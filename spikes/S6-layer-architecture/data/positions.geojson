@@ -1,0 +1,575 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": {
+        "deviceId": "device-001",
+        "name": "Alpha Team",
+        "color": "#e6194b",
+        "timestamp": "2026-04-06T13:59:30.000Z",
+        "altitude": 407,
+        "speed": 1,
+        "battery": 42
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -9.769352893401177,
+          51.92181423072949
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "deviceId": "device-002",
+        "name": "Bravo Team",
+        "color": "#3cb44b",
+        "timestamp": "2026-04-06T13:59:30.000Z",
+        "altitude": 374,
+        "speed": 1.2,
+        "battery": 41
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -9.763987757797501,
+          51.978123579521196
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "deviceId": "device-003",
+        "name": "Charlie Team",
+        "color": "#ffe119",
+        "timestamp": "2026-04-06T13:59:30.000Z",
+        "altitude": 379,
+        "speed": 1.6,
+        "battery": 41
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -9.743442277773726,
+          52.04656360302368
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "deviceId": "device-004",
+        "name": "Delta Team",
+        "color": "#4363d8",
+        "timestamp": "2026-04-06T13:59:30.000Z",
+        "altitude": 411,
+        "speed": 1.2,
+        "battery": 44
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -9.767037944233188,
+          51.98502237732782
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "deviceId": "device-005",
+        "name": "Echo Team",
+        "color": "#f58231",
+        "timestamp": "2026-04-06T13:59:30.000Z",
+        "altitude": 375,
+        "speed": 1.8,
+        "battery": 43
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -9.748213752862478,
+          51.93454652562957
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "deviceId": "device-006",
+        "name": "Foxtrot Team",
+        "color": "#911eb4",
+        "timestamp": "2026-04-06T13:59:30.000Z",
+        "altitude": 377,
+        "speed": 1.8,
+        "battery": 40
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -9.813696936656312,
+          52.014215564507865
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "deviceId": "device-007",
+        "name": "Golf Team",
+        "color": "#42d4f4",
+        "timestamp": "2026-04-06T13:59:30.000Z",
+        "altitude": 384,
+        "speed": 1,
+        "battery": 41
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -9.745182269424586,
+          51.97897279565572
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "deviceId": "device-008",
+        "name": "Hotel Team",
+        "color": "#f032e6",
+        "timestamp": "2026-04-06T13:59:30.000Z",
+        "altitude": 384,
+        "speed": 1.3,
+        "battery": 40
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -9.671650633571927,
+          51.98005596551195
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "deviceId": "device-009",
+        "name": "India Team",
+        "color": "#bfef45",
+        "timestamp": "2026-04-06T13:59:30.000Z",
+        "altitude": 397,
+        "speed": 1.9,
+        "battery": 44
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -9.826941777540352,
+          51.993111897780274
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "deviceId": "device-010",
+        "name": "Juliet Team",
+        "color": "#fabed4",
+        "timestamp": "2026-04-06T13:59:30.000Z",
+        "altitude": 409,
+        "speed": 1.2,
+        "battery": 41
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -9.657241926856475,
+          52.0165152921735
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "deviceId": "device-011",
+        "name": "Kilo Team",
+        "color": "#469990",
+        "timestamp": "2026-04-06T13:59:30.000Z",
+        "altitude": 382,
+        "speed": 1.3,
+        "battery": 44
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -9.692615062497149,
+          51.9870938416844
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "deviceId": "device-012",
+        "name": "Lima Team",
+        "color": "#dcbeff",
+        "timestamp": "2026-04-06T13:59:30.000Z",
+        "altitude": 390,
+        "speed": 1,
+        "battery": 43
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -9.79532838224992,
+          52.034572155482714
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "deviceId": "device-013",
+        "name": "Mike Team",
+        "color": "#9A6324",
+        "timestamp": "2026-04-06T13:59:30.000Z",
+        "altitude": 399,
+        "speed": 1.3,
+        "battery": 44
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -9.757927719805007,
+          52.000105053561626
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "deviceId": "device-014",
+        "name": "November Team",
+        "color": "#fffac8",
+        "timestamp": "2026-04-06T13:59:30.000Z",
+        "altitude": 413,
+        "speed": 1.2,
+        "battery": 43
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -9.816784760581502,
+          52.008871580199205
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "deviceId": "device-015",
+        "name": "Oscar Team",
+        "color": "#800000",
+        "timestamp": "2026-04-06T13:59:30.000Z",
+        "altitude": 398,
+        "speed": 1.5,
+        "battery": 40
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -9.655896747876936,
+          51.97635396245201
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "deviceId": "device-016",
+        "name": "Papa Team",
+        "color": "#aaffc3",
+        "timestamp": "2026-04-06T13:59:30.000Z",
+        "altitude": 396,
+        "speed": 1.4,
+        "battery": 42
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -9.853134772286454,
+          51.97472342412857
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "deviceId": "device-017",
+        "name": "Quebec Team",
+        "color": "#808000",
+        "timestamp": "2026-04-06T13:59:30.000Z",
+        "altitude": 367,
+        "speed": 1.1,
+        "battery": 45
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -9.675525713244635,
+          51.98314920365406
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "deviceId": "device-018",
+        "name": "Romeo Team",
+        "color": "#ffd8b1",
+        "timestamp": "2026-04-06T13:59:30.000Z",
+        "altitude": 410,
+        "speed": 1.3,
+        "battery": 43
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -9.77847760145168,
+          52.012668782427234
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "deviceId": "device-019",
+        "name": "Sierra Team",
+        "color": "#000075",
+        "timestamp": "2026-04-06T13:59:30.000Z",
+        "altitude": 367,
+        "speed": 0.9,
+        "battery": 42
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -9.764870861756457,
+          52.018541777586115
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "deviceId": "device-020",
+        "name": "Tango Team",
+        "color": "#a9a9a9",
+        "timestamp": "2026-04-06T13:59:30.000Z",
+        "altitude": 400,
+        "speed": 1.6,
+        "battery": 45
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -9.749880076433623,
+          51.932507153334235
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "deviceId": "device-021",
+        "name": "Uniform Team",
+        "color": "#e6194b",
+        "timestamp": "2026-04-06T13:59:30.000Z",
+        "altitude": 395,
+        "speed": 1.8,
+        "battery": 43
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -9.621640331534493,
+          52.01941714458945
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "deviceId": "device-022",
+        "name": "Victor Team",
+        "color": "#3cb44b",
+        "timestamp": "2026-04-06T13:59:30.000Z",
+        "altitude": 380,
+        "speed": 1.4,
+        "battery": 45
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -9.782651160925488,
+          51.94687058917418
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "deviceId": "device-023",
+        "name": "Whiskey Team",
+        "color": "#ffe119",
+        "timestamp": "2026-04-06T13:59:30.000Z",
+        "altitude": 398,
+        "speed": 0.9,
+        "battery": 41
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -9.666523464431965,
+          51.98421561243486
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "deviceId": "device-024",
+        "name": "Xray Team",
+        "color": "#4363d8",
+        "timestamp": "2026-04-06T13:59:30.000Z",
+        "altitude": 407,
+        "speed": 0.7,
+        "battery": 40
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -9.793069342799246,
+          51.981046420770845
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "deviceId": "device-025",
+        "name": "Yankee Team",
+        "color": "#f58231",
+        "timestamp": "2026-04-06T13:59:30.000Z",
+        "altitude": 369,
+        "speed": 1.5,
+        "battery": 43
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -9.780108271828766,
+          52.04782304874596
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "deviceId": "device-026",
+        "name": "Zulu Team",
+        "color": "#911eb4",
+        "timestamp": "2026-04-06T13:59:30.000Z",
+        "altitude": 402,
+        "speed": 2,
+        "battery": 42
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -9.67082587991943,
+          52.0589473451329
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "deviceId": "device-027",
+        "name": "Base Ops",
+        "color": "#42d4f4",
+        "timestamp": "2026-04-06T13:59:30.000Z",
+        "altitude": 399,
+        "speed": 1.4,
+        "battery": 44
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -9.788192416448151,
+          52.03925466584139
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "deviceId": "device-028",
+        "name": "Mobile CP",
+        "color": "#f032e6",
+        "timestamp": "2026-04-06T13:59:30.000Z",
+        "altitude": 414,
+        "speed": 1.6,
+        "battery": 41
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -9.736780163943044,
+          52.05261356190614
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "deviceId": "device-029",
+        "name": "Heli Liaison",
+        "color": "#bfef45",
+        "timestamp": "2026-04-06T13:59:30.000Z",
+        "altitude": 397,
+        "speed": 2.1,
+        "battery": 43
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -9.818894340492964,
+          52.004585963208484
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "deviceId": "device-030",
+        "name": "Dog Handler",
+        "color": "#fabed4",
+        "timestamp": "2026-04-06T13:59:30.000Z",
+        "altitude": 399,
+        "speed": 1.6,
+        "battery": 44
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -9.662849266811063,
+          52.06899991545757
+        ]
+      }
+    }
+  ]
+}

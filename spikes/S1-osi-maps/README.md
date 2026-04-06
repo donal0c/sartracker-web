@@ -1,36 +1,73 @@
-# R1: OSI Maps — Offline-First Strategy
+# React + TypeScript + Vite
 
-## Risk Level: CRITICAL
-## Status: ⏳ Waiting on Eamonn for MapGenie access details
+This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
 
-## The Problem
-The team relies on OSI Discovery Series 1:50,000 maps — contours, mountain peaks, spot heights, townland names, rivers, bog markings. Generic OpenStreetMap/OpenTopoMap is NOT equivalent. If the app can't show these maps offline, it's a non-starter.
+Currently, two official plugins are available:
 
-## What We Know
-- MapGenie migrated from AWS to ArcGIS Online (July 2024)
-- Available via WMS, WMTS, ESRI REST API
-- Available in Web Mercator (EPSG:3857) — MapLibre compatible
-- Access requires National Mapping Agreement credentials or institutional access
-- SAR teams likely qualify under public sector/emergency services access
-- Kerry coverage = sheets 70, 71, 78, 83, 84, 85 (Discovery Series)
+- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
+- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
 
-## Questions for Eamonn
-1. What are your current MapGenie/OSI tile service connection details?
-2. Do you have a username/password or token for MapGenie?
-3. What QGIS layers are configured for the OSI maps? (screenshot of QGIS layer properties)
-4. Are the maps loaded as local raster files (georeferenced JPGs) or via WMS/WMTS?
-5. Would KMRT be open to requesting formal MapGenie access if not already set up?
+## React Compiler
 
-## Research Needed
-- [ ] Exact MapGenie WMTS endpoint URL format (post ArcGIS Online migration)
-- [ ] Whether MapGenie tiles can be cached/downloaded for offline use (licensing)
-- [ ] MapLibre raster tile source configuration for WMTS
-- [ ] MBTiles/PMTiles conversion pipeline for pre-downloaded OSI rasters
-- [ ] Quality comparison: MapGenie WMTS vs georeferenced raster at various zoom levels
-- [ ] Fallback: OpenTopoMap contour quality for Kerry mountains
+The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
 
-## Spike Criteria
-✅ MapLibre renders OSI Discovery tiles at quality parity with QGIS
-✅ Tiles load from local cache when network is disabled
-✅ Kerry mountain area (MacGillycuddy's Reeks) renders with full contour detail
-✅ Zoom levels 10-16 cover operational needs
+## Expanding the ESLint configuration
+
+If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+
+```js
+export default defineConfig([
+  globalIgnores(['dist']),
+  {
+    files: ['**/*.{ts,tsx}'],
+    extends: [
+      // Other configs...
+
+      // Remove tseslint.configs.recommended and replace with this
+      tseslint.configs.recommendedTypeChecked,
+      // Alternatively, use this for stricter rules
+      tseslint.configs.strictTypeChecked,
+      // Optionally, add this for stylistic rules
+      tseslint.configs.stylisticTypeChecked,
+
+      // Other configs...
+    ],
+    languageOptions: {
+      parserOptions: {
+        project: ['./tsconfig.node.json', './tsconfig.app.json'],
+        tsconfigRootDir: import.meta.dirname,
+      },
+      // other options...
+    },
+  },
+])
+```
+
+You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+
+```js
+// eslint.config.js
+import reactX from 'eslint-plugin-react-x'
+import reactDom from 'eslint-plugin-react-dom'
+
+export default defineConfig([
+  globalIgnores(['dist']),
+  {
+    files: ['**/*.{ts,tsx}'],
+    extends: [
+      // Other configs...
+      // Enable lint rules for React
+      reactX.configs['recommended-typescript'],
+      // Enable lint rules for React DOM
+      reactDom.configs.recommended,
+    ],
+    languageOptions: {
+      parserOptions: {
+        project: ['./tsconfig.node.json', './tsconfig.app.json'],
+        tsconfigRootDir: import.meta.dirname,
+      },
+      // other options...
+    },
+  },
+])
+```

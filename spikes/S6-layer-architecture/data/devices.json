@@ -1,0 +1,152 @@
+[
+  {
+    "deviceId": "device-001",
+    "name": "Alpha Team",
+    "color": "#e6194b"
+  },
+  {
+    "deviceId": "device-002",
+    "name": "Bravo Team",
+    "color": "#3cb44b"
+  },
+  {
+    "deviceId": "device-003",
+    "name": "Charlie Team",
+    "color": "#ffe119"
+  },
+  {
+    "deviceId": "device-004",
+    "name": "Delta Team",
+    "color": "#4363d8"
+  },
+  {
+    "deviceId": "device-005",
+    "name": "Echo Team",
+    "color": "#f58231"
+  },
+  {
+    "deviceId": "device-006",
+    "name": "Foxtrot Team",
+    "color": "#911eb4"
+  },
+  {
+    "deviceId": "device-007",
+    "name": "Golf Team",
+    "color": "#42d4f4"
+  },
+  {
+    "deviceId": "device-008",
+    "name": "Hotel Team",
+    "color": "#f032e6"
+  },
+  {
+    "deviceId": "device-009",
+    "name": "India Team",
+    "color": "#bfef45"
+  },
+  {
+    "deviceId": "device-010",
+    "name": "Juliet Team",
+    "color": "#fabed4"
+  },
+  {
+    "deviceId": "device-011",
+    "name": "Kilo Team",
+    "color": "#469990"
+  },
+  {
+    "deviceId": "device-012",
+    "name": "Lima Team",
+    "color": "#dcbeff"
+  },
+  {
+    "deviceId": "device-013",
+    "name": "Mike Team",
+    "color": "#9A6324"
+  },
+  {
+    "deviceId": "device-014",
+    "name": "November Team",
+    "color": "#fffac8"
+  },
+  {
+    "deviceId": "device-015",
+    "name": "Oscar Team",
+    "color": "#800000"
+  },
+  {
+    "deviceId": "device-016",
+    "name": "Papa Team",
+    "color": "#aaffc3"
+  },
+  {
+    "deviceId": "device-017",
+    "name": "Quebec Team",
+    "color": "#808000"
+  },
+  {
+    "deviceId": "device-018",
+    "name": "Romeo Team",
+    "color": "#ffd8b1"
+  },
+  {
+    "deviceId": "device-019",
+    "name": "Sierra Team",
+    "color": "#000075"
+  },
+  {
+    "deviceId": "device-020",
+    "name": "Tango Team",
+    "color": "#a9a9a9"
+  },
+  {
+    "deviceId": "device-021",
+    "name": "Uniform Team",
+    "color": "#e6194b"
+  },
+  {
+    "deviceId": "device-022",
+    "name": "Victor Team",
+    "color": "#3cb44b"
+  },
+  {
+    "deviceId": "device-023",
+    "name": "Whiskey Team",
+    "color": "#ffe119"
+  },
+  {
+    "deviceId": "device-024",
+    "name": "Xray Team",
+    "color": "#4363d8"
+  },
+  {
+    "deviceId": "device-025",
+    "name": "Yankee Team",
+    "color": "#f58231"
+  },
+  {
+    "deviceId": "device-026",
+    "name": "Zulu Team",
+    "color": "#911eb4"
+  },
+  {
+    "deviceId": "device-027",
+    "name": "Base Ops",
+    "color": "#42d4f4"
+  },
+  {
+    "deviceId": "device-028",
+    "name": "Mobile CP",
+    "color": "#f032e6"
+  },
+  {
+    "deviceId": "device-029",
+    "name": "Heli Liaison",
+    "color": "#bfef45"
+  },
+  {
+    "deviceId": "device-030",
+    "name": "Dog Handler",
+    "color": "#fabed4"
+  }
+]

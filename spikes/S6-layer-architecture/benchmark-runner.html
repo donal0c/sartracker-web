@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>S6 Automated Benchmark Runner</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #0d1117; color: #e6edf3; padding: 24px; }
+  h1 { font-size: 22px; margin-bottom: 16px; }
+  .instructions { background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 16px; margin-bottom: 20px; }
+  .instructions h3 { color: #58a6ff; margin-bottom: 8px; }
+  .instructions ol { padding-left: 20px; line-height: 1.8; }
+  .instructions code { background: #1f2937; padding: 2px 6px; border-radius: 3px; font-size: 13px; }
+  table { width: 100%; border-collapse: collapse; margin-top: 16px; }
+  th, td { padding: 10px 14px; text-align: left; border-bottom: 1px solid #30363d; }
+  th { background: #161b22; color: #8b949e; font-size: 12px; text-transform: uppercase; }
+  td { font-family: 'SF Mono', monospace; font-size: 14px; }
+  .pass { color: #3fb950; }
+  .fail { color: #f85149; }
+  .warn { color: #d29922; }
+  .metric-label { color: #8b949e; }
+  textarea { width: 100%; height: 200px; background: #0d1117; color: #e6edf3; border: 1px solid #30363d; border-radius: 6px; padding: 12px; font-family: monospace; font-size: 12px; margin-top: 12px; }
+  #paste-area { margin-top: 24px; }
+  button { background: #238636; color: #fff; border: none; padding: 8px 16px; border-radius: 6px; cursor: pointer; font-size: 14px; margin-top: 12px; }
+  button:hover { background: #2ea043; }
+</style>
+</head>
+<body>
+
+<h1>S6 Layer Architecture — Benchmark Results</h1>
+
+<div class="instructions">
+  <h3>How to Run</h3>
+  <ol>
+    <li>Open each prototype HTML file in a browser (use a local file server — <code>npx serve .</code>)</li>
+    <li>Click "Run Benchmark" in each prototype's sidebar</li>
+    <li>Copy the full benchmark output from each</li>
+    <li>Paste below to auto-populate the comparison table</li>
+  </ol>
+  <p style="margin-top:8px;color:#8b949e;">Performance targets: FPS >30 | Device toggle &lt;100ms | Category toggle &lt;50ms</p>
+</div>
+
+<div id="paste-area">
+  <h3>Paste Approach A results:</h3>
+  <textarea id="results-a" placeholder="Paste Approach A benchmark output here..."></textarea>
+  <h3 style="margin-top:12px">Paste Approach B results:</h3>
+  <textarea id="results-b" placeholder="Paste Approach B benchmark output here..."></textarea>
+  <h3 style="margin-top:12px">Paste Approach C results:</h3>
+  <textarea id="results-c" placeholder="Paste Approach C benchmark output here..."></textarea>
+  <button onclick="parseAndDisplay()">Compare Results</button>
+</div>
+
+<div id="comparison" style="margin-top:24px;display:none;">
+  <h2 style="margin-bottom:8px;">Comparison</h2>
+  <table id="results-table">
+    <thead>
+      <tr>
+        <th>Metric</th>
+        <th>Target</th>
+        <th>A: Many Layers</th>
+        <th>B: Filter-Based</th>
+        <th>C: Hybrid</th>
+      </tr>
+    </thead>
+    <tbody id="table-body"></tbody>
+  </table>
+
+  <h3 style="margin-top:24px;">Raw Markdown (for RESULTS.md)</h3>
+  <textarea id="markdown-output" style="height:300px;"></textarea>
+</div>
+
+<script>
+function parseBenchmarkText(text) {
+  const result = {};
+
+  // FPS
+  const fpsMatch = text.match(/FPS:?\s*([\d.]+)\s*±\s*([\d.]+)/);
+  if (fpsMatch) {
+    result.fps = { mean: parseFloat(fpsMatch[1]), std: parseFloat(fpsMatch[2]) };
+  }
+
+  // Single device toggle
+  const devMatch = text.match(/Single device toggle:?\s*([\d.]+)\s*±\s*([\d.]+)/);
+  if (devMatch) {
+    result.deviceToggle = { mean: parseFloat(devMatch[1]), std: parseFloat(devMatch[2]) };
+  }
+
+  // Category toggle (markers)
+  const catMatch = text.match(/Category toggle.*?:?\s*([\d.]+)\s*±\s*([\d.]+)/);
+  if (catMatch) {
+    result.categoryToggle = { mean: parseFloat(catMatch[1]), std: parseFloat(catMatch[2]) };
+  }
+
+  // Breadcrumbs toggle
+  const bcMatch = text.match(/Breadcrumbs toggle:?\s*([\d.]+)\s*±\s*([\d.]+)/);
+  if (bcMatch) {
+    result.breadcrumbToggle = { mean: parseFloat(bcMatch[1]), std: parseFloat(bcMatch[2]) };
+  }
+
+  // Layer count
+  const layerMatch = text.match(/(?:Total MapLibre )?(?:layers|Style layers):?\s*~?(\d+)/);
+  if (layerMatch) {
+    result.layerCount = parseInt(layerMatch[1]);
+  }
+
+  return result;
+}
+
+function statusClass(value, target, isHigherBetter) {
+  if (isHigherBetter) {
+    return value >= target ? 'pass' : (value >= target * 0.7 ? 'warn' : 'fail');
+  }
+  return value <= target ? 'pass' : (value <= target * 1.5 ? 'warn' : 'fail');
+}
+
+function fmt(metric) {
+  if (!metric) return '<span class="metric-label">—</span>';
+  return `${metric.mean.toFixed(1)} ± ${metric.std.toFixed(1)}`;
+}
+
+function fmtCell(metric, target, isHigherBetter) {
+  if (!metric) return '<span class="metric-label">—</span>';
+  const cls = statusClass(metric.mean, target, isHigherBetter);
+  return `<span class="${cls}">${metric.mean.toFixed(2)} ± ${metric.std.toFixed(2)}</span>`;
+}
+
+function parseAndDisplay() {
+  const a = parseBenchmarkText(document.getElementById('results-a').value);
+  const b = parseBenchmarkText(document.getElementById('results-b').value);
+  const c = parseBenchmarkText(document.getElementById('results-c').value);
+
+  const rows = [
+    { label: 'FPS (pan/zoom)', target: '>30', a: a.fps, b: b.fps, c: c.fps, higher: true, targetVal: 30 },
+    { label: 'Device toggle (ms)', target: '<100', a: a.deviceToggle, b: b.deviceToggle, c: c.deviceToggle, higher: false, targetVal: 100 },
+    { label: 'Category toggle (ms)', target: '<50', a: a.categoryToggle, b: b.categoryToggle, c: c.categoryToggle, higher: false, targetVal: 50 },
+    { label: 'Breadcrumb toggle (ms)', target: '<50', a: a.breadcrumbToggle, b: b.breadcrumbToggle, c: c.breadcrumbToggle, higher: false, targetVal: 50 },
+  ];
+
+  const tbody = document.getElementById('table-body');
+  tbody.innerHTML = '';
+
+  rows.forEach(row => {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td>${row.label}</td>
+      <td class="metric-label">${row.target}</td>
+      <td>${fmtCell(row.a, row.targetVal, row.higher)}</td>
+      <td>${fmtCell(row.b, row.targetVal, row.higher)}</td>
+      <td>${fmtCell(row.c, row.targetVal, row.higher)}</td>
+    `;
+    tbody.appendChild(tr);
+  });
+
+  document.getElementById('comparison').style.display = 'block';
+
+  // Generate Markdown
+  let md = `| Metric | Target | A: Many Layers | B: Filter-Based | C: Hybrid |\n`;
+  md += `|--------|--------|---------------|-----------------|----------|\n`;
+  rows.forEach(row => {
+    md += `| ${row.label} | ${row.target} | ${fmt(row.a)} | ${fmt(row.b)} | ${fmt(row.c)} |\n`;
+  });
+  md += `\nLayer/Source counts:\n`;
+  md += `- A: ${a.layerCount || '?'} layers, ~90 sources\n`;
+  md += `- B: 6 layers, 4 sources\n`;
+  md += `- C: ~15 layers, 3 sources\n`;
+
+  document.getElementById('markdown-output').value = md;
+}
+</script>
+
+</body>
+</html>
