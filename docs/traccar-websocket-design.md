@@ -1,19 +1,21 @@
 # R3: Traccar WebSocket Reconnect & Reconciliation
 
+This document is now a v2 exploration note. It is not the active v1 plan.
+
 ## Risk Level: HIGH
-## Status: 🔬 Needs deep research
+## Status: Deferred. V1 uses HTTP polling
 
-## The Problem
-Upgrading from HTTP polling to WebSocket push introduces statefulness. Mountain networks drop frequently. Without proper reconnection and gap-filling logic, breadcrumb trails will have gaps, positions will be lost, and the team won't know where their people actually walked.
+## Context
+The project decision after Spike S7 is to use HTTP polling for v1 because it matches the proven plugin behaviour and avoids introducing unnecessary statefulness into the first operational release.
 
-## What We Know
+## Keep This For V2
 - Current plugin polls Traccar REST API: GET /api/positions (all current) + GET /api/positions?deviceId=X&from=...&to=... (breadcrumbs)
 - Traccar offers WebSocket at /api/socket — pushes position updates in real-time
 - WebSocket requires session auth (POST /api/session first)
 - On reconnect, WebSocket only sends NEW positions from that point
 - The plugin's traccar_http.py (1,942 lines) handles all this currently
 
-## Research Needed
+## Questions To Revisit Later
 - [ ] Traccar WebSocket message format (what fields, how are positions identified?)
 - [ ] Does Traccar assign sequential IDs to positions?
 - [ ] What happens to positions recorded while the client is disconnected?
@@ -22,7 +24,7 @@ Upgrading from HTTP polling to WebSocket push introduces statefulness. Mountain 
 - [ ] How does the current plugin handle reconnection/missed data?
 - [ ] What's the practical reconnect frequency in Kerry mountain terrain?
 
-## Design Requirements
+## V2 Requirements If Reopened
 - Automatic reconnection with exponential backoff
 - HTTP polling fallback when WebSocket is unavailable
 - On reconnect: fetch all positions between last-known timestamp and now via REST
@@ -30,8 +32,7 @@ Upgrading from HTTP polling to WebSocket push introduces statefulness. Mountain 
 - Monotonic ordering — reject/buffer out-of-order positions
 - Graceful degradation: if server is unreachable, show last known positions with staleness indicator
 
-## Spike Criteria
-✅ WebSocket connects, receives real-time positions, renders on map
-✅ Kill network, wait 60s, restore — breadcrumb trail has no gaps
-✅ HTTP polling fallback activates within 10s of WebSocket failure
-✅ De-duplication verified — no doubled position markers
+## Current V1 Rule
+- Do not build WebSocket transport into the initial production scaffold
+- Use the proven HTTP polling approach from Spike S7
+- Revisit this document only after the Phase 1 operational core is stable

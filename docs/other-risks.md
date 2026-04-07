@@ -1,7 +1,11 @@
+# Post-Spike Risk Notes
+
+These notes are retained for implementation planning after the spike phase. They are not the authoritative source for current project state; use `handoff/HANDOFF.md`, `CODEX_START.md`, and `CLAUDE.md` for the active build direction.
+
 # R4: Auto-Update Security & Rollback
 
 ## Risk Level: HIGH
-## Status: 🔬 Needs research
+## Status: Deferred to Phase 3 hardening
 
 ## The Problem
 Auto-update in a life-safety desktop app is a supply-chain boundary. A broken update during an active rescue could be catastrophic. The update mechanism needs to be hardened.
@@ -28,31 +32,24 @@ Auto-update in a life-safety desktop app is a supply-chain boundary. A broken up
 # R5: Mission State Crash-Safe Persistence
 
 ## Risk Level: MEDIUM
-## Status: 🔬 Needs research
+## Status: Resolved by Spike S5
 
-## The Problem
-Replacing QgsProject with "JSON on disk" without crash safety = potential mission data loss. A crash during autosave could leave a 0-byte file.
+## Outcome
+This risk is closed for v1. The project direction is SQLite in WAL mode behind a backend mission store, not JSON-on-disk mission state.
 
-## Research Needed
-- [ ] Tauri filesystem API capabilities (atomic rename, temp files)
-- [ ] Best practices for crash-safe JSON persistence in Electron/Tauri apps
-- [ ] What does the current plugin store in mission state? (audit mission_storage.py)
-- [ ] SQLite via Tauri SQL plugin — overkill or appropriate?
-- [ ] Write-ahead-log patterns for JSON state
-
-## Design Requirements
-- Atomic writes (write to .tmp, rename on success)
-- Schema versioning with migration functions
-- Automatic backup before each save (keep last 3)
-- Corruption detection (checksum or JSON parse validation)
-- Recovery UI: "Mission file appears corrupted. Restore from backup?"
+## Confirmed Direction
+- SQLite with WAL mode
+- Transactional writes
+- Sequential schema migrations
+- Backup rotation
+- Recovery on restart through SQLite semantics rather than ad hoc file repair
 
 ---
 
 # R6: Magnetic Declination
 
 ## Risk Level: MEDIUM
-## Status: 🔬 Needs research
+## Status: Open product decision for v1
 
 ## The Problem
 Current plugin hardcodes Ireland's magnetic declination at -4.5°. This drifts annually and varies by location.
@@ -69,32 +66,27 @@ Current plugin hardcodes Ireland's magnetic declination at -4.5°. This drifts a
 # R7: Tauri Distribution (Windows/macOS)
 
 ## Risk Level: MEDIUM
-## Status: 🔬 Needs research
+## Status: Largely resolved for v1
 
 ## The Problem
 Non-technical users need seamless installation. macOS Gatekeeper blocks unsigned apps. Windows SmartScreen warns on unknown publishers. Tauri on Windows requires WebView2.
 
-## Research Needed
-- [ ] What OS do team members actually use? (ask Eamonn)
-- [ ] WebView2 availability on Windows 10/11 (pre-installed on Win 11)
-- [ ] Tauri Windows installer options (.msi, .exe, NSIS)
-- [ ] macOS notarization process and cost
-- [ ] Linux distribution (AppImage? .deb?)
-- [ ] Tauri binary size for a MapLibre + React app
+## Current Direction
+- Tauri 2 remains the chosen desktop wrapper
+- v1 is aimed at the team's Windows/Linux usage
+- No code signing for v1
+- Packaging hardening remains a later-phase concern, not a blocker for scaffold/core implementation
 
 ---
 
 # R8: Terra Draw Feature Parity
 
 ## Risk Level: LOW
-## Status: 🔬 Needs research
+## Status: Resolved by Spike S3
 
-## The Problem
-Terra Draw has most SAR drawing modes built in, but range rings (concentric circles at LPB probability distances) are not native. Need custom implementation.
+## Outcome
+This is no longer an open architecture risk. Terra Draw plus custom SAR geometry logic proved sufficient in the drawing tools spike.
 
-## Research Needed
-- [ ] Terra Draw API for custom geometry generation
-- [ ] Turf.js circle() at multiple radii → GeoJSON → MapLibre layers
-- [ ] Can Terra Draw features have custom metadata (POA, team, status)?
-- [ ] Select/edit workflow for search areas
-- [ ] Measurement display (distance/area labels on drawn features)
+## Implementation Reminder
+- Rebuild the production drawing system from scratch with tests
+- Use the spike as a reference implementation, not as an import source

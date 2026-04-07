@@ -40,7 +40,7 @@ QGIS version updates keep breaking the plugin. The team is non-technical and can
 
 **Build a bespoke standalone desktop application** that replaces the QGIS plugin entirely. Port all domain logic from Python to TypeScript.
 
-### Proposed Stack
+### Confirmed Stack
 | Component | Technology | Replaces |
 |-----------|-----------|----------|
 | Desktop wrapper | Tauri 2 | QGIS application |
@@ -49,7 +49,7 @@ QGIS version updates keep breaking the plugin. The team is non-technical and can
 | Geospatial maths | Turf.js | Custom Python drawing_math.py |
 | Coordinates | proj4js | QgsCoordinateTransform |
 | UI | TypeScript + React | PyQt5/6 widgets |
-| Offline tiles | PMTiles | QGIS raster layers |
+| Offline tiles | PMTiles / GeoPackage-derived tiles | QGIS raster layers |
 | Auto-update | Tauri updater plugin | Manual QGIS plugin updates |
 
 ### Key Advantages
@@ -59,29 +59,34 @@ QGIS version updates keep breaking the plugin. The team is non-technical and can
 - **Offline-first** maps bundled with the app
 - **Cross-platform** Mac/Windows/Linux from one codebase
 
-## Identified Risks
+## Architecture Status
 
-Reviewed by a 3-model Agent Council (Claude Opus 4.6, Gemini 3.1 Pro, GPT 5.4). Full council verdict in research docs.
+The initial risks were reviewed by a 3-model Agent Council and then validated through 7 technical spikes. At this point, the repo is no longer in open-ended research mode; it is in pre-build with a defined architecture.
 
 | # | Risk | Severity | Status |
 |---|------|----------|--------|
-| R1 | OSI maps offline-first | CRITICAL | ⏳ Waiting on Eamonn for MapGenie access |
-| R2 | Irish Grid coordinate accuracy (TM65/NTv2) | CRITICAL | 🔬 Needs research |
-| R3 | Traccar WebSocket reconnect/reconciliation | HIGH | 🔬 Needs research |
-| R4 | Auto-update security & rollback | HIGH | 🔬 Needs research |
-| R5 | Mission state crash-safe persistence | MEDIUM | 🔬 Needs research |
-| R6 | Magnetic declination (dynamic vs hardcoded) | MEDIUM | 🔬 Needs research |
-| R7 | Tauri Windows/macOS distribution (signing) | MEDIUM | 🔬 Needs research |
-| R8 | Terra Draw feature parity (range rings) | LOW | 🔬 Needs research |
+| R1 | OSI maps offline-first | CRITICAL | Spike passed; production GeoPackage still awaited for final validation |
+| R2 | Irish Grid coordinate accuracy | CRITICAL | Resolved via S2 using validated proj4js transform |
+| R3 | Traccar live updates | HIGH | Resolved for v1 with HTTP polling; WebSocket deferred |
+| R4 | Auto-update security & rollback | HIGH | Deferred to hardening policy work after core build |
+| R5 | Mission state crash-safe persistence | MEDIUM | Resolved via S5 with SQLite WAL |
+| R6 | Magnetic declination policy | MEDIUM | Still open for explicit v1 product decision |
+| R7 | Desktop distribution | MEDIUM | Resolved for v1 with Tauri 2 and no code signing |
+| R8 | Terra Draw feature parity | LOW | Resolved via S3 |
 
-## Spike Plan
+## What The Spikes Established
 
-Each critical risk gets a focused prototype before full build begins:
+1. **Coordinates:** `ITM` is the internal working CRS, `TM65` is display-only, and the chosen transform matches QGIS accuracy.
+2. **Persistence:** SQLite in `WAL` mode is the production direction, not JSON files.
+3. **Tracking:** HTTP polling is the correct v1 transport because it matches the proven plugin model and avoids WebSocket reconnection complexity.
+4. **Layers:** A hybrid `3-source / ~15-layer` MapLibre architecture performs well enough for large breadcrumb datasets.
+5. **Drawing:** Terra Draw plus custom geometry logic covers the SAR-specific toolset.
 
-1. **Map Spike** — MapLibre + OSI MapGenie WMTS + offline tiles
-2. **Coordinate Spike** — proj4js TM65 validation against QGIS golden dataset
-3. **Persistence Spike** — atomic JSON save/load with crash recovery
-4. **Traccar Spike** — WebSocket + HTTP fallback with gap healing
+## Current Execution State
+
+- **Phase:** Pre-build, ready for scaffold and Phase 1 implementation
+- **Immediate next steps:** scaffold the app, set up test infrastructure, then build mission lifecycle first with TDD
+- **Operational continuity:** `handoff/HANDOFF.md` is the authoritative in-repo log for whichever coding agent works next
 
 ## Project Structure
 
@@ -116,7 +121,7 @@ sartracker-web/
 
 ## Timeline
 
-- **Now:** Planning, risk research, spike preparation
-- **Next:** Validate spikes (maps, coordinates, persistence, Traccar)
-- **Then:** Full build (estimated 25-30 days AI-assisted)
+- **Now:** Scaffold and Phase 1 build
+- **Next:** Operational core features with tests-first workflow
+- **Then:** Hardening, field validation, and deployment preparation
 - **Before production:** Field testing with team

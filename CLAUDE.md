@@ -11,6 +11,8 @@ This application is used by Kerry Mountain Rescue Team during real search and re
 3. **Read handoff/HANDOFF.md** for the current state and what was last done
 4. **Read the relevant bead** for whatever you're working on (`bd list`, `bd show <id>`)
 
+`handoff/HANDOFF.md` is the shared continuity document between Donal, Codex, and Claude Code. If there is any mismatch between older planning docs and the current implementation state, follow the handoff file and update stale docs as part of the work.
+
 ## After Every Chunk of Work
 
 1. **Update handoff/HANDOFF.md** — what you did, what's next, any blockers
@@ -29,12 +31,25 @@ This application is used by Kerry Mountain Rescue Team during real search and re
 6. Every module gets unit tests + integration tests
 7. Every user-facing flow gets Playwright E2E tests
 
+### Feature Delivery Workflow
+For every feature bead after scaffolding:
+1. Do a short design pass before implementation
+2. Write down the safety invariants and failure modes
+3. Define the test plan before writing production code
+4. Start with failing tests for the core behaviour
+5. Only then implement the feature
+
+For scaffold and tooling beads, be pragmatic. For behaviour-bearing features, tests-first is the default and should only be skipped with an explicit reason recorded in `handoff/HANDOFF.md`.
+
 ### Code Quality
 - TypeScript strict mode — no `any` types
 - All functions must have JSDoc comments
 - All coordinate functions must validate inputs (NaN, Infinity, out-of-range)
 - Error messages must be clear and actionable — volunteers will see them
 - No silent failures — log and surface errors
+- Prefer deterministic tests over brittle snapshots
+- Prefer simple, boring infrastructure choices over clever abstractions
+- If a safety-critical path fails, fail loudly and visibly rather than silently falling back
 
 ### Coordinate Safety
 - ITM (EPSG:2157) is the working CRS
@@ -48,6 +63,18 @@ This application is used by Kerry Mountain Rescue Team during real search and re
 - Atomic commits — one logical change per commit
 - Never commit failing tests
 
+### Bead Planning Checklist
+Before implementing a feature bead, capture these explicitly in the bead notes, handoff, or working notes:
+- Goal and non-goals
+- Safety invariants
+- Failure modes
+- Persistence impact
+- Coordinate impact
+- What must never regress
+- Test plan
+
+If an architectural decision is made during execution, record it in `handoff/HANDOFF.md` so the next coding agent inherits the same assumptions.
+
 ## Architecture
 
 ### Stack
@@ -57,7 +84,7 @@ This application is used by Kerry Mountain Rescue Team during real search and re
 - **Terra Draw** — drawing interactions (polygons, lines)
 - **Turf.js** — geospatial calculations
 - **proj4js** — coordinate conversion
-- **better-sqlite3** — mission persistence (WAL mode)
+- **SQLite mission store behind Tauri commands** — mission persistence (WAL mode)
 
 ### Layer Architecture (from S6 spike)
 - **Hybrid approach**: 3 sources (tracking, markers, drawings) + ~15 style layers
@@ -69,6 +96,19 @@ This application is used by Kerry Mountain Rescue Team during real search and re
 - Atomic operations — no partial writes
 - Schema versioned with migrations
 - Backup rotation — keep last 3
+- Renderer does not access the database directly; persistence is mediated by a backend mission store
+
+### Domain Boundaries
+- The renderer stays thin
+- Safety-critical logic lives in testable modules behind clear interfaces
+- Domain logic, persistence, and coordinate transformation code must not be buried inside React components
+- Spike code is evidence and reference material, not production code to import directly
+
+### Testing Strategy
+- Unit tests for pure logic, transforms, validators, and domain rules
+- Integration tests for module boundaries such as MissionStore, Traccar polling, and layer-state shaping
+- Playwright E2E tests only for genuine operator workflows
+- New features should normally add or update tests at the lowest meaningful level first, then add higher-level coverage where warranted
 
 ### Traccar Integration (from S7 spike)
 - HTTP polling for v1 (proven, reliable)

@@ -24,7 +24,7 @@ We have chosen this stack based on deep research and 7 technical spikes (detaile
 *   **Drawing Interactions:** Terra Draw
 *   **Geospatial Math:** Turf.js
 *   **Coordinate Conversion:** proj4js
-*   **Local Persistence:** SQLite (via better-sqlite3 / Tauri plugin)
+*   **Local Persistence:** SQLite in WAL mode, exposed to the frontend through Tauri commands
 *   **Testing:** Vitest (unit) + Playwright (E2E UI)
 
 ## 3. What We Have Proven (The 7 Spikes)
@@ -48,6 +48,7 @@ Before writing production code, we ran 7 isolated spikes to validate our riskies
     *   **TM65** is for DISPLAY ONLY (Irish Grid References like "V 80245 84452").
     *   *Always* validate inputs (no NaN/Infinity) before converting.
 *   **State Management:** Do not let React component state become the source of truth for mission data. Mission state must be serializable and crash-recoverable (SQLite).
+*   **Persistence Boundary:** The renderer must not talk to SQLite directly. Mission persistence lives behind a backend store exposed through Tauri commands so writes remain controlled, testable, and crash-safe.
 *   **Layer Architecture:** Use the Hybrid approach from Spike S6. Use MapLibre filter expressions for visibility toggling.
 *   **Traccar Strategy:** Use HTTP polling for v1 (already proven in S7). WebSocket push is a v2 enhancement.
 
@@ -59,7 +60,7 @@ You are part of a multi-agent team:
 
 **The Loop:**
 1.  Check the active task via the `bd` (beads) CLI tool: `bd list` -> `bd show <id>`
-2.  Read `handoff/HANDOFF.md` to see the exact current state.
+2.  Read `handoff/HANDOFF.md` to see the exact current state. Treat it as the authoritative log for in-flight work, decisions made during implementation, and what the next agent should do.
 3.  Do the work (TDD).
 4.  Run tests: `npm run test:all`
 5.  Commit with the bead ID in the message: `feat: add coordinate bar [sartracker-web-abc]`
