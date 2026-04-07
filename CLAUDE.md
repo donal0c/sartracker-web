@@ -75,6 +75,34 @@ Before implementing a feature bead, capture these explicitly in the bead notes, 
 
 If an architectural decision is made during execution, record it in `handoff/HANDOFF.md` so the next coding agent inherits the same assumptions.
 
+### Bead Readiness Rubric
+Use a readiness pass before implementation so the planning/research team can work ahead on ambiguous beads while coding continues on the current one.
+
+#### Research Required Rating
+- `Low` — Ready to implement. Only minor product or UX choices remain.
+- `Medium` — Implementable, but targeted research or a short design note would materially reduce risk.
+- `High` — Not ready. Core behaviour, data flow, or architecture is still too ambiguous.
+
+#### Implementation Readiness Score
+- `5/5` — Ready now. No meaningful blockers.
+- `4/5` — Ready with a few minor clarifications.
+- `3/5` — Probably implementable, but should not start without targeted decisions.
+- `2/5` — Needs structured research/spec work first.
+- `1/5` — Not ready for implementation.
+
+#### Readiness Template
+For each upcoming bead, capture:
+- Research required
+- Implementation readiness score
+- Recommended action: implement now, implement after short design pass, or research before implementation
+- Why
+- Locked decisions
+- Open questions
+- Evidence / references
+- Ready-to-start checklist
+
+The project’s current working version of this rubric lives in `docs/bead-readiness.md`. Update that file as beads become clearer.
+
 ## Architecture
 
 ### Stack

@@ -84,3 +84,4 @@ bd list
 - Spike golden datasets and test fixtures CAN be copied to tests/fixtures/
 - If an older planning doc disagrees with the current implementation state, update the doc or defer to this handoff file plus `CODEX_START.md`
 - `src-tauri/` is now initialized and the Tauri SQL plugin is wired in; persistence work should continue behind the MissionStore boundary only
+- Use `docs/bead-readiness.md` to track how much background research each upcoming bead still needs before implementation
