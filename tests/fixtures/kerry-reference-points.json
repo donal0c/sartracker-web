@@ -1,0 +1,17 @@
+{
+  "description": "Golden dataset of Kerry reference points for coordinate validation",
+  "points": [
+    {
+      "name": "Carrauntoohil Summit",
+      "wgs84": { "lat": 51.99917, "lon": -9.74406 }
+    },
+    {
+      "name": "Killarney Town Centre",
+      "wgs84": { "lat": 52.059444, "lon": -9.507222 }
+    },
+    {
+      "name": "Tralee Town Centre",
+      "wgs84": { "lat": 52.270868, "lon": -9.702278 }
+    }
+  ]
+}

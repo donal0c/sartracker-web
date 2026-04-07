@@ -1,4 +1,5 @@
 import { useAppStore } from './lib/app-store'
+import { MapView } from './components/map-view'
 
 function App() {
   const status = useAppStore((state) => state.status)
@@ -27,35 +28,24 @@ function App() {
           <div className="rounded-3xl border border-stone-800 bg-stone-900/80 p-6 shadow-2xl shadow-black/30">
             <div className="flex items-center justify-between">
               <h2 className="text-lg font-semibold text-stone-50">Operations Map</h2>
-              <span className="text-sm text-stone-400">MapLibre baseline pending M2</span>
+              <span className="text-sm text-stone-400">Kerry centred · zoom 12</span>
             </div>
-            <div
-              className="mt-5 flex min-h-[420px] items-center justify-center rounded-2xl border border-dashed border-amber-500/25 bg-[radial-gradient(circle_at_top,_rgba(245,158,11,0.18),_transparent_35%),linear-gradient(180deg,_rgba(28,25,23,0.9),_rgba(12,10,9,0.96))]"
-              data-testid="map-shell"
-            >
-              <div className="max-w-md text-center">
-                <p className="text-xs uppercase tracking-[0.3em] text-amber-300/80">
-                  Operational Core
-                </p>
-                <p className="mt-4 text-2xl font-semibold text-stone-50">
-                  Map shell ready for Tauri, React, and test infrastructure
-                </p>
-                <p className="mt-3 text-sm leading-6 text-stone-400">
-                  The scaffold is intentionally thin. Safety-critical coordinate,
-                  persistence, and tracking logic will live in testable modules.
-                </p>
-              </div>
+            <div className="mt-5">
+              <MapView />
             </div>
           </div>
 
           <aside className="rounded-3xl border border-stone-800 bg-stone-900/80 p-6">
-            <h2 className="text-lg font-semibold text-stone-50">Build Guardrails</h2>
+            <h2 className="text-lg font-semibold text-stone-50">Map Baseline</h2>
             <ul className="mt-4 space-y-3 text-sm leading-6 text-stone-300">
-              <li>Strict TypeScript and ESLint are enabled.</li>
-              <li>Vitest and Playwright smoke coverage is in place.</li>
-              <li>State flows through Zustand, not ad hoc component state.</li>
-              <li>Tauri SQL plugin is installed for the MissionStore boundary.</li>
+              <li>Four locked basemaps with persistent selection.</li>
+              <li>Coordinate bar formats WGS84 and TM65 side by side.</li>
+              <li>Service worker caches viewed tiles for offline resilience.</li>
+              <li>Map rendering stays thin while coordinate math lives in testable modules.</li>
             </ul>
+            <div className="mt-6 rounded-2xl border border-stone-700 bg-stone-950/70 p-4 text-sm text-stone-400">
+              Scaffold status: <span className="text-emerald-300">{status}</span>
+            </div>
           </aside>
         </section>
       </div>
