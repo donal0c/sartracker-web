@@ -17,6 +17,15 @@ playwright-report
 test-results
 *.local
 
+# Planning & spike artifacts (local only)
+spikes/
+docs/
+handoff/
+specs/
+OVERVIEW.md
+CODEX_START.md
+.beads/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
