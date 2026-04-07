@@ -28,11 +28,20 @@ self.addEventListener('fetch', (event) => {
         return cached
       }
 
-      const response = await fetch(request)
-      if (response.ok) {
-        await cache.put(request, response.clone())
+      try {
+        const response = await fetch(request)
+        if (response.ok) {
+          await cache.put(request, response.clone())
+        }
+        return response
+      } catch (error) {
+        const fallback = await cache.match(request, { ignoreSearch: true })
+        if (fallback) {
+          return fallback
+        }
+
+        throw error
       }
-      return response
     }),
   )
 })

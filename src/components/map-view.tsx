@@ -6,14 +6,12 @@ import maplibregl, { type LngLatBoundsLike, type StyleSpecification } from 'mapl
 import { CoordinateBar } from './coordinate-bar'
 import { BasemapSwitcher } from './basemap-switcher'
 import {
-  DEFAULT_BASEMAP_ID,
-  getBasemapById,
   MAP_CENTER,
   MAP_DEFAULT_ZOOM,
+  getBasemapById,
   type BasemapId,
 } from '../lib/map-config'
-
-const BASEMAP_STORAGE_KEY = 'sartracker.map.basemap'
+import { persistBasemapPreference, readStoredBasemap } from '../lib/map-preferences'
 const KERRY_MAX_BOUNDS: LngLatBoundsLike = [
   [-10.7, 51.55],
   [-9.1, 52.6],
@@ -43,30 +41,11 @@ function createRasterStyle(basemapId: BasemapId): StyleSpecification {
   }
 }
 
-function readStoredBasemap(): BasemapId {
-  const candidate = window.localStorage.getItem(BASEMAP_STORAGE_KEY)
-
-  if (candidate === null) {
-    return DEFAULT_BASEMAP_ID
-  }
-
-  try {
-    return getBasemapById(candidate as BasemapId).id
-  } catch {
-    return DEFAULT_BASEMAP_ID
-  }
-}
-
 export function MapView() {
   const containerRef = useRef<HTMLDivElement | null>(null)
   const mapRef = useRef<maplibregl.Map | null>(null)
-  const [activeBasemapId, setActiveBasemapId] = useState<BasemapId>(() => {
-    if (typeof window === 'undefined') {
-      return DEFAULT_BASEMAP_ID
-    }
-
-    return readStoredBasemap()
-  })
+  const previousBasemapIdRef = useRef<BasemapId | null>(null)
+  const [activeBasemapId, setActiveBasemapId] = useState<BasemapId>(() => readStoredBasemap())
   const [hoverCoordinate, setHoverCoordinate] = useState<{
     readonly latitude: number | null
     readonly longitude: number | null
@@ -77,7 +56,7 @@ export function MapView() {
   const style = useMemo(() => createRasterStyle(activeBasemapId), [activeBasemapId])
 
   useEffect(() => {
-    window.localStorage.setItem(BASEMAP_STORAGE_KEY, activeBasemapId)
+    persistBasemapPreference(activeBasemapId)
   }, [activeBasemapId])
 
   useEffect(() => {
@@ -115,22 +94,25 @@ export function MapView() {
     })
 
     mapRef.current = map
+    previousBasemapIdRef.current = activeBasemapId
 
     return () => {
       map.remove()
       mapRef.current = null
+      previousBasemapIdRef.current = null
     }
-  }, [style])
+  }, [activeBasemapId, style])
 
   useEffect(() => {
     const map = mapRef.current
 
-    if (map === null) {
+    if (map === null || previousBasemapIdRef.current === activeBasemapId) {
       return
     }
 
     map.setStyle(style)
-  }, [style])
+    previousBasemapIdRef.current = activeBasemapId
+  }, [activeBasemapId, style])
 
   return (
     <div className="relative min-h-[560px] overflow-hidden rounded-2xl border border-stone-700 bg-stone-950">

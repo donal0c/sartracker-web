@@ -3,7 +3,7 @@
 > **Read this before doing ANY work. Update this after EVERY chunk of work.**
 
 ## Last Updated
-2026-04-07 21:46 by Codex
+2026-04-07 22:32 by Codex
 
 ## Current State
 **Phase: Pre-Build — All spikes complete, ready for Phase 1 build**
@@ -50,6 +50,21 @@
   - `npm run test:e2e` ✅
   - `npm run test:all` ✅
 - Note: browser tests show expected console noise when third-party ESRI tiles fail to fetch in test runs; the app still renders and the acceptance criteria pass
+
+### 2026-04-07 M2 hardening follow-up
+- Extracted basemap preference persistence into `src/lib/map-preferences.ts`
+- Hardened basemap preference reads/writes against locked-down or unavailable `localStorage`
+- Hardened service worker registration to warn instead of throwing on registration failure
+- Added focused browser-environment tests:
+  - `tests/unit/map-preferences.test.ts`
+  - `tests/unit/register-service-worker.test.ts`
+- Lazy-loaded the map shell from `src/App.tsx` so the app shell no longer eagerly pays the full MapLibre bundle cost
+- Verification completed:
+  - `npm run test` ✅
+  - `npm run lint` ✅
+  - `npm run build` ✅
+  - `npm run test:e2e` ✅
+- Note: the main map chunk is still large because MapLibre, proj4, and map UI code are intentionally grouped there; this is better than bloating the initial shell bundle and can be revisited later if startup performance becomes an issue
 
 ### 2026-04-06 Doc cleanup
 - Aligned `README.md`, `OVERVIEW.md`, and supporting docs with the post-spike reality

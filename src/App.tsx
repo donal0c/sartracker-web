@@ -1,5 +1,12 @@
+import { Suspense, lazy } from 'react'
+
 import { useAppStore } from './lib/app-store'
-import { MapView } from './components/map-view'
+
+const MapView = lazy(async () => {
+  const module = await import('./components/map-view')
+
+  return { default: module.MapView }
+})
 
 function App() {
   const status = useAppStore((state) => state.status)
@@ -31,7 +38,15 @@ function App() {
               <span className="text-sm text-stone-400">Kerry centred · zoom 12</span>
             </div>
             <div className="mt-5">
-              <MapView />
+              <Suspense
+                fallback={
+                  <div className="flex min-h-[560px] items-center justify-center rounded-2xl border border-stone-700 bg-stone-950 text-sm text-stone-400">
+                    Loading map shell...
+                  </div>
+                }
+              >
+                <MapView />
+              </Suspense>
             </div>
           </div>
 
