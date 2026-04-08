@@ -3,7 +3,7 @@
 > **Read this before doing ANY work. Update this after EVERY chunk of work.**
 
 ## Last Updated
-2026-04-08 00:35 by Codex
+2026-04-08 06:27 by Codex
 
 ## Current State
 **Phase: Pre-Build — All spikes complete, ready for Phase 1 build**
@@ -82,6 +82,18 @@
   - `npm run build` ✅
   - `npm run test:e2e` ✅
 - Note: ESRI tile fetch noise may still appear in some environments, but it is no longer silent from an operator perspective because degraded map state is now surfaced in the UI
+
+### 2026-04-08 M2 architectural cleanup
+- Extracted map lifecycle/orchestration out of the view layer into `src/features/map/use-map-controller.ts`
+- Extracted MapLibre style construction and bounds into `src/features/map/map-style.ts`
+- Simplified `src/components/map-view.tsx` so it is now primarily a presentational shell around the controller output
+- Added `tests/unit/map-style.test.ts` to lock the raster-style and Kerry-bounds contract
+- Verification completed:
+  - `npm run test` ✅
+  - `npm run lint` ✅
+  - `npm run build` ✅
+  - `npm run test:e2e` ✅
+- Architectural note: this reduces the risk that `map-view.tsx` becomes a long-lived “smart blob” as later map, tracking, and drawing features are added
 
 ### 2026-04-06 Doc cleanup
 - Aligned `README.md`, `OVERVIEW.md`, and supporting docs with the post-spike reality
