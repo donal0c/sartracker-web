@@ -3,7 +3,7 @@
 > **Read this before doing ANY work. Update this after EVERY chunk of work.**
 
 ## Last Updated
-2026-04-08 07:07 by Codex
+2026-04-08 07:14 by Codex
 
 ## Current State
 **Phase: Pre-Build — All spikes complete, ready for Phase 1 build**
@@ -186,6 +186,33 @@
   - autosave orchestration
   - archive/export implementation
 
+### 2026-04-08 M3 persistence extended — drawings
+- Added drawing persistence schema with generic/common fields suitable for the later drawing-tool bead
+- Added backend commands and store operations for:
+  - drawing upsert
+  - drawing fetch/list
+  - drawing delete
+- Drawing payloads now support:
+  - `line`
+  - `search_area`
+  - `range_ring`
+  - `bearing_line`
+  - `search_sector`
+  - `text_label`
+- Extended the frontend Tauri mission store adapter to expose drawing operations
+- Added Rust coverage for drawing upsert, update ordering, listing, and delete
+- Verification completed:
+  - `npm run test` ✅
+  - `npm run lint` ✅
+  - `npm run build` ✅
+  - `npm run test:all` ✅
+  - `cargo check --manifest-path src-tauri/Cargo.toml` ✅
+  - `cargo test --manifest-path src-tauri/Cargo.toml` ✅
+- Remaining M3 work:
+  - fuller mission event coverage
+  - autosave orchestration
+  - archive/export implementation
+
 ### 2026-04-06 Doc cleanup
 - Aligned `README.md`, `OVERVIEW.md`, and supporting docs with the post-spike reality
 - Marked older WebSocket/planning notes as deferred or historical where they no longer describe the active v1 plan
@@ -216,7 +243,7 @@
 - **Eamonn:** Traccar admin credentials for API testing (kmrtsar.ddns.net:8082)
 
 ## What's Next
-1. **Continue M3** — add drawings behind the same Rust mission store boundary
+1. **Continue M3** — implement autosave orchestration and finalize archive/export boundaries
 2. **Keep the MissionStore boundary strict** — renderer should not accumulate raw SQL access
 3. **Decide/archive implementation boundary explicitly** — live SQLite is now established; archive/export still needs its final concrete format implementation
 4. **Make an explicit v1 magnetic declination decision** before implementing magnetic-bearing behaviour in later drawing work

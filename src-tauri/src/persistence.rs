@@ -121,6 +121,39 @@ pub struct Marker {
     pub evacuation_priority: Option<String>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::Type, PartialEq, Eq)]
+#[sqlx(type_name = "TEXT", rename_all = "snake_case")]
+#[serde(rename_all = "snake_case")]
+pub enum DrawingType {
+    Line,
+    SearchArea,
+    RangeRing,
+    BearingLine,
+    SearchSector,
+    TextLabel,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow, PartialEq)]
+pub struct Drawing {
+    pub id: String,
+    pub mission_id: String,
+    #[serde(rename = "type")]
+    #[sqlx(rename = "type")]
+    pub drawing_type: DrawingType,
+    pub name: String,
+    pub description: Option<String>,
+    pub color: Option<String>,
+    pub width: Option<f64>,
+    pub distance_m: Option<f64>,
+    pub temporary_measure: Option<bool>,
+    pub label: Option<String>,
+    pub display_order: i64,
+    pub geometry_json: String,
+    pub metadata_json: Option<String>,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MissionStoreInfo {
     pub schema_version: i64,
@@ -181,6 +214,23 @@ pub struct UpsertMarkerInput {
     pub condition: Option<String>,
     pub treatment: Option<String>,
     pub evacuation_priority: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct UpsertDrawingInput {
+    pub id: Option<String>,
+    pub mission_id: String,
+    pub r#type: DrawingType,
+    pub name: String,
+    pub description: Option<String>,
+    pub color: Option<String>,
+    pub width: Option<f64>,
+    pub distance_m: Option<f64>,
+    pub temporary_measure: Option<bool>,
+    pub label: Option<String>,
+    pub display_order: i64,
+    pub geometry_json: String,
+    pub metadata_json: Option<String>,
 }
 
 impl MissionStore {
@@ -323,6 +373,28 @@ impl MissionStore {
 
             CREATE INDEX IF NOT EXISTS idx_markers_mission_display_order
               ON markers(mission_id, display_order);
+
+            CREATE TABLE IF NOT EXISTS drawings (
+              id TEXT PRIMARY KEY,
+              mission_id TEXT NOT NULL,
+              type TEXT NOT NULL CHECK(type IN ('line', 'search_area', 'range_ring', 'bearing_line', 'search_sector', 'text_label')),
+              name TEXT NOT NULL,
+              description TEXT,
+              color TEXT,
+              width REAL,
+              distance_m REAL,
+              temporary_measure INTEGER,
+              label TEXT,
+              display_order INTEGER NOT NULL DEFAULT 0,
+              geometry_json TEXT NOT NULL,
+              metadata_json TEXT,
+              created_at TEXT NOT NULL,
+              updated_at TEXT NOT NULL,
+              FOREIGN KEY (mission_id) REFERENCES missions(id) ON DELETE CASCADE
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_drawings_mission_display_order
+              ON drawings(mission_id, display_order);
 
             CREATE TABLE IF NOT EXISTS mission_events (
               id TEXT PRIMARY KEY,
@@ -787,6 +859,104 @@ impl MissionStore {
         Ok(result.rows_affected() > 0)
     }
 
+    pub async fn upsert_drawing(&self, input: UpsertDrawingInput) -> Result<Drawing, String> {
+        self.get_mission(input.mission_id.clone()).await?;
+
+        let drawing_id = input.id.unwrap_or_else(|| Uuid::new_v4().to_string());
+        let now = Utc::now().to_rfc3339();
+        let created_at = self
+            .get_drawing(drawing_id.clone())
+            .await
+            .ok()
+            .map(|existing| existing.created_at)
+            .unwrap_or_else(|| now.clone());
+
+        sqlx::query(
+            r#"
+            INSERT INTO drawings (
+              id, mission_id, type, name, description, color, width, distance_m, temporary_measure,
+              label, display_order, geometry_json, metadata_json, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(id) DO UPDATE SET
+              mission_id = excluded.mission_id,
+              type = excluded.type,
+              name = excluded.name,
+              description = excluded.description,
+              color = excluded.color,
+              width = excluded.width,
+              distance_m = excluded.distance_m,
+              temporary_measure = excluded.temporary_measure,
+              label = excluded.label,
+              display_order = excluded.display_order,
+              geometry_json = excluded.geometry_json,
+              metadata_json = excluded.metadata_json,
+              updated_at = excluded.updated_at
+            "#,
+        )
+        .bind(&drawing_id)
+        .bind(&input.mission_id)
+        .bind(&input.r#type)
+        .bind(&input.name)
+        .bind(&input.description)
+        .bind(&input.color)
+        .bind(input.width)
+        .bind(input.distance_m)
+        .bind(input.temporary_measure)
+        .bind(&input.label)
+        .bind(input.display_order)
+        .bind(&input.geometry_json)
+        .bind(&input.metadata_json)
+        .bind(&created_at)
+        .bind(&now)
+        .execute(&self.pool)
+        .await
+        .map_err(|error| format!("Failed to upsert drawing {drawing_id}: {error}"))?;
+
+        self.get_drawing(drawing_id).await
+    }
+
+    pub async fn get_drawing(&self, drawing_id: String) -> Result<Drawing, String> {
+        sqlx::query_as::<_, Drawing>(
+            r#"
+            SELECT id, mission_id, type, name, description, color, width, distance_m, temporary_measure,
+                   label, display_order, geometry_json, metadata_json, created_at, updated_at
+            FROM drawings
+            WHERE id = ?
+            "#,
+        )
+        .bind(&drawing_id)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|error| format!("Failed to load drawing {drawing_id}: {error}"))?
+        .ok_or_else(|| format!("Drawing not found: {drawing_id}"))
+    }
+
+    pub async fn list_drawings(&self, mission_id: String) -> Result<Vec<Drawing>, String> {
+        sqlx::query_as::<_, Drawing>(
+            r#"
+            SELECT id, mission_id, type, name, description, color, width, distance_m, temporary_measure,
+                   label, display_order, geometry_json, metadata_json, created_at, updated_at
+            FROM drawings
+            WHERE mission_id = ?
+            ORDER BY display_order ASC, created_at ASC
+            "#,
+        )
+        .bind(mission_id)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|error| format!("Failed to list drawings: {error}"))
+    }
+
+    pub async fn delete_drawing(&self, drawing_id: String) -> Result<bool, String> {
+        let result = sqlx::query("DELETE FROM drawings WHERE id = ?")
+            .bind(&drawing_id)
+            .execute(&self.pool)
+            .await
+            .map_err(|error| format!("Failed to delete drawing {drawing_id}: {error}"))?;
+
+        Ok(result.rows_affected() > 0)
+    }
+
     pub async fn get_mission(&self, mission_id: String) -> Result<Mission, String> {
         sqlx::query_as::<_, Mission>(
             r#"
@@ -1050,6 +1220,38 @@ pub async fn delete_marker(
     store: State<'_, MissionStoreState>,
 ) -> Result<bool, String> {
     store.0.delete_marker(marker_id).await
+}
+
+#[tauri::command]
+pub async fn upsert_drawing(
+    input: UpsertDrawingInput,
+    store: State<'_, MissionStoreState>,
+) -> Result<Drawing, String> {
+    store.0.upsert_drawing(input).await
+}
+
+#[tauri::command]
+pub async fn get_drawing(
+    drawing_id: String,
+    store: State<'_, MissionStoreState>,
+) -> Result<Drawing, String> {
+    store.0.get_drawing(drawing_id).await
+}
+
+#[tauri::command]
+pub async fn list_drawings(
+    mission_id: String,
+    store: State<'_, MissionStoreState>,
+) -> Result<Vec<Drawing>, String> {
+    store.0.list_drawings(mission_id).await
+}
+
+#[tauri::command]
+pub async fn delete_drawing(
+    drawing_id: String,
+    store: State<'_, MissionStoreState>,
+) -> Result<bool, String> {
+    store.0.delete_drawing(drawing_id).await
 }
 
 #[tauri::command]
@@ -1444,5 +1646,80 @@ mod tests {
             .expect("marker should delete");
         assert!(deleted);
         assert!(store.list_markers(mission.id).await.expect("markers after delete").is_empty());
+    }
+
+    #[tokio::test]
+    async fn upserts_lists_and_deletes_drawings() {
+        let (database_path, backup_path) = temp_paths("drawings");
+        let store = MissionStore::connect(database_path, backup_path)
+            .await
+            .expect("store should initialize");
+
+        let mission = store
+            .create_mission(CreateMissionInput {
+                name: "Drawing Mission".to_string(),
+                notes: None,
+            })
+            .await
+            .expect("mission should be created");
+
+        let drawing = store
+            .upsert_drawing(UpsertDrawingInput {
+                id: None,
+                mission_id: mission.id.clone(),
+                r#type: DrawingType::Line,
+                name: "Track Line".to_string(),
+                description: Some("Outbound route".to_string()),
+                color: Some("#00AAFF".to_string()),
+                width: Some(2.0),
+                distance_m: Some(1200.0),
+                temporary_measure: Some(false),
+                label: Some("A-B".to_string()),
+                display_order: 3,
+                geometry_json: "{\"type\":\"LineString\",\"coordinates\":[[-9.5,52.0],[-9.4,52.1]]}".to_string(),
+                metadata_json: Some("{\"team\":\"Alpha\"}".to_string()),
+            })
+            .await
+            .expect("drawing should upsert");
+
+        assert_eq!(drawing.drawing_type, DrawingType::Line);
+        assert_eq!(drawing.display_order, 3);
+
+        let updated = store
+            .upsert_drawing(UpsertDrawingInput {
+                id: Some(drawing.id.clone()),
+                mission_id: mission.id.clone(),
+                r#type: DrawingType::Line,
+                name: "Track Line".to_string(),
+                description: Some("Revised route".to_string()),
+                color: Some("#0088CC".to_string()),
+                width: Some(3.0),
+                distance_m: Some(1300.0),
+                temporary_measure: Some(false),
+                label: Some("A-C".to_string()),
+                display_order: 1,
+                geometry_json: "{\"type\":\"LineString\",\"coordinates\":[[-9.5,52.0],[-9.3,52.2]]}".to_string(),
+                metadata_json: Some("{\"team\":\"Bravo\"}".to_string()),
+            })
+            .await
+            .expect("drawing should update");
+
+        assert_eq!(updated.id, drawing.id);
+        assert_eq!(updated.display_order, 1);
+        assert_eq!(updated.description.as_deref(), Some("Revised route"));
+
+        let drawings = store
+            .list_drawings(mission.id.clone())
+            .await
+            .expect("drawings should list");
+        assert_eq!(drawings.len(), 1);
+        assert_eq!(drawings[0].id, drawing.id);
+
+        let deleted = store
+            .delete_drawing(drawing.id.clone())
+            .await
+            .expect("drawing should delete");
+        assert!(deleted);
+        assert!(store.list_drawings(mission.id).await.expect("drawings after delete").is_empty());
     }
 }

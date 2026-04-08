@@ -68,6 +68,32 @@ export type Marker = {
   readonly evacuation_priority: string | null
 }
 
+export type DrawingType =
+  | 'line'
+  | 'search_area'
+  | 'range_ring'
+  | 'bearing_line'
+  | 'search_sector'
+  | 'text_label'
+
+export type Drawing = {
+  readonly id: string
+  readonly mission_id: string
+  readonly type: DrawingType
+  readonly name: string
+  readonly description: string | null
+  readonly color: string | null
+  readonly width: number | null
+  readonly distance_m: number | null
+  readonly temporary_measure: boolean | null
+  readonly label: string | null
+  readonly display_order: number
+  readonly geometry_json: string
+  readonly metadata_json: string | null
+  readonly created_at: string
+  readonly updated_at: string
+}
+
 export type MissionStoreInfo = {
   readonly schema_version: number
   readonly database_path: string
@@ -125,6 +151,22 @@ export type UpsertMarkerInput = {
   readonly evacuation_priority?: string | null
 }
 
+export type UpsertDrawingInput = {
+  readonly id?: string | null
+  readonly mission_id: string
+  readonly type: DrawingType
+  readonly name: string
+  readonly description?: string | null
+  readonly color?: string | null
+  readonly width?: number | null
+  readonly distance_m?: number | null
+  readonly temporary_measure?: boolean | null
+  readonly label?: string | null
+  readonly display_order: number
+  readonly geometry_json: string
+  readonly metadata_json?: string | null
+}
+
 export type MissionStore = {
   readonly info: () => Promise<MissionStoreInfo>
   readonly syncBackup: () => Promise<string>
@@ -142,6 +184,10 @@ export type MissionStore = {
   readonly getMarker: (markerId: string) => Promise<Marker>
   readonly listMarkers: (missionId: string) => Promise<readonly Marker[]>
   readonly deleteMarker: (markerId: string) => Promise<boolean>
+  readonly upsertDrawing: (input: UpsertDrawingInput) => Promise<Drawing>
+  readonly getDrawing: (drawingId: string) => Promise<Drawing>
+  readonly listDrawings: (missionId: string) => Promise<readonly Drawing[]>
+  readonly deleteDrawing: (drawingId: string) => Promise<boolean>
   readonly getMission: (missionId: string) => Promise<Mission>
   readonly listMissions: () => Promise<readonly Mission[]>
   readonly getActiveMission: () => Promise<Mission | null>
@@ -168,6 +214,10 @@ export function createTauriMissionStore(): MissionStore {
     getMarker: (markerId) => invoke<Marker>('get_marker', { markerId }),
     listMarkers: (missionId) => invoke<readonly Marker[]>('list_markers', { missionId }),
     deleteMarker: (markerId) => invoke<boolean>('delete_marker', { markerId }),
+    upsertDrawing: (input) => invoke<Drawing>('upsert_drawing', { input }),
+    getDrawing: (drawingId) => invoke<Drawing>('get_drawing', { drawingId }),
+    listDrawings: (missionId) => invoke<readonly Drawing[]>('list_drawings', { missionId }),
+    deleteDrawing: (drawingId) => invoke<boolean>('delete_drawing', { drawingId }),
     getMission: (missionId) => invoke<Mission>('get_mission', { missionId }),
     listMissions: () => invoke<readonly Mission[]>('list_missions'),
     getActiveMission: () => invoke<Mission | null>('get_active_mission'),
