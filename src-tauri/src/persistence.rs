@@ -47,6 +47,43 @@ pub struct Mission {
     pub schema_version: i64,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::Type, PartialEq, Eq)]
+#[sqlx(type_name = "TEXT", rename_all = "lowercase")]
+#[serde(rename_all = "lowercase")]
+pub enum DeviceStatus {
+    Online,
+    Offline,
+    Unknown,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow, PartialEq)]
+pub struct Device {
+    pub id: String,
+    pub mission_id: String,
+    pub device_id: String,
+    pub name: String,
+    pub color: String,
+    pub last_seen: Option<String>,
+    pub status: DeviceStatus,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow, PartialEq)]
+pub struct Position {
+    pub id: String,
+    pub mission_id: String,
+    pub device_id: String,
+    pub name: Option<String>,
+    pub lat: f64,
+    pub lon: f64,
+    pub altitude: Option<f64>,
+    pub speed: Option<f64>,
+    pub battery: Option<f64>,
+    pub accuracy: Option<f64>,
+    pub source: Option<String>,
+    pub timestamp: String,
+    pub data_origin: String,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MissionStoreInfo {
     pub schema_version: i64,
@@ -58,6 +95,32 @@ pub struct MissionStoreInfo {
 pub struct CreateMissionInput {
     pub name: String,
     pub notes: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct UpsertDeviceInput {
+    pub mission_id: String,
+    pub device_id: String,
+    pub name: String,
+    pub color: String,
+    pub status: DeviceStatus,
+    pub last_seen: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct AddPositionInput {
+    pub mission_id: String,
+    pub device_id: String,
+    pub name: Option<String>,
+    pub lat: f64,
+    pub lon: f64,
+    pub altitude: Option<f64>,
+    pub speed: Option<f64>,
+    pub battery: Option<f64>,
+    pub accuracy: Option<f64>,
+    pub source: Option<String>,
+    pub timestamp: Option<String>,
+    pub data_origin: Option<String>,
 }
 
 impl MissionStore {
@@ -136,6 +199,42 @@ impl MissionStore {
             );
 
             CREATE INDEX IF NOT EXISTS idx_missions_status ON missions(status);
+
+            CREATE TABLE IF NOT EXISTS devices (
+              id TEXT PRIMARY KEY,
+              mission_id TEXT NOT NULL,
+              device_id TEXT NOT NULL,
+              name TEXT NOT NULL,
+              color TEXT NOT NULL,
+              last_seen TEXT,
+              status TEXT NOT NULL CHECK(status IN ('online', 'offline', 'unknown')),
+              FOREIGN KEY (mission_id) REFERENCES missions(id) ON DELETE CASCADE,
+              UNIQUE (mission_id, device_id)
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_devices_mission_name
+              ON devices(mission_id, name);
+
+            CREATE TABLE IF NOT EXISTS positions (
+              id TEXT PRIMARY KEY,
+              mission_id TEXT NOT NULL,
+              device_id TEXT NOT NULL,
+              name TEXT,
+              lat REAL NOT NULL,
+              lon REAL NOT NULL,
+              altitude REAL,
+              speed REAL,
+              battery REAL,
+              accuracy REAL,
+              source TEXT,
+              timestamp TEXT NOT NULL,
+              data_origin TEXT NOT NULL DEFAULT 'live' CHECK(data_origin IN ('live', 'cache')),
+              FOREIGN KEY (mission_id) REFERENCES missions(id) ON DELETE CASCADE,
+              FOREIGN KEY (mission_id, device_id) REFERENCES devices(mission_id, device_id)
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_positions_mission_device_timestamp
+              ON positions(mission_id, device_id, timestamp);
 
             CREATE TABLE IF NOT EXISTS mission_events (
               id TEXT PRIMARY KEY,
@@ -265,6 +364,217 @@ impl MissionStore {
             .map_err(|error| format!("Failed to commit mission creation: {error}"))?;
 
         self.get_mission(mission_id).await
+    }
+
+    pub async fn upsert_device(&self, input: UpsertDeviceInput) -> Result<Device, String> {
+        self.get_mission(input.mission_id.clone()).await?;
+
+        let device_row_id = Uuid::new_v4().to_string();
+        sqlx::query(
+            r#"
+            INSERT INTO devices (id, mission_id, device_id, name, color, last_seen, status)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(mission_id, device_id) DO UPDATE SET
+              name = excluded.name,
+              color = excluded.color,
+              last_seen = excluded.last_seen,
+              status = excluded.status
+            "#,
+        )
+        .bind(device_row_id)
+        .bind(&input.mission_id)
+        .bind(&input.device_id)
+        .bind(&input.name)
+        .bind(&input.color)
+        .bind(&input.last_seen)
+        .bind(&input.status)
+        .execute(&self.pool)
+        .await
+        .map_err(|error| format!("Failed to upsert device {}: {error}", input.device_id))?;
+
+        self.get_device(input.mission_id, input.device_id).await
+    }
+
+    pub async fn get_device(
+        &self,
+        mission_id: String,
+        device_id: String,
+    ) -> Result<Device, String> {
+        sqlx::query_as::<_, Device>(
+            r#"
+            SELECT id, mission_id, device_id, name, color, last_seen, status
+            FROM devices
+            WHERE mission_id = ? AND device_id = ?
+            "#,
+        )
+        .bind(&mission_id)
+        .bind(&device_id)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|error| format!("Failed to load device {device_id}: {error}"))?
+        .ok_or_else(|| format!("Device not found: {device_id}"))
+    }
+
+    pub async fn list_devices(&self, mission_id: String) -> Result<Vec<Device>, String> {
+        sqlx::query_as::<_, Device>(
+            r#"
+            SELECT id, mission_id, device_id, name, color, last_seen, status
+            FROM devices
+            WHERE mission_id = ?
+            ORDER BY name ASC
+            "#,
+        )
+        .bind(mission_id)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|error| format!("Failed to list devices: {error}"))
+    }
+
+    pub async fn add_position(&self, input: AddPositionInput) -> Result<Position, String> {
+        self.get_device(input.mission_id.clone(), input.device_id.clone()).await?;
+
+        if !input.lat.is_finite() || input.lat < -90.0 || input.lat > 90.0 {
+            return Err("Latitude must be a finite value between -90 and 90.".to_string());
+        }
+        if !input.lon.is_finite() || input.lon < -180.0 || input.lon > 180.0 {
+            return Err("Longitude must be a finite value between -180 and 180.".to_string());
+        }
+
+        let position_id = Uuid::new_v4().to_string();
+        let timestamp = input.timestamp.unwrap_or_else(|| Utc::now().to_rfc3339());
+        let data_origin = input.data_origin.unwrap_or_else(|| "live".to_string());
+
+        if data_origin != "live" && data_origin != "cache" {
+            return Err("Position data origin must be either 'live' or 'cache'.".to_string());
+        }
+
+        let mut tx = self
+            .pool
+            .begin()
+            .await
+            .map_err(|error| format!("Failed to start position transaction: {error}"))?;
+
+        sqlx::query(
+            r#"
+            INSERT INTO positions (
+              id, mission_id, device_id, name, lat, lon, altitude, speed, battery, accuracy,
+              source, timestamp, data_origin
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            "#,
+        )
+        .bind(&position_id)
+        .bind(&input.mission_id)
+        .bind(&input.device_id)
+        .bind(&input.name)
+        .bind(input.lat)
+        .bind(input.lon)
+        .bind(input.altitude)
+        .bind(input.speed)
+        .bind(input.battery)
+        .bind(input.accuracy)
+        .bind(&input.source)
+        .bind(&timestamp)
+        .bind(&data_origin)
+        .execute(&mut *tx)
+        .await
+        .map_err(|error| format!("Failed to insert position: {error}"))?;
+
+        sqlx::query(
+            r#"
+            UPDATE devices
+            SET last_seen = ?, status = 'online'
+            WHERE mission_id = ? AND device_id = ?
+            "#,
+        )
+        .bind(&timestamp)
+        .bind(&input.mission_id)
+        .bind(&input.device_id)
+        .execute(&mut *tx)
+        .await
+        .map_err(|error| format!("Failed to update device last_seen: {error}"))?;
+
+        tx.commit()
+            .await
+            .map_err(|error| format!("Failed to commit position insert: {error}"))?;
+
+        self.get_position(position_id).await
+    }
+
+    pub async fn get_position(&self, position_id: String) -> Result<Position, String> {
+        sqlx::query_as::<_, Position>(
+            r#"
+            SELECT id, mission_id, device_id, name, lat, lon, altitude, speed, battery, accuracy,
+                   source, timestamp, data_origin
+            FROM positions
+            WHERE id = ?
+            "#,
+        )
+        .bind(&position_id)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|error| format!("Failed to load position {position_id}: {error}"))?
+        .ok_or_else(|| format!("Position not found: {position_id}"))
+    }
+
+    pub async fn list_positions(
+        &self,
+        mission_id: String,
+        device_id: Option<String>,
+    ) -> Result<Vec<Position>, String> {
+        if let Some(device_id) = device_id {
+            return sqlx::query_as::<_, Position>(
+                r#"
+                SELECT id, mission_id, device_id, name, lat, lon, altitude, speed, battery, accuracy,
+                       source, timestamp, data_origin
+                FROM positions
+                WHERE mission_id = ? AND device_id = ?
+                ORDER BY timestamp ASC
+                "#,
+            )
+            .bind(mission_id)
+            .bind(device_id)
+            .fetch_all(&self.pool)
+            .await
+            .map_err(|error| format!("Failed to list positions: {error}"));
+        }
+
+        sqlx::query_as::<_, Position>(
+            r#"
+            SELECT id, mission_id, device_id, name, lat, lon, altitude, speed, battery, accuracy,
+                   source, timestamp, data_origin
+            FROM positions
+            WHERE mission_id = ?
+            ORDER BY timestamp ASC
+            "#,
+        )
+        .bind(mission_id)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|error| format!("Failed to list positions: {error}"))
+    }
+
+    pub async fn latest_positions(&self, mission_id: String) -> Result<Vec<Position>, String> {
+        sqlx::query_as::<_, Position>(
+            r#"
+            SELECT p.id, p.mission_id, p.device_id, p.name, p.lat, p.lon, p.altitude, p.speed,
+                   p.battery, p.accuracy, p.source, p.timestamp, p.data_origin
+            FROM positions p
+            INNER JOIN (
+              SELECT device_id, MAX(timestamp) AS max_timestamp
+              FROM positions
+              WHERE mission_id = ?
+              GROUP BY device_id
+            ) latest
+              ON p.device_id = latest.device_id AND p.timestamp = latest.max_timestamp
+            WHERE p.mission_id = ?
+            ORDER BY p.device_id ASC
+            "#,
+        )
+        .bind(&mission_id)
+        .bind(&mission_id)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|error| format!("Failed to load latest positions: {error}"))
     }
 
     pub async fn get_mission(&self, mission_id: String) -> Result<Mission, String> {
@@ -468,6 +778,56 @@ pub async fn create_mission(
 }
 
 #[tauri::command]
+pub async fn upsert_device(
+    input: UpsertDeviceInput,
+    store: State<'_, MissionStoreState>,
+) -> Result<Device, String> {
+    store.0.upsert_device(input).await
+}
+
+#[tauri::command]
+pub async fn get_device(
+    mission_id: String,
+    device_id: String,
+    store: State<'_, MissionStoreState>,
+) -> Result<Device, String> {
+    store.0.get_device(mission_id, device_id).await
+}
+
+#[tauri::command]
+pub async fn list_devices(
+    mission_id: String,
+    store: State<'_, MissionStoreState>,
+) -> Result<Vec<Device>, String> {
+    store.0.list_devices(mission_id).await
+}
+
+#[tauri::command]
+pub async fn add_position(
+    input: AddPositionInput,
+    store: State<'_, MissionStoreState>,
+) -> Result<Position, String> {
+    store.0.add_position(input).await
+}
+
+#[tauri::command]
+pub async fn list_positions(
+    mission_id: String,
+    device_id: Option<String>,
+    store: State<'_, MissionStoreState>,
+) -> Result<Vec<Position>, String> {
+    store.0.list_positions(mission_id, device_id).await
+}
+
+#[tauri::command]
+pub async fn latest_positions(
+    mission_id: String,
+    store: State<'_, MissionStoreState>,
+) -> Result<Vec<Position>, String> {
+    store.0.latest_positions(mission_id).await
+}
+
+#[tauri::command]
 pub async fn get_mission(
     mission_id: String,
     store: State<'_, MissionStoreState>,
@@ -643,5 +1003,117 @@ mod tests {
             .await
             .expect("new mission should be allowed after finish");
         assert_eq!(next.status, MissionStatus::Active);
+    }
+
+    #[tokio::test]
+    async fn upserts_devices_and_records_latest_position() {
+        let (database_path, backup_path) = temp_paths("tracking");
+        let store = MissionStore::connect(database_path, backup_path)
+            .await
+            .expect("store should initialize");
+
+        let mission = store
+            .create_mission(CreateMissionInput {
+                name: "Tracking Mission".to_string(),
+                notes: None,
+            })
+            .await
+            .expect("mission should be created");
+
+        let device = store
+            .upsert_device(UpsertDeviceInput {
+                mission_id: mission.id.clone(),
+                device_id: "tracker-1".to_string(),
+                name: "Rescuer One".to_string(),
+                color: "#00AAFF".to_string(),
+                status: DeviceStatus::Unknown,
+                last_seen: None,
+            })
+            .await
+            .expect("device should upsert");
+
+        assert_eq!(device.status, DeviceStatus::Unknown);
+
+        let position = store
+            .add_position(AddPositionInput {
+                mission_id: mission.id.clone(),
+                device_id: "tracker-1".to_string(),
+                name: Some("Rescuer One".to_string()),
+                lat: 52.0599,
+                lon: -9.5045,
+                altitude: Some(15.0),
+                speed: Some(1.4),
+                battery: Some(88.0),
+                accuracy: Some(4.0),
+                source: Some("traccar".to_string()),
+                timestamp: Some("2026-04-08T06:00:00Z".to_string()),
+                data_origin: Some("live".to_string()),
+            })
+            .await
+            .expect("position should insert");
+
+        assert_eq!(position.device_id, "tracker-1");
+
+        let devices = store
+            .list_devices(mission.id.clone())
+            .await
+            .expect("devices should list");
+        assert_eq!(devices.len(), 1);
+        assert_eq!(devices[0].status, DeviceStatus::Online);
+        assert_eq!(devices[0].last_seen.as_deref(), Some("2026-04-08T06:00:00Z"));
+
+        let latest_positions = store
+            .latest_positions(mission.id.clone())
+            .await
+            .expect("latest positions should list");
+        assert_eq!(latest_positions.len(), 1);
+        assert_eq!(latest_positions[0].timestamp, "2026-04-08T06:00:00Z");
+    }
+
+    #[tokio::test]
+    async fn rejects_invalid_position_coordinates() {
+        let (database_path, backup_path) = temp_paths("invalid-position");
+        let store = MissionStore::connect(database_path, backup_path)
+            .await
+            .expect("store should initialize");
+
+        let mission = store
+            .create_mission(CreateMissionInput {
+                name: "Validation Mission".to_string(),
+                notes: None,
+            })
+            .await
+            .expect("mission should be created");
+
+        store
+            .upsert_device(UpsertDeviceInput {
+                mission_id: mission.id.clone(),
+                device_id: "tracker-2".to_string(),
+                name: "Rescuer Two".to_string(),
+                color: "#FF8800".to_string(),
+                status: DeviceStatus::Unknown,
+                last_seen: None,
+            })
+            .await
+            .expect("device should upsert");
+
+        let invalid_position = store
+            .add_position(AddPositionInput {
+                mission_id: mission.id,
+                device_id: "tracker-2".to_string(),
+                name: None,
+                lat: 120.0,
+                lon: -9.0,
+                altitude: None,
+                speed: None,
+                battery: None,
+                accuracy: None,
+                source: None,
+                timestamp: None,
+                data_origin: None,
+            })
+            .await;
+
+        assert!(invalid_position.is_err());
     }
 }
