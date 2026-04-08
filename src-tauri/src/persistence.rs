@@ -84,6 +84,43 @@ pub struct Position {
     pub data_origin: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::Type, PartialEq, Eq)]
+#[sqlx(type_name = "TEXT", rename_all = "snake_case")]
+#[serde(rename_all = "snake_case")]
+pub enum MarkerType {
+    IppLkp,
+    Clue,
+    Hazard,
+    Casualty,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow, PartialEq)]
+pub struct Marker {
+    pub id: String,
+    pub mission_id: String,
+    #[serde(rename = "type")]
+    #[sqlx(rename = "type")]
+    pub marker_type: MarkerType,
+    pub name: String,
+    pub description: Option<String>,
+    pub lat: f64,
+    pub lon: f64,
+    pub irish_grid_e: i64,
+    pub irish_grid_n: i64,
+    pub created_at: String,
+    pub updated_at: String,
+    pub display_order: i64,
+    pub subject_category: Option<String>,
+    pub clue_type: Option<String>,
+    pub confidence: Option<f64>,
+    pub found_by: Option<String>,
+    pub hazard_type: Option<String>,
+    pub severity: Option<String>,
+    pub condition: Option<String>,
+    pub treatment: Option<String>,
+    pub evacuation_priority: Option<String>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MissionStoreInfo {
     pub schema_version: i64,
@@ -121,6 +158,29 @@ pub struct AddPositionInput {
     pub source: Option<String>,
     pub timestamp: Option<String>,
     pub data_origin: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct UpsertMarkerInput {
+    pub id: Option<String>,
+    pub mission_id: String,
+    pub r#type: MarkerType,
+    pub name: String,
+    pub description: Option<String>,
+    pub lat: f64,
+    pub lon: f64,
+    pub irish_grid_e: i64,
+    pub irish_grid_n: i64,
+    pub display_order: i64,
+    pub subject_category: Option<String>,
+    pub clue_type: Option<String>,
+    pub confidence: Option<f64>,
+    pub found_by: Option<String>,
+    pub hazard_type: Option<String>,
+    pub severity: Option<String>,
+    pub condition: Option<String>,
+    pub treatment: Option<String>,
+    pub evacuation_priority: Option<String>,
 }
 
 impl MissionStore {
@@ -235,6 +295,34 @@ impl MissionStore {
 
             CREATE INDEX IF NOT EXISTS idx_positions_mission_device_timestamp
               ON positions(mission_id, device_id, timestamp);
+
+            CREATE TABLE IF NOT EXISTS markers (
+              id TEXT PRIMARY KEY,
+              mission_id TEXT NOT NULL,
+              type TEXT NOT NULL CHECK(type IN ('ipp_lkp', 'clue', 'hazard', 'casualty')),
+              name TEXT NOT NULL,
+              description TEXT,
+              lat REAL NOT NULL,
+              lon REAL NOT NULL,
+              irish_grid_e INTEGER NOT NULL,
+              irish_grid_n INTEGER NOT NULL,
+              created_at TEXT NOT NULL,
+              updated_at TEXT NOT NULL,
+              display_order INTEGER NOT NULL DEFAULT 0,
+              subject_category TEXT,
+              clue_type TEXT,
+              confidence REAL,
+              found_by TEXT,
+              hazard_type TEXT,
+              severity TEXT,
+              condition TEXT,
+              treatment TEXT,
+              evacuation_priority TEXT,
+              FOREIGN KEY (mission_id) REFERENCES missions(id) ON DELETE CASCADE
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_markers_mission_display_order
+              ON markers(mission_id, display_order);
 
             CREATE TABLE IF NOT EXISTS mission_events (
               id TEXT PRIMARY KEY,
@@ -577,6 +665,128 @@ impl MissionStore {
         .map_err(|error| format!("Failed to load latest positions: {error}"))
     }
 
+    pub async fn upsert_marker(&self, input: UpsertMarkerInput) -> Result<Marker, String> {
+        self.get_mission(input.mission_id.clone()).await?;
+
+        if !input.lat.is_finite() || input.lat < -90.0 || input.lat > 90.0 {
+            return Err("Marker latitude must be a finite value between -90 and 90.".to_string());
+        }
+        if !input.lon.is_finite() || input.lon < -180.0 || input.lon > 180.0 {
+            return Err("Marker longitude must be a finite value between -180 and 180.".to_string());
+        }
+
+        let marker_id = input.id.unwrap_or_else(|| Uuid::new_v4().to_string());
+        let now = Utc::now().to_rfc3339();
+        let created_at = self
+            .get_marker(marker_id.clone())
+            .await
+            .ok()
+            .map(|existing| existing.created_at)
+            .unwrap_or_else(|| now.clone());
+
+        sqlx::query(
+            r#"
+            INSERT INTO markers (
+              id, mission_id, type, name, description, lat, lon, irish_grid_e, irish_grid_n,
+              created_at, updated_at, display_order, subject_category, clue_type, confidence,
+              found_by, hazard_type, severity, condition, treatment, evacuation_priority
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(id) DO UPDATE SET
+              mission_id = excluded.mission_id,
+              type = excluded.type,
+              name = excluded.name,
+              description = excluded.description,
+              lat = excluded.lat,
+              lon = excluded.lon,
+              irish_grid_e = excluded.irish_grid_e,
+              irish_grid_n = excluded.irish_grid_n,
+              updated_at = excluded.updated_at,
+              display_order = excluded.display_order,
+              subject_category = excluded.subject_category,
+              clue_type = excluded.clue_type,
+              confidence = excluded.confidence,
+              found_by = excluded.found_by,
+              hazard_type = excluded.hazard_type,
+              severity = excluded.severity,
+              condition = excluded.condition,
+              treatment = excluded.treatment,
+              evacuation_priority = excluded.evacuation_priority
+            "#,
+        )
+        .bind(&marker_id)
+        .bind(&input.mission_id)
+        .bind(&input.r#type)
+        .bind(&input.name)
+        .bind(&input.description)
+        .bind(input.lat)
+        .bind(input.lon)
+        .bind(input.irish_grid_e)
+        .bind(input.irish_grid_n)
+        .bind(&created_at)
+        .bind(&now)
+        .bind(input.display_order)
+        .bind(&input.subject_category)
+        .bind(&input.clue_type)
+        .bind(input.confidence)
+        .bind(&input.found_by)
+        .bind(&input.hazard_type)
+        .bind(&input.severity)
+        .bind(&input.condition)
+        .bind(&input.treatment)
+        .bind(&input.evacuation_priority)
+        .execute(&self.pool)
+        .await
+        .map_err(|error| format!("Failed to upsert marker {marker_id}: {error}"))?;
+
+        self.get_marker(marker_id).await
+    }
+
+    pub async fn get_marker(&self, marker_id: String) -> Result<Marker, String> {
+        sqlx::query_as::<_, Marker>(
+            r#"
+            SELECT id, mission_id, type, name, description, lat, lon,
+                   irish_grid_e, irish_grid_n, created_at, updated_at, display_order,
+                   subject_category, clue_type, confidence, found_by, hazard_type, severity,
+                   condition, treatment, evacuation_priority
+            FROM markers
+            WHERE id = ?
+            "#,
+        )
+        .bind(&marker_id)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|error| format!("Failed to load marker {marker_id}: {error}"))?
+        .ok_or_else(|| format!("Marker not found: {marker_id}"))
+    }
+
+    pub async fn list_markers(&self, mission_id: String) -> Result<Vec<Marker>, String> {
+        sqlx::query_as::<_, Marker>(
+            r#"
+            SELECT id, mission_id, type, name, description, lat, lon,
+                   irish_grid_e, irish_grid_n, created_at, updated_at, display_order,
+                   subject_category, clue_type, confidence, found_by, hazard_type, severity,
+                   condition, treatment, evacuation_priority
+            FROM markers
+            WHERE mission_id = ?
+            ORDER BY display_order ASC, created_at ASC
+            "#,
+        )
+        .bind(mission_id)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|error| format!("Failed to list markers: {error}"))
+    }
+
+    pub async fn delete_marker(&self, marker_id: String) -> Result<bool, String> {
+        let result = sqlx::query("DELETE FROM markers WHERE id = ?")
+            .bind(&marker_id)
+            .execute(&self.pool)
+            .await
+            .map_err(|error| format!("Failed to delete marker {marker_id}: {error}"))?;
+
+        Ok(result.rows_affected() > 0)
+    }
+
     pub async fn get_mission(&self, mission_id: String) -> Result<Mission, String> {
         sqlx::query_as::<_, Mission>(
             r#"
@@ -808,6 +1018,38 @@ pub async fn add_position(
     store: State<'_, MissionStoreState>,
 ) -> Result<Position, String> {
     store.0.add_position(input).await
+}
+
+#[tauri::command]
+pub async fn upsert_marker(
+    input: UpsertMarkerInput,
+    store: State<'_, MissionStoreState>,
+) -> Result<Marker, String> {
+    store.0.upsert_marker(input).await
+}
+
+#[tauri::command]
+pub async fn get_marker(
+    marker_id: String,
+    store: State<'_, MissionStoreState>,
+) -> Result<Marker, String> {
+    store.0.get_marker(marker_id).await
+}
+
+#[tauri::command]
+pub async fn list_markers(
+    mission_id: String,
+    store: State<'_, MissionStoreState>,
+) -> Result<Vec<Marker>, String> {
+    store.0.list_markers(mission_id).await
+}
+
+#[tauri::command]
+pub async fn delete_marker(
+    marker_id: String,
+    store: State<'_, MissionStoreState>,
+) -> Result<bool, String> {
+    store.0.delete_marker(marker_id).await
 }
 
 #[tauri::command]
@@ -1115,5 +1357,92 @@ mod tests {
             .await;
 
         assert!(invalid_position.is_err());
+    }
+
+    #[tokio::test]
+    async fn upserts_lists_and_deletes_markers() {
+        let (database_path, backup_path) = temp_paths("markers");
+        let store = MissionStore::connect(database_path, backup_path)
+            .await
+            .expect("store should initialize");
+
+        let mission = store
+            .create_mission(CreateMissionInput {
+                name: "Marker Mission".to_string(),
+                notes: None,
+            })
+            .await
+            .expect("mission should be created");
+
+        let marker = store
+            .upsert_marker(UpsertMarkerInput {
+                id: None,
+                mission_id: mission.id.clone(),
+                r#type: MarkerType::Clue,
+                name: "Boot Print".to_string(),
+                description: Some("Fresh print near river".to_string()),
+                lat: 52.1,
+                lon: -9.5,
+                irish_grid_e: 496584,
+                irish_grid_n: 591256,
+                display_order: 2,
+                subject_category: None,
+                clue_type: Some("footwear".to_string()),
+                confidence: Some(0.8),
+                found_by: Some("Team Alpha".to_string()),
+                hazard_type: None,
+                severity: None,
+                condition: None,
+                treatment: None,
+                evacuation_priority: None,
+            })
+            .await
+            .expect("marker should upsert");
+
+        assert_eq!(marker.marker_type, MarkerType::Clue);
+        assert_eq!(marker.display_order, 2);
+
+        let updated = store
+            .upsert_marker(UpsertMarkerInput {
+                id: Some(marker.id.clone()),
+                mission_id: mission.id.clone(),
+                r#type: MarkerType::Clue,
+                name: "Boot Print".to_string(),
+                description: Some("Fresh print near treeline".to_string()),
+                lat: 52.1001,
+                lon: -9.5001,
+                irish_grid_e: 496580,
+                irish_grid_n: 591250,
+                display_order: 1,
+                subject_category: None,
+                clue_type: Some("footwear".to_string()),
+                confidence: Some(0.9),
+                found_by: Some("Team Alpha".to_string()),
+                hazard_type: None,
+                severity: None,
+                condition: None,
+                treatment: None,
+                evacuation_priority: None,
+            })
+            .await
+            .expect("marker should update");
+
+        assert_eq!(updated.id, marker.id);
+        assert_eq!(updated.display_order, 1);
+        assert_eq!(updated.description.as_deref(), Some("Fresh print near treeline"));
+
+        let markers = store
+            .list_markers(mission.id.clone())
+            .await
+            .expect("markers should list");
+        assert_eq!(markers.len(), 1);
+        assert_eq!(markers[0].id, marker.id);
+
+        let deleted = store
+            .delete_marker(marker.id.clone())
+            .await
+            .expect("marker should delete");
+        assert!(deleted);
+        assert!(store.list_markers(mission.id).await.expect("markers after delete").is_empty());
     }
 }

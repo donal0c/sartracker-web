@@ -3,7 +3,7 @@
 > **Read this before doing ANY work. Update this after EVERY chunk of work.**
 
 ## Last Updated
-2026-04-08 06:57 by Codex
+2026-04-08 07:07 by Codex
 
 ## Current State
 **Phase: Pre-Build — All spikes complete, ready for Phase 1 build**
@@ -154,7 +154,33 @@
   - `cargo check --manifest-path src-tauri/Cargo.toml` ✅
   - `cargo test --manifest-path src-tauri/Cargo.toml` ✅
 - Remaining M3 work:
-  - markers
+  - drawings
+  - fuller event coverage
+  - autosave orchestration
+  - archive/export implementation
+
+### 2026-04-08 M3 persistence extended — markers
+- Added marker persistence schema with shared/common fields plus type-specific columns
+- Added backend commands and store operations for:
+  - marker upsert
+  - marker fetch/list
+  - marker delete
+- Marker payloads now support:
+  - `ipp_lkp`
+  - `clue`
+  - `hazard`
+  - `casualty`
+- Added validation for invalid marker coordinates before insert/update
+- Extended the frontend Tauri mission store adapter to expose marker operations
+- Added Rust coverage for marker upsert, update ordering, listing, and delete
+- Verification completed:
+  - `npm run test` ✅
+  - `npm run lint` ✅
+  - `npm run build` ✅
+  - `npm run test:all` ✅
+  - `cargo check --manifest-path src-tauri/Cargo.toml` ✅
+  - `cargo test --manifest-path src-tauri/Cargo.toml` ✅
+- Remaining M3 work:
   - drawings
   - fuller event coverage
   - autosave orchestration
@@ -190,7 +216,7 @@
 - **Eamonn:** Traccar admin credentials for API testing (kmrtsar.ddns.net:8082)
 
 ## What's Next
-1. **Continue M3** — add markers and drawings behind the same Rust mission store boundary
+1. **Continue M3** — add drawings behind the same Rust mission store boundary
 2. **Keep the MissionStore boundary strict** — renderer should not accumulate raw SQL access
 3. **Decide/archive implementation boundary explicitly** — live SQLite is now established; archive/export still needs its final concrete format implementation
 4. **Make an explicit v1 magnetic declination decision** before implementing magnetic-bearing behaviour in later drawing work

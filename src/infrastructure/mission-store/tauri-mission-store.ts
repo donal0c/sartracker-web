@@ -42,6 +42,32 @@ export type Position = {
   readonly data_origin: 'live' | 'cache'
 }
 
+export type MarkerType = 'ipp_lkp' | 'clue' | 'hazard' | 'casualty'
+
+export type Marker = {
+  readonly id: string
+  readonly mission_id: string
+  readonly type: MarkerType
+  readonly name: string
+  readonly description: string | null
+  readonly lat: number
+  readonly lon: number
+  readonly irish_grid_e: number
+  readonly irish_grid_n: number
+  readonly created_at: string
+  readonly updated_at: string
+  readonly display_order: number
+  readonly subject_category: string | null
+  readonly clue_type: string | null
+  readonly confidence: number | null
+  readonly found_by: string | null
+  readonly hazard_type: string | null
+  readonly severity: string | null
+  readonly condition: string | null
+  readonly treatment: string | null
+  readonly evacuation_priority: string | null
+}
+
 export type MissionStoreInfo = {
   readonly schema_version: number
   readonly database_path: string
@@ -77,6 +103,28 @@ export type AddPositionInput = {
   readonly data_origin?: 'live' | 'cache' | null
 }
 
+export type UpsertMarkerInput = {
+  readonly id?: string | null
+  readonly mission_id: string
+  readonly type: MarkerType
+  readonly name: string
+  readonly description?: string | null
+  readonly lat: number
+  readonly lon: number
+  readonly irish_grid_e: number
+  readonly irish_grid_n: number
+  readonly display_order: number
+  readonly subject_category?: string | null
+  readonly clue_type?: string | null
+  readonly confidence?: number | null
+  readonly found_by?: string | null
+  readonly hazard_type?: string | null
+  readonly severity?: string | null
+  readonly condition?: string | null
+  readonly treatment?: string | null
+  readonly evacuation_priority?: string | null
+}
+
 export type MissionStore = {
   readonly info: () => Promise<MissionStoreInfo>
   readonly syncBackup: () => Promise<string>
@@ -90,6 +138,10 @@ export type MissionStore = {
     deviceId?: string,
   ) => Promise<readonly Position[]>
   readonly latestPositions: (missionId: string) => Promise<readonly Position[]>
+  readonly upsertMarker: (input: UpsertMarkerInput) => Promise<Marker>
+  readonly getMarker: (markerId: string) => Promise<Marker>
+  readonly listMarkers: (missionId: string) => Promise<readonly Marker[]>
+  readonly deleteMarker: (markerId: string) => Promise<boolean>
   readonly getMission: (missionId: string) => Promise<Mission>
   readonly listMissions: () => Promise<readonly Mission[]>
   readonly getActiveMission: () => Promise<Mission | null>
@@ -112,6 +164,10 @@ export function createTauriMissionStore(): MissionStore {
       invoke<readonly Position[]>('list_positions', { missionId, deviceId }),
     latestPositions: (missionId) =>
       invoke<readonly Position[]>('latest_positions', { missionId }),
+    upsertMarker: (input) => invoke<Marker>('upsert_marker', { input }),
+    getMarker: (markerId) => invoke<Marker>('get_marker', { markerId }),
+    listMarkers: (missionId) => invoke<readonly Marker[]>('list_markers', { missionId }),
+    deleteMarker: (markerId) => invoke<boolean>('delete_marker', { markerId }),
     getMission: (missionId) => invoke<Mission>('get_mission', { missionId }),
     listMissions: () => invoke<readonly Mission[]>('list_missions'),
     getActiveMission: () => invoke<Mission | null>('get_active_mission'),

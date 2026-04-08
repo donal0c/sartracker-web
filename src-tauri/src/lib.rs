@@ -5,10 +5,11 @@ use std::sync::Arc;
 use tauri::Manager;
 
 use persistence::{
-    add_position, build_mission_store, create_mission, finish_mission, get_active_mission,
-    get_device, get_mission, get_recoverable_mission, latest_positions, list_devices,
-    list_missions, list_positions, mission_store_info, pause_mission, resume_mission,
-    sync_mission_store_backup, upsert_device, MissionStoreState,
+    add_position, build_mission_store, create_mission, delete_marker, finish_mission,
+    get_active_mission, get_device, get_marker, get_mission, get_recoverable_mission,
+    latest_positions, list_devices, list_markers, list_missions, list_positions,
+    mission_store_info, pause_mission, resume_mission, sync_mission_store_backup, upsert_device,
+    upsert_marker, MissionStoreState,
 };
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -37,6 +38,10 @@ pub fn run() {
             add_position,
             list_positions,
             latest_positions,
+            upsert_marker,
+            get_marker,
+            list_markers,
+            delete_marker,
             get_mission,
             list_missions,
             get_active_mission,

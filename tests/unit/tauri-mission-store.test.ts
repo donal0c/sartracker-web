@@ -22,6 +22,9 @@ describe('tauri mission store adapter', () => {
     invokeMock.mockResolvedValueOnce({ id: 'p-1', device_id: 'tracker-1' })
     invokeMock.mockResolvedValueOnce([{ id: 'p-1', device_id: 'tracker-1' }])
     invokeMock.mockResolvedValueOnce([{ id: 'p-1', device_id: 'tracker-1' }])
+    invokeMock.mockResolvedValueOnce({ id: 'mk-1', type: 'clue' })
+    invokeMock.mockResolvedValueOnce([{ id: 'mk-1', type: 'clue' }])
+    invokeMock.mockResolvedValueOnce(true)
     invokeMock.mockResolvedValueOnce(null)
 
     const store = createTauriMissionStore()
@@ -56,6 +59,20 @@ describe('tauri mission store adapter', () => {
     await expect(store.latestPositions('m-1')).resolves.toEqual([
       { id: 'p-1', device_id: 'tracker-1' },
     ])
+    await expect(
+      store.upsertMarker({
+        mission_id: 'm-1',
+        type: 'clue',
+        name: 'Boot Print',
+        lat: 52.0599,
+        lon: -9.5045,
+        irish_grid_e: 496584,
+        irish_grid_n: 591256,
+        display_order: 1,
+      }),
+    ).resolves.toEqual({ id: 'mk-1', type: 'clue' })
+    await expect(store.listMarkers('m-1')).resolves.toEqual([{ id: 'mk-1', type: 'clue' }])
+    await expect(store.deleteMarker('mk-1')).resolves.toBe(true)
     await expect(store.getActiveMission()).resolves.toBeNull()
 
     expect(invokeMock).toHaveBeenNthCalledWith(1, 'mission_store_info')
@@ -88,6 +105,20 @@ describe('tauri mission store adapter', () => {
     expect(invokeMock).toHaveBeenNthCalledWith(8, 'latest_positions', {
       missionId: 'm-1',
     })
-    expect(invokeMock).toHaveBeenNthCalledWith(9, 'get_active_mission')
+    expect(invokeMock).toHaveBeenNthCalledWith(9, 'upsert_marker', {
+      input: {
+        mission_id: 'm-1',
+        type: 'clue',
+        name: 'Boot Print',
+        lat: 52.0599,
+        lon: -9.5045,
+        irish_grid_e: 496584,
+        irish_grid_n: 591256,
+        display_order: 1,
+      },
+    })
+    expect(invokeMock).toHaveBeenNthCalledWith(10, 'list_markers', { missionId: 'm-1' })
+    expect(invokeMock).toHaveBeenNthCalledWith(11, 'delete_marker', { markerId: 'mk-1' })
+    expect(invokeMock).toHaveBeenNthCalledWith(12, 'get_active_mission')
   })
 })
