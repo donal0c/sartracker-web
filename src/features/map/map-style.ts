@@ -7,6 +7,9 @@ export const KERRY_MAX_BOUNDS: LngLatBoundsLike = [
   [-9.1, 52.6],
 ]
 
+/**
+ * Builds the raster-only MapLibre style used by the v1 basemap shell.
+ */
 export function createRasterStyle(basemapId: BasemapId): StyleSpecification {
   const basemap = getBasemapById(basemapId)
 

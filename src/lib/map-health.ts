@@ -5,6 +5,9 @@ export type MapHealth = {
   readonly message: string
 }
 
+/**
+ * Creates the loading state shown while a basemap is being applied.
+ */
 export function createLoadingMapHealth(basemapLabel: string): MapHealth {
   return {
     status: 'loading',
@@ -12,6 +15,9 @@ export function createLoadingMapHealth(basemapLabel: string): MapHealth {
   }
 }
 
+/**
+ * Creates the ready state shown once the basemap has settled.
+ */
 export function createReadyMapHealth(basemapLabel: string): MapHealth {
   return {
     status: 'ready',
@@ -19,6 +25,9 @@ export function createReadyMapHealth(basemapLabel: string): MapHealth {
   }
 }
 
+/**
+ * Creates the degraded state shown when map rendering or tile loading fails.
+ */
 export function createDegradedMapHealth(
   basemapLabel: string,
   detail = 'Some tiles failed to load',

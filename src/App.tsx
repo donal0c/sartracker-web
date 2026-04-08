@@ -8,6 +8,9 @@ const MapView = lazy(async () => {
   return { default: module.MapView }
 })
 
+/**
+ * Renders the current scaffold shell around the operations map.
+ */
 function App() {
   const status = useAppStore((state) => state.status)
 

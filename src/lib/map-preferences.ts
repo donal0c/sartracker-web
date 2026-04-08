@@ -2,6 +2,9 @@ import { DEFAULT_BASEMAP_ID, getBasemapById, type BasemapId } from './map-config
 
 export const BASEMAP_STORAGE_KEY = 'sartracker.map.basemap'
 
+/**
+ * Reads the persisted basemap preference with safe fallback behaviour.
+ */
 export function readStoredBasemap(): BasemapId {
   if (typeof window === 'undefined') {
     return DEFAULT_BASEMAP_ID
@@ -20,6 +23,9 @@ export function readStoredBasemap(): BasemapId {
   }
 }
 
+/**
+ * Persists the operator's basemap preference when storage is available.
+ */
 export function persistBasemapPreference(basemapId: BasemapId): void {
   if (typeof window === 'undefined') {
     return

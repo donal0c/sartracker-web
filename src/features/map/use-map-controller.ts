@@ -29,6 +29,9 @@ type MapController = {
   readonly handleBasemapChange: (nextBasemapId: BasemapId) => void
 }
 
+/**
+ * Owns the map lifecycle, hover state, basemap switching, and health reporting.
+ */
 export function useMapController(): MapController {
   const initialBasemapId = readStoredBasemap()
   const containerRef = useRef<HTMLDivElement | null>(null)

@@ -56,6 +56,9 @@ export const BASEMAPS: readonly Basemap[] = [
   },
 ] as const
 
+/**
+ * Resolves a basemap identifier to its locked configuration.
+ */
 export function getBasemapById(id: BasemapId): Basemap {
   const basemap = BASEMAPS.find((candidate) => candidate.id === id)
 
@@ -66,6 +69,9 @@ export function getBasemapById(id: BasemapId): Basemap {
   return basemap
 }
 
+/**
+ * Expands a tile URL template with z/x/y coordinates.
+ */
 export function buildTileUrl(template: string, z: number, x: number, y: number): string {
   return template
     .replace('{z}', String(z))

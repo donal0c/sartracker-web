@@ -3,7 +3,7 @@
 > **Read this before doing ANY work. Update this after EVERY chunk of work.**
 
 ## Last Updated
-2026-04-08 08:16 by Codex
+2026-04-08 08:36 by Codex
 
 ## Current State
 **Phase: Phase 1 build in progress — M1, M2, and M3 complete**
@@ -11,6 +11,17 @@
 `HANDOFF.md` is the authoritative continuity log for active repo work across Donal, Codex, and Claude Code. Update it after every meaningful chunk so the next agent can resume without re-discovery.
 
 ## What's Been Done
+
+### 2026-04-08 code quality hardening follow-up
+- Tightened coordinate formatting safety in `src/lib/coordinates.ts`
+- `formatWGS84Degrees` now validates latitude/longitude ranges instead of formatting impossible values
+- Added regression coverage in `tests/unit/coordinates.test.ts` for invalid WGS84 formatting inputs
+- Added JSDoc comments to the main exported map, persistence, runtime, and coordinate helpers so the repo better matches its documented code standard
+- Verification completed:
+  - `npm run test` ✅
+  - `npm run lint` ✅
+- Note:
+  - This improves standards compliance and closes one concrete coordinate-safety gap, but broader mission workflow readiness is still limited by incomplete higher-level features rather than code hygiene
 
 ### 2026-04-07 M1 scaffold implementation
 - Scaffolded the app with Vite + React + TypeScript in the repo root and initialized `src-tauri/`

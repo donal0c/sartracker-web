@@ -5,6 +5,9 @@ import { BasemapSwitcher } from './basemap-switcher'
 import { MapStatusBadge } from './map-status-badge'
 import { useMapController } from '../features/map/use-map-controller'
 
+/**
+ * Renders the operator-facing map shell around the map controller state.
+ */
 export function MapView() {
   const {
     activeBasemapId,

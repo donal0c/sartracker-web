@@ -19,6 +19,11 @@ describe('map coordinate formatting', () => {
     expect(formatWGS84Degrees(52.274681, -9.530912)).toBe('52.274681°N, 9.530912°W')
   })
 
+  it('rejects impossible WGS84 coordinates during formatting', () => {
+    expect(() => formatWGS84Degrees(95, -9.530912)).toThrow(/Invalid latitude/)
+    expect(() => formatWGS84Degrees(52.274681, -190)).toThrow(/Invalid longitude/)
+  })
+
   it('formats TM65 easting and northing as a 5 digit Irish grid reference', () => {
     expect(formatIrishGridReference(99840, 104018)).toBe('Q 99840 04018')
   })

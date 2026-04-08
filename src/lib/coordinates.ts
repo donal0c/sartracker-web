@@ -27,6 +27,9 @@ const IRISH_GRID_ROWS = ['ABCDE', 'FGHJK', 'LMNOP', 'QRSTU', 'VWXYZ']
 const IRISH_GRID_SIZE = 100_000
 const IRISH_GRID_DIM = 5
 
+/**
+ * Validates a numeric input before it enters coordinate math.
+ */
 function validateNumeric(value: unknown, name: string, context: string): number {
   if (typeof value !== 'number') {
     throw new TypeError(
@@ -43,6 +46,9 @@ function validateNumeric(value: unknown, name: string, context: string): number 
   return value
 }
 
+/**
+ * Validates WGS84 latitude and longitude ranges.
+ */
 function validateWGS84Range(lat: number, lon: number, context: string): void {
   if (lat < WGS84_LAT_MIN || lat > WGS84_LAT_MAX) {
     throw new RangeError(`Invalid latitude during ${context}: ${lat.toFixed(6)}`)
@@ -52,6 +58,9 @@ function validateWGS84Range(lat: number, lon: number, context: string): void {
   }
 }
 
+/**
+ * Converts WGS84 latitude/longitude coordinates into TM65 easting/northing.
+ */
 export function wgs84ToTM65(lat: number, lon: number): [number, number] {
   const context = 'wgs84_to_tm65'
   const safeLat = validateNumeric(lat, 'latitude', context)
@@ -62,6 +71,9 @@ export function wgs84ToTM65(lat: number, lon: number): [number, number] {
   return proj4('EPSG:4326', 'TM65', [safeLon, safeLat]) as [number, number]
 }
 
+/**
+ * Formats TM65 easting/northing values as an Irish grid reference.
+ */
 export function formatIrishGridReference(
   easting: number,
   northing: number,
@@ -102,6 +114,9 @@ export function formatIrishGridReference(
     .padStart(digits, '0')}`
 }
 
+/**
+ * Formats WGS84 latitude/longitude values with directional suffixes.
+ */
 export function formatWGS84Degrees(lat: number, lon: number, precision = 6): string {
   const context = 'format_wgs84_degrees'
   const safeLat = validateNumeric(lat, 'latitude', context)
@@ -111,6 +126,8 @@ export function formatWGS84Degrees(lat: number, lon: number, precision = 6): str
     throw new RangeError(`Invalid precision during ${context}: ${precision}`)
   }
 
+  validateWGS84Range(safeLat, safeLon, context)
+
   const latDir = safeLat >= 0 ? 'N' : 'S'
   const lonDir = safeLon >= 0 ? 'E' : 'W'
 
@@ -119,6 +136,9 @@ export function formatWGS84Degrees(lat: number, lon: number, precision = 6): str
   )}°${lonDir}`
 }
 
+/**
+ * Formats the operator coordinate bar with both WGS84 and TM65 values.
+ */
 export function formatMapCoordinateBar(lat: number, lon: number): string {
   const [easting, northing] = wgs84ToTM65(lat, lon)
   return `${formatWGS84Degrees(lat, lon)}  |  ${formatIrishGridReference(easting, northing)}`

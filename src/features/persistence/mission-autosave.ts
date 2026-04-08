@@ -24,6 +24,9 @@ const DEFAULT_LOGGER: AutosaveLogger = {
   },
 }
 
+/**
+ * Starts periodic and lifecycle-triggered mission backup sync for the active mission.
+ */
 export function startMissionAutosave(
   store: AutosaveStore,
   options: StartMissionAutosaveOptions = {},
