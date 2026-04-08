@@ -100,6 +100,12 @@ export type MissionStoreInfo = {
   readonly backup_path: string
 }
 
+export type MissionArchiveInfo = {
+  readonly mission_id: string
+  readonly archive_path: string
+  readonly created_at: string
+}
+
 export type CreateMissionInput = {
   readonly name: string
   readonly notes?: string | null
@@ -170,6 +176,7 @@ export type UpsertDrawingInput = {
 export type MissionStore = {
   readonly info: () => Promise<MissionStoreInfo>
   readonly syncBackup: () => Promise<string>
+  readonly createMissionArchive: (missionId: string) => Promise<MissionArchiveInfo>
   readonly createMission: (input: CreateMissionInput) => Promise<Mission>
   readonly upsertDevice: (input: UpsertDeviceInput) => Promise<Device>
   readonly getDevice: (missionId: string, deviceId: string) => Promise<Device>
@@ -201,6 +208,8 @@ export function createTauriMissionStore(): MissionStore {
   return {
     info: () => invoke<MissionStoreInfo>('mission_store_info'),
     syncBackup: () => invoke<string>('sync_mission_store_backup'),
+    createMissionArchive: (missionId) =>
+      invoke<MissionArchiveInfo>('create_mission_archive', { missionId }),
     createMission: (input) => invoke<Mission>('create_mission', { input }),
     upsertDevice: (input) => invoke<Device>('upsert_device', { input }),
     getDevice: (missionId, deviceId) => invoke<Device>('get_device', { missionId, deviceId }),

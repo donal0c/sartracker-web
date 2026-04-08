@@ -1,4 +1,4 @@
-use std::{path::PathBuf, sync::Arc};
+use std::{fs::File, io::Write, path::PathBuf, sync::Arc};
 
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
@@ -8,9 +8,11 @@ use sqlx::{
 };
 use tauri::{AppHandle, Manager, Runtime, State};
 use uuid::Uuid;
+use zip::{write::SimpleFileOptions, CompressionMethod, ZipWriter};
 
 const DATABASE_FILE_NAME: &str = "mission-store.sqlite";
 const BACKUP_FILE_NAME: &str = "mission-store.backup.sqlite";
+const ARCHIVE_DIRECTORY_NAME: &str = "archives";
 const CURRENT_SCHEMA_VERSION: i64 = 1;
 
 #[derive(Clone)]
@@ -159,6 +161,13 @@ pub struct MissionStoreInfo {
     pub schema_version: i64,
     pub database_path: String,
     pub backup_path: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct MissionArchiveInfo {
+    pub mission_id: String,
+    pub archive_path: String,
+    pub created_at: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -460,6 +469,93 @@ impl MissionStore {
             .map_err(|error| format!("Failed to finalize mission store backup: {error}"))?;
 
         Ok(self.backup_path.to_string_lossy().to_string())
+    }
+
+    pub async fn create_mission_archive(
+        &self,
+        mission_id: String,
+    ) -> Result<MissionArchiveInfo, String> {
+        let mission = self.get_mission(mission_id.clone()).await?;
+        if mission.status != MissionStatus::Finished && mission.status != MissionStatus::Finalized {
+          return Err("Only finished or finalized missions can be archived.".to_string());
+        }
+
+        let backup_path = self.sync_backup().await?;
+        let created_at = Utc::now().to_rfc3339();
+        let archive_dir = self
+            .database_path
+            .parent()
+            .ok_or_else(|| "Mission store config directory is unavailable.".to_string())?
+            .join(ARCHIVE_DIRECTORY_NAME);
+        std::fs::create_dir_all(&archive_dir)
+            .map_err(|error| format!("Failed to create archive directory: {error}"))?;
+
+        let archive_name = format!("{}-{}.zip", mission_id, created_at.replace(':', "-"));
+        let temporary_archive_path = archive_dir.join(format!("{archive_name}.tmp"));
+        let final_archive_path = archive_dir.join(archive_name);
+
+        let mut zip_writer = ZipWriter::new(
+            File::create(&temporary_archive_path)
+                .map_err(|error| format!("Failed to create temporary mission archive: {error}"))?,
+        );
+        let options = SimpleFileOptions::default()
+            .compression_method(CompressionMethod::Deflated);
+
+        let manifest_json = serde_json::to_vec_pretty(&serde_json::json!({
+            "archive_version": 1,
+            "created_at": created_at,
+            "mission_id": mission_id,
+            "schema_version": CURRENT_SCHEMA_VERSION,
+            "snapshot_format": "sqlite",
+        }))
+        .map_err(|error| format!("Failed to serialize mission archive manifest: {error}"))?;
+
+        let mission_json = serde_json::to_vec_pretty(&mission)
+            .map_err(|error| format!("Failed to serialize mission archive payload: {error}"))?;
+
+        zip_writer
+            .start_file("manifest.json", options)
+            .map_err(|error| format!("Failed to start manifest entry: {error}"))?;
+        zip_writer
+            .write_all(&manifest_json)
+            .map_err(|error| format!("Failed to write manifest entry: {error}"))?;
+
+        zip_writer
+            .start_file("mission.json", options)
+            .map_err(|error| format!("Failed to start mission entry: {error}"))?;
+        zip_writer
+            .write_all(&mission_json)
+            .map_err(|error| format!("Failed to write mission entry: {error}"))?;
+
+        let snapshot_path = PathBuf::from(&backup_path);
+        let snapshot_bytes = std::fs::read(&snapshot_path)
+            .map_err(|error| format!("Failed to read mission store backup for archive: {error}"))?;
+        zip_writer
+            .start_file("mission-store.sqlite", options)
+            .map_err(|error| format!("Failed to start snapshot entry: {error}"))?;
+        zip_writer
+            .write_all(&snapshot_bytes)
+            .map_err(|error| format!("Failed to write snapshot entry: {error}"))?;
+
+        zip_writer
+            .finish()
+            .map_err(|error| format!("Failed to finalize mission archive: {error}"))?;
+
+        std::fs::rename(&temporary_archive_path, &final_archive_path)
+            .map_err(|error| format!("Failed to finalize mission archive file: {error}"))?;
+
+        self.append_event(
+            &mission_id,
+            "mission_archived",
+            serde_json::json!({ "archive_path": final_archive_path.to_string_lossy() }),
+        )
+        .await?;
+
+        Ok(MissionArchiveInfo {
+            mission_id,
+            archive_path: final_archive_path.to_string_lossy().to_string(),
+            created_at,
+        })
     }
 
     pub async fn schema_version(&self) -> Result<i64, String> {
@@ -1121,6 +1217,33 @@ impl MissionStore {
 
         Ok(())
     }
+
+    async fn append_event(
+        &self,
+        mission_id: &str,
+        event_type: &str,
+        details_json: serde_json::Value,
+    ) -> Result<(), String> {
+        let details = serde_json::to_string(&details_json)
+            .map_err(|error| format!("Failed to serialize mission event details: {error}"))?;
+
+        sqlx::query(
+            r#"
+            INSERT INTO mission_events (id, mission_id, event_type, timestamp, details_json)
+            VALUES (?, ?, ?, ?, ?)
+            "#,
+        )
+        .bind(Uuid::new_v4().to_string())
+        .bind(mission_id)
+        .bind(event_type)
+        .bind(Utc::now().to_rfc3339())
+        .bind(details)
+        .execute(&self.pool)
+        .await
+        .map_err(|error| format!("Failed to append mission event: {error}"))?;
+
+        Ok(())
+    }
 }
 
 pub async fn build_mission_store<R: Runtime>(app: &AppHandle<R>) -> Result<MissionStore, String> {
@@ -1147,6 +1270,14 @@ pub async fn sync_mission_store_backup(
     store: State<'_, MissionStoreState>,
 ) -> Result<String, String> {
     store.0.sync_backup().await
+}
+
+#[tauri::command]
+pub async fn create_mission_archive(
+    mission_id: String,
+    store: State<'_, MissionStoreState>,
+) -> Result<MissionArchiveInfo, String> {
+    store.0.create_mission_archive(mission_id).await
 }
 
 #[tauri::command]
@@ -1325,6 +1456,8 @@ pub async fn finish_mission(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::io::Read;
+    use zip::ZipArchive;
 
     fn temp_paths(name: &str) -> (PathBuf, PathBuf) {
         let unique = Uuid::new_v4().to_string();
@@ -1721,5 +1854,45 @@ mod tests {
             .expect("drawing should delete");
         assert!(deleted);
         assert!(store.list_drawings(mission.id).await.expect("drawings after delete").is_empty());
+    }
+
+    #[tokio::test]
+    async fn creates_zip_archive_for_finished_mission() {
+        let (database_path, backup_path) = temp_paths("archive");
+        let store = MissionStore::connect(database_path, backup_path)
+            .await
+            .expect("store should initialize");
+
+        let mission = store
+            .create_mission(CreateMissionInput {
+                name: "Archive Mission".to_string(),
+                notes: Some("Ready to archive".to_string()),
+            })
+            .await
+            .expect("mission should be created");
+
+        store
+            .finish_mission(mission.id.clone())
+            .await
+            .expect("mission should finish");
+
+        let archive = store
+            .create_mission_archive(mission.id.clone())
+            .await
+            .expect("archive should succeed");
+
+        assert!(PathBuf::from(&archive.archive_path).exists());
+
+        let archive_file = File::open(&archive.archive_path).expect("archive file");
+        let mut zip = ZipArchive::new(archive_file).expect("zip archive should open");
+        assert!(zip.by_name("manifest.json").is_ok());
+        assert!(zip.by_name("mission.json").is_ok());
+
+        let mut sqlite_entry = zip.by_name("mission-store.sqlite").expect("sqlite snapshot");
+        let mut sqlite_bytes = Vec::new();
+        sqlite_entry
+            .read_to_end(&mut sqlite_bytes)
+            .expect("sqlite snapshot should read");
+        assert!(!sqlite_bytes.is_empty());
     }
 }

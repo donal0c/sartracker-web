@@ -3,10 +3,10 @@
 > **Read this before doing ANY work. Update this after EVERY chunk of work.**
 
 ## Last Updated
-2026-04-08 07:14 by Codex
+2026-04-08 07:26 by Codex
 
 ## Current State
-**Phase: Pre-Build — All spikes complete, ready for Phase 1 build**
+**Phase: Phase 1 build in progress — M1, M2, and M3 complete**
 
 `HANDOFF.md` is the authoritative continuity log for active repo work across Donal, Codex, and Claude Code. Update it after every meaningful chunk so the next agent can resume without re-discovery.
 
@@ -212,6 +212,35 @@
   - fuller mission event coverage
   - autosave orchestration
   - archive/export implementation
+
+### 2026-04-08 M3 persistence completed — autosave + archive/export
+- Added frontend autosave orchestration in:
+  - `src/features/persistence/autosave-config.ts`
+  - `src/features/persistence/mission-autosave.ts`
+  - `src/lib/tauri-runtime.ts`
+  - `src/main.tsx` (runtime-gated autosave startup)
+- Added frontend autosave coverage in:
+  - `tests/unit/mission-autosave.test.ts`
+- Extended mission store adapter with mission archive support:
+  - `createMissionArchive(missionId)` in `src/infrastructure/mission-store/tauri-mission-store.ts`
+  - command forwarding coverage in `tests/unit/tauri-mission-store.test.ts`
+- Added backend archive/export implementation in `src-tauri/src/persistence.rs`:
+  - archive model `MissionArchiveInfo`
+  - `create_mission_archive` command/store method
+  - archive constraints: only `finished`/`finalized` missions
+  - archive contents: `manifest.json`, `mission.json`, `mission-store.sqlite`
+  - sync backup before archive creation
+  - atomic finalize via temp+rename
+  - mission event append: `mission_archived`
+- Exposed `create_mission_archive` through Tauri invoke handler in `src-tauri/src/lib.rs`
+- Added backend archive coverage:
+  - `creates_zip_archive_for_finished_mission`
+- Verification completed:
+  - `npm run test` ✅
+  - `npm run lint` ✅
+  - `npm run build` ✅
+  - `cargo test --manifest-path src-tauri/Cargo.toml` ✅
+- M3 status: complete for current bead scope (mission store, schema/versioning, immediate persistence paths, backup sync, autosave orchestration, crash-recovery query, archive/export path)
 
 ### 2026-04-06 Doc cleanup
 - Aligned `README.md`, `OVERVIEW.md`, and supporting docs with the post-spike reality

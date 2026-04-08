@@ -16,6 +16,7 @@ describe('tauri mission store adapter', () => {
 
     invokeMock.mockResolvedValueOnce({ schema_version: 1 })
     invokeMock.mockResolvedValueOnce('/tmp/backup.sqlite')
+    invokeMock.mockResolvedValueOnce({ mission_id: 'm-1', archive_path: '/tmp/m-1.zip' })
     invokeMock.mockResolvedValueOnce({ id: 'm-1', status: 'active' })
     invokeMock.mockResolvedValueOnce({ id: 'd-1', device_id: 'tracker-1' })
     invokeMock.mockResolvedValueOnce([{ id: 'd-1', device_id: 'tracker-1' }])
@@ -34,6 +35,10 @@ describe('tauri mission store adapter', () => {
 
     await expect(store.info()).resolves.toEqual({ schema_version: 1 })
     await expect(store.syncBackup()).resolves.toBe('/tmp/backup.sqlite')
+    await expect(store.createMissionArchive('m-1')).resolves.toEqual({
+      mission_id: 'm-1',
+      archive_path: '/tmp/m-1.zip',
+    })
     await expect(store.createMission({ name: 'Training' })).resolves.toEqual({
       id: 'm-1',
       status: 'active',
@@ -91,10 +96,13 @@ describe('tauri mission store adapter', () => {
 
     expect(invokeMock).toHaveBeenNthCalledWith(1, 'mission_store_info')
     expect(invokeMock).toHaveBeenNthCalledWith(2, 'sync_mission_store_backup')
-    expect(invokeMock).toHaveBeenNthCalledWith(3, 'create_mission', {
+    expect(invokeMock).toHaveBeenNthCalledWith(3, 'create_mission_archive', {
+      missionId: 'm-1',
+    })
+    expect(invokeMock).toHaveBeenNthCalledWith(4, 'create_mission', {
       input: { name: 'Training' },
     })
-    expect(invokeMock).toHaveBeenNthCalledWith(4, 'upsert_device', {
+    expect(invokeMock).toHaveBeenNthCalledWith(5, 'upsert_device', {
       input: {
         mission_id: 'm-1',
         device_id: 'tracker-1',
@@ -103,8 +111,8 @@ describe('tauri mission store adapter', () => {
         status: 'unknown',
       },
     })
-    expect(invokeMock).toHaveBeenNthCalledWith(5, 'list_devices', { missionId: 'm-1' })
-    expect(invokeMock).toHaveBeenNthCalledWith(6, 'add_position', {
+    expect(invokeMock).toHaveBeenNthCalledWith(6, 'list_devices', { missionId: 'm-1' })
+    expect(invokeMock).toHaveBeenNthCalledWith(7, 'add_position', {
       input: {
         mission_id: 'm-1',
         device_id: 'tracker-1',
@@ -112,14 +120,14 @@ describe('tauri mission store adapter', () => {
         lon: -9.5045,
       },
     })
-    expect(invokeMock).toHaveBeenNthCalledWith(7, 'list_positions', {
+    expect(invokeMock).toHaveBeenNthCalledWith(8, 'list_positions', {
       missionId: 'm-1',
       deviceId: 'tracker-1',
     })
-    expect(invokeMock).toHaveBeenNthCalledWith(8, 'latest_positions', {
+    expect(invokeMock).toHaveBeenNthCalledWith(9, 'latest_positions', {
       missionId: 'm-1',
     })
-    expect(invokeMock).toHaveBeenNthCalledWith(9, 'upsert_marker', {
+    expect(invokeMock).toHaveBeenNthCalledWith(10, 'upsert_marker', {
       input: {
         mission_id: 'm-1',
         type: 'clue',
@@ -131,9 +139,9 @@ describe('tauri mission store adapter', () => {
         display_order: 1,
       },
     })
-    expect(invokeMock).toHaveBeenNthCalledWith(10, 'list_markers', { missionId: 'm-1' })
-    expect(invokeMock).toHaveBeenNthCalledWith(11, 'delete_marker', { markerId: 'mk-1' })
-    expect(invokeMock).toHaveBeenNthCalledWith(12, 'upsert_drawing', {
+    expect(invokeMock).toHaveBeenNthCalledWith(11, 'list_markers', { missionId: 'm-1' })
+    expect(invokeMock).toHaveBeenNthCalledWith(12, 'delete_marker', { markerId: 'mk-1' })
+    expect(invokeMock).toHaveBeenNthCalledWith(13, 'upsert_drawing', {
       input: {
         mission_id: 'm-1',
         type: 'line',
@@ -143,8 +151,8 @@ describe('tauri mission store adapter', () => {
           '{"type":"LineString","coordinates":[[-9.5,52.0],[-9.4,52.1]]}',
       },
     })
-    expect(invokeMock).toHaveBeenNthCalledWith(13, 'list_drawings', { missionId: 'm-1' })
-    expect(invokeMock).toHaveBeenNthCalledWith(14, 'delete_drawing', { drawingId: 'dr-1' })
-    expect(invokeMock).toHaveBeenNthCalledWith(15, 'get_active_mission')
+    expect(invokeMock).toHaveBeenNthCalledWith(14, 'list_drawings', { missionId: 'm-1' })
+    expect(invokeMock).toHaveBeenNthCalledWith(15, 'delete_drawing', { drawingId: 'dr-1' })
+    expect(invokeMock).toHaveBeenNthCalledWith(16, 'get_active_mission')
   })
 })
