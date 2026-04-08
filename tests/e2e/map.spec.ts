@@ -10,6 +10,7 @@ test.describe('M2 map shell', () => {
   test('renders the map canvas and basemap controls', async ({ page }) => {
     await expect(page.locator('canvas').first()).toBeVisible()
     await expect(page.getByTestId('basemap-switcher')).toBeVisible()
+    await expect(page.getByTestId('map-health')).toContainText('basemap')
     await expect(page.getByTestId('basemap-btn-opentopomap')).toBeVisible()
     await expect(page.getByTestId('basemap-btn-esri_topo')).toBeVisible()
     await expect(page.getByTestId('basemap-btn-openstreetmap')).toBeVisible()

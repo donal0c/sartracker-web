@@ -5,13 +5,21 @@ import maplibregl, { type LngLatBoundsLike, type StyleSpecification } from 'mapl
 
 import { CoordinateBar } from './coordinate-bar'
 import { BasemapSwitcher } from './basemap-switcher'
+import { MapStatusBadge } from './map-status-badge'
 import {
   MAP_CENTER,
   MAP_DEFAULT_ZOOM,
   getBasemapById,
   type BasemapId,
 } from '../lib/map-config'
+import {
+  createDegradedMapHealth,
+  createLoadingMapHealth,
+  createReadyMapHealth,
+  type MapHealth,
+} from '../lib/map-health'
 import { persistBasemapPreference, readStoredBasemap } from '../lib/map-preferences'
+
 const KERRY_MAX_BOUNDS: LngLatBoundsLike = [
   [-10.7, 51.55],
   [-9.1, 52.6],
@@ -45,6 +53,7 @@ export function MapView() {
   const containerRef = useRef<HTMLDivElement | null>(null)
   const mapRef = useRef<maplibregl.Map | null>(null)
   const previousBasemapIdRef = useRef<BasemapId | null>(null)
+  const activeBasemapIdRef = useRef<BasemapId>(readStoredBasemap())
   const [activeBasemapId, setActiveBasemapId] = useState<BasemapId>(() => readStoredBasemap())
   const [hoverCoordinate, setHoverCoordinate] = useState<{
     readonly latitude: number | null
@@ -53,11 +62,20 @@ export function MapView() {
     latitude: null,
     longitude: null,
   })
+  const [mapHealth, setMapHealth] = useState<MapHealth>(() =>
+    createLoadingMapHealth(getBasemapById(activeBasemapId).label),
+  )
   const style = useMemo(() => createRasterStyle(activeBasemapId), [activeBasemapId])
 
   useEffect(() => {
     persistBasemapPreference(activeBasemapId)
   }, [activeBasemapId])
+
+  function handleBasemapChange(nextBasemapId: BasemapId) {
+    activeBasemapIdRef.current = nextBasemapId
+    setMapHealth(createLoadingMapHealth(getBasemapById(nextBasemapId).label))
+    setActiveBasemapId(nextBasemapId)
+  }
 
   useEffect(() => {
     if (containerRef.current === null || mapRef.current !== null) {
@@ -79,6 +97,31 @@ export function MapView() {
         latitude: center.lat,
         longitude: center.lng,
       })
+    })
+    map.on('idle', () => {
+      setMapHealth((current) => {
+        if (current.status === 'degraded') {
+          return current
+        }
+
+        return createReadyMapHealth(getBasemapById(activeBasemapIdRef.current).label)
+      })
+    })
+    map.on('error', () => {
+      setMapHealth(
+        createDegradedMapHealth(getBasemapById(activeBasemapIdRef.current).label),
+      )
+    })
+    map.on('webglcontextlost', () => {
+      setMapHealth(
+        createDegradedMapHealth(
+          getBasemapById(activeBasemapIdRef.current).label,
+          'WebGL context lost',
+        ),
+      )
+    })
+    map.on('webglcontextrestored', () => {
+      setMapHealth(createLoadingMapHealth(getBasemapById(activeBasemapIdRef.current).label))
     })
     map.on('mousemove', (event) => {
       setHoverCoordinate({
@@ -118,11 +161,14 @@ export function MapView() {
     <div className="relative min-h-[560px] overflow-hidden rounded-2xl border border-stone-700 bg-stone-950">
       <BasemapSwitcher
         activeBasemapId={activeBasemapId}
-        onBasemapChange={setActiveBasemapId}
+        onBasemapChange={handleBasemapChange}
       />
       <div className="absolute inset-0" data-testid="map-container" ref={containerRef} />
-      <div className="pointer-events-none absolute right-4 top-4 z-10 rounded-full border border-emerald-400/30 bg-emerald-400/10 px-3 py-1 text-xs text-emerald-100">
-        Cached tiles available offline after viewing
+      <div className="pointer-events-none absolute right-4 top-4 z-10 flex flex-col items-end gap-2">
+        <MapStatusBadge health={mapHealth} />
+        <div className="rounded-full border border-emerald-400/30 bg-emerald-400/10 px-3 py-1 text-xs text-emerald-100">
+          Cached tiles available offline after viewing
+        </div>
       </div>
       <CoordinateBar
         latitude={hoverCoordinate.latitude}

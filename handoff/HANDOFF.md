@@ -3,7 +3,7 @@
 > **Read this before doing ANY work. Update this after EVERY chunk of work.**
 
 ## Last Updated
-2026-04-07 22:32 by Codex
+2026-04-08 00:35 by Codex
 
 ## Current State
 **Phase: Pre-Build — All spikes complete, ready for Phase 1 build**
@@ -65,6 +65,23 @@
   - `npm run build` ✅
   - `npm run test:e2e` ✅
 - Note: the main map chunk is still large because MapLibre, proj4, and map UI code are intentionally grouped there; this is better than bloating the initial shell bundle and can be revisited later if startup performance becomes an issue
+
+### 2026-04-08 M2 observability hardening
+- Added explicit map health state in `src/lib/map-health.ts`
+- Added visible operator-facing map status badge in `src/components/map-status-badge.tsx`
+- The map now reports:
+  - loading while a basemap is being applied
+  - ready once the map reaches idle
+  - degraded if MapLibre surfaces tile/source errors
+  - degraded if the WebGL context is lost
+- Added `tests/unit/map-health.test.ts`
+- Extended `tests/e2e/map.spec.ts` to assert the map health badge is present
+- Verification completed:
+  - `npm run test` ✅
+  - `npm run lint` ✅
+  - `npm run build` ✅
+  - `npm run test:e2e` ✅
+- Note: ESRI tile fetch noise may still appear in some environments, but it is no longer silent from an operator perspective because degraded map state is now surfaced in the UI
 
 ### 2026-04-06 Doc cleanup
 - Aligned `README.md`, `OVERVIEW.md`, and supporting docs with the post-spike reality
