@@ -1,4 +1,8 @@
 import { DEFAULT_AUTOSAVE_INTERVAL_MS, normalizeAutosaveIntervalMs } from './autosave-config'
+import {
+  createBrowserMissionAutosaveRuntime,
+  type MissionAutosaveRuntime,
+} from './mission-autosave-runtime'
 
 type MissionLike = {
   readonly id: string
@@ -16,6 +20,7 @@ type AutosaveLogger = {
 type StartMissionAutosaveOptions = {
   readonly intervalMs?: number
   readonly logger?: AutosaveLogger
+  readonly runtime?: MissionAutosaveRuntime | null
 }
 
 const DEFAULT_LOGGER: AutosaveLogger = {
@@ -35,7 +40,12 @@ export function startMissionAutosave(
     options.intervalMs ?? DEFAULT_AUTOSAVE_INTERVAL_MS,
   )
   const logger = options.logger ?? DEFAULT_LOGGER
+  const runtime = options.runtime ?? createBrowserMissionAutosaveRuntime()
   let syncInFlight = false
+
+  if (runtime === null) {
+    return () => undefined
+  }
 
   const runAutosave = async () => {
     if (syncInFlight) {
@@ -59,7 +69,7 @@ export function startMissionAutosave(
   }
 
   const handleVisibilityChange = () => {
-    if (document.visibilityState === 'hidden') {
+    if (runtime.getVisibilityState() === 'hidden') {
       void runAutosave()
     }
   }
@@ -68,16 +78,16 @@ export function startMissionAutosave(
     void runAutosave()
   }
 
-  const timer = window.setInterval(() => {
+  const timer = runtime.setInterval(() => {
     void runAutosave()
   }, intervalMs)
 
-  document.addEventListener('visibilitychange', handleVisibilityChange)
-  window.addEventListener('pagehide', handlePageHide)
+  runtime.addDocumentEventListener('visibilitychange', handleVisibilityChange)
+  runtime.addWindowEventListener('pagehide', handlePageHide)
 
   return () => {
-    window.clearInterval(timer)
-    document.removeEventListener('visibilitychange', handleVisibilityChange)
-    window.removeEventListener('pagehide', handlePageHide)
+    runtime.clearInterval(timer)
+    runtime.removeDocumentEventListener('visibilitychange', handleVisibilityChange)
+    runtime.removeWindowEventListener('pagehide', handlePageHide)
   }
 }

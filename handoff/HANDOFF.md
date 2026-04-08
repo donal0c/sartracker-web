@@ -3,7 +3,7 @@
 > **Read this before doing ANY work. Update this after EVERY chunk of work.**
 
 ## Last Updated
-2026-04-08 08:36 by Codex
+2026-04-08 09:04 by Codex
 
 ## Current State
 **Phase: Phase 1 build in progress — M1, M2, and M3 complete**
@@ -11,6 +11,22 @@
 `HANDOFF.md` is the authoritative continuity log for active repo work across Donal, Codex, and Claude Code. Update it after every meaningful chunk so the next agent can resume without re-discovery.
 
 ## What's Been Done
+
+### 2026-04-08 daily code hardening
+- Reviewed the current renderer/runtime structure against the repo standards in `CLAUDE.md` and selected only low-risk hardening changes
+- Extracted non-React startup orchestration out of `src/main.tsx` into `src/features/runtime/start-app-runtime.ts`
+- Added `tests/unit/start-app-runtime.test.ts` so service worker startup and Tauri-only autosave startup are now locked by explicit tests instead of remaining implicit entrypoint behavior
+- Extracted browser lifecycle access behind `src/features/persistence/mission-autosave-runtime.ts`
+- Hardened `startMissionAutosave` so it can no-op safely when browser lifecycle globals are unavailable and so timer/listener cleanup is exercised directly in tests
+- Expanded `tests/unit/tauri-mission-store.test.ts` to cover the full frontend mission-store adapter surface, including mission lifecycle and fetch methods that previously had no explicit command-contract coverage
+- Verification completed:
+  - `npm ci` ✅
+  - `npm run test` ✅
+  - `npm run lint` ✅
+  - `npm run build` ✅
+- Skipped on purpose:
+  - deeper refactoring of `src/features/map/use-map-controller.ts` because that area now touches live map lifecycle and event wiring, so a “cleaner” split would carry more regression risk than this hardening pass allows
+  - broader mission-store type/module breakup because the current adapter is large but still straightforward; stronger contract coverage was the safer high-value move for now
 
 ### 2026-04-08 code quality hardening follow-up
 - Tightened coordinate formatting safety in `src/lib/coordinates.ts`

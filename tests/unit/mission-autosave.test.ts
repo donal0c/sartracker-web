@@ -5,6 +5,7 @@ import {
   MIN_AUTOSAVE_INTERVAL_MS,
   normalizeAutosaveIntervalMs,
 } from '../../src/features/persistence/autosave-config'
+import type { MissionAutosaveRuntime } from '../../src/features/persistence/mission-autosave-runtime'
 import { startMissionAutosave } from '../../src/features/persistence/mission-autosave'
 
 describe('mission autosave', () => {
@@ -120,5 +121,68 @@ describe('mission autosave', () => {
     await Promise.resolve()
     await Promise.resolve()
     stop()
+  })
+
+  it('returns a no-op stop function when browser lifecycle APIs are unavailable', () => {
+    const stop = startMissionAutosave(
+      {
+        getActiveMission: vi.fn(),
+        syncBackup: vi.fn(),
+      },
+      {
+        runtime: null,
+      },
+    )
+
+    expect(stop).toBeTypeOf('function')
+    expect(() => stop()).not.toThrow()
+  })
+
+  it('removes timer and lifecycle listeners on stop', () => {
+    const listeners: {
+      document: EventListener[]
+      window: EventListener[]
+    } = {
+      document: [],
+      window: [],
+    }
+    const runtime: MissionAutosaveRuntime = {
+      getVisibilityState: () => 'visible',
+      setInterval: vi.fn().mockReturnValue(42),
+      clearInterval: vi.fn(),
+      addDocumentEventListener: vi.fn((_, listener) => {
+        listeners.document.push(listener)
+      }),
+      removeDocumentEventListener: vi.fn((_, listener) => {
+        listeners.document = listeners.document.filter((candidate) => candidate !== listener)
+      }),
+      addWindowEventListener: vi.fn((_, listener) => {
+        listeners.window.push(listener)
+      }),
+      removeWindowEventListener: vi.fn((_, listener) => {
+        listeners.window = listeners.window.filter((candidate) => candidate !== listener)
+      }),
+    }
+
+    const stop = startMissionAutosave(
+      {
+        getActiveMission: vi.fn().mockResolvedValue(null),
+        syncBackup: vi.fn(),
+      },
+      {
+        runtime,
+      },
+    )
+
+    expect(listeners.document).toHaveLength(1)
+    expect(listeners.window).toHaveLength(1)
+
+    stop()
+
+    expect(runtime.clearInterval).toHaveBeenCalledWith(42)
+    expect(runtime.removeDocumentEventListener).toHaveBeenCalledTimes(1)
+    expect(runtime.removeWindowEventListener).toHaveBeenCalledTimes(1)
+    expect(listeners.document).toHaveLength(0)
+    expect(listeners.window).toHaveLength(0)
   })
 })
