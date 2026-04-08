@@ -38,6 +38,8 @@ For every feature bead after scaffolding:
 3. Define the test plan before writing production code
 4. Start with failing tests for the core behaviour
 5. Only then implement the feature
+6. Stop for a refactor pass before calling the bead complete
+7. Re-evaluate whether the resulting structure is still the one we want future beads to build on
 
 For scaffold and tooling beads, be pragmatic. For behaviour-bearing features, tests-first is the default and should only be skipped with an explicit reason recorded in `handoff/HANDOFF.md`.
 
@@ -60,6 +62,8 @@ This repo should be biased toward code that is unusually clean, explicit, and re
 - Favour explicit names and explicit boundaries over clever reuse
 - A small amount of deliberate structure now is cheaper than broad cleanup later
 - Before adding new code, check whether the right move is to extract, rename, or simplify existing code first
+- Do not leave behind “we can clean this up later” structure in safety-critical or high-churn areas
+- If a warning, rough edge, or weak boundary is discovered during a bead, either fix it in that bead or record a specific reason it is being deferred
 
 ### Anti-Sprawl Rules
 - Do not let React components become orchestration blobs
@@ -68,6 +72,7 @@ This repo should be biased toward code that is unusually clean, explicit, and re
 - Do not introduce abstractions unless they remove real duplication or clarify a stable boundary
 - Do not copy data-shaping logic across features; extract it into a named module with tests
 - Prefer deleting or replacing weak structure early rather than building around it
+- Do not accept accidental build, state, or persistence complexity just because the feature still “works”
 
 ### Refactor Triggers
 Stop and refactor before continuing when any of these happen:
@@ -77,8 +82,27 @@ Stop and refactor before continuing when any of these happen:
 - The same rule appears in more than one place
 - A boundary between UI, application logic, and infrastructure starts to blur
 - A new feature would be faster to add by “just putting it here” in the wrong layer
+- A build warning or runtime warning reflects app-owned structure rather than an intentional dependency constraint
+- Tests can only be made to pass by coupling unrelated concerns together
 
 Record meaningful refactors in `handoff/HANDOFF.md` so the next agent understands why the structure changed.
+
+### Ambiguity Protocol
+Do not code through ambiguity in life-safety or architecture-bearing areas.
+
+- If a bead contains contradictory rules, stop and record the contradiction before implementation
+- If a key operator behaviour, persistence rule, or state transition is unclear, add it to the bead as an open question instead of inventing the answer in code
+- Prefer a short research follow-up over embedding speculative behaviour into the application
+- When a bead is implementation-ready except for minor UI polish, proceed and record the assumption
+- When a bead is missing a core domain decision, do not start implementation until that decision is locked
+
+### Definition Of Done
+A bead is not done just because tests pass.
+
+- The code must be clean enough that the next bead can extend it without workaround structure
+- The main risks and failure modes must be covered by tests
+- Shared docs (`CLAUDE.md`, bead comments, `handoff/HANDOFF.md`) must reflect any decisions made during the work
+- Remaining debt, if any, must be explicit, small, and intentional
 
 ### Coordinate Safety
 - ITM (EPSG:2157) is the working CRS

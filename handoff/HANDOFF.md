@@ -3,7 +3,7 @@
 > **Read this before doing ANY work. Update this after EVERY chunk of work.**
 
 ## Last Updated
-2026-04-08 08:12 by Codex
+2026-04-08 08:16 by Codex
 
 ## Current State
 **Phase: Phase 1 build in progress — M1, M2, and M3 complete**
@@ -120,6 +120,20 @@
 - Important note:
   - the remaining large JS asset is the isolated `map-vendor` chunk from `maplibre-gl` itself
   - this is now an intentional, budgeted dependency artifact rather than accidental bundle sprawl in app-owned code
+
+### 2026-04-08 Bead readiness tightening for M4/M5/M6
+- Tightened `CLAUDE.md` so future sessions explicitly enforce:
+  - refactor-before-done discipline
+  - ambiguity escalation instead of coding through contradictions
+  - a stricter definition of done for safety-critical work
+- Added readiness review comments to the next feature beads:
+  - M4 (`sartracker-web-rbg`): close to ready, but still needs confirmation on production Traccar auth/session shape, offline/degraded operator UX, paused-mission polling semantics, and cache retention/file policy
+  - M5 (`sartracker-web-4wh`): not ready until one lifecycle contradiction is resolved; bead currently conflicts with the implemented M3 persistence model on whether finished missions persist as real states or auto-collapse to idle
+  - M6 (`sartracker-web-ahy`): mostly ready, but still needs explicit decisions on marker icon set, edit UI location, label display rule, canonical per-type fields, and whether subject categories are controlled values
+- Current recommendation:
+  - M4 can proceed after a short design pass and targeted product clarifications
+  - M5 should not start until the lifecycle model is locked
+  - M6 can proceed once the UI/product choices above are answered
 
 ### 2026-04-08 M3 persistence started — first slice
 - Added a real backend persistence boundary in `src-tauri/src/persistence.rs`
