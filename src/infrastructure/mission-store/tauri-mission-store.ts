@@ -106,6 +106,14 @@ export type MissionArchiveInfo = {
   readonly created_at: string
 }
 
+export type MissionEvent = {
+  readonly id: string
+  readonly mission_id: string
+  readonly event_type: string
+  readonly timestamp: string
+  readonly details_json: string | null
+}
+
 export type CreateMissionInput = {
   readonly name: string
   readonly notes?: string | null
@@ -187,6 +195,7 @@ export type MissionStore = {
     deviceId?: string,
   ) => Promise<readonly Position[]>
   readonly latestPositions: (missionId: string) => Promise<readonly Position[]>
+  readonly listMissionEvents: (missionId: string) => Promise<readonly MissionEvent[]>
   readonly upsertMarker: (input: UpsertMarkerInput) => Promise<Marker>
   readonly getMarker: (markerId: string) => Promise<Marker>
   readonly listMarkers: (missionId: string) => Promise<readonly Marker[]>
@@ -219,6 +228,8 @@ export function createTauriMissionStore(): MissionStore {
       invoke<readonly Position[]>('list_positions', { missionId, deviceId }),
     latestPositions: (missionId) =>
       invoke<readonly Position[]>('latest_positions', { missionId }),
+    listMissionEvents: (missionId) =>
+      invoke<readonly MissionEvent[]>('list_mission_events', { missionId }),
     upsertMarker: (input) => invoke<Marker>('upsert_marker', { input }),
     getMarker: (markerId) => invoke<Marker>('get_marker', { markerId }),
     listMarkers: (missionId) => invoke<readonly Marker[]>('list_markers', { missionId }),

@@ -8,7 +8,7 @@ use persistence::{
     add_position, build_mission_store, create_mission, delete_drawing, delete_marker,
     create_mission_archive, finish_mission, get_active_mission, get_device, get_drawing,
     get_marker, get_mission, get_recoverable_mission, latest_positions, list_devices,
-    list_drawings, list_markers, list_missions, list_positions, mission_store_info,
+    list_drawings, list_markers, list_mission_events, list_missions, list_positions, mission_store_info,
     pause_mission, resume_mission, sync_mission_store_backup, upsert_device, upsert_drawing,
     upsert_marker, MissionStoreState,
 };
@@ -40,6 +40,7 @@ pub fn run() {
             add_position,
             list_positions,
             latest_positions,
+            list_mission_events,
             upsert_marker,
             get_marker,
             list_markers,

@@ -152,7 +152,8 @@ The project’s current working version of this rubric lives in `docs/bead-readi
 - SQLite with WAL mode — crash-safe by default
 - Atomic operations — no partial writes
 - Schema versioned with migrations
-- Backup rotation — keep last 3
+- Backup mirror — keep one atomic mirror copy via temp+rename
+- Every state-changing persistence operation should append an audit event
 - Renderer does not access the database directly; persistence is mediated by a backend mission store
 
 ### Domain Boundaries

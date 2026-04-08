@@ -34,7 +34,7 @@ export function startMissionAutosave(
   const logger = options.logger ?? DEFAULT_LOGGER
   let syncInFlight = false
 
-  const timer = window.setInterval(async () => {
+  const runAutosave = async () => {
     if (syncInFlight) {
       return
     }
@@ -53,9 +53,28 @@ export function startMissionAutosave(
     } finally {
       syncInFlight = false
     }
+  }
+
+  const handleVisibilityChange = () => {
+    if (document.visibilityState === 'hidden') {
+      void runAutosave()
+    }
+  }
+
+  const handlePageHide = () => {
+    void runAutosave()
+  }
+
+  const timer = window.setInterval(() => {
+    void runAutosave()
   }, intervalMs)
+
+  document.addEventListener('visibilitychange', handleVisibilityChange)
+  window.addEventListener('pagehide', handlePageHide)
 
   return () => {
     window.clearInterval(timer)
+    document.removeEventListener('visibilitychange', handleVisibilityChange)
+    window.removeEventListener('pagehide', handlePageHide)
   }
 }

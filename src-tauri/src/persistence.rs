@@ -4,7 +4,7 @@ use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use sqlx::{
     sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions, SqliteSynchronous},
-    ConnectOptions, FromRow, SqlitePool,
+    ConnectOptions, Executor, FromRow, Sqlite, SqlitePool,
 };
 use tauri::{AppHandle, Manager, Runtime, State};
 use uuid::Uuid;
@@ -170,6 +170,15 @@ pub struct MissionArchiveInfo {
     pub created_at: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow, PartialEq, Eq)]
+pub struct MissionEvent {
+    pub id: String,
+    pub mission_id: String,
+    pub event_type: String,
+    pub timestamp: String,
+    pub details_json: Option<String>,
+}
+
 #[derive(Debug, Clone, Deserialize)]
 pub struct CreateMissionInput {
     pub name: String,
@@ -243,6 +252,39 @@ pub struct UpsertDrawingInput {
 }
 
 impl MissionStore {
+    async fn insert_event<'a, E>(
+        executor: E,
+        mission_id: &str,
+        event_type: &str,
+        timestamp: &str,
+        details_json: Option<&serde_json::Value>,
+    ) -> Result<(), String>
+    where
+        E: Executor<'a, Database = Sqlite>,
+    {
+        let details = details_json
+            .map(serde_json::to_string)
+            .transpose()
+            .map_err(|error| format!("Failed to serialize mission event details: {error}"))?;
+
+        sqlx::query(
+            r#"
+            INSERT INTO mission_events (id, mission_id, event_type, timestamp, details_json)
+            VALUES (?, ?, ?, ?, ?)
+            "#,
+        )
+        .bind(Uuid::new_v4().to_string())
+        .bind(mission_id)
+        .bind(event_type)
+        .bind(timestamp)
+        .bind(details)
+        .execute(executor)
+        .await
+        .map_err(|error| format!("Failed to append mission event: {error}"))?;
+
+        Ok(())
+    }
+
     pub async fn connect(database_path: PathBuf, backup_path: PathBuf) -> Result<Self, String> {
         if let Some(parent) = database_path.parent() {
             std::fs::create_dir_all(parent)
@@ -468,6 +510,17 @@ impl MissionStore {
         std::fs::rename(&temporary_path, &self.backup_path)
             .map_err(|error| format!("Failed to finalize mission store backup: {error}"))?;
 
+        if let Some(active_mission) = self.get_active_mission().await? {
+            self.append_event(
+                &active_mission.id,
+                "mission_backup_synced",
+                serde_json::json!({
+                    "backup_path": self.backup_path.to_string_lossy(),
+                }),
+            )
+            .await?;
+        }
+
         Ok(self.backup_path.to_string_lossy().to_string())
     }
 
@@ -541,6 +594,8 @@ impl MissionStore {
             .finish()
             .map_err(|error| format!("Failed to finalize mission archive: {error}"))?;
 
+        Self::validate_archive_file(&temporary_archive_path, &mission_id)?;
+
         std::fs::rename(&temporary_archive_path, &final_archive_path)
             .map_err(|error| format!("Failed to finalize mission archive file: {error}"))?;
 
@@ -575,7 +630,6 @@ impl MissionStore {
         }
 
         let mission_id = Uuid::new_v4().to_string();
-        let event_id = Uuid::new_v4().to_string();
         let now = Utc::now().to_rfc3339();
 
         let mut tx = self
@@ -600,20 +654,15 @@ impl MissionStore {
         .await
         .map_err(|error| format!("Failed to create mission: {error}"))?;
 
-        let details_json = serde_json::json!({ "name": input.name }).to_string();
-        sqlx::query(
-            r#"
-            INSERT INTO mission_events (id, mission_id, event_type, timestamp, details_json)
-            VALUES (?, ?, 'mission_created', ?, ?)
-            "#,
+        let details_json = serde_json::json!({ "name": input.name, "notes": input.notes });
+        Self::insert_event(
+            &mut *tx,
+            &mission_id,
+            "mission_created",
+            &now,
+            Some(&details_json),
         )
-        .bind(&event_id)
-        .bind(&mission_id)
-        .bind(&now)
-        .bind(details_json)
-        .execute(&mut *tx)
-        .await
-        .map_err(|error| format!("Failed to record mission creation event: {error}"))?;
+        .await?;
 
         tx.commit()
             .await
@@ -624,8 +673,27 @@ impl MissionStore {
 
     pub async fn upsert_device(&self, input: UpsertDeviceInput) -> Result<Device, String> {
         self.get_mission(input.mission_id.clone()).await?;
+        let existing_device = self
+            .get_device(input.mission_id.clone(), input.device_id.clone())
+            .await
+            .ok();
+        let event_type = if existing_device.is_some() {
+            "device_updated"
+        } else {
+            "device_created"
+        };
+        let event_timestamp = input
+            .last_seen
+            .clone()
+            .unwrap_or_else(|| Utc::now().to_rfc3339());
 
         let device_row_id = Uuid::new_v4().to_string();
+        let mut tx = self
+            .pool
+            .begin()
+            .await
+            .map_err(|error| format!("Failed to start device upsert transaction: {error}"))?;
+
         sqlx::query(
             r#"
             INSERT INTO devices (id, mission_id, device_id, name, color, last_seen, status)
@@ -644,9 +712,28 @@ impl MissionStore {
         .bind(&input.color)
         .bind(&input.last_seen)
         .bind(&input.status)
-        .execute(&self.pool)
+        .execute(&mut *tx)
         .await
         .map_err(|error| format!("Failed to upsert device {}: {error}", input.device_id))?;
+
+        let event_details = serde_json::json!({
+            "device_id": input.device_id,
+            "name": input.name,
+            "status": input.status,
+            "color": input.color,
+        });
+        Self::insert_event(
+            &mut *tx,
+            &input.mission_id,
+            event_type,
+            &event_timestamp,
+            Some(&event_details),
+        )
+        .await?;
+
+        tx.commit()
+            .await
+            .map_err(|error| format!("Failed to commit device upsert: {error}"))?;
 
         self.get_device(input.mission_id, input.device_id).await
     }
@@ -749,6 +836,22 @@ impl MissionStore {
         .await
         .map_err(|error| format!("Failed to update device last_seen: {error}"))?;
 
+        let event_details = serde_json::json!({
+            "position_id": position_id,
+            "device_id": input.device_id,
+            "timestamp": timestamp,
+            "data_origin": data_origin,
+            "source": input.source,
+        });
+        Self::insert_event(
+            &mut *tx,
+            &input.mission_id,
+            "position_recorded",
+            event_details["timestamp"].as_str().unwrap_or_default(),
+            Some(&event_details),
+        )
+        .await?;
+
         tx.commit()
             .await
             .map_err(|error| format!("Failed to commit position insert: {error}"))?;
@@ -845,12 +948,25 @@ impl MissionStore {
 
         let marker_id = input.id.unwrap_or_else(|| Uuid::new_v4().to_string());
         let now = Utc::now().to_rfc3339();
-        let created_at = self
+        let existing_marker = self
             .get_marker(marker_id.clone())
             .await
-            .ok()
-            .map(|existing| existing.created_at)
+            .ok();
+        let created_at = existing_marker
+            .as_ref()
+            .map(|existing| existing.created_at.clone())
             .unwrap_or_else(|| now.clone());
+        let event_type = if existing_marker.is_some() {
+            "marker_updated"
+        } else {
+            "marker_created"
+        };
+
+        let mut tx = self
+            .pool
+            .begin()
+            .await
+            .map_err(|error| format!("Failed to start marker upsert transaction: {error}"))?;
 
         sqlx::query(
             r#"
@@ -902,9 +1018,28 @@ impl MissionStore {
         .bind(&input.condition)
         .bind(&input.treatment)
         .bind(&input.evacuation_priority)
-        .execute(&self.pool)
+        .execute(&mut *tx)
         .await
         .map_err(|error| format!("Failed to upsert marker {marker_id}: {error}"))?;
+
+        let event_details = serde_json::json!({
+            "marker_id": marker_id,
+            "marker_type": input.r#type,
+            "name": input.name,
+            "display_order": input.display_order,
+        });
+        Self::insert_event(
+            &mut *tx,
+            &input.mission_id,
+            event_type,
+            &now,
+            Some(&event_details),
+        )
+        .await?;
+
+        tx.commit()
+            .await
+            .map_err(|error| format!("Failed to commit marker upsert: {error}"))?;
 
         self.get_marker(marker_id).await
     }
@@ -946,11 +1081,40 @@ impl MissionStore {
     }
 
     pub async fn delete_marker(&self, marker_id: String) -> Result<bool, String> {
+        let existing_marker = self.get_marker(marker_id.clone()).await.ok();
+        let Some(marker) = existing_marker else {
+            return Ok(false);
+        };
+
+        let mut tx = self
+            .pool
+            .begin()
+            .await
+            .map_err(|error| format!("Failed to start marker delete transaction: {error}"))?;
+
         let result = sqlx::query("DELETE FROM markers WHERE id = ?")
             .bind(&marker_id)
-            .execute(&self.pool)
+            .execute(&mut *tx)
             .await
             .map_err(|error| format!("Failed to delete marker {marker_id}: {error}"))?;
+
+        let event_details = serde_json::json!({
+            "marker_id": marker.id,
+            "marker_type": marker.marker_type,
+            "name": marker.name,
+        });
+        Self::insert_event(
+            &mut *tx,
+            &marker.mission_id,
+            "marker_deleted",
+            &Utc::now().to_rfc3339(),
+            Some(&event_details),
+        )
+        .await?;
+
+        tx.commit()
+            .await
+            .map_err(|error| format!("Failed to commit marker delete: {error}"))?;
 
         Ok(result.rows_affected() > 0)
     }
@@ -960,12 +1124,25 @@ impl MissionStore {
 
         let drawing_id = input.id.unwrap_or_else(|| Uuid::new_v4().to_string());
         let now = Utc::now().to_rfc3339();
-        let created_at = self
+        let existing_drawing = self
             .get_drawing(drawing_id.clone())
             .await
-            .ok()
-            .map(|existing| existing.created_at)
+            .ok();
+        let created_at = existing_drawing
+            .as_ref()
+            .map(|existing| existing.created_at.clone())
             .unwrap_or_else(|| now.clone());
+        let event_type = if existing_drawing.is_some() {
+            "drawing_updated"
+        } else {
+            "drawing_created"
+        };
+
+        let mut tx = self
+            .pool
+            .begin()
+            .await
+            .map_err(|error| format!("Failed to start drawing upsert transaction: {error}"))?;
 
         sqlx::query(
             r#"
@@ -1004,9 +1181,28 @@ impl MissionStore {
         .bind(&input.metadata_json)
         .bind(&created_at)
         .bind(&now)
-        .execute(&self.pool)
+        .execute(&mut *tx)
         .await
         .map_err(|error| format!("Failed to upsert drawing {drawing_id}: {error}"))?;
+
+        let event_details = serde_json::json!({
+            "drawing_id": drawing_id,
+            "drawing_type": input.r#type,
+            "name": input.name,
+            "display_order": input.display_order,
+        });
+        Self::insert_event(
+            &mut *tx,
+            &input.mission_id,
+            event_type,
+            &now,
+            Some(&event_details),
+        )
+        .await?;
+
+        tx.commit()
+            .await
+            .map_err(|error| format!("Failed to commit drawing upsert: {error}"))?;
 
         self.get_drawing(drawing_id).await
     }
@@ -1044,11 +1240,40 @@ impl MissionStore {
     }
 
     pub async fn delete_drawing(&self, drawing_id: String) -> Result<bool, String> {
+        let existing_drawing = self.get_drawing(drawing_id.clone()).await.ok();
+        let Some(drawing) = existing_drawing else {
+            return Ok(false);
+        };
+
+        let mut tx = self
+            .pool
+            .begin()
+            .await
+            .map_err(|error| format!("Failed to start drawing delete transaction: {error}"))?;
+
         let result = sqlx::query("DELETE FROM drawings WHERE id = ?")
             .bind(&drawing_id)
-            .execute(&self.pool)
+            .execute(&mut *tx)
             .await
             .map_err(|error| format!("Failed to delete drawing {drawing_id}: {error}"))?;
+
+        let event_details = serde_json::json!({
+            "drawing_id": drawing.id,
+            "drawing_type": drawing.drawing_type,
+            "name": drawing.name,
+        });
+        Self::insert_event(
+            &mut *tx,
+            &drawing.mission_id,
+            "drawing_deleted",
+            &Utc::now().to_rfc3339(),
+            Some(&event_details),
+        )
+        .await?;
+
+        tx.commit()
+            .await
+            .map_err(|error| format!("Failed to commit drawing delete: {error}"))?;
 
         Ok(result.rows_affected() > 0)
     }
@@ -1113,6 +1338,21 @@ impl MissionStore {
         .fetch_optional(&self.pool)
         .await
         .map_err(|error| format!("Failed to load recoverable mission: {error}"))
+    }
+
+    pub async fn list_mission_events(&self, mission_id: String) -> Result<Vec<MissionEvent>, String> {
+        sqlx::query_as::<_, MissionEvent>(
+            r#"
+            SELECT id, mission_id, event_type, timestamp, details_json
+            FROM mission_events
+            WHERE mission_id = ?
+            ORDER BY timestamp ASC, id ASC
+            "#,
+        )
+        .bind(mission_id)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|error| format!("Failed to list mission events: {error}"))
     }
 
     pub async fn pause_mission(&self, mission_id: String) -> Result<Mission, String> {
@@ -1189,7 +1429,7 @@ impl MissionStore {
             WHERE id = ?
             "#,
         )
-        .bind(next_status)
+        .bind(&next_status)
         .bind(pause_time)
         .bind(finish_time)
         .bind(mission_id)
@@ -1197,19 +1437,10 @@ impl MissionStore {
         .await
         .map_err(|error| format!("Failed to update mission status: {error}"))?;
 
-        sqlx::query(
-            r#"
-            INSERT INTO mission_events (id, mission_id, event_type, timestamp, details_json)
-            VALUES (?, ?, ?, ?, NULL)
-            "#,
-        )
-        .bind(Uuid::new_v4().to_string())
-        .bind(mission_id)
-        .bind(event_type)
-        .bind(timestamp)
-        .execute(&mut *tx)
-        .await
-        .map_err(|error| format!("Failed to append mission event: {error}"))?;
+        let details = serde_json::json!({
+            "status": &next_status,
+        });
+        Self::insert_event(&mut *tx, mission_id, event_type, &timestamp, Some(&details)).await?;
 
         tx.commit()
             .await
@@ -1224,23 +1455,58 @@ impl MissionStore {
         event_type: &str,
         details_json: serde_json::Value,
     ) -> Result<(), String> {
-        let details = serde_json::to_string(&details_json)
-            .map_err(|error| format!("Failed to serialize mission event details: {error}"))?;
-
-        sqlx::query(
-            r#"
-            INSERT INTO mission_events (id, mission_id, event_type, timestamp, details_json)
-            VALUES (?, ?, ?, ?, ?)
-            "#,
+        Self::insert_event(
+            &self.pool,
+            mission_id,
+            event_type,
+            &Utc::now().to_rfc3339(),
+            Some(&details_json),
         )
-        .bind(Uuid::new_v4().to_string())
-        .bind(mission_id)
-        .bind(event_type)
-        .bind(Utc::now().to_rfc3339())
-        .bind(details)
-        .execute(&self.pool)
         .await
-        .map_err(|error| format!("Failed to append mission event: {error}"))?;
+    }
+
+    fn validate_archive_file(archive_path: &PathBuf, mission_id: &str) -> Result<(), String> {
+        let archive_file = File::open(archive_path)
+            .map_err(|error| format!("Failed to open temporary mission archive for validation: {error}"))?;
+        let mut zip = zip::ZipArchive::new(archive_file)
+            .map_err(|error| format!("Failed to read temporary mission archive for validation: {error}"))?;
+
+        let mut manifest_json = String::new();
+        {
+            let mut manifest_entry = zip
+                .by_name("manifest.json")
+                .map_err(|error| format!("Mission archive is missing manifest.json: {error}"))?;
+            std::io::Read::read_to_string(&mut manifest_entry, &mut manifest_json)
+                .map_err(|error| format!("Failed to read mission archive manifest: {error}"))?;
+        }
+        let manifest: serde_json::Value = serde_json::from_str(&manifest_json)
+            .map_err(|error| format!("Mission archive manifest is invalid JSON: {error}"))?;
+        if manifest.get("mission_id").and_then(serde_json::Value::as_str) != Some(mission_id) {
+            return Err("Mission archive manifest does not match the requested mission.".to_string());
+        }
+
+        let mut mission_json = String::new();
+        {
+            let mut mission_entry = zip
+                .by_name("mission.json")
+                .map_err(|error| format!("Mission archive is missing mission.json: {error}"))?;
+            std::io::Read::read_to_string(&mut mission_entry, &mut mission_json)
+                .map_err(|error| format!("Failed to read mission archive payload: {error}"))?;
+        }
+        let mission: serde_json::Value = serde_json::from_str(&mission_json)
+            .map_err(|error| format!("Mission archive payload is invalid JSON: {error}"))?;
+        if mission.get("id").and_then(serde_json::Value::as_str) != Some(mission_id) {
+            return Err("Mission archive payload does not match the requested mission.".to_string());
+        }
+
+        {
+            let sqlite_entry = zip
+                .by_name("mission-store.sqlite")
+                .map_err(|error| format!("Mission archive is missing mission-store.sqlite: {error}"))?;
+            if sqlite_entry.size() == 0 {
+                return Err("Mission archive contains an empty mission-store.sqlite snapshot.".to_string());
+            }
+        }
 
         Ok(())
     }
@@ -1400,6 +1666,14 @@ pub async fn latest_positions(
     store: State<'_, MissionStoreState>,
 ) -> Result<Vec<Position>, String> {
     store.0.latest_positions(mission_id).await
+}
+
+#[tauri::command]
+pub async fn list_mission_events(
+    store: State<'_, MissionStoreState>,
+    mission_id: String,
+) -> Result<Vec<MissionEvent>, String> {
+    store.0.list_mission_events(mission_id).await
 }
 
 #[tauri::command]
@@ -1857,6 +2131,128 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn records_audit_events_for_persistence_mutations() {
+        let (database_path, backup_path) = temp_paths("audit-events");
+        let store = MissionStore::connect(database_path, backup_path)
+            .await
+            .expect("store should initialize");
+
+        let mission = store
+            .create_mission(CreateMissionInput {
+                name: "Audit Mission".to_string(),
+                notes: None,
+            })
+            .await
+            .expect("mission should be created");
+
+        store
+            .upsert_device(UpsertDeviceInput {
+                mission_id: mission.id.clone(),
+                device_id: "tracker-1".to_string(),
+                name: "Rescuer One".to_string(),
+                color: "#00AAFF".to_string(),
+                status: DeviceStatus::Unknown,
+                last_seen: None,
+            })
+            .await
+            .expect("device should upsert");
+
+        store
+            .add_position(AddPositionInput {
+                mission_id: mission.id.clone(),
+                device_id: "tracker-1".to_string(),
+                name: Some("Rescuer One".to_string()),
+                lat: 52.0599,
+                lon: -9.5045,
+                altitude: None,
+                speed: None,
+                battery: None,
+                accuracy: None,
+                source: Some("traccar".to_string()),
+                timestamp: None,
+                data_origin: Some("live".to_string()),
+            })
+            .await
+            .expect("position should insert");
+
+        let marker = store
+            .upsert_marker(UpsertMarkerInput {
+                id: None,
+                mission_id: mission.id.clone(),
+                r#type: MarkerType::Clue,
+                name: "Boot Print".to_string(),
+                description: None,
+                lat: 52.1,
+                lon: -9.5,
+                irish_grid_e: 496584,
+                irish_grid_n: 591256,
+                display_order: 1,
+                subject_category: None,
+                clue_type: Some("footwear".to_string()),
+                confidence: Some(0.8),
+                found_by: Some("Team Alpha".to_string()),
+                hazard_type: None,
+                severity: None,
+                condition: None,
+                treatment: None,
+                evacuation_priority: None,
+            })
+            .await
+            .expect("marker should upsert");
+
+        store
+            .delete_marker(marker.id.clone())
+            .await
+            .expect("marker should delete");
+
+        let drawing = store
+            .upsert_drawing(UpsertDrawingInput {
+                id: None,
+                mission_id: mission.id.clone(),
+                r#type: DrawingType::Line,
+                name: "Track Line".to_string(),
+                description: None,
+                color: Some("#00AAFF".to_string()),
+                width: Some(2.0),
+                distance_m: Some(1200.0),
+                temporary_measure: Some(false),
+                label: None,
+                display_order: 1,
+                geometry_json: "{\"type\":\"LineString\",\"coordinates\":[[-9.5,52.0],[-9.4,52.1]]}".to_string(),
+                metadata_json: None,
+            })
+            .await
+            .expect("drawing should upsert");
+
+        store
+            .delete_drawing(drawing.id.clone())
+            .await
+            .expect("drawing should delete");
+
+        let events = store
+            .list_mission_events(mission.id.clone())
+            .await
+            .expect("events should list");
+        let event_types = events
+            .iter()
+            .map(|event| event.event_type.as_str())
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            event_types,
+            vec![
+                "mission_created",
+                "device_created",
+                "position_recorded",
+                "marker_created",
+                "marker_deleted",
+                "drawing_created",
+                "drawing_deleted",
+            ]
+        );
+    }
+
+    #[tokio::test]
     async fn creates_zip_archive_for_finished_mission() {
         let (database_path, backup_path) = temp_paths("archive");
         let store = MissionStore::connect(database_path, backup_path)
@@ -1894,5 +2290,52 @@ mod tests {
             .read_to_end(&mut sqlite_bytes)
             .expect("sqlite snapshot should read");
         assert!(!sqlite_bytes.is_empty());
+
+        let events = store
+            .list_mission_events(mission.id.clone())
+            .await
+            .expect("events should list");
+        assert_eq!(
+            events.last().map(|event| event.event_type.as_str()),
+            Some("mission_archived")
+        );
+    }
+
+    #[tokio::test]
+    async fn lists_mission_events_in_timestamp_order() {
+        let (database_path, backup_path) = temp_paths("event-list");
+        let store = MissionStore::connect(database_path, backup_path)
+            .await
+            .expect("store should initialize");
+
+        let mission = store
+            .create_mission(CreateMissionInput {
+                name: "Event Mission".to_string(),
+                notes: None,
+            })
+            .await
+            .expect("mission should be created");
+
+        let paused = store
+            .pause_mission(mission.id.clone())
+            .await
+            .expect("pause should succeed");
+        assert_eq!(paused.status, MissionStatus::Paused);
+
+        let resumed = store
+            .resume_mission(mission.id.clone())
+            .await
+            .expect("resume should succeed");
+        assert_eq!(resumed.status, MissionStatus::Active);
+
+        let events = store
+            .list_mission_events(mission.id)
+            .await
+            .expect("events should list");
+
+        assert_eq!(events.len(), 3);
+        assert_eq!(events[0].event_type, "mission_created");
+        assert_eq!(events[1].event_type, "mission_paused");
+        assert_eq!(events[2].event_type, "mission_resumed");
     }
 }

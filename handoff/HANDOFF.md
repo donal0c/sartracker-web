@@ -3,7 +3,7 @@
 > **Read this before doing ANY work. Update this after EVERY chunk of work.**
 
 ## Last Updated
-2026-04-08 07:26 by Codex
+2026-04-08 07:40 by Codex
 
 ## Current State
 **Phase: Phase 1 build in progress — M1, M2, and M3 complete**
@@ -241,6 +241,39 @@
   - `npm run build` ✅
   - `cargo test --manifest-path src-tauri/Cargo.toml` ✅
 - M3 status: complete for current bead scope (mission store, schema/versioning, immediate persistence paths, backup sync, autosave orchestration, crash-recovery query, archive/export path)
+
+### 2026-04-08 M3 persistence hardening follow-up
+- Hardened persistence auditability:
+  - added typed `MissionEvent` records and `list_mission_events`
+  - extended the Tauri mission store adapter to expose mission event listing
+  - state-changing store operations now append audit events for:
+    - device create/update
+    - position record
+    - marker create/update/delete
+    - drawing create/update/delete
+    - mission lifecycle transitions
+    - backup sync for active/paused missions
+    - archive creation
+- Hardened archive integrity:
+  - temporary archive ZIP is now re-opened and validated before final rename
+  - validation confirms `manifest.json`, `mission.json`, and non-empty `mission-store.sqlite`
+  - validation confirms manifest/payload mission IDs match the requested mission
+- Hardened autosave behavior:
+  - autosave still runs on the configured timer
+  - autosave also attempts a backup sync when the page is hidden or on `pagehide`
+  - overlap protection remains in place so timer/lifecycle triggers cannot run concurrent syncs
+- Added/expanded tests:
+  - Rust tests for mission event ordering and persistence mutation audit coverage
+  - TypeScript tests for lifecycle-triggered autosave and overlap protection
+- Verification completed:
+  - `npm run test` ✅
+  - `npm run lint` ✅
+  - `npm run build` ✅
+  - `npm run test:e2e` ✅
+  - `cargo check --manifest-path src-tauri/Cargo.toml` ✅
+  - `cargo test --manifest-path src-tauri/Cargo.toml` ✅
+- Remaining known non-M3 polish item:
+  - Vite still warns about the large lazy-loaded map chunk; this is a performance concern, not a persistence correctness issue
 
 ### 2026-04-06 Doc cleanup
 - Aligned `README.md`, `OVERVIEW.md`, and supporting docs with the post-spike reality

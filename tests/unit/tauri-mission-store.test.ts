@@ -29,6 +29,7 @@ describe('tauri mission store adapter', () => {
     invokeMock.mockResolvedValueOnce({ id: 'dr-1', type: 'line' })
     invokeMock.mockResolvedValueOnce([{ id: 'dr-1', type: 'line' }])
     invokeMock.mockResolvedValueOnce(true)
+    invokeMock.mockResolvedValueOnce([{ id: 'e-1', event_type: 'mission_created' }])
     invokeMock.mockResolvedValueOnce(null)
 
     const store = createTauriMissionStore()
@@ -92,6 +93,9 @@ describe('tauri mission store adapter', () => {
     ).resolves.toEqual({ id: 'dr-1', type: 'line' })
     await expect(store.listDrawings('m-1')).resolves.toEqual([{ id: 'dr-1', type: 'line' }])
     await expect(store.deleteDrawing('dr-1')).resolves.toBe(true)
+    await expect(store.listMissionEvents('m-1')).resolves.toEqual([
+      { id: 'e-1', event_type: 'mission_created' },
+    ])
     await expect(store.getActiveMission()).resolves.toBeNull()
 
     expect(invokeMock).toHaveBeenNthCalledWith(1, 'mission_store_info')
@@ -153,6 +157,7 @@ describe('tauri mission store adapter', () => {
     })
     expect(invokeMock).toHaveBeenNthCalledWith(14, 'list_drawings', { missionId: 'm-1' })
     expect(invokeMock).toHaveBeenNthCalledWith(15, 'delete_drawing', { drawingId: 'dr-1' })
-    expect(invokeMock).toHaveBeenNthCalledWith(16, 'get_active_mission')
+    expect(invokeMock).toHaveBeenNthCalledWith(16, 'list_mission_events', { missionId: 'm-1' })
+    expect(invokeMock).toHaveBeenNthCalledWith(17, 'get_active_mission')
   })
 })

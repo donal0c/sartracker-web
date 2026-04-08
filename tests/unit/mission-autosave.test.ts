@@ -71,4 +71,54 @@ describe('mission autosave', () => {
 
     stop()
   })
+
+  it('attempts a final sync when the page is hidden', async () => {
+    const store = {
+      getActiveMission: vi.fn().mockResolvedValue({ id: 'm-1' }),
+      syncBackup: vi.fn().mockResolvedValue('/tmp/mission.sqlite'),
+    }
+
+    const stop = startMissionAutosave(store, { intervalMs: 5_000 })
+
+    Object.defineProperty(document, 'visibilityState', {
+      configurable: true,
+      value: 'hidden',
+    })
+    document.dispatchEvent(new Event('visibilitychange'))
+    await Promise.resolve()
+    await Promise.resolve()
+
+    expect(store.syncBackup).toHaveBeenCalledTimes(1)
+
+    stop()
+  })
+
+  it('does not start overlapping syncs from timer and lifecycle triggers', async () => {
+    let resolveSync: ((value: string) => void) | null = null
+    const store = {
+      getActiveMission: vi.fn().mockResolvedValue({ id: 'm-1' }),
+      syncBackup: vi.fn().mockImplementation(
+        () =>
+          new Promise<string>((resolve) => {
+            resolveSync = resolve
+          }),
+      ),
+    }
+
+    const stop = startMissionAutosave(store, { intervalMs: 5_000 })
+
+    Object.defineProperty(document, 'visibilityState', {
+      configurable: true,
+      value: 'hidden',
+    })
+    document.dispatchEvent(new Event('visibilitychange'))
+    await vi.advanceTimersByTimeAsync(5_000)
+
+    expect(store.syncBackup).toHaveBeenCalledTimes(1)
+
+    resolveSync?.('/tmp/mission.sqlite')
+    await Promise.resolve()
+    await Promise.resolve()
+    stop()
+  })
 })
