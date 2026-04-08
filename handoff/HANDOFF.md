@@ -3,7 +3,7 @@
 > **Read this before doing ANY work. Update this after EVERY chunk of work.**
 
 ## Last Updated
-2026-04-08 06:27 by Codex
+2026-04-08 06:49 by Codex
 
 ## Current State
 **Phase: Pre-Build — All spikes complete, ready for Phase 1 build**
@@ -95,6 +95,42 @@
   - `npm run test:e2e` ✅
 - Architectural note: this reduces the risk that `map-view.tsx` becomes a long-lived “smart blob” as later map, tracking, and drawing features are added
 
+### 2026-04-08 M3 persistence started — first slice
+- Added a real backend persistence boundary in `src-tauri/src/persistence.rs`
+- Mission store now initializes SQLite with:
+  - WAL mode
+  - foreign keys enabled
+  - synchronous `NORMAL`
+  - schema metadata table
+  - initial `missions` + `mission_events` schema
+- Added backend mission lifecycle commands:
+  - `mission_store_info`
+  - `create_mission`
+  - `get_mission`
+  - `list_missions`
+  - `get_active_mission`
+  - `get_recoverable_mission`
+  - `pause_mission`
+  - `resume_mission`
+  - `finish_mission`
+  - `sync_mission_store_backup`
+- Added atomic backup sync via SQLite `VACUUM INTO` temp file + rename
+- Added frontend Tauri adapter in `src/infrastructure/mission-store/tauri-mission-store.ts`
+- Added tests:
+  - frontend adapter unit test in `tests/unit/tauri-mission-store.test.ts`
+  - backend Rust tests for schema init, mission creation/listing, lifecycle transitions, and atomic backup
+- Verification completed:
+  - `npm run test` ✅
+  - `npm run lint` ✅
+  - `npm run build` ✅
+  - `npm run test:all` ✅
+  - `cargo check --manifest-path src-tauri/Cargo.toml` ✅
+  - `cargo test --manifest-path src-tauri/Cargo.toml` ✅
+- Important architectural note:
+  - This slice keeps the live mission store behind Rust/Tauri commands.
+  - The renderer only talks through the typed mission store adapter.
+  - SQLite is the live working store; archive/export remains separate work.
+
 ### 2026-04-06 Doc cleanup
 - Aligned `README.md`, `OVERVIEW.md`, and supporting docs with the post-spike reality
 - Marked older WebSocket/planning notes as deferred or historical where they no longer describe the active v1 plan
@@ -125,9 +161,9 @@
 - **Eamonn:** Traccar admin credentials for API testing (kmrtsar.ddns.net:8082)
 
 ## What's Next
-1. **Review and close M2 bead `sartracker-web-cib`**
-2. **Start M3: Persistence — SQLite mission store**
-3. **Keep the MissionStore boundary strict** — renderer should not accumulate raw SQL access
+1. **Continue M3** — add remaining persistence schema tables and store operations behind the same Rust boundary
+2. **Keep the MissionStore boundary strict** — renderer should not accumulate raw SQL access
+3. **Decide/archive implementation boundary explicitly** — live SQLite is now established; archive/export still needs its final concrete format implementation
 4. **Make an explicit v1 magnetic declination decision** before implementing magnetic-bearing behaviour in later drawing work
 5. **When GeoPackage arrives:** run the conversion pipeline, test in MapLibre
 
