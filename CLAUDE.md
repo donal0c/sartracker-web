@@ -51,6 +51,35 @@ For scaffold and tooling beads, be pragmatic. For behaviour-bearing features, te
 - Prefer simple, boring infrastructure choices over clever abstractions
 - If a safety-critical path fails, fail loudly and visibly rather than silently falling back
 
+### Near-Perfect Code Standard
+This repo should be biased toward code that is unusually clean, explicit, and resilient. Avoid “good enough for now” decisions that create drag for later beads.
+
+- Prefer forward-looking structure over quick local convenience
+- Every new module should have a single, obvious responsibility
+- If a component or module starts accumulating unrelated concerns, stop and split it before adding more
+- Favour explicit names and explicit boundaries over clever reuse
+- A small amount of deliberate structure now is cheaper than broad cleanup later
+- Before adding new code, check whether the right move is to extract, rename, or simplify existing code first
+
+### Anti-Sprawl Rules
+- Do not let React components become orchestration blobs
+- Do not bury domain rules, coordinate logic, persistence logic, or tracking logic inside UI code
+- Do not create generic dumping-ground files such as `utils.ts`, `helpers.ts`, `misc.ts`, or `common.ts`
+- Do not introduce abstractions unless they remove real duplication or clarify a stable boundary
+- Do not copy data-shaping logic across features; extract it into a named module with tests
+- Prefer deleting or replacing weak structure early rather than building around it
+
+### Refactor Triggers
+Stop and refactor before continuing when any of these happen:
+- A file is taking on more than one clear responsibility
+- A React component owns lifecycle orchestration plus rendering plus data shaping
+- A function becomes hard to name precisely
+- The same rule appears in more than one place
+- A boundary between UI, application logic, and infrastructure starts to blur
+- A new feature would be faster to add by “just putting it here” in the wrong layer
+
+Record meaningful refactors in `handoff/HANDOFF.md` so the next agent understands why the structure changed.
+
 ### Coordinate Safety
 - ITM (EPSG:2157) is the working CRS
 - TM65 is display-only (Irish Grid references)
@@ -132,6 +161,21 @@ The project’s current working version of this rubric lives in `docs/bead-readi
 - Domain logic, persistence, and coordinate transformation code must not be buried inside React components
 - Spike code is evidence and reference material, not production code to import directly
 
+### Dependency Direction
+- UI depends on application-facing modules, not infrastructure details
+- Infrastructure modules implement ports/interfaces; they should not drive UI structure
+- Persistence, tracking, and time/external integrations should be introduced behind explicit boundaries
+- Prefer one-way dependencies; avoid circular knowledge between features
+
+### Structure First
+When adding a new subsystem, prefer a layout that makes future growth obvious. A good default is:
+- `src/features/<feature>/` for feature-specific UI/application wiring
+- `src/lib/` for stable shared libraries with strong tests
+- `src/domain/` for mission rules and safety-critical business logic when that layer starts to emerge
+- `src/infrastructure/` for external systems such as persistence, Traccar, filesystem, or clocks when those adapters appear
+
+It is acceptable for the repo to grow into this structure gradually, but new work should move it toward cleaner boundaries, not away from them.
+
 ### Testing Strategy
 - Unit tests for pure logic, transforms, validators, and domain rules
 - Integration tests for module boundaries such as MissionStore, Traccar polling, and layer-state shaping
@@ -155,10 +199,11 @@ sartracker-web/
 ├── handoff/
 │   └── HANDOFF.md         ← current state, last work done, next steps
 ├── src/
-│   ├── lib/               ← core libraries (coordinates, geodesic, traccar, store)
+│   ├── features/          ← feature-specific controllers, views, and adapters
+│   ├── lib/               ← stable shared libraries (coordinates, config, validation)
 │   ├── components/        ← React components
-│   ├── hooks/             ← React hooks
-│   ├── utils/             ← utility functions
+│   ├── domain/            ← mission rules and safety-critical business logic (emerge as needed)
+│   ├── infrastructure/    ← persistence, Traccar, filesystem, clocks (emerge as needed)
 │   └── types/             ← TypeScript type definitions
 ├── tests/
 │   ├── unit/              ← vitest unit tests
@@ -168,6 +213,8 @@ sartracker-web/
 ├── specs/                 ← architecture specs
 └── docs/                  ← reference documentation
 ```
+
+Avoid introducing `src/utils/` unless there is a very strong reason and the file has one precise responsibility.
 
 ## Spike Reference (read-only)
 All spikes passed. Use them as reference implementations and test fixtures:
