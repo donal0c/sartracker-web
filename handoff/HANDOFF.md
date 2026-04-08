@@ -3,7 +3,7 @@
 > **Read this before doing ANY work. Update this after EVERY chunk of work.**
 
 ## Last Updated
-2026-04-08 07:40 by Codex
+2026-04-08 08:12 by Codex
 
 ## Current State
 **Phase: Phase 1 build in progress — M1, M2, and M3 complete**
@@ -94,6 +94,32 @@
   - `npm run build` ✅
   - `npm run test:e2e` ✅
 - Architectural note: this reduces the risk that `map-view.tsx` becomes a long-lived “smart blob” as later map, tracking, and drawing features are added
+
+### 2026-04-08 M2 bundle hardening
+- Refactored Vite output chunking so the lazy-loaded map route no longer collapses app code, React runtime, proj4, and MapLibre into one giant artifact
+- Added explicit manual chunk strategy in `build/vite-manual-chunks.ts` and wired it into `vite.config.ts`
+- Current build output now separates:
+  - app shell chunk
+  - map view chunk
+  - `react-vendor`
+  - `geodesy-vendor`
+  - `map-vendor`
+- Added explicit bundle budget policy:
+  - `build/bundle-budgets.js`
+  - `scripts/check-bundle-size.mjs`
+  - build now fails if chunks exceed policy rather than relying on a vague global warning
+- Added tests:
+  - `tests/unit/vite-manual-chunks.test.ts`
+  - `tests/unit/bundle-budgets.test.ts`
+- Verification completed:
+  - `npm run test` ✅
+  - `npm run lint` ✅
+  - `npm run build` ✅
+  - `npm run test:e2e` ✅
+  - `cargo check --manifest-path src-tauri/Cargo.toml` ✅
+- Important note:
+  - the remaining large JS asset is the isolated `map-vendor` chunk from `maplibre-gl` itself
+  - this is now an intentional, budgeted dependency artifact rather than accidental bundle sprawl in app-owned code
 
 ### 2026-04-08 M3 persistence started — first slice
 - Added a real backend persistence boundary in `src-tauri/src/persistence.rs`
