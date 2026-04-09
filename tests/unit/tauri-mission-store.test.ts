@@ -17,7 +17,7 @@ describe('tauri mission store adapter', () => {
     invokeMock.mockResolvedValueOnce({ schema_version: 1 })
     invokeMock.mockResolvedValueOnce('/tmp/backup.sqlite')
     invokeMock.mockResolvedValueOnce({ mission_id: 'm-1', archive_path: '/tmp/m-1.zip' })
-    invokeMock.mockResolvedValueOnce({ id: 'm-1', status: 'active' })
+    invokeMock.mockResolvedValueOnce({ id: 'm-1', status: 'active', start_time: '2026-04-09T08:00:00.000Z' })
     invokeMock.mockResolvedValueOnce({ id: 'd-1', device_id: 'tracker-1' })
     invokeMock.mockResolvedValueOnce({ id: 'd-1', device_id: 'tracker-1' })
     invokeMock.mockResolvedValueOnce([{ id: 'd-1', device_id: 'tracker-1' }])
@@ -49,9 +49,10 @@ describe('tauri mission store adapter', () => {
       mission_id: 'm-1',
       archive_path: '/tmp/m-1.zip',
     })
-    await expect(store.createMission({ name: 'Training' })).resolves.toEqual({
+    await expect(store.createMission({ name: 'Training', start_time: '2026-04-09T08:00:00.000Z' })).resolves.toEqual({
       id: 'm-1',
       status: 'active',
+      start_time: '2026-04-09T08:00:00.000Z',
     })
     await expect(
       store.upsertDevice({
@@ -125,7 +126,10 @@ describe('tauri mission store adapter', () => {
       missionId: 'm-1',
     })
     expect(invokeMock).toHaveBeenNthCalledWith(4, 'create_mission', {
-      input: { name: 'Training' },
+      input: {
+        name: 'Training',
+        start_time: '2026-04-09T08:00:00.000Z',
+      },
     })
     expect(invokeMock).toHaveBeenNthCalledWith(5, 'upsert_device', {
       input: {

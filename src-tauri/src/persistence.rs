@@ -1,6 +1,8 @@
 use std::{fs::File, io::Write, path::PathBuf, sync::Arc};
 
 use chrono::Utc;
+#[cfg(test)]
+use chrono::Duration;
 use serde::{Deserialize, Serialize};
 use sqlx::{
     sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions, SqliteSynchronous},
@@ -182,6 +184,7 @@ pub struct MissionEvent {
 #[derive(Debug, Clone, Deserialize)]
 pub struct CreateMissionInput {
     pub name: String,
+    pub start_time: Option<String>,
     pub notes: Option<String>,
 }
 
@@ -630,7 +633,8 @@ impl MissionStore {
         }
 
         let mission_id = Uuid::new_v4().to_string();
-        let now = Utc::now().to_rfc3339();
+        let start_time = validate_optional_timestamp(input.start_time.as_deref(), "mission start_time")?
+            .unwrap_or_else(|| Utc::now().to_rfc3339());
 
         let mut tx = self
             .pool
@@ -647,19 +651,23 @@ impl MissionStore {
         )
         .bind(&mission_id)
         .bind(&input.name)
-        .bind(&now)
+        .bind(&start_time)
         .bind(&input.notes)
         .bind(CURRENT_SCHEMA_VERSION)
         .execute(&mut *tx)
         .await
         .map_err(|error| format!("Failed to create mission: {error}"))?;
 
-        let details_json = serde_json::json!({ "name": input.name, "notes": input.notes });
+        let details_json = serde_json::json!({
+            "name": input.name,
+            "notes": input.notes,
+            "start_time": start_time,
+        });
         Self::insert_event(
             &mut *tx,
             &mission_id,
             "mission_created",
-            &now,
+            &start_time,
             Some(&details_json),
         )
         .await?;
@@ -1330,7 +1338,7 @@ impl MissionStore {
             SELECT id, name, status, start_time, pause_time, finish_time,
                    paused_seconds, notes, schema_version
             FROM missions
-            WHERE status = 'paused'
+            WHERE status IN ('active', 'paused')
             ORDER BY start_time DESC
             LIMIT 1
             "#,
@@ -1406,6 +1414,7 @@ impl MissionStore {
         pause_time: Option<String>,
         finish_time: Option<String>,
     ) -> Result<(), String> {
+        let mission = self.get_mission(mission_id.to_string()).await?;
         let event_type = match next_status {
             MissionStatus::Active => "mission_resumed",
             MissionStatus::Paused => "mission_paused",
@@ -1416,6 +1425,8 @@ impl MissionStore {
         };
 
         let timestamp = pause_time.clone().or(finish_time.clone()).unwrap_or_else(|| Utc::now().to_rfc3339());
+        let additional_paused_seconds =
+            calculate_additional_paused_seconds(&mission, &timestamp)?;
         let mut tx = self
             .pool
             .begin()
@@ -1425,13 +1436,14 @@ impl MissionStore {
         sqlx::query(
             r#"
             UPDATE missions
-            SET status = ?, pause_time = ?, finish_time = ?
+            SET status = ?, pause_time = ?, finish_time = ?, paused_seconds = ?
             WHERE id = ?
             "#,
         )
         .bind(&next_status)
         .bind(pause_time)
         .bind(finish_time)
+        .bind(mission.paused_seconds + additional_paused_seconds)
         .bind(mission_id)
         .execute(&mut *tx)
         .await
@@ -1510,6 +1522,34 @@ impl MissionStore {
 
         Ok(())
     }
+}
+
+fn calculate_additional_paused_seconds(mission: &Mission, transition_timestamp: &str) -> Result<i64, String> {
+    if mission.status != MissionStatus::Paused || mission.pause_time.is_none() {
+        return Ok(0);
+    }
+
+    let pause_started_at = mission.pause_time.as_deref().expect("pause_time checked above");
+    let paused_duration = chrono::DateTime::parse_from_rfc3339(transition_timestamp)
+        .map_err(|error| format!("Invalid mission transition timestamp: {error}"))?
+        .signed_duration_since(
+            chrono::DateTime::parse_from_rfc3339(pause_started_at)
+                .map_err(|error| format!("Invalid mission pause_time: {error}"))?,
+        )
+        .num_seconds();
+
+    Ok(paused_duration.max(0))
+}
+
+fn validate_optional_timestamp(value: Option<&str>, label: &str) -> Result<Option<String>, String> {
+    let Some(timestamp) = value else {
+        return Ok(None);
+    };
+
+    chrono::DateTime::parse_from_rfc3339(timestamp)
+        .map_err(|error| format!("{label} must be a valid RFC3339 timestamp: {error}"))?;
+
+    Ok(Some(timestamp.to_string()))
 }
 
 pub async fn build_mission_store<R: Runtime>(app: &AppHandle<R>) -> Result<MissionStore, String> {
@@ -1764,6 +1804,7 @@ mod tests {
         let mission = store
             .create_mission(CreateMissionInput {
                 name: "Test Mission".to_string(),
+                start_time: None,
                 notes: Some("First mission".to_string()),
             })
             .await
@@ -1784,6 +1825,7 @@ mod tests {
         store
             .create_mission(CreateMissionInput {
                 name: "Backup Mission".to_string(),
+                start_time: None,
                 notes: None,
             })
             .await
@@ -1805,6 +1847,7 @@ mod tests {
         let mission = store
             .create_mission(CreateMissionInput {
                 name: "Mission A".to_string(),
+                start_time: None,
                 notes: None,
             })
             .await
@@ -1813,6 +1856,7 @@ mod tests {
         let create_second_result = store
             .create_mission(CreateMissionInput {
                 name: "Mission B".to_string(),
+                start_time: None,
                 notes: None,
             })
             .await;
@@ -1849,11 +1893,110 @@ mod tests {
         let next = store
             .create_mission(CreateMissionInput {
                 name: "Mission B".to_string(),
+                start_time: None,
                 notes: None,
             })
             .await
             .expect("new mission should be allowed after finish");
         assert_eq!(next.status, MissionStatus::Active);
+    }
+
+    #[tokio::test]
+    async fn creates_mission_with_explicit_backdated_start_time() {
+        let (database_path, backup_path) = temp_paths("backdated-start");
+        let store = MissionStore::connect(database_path, backup_path)
+            .await
+            .expect("store should initialize");
+
+        let mission = store
+            .create_mission(CreateMissionInput {
+                name: "Backdated Mission".to_string(),
+                start_time: Some("2026-04-09T08:00:00.000Z".to_string()),
+                notes: None,
+            })
+            .await
+            .expect("mission should be created");
+
+        assert_eq!(mission.start_time, "2026-04-09T08:00:00.000Z");
+    }
+
+    #[tokio::test]
+    async fn recovers_active_mission_as_startup_candidate() {
+        let (database_path, backup_path) = temp_paths("recover-active");
+        let store = MissionStore::connect(database_path, backup_path)
+            .await
+            .expect("store should initialize");
+
+        let mission = store
+            .create_mission(CreateMissionInput {
+                name: "Recover Me".to_string(),
+                start_time: None,
+                notes: None,
+            })
+            .await
+            .expect("mission should be created");
+
+        let recoverable = store
+            .get_recoverable_mission()
+            .await
+            .expect("recoverable mission should load");
+
+        assert_eq!(recoverable, Some(mission));
+    }
+
+    #[tokio::test]
+    async fn accumulates_paused_seconds_on_resume_and_finish_from_pause() {
+        let (database_path, backup_path) = temp_paths("paused-seconds");
+        let store = MissionStore::connect(database_path, backup_path)
+            .await
+            .expect("store should initialize");
+
+        let mission = store
+            .create_mission(CreateMissionInput {
+                name: "Pause Math".to_string(),
+                start_time: Some("2026-04-09T08:00:00.000Z".to_string()),
+                notes: None,
+            })
+            .await
+            .expect("mission should be created");
+
+        let paused = store
+            .pause_mission(mission.id.clone())
+            .await
+            .expect("pause should succeed");
+        assert!(paused.pause_time.is_some());
+
+        sqlx::query("UPDATE missions SET pause_time = ? WHERE id = ?")
+            .bind((Utc::now() - Duration::seconds(300)).to_rfc3339())
+            .bind(&mission.id)
+            .execute(&store.pool)
+            .await
+            .expect("pause_time should update");
+
+        let resumed = store
+            .resume_mission(mission.id.clone())
+            .await
+            .expect("resume should succeed");
+        assert!(resumed.paused_seconds >= 300);
+
+        let paused_again = store
+            .pause_mission(mission.id.clone())
+            .await
+            .expect("pause should succeed again");
+        assert!(paused_again.pause_time.is_some());
+
+        sqlx::query("UPDATE missions SET pause_time = ? WHERE id = ?")
+            .bind((Utc::now() - Duration::seconds(120)).to_rfc3339())
+            .bind(&mission.id)
+            .execute(&store.pool)
+            .await
+            .expect("pause_time should update again");
+
+        let finished = store
+            .finish_mission(mission.id.clone())
+            .await
+            .expect("finish should succeed");
+        assert!(finished.paused_seconds >= resumed.paused_seconds + 120);
     }
 
     #[tokio::test]
@@ -1866,6 +2009,7 @@ mod tests {
         let mission = store
             .create_mission(CreateMissionInput {
                 name: "Tracking Mission".to_string(),
+                start_time: None,
                 notes: None,
             })
             .await
@@ -1931,6 +2075,7 @@ mod tests {
         let mission = store
             .create_mission(CreateMissionInput {
                 name: "Validation Mission".to_string(),
+                start_time: None,
                 notes: None,
             })
             .await
@@ -1978,6 +2123,7 @@ mod tests {
         let mission = store
             .create_mission(CreateMissionInput {
                 name: "Marker Mission".to_string(),
+                start_time: None,
                 notes: None,
             })
             .await
@@ -2065,6 +2211,7 @@ mod tests {
         let mission = store
             .create_mission(CreateMissionInput {
                 name: "Drawing Mission".to_string(),
+                start_time: None,
                 notes: None,
             })
             .await
@@ -2140,6 +2287,7 @@ mod tests {
         let mission = store
             .create_mission(CreateMissionInput {
                 name: "Audit Mission".to_string(),
+                start_time: None,
                 notes: None,
             })
             .await
@@ -2262,6 +2410,7 @@ mod tests {
         let mission = store
             .create_mission(CreateMissionInput {
                 name: "Archive Mission".to_string(),
+                start_time: None,
                 notes: Some("Ready to archive".to_string()),
             })
             .await
@@ -2311,6 +2460,7 @@ mod tests {
         let mission = store
             .create_mission(CreateMissionInput {
                 name: "Event Mission".to_string(),
+                start_time: None,
                 notes: None,
             })
             .await

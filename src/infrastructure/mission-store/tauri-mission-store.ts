@@ -1,6 +1,6 @@
 import { invoke } from '@tauri-apps/api/core'
 
-export type MissionStatus = 'idle' | 'active' | 'paused' | 'finished' | 'finalized'
+export type MissionStatus = 'active' | 'paused' | 'finished' | 'finalized'
 
 export type Mission = {
   readonly id: string
@@ -116,6 +116,7 @@ export type MissionEvent = {
 
 export type CreateMissionInput = {
   readonly name: string
+  readonly start_time?: string
   readonly notes?: string | null
 }
 

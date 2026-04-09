@@ -10,6 +10,12 @@ import {
 import { registerServiceWorker } from '../../lib/register-service-worker'
 import { isTauriRuntimeAvailable } from '../../lib/tauri-runtime'
 import {
+  applyMissionRuntime,
+  applyMissionRuntimeController,
+  useMissionStore,
+} from '../mission/mission-store'
+import { startMissionRuntime } from '../mission/start-mission-runtime'
+import {
   createPollingManager,
   type TrackingPollerClient,
 } from '../tracking/polling-manager'
@@ -26,6 +32,7 @@ type StartAppRuntimeDependencies = {
   readonly isTauriRuntimeAvailable: () => boolean
   readonly createMissionStore: () => MissionStore
   readonly startMissionAutosave: (store: AutosaveStore) => () => void
+  readonly startMissionRuntime: typeof startMissionRuntime
   readonly startTrackingRuntime: typeof startTrackingRuntime
 }
 
@@ -34,6 +41,7 @@ const DEFAULT_DEPENDENCIES: StartAppRuntimeDependencies = {
   isTauriRuntimeAvailable,
   createMissionStore: createTauriMissionStore,
   startMissionAutosave,
+  startMissionRuntime,
   startTrackingRuntime,
 }
 
@@ -53,6 +61,11 @@ export async function startAppRuntime(
   const trackingMissionStore: TrackingRuntimeMissionStore = missionStore
 
   dependencies.startMissionAutosave(missionStore)
+  const missionRuntimeController = await dependencies.startMissionRuntime({
+    missionStore,
+    applyRuntime: applyMissionRuntime,
+  })
+  applyMissionRuntimeController(missionRuntimeController)
   await dependencies.startTrackingRuntime({
     config: readTrackingRuntimeConfig(),
     createClient: createTraccarClient,
@@ -60,6 +73,12 @@ export async function startAppRuntime(
       createPollingManager(client as TrackingPollerClient, {
         intervalMs: 30_000,
         staleThresholdMs: 60 * 60 * 1000,
+        shouldPoll: () => useMissionStore.getState().phase === 'active',
+        getHistoryResetKey: () => useMissionStore.getState().currentMission?.id ?? null,
+        getInitialBreadcrumbFrom: () => {
+          const mission = useMissionStore.getState().currentMission
+          return mission === null ? null : new Date(mission.start_time)
+        },
         onSnapshot: hooks.onSnapshot,
         onStatusChange: hooks.onStatusChange,
       }),

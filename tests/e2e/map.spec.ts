@@ -50,4 +50,11 @@ test.describe('M2 map shell', () => {
     await expect(page.getByTestId('tracking-status')).toContainText('idle')
     await expect(page.getByTestId('tracking-status')).toContainText('Tracking is not configured.')
   })
+
+  test('shows the mission control panel shell', async ({ page }) => {
+    await expect(page.getByTestId('mission-control')).toBeVisible()
+    await expect(page.getByTestId('mission-control')).toContainText('Mission Control')
+    await expect(page.getByTestId('mission-control')).toContainText('idle')
+    await expect(page.getByTestId('mission-start-btn')).toBeDisabled()
+  })
 })

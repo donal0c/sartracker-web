@@ -22,6 +22,9 @@ type PollingManagerOptions = {
   readonly intervalMs: number
   readonly staleThresholdMs: number
   readonly retryBaseMs?: number
+  readonly shouldPoll?: () => boolean
+  readonly getHistoryResetKey?: () => string | null
+  readonly getInitialBreadcrumbFrom?: () => Date | null
   readonly onSnapshot: (snapshot: TrackingSnapshot) => void
   readonly onStatusChange: (status: TrackingConnectionStatus) => void
   readonly now?: () => Date
@@ -52,6 +55,7 @@ export function createPollingManager(
   let lastGoodSnapshot: TrackingSnapshot | null = null
   let lastSuccessAt: string | null = null
   let breadcrumbPositions: readonly NormalizedTrackingPosition[] = []
+  let activeHistoryResetKey: string | null = null
   const latestBreadcrumbTimestampByDevice = new Map<string, string>()
 
   const publishStatus = (overrides: Partial<TrackingConnectionStatus> = {}) => {
@@ -86,6 +90,32 @@ export function createPollingManager(
 
   const poll = async () => {
     try {
+      const nextHistoryResetKey = options.getHistoryResetKey?.() ?? null
+      if (nextHistoryResetKey !== activeHistoryResetKey) {
+        activeHistoryResetKey = nextHistoryResetKey
+        breadcrumbPositions = []
+        latestBreadcrumbTimestampByDevice.clear()
+        lastGoodSnapshot = null
+      }
+
+      if (!(options.shouldPoll?.() ?? true)) {
+        if (lastGoodSnapshot !== null) {
+          options.onSnapshot(
+            annotateTrackingSnapshotHealth(lastGoodSnapshot, {
+              now: now(),
+              deviceStaleThresholdMs: options.staleThresholdMs,
+            }),
+          )
+        }
+
+        publishStatus({
+          mode: lastGoodSnapshot === null ? 'idle' : 'online',
+          warning: 'Live refresh suspended while mission is paused.',
+        })
+        scheduleNextPoll(options.intervalMs)
+        return
+      }
+
       await authenticateIfNeeded()
 
       const [devices, positions] = await Promise.all([
@@ -164,7 +194,8 @@ export function createPollingManager(
         const lastTimestamp = latestBreadcrumbTimestampByDevice.get(device.device_id)
         const fetchFrom =
           lastTimestamp === undefined
-            ? new Date(fetchUntil.getTime() - 3 * 60 * 60 * 1000)
+            ? (options.getInitialBreadcrumbFrom?.() ??
+              new Date(fetchUntil.getTime() - 3 * 60 * 60 * 1000))
             : new Date(Date.parse(lastTimestamp) + 1_000)
 
         const breadcrumbs = await client.getBreadcrumbs(device.device_id, fetchFrom, fetchUntil)

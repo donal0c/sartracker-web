@@ -203,4 +203,71 @@ describe('polling manager', () => {
 
     poller.stop()
   })
+
+  it('keeps the polling timer alive while suppressing refresh during mission pause', async () => {
+    const client = createClient()
+    const onStatusChange = vi.fn()
+
+    const poller = createPollingManager(client, {
+      intervalMs: 5_000,
+      staleThresholdMs: 60 * 60 * 1000,
+      onSnapshot: vi.fn(),
+      onStatusChange,
+      shouldPoll: () => false,
+      now: () => new Date('2026-04-06T10:35:00.000Z'),
+    })
+
+    poller.start()
+    await vi.advanceTimersByTimeAsync(0)
+    await vi.advanceTimersByTimeAsync(5_000)
+
+    expect(client.authenticate).not.toHaveBeenCalled()
+    expect(client.getDevices).not.toHaveBeenCalled()
+    expect(onStatusChange).toHaveBeenCalledWith(
+      expect.objectContaining({
+        warning: 'Live refresh suspended while mission is paused.',
+      }),
+    )
+
+    poller.stop()
+  })
+
+  it('resets breadcrumb history when a new mission session starts', async () => {
+    const client = createClient()
+    const onSnapshot = vi.fn()
+    let historyResetKey: string | null = 'mission-1'
+    let initialBreadcrumbFrom = new Date('2026-04-06T07:00:00.000Z')
+
+    const poller = createPollingManager(client, {
+      intervalMs: 5_000,
+      staleThresholdMs: 60 * 60 * 1000,
+      onSnapshot,
+      onStatusChange: vi.fn(),
+      getHistoryResetKey: () => historyResetKey,
+      getInitialBreadcrumbFrom: () => initialBreadcrumbFrom,
+      now: () => new Date('2026-04-06T10:35:00.000Z'),
+    })
+
+    poller.start()
+    await vi.advanceTimersByTimeAsync(0)
+
+    historyResetKey = 'mission-2'
+    initialBreadcrumbFrom = new Date('2026-04-06T09:00:00.000Z')
+    await vi.advanceTimersByTimeAsync(5_000)
+
+    expect(client.getBreadcrumbs).toHaveBeenCalledWith(
+      '1',
+      new Date('2026-04-06T07:00:00.000Z'),
+      expect.any(Date),
+    )
+    expect(client.getBreadcrumbs).toHaveBeenCalledWith(
+      '1',
+      new Date('2026-04-06T09:00:00.000Z'),
+      expect.any(Date),
+    )
+    expect(onSnapshot.mock.calls[0]?.[0].breadcrumbs).toHaveLength(3)
+    expect(onSnapshot.mock.calls[1]?.[0].breadcrumbs).toHaveLength(3)
+
+    poller.stop()
+  })
 })

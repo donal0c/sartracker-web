@@ -1,5 +1,6 @@
 import { Suspense, lazy } from 'react'
 
+import { MissionControlPanel } from './components/mission-control-panel'
 import { useAppStore } from './lib/app-store'
 import { TrackingStatusPanel } from './components/tracking-status-panel'
 
@@ -64,6 +65,9 @@ function App() {
             </ul>
             <div className="mt-6 rounded-2xl border border-stone-700 bg-stone-950/70 p-4 text-sm text-stone-400">
               Runtime status: <span className="text-emerald-300">{status}</span>
+            </div>
+            <div className="mt-6">
+              <MissionControlPanel />
             </div>
             <TrackingStatusPanel />
           </aside>

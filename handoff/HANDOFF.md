@@ -3,14 +3,53 @@
 > **Read this before doing ANY work. Update this after EVERY chunk of work.**
 
 ## Last Updated
-2026-04-09 13:14 by Codex
+2026-04-09 15:03 by Codex
 
 ## Current State
-**Phase: Phase 1 build in progress — M1, M2, M3, and M4 complete**
+**Phase: Phase 1 build in progress — M1, M2, M3, M4, and M5 complete**
 
 `HANDOFF.md` is the authoritative continuity log for active repo work across Donal, Codex, and Claude Code. Update it after every meaningful chunk so the next agent can resume without re-discovery.
 
 ## What's Been Done
+
+### 2026-04-09 M5 mission UI implementation completed
+- Implemented the mission lifecycle subsystem behind explicit boundaries in `src/features/mission/`
+- Added:
+  - pure timer calculation/formatting module for elapsed vs active-search time
+  - mission runtime/store layer for startup recovery, mission transitions, duplicate-name checks, and controller registration
+  - operator-facing mission control panel with:
+    - mission name input
+    - 0-48 hour back-dated start offset
+    - Start / Pause / Resume / Finish controls
+    - finish confirmation dialog
+    - resume/start-fresh recovery prompt
+    - dual timer display
+- Extended the mission persistence boundary:
+  - `create_mission` now accepts an optional explicit `start_time`
+  - recoverable mission lookup now includes persisted `active` missions so restart can treat them as paused
+  - paused duration is accumulated correctly on resume and on finish-from-paused
+- Hardened M4/M5 integration:
+  - tracking refresh now only polls while mission phase is `active`
+  - paused missions keep the polling timer alive but suppress fetches
+  - breadcrumb history resets cleanly on a new mission and first breadcrumb fetch uses the mission start time
+- Important implementation note:
+  - `Start Fresh` currently resolves the recoverable mission by finishing it, which clears pause state, preserves data on disk, and returns the UI to idle
+- Added focused test coverage for:
+  - timer math
+  - mission runtime recovery/start/pause/resume/finish behavior
+  - duplicate-name warning logic
+  - polling suppression and breadcrumb reset across mission boundaries
+  - updated mission store adapter contract
+  - browser-visible mission panel shell
+- Verification completed:
+  - `npm run test` ✅
+  - `npm run lint` ✅
+  - `npm run build` ✅
+  - `npm run test:e2e` ✅
+  - `cargo check --manifest-path src-tauri/Cargo.toml` ✅
+  - `cargo test --manifest-path src-tauri/Cargo.toml` ✅
+- Follow-up note:
+  - Playwright coverage exercises the browser shell only; live Tauri/operator validation of the interactive mission controls should still happen in the desktop runtime
 
 ### 2026-04-09 M4 tracking implementation completed
 - Implemented the full Traccar tracking runtime behind explicit boundaries in `src/features/tracking/`
