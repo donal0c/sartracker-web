@@ -3,6 +3,8 @@ import type { BasemapId } from '../../lib/map-config'
 import type { MapHealth } from '../../lib/map-health'
 import type { HoverCoordinate } from './use-map-instance'
 import { useMapInstance } from './use-map-instance'
+import { useMapDrawingInteractions } from './use-map-drawing-interactions'
+import { useMapDrawingOverlays } from './use-map-drawing-overlays'
 import { useMapMarkerInteractions } from './use-map-marker-interactions'
 import { useMapOverlays } from './use-map-overlays'
 
@@ -23,6 +25,14 @@ export function useMapController(): MapController {
 
   useMapOverlays({
     activeBasemapId: mapInstance.activeBasemapId,
+    mapRef: mapInstance.mapRef,
+  })
+  useMapDrawingOverlays({
+    activeBasemapId: mapInstance.activeBasemapId,
+    mapRef: mapInstance.mapRef,
+  })
+  useMapDrawingInteractions({
+    containerRef: mapInstance.containerRef,
     mapRef: mapInstance.mapRef,
   })
   useMapMarkerInteractions({

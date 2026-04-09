@@ -1,6 +1,7 @@
 import { useEffect, type RefObject } from 'react'
 import type maplibregl from 'maplibre-gl'
 
+import { useDrawingStore } from '../drawings/drawing-store'
 import { useMissionStore } from '../mission/mission-store'
 import { findNearestMarkerId } from '../markers/marker-hit-testing'
 import { useMarkerStore } from '../markers/marker-store'
@@ -25,6 +26,9 @@ export function useMapMarkerInteractions(
   const markerActiveMissionId = useMarkerStore((state) => state.activeMissionId)
   const markerController = useMarkerStore((state) => state.controller)
   const markerState = useMarkerStore((state) => state.markers)
+  const drawingActiveTool = useDrawingStore((state) => state.activeTool)
+  const drawingDialog = useDrawingStore((state) => state.dialog)
+  const drawingSketch = useDrawingStore((state) => state.sketch)
   const missionPhase = useMissionStore((state) => state.phase)
   const currentMissionId = useMissionStore((state) => state.currentMission?.id ?? null)
 
@@ -38,6 +42,10 @@ export function useMapMarkerInteractions(
 
     const handleMarkerClick = (event: MouseEvent) => {
       if (shouldIgnoreMarkerMapClick(currentMissionId, missionPhase, event.target)) {
+        return
+      }
+
+      if (drawingActiveTool !== 'select' || drawingDialog !== null || drawingSketch !== null) {
         return
       }
 
@@ -98,6 +106,9 @@ export function useMapMarkerInteractions(
     }
   }, [
     currentMissionId,
+    drawingActiveTool,
+    drawingDialog,
+    drawingSketch,
     markerActiveMissionId,
     markerController,
     markerState,

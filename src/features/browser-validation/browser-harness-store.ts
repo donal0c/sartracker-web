@@ -29,6 +29,7 @@ type BrowserHarnessStore = {
   readonly deleteMarker: (markerId: string) => Promise<boolean>
   readonly listDrawings: (missionId: string) => Promise<readonly Drawing[]>
   readonly upsertDrawing: (input: UpsertDrawingInput) => Promise<Drawing>
+  readonly deleteDrawing: (drawingId: string) => Promise<boolean>
 }
 
 let browserHarnessStore: BrowserHarnessStore | null = null
@@ -215,6 +216,19 @@ export function getBrowserHarnessStore(): BrowserHarnessStore {
       }
       save()
       return drawing
+    },
+    deleteDrawing: async (drawingId) => {
+      const didDelete = state.drawings.some((drawing) => drawing.id === drawingId)
+      if (!didDelete) {
+        return false
+      }
+
+      state = {
+        ...state,
+        drawings: state.drawings.filter((drawing) => drawing.id !== drawingId),
+      }
+      save()
+      return true
     },
   }
 

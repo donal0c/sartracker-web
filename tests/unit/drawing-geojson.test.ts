@@ -1,0 +1,114 @@
+import { describe, expect, it } from 'vitest'
+
+import {
+  createDrawingFeatureCollection,
+  createDrawingPreviewFeatureCollection,
+} from '../../src/features/drawings/drawing-geojson'
+import type { Drawing } from '../../src/infrastructure/mission-store/tauri-mission-store'
+
+describe('drawing geojson', () => {
+  it('creates geometry and label features for line drawings', () => {
+    const collection = createDrawingFeatureCollection(
+      [
+        createDrawing({
+          id: 'drawing-line',
+          type: 'line',
+          geometry_json: JSON.stringify({
+            type: 'LineString',
+            coordinates: [
+              [-9.744, 51.999],
+              [-9.734, 52.009],
+            ],
+          }),
+          label: '1.57 km',
+          metadata_json: JSON.stringify({ kind: 'line' }),
+        }),
+      ],
+      'drawing-line',
+    )
+
+    expect(collection.features).toHaveLength(2)
+    expect(collection.features[0]?.properties?.selected).toBe(true)
+    expect(collection.features[1]?.geometry.type).toBe('Point')
+    expect(collection.features[1]?.properties?.label).toBe('1.57 km')
+  })
+
+  it('creates one polygon feature per LPB ring plus labels', () => {
+    const collection = createDrawingFeatureCollection(
+      [
+        createDrawing({
+          id: 'drawing-range',
+          type: 'range_ring',
+          geometry_json: JSON.stringify({
+            type: 'MultiPolygon',
+            coordinates: [
+              [[[-9.7, 52.0], [-9.69, 52.0], [-9.69, 52.01], [-9.7, 52.01], [-9.7, 52.0]]],
+              [[[-9.71, 51.99], [-9.68, 51.99], [-9.68, 52.02], [-9.71, 52.02], [-9.71, 51.99]]],
+            ],
+          }),
+          metadata_json: JSON.stringify({
+            kind: 'range_ring',
+            mode: 'lpb',
+            center: [-9.7, 52.0],
+            radiiM: [800, 2000],
+            colors: ['#22C55E', '#EAB308'],
+            labels: ['25%', '50%'],
+            lpbCategory: 'hiker',
+          }),
+        }),
+      ],
+      null,
+    )
+
+    expect(collection.features.filter((feature) => feature.geometry.type === 'Polygon')).toHaveLength(2)
+    expect(collection.features.filter((feature) => feature.geometry.type === 'Point')).toHaveLength(2)
+  })
+
+  it('creates preview line and vertex features while sketching', () => {
+    const collection = createDrawingPreviewFeatureCollection(
+      {
+        tool: 'line',
+        points: [
+          [-9.744, 51.999],
+          [-9.734, 52.009],
+        ],
+      },
+      'line',
+    )
+
+    expect(collection.features.some((feature) => feature.geometry.type === 'LineString')).toBe(true)
+    expect(collection.features.filter((feature) => feature.geometry.type === 'Point')).toHaveLength(2)
+  })
+})
+
+function createDrawing(overrides: Partial<Drawing>): Drawing {
+  return {
+    id: 'drawing-1',
+    mission_id: 'mission-1',
+    type: 'search_area',
+    name: 'Drawing',
+    description: null,
+    color: null,
+    width: null,
+    distance_m: null,
+    temporary_measure: null,
+    label: null,
+    display_order: 1,
+    geometry_json: JSON.stringify({
+      type: 'Polygon',
+      coordinates: [[[-9.7, 52.0], [-9.69, 52.0], [-9.69, 52.01], [-9.7, 52.0]]],
+    }),
+    metadata_json: JSON.stringify({
+      kind: 'search_area',
+      team: null,
+      status: 'Planned',
+      poaPercent: null,
+      terrain: null,
+      notes: null,
+      areaSqM: 100,
+    }),
+    created_at: '2026-04-09T00:00:00.000Z',
+    updated_at: '2026-04-09T00:00:00.000Z',
+    ...overrides,
+  }
+}

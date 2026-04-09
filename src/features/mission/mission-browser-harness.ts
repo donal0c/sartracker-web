@@ -40,6 +40,8 @@ export async function startMissionBrowserHarness(): Promise<void> {
     | 'upsertMarker'
     | 'deleteMarker'
     | 'listDrawings'
+    | 'upsertDrawing'
+    | 'deleteDrawing'
   >
   const controller = await startMissionRuntime({
     missionStore: browserStore,

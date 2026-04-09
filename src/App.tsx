@@ -1,6 +1,7 @@
 import { Suspense, lazy } from 'react'
 
 import { DrawingRuntimeBridge } from './features/drawings/drawing-runtime-bridge'
+import { DrawingDialog } from './components/drawing-dialog'
 import { LayerFilterPanel } from './components/layer-filter-panel'
 import { MissionControlPanel } from './components/mission-control-panel'
 import { MarkerDialog } from './components/marker-dialog'
@@ -80,6 +81,7 @@ function App() {
           </aside>
         </section>
       </div>
+      <DrawingDialog />
       <MarkerDialog />
     </main>
   )

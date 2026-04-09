@@ -638,11 +638,41 @@
 - **Eamonn:** Traccar admin credentials for API testing (kmrtsar.ddns.net:8082)
 
 ## What's Next
-1. **Start M8** — implement drawing tools against the now-established visibility/runtime structure
-2. **Keep the MissionStore boundary strict** — renderer should not accumulate raw SQL access
-3. **Make an explicit v1 magnetic declination decision** before implementing magnetic-bearing behaviour in later drawing work
-4. **Use the new drawing runtime/store as the entry point** rather than inventing a second drawing-state path
-5. **When GeoPackage arrives:** run the conversion pipeline, test in MapLibre
+### 2026-04-09 M8 complete
+- Implemented the full M8 drawing slice on top of the refactored map architecture:
+  - drawing domain math and typed draft model
+  - LPB category data locked to the plugin / Koester research values
+  - drawing builder/parser pipeline for line, search area, range ring, bearing line, and search sector
+  - expanded drawing runtime with tool arming, sketch lifecycle, dialog save/edit/delete, and selection state
+  - drawing-specific GeoJSON shaping and overlay sync modules
+  - drawing-specific map interaction hook
+  - operator drawing toolbar and modal dialog flows
+- Important architectural outcome:
+  - drawing overlay sync was added as its own map module
+  - `use-map-overlays` did **not** become the next hotspot
+  - marker interactions are now explicitly gated while a drawing tool/dialog/sketch is active
+- Browser harness and test support extended for drawing CRUD flows
+- Added/expanded tests:
+  - unit tests for drawing math, LPB data, builder/parsing logic, GeoJSON shaping, runtime behavior
+  - Playwright M8 workflows for:
+    - line creation
+    - search area creation + metadata
+    - LPB range ring + bearing line creation
+    - search sector creation + `Esc` cancel path
+    - edit/delete through select mode
+    - guard against marker modal opening during drawing mode
+- Verification completed:
+  - `npm run test` ✅
+  - `npm run lint` ✅
+  - `npm run build` ✅
+  - `npm run test:e2e` ✅
+  - `cargo test --manifest-path src-tauri/Cargo.toml` ✅
+
+## What's Next
+1. **Start M9** — measurement tool using the same drawing/map interaction discipline established in M8
+2. **Keep map interaction boundaries strict** — measurement should get its own focused modules rather than bloating the generic hooks
+3. **Keep the MissionStore boundary strict** — renderer should not accumulate raw SQL access
+4. **When GeoPackage arrives:** run the conversion pipeline, test in MapLibre
 
 ## Active Beads
 ```

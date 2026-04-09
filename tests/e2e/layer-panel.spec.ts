@@ -74,7 +74,12 @@ test.describe('M7 layer panel workflows', () => {
         activeMissionId: missionId,
         drawings: await harnessStore.listDrawings(missionId),
         loading: false,
+        saving: false,
         error: null,
+        activeTool: 'select',
+        sketch: null,
+        dialog: null,
+        selectedDrawingId: null,
       })
     })
   })
