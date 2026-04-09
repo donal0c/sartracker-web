@@ -1,0 +1,285 @@
+import { useMarkerStore } from '../features/markers/marker-store'
+import {
+  CASUALTY_CONDITIONS,
+  CLUE_TYPES,
+  CONFIDENCE_LEVELS,
+  EVACUATION_PRIORITIES,
+  HAZARD_SEVERITIES,
+  HAZARD_TYPES,
+  SUBJECT_CATEGORIES,
+} from '../features/markers/marker-definitions'
+import type { MarkerType } from '../infrastructure/mission-store/tauri-mission-store'
+
+const MARKER_TYPE_OPTIONS: readonly { value: MarkerType; label: string }[] = [
+  { value: 'ipp_lkp', label: 'IPP/LKP' },
+  { value: 'clue', label: 'Clue' },
+  { value: 'hazard', label: 'Hazard' },
+  { value: 'casualty', label: 'Casualty' },
+]
+
+/**
+ * Renders the modal marker form used for create/edit flows.
+ */
+export function MarkerDialog() {
+  const dialog = useMarkerStore((state) => state.dialog)
+  const controller = useMarkerStore((state) => state.controller)
+  const saving = useMarkerStore((state) => state.saving)
+  const runtimeError = useMarkerStore((state) => state.error)
+
+  if (dialog === null || controller === null) {
+    return null
+  }
+  const draft = dialog.draft
+
+  return (
+    <div
+      className="fixed inset-0 z-40 flex items-center justify-center bg-stone-950/70 px-4 py-8 backdrop-blur-sm"
+      data-testid="marker-dialog"
+    >
+      <div className="w-full max-w-2xl rounded-3xl border border-stone-700 bg-stone-900 p-6 shadow-2xl shadow-black/40">
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-xs uppercase tracking-[0.3em] text-amber-300">
+              {dialog.mode === 'create' ? 'New Marker' : 'Edit Marker'}
+            </p>
+            <h2 className="mt-2 text-xl font-semibold text-stone-50">Marker Details</h2>
+          </div>
+          <button
+            className="rounded-lg border border-stone-600 bg-stone-950 px-3 py-2 text-sm text-stone-200"
+            onClick={() => controller.closeDialog()}
+            type="button"
+          >
+            Close
+          </button>
+        </div>
+
+        <div className="mt-6 space-y-6">
+          <section>
+            <p className="text-xs uppercase tracking-[0.2em] text-stone-300">Marker Type</p>
+            <div className="mt-3 grid gap-2 sm:grid-cols-4">
+              {MARKER_TYPE_OPTIONS.map((option) => (
+                <label
+                  className={`rounded-xl border px-3 py-2 text-sm ${
+                    draft.type === option.value
+                      ? 'border-amber-300 bg-amber-300/10 text-amber-100'
+                      : 'border-stone-700 bg-stone-950 text-stone-200'
+                  }`}
+                  key={option.value}
+                >
+                  <input
+                    checked={draft.type === option.value}
+                    className="sr-only"
+                    name="marker-type"
+                    onChange={() => controller.changeDraftType(option.value)}
+                    type="radio"
+                    value={option.value}
+                  />
+                  {option.label}
+                </label>
+              ))}
+            </div>
+          </section>
+
+          <section className="grid gap-4 md:grid-cols-2">
+            <ReadOnlyField label="WGS84" value={draft.coordinates.wgs84Display} />
+            <ReadOnlyField
+              label="ITM"
+              value={`${draft.coordinates.irishGridE}, ${draft.coordinates.irishGridN}`}
+            />
+            <ReadOnlyField label="TM65 Grid Ref" value={draft.coordinates.tm65GridRef} />
+          </section>
+
+          <section className="grid gap-4 md:grid-cols-2">
+            <Field
+              label="Name"
+              onChange={(value) => controller.updateDraft({ name: value })}
+              testId="marker-name-input"
+              value={draft.name}
+            />
+            <Field
+              label="Description"
+              onChange={(value) => controller.updateDraft({ description: value })}
+              testId="marker-description-input"
+              value={draft.description}
+            />
+          </section>
+
+          {draft.type === 'ipp_lkp' ? (
+            <SelectField
+              label="Subject Category"
+              onChange={(value) => controller.updateDraft({ subjectCategory: value })}
+              options={SUBJECT_CATEGORIES}
+              testId="marker-subject-category-input"
+              value={draft.subjectCategory}
+            />
+          ) : null}
+
+          {draft.type === 'clue' ? (
+            <div className="grid gap-4 md:grid-cols-2">
+              <SelectField
+                label="Clue Type"
+                onChange={(value) => controller.updateDraft({ clueType: value })}
+                options={CLUE_TYPES}
+                testId="marker-clue-type-input"
+                value={draft.clueType}
+              />
+              <SelectField
+                label="Confidence"
+                onChange={(value) => controller.updateDraft({ confidence: value })}
+                options={CONFIDENCE_LEVELS}
+                testId="marker-confidence-input"
+                value={draft.confidence}
+              />
+              <Field
+                label="Found By"
+                onChange={(value) => controller.updateDraft({ foundBy: value })}
+                testId="marker-found-by-input"
+                value={draft.foundBy}
+              />
+            </div>
+          ) : null}
+
+          {draft.type === 'hazard' ? (
+            <div className="grid gap-4 md:grid-cols-2">
+              <SelectField
+                label="Hazard Type"
+                onChange={(value) => controller.updateDraft({ hazardType: value })}
+                options={HAZARD_TYPES}
+                testId="marker-hazard-type-input"
+                value={draft.hazardType}
+              />
+              <SelectField
+                label="Severity"
+                onChange={(value) => controller.updateDraft({ severity: value })}
+                options={HAZARD_SEVERITIES}
+                testId="marker-severity-input"
+                value={draft.severity}
+              />
+            </div>
+          ) : null}
+
+          {draft.type === 'casualty' ? (
+            <div className="grid gap-4 md:grid-cols-2">
+              <SelectField
+                label="Condition"
+                onChange={(value) => controller.updateDraft({ condition: value })}
+                options={CASUALTY_CONDITIONS}
+                testId="marker-condition-input"
+                value={draft.condition}
+              />
+              <SelectField
+                label="Evacuation Priority"
+                onChange={(value) => controller.updateDraft({ evacuationPriority: value })}
+                options={EVACUATION_PRIORITIES}
+                testId="marker-evacuation-priority-input"
+                value={draft.evacuationPriority}
+              />
+              <Field
+                label="Treatment"
+                onChange={(value) => controller.updateDraft({ treatment: value })}
+                testId="marker-treatment-input"
+                value={draft.treatment}
+              />
+              <Field
+                label="Found By"
+                onChange={(value) => controller.updateDraft({ foundBy: value })}
+                testId="marker-found-by-input"
+                value={draft.foundBy}
+              />
+            </div>
+          ) : null}
+
+          {runtimeError !== null ? <p className="text-sm text-rose-300">{runtimeError}</p> : null}
+
+          <div className="flex justify-between gap-3">
+            <div>
+              {dialog.mode === 'edit' ? (
+                <button
+                  className="rounded-lg border border-rose-500/30 bg-rose-500/10 px-4 py-2 text-sm text-rose-100"
+                  data-testid="marker-delete-btn"
+                  onClick={() => void controller.deleteEditingMarker()}
+                  type="button"
+                >
+                  Delete
+                </button>
+              ) : null}
+            </div>
+            <div className="flex gap-3">
+              <button
+                className="rounded-lg border border-stone-600 bg-stone-950 px-4 py-2 text-sm text-stone-200"
+                onClick={() => controller.closeDialog()}
+                type="button"
+              >
+                Cancel
+              </button>
+              <button
+                className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-4 py-2 text-sm text-emerald-100 disabled:opacity-50"
+                data-testid="marker-save-btn"
+                disabled={saving}
+                onClick={() => void controller.saveDraft()}
+                type="button"
+              >
+                {saving ? 'Saving...' : 'Save'}
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function Field(props: {
+  readonly label: string
+  readonly value: string
+  readonly onChange: (value: string) => void
+  readonly testId: string
+}) {
+  return (
+    <label className="block text-sm text-stone-200">
+      <span className="text-xs uppercase tracking-[0.2em] text-stone-300">{props.label}</span>
+      <input
+        className="mt-2 w-full rounded-lg border border-stone-700 bg-stone-950 px-3 py-2 text-sm text-stone-100"
+        data-testid={props.testId}
+        onChange={(event) => props.onChange(event.target.value)}
+        value={props.value}
+      />
+    </label>
+  )
+}
+
+function SelectField<TOption extends string>(props: {
+  readonly label: string
+  readonly value: TOption | ''
+  readonly onChange: (value: TOption | '') => void
+  readonly options: readonly TOption[]
+  readonly testId: string
+}) {
+  return (
+    <label className="block text-sm text-stone-200">
+      <span className="text-xs uppercase tracking-[0.2em] text-stone-300">{props.label}</span>
+      <select
+        className="mt-2 w-full rounded-lg border border-stone-700 bg-stone-950 px-3 py-2 text-sm text-stone-100"
+        data-testid={props.testId}
+        onChange={(event) => props.onChange(event.target.value as TOption | '')}
+        value={props.value}
+      >
+        <option value="">Select...</option>
+        {props.options.map((option) => (
+          <option key={option} value={option}>
+            {option}
+          </option>
+        ))}
+      </select>
+    </label>
+  )
+}
+
+function ReadOnlyField(props: { readonly label: string; readonly value: string }) {
+  return (
+    <div className="rounded-2xl border border-stone-800 bg-stone-950/80 p-4">
+      <p className="text-xs uppercase tracking-[0.2em] text-stone-300">{props.label}</p>
+      <p className="mt-2 text-sm text-stone-100">{props.value}</p>
+    </div>
+  )
+}

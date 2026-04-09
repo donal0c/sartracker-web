@@ -3,6 +3,7 @@ import {
   formatIrishGridReference,
   formatMapCoordinateBar,
   formatWGS84Degrees,
+  wgs84ToITM,
   wgs84ToTM65,
 } from '../../src/lib/coordinates'
 
@@ -51,6 +52,23 @@ describe('wgs84 to TM65 conversion', () => {
       { name: 'Carrauntoohil Summit', ref: 'V 80011 84363' },
       { name: 'Killarney Town Centre', ref: 'V 96415 90706' },
       { name: 'Tralee Town Centre', ref: 'Q 83589 14525' },
+    ])
+  })
+})
+
+describe('wgs84 to ITM conversion', () => {
+  it('converts the known Kerry operational points into ITM coordinates', () => {
+    expect(wgs84ToITM(51.99917, -9.74406).map((value) => Math.round(value))).toEqual([
+      480245,
+      584452,
+    ])
+    expect(wgs84ToITM(52.059444, -9.507222).map((value) => Math.round(value))).toEqual([
+      496646,
+      590793,
+    ])
+    expect(wgs84ToITM(52.270868, -9.702278).map((value) => Math.round(value))).toEqual([
+      483823,
+      614607,
     ])
   })
 })

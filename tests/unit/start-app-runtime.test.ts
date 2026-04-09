@@ -14,6 +14,7 @@ describe('app runtime startup', () => {
       createMissionStore: vi.fn(),
       startMissionAutosave: vi.fn(),
       startMissionRuntime: vi.fn(),
+      startMarkerRuntime: vi.fn(),
       startTrackingRuntime: vi.fn(),
     })
 
@@ -52,6 +53,7 @@ describe('app runtime startup', () => {
     const createMissionStore = vi.fn().mockReturnValue(store)
     const startMissionAutosave = vi.fn().mockReturnValue(vi.fn())
     const startMissionRuntime = vi.fn().mockResolvedValue({})
+    const startMarkerRuntime = vi.fn().mockResolvedValue({})
     const startTrackingRuntime = vi.fn().mockResolvedValue(vi.fn())
 
     await startAppRuntime({
@@ -60,6 +62,7 @@ describe('app runtime startup', () => {
       createMissionStore,
       startMissionAutosave,
       startMissionRuntime,
+      startMarkerRuntime,
       startTrackingRuntime,
     })
 
@@ -67,6 +70,10 @@ describe('app runtime startup', () => {
     expect(startMissionAutosave).toHaveBeenCalledWith(store)
     expect(startMissionRuntime).toHaveBeenCalledWith({
       missionStore: store,
+      applyRuntime: expect.any(Function),
+    })
+    expect(startMarkerRuntime).toHaveBeenCalledWith({
+      markerStore: store,
       applyRuntime: expect.any(Function),
     })
     expect(startTrackingRuntime).toHaveBeenCalledTimes(1)
@@ -82,6 +89,7 @@ describe('app runtime startup', () => {
       createMissionStore,
       startMissionAutosave,
       startMissionRuntime: vi.fn(),
+      startMarkerRuntime: vi.fn(),
       startTrackingRuntime: vi.fn(),
     })
 

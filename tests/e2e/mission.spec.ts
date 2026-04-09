@@ -76,7 +76,7 @@ test.describe('M5 mission control workflows', () => {
 
     await expect(page.getByTestId('mission-control')).toContainText('idle')
     const persistedMission = await page.evaluate(() => {
-      const raw = window.sessionStorage.getItem('sartracker:mission-harness')
+      const raw = window.sessionStorage.getItem('sartracker:browser-harness')
       if (raw === null) {
         return null
       }

@@ -3,14 +3,50 @@
 > **Read this before doing ANY work. Update this after EVERY chunk of work.**
 
 ## Last Updated
-2026-04-09 15:35 by Codex
+2026-04-09 16:20 by Codex
 
 ## Current State
-**Phase: Phase 1 build in progress — M1, M2, M3, M4, and M5 complete**
+**Phase: Phase 1 build in progress — M1, M2, M3, M4, M5, and M6 complete**
 
 `HANDOFF.md` is the authoritative continuity log for active repo work across Donal, Codex, and Claude Code. Update it after every meaningful chunk so the next agent can resume without re-discovery.
 
 ## What's Been Done
+
+### 2026-04-09 M6 markers implementation completed
+- Implemented the marker subsystem behind explicit boundaries in `src/features/markers/`
+- Added:
+  - marker definitions for fixed dropdown values and visual/icon metadata
+  - marker draft helpers for coordinate derivation, type switching, and persistence payload shaping
+  - marker runtime/store layer for mission-scoped load, create, edit, save, and delete flows
+  - marker GeoJSON shaping and MapLibre overlay sync with custom SVG icons and always-visible labels
+  - marker runtime bridge so mission changes refresh marker state automatically
+  - operator-facing modal dialog with:
+    - type selector
+    - read-only WGS84, ITM, and TM65 grid reference display
+    - type-specific fields for IPP/LKP, clue, hazard, and casualty markers
+    - create/edit/delete flows
+- Extended runtime/browser validation support:
+  - generalized the browser harness storage to support both mission and marker state
+  - wired marker runtime into `start-app-runtime.ts` so production and harness paths use the same store boundary
+- Hardened map interaction for reliability:
+  - added a dedicated invisible marker hitbox layer for robust selection
+  - added nearest-marker projected-distance fallback so edit/reopen still works if rendered-feature picking is temporarily stale
+- Hardened marker data correctness:
+  - ITM conversion now uses the dedicated `wgs84ToITM` helper
+  - clue confidence is stored as the numeric persistence score the Rust layer expects while the UI still shows human-readable labels
+- Added focused test coverage for:
+  - draft conversion and type-specific field stripping
+  - runtime load/create/edit/delete behavior
+  - marker GeoJSON shaping
+  - projected hit-testing fallback
+  - app runtime wiring for the marker subsystem
+  - browser-visible create/edit/delete marker workflows
+- Verification completed:
+  - `npm run test` ✅
+  - `npm run lint` ✅
+  - `npm run build` ✅
+  - `npm run test:e2e` ✅
+  - `cargo test --manifest-path src-tauri/Cargo.toml` ✅
 
 ### 2026-04-09 frontend validation and runtime hardening pass
 - Added a browser-only mission validation harness in `src/features/mission/mission-browser-harness.ts`
@@ -503,10 +539,10 @@
 - **Eamonn:** Traccar admin credentials for API testing (kmrtsar.ddns.net:8082)
 
 ## What's Next
-1. **Continue M3** — implement autosave orchestration and finalize archive/export boundaries
+1. **Start M7** — implement the layer/filter panel against the existing tracking/marker overlays
 2. **Keep the MissionStore boundary strict** — renderer should not accumulate raw SQL access
-3. **Decide/archive implementation boundary explicitly** — live SQLite is now established; archive/export still needs its final concrete format implementation
-4. **Make an explicit v1 magnetic declination decision** before implementing magnetic-bearing behaviour in later drawing work
+3. **Make an explicit v1 magnetic declination decision** before implementing magnetic-bearing behaviour in later drawing work
+4. **Lock M8 readiness details** before drawing-tool implementation if any bead ambiguity remains
 5. **When GeoPackage arrives:** run the conversion pipeline, test in MapLibre
 
 ## Active Beads

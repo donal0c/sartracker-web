@@ -10,6 +10,15 @@ import {
 } from '../../lib/map-health'
 import { persistBasemapPreference, readStoredBasemap } from '../../lib/map-preferences'
 import { createRasterStyle, KERRY_MAX_BOUNDS } from './map-style'
+import { useMissionStore } from '../mission/mission-store'
+import { findNearestMarkerId } from '../markers/marker-hit-testing'
+import { useMarkerStore } from '../markers/marker-store'
+import {
+  MARKER_HITBOX_LAYER_ID,
+  MARKER_LABEL_LAYER_ID,
+  MARKER_SYMBOL_LAYER_ID,
+  syncMarkerOverlay,
+} from '../markers/sync-marker-overlay'
 import { syncTrackingOverlay } from '../tracking/sync-tracking-overlay'
 import { useTrackingStore } from '../tracking/tracking-store'
 
@@ -47,6 +56,11 @@ export function useMapController(): MapController {
   )
   const style = useMemo(() => createRasterStyle(activeBasemapId), [activeBasemapId])
   const trackingSnapshot = useTrackingStore((state) => state.snapshot)
+  const markerActiveMissionId = useMarkerStore((state) => state.activeMissionId)
+  const markerController = useMarkerStore((state) => state.controller)
+  const markerState = useMarkerStore((state) => state.markers)
+  const missionPhase = useMissionStore((state) => state.phase)
+  const currentMissionId = useMissionStore((state) => state.currentMission?.id ?? null)
 
   useEffect(() => {
     persistBasemapPreference(activeBasemapId)
@@ -157,6 +171,106 @@ export function useMapController(): MapController {
       map.off('styledata', synchronizeOverlay)
     }
   }, [activeBasemapId, trackingSnapshot])
+
+  useEffect(() => {
+    const map = mapRef.current
+
+    if (map === null) {
+      return
+    }
+
+    const synchronizeOverlay = () => {
+      if (!map.isStyleLoaded()) {
+        return
+      }
+
+      void syncMarkerOverlay(map, markerState)
+    }
+
+    synchronizeOverlay()
+    map.on('styledata', synchronizeOverlay)
+
+    return () => {
+      map.off('styledata', synchronizeOverlay)
+    }
+  }, [activeBasemapId, markerState])
+
+  useEffect(() => {
+    const map = mapRef.current
+    const mapContainer = containerRef.current
+
+    if (map === null || mapContainer === null || markerController === null) {
+      return
+    }
+
+    const handleMarkerClick = (event: MouseEvent) => {
+      if (currentMissionId === null || missionPhase === 'recovery') {
+        return
+      }
+
+      const target = event.target
+      if (target instanceof HTMLElement && target.closest('button, input, select, label, a')) {
+        return
+      }
+
+      const containerBounds = mapContainer.getBoundingClientRect()
+      if (
+        event.clientX < containerBounds.left ||
+        event.clientX > containerBounds.right ||
+        event.clientY < containerBounds.top ||
+        event.clientY > containerBounds.bottom
+      ) {
+        return
+      }
+
+      const point = {
+        x: event.clientX - containerBounds.left,
+        y: event.clientY - containerBounds.top,
+      }
+      const queryPoint: [number, number] = [point.x, point.y]
+      const interactiveMarkerLayers = [
+        MARKER_HITBOX_LAYER_ID,
+        MARKER_SYMBOL_LAYER_ID,
+        MARKER_LABEL_LAYER_ID,
+      ].filter((layerId) => map.getLayer(layerId) !== undefined)
+      const markerFeature =
+        interactiveMarkerLayers.length === 0
+          ? null
+          : map.queryRenderedFeatures(queryPoint, {
+              layers: interactiveMarkerLayers,
+            })[0] ?? null
+
+      const renderedMarkerId =
+        markerFeature?.properties && 'markerId' in markerFeature.properties
+          ? markerFeature.properties.markerId
+          : null
+      const markerId =
+        typeof renderedMarkerId === 'string'
+          ? renderedMarkerId
+          : findNearestMarkerId(map, point, markerState)
+
+      if (markerId !== null) {
+        markerController.beginEdit(markerId)
+        return
+      }
+
+      const lngLat = map.unproject([point.x, point.y])
+      if (markerActiveMissionId !== currentMissionId) {
+        void markerController.refreshMission(currentMissionId).then(() => {
+          markerController.beginCreateAt(lngLat.lat, lngLat.lng)
+        })
+        return
+      }
+
+      markerController.beginCreateAt(lngLat.lat, lngLat.lng)
+    }
+
+    window.addEventListener('click', handleMarkerClick, true)
+
+    return () => {
+      window.removeEventListener('click', handleMarkerClick, true)
+    }
+  }, [currentMissionId, markerActiveMissionId, markerController, missionPhase, markerState])
 
   return {
     activeBasemapId,

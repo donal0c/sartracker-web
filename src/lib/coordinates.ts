@@ -59,6 +59,19 @@ function validateWGS84Range(lat: number, lon: number, context: string): void {
 }
 
 /**
+ * Converts WGS84 latitude/longitude coordinates into ITM easting/northing.
+ */
+export function wgs84ToITM(lat: number, lon: number): [number, number] {
+  const context = 'wgs84_to_itm'
+  const safeLat = validateNumeric(lat, 'latitude', context)
+  const safeLon = validateNumeric(lon, 'longitude', context)
+
+  validateWGS84Range(safeLat, safeLon, context)
+
+  return proj4('EPSG:4326', 'EPSG:2157', [safeLon, safeLat]) as [number, number]
+}
+
+/**
  * Converts WGS84 latitude/longitude coordinates into TM65 easting/northing.
  */
 export function wgs84ToTM65(lat: number, lon: number): [number, number] {
