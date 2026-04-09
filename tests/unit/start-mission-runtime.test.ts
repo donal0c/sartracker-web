@@ -132,6 +132,26 @@ describe('startMissionRuntime', () => {
     })
   })
 
+  it('rejects a future start time before it reaches the mission store', async () => {
+    const createMission = vi.fn()
+    const runtime = await startMissionRuntime({
+      missionStore: createMissionStoreStub({
+        createMission,
+      }),
+      applyRuntime: vi.fn(),
+      now: () => new Date('2026-04-09T11:00:00.000Z'),
+    })
+
+    await expect(
+      runtime.startMission({
+        name: 'Future Mission',
+        startTime: '2026-04-09T11:30:00.000Z',
+      }),
+    ).rejects.toThrow('Mission start time cannot be in the future.')
+
+    expect(createMission).not.toHaveBeenCalled()
+  })
+
   it('pauses and resumes the current mission through the runtime controller', async () => {
     const applyRuntime = vi.fn()
     const runtime = await startMissionRuntime({

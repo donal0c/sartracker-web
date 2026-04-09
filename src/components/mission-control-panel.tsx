@@ -22,6 +22,8 @@ export function MissionControlPanel() {
   const [duplicateWarning, setDuplicateWarning] = useState<string | null>(null)
   const [duplicateAcknowledged, setDuplicateAcknowledged] = useState(false)
   const [showFinishDialog, setShowFinishDialog] = useState(false)
+  const missionNameInputId = 'mission-name-input'
+  const missionOffsetInputId = 'mission-offset-input'
 
   useEffect(() => {
     const timer = window.setInterval(() => {
@@ -83,6 +85,7 @@ export function MissionControlPanel() {
       setStartError(null)
       setDuplicateWarning(null)
       setDuplicateAcknowledged(false)
+      setNow(new Date())
     } catch (error) {
       setStartError(toErrorMessage(error))
     }
@@ -98,10 +101,12 @@ export function MissionControlPanel() {
     try {
       if (phase === 'paused') {
         await controller.resumeMission()
+        setNow(new Date())
         return
       }
 
       await controller.pauseMission()
+      setNow(new Date())
     } catch (error) {
       setActionError(toErrorMessage(error))
     }
@@ -116,6 +121,7 @@ export function MissionControlPanel() {
 
     try {
       await controller.finishMission()
+      setNow(new Date())
       setShowFinishDialog(false)
     } catch (error) {
       setActionError(toErrorMessage(error))
@@ -131,6 +137,7 @@ export function MissionControlPanel() {
 
     try {
       await controller.resumeRecoverableMission()
+      setNow(new Date())
     } catch (error) {
       setActionError(toErrorMessage(error))
     }
@@ -145,6 +152,7 @@ export function MissionControlPanel() {
 
     try {
       await controller.startFresh()
+      setNow(new Date())
     } catch (error) {
       setActionError(toErrorMessage(error))
     }
@@ -175,13 +183,13 @@ export function MissionControlPanel() {
       <div className="mt-3 space-y-3">
         <div className="grid gap-3 sm:grid-cols-2">
           <div className="rounded-xl border border-stone-800 bg-stone-900/80 p-3">
-            <p className="text-xs uppercase tracking-[0.2em] text-stone-500">Elapsed</p>
+            <p className="text-xs uppercase tracking-[0.2em] text-stone-300">Elapsed</p>
             <p className="mt-1 font-mono text-xl text-stone-50" data-testid="mission-elapsed">
               {formatMissionDuration(timerState?.elapsedSeconds ?? 0)}
             </p>
           </div>
           <div className="rounded-xl border border-stone-800 bg-stone-900/80 p-3">
-            <p className="text-xs uppercase tracking-[0.2em] text-stone-500">Active Search</p>
+            <p className="text-xs uppercase tracking-[0.2em] text-stone-300">Active Search</p>
             <p className="mt-1 font-mono text-xl text-stone-50" data-testid="mission-active-search">
               {formatMissionDuration(timerState?.activeSeconds ?? 0)}
             </p>
@@ -189,13 +197,17 @@ export function MissionControlPanel() {
         </div>
 
         <div className="rounded-xl border border-stone-800 bg-stone-900/80 p-3">
-          <label className="block text-xs uppercase tracking-[0.2em] text-stone-500">
+          <label
+            className="block text-xs uppercase tracking-[0.2em] text-stone-300"
+            htmlFor={missionNameInputId}
+          >
             Mission Name
           </label>
           <input
             className="mt-2 w-full rounded-lg border border-stone-700 bg-stone-950 px-3 py-2 text-sm text-stone-100 outline-none ring-0"
             data-testid="mission-name-input"
             disabled={controller === null || phase !== 'idle'}
+            id={missionNameInputId}
             onChange={(event) => {
               setMissionName(event.target.value)
               setDuplicateWarning(null)
@@ -205,13 +217,17 @@ export function MissionControlPanel() {
             value={missionName}
           />
 
-          <label className="mt-3 block text-xs uppercase tracking-[0.2em] text-stone-500">
+          <label
+            className="mt-3 block text-xs uppercase tracking-[0.2em] text-stone-300"
+            htmlFor={missionOffsetInputId}
+          >
             Start Offset (Hours)
           </label>
           <input
             className="mt-2 w-full rounded-lg border border-stone-700 bg-stone-950 px-3 py-2 text-sm text-stone-100 outline-none ring-0"
             data-testid="mission-offset-input"
             disabled={controller === null || phase !== 'idle'}
+            id={missionOffsetInputId}
             max="48"
             min="0"
             onChange={(event) => setStartOffsetHours(event.target.value)}
@@ -221,7 +237,7 @@ export function MissionControlPanel() {
           />
 
           {currentMission !== null ? (
-            <p className="mt-3 text-xs text-stone-400">
+            <p className="mt-3 text-xs text-stone-300">
               Current mission: <span className="text-stone-200">{currentMission.name}</span>
             </p>
           ) : null}
@@ -231,7 +247,7 @@ export function MissionControlPanel() {
             <p className="mt-3 text-xs text-amber-300">{duplicateWarning}</p>
           ) : null}
           {controller === null ? (
-            <p className="mt-3 text-xs text-stone-500">
+            <p className="mt-3 text-xs text-stone-300">
               Mission controls activate in the desktop runtime.
             </p>
           ) : null}

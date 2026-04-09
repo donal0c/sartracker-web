@@ -3,7 +3,7 @@
 > **Read this before doing ANY work. Update this after EVERY chunk of work.**
 
 ## Last Updated
-2026-04-09 15:03 by Codex
+2026-04-09 15:35 by Codex
 
 ## Current State
 **Phase: Phase 1 build in progress — M1, M2, M3, M4, and M5 complete**
@@ -11,6 +11,41 @@
 `HANDOFF.md` is the authoritative continuity log for active repo work across Donal, Codex, and Claude Code. Update it after every meaningful chunk so the next agent can resume without re-discovery.
 
 ## What's Been Done
+
+### 2026-04-09 frontend validation and runtime hardening pass
+- Added a browser-only mission validation harness in `src/features/mission/mission-browser-harness.ts`
+  - enabled only in dev with `?missionHarness=1`
+  - reuses the real mission runtime/store flow instead of a fake UI-only state machine
+  - persists mission state in `sessionStorage` so reload/recovery flows can be tested headlessly
+- Added `tests/e2e/mission.spec.ts` for serious Playwright headless workflow coverage:
+  - back-dated start
+  - pause/resume timer behaviour
+  - finish flow
+  - finish-from-paused timing invariant
+  - duplicate mission-name warning
+  - invalid start offset guardrail
+  - recovery on reload with Resume / Start Fresh
+- Fixed a real mission UI timing issue:
+  - timer display could remain stale for up to one tick after pause/resume/finish/recovery actions
+  - mission action handlers now force an immediate `now` refresh after successful transitions
+- Hardened tracking orchestration in two important places:
+  - `createPollingManager` now distinguishes `idle` from `paused` instead of collapsing both into a boolean “don’t poll” state
+  - idle tracking now reports `Waiting for an active mission.` rather than the paused-mission warning
+  - corrupted tracking cache payloads are now ignored safely instead of aborting tracking runtime startup
+- Added/expanded test coverage for the above:
+  - `tests/unit/start-mission-runtime.test.ts`
+  - `tests/unit/polling-manager.test.ts`
+  - `tests/unit/start-tracking-runtime.test.ts`
+- Web shell cleanup completed as part of the validation pass:
+  - `index.html` now has the correct app title and meta description
+  - added `public/robots.txt`
+- Verification completed:
+  - `npm run test` ✅
+  - `npm run lint` ✅
+  - `npm run build` ✅
+  - `npm run test:e2e` ✅
+  - `cargo check --manifest-path src-tauri/Cargo.toml` ✅
+  - `cargo test --manifest-path src-tauri/Cargo.toml` ✅
 
 ### 2026-04-09 M5 mission UI implementation completed
 - Implemented the mission lifecycle subsystem behind explicit boundaries in `src/features/mission/`

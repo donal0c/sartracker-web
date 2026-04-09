@@ -100,8 +100,8 @@ export async function startTrackingRuntime(
 
   const cachedContents = await dependencies.cache.read()
   if (cachedContents !== null) {
-    const cachedSnapshot = parseTrackingCachePayload(cachedContents)
-    if (isTrackingCacheUsable(cachedSnapshot.cached_at, now())) {
+    const cachedSnapshot = safelyParseCachedSnapshot(cachedContents)
+    if (cachedSnapshot !== null && isTrackingCacheUsable(cachedSnapshot.cached_at, now())) {
       dependencies.applySnapshot(
         annotateTrackingSnapshotHealth(
           {
@@ -195,4 +195,14 @@ async function persistTrackingSnapshot(
 
 function createPositionKey(deviceId: string, timestamp: string): string {
   return `${deviceId}:${timestamp}`
+}
+
+function safelyParseCachedSnapshot(
+  contents: string,
+): ReturnType<typeof parseTrackingCachePayload> | null {
+  try {
+    return parseTrackingCachePayload(contents)
+  } catch {
+    return null
+  }
 }

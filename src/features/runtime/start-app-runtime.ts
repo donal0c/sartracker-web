@@ -73,7 +73,10 @@ export async function startAppRuntime(
       createPollingManager(client as TrackingPollerClient, {
         intervalMs: 30_000,
         staleThresholdMs: 60 * 60 * 1000,
-        shouldPoll: () => useMissionStore.getState().phase === 'active',
+        getPollingMode: () => {
+          const phase = useMissionStore.getState().phase
+          return phase === 'active' || phase === 'paused' ? phase : 'idle'
+        },
         getHistoryResetKey: () => useMissionStore.getState().currentMission?.id ?? null,
         getInitialBreadcrumbFrom: () => {
           const mission = useMissionStore.getState().currentMission

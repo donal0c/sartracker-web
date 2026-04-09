@@ -22,7 +22,7 @@ type PollingManagerOptions = {
   readonly intervalMs: number
   readonly staleThresholdMs: number
   readonly retryBaseMs?: number
-  readonly shouldPoll?: () => boolean
+  readonly getPollingMode?: () => 'active' | 'paused' | 'idle'
   readonly getHistoryResetKey?: () => string | null
   readonly getInitialBreadcrumbFrom?: () => Date | null
   readonly onSnapshot: (snapshot: TrackingSnapshot) => void
@@ -98,7 +98,8 @@ export function createPollingManager(
         lastGoodSnapshot = null
       }
 
-      if (!(options.shouldPoll?.() ?? true)) {
+      const pollingMode = options.getPollingMode?.() ?? 'active'
+      if (pollingMode !== 'active') {
         if (lastGoodSnapshot !== null) {
           options.onSnapshot(
             annotateTrackingSnapshotHealth(lastGoodSnapshot, {
@@ -109,8 +110,11 @@ export function createPollingManager(
         }
 
         publishStatus({
-          mode: lastGoodSnapshot === null ? 'idle' : 'online',
-          warning: 'Live refresh suspended while mission is paused.',
+          mode: 'idle',
+          warning:
+            pollingMode === 'paused'
+              ? 'Live refresh suspended while mission is paused.'
+              : 'Waiting for an active mission.',
         })
         scheduleNextPoll(options.intervalMs)
         return

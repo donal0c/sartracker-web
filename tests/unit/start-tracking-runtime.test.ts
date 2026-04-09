@@ -113,6 +113,28 @@ describe('startTrackingRuntime', () => {
     expect(applySnapshot).not.toHaveBeenCalled()
   })
 
+  it('ignores malformed cache payloads and still starts the poller', async () => {
+    const applySnapshot = vi.fn()
+    const createPoller = vi.fn().mockReturnValue({ start: vi.fn(), stop: vi.fn() })
+
+    await startTrackingRuntime({
+      config: { baseUrl: 'http://test:8082' },
+      createClient: vi.fn(),
+      createPoller,
+      cache: {
+        read: vi.fn().mockResolvedValue('{not-valid-json'),
+        write: vi.fn(),
+      },
+      missionStore: createMissionStoreStub(),
+      applySnapshot,
+      applyStatus: vi.fn(),
+      now: () => new Date('2026-04-06T10:35:00.000Z'),
+    })
+
+    expect(applySnapshot).not.toHaveBeenCalled()
+    expect(createPoller).toHaveBeenCalledTimes(1)
+  })
+
   it('persists devices and deduplicated positions into the active mission on snapshot updates', async () => {
     const upsertDevice = vi.fn().mockResolvedValue(undefined)
     const addPosition = vi.fn().mockResolvedValue(undefined)

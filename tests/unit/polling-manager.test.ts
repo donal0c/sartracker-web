@@ -213,7 +213,7 @@ describe('polling manager', () => {
       staleThresholdMs: 60 * 60 * 1000,
       onSnapshot: vi.fn(),
       onStatusChange,
-      shouldPoll: () => false,
+      getPollingMode: () => 'paused',
       now: () => new Date('2026-04-06T10:35:00.000Z'),
     })
 
@@ -226,6 +226,35 @@ describe('polling manager', () => {
     expect(onStatusChange).toHaveBeenCalledWith(
       expect.objectContaining({
         warning: 'Live refresh suspended while mission is paused.',
+      }),
+    )
+
+    poller.stop()
+  })
+
+  it('stays idle without authenticating before a mission starts', async () => {
+    const client = createClient()
+    const onStatusChange = vi.fn()
+
+    const poller = createPollingManager(client, {
+      intervalMs: 5_000,
+      staleThresholdMs: 60 * 60 * 1000,
+      onSnapshot: vi.fn(),
+      onStatusChange,
+      getPollingMode: () => 'idle',
+      now: () => new Date('2026-04-06T10:35:00.000Z'),
+    })
+
+    poller.start()
+    await vi.advanceTimersByTimeAsync(0)
+    await vi.advanceTimersByTimeAsync(5_000)
+
+    expect(client.authenticate).not.toHaveBeenCalled()
+    expect(client.getDevices).not.toHaveBeenCalled()
+    expect(onStatusChange).toHaveBeenCalledWith(
+      expect.objectContaining({
+        mode: 'idle',
+        warning: 'Waiting for an active mission.',
       }),
     )
 
