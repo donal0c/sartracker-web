@@ -12,6 +12,11 @@ import { isTauriRuntimeAvailable } from '../../lib/tauri-runtime'
 import { applyMarkerController, applyMarkerRuntime } from '../markers/marker-store'
 import { startMarkerRuntime } from '../markers/start-marker-runtime'
 import {
+  applyDrawingController,
+  applyDrawingRuntime,
+} from '../drawings/drawing-store'
+import { startDrawingRuntime } from '../drawings/start-drawing-runtime'
+import {
   applyMissionRuntime,
   applyMissionRuntimeController,
   useMissionStore,
@@ -36,6 +41,7 @@ type StartAppRuntimeDependencies = {
   readonly startMissionAutosave: (store: AutosaveStore) => () => void
   readonly startMissionRuntime: typeof startMissionRuntime
   readonly startMarkerRuntime: typeof startMarkerRuntime
+  readonly startDrawingRuntime: typeof startDrawingRuntime
   readonly startTrackingRuntime: typeof startTrackingRuntime
 }
 
@@ -46,6 +52,7 @@ const DEFAULT_DEPENDENCIES: StartAppRuntimeDependencies = {
   startMissionAutosave,
   startMissionRuntime,
   startMarkerRuntime,
+  startDrawingRuntime,
   startTrackingRuntime,
 }
 
@@ -75,6 +82,11 @@ export async function startAppRuntime(
     applyRuntime: applyMarkerRuntime,
   })
   applyMarkerController(markerRuntimeController)
+  const drawingRuntimeController = await dependencies.startDrawingRuntime({
+    drawingStore: missionStore,
+    applyRuntime: applyDrawingRuntime,
+  })
+  applyDrawingController(drawingRuntimeController)
   await dependencies.startTrackingRuntime({
     config: readTrackingRuntimeConfig(),
     createClient: createTraccarClient,

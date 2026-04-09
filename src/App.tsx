@@ -1,5 +1,7 @@
 import { Suspense, lazy } from 'react'
 
+import { DrawingRuntimeBridge } from './features/drawings/drawing-runtime-bridge'
+import { LayerFilterPanel } from './components/layer-filter-panel'
 import { MissionControlPanel } from './components/mission-control-panel'
 import { MarkerDialog } from './components/marker-dialog'
 import { MarkerRuntimeBridge } from './features/markers/marker-runtime-bridge'
@@ -20,6 +22,7 @@ function App() {
 
   return (
     <main className="min-h-screen bg-stone-950 text-stone-100">
+      <DrawingRuntimeBridge />
       <MarkerRuntimeBridge />
       <div className="mx-auto flex min-h-screen max-w-6xl flex-col px-6 py-10 lg:px-10">
         <header className="flex items-center justify-between border-b border-amber-500/20 pb-5">
@@ -73,6 +76,7 @@ function App() {
               <MissionControlPanel />
             </div>
             <TrackingStatusPanel />
+            <LayerFilterPanel />
           </aside>
         </section>
       </div>

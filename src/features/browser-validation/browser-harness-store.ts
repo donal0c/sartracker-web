@@ -1,13 +1,16 @@
 import type {
   CreateMissionInput,
+  Drawing,
   Marker,
   Mission,
+  UpsertDrawingInput,
   UpsertMarkerInput,
 } from '../../infrastructure/mission-store/tauri-mission-store'
 
 type BrowserHarnessState = {
   readonly missions: readonly Mission[]
   readonly markers: readonly Marker[]
+  readonly drawings: readonly Drawing[]
   readonly currentMissionId: string | null
   readonly recoverableMissionId: string | null
 }
@@ -24,6 +27,8 @@ type BrowserHarnessStore = {
   readonly listMarkers: (missionId: string) => Promise<readonly Marker[]>
   readonly upsertMarker: (input: UpsertMarkerInput) => Promise<Marker>
   readonly deleteMarker: (markerId: string) => Promise<boolean>
+  readonly listDrawings: (missionId: string) => Promise<readonly Drawing[]>
+  readonly upsertDrawing: (input: UpsertDrawingInput) => Promise<Drawing>
 }
 
 let browserHarnessStore: BrowserHarnessStore | null = null
@@ -133,7 +138,7 @@ export function getBrowserHarnessStore(): BrowserHarnessStore {
         : state.markers.find((marker) => marker.id === input.id) ?? null
       const now = new Date().toISOString()
       const marker = {
-        id: existingMarker?.id ?? createId('marker'),
+        id: existingMarker?.id ?? input.id ?? createId('marker'),
         mission_id: input.mission_id,
         type: input.type,
         name: input.name,
@@ -176,6 +181,41 @@ export function getBrowserHarnessStore(): BrowserHarnessStore {
       save()
       return true
     },
+    listDrawings: async (missionId) =>
+      state.drawings
+        .filter((drawing) => drawing.mission_id === missionId)
+        .sort((left, right) => left.display_order - right.display_order),
+    upsertDrawing: async (input) => {
+      const existingDrawing =
+        input.id === undefined || input.id === null
+          ? null
+          : state.drawings.find((drawing) => drawing.id === input.id) ?? null
+      const now = new Date().toISOString()
+      const drawing = {
+        id: existingDrawing?.id ?? input.id ?? createId('drawing'),
+        mission_id: input.mission_id,
+        type: input.type,
+        name: input.name,
+        description: input.description ?? null,
+        color: input.color ?? null,
+        width: input.width ?? null,
+        distance_m: input.distance_m ?? null,
+        temporary_measure: input.temporary_measure ?? null,
+        label: input.label ?? null,
+        display_order: input.display_order,
+        geometry_json: input.geometry_json,
+        metadata_json: input.metadata_json ?? null,
+        created_at: existingDrawing?.created_at ?? now,
+        updated_at: now,
+      } satisfies Drawing
+
+      state = {
+        ...state,
+        drawings: upsertDrawing(state.drawings, drawing),
+      }
+      save()
+      return drawing
+    },
   }
 
   return browserHarnessStore
@@ -183,12 +223,24 @@ export function getBrowserHarnessStore(): BrowserHarnessStore {
 
 function readHarnessState(): BrowserHarnessState {
   if (typeof window === 'undefined') {
-    return { missions: [], markers: [], currentMissionId: null, recoverableMissionId: null }
+    return {
+      missions: [],
+      markers: [],
+      drawings: [],
+      currentMissionId: null,
+      recoverableMissionId: null,
+    }
   }
 
   const stored = window.sessionStorage.getItem(BROWSER_HARNESS_STORAGE_KEY)
   if (stored === null) {
-    return { missions: [], markers: [], currentMissionId: null, recoverableMissionId: null }
+    return {
+      missions: [],
+      markers: [],
+      drawings: [],
+      currentMissionId: null,
+      recoverableMissionId: null,
+    }
   }
 
   try {
@@ -196,13 +248,20 @@ function readHarnessState(): BrowserHarnessState {
     return {
       missions: Array.isArray(parsed.missions) ? parsed.missions : [],
       markers: Array.isArray(parsed.markers) ? parsed.markers : [],
+      drawings: Array.isArray(parsed.drawings) ? parsed.drawings : [],
       currentMissionId:
         typeof parsed.currentMissionId === 'string' ? parsed.currentMissionId : null,
       recoverableMissionId:
         typeof parsed.recoverableMissionId === 'string' ? parsed.recoverableMissionId : null,
     }
   } catch {
-    return { missions: [], markers: [], currentMissionId: null, recoverableMissionId: null }
+    return {
+      missions: [],
+      markers: [],
+      drawings: [],
+      currentMissionId: null,
+      recoverableMissionId: null,
+    }
   }
 }
 
@@ -260,4 +319,13 @@ function upsertMarker(markers: readonly Marker[], marker: Marker): readonly Mark
   }
 
   return markers.map((candidate) => (candidate.id === marker.id ? marker : candidate))
+}
+
+function upsertDrawing(drawings: readonly Drawing[], drawing: Drawing): readonly Drawing[] {
+  const existingIndex = drawings.findIndex((candidate) => candidate.id === drawing.id)
+  if (existingIndex === -1) {
+    return [...drawings, drawing]
+  }
+
+  return drawings.map((candidate) => (candidate.id === drawing.id ? drawing : candidate))
 }

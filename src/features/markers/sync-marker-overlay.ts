@@ -1,36 +1,25 @@
 import type maplibregl from 'maplibre-gl'
 import type { GeoJsonProperties, Point } from 'geojson'
 
-import type { Marker } from '../../infrastructure/mission-store/tauri-mission-store'
+import { buildMarkerLayerFilter } from '../layers/map-layer-filters'
+import type { Marker, MarkerType } from '../../infrastructure/mission-store/tauri-mission-store'
 import { createMarkerFeatureCollection } from './marker-geojson'
 
 export const MARKER_SOURCE_ID = 'mission-markers'
-export const MARKER_SYMBOL_LAYER_ID = 'mission-markers-symbol'
 export const MARKER_HITBOX_LAYER_ID = 'mission-markers-hitbox'
-export const MARKER_LABEL_LAYER_ID = 'mission-markers-labels'
+export const MARKER_TYPES: readonly MarkerType[] = ['ipp_lkp', 'clue', 'hazard', 'casualty']
 
 /**
- * Synchronizes persisted mission markers into the current map style.
+ * Synchronizes persisted mission markers into the current map style and applies
+ * per-type visibility filters.
  */
 export async function syncMarkerOverlay(
   map: maplibregl.Map,
   markers: readonly Marker[],
+  markerTypeVisibility: Record<MarkerType, boolean>,
 ): Promise<void> {
   await ensureMarkerImages(map)
   ensureMarkerSource(map, createMarkerFeatureCollection(markers))
-
-  if (!map.getLayer(MARKER_SYMBOL_LAYER_ID)) {
-    map.addLayer({
-      id: MARKER_SYMBOL_LAYER_ID,
-      type: 'symbol',
-      source: MARKER_SOURCE_ID,
-      layout: {
-        'icon-image': ['get', 'iconId'],
-        'icon-allow-overlap': true,
-        'icon-ignore-placement': true,
-      },
-    })
-  }
 
   if (!map.getLayer(MARKER_HITBOX_LAYER_ID)) {
     map.addLayer({
@@ -46,27 +35,67 @@ export async function syncMarkerOverlay(
     })
   }
 
-  if (!map.getLayer(MARKER_LABEL_LAYER_ID)) {
-    map.addLayer({
-      id: MARKER_LABEL_LAYER_ID,
-      type: 'symbol',
-      source: MARKER_SOURCE_ID,
-      layout: {
-        'text-field': ['get', 'name'],
-        'text-size': 10,
-        'text-font': ['Open Sans Semibold', 'Arial Unicode MS Bold'],
-        'text-allow-overlap': true,
-        'text-ignore-placement': true,
-        'text-offset': [0, 1.1],
-        'text-anchor': 'top',
-      },
-      paint: {
-        'text-color': ['get', 'labelColor'],
-        'text-halo-color': '#FFFFFF',
-        'text-halo-width': 1.4,
-      },
-    })
+  for (const markerType of MARKER_TYPES) {
+    const symbolLayerId = getMarkerSymbolLayerId(markerType)
+    const labelLayerId = getMarkerLabelLayerId(markerType)
+
+    if (!map.getLayer(symbolLayerId)) {
+      map.addLayer({
+        id: symbolLayerId,
+        type: 'symbol',
+        source: MARKER_SOURCE_ID,
+        layout: {
+          'icon-image': ['get', 'iconId'],
+          'icon-allow-overlap': true,
+          'icon-ignore-placement': true,
+        },
+      })
+    }
+
+    if (!map.getLayer(labelLayerId)) {
+      map.addLayer({
+        id: labelLayerId,
+        type: 'symbol',
+        source: MARKER_SOURCE_ID,
+        layout: {
+          'text-field': ['get', 'name'],
+          'text-size': 10,
+          'text-font': ['Open Sans Semibold', 'Arial Unicode MS Bold'],
+          'text-allow-overlap': true,
+          'text-ignore-placement': true,
+          'text-offset': [0, 1.1],
+          'text-anchor': 'top',
+        },
+        paint: {
+          'text-color': ['get', 'labelColor'],
+          'text-halo-color': '#FFFFFF',
+          'text-halo-width': 1.4,
+        },
+      })
+    }
+
+    const typeFilter = buildMarkerLayerFilter(markerType, markerTypeVisibility[markerType])
+    map.setFilter(symbolLayerId, typeFilter)
+    map.setFilter(labelLayerId, typeFilter)
   }
+
+  const visibleTypeFilters = MARKER_TYPES.filter((type) => markerTypeVisibility[type]).map((type) =>
+    buildMarkerLayerFilter(type, true),
+  )
+  map.setFilter(
+    MARKER_HITBOX_LAYER_ID,
+    visibleTypeFilters.length === 0
+      ? ['==', ['get', 'markerId'], '__hidden__']
+      : ['any', ...visibleTypeFilters],
+  )
+}
+
+export function getMarkerSymbolLayerId(markerType: MarkerType): string {
+  return `mission-markers-symbol-${markerType}`
+}
+
+export function getMarkerLabelLayerId(markerType: MarkerType): string {
+  return `mission-markers-label-${markerType}`
 }
 
 function ensureMarkerSource(

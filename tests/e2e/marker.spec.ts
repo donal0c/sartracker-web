@@ -13,9 +13,10 @@ test.describe('M6 marker workflows', () => {
   test('creates a clue marker from a map click and persists it', async ({ page }) => {
     await clickMapCentre(page)
 
-    await expect(page.getByTestId('marker-dialog')).toBeVisible()
+    const dialog = page.getByTestId('marker-dialog')
+    await expect(dialog).toBeVisible()
     await page.getByTestId('marker-name-input').fill('Boot print')
-    await page.locator('label', { hasText: 'Clue' }).click()
+    await dialog.getByText('Clue', { exact: true }).click()
     await page.getByTestId('marker-clue-type-input').selectOption('Footprint')
     await page.getByTestId('marker-confidence-input').selectOption('Probable')
     await page.getByTestId('marker-found-by-input').fill('Team 2')
@@ -40,8 +41,9 @@ test.describe('M6 marker workflows', () => {
 
   test('edits and deletes an existing marker through the modal flow', async ({ page }) => {
     await clickMapCentre(page)
+    const dialog = page.getByTestId('marker-dialog')
     await page.getByTestId('marker-name-input').fill('Initial hazard')
-    await page.locator('label', { hasText: 'Hazard' }).click()
+    await dialog.getByText('Hazard', { exact: true }).click()
     await page.getByTestId('marker-hazard-type-input').selectOption('Cliff/Drop-off')
     await page.getByTestId('marker-severity-input').selectOption('High')
     await page.getByTestId('marker-save-btn').click()

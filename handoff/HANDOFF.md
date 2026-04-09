@@ -3,14 +3,57 @@
 > **Read this before doing ANY work. Update this after EVERY chunk of work.**
 
 ## Last Updated
-2026-04-09 16:20 by Codex
+2026-04-09 16:36 by Codex
 
 ## Current State
-**Phase: Phase 1 build in progress — M1, M2, M3, M4, M5, and M6 complete**
+**Phase: Phase 1 build in progress — M1, M2, M3, M4, M5, M6, and M7 complete**
 
 `HANDOFF.md` is the authoritative continuity log for active repo work across Donal, Codex, and Claude Code. Update it after every meaningful chunk so the next agent can resume without re-discovery.
 
 ## What's Been Done
+
+### 2026-04-09 M7 layer/filter panel implementation completed
+- Implemented the M7 visibility subsystem behind explicit boundaries in:
+  - `src/features/layers/`
+  - `src/features/drawings/`
+  - `src/components/layer-filter-panel.tsx`
+- Added a dedicated shared visibility store for:
+  - panel expanded/collapsed state
+  - per-device visibility
+  - per-marker-type visibility
+  - per-drawing-type visibility
+  - per-drawing-item visibility
+- Locked M7 UI decisions in implementation:
+  - panel location: right sidebar
+  - default state: expanded
+- Hardened map overlay architecture to align more closely with the S6 hybrid model:
+  - tracking overlay now uses a single mixed-geometry `tracking` source with point/line layers filtered by geometry type
+  - marker overlay now uses one source plus per-type symbol/label layers and a shared hitbox layer
+  - visibility is applied through explicit map filter expressions rather than ad hoc UI-only state
+- Added read-only drawing runtime support so the panel can already understand drawings before M8 editing tools exist:
+  - mission-scoped drawing store
+  - drawing runtime loader
+  - drawing runtime bridge
+  - browser harness support for seeded drawings
+- Added the operator-facing right-sidebar panel with:
+  - People section: search, per-device toggle, All On / All Off, colour and last-seen info
+  - Markers section: per-type toggles, All On / All Off
+  - Drawings section: per-type toggles, per-item toggles, All On / All Off, visible-count summary
+- Hardened validation/harness quality:
+  - browser harness now honors caller-provided ids when seeding markers/drawings
+  - marker Playwright tests were tightened to scope actions to the modal after the new sidebar introduced duplicate visible labels
+- Added focused test coverage for:
+  - visibility store behavior
+  - map layer filter helper logic
+  - drawing runtime loading
+  - app runtime startup wiring for drawing runtime
+  - browser-visible layer panel flows
+- Verification completed:
+  - `npm run test` ✅
+  - `npm run lint` ✅
+  - `npm run build` ✅
+  - `npm run test:e2e` ✅
+  - `cargo test --manifest-path src-tauri/Cargo.toml` ✅
 
 ### 2026-04-09 M6 markers implementation completed
 - Implemented the marker subsystem behind explicit boundaries in `src/features/markers/`
@@ -539,10 +582,10 @@
 - **Eamonn:** Traccar admin credentials for API testing (kmrtsar.ddns.net:8082)
 
 ## What's Next
-1. **Start M7** — implement the layer/filter panel against the existing tracking/marker overlays
+1. **Start M8** — implement drawing tools against the now-established visibility/runtime structure
 2. **Keep the MissionStore boundary strict** — renderer should not accumulate raw SQL access
 3. **Make an explicit v1 magnetic declination decision** before implementing magnetic-bearing behaviour in later drawing work
-4. **Lock M8 readiness details** before drawing-tool implementation if any bead ambiguity remains
+4. **Use the new drawing runtime/store as the entry point** rather than inventing a second drawing-state path
 5. **When GeoPackage arrives:** run the conversion pipeline, test in MapLibre
 
 ## Active Beads

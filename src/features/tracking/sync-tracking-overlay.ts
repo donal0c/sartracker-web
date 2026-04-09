@@ -1,33 +1,30 @@
 import type maplibregl from 'maplibre-gl'
-import type { FeatureCollection, Geometry, GeoJsonProperties } from 'geojson'
+import type { ExpressionSpecification } from 'maplibre-gl'
 
-import { createBreadcrumbFeatureCollection, createDeviceFeatureCollection } from './tracking-geojson'
+import { buildTrackingLayerFilter } from '../layers/map-layer-filters'
+import { createTrackingFeatureCollection } from './tracking-geojson'
 import type { TrackingSnapshot } from './tracking-types'
 
-const TRACKING_DEVICE_SOURCE_ID = 'tracking-devices'
-const TRACKING_BREADCRUMB_SOURCE_ID = 'tracking-breadcrumbs'
-const TRACKING_DEVICE_LAYER_ID = 'tracking-devices-circle'
-const TRACKING_BREADCRUMB_LAYER_ID = 'tracking-breadcrumbs-line'
+export const TRACKING_SOURCE_ID = 'tracking'
+export const TRACKING_DEVICE_LAYER_ID = 'tracking-devices-circle'
+export const TRACKING_BREADCRUMB_LAYER_ID = 'tracking-breadcrumbs-line'
 
 /**
- * Synchronizes tracking sources and layers into the current map style.
+ * Synchronizes tracking source/layers and applies the current device visibility filters.
  */
 export function syncTrackingOverlay(
   map: maplibregl.Map,
   snapshot: TrackingSnapshot,
+  hiddenDeviceIds: readonly string[],
 ): void {
-  ensureTrackingSource(
-    map,
-    TRACKING_BREADCRUMB_SOURCE_ID,
-    createBreadcrumbFeatureCollection(snapshot, 5 * 60 * 1000),
-  )
-  ensureTrackingSource(map, TRACKING_DEVICE_SOURCE_ID, createDeviceFeatureCollection(snapshot))
+  ensureTrackingSource(map, createTrackingFeatureCollection(snapshot, 5 * 60 * 1000))
 
   if (!map.getLayer(TRACKING_BREADCRUMB_LAYER_ID)) {
     map.addLayer({
       id: TRACKING_BREADCRUMB_LAYER_ID,
       type: 'line',
-      source: TRACKING_BREADCRUMB_SOURCE_ID,
+      source: TRACKING_SOURCE_ID,
+      filter: ['==', '$type', 'LineString'],
       paint: {
         'line-color': ['get', 'color'],
         'line-width': 1.5,
@@ -44,7 +41,8 @@ export function syncTrackingOverlay(
     map.addLayer({
       id: TRACKING_DEVICE_LAYER_ID,
       type: 'circle',
-      source: TRACKING_DEVICE_SOURCE_ID,
+      source: TRACKING_SOURCE_ID,
+      filter: ['==', '$type', 'Point'],
       paint: {
         'circle-color': ['get', 'color'],
         'circle-radius': 5,
@@ -69,21 +67,35 @@ export function syncTrackingOverlay(
       },
     })
   }
+
+  const visibilityFilter = buildTrackingLayerFilter(hiddenDeviceIds)
+  map.setFilter(TRACKING_BREADCRUMB_LAYER_ID, combineFilters(['==', '$type', 'LineString'], visibilityFilter))
+  map.setFilter(TRACKING_DEVICE_LAYER_ID, combineFilters(['==', '$type', 'Point'], visibilityFilter))
 }
 
 function ensureTrackingSource(
   map: maplibregl.Map,
-  sourceId: string,
-  data: FeatureCollection<Geometry, GeoJsonProperties>,
+  data: GeoJSON.FeatureCollection,
 ): void {
-  const source = map.getSource(sourceId) as maplibregl.GeoJSONSource | undefined
+  const source = map.getSource(TRACKING_SOURCE_ID) as maplibregl.GeoJSONSource | undefined
   if (source) {
     source.setData(data)
     return
   }
 
-  map.addSource(sourceId, {
+  map.addSource(TRACKING_SOURCE_ID, {
     type: 'geojson',
     data,
   })
+}
+
+function combineFilters(
+  baseFilter: ExpressionSpecification,
+  visibilityFilter: ExpressionSpecification | null,
+): ExpressionSpecification {
+  if (visibilityFilter === null) {
+    return baseFilter
+  }
+
+  return ['all', baseFilter, visibilityFilter]
 }

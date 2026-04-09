@@ -1,4 +1,4 @@
-import type { Feature, FeatureCollection, LineString, Point } from 'geojson'
+import type { Feature, FeatureCollection, Geometry, LineString, Point } from 'geojson'
 
 import { createBreadcrumbSegments } from './breadcrumb-accumulator'
 import { createDeviceColor } from './tracking-color'
@@ -21,6 +21,19 @@ type GeoJsonLineFeature = Feature<
     readonly color: string
   }
 >
+
+export function createTrackingFeatureCollection(
+  snapshot: TrackingSnapshot,
+  gapThresholdMs: number,
+): FeatureCollection<Geometry> {
+  return {
+    type: 'FeatureCollection',
+    features: [
+      ...createBreadcrumbFeatureCollection(snapshot, gapThresholdMs).features,
+      ...createDeviceFeatureCollection(snapshot).features,
+    ],
+  }
+}
 
 /**
  * Creates GeoJSON point features for the current tracked device positions.

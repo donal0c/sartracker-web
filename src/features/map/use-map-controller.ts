@@ -11,12 +11,14 @@ import {
 import { persistBasemapPreference, readStoredBasemap } from '../../lib/map-preferences'
 import { createRasterStyle, KERRY_MAX_BOUNDS } from './map-style'
 import { useMissionStore } from '../mission/mission-store'
+import { useLayerVisibilityStore } from '../layers/layer-visibility-store'
 import { findNearestMarkerId } from '../markers/marker-hit-testing'
 import { useMarkerStore } from '../markers/marker-store'
 import {
   MARKER_HITBOX_LAYER_ID,
-  MARKER_LABEL_LAYER_ID,
-  MARKER_SYMBOL_LAYER_ID,
+  MARKER_TYPES,
+  getMarkerLabelLayerId,
+  getMarkerSymbolLayerId,
   syncMarkerOverlay,
 } from '../markers/sync-marker-overlay'
 import { syncTrackingOverlay } from '../tracking/sync-tracking-overlay'
@@ -56,6 +58,8 @@ export function useMapController(): MapController {
   )
   const style = useMemo(() => createRasterStyle(activeBasemapId), [activeBasemapId])
   const trackingSnapshot = useTrackingStore((state) => state.snapshot)
+  const hiddenDeviceIds = useLayerVisibilityStore((state) => state.hiddenDeviceIds)
+  const markerTypeVisibility = useLayerVisibilityStore((state) => state.markerTypeVisibility)
   const markerActiveMissionId = useMarkerStore((state) => state.activeMissionId)
   const markerController = useMarkerStore((state) => state.controller)
   const markerState = useMarkerStore((state) => state.markers)
@@ -161,7 +165,7 @@ export function useMapController(): MapController {
         return
       }
 
-      syncTrackingOverlay(map, trackingSnapshot)
+      syncTrackingOverlay(map, trackingSnapshot, hiddenDeviceIds)
     }
 
     synchronizeOverlay()
@@ -170,7 +174,7 @@ export function useMapController(): MapController {
     return () => {
       map.off('styledata', synchronizeOverlay)
     }
-  }, [activeBasemapId, trackingSnapshot])
+  }, [activeBasemapId, hiddenDeviceIds, trackingSnapshot])
 
   useEffect(() => {
     const map = mapRef.current
@@ -184,7 +188,7 @@ export function useMapController(): MapController {
         return
       }
 
-      void syncMarkerOverlay(map, markerState)
+      void syncMarkerOverlay(map, markerState, markerTypeVisibility)
     }
 
     synchronizeOverlay()
@@ -193,7 +197,7 @@ export function useMapController(): MapController {
     return () => {
       map.off('styledata', synchronizeOverlay)
     }
-  }, [activeBasemapId, markerState])
+  }, [activeBasemapId, markerState, markerTypeVisibility])
 
   useEffect(() => {
     const map = mapRef.current
@@ -230,8 +234,10 @@ export function useMapController(): MapController {
       const queryPoint: [number, number] = [point.x, point.y]
       const interactiveMarkerLayers = [
         MARKER_HITBOX_LAYER_ID,
-        MARKER_SYMBOL_LAYER_ID,
-        MARKER_LABEL_LAYER_ID,
+        ...MARKER_TYPES.flatMap((markerType) => [
+          getMarkerSymbolLayerId(markerType),
+          getMarkerLabelLayerId(markerType),
+        ]),
       ].filter((layerId) => map.getLayer(layerId) !== undefined)
       const markerFeature =
         interactiveMarkerLayers.length === 0

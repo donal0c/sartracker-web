@@ -1,6 +1,8 @@
 import type {
   MissionStore,
 } from '../../infrastructure/mission-store/tauri-mission-store'
+import { applyDrawingController, applyDrawingRuntime } from '../drawings/drawing-store'
+import { startDrawingRuntime } from '../drawings/start-drawing-runtime'
 import { getBrowserHarnessStore } from '../browser-validation/browser-harness-store'
 import { applyMarkerController, applyMarkerRuntime } from '../markers/marker-store'
 import { startMarkerRuntime } from '../markers/start-marker-runtime'
@@ -37,6 +39,7 @@ export async function startMissionBrowserHarness(): Promise<void> {
     | 'listMarkers'
     | 'upsertMarker'
     | 'deleteMarker'
+    | 'listDrawings'
   >
   const controller = await startMissionRuntime({
     missionStore: browserStore,
@@ -50,4 +53,9 @@ export async function startMissionBrowserHarness(): Promise<void> {
     applyRuntime: applyMarkerRuntime,
   })
   applyMarkerController(markerController)
+  const drawingController = await startDrawingRuntime({
+    drawingStore: browserStore,
+    applyRuntime: applyDrawingRuntime,
+  })
+  applyDrawingController(drawingController)
 }
