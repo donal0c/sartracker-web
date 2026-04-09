@@ -3,14 +3,60 @@
 > **Read this before doing ANY work. Update this after EVERY chunk of work.**
 
 ## Last Updated
-2026-04-09 17:14 by Codex
+2026-04-09 21:03 by Codex
 
 ## Current State
-**Phase: Phase 1 build in progress — M1, M2, M3, M4, M5, M6, and M7 complete**
+**Phase: Phase 1 build in progress — M1, M2, M3, M4, M5, M6, M7, and M8 complete**
 
 `HANDOFF.md` is the authoritative continuity log for active repo work across Donal, Codex, and Claude Code. Update it after every meaningful chunk so the next agent can resume without re-discovery.
 
 ## What's Been Done
+
+### 2026-04-09 pre-M9 drawing architecture hardening pass
+- Performed a bounded structural refactor on the drawings subsystem before M9 measurement work
+- Split the former `src/features/drawings/drawing-builders.ts` hotspot into explicit concerns:
+  - `src/features/drawings/drawing-draft-factories.ts`
+    - default draft creation for line/search-area/range-ring/bearing-line/search-sector flows
+  - `src/features/drawings/drawing-persistence/`
+    - thin shared persistence/parsing helpers in `shared.ts`
+    - one type-specific persistence module per editable drawing type
+    - shared contract entrypoint in `index.ts`
+  - `src/features/drawings/drawing-builders.ts`
+    - now a stable facade only, preserving existing imports while delegating to the extracted modules
+- Split the former `src/features/drawings/start-drawing-runtime.ts` orchestration blob into clearer ownership:
+  - `src/features/drawings/drawing-runtime-state.ts`
+    - mutable runtime state container + immutable snapshot boundary
+  - `src/features/drawings/drawing-runtime-editor.ts`
+    - tool/sketch/dialog/edit-selection transitions
+  - `src/features/drawings/drawing-runtime-session.ts`
+    - mission refresh state, save/delete session updates, display-order logic
+  - `src/features/drawings/start-drawing-runtime.ts`
+    - now a thinner async coordinator over the extracted pure state helpers
+- Reduced map interaction drift by extracting shared guard logic into:
+  - `src/features/map/map-interaction-guards.ts`
+    - active-mission / recovery-mode ignore rules
+    - shared map-container bounds hit testing
+  - marker and drawing interaction helper modules now wrap that shared guard layer instead of re-implementing it separately
+- Added focused unit coverage for the new seams:
+  - `tests/unit/map-interaction-guards.test.ts`
+  - `tests/unit/drawing-runtime-editor.test.ts`
+  - `tests/unit/drawing-runtime-session.test.ts`
+- Important scope note:
+  - no product behavior was intentionally changed
+  - no M9 functionality was introduced
+  - no browser-harness redesign was attempted
+  - existing marker, drawing, map, and mission behavior stayed intact
+- Verification completed on the final tree:
+  - `npm run test` ✅
+  - `npm run lint` ✅
+  - `npm run build` ✅
+  - `npm run test:e2e` ✅
+  - `cargo test --manifest-path src-tauri/Cargo.toml` ✅
+- M9 readiness note:
+  - the drawings subsystem now has cleaner landing zones for measurement-related overlap:
+    - type-specific persistence instead of one builder dump file
+    - pure runtime editor/session seams instead of a single imperative controller blob
+    - shared map interaction guards so measurement does not need a third copy of click-ignore/bounds logic
 
 ### 2026-04-09 pre-M8 map controller refactor
 - Performed a bounded structural hardening pass on the map controller before M8 drawing work

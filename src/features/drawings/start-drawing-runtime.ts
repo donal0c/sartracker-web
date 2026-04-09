@@ -1,15 +1,30 @@
 import type { Drawing, MissionStore } from '../../infrastructure/mission-store/tauri-mission-store'
+import { buildDrawingInput } from './drawing-builders'
 import {
-  buildDrawingInput,
-  createBearingLineDraft,
-  createDraftFromDrawing,
-  createLineDraft,
-  createRangeRingDraft,
-  createSearchAreaDraft,
-  createSearchSectorDraft,
-} from './drawing-builders'
+  appendDrawingSketchPoint,
+  beginDrawingDialogAtPoint,
+  beginDrawingEdit,
+  cancelActiveDrawingTool,
+  closeDrawingDialog,
+  createDrawingRuntimeMutableState,
+  completeDrawingSketch,
+  selectDrawing,
+  setActiveDrawingTool,
+  snapshotDrawingRuntimeState,
+  updateDrawingDraft,
+} from './drawing-runtime-editor'
+import {
+  applyDrawingDeleteSuccess,
+  applyDrawingMissionRefreshFailure,
+  applyDrawingMissionRefreshSuccess,
+  applyDrawingSaveFailure,
+  applyDrawingSaveSuccess,
+  beginDrawingMissionRefresh,
+  beginDrawingSave,
+  getNextDrawingDisplayOrder,
+} from './drawing-runtime-session'
 import type { DrawingRuntimeState } from './drawing-store'
-import type { DrawingDraft, DrawingSketchState, DrawingTool } from './drawing-types'
+import type { DrawingDraft, DrawingTool } from './drawing-types'
 
 type DrawingStoreBoundary = Pick<
   MissionStore,
@@ -40,264 +55,129 @@ export type DrawingRuntimeController = {
   readonly selectDrawing: (drawingId: string | null) => void
 }
 
+/**
+ * Starts the drawing runtime controller used by the map, dialog, and mission bridges.
+ */
 export async function startDrawingRuntime(
   dependencies: StartDrawingRuntimeDependencies,
 ): Promise<DrawingRuntimeController> {
-  let activeMissionId: string | null = null
-  let drawings: readonly Drawing[] = []
-  let loading = false
-  let saving = false
-  let error: string | null = null
-  let activeTool: DrawingTool = 'select'
-  let sketch: DrawingSketchState = null
-  let dialog: DrawingRuntimeState['dialog'] = null
-  let selectedDrawingId: string | null = null
+  const state = createDrawingRuntimeMutableState()
 
   publishRuntime()
 
   return {
     refreshMission: async (missionId) => {
-      activeMissionId = missionId
-      error = null
-      dialog = null
-      sketch = null
-      selectedDrawingId = null
+      beginDrawingMissionRefresh(state, missionId)
+      publishRuntime()
 
       if (missionId === null) {
-        drawings = []
-        loading = false
-        publishRuntime()
         return
       }
 
-      loading = true
-      publishRuntime()
-
       try {
-        drawings = await dependencies.drawingStore.listDrawings(missionId)
-        loading = false
+        applyDrawingMissionRefreshSuccess(
+          state,
+          await dependencies.drawingStore.listDrawings(missionId),
+        )
         publishRuntime()
       } catch (runtimeError) {
-        drawings = []
-        loading = false
-        error = toErrorMessage(runtimeError)
+        applyDrawingMissionRefreshFailure(state, toErrorMessage(runtimeError))
         publishRuntime()
         throw runtimeError
       }
     },
     setActiveTool: (tool) => {
-      activeTool = tool
-      sketch = null
-      dialog = null
-      if (tool !== 'select') {
-        selectedDrawingId = null
-      }
-      error = null
+      setActiveDrawingTool(state, tool)
       publishRuntime()
     },
     cancelActiveTool: () => {
-      activeTool = 'select'
-      sketch = null
-      dialog = null
-      error = null
+      cancelActiveDrawingTool(state)
       publishRuntime()
     },
     appendSketchPoint: (lon, lat) => {
-      if (activeTool !== 'line' && activeTool !== 'search_area') {
-        return
-      }
-
-      if (sketch === null || sketch.tool !== activeTool) {
-        sketch = {
-          tool: activeTool,
-          points: [[lon, lat]],
-        }
-      } else {
-        sketch = {
-          ...sketch,
-          points: [...sketch.points, [lon, lat]],
-        }
-      }
-
-      error = null
+      appendDrawingSketchPoint(state, lon, lat)
       publishRuntime()
     },
     completeSketch: () => {
-      if (sketch === null) {
-        return
-      }
-
-      if (sketch.tool === 'line') {
-        if (sketch.points.length < 2) {
-          error = 'Lines require at least two points.'
-          publishRuntime()
-          return
-        }
-
-        dialog = {
-          mode: 'create',
-          draft: createLineDraft(sketch.points),
-        }
-      }
-
-      if (sketch.tool === 'search_area') {
-        if (sketch.points.length < 3) {
-          error = 'Search areas require at least three points.'
-          publishRuntime()
-          return
-        }
-
-        dialog = {
-          mode: 'create',
-          draft: createSearchAreaDraft(sketch.points),
-        }
-      }
-
-      sketch = null
-      error = null
+      completeDrawingSketch(state)
       publishRuntime()
     },
     beginDialogAtPoint: (tool, lon, lat) => {
-      activeTool = tool
-      error = null
-      sketch = null
-      dialog = {
-        mode: 'create',
-        draft:
-          tool === 'range_ring'
-            ? createRangeRingDraft([lon, lat])
-            : tool === 'bearing_line'
-              ? createBearingLineDraft([lon, lat])
-              : createSearchSectorDraft([lon, lat]),
-      }
+      beginDrawingDialogAtPoint(state, tool, lon, lat)
       publishRuntime()
     },
     beginEdit: (drawingId) => {
-      const drawing = drawings.find((candidate) => candidate.id === drawingId)
-      if (drawing === undefined) {
-        error = `Drawing not found: ${drawingId}`
-        publishRuntime()
-        return
-      }
-
-      selectedDrawingId = drawing.id
-      dialog = {
-        mode: 'edit',
-        draft: createDraftFromDrawing(drawing),
-      }
-      error = null
+      beginDrawingEdit(state, drawingId)
       publishRuntime()
     },
     updateDraft: (draft) => {
-      if (dialog === null) {
-        return
-      }
-
-      dialog = {
-        ...dialog,
-        draft,
-      }
+      updateDrawingDraft(state, draft)
       publishRuntime()
     },
     closeDialog: () => {
-      dialog = null
-      error = null
-      if (activeTool !== 'select') {
-        activeTool = 'select'
-      }
+      closeDrawingDialog(state)
       publishRuntime()
     },
     saveDialog: async () => {
-      if (activeMissionId === null || dialog === null) {
+      if (state.activeMissionId === null || state.dialog === null) {
         return null
       }
 
-      saving = true
-      error = null
+      beginDrawingSave(state)
       publishRuntime()
 
       try {
         const drawing = await dependencies.drawingStore.upsertDrawing(
           buildDrawingInput({
-            missionId: activeMissionId,
-            displayOrder: getDisplayOrder(drawings, dialog.draft.id),
-            draft: dialog.draft,
+            missionId: state.activeMissionId,
+            displayOrder: getNextDrawingDisplayOrder(state, state.dialog.draft.id),
+            draft: state.dialog.draft,
           }),
         )
 
-        drawings = upsertDrawing(drawings, drawing)
-        selectedDrawingId = drawing.id
-        dialog = null
-        activeTool = 'select'
-        saving = false
+        applyDrawingSaveSuccess(state, drawing)
         publishRuntime()
         return drawing
       } catch (runtimeError) {
-        saving = false
-        error = toErrorMessage(runtimeError)
+        applyDrawingSaveFailure(state, toErrorMessage(runtimeError))
         publishRuntime()
         throw runtimeError
       }
     },
     deleteSelectedDrawing: async () => {
-      if (selectedDrawingId === null) {
+      if (state.selectedDrawingId === null) {
         return false
       }
 
-      const didDelete = await dependencies.drawingStore.deleteDrawing(selectedDrawingId)
+      const didDelete = await dependencies.drawingStore.deleteDrawing(
+        state.selectedDrawingId,
+      )
       if (!didDelete) {
         return false
       }
 
-      drawings = drawings.filter((drawing) => drawing.id !== selectedDrawingId)
-      selectedDrawingId = null
-      dialog = null
-      activeTool = 'select'
-      error = null
+      applyDrawingDeleteSuccess(state)
       publishRuntime()
       return true
     },
     selectDrawing: (drawingId) => {
-      selectedDrawingId = drawingId
+      selectDrawing(state, drawingId)
       publishRuntime()
     },
   }
 
   function publishRuntime(): void {
-    dependencies.applyRuntime({
-      activeMissionId,
-      drawings,
-      loading,
-      saving,
-      error,
-      activeTool,
-      sketch,
-      dialog,
-      selectedDrawingId,
-    })
+    dependencies.applyRuntime(snapshotDrawingRuntimeState(state))
   }
 }
 
-function getDisplayOrder(drawings: readonly Drawing[], drawingId: string | null): number {
-  if (drawingId !== null) {
-    const existing = drawings.find((drawing) => drawing.id === drawingId)
-    if (existing !== undefined) {
-      return existing.display_order
-    }
-  }
-
-  return drawings.reduce((maxOrder, drawing) => Math.max(maxOrder, drawing.display_order), 0) + 1
-}
-
-function upsertDrawing(drawings: readonly Drawing[], drawing: Drawing): readonly Drawing[] {
-  const existingIndex = drawings.findIndex((candidate) => candidate.id === drawing.id)
-  if (existingIndex === -1) {
-    return [...drawings, drawing].sort((left, right) => left.display_order - right.display_order)
-  }
-
-  return drawings.map((candidate) => (candidate.id === drawing.id ? drawing : candidate))
-}
-
+/**
+ * Converts an unknown runtime error into an operator-visible message.
+ */
 function toErrorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : 'Drawing action failed.'
+  if (error instanceof Error && error.message.trim() !== '') {
+    return error.message
+  }
+
+  return 'Drawing operation failed.'
 }
