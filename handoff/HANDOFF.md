@@ -43,6 +43,12 @@
   - `npm run build` ✅
   - `npm run test:e2e` ✅
   - `cargo test --manifest-path src-tauri/Cargo.toml` ✅
+- Post-implementation headed browser validation:
+  - confirmed the map renders visually in a real browser session (not black/blank)
+  - confirmed tile requests were succeeding and browser console stayed clear
+  - visually validated line + LPB range-ring overlays on the live map canvas
+  - found and fixed a real UI issue where the drawing toolbar could intercept basemap button clicks
+  - re-verified basemap switching + M2/M8 Playwright coverage after the layout hardening
 
 ### 2026-04-09 map render regression fix
 - Investigated a user-reported blank/black map using isolated Playwright only

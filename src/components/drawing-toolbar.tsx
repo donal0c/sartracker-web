@@ -26,7 +26,7 @@ export function DrawingToolbar() {
 
   return (
     <div
-      className="absolute left-4 top-4 z-20 w-[18rem] rounded-2xl border border-stone-700 bg-stone-950/90 p-3 shadow-2xl shadow-black/40 backdrop-blur-sm"
+      className="absolute left-4 top-24 z-20 w-[18rem] rounded-2xl border border-stone-700 bg-stone-950/90 p-3 shadow-2xl shadow-black/40 backdrop-blur-sm"
       data-testid="drawing-toolbar"
     >
       <div className="flex items-center justify-between gap-3">
