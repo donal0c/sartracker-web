@@ -17,6 +17,28 @@ test.describe('M2 map shell', () => {
     await expect(page.getByTestId('basemap-btn-esri_satellite')).toBeVisible()
   })
 
+  test('keeps the live map container at a non-zero height', async ({ page }) => {
+    const dimensions = await page.evaluate(() => {
+      const mapContainer = document.querySelector('[data-testid="map-container"]')
+      const mapRoot = document.querySelector('.maplibregl-map')
+      const target = mapContainer ?? mapRoot
+
+      if (!(target instanceof HTMLElement)) {
+        return null
+      }
+
+      const rect = target.getBoundingClientRect()
+      return {
+        width: rect.width,
+        height: rect.height,
+      }
+    })
+
+    expect(dimensions).not.toBeNull()
+    expect(dimensions?.width ?? 0).toBeGreaterThan(100)
+    expect(dimensions?.height ?? 0).toBeGreaterThan(100)
+  })
+
   test('persists the selected basemap', async ({ page }) => {
     await page.getByTestId('basemap-btn-esri_topo').click()
     await expect(page.getByTestId('basemap-btn-esri_topo')).toHaveClass(/bg-amber-300/)

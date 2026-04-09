@@ -3,7 +3,7 @@
 > **Read this before doing ANY work. Update this after EVERY chunk of work.**
 
 ## Last Updated
-2026-04-09 16:36 by Codex
+2026-04-09 17:14 by Codex
 
 ## Current State
 **Phase: Phase 1 build in progress — M1, M2, M3, M4, M5, M6, and M7 complete**
@@ -11,6 +11,62 @@
 `HANDOFF.md` is the authoritative continuity log for active repo work across Donal, Codex, and Claude Code. Update it after every meaningful chunk so the next agent can resume without re-discovery.
 
 ## What's Been Done
+
+### 2026-04-09 pre-M8 map controller refactor
+- Performed a bounded structural hardening pass on the map controller before M8 drawing work
+- Split the former `src/features/map/use-map-controller.ts` hotspot into explicit concerns:
+  - `src/features/map/use-map-instance.ts`
+    - MapLibre instance lifecycle
+    - basemap/style management
+    - hover coordinate state
+    - map health state
+  - `src/features/map/use-map-overlays.ts`
+    - tracking overlay synchronization
+    - marker overlay synchronization
+  - `src/features/map/use-map-marker-interactions.ts`
+    - click-driven marker edit/create orchestration
+  - `src/features/map/map-marker-interactions.ts`
+    - small pure interaction helpers extracted so click behavior is easier to reason about and test
+- Kept `src/features/map/use-map-controller.ts` as the stable public facade consumed by the map view, so no component/API churn was introduced
+- Added focused regression coverage in `tests/unit/map-marker-interactions.test.ts` for:
+  - click-ignore rules
+  - map-bounds hit testing
+  - interactive marker layer selection
+  - rendered-marker-id vs nearest-marker fallback behavior
+- Important scope note:
+  - no product behavior was intentionally changed
+  - no drawing/measurement functionality was introduced
+  - no offline map scope changed
+- Verification completed:
+  - `npm run test` ✅
+  - `npm run lint` ✅
+  - `npm run build` ✅
+  - `npm run test:e2e` ✅
+  - `cargo test --manifest-path src-tauri/Cargo.toml` ✅
+
+### 2026-04-09 map render regression fix
+- Investigated a user-reported blank/black map using isolated Playwright only
+- Root cause:
+  - the live MapLibre container could collapse to zero layout height even though the inner canvas still existed
+  - this was caused by the map shell relying on an absolutely positioned ref target inside a wrapper that only guaranteed `min-height`
+- Fixed the map shell in `src/components/map-view.tsx` by:
+  - giving the outer map frame a real fixed height (`h-[560px]`)
+  - making the ref target participate in layout with `h-full w-full` instead of `absolute inset-0`
+- Added a regression Playwright test in `tests/e2e/map.spec.ts` that asserts the live map container keeps a non-zero height
+- Verification completed:
+  - targeted red/green Playwright regression test ✅
+  - `npx playwright test tests/e2e/map.spec.ts` ✅
+  - `npm run build` ✅
+
+### 2026-04-09 documentation alignment pass
+- Updated `README.md` to reflect the actual implementation line instead of planned functionality:
+  - explicitly states that M1-M7 are complete and M8-M10 remain open
+  - distinguishes current tile-caching support from true bundled offline maps
+  - adds the browser validation harness workflow for manual testing
+- Updated `OVERVIEW.md` so it no longer describes the standalone app as pre-build:
+  - current execution state now reflects the implemented milestone line
+  - added explicit sections for what already works in the standalone app vs what is still missing
+- No production code changed in this pass
 
 ### 2026-04-09 M7 layer/filter panel implementation completed
 - Implemented the M7 visibility subsystem behind explicit boundaries in:

@@ -18,12 +18,12 @@ export function MapView() {
   } = useMapController()
 
   return (
-    <div className="relative min-h-[560px] overflow-hidden rounded-2xl border border-stone-700 bg-stone-950">
+    <div className="relative h-[560px] overflow-hidden rounded-2xl border border-stone-700 bg-stone-950">
       <BasemapSwitcher
         activeBasemapId={activeBasemapId}
         onBasemapChange={handleBasemapChange}
       />
-      <div className="absolute inset-0" data-testid="map-container" ref={containerRef} />
+      <div className="h-full w-full" data-testid="map-container" ref={containerRef} />
       <div className="pointer-events-none absolute right-4 top-4 z-10 flex flex-col items-end gap-2">
         <MapStatusBadge health={mapHealth} />
         <div className="rounded-full border border-emerald-400/30 bg-emerald-400/10 px-3 py-1 text-xs text-emerald-100">
