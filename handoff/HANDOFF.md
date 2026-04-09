@@ -3,7 +3,7 @@
 > **Read this before doing ANY work. Update this after EVERY chunk of work.**
 
 ## Last Updated
-2026-04-08 09:04 by Codex
+2026-04-09 09:28 by Codex
 
 ## Current State
 **Phase: Phase 1 build in progress — M1, M2, and M3 complete**
@@ -161,6 +161,20 @@
   - M4 can proceed after a short design pass and targeted product clarifications
   - M5 should not start until the lifecycle model is locked
   - M6 can proceed once the UI/product choices above are answered
+
+### 2026-04-09 M5 research checklist added
+- Added a focused research follow-up comment to bead `sartracker-web-4wh` so Claude Code/the planning side can resolve the remaining M5 lifecycle ambiguity before implementation
+- The checklist now explicitly asks for:
+  - canonical mission lifecycle model
+  - finalize scope
+  - exact persisted status set
+  - finish/pause tracking behavior
+  - Start Fresh semantics
+  - admin unlock approach
+  - timer formulas
+  - locked operator-facing confirmation/recovery copy
+- Current recommendation remains unchanged:
+  - do not start M5 implementation until the bead body is rewritten to reflect the resolved lifecycle model
 
 ### 2026-04-08 M3 persistence started — first slice
 - Added a real backend persistence boundary in `src-tauri/src/persistence.rs`
