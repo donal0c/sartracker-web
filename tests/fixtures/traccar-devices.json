@@ -1,0 +1,28 @@
+[
+  {
+    "id": 1,
+    "name": "Donal Phone",
+    "uniqueId": "872656784",
+    "status": "online",
+    "lastUpdate": "2026-04-06T10:30:00.000Z",
+    "positionId": 100,
+    "disabled": false,
+    "groupId": 0,
+    "category": "person",
+    "attributes": {
+      "speedUnit": "kn"
+    }
+  },
+  {
+    "id": 2,
+    "name": "Team Lead",
+    "uniqueId": "123456789",
+    "status": "offline",
+    "lastUpdate": "2026-04-06T09:00:00.000Z",
+    "positionId": 101,
+    "disabled": false,
+    "groupId": 0,
+    "category": "person",
+    "attributes": {}
+  }
+]

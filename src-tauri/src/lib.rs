@@ -1,4 +1,5 @@
 mod persistence;
+mod tracking_cache;
 
 use std::sync::Arc;
 
@@ -12,6 +13,7 @@ use persistence::{
     pause_mission, resume_mission, sync_mission_store_backup, upsert_device, upsert_drawing,
     upsert_marker, MissionStoreState,
 };
+use tracking_cache::{read_tracking_cache, write_tracking_cache};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -56,6 +58,9 @@ pub fn run() {
             pause_mission,
             resume_mission,
             finish_mission
+            ,
+            read_tracking_cache,
+            write_tracking_cache
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

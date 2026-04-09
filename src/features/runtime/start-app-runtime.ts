@@ -2,15 +2,31 @@ import {
   type AutosaveStore,
   startMissionAutosave,
 } from '../persistence/mission-autosave'
-import { createTauriMissionStore } from '../../infrastructure/mission-store/tauri-mission-store'
+import { createTauriTrackingCache } from '../../infrastructure/tracking-cache/tauri-tracking-cache'
+import {
+  createTauriMissionStore,
+  type MissionStore,
+} from '../../infrastructure/mission-store/tauri-mission-store'
 import { registerServiceWorker } from '../../lib/register-service-worker'
 import { isTauriRuntimeAvailable } from '../../lib/tauri-runtime'
+import {
+  createPollingManager,
+  type TrackingPollerClient,
+} from '../tracking/polling-manager'
+import { createTraccarClient } from '../tracking/traccar-client'
+import { applyTrackingSnapshot, applyTrackingStatus } from '../tracking/tracking-store'
+import { readTrackingRuntimeConfig } from '../tracking/tracking-runtime-config'
+import {
+  startTrackingRuntime,
+  type TrackingRuntimeMissionStore,
+} from '../tracking/start-tracking-runtime'
 
 type StartAppRuntimeDependencies = {
   readonly registerServiceWorker: () => Promise<void>
   readonly isTauriRuntimeAvailable: () => boolean
-  readonly createMissionStore: () => AutosaveStore
+  readonly createMissionStore: () => MissionStore
   readonly startMissionAutosave: (store: AutosaveStore) => () => void
+  readonly startTrackingRuntime: typeof startTrackingRuntime
 }
 
 const DEFAULT_DEPENDENCIES: StartAppRuntimeDependencies = {
@@ -18,6 +34,7 @@ const DEFAULT_DEPENDENCIES: StartAppRuntimeDependencies = {
   isTauriRuntimeAvailable,
   createMissionStore: createTauriMissionStore,
   startMissionAutosave,
+  startTrackingRuntime,
 }
 
 /**
@@ -32,5 +49,23 @@ export async function startAppRuntime(
     return
   }
 
-  dependencies.startMissionAutosave(dependencies.createMissionStore())
+  const missionStore = dependencies.createMissionStore()
+  const trackingMissionStore: TrackingRuntimeMissionStore = missionStore
+
+  dependencies.startMissionAutosave(missionStore)
+  await dependencies.startTrackingRuntime({
+    config: readTrackingRuntimeConfig(),
+    createClient: createTraccarClient,
+    createPoller: (client, hooks) =>
+      createPollingManager(client as TrackingPollerClient, {
+        intervalMs: 30_000,
+        staleThresholdMs: 60 * 60 * 1000,
+        onSnapshot: hooks.onSnapshot,
+        onStatusChange: hooks.onStatusChange,
+      }),
+    cache: createTauriTrackingCache(),
+    missionStore: trackingMissionStore,
+    applySnapshot: applyTrackingSnapshot,
+    applyStatus: applyTrackingStatus,
+  })
 }

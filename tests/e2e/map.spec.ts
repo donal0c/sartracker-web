@@ -43,4 +43,11 @@ test.describe('M2 map shell', () => {
     await expect(page.getByTestId('coords-combined')).toContainText('°')
     await expect(page.getByTestId('coords-combined')).toContainText('|')
   })
+
+  test('shows the operator-facing tracking status panel', async ({ page }) => {
+    await expect(page.getByTestId('tracking-status')).toBeVisible()
+    await expect(page.getByTestId('tracking-status')).toContainText('Tracking')
+    await expect(page.getByTestId('tracking-status')).toContainText('idle')
+    await expect(page.getByTestId('tracking-status')).toContainText('Tracking is not configured.')
+  })
 })

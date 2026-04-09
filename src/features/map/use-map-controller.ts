@@ -10,6 +10,8 @@ import {
 } from '../../lib/map-health'
 import { persistBasemapPreference, readStoredBasemap } from '../../lib/map-preferences'
 import { createRasterStyle, KERRY_MAX_BOUNDS } from './map-style'
+import { syncTrackingOverlay } from '../tracking/sync-tracking-overlay'
+import { useTrackingStore } from '../tracking/tracking-store'
 
 export type HoverCoordinate = {
   readonly latitude: number | null
@@ -44,6 +46,7 @@ export function useMapController(): MapController {
     createLoadingMapHealth(getBasemapById(initialBasemapId).label),
   )
   const style = useMemo(() => createRasterStyle(activeBasemapId), [activeBasemapId])
+  const trackingSnapshot = useTrackingStore((state) => state.snapshot)
 
   useEffect(() => {
     persistBasemapPreference(activeBasemapId)
@@ -131,6 +134,29 @@ export function useMapController(): MapController {
     map.setStyle(style)
     previousBasemapIdRef.current = activeBasemapId
   }, [activeBasemapId, style])
+
+  useEffect(() => {
+    const map = mapRef.current
+
+    if (map === null) {
+      return
+    }
+
+    const synchronizeOverlay = () => {
+      if (!map.isStyleLoaded()) {
+        return
+      }
+
+      syncTrackingOverlay(map, trackingSnapshot)
+    }
+
+    synchronizeOverlay()
+    map.on('styledata', synchronizeOverlay)
+
+    return () => {
+      map.off('styledata', synchronizeOverlay)
+    }
+  }, [activeBasemapId, trackingSnapshot])
 
   return {
     activeBasemapId,

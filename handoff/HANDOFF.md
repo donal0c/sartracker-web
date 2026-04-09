@@ -3,14 +3,57 @@
 > **Read this before doing ANY work. Update this after EVERY chunk of work.**
 
 ## Last Updated
-2026-04-09 09:28 by Codex
+2026-04-09 13:14 by Codex
 
 ## Current State
-**Phase: Phase 1 build in progress — M1, M2, and M3 complete**
+**Phase: Phase 1 build in progress — M1, M2, M3, and M4 complete**
 
 `HANDOFF.md` is the authoritative continuity log for active repo work across Donal, Codex, and Claude Code. Update it after every meaningful chunk so the next agent can resume without re-discovery.
 
 ## What's Been Done
+
+### 2026-04-09 M4 tracking implementation completed
+- Implemented the full Traccar tracking runtime behind explicit boundaries in `src/features/tracking/`
+- Added:
+  - transport client with session/basic/bearer auth handling
+  - polling manager with retry/backoff, incremental breadcrumbs, and last-good snapshot behavior
+  - cache payload codec plus Tauri-backed transport cache with atomic temp+rename writes
+  - runtime orchestrator that hydrates from cache, starts polling, writes cache updates, and persists positions/devices into the active mission store
+  - map overlay sync for tracked devices and breadcrumb trails
+  - operator-facing tracking status panel in the shell
+- Hardened degraded-mode behavior:
+  - stale device marking after the 1 hour threshold
+  - cached snapshot health annotation with 5 minute cache TTL and 4 hour max cache age
+  - OFFLINE MODE warning while serving the last known positions
+  - CONNECTION RESTORED signal on recovery
+  - stale device map indicator via yellow circle stroke
+- Refined startup architecture:
+  - `start-app-runtime.ts` now owns tracking startup alongside autosave
+  - runtime config loading is isolated
+  - map overlay resync now survives basemap style swaps
+- Added canonical Traccar fixtures:
+  - `tests/fixtures/traccar-devices.json`
+  - `tests/fixtures/traccar-positions.json`
+  - `tests/fixtures/traccar-breadcrumbs.json`
+- Added focused test coverage for:
+  - color derivation
+  - payload normalization
+  - breadcrumb accumulation/segmentation
+  - polling/retry/offline/recovery behavior
+  - cache parsing and cache health rules
+  - tracking runtime orchestration
+  - Tauri tracking cache adapter/commands
+  - tracking GeoJSON shaping
+  - browser-visible tracking panel
+- Verification completed:
+  - `npm run test` ✅
+  - `npm run lint` ✅
+  - `npm run build` ✅
+  - `npm run test:e2e` ✅
+  - `cargo check --manifest-path src-tauri/Cargo.toml` ✅
+  - `cargo test --manifest-path src-tauri/Cargo.toml` ✅
+- Follow-up note:
+  - M4 is implementation-complete for the current bead, but live field validation against real KMRT Traccar credentials should still happen once those credentials are available
 
 ### 2026-04-08 daily code hardening
 - Reviewed the current renderer/runtime structure against the repo standards in `CLAUDE.md` and selected only low-risk hardening changes

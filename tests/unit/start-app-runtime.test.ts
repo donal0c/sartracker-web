@@ -12,6 +12,7 @@ describe('app runtime startup', () => {
       isTauriRuntimeAvailable: vi.fn().mockReturnValue(false),
       createMissionStore: vi.fn(),
       startMissionAutosave: vi.fn(),
+      startTrackingRuntime: vi.fn(),
     })
 
     expect(registerServiceWorker).toHaveBeenCalledTimes(1)
@@ -24,16 +25,19 @@ describe('app runtime startup', () => {
     }
     const createMissionStore = vi.fn().mockReturnValue(store)
     const startMissionAutosave = vi.fn().mockReturnValue(vi.fn())
+    const startTrackingRuntime = vi.fn().mockResolvedValue(vi.fn())
 
     await startAppRuntime({
       registerServiceWorker: vi.fn().mockResolvedValue(undefined),
       isTauriRuntimeAvailable: vi.fn().mockReturnValue(true),
       createMissionStore,
       startMissionAutosave,
+      startTrackingRuntime,
     })
 
     expect(createMissionStore).toHaveBeenCalledTimes(1)
     expect(startMissionAutosave).toHaveBeenCalledWith(store)
+    expect(startTrackingRuntime).toHaveBeenCalledTimes(1)
   })
 
   it('does not create the mission store outside Tauri', async () => {
@@ -45,6 +49,7 @@ describe('app runtime startup', () => {
       isTauriRuntimeAvailable: vi.fn().mockReturnValue(false),
       createMissionStore,
       startMissionAutosave,
+      startTrackingRuntime: vi.fn(),
     })
 
     expect(createMissionStore).not.toHaveBeenCalled()

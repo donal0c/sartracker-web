@@ -1,0 +1,37 @@
+[
+  {
+    "id": 100,
+    "deviceId": 1,
+    "latitude": 51.9985,
+    "longitude": -9.7426,
+    "altitude": 320.5,
+    "speed": 1.2,
+    "accuracy": 8.0,
+    "fixTime": "2026-04-06T10:30:00.000Z",
+    "serverTime": "2026-04-06T10:30:01.000Z",
+    "deviceTime": "2026-04-06T10:30:00.000Z",
+    "attributes": {
+      "batteryLevel": 85,
+      "motion": true
+    },
+    "valid": true,
+    "protocol": "osmand"
+  },
+  {
+    "id": 101,
+    "deviceId": 2,
+    "latitude": 52.0012,
+    "longitude": -9.7501,
+    "altitude": 280.0,
+    "speed": 0.0,
+    "accuracy": 15.0,
+    "fixTime": "2026-04-06T09:00:00.000Z",
+    "serverTime": "2026-04-06T09:00:02.000Z",
+    "deviceTime": "2026-04-06T09:00:00.000Z",
+    "attributes": {
+      "batteryLevel": 42
+    },
+    "valid": true,
+    "protocol": "osmand"
+  }
+]

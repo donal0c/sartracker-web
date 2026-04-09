@@ -1,6 +1,7 @@
 import { Suspense, lazy } from 'react'
 
 import { useAppStore } from './lib/app-store'
+import { TrackingStatusPanel } from './components/tracking-status-panel'
 
 const MapView = lazy(async () => {
   const module = await import('./components/map-view')
@@ -30,7 +31,7 @@ function App() {
             </h1>
           </div>
           <div className="rounded-full border border-emerald-400/30 bg-emerald-400/10 px-3 py-1 text-sm text-emerald-200">
-            Scaffold {status}
+            Runtime {status}
           </div>
         </header>
 
@@ -54,16 +55,17 @@ function App() {
           </div>
 
           <aside className="rounded-3xl border border-stone-800 bg-stone-900/80 p-6">
-            <h2 className="text-lg font-semibold text-stone-50">Map Baseline</h2>
+            <h2 className="text-lg font-semibold text-stone-50">Operations Status</h2>
             <ul className="mt-4 space-y-3 text-sm leading-6 text-stone-300">
               <li>Four locked basemaps with persistent selection.</li>
               <li>Coordinate bar formats WGS84 and TM65 side by side.</li>
               <li>Service worker caches viewed tiles for offline resilience.</li>
-              <li>Map rendering stays thin while coordinate math lives in testable modules.</li>
+              <li>Tracking state survives restarts through the transport cache and mission store.</li>
             </ul>
             <div className="mt-6 rounded-2xl border border-stone-700 bg-stone-950/70 p-4 text-sm text-stone-400">
-              Scaffold status: <span className="text-emerald-300">{status}</span>
+              Runtime status: <span className="text-emerald-300">{status}</span>
             </div>
+            <TrackingStatusPanel />
           </aside>
         </section>
       </div>
