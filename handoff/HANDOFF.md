@@ -3,14 +3,61 @@
 > **Read this before doing ANY work. Update this after EVERY chunk of work.**
 
 ## Last Updated
-2026-04-10 15:49 by Codex
+2026-04-10 16:03 by Codex
 
 ## Current State
-**Phase: Phase 1 operational core complete — M1 through M10 complete; parity foundation now includes M12, M14, and M16; next logical bead is M17**
+**Phase: Phase 1 operational core complete — M1 through M10 complete; parity foundation now includes M12, M14, M16, and M17; next logical bead is M18**
 
 `HANDOFF.md` is the authoritative continuity log for active repo work across Donal, Codex, and Claude Code. Update it after every meaningful chunk so the next agent can resume without re-discovery.
 
 ## What's Been Done
+
+### 2026-04-10 M17 layer tree and feature inspection UI completed
+- Replaced the flat layer/filter panel with a real operator-facing tree workspace in:
+  - `src/components/layer-filter-panel.tsx`
+- Added dedicated local UI state for the tree surface in:
+  - `src/features/layers/layer-tree-ui-store.ts`
+- Added tree-domain helpers in:
+  - `src/features/layers/layer-catalog-tree.ts`
+- Important architectural choices:
+  - M17 stays on top of the M16 catalog domain instead of rebuilding layer logic in the component
+  - local tree state (panel collapse, search, expanded nodes) is separated from actual map visibility state
+  - group/layer/item visibility actions cascade through the catalog and then hydrate back into map overlay state
+  - alias/favorite/order mutations all continue to go through the catalog runtime / persisted metadata boundary
+- New operator-facing capabilities now present:
+  - nested grouped layer tree
+  - per-group, per-layer, and per-feature visibility toggles
+  - search across layers/features
+  - feature/layer/group inspection pane
+  - alias editing
+  - favorite toggling
+  - sibling move up/down reordering
+- Extended map visibility support so the tree can control more than the old flat panel:
+  - per-marker-item visibility
+  - breadcrumb layer visibility
+  - measurement layer visibility
+- Updated overlay wiring in:
+  - `src/features/map/use-map-overlays.ts`
+  - `src/features/map/use-map-measurement-overlays.ts`
+  - `src/features/tracking/sync-tracking-overlay.ts`
+  - `src/features/markers/sync-marker-overlay.ts`
+  - `src/features/layers/map-layer-filters.ts`
+  - `src/features/layers/layer-visibility-store.ts`
+- Added / updated coverage:
+  - `tests/unit/layer-catalog-tree.test.ts`
+  - `tests/unit/layer-visibility-store.test.ts`
+  - `tests/unit/map-layer-filters.test.ts`
+  - `tests/e2e/layer-panel.spec.ts`
+  - `tests/e2e/full-mission-flow.spec.ts`
+- Verification completed:
+  - `npm run test` ✅
+  - `npm run lint` ✅
+  - `npm run build` ✅
+  - `npm run test:e2e` ✅
+  - `cargo test --manifest-path src-tauri/Cargo.toml` ✅
+- Result:
+  - the layer workspace now behaves much more like the old operational layer tree
+  - M18+ can build on a stronger review/navigation surface instead of a flat filter sidebar
 
 ### 2026-04-10 M16 layer catalog domain completed
 - Implemented M16 as a proper domain/runtime/persistence foundation underneath the existing flat layer panel rather than jumping straight to the M17 tree UI

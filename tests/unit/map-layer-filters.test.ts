@@ -20,8 +20,13 @@ describe('map layer filter helpers', () => {
   })
 
   it('builds a marker type filter and a hidden marker filter', () => {
-    expect(buildMarkerLayerFilter('clue', true)).toEqual(['==', ['get', 'markerType'], 'clue'])
-    expect(buildMarkerLayerFilter('clue', false)).toEqual(['==', ['get', 'markerId'], '__hidden__'])
+    expect(buildMarkerLayerFilter('clue', true, [])).toEqual(['==', ['get', 'markerType'], 'clue'])
+    expect(buildMarkerLayerFilter('clue', false, [])).toEqual(['==', ['get', 'markerId'], '__hidden__'])
+    expect(buildMarkerLayerFilter('clue', true, ['marker-1'])).toEqual([
+      'all',
+      ['==', ['get', 'markerType'], 'clue'],
+      ['!', ['in', ['get', 'markerId'], ['literal', ['marker-1']]]],
+    ])
   })
 
   it('summarizes visible drawings after type and item hiding', () => {

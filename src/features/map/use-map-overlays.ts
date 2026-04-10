@@ -19,7 +19,9 @@ type UseMapOverlaysOptions = {
 export function useMapOverlays(options: UseMapOverlaysOptions): void {
   const trackingSnapshot = useTrackingStore((state) => state.snapshot)
   const hiddenDeviceIds = useLayerVisibilityStore((state) => state.hiddenDeviceIds)
+  const breadcrumbsVisible = useLayerVisibilityStore((state) => state.breadcrumbsVisible)
   const markerTypeVisibility = useLayerVisibilityStore((state) => state.markerTypeVisibility)
+  const hiddenMarkerIds = useLayerVisibilityStore((state) => state.hiddenMarkerIds)
   const markerState = useMarkerStore((state) => state.markers)
 
   useEffect(() => {
@@ -34,7 +36,7 @@ export function useMapOverlays(options: UseMapOverlaysOptions): void {
         return
       }
 
-      syncTrackingOverlay(map, trackingSnapshot, hiddenDeviceIds)
+      syncTrackingOverlay(map, trackingSnapshot, hiddenDeviceIds, breadcrumbsVisible)
     }
 
     synchronizeOverlay()
@@ -43,7 +45,7 @@ export function useMapOverlays(options: UseMapOverlaysOptions): void {
     return () => {
       map.off('styledata', synchronizeOverlay)
     }
-  }, [options.activeBasemapId, options.mapRef, hiddenDeviceIds, trackingSnapshot])
+  }, [options.activeBasemapId, options.mapRef, breadcrumbsVisible, hiddenDeviceIds, trackingSnapshot])
 
   useEffect(() => {
     const map = options.mapRef.current
@@ -57,7 +59,7 @@ export function useMapOverlays(options: UseMapOverlaysOptions): void {
         return
       }
 
-      void syncMarkerOverlay(map, markerState, markerTypeVisibility)
+      void syncMarkerOverlay(map, markerState, markerTypeVisibility, hiddenMarkerIds)
     }
 
     synchronizeOverlay()
@@ -66,5 +68,5 @@ export function useMapOverlays(options: UseMapOverlaysOptions): void {
     return () => {
       map.off('styledata', synchronizeOverlay)
     }
-  }, [options.activeBasemapId, options.mapRef, markerState, markerTypeVisibility])
+  }, [hiddenMarkerIds, markerState, markerTypeVisibility, options.activeBasemapId, options.mapRef])
 }

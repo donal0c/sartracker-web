@@ -19,12 +19,19 @@ export function buildTrackingLayerFilter(
 export function buildMarkerLayerFilter(
   markerType: MarkerType,
   visible: boolean,
+  hiddenMarkerIds: readonly string[],
 ): ExpressionSpecification {
   if (!visible) {
     return ['==', ['get', 'markerId'], '__hidden__']
   }
 
-  return ['==', ['get', 'markerType'], markerType]
+  const filters: ExpressionSpecification[] = [['==', ['get', 'markerType'], markerType]]
+
+  if (hiddenMarkerIds.length > 0) {
+    filters.push(['!', ['in', ['get', 'markerId'], ['literal', [...hiddenMarkerIds]]]])
+  }
+
+  return filters.length === 1 ? filters[0]! : ['all', ...filters]
 }
 
 export function buildDrawingVisibilitySummary(

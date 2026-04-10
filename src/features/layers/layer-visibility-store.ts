@@ -9,6 +9,8 @@ import type { LayerCatalogRootNode } from './layer-catalog-types'
 import {
   getDrawingLayerNodeId,
   getMarkerLayerNodeId,
+  MEASUREMENTS_LAYER_NODE_ID,
+  TRACKING_BREADCRUMBS_LAYER_NODE_ID,
   TRACKING_DEVICES_LAYER_NODE_ID,
 } from './layer-catalog-ids'
 
@@ -29,15 +31,15 @@ export const MARKER_TYPE_LABELS: Record<MarkerType, string> = {
 }
 
 type LayerVisibilityState = {
-  readonly panelExpanded: boolean
-  readonly peopleSearch: string
   readonly hiddenDeviceIds: readonly string[]
+  readonly hiddenMarkerIds: readonly string[]
   readonly markerTypeVisibility: Record<MarkerType, boolean>
   readonly drawingTypeVisibility: Record<DrawingType, boolean>
   readonly hiddenDrawingIds: readonly string[]
-  readonly setPanelExpanded: (expanded: boolean) => void
-  readonly setPeopleSearch: (value: string) => void
+  readonly breadcrumbsVisible: boolean
+  readonly measurementsVisible: boolean
   readonly toggleDeviceVisibility: (deviceId: string) => void
+  readonly toggleMarkerVisibility: (markerId: string) => void
   readonly showAllDevices: () => void
   readonly hideAllDevices: (deviceIds: readonly string[]) => void
   readonly setMarkerTypeVisibility: (type: MarkerType, visible: boolean) => void
@@ -49,6 +51,8 @@ type LayerVisibilityState = {
   readonly toggleDrawingVisibility: (drawingId: string) => void
   readonly showAllDrawings: () => void
   readonly hideAllDrawings: (drawings: readonly Drawing[]) => void
+  readonly setBreadcrumbsVisible: (visible: boolean) => void
+  readonly setMeasurementsVisible: (visible: boolean) => void
   readonly hydrateCatalogVisibility: (root: LayerCatalogRootNode) => void
 }
 
@@ -69,19 +73,24 @@ const DEFAULT_DRAWING_TYPE_VISIBILITY: Record<DrawingType, boolean> = {
 }
 
 export const useLayerVisibilityStore = create<LayerVisibilityState>((set) => ({
-  panelExpanded: true,
-  peopleSearch: '',
   hiddenDeviceIds: [],
+  hiddenMarkerIds: [],
   markerTypeVisibility: DEFAULT_MARKER_TYPE_VISIBILITY,
   drawingTypeVisibility: DEFAULT_DRAWING_TYPE_VISIBILITY,
   hiddenDrawingIds: [],
-  setPanelExpanded: (expanded) => set({ panelExpanded: expanded }),
-  setPeopleSearch: (value) => set({ peopleSearch: value }),
+  breadcrumbsVisible: true,
+  measurementsVisible: true,
   toggleDeviceVisibility: (deviceId) =>
     set((state) => ({
       hiddenDeviceIds: state.hiddenDeviceIds.includes(deviceId)
         ? state.hiddenDeviceIds.filter((candidate) => candidate !== deviceId)
         : [...state.hiddenDeviceIds, deviceId],
+    })),
+  toggleMarkerVisibility: (markerId) =>
+    set((state) => ({
+      hiddenMarkerIds: state.hiddenMarkerIds.includes(markerId)
+        ? state.hiddenMarkerIds.filter((candidate) => candidate !== markerId)
+        : [...state.hiddenMarkerIds, markerId],
     })),
   showAllDevices: () => set({ hiddenDeviceIds: [] }),
   hideAllDevices: (deviceIds) => set({ hiddenDeviceIds: [...deviceIds] }),
@@ -129,9 +138,12 @@ export const useLayerVisibilityStore = create<LayerVisibilityState>((set) => ({
     })),
   showAllDrawings: () => set({ hiddenDrawingIds: [] }),
   hideAllDrawings: (drawings) => set({ hiddenDrawingIds: drawings.map((drawing) => drawing.id) }),
+  setBreadcrumbsVisible: (visible) => set({ breadcrumbsVisible: visible }),
+  setMeasurementsVisible: (visible) => set({ measurementsVisible: visible }),
   hydrateCatalogVisibility: (root) =>
     set({
       hiddenDeviceIds: collectHiddenDeviceIds(root),
+      hiddenMarkerIds: collectHiddenMarkerIds(root),
       markerTypeVisibility: {
         ipp_lkp: readLayerVisibility(root, getMarkerLayerNodeId('ipp_lkp')),
         clue: readLayerVisibility(root, getMarkerLayerNodeId('clue')),
@@ -147,6 +159,8 @@ export const useLayerVisibilityStore = create<LayerVisibilityState>((set) => ({
         text_label: readLayerVisibility(root, getDrawingLayerNodeId('text_label')),
       },
       hiddenDrawingIds: collectHiddenDrawingIds(root),
+      breadcrumbsVisible: readLayerVisibility(root, TRACKING_BREADCRUMBS_LAYER_NODE_ID),
+      measurementsVisible: readLayerVisibility(root, MEASUREMENTS_LAYER_NODE_ID),
     }),
 }))
 
@@ -167,6 +181,14 @@ export function isDrawingVisible(
   drawing: Drawing,
 ): boolean {
   return drawingTypeVisibility[drawing.type] && !hiddenDrawingIds.includes(drawing.id)
+}
+
+export function isMarkerVisible(
+  markerTypeVisibility: Record<MarkerType, boolean>,
+  hiddenMarkerIds: readonly string[],
+  marker: { readonly id: string; readonly type: MarkerType },
+): boolean {
+  return markerTypeVisibility[marker.type] && !hiddenMarkerIds.includes(marker.id)
 }
 
 function readLayerVisibility(root: LayerCatalogRootNode, layerId: string): boolean {
@@ -205,6 +227,17 @@ function collectHiddenDrawingIds(root: LayerCatalogRootNode): readonly string[] 
     .flatMap((layer) =>
       layer.children.flatMap((child) =>
         child.entity?.type === 'drawing' && !child.isVisible ? [child.entity.drawing.id] : [],
+      ),
+    )
+}
+
+function collectHiddenMarkerIds(root: LayerCatalogRootNode): readonly string[] {
+  return root.children
+    .flatMap((group) => group.children)
+    .filter((layer) => layer.id.startsWith('layer:markers:'))
+    .flatMap((layer) =>
+      layer.children.flatMap((child) =>
+        child.entity?.type === 'marker' && !child.isVisible ? [child.entity.marker.id] : [],
       ),
     )
 }

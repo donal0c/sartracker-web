@@ -17,6 +17,7 @@ export async function syncMarkerOverlay(
   map: maplibregl.Map,
   markers: readonly Marker[],
   markerTypeVisibility: Record<MarkerType, boolean>,
+  hiddenMarkerIds: readonly string[],
 ): Promise<void> {
   await ensureMarkerImages(map)
   ensureMarkerSource(map, createMarkerFeatureCollection(markers))
@@ -74,13 +75,17 @@ export async function syncMarkerOverlay(
       })
     }
 
-    const typeFilter = buildMarkerLayerFilter(markerType, markerTypeVisibility[markerType])
+    const typeFilter = buildMarkerLayerFilter(
+      markerType,
+      markerTypeVisibility[markerType],
+      hiddenMarkerIds,
+    )
     map.setFilter(symbolLayerId, typeFilter)
     map.setFilter(labelLayerId, typeFilter)
   }
 
   const visibleTypeFilters = MARKER_TYPES.filter((type) => markerTypeVisibility[type]).map((type) =>
-    buildMarkerLayerFilter(type, true),
+    buildMarkerLayerFilter(type, true, hiddenMarkerIds),
   )
   map.setFilter(
     MARKER_HITBOX_LAYER_ID,

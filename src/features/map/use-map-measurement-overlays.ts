@@ -7,6 +7,7 @@ import {
   syncMeasurementOverlay,
   syncMeasurementPreviewOverlay,
 } from '../measurements/sync-measurement-overlay'
+import { useLayerVisibilityStore } from '../layers/layer-visibility-store'
 
 type UseMapMeasurementOverlaysOptions = {
   readonly activeBasemapId: BasemapId
@@ -22,6 +23,7 @@ export function useMapMeasurementOverlays(
   const measurements = useMeasurementStore((state) => state.measurements)
   const draftStart = useMeasurementStore((state) => state.draftStart)
   const hoverPoint = useMeasurementStore((state) => state.hoverPoint)
+  const measurementsVisible = useLayerVisibilityStore((state) => state.measurementsVisible)
 
   useEffect(() => {
     const map = options.mapRef.current
@@ -34,7 +36,7 @@ export function useMapMeasurementOverlays(
         return
       }
 
-      syncMeasurementOverlay(map, measurements)
+      syncMeasurementOverlay(map, measurementsVisible ? measurements : [])
     }
 
     synchronizeOverlay()
@@ -42,7 +44,7 @@ export function useMapMeasurementOverlays(
     return () => {
       map.off('styledata', synchronizeOverlay)
     }
-  }, [measurements, options.activeBasemapId, options.mapRef])
+  }, [measurements, measurementsVisible, options.activeBasemapId, options.mapRef])
 
   useEffect(() => {
     const map = options.mapRef.current

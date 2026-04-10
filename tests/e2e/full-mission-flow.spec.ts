@@ -65,8 +65,8 @@ test.describe('M10 full mission integration flow', () => {
     await page.getByTestId('drawing-save-btn').click()
     await expect(page.getByTestId('drawing-dialog')).toBeHidden()
 
-    await page.getByTestId('layer-device-toggle-bravo').click()
-    await expect(page.getByTestId('layer-device-toggle-bravo')).not.toBeChecked()
+    await page.getByTestId('layer-visibility-feature-device-bravo').click()
+    await expect(page.getByTestId('layer-visibility-feature-device-bravo')).not.toBeChecked()
 
     await page.getByTestId('measurement-arm-btn').click()
     await clickMap(page, { x: 460, y: 240 })

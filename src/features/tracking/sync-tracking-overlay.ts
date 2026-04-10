@@ -16,6 +16,7 @@ export function syncTrackingOverlay(
   map: maplibregl.Map,
   snapshot: TrackingSnapshot,
   hiddenDeviceIds: readonly string[],
+  breadcrumbsVisible: boolean,
 ): void {
   ensureTrackingSource(map, createTrackingFeatureCollection(snapshot, 5 * 60 * 1000))
 
@@ -69,7 +70,12 @@ export function syncTrackingOverlay(
   }
 
   const visibilityFilter = buildTrackingLayerFilter(hiddenDeviceIds)
-  map.setFilter(TRACKING_BREADCRUMB_LAYER_ID, combineFilters(['==', '$type', 'LineString'], visibilityFilter))
+  map.setFilter(
+    TRACKING_BREADCRUMB_LAYER_ID,
+    breadcrumbsVisible
+      ? combineFilters(['==', '$type', 'LineString'], visibilityFilter)
+      : ['==', ['get', 'deviceId'], '__hidden__'],
+  )
   map.setFilter(TRACKING_DEVICE_LAYER_ID, combineFilters(['==', '$type', 'Point'], visibilityFilter))
 }
 

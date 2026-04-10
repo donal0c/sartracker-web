@@ -1,11 +1,9 @@
 import type { Drawing, Marker } from '../../infrastructure/mission-store/tauri-mission-store'
 import type { NormalizedTrackingDevice } from '../tracking/tracking-types'
 import { buildLayerCatalogTree } from './layer-catalog-builder'
+import type { LayerCatalogNode } from './layer-catalog-tree'
 import { createEmptyLayerCatalogTree } from './layer-catalog-types'
 import type {
-  LayerCatalogFeatureItemNode,
-  LayerCatalogGroupNode,
-  LayerCatalogLayerNode,
   LayerCatalogMetadataEntry,
   LayerCatalogNodeKind,
   LayerCatalogRootNode,
@@ -51,12 +49,6 @@ export type LayerCatalogController = {
     orderedNodeIds: readonly string[],
   ) => Promise<void>
 }
-
-type LayerCatalogNode =
-  | LayerCatalogRootNode
-  | LayerCatalogGroupNode
-  | LayerCatalogLayerNode
-  | LayerCatalogFeatureItemNode
 
 export async function startLayerCatalogRuntime(
   dependencies: StartLayerCatalogRuntimeDependencies,
