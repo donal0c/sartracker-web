@@ -5,6 +5,12 @@ import type {
   DrawingType,
   MarkerType,
 } from '../../infrastructure/mission-store/tauri-mission-store'
+import type { LayerCatalogRootNode } from './layer-catalog-types'
+import {
+  getDrawingLayerNodeId,
+  getMarkerLayerNodeId,
+  TRACKING_DEVICES_LAYER_NODE_ID,
+} from './layer-catalog-ids'
 
 export const DRAWING_TYPE_LABELS: Record<DrawingType, string> = {
   line: 'Lines',
@@ -43,6 +49,7 @@ type LayerVisibilityState = {
   readonly toggleDrawingVisibility: (drawingId: string) => void
   readonly showAllDrawings: () => void
   readonly hideAllDrawings: (drawings: readonly Drawing[]) => void
+  readonly hydrateCatalogVisibility: (root: LayerCatalogRootNode) => void
 }
 
 const DEFAULT_MARKER_TYPE_VISIBILITY: Record<MarkerType, boolean> = {
@@ -122,6 +129,25 @@ export const useLayerVisibilityStore = create<LayerVisibilityState>((set) => ({
     })),
   showAllDrawings: () => set({ hiddenDrawingIds: [] }),
   hideAllDrawings: (drawings) => set({ hiddenDrawingIds: drawings.map((drawing) => drawing.id) }),
+  hydrateCatalogVisibility: (root) =>
+    set({
+      hiddenDeviceIds: collectHiddenDeviceIds(root),
+      markerTypeVisibility: {
+        ipp_lkp: readLayerVisibility(root, getMarkerLayerNodeId('ipp_lkp')),
+        clue: readLayerVisibility(root, getMarkerLayerNodeId('clue')),
+        hazard: readLayerVisibility(root, getMarkerLayerNodeId('hazard')),
+        casualty: readLayerVisibility(root, getMarkerLayerNodeId('casualty')),
+      },
+      drawingTypeVisibility: {
+        line: readLayerVisibility(root, getDrawingLayerNodeId('line')),
+        search_area: readLayerVisibility(root, getDrawingLayerNodeId('search_area')),
+        range_ring: readLayerVisibility(root, getDrawingLayerNodeId('range_ring')),
+        bearing_line: readLayerVisibility(root, getDrawingLayerNodeId('bearing_line')),
+        search_sector: readLayerVisibility(root, getDrawingLayerNodeId('search_sector')),
+        text_label: readLayerVisibility(root, getDrawingLayerNodeId('text_label')),
+      },
+      hiddenDrawingIds: collectHiddenDrawingIds(root),
+    }),
 }))
 
 export function isDeviceVisible(hiddenDeviceIds: readonly string[], deviceId: string): boolean {
@@ -141,4 +167,44 @@ export function isDrawingVisible(
   drawing: Drawing,
 ): boolean {
   return drawingTypeVisibility[drawing.type] && !hiddenDrawingIds.includes(drawing.id)
+}
+
+function readLayerVisibility(root: LayerCatalogRootNode, layerId: string): boolean {
+  const layer = root.children
+    .flatMap((group) => group.children)
+    .find((candidate) => candidate.id === layerId)
+
+  return layer?.isVisible ?? true
+}
+
+function collectHiddenDeviceIds(root: LayerCatalogRootNode): readonly string[] {
+  const deviceLayer = root.children
+    .flatMap((group) => group.children)
+    .find((candidate) => candidate.id === TRACKING_DEVICES_LAYER_NODE_ID)
+
+  if (deviceLayer === undefined) {
+    return []
+  }
+
+  if (!deviceLayer.isVisible) {
+    return deviceLayer.children
+      .flatMap((child) =>
+        child.entity?.type === 'device' ? [child.entity.device.device_id] : [],
+      )
+  }
+
+  return deviceLayer.children.flatMap((child) =>
+    child.entity?.type === 'device' && !child.isVisible ? [child.entity.device.device_id] : [],
+  )
+}
+
+function collectHiddenDrawingIds(root: LayerCatalogRootNode): readonly string[] {
+  return root.children
+    .flatMap((group) => group.children)
+    .filter((layer) => layer.id.startsWith('layer:drawings:'))
+    .flatMap((layer) =>
+      layer.children.flatMap((child) =>
+        child.entity?.type === 'drawing' && !child.isVisible ? [child.entity.drawing.id] : [],
+      ),
+    )
 }

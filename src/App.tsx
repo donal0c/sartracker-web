@@ -3,6 +3,7 @@ import { Suspense, lazy, useState } from 'react'
 import { DrawingRuntimeBridge } from './features/drawings/drawing-runtime-bridge'
 import { DrawingDialog } from './components/drawing-dialog'
 import { LayerFilterPanel } from './components/layer-filter-panel'
+import { LayerCatalogRuntimeBridge } from './features/layers/layer-catalog-runtime-bridge'
 import { MeasurementPanel } from './components/measurement-panel'
 import { MissionControlPanel } from './components/mission-control-panel'
 import { MarkerDialog } from './components/marker-dialog'
@@ -28,6 +29,7 @@ function App() {
   return (
     <main className="flex h-screen w-screen overflow-hidden bg-stone-950 text-stone-100">
       <DrawingRuntimeBridge />
+      <LayerCatalogRuntimeBridge />
       <MarkerRuntimeBridge />
       <MeasurementRuntimeBridge />
       

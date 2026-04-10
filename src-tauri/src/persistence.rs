@@ -16,7 +16,7 @@ use crate::settings::SettingsStoreState;
 const DATABASE_FILE_NAME: &str = "mission-store.sqlite";
 const BACKUP_FILE_NAME: &str = "mission-store.backup.sqlite";
 const ARCHIVE_DIRECTORY_NAME: &str = "archives";
-const CURRENT_SCHEMA_VERSION: i64 = 1;
+const CURRENT_SCHEMA_VERSION: i64 = 2;
 
 #[derive(Clone)]
 pub struct MissionStore {
@@ -159,6 +159,29 @@ pub struct Drawing {
     pub updated_at: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::Type, PartialEq, Eq)]
+#[sqlx(type_name = "TEXT", rename_all = "snake_case")]
+#[serde(rename_all = "snake_case")]
+pub enum LayerCatalogNodeKind {
+    Group,
+    Layer,
+    FeatureItem,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow, PartialEq, Eq)]
+pub struct LayerCatalogEntry {
+    pub mission_id: String,
+    pub node_id: String,
+    pub parent_node_id: Option<String>,
+    pub node_kind: LayerCatalogNodeKind,
+    pub alias: Option<String>,
+    pub is_favorite: bool,
+    pub is_visible: bool,
+    pub display_order: i64,
+    pub metadata_json: Option<String>,
+    pub updated_at: String,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MissionStoreInfo {
     pub schema_version: i64,
@@ -265,6 +288,19 @@ pub struct UpsertDrawingInput {
     pub label: Option<String>,
     pub display_order: i64,
     pub geometry_json: String,
+    pub metadata_json: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct UpsertLayerCatalogEntryInput {
+    pub mission_id: String,
+    pub node_id: String,
+    pub parent_node_id: Option<String>,
+    pub node_kind: LayerCatalogNodeKind,
+    pub alias: Option<String>,
+    pub is_favorite: Option<bool>,
+    pub is_visible: Option<bool>,
+    pub display_order: Option<i64>,
     pub metadata_json: Option<String>,
 }
 
@@ -475,6 +511,24 @@ impl MissionStore {
 
             CREATE INDEX IF NOT EXISTS idx_mission_events_mission_timestamp
               ON mission_events(mission_id, timestamp);
+
+            CREATE TABLE IF NOT EXISTS layer_catalog_entries (
+              mission_id TEXT NOT NULL,
+              node_id TEXT NOT NULL,
+              parent_node_id TEXT,
+              node_kind TEXT NOT NULL CHECK(node_kind IN ('group', 'layer', 'feature_item')),
+              alias TEXT,
+              is_favorite INTEGER NOT NULL DEFAULT 0,
+              is_visible INTEGER NOT NULL DEFAULT 1,
+              display_order INTEGER NOT NULL DEFAULT 0,
+              metadata_json TEXT,
+              updated_at TEXT NOT NULL,
+              PRIMARY KEY (mission_id, node_id),
+              FOREIGN KEY (mission_id) REFERENCES missions(id) ON DELETE CASCADE
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_layer_catalog_entries_mission_parent_order
+              ON layer_catalog_entries(mission_id, parent_node_id, display_order);
             "#,
         )
         .execute(&mut *tx)
@@ -1313,6 +1367,79 @@ impl MissionStore {
         Ok(result.rows_affected() > 0)
     }
 
+    pub async fn list_layer_catalog_entries(
+        &self,
+        mission_id: String,
+    ) -> Result<Vec<LayerCatalogEntry>, String> {
+        sqlx::query_as::<_, LayerCatalogEntry>(
+            r#"
+            SELECT mission_id, node_id, parent_node_id, node_kind, alias, is_favorite, is_visible,
+                   display_order, metadata_json, updated_at
+            FROM layer_catalog_entries
+            WHERE mission_id = ?
+            ORDER BY parent_node_id ASC, display_order ASC, node_id ASC
+            "#,
+        )
+        .bind(mission_id)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|error| format!("Failed to list layer catalog entries: {error}"))
+    }
+
+    pub async fn upsert_layer_catalog_entry(
+        &self,
+        input: UpsertLayerCatalogEntryInput,
+    ) -> Result<LayerCatalogEntry, String> {
+        self.ensure_mission_mutable(&input.mission_id).await?;
+
+        let timestamp = Utc::now().to_rfc3339();
+        sqlx::query(
+            r#"
+            INSERT INTO layer_catalog_entries (
+              mission_id, node_id, parent_node_id, node_kind, alias, is_favorite, is_visible,
+              display_order, metadata_json, updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(mission_id, node_id) DO UPDATE SET
+              parent_node_id = excluded.parent_node_id,
+              node_kind = excluded.node_kind,
+              alias = excluded.alias,
+              is_favorite = excluded.is_favorite,
+              is_visible = excluded.is_visible,
+              display_order = excluded.display_order,
+              metadata_json = excluded.metadata_json,
+              updated_at = excluded.updated_at
+            "#,
+        )
+        .bind(&input.mission_id)
+        .bind(&input.node_id)
+        .bind(&input.parent_node_id)
+        .bind(&input.node_kind)
+        .bind(&input.alias)
+        .bind(input.is_favorite.unwrap_or(false))
+        .bind(input.is_visible.unwrap_or(true))
+        .bind(input.display_order.unwrap_or(0))
+        .bind(&input.metadata_json)
+        .bind(&timestamp)
+        .execute(&self.pool)
+        .await
+        .map_err(|error| format!("Failed to save layer catalog entry: {error}"))?;
+
+        sqlx::query_as::<_, LayerCatalogEntry>(
+            r#"
+            SELECT mission_id, node_id, parent_node_id, node_kind, alias, is_favorite, is_visible,
+                   display_order, metadata_json, updated_at
+            FROM layer_catalog_entries
+            WHERE mission_id = ? AND node_id = ?
+            "#,
+        )
+        .bind(&input.mission_id)
+        .bind(&input.node_id)
+        .fetch_one(&self.pool)
+        .await
+        .map_err(|error| format!("Failed to read saved layer catalog entry: {error}"))
+    }
+
     pub async fn get_mission(&self, mission_id: String) -> Result<Mission, String> {
         sqlx::query_as::<_, Mission>(
             r#"
@@ -1877,6 +2004,22 @@ pub async fn delete_drawing(
     store: State<'_, MissionStoreState>,
 ) -> Result<bool, String> {
     store.0.delete_drawing(drawing_id).await
+}
+
+#[tauri::command]
+pub async fn list_layer_catalog_entries(
+    mission_id: String,
+    store: State<'_, MissionStoreState>,
+) -> Result<Vec<LayerCatalogEntry>, String> {
+    store.0.list_layer_catalog_entries(mission_id).await
+}
+
+#[tauri::command]
+pub async fn upsert_layer_catalog_entry(
+    input: UpsertLayerCatalogEntryInput,
+    store: State<'_, MissionStoreState>,
+) -> Result<LayerCatalogEntry, String> {
+    store.0.upsert_layer_catalog_entry(input).await
 }
 
 #[tauri::command]
@@ -2842,5 +2985,110 @@ mod tests {
         assert_eq!(events[0].event_type, "mission_created");
         assert_eq!(events[1].event_type, "mission_paused");
         assert_eq!(events[2].event_type, "mission_resumed");
+    }
+
+    #[tokio::test]
+    async fn saves_and_lists_layer_catalog_entries() {
+        let (database_path, backup_path) = temp_paths("layer-catalog");
+        let store = MissionStore::connect(database_path, backup_path)
+            .await
+            .expect("store should initialize");
+
+        let mission = store
+            .create_mission(CreateMissionInput {
+                name: "Layer Catalog Mission".to_string(),
+                start_time: None,
+                notes: None,
+            })
+            .await
+            .expect("mission should be created");
+
+        let entry = store
+            .upsert_layer_catalog_entry(UpsertLayerCatalogEntryInput {
+                mission_id: mission.id.clone(),
+                node_id: "feature:device:alpha".to_string(),
+                parent_node_id: Some("layer:tracking:devices".to_string()),
+                node_kind: LayerCatalogNodeKind::FeatureItem,
+                alias: Some("Alpha Ops".to_string()),
+                is_favorite: Some(true),
+                is_visible: Some(false),
+                display_order: Some(3),
+                metadata_json: None,
+            })
+            .await
+            .expect("catalog entry should save");
+
+        assert_eq!(entry.parent_node_id.as_deref(), Some("layer:tracking:devices"));
+        assert!(!entry.is_visible);
+        assert!(entry.is_favorite);
+
+        let entries = store
+            .list_layer_catalog_entries(mission.id.clone())
+            .await
+            .expect("entries should list");
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].alias.as_deref(), Some("Alpha Ops"));
+
+        let updated = store
+            .upsert_layer_catalog_entry(UpsertLayerCatalogEntryInput {
+                mission_id: mission.id.clone(),
+                node_id: "feature:device:alpha".to_string(),
+                parent_node_id: Some("layer:tracking:devices".to_string()),
+                node_kind: LayerCatalogNodeKind::FeatureItem,
+                alias: Some("Alpha Updated".to_string()),
+                is_favorite: Some(false),
+                is_visible: Some(true),
+                display_order: Some(1),
+                metadata_json: Some("{\"favorite\":false}".to_string()),
+            })
+            .await
+            .expect("catalog entry should update");
+
+        assert_eq!(updated.alias.as_deref(), Some("Alpha Updated"));
+        assert!(updated.is_visible);
+        assert_eq!(updated.display_order, 1);
+    }
+
+    #[tokio::test]
+    async fn rejects_layer_catalog_writes_for_finalized_missions() {
+        let (database_path, backup_path) = temp_paths("layer-catalog-finalized");
+        let store = MissionStore::connect(database_path, backup_path)
+            .await
+            .expect("store should initialize");
+
+        let mission = store
+            .create_mission(CreateMissionInput {
+                name: "Locked Catalog Mission".to_string(),
+                start_time: None,
+                notes: None,
+            })
+            .await
+            .expect("mission should be created");
+
+        store
+            .finish_mission(mission.id.clone())
+            .await
+            .expect("mission should finish");
+        store
+            .finalize_mission(mission.id.clone())
+            .await
+            .expect("mission should finalize");
+
+        let error = store
+            .upsert_layer_catalog_entry(UpsertLayerCatalogEntryInput {
+                mission_id: mission.id,
+                node_id: "group:tracking".to_string(),
+                parent_node_id: Some("root:mission-catalog".to_string()),
+                node_kind: LayerCatalogNodeKind::Group,
+                alias: Some("Blocked".to_string()),
+                is_favorite: Some(false),
+                is_visible: Some(true),
+                display_order: Some(1),
+                metadata_json: None,
+            })
+            .await
+            .expect_err("finalized mission should reject catalog writes");
+
+        assert!(error.contains("read-only"));
     }
 }

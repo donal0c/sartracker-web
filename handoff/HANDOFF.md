@@ -3,14 +3,63 @@
 > **Read this before doing ANY work. Update this after EVERY chunk of work.**
 
 ## Last Updated
-2026-04-10 15:22 by Codex
+2026-04-10 15:49 by Codex
 
 ## Current State
-**Phase: Phase 1 operational core complete — M1 through M10 complete; tactical UI modernization pass merged; parity program beads queued**
+**Phase: Phase 1 operational core complete — M1 through M10 complete; parity foundation now includes M12, M14, and M16; next logical bead is M17**
 
 `HANDOFF.md` is the authoritative continuity log for active repo work across Donal, Codex, and Claude Code. Update it after every meaningful chunk so the next agent can resume without re-discovery.
 
 ## What's Been Done
+
+### 2026-04-10 M16 layer catalog domain completed
+- Implemented M16 as a proper domain/runtime/persistence foundation underneath the existing flat layer panel rather than jumping straight to the M17 tree UI
+- Added the catalog model and ID helpers in:
+  - `src/features/layers/layer-catalog-types.ts`
+  - `src/features/layers/layer-catalog-ids.ts`
+  - `src/features/layers/layer-catalog-builder.ts`
+- Added a dedicated catalog runtime/store/bridge:
+  - `src/features/layers/start-layer-catalog-runtime.ts`
+  - `src/features/layers/layer-catalog-store.ts`
+  - `src/features/layers/layer-catalog-runtime-bridge.tsx`
+- Important architectural choices:
+  - grouped tree model is canonical now: `Tracking`, `Helicopters`, `Map Tools`, `GPX Tracks`
+  - stable IDs are explicit and not label-derived
+  - metadata persistence is mission-scoped and backend-backed
+  - current UI remains the M7 flat filter panel, but it now hydrates from catalog metadata instead of local-only state
+  - expanded/collapsed/search remain local UI state, as planned
+- Hardened the runtime so feature-item operations do not guess parent IDs from strings:
+  - catalog runtime now builds a node index from the real tree
+  - rename / favorite / visibility / reorder operations persist against real parent relationships
+- Added a Tauri-backed layer catalog metadata adapter in:
+  - `src/infrastructure/layer-catalog-store/tauri-layer-catalog-store.ts`
+- Extended Rust persistence in `src-tauri/src/persistence.rs`:
+  - schema version bumped to `2`
+  - new `layer_catalog_entries` table
+  - new Tauri commands:
+    - `list_layer_catalog_entries`
+    - `upsert_layer_catalog_entry`
+  - finalized missions reject catalog writes via the same read-only boundary as other mission mutations
+- Integrated the current layer panel so mission-scoped visibility now survives reload/recovery in browser validation mode and desktop runtime:
+  - `src/components/layer-filter-panel.tsx`
+  - `src/features/layers/layer-visibility-store.ts`
+  - `src/App.tsx`
+- Added / updated coverage:
+  - `tests/unit/layer-catalog-builder.test.ts`
+  - `tests/unit/start-layer-catalog-runtime.test.ts`
+  - `tests/unit/tauri-layer-catalog-store.test.ts`
+  - `tests/unit/layer-visibility-store.test.ts`
+  - `tests/e2e/layer-panel.spec.ts`
+  - Rust persistence tests for catalog entry persistence + finalized rejection
+- Verification completed:
+  - `npm run test` ✅
+  - `npm run lint` ✅
+  - `npm run build` ✅
+  - `npm run test:e2e` ✅
+  - `cargo test --manifest-path src-tauri/Cargo.toml` ✅
+- Result:
+  - M16 is now a solid foundation bead, not a UI stub
+  - M17 can build on a real persisted catalog model instead of recreating one in the view layer
 
 ### 2026-04-10 M14 finalize / archive / unlock completed
 - Implemented M14 as a separate mission-governance slice rather than inflating the active mission runtime:

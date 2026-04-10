@@ -14,9 +14,10 @@ use persistence::{
     add_position, build_mission_store, create_mission, delete_drawing, delete_marker,
     create_mission_archive, finish_mission, get_active_mission, get_device, get_drawing,
     get_marker, get_mission, get_recoverable_mission, latest_positions, list_devices,
-    list_drawings, list_markers, list_mission_events, list_missions, list_positions, mission_store_info,
-    pause_mission, resume_mission, sync_mission_store_backup, upsert_device, upsert_drawing,
-    upsert_marker, finalize_mission, unlock_finalized_mission, MissionStoreState,
+    list_drawings, list_layer_catalog_entries, list_markers, list_mission_events, list_missions,
+    list_positions, mission_store_info, pause_mission, resume_mission, sync_mission_store_backup,
+    upsert_device, upsert_drawing, upsert_layer_catalog_entry, upsert_marker, finalize_mission,
+    unlock_finalized_mission, MissionStoreState,
 };
 use tracking_cache::{read_tracking_cache, write_tracking_cache};
 
@@ -58,6 +59,8 @@ pub fn run() {
             get_drawing,
             list_drawings,
             delete_drawing,
+            list_layer_catalog_entries,
+            upsert_layer_catalog_entry,
             get_mission,
             list_missions,
             get_active_mission,

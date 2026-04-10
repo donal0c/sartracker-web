@@ -9,6 +9,13 @@ import {
   MARKER_TYPE_LABELS,
   useLayerVisibilityStore,
 } from '../features/layers/layer-visibility-store'
+import { useLayerCatalogStore } from '../features/layers/layer-catalog-store'
+import {
+  getDeviceFeatureNodeId,
+  getDrawingFeatureNodeId,
+  getDrawingLayerNodeId,
+  getMarkerLayerNodeId,
+} from '../features/layers/layer-catalog-ids'
 import { buildDrawingVisibilitySummary } from '../features/layers/map-layer-filters'
 import { useMarkerStore } from '../features/markers/marker-store'
 import { createDeviceColor } from '../features/tracking/tracking-color'
@@ -26,6 +33,7 @@ export function LayerFilterPanel() {
   const markers = useMarkerStore((state) => state.markers)
   const drawings = useDrawingStore((state) => state.drawings)
   const drawingsLoading = useDrawingStore((state) => state.loading)
+  const catalogController = useLayerCatalogStore((state) => state.controller)
   const panelExpanded = useLayerVisibilityStore((state) => state.panelExpanded)
   const peopleSearch = useLayerVisibilityStore((state) => state.peopleSearch)
   const hiddenDeviceIds = useLayerVisibilityStore((state) => state.hiddenDeviceIds)
@@ -100,6 +108,27 @@ export function LayerFilterPanel() {
     hiddenDrawingIds,
   )
 
+  function persistNodeVisibility(nodeId: string, visible: boolean): void {
+    if (catalogController === null) {
+      return
+    }
+
+    void catalogController.setNodeVisibility(nodeId, visible).catch(() => undefined)
+  }
+
+  function persistManyNodeVisibilities(
+    nodeIds: readonly string[],
+    visible: boolean,
+  ): void {
+    if (catalogController === null) {
+      return
+    }
+
+    void Promise.all(
+      nodeIds.map((nodeId) => catalogController.setNodeVisibility(nodeId, visible)),
+    ).catch(() => undefined)
+  }
+
   return (
     <section
       className="rounded-2xl border border-stone-800 bg-stone-950/40 p-5 text-sm"
@@ -121,8 +150,20 @@ export function LayerFilterPanel() {
         <div className="space-y-6">
           <div data-testid="layer-section-people">
             <SectionHeader
-              actionAllOff={() => hideAllDevices(trackingSnapshot.devices.map((device) => device.device_id))}
-              actionAllOn={showAllDevices}
+              actionAllOff={() => {
+                hideAllDevices(trackingSnapshot.devices.map((device) => device.device_id))
+                persistManyNodeVisibilities(
+                  trackingSnapshot.devices.map((device) => getDeviceFeatureNodeId(device.device_id)),
+                  false,
+                )
+              }}
+              actionAllOn={() => {
+                showAllDevices()
+                persistManyNodeVisibilities(
+                  trackingSnapshot.devices.map((device) => getDeviceFeatureNodeId(device.device_id)),
+                  true,
+                )
+              }}
               title="People"
             />
             <div className="mt-3">
@@ -148,7 +189,13 @@ export function LayerFilterPanel() {
                         className="rounded border-stone-700 bg-stone-950 text-amber-500 focus:ring-amber-500/30"
                         checked={isDeviceVisible(hiddenDeviceIds, device.device_id)}
                         data-testid={`layer-device-toggle-${device.device_id}`}
-                        onChange={() => toggleDeviceVisibility(device.device_id)}
+                        onChange={(event) => {
+                          toggleDeviceVisibility(device.device_id)
+                          persistNodeVisibility(
+                            getDeviceFeatureNodeId(device.device_id),
+                            event.target.checked,
+                          )
+                        }}
                         type="checkbox"
                       />
                       <span
@@ -173,8 +220,24 @@ export function LayerFilterPanel() {
 
           <div data-testid="layer-section-markers">
             <SectionHeader
-              actionAllOff={hideAllMarkerTypes}
-              actionAllOn={showAllMarkerTypes}
+              actionAllOff={() => {
+                hideAllMarkerTypes()
+                persistManyNodeVisibilities(
+                  (Object.keys(MARKER_TYPE_LABELS) as MarkerType[]).map((type) =>
+                    getMarkerLayerNodeId(type),
+                  ),
+                  false,
+                )
+              }}
+              actionAllOn={() => {
+                showAllMarkerTypes()
+                persistManyNodeVisibilities(
+                  (Object.keys(MARKER_TYPE_LABELS) as MarkerType[]).map((type) =>
+                    getMarkerLayerNodeId(type),
+                  ),
+                  true,
+                )
+              }}
               title="Markers"
             />
             <div className="mt-3 space-y-1">
@@ -185,12 +248,18 @@ export function LayerFilterPanel() {
                 >
                   <div className="flex items-center gap-3">
                     <input
-                      className="rounded border-stone-700 bg-stone-950 text-amber-500 focus:ring-amber-500/30"
-                      checked={isMarkerTypeVisible(markerTypeVisibility, type)}
-                      data-testid={`layer-marker-toggle-${type}`}
-                      onChange={(event) => setMarkerTypeVisibility(type, event.target.checked)}
-                      type="checkbox"
-                    />
+                        className="rounded border-stone-700 bg-stone-950 text-amber-500 focus:ring-amber-500/30"
+                        checked={isMarkerTypeVisible(markerTypeVisibility, type)}
+                        data-testid={`layer-marker-toggle-${type}`}
+                        onChange={(event) => {
+                          setMarkerTypeVisibility(type, event.target.checked)
+                          persistNodeVisibility(
+                            getMarkerLayerNodeId(type),
+                            event.target.checked,
+                          )
+                        }}
+                        type="checkbox"
+                      />
                     <span className="text-xs font-medium text-stone-300">{MARKER_TYPE_LABELS[type]}</span>
                   </div>
                   <span className="text-[10px] font-mono font-bold text-stone-500">{markerCounts[type]}</span>
@@ -204,10 +273,30 @@ export function LayerFilterPanel() {
               actionAllOff={() => {
                 hideAllDrawingTypes()
                 hideAllDrawings(drawings)
+                persistManyNodeVisibilities(
+                  (Object.keys(DRAWING_TYPE_LABELS) as DrawingType[]).map((type) =>
+                    getDrawingLayerNodeId(type),
+                  ),
+                  false,
+                )
+                persistManyNodeVisibilities(
+                  drawings.map((drawing) => getDrawingFeatureNodeId(drawing.id)),
+                  false,
+                )
               }}
               actionAllOn={() => {
                 showAllDrawingTypes()
                 showAllDrawings()
+                persistManyNodeVisibilities(
+                  (Object.keys(DRAWING_TYPE_LABELS) as DrawingType[]).map((type) =>
+                    getDrawingLayerNodeId(type),
+                  ),
+                  true,
+                )
+                persistManyNodeVisibilities(
+                  drawings.map((drawing) => getDrawingFeatureNodeId(drawing.id)),
+                  true,
+                )
               }}
               title="Drawings"
             />
@@ -219,12 +308,18 @@ export function LayerFilterPanel() {
                 >
                   <div className="flex items-center gap-3">
                     <input
-                      className="rounded border-stone-700 bg-stone-950 text-amber-500 focus:ring-amber-500/30"
-                      checked={drawingTypeVisibility[type]}
-                      data-testid={`layer-drawing-type-toggle-${type}`}
-                      onChange={(event) => setDrawingTypeVisibility(type, event.target.checked)}
-                      type="checkbox"
-                    />
+                        className="rounded border-stone-700 bg-stone-950 text-amber-500 focus:ring-amber-500/30"
+                        checked={drawingTypeVisibility[type]}
+                        data-testid={`layer-drawing-type-toggle-${type}`}
+                        onChange={(event) => {
+                          setDrawingTypeVisibility(type, event.target.checked)
+                          persistNodeVisibility(
+                            getDrawingLayerNodeId(type),
+                            event.target.checked,
+                          )
+                        }}
+                        type="checkbox"
+                      />
                     <span className="text-xs font-medium text-stone-300">{DRAWING_TYPE_LABELS[type]}</span>
                   </div>
                   <span className="text-[10px] font-mono font-bold text-stone-500">{drawingCounts[type]}</span>
@@ -247,7 +342,13 @@ export function LayerFilterPanel() {
                         className="rounded border-stone-700 bg-stone-950 text-amber-500 focus:ring-amber-500/30"
                         checked={isDrawingVisible(drawingTypeVisibility, hiddenDrawingIds, drawing)}
                         data-testid={`layer-drawing-toggle-${drawing.id}`}
-                        onChange={() => toggleDrawingVisibility(drawing.id)}
+                        onChange={(event) => {
+                          toggleDrawingVisibility(drawing.id)
+                          persistNodeVisibility(
+                            getDrawingFeatureNodeId(drawing.id),
+                            event.target.checked,
+                          )
+                        }}
                         type="checkbox"
                       />
                       <div>
