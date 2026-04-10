@@ -58,7 +58,7 @@ export function syncDrawingOverlay(
   )
   map.setFilter(
     DRAWING_POINT_LAYER_ID,
-    combineFilters(['==', ['get', 'featureKind'], 'label'], labelVisibilityFilter),
+    combineFilters(['all', ['==', '$type', 'Point'], ['==', ['get', 'featureKind'], 'geometry']], geometryVisibilityFilter),
   )
 }
 
@@ -165,8 +165,9 @@ function ensureDrawingLayers(map: maplibregl.Map): void {
       type: 'circle',
       source: DRAWING_SOURCE_ID,
       paint: {
-        'circle-radius': ['case', ['boolean', ['get', 'selected'], false], 5, 4],
-        'circle-color': ['get', 'labelColor'],
+        'circle-radius': ['case', ['boolean', ['get', 'selected'], false], 5.5, 4],
+        'circle-color': ['coalesce', ['get', 'strokeColor'], ['get', 'labelColor']],
+        'circle-opacity': ['case', ['boolean', ['get', 'selected'], false], 0.95, 0.75],
         'circle-stroke-color': '#0C0A09',
         'circle-stroke-width': 1.5,
       },
@@ -180,10 +181,21 @@ function ensureDrawingLayers(map: maplibregl.Map): void {
       source: DRAWING_SOURCE_ID,
       layout: {
         'text-field': ['get', 'label'],
-        'text-size': 11,
+        'text-size': ['coalesce', ['get', 'fontSize'], 11],
         'text-font': ['Open Sans Semibold', 'Arial Unicode MS Bold'],
-        'text-offset': [0, 1.2],
-        'text-anchor': 'top',
+        'text-offset': [
+          'case',
+          ['==', ['get', 'drawingType'], 'text_label'],
+          ['literal', [0, 0]],
+          ['literal', [0, 1.2]],
+        ],
+        'text-anchor': [
+          'case',
+          ['==', ['get', 'drawingType'], 'text_label'],
+          'center',
+          'top',
+        ],
+        'text-rotate': ['coalesce', ['get', 'rotation'], 0],
         'text-allow-overlap': true,
         'text-ignore-placement': true,
       },

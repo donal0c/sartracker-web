@@ -145,7 +145,8 @@ export function useMapDrawingInteractions(
       if (
         activeTool === 'range_ring' ||
         activeTool === 'bearing_line' ||
-        activeTool === 'search_sector'
+        activeTool === 'search_sector' ||
+        activeTool === 'text_label'
       ) {
         event.preventDefault()
         event.stopImmediatePropagation()

@@ -3,14 +3,69 @@
 > **Read this before doing ANY work. Update this after EVERY chunk of work.**
 
 ## Last Updated
-2026-04-10 16:03 by Codex
+2026-04-10 16:50 by Codex
 
 ## Current State
-**Phase: Phase 1 operational core complete — M1 through M10 complete; parity foundation now includes M12, M14, M16, and M17; next logical bead is M18**
+**Phase: Phase 1 operational core complete — M1 through M10 complete; parity foundation now includes M12, M14, M16, M17, and M18; next logical bead is M19**
 
 `HANDOFF.md` is the authoritative continuity log for active repo work across Donal, Codex, and Claude Code. Update it after every meaningful chunk so the next agent can resume without re-discovery.
 
 ## What's Been Done
+
+### 2026-04-10 M18 text labels and coordinate converter completed
+- Implemented `text_label` as a real drawing subtype instead of a side-channel annotation feature:
+  - draft/type/runtime support in:
+    - `src/features/drawings/drawing-types.ts`
+    - `src/features/drawings/drawing-draft-factories.ts`
+    - `src/features/drawings/drawing-runtime-editor.ts`
+    - `src/features/drawings/start-drawing-runtime.ts`
+  - type-specific persistence in:
+    - `src/features/drawings/drawing-persistence/text-label-drawing-persistence.ts`
+    - `src/features/drawings/drawing-persistence/index.ts`
+- Important architectural choices:
+  - text labels stay inside the existing drawings pipeline so selection, persistence, ordering, and layer-catalog visibility all work through the same mission-scoped boundary
+  - text-label metadata is explicit and typed: text, font size, hex color, rotation, anchor point
+  - text labels are editable through the same create/edit/delete runtime used by other drawing tools, rather than introducing a parallel label runtime
+- Hardened drawing rendering for text labels in:
+  - `src/features/drawings/drawing-geojson.ts`
+  - `src/features/drawings/sync-drawing-overlay.ts`
+  - label styling now honors stored font size / rotation / color
+  - text labels render as proper symbol labels with an anchor point and remain selectable through the map overlay stack
+- Added a dedicated coordinate conversion feature slice:
+  - conversion logic in `src/features/coordinates/coordinate-tool.ts`
+  - modal/control state in `src/features/coordinates/coordinate-tool-store.ts`
+  - operator dialog in `src/components/coordinate-converter-dialog.tsx`
+- Added coordinate-tool parity capabilities:
+  - WGS84 input flow
+  - ITM input flow
+  - TM65 grid-reference input flow
+  - operator-facing output for WGS84 / ITM / TM65
+  - copy-to-clipboard actions
+  - go-to-location action with temporary target marker feedback on the map
+- Added map integration for go-to-location in:
+  - `src/features/map/use-map-location-target.ts`
+  - `src/features/map/use-map-controller.ts`
+  - `src/components/coordinate-bar.tsx`
+- Updated operator UI:
+  - drawing toolbar now includes `Text Label`
+  - drawing dialog includes a type-specific text-label editor
+  - coordinate bar now opens the converter and shows a temporary target-active indicator after `Go To Location`
+- Added / updated coverage:
+  - `tests/unit/coordinates.test.ts`
+  - `tests/unit/coordinate-tool.test.ts`
+  - `tests/unit/drawing-builders.test.ts`
+  - `tests/e2e/coordinate-converter.spec.ts`
+  - `tests/e2e/drawing-tools.spec.ts`
+- Verification completed:
+  - `npm run test` ✅
+  - `npm run lint` ✅
+  - `npm run build` ✅
+  - `npm run test:e2e` ✅
+  - `cargo test --manifest-path src-tauri/Cargo.toml` ✅
+- Result:
+  - the standalone app now has parity for both text labels and coordinate conversion workflows
+  - the coordinate tool is cleanly separated from mission persistence while still integrating safely with the live map
+  - M19 is now the next logical bead
 
 ### 2026-04-10 M17 layer tree and feature inspection UI completed
 - Replaced the flat layer/filter panel with a real operator-facing tree workspace in:

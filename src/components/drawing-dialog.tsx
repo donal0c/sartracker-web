@@ -49,20 +49,27 @@ export function DrawingDialog() {
         </div>
 
         <div className="mt-6 space-y-6">
-          <section className="grid gap-4 md:grid-cols-2">
-            <Field
-              label="Name"
-              onChange={(value) => controller.updateDraft({ ...draft, name: value })}
-              testId="drawing-name-input"
-              value={draft.name}
+          {draft.type === 'text_label' ? (
+            <TextLabelSection
+              draft={draft}
+              onChange={(nextDraft) => controller.updateDraft(nextDraft)}
             />
-            <Field
-              label="Description"
-              onChange={(value) => controller.updateDraft({ ...draft, description: value })}
-              testId="drawing-description-input"
-              value={draft.description}
-            />
-          </section>
+          ) : (
+            <section className="grid gap-4 md:grid-cols-2">
+              <Field
+                label="Name"
+                onChange={(value) => controller.updateDraft({ ...draft, name: value })}
+                testId="drawing-name-input"
+                value={draft.name}
+              />
+              <Field
+                label="Description"
+                onChange={(value) => controller.updateDraft({ ...draft, description: value })}
+                testId="drawing-description-input"
+                value={draft.description}
+              />
+            </section>
+          )}
 
           {draft.type === 'line' ? (
             <LineSection
@@ -382,6 +389,54 @@ function SearchSectorSection(props: {
   )
 }
 
+function TextLabelSection(props: {
+  readonly draft: Extract<DrawingDraft, { type: 'text_label' }>
+  readonly onChange: (draft: Extract<DrawingDraft, { type: 'text_label' }>) => void
+}) {
+  return (
+    <>
+      <ReadOnlyGrid
+        items={[
+          {
+            label: 'Anchor',
+            value: `${props.draft.point[1].toFixed(5)}, ${props.draft.point[0].toFixed(5)}`,
+          },
+          {
+            label: 'Rotation',
+            value: props.draft.rotation === '' ? '0°' : `${props.draft.rotation}°`,
+          },
+        ]}
+      />
+      <TextAreaField
+        label="Text"
+        onChange={(value) => props.onChange({ ...props.draft, text: value })}
+        testId="drawing-text-label-text-input"
+        value={props.draft.text}
+      />
+      <section className="grid gap-4 md:grid-cols-3">
+        <Field
+          label="Font Size"
+          onChange={(value) => props.onChange({ ...props.draft, fontSize: value })}
+          testId="drawing-text-label-font-size-input"
+          value={props.draft.fontSize}
+        />
+        <Field
+          label="Color"
+          onChange={(value) => props.onChange({ ...props.draft, color: value })}
+          testId="drawing-text-label-color-input"
+          value={props.draft.color}
+        />
+        <Field
+          label="Rotation (°)"
+          onChange={(value) => props.onChange({ ...props.draft, rotation: value })}
+          testId="drawing-text-label-rotation-input"
+          value={props.draft.rotation}
+        />
+      </section>
+    </>
+  )
+}
+
 function Field(props: {
   readonly label: string
   readonly value: string
@@ -494,4 +549,5 @@ const DRAWING_DIALOG_TITLES: Record<DrawingDraft['type'], string> = {
   range_ring: 'Range Ring Details',
   bearing_line: 'Bearing Line Details',
   search_sector: 'Search Sector Details',
+  text_label: 'Text Label Details',
 }

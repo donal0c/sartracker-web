@@ -6,6 +6,7 @@ import {
   createRangeRingDraft,
   createSearchAreaDraft,
   createSearchSectorDraft,
+  createTextLabelDraft,
 } from './drawing-builders'
 import {
   createDrawingRuntimeMutableState,
@@ -108,7 +109,7 @@ export function completeDrawingSketch(state: DrawingRuntimeMutableState): void {
  */
 export function beginDrawingDialogAtPoint(
   state: DrawingRuntimeMutableState,
-  tool: Extract<DrawingTool, 'range_ring' | 'bearing_line' | 'search_sector'>,
+  tool: Extract<DrawingTool, 'range_ring' | 'bearing_line' | 'search_sector' | 'text_label'>,
   lon: number,
   lat: number,
 ): void {
@@ -122,7 +123,9 @@ export function beginDrawingDialogAtPoint(
         ? createRangeRingDraft([lon, lat])
         : tool === 'bearing_line'
           ? createBearingLineDraft([lon, lat])
-          : createSearchSectorDraft([lon, lat]),
+          : tool === 'search_sector'
+            ? createSearchSectorDraft([lon, lat])
+            : createTextLabelDraft([lon, lat]),
   }
 }
 

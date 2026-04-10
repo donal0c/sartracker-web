@@ -13,6 +13,8 @@ type DrawingFeatureProperties = GeoJsonProperties & {
   readonly fillColor: string
   readonly labelColor: string
   readonly label: string | null
+  readonly fontSize: number
+  readonly rotation: number
   readonly width: number
   readonly selected: boolean
 }
@@ -78,6 +80,18 @@ export function createDrawingFeatureCollection(
     const fillColor = drawing.color === null ? baseStyle.fillColor : `${drawing.color}22`
     const width = drawing.width ?? baseStyle.width
     const label = drawing.label ?? drawing.name
+    const labelStyle =
+      parsed.metadata?.kind === 'text_label'
+        ? {
+            fontSize: parsed.metadata.fontSize,
+            rotation: parsed.metadata.rotation,
+            color: parsed.metadata.color,
+          }
+        : {
+            fontSize: 11,
+            rotation: 0,
+            color: baseStyle.labelColor,
+          }
 
     if (parsed.type === 'range_ring' && parsed.parsedGeometry.type === 'MultiPolygon') {
       const metadata = parsed.metadata?.kind === 'range_ring' ? parsed.metadata : null
@@ -114,6 +128,8 @@ export function createDrawingFeatureCollection(
                 ),
                 label: labelText,
                 labelColor: ringStroke,
+                fontSize: 11,
+                rotation: 0,
                 selected: isSelected,
               }),
             )
@@ -142,7 +158,9 @@ export function createDrawingFeatureCollection(
           drawing,
           coordinate: labelCoordinate,
           label,
-          labelColor: baseStyle.labelColor,
+          labelColor: labelStyle.color,
+          fontSize: labelStyle.fontSize,
+          rotation: labelStyle.rotation,
           selected: isSelected,
         }),
       )
@@ -228,6 +246,8 @@ function createGeometryFeature(args: {
       fillColor: args.fillColor,
       labelColor: DEFAULT_DRAWING_STYLE[args.drawing.type].labelColor,
       label: args.label,
+      fontSize: 11,
+      rotation: 0,
       width: args.width,
       selected: args.selected,
     },
@@ -239,6 +259,8 @@ function createLabelFeature(args: {
   readonly coordinate: LonLat
   readonly label: string | null
   readonly labelColor: string
+  readonly fontSize: number
+  readonly rotation: number
   readonly selected: boolean
 }): Feature<Point, DrawingFeatureProperties> {
   return {
@@ -255,6 +277,8 @@ function createLabelFeature(args: {
       fillColor: DEFAULT_DRAWING_STYLE[args.drawing.type].fillColor,
       labelColor: args.labelColor,
       label: args.label,
+      fontSize: args.fontSize,
+      rotation: args.rotation,
       width: DEFAULT_DRAWING_STYLE[args.drawing.type].width,
       selected: args.selected,
     },
@@ -277,6 +301,8 @@ function createPreviewFeature(
       fillColor: style.fillColor,
       labelColor: style.labelColor,
       label: null,
+      fontSize: 11,
+      rotation: 0,
       width: style.width,
       selected: false,
     },
@@ -305,6 +331,8 @@ function createPreviewVertexFeature(
       fillColor: style.fillColor,
       labelColor: style.labelColor,
       label: null,
+      fontSize: 11,
+      rotation: 0,
       width: style.width,
       selected: false,
     },
@@ -320,6 +348,10 @@ function resolveLabelCoordinate(drawing: ReturnType<typeof parsePersistedDrawing
   if (drawing.parsedGeometry.type === 'Polygon') {
     const ring = (drawing.parsedGeometry.coordinates[0] ?? []).map((coordinate) => toLonLat(coordinate))
     return centroidOfRing(ring)
+  }
+
+  if (drawing.parsedGeometry.type === 'Point') {
+    return toLonLat(drawing.parsedGeometry.coordinates)
   }
 
   return null

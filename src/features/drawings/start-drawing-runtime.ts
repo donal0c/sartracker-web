@@ -43,7 +43,7 @@ export type DrawingRuntimeController = {
   readonly appendSketchPoint: (lon: number, lat: number) => void
   readonly completeSketch: () => void
   readonly beginDialogAtPoint: (
-    tool: Extract<DrawingTool, 'range_ring' | 'bearing_line' | 'search_sector'>,
+    tool: Extract<DrawingTool, 'range_ring' | 'bearing_line' | 'search_sector' | 'text_label'>,
     lon: number,
     lat: number,
   ) => void

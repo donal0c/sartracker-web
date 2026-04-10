@@ -9,4 +9,5 @@ export {
   createRangeRingDraft,
   createSearchAreaDraft,
   createSearchSectorDraft,
+  createTextLabelDraft,
 } from './drawing-draft-factories'

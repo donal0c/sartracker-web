@@ -9,6 +9,7 @@ import { useMapMeasurementInteractions } from './use-map-measurement-interaction
 import { useMapMeasurementOverlays } from './use-map-measurement-overlays'
 import { useMapMarkerInteractions } from './use-map-marker-interactions'
 import { useMapOverlays } from './use-map-overlays'
+import { useMapLocationTarget } from './use-map-location-target'
 
 type MapController = {
   readonly activeBasemapId: BasemapId
@@ -47,6 +48,9 @@ export function useMapController(): MapController {
   })
   useMapMarkerInteractions({
     containerRef: mapInstance.containerRef,
+    mapRef: mapInstance.mapRef,
+  })
+  useMapLocationTarget({
     mapRef: mapInstance.mapRef,
   })
 

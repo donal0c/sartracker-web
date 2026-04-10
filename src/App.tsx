@@ -2,6 +2,7 @@ import { Suspense, lazy, useState } from 'react'
 
 import { DrawingRuntimeBridge } from './features/drawings/drawing-runtime-bridge'
 import { DrawingDialog } from './components/drawing-dialog'
+import { CoordinateConverterDialog } from './components/coordinate-converter-dialog'
 import { LayerFilterPanel } from './components/layer-filter-panel'
 import { LayerCatalogRuntimeBridge } from './features/layers/layer-catalog-runtime-bridge'
 import { MeasurementPanel } from './components/measurement-panel'
@@ -95,6 +96,7 @@ function App() {
       </aside>
 
       <DrawingDialog />
+      <CoordinateConverterDialog />
       <MarkerDialog />
       <SettingsWorkspace onClose={() => setSettingsOpen(false)} open={settingsOpen} />
     </main>

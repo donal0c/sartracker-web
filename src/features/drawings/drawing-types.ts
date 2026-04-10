@@ -9,6 +9,7 @@ export type DrawingTool =
   | 'range_ring'
   | 'bearing_line'
   | 'search_sector'
+  | 'text_label'
 
 export type SearchAreaStatus =
   | 'Planned'
@@ -75,12 +76,23 @@ export type SearchSectorDrawingDraft = {
   readonly radiusM: string
 }
 
+export type TextLabelDrawingDraft = {
+  readonly id: string | null
+  readonly type: 'text_label'
+  readonly text: string
+  readonly fontSize: string
+  readonly color: string
+  readonly rotation: string
+  readonly point: LonLat
+}
+
 export type DrawingDraft =
   | LineDrawingDraft
   | SearchAreaDrawingDraft
   | RangeRingDrawingDraft
   | BearingLineDrawingDraft
   | SearchSectorDrawingDraft
+  | TextLabelDrawingDraft
 
 export type DrawingDialogState = {
   readonly mode: 'create' | 'edit'
@@ -130,6 +142,14 @@ export type DrawingMetadata =
       readonly endBearing: number
       readonly radiusM: number
     }
+  | {
+      readonly kind: 'text_label'
+      readonly text: string
+      readonly fontSize: number
+      readonly color: string
+      readonly rotation: number
+      readonly point: LonLat
+    }
 
 export type PersistedDrawing = Drawing & {
   readonly parsedGeometry: GeoJSON.Geometry
@@ -150,6 +170,7 @@ export function isEditableDrawingType(type: DrawingType): type is DrawingDraft['
     type === 'search_area' ||
     type === 'range_ring' ||
     type === 'bearing_line' ||
-    type === 'search_sector'
+    type === 'search_sector' ||
+    type === 'text_label'
   )
 }

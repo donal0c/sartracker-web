@@ -1,4 +1,5 @@
 import proj4 from 'proj4'
+import type { CoordinateDisplayMode } from '../features/settings/settings-types'
 
 const ITM_PROJ =
   '+proj=tmerc +lat_0=53.5 +lon_0=-8 +k=0.99982 ' +
@@ -85,6 +86,45 @@ export function wgs84ToTM65(lat: number, lon: number): [number, number] {
 }
 
 /**
+ * Converts ITM easting/northing coordinates into WGS84 latitude/longitude.
+ */
+export function itmToWgs84(easting: number, northing: number): [number, number] {
+  const context = 'itm_to_wgs84'
+  const safeEasting = validateNumeric(easting, 'easting', context)
+  const safeNorthing = validateNumeric(northing, 'northing', context)
+  const [lon, lat] = proj4('EPSG:2157', 'EPSG:4326', [safeEasting, safeNorthing]) as [
+    number,
+    number,
+  ]
+
+  validateWGS84Range(lat, lon, context)
+
+  return [lat, lon]
+}
+
+/**
+ * Converts TM65 easting/northing coordinates into WGS84 latitude/longitude.
+ */
+export function tm65ToWgs84(easting: number, northing: number): [number, number] {
+  const context = 'tm65_to_wgs84'
+  const safeEasting = validateNumeric(easting, 'easting', context)
+  const safeNorthing = validateNumeric(northing, 'northing', context)
+
+  if (safeEasting < TM65_EASTING_MIN || safeEasting >= TM65_EASTING_MAX) {
+    throw new RangeError(`TM65 easting outside valid range during ${context}`)
+  }
+  if (safeNorthing < TM65_NORTHING_MIN || safeNorthing >= TM65_NORTHING_MAX) {
+    throw new RangeError(`TM65 northing outside valid range during ${context}`)
+  }
+
+  const [lon, lat] = proj4('TM65', 'EPSG:4326', [safeEasting, safeNorthing]) as [number, number]
+
+  validateWGS84Range(lat, lon, context)
+
+  return [lat, lon]
+}
+
+/**
  * Formats TM65 easting/northing values as an Irish grid reference.
  */
 export function formatIrishGridReference(
@@ -128,6 +168,57 @@ export function formatIrishGridReference(
 }
 
 /**
+ * Parses an Irish grid reference into TM65 easting/northing coordinates.
+ */
+export function parseIrishGridReference(value: string): [number, number] {
+  const context = 'parse_irish_grid_reference'
+  const normalized = value.trim().toUpperCase()
+  const match = normalized.match(/^([A-HJ-Z])[\s,]+(\d{1,5})[\s,]+(\d{1,5})$/)
+  if (match === null) {
+    throw new Error('TM65 grid reference must look like "V 80245 84452".')
+  }
+
+  const letter = match[1]!
+  const rawEasting = match[2]!
+  const rawNorthing = match[3]!
+  if (rawEasting.length !== rawNorthing.length) {
+    throw new Error('TM65 grid reference must use the same precision for easting and northing.')
+  }
+
+  const gridPosition = findIrishGridLetterPosition(letter)
+  if (gridPosition === null) {
+    throw new Error(`TM65 grid square outside valid range during ${context}`)
+  }
+
+  const precision = rawEasting.length
+  const scale = 10 ** (5 - precision)
+  const eastingRemainder = Number(rawEasting) * scale
+  const northingRemainder = Number(rawNorthing) * scale
+  const easting = gridPosition.easting + eastingRemainder
+  const northing = gridPosition.northing + northingRemainder
+
+  if (easting < TM65_EASTING_MIN || easting >= TM65_EASTING_MAX) {
+    throw new Error(`TM65 easting outside valid range during ${context}`)
+  }
+  if (northing < TM65_NORTHING_MIN || northing >= TM65_NORTHING_MAX) {
+    throw new Error(`TM65 northing outside valid range during ${context}`)
+  }
+
+  return [easting, northing]
+}
+
+/**
+ * Formats ITM coordinates for operator display.
+ */
+export function formatITMCoordinates(easting: number, northing: number): string {
+  const context = 'format_itm_coordinates'
+  const safeEasting = validateNumeric(easting, 'easting', context)
+  const safeNorthing = validateNumeric(northing, 'northing', context)
+
+  return `${Math.round(safeEasting)}, ${Math.round(safeNorthing)}`
+}
+
+/**
  * Formats WGS84 latitude/longitude values with directional suffixes.
  */
 export function formatWGS84Degrees(lat: number, lon: number, precision = 6): string {
@@ -162,4 +253,20 @@ export function formatMapCoordinateBar(
   const tm65 = formatIrishGridReference(easting, northing)
   return mode === 'tm65_first' ? `${tm65}  |  ${wgs84}` : `${wgs84}  |  ${tm65}`
 }
-import type { CoordinateDisplayMode } from '../features/settings/settings-types'
+
+function findIrishGridLetterPosition(letter: string): { easting: number; northing: number } | null {
+  for (let row = 0; row < IRISH_GRID_ROWS.length; row += 1) {
+    const letters = IRISH_GRID_ROWS[row]!
+    const col = letters.indexOf(letter)
+    if (col === -1) {
+      continue
+    }
+
+    return {
+      easting: col * IRISH_GRID_SIZE,
+      northing: (IRISH_GRID_DIM - 1 - row) * IRISH_GRID_SIZE,
+    }
+  }
+
+  return null
+}

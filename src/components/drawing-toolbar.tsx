@@ -10,6 +10,7 @@ const DRAWING_TOOL_OPTIONS = [
   { value: 'range_ring', label: 'Range Rings', hint: 'Click a centre point, then configure rings' },
   { value: 'bearing_line', label: 'Bearing', hint: 'Click an origin, then enter bearing and distance' },
   { value: 'search_sector', label: 'Sector', hint: 'Click a centre point, then set bearings and radius' },
+  { value: 'text_label', label: 'Text Label', hint: 'Click a point, then enter label text and style' },
 ] as const
 
 /**

@@ -4,6 +4,7 @@ import type {
   RangeRingDrawingDraft,
   SearchAreaDrawingDraft,
   SearchSectorDrawingDraft,
+  TextLabelDrawingDraft,
 } from './drawing-types'
 import type { LonLat } from './drawing-math'
 
@@ -84,5 +85,20 @@ export function createSearchSectorDraft(center: LonLat): SearchSectorDrawingDraf
     startBearing: '0',
     endBearing: '90',
     radiusM: '1000',
+  }
+}
+
+/**
+ * Creates an empty text-label draft from a selected anchor point.
+ */
+export function createTextLabelDraft(point: LonLat): TextLabelDrawingDraft {
+  return {
+    id: null,
+    type: 'text_label',
+    text: '',
+    fontSize: '12',
+    color: '#000000',
+    rotation: '0',
+    point,
   }
 }

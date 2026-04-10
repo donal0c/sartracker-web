@@ -1,8 +1,12 @@
 import fixture from '../fixtures/kerry-reference-points.json'
 import {
+  formatITMCoordinates,
   formatIrishGridReference,
   formatMapCoordinateBar,
   formatWGS84Degrees,
+  itmToWgs84,
+  parseIrishGridReference,
+  tm65ToWgs84,
   wgs84ToITM,
   wgs84ToTM65,
 } from '../../src/lib/coordinates'
@@ -33,6 +37,10 @@ describe('map coordinate formatting', () => {
     expect(formatMapCoordinateBar(52.274681, -9.530912)).toBe(
       '52.274681°N, 9.530912°W  |  Q 95296 14688',
     )
+  })
+
+  it('formats ITM coordinates as rounded easting/northing pairs', () => {
+    expect(formatITMCoordinates(480245.4, 584451.6)).toBe('480245, 584452')
   })
 })
 
@@ -70,5 +78,24 @@ describe('wgs84 to ITM conversion', () => {
       483823,
       614607,
     ])
+  })
+})
+
+describe('reverse Irish coordinate conversions', () => {
+  it('parses Irish grid references into TM65 easting/northing coordinates', () => {
+    expect(parseIrishGridReference('Q 99840 04018')).toEqual([99840, 104018])
+    expect(parseIrishGridReference('v 80011 84363')).toEqual([80011, 84363])
+  })
+
+  it('converts ITM coordinates back into WGS84 within operational tolerance', () => {
+    const [lat, lon] = itmToWgs84(480245, 584452)
+    expect(lat).toBeCloseTo(51.99917, 4)
+    expect(lon).toBeCloseTo(-9.74406, 4)
+  })
+
+  it('converts TM65 coordinates back into WGS84 within operational tolerance', () => {
+    const [lat, lon] = tm65ToWgs84(80011, 84363)
+    expect(lat).toBeCloseTo(51.99917, 4)
+    expect(lon).toBeCloseTo(-9.74406, 4)
   })
 })

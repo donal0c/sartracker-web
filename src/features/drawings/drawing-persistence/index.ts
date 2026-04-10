@@ -4,6 +4,10 @@ import { buildLineDrawingInput, createLineDraftFromDrawing } from './line-drawin
 import { buildRangeRingDrawingInput, createRangeRingDraftFromDrawing } from './range-ring-drawing-persistence'
 import { buildSearchAreaDrawingInput, createSearchAreaDraftFromDrawing } from './search-area-drawing-persistence'
 import { buildSearchSectorDrawingInput, createSearchSectorDraftFromDrawing } from './search-sector-drawing-persistence'
+import {
+  buildTextLabelDrawingInput,
+  createTextLabelDraftFromDrawing,
+} from './text-label-drawing-persistence'
 import { type BuildDrawingInputArgs, parsePersistedDrawing } from './shared'
 
 /**
@@ -25,6 +29,8 @@ export function buildDrawingInput({
       return buildBearingLineDrawingInput(missionId, displayOrder, draft)
     case 'search_sector':
       return buildSearchSectorDrawingInput(missionId, displayOrder, draft)
+    case 'text_label':
+      return buildTextLabelDrawingInput(missionId, displayOrder, draft)
   }
 }
 
@@ -48,6 +54,8 @@ export function createDraftFromDrawing(drawing: Drawing) {
       return createBearingLineDraftFromDrawing(drawing)
     case 'search_sector':
       return createSearchSectorDraftFromDrawing(drawing)
+    case 'text_label':
+      return createTextLabelDraftFromDrawing(drawing)
     default:
       throw new Error(`Unsupported drawing type for editing: ${drawing.type}`)
   }

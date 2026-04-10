@@ -7,6 +7,7 @@ import {
   createRangeRingDraft,
   createSearchAreaDraft,
   createSearchSectorDraft,
+  createTextLabelDraft,
   parsePersistedDrawing,
 } from '../../src/features/drawings/drawing-builders'
 
@@ -97,6 +98,28 @@ describe('drawing builders', () => {
 
     expect(input.type).toBe('search_sector')
     expect(input.geometry_json).toContain('"Polygon"')
+  })
+
+  it('builds text labels with persisted style metadata', () => {
+    const input = buildDrawingInput({
+      missionId: 'mission-1',
+      displayOrder: 6,
+      draft: {
+        ...createTextLabelDraft([-9.744, 51.999]),
+        text: 'Landing Zone',
+        fontSize: '18',
+        color: '#FFCC00',
+        rotation: '15',
+      },
+    })
+
+    expect(input.type).toBe('text_label')
+    expect(input.name).toBe('Landing Zone')
+    expect(input.label).toBe('Landing Zone')
+    expect(input.color).toBe('#FFCC00')
+    expect(input.geometry_json).toContain('"Point"')
+    expect(input.metadata_json).toContain('"fontSize":18')
+    expect(input.metadata_json).toContain('"rotation":15')
   })
 
   it('parses persisted drawing geometry and metadata', () => {

@@ -93,6 +93,30 @@ test.describe('M8 drawing workflows', () => {
     expect(drawings.some((drawing) => drawing.name === 'Sector North' && drawing.type === 'search_sector')).toBe(true)
   })
 
+  test('creates, edits, and exposes text labels through the layer tree', async ({ page }) => {
+    await page.getByTestId('drawing-tool-text_label').click()
+    await clickMap(page, { x: 540, y: 220 })
+
+    await expect(page.getByTestId('drawing-dialog')).toBeVisible()
+    await page.getByTestId('drawing-text-label-text-input').fill('Landing Zone')
+    await page.getByTestId('drawing-text-label-font-size-input').fill('18')
+    await page.getByTestId('drawing-text-label-color-input').fill('#FFCC00')
+    await page.getByTestId('drawing-save-btn').click()
+
+    const drawings = await readMissionDrawings(page)
+    expect(drawings.some((drawing) => drawing.type === 'text_label' && drawing.name === 'Landing Zone')).toBe(true)
+
+    await clickMap(page, { x: 540, y: 220 })
+    await expect(page.getByTestId('drawing-dialog')).toBeVisible()
+    await page.getByTestId('drawing-text-label-text-input').fill('Updated Landing Zone')
+    await page.getByTestId('drawing-save-btn').click()
+
+    await page.getByTestId('layer-panel').scrollIntoViewIfNeeded()
+    await page.getByTestId('layer-tree-search').fill('Updated Landing')
+    await expect(page.getByText('Text Labels')).toBeVisible()
+    await expect(page.getByText('Updated Landing Zone')).toBeVisible()
+  })
+
   test('edits and deletes an existing drawing through select mode', async ({ page }) => {
     await page.getByTestId('drawing-tool-line').click()
     await clickMap(page, { x: 420, y: 240 })
