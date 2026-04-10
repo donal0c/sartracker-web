@@ -1,14 +1,20 @@
 import type {
+  AddPositionInput,
   CreateMissionInput,
+  Device,
   Drawing,
   Marker,
   Mission,
+  Position,
+  UpsertDeviceInput,
   UpsertDrawingInput,
   UpsertMarkerInput,
 } from '../../infrastructure/mission-store/tauri-mission-store'
 
 type BrowserHarnessState = {
   readonly missions: readonly Mission[]
+  readonly devices: readonly Device[]
+  readonly positions: readonly Position[]
   readonly markers: readonly Marker[]
   readonly drawings: readonly Drawing[]
   readonly currentMissionId: string | null
@@ -20,10 +26,18 @@ const BROWSER_HARNESS_STORAGE_KEY = 'sartracker:browser-harness'
 type BrowserHarnessStore = {
   readonly createMission: (input: CreateMissionInput) => Promise<Mission>
   readonly listMissions: () => Promise<readonly Mission[]>
+  readonly getActiveMission: () => Promise<Mission | null>
   readonly getRecoverableMission: () => Promise<Mission | null>
   readonly pauseMission: (missionId: string) => Promise<Mission>
   readonly resumeMission: (missionId: string) => Promise<Mission>
   readonly finishMission: (missionId: string) => Promise<Mission>
+  readonly listDevices: (missionId: string) => Promise<readonly Device[]>
+  readonly upsertDevice: (input: UpsertDeviceInput) => Promise<Device>
+  readonly addPosition: (input: AddPositionInput) => Promise<Position>
+  readonly listPositions: (
+    missionId: string,
+    deviceId?: string,
+  ) => Promise<readonly Position[]>
   readonly listMarkers: (missionId: string) => Promise<readonly Marker[]>
   readonly upsertMarker: (input: UpsertMarkerInput) => Promise<Marker>
   readonly deleteMarker: (markerId: string) => Promise<boolean>
@@ -70,6 +84,10 @@ export function getBrowserHarnessStore(): BrowserHarnessStore {
       return mission
     },
     listMissions: async () => state.missions,
+    getActiveMission: async () => {
+      const mission = findMission(state.currentMissionId, state.missions)
+      return mission?.status === 'active' ? mission : null
+    },
     getRecoverableMission: async () => {
       const currentMission = findMission(state.currentMissionId, state.missions)
       if (currentMission?.status === 'active') {
@@ -129,6 +147,70 @@ export function getBrowserHarnessStore(): BrowserHarnessStore {
       save()
       return finishedMission
     },
+    listDevices: async (missionId) =>
+      state.devices.filter((device) => device.mission_id === missionId),
+    upsertDevice: async (input) => {
+      const existingDevice =
+        state.devices.find(
+          (device) =>
+            device.mission_id === input.mission_id && device.device_id === input.device_id,
+        ) ?? null
+
+      const device = {
+        id: existingDevice?.id ?? createId('device'),
+        mission_id: input.mission_id,
+        device_id: input.device_id,
+        name: input.name,
+        color: input.color,
+        status: input.status,
+        last_seen: input.last_seen ?? null,
+      } satisfies Device
+
+      state = {
+        ...state,
+        devices: upsertDevice(state.devices, device),
+      }
+      save()
+      return device
+    },
+    addPosition: async (input) => {
+      const position = {
+        id: createId('position'),
+        mission_id: input.mission_id,
+        device_id: input.device_id,
+        name: input.name ?? null,
+        lat: input.lat,
+        lon: input.lon,
+        altitude: input.altitude ?? null,
+        speed: input.speed ?? null,
+        battery: input.battery ?? null,
+        accuracy: input.accuracy ?? null,
+        source: input.source ?? null,
+        timestamp: input.timestamp ?? new Date().toISOString(),
+        data_origin: input.data_origin ?? 'live',
+      } satisfies Position
+
+      state = {
+        ...state,
+        positions: [...state.positions, position],
+      }
+      save()
+      return position
+    },
+    listPositions: async (missionId, deviceId) =>
+      state.positions
+        .filter((position) => {
+          if (position.mission_id !== missionId) {
+            return false
+          }
+
+          if (deviceId === undefined) {
+            return true
+          }
+
+          return position.device_id === deviceId
+        })
+        .sort((left, right) => Date.parse(left.timestamp) - Date.parse(right.timestamp)),
     listMarkers: async (missionId) =>
       state.markers
         .filter((marker) => marker.mission_id === missionId)
@@ -235,10 +317,24 @@ export function getBrowserHarnessStore(): BrowserHarnessStore {
   return browserHarnessStore
 }
 
+export function readBrowserHarnessState(): BrowserHarnessState {
+  return readHarnessState()
+}
+
+export function resetBrowserHarnessStore(clearStorage = true): void {
+  browserHarnessStore = null
+
+  if (clearStorage && typeof window !== 'undefined') {
+    window.sessionStorage.removeItem(BROWSER_HARNESS_STORAGE_KEY)
+  }
+}
+
 function readHarnessState(): BrowserHarnessState {
   if (typeof window === 'undefined') {
     return {
       missions: [],
+      devices: [],
+      positions: [],
       markers: [],
       drawings: [],
       currentMissionId: null,
@@ -250,6 +346,8 @@ function readHarnessState(): BrowserHarnessState {
   if (stored === null) {
     return {
       missions: [],
+      devices: [],
+      positions: [],
       markers: [],
       drawings: [],
       currentMissionId: null,
@@ -261,6 +359,8 @@ function readHarnessState(): BrowserHarnessState {
     const parsed = JSON.parse(stored) as Partial<BrowserHarnessState>
     return {
       missions: Array.isArray(parsed.missions) ? parsed.missions : [],
+      devices: Array.isArray(parsed.devices) ? parsed.devices : [],
+      positions: Array.isArray(parsed.positions) ? parsed.positions : [],
       markers: Array.isArray(parsed.markers) ? parsed.markers : [],
       drawings: Array.isArray(parsed.drawings) ? parsed.drawings : [],
       currentMissionId:
@@ -271,6 +371,8 @@ function readHarnessState(): BrowserHarnessState {
   } catch {
     return {
       missions: [],
+      devices: [],
+      positions: [],
       markers: [],
       drawings: [],
       currentMissionId: null,
@@ -333,6 +435,18 @@ function upsertMarker(markers: readonly Marker[], marker: Marker): readonly Mark
   }
 
   return markers.map((candidate) => (candidate.id === marker.id ? marker : candidate))
+}
+
+function upsertDevice(devices: readonly Device[], device: Device): readonly Device[] {
+  const existingIndex = devices.findIndex(
+    (candidate) =>
+      candidate.mission_id === device.mission_id && candidate.device_id === device.device_id,
+  )
+  if (existingIndex === -1) {
+    return [...devices, device]
+  }
+
+  return devices.map((candidate, index) => (index === existingIndex ? device : candidate))
 }
 
 function upsertDrawing(drawings: readonly Drawing[], drawing: Drawing): readonly Drawing[] {

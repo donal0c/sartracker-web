@@ -3,14 +3,204 @@
 > **Read this before doing ANY work. Update this after EVERY chunk of work.**
 
 ## Last Updated
-2026-04-10 11:20 by Codex
+2026-04-10 13:25 by Codex
 
 ## Current State
-**Phase: Phase 1 build in progress — M1, M2, M3, M4, M5, M6, M7, M8, and M9 complete; tactical UI modernization pass merged**
+**Phase: Phase 1 operational core complete — M1 through M10 complete; tactical UI modernization pass merged; parity program beads queued**
 
 `HANDOFF.md` is the authoritative continuity log for active repo work across Donal, Codex, and Claude Code. Update it after every meaningful chunk so the next agent can resume without re-discovery.
 
 ## What's Been Done
+
+### 2026-04-10 M10 integration flow completed
+- Implemented M10 as a true full-mission Playwright integration pass instead of another narrow feature test
+- Extended the browser validation harness so it now persists and rehydrates:
+  - missions
+  - tracking devices + positions
+  - markers
+  - drawings
+- Added a typed browser-only harness API in `src/features/browser-validation/browser-harness-api.ts` so Playwright can:
+  - inject mocked tracking snapshots cleanly
+  - hydrate tracking state after reload/recovery
+  - inspect persisted harness state without raw ad hoc storage parsing
+- Updated `src/features/mission/mission-browser-harness.ts` to install the browser harness API and rehydrate tracking on startup
+- Added focused unit coverage in `tests/unit/browser-harness-store.test.ts` for the new tracking-aware browser harness persistence
+- Added `tests/e2e/full-mission-flow.spec.ts` covering the complete simulated SAR mission:
+  - app load
+  - mission start
+  - mocked tracking arrival
+  - IPP marker creation
+  - clue marker creation
+  - search-area drawing + team assignment
+  - range ring creation
+  - bearing line creation
+  - device visibility toggle
+  - measurement flow
+  - pause/resume
+  - crash-style reload + recovery prompt
+  - mission finish
+  - persisted-state verification
+- Important implementation notes:
+  - mocked tracking data is now treated as real mission persistence in the browser harness, so reload recovery validates device/position continuity instead of only UI state
+  - measurements remain temporary operational aids and are not part of the persisted mission-record checks after reload
+- Verification completed:
+  - `npm run test` ✅
+  - `npm run lint` ✅
+  - `npm run build` ✅
+  - `npm run test:e2e` ✅
+  - `cargo test --manifest-path src-tauri/Cargo.toml` ✅
+
+### 2026-04-10 parity clarification pass against legacy plugin
+- Reviewed `docs/parity-clarifications.md` against the actual legacy plugin code in `~/Documents/Qgis/sartracker` to replace open questions with plugin-grounded answers wherever possible
+- Clarified from plugin code/tests/UI:
+  - M12 settings workspace shape:
+    - sections are `Mission Defaults`, `Data Sources`, and `Advanced Settings`
+    - coordinator/admin rosters are simple identity lists
+    - credentials are intentionally split into secure storage rather than normal settings
+  - M13 replay/training mode:
+    - plugin replay is a simple replay-window flow, not a scrubber/playback console
+    - controls are enable + start datetime + duration hours
+    - replay is provider-gated to `traccar_http`
+    - replay uses isolated temp storage and auto-disables when a mission is active
+  - M14 finalize/archive/unlock:
+    - finalize is explicitly `Archive & Lock`
+    - archive success is required before finalized state is set
+    - archive includes `.qgz`, `.gpkg`, and attachments
+    - admin unlock is name-based against the admin roster
+  - M15 mission logs workspace:
+    - plugin surface is a three-tab review workspace: `Layer Console`, `Marker Log`, `Mission Details`
+    - attachment opening uses OS default app with missing-file warnings
+  - M16 layer catalog:
+    - canonical group/layer structure confirmed from plugin schema
+    - group/layer/feature-item distinction confirmed from catalog code
+    - presentation state vs mission metadata is a mixed persistence model
+  - M18 coordinate converter:
+    - modal dialog
+    - supports WGS84, ITM, and TM65 inputs
+    - go-to action zooms to a local extent and shows a temporary crosshair target
+  - M19 devices workspace:
+    - standalone window, not a docked mini-panel
+    - click/refresh behavior confirmed
+    - zoom-to-device is not required for plugin parity
+  - M20 marker evidence/audit:
+    - attachments are copied into mission-managed `attachments/`
+    - attachment paths become mission-relative
+    - attachments are mirrored to backup and included in archive
+    - audit fields confirmed from plugin schema/UI
+  - M21 diagnostics/repair:
+    - diagnostics bundle format confirmed from code
+    - repair scope is intentionally narrow: layer structure recreation/repair, not broad data mutation
+  - M22 GPX:
+    - one-off import, folder import, and watched-folder auto-import are all real plugin features
+    - GPX imports create one layer per GPX file under `GPX Tracks`
+    - duplicate suppression is file-path based
+  - M23 helicopters:
+    - placeholder-first canonical helicopter layers are real
+    - four fixed slots/colors and field set confirmed
+  - M24 focus mode:
+    - hides menu/status/toolbars and most docks while preserving SAR panel + Layers panel
+    - focus-mode active state is persisted for crash recovery, but full binary layout state is not
+- Updated `docs/parity-clarifications.md` to reflect those findings and reduce remaining ambiguity
+- Follow-up text-label pass:
+  - confirmed the plugin text-label data model and CRUD path are fully implemented in layer/controller code
+  - confirmed text-label fields are `text`, `lat`, `lon`, `font_size`, `color`, `rotation`, `created`, `display_order`
+  - confirmed validation/defaults:
+    - non-empty text
+    - max length `255`
+    - validated font size
+    - validated hex color
+    - finite rotation
+    - defaults `font_size=12`, `color=#000000`, `rotation=0`
+  - important parity nuance: the old SAR panel `Text Label` button is still disabled, so plugin parity here means the capability definitely exists, but the frontline operator entrypoint was not fully surfaced in the panel
+- Updated:
+  - `docs/parity-clarifications.md`
+  - `docs/bead-readiness.md`
+- Remaining major unknown:
+  - M25 offline map resilience still looks like genuine research rather than hidden plugin behavior
+- Scope note:
+  - this was a documentation/research pass only
+  - no production code changed
+  - no tests were run because only docs were updated
+
+### 2026-04-10 mini-spec pass for M12 / M14 / M16
+- Drafted a compact implementation-shaping spec note for the three beads that still warranted a short design pass before coding:
+  - [parity-mini-specs-m12-m14-m16.md](/Users/donalocallaghan/workspace/vibes/sartracker-web/docs/parity-mini-specs-m12-m14-m16.md)
+- Locked decisions captured there:
+  - M12 settings
+    - preserve plugin section structure: `Mission Defaults`, `Data Sources`, `Advanced Settings`
+    - split desktop app-global settings from user-local UI preferences
+    - keep secrets out of mission SQLite and behind a Tauri-side `SecretStore`
+  - M14 finalize/archive/unlock
+    - finalize is `Archive & Lock` from `finished`
+    - `finalized` is strictly read-only
+    - unlock moves mission back to editable state via explicit admin action
+    - unlock reason is required
+    - read-only enforcement must exist in domain/runtime logic, not just the UI
+  - M16 layer catalog
+    - canonical tree locked, including `GPX Tracks`
+    - node taxonomy locked: root / group / layer / feature-item
+    - mission-scoped metadata vs local UI preference split locked
+- Updated `docs/bead-readiness.md` to mark:
+  - `sartracker-web-2jk.1` as `5/5`
+  - `sartracker-web-2jk.3` as `5/5`
+  - `sartracker-web-2jk.5` as `5/5`
+- Next implementation guidance:
+  - M12, M14, and M16 should now be treated as implementation-ready
+  - M25 remains the major unresolved research bead
+- Scope note:
+  - docs/bead/spec work only
+  - no production code changed
+  - no tests were run
+
+### 2026-04-10 QGIS replacement roadmap + parity beads created
+- Performed a second-pass plugin dive to tighten the parity audit before planning:
+  - confirmed the plugin settings workspace includes coordinator/admin rosters, secure provider config, replay-window config, and layer-repair tooling
+  - confirmed the mission-logs workspace includes mission details, searchable marker log, attachment opening, and a richer layer-console workflow
+  - confirmed the plugin layer catalog persists alias/favorite/expanded/order metadata beyond simple visibility toggles
+  - confirmed dedicated devices-window and coordinate-converter utilities are real plugin surfaces, not just doc mentions
+- Created the QGIS replacement program epic:
+  - `sartracker-web-2jk` — `M11: QGIS replacement parity program`
+- Created the child parity beads:
+  - `sartracker-web-2jk.1` — `M12: Settings workspace parity`
+  - `sartracker-web-2jk.2` — `M13: Replay / training mode parity`
+  - `sartracker-web-2jk.3` — `M14: Mission finalization, archive, and admin unlock`
+  - `sartracker-web-2jk.4` — `M15: Mission logs and audit review workspace`
+  - `sartracker-web-2jk.5` — `M16: Layer catalog domain and grouped layer model`
+  - `sartracker-web-2jk.6` — `M17: Layer tree and feature inspection UI`
+  - `sartracker-web-2jk.7` — `M18: Text labels and coordinate tool parity`
+  - `sartracker-web-2jk.8` — `M19: Devices workspace parity`
+  - `sartracker-web-2jk.9` — `M20: Marker evidence and audit metadata parity`
+  - `sartracker-web-2jk.10` — `M21: Diagnostics workspace and repair tooling`
+  - `sartracker-web-2jk.11` — `M22: GPX import and watch parity`
+  - `sartracker-web-2jk.12` — `M23: Helicopter layer parity`
+  - `sartracker-web-2jk.13` — `M24: Focus mode parity`
+  - `sartracker-web-2jk.14` — `M25: Offline map resilience parity`
+  - `sartracker-web-2jk.15` — `M26: QGIS replacement parity acceptance sweep`
+- Added planning docs:
+  - `docs/qgis-replacement-roadmap.md`
+  - expanded `docs/plugin-parity-matrix.md` with second-pass specificity from plugin code
+  - updated `docs/bead-readiness.md` with readiness/ordering for the new parity program
+- Scope note:
+  - this was a planning/documentation/issue-tracker pass only
+  - no production code changed
+  - no tests were run because no executable behaviour changed
+
+### 2026-04-10 plugin replacement parity audit documented
+- Created `docs/plugin-parity-matrix.md` as a code-grounded replacement audit against the legacy QGIS plugin
+- The matrix compares:
+  - plugin functionality
+  - relevant QGIS operational layer behaviour
+  - current `sartracker-web` implementation state
+  - explicit status buckets: `Complete`, `Partial`, `Backend only`, `Missing`
+- Important findings captured in the matrix:
+  - core live-operation parity is now strong across mission lifecycle, tracking, markers, drawings, measurements, visibility filtering, and persistence
+  - archive/finalize support exists in backend/persistence but is not yet exposed as a full operator workflow
+  - replay/testing mode, diagnostics, mission-log UI, GPX import/watch, helicopter support, and full QGIS-style layer-tree behaviour remain meaningful gaps
+  - `text_label` exists in storage/style plumbing but is not yet exposed as an operator drawing tool
+- Scope note:
+  - this was a documentation/audit pass only
+  - no production behaviour changed
+  - no tests were run because only docs were updated
 
 ### 2026-04-10 M9 measurement implementation completed
 - Implemented M9 as a separate measurement subsystem rather than folding it into drawings, so the post-M8 drawing cleanup remains intact
@@ -775,41 +965,11 @@
 - **Eamonn:** Traccar admin credentials for API testing (kmrtsar.ddns.net:8082)
 
 ## What's Next
-### 2026-04-09 M8 complete
-- Implemented the full M8 drawing slice on top of the refactored map architecture:
-  - drawing domain math and typed draft model
-  - LPB category data locked to the plugin / Koester research values
-  - drawing builder/parser pipeline for line, search area, range ring, bearing line, and search sector
-  - expanded drawing runtime with tool arming, sketch lifecycle, dialog save/edit/delete, and selection state
-  - drawing-specific GeoJSON shaping and overlay sync modules
-  - drawing-specific map interaction hook
-  - operator drawing toolbar and modal dialog flows
-- Important architectural outcome:
-  - drawing overlay sync was added as its own map module
-  - `use-map-overlays` did **not** become the next hotspot
-  - marker interactions are now explicitly gated while a drawing tool/dialog/sketch is active
-- Browser harness and test support extended for drawing CRUD flows
-- Added/expanded tests:
-  - unit tests for drawing math, LPB data, builder/parsing logic, GeoJSON shaping, runtime behavior
-  - Playwright M8 workflows for:
-    - line creation
-    - search area creation + metadata
-    - LPB range ring + bearing line creation
-    - search sector creation + `Esc` cancel path
-    - edit/delete through select mode
-    - guard against marker modal opening during drawing mode
-- Verification completed:
-  - `npm run test` ✅
-  - `npm run lint` ✅
-  - `npm run build` ✅
-  - `npm run test:e2e` ✅
-  - `cargo test --manifest-path src-tauri/Cargo.toml` ✅
-
-## What's Next
-1. **Start M10** — integration / end-to-end hardening across the now-complete Phase 1 operator surface
-2. **Keep map interaction boundaries strict** — future work should preserve the separate marker / drawing / measurement map seams
-3. **Keep the MissionStore boundary strict** — renderer should not accumulate raw SQL access
-4. **When GeoPackage arrives:** run the conversion pipeline, test in MapLibre
+1. **Choose the first parity bead** — strongest implementation-ready options now are M12, M14, M16, M18, M19, and M24
+2. **Keep browser-validation boundaries strict** — future end-to-end work should continue using the typed browser harness API rather than raw storage poking
+3. **Keep map interaction boundaries strict** — preserve the separate marker / drawing / measurement map seams
+4. **Keep the MissionStore boundary strict** — renderer should not accumulate raw SQL access
+5. **When GeoPackage arrives:** run the conversion pipeline, test in MapLibre
 
 ## Active Beads
 ```

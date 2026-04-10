@@ -4,6 +4,10 @@ import type {
 import { applyDrawingController, applyDrawingRuntime } from '../drawings/drawing-store'
 import { startDrawingRuntime } from '../drawings/start-drawing-runtime'
 import { getBrowserHarnessStore } from '../browser-validation/browser-harness-store'
+import {
+  hydrateTrackingFromBrowserHarness,
+  installBrowserHarnessApi,
+} from '../browser-validation/browser-harness-api'
 import { applyMarkerController, applyMarkerRuntime } from '../markers/marker-store'
 import { startMarkerRuntime } from '../markers/start-marker-runtime'
 import { applyMissionRuntime, applyMissionRuntimeController } from './mission-store'
@@ -28,14 +32,21 @@ export async function startMissionBrowserHarness(): Promise<void> {
     return
   }
 
+  installBrowserHarnessApi()
+
   const browserStore = getBrowserHarnessStore() as Pick<
     MissionStore,
     | 'createMission'
     | 'listMissions'
+    | 'getActiveMission'
     | 'getRecoverableMission'
     | 'pauseMission'
     | 'resumeMission'
     | 'finishMission'
+    | 'listDevices'
+    | 'upsertDevice'
+    | 'addPosition'
+    | 'listPositions'
     | 'listMarkers'
     | 'upsertMarker'
     | 'deleteMarker'
@@ -60,4 +71,6 @@ export async function startMissionBrowserHarness(): Promise<void> {
     applyRuntime: applyDrawingRuntime,
   })
   applyDrawingController(drawingController)
+
+  await hydrateTrackingFromBrowserHarness()
 }
