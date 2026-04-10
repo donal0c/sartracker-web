@@ -3,7 +3,7 @@ import { expect, test } from '@playwright/test'
 test.describe('M7 layer panel workflows', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto('/?missionHarness=1')
-    await expect(page.getByTestId('app-title')).toHaveText('SAR Tracker Web')
+    const title = page.getByTestId('app-title'); await title.waitFor({ state: 'visible', timeout: 10000 }); await expect(title).toContainText('SAR Tracker')
     await page.waitForSelector('canvas', { timeout: 15000 })
     await page.getByTestId('mission-name-input').fill('Layer Mission')
     await page.getByTestId('mission-start-btn').click()

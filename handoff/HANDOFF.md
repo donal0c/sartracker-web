@@ -3,14 +3,50 @@
 > **Read this before doing ANY work. Update this after EVERY chunk of work.**
 
 ## Last Updated
-2026-04-09 21:03 by Codex
+2026-04-10 10:35 by Codex
 
 ## Current State
-**Phase: Phase 1 build in progress — M1, M2, M3, M4, M5, M6, M7, and M8 complete**
+**Phase: Phase 1 build in progress — M1, M2, M3, M4, M5, M6, M7, and M8 complete; tactical UI modernization pass under review**
 
 `HANDOFF.md` is the authoritative continuity log for active repo work across Donal, Codex, and Claude Code. Update it after every meaningful chunk so the next agent can resume without re-discovery.
 
 ## What's Been Done
+
+### 2026-04-10 tactical UI modernization pass (local changes under review)
+- Gemini produced a restrained UI overhaul aimed at making the shell more map-first and operational without changing core mission, marker, drawing, or tracking behavior
+- Current local UI changes include:
+  - `src/App.tsx`
+    - switched from the centered `max-w-6xl` dashboard shell to a full-viewport split layout
+    - map now takes the full remaining viewport width
+    - fixed right operational sidebar (`380px`) now owns mission control, tracking status, and layer filters
+  - `src/components/map-view.tsx`
+    - map shell now uses full available height/width instead of the former fixed-height card container
+    - removed the extra “cached tiles available offline after viewing” badge from the map chrome
+  - `src/components/mission-control-panel.tsx`
+    - setup inputs are hidden once a mission is active/paused/recovery
+    - elapsed/active timers were visually promoted
+    - action buttons were changed from outlined controls to solid semantic buttons
+    - recovery/finish dialogs were visually tightened and button labels simplified
+  - `src/components/tracking-status-panel.tsx`
+    - tracking counts moved into a denser telemetry grid
+    - timestamps now render with local time formatting instead of raw persisted strings
+  - `src/components/layer-filter-panel.tsx`
+    - sidebar visuals tightened for the new operational layout
+    - people / marker / drawing rows were restyled for denser scanning
+- Important review note:
+  - the initial Gemini handoff edit incorrectly replaced most of this file with a placeholder summary
+  - Codex restored the full continuity log and is validating the UI changes before any commit/push decision
+- Verification at review time:
+  - `npm run lint` ✅
+  - `npm run build` ✅
+  - `npm run test` ✅
+  - `npm run test:e2e` ✅
+- Codex review result:
+  - restored `HANDOFF.md` after Gemini replaced most of it with a placeholder summary
+  - completed a browser validation pass against the running Vite app plus the full automated suite
+  - no functional blocker found in the UI overhaul itself; current decision is down to product/operational preference rather than correctness
+- Remaining before acceptance:
+  - final user call on whether the UI pass is operationally better enough to keep
 
 ### 2026-04-09 pre-M9 drawing architecture hardening pass
 - Performed a bounded structural refactor on the drawings subsystem before M9 measurement work
@@ -721,10 +757,11 @@
   - `cargo test --manifest-path src-tauri/Cargo.toml` ✅
 
 ## What's Next
-1. **Start M9** — measurement tool using the same drawing/map interaction discipline established in M8
-2. **Keep map interaction boundaries strict** — measurement should get its own focused modules rather than bloating the generic hooks
-3. **Keep the MissionStore boundary strict** — renderer should not accumulate raw SQL access
-4. **When GeoPackage arrives:** run the conversion pipeline, test in MapLibre
+1. **Review/accept the tactical UI modernization pass** before committing it
+2. **Start M9** — measurement tool using the same drawing/map interaction discipline established in M8
+3. **Keep map interaction boundaries strict** — measurement should get its own focused modules rather than bloating the generic hooks
+4. **Keep the MissionStore boundary strict** — renderer should not accumulate raw SQL access
+5. **When GeoPackage arrives:** run the conversion pipeline, test in MapLibre
 
 ## Active Beads
 ```

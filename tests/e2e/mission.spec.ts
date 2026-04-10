@@ -3,7 +3,9 @@ import { expect, test } from '@playwright/test'
 test.describe('M5 mission control workflows', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto('/?missionHarness=1')
-    await expect(page.getByTestId('app-title')).toHaveText('SAR Tracker Web')
+    const title = page.getByTestId('app-title')
+    await title.waitFor({ state: 'visible', timeout: 10000 })
+    await expect(title).toContainText('SAR Tracker')
     await page.waitForSelector('canvas', { timeout: 15000 })
     await expect(page.getByTestId('mission-start-btn')).toBeEnabled()
   })
@@ -14,7 +16,7 @@ test.describe('M5 mission control workflows', () => {
     await page.getByTestId('mission-start-btn').click()
 
     await expect(page.getByTestId('mission-control')).toContainText('active')
-    await expect(page.getByText('Current mission:')).toContainText('Night Search')
+    await expect(page.getByTestId('current-mission-name')).toContainText('Night Search')
     await expect(page.getByTestId('mission-elapsed')).toHaveText(/^02:0\d:\d\d$/)
   })
 
@@ -52,7 +54,7 @@ test.describe('M5 mission control workflows', () => {
 
     await page.getByTestId('mission-finish-btn').click()
     await expect(page.getByTestId('mission-finish-dialog')).toBeVisible()
-    await page.getByTestId('mission-finish-dialog').getByRole('button', { name: 'Yes' }).click()
+    await page.getByTestId('mission-finish-dialog').getByRole('button', { name: 'Confirm Finish' }).click()
 
     await expect(page.getByTestId('mission-control')).toContainText('idle')
     await expect(page.getByTestId('mission-start-btn')).toBeEnabled()
@@ -61,7 +63,7 @@ test.describe('M5 mission control workflows', () => {
   })
 
   test('finishes a paused mission without letting active search time advance', async ({ page }) => {
-    await page.getByLabel('Mission Name').fill('Paused Finish Flow')
+    await page.getByTestId('mission-name-input').fill('Paused Finish Flow')
     await page.getByTestId('mission-start-btn').click()
 
     await page.waitForTimeout(1100)
@@ -72,7 +74,7 @@ test.describe('M5 mission control workflows', () => {
     await page.waitForTimeout(1100)
 
     await page.getByTestId('mission-finish-btn').click()
-    await page.getByTestId('mission-finish-dialog').getByRole('button', { name: 'Yes' }).click()
+    await page.getByTestId('mission-finish-dialog').getByRole('button', { name: 'Confirm Finish' }).click()
 
     await expect(page.getByTestId('mission-control')).toContainText('idle')
     const persistedMission = await page.evaluate(() => {
@@ -110,7 +112,7 @@ test.describe('M5 mission control workflows', () => {
     await page.getByTestId('mission-name-input').fill('Duplicate Test')
     await page.getByTestId('mission-start-btn').click()
     await page.getByTestId('mission-finish-btn').click()
-    await page.getByTestId('mission-finish-dialog').getByRole('button', { name: 'Yes' }).click()
+    await page.getByTestId('mission-finish-dialog').getByRole('button', { name: 'Confirm Finish' }).click()
 
     await page.getByTestId('mission-name-input').fill('Duplicate Test')
     await page.getByTestId('mission-start-btn').click()
@@ -123,8 +125,8 @@ test.describe('M5 mission control workflows', () => {
   })
 
   test('rejects invalid start offsets before creating a mission', async ({ page }) => {
-    await page.getByLabel('Mission Name').fill('Offset Guardrails')
-    await page.getByLabel('Start Offset (Hours)').fill('49')
+    await page.getByTestId('mission-name-input').fill('Offset Guardrails')
+    await page.getByTestId('mission-offset-input').fill('49')
     await page.getByTestId('mission-start-btn').click()
 
     await expect(page.getByTestId('mission-control')).toContainText(
@@ -139,10 +141,10 @@ test.describe('M5 mission control workflows', () => {
 
     await page.reload()
     await expect(page.getByTestId('mission-recovery-dialog')).toBeVisible()
-    await page.getByRole('button', { name: 'Resume Mission' }).click()
+    await page.getByRole('button', { name: 'Resume' }).click()
 
     await expect(page.getByTestId('mission-control')).toContainText('active')
-    await expect(page.getByText('Current mission:')).toContainText('Recovery Flow')
+    await expect(page.getByTestId('current-mission-name')).toContainText('Recovery Flow')
   })
 
   test('surfaces recovery on reload and can start fresh', async ({ page }) => {

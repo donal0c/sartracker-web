@@ -102,18 +102,13 @@ export function LayerFilterPanel() {
 
   return (
     <section
-      className="mt-6 rounded-2xl border border-stone-700 bg-stone-950/70 p-4 text-sm text-stone-300"
+      className="rounded-2xl border border-stone-800 bg-stone-950/40 p-5 text-sm"
       data-testid="layer-panel"
     >
-      <div className="flex items-center justify-between gap-3">
-        <div>
-          <h3 className="font-semibold text-stone-100">Layer Filters</h3>
-          <p className="mt-1 text-xs text-stone-400">
-            Right-sidebar visibility controls for people, markers, and drawings.
-          </p>
-        </div>
+      <div className="flex items-center justify-between gap-3 mb-5">
+        <h3 className="font-bold uppercase tracking-wider text-stone-400 text-[11px]">Layer Filters</h3>
         <button
-          className="rounded-lg border border-stone-600 bg-stone-900 px-3 py-2 text-xs text-stone-200"
+          className="rounded-lg bg-stone-800 hover:bg-stone-700 active:bg-stone-900 px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider text-stone-300 transition-colors"
           data-testid="layer-panel-toggle"
           onClick={() => setPanelExpanded(!panelExpanded)}
           type="button"
@@ -123,51 +118,51 @@ export function LayerFilterPanel() {
       </div>
 
       {panelExpanded ? (
-        <div className="mt-5 space-y-5">
+        <div className="space-y-6">
           <div data-testid="layer-section-people">
             <SectionHeader
               actionAllOff={() => hideAllDevices(trackingSnapshot.devices.map((device) => device.device_id))}
               actionAllOn={showAllDevices}
               title="People"
             />
-            <label className="mt-3 block text-xs text-stone-400">
-              Filter people
+            <div className="mt-3">
               <input
-                className="mt-2 w-full rounded-lg border border-stone-700 bg-stone-950 px-3 py-2 text-sm text-stone-100"
+                className="w-full rounded-lg border border-stone-700 bg-stone-950 px-3 py-2 text-xs text-stone-100 placeholder:text-stone-700 outline-none focus:border-amber-500/50 transition-colors"
                 data-testid="layer-people-search"
                 onChange={(event) => setPeopleSearch(event.target.value)}
-                placeholder="Search by device name"
+                placeholder="Search Teams..."
                 value={peopleSearch}
               />
-            </label>
-            <div className="mt-3 space-y-2">
+            </div>
+            <div className="mt-3 space-y-1">
               {filteredDevices.length === 0 ? (
-                <EmptyRow message="No tracked devices match the current filter." />
+                <EmptyRow message="No devices match filter." />
               ) : (
                 filteredDevices.map((device) => (
                   <label
-                    className="flex items-center justify-between rounded-xl border border-stone-800 bg-stone-900/70 px-3 py-2"
+                    className="flex items-center justify-between rounded-xl border border-stone-800/50 bg-stone-900/40 px-3 py-2 hover:bg-stone-900/60 transition-colors"
                     key={device.device_id}
                   >
                     <div className="flex min-w-0 items-center gap-3">
                       <input
+                        className="rounded border-stone-700 bg-stone-950 text-amber-500 focus:ring-amber-500/30"
                         checked={isDeviceVisible(hiddenDeviceIds, device.device_id)}
                         data-testid={`layer-device-toggle-${device.device_id}`}
                         onChange={() => toggleDeviceVisibility(device.device_id)}
                         type="checkbox"
                       />
                       <span
-                        className="h-3 w-3 rounded-full border border-stone-950"
+                        className="h-2 w-2 rounded-full border border-stone-950"
                         style={{ backgroundColor: createDeviceColor(device.device_id) }}
                       />
                       <div className="min-w-0">
-                        <p className="truncate text-sm text-stone-100">{device.name}</p>
-                        <p className="text-xs text-stone-400">
-                          Last seen: {device.last_seen ?? 'No fix yet'}
+                        <p className="truncate text-xs font-bold text-stone-200">{device.name}</p>
+                        <p className="text-[10px] font-mono text-stone-500">
+                          {device.last_seen ? new Date(device.last_seen).toLocaleTimeString() : 'NO FIX'}
                         </p>
                       </div>
                     </div>
-                    <span className="ml-3 text-xs uppercase tracking-[0.2em] text-stone-500">
+                    <span className="ml-3 text-[10px] font-bold uppercase tracking-tight text-stone-500">
                       {device.status}
                     </span>
                   </label>
@@ -182,22 +177,23 @@ export function LayerFilterPanel() {
               actionAllOn={showAllMarkerTypes}
               title="Markers"
             />
-            <div className="mt-3 space-y-2">
+            <div className="mt-3 space-y-1">
               {(Object.keys(MARKER_TYPE_LABELS) as MarkerType[]).map((type) => (
                 <label
-                  className="flex items-center justify-between rounded-xl border border-stone-800 bg-stone-900/70 px-3 py-2"
+                  className="flex items-center justify-between rounded-xl border border-stone-800/50 bg-stone-900/40 px-3 py-1.5 hover:bg-stone-900/60 transition-colors"
                   key={type}
                 >
                   <div className="flex items-center gap-3">
                     <input
+                      className="rounded border-stone-700 bg-stone-950 text-amber-500 focus:ring-amber-500/30"
                       checked={isMarkerTypeVisible(markerTypeVisibility, type)}
                       data-testid={`layer-marker-toggle-${type}`}
                       onChange={(event) => setMarkerTypeVisibility(type, event.target.checked)}
                       type="checkbox"
                     />
-                    <span className="text-sm text-stone-100">{MARKER_TYPE_LABELS[type]}</span>
+                    <span className="text-xs font-medium text-stone-300">{MARKER_TYPE_LABELS[type]}</span>
                   </div>
-                  <span className="text-xs text-stone-400">{markerCounts[type]}</span>
+                  <span className="text-[10px] font-mono font-bold text-stone-500">{markerCounts[type]}</span>
                 </label>
               ))}
             </div>
@@ -215,54 +211,56 @@ export function LayerFilterPanel() {
               }}
               title="Drawings"
             />
-            <div className="mt-3 space-y-2">
+            <div className="mt-3 space-y-1">
               {(Object.keys(DRAWING_TYPE_LABELS) as DrawingType[]).map((type) => (
                 <label
-                  className="flex items-center justify-between rounded-xl border border-stone-800 bg-stone-900/70 px-3 py-2"
+                  className="flex items-center justify-between rounded-xl border border-stone-800/50 bg-stone-900/40 px-3 py-1.5 hover:bg-stone-900/60 transition-colors"
                   key={type}
                 >
                   <div className="flex items-center gap-3">
                     <input
+                      className="rounded border-stone-700 bg-stone-950 text-amber-500 focus:ring-amber-500/30"
                       checked={drawingTypeVisibility[type]}
                       data-testid={`layer-drawing-type-toggle-${type}`}
                       onChange={(event) => setDrawingTypeVisibility(type, event.target.checked)}
                       type="checkbox"
                     />
-                    <span className="text-sm text-stone-100">{DRAWING_TYPE_LABELS[type]}</span>
+                    <span className="text-xs font-medium text-stone-300">{DRAWING_TYPE_LABELS[type]}</span>
                   </div>
-                  <span className="text-xs text-stone-400">{drawingCounts[type]}</span>
+                  <span className="text-[10px] font-mono font-bold text-stone-500">{drawingCounts[type]}</span>
                 </label>
               ))}
             </div>
-            <div className="mt-3 space-y-2">
+            <div className="mt-4 space-y-1">
               {drawingsLoading ? (
-                <EmptyRow message="Loading drawings..." />
+                <EmptyRow message="Syncing drawings..." />
               ) : drawings.length === 0 ? (
-                <EmptyRow message="No drawings in the current mission yet." />
+                <EmptyRow message="No drawings in session." />
               ) : (
                 drawings.map((drawing) => (
                   <label
-                    className="flex items-center justify-between rounded-xl border border-stone-800 bg-stone-900/60 px-3 py-2"
+                    className="flex items-center justify-between rounded-xl border border-stone-800/50 bg-stone-900/30 px-3 py-1.5"
                     key={drawing.id}
                   >
                     <div className="flex items-center gap-3">
                       <input
+                        className="rounded border-stone-700 bg-stone-950 text-amber-500 focus:ring-amber-500/30"
                         checked={isDrawingVisible(drawingTypeVisibility, hiddenDrawingIds, drawing)}
                         data-testid={`layer-drawing-toggle-${drawing.id}`}
                         onChange={() => toggleDrawingVisibility(drawing.id)}
                         type="checkbox"
                       />
                       <div>
-                        <p className="text-sm text-stone-100">{drawing.name}</p>
-                        <p className="text-xs text-stone-400">{DRAWING_TYPE_LABELS[drawing.type]}</p>
+                        <p className="text-xs font-medium text-stone-300">{drawing.name}</p>
+                        <p className="text-[10px] uppercase text-stone-600 font-bold">{DRAWING_TYPE_LABELS[drawing.type]}</p>
                       </div>
                     </div>
                   </label>
                 ))
               )}
             </div>
-            <p className="mt-3 text-xs text-stone-500">
-              Visible drawings: {drawingSummary.visibleCount}/{drawingSummary.totalCount}
+            <p className="mt-3 text-[10px] font-bold text-stone-600 uppercase tracking-tighter text-right">
+              VISIBLE: {drawingSummary.visibleCount}/{drawingSummary.totalCount}
             </p>
           </div>
         </div>
@@ -277,20 +275,20 @@ function SectionHeader(props: {
   readonly actionAllOff: () => void
 }) {
   return (
-    <div className="flex items-center justify-between gap-3">
-      <h4 className="text-sm font-semibold uppercase tracking-[0.2em] text-stone-200">
+    <div className="flex items-center justify-between gap-3 border-b border-stone-800/50 pb-2">
+      <h4 className="text-[11px] font-bold uppercase tracking-widest text-stone-500">
         {props.title}
       </h4>
-      <div className="flex gap-2 text-xs">
+      <div className="flex gap-2">
         <button
-          className="rounded-lg border border-stone-700 bg-stone-900 px-2 py-1 text-stone-300"
+          className="rounded bg-stone-800 hover:bg-stone-700 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider text-stone-400 transition-colors"
           onClick={props.actionAllOn}
           type="button"
         >
           All On
         </button>
         <button
-          className="rounded-lg border border-stone-700 bg-stone-900 px-2 py-1 text-stone-300"
+          className="rounded bg-stone-800 hover:bg-stone-700 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider text-stone-400 transition-colors"
           onClick={props.actionAllOff}
           type="button"
         >
@@ -303,7 +301,7 @@ function SectionHeader(props: {
 
 function EmptyRow(props: { readonly message: string }) {
   return (
-    <div className="rounded-xl border border-dashed border-stone-700 bg-stone-900/40 px-3 py-3 text-xs text-stone-500">
+    <div className="rounded-xl border border-dashed border-stone-800 bg-stone-950/20 px-3 py-2 text-[10px] font-medium text-stone-600 italic">
       {props.message}
     </div>
   )
