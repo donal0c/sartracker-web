@@ -8,6 +8,7 @@ import {
   type CoordinateConverterMode,
 } from '../features/coordinates/coordinate-tool'
 import { useCoordinateToolStore } from '../features/coordinates/coordinate-tool-store'
+import { useMapTargetStore } from '../features/map/map-target-store'
 
 /**
  * Renders the coordinate conversion utility with copy and go-to actions.
@@ -15,7 +16,7 @@ import { useCoordinateToolStore } from '../features/coordinates/coordinate-tool-
 export function CoordinateConverterDialog() {
   const open = useCoordinateToolStore((state) => state.open)
   const closeDialog = useCoordinateToolStore((state) => state.closeDialog)
-  const queueTarget = useCoordinateToolStore((state) => state.queueTarget)
+  const queueTarget = useMapTargetStore((state) => state.queueTarget)
   const [draft, setDraft] = useState(createCoordinateConverterDraft)
   const [result, setResult] = useState<CoordinateConversionResult | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -198,7 +199,10 @@ export function CoordinateConverterDialog() {
                 <button
                   className="rounded-lg border border-amber-400/30 bg-amber-400/10 px-4 py-2 text-sm text-amber-100"
                   data-testid="coordinate-go-to-btn"
-                  onClick={() => queueTarget(result.latitude, result.longitude)}
+                  onClick={() => {
+                    queueTarget(result.latitude, result.longitude, 'Coordinate Target')
+                    closeDialog()
+                  }}
                   type="button"
                 >
                   Go To Location

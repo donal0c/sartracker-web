@@ -1,5 +1,6 @@
 import { formatMapCoordinateBar } from '../lib/coordinates'
 import { useCoordinateToolStore } from '../features/coordinates/coordinate-tool-store'
+import { useMapTargetStore } from '../features/map/map-target-store'
 import { readCoordinateDisplayMode } from '../lib/coordinate-preferences'
 
 type CoordinateBarProps = {
@@ -10,7 +11,7 @@ type CoordinateBarProps = {
 export function CoordinateBar({ latitude, longitude }: CoordinateBarProps) {
   const mode = readCoordinateDisplayMode()
   const openDialog = useCoordinateToolStore((state) => state.openDialog)
-  const activeTarget = useCoordinateToolStore((state) => state.activeTarget)
+  const activeTarget = useMapTargetStore((state) => state.activeTarget)
   const content =
     latitude === null || longitude === null ? '—' : formatMapCoordinateBar(latitude, longitude, mode)
 
@@ -27,7 +28,7 @@ export function CoordinateBar({ latitude, longitude }: CoordinateBarProps) {
               className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-2 py-1 text-[11px] font-sans font-semibold uppercase tracking-[0.2em] text-amber-100"
               data-testid="coordinate-target-indicator"
             >
-              Target Active
+              {activeTarget.label ?? 'Target Active'}
             </span>
           ) : null}
           <button

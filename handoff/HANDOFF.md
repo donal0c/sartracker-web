@@ -3,14 +3,57 @@
 > **Read this before doing ANY work. Update this after EVERY chunk of work.**
 
 ## Last Updated
-2026-04-10 16:50 by Codex
+2026-04-10 17:14 by Codex
 
 ## Current State
-**Phase: Phase 1 operational core complete — M1 through M10 complete; parity foundation now includes M12, M14, M16, M17, and M18; next logical bead is M19**
+**Phase: Phase 1 operational core complete — M1 through M10 complete; parity foundation now includes M12, M14, M16, M17, M18, and M19; next logical bead is M20**
 
 `HANDOFF.md` is the authoritative continuity log for active repo work across Donal, Codex, and Claude Code. Update it after every meaningful chunk so the next agent can resume without re-discovery.
 
 ## What's Been Done
+
+### 2026-04-10 M19 devices workspace completed
+- Implemented a dedicated tracking devices workspace instead of stretching the sidebar panel further:
+  - `src/components/devices-workspace.tsx`
+  - opened from `src/components/tracking-status-panel.tsx`
+  - mounted in `src/App.tsx`
+- Important architectural choices:
+  - the workspace reads directly from the existing tracking snapshot + tracking status stores instead of maintaining a second device truth
+  - open/selection state is isolated in:
+    - `src/features/tracking/device-workspace-store.ts`
+  - roster/view-model shaping is isolated in:
+    - `src/features/tracking/device-workspace-model.ts`
+  - map zoom/selection uses the shared map-target boundary rather than a device-specific map shortcut
+- Small but worthwhile refactor:
+  - extracted the generic map target flow out of the coordinate tool into:
+    - `src/features/map/map-target-store.ts`
+  - both M18 coordinate conversion and M19 device zoom now go through the same target marker path
+  - updated:
+    - `src/features/map/use-map-location-target.ts`
+    - `src/components/coordinate-converter-dialog.tsx`
+    - `src/components/coordinate-bar.tsx`
+- New operator-facing capabilities now present:
+  - dedicated device roster/workspace
+  - status, last-seen, source, battery, and speed visibility at roster scale
+  - offline/degraded status summary aligned with tracking runtime health
+  - row selection and detail pane for active device inspection
+  - per-device visibility toggles directly from the workspace
+  - zoom-to-device action with temporary map target feedback
+  - reconnect button wired through the app runtime reload boundary for desktop runtime
+- Added / updated coverage:
+  - `tests/unit/device-workspace-model.test.ts`
+  - `tests/e2e/devices-workspace.spec.ts`
+  - existing M18 coordinate converter coverage still passes after the shared map-target refactor
+- Verification completed:
+  - `npm run test` ✅
+  - `npm run lint` ✅
+  - `npm run build` ✅
+  - `npm run test:e2e` ✅
+  - `cargo test --manifest-path src-tauri/Cargo.toml` ✅
+- Result:
+  - the tracking surface now has a true operator-scale roster workspace instead of relying on a cramped sidebar summary
+  - map-centric device workflows are cleaner and now share a better general map-target abstraction
+  - M20 is now the next logical bead
 
 ### 2026-04-10 M18 text labels and coordinate converter completed
 - Implemented `text_label` as a real drawing subtype instead of a side-channel annotation feature:

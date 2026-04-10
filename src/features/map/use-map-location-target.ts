@@ -1,7 +1,7 @@
 import { useEffect, useRef, type RefObject } from 'react'
 import type maplibregl from 'maplibre-gl'
 
-import { useCoordinateToolStore } from '../coordinates/coordinate-tool-store'
+import { useMapTargetStore } from './map-target-store'
 
 const TARGET_SOURCE_ID = 'coordinate-target'
 const TARGET_RING_LAYER_ID = 'coordinate-target-ring'
@@ -17,9 +17,9 @@ type UseMapLocationTargetOptions = {
  * Handles coordinate-tool go-to requests and renders the temporary target marker.
  */
 export function useMapLocationTarget(options: UseMapLocationTargetOptions): void {
-  const pendingTarget = useCoordinateToolStore((state) => state.pendingTarget)
-  const clearPendingTarget = useCoordinateToolStore((state) => state.clearPendingTarget)
-  const clearActiveTarget = useCoordinateToolStore((state) => state.clearActiveTarget)
+  const pendingTarget = useMapTargetStore((state) => state.pendingTarget)
+  const clearPendingTarget = useMapTargetStore((state) => state.clearPendingTarget)
+  const clearActiveTarget = useMapTargetStore((state) => state.clearActiveTarget)
   const activeTimeoutRef = useRef<number | null>(null)
   const lastAppliedTargetIdRef = useRef<number | null>(null)
 

@@ -1,4 +1,5 @@
 import { useTrackingStore } from '../features/tracking/tracking-store'
+import { useDeviceWorkspaceStore } from '../features/tracking/device-workspace-store'
 
 /**
  * Renders the operator-facing tracking status summary.
@@ -6,6 +7,7 @@ import { useTrackingStore } from '../features/tracking/tracking-store'
 export function TrackingStatusPanel() {
   const snapshot = useTrackingStore((state) => state.snapshot)
   const status = useTrackingStore((state) => state.status)
+  const openWorkspace = useDeviceWorkspaceStore((state) => state.openWorkspace)
   const staleDeviceCount = snapshot.positions.filter((position) => position.device_cache_stale).length
   const cachedDeviceCount = snapshot.positions.filter((position) => position.data_origin === 'cache').length
 
@@ -52,6 +54,16 @@ export function TrackingStatusPanel() {
       </div>
 
       <div className="mt-4 space-y-2 border-t border-stone-800 pt-4">
+        <div className="flex justify-end">
+          <button
+            className="rounded-lg border border-stone-700 bg-stone-900 px-3 py-2 text-[11px] font-bold uppercase tracking-wider text-stone-300"
+            data-testid="open-devices-workspace"
+            onClick={() => openWorkspace()}
+            type="button"
+          >
+            Open Devices
+          </button>
+        </div>
         <div className="flex items-center justify-between text-[10px] uppercase tracking-wider text-stone-500">
           <span>Last Success</span>
           <span className="font-mono font-bold text-stone-300">
