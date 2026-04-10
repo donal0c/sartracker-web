@@ -28,6 +28,7 @@ describe('mission review model', () => {
           marker_id: 'marker-1',
           marker_type: 'clue',
           name: 'Boot Print',
+          updated_by: 'Ops Lead',
         }),
       ],
       markers: [createMarker()],
@@ -45,9 +46,14 @@ describe('mission review model', () => {
     expect(snapshot.summary.breadcrumbCount).toBe(1)
     expect(snapshot.eventRows[0]?.title).toBe('Mission Created')
     expect(snapshot.eventRows[1]?.description).toContain('Boot Print')
+    expect(snapshot.eventRows[1]?.description).toContain('Ops Lead')
     expect(snapshot.markerRows[0]?.detailRows.some((row) => row.label === 'Clue Type')).toBe(
       true,
     )
+    expect(snapshot.markerRows[0]?.detailRows.some((row) => row.label === 'Updated By')).toBe(
+      true,
+    )
+    expect(snapshot.markerRows[0]?.historyRows).toHaveLength(1)
   })
 
   it('filters marker rows by query and type', () => {
@@ -62,6 +68,10 @@ describe('mission review model', () => {
           id: 'marker-2',
           type: 'hazard',
           name: 'Loose Scree',
+          description: 'Steep unstable slope',
+          updated_by: null,
+          coordinator_ids: null,
+          attachment_path: null,
           hazard_type: 'terrain',
           clue_type: null,
         },
@@ -133,6 +143,9 @@ function createMarker(): Marker {
     condition: null,
     treatment: null,
     evacuation_priority: null,
+    updated_by: 'Ops Lead',
+    coordinator_ids: 'Coord 1, Coord 2',
+    attachment_path: '/tmp/missions/mission-1/attachments/boot-print.jpg',
   }
 }
 

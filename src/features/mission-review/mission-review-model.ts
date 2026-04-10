@@ -51,6 +51,7 @@ export type MissionReviewMarkerRow = {
   readonly coordinateDisplay: string
   readonly searchText: string
   readonly detailRows: readonly { readonly label: string; readonly value: string }[]
+  readonly historyRows: readonly MissionReviewEventRow[]
   readonly attachmentPath: string | null
 }
 
@@ -111,7 +112,7 @@ export function buildMissionReviewSnapshot(
       eventCount: input.events.length,
     },
     eventRows: input.events.map(buildEventRow),
-    markerRows: input.markers.map(buildMarkerRow),
+    markerRows: input.markers.map((marker) => buildMarkerRow(marker, input.events)),
     layerRoot: catalogRoot,
   }
 }
@@ -155,7 +156,10 @@ function buildEventRow(event: MissionEvent): MissionReviewEventRow {
   }
 }
 
-function buildMarkerRow(marker: Marker): MissionReviewMarkerRow {
+function buildMarkerRow(
+  marker: Marker,
+  events: readonly MissionEvent[],
+): MissionReviewMarkerRow {
   const detailRows = [
     { label: 'Created', value: formatTimestamp(marker.created_at) },
     { label: 'Updated', value: formatTimestamp(marker.updated_at) },
@@ -177,6 +181,9 @@ function buildMarkerRow(marker: Marker): MissionReviewMarkerRow {
     marker.condition ?? '',
     marker.treatment ?? '',
     marker.evacuation_priority ?? '',
+    marker.updated_by ?? '',
+    marker.coordinator_ids ?? '',
+    marker.attachment_path ?? '',
   ]
     .join(' ')
     .toLowerCase()
@@ -191,7 +198,8 @@ function buildMarkerRow(marker: Marker): MissionReviewMarkerRow {
     coordinateDisplay: `${marker.lat.toFixed(5)}, ${marker.lon.toFixed(5)}`,
     searchText,
     detailRows,
-    attachmentPath: null,
+    historyRows: buildMarkerHistoryRows(marker.id, events),
+    attachmentPath: marker.attachment_path,
   }
 }
 
@@ -227,8 +235,27 @@ function buildMarkerSpecificDetails(
   if (marker.evacuation_priority !== null) {
     rows.push({ label: 'Evac Priority', value: marker.evacuation_priority })
   }
+  if (marker.updated_by !== null) {
+    rows.push({ label: 'Updated By', value: marker.updated_by })
+  }
+  if (marker.coordinator_ids !== null) {
+    rows.push({ label: 'Coordinator IDs', value: marker.coordinator_ids })
+  }
+  if (marker.attachment_path !== null) {
+    rows.push({ label: 'Attachment Path', value: marker.attachment_path })
+  }
 
   return rows
+}
+
+function buildMarkerHistoryRows(
+  markerId: string,
+  events: readonly MissionEvent[],
+): readonly MissionReviewEventRow[] {
+  return events
+    .filter((event) => readString(parseEventDetails(event.details_json), 'marker_id') === markerId)
+    .map(buildEventRow)
+    .reverse()
 }
 
 function normalizeReviewDevice(device: Device): NormalizedTrackingDevice {
@@ -268,6 +295,8 @@ function describeMissionEvent(
   const drawingType = readString(details, 'drawing_type')
   const deviceId = readString(details, 'device_id')
   const archivePath = readString(details, 'archive_path')
+  const updatedBy = readString(details, 'updated_by')
+  const attachmentPath = readString(details, 'attachment_path')
   const adminName = readString(details, 'admin_name')
   const reason = readString(details, 'reason')
 
@@ -281,9 +310,13 @@ function describeMissionEvent(
       return deviceId === null ? 'Position recorded.' : `Position recorded for ${deviceId}.`
     case 'marker_created':
     case 'marker_updated':
-      return name === null
-        ? 'Marker saved.'
-        : `${markerType ?? 'marker'} saved as ${name}.`
+      return [
+        name === null ? 'Marker saved.' : `${markerType ?? 'marker'} saved as ${name}.`,
+        updatedBy === null ? null : `Updated by ${updatedBy}.`,
+        attachmentPath === null ? null : `Attachment: ${attachmentPath}.`,
+      ]
+        .filter((value): value is string => value !== null)
+        .join(' ')
     case 'marker_deleted':
       return name === null ? 'Marker deleted.' : `${markerType ?? 'marker'} ${name} deleted.`
     case 'drawing_created':

@@ -100,6 +100,9 @@ describe('app runtime startup', () => {
     })
     expect(startMarkerRuntime).toHaveBeenCalledWith({
       markerStore: store,
+      attachmentStore: {
+        ingest: expect.any(Function),
+      },
       applyRuntime: expect.any(Function),
     })
     expect(startDrawingRuntime).toHaveBeenCalledWith({

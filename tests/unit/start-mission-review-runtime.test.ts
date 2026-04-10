@@ -143,6 +143,9 @@ function createMissionReviewStoreStub(overrides: Record<string, unknown> = {}) {
     condition: null,
     treatment: null,
     evacuation_priority: null,
+    updated_by: null,
+    coordinator_ids: null,
+    attachment_path: null,
   }
   const device: Device = {
     id: 'device-1',

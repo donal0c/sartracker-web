@@ -30,6 +30,9 @@ const EXISTING_MARKER: Marker = {
   condition: null,
   treatment: null,
   evacuation_priority: null,
+  updated_by: 'Ops Lead',
+  coordinator_ids: 'C1, C2',
+  attachment_path: '/tmp/missions/mission-1/attachments/boot-print.jpg',
 }
 
 describe('marker draft helpers', () => {
@@ -54,6 +57,9 @@ describe('marker draft helpers', () => {
     expect(draft.clueType).toBe('Footprint')
     expect(draft.confidence).toBe('Probable')
     expect(draft.foundBy).toBe('Team 2')
+    expect(draft.updatedBy).toBe('Ops Lead')
+    expect(draft.coordinatorIds).toBe('C1, C2')
+    expect(draft.attachmentName).toBe('boot-print.jpg')
   })
 
   it('keeps shared fields while resetting irrelevant marker-specific fields on type change', () => {
@@ -101,10 +107,29 @@ describe('marker draft helpers', () => {
       treatment: 'Warm fluids',
       evacuation_priority: 'Urgent',
       found_by: 'Alpha team',
+      updated_by: null,
+      coordinator_ids: null,
+      attachment_path: null,
       clue_type: null,
       hazard_type: null,
       severity: null,
     })
+  })
+
+  it('normalizes audit metadata and attachments into the save payload', () => {
+    const input = buildMarkerSaveInput({
+      missionId: 'mission-1',
+      displayOrder: 2,
+      draft: {
+        ...createMarkerDraftFromMarker(EXISTING_MARKER),
+        updatedBy: '  Donal  ',
+        coordinatorIds: ' Ops 1, Ops 2 ,, ',
+      },
+    })
+
+    expect(input.updated_by).toBe('Donal')
+    expect(input.coordinator_ids).toBe('Ops 1, Ops 2')
+    expect(input.attachment_path).toBe('/tmp/missions/mission-1/attachments/boot-print.jpg')
   })
 
   it('rejects save attempts without a marker name', () => {

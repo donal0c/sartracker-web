@@ -30,7 +30,7 @@ const SAR_PALETTE: readonly string[] = [
  */
 export function createDeviceColor(deviceId: string): string {
   const seed = createStableHash(deviceId)
-  return SAR_PALETTE[seed % SAR_PALETTE.length]
+  return SAR_PALETTE[seed % SAR_PALETTE.length] ?? '#E6194B'
 }
 
 function createStableHash(value: string): number {

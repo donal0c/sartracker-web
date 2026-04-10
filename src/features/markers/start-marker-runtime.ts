@@ -10,11 +10,16 @@ import {
   type MarkerDraft,
 } from './marker-draft'
 import type { MarkerDialogState, MarkerRuntimeState } from './marker-store'
+import type { IngestedMarkerAttachment } from '../../infrastructure/marker-attachment-store/tauri-marker-attachment-store'
 
 type MarkerStoreBoundary = Pick<MissionStore, 'listMarkers' | 'upsertMarker' | 'deleteMarker'>
+type MarkerAttachmentStoreBoundary = {
+  readonly ingest: (missionId: string, file: File) => Promise<IngestedMarkerAttachment>
+}
 
 type StartMarkerRuntimeDependencies = {
   readonly markerStore: MarkerStoreBoundary
+  readonly attachmentStore: MarkerAttachmentStoreBoundary
   readonly applyRuntime: (runtime: MarkerRuntimeState) => void
 }
 
@@ -24,6 +29,8 @@ export type MarkerRuntimeController = {
   readonly beginEdit: (markerId: string) => void
   readonly updateDraft: (patch: Partial<MarkerDraft>) => void
   readonly changeDraftType: (type: MarkerDraft['type']) => void
+  readonly attachEvidence: (file: File) => Promise<void>
+  readonly clearAttachment: () => void
   readonly closeDialog: () => void
   readonly saveDraft: () => Promise<Marker | null>
   readonly deleteEditingMarker: () => Promise<boolean>
@@ -109,6 +116,48 @@ export async function startMarkerRuntime(
       dialog = {
         ...dialog,
         draft: changeMarkerDraftType(dialog.draft, type),
+      }
+      publishRuntime()
+    },
+    attachEvidence: async (file) => {
+      if (activeMissionId === null || dialog === null) {
+        return
+      }
+
+      saving = true
+      error = null
+      publishRuntime()
+
+      try {
+        const attachment = await dependencies.attachmentStore.ingest(activeMissionId, file)
+        dialog = {
+          ...dialog,
+          draft: {
+            ...dialog.draft,
+            attachmentPath: attachment.storedPath,
+            attachmentName: attachment.fileName,
+          },
+        }
+        saving = false
+        publishRuntime()
+      } catch (runtimeError) {
+        saving = false
+        error = toErrorMessage(runtimeError)
+        publishRuntime()
+      }
+    },
+    clearAttachment: () => {
+      if (dialog === null) {
+        return
+      }
+
+      dialog = {
+        ...dialog,
+        draft: {
+          ...dialog.draft,
+          attachmentPath: null,
+          attachmentName: null,
+        },
       }
       publishRuntime()
     },

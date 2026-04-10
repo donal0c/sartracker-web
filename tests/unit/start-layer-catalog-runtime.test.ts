@@ -149,5 +149,8 @@ function createMarker(): Marker {
     condition: null,
     treatment: null,
     evacuation_priority: null,
+    updated_by: null,
+    coordinator_ids: null,
+    attachment_path: null,
   }
 }

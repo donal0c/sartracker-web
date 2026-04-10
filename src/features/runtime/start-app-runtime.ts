@@ -7,6 +7,7 @@ import {
   createTauriMissionStore,
   type MissionStore,
 } from '../../infrastructure/mission-store/tauri-mission-store'
+import { ingestMarkerAttachment } from '../../infrastructure/marker-attachment-store/tauri-marker-attachment-store'
 import { loadRuntimeBootstrapSettings } from '../../infrastructure/settings-store/tauri-settings-store'
 import { registerServiceWorker } from '../../lib/register-service-worker'
 import { isTauriRuntimeAvailable } from '../../lib/tauri-runtime'
@@ -115,6 +116,9 @@ export async function startAppRuntime(
   applyMissionGovernanceController(missionGovernanceController)
   const markerRuntimeController = await dependencies.startMarkerRuntime({
     markerStore: missionStore,
+    attachmentStore: {
+      ingest: ingestMarkerAttachment,
+    },
     applyRuntime: applyMarkerRuntime,
   })
   applyMarkerController(markerRuntimeController)

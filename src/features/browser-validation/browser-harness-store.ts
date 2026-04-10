@@ -462,6 +462,9 @@ export function getBrowserHarnessStore(): BrowserHarnessStore {
         condition: input.condition ?? null,
         treatment: input.treatment ?? null,
         evacuation_priority: input.evacuation_priority ?? null,
+        updated_by: input.updated_by ?? null,
+        coordinator_ids: input.coordinator_ids ?? null,
+        attachment_path: input.attachment_path ?? null,
       } satisfies Marker
 
       state = {
@@ -477,6 +480,9 @@ export function getBrowserHarnessStore(): BrowserHarnessStore {
             marker_type: marker.type,
             name: marker.name,
             display_order: marker.display_order,
+            updated_by: marker.updated_by,
+            coordinator_ids: marker.coordinator_ids,
+            attachment_path: marker.attachment_path,
           },
         ),
       }

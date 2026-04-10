@@ -25,6 +25,9 @@ const MARKER: Marker = {
   condition: null,
   treatment: null,
   evacuation_priority: null,
+  updated_by: null,
+  coordinator_ids: null,
+  attachment_path: null,
 }
 
 describe('startMarkerRuntime', () => {
@@ -34,6 +37,7 @@ describe('startMarkerRuntime', () => {
       markerStore: createMarkerStoreStub({
         listMarkers: vi.fn().mockResolvedValue([MARKER]),
       }),
+      attachmentStore: { ingest: vi.fn() },
       applyRuntime,
     })
 
@@ -60,6 +64,7 @@ describe('startMarkerRuntime', () => {
         listMarkers: vi.fn().mockResolvedValue([MARKER]),
         upsertMarker,
       }),
+      attachmentStore: { ingest: vi.fn() },
       applyRuntime,
     })
 
@@ -91,6 +96,7 @@ describe('startMarkerRuntime', () => {
         listMarkers: vi.fn().mockResolvedValue([MARKER]),
         upsertMarker,
       }),
+      attachmentStore: { ingest: vi.fn() },
       applyRuntime: vi.fn(),
     })
 
@@ -116,6 +122,7 @@ describe('startMarkerRuntime', () => {
         listMarkers: vi.fn().mockResolvedValue([MARKER]),
         deleteMarker,
       }),
+      attachmentStore: { ingest: vi.fn() },
       applyRuntime,
     })
 

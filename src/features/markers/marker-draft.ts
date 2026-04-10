@@ -39,6 +39,10 @@ export type MarkerDraft = {
   readonly condition: string
   readonly treatment: string
   readonly evacuationPriority: string
+  readonly updatedBy: string
+  readonly coordinatorIds: string
+  readonly attachmentPath: string | null
+  readonly attachmentName: string | null
   readonly displayOrder: number | null
 }
 
@@ -68,6 +72,10 @@ export function createMarkerDraftAtCoordinate(
     condition: '',
     treatment: '',
     evacuationPriority: '',
+    updatedBy: '',
+    coordinatorIds: '',
+    attachmentPath: null,
+    attachmentName: null,
     displayOrder: null,
   }
 }
@@ -95,6 +103,10 @@ export function createMarkerDraftFromMarker(marker: Marker): MarkerDraft {
     condition: marker.condition ?? '',
     treatment: marker.treatment ?? '',
     evacuationPriority: marker.evacuation_priority ?? '',
+    updatedBy: marker.updated_by ?? '',
+    coordinatorIds: marker.coordinator_ids ?? '',
+    attachmentPath: marker.attachment_path,
+    attachmentName: marker.attachment_path === null ? null : readFileName(marker.attachment_path),
     displayOrder: marker.display_order,
   }
 }
@@ -115,6 +127,10 @@ export function changeMarkerDraftType(
     condition: type === 'casualty' ? draft.condition : '',
     treatment: type === 'casualty' ? draft.treatment : '',
     evacuationPriority: type === 'casualty' ? draft.evacuationPriority : '',
+    updatedBy: draft.updatedBy,
+    coordinatorIds: draft.coordinatorIds,
+    attachmentPath: draft.attachmentPath,
+    attachmentName: draft.attachmentName,
   }
 }
 
@@ -152,6 +168,9 @@ export function buildMarkerSaveInput({
     treatment: draft.type === 'casualty' ? normalizeOptionalText(draft.treatment) : null,
     evacuation_priority:
       draft.type === 'casualty' ? normalizeOptionalText(draft.evacuationPriority) : null,
+    updated_by: normalizeOptionalText(draft.updatedBy),
+    coordinator_ids: normalizeOptionalText(normalizeCoordinatorIds(draft.coordinatorIds)),
+    attachment_path: draft.attachmentPath,
   }
 }
 
@@ -176,4 +195,18 @@ function normalizeOptionalText(value: string): string | null {
 
 function normalizeConfidence(value: ConfidenceLevel | ''): number | null {
   return value === '' ? null : toConfidenceScore(value)
+}
+
+function normalizeCoordinatorIds(value: string): string {
+  return value
+    .split(',')
+    .map((entry) => entry.trim())
+    .filter((entry) => entry !== '')
+    .join(', ')
+}
+
+function readFileName(path: string): string {
+  const normalizedPath = path.replace(/\\/g, '/')
+  const segments = normalizedPath.split('/')
+  return segments[segments.length - 1] ?? path
 }

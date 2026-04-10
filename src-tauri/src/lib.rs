@@ -18,6 +18,7 @@ use persistence::{
     list_drawings, list_layer_catalog_entries, list_markers, list_mission_events, list_missions,
     list_positions, mission_store_info, pause_mission, resume_mission, sync_mission_store_backup,
     upsert_device, upsert_drawing, upsert_layer_catalog_entry, upsert_marker, finalize_mission,
+    ingest_marker_attachment,
     unlock_finalized_mission, MissionStoreState,
 };
 use tracking_cache::{read_tracking_cache, write_tracking_cache};
@@ -56,6 +57,7 @@ pub fn run() {
             upsert_marker,
             get_marker,
             list_markers,
+            ingest_marker_attachment,
             delete_marker,
             upsert_drawing,
             get_drawing,

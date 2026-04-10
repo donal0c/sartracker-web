@@ -49,6 +49,73 @@ test.describe('M2 map shell', () => {
     await expect(page.getByTestId('basemap-btn-esri_topo')).toHaveClass(/bg-amber-300/)
   })
 
+  test('preserves the map viewport when switching basemaps', async ({ page }) => {
+    await page.evaluate(() => {
+      const harness = (window as Window & { __SARTRACKER_MAP__?: {
+        jumpTo: (options: {
+          center: [number, number]
+          zoom: number
+          bearing: number
+          pitch: number
+        }) => void
+      } }).__SARTRACKER_MAP__
+      if (harness === undefined) {
+        return
+      }
+
+      harness.jumpTo({
+        center: [-9.74406, 51.99917],
+        zoom: 13.8,
+        bearing: 18,
+        pitch: 42,
+      })
+    })
+
+    const before = await page.evaluate(() => {
+      const map = (window as Window & { __SARTRACKER_MAP__?: {
+        getCenter: () => { lat: number; lng: number }
+        getZoom: () => number
+      } }).__SARTRACKER_MAP__
+      if (map === undefined) {
+        return null
+      }
+
+      const center = map.getCenter()
+      return {
+        lat: center.lat,
+        lon: center.lng,
+        zoom: map.getZoom(),
+      }
+    })
+
+    expect(before).not.toBeNull()
+
+    await page.getByTestId('basemap-btn-esri_topo').click()
+    await expect(page.getByTestId('basemap-btn-esri_topo')).toHaveClass(/bg-amber-300/)
+
+    const after = await page.evaluate(() => {
+      const map = (window as Window & { __SARTRACKER_MAP__?: {
+        getCenter: () => { lat: number; lng: number }
+        getZoom: () => number
+      } }).__SARTRACKER_MAP__
+      if (map === undefined) {
+        return null
+      }
+
+      const center = map.getCenter()
+      return {
+        lat: center.lat,
+        lon: center.lng,
+        zoom: map.getZoom(),
+      }
+    })
+
+    expect(after).not.toBeNull()
+    expect(Math.abs((after?.lat ?? 0) - (before?.lat ?? 0))).toBeLessThan(0.0001)
+    expect(Math.abs((after?.lon ?? 0) - (before?.lon ?? 0))).toBeLessThan(0.0001)
+    expect(Math.abs((after?.zoom ?? 0) - (before?.zoom ?? 0))).toBeLessThan(0.01)
+  })
+
   test('updates the coordinate bar on mouse move', async ({ page }) => {
     const mapContainer = page.getByTestId('map-container')
     const bounds = await mapContainer.boundingBox()

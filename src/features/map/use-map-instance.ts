@@ -10,6 +10,7 @@ import {
 } from '../../lib/map-health'
 import { persistBasemapPreference, readStoredBasemap } from '../../lib/map-preferences'
 import { createRasterStyle, KERRY_MAX_BOUNDS } from './map-style'
+import { applyMapStylePreservingCamera } from './apply-map-style-preserving-camera'
 
 export type HoverCoordinate = {
   readonly latitude: number | null
@@ -36,6 +37,8 @@ export type MapInstanceController = {
  */
 export function useMapInstance(): MapInstanceController {
   const initialBasemapId = readStoredBasemap()
+  const initialBasemapIdRef = useRef(initialBasemapId)
+  const initialStyleRef = useRef(createRasterStyle(initialBasemapId))
   const containerRef = useRef<HTMLDivElement | null>(null)
   const mapRef = useRef<maplibregl.Map | null>(null)
   const previousBasemapIdRef = useRef<BasemapId | null>(null)
@@ -64,7 +67,7 @@ export function useMapInstance(): MapInstanceController {
 
     const map = new maplibregl.Map({
       container: containerRef.current,
-      style,
+      style: initialStyleRef.current,
       center: [...MAP_CENTER],
       zoom: MAP_DEFAULT_ZOOM,
       maxBounds: KERRY_MAX_BOUNDS,
@@ -114,14 +117,20 @@ export function useMapInstance(): MapInstanceController {
     })
 
     mapRef.current = map
-    previousBasemapIdRef.current = activeBasemapId
+    if (typeof window !== 'undefined') {
+      ;(window as Window & { __SARTRACKER_MAP__?: maplibregl.Map }).__SARTRACKER_MAP__ = map
+    }
+    previousBasemapIdRef.current = initialBasemapIdRef.current
 
     return () => {
       map.remove()
+      if (typeof window !== 'undefined') {
+        delete (window as Window & { __SARTRACKER_MAP__?: maplibregl.Map }).__SARTRACKER_MAP__
+      }
       mapRef.current = null
       previousBasemapIdRef.current = null
     }
-  }, [activeBasemapId, style])
+  }, [])
 
   useEffect(() => {
     const map = mapRef.current
@@ -130,7 +139,7 @@ export function useMapInstance(): MapInstanceController {
       return
     }
 
-    map.setStyle(style)
+    applyMapStylePreservingCamera(map, style)
     previousBasemapIdRef.current = activeBasemapId
   }, [activeBasemapId, style])
 

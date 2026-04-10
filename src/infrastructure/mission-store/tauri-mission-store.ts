@@ -66,6 +66,9 @@ export type Marker = {
   readonly condition: string | null
   readonly treatment: string | null
   readonly evacuation_priority: string | null
+  readonly updated_by: string | null
+  readonly coordinator_ids: string | null
+  readonly attachment_path: string | null
 }
 
 export type DrawingType =
@@ -175,6 +178,9 @@ export type UpsertMarkerInput = {
   readonly condition?: string | null
   readonly treatment?: string | null
   readonly evacuation_priority?: string | null
+  readonly updated_by?: string | null
+  readonly coordinator_ids?: string | null
+  readonly attachment_path?: string | null
 }
 
 export type UpsertDrawingInput = {

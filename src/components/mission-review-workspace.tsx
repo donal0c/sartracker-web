@@ -445,6 +445,31 @@ function MarkerLogTab(props: {
                 Open Attachment
               </button>
             </div>
+
+            <div className="mt-5 rounded-2xl border border-stone-800 bg-stone-950/30 p-4">
+              <p className="text-[10px] font-bold uppercase tracking-wider text-stone-500">
+                Marker History
+              </p>
+              <div className="mt-3 space-y-3" data-testid="mission-review-marker-history">
+                {selectedMarker.historyRows.length === 0 ? (
+                  <p className="text-sm text-stone-500">No marker history recorded.</p>
+                ) : (
+                  selectedMarker.historyRows.map((event) => (
+                    <div className="rounded-xl border border-stone-800 bg-stone-950/40 p-3" key={event.id}>
+                      <div className="flex items-start justify-between gap-3">
+                        <p className="font-semibold text-stone-100">{event.title}</p>
+                        <span className="font-mono text-[11px] text-stone-500">
+                          {event.timestampDisplay}
+                        </span>
+                      </div>
+                      <p className="mt-2 text-sm leading-relaxed text-stone-300">
+                        {event.description}
+                      </p>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
           </>
         )}
       </aside>

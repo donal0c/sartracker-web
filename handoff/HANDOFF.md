@@ -3,14 +3,68 @@
 > **Read this before doing ANY work. Update this after EVERY chunk of work.**
 
 ## Last Updated
-2026-04-10 21:30 by Claude Code (Opus)
+2026-04-10 23:42 by Codex
 
 ## Current State
-**Phase: Phase 1 operational core complete — M1 through M10 complete; parity foundation now includes M12, M14, M15, M16, M17, M18, and M19; next logical bead is M20. Critical tracking visibility fix applied and verified.**
+**Phase: Phase 1 operational core complete — M1 through M10 complete; parity foundation now includes M12, M14, M15, M16, M17, M18, M19, and M20. The basemap viewport reset bug is fixed and verified. Next logical bead is M21.**
 
 `HANDOFF.md` is the authoritative continuity log for active repo work across Donal, Codex, and Claude Code. Update it after every meaningful chunk so the next agent can resume without re-discovery.
 
 ## What's Been Done
+
+### 2026-04-10 Basemap viewport hardening + M20 marker evidence parity completed
+
+- Fixed the safety-critical basemap switch regression in the actual lifecycle boundary instead of patching around it in UI code:
+  - root cause was `src/features/map/use-map-instance.ts` recreating the entire MapLibre instance on basemap changes because the mount effect was keyed to style/basemap state
+  - corrected this by making the map instance mount exactly once and keeping style swaps on the long-lived instance
+  - kept a small camera-preservation helper in:
+    - `src/features/map/apply-map-style-preserving-camera.ts`
+  - added focused regression coverage:
+    - `tests/unit/apply-map-style-preserving-camera.test.ts`
+    - `tests/e2e/map.spec.ts` now asserts the viewport is preserved across basemap switches
+- Implemented M20 marker evidence and audit metadata parity end to end:
+  - expanded marker schema/types across frontend + Rust persistence with:
+    - `updated_by`
+    - `coordinator_ids`
+    - `attachment_path`
+  - added attachment ingestion boundary:
+    - `src/infrastructure/marker-attachment-store/tauri-marker-attachment-store.ts`
+  - added Tauri-side attachment ingest + mission-managed storage handling in:
+    - `src-tauri/src/persistence.rs`
+    - `src-tauri/src/lib.rs`
+    - `src-tauri/Cargo.toml`
+  - attachment ingestion now:
+    - accepts browser-selected files
+    - validates non-empty payloads
+    - enforces a 25 MB max file size
+    - writes atomically into mission attachment storage
+    - mirrors to configured backup mission root when present
+    - includes marker attachments in mission archive ZIP output
+  - expanded marker authoring UI in:
+    - `src/components/marker-dialog.tsx`
+    - added Updated By, Coordinator IDs, and Evidence Attachment flows
+    - hardened the dialog layout so long forms remain scrollable and operable in real browser runs
+  - wired attachment ingestion through the marker runtime in:
+    - `src/features/markers/marker-draft.ts`
+    - `src/features/markers/start-marker-runtime.ts`
+    - `src/features/runtime/start-app-runtime.ts`
+    - `src/features/mission/mission-browser-harness.ts`
+  - upgraded mission review so operators can review marker audit/evidence context, not just latest marker state:
+    - `src/features/mission-review/mission-review-model.ts`
+    - `src/components/mission-review-workspace.tsx`
+    - marker detail now shows audit fields, attachment path, and per-marker history derived from mission events
+  - kept browser harness parity aligned in:
+    - `src/features/browser-validation/browser-harness-store.ts`
+- Verification completed:
+  - `npm run test` ✅
+  - `npm run lint` ✅
+  - `npm run build` ✅
+  - `cargo test --manifest-path src-tauri/Cargo.toml` ✅
+  - `npm run test:e2e` ✅
+- Result:
+  - `sartracker-web-seq` should be treated as fixed
+  - `sartracker-web-2jk.9` should be treated as implemented
+  - next logical parity bead is `sartracker-web-2jk.10` (M21 diagnostics workspace), unless you want to divert first into the remaining non-blocking UI validation follow-ups (`sartracker-web-awm`, `sartracker-web-bsl`, `sartracker-web-lo6`)
 
 ### 2026-04-10 Deep UI Validation — CRITICAL tracking visibility fix
 

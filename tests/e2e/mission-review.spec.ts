@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test'
+import path from 'node:path'
 
 test.describe('M15 mission review workspace', () => {
   test.beforeEach(async ({ page }) => {
@@ -64,6 +65,39 @@ test.describe('M15 mission review workspace', () => {
     await expect(page.getByTestId('mission-review-marker-log')).toContainText('Loose Scree')
     await expect(page.getByTestId('mission-review-marker-detail')).toContainText('Loose Scree')
   })
+
+  test('shows marker evidence and audit metadata in review flows', async ({ page }) => {
+    await createMarker(page, {
+      name: 'Evidence Cache',
+      typeLabel: 'Clue',
+      position: { x: 470, y: 250 },
+      updatedBy: 'Ops Lead',
+      coordinatorIds: 'C1, C2',
+      attachmentPath: path.resolve('tests/fixtures/marker-evidence.txt'),
+    })
+
+    await page.getByTestId('open-mission-review-workspace').click()
+    await page.getByRole('button', { name: 'Marker Log' }).click()
+
+    await expect(page.getByTestId('mission-review-marker-detail')).toContainText('Evidence Cache')
+    await expect(page.getByTestId('mission-review-marker-detail')).toContainText('Ops Lead')
+    await expect(page.getByTestId('mission-review-marker-detail')).toContainText('C1, C2')
+    await expect(page.getByTestId('mission-review-marker-detail')).toContainText('marker-evidence.txt')
+    await expect(page.getByTestId('mission-review-marker-history')).toContainText('Marker Created')
+
+    await page.getByTestId('mission-review-marker-open-attachment').click()
+    await expect.poll(async () => {
+      return page.evaluate(() => {
+        const raw = window.sessionStorage.getItem('sartracker:browser-harness')
+        if (raw === null) {
+          return []
+        }
+
+        const parsed = JSON.parse(raw) as { openedPaths?: string[] }
+        return parsed.openedPaths ?? []
+      })
+    }).toContainEqual(expect.stringContaining('marker-evidence.txt'))
+  })
 })
 
 async function createMarker(
@@ -72,6 +106,9 @@ async function createMarker(
     readonly name: string
     readonly typeLabel: 'Clue' | 'Hazard'
     readonly position: { readonly x: number; readonly y: number }
+    readonly updatedBy?: string
+    readonly coordinatorIds?: string
+    readonly attachmentPath?: string
   },
 ) {
   await page.getByTestId('map-container').click({ position: options.position })
@@ -87,6 +124,20 @@ async function createMarker(
     await page.getByTestId('marker-hazard-type-input').selectOption('Cliff/Drop-off')
   }
 
+  if (options.updatedBy !== undefined) {
+    await page.getByTestId('marker-updated-by-input').fill(options.updatedBy)
+  }
+
+  if (options.coordinatorIds !== undefined) {
+    await page.getByTestId('marker-coordinator-ids-input').fill(options.coordinatorIds)
+  }
+
+  if (options.attachmentPath !== undefined) {
+    await page.getByTestId('marker-attachment-input').setInputFiles(options.attachmentPath)
+    await expect(page.getByTestId('marker-attachment-summary')).toContainText('marker-evidence.txt')
+  }
+
+  await page.getByTestId('marker-save-btn').scrollIntoViewIfNeeded()
   await page.getByTestId('marker-save-btn').click()
   await expect(dialog).toBeHidden()
 }

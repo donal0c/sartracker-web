@@ -1,12 +1,19 @@
-use std::{fs::File, io::Write, path::PathBuf, sync::Arc};
+use std::{
+    fs,
+    fs::File,
+    io::Write,
+    path::{Path, PathBuf},
+    sync::Arc,
+};
 
+use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine};
 use chrono::Utc;
 #[cfg(test)]
 use chrono::Duration;
 use serde::{Deserialize, Serialize};
 use sqlx::{
     sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions, SqliteSynchronous},
-    ConnectOptions, Executor, FromRow, Sqlite, SqlitePool,
+    ConnectOptions, Executor, FromRow, Row, Sqlite, SqlitePool,
 };
 use tauri::{AppHandle, Manager, Runtime, State};
 use uuid::Uuid;
@@ -16,7 +23,9 @@ use crate::settings::SettingsStoreState;
 const DATABASE_FILE_NAME: &str = "mission-store.sqlite";
 const BACKUP_FILE_NAME: &str = "mission-store.backup.sqlite";
 const ARCHIVE_DIRECTORY_NAME: &str = "archives";
-const CURRENT_SCHEMA_VERSION: i64 = 2;
+const ATTACHMENTS_DIRECTORY_NAME: &str = "attachments";
+const DEFAULT_MISSION_STORAGE_DIRECTORY_NAME: &str = "missions";
+const CURRENT_SCHEMA_VERSION: i64 = 3;
 
 #[derive(Clone)]
 pub struct MissionStore {
@@ -124,6 +133,9 @@ pub struct Marker {
     pub condition: Option<String>,
     pub treatment: Option<String>,
     pub evacuation_priority: Option<String>,
+    pub updated_by: Option<String>,
+    pub coordinator_ids: Option<String>,
+    pub attachment_path: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, sqlx::Type, PartialEq, Eq)]
@@ -272,6 +284,17 @@ pub struct UpsertMarkerInput {
     pub condition: Option<String>,
     pub treatment: Option<String>,
     pub evacuation_priority: Option<String>,
+    pub updated_by: Option<String>,
+    pub coordinator_ids: Option<String>,
+    pub attachment_path: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct IngestMarkerAttachmentInput {
+    pub mission_id: String,
+    pub file_name: String,
+    pub bytes_base64: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -472,6 +495,9 @@ impl MissionStore {
               condition TEXT,
               treatment TEXT,
               evacuation_priority TEXT,
+              updated_by TEXT,
+              coordinator_ids TEXT,
+              attachment_path TEXT,
               FOREIGN KEY (mission_id) REFERENCES missions(id) ON DELETE CASCADE
             );
 
@@ -535,6 +561,10 @@ impl MissionStore {
         .await
         .map_err(|error| format!("Failed to apply mission store schema: {error}"))?;
 
+        Self::ensure_column_exists(&mut *tx, "markers", "updated_by", "TEXT").await?;
+        Self::ensure_column_exists(&mut *tx, "markers", "coordinator_ids", "TEXT").await?;
+        Self::ensure_column_exists(&mut *tx, "markers", "attachment_path", "TEXT").await?;
+
         sqlx::query(
             "INSERT INTO metadata (key, value) VALUES ('schema_version', ?)
              ON CONFLICT(key) DO UPDATE SET value = excluded.value",
@@ -547,6 +577,35 @@ impl MissionStore {
         tx.commit()
             .await
             .map_err(|error| format!("Failed to commit mission store migrations: {error}"))?;
+
+        Ok(())
+    }
+
+    async fn ensure_column_exists(
+        executor: &mut sqlx::SqliteConnection,
+        table_name: &str,
+        column_name: &str,
+        column_sql: &str,
+    ) -> Result<(), String> {
+        let pragma = format!("PRAGMA table_info({table_name})");
+        let rows = sqlx::query(&pragma)
+            .fetch_all(&mut *executor)
+            .await
+            .map_err(|error| format!("Failed to inspect {table_name} columns: {error}"))?;
+
+        if rows
+            .iter()
+            .filter_map(|row| row.try_get::<String, _>("name").ok())
+            .any(|existing| existing == column_name)
+        {
+            return Ok(());
+        }
+
+        let alter = format!("ALTER TABLE {table_name} ADD COLUMN {column_name} {column_sql}");
+        sqlx::query(&alter)
+            .execute(&mut *executor)
+            .await
+            .map_err(|error| format!("Failed to add {table_name}.{column_name}: {error}"))?;
 
         Ok(())
     }
@@ -668,6 +727,33 @@ impl MissionStore {
         zip_writer
             .write_all(&snapshot_bytes)
             .map_err(|error| format!("Failed to write snapshot entry: {error}"))?;
+
+        for attachment_path in self.list_marker_attachment_paths(mission_id).await? {
+            let attachment_file_path = PathBuf::from(&attachment_path);
+            if !attachment_file_path.exists() {
+                return Err(format!(
+                    "Mission archive cannot be created because marker attachment is missing: {}",
+                    attachment_file_path.to_string_lossy()
+                ));
+            }
+
+            let attachment_name = attachment_file_path
+                .file_name()
+                .and_then(|name| name.to_str())
+                .ok_or_else(|| "Attachment file name is invalid.".to_string())?;
+            let attachment_bytes = fs::read(&attachment_file_path)
+                .map_err(|error| format!("Failed to read marker attachment for archive: {error}"))?;
+
+            zip_writer
+                .start_file(
+                    format!("{ATTACHMENTS_DIRECTORY_NAME}/{attachment_name}"),
+                    options,
+                )
+                .map_err(|error| format!("Failed to start attachment archive entry: {error}"))?;
+            zip_writer
+                .write_all(&attachment_bytes)
+                .map_err(|error| format!("Failed to write attachment archive entry: {error}"))?;
+        }
 
         zip_writer
             .finish()
@@ -1060,8 +1146,9 @@ impl MissionStore {
             INSERT INTO markers (
               id, mission_id, type, name, description, lat, lon, irish_grid_e, irish_grid_n,
               created_at, updated_at, display_order, subject_category, clue_type, confidence,
-              found_by, hazard_type, severity, condition, treatment, evacuation_priority
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+              found_by, hazard_type, severity, condition, treatment, evacuation_priority,
+              updated_by, coordinator_ids, attachment_path
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(id) DO UPDATE SET
               mission_id = excluded.mission_id,
               type = excluded.type,
@@ -1081,7 +1168,10 @@ impl MissionStore {
               severity = excluded.severity,
               condition = excluded.condition,
               treatment = excluded.treatment,
-              evacuation_priority = excluded.evacuation_priority
+              evacuation_priority = excluded.evacuation_priority,
+              updated_by = excluded.updated_by,
+              coordinator_ids = excluded.coordinator_ids,
+              attachment_path = excluded.attachment_path
             "#,
         )
         .bind(&marker_id)
@@ -1105,6 +1195,9 @@ impl MissionStore {
         .bind(&input.condition)
         .bind(&input.treatment)
         .bind(&input.evacuation_priority)
+        .bind(&input.updated_by)
+        .bind(&input.coordinator_ids)
+        .bind(&input.attachment_path)
         .execute(&mut *tx)
         .await
         .map_err(|error| format!("Failed to upsert marker {marker_id}: {error}"))?;
@@ -1114,6 +1207,9 @@ impl MissionStore {
             "marker_type": input.r#type,
             "name": input.name,
             "display_order": input.display_order,
+            "updated_by": input.updated_by,
+            "coordinator_ids": input.coordinator_ids,
+            "attachment_path": input.attachment_path,
         });
         Self::insert_event(
             &mut *tx,
@@ -1137,7 +1233,7 @@ impl MissionStore {
             SELECT id, mission_id, type, name, description, lat, lon,
                    irish_grid_e, irish_grid_n, created_at, updated_at, display_order,
                    subject_category, clue_type, confidence, found_by, hazard_type, severity,
-                   condition, treatment, evacuation_priority
+                   condition, treatment, evacuation_priority, updated_by, coordinator_ids, attachment_path
             FROM markers
             WHERE id = ?
             "#,
@@ -1155,7 +1251,7 @@ impl MissionStore {
             SELECT id, mission_id, type, name, description, lat, lon,
                    irish_grid_e, irish_grid_n, created_at, updated_at, display_order,
                    subject_category, clue_type, confidence, found_by, hazard_type, severity,
-                   condition, treatment, evacuation_priority
+                   condition, treatment, evacuation_priority, updated_by, coordinator_ids, attachment_path
             FROM markers
             WHERE mission_id = ?
             ORDER BY display_order ASC, created_at ASC
@@ -1165,6 +1261,40 @@ impl MissionStore {
         .fetch_all(&self.pool)
         .await
         .map_err(|error| format!("Failed to list markers: {error}"))
+    }
+
+    pub async fn ingest_marker_attachment(
+        &self,
+        input: IngestMarkerAttachmentInput,
+        settings: &SettingsStoreState,
+    ) -> Result<String, String> {
+        self.ensure_mission_mutable(&input.mission_id).await?;
+        self.get_mission(input.mission_id.clone()).await?;
+
+        let file_name = sanitize_attachment_file_name(&input.file_name)?;
+        let bytes = BASE64_STANDARD
+            .decode(input.bytes_base64.as_bytes())
+            .map_err(|error| format!("Attachment payload is not valid base64: {error}"))?;
+
+        if bytes.is_empty() {
+            return Err("Attachment file is empty.".to_string());
+        }
+
+        if bytes.len() > 25 * 1024 * 1024 {
+            return Err("Attachment must be 25 MB or smaller.".to_string());
+        }
+
+        let primary_path =
+            self.resolve_attachment_destination(&input.mission_id, &file_name, settings, false)?;
+        write_bytes_atomically(&primary_path, &bytes)?;
+
+        if let Some(backup_path) =
+            self.resolve_attachment_destination_optional(&input.mission_id, &file_name, settings, true)?
+        {
+            write_bytes_atomically(&backup_path, &bytes)?;
+        }
+
+        Ok(primary_path.to_string_lossy().to_string())
     }
 
     pub async fn delete_marker(&self, marker_id: String) -> Result<bool, String> {
@@ -1205,6 +1335,66 @@ impl MissionStore {
             .map_err(|error| format!("Failed to commit marker delete: {error}"))?;
 
         Ok(result.rows_affected() > 0)
+    }
+
+    async fn list_marker_attachment_paths(&self, mission_id: &str) -> Result<Vec<String>, String> {
+        sqlx::query_scalar::<_, String>(
+            r#"
+            SELECT attachment_path
+            FROM markers
+            WHERE mission_id = ? AND attachment_path IS NOT NULL AND TRIM(attachment_path) != ''
+            ORDER BY display_order ASC, created_at ASC
+            "#,
+        )
+        .bind(mission_id)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|error| format!("Failed to list marker attachment paths: {error}"))
+    }
+
+    fn resolve_attachment_destination(
+        &self,
+        mission_id: &str,
+        file_name: &str,
+        settings: &SettingsStoreState,
+        backup: bool,
+    ) -> Result<PathBuf, String> {
+        self.resolve_attachment_destination_optional(mission_id, file_name, settings, backup)?
+            .ok_or_else(|| "Attachment destination is unavailable.".to_string())
+    }
+
+    fn resolve_attachment_destination_optional(
+        &self,
+        mission_id: &str,
+        file_name: &str,
+        settings: &SettingsStoreState,
+        backup: bool,
+    ) -> Result<Option<PathBuf>, String> {
+        let settings_view = settings.0.load_view()?;
+        let configured_root = if backup {
+            settings_view.mission_defaults.backup_mission_root
+        } else {
+            settings_view.mission_defaults.primary_mission_root
+        };
+
+        let root = if configured_root.trim().is_empty() {
+            if backup {
+                return Ok(None);
+            }
+
+            self.database_path
+                .parent()
+                .ok_or_else(|| "Mission store config directory is unavailable.".to_string())?
+                .join(DEFAULT_MISSION_STORAGE_DIRECTORY_NAME)
+        } else {
+            PathBuf::from(configured_root)
+        };
+
+        Ok(Some(
+            root.join(mission_id)
+                .join(ATTACHMENTS_DIRECTORY_NAME)
+                .join(format!("{}-{}", Uuid::new_v4(), file_name)),
+        ))
     }
 
     pub async fn upsert_drawing(&self, input: UpsertDrawingInput) -> Result<Drawing, String> {
@@ -1867,6 +2057,54 @@ fn validate_optional_timestamp(value: Option<&str>, label: &str) -> Result<Optio
     Ok(Some(timestamp.to_string()))
 }
 
+fn sanitize_attachment_file_name(file_name: &str) -> Result<String, String> {
+    let trimmed = file_name.trim();
+    if trimmed.is_empty() {
+        return Err("Attachment file name is required.".to_string());
+    }
+
+    let base_name = Path::new(trimmed)
+        .file_name()
+        .and_then(|value| value.to_str())
+        .ok_or_else(|| "Attachment file name is invalid.".to_string())?;
+
+    let sanitized = base_name
+        .chars()
+        .map(|character| match character {
+            '/' | '\\' | ':' | '*' | '?' | '"' | '<' | '>' | '|' => '-',
+            _ => character,
+        })
+        .collect::<String>()
+        .trim()
+        .to_string();
+
+    if sanitized.is_empty() {
+        return Err("Attachment file name is invalid.".to_string());
+    }
+
+    Ok(sanitized)
+}
+
+fn write_bytes_atomically(path: &PathBuf, bytes: &[u8]) -> Result<(), String> {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)
+            .map_err(|error| format!("Failed to create attachment directory: {error}"))?;
+    }
+
+    let temporary_path = path.with_extension("tmp");
+    if temporary_path.exists() {
+        fs::remove_file(&temporary_path)
+            .map_err(|error| format!("Failed to clear temporary attachment file: {error}"))?;
+    }
+
+    fs::write(&temporary_path, bytes)
+        .map_err(|error| format!("Failed to write attachment file: {error}"))?;
+    fs::rename(&temporary_path, path)
+        .map_err(|error| format!("Failed to finalize attachment file: {error}"))?;
+
+    Ok(())
+}
+
 pub async fn build_mission_store<R: Runtime>(app: &AppHandle<R>) -> Result<MissionStore, String> {
     let config_dir = app
         .path()
@@ -1964,6 +2202,15 @@ pub async fn list_markers(
     store: State<'_, MissionStoreState>,
 ) -> Result<Vec<Marker>, String> {
     store.0.list_markers(mission_id).await
+}
+
+#[tauri::command]
+pub async fn ingest_marker_attachment(
+    input: IngestMarkerAttachmentInput,
+    store: State<'_, MissionStoreState>,
+    settings: State<'_, SettingsStoreState>,
+) -> Result<String, String> {
+    store.0.ingest_marker_attachment(input, &settings).await
 }
 
 #[tauri::command]
@@ -2499,6 +2746,9 @@ mod tests {
                 condition: None,
                 treatment: None,
                 evacuation_priority: None,
+                updated_by: Some("Ops Lead".to_string()),
+                coordinator_ids: Some("C1, C2".to_string()),
+                attachment_path: Some("/tmp/attachment-a.jpg".to_string()),
             })
             .await
             .expect("marker should upsert");
@@ -2527,6 +2777,9 @@ mod tests {
                 condition: None,
                 treatment: None,
                 evacuation_priority: None,
+                updated_by: Some("Ops Lead".to_string()),
+                coordinator_ids: Some("C1, C2".to_string()),
+                attachment_path: Some("/tmp/attachment-b.jpg".to_string()),
             })
             .await
             .expect("marker should update");
@@ -2693,6 +2946,9 @@ mod tests {
                 condition: None,
                 treatment: None,
                 evacuation_priority: None,
+                updated_by: None,
+                coordinator_ids: None,
+                attachment_path: None,
             })
             .await
             .expect("marker should upsert");
@@ -2890,6 +3146,9 @@ mod tests {
                 condition: None,
                 treatment: None,
                 evacuation_priority: None,
+                updated_by: None,
+                coordinator_ids: None,
+                attachment_path: None,
             })
             .await
             .expect_err("finalized mission should reject marker writes");
@@ -2942,6 +3201,9 @@ mod tests {
                 condition: None,
                 treatment: None,
                 evacuation_priority: None,
+                updated_by: None,
+                coordinator_ids: None,
+                attachment_path: None,
             })
             .await
             .expect("marker should save after unlock");

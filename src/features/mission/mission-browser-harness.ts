@@ -4,6 +4,7 @@ import type {
 import { applyDrawingController, applyDrawingRuntime } from '../drawings/drawing-store'
 import { startDrawingRuntime } from '../drawings/start-drawing-runtime'
 import { getBrowserHarnessStore } from '../browser-validation/browser-harness-store'
+import { ingestMarkerAttachment } from '../../infrastructure/marker-attachment-store/tauri-marker-attachment-store'
 import {
   hydrateTrackingFromBrowserHarness,
   installBrowserHarnessApi,
@@ -85,6 +86,9 @@ export async function startMissionBrowserHarness(): Promise<void> {
   applyMissionGovernanceController(governanceController)
   const markerController = await startMarkerRuntime({
     markerStore: browserStore,
+    attachmentStore: {
+      ingest: ingestMarkerAttachment,
+    },
     applyRuntime: applyMarkerRuntime,
   })
   applyMarkerController(markerController)
