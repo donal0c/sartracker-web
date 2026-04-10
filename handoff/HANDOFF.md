@@ -3,14 +3,62 @@
 > **Read this before doing ANY work. Update this after EVERY chunk of work.**
 
 ## Last Updated
-2026-04-10 10:35 by Codex
+2026-04-10 11:20 by Codex
 
 ## Current State
-**Phase: Phase 1 build in progress — M1, M2, M3, M4, M5, M6, M7, and M8 complete; tactical UI modernization pass under review**
+**Phase: Phase 1 build in progress — M1, M2, M3, M4, M5, M6, M7, M8, and M9 complete; tactical UI modernization pass merged**
 
 `HANDOFF.md` is the authoritative continuity log for active repo work across Donal, Codex, and Claude Code. Update it after every meaningful chunk so the next agent can resume without re-discovery.
 
 ## What's Been Done
+
+### 2026-04-10 M9 measurement implementation completed
+- Implemented M9 as a separate measurement subsystem rather than folding it into drawings, so the post-M8 drawing cleanup remains intact
+- Added a dedicated measurement runtime in `src/features/measurements/`:
+  - `measurement-types.ts`
+    - explicit runtime model for completed measurements, armed mode, and in-progress draft state
+  - `start-measurement-runtime.ts`
+    - pure controller for mission refresh, arm/cancel, point registration, hover preview, and clear-all
+    - locked M9 defaults in implementation:
+      - permanent label on the measurement line
+      - temporary operational aids cleared on mission finish / mission change
+  - `measurement-geojson.ts`
+    - line + label feature generation
+    - preview feature generation for the live first-point/second-point workflow
+  - `sync-measurement-overlay.ts`
+    - dedicated MapLibre source/layers for completed measurement lines + labels
+    - dedicated preview source/layers for the in-progress measurement
+  - `measurement-store.ts`
+  - `measurement-runtime-bridge.tsx`
+- Added explicit map wiring without bloating the existing generic hooks:
+  - `src/features/map/use-map-measurement-overlays.ts`
+  - `src/features/map/use-map-measurement-interactions.ts`
+  - `src/features/map/use-map-controller.ts` now composes measurement overlays/interactions alongside markers and drawings
+- Added operator-facing sidebar controls in `src/components/measurement-panel.tsx`:
+  - Measure / Cancel Measure
+  - Clear Measurements
+  - active measurement count
+  - persistent measurement summaries matching the map label content
+- Hardened map mode arbitration:
+  - measurement mode now blocks marker creation/edit clicks while armed
+  - drawing interactions now stand down while measurement mode is armed
+  - switching from drawing tools to measurement cancels the active drawing tool first
+  - switching from measurement back to drawing tools cancels measurement mode first
+- Added focused tests:
+  - `tests/unit/start-measurement-runtime.test.ts`
+  - `tests/unit/measurement-geojson.test.ts`
+  - `tests/e2e/measurement.spec.ts`
+    - multiple measurements can coexist
+    - clear-all flow
+    - escape cancel flow
+    - automatic clear on mission finish
+    - clean handoff between measurement mode and drawing tools
+- Verification completed:
+  - `npm run test` ✅
+  - `npm run lint` ✅
+  - `npm run build` ✅
+  - `npm run test:e2e` ✅
+  - `cargo test --manifest-path src-tauri/Cargo.toml` ✅
 
 ### 2026-04-10 tactical UI modernization pass (local changes under review)
 - Gemini produced a restrained UI overhaul aimed at making the shell more map-first and operational without changing core mission, marker, drawing, or tracking behavior
@@ -45,8 +93,9 @@
   - restored `HANDOFF.md` after Gemini replaced most of it with a placeholder summary
   - completed a browser validation pass against the running Vite app plus the full automated suite
   - no functional blocker found in the UI overhaul itself; current decision is down to product/operational preference rather than correctness
-- Remaining before acceptance:
-  - final user call on whether the UI pass is operationally better enough to keep
+- Final result:
+  - user accepted the UI pass
+  - changes were committed and pushed as `c90e16a`
 
 ### 2026-04-09 pre-M9 drawing architecture hardening pass
 - Performed a bounded structural refactor on the drawings subsystem before M9 measurement work
@@ -757,11 +806,10 @@
   - `cargo test --manifest-path src-tauri/Cargo.toml` ✅
 
 ## What's Next
-1. **Review/accept the tactical UI modernization pass** before committing it
-2. **Start M9** — measurement tool using the same drawing/map interaction discipline established in M8
-3. **Keep map interaction boundaries strict** — measurement should get its own focused modules rather than bloating the generic hooks
-4. **Keep the MissionStore boundary strict** — renderer should not accumulate raw SQL access
-5. **When GeoPackage arrives:** run the conversion pipeline, test in MapLibre
+1. **Start M10** — integration / end-to-end hardening across the now-complete Phase 1 operator surface
+2. **Keep map interaction boundaries strict** — future work should preserve the separate marker / drawing / measurement map seams
+3. **Keep the MissionStore boundary strict** — renderer should not accumulate raw SQL access
+4. **When GeoPackage arrives:** run the conversion pipeline, test in MapLibre
 
 ## Active Beads
 ```

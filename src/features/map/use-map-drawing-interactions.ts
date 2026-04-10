@@ -2,6 +2,7 @@ import { useEffect, type RefObject } from 'react'
 import type maplibregl from 'maplibre-gl'
 
 import { useDrawingStore } from '../drawings/drawing-store'
+import { useMeasurementStore } from '../measurements/measurement-store'
 import { useMissionStore } from '../mission/mission-store'
 import {
   getInteractiveDrawingLayerIds,
@@ -24,6 +25,7 @@ export function useMapDrawingInteractions(
   const controller = useDrawingStore((state) => state.controller)
   const activeTool = useDrawingStore((state) => state.activeTool)
   const dialog = useDrawingStore((state) => state.dialog)
+  const measurementMode = useMeasurementStore((state) => state.mode)
   const currentMissionId = useMissionStore((state) => state.currentMission?.id ?? null)
   const missionPhase = useMissionStore((state) => state.phase)
 
@@ -96,7 +98,10 @@ export function useMapDrawingInteractions(
     }
 
     const handleClick = (event: MouseEvent) => {
-      if (shouldIgnoreDrawingMapClick(currentMissionId, missionPhase, event.target)) {
+      if (
+        measurementMode === 'armed' ||
+        shouldIgnoreDrawingMapClick(currentMissionId, missionPhase, event.target)
+      ) {
         return
       }
 
@@ -191,6 +196,7 @@ export function useMapDrawingInteractions(
     activeTool,
     controller,
     currentMissionId,
+    measurementMode,
     missionPhase,
     options.containerRef,
     options.mapRef,

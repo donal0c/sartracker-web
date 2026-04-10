@@ -1,5 +1,6 @@
 import { useDrawingStore } from '../features/drawings/drawing-store'
 import { LPB_CATEGORIES } from '../features/drawings/lpb-data'
+import { useMeasurementStore } from '../features/measurements/measurement-store'
 import { useMissionStore } from '../features/mission/mission-store'
 
 const DRAWING_TOOL_OPTIONS = [
@@ -18,6 +19,8 @@ export function DrawingToolbar() {
   const controller = useDrawingStore((state) => state.controller)
   const activeTool = useDrawingStore((state) => state.activeTool)
   const dialog = useDrawingStore((state) => state.dialog)
+  const measurementController = useMeasurementStore((state) => state.controller)
+  const measurementMode = useMeasurementStore((state) => state.mode)
   const missionId = useMissionStore((state) => state.currentMission?.id ?? null)
   const missionPhase = useMissionStore((state) => state.phase)
 
@@ -58,6 +61,10 @@ export function DrawingToolbar() {
               onClick={() => {
                 if (controller === null) {
                   return
+                }
+
+                if (measurementController !== null && measurementMode === 'armed') {
+                  measurementController.cancelMeasurement()
                 }
 
                 if (option.value === 'select') {

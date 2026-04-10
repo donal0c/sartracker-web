@@ -3,9 +3,11 @@ import { Suspense, lazy } from 'react'
 import { DrawingRuntimeBridge } from './features/drawings/drawing-runtime-bridge'
 import { DrawingDialog } from './components/drawing-dialog'
 import { LayerFilterPanel } from './components/layer-filter-panel'
+import { MeasurementPanel } from './components/measurement-panel'
 import { MissionControlPanel } from './components/mission-control-panel'
 import { MarkerDialog } from './components/marker-dialog'
 import { MarkerRuntimeBridge } from './features/markers/marker-runtime-bridge'
+import { MeasurementRuntimeBridge } from './features/measurements/measurement-runtime-bridge'
 import { useAppStore } from './lib/app-store'
 import { TrackingStatusPanel } from './components/tracking-status-panel'
 
@@ -25,6 +27,7 @@ function App() {
     <main className="flex h-screen w-screen overflow-hidden bg-stone-950 text-stone-100">
       <DrawingRuntimeBridge />
       <MarkerRuntimeBridge />
+      <MeasurementRuntimeBridge />
       
       {/* Map Area - Expanded */}
       <section className="relative flex-1 overflow-hidden">
@@ -65,6 +68,7 @@ function App() {
           <MissionControlPanel />
           <TrackingStatusPanel />
           <LayerFilterPanel />
+          <MeasurementPanel />
           
           <div className="rounded-xl border border-stone-800 bg-stone-950/40 p-4 text-[11px] leading-relaxed text-stone-500">
             <p className="font-semibold text-stone-400 uppercase tracking-wider mb-2">Operational Notes</p>
