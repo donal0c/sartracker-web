@@ -11,7 +11,11 @@
     "tauri": "tauri",
     "test": "vitest run",
     "test:e2e": "playwright test",
-    "test:all": "npm run test && npm run test:e2e"
+    "test:all": "npm run test && npm run test:e2e",
+    "mock:traccar": "npx --prefix tools/mock-traccar tsx tools/mock-traccar/src/server.ts",
+    "mock:traccar:fast": "npx --prefix tools/mock-traccar tsx tools/mock-traccar/src/server.ts --speed 30",
+    "mock:traccar:loop": "npx --prefix tools/mock-traccar tsx tools/mock-traccar/src/server.ts --loop",
+    "mock:traccar:realtime": "npx --prefix tools/mock-traccar tsx tools/mock-traccar/src/server.ts --speed 1 --loop"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.10.1",

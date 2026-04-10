@@ -15,9 +15,18 @@ import {
   applyMissionGovernanceRuntime,
   applyMissionRuntime,
   applyMissionRuntimeController,
+  useMissionStore,
 } from './mission-store'
 import { startMissionGovernanceRuntime } from './start-mission-governance-runtime'
 import { startMissionRuntime } from './start-mission-runtime'
+import { readTrackingRuntimeConfig } from '../tracking/tracking-runtime-config'
+import { createTraccarClient } from '../tracking/traccar-client'
+import {
+  createPollingManager,
+  type TrackingPollerClient,
+} from '../tracking/polling-manager'
+import { startTrackingRuntime } from '../tracking/start-tracking-runtime'
+import { applyTrackingSnapshot, applyTrackingStatus } from '../tracking/tracking-store'
 
 /**
  * Returns whether the browser mission harness should be enabled for validation.
@@ -86,4 +95,33 @@ export async function startMissionBrowserHarness(): Promise<void> {
   applyDrawingController(drawingController)
 
   await hydrateTrackingFromBrowserHarness()
+
+  // If Traccar env vars are present, start real HTTP polling against the mock/live server
+  const trackingConfig = readTrackingRuntimeConfig()
+  if (trackingConfig !== null) {
+    console.log('[browser-harness] Starting real tracking polling against', trackingConfig.baseUrl)
+    await startTrackingRuntime({
+      config: trackingConfig,
+      createClient: createTraccarClient,
+      createPoller: (client, hooks) =>
+        createPollingManager(client as TrackingPollerClient, {
+          intervalMs: 10_000,
+          staleThresholdMs: 60 * 60 * 1000,
+          getPollingMode: () => {
+            const phase = useMissionStore.getState().phase
+            return phase === 'active' || phase === 'paused' ? phase : 'idle'
+          },
+          getHistoryResetKey: () => useMissionStore.getState().currentMission?.id ?? null,
+          getInitialBreadcrumbFrom: () => {
+            const mission = useMissionStore.getState().currentMission
+            return mission === null ? null : new Date(mission.start_time)
+          },
+          ...hooks,
+        }),
+      cache: { read: async () => null, write: async (c: string) => c },
+      missionStore: browserStore,
+      applySnapshot: applyTrackingSnapshot,
+      applyStatus: applyTrackingStatus,
+    })
+  }
 }

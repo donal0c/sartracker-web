@@ -3,14 +3,123 @@
 > **Read this before doing ANY work. Update this after EVERY chunk of work.**
 
 ## Last Updated
-2026-04-10 17:44 by Codex
+2026-04-10 21:30 by Claude Code (Opus)
 
 ## Current State
-**Phase: Phase 1 operational core complete — M1 through M10 complete; parity foundation now includes M12, M14, M15, M16, M17, M18, and M19; next logical bead is M20**
+**Phase: Phase 1 operational core complete — M1 through M10 complete; parity foundation now includes M12, M14, M15, M16, M17, M18, and M19; next logical bead is M20. Critical tracking visibility fix applied and verified.**
 
 `HANDOFF.md` is the authoritative continuity log for active repo work across Donal, Codex, and Claude Code. Update it after every meaningful chunk so the next agent can resume without re-discovery.
 
 ## What's Been Done
+
+### 2026-04-10 Deep UI Validation — CRITICAL tracking visibility fix
+
+**Context**: Executed the full `docs/deep-ui-validation-checklist.md` against the app running with the mock Traccar server. Used a triple-verification methodology where every visual claim was independently verified by 3 sub-agents examining screenshots.
+
+**CRITICAL BUG FOUND AND FIXED**: Device markers and breadcrumb trails were rendered with dark earth-tone colors (`#4E593E`, `#875D3E`, `#95543E`, etc.) at 5px circle radius and 1.5px dashed line width. These were **functionally invisible** on both satellite and topographic basemaps of Irish terrain. 15 independent verification agents unanimously confirmed 0 markers and 0 trails were visually identifiable before the fix.
+
+**Fix applied** (3 files changed, all 205 tests pass):
+- `src/features/tracking/tracking-color.ts` — Replaced hash-to-RGB color generator with a curated 12-color high-visibility SAR palette (red, green, blue, orange, purple, cyan, magenta, lime, pink, lavender, brown, gold)
+- `src/features/tracking/sync-tracking-overlay.ts` — Device circles: 5px→7px radius, stroke dark→white for contrast, stroke width 1.5→2px. Breadcrumb lines: 1.5px dashed→3px solid, added 0.85 opacity
+- `tests/unit/tracking-color.test.ts` — Updated to match new palette approach
+
+**Post-fix verification**: 3/3 agents confirmed 5 bright markers clearly visible on satellite (rated 7-8/10). 3/3 agents confirmed 2 device markers + 2 breadcrumb trail lines clearly visible on topo (trails rated 7-8/10). Total: 15 agents used across 5 batches.
+
+**Remaining issues (beads created)**:
+- `sartracker-web-seq` (P1): Basemap switch resets map viewport to default center — operators lose tracking view when switching basemaps
+- `sartracker-web-awm` (P2): Device markers rated only 4-6/10 on topo basemap — may need larger radius or labels
+- `sartracker-web-lo6` (P4): OpenTopoMap tile degradation message appears intermittently
+- `sartracker-web-bsl` (P3): Sections 13-16 not triple-verified — Review, Settings, Governance, Recovery need rigorous re-test
+
+**Sections verified clean** (Playwright + Chrome DevTools): Boot, basemap switching, mission lifecycle (start/pause/resume/finish), tracking system status, device markers on map, breadcrumb trails, devices workspace, layer tree, marker creation dialog, drawing tool arm/cancel, measurement tool, coordinate converter structure.
+
+**Decision**: The tracking visibility fix is the most important safety-critical change in this session. The basemap viewport reset (sartracker-web-seq) is the highest priority remaining bug.
+
+### 2026-04-10 mock Traccar server fitness review
+- Performed a source-level review of the new mock Traccar server in:
+  - `tools/mock-traccar/README.md`
+  - `tools/mock-traccar/src/server.ts`
+  - `tools/mock-traccar/src/router.ts`
+  - `tools/mock-traccar/src/auth.ts`
+  - `tools/mock-traccar/src/playback-engine.ts`
+  - `tools/mock-traccar/src/device-roster.ts`
+  - `tools/mock-traccar/src/position-store.ts`
+  - `tools/mock-traccar/src/route-generator.ts`
+  - `tools/mock-traccar/src/csv-parser.ts`
+- Verdict:
+  - good foundation and directionally correct for manual map/roster demos
+  - not yet fit as a full parity-confidence simulator for tracking behavior
+- Important confirmed gaps/mismatches:
+  - `/health` is documented as unauthenticated in `README.md`, but the router currently puts the auth gate in front of it, so it returns `401` without credentials
+  - `GET /api/positions` claims to return one current position per online device, but `position-store.ts` currently returns the last visible point for every routed device, including devices whose roster status has become `offline`
+  - this means the mock can surface a fully offline device as a current map position, which is opposite to the legacy plugin's active-device filtering model
+  - playback timestamp compression at speeds >1x is a real limitation, not just a minor caveat:
+    - breadcrumb-gap segmentation
+    - stale/unknown transitions
+    - any time-threshold-driven behavior
+    are not faithfully exercised at the default `10x`
+  - route generation uses `Math.random()` for EOC and Medic jitter/speeds, so server output is not deterministic across runs; that weakens regression confidence and screenshot/test repeatability
+  - Team Delta's `goUnknownAfterMs` intent is not modeled cleanly: the special branch depends on `lastPoint.scenarioOffsetMs >= goUnknownAfterMs`, but Delta's generated route ends just before the configured cutoff, so normal stale logic is effectively doing the work instead
+- Practical conclusion:
+  - use the current mock for exploratory manual testing only
+  - do not treat it yet as a trusted parity harness for acceptance, automated regression, or life-safety behavior signoff
+- Recommended next fixes before relying on it heavily:
+  - make `/health` truly unauthenticated
+  - ensure current-position responses respect roster visibility/status rules
+  - make route generation deterministic via seeded randomness or fixed fixtures
+  - split visual-speed playback from threshold-accurate playback more explicitly
+  - tighten Team Delta state-transition modeling so the scenario matches the README and intended failure case
+- Verification:
+  - manual endpoint probing only
+  - confirmed `/health` currently returns `401`
+  - confirmed a late-start probe (`--speed 1 --start-offset 90`) returns Team Delta in `/api/positions` while `/api/devices` reports it as `offline`
+
+### 2026-04-10 legacy Traccar tracking deep-dive + mock-server spec
+- Performed a fresh deep dive into the legacy QGIS plugin's HTTP tracking stack to support a realistic mock tracking server for `sartracker-web`.
+- Investigated the actual behavior in:
+  - `/Users/donalocallaghan/Documents/Qgis/sartracker/providers/traccar_http.py`
+  - `/Users/donalocallaghan/Documents/Qgis/sartracker/providers/tasks.py`
+  - `/Users/donalocallaghan/Documents/Qgis/sartracker/controllers/provider_controller.py`
+  - `/Users/donalocallaghan/Documents/Qgis/sartracker/controllers/layer_managers/tracking_manager.py`
+  - `/Users/donalocallaghan/Documents/Qgis/sartracker/controllers/layer_managers/tracking_segments.py`
+  - `/Users/donalocallaghan/Documents/Qgis/sartracker/controllers/devices_controller.py`
+  - `/Users/donalocallaghan/Documents/Qgis/sartracker/utils/device_filtering.py`
+- Important clarified legacy behavior:
+  - provider uses `GET /api/devices`, `GET /api/positions`, and per-device `GET /api/positions?deviceId&from&to`
+  - provider prefers bulk breadcrumb fetch first but falls back to per-device fetch when Traccar only returns latest points in bulk mode
+  - map-visible tracking is filtered to active devices only:
+    - `online` => visible
+    - `offline` => hidden from tracking layers
+    - `unknown` => visible only if recent enough
+  - current positions are labeled with device `name`, not special initials logic
+  - breadcrumb trails are segmented on gaps greater than 5 minutes
+  - empty/bad poll responses intentionally do not clear live map tracking immediately
+  - last-good tracking cache is part of the operational safety model, not an incidental optimization
+- Investigated legacy sample/mock route inputs:
+  - `/Users/donalocallaghan/Documents/Qgis/sartracker/From_Eamon/Glenagenty.csv`
+  - `/Users/donalocallaghan/Documents/Qgis/sartracker/From_Eamon/mock_team_alpha.csv`
+  - `/Users/donalocallaghan/Documents/Qgis/sartracker/From_Eamon/mock_team_bravo.csv`
+  - `/Users/donalocallaghan/Documents/Qgis/sartracker/From_Eamon/mock_team_charlie.csv`
+  - `/Users/donalocallaghan/Documents/Qgis/sartracker/dev_tools/traccar_stub.py`
+  - `/Users/donalocallaghan/Documents/Qgis/sartracker/dev_tools/csv_to_fixtures.py`
+- Added a new design note:
+  - `docs/mock-traccar-server-spec.md`
+- Added a new child bead under the parity epic:
+  - `sartracker-web-2jk.16` — Mock Traccar server and Glenagenty scenario fixtures
+- The new note captures:
+  - exact legacy HTTP tracking behavior worth preserving
+  - required mock API contract
+  - realistic multi-device simulation model
+  - suggested Glenagenty-area device roles and staggered starts
+  - failure-mode scenarios for stale, offline, and breadcrumb-gap testing
+  - recommendation to build a standalone mock server under `tools/mock-traccar/`
+- Why this matters:
+  - the existing legacy stub is useful but too thin for full parity testing in the new app
+  - we now have a documented path for exercising real client polling, current positions, breadcrumbs, device visibility, and resilience behavior without live Traccar
+- Verification:
+  - no automated tests run; this was a research/documentation pass only
+- Suggested next step:
+  - create a dedicated implementation bead for the mock Traccar server and fixture generator, then build Scenario A/B first before adding stale/offline/outage scenarios
 
 ### 2026-04-10 M15 mission review workspace completed
 - Implemented a dedicated non-modal mission review workspace instead of spreading audit/review across ad hoc panels:

@@ -28,8 +28,8 @@ export function syncTrackingOverlay(
       filter: ['==', '$type', 'LineString'],
       paint: {
         'line-color': ['get', 'color'],
-        'line-width': 1.5,
-        'line-dasharray': [1, 1.5],
+        'line-width': 3,
+        'line-opacity': 0.85,
       },
       layout: {
         'line-cap': 'round',
@@ -46,18 +46,18 @@ export function syncTrackingOverlay(
       filter: ['==', '$type', 'Point'],
       paint: {
         'circle-color': ['get', 'color'],
-        'circle-radius': 5,
+        'circle-radius': 7,
         'circle-stroke-color': [
           'case',
           ['boolean', ['get', 'stale'], false],
           '#FACC15',
-          '#0F172A',
+          '#FFFFFF',
         ],
         'circle-stroke-width': [
           'case',
           ['boolean', ['get', 'stale'], false],
-          2.5,
-          1.5,
+          3,
+          2,
         ],
         'circle-opacity': [
           'case',

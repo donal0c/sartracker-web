@@ -7,15 +7,16 @@ describe('tracking colors', () => {
     expect(createDeviceColor('tracker-1')).toBe(createDeviceColor('tracker-1'))
   })
 
-  it('stays within the visible channel range', () => {
+  it('returns a valid hex color from the SAR palette', () => {
     const color = createDeviceColor('tracker-1')
-    const channels = color
-      .replace('#', '')
-      .match(/.{2}/g)
-      ?.map((channel) => Number.parseInt(channel, 16))
+    expect(color).toMatch(/^#[0-9A-F]{6}$/i)
+  })
 
-    expect(channels).toBeDefined()
-    expect(channels).toHaveLength(3)
-    expect(channels?.every((channel) => channel >= 50 && channel <= 255)).toBe(true)
+  it('produces different colors for different device ids', () => {
+    const ids = ['1', '2', '3', '4', '5', '6', '7', '8']
+    const colors = ids.map(createDeviceColor)
+    const unique = new Set(colors)
+    // With 8 devices and a 12-colour palette, expect at least 4 distinct colours
+    expect(unique.size).toBeGreaterThanOrEqual(4)
   })
 })
