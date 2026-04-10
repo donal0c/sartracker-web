@@ -3,9 +3,12 @@ import type {
   CreateMissionInput,
   Device,
   Drawing,
+  FinalizeMissionResult,
   Marker,
   Mission,
+  MissionArchiveInfo,
   Position,
+  UnlockFinalizedMissionInput,
   UpsertDeviceInput,
   UpsertDrawingInput,
   UpsertMarkerInput,
@@ -31,6 +34,8 @@ type BrowserHarnessStore = {
   readonly pauseMission: (missionId: string) => Promise<Mission>
   readonly resumeMission: (missionId: string) => Promise<Mission>
   readonly finishMission: (missionId: string) => Promise<Mission>
+  readonly finalizeMission: (missionId: string) => Promise<FinalizeMissionResult>
+  readonly unlockFinalizedMission: (input: UnlockFinalizedMissionInput) => Promise<Mission>
   readonly listDevices: (missionId: string) => Promise<readonly Device[]>
   readonly upsertDevice: (input: UpsertDeviceInput) => Promise<Device>
   readonly addPosition: (input: AddPositionInput) => Promise<Position>
@@ -147,9 +152,52 @@ export function getBrowserHarnessStore(): BrowserHarnessStore {
       save()
       return finishedMission
     },
+    finalizeMission: async (missionId) => {
+      const mission = requireMission(missionId, state.missions)
+      if (mission.status !== 'finished') {
+        throw new Error('Only finished missions can be finalized.')
+      }
+
+      const finalizedMission = {
+        ...mission,
+        status: 'finalized' as const,
+      }
+      const archive = {
+        mission_id: missionId,
+        archive_path: `/tmp/${missionId}-archive.zip`,
+        created_at: new Date().toISOString(),
+      } satisfies MissionArchiveInfo
+
+      state = replaceMission(state, finalizedMission, null, null)
+      save()
+      return { mission: finalizedMission, archive }
+    },
+    unlockFinalizedMission: async (input) => {
+      const mission = requireMission(input.mission_id, state.missions)
+      if (mission.status !== 'finalized') {
+        throw new Error('Only finalized missions can be unlocked.')
+      }
+
+      const settings = readBrowserSettings()
+      if (!settings.missionDefaults.adminRoster.includes(input.admin_name)) {
+        throw new Error('Selected admin is not authorized to unlock finalized missions.')
+      }
+      if (input.reason.trim() === '') {
+        throw new Error('Unlock reason is required.')
+      }
+
+      const unlockedMission = {
+        ...mission,
+        status: 'finished' as const,
+      }
+      state = replaceMission(state, unlockedMission, null, null)
+      save()
+      return unlockedMission
+    },
     listDevices: async (missionId) =>
       state.devices.filter((device) => device.mission_id === missionId),
     upsertDevice: async (input) => {
+      ensureMissionMutable(input.mission_id, state.missions)
       const existingDevice =
         state.devices.find(
           (device) =>
@@ -174,6 +222,7 @@ export function getBrowserHarnessStore(): BrowserHarnessStore {
       return device
     },
     addPosition: async (input) => {
+      ensureMissionMutable(input.mission_id, state.missions)
       const position = {
         id: createId('position'),
         mission_id: input.mission_id,
@@ -216,6 +265,7 @@ export function getBrowserHarnessStore(): BrowserHarnessStore {
         .filter((marker) => marker.mission_id === missionId)
         .sort((left, right) => left.display_order - right.display_order),
     upsertMarker: async (input) => {
+      ensureMissionMutable(input.mission_id, state.missions)
       const existingMarker = input.id === undefined || input.id === null
         ? null
         : state.markers.find((marker) => marker.id === input.id) ?? null
@@ -256,6 +306,10 @@ export function getBrowserHarnessStore(): BrowserHarnessStore {
       if (!didDelete) {
         return false
       }
+      const marker = state.markers.find((candidate) => candidate.id === markerId)
+      if (marker !== undefined) {
+        ensureMissionMutable(marker.mission_id, state.missions)
+      }
 
       state = {
         ...state,
@@ -269,6 +323,7 @@ export function getBrowserHarnessStore(): BrowserHarnessStore {
         .filter((drawing) => drawing.mission_id === missionId)
         .sort((left, right) => left.display_order - right.display_order),
     upsertDrawing: async (input) => {
+      ensureMissionMutable(input.mission_id, state.missions)
       const existingDrawing =
         input.id === undefined || input.id === null
           ? null
@@ -303,6 +358,10 @@ export function getBrowserHarnessStore(): BrowserHarnessStore {
       const didDelete = state.drawings.some((drawing) => drawing.id === drawingId)
       if (!didDelete) {
         return false
+      }
+      const drawing = state.drawings.find((candidate) => candidate.id === drawingId)
+      if (drawing !== undefined) {
+        ensureMissionMutable(drawing.mission_id, state.missions)
       }
 
       state = {
@@ -381,6 +440,39 @@ function readHarnessState(): BrowserHarnessState {
   }
 }
 
+function readBrowserSettings(): {
+  readonly missionDefaults: {
+    readonly adminRoster: readonly string[]
+  }
+} {
+  if (typeof window === 'undefined') {
+    return { missionDefaults: { adminRoster: [] } }
+  }
+
+  try {
+    const raw = window.localStorage.getItem('sartracker:browser-settings')
+    if (raw === null) {
+      return { missionDefaults: { adminRoster: [] } }
+    }
+
+    const parsed = JSON.parse(raw) as {
+      missionDefaults?: {
+        adminRoster?: readonly string[]
+      }
+    }
+
+    return {
+      missionDefaults: {
+        adminRoster: Array.isArray(parsed.missionDefaults?.adminRoster)
+          ? parsed.missionDefaults?.adminRoster ?? []
+          : [],
+      },
+    }
+  } catch {
+    return { missionDefaults: { adminRoster: [] } }
+  }
+}
+
 function replaceMission(
   state: BrowserHarnessState,
   nextMission: Mission,
@@ -407,6 +499,15 @@ function requireMission(missionId: string, missions: readonly Mission[]): Missio
   const mission = findMission(missionId, missions)
   if (mission === null) {
     throw new Error(`Mission not found: ${missionId}`)
+  }
+
+  return mission
+}
+
+function ensureMissionMutable(missionId: string, missions: readonly Mission[]): Mission {
+  const mission = requireMission(missionId, missions)
+  if (mission.status === 'finalized') {
+    throw new Error('Finalized missions are read-only until an admin unlocks them.')
   }
 
   return mission

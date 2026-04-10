@@ -106,6 +106,17 @@ export type MissionArchiveInfo = {
   readonly created_at: string
 }
 
+export type FinalizeMissionResult = {
+  readonly mission: Mission
+  readonly archive: MissionArchiveInfo
+}
+
+export type UnlockFinalizedMissionInput = {
+  readonly mission_id: string
+  readonly admin_name: string
+  readonly reason: string
+}
+
 export type MissionEvent = {
   readonly id: string
   readonly mission_id: string
@@ -212,6 +223,8 @@ export type MissionStore = {
   readonly pauseMission: (missionId: string) => Promise<Mission>
   readonly resumeMission: (missionId: string) => Promise<Mission>
   readonly finishMission: (missionId: string) => Promise<Mission>
+  readonly finalizeMission: (missionId: string) => Promise<FinalizeMissionResult>
+  readonly unlockFinalizedMission: (input: UnlockFinalizedMissionInput) => Promise<Mission>
 }
 
 export function createTauriMissionStore(): MissionStore {
@@ -246,5 +259,9 @@ export function createTauriMissionStore(): MissionStore {
     pauseMission: (missionId) => invoke<Mission>('pause_mission', { missionId }),
     resumeMission: (missionId) => invoke<Mission>('resume_mission', { missionId }),
     finishMission: (missionId) => invoke<Mission>('finish_mission', { missionId }),
+    finalizeMission: (missionId) =>
+      invoke<FinalizeMissionResult>('finalize_mission', { missionId }),
+    unlockFinalizedMission: (input) =>
+      invoke<Mission>('unlock_finalized_mission', { input }),
   }
 }

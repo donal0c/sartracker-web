@@ -10,6 +10,7 @@ describe('browser harness store', () => {
   beforeEach(() => {
     resetBrowserHarnessStore(false)
     window.sessionStorage.clear()
+    window.localStorage.clear()
   })
 
   it('persists devices and positions for the active mission', async () => {
@@ -49,5 +50,44 @@ describe('browser harness store', () => {
     expect(persistedState.currentMissionId).toBe(mission.id)
     expect(persistedState.devices).toHaveLength(1)
     expect(persistedState.positions).toHaveLength(2)
+  })
+
+  it('finalizes and unlocks a mission using the configured admin roster', async () => {
+    window.localStorage.setItem(
+      'sartracker:browser-settings',
+      JSON.stringify({
+        missionDefaults: {
+          adminRoster: ['Ops Lead'],
+        },
+      }),
+    )
+
+    const store = getBrowserHarnessStore()
+    const mission = await store.createMission({ name: 'Governance Mission' })
+    await store.finishMission(mission.id)
+
+    const finalized = await store.finalizeMission(mission.id)
+    expect(finalized.mission.status).toBe('finalized')
+    expect(finalized.archive.archive_path).toContain(`${mission.id}-archive.zip`)
+
+    await expect(
+      store.upsertMarker({
+        mission_id: mission.id,
+        type: 'clue',
+        name: 'Blocked Marker',
+        lat: 52,
+        lon: -9.7,
+        irish_grid_e: 496584,
+        irish_grid_n: 591256,
+        display_order: 1,
+      }),
+    ).rejects.toThrow('read-only')
+
+    const unlocked = await store.unlockFinalizedMission({
+      mission_id: mission.id,
+      admin_name: 'Ops Lead',
+      reason: 'Need to correct mission notes',
+    })
+    expect(unlocked.status).toBe('finished')
   })
 })

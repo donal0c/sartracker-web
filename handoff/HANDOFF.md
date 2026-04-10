@@ -3,7 +3,7 @@
 > **Read this before doing ANY work. Update this after EVERY chunk of work.**
 
 ## Last Updated
-2026-04-10 12:56 by Codex
+2026-04-10 15:22 by Codex
 
 ## Current State
 **Phase: Phase 1 operational core complete — M1 through M10 complete; tactical UI modernization pass merged; parity program beads queued**
@@ -11,6 +11,51 @@
 `HANDOFF.md` is the authoritative continuity log for active repo work across Donal, Codex, and Claude Code. Update it after every meaningful chunk so the next agent can resume without re-discovery.
 
 ## What's Been Done
+
+### 2026-04-10 M14 finalize / archive / unlock completed
+- Implemented M14 as a separate mission-governance slice rather than inflating the active mission runtime:
+  - `src/features/mission/start-mission-governance-runtime.ts`
+  - governance state/controller added to `src/features/mission/mission-store.ts`
+- Added operator-facing governance UI to `src/components/mission-control-panel.tsx`:
+  - idle-state governance card for the latest finished/finalized mission
+  - explicit `Archive & Lock` confirmation flow
+  - explicit admin unlock flow with configured admin roster selection + required reason
+- Extended the Tauri mission-store boundary in `src/infrastructure/mission-store/tauri-mission-store.ts` with:
+  - `finalizeMission`
+  - `unlockFinalizedMission`
+- Hardened the Rust persistence boundary in `src-tauri/src/persistence.rs`:
+  - added finalize command/result and unlock command/input
+  - finalize now records governance audit events:
+    - `mission_finalize_requested`
+    - `mission_archive_succeeded`
+    - `mission_archive_failed`
+    - `mission_finalized`
+  - admin unlock now records:
+    - `mission_unlock_requested`
+    - `mission_unlocked`
+    - `mission_unlock_denied`
+  - added true read-only enforcement for finalized missions at the persistence layer:
+    - device writes
+    - position writes
+    - marker create/update/delete
+    - drawing create/update/delete
+- Browser validation harness now mirrors the same governance rules:
+  - supports finalize/unlock
+  - enforces finalized read-only behavior
+  - uses configured admin roster from browser settings fallback
+- Added / updated coverage:
+  - `tests/unit/start-mission-governance-runtime.test.ts`
+  - `tests/unit/tauri-mission-store.test.ts`
+  - `tests/unit/browser-harness-store.test.ts`
+  - `tests/unit/start-app-runtime.test.ts`
+  - `tests/e2e/mission.spec.ts`
+  - Rust persistence tests for finalize/unlock/read-only
+- Verification completed:
+  - `npm run test` ✅
+  - `npm run lint` ✅
+  - `npm run build` ✅
+  - `npm run test:e2e` ✅
+  - `cargo test --manifest-path src-tauri/Cargo.toml` ✅
 
 ### 2026-04-10 M12 settings workspace completed
 - Implemented the standalone settings workspace needed for plugin parity in:

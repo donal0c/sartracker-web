@@ -10,7 +10,13 @@ import {
 } from '../browser-validation/browser-harness-api'
 import { applyMarkerController, applyMarkerRuntime } from '../markers/marker-store'
 import { startMarkerRuntime } from '../markers/start-marker-runtime'
-import { applyMissionRuntime, applyMissionRuntimeController } from './mission-store'
+import {
+  applyMissionGovernanceController,
+  applyMissionGovernanceRuntime,
+  applyMissionRuntime,
+  applyMissionRuntimeController,
+} from './mission-store'
+import { startMissionGovernanceRuntime } from './start-mission-governance-runtime'
 import { startMissionRuntime } from './start-mission-runtime'
 
 /**
@@ -43,6 +49,8 @@ export async function startMissionBrowserHarness(): Promise<void> {
     | 'pauseMission'
     | 'resumeMission'
     | 'finishMission'
+    | 'finalizeMission'
+    | 'unlockFinalizedMission'
     | 'listDevices'
     | 'upsertDevice'
     | 'addPosition'
@@ -61,6 +69,11 @@ export async function startMissionBrowserHarness(): Promise<void> {
   })
 
   applyMissionRuntimeController(controller)
+  const governanceController = await startMissionGovernanceRuntime({
+    missionStore: browserStore,
+    applyRuntime: applyMissionGovernanceRuntime,
+  })
+  applyMissionGovernanceController(governanceController)
   const markerController = await startMarkerRuntime({
     markerStore: browserStore,
     applyRuntime: applyMarkerRuntime,

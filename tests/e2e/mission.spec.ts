@@ -62,6 +62,66 @@ test.describe('M5 mission control workflows', () => {
     await expect(page.getByTestId('mission-finish-btn')).toBeDisabled()
   })
 
+  test('finalizes a finished mission via archive-and-lock governance flow', async ({ page }) => {
+    await page.getByTestId('mission-name-input').fill('Finalize Flow')
+    await page.getByTestId('mission-start-btn').click()
+    await page.getByTestId('mission-finish-btn').click()
+    await page.getByTestId('mission-finish-dialog').getByRole('button', { name: 'Confirm Finish' }).click()
+
+    await expect(page.getByTestId('mission-governance-card')).toContainText('Finalize Flow')
+    await page.getByTestId('mission-finalize-btn').click()
+    await expect(page.getByTestId('mission-finalize-dialog')).toBeVisible()
+    await page.getByTestId('mission-finalize-confirm').click()
+
+    await expect(page.getByTestId('mission-governance-card')).toContainText('finalized')
+    await expect(page.getByText(/Mission archived to/)).toBeVisible()
+
+    const persistedMission = await page.evaluate(() => {
+      const raw = window.sessionStorage.getItem('sartracker:browser-harness')
+      if (raw === null) {
+        return null
+      }
+
+      const parsed = JSON.parse(raw) as {
+        missions?: Array<{ name: string; status: string }>
+      }
+
+      return parsed.missions?.find((mission) => mission.name === 'Finalize Flow') ?? null
+    })
+
+    expect(persistedMission?.status).toBe('finalized')
+  })
+
+  test('unlocks a finalized mission through the configured admin roster', async ({ page }) => {
+    await page.evaluate(() => {
+      window.localStorage.setItem(
+        'sartracker:browser-settings',
+        JSON.stringify({
+          missionDefaults: {
+            adminRoster: ['Ops Lead'],
+          },
+        }),
+      )
+    })
+    await page.reload()
+
+    await page.getByTestId('mission-name-input').fill('Unlock Flow')
+    await page.getByTestId('mission-start-btn').click()
+    await page.getByTestId('mission-finish-btn').click()
+    await page.getByTestId('mission-finish-dialog').getByRole('button', { name: 'Confirm Finish' }).click()
+    await page.getByTestId('mission-finalize-btn').click()
+    await page.getByTestId('mission-finalize-confirm').click()
+
+    await page.getByTestId('mission-unlock-btn').click()
+    await expect(page.getByTestId('mission-unlock-dialog')).toBeVisible()
+    await page.getByTestId('mission-unlock-admin').selectOption('Ops Lead')
+    await page.getByTestId('mission-unlock-reason').fill('Need to add follow-up notes')
+    await page.getByTestId('mission-unlock-confirm').click()
+
+    await expect(page.getByTestId('mission-governance-card')).toContainText('finished')
+    await expect(page.getByText(/Mission unlocked by Ops Lead/)).toBeVisible()
+  })
+
   test('finishes a paused mission without letting active search time advance', async ({ page }) => {
     await page.getByTestId('mission-name-input').fill('Paused Finish Flow')
     await page.getByTestId('mission-start-btn').click()

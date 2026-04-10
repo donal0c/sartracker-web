@@ -40,6 +40,11 @@ describe('tauri mission store adapter', () => {
     invokeMock.mockResolvedValueOnce({ id: 'm-2', status: 'paused' })
     invokeMock.mockResolvedValueOnce({ id: 'm-2', status: 'active' })
     invokeMock.mockResolvedValueOnce({ id: 'm-2', status: 'finished' })
+    invokeMock.mockResolvedValueOnce({
+      mission: { id: 'm-2', status: 'finalized' },
+      archive: { mission_id: 'm-2', archive_path: '/tmp/m-2.zip', created_at: '2026-04-10T13:00:00.000Z' },
+    })
+    invokeMock.mockResolvedValueOnce({ id: 'm-2', status: 'finished' })
 
     const store = createTauriMissionStore()
 
@@ -119,6 +124,17 @@ describe('tauri mission store adapter', () => {
     await expect(store.pauseMission('m-2')).resolves.toEqual({ id: 'm-2', status: 'paused' })
     await expect(store.resumeMission('m-2')).resolves.toEqual({ id: 'm-2', status: 'active' })
     await expect(store.finishMission('m-2')).resolves.toEqual({ id: 'm-2', status: 'finished' })
+    await expect(store.finalizeMission('m-2')).resolves.toEqual({
+      mission: { id: 'm-2', status: 'finalized' },
+      archive: { mission_id: 'm-2', archive_path: '/tmp/m-2.zip', created_at: '2026-04-10T13:00:00.000Z' },
+    })
+    await expect(
+      store.unlockFinalizedMission({
+        mission_id: 'm-2',
+        admin_name: 'Ops Lead',
+        reason: 'Need to correct notes',
+      }),
+    ).resolves.toEqual({ id: 'm-2', status: 'finished' })
 
     expect(invokeMock).toHaveBeenNthCalledWith(1, 'mission_store_info')
     expect(invokeMock).toHaveBeenNthCalledWith(2, 'sync_mission_store_backup')
@@ -196,5 +212,13 @@ describe('tauri mission store adapter', () => {
     expect(invokeMock).toHaveBeenNthCalledWith(24, 'pause_mission', { missionId: 'm-2' })
     expect(invokeMock).toHaveBeenNthCalledWith(25, 'resume_mission', { missionId: 'm-2' })
     expect(invokeMock).toHaveBeenNthCalledWith(26, 'finish_mission', { missionId: 'm-2' })
+    expect(invokeMock).toHaveBeenNthCalledWith(27, 'finalize_mission', { missionId: 'm-2' })
+    expect(invokeMock).toHaveBeenNthCalledWith(28, 'unlock_finalized_mission', {
+      input: {
+        mission_id: 'm-2',
+        admin_name: 'Ops Lead',
+        reason: 'Need to correct notes',
+      },
+    })
   })
 })

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 
+import { loadAppSettings } from '../infrastructure/settings-store/tauri-settings-store'
 import { useMissionStore } from '../features/mission/mission-store'
 import {
   calculateMissionTimerState,
@@ -14,6 +15,8 @@ export function MissionControlPanel() {
   const currentMission = useMissionStore((state) => state.currentMission)
   const recoverableMission = useMissionStore((state) => state.recoverableMission)
   const controller = useMissionStore((state) => state.controller)
+  const governanceMission = useMissionStore((state) => state.governanceMission)
+  const governanceController = useMissionStore((state) => state.governanceController)
   const [missionName, setMissionName] = useState('')
   const [startOffsetHours, setStartOffsetHours] = useState('0')
   const [now, setNow] = useState(() => new Date())
@@ -22,6 +25,13 @@ export function MissionControlPanel() {
   const [duplicateWarning, setDuplicateWarning] = useState<string | null>(null)
   const [duplicateAcknowledged, setDuplicateAcknowledged] = useState(false)
   const [showFinishDialog, setShowFinishDialog] = useState(false)
+  const [showFinalizeDialog, setShowFinalizeDialog] = useState(false)
+  const [showUnlockDialog, setShowUnlockDialog] = useState(false)
+  const [governanceBusy, setGovernanceBusy] = useState(false)
+  const [governanceFeedback, setGovernanceFeedback] = useState<string | null>(null)
+  const [adminRoster, setAdminRoster] = useState<readonly string[]>([])
+  const [selectedAdmin, setSelectedAdmin] = useState('')
+  const [unlockReason, setUnlockReason] = useState('')
   const missionNameInputId = 'mission-name-input'
   const missionOffsetInputId = 'mission-offset-input'
 
@@ -34,6 +44,37 @@ export function MissionControlPanel() {
       window.clearInterval(timer)
     }
   }, [])
+
+  useEffect(() => {
+    if (!showUnlockDialog) {
+      return
+    }
+
+    let cancelled = false
+
+    void loadAppSettings()
+      .then((settings) => {
+        if (cancelled) {
+          return
+        }
+
+        setAdminRoster(settings.missionDefaults.adminRoster)
+        setSelectedAdmin((current) =>
+          current !== '' && settings.missionDefaults.adminRoster.includes(current)
+            ? current
+            : (settings.missionDefaults.adminRoster[0] ?? ''),
+        )
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          setActionError(toErrorMessage(error))
+        }
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [showUnlockDialog])
 
   const timerState = useMemo(() => {
     if (currentMission === null) {
@@ -121,6 +162,7 @@ export function MissionControlPanel() {
 
     try {
       await controller.finishMission()
+      await governanceController?.refreshGovernanceMission()
       setNow(new Date())
       setShowFinishDialog(false)
     } catch (error) {
@@ -152,9 +194,55 @@ export function MissionControlPanel() {
 
     try {
       await controller.startFresh()
+      await governanceController?.refreshGovernanceMission()
       setNow(new Date())
     } catch (error) {
       setActionError(toErrorMessage(error))
+    }
+  }
+
+  async function handleConfirmFinalize(): Promise<void> {
+    if (governanceController === null || governanceMission === null) {
+      return
+    }
+
+    setGovernanceBusy(true)
+    setActionError(null)
+    setGovernanceFeedback(null)
+
+    try {
+      const result = await governanceController.finalizeGovernanceMission(governanceMission.id)
+      setGovernanceFeedback(`Mission archived to ${result.archive.archive_path}`)
+      setShowFinalizeDialog(false)
+    } catch (error) {
+      setActionError(toErrorMessage(error))
+    } finally {
+      setGovernanceBusy(false)
+    }
+  }
+
+  async function handleConfirmUnlock(): Promise<void> {
+    if (governanceController === null || governanceMission === null) {
+      return
+    }
+
+    setGovernanceBusy(true)
+    setActionError(null)
+    setGovernanceFeedback(null)
+
+    try {
+      const mission = await governanceController.unlockGovernanceMission({
+        mission_id: governanceMission.id,
+        admin_name: selectedAdmin,
+        reason: unlockReason,
+      })
+      setGovernanceFeedback(`Mission unlocked by ${selectedAdmin}. Status is now ${mission.status}.`)
+      setShowUnlockDialog(false)
+      setUnlockReason('')
+    } catch (error) {
+      setActionError(toErrorMessage(error))
+    } finally {
+      setGovernanceBusy(false)
     }
   }
 
@@ -296,6 +384,59 @@ export function MissionControlPanel() {
             Finish
           </button>
         </div>
+
+        {phase === 'idle' && governanceMission !== null ? (
+          <div
+            className="rounded-xl border border-sky-500/20 bg-sky-950/20 p-4"
+            data-testid="mission-governance-card"
+          >
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <p className="text-[10px] font-bold uppercase tracking-wider text-sky-300/80">
+                  Mission Governance
+                </p>
+                <p className="mt-1 text-sm font-semibold text-stone-100">
+                  {governanceMission.name}
+                </p>
+                <p className="mt-1 text-[11px] text-stone-400">
+                  Status: <span className="font-mono uppercase">{governanceMission.status}</span>
+                </p>
+                {governanceMission.finish_time ? (
+                  <p className="mt-1 text-[11px] text-stone-500">
+                    Finished: {new Date(governanceMission.finish_time).toLocaleString()}
+                  </p>
+                ) : null}
+              </div>
+              {governanceMission.status === 'finished' ? (
+                <button
+                  className="rounded-lg bg-sky-600 px-3 py-2 text-[11px] font-bold uppercase tracking-wider text-white disabled:opacity-40"
+                  data-testid="mission-finalize-btn"
+                  disabled={governanceBusy}
+                  onClick={() => setShowFinalizeDialog(true)}
+                  type="button"
+                >
+                  Archive & Lock
+                </button>
+              ) : (
+                <button
+                  className="rounded-lg border border-stone-600 bg-stone-900 px-3 py-2 text-[11px] font-bold uppercase tracking-wider text-stone-200 disabled:opacity-40"
+                  data-testid="mission-unlock-btn"
+                  disabled={governanceBusy}
+                  onClick={() => setShowUnlockDialog(true)}
+                  type="button"
+                >
+                  Admin Unlock
+                </button>
+              )}
+            </div>
+          </div>
+        ) : null}
+
+        {governanceFeedback !== null ? (
+          <p className="text-xs text-emerald-300 bg-emerald-500/10 p-2 rounded-lg border border-emerald-500/20">
+            {governanceFeedback}
+          </p>
+        ) : null}
       </div>
 
       {phase === 'recovery' && recoverableMission !== null ? (
@@ -319,6 +460,102 @@ export function MissionControlPanel() {
               type="button"
             >
               Start Fresh
+            </button>
+          </div>
+        </div>
+      ) : null}
+
+      {showFinalizeDialog && governanceMission !== null ? (
+        <div
+          className="mt-4 rounded-xl border border-sky-500/30 bg-sky-950/50 p-4 shadow-xl"
+          data-testid="mission-finalize-dialog"
+        >
+          <p className="font-bold text-sky-300 uppercase text-[11px] tracking-wider">
+            Archive & Lock?
+          </p>
+          <p className="mt-2 text-[11px] leading-relaxed text-stone-300">
+            This creates a validated archive and makes the mission read-only until an admin
+            explicitly unlocks it.
+          </p>
+          <div className="mt-4 flex gap-2">
+            <button
+              className="flex-1 rounded-lg bg-sky-600 px-3 py-2 text-[10px] font-bold uppercase tracking-wider text-white disabled:opacity-40"
+              data-testid="mission-finalize-confirm"
+              disabled={governanceBusy}
+              onClick={() => void handleConfirmFinalize()}
+              type="button"
+            >
+              {governanceBusy ? 'Finalizing…' : 'Confirm Archive & Lock'}
+            </button>
+            <button
+              className="flex-1 rounded-lg bg-stone-800 px-3 py-2 text-[10px] font-bold uppercase tracking-wider text-stone-300"
+              onClick={() => setShowFinalizeDialog(false)}
+              type="button"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      ) : null}
+
+      {showUnlockDialog && governanceMission !== null ? (
+        <div
+          className="mt-4 rounded-xl border border-amber-500/30 bg-amber-950/50 p-4 shadow-xl"
+          data-testid="mission-unlock-dialog"
+        >
+          <p className="font-bold text-amber-300 uppercase text-[11px] tracking-wider">
+            Admin Unlock
+          </p>
+          <div className="mt-4 space-y-4">
+            <label className="block space-y-2">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-stone-500">
+                Admin Identity
+              </span>
+              <select
+                className="w-full rounded-lg border border-stone-700 bg-stone-950 px-3 py-2 text-sm text-stone-100"
+                data-testid="mission-unlock-admin"
+                onChange={(event) => setSelectedAdmin(event.target.value)}
+                value={selectedAdmin}
+              >
+                {adminRoster.length === 0 ? (
+                  <option value="">No admins configured</option>
+                ) : (
+                  adminRoster.map((admin) => (
+                    <option key={admin} value={admin}>
+                      {admin}
+                    </option>
+                  ))
+                )}
+              </select>
+            </label>
+            <label className="block space-y-2">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-stone-500">
+                Unlock Reason
+              </span>
+              <textarea
+                className="min-h-24 w-full rounded-lg border border-stone-700 bg-stone-950 px-3 py-2 text-sm text-stone-100"
+                data-testid="mission-unlock-reason"
+                onChange={(event) => setUnlockReason(event.target.value)}
+                value={unlockReason}
+              />
+            </label>
+          </div>
+          <div className="mt-4 flex gap-2">
+            <button
+              className="flex-1 rounded-lg bg-amber-600 px-3 py-2 text-[10px] font-bold uppercase tracking-wider text-white disabled:opacity-40"
+              data-testid="mission-unlock-confirm"
+              disabled={selectedAdmin.trim() === '' || unlockReason.trim() === '' || governanceBusy}
+              onClick={() => void handleConfirmUnlock()}
+              type="button"
+            >
+              {governanceBusy ? 'Unlocking…' : 'Confirm Unlock'}
+            </button>
+            <button
+              className="flex-1 rounded-lg bg-stone-800 px-3 py-2 text-[10px] font-bold uppercase tracking-wider text-stone-300"
+              onClick={() => setShowUnlockDialog(false)}
+              type="button"
+            >
+              Cancel
             </button>
           </div>
         </div>

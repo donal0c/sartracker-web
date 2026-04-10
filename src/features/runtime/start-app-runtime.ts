@@ -18,10 +18,13 @@ import {
 } from '../drawings/drawing-store'
 import { startDrawingRuntime } from '../drawings/start-drawing-runtime'
 import {
+  applyMissionGovernanceController,
+  applyMissionGovernanceRuntime,
   applyMissionRuntime,
   applyMissionRuntimeController,
   useMissionStore,
 } from '../mission/mission-store'
+import { startMissionGovernanceRuntime } from '../mission/start-mission-governance-runtime'
 import { startMissionRuntime } from '../mission/start-mission-runtime'
 import {
   createPollingManager,
@@ -64,6 +67,7 @@ type StartAppRuntimeDependencies = {
     options?: { readonly intervalMs?: number },
   ) => () => void
   readonly startMissionRuntime: typeof startMissionRuntime
+  readonly startMissionGovernanceRuntime: typeof startMissionGovernanceRuntime
   readonly startMarkerRuntime: typeof startMarkerRuntime
   readonly startDrawingRuntime: typeof startDrawingRuntime
   readonly startTrackingRuntime: typeof startTrackingRuntime
@@ -76,6 +80,7 @@ const DEFAULT_DEPENDENCIES: StartAppRuntimeDependencies = {
   readRuntimeBootstrapSettings: loadRuntimeBootstrapSettings,
   startMissionAutosave,
   startMissionRuntime,
+  startMissionGovernanceRuntime,
   startMarkerRuntime,
   startDrawingRuntime,
   startTrackingRuntime,
@@ -103,6 +108,11 @@ export async function startAppRuntime(
     applyRuntime: applyMissionRuntime,
   })
   applyMissionRuntimeController(missionRuntimeController)
+  const missionGovernanceController = await dependencies.startMissionGovernanceRuntime({
+    missionStore,
+    applyRuntime: applyMissionGovernanceRuntime,
+  })
+  applyMissionGovernanceController(missionGovernanceController)
   const markerRuntimeController = await dependencies.startMarkerRuntime({
     markerStore: missionStore,
     applyRuntime: applyMarkerRuntime,

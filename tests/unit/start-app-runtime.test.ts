@@ -15,6 +15,7 @@ describe('app runtime startup', () => {
       readRuntimeBootstrapSettings: vi.fn(),
       startMissionAutosave: vi.fn(),
       startMissionRuntime: vi.fn(),
+      startMissionGovernanceRuntime: vi.fn(),
       startMarkerRuntime: vi.fn(),
       startDrawingRuntime: vi.fn(),
       startTrackingRuntime: vi.fn(),
@@ -55,6 +56,7 @@ describe('app runtime startup', () => {
     const createMissionStore = vi.fn().mockReturnValue(store)
     const startMissionAutosave = vi.fn().mockReturnValue(vi.fn())
     const startMissionRuntime = vi.fn().mockResolvedValue({})
+    const startMissionGovernanceRuntime = vi.fn().mockResolvedValue({})
     const startMarkerRuntime = vi.fn().mockResolvedValue({})
     const startDrawingRuntime = vi.fn().mockResolvedValue({})
     const startTrackingRuntime = vi.fn().mockResolvedValue(vi.fn())
@@ -77,6 +79,7 @@ describe('app runtime startup', () => {
       readRuntimeBootstrapSettings,
       startMissionAutosave,
       startMissionRuntime,
+      startMissionGovernanceRuntime,
       startMarkerRuntime,
       startDrawingRuntime,
       startTrackingRuntime,
@@ -88,6 +91,10 @@ describe('app runtime startup', () => {
       intervalMs: 45_000,
     })
     expect(startMissionRuntime).toHaveBeenCalledWith({
+      missionStore: store,
+      applyRuntime: expect.any(Function),
+    })
+    expect(startMissionGovernanceRuntime).toHaveBeenCalledWith({
       missionStore: store,
       applyRuntime: expect.any(Function),
     })
@@ -122,6 +129,7 @@ describe('app runtime startup', () => {
       readRuntimeBootstrapSettings: vi.fn(),
       startMissionAutosave,
       startMissionRuntime: vi.fn(),
+      startMissionGovernanceRuntime: vi.fn(),
       startMarkerRuntime: vi.fn(),
       startDrawingRuntime: vi.fn(),
       startTrackingRuntime: vi.fn(),

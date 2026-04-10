@@ -11,6 +11,7 @@ use sqlx::{
 use tauri::{AppHandle, Manager, Runtime, State};
 use uuid::Uuid;
 use zip::{write::SimpleFileOptions, CompressionMethod, ZipWriter};
+use crate::settings::SettingsStoreState;
 
 const DATABASE_FILE_NAME: &str = "mission-store.sqlite";
 const BACKUP_FILE_NAME: &str = "mission-store.backup.sqlite";
@@ -170,6 +171,19 @@ pub struct MissionArchiveInfo {
     pub mission_id: String,
     pub archive_path: String,
     pub created_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct FinalizeMissionResult {
+    pub mission: Mission,
+    pub archive: MissionArchiveInfo,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct UnlockFinalizedMissionInput {
+    pub mission_id: String,
+    pub admin_name: String,
+    pub reason: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow, PartialEq, Eq)]
@@ -531,7 +545,15 @@ impl MissionStore {
         &self,
         mission_id: String,
     ) -> Result<MissionArchiveInfo, String> {
-        let mission = self.get_mission(mission_id.clone()).await?;
+        self.create_mission_archive_internal(&mission_id, true).await
+    }
+
+    async fn create_mission_archive_internal(
+        &self,
+        mission_id: &str,
+        record_archive_event: bool,
+    ) -> Result<MissionArchiveInfo, String> {
+        let mission = self.get_mission(mission_id.to_string()).await?;
         if mission.status != MissionStatus::Finished && mission.status != MissionStatus::Finalized {
           return Err("Only finished or finalized missions can be archived.".to_string());
         }
@@ -597,20 +619,22 @@ impl MissionStore {
             .finish()
             .map_err(|error| format!("Failed to finalize mission archive: {error}"))?;
 
-        Self::validate_archive_file(&temporary_archive_path, &mission_id)?;
+        Self::validate_archive_file(&temporary_archive_path, mission_id)?;
 
         std::fs::rename(&temporary_archive_path, &final_archive_path)
             .map_err(|error| format!("Failed to finalize mission archive file: {error}"))?;
 
-        self.append_event(
-            &mission_id,
-            "mission_archived",
-            serde_json::json!({ "archive_path": final_archive_path.to_string_lossy() }),
-        )
-        .await?;
+        if record_archive_event {
+            self.append_event(
+                mission_id,
+                "mission_archived",
+                serde_json::json!({ "archive_path": final_archive_path.to_string_lossy() }),
+            )
+            .await?;
+        }
 
         Ok(MissionArchiveInfo {
-            mission_id,
+            mission_id: mission_id.to_string(),
             archive_path: final_archive_path.to_string_lossy().to_string(),
             created_at,
         })
@@ -680,7 +704,7 @@ impl MissionStore {
     }
 
     pub async fn upsert_device(&self, input: UpsertDeviceInput) -> Result<Device, String> {
-        self.get_mission(input.mission_id.clone()).await?;
+        self.ensure_mission_mutable(&input.mission_id).await?;
         let existing_device = self
             .get_device(input.mission_id.clone(), input.device_id.clone())
             .await
@@ -782,6 +806,7 @@ impl MissionStore {
     }
 
     pub async fn add_position(&self, input: AddPositionInput) -> Result<Position, String> {
+        self.ensure_mission_mutable(&input.mission_id).await?;
         self.get_device(input.mission_id.clone(), input.device_id.clone()).await?;
 
         if !input.lat.is_finite() || input.lat < -90.0 || input.lat > 90.0 {
@@ -945,7 +970,7 @@ impl MissionStore {
     }
 
     pub async fn upsert_marker(&self, input: UpsertMarkerInput) -> Result<Marker, String> {
-        self.get_mission(input.mission_id.clone()).await?;
+        self.ensure_mission_mutable(&input.mission_id).await?;
 
         if !input.lat.is_finite() || input.lat < -90.0 || input.lat > 90.0 {
             return Err("Marker latitude must be a finite value between -90 and 90.".to_string());
@@ -1093,6 +1118,7 @@ impl MissionStore {
         let Some(marker) = existing_marker else {
             return Ok(false);
         };
+        self.ensure_mission_mutable(&marker.mission_id).await?;
 
         let mut tx = self
             .pool
@@ -1128,7 +1154,7 @@ impl MissionStore {
     }
 
     pub async fn upsert_drawing(&self, input: UpsertDrawingInput) -> Result<Drawing, String> {
-        self.get_mission(input.mission_id.clone()).await?;
+        self.ensure_mission_mutable(&input.mission_id).await?;
 
         let drawing_id = input.id.unwrap_or_else(|| Uuid::new_v4().to_string());
         let now = Utc::now().to_rfc3339();
@@ -1252,6 +1278,7 @@ impl MissionStore {
         let Some(drawing) = existing_drawing else {
             return Ok(false);
         };
+        self.ensure_mission_mutable(&drawing.mission_id).await?;
 
         let mut tx = self
             .pool
@@ -1407,6 +1434,133 @@ impl MissionStore {
         self.get_mission(mission_id).await
     }
 
+    pub async fn finalize_mission(
+        &self,
+        mission_id: String,
+    ) -> Result<FinalizeMissionResult, String> {
+        let mission = self.get_mission(mission_id.clone()).await?;
+        if mission.status != MissionStatus::Finished {
+            return Err("Only finished missions can be finalized.".to_string());
+        }
+
+        self.append_event(
+            &mission_id,
+            "mission_finalize_requested",
+            serde_json::json!({
+                "resulting_status": "finished",
+            }),
+        )
+        .await?;
+
+        let archive = match self
+            .create_mission_archive_internal(&mission_id, false)
+            .await
+        {
+            Ok(archive) => archive,
+            Err(error) => {
+                self.append_event(
+                    &mission_id,
+                    "mission_archive_failed",
+                    serde_json::json!({
+                        "resulting_status": "finished",
+                        "error": error,
+                    }),
+                )
+                .await?;
+                return Err(error);
+            }
+        };
+
+        self.append_event(
+            &mission_id,
+            "mission_archive_succeeded",
+            serde_json::json!({
+                "resulting_status": "finished",
+                "archive_path": archive.archive_path.clone(),
+            }),
+        )
+        .await?;
+
+        self.set_non_operational_status(&mission_id, MissionStatus::Finalized)
+            .await?;
+
+        self.append_event(
+            &mission_id,
+            "mission_finalized",
+            serde_json::json!({
+                "resulting_status": "finalized",
+                "archive_path": archive.archive_path.clone(),
+            }),
+        )
+        .await?;
+
+        Ok(FinalizeMissionResult {
+            mission: self.get_mission(mission_id).await?,
+            archive,
+        })
+    }
+
+    pub async fn unlock_finalized_mission(
+        &self,
+        input: UnlockFinalizedMissionInput,
+        admin_roster: &[String],
+    ) -> Result<Mission, String> {
+        let mission = self.get_mission(input.mission_id.clone()).await?;
+        if mission.status != MissionStatus::Finalized {
+            return Err("Only finalized missions can be unlocked.".to_string());
+        }
+
+        let admin_name = input.admin_name.trim().to_string();
+        let reason = input.reason.trim().to_string();
+        if reason.is_empty() {
+            return Err("Unlock reason is required.".to_string());
+        }
+
+        self.append_event(
+            &input.mission_id,
+            "mission_unlock_requested",
+            serde_json::json!({
+                "admin_name": admin_name,
+                "reason": reason,
+                "resulting_status": "finalized",
+            }),
+        )
+        .await?;
+
+        let allowed = admin_roster
+            .iter()
+            .any(|candidate| candidate.trim() == admin_name);
+        if !allowed {
+            self.append_event(
+                &input.mission_id,
+                "mission_unlock_denied",
+                serde_json::json!({
+                    "admin_name": admin_name,
+                    "reason": reason,
+                    "resulting_status": "finalized",
+                }),
+            )
+            .await?;
+            return Err("Selected admin is not authorized to unlock finalized missions.".to_string());
+        }
+
+        self.set_non_operational_status(&input.mission_id, MissionStatus::Finished)
+            .await?;
+
+        self.append_event(
+            &input.mission_id,
+            "mission_unlocked",
+            serde_json::json!({
+                "admin_name": admin_name,
+                "reason": reason,
+                "resulting_status": "finished",
+            }),
+        )
+        .await?;
+
+        self.get_mission(input.mission_id).await
+    }
+
     async fn update_mission_status(
         &self,
         mission_id: &str,
@@ -1461,6 +1615,31 @@ impl MissionStore {
         Ok(())
     }
 
+    async fn set_non_operational_status(
+        &self,
+        mission_id: &str,
+        next_status: MissionStatus,
+    ) -> Result<(), String> {
+        let mission = self.get_mission(mission_id.to_string()).await?;
+
+        sqlx::query(
+            r#"
+            UPDATE missions
+            SET status = ?, pause_time = NULL, finish_time = ?, paused_seconds = ?
+            WHERE id = ?
+            "#,
+        )
+        .bind(&next_status)
+        .bind(&mission.finish_time)
+        .bind(mission.paused_seconds)
+        .bind(mission_id)
+        .execute(&self.pool)
+        .await
+        .map_err(|error| format!("Failed to update non-operational mission status: {error}"))?;
+
+        Ok(())
+    }
+
     async fn append_event(
         &self,
         mission_id: &str,
@@ -1475,6 +1654,15 @@ impl MissionStore {
             Some(&details_json),
         )
         .await
+    }
+
+    async fn ensure_mission_mutable(&self, mission_id: &str) -> Result<Mission, String> {
+        let mission = self.get_mission(mission_id.to_string()).await?;
+        if mission.status == MissionStatus::Finalized {
+            return Err("Finalized missions are read-only until an admin unlocks them.".to_string());
+        }
+
+        Ok(mission)
     }
 
     fn validate_archive_file(archive_path: &PathBuf, mission_id: &str) -> Result<(), String> {
@@ -1765,6 +1953,24 @@ pub async fn finish_mission(
     store: State<'_, MissionStoreState>,
 ) -> Result<Mission, String> {
     store.0.finish_mission(mission_id).await
+}
+
+#[tauri::command]
+pub async fn finalize_mission(
+    mission_id: String,
+    store: State<'_, MissionStoreState>,
+) -> Result<FinalizeMissionResult, String> {
+    store.0.finalize_mission(mission_id).await
+}
+
+#[tauri::command]
+pub async fn unlock_finalized_mission(
+    input: UnlockFinalizedMissionInput,
+    store: State<'_, MissionStoreState>,
+    settings: State<'_, SettingsStoreState>,
+) -> Result<Mission, String> {
+    let admin_roster = settings.0.load_view()?.mission_defaults.admin_roster;
+    store.0.unlock_finalized_mission(input, &admin_roster).await
 }
 
 #[cfg(test)]
@@ -2448,6 +2654,155 @@ mod tests {
             events.last().map(|event| event.event_type.as_str()),
             Some("mission_archived")
         );
+    }
+
+    #[tokio::test]
+    async fn finalizes_a_finished_mission_and_records_governance_events() {
+        let (database_path, backup_path) = temp_paths("finalize");
+        let store = MissionStore::connect(database_path, backup_path)
+            .await
+            .expect("store should initialize");
+
+        let mission = store
+            .create_mission(CreateMissionInput {
+                name: "Finalize Mission".to_string(),
+                start_time: None,
+                notes: None,
+            })
+            .await
+            .expect("mission should be created");
+
+        store
+            .finish_mission(mission.id.clone())
+            .await
+            .expect("mission should finish");
+
+        let result = store
+            .finalize_mission(mission.id.clone())
+            .await
+            .expect("mission should finalize");
+
+        assert_eq!(result.mission.status, MissionStatus::Finalized);
+        assert!(PathBuf::from(&result.archive.archive_path).exists());
+
+        let events = store
+            .list_mission_events(mission.id)
+            .await
+            .expect("events should list");
+        let event_types = events
+            .iter()
+            .map(|event| event.event_type.as_str())
+            .collect::<Vec<_>>();
+        assert!(event_types.ends_with(&[
+            "mission_finished",
+            "mission_finalize_requested",
+            "mission_archive_succeeded",
+            "mission_finalized",
+        ]));
+    }
+
+    #[tokio::test]
+    async fn blocks_mutations_for_finalized_missions_until_admin_unlock() {
+        let (database_path, backup_path) = temp_paths("finalized-readonly");
+        let store = MissionStore::connect(database_path, backup_path)
+            .await
+            .expect("store should initialize");
+
+        let mission = store
+            .create_mission(CreateMissionInput {
+                name: "Locked Mission".to_string(),
+                start_time: None,
+                notes: None,
+            })
+            .await
+            .expect("mission should be created");
+
+        store
+            .finish_mission(mission.id.clone())
+            .await
+            .expect("mission should finish");
+        store
+            .finalize_mission(mission.id.clone())
+            .await
+            .expect("mission should finalize");
+
+        let marker_error = store
+            .upsert_marker(UpsertMarkerInput {
+                id: None,
+                mission_id: mission.id.clone(),
+                r#type: MarkerType::Clue,
+                name: "Blocked Marker".to_string(),
+                description: None,
+                lat: 52.1,
+                lon: -9.5,
+                irish_grid_e: 496584,
+                irish_grid_n: 591256,
+                display_order: 1,
+                subject_category: None,
+                clue_type: None,
+                confidence: None,
+                found_by: None,
+                hazard_type: None,
+                severity: None,
+                condition: None,
+                treatment: None,
+                evacuation_priority: None,
+            })
+            .await
+            .expect_err("finalized mission should reject marker writes");
+        assert!(marker_error.contains("read-only"));
+
+        let unlock_error = store
+            .unlock_finalized_mission(
+                UnlockFinalizedMissionInput {
+                    mission_id: mission.id.clone(),
+                    admin_name: "Unauthorized".to_string(),
+                    reason: "No access".to_string(),
+                },
+                &["Ops Lead".to_string()],
+            )
+            .await
+            .expect_err("unauthorized admin should be rejected");
+        assert!(unlock_error.contains("not authorized"));
+
+        let unlocked = store
+            .unlock_finalized_mission(
+                UnlockFinalizedMissionInput {
+                    mission_id: mission.id.clone(),
+                    admin_name: "Ops Lead".to_string(),
+                    reason: "Need to correct map data".to_string(),
+                },
+                &["Ops Lead".to_string()],
+            )
+            .await
+            .expect("authorized unlock should succeed");
+        assert_eq!(unlocked.status, MissionStatus::Finished);
+
+        let marker = store
+            .upsert_marker(UpsertMarkerInput {
+                id: None,
+                mission_id: mission.id.clone(),
+                r#type: MarkerType::Clue,
+                name: "Allowed Marker".to_string(),
+                description: None,
+                lat: 52.1,
+                lon: -9.5,
+                irish_grid_e: 496584,
+                irish_grid_n: 591256,
+                display_order: 1,
+                subject_category: None,
+                clue_type: None,
+                confidence: None,
+                found_by: None,
+                hazard_type: None,
+                severity: None,
+                condition: None,
+                treatment: None,
+                evacuation_priority: None,
+            })
+            .await
+            .expect("marker should save after unlock");
+        assert_eq!(marker.name, "Allowed Marker");
     }
 
     #[tokio::test]
