@@ -12,6 +12,7 @@ describe('app runtime startup', () => {
       registerServiceWorker,
       isTauriRuntimeAvailable: vi.fn().mockReturnValue(false),
       createMissionStore: vi.fn(),
+      readRuntimeBootstrapSettings: vi.fn(),
       startMissionAutosave: vi.fn(),
       startMissionRuntime: vi.fn(),
       startMarkerRuntime: vi.fn(),
@@ -57,11 +58,23 @@ describe('app runtime startup', () => {
     const startMarkerRuntime = vi.fn().mockResolvedValue({})
     const startDrawingRuntime = vi.fn().mockResolvedValue({})
     const startTrackingRuntime = vi.fn().mockResolvedValue(vi.fn())
+    const readRuntimeBootstrapSettings = vi.fn().mockResolvedValue({
+      autosaveEnabled: true,
+      autosaveIntervalMs: 45_000,
+      trackingPollIntervalMs: 60_000,
+      trackingCacheEnabled: false,
+      trackingConfig: {
+        baseUrl: 'https://traccar.example.com',
+        email: 'ops@example.com',
+        password: 'secret',
+      },
+    })
 
     await startAppRuntime({
       registerServiceWorker: vi.fn().mockResolvedValue(undefined),
       isTauriRuntimeAvailable: vi.fn().mockReturnValue(true),
       createMissionStore,
+      readRuntimeBootstrapSettings,
       startMissionAutosave,
       startMissionRuntime,
       startMarkerRuntime,
@@ -70,7 +83,10 @@ describe('app runtime startup', () => {
     })
 
     expect(createMissionStore).toHaveBeenCalledTimes(1)
-    expect(startMissionAutosave).toHaveBeenCalledWith(store)
+    expect(readRuntimeBootstrapSettings).toHaveBeenCalledWith(false)
+    expect(startMissionAutosave).toHaveBeenCalledWith(store, {
+      intervalMs: 45_000,
+    })
     expect(startMissionRuntime).toHaveBeenCalledWith({
       missionStore: store,
       applyRuntime: expect.any(Function),
@@ -84,6 +100,15 @@ describe('app runtime startup', () => {
       applyRuntime: expect.any(Function),
     })
     expect(startTrackingRuntime).toHaveBeenCalledTimes(1)
+    expect(startTrackingRuntime).toHaveBeenCalledWith(
+      expect.objectContaining({
+        config: expect.objectContaining({ baseUrl: 'https://traccar.example.com' }),
+        cache: expect.objectContaining({
+          read: expect.any(Function),
+          write: expect.any(Function),
+        }),
+      }),
+    )
   })
 
   it('does not create the mission store outside Tauri', async () => {
@@ -94,6 +119,7 @@ describe('app runtime startup', () => {
       registerServiceWorker: vi.fn().mockResolvedValue(undefined),
       isTauriRuntimeAvailable: vi.fn().mockReturnValue(false),
       createMissionStore,
+      readRuntimeBootstrapSettings: vi.fn(),
       startMissionAutosave,
       startMissionRuntime: vi.fn(),
       startMarkerRuntime: vi.fn(),

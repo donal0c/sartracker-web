@@ -1,4 +1,4 @@
-import { Suspense, lazy } from 'react'
+import { Suspense, lazy, useState } from 'react'
 
 import { DrawingRuntimeBridge } from './features/drawings/drawing-runtime-bridge'
 import { DrawingDialog } from './components/drawing-dialog'
@@ -10,6 +10,7 @@ import { MarkerRuntimeBridge } from './features/markers/marker-runtime-bridge'
 import { MeasurementRuntimeBridge } from './features/measurements/measurement-runtime-bridge'
 import { useAppStore } from './lib/app-store'
 import { TrackingStatusPanel } from './components/tracking-status-panel'
+import { SettingsWorkspace } from './components/settings-workspace'
 
 const MapView = lazy(async () => {
   const module = await import('./components/map-view')
@@ -22,6 +23,7 @@ const MapView = lazy(async () => {
  */
 function App() {
   const status = useAppStore((state) => state.status)
+  const [settingsOpen, setSettingsOpen] = useState(false)
 
   return (
     <main className="flex h-screen w-screen overflow-hidden bg-stone-950 text-stone-100">
@@ -60,6 +62,14 @@ function App() {
             <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-400/80">
               System {status}
             </span>
+            <button
+              className="ml-auto rounded-lg border border-stone-700 bg-stone-900 px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider text-stone-300"
+              data-testid="open-settings-workspace"
+              onClick={() => setSettingsOpen(true)}
+              type="button"
+            >
+              Settings
+            </button>
           </div>
         </header>
 
@@ -84,6 +94,7 @@ function App() {
 
       <DrawingDialog />
       <MarkerDialog />
+      <SettingsWorkspace onClose={() => setSettingsOpen(false)} open={settingsOpen} />
     </main>
   )
 }

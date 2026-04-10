@@ -1,9 +1,14 @@
 mod persistence;
+mod settings;
 mod tracking_cache;
 
 use std::sync::Arc;
 
 use tauri::Manager;
+use settings::{
+    build_settings_store, load_app_settings, load_runtime_bootstrap_settings, save_app_settings,
+    test_tracking_connection, SettingsStoreState,
+};
 
 use persistence::{
     add_position, build_mission_store, create_mission, delete_drawing, delete_marker,
@@ -22,6 +27,8 @@ pub fn run() {
         .setup(|app| {
             let mission_store = tauri::async_runtime::block_on(build_mission_store(app.handle()))?;
             app.manage(MissionStoreState(Arc::new(mission_store)));
+            let settings_store = build_settings_store(app.handle())?;
+            app.manage(SettingsStoreState(Arc::new(settings_store)));
             if cfg!(debug_assertions) {
                 app.handle().plugin(
                     tauri_plugin_log::Builder::default()
@@ -57,8 +64,11 @@ pub fn run() {
             get_recoverable_mission,
             pause_mission,
             resume_mission,
-            finish_mission
-            ,
+            finish_mission,
+            load_app_settings,
+            save_app_settings,
+            test_tracking_connection,
+            load_runtime_bootstrap_settings,
             read_tracking_cache,
             write_tracking_cache
         ])

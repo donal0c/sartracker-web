@@ -152,7 +152,14 @@ export function formatWGS84Degrees(lat: number, lon: number, precision = 6): str
 /**
  * Formats the operator coordinate bar with both WGS84 and TM65 values.
  */
-export function formatMapCoordinateBar(lat: number, lon: number): string {
+export function formatMapCoordinateBar(
+  lat: number,
+  lon: number,
+  mode: CoordinateDisplayMode = 'wgs84_first',
+): string {
   const [easting, northing] = wgs84ToTM65(lat, lon)
-  return `${formatWGS84Degrees(lat, lon)}  |  ${formatIrishGridReference(easting, northing)}`
+  const wgs84 = formatWGS84Degrees(lat, lon)
+  const tm65 = formatIrishGridReference(easting, northing)
+  return mode === 'tm65_first' ? `${tm65}  |  ${wgs84}` : `${wgs84}  |  ${tm65}`
 }
+import type { CoordinateDisplayMode } from '../features/settings/settings-types'

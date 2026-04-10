@@ -1,0 +1,103 @@
+export type CoordinateDisplayMode = 'wgs84_first' | 'tm65_first'
+
+export type TrackingProviderType = 'none' | 'traccar_http'
+
+export type TrackingAuthMode = 'basic' | 'bearer'
+
+export type MissionDefaultsSettings = {
+  readonly autoRefreshEnabled: boolean
+  readonly autoRefreshIntervalSeconds: number
+  readonly autoSaveEnabled: boolean
+  readonly autoSaveIntervalSeconds: number
+  readonly primaryMissionRoot: string
+  readonly backupMissionRoot: string
+  readonly coordinatorRoster: readonly string[]
+  readonly adminRoster: readonly string[]
+}
+
+export type DataSourceSettings = {
+  readonly providerType: TrackingProviderType
+  readonly baseUrl: string
+  readonly authMode: TrackingAuthMode
+  readonly email: string
+  readonly autoConnect: boolean
+  readonly trackingCacheEnabled: boolean
+  readonly replayEnabled: boolean
+  readonly replayStart: string
+  readonly replayDurationHours: number
+  readonly secretPresent: boolean
+}
+
+export type AdvancedSettings = {
+  readonly repairLayerStructureAvailable: boolean
+}
+
+export type AppSettings = {
+  readonly missionDefaults: MissionDefaultsSettings
+  readonly dataSource: DataSourceSettings
+  readonly advanced: AdvancedSettings
+}
+
+export type AppSettingsDraft = {
+  readonly missionDefaults: MissionDefaultsSettings
+  readonly dataSource: DataSourceSettings & {
+    readonly secretInput: string
+    readonly clearSecret: boolean
+  }
+}
+
+export type RuntimeBootstrapSettings = {
+  readonly autosaveEnabled: boolean
+  readonly autosaveIntervalMs: number
+  readonly trackingPollIntervalMs: number
+  readonly trackingCacheEnabled: boolean
+  readonly trackingConfig: {
+    readonly baseUrl: string
+    readonly email?: string
+    readonly password?: string
+    readonly token?: string
+  } | null
+}
+
+export const DEFAULT_APP_SETTINGS: AppSettings = {
+  missionDefaults: {
+    autoRefreshEnabled: true,
+    autoRefreshIntervalSeconds: 30,
+    autoSaveEnabled: true,
+    autoSaveIntervalSeconds: 30,
+    primaryMissionRoot: '',
+    backupMissionRoot: '',
+    coordinatorRoster: [],
+    adminRoster: [],
+  },
+  dataSource: {
+    providerType: 'none',
+    baseUrl: '',
+    authMode: 'basic',
+    email: '',
+    autoConnect: true,
+    trackingCacheEnabled: true,
+    replayEnabled: false,
+    replayStart: '',
+    replayDurationHours: 4,
+    secretPresent: false,
+  },
+  advanced: {
+    repairLayerStructureAvailable: false,
+  },
+}
+
+export function createSettingsDraft(settings: AppSettings): AppSettingsDraft {
+  return {
+    missionDefaults: {
+      ...settings.missionDefaults,
+      coordinatorRoster: [...settings.missionDefaults.coordinatorRoster],
+      adminRoster: [...settings.missionDefaults.adminRoster],
+    },
+    dataSource: {
+      ...settings.dataSource,
+      secretInput: '',
+      clearSecret: false,
+    },
+  }
+}

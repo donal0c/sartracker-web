@@ -3,7 +3,7 @@
 > **Read this before doing ANY work. Update this after EVERY chunk of work.**
 
 ## Last Updated
-2026-04-10 13:25 by Codex
+2026-04-10 12:56 by Codex
 
 ## Current State
 **Phase: Phase 1 operational core complete — M1 through M10 complete; tactical UI modernization pass merged; parity program beads queued**
@@ -11,6 +11,48 @@
 `HANDOFF.md` is the authoritative continuity log for active repo work across Donal, Codex, and Claude Code. Update it after every meaningful chunk so the next agent can resume without re-discovery.
 
 ## What's Been Done
+
+### 2026-04-10 M12 settings workspace completed
+- Implemented the standalone settings workspace needed for plugin parity in:
+  - `src/components/settings-workspace.tsx`
+  - `src/features/settings/`
+  - `src/infrastructure/settings-store/tauri-settings-store.ts`
+  - `src-tauri/src/settings.rs`
+- Added a Tauri-backed desktop settings store with a dedicated secret boundary:
+  - operational defaults persist in `settings.json`
+  - Traccar secrets are kept in a Tauri-side `SecretStore` via OS keyring, not in mission SQLite or browser storage
+- Added settings coverage for:
+  - mission defaults
+  - primary / backup mission roots
+  - coordinator roster
+  - admin roster
+  - Traccar provider config
+  - basic and bearer auth modes
+  - auto-connect default
+  - tracking cache default
+  - replay defaults
+  - coordinate display preference
+- Added runtime reload plumbing so saving settings can immediately reconfigure:
+  - autosave interval / enablement
+  - tracking polling interval / enablement
+  - tracking cache enablement
+  - forced reconnect on `Save & Connect`
+- Added migration hardening on the Rust settings schema:
+  - persisted settings structs now tolerate partial / older JSON via serde defaults
+  - legacy settings loads fall back safely instead of parse-failing
+- Added provider-gated replay enforcement in both frontend and backend validation / normalization so non-Traccar modes cannot persist replay defaults accidentally
+- Added focused coverage:
+  - `tests/unit/settings-validation.test.ts`
+  - `tests/unit/coordinate-preferences.test.ts`
+  - `tests/unit/start-app-runtime.test.ts`
+  - `tests/e2e/settings.spec.ts`
+  - Rust settings tests in `src-tauri/src/settings.rs`
+- Verification completed:
+  - `npm run test` ✅
+  - `npm run lint` ✅
+  - `npm run build` ✅
+  - `npm run test:e2e` ✅
+  - `cargo test --manifest-path src-tauri/Cargo.toml` ✅
 
 ### 2026-04-10 M10 integration flow completed
 - Implemented M10 as a true full-mission Playwright integration pass instead of another narrow feature test

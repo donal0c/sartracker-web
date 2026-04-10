@@ -1,4 +1,5 @@
 import { formatMapCoordinateBar } from '../lib/coordinates'
+import { readCoordinateDisplayMode } from '../lib/coordinate-preferences'
 
 type CoordinateBarProps = {
   readonly latitude: number | null
@@ -6,8 +7,9 @@ type CoordinateBarProps = {
 }
 
 export function CoordinateBar({ latitude, longitude }: CoordinateBarProps) {
+  const mode = readCoordinateDisplayMode()
   const content =
-    latitude === null || longitude === null ? '—' : formatMapCoordinateBar(latitude, longitude)
+    latitude === null || longitude === null ? '—' : formatMapCoordinateBar(latitude, longitude, mode)
 
   return (
     <div

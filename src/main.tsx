@@ -6,9 +6,14 @@ import {
   shouldEnableMissionBrowserHarness,
   startMissionBrowserHarness,
 } from './features/mission/mission-browser-harness'
+import { applyAppRuntimeController } from './features/runtime/app-runtime-controller'
 import { startAppRuntime } from './features/runtime/start-app-runtime'
 
-void startAppRuntime()
+void startAppRuntime().then((controller) => {
+  if (controller !== null) {
+    applyAppRuntimeController(controller)
+  }
+})
 
 if (shouldEnableMissionBrowserHarness()) {
   void startMissionBrowserHarness()
