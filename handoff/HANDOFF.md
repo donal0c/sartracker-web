@@ -3,7 +3,7 @@
 > **Read this before doing ANY work. Update this after EVERY chunk of work.**
 
 ## Last Updated
-2026-04-10 23:42 by Codex
+2026-04-11 00:00 by Codex
 
 ## Current State
 **Phase: Phase 1 operational core complete — M1 through M10 complete; parity foundation now includes M12, M14, M15, M16, M17, M18, M19, and M20. The basemap viewport reset bug is fixed and verified. Next logical bead is M21.**
@@ -11,6 +11,32 @@
 `HANDOFF.md` is the authoritative continuity log for active repo work across Donal, Codex, and Claude Code. Update it after every meaningful chunk so the next agent can resume without re-discovery.
 
 ## What's Been Done
+
+### 2026-04-11 M20 hardening pass completed
+
+- Tightened marker runtime async safety in:
+  - `src/features/markers/start-marker-runtime.ts`
+  - mission refresh now uses last-request-wins guards so stale loads cannot overwrite the current mission context
+  - marker delete now has the same saving/error discipline as save flows
+  - dialog mutation actions are blocked while save/attachment work is in flight, reducing race-prone UI states
+- Hardened the marker authoring surface in:
+  - `src/components/marker-dialog.tsx`
+  - inputs, type toggles, attachment clear/upload, and close/cancel actions now respect the saving state instead of allowing mid-flight edits
+- Eliminated a real evidence-storage debt source in:
+  - `src-tauri/src/persistence.rs`
+  - when a managed marker attachment is replaced or the marker is deleted, the superseded primary attachment file is now cleaned up instead of silently accumulating orphaned evidence files
+- Added regression coverage for the new hardening:
+  - `tests/unit/start-marker-runtime.test.ts`
+  - `src-tauri/src/persistence.rs` now includes a test that verifies managed marker attachments are removed when superseded/deleted
+- Verification completed:
+  - `npm run test` ✅
+  - `npm run lint` ✅
+  - `npm run build` ✅
+  - `cargo test --manifest-path src-tauri/Cargo.toml` ✅
+- Assessment:
+  - M20 is in a materially better place after this pass
+  - the biggest remaining headroom is now polish-level rather than structural: richer attachment UX/policy and another manual evidence-heavy browser validation pass
+  - next logical bead remains `sartracker-web-2jk.10` (M21 diagnostics workspace)
 
 ### 2026-04-10 Basemap viewport hardening + M20 marker evidence parity completed
 

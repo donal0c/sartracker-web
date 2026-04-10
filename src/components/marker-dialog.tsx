@@ -45,7 +45,8 @@ export function MarkerDialog() {
             <h2 className="mt-2 text-xl font-semibold text-stone-50">Marker Details</h2>
           </div>
           <button
-            className="rounded-lg border border-stone-600 bg-stone-950 px-3 py-2 text-sm text-stone-200"
+            className="rounded-lg border border-stone-600 bg-stone-950 px-3 py-2 text-sm text-stone-200 disabled:opacity-50"
+            disabled={saving}
             onClick={() => controller.closeDialog()}
             type="button"
           >
@@ -69,6 +70,7 @@ export function MarkerDialog() {
                   <input
                     checked={draft.type === option.value}
                     className="sr-only"
+                    disabled={saving}
                     name="marker-type"
                     onChange={() => controller.changeDraftType(option.value)}
                     type="radio"
@@ -92,12 +94,14 @@ export function MarkerDialog() {
           <section className="grid gap-4 md:grid-cols-2">
             <Field
               label="Name"
+              disabled={saving}
               onChange={(value) => controller.updateDraft({ name: value })}
               testId="marker-name-input"
               value={draft.name}
             />
             <Field
               label="Description"
+              disabled={saving}
               onChange={(value) => controller.updateDraft({ description: value })}
               testId="marker-description-input"
               value={draft.description}
@@ -107,12 +111,14 @@ export function MarkerDialog() {
           <section className="grid gap-4 md:grid-cols-2">
             <Field
               label="Updated By"
+              disabled={saving}
               onChange={(value) => controller.updateDraft({ updatedBy: value })}
               testId="marker-updated-by-input"
               value={draft.updatedBy}
             />
             <Field
               label="Coordinator IDs"
+              disabled={saving}
               onChange={(value) => controller.updateDraft({ coordinatorIds: value })}
               testId="marker-coordinator-ids-input"
               value={draft.coordinatorIds}
@@ -122,6 +128,7 @@ export function MarkerDialog() {
           {draft.type === 'ipp_lkp' ? (
             <SelectField
               label="Subject Category"
+              disabled={saving}
               onChange={(value) => controller.updateDraft({ subjectCategory: value })}
               options={SUBJECT_CATEGORIES}
               testId="marker-subject-category-input"
@@ -133,6 +140,7 @@ export function MarkerDialog() {
             <div className="grid gap-4 md:grid-cols-2">
               <SelectField
                 label="Clue Type"
+                disabled={saving}
                 onChange={(value) => controller.updateDraft({ clueType: value })}
                 options={CLUE_TYPES}
                 testId="marker-clue-type-input"
@@ -140,6 +148,7 @@ export function MarkerDialog() {
               />
               <SelectField
                 label="Confidence"
+                disabled={saving}
                 onChange={(value) => controller.updateDraft({ confidence: value })}
                 options={CONFIDENCE_LEVELS}
                 testId="marker-confidence-input"
@@ -147,6 +156,7 @@ export function MarkerDialog() {
               />
               <Field
                 label="Found By"
+                disabled={saving}
                 onChange={(value) => controller.updateDraft({ foundBy: value })}
                 testId="marker-found-by-input"
                 value={draft.foundBy}
@@ -158,6 +168,7 @@ export function MarkerDialog() {
             <div className="grid gap-4 md:grid-cols-2">
               <SelectField
                 label="Hazard Type"
+                disabled={saving}
                 onChange={(value) => controller.updateDraft({ hazardType: value })}
                 options={HAZARD_TYPES}
                 testId="marker-hazard-type-input"
@@ -165,6 +176,7 @@ export function MarkerDialog() {
               />
               <SelectField
                 label="Severity"
+                disabled={saving}
                 onChange={(value) => controller.updateDraft({ severity: value })}
                 options={HAZARD_SEVERITIES}
                 testId="marker-severity-input"
@@ -177,6 +189,7 @@ export function MarkerDialog() {
             <div className="grid gap-4 md:grid-cols-2">
               <SelectField
                 label="Condition"
+                disabled={saving}
                 onChange={(value) => controller.updateDraft({ condition: value })}
                 options={CASUALTY_CONDITIONS}
                 testId="marker-condition-input"
@@ -184,6 +197,7 @@ export function MarkerDialog() {
               />
               <SelectField
                 label="Evacuation Priority"
+                disabled={saving}
                 onChange={(value) => controller.updateDraft({ evacuationPriority: value })}
                 options={EVACUATION_PRIORITIES}
                 testId="marker-evacuation-priority-input"
@@ -191,12 +205,14 @@ export function MarkerDialog() {
               />
               <Field
                 label="Treatment"
+                disabled={saving}
                 onChange={(value) => controller.updateDraft({ treatment: value })}
                 testId="marker-treatment-input"
                 value={draft.treatment}
               />
               <Field
                 label="Found By"
+                disabled={saving}
                 onChange={(value) => controller.updateDraft({ foundBy: value })}
                 testId="marker-found-by-input"
                 value={draft.foundBy}
@@ -218,6 +234,7 @@ export function MarkerDialog() {
                 <button
                   className="rounded-lg border border-stone-700 bg-stone-900 px-3 py-2 text-xs text-stone-200"
                   data-testid="marker-clear-attachment-btn"
+                  disabled={saving}
                   onClick={() => controller.clearAttachment()}
                   type="button"
                 >
@@ -230,6 +247,7 @@ export function MarkerDialog() {
               <input
                 className="mt-2 block w-full rounded-lg border border-stone-700 bg-stone-950 px-3 py-2 text-sm text-stone-100 file:mr-3 file:rounded-lg file:border-0 file:bg-amber-300/10 file:px-3 file:py-2 file:text-xs file:font-semibold file:text-amber-100"
                 data-testid="marker-attachment-input"
+                disabled={saving}
                 onChange={(event) => {
                   const file = event.target.files?.[0] ?? null
                   if (file !== null) {
@@ -260,7 +278,8 @@ export function MarkerDialog() {
             </div>
             <div className="flex gap-3">
               <button
-                className="rounded-lg border border-stone-600 bg-stone-950 px-4 py-2 text-sm text-stone-200"
+                className="rounded-lg border border-stone-600 bg-stone-950 px-4 py-2 text-sm text-stone-200 disabled:opacity-50"
+                disabled={saving}
                 onClick={() => controller.closeDialog()}
                 type="button"
               >
@@ -286,6 +305,7 @@ export function MarkerDialog() {
 function Field(props: {
   readonly label: string
   readonly value: string
+  readonly disabled?: boolean
   readonly onChange: (value: string) => void
   readonly testId: string
 }) {
@@ -295,6 +315,7 @@ function Field(props: {
       <input
         className="mt-2 w-full rounded-lg border border-stone-700 bg-stone-950 px-3 py-2 text-sm text-stone-100"
         data-testid={props.testId}
+        disabled={props.disabled}
         onChange={(event) => props.onChange(event.target.value)}
         value={props.value}
       />
@@ -305,6 +326,7 @@ function Field(props: {
 function SelectField<TOption extends string>(props: {
   readonly label: string
   readonly value: TOption | ''
+  readonly disabled?: boolean
   readonly onChange: (value: TOption | '') => void
   readonly options: readonly TOption[]
   readonly testId: string
@@ -315,6 +337,7 @@ function SelectField<TOption extends string>(props: {
       <select
         className="mt-2 w-full rounded-lg border border-stone-700 bg-stone-950 px-3 py-2 text-sm text-stone-100"
         data-testid={props.testId}
+        disabled={props.disabled}
         onChange={(event) => props.onChange(event.target.value as TOption | '')}
         value={props.value}
       >

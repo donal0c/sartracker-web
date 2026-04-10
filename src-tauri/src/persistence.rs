@@ -1224,6 +1224,15 @@ impl MissionStore {
             .await
             .map_err(|error| format!("Failed to commit marker upsert: {error}"))?;
 
+        if let Some(existing_attachment_path) = existing_marker
+            .as_ref()
+            .and_then(|marker| marker.attachment_path.as_deref())
+        {
+            if Some(existing_attachment_path) != input.attachment_path.as_deref() {
+                self.remove_managed_marker_attachment(&input.mission_id, existing_attachment_path);
+            }
+        }
+
         self.get_marker(marker_id).await
     }
 
@@ -1334,6 +1343,10 @@ impl MissionStore {
             .await
             .map_err(|error| format!("Failed to commit marker delete: {error}"))?;
 
+        if let Some(attachment_path) = marker.attachment_path.as_deref() {
+            self.remove_managed_marker_attachment(&marker.mission_id, attachment_path);
+        }
+
         Ok(result.rows_affected() > 0)
     }
 
@@ -1395,6 +1408,40 @@ impl MissionStore {
                 .join(ATTACHMENTS_DIRECTORY_NAME)
                 .join(format!("{}-{}", Uuid::new_v4(), file_name)),
         ))
+    }
+
+    fn remove_managed_marker_attachment(
+        &self,
+        mission_id: &str,
+        attachment_path: &str,
+    ) {
+        let Some(path) = self.managed_marker_attachment_path(mission_id, attachment_path) else {
+            return;
+        };
+
+        if let Err(error) = remove_file_if_exists(&path) {
+            eprintln!(
+                "Failed to remove superseded marker attachment {}: {}",
+                path.to_string_lossy(),
+                error
+            );
+        }
+    }
+
+    fn managed_marker_attachment_path(
+        &self,
+        mission_id: &str,
+        attachment_path: &str,
+    ) -> Option<PathBuf> {
+        let path = PathBuf::from(attachment_path);
+        let normalized_path = path.to_string_lossy().replace('\\', "/");
+        let managed_segment = format!("/{mission_id}/{ATTACHMENTS_DIRECTORY_NAME}/");
+
+        if normalized_path.contains(&managed_segment) {
+            Some(path)
+        } else {
+            None
+        }
     }
 
     pub async fn upsert_drawing(&self, input: UpsertDrawingInput) -> Result<Drawing, String> {
@@ -2105,6 +2152,14 @@ fn write_bytes_atomically(path: &PathBuf, bytes: &[u8]) -> Result<(), String> {
     Ok(())
 }
 
+fn remove_file_if_exists(path: &PathBuf) -> Result<(), String> {
+    if !path.exists() {
+        return Ok(());
+    }
+
+    fs::remove_file(path).map_err(|error| format!("Failed to remove file: {error}"))
+}
+
 pub async fn build_mission_store<R: Runtime>(app: &AppHandle<R>) -> Result<MissionStore, String> {
     let config_dir = app
         .path()
@@ -2801,6 +2856,103 @@ mod tests {
             .expect("marker should delete");
         assert!(deleted);
         assert!(store.list_markers(mission.id).await.expect("markers after delete").is_empty());
+    }
+
+    #[tokio::test]
+    async fn deletes_superseded_managed_marker_attachments() {
+        let (database_path, backup_path) = temp_paths("marker-attachment-cleanup");
+        let store = MissionStore::connect(database_path.clone(), backup_path)
+            .await
+            .expect("store should initialize");
+
+        let mission = store
+            .create_mission(CreateMissionInput {
+                name: "Attachment Cleanup Mission".to_string(),
+                start_time: None,
+                notes: None,
+            })
+            .await
+            .expect("mission should be created");
+
+        let attachments_root = database_path
+            .parent()
+            .expect("database parent")
+            .join(DEFAULT_MISSION_STORAGE_DIRECTORY_NAME)
+            .join(&mission.id)
+            .join(ATTACHMENTS_DIRECTORY_NAME);
+        fs::create_dir_all(&attachments_root).expect("attachments dir");
+
+        let original_attachment = attachments_root.join("old-evidence.txt");
+        fs::write(&original_attachment, b"old").expect("seed old attachment");
+
+        let marker = store
+            .upsert_marker(UpsertMarkerInput {
+                id: None,
+                mission_id: mission.id.clone(),
+                r#type: MarkerType::Clue,
+                name: "Boot Print".to_string(),
+                description: None,
+                lat: 52.1,
+                lon: -9.5,
+                irish_grid_e: 496584,
+                irish_grid_n: 591256,
+                display_order: 1,
+                subject_category: None,
+                clue_type: None,
+                confidence: None,
+                found_by: None,
+                hazard_type: None,
+                severity: None,
+                condition: None,
+                treatment: None,
+                evacuation_priority: None,
+                updated_by: None,
+                coordinator_ids: None,
+                attachment_path: Some(original_attachment.to_string_lossy().to_string()),
+            })
+            .await
+            .expect("marker should create");
+
+        let replacement_attachment = attachments_root.join("new-evidence.txt");
+        fs::write(&replacement_attachment, b"new").expect("seed replacement attachment");
+
+        store
+            .upsert_marker(UpsertMarkerInput {
+                id: Some(marker.id.clone()),
+                mission_id: mission.id.clone(),
+                r#type: MarkerType::Clue,
+                name: "Boot Print".to_string(),
+                description: None,
+                lat: 52.1,
+                lon: -9.5,
+                irish_grid_e: 496584,
+                irish_grid_n: 591256,
+                display_order: 1,
+                subject_category: None,
+                clue_type: None,
+                confidence: None,
+                found_by: None,
+                hazard_type: None,
+                severity: None,
+                condition: None,
+                treatment: None,
+                evacuation_priority: None,
+                updated_by: None,
+                coordinator_ids: None,
+                attachment_path: Some(replacement_attachment.to_string_lossy().to_string()),
+            })
+            .await
+            .expect("marker should update");
+
+        assert!(!original_attachment.exists());
+        assert!(replacement_attachment.exists());
+
+        store
+            .delete_marker(marker.id.clone())
+            .await
+            .expect("marker should delete");
+
+        assert!(!replacement_attachment.exists());
     }
 
     #[tokio::test]

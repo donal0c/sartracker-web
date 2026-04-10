@@ -45,11 +45,13 @@ export async function startMarkerRuntime(
   let saving = false
   let error: string | null = null
   let dialog: MarkerDialogState | null = null
+  let refreshToken = 0
 
   publishRuntime()
 
   return {
     refreshMission: async (missionId) => {
+      const token = ++refreshToken
       activeMissionId = missionId
       dialog = null
       error = null
@@ -63,9 +65,26 @@ export async function startMarkerRuntime(
 
       loading = true
       publishRuntime()
-      markers = await dependencies.markerStore.listMarkers(missionId)
-      loading = false
-      publishRuntime()
+      try {
+        const nextMarkers = await dependencies.markerStore.listMarkers(missionId)
+        if (!isCurrentRefresh(token, missionId)) {
+          return
+        }
+
+        markers = nextMarkers
+      } catch (runtimeError) {
+        if (!isCurrentRefresh(token, missionId)) {
+          return
+        }
+
+        markers = []
+        error = toErrorMessage(runtimeError)
+      } finally {
+        if (isCurrentRefresh(token, missionId)) {
+          loading = false
+          publishRuntime()
+        }
+      }
     },
     beginCreateAt: (lat, lon) => {
       if (activeMissionId === null) {
@@ -95,7 +114,7 @@ export async function startMarkerRuntime(
       publishRuntime()
     },
     updateDraft: (patch) => {
-      if (dialog === null) {
+      if (dialog === null || saving) {
         return
       }
 
@@ -109,7 +128,7 @@ export async function startMarkerRuntime(
       publishRuntime()
     },
     changeDraftType: (type) => {
-      if (dialog === null) {
+      if (dialog === null || saving) {
         return
       }
 
@@ -120,16 +139,27 @@ export async function startMarkerRuntime(
       publishRuntime()
     },
     attachEvidence: async (file) => {
-      if (activeMissionId === null || dialog === null) {
+      if (activeMissionId === null || dialog === null || saving) {
         return
       }
 
+      const missionId = activeMissionId
+      const dialogId = dialog.draft.id
+      const dialogCoordinates = dialog.draft.coordinates
       saving = true
       error = null
       publishRuntime()
 
       try {
-        const attachment = await dependencies.attachmentStore.ingest(activeMissionId, file)
+        const attachment = await dependencies.attachmentStore.ingest(missionId, file)
+        const isCurrentContext = isCurrentDialogContext(missionId, dialogId, dialogCoordinates)
+        saving = false
+
+        if (!isCurrentContext) {
+          publishRuntime()
+          return
+        }
+
         dialog = {
           ...dialog,
           draft: {
@@ -138,7 +168,6 @@ export async function startMarkerRuntime(
             attachmentName: attachment.fileName,
           },
         }
-        saving = false
         publishRuntime()
       } catch (runtimeError) {
         saving = false
@@ -147,7 +176,7 @@ export async function startMarkerRuntime(
       }
     },
     clearAttachment: () => {
-      if (dialog === null) {
+      if (dialog === null || saving) {
         return
       }
 
@@ -162,12 +191,16 @@ export async function startMarkerRuntime(
       publishRuntime()
     },
     closeDialog: () => {
+      if (saving) {
+        return
+      }
+
       dialog = null
       error = null
       publishRuntime()
     },
     saveDraft: async () => {
-      if (activeMissionId === null || dialog === null) {
+      if (activeMissionId === null || dialog === null || saving) {
         return null
       }
 
@@ -197,20 +230,35 @@ export async function startMarkerRuntime(
       }
     },
     deleteEditingMarker: async () => {
-      if (dialog?.mode !== 'edit' || dialog.draft.id === null) {
+      if (dialog?.mode !== 'edit' || dialog.draft.id === null || saving) {
         return false
       }
 
-      const didDelete = await dependencies.markerStore.deleteMarker(dialog.draft.id)
-      if (!didDelete) {
-        return false
-      }
-
-      markers = markers.filter((marker) => marker.id !== dialog?.draft.id)
-      dialog = null
+      const markerId = dialog.draft.id
+      saving = true
       error = null
       publishRuntime()
-      return true
+
+      try {
+        const didDelete = await dependencies.markerStore.deleteMarker(markerId)
+        if (!didDelete) {
+          saving = false
+          publishRuntime()
+          return false
+        }
+
+        markers = markers.filter((marker) => marker.id !== markerId)
+        dialog = null
+        saving = false
+        error = null
+        publishRuntime()
+        return true
+      } catch (runtimeError) {
+        saving = false
+        error = toErrorMessage(runtimeError)
+        publishRuntime()
+        throw runtimeError
+      }
     },
   }
 
@@ -223,6 +271,24 @@ export async function startMarkerRuntime(
       error,
       dialog,
     })
+  }
+
+  function isCurrentRefresh(token: number, missionId: string): boolean {
+    return refreshToken === token && activeMissionId === missionId
+  }
+
+  function isCurrentDialogContext(
+    missionId: string,
+    dialogId: string | null,
+    coordinates: MarkerDraft['coordinates'],
+  ): boolean {
+    return (
+      activeMissionId === missionId &&
+      dialog !== null &&
+      dialog.draft.id === dialogId &&
+      dialog.draft.coordinates.lat === coordinates.lat &&
+      dialog.draft.coordinates.lon === coordinates.lon
+    )
   }
 }
 

@@ -138,6 +138,56 @@ describe('startMarkerRuntime', () => {
       }),
     )
   })
+
+  it('surfaces mission refresh errors without leaving stale marker state behind', async () => {
+    const applyRuntime = vi.fn()
+    const runtime = await startMarkerRuntime({
+      markerStore: createMarkerStoreStub({
+        listMarkers: vi.fn().mockRejectedValue(new Error('marker load failed')),
+      }),
+      attachmentStore: { ingest: vi.fn() },
+      applyRuntime,
+    })
+
+    await runtime.refreshMission('mission-1')
+
+    expect(applyRuntime).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        activeMissionId: 'mission-1',
+        markers: [],
+        loading: false,
+        error: 'marker load failed',
+      }),
+    )
+  })
+
+  it('keeps the dialog open and reports an error when delete fails', async () => {
+    const deleteMarker = vi.fn().mockRejectedValue(new Error('delete failed'))
+    const applyRuntime = vi.fn()
+    const runtime = await startMarkerRuntime({
+      markerStore: createMarkerStoreStub({
+        listMarkers: vi.fn().mockResolvedValue([MARKER]),
+        deleteMarker,
+      }),
+      attachmentStore: { ingest: vi.fn() },
+      applyRuntime,
+    })
+
+    await runtime.refreshMission('mission-1')
+    runtime.beginEdit('marker-1')
+
+    await expect(runtime.deleteEditingMarker()).rejects.toThrow('delete failed')
+
+    expect(applyRuntime).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        saving: false,
+        error: 'delete failed',
+        dialog: expect.objectContaining({
+          mode: 'edit',
+        }),
+      }),
+    )
+  })
 })
 
 function createMarkerStoreStub(overrides: Record<string, unknown> = {}) {
