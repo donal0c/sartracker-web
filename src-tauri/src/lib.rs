@@ -1,4 +1,5 @@
 mod persistence;
+mod opener;
 mod settings;
 mod tracking_cache;
 
@@ -20,6 +21,7 @@ use persistence::{
     unlock_finalized_mission, MissionStoreState,
 };
 use tracking_cache::{read_tracking_cache, write_tracking_cache};
+use opener::open_external_path;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -76,6 +78,8 @@ pub fn run() {
             load_runtime_bootstrap_settings,
             read_tracking_cache,
             write_tracking_cache
+            ,
+            open_external_path
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

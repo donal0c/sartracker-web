@@ -5,6 +5,7 @@ import { DrawingDialog } from './components/drawing-dialog'
 import { CoordinateConverterDialog } from './components/coordinate-converter-dialog'
 import { DevicesWorkspace } from './components/devices-workspace'
 import { LayerFilterPanel } from './components/layer-filter-panel'
+import { MissionReviewWorkspace } from './components/mission-review-workspace'
 import { LayerCatalogRuntimeBridge } from './features/layers/layer-catalog-runtime-bridge'
 import { MeasurementPanel } from './components/measurement-panel'
 import { MissionControlPanel } from './components/mission-control-panel'
@@ -12,6 +13,7 @@ import { MarkerDialog } from './components/marker-dialog'
 import { MarkerRuntimeBridge } from './features/markers/marker-runtime-bridge'
 import { MeasurementRuntimeBridge } from './features/measurements/measurement-runtime-bridge'
 import { useAppStore } from './lib/app-store'
+import { MissionReviewRuntimeBridge } from './features/mission-review/mission-review-runtime-bridge'
 import { TrackingStatusPanel } from './components/tracking-status-panel'
 import { SettingsWorkspace } from './components/settings-workspace'
 
@@ -34,6 +36,7 @@ function App() {
       <LayerCatalogRuntimeBridge />
       <MarkerRuntimeBridge />
       <MeasurementRuntimeBridge />
+      <MissionReviewRuntimeBridge />
       
       {/* Map Area - Expanded */}
       <section className="relative flex-1 overflow-hidden">
@@ -99,6 +102,7 @@ function App() {
       <DrawingDialog />
       <CoordinateConverterDialog />
       <DevicesWorkspace />
+      <MissionReviewWorkspace />
       <MarkerDialog />
       <SettingsWorkspace onClose={() => setSettingsOpen(false)} open={settingsOpen} />
     </main>

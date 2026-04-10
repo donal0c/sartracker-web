@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 
 import { loadAppSettings } from '../infrastructure/settings-store/tauri-settings-store'
 import { useMissionStore } from '../features/mission/mission-store'
+import { useMissionReviewWorkspaceStore } from '../features/mission-review/mission-review-workspace-store'
 import {
   calculateMissionTimerState,
   formatMissionDuration,
@@ -17,6 +18,7 @@ export function MissionControlPanel() {
   const controller = useMissionStore((state) => state.controller)
   const governanceMission = useMissionStore((state) => state.governanceMission)
   const governanceController = useMissionStore((state) => state.governanceController)
+  const openReviewWorkspace = useMissionReviewWorkspaceStore((state) => state.openWorkspace)
   const [missionName, setMissionName] = useState('')
   const [startOffsetHours, setStartOffsetHours] = useState('0')
   const [now, setNow] = useState(() => new Date())
@@ -251,9 +253,18 @@ export function MissionControlPanel() {
       className="rounded-2xl border border-stone-800 bg-stone-950/40 p-5 text-sm"
       data-testid="mission-control"
     >
-      <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center justify-between mb-4">
         <span className="font-bold uppercase tracking-wider text-stone-400 text-[11px]">Mission Control</span>
         <div className="flex items-center gap-2">
+          <button
+            className="rounded-lg border border-stone-700 bg-stone-900 px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider text-stone-300"
+            data-testid="open-mission-review-workspace"
+            disabled={currentMission === null && governanceMission === null && recoverableMission === null}
+            onClick={() => openReviewWorkspace()}
+            type="button"
+          >
+            Review
+          </button>
           {phase !== 'idle' && (
             <div className={`h-2 w-2 rounded-full ${phase === 'active' ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]' : 'bg-amber-500 animate-pulse'}`} />
           )}

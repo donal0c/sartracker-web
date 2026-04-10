@@ -12,6 +12,7 @@ export const DRAWING_FILL_LAYER_ID = 'mission-drawings-fill'
 export const DRAWING_LINE_LAYER_ID = 'mission-drawings-line'
 export const DRAWING_LABEL_LAYER_ID = 'mission-drawings-label'
 export const DRAWING_POINT_LAYER_ID = 'mission-drawings-point'
+export const DRAWING_POINT_HITBOX_LAYER_ID = 'mission-drawings-point-hitbox'
 export const DRAWING_LINE_HITBOX_LAYER_ID = 'mission-drawings-line-hitbox'
 export const DRAWING_FILL_HITBOX_LAYER_ID = 'mission-drawings-fill-hitbox'
 export const DRAWING_PREVIEW_FILL_LAYER_ID = 'mission-drawing-preview-fill'
@@ -58,6 +59,10 @@ export function syncDrawingOverlay(
   )
   map.setFilter(
     DRAWING_POINT_LAYER_ID,
+    combineFilters(['all', ['==', '$type', 'Point'], ['==', ['get', 'featureKind'], 'geometry']], geometryVisibilityFilter),
+  )
+  map.setFilter(
+    DRAWING_POINT_HITBOX_LAYER_ID,
     combineFilters(['all', ['==', '$type', 'Point'], ['==', ['get', 'featureKind'], 'geometry']], geometryVisibilityFilter),
   )
 }
@@ -170,6 +175,24 @@ function ensureDrawingLayers(map: maplibregl.Map): void {
         'circle-opacity': ['case', ['boolean', ['get', 'selected'], false], 0.95, 0.75],
         'circle-stroke-color': '#0C0A09',
         'circle-stroke-width': 1.5,
+      },
+    })
+  }
+
+  if (!map.getLayer(DRAWING_POINT_HITBOX_LAYER_ID)) {
+    map.addLayer({
+      id: DRAWING_POINT_HITBOX_LAYER_ID,
+      type: 'circle',
+      source: DRAWING_SOURCE_ID,
+      paint: {
+        'circle-radius': [
+          'case',
+          ['==', ['get', 'drawingType'], 'text_label'],
+          16,
+          12,
+        ],
+        'circle-color': '#000000',
+        'circle-opacity': 0,
       },
     })
   }

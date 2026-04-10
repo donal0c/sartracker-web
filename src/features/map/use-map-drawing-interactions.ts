@@ -1,6 +1,7 @@
 import { useEffect, type RefObject } from 'react'
 import type maplibregl from 'maplibre-gl'
 
+import { findNearestDrawingId } from '../drawings/drawing-hit-testing'
 import { useDrawingStore } from '../drawings/drawing-store'
 import { useMeasurementStore } from '../measurements/measurement-store'
 import { useMissionStore } from '../mission/mission-store'
@@ -25,6 +26,7 @@ export function useMapDrawingInteractions(
   const controller = useDrawingStore((state) => state.controller)
   const activeTool = useDrawingStore((state) => state.activeTool)
   const dialog = useDrawingStore((state) => state.dialog)
+  const drawings = useDrawingStore((state) => state.drawings)
   const measurementMode = useMeasurementStore((state) => state.mode)
   const currentMissionId = useMissionStore((state) => state.currentMission?.id ?? null)
   const missionPhase = useMissionStore((state) => state.phase)
@@ -123,11 +125,13 @@ export function useMapDrawingInteractions(
                 layers: interactiveDrawingLayers,
               })[0] ?? null
         const drawingId = resolveClickedDrawingId(drawingFeature?.properties?.drawingId)
+        const resolvedDrawingId =
+          drawingId ?? findNearestDrawingId(map, point, drawings)
 
-        if (drawingId !== null) {
+        if (resolvedDrawingId !== null) {
           event.preventDefault()
           event.stopImmediatePropagation()
-          controller.beginEdit(drawingId)
+          controller.beginEdit(resolvedDrawingId)
         }
 
         return
@@ -197,6 +201,7 @@ export function useMapDrawingInteractions(
     activeTool,
     controller,
     currentMissionId,
+    drawings,
     measurementMode,
     missionPhase,
     options.containerRef,

@@ -3,14 +3,66 @@
 > **Read this before doing ANY work. Update this after EVERY chunk of work.**
 
 ## Last Updated
-2026-04-10 17:14 by Codex
+2026-04-10 17:44 by Codex
 
 ## Current State
-**Phase: Phase 1 operational core complete — M1 through M10 complete; parity foundation now includes M12, M14, M16, M17, M18, and M19; next logical bead is M20**
+**Phase: Phase 1 operational core complete — M1 through M10 complete; parity foundation now includes M12, M14, M15, M16, M17, M18, and M19; next logical bead is M20**
 
 `HANDOFF.md` is the authoritative continuity log for active repo work across Donal, Codex, and Claude Code. Update it after every meaningful chunk so the next agent can resume without re-discovery.
 
 ## What's Been Done
+
+### 2026-04-10 M15 mission review workspace completed
+- Implemented a dedicated non-modal mission review workspace instead of spreading audit/review across ad hoc panels:
+  - `src/components/mission-review-workspace.tsx`
+  - opened from `src/components/mission-control-panel.tsx`
+  - mounted in `src/App.tsx`
+- Added a separate mission-review feature slice so review logic does not pollute mission lifecycle runtime:
+  - `src/features/mission-review/mission-review-model.ts`
+  - `src/features/mission-review/start-mission-review-runtime.ts`
+  - `src/features/mission-review/mission-review-store.ts`
+  - `src/features/mission-review/mission-review-workspace-store.ts`
+  - `src/features/mission-review/mission-review-runtime-bridge.tsx`
+- Important architectural choices:
+  - mission review loads through explicit store boundaries (`MissionStore` + `LayerCatalogStore`) rather than scraping live React state
+  - refresh safety is handled in the review runtime via token-based last-request-wins behavior
+  - the review surface is split into:
+    - `Mission Details` — mission summary, storage-path review, audit/event log
+    - `Marker Log` — searchable marker review with detail pane and zoom
+    - `Layer Console` — read-only grouped catalog summary that stays single-sourced with the main layer workspace
+  - layer statistics are derived from the canonical layer-catalog builder so review counts match the live catalog model
+- Extended browser-validation support so the review workspace is backed by real persisted-like audit data instead of stubs:
+  - `src/features/browser-validation/browser-harness-store.ts`
+  - browser harness now records mission events, exposes store info, and records opened external paths for validation
+- Added a real cross-platform external path opener boundary for archive/evidence-style file opening:
+  - `src/infrastructure/file-launcher/tauri-file-launcher.ts`
+  - `src-tauri/src/opener.rs`
+  - wired in `src-tauri/src/lib.rs`
+- Verification hardening uncovered and fixed a real M8 interaction weakness:
+  - point-based drawings, especially text labels, were still too dependent on perfect rendered-feature picking
+  - added point-drawing hitboxes and projected-distance fallback selection in:
+    - `src/features/drawings/sync-drawing-overlay.ts`
+    - `src/features/drawings/drawing-hit-testing.ts`
+    - `src/features/map/map-drawing-interactions.ts`
+    - `src/features/map/use-map-drawing-interactions.ts`
+- Added / updated coverage:
+  - `tests/unit/mission-review-model.test.ts`
+  - `tests/unit/start-mission-review-runtime.test.ts`
+  - `tests/unit/browser-harness-store.test.ts`
+  - `tests/unit/drawing-hit-testing.test.ts`
+  - `tests/e2e/mission-review.spec.ts`
+  - existing text-label edit Playwright flow now passes reliably after the hit-testing hardening
+- Verification completed:
+  - `npm run test` ✅
+  - `npm run lint` ✅
+  - `npm run build` ✅
+  - `npm run test:e2e` ✅
+  - `cargo test --manifest-path src-tauri/Cargo.toml` ✅
+- Result:
+  - operators now have a real in-app review console for mission details, audit history, marker review, and storage-path inspection
+  - M20 now has the review surface it depends on for future marker evidence/audit parity
+  - map selection for point-based drawings is more robust than before this bead started
+  - M20 remains the next logical bead
 
 ### 2026-04-10 M19 devices workspace completed
 - Implemented a dedicated tracking devices workspace instead of stretching the sidebar panel further:

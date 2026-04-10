@@ -50,6 +50,8 @@ describe('browser harness store', () => {
     expect(persistedState.currentMissionId).toBe(mission.id)
     expect(persistedState.devices).toHaveLength(1)
     expect(persistedState.positions).toHaveLength(2)
+    expect(persistedState.missionEvents.map((event) => event.event_type)).toContain('mission_created')
+    expect(persistedState.missionEvents.map((event) => event.event_type)).toContain('position_recorded')
   })
 
   it('finalizes and unlocks a mission using the configured admin roster', async () => {
@@ -89,5 +91,19 @@ describe('browser harness store', () => {
       reason: 'Need to correct mission notes',
     })
     expect(unlocked.status).toBe('finished')
+    expect(await store.listMissionEvents(mission.id)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ event_type: 'mission_finalized' }),
+        expect.objectContaining({ event_type: 'mission_unlocked' }),
+      ]),
+    )
+  })
+
+  it('records opened paths for review workflows', async () => {
+    const store = getBrowserHarnessStore()
+
+    await store.openExternalPath('/tmp/review-archive.zip')
+
+    expect(readBrowserHarnessState().openedPaths).toEqual(['/tmp/review-archive.zip'])
   })
 })

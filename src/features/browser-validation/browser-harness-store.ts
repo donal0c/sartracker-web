@@ -6,7 +6,9 @@ import type {
   FinalizeMissionResult,
   Marker,
   Mission,
+  MissionEvent,
   MissionArchiveInfo,
+  MissionStoreInfo,
   Position,
   UnlockFinalizedMissionInput,
   UpsertDeviceInput,
@@ -20,6 +22,8 @@ type BrowserHarnessState = {
   readonly positions: readonly Position[]
   readonly markers: readonly Marker[]
   readonly drawings: readonly Drawing[]
+  readonly missionEvents: readonly MissionEvent[]
+  readonly openedPaths: readonly string[]
   readonly currentMissionId: string | null
   readonly recoverableMissionId: string | null
 }
@@ -31,6 +35,9 @@ type BrowserHarnessStore = {
   readonly listMissions: () => Promise<readonly Mission[]>
   readonly getActiveMission: () => Promise<Mission | null>
   readonly getRecoverableMission: () => Promise<Mission | null>
+  readonly info: () => Promise<MissionStoreInfo>
+  readonly listMissionEvents: (missionId: string) => Promise<readonly MissionEvent[]>
+  readonly openExternalPath: (path: string) => Promise<void>
   readonly pauseMission: (missionId: string) => Promise<Mission>
   readonly resumeMission: (missionId: string) => Promise<Mission>
   readonly finishMission: (missionId: string) => Promise<Mission>
@@ -65,12 +72,19 @@ export function getBrowserHarnessStore(): BrowserHarnessStore {
   }
 
   browserHarnessStore = {
+    info: async () => ({
+      schema_version: 1,
+      database_path: '/tmp/browser-harness/mission-store.sqlite',
+      backup_path: '/tmp/browser-harness/mission-store.backup.sqlite',
+    }),
     createMission: async (input) => {
+      const missionId = createId('mission')
+      const startTime = input.start_time ?? new Date().toISOString()
       const mission = {
-        id: createId('mission'),
+        id: missionId,
         name: input.name,
         status: 'active',
-        start_time: input.start_time ?? new Date().toISOString(),
+        start_time: startTime,
         pause_time: null,
         finish_time: null,
         paused_seconds: 0,
@@ -81,6 +95,11 @@ export function getBrowserHarnessStore(): BrowserHarnessStore {
       state = {
         ...state,
         missions: [...state.missions, mission],
+        missionEvents: appendEvent(state.missionEvents, missionId, 'mission_created', startTime, {
+          name: input.name,
+          notes: input.notes ?? null,
+          start_time: startTime,
+        }),
         currentMissionId: mission.id,
         recoverableMissionId: null,
       }
@@ -89,6 +108,21 @@ export function getBrowserHarnessStore(): BrowserHarnessStore {
       return mission
     },
     listMissions: async () => state.missions,
+    listMissionEvents: async (missionId) =>
+      state.missionEvents
+        .filter((event) => event.mission_id === missionId)
+        .sort((left, right) => Date.parse(left.timestamp) - Date.parse(right.timestamp)),
+    openExternalPath: async (path) => {
+      if (path.trim() === '') {
+        throw new Error('Path is required.')
+      }
+
+      state = {
+        ...state,
+        openedPaths: [...state.openedPaths, path],
+      }
+      save()
+    },
     getActiveMission: async () => {
       const mission = findMission(state.currentMissionId, state.missions)
       return mission?.status === 'active' ? mission : null
@@ -101,7 +135,21 @@ export function getBrowserHarnessStore(): BrowserHarnessStore {
           status: 'paused' as const,
           pause_time: new Date().toISOString(),
         }
-        state = replaceMission(state, pausedMission, null, pausedMission.id)
+        state = replaceMission(
+          {
+            ...state,
+            missionEvents: appendEvent(
+              state.missionEvents,
+              pausedMission.id,
+              'mission_paused',
+              pausedMission.pause_time ?? new Date().toISOString(),
+              { status: 'paused' },
+            ),
+          },
+          pausedMission,
+          null,
+          pausedMission.id,
+        )
         save()
         return pausedMission
       }
@@ -122,6 +170,16 @@ export function getBrowserHarnessStore(): BrowserHarnessStore {
         pause_time: new Date().toISOString(),
       }
       state = replaceMission(state, pausedMission, missionId, null)
+      state = {
+        ...state,
+        missionEvents: appendEvent(
+          state.missionEvents,
+          missionId,
+          'mission_paused',
+          pausedMission.pause_time ?? new Date().toISOString(),
+          { status: 'paused' },
+        ),
+      }
       save()
       return pausedMission
     },
@@ -134,6 +192,16 @@ export function getBrowserHarnessStore(): BrowserHarnessStore {
         paused_seconds: mission.paused_seconds + calculatePausedSeconds(mission.pause_time),
       }
       state = replaceMission(state, resumedMission, missionId, null)
+      state = {
+        ...state,
+        missionEvents: appendEvent(
+          state.missionEvents,
+          missionId,
+          'mission_resumed',
+          new Date().toISOString(),
+          { status: 'active' },
+        ),
+      }
       save()
       return resumedMission
     },
@@ -149,6 +217,16 @@ export function getBrowserHarnessStore(): BrowserHarnessStore {
           (mission.status === 'paused' ? calculatePausedSeconds(mission.pause_time) : 0),
       }
       state = replaceMission(state, finishedMission, null, null)
+      state = {
+        ...state,
+        missionEvents: appendEvent(
+          state.missionEvents,
+          missionId,
+          'mission_finished',
+          finishedMission.finish_time ?? new Date().toISOString(),
+          { status: 'finished' },
+        ),
+      }
       save()
       return finishedMission
     },
@@ -168,7 +246,35 @@ export function getBrowserHarnessStore(): BrowserHarnessStore {
         created_at: new Date().toISOString(),
       } satisfies MissionArchiveInfo
 
-      state = replaceMission(state, finalizedMission, null, null)
+      state = replaceMission(
+        {
+          ...state,
+          missionEvents: [
+            ...appendEvent(state.missionEvents, missionId, 'mission_finalize_requested', new Date().toISOString(), {
+              resulting_status: 'finished',
+            }),
+          ],
+        },
+        finalizedMission,
+        null,
+        null,
+      )
+      state = {
+        ...state,
+        missionEvents: appendEvent(
+          appendEvent(state.missionEvents, missionId, 'mission_archive_succeeded', archive.created_at, {
+            resulting_status: 'finished',
+            archive_path: archive.archive_path,
+          }),
+          missionId,
+          'mission_finalized',
+          archive.created_at,
+          {
+            resulting_status: 'finalized',
+            archive_path: archive.archive_path,
+          },
+        ),
+      }
       save()
       return { mission: finalizedMission, archive }
     },
@@ -180,6 +286,25 @@ export function getBrowserHarnessStore(): BrowserHarnessStore {
 
       const settings = readBrowserSettings()
       if (!settings.missionDefaults.adminRoster.includes(input.admin_name)) {
+        state = {
+          ...state,
+          missionEvents: appendEvent(
+            appendEvent(state.missionEvents, input.mission_id, 'mission_unlock_requested', new Date().toISOString(), {
+              admin_name: input.admin_name,
+              reason: input.reason,
+              resulting_status: 'finalized',
+            }),
+            input.mission_id,
+            'mission_unlock_denied',
+            new Date().toISOString(),
+            {
+              admin_name: input.admin_name,
+              reason: input.reason,
+              resulting_status: 'finalized',
+            },
+          ),
+        }
+        save()
         throw new Error('Selected admin is not authorized to unlock finalized missions.')
       }
       if (input.reason.trim() === '') {
@@ -190,7 +315,29 @@ export function getBrowserHarnessStore(): BrowserHarnessStore {
         ...mission,
         status: 'finished' as const,
       }
-      state = replaceMission(state, unlockedMission, null, null)
+      state = replaceMission(
+        {
+          ...state,
+          missionEvents: appendEvent(
+            appendEvent(state.missionEvents, input.mission_id, 'mission_unlock_requested', new Date().toISOString(), {
+              admin_name: input.admin_name,
+              reason: input.reason,
+              resulting_status: 'finalized',
+            }),
+            input.mission_id,
+            'mission_unlocked',
+            new Date().toISOString(),
+            {
+              admin_name: input.admin_name,
+              reason: input.reason,
+              resulting_status: 'finished',
+            },
+          ),
+        },
+        unlockedMission,
+        null,
+        null,
+      )
       save()
       return unlockedMission
     },
@@ -217,6 +364,16 @@ export function getBrowserHarnessStore(): BrowserHarnessStore {
       state = {
         ...state,
         devices: upsertDevice(state.devices, device),
+        missionEvents: appendEvent(
+          state.missionEvents,
+          input.mission_id,
+          existingDevice === null ? 'device_created' : 'device_updated',
+          new Date().toISOString(),
+          {
+            device_id: input.device_id,
+            name: input.name,
+          },
+        ),
       }
       save()
       return device
@@ -242,6 +399,19 @@ export function getBrowserHarnessStore(): BrowserHarnessStore {
       state = {
         ...state,
         positions: [...state.positions, position],
+        missionEvents: appendEvent(
+          state.missionEvents,
+          input.mission_id,
+          'position_recorded',
+          position.timestamp,
+          {
+            position_id: position.id,
+            device_id: input.device_id,
+            timestamp: position.timestamp,
+            data_origin: position.data_origin,
+            source: position.source,
+          },
+        ),
       }
       save()
       return position
@@ -297,6 +467,18 @@ export function getBrowserHarnessStore(): BrowserHarnessStore {
       state = {
         ...state,
         markers: upsertMarker(state.markers, marker),
+        missionEvents: appendEvent(
+          state.missionEvents,
+          input.mission_id,
+          existingMarker === null ? 'marker_created' : 'marker_updated',
+          now,
+          {
+            marker_id: marker.id,
+            marker_type: marker.type,
+            name: marker.name,
+            display_order: marker.display_order,
+          },
+        ),
       }
       save()
       return marker
@@ -314,6 +496,14 @@ export function getBrowserHarnessStore(): BrowserHarnessStore {
       state = {
         ...state,
         markers: state.markers.filter((marker) => marker.id !== markerId),
+        missionEvents:
+          marker === undefined
+            ? state.missionEvents
+            : appendEvent(state.missionEvents, marker.mission_id, 'marker_deleted', new Date().toISOString(), {
+                marker_id: marker.id,
+                marker_type: marker.type,
+                name: marker.name,
+              }),
       }
       save()
       return true
@@ -350,6 +540,18 @@ export function getBrowserHarnessStore(): BrowserHarnessStore {
       state = {
         ...state,
         drawings: upsertDrawing(state.drawings, drawing),
+        missionEvents: appendEvent(
+          state.missionEvents,
+          input.mission_id,
+          existingDrawing === null ? 'drawing_created' : 'drawing_updated',
+          now,
+          {
+            drawing_id: drawing.id,
+            drawing_type: drawing.type,
+            name: drawing.name,
+            display_order: drawing.display_order,
+          },
+        ),
       }
       save()
       return drawing
@@ -367,6 +569,14 @@ export function getBrowserHarnessStore(): BrowserHarnessStore {
       state = {
         ...state,
         drawings: state.drawings.filter((drawing) => drawing.id !== drawingId),
+        missionEvents:
+          drawing === undefined
+            ? state.missionEvents
+            : appendEvent(state.missionEvents, drawing.mission_id, 'drawing_deleted', new Date().toISOString(), {
+                drawing_id: drawing.id,
+                drawing_type: drawing.type,
+                name: drawing.name,
+              }),
       }
       save()
       return true
@@ -396,6 +606,8 @@ function readHarnessState(): BrowserHarnessState {
       positions: [],
       markers: [],
       drawings: [],
+      missionEvents: [],
+      openedPaths: [],
       currentMissionId: null,
       recoverableMissionId: null,
     }
@@ -409,6 +621,8 @@ function readHarnessState(): BrowserHarnessState {
       positions: [],
       markers: [],
       drawings: [],
+      missionEvents: [],
+      openedPaths: [],
       currentMissionId: null,
       recoverableMissionId: null,
     }
@@ -422,6 +636,8 @@ function readHarnessState(): BrowserHarnessState {
       positions: Array.isArray(parsed.positions) ? parsed.positions : [],
       markers: Array.isArray(parsed.markers) ? parsed.markers : [],
       drawings: Array.isArray(parsed.drawings) ? parsed.drawings : [],
+      missionEvents: Array.isArray(parsed.missionEvents) ? parsed.missionEvents : [],
+      openedPaths: Array.isArray(parsed.openedPaths) ? parsed.openedPaths : [],
       currentMissionId:
         typeof parsed.currentMissionId === 'string' ? parsed.currentMissionId : null,
       recoverableMissionId:
@@ -434,6 +650,8 @@ function readHarnessState(): BrowserHarnessState {
       positions: [],
       markers: [],
       drawings: [],
+      missionEvents: [],
+      openedPaths: [],
       currentMissionId: null,
       recoverableMissionId: null,
     }
@@ -557,4 +775,23 @@ function upsertDrawing(drawings: readonly Drawing[], drawing: Drawing): readonly
   }
 
   return drawings.map((candidate) => (candidate.id === drawing.id ? drawing : candidate))
+}
+
+function appendEvent(
+  events: readonly MissionEvent[],
+  missionId: string,
+  eventType: string,
+  timestamp: string,
+  details: Record<string, unknown>,
+): readonly MissionEvent[] {
+  return [
+    ...events,
+    {
+      id: createId('event'),
+      mission_id: missionId,
+      event_type: eventType,
+      timestamp,
+      details_json: JSON.stringify(details),
+    },
+  ]
 }
