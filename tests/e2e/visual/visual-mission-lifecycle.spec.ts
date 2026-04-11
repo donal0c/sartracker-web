@@ -16,7 +16,6 @@ import {
   navigateToHarness,
   startMission,
   pauseMission,
-  resumeMission,
 } from './helpers/test-setup'
 import {
   captureAndRegister,

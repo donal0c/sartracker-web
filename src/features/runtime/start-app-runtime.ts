@@ -11,6 +11,11 @@ import { registerServiceWorker } from '../../lib/register-service-worker'
 import { isTauriRuntimeAvailable } from '../../lib/tauri-runtime'
 import { applyGpxController, applyGpxRuntime } from '../gpx/gpx-store'
 import { startGpxRuntime } from '../gpx/start-gpx-runtime'
+import {
+  applyHelicopterController,
+  applyHelicopterRuntime,
+} from '../helicopters/helicopter-store'
+import { startHelicopterRuntime } from '../helicopters/start-helicopter-runtime'
 import { applyMarkerController, applyMarkerRuntime } from '../markers/marker-store'
 import { startMarkerRuntime } from '../markers/start-marker-runtime'
 import {
@@ -71,6 +76,7 @@ type StartAppRuntimeDependencies = {
   readonly startMissionGovernanceRuntime: typeof startMissionGovernanceRuntime
   readonly startMarkerRuntime: typeof startMarkerRuntime
   readonly startDrawingRuntime: typeof startDrawingRuntime
+  readonly startHelicopterRuntime: typeof startHelicopterRuntime
   readonly startGpxRuntime: typeof startGpxRuntime
   readonly startTrackingRuntime: typeof startTrackingRuntime
 }
@@ -85,6 +91,7 @@ const DEFAULT_DEPENDENCIES: StartAppRuntimeDependencies = {
   startMissionGovernanceRuntime,
   startMarkerRuntime,
   startDrawingRuntime,
+  startHelicopterRuntime,
   startGpxRuntime,
   startTrackingRuntime,
 }
@@ -95,29 +102,34 @@ const DEFAULT_DEPENDENCIES: StartAppRuntimeDependencies = {
 export async function startAppRuntime(
   dependencies: StartAppRuntimeDependencies = DEFAULT_DEPENDENCIES,
 ): Promise<AppRuntimeController | null> {
-  await dependencies.registerServiceWorker()
+  const resolvedDependencies = {
+    ...DEFAULT_DEPENDENCIES,
+    ...dependencies,
+  } satisfies StartAppRuntimeDependencies
 
-  if (!dependencies.isTauriRuntimeAvailable()) {
+  await resolvedDependencies.registerServiceWorker()
+
+  if (!resolvedDependencies.isTauriRuntimeAvailable()) {
     return null
   }
 
-  const missionStore = dependencies.createMissionStore()
+  const missionStore = resolvedDependencies.createMissionStore()
   const trackingMissionStore = missionStore as MissionStore & TrackingRuntimeMissionStore
   const gpxImportSource = createTauriGpxImportSource()
   let activeServices = createNoopRuntimeServiceHandles()
   let reloadGeneration = 0
 
-  const missionRuntimeController = await dependencies.startMissionRuntime({
+  const missionRuntimeController = await resolvedDependencies.startMissionRuntime({
     missionStore,
     applyRuntime: applyMissionRuntime,
   })
   applyMissionRuntimeController(missionRuntimeController)
-  const missionGovernanceController = await dependencies.startMissionGovernanceRuntime({
+  const missionGovernanceController = await resolvedDependencies.startMissionGovernanceRuntime({
     missionStore,
     applyRuntime: applyMissionGovernanceRuntime,
   })
   applyMissionGovernanceController(missionGovernanceController)
-  const markerRuntimeController = await dependencies.startMarkerRuntime({
+  const markerRuntimeController = await resolvedDependencies.startMarkerRuntime({
     markerStore: missionStore,
     attachmentStore: {
       ingest: ingestMarkerAttachment,
@@ -125,12 +137,17 @@ export async function startAppRuntime(
     applyRuntime: applyMarkerRuntime,
   })
   applyMarkerController(markerRuntimeController)
-  const drawingRuntimeController = await dependencies.startDrawingRuntime({
+  const drawingRuntimeController = await resolvedDependencies.startDrawingRuntime({
     drawingStore: missionStore,
     applyRuntime: applyDrawingRuntime,
   })
   applyDrawingController(drawingRuntimeController)
-  const gpxRuntimeController = await dependencies.startGpxRuntime({
+  const helicopterRuntimeController = await resolvedDependencies.startHelicopterRuntime({
+    helicopterStore: missionStore,
+    applyRuntime: applyHelicopterRuntime,
+  })
+  applyHelicopterController(helicopterRuntimeController)
+  const gpxRuntimeController = await resolvedDependencies.startGpxRuntime({
     gpxStore: missionStore,
     watchSource: gpxImportSource,
     applyRuntime: applyGpxRuntime,
@@ -150,15 +167,15 @@ export async function startAppRuntime(
   async function reloadSettings(options?: { readonly forceConnect?: boolean }): Promise<void> {
     const generation = ++reloadGeneration
 
-    const runtimeSettings = await dependencies.readRuntimeBootstrapSettings(
+    const runtimeSettings = await resolvedDependencies.readRuntimeBootstrapSettings(
       options?.forceConnect ?? false,
     )
 
     const nextServices = await createManagedRuntimeServices({
       runtimeSettings,
       missionStore: trackingMissionStore,
-      startMissionAutosave: dependencies.startMissionAutosave,
-      startTrackingRuntime: dependencies.startTrackingRuntime,
+      startMissionAutosave: resolvedDependencies.startMissionAutosave,
+      startTrackingRuntime: resolvedDependencies.startTrackingRuntime,
       createClient: createTraccarClient,
       createPoller: (client, hooks) =>
         createPollingManager(client as TrackingPollerClient, {

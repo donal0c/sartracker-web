@@ -109,6 +109,38 @@ export type GpxTrackImport = {
   readonly updated_at: string
 }
 
+export type HelicopterSlotKey = 'slot_1' | 'slot_2' | 'slot_3' | 'slot_4'
+
+export type Helicopter = {
+  readonly id: string
+  readonly mission_id: string
+  readonly slot_key: HelicopterSlotKey
+  readonly call_sign: string
+  readonly hex_id: string | null
+  readonly lat: number
+  readonly lon: number
+  readonly altitude: number | null
+  readonly speed: number | null
+  readonly heading: number | null
+  readonly last_update: string
+  readonly created_at: string
+  readonly updated_at: string
+}
+
+export type UpsertHelicopterInput = {
+  readonly id?: string | null
+  readonly mission_id: string
+  readonly slot_key: HelicopterSlotKey
+  readonly call_sign: string
+  readonly hex_id?: string | null
+  readonly lat: number
+  readonly lon: number
+  readonly altitude?: number | null
+  readonly speed?: number | null
+  readonly heading?: number | null
+  readonly last_update?: string | null
+}
+
 export type UpsertGpxTrackImportInput = {
   readonly id?: string | null
   readonly mission_id: string
@@ -244,6 +276,9 @@ export type MissionStore = {
   readonly getDrawing: (drawingId: string) => Promise<Drawing>
   readonly listDrawings: (missionId: string) => Promise<readonly Drawing[]>
   readonly deleteDrawing: (drawingId: string) => Promise<boolean>
+  readonly upsertHelicopter: (input: UpsertHelicopterInput) => Promise<Helicopter>
+  readonly listHelicopters: (missionId: string) => Promise<readonly Helicopter[]>
+  readonly deleteHelicopter: (helicopterId: string) => Promise<boolean>
   readonly upsertGpxImport: (input: UpsertGpxTrackImportInput) => Promise<GpxTrackImport>
   readonly listGpxImports: (missionId: string) => Promise<readonly GpxTrackImport[]>
   readonly deleteGpxImport: (importId: string) => Promise<boolean>
@@ -283,6 +318,11 @@ export function createTauriMissionStore(): MissionStore {
     getDrawing: (drawingId) => invoke<Drawing>('get_drawing', { drawingId }),
     listDrawings: (missionId) => invoke<readonly Drawing[]>('list_drawings', { missionId }),
     deleteDrawing: (drawingId) => invoke<boolean>('delete_drawing', { drawingId }),
+    upsertHelicopter: (input) => invoke<Helicopter>('upsert_helicopter', { input }),
+    listHelicopters: (missionId) =>
+      invoke<readonly Helicopter[]>('list_helicopters', { missionId }),
+    deleteHelicopter: (helicopterId) =>
+      invoke<boolean>('delete_helicopter', { helicopterId }),
     upsertGpxImport: (input) => invoke<GpxTrackImport>('upsert_gpx_import', { input }),
     listGpxImports: (missionId) =>
       invoke<readonly GpxTrackImport[]>('list_gpx_imports', { missionId }),

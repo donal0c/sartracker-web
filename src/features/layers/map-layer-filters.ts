@@ -3,6 +3,7 @@ import type { ExpressionSpecification } from 'maplibre-gl'
 import type {
   Drawing,
   DrawingType,
+  HelicopterSlotKey,
   MarkerType,
 } from '../../infrastructure/mission-store/tauri-mission-store'
 
@@ -83,4 +84,27 @@ export function buildGpxLayerFilter(hiddenImportIds: readonly string[]): Express
   }
 
   return ['!', ['in', ['get', 'gpxImportId'], ['literal', [...hiddenImportIds]]]]
+}
+
+export function buildHelicopterLayerFilter(
+  slotVisibility: Record<HelicopterSlotKey, boolean>,
+  hiddenHelicopterIds: readonly string[],
+): ExpressionSpecification {
+  const visibleSlots = (Object.entries(slotVisibility) as [HelicopterSlotKey, boolean][])
+    .filter(([, visible]) => visible)
+    .map(([slotKey]) => slotKey)
+
+  if (visibleSlots.length === 0) {
+    return ['==', ['get', 'helicopterId'], '__hidden__']
+  }
+
+  const filters: ExpressionSpecification[] = [
+    ['in', ['get', 'slotKey'], ['literal', visibleSlots]],
+  ]
+
+  if (hiddenHelicopterIds.length > 0) {
+    filters.push(['!', ['in', ['get', 'helicopterId'], ['literal', [...hiddenHelicopterIds]]]])
+  }
+
+  return filters.length === 1 ? filters[0]! : ['all', ...filters]
 }

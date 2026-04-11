@@ -15,12 +15,7 @@
  * operation could cause operators to miss critical information.
  */
 import { expect, test } from '@playwright/test'
-import {
-  navigateToHarness,
-  waitForAppShell,
-  startMission,
-  injectStandardTracking,
-} from './helpers/test-setup'
+import { navigateToHarness } from './helpers/test-setup'
 import {
   captureAndRegister,
   captureElementAndRegister,

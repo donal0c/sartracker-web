@@ -3,11 +3,13 @@ import { create } from 'zustand'
 import type {
   Drawing,
   DrawingType,
+  HelicopterSlotKey,
   MarkerType,
 } from '../../infrastructure/mission-store/tauri-mission-store'
 import type { LayerCatalogRootNode } from './layer-catalog-types'
 import {
   getDrawingLayerNodeId,
+  getHelicopterLayerNodeId,
   getMarkerLayerNodeId,
   MEASUREMENTS_LAYER_NODE_ID,
   TRACKING_BREADCRUMBS_LAYER_NODE_ID,
@@ -18,8 +20,10 @@ type LayerVisibilityState = {
   readonly hydratedMissionId: string | null
   readonly hiddenDeviceIds: readonly string[]
   readonly hiddenMarkerIds: readonly string[]
+  readonly hiddenHelicopterIds: readonly string[]
   readonly hiddenGpxImportIds: readonly string[]
   readonly markerTypeVisibility: Record<MarkerType, boolean>
+  readonly helicopterSlotVisibility: Record<HelicopterSlotKey, boolean>
   readonly drawingTypeVisibility: Record<DrawingType, boolean>
   readonly hiddenDrawingIds: readonly string[]
   readonly breadcrumbsVisible: boolean
@@ -58,12 +62,21 @@ const DEFAULT_DRAWING_TYPE_VISIBILITY: Record<DrawingType, boolean> = {
   text_label: true,
 }
 
+const DEFAULT_HELICOPTER_SLOT_VISIBILITY: Record<HelicopterSlotKey, boolean> = {
+  slot_1: true,
+  slot_2: true,
+  slot_3: true,
+  slot_4: true,
+}
+
 export const useLayerVisibilityStore = create<LayerVisibilityState>((set) => ({
   hydratedMissionId: null,
   hiddenDeviceIds: [],
   hiddenMarkerIds: [],
+  hiddenHelicopterIds: [],
   hiddenGpxImportIds: [],
   markerTypeVisibility: DEFAULT_MARKER_TYPE_VISIBILITY,
+  helicopterSlotVisibility: DEFAULT_HELICOPTER_SLOT_VISIBILITY,
   drawingTypeVisibility: DEFAULT_DRAWING_TYPE_VISIBILITY,
   hiddenDrawingIds: [],
   breadcrumbsVisible: true,
@@ -132,6 +145,7 @@ export const useLayerVisibilityStore = create<LayerVisibilityState>((set) => ({
     set((state) => {
       const nextHiddenDeviceIds = collectHiddenDeviceIds(root)
       const nextHiddenMarkerIds = collectHiddenMarkerIds(root)
+      const nextHiddenHelicopterIds = collectHiddenHelicopterIds(root)
       const nextHiddenGpxImportIds = collectHiddenGpxImportIds(root)
       const nextHiddenDrawingIds = collectHiddenDrawingIds(root)
       const nextMarkerTypeVisibility: Record<MarkerType, boolean> = {
@@ -148,6 +162,12 @@ export const useLayerVisibilityStore = create<LayerVisibilityState>((set) => ({
         search_sector: readLayerVisibility(root, getDrawingLayerNodeId('search_sector')),
         text_label: readLayerVisibility(root, getDrawingLayerNodeId('text_label')),
       }
+      const nextHelicopterSlotVisibility: Record<HelicopterSlotKey, boolean> = {
+        slot_1: readLayerVisibility(root, getHelicopterLayerNodeId('slot_1')),
+        slot_2: readLayerVisibility(root, getHelicopterLayerNodeId('slot_2')),
+        slot_3: readLayerVisibility(root, getHelicopterLayerNodeId('slot_3')),
+        slot_4: readLayerVisibility(root, getHelicopterLayerNodeId('slot_4')),
+      }
       const nextBreadcrumbsVisible = readLayerVisibility(root, TRACKING_BREADCRUMBS_LAYER_NODE_ID)
       const nextMeasurementsVisible = readLayerVisibility(root, MEASUREMENTS_LAYER_NODE_ID)
 
@@ -159,6 +179,12 @@ export const useLayerVisibilityStore = create<LayerVisibilityState>((set) => ({
       const hiddenMarkerIds = shallowStringArrayEqual(state.hiddenMarkerIds, nextHiddenMarkerIds)
         ? state.hiddenMarkerIds
         : nextHiddenMarkerIds
+      const hiddenHelicopterIds = shallowStringArrayEqual(
+        state.hiddenHelicopterIds,
+        nextHiddenHelicopterIds,
+      )
+        ? state.hiddenHelicopterIds
+        : nextHiddenHelicopterIds
       const hiddenGpxImportIds = shallowStringArrayEqual(state.hiddenGpxImportIds, nextHiddenGpxImportIds)
         ? state.hiddenGpxImportIds
         : nextHiddenGpxImportIds
@@ -171,14 +197,22 @@ export const useLayerVisibilityStore = create<LayerVisibilityState>((set) => ({
       const drawingTypeVisibility = shallowRecordEqual(state.drawingTypeVisibility, nextDrawingTypeVisibility)
         ? state.drawingTypeVisibility
         : nextDrawingTypeVisibility
+      const helicopterSlotVisibility = shallowRecordEqual(
+        state.helicopterSlotVisibility,
+        nextHelicopterSlotVisibility,
+      )
+        ? state.helicopterSlotVisibility
+        : nextHelicopterSlotVisibility
 
       if (
         state.hydratedMissionId === missionId &&
         hiddenDeviceIds === state.hiddenDeviceIds &&
         hiddenMarkerIds === state.hiddenMarkerIds &&
+        hiddenHelicopterIds === state.hiddenHelicopterIds &&
         hiddenGpxImportIds === state.hiddenGpxImportIds &&
         hiddenDrawingIds === state.hiddenDrawingIds &&
         markerTypeVisibility === state.markerTypeVisibility &&
+        helicopterSlotVisibility === state.helicopterSlotVisibility &&
         drawingTypeVisibility === state.drawingTypeVisibility &&
         nextBreadcrumbsVisible === state.breadcrumbsVisible &&
         nextMeasurementsVisible === state.measurementsVisible
@@ -190,9 +224,11 @@ export const useLayerVisibilityStore = create<LayerVisibilityState>((set) => ({
         hydratedMissionId: missionId,
         hiddenDeviceIds,
         hiddenMarkerIds,
+        hiddenHelicopterIds,
         hiddenGpxImportIds,
         hiddenDrawingIds,
         markerTypeVisibility,
+        helicopterSlotVisibility,
         drawingTypeVisibility,
         breadcrumbsVisible: nextBreadcrumbsVisible,
         measurementsVisible: nextMeasurementsVisible,
@@ -274,6 +310,17 @@ function collectHiddenMarkerIds(root: LayerCatalogRootNode): readonly string[] {
     .flatMap((layer) =>
       layer.children.flatMap((child) =>
         child.entity?.type === 'marker' && !child.isVisible ? [child.entity.marker.id] : [],
+      ),
+    )
+}
+
+function collectHiddenHelicopterIds(root: LayerCatalogRootNode): readonly string[] {
+  return root.children
+    .flatMap((group) => group.children)
+    .filter((layer) => layer.id.startsWith('layer:helicopters:'))
+    .flatMap((layer) =>
+      layer.children.flatMap((child) =>
+        child.entity?.type === 'helicopter' && !child.isVisible ? [child.entity.helicopter.id] : [],
       ),
     )
 }

@@ -1,6 +1,7 @@
 import type {
   Drawing,
   GpxTrackImport,
+  Helicopter,
   Marker,
 } from '../../infrastructure/mission-store/tauri-mission-store'
 import type { NormalizedTrackingDevice } from '../tracking/tracking-types'
@@ -21,6 +22,8 @@ import {
   getDrawingLayerNodeId,
   getGpxImportFeatureNodeId,
   getGpxImportLayerNodeId,
+  getHelicopterFeatureNodeId,
+  getHelicopterLayerNodeId,
   getMarkerFeatureNodeId,
   getMarkerLayerNodeId,
   GPX_TRACKS_GROUP_NODE_ID,
@@ -76,6 +79,7 @@ export function buildLayerCatalogTree(input: LayerCatalogBuildInput): LayerCatal
   const featureItemsByLayer = new Map<string, LayerCatalogFeatureItemNode[]>()
 
   addDeviceItems(featureItemsByLayer, input.devices, metadataIndex)
+  addHelicopterItems(featureItemsByLayer, input.helicopters ?? [], metadataIndex)
   addMarkerItems(featureItemsByLayer, input.markers, metadataIndex)
   addDrawingItems(featureItemsByLayer, input.drawings, metadataIndex)
 
@@ -226,6 +230,33 @@ function addMarkerItems(
         fallbackOrder: marker.display_order,
         metadataIndex,
         entity: { type: 'marker', marker },
+      }),
+    )
+    groups.set(layerId, items)
+  }
+
+  for (const [layerId, items] of groups) {
+    target.set(layerId, items)
+  }
+}
+
+function addHelicopterItems(
+  target: Map<string, LayerCatalogFeatureItemNode[]>,
+  helicopters: readonly Helicopter[],
+  metadataIndex: Map<string, LayerCatalogMetadataEntry>,
+): void {
+  const groups = new Map<string, LayerCatalogFeatureItemNode[]>()
+  for (const helicopter of helicopters) {
+    const layerId = getHelicopterLayerNodeId(helicopter.slot_key)
+    const items = groups.get(layerId) ?? []
+    items.push(
+      createFeatureItem({
+        id: getHelicopterFeatureNodeId(helicopter.id),
+        parentId: layerId,
+        label: helicopter.call_sign,
+        fallbackOrder: 0,
+        metadataIndex,
+        entity: { type: 'helicopter', helicopter },
       }),
     )
     groups.set(layerId, items)

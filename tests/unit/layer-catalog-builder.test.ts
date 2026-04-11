@@ -6,6 +6,7 @@ import type {
   Device,
   Drawing,
   GpxTrackImport,
+  Helicopter,
   Marker,
 } from '../../src/infrastructure/mission-store/tauri-mission-store'
 
@@ -19,6 +20,7 @@ describe('layer catalog builder', () => {
         createMarker('marker-1', 'Alpha Clue', 1),
       ],
       drawings: [createDrawing('drawing-1', 'Sector Alpha', 1)],
+      helicopters: [createHelicopter('heli-1', 'slot_1', 'Rescue 118')],
       gpxImports: [],
       metadataEntries: [],
     })
@@ -37,6 +39,16 @@ describe('layer catalog builder', () => {
       'Alpha Clue',
       'Bravo Clue',
     ])
+
+    const helicopterLayer = root.children
+      .flatMap((group) => group.children)
+      .find((layer) => layer.id === 'layer:helicopters:slot-1')
+    expect(helicopterLayer?.children[0]).toMatchObject({
+      displayLabel: 'Rescue 118',
+      entity: {
+        type: 'helicopter',
+      },
+    })
   })
 
   it('applies persisted aliases, visibility, and display order metadata', () => {
@@ -72,6 +84,7 @@ describe('layer catalog builder', () => {
       devices: [],
       markers: [],
       drawings: [createDrawing('drawing-1', 'Sector Alpha', 1)],
+      helicopters: [],
       gpxImports: [],
       metadataEntries,
     })
@@ -99,6 +112,7 @@ describe('layer catalog builder', () => {
       devices: [],
       markers: [],
       drawings: [],
+      helicopters: [],
       gpxImports: [
         createGpxImport('gpx-2', 'Bravo Route', 2),
         createGpxImport('gpx-1', 'Alpha Route', 1),
@@ -117,6 +131,26 @@ describe('layer catalog builder', () => {
         type: 'gpx_import',
       },
     })
+  })
+
+  it('assigns helicopters to their canonical slot layers even when a slot is empty', () => {
+    const root = buildLayerCatalogTree({
+      missionId: 'mission-1',
+      devices: [],
+      markers: [],
+      drawings: [],
+      helicopters: [createHelicopter('heli-2', 'slot_3', 'Air Corps 1')],
+      gpxImports: [],
+      metadataEntries: [],
+    })
+
+    const helicopterGroup = root.children.find((group) => group.id === 'group:helicopters')
+    expect(helicopterGroup?.children.map((layer) => [layer.id, layer.children.length])).toEqual([
+      ['layer:helicopters:slot-1', 0],
+      ['layer:helicopters:slot-2', 0],
+      ['layer:helicopters:slot-3', 1],
+      ['layer:helicopters:slot-4', 0],
+    ])
   })
 })
 
@@ -192,5 +226,27 @@ function createGpxImport(id: string, displayName: string, order: number): GpxTra
     metadata_json: JSON.stringify({ displayOrder: order }),
     imported_at: '2026-04-11T10:00:00.000Z',
     updated_at: '2026-04-11T10:00:00.000Z',
+  }
+}
+
+function createHelicopter(
+  id: string,
+  slotKey: Helicopter['slot_key'],
+  callSign: string,
+): Helicopter {
+  return {
+    id,
+    mission_id: 'mission-1',
+    slot_key: slotKey,
+    call_sign: callSign,
+    hex_id: '4CA123',
+    lat: 52.05,
+    lon: -9.51,
+    altitude: 1200,
+    speed: 95,
+    heading: 180,
+    last_update: '2026-04-11T10:05:00.000Z',
+    created_at: '2026-04-11T10:00:00.000Z',
+    updated_at: '2026-04-11T10:05:00.000Z',
   }
 }

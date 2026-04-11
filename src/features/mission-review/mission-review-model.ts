@@ -2,6 +2,7 @@ import type {
   Device,
   Drawing,
   GpxTrackImport,
+  Helicopter,
   Marker,
   Mission,
   MissionEvent,
@@ -75,6 +76,7 @@ type BuildMissionReviewSnapshotInput = {
   readonly devices: readonly Device[]
   readonly positions: readonly Position[]
   readonly drawings: readonly Drawing[]
+  readonly helicopters: readonly Helicopter[]
   readonly gpxImports: readonly GpxTrackImport[]
   readonly layerMetadata: readonly LayerCatalogMetadataEntry[]
 }
@@ -87,6 +89,7 @@ export function buildMissionReviewSnapshot(
     devices: input.devices.map(normalizeReviewDevice),
     markers: input.markers,
     drawings: input.drawings.filter((drawing) => drawing.temporary_measure !== true),
+    helicopters: input.helicopters,
     gpxImports: input.gpxImports,
     metadataEntries: input.layerMetadata,
   })

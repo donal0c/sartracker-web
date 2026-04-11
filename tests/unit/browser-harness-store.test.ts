@@ -133,4 +133,35 @@ describe('browser harness store', () => {
       ]),
     )
   })
+
+  it('persists helicopters per slot and records audit events', async () => {
+    const store = getBrowserHarnessStore()
+    const mission = await store.createMission({ name: 'Helicopter Mission' })
+
+    await store.upsertHelicopter({
+      mission_id: mission.id,
+      slot_key: 'slot_4',
+      call_sign: 'Air Corps 2',
+      hex_id: '4CAE44',
+      lat: 52.2,
+      lon: -9.8,
+      altitude: 1800,
+      speed: 120,
+      heading: 45,
+      last_update: '2026-04-11T12:05:00.000Z',
+    })
+
+    expect(await store.listHelicopters(mission.id)).toEqual([
+      expect.objectContaining({
+        slot_key: 'slot_4',
+        call_sign: 'Air Corps 2',
+      }),
+    ])
+
+    expect(readBrowserHarnessState().missionEvents).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ event_type: 'helicopter_created' }),
+      ]),
+    )
+  })
 })

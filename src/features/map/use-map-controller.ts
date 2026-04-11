@@ -6,6 +6,7 @@ import { useMapInstance } from './use-map-instance'
 import { useMapDrawingInteractions } from './use-map-drawing-interactions'
 import { useMapDrawingOverlays } from './use-map-drawing-overlays'
 import { useMapGpxOverlays } from './use-map-gpx-overlays'
+import { useMapHelicopterOverlays } from './use-map-helicopter-overlays'
 import { useMapMeasurementInteractions } from './use-map-measurement-interactions'
 import { useMapMeasurementOverlays } from './use-map-measurement-overlays'
 import { useMapMarkerInteractions } from './use-map-marker-interactions'
@@ -38,6 +39,11 @@ export function useMapController(): MapController {
     mapReadyVersion: mapInstance.mapReadyVersion,
   })
   useMapGpxOverlays({
+    activeBasemapId: mapInstance.activeBasemapId,
+    mapRef: mapInstance.mapRef,
+    mapReadyVersion: mapInstance.mapReadyVersion,
+  })
+  useMapHelicopterOverlays({
     activeBasemapId: mapInstance.activeBasemapId,
     mapRef: mapInstance.mapRef,
     mapReadyVersion: mapInstance.mapReadyVersion,

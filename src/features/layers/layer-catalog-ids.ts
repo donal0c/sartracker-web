@@ -1,5 +1,6 @@
 import type {
   DrawingType,
+  HelicopterSlotKey,
   MarkerType,
 } from '../../infrastructure/mission-store/tauri-mission-store'
 
@@ -60,4 +61,21 @@ export function getGpxImportLayerNodeId(importId: string): string {
 
 export function getGpxImportFeatureNodeId(importId: string): string {
   return `feature:gpx:${importId}`
+}
+
+export function getHelicopterLayerNodeId(slotKey: HelicopterSlotKey): string {
+  switch (slotKey) {
+    case 'slot_1':
+      return 'layer:helicopters:slot-1'
+    case 'slot_2':
+      return 'layer:helicopters:slot-2'
+    case 'slot_3':
+      return 'layer:helicopters:slot-3'
+    case 'slot_4':
+      return 'layer:helicopters:slot-4'
+  }
+}
+
+export function getHelicopterFeatureNodeId(helicopterId: string): string {
+  return `feature:helicopter:${helicopterId}`
 }

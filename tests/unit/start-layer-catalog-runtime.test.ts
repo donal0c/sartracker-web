@@ -4,6 +4,7 @@ import { startLayerCatalogRuntime } from '../../src/features/layers/start-layer-
 import type { LayerCatalogMetadataEntry } from '../../src/features/layers/layer-catalog-types'
 import type {
   Device,
+  Helicopter,
   Marker,
 } from '../../src/infrastructure/mission-store/tauri-mission-store'
 
@@ -34,6 +35,7 @@ describe('startLayerCatalogRuntime', () => {
       devices: [],
       markers: [createMarker()],
       drawings: [],
+      helicopters: [],
       gpxImports: [],
     })
     await runtime.renameNode('feature:marker:marker-1', 'Primary clue')
@@ -80,6 +82,7 @@ describe('startLayerCatalogRuntime', () => {
       devices: [createDevice('alpha', 'Alpha Team'), createDevice('bravo', 'Bravo Team')],
       markers: [],
       drawings: [],
+      helicopters: [],
       gpxImports: [],
     })
     await runtime.reorderNode('layer:tracking:devices', [
@@ -99,6 +102,47 @@ describe('startLayerCatalogRuntime', () => {
       expect.objectContaining({
         nodeId: 'feature:device:alpha',
         displayOrder: 1,
+      }),
+    )
+  })
+
+  it('persists helicopter feature-item aliases with the canonical helicopter layer parent', async () => {
+    const upsertMetadata = vi.fn().mockImplementation(async (input) => ({
+      missionId: input.missionId,
+      nodeId: input.nodeId,
+      parentNodeId: input.parentNodeId,
+      nodeKind: input.nodeKind,
+      alias: input.alias ?? null,
+      isFavorite: input.isFavorite ?? false,
+      isVisible: input.isVisible ?? true,
+      displayOrder: input.displayOrder ?? 0,
+      metadataJson: input.metadataJson ?? null,
+      updatedAt: '2026-04-10T10:00:00.000Z',
+    }))
+    const runtime = await startLayerCatalogRuntime({
+      layerCatalogStore: {
+        listMetadata: vi.fn().mockResolvedValue([]),
+        upsertMetadata,
+      },
+      applyRuntime: vi.fn(),
+    })
+
+    await runtime.refreshCatalog({
+      missionId: 'mission-1',
+      devices: [],
+      markers: [],
+      drawings: [],
+      helicopters: [createHelicopter()],
+      gpxImports: [],
+    })
+    await runtime.renameNode('feature:helicopter:heli-1', 'Primary air asset')
+
+    expect(upsertMetadata).toHaveBeenCalledWith(
+      expect.objectContaining({
+        nodeId: 'feature:helicopter:heli-1',
+        parentNodeId: 'layer:helicopters:slot-2',
+        nodeKind: 'feature_item',
+        alias: 'Primary air asset',
       }),
     )
   })
@@ -154,5 +198,23 @@ function createMarker(): Marker {
     updated_by: null,
     coordinator_ids: null,
     attachment_path: null,
+  }
+}
+
+function createHelicopter(): Helicopter {
+  return {
+    id: 'heli-1',
+    mission_id: 'mission-1',
+    slot_key: 'slot_2',
+    call_sign: 'Rescue 115',
+    hex_id: '4CA999',
+    lat: 52.1,
+    lon: -9.6,
+    altitude: 1400,
+    speed: 110,
+    heading: 220,
+    last_update: '2026-04-11T10:00:00.000Z',
+    created_at: '2026-04-11T09:55:00.000Z',
+    updated_at: '2026-04-11T10:00:00.000Z',
   }
 }

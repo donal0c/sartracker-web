@@ -25,7 +25,7 @@ const BACKUP_FILE_NAME: &str = "mission-store.backup.sqlite";
 const ARCHIVE_DIRECTORY_NAME: &str = "archives";
 const ATTACHMENTS_DIRECTORY_NAME: &str = "attachments";
 const DEFAULT_MISSION_STORAGE_DIRECTORY_NAME: &str = "missions";
-const CURRENT_SCHEMA_VERSION: i64 = 3;
+const CURRENT_SCHEMA_VERSION: i64 = 4;
 
 #[derive(Clone)]
 pub struct MissionStore {
@@ -187,6 +187,41 @@ pub struct GpxTrackImport {
 #[derive(Debug, Clone, Serialize, Deserialize, sqlx::Type, PartialEq, Eq)]
 #[sqlx(type_name = "TEXT", rename_all = "snake_case")]
 #[serde(rename_all = "snake_case")]
+pub enum HelicopterSlotKey {
+    #[sqlx(rename = "slot_1")]
+    #[serde(rename = "slot_1")]
+    Slot1,
+    #[sqlx(rename = "slot_2")]
+    #[serde(rename = "slot_2")]
+    Slot2,
+    #[sqlx(rename = "slot_3")]
+    #[serde(rename = "slot_3")]
+    Slot3,
+    #[sqlx(rename = "slot_4")]
+    #[serde(rename = "slot_4")]
+    Slot4,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow, PartialEq)]
+pub struct Helicopter {
+    pub id: String,
+    pub mission_id: String,
+    pub slot_key: HelicopterSlotKey,
+    pub call_sign: String,
+    pub hex_id: Option<String>,
+    pub lat: f64,
+    pub lon: f64,
+    pub altitude: Option<f64>,
+    pub speed: Option<f64>,
+    pub heading: Option<f64>,
+    pub last_update: String,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::Type, PartialEq, Eq)]
+#[sqlx(type_name = "TEXT", rename_all = "snake_case")]
+#[serde(rename_all = "snake_case")]
 pub enum LayerCatalogNodeKind {
     Group,
     Layer,
@@ -336,6 +371,21 @@ pub struct UpsertGpxTrackImportInput {
     pub display_name: String,
     pub geometry_json: String,
     pub metadata_json: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct UpsertHelicopterInput {
+    pub id: Option<String>,
+    pub mission_id: String,
+    pub slot_key: HelicopterSlotKey,
+    pub call_sign: String,
+    pub hex_id: Option<String>,
+    pub lat: f64,
+    pub lon: f64,
+    pub altitude: Option<f64>,
+    pub speed: Option<f64>,
+    pub heading: Option<f64>,
+    pub last_update: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -549,6 +599,27 @@ impl MissionStore {
 
             CREATE INDEX IF NOT EXISTS idx_drawings_mission_display_order
               ON drawings(mission_id, display_order);
+
+            CREATE TABLE IF NOT EXISTS helicopters (
+              id TEXT PRIMARY KEY,
+              mission_id TEXT NOT NULL,
+              slot_key TEXT NOT NULL CHECK(slot_key IN ('slot_1', 'slot_2', 'slot_3', 'slot_4')),
+              call_sign TEXT NOT NULL,
+              hex_id TEXT,
+              lat REAL NOT NULL,
+              lon REAL NOT NULL,
+              altitude REAL,
+              speed REAL,
+              heading REAL,
+              last_update TEXT NOT NULL,
+              created_at TEXT NOT NULL,
+              updated_at TEXT NOT NULL,
+              FOREIGN KEY (mission_id) REFERENCES missions(id) ON DELETE CASCADE,
+              UNIQUE (mission_id, slot_key)
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_helicopters_mission_slot
+              ON helicopters(mission_id, slot_key);
 
             CREATE TABLE IF NOT EXISTS gpx_track_imports (
               id TEXT PRIMARY KEY,
@@ -1644,6 +1715,187 @@ impl MissionStore {
         Ok(result.rows_affected() > 0)
     }
 
+    pub async fn upsert_helicopter(&self, input: UpsertHelicopterInput) -> Result<Helicopter, String> {
+        self.ensure_mission_mutable(&input.mission_id).await?;
+
+        if !input.lat.is_finite() || input.lat < -90.0 || input.lat > 90.0 {
+            return Err(
+                "Helicopter latitude must be a finite value between -90 and 90.".to_string(),
+            );
+        }
+        if !input.lon.is_finite() || input.lon < -180.0 || input.lon > 180.0 {
+            return Err(
+                "Helicopter longitude must be a finite value between -180 and 180.".to_string(),
+            );
+        }
+
+        let existing_helicopter = sqlx::query_as::<_, Helicopter>(
+            r#"
+            SELECT id, mission_id, slot_key, call_sign, hex_id, lat, lon, altitude, speed, heading,
+                   last_update, created_at, updated_at
+            FROM helicopters
+            WHERE mission_id = ? AND slot_key = ?
+            "#,
+        )
+        .bind(&input.mission_id)
+        .bind(&input.slot_key)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|error| format!("Failed to load helicopter slot {:?}: {error}", input.slot_key))?;
+
+        let helicopter_id = input
+            .id
+            .clone()
+            .or_else(|| existing_helicopter.as_ref().map(|entry| entry.id.clone()))
+            .unwrap_or_else(|| Uuid::new_v4().to_string());
+        let now = Utc::now().to_rfc3339();
+        let created_at = existing_helicopter
+            .as_ref()
+            .map(|entry| entry.created_at.clone())
+            .unwrap_or_else(|| now.clone());
+        let event_type = if existing_helicopter.is_some() {
+            "helicopter_updated"
+        } else {
+            "helicopter_created"
+        };
+        let last_update = input.last_update.clone().unwrap_or_else(|| now.clone());
+
+        let mut tx = self
+            .pool
+            .begin()
+            .await
+            .map_err(|error| format!("Failed to start helicopter upsert transaction: {error}"))?;
+
+        sqlx::query(
+            r#"
+            INSERT INTO helicopters (
+              id, mission_id, slot_key, call_sign, hex_id, lat, lon, altitude, speed, heading,
+              last_update, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(mission_id, slot_key) DO UPDATE SET
+              id = excluded.id,
+              call_sign = excluded.call_sign,
+              hex_id = excluded.hex_id,
+              lat = excluded.lat,
+              lon = excluded.lon,
+              altitude = excluded.altitude,
+              speed = excluded.speed,
+              heading = excluded.heading,
+              last_update = excluded.last_update,
+              updated_at = excluded.updated_at
+            "#,
+        )
+        .bind(&helicopter_id)
+        .bind(&input.mission_id)
+        .bind(&input.slot_key)
+        .bind(&input.call_sign)
+        .bind(&input.hex_id)
+        .bind(input.lat)
+        .bind(input.lon)
+        .bind(input.altitude)
+        .bind(input.speed)
+        .bind(input.heading)
+        .bind(&last_update)
+        .bind(&created_at)
+        .bind(&now)
+        .execute(&mut *tx)
+        .await
+        .map_err(|error| format!("Failed to upsert helicopter {helicopter_id}: {error}"))?;
+
+        let event_details = serde_json::json!({
+            "helicopter_id": helicopter_id,
+            "slot_key": input.slot_key,
+            "call_sign": input.call_sign,
+            "hex_id": input.hex_id,
+        });
+        Self::insert_event(
+            &mut *tx,
+            &input.mission_id,
+            event_type,
+            &now,
+            Some(&event_details),
+        )
+        .await?;
+
+        tx.commit()
+            .await
+            .map_err(|error| format!("Failed to commit helicopter upsert: {error}"))?;
+
+        self.get_helicopter(helicopter_id).await
+    }
+
+    pub async fn get_helicopter(&self, helicopter_id: String) -> Result<Helicopter, String> {
+        sqlx::query_as::<_, Helicopter>(
+            r#"
+            SELECT id, mission_id, slot_key, call_sign, hex_id, lat, lon, altitude, speed, heading,
+                   last_update, created_at, updated_at
+            FROM helicopters
+            WHERE id = ?
+            "#,
+        )
+        .bind(&helicopter_id)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|error| format!("Failed to load helicopter {helicopter_id}: {error}"))?
+        .ok_or_else(|| format!("Helicopter not found: {helicopter_id}"))
+    }
+
+    pub async fn list_helicopters(&self, mission_id: String) -> Result<Vec<Helicopter>, String> {
+        sqlx::query_as::<_, Helicopter>(
+            r#"
+            SELECT id, mission_id, slot_key, call_sign, hex_id, lat, lon, altitude, speed, heading,
+                   last_update, created_at, updated_at
+            FROM helicopters
+            WHERE mission_id = ?
+            ORDER BY slot_key ASC
+            "#,
+        )
+        .bind(mission_id)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|error| format!("Failed to list helicopters: {error}"))
+    }
+
+    pub async fn delete_helicopter(&self, helicopter_id: String) -> Result<bool, String> {
+        let existing = self.get_helicopter(helicopter_id.clone()).await.ok();
+        let Some(helicopter) = existing else {
+            return Ok(false);
+        };
+        self.ensure_mission_mutable(&helicopter.mission_id).await?;
+
+        let mut tx = self
+            .pool
+            .begin()
+            .await
+            .map_err(|error| format!("Failed to start helicopter delete transaction: {error}"))?;
+
+        let result = sqlx::query("DELETE FROM helicopters WHERE id = ?")
+            .bind(&helicopter_id)
+            .execute(&mut *tx)
+            .await
+            .map_err(|error| format!("Failed to delete helicopter {helicopter_id}: {error}"))?;
+
+        let event_details = serde_json::json!({
+            "helicopter_id": helicopter.id,
+            "slot_key": helicopter.slot_key,
+            "call_sign": helicopter.call_sign,
+        });
+        Self::insert_event(
+            &mut *tx,
+            &helicopter.mission_id,
+            "helicopter_deleted",
+            &Utc::now().to_rfc3339(),
+            Some(&event_details),
+        )
+        .await?;
+
+        tx.commit()
+            .await
+            .map_err(|error| format!("Failed to commit helicopter delete: {error}"))?;
+
+        Ok(result.rows_affected() > 0)
+    }
+
     pub async fn upsert_gpx_import(
         &self,
         input: UpsertGpxTrackImportInput,
@@ -2582,6 +2834,30 @@ pub async fn delete_drawing(
 }
 
 #[tauri::command]
+pub async fn upsert_helicopter(
+    input: UpsertHelicopterInput,
+    store: State<'_, MissionStoreState>,
+) -> Result<Helicopter, String> {
+    store.0.upsert_helicopter(input).await
+}
+
+#[tauri::command]
+pub async fn list_helicopters(
+    mission_id: String,
+    store: State<'_, MissionStoreState>,
+) -> Result<Vec<Helicopter>, String> {
+    store.0.list_helicopters(mission_id).await
+}
+
+#[tauri::command]
+pub async fn delete_helicopter(
+    helicopter_id: String,
+    store: State<'_, MissionStoreState>,
+) -> Result<bool, String> {
+    store.0.delete_helicopter(helicopter_id).await
+}
+
+#[tauri::command]
 pub async fn upsert_gpx_import(
     input: UpsertGpxTrackImportInput,
     store: State<'_, MissionStoreState>,
@@ -3362,6 +3638,81 @@ mod tests {
             .list_drawings(mission.id)
             .await
             .expect("drawings after delete")
+            .is_empty());
+    }
+
+    #[tokio::test]
+    async fn upserts_lists_and_deletes_helicopters() {
+        let (database_path, backup_path) = temp_paths("helicopter-crud");
+        let store = MissionStore::connect(database_path, backup_path)
+            .await
+            .expect("store should initialize");
+
+        let mission = store
+            .create_mission(CreateMissionInput {
+                name: "Helicopter Mission".to_string(),
+                start_time: None,
+                notes: None,
+            })
+            .await
+            .expect("mission should be created");
+
+        let helicopter = store
+            .upsert_helicopter(UpsertHelicopterInput {
+                id: None,
+                mission_id: mission.id.clone(),
+                slot_key: HelicopterSlotKey::Slot1,
+                call_sign: "Rescue 118".to_string(),
+                hex_id: Some("4CA118".to_string()),
+                lat: 52.0599,
+                lon: -9.5045,
+                altitude: Some(1200.0),
+                speed: Some(95.0),
+                heading: Some(180.0),
+                last_update: Some("2026-04-11T12:00:00.000Z".to_string()),
+            })
+            .await
+            .expect("helicopter should upsert");
+
+        assert_eq!(helicopter.slot_key, HelicopterSlotKey::Slot1);
+        assert_eq!(helicopter.call_sign, "Rescue 118");
+
+        let updated = store
+            .upsert_helicopter(UpsertHelicopterInput {
+                id: Some(helicopter.id.clone()),
+                mission_id: mission.id.clone(),
+                slot_key: HelicopterSlotKey::Slot1,
+                call_sign: "Rescue 118B".to_string(),
+                hex_id: None,
+                lat: 52.07,
+                lon: -9.51,
+                altitude: Some(1300.0),
+                speed: Some(100.0),
+                heading: Some(200.0),
+                last_update: None,
+            })
+            .await
+            .expect("helicopter should update");
+
+        assert_eq!(updated.id, helicopter.id);
+        assert_eq!(updated.call_sign, "Rescue 118B");
+
+        let helicopters = store
+            .list_helicopters(mission.id.clone())
+            .await
+            .expect("helicopters should list");
+        assert_eq!(helicopters.len(), 1);
+        assert_eq!(helicopters[0].call_sign, "Rescue 118B");
+
+        let deleted = store
+            .delete_helicopter(helicopter.id.clone())
+            .await
+            .expect("helicopter should delete");
+        assert!(deleted);
+        assert!(store
+            .list_helicopters(mission.id)
+            .await
+            .expect("helicopters after delete")
             .is_empty());
     }
 

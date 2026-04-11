@@ -5,6 +5,7 @@ import type {
   Drawing,
   FinalizeMissionResult,
   GpxTrackImport,
+  Helicopter,
   Marker,
   Mission,
   MissionEvent,
@@ -15,6 +16,7 @@ import type {
   UpsertDeviceInput,
   UpsertDrawingInput,
   UpsertGpxTrackImportInput,
+  UpsertHelicopterInput,
   UpsertMarkerInput,
 } from '../../infrastructure/mission-store/tauri-mission-store'
 
@@ -24,6 +26,7 @@ type BrowserHarnessState = {
   readonly positions: readonly Position[]
   readonly markers: readonly Marker[]
   readonly drawings: readonly Drawing[]
+  readonly helicopters: readonly Helicopter[]
   readonly gpxImports: readonly GpxTrackImport[]
   readonly missionEvents: readonly MissionEvent[]
   readonly openedPaths: readonly string[]
@@ -59,6 +62,9 @@ type BrowserHarnessStore = {
   readonly listDrawings: (missionId: string) => Promise<readonly Drawing[]>
   readonly upsertDrawing: (input: UpsertDrawingInput) => Promise<Drawing>
   readonly deleteDrawing: (drawingId: string) => Promise<boolean>
+  readonly listHelicopters: (missionId: string) => Promise<readonly Helicopter[]>
+  readonly upsertHelicopter: (input: UpsertHelicopterInput) => Promise<Helicopter>
+  readonly deleteHelicopter: (helicopterId: string) => Promise<boolean>
   readonly listGpxImports: (missionId: string) => Promise<readonly GpxTrackImport[]>
   readonly upsertGpxImport: (input: UpsertGpxTrackImportInput) => Promise<GpxTrackImport>
   readonly deleteGpxImport: (importId: string) => Promise<boolean>
@@ -593,6 +599,78 @@ export function getBrowserHarnessStore(): BrowserHarnessStore {
       save()
       return true
     },
+    listHelicopters: async (missionId) =>
+      state.helicopters
+        .filter((helicopter) => helicopter.mission_id === missionId)
+        .sort((left, right) => left.slot_key.localeCompare(right.slot_key)),
+    upsertHelicopter: async (input) => {
+      ensureMissionMutable(input.mission_id, state.missions)
+      const existingHelicopter =
+        state.helicopters.find(
+          (entry) =>
+            entry.mission_id === input.mission_id && entry.slot_key === input.slot_key,
+        ) ?? null
+      const now = new Date().toISOString()
+      const helicopter = {
+        id: existingHelicopter?.id ?? input.id ?? createId('helicopter'),
+        mission_id: input.mission_id,
+        slot_key: input.slot_key,
+        call_sign: input.call_sign,
+        hex_id: input.hex_id ?? null,
+        lat: input.lat,
+        lon: input.lon,
+        altitude: input.altitude ?? null,
+        speed: input.speed ?? null,
+        heading: input.heading ?? null,
+        last_update: input.last_update ?? now,
+        created_at: existingHelicopter?.created_at ?? now,
+        updated_at: now,
+      } satisfies Helicopter
+
+      state = {
+        ...state,
+        helicopters: upsertHelicopter(state.helicopters, helicopter),
+        missionEvents: appendEvent(
+          state.missionEvents,
+          input.mission_id,
+          existingHelicopter === null ? 'helicopter_created' : 'helicopter_updated',
+          now,
+          {
+            helicopter_id: helicopter.id,
+            slot_key: helicopter.slot_key,
+            call_sign: helicopter.call_sign,
+            hex_id: helicopter.hex_id,
+          },
+        ),
+      }
+      save()
+      return helicopter
+    },
+    deleteHelicopter: async (helicopterId) => {
+      const helicopter = state.helicopters.find((candidate) => candidate.id === helicopterId)
+      if (helicopter === undefined) {
+        return false
+      }
+
+      ensureMissionMutable(helicopter.mission_id, state.missions)
+      state = {
+        ...state,
+        helicopters: state.helicopters.filter((entry) => entry.id !== helicopterId),
+        missionEvents: appendEvent(
+          state.missionEvents,
+          helicopter.mission_id,
+          'helicopter_deleted',
+          new Date().toISOString(),
+          {
+            helicopter_id: helicopter.id,
+            slot_key: helicopter.slot_key,
+            call_sign: helicopter.call_sign,
+          },
+        ),
+      }
+      save()
+      return true
+    },
     listGpxImports: async (missionId) =>
       state.gpxImports
         .filter((entry) => entry.mission_id === missionId)
@@ -687,6 +765,7 @@ function readHarnessState(): BrowserHarnessState {
       positions: [],
       markers: [],
       drawings: [],
+      helicopters: [],
       gpxImports: [],
       missionEvents: [],
       openedPaths: [],
@@ -703,6 +782,7 @@ function readHarnessState(): BrowserHarnessState {
       positions: [],
       markers: [],
       drawings: [],
+      helicopters: [],
       gpxImports: [],
       missionEvents: [],
       openedPaths: [],
@@ -719,6 +799,7 @@ function readHarnessState(): BrowserHarnessState {
       positions: Array.isArray(parsed.positions) ? parsed.positions : [],
       markers: Array.isArray(parsed.markers) ? parsed.markers : [],
       drawings: Array.isArray(parsed.drawings) ? parsed.drawings : [],
+      helicopters: Array.isArray(parsed.helicopters) ? parsed.helicopters : [],
       gpxImports: Array.isArray(parsed.gpxImports) ? parsed.gpxImports : [],
       missionEvents: Array.isArray(parsed.missionEvents) ? parsed.missionEvents : [],
       openedPaths: Array.isArray(parsed.openedPaths) ? parsed.openedPaths : [],
@@ -734,6 +815,7 @@ function readHarnessState(): BrowserHarnessState {
       positions: [],
       markers: [],
       drawings: [],
+      helicopters: [],
       gpxImports: [],
       missionEvents: [],
       openedPaths: [],
@@ -860,6 +942,18 @@ function upsertDrawing(drawings: readonly Drawing[], drawing: Drawing): readonly
   }
 
   return drawings.map((candidate) => (candidate.id === drawing.id ? drawing : candidate))
+}
+
+function upsertHelicopter(
+  helicopters: readonly Helicopter[],
+  helicopter: Helicopter,
+): readonly Helicopter[] {
+  const filtered = helicopters.filter(
+    (candidate) =>
+      candidate.id !== helicopter.id &&
+      !(candidate.mission_id === helicopter.mission_id && candidate.slot_key === helicopter.slot_key),
+  )
+  return [...filtered, helicopter]
 }
 
 function upsertGpxImport(

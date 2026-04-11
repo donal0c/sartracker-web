@@ -32,6 +32,9 @@ describe('tauri mission store adapter', () => {
     invokeMock.mockResolvedValueOnce({ id: 'dr-1', type: 'line' })
     invokeMock.mockResolvedValueOnce([{ id: 'dr-1', type: 'line' }])
     invokeMock.mockResolvedValueOnce(true)
+    invokeMock.mockResolvedValueOnce({ id: 'h-1', slot_key: 'slot_1' })
+    invokeMock.mockResolvedValueOnce([{ id: 'h-1', slot_key: 'slot_1' }])
+    invokeMock.mockResolvedValueOnce(true)
     invokeMock.mockResolvedValueOnce([{ id: 'e-1', event_type: 'mission_created' }])
     invokeMock.mockResolvedValueOnce({ id: 'm-1', status: 'active' })
     invokeMock.mockResolvedValueOnce([{ id: 'm-1', status: 'active' }])
@@ -114,6 +117,17 @@ describe('tauri mission store adapter', () => {
     await expect(store.getDrawing('dr-1')).resolves.toEqual({ id: 'dr-1', type: 'line' })
     await expect(store.listDrawings('m-1')).resolves.toEqual([{ id: 'dr-1', type: 'line' }])
     await expect(store.deleteDrawing('dr-1')).resolves.toBe(true)
+    await expect(
+      store.upsertHelicopter({
+        mission_id: 'm-1',
+        slot_key: 'slot_1',
+        call_sign: 'Rescue 118',
+        lat: 52.0599,
+        lon: -9.5045,
+      }),
+    ).resolves.toEqual({ id: 'h-1', slot_key: 'slot_1' })
+    await expect(store.listHelicopters('m-1')).resolves.toEqual([{ id: 'h-1', slot_key: 'slot_1' }])
+    await expect(store.deleteHelicopter('h-1')).resolves.toBe(true)
     await expect(store.listMissionEvents('m-1')).resolves.toEqual([
       { id: 'e-1', event_type: 'mission_created' },
     ])
@@ -204,16 +218,27 @@ describe('tauri mission store adapter', () => {
     expect(invokeMock).toHaveBeenNthCalledWith(16, 'get_drawing', { drawingId: 'dr-1' })
     expect(invokeMock).toHaveBeenNthCalledWith(17, 'list_drawings', { missionId: 'm-1' })
     expect(invokeMock).toHaveBeenNthCalledWith(18, 'delete_drawing', { drawingId: 'dr-1' })
-    expect(invokeMock).toHaveBeenNthCalledWith(19, 'list_mission_events', { missionId: 'm-1' })
-    expect(invokeMock).toHaveBeenNthCalledWith(20, 'get_mission', { missionId: 'm-1' })
-    expect(invokeMock).toHaveBeenNthCalledWith(21, 'list_missions')
-    expect(invokeMock).toHaveBeenNthCalledWith(22, 'get_active_mission')
-    expect(invokeMock).toHaveBeenNthCalledWith(23, 'get_recoverable_mission')
-    expect(invokeMock).toHaveBeenNthCalledWith(24, 'pause_mission', { missionId: 'm-2' })
-    expect(invokeMock).toHaveBeenNthCalledWith(25, 'resume_mission', { missionId: 'm-2' })
-    expect(invokeMock).toHaveBeenNthCalledWith(26, 'finish_mission', { missionId: 'm-2' })
-    expect(invokeMock).toHaveBeenNthCalledWith(27, 'finalize_mission', { missionId: 'm-2' })
-    expect(invokeMock).toHaveBeenNthCalledWith(28, 'unlock_finalized_mission', {
+    expect(invokeMock).toHaveBeenNthCalledWith(19, 'upsert_helicopter', {
+      input: {
+        mission_id: 'm-1',
+        slot_key: 'slot_1',
+        call_sign: 'Rescue 118',
+        lat: 52.0599,
+        lon: -9.5045,
+      },
+    })
+    expect(invokeMock).toHaveBeenNthCalledWith(20, 'list_helicopters', { missionId: 'm-1' })
+    expect(invokeMock).toHaveBeenNthCalledWith(21, 'delete_helicopter', { helicopterId: 'h-1' })
+    expect(invokeMock).toHaveBeenNthCalledWith(22, 'list_mission_events', { missionId: 'm-1' })
+    expect(invokeMock).toHaveBeenNthCalledWith(23, 'get_mission', { missionId: 'm-1' })
+    expect(invokeMock).toHaveBeenNthCalledWith(24, 'list_missions')
+    expect(invokeMock).toHaveBeenNthCalledWith(25, 'get_active_mission')
+    expect(invokeMock).toHaveBeenNthCalledWith(26, 'get_recoverable_mission')
+    expect(invokeMock).toHaveBeenNthCalledWith(27, 'pause_mission', { missionId: 'm-2' })
+    expect(invokeMock).toHaveBeenNthCalledWith(28, 'resume_mission', { missionId: 'm-2' })
+    expect(invokeMock).toHaveBeenNthCalledWith(29, 'finish_mission', { missionId: 'm-2' })
+    expect(invokeMock).toHaveBeenNthCalledWith(30, 'finalize_mission', { missionId: 'm-2' })
+    expect(invokeMock).toHaveBeenNthCalledWith(31, 'unlock_finalized_mission', {
       input: {
         mission_id: 'm-2',
         admin_name: 'Ops Lead',
