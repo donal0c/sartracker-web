@@ -21,18 +21,32 @@ describe('drawing hit testing', () => {
     expect(drawingId).toBe('label-1')
   })
 
-  it('ignores non-point drawings and distant point drawings', () => {
+  it('selects line drawings using projected segment distance when rendered feature picking misses', () => {
     const map = {
       project: ({ lng, lat }: { lng: number; lat: number }) => ({ x: lng * 10, y: lat * 10 }),
     }
 
     const drawingId = findNearestDrawingId(
       map as never,
-      { x: 100, y: 100 },
+      { x: 110, y: 110 },
       [
         createLineDrawing('line-1'),
         createPointDrawing('label-2', [30, 30]),
       ],
+    )
+
+    expect(drawingId).toBe('line-1')
+  })
+
+  it('ignores distant drawings outside the selection radius', () => {
+    const map = {
+      project: ({ lng, lat }: { lng: number; lat: number }) => ({ x: lng * 10, y: lat * 10 }),
+    }
+
+    const drawingId = findNearestDrawingId(
+      map as never,
+      { x: 300, y: 300 },
+      [createLineDrawing('line-1'), createPointDrawing('label-2', [10, 10])],
     )
 
     expect(drawingId).toBeNull()

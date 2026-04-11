@@ -1,6 +1,8 @@
 import { Suspense, lazy, useState } from 'react'
 
 import { DrawingRuntimeBridge } from './features/drawings/drawing-runtime-bridge'
+import { DiagnosticsRuntimeBridge } from './features/diagnostics/diagnostics-runtime-bridge'
+import { DiagnosticsWorkspace } from './components/diagnostics-workspace'
 import { DrawingDialog } from './components/drawing-dialog'
 import { CoordinateConverterDialog } from './components/coordinate-converter-dialog'
 import { DevicesWorkspace } from './components/devices-workspace'
@@ -16,6 +18,7 @@ import { useAppStore } from './lib/app-store'
 import { MissionReviewRuntimeBridge } from './features/mission-review/mission-review-runtime-bridge'
 import { TrackingStatusPanel } from './components/tracking-status-panel'
 import { SettingsWorkspace } from './components/settings-workspace'
+import { useDiagnosticsWorkspaceStore } from './features/diagnostics/diagnostics-workspace-store'
 
 const MapView = lazy(async () => {
   const module = await import('./components/map-view')
@@ -29,9 +32,11 @@ const MapView = lazy(async () => {
 function App() {
   const status = useAppStore((state) => state.status)
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const openDiagnosticsWorkspace = useDiagnosticsWorkspaceStore((state) => state.openWorkspace)
 
   return (
     <main className="flex h-screen w-screen overflow-hidden bg-stone-950 text-stone-100">
+      <DiagnosticsRuntimeBridge />
       <DrawingRuntimeBridge />
       <LayerCatalogRuntimeBridge />
       <MarkerRuntimeBridge />
@@ -70,6 +75,14 @@ function App() {
               System {status}
             </span>
             <button
+              className="rounded-lg border border-stone-700 bg-stone-900 px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider text-stone-300"
+              data-testid="open-diagnostics-workspace"
+              onClick={() => openDiagnosticsWorkspace()}
+              type="button"
+            >
+              Diagnostics
+            </button>
+            <button
               className="ml-auto rounded-lg border border-stone-700 bg-stone-900 px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider text-stone-300"
               data-testid="open-settings-workspace"
               onClick={() => setSettingsOpen(true)}
@@ -104,6 +117,7 @@ function App() {
       <DevicesWorkspace />
       <MissionReviewWorkspace />
       <MarkerDialog />
+      <DiagnosticsWorkspace />
       <SettingsWorkspace onClose={() => setSettingsOpen(false)} open={settingsOpen} />
     </main>
   )

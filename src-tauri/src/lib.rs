@@ -1,4 +1,5 @@
 mod persistence;
+mod diagnostics;
 mod opener;
 mod settings;
 mod tracking_cache;
@@ -10,12 +11,13 @@ use settings::{
     build_settings_store, load_app_settings, load_runtime_bootstrap_settings, save_app_settings,
     test_tracking_connection, SettingsStoreState,
 };
+use diagnostics::export_diagnostics_report;
 
 use persistence::{
     add_position, build_mission_store, create_mission, delete_drawing, delete_marker,
     create_mission_archive, finish_mission, get_active_mission, get_device, get_drawing,
     get_marker, get_mission, get_recoverable_mission, latest_positions, list_devices,
-    list_drawings, list_layer_catalog_entries, list_markers, list_mission_events, list_missions,
+    list_drawings, list_layer_catalog_entries, clear_layer_catalog_entries, list_markers, list_mission_events, list_missions,
     list_positions, mission_store_info, pause_mission, resume_mission, sync_mission_store_backup,
     upsert_device, upsert_drawing, upsert_layer_catalog_entry, upsert_marker, finalize_mission,
     ingest_marker_attachment,
@@ -65,6 +67,7 @@ pub fn run() {
             delete_drawing,
             list_layer_catalog_entries,
             upsert_layer_catalog_entry,
+            clear_layer_catalog_entries,
             get_mission,
             list_missions,
             get_active_mission,
@@ -81,7 +84,8 @@ pub fn run() {
             read_tracking_cache,
             write_tracking_cache
             ,
-            open_external_path
+            open_external_path,
+            export_diagnostics_report
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

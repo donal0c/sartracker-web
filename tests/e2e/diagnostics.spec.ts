@@ -1,0 +1,119 @@
+import { expect, test } from '@playwright/test'
+
+test.describe('M21 diagnostics workspace', () => {
+  test.beforeEach(async ({ context, page }) => {
+    await context.grantPermissions(['clipboard-read', 'clipboard-write'])
+    await page.goto('/?missionHarness=1')
+    const title = page.getByTestId('app-title')
+    await title.waitFor({ state: 'visible', timeout: 10000 })
+    await expect(title).toContainText('SAR Tracker')
+  })
+
+  test('opens diagnostics, copies the support report, exports it, and repairs layer metadata', async ({
+    page,
+  }) => {
+    await page.getByTestId('mission-name-input').fill('Diagnostics Mission')
+    await page.getByTestId('mission-start-btn').click()
+    await expect(page.getByTestId('mission-control')).toContainText('active')
+
+    await page.evaluate(() => {
+      window.localStorage.setItem(
+        'sartracker:browser-settings',
+        JSON.stringify({
+          missionDefaults: {
+            autoRefreshEnabled: true,
+            autoRefreshIntervalSeconds: 30,
+            autoSaveEnabled: true,
+            autoSaveIntervalSeconds: 45,
+            primaryMissionRoot: '/missions/primary',
+            backupMissionRoot: '/missions/backup',
+            coordinatorRoster: ['C1'],
+            adminRoster: ['Ops Lead'],
+          },
+          dataSource: {
+            providerType: 'traccar_http',
+            baseUrl: 'https://traccar.example.com',
+            authMode: 'basic',
+            email: 'ops@example.com',
+            autoConnect: true,
+            trackingCacheEnabled: true,
+            replayEnabled: false,
+            replayStart: '',
+            replayDurationHours: 4,
+            secretPresent: true,
+          },
+          advanced: {
+            repairLayerStructureAvailable: false,
+          },
+        }),
+      )
+
+      const rawHarness = window.sessionStorage.getItem('sartracker:browser-harness')
+      if (rawHarness === null) {
+        throw new Error('Browser harness state unavailable.')
+      }
+
+      const harness = JSON.parse(rawHarness) as { currentMissionId?: string | null }
+      const missionId = harness.currentMissionId
+      if (missionId === undefined || missionId === null) {
+        throw new Error('Current mission id unavailable.')
+      }
+
+      window.sessionStorage.setItem(
+        'sartracker:browser-layer-catalog',
+        JSON.stringify({
+          [missionId]: [
+            {
+              missionId,
+              nodeId: 'feature:marker:marker-1',
+              parentNodeId: 'layer:markers:clues',
+              nodeKind: 'feature_item',
+              alias: 'Legacy alias',
+              isFavorite: false,
+              isVisible: true,
+              displayOrder: 0,
+              metadataJson: null,
+              updatedAt: '2026-04-11T01:00:00.000Z',
+            },
+          ],
+        }),
+      )
+    })
+
+    await page.getByTestId('open-diagnostics-workspace').click()
+    await expect(page.getByTestId('diagnostics-workspace')).toBeVisible()
+    await expect(page.getByTestId('diagnostics-workspace')).toContainText('Diagnostics Mission')
+    await expect(page.getByTestId('diagnostics-workspace')).toContainText('https://traccar.example.com')
+
+    await page.getByTestId('diagnostics-copy-report').click()
+    await expect(page.getByTestId('diagnostics-feedback')).toContainText('copied')
+    await expect.poll(async () => page.evaluate(() => navigator.clipboard.readText())).toContain(
+      'Diagnostics Report',
+    )
+
+    await page.getByTestId('diagnostics-export-report').click()
+    await expect(page.getByTestId('diagnostics-feedback')).toContainText('Exported')
+    await expect(page.getByTestId('diagnostics-export-path')).toContainText('diagnostics-report')
+
+    await page.getByTestId('diagnostics-repair-layer-catalog').click()
+    await expect(page.getByTestId('diagnostics-feedback')).toContainText('Layer catalog metadata reset')
+
+    await expect.poll(async () => {
+      return page.evaluate(() => {
+        const rawHarness = window.sessionStorage.getItem('sartracker:browser-harness')
+        if (rawHarness === null) {
+          return null
+        }
+
+        const harness = JSON.parse(rawHarness) as { currentMissionId?: string | null }
+        const missionId = harness.currentMissionId
+        if (missionId === undefined || missionId === null) {
+          return null
+        }
+
+        const raw = window.sessionStorage.getItem('sartracker:browser-layer-catalog')
+        return raw === null ? null : JSON.parse(raw)[missionId] ?? null
+      })
+    }).toBeNull()
+  })
+})

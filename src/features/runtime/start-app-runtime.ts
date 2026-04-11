@@ -1,8 +1,5 @@
-import {
-  type AutosaveStore,
-  startMissionAutosave,
-} from '../persistence/mission-autosave'
-import { createTauriTrackingCache } from '../../infrastructure/tracking-cache/tauri-tracking-cache'
+import type { AutosaveStore } from '../persistence/mission-autosave'
+import { startMissionAutosave } from '../persistence/mission-autosave'
 import {
   createTauriMissionStore,
   type MissionStore,
@@ -39,11 +36,11 @@ import {
   type TrackingRuntimeMissionStore,
 } from '../tracking/start-tracking-runtime'
 import type { AppRuntimeController } from './app-runtime-controller'
-
-const NOOP_TRACKING_CACHE = {
-  read: async () => null,
-  write: async (contents: string) => contents,
-}
+import {
+  createManagedRuntimeServices,
+  createNoopRuntimeServiceHandles,
+  stopRuntimeServices,
+} from './runtime-managed-services'
 
 type StartAppRuntimeDependencies = {
   readonly registerServiceWorker: () => Promise<void>
@@ -100,9 +97,9 @@ export async function startAppRuntime(
   }
 
   const missionStore = dependencies.createMissionStore()
-  const trackingMissionStore: TrackingRuntimeMissionStore = missionStore
-  let stopAutosave: () => void = () => undefined
-  let stopTracking: () => void = () => undefined
+  const trackingMissionStore = missionStore as MissionStore & TrackingRuntimeMissionStore
+  let activeServices = createNoopRuntimeServiceHandles()
+  let reloadGeneration = 0
 
   const missionRuntimeController = await dependencies.startMissionRuntime({
     missionStore,
@@ -128,26 +125,28 @@ export async function startAppRuntime(
   })
   applyDrawingController(drawingRuntimeController)
   await reloadSettings()
-  return { reloadSettings }
+  return {
+    reloadSettings,
+    dispose: () => {
+      reloadGeneration += 1
+      const previousServices = activeServices
+      activeServices = createNoopRuntimeServiceHandles()
+      stopRuntimeServices(previousServices)
+    },
+  }
 
   async function reloadSettings(options?: { readonly forceConnect?: boolean }): Promise<void> {
-    stopAutosave()
-    stopTracking()
+    const generation = ++reloadGeneration
 
     const runtimeSettings = await dependencies.readRuntimeBootstrapSettings(
       options?.forceConnect ?? false,
     )
 
-    if (runtimeSettings.autosaveEnabled) {
-      stopAutosave = dependencies.startMissionAutosave(missionStore, {
-        intervalMs: runtimeSettings.autosaveIntervalMs,
-      })
-    } else {
-      stopAutosave = () => undefined
-    }
-
-    stopTracking = await dependencies.startTrackingRuntime({
-      config: runtimeSettings.trackingConfig ?? readTrackingRuntimeConfig(),
+    const nextServices = await createManagedRuntimeServices({
+      runtimeSettings,
+      missionStore: trackingMissionStore,
+      startMissionAutosave: dependencies.startMissionAutosave,
+      startTrackingRuntime: dependencies.startTrackingRuntime,
       createClient: createTraccarClient,
       createPoller: (client, hooks) =>
         createPollingManager(client as TrackingPollerClient, {
@@ -165,12 +164,18 @@ export async function startAppRuntime(
           onSnapshot: hooks.onSnapshot,
           onStatusChange: hooks.onStatusChange,
         }),
-      cache: runtimeSettings.trackingCacheEnabled
-        ? createTauriTrackingCache()
-        : NOOP_TRACKING_CACHE,
-      missionStore: trackingMissionStore,
+      readTrackingRuntimeConfig,
       applySnapshot: applyTrackingSnapshot,
       applyStatus: applyTrackingStatus,
     })
+
+    if (generation !== reloadGeneration) {
+      stopRuntimeServices(nextServices)
+      return
+    }
+
+    const previousServices = activeServices
+    activeServices = nextServices
+    stopRuntimeServices(previousServices)
   }
 }

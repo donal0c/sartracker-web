@@ -40,6 +40,14 @@ export function shouldEnableMissionBrowserHarness(): boolean {
   return new URLSearchParams(window.location.search).get('missionHarness') === '1'
 }
 
+function shouldEnableBrowserHarnessLiveTracking(): boolean {
+  if (typeof window === 'undefined') {
+    return false
+  }
+
+  return new URLSearchParams(window.location.search).get('liveTracking') === '1'
+}
+
 /**
  * Starts a browser-only mission runtime harness for headless validation.
  */
@@ -102,7 +110,7 @@ export async function startMissionBrowserHarness(): Promise<void> {
 
   // If Traccar env vars are present, start real HTTP polling against the mock/live server
   const trackingConfig = readTrackingRuntimeConfig()
-  if (trackingConfig !== null) {
+  if (trackingConfig !== null && shouldEnableBrowserHarnessLiveTracking()) {
     console.log('[browser-harness] Starting real tracking polling against', trackingConfig.baseUrl)
     await startTrackingRuntime({
       config: trackingConfig,

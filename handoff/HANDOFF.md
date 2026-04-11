@@ -1510,3 +1510,68 @@ bd list
 - If an older planning doc disagrees with the current implementation state, update the doc or defer to this handoff file plus `CODEX_START.md`
 - `src-tauri/` is now initialized and the Tauri SQL plugin is wired in; persistence work should continue behind the MissionStore boundary only
 - Use `docs/bead-readiness.md` to track how much background research each upcoming bead still needs before implementation
+
+### 2026-04-10 M21 diagnostics workspace completed
+- Added a dedicated diagnostics feature slice and operator workspace:
+  - `src/features/diagnostics/diagnostics-model.ts`
+  - `src/features/diagnostics/diagnostics-store.ts`
+  - `src/features/diagnostics/diagnostics-workspace-store.ts`
+  - `src/features/diagnostics/start-diagnostics-runtime.ts`
+  - `src/features/diagnostics/diagnostics-runtime-bridge.tsx`
+  - `src/components/diagnostics-workspace.tsx`
+- Added support report export plumbing:
+  - `src/infrastructure/support-report/tauri-support-report-store.ts`
+  - `src-tauri/src/diagnostics.rs`
+  - `src/lib/app-version.ts`
+  - `src/App.tsx`
+  - `src-tauri/src/lib.rs`
+- Added safe repair tooling for corrupted/stale layer catalog metadata:
+  - `clear_layer_catalog_entries` in `src-tauri/src/persistence.rs`
+  - mission-store adapter support in `src/infrastructure/layer-catalog-store/tauri-layer-catalog-store.ts`
+  - repair action refreshes the active catalog after metadata reset
+- Hardened drawing selection fallback:
+  - `src/features/drawings/drawing-hit-testing.ts` now supports point, line-segment, and polygon hit testing
+  - fixed select-mode edit/delete regression for non-point drawings
+- Hardened browser harness tracking isolation:
+  - `src/features/mission/mission-browser-harness.ts` now starts real HTTP polling only when both tracking env vars are present and `?liveTracking=1` is set
+  - this prevents deterministic Playwright harness runs from being polluted by ambient mock/live Traccar config
+  - live browser validation against mock Traccar should now use `?missionHarness=1&liveTracking=1`
+- Tightened flaky timer/browser assertions without weakening behavioral intent:
+  - `tests/e2e/mission.spec.ts`
+  - `tests/e2e/full-mission-flow.spec.ts`
+  - broad mission flow now has an explicit 45s budget because it is intentionally end-to-end and multi-surface
+- Added/updated coverage:
+  - `tests/unit/diagnostics-model.test.ts`
+  - `tests/unit/start-diagnostics-runtime.test.ts`
+  - `tests/unit/tauri-layer-catalog-store.test.ts`
+  - `tests/unit/drawing-hit-testing.test.ts`
+  - `tests/e2e/diagnostics.spec.ts`
+- Verification completed:
+  - `npm run lint` ✅
+  - `npm run test` ✅
+  - `npm run build` ✅
+  - `cargo test --manifest-path src-tauri/Cargo.toml` ✅
+  - `npm run test:e2e` ✅
+- Bead status:
+  - `sartracker-web-2jk.10` ready to close as complete
+
+### 2026-04-11 runtime lifecycle hardening pass
+- Improved maintainability and runtime robustness in the app bootstrap/orchestration layer:
+  - extracted runtime service startup/teardown into `src/features/runtime/runtime-managed-services.ts`
+  - `src/features/runtime/start-app-runtime.ts` now treats autosave + tracking as managed lifecycle units instead of mutating stop handles inline
+- Hardened `reloadSettings()` behavior:
+  - healthy autosave/tracking services are no longer torn down before replacement services are confirmed
+  - overlapping reload calls now use generation-based last-request-wins semantics
+  - stale in-flight reloads clean up their own temporary services instead of overriding the latest configuration
+- Added explicit runtime teardown support:
+  - `AppRuntimeController` now exposes `dispose()`
+  - startup/runtime ownership is now explicit instead of assuming process lifetime
+- Added unit coverage for the new lifecycle guarantees:
+  - keeps existing services alive when settings reload fails
+  - applies only the latest overlapping settings reload
+  - disposes active runtime services explicitly
+- Verification completed:
+  - `npm run lint` ✅
+  - `npm run test` ✅
+  - `npm run build` ✅
+  - `npx playwright test tests/e2e/settings.spec.ts tests/e2e/diagnostics.spec.ts tests/e2e/full-mission-flow.spec.ts` ✅

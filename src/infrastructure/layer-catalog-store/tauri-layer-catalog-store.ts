@@ -27,12 +27,14 @@ export type LayerCatalogStore = {
   readonly upsertMetadata: (
     input: UpsertLayerCatalogMetadataInput,
   ) => Promise<LayerCatalogMetadataEntry>
+  readonly clearMetadata: (missionId: string) => Promise<void>
 }
 
 export function createTauriLayerCatalogStore(): LayerCatalogStore {
   return {
     listMetadata: listLayerCatalogMetadata,
     upsertMetadata: upsertLayerCatalogMetadata,
+    clearMetadata: clearLayerCatalogMetadata,
   }
 }
 
@@ -91,6 +93,23 @@ export async function upsertLayerCatalogMetadata(
     [input.missionId]: nextMissionEntries,
   })
   return nextEntry
+}
+
+export async function clearLayerCatalogMetadata(missionId: string): Promise<void> {
+  if (isTauriRuntimeAvailable()) {
+    await invoke('clear_layer_catalog_entries', { missionId })
+    return
+  }
+
+  ensureBrowserMissionMutable(missionId)
+  const current = readBrowserCatalogState()
+  if (!(missionId in current)) {
+    return
+  }
+
+  const next = { ...current }
+  delete next[missionId]
+  writeBrowserCatalogState(next)
 }
 
 function fromRawEntry(entry: RawLayerCatalogMetadataEntry): LayerCatalogMetadataEntry {

@@ -1,5 +1,6 @@
 export type AppRuntimeController = {
   readonly reloadSettings: (options?: { readonly forceConnect?: boolean }) => Promise<void>
+  readonly dispose: () => void
 }
 
 let controller: AppRuntimeController | null = null

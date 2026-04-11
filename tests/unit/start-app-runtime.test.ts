@@ -141,4 +141,179 @@ describe('app runtime startup', () => {
     expect(createMissionStore).not.toHaveBeenCalled()
     expect(startMissionAutosave).not.toHaveBeenCalled()
   })
+
+  it('keeps existing services alive when a settings reload fails', async () => {
+    const store: MissionStore & AutosaveStore = createMissionStoreStub()
+    const initialAutosaveStop = vi.fn()
+    const initialTrackingStop = vi.fn()
+    const startMissionAutosave = vi
+      .fn()
+      .mockReturnValueOnce(initialAutosaveStop)
+    const startTrackingRuntime = vi
+      .fn()
+      .mockResolvedValueOnce(initialTrackingStop)
+    const readRuntimeBootstrapSettings = vi
+      .fn()
+      .mockResolvedValueOnce(createBootstrapSettings())
+      .mockRejectedValueOnce(new Error('settings unavailable'))
+
+    const runtime = await startAppRuntime({
+      registerServiceWorker: vi.fn().mockResolvedValue(undefined),
+      isTauriRuntimeAvailable: vi.fn().mockReturnValue(true),
+      createMissionStore: vi.fn().mockReturnValue(store),
+      readRuntimeBootstrapSettings,
+      startMissionAutosave,
+      startMissionRuntime: vi.fn().mockResolvedValue({}),
+      startMissionGovernanceRuntime: vi.fn().mockResolvedValue({}),
+      startMarkerRuntime: vi.fn().mockResolvedValue({}),
+      startDrawingRuntime: vi.fn().mockResolvedValue({}),
+      startTrackingRuntime,
+    })
+
+    await expect(runtime?.reloadSettings()).rejects.toThrow('settings unavailable')
+    expect(initialAutosaveStop).not.toHaveBeenCalled()
+    expect(initialTrackingStop).not.toHaveBeenCalled()
+  })
+
+  it('applies only the latest overlapping settings reload', async () => {
+    const store: MissionStore & AutosaveStore = createMissionStoreStub()
+    const initialAutosaveStop = vi.fn()
+    const initialTrackingStop = vi.fn()
+    const latestAutosaveStop = vi.fn()
+    const latestTrackingStop = vi.fn()
+    const staleAutosaveStop = vi.fn()
+    const staleTrackingStop = vi.fn()
+
+    let releaseFirstReload: (() => void) | null = null
+    const readRuntimeBootstrapSettings = vi
+      .fn()
+      .mockResolvedValueOnce(createBootstrapSettings({ autosaveIntervalMs: 10_000 }))
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            releaseFirstReload = () =>
+              resolve(createBootstrapSettings({ autosaveIntervalMs: 20_000 }))
+          }),
+      )
+      .mockResolvedValueOnce(createBootstrapSettings({ autosaveIntervalMs: 30_000 }))
+
+    const startMissionAutosave = vi
+      .fn()
+      .mockReturnValueOnce(initialAutosaveStop)
+      .mockReturnValueOnce(latestAutosaveStop)
+      .mockReturnValueOnce(staleAutosaveStop)
+
+    const startTrackingRuntime = vi
+      .fn()
+      .mockResolvedValueOnce(initialTrackingStop)
+      .mockResolvedValueOnce(latestTrackingStop)
+      .mockResolvedValueOnce(staleTrackingStop)
+
+    const runtime = await startAppRuntime({
+      registerServiceWorker: vi.fn().mockResolvedValue(undefined),
+      isTauriRuntimeAvailable: vi.fn().mockReturnValue(true),
+      createMissionStore: vi.fn().mockReturnValue(store),
+      readRuntimeBootstrapSettings,
+      startMissionAutosave,
+      startMissionRuntime: vi.fn().mockResolvedValue({}),
+      startMissionGovernanceRuntime: vi.fn().mockResolvedValue({}),
+      startMarkerRuntime: vi.fn().mockResolvedValue({}),
+      startDrawingRuntime: vi.fn().mockResolvedValue({}),
+      startTrackingRuntime,
+    })
+
+    const firstReload = runtime?.reloadSettings()
+    const secondReload = runtime?.reloadSettings()
+    await Promise.resolve()
+    releaseFirstReload?.()
+    await Promise.all([firstReload, secondReload])
+
+    expect(initialAutosaveStop).toHaveBeenCalledTimes(1)
+    expect(initialTrackingStop).toHaveBeenCalledTimes(1)
+    expect(staleAutosaveStop).toHaveBeenCalledTimes(1)
+    expect(staleTrackingStop).toHaveBeenCalledTimes(1)
+    expect(latestAutosaveStop).not.toHaveBeenCalled()
+    expect(latestTrackingStop).not.toHaveBeenCalled()
+    expect(startMissionAutosave).toHaveBeenNthCalledWith(2, store, {
+      intervalMs: 30_000,
+    })
+    expect(startMissionAutosave).toHaveBeenNthCalledWith(3, store, {
+      intervalMs: 20_000,
+    })
+  })
+
+  it('disposes the active runtime services explicitly', async () => {
+    const store: MissionStore & AutosaveStore = createMissionStoreStub()
+    const activeAutosaveStop = vi.fn()
+    const activeTrackingStop = vi.fn()
+
+    const runtime = await startAppRuntime({
+      registerServiceWorker: vi.fn().mockResolvedValue(undefined),
+      isTauriRuntimeAvailable: vi.fn().mockReturnValue(true),
+      createMissionStore: vi.fn().mockReturnValue(store),
+      readRuntimeBootstrapSettings: vi.fn().mockResolvedValue(createBootstrapSettings()),
+      startMissionAutosave: vi.fn().mockReturnValue(activeAutosaveStop),
+      startMissionRuntime: vi.fn().mockResolvedValue({}),
+      startMissionGovernanceRuntime: vi.fn().mockResolvedValue({}),
+      startMarkerRuntime: vi.fn().mockResolvedValue({}),
+      startDrawingRuntime: vi.fn().mockResolvedValue({}),
+      startTrackingRuntime: vi.fn().mockResolvedValue(activeTrackingStop),
+    })
+
+    runtime?.dispose()
+
+    expect(activeAutosaveStop).toHaveBeenCalledTimes(1)
+    expect(activeTrackingStop).toHaveBeenCalledTimes(1)
+  })
 })
+
+function createMissionStoreStub(): MissionStore & AutosaveStore {
+  return {
+    info: vi.fn(),
+    createMissionArchive: vi.fn(),
+    createMission: vi.fn(),
+    upsertDevice: vi.fn(),
+    getDevice: vi.fn(),
+    listDevices: vi.fn(),
+    addPosition: vi.fn(),
+    listPositions: vi.fn(),
+    latestPositions: vi.fn(),
+    listMissionEvents: vi.fn(),
+    upsertMarker: vi.fn(),
+    getMarker: vi.fn(),
+    listMarkers: vi.fn(),
+    deleteMarker: vi.fn(),
+    upsertDrawing: vi.fn(),
+    getDrawing: vi.fn(),
+    listDrawings: vi.fn(),
+    deleteDrawing: vi.fn(),
+    getMission: vi.fn(),
+    listMissions: vi.fn(),
+    getActiveMission: vi.fn(),
+    getRecoverableMission: vi.fn(),
+    pauseMission: vi.fn(),
+    resumeMission: vi.fn(),
+    finishMission: vi.fn(),
+    syncBackup: vi.fn(),
+  }
+}
+
+function createBootstrapSettings(overrides?: Partial<{
+  autosaveEnabled: boolean
+  autosaveIntervalMs: number
+  trackingPollIntervalMs: number
+  trackingCacheEnabled: boolean
+}>){
+  return {
+    autosaveEnabled: true,
+    autosaveIntervalMs: 45_000,
+    trackingPollIntervalMs: 60_000,
+    trackingCacheEnabled: false,
+    trackingConfig: {
+      baseUrl: 'https://traccar.example.com',
+      email: 'ops@example.com',
+      password: 'secret',
+    },
+    ...overrides,
+  }
+}

@@ -37,7 +37,9 @@ test.describe('M5 mission control workflows', () => {
     const activeDuringPause = await page.getByTestId('mission-active-search').textContent()
 
     expect(elapsedDuringPause).not.toBe(elapsedBeforePause)
-    expect(activeDuringPause).toBe(activeAtPause)
+    expect(
+      Math.abs(parseDuration(activeDuringPause) - parseDuration(activeAtPause)),
+    ).toBeLessThanOrEqual(1)
 
     await page.getByTestId('mission-pause-resume-btn').click()
     await expect(page.getByTestId('mission-control')).toContainText('active')

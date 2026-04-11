@@ -1677,6 +1677,41 @@ impl MissionStore {
         .map_err(|error| format!("Failed to read saved layer catalog entry: {error}"))
     }
 
+    pub async fn clear_layer_catalog_entries(&self, mission_id: String) -> Result<(), String> {
+        self.ensure_mission_mutable(&mission_id).await?;
+        self.get_mission(mission_id.clone()).await?;
+
+        let mut tx = self
+            .pool
+            .begin()
+            .await
+            .map_err(|error| format!("Failed to start layer catalog repair transaction: {error}"))?;
+
+        sqlx::query("DELETE FROM layer_catalog_entries WHERE mission_id = ?")
+            .bind(&mission_id)
+            .execute(&mut *tx)
+            .await
+            .map_err(|error| format!("Failed to clear layer catalog entries: {error}"))?;
+
+        Self::insert_event(
+            &mut *tx,
+            &mission_id,
+            "layer_catalog_repaired",
+            &Utc::now().to_rfc3339(),
+            Some(&serde_json::json!({
+                "action": "reset_metadata",
+                "mission_id": mission_id,
+            })),
+        )
+        .await?;
+
+        tx.commit()
+            .await
+            .map_err(|error| format!("Failed to commit layer catalog repair: {error}"))?;
+
+        Ok(())
+    }
+
     pub async fn get_mission(&self, mission_id: String) -> Result<Mission, String> {
         sqlx::query_as::<_, Mission>(
             r#"
@@ -2322,6 +2357,14 @@ pub async fn upsert_layer_catalog_entry(
     store: State<'_, MissionStoreState>,
 ) -> Result<LayerCatalogEntry, String> {
     store.0.upsert_layer_catalog_entry(input).await
+}
+
+#[tauri::command]
+pub async fn clear_layer_catalog_entries(
+    mission_id: String,
+    store: State<'_, MissionStoreState>,
+) -> Result<(), String> {
+    store.0.clear_layer_catalog_entries(mission_id).await
 }
 
 #[tauri::command]
@@ -3461,6 +3504,31 @@ mod tests {
         assert_eq!(updated.alias.as_deref(), Some("Alpha Updated"));
         assert!(updated.is_visible);
         assert_eq!(updated.display_order, 1);
+
+        store
+            .clear_layer_catalog_entries(mission.id.clone())
+            .await
+            .expect("catalog repair should succeed");
+
+        let repaired_entries = store
+            .list_layer_catalog_entries(mission.id.clone())
+            .await
+            .expect("entries should list after repair");
+        assert!(repaired_entries.is_empty());
+
+        let repair_event = store
+            .list_mission_events(mission.id)
+            .await
+            .expect("events should list")
+            .into_iter()
+            .find(|event| event.event_type == "layer_catalog_repaired")
+            .expect("repair event should exist");
+        assert!(
+            repair_event
+                .details_json
+                .unwrap_or_default()
+                .contains("reset_metadata")
+        );
     }
 
     #[tokio::test]

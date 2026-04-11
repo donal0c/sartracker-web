@@ -46,6 +46,7 @@ describe('tauri layer catalog store adapter', () => {
       metadata_json: null,
       updated_at: '2026-04-10T10:05:00.000Z',
     })
+    invokeMock.mockResolvedValueOnce(undefined)
 
     const store = createTauriLayerCatalogStore()
 
@@ -86,6 +87,8 @@ describe('tauri layer catalog store adapter', () => {
       updatedAt: '2026-04-10T10:05:00.000Z',
     })
 
+    await expect(store.clearMetadata('mission-1')).resolves.toBeUndefined()
+
     expect(invokeMock).toHaveBeenNthCalledWith(1, 'list_layer_catalog_entries', {
       missionId: 'mission-1',
     })
@@ -101,6 +104,9 @@ describe('tauri layer catalog store adapter', () => {
         display_order: 2,
         metadata_json: null,
       },
+    })
+    expect(invokeMock).toHaveBeenNthCalledWith(3, 'clear_layer_catalog_entries', {
+      missionId: 'mission-1',
     })
   })
 })
