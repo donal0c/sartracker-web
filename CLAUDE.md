@@ -4,28 +4,80 @@
 
 This application is used by Kerry Mountain Rescue Team during real search and rescue operations. Incorrect coordinates, broken tracking, or data loss could endanger lives. Treat every change with the seriousness that demands.
 
+This repo should feel like mission software, not a prototype. The standard is not merely "works on my machine" or "passes the tests." The target is software that is calm, explicit, trustworthy, and unusually well-structured under pressure.
+
+The quality bar here is intentionally very high:
+- operator-facing behavior should feel reliable and unsurprising
+- safety-critical logic should be easy to inspect and hard to misuse
+- tests should give real confidence, not just coverage numbers
+- architecture should get cleaner as the project grows, not noisier
+- every meaningful change should leave the codebase in a better state than it found it
+
+Aim for work that feels closer to a 9.5-10/10 engineering result than a fast acceptable patch. Favor clarity, explicitness, and durable structure over cleverness or speed.
+
 ## Before You Start
 
 1. **Read this file completely**
-2. **Read AGENTS.md** for project context and architecture
-3. **Read handoff/HANDOFF.md** for the current state and what was last done
-4. **Read the relevant bead** for whatever you're working on (`bd list`, `bd show <id>`)
+2. **Read `handoff/HANDOFF.md` immediately after this file**
+3. **Read the relevant bead** for whatever you're working on (`bd list`, `bd show <id>`)
 
-### Hands-Off Handoff Protocol (required)
+## Project Intent
 
-Use these exact phrases every time you want to trigger either assistant:
-- `Read what Codex has said`
-- `Read what Claude has said`
+This project exists to replace a legacy QGIS SAR workflow with a standalone application that operators can trust during real incidents.
 
-Behavior:
-- `Read what Codex has said` means read and act on:
-  - `handoff/messages/TO_CLAUDE_FROM_CODEX.md`
-- `Read what Claude has said` means read and act on:
-  - `handoff/messages/TO_CODEX_FROM_CLAUDE.md`
+That means a fresh agent should assume:
+- correctness matters more than speed
+- maintainability matters because many future beads will build on today's boundaries
+- ambiguity in safety-critical behavior should be surfaced, not silently coded through
+- "good enough for now" is usually the wrong tradeoff here
 
-No file paths or extra prompts are needed in the handoff message.
+When in doubt, prefer the option that makes the system more understandable, more testable, and more resilient for the next person who has to extend it.
 
-`handoff/HANDOFF.md` is the shared continuity document between Donal, Codex, and Claude Code. If there is any mismatch between older planning docs and the current implementation state, follow the handoff file and update stale docs as part of the work.
+### Handoff Protocol (required)
+
+`AGENTS.md` is a symlink to this file. There is only one instruction file.
+
+`handoff/HANDOFF.md` is the single continuity document for this repo.
+
+That means:
+- do not rely on agent-to-agent packet files
+- do not create new Codex/Claude baton-passing files
+- do not keep separate status notes elsewhere when the information belongs in `handoff/HANDOFF.md`
+- if an older planning doc disagrees with `handoff/HANDOFF.md`, treat the handoff file as the current operating truth until the docs are reconciled
+
+Every agent must be able to resume the project by reading only:
+1. `CLAUDE.md`
+2. `handoff/HANDOFF.md`
+3. the relevant bead(s)
+
+When you finish a chunk of work, update `handoff/HANDOFF.md` so the next agent can continue without reconstructing context from commit history, old chat context, or deleted packet files.
+
+### Handoff Etiquette (required)
+
+`handoff/HANDOFF.md` must stay short and operational.
+
+It should contain only:
+- current state
+- active work
+- open beads that matter now
+- known parity gaps
+- next actions
+- a short verification snapshot
+- a pointer to archived history when needed
+
+Do not use `handoff/HANDOFF.md` for:
+- long chronological diaries
+- speculative improvement lists
+- duplicate copies of bead details
+- duplicate copies of parity matrices
+
+Use these locations instead:
+- beads: tracked feature / bug / hardening work
+- `docs/areas-to-investigate.md`: rolling improvement queue and fixed improvement-mode prompt
+- parity docs: row-level parity evidence
+- `handoff/archive/`: older detailed history
+
+If you make `HANDOFF.md` materially longer, compress it before finishing.
 
 ### When We Involve Claude (required)
 
@@ -39,12 +91,11 @@ Use Claude for each batch at the end, after tests and docs are updated.
 
 For each batch, after completing work:
 1. update `handoff/HANDOFF.md`,
-2. update the relevant packet files,
+2. update the relevant bead(s),
 3. run the verification suite,
-4. update packet to say "ready for Claude validation" and what to check.
+4. record exactly what was verified, what remains open, and what Claude should validate next directly in `handoff/HANDOFF.md`.
 
-After that handoff, we do:
-- `Read what Claude has said` (next agent picks up, validates, and either clears the batch or adds follow-up gaps).
+There is no separate packet layer. The handoff file must contain the current baton state.
 
 ## After Every Chunk of Work
 
@@ -97,6 +148,11 @@ This repo should be biased toward code that is unusually clean, explicit, and re
 - Before adding new code, check whether the right move is to extract, rename, or simplify existing code first
 - Do not leave behind “we can clean this up later” structure in safety-critical or high-churn areas
 - If a warning, rough edge, or weak boundary is discovered during a bead, either fix it in that bead or record a specific reason it is being deferred
+
+Think in terms of craft, not just delivery:
+- the next agent should be able to understand the change quickly
+- the next bead should be easier because of this bead, not harder
+- the safest design is usually the one with the clearest boundaries and the least hidden behavior
 
 ### Anti-Sprawl Rules
 - Do not let React components become orchestration blobs
