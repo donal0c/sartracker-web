@@ -5,6 +5,7 @@ import type { HoverCoordinate } from './use-map-instance'
 import { useMapInstance } from './use-map-instance'
 import { useMapDrawingInteractions } from './use-map-drawing-interactions'
 import { useMapDrawingOverlays } from './use-map-drawing-overlays'
+import { useMapGpxOverlays } from './use-map-gpx-overlays'
 import { useMapMeasurementInteractions } from './use-map-measurement-interactions'
 import { useMapMeasurementOverlays } from './use-map-measurement-overlays'
 import { useMapMarkerInteractions } from './use-map-marker-interactions'
@@ -29,14 +30,22 @@ export function useMapController(): MapController {
   useMapOverlays({
     activeBasemapId: mapInstance.activeBasemapId,
     mapRef: mapInstance.mapRef,
+    mapReadyVersion: mapInstance.mapReadyVersion,
   })
   useMapDrawingOverlays({
     activeBasemapId: mapInstance.activeBasemapId,
     mapRef: mapInstance.mapRef,
+    mapReadyVersion: mapInstance.mapReadyVersion,
+  })
+  useMapGpxOverlays({
+    activeBasemapId: mapInstance.activeBasemapId,
+    mapRef: mapInstance.mapRef,
+    mapReadyVersion: mapInstance.mapReadyVersion,
   })
   useMapMeasurementOverlays({
     activeBasemapId: mapInstance.activeBasemapId,
     mapRef: mapInstance.mapRef,
+    mapReadyVersion: mapInstance.mapReadyVersion,
   })
   useMapDrawingInteractions({
     containerRef: mapInstance.containerRef,

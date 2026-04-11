@@ -290,7 +290,10 @@ impl SettingsStore {
         self.to_view(&next)
     }
 
-    pub fn runtime_bootstrap(&self, force_connect: bool) -> Result<RuntimeBootstrapSettings, String> {
+    pub fn runtime_bootstrap(
+        &self,
+        force_connect: bool,
+    ) -> Result<RuntimeBootstrapSettings, String> {
         let persisted = self
             .persisted
             .lock()
@@ -298,7 +301,8 @@ impl SettingsStore {
             .clone();
 
         let secret = self.read_current_secret(&persisted.data_source.auth_mode)?;
-        let should_connect = persisted.data_source.provider_type == TrackingProviderType::TraccarHttp
+        let should_connect = persisted.data_source.provider_type
+            == TrackingProviderType::TraccarHttp
             && persisted.mission_defaults.auto_refresh_enabled
             && (force_connect || persisted.data_source.auto_connect)
             && secret.is_some();
@@ -306,7 +310,8 @@ impl SettingsStore {
         Ok(RuntimeBootstrapSettings {
             autosave_enabled: persisted.mission_defaults.auto_save_enabled,
             autosave_interval_ms: persisted.mission_defaults.auto_save_interval_seconds * 1000,
-            tracking_poll_interval_ms: persisted.mission_defaults.auto_refresh_interval_seconds * 1000,
+            tracking_poll_interval_ms: persisted.mission_defaults.auto_refresh_interval_seconds
+                * 1000,
             tracking_cache_enabled: persisted.data_source.tracking_cache_enabled,
             tracking_config: if should_connect {
                 Some(match persisted.data_source.auth_mode {
@@ -329,7 +334,10 @@ impl SettingsStore {
         })
     }
 
-    pub async fn test_connection(&self, draft: AppSettingsDraft) -> Result<TestConnectionResult, String> {
+    pub async fn test_connection(
+        &self,
+        draft: AppSettingsDraft,
+    ) -> Result<TestConnectionResult, String> {
         let existing_secret_present = self
             .read_current_secret(&draft.data_source.auth_mode)?
             .is_some();
@@ -353,7 +361,9 @@ impl SettingsStore {
         let Some(secret_value) = secret else {
             return Ok(TestConnectionResult {
                 ok: false,
-                message: String::from("A provider secret is required before testing the connection."),
+                message: String::from(
+                    "A provider secret is required before testing the connection.",
+                ),
             });
         };
 
@@ -361,7 +371,12 @@ impl SettingsStore {
             .cookie_store(true)
             .build()
             .map_err(|error| format!("Failed to build HTTP client: {error}"))?;
-        let base_url = draft.data_source.base_url.trim().trim_end_matches('/').to_string();
+        let base_url = draft
+            .data_source
+            .base_url
+            .trim()
+            .trim_end_matches('/')
+            .to_string();
 
         match draft.data_source.auth_mode {
             TrackingAuthMode::Basic => {
@@ -553,7 +568,10 @@ fn normalize_roster(values: Vec<String>) -> Vec<String> {
             continue;
         }
 
-        if !normalized.iter().any(|existing: &String| existing == trimmed) {
+        if !normalized
+            .iter()
+            .any(|existing: &String| existing == trimmed)
+        {
             normalized.push(trimmed.to_string());
         }
     }
@@ -583,8 +601,7 @@ fn validate_settings_draft(
     existing_secret_present: bool,
 ) -> Result<(), String> {
     let defaults = &draft.mission_defaults;
-    if defaults.auto_refresh_interval_seconds < 5 || defaults.auto_refresh_interval_seconds > 3600
-    {
+    if defaults.auto_refresh_interval_seconds < 5 || defaults.auto_refresh_interval_seconds > 3600 {
         return Err(String::from(
             "Auto-refresh interval must be between 5 and 3600 seconds.",
         ));
@@ -597,7 +614,8 @@ fn validate_settings_draft(
     }
 
     let data_source = &draft.data_source;
-    if data_source.provider_type != TrackingProviderType::TraccarHttp && data_source.replay_enabled {
+    if data_source.provider_type != TrackingProviderType::TraccarHttp && data_source.replay_enabled
+    {
         return Err(String::from(
             "Replay defaults are only available for the Traccar HTTP provider.",
         ));
@@ -624,7 +642,9 @@ fn validate_settings_draft(
 
         if data_source.replay_enabled {
             if data_source.replay_duration_hours < 1 || data_source.replay_duration_hours > 24 {
-                return Err(String::from("Replay duration must be between 1 and 24 hours."));
+                return Err(String::from(
+                    "Replay duration must be between 1 and 24 hours.",
+                ));
             }
 
             if data_source.replay_start.trim().is_empty() {
@@ -633,8 +653,11 @@ fn validate_settings_draft(
                 ));
             }
 
-            chrono::NaiveDateTime::parse_from_str(data_source.replay_start.trim(), "%Y-%m-%dT%H:%M")
-                .map_err(|error| format!("Replay start must be a valid local datetime: {error}"))?;
+            chrono::NaiveDateTime::parse_from_str(
+                data_source.replay_start.trim(),
+                "%Y-%m-%dT%H:%M",
+            )
+            .map_err(|error| format!("Replay start must be a valid local datetime: {error}"))?;
         }
     }
 
@@ -644,7 +667,10 @@ fn validate_settings_draft(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::{collections::HashMap, time::{SystemTime, UNIX_EPOCH}};
+    use std::{
+        collections::HashMap,
+        time::{SystemTime, UNIX_EPOCH},
+    };
 
     #[derive(Default)]
     struct MemorySecretStore {

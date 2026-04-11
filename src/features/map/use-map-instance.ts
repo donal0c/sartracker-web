@@ -28,6 +28,7 @@ export type MapInstanceController = {
   readonly hoverCoordinate: HoverCoordinate
   readonly mapHealth: MapHealth
   readonly mapRef: RefObject<maplibregl.Map | null>
+  readonly mapReadyVersion: number
   readonly handleBasemapChange: (nextBasemapId: BasemapId) => void
 }
 
@@ -44,6 +45,7 @@ export function useMapInstance(): MapInstanceController {
   const previousBasemapIdRef = useRef<BasemapId | null>(null)
   const activeBasemapIdRef = useRef<BasemapId>(initialBasemapId)
   const [activeBasemapId, setActiveBasemapId] = useState<BasemapId>(initialBasemapId)
+  const [mapReadyVersion, setMapReadyVersion] = useState(0)
   const [hoverCoordinate, setHoverCoordinate] = useState<HoverCoordinate>(EMPTY_HOVER_COORDINATE)
   const [mapHealth, setMapHealth] = useState<MapHealth>(() =>
     createLoadingMapHealth(getBasemapById(initialBasemapId).label),
@@ -117,6 +119,9 @@ export function useMapInstance(): MapInstanceController {
     })
 
     mapRef.current = map
+    window.setTimeout(() => {
+      setMapReadyVersion((version) => version + 1)
+    }, 0)
     if (typeof window !== 'undefined') {
       ;(window as Window & { __SARTRACKER_MAP__?: maplibregl.Map }).__SARTRACKER_MAP__ = map
     }
@@ -149,6 +154,7 @@ export function useMapInstance(): MapInstanceController {
     hoverCoordinate,
     mapHealth,
     mapRef,
+    mapReadyVersion,
     handleBasemapChange,
   }
 }

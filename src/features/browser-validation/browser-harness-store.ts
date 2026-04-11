@@ -4,6 +4,7 @@ import type {
   Device,
   Drawing,
   FinalizeMissionResult,
+  GpxTrackImport,
   Marker,
   Mission,
   MissionEvent,
@@ -13,6 +14,7 @@ import type {
   UnlockFinalizedMissionInput,
   UpsertDeviceInput,
   UpsertDrawingInput,
+  UpsertGpxTrackImportInput,
   UpsertMarkerInput,
 } from '../../infrastructure/mission-store/tauri-mission-store'
 
@@ -22,6 +24,7 @@ type BrowserHarnessState = {
   readonly positions: readonly Position[]
   readonly markers: readonly Marker[]
   readonly drawings: readonly Drawing[]
+  readonly gpxImports: readonly GpxTrackImport[]
   readonly missionEvents: readonly MissionEvent[]
   readonly openedPaths: readonly string[]
   readonly currentMissionId: string | null
@@ -56,6 +59,9 @@ type BrowserHarnessStore = {
   readonly listDrawings: (missionId: string) => Promise<readonly Drawing[]>
   readonly upsertDrawing: (input: UpsertDrawingInput) => Promise<Drawing>
   readonly deleteDrawing: (drawingId: string) => Promise<boolean>
+  readonly listGpxImports: (missionId: string) => Promise<readonly GpxTrackImport[]>
+  readonly upsertGpxImport: (input: UpsertGpxTrackImportInput) => Promise<GpxTrackImport>
+  readonly deleteGpxImport: (importId: string) => Promise<boolean>
 }
 
 let browserHarnessStore: BrowserHarnessStore | null = null
@@ -587,6 +593,75 @@ export function getBrowserHarnessStore(): BrowserHarnessStore {
       save()
       return true
     },
+    listGpxImports: async (missionId) =>
+      state.gpxImports
+        .filter((entry) => entry.mission_id === missionId)
+        .sort((left, right) => left.display_name.localeCompare(right.display_name)),
+    upsertGpxImport: async (input) => {
+      ensureMissionMutable(input.mission_id, state.missions)
+      const existingImport =
+        state.gpxImports.find(
+          (entry) =>
+            entry.mission_id === input.mission_id && entry.source_path === input.source_path,
+        ) ?? null
+      const now = new Date().toISOString()
+      const gpxImport = {
+        id: existingImport?.id ?? input.id ?? createId('gpx'),
+        mission_id: input.mission_id,
+        source_path: input.source_path,
+        file_name: input.file_name,
+        display_name: input.display_name,
+        geometry_json: input.geometry_json,
+        metadata_json: input.metadata_json ?? null,
+        imported_at: existingImport?.imported_at ?? now,
+        updated_at: now,
+      } satisfies GpxTrackImport
+
+      state = {
+        ...state,
+        gpxImports: upsertGpxImport(state.gpxImports, gpxImport),
+        missionEvents: appendEvent(
+          state.missionEvents,
+          input.mission_id,
+          existingImport === null ? 'gpx_import_created' : 'gpx_import_updated',
+          now,
+          {
+            gpx_import_id: gpxImport.id,
+            source_path: gpxImport.source_path,
+            file_name: gpxImport.file_name,
+            display_name: gpxImport.display_name,
+          },
+        ),
+      }
+      save()
+      return gpxImport
+    },
+    deleteGpxImport: async (importId) => {
+      const gpxImport = state.gpxImports.find((candidate) => candidate.id === importId)
+      if (gpxImport === undefined) {
+        return false
+      }
+
+      ensureMissionMutable(gpxImport.mission_id, state.missions)
+      state = {
+        ...state,
+        gpxImports: state.gpxImports.filter((entry) => entry.id !== importId),
+        missionEvents: appendEvent(
+          state.missionEvents,
+          gpxImport.mission_id,
+          'gpx_import_deleted',
+          new Date().toISOString(),
+          {
+            gpx_import_id: gpxImport.id,
+            source_path: gpxImport.source_path,
+            file_name: gpxImport.file_name,
+            display_name: gpxImport.display_name,
+          },
+        ),
+      }
+      save()
+      return true
+    },
   }
 
   return browserHarnessStore
@@ -612,6 +687,7 @@ function readHarnessState(): BrowserHarnessState {
       positions: [],
       markers: [],
       drawings: [],
+      gpxImports: [],
       missionEvents: [],
       openedPaths: [],
       currentMissionId: null,
@@ -627,6 +703,7 @@ function readHarnessState(): BrowserHarnessState {
       positions: [],
       markers: [],
       drawings: [],
+      gpxImports: [],
       missionEvents: [],
       openedPaths: [],
       currentMissionId: null,
@@ -642,6 +719,7 @@ function readHarnessState(): BrowserHarnessState {
       positions: Array.isArray(parsed.positions) ? parsed.positions : [],
       markers: Array.isArray(parsed.markers) ? parsed.markers : [],
       drawings: Array.isArray(parsed.drawings) ? parsed.drawings : [],
+      gpxImports: Array.isArray(parsed.gpxImports) ? parsed.gpxImports : [],
       missionEvents: Array.isArray(parsed.missionEvents) ? parsed.missionEvents : [],
       openedPaths: Array.isArray(parsed.openedPaths) ? parsed.openedPaths : [],
       currentMissionId:
@@ -656,6 +734,7 @@ function readHarnessState(): BrowserHarnessState {
       positions: [],
       markers: [],
       drawings: [],
+      gpxImports: [],
       missionEvents: [],
       openedPaths: [],
       currentMissionId: null,
@@ -781,6 +860,20 @@ function upsertDrawing(drawings: readonly Drawing[], drawing: Drawing): readonly
   }
 
   return drawings.map((candidate) => (candidate.id === drawing.id ? drawing : candidate))
+}
+
+function upsertGpxImport(
+  gpxImports: readonly GpxTrackImport[],
+  gpxImport: GpxTrackImport,
+): readonly GpxTrackImport[] {
+  const existingIndex = gpxImports.findIndex((candidate) => candidate.id === gpxImport.id)
+  if (existingIndex === -1) {
+    return [...gpxImports, gpxImport]
+  }
+
+  return gpxImports.map((candidate) =>
+    candidate.id === gpxImport.id ? gpxImport : candidate,
+  )
 }
 
 function appendEvent(

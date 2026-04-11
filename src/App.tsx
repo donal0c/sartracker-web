@@ -6,6 +6,7 @@ import { DiagnosticsWorkspace } from './components/diagnostics-workspace'
 import { DrawingDialog } from './components/drawing-dialog'
 import { CoordinateConverterDialog } from './components/coordinate-converter-dialog'
 import { DevicesWorkspace } from './components/devices-workspace'
+import { GpxImportPanel } from './components/gpx-import-panel'
 import { LayerFilterPanel } from './components/layer-filter-panel'
 import { MissionReviewWorkspace } from './components/mission-review-workspace'
 import { LayerCatalogRuntimeBridge } from './features/layers/layer-catalog-runtime-bridge'
@@ -19,6 +20,7 @@ import { MissionReviewRuntimeBridge } from './features/mission-review/mission-re
 import { TrackingStatusPanel } from './components/tracking-status-panel'
 import { SettingsWorkspace } from './components/settings-workspace'
 import { useDiagnosticsWorkspaceStore } from './features/diagnostics/diagnostics-workspace-store'
+import { GpxRuntimeBridge } from './features/gpx/gpx-runtime-bridge'
 
 const MapView = lazy(async () => {
   const module = await import('./components/map-view')
@@ -38,6 +40,7 @@ function App() {
     <main className="flex h-screen w-screen overflow-hidden bg-stone-950 text-stone-100">
       <DiagnosticsRuntimeBridge />
       <DrawingRuntimeBridge />
+      <GpxRuntimeBridge />
       <LayerCatalogRuntimeBridge />
       <MarkerRuntimeBridge />
       <MeasurementRuntimeBridge />
@@ -97,6 +100,7 @@ function App() {
         <div className="flex-1 space-y-6 px-6 py-8 overflow-y-auto">
           <MissionControlPanel />
           <TrackingStatusPanel />
+          <GpxImportPanel />
           <LayerFilterPanel />
           <MeasurementPanel />
           

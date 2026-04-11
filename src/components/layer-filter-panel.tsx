@@ -473,6 +473,13 @@ function buildInspectionRows(
         { label: 'Updated', value: node.entity.drawing.updated_at },
       ]
     }
+    if (node.entity?.type === 'gpx_import') {
+      return [
+        { label: 'Source Path', value: node.entity.gpxImport.source_path },
+        { label: 'File Name', value: node.entity.gpxImport.file_name },
+        { label: 'Imported', value: node.entity.gpxImport.imported_at },
+      ]
+    }
   }
 
   return [

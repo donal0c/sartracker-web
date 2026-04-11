@@ -34,6 +34,7 @@ describe('startLayerCatalogRuntime', () => {
       devices: [],
       markers: [createMarker()],
       drawings: [],
+      gpxImports: [],
     })
     await runtime.renameNode('feature:marker:marker-1', 'Primary clue')
 
@@ -79,6 +80,7 @@ describe('startLayerCatalogRuntime', () => {
       devices: [createDevice('alpha', 'Alpha Team'), createDevice('bravo', 'Bravo Team')],
       markers: [],
       drawings: [],
+      gpxImports: [],
     })
     await runtime.reorderNode('layer:tracking:devices', [
       'feature:device:bravo',

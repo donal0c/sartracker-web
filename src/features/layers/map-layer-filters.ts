@@ -76,3 +76,11 @@ export function buildDrawingLayerFilter(
 
   return filters.length === 1 ? filters[0]! : ['all', ...filters]
 }
+
+export function buildGpxLayerFilter(hiddenImportIds: readonly string[]): ExpressionSpecification | null {
+  if (hiddenImportIds.length === 0) {
+    return null
+  }
+
+  return ['!', ['in', ['get', 'gpxImportId'], ['literal', [...hiddenImportIds]]]]
+}

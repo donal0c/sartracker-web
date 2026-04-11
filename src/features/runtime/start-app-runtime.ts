@@ -4,10 +4,13 @@ import {
   createTauriMissionStore,
   type MissionStore,
 } from '../../infrastructure/mission-store/tauri-mission-store'
+import { createTauriGpxImportSource } from '../../infrastructure/gpx-import-source/tauri-gpx-import-source'
 import { ingestMarkerAttachment } from '../../infrastructure/marker-attachment-store/tauri-marker-attachment-store'
 import { loadRuntimeBootstrapSettings } from '../../infrastructure/settings-store/tauri-settings-store'
 import { registerServiceWorker } from '../../lib/register-service-worker'
 import { isTauriRuntimeAvailable } from '../../lib/tauri-runtime'
+import { applyGpxController, applyGpxRuntime } from '../gpx/gpx-store'
+import { startGpxRuntime } from '../gpx/start-gpx-runtime'
 import { applyMarkerController, applyMarkerRuntime } from '../markers/marker-store'
 import { startMarkerRuntime } from '../markers/start-marker-runtime'
 import {
@@ -68,6 +71,7 @@ type StartAppRuntimeDependencies = {
   readonly startMissionGovernanceRuntime: typeof startMissionGovernanceRuntime
   readonly startMarkerRuntime: typeof startMarkerRuntime
   readonly startDrawingRuntime: typeof startDrawingRuntime
+  readonly startGpxRuntime: typeof startGpxRuntime
   readonly startTrackingRuntime: typeof startTrackingRuntime
 }
 
@@ -81,6 +85,7 @@ const DEFAULT_DEPENDENCIES: StartAppRuntimeDependencies = {
   startMissionGovernanceRuntime,
   startMarkerRuntime,
   startDrawingRuntime,
+  startGpxRuntime,
   startTrackingRuntime,
 }
 
@@ -98,6 +103,7 @@ export async function startAppRuntime(
 
   const missionStore = dependencies.createMissionStore()
   const trackingMissionStore = missionStore as MissionStore & TrackingRuntimeMissionStore
+  const gpxImportSource = createTauriGpxImportSource()
   let activeServices = createNoopRuntimeServiceHandles()
   let reloadGeneration = 0
 
@@ -124,6 +130,12 @@ export async function startAppRuntime(
     applyRuntime: applyDrawingRuntime,
   })
   applyDrawingController(drawingRuntimeController)
+  const gpxRuntimeController = await dependencies.startGpxRuntime({
+    gpxStore: missionStore,
+    watchSource: gpxImportSource,
+    applyRuntime: applyGpxRuntime,
+  })
+  applyGpxController(gpxRuntimeController)
   await reloadSettings()
   return {
     reloadSettings,

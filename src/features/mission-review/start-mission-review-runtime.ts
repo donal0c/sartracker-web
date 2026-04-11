@@ -16,6 +16,7 @@ type MissionReviewStoreBoundary = Pick<
   | 'listDevices'
   | 'listPositions'
   | 'listDrawings'
+  | 'listGpxImports'
 >
 
 export type MissionReviewRuntimeState = {
@@ -99,7 +100,7 @@ export async function startMissionReviewRuntime(
         return
       }
 
-      const [info, events, markers, devices, positions, drawings, layerMetadata] =
+      const [info, events, markers, devices, positions, drawings, gpxImports, layerMetadata] =
         await Promise.all([
           dependencies.missionStore.info(),
           dependencies.missionStore.listMissionEvents(selectedMission.id),
@@ -107,6 +108,7 @@ export async function startMissionReviewRuntime(
           dependencies.missionStore.listDevices(selectedMission.id),
           dependencies.missionStore.listPositions(selectedMission.id),
           dependencies.missionStore.listDrawings(selectedMission.id),
+          dependencies.missionStore.listGpxImports(selectedMission.id),
           dependencies.layerCatalogStore.listMetadata(selectedMission.id),
         ])
 
@@ -121,6 +123,7 @@ export async function startMissionReviewRuntime(
           devices,
           positions,
           drawings,
+          gpxImports,
           layerMetadata,
         }),
         loading: false,

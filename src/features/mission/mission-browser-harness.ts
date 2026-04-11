@@ -4,6 +4,8 @@ import type {
 import { applyDrawingController, applyDrawingRuntime } from '../drawings/drawing-store'
 import { startDrawingRuntime } from '../drawings/start-drawing-runtime'
 import { getBrowserHarnessStore } from '../browser-validation/browser-harness-store'
+import { applyGpxController, applyGpxRuntime } from '../gpx/gpx-store'
+import { startGpxRuntime } from '../gpx/start-gpx-runtime'
 import { ingestMarkerAttachment } from '../../infrastructure/marker-attachment-store/tauri-marker-attachment-store'
 import {
   hydrateTrackingFromBrowserHarness,
@@ -79,6 +81,9 @@ export async function startMissionBrowserHarness(): Promise<void> {
     | 'listDrawings'
     | 'upsertDrawing'
     | 'deleteDrawing'
+    | 'listGpxImports'
+    | 'upsertGpxImport'
+    | 'deleteGpxImport'
   >
   const controller = await startMissionRuntime({
     missionStore: browserStore,
@@ -105,6 +110,11 @@ export async function startMissionBrowserHarness(): Promise<void> {
     applyRuntime: applyDrawingRuntime,
   })
   applyDrawingController(drawingController)
+  const gpxController = await startGpxRuntime({
+    gpxStore: browserStore,
+    applyRuntime: applyGpxRuntime,
+  })
+  applyGpxController(gpxController)
 
   await hydrateTrackingFromBrowserHarness()
 

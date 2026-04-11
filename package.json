@@ -19,6 +19,7 @@
   },
   "dependencies": {
     "@tauri-apps/api": "^2.10.1",
+    "@tauri-apps/plugin-dialog": "^2.4.0",
     "@tauri-apps/plugin-sql": "^2.4.0",
     "@turf/turf": "^7.3.4",
     "maplibre-gl": "^5.22.0",

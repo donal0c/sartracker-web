@@ -249,6 +249,7 @@ function MissionDetailsTab(props: {
         <SummaryCard label="Markers" value={String(props.summary.markerCount)} />
         <SummaryCard label="Devices" value={String(props.summary.trackingDeviceCount)} />
         <SummaryCard label="Breadcrumbs" value={String(props.summary.breadcrumbCount)} />
+        <SummaryCard label="GPX Imports" value={String(props.summary.gpxImportCount)} />
       </div>
 
       <div className="grid gap-5 lg:grid-cols-[minmax(0,1.2fr)_minmax(22rem,0.8fr)]">
@@ -266,6 +267,7 @@ function MissionDetailsTab(props: {
             <DetailRow label="Layer Count" value={String(props.summary.layerCount)} />
             <DetailRow label="Feature Count" value={String(props.summary.featureCount)} />
             <DetailRow label="Drawing Count" value={String(props.summary.drawingCount)} />
+            <DetailRow label="GPX Imports" value={String(props.summary.gpxImportCount)} />
             <DetailRow label="Event Count" value={String(props.summary.eventCount)} />
           </dl>
           <div className="mt-4 rounded-xl border border-stone-800 bg-stone-950/40 p-4">

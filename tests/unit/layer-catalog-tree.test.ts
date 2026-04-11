@@ -45,6 +45,7 @@ function createRoot() {
     devices: [createDevice('alpha', 'Alpha Team'), createDevice('bravo', 'Bravo Team')],
     markers: [createMarker()],
     drawings: [createDrawing()],
+    gpxImports: [],
     metadataEntries: [],
   })
 }

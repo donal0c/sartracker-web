@@ -1575,3 +1575,50 @@ bd list
   - `npm run test` ✅
   - `npm run build` ✅
   - `npx playwright test tests/e2e/settings.spec.ts tests/e2e/diagnostics.spec.ts tests/e2e/full-mission-flow.spec.ts` ✅
+
+### 2026-04-11 M22 GPX import/watch parity completed
+- Added a first-class GPX feature slice instead of overloading drawings:
+  - `src/features/gpx/gpx-parser.ts`
+  - `src/features/gpx/start-gpx-runtime.ts`
+  - `src/features/gpx/gpx-store.ts`
+  - `src/features/gpx/gpx-runtime-bridge.tsx`
+  - `src/features/gpx/gpx-geojson.ts`
+  - `src/features/gpx/sync-gpx-overlay.ts`
+- Added desktop GPX ingest infrastructure with native dialog support and thin file-system commands:
+  - `src/infrastructure/gpx-import-source/tauri-gpx-import-source.ts`
+  - `src-tauri/src/gpx.rs`
+  - `@tauri-apps/plugin-dialog` / `tauri-plugin-dialog`
+- Extended the mission store with persisted GPX imports and audit events:
+  - `src/infrastructure/mission-store/tauri-mission-store.ts`
+  - `src-tauri/src/persistence.rs`
+  - `src-tauri/src/lib.rs`
+- Delivered plugin-parity GPX workflows:
+  - one-off GPX file import
+  - folder import
+  - watched-folder import with immediate initial ingest and rescan support
+  - duplicate suppression by source path
+  - one dynamic layer per GPX file under the top-level `GPX Tracks` group
+- Wired GPX through operator-facing surfaces:
+  - `src/components/gpx-import-panel.tsx`
+  - `src/App.tsx`
+  - layer catalog and visibility integration in `src/features/layers/*`
+  - mission review summary/event support in `src/features/mission-review/*`
+  - browser harness/runtime parity in `src/features/browser-validation/*` and `src/features/mission/mission-browser-harness.ts`
+- Hardened map overlay startup timing:
+  - added `src/features/map/map-style-sync.ts`
+  - overlay hooks now retry until the style is actually ready so early-arriving mission data is not silently dropped during initial map boot
+  - this fixed a real GPX rendering race and improves the shared overlay path beyond M22
+- Added/updated coverage:
+  - `tests/unit/gpx-parser.test.ts`
+  - `tests/unit/start-gpx-runtime.test.ts`
+  - `tests/unit/browser-harness-store.test.ts`
+  - layer catalog runtime/tree tests updated for GPX-aware inputs
+  - `tests/e2e/gpx-import.spec.ts`
+- Verification completed:
+  - `npm run lint` ✅
+  - `npm run build` ✅
+  - `npm run test -- tests/unit/gpx-parser.test.ts tests/unit/start-gpx-runtime.test.ts tests/unit/layer-catalog-builder.test.ts tests/unit/start-layer-catalog-runtime.test.ts tests/unit/layer-catalog-tree.test.ts tests/unit/browser-harness-store.test.ts` ✅
+  - `cargo test --manifest-path src-tauri/Cargo.toml` ✅
+  - `npx playwright test tests/e2e/map.spec.ts tests/e2e/layer-panel.spec.ts tests/e2e/mission-review.spec.ts tests/e2e/gpx-import.spec.ts` ✅
+- Bead status:
+  - `sartracker-web-2jk.11` ready to close as complete

@@ -1,6 +1,7 @@
 import type {
   Device,
   Drawing,
+  GpxTrackImport,
   Marker,
   Mission,
   MissionEvent,
@@ -30,6 +31,7 @@ export type MissionReviewSummary = {
   readonly trackingDeviceCount: number
   readonly breadcrumbCount: number
   readonly eventCount: number
+  readonly gpxImportCount: number
 }
 
 export type MissionReviewEventRow = {
@@ -71,6 +73,7 @@ type BuildMissionReviewSnapshotInput = {
   readonly devices: readonly Device[]
   readonly positions: readonly Position[]
   readonly drawings: readonly Drawing[]
+  readonly gpxImports: readonly GpxTrackImport[]
   readonly layerMetadata: readonly LayerCatalogMetadataEntry[]
 }
 
@@ -82,6 +85,7 @@ export function buildMissionReviewSnapshot(
     devices: input.devices.map(normalizeReviewDevice),
     markers: input.markers,
     drawings: input.drawings.filter((drawing) => drawing.temporary_measure !== true),
+    gpxImports: input.gpxImports,
     metadataEntries: input.layerMetadata,
   })
   const layerCount = catalogRoot.children.reduce((count, group) => count + group.children.length, 0)
@@ -110,6 +114,7 @@ export function buildMissionReviewSnapshot(
       trackingDeviceCount: input.devices.length,
       breadcrumbCount: input.positions.length,
       eventCount: input.events.length,
+      gpxImportCount: input.gpxImports.length,
     },
     eventRows: input.events.map(buildEventRow),
     markerRows: input.markers.map((marker) => buildMarkerRow(marker, input.events)),
@@ -299,6 +304,9 @@ function describeMissionEvent(
   const attachmentPath = readString(details, 'attachment_path')
   const adminName = readString(details, 'admin_name')
   const reason = readString(details, 'reason')
+  const sourcePath = readString(details, 'source_path')
+  const fileName = readString(details, 'file_name')
+  const displayName = readString(details, 'display_name')
 
   switch (eventType) {
     case 'mission_created':
@@ -326,6 +334,17 @@ function describeMissionEvent(
         : `${drawingType ?? 'drawing'} saved as ${name}.`
     case 'drawing_deleted':
       return name === null ? 'Drawing deleted.' : `${drawingType ?? 'drawing'} ${name} deleted.`
+    case 'gpx_import_created':
+    case 'gpx_import_updated':
+      return [
+        displayName === null ? 'GPX import saved.' : `GPX import saved as ${displayName}.`,
+        fileName === null ? null : `File: ${fileName}.`,
+        sourcePath === null ? null : `Source: ${sourcePath}.`,
+      ]
+        .filter((value): value is string => value !== null)
+        .join(' ')
+    case 'gpx_import_deleted':
+      return displayName === null ? 'GPX import deleted.' : `GPX import ${displayName} deleted.`
     case 'mission_archived':
     case 'mission_archive_succeeded':
       return archivePath === null ? 'Mission archive created.' : `Archive created at ${archivePath}.`
@@ -391,4 +410,7 @@ const EVENT_TITLES: Record<
   mission_unlock_requested: { title: 'Unlock Requested', description: 'Unlock requested.' },
   mission_unlock_denied: { title: 'Unlock Denied', description: 'Unlock denied.' },
   mission_unlocked: { title: 'Mission Unlocked', description: 'Mission unlocked for correction.' },
+  gpx_import_created: { title: 'GPX Import Created', description: null },
+  gpx_import_updated: { title: 'GPX Import Updated', description: null },
+  gpx_import_deleted: { title: 'GPX Import Deleted', description: null },
 }

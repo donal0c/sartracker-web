@@ -1,6 +1,7 @@
 import { useEffect } from 'react'
 
 import { useDrawingStore } from '../drawings/drawing-store'
+import { useGpxStore } from '../gpx/gpx-store'
 import { createTauriLayerCatalogStore } from '../../infrastructure/layer-catalog-store/tauri-layer-catalog-store'
 import { useMarkerStore } from '../markers/marker-store'
 import { useMissionStore } from '../mission/mission-store'
@@ -20,6 +21,7 @@ export function LayerCatalogRuntimeBridge() {
   const devices = useTrackingStore((state) => state.snapshot.devices)
   const markers = useMarkerStore((state) => state.markers)
   const drawings = useDrawingStore((state) => state.drawings)
+  const gpxImports = useGpxStore((state) => state.imports)
   const hydrateCatalogVisibility = useLayerVisibilityStore(
     (state) => state.hydrateCatalogVisibility,
   )
@@ -54,8 +56,9 @@ export function LayerCatalogRuntimeBridge() {
       devices,
       markers,
       drawings,
+      gpxImports,
     })
-  }, [controller, devices, drawings, markers, missionId])
+  }, [controller, devices, drawings, gpxImports, markers, missionId])
 
   useEffect(() => {
     hydrateCatalogVisibility(root)

@@ -97,6 +97,28 @@ export type Drawing = {
   readonly updated_at: string
 }
 
+export type GpxTrackImport = {
+  readonly id: string
+  readonly mission_id: string
+  readonly source_path: string
+  readonly file_name: string
+  readonly display_name: string
+  readonly geometry_json: string
+  readonly metadata_json: string | null
+  readonly imported_at: string
+  readonly updated_at: string
+}
+
+export type UpsertGpxTrackImportInput = {
+  readonly id?: string | null
+  readonly mission_id: string
+  readonly source_path: string
+  readonly file_name: string
+  readonly display_name: string
+  readonly geometry_json: string
+  readonly metadata_json?: string | null
+}
+
 export type MissionStoreInfo = {
   readonly schema_version: number
   readonly database_path: string
@@ -222,6 +244,9 @@ export type MissionStore = {
   readonly getDrawing: (drawingId: string) => Promise<Drawing>
   readonly listDrawings: (missionId: string) => Promise<readonly Drawing[]>
   readonly deleteDrawing: (drawingId: string) => Promise<boolean>
+  readonly upsertGpxImport: (input: UpsertGpxTrackImportInput) => Promise<GpxTrackImport>
+  readonly listGpxImports: (missionId: string) => Promise<readonly GpxTrackImport[]>
+  readonly deleteGpxImport: (importId: string) => Promise<boolean>
   readonly getMission: (missionId: string) => Promise<Mission>
   readonly listMissions: () => Promise<readonly Mission[]>
   readonly getActiveMission: () => Promise<Mission | null>
@@ -258,6 +283,10 @@ export function createTauriMissionStore(): MissionStore {
     getDrawing: (drawingId) => invoke<Drawing>('get_drawing', { drawingId }),
     listDrawings: (missionId) => invoke<readonly Drawing[]>('list_drawings', { missionId }),
     deleteDrawing: (drawingId) => invoke<boolean>('delete_drawing', { drawingId }),
+    upsertGpxImport: (input) => invoke<GpxTrackImport>('upsert_gpx_import', { input }),
+    listGpxImports: (missionId) =>
+      invoke<readonly GpxTrackImport[]>('list_gpx_imports', { missionId }),
+    deleteGpxImport: (importId) => invoke<boolean>('delete_gpx_import', { importId }),
     getMission: (missionId) => invoke<Mission>('get_mission', { missionId }),
     listMissions: () => invoke<readonly Mission[]>('list_missions'),
     getActiveMission: () => invoke<Mission | null>('get_active_mission'),

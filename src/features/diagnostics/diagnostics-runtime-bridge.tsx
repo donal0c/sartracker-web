@@ -10,6 +10,7 @@ import { getDependencySmoke } from '../../lib/dependency-smoke'
 import { isTauriRuntimeAvailable } from '../../lib/tauri-runtime'
 import { useLayerCatalogStore } from '../layers/layer-catalog-store'
 import { useDrawingStore } from '../drawings/drawing-store'
+import { useGpxStore } from '../gpx/gpx-store'
 import { useMarkerStore } from '../markers/marker-store'
 import { useMissionStore } from '../mission/mission-store'
 import { useTrackingStore } from '../tracking/tracking-store'
@@ -81,6 +82,7 @@ export function DiagnosticsRuntimeBridge() {
           devices: useTrackingStore.getState().snapshot.devices,
           markers: useMarkerStore.getState().markers,
           drawings: useDrawingStore.getState().drawings,
+          gpxImports: useGpxStore.getState().imports,
         })
       },
       applyRuntime: applyDiagnosticsRuntime,

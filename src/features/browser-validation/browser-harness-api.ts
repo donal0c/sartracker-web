@@ -1,4 +1,5 @@
 import { applyTrackingSnapshot, applyTrackingStatus } from '../tracking/tracking-store'
+import { useGpxStore } from '../gpx/gpx-store'
 import type {
   TrackingConnectionStatus,
   TrackingSnapshot,
@@ -15,6 +16,13 @@ type BrowserHarnessApi = {
     status?: TrackingConnectionStatus,
   ) => Promise<void>
   readonly hydrateTracking: () => Promise<void>
+  readonly importGpxFiles: (
+    files: readonly {
+      readonly sourcePath: string
+      readonly fileName: string
+      readonly contents: string
+    }[],
+  ) => Promise<void>
   readonly readState: () => ReturnType<typeof readBrowserHarnessState>
   readonly reset: () => void
 }
@@ -87,6 +95,14 @@ export function installBrowserHarnessApi(): void {
       const snapshot = await createTrackingSnapshotFromHarness()
       applyTrackingSnapshot(snapshot)
       applyTrackingStatus(resolveHydratedStatus(snapshot))
+    },
+    importGpxFiles: async (files) => {
+      const controller = useGpxStore.getState().controller
+      if (controller === null) {
+        throw new Error('GPX runtime controller is unavailable.')
+      }
+
+      await controller.importFiles(files)
     },
     readState: () => readBrowserHarnessState(),
     reset: () => {

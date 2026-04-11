@@ -1,5 +1,6 @@
 import type {
   Drawing,
+  GpxTrackImport,
   Marker,
 } from '../../infrastructure/mission-store/tauri-mission-store'
 import type { NormalizedTrackingDevice } from '../tracking/tracking-types'
@@ -18,6 +19,8 @@ import {
   getDeviceFeatureNodeId,
   getDrawingFeatureNodeId,
   getDrawingLayerNodeId,
+  getGpxImportFeatureNodeId,
+  getGpxImportLayerNodeId,
   getMarkerFeatureNodeId,
   getMarkerLayerNodeId,
   GPX_TRACKS_GROUP_NODE_ID,
@@ -65,7 +68,6 @@ const LAYER_DEFINITIONS: readonly {
   { key: 'drawing_search_sector', id: getDrawingLayerNodeId('search_sector'), parentId: MAP_TOOLS_GROUP_NODE_ID, label: 'Search Sectors', displayOrder: 90 },
   { key: 'drawing_text_label', id: getDrawingLayerNodeId('text_label'), parentId: MAP_TOOLS_GROUP_NODE_ID, label: 'Text Labels', displayOrder: 100 },
   { key: 'measurement', id: MEASUREMENTS_LAYER_NODE_ID, parentId: MAP_TOOLS_GROUP_NODE_ID, label: 'Measurements', displayOrder: 110 },
-  { key: 'gpx_tracks', id: 'layer:gpx:tracks', parentId: GPX_TRACKS_GROUP_NODE_ID, label: 'Imported GPX Tracks', displayOrder: 10 },
 ]
 
 export function buildLayerCatalogTree(input: LayerCatalogBuildInput): LayerCatalogRootNode {
@@ -77,27 +79,30 @@ export function buildLayerCatalogTree(input: LayerCatalogBuildInput): LayerCatal
   addMarkerItems(featureItemsByLayer, input.markers, metadataIndex)
   addDrawingItems(featureItemsByLayer, input.drawings, metadataIndex)
 
-  const layers = LAYER_DEFINITIONS.map((layer) => {
-    const layerMetadata = metadataIndex.get(layer.id)
-    const children = [...(featureItemsByLayer.get(layer.id) ?? [])].sort(compareNodes)
-    return {
-      id: layer.id,
-      kind: 'layer',
-      layerKey: layer.key,
-      label: layer.label,
-      alias: layerMetadata?.alias ?? null,
-      displayLabel: layerMetadata?.alias?.trim() ? layerMetadata.alias : layer.label,
-      isFavorite: layerMetadata?.isFavorite ?? false,
-      isVisible: layerMetadata?.isVisible ?? true,
-      displayOrder: layerMetadata?.displayOrder ?? layer.displayOrder,
-      parentId: layer.parentId,
-      summary: {
-        totalCount: children.length,
-        visibleCount: children.filter((child) => child.isVisible).length,
-      },
-      children,
-    } satisfies LayerCatalogLayerNode
-  })
+  const layers = [
+    ...LAYER_DEFINITIONS.map((layer) => {
+      const layerMetadata = metadataIndex.get(layer.id)
+      const children = [...(featureItemsByLayer.get(layer.id) ?? [])].sort(compareNodes)
+      return {
+        id: layer.id,
+        kind: 'layer',
+        layerKey: layer.key,
+        label: layer.label,
+        alias: layerMetadata?.alias ?? null,
+        displayLabel: layerMetadata?.alias?.trim() ? layerMetadata.alias : layer.label,
+        isFavorite: layerMetadata?.isFavorite ?? false,
+        isVisible: layerMetadata?.isVisible ?? true,
+        displayOrder: layerMetadata?.displayOrder ?? layer.displayOrder,
+        parentId: layer.parentId,
+        summary: {
+          totalCount: children.length,
+          visibleCount: children.filter((child) => child.isVisible).length,
+        },
+        children,
+      } satisfies LayerCatalogLayerNode
+    }),
+    ...buildGpxLayers(input.gpxImports, metadataIndex),
+  ]
 
   const groups = GROUP_DEFINITIONS.map((group) => {
     const groupMetadata = metadataIndex.get(group.id)
@@ -132,6 +137,57 @@ export function buildLayerCatalogTree(input: LayerCatalogBuildInput): LayerCatal
     parentId: null,
     children: groups,
   }
+}
+
+function buildGpxLayers(
+  gpxImports: readonly GpxTrackImport[],
+  metadataIndex: Map<string, LayerCatalogMetadataEntry>,
+): readonly LayerCatalogLayerNode[] {
+  return gpxImports
+    .map((gpxImport, index) => {
+      const layerId = getGpxImportLayerNodeId(gpxImport.id)
+      const layerMetadata = metadataIndex.get(layerId)
+      const featureId = getGpxImportFeatureNodeId(gpxImport.id)
+      const featureMetadata = metadataIndex.get(featureId)
+      const child = createFeatureItem({
+        id: featureId,
+        parentId: layerId,
+        label: gpxImport.display_name,
+        fallbackOrder: index + 1,
+        metadataIndex,
+        entity: { type: 'gpx_import', gpxImport },
+      })
+
+      return {
+        id: layerId,
+        kind: 'layer',
+        layerKey: 'gpx_tracks',
+        label: gpxImport.display_name,
+        alias: layerMetadata?.alias ?? null,
+        displayLabel: layerMetadata?.alias?.trim() ? layerMetadata.alias : gpxImport.display_name,
+        isFavorite: layerMetadata?.isFavorite ?? false,
+        isVisible: layerMetadata?.isVisible ?? true,
+        displayOrder: layerMetadata?.displayOrder ?? 10_000,
+        parentId: GPX_TRACKS_GROUP_NODE_ID,
+        summary: {
+          totalCount: 1,
+          visibleCount: child.isVisible ? 1 : 0,
+        },
+        children: [
+          featureMetadata === undefined
+            ? child
+            : {
+                ...child,
+                alias: featureMetadata.alias ?? null,
+                displayLabel: featureMetadata.alias?.trim() ? featureMetadata.alias : child.label,
+                isFavorite: featureMetadata.isFavorite,
+                isVisible: featureMetadata.isVisible,
+                displayOrder: featureMetadata.displayOrder,
+              },
+        ],
+      } satisfies LayerCatalogLayerNode
+    })
+    .sort(compareNodes)
 }
 
 function addDeviceItems(

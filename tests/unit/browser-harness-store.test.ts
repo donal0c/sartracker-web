@@ -106,4 +106,31 @@ describe('browser harness store', () => {
 
     expect(readBrowserHarnessState().openedPaths).toEqual(['/tmp/review-archive.zip'])
   })
+
+  it('persists GPX imports and audit events for the active mission', async () => {
+    const store = getBrowserHarnessStore()
+    const mission = await store.createMission({ name: 'GPX Mission' })
+
+    await store.upsertGpxImport({
+      mission_id: mission.id,
+      source_path: '/tracks/alpha.gpx',
+      file_name: 'alpha.gpx',
+      display_name: 'Alpha Track',
+      geometry_json: '{"type":"MultiLineString","coordinates":[]}',
+      metadata_json: '{"trackCount":1,"pointCount":2}',
+    })
+
+    expect(await store.listGpxImports(mission.id)).toEqual([
+      expect.objectContaining({
+        source_path: '/tracks/alpha.gpx',
+        display_name: 'Alpha Track',
+      }),
+    ])
+
+    expect(readBrowserHarnessState().missionEvents).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ event_type: 'gpx_import_created' }),
+      ]),
+    )
+  })
 })

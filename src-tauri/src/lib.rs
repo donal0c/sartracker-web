@@ -1,35 +1,38 @@
-mod persistence;
 mod diagnostics;
+mod gpx;
 mod opener;
+mod persistence;
 mod settings;
 mod tracking_cache;
 
 use std::sync::Arc;
 
-use tauri::Manager;
+use diagnostics::export_diagnostics_report;
+use gpx::{list_gpx_directory_files, read_gpx_files};
 use settings::{
     build_settings_store, load_app_settings, load_runtime_bootstrap_settings, save_app_settings,
     test_tracking_connection, SettingsStoreState,
 };
-use diagnostics::export_diagnostics_report;
+use tauri::Manager;
 
+use opener::open_external_path;
 use persistence::{
-    add_position, build_mission_store, create_mission, delete_drawing, delete_marker,
-    create_mission_archive, finish_mission, get_active_mission, get_device, get_drawing,
-    get_marker, get_mission, get_recoverable_mission, latest_positions, list_devices,
-    list_drawings, list_layer_catalog_entries, clear_layer_catalog_entries, list_markers, list_mission_events, list_missions,
-    list_positions, mission_store_info, pause_mission, resume_mission, sync_mission_store_backup,
-    upsert_device, upsert_drawing, upsert_layer_catalog_entry, upsert_marker, finalize_mission,
-    ingest_marker_attachment,
-    unlock_finalized_mission, MissionStoreState,
+    add_position, build_mission_store, clear_layer_catalog_entries, create_mission,
+    create_mission_archive, delete_drawing, delete_gpx_import, delete_marker, finalize_mission,
+    finish_mission, get_active_mission, get_device, get_drawing, get_marker, get_mission,
+    get_recoverable_mission, ingest_marker_attachment, latest_positions, list_devices,
+    list_drawings, list_gpx_imports, list_layer_catalog_entries, list_markers, list_mission_events,
+    list_missions, list_positions, mission_store_info, pause_mission, resume_mission,
+    sync_mission_store_backup, unlock_finalized_mission, upsert_device, upsert_drawing,
+    upsert_gpx_import, upsert_layer_catalog_entry, upsert_marker, MissionStoreState,
 };
 use tracking_cache::{read_tracking_cache, write_tracking_cache};
-use opener::open_external_path;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_sql::Builder::new().build())
+        .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             let mission_store = tauri::async_runtime::block_on(build_mission_store(app.handle()))?;
             app.manage(MissionStoreState(Arc::new(mission_store)));
@@ -65,6 +68,9 @@ pub fn run() {
             get_drawing,
             list_drawings,
             delete_drawing,
+            upsert_gpx_import,
+            list_gpx_imports,
+            delete_gpx_import,
             list_layer_catalog_entries,
             upsert_layer_catalog_entry,
             clear_layer_catalog_entries,
@@ -82,10 +88,11 @@ pub fn run() {
             test_tracking_connection,
             load_runtime_bootstrap_settings,
             read_tracking_cache,
-            write_tracking_cache
-            ,
+            write_tracking_cache,
             open_external_path,
-            export_diagnostics_report
+            export_diagnostics_report,
+            read_gpx_files,
+            list_gpx_directory_files
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

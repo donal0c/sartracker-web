@@ -1,4 +1,4 @@
-import type { Drawing, Marker } from '../../infrastructure/mission-store/tauri-mission-store'
+import type { Drawing, GpxTrackImport, Marker } from '../../infrastructure/mission-store/tauri-mission-store'
 import type { NormalizedTrackingDevice } from '../tracking/tracking-types'
 
 export type LayerCatalogNodeKind = 'root' | 'group' | 'layer' | 'feature_item'
@@ -66,6 +66,7 @@ export type LayerCatalogFeatureEntity =
   | { readonly type: 'device'; readonly device: NormalizedTrackingDevice }
   | { readonly type: 'marker'; readonly marker: Marker }
   | { readonly type: 'drawing'; readonly drawing: Drawing }
+  | { readonly type: 'gpx_import'; readonly gpxImport: GpxTrackImport }
 
 export type LayerCatalogFeatureItemNode = LayerCatalogBaseNode & {
   readonly kind: 'feature_item'
@@ -98,6 +99,7 @@ export type LayerCatalogBuildInput = {
   readonly devices: readonly NormalizedTrackingDevice[]
   readonly markers: readonly Marker[]
   readonly drawings: readonly Drawing[]
+  readonly gpxImports: readonly GpxTrackImport[]
   readonly metadataEntries: readonly LayerCatalogMetadataEntry[]
 }
 

@@ -33,6 +33,7 @@ export const MARKER_TYPE_LABELS: Record<MarkerType, string> = {
 type LayerVisibilityState = {
   readonly hiddenDeviceIds: readonly string[]
   readonly hiddenMarkerIds: readonly string[]
+  readonly hiddenGpxImportIds: readonly string[]
   readonly markerTypeVisibility: Record<MarkerType, boolean>
   readonly drawingTypeVisibility: Record<DrawingType, boolean>
   readonly hiddenDrawingIds: readonly string[]
@@ -75,6 +76,7 @@ const DEFAULT_DRAWING_TYPE_VISIBILITY: Record<DrawingType, boolean> = {
 export const useLayerVisibilityStore = create<LayerVisibilityState>((set) => ({
   hiddenDeviceIds: [],
   hiddenMarkerIds: [],
+  hiddenGpxImportIds: [],
   markerTypeVisibility: DEFAULT_MARKER_TYPE_VISIBILITY,
   drawingTypeVisibility: DEFAULT_DRAWING_TYPE_VISIBILITY,
   hiddenDrawingIds: [],
@@ -144,6 +146,7 @@ export const useLayerVisibilityStore = create<LayerVisibilityState>((set) => ({
     set({
       hiddenDeviceIds: collectHiddenDeviceIds(root),
       hiddenMarkerIds: collectHiddenMarkerIds(root),
+      hiddenGpxImportIds: collectHiddenGpxImportIds(root),
       markerTypeVisibility: {
         ipp_lkp: readLayerVisibility(root, getMarkerLayerNodeId('ipp_lkp')),
         clue: readLayerVisibility(root, getMarkerLayerNodeId('clue')),
@@ -238,6 +241,20 @@ function collectHiddenMarkerIds(root: LayerCatalogRootNode): readonly string[] {
     .flatMap((layer) =>
       layer.children.flatMap((child) =>
         child.entity?.type === 'marker' && !child.isVisible ? [child.entity.marker.id] : [],
+      ),
+    )
+}
+
+function collectHiddenGpxImportIds(root: LayerCatalogRootNode): readonly string[] {
+  return root.children
+    .flatMap((group) => group.children)
+    .filter((layer) => layer.id.startsWith('layer:gpx:'))
+    .flatMap((layer) =>
+      layer.children.flatMap((child) =>
+        child.entity?.type === 'gpx_import' &&
+        (!layer.isVisible || !child.isVisible)
+          ? [child.entity.gpxImport.id]
+          : [],
       ),
     )
 }

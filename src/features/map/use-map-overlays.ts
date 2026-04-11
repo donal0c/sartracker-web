@@ -7,10 +7,12 @@ import { syncMarkerOverlay } from '../markers/sync-marker-overlay'
 import { syncTrackingOverlay } from '../tracking/sync-tracking-overlay'
 import { useTrackingStore } from '../tracking/tracking-store'
 import type { BasemapId } from '../../lib/map-config'
+import { registerMapStyleSync } from './map-style-sync'
 
 type UseMapOverlaysOptions = {
   readonly activeBasemapId: BasemapId
   readonly mapRef: RefObject<maplibregl.Map | null>
+  readonly mapReadyVersion: number
 }
 
 /**
@@ -39,13 +41,15 @@ export function useMapOverlays(options: UseMapOverlaysOptions): void {
       syncTrackingOverlay(map, trackingSnapshot, hiddenDeviceIds, breadcrumbsVisible)
     }
 
-    synchronizeOverlay()
-    map.on('styledata', synchronizeOverlay)
-
-    return () => {
-      map.off('styledata', synchronizeOverlay)
-    }
-  }, [options.activeBasemapId, options.mapRef, breadcrumbsVisible, hiddenDeviceIds, trackingSnapshot])
+    return registerMapStyleSync(map, synchronizeOverlay)
+  }, [
+    options.activeBasemapId,
+    options.mapReadyVersion,
+    options.mapRef,
+    breadcrumbsVisible,
+    hiddenDeviceIds,
+    trackingSnapshot,
+  ])
 
   useEffect(() => {
     const map = options.mapRef.current
@@ -62,11 +66,13 @@ export function useMapOverlays(options: UseMapOverlaysOptions): void {
       void syncMarkerOverlay(map, markerState, markerTypeVisibility, hiddenMarkerIds)
     }
 
-    synchronizeOverlay()
-    map.on('styledata', synchronizeOverlay)
-
-    return () => {
-      map.off('styledata', synchronizeOverlay)
-    }
-  }, [hiddenMarkerIds, markerState, markerTypeVisibility, options.activeBasemapId, options.mapRef])
+    return registerMapStyleSync(map, synchronizeOverlay)
+  }, [
+    hiddenMarkerIds,
+    markerState,
+    markerTypeVisibility,
+    options.activeBasemapId,
+    options.mapReadyVersion,
+    options.mapRef,
+  ])
 }

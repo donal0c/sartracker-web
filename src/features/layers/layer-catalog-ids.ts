@@ -53,3 +53,11 @@ export function getMarkerFeatureNodeId(markerId: string): string {
 export function getDrawingFeatureNodeId(drawingId: string): string {
   return `feature:drawing:${drawingId}`
 }
+
+export function getGpxImportLayerNodeId(importId: string): string {
+  return `layer:gpx:${importId}`
+}
+
+export function getGpxImportFeatureNodeId(importId: string): string {
+  return `feature:gpx:${importId}`
+}

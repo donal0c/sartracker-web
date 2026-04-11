@@ -6,10 +6,11 @@ use std::{
     sync::Arc,
 };
 
+use crate::settings::SettingsStoreState;
 use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine};
-use chrono::Utc;
 #[cfg(test)]
 use chrono::Duration;
+use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use sqlx::{
     sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions, SqliteSynchronous},
@@ -18,7 +19,6 @@ use sqlx::{
 use tauri::{AppHandle, Manager, Runtime, State};
 use uuid::Uuid;
 use zip::{write::SimpleFileOptions, CompressionMethod, ZipWriter};
-use crate::settings::SettingsStoreState;
 
 const DATABASE_FILE_NAME: &str = "mission-store.sqlite";
 const BACKUP_FILE_NAME: &str = "mission-store.backup.sqlite";
@@ -171,6 +171,19 @@ pub struct Drawing {
     pub updated_at: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow, PartialEq)]
+pub struct GpxTrackImport {
+    pub id: String,
+    pub mission_id: String,
+    pub source_path: String,
+    pub file_name: String,
+    pub display_name: String,
+    pub geometry_json: String,
+    pub metadata_json: Option<String>,
+    pub imported_at: String,
+    pub updated_at: String,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, sqlx::Type, PartialEq, Eq)]
 #[sqlx(type_name = "TEXT", rename_all = "snake_case")]
 #[serde(rename_all = "snake_case")]
@@ -310,6 +323,17 @@ pub struct UpsertDrawingInput {
     pub temporary_measure: Option<bool>,
     pub label: Option<String>,
     pub display_order: i64,
+    pub geometry_json: String,
+    pub metadata_json: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct UpsertGpxTrackImportInput {
+    pub id: Option<String>,
+    pub mission_id: String,
+    pub source_path: String,
+    pub file_name: String,
+    pub display_name: String,
     pub geometry_json: String,
     pub metadata_json: Option<String>,
 }
@@ -526,6 +550,23 @@ impl MissionStore {
             CREATE INDEX IF NOT EXISTS idx_drawings_mission_display_order
               ON drawings(mission_id, display_order);
 
+            CREATE TABLE IF NOT EXISTS gpx_track_imports (
+              id TEXT PRIMARY KEY,
+              mission_id TEXT NOT NULL,
+              source_path TEXT NOT NULL,
+              file_name TEXT NOT NULL,
+              display_name TEXT NOT NULL,
+              geometry_json TEXT NOT NULL,
+              metadata_json TEXT,
+              imported_at TEXT NOT NULL,
+              updated_at TEXT NOT NULL,
+              FOREIGN KEY (mission_id) REFERENCES missions(id) ON DELETE CASCADE,
+              UNIQUE (mission_id, source_path)
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_gpx_track_imports_mission_display_name
+              ON gpx_track_imports(mission_id, display_name, imported_at);
+
             CREATE TABLE IF NOT EXISTS mission_events (
               id TEXT PRIMARY KEY,
               mission_id TEXT NOT NULL,
@@ -658,7 +699,8 @@ impl MissionStore {
         &self,
         mission_id: String,
     ) -> Result<MissionArchiveInfo, String> {
-        self.create_mission_archive_internal(&mission_id, true).await
+        self.create_mission_archive_internal(&mission_id, true)
+            .await
     }
 
     async fn create_mission_archive_internal(
@@ -668,7 +710,7 @@ impl MissionStore {
     ) -> Result<MissionArchiveInfo, String> {
         let mission = self.get_mission(mission_id.to_string()).await?;
         if mission.status != MissionStatus::Finished && mission.status != MissionStatus::Finalized {
-          return Err("Only finished or finalized missions can be archived.".to_string());
+            return Err("Only finished or finalized missions can be archived.".to_string());
         }
 
         let backup_path = self.sync_backup().await?;
@@ -689,8 +731,7 @@ impl MissionStore {
             File::create(&temporary_archive_path)
                 .map_err(|error| format!("Failed to create temporary mission archive: {error}"))?,
         );
-        let options = SimpleFileOptions::default()
-            .compression_method(CompressionMethod::Deflated);
+        let options = SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
 
         let manifest_json = serde_json::to_vec_pretty(&serde_json::json!({
             "archive_version": 1,
@@ -741,8 +782,9 @@ impl MissionStore {
                 .file_name()
                 .and_then(|name| name.to_str())
                 .ok_or_else(|| "Attachment file name is invalid.".to_string())?;
-            let attachment_bytes = fs::read(&attachment_file_path)
-                .map_err(|error| format!("Failed to read marker attachment for archive: {error}"))?;
+            let attachment_bytes = fs::read(&attachment_file_path).map_err(|error| {
+                format!("Failed to read marker attachment for archive: {error}")
+            })?;
 
             zip_writer
                 .start_file(
@@ -781,10 +823,11 @@ impl MissionStore {
     }
 
     pub async fn schema_version(&self) -> Result<i64, String> {
-        let row: Option<(String,)> = sqlx::query_as("SELECT value FROM metadata WHERE key = 'schema_version'")
-            .fetch_optional(&self.pool)
-            .await
-            .map_err(|error| format!("Failed to read schema version: {error}"))?;
+        let row: Option<(String,)> =
+            sqlx::query_as("SELECT value FROM metadata WHERE key = 'schema_version'")
+                .fetch_optional(&self.pool)
+                .await
+                .map_err(|error| format!("Failed to read schema version: {error}"))?;
 
         row.and_then(|(value,)| value.parse::<i64>().ok())
             .ok_or_else(|| "Mission store schema version is missing or invalid".to_string())
@@ -797,8 +840,9 @@ impl MissionStore {
         }
 
         let mission_id = Uuid::new_v4().to_string();
-        let start_time = validate_optional_timestamp(input.start_time.as_deref(), "mission start_time")?
-            .unwrap_or_else(|| Utc::now().to_rfc3339());
+        let start_time =
+            validate_optional_timestamp(input.start_time.as_deref(), "mission start_time")?
+                .unwrap_or_else(|| Utc::now().to_rfc3339());
 
         let mut tx = self
             .pool
@@ -947,7 +991,8 @@ impl MissionStore {
 
     pub async fn add_position(&self, input: AddPositionInput) -> Result<Position, String> {
         self.ensure_mission_mutable(&input.mission_id).await?;
-        self.get_device(input.mission_id.clone(), input.device_id.clone()).await?;
+        self.get_device(input.mission_id.clone(), input.device_id.clone())
+            .await?;
 
         if !input.lat.is_finite() || input.lat < -90.0 || input.lat > 90.0 {
             return Err("Latitude must be a finite value between -90 and 90.".to_string());
@@ -1116,15 +1161,14 @@ impl MissionStore {
             return Err("Marker latitude must be a finite value between -90 and 90.".to_string());
         }
         if !input.lon.is_finite() || input.lon < -180.0 || input.lon > 180.0 {
-            return Err("Marker longitude must be a finite value between -180 and 180.".to_string());
+            return Err(
+                "Marker longitude must be a finite value between -180 and 180.".to_string(),
+            );
         }
 
         let marker_id = input.id.unwrap_or_else(|| Uuid::new_v4().to_string());
         let now = Utc::now().to_rfc3339();
-        let existing_marker = self
-            .get_marker(marker_id.clone())
-            .await
-            .ok();
+        let existing_marker = self.get_marker(marker_id.clone()).await.ok();
         let created_at = existing_marker
             .as_ref()
             .map(|existing| existing.created_at.clone())
@@ -1297,9 +1341,12 @@ impl MissionStore {
             self.resolve_attachment_destination(&input.mission_id, &file_name, settings, false)?;
         write_bytes_atomically(&primary_path, &bytes)?;
 
-        if let Some(backup_path) =
-            self.resolve_attachment_destination_optional(&input.mission_id, &file_name, settings, true)?
-        {
+        if let Some(backup_path) = self.resolve_attachment_destination_optional(
+            &input.mission_id,
+            &file_name,
+            settings,
+            true,
+        )? {
             write_bytes_atomically(&backup_path, &bytes)?;
         }
 
@@ -1410,11 +1457,7 @@ impl MissionStore {
         ))
     }
 
-    fn remove_managed_marker_attachment(
-        &self,
-        mission_id: &str,
-        attachment_path: &str,
-    ) {
+    fn remove_managed_marker_attachment(&self, mission_id: &str, attachment_path: &str) {
         let Some(path) = self.managed_marker_attachment_path(mission_id, attachment_path) else {
             return;
         };
@@ -1449,10 +1492,7 @@ impl MissionStore {
 
         let drawing_id = input.id.unwrap_or_else(|| Uuid::new_v4().to_string());
         let now = Utc::now().to_rfc3339();
-        let existing_drawing = self
-            .get_drawing(drawing_id.clone())
-            .await
-            .ok();
+        let existing_drawing = self.get_drawing(drawing_id.clone()).await.ok();
         let created_at = existing_drawing
             .as_ref()
             .map(|existing| existing.created_at.clone())
@@ -1604,6 +1644,179 @@ impl MissionStore {
         Ok(result.rows_affected() > 0)
     }
 
+    pub async fn upsert_gpx_import(
+        &self,
+        input: UpsertGpxTrackImportInput,
+    ) -> Result<GpxTrackImport, String> {
+        self.ensure_mission_mutable(&input.mission_id).await?;
+
+        let existing_import = sqlx::query_as::<_, GpxTrackImport>(
+            r#"
+            SELECT id, mission_id, source_path, file_name, display_name, geometry_json,
+                   metadata_json, imported_at, updated_at
+            FROM gpx_track_imports
+            WHERE mission_id = ? AND source_path = ?
+            "#,
+        )
+        .bind(&input.mission_id)
+        .bind(&input.source_path)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|error| {
+            format!(
+                "Failed to inspect GPX import {}: {error}",
+                input.source_path
+            )
+        })?;
+
+        let import_id = input
+            .id
+            .or_else(|| existing_import.as_ref().map(|entry| entry.id.clone()))
+            .unwrap_or_else(|| Uuid::new_v4().to_string());
+        let now = Utc::now().to_rfc3339();
+        let imported_at = existing_import
+            .as_ref()
+            .map(|entry| entry.imported_at.clone())
+            .unwrap_or_else(|| now.clone());
+        let event_type = if existing_import.is_some() {
+            "gpx_import_updated"
+        } else {
+            "gpx_import_created"
+        };
+
+        let mut tx = self
+            .pool
+            .begin()
+            .await
+            .map_err(|error| format!("Failed to start GPX import transaction: {error}"))?;
+
+        sqlx::query(
+            r#"
+            INSERT INTO gpx_track_imports (
+              id, mission_id, source_path, file_name, display_name, geometry_json,
+              metadata_json, imported_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(id) DO UPDATE SET
+              mission_id = excluded.mission_id,
+              source_path = excluded.source_path,
+              file_name = excluded.file_name,
+              display_name = excluded.display_name,
+              geometry_json = excluded.geometry_json,
+              metadata_json = excluded.metadata_json,
+              updated_at = excluded.updated_at
+            "#,
+        )
+        .bind(&import_id)
+        .bind(&input.mission_id)
+        .bind(&input.source_path)
+        .bind(&input.file_name)
+        .bind(&input.display_name)
+        .bind(&input.geometry_json)
+        .bind(&input.metadata_json)
+        .bind(&imported_at)
+        .bind(&now)
+        .execute(&mut *tx)
+        .await
+        .map_err(|error| format!("Failed to upsert GPX import {import_id}: {error}"))?;
+
+        let event_details = serde_json::json!({
+            "gpx_import_id": import_id,
+            "source_path": input.source_path,
+            "file_name": input.file_name,
+            "display_name": input.display_name,
+        });
+        Self::insert_event(
+            &mut *tx,
+            &input.mission_id,
+            event_type,
+            &now,
+            Some(&event_details),
+        )
+        .await?;
+
+        tx.commit()
+            .await
+            .map_err(|error| format!("Failed to commit GPX import upsert: {error}"))?;
+
+        self.get_gpx_import(import_id).await
+    }
+
+    pub async fn get_gpx_import(&self, import_id: String) -> Result<GpxTrackImport, String> {
+        sqlx::query_as::<_, GpxTrackImport>(
+            r#"
+            SELECT id, mission_id, source_path, file_name, display_name, geometry_json,
+                   metadata_json, imported_at, updated_at
+            FROM gpx_track_imports
+            WHERE id = ?
+            "#,
+        )
+        .bind(&import_id)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|error| format!("Failed to load GPX import {import_id}: {error}"))?
+        .ok_or_else(|| format!("GPX import not found: {import_id}"))
+    }
+
+    pub async fn list_gpx_imports(
+        &self,
+        mission_id: String,
+    ) -> Result<Vec<GpxTrackImport>, String> {
+        sqlx::query_as::<_, GpxTrackImport>(
+            r#"
+            SELECT id, mission_id, source_path, file_name, display_name, geometry_json,
+                   metadata_json, imported_at, updated_at
+            FROM gpx_track_imports
+            WHERE mission_id = ?
+            ORDER BY display_name COLLATE NOCASE ASC, imported_at ASC
+            "#,
+        )
+        .bind(mission_id)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|error| format!("Failed to list GPX imports: {error}"))
+    }
+
+    pub async fn delete_gpx_import(&self, import_id: String) -> Result<bool, String> {
+        let existing_import = self.get_gpx_import(import_id.clone()).await.ok();
+        let Some(gpx_import) = existing_import else {
+            return Ok(false);
+        };
+        self.ensure_mission_mutable(&gpx_import.mission_id).await?;
+
+        let mut tx = self
+            .pool
+            .begin()
+            .await
+            .map_err(|error| format!("Failed to start GPX delete transaction: {error}"))?;
+
+        let result = sqlx::query("DELETE FROM gpx_track_imports WHERE id = ?")
+            .bind(&import_id)
+            .execute(&mut *tx)
+            .await
+            .map_err(|error| format!("Failed to delete GPX import {import_id}: {error}"))?;
+
+        let event_details = serde_json::json!({
+            "gpx_import_id": gpx_import.id,
+            "source_path": gpx_import.source_path,
+            "file_name": gpx_import.file_name,
+            "display_name": gpx_import.display_name,
+        });
+        Self::insert_event(
+            &mut *tx,
+            &gpx_import.mission_id,
+            "gpx_import_deleted",
+            &Utc::now().to_rfc3339(),
+            Some(&event_details),
+        )
+        .await?;
+
+        tx.commit()
+            .await
+            .map_err(|error| format!("Failed to commit GPX delete: {error}"))?;
+
+        Ok(result.rows_affected() > 0)
+    }
+
     pub async fn list_layer_catalog_entries(
         &self,
         mission_id: String,
@@ -1681,11 +1894,9 @@ impl MissionStore {
         self.ensure_mission_mutable(&mission_id).await?;
         self.get_mission(mission_id.clone()).await?;
 
-        let mut tx = self
-            .pool
-            .begin()
-            .await
-            .map_err(|error| format!("Failed to start layer catalog repair transaction: {error}"))?;
+        let mut tx = self.pool.begin().await.map_err(|error| {
+            format!("Failed to start layer catalog repair transaction: {error}")
+        })?;
 
         sqlx::query("DELETE FROM layer_catalog_entries WHERE mission_id = ?")
             .bind(&mission_id)
@@ -1774,7 +1985,10 @@ impl MissionStore {
         .map_err(|error| format!("Failed to load recoverable mission: {error}"))
     }
 
-    pub async fn list_mission_events(&self, mission_id: String) -> Result<Vec<MissionEvent>, String> {
+    pub async fn list_mission_events(
+        &self,
+        mission_id: String,
+    ) -> Result<Vec<MissionEvent>, String> {
         sqlx::query_as::<_, MissionEvent>(
             r#"
             SELECT id, mission_id, event_type, timestamp, details_json
@@ -1940,7 +2154,9 @@ impl MissionStore {
                 }),
             )
             .await?;
-            return Err("Selected admin is not authorized to unlock finalized missions.".to_string());
+            return Err(
+                "Selected admin is not authorized to unlock finalized missions.".to_string(),
+            );
         }
 
         self.set_non_operational_status(&input.mission_id, MissionStatus::Finished)
@@ -1977,9 +2193,11 @@ impl MissionStore {
             }
         };
 
-        let timestamp = pause_time.clone().or(finish_time.clone()).unwrap_or_else(|| Utc::now().to_rfc3339());
-        let additional_paused_seconds =
-            calculate_additional_paused_seconds(&mission, &timestamp)?;
+        let timestamp = pause_time
+            .clone()
+            .or(finish_time.clone())
+            .unwrap_or_else(|| Utc::now().to_rfc3339());
+        let additional_paused_seconds = calculate_additional_paused_seconds(&mission, &timestamp)?;
         let mut tx = self
             .pool
             .begin()
@@ -2058,17 +2276,21 @@ impl MissionStore {
     async fn ensure_mission_mutable(&self, mission_id: &str) -> Result<Mission, String> {
         let mission = self.get_mission(mission_id.to_string()).await?;
         if mission.status == MissionStatus::Finalized {
-            return Err("Finalized missions are read-only until an admin unlocks them.".to_string());
+            return Err(
+                "Finalized missions are read-only until an admin unlocks them.".to_string(),
+            );
         }
 
         Ok(mission)
     }
 
     fn validate_archive_file(archive_path: &PathBuf, mission_id: &str) -> Result<(), String> {
-        let archive_file = File::open(archive_path)
-            .map_err(|error| format!("Failed to open temporary mission archive for validation: {error}"))?;
-        let mut zip = zip::ZipArchive::new(archive_file)
-            .map_err(|error| format!("Failed to read temporary mission archive for validation: {error}"))?;
+        let archive_file = File::open(archive_path).map_err(|error| {
+            format!("Failed to open temporary mission archive for validation: {error}")
+        })?;
+        let mut zip = zip::ZipArchive::new(archive_file).map_err(|error| {
+            format!("Failed to read temporary mission archive for validation: {error}")
+        })?;
 
         let mut manifest_json = String::new();
         {
@@ -2080,8 +2302,14 @@ impl MissionStore {
         }
         let manifest: serde_json::Value = serde_json::from_str(&manifest_json)
             .map_err(|error| format!("Mission archive manifest is invalid JSON: {error}"))?;
-        if manifest.get("mission_id").and_then(serde_json::Value::as_str) != Some(mission_id) {
-            return Err("Mission archive manifest does not match the requested mission.".to_string());
+        if manifest
+            .get("mission_id")
+            .and_then(serde_json::Value::as_str)
+            != Some(mission_id)
+        {
+            return Err(
+                "Mission archive manifest does not match the requested mission.".to_string(),
+            );
         }
 
         let mut mission_json = String::new();
@@ -2095,15 +2323,19 @@ impl MissionStore {
         let mission: serde_json::Value = serde_json::from_str(&mission_json)
             .map_err(|error| format!("Mission archive payload is invalid JSON: {error}"))?;
         if mission.get("id").and_then(serde_json::Value::as_str) != Some(mission_id) {
-            return Err("Mission archive payload does not match the requested mission.".to_string());
+            return Err(
+                "Mission archive payload does not match the requested mission.".to_string(),
+            );
         }
 
         {
-            let sqlite_entry = zip
-                .by_name("mission-store.sqlite")
-                .map_err(|error| format!("Mission archive is missing mission-store.sqlite: {error}"))?;
+            let sqlite_entry = zip.by_name("mission-store.sqlite").map_err(|error| {
+                format!("Mission archive is missing mission-store.sqlite: {error}")
+            })?;
             if sqlite_entry.size() == 0 {
-                return Err("Mission archive contains an empty mission-store.sqlite snapshot.".to_string());
+                return Err(
+                    "Mission archive contains an empty mission-store.sqlite snapshot.".to_string(),
+                );
             }
         }
 
@@ -2111,12 +2343,18 @@ impl MissionStore {
     }
 }
 
-fn calculate_additional_paused_seconds(mission: &Mission, transition_timestamp: &str) -> Result<i64, String> {
+fn calculate_additional_paused_seconds(
+    mission: &Mission,
+    transition_timestamp: &str,
+) -> Result<i64, String> {
     if mission.status != MissionStatus::Paused || mission.pause_time.is_none() {
         return Ok(0);
     }
 
-    let pause_started_at = mission.pause_time.as_deref().expect("pause_time checked above");
+    let pause_started_at = mission
+        .pause_time
+        .as_deref()
+        .expect("pause_time checked above");
     let paused_duration = chrono::DateTime::parse_from_rfc3339(transition_timestamp)
         .map_err(|error| format!("Invalid mission transition timestamp: {error}"))?
         .signed_duration_since(
@@ -2344,6 +2582,30 @@ pub async fn delete_drawing(
 }
 
 #[tauri::command]
+pub async fn upsert_gpx_import(
+    input: UpsertGpxTrackImportInput,
+    store: State<'_, MissionStoreState>,
+) -> Result<GpxTrackImport, String> {
+    store.0.upsert_gpx_import(input).await
+}
+
+#[tauri::command]
+pub async fn list_gpx_imports(
+    mission_id: String,
+    store: State<'_, MissionStoreState>,
+) -> Result<Vec<GpxTrackImport>, String> {
+    store.0.list_gpx_imports(mission_id).await
+}
+
+#[tauri::command]
+pub async fn delete_gpx_import(
+    import_id: String,
+    store: State<'_, MissionStoreState>,
+) -> Result<bool, String> {
+    store.0.delete_gpx_import(import_id).await
+}
+
+#[tauri::command]
 pub async fn list_layer_catalog_entries(
     mission_id: String,
     store: State<'_, MissionStoreState>,
@@ -2485,7 +2747,10 @@ mod tests {
         let schema_version = store.schema_version().await.expect("schema version");
         assert_eq!(schema_version, CURRENT_SCHEMA_VERSION);
         assert!(database_path.exists());
-        assert_eq!(store.info().await.expect("store info").backup_path, backup_path.to_string_lossy());
+        assert_eq!(
+            store.info().await.expect("store info").backup_path,
+            backup_path.to_string_lossy()
+        );
     }
 
     #[tokio::test]
@@ -2505,7 +2770,10 @@ mod tests {
             .expect("mission should be created");
 
         assert_eq!(mission.status, MissionStatus::Active);
-        assert_eq!(store.get_active_mission().await.expect("active mission"), Some(mission.clone()));
+        assert_eq!(
+            store.get_active_mission().await.expect("active mission"),
+            Some(mission.clone())
+        );
         assert_eq!(store.list_missions().await.expect("missions").len(), 1);
     }
 
@@ -2528,7 +2796,12 @@ mod tests {
         let backup_file = store.sync_backup().await.expect("backup should succeed");
         assert_eq!(backup_file, backup_path.to_string_lossy());
         assert!(backup_path.exists());
-        assert!(std::fs::metadata(&backup_path).expect("backup metadata").len() > 0);
+        assert!(
+            std::fs::metadata(&backup_path)
+                .expect("backup metadata")
+                .len()
+                > 0
+        );
     }
 
     #[tokio::test]
@@ -2749,7 +3022,10 @@ mod tests {
             .expect("devices should list");
         assert_eq!(devices.len(), 1);
         assert_eq!(devices[0].status, DeviceStatus::Online);
-        assert_eq!(devices[0].last_seen.as_deref(), Some("2026-04-08T06:00:00Z"));
+        assert_eq!(
+            devices[0].last_seen.as_deref(),
+            Some("2026-04-08T06:00:00Z")
+        );
 
         let latest_positions = store
             .latest_positions(mission.id.clone())
@@ -2884,7 +3160,10 @@ mod tests {
 
         assert_eq!(updated.id, marker.id);
         assert_eq!(updated.display_order, 1);
-        assert_eq!(updated.description.as_deref(), Some("Fresh print near treeline"));
+        assert_eq!(
+            updated.description.as_deref(),
+            Some("Fresh print near treeline")
+        );
 
         let markers = store
             .list_markers(mission.id.clone())
@@ -2898,7 +3177,11 @@ mod tests {
             .await
             .expect("marker should delete");
         assert!(deleted);
-        assert!(store.list_markers(mission.id).await.expect("markers after delete").is_empty());
+        assert!(store
+            .list_markers(mission.id)
+            .await
+            .expect("markers after delete")
+            .is_empty());
     }
 
     #[tokio::test]
@@ -3027,7 +3310,9 @@ mod tests {
                 temporary_measure: Some(false),
                 label: Some("A-B".to_string()),
                 display_order: 3,
-                geometry_json: "{\"type\":\"LineString\",\"coordinates\":[[-9.5,52.0],[-9.4,52.1]]}".to_string(),
+                geometry_json:
+                    "{\"type\":\"LineString\",\"coordinates\":[[-9.5,52.0],[-9.4,52.1]]}"
+                        .to_string(),
                 metadata_json: Some("{\"team\":\"Alpha\"}".to_string()),
             })
             .await
@@ -3049,7 +3334,9 @@ mod tests {
                 temporary_measure: Some(false),
                 label: Some("A-C".to_string()),
                 display_order: 1,
-                geometry_json: "{\"type\":\"LineString\",\"coordinates\":[[-9.5,52.0],[-9.3,52.2]]}".to_string(),
+                geometry_json:
+                    "{\"type\":\"LineString\",\"coordinates\":[[-9.5,52.0],[-9.3,52.2]]}"
+                        .to_string(),
                 metadata_json: Some("{\"team\":\"Bravo\"}".to_string()),
             })
             .await
@@ -3071,7 +3358,81 @@ mod tests {
             .await
             .expect("drawing should delete");
         assert!(deleted);
-        assert!(store.list_drawings(mission.id).await.expect("drawings after delete").is_empty());
+        assert!(store
+            .list_drawings(mission.id)
+            .await
+            .expect("drawings after delete")
+            .is_empty());
+    }
+
+    #[tokio::test]
+    async fn upserts_lists_and_deletes_gpx_imports() {
+        let (database_path, backup_path) = temp_paths("gpx-imports");
+        let store = MissionStore::connect(database_path, backup_path)
+            .await
+            .expect("store should initialize");
+
+        let mission = store
+            .create_mission(CreateMissionInput {
+                name: "GPX Mission".to_string(),
+                start_time: None,
+                notes: None,
+            })
+            .await
+            .expect("mission should be created");
+
+        let gpx_import = store
+            .upsert_gpx_import(UpsertGpxTrackImportInput {
+                id: None,
+                mission_id: mission.id.clone(),
+                source_path: "/tracks/alpha.gpx".to_string(),
+                file_name: "alpha.gpx".to_string(),
+                display_name: "Alpha Track".to_string(),
+                geometry_json:
+                    "{\"type\":\"MultiLineString\",\"coordinates\":[[[-9.7,52.0],[-9.71,52.01]]]}"
+                        .to_string(),
+                metadata_json: Some("{\"trackCount\":1,\"pointCount\":2}".to_string()),
+            })
+            .await
+            .expect("gpx import should upsert");
+
+        assert_eq!(gpx_import.display_name, "Alpha Track");
+
+        let updated = store
+            .upsert_gpx_import(UpsertGpxTrackImportInput {
+                id: Some(gpx_import.id.clone()),
+                mission_id: mission.id.clone(),
+                source_path: "/tracks/alpha.gpx".to_string(),
+                file_name: "alpha.gpx".to_string(),
+                display_name: "Alpha Track Revised".to_string(),
+                geometry_json:
+                    "{\"type\":\"MultiLineString\",\"coordinates\":[[[-9.7,52.0],[-9.72,52.02]]]}"
+                        .to_string(),
+                metadata_json: Some("{\"trackCount\":1,\"pointCount\":2}".to_string()),
+            })
+            .await
+            .expect("gpx import should update");
+
+        assert_eq!(updated.id, gpx_import.id);
+        assert_eq!(updated.display_name, "Alpha Track Revised");
+
+        let imports = store
+            .list_gpx_imports(mission.id.clone())
+            .await
+            .expect("imports should list");
+        assert_eq!(imports.len(), 1);
+        assert_eq!(imports[0].id, gpx_import.id);
+
+        let deleted = store
+            .delete_gpx_import(gpx_import.id.clone())
+            .await
+            .expect("gpx import should delete");
+        assert!(deleted);
+        assert!(store
+            .list_gpx_imports(mission.id)
+            .await
+            .expect("imports after delete")
+            .is_empty());
     }
 
     #[tokio::test]
@@ -3166,7 +3527,9 @@ mod tests {
                 temporary_measure: Some(false),
                 label: None,
                 display_order: 1,
-                geometry_json: "{\"type\":\"LineString\",\"coordinates\":[[-9.5,52.0],[-9.4,52.1]]}".to_string(),
+                geometry_json:
+                    "{\"type\":\"LineString\",\"coordinates\":[[-9.5,52.0],[-9.4,52.1]]}"
+                        .to_string(),
                 metadata_json: None,
             })
             .await
@@ -3233,7 +3596,9 @@ mod tests {
         assert!(zip.by_name("manifest.json").is_ok());
         assert!(zip.by_name("mission.json").is_ok());
 
-        let mut sqlite_entry = zip.by_name("mission-store.sqlite").expect("sqlite snapshot");
+        let mut sqlite_entry = zip
+            .by_name("mission-store.sqlite")
+            .expect("sqlite snapshot");
         let mut sqlite_bytes = Vec::new();
         sqlite_entry
             .read_to_end(&mut sqlite_bytes)
@@ -3475,7 +3840,10 @@ mod tests {
             .await
             .expect("catalog entry should save");
 
-        assert_eq!(entry.parent_node_id.as_deref(), Some("layer:tracking:devices"));
+        assert_eq!(
+            entry.parent_node_id.as_deref(),
+            Some("layer:tracking:devices")
+        );
         assert!(!entry.is_visible);
         assert!(entry.is_favorite);
 
@@ -3523,12 +3891,10 @@ mod tests {
             .into_iter()
             .find(|event| event.event_type == "layer_catalog_repaired")
             .expect("repair event should exist");
-        assert!(
-            repair_event
-                .details_json
-                .unwrap_or_default()
-                .contains("reset_metadata")
-        );
+        assert!(repair_event
+            .details_json
+            .unwrap_or_default()
+            .contains("reset_metadata"));
     }
 
     #[tokio::test]

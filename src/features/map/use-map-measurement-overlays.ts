@@ -8,10 +8,12 @@ import {
   syncMeasurementPreviewOverlay,
 } from '../measurements/sync-measurement-overlay'
 import { useLayerVisibilityStore } from '../layers/layer-visibility-store'
+import { registerMapStyleSync } from './map-style-sync'
 
 type UseMapMeasurementOverlaysOptions = {
   readonly activeBasemapId: BasemapId
   readonly mapRef: RefObject<maplibregl.Map | null>
+  readonly mapReadyVersion: number
 }
 
 /**
@@ -39,12 +41,8 @@ export function useMapMeasurementOverlays(
       syncMeasurementOverlay(map, measurementsVisible ? measurements : [])
     }
 
-    synchronizeOverlay()
-    map.on('styledata', synchronizeOverlay)
-    return () => {
-      map.off('styledata', synchronizeOverlay)
-    }
-  }, [measurements, measurementsVisible, options.activeBasemapId, options.mapRef])
+    return registerMapStyleSync(map, synchronizeOverlay)
+  }, [measurements, measurementsVisible, options.activeBasemapId, options.mapReadyVersion, options.mapRef])
 
   useEffect(() => {
     const map = options.mapRef.current
@@ -63,10 +61,6 @@ export function useMapMeasurementOverlays(
       })
     }
 
-    synchronizePreview()
-    map.on('styledata', synchronizePreview)
-    return () => {
-      map.off('styledata', synchronizePreview)
-    }
-  }, [draftStart, hoverPoint, options.activeBasemapId, options.mapRef])
+    return registerMapStyleSync(map, synchronizePreview)
+  }, [draftStart, hoverPoint, options.activeBasemapId, options.mapReadyVersion, options.mapRef])
 }

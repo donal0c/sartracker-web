@@ -5,6 +5,7 @@ import type { LayerCatalogMetadataEntry } from '../../src/features/layers/layer-
 import type {
   Device,
   Drawing,
+  GpxTrackImport,
   Marker,
 } from '../../src/infrastructure/mission-store/tauri-mission-store'
 
@@ -18,6 +19,7 @@ describe('layer catalog builder', () => {
         createMarker('marker-1', 'Alpha Clue', 1),
       ],
       drawings: [createDrawing('drawing-1', 'Sector Alpha', 1)],
+      gpxImports: [],
       metadataEntries: [],
     })
 
@@ -70,6 +72,7 @@ describe('layer catalog builder', () => {
       devices: [],
       markers: [],
       drawings: [createDrawing('drawing-1', 'Sector Alpha', 1)],
+      gpxImports: [],
       metadataEntries,
     })
 
@@ -87,6 +90,32 @@ describe('layer catalog builder', () => {
       displayLabel: 'Sector Bravo',
       isVisible: false,
       displayOrder: 9,
+    })
+  })
+
+  it('creates one dynamic GPX layer per imported file under the GPX group', () => {
+    const root = buildLayerCatalogTree({
+      missionId: 'mission-1',
+      devices: [],
+      markers: [],
+      drawings: [],
+      gpxImports: [
+        createGpxImport('gpx-2', 'Bravo Route', 2),
+        createGpxImport('gpx-1', 'Alpha Route', 1),
+      ],
+      metadataEntries: [],
+    })
+
+    const gpxGroup = root.children.find((group) => group.id === 'group:gpx-tracks')
+    expect(gpxGroup?.children.map((layer) => layer.displayLabel)).toEqual([
+      'Alpha Route',
+      'Bravo Route',
+    ])
+    expect(gpxGroup?.children[0]?.children[0]).toMatchObject({
+      displayLabel: 'Alpha Route',
+      entity: {
+        type: 'gpx_import',
+      },
     })
   })
 })
@@ -149,5 +178,19 @@ function createDrawing(id: string, name: string, displayOrder: number): Drawing 
     metadata_json: null,
     created_at: '2026-04-10T10:00:00.000Z',
     updated_at: '2026-04-10T10:00:00.000Z',
+  }
+}
+
+function createGpxImport(id: string, displayName: string, order: number): GpxTrackImport {
+  return {
+    id,
+    mission_id: 'mission-1',
+    source_path: `/tracks/${displayName.toLowerCase().replace(/\s+/g, '-')}.gpx`,
+    file_name: `${displayName.toLowerCase().replace(/\s+/g, '-')}.gpx`,
+    display_name: displayName,
+    geometry_json: '{"type":"MultiLineString","coordinates":[]}',
+    metadata_json: JSON.stringify({ displayOrder: order }),
+    imported_at: '2026-04-11T10:00:00.000Z',
+    updated_at: '2026-04-11T10:00:00.000Z',
   }
 }

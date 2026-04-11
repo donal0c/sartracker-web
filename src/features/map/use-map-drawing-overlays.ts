@@ -8,10 +8,12 @@ import {
 } from '../drawings/sync-drawing-overlay'
 import { useLayerVisibilityStore } from '../layers/layer-visibility-store'
 import type { BasemapId } from '../../lib/map-config'
+import { registerMapStyleSync } from './map-style-sync'
 
 type UseMapDrawingOverlaysOptions = {
   readonly activeBasemapId: BasemapId
   readonly mapRef: RefObject<maplibregl.Map | null>
+  readonly mapReadyVersion: number
 }
 
 /**
@@ -46,18 +48,14 @@ export function useMapDrawingOverlays(options: UseMapDrawingOverlaysOptions): vo
       )
     }
 
-    synchronizeOverlay()
-    map.on('styledata', synchronizeOverlay)
-
-    return () => {
-      map.off('styledata', synchronizeOverlay)
-    }
+    return registerMapStyleSync(map, synchronizeOverlay)
   }, [
     activeTool,
     drawings,
     drawingTypeVisibility,
     hiddenDrawingIds,
     options.activeBasemapId,
+    options.mapReadyVersion,
     options.mapRef,
     selectedDrawingId,
   ])
@@ -80,11 +78,6 @@ export function useMapDrawingOverlays(options: UseMapDrawingOverlaysOptions): vo
       })
     }
 
-    synchronizePreview()
-    map.on('styledata', synchronizePreview)
-
-    return () => {
-      map.off('styledata', synchronizePreview)
-    }
-  }, [activeTool, options.activeBasemapId, options.mapRef, sketch])
+    return registerMapStyleSync(map, synchronizePreview)
+  }, [activeTool, options.activeBasemapId, options.mapReadyVersion, options.mapRef, sketch])
 }
