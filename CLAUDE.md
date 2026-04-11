@@ -104,6 +104,36 @@ There is no separate packet layer. The handoff file must contain the current bat
 3. **Commit with a descriptive message** referencing the bead ID
 4. **Run the full test suite** — nothing ships without green tests
 
+### Finish Protocol (required)
+
+At the end of a work cycle, do not stop at "the code is written."
+
+Before finishing, the agent should:
+1. run the relevant verification for the slice that changed
+2. run Playwright coverage when UI, map, workflow, or runtime behavior was affected
+3. confirm the result meets the repo's quality bar, aiming for roughly 9.5-10/10 quality rather than "probably fine"
+4. update `handoff/HANDOFF.md` with a short baton-ready summary
+5. update the relevant bead(s)
+
+If, and only if, the agent is highly confident that:
+- the change is complete for this chunk
+- the tests are green
+- the behavior is well verified
+- the code quality is genuinely high
+
+then the agent should also:
+6. `git add` the intended files
+7. create a descriptive commit referencing the bead ID
+8. `git push`
+
+The default desired end state is a clean worktree on the remote branch so the next agent can begin from a stable baseline.
+
+Do not commit or push:
+- when tests are failing
+- when verification is incomplete for a behavior-bearing change
+- when the handoff or bead state is stale
+- when confidence is still low and the right next step is another validation/fix pass
+
 ## Development Rules
 
 ### Strict TDD — No Exceptions
