@@ -323,8 +323,60 @@ It is acceptable for the repo to grow into this structure gradually, but new wor
 ### Testing Strategy
 - Unit tests for pure logic, transforms, validators, and domain rules
 - Integration tests for module boundaries such as MissionStore, Traccar polling, and layer-state shaping
-- Playwright E2E tests only for genuine operator workflows
+- Playwright E2E tests for genuine operator workflows
+- **Visual verification E2E tests** for independent AI-reviewed screenshot verification (see below)
 - New features should normally add or update tests at the lowest meaningful level first, then add higher-level coverage where warranted
+
+### Visual Verification E2E Tests
+
+The `tests/e2e/visual/` suite provides a second layer of verification beyond standard Playwright assertions. Each test:
+
+1. Performs an operator workflow (start mission, place marker, etc.)
+2. Makes standard Playwright DOM assertions (element visible, text correct, etc.)
+3. Captures a screenshot with a verification manifest entry describing what to check
+4. After tests run, an Opus-class AI subagent independently reads each screenshot and verifies visual correctness
+
+This two-layer approach is required because this is a life-safety application. DOM assertions confirm the code is correct; visual verification confirms the operator would actually see the right thing.
+
+**Running visual tests:**
+```bash
+# Visual tests only (22 tests, ~25s)
+npx playwright test --project=visual
+
+# Standard E2E tests only (55 tests, ~30s, visual tests excluded)
+npx playwright test --project=chromium
+
+# Both projects
+npx playwright test
+```
+
+**After running visual tests**, screenshots and `.entry.json` manifest files are written to `test-results/visual-verification/`. To complete verification, spawn Opus subagents that read each screenshot and verify against the manifest prompt. Each entry includes:
+- `screenshotPath` — absolute path to the PNG
+- `verificationPrompt` — detailed checklist for the visual reviewer
+- `severity` — `critical` | `high` | `medium`
+- `playwrightAssertions` — what the automated layer already confirmed
+
+**Structure:**
+```
+tests/e2e/visual/
+├── helpers/
+│   ├── test-setup.ts            — shared harness setup, mission, tracking injection
+│   └── verification-manifest.ts — parallel-safe manifest (per-entry JSON files)
+├── visual-app-shell.spec.ts     — 4 tests: layout, toolbar, basemaps, coordinates
+├── visual-mission-lifecycle.spec.ts — 6 tests: active, backdated, paused, finish, governance, recovery
+├── visual-tracking.spec.ts      — 4 tests: status panel, map devices, layer panel, full operational
+├── visual-markers.spec.ts       — 4 tests: IPP/LKP, Clue, Hazard, Casualty dialogs
+└── visual-drawings.spec.ts      — 4 tests: search area, LPB rings, bearing conversion, multi-drawing
+```
+
+**Adding new visual tests:** Use `captureAndRegister()` for full-page screenshots or `captureElementAndRegister()` for element-scoped screenshots. Write verification prompts as numbered checklists — each item should be independently verifiable from the screenshot alone. Set `severity: 'critical'` for anything that affects operator safety.
+
+**Key design decisions:**
+- The `visual` Playwright project uses `1440x900` viewport for consistent screenshot dimensions
+- Manifest entries are written as individual `.entry.json` files (parallel-safe across Playwright workers)
+- The `?missionHarness=1` URL parameter enables browser validation mode (mock Tauri backend via sessionStorage)
+- Map clicks use `{ force: true }` to bypass the drawing toolbar overlay
+- Tracking data is injected via `window.__SARTRACKER_BROWSER_HARNESS__.injectTrackingSnapshot()`
 
 ### Traccar Integration (from S7 spike)
 - HTTP polling for v1 (proven, reliable)
@@ -351,7 +403,8 @@ sartracker-web/
 │   └── types/             ← TypeScript type definitions
 ├── tests/
 │   ├── unit/              ← vitest unit tests
-│   ├── e2e/               ← Playwright E2E tests
+│   ├── e2e/               ← Playwright E2E tests (55 standard + 22 visual)
+│   │   └── visual/        ← AI-verified visual E2E tests (screenshot + Opus subagent)
 │   └── fixtures/          ← test data (golden datasets, mock responses)
 ├── spikes/                ← ARCHIVED spike code (reference only, do not modify)
 ├── specs/                 ← architecture specs
@@ -375,10 +428,13 @@ All spikes passed. Use them as reference implementations and test fixtures:
 # Unit tests
 npm run test
 
-# E2E tests
+# E2E tests (standard project only — excludes visual)
 npm run test:e2e
 
-# All tests
+# Visual verification E2E tests
+npx playwright test --project=visual
+
+# All tests (unit + all E2E including visual)
 npm run test:all
 ```
 

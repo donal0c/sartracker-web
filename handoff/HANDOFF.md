@@ -13,7 +13,7 @@
 
 ## Last Updated
 
-- 2026-04-11 19:35 by Codex
+- 2026-04-11 18:30 by Claude Opus (visual E2E test suite)
 
 ## Current State
 
@@ -23,6 +23,28 @@
   - `docs/areas-to-investigate.md` = improvement queue + fixed improvement prompt
   - beads = tracked feature/bug/hardening work
 - Old multi-file Codex/Claude packet handoff system has been removed.
+- **Visual verification E2E test suite now in place** (see below).
+
+## Last Work Done
+
+Built a two-layer visual verification E2E test suite in `tests/e2e/visual/`:
+
+- **22 new Playwright tests** across 5 spec files covering app shell, mission lifecycle, tracking, markers, and drawings
+- **Layer 1**: Standard Playwright DOM assertions (element visibility, text content, state)
+- **Layer 2**: Each test captures a screenshot with a verification manifest. Opus subagents independently read each screenshot and verify a numbered checklist of visual criteria.
+- **Results**: All 22 Playwright tests pass. 11/11 Opus visual verifications passed (after 2 prompt iterations).
+- **Real finding confirmed**: Device marker labels too small on topo basemap (independently flagged by Opus reviewer — matches existing bead `sartracker-web-awm`).
+- **Zero regression**: All 55 existing E2E tests still pass. Playwright config updated with separate `chromium` (standard) and `visual` (AI-verified) projects.
+- **Key files added**:
+  - `tests/e2e/visual/helpers/test-setup.ts` — shared harness setup, mission lifecycle, tracking injection
+  - `tests/e2e/visual/helpers/verification-manifest.ts` — parallel-safe manifest (per-entry JSON files)
+  - `tests/e2e/visual/visual-app-shell.spec.ts` — 4 tests
+  - `tests/e2e/visual/visual-mission-lifecycle.spec.ts` — 6 tests
+  - `tests/e2e/visual/visual-tracking.spec.ts` — 4 tests
+  - `tests/e2e/visual/visual-markers.spec.ts` — 4 tests
+  - `tests/e2e/visual/visual-drawings.spec.ts` — 4 tests
+  - `playwright.config.ts` — updated with `visual` project (1440x900 viewport, visual tests isolated)
+- Full details in `CLAUDE.md` under "Visual Verification E2E Tests".
 
 ## Active Work
 
@@ -57,6 +79,7 @@ Choose one path and update this file when done:
 1. Continue parity verification with Batch 5 markers.
 2. Pick the best candidate from `docs/areas-to-investigate.md` and execute one bounded improvement.
 3. Work the next highest-priority open bead.
+4. Expand visual E2E tests (Wave 2: settings, diagnostics, GPX import, coordinate converter).
 
 ## Verification Snapshot
 
@@ -71,6 +94,11 @@ Choose one path and update this file when done:
   - Batch 7 measurements/coordinates
   - Batch 8 review/settings/diagnostics
   - Batch 9 GPX/helicopters/structure
+- Visual E2E test suite:
+  - 22 Playwright tests: all green
+  - 55 existing E2E tests: all green (zero regression)
+  - Opus visual verification: 11/11 passed
+  - Coverage: app shell, mission lifecycle (6 states), tracking (panel + map + layers), markers (4 types), drawings (4 tools + multi-drawing)
 
 ## Archive
 

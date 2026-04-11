@@ -18,6 +18,16 @@ export default defineConfig({
     {
       name: 'chromium',
       use: { ...devices['Desktop Chrome'] },
+      testIgnore: '**/visual/**',
+    },
+    {
+      name: 'visual',
+      use: {
+        ...devices['Desktop Chrome'],
+        viewport: { width: 1440, height: 900 },
+        screenshot: 'on',
+      },
+      testMatch: '**/visual/**/*.spec.ts',
     },
   ],
 })
