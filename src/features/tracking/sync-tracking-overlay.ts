@@ -7,6 +7,7 @@ import type { TrackingSnapshot } from './tracking-types'
 
 export const TRACKING_SOURCE_ID = 'tracking'
 export const TRACKING_DEVICE_LAYER_ID = 'tracking-devices-circle'
+export const TRACKING_DEVICE_LABEL_LAYER_ID = 'tracking-devices-label'
 export const TRACKING_BREADCRUMB_LAYER_ID = 'tracking-breadcrumbs-line'
 
 /**
@@ -69,6 +70,29 @@ export function syncTrackingOverlay(
     })
   }
 
+  if (!map.getLayer(TRACKING_DEVICE_LABEL_LAYER_ID)) {
+    map.addLayer({
+      id: TRACKING_DEVICE_LABEL_LAYER_ID,
+      type: 'symbol',
+      source: TRACKING_SOURCE_ID,
+      filter: ['==', '$type', 'Point'],
+      layout: {
+        'text-field': ['get', 'name'],
+        'text-font': ['Open Sans Regular', 'Arial Unicode MS Regular'],
+        'text-size': 12,
+        'text-offset': [0, -1.4],
+        'text-anchor': 'bottom',
+        'text-allow-overlap': false,
+        'text-ignore-placement': false,
+      },
+      paint: {
+        'text-color': '#FDE68A',
+        'text-halo-color': '#0f172a',
+        'text-halo-width': 2,
+      },
+    })
+  }
+
   const visibilityFilter = buildTrackingLayerFilter(hiddenDeviceIds)
   map.setFilter(
     TRACKING_BREADCRUMB_LAYER_ID,
@@ -77,6 +101,10 @@ export function syncTrackingOverlay(
       : ['==', ['get', 'deviceId'], '__hidden__'],
   )
   map.setFilter(TRACKING_DEVICE_LAYER_ID, combineFilters(['==', '$type', 'Point'], visibilityFilter))
+  map.setFilter(
+    TRACKING_DEVICE_LABEL_LAYER_ID,
+    combineFilters(['==', '$type', 'Point'], visibilityFilter),
+  )
 }
 
 function ensureTrackingSource(

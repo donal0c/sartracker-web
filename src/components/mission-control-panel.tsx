@@ -101,8 +101,8 @@ export function MissionControlPanel() {
     }
 
     const parsedOffset = Number(startOffsetHours)
-    if (!Number.isFinite(parsedOffset) || parsedOffset < 0 || parsedOffset > 48) {
-      setStartError('Start offset must be between 0 and 48 hours.')
+    if (!Number.isFinite(parsedOffset) || parsedOffset < 0 || parsedOffset > 5) {
+      setStartError('Start offset must be between 0 and 5 hours.')
       return
     }
 
@@ -338,7 +338,7 @@ export function MissionControlPanel() {
                 data-testid="mission-offset-input"
                 disabled={controller === null}
                 id={missionOffsetInputId}
-                max="48"
+                max="5"
                 min="0"
                 onChange={(event) => setStartOffsetHours(event.target.value)}
                 step="0.5"

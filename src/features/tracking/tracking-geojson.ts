@@ -8,6 +8,7 @@ type GeoJsonPointFeature = Feature<
   Point,
   {
     readonly deviceId: string
+    readonly name: string
     readonly color: string
     readonly stale: boolean
     readonly dataOrigin: string
@@ -41,6 +42,10 @@ export function createTrackingFeatureCollection(
 export function createDeviceFeatureCollection(
   snapshot: TrackingSnapshot,
 ): FeatureCollection<Point> {
+  const deviceNameById = new Map(
+    snapshot.devices.map((device) => [device.device_id, device.name] as const),
+  )
+
   const features: GeoJsonPointFeature[] = snapshot.positions.map((position) => ({
     type: 'Feature',
     geometry: {
@@ -49,6 +54,7 @@ export function createDeviceFeatureCollection(
     },
     properties: {
       deviceId: position.device_id,
+      name: deviceNameById.get(position.device_id) ?? position.device_id,
       color: createDeviceColor(position.device_id),
       stale: position.device_cache_stale,
       dataOrigin: position.data_origin,

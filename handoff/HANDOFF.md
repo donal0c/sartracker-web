@@ -3,14 +3,403 @@
 > **Read this before doing ANY work. Update this after EVERY chunk of work.**
 
 ## Last Updated
-2026-04-11 00:00 by Codex
+2026-04-11 19:06 by Codex
+
+### 2026-04-11 19:06 by Codex
+
+- Batch 4 is now closed as **done-with-gap**:
+  - `LPV-020`..`LPV-028` are fully verified as Match.
+  - `LPV-029` is explicitly held as an unresolved gap: mission metadata/coordinator dialog is still missing in the web mission-start lifecycle.
+- Updated operating state for next execution:
+  - Next target is **Batch 5** (`LPV-080` to `LPV-086`, Markers).
+  - Batch 4 packet remains blocked for final parity until LPV-029 is either implemented or explicitly deferred.
+- Updated outgoing packet files to keep next-action alignment:
+  - [handoff/messages/TO_CLAUDE_FROM_CODEX.md](/Users/donalocallaghan/workspace/vibes/sartracker-web/handoff/messages/TO_CLAUDE_FROM_CODEX.md)
+  - [handoff/packs/active/codex-to-claude.md](/Users/donalocallaghan/workspace/vibes/sartracker-web/handoff/packs/active/codex-to-claude.md)
+
+### 2026-04-11 18:56 by Codex
+
+- Batch 4 is partially completed (`LPV-020` to `LPV-029`): `LPV-020`..`LPV-028` are now marked Match with evidence.
+- Implemented hard guard for start offset bounds end-to-end:
+  - UI (`src/components/mission-control-panel.tsx`) now constrains `Start Offset (Hours)` to `0..5` and validates with matching error text.
+  - Runtime (`src/features/mission/start-mission-runtime.ts`) now rejects start times older than 5 hours from current time.
+  - Tests added/updated in:
+    - `tests/unit/start-mission-runtime.test.ts`
+      - added explicit 5-hour boundary pass test
+    - `tests/unit/start-mission-runtime.test.ts`
+      - added rejection test for >5-hour past start
+    - `tests/e2e/mission.spec.ts`
+      - invalid offset test uses `6` and expects `0 to 5` message
+- `docs/web-parity-verification-matrix.md` rows `LPV-020`..`LPV-028` set to Match and `LPV-029` set to Mismatch with evidence/gap summary.
+- `docs/web-operator-verification-checklists.md` Batch 4 checklist now captures verification details:
+  - `LPV-020`..`LPV-028` marked Match
+  - `LPV-029` marked Mismatch (mission metadata/coordinator dialog still missing in web mission-start flow).
+- Next step: handoff packet sent to Claude for review and continuation with the open gap.
+
+### 2026-04-11 18:26 by Codex
+
+- Updated `CLAUDE.md` with explicit Claude-involvement criteria for batch handoff.
+- New rule: Claude validates all batches that are life-safety critical, final before complete, ambiguous vs legacy behavior, or still high-risk.
+- Added required post-completion steps before `Read what Claude has said`: update handoff + packet files, run verification, and include the exact checks in the packet.
+
+### 2026-04-11 18:20 by Codex
+
+- Read latest implementation status for Batch 3 and aligned all packet files:
+  - `handoff/messages/TO_CODEX_FROM_CLAUDE.md`
+  - `handoff/messages/TO_CLAUDE_FROM_CODEX.md`
+  - `handoff/packs/active/claude-to-codex.md`
+  - `handoff/packs/active/codex-to-claude.md`
+- Closed remaining Batch 3 gaps:
+  - LPV-042 now Match — map shows `name` label text on current-position symbols.
+  - LPV-047 now Match — one-time initial fit-to-bounds added on first tracked position render.
+- Updated `tests/unit/tracking-viewport.test.ts` with tolerant assertions for single-point buffering.
+- Updated and re-ran targeted verification:
+  - `npm test -- tests/unit/tracking-geojson.test.ts tests/unit/tracking-viewport.test.ts`
+  - `npx playwright test tests/e2e/parity-visibility.spec.ts`
+- Status: Batch 3 (LPV-040 to LPV-048) can now transition to "complete and match-only."
+- Next packet target remains `LPV-020` to `LPV-029` (Mission lifecycle).
+
+### 2026-04-11 18:05 by Codex
+
+- Read `TO_CODEX_FROM_CLAUDE.md` latest batch report (`claude-to-codex-batch3-tracking-devices-complete`).
+- Codex summary:
+  - `LPV-040`, `LPV-041`, `LPV-043`, `LPV-044`, `LPV-045`, `LPV-046`, `LPV-048` = Match.
+  - `LPV-042` = Partial (critical): map markers lack name labels.
+  - `LPV-047` = Missing (medium): no auto frame/fitBounds on first tracking render.
+- `handoff/messages/TO_CLAUDE_FROM_CODEX.md` now updated to decision packet waiting on LPV-042 and LPV-047.
+- Next action: make explicit decision for LPV-042 and LPV-047 then proceed to implementation packet.
+
+### 2026-04-11 18:00 Parity Batch 3 completed: Tracking and devices (LPV-040 to LPV-048)
+
+Batch completed: LPV-040 to LPV-048
+
+Completed:
+- LPV-040: Match — Traccar HTTP provider with auth/retry/timeout
+- LPV-041: Match — separate fetches for roster, positions, breadcrumbs
+- LPV-042: Partial — one marker per device renders, but name labels absent from map
+- LPV-043: Match — >5min gap segmentation for breadcrumbs
+- LPV-044: Match — filtering affects map only, not roster
+- LPV-045: Match — last-good cache prevents blank on poll failure
+- LPV-046: Match — FNV-1a hash deterministic color assignment
+- LPV-047: Missing — no initial zoom framing of all tracked devices
+- LPV-048: Match — full devices workspace with all fields
+
+Blocked:
+- None
+
+Critical gaps:
+- LPV-042 (Partial, Critical): Device name labels missing from map markers. Circle markers render correctly per device but have no text overlay. Legacy renders device `name` as label on each position marker. Devices workspace shows names in roster but map canvas does not.
+
+Medium gaps:
+- LPV-047 (Missing, Medium): No fitBounds/zoom-to-extent on first tracking data arrival. Per-device zoom works from devices workspace but no auto-frame-all.
+
+Needs decision:
+- LPV-042: Should device name labels be added to tracking markers on the map canvas?
+- LPV-047: Should initial zoom framing be implemented for the tracking layer?
+
+Evidence method:
+- 26 unit tests across 7 tracking test files (all pass)
+- 3 E2E tests in devices-workspace.spec.ts (all pass)
+- 1 E2E test in full-mission-flow.spec.ts (passes)
+- Code inspection of traccar-client.ts, polling-manager.ts, sync-tracking-overlay.ts, tracking-geojson.ts, tracking-color.ts, breadcrumb-accumulator.ts, devices-workspace.tsx, device-workspace-model.ts
+
+Ready for tests:
+- Yes for Match items. LPV-042 needs label implementation, LPV-047 needs fitBounds implementation before parity tests.
+
+### 2026-04-11 17:31 by Codex
+
+- Confirmed status of previous packet: Batch 2 follow-up completed and locked.
+- Updated outgoing handoff packet for Claude to start Batch 3 (`LPV-040` to `LPV-048`) without manual packet renaming:
+  - [TO_CLAUDE_FROM_CODEX](/Users/donalocallaghan/workspace/vibes/sartracker-web/handoff/messages/TO_CLAUDE_FROM_CODEX.md)
+  - [active/codex-to-claude.md](/Users/donalocallaghan/workspace/vibes/sartracker-web/handoff/packs/active/codex-to-claude.md)
+- Current state clarified: **Batch 2 complete, Batch 3 active**.
+- Remaining known gaps unchanged: `LPV-061`, `LPV-068`, `LPV-069` remain deferred.
+- Next expected action: `Read what Codex has said` triggers Claude on tracking/devices verification, then `Read what Claude has said` ingests results.
+
+### 2026-04-11 17:30 Batch 2 follow-up: LPV-063, LPV-064, LPV-065 implemented
+
+- Per Codex decisions, added three UI controls to `layer-filter-panel.tsx`:
+  1. **Show Hidden toggle** (LPV-063): Checkbox defaults ON (safety-first — all items visible). When OFF, `filterHiddenNodes()` strips hidden items from the tree listing. State persisted in `layer-tree-ui-store.ts`.
+  2. **Refresh button** (LPV-064): Calls `controller.forceRefresh()` which reloads catalog metadata from persistence and rebuilds the tree. Added `forceRefresh` to `LayerCatalogController` in `start-layer-catalog-runtime.ts`.
+  3. **Expand All button** (LPV-065): Calls `collectAllExpandableNodeIds()` + `resetExpandedNodeIds()` to expand all groups and layers.
+- Added `filterHiddenNodes()` and `collectAllExpandableNodeIds()` to `layer-catalog-tree.ts`
+- Added Playwright tests: `tests/e2e/parity-layer-console.spec.ts` — 3 tests, all pass
+- Updated matrix: LPV-063, LPV-064, LPV-065 → `Match`
+- Verification: 272 unit tests pass, 14 E2E tests pass (3 layer-panel + 8 parity-visibility + 3 new), 0 regressions
+- **Batch 2 final tally**: 8 Match, 3 Missing (LPV-061, LPV-068, LPV-069 — deferred per Codex)
+
+### 2026-04-11 17:10 by Codex
+
+- Batch 2 operator-decisions finalized:
+  - LPV-063: keep layer items always visible in tree; add explicit Show hidden control for declutter.
+  - LPV-064: keep reactive auto-refresh as primary; add manual refresh as resilience fallback.
+  - LPV-065: add Expand All control.
+  - LPV-061/068/069 kept as explicit follow-up gaps (deferred to later bead).
+- Updated active packet:
+  - [TO_CLAUDE_FROM_CODEX](/Users/donalocallaghan/workspace/vibes/sartracker-web/handoff/messages/TO_CLAUDE_FROM_CODEX.md)
+  - [active/codex-to-claude.md](/Users/donalocallaghan/workspace/vibes/sartracker-web/handoff/packs/active/codex-to-claude.md)
+- Current state: **Batch 2.1 follow-up implementation is active; scope limited to LPV-063, LPV-064, LPV-065.**
+
+### 2026-04-11 17:00 Parity Batch 2 completed: Layer tree and console (LPV-060 to LPV-070)
+
+Batch completed: LPV-060 to LPV-070
+
+Completed:
+- LPV-060: Match — hierarchical tree with groups → layers → feature items
+- LPV-061: Missing — no type filter dropdown (legacy has 10 options)
+- LPV-062: Match — search input filters tree reactively
+- LPV-063: Partial — no show-hidden toggle, but web always shows all items
+- LPV-064: Partial — no manual refresh button, but reactive auto-refresh works
+- LPV-065: Missing — no Expand All button
+- LPV-066: Match — visibility toggles at all levels (verified by Batch 1 fix)
+- LPV-067: Match — alias, favorite, reorder all in inspector pane
+- LPV-068: Missing — no right-click context menu
+- LPV-069: Missing — no bulk operations or tracking layer protection
+- LPV-070: Match — tree/canvas sync verified (Batch 1 LPV-247)
+
+Blocked:
+- None
+
+Critical mismatches:
+- None critical. All Critical-severity items (LPV-060, LPV-066, LPV-070) are Match.
+
+Medium-severity gaps:
+- LPV-061 (Missing): Type filter dropdown — the tree's hierarchical grouping provides navigation by type, but no explicit filter control exists
+- LPV-068 (Missing): Context menu — no delete/zoom/export/duplicate from the tree surface. The inspector provides rename/favorite only.
+- LPV-069 (Missing): Bulk operations — no bulk delete, export, or team assignment. No tracking layer protection.
+
+Needs decision:
+- LPV-063: Is always-showing-hidden-items acceptable, or does the operator need a toggle to declutter?
+- LPV-064: Is reactive auto-refresh sufficient, or does the operator need a manual refresh fallback?
+
+Ready for tests:
+- Yes for Match items. Missing items need implementation before tests can be written.
+
+### 2026-04-11 16:20 by Codex
+
+- Clarified handoff loop state after Batch 1 completion.
+- `handoff/messages/TO_CLAUDE_FROM_CODEX.md` updated to Batch 2 execution packet.
+- Active state: `LPV-060` to `LPV-070` pending verification.
+
+## Process Rule
+For hands-off operation, use only these prompts:
+- `Read what Codex has said`
+- `Read what Claude has said`
+No file paths required.
 
 ## Current State
-**Phase: Phase 1 operational core complete — M1 through M10 complete; parity foundation now includes M12, M14, M15, M16, M17, M18, M19, and M20. The basemap viewport reset bug is fixed and verified. Next logical bead is M21.**
+**Phase: Batch 3 verified, pending LPV-042/LPV-047 decisions before moving to Batch 4.**
+
+### 2026-04-11 01:45 Standardized Hands-Off Prompts
+
+- Added fixed packet files so you can use the same two one-line prompts every time:
+  - `/handoff/messages/TO_CLAUDE_FROM_CODEX.md`
+  - `/handoff/messages/TO_CODEX_FROM_CLAUDE.md`
+- Added a short prompt file:
+  - [quick-handoff-prompt.md](/Users/donalocallaghan/workspace/vibes/sartracker-web/docs/quick-handoff-prompt.md)
+- Packet folder remains the canonical archive:
+  - [handoff/packs/README.md](/Users/donalocallaghan/workspace/vibes/sartracker-web/handoff/packs/README.md)
+- Canonical prompts now (no options):
+  - `Read /Users/donalocallaghan/workspace/vibes/sartracker-web/handoff/messages/TO_CLAUDE_FROM_CODEX.md`
+  - `Read /Users/donalocallaghan/workspace/vibes/sartracker-web/handoff/messages/TO_CODEX_FROM_CLAUDE.md`
 
 `HANDOFF.md` is the authoritative continuity log for active repo work across Donal, Codex, and Claude Code. Update it after every meaningful chunk so the next agent can resume without re-discovery.
 
 ## What's Been Done
+
+### 2026-04-11 Parity Batch 1 visibility fix applied and verified
+
+- **Bug found**: Layer tree visibility toggles did not propagate to the MapLibre map. All 8 rows (LPV-240 to LPV-247) were `Mismatch`.
+- **Root cause**: Two-part failure:
+  1. `hydrateCatalogVisibility` in `layer-visibility-store.ts` had a one-shot guard that blocked re-derivation for the same mission after initial hydration
+  2. The tree UI (`layer-filter-panel.tsx`) only called `controller.setNodeVisibility` (async catalog persistence) without also updating the Zustand visibility store that drives MapLibre
+- **Fix applied (2 files)**:
+  1. `src/features/layers/layer-visibility-store.ts` — replaced one-shot `hydratedMissionId` guard with shallow-equality comparison. `hydrateCatalogVisibility` now always re-derives from the current tree but preserves array/record references when unchanged to avoid unnecessary overlay re-renders.
+  2. `src/components/layer-filter-panel.tsx` — added `applyVisibilityForNodes()` function that maps tree node IDs to the appropriate visibility store actions and calls them synchronously after the user clicks a tree checkbox. This provides immediate map response without depending on the async React bridge effect cycle.
+- **Tests**:
+  - 3 new unit tests in `tests/unit/layer-visibility-store.test.ts`:
+    - `re-derives visibility from the catalog tree on every hydration call`
+    - `propagates tree visibility changes to the store on same-mission hydration`
+    - `preserves references when hydrating unchanged tree for performance`
+  - 8 Playwright tests in `tests/e2e/parity-visibility.spec.ts` — all pass
+  - 272 unit tests pass, 0 regressions
+  - Existing E2E tests (layer-panel, full-mission-flow) pass, 0 regressions
+- **Post-fix result**: All 8 LPV rows are `Match`
+- **Cleanup note**: `tests/e2e/diag-visibility.spec.ts` and `tests/e2e/diag2.spec.ts` are diagnostic files that should be deleted
+
+Batch completed: LPV-240 to LPV-247
+
+Completed:
+- LPV-240: Match — per-device tracking visibility toggle hides only that device
+- LPV-241: Match — marker-type visibility toggle hides only that type
+- LPV-242: Match — individual marker visibility toggle hides only that marker
+- LPV-243: Match — drawing-type visibility toggle hides only that type
+- LPV-244: Match — individual drawing visibility toggle hides only that item
+- LPV-245: Match — measurement visibility toggle hides pinned measurements
+- LPV-246: Match — group visibility cascade hides all descendants
+- LPV-247: Match — tree/canvas synchronization survives repeated changes
+
+Blocked:
+- None
+
+Critical mismatches:
+- None (all fixed)
+
+Needs decision:
+- None
+
+Ready for tests:
+- Yes — `tests/e2e/parity-visibility.spec.ts` serves as the locked regression suite
+
+### 2026-04-11 Parity Batch 1 initial verification: Critical visibility (LPV-240 to LPV-247)
+
+Initial verification pass — all 8 rows identified as Mismatch before fix.
+
+Batch completed: LPV-240 to LPV-247 (initial pass)
+
+Completed:
+- LPV-240: Mismatch — per-device tracking visibility toggle does not propagate to map
+- LPV-241: Mismatch — marker-type visibility toggle does not propagate to map
+- LPV-242: Mismatch — individual marker visibility toggle does not propagate to map
+- LPV-243: Mismatch — drawing-type visibility toggle does not propagate to map
+- LPV-244: Mismatch — individual drawing visibility toggle does not propagate to map
+- LPV-245: Mismatch — measurement visibility toggle does not propagate to map
+- LPV-246: Mismatch — group visibility cascade does not propagate to map
+- LPV-247: Mismatch — tree/canvas desynchronized; tree shows toggled state while map shows initial state
+
+Blocked:
+- None blocked for verification; all 8 rows were verified and all failed
+
+Critical mismatches:
+- **All 8 rows share a single root cause**: `hydrateCatalogVisibility` in `src/features/layers/layer-visibility-store.ts:133` has a guard `if (state.hydratedMissionId === missionId && missionId !== null) { return state }` that blocks all visibility store updates after initial mission load
+- The layer tree UI (`src/components/layer-filter-panel.tsx`) toggles visibility via `controller.setNodeVisibility()` which persists catalog metadata and rebuilds the tree, but this path does NOT update the Zustand visibility store (`useLayerVisibilityStore`) that drives MapLibre filters
+- The tree checkbox correctly reflects the catalog node's `isVisible` property, so the **UI appears correct** while the **map is unchanged**
+- This is especially dangerous because manual visual inspection of the tree suggests everything is working
+
+Needs decision:
+- None — the fix path is clear (see below)
+
+Ready for tests:
+- No. Parity tests cannot pass until the architecture fix is applied. The Playwright tests in `tests/e2e/parity-visibility.spec.ts` serve as the regression suite and will pass once the fix is in place.
+
+#### Root Cause Detail
+
+Two visibility paths exist in the codebase:
+
+1. **Catalog metadata persistence** (`controller.setNodeVisibility` → catalog rebuild → `node.isVisible` in tree): Works correctly for persisting visibility state and displaying it in the tree UI. Used by the layer-filter-panel.
+2. **Visibility store** (`useLayerVisibilityStore` → `hiddenDeviceIds`, `markerTypeVisibility`, `drawingTypeVisibility`, `hiddenDrawingIds`, `measurementsVisible`): Drives all MapLibre overlay hooks (`use-map-overlays`, `use-map-drawing-overlays`, `use-map-measurement-overlays`).
+
+The bridge (`layer-catalog-runtime-bridge.tsx:63-65`) calls `hydrateCatalogVisibility(missionId, root)` whenever `root` changes. This correctly populates the visibility store on initial mission load. But after that, the guard at line 133 blocks all subsequent updates for the same mission.
+
+The `devices-workspace.tsx` has a separate toggle that calls `toggleDeviceVisibility` directly on the visibility store — this works but only for devices from that specific workspace.
+
+#### Recommended Fix
+
+Remove the early-return guard from `hydrateCatalogVisibility` (or make it always re-derive from the current tree), so that every catalog rebuild correctly propagates to the visibility store. Alternatively, have the tree UI call both `controller.setNodeVisibility` (for persistence) AND the appropriate visibility store action (for immediate map update).
+
+The fix should then be verified by running `npx playwright test tests/e2e/parity-visibility.spec.ts` — all 8 tests should pass.
+
+#### Evidence
+
+- Code analysis of `src/features/layers/layer-visibility-store.ts`, `src/features/layers/layer-catalog-runtime-bridge.tsx`, `src/features/layers/start-layer-catalog-runtime.ts`, `src/components/layer-filter-panel.tsx`
+- All overlay hooks confirmed to read exclusively from the visibility store: `src/features/map/use-map-overlays.ts`, `src/features/map/use-map-drawing-overlays.ts`, `src/features/map/use-map-measurement-overlays.ts`
+- Playwright test suite: `tests/e2e/parity-visibility.spec.ts` — 8 tests, all 8 fail with visibility store remaining at initial values after tree toggles
+- Existing layer-panel E2E test (`tests/e2e/layer-panel.spec.ts`) does NOT verify map state after toggles — it only checks checkbox state, which is why this bug was previously undetected
+
+### 2026-04-11 parity execution protocol added for Claude Code
+
+- Added a dedicated orchestration document for the legacy-to-web parity program:
+  - `docs/parity-execution-protocol.md`
+- Added a dedicated web-only execution checklist pack:
+  - `docs/web-operator-verification-checklists.md`
+- These files are intended to be the single entrypoint package to hand to Claude Code so it can start work without repeated human context transfer.
+- It locks:
+  - source of truth order:
+    - legacy runtime first
+    - legacy code/tests second
+    - README prose lower priority
+  - canonical working files for Claude execution:
+    - `docs/legacy-plugin-operator-verification-spec.md`
+    - `docs/web-operator-verification-checklists.md`
+    - `docs/web-parity-verification-matrix.md`
+    - `handoff/HANDOFF.md`
+  - Codex role vs Claude Code role:
+    - Codex documents and tightens legacy behavior from the old plugin
+    - Claude Code verifies only `sartracker-web` against that documented behavior
+  - required evidence standard
+  - allowed status vocabulary
+  - mandatory update discipline
+  - batch order for execution
+- Most important execution decision:
+  - Claude Code should start with Batch 1 only:
+    - `LPV-240` through `LPV-247`
+    - the critical visibility tests
+  - Reason:
+    - if layer visibility cannot be trusted, the operator cannot trust the map
+- Practical result:
+  - we now have a self-contained “read this and go” protocol document plus web verification checklist pack, instead of relying on conversational handoff
+  - the next agent should not need Donal to restate the plan
+- Verification:
+  - no automated tests run; this was a documentation/orchestration pass only
+- Recommended next step:
+  - point Claude Code at `docs/parity-execution-protocol.md`
+  - instruct it to execute Batch 1 and update the checklist, matrix, and handoff with evidence
+
+### 2026-04-11 legacy-first operator verification spec started
+
+- Restarted the parity/review effort from the correct source of truth:
+  - the legacy QGIS plugin at `/Users/donalocallaghan/Documents/Qgis/sartracker`
+- For this pass, treated `sartracker-web` as secondary only; the goal was to lock legacy behavior before any web comparison.
+- Mapped the legacy operator surface from code/tests across:
+  - main plugin entrypoint and mission lifecycle
+  - SAR panel
+  - layer console / catalog
+  - devices window
+  - mission logs window
+  - settings workspace
+  - diagnostics panel
+  - coordinate converter
+  - tracking provider/controller/layer managers
+  - marker manager
+  - drawing manager and map tools
+  - legacy test suite inventory
+- Added a new ground-truth document:
+  - `docs/legacy-plugin-operator-verification-spec.md`
+- Added two follow-on execution artifacts derived from that spec:
+  - `docs/legacy-plugin-runtime-checklist.md`
+  - `docs/web-parity-verification-matrix.md`
+- The new spec is intentionally legacy-only and includes:
+  - source-of-truth rules
+  - evidence references back to legacy files/tests
+  - explicit `LPV-*` verification items for:
+    - primary operator surfaces
+    - mission lifecycle
+    - tracking/device visibility
+    - layer tree and visibility behavior
+    - marker workflows
+    - drawing tool workflows
+    - measurement/coordinates
+    - mission logs
+    - settings
+    - diagnostics
+    - GPX/helicopters
+    - critical visibility tests to carry forward
+- Practical result:
+  - we now have a concrete legacy-first checklist to compare against the web app instead of relying on vague parity summaries
+  - especially important: it calls out the exact layer-visibility checks that must be validated rather than assumed
+- The runtime checklist is intended for literal use while operating the legacy plugin in QGIS:
+  - screen-by-screen
+  - workflow-by-workflow
+  - with explicit pass/fail/blocked tracking
+- The parity matrix is intended for the next phase:
+  - one row per `LPV-*`
+  - legacy evidence column
+  - web result column
+  - severity and bead follow-up columns
+- Verification:
+  - no automated tests run; this was a research/documentation pass only
+- Recommended next step:
+  - start actually executing the legacy runtime checklist and fill the parity matrix row by row against `sartracker-web`, beginning with the critical visibility items (`LPV-240` through `LPV-247`)
 
 ### 2026-04-11 M20 hardening pass completed
 

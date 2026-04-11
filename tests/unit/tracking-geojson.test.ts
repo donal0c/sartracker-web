@@ -22,6 +22,7 @@ describe('tracking geojson', () => {
     expect(collection.features).toHaveLength(2)
     expect(collection.features[0]?.geometry.type).toBe('Point')
     expect(collection.features[0]?.properties.deviceId).toBe('1')
+    expect(collection.features[0]?.properties.name).toBe('Donal Phone')
     expect(collection.features[0]?.properties.color).toMatch(/^#/)
     expect(collection.features[0]?.properties.stale).toBe(true)
   })

@@ -93,6 +93,78 @@ describe('startMissionReviewRuntime', () => {
       }),
     )
   })
+
+  it('surfaces an error when a store query fails during load', async () => {
+    const applyRuntime = vi.fn()
+    const runtime = await startMissionReviewRuntime({
+      missionStore: createMissionReviewStoreStub({
+        listMissions: vi.fn().mockResolvedValue([FIRST_MISSION]),
+        listMarkers: vi.fn().mockRejectedValue(new Error('markers table corrupt')),
+      }),
+      layerCatalogStore: {
+        listMetadata: vi.fn().mockResolvedValue([]),
+      },
+      applyRuntime,
+    })
+
+    await runtime.load(FIRST_MISSION.id)
+
+    expect(applyRuntime).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        loading: false,
+        error: 'markers table corrupt',
+      }),
+    )
+  })
+
+  it('refreshes the currently selected mission', async () => {
+    const applyRuntime = vi.fn()
+    const runtime = await startMissionReviewRuntime({
+      missionStore: createMissionReviewStoreStub({
+        listMissions: vi.fn().mockResolvedValue([FIRST_MISSION]),
+      }),
+      layerCatalogStore: {
+        listMetadata: vi.fn().mockResolvedValue([]),
+      },
+      applyRuntime,
+    })
+
+    await runtime.load(FIRST_MISSION.id)
+    await runtime.refreshSelectedMission()
+
+    const lastCall = applyRuntime.mock.calls.at(-1)?.[0]
+    expect(lastCall).toMatchObject({
+      selectedMissionId: FIRST_MISSION.id,
+      loading: false,
+      refreshing: false,
+    })
+    expect(lastCall?.snapshot).not.toBeNull()
+  })
+
+  it('handles an empty mission list without crashing', async () => {
+    const applyRuntime = vi.fn()
+    const runtime = await startMissionReviewRuntime({
+      missionStore: createMissionReviewStoreStub({
+        listMissions: vi.fn().mockResolvedValue([]),
+      }),
+      layerCatalogStore: {
+        listMetadata: vi.fn().mockResolvedValue([]),
+      },
+      applyRuntime,
+    })
+
+    await runtime.load(null)
+
+    expect(applyRuntime).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        missions: [],
+        selectedMissionId: null,
+        snapshot: null,
+        loading: false,
+        error: null,
+      }),
+    )
+  })
 })
 
 const FIRST_MISSION: Mission = {
@@ -197,6 +269,7 @@ function createMissionReviewStoreStub(overrides: Record<string, unknown> = {}) {
     listDevices: vi.fn().mockResolvedValue([device]),
     listPositions: vi.fn().mockResolvedValue([position]),
     listDrawings: vi.fn().mockResolvedValue([drawing]),
+    listGpxImports: vi.fn().mockResolvedValue([]),
     ...overrides,
   }
 }

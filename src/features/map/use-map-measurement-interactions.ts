@@ -1,11 +1,10 @@
 import { useEffect, type RefObject } from 'react'
 import type maplibregl from 'maplibre-gl'
 
-import { useDrawingStore } from '../drawings/drawing-store'
 import { useMeasurementStore } from '../measurements/measurement-store'
 import { useMissionStore } from '../mission/mission-store'
-import { useMarkerStore } from '../markers/marker-store'
 import { isPointInsideMapContainer, shouldIgnoreMapInteraction } from './map-interaction-guards'
+import { useMapInteractionMode } from './use-map-interaction-mode'
 
 type UseMapMeasurementInteractionsOptions = {
   readonly containerRef: RefObject<HTMLDivElement | null>
@@ -20,11 +19,9 @@ export function useMapMeasurementInteractions(
 ): void {
   const controller = useMeasurementStore((state) => state.controller)
   const mode = useMeasurementStore((state) => state.mode)
+  const interactionMode = useMapInteractionMode()
   const currentMissionId = useMissionStore((state) => state.currentMission?.id ?? null)
   const missionPhase = useMissionStore((state) => state.phase)
-  const drawingTool = useDrawingStore((state) => state.activeTool)
-  const drawingDialog = useDrawingStore((state) => state.dialog)
-  const markerDialog = useMarkerStore((state) => state.dialog)
 
   useEffect(() => {
     if (controller === null) {
@@ -71,12 +68,7 @@ export function useMapMeasurementInteractions(
     }
 
     const handleClick = (event: MouseEvent) => {
-      if (
-        mode !== 'armed' ||
-        drawingTool !== 'select' ||
-        drawingDialog !== null ||
-        markerDialog !== null
-      ) {
+      if (interactionMode !== 'measurement_armed') {
         return
       }
 
@@ -128,9 +120,7 @@ export function useMapMeasurementInteractions(
   }, [
     controller,
     currentMissionId,
-    drawingDialog,
-    drawingTool,
-    markerDialog,
+    interactionMode,
     missionPhase,
     mode,
     options.containerRef,

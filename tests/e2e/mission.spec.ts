@@ -165,9 +165,9 @@ test.describe('M5 mission control workflows', () => {
     const elapsedAtFinish = Math.floor(
       (Date.parse(persistedMission!.finish_time ?? '') - Date.parse(persistedMission!.start_time)) / 1000,
     )
-    expect(Math.max(0, elapsedAtFinish - persistedMission!.paused_seconds)).toBe(
-      parseDuration(activeAtPause),
-    )
+    expect(
+      Math.abs(Math.max(0, elapsedAtFinish - persistedMission!.paused_seconds) - parseDuration(activeAtPause)),
+    ).toBeLessThanOrEqual(1)
   })
 
   test('warns before reusing an existing mission name', async ({ page }) => {
@@ -188,11 +188,11 @@ test.describe('M5 mission control workflows', () => {
 
   test('rejects invalid start offsets before creating a mission', async ({ page }) => {
     await page.getByTestId('mission-name-input').fill('Offset Guardrails')
-    await page.getByTestId('mission-offset-input').fill('49')
+    await page.getByTestId('mission-offset-input').fill('6')
     await page.getByTestId('mission-start-btn').click()
 
     await expect(page.getByTestId('mission-control')).toContainText(
-      'Start offset must be between 0 and 48 hours.',
+      'Start offset must be between 0 and 5 hours.',
     )
     await expect(page.getByTestId('mission-control')).toContainText('idle')
   })

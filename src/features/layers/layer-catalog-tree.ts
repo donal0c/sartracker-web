@@ -99,6 +99,58 @@ export function filterCatalogTree(
   }
 }
 
+/**
+ * Removes hidden nodes (isVisible === false) from the tree. Groups and layers
+ * are kept if they have at least one visible descendant.
+ */
+export function filterHiddenNodes(root: LayerCatalogRootNode): LayerCatalogRootNode {
+  const filteredGroups: LayerCatalogGroupNode[] = []
+
+  for (const group of root.children) {
+    const filteredLayers: LayerCatalogLayerNode[] = []
+
+    for (const layer of group.children) {
+      const filteredItems = layer.children.filter((item) => item.isVisible)
+      if (!layer.isVisible && filteredItems.length === 0) {
+        continue
+      }
+
+      filteredLayers.push({
+        ...layer,
+        children: filteredItems,
+      })
+    }
+
+    if (!group.isVisible && filteredLayers.length === 0) {
+      continue
+    }
+
+    filteredGroups.push({
+      ...group,
+      children: filteredLayers,
+    })
+  }
+
+  return {
+    ...root,
+    children: filteredGroups,
+  }
+}
+
+/**
+ * Collects all expandable node IDs in the tree (groups and layers).
+ */
+export function collectAllExpandableNodeIds(root: LayerCatalogRootNode): readonly string[] {
+  const ids: string[] = []
+  for (const group of root.children) {
+    ids.push(group.id)
+    for (const layer of group.children) {
+      ids.push(layer.id)
+    }
+  }
+  return ids
+}
+
 function filterNode(
   node: LayerCatalogGroupNode | LayerCatalogLayerNode | LayerCatalogFeatureItemNode,
   query: string,

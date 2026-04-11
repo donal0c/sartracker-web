@@ -141,7 +141,7 @@ export function MissionReviewWorkspace() {
                         {mission.status}
                       </p>
                       <p className="mt-1 font-mono text-[11px] text-stone-500">
-                        {new Date(mission.start_time).toLocaleString()}
+                        {new Date(mission.start_time).toLocaleString('en-IE', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false })}
                       </p>
                     </button>
                   )
@@ -198,11 +198,13 @@ export function MissionReviewWorkspace() {
                     onOpenPath={(path) => void handleOpenPath(path)}
                     onSelectMarker={setSelectedMarkerId}
                     onZoomMarker={() => {
-                      if (selectedMarker === null) {
+                      if (
+                        selectedMarker === null ||
+                        !isValidWgs84(selectedMarker.lat, selectedMarker.lon)
+                      ) {
                         return
                       }
-                      const [latText, lonText] = selectedMarker.coordinateDisplay.split(', ')
-                      queueTarget(Number(latText), Number(lonText), selectedMarker.name)
+                      queueTarget(selectedMarker.lat, selectedMarker.lon, selectedMarker.name)
                     }}
                     selectedMarker={selectedMarker}
                   />
@@ -583,6 +585,17 @@ function resolveEventPath(event: MissionReviewEventRow): string | null {
   }
 
   return null
+}
+
+function isValidWgs84(lat: number, lon: number): boolean {
+  return (
+    Number.isFinite(lat) &&
+    Number.isFinite(lon) &&
+    lat >= -90 &&
+    lat <= 90 &&
+    lon >= -180 &&
+    lon <= 180
+  )
 }
 
 function toErrorMessage(error: unknown): string {

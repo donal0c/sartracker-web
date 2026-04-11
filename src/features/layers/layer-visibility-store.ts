@@ -14,23 +14,8 @@ import {
   TRACKING_DEVICES_LAYER_NODE_ID,
 } from './layer-catalog-ids'
 
-export const DRAWING_TYPE_LABELS: Record<DrawingType, string> = {
-  line: 'Lines',
-  search_area: 'Search Areas',
-  range_ring: 'Range Rings',
-  bearing_line: 'Bearing Lines',
-  search_sector: 'Search Sectors',
-  text_label: 'Text Labels',
-}
-
-export const MARKER_TYPE_LABELS: Record<MarkerType, string> = {
-  ipp_lkp: 'IPP / LKP',
-  clue: 'Clues',
-  hazard: 'Hazards',
-  casualty: 'Casualties',
-}
-
 type LayerVisibilityState = {
+  readonly hydratedMissionId: string | null
   readonly hiddenDeviceIds: readonly string[]
   readonly hiddenMarkerIds: readonly string[]
   readonly hiddenGpxImportIds: readonly string[]
@@ -54,7 +39,7 @@ type LayerVisibilityState = {
   readonly hideAllDrawings: (drawings: readonly Drawing[]) => void
   readonly setBreadcrumbsVisible: (visible: boolean) => void
   readonly setMeasurementsVisible: (visible: boolean) => void
-  readonly hydrateCatalogVisibility: (root: LayerCatalogRootNode) => void
+  readonly hydrateCatalogVisibility: (missionId: string | null, root: LayerCatalogRootNode) => void
 }
 
 const DEFAULT_MARKER_TYPE_VISIBILITY: Record<MarkerType, boolean> = {
@@ -74,6 +59,7 @@ const DEFAULT_DRAWING_TYPE_VISIBILITY: Record<DrawingType, boolean> = {
 }
 
 export const useLayerVisibilityStore = create<LayerVisibilityState>((set) => ({
+  hydratedMissionId: null,
   hiddenDeviceIds: [],
   hiddenMarkerIds: [],
   hiddenGpxImportIds: [],
@@ -142,28 +128,75 @@ export const useLayerVisibilityStore = create<LayerVisibilityState>((set) => ({
   hideAllDrawings: (drawings) => set({ hiddenDrawingIds: drawings.map((drawing) => drawing.id) }),
   setBreadcrumbsVisible: (visible) => set({ breadcrumbsVisible: visible }),
   setMeasurementsVisible: (visible) => set({ measurementsVisible: visible }),
-  hydrateCatalogVisibility: (root) =>
-    set({
-      hiddenDeviceIds: collectHiddenDeviceIds(root),
-      hiddenMarkerIds: collectHiddenMarkerIds(root),
-      hiddenGpxImportIds: collectHiddenGpxImportIds(root),
-      markerTypeVisibility: {
+  hydrateCatalogVisibility: (missionId, root) =>
+    set((state) => {
+      const nextHiddenDeviceIds = collectHiddenDeviceIds(root)
+      const nextHiddenMarkerIds = collectHiddenMarkerIds(root)
+      const nextHiddenGpxImportIds = collectHiddenGpxImportIds(root)
+      const nextHiddenDrawingIds = collectHiddenDrawingIds(root)
+      const nextMarkerTypeVisibility: Record<MarkerType, boolean> = {
         ipp_lkp: readLayerVisibility(root, getMarkerLayerNodeId('ipp_lkp')),
         clue: readLayerVisibility(root, getMarkerLayerNodeId('clue')),
         hazard: readLayerVisibility(root, getMarkerLayerNodeId('hazard')),
         casualty: readLayerVisibility(root, getMarkerLayerNodeId('casualty')),
-      },
-      drawingTypeVisibility: {
+      }
+      const nextDrawingTypeVisibility: Record<DrawingType, boolean> = {
         line: readLayerVisibility(root, getDrawingLayerNodeId('line')),
         search_area: readLayerVisibility(root, getDrawingLayerNodeId('search_area')),
         range_ring: readLayerVisibility(root, getDrawingLayerNodeId('range_ring')),
         bearing_line: readLayerVisibility(root, getDrawingLayerNodeId('bearing_line')),
         search_sector: readLayerVisibility(root, getDrawingLayerNodeId('search_sector')),
         text_label: readLayerVisibility(root, getDrawingLayerNodeId('text_label')),
-      },
-      hiddenDrawingIds: collectHiddenDrawingIds(root),
-      breadcrumbsVisible: readLayerVisibility(root, TRACKING_BREADCRUMBS_LAYER_NODE_ID),
-      measurementsVisible: readLayerVisibility(root, MEASUREMENTS_LAYER_NODE_ID),
+      }
+      const nextBreadcrumbsVisible = readLayerVisibility(root, TRACKING_BREADCRUMBS_LAYER_NODE_ID)
+      const nextMeasurementsVisible = readLayerVisibility(root, MEASUREMENTS_LAYER_NODE_ID)
+
+      // Preserve existing array/object references when values are unchanged to
+      // avoid unnecessary re-renders in overlay hooks that depend on these values.
+      const hiddenDeviceIds = shallowStringArrayEqual(state.hiddenDeviceIds, nextHiddenDeviceIds)
+        ? state.hiddenDeviceIds
+        : nextHiddenDeviceIds
+      const hiddenMarkerIds = shallowStringArrayEqual(state.hiddenMarkerIds, nextHiddenMarkerIds)
+        ? state.hiddenMarkerIds
+        : nextHiddenMarkerIds
+      const hiddenGpxImportIds = shallowStringArrayEqual(state.hiddenGpxImportIds, nextHiddenGpxImportIds)
+        ? state.hiddenGpxImportIds
+        : nextHiddenGpxImportIds
+      const hiddenDrawingIds = shallowStringArrayEqual(state.hiddenDrawingIds, nextHiddenDrawingIds)
+        ? state.hiddenDrawingIds
+        : nextHiddenDrawingIds
+      const markerTypeVisibility = shallowRecordEqual(state.markerTypeVisibility, nextMarkerTypeVisibility)
+        ? state.markerTypeVisibility
+        : nextMarkerTypeVisibility
+      const drawingTypeVisibility = shallowRecordEqual(state.drawingTypeVisibility, nextDrawingTypeVisibility)
+        ? state.drawingTypeVisibility
+        : nextDrawingTypeVisibility
+
+      if (
+        state.hydratedMissionId === missionId &&
+        hiddenDeviceIds === state.hiddenDeviceIds &&
+        hiddenMarkerIds === state.hiddenMarkerIds &&
+        hiddenGpxImportIds === state.hiddenGpxImportIds &&
+        hiddenDrawingIds === state.hiddenDrawingIds &&
+        markerTypeVisibility === state.markerTypeVisibility &&
+        drawingTypeVisibility === state.drawingTypeVisibility &&
+        nextBreadcrumbsVisible === state.breadcrumbsVisible &&
+        nextMeasurementsVisible === state.measurementsVisible
+      ) {
+        return state
+      }
+
+      return {
+        hydratedMissionId: missionId,
+        hiddenDeviceIds,
+        hiddenMarkerIds,
+        hiddenGpxImportIds,
+        hiddenDrawingIds,
+        markerTypeVisibility,
+        drawingTypeVisibility,
+        breadcrumbsVisible: nextBreadcrumbsVisible,
+        measurementsVisible: nextMeasurementsVisible,
+      }
     }),
 }))
 
@@ -243,6 +276,43 @@ function collectHiddenMarkerIds(root: LayerCatalogRootNode): readonly string[] {
         child.entity?.type === 'marker' && !child.isVisible ? [child.entity.marker.id] : [],
       ),
     )
+}
+
+function shallowStringArrayEqual(
+  a: readonly string[],
+  b: readonly string[],
+): boolean {
+  if (a.length !== b.length) {
+    return false
+  }
+
+  for (let i = 0; i < a.length; i++) {
+    if (a[i] !== b[i]) {
+      return false
+    }
+  }
+
+  return true
+}
+
+function shallowRecordEqual<K extends string>(
+  a: Record<K, boolean>,
+  b: Record<K, boolean>,
+): boolean {
+  const keysA = Object.keys(a) as K[]
+  const keysB = Object.keys(b) as K[]
+
+  if (keysA.length !== keysB.length) {
+    return false
+  }
+
+  for (const key of keysA) {
+    if (a[key] !== b[key]) {
+      return false
+    }
+  }
+
+  return true
 }
 
 function collectHiddenGpxImportIds(root: LayerCatalogRootNode): readonly string[] {

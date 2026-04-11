@@ -5,11 +5,13 @@ type LayerTreeUiState = {
   readonly panelExpanded: boolean
   readonly searchQuery: string
   readonly expandedNodeIds: readonly string[]
+  readonly showHidden: boolean
   readonly setPanelExpanded: (expanded: boolean) => void
   readonly setSearchQuery: (query: string) => void
   readonly toggleNodeExpanded: (nodeId: string) => void
   readonly setNodeExpanded: (nodeId: string, expanded: boolean) => void
   readonly resetExpandedNodeIds: (nodeIds: readonly string[]) => void
+  readonly setShowHidden: (showHidden: boolean) => void
 }
 
 const DEFAULT_EXPANDED_NODE_IDS = [
@@ -34,6 +36,7 @@ export const useLayerTreeUiStore = create<LayerTreeUiState>()(
       panelExpanded: true,
       searchQuery: '',
       expandedNodeIds: [...DEFAULT_EXPANDED_NODE_IDS],
+      showHidden: true,
       setPanelExpanded: (expanded) => set({ panelExpanded: expanded }),
       setSearchQuery: (query) => set({ searchQuery: query }),
       toggleNodeExpanded: (nodeId) =>
@@ -51,12 +54,14 @@ export const useLayerTreeUiStore = create<LayerTreeUiState>()(
             : state.expandedNodeIds.filter((candidate) => candidate !== nodeId),
         })),
       resetExpandedNodeIds: (nodeIds) => set({ expandedNodeIds: [...nodeIds] }),
+      setShowHidden: (showHidden) => set({ showHidden }),
     }),
     {
       name: 'sartracker:layer-tree-ui',
       partialize: (state) => ({
         panelExpanded: state.panelExpanded,
         expandedNodeIds: state.expandedNodeIds,
+        showHidden: state.showHidden,
       }),
     },
   ),

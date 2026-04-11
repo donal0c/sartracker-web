@@ -1,16 +1,31 @@
 import { useEffect, useMemo, useState } from 'react'
 
 import { useLayerCatalogStore } from '../features/layers/layer-catalog-store'
+import {
+  getDrawingLayerNodeId,
+  getMarkerLayerNodeId,
+  MEASUREMENTS_LAYER_NODE_ID,
+  TRACKING_BREADCRUMBS_LAYER_NODE_ID,
+  TRACKING_DEVICES_LAYER_NODE_ID,
+} from '../features/layers/layer-catalog-ids'
 import type { LayerCatalogNode } from '../features/layers/layer-catalog-tree'
 import {
+  collectAllExpandableNodeIds,
   filterCatalogTree,
+  filterHiddenNodes,
   findCatalogNode,
   getDescendantNodeIds,
   getNodeChildren,
   getSiblingNodeIds,
   hasNodeChildren,
 } from '../features/layers/layer-catalog-tree'
+import type { LayerCatalogRootNode } from '../features/layers/layer-catalog-types'
 import { useLayerTreeUiStore } from '../features/layers/layer-tree-ui-store'
+import { useLayerVisibilityStore } from '../features/layers/layer-visibility-store'
+import type {
+  DrawingType,
+  MarkerType,
+} from '../infrastructure/mission-store/tauri-mission-store'
 import { useMeasurementStore } from '../features/measurements/measurement-store'
 import { useTrackingStore } from '../features/tracking/tracking-store'
 
@@ -30,13 +45,16 @@ export function LayerFilterPanel() {
   const setSearchQuery = useLayerTreeUiStore((state) => state.setSearchQuery)
   const toggleNodeExpanded = useLayerTreeUiStore((state) => state.toggleNodeExpanded)
   const setNodeExpanded = useLayerTreeUiStore((state) => state.setNodeExpanded)
+  const resetExpandedNodeIds = useLayerTreeUiStore((state) => state.resetExpandedNodeIds)
+  const showHidden = useLayerTreeUiStore((state) => state.showHidden)
+  const setShowHidden = useLayerTreeUiStore((state) => state.setShowHidden)
   const trackingSnapshot = useTrackingStore((state) => state.snapshot)
   const measurements = useMeasurementStore((state) => state.measurements)
 
-  const filteredRoot = useMemo(
-    () => filterCatalogTree(root, searchQuery),
-    [root, searchQuery],
-  )
+  const filteredRoot = useMemo(() => {
+    const searched = filterCatalogTree(root, searchQuery)
+    return showHidden ? searched : filterHiddenNodes(searched)
+  }, [root, searchQuery, showHidden])
   const selectedNode = useMemo(
     () => findCatalogNode(root, selectedNodeId),
     [root, selectedNodeId],
@@ -88,6 +106,37 @@ export function LayerFilterPanel() {
             placeholder="Search layers and features..."
             value={searchQuery}
           />
+
+          <div className="flex flex-wrap items-center gap-2">
+            <label
+              className="flex items-center gap-1.5 text-[10px] text-stone-400"
+              data-testid="layer-show-hidden-toggle"
+            >
+              <input
+                checked={showHidden}
+                className="rounded border-stone-700 bg-stone-950 text-amber-500 focus:ring-amber-500/30"
+                onChange={(event) => setShowHidden(event.target.checked)}
+                type="checkbox"
+              />
+              Show Hidden
+            </label>
+            <button
+              className="rounded-lg bg-stone-800 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-stone-400 transition-colors hover:bg-stone-700 hover:text-stone-200 active:bg-stone-900"
+              data-testid="layer-expand-all-btn"
+              onClick={() => resetExpandedNodeIds(collectAllExpandableNodeIds(root))}
+              type="button"
+            >
+              Expand All
+            </button>
+            <button
+              className="rounded-lg bg-stone-800 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-stone-400 transition-colors hover:bg-stone-700 hover:text-stone-200 active:bg-stone-900"
+              data-testid="layer-refresh-btn"
+              onClick={() => void catalogController?.forceRefresh()}
+              type="button"
+            >
+              Refresh
+            </button>
+          </div>
 
           {catalogError ? (
             <EmptyState message={catalogError} testId="layer-tree-error" />
@@ -505,7 +554,128 @@ async function setSubtreeVisibility(
   }
 
   const nodeIds = [node.id, ...getDescendantNodeIds(node)]
-  await Promise.all(nodeIds.map((candidateNodeId) => controller.setNodeVisibility(candidateNodeId, visible)))
+
+  // 1. Persist visibility metadata to the catalog (for durability across reload).
+  void Promise.all(nodeIds.map((candidateNodeId) => controller.setNodeVisibility(candidateNodeId, visible)))
+
+  // 2. Immediately push to the visibility store so MapLibre filters update
+  //    without waiting for the async persist → rebuild → bridge effect cycle.
+  applyVisibilityForNodes(root, nodeIds, visible)
+}
+
+const MARKER_TYPE_BY_LAYER_ID: Readonly<Record<string, MarkerType>> = {
+  [getMarkerLayerNodeId('ipp_lkp')]: 'ipp_lkp',
+  [getMarkerLayerNodeId('clue')]: 'clue',
+  [getMarkerLayerNodeId('hazard')]: 'hazard',
+  [getMarkerLayerNodeId('casualty')]: 'casualty',
+}
+
+const DRAWING_TYPE_BY_LAYER_ID: Readonly<Record<string, DrawingType>> = {
+  [getDrawingLayerNodeId('line')]: 'line',
+  [getDrawingLayerNodeId('search_area')]: 'search_area',
+  [getDrawingLayerNodeId('range_ring')]: 'range_ring',
+  [getDrawingLayerNodeId('bearing_line')]: 'bearing_line',
+  [getDrawingLayerNodeId('search_sector')]: 'search_sector',
+  [getDrawingLayerNodeId('text_label')]: 'text_label',
+}
+
+/**
+ * Directly pushes visibility changes to the Zustand visibility store so MapLibre
+ * filters update immediately. This complements the async catalog persistence path
+ * and avoids depending on React's useEffect cycle for map responsiveness.
+ */
+function applyVisibilityForNodes(
+  root: LayerCatalogRootNode,
+  nodeIds: readonly string[],
+  visible: boolean,
+): void {
+  const store = useLayerVisibilityStore.getState()
+
+  for (const nodeId of nodeIds) {
+    // Device feature item: feature:device:{deviceId}
+    if (nodeId.startsWith('feature:device:')) {
+      const deviceId = nodeId.slice('feature:device:'.length)
+      const hidden = store.hiddenDeviceIds.includes(deviceId)
+      if (visible && hidden) {
+        store.toggleDeviceVisibility(deviceId)
+      } else if (!visible && !hidden) {
+        store.toggleDeviceVisibility(deviceId)
+      }
+      continue
+    }
+
+    // Marker feature item: feature:marker:{markerId}
+    if (nodeId.startsWith('feature:marker:')) {
+      const markerId = nodeId.slice('feature:marker:'.length)
+      const hidden = store.hiddenMarkerIds.includes(markerId)
+      if (visible && hidden) {
+        store.toggleMarkerVisibility(markerId)
+      } else if (!visible && !hidden) {
+        store.toggleMarkerVisibility(markerId)
+      }
+      continue
+    }
+
+    // Drawing feature item: feature:drawing:{drawingId}
+    if (nodeId.startsWith('feature:drawing:')) {
+      const drawingId = nodeId.slice('feature:drawing:'.length)
+      const hidden = store.hiddenDrawingIds.includes(drawingId)
+      if (visible && hidden) {
+        store.toggleDrawingVisibility(drawingId)
+      } else if (!visible && !hidden) {
+        store.toggleDrawingVisibility(drawingId)
+      }
+      continue
+    }
+
+    // Marker type layer
+    const markerType = MARKER_TYPE_BY_LAYER_ID[nodeId]
+    if (markerType !== undefined) {
+      store.setMarkerTypeVisibility(markerType, visible)
+      continue
+    }
+
+    // Drawing type layer
+    const drawingType = DRAWING_TYPE_BY_LAYER_ID[nodeId]
+    if (drawingType !== undefined) {
+      store.setDrawingTypeVisibility(drawingType, visible)
+      continue
+    }
+
+    // Breadcrumbs layer
+    if (nodeId === TRACKING_BREADCRUMBS_LAYER_NODE_ID) {
+      store.setBreadcrumbsVisible(visible)
+      continue
+    }
+
+    // Measurements layer
+    if (nodeId === MEASUREMENTS_LAYER_NODE_ID) {
+      store.setMeasurementsVisible(visible)
+      continue
+    }
+
+    // Device layer: when hiding the entire device layer, hide all device children
+    if (nodeId === TRACKING_DEVICES_LAYER_NODE_ID) {
+      const deviceLayer = root.children
+        .flatMap((group) => group.children)
+        .find((layer) => layer.id === TRACKING_DEVICES_LAYER_NODE_ID)
+      if (deviceLayer !== undefined) {
+        const allDeviceIds = deviceLayer.children
+          .flatMap((child) =>
+            child.entity?.type === 'device' ? [child.entity.device.device_id] : [],
+          )
+        if (visible) {
+          store.showAllDevices()
+        } else {
+          store.hideAllDevices(allDeviceIds)
+        }
+      }
+      continue
+    }
+
+    // Groups and other structural nodes: no direct store action needed
+    // (their children are handled individually via getDescendantNodeIds)
+  }
 }
 
 async function reorderNodeRelative(

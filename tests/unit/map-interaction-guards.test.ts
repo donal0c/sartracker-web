@@ -52,6 +52,29 @@ describe('map interaction guards', () => {
     ).toBe(false)
   })
 
+  it('allows clicks with null target during an active mission', () => {
+    expect(
+      shouldIgnoreMapInteraction({
+        currentMissionId: 'mission-1',
+        missionPhase: 'active',
+        target: null,
+        interactiveSelector: 'button, input, select, label, a',
+      }),
+    ).toBe(false)
+  })
+
+  it('allows clicks during a paused mission', () => {
+    const surface = document.createElement('div')
+    expect(
+      shouldIgnoreMapInteraction({
+        currentMissionId: 'mission-1',
+        missionPhase: 'paused',
+        target: surface,
+        interactiveSelector: 'button, input, select, label, a',
+      }),
+    ).toBe(false)
+  })
+
   it('detects points inside the map container bounds', () => {
     expect(
       isPointInsideMapContainer(

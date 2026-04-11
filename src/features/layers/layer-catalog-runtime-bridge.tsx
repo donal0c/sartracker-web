@@ -61,8 +61,8 @@ export function LayerCatalogRuntimeBridge() {
   }, [controller, devices, drawings, gpxImports, markers, missionId])
 
   useEffect(() => {
-    hydrateCatalogVisibility(root)
-  }, [hydrateCatalogVisibility, root])
+    hydrateCatalogVisibility(missionId, root)
+  }, [hydrateCatalogVisibility, missionId, root])
 
   return null
 }

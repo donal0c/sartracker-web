@@ -3,7 +3,6 @@ import type maplibregl from 'maplibre-gl'
 
 import { findNearestDrawingId } from '../drawings/drawing-hit-testing'
 import { useDrawingStore } from '../drawings/drawing-store'
-import { useMeasurementStore } from '../measurements/measurement-store'
 import { useMissionStore } from '../mission/mission-store'
 import {
   getInteractiveDrawingLayerIds,
@@ -11,6 +10,7 @@ import {
   resolveClickedDrawingId,
   shouldIgnoreDrawingMapClick,
 } from './map-drawing-interactions'
+import { useMapInteractionMode } from './use-map-interaction-mode'
 
 type UseMapDrawingInteractionsOptions = {
   readonly containerRef: RefObject<HTMLDivElement | null>
@@ -27,7 +27,7 @@ export function useMapDrawingInteractions(
   const activeTool = useDrawingStore((state) => state.activeTool)
   const dialog = useDrawingStore((state) => state.dialog)
   const drawings = useDrawingStore((state) => state.drawings)
-  const measurementMode = useMeasurementStore((state) => state.mode)
+  const interactionMode = useMapInteractionMode()
   const currentMissionId = useMissionStore((state) => state.currentMission?.id ?? null)
   const missionPhase = useMissionStore((state) => state.phase)
 
@@ -101,7 +101,7 @@ export function useMapDrawingInteractions(
 
     const handleClick = (event: MouseEvent) => {
       if (
-        measurementMode === 'armed' ||
+        interactionMode === 'measurement_armed' ||
         shouldIgnoreDrawingMapClick(currentMissionId, missionPhase, event.target)
       ) {
         return
@@ -202,7 +202,7 @@ export function useMapDrawingInteractions(
     controller,
     currentMissionId,
     drawings,
-    measurementMode,
+    interactionMode,
     missionPhase,
     options.containerRef,
     options.mapRef,

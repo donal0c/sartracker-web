@@ -11,7 +11,40 @@ This application is used by Kerry Mountain Rescue Team during real search and re
 3. **Read handoff/HANDOFF.md** for the current state and what was last done
 4. **Read the relevant bead** for whatever you're working on (`bd list`, `bd show <id>`)
 
+### Hands-Off Handoff Protocol (required)
+
+Use these exact phrases every time you want to trigger either assistant:
+- `Read what Codex has said`
+- `Read what Claude has said`
+
+Behavior:
+- `Read what Codex has said` means read and act on:
+  - `handoff/messages/TO_CLAUDE_FROM_CODEX.md`
+- `Read what Claude has said` means read and act on:
+  - `handoff/messages/TO_CODEX_FROM_CLAUDE.md`
+
+No file paths or extra prompts are needed in the handoff message.
+
 `handoff/HANDOFF.md` is the shared continuity document between Donal, Codex, and Claude Code. If there is any mismatch between older planning docs and the current implementation state, follow the handoff file and update stale docs as part of the work.
+
+### When We Involve Claude (required)
+
+Use Claude for each batch at the end, after tests and docs are updated.
+
+- Always invite Claude review when a bead touches life-safety behavior:
+  - tracking, layer visibility/state, mission lifecycle, persistence, or operator workflow.
+- Always invite Claude review before marking any batch as complete.
+- Involve Claude if there is ambiguity in requirements or behavior from the legacy plugin.
+- Involve Claude when a single test run still has red risks despite implementation being mostly in place.
+
+For each batch, after completing work:
+1. update `handoff/HANDOFF.md`,
+2. update the relevant packet files,
+3. run the verification suite,
+4. update packet to say "ready for Claude validation" and what to check.
+
+After that handoff, we do:
+- `Read what Claude has said` (next agent picks up, validates, and either clears the batch or adds follow-up gaps).
 
 ## After Every Chunk of Work
 

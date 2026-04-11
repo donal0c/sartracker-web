@@ -48,6 +48,8 @@ export type MissionReviewMarkerRow = {
   readonly type: Marker['type']
   readonly name: string
   readonly description: string
+  readonly lat: number
+  readonly lon: number
   readonly createdAtDisplay: string
   readonly updatedAtDisplay: string
   readonly coordinateDisplay: string
@@ -96,6 +98,8 @@ export function buildMissionReviewSnapshot(
     0,
   )
 
+  const eventsByMarkerId = indexEventsByMarkerId(input.events)
+
   return {
     mission: input.mission,
     summary: {
@@ -117,7 +121,7 @@ export function buildMissionReviewSnapshot(
       gpxImportCount: input.gpxImports.length,
     },
     eventRows: input.events.map(buildEventRow),
-    markerRows: input.markers.map((marker) => buildMarkerRow(marker, input.events)),
+    markerRows: input.markers.map((marker) => buildMarkerRow(marker, eventsByMarkerId)),
     layerRoot: catalogRoot,
   }
 }
@@ -163,14 +167,16 @@ function buildEventRow(event: MissionEvent): MissionReviewEventRow {
 
 function buildMarkerRow(
   marker: Marker,
-  events: readonly MissionEvent[],
+  eventsByMarkerId: Map<string, readonly MissionEvent[]>,
 ): MissionReviewMarkerRow {
+  const latDisplay = formatCoordinate(marker.lat)
+  const lonDisplay = formatCoordinate(marker.lon)
   const detailRows = [
     { label: 'Created', value: formatTimestamp(marker.created_at) },
     { label: 'Updated', value: formatTimestamp(marker.updated_at) },
-    { label: 'Latitude', value: marker.lat.toFixed(5) },
-    { label: 'Longitude', value: marker.lon.toFixed(5) },
-    { label: 'Irish Grid', value: `${marker.irish_grid_e}, ${marker.irish_grid_n}` },
+    { label: 'Latitude', value: latDisplay },
+    { label: 'Longitude', value: lonDisplay },
+    { label: 'Irish Grid', value: formatIrishGrid(marker.irish_grid_e, marker.irish_grid_n) },
     ...buildMarkerSpecificDetails(marker),
   ]
 
@@ -198,12 +204,14 @@ function buildMarkerRow(
     type: marker.type,
     name: marker.name,
     description: marker.description?.trim() || 'No description recorded.',
+    lat: marker.lat,
+    lon: marker.lon,
     createdAtDisplay: formatTimestamp(marker.created_at),
     updatedAtDisplay: formatTimestamp(marker.updated_at),
-    coordinateDisplay: `${marker.lat.toFixed(5)}, ${marker.lon.toFixed(5)}`,
+    coordinateDisplay: `${latDisplay}, ${lonDisplay}`,
     searchText,
     detailRows,
-    historyRows: buildMarkerHistoryRows(marker.id, events),
+    historyRows: (eventsByMarkerId.get(marker.id) ?? []).map(buildEventRow).reverse(),
     attachmentPath: marker.attachment_path,
   }
 }
@@ -253,14 +261,26 @@ function buildMarkerSpecificDetails(
   return rows
 }
 
-function buildMarkerHistoryRows(
-  markerId: string,
+/**
+ * Pre-indexes events by marker_id so marker history rows can be built in O(n) instead of O(n*m).
+ */
+function indexEventsByMarkerId(
   events: readonly MissionEvent[],
-): readonly MissionReviewEventRow[] {
-  return events
-    .filter((event) => readString(parseEventDetails(event.details_json), 'marker_id') === markerId)
-    .map(buildEventRow)
-    .reverse()
+): Map<string, readonly MissionEvent[]> {
+  const index = new Map<string, MissionEvent[]>()
+  for (const event of events) {
+    const details = parseEventDetails(event.details_json)
+    const markerId = readString(details, 'marker_id')
+    if (markerId !== null) {
+      const existing = index.get(markerId)
+      if (existing !== undefined) {
+        existing.push(event)
+      } else {
+        index.set(markerId, [event])
+      }
+    }
+  }
+  return index
 }
 
 function normalizeReviewDevice(device: Device): NormalizedTrackingDevice {
@@ -376,13 +396,42 @@ function humanizeEventType(eventType: string): string {
     .join(' ')
 }
 
+/**
+ * Formats a coordinate value with validation. Returns 'Invalid' for NaN/Infinity.
+ */
+function formatCoordinate(value: number): string {
+  return Number.isFinite(value) ? value.toFixed(5) : 'Invalid'
+}
+
+/**
+ * Formats Irish Grid easting/northing with validation.
+ */
+function formatIrishGrid(easting: number, northing: number): string {
+  if (!Number.isFinite(easting) || !Number.isFinite(northing)) {
+    return 'Invalid'
+  }
+  return `${easting}, ${northing}`
+}
+
+/**
+ * Formats an ISO timestamp string for display using explicit en-IE locale and 24-hour time
+ * so output is deterministic across machines for after-action report reproducibility.
+ */
 function formatTimestamp(value: string): string {
   const parsed = Date.parse(value)
   if (Number.isNaN(parsed)) {
     return value
   }
 
-  return new Date(parsed).toLocaleString()
+  return new Date(parsed).toLocaleString('en-IE', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+  })
 }
 
 function formatDuration(totalSeconds: number): string {

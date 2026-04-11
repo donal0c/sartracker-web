@@ -41,6 +41,7 @@ type RefreshCatalogInput = {
 
 export type LayerCatalogController = {
   readonly refreshCatalog: (input: RefreshCatalogInput) => Promise<void>
+  readonly forceRefresh: () => Promise<void>
   readonly selectNode: (nodeId: string | null) => void
   readonly renameNode: (nodeId: string, alias: string | null) => Promise<void>
   readonly toggleFavorite: (nodeId: string) => Promise<void>
@@ -97,6 +98,23 @@ export async function startLayerCatalogRuntime(
         error = toErrorMessage(runtimeError)
         publishRuntime()
         throw runtimeError
+      }
+    },
+    forceRefresh: async () => {
+      if (missionId === null) {
+        return
+      }
+
+      loading = true
+      error = null
+      publishRuntime()
+      try {
+        metadataEntries = await dependencies.layerCatalogStore.listMetadata(missionId)
+        rebuild()
+      } catch (runtimeError) {
+        loading = false
+        error = toErrorMessage(runtimeError)
+        publishRuntime()
       }
     },
     selectNode: (nodeId) => {

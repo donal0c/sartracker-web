@@ -1,0 +1,13 @@
+{
+  "name": "Default Glenagenty Rescue",
+  "description": "8-device mountain rescue simulation in the Glenagenty area. EOC stationary, 3 search teams, 1 unknown device, 1 offline device, 1 medic, 1 hill party with radio gap.",
+  "durationMs": 7200000,
+  "speedMultiplier": 10,
+  "startOffsetMs": 0,
+  "loop": false,
+  "auth": {
+    "email": "admin@mock.local",
+    "password": "mock",
+    "token": "mock-bearer-token"
+  }
+}

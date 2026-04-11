@@ -43,6 +43,15 @@ export function MissionReviewRuntimeBridge() {
       if (!cancelled) {
         applyMissionReviewController(nextController)
       }
+    }).catch((error: unknown) => {
+      applyMissionReviewRuntime({
+        missions: [],
+        selectedMissionId: null,
+        snapshot: null,
+        loading: false,
+        refreshing: false,
+        error: error instanceof Error ? error.message : 'Mission review failed to start.',
+      })
     })
 
     return () => {

@@ -132,6 +132,32 @@ describe('startMissionRuntime', () => {
     })
   })
 
+  it('allows start times as old as 5 hours', async () => {
+    const createMission = vi.fn().mockResolvedValue({
+      ...ACTIVE_MISSION,
+      name: 'Backdated',
+      start_time: '2026-04-09T06:00:00.000Z',
+    })
+
+    const runtime = await startMissionRuntime({
+      missionStore: createMissionStoreStub({
+        createMission,
+      }),
+      applyRuntime: vi.fn(),
+      now: () => new Date('2026-04-09T11:00:00.000Z'),
+    })
+
+    await runtime.startMission({
+      name: 'Backdated',
+      startTime: '2026-04-09T06:00:00.000Z',
+    })
+
+    expect(createMission).toHaveBeenCalledWith({
+      name: 'Backdated',
+      start_time: '2026-04-09T06:00:00.000Z',
+    })
+  })
+
   it('rejects a future start time before it reaches the mission store', async () => {
     const createMission = vi.fn()
     const runtime = await startMissionRuntime({
@@ -148,6 +174,26 @@ describe('startMissionRuntime', () => {
         startTime: '2026-04-09T11:30:00.000Z',
       }),
     ).rejects.toThrow('Mission start time cannot be in the future.')
+
+    expect(createMission).not.toHaveBeenCalled()
+  })
+
+  it('rejects start times older than 5 hours before now', async () => {
+    const createMission = vi.fn()
+    const runtime = await startMissionRuntime({
+      missionStore: createMissionStoreStub({
+        createMission,
+      }),
+      applyRuntime: vi.fn(),
+      now: () => new Date('2026-04-09T11:00:00.000Z'),
+    })
+
+    await expect(
+      runtime.startMission({
+        name: 'Old Mission',
+        startTime: '2026-04-09T05:59:59.999Z',
+      }),
+    ).rejects.toThrow('Mission start time cannot be more than 5 hours in the past.')
 
     expect(createMission).not.toHaveBeenCalled()
   })

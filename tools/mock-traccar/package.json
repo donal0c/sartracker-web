@@ -1,0 +1,15 @@
+{
+  "name": "mock-traccar",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "tsx src/server.ts",
+    "start:fast": "tsx src/server.ts --speed 30"
+  },
+  "devDependencies": {
+    "tsx": "^4.19.0",
+    "typescript": "~5.6.2",
+    "@types/node": "^22.0.0"
+  }
+}

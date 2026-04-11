@@ -35,6 +35,7 @@ describe('mission review model', () => {
       devices: [createDevice()],
       positions: [createPosition()],
       drawings: [createDrawing()],
+      gpxImports: [],
       layerMetadata: [] satisfies readonly LayerCatalogMetadataEntry[],
     })
 
@@ -54,6 +55,49 @@ describe('mission review model', () => {
       true,
     )
     expect(snapshot.markerRows[0]?.historyRows).toHaveLength(1)
+    expect(snapshot.markerRows[0]?.lat).toBe(52.0599)
+    expect(snapshot.markerRows[0]?.lon).toBe(-9.5045)
+  })
+
+  it('builds a valid snapshot with zero data', () => {
+    const snapshot = buildMissionReviewSnapshot({
+      mission: createMission(),
+      info: createStoreInfo(),
+      events: [],
+      markers: [],
+      devices: [],
+      positions: [],
+      drawings: [],
+      gpxImports: [],
+      layerMetadata: [],
+    })
+
+    expect(snapshot.summary.markerCount).toBe(0)
+    expect(snapshot.summary.drawingCount).toBe(0)
+    expect(snapshot.summary.trackingDeviceCount).toBe(0)
+    expect(snapshot.summary.breadcrumbCount).toBe(0)
+    expect(snapshot.summary.eventCount).toBe(0)
+    expect(snapshot.summary.gpxImportCount).toBe(0)
+    expect(snapshot.markerRows).toHaveLength(0)
+    expect(snapshot.eventRows).toHaveLength(0)
+    expect(snapshot.layerRoot.children.length).toBeGreaterThan(0)
+  })
+
+  it('produces safe coordinate display for invalid lat/lon', () => {
+    const snapshot = buildMissionReviewSnapshot({
+      mission: createMission(),
+      info: createStoreInfo(),
+      events: [],
+      markers: [{ ...createMarker(), lat: NaN, lon: Infinity }],
+      devices: [],
+      positions: [],
+      drawings: [],
+      gpxImports: [],
+      layerMetadata: [],
+    })
+
+    expect(snapshot.markerRows[0]?.coordinateDisplay).toBe('Invalid, Invalid')
+    expect(snapshot.markerRows[0]?.detailRows.find((r) => r.label === 'Latitude')?.value).toBe('Invalid')
   })
 
   it('filters marker rows by query and type', () => {
@@ -79,6 +123,7 @@ describe('mission review model', () => {
       devices: [],
       positions: [],
       drawings: [],
+      gpxImports: [],
       layerMetadata: [],
     }).markerRows
 

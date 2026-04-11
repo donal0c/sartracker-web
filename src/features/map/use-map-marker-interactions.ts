@@ -1,8 +1,6 @@
 import { useEffect, type RefObject } from 'react'
 import type maplibregl from 'maplibre-gl'
 
-import { useDrawingStore } from '../drawings/drawing-store'
-import { useMeasurementStore } from '../measurements/measurement-store'
 import { useMissionStore } from '../mission/mission-store'
 import { findNearestMarkerId } from '../markers/marker-hit-testing'
 import { useMarkerStore } from '../markers/marker-store'
@@ -12,6 +10,7 @@ import {
   resolveClickedMarkerId,
   shouldIgnoreMarkerMapClick,
 } from './map-marker-interactions'
+import { useMapInteractionMode } from './use-map-interaction-mode'
 
 type UseMapMarkerInteractionsOptions = {
   readonly containerRef: RefObject<HTMLDivElement | null>
@@ -27,10 +26,7 @@ export function useMapMarkerInteractions(
   const markerActiveMissionId = useMarkerStore((state) => state.activeMissionId)
   const markerController = useMarkerStore((state) => state.controller)
   const markerState = useMarkerStore((state) => state.markers)
-  const drawingActiveTool = useDrawingStore((state) => state.activeTool)
-  const drawingDialog = useDrawingStore((state) => state.dialog)
-  const drawingSketch = useDrawingStore((state) => state.sketch)
-  const measurementMode = useMeasurementStore((state) => state.mode)
+  const interactionMode = useMapInteractionMode()
   const missionPhase = useMissionStore((state) => state.phase)
   const currentMissionId = useMissionStore((state) => state.currentMission?.id ?? null)
 
@@ -47,12 +43,7 @@ export function useMapMarkerInteractions(
         return
       }
 
-      if (
-        measurementMode === 'armed' ||
-        drawingActiveTool !== 'select' ||
-        drawingDialog !== null ||
-        drawingSketch !== null
-      ) {
+      if (interactionMode !== 'idle') {
         return
       }
 
@@ -113,10 +104,7 @@ export function useMapMarkerInteractions(
     }
   }, [
     currentMissionId,
-    drawingActiveTool,
-    drawingDialog,
-    drawingSketch,
-    measurementMode,
+    interactionMode,
     markerActiveMissionId,
     markerController,
     markerState,
