@@ -23,16 +23,18 @@ type PlaybackOptions = {
 /**
  * Creates a playback engine.
  * scenarioTimeMs = startOffsetMs + (wallElapsed * speedMultiplier)
- * The anchor date is set so that scenario T+0 corresponds to a fixed wall-clock reference.
+ *
+ * Timestamps are always emitted with real-time spacing regardless of playback speed.
+ * The speed multiplier only controls how fast the engine advances through scenario time,
+ * not the timestamp values — so breadcrumb gap segmentation (5-min threshold) and
+ * stale detection work correctly at any playback speed.
  */
 export function createPlaybackEngine(options: PlaybackOptions): PlaybackEngine {
   const serverStartMs = Date.now()
 
   // Anchor date: the wall-clock time that represents scenario T+0.
-  // We subtract the start offset so that at server start, scenarioTimeMs = startOffsetMs.
-  const anchorDate = new Date(
-    serverStartMs - options.startOffsetMs / options.speedMultiplier,
-  )
+  // We subtract the full start offset so timestamps reflect real scenario spacing.
+  const anchorDate = new Date(serverStartMs - options.startOffsetMs)
 
   return {
     getScenarioTimeMs(): number {
@@ -49,7 +51,8 @@ export function createPlaybackEngine(options: PlaybackOptions): PlaybackEngine {
     },
 
     getScenarioDate(scenarioOffsetMs: number): Date {
-      return new Date(anchorDate.getTime() + scenarioOffsetMs / options.speedMultiplier)
+      // Timestamps use real-time spacing: anchorDate + scenario offset (no speed division)
+      return new Date(anchorDate.getTime() + scenarioOffsetMs)
     },
 
     anchorDate,

@@ -34,6 +34,17 @@ export function createRouter(deps: RouterDeps) {
     const url = new URL(req.url ?? '/', `http://${req.headers.host ?? 'localhost'}`)
     const pathname = url.pathname
 
+    // Health check — no auth required
+    if (req.method === 'GET' && pathname === '/health') {
+      const scenarioMs = deps.engine.getScenarioTimeMs()
+      sendJson(res, {
+        status: 'ok',
+        scenarioTimeMs: scenarioMs,
+        scenarioTimeFormatted: formatDuration(scenarioMs),
+      })
+      return
+    }
+
     // POST /api/session — no auth required for login
     if (req.method === 'POST' && pathname === '/api/session') {
       handleSession(req, res, deps)
@@ -59,17 +70,6 @@ export function createRouter(deps: RouterDeps) {
 
     if (req.method === 'GET' && pathname === '/api/reports/route') {
       handlePositions(url, res, deps)
-      return
-    }
-
-    // Health check
-    if (req.method === 'GET' && pathname === '/health') {
-      const scenarioMs = deps.engine.getScenarioTimeMs()
-      sendJson(res, {
-        status: 'ok',
-        scenarioTimeMs: scenarioMs,
-        scenarioTimeFormatted: formatDuration(scenarioMs),
-      })
       return
     }
 
@@ -127,8 +127,15 @@ function handlePositions(url: URL, res: ServerResponse, deps: RouterDeps): void 
     return
   }
 
-  // Otherwise return latest positions per device
-  const positions = deps.positionStore.getLatestPositions()
+  // Otherwise return latest positions per device, excluding offline devices.
+  // Real Traccar only returns positions for online/unknown devices.
+  const roster = getDeviceRoster(deps.deviceDefinitions, deps.routes, deps.engine)
+  const offlineDeviceIds = new Set(
+    roster.filter((d) => d.status === 'offline').map((d) => d.id),
+  )
+  const positions = deps.positionStore
+    .getLatestPositions()
+    .filter((p) => !offlineDeviceIds.has(p.deviceId))
   sendJson(res, positions)
 }
 

@@ -13,7 +13,7 @@
 
 ## Last Updated
 
-- 2026-04-12 08:30 by Claude Opus (bug fixes: sartracker-web-awm, sartracker-web-lo6)
+- 2026-04-12 09:00 by Claude Opus (mock-traccar hardening: sartracker-web-2jk.16)
 
 ## Current State
 
@@ -28,26 +28,24 @@
 
 ## Last Work Done
 
-Fixed two bugs discovered during deep UI validation:
+**sartracker-web-2jk.16 — Mock Traccar server hardening (5 fixes)**
 
-**sartracker-web-awm — Device markers too small on topo basemap (closed)**
-- Increased circle radius from 7px to 11px for clear visibility on all basemaps
-- Repositioned name labels from above-center to right-of-marker (anchor: left, offset: [1.2, 0])
-- Enabled label overlap so all device names are always visible during operations
-- Added `tests/unit/sync-tracking-overlay.test.ts` (8 tests)
+Fixed 5 issues found during the fitness review of `tools/mock-traccar/`:
 
-**sartracker-web-lo6 — OpenTopoMap tile degradation message too sensitive (closed)**
-- Created `src/lib/tile-health-tracker.ts` — threshold-based degradation detection
-- Requires 3+ tile errors within a 10-second sliding window before showing degradation warning
-- Added recovery: if all errors expire from the window, idle handler clears the degraded state
-- Basemap changes reset the tracker
-- Added `tests/unit/tile-health-tracker.test.ts` (13 tests)
+1. **`/health` endpoint now public** — moved before auth middleware in router.ts
+2. **Offline devices excluded from `/api/positions`** — roster status check filters offline devices from current-position response, matching real Traccar behavior
+3. **Deterministic route generation** — replaced `Math.random()` with seeded mulberry32 PRNG; same seed always produces identical routes across runs
+4. **Timestamp spacing independent of playback speed** — `getScenarioDate()` no longer divides by speed multiplier; breadcrumb gap segmentation (5-min threshold) and stale detection now work correctly at any playback speed
+5. **Team Delta timing aligned** — `goUnknownAfterMs` set to `39 × 30_000` (1,170,000ms) matching the actual last route point; `computeDeviceStatus` now triggers correctly
 
-Verification green: lint, 304 unit tests (66 files), build, 78 E2E tests (55 chromium + 22 visual + 1 full-mission)
+Added `tests/unit/mock-traccar-hardening.test.ts` (16 tests) covering all 5 fixes.
+
+Verification green: lint, 320 unit tests (67 files), build, 78 E2E tests (55 chromium + 22 visual + 1 full-mission)
 
 ## Active Work
 
 - M23 is complete and validated.
+- Mock Traccar server hardened (`sartracker-web-2jk.16`) — ready for integration testing.
 - Next recommended implementation bead: **`sartracker-web-2jk.13` — M24 focus mode parity**
 - Next parity verification target after that remains **Batch 5** markers (`LPV-080` to `LPV-086`)
 
@@ -93,6 +91,9 @@ Choose one path and update this file when done:
   - 55 existing E2E tests: all green (zero regression)
   - Opus visual verification: 11/11 passed
   - Coverage: app shell, mission lifecycle (6 states), tracking (panel + map + layers), markers (4 types), drawings (4 tools + multi-drawing)
+- Mock Traccar server:
+  - 16 unit tests covering all 5 hardening fixes
+  - Manual curl verification: /health public, offline filtering, auth gates
 
 ## Archive
 

@@ -1,5 +1,19 @@
 import type { DeviceDefinition, RoutePoint, SeedPoint } from './types.js'
 
+/**
+ * Mulberry32 seeded PRNG. Returns a function that produces values in [0, 1).
+ * Deterministic: same seed always produces the same sequence.
+ */
+function createSeededRng(seed: number): () => number {
+  let state = seed | 0
+  return function mulberry32(): number {
+    state = (state + 0x6d2b79f5) | 0
+    let t = Math.imul(state ^ (state >>> 15), 1 | state)
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296
+  }
+}
+
 /** All device definitions for the Glenagenty rescue scenario. */
 export const DEVICE_DEFINITIONS: readonly DeviceDefinition[] = [
   {
@@ -36,7 +50,9 @@ export const DEVICE_DEFINITIONS: readonly DeviceDefinition[] = [
     uniqueId: 'sar_delta_005',
     category: 'person',
     startOffsetMs: 0,
-    goUnknownAfterMs: 20 * 60 * 1000,
+    // 40 route points at 30s intervals → last point at index 39 × 30_000 = 1_170_000ms.
+    // goUnknownAfterMs must match so computeDeviceStatus triggers correctly.
+    goUnknownAfterMs: 39 * 30_000,
   },
   {
     id: 6,
@@ -62,27 +78,35 @@ export const DEVICE_DEFINITIONS: readonly DeviceDefinition[] = [
   },
 ]
 
+/** Default PRNG seed for deterministic route generation. */
+const DEFAULT_SEED = 0x534152 // "SAR" in hex
+
 /**
  * Generates all device routes from the seed CSV points.
  * Returns a map of deviceId → RoutePoint[].
+ * Uses a seeded PRNG for deterministic output across runs.
  */
-export function generateAllRoutes(seed: readonly SeedPoint[]): Map<number, RoutePoint[]> {
+export function generateAllRoutes(
+  seed: readonly SeedPoint[],
+  rngSeed: number = DEFAULT_SEED,
+): Map<number, RoutePoint[]> {
+  const rng = createSeededRng(rngSeed)
   const routes = new Map<number, RoutePoint[]>()
 
-  routes.set(1, generateEocRoute())
+  routes.set(1, generateEocRoute(rng))
   routes.set(2, generateTeamAlphaRoute(seed))
   routes.set(3, generateTeamBravoRoute(seed))
   routes.set(4, generateTeamCharlieRoute(seed))
   routes.set(5, generateTeamDeltaRoute(seed))
   // Device 6 (Team Echo) has no route — offline only
-  routes.set(7, generateMedicRoute())
+  routes.set(7, generateMedicRoute(rng))
   routes.set(8, generateHillPartyRoute(seed))
 
   return routes
 }
 
 /** EOC: stationary at the car park with GPS jitter. ~120 points over 2h at 30s intervals. */
-function generateEocRoute(): RoutePoint[] {
+function generateEocRoute(rng: () => number): RoutePoint[] {
   const baseLat = 52.2704
   const baseLon = -9.5456
   const points: RoutePoint[] = []
@@ -90,17 +114,17 @@ function generateEocRoute(): RoutePoint[] {
   const count = 240 // 2 hours at 30s intervals
 
   for (let i = 0; i < count; i++) {
-    const jitterLat = (Math.random() - 0.5) * 0.00006
-    const jitterLon = (Math.random() - 0.5) * 0.00006
+    const jitterLat = (rng() - 0.5) * 0.00006
+    const jitterLon = (rng() - 0.5) * 0.00006
 
     points.push({
       scenarioOffsetMs: i * intervalMs,
       latitude: baseLat + jitterLat,
       longitude: baseLon + jitterLon,
-      altitude: 175 + (Math.random() - 0.5) * 4,
-      speed: Math.random() * 0.2,
+      altitude: 175 + (rng() - 0.5) * 4,
+      speed: rng() * 0.2,
       batteryLevel: 95 - i * 0.02,
-      distance: Math.random() * 3,
+      distance: rng() * 3,
       motion: false,
     })
   }
@@ -174,7 +198,7 @@ function generateTeamDeltaRoute(seed: readonly SeedPoint[]): RoutePoint[] {
 }
 
 /** Medic 1: relocate from EOC to casualty site, then stationary. */
-function generateMedicRoute(): RoutePoint[] {
+function generateMedicRoute(rng: () => number): RoutePoint[] {
   const startOffset = DEVICE_DEFINITIONS.find((d) => d.id === 7)!.startOffsetMs
   const points: RoutePoint[] = []
 
@@ -191,9 +215,9 @@ function generateMedicRoute(): RoutePoint[] {
       latitude: startLat + (endLat - startLat) * t,
       longitude: startLon + (endLon - startLon) * t,
       altitude: 175 + t * 40,
-      speed: 2.5 + Math.random() * 1.0,
+      speed: 2.5 + rng() * 1.0,
       batteryLevel: 88 - i * 0.5,
-      distance: 25 + Math.random() * 10,
+      distance: 25 + rng() * 10,
       motion: true,
     })
   }
@@ -202,12 +226,12 @@ function generateMedicRoute(): RoutePoint[] {
   for (let i = 0; i < 90; i++) {
     points.push({
       scenarioOffsetMs: startOffset + (10 + i) * 30_000,
-      latitude: endLat + (Math.random() - 0.5) * 0.00004,
-      longitude: endLon + (Math.random() - 0.5) * 0.00004,
-      altitude: 215 + (Math.random() - 0.5) * 3,
-      speed: Math.random() * 0.15,
+      latitude: endLat + (rng() - 0.5) * 0.00004,
+      longitude: endLon + (rng() - 0.5) * 0.00004,
+      altitude: 215 + (rng() - 0.5) * 3,
+      speed: rng() * 0.15,
       batteryLevel: 83 - i * 0.03,
-      distance: Math.random() * 2,
+      distance: rng() * 2,
       motion: false,
     })
   }
