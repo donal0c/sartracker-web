@@ -30,6 +30,7 @@ test.describe('Visual: Drawing Tools', () => {
   test.beforeEach(async ({ page }) => {
     await navigateToHarness(page)
     await startMission(page, 'Drawing Verification')
+    await page.getByTestId('drawing-toolbar-expand').click()
   })
 
   test('search area dialog shows team metadata and area calculation', async ({ page }) => {

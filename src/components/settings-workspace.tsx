@@ -84,13 +84,13 @@ export function SettingsWorkspace({ open, onClose }: SettingsWorkspaceProps) {
       <div className="ml-auto flex h-full w-full max-w-3xl flex-col border-l border-stone-800 bg-stone-950 shadow-2xl">
         <header className="flex items-center justify-between border-b border-stone-800 px-6 py-5">
           <div>
-            <p className="text-[10px] font-bold uppercase tracking-[0.3em] text-amber-300/80">
+            <p className="text-[11px] font-semibold uppercase tracking-wider text-amber-300/80">
               Settings Workspace
             </p>
             <h2 className="mt-1 font-mono text-2xl font-bold text-stone-50">Operational Settings</h2>
           </div>
           <button
-            className="rounded-lg border border-stone-700 bg-stone-900 px-3 py-2 text-[11px] font-bold uppercase tracking-wider text-stone-300"
+            className="rounded-lg border border-stone-600 bg-stone-800 px-3 py-2 text-xs font-semibold text-stone-200"
             onClick={onClose}
             type="button"
           >

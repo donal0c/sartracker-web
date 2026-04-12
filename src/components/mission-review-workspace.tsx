@@ -83,14 +83,14 @@ export function MissionReviewWorkspace() {
       <div className="ml-auto flex h-full w-full max-w-7xl flex-col border-l border-stone-800 bg-stone-950 shadow-2xl">
         <header className="flex items-center justify-between border-b border-stone-800 px-6 py-5">
           <div>
-            <p className="text-[10px] font-bold uppercase tracking-[0.3em] text-amber-300/80">
+            <p className="text-[11px] font-semibold uppercase tracking-wider text-amber-300/80">
               Mission Review
             </p>
             <h2 className="mt-1 font-mono text-2xl font-bold text-stone-50">Audit Workspace</h2>
           </div>
           <div className="flex items-center gap-3">
             <button
-              className="rounded-lg border border-stone-700 bg-stone-900 px-3 py-2 text-[11px] font-bold uppercase tracking-wider text-stone-300 disabled:opacity-50"
+              className="rounded-lg border border-stone-600 bg-stone-800 px-3 py-2 text-xs font-semibold text-stone-200 disabled:opacity-50"
               data-testid="mission-review-refresh"
               disabled={controller === null || refreshing}
               onClick={() => void controller?.refreshSelectedMission()}
@@ -99,7 +99,7 @@ export function MissionReviewWorkspace() {
               {refreshing ? 'Refreshing…' : 'Refresh'}
             </button>
             <button
-              className="rounded-lg border border-stone-700 bg-stone-900 px-3 py-2 text-[11px] font-bold uppercase tracking-wider text-stone-300"
+              className="rounded-lg border border-stone-600 bg-stone-800 px-3 py-2 text-xs font-semibold text-stone-200"
               onClick={closeWorkspace}
               type="button"
             >
@@ -416,7 +416,7 @@ function MarkerLogTab(props: {
                 </p>
               </div>
               <button
-                className="rounded-lg border border-stone-700 bg-stone-900 px-3 py-2 text-[11px] font-bold uppercase tracking-wider text-stone-300"
+                className="rounded-lg border border-stone-600 bg-stone-800 px-3 py-2 text-xs font-semibold text-stone-200"
                 data-testid="mission-review-marker-zoom"
                 onClick={props.onZoomMarker}
                 type="button"
@@ -440,7 +440,7 @@ function MarkerLogTab(props: {
 
             <div className="mt-4 flex gap-3">
               <button
-                className="rounded-lg border border-stone-700 bg-stone-900 px-3 py-2 text-[11px] font-bold uppercase tracking-wider text-stone-300"
+                className="rounded-lg border border-stone-600 bg-stone-800 px-3 py-2 text-xs font-semibold text-stone-200"
                 data-testid="mission-review-marker-open-attachment"
                 disabled={selectedMarker.attachmentPath === null}
                 onClick={() => props.onOpenPath(selectedMarker.attachmentPath)}

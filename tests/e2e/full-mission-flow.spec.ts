@@ -35,6 +35,7 @@ test.describe('M10 full mission integration flow', () => {
     await page.getByTestId('marker-save-btn').click()
     await expect(page.getByTestId('marker-dialog')).toBeHidden()
 
+    await page.getByTestId('drawing-toolbar-expand').click()
     await page.getByTestId('drawing-tool-search_area').click()
     await clickMap(page, { x: 420, y: 180 })
     await clickMap(page, { x: 620, y: 180 })

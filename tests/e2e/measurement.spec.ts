@@ -61,6 +61,7 @@ test.describe('M9 measurement workflows', () => {
   test('hands map control cleanly between measurement mode and drawing tools', async ({
     page,
   }) => {
+    await page.getByTestId('drawing-toolbar-expand').click()
     await page.getByTestId('drawing-tool-line').click()
     await expect(page.getByText('Active: Line')).toBeVisible()
 

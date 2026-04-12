@@ -254,10 +254,10 @@ export function MissionControlPanel() {
       data-testid="mission-control"
     >
         <div className="flex items-center justify-between mb-4">
-        <span className="font-bold uppercase tracking-wider text-stone-400 text-[11px]">Mission Control</span>
+        <span className="font-semibold uppercase tracking-wide text-stone-400 text-[13px]">Mission Control</span>
         <div className="flex items-center gap-2">
           <button
-            className="rounded-lg border border-stone-700 bg-stone-900 px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider text-stone-300"
+            className="rounded-lg border border-stone-600 bg-stone-800 px-3 py-1.5 text-[12px] font-semibold text-stone-200 hover:bg-stone-700"
             data-testid="open-mission-review-workspace"
             disabled={currentMission === null && governanceMission === null && recoverableMission === null}
             onClick={() => openReviewWorkspace()}
@@ -269,7 +269,7 @@ export function MissionControlPanel() {
             <div className={`h-2 w-2 rounded-full ${phase === 'active' ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]' : 'bg-amber-500 animate-pulse'}`} />
           )}
           <span
-            className={`font-bold uppercase text-[11px] ${
+            className={`font-semibold uppercase text-[11px] ${
               phase === 'active'
                 ? 'text-emerald-400'
                 : phase === 'paused'
@@ -288,13 +288,13 @@ export function MissionControlPanel() {
         {/* Primary Telemetry */}
         <div className="grid gap-3 sm:grid-cols-2">
           <div className="rounded-xl border border-stone-800 bg-stone-900/50 p-3">
-            <p className="text-[10px] font-bold uppercase tracking-wider text-stone-500">Elapsed</p>
+            <p className="text-[11px] font-medium text-stone-300">Elapsed</p>
             <p className="mt-1 font-mono text-2xl font-bold text-stone-100" data-testid="mission-elapsed">
               {formatMissionDuration(timerState?.elapsedSeconds ?? 0)}
             </p>
           </div>
           <div className="rounded-xl border border-stone-800 bg-stone-900/50 p-3">
-            <p className="text-[10px] font-bold uppercase tracking-wider text-stone-500">Active Search</p>
+            <p className="text-[11px] font-medium text-stone-300">Active Search</p>
             <p className="mt-1 font-mono text-2xl font-bold text-emerald-400" data-testid="mission-active-search">
               {formatMissionDuration(timerState?.activeSeconds ?? 0)}
             </p>
@@ -306,7 +306,7 @@ export function MissionControlPanel() {
           <div className="rounded-xl border border-stone-800 bg-stone-900/30 p-4 space-y-4">
             <div>
               <label
-                className="block text-[10px] font-bold uppercase tracking-wider text-stone-500"
+                className="block text-[11px] font-medium text-stone-300"
                 htmlFor={missionNameInputId}
               >
                 Mission Name
@@ -328,7 +328,7 @@ export function MissionControlPanel() {
 
             <div>
               <label
-                className="block text-[10px] font-bold uppercase tracking-wider text-stone-500"
+                className="block text-[11px] font-medium text-stone-300"
                 htmlFor={missionOffsetInputId}
               >
                 Start Offset (Hours)
@@ -349,8 +349,8 @@ export function MissionControlPanel() {
           </div>
         ) : (
           <div className="px-1 py-2 rounded-xl border border-stone-800 bg-stone-900/30">
-             <p className="text-[10px] font-bold text-stone-500 uppercase tracking-widest mb-1">Current Mission</p>
-             <p className="text-[11px] font-bold text-stone-200 uppercase tracking-tight" data-testid="current-mission-name">
+             <p className="text-[11px] font-medium text-stone-300 mb-1">Current Mission</p>
+             <p className="text-[13px] font-semibold text-stone-200" data-testid="current-mission-name">
               {currentMission?.name}
             </p>
           </div>
@@ -368,7 +368,7 @@ export function MissionControlPanel() {
         {/* Tactical Actions */}
         <div className="grid gap-2 sm:grid-cols-3">
           <button
-            className="rounded-lg bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 px-3 py-2.5 text-[11px] font-bold uppercase tracking-wider text-white shadow-lg shadow-emerald-900/20 transition-all disabled:cursor-not-allowed disabled:opacity-20 disabled:grayscale"
+            className="rounded-lg bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 px-3 py-2.5 text-[13px] font-semibold text-white shadow-lg shadow-emerald-900/20 transition-all disabled:cursor-not-allowed disabled:opacity-20 disabled:grayscale"
             data-testid="mission-start-btn"
             disabled={controller === null || phase !== 'idle'}
             onClick={() => void handleStartMission()}
@@ -377,7 +377,7 @@ export function MissionControlPanel() {
             Start
           </button>
           <button
-            className="rounded-lg bg-amber-600 hover:bg-amber-500 active:bg-amber-700 px-3 py-2.5 text-[11px] font-bold uppercase tracking-wider text-white shadow-lg shadow-amber-900/20 transition-all disabled:cursor-not-allowed disabled:opacity-20 disabled:grayscale"
+            className="rounded-lg bg-amber-600 hover:bg-amber-500 active:bg-amber-700 px-3 py-2.5 text-[13px] font-semibold text-white shadow-lg shadow-amber-900/20 transition-all disabled:cursor-not-allowed disabled:opacity-20 disabled:grayscale"
             data-testid="mission-pause-resume-btn"
             disabled={controller === null || (phase !== 'active' && phase !== 'paused')}
             onClick={() => void handlePauseOrResume()}
@@ -386,7 +386,7 @@ export function MissionControlPanel() {
             {phase === 'paused' ? 'Resume' : 'Pause'}
           </button>
           <button
-            className="rounded-lg bg-rose-600 hover:bg-rose-500 active:bg-rose-700 px-3 py-2.5 text-[11px] font-bold uppercase tracking-wider text-white shadow-lg shadow-rose-900/20 transition-all disabled:cursor-not-allowed disabled:opacity-20 disabled:grayscale"
+            className="rounded-lg bg-rose-600 hover:bg-rose-500 active:bg-rose-700 px-3 py-2.5 text-[13px] font-semibold text-white shadow-lg shadow-rose-900/20 transition-all disabled:cursor-not-allowed disabled:opacity-20 disabled:grayscale"
             data-testid="mission-finish-btn"
             disabled={controller === null || (phase !== 'active' && phase !== 'paused')}
             onClick={() => setShowFinishDialog(true)}
@@ -403,24 +403,24 @@ export function MissionControlPanel() {
           >
             <div className="flex items-center justify-between gap-3">
               <div>
-                <p className="text-[10px] font-bold uppercase tracking-wider text-sky-300/80">
+                <p className="text-[13px] font-semibold uppercase tracking-wide text-sky-300/80">
                   Mission Governance
                 </p>
                 <p className="mt-1 text-sm font-semibold text-stone-100">
                   {governanceMission.name}
                 </p>
-                <p className="mt-1 text-[11px] text-stone-400">
+                <p className="mt-1 text-[13px] text-stone-300">
                   Status: <span className="font-mono uppercase">{governanceMission.status}</span>
                 </p>
                 {governanceMission.finish_time ? (
-                  <p className="mt-1 text-[11px] text-stone-500">
+                  <p className="mt-1 text-[13px] text-stone-400">
                     Finished: {new Date(governanceMission.finish_time).toLocaleString()}
                   </p>
                 ) : null}
               </div>
               {governanceMission.status === 'finished' ? (
                 <button
-                  className="rounded-lg bg-sky-600 px-3 py-2 text-[11px] font-bold uppercase tracking-wider text-white disabled:opacity-40"
+                  className="rounded-lg bg-sky-600 px-3 py-2 text-[12px] font-semibold text-white disabled:opacity-40"
                   data-testid="mission-finalize-btn"
                   disabled={governanceBusy}
                   onClick={() => setShowFinalizeDialog(true)}
@@ -430,7 +430,7 @@ export function MissionControlPanel() {
                 </button>
               ) : (
                 <button
-                  className="rounded-lg border border-stone-600 bg-stone-900 px-3 py-2 text-[11px] font-bold uppercase tracking-wider text-stone-200 disabled:opacity-40"
+                  className="rounded-lg border border-stone-600 bg-stone-800 px-3 py-2 text-[12px] font-semibold text-stone-200 disabled:opacity-40 hover:bg-stone-700"
                   data-testid="mission-unlock-btn"
                   disabled={governanceBusy}
                   onClick={() => setShowUnlockDialog(true)}
@@ -452,21 +452,21 @@ export function MissionControlPanel() {
 
       {phase === 'recovery' && recoverableMission !== null ? (
         <div className="mt-4 rounded-xl border border-amber-500/30 bg-amber-950/50 p-4 shadow-xl" data-testid="mission-recovery-dialog">
-          <p className="font-bold text-amber-400 uppercase text-[11px] tracking-wider">Resume Mission?</p>
-          <div className="mt-2 font-mono text-[10px] leading-relaxed text-stone-300">
-            <p>ID: {recoverableMission.name}</p>
+          <p className="font-semibold text-amber-400 uppercase text-[13px] tracking-wide">Resume Mission?</p>
+          <div className="mt-2 font-mono text-[13px] leading-relaxed text-stone-300">
+            <p>{recoverableMission.name}</p>
             <p>Started: {new Date(recoverableMission.start_time).toLocaleString()}</p>
           </div>
           <div className="mt-4 flex gap-2">
             <button
-              className="flex-1 rounded-lg bg-emerald-600 px-3 py-2 text-[10px] font-bold uppercase tracking-wider text-white"
+              className="flex-1 rounded-lg bg-emerald-600 px-3 py-2 text-[12px] font-semibold text-white hover:bg-emerald-500"
               onClick={() => void handleResumeRecoverable()}
               type="button"
             >
               Resume
             </button>
             <button
-              className="flex-1 rounded-lg bg-stone-800 px-3 py-2 text-[10px] font-bold uppercase tracking-wider text-stone-300"
+              className="flex-1 rounded-lg bg-stone-800 px-3 py-2 text-[12px] font-semibold text-stone-200 hover:bg-stone-700"
               onClick={() => void handleStartFresh()}
               type="button"
             >
@@ -481,16 +481,16 @@ export function MissionControlPanel() {
           className="mt-4 rounded-xl border border-sky-500/30 bg-sky-950/50 p-4 shadow-xl"
           data-testid="mission-finalize-dialog"
         >
-          <p className="font-bold text-sky-300 uppercase text-[11px] tracking-wider">
+          <p className="font-semibold text-sky-300 uppercase text-[13px] tracking-wide">
             Archive & Lock?
           </p>
-          <p className="mt-2 text-[11px] leading-relaxed text-stone-300">
+          <p className="mt-2 text-[13px] leading-relaxed text-stone-300">
             This creates a validated archive and makes the mission read-only until an admin
             explicitly unlocks it.
           </p>
           <div className="mt-4 flex gap-2">
             <button
-              className="flex-1 rounded-lg bg-sky-600 px-3 py-2 text-[10px] font-bold uppercase tracking-wider text-white disabled:opacity-40"
+              className="flex-1 rounded-lg bg-sky-600 px-3 py-2 text-[12px] font-semibold text-white disabled:opacity-40 hover:bg-sky-500"
               data-testid="mission-finalize-confirm"
               disabled={governanceBusy}
               onClick={() => void handleConfirmFinalize()}
@@ -499,7 +499,7 @@ export function MissionControlPanel() {
               {governanceBusy ? 'Finalizing…' : 'Confirm Archive & Lock'}
             </button>
             <button
-              className="flex-1 rounded-lg bg-stone-800 px-3 py-2 text-[10px] font-bold uppercase tracking-wider text-stone-300"
+              className="flex-1 rounded-lg bg-stone-800 px-3 py-2 text-[12px] font-semibold text-stone-200 hover:bg-stone-700"
               onClick={() => setShowFinalizeDialog(false)}
               type="button"
             >
@@ -514,12 +514,12 @@ export function MissionControlPanel() {
           className="mt-4 rounded-xl border border-amber-500/30 bg-amber-950/50 p-4 shadow-xl"
           data-testid="mission-unlock-dialog"
         >
-          <p className="font-bold text-amber-300 uppercase text-[11px] tracking-wider">
+          <p className="font-semibold text-amber-300 uppercase text-[13px] tracking-wide">
             Admin Unlock
           </p>
           <div className="mt-4 space-y-4">
             <label className="block space-y-2">
-              <span className="text-[10px] font-bold uppercase tracking-wider text-stone-500">
+              <span className="text-[11px] font-medium text-stone-300">
                 Admin Identity
               </span>
               <select
@@ -540,7 +540,7 @@ export function MissionControlPanel() {
               </select>
             </label>
             <label className="block space-y-2">
-              <span className="text-[10px] font-bold uppercase tracking-wider text-stone-500">
+              <span className="text-[11px] font-medium text-stone-300">
                 Unlock Reason
               </span>
               <textarea
@@ -553,7 +553,7 @@ export function MissionControlPanel() {
           </div>
           <div className="mt-4 flex gap-2">
             <button
-              className="flex-1 rounded-lg bg-amber-600 px-3 py-2 text-[10px] font-bold uppercase tracking-wider text-white disabled:opacity-40"
+              className="flex-1 rounded-lg bg-amber-600 px-3 py-2 text-[12px] font-semibold text-white disabled:opacity-40 hover:bg-amber-500"
               data-testid="mission-unlock-confirm"
               disabled={selectedAdmin.trim() === '' || unlockReason.trim() === '' || governanceBusy}
               onClick={() => void handleConfirmUnlock()}
@@ -562,7 +562,7 @@ export function MissionControlPanel() {
               {governanceBusy ? 'Unlocking…' : 'Confirm Unlock'}
             </button>
             <button
-              className="flex-1 rounded-lg bg-stone-800 px-3 py-2 text-[10px] font-bold uppercase tracking-wider text-stone-300"
+              className="flex-1 rounded-lg bg-stone-800 px-3 py-2 text-[12px] font-semibold text-stone-200 hover:bg-stone-700"
               onClick={() => setShowUnlockDialog(false)}
               type="button"
             >
@@ -574,20 +574,20 @@ export function MissionControlPanel() {
 
       {showFinishDialog ? (
         <div className="mt-4 rounded-xl border border-rose-500/30 bg-rose-950/50 p-4 shadow-xl" data-testid="mission-finish-dialog">
-          <p className="font-bold text-rose-400 uppercase text-[11px] tracking-wider">End Mission?</p>
-          <p className="mt-2 text-[11px] leading-relaxed text-stone-300">
+          <p className="font-semibold text-rose-400 uppercase text-[13px] tracking-wide">End Mission?</p>
+          <p className="mt-2 text-[13px] leading-relaxed text-stone-300">
             This will stop timers and return to IDLE. Data remains saved.
           </p>
           <div className="mt-4 flex gap-2">
             <button
-              className="flex-1 rounded-lg bg-rose-600 px-3 py-2 text-[10px] font-bold uppercase tracking-wider text-white"
+              className="flex-1 rounded-lg bg-rose-600 px-3 py-2 text-[12px] font-semibold text-white hover:bg-rose-500"
               onClick={() => void handleConfirmFinish()}
               type="button"
             >
               Confirm Finish
             </button>
             <button
-              className="flex-1 rounded-lg bg-stone-800 px-3 py-2 text-[10px] font-bold uppercase tracking-wider text-stone-300"
+              className="flex-1 rounded-lg bg-stone-800 px-3 py-2 text-[12px] font-semibold text-stone-200 hover:bg-stone-700"
               onClick={() => setShowFinishDialog(false)}
               type="button"
             >

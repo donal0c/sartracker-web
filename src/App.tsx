@@ -66,7 +66,7 @@ function App() {
       <aside className="z-20 flex w-[380px] flex-col border-l border-stone-800 bg-stone-900 shadow-2xl">
         {/* Tactical Header */}
         <header className="flex-shrink-0 border-b border-amber-500/20 px-6 py-6">
-          <p className="text-[10px] font-bold uppercase tracking-[0.3em] text-amber-300/80">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-amber-300/80">
             Kerry Mountain Rescue
           </p>
           <h1
@@ -77,11 +77,11 @@ function App() {
           </h1>
           <div className="mt-3 flex items-center gap-2">
             <div className="h-1.5 w-1.5 rounded-full bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.5)]" />
-            <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-400/80">
+            <span className="text-[11px] font-semibold uppercase tracking-wider text-emerald-400/80">
               System {status}
             </span>
             <button
-              className="rounded-lg border border-stone-700 bg-stone-900 px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider text-stone-300"
+              className="rounded-lg border border-stone-600 bg-stone-800 px-3 py-1.5 text-[12px] font-semibold text-stone-200 hover:bg-stone-700"
               data-testid="open-diagnostics-workspace"
               onClick={() => openDiagnosticsWorkspace()}
               type="button"
@@ -89,7 +89,7 @@ function App() {
               Diagnostics
             </button>
             <button
-              className="ml-auto rounded-lg border border-stone-700 bg-stone-900 px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider text-stone-300"
+              className="ml-auto rounded-lg border border-stone-600 bg-stone-800 px-3 py-1.5 text-[12px] font-semibold text-stone-200 hover:bg-stone-700"
               data-testid="open-settings-workspace"
               onClick={() => setSettingsOpen(true)}
               type="button"
@@ -108,8 +108,8 @@ function App() {
           <LayerFilterPanel />
           <MeasurementPanel />
           
-          <div className="rounded-xl border border-stone-800 bg-stone-950/40 p-4 text-[11px] leading-relaxed text-stone-500">
-            <p className="font-semibold text-stone-400 uppercase tracking-wider mb-2">Operational Notes</p>
+          <div className="rounded-xl border border-stone-800 bg-stone-950/40 p-4 text-[13px] leading-relaxed text-stone-400">
+            <p className="text-[13px] font-semibold uppercase tracking-wide text-stone-300 mb-2">Operational Notes</p>
             <ul className="list-disc pl-4 space-y-1">
               <li>ITM (EPSG:2157) is the working CRS.</li>
               <li>WGS84 for GPS and map rendering.</li>

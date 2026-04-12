@@ -63,6 +63,7 @@ Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
 
   test('drawing toolbar shows all 7 tools with correct labels', async ({ page }) => {
     await expect(page.getByTestId('drawing-toolbar')).toBeVisible()
+    await page.getByTestId('drawing-toolbar-expand').click()
     await expect(page.getByTestId('drawing-tool-line')).toBeVisible()
     await expect(page.getByTestId('drawing-tool-search_area')).toBeVisible()
     await expect(page.getByTestId('drawing-tool-range_ring')).toBeVisible()

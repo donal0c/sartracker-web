@@ -8,6 +8,7 @@ test.describe('M8 drawing workflows', () => {
     await page.getByTestId('mission-name-input').fill('Drawing Mission')
     await page.getByTestId('mission-start-btn').click()
     await expect(page.getByTestId('mission-control')).toContainText('active')
+    await page.getByTestId('drawing-toolbar-expand').click()
   })
 
   test('creates a line drawing from the toolbar and persists it', async ({ page }) => {

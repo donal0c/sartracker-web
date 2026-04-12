@@ -13,7 +13,7 @@
 
 ## Last Updated
 
-- 2026-04-12 09:55 by Claude Opus (mock-traccar hardening committed: sartracker-web-2jk.16)
+- 2026-04-12 20:58 by Codex (reviewed UI/UX audit batch, full verification green, ready to commit/push)
 
 ## Current State
 
@@ -28,7 +28,30 @@
 
 ## Last Work Done
 
-**sartracker-web-2jk.16 — Mock Traccar server hardening (5 fixes)**
+**UI/UX Audit — C5 + C3 + C1 all 11 slices complete**
+
+Branch: `feat/ui-ux-audit-critical`
+
+All 11 slices triple-validated by Opus subagents:
+- Slices 1-4: App header, Mission Control (header, timers, inputs, dialogs) — `App.tsx`, `mission-control-panel.tsx`
+- Slice 5: Tracking Status panel — `tracking-status-panel.tsx`
+- Slice 6: Helicopter panel (C3 collapse + C5 text) — `helicopter-panel.tsx`, `helicopter-panel.spec.ts`
+- Slice 7: GPX Import panel — `gpx-import-panel.tsx`
+- Slice 8: Layer Filter panel — `layer-filter-panel.tsx`
+- Slice 9: Measurement panel — `measurement-panel.tsx`
+- Slice 10: Drawing toolbar (C1 collapse + C5 contrast) — `drawing-toolbar.tsx`, 5 E2E test files updated
+- Slice 11: Workspace headers — `diagnostics-workspace.tsx`, `devices-workspace.tsx`, `settings-workspace.tsx`, `mission-review-workspace.tsx`
+
+Key decisions:
+- Timer values at text-2xl (24px) — text-4xl overflows 2-col grid
+- Labels use stone-300 not stone-400 — stone-400 flagged too faint
+- Buttons use stone-800 bg + stone-600 borders (stone-900 blended into panel bg)
+- Helicopter slots collapsed by default — 4 compact rows vs 32 inputs
+- Drawing toolbar collapsed by default — compact strip vs 20% map obstruction
+- E2E tests updated: 5 test files got `drawing-toolbar-expand` click, 1 got `helicopter-toggle-slot_1` click, 1 assertion updated for uppercase badge
+- Codex review pass re-verified the batch locally: `npm run test`, `npm run build`, `npx playwright test --project=visual`, and a clean rerun of `npm run test:e2e` all passed. Initial full Playwright run hit two nondeterministic failures (`full-mission-flow`, `layer-panel`) that both passed immediately on isolated rerun before the clean suite pass.
+
+**Previous: sartracker-web-2jk.16 — Mock Traccar server hardening (5 fixes)**
 
 Fixed 5 issues found during the fitness review of `tools/mock-traccar/`:
 
@@ -91,6 +114,11 @@ Choose one path and update this file when done:
   - 55 existing E2E tests: all green (zero regression)
   - Opus visual verification: 11/11 passed
   - Coverage: app shell, mission lifecycle (6 states), tracking (panel + map + layers), markers (4 types), drawings (4 tools + multi-drawing)
+- Codex verification rerun:
+  - `npm run test`: 320/320 passing
+  - `npm run build`: passing
+  - `npm run test:e2e`: 78/78 passing on final rerun
+  - `npx playwright test --project=visual`: 22/22 passing
 - Mock Traccar server:
   - 16 unit tests covering all 5 hardening fixes
   - Manual curl verification: /health public, offline filtering, auth gates
