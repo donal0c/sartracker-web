@@ -13,7 +13,7 @@
 
 ## Last Updated
 
-- 2026-04-11 18:46 by Codex (M23 helicopter layer parity)
+- 2026-04-12 08:30 by Claude Opus (bug fixes: sartracker-web-awm, sartracker-web-lo6)
 
 ## Current State
 
@@ -28,24 +28,22 @@
 
 ## Last Work Done
 
-Completed **M23 helicopter layer parity** as a first-class mission feature:
+Fixed two bugs discovered during deep UI validation:
 
-- added persisted helicopter slot support to the TypeScript mission store boundary and Tauri SQLite mission store
-- added browser-harness persistence so helicopter workflows are testable in Playwright validation mode
-- added a dedicated helicopter runtime/store/bridge instead of overloading tracking
-- integrated helicopter slots into the grouped layer catalog and layer visibility hydration
-- added a distinct map overlay with fixed slot colors and call-sign labels
-- added an operator-facing helicopter panel for slot entry/update/clear flows
-- added coverage:
-  - unit tests for helicopter runtime, layer catalog, mission store adapter, and browser harness persistence
-  - Rust persistence CRUD test
-  - Playwright spec: `tests/e2e/helicopter-panel.spec.ts`
-- verification now green:
-  - `npm run lint`
-  - `npm run test`
-  - `npm run build`
-  - `cargo test --manifest-path src-tauri/Cargo.toml`
-  - `npm run test:e2e` (full suite, including visual project)
+**sartracker-web-awm — Device markers too small on topo basemap (closed)**
+- Increased circle radius from 7px to 11px for clear visibility on all basemaps
+- Repositioned name labels from above-center to right-of-marker (anchor: left, offset: [1.2, 0])
+- Enabled label overlap so all device names are always visible during operations
+- Added `tests/unit/sync-tracking-overlay.test.ts` (8 tests)
+
+**sartracker-web-lo6 — OpenTopoMap tile degradation message too sensitive (closed)**
+- Created `src/lib/tile-health-tracker.ts` — threshold-based degradation detection
+- Requires 3+ tile errors within a 10-second sliding window before showing degradation warning
+- Added recovery: if all errors expire from the window, idle handler clears the degraded state
+- Basemap changes reset the tracker
+- Added `tests/unit/tile-health-tracker.test.ts` (13 tests)
+
+Verification green: lint, 304 unit tests (66 files), build, 78 E2E tests (55 chromium + 22 visual + 1 full-mission)
 
 ## Active Work
 
@@ -60,9 +58,7 @@ Completed **M23 helicopter layer parity** as a first-class mission feature:
 - `sartracker-web-2jk.13` — focus mode parity
 - `sartracker-web-2jk.15` — final parity acceptance sweep
 - `sartracker-web-2jk.16` — mock Traccar server + Glenagenty fixtures
-- `sartracker-web-awm` — device markers too small on topo basemap
 - `sartracker-web-bsl` — sections 13-16 not triple-verified in deep UI validation
-- `sartracker-web-lo6` — intermittent OpenTopoMap degradation message
 
 ## Known Parity Gaps
 
