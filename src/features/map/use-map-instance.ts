@@ -8,6 +8,7 @@ import {
   createReadyMapHealth,
   type MapHealth,
 } from '../../lib/map-health'
+import { createTileHealthTracker } from '../../lib/tile-health-tracker'
 import { persistBasemapPreference, readStoredBasemap } from '../../lib/map-preferences'
 import { createRasterStyle, KERRY_MAX_BOUNDS } from './map-style'
 import { applyMapStylePreservingCamera } from './apply-map-style-preserving-camera'
@@ -44,6 +45,7 @@ export function useMapInstance(): MapInstanceController {
   const mapRef = useRef<maplibregl.Map | null>(null)
   const previousBasemapIdRef = useRef<BasemapId | null>(null)
   const activeBasemapIdRef = useRef<BasemapId>(initialBasemapId)
+  const tileHealthTrackerRef = useRef(createTileHealthTracker())
   const [activeBasemapId, setActiveBasemapId] = useState<BasemapId>(initialBasemapId)
   const [mapReadyVersion, setMapReadyVersion] = useState(0)
   const [hoverCoordinate, setHoverCoordinate] = useState<HoverCoordinate>(EMPTY_HOVER_COORDINATE)
@@ -58,6 +60,7 @@ export function useMapInstance(): MapInstanceController {
 
   function handleBasemapChange(nextBasemapId: BasemapId) {
     activeBasemapIdRef.current = nextBasemapId
+    tileHealthTrackerRef.current.reset()
     setMapHealth(createLoadingMapHealth(getBasemapById(nextBasemapId).label))
     setActiveBasemapId(nextBasemapId)
   }
@@ -84,18 +87,26 @@ export function useMapInstance(): MapInstanceController {
       })
     })
     map.on('idle', () => {
+      const tracker = tileHealthTrackerRef.current
       setMapHealth((current) => {
         if (current.status === 'degraded') {
+          if (tracker.shouldRecover(Date.now())) {
+            tracker.reset()
+            return createReadyMapHealth(getBasemapById(activeBasemapIdRef.current).label)
+          }
           return current
         }
-
+        tracker.reset()
         return createReadyMapHealth(getBasemapById(activeBasemapIdRef.current).label)
       })
     })
     map.on('error', () => {
-      setMapHealth(
-        createDegradedMapHealth(getBasemapById(activeBasemapIdRef.current).label),
-      )
+      const decision = tileHealthTrackerRef.current.recordError(Date.now())
+      if (decision === 'degrade') {
+        setMapHealth(
+          createDegradedMapHealth(getBasemapById(activeBasemapIdRef.current).label),
+        )
+      }
     })
     map.on('webglcontextlost', () => {
       setMapHealth(
