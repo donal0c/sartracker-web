@@ -47,7 +47,7 @@ export function syncTrackingOverlay(
       filter: ['==', '$type', 'Point'],
       paint: {
         'circle-color': ['get', 'color'],
-        'circle-radius': 7,
+        'circle-radius': 11,
         'circle-stroke-color': [
           'case',
           ['boolean', ['get', 'stale'], false],
@@ -80,9 +80,9 @@ export function syncTrackingOverlay(
         'text-field': ['get', 'name'],
         'text-font': ['Open Sans Regular', 'Arial Unicode MS Regular'],
         'text-size': 12,
-        'text-offset': [0, -1.4],
-        'text-anchor': 'bottom',
-        'text-allow-overlap': false,
+        'text-offset': [1.2, 0],
+        'text-anchor': 'left',
+        'text-allow-overlap': true,
         'text-ignore-placement': false,
       },
       paint: {
