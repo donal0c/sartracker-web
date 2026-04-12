@@ -13,7 +13,7 @@
 
 ## Last Updated
 
-- 2026-04-12 09:00 by Claude Opus (mock-traccar hardening: sartracker-web-2jk.16)
+- 2026-04-12 09:55 by Claude Opus (mock-traccar hardening committed: sartracker-web-2jk.16)
 
 ## Current State
 
@@ -40,12 +40,12 @@ Fixed 5 issues found during the fitness review of `tools/mock-traccar/`:
 
 Added `tests/unit/mock-traccar-hardening.test.ts` (16 tests) covering all 5 fixes.
 
-Verification green: lint, 320 unit tests (67 files), build, 78 E2E tests (55 chromium + 22 visual + 1 full-mission)
+All changes committed and pushed. Verification green: lint, 320 unit tests (67 files), build, 78 E2E tests (55 chromium + 22 visual + 1 full-mission). Two flaky tests (full-mission-flow timeout, gpx-import map source assertion) passed on retry — unrelated to mock Traccar changes.
 
 ## Active Work
 
 - M23 is complete and validated.
-- Mock Traccar server hardened (`sartracker-web-2jk.16`) — ready for integration testing.
+- Mock Traccar server hardened and committed (`sartracker-web-2jk.16`) — ready for integration testing.
 - Next recommended implementation bead: **`sartracker-web-2jk.13` — M24 focus mode parity**
 - Next parity verification target after that remains **Batch 5** markers (`LPV-080` to `LPV-086`)
 
