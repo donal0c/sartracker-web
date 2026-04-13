@@ -40,11 +40,37 @@ async function readVisibilityState(page: Page) {
       hiddenDeviceIds: [...state.hiddenDeviceIds],
       hiddenMarkerIds: [...state.hiddenMarkerIds],
       hiddenDrawingIds: [...state.hiddenDrawingIds],
+      groupVisibility: { ...state.groupVisibility },
       markerTypeVisibility: { ...state.markerTypeVisibility },
       drawingTypeVisibility: { ...state.drawingTypeVisibility },
       breadcrumbsVisible: state.breadcrumbsVisible,
       measurementsVisible: state.measurementsVisible,
       hydratedMissionId: state.hydratedMissionId,
+    }
+  })
+}
+
+async function readMapFilterState(page: Page) {
+  return page.evaluate(() => {
+    const map = (
+      window as Window & {
+        __SARTRACKER_MAP__?: {
+          getFilter: (layerId: string) => unknown
+        }
+      }
+    ).__SARTRACKER_MAP__
+
+    if (map === undefined) {
+      throw new Error('Map instance is unavailable.')
+    }
+
+    const readFilter = (layerId: string) =>
+      map.getLayer(layerId) === undefined ? null : (map.getFilter(layerId) ?? null)
+
+    return {
+      drawingLine: readFilter('mission-drawings-line'),
+      drawingLabel: readFilter('mission-drawings-label'),
+      clueMarkers: readFilter('mission-markers-symbol-clue'),
     }
   })
 }
@@ -262,6 +288,7 @@ test.describe('Batch 1: Critical visibility parity (LPV-240 to LPV-247)', () => 
     await seedVisibilityTestData(page)
     // Wait for the catalog to process the new data
     await page.waitForTimeout(500)
+    await page.getByTestId('sidebar-tab-layers').click()
   })
 
   test('LPV-240: per-device tracking visibility toggle propagates to visibility store', async ({
@@ -413,6 +440,59 @@ test.describe('Batch 1: Critical visibility parity (LPV-240 to LPV-247)', () => 
     // Previous child visibility should be restored
     expect(restored.hiddenDeviceIds).toEqual([])
     expect(restored.breadcrumbsVisible).toBe(true)
+  })
+
+  test('LPV-246a: Map Tools group visibility cascade propagates to all map-tool runtime channels', async ({
+    page,
+  }) => {
+    const before = await readVisibilityState(page)
+    const beforeFilters = await readMapFilterState(page)
+    expect(before.groupVisibility.mapTools).toBe(true)
+    expect(before.markerTypeVisibility.clue).toBe(true)
+    expect(before.drawingTypeVisibility.range_ring).toBe(true)
+    expect(before.measurementsVisible).toBe(true)
+    expect(JSON.stringify(beforeFilters.drawingLabel)).not.toContain('__hidden__')
+    expect(JSON.stringify(beforeFilters.clueMarkers)).not.toContain('__hidden__')
+
+    const mapToolsGroupToggle = page.getByTestId('layer-visibility-group-map-tools')
+    await expect(mapToolsGroupToggle).toBeVisible({ timeout: 10000 })
+    await mapToolsGroupToggle.click()
+    await page.waitForTimeout(500)
+
+    const after = await readVisibilityState(page)
+    const afterFilters = await readMapFilterState(page)
+    expect(after.groupVisibility.mapTools).toBe(false)
+    expect(after.markerTypeVisibility.clue).toBe(false)
+    expect(after.markerTypeVisibility.hazard).toBe(false)
+    expect(after.drawingTypeVisibility.line).toBe(false)
+    expect(after.drawingTypeVisibility.range_ring).toBe(false)
+    expect(after.hiddenDrawingIds).toContain('drawing-line-1')
+    expect(after.hiddenDrawingIds).toContain('drawing-ring-1')
+    expect(after.measurementsVisible).toBe(false)
+    expect(JSON.stringify(afterFilters.drawingLabel)).toContain('__hidden__')
+    expect(JSON.stringify(afterFilters.clueMarkers)).toContain('__hidden__')
+
+    await mapToolsGroupToggle.click()
+    await page.waitForTimeout(500)
+
+    const restored = await readVisibilityState(page)
+    await expect
+      .poll(async () => JSON.stringify((await readMapFilterState(page)).drawingLabel), {
+        timeout: 5000,
+      })
+      .not.toContain('__hidden__')
+    await expect
+      .poll(async () => JSON.stringify((await readMapFilterState(page)).clueMarkers), {
+        timeout: 5000,
+      })
+      .not.toContain('__hidden__')
+    expect(restored.groupVisibility.mapTools).toBe(true)
+    expect(restored.markerTypeVisibility.clue).toBe(true)
+    expect(restored.markerTypeVisibility.hazard).toBe(true)
+    expect(restored.drawingTypeVisibility.line).toBe(true)
+    expect(restored.drawingTypeVisibility.range_ring).toBe(true)
+    expect(restored.hiddenDrawingIds).toEqual([])
+    expect(restored.measurementsVisible).toBe(true)
   })
 
   test('LPV-247: tree/canvas synchronization — repeated toggles maintain consistency', async ({

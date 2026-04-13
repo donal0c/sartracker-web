@@ -41,6 +41,7 @@ test.describe('M23 helicopter layer parity', () => {
 
     await expect(page.getByTestId('helicopter-panel')).toContainText('1 ACTIVE')
 
+    await page.getByTestId('sidebar-tab-layers').click()
     await page.getByTestId('layer-expand-group-helicopters').click()
     await page.getByTestId('layer-expand-layer-helicopters-slot-1').click()
     await expect(page.getByTestId('layer-tree')).toContainText('Rescue 118')

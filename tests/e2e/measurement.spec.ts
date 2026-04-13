@@ -10,6 +10,7 @@ test.describe('M9 measurement workflows', () => {
     await page.getByTestId('mission-name-input').fill('Measurement Mission')
     await page.getByTestId('mission-start-btn').click()
     await expect(page.getByTestId('mission-control')).toContainText('active')
+    await page.getByTestId('sidebar-tab-tools').click()
   })
 
   test('creates multiple measurements and clears them manually', async ({ page }) => {

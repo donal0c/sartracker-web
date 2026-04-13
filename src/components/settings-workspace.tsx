@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState, type Dispatch, type ReactNode, type SetStateAction } from 'react'
 
 import { getAppRuntimeController } from '../features/runtime/app-runtime-controller'
+import { WorkspaceOverlay, WorkspaceHeader } from './workspace-overlay'
 import {
   createSettingsDraft,
   type AppSettingsDraft,
@@ -75,30 +76,15 @@ export function SettingsWorkspace({ open, onClose }: SettingsWorkspaceProps) {
     [draft],
   )
 
-  if (!open) {
-    return null
-  }
-
   return (
-    <div className="fixed inset-0 z-50 flex bg-stone-950/80 backdrop-blur-sm">
-      <div className="ml-auto flex h-full w-full max-w-3xl flex-col border-l border-stone-800 bg-stone-950 shadow-2xl">
-        <header className="flex items-center justify-between border-b border-stone-800 px-6 py-5">
-          <div>
-            <p className="text-[11px] font-semibold uppercase tracking-wider text-amber-300/80">
-              Settings Workspace
-            </p>
-            <h2 className="mt-1 font-mono text-2xl font-bold text-stone-50">Operational Settings</h2>
-          </div>
-          <button
-            className="rounded-lg border border-stone-600 bg-stone-800 px-3 py-2 text-xs font-semibold text-stone-200"
-            onClick={onClose}
-            type="button"
-          >
-            Close
-          </button>
-        </header>
+    <WorkspaceOverlay open={open} onClose={onClose} maxWidth="max-w-3xl">
+      <WorkspaceHeader
+        subtitle="Settings Workspace"
+        title="Operational Settings"
+        onClose={onClose}
+      />
 
-        <div className="flex-1 space-y-6 overflow-y-auto px-6 py-6" data-testid="settings-workspace">
+      <div className="flex-1 space-y-6 overflow-y-auto px-6 py-6" data-testid="settings-workspace">
           {loading || draft === null ? (
             <div className="rounded-xl border border-stone-800 bg-stone-900/40 p-5 text-sm text-stone-400">
               Loading settings…
@@ -501,8 +487,7 @@ export function SettingsWorkspace({ open, onClose }: SettingsWorkspaceProps) {
             </button>
           </div>
         </footer>
-      </div>
-    </div>
+    </WorkspaceOverlay>
   )
 
   async function handleTestConnection(currentDraft: AppSettingsDraft): Promise<void> {

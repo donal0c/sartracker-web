@@ -27,7 +27,7 @@ export function GpxImportPanel() {
 
   return (
     <section
-      className="rounded-2xl border border-stone-800 bg-stone-950/40 p-5 text-sm"
+      className="rounded-2xl border border-stone-800/60 bg-stone-950/30 p-4 text-sm"
       data-testid="gpx-import-panel"
     >
       <div className="flex items-start justify-between gap-3">
@@ -89,7 +89,7 @@ export function GpxImportPanel() {
 
       <div className="mt-4 space-y-3">
         <PanelList
-          emptyMessage="No watched folders yet."
+          emptyMessage="No watched folders. Use Watch Folder above to auto-import new tracks."
           items={watchedDirectories.map((directoryPath) => ({
             id: directoryPath,
             primary: directoryPath,
@@ -105,7 +105,7 @@ export function GpxImportPanel() {
         />
 
         <PanelList
-          emptyMessage="No GPX tracks imported yet."
+          emptyMessage="No GPX tracks imported. Use the buttons above to import files or folders."
           items={imports.map((entry) => ({
             id: entry.id,
             primary: entry.display_name,

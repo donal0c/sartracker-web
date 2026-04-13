@@ -75,7 +75,7 @@ export function LayerFilterPanel() {
 
   return (
     <section
-      className="rounded-2xl border border-stone-800 bg-stone-950/40 p-5 text-sm"
+      className="rounded-2xl border border-stone-800/60 bg-stone-950/30 p-4 text-sm"
       data-testid="layer-panel"
     >
       <div className="mb-4 flex items-center justify-between gap-3">
@@ -311,7 +311,7 @@ function LayerInspector(props: {
   const [aliasDraft, setAliasDraft] = useState(selectedNode?.alias ?? '')
 
   if (selectedNode === null) {
-    return <EmptyState message="Select a layer or feature to inspect it." testId="layer-inspector-empty" />
+    return <EmptyState message="Select a layer or feature from the tree above to inspect its properties." testId="layer-inspector-empty" />
   }
 
   const siblings = getSiblingNodeIds(props.root, selectedNode.id)

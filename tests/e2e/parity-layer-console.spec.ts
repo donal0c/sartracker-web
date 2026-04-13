@@ -96,6 +96,7 @@ test.describe('Batch 2 follow-up: layer console controls (LPV-063, LPV-064, LPV-
     await expect(page.getByTestId('mission-control')).toContainText('active')
     await seedLayerData(page)
     await page.waitForTimeout(500)
+    await page.getByTestId('sidebar-tab-layers').click({ force: true })
   })
 
   test('LPV-063: show-hidden toggle filters hidden items from tree', async ({ page }) => {

@@ -250,7 +250,7 @@ export function MissionControlPanel() {
 
   return (
     <section
-      className="rounded-2xl border border-stone-800 bg-stone-950/40 p-5 text-sm"
+      className="rounded-2xl border border-stone-700 bg-stone-900/60 p-5 text-sm shadow-lg shadow-black/20"
       data-testid="mission-control"
     >
         <div className="flex items-center justify-between mb-4">
@@ -366,9 +366,9 @@ export function MissionControlPanel() {
         </div>
 
         {/* Tactical Actions */}
-        <div className="grid gap-2 sm:grid-cols-3">
+        <div className="space-y-2">
           <button
-            className="rounded-lg bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 px-3 py-2.5 text-[13px] font-semibold text-white shadow-lg shadow-emerald-900/20 transition-all disabled:cursor-not-allowed disabled:opacity-20 disabled:grayscale"
+            className="w-full rounded-lg bg-amber-500 hover:bg-amber-400 active:bg-amber-600 px-4 py-3 text-[15px] font-bold text-stone-950 shadow-lg shadow-amber-900/30 transition-all disabled:cursor-not-allowed disabled:opacity-20 disabled:grayscale"
             data-testid="mission-start-btn"
             disabled={controller === null || phase !== 'idle'}
             onClick={() => void handleStartMission()}
@@ -376,24 +376,26 @@ export function MissionControlPanel() {
           >
             Start
           </button>
-          <button
-            className="rounded-lg bg-amber-600 hover:bg-amber-500 active:bg-amber-700 px-3 py-2.5 text-[13px] font-semibold text-white shadow-lg shadow-amber-900/20 transition-all disabled:cursor-not-allowed disabled:opacity-20 disabled:grayscale"
-            data-testid="mission-pause-resume-btn"
-            disabled={controller === null || (phase !== 'active' && phase !== 'paused')}
-            onClick={() => void handlePauseOrResume()}
-            type="button"
-          >
-            {phase === 'paused' ? 'Resume' : 'Pause'}
-          </button>
-          <button
-            className="rounded-lg bg-rose-600 hover:bg-rose-500 active:bg-rose-700 px-3 py-2.5 text-[13px] font-semibold text-white shadow-lg shadow-rose-900/20 transition-all disabled:cursor-not-allowed disabled:opacity-20 disabled:grayscale"
-            data-testid="mission-finish-btn"
-            disabled={controller === null || (phase !== 'active' && phase !== 'paused')}
-            onClick={() => setShowFinishDialog(true)}
-            type="button"
-          >
-            Finish
-          </button>
+          <div className="grid gap-2 sm:grid-cols-2">
+            <button
+              className="rounded-lg border-2 border-amber-500 bg-transparent px-3 py-2.5 text-[13px] font-semibold text-amber-400 transition-all hover:bg-amber-500/10 disabled:cursor-not-allowed disabled:opacity-20 disabled:grayscale"
+              data-testid="mission-pause-resume-btn"
+              disabled={controller === null || (phase !== 'active' && phase !== 'paused')}
+              onClick={() => void handlePauseOrResume()}
+              type="button"
+            >
+              {phase === 'paused' ? 'Resume' : 'Pause'}
+            </button>
+            <button
+              className="rounded-lg bg-rose-600 hover:bg-rose-500 active:bg-rose-700 px-3 py-2.5 text-[13px] font-semibold text-white shadow-lg shadow-rose-900/20 transition-all disabled:cursor-not-allowed disabled:opacity-20 disabled:grayscale"
+              data-testid="mission-finish-btn"
+              disabled={controller === null || (phase !== 'active' && phase !== 'paused')}
+              onClick={() => setShowFinishDialog(true)}
+              type="button"
+            >
+              Finish
+            </button>
+          </div>
         </div>
 
         {phase === 'idle' && governanceMission !== null ? (

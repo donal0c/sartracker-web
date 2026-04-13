@@ -1,6 +1,10 @@
 import { useEffect, useRef, type RefObject } from 'react'
 import type maplibregl from 'maplibre-gl'
 
+import {
+  getEffectiveMarkerTypeVisibility,
+  getEffectiveTrackingVisible,
+} from '../layers/effective-overlay-visibility'
 import { useLayerVisibilityStore } from '../layers/layer-visibility-store'
 import { useMarkerStore } from '../markers/marker-store'
 import { syncMarkerOverlay } from '../markers/sync-marker-overlay'
@@ -26,6 +30,7 @@ const TRACKING_INITIAL_FIT_DURATION_MS = 0
  */
 export function useMapOverlays(options: UseMapOverlaysOptions): void {
   const trackingSnapshot = useTrackingStore((state) => state.snapshot)
+  const groupVisibility = useLayerVisibilityStore((state) => state.groupVisibility)
   const hiddenDeviceIds = useLayerVisibilityStore((state) => state.hiddenDeviceIds)
   const breadcrumbsVisible = useLayerVisibilityStore((state) => state.breadcrumbsVisible)
   const markerTypeVisibility = useLayerVisibilityStore((state) => state.markerTypeVisibility)
@@ -46,7 +51,12 @@ export function useMapOverlays(options: UseMapOverlaysOptions): void {
         return
       }
 
-      syncTrackingOverlay(map, trackingSnapshot, hiddenDeviceIds, breadcrumbsVisible)
+      syncTrackingOverlay(
+        map,
+        getEffectiveTrackingVisible(groupVisibility) ? trackingSnapshot : emptyTrackingSnapshot(),
+        hiddenDeviceIds,
+        getEffectiveTrackingVisible(groupVisibility) && breadcrumbsVisible,
+      )
 
       if (missionId === null) {
         return
@@ -75,6 +85,7 @@ export function useMapOverlays(options: UseMapOverlaysOptions): void {
     options.mapReadyVersion,
     options.mapRef,
     breadcrumbsVisible,
+    groupVisibility,
     hiddenDeviceIds,
     missionId,
     trackingSnapshot,
@@ -92,11 +103,17 @@ export function useMapOverlays(options: UseMapOverlaysOptions): void {
         return
       }
 
-      void syncMarkerOverlay(map, markerState, markerTypeVisibility, hiddenMarkerIds)
+      void syncMarkerOverlay(
+        map,
+        markerState,
+        getEffectiveMarkerTypeVisibility(groupVisibility, markerTypeVisibility),
+        hiddenMarkerIds,
+      )
     }
 
     return registerMapStyleSync(map, synchronizeOverlay)
   }, [
+    groupVisibility,
     hiddenMarkerIds,
     markerState,
     markerTypeVisibility,
@@ -104,4 +121,15 @@ export function useMapOverlays(options: UseMapOverlaysOptions): void {
     options.mapReadyVersion,
     options.mapRef,
   ])
+}
+
+/**
+ * Returns an empty snapshot so hidden tracking groups remove devices and breadcrumbs from the map.
+ */
+function emptyTrackingSnapshot(): ReturnType<typeof useTrackingStore.getState>['snapshot'] {
+  return {
+    devices: [],
+    positions: [],
+    breadcrumbs: [],
+  }
 }

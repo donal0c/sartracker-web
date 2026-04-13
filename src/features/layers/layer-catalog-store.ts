@@ -6,6 +6,7 @@ import type {
 import type { LayerCatalogRootNode } from './layer-catalog-types'
 import type { LayerCatalogController } from './start-layer-catalog-runtime'
 import { createEmptyLayerCatalogTree } from './layer-catalog-types'
+import { useLayerVisibilityStore } from './layer-visibility-store'
 
 type LayerCatalogStoreState = LayerCatalogRuntimeState & {
   readonly controller: LayerCatalogController | null
@@ -27,12 +28,16 @@ const EMPTY_LAYER_CATALOG_RUNTIME: LayerCatalogRuntimeState = {
 export const useLayerCatalogStore = create<LayerCatalogStoreState>((set) => ({
   ...EMPTY_LAYER_CATALOG_RUNTIME,
   controller: null,
-  applyRuntime: (runtime) => set(runtime),
+  applyRuntime: (runtime) => {
+    set(runtime)
+    useLayerVisibilityStore.getState().hydrateCatalogVisibility(runtime.missionId, runtime.root)
+  },
   applyController: (controller) => set({ controller }),
 }))
 
 export function applyLayerCatalogRuntime(runtime: LayerCatalogRuntimeState): void {
   useLayerCatalogStore.setState(runtime)
+  useLayerVisibilityStore.getState().hydrateCatalogVisibility(runtime.missionId, runtime.root)
 }
 
 export function applyLayerCatalogController(controller: LayerCatalogController): void {

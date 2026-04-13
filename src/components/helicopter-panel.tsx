@@ -40,7 +40,7 @@ export function HelicopterPanel() {
 
   return (
     <section
-      className="rounded-2xl border border-stone-800 bg-stone-950/40 p-5 text-sm"
+      className="rounded-2xl border border-stone-800/60 bg-stone-950/30 p-4 text-sm"
       data-testid="helicopter-panel"
     >
       <div className="flex items-start justify-between gap-3">

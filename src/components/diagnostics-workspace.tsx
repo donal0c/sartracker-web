@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 
 import { useDiagnosticsStore } from '../features/diagnostics/diagnostics-store'
 import { useDiagnosticsWorkspaceStore } from '../features/diagnostics/diagnostics-workspace-store'
+import { WorkspaceOverlay, WorkspaceHeader } from './workspace-overlay'
 
 /**
  * Renders the operator diagnostics workspace and repair/export actions.
@@ -32,30 +33,16 @@ export function DiagnosticsWorkspace() {
   const feedback = localFeedback ?? runtimeFeedback
   const missionOptions = useMemo(() => snapshot?.missionOptions ?? [], [snapshot])
 
-  if (!open) {
-    return null
-  }
-
   return (
-    <div className="fixed inset-0 z-50 flex bg-stone-950/80 backdrop-blur-sm">
-      <div className="ml-auto flex h-full w-full max-w-4xl flex-col border-l border-stone-800 bg-stone-950 shadow-2xl">
-        <header className="flex items-center justify-between border-b border-stone-800 px-6 py-5">
-          <div>
-            <p className="text-[11px] font-semibold uppercase tracking-wider text-cyan-300/80">
-              Diagnostics Workspace
-            </p>
-            <h2 className="mt-1 font-mono text-2xl font-bold text-stone-50">Operational Diagnostics</h2>
-          </div>
-          <button
-            className="rounded-lg border border-stone-600 bg-stone-800 px-3 py-2 text-xs font-semibold text-stone-200"
-            onClick={() => closeWorkspace()}
-            type="button"
-          >
-            Close
-          </button>
-        </header>
+    <WorkspaceOverlay open={open} onClose={closeWorkspace}>
+      <WorkspaceHeader
+        subtitle="Diagnostics Workspace"
+        subtitleColor="text-cyan-300/80"
+        title="Operational Diagnostics"
+        onClose={closeWorkspace}
+      />
 
-        <div className="flex-1 overflow-y-auto px-6 py-6" data-testid="diagnostics-workspace">
+      <div className="flex-1 overflow-y-auto px-6 py-6" data-testid="diagnostics-workspace">
           {loading || snapshot === null ? (
             <div className="rounded-xl border border-stone-800 bg-stone-900/40 p-5 text-sm text-stone-400">
               Loading diagnostics…
@@ -191,8 +178,7 @@ export function DiagnosticsWorkspace() {
             </div>
           )}
         </div>
-      </div>
-    </div>
+    </WorkspaceOverlay>
   )
 
   async function handleCopy(report: string): Promise<void> {

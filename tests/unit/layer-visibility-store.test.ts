@@ -15,6 +15,7 @@ describe('layer visibility store', () => {
     const state = useLayerVisibilityStore.getState()
 
     expect(isMarkerTypeVisible(state.markerTypeVisibility, 'clue')).toBe(true)
+    expect(state.groupVisibility.mapTools).toBe(true)
     expect(state.drawingTypeVisibility.search_area).toBe(true)
     expect(state.breadcrumbsVisible).toBe(true)
     expect(state.measurementsVisible).toBe(true)
@@ -238,6 +239,8 @@ describe('layer visibility store', () => {
 
     const hydratedState = useLayerVisibilityStore.getState()
     expect(hydratedState.hiddenDeviceIds).toEqual(['alpha'])
+    expect(hydratedState.groupVisibility.tracking).toBe(true)
+    expect(hydratedState.groupVisibility.mapTools).toBe(true)
     expect(hydratedState.markerTypeVisibility.hazard).toBe(false)
     expect(hydratedState.hiddenMarkerIds).toEqual(['marker-1'])
     expect(hydratedState.hiddenDrawingIds).toEqual(['drawing-1'])
@@ -277,6 +280,23 @@ describe('layer visibility store', () => {
 
     useLayerVisibilityStore.getState().hydrateCatalogVisibility('mission-1', treeV2)
     expect(useLayerVisibilityStore.getState().markerTypeVisibility.clue).toBe(false)
+  })
+
+  it('hydrates parent group visibility as a first-class runtime boundary', () => {
+    useLayerVisibilityStore.setState(useLayerVisibilityStore.getInitialState())
+
+    const tree = createMinimalTree()
+    const mapToolsGroup = tree.children[0]
+    if (mapToolsGroup === undefined) {
+      throw new Error('Expected minimal tree to include the map-tools group.')
+    }
+
+    ;(mapToolsGroup as { isVisible: boolean }).isVisible = false
+
+    useLayerVisibilityStore.getState().hydrateCatalogVisibility('mission-1', tree)
+
+    expect(useLayerVisibilityStore.getState().groupVisibility.mapTools).toBe(false)
+    expect(useLayerVisibilityStore.getState().markerTypeVisibility.clue).toBe(true)
   })
 
   it('preserves references when hydrating unchanged tree for performance', () => {

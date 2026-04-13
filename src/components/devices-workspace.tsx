@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 
 import { getAppRuntimeController } from '../features/runtime/app-runtime-controller'
+import { WorkspaceOverlay, WorkspaceHeader } from './workspace-overlay'
 import {
   buildDeviceWorkspaceRows,
   buildDeviceWorkspaceSummary,
@@ -37,41 +38,24 @@ export function DevicesWorkspace() {
   const selectedRow =
     rows.find((row) => row.deviceId === selectedDeviceId) ?? rows[0] ?? null
 
-  if (!open) {
-    return null
-  }
-
   return (
-    <div className="fixed inset-0 z-50 flex bg-stone-950/80 backdrop-blur-sm">
-      <div className="ml-auto flex h-full w-full max-w-5xl flex-col border-l border-stone-800 bg-stone-950 shadow-2xl">
-        <header className="flex items-center justify-between border-b border-stone-800 px-6 py-5">
-          <div>
-            <p className="text-[11px] font-semibold uppercase tracking-wider text-amber-300/80">
-              Devices Workspace
-            </p>
-            <h2 className="mt-1 font-mono text-2xl font-bold text-stone-50">
-              Tracking Devices
-            </h2>
-          </div>
-          <div className="flex items-center gap-3">
-            <button
-              className="rounded-lg border border-stone-600 bg-stone-800 px-3 py-2 text-xs font-semibold text-stone-200 disabled:opacity-50"
-              data-testid="devices-refresh-btn"
-              disabled={refreshing}
-              onClick={() => void refreshTracking()}
-              type="button"
-            >
-              {refreshing ? 'Refreshing…' : 'Reconnect'}
-            </button>
-            <button
-              className="rounded-lg border border-stone-600 bg-stone-800 px-3 py-2 text-xs font-semibold text-stone-200"
-              onClick={closeWorkspace}
-              type="button"
-            >
-              Close
-            </button>
-          </div>
-        </header>
+    <WorkspaceOverlay open={open} onClose={closeWorkspace} maxWidth="max-w-5xl">
+      <WorkspaceHeader
+        subtitle="Devices Workspace"
+        title="Tracking Devices"
+        onClose={closeWorkspace}
+        actions={
+          <button
+            className="rounded-lg border border-stone-600 bg-stone-800 px-3 py-2 text-xs font-semibold text-stone-200 disabled:opacity-50"
+            data-testid="devices-refresh-btn"
+            disabled={refreshing}
+            onClick={() => void refreshTracking()}
+            type="button"
+          >
+            {refreshing ? 'Refreshing…' : 'Reconnect'}
+          </button>
+        }
+      />
 
         <div className="grid flex-1 gap-0 lg:grid-cols-[minmax(0,1.4fr)_minmax(20rem,0.8fr)]">
           <section
@@ -221,7 +205,7 @@ export function DevicesWorkspace() {
           <aside className="px-6 py-6" data-testid="devices-inspector">
             {selectedRow === null ? (
               <div className="rounded-2xl border border-dashed border-stone-800 bg-stone-900/20 p-5 text-sm italic text-stone-500">
-                No devices available.
+                No devices available. Configure a tracking provider in Settings to see devices here.
               </div>
             ) : (
               <div className="space-y-4 rounded-2xl border border-stone-800 bg-stone-900/40 p-5">
@@ -277,8 +261,7 @@ export function DevicesWorkspace() {
             )}
           </aside>
         </div>
-      </div>
-    </div>
+    </WorkspaceOverlay>
   )
 
   async function refreshTracking(): Promise<void> {

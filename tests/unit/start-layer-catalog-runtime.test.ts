@@ -146,6 +146,73 @@ describe('startLayerCatalogRuntime', () => {
       }),
     )
   })
+
+  it('ignores stale refresh results that resolve after a visibility mutation', async () => {
+    const applyRuntime = vi.fn()
+    const staleMetadata = deferredPromise<readonly LayerCatalogMetadataEntry[]>()
+    let entries: readonly LayerCatalogMetadataEntry[] = []
+    let metadataMode: 'fresh' | 'stale' = 'fresh'
+
+    const runtime = await startLayerCatalogRuntime({
+      layerCatalogStore: {
+        listMetadata: vi.fn().mockImplementation(async () => {
+          if (metadataMode === 'stale') {
+            return staleMetadata.promise
+          }
+
+          if (entries.length > 0) {
+            return entries
+          }
+
+          return []
+        }),
+        upsertMetadata: vi.fn().mockImplementation(async (input) => {
+          const nextEntry: LayerCatalogMetadataEntry = {
+            missionId: input.missionId,
+            nodeId: input.nodeId,
+            parentNodeId: input.parentNodeId,
+            nodeKind: input.nodeKind,
+            alias: input.alias ?? null,
+            isFavorite: input.isFavorite ?? false,
+            isVisible: input.isVisible ?? true,
+            displayOrder: input.displayOrder ?? 0,
+            metadataJson: input.metadataJson ?? null,
+            updatedAt: '2026-04-10T10:00:00.000Z',
+          }
+          entries = upsertEntry(entries, nextEntry)
+          return nextEntry
+        }),
+      },
+      applyRuntime,
+    })
+
+    await runtime.refreshCatalog({
+      missionId: 'mission-1',
+      devices: [createDevice('alpha', 'Alpha Team')],
+      markers: [],
+      drawings: [],
+      helicopters: [],
+      gpxImports: [],
+    })
+
+    metadataMode = 'stale'
+    const refreshPromise = runtime.refreshCatalog({
+      missionId: 'mission-1',
+      devices: [createDevice('alpha', 'Alpha Team')],
+      markers: [],
+      drawings: [],
+      helicopters: [],
+      gpxImports: [],
+    })
+
+    await Promise.resolve()
+    await runtime.setNodeVisibility('feature:device:alpha', false)
+    staleMetadata.resolve([])
+    await refreshPromise
+
+    const latestRuntime = applyRuntime.mock.calls.at(-1)?.[0]
+    expect(latestRuntime.root.children[0]?.children[0]?.children[0]?.isVisible).toBe(false)
+  })
 })
 
 function upsertEntry(
@@ -158,6 +225,17 @@ function upsertEntry(
   }
 
   return entries.map((entry, index) => (index === existingIndex ? nextEntry : entry))
+}
+
+function deferredPromise<T>() {
+  let resolve!: (value: T) => void
+  let reject!: (reason?: unknown) => void
+  const promise = new Promise<T>((nextResolve, nextReject) => {
+    resolve = nextResolve
+    reject = nextReject
+  })
+
+  return { promise, resolve, reject }
 }
 
 function createDevice(deviceId: string, name: string): Device {

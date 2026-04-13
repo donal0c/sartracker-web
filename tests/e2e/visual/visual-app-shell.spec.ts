@@ -42,13 +42,14 @@ test.describe('Visual: App Shell', () => {
       severity: 'critical',
       verificationPrompt: `Verify this screenshot of the SAR Tracker application in idle state:
 1. The right sidebar should show "Kerry Mountain Rescue" and "SAR Tracker" title text
-2. There should be a "MISSION CONTROL" section showing "idle" state with timers at 00:00:00
-3. There should be a "TRACKING" section showing idle status
-4. The left side should show a topographic map (OpenTopoMap basemap with terrain contours)
-5. The top of the map should have 4 basemap switcher buttons (OpenTopoMap, ESRI Topo, OpenStreetMap, ESRI Satellite)
-6. A drawing toolbar should be visible on the left side with tools: Select, Line, Search Area, Range Rings, Bearing, Sector, Text Label
-7. A coordinate bar should be visible at the bottom of the map
-8. The overall theme should be dark (dark backgrounds with light text)
+2. There should be a "MISSION CONTROL" section pinned at top showing "idle" state with timers at 00:00:00
+3. Below Mission Control, there should be a segmented tab control with Tracking / Tools / Layers
+4. There should be a "TRACKING" section showing idle status (active tab by default)
+5. The left side should show a topographic map (OpenTopoMap basemap with terrain contours)
+6. The top of the map should have 4 basemap switcher buttons (OpenTopoMap, ESRI Topo, OpenStreetMap, ESRI Satellite)
+7. A drawing toolbar should be visible on the left side with tools: Select, Line, Search Area, Range Rings, Bearing, Sector, Text Label
+8. A coordinate bar should be visible at the bottom of the map
+9. The overall theme should be dark (dark backgrounds with light text)
 Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
       playwrightAssertions: [
         'app-title contains "SAR Tracker"',

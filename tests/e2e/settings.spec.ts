@@ -37,7 +37,7 @@ test.describe('M12 settings workspace', () => {
     await page.getByRole('button', { name: 'TM65 first' }).click()
     await page.getByTestId('settings-save').click()
     await expect(page.getByTestId('settings-feedback')).toContainText('Settings saved.')
-    await page.getByRole('button', { name: 'Close' }).click()
+    await page.getByTestId('workspace-close-btn').click()
 
     await page.reload()
     await page.getByTestId('open-settings-workspace').click()

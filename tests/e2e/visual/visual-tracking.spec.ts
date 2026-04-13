@@ -54,9 +54,11 @@ Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
   })
 
   test('map shows device markers at correct positions', async ({ page }) => {
-    // Verify devices are visible on map by checking the tracking text appears
+    // Device names appear in the layer tree (Layers tab)
+    await page.getByTestId('sidebar-tab-layers').click()
     await expect(page.getByText('Alpha Team')).toBeVisible()
     await expect(page.getByText('Bravo Team')).toBeVisible()
+    await page.getByTestId('sidebar-tab-tracking').click()
 
     // Zoom the map closer to the device positions for readable labels
     await page.evaluate(() => {
@@ -89,6 +91,7 @@ Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
   })
 
   test('layer panel lists all tracked devices', async ({ page }) => {
+    await page.getByTestId('sidebar-tab-layers').click()
     const layerPanel = page.getByTestId('layer-panel')
     await expect(layerPanel).toBeVisible()
     await layerPanel.scrollIntoViewIfNeeded()
@@ -133,9 +136,9 @@ Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
 3. LEFT SIDE - TOOLBAR: The drawing toolbar should be on the left side of the map
 4. LEFT SIDE - COORDS: A coordinate bar should be at the bottom of the map
 5. RIGHT SIDE - HEADER: "Kerry Mountain Rescue" and "SAR Tracker" branding
-6. RIGHT SIDE - MISSION: Mission Control panel showing "ACTIVE" status with running timers
-7. RIGHT SIDE - TRACKING: Tracking panel showing "online" status with device count
-8. RIGHT SIDE - LAYERS: Layer panel showing the device tree
+6. RIGHT SIDE - MISSION: Mission Control panel pinned at top showing "ACTIVE" status with running timers
+7. RIGHT SIDE - TABS: A segmented tab control with Tracking / Tools / Layers below Mission Control
+8. RIGHT SIDE - TRACKING: Tracking panel showing "online" status with device count (active tab)
 9. The overall layout should be: map taking ~70% width, sidebar taking ~30% width
 10. Theme should be dark with amber/gold accents
 Report PASS or FAIL for each item, then an overall PASS/FAIL.`,

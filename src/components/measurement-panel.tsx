@@ -25,7 +25,7 @@ export function MeasurementPanel() {
 
   return (
     <section
-      className="rounded-2xl border border-stone-800 bg-stone-950/40 p-5 text-sm"
+      className="rounded-2xl border border-stone-800 bg-stone-950/40 p-4 text-sm"
       data-testid="measurement-panel"
     >
       <div className="mb-4 flex items-center justify-between">
@@ -93,7 +93,7 @@ export function MeasurementPanel() {
         <div className="space-y-2" data-testid="measurement-list">
           {measurements.length === 0 ? (
             <div className="rounded-xl border border-dashed border-stone-800 bg-stone-950/20 px-3 py-2 text-xs font-medium italic text-stone-500">
-              No active measurements.
+              No active measurements. Click Measure above to start.
             </div>
           ) : (
             measurements.map((measurement) => (

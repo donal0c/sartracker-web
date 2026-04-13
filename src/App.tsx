@@ -30,12 +30,19 @@ const MapView = lazy(async () => {
   return { default: module.MapView }
 })
 
-/**
- * Renders the current scaffold shell around the operations map.
- */
+/** Sidebar tab identifiers for the segmented control below Mission Control. */
+type SidebarTab = 'tracking' | 'tools' | 'layers'
+
+const SIDEBAR_TABS: readonly { readonly id: SidebarTab; readonly label: string }[] = [
+  { id: 'tracking', label: 'Tracking' },
+  { id: 'tools', label: 'Tools' },
+  { id: 'layers', label: 'Layers' },
+]
+
 function App() {
   const status = useAppStore((state) => state.status)
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [sidebarTab, setSidebarTab] = useState<SidebarTab>('tracking')
   const openDiagnosticsWorkspace = useDiagnosticsWorkspaceStore((state) => state.openWorkspace)
 
   return (
@@ -99,24 +106,60 @@ function App() {
           </div>
         </header>
 
-        {/* Status & Controls Scrolled Area */}
-        <div className="flex-1 space-y-6 px-6 py-8 overflow-y-auto">
+        {/* Pinned Mission Control — always visible, non-scrolling */}
+        <div className="flex-shrink-0 border-b border-stone-800/50 px-6 pt-6 pb-4">
           <MissionControlPanel />
-          <TrackingStatusPanel />
-          <HelicopterPanel />
-          <GpxImportPanel />
-          <LayerFilterPanel />
-          <MeasurementPanel />
-          
-          <div className="rounded-xl border border-stone-800 bg-stone-950/40 p-4 text-[13px] leading-relaxed text-stone-400">
-            <p className="text-[13px] font-semibold uppercase tracking-wide text-stone-300 mb-2">Operational Notes</p>
-            <ul className="list-disc pl-4 space-y-1">
-              <li>ITM (EPSG:2157) is the working CRS.</li>
-              <li>WGS84 for GPS and map rendering.</li>
-              <li>Service worker caching active for viewed tiles.</li>
-              <li>SQLite persistence active (WAL mode).</li>
-            </ul>
+        </div>
+
+        {/* Segmented Tab Control */}
+        <div className="flex-shrink-0 px-6 pt-3 pb-2" data-testid="sidebar-tabs">
+          <div className="flex rounded-lg bg-stone-800/50 p-1">
+            {SIDEBAR_TABS.map((tab) => (
+              <button
+                className={`flex-1 rounded-md px-3 py-1.5 text-[12px] font-semibold transition-colors ${
+                  sidebarTab === tab.id
+                    ? 'bg-stone-700 text-amber-300 shadow-sm'
+                    : 'text-stone-400 hover:text-stone-200'
+                }`}
+                data-testid={`sidebar-tab-${tab.id}`}
+                key={tab.id}
+                onClick={() => setSidebarTab(tab.id)}
+                type="button"
+              >
+                {tab.label}
+              </button>
+            ))}
           </div>
+        </div>
+
+        {/* Tab Content — scrollable */}
+        <div className="flex-1 space-y-6 overflow-y-auto px-6 py-4">
+          {sidebarTab === 'tracking' && (
+            <>
+              <TrackingStatusPanel />
+              <HelicopterPanel />
+            </>
+          )}
+          {sidebarTab === 'tools' && (
+            <>
+              <GpxImportPanel />
+              <MeasurementPanel />
+            </>
+          )}
+          {sidebarTab === 'layers' && (
+            <>
+              <LayerFilterPanel />
+              <div className="rounded-xl border border-stone-800/60 bg-stone-950/30 p-3 text-[13px] leading-relaxed text-stone-400">
+                <p className="text-[13px] font-semibold uppercase tracking-wide text-stone-300 mb-2">Operational Notes</p>
+                <ul className="list-disc pl-4 space-y-1">
+                  <li>ITM (EPSG:2157) is the working CRS.</li>
+                  <li>WGS84 for GPS and map rendering.</li>
+                  <li>Service worker caching active for viewed tiles.</li>
+                  <li>SQLite persistence active (WAL mode).</li>
+                </ul>
+              </div>
+            </>
+          )}
         </div>
       </aside>
 
