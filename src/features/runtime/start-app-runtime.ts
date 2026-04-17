@@ -6,6 +6,7 @@ import {
 } from '../../infrastructure/mission-store/tauri-mission-store'
 import { createTauriGpxImportSource } from '../../infrastructure/gpx-import-source/tauri-gpx-import-source'
 import { ingestMarkerAttachment } from '../../infrastructure/marker-attachment-store/tauri-marker-attachment-store'
+import { createTauriTrackingCache } from '../../infrastructure/tracking-cache/tauri-tracking-cache'
 import { loadRuntimeBootstrapSettings } from '../../infrastructure/settings-store/tauri-settings-store'
 import { registerServiceWorker } from '../../lib/register-service-worker'
 import { isTauriRuntimeAvailable } from '../../lib/tauri-runtime'
@@ -193,6 +194,7 @@ export async function startAppRuntime(
           onSnapshot: hooks.onSnapshot,
           onStatusChange: hooks.onStatusChange,
         }),
+      createTrackingCache: createTauriTrackingCache,
       readTrackingRuntimeConfig,
       applySnapshot: applyTrackingSnapshot,
       applyStatus: applyTrackingStatus,

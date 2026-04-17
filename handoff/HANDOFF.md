@@ -13,7 +13,7 @@
 
 ## Last Updated
 
-- 2026-04-12 09:55 by Claude Opus (mock-traccar hardening committed: sartracker-web-2jk.16)
+- 2026-04-17 09:06 by Codex (daily code hardening pass; verification green)
 
 ## Current State
 
@@ -28,24 +28,25 @@
 
 ## Last Work Done
 
-**sartracker-web-2jk.16 — Mock Traccar server hardening (5 fixes)**
+**Daily code hardening pass (bounded runtime reliability cleanup)**
 
-Fixed 5 issues found during the fitness review of `tools/mock-traccar/`:
+Implemented three low-risk improvements without changing intended operator behavior:
 
-1. **`/health` endpoint now public** — moved before auth middleware in router.ts
-2. **Offline devices excluded from `/api/positions`** — roster status check filters offline devices from current-position response, matching real Traccar behavior
-3. **Deterministic route generation** — replaced `Math.random()` with seeded mulberry32 PRNG; same seed always produces identical routes across runs
-4. **Timestamp spacing independent of playback speed** — `getScenarioDate()` no longer divides by speed multiplier; breadcrumb gap segmentation (5-min threshold) and stale detection now work correctly at any playback speed
-5. **Team Delta timing aligned** — `goUnknownAfterMs` set to `39 × 30_000` (1,170,000ms) matching the actual last route point; `computeDeviceStatus` now triggers correctly
+1. **Tracking side effects no longer flip a healthy poll into failure** — `startTrackingRuntime()` now keeps the live snapshot applied even if cache writes or mission persistence fail, and logs each failure path explicitly instead of letting the poller treat it as transport outage.
+2. **Drawing deletion now follows the same explicit lifecycle as saves** — delete operations set `saving`, clear stale errors, surface delete failures back into runtime state, and always clear `saving` on exit.
+3. **Runtime service startup boundary is cleaner and more testable** — `runtime-managed-services.ts` no longer reaches directly into Tauri infrastructure for tracking cache creation; the cache adapter is injected from `start-app-runtime.ts`, and the lifecycle helpers now have direct unit coverage.
 
-Added `tests/unit/mock-traccar-hardening.test.ts` (16 tests) covering all 5 fixes.
+Added/updated unit coverage:
 
-All changes committed and pushed. Verification green: lint, 320 unit tests (67 files), build, 78 E2E tests (55 chromium + 22 visual + 1 full-mission). Two flaky tests (full-mission-flow timeout, gpx-import map source assertion) passed on retry — unrelated to mock Traccar changes.
+- `tests/unit/start-tracking-runtime.test.ts`
+- `tests/unit/start-drawing-runtime.test.ts`
+- `tests/unit/runtime-managed-services.test.ts`
 
 ## Active Work
 
 - M23 is complete and validated.
 - Mock Traccar server hardened and committed (`sartracker-web-2jk.16`) — ready for integration testing.
+- Daily hardening runtime cleanup is implemented locally and verified; not committed/pushed in this automation run.
 - Next recommended implementation bead: **`sartracker-web-2jk.13` — M24 focus mode parity**
 - Next parity verification target after that remains **Batch 5** markers (`LPV-080` to `LPV-086`)
 
@@ -71,7 +72,8 @@ Choose one path and update this file when done:
 
 1. Start **M24 focus mode parity** as the next clean implementation bead.
 2. Continue parity verification with Batch 5 markers.
-3. Pick one bounded improvement from `docs/areas-to-investigate.md`.
+3. Pick one bounded improvement from `docs/areas-to-investigate.md`:
+   browser harness runtime duplication cleanup or browser harness store decomposition.
 
 ## Verification Snapshot
 
@@ -94,6 +96,10 @@ Choose one path and update this file when done:
 - Mock Traccar server:
   - 16 unit tests covering all 5 hardening fixes
   - Manual curl verification: /health public, offline filtering, auth gates
+- Daily hardening pass:
+  - `npm run test` -> 68 files / 325 tests passed
+  - `npm run build` -> passed
+  - `npx eslint` on changed files -> passed
 
 ## Archive
 

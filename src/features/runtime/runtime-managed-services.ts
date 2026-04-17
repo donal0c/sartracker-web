@@ -1,4 +1,4 @@
-import { createTauriTrackingCache } from '../../infrastructure/tracking-cache/tauri-tracking-cache'
+import type { TrackingCache } from '../../infrastructure/tracking-cache/tauri-tracking-cache'
 import type { AutosaveStore } from '../persistence/mission-autosave'
 import type { TrackingRuntimeMissionStore } from '../tracking/start-tracking-runtime'
 
@@ -69,6 +69,7 @@ type CreateManagedRuntimeServicesDependencies = {
   readonly applySnapshot: (snapshot: import('../tracking/tracking-types').TrackingSnapshot) => void
   readonly applyStatus: (status: import('../tracking/tracking-types').TrackingConnectionStatus) => void
   readonly readTrackingRuntimeConfig: () => RuntimeBootstrapSettings['trackingConfig']
+  readonly createTrackingCache: () => TrackingCache
 }
 
 /**
@@ -109,7 +110,7 @@ export async function createManagedRuntimeServices(
       createClient: dependencies.createClient,
       createPoller: dependencies.createPoller,
       cache: dependencies.runtimeSettings.trackingCacheEnabled
-        ? createTauriTrackingCache()
+        ? dependencies.createTrackingCache()
         : NOOP_TRACKING_CACHE,
       missionStore: dependencies.missionStore,
       applySnapshot: dependencies.applySnapshot,

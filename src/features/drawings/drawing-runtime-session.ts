@@ -84,6 +84,14 @@ export function beginDrawingSave(state: DrawingRuntimeMutableState): void {
 }
 
 /**
+ * Marks the runtime as saving before the drawing store delete runs.
+ */
+export function beginDrawingDelete(state: DrawingRuntimeMutableState): void {
+  state.saving = true
+  state.error = null
+}
+
+/**
  * Applies a successful save and restores the editor to select mode.
  */
 export function applyDrawingSaveSuccess(
@@ -120,7 +128,19 @@ export function applyDrawingDeleteSuccess(state: DrawingRuntimeMutableState): vo
   state.selectedDrawingId = null
   state.dialog = null
   state.activeTool = 'select'
+  state.saving = false
   state.error = null
+}
+
+/**
+ * Applies a delete failure and clears the saving flag.
+ */
+export function applyDrawingDeleteFailure(
+  state: DrawingRuntimeMutableState,
+  error: string,
+): void {
+  state.saving = false
+  state.error = error
 }
 
 function upsertDrawing(

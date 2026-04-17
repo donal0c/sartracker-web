@@ -14,11 +14,13 @@ import {
   updateDrawingDraft,
 } from './drawing-runtime-editor'
 import {
+  applyDrawingDeleteFailure,
   applyDrawingDeleteSuccess,
   applyDrawingMissionRefreshFailure,
   applyDrawingMissionRefreshSuccess,
   applyDrawingSaveFailure,
   applyDrawingSaveSuccess,
+  beginDrawingDelete,
   beginDrawingMissionRefresh,
   beginDrawingSave,
   getNextDrawingDisplayOrder,
@@ -145,20 +147,31 @@ export async function startDrawingRuntime(
       }
     },
     deleteSelectedDrawing: async () => {
-      if (state.selectedDrawingId === null) {
+      if (state.selectedDrawingId === null || state.saving) {
         return false
       }
 
-      const didDelete = await dependencies.drawingStore.deleteDrawing(
-        state.selectedDrawingId,
-      )
-      if (!didDelete) {
-        return false
-      }
-
-      applyDrawingDeleteSuccess(state)
+      beginDrawingDelete(state)
       publishRuntime()
-      return true
+
+      try {
+        const didDelete = await dependencies.drawingStore.deleteDrawing(
+          state.selectedDrawingId,
+        )
+        if (!didDelete) {
+          state.saving = false
+          publishRuntime()
+          return false
+        }
+
+        applyDrawingDeleteSuccess(state)
+        publishRuntime()
+        return true
+      } catch (runtimeError) {
+        applyDrawingDeleteFailure(state, toErrorMessage(runtimeError))
+        publishRuntime()
+        throw runtimeError
+      }
     },
     selectDrawing: (drawingId) => {
       selectDrawing(state, drawingId)

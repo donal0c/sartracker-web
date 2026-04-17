@@ -123,6 +123,40 @@ describe('startDrawingRuntime', () => {
       }),
     )
   })
+
+  it('surfaces delete failures and clears the saving state', async () => {
+    const applyRuntime = vi.fn()
+    const deleteDrawing = vi.fn().mockRejectedValue(new Error('Delete failed.'))
+    const runtime = await startDrawingRuntime({
+      drawingStore: {
+        listDrawings: vi.fn().mockResolvedValue([createDrawing()]),
+        upsertDrawing: vi.fn(),
+        deleteDrawing,
+      },
+      applyRuntime,
+    })
+
+    await runtime.refreshMission('mission-1')
+    runtime.selectDrawing('drawing-1')
+
+    await expect(runtime.deleteSelectedDrawing()).rejects.toThrow('Delete failed.')
+
+    expect(deleteDrawing).toHaveBeenCalledWith('drawing-1')
+    expect(applyRuntime).toHaveBeenCalledWith(
+      expect.objectContaining({
+        selectedDrawingId: 'drawing-1',
+        saving: true,
+        error: null,
+      }),
+    )
+    expect(applyRuntime).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        selectedDrawingId: 'drawing-1',
+        saving: false,
+        error: 'Delete failed.',
+      }),
+    )
+  })
 })
 
 function createDrawing(): Drawing {

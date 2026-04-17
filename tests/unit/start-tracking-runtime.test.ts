@@ -183,6 +183,51 @@ describe('startTrackingRuntime', () => {
       }),
     )
   })
+
+  it('keeps the live snapshot applied when cache and mission persistence side effects fail', async () => {
+    const applySnapshot = vi.fn()
+    const logger = { warn: vi.fn() }
+    let pollerHooks:
+      | {
+          onSnapshot: (snapshot: TrackingSnapshot) => void | Promise<void>
+          onStatusChange: (status: TrackingConnectionStatus) => void
+        }
+      | undefined
+
+    await startTrackingRuntime({
+      config: { baseUrl: 'http://test:8082' },
+      createClient: vi.fn().mockReturnValue({}),
+      createPoller: vi.fn().mockImplementation((_client, hooks) => {
+        pollerHooks = hooks
+        return { start: vi.fn(), stop: vi.fn() }
+      }),
+      cache: {
+        read: vi.fn().mockResolvedValue(null),
+        write: vi.fn().mockRejectedValue(new Error('cache write failed')),
+      },
+      missionStore: createMissionStoreStub({
+        getActiveMission: vi.fn().mockResolvedValue({ id: 'mission-1' }),
+        listPositions: vi.fn().mockResolvedValue([]),
+        upsertDevice: vi.fn().mockRejectedValue(new Error('device persistence failed')),
+      }),
+      applySnapshot,
+      applyStatus: vi.fn(),
+      logger,
+      now: () => new Date('2026-04-06T10:35:00.000Z'),
+    })
+
+    await expect(pollerHooks?.onSnapshot(SNAPSHOT)).resolves.toBeUndefined()
+
+    expect(applySnapshot).toHaveBeenCalledWith(SNAPSHOT)
+    expect(logger.warn).toHaveBeenCalledWith(
+      'Tracking cache update failed.',
+      expect.any(Error),
+    )
+    expect(logger.warn).toHaveBeenCalledWith(
+      'Tracking mission persistence failed.',
+      expect.any(Error),
+    )
+  })
 })
 
 function createMissionStoreStub(overrides: Record<string, unknown> = {}) {

@@ -38,6 +38,10 @@ type TrackingRuntimeCache = {
   readonly write: (contents: string) => Promise<string>
 }
 
+type TrackingRuntimeLogger = {
+  readonly warn: (message: string, error: unknown) => void
+}
+
 export type TrackingRuntimeMissionStore = {
   readonly getActiveMission: () => Promise<{ readonly id: string } | null>
   readonly listPositions: (missionId: string) => Promise<readonly {
@@ -75,7 +79,14 @@ type StartTrackingRuntimeDependencies = {
   readonly missionStore: TrackingRuntimeMissionStore
   readonly applySnapshot: (snapshot: TrackingSnapshot) => void
   readonly applyStatus: (status: TrackingConnectionStatus) => void
+  readonly logger?: TrackingRuntimeLogger
   readonly now?: () => Date
+}
+
+const DEFAULT_TRACKING_RUNTIME_LOGGER: TrackingRuntimeLogger = {
+  warn: (message, error) => {
+    console.warn(message, error)
+  },
 }
 
 /**
@@ -85,6 +96,7 @@ export async function startTrackingRuntime(
   dependencies: StartTrackingRuntimeDependencies,
 ): Promise<() => void> {
   const now = dependencies.now ?? (() => new Date())
+  const logger = dependencies.logger ?? DEFAULT_TRACKING_RUNTIME_LOGGER
 
   if (dependencies.config === null) {
     dependencies.applyStatus({
@@ -123,15 +135,27 @@ export async function startTrackingRuntime(
   const poller = dependencies.createPoller(client, {
     onSnapshot: async (snapshot) => {
       dependencies.applySnapshot(snapshot)
-      await dependencies.cache.write(
-        serializeTrackingCachePayload({
-          cached_at: now().toISOString(),
-          devices: snapshot.devices,
-          positions: snapshot.positions,
-          breadcrumbs: snapshot.breadcrumbs,
-        }),
-      )
-      await persistTrackingSnapshot(snapshot, dependencies.missionStore)
+      await Promise.allSettled([
+        dependencies.cache.write(
+          serializeTrackingCachePayload({
+            cached_at: now().toISOString(),
+            devices: snapshot.devices,
+            positions: snapshot.positions,
+            breadcrumbs: snapshot.breadcrumbs,
+          }),
+        ),
+        persistTrackingSnapshot(snapshot, dependencies.missionStore),
+      ]).then((results) => {
+        const cacheWriteResult = results[0]
+        if (cacheWriteResult !== undefined && cacheWriteResult.status === 'rejected') {
+          logger.warn('Tracking cache update failed.', cacheWriteResult.reason)
+        }
+
+        const missionPersistenceResult = results[1]
+        if (missionPersistenceResult !== undefined && missionPersistenceResult.status === 'rejected') {
+          logger.warn('Tracking mission persistence failed.', missionPersistenceResult.reason)
+        }
+      })
     },
     onStatusChange: (status) => {
       dependencies.applyStatus(status)

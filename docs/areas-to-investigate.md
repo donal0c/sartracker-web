@@ -57,7 +57,27 @@ Use this exact operating prompt in spirit when running improvement-mode work:
 
 ## Active Candidates
 
-- None yet. Future agents should add entries here.
+### Decompose browser harness store
+
+- Area: `src/features/browser-validation/browser-harness-store.ts`
+- Why it matters: At ~1000 lines it is becoming a mixed-responsibility test harness plus mission store implementation, which makes safety review and future parity work harder.
+- Evidence: It is currently the largest TypeScript file in the repo and owns mission lifecycle, persistence shaping, browser storage, and test harness plumbing together.
+- Impact: 4
+- Complexity: 4
+- Risk: 3
+- Recommended next step: Split the store into a small harness-facing API plus focused mission/device/marker/drawing persistence modules with direct unit coverage.
+- Bead needed: Probably, if the split crosses multiple sessions.
+
+### Extract shared runtime bootstrap for app vs browser harness
+
+- Area: `src/features/runtime/start-app-runtime.ts`, `src/features/mission/mission-browser-harness.ts`
+- Why it matters: Both files perform very similar runtime/controller wiring, which invites parity drift when new subsystems or safety rules are added.
+- Evidence: Mission, governance, marker, drawing, helicopter, GPX, and tracking setup logic is duplicated with only the concrete store/adapters changing.
+- Impact: 4
+- Complexity: 3
+- Risk: 3
+- Recommended next step: Extract a small runtime bootstrap helper that accepts the store/adapters and returns the controller bundle, then keep browser-harness-specific behavior as a thin wrapper.
+- Bead needed: Not necessarily, but worth one if paired with other browser harness cleanup.
 
 ## Entry Template
 
