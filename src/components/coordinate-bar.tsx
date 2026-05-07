@@ -25,7 +25,7 @@ export function CoordinateBar({ latitude, longitude }: CoordinateBarProps) {
 
   return (
     <div
-      className="absolute inset-x-0 bottom-0 z-10 border-t border-stone-700 bg-stone-950/90 px-4 py-2.5 font-mono text-base font-semibold text-stone-100 backdrop-blur"
+      className="absolute inset-x-0 bottom-0 z-10 border-t border-[var(--sar-line)] bg-[rgba(9,8,7,0.94)] px-4 py-2.5 font-mono text-base font-semibold text-stone-100 shadow-2xl shadow-black/30"
       data-testid="coordinate-display"
     >
       <div className="flex items-center justify-between gap-4">
@@ -33,7 +33,7 @@ export function CoordinateBar({ latitude, longitude }: CoordinateBarProps) {
         {wgs84Display !== null && gridDisplay !== null ? (
           mode === 'tm65_first' ? (
             <span className="flex items-center gap-3">
-              <span className="rounded bg-amber-500/15 px-2 py-0.5 text-amber-100" data-testid="coords-grid">{gridDisplay}</span>
+              <span className="rounded border border-amber-500/30 bg-amber-500/12 px-2 py-0.5 text-amber-100" data-testid="coords-grid">{gridDisplay}</span>
               <span className="text-stone-400">|</span>
               <span className="text-stone-300" data-testid="coords-wgs84">{wgs84Display}</span>
             </span>
@@ -41,7 +41,7 @@ export function CoordinateBar({ latitude, longitude }: CoordinateBarProps) {
             <span className="flex items-center gap-3">
               <span className="text-stone-300" data-testid="coords-wgs84">{wgs84Display}</span>
               <span className="text-stone-400">|</span>
-              <span className="rounded bg-amber-500/15 px-2 py-0.5 text-amber-100" data-testid="coords-grid">{gridDisplay}</span>
+              <span className="rounded border border-amber-500/30 bg-amber-500/12 px-2 py-0.5 text-amber-100" data-testid="coords-grid">{gridDisplay}</span>
             </span>
           )
         ) : (
@@ -57,7 +57,7 @@ export function CoordinateBar({ latitude, longitude }: CoordinateBarProps) {
             </span>
           ) : null}
           <button
-            className="rounded-lg border border-stone-600 bg-stone-800 px-3 py-1 text-xs font-sans font-semibold text-stone-200"
+            className="sar-button rounded-lg px-3 py-1 text-xs font-sans font-semibold"
             data-testid="open-coordinate-converter"
             onClick={() => openDialog()}
             type="button"

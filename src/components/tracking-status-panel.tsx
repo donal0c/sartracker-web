@@ -13,13 +13,13 @@ export function TrackingStatusPanel() {
 
   return (
     <div
-      className="rounded-2xl border border-stone-800 bg-stone-950/40 p-5 text-sm"
+      className="sar-panel rounded-xl p-5 text-sm"
       data-testid="tracking-status"
     >
       <div className="flex items-center justify-between mb-4">
-        <span className="font-semibold uppercase tracking-wider text-stone-400 text-[13px]">Tracking System</span>
+        <span className="sar-section-label">Tracking System</span>
         <div className="flex items-center gap-2">
-          <div className={`h-2 w-2 rounded-full ${status.mode === 'online' ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]' : 'bg-amber-500 animate-pulse'}`} />
+          <div className={`h-2 w-2 rounded-full ${status.mode === 'online' ? 'bg-emerald-400' : 'bg-amber-500 animate-pulse'}`} />
           <span
             className={`font-bold uppercase text-[11px] ${
               status.mode === 'online'
@@ -34,8 +34,8 @@ export function TrackingStatusPanel() {
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-y-2 border-t border-stone-800 pt-4 font-mono text-[13px] tracking-tight text-stone-300">
-        <div className="flex justify-between border-r border-stone-800 pr-3">
+      <div className="grid grid-cols-2 gap-y-2 border-t border-[var(--sar-line)] pt-4 font-mono text-[13px] tracking-tight text-stone-300">
+        <div className="flex justify-between border-r border-[var(--sar-line)] pr-3">
           <span>Devices</span>
           <span className="font-bold text-stone-200">{snapshot.devices.length}</span>
         </div>
@@ -53,10 +53,10 @@ export function TrackingStatusPanel() {
         </div>
       </div>
 
-      <div className="mt-4 space-y-2 border-t border-stone-800 pt-4">
+      <div className="mt-4 space-y-2 border-t border-[var(--sar-line)] pt-4">
         <div className="flex justify-end">
           <button
-            className="rounded-lg border border-stone-600 bg-stone-800 px-3 py-2 text-xs font-semibold text-stone-200"
+            className="sar-button rounded-lg px-3 py-2 text-xs font-semibold"
             data-testid="open-devices-workspace"
             onClick={() => openWorkspace()}
             type="button"

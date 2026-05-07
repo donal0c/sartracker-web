@@ -264,14 +264,14 @@ export function MissionControlPanel() {
 
   return (
     <section
-      className="rounded-2xl border border-stone-700 bg-stone-900/60 p-5 text-sm shadow-lg shadow-black/20"
+      className="sar-panel rounded-xl p-5 text-sm"
       data-testid="mission-control"
     >
-        <div className="flex items-center justify-between mb-4">
-        <span className="font-semibold uppercase tracking-wide text-stone-400 text-[13px]">Mission Control</span>
+      <div className="flex items-center justify-between mb-4">
+        <span className="sar-section-label">Mission Control</span>
         <div className="flex items-center gap-2">
           <button
-            className="rounded-lg border border-stone-600 bg-stone-800 px-3 py-1.5 text-[12px] font-semibold text-stone-200 hover:bg-stone-700"
+            className="sar-button rounded-lg px-3 py-1.5 text-[12px] font-semibold"
             data-testid="open-mission-review-workspace"
             disabled={currentMission === null && governanceMission === null && recoverableMission === null}
             onClick={() => openReviewWorkspace()}
@@ -301,13 +301,13 @@ export function MissionControlPanel() {
       <div className="space-y-4">
         {/* Primary Telemetry */}
         <div className="grid gap-3 sm:grid-cols-2">
-          <div className="rounded-xl border border-stone-800 bg-stone-900/50 p-3">
+          <div className="sar-readout rounded-lg p-3">
             <p className="text-[11px] font-medium text-stone-300">Elapsed</p>
             <p className="mt-1 font-mono text-2xl font-bold text-stone-100" data-testid="mission-elapsed">
               {formatMissionDuration(timerState?.elapsedSeconds ?? 0)}
             </p>
           </div>
-          <div className="rounded-xl border border-stone-800 bg-stone-900/50 p-3">
+          <div className="sar-readout rounded-lg p-3">
             <p className="text-[11px] font-medium text-stone-300">Active Search</p>
             <p className="mt-1 font-mono text-2xl font-bold text-emerald-400" data-testid="mission-active-search">
               {formatMissionDuration(timerState?.activeSeconds ?? 0)}
@@ -317,7 +317,7 @@ export function MissionControlPanel() {
 
         {/* Setup Inputs - Only visible in Idle */}
         {phase === 'idle' ? (
-          <div className="rounded-xl border border-stone-800 bg-stone-900/30 p-4 space-y-4">
+          <div className="sar-panel-raised space-y-4 rounded-lg p-4">
             <div>
               <label
                 className="block text-[11px] font-medium text-stone-300"
@@ -362,7 +362,7 @@ export function MissionControlPanel() {
             </div>
           </div>
         ) : (
-          <div className="px-1 py-2 rounded-xl border border-stone-800 bg-stone-900/30">
+          <div className="sar-readout rounded-lg px-3 py-3">
              <p className="text-[11px] font-medium text-stone-300 mb-1">Current Mission</p>
              <p className="text-[13px] font-semibold text-stone-200" data-testid="current-mission-name">
               {currentMission?.name}
@@ -382,7 +382,7 @@ export function MissionControlPanel() {
         {/* Tactical Actions */}
         <div className="space-y-2">
           <button
-            className="w-full rounded-lg bg-amber-500 hover:bg-amber-400 active:bg-amber-600 px-4 py-3 text-[15px] font-bold text-stone-950 shadow-lg shadow-amber-900/30 transition-all disabled:cursor-not-allowed disabled:opacity-20 disabled:grayscale"
+            className="w-full rounded-lg bg-amber-400 px-4 py-3 text-[15px] font-bold text-stone-950 shadow-lg shadow-black/25 transition-all hover:bg-amber-300 active:bg-amber-500 disabled:cursor-not-allowed disabled:opacity-20 disabled:grayscale"
             data-testid="mission-start-btn"
             disabled={controller === null || phase !== 'idle'}
             onClick={() => void handleStartMission()}
@@ -392,7 +392,7 @@ export function MissionControlPanel() {
           </button>
           <div className="grid gap-2 sm:grid-cols-2">
             <button
-              className="rounded-lg border-2 border-amber-500 bg-transparent px-3 py-2.5 text-[13px] font-semibold text-amber-400 transition-all hover:bg-amber-500/10 disabled:cursor-not-allowed disabled:opacity-20 disabled:grayscale"
+              className="rounded-lg border border-amber-400/70 bg-transparent px-3 py-2.5 text-[13px] font-semibold text-amber-200 transition-all hover:bg-amber-500/10 disabled:cursor-not-allowed disabled:opacity-20 disabled:grayscale"
               data-testid="mission-pause-resume-btn"
               disabled={controller === null || (phase !== 'active' && phase !== 'paused')}
               onClick={() => void handlePauseOrResume()}

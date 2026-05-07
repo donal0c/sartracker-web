@@ -3,13 +3,16 @@ import 'maplibre-gl/dist/maplibre-gl.css'
 import { CoordinateBar } from './coordinate-bar'
 import { BasemapSwitcher } from './basemap-switcher'
 import { DrawingToolbar } from './drawing-toolbar'
+import { FocusModeCoordinateMirror } from './focus-mode-coordinate-mirror'
 import { MapStatusBadge } from './map-status-badge'
+import { useFocusModeStore } from '../features/focus-mode/focus-mode-store'
 import { useMapController } from '../features/map/use-map-controller'
 
 /**
  * Renders the operator-facing map shell around the map controller state.
  */
 export function MapView() {
+  const focusModeActive = useFocusModeStore((state) => state.active)
   const {
     activeBasemapId,
     containerRef,
@@ -33,6 +36,12 @@ export function MapView() {
         latitude={hoverCoordinate.latitude}
         longitude={hoverCoordinate.longitude}
       />
+      {focusModeActive ? (
+        <FocusModeCoordinateMirror
+          latitude={hoverCoordinate.latitude}
+          longitude={hoverCoordinate.longitude}
+        />
+      ) : null}
     </div>
   )
 }

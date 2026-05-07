@@ -157,4 +157,47 @@ Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
       ],
     })
   })
+
+  test('focus mode keeps mission, layer, and coordinate awareness visible', async ({ page }) => {
+    await page.getByTestId('mission-name-input').fill('Visual Focus Mode')
+    await page.getByTestId('mission-start-btn').click()
+    await expect(page.getByTestId('mission-control')).toContainText('active')
+
+    await page.getByTestId('focus-mode-toggle').click()
+    await expect(page.getByTestId('app-shell')).toHaveAttribute('data-focus-mode', 'true')
+    await expect(page.getByTestId('focus-mode-sidebar')).toBeVisible()
+    await expect(page.getByTestId('mission-control')).toContainText('Visual Focus Mode')
+    await expect(page.getByTestId('layer-panel')).toBeVisible()
+
+    const mapContainer = page.getByTestId('map-container')
+    const bounds = await mapContainer.boundingBox()
+    expect(bounds).toBeTruthy()
+    if (bounds) {
+      await page.mouse.move(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2)
+    }
+    await expect(page.getByTestId('focus-mode-coordinate-display')).toContainText('°')
+
+    await captureAndRegister(page, {
+      testId: 'shell-focus-mode',
+      testName: 'Focus mode map-first operational shell',
+      area: 'app-shell',
+      severity: 'critical',
+      verificationPrompt: `Verify this screenshot of SAR Tracker in Focus Mode Plus:
+1. The map should remain the dominant surface and be wider than the normal shell
+2. The normal full sidebar header/tabs should be replaced by a reduced Focus Mode Plus sidebar
+3. The reduced sidebar should keep Mission Control visible with the active mission name and timers
+4. Tracking status should still be visible in the reduced sidebar
+5. Layer Workspace controls should remain visible in the reduced sidebar
+6. A mirrored focus coordinate display should be visible on top of the map
+7. The drawing toolbar and map health/status badge should remain visible on the map
+Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
+      playwrightAssertions: [
+        'app-shell data-focus-mode is true',
+        'focus-mode-sidebar is visible',
+        'mission-control contains active mission',
+        'layer-panel is visible',
+        'focus-mode-coordinate-display contains coordinates',
+      ],
+    })
+  })
 })
