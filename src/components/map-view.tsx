@@ -7,6 +7,7 @@ import { FocusModeCoordinateMirror } from './focus-mode-coordinate-mirror'
 import { MapStatusBadge } from './map-status-badge'
 import { OfflineMapReadinessBadge } from './offline-map-readiness-badge'
 import { useFocusModeStore } from '../features/focus-mode/focus-mode-store'
+import { useOfflineMapCoverage } from '../features/map/use-offline-map-coverage'
 import { useMapController } from '../features/map/use-map-controller'
 import { useOfflineMapReadiness } from '../features/map/use-offline-map-readiness'
 
@@ -21,8 +22,13 @@ export function MapView() {
     handleBasemapChange,
     hoverCoordinate,
     mapHealth,
+    mapRef,
   } = useMapController()
   const offlineMapReadiness = useOfflineMapReadiness(activeBasemapId)
+  const { coverage, checkCurrentViewCoverage } = useOfflineMapCoverage(
+    activeBasemapId,
+    mapRef,
+  )
 
   return (
     <div className="relative h-full w-full overflow-hidden bg-stone-950">
@@ -34,7 +40,11 @@ export function MapView() {
       <div className="h-full w-full" data-testid="map-container" ref={containerRef} />
       <div className="pointer-events-none absolute bottom-20 right-3 z-10 flex max-w-[min(18rem,calc(100%-2rem))] flex-col items-end gap-2">
         <MapStatusBadge health={mapHealth} />
-        <OfflineMapReadinessBadge readiness={offlineMapReadiness} />
+        <OfflineMapReadinessBadge
+          coverage={coverage}
+          onCheckCoverage={checkCurrentViewCoverage}
+          readiness={offlineMapReadiness}
+        />
       </div>
       <CoordinateBar
         latitude={hoverCoordinate.latitude}

@@ -1,4 +1,5 @@
 import type { RefObject } from 'react'
+import type maplibregl from 'maplibre-gl'
 import type { BasemapId } from '../../lib/map-config'
 import type { MapHealth } from '../../lib/map-health'
 import type { HoverCoordinate } from './use-map-instance'
@@ -18,6 +19,7 @@ type MapController = {
   readonly containerRef: RefObject<HTMLDivElement | null>
   readonly hoverCoordinate: HoverCoordinate
   readonly mapHealth: MapHealth
+  readonly mapRef: RefObject<maplibregl.Map | null>
   readonly handleBasemapChange: (nextBasemapId: BasemapId) => void
 }
 
@@ -74,6 +76,7 @@ export function useMapController(): MapController {
     containerRef: mapInstance.containerRef,
     hoverCoordinate: mapInstance.hoverCoordinate,
     mapHealth: mapInstance.mapHealth,
+    mapRef: mapInstance.mapRef,
     handleBasemapChange: mapInstance.handleBasemapChange,
   }
 }

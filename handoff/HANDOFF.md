@@ -13,7 +13,7 @@
 
 ## Last Updated
 
-- 2026-05-07 by Codex (offline map readiness tranche complete and validated in the in-app browser)
+- 2026-05-07 by Codex (offline map coverage preflight tranche complete and validated with user-approved Playwright)
 
 ## Current State
 
@@ -22,7 +22,7 @@
 - M24 focus mode parity is implemented locally: explicit Focus Mode Plus state, persisted reload behavior, map-first layout, preserved mission/tracking/layer awareness, and mirrored focus coordinates.
 - Visual direction pass is captured in `tmp/visual-direction/`: in-app screenshots, generated inspiration mockups, and a short design brief. The adopted direction is restrained matte graphite mission software with warm amber affordances, not decorative HUD/glass/neon styling.
 - The follow-on workspace polish tranche is complete: Settings, Diagnostics, Coordinate Converter, Layer Workspace, shared workspace chrome, and shared dialog chrome now use the SAR matte/tactile token system. The sidebar mission-control block now scrolls internally on constrained viewports so layer/tools content stays reachable.
-- A first offline map resilience slice is complete: operators now get explicit viewed-tile cache readiness in the map chrome, with field workflow documentation and parity evidence updated. Full packaged offline map bundles remain a parity gap.
+- Offline map resilience has advanced from readiness-only to current-view preflight: operators now get explicit viewed-tile cache readiness and can check whether the current visible map tiles are actually cached. Full packaged offline map bundles and saved coverage manifests remain parity gaps.
 - The layer tree/catalog and the live map overlays now share an authoritative visibility path again.
 - The specific `Map Tools` failure reported in live use is fixed:
   - group visibility now gates drawing, marker, measurement, helicopter, GPX, and tracking overlay channels correctly
@@ -95,8 +95,8 @@
 
 - Quality-to-9.5 goal is active.
 - Current branch is `feat/ui-ux-audit-critical`.
-- Current scores after offline map readiness slice: code/architecture 9.0, UX 8.9, UI 8.6.
-- Next recommended phase: replay / training mode parity (`sartracker-web-2jk.2`) or the remaining packaged/offline map bundle gap in `sartracker-web-2jk.14`, depending whether the next agent wants operational workflow parity or field deployment resilience first.
+- Current scores after offline map coverage preflight slice: code/architecture 9.1, UX 9.0, UI 8.7.
+- Next recommended phase: replay / training mode parity (`sartracker-web-2jk.2`) or the remaining packaged offline map bundle / saved coverage manifest gap in `sartracker-web-2jk.14`.
 
 ## Open Beads That Matter Now
 
@@ -114,7 +114,7 @@
 
 ## Next Actions
 
-1. Commit and push the offline map readiness slice after final verification.
+1. Commit and push the offline coverage preflight tranche.
 2. Start the next parity tranche: replay / training mode (`sartracker-web-2jk.2`) or packaged offline map bundle planning/implementation (`sartracker-web-2jk.14` remainder).
 3. Keep Playwright workers at `2` unless the harness/runtime model changes enough to justify re-raising concurrency.
 
@@ -148,6 +148,27 @@
     - badge text: `Viewed tiles cache ready` / `OpenTopoMap: tiles viewed now are available offline.`
     - first pass found top-control crowding in the constrained shell; badge stack moved to lower map chrome before validation
     - browser console errors: none
+- Current offline map coverage preflight tranche:
+  - Added `src/features/map/offline-map-coverage.ts`
+  - Added `src/features/map/use-offline-map-coverage.ts`
+  - Updated `src/components/offline-map-readiness-badge.tsx` with `Check View`
+  - Exposed `mapRef` through `src/features/map/use-map-controller.ts`
+  - Added `tests/unit/offline-map-coverage.test.ts`
+  - Updated `docs/offline-map-resilience.md`
+  - Updated `docs/plugin-parity-matrix.md`
+  - `npm run lint` ✅
+  - `npm run build` ✅
+  - `npm run test` → 73 files / 348 tests ✅
+  - Targeted coverage test → 9 tests ✅
+  - `git diff --check` ✅
+  - User-approved Playwright visual/interaction pass ✅
+    - loaded `http://127.0.0.1:1420/?missionHarness=1`
+    - preflight initially showed `Current view not checked`
+    - clicked `Check View`
+    - preflight changed to `Current view not cached` / `0/9 OpenTopoMap tiles cached for z12.`
+    - first screenshot showed the badge was too translucent over bright topo tiles; fixed by switching the badge and inner coverage panel to high-opacity matte backgrounds
+    - final screenshot: `test-results/offline-coverage-readable.png`
+    - browser console/page errors: none
 - Previous committed tranche:
   - `npm run lint` ✅
   - `npm run build` ✅
