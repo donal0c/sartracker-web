@@ -13,7 +13,7 @@
 
 ## Last Updated
 
-- 2026-05-07 by Codex (mockup-led SAR command-console UI redesign tranche complete and validated)
+- 2026-05-07 by Codex (Mountain Rescue branding pass complete and validated)
 
 ## Current State
 
@@ -33,12 +33,18 @@
 
 ## Last Work Done
 
+**Mountain Rescue branding pass**
+
+- Removed Kerry Mountain Rescue organization branding from the app mast, browser metadata, README, Tauri package description, visual verification prompts, mock Traccar seed label, and repo instruction copy.
+- Replaced the app mast acronym with `MR` and the visible brand text with `Mountain Rescue`.
+- Left geographic/test-terrain references such as Kerry bounds and Kerry mountains in place where they describe coordinate fixtures or map validation area rather than product ownership.
+
 **Mockup-led SAR command-console UI redesign**
 
 - Captured current Playwright screenshots for idle, active tracking, layers, tools, coordinate converter, settings, diagnostics, offline coverage, constrained shell, and drawing toolbar states.
 - Generated multiple AI visual directions from those screenshots and adopted the practical common direction: map-first, rectangular tactile controls, integrated right command rail, compact telemetry blocks, matte graphite surfaces, amber active affordances, green readiness, red destructive actions.
 - Added/refined shared SAR UI primitives in `src/index.css` for modules, readouts, command docks, tactile action buttons, inline alerts, and tree rows.
-- Reworked the operational shell in `src/App.tsx` with a stronger KMR mast, integrated status block, rectangular action controls, denser mission rail, and less generic tab/notes treatment.
+- Reworked the operational shell in `src/App.tsx` with a stronger Mountain Rescue mast, integrated status block, rectangular action controls, denser mission rail, and less generic tab/notes treatment.
 - Added a full-width command mast with mission, elapsed/active timing, device/fix count, system readiness, and operational actions so the app moves structurally toward the generated mockups instead of only polishing the old right-sidebar layout.
 - Reworked the bottom coordinate display into a taller instrument strip with separate Coordinates, Irish Grid, Map CRS, Work CRS, and Convert cells.
 - Reworked map chrome and high-frequency operator controls:

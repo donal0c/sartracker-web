@@ -2,7 +2,7 @@
 
 ## ⚠️ LIFE-SAFETY CRITICAL APPLICATION
 
-This application is used by Kerry Mountain Rescue Team during real search and rescue operations. Incorrect coordinates, broken tracking, or data loss could endanger lives. Treat every change with the seriousness that demands.
+This application is used by Mountain Rescue teams during real search and rescue operations. Incorrect coordinates, broken tracking, or data loss could endanger lives. Treat every change with the seriousness that demands.
 
 This repo should feel like mission software, not a prototype. The standard is not merely "works on my machine" or "passes the tests." The target is software that is calm, explicit, trustworthy, and unusually well-structured under pressure.
 

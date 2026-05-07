@@ -58,7 +58,7 @@ export async function finishMission(page: Page): Promise<void> {
 }
 
 /**
- * Standard 3-device tracking scenario for Kerry Mountain Rescue.
+ * Standard 3-device tracking scenario for Mountain Rescue validation.
  * Alpha: online, near Carrauntoohil summit ridge
  * Bravo: online, near Hag's Tooth col
  * Charlie: offline/stale, lower slopes

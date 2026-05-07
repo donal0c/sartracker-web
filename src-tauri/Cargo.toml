@@ -1,7 +1,7 @@
 [package]
 name = "sartracker-web"
 version = "0.1.0"
-description = "Standalone SAR Tracker desktop application for Kerry Mountain Rescue Team"
+description = "Standalone SAR Tracker desktop application for Mountain Rescue teams"
 authors = ["Donal O'Callaghan"]
 license = ""
 repository = ""

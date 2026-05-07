@@ -1,6 +1,6 @@
 # SAR Tracker Web
 
-**Standalone Search & Rescue Tracking Console for Kerry Mountain Rescue**
+**Standalone Search & Rescue Tracking Console for Mountain Rescue**
 
 A bespoke desktop application for real-time GPS tracking, mission management, and search area planning during mountain rescue operations.
 
@@ -18,7 +18,7 @@ This application is used during real search and rescue operations. Accuracy, rel
 
 ## What It Does
 
-- **Map operations shell** with Kerry-centred MapLibre rendering and 4 selectable basemaps
+- **Map operations shell** with mountain-region MapLibre rendering and 4 selectable basemaps
 - **Mission management** — start, pause, resume, finish, recover on restart, dual timers
 - **Real-time GPS tracking runtime** via Traccar HTTP polling with breadcrumb/history persistence
 - **Map markers** — IPP/LKP, clues, hazards, casualties with metadata and map-edit flows
@@ -89,7 +89,7 @@ This project replaces the [SAR Tracker QGIS Plugin](https://github.com/donal0c/s
 
 ## Built For
 
-[Kerry Mountain Rescue Team](https://www.kerrymountainrescue.ie/), Ireland 🏔️
+Mountain Rescue teams operating in demanding field conditions.
 
 ---
 

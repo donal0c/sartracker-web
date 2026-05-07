@@ -41,7 +41,7 @@ test.describe('Visual: App Shell', () => {
       area: 'app-shell',
       severity: 'critical',
       verificationPrompt: `Verify this screenshot of the SAR Tracker application in idle state:
-1. The right sidebar should show "Kerry Mountain Rescue" and "SAR Tracker" title text
+1. The command mast should show "Mountain Rescue" and "SAR Tracker" title text
 2. There should be a "MISSION CONTROL" section pinned at top showing "idle" state with timers at 00:00:00
 3. Below Mission Control, there should be a segmented tab control with Tracking / Tools / Layers
 4. There should be a "TRACKING" section showing idle status (active tab by default)

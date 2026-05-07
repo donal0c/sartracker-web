@@ -10,7 +10,7 @@ When the SAR Tracker app connects, it sees exactly what it would see polling a r
 
 ## The simulated rescue
 
-The scenario is anchored to the Glenagenty area (lat 52.265–52.278, lon -9.556 to -9.512), a real operational area for Kerry Mountain Rescue. The seed route data comes from Eamonn's Glenagenty CSV export — 254 GPS points covering an approximately 8.6km track over 2 hours at walking pace through mountain terrain.
+The scenario is anchored to the Glenagenty area (lat 52.265–52.278, lon -9.556 to -9.512), a real mountain rescue operational area. The seed route data comes from Eamonn's Glenagenty CSV export — 254 GPS points covering an approximately 8.6km track over 2 hours at walking pace through mountain terrain.
 
 ### Device roster
 

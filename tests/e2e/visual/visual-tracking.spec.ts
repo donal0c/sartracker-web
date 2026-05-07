@@ -135,7 +135,7 @@ Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
 2. LEFT SIDE - DEVICES: Device markers with team names should be visible on the map
 3. LEFT SIDE - TOOLBAR: The drawing toolbar should be on the left side of the map
 4. LEFT SIDE - COORDS: A coordinate bar should be at the bottom of the map
-5. RIGHT SIDE - HEADER: "Kerry Mountain Rescue" and "SAR Tracker" branding
+5. TOP HEADER: "Mountain Rescue" and "SAR Tracker" branding
 6. RIGHT SIDE - MISSION: Mission Control panel pinned at top showing "ACTIVE" status with running timers
 7. RIGHT SIDE - TABS: A segmented tab control with Tracking / Tools / Layers below Mission Control
 8. RIGHT SIDE - TRACKING: Tracking panel showing "online" status with device count (active tab)

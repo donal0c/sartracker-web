@@ -195,11 +195,11 @@ function CommandMast(props: {
       <div className="grid min-h-[88px] grid-cols-[260px_minmax(300px,1fr)_190px_430px] items-stretch">
         <div className="flex items-center gap-4 border-r border-[var(--sar-line)] px-5">
           <div className="flex h-12 w-12 flex-shrink-0 items-center justify-center border border-amber-300/35 bg-amber-300/10 font-mono text-[11px] font-black text-amber-200">
-            KMR
+            MR
           </div>
           <div className="min-w-0">
             <p className="text-[10px] font-black uppercase tracking-[0.32em] text-amber-300">
-              Kerry Mountain Rescue
+              Mountain Rescue
             </p>
             <h1
               className="mt-1 font-mono text-[27px] font-black leading-none tracking-wide text-stone-50"
