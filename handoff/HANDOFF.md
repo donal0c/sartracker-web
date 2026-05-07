@@ -13,7 +13,7 @@
 
 ## Last Updated
 
-- 2026-05-07 by Codex (workspace visual polish tranche complete and validated in the in-app browser)
+- 2026-05-07 by Codex (offline map readiness tranche complete and validated in the in-app browser)
 
 ## Current State
 
@@ -22,6 +22,7 @@
 - M24 focus mode parity is implemented locally: explicit Focus Mode Plus state, persisted reload behavior, map-first layout, preserved mission/tracking/layer awareness, and mirrored focus coordinates.
 - Visual direction pass is captured in `tmp/visual-direction/`: in-app screenshots, generated inspiration mockups, and a short design brief. The adopted direction is restrained matte graphite mission software with warm amber affordances, not decorative HUD/glass/neon styling.
 - The follow-on workspace polish tranche is complete: Settings, Diagnostics, Coordinate Converter, Layer Workspace, shared workspace chrome, and shared dialog chrome now use the SAR matte/tactile token system. The sidebar mission-control block now scrolls internally on constrained viewports so layer/tools content stays reachable.
+- A first offline map resilience slice is complete: operators now get explicit viewed-tile cache readiness in the map chrome, with field workflow documentation and parity evidence updated. Full packaged offline map bundles remain a parity gap.
 - The layer tree/catalog and the live map overlays now share an authoritative visibility path again.
 - The specific `Map Tools` failure reported in live use is fixed:
   - group visibility now gates drawing, marker, measurement, helicopter, GPX, and tracking overlay channels correctly
@@ -94,8 +95,8 @@
 
 - Quality-to-9.5 goal is active.
 - Current branch is `feat/ui-ux-audit-critical`.
-- Current scores after workspace polish: code/architecture 8.9, UX 8.7, UI 8.6.
-- Next recommended phase: offline map resilience parity (`sartracker-web-2jk.14`), because it is a more life-safety-relevant path to 9.5 than further surface polish.
+- Current scores after offline map readiness slice: code/architecture 9.0, UX 8.9, UI 8.6.
+- Next recommended phase: replay / training mode parity (`sartracker-web-2jk.2`) or the remaining packaged/offline map bundle gap in `sartracker-web-2jk.14`, depending whether the next agent wants operational workflow parity or field deployment resilience first.
 
 ## Open Beads That Matter Now
 
@@ -113,8 +114,8 @@
 
 ## Next Actions
 
-1. Start offline map resilience parity (`sartracker-web-2jk.14`) with a short design/test pass first.
-2. Re-score code/architecture, UI, and UX after the offline resilience tranche.
+1. Commit and push the offline map readiness slice after final verification.
+2. Start the next parity tranche: replay / training mode (`sartracker-web-2jk.2`) or packaged offline map bundle planning/implementation (`sartracker-web-2jk.14` remainder).
 3. Keep Playwright workers at `2` unless the harness/runtime model changes enough to justify re-raising concurrency.
 
 ## Verification Snapshot
@@ -129,6 +130,23 @@
     - Diagnostics workspace: matte diagnostic rows with no console errors
     - Coordinate Converter: compact dialog, clear mode selector, readable inputs/actions
     - Layer Workspace: content reachable on constrained viewport after sidebar Mission Control scroll fix
+    - browser console errors: none
+- Current offline map readiness tranche:
+  - Added `src/features/map/offline-map-readiness.ts`
+  - Added `src/features/map/use-offline-map-readiness.ts`
+  - Added `src/components/offline-map-readiness-badge.tsx`
+  - Wired map chrome in `src/components/map-view.tsx`
+  - Added `tests/unit/offline-map-readiness.test.ts`
+  - Added `docs/offline-map-resilience.md`
+  - Updated `docs/plugin-parity-matrix.md`
+  - `npm run lint` ✅
+  - `npm run build` ✅
+  - `npm run test` → 72 files / 339 tests ✅
+  - Targeted readiness test → 5 tests ✅
+  - In-app browser visual pass ✅
+    - readiness badge visible at `http://127.0.0.1:1420/?missionHarness=1`
+    - badge text: `Viewed tiles cache ready` / `OpenTopoMap: tiles viewed now are available offline.`
+    - first pass found top-control crowding in the constrained shell; badge stack moved to lower map chrome before validation
     - browser console errors: none
 - Previous committed tranche:
   - `npm run lint` ✅
