@@ -116,6 +116,38 @@ test.describe('M2 map shell', () => {
     expect(Math.abs((after?.zoom ?? 0) - (before?.zoom ?? 0))).toBeLessThan(0.01)
   })
 
+  test('allows navigation across Ireland instead of locking to the default mission area', async ({ page }) => {
+    const targets = [
+      { label: 'south west', center: [-10.45, 51.55] },
+      { label: 'north west', center: [-8.15, 55.25] },
+      { label: 'east coast', center: [-6.25, 53.35] },
+    ] satisfies readonly { readonly label: string; readonly center: [number, number] }[]
+
+    for (const target of targets) {
+      const reached = await page.evaluate((candidate) => {
+        const map = (window as Window & { __SARTRACKER_MAP__?: {
+          jumpTo: (options: { center: [number, number]; zoom: number }) => void
+          getCenter: () => { lat: number; lng: number }
+        } }).__SARTRACKER_MAP__
+        if (map === undefined) {
+          return null
+        }
+
+        map.jumpTo({ center: candidate.center, zoom: 10 })
+        const center = map.getCenter()
+        return {
+          label: candidate.label,
+          lat: center.lat,
+          lon: center.lng,
+        }
+      }, target)
+
+      expect(reached, target.label).not.toBeNull()
+      expect(Math.abs((reached?.lon ?? 0) - target.center[0]), target.label).toBeLessThan(0.05)
+      expect(Math.abs((reached?.lat ?? 0) - target.center[1]), target.label).toBeLessThan(0.05)
+    }
+  })
+
   test('updates the coordinate bar on mouse move', async ({ page }) => {
     const mapContainer = page.getByTestId('map-container')
     const bounds = await mapContainer.boundingBox()

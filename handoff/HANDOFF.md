@@ -13,7 +13,7 @@
 
 ## Last Updated
 
-- 2026-05-07 by Codex (Mountain Rescue branding pass complete and validated)
+- 2026-05-07 by Codex (Ireland-wide map navigation bounds implemented and validated)
 
 ## Current State
 
@@ -23,7 +23,7 @@
 - Visual direction pass is captured in `tmp/redesign-2026-05-07/`: Playwright screenshots, generated inspiration mockups, visual brief, and iteration screenshots. The adopted direction is restrained matte graphite mission software with warm amber affordances, not decorative HUD/glass/neon styling.
 - Mockup-led UI redesign tranche is complete: the main shell now has a full-width command mast and bottom instrument strip, plus a denser right command rail, mission control, tracking status, layer workspace, map chrome, coordinate converter, settings/diagnostics workspaces, and expanded drawing toolbar following the generated command-console direction.
 - The follow-on workspace polish tranche is complete: Settings, Diagnostics, Coordinate Converter, Layer Workspace, shared workspace chrome, and shared dialog chrome now use the SAR matte/tactile token system. The sidebar mission-control block now scrolls internally on constrained viewports so layer/tools content stays reachable.
-- Offline map resilience has advanced from readiness-only to current-view preflight: operators now get explicit viewed-tile cache readiness and can check whether the current visible map tiles are actually cached. Full packaged offline map bundles and saved coverage manifests remain parity gaps.
+- Offline map resilience has advanced from readiness-only to current-view preflight: operators now get explicit viewed-tile cache readiness and can check whether the current visible map tiles are actually cached. Online map navigation is no longer Kerry-bound and now allows Ireland-wide panning. Full packaged offline map bundles and saved coverage manifests remain parity gaps.
 - The layer tree/catalog and the live map overlays now share an authoritative visibility path again.
 - The specific `Map Tools` failure reported in live use is fixed:
   - group visibility now gates drawing, marker, measurement, helicopter, GPX, and tracking overlay channels correctly
@@ -32,6 +32,13 @@
 - Playwright concurrency is intentionally reduced to `2` workers for deterministic local validation. This is slower, but it makes the harness reliable under full-suite load.
 
 ## Last Work Done
+
+**Ireland-wide map navigation bounds**
+
+- Replaced the Kerry-only `KERRY_MAX_BOUNDS` with `IRELAND_MAX_BOUNDS` in the MapLibre instance.
+- Set Ireland-wide bounds to `[-10.85, 51.25]` southwest and `[-5.25, 55.55]` northeast so operators can pan across the island while avoiding accidental global drift.
+- Added Playwright regression coverage that jumps to southwest, northwest, and east-coast Ireland and confirms MapLibre is not clamping back to the old Kerry mission area.
+- Updated offline map docs to distinguish Ireland-wide online navigation from not-yet-implemented packaged offline map bundles.
 
 **Mountain Rescue branding pass**
 

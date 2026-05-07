@@ -1,6 +1,6 @@
 # Offline Map Resilience
 
-SAR Tracker Web currently supports a field-ready viewed-tile workflow with explicit current-view coverage preflight. It does not yet ship packaged offline basemap bundles.
+SAR Tracker Web currently supports Ireland-wide online map navigation plus a field-ready viewed-tile workflow with explicit current-view coverage preflight. It does not yet ship packaged offline basemap bundles.
 
 ## Operator Workflow
 
@@ -38,6 +38,7 @@ Implemented:
 - operator-triggered current-view tile coverage preflight
 - service-worker/cache/browser support detection
 - explicit offline viewed-tiles-only warning
+- Ireland-wide online navigation bounds
 - unit coverage for readiness and coverage states
 - in-app field workflow documentation
 

@@ -1,10 +1,10 @@
-import { createRasterStyle, KERRY_MAX_BOUNDS } from '../../src/features/map/map-style'
+import { createRasterStyle, IRELAND_MAX_BOUNDS } from '../../src/features/map/map-style'
 
 describe('map style creation', () => {
-  it('keeps the map constrained to Kerry bounds', () => {
-    expect(KERRY_MAX_BOUNDS).toEqual([
-      [-10.7, 51.55],
-      [-9.1, 52.6],
+  it('keeps the map constrained to Ireland-wide bounds', () => {
+    expect(IRELAND_MAX_BOUNDS).toEqual([
+      [-10.85, 51.25],
+      [-5.25, 55.55],
     ])
   })
 
