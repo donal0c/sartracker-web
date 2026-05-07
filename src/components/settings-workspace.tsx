@@ -94,7 +94,7 @@ export function SettingsWorkspace({ open, onClose }: SettingsWorkspaceProps) {
 
       <div className="flex-1 space-y-6 overflow-y-auto px-6 py-6" data-testid="settings-workspace">
           {loading || draft === null ? (
-            <div className="rounded-xl border border-stone-800 bg-stone-900/40 p-5 text-sm text-stone-400">
+            <div className="sar-panel-raised rounded-lg p-5 text-sm text-stone-400">
               Loading settings…
             </div>
           ) : (
@@ -208,7 +208,7 @@ export function SettingsWorkspace({ open, onClose }: SettingsWorkspaceProps) {
                 />
 
                 <div className="space-y-2">
-                  <p className="text-[11px] font-bold uppercase tracking-wider text-stone-400">
+                  <p className="sar-section-label">
                     Coordinate display mode
                   </p>
                   <div className="flex gap-3">
@@ -229,7 +229,7 @@ export function SettingsWorkspace({ open, onClose }: SettingsWorkspaceProps) {
               <Section title="Data Sources" description="Provider configuration and startup behavior.">
                 <div className="space-y-4">
                   <div className="space-y-2">
-                    <p className="text-[11px] font-bold uppercase tracking-wider text-stone-400">
+                    <p className="sar-section-label">
                       Provider
                     </p>
                     <div className="flex gap-3">
@@ -275,7 +275,7 @@ export function SettingsWorkspace({ open, onClose }: SettingsWorkspaceProps) {
                   />
 
                   <div className="space-y-2">
-                    <p className="text-[11px] font-bold uppercase tracking-wider text-stone-400">
+                    <p className="sar-section-label">
                       Authentication mode
                     </p>
                     <div className="flex gap-3">
@@ -424,7 +424,7 @@ export function SettingsWorkspace({ open, onClose }: SettingsWorkspaceProps) {
 
               <Section title="Advanced Settings" description="Reserved repair and support actions.">
                 <button
-                  className="rounded-lg border border-stone-700 bg-stone-900 px-4 py-3 text-[11px] font-bold uppercase tracking-wider text-stone-500"
+                  className="sar-button rounded-lg px-4 py-3 text-[11px] font-bold uppercase tracking-wider text-stone-500 disabled:opacity-45"
                   disabled
                   type="button"
                 >
@@ -448,13 +448,13 @@ export function SettingsWorkspace({ open, onClose }: SettingsWorkspaceProps) {
           )}
         </div>
 
-        <footer className="flex items-center justify-between border-t border-stone-800 px-6 py-4">
+        <footer className="sar-workspace-footer flex flex-col gap-3 px-6 py-4 sm:flex-row sm:items-center sm:justify-between">
           <p className="text-[11px] text-stone-500">
             Secrets stay out of mission SQLite and browser storage.
           </p>
-          <div className="flex gap-3">
+          <div className="flex flex-wrap gap-3 sm:justify-end">
             <button
-              className="rounded-lg border border-stone-700 bg-stone-900 px-4 py-2 text-[11px] font-bold uppercase tracking-wider text-stone-300 disabled:opacity-40"
+              className="sar-button rounded-lg px-4 py-2 text-[11px] font-bold uppercase tracking-wider disabled:opacity-40"
               data-testid="settings-test-connection"
               disabled={draft === null || testing || Object.keys(validationErrors).length > 0}
               onClick={() => {
@@ -467,7 +467,7 @@ export function SettingsWorkspace({ open, onClose }: SettingsWorkspaceProps) {
               {testing ? 'Testing…' : 'Test Connection'}
             </button>
             <button
-              className="rounded-lg border border-stone-700 bg-stone-900 px-4 py-2 text-[11px] font-bold uppercase tracking-wider text-stone-300 disabled:opacity-40"
+              className="sar-button rounded-lg px-4 py-2 text-[11px] font-bold uppercase tracking-wider disabled:opacity-40"
               data-testid="settings-save"
               disabled={draft === null || saving || Object.keys(validationErrors).length > 0}
               onClick={() => {
@@ -478,7 +478,7 @@ export function SettingsWorkspace({ open, onClose }: SettingsWorkspaceProps) {
               {saving ? 'Saving…' : 'Save'}
             </button>
             <button
-              className="rounded-lg bg-amber-500 px-4 py-2 text-[11px] font-bold uppercase tracking-wider text-stone-950 disabled:opacity-40"
+              className="rounded-lg border border-amber-300/50 bg-amber-400 px-4 py-2 text-[11px] font-bold uppercase tracking-wider text-stone-950 transition hover:bg-amber-300 disabled:opacity-40"
               data-testid="settings-save-connect"
               disabled={
                 draft === null ||
@@ -549,9 +549,9 @@ function Section(props: {
   readonly children: ReactNode
 }) {
   return (
-    <section className="rounded-2xl border border-stone-800 bg-stone-900/30 p-5">
+    <section className="sar-panel-raised rounded-lg p-5">
       <div className="mb-4">
-        <h3 className="font-bold uppercase tracking-wider text-stone-200 text-[12px]">
+        <h3 className="text-[12px] font-bold uppercase tracking-wider text-stone-200">
           {props.title}
         </h3>
         <p className="mt-1 text-sm text-stone-500">{props.description}</p>
@@ -571,11 +571,11 @@ function TextField(props: {
 }) {
   return (
     <label className="block space-y-2">
-      <span className="text-[11px] font-bold uppercase tracking-wider text-stone-400">
+      <span className="sar-section-label">
         {props.label}
       </span>
       <input
-        className="w-full rounded-lg border border-stone-700 bg-stone-950 px-3 py-2 text-sm text-stone-100 outline-none focus:border-amber-500/50"
+        className="sar-input w-full rounded-lg px-3 py-2 text-sm"
         data-testid={props.testId}
         onChange={(event) => props.onChange(event.target.value)}
         type={props.type ?? 'text'}
@@ -604,11 +604,11 @@ function TextAreaField(props: {
 }) {
   return (
     <label className="block space-y-2">
-      <span className="text-[11px] font-bold uppercase tracking-wider text-stone-400">
+      <span className="sar-section-label">
         {props.label}
       </span>
       <textarea
-        className="min-h-24 w-full rounded-lg border border-stone-700 bg-stone-950 px-3 py-2 text-sm text-stone-100 outline-none focus:border-amber-500/50"
+        className="sar-input min-h-24 w-full rounded-lg px-3 py-2 text-sm"
         data-testid={props.testId}
         onChange={(event) => props.onChange(event.target.value)}
         value={props.value}
@@ -625,7 +625,7 @@ function ToggleField(props: {
   readonly testId?: string
 }) {
   return (
-    <label className="flex items-center justify-between gap-4 rounded-lg border border-stone-800 bg-stone-950/70 px-3 py-2">
+    <label className="sar-toggle flex items-center justify-between gap-4 rounded-lg px-3 py-2">
       <span className="text-sm text-stone-200">{props.label}</span>
       <input
         checked={props.checked}
@@ -645,10 +645,10 @@ function ChoiceButton(props: {
 }) {
   return (
     <button
-      className={`rounded-lg px-3 py-2 text-[11px] font-bold uppercase tracking-wider transition ${
+      className={`rounded-lg border px-3 py-2 text-[11px] font-bold uppercase tracking-wider transition ${
         props.active
-          ? 'bg-amber-500 text-stone-950'
-          : 'border border-stone-700 bg-stone-900 text-stone-300'
+          ? 'border-amber-300/50 bg-amber-400 text-stone-950'
+          : 'sar-button'
       }`}
       onClick={props.onClick}
       type="button"

@@ -43,7 +43,7 @@ export function DiagnosticsWorkspace() {
     >
       <WorkspaceHeader
         subtitle="Diagnostics Workspace"
-        subtitleColor="text-cyan-300/80"
+        subtitleColor="text-amber-300/80"
         titleId={DIAGNOSTICS_WORKSPACE_TITLE_ID}
         title="Operational Diagnostics"
         onClose={closeWorkspace}
@@ -51,7 +51,7 @@ export function DiagnosticsWorkspace() {
 
       <div className="flex-1 overflow-y-auto px-6 py-6" data-testid="diagnostics-workspace">
           {loading || snapshot === null ? (
-            <div className="rounded-xl border border-stone-800 bg-stone-900/40 p-5 text-sm text-stone-400">
+            <div className="sar-panel-raised rounded-lg p-5 text-sm text-stone-400">
               Loading diagnostics…
             </div>
           ) : (
@@ -63,10 +63,10 @@ export function DiagnosticsWorkspace() {
                 <DiagnosticsSection rows={snapshot.configurationRows} title="Configuration" />
               </section>
 
-              <section className="rounded-2xl border border-stone-800 bg-stone-900/40 p-5">
+              <section className="sar-panel-raised rounded-lg p-5">
                 <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
                   <div className="space-y-2">
-                    <p className="text-[11px] font-bold uppercase tracking-wider text-stone-400">
+                    <p className="sar-section-label">
                       Repair Tooling
                     </p>
                     <p className="text-sm text-stone-300">{snapshot.repair.targetMissionLabel}</p>
@@ -76,7 +76,7 @@ export function DiagnosticsWorkspace() {
                   </div>
                   <div className="flex flex-wrap gap-3">
                     <button
-                      className="rounded-lg border border-cyan-500/30 bg-cyan-500/10 px-4 py-2 text-sm font-semibold text-cyan-100 disabled:opacity-50"
+                      className="sar-button-focus rounded-lg px-4 py-2 text-sm font-semibold disabled:opacity-50"
                       data-testid="diagnostics-copy-report"
                       disabled={snapshot === null}
                       onClick={() => void handleCopy(snapshot.supportReport)}
@@ -85,7 +85,7 @@ export function DiagnosticsWorkspace() {
                       Copy Report
                     </button>
                     <button
-                      className="rounded-lg border border-stone-700 bg-stone-900 px-4 py-2 text-sm font-semibold text-stone-200 disabled:opacity-50"
+                      className="sar-button rounded-lg px-4 py-2 text-sm font-semibold disabled:opacity-50"
                       data-testid="diagnostics-export-report"
                       disabled={exporting || snapshot === null}
                       onClick={() => {
@@ -97,7 +97,7 @@ export function DiagnosticsWorkspace() {
                       {exporting ? 'Exporting...' : 'Export Report'}
                     </button>
                     <button
-                      className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-2 text-sm font-semibold text-amber-100 disabled:opacity-50"
+                      className="rounded-lg border border-amber-400/40 bg-amber-400/10 px-4 py-2 text-sm font-semibold text-amber-100 transition hover:bg-amber-400/20 disabled:opacity-50"
                       data-testid="diagnostics-repair-layer-catalog"
                       disabled={!snapshot.repair.available || repairing}
                       onClick={() => {
@@ -128,10 +128,10 @@ export function DiagnosticsWorkspace() {
                 ) : null}
               </section>
 
-              <section className="rounded-2xl border border-stone-800 bg-stone-900/40 p-5">
+              <section className="sar-panel-raised rounded-lg p-5">
                 <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                   <div>
-                    <p className="text-[11px] font-bold uppercase tracking-wider text-stone-400">
+                    <p className="sar-section-label">
                       Repair Target
                     </p>
                     <p className="mt-1 text-sm text-stone-300">
@@ -139,7 +139,7 @@ export function DiagnosticsWorkspace() {
                     </p>
                   </div>
                   <select
-                    className="rounded-lg border border-stone-700 bg-stone-950 px-3 py-2 text-sm text-stone-100"
+                    className="sar-input rounded-lg px-3 py-2 text-sm"
                     data-testid="diagnostics-mission-select"
                     disabled={loading || controller === null}
                     onChange={(event) => {
@@ -162,7 +162,7 @@ export function DiagnosticsWorkspace() {
               </section>
 
               {snapshot.warnings.length > 0 ? (
-                <section className="rounded-2xl border border-amber-500/20 bg-amber-500/5 p-5">
+                <section className="rounded-lg border border-amber-400/30 bg-amber-400/10 p-5">
                   <p className="text-[11px] font-bold uppercase tracking-wider text-amber-300">
                     Warnings
                   </p>
@@ -174,11 +174,11 @@ export function DiagnosticsWorkspace() {
                 </section>
               ) : null}
 
-              <section className="rounded-2xl border border-stone-800 bg-stone-900/40 p-5">
-                <p className="text-[11px] font-bold uppercase tracking-wider text-stone-400">
+              <section className="sar-panel-raised rounded-lg p-5">
+                <p className="sar-section-label">
                   Support Report Preview
                 </p>
-                <pre className="mt-4 overflow-x-auto whitespace-pre-wrap break-words rounded-xl border border-stone-800 bg-stone-950/70 p-4 text-xs text-stone-300">
+                <pre className="sar-readout mt-4 overflow-x-auto whitespace-pre-wrap break-words rounded-lg p-4 text-xs text-stone-300">
                   {snapshot.supportReport}
                 </pre>
               </section>
@@ -209,11 +209,11 @@ function DiagnosticsSection(props: {
   }[]
 }) {
   return (
-    <section className="rounded-2xl border border-stone-800 bg-stone-900/40 p-5">
-      <p className="text-[11px] font-bold uppercase tracking-wider text-stone-400">{props.title}</p>
+    <section className="sar-panel-raised rounded-lg p-5">
+      <p className="sar-section-label">{props.title}</p>
       <div className="mt-4 space-y-3">
         {props.rows.map((row) => (
-          <div className="flex items-start justify-between gap-4 text-sm" key={`${props.title}-${row.label}`}>
+          <div className="sar-status-row flex items-start justify-between gap-4 pt-3 text-sm first:border-t-0 first:pt-0" key={`${props.title}-${row.label}`}>
             <span className="text-stone-400">{row.label}</span>
             <span className={rowToneClassName(row.tone)}>{row.value}</span>
           </div>

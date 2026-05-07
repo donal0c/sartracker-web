@@ -122,7 +122,7 @@ function App() {
           </header>
 
           {/* Pinned Mission Control — always visible, non-scrolling */}
-          <div className="flex-shrink-0 border-b border-[var(--sar-line)] px-6 pb-4 pt-5">
+          <div className="min-h-0 max-h-[55vh] flex-shrink overflow-y-auto border-b border-[var(--sar-line)] px-6 pb-4 pt-5">
             <MissionControlPanel />
           </div>
 

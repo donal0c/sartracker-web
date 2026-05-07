@@ -125,7 +125,7 @@ export function WorkspaceOverlay({
       <div
         aria-labelledby={labelledBy}
         aria-modal="true"
-        className={`ml-auto flex h-full w-full ${maxWidth} flex-col border-l border-stone-800 bg-stone-950 shadow-2xl transition-transform duration-250 ${
+        className={`sar-sidebar ml-auto flex h-full w-full ${maxWidth} flex-col transition-transform duration-250 ${
           visible ? 'translate-x-0 ease-out' : 'translate-x-full ease-in'
         }`}
         onKeyDown={handleKeyDown}
@@ -166,17 +166,17 @@ export function WorkspaceHeader({
   actions,
 }: WorkspaceHeaderProps) {
   return (
-    <header className="flex items-center justify-between border-b border-stone-800 px-6 py-5">
-      <div>
+    <header className="sar-workspace-header flex flex-col gap-4 px-6 py-5 sm:flex-row sm:items-center sm:justify-between">
+      <div className="min-w-0">
         <p className={`text-[11px] font-semibold uppercase tracking-wider ${subtitleColor}`}>
           {subtitle}
         </p>
         <h2 className="mt-1 font-mono text-2xl font-bold text-stone-50" id={titleId}>{title}</h2>
       </div>
-      <div className="flex items-center gap-3">
+      <div className="flex flex-wrap items-center gap-3">
         {actions}
         <button
-          className="group flex items-center gap-2 rounded-lg border border-stone-600 bg-stone-800 px-3 py-2 text-sm font-semibold text-stone-200 transition-colors hover:bg-stone-700"
+          className="sar-button group flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-semibold"
           data-testid="workspace-close-btn"
           onClick={onClose}
           type="button"
@@ -185,7 +185,7 @@ export function WorkspaceHeader({
             <path d="M6 18L18 6M6 6l12 12" strokeLinecap="round" strokeLinejoin="round" />
           </svg>
           Close
-          <kbd className="ml-1 rounded border border-stone-600 bg-stone-900 px-1.5 py-0.5 text-[10px] font-mono text-stone-400">Esc</kbd>
+          <kbd className="ml-1 rounded border border-stone-700 bg-stone-950 px-1.5 py-0.5 font-mono text-[10px] text-stone-400">Esc</kbd>
         </button>
       </div>
     </header>
