@@ -152,6 +152,27 @@ test.describe('M8 drawing workflows', () => {
     await expect(page.getByTestId('drawing-dialog')).toBeVisible()
     await expect(page.getByTestId('marker-dialog')).toBeHidden()
   })
+
+  test('uses dialog semantics, traps focus, and cancels with Escape', async ({ page }) => {
+    await page.getByTestId('drawing-tool-line').click({ force: true })
+    await clickMap(page, { x: 420, y: 240 })
+    await clickMap(page, { x: 560, y: 300 })
+    await rightClickMap(page, { x: 560, y: 300 })
+
+    const dialog = page.getByRole('dialog', { name: 'Line Details' })
+    await expect(dialog).toBeVisible()
+    await expect(dialog).toHaveAttribute('aria-modal', 'true')
+
+    await expect(dialog.getByRole('button', { name: 'Close' })).toBeFocused()
+    await page.keyboard.press('Shift+Tab')
+    await expect(dialog.getByRole('button', { name: 'Save' })).toBeFocused()
+
+    await page.keyboard.press('Escape')
+    await expect(page.getByTestId('drawing-dialog')).toBeHidden()
+
+    const drawings = await readMissionDrawings(page)
+    expect(drawings).toHaveLength(0)
+  })
 })
 
 async function clickMap(

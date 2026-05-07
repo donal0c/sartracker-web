@@ -13,11 +13,12 @@
 
 ## Last Updated
 
-- 2026-04-13 01:15 by Codex (layer visibility/runtime parity fix complete, full validation green on stable Playwright concurrency)
+- 2026-05-07 by Codex (Phase 1 quality-to-9.5 dialog/accessibility platform complete and fully revalidated)
 
 ## Current State
 
-- UI/UX audit work is present locally on `feat/ui-ux-audit-critical` and has now been revalidated alongside the latest hardening.
+- UI/UX audit work is present locally on `feat/ui-ux-audit-critical`.
+- Phase 1 of the quality-to-9.5 push is complete: shared dialog/workspace focus management is now in place for major operator overlays, marker/drawing forms, and mission decision prompts.
 - The layer tree/catalog and the live map overlays now share an authoritative visibility path again.
 - The specific `Map Tools` failure reported in live use is fixed:
   - group visibility now gates drawing, marker, measurement, helicopter, GPX, and tracking overlay channels correctly
@@ -26,6 +27,16 @@
 - Playwright concurrency is intentionally reduced to `2` workers for deterministic local validation. This is slower, but it makes the harness reliable under full-suite load.
 
 ## Last Work Done
+
+**Phase 1: accessible modal/workspace platform**
+
+- Added shared focus-management helpers and a reusable centered `DialogOverlay`.
+- Hardened Settings, Diagnostics, Devices, Mission Review, and Coordinate Converter overlays with dialog semantics, labelled headings, focus trapping, Escape close behavior, and focus return.
+- Migrated marker and drawing dialogs to the shared dialog primitive with matching semantics, focus trapping, Escape cancellation, and viewport-safe scrolling.
+- Hardened mission finish/finalize/unlock decision prompts as keyboard-contained `alertdialog` surfaces.
+- Added unit coverage for focus-management behavior and E2E coverage for Settings, Diagnostics, Coordinate Converter, marker, drawing, and mission finish confirmation keyboard behavior.
+- Added a timeout fallback to workspace-overlay close cleanup so mounted state and focus return do not depend solely on CSS transition-end delivery.
+- Stabilized the LPV-246a parity test by polling map filter propagation on hide as well as restore, matching the asynchronous MapLibre style/update path.
 
 **Layer visibility + parity hardening**
 
@@ -54,9 +65,9 @@
 
 ## Active Work
 
-- No active implementation in progress.
+- Quality-to-9.5 goal is active.
 - Current branch is `feat/ui-ux-audit-critical`.
-- Next recommended implementation bead remains **`sartracker-web-2jk.13` — M24 focus mode parity** once this branch is committed/pushed.
+- Next recommended phase: **`sartracker-web-2jk.13` — M24 focus mode parity** for the larger UX/UI score lift.
 
 ## Open Beads That Matter Now
 
@@ -75,16 +86,22 @@
 
 ## Next Actions
 
-1. Commit and push the validated `feat/ui-ux-audit-critical` branch.
-2. Start **M24 focus mode parity**.
+1. Start **M24 focus mode parity** as the next large operator-experience phase.
+2. Re-score code/architecture, UI, and UX after the focus-mode phase before committing to the next tranche.
 3. Keep Playwright workers at `2` unless the harness/runtime model changes enough to justify re-raising concurrency.
 
 ## Verification Snapshot
 
 - `npm run lint` ✅
-- `npm run test` → 69 files / 326 tests ✅
+- `npm run test` → 70 files / 331 tests ✅
 - `npm run build` ✅
-- `npm run test:e2e` → 79/79 passing with `workers: 2` ✅
+- `npm run test:e2e` → 85/85 passing with `workers: 2` ✅
+- In-app browser check on `http://127.0.0.1:1420/?missionHarness=1` ✅
+  - Settings and Coordinate Converter expose dialog semantics
+  - Marker and Drawing dialogs expose dialog semantics
+  - mission finish confirmation exposes `alertdialog` semantics
+  - Escape closes checked overlays/prompts/dialog forms
+  - browser console errors: none
 - Verified parity batches:
   - Batch 1 visibility ✅
   - Batch 2 layer tree/console ✅

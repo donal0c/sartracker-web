@@ -9,6 +9,9 @@ import {
 } from '../features/coordinates/coordinate-tool'
 import { useCoordinateToolStore } from '../features/coordinates/coordinate-tool-store'
 import { useMapTargetStore } from '../features/map/map-target-store'
+import { DialogOverlay } from './dialog-overlay'
+
+const COORDINATE_CONVERTER_TITLE_ID = 'coordinate-converter-title'
 
 /**
  * Renders the coordinate conversion utility with copy and go-to actions.
@@ -33,33 +36,33 @@ export function CoordinateConverterDialog() {
     setCopiedKind(null)
   }, [open])
 
-  if (!open) {
-    return null
-  }
-
   return (
-    <div
-      className="fixed inset-0 z-40 flex items-center justify-center bg-stone-950/70 px-4 py-8 backdrop-blur-sm"
-      data-testid="coordinate-converter-dialog"
+    <DialogOverlay
+      labelledBy={COORDINATE_CONVERTER_TITLE_ID}
+      open={open}
+      onClose={closeDialog}
+      testId="coordinate-converter-dialog"
     >
-      <div className="w-full max-w-3xl rounded-3xl border border-stone-700 bg-stone-900 p-6 shadow-2xl shadow-black/40">
-        <div className="flex items-center justify-between gap-3">
-          <div>
-            <p className="text-xs uppercase tracking-[0.3em] text-amber-300">Coordinate Converter</p>
-            <h2 className="mt-2 text-xl font-semibold text-stone-50">
-              Convert WGS84, ITM, and TM65
-            </h2>
-          </div>
-          <button
-            className="rounded-lg border border-stone-600 bg-stone-950 px-3 py-2 text-sm text-stone-200"
-            onClick={() => closeDialog()}
-            type="button"
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <p className="text-xs uppercase tracking-[0.3em] text-amber-300">Coordinate Converter</p>
+          <h2
+            className="mt-2 text-xl font-semibold text-stone-50"
+            id={COORDINATE_CONVERTER_TITLE_ID}
           >
-            Close
-          </button>
+            Convert WGS84, ITM, and TM65
+          </h2>
         </div>
+        <button
+          className="rounded-lg border border-stone-600 bg-stone-950 px-3 py-2 text-sm text-stone-200"
+          onClick={() => closeDialog()}
+          type="button"
+        >
+          Close
+        </button>
+      </div>
 
-        <div className="mt-6 space-y-6">
+      <div className="mt-6 space-y-6">
           <section>
             <p className="text-xs uppercase tracking-[0.2em] text-stone-300">Input Mode</p>
             <div className="mt-3 grid gap-2 sm:grid-cols-3">
@@ -211,8 +214,7 @@ export function CoordinateConverterDialog() {
             </section>
           ) : null}
         </div>
-      </div>
-    </div>
+    </DialogOverlay>
   )
 
   async function copyValue(kind: 'wgs84' | 'itm' | 'tm65'): Promise<void> {

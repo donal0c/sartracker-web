@@ -4,6 +4,8 @@ import { useDiagnosticsStore } from '../features/diagnostics/diagnostics-store'
 import { useDiagnosticsWorkspaceStore } from '../features/diagnostics/diagnostics-workspace-store'
 import { WorkspaceOverlay, WorkspaceHeader } from './workspace-overlay'
 
+const DIAGNOSTICS_WORKSPACE_TITLE_ID = 'diagnostics-workspace-title'
+
 /**
  * Renders the operator diagnostics workspace and repair/export actions.
  */
@@ -34,10 +36,15 @@ export function DiagnosticsWorkspace() {
   const missionOptions = useMemo(() => snapshot?.missionOptions ?? [], [snapshot])
 
   return (
-    <WorkspaceOverlay open={open} onClose={closeWorkspace}>
+    <WorkspaceOverlay
+      labelledBy={DIAGNOSTICS_WORKSPACE_TITLE_ID}
+      open={open}
+      onClose={closeWorkspace}
+    >
       <WorkspaceHeader
         subtitle="Diagnostics Workspace"
         subtitleColor="text-cyan-300/80"
+        titleId={DIAGNOSTICS_WORKSPACE_TITLE_ID}
         title="Operational Diagnostics"
         onClose={closeWorkspace}
       />

@@ -64,6 +64,25 @@ test.describe('M5 mission control workflows', () => {
     await expect(page.getByTestId('mission-finish-btn')).toBeDisabled()
   })
 
+  test('finish confirmation is an accessible alertdialog and cancels with Escape', async ({
+    page,
+  }) => {
+    await page.getByTestId('mission-name-input').fill('Keyboard Finish Flow')
+    await page.getByTestId('mission-start-btn').click()
+
+    const finishButton = page.getByTestId('mission-finish-btn')
+    await finishButton.click()
+
+    const dialog = page.getByRole('alertdialog', { name: 'End Mission?' })
+    await expect(dialog).toBeVisible()
+    await expect(dialog.getByRole('button', { name: 'Confirm Finish' })).toBeFocused()
+
+    await page.keyboard.press('Escape')
+    await expect(dialog).toBeHidden()
+    await expect(finishButton).toBeFocused()
+    await expect(page.getByTestId('mission-control')).toContainText('active')
+  })
+
   test('finalizes a finished mission via archive-and-lock governance flow', async ({ page }) => {
     await page.getByTestId('mission-name-input').fill('Finalize Flow')
     await page.getByTestId('mission-start-btn').click()

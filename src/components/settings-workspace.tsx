@@ -26,6 +26,8 @@ type SettingsWorkspaceProps = {
   readonly onClose: () => void
 }
 
+const SETTINGS_WORKSPACE_TITLE_ID = 'settings-workspace-title'
+
 /**
  * Renders the operator settings workspace used for standalone configuration parity.
  */
@@ -77,9 +79,15 @@ export function SettingsWorkspace({ open, onClose }: SettingsWorkspaceProps) {
   )
 
   return (
-    <WorkspaceOverlay open={open} onClose={onClose} maxWidth="max-w-3xl">
+    <WorkspaceOverlay
+      labelledBy={SETTINGS_WORKSPACE_TITLE_ID}
+      open={open}
+      onClose={onClose}
+      maxWidth="max-w-3xl"
+    >
       <WorkspaceHeader
         subtitle="Settings Workspace"
+        titleId={SETTINGS_WORKSPACE_TITLE_ID}
         title="Operational Settings"
         onClose={onClose}
       />

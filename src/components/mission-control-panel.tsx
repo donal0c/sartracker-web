@@ -1,4 +1,11 @@
-import { useEffect, useMemo, useState } from 'react'
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type KeyboardEvent as ReactKeyboardEvent,
+  type ReactNode,
+} from 'react'
 
 import { loadAppSettings } from '../infrastructure/settings-store/tauri-settings-store'
 import { useMissionStore } from '../features/mission/mission-store'
@@ -7,6 +14,15 @@ import {
   calculateMissionTimerState,
   formatMissionDuration,
 } from '../features/mission/mission-timers'
+import { focusFirstElement, restoreFocus, trapTabKey } from '../lib/focus-management'
+
+const MISSION_NAME_INPUT_ID = 'mission-name-input'
+const MISSION_OFFSET_INPUT_ID = 'mission-offset-input'
+const MISSION_FINALIZE_TITLE_ID = 'mission-finalize-dialog-title'
+const MISSION_FINALIZE_DESCRIPTION_ID = 'mission-finalize-dialog-description'
+const MISSION_UNLOCK_TITLE_ID = 'mission-unlock-dialog-title'
+const MISSION_FINISH_TITLE_ID = 'mission-finish-dialog-title'
+const MISSION_FINISH_DESCRIPTION_ID = 'mission-finish-dialog-description'
 
 /**
  * Renders mission lifecycle controls and timer state for operators.
@@ -34,8 +50,6 @@ export function MissionControlPanel() {
   const [adminRoster, setAdminRoster] = useState<readonly string[]>([])
   const [selectedAdmin, setSelectedAdmin] = useState('')
   const [unlockReason, setUnlockReason] = useState('')
-  const missionNameInputId = 'mission-name-input'
-  const missionOffsetInputId = 'mission-offset-input'
 
   useEffect(() => {
     const timer = window.setInterval(() => {
@@ -307,7 +321,7 @@ export function MissionControlPanel() {
             <div>
               <label
                 className="block text-[11px] font-medium text-stone-300"
-                htmlFor={missionNameInputId}
+                htmlFor={MISSION_NAME_INPUT_ID}
               >
                 Mission Name
               </label>
@@ -315,7 +329,7 @@ export function MissionControlPanel() {
                 className="mt-2 w-full rounded-lg border border-stone-700 bg-stone-950 px-3 py-2 text-sm text-stone-100 placeholder:text-stone-700 outline-none focus:border-amber-500/50 transition-colors"
                 data-testid="mission-name-input"
                 disabled={controller === null}
-                id={missionNameInputId}
+                id={MISSION_NAME_INPUT_ID}
                 onChange={(event) => {
                   setMissionName(event.target.value)
                   setDuplicateWarning(null)
@@ -329,7 +343,7 @@ export function MissionControlPanel() {
             <div>
               <label
                 className="block text-[11px] font-medium text-stone-300"
-                htmlFor={missionOffsetInputId}
+                htmlFor={MISSION_OFFSET_INPUT_ID}
               >
                 Start Offset (Hours)
               </label>
@@ -337,7 +351,7 @@ export function MissionControlPanel() {
                 className="mt-2 w-full rounded-lg border border-stone-700 bg-stone-950 px-3 py-2 text-sm text-stone-100 outline-none focus:border-amber-500/50 transition-colors"
                 data-testid="mission-offset-input"
                 disabled={controller === null}
-                id={missionOffsetInputId}
+                id={MISSION_OFFSET_INPUT_ID}
                 max="5"
                 min="0"
                 onChange={(event) => setStartOffsetHours(event.target.value)}
@@ -479,14 +493,23 @@ export function MissionControlPanel() {
       ) : null}
 
       {showFinalizeDialog && governanceMission !== null ? (
-        <div
+        <InlineDecisionDialog
+          describedBy={MISSION_FINALIZE_DESCRIPTION_ID}
           className="mt-4 rounded-xl border border-sky-500/30 bg-sky-950/50 p-4 shadow-xl"
           data-testid="mission-finalize-dialog"
+          labelledBy={MISSION_FINALIZE_TITLE_ID}
+          onCancel={() => setShowFinalizeDialog(false)}
         >
-          <p className="font-semibold text-sky-300 uppercase text-[13px] tracking-wide">
+          <p
+            className="font-semibold text-sky-300 uppercase text-[13px] tracking-wide"
+            id={MISSION_FINALIZE_TITLE_ID}
+          >
             Archive & Lock?
           </p>
-          <p className="mt-2 text-[13px] leading-relaxed text-stone-300">
+          <p
+            className="mt-2 text-[13px] leading-relaxed text-stone-300"
+            id={MISSION_FINALIZE_DESCRIPTION_ID}
+          >
             This creates a validated archive and makes the mission read-only until an admin
             explicitly unlocks it.
           </p>
@@ -508,15 +531,20 @@ export function MissionControlPanel() {
               Cancel
             </button>
           </div>
-        </div>
+        </InlineDecisionDialog>
       ) : null}
 
       {showUnlockDialog && governanceMission !== null ? (
-        <div
+        <InlineDecisionDialog
           className="mt-4 rounded-xl border border-amber-500/30 bg-amber-950/50 p-4 shadow-xl"
           data-testid="mission-unlock-dialog"
+          labelledBy={MISSION_UNLOCK_TITLE_ID}
+          onCancel={() => setShowUnlockDialog(false)}
         >
-          <p className="font-semibold text-amber-300 uppercase text-[13px] tracking-wide">
+          <p
+            className="font-semibold text-amber-300 uppercase text-[13px] tracking-wide"
+            id={MISSION_UNLOCK_TITLE_ID}
+          >
             Admin Unlock
           </p>
           <div className="mt-4 space-y-4">
@@ -571,13 +599,27 @@ export function MissionControlPanel() {
               Cancel
             </button>
           </div>
-        </div>
+        </InlineDecisionDialog>
       ) : null}
 
       {showFinishDialog ? (
-        <div className="mt-4 rounded-xl border border-rose-500/30 bg-rose-950/50 p-4 shadow-xl" data-testid="mission-finish-dialog">
-          <p className="font-semibold text-rose-400 uppercase text-[13px] tracking-wide">End Mission?</p>
-          <p className="mt-2 text-[13px] leading-relaxed text-stone-300">
+        <InlineDecisionDialog
+          describedBy={MISSION_FINISH_DESCRIPTION_ID}
+          className="mt-4 rounded-xl border border-rose-500/30 bg-rose-950/50 p-4 shadow-xl"
+          data-testid="mission-finish-dialog"
+          labelledBy={MISSION_FINISH_TITLE_ID}
+          onCancel={() => setShowFinishDialog(false)}
+        >
+          <p
+            className="font-semibold text-rose-400 uppercase text-[13px] tracking-wide"
+            id={MISSION_FINISH_TITLE_ID}
+          >
+            End Mission?
+          </p>
+          <p
+            className="mt-2 text-[13px] leading-relaxed text-stone-300"
+            id={MISSION_FINISH_DESCRIPTION_ID}
+          >
             This will stop timers and return to IDLE. Data remains saved.
           </p>
           <div className="mt-4 flex gap-2">
@@ -596,9 +638,63 @@ export function MissionControlPanel() {
               Cancel
             </button>
           </div>
-        </div>
+        </InlineDecisionDialog>
       ) : null}
     </section>
+  )
+}
+
+function InlineDecisionDialog(props: {
+  readonly labelledBy: string
+  readonly describedBy?: string
+  readonly className: string
+  readonly 'data-testid': string
+  readonly onCancel: () => void
+  readonly children: ReactNode
+}) {
+  const panelRef = useRef<HTMLDivElement>(null)
+  const returnFocusRef = useRef<Element | null>(null)
+
+  useEffect(() => {
+    returnFocusRef.current = document.activeElement
+    const panel = panelRef.current
+    if (panel === null) {
+      return
+    }
+
+    const focusFrame = requestAnimationFrame(() => focusFirstElement(panel))
+    return () => {
+      cancelAnimationFrame(focusFrame)
+      restoreFocus(returnFocusRef.current)
+      returnFocusRef.current = null
+    }
+  }, [])
+
+  function handleKeyDown(event: ReactKeyboardEvent<HTMLDivElement>): void {
+    if (event.key === 'Escape') {
+      event.preventDefault()
+      props.onCancel()
+      return
+    }
+
+    if (panelRef.current !== null) {
+      trapTabKey(event.nativeEvent, panelRef.current)
+    }
+  }
+
+  return (
+    <div
+      aria-describedby={props.describedBy}
+      aria-labelledby={props.labelledBy}
+      className={props.className}
+      data-testid={props['data-testid']}
+      onKeyDown={handleKeyDown}
+      ref={panelRef}
+      role="alertdialog"
+      tabIndex={-1}
+    >
+      {props.children}
+    </div>
   )
 }
 

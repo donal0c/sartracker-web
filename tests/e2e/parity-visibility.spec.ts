@@ -460,7 +460,6 @@ test.describe('Batch 1: Critical visibility parity (LPV-240 to LPV-247)', () => 
     await page.waitForTimeout(500)
 
     const after = await readVisibilityState(page)
-    const afterFilters = await readMapFilterState(page)
     expect(after.groupVisibility.mapTools).toBe(false)
     expect(after.markerTypeVisibility.clue).toBe(false)
     expect(after.markerTypeVisibility.hazard).toBe(false)
@@ -469,8 +468,16 @@ test.describe('Batch 1: Critical visibility parity (LPV-240 to LPV-247)', () => 
     expect(after.hiddenDrawingIds).toContain('drawing-line-1')
     expect(after.hiddenDrawingIds).toContain('drawing-ring-1')
     expect(after.measurementsVisible).toBe(false)
-    expect(JSON.stringify(afterFilters.drawingLabel)).toContain('__hidden__')
-    expect(JSON.stringify(afterFilters.clueMarkers)).toContain('__hidden__')
+    await expect
+      .poll(async () => JSON.stringify((await readMapFilterState(page)).drawingLabel), {
+        timeout: 5000,
+      })
+      .toContain('__hidden__')
+    await expect
+      .poll(async () => JSON.stringify((await readMapFilterState(page)).clueMarkers), {
+        timeout: 5000,
+      })
+      .toContain('__hidden__')
 
     await mapToolsGroupToggle.click()
     await page.waitForTimeout(500)

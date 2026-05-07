@@ -11,6 +11,8 @@ import { useTrackingStore } from '../features/tracking/tracking-store'
 import { useLayerVisibilityStore } from '../features/layers/layer-visibility-store'
 import { useMapTargetStore } from '../features/map/map-target-store'
 
+const DEVICES_WORKSPACE_TITLE_ID = 'devices-workspace-title'
+
 /**
  * Renders the dedicated tracking devices workspace used for roster-scale operations.
  */
@@ -39,9 +41,15 @@ export function DevicesWorkspace() {
     rows.find((row) => row.deviceId === selectedDeviceId) ?? rows[0] ?? null
 
   return (
-    <WorkspaceOverlay open={open} onClose={closeWorkspace} maxWidth="max-w-5xl">
+    <WorkspaceOverlay
+      labelledBy={DEVICES_WORKSPACE_TITLE_ID}
+      open={open}
+      onClose={closeWorkspace}
+      maxWidth="max-w-5xl"
+    >
       <WorkspaceHeader
         subtitle="Devices Workspace"
+        titleId={DEVICES_WORKSPACE_TITLE_ID}
         title="Tracking Devices"
         onClose={closeWorkspace}
         actions={

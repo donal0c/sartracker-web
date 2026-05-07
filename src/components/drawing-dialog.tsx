@@ -8,6 +8,9 @@ import {
 } from '../features/drawings/drawing-math'
 import { LPB_CATEGORIES, LPB_PERCENTILE_ORDER, LPB_RING_COLORS } from '../features/drawings/lpb-data'
 import { SEARCH_AREA_STATUSES, type DrawingDraft } from '../features/drawings/drawing-types'
+import { DialogOverlay } from './dialog-overlay'
+
+const DRAWING_DIALOG_TITLE_ID = 'drawing-dialog-title'
 
 /**
  * Renders the modal drawing form used for create/edit flows.
@@ -25,51 +28,53 @@ export function DrawingDialog() {
   const draft = dialog.draft
 
   return (
-    <div
-      className="fixed inset-0 z-40 flex items-center justify-center bg-stone-950/70 px-4 py-8 backdrop-blur-sm"
-      data-testid="drawing-dialog"
+    <DialogOverlay
+      labelledBy={DRAWING_DIALOG_TITLE_ID}
+      onClose={() => controller.closeDialog()}
+      open={dialog !== null}
+      panelClassName="max-h-[calc(100vh-4rem)] w-full max-w-3xl overflow-y-auto rounded-3xl border border-stone-700 bg-stone-900 p-6 shadow-2xl shadow-black/40"
+      testId="drawing-dialog"
     >
-      <div className="w-full max-w-3xl rounded-3xl border border-stone-700 bg-stone-900 p-6 shadow-2xl shadow-black/40">
-        <div className="flex items-center justify-between gap-3">
-          <div>
-            <p className="text-xs uppercase tracking-[0.3em] text-amber-300">
-              {dialog.mode === 'create' ? 'New Drawing' : 'Edit Drawing'}
-            </p>
-            <h2 className="mt-2 text-xl font-semibold text-stone-50">
-              {DRAWING_DIALOG_TITLES[draft.type]}
-            </h2>
-          </div>
-          <button
-            className="rounded-lg border border-stone-600 bg-stone-950 px-3 py-2 text-sm text-stone-200"
-            onClick={() => controller.closeDialog()}
-            type="button"
-          >
-            Close
-          </button>
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <p className="text-xs uppercase tracking-[0.3em] text-amber-300">
+            {dialog.mode === 'create' ? 'New Drawing' : 'Edit Drawing'}
+          </p>
+          <h2 className="mt-2 text-xl font-semibold text-stone-50" id={DRAWING_DIALOG_TITLE_ID}>
+            {DRAWING_DIALOG_TITLES[draft.type]}
+          </h2>
         </div>
+        <button
+          className="rounded-lg border border-stone-600 bg-stone-950 px-3 py-2 text-sm text-stone-200"
+          onClick={() => controller.closeDialog()}
+          type="button"
+        >
+          Close
+        </button>
+      </div>
 
-        <div className="mt-6 space-y-6">
-          {draft.type === 'text_label' ? (
-            <TextLabelSection
-              draft={draft}
-              onChange={(nextDraft) => controller.updateDraft(nextDraft)}
+      <div className="mt-6 space-y-6">
+        {draft.type === 'text_label' ? (
+          <TextLabelSection
+            draft={draft}
+            onChange={(nextDraft) => controller.updateDraft(nextDraft)}
+          />
+        ) : (
+          <section className="grid gap-4 md:grid-cols-2">
+            <Field
+              label="Name"
+              onChange={(value) => controller.updateDraft({ ...draft, name: value })}
+              testId="drawing-name-input"
+              value={draft.name}
             />
-          ) : (
-            <section className="grid gap-4 md:grid-cols-2">
-              <Field
-                label="Name"
-                onChange={(value) => controller.updateDraft({ ...draft, name: value })}
-                testId="drawing-name-input"
-                value={draft.name}
-              />
-              <Field
-                label="Description"
-                onChange={(value) => controller.updateDraft({ ...draft, description: value })}
-                testId="drawing-description-input"
-                value={draft.description}
-              />
-            </section>
-          )}
+            <Field
+              label="Description"
+              onChange={(value) => controller.updateDraft({ ...draft, description: value })}
+              testId="drawing-description-input"
+              value={draft.description}
+            />
+          </section>
+        )}
 
           {draft.type === 'line' ? (
             <LineSection
@@ -139,9 +144,8 @@ export function DrawingDialog() {
               </button>
             </div>
           </div>
-        </div>
       </div>
-    </div>
+    </DialogOverlay>
   )
 }
 

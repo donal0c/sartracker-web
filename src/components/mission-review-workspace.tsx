@@ -15,6 +15,8 @@ import { useMissionReviewWorkspaceStore } from '../features/mission-review/missi
 
 type ReviewTab = 'mission-details' | 'marker-log' | 'layer-console'
 
+const MISSION_REVIEW_WORKSPACE_TITLE_ID = 'mission-review-workspace-title'
+
 /**
  * Renders the mission review workspace for audit, marker review, and mission details.
  */
@@ -76,9 +78,15 @@ export function MissionReviewWorkspace() {
   }, [filteredMarkers])
 
   return (
-    <WorkspaceOverlay open={open} onClose={closeWorkspace} maxWidth="max-w-7xl">
+    <WorkspaceOverlay
+      labelledBy={MISSION_REVIEW_WORKSPACE_TITLE_ID}
+      open={open}
+      onClose={closeWorkspace}
+      maxWidth="max-w-7xl"
+    >
       <WorkspaceHeader
         subtitle="Mission Review"
+        titleId={MISSION_REVIEW_WORKSPACE_TITLE_ID}
         title="Audit Workspace"
         onClose={closeWorkspace}
         actions={

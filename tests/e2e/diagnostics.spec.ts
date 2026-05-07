@@ -116,4 +116,19 @@ test.describe('M21 diagnostics workspace', () => {
       })
     }).toBeNull()
   })
+
+  test('uses dialog semantics and returns focus to the diagnostics opener on Escape', async ({
+    page,
+  }) => {
+    const opener = page.getByTestId('open-diagnostics-workspace')
+    await opener.click()
+
+    const dialog = page.getByRole('dialog', { name: 'Operational Diagnostics' })
+    await expect(dialog).toBeVisible()
+    await expect(page.getByTestId('workspace-close-btn')).toBeFocused()
+
+    await page.keyboard.press('Escape')
+    await expect(dialog).toBeHidden()
+    await expect(opener).toBeFocused()
+  })
 })

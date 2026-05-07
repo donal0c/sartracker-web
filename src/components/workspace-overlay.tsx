@@ -1,4 +1,13 @@
-import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type KeyboardEvent as ReactKeyboardEvent,
+  type ReactNode,
+} from 'react'
+
+import { focusFirstElement, restoreFocus, trapTabKey } from '../lib/focus-management'
 
 type WorkspaceOverlayProps = {
   /** Whether the workspace is open. Controls mount/unmount with exit animation. */
@@ -7,6 +16,8 @@ type WorkspaceOverlayProps = {
   readonly onClose: () => void
   /** Maximum width class for the panel (e.g. "max-w-4xl"). */
   readonly maxWidth?: string
+  /** Element id for the visible workspace title. */
+  readonly labelledBy: string
   /** Content rendered inside the sliding panel. */
   readonly children: ReactNode
 }
@@ -17,13 +28,27 @@ type WorkspaceOverlayProps = {
  * All workspace panels (Settings, Diagnostics, Devices, Mission Review) use this wrapper
  * for consistent entry/exit transitions and close affordance.
  */
-export function WorkspaceOverlay({ open, onClose, maxWidth = 'max-w-4xl', children }: WorkspaceOverlayProps) {
+export function WorkspaceOverlay({
+  open,
+  onClose,
+  maxWidth = 'max-w-4xl',
+  labelledBy,
+  children,
+}: WorkspaceOverlayProps) {
   const [mounted, setMounted] = useState(false)
   const [visible, setVisible] = useState(false)
   const panelRef = useRef<HTMLDivElement>(null)
+  const returnFocusRef = useRef<Element | null>(null)
+
+  const finishClose = useCallback(() => {
+    setMounted(false)
+    restoreFocus(returnFocusRef.current)
+    returnFocusRef.current = null
+  }, [])
 
   useEffect(() => {
     if (open) {
+      returnFocusRef.current = document.activeElement
       const mountFrame = requestAnimationFrame(() => {
         setMounted(true)
         // Allow one frame for the DOM to mount before triggering the enter animation.
@@ -41,25 +66,40 @@ export function WorkspaceOverlay({ open, onClose, maxWidth = 'max-w-4xl', childr
   /** After exit animation completes, unmount the DOM. */
   const handleTransitionEnd = useCallback(() => {
     if (!visible) {
-      setMounted(false)
+      finishClose()
     }
-  }, [visible])
+  }, [finishClose, visible])
 
-  /** Close on Escape key. */
   useEffect(() => {
-    if (!mounted) {
+    if (!mounted || visible) {
       return
     }
 
-    function handleKeyDown(event: KeyboardEvent): void {
-      if (event.key === 'Escape') {
-        onClose()
-      }
+    const closeTimer = window.setTimeout(finishClose, 350)
+    return () => window.clearTimeout(closeTimer)
+  }, [finishClose, mounted, visible])
+
+  useEffect(() => {
+    const panel = panelRef.current
+    if (!mounted || panel === null) {
+      return
     }
 
-    document.addEventListener('keydown', handleKeyDown)
-    return () => document.removeEventListener('keydown', handleKeyDown)
-  }, [mounted, onClose])
+    const focusFrame = requestAnimationFrame(() => focusFirstElement(panel))
+    return () => cancelAnimationFrame(focusFrame)
+  }, [mounted])
+
+  function handleKeyDown(event: ReactKeyboardEvent<HTMLDivElement>): void {
+    if (event.key === 'Escape') {
+      event.preventDefault()
+      onClose()
+      return
+    }
+
+    if (panelRef.current !== null) {
+      trapTabKey(event.nativeEvent, panelRef.current)
+    }
+  }
 
   if (!mounted) {
     return null
@@ -83,10 +123,15 @@ export function WorkspaceOverlay({ open, onClose, maxWidth = 'max-w-4xl', childr
 
       {/* Sliding panel */}
       <div
+        aria-labelledby={labelledBy}
+        aria-modal="true"
         className={`ml-auto flex h-full w-full ${maxWidth} flex-col border-l border-stone-800 bg-stone-950 shadow-2xl transition-transform duration-250 ${
           visible ? 'translate-x-0 ease-out' : 'translate-x-full ease-in'
         }`}
+        onKeyDown={handleKeyDown}
         ref={panelRef}
+        role="dialog"
+        tabIndex={-1}
       >
         {children}
       </div>
@@ -95,6 +140,8 @@ export function WorkspaceOverlay({ open, onClose, maxWidth = 'max-w-4xl', childr
 }
 
 type WorkspaceHeaderProps = {
+  /** Stable id used by the parent dialog's aria-labelledby. */
+  readonly titleId: string
   /** Small uppercase subtitle (e.g. "Diagnostics Workspace"). */
   readonly subtitle: string
   /** Large heading text (e.g. "Operational Diagnostics"). */
@@ -111,6 +158,7 @@ type WorkspaceHeaderProps = {
  * Consistent workspace header with close button (× icon + Esc hint).
  */
 export function WorkspaceHeader({
+  titleId,
   subtitle,
   title,
   subtitleColor = 'text-amber-300/80',
@@ -123,7 +171,7 @@ export function WorkspaceHeader({
         <p className={`text-[11px] font-semibold uppercase tracking-wider ${subtitleColor}`}>
           {subtitle}
         </p>
-        <h2 className="mt-1 font-mono text-2xl font-bold text-stone-50">{title}</h2>
+        <h2 className="mt-1 font-mono text-2xl font-bold text-stone-50" id={titleId}>{title}</h2>
       </div>
       <div className="flex items-center gap-3">
         {actions}
