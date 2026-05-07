@@ -54,7 +54,7 @@ export function CoordinateConverterDialog() {
           </h2>
         </div>
         <button
-          className="sar-button rounded-lg px-3 py-2 text-sm font-semibold"
+          className="sar-button px-3 py-2 text-sm font-semibold"
           onClick={() => closeDialog()}
           type="button"
         >
@@ -68,7 +68,7 @@ export function CoordinateConverterDialog() {
             <div className="mt-3 grid gap-2 sm:grid-cols-3">
               {(['wgs84', 'itm', 'tm65'] as const).map((mode) => (
                 <label
-                  className={`rounded-lg border px-3 py-2 text-sm font-semibold transition ${
+                  className={`border px-3 py-2 text-sm font-semibold transition ${
                     draft.mode === mode
                       ? 'sar-tab-active'
                       : 'sar-button'
@@ -138,7 +138,7 @@ export function CoordinateConverterDialog() {
 
           <div className="flex gap-3">
             <button
-              className="rounded-lg border border-emerald-400/30 bg-emerald-400/10 px-4 py-2 text-sm font-semibold text-emerald-100 transition hover:bg-emerald-400/20"
+              className="border border-emerald-400/30 bg-emerald-400/10 px-4 py-2 text-sm font-semibold text-emerald-100 transition hover:bg-emerald-400/20"
               data-testid="coordinate-convert-btn"
               onClick={() => {
                 try {
@@ -159,7 +159,7 @@ export function CoordinateConverterDialog() {
               Convert
             </button>
             <button
-              className="sar-button rounded-lg px-4 py-2 text-sm font-semibold"
+              className="sar-button px-4 py-2 text-sm font-semibold"
               onClick={() => {
                 setDraft(createCoordinateConverterDraft())
                 setResult(null)
@@ -200,7 +200,7 @@ export function CoordinateConverterDialog() {
 
               <div className="md:col-span-3 flex justify-end">
                 <button
-                  className="sar-button-focus rounded-lg px-4 py-2 text-sm font-semibold"
+                  className="sar-button-focus px-4 py-2 text-sm font-semibold"
                   data-testid="coordinate-go-to-btn"
                   onClick={() => {
                     queueTarget(result.latitude, result.longitude, 'Coordinate Target')
@@ -248,7 +248,7 @@ function Field(props: {
     <label className="block text-sm text-stone-200">
       <span className="sar-section-label">{props.label}</span>
       <input
-        className="sar-input mt-2 w-full rounded-lg px-3 py-2 text-sm"
+        className="sar-input mt-2 w-full px-3 py-2 text-sm"
         data-testid={props.testId}
         onChange={(event) => props.onChange(event.target.value)}
         value={props.value}
@@ -265,11 +265,11 @@ function ResultCard(props: {
   readonly testId: string
 }) {
   return (
-    <div className="sar-panel-raised rounded-lg p-4" data-testid={props.testId}>
+    <div className="sar-module p-4" data-testid={props.testId}>
       <div className="flex items-center justify-between gap-3">
         <p className="sar-section-label">{props.label}</p>
         <button
-          className="sar-button rounded-md px-2 py-1 text-[11px]"
+          className="sar-button px-2 py-1 text-[11px]"
           data-testid={`${props.testId}-copy`}
           onClick={props.onCopy}
           type="button"

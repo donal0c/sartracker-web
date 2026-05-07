@@ -94,7 +94,7 @@ export function SettingsWorkspace({ open, onClose }: SettingsWorkspaceProps) {
 
       <div className="flex-1 space-y-6 overflow-y-auto px-6 py-6" data-testid="settings-workspace">
           {loading || draft === null ? (
-            <div className="sar-panel-raised rounded-lg p-5 text-sm text-stone-400">
+            <div className="sar-module p-5 text-sm text-stone-400">
               Loading settings…
             </div>
           ) : (
@@ -424,7 +424,7 @@ export function SettingsWorkspace({ open, onClose }: SettingsWorkspaceProps) {
 
               <Section title="Advanced Settings" description="Reserved repair and support actions.">
                 <button
-                  className="sar-button rounded-lg px-4 py-3 text-[11px] font-bold uppercase tracking-wider text-stone-500 disabled:opacity-45"
+                  className="sar-button px-4 py-3 text-[11px] font-bold uppercase tracking-wider text-stone-500 disabled:opacity-45"
                   disabled
                   type="button"
                 >
@@ -434,7 +434,7 @@ export function SettingsWorkspace({ open, onClose }: SettingsWorkspaceProps) {
 
               {(error ?? feedback) ? (
                 <div
-                  className={`rounded-xl border px-4 py-3 text-sm ${
+                  className={`border px-4 py-3 text-sm ${
                     error
                       ? 'border-rose-500/40 bg-rose-950/40 text-rose-200'
                       : 'border-emerald-500/30 bg-emerald-950/30 text-emerald-200'
@@ -454,7 +454,7 @@ export function SettingsWorkspace({ open, onClose }: SettingsWorkspaceProps) {
           </p>
           <div className="flex flex-wrap gap-3 sm:justify-end">
             <button
-              className="sar-button rounded-lg px-4 py-2 text-[11px] font-bold uppercase tracking-wider disabled:opacity-40"
+              className="sar-button px-4 py-2 text-[11px] font-bold uppercase tracking-wider disabled:opacity-40"
               data-testid="settings-test-connection"
               disabled={draft === null || testing || Object.keys(validationErrors).length > 0}
               onClick={() => {
@@ -467,7 +467,7 @@ export function SettingsWorkspace({ open, onClose }: SettingsWorkspaceProps) {
               {testing ? 'Testing…' : 'Test Connection'}
             </button>
             <button
-              className="sar-button rounded-lg px-4 py-2 text-[11px] font-bold uppercase tracking-wider disabled:opacity-40"
+              className="sar-button px-4 py-2 text-[11px] font-bold uppercase tracking-wider disabled:opacity-40"
               data-testid="settings-save"
               disabled={draft === null || saving || Object.keys(validationErrors).length > 0}
               onClick={() => {
@@ -478,7 +478,7 @@ export function SettingsWorkspace({ open, onClose }: SettingsWorkspaceProps) {
               {saving ? 'Saving…' : 'Save'}
             </button>
             <button
-              className="rounded-lg border border-amber-300/50 bg-amber-400 px-4 py-2 text-[11px] font-bold uppercase tracking-wider text-stone-950 transition hover:bg-amber-300 disabled:opacity-40"
+              className="sar-action-primary px-4 py-2 text-[11px] font-bold uppercase tracking-wider transition disabled:opacity-40"
               data-testid="settings-save-connect"
               disabled={
                 draft === null ||
@@ -549,7 +549,7 @@ function Section(props: {
   readonly children: ReactNode
 }) {
   return (
-    <section className="sar-panel-raised rounded-lg p-5">
+    <section className="sar-module p-5">
       <div className="mb-4">
         <h3 className="text-[12px] font-bold uppercase tracking-wider text-stone-200">
           {props.title}
@@ -575,7 +575,7 @@ function TextField(props: {
         {props.label}
       </span>
       <input
-        className="sar-input w-full rounded-lg px-3 py-2 text-sm"
+        className="sar-input w-full px-3 py-2 text-sm"
         data-testid={props.testId}
         onChange={(event) => props.onChange(event.target.value)}
         type={props.type ?? 'text'}
@@ -608,7 +608,7 @@ function TextAreaField(props: {
         {props.label}
       </span>
       <textarea
-        className="sar-input min-h-24 w-full rounded-lg px-3 py-2 text-sm"
+        className="sar-input min-h-24 w-full px-3 py-2 text-sm"
         data-testid={props.testId}
         onChange={(event) => props.onChange(event.target.value)}
         value={props.value}
@@ -625,7 +625,7 @@ function ToggleField(props: {
   readonly testId?: string
 }) {
   return (
-    <label className="sar-toggle flex items-center justify-between gap-4 rounded-lg px-3 py-2">
+    <label className="sar-toggle flex items-center justify-between gap-4 px-3 py-2">
       <span className="text-sm text-stone-200">{props.label}</span>
       <input
         checked={props.checked}
@@ -645,9 +645,9 @@ function ChoiceButton(props: {
 }) {
   return (
     <button
-      className={`rounded-lg border px-3 py-2 text-[11px] font-bold uppercase tracking-wider transition ${
+      className={`border px-3 py-2 text-[11px] font-bold uppercase tracking-wider transition ${
         props.active
-          ? 'border-amber-300/50 bg-amber-400 text-stone-950'
+          ? 'border-amber-300/50 bg-amber-500 text-stone-950'
           : 'sar-button'
       }`}
       onClick={props.onClick}

@@ -75,20 +75,20 @@ export function LayerFilterPanel() {
 
   return (
     <section
-      className="sar-panel rounded-lg p-4 text-sm"
+      className="sar-panel p-4 text-sm"
       data-testid="layer-panel"
     >
-      <div className="mb-4 flex items-center justify-between gap-3">
+      <div className="mb-4 flex items-center justify-between gap-3 border-b border-[var(--sar-line)] pb-3">
         <div>
-          <h3 className="sar-section-label">
+          <h3 className="sar-section-label text-amber-300/90">
             Layer Workspace
           </h3>
-          <p className="mt-1 text-xs text-stone-400">
-            Catalog, visibility, aliases, and inspection.
+          <p className="mt-1 text-[11px] uppercase tracking-[0.12em] text-stone-500">
+            visibility and inspection
           </p>
         </div>
         <button
-          className="sar-button rounded-lg px-3 py-1.5 text-xs font-semibold"
+          className="sar-button px-3 py-1.5 text-xs font-bold uppercase tracking-[0.08em]"
           data-testid="layer-panel-toggle"
           onClick={() => setPanelExpanded(!panelExpanded)}
           type="button"
@@ -100,7 +100,7 @@ export function LayerFilterPanel() {
       {panelExpanded ? (
         <div className="space-y-4">
           <input
-            className="sar-input w-full rounded-lg px-3 py-2 text-xs"
+            className="sar-input w-full px-3 py-2 text-xs"
             data-testid="layer-tree-search"
             onChange={(event) => setSearchQuery(event.target.value)}
             placeholder="Search layers and features..."
@@ -109,7 +109,7 @@ export function LayerFilterPanel() {
 
           <div className="flex flex-wrap items-center gap-2">
             <label
-              className="sar-toggle flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[11px] font-medium text-stone-300"
+              className="sar-toggle flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-medium text-stone-300"
               data-testid="layer-show-hidden-toggle"
             >
               <input
@@ -121,7 +121,7 @@ export function LayerFilterPanel() {
               Show Hidden
             </label>
             <button
-              className="sar-button rounded-lg px-2 py-1 text-[11px] font-semibold"
+              className="sar-button px-2 py-1 text-[11px] font-semibold"
               data-testid="layer-expand-all-btn"
               onClick={() => resetExpandedNodeIds(collectAllExpandableNodeIds(root))}
               type="button"
@@ -129,7 +129,7 @@ export function LayerFilterPanel() {
               Expand All
             </button>
             <button
-              className="sar-button rounded-lg px-2 py-1 text-[11px] font-semibold"
+              className="sar-button px-2 py-1 text-[11px] font-semibold"
               data-testid="layer-refresh-btn"
               onClick={() => void catalogController?.forceRefresh()}
               type="button"
@@ -142,7 +142,7 @@ export function LayerFilterPanel() {
             <EmptyState message={catalogError} testId="layer-tree-error" />
           ) : null}
 
-          <div className="sar-panel-raised rounded-lg">
+          <div className="sar-module">
             <div className="border-b border-stone-800/60 px-3 py-2">
               <p className="sar-section-label">
                 Layer Tree
@@ -213,8 +213,8 @@ function TreeNodeRow(props: {
   return (
     <div>
       <div
-        className={`flex items-center gap-2 rounded-lg px-2 py-1.5 text-xs transition-colors ${
-          rowSelected ? 'bg-amber-400/10 text-amber-100' : 'text-stone-300 hover:bg-stone-900/60'
+        className={`sar-tree-row mb-1 flex items-center gap-2 px-2 py-1.5 text-xs transition-colors ${
+          rowSelected ? 'sar-tree-row-active' : 'text-stone-300'
         }`}
         data-testid={`layer-row-${toTestId(props.node.id)}`}
         style={{ paddingLeft: `${props.depth * 16 + 8}px` }}
@@ -260,7 +260,7 @@ function TreeNodeRow(props: {
 
         {props.node.kind !== 'root' ? (
           <button
-            className={`rounded px-1.5 py-0.5 text-[11px] ${
+            className={`px-1.5 py-0.5 text-[11px] ${
               props.node.isFavorite
                 ? 'bg-amber-500/20 text-amber-200'
                 : 'text-stone-600 hover:bg-stone-800 hover:text-stone-300'
@@ -327,7 +327,7 @@ function LayerInspector(props: {
 
   return (
     <div
-      className="sar-panel-raised rounded-lg p-4"
+      className="sar-module p-4"
       data-testid="layer-inspector"
     >
       <div className="flex items-start justify-between gap-3">
@@ -346,7 +346,7 @@ function LayerInspector(props: {
           </p>
         </div>
         <button
-          className={`rounded-md border px-2 py-1 text-[11px] font-semibold ${
+          className={`border px-2 py-1 text-[11px] font-semibold ${
             selectedNode.isFavorite
               ? 'border-amber-400/40 bg-amber-400/20 text-amber-200'
               : 'sar-button'
@@ -371,13 +371,13 @@ function LayerInspector(props: {
             </span>
             <div className="flex flex-wrap gap-2">
               <input
-                className="sar-input min-w-40 flex-1 rounded-lg px-3 py-2 text-xs"
+                className="sar-input min-w-40 flex-1 px-3 py-2 text-xs"
                 data-testid="layer-alias-input"
                 onChange={(event) => setAliasDraft(event.target.value)}
                 value={aliasDraft}
               />
               <button
-                className="sar-button rounded-lg px-3 py-2 text-[11px] font-semibold"
+                className="sar-button px-3 py-2 text-[11px] font-semibold"
                 data-testid="layer-alias-save"
                 onClick={() =>
                   void props.controller?.renameNode(
@@ -390,7 +390,7 @@ function LayerInspector(props: {
                 Save
               </button>
               <button
-                className="sar-button rounded-lg px-3 py-2 text-[11px] font-semibold"
+                className="sar-button px-3 py-2 text-[11px] font-semibold"
                 data-testid="layer-alias-clear"
                 onClick={() => {
                   setAliasDraft('')
@@ -405,7 +405,7 @@ function LayerInspector(props: {
 
           <div className="flex gap-2">
             <button
-              className="sar-button rounded-lg px-3 py-2 text-[11px] font-semibold disabled:cursor-not-allowed disabled:opacity-40"
+              className="sar-button px-3 py-2 text-[11px] font-semibold disabled:cursor-not-allowed disabled:opacity-40"
               data-testid="layer-move-up"
               disabled={!canMoveUp}
               onClick={() =>
@@ -421,7 +421,7 @@ function LayerInspector(props: {
               Move Up
             </button>
             <button
-              className="sar-button rounded-lg px-3 py-2 text-[11px] font-semibold disabled:cursor-not-allowed disabled:opacity-40"
+              className="sar-button px-3 py-2 text-[11px] font-semibold disabled:cursor-not-allowed disabled:opacity-40"
               data-testid="layer-move-down"
               disabled={!canMoveDown}
               onClick={() =>
@@ -440,7 +440,7 @@ function LayerInspector(props: {
         </div>
       ) : null}
 
-      <div className="sar-readout mt-4 rounded-lg p-3">
+      <div className="sar-readout mt-4 p-3">
         <p className="sar-section-label mb-2">
           Details
         </p>

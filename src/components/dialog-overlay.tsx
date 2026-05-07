@@ -74,7 +74,7 @@ export function DialogOverlay({
 
   return (
     <div
-      className="fixed inset-0 z-40 flex items-center justify-center bg-stone-950/75 px-4 py-8 backdrop-blur-sm"
+      className="fixed inset-0 z-40 flex items-center justify-center bg-stone-950/82 px-4 py-8 backdrop-blur-[2px]"
       data-testid={testId}
     >
       <button
@@ -87,7 +87,7 @@ export function DialogOverlay({
       <div
         aria-labelledby={labelledBy}
         aria-modal="true"
-        className={`sar-panel relative w-full rounded-lg p-6 ${panelClassName}`}
+        className={`sar-panel relative w-full p-6 ${panelClassName}`}
         onKeyDown={handleKeyDown}
         ref={panelRef}
         role="dialog"

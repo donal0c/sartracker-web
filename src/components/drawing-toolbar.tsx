@@ -33,20 +33,20 @@ export function DrawingToolbar() {
 
   return (
     <div
-      className="absolute left-4 top-24 z-20 rounded-xl border border-[var(--sar-line)] bg-[rgba(9,8,7,0.95)] shadow-2xl shadow-black/40"
+      className="sar-control-dock absolute left-4 top-24 z-20 rounded"
       data-testid="drawing-toolbar"
     >
       {expanded ? (
-        <div className="max-h-[calc(100vh-9rem)] w-[18rem] overflow-y-auto p-3">
-          <div className="flex items-center justify-between gap-3">
+        <div className="max-h-[calc(100vh-9rem)] w-[8.75rem] overflow-y-auto p-3">
+          <div className="space-y-2">
             <div>
-              <p className="sar-section-label text-amber-300">Drawing Tools</p>
-              <p className="mt-1 text-xs font-medium text-white">
-                One active tool at a time. Esc cancels. Double-click or right-click finishes multi-point tools.
+              <p className="text-[10px] font-black uppercase tracking-[0.24em] text-amber-200">Drawing Tools</p>
+              <p className="mt-1 font-mono text-[10px] font-bold uppercase tracking-[0.12em] text-stone-500">
+                {disabled ? 'mission required' : 'armed'}
               </p>
             </div>
             <button
-              className="sar-button rounded-lg px-2 py-1 text-xs font-semibold"
+              className="sar-button w-full px-2 py-1.5 text-[10px] font-bold uppercase tracking-[0.1em]"
               data-testid="drawing-toolbar-collapse"
               onClick={() => setExpanded(false)}
               type="button"
@@ -55,21 +55,21 @@ export function DrawingToolbar() {
             </button>
           </div>
 
-          <div className="mt-2 rounded-lg border border-[var(--sar-line)] bg-[var(--sar-panel-sunken)] px-3 py-1 text-center text-[11px] font-semibold uppercase tracking-[0.12em] text-stone-100">
+          <div className="mt-3 border border-[var(--sar-line)] bg-[var(--sar-panel-sunken)] px-2 py-2 text-center text-[10px] font-black uppercase tracking-[0.16em] text-stone-100">
             Active: {activeDefinition?.label ?? 'Select'}
           </div>
 
-          <div className="mt-3 grid grid-cols-2 gap-2">
+          <div className="mt-3 grid gap-2">
             {DRAWING_TOOL_OPTIONS.map((option) => {
               const isActive = activeTool === option.value
 
               return (
                 <button
-                  className={`min-h-12 rounded-lg border px-3 py-3 text-left text-sm transition ${
+                  className={`min-h-14 border px-2 py-2 text-center text-[11px] uppercase tracking-[0.08em] transition ${
                     isActive
-                      ? 'border-amber-300 bg-amber-300/10 text-amber-50'
-                      : 'border-stone-600 bg-[var(--sar-panel-raised)] text-white hover:border-stone-400 hover:bg-stone-800'
-                  } disabled:cursor-not-allowed disabled:opacity-40`}
+                      ? 'border-amber-300 bg-amber-300/14 text-amber-50 shadow-[inset_0_0_0_1px_rgba(244,183,74,0.24)]'
+                      : 'border-stone-700 bg-[var(--sar-panel-raised)] text-stone-200 hover:border-stone-400 hover:bg-stone-800'
+                  } disabled:cursor-not-allowed disabled:opacity-55`}
                   data-testid={`drawing-tool-${option.value}`}
                   disabled={disabled}
                   key={option.value}
@@ -96,15 +96,13 @@ export function DrawingToolbar() {
                   }}
                   type="button"
                 >
-                  <span className="block font-semibold">{option.label}</span>
-                  <span className="mt-1 block text-[13px] font-normal text-white">{option.hint}</span>
+                  <span className="block font-black">{option.label}</span>
                 </button>
               )
             })}
           </div>
-
-          <p className="mt-3 text-xs font-medium text-white">
-            LPB categories: {Object.values(LPB_CATEGORIES).map((category) => category.label).join(' · ')}
+          <p className="mt-3 border-t border-[var(--sar-line)] pt-2 text-[10px] font-bold uppercase tracking-[0.1em] text-stone-500">
+            LPB {Object.values(LPB_CATEGORIES).length} categories
           </p>
         </div>
       ) : (
@@ -114,8 +112,8 @@ export function DrawingToolbar() {
           onClick={() => setExpanded(true)}
           type="button"
         >
-          <span className="sar-section-label text-amber-300">Drawing Tools</span>
-          <span className="rounded-lg border border-[var(--sar-line)] bg-[var(--sar-panel-raised)] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-stone-300">
+          <span className="text-[10px] font-black uppercase tracking-[0.24em] text-amber-200">Drawing Tools</span>
+          <span className="border border-[var(--sar-line)] bg-[var(--sar-panel-raised)] px-3 py-1 text-[11px] font-bold uppercase tracking-[0.14em] text-stone-200">
             Active: {activeDefinition?.label ?? 'Select'}
           </span>
           <svg className="h-4 w-4 text-stone-400" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">

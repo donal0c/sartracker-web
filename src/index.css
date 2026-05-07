@@ -4,11 +4,11 @@
 
 :root {
   --sar-ink: #090807;
-  --sar-panel: #12110f;
-  --sar-panel-raised: #181613;
-  --sar-panel-sunken: #0d0c0a;
-  --sar-line: rgba(168, 162, 158, 0.16);
-  --sar-line-strong: rgba(245, 158, 11, 0.34);
+  --sar-panel: #11100e;
+  --sar-panel-raised: #1b1915;
+  --sar-panel-sunken: #090807;
+  --sar-line: rgba(214, 204, 190, 0.15);
+  --sar-line-strong: rgba(245, 158, 11, 0.42);
   --sar-text: #f4f1ec;
   --sar-text-muted: #a8a29e;
   --sar-amber: #f4b74a;
@@ -41,7 +41,8 @@ body {
 @layer components {
   .sar-shell {
     background:
-      linear-gradient(180deg, rgba(244, 183, 74, 0.025), transparent 22rem),
+      radial-gradient(circle at 72% 0%, rgba(244, 183, 74, 0.055), transparent 22rem),
+      linear-gradient(90deg, rgba(0, 0, 0, 0.22), transparent 34%),
       var(--sar-ink);
     color: var(--sar-text);
   }
@@ -49,23 +50,82 @@ body {
   .sar-sidebar {
     border-left: 1px solid var(--sar-line);
     background:
-      linear-gradient(180deg, rgba(244, 183, 74, 0.035), transparent 16rem),
+      linear-gradient(180deg, rgba(244, 183, 74, 0.055), transparent 14rem),
+      linear-gradient(90deg, rgba(255, 255, 255, 0.025), transparent 7rem),
       var(--sar-panel);
-    box-shadow: -28px 0 60px rgba(0, 0, 0, 0.44);
+    box-shadow:
+      -34px 0 70px rgba(0, 0, 0, 0.5),
+      inset 1px 0 rgba(255, 255, 255, 0.035);
+  }
+
+  .sar-command-mast {
+    border-bottom: 1px solid rgba(214, 204, 190, 0.12);
+    background:
+      linear-gradient(180deg, rgba(255, 255, 255, 0.03), transparent),
+      linear-gradient(90deg, rgba(244, 183, 74, 0.08), transparent 55%),
+      #15130f;
+    box-shadow: inset 0 -1px rgba(0, 0, 0, 0.42);
+  }
+
+  .sar-global-mast {
+    border-bottom: 1px solid rgba(214, 204, 190, 0.13);
+    background:
+      linear-gradient(180deg, rgba(255, 255, 255, 0.035), transparent 52%),
+      linear-gradient(90deg, rgba(244, 183, 74, 0.08), transparent 34%),
+      #12100d;
+    box-shadow:
+      0 18px 42px rgba(0, 0, 0, 0.28),
+      inset 0 -1px rgba(0, 0, 0, 0.48);
+  }
+
+  .sar-mast-button {
+    min-width: 94px;
+    border-left: 1px solid var(--sar-line);
+    background:
+      linear-gradient(180deg, rgba(255, 255, 255, 0.035), transparent),
+      rgba(9, 8, 7, 0.34);
+    color: var(--sar-text);
+    padding: 0 0.9rem;
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    white-space: nowrap;
+    transition:
+      background-color 150ms ease,
+      color 150ms ease;
+  }
+
+  .sar-mast-button:hover {
+    background: rgba(244, 183, 74, 0.11);
+    color: #fde9b5;
   }
 
   .sar-panel {
     border: 1px solid var(--sar-line);
     background:
-      linear-gradient(180deg, rgba(255, 255, 255, 0.015), transparent),
+      linear-gradient(180deg, rgba(255, 255, 255, 0.035), transparent 45%),
+      linear-gradient(90deg, rgba(244, 183, 74, 0.025), transparent 55%),
       var(--sar-panel);
-    box-shadow: 0 18px 44px rgba(0, 0, 0, 0.22);
+    box-shadow:
+      0 18px 44px rgba(0, 0, 0, 0.22),
+      inset 0 1px rgba(255, 255, 255, 0.035);
   }
 
   .sar-panel-raised {
     border: 1px solid var(--sar-line);
     background: var(--sar-panel-raised);
     box-shadow: inset 0 1px rgba(255, 255, 255, 0.025);
+  }
+
+  .sar-module {
+    border: 1px solid rgba(214, 204, 190, 0.14);
+    background:
+      linear-gradient(180deg, rgba(255, 255, 255, 0.028), transparent 42%),
+      rgba(9, 8, 7, 0.44);
+    box-shadow:
+      inset 0 1px rgba(255, 255, 255, 0.025),
+      0 14px 34px rgba(0, 0, 0, 0.16);
   }
 
   .sar-workspace-header {
@@ -82,8 +142,13 @@ body {
 
   .sar-readout {
     border: 1px solid rgba(168, 162, 158, 0.13);
-    background: var(--sar-panel-sunken);
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.025);
+    background:
+      linear-gradient(180deg, rgba(255, 255, 255, 0.025), transparent),
+      var(--sar-panel-sunken);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.025),
+      inset 0 -18px 34px rgba(0, 0, 0, 0.18);
+    font-variant-numeric: tabular-nums;
   }
 
   .sar-section-label {
@@ -96,8 +161,13 @@ body {
 
   .sar-button {
     border: 1px solid rgba(168, 162, 158, 0.2);
-    background: #24211e;
+    background:
+      linear-gradient(180deg, rgba(255, 255, 255, 0.04), transparent),
+      #24211e;
     color: var(--sar-text);
+    box-shadow:
+      inset 0 1px rgba(255, 255, 255, 0.04),
+      0 8px 20px rgba(0, 0, 0, 0.18);
     transition:
       border-color 150ms ease,
       background-color 150ms ease,
@@ -107,6 +177,40 @@ body {
   .sar-button:hover {
     border-color: rgba(244, 183, 74, 0.35);
     background: #2d2925;
+  }
+
+  .sar-action-primary {
+    border: 1px solid rgba(244, 183, 74, 0.8);
+    background:
+      linear-gradient(180deg, rgba(255, 255, 255, 0.18), transparent 42%),
+      var(--sar-amber);
+    color: #16110a;
+    box-shadow:
+      inset 0 1px rgba(255, 255, 255, 0.22),
+      0 14px 28px rgba(0, 0, 0, 0.3);
+  }
+
+  .sar-action-primary:hover {
+    background:
+      linear-gradient(180deg, rgba(255, 255, 255, 0.22), transparent 42%),
+      #f8c65c;
+  }
+
+  .sar-action-danger {
+    border: 1px solid rgba(244, 63, 94, 0.55);
+    background:
+      linear-gradient(180deg, rgba(255, 255, 255, 0.08), transparent 44%),
+      #b91c3c;
+    color: #fff7f7;
+    box-shadow:
+      inset 0 1px rgba(255, 255, 255, 0.12),
+      0 14px 28px rgba(0, 0, 0, 0.28);
+  }
+
+  .sar-action-danger:hover {
+    background:
+      linear-gradient(180deg, rgba(255, 255, 255, 0.1), transparent 44%),
+      #d01846;
   }
 
   .sar-button-focus {
@@ -147,6 +251,11 @@ body {
     background: var(--sar-panel-sunken);
   }
 
+  .sar-inline-alert {
+    border: 1px solid rgba(244, 183, 74, 0.28);
+    background: rgba(120, 72, 18, 0.16);
+  }
+
   .sar-status-row {
     border-top: 1px solid rgba(168, 162, 158, 0.11);
   }
@@ -154,6 +263,50 @@ body {
   .sar-tab-active {
     border: 1px solid rgba(244, 183, 74, 0.35);
     background: rgba(244, 183, 74, 0.12);
+    color: #fde9b5;
+  }
+
+  .sar-control-dock {
+    border: 1px solid rgba(214, 204, 190, 0.17);
+    background:
+      linear-gradient(180deg, rgba(255, 255, 255, 0.04), transparent),
+      rgba(9, 8, 7, 0.94);
+    box-shadow:
+      0 18px 46px rgba(0, 0, 0, 0.36),
+      inset 0 1px rgba(255, 255, 255, 0.04);
+  }
+
+  .sar-instrument-strip {
+    border-top: 1px solid rgba(214, 204, 190, 0.13);
+    background:
+      linear-gradient(90deg, rgba(0, 0, 0, 0.96), rgba(9, 8, 7, 0.9) 68%, rgba(9, 8, 7, 0.76)),
+      var(--sar-ink);
+    box-shadow:
+      0 -20px 44px rgba(0, 0, 0, 0.34),
+      inset 0 1px rgba(255, 255, 255, 0.035);
+  }
+
+  .sar-rail-section {
+    border: 1px solid rgba(214, 204, 190, 0.13);
+    background:
+      linear-gradient(180deg, rgba(255, 255, 255, 0.03), transparent),
+      rgba(9, 8, 7, 0.38);
+    box-shadow: inset 0 1px rgba(255, 255, 255, 0.025);
+  }
+
+  .sar-tree-row {
+    border: 1px solid transparent;
+    background: rgba(9, 8, 7, 0.12);
+  }
+
+  .sar-tree-row:hover {
+    border-color: rgba(214, 204, 190, 0.12);
+    background: rgba(255, 255, 255, 0.035);
+  }
+
+  .sar-tree-row-active {
+    border-color: rgba(244, 183, 74, 0.28);
+    background: rgba(244, 183, 74, 0.11);
     color: #fde9b5;
   }
 }

@@ -51,7 +51,7 @@ export function DiagnosticsWorkspace() {
 
       <div className="flex-1 overflow-y-auto px-6 py-6" data-testid="diagnostics-workspace">
           {loading || snapshot === null ? (
-            <div className="sar-panel-raised rounded-lg p-5 text-sm text-stone-400">
+            <div className="sar-module p-5 text-sm text-stone-400">
               Loading diagnostics…
             </div>
           ) : (
@@ -63,7 +63,7 @@ export function DiagnosticsWorkspace() {
                 <DiagnosticsSection rows={snapshot.configurationRows} title="Configuration" />
               </section>
 
-              <section className="sar-panel-raised rounded-lg p-5">
+              <section className="sar-module p-5">
                 <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
                   <div className="space-y-2">
                     <p className="sar-section-label">
@@ -76,7 +76,7 @@ export function DiagnosticsWorkspace() {
                   </div>
                   <div className="flex flex-wrap gap-3">
                     <button
-                      className="sar-button-focus rounded-lg px-4 py-2 text-sm font-semibold disabled:opacity-50"
+                      className="sar-button-focus px-4 py-2 text-sm font-semibold disabled:opacity-50"
                       data-testid="diagnostics-copy-report"
                       disabled={snapshot === null}
                       onClick={() => void handleCopy(snapshot.supportReport)}
@@ -85,7 +85,7 @@ export function DiagnosticsWorkspace() {
                       Copy Report
                     </button>
                     <button
-                      className="sar-button rounded-lg px-4 py-2 text-sm font-semibold disabled:opacity-50"
+                      className="sar-button px-4 py-2 text-sm font-semibold disabled:opacity-50"
                       data-testid="diagnostics-export-report"
                       disabled={exporting || snapshot === null}
                       onClick={() => {
@@ -97,7 +97,7 @@ export function DiagnosticsWorkspace() {
                       {exporting ? 'Exporting...' : 'Export Report'}
                     </button>
                     <button
-                      className="rounded-lg border border-amber-400/40 bg-amber-400/10 px-4 py-2 text-sm font-semibold text-amber-100 transition hover:bg-amber-400/20 disabled:opacity-50"
+                      className="border border-amber-400/40 bg-amber-400/10 px-4 py-2 text-sm font-semibold text-amber-100 transition hover:bg-amber-400/20 disabled:opacity-50"
                       data-testid="diagnostics-repair-layer-catalog"
                       disabled={!snapshot.repair.available || repairing}
                       onClick={() => {
@@ -128,7 +128,7 @@ export function DiagnosticsWorkspace() {
                 ) : null}
               </section>
 
-              <section className="sar-panel-raised rounded-lg p-5">
+              <section className="sar-module p-5">
                 <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                   <div>
                     <p className="sar-section-label">
@@ -139,7 +139,7 @@ export function DiagnosticsWorkspace() {
                     </p>
                   </div>
                   <select
-                    className="sar-input rounded-lg px-3 py-2 text-sm"
+                    className="sar-input px-3 py-2 text-sm"
                     data-testid="diagnostics-mission-select"
                     disabled={loading || controller === null}
                     onChange={(event) => {
@@ -162,7 +162,7 @@ export function DiagnosticsWorkspace() {
               </section>
 
               {snapshot.warnings.length > 0 ? (
-                <section className="rounded-lg border border-amber-400/30 bg-amber-400/10 p-5">
+                <section className="border border-amber-400/30 bg-amber-400/10 p-5">
                   <p className="text-[11px] font-bold uppercase tracking-wider text-amber-300">
                     Warnings
                   </p>
@@ -174,11 +174,11 @@ export function DiagnosticsWorkspace() {
                 </section>
               ) : null}
 
-              <section className="sar-panel-raised rounded-lg p-5">
+              <section className="sar-module p-5">
                 <p className="sar-section-label">
                   Support Report Preview
                 </p>
-                <pre className="sar-readout mt-4 overflow-x-auto whitespace-pre-wrap break-words rounded-lg p-4 text-xs text-stone-300">
+                <pre className="sar-readout mt-4 overflow-x-auto whitespace-pre-wrap break-words p-4 text-xs text-stone-300">
                   {snapshot.supportReport}
                 </pre>
               </section>
@@ -209,7 +209,7 @@ function DiagnosticsSection(props: {
   }[]
 }) {
   return (
-    <section className="sar-panel-raised rounded-lg p-5">
+    <section className="sar-module p-5">
       <p className="sar-section-label">{props.title}</p>
       <div className="mt-4 space-y-3">
         {props.rows.map((row) => (

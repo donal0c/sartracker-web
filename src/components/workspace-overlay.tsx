@@ -114,7 +114,7 @@ export function WorkspaceOverlay({
       <button
         aria-label="Close workspace"
         className={`absolute inset-0 transition-opacity duration-250 ease-out ${
-          visible ? 'bg-stone-950/80 backdrop-blur-sm' : 'bg-transparent'
+          visible ? 'bg-stone-950/82 backdrop-blur-[2px]' : 'bg-transparent'
         }`}
         onClick={onClose}
         tabIndex={-1}
@@ -176,7 +176,7 @@ export function WorkspaceHeader({
       <div className="flex flex-wrap items-center gap-3">
         {actions}
         <button
-          className="sar-button group flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-semibold"
+          className="sar-button group flex items-center gap-2 px-3 py-2 text-sm font-semibold"
           data-testid="workspace-close-btn"
           onClick={onClose}
           type="button"
@@ -185,7 +185,7 @@ export function WorkspaceHeader({
             <path d="M6 18L18 6M6 6l12 12" strokeLinecap="round" strokeLinejoin="round" />
           </svg>
           Close
-          <kbd className="ml-1 rounded border border-stone-700 bg-stone-950 px-1.5 py-0.5 font-mono text-[10px] text-stone-400">Esc</kbd>
+          <kbd className="ml-1 border border-stone-700 bg-stone-950 px-1.5 py-0.5 font-mono text-[10px] text-stone-400">Esc</kbd>
         </button>
       </div>
     </header>

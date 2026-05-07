@@ -1,4 +1,4 @@
-import { Suspense, lazy, useState } from 'react'
+import { Suspense, lazy, useEffect, useMemo, useState } from 'react'
 
 import { DrawingRuntimeBridge } from './features/drawings/drawing-runtime-bridge'
 import { DiagnosticsRuntimeBridge } from './features/diagnostics/diagnostics-runtime-bridge'
@@ -26,6 +26,9 @@ import { useDiagnosticsWorkspaceStore } from './features/diagnostics/diagnostics
 import { GpxRuntimeBridge } from './features/gpx/gpx-runtime-bridge'
 import { HelicopterRuntimeBridge } from './features/helicopters/helicopter-runtime-bridge'
 import { useFocusModeStore } from './features/focus-mode/focus-mode-store'
+import { useMissionStore } from './features/mission/mission-store'
+import { calculateMissionTimerState, formatMissionDuration } from './features/mission/mission-timers'
+import { useTrackingStore } from './features/tracking/tracking-store'
 
 const MapView = lazy(async () => {
   const module = await import('./components/map-view')
@@ -51,7 +54,7 @@ function App() {
 
   return (
     <main
-      className="sar-shell flex h-screen w-screen overflow-hidden"
+      className="sar-shell flex h-screen w-screen flex-col overflow-hidden"
       data-focus-mode={focusModeActive ? 'true' : 'false'}
       data-testid="app-shell"
     >
@@ -64,120 +67,94 @@ function App() {
       <MeasurementRuntimeBridge />
       <MissionReviewRuntimeBridge />
 
-      {/* Map Area - Expanded */}
-      <section className="relative flex-1 overflow-hidden">
-        <Suspense
-          fallback={
-            <div className="flex h-full w-full items-center justify-center bg-stone-950 text-sm text-stone-400">
-              Loading map shell...
-            </div>
-          }
-        >
-          <MapView />
-        </Suspense>
-      </section>
-
-      {/* Operational Sidebar - Fixed Right */}
-      {focusModeActive ? (
-        <FocusModeSidebar />
-      ) : (
-        <aside
-          className="sar-sidebar z-20 flex w-[380px] flex-col"
-          data-testid="operational-sidebar"
-        >
-          {/* Tactical Header */}
-          <header className="flex-shrink-0 border-b border-[var(--sar-line)] px-6 py-5">
-            <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-amber-300/85">
-              Kerry Mountain Rescue
-            </p>
-            <h1
-              className="mt-1 font-mono text-2xl font-bold text-stone-50"
-              data-testid="app-title"
-            >
-              SAR Tracker
-            </h1>
-            <div className="mt-3 flex items-center gap-2">
-              <div className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
-              <span className="font-mono text-[11px] font-bold uppercase tracking-[0.12em] text-emerald-300">
-                System {status}
-              </span>
-              <button
-                className="sar-button rounded-lg px-3 py-1.5 text-[12px] font-semibold"
-                data-testid="open-diagnostics-workspace"
-                onClick={() => openDiagnosticsWorkspace()}
-                type="button"
-              >
-                Diagnostics
-              </button>
-              <FocusModeToggle className="sar-button-focus rounded-lg px-3 py-1.5 text-[12px] font-semibold" />
-              <button
-                className="sar-button ml-auto rounded-lg px-3 py-1.5 text-[12px] font-semibold"
-                data-testid="open-settings-workspace"
-                onClick={() => setSettingsOpen(true)}
-                type="button"
-              >
-                Settings
-              </button>
-            </div>
-          </header>
-
-          {/* Pinned Mission Control — always visible, non-scrolling */}
-          <div className="min-h-0 max-h-[55vh] flex-shrink overflow-y-auto border-b border-[var(--sar-line)] px-6 pb-4 pt-5">
-            <MissionControlPanel />
-          </div>
-
-          {/* Segmented Tab Control */}
-          <div className="flex-shrink-0 px-6 pt-3 pb-2" data-testid="sidebar-tabs">
-            <div className="flex rounded-lg border border-[var(--sar-line)] bg-[var(--sar-panel-sunken)] p-1">
-              {SIDEBAR_TABS.map((tab) => (
-                <button
-                  className={`flex-1 rounded-md px-3 py-1.5 text-[12px] font-semibold transition-colors ${
-                    sidebarTab === tab.id
-                      ? 'sar-tab-active shadow-sm'
-                      : 'text-stone-400 hover:text-stone-200'
-                  }`}
-                  data-testid={`sidebar-tab-${tab.id}`}
-                  key={tab.id}
-                  onClick={() => setSidebarTab(tab.id)}
-                  type="button"
-                >
-                  {tab.label}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Tab Content — scrollable */}
-          <div className="flex-1 space-y-6 overflow-y-auto px-6 py-4">
-            {sidebarTab === 'tracking' && (
-              <>
-                <TrackingStatusPanel />
-                <HelicopterPanel />
-              </>
-            )}
-            {sidebarTab === 'tools' && (
-              <>
-                <GpxImportPanel />
-                <MeasurementPanel />
-              </>
-            )}
-            {sidebarTab === 'layers' && (
-              <>
-                <LayerFilterPanel />
-                <div className="rounded-xl border border-stone-800/60 bg-stone-950/30 p-3 text-[13px] leading-relaxed text-stone-400">
-                  <p className="text-[13px] font-semibold uppercase tracking-wide text-stone-300 mb-2">Operational Notes</p>
-                  <ul className="list-disc pl-4 space-y-1">
-                    <li>ITM (EPSG:2157) is the working CRS.</li>
-                    <li>WGS84 for GPS and map rendering.</li>
-                    <li>Service worker caching active for viewed tiles.</li>
-                    <li>SQLite persistence active (WAL mode).</li>
-                  </ul>
-                </div>
-              </>
-            )}
-          </div>
-        </aside>
+      {focusModeActive ? null : (
+        <CommandMast
+          onOpenDiagnostics={openDiagnosticsWorkspace}
+          onOpenSettings={() => setSettingsOpen(true)}
+          status={status}
+        />
       )}
+
+      <div className="flex min-h-0 flex-1">
+        {/* Map Area - Expanded */}
+        <section className="relative flex-1 overflow-hidden">
+          <Suspense
+            fallback={
+              <div className="flex h-full w-full items-center justify-center bg-stone-950 text-sm text-stone-400">
+                Loading map shell...
+              </div>
+            }
+          >
+            <MapView />
+          </Suspense>
+        </section>
+
+        {/* Operational Sidebar - Fixed Right */}
+        {focusModeActive ? (
+          <FocusModeSidebar />
+        ) : (
+          <aside
+            className="sar-sidebar z-20 flex w-[400px] flex-col"
+            data-testid="operational-sidebar"
+          >
+            {/* Pinned Mission Control — always visible, non-scrolling */}
+            <div className="min-h-0 max-h-[53vh] flex-shrink overflow-y-auto border-b border-[var(--sar-line)] px-5 pb-4 pt-5">
+              <MissionControlPanel />
+            </div>
+
+            {/* Segmented Tab Control */}
+            <div className="flex-shrink-0 px-5 pb-2 pt-3" data-testid="sidebar-tabs">
+              <div className="grid grid-cols-3 border border-[var(--sar-line)] bg-[var(--sar-panel-sunken)] p-1">
+                {SIDEBAR_TABS.map((tab) => (
+                  <button
+                    className={`px-3 py-2 text-[12px] font-bold uppercase tracking-[0.08em] transition-colors ${
+                      sidebarTab === tab.id
+                        ? 'sar-tab-active shadow-sm'
+                        : 'text-stone-400 hover:text-stone-200'
+                    }`}
+                    data-testid={`sidebar-tab-${tab.id}`}
+                    key={tab.id}
+                    onClick={() => setSidebarTab(tab.id)}
+                    type="button"
+                  >
+                    {tab.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Tab Content — scrollable */}
+            <div className="flex-1 space-y-5 overflow-y-auto px-5 py-4">
+              {sidebarTab === 'tracking' && (
+                <>
+                  <TrackingStatusPanel />
+                  <HelicopterPanel />
+                </>
+              )}
+              {sidebarTab === 'tools' && (
+                <>
+                  <GpxImportPanel />
+                  <MeasurementPanel />
+                </>
+              )}
+              {sidebarTab === 'layers' && (
+                <>
+                  <LayerFilterPanel />
+                  <div className="sar-rail-section p-3 text-[13px] leading-relaxed text-stone-400">
+                    <p className="mb-2 text-[11px] font-bold uppercase tracking-[0.12em] text-stone-300">Operational Notes</p>
+                    <ul className="list-disc pl-4 space-y-1">
+                      <li>ITM (EPSG:2157) is the working CRS.</li>
+                      <li>WGS84 for GPS and map rendering.</li>
+                      <li>Service worker caching active for viewed tiles.</li>
+                      <li>SQLite persistence active (WAL mode).</li>
+                    </ul>
+                  </div>
+                </>
+              )}
+            </div>
+          </aside>
+        )}
+      </div>
 
       <DrawingDialog />
       <CoordinateConverterDialog />
@@ -191,3 +168,148 @@ function App() {
 }
 
 export default App
+
+function CommandMast(props: {
+  readonly status: string
+  readonly onOpenDiagnostics: () => void
+  readonly onOpenSettings: () => void
+}) {
+  const phase = useMissionStore((state) => state.phase)
+  const currentMission = useMissionStore((state) => state.currentMission)
+  const snapshot = useTrackingStore((state) => state.snapshot)
+  const trackingStatus = useTrackingStore((state) => state.status)
+  const [now, setNow] = useState(() => new Date())
+  const staleCount = snapshot.positions.filter((position) => position.device_cache_stale).length
+  const timerState = useMemo(
+    () => (currentMission === null ? null : calculateMissionTimerState(currentMission, now)),
+    [currentMission, now],
+  )
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(new Date()), 1000)
+    return () => window.clearInterval(timer)
+  }, [])
+
+  return (
+    <header className="sar-global-mast flex-shrink-0" data-testid="command-mast">
+      <div className="grid min-h-[88px] grid-cols-[260px_minmax(300px,1fr)_190px_430px] items-stretch">
+        <div className="flex items-center gap-4 border-r border-[var(--sar-line)] px-5">
+          <div className="flex h-12 w-12 flex-shrink-0 items-center justify-center border border-amber-300/35 bg-amber-300/10 font-mono text-[11px] font-black text-amber-200">
+            KMR
+          </div>
+          <div className="min-w-0">
+            <p className="text-[10px] font-black uppercase tracking-[0.32em] text-amber-300">
+              Kerry Mountain Rescue
+            </p>
+            <h1
+              className="mt-1 font-mono text-[27px] font-black leading-none tracking-wide text-stone-50"
+              data-testid="app-title"
+            >
+              SAR Tracker
+            </h1>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-[minmax(0,1fr)_126px_126px] border-r border-[var(--sar-line)]">
+          <div className="min-w-0 px-5 py-4">
+            <div className="flex items-center gap-2">
+              <span className="sar-section-label text-amber-300/90">Mission</span>
+              <span className={phasePillClassName(phase)}>{phase}</span>
+            </div>
+            <p className="mt-2 truncate text-sm font-bold text-stone-100">
+              {currentMission?.name ?? 'No active mission'}
+            </p>
+            <p className="mt-1 font-mono text-[11px] uppercase tracking-[0.12em] text-stone-500">
+              {currentMission === null ? 'Ready to start' : `Started ${formatTime(currentMission.start_time)}`}
+            </p>
+          </div>
+          <TopReadout label="Elapsed" value={formatMissionDuration(timerState?.elapsedSeconds ?? 0)} />
+          <TopReadout
+            label="Active"
+            tone="success"
+            value={formatMissionDuration(timerState?.activeSeconds ?? 0)}
+          />
+        </div>
+
+        <div className="grid grid-cols-2 border-r border-[var(--sar-line)]">
+          <TopReadout label="Devices" value={String(snapshot.devices.length)} />
+          <TopReadout
+            label={trackingStatus.mode}
+            tone={trackingStatus.mode === 'online' ? 'success' : staleCount > 0 ? 'warning' : 'default'}
+            value={`${snapshot.positions.length}/${staleCount}`}
+          />
+        </div>
+
+        <div className="grid grid-cols-[1fr_auto_auto_auto] items-stretch">
+          <div className="flex flex-col justify-center border-r border-[var(--sar-line)] px-4">
+            <p className="sar-section-label">System Status</p>
+            <p className="mt-1 font-mono text-sm font-black uppercase tracking-[0.14em] text-emerald-300">
+              {props.status}
+            </p>
+          </div>
+          <button
+            className="sar-mast-button"
+            data-testid="open-diagnostics-workspace"
+            onClick={() => props.onOpenDiagnostics()}
+            type="button"
+          >
+            Diagnostics
+          </button>
+          <FocusModeToggle className="sar-mast-button" compact />
+          <button
+            className="sar-mast-button"
+            data-testid="open-settings-workspace"
+            onClick={() => props.onOpenSettings()}
+            type="button"
+          >
+            Settings
+          </button>
+        </div>
+      </div>
+    </header>
+  )
+}
+
+function TopReadout(props: {
+  readonly label: string
+  readonly value: string
+  readonly tone?: 'default' | 'success' | 'warning'
+}) {
+  const toneClassName =
+    props.tone === 'success'
+      ? 'text-emerald-300'
+      : props.tone === 'warning'
+        ? 'text-amber-300'
+        : 'text-stone-100'
+
+  return (
+    <div className="flex flex-col justify-center border-l border-[var(--sar-line)] px-4">
+      <p className="text-[10px] font-black uppercase tracking-[0.14em] text-stone-500">
+        {props.label}
+      </p>
+      <p className={`mt-1 font-mono text-xl font-black leading-none ${toneClassName}`}>
+        {props.value}
+      </p>
+    </div>
+  )
+}
+
+function phasePillClassName(phase: string): string {
+  if (phase === 'active') {
+    return 'border border-emerald-400/30 bg-emerald-400/10 px-2 py-0.5 font-mono text-[10px] font-black uppercase tracking-[0.12em] text-emerald-300'
+  }
+
+  if (phase === 'paused' || phase === 'recovery') {
+    return 'border border-amber-400/30 bg-amber-400/10 px-2 py-0.5 font-mono text-[10px] font-black uppercase tracking-[0.12em] text-amber-300'
+  }
+
+  return 'border border-stone-700 bg-stone-950 px-2 py-0.5 font-mono text-[10px] font-black uppercase tracking-[0.12em] text-stone-500'
+}
+
+function formatTime(value: string): string {
+  return new Date(value).toLocaleTimeString([], {
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  })
+}

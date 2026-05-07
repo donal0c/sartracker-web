@@ -13,14 +13,15 @@
 
 ## Last Updated
 
-- 2026-05-07 by Codex (offline map coverage preflight tranche complete and validated with user-approved Playwright)
+- 2026-05-07 by Codex (mockup-led SAR command-console UI redesign tranche complete and validated)
 
 ## Current State
 
 - UI/UX audit work is present locally on `feat/ui-ux-audit-critical`.
 - Phase 1 of the quality-to-9.5 push is complete: shared dialog/workspace focus management is now in place for major operator overlays, marker/drawing forms, and mission decision prompts.
 - M24 focus mode parity is implemented locally: explicit Focus Mode Plus state, persisted reload behavior, map-first layout, preserved mission/tracking/layer awareness, and mirrored focus coordinates.
-- Visual direction pass is captured in `tmp/visual-direction/`: in-app screenshots, generated inspiration mockups, and a short design brief. The adopted direction is restrained matte graphite mission software with warm amber affordances, not decorative HUD/glass/neon styling.
+- Visual direction pass is captured in `tmp/redesign-2026-05-07/`: Playwright screenshots, generated inspiration mockups, visual brief, and iteration screenshots. The adopted direction is restrained matte graphite mission software with warm amber affordances, not decorative HUD/glass/neon styling.
+- Mockup-led UI redesign tranche is complete: the main shell now has a full-width command mast and bottom instrument strip, plus a denser right command rail, mission control, tracking status, layer workspace, map chrome, coordinate converter, settings/diagnostics workspaces, and expanded drawing toolbar following the generated command-console direction.
 - The follow-on workspace polish tranche is complete: Settings, Diagnostics, Coordinate Converter, Layer Workspace, shared workspace chrome, and shared dialog chrome now use the SAR matte/tactile token system. The sidebar mission-control block now scrolls internally on constrained viewports so layer/tools content stays reachable.
 - Offline map resilience has advanced from readiness-only to current-view preflight: operators now get explicit viewed-tile cache readiness and can check whether the current visible map tiles are actually cached. Full packaged offline map bundles and saved coverage manifests remain parity gaps.
 - The layer tree/catalog and the live map overlays now share an authoritative visibility path again.
@@ -31,6 +32,26 @@
 - Playwright concurrency is intentionally reduced to `2` workers for deterministic local validation. This is slower, but it makes the harness reliable under full-suite load.
 
 ## Last Work Done
+
+**Mockup-led SAR command-console UI redesign**
+
+- Captured current Playwright screenshots for idle, active tracking, layers, tools, coordinate converter, settings, diagnostics, offline coverage, constrained shell, and drawing toolbar states.
+- Generated multiple AI visual directions from those screenshots and adopted the practical common direction: map-first, rectangular tactile controls, integrated right command rail, compact telemetry blocks, matte graphite surfaces, amber active affordances, green readiness, red destructive actions.
+- Added/refined shared SAR UI primitives in `src/index.css` for modules, readouts, command docks, tactile action buttons, inline alerts, and tree rows.
+- Reworked the operational shell in `src/App.tsx` with a stronger KMR mast, integrated status block, rectangular action controls, denser mission rail, and less generic tab/notes treatment.
+- Added a full-width command mast with mission, elapsed/active timing, device/fix count, system readiness, and operational actions so the app moves structurally toward the generated mockups instead of only polishing the old right-sidebar layout.
+- Reworked the bottom coordinate display into a taller instrument strip with separate Coordinates, Irish Grid, Map CRS, Work CRS, and Convert cells.
+- Reworked map chrome and high-frequency operator controls:
+  - basemap dock
+  - coordinate instrument strip
+  - map/offline status badges
+  - expanded drawing toolbar as a compact vertical tool dock
+- Reworked key right-rail panels:
+  - Mission Control
+  - Tracking System
+  - Layer Workspace
+- Reworked shared dialog/workspace surfaces used by Settings, Diagnostics, and Coordinate Converter to match the matte command-console treatment while preserving focus trapping and Escape behavior.
+- Playwright iteration screenshots are in `tmp/redesign-2026-05-07/iteration-1/` through `tmp/redesign-2026-05-07/iteration-6-instrument-strip/`.
 
 **Phase 1: accessible modal/workspace platform**
 
@@ -95,7 +116,7 @@
 
 - Quality-to-9.5 goal is active.
 - Current branch is `feat/ui-ux-audit-critical`.
-- Current scores after offline map coverage preflight slice: code/architecture 9.1, UX 9.0, UI 8.7.
+- Current scores after mockup-led UI redesign slice: code/architecture 9.1, UX 9.0, UI roughly 9.2 pending a fresh independent scoring pass.
 - Next recommended phase: replay / training mode parity (`sartracker-web-2jk.2`) or the remaining packaged offline map bundle / saved coverage manifest gap in `sartracker-web-2jk.14`.
 
 ## Open Beads That Matter Now
@@ -114,11 +135,28 @@
 
 ## Next Actions
 
-1. Commit and push the offline coverage preflight tranche.
-2. Start the next parity tranche: replay / training mode (`sartracker-web-2jk.2`) or packaged offline map bundle planning/implementation (`sartracker-web-2jk.14` remainder).
-3. Keep Playwright workers at `2` unless the harness/runtime model changes enough to justify re-raising concurrency.
+1. Commit and push the mockup-led UI redesign tranche.
+2. Do a fresh independent UI/UX scoring pass against the new screenshots before choosing the next polish slice.
+3. Start the next parity tranche: replay / training mode (`sartracker-web-2jk.2`) or packaged offline map bundle planning/implementation (`sartracker-web-2jk.14` remainder).
+4. Keep Playwright workers at `2` unless the harness/runtime model changes enough to justify re-raising concurrency.
 
 ## Verification Snapshot
+
+- Current mockup-led UI redesign tranche:
+  - `npm run lint` ✅
+  - `npm run build` ✅
+  - `npm run test` → 73 files / 348 tests ✅
+  - `npm run test:e2e` → 88/88 passing with `workers: 2` ✅
+  - Targeted settings rerun after visual-token class fix → 3/3 passing ✅
+  - Playwright visual iteration pass ✅
+    - active mission shell: disabled Start no longer consumes active mission layout; Pause/Finish remain primary
+    - layers workspace: right rail uses compact mission/status hierarchy with tactile layer rows and controls
+    - settings/diagnostics: dense matte workspaces remain readable and keyboard-operable
+    - coordinate converter: centered command dialog preserves clear modes and actions
+    - drawing toolbar: expanded state now presents as compact vertical field tool dock
+    - command mast: global mission/system/tracking strip added after user correctly called out that the prior pass still looked too unlike the mockups
+    - coordinate strip: bottom chrome now reads as separated mission instruments instead of a thin app footer
+    - final iteration console/page errors: none
 
 - Current workspace polish tranche:
   - `npm run lint` ✅

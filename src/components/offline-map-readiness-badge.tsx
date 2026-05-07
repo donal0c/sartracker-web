@@ -33,20 +33,20 @@ export function OfflineMapReadinessBadge({
   return (
     <div
       aria-live="polite"
-      className={`pointer-events-auto max-w-full rounded-lg border px-3 py-2 text-xs shadow-xl shadow-black/50 ${TONE_CLASSES[readiness.tone]}`}
+      className={`pointer-events-auto max-w-full border px-3 py-2 text-xs shadow-xl shadow-black/50 ${TONE_CLASSES[readiness.tone]}`}
       data-testid="offline-map-readiness"
     >
       <p className="font-semibold">{readiness.label}</p>
       <p className="mt-0.5 text-[11px] opacity-85">{readiness.detail}</p>
       {coverage !== undefined && onCheckCoverage !== undefined ? (
         <div
-          className={`mt-2 rounded-md border px-2 py-2 ${COVERAGE_TONE_CLASSES[coverage.tone]}`}
+          className={`mt-2 border px-2 py-2 ${COVERAGE_TONE_CLASSES[coverage.tone]}`}
           data-testid="offline-map-coverage"
         >
           <div className="flex items-center justify-between gap-2">
             <p className="font-semibold">{coverage.label}</p>
             <button
-              className="rounded border border-current/30 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] transition hover:bg-white/10 disabled:cursor-wait disabled:opacity-60"
+              className="border border-current/40 px-2 py-1 text-[10px] font-black uppercase tracking-[0.18em] transition hover:bg-white/10 disabled:cursor-wait disabled:opacity-60"
               data-testid="check-offline-map-coverage"
               disabled={checking}
               onClick={onCheckCoverage}
