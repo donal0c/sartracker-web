@@ -20,6 +20,11 @@ import {
   hasNodeChildren,
 } from '../features/layers/layer-catalog-tree'
 import type { LayerCatalogRootNode } from '../features/layers/layer-catalog-types'
+import {
+  buildLayerInspectionRows,
+  getLayerNodeCountLabel,
+  toLayerTreeTestId,
+} from '../features/layers/layer-panel-model'
 import { useLayerTreeUiStore } from '../features/layers/layer-tree-ui-store'
 import { useLayerVisibilityStore } from '../features/layers/layer-visibility-store'
 import type {
@@ -203,10 +208,12 @@ function TreeNodeRow(props: {
 }) {
   const isExpanded = props.expandedNodeIds.includes(props.node.id)
   const children = getNodeChildren(props.node)
-  const childCount = getNodeCountLabel(
+  const childCount = getLayerNodeCountLabel(
     props.node,
-    props.trackingBreadcrumbCount,
-    props.measurementCount,
+    {
+      trackingBreadcrumbCount: props.trackingBreadcrumbCount,
+      measurementCount: props.measurementCount,
+    },
   )
   const rowSelected = props.selectedNodeId === props.node.id
 
@@ -216,13 +223,13 @@ function TreeNodeRow(props: {
         className={`sar-tree-row mb-1 flex items-center gap-2 px-2 py-1.5 text-xs transition-colors ${
           rowSelected ? 'sar-tree-row-active' : 'text-stone-300'
         }`}
-        data-testid={`layer-row-${toTestId(props.node.id)}`}
+        data-testid={`layer-row-${toLayerTreeTestId(props.node.id)}`}
         style={{ paddingLeft: `${props.depth * 16 + 8}px` }}
       >
         {hasNodeChildren(props.node) ? (
           <button
             className="w-5 text-stone-500"
-            data-testid={`layer-expand-${toTestId(props.node.id)}`}
+            data-testid={`layer-expand-${toLayerTreeTestId(props.node.id)}`}
             onClick={() => props.toggleNodeExpanded(props.node.id)}
             type="button"
           >
@@ -236,7 +243,7 @@ function TreeNodeRow(props: {
           <input
             checked={props.node.isVisible}
             className="rounded border-stone-700 bg-stone-950 text-amber-500 focus:ring-amber-500/30"
-            data-testid={`layer-visibility-${toTestId(props.node.id)}`}
+            data-testid={`layer-visibility-${toLayerTreeTestId(props.node.id)}`}
             onChange={(event) =>
               void setSubtreeVisibility(
                 props.root,
@@ -251,7 +258,7 @@ function TreeNodeRow(props: {
 
         <button
           className="min-w-0 flex-1 truncate text-left"
-          data-testid={`layer-select-${toTestId(props.node.id)}`}
+          data-testid={`layer-select-${toLayerTreeTestId(props.node.id)}`}
           onClick={() => props.onSelect(props.node.id)}
           type="button"
         >
@@ -265,7 +272,7 @@ function TreeNodeRow(props: {
                 ? 'bg-amber-500/20 text-amber-200'
                 : 'text-stone-600 hover:bg-stone-800 hover:text-stone-300'
             }`}
-            data-testid={`layer-favorite-${toTestId(props.node.id)}`}
+            data-testid={`layer-favorite-${toLayerTreeTestId(props.node.id)}`}
             onClick={() => void props.controller?.toggleFavorite(props.node.id)}
             type="button"
           >
@@ -318,11 +325,13 @@ function LayerInspector(props: {
   const selectedIndex = siblings.indexOf(selectedNode.id)
   const canMoveUp = selectedIndex > 0
   const canMoveDown = selectedIndex !== -1 && selectedIndex < siblings.length - 1
-  const inspectionRows = buildInspectionRows(
+  const inspectionRows = buildLayerInspectionRows(
     selectedNode,
-    props.trackingDeviceCount,
-    props.trackingBreadcrumbCount,
-    props.measurementCount,
+    {
+      trackingDeviceCount: props.trackingDeviceCount,
+      trackingBreadcrumbCount: props.trackingBreadcrumbCount,
+      measurementCount: props.measurementCount,
+    },
   )
 
   return (
@@ -455,87 +464,6 @@ function LayerInspector(props: {
       </div>
     </div>
   )
-}
-
-function buildInspectionRows(
-  node: LayerCatalogNode,
-  trackingDeviceCount: number,
-  trackingBreadcrumbCount: number,
-  measurementCount: number,
-): readonly { readonly label: string; readonly value: string }[] {
-  if (node.kind === 'group') {
-    return [
-      { label: 'Group Key', value: node.groupKey },
-      { label: 'Child Layers', value: String(node.children.length) },
-      { label: 'Visible', value: node.isVisible ? 'Yes' : 'No' },
-    ]
-  }
-
-  if (node.kind === 'layer') {
-    if (node.id === 'layer:tracking:breadcrumbs') {
-      return [
-        { label: 'Layer Key', value: node.layerKey },
-        { label: 'Breadcrumb Points', value: String(trackingBreadcrumbCount) },
-        { label: 'Visible', value: node.isVisible ? 'Yes' : 'No' },
-      ]
-    }
-    if (node.id === 'layer:tracking:devices') {
-      return [
-        { label: 'Layer Key', value: node.layerKey },
-        { label: 'Tracking Devices', value: String(trackingDeviceCount) },
-        { label: 'Visible', value: node.isVisible ? 'Yes' : 'No' },
-      ]
-    }
-    if (node.id === 'layer:map-tools:measurements') {
-      return [
-        { label: 'Layer Key', value: node.layerKey },
-        { label: 'Active Measurements', value: String(measurementCount) },
-        { label: 'Visible', value: node.isVisible ? 'Yes' : 'No' },
-      ]
-    }
-    return [
-      { label: 'Layer Key', value: node.layerKey },
-      { label: 'Visible Items', value: `${node.summary.visibleCount}/${node.summary.totalCount}` },
-      { label: 'Visible', value: node.isVisible ? 'Yes' : 'No' },
-    ]
-  }
-
-  if (node.kind === 'feature_item') {
-    if (node.entity?.type === 'device') {
-      return [
-        { label: 'Device ID', value: node.entity.device.device_id },
-        { label: 'Status', value: node.entity.device.status },
-        { label: 'Last Seen', value: node.entity.device.last_seen ?? 'No fix' },
-      ]
-    }
-    if (node.entity?.type === 'marker') {
-      return [
-        { label: 'Marker Type', value: node.entity.marker.type },
-        { label: 'Coordinates', value: `${node.entity.marker.lat.toFixed(4)}, ${node.entity.marker.lon.toFixed(4)}` },
-        { label: 'Updated', value: node.entity.marker.updated_at },
-      ]
-    }
-    if (node.entity?.type === 'drawing') {
-      return [
-        { label: 'Drawing Type', value: node.entity.drawing.type },
-        { label: 'Label', value: node.entity.drawing.label ?? 'None' },
-        { label: 'Updated', value: node.entity.drawing.updated_at },
-      ]
-    }
-    if (node.entity?.type === 'gpx_import') {
-      return [
-        { label: 'Source Path', value: node.entity.gpxImport.source_path },
-        { label: 'File Name', value: node.entity.gpxImport.file_name },
-        { label: 'Imported', value: node.entity.gpxImport.imported_at },
-      ]
-    }
-  }
-
-  return [
-    { label: 'Node ID', value: node.id },
-    { label: 'Visible', value: node.isVisible ? 'Yes' : 'No' },
-    { label: 'Favorite', value: node.isFavorite ? 'Yes' : 'No' },
-  ]
 }
 
 async function setSubtreeVisibility(
@@ -706,30 +634,6 @@ async function reorderNodeRelative(
   ]
 
   await controller.reorderNode(node.parentId, siblings)
-}
-
-function getNodeCountLabel(
-  node: LayerCatalogNode,
-  trackingBreadcrumbCount: number,
-  measurementCount: number,
-): string {
-  if (node.kind === 'group') {
-    return String(node.children.length)
-  }
-  if (node.kind === 'layer') {
-    if (node.id === 'layer:tracking:breadcrumbs') {
-      return String(trackingBreadcrumbCount)
-    }
-    if (node.id === 'layer:map-tools:measurements') {
-      return String(measurementCount)
-    }
-    return String(node.summary.totalCount)
-  }
-  return ''
-}
-
-function toTestId(value: string): string {
-  return value.replace(/[^a-zA-Z0-9]+/g, '-')
 }
 
 function EmptyState(props: { readonly message: string; readonly testId?: string }) {

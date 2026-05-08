@@ -61,10 +61,13 @@ npm run dev
 # Run Tauri desktop development shell
 npm run tauri dev
 
-# Run tests
-npm run test        # unit tests (vitest)
-npm run test:e2e    # browser tests (Playwright)
-npm run test:all    # everything
+# Run verification
+npm run lint         # static analysis
+npm run build        # TypeScript, Vite, and bundle budgets
+npm run test         # JS unit tests (Vitest)
+npm run test:e2e     # browser tests (Playwright projects)
+npm run test:backend # Tauri/Rust backend tests (Cargo)
+npm run test:all     # JS unit + Playwright + backend tests
 ```
 
 ### Browser Validation Harness

@@ -428,13 +428,16 @@ All spikes passed. Use them as reference implementations and test fixtures:
 # Unit tests
 npm run test
 
-# E2E tests (standard project only — excludes visual)
+# E2E tests (all configured Playwright projects)
 npm run test:e2e
 
 # Visual verification E2E tests
 npx playwright test --project=visual
 
-# All tests (unit + all E2E including visual)
+# Backend/Tauri tests
+npm run test:backend
+
+# All tests (unit + all Playwright projects + backend)
 npm run test:all
 ```
 

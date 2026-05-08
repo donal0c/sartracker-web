@@ -13,7 +13,7 @@
 
 ## Last Updated
 
-- 2026-05-07 by Codex (Ireland-wide map navigation bounds implemented and validated)
+- 2026-05-08 by Codex (verification gate now includes backend Cargo tests; layer panel model extraction validated)
 
 ## Current State
 
@@ -25,6 +25,8 @@
 - The follow-on workspace polish tranche is complete: Settings, Diagnostics, Coordinate Converter, Layer Workspace, shared workspace chrome, and shared dialog chrome now use the SAR matte/tactile token system. The sidebar mission-control block now scrolls internally on constrained viewports so layer/tools content stays reachable.
 - Offline map resilience has advanced from readiness-only to current-view preflight: operators now get explicit viewed-tile cache readiness and can check whether the current visible map tiles are actually cached. Online map navigation is no longer Kerry-bound and now allows Ireland-wide panning. Full packaged offline map bundles and saved coverage manifests remain parity gaps.
 - The layer tree/catalog and the live map overlays now share an authoritative visibility path again.
+- The normal full verification path now includes backend/Tauri Cargo tests via `npm run test:all`; `npm run test:backend` is the explicit backend-only gate.
+- Layer Workspace inspection/count/test-id derivation has started moving out of React into a tested feature model (`src/features/layers/layer-panel-model.ts`), reducing the largest layer panel component without changing operator behavior.
 - The specific `Map Tools` failure reported in live use is fixed:
   - group visibility now gates drawing, marker, measurement, helicopter, GPX, and tracking overlay channels correctly
   - stale layer-catalog refreshes can no longer overwrite a just-clicked visibility change
@@ -32,6 +34,21 @@
 - Playwright concurrency is intentionally reduced to `2` workers for deterministic local validation. This is slower, but it makes the harness reliable under full-suite load.
 
 ## Last Work Done
+
+**Verification gate + layer panel model seam**
+
+- Added `npm run test:backend` and wired it into `npm run test:all`, so backend persistence/governance tests are part of the ordinary full test path.
+- Added unit coverage that prevents the verification scripts from drifting back to JS-only full tests.
+- Extracted layer inspection rows, row count labels, and stable tree test-id normalization from `src/components/layer-filter-panel.tsx` into `src/features/layers/layer-panel-model.ts`.
+- Added focused model tests for tracking/device, measurement, marker inspection rows, count labels, and test-id normalization.
+- Updated `README.md` and `CLAUDE.md` testing docs to name `lint`, `build`, JS unit, Playwright, and backend Cargo verification explicitly.
+- Chrome validation in harness mode:
+  - loaded `http://127.0.0.1:1420/?missionHarness=1`
+  - started `Chrome validation mission`
+  - opened Layers, confirmed the layer tree populated
+  - selected the People tracking layer and confirmed inspector rows showed `Tracking Devices 0` / `Visible Yes`
+  - browser console errors: none
+- Beads warning: `bd list/show` reported a repo-ID mismatch before reading issues. I did not run migration or daemon repair in this batch.
 
 **Ireland-wide map navigation bounds**
 
@@ -130,7 +147,7 @@
 - Quality-to-9.5 goal is active.
 - Current branch is `feat/ui-ux-audit-critical`.
 - Current scores after mockup-led UI redesign slice: code/architecture 9.1, UX 9.0, UI roughly 9.2 pending a fresh independent scoring pass.
-- Next recommended phase: replay / training mode parity (`sartracker-web-2jk.2`) or the remaining packaged offline map bundle / saved coverage manifest gap in `sartracker-web-2jk.14`.
+- Next recommended phase: either continue obvious model/component extraction around `layer-filter-panel`, `mission-control-panel`, or `settings-workspace`, or start replay / training mode parity (`sartracker-web-2jk.2`) after a short design pass. Packaged offline map bundles / saved coverage manifests remain the other major parity gap in `sartracker-web-2jk.14`.
 
 ## Open Beads That Matter Now
 
@@ -148,12 +165,28 @@
 
 ## Next Actions
 
-1. Commit and push the mockup-led UI redesign tranche.
-2. Do a fresh independent UI/UX scoring pass against the new screenshots before choosing the next polish slice.
-3. Start the next parity tranche: replay / training mode (`sartracker-web-2jk.2`) or packaged offline map bundle planning/implementation (`sartracker-web-2jk.14` remainder).
+1. Decide whether to continue architecture-risk reduction in one of the remaining large UI modules or start replay / training mode (`sartracker-web-2jk.2`).
+2. If starting replay, do a short design pass first around replay/live isolation, provider gating, historical position derivation, and unmistakable replay state.
+3. Resolve the `bd` repo-ID mismatch before relying on bead writes/sync from this checkout.
 4. Keep Playwright workers at `2` unless the harness/runtime model changes enough to justify re-raising concurrency.
 
 ## Verification Snapshot
+
+- Current verification-gate / layer-panel model batch:
+  - Red tests confirmed before implementation:
+    - `npx vitest run tests/unit/verification-scripts.test.ts` failed because `test:backend` was missing
+    - `npx vitest run tests/unit/layer-panel-model.test.ts` failed because `layer-panel-model` did not exist
+  - Targeted green tests:
+    - `npx vitest run tests/unit/verification-scripts.test.ts` → 1/1 ✅
+    - `npx vitest run tests/unit/layer-panel-model.test.ts` → 3/3 ✅
+  - Required verification:
+    - `npm run lint` ✅
+    - `npm run build` ✅
+    - `npm run test` → 75 files / 352 tests ✅
+    - `cargo test --manifest-path src-tauri/Cargo.toml` → 26 backend tests + doctests ✅
+    - `npm run test:e2e` → 89/89 passing with `workers: 2` ✅
+    - `npm run test:all` → JS unit + Playwright + backend Cargo tests ✅
+    - Chrome harness validation ✅
 
 - Current mockup-led UI redesign tranche:
   - `npm run lint` ✅
