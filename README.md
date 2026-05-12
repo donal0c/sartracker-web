@@ -22,20 +22,18 @@ This application is used during real search and rescue operations. Accuracy, rel
 - **Mission management** — start, pause, resume, finish, recover on restart, dual timers
 - **Real-time GPS tracking runtime** via Traccar HTTP polling with breadcrumb/history persistence
 - **Map markers** — IPP/LKP, clues, hazards, casualties with metadata and map-edit flows
-- **Layer filtering** for people, markers, and persisted drawing records
+- **Layer workspace** for people, helicopters, markers, drawings, measurements, and GPX overlays
+- **Drawing and measurement tools** — lines, search areas, range rings, bearings, sectors, text labels, and quick distance/bearing checks
+- **GPX and helicopter operations** — GPX import/watch surfaces and four aviation slot records in the desktop app
 - **Irish Grid coordinates** — WGS84, ITM, and TM65 display in the operator UI
 - **Tile caching after view** via service worker for limited offline resilience
+- **Operator manual** — bundled at `public/manual/index.html` and linked from the app Help button
 
 ## Current Build Status
 
-The current implementation line is:
+The current implementation line has moved past the original M1-M10 scaffold. The app now has a real map shell, mission lifecycle, tracking runtime, marker CRUD, drawing tools, measurement tools, GPX surfaces, helicopter slots, diagnostics, mission review, persistence, and a richer layer workspace.
 
-- `M1-M7` complete
-- `M8` drawing tools: not implemented yet
-- `M9` measurement tool: not implemented yet
-- `M10` full mission-flow E2E: not implemented yet
-
-That means the app already has a real map shell, mission lifecycle, tracking runtime, marker CRUD, persistence, and the right-sidebar layer panel. It does not yet have operator drawing tools, measurement tools, or bundled offline topo maps.
+Known remaining parity gaps include full packaged offline map bundles, replay/training mode parity, richer mission metadata capture, and final QGIS replacement acceptance.
 
 ## Stack
 

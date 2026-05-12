@@ -192,17 +192,17 @@ function CommandMast(props: {
 
   return (
     <header className="sar-global-mast flex-shrink-0" data-testid="command-mast">
-      <div className="grid min-h-[88px] grid-cols-[260px_minmax(300px,1fr)_190px_430px] items-stretch">
-        <div className="flex items-center gap-4 border-r border-[var(--sar-line)] px-5">
-          <div className="flex h-12 w-12 flex-shrink-0 items-center justify-center border border-amber-300/35 bg-amber-300/10 font-mono text-[11px] font-black text-amber-200">
+      <div className="grid min-h-[88px] w-full grid-cols-[260px_minmax(220px,1fr)_124px_124px_72px_72px_120px_128px_128px_128px_96px] items-stretch overflow-hidden">
+        <div className="flex min-w-0 items-center gap-3 border-r border-[var(--sar-line)] px-4">
+          <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center border border-amber-300/35 bg-amber-300/10 font-mono text-[11px] font-black text-amber-200">
             MR
           </div>
           <div className="min-w-0">
-            <p className="text-[10px] font-black uppercase tracking-[0.32em] text-amber-300">
+            <p className="truncate text-[10px] font-black uppercase tracking-[0.16em] text-amber-300">
               Mountain Rescue
             </p>
             <h1
-              className="mt-1 font-mono text-[27px] font-black leading-none tracking-wide text-stone-50"
+              className="mt-1 truncate font-mono text-[22px] font-black leading-none tracking-wide text-stone-50"
               data-testid="app-title"
             >
               SAR Tracker
@@ -210,61 +210,64 @@ function CommandMast(props: {
           </div>
         </div>
 
-        <div className="grid grid-cols-[minmax(0,1fr)_126px_126px] border-r border-[var(--sar-line)]">
-          <div className="min-w-0 px-5 py-4">
-            <div className="flex items-center gap-2">
-              <span className="sar-section-label text-amber-300/90">Mission</span>
-              <span className={phasePillClassName(phase)}>{phase}</span>
-            </div>
-            <p className="mt-2 truncate text-sm font-bold text-stone-100">
-              {currentMission?.name ?? 'No active mission'}
-            </p>
-            <p className="mt-1 font-mono text-[11px] uppercase tracking-[0.12em] text-stone-500">
-              {currentMission === null ? 'Ready to start' : `Started ${formatTime(currentMission.start_time)}`}
-            </p>
+        <div className="min-w-0 border-r border-[var(--sar-line)] px-4 py-4">
+          <div className="flex items-center gap-2">
+            <span className="sar-section-label text-amber-300/90">Mission</span>
+            <span className={phasePillClassName(phase)}>{phase}</span>
           </div>
-          <TopReadout label="Elapsed" value={formatMissionDuration(timerState?.elapsedSeconds ?? 0)} />
-          <TopReadout
-            label="Active"
-            tone="success"
-            value={formatMissionDuration(timerState?.activeSeconds ?? 0)}
-          />
+          <p className="mt-2 truncate text-sm font-bold text-stone-100">
+            {currentMission?.name ?? 'No active mission'}
+          </p>
+          <p className="mt-1 truncate font-mono text-[11px] uppercase tracking-[0.12em] text-stone-500">
+            {currentMission === null ? 'Ready to start' : `Started ${formatTime(currentMission.start_time)}`}
+          </p>
         </div>
 
-        <div className="grid grid-cols-2 border-r border-[var(--sar-line)]">
-          <TopReadout label="Devices" value={String(snapshot.devices.length)} />
-          <TopReadout
-            label={trackingStatus.mode}
-            tone={trackingStatus.mode === 'online' ? 'success' : staleCount > 0 ? 'warning' : 'default'}
-            value={`${snapshot.positions.length}/${staleCount}`}
-          />
-        </div>
+        <TopReadout label="Elapsed" value={formatMissionDuration(timerState?.elapsedSeconds ?? 0)} />
+        <TopReadout
+          label="Active"
+          tone="success"
+          value={formatMissionDuration(timerState?.activeSeconds ?? 0)}
+        />
+        <TopReadout label="Devices" value={String(snapshot.devices.length)} />
+        <TopReadout
+          label={trackingStatus.mode}
+          tone={trackingStatus.mode === 'online' ? 'success' : staleCount > 0 ? 'warning' : 'default'}
+          value={`${snapshot.positions.length}/${staleCount}`}
+        />
 
-        <div className="grid grid-cols-[1fr_auto_auto_auto] items-stretch">
-          <div className="flex flex-col justify-center border-r border-[var(--sar-line)] px-4">
-            <p className="sar-section-label">System Status</p>
-            <p className="mt-1 font-mono text-sm font-black uppercase tracking-[0.14em] text-emerald-300">
-              {props.status}
-            </p>
-          </div>
-          <button
-            className="sar-mast-button"
-            data-testid="open-diagnostics-workspace"
-            onClick={() => props.onOpenDiagnostics()}
-            type="button"
-          >
-            Diagnostics
-          </button>
-          <FocusModeToggle className="sar-mast-button" compact />
-          <button
-            className="sar-mast-button"
-            data-testid="open-settings-workspace"
-            onClick={() => props.onOpenSettings()}
-            type="button"
-          >
-            Settings
-          </button>
+        <div className="flex min-w-0 flex-col justify-center border-l border-r border-[var(--sar-line)] px-4">
+          <p className="sar-section-label">System Status</p>
+          <p className="mt-1 font-mono text-sm font-black uppercase tracking-[0.14em] text-emerald-300">
+            {props.status}
+          </p>
         </div>
+        <button
+          className="sar-mast-button"
+          data-testid="open-diagnostics-workspace"
+          onClick={() => props.onOpenDiagnostics()}
+          type="button"
+        >
+          Diagnostics
+        </button>
+        <FocusModeToggle className="sar-mast-button" compact />
+        <button
+          className="sar-mast-button"
+          data-testid="open-settings-workspace"
+          onClick={() => props.onOpenSettings()}
+          type="button"
+        >
+          Settings
+        </button>
+        <a
+          className="sar-mast-button inline-flex items-center justify-center"
+          data-testid="open-help-manual"
+          href="./manual/index.html"
+          rel="noreferrer"
+          target="_blank"
+        >
+          Help
+        </a>
       </div>
     </header>
   )
@@ -283,7 +286,7 @@ function TopReadout(props: {
         : 'text-stone-100'
 
   return (
-    <div className="flex flex-col justify-center border-l border-[var(--sar-line)] px-4">
+    <div className="flex min-w-0 flex-col justify-center border-r border-[var(--sar-line)] px-4">
       <p className="text-[10px] font-black uppercase tracking-[0.14em] text-stone-500">
         {props.label}
       </p>

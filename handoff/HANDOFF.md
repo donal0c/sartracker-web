@@ -13,7 +13,7 @@
 
 ## Last Updated
 
-- 2026-05-08 by Codex (verification gate now includes backend Cargo tests; layer panel model extraction validated)
+- 2026-05-12 by Codex (operator manual added and linked from app Help)
 
 ## Current State
 
@@ -27,6 +27,7 @@
 - The layer tree/catalog and the live map overlays now share an authoritative visibility path again.
 - The normal full verification path now includes backend/Tauri Cargo tests via `npm run test:all`; `npm run test:backend` is the explicit backend-only gate.
 - Layer Workspace inspection/count/test-id derivation has started moving out of React into a tested feature model (`src/features/layers/layer-panel-model.ts`), reducing the largest layer panel component without changing operator behavior.
+- A living operator manual now ships from `public/manual/index.html` and is linked from the command mast Help button. It includes current screenshots for the app shell, layer workspace, tools/map, settings, and diagnostics.
 - The specific `Map Tools` failure reported in live use is fixed:
   - group visibility now gates drawing, marker, measurement, helicopter, GPX, and tracking overlay channels correctly
   - stale layer-catalog refreshes can no longer overwrite a just-clicked visibility change
@@ -34,6 +35,15 @@
 - Playwright concurrency is intentionally reduced to `2` workers for deterministic local validation. This is slower, but it makes the harness reliable under full-suite load.
 
 ## Last Work Done
+
+**Operator manual + Help link**
+
+- Added a self-contained static operator manual at `public/manual/index.html`.
+- Captured Chrome browser-harness screenshots into `public/manual/assets/`.
+- Added a command mast `Help` link that opens `./manual/index.html` in a new tab/window.
+- Tightened the command mast layout after manual testing showed Help clipping off-screen on narrower desktop widths.
+- Updated `README.md` so it no longer says drawing and measurement tools are missing.
+- Beads warning persists: `bd list` still reports the repo-ID mismatch, so no bead write was attempted.
 
 **Verification gate + layer panel model seam**
 
@@ -171,6 +181,21 @@
 4. Keep Playwright workers at `2` unless the harness/runtime model changes enough to justify re-raising concurrency.
 
 ## Verification Snapshot
+
+- Current operator manual batch:
+  - Chrome harness validation ✅
+    - verified `Help` link exists with `href="./manual/index.html"`
+    - loaded `http://127.0.0.1:1420/manual/index.html`
+    - confirmed page title `SAR Tracker Operator Manual`
+    - confirmed screenshot asset reference renders in the manual DOM
+  - `git diff --check` ✅
+  - `npm run lint` ✅
+  - `npm run build` ✅
+  - confirmed `dist/manual/index.html` and copied manual screenshots exist ✅
+  - Follow-up mast spacing fix:
+    - `git diff --check` ✅
+    - `npm run lint` ✅
+    - `npm run build` ✅
 
 - Current verification-gate / layer-panel model batch:
   - Red tests confirmed before implementation:
