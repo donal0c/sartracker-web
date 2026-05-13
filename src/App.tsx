@@ -23,6 +23,7 @@ import { SettingsWorkspace } from './components/settings-workspace'
 import { useDiagnosticsWorkspaceStore } from './features/diagnostics/diagnostics-workspace-store'
 import { GpxRuntimeBridge } from './features/gpx/gpx-runtime-bridge'
 import { HelicopterRuntimeBridge } from './features/helicopters/helicopter-runtime-bridge'
+import { APP_VERSION } from './lib/app-version'
 
 const MapView = lazy(async () => {
   const module = await import('./components/map-view')
@@ -75,6 +76,9 @@ function App() {
           >
             SAR Tracker
           </h1>
+          <p className="mt-2 min-w-0 truncate font-mono text-[10px] uppercase tracking-[0.12em] text-stone-400">
+            {APP_VERSION}
+          </p>
           <div className="mt-3 flex items-center gap-2">
             <div className="h-1.5 w-1.5 rounded-full bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.5)]" />
             <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-400/80">

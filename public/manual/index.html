@@ -1,0 +1,693 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>SAR Tracker Operator Manual</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #12100d;
+        --panel: #1b1813;
+        --panel-strong: #242018;
+        --line: rgba(214, 204, 190, 0.18);
+        --text: #f5f0e8;
+        --muted: #b8ad9e;
+        --dim: #7f7669;
+        --amber: #f4b74a;
+        --green: #5ee0a5;
+        --red: #fb7185;
+        --blue: #7dd3fc;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        background:
+          linear-gradient(180deg, rgba(244, 183, 74, 0.08), transparent 34rem),
+          radial-gradient(circle at top right, rgba(125, 211, 252, 0.08), transparent 32rem),
+          var(--bg);
+        color: var(--text);
+        font-family:
+          Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        line-height: 1.55;
+      }
+
+      a {
+        color: var(--amber);
+      }
+
+      .page {
+        display: grid;
+        grid-template-columns: minmax(15rem, 18rem) minmax(0, 1fr);
+        gap: 2rem;
+        margin: 0 auto;
+        max-width: 120rem;
+        padding: 2rem;
+      }
+
+      .sidebar {
+        align-self: start;
+        position: sticky;
+        top: 1.5rem;
+        border: 1px solid var(--line);
+        background: rgba(27, 24, 19, 0.82);
+        padding: 1rem;
+      }
+
+      .brand {
+        border-bottom: 1px solid var(--line);
+        margin-bottom: 1rem;
+        padding-bottom: 1rem;
+      }
+
+      .brand-mark {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 2.75rem;
+        height: 2.75rem;
+        border: 1px solid rgba(244, 183, 74, 0.42);
+        background: rgba(244, 183, 74, 0.1);
+        color: #fde9b5;
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 0.8rem;
+        font-weight: 900;
+      }
+
+      nav a {
+        display: block;
+        border-left: 2px solid transparent;
+        color: var(--muted);
+        padding: 0.35rem 0.6rem;
+        text-decoration: none;
+      }
+
+      nav a:hover {
+        border-color: var(--amber);
+        color: var(--text);
+        background: rgba(244, 183, 74, 0.08);
+      }
+
+      main {
+        min-width: 0;
+      }
+
+      .hero {
+        min-height: 32rem;
+        display: grid;
+        align-items: end;
+        border: 1px solid var(--line);
+        background:
+          linear-gradient(180deg, rgba(18, 16, 13, 0.08), rgba(18, 16, 13, 0.92)),
+          url("assets/app-shell.png") center / cover no-repeat;
+        padding: 2rem;
+      }
+
+      .eyebrow {
+        color: var(--amber);
+        font-size: 0.74rem;
+        font-weight: 900;
+        letter-spacing: 0.24em;
+        text-transform: uppercase;
+      }
+
+      h1,
+      h2,
+      h3 {
+        line-height: 1.12;
+      }
+
+      h1 {
+        max-width: 48rem;
+        margin: 0.7rem 0;
+        font-size: clamp(2.4rem, 5vw, 5.5rem);
+        letter-spacing: 0;
+      }
+
+      h2 {
+        margin: 3rem 0 1rem;
+        font-size: clamp(1.6rem, 2.4vw, 2.4rem);
+      }
+
+      h3 {
+        margin: 1.5rem 0 0.5rem;
+        color: #fff7e6;
+      }
+
+      p {
+        max-width: 75ch;
+      }
+
+      .lead {
+        max-width: 56rem;
+        color: #e8ded0;
+        font-size: 1.18rem;
+      }
+
+      .meta-grid,
+      .card-grid,
+      .step-grid {
+        display: grid;
+        gap: 1rem;
+      }
+
+      .meta-grid {
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        margin-top: 1.5rem;
+      }
+
+      .card-grid {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+      }
+
+      .step-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      .card,
+      .note,
+      .warning,
+      .callout {
+        border: 1px solid var(--line);
+        background:
+          linear-gradient(180deg, rgba(255, 255, 255, 0.035), transparent),
+          rgba(27, 24, 19, 0.92);
+        padding: 1rem;
+      }
+
+      .card strong,
+      .note strong,
+      .warning strong,
+      .callout strong {
+        color: #fff7e6;
+      }
+
+      .warning {
+        border-color: rgba(251, 113, 133, 0.34);
+        background: rgba(60, 18, 24, 0.78);
+      }
+
+      .callout {
+        border-color: rgba(94, 224, 165, 0.3);
+        background: rgba(15, 45, 33, 0.68);
+      }
+
+      .note {
+        border-color: rgba(244, 183, 74, 0.28);
+        background: rgba(52, 38, 16, 0.58);
+      }
+
+      .kpi {
+        color: var(--dim);
+        font-size: 0.72rem;
+        font-weight: 900;
+        letter-spacing: 0.16em;
+        text-transform: uppercase;
+      }
+
+      .kpi-value {
+        display: block;
+        margin-top: 0.25rem;
+        color: var(--text);
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 1.05rem;
+        font-weight: 900;
+      }
+
+      .screenshot {
+        margin: 1.25rem 0;
+        border: 1px solid var(--line);
+        background: #0c0b09;
+      }
+
+      .screenshot img {
+        display: block;
+        width: 100%;
+      }
+
+      .screenshot figcaption {
+        border-top: 1px solid var(--line);
+        color: var(--muted);
+        font-size: 0.9rem;
+        padding: 0.75rem 1rem;
+      }
+
+      .toc-label {
+        margin: 0 0 0.5rem;
+        color: var(--dim);
+        font-size: 0.72rem;
+        font-weight: 900;
+        letter-spacing: 0.18em;
+        text-transform: uppercase;
+      }
+
+      .tag {
+        display: inline-flex;
+        border: 1px solid rgba(244, 183, 74, 0.38);
+        color: #fde9b5;
+        font-size: 0.76rem;
+        font-weight: 800;
+        letter-spacing: 0.08em;
+        margin: 0.15rem 0.2rem 0.15rem 0;
+        padding: 0.18rem 0.45rem;
+        text-transform: uppercase;
+      }
+
+      code {
+        border: 1px solid rgba(214, 204, 190, 0.18);
+        background: rgba(0, 0, 0, 0.28);
+        color: #ffe7a3;
+        padding: 0.08rem 0.3rem;
+      }
+
+      ul,
+      ol {
+        max-width: 78ch;
+        padding-left: 1.25rem;
+      }
+
+      li + li {
+        margin-top: 0.35rem;
+      }
+
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        margin: 1rem 0 1.5rem;
+        background: rgba(27, 24, 19, 0.72);
+      }
+
+      th,
+      td {
+        border: 1px solid var(--line);
+        padding: 0.7rem;
+        text-align: left;
+        vertical-align: top;
+      }
+
+      th {
+        color: #fff7e6;
+        font-size: 0.76rem;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+      }
+
+      footer {
+        border-top: 1px solid var(--line);
+        color: var(--dim);
+        margin-top: 4rem;
+        padding: 2rem 0 0;
+      }
+
+      @media (max-width: 980px) {
+        .page {
+          display: block;
+          padding: 1rem;
+        }
+
+        .sidebar {
+          position: static;
+          margin-bottom: 1rem;
+        }
+
+        .meta-grid,
+        .card-grid,
+        .step-grid {
+          grid-template-columns: 1fr;
+        }
+
+        .hero {
+          min-height: 28rem;
+          padding: 1.25rem;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="page">
+      <aside class="sidebar">
+        <div class="brand">
+          <span class="brand-mark">MR</span>
+          <p class="toc-label" style="margin-top: 0.9rem">SAR Tracker Manual</p>
+          <p style="margin: 0; color: var(--muted); font-size: 0.92rem">
+            Living operator guide for the standalone Mountain Rescue console.
+          </p>
+        </div>
+        <nav aria-label="Manual sections">
+          <p class="toc-label">Contents</p>
+          <a href="#start">Start Here</a>
+          <a href="#screen">Main Screen</a>
+          <a href="#mission">Mission Control</a>
+          <a href="#map">Map And Coordinates</a>
+          <a href="#tracking">Tracking And Devices</a>
+          <a href="#layers">Layers</a>
+          <a href="#markers">Markers</a>
+          <a href="#tools">Drawing And Measurement</a>
+          <a href="#gpx">GPX And Helicopters</a>
+          <a href="#review">Review And Diagnostics</a>
+          <a href="#settings">Settings</a>
+          <a href="#known-gaps">Known Gaps</a>
+          <a href="#maintaining">Maintaining This Manual</a>
+        </nav>
+      </aside>
+
+      <main>
+        <section class="hero">
+          <div>
+            <p class="eyebrow">Mountain Rescue field operations</p>
+            <h1>SAR Tracker Operator Manual</h1>
+            <p class="lead">
+              SAR Tracker is the standalone replacement for the older QGIS SAR workflow. It is built
+              around a live map, mission lifecycle controls, Traccar tracking, operational layers,
+              markers, drawings, measurements, GPX overlays, aviation slots, diagnostics, and mission
+              review.
+            </p>
+            <div class="meta-grid">
+              <div class="card"><span class="kpi">Verified</span><span class="kpi-value">12 May 2026</span></div>
+              <div class="card"><span class="kpi">Branch</span><span class="kpi-value">feat/ui-ux-audit-critical</span></div>
+              <div class="card"><span class="kpi">Runtime Checked</span><span class="kpi-value">Browser harness</span></div>
+              <div class="card"><span class="kpi">Desktop Shell</span><span class="kpi-value">Tauri 2</span></div>
+            </div>
+          </div>
+        </section>
+
+        <section id="start">
+          <h2>Start Here</h2>
+          <div class="warning">
+            <strong>Operational caution:</strong> this app is intended for search and rescue work. Do
+            not treat a screen as trustworthy just because it looks calm. Check mission phase, tracking
+            source, device freshness, layer visibility, and offline map readiness before relying on the
+            display during an incident.
+          </div>
+
+          <div class="step-grid">
+            <div class="card">
+              <h3>For an operator</h3>
+              <ol>
+                <li>Open the app and confirm the top mast says <strong>ready</strong>.</li>
+                <li>Enter a clear mission name in <strong>Mission Control</strong>.</li>
+                <li>Use <strong>Start Offset</strong> only when the real search began before the app was opened.</li>
+                <li>Press <strong>Start</strong>, then confirm the mission phase changes to <strong>active</strong>.</li>
+                <li>Check <strong>Tracking System</strong>, <strong>Layers</strong>, and <strong>Offline Map</strong> before field use.</li>
+              </ol>
+            </div>
+            <div class="card">
+              <h3>For a maintainer</h3>
+              <ol>
+                <li>Keep this manual factual and tied to app behavior.</li>
+                <li>When a feature changes, update the matching section in this file.</li>
+                <li>Replace screenshots when the UI changes materially.</li>
+                <li>Do not document planned behavior as working behavior.</li>
+              </ol>
+            </div>
+          </div>
+        </section>
+
+        <section id="screen">
+          <h2>Main Screen</h2>
+          <p>
+            The main screen is map-first. The top command mast gives mission, timing, tracking, system,
+            diagnostics, focus mode, settings, and help. It also shows the running application version so
+            teams can confirm they are testing the same build. The right rail is split into
+            <strong>Tracking</strong>, <strong>Tools</strong>, and <strong>Layers</strong>. The map itself
+            carries basemap controls, drawing tools, map health, offline tile status, and the coordinate
+            instrument strip.
+          </p>
+          <figure class="screenshot">
+            <img src="assets/app-shell.png" alt="SAR Tracker app shell with active mission and map" />
+            <figcaption>Main operational shell during an active browser-harness mission.</figcaption>
+          </figure>
+          <div class="card-grid">
+            <div class="card"><strong>Command mast</strong><br />Mission name, phase, timers, device counts, system state, current app version, Diagnostics, Focus Mode, Settings, and Help.</div>
+            <div class="card"><strong>Map workspace</strong><br />Basemaps, drawing tools, live map canvas, health badge, offline-readiness badge, and coordinate strip.</div>
+            <div class="card"><strong>Right rail</strong><br />Pinned Mission Control plus tabs for tracking, tools, and layer inspection.</div>
+          </div>
+        </section>
+
+        <section id="mission">
+          <h2>Mission Control</h2>
+          <p>
+            Mission Control owns the mission lifecycle. A mission starts in <strong>idle</strong>, moves
+            to <strong>active</strong>, can be <strong>paused</strong> and resumed, and can be
+            <strong>finished</strong>. Finished missions can be reviewed and, in the governance flow,
+            archived and locked.
+          </p>
+          <table>
+            <thead>
+              <tr><th>Control</th><th>What It Does</th><th>Operator Check</th></tr>
+            </thead>
+            <tbody>
+              <tr><td>Mission Name</td><td>Names the active incident record.</td><td>Use a name that field coordinators will recognize later.</td></tr>
+              <tr><td>Start Offset</td><td>Backdates the mission start by up to 5 hours.</td><td>Use only when the search already began before logging in the app.</td></tr>
+              <tr><td>Pause / Resume</td><td>Stops or restarts active-search timing without ending the mission.</td><td>Elapsed time keeps running; active-search time pauses.</td></tr>
+              <tr><td>Finish</td><td>Opens a confirmation before ending the mission.</td><td>Confirm only when operations are genuinely complete.</td></tr>
+              <tr><td>Review</td><td>Opens mission details, marker log, layer console, and audit records.</td><td>Use after or during operations to inspect saved mission state.</td></tr>
+            </tbody>
+          </table>
+          <div class="note">
+            <strong>Recovery behavior:</strong> if the app finds an interrupted mission after reload or
+            restart, it offers <strong>Resume</strong> or <strong>Start Fresh</strong>. Resume keeps the
+            mission continuity; Start Fresh abandons that recovery path and begins cleanly.
+          </div>
+        </section>
+
+        <section id="map">
+          <h2>Map And Coordinates</h2>
+          <p>
+            The map renders in WGS84 for display, while ITM is the working coordinate reference system
+            for operational records. TM65 Irish Grid is available for operator display and input. The
+            coordinate strip updates as the cursor moves and exposes the coordinate converter through
+            the <strong>Convert</strong> button.
+          </p>
+          <div class="card-grid">
+            <div class="card"><strong>Basemaps</strong><br />OpenTopoMap, ESRI World Topo, OpenStreetMap, and ESRI Satellite.</div>
+            <div class="card"><strong>Coordinate converter</strong><br />Accepts WGS84, ITM, or TM65 and can copy results or jump the map to the converted point.</div>
+            <div class="card"><strong>Offline badge</strong><br />Shows whether viewed tiles are available and lets operators check the current view before relying on offline tiles.</div>
+          </div>
+          <p>
+            Offline map behavior is currently <strong>viewed tile caching</strong>, not a complete
+            packaged offline map bundle. Use <strong>Check View</strong> for the current map view before
+            assuming an area is cached.
+          </p>
+        </section>
+
+        <section id="tracking">
+          <h2>Tracking And Devices</h2>
+          <p>
+            The tracking runtime is designed around Traccar HTTP polling. It separates live positions
+            from cached positions, keeps last-good data when the provider is unreachable, and marks stale
+            devices rather than silently clearing them from the map.
+          </p>
+          <figure class="screenshot">
+            <img src="assets/tracking-map.png" alt="Map showing current team dots and breadcrumb trails from a live tracking simulation" />
+            <figcaption>Tracking overlay with current device dots and breadcrumb trails from a multi-team simulation.</figcaption>
+          </figure>
+          <div class="card-grid">
+            <div class="card"><strong>Devices</strong><br />Number of tracked devices known to the current snapshot.</div>
+            <div class="card"><strong>Fixes</strong><br />Current position fixes rendered for devices.</div>
+            <div class="card"><strong>Cache and stale</strong><br />Counts positions served from cache or considered stale.</div>
+          </div>
+          <p>
+            Each tracked device renders as a colored current-location dot with a matching label. Breadcrumb
+            trails use the same device color with a dark casing so previous movement remains visible across
+            satellite, topo, and street basemaps. Hiding a device, the <strong>People</strong> layer, or
+            <strong>Breadcrumbs</strong> from Layers removes the matching overlay from the map.
+          </p>
+          <h3>Devices Workspace</h3>
+          <p>
+            Press <strong>Open Devices</strong> from the Tracking tab to inspect the roster. The workspace
+            shows device health, last seen time, source, visibility, and a <strong>Zoom</strong> action for
+            devices with a valid fix. <strong>Reconnect</strong> reloads settings and forces the tracking
+            provider to reconnect.
+          </p>
+          <h3>Adding Tracker Information</h3>
+          <ol>
+            <li>Open <strong>Settings</strong>.</li>
+            <li>In <strong>Data Sources</strong>, choose <strong>Traccar HTTP</strong>.</li>
+            <li>Enter the provider base URL.</li>
+            <li>Choose <strong>Basic</strong> or <strong>Bearer</strong> authentication.</li>
+            <li>Enter the email/password or bearer token.</li>
+            <li>Use <strong>Test Connection</strong> before saving for live use.</li>
+            <li>Use <strong>Save & Connect</strong> to reload tracking immediately.</li>
+          </ol>
+          <div class="note">
+            Secrets are intentionally kept out of mission SQLite and browser storage. If a stored secret
+            already exists, Settings can show that one is present and can clear it on save.
+          </div>
+        </section>
+
+        <section id="layers">
+          <h2>Layers</h2>
+          <p>
+            The Layers tab is the operational visibility and inspection console. It controls map overlays
+            for tracking, helicopters, map tools, markers, drawings, measurements, and GPX tracks. Changes
+            are applied to the map filters, not just to the visible list.
+          </p>
+          <figure class="screenshot">
+            <img src="assets/layer-workspace.png" alt="Layer workspace showing tracking and map tool groups" />
+            <figcaption>Layer Workspace with grouped overlay tree and inspection area.</figcaption>
+          </figure>
+          <table>
+            <thead>
+              <tr><th>Layer Action</th><th>Meaning</th></tr>
+            </thead>
+            <tbody>
+              <tr><td>Checkbox</td><td>Show or hide a group, layer, or feature on the map.</td></tr>
+              <tr><td>Expand / collapse</td><td>Open or close grouped layer sections.</td></tr>
+              <tr><td>Search</td><td>Filter the tree to matching layers and features.</td></tr>
+              <tr><td>Show Hidden</td><td>Include hidden nodes so they can be inspected or restored.</td></tr>
+              <tr><td>Favorite</td><td>Mark an important layer or feature for future operator emphasis.</td></tr>
+              <tr><td>Alias</td><td>Rename a layer or feature without changing its underlying record.</td></tr>
+              <tr><td>Move Up / Move Down</td><td>Reorder siblings in the tree where the current node supports it.</td></tr>
+            </tbody>
+          </table>
+        </section>
+
+        <section id="markers">
+          <h2>Markers</h2>
+          <p>
+            Markers are map records for incident planning and field evidence. Click the map during an
+            active mission to create a marker, then complete the marker form. Existing markers can be
+            selected from the map or inspected through the mission review and layer surfaces.
+          </p>
+          <div class="card-grid">
+            <div class="card"><strong>IPP / LKP</strong><br />Initial or last known position with subject category.</div>
+            <div class="card"><strong>Clue</strong><br />Clue type, confidence, found-by, and notes.</div>
+            <div class="card"><strong>Hazard</strong><br />Hazard type and severity.</div>
+            <div class="card"><strong>Casualty</strong><br />Condition, treatment, evacuation priority, and found-by.</div>
+            <div class="card"><strong>Evidence attachment</strong><br />Attach a photo or file that should travel with the marker in desktop mode.</div>
+            <div class="card"><strong>Coordinates</strong><br />Every marker shows WGS84, ITM, and TM65 readouts in the form.</div>
+          </div>
+        </section>
+
+        <section id="tools">
+          <h2>Drawing And Measurement</h2>
+          <p>
+            Drawing tools are armed from the map toolbar. They require an active mission and are disabled
+            during recovery. Only one drawing or measurement mode should be active at a time; arming one
+            cancels the other.
+          </p>
+          <figure class="screenshot">
+            <img src="assets/tools-and-map.png" alt="Drawing tools expanded next to map and measurement panel" />
+            <figcaption>Drawing toolbar expanded with the Tools tab open.</figcaption>
+          </figure>
+          <table>
+            <thead>
+              <tr><th>Tool</th><th>Typical Use</th></tr>
+            </thead>
+            <tbody>
+              <tr><td>Select</td><td>Edit or delete existing drawings.</td></tr>
+              <tr><td>Line</td><td>Draw route lines and see measured distance.</td></tr>
+              <tr><td>Search Area</td><td>Draw polygons with team, status, POA, terrain, and notes.</td></tr>
+              <tr><td>Range Rings</td><td>Create manual rings or LPB percentile rings from a point.</td></tr>
+              <tr><td>Bearing</td><td>Create a bearing line from an origin, distance, and true or magnetic bearing.</td></tr>
+              <tr><td>Sector</td><td>Create a search sector from center, start bearing, end bearing, and radius.</td></tr>
+              <tr><td>Text Label</td><td>Place map text with size, color, and rotation.</td></tr>
+              <tr><td>Measurement</td><td>Temporary two-point distance and bearing measurement from the Tools tab.</td></tr>
+            </tbody>
+          </table>
+          <div class="callout">
+            Bearing conversion uses the Ireland magnetic declination rule documented for this project:
+            true to magnetic subtracts 4.5 degrees; magnetic to true adds 4.5 degrees.
+          </div>
+        </section>
+
+        <section id="gpx">
+          <h2>GPX And Helicopters</h2>
+          <h3>GPX Tracks</h3>
+          <p>
+            The GPX panel can import files, import a folder, watch a folder, rescan watched folders, and
+            delete imported tracks. These file-system controls are available in the Tauri desktop app and
+            are disabled in browser-only validation mode.
+          </p>
+          <h3>Helicopters</h3>
+          <p>
+            The Helicopters panel reserves four aviation slots: Rescue 118, Rescue 115, Air Corps 1, and
+            Air Corps 2. Each slot can hold call sign, HEX ID, latitude, longitude, altitude, speed,
+            heading, and last update. A slot needs a call sign plus valid latitude and longitude before
+            it can be saved.
+          </p>
+        </section>
+
+        <section id="review">
+          <h2>Review And Diagnostics</h2>
+          <h3>Mission Review</h3>
+          <p>
+            The Review button opens the Audit Workspace. It contains a mission selector, mission details,
+            marker log, layer console, and event log. Use it to inspect saved mission state and to zoom
+            back to markers when a marker has valid coordinates.
+          </p>
+          <h3>Diagnostics</h3>
+          <p>
+            Diagnostics shows runtime mode, app version, mission phase, storage health, tracking snapshot,
+            configuration, warnings, and a support report preview. It can copy or export the report and
+            can reset layer catalog metadata for a selected mission.
+          </p>
+          <figure class="screenshot">
+            <img src="assets/diagnostics-workspace.png" alt="Diagnostics workspace showing summary, storage, tracking, and report" />
+            <figcaption>Diagnostics in browser harness mode with tracking intentionally unconfigured.</figcaption>
+          </figure>
+        </section>
+
+        <section id="settings">
+          <h2>Settings</h2>
+          <p>
+            Settings is where mission defaults, tracking provider configuration, coordinate display mode,
+            and advanced repair placeholders live.
+          </p>
+          <figure class="screenshot">
+            <img src="assets/settings-workspace.png" alt="Settings workspace showing mission defaults and data source configuration" />
+            <figcaption>Settings workspace with mission defaults and Traccar HTTP configuration fields.</figcaption>
+          </figure>
+          <table>
+            <thead>
+              <tr><th>Section</th><th>What To Configure</th></tr>
+            </thead>
+            <tbody>
+              <tr><td>Mission Defaults</td><td>Auto-refresh, auto-save, mission roots, coordinator roster, admin roster, and coordinate display preference.</td></tr>
+              <tr><td>Data Sources</td><td>Provider type, Traccar URL, authentication mode, secret handling, auto-connect, tracking cache, and replay defaults.</td></tr>
+              <tr><td>Advanced Settings</td><td>Reserved repair/support actions. Some actions may remain disabled until the matching milestone is complete.</td></tr>
+            </tbody>
+          </table>
+        </section>
+
+        <section id="known-gaps">
+          <h2>Known Gaps And Limits</h2>
+          <p>
+            This section should stay honest. It is safer for an operator to know what is not complete
+            than to infer reliability from a polished interface.
+          </p>
+          <ul>
+            <li><strong>Offline maps:</strong> viewed tile caching and current-view preflight exist, but full packaged offline map bundles and saved coverage manifests are still open work.</li>
+            <li><strong>Replay mode:</strong> settings expose replay defaults, but full replay/training workflow parity is still active work.</li>
+            <li><strong>Mission metadata:</strong> richer coordinator/metadata capture at mission start remains a parity gap.</li>
+            <li><strong>Layer parity:</strong> the app has a grouped layer tree with visibility, aliases, favorites, and reorder controls, but final parity acceptance is still pending.</li>
+            <li><strong>Browser harness differences:</strong> desktop-only actions such as GPX file picking and marker file attachments are limited or unavailable in browser validation mode.</li>
+          </ul>
+        </section>
+
+        <section id="maintaining">
+          <h2>Maintaining This Manual</h2>
+          <p>
+            Treat this as living documentation. When a feature is added, changed, or found to behave
+            differently from this guide, update the manual in the same work batch. Screenshots live under
+            <code>public/manual/assets/</code>, and the manual itself is <code>public/manual/index.html</code>.
+          </p>
+          <div class="note">
+            The manual should describe current operator-visible behavior, not internal implementation
+            wishes. If a feature is planned but not ready, put it under Known Gaps until it is verified.
+          </div>
+        </section>
+
+        <footer>
+          SAR Tracker Operator Manual. First living-manual draft generated from the current code,
+          documentation, tests, and Chrome browser-harness validation on 12 May 2026.
+        </footer>
+      </main>
+    </div>
+  </body>
+</html>
