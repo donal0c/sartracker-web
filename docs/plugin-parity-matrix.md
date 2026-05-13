@@ -1,5 +1,8 @@
 # QGIS Plugin Replacement Parity Matrix
 
+> **This file is the canonical source of truth for plugin parity status.**
+> When this file disagrees with `docs/web-parity-verification-matrix.md`, `docs/qgis-replacement-roadmap.md`, or `docs/parity-execution-protocol.md`, this file wins.
+
 ## Purpose
 
 This document compares the legacy QGIS SAR Tracker plugin in

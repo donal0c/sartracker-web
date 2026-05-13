@@ -55,29 +55,54 @@ Use this exact operating prompt in spirit when running improvement-mode work:
   - likely to span sessions
   - important enough that it should not depend on this file alone
 
+## Temporary Hardening Board
+
+The deep hardening investigation from 2026-05-13 is the temporary execution board for the current improvement campaign. Use it while the campaign is active, but do not treat it as durable project documentation. When the backlog is worked through, delete the ephemeral board and leave durable outcomes in beads, tests, source docs, and `handoff/HANDOFF.md`.
+
+- Report: `docs/reports/deep-hardening-investigation-2026-05-13.md`
+- Task board: `docs/hardening-backlog/INDEX.md`
+- Subagent evidence: `tmp/hardening-investigation-2026-05-13/w1-*.md`
+
+Top recommended next three:
+
+1. **T01 — Docs / bead repo-ID reconciliation (Phase 0).** Update OVERVIEW, bead-readiness, parity matrices; run `bd migrate --update-repo-id`; trim this file.
+2. **T02 + T03 — Governance atomicity + finished-mission write guard.** Two small Rust changes that close the most direct life-safety correctness gaps (`set_non_operational_status` is non-transactional; `ensure_mission_mutable` allows writes to `finished` missions).
+3. **T05 — Unify Tauri + browser-harness boot via `startCoreFeatureRuntimes`.** Single biggest unlock for everything else and removes Tauri leaks from the harness.
+
 ## Active Candidates
-
-### Decompose browser harness store
-
-- Area: `src/features/browser-validation/browser-harness-store.ts`
-- Why it matters: At ~1000 lines it is becoming a mixed-responsibility test harness plus mission store implementation, which makes safety review and future parity work harder.
-- Evidence: It is currently the largest TypeScript file in the repo and owns mission lifecycle, persistence shaping, browser storage, and test harness plumbing together.
-- Impact: 4
-- Complexity: 4
-- Risk: 3
-- Recommended next step: Split the store into a small harness-facing API plus focused mission/device/marker/drawing persistence modules with direct unit coverage.
-- Bead needed: Probably, if the split crosses multiple sessions.
 
 ### Extract shared runtime bootstrap for app vs browser harness
 
 - Area: `src/features/runtime/start-app-runtime.ts`, `src/features/mission/mission-browser-harness.ts`
 - Why it matters: Both files perform very similar runtime/controller wiring, which invites parity drift when new subsystems or safety rules are added.
-- Evidence: Mission, governance, marker, drawing, helicopter, GPX, and tracking setup logic is duplicated with only the concrete store/adapters changing.
-- Impact: 4
+- Evidence: Mission, governance, marker, drawing, helicopter, GPX, and tracking setup logic is duplicated with only the concrete store/adapters changing. See hardening task **T05**.
+- Impact: 5
 - Complexity: 3
 - Risk: 3
-- Recommended next step: Extract a small runtime bootstrap helper that accepts the store/adapters and returns the controller bundle, then keep browser-harness-specific behavior as a thin wrapper.
-- Bead needed: Not necessarily, but worth one if paired with other browser harness cleanup.
+- Recommended next step: Extract `startCoreFeatureRuntimes(store, adapters)` that both boot paths call; replace the harness's Tauri `ingestMarkerAttachment` with a no-op adapter; make the layer-catalog and mission-review runtime bridges harness-aware.
+- Bead needed: Yes, once `bd` repo-ID is fixed.
+
+### Extract `layer-visibility-service` out of `layer-filter-panel.tsx`
+
+- Area: `src/components/layer-filter-panel.tsx`, `src/features/layers/`
+- Why it matters: The authoritative visibility-patch engine (`applyVisibilityForNodes`, ~90 lines of raw catalog-ID prefix matching) lives inside a UI component. Future reorganization cannot safely move or split the layer panel until this is extracted.
+- Evidence: See hardening task **T07** and subagent W1.b seams #1, #2.
+- Impact: 5
+- Complexity: 3
+- Risk: 3
+- Recommended next step: Move `applyVisibilityForNodes`, `setSubtreeVisibility`, and `reorderNodeRelative` into `src/features/layers/layer-visibility-service.ts`, using `layer-catalog-ids.ts` as the single ID-translation source. Remove the cross-store `hydrateCatalogVisibility` write from inside the Zustand `set` callback in `layer-catalog-store.ts`.
+- Bead needed: Yes.
+
+### Decompose browser harness store
+
+- Area: `src/features/browser-validation/browser-harness-store.ts`
+- Why it matters: At ~1000 lines it is the largest TypeScript file in the repo and mixes harness API plumbing with mission/device/marker/drawing persistence. Harder to safety-review and easy to drift against production persistence.
+- Evidence: Largest file in the repo; also note `getRecoverableMission` has hidden write semantics (pauses the active mission when called).
+- Impact: 4
+- Complexity: 4
+- Risk: 3
+- Recommended next step: After T05 lands, split the store into a small harness-facing API plus focused mission/device/marker/drawing modules with direct unit coverage. Remove the write side-effect from `getRecoverableMission`.
+- Bead needed: Yes.
 
 ## Entry Template
 

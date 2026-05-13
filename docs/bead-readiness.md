@@ -20,37 +20,37 @@ Use this document before implementation to decide how much parallel research, pl
 
 ## Current Assessments
 
-Last updated: 2026-04-08 08:00 by Forge
+Last updated: 2026-05-13 by Claude (T01 docs reconciliation)
 
 ## QGIS Replacement Program
 
-Last updated: 2026-04-11 18:46 by Codex
+Last updated: 2026-05-13 by Claude (T01 docs reconciliation)
 
 ### `sartracker-web-2jk` — M11: QGIS replacement parity program
 
 - Research required: `Low`
 - Implementation readiness: `5/5`
-- Recommended action: **Execute as the Phase 2/3 parity program**
+- Recommended action: **Phase 2 largely complete; remaining work is M13 replay, M25 offline bundles, and M26 acceptance sweep**
 
 ### New Beads Created From The Parity Audit
 
 | Bead | Score | Recommended action | Why |
 |------|-------|--------------------|-----|
-| `sartracker-web-2jk.1` — M12 Settings workspace parity | 5/5 | Implement first | Mini-spec now locks section structure, settings scope split, and secure secret boundary |
-| `sartracker-web-2jk.2` — M13 Replay / training mode parity | 4/5 | Implement after M12 | Clear plugin gap with strong guardrails already evidenced in plugin tests/docs |
-| `sartracker-web-2jk.3` — M14 Mission finalization, archive, and admin unlock | 5/5 | Implement after M12 | Mini-spec now locks lifecycle semantics, read-only enforcement, and unlock audit model |
-| `sartracker-web-2jk.4` — M15 Mission logs and audit review workspace | 4/5 | Implement after M14 | Depends on lifecycle governance and uses richer review/audit surface |
-| `sartracker-web-2jk.5` — M16 Layer catalog domain and grouped layer model | 5/5 | Implement first wave | Mini-spec now locks canonical tree, node taxonomy, and mission-vs-local persistence split |
-| `sartracker-web-2jk.6` — M17 Layer tree and feature inspection UI | 4/5 | Implement after M16 | UI layer on top of the catalog foundation |
-| `sartracker-web-2jk.7` — M18 Text labels and coordinate tool parity | 5/5 | Implement in parallel once bandwidth exists | Coordinate converter behavior is explicit, and text-label schema/CRUD are plugin-backed even though the old SAR-panel button was still disabled |
-| `sartracker-web-2jk.8` — M19 Devices workspace parity | 5/5 | Implement in parallel | Clear plugin analogue and bounded scope |
-| `sartracker-web-2jk.9` — M20 Marker evidence and audit metadata parity | 4/5 | Implement after M15 | Touches review/audit and persistence shape |
-| `sartracker-web-2jk.10` — M21 Diagnostics workspace and repair tooling | 4/5 | Implement after M12 | Mostly bounded, but repair semantics need careful standalone interpretation |
-| `sartracker-web-2jk.11` — M22 GPX import and watch parity | 4/5 | Implement after M16 | Needs integration into grouped layer/catalog model |
-| `sartracker-web-2jk.12` — M23 Helicopter layer parity | Complete | Implemented 2026-04-11 | First-class helicopter slots now persist, render, and validate end to end |
-| `sartracker-web-2jk.13` — M24 Focus mode parity | 5/5 | Implement later | Bounded UI/interaction feature once the rest is stable |
-| `sartracker-web-2jk.14` — M25 Offline map resilience parity | 3/5 | Short design pass, then implement | Capability gap is clear, but final offline packaging strategy needs a small design decision |
-| `sartracker-web-2jk.15` — M26 QGIS replacement parity acceptance sweep | 5/5 | Run last | Final retirement gate for the plugin |
+| `sartracker-web-2jk.1` — M12 Settings workspace parity | Complete | Implemented; see HANDOFF | Settings workspace shipped |
+| `sartracker-web-2jk.2` — M13 Replay / training mode parity | 4/5 | Open — next major bead after hardening | Clear plugin gap with strong guardrails already evidenced in plugin tests/docs |
+| `sartracker-web-2jk.3` — M14 Mission finalization, archive, and admin unlock | Complete | Implemented; see HANDOFF | Finalize/archive/unlock workflows shipped with audit coverage |
+| `sartracker-web-2jk.4` — M15 Mission logs and audit review workspace | Complete | Implemented; see HANDOFF | Mission review workspace shipped |
+| `sartracker-web-2jk.5` — M16 Layer catalog domain and grouped layer model | Complete | Implemented; see HANDOFF | Grouped layer catalog is the authoritative source for the layer tree |
+| `sartracker-web-2jk.6` — M17 Layer tree and feature inspection UI | Complete | Implemented; see HANDOFF | Feature inspection rows live in `src/features/layers/layer-panel-model.ts` |
+| `sartracker-web-2jk.7` — M18 Text labels and coordinate tool parity | Complete | Implemented; see HANDOFF | Coordinate converter and text labels shipped |
+| `sartracker-web-2jk.8` — M19 Devices workspace parity | Complete | Implemented; see HANDOFF | Devices workspace shipped |
+| `sartracker-web-2jk.9` — M20 Marker evidence and audit metadata parity | Complete | Implemented; see HANDOFF | Marker metadata/audit parity shipped |
+| `sartracker-web-2jk.10` — M21 Diagnostics workspace and repair tooling | Complete | Implemented; see HANDOFF | Diagnostics workspace shipped |
+| `sartracker-web-2jk.11` — M22 GPX import and watch parity | Complete | Implemented; see HANDOFF | GPX import/watch surfaces shipped |
+| `sartracker-web-2jk.12` — M23 Helicopter layer parity | Complete | Implemented 2026-04-11 | First-class helicopter slots persist, render, and validate end to end |
+| `sartracker-web-2jk.13` — M24 Focus mode parity | Complete | Implemented; closed by T01 | Focus Mode Plus store, toggle, sidebar, coordinate mirror, E2E + visual coverage; see `src/features/focus-mode/` |
+| `sartracker-web-2jk.14` — M25 Offline map resilience parity | 3/5 | Open — readiness + current-view preflight shipped; packaged offline bundles still outstanding | Capability gap partially closed by 2026-05 readiness work; full packaged bundles still need a design pass |
+| `sartracker-web-2jk.15` — M26 QGIS replacement parity acceptance sweep | 5/5 | Open — run last, after M13 and M25 | Final retirement gate for the plugin |
 
 ## Completed Milestones
 
@@ -59,6 +59,32 @@ Last updated: 2026-04-11 18:46 by Codex
 | M1: Scaffold | 2026-04-07 | Tauri + Vite + React + TS, all tests green |
 | M2: Map | 2026-04-08 | MapLibre, basemaps, coordinate bar, health badge, SW caching |
 | M3: Persistence | 2026-04-08 | 2,341 lines Rust, full schema, audit trail, autosave, archive |
+| M4: Tracking (`sartracker-web-rbg`) | 2026 Phase 1 | Traccar HTTP polling runtime, per-device breadcrumbs, last-good cache, stale detection |
+| M5: Mission UI (`sartracker-web-vxm`) | 2026 Phase 1 | Mission lifecycle, timers, recovery, back-dated start |
+| M6: Markers (`sartracker-web-ahy`) | 2026 Phase 1 | IPP/LKP, clue, hazard, casualty marker CRUD with audit metadata |
+| M7: Layer panel (`sartracker-web-o56`) | 2026 Phase 1 | Right-rail layer/filter panel with visibility store |
+| M8: Drawing tools (`sartracker-web-a9l`) | 2026 Phase 1 | Lines, search areas, range rings (LPB), bearings, sectors |
+| M9: Measurement (`sartracker-web-93p`) | 2026 Phase 1 | Quick distance/bearing measurement tool |
+| M10: Integration E2E (`sartracker-web-2bz`) | 2026 Phase 1 | Playwright coverage across mission/marker/drawing flows |
+| M12: Settings workspace (`sartracker-web-2jk.1`) | 2026 Phase 2 | Settings workspace parity, secret boundary |
+| M14: Finalization/archive/unlock (`sartracker-web-2jk.3`) | 2026 Phase 2 | Finalize, archive, admin unlock with audit |
+| M15: Mission logs/audit review (`sartracker-web-2jk.4`) | 2026 Phase 2 | Mission review workspace |
+| M16: Layer catalog domain (`sartracker-web-2jk.5`) | 2026 Phase 2 | Canonical layer catalog store |
+| M17: Layer tree / inspection (`sartracker-web-2jk.6`) | 2026 Phase 2 | Grouped layer tree + feature inspection rows |
+| M18: Text labels + coordinate tool (`sartracker-web-2jk.7`) | 2026 Phase 2 | Text label schema/CRUD + coordinate converter |
+| M19: Devices workspace (`sartracker-web-2jk.8`) | 2026 Phase 2 | Devices workspace parity |
+| M20: Marker evidence/audit metadata (`sartracker-web-2jk.9`) | 2026 Phase 2 | Marker metadata + audit persistence |
+| M21: Diagnostics + repair (`sartracker-web-2jk.10`) | 2026 Phase 2 | Diagnostics workspace and repair tooling |
+| M22: GPX import/watch (`sartracker-web-2jk.11`) | 2026 Phase 2 | GPX import + watch surfaces integrated into layer catalog |
+| M23: Helicopter layer (`sartracker-web-2jk.12`) | 2026-04-11 | First-class helicopter slots |
+| M24: Focus mode (`sartracker-web-2jk.13`) | 2026 Phase 2 | Focus Mode Plus, persisted reload, tracking/mission awareness, coordinate mirror |
+
+### Currently Open Parity Beads
+
+- `sartracker-web-2jk.2` — M13 replay / training mode parity (blocked — next major bead after hardening)
+- `sartracker-web-2jk.14` — M25 offline map resilience parity (readiness + current-view preflight shipped; full packaged offline bundles remain)
+- `sartracker-web-2jk.15` — M26 QGIS replacement parity acceptance sweep (blocked — run last)
+- `sartracker-web-bsl` — sections 13–16 not yet triple-verified in deep UI validation
 
 ---
 

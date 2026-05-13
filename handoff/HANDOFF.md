@@ -13,11 +13,60 @@
 
 ## Last Updated
 
+- 2026-05-13 by Claude (T02 governance atomicity — finalize + unlock status/audit writes now share one sqlx transaction)
+- 2026-05-13 by Claude (T01 docs reconciliation — OVERVIEW/bead-readiness/parity banners + bead repo-ID fix)
+- 2026-05-13 by Codex (hygiene pass on temporary hardening board)
+- 2026-05-13 by Claude (deep hardening investigation — temporary local board)
 - 2026-05-13 by Codex (reconciled UI branch back onto master; master is canonical)
 - 2026-05-13 by Codex (build stamp + visible version in mast)
 - 2026-05-13 by Codex (tracking visual readability + visibility regression hardening)
 - 2026-05-13 by Codex (HTTP tracking mock-server Chrome validation + per-device map filter fix)
 - 2026-05-12 by Codex (operator manual added and linked from app Help)
+
+## T02 Governance Atomicity — Baton Note (2026-05-13, Claude)
+
+Phase 1 task T02 is complete. Governance status transitions (`finalize_mission`, `unlock_finalized_mission`) now commit the status `UPDATE` and the audit `INSERT` inside a single `sqlx` transaction — a crash or insert failure between the two writes now rolls back the status change instead of leaving a locked/unlocked mission with no audit record.
+
+- Introduced private `MissionStore::set_non_operational_status_with_event` in `src-tauri/src/persistence.rs`. It begins a transaction, issues the `UPDATE missions …`, drives the existing generic `Self::insert_event` against the same transaction, then commits. The old non-transactional `set_non_operational_status` was deleted (both callers migrated).
+- `finalize_mission` and `unlock_finalized_mission` now each make a single call to the helper instead of the previous two-step `set_non_operational_status(...)` → `append_event(...)` pattern. No public API or schema changes; no TypeScript/React changes.
+- Added three Rust tests to `persistence.rs` (`finalize_mission_commits_status_and_event_atomically`, `finalize_mission_rolls_back_status_on_event_insert_failure`, `unlock_finalized_mission_rolls_back_status_on_event_insert_failure`). Rollback is forced with a `BEFORE INSERT` trigger scoped to the specific event_type, then dropped before post-hoc assertions. Temporarily running the rollback tests against a non-atomic helper confirmed they genuinely fail without the transaction, so they are a real regression guard and not vacuous.
+- Verification: `cargo test --manifest-path src-tauri/Cargo.toml` → 29/29; `npm run lint` clean; `npm run build` clean; `npm run test` → 362/362; `npm run test:e2e` → 89/89.
+- Hardening backlog board updated: `docs/hardening-backlog/INDEX.md` T02 row ticked; `docs/hardening-backlog/T02-governance-atomicity.md` header set to `Complete` and checklist filled in with explicit notes.
+- Next recommended task: T03 (block data-bearing mutations on finished missions) — same file, pairs naturally with this change.
+
+## T01 Docs Reconciliation — Baton Note (2026-05-13, Claude)
+
+Phase 0 of the hardening program is complete. No code changes.
+
+- Rewrote `OVERVIEW.md` current-state, execution-state, working-features, not-yet-implemented, project-structure, team, and timeline sections to reflect the post-M22 reality. Removed KMRT/Kerry Mountain Rescue product branding; Kerry geographic references remain only where they describe test fixtures.
+- Updated `README.md` status line to Phase 2 parity program.
+- Rewrote `docs/bead-readiness.md` Current Assessments and Completed Milestones tables. M12–M22 and M24 are now marked complete; M13, M25, M26, and `sartracker-web-bsl` are called out as the live open beads.
+- Added a canonical-source-of-truth banner to `docs/plugin-parity-matrix.md`.
+- Added retrospective/archival banners to `docs/web-parity-verification-matrix.md` (Path B — not filled in), `docs/qgis-replacement-roadmap.md`, and `docs/parity-execution-protocol.md`.
+- Clarified the `src/infrastructure/` entry in the `CLAUDE.md` project tree with the adapters that actually live there.
+- Added one sentence to `public/manual/index.html` explaining the command-mast version chip is git-stamped at build time.
+- `docs/areas-to-investigate.md` was already trimmed in the investigation pass and still points at this backlog plus three active candidates.
+- Ran `bd migrate --update-repo-id`: `bd doctor` now reports `✓ Repo Fingerprint Verified (bd2f3031)`. Writes and sync are safe again.
+- Closed `sartracker-web-2jk.13` (M24 focus mode) with a reason referencing the focus-mode implementation. `bd sync --flush-only` completed cleanly.
+
+Open beads that remain: `sartracker-web-2jk.2` (M13 replay), `sartracker-web-2jk.14` (M25 offline map bundles), `sartracker-web-2jk.15` (M26 acceptance sweep), `sartracker-web-bsl` (sections 13–16 deep UI validation).
+
+## Deep Hardening Investigation — Baton Note (2026-05-13, Claude)
+
+A read-only, whole-app hardening investigation was completed. No production code was changed. Eight parallel subagents audited runtime bootstrap, map/layers/overlay, UI modularity, mission/persistence/governance, tracking/offline, feature boundaries, verification, and docs drift.
+
+- Main report: `docs/reports/deep-hardening-investigation-2026-05-13.md`
+- Task board: `docs/hardening-backlog/INDEX.md`
+- Per-area evidence: `tmp/hardening-investigation-2026-05-13/w1-*.md`
+- `docs/areas-to-investigate.md` now points at the report and lists the top three active candidates.
+- **Temporary actionable backlog:** `docs/hardening-backlog/` — 13 task files (T01–T13) plus `INDEX.md` master checklist. These are ephemeral execution scaffolding: use them for the hardening campaign, then delete the board/report once durable outcomes are captured in beads, tests, source docs, and this handoff. Each task assumes the standard repo orientation first (`CLAUDE.md`, this handoff, and the relevant bead), then provides the scoped execution brief.
+
+Top 3 recommended first tasks:
+1. **T01** — Docs reconciliation (Phase 0): `OVERVIEW.md`, `bead-readiness.md`, parity matrices are stale; run `bd migrate --update-repo-id` to unblock bead writes.
+2. **T02 + T03** — Governance atomicity + finished-mission write guard (two small Rust changes, `src-tauri/src/persistence.rs`).
+3. **T05** — Unify Tauri + browser-harness boot via `startCoreFeatureRuntimes` and remove Tauri leaks from the harness.
+
+Scores at a glance: architecture 8.0/10, UI modularity 6.5/10, safety/resilience 7.0/10, test confidence 7.5/10. The dominant themes are orchestration duplication and UI concentration — both need to be reduced before large UI reorganization is safe.
 
 ## Current State
 

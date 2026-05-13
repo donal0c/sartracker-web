@@ -2346,11 +2346,9 @@ impl MissionStore {
         )
         .await?;
 
-        self.set_non_operational_status(&mission_id, MissionStatus::Finalized)
-            .await?;
-
-        self.append_event(
+        self.set_non_operational_status_with_event(
             &mission_id,
+            MissionStatus::Finalized,
             "mission_finalized",
             serde_json::json!({
                 "resulting_status": "finalized",
@@ -2411,11 +2409,9 @@ impl MissionStore {
             );
         }
 
-        self.set_non_operational_status(&input.mission_id, MissionStatus::Finished)
-            .await?;
-
-        self.append_event(
+        self.set_non_operational_status_with_event(
             &input.mission_id,
+            MissionStatus::Finished,
             "mission_unlocked",
             serde_json::json!({
                 "admin_name": admin_name,
@@ -2484,12 +2480,27 @@ impl MissionStore {
         Ok(())
     }
 
-    async fn set_non_operational_status(
+    /// Atomically transitions a mission into a non-operational status and records
+    /// the corresponding audit event in a single `sqlx` transaction.
+    ///
+    /// Either both the status update and the event insert commit, or neither
+    /// does. A crash (or an insert failure) between the two writes rolls back
+    /// the status change, so the governance trail cannot silently diverge from
+    /// the mission's locked/unlocked reality.
+    async fn set_non_operational_status_with_event(
         &self,
         mission_id: &str,
         next_status: MissionStatus,
+        event_type: &str,
+        event_details: serde_json::Value,
     ) -> Result<(), String> {
         let mission = self.get_mission(mission_id.to_string()).await?;
+
+        let mut tx = self
+            .pool
+            .begin()
+            .await
+            .map_err(|error| format!("Failed to start governance transaction: {error}"))?;
 
         sqlx::query(
             r#"
@@ -2502,9 +2513,22 @@ impl MissionStore {
         .bind(&mission.finish_time)
         .bind(mission.paused_seconds)
         .bind(mission_id)
-        .execute(&self.pool)
+        .execute(&mut *tx)
         .await
         .map_err(|error| format!("Failed to update non-operational mission status: {error}"))?;
+
+        Self::insert_event(
+            &mut *tx,
+            mission_id,
+            event_type,
+            &Utc::now().to_rfc3339(),
+            Some(&event_details),
+        )
+        .await?;
+
+        tx.commit()
+            .await
+            .map_err(|error| format!("Failed to commit governance transition: {error}"))?;
 
         Ok(())
     }
@@ -4289,5 +4313,206 @@ mod tests {
             .expect_err("finalized mission should reject catalog writes");
 
         assert!(error.contains("read-only"));
+    }
+
+    #[tokio::test]
+    async fn finalize_mission_commits_status_and_event_atomically() {
+        let (database_path, backup_path) = temp_paths("finalize-atomic");
+        let store = MissionStore::connect(database_path, backup_path)
+            .await
+            .expect("store should initialize");
+
+        let mission = store
+            .create_mission(CreateMissionInput {
+                name: "Atomic Finalize".to_string(),
+                start_time: None,
+                notes: None,
+            })
+            .await
+            .expect("mission should be created");
+
+        store
+            .finish_mission(mission.id.clone())
+            .await
+            .expect("mission should finish");
+
+        store
+            .finalize_mission(mission.id.clone())
+            .await
+            .expect("mission should finalize");
+
+        let reloaded = store
+            .get_mission(mission.id.clone())
+            .await
+            .expect("mission should reload");
+        assert_eq!(reloaded.status, MissionStatus::Finalized);
+
+        let events = store
+            .list_mission_events(mission.id)
+            .await
+            .expect("events should list");
+        assert!(
+            events
+                .iter()
+                .any(|event| event.event_type == "mission_finalized"),
+            "atomic finalize must emit the mission_finalized audit event"
+        );
+    }
+
+    #[tokio::test]
+    async fn finalize_mission_rolls_back_status_on_event_insert_failure() {
+        let (database_path, backup_path) = temp_paths("finalize-rollback");
+        let store = MissionStore::connect(database_path, backup_path)
+            .await
+            .expect("store should initialize");
+
+        let mission = store
+            .create_mission(CreateMissionInput {
+                name: "Rollback Finalize".to_string(),
+                start_time: None,
+                notes: None,
+            })
+            .await
+            .expect("mission should be created");
+
+        store
+            .finish_mission(mission.id.clone())
+            .await
+            .expect("mission should finish");
+
+        // Forced failure: block only the `mission_finalized` audit event insert.
+        // Earlier events (`mission_finalize_requested`, `mission_archive_succeeded`)
+        // still succeed, so the trigger specifically exercises the atomic helper:
+        // the status UPDATE to `Finalized` would commit unless the same
+        // transaction's event INSERT forces a rollback.
+        sqlx::query(
+            "CREATE TRIGGER block_finalize_event \
+             BEFORE INSERT ON mission_events \
+             WHEN NEW.event_type = 'mission_finalized' \
+             BEGIN SELECT RAISE(FAIL, 'forced finalize event failure'); END;",
+        )
+        .execute(&store.pool)
+        .await
+        .expect("trigger should install");
+
+        let error = store
+            .finalize_mission(mission.id.clone())
+            .await
+            .expect_err("finalize should propagate the forced event failure");
+        assert!(
+            error.contains("forced finalize event failure")
+                || error.contains("Failed to append mission event"),
+            "unexpected finalize error: {error}"
+        );
+
+        sqlx::query("DROP TRIGGER block_finalize_event")
+            .execute(&store.pool)
+            .await
+            .expect("trigger should drop");
+
+        let reloaded = store
+            .get_mission(mission.id.clone())
+            .await
+            .expect("mission should reload");
+        assert_eq!(
+            reloaded.status,
+            MissionStatus::Finished,
+            "status must roll back to Finished when the finalize audit event fails"
+        );
+
+        let events = store
+            .list_mission_events(mission.id)
+            .await
+            .expect("events should list");
+        assert!(
+            !events
+                .iter()
+                .any(|event| event.event_type == "mission_finalized"),
+            "no mission_finalized audit event should exist after rollback"
+        );
+    }
+
+    #[tokio::test]
+    async fn unlock_finalized_mission_rolls_back_status_on_event_insert_failure() {
+        let (database_path, backup_path) = temp_paths("unlock-rollback");
+        let store = MissionStore::connect(database_path, backup_path)
+            .await
+            .expect("store should initialize");
+
+        let mission = store
+            .create_mission(CreateMissionInput {
+                name: "Rollback Unlock".to_string(),
+                start_time: None,
+                notes: None,
+            })
+            .await
+            .expect("mission should be created");
+
+        store
+            .finish_mission(mission.id.clone())
+            .await
+            .expect("mission should finish");
+        store
+            .finalize_mission(mission.id.clone())
+            .await
+            .expect("mission should finalize");
+
+        // Forced failure: block only the `mission_unlocked` audit event insert.
+        // `mission_unlock_requested` still commits, so the trigger specifically
+        // exercises the atomic unlock helper: the status UPDATE back to
+        // `Finished` must roll back because the same transaction's event
+        // INSERT fails.
+        sqlx::query(
+            "CREATE TRIGGER block_unlock_event \
+             BEFORE INSERT ON mission_events \
+             WHEN NEW.event_type = 'mission_unlocked' \
+             BEGIN SELECT RAISE(FAIL, 'forced unlock event failure'); END;",
+        )
+        .execute(&store.pool)
+        .await
+        .expect("trigger should install");
+
+        let error = store
+            .unlock_finalized_mission(
+                UnlockFinalizedMissionInput {
+                    mission_id: mission.id.clone(),
+                    admin_name: "Ops Lead".to_string(),
+                    reason: "Audit correction".to_string(),
+                },
+                &["Ops Lead".to_string()],
+            )
+            .await
+            .expect_err("unlock should propagate the forced event failure");
+        assert!(
+            error.contains("forced unlock event failure")
+                || error.contains("Failed to append mission event"),
+            "unexpected unlock error: {error}"
+        );
+
+        sqlx::query("DROP TRIGGER block_unlock_event")
+            .execute(&store.pool)
+            .await
+            .expect("trigger should drop");
+
+        let reloaded = store
+            .get_mission(mission.id.clone())
+            .await
+            .expect("mission should reload");
+        assert_eq!(
+            reloaded.status,
+            MissionStatus::Finalized,
+            "status must remain Finalized when the unlock audit event fails"
+        );
+
+        let events = store
+            .list_mission_events(mission.id)
+            .await
+            .expect("events should list");
+        assert!(
+            !events
+                .iter()
+                .any(|event| event.event_type == "mission_unlocked"),
+            "no mission_unlocked audit event should exist after rollback"
+        );
     }
 }

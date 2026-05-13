@@ -407,7 +407,7 @@ sartracker-web/
 │   ├── lib/               ← stable shared libraries (coordinates, config, validation)
 │   ├── components/        ← React components
 │   ├── domain/            ← mission rules and safety-critical business logic (emerge as needed)
-│   ├── infrastructure/    ← persistence, Traccar, filesystem, clocks (emerge as needed)
+│   ├── infrastructure/    ← Tauri-facing adapters: mission-store, settings-store, tracking-cache, gpx-import-source, marker-attachment-store, layer-catalog-store, support-report, file-launcher
 │   └── types/             ← TypeScript type definitions
 ├── tests/
 │   ├── unit/              ← vitest unit tests

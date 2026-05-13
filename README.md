@@ -94,4 +94,4 @@ Mountain Rescue teams operating in demanding field conditions.
 
 ---
 
-**Status:** Active Development, with Phase 1 implemented through M7
+**Status:** Active Development — Phase 2 parity program largely complete; M13 (replay), M25 (offline map bundles), and M26 (acceptance sweep) remain as the main open beads.
