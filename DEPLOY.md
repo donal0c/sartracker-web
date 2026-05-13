@@ -38,11 +38,11 @@ The project uses a minimal `vercel.json`:
 ```
 
 **What this means:**
-- `buildCommand: null` — Vercel does NOT build the project. You must build locally (or in CI) first.
-- `installCommand: null` — Vercel does NOT run `npm install`. Dependencies are not needed at deploy time.
-- `outputDirectory: "dist"` — Vercel serves the contents of `dist/` as a static site.
+- `buildCommand: null` — the project is intended to deploy from local prebuilt output.
+- `installCommand: null` — dependencies are not needed at deploy time after the local Vercel build output exists.
+- `outputDirectory: "dist"` — Vercel serves the Vite static build output.
 
-This is the "pre-built" deployment pattern — the cheapest, fastest, and most predictable approach.
+This is the Vercel prebuilt deployment pattern. Use `vercel build` to create `.vercel/output`, then deploy that output with `vercel deploy --prebuilt`.
 
 ## Deploy Commands
 
@@ -50,6 +50,8 @@ This is the "pre-built" deployment pattern — the cheapest, fastest, and most p
 ```bash
 cd ~/workspace/vibes/sartracker-web
 npm run build
+vercel pull --yes --environment production --token=$VERCEL_TOKEN --scope=ocallaghandonal2-1437s-projects
+vercel build --prod --token=$VERCEL_TOKEN --scope=ocallaghandonal2-1437s-projects
 vercel deploy --prebuilt --prod --token=$VERCEL_TOKEN --yes --scope=ocallaghandonal2-1437s-projects
 ```
 
@@ -57,12 +59,14 @@ vercel deploy --prebuilt --prod --token=$VERCEL_TOKEN --yes --scope=ocallaghando
 ```bash
 cd ~/workspace/vibes/sartracker-web
 npm run build
+vercel pull --yes --environment preview --token=$VERCEL_TOKEN --scope=ocallaghandonal2-1437s-projects
+vercel build --token=$VERCEL_TOKEN --scope=ocallaghandonal2-1437s-projects
 vercel deploy --prebuilt --token=$VERCEL_TOKEN --yes --scope=ocallaghandonal2-1437s-projects
 ```
 
 ### One-liner (build + deploy)
 ```bash
-cd ~/workspace/vibes/sartracker-web && npm run build && vercel deploy --prebuilt --prod --token=$VERCEL_TOKEN --yes --scope=ocallaghandonal2-1437s-projects
+cd ~/workspace/vibes/sartracker-web && npm run build && vercel pull --yes --environment production --token=$VERCEL_TOKEN --scope=ocallaghandonal2-1437s-projects && vercel build --prod --token=$VERCEL_TOKEN --scope=ocallaghandonal2-1437s-projects && vercel deploy --prebuilt --prod --token=$VERCEL_TOKEN --yes --scope=ocallaghandonal2-1437s-projects
 ```
 
 ## Environment Variables
@@ -128,7 +132,9 @@ eslint.config.js
 package-lock.json
 ```
 
-**Note:** `*.md` is in `.vercelignore`, so this DEPLOY.md file itself won't be uploaded. Only `dist/`, `vercel.json`, `package.json`, and `public/` go to Vercel.
+**Note:** `*.md` is in `.vercelignore`, so this DEPLOY.md file itself won't be uploaded. The prebuilt deployment uploads `.vercel/output`, not the source tree.
+
+Do not replace the prebuilt flow with a direct `vercel deploy --prod` source upload unless `.vercelignore` is also changed. A direct remote build excludes `scripts/`, which breaks `npm run build` because `scripts/generate-app-version.mjs` is required.
 
 ## SPA Routing
 
