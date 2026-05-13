@@ -179,8 +179,10 @@ function ensureBrowserMissionMutable(missionId: string): void {
       missions?: readonly { readonly id: string; readonly status: string }[]
     }
     const mission = parsed.missions?.find((candidate) => candidate.id === missionId)
-    if (mission?.status === 'finalized') {
-      throw new Error('Finalized missions are read-only until an admin unlocks them.')
+    if (mission?.status === 'finished' || mission?.status === 'finalized') {
+      throw new Error(
+        `Cannot write data to finished mission ${missionId}; resume the mission or unlock it first.`,
+      )
     }
   } catch (error) {
     if (error instanceof Error) {

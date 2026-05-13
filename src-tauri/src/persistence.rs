@@ -959,7 +959,7 @@ impl MissionStore {
     }
 
     pub async fn upsert_device(&self, input: UpsertDeviceInput) -> Result<Device, String> {
-        self.ensure_mission_mutable(&input.mission_id).await?;
+        self.ensure_mission_writable_for_data(&input.mission_id).await?;
         let existing_device = self
             .get_device(input.mission_id.clone(), input.device_id.clone())
             .await
@@ -1061,7 +1061,7 @@ impl MissionStore {
     }
 
     pub async fn add_position(&self, input: AddPositionInput) -> Result<Position, String> {
-        self.ensure_mission_mutable(&input.mission_id).await?;
+        self.ensure_mission_writable_for_data(&input.mission_id).await?;
         self.get_device(input.mission_id.clone(), input.device_id.clone())
             .await?;
 
@@ -1226,7 +1226,7 @@ impl MissionStore {
     }
 
     pub async fn upsert_marker(&self, input: UpsertMarkerInput) -> Result<Marker, String> {
-        self.ensure_mission_mutable(&input.mission_id).await?;
+        self.ensure_mission_writable_for_data(&input.mission_id).await?;
 
         if !input.lat.is_finite() || input.lat < -90.0 || input.lat > 90.0 {
             return Err("Marker latitude must be a finite value between -90 and 90.".to_string());
@@ -1392,7 +1392,7 @@ impl MissionStore {
         input: IngestMarkerAttachmentInput,
         settings: &SettingsStoreState,
     ) -> Result<String, String> {
-        self.ensure_mission_mutable(&input.mission_id).await?;
+        self.ensure_mission_writable_for_data(&input.mission_id).await?;
         self.get_mission(input.mission_id.clone()).await?;
 
         let file_name = sanitize_attachment_file_name(&input.file_name)?;
@@ -1429,7 +1429,7 @@ impl MissionStore {
         let Some(marker) = existing_marker else {
             return Ok(false);
         };
-        self.ensure_mission_mutable(&marker.mission_id).await?;
+        self.ensure_mission_writable_for_data(&marker.mission_id).await?;
 
         let mut tx = self
             .pool
@@ -1559,7 +1559,7 @@ impl MissionStore {
     }
 
     pub async fn upsert_drawing(&self, input: UpsertDrawingInput) -> Result<Drawing, String> {
-        self.ensure_mission_mutable(&input.mission_id).await?;
+        self.ensure_mission_writable_for_data(&input.mission_id).await?;
 
         let drawing_id = input.id.unwrap_or_else(|| Uuid::new_v4().to_string());
         let now = Utc::now().to_rfc3339();
@@ -1680,7 +1680,7 @@ impl MissionStore {
         let Some(drawing) = existing_drawing else {
             return Ok(false);
         };
-        self.ensure_mission_mutable(&drawing.mission_id).await?;
+        self.ensure_mission_writable_for_data(&drawing.mission_id).await?;
 
         let mut tx = self
             .pool
@@ -1716,7 +1716,7 @@ impl MissionStore {
     }
 
     pub async fn upsert_helicopter(&self, input: UpsertHelicopterInput) -> Result<Helicopter, String> {
-        self.ensure_mission_mutable(&input.mission_id).await?;
+        self.ensure_mission_writable_for_data(&input.mission_id).await?;
 
         if !input.lat.is_finite() || input.lat < -90.0 || input.lat > 90.0 {
             return Err(
@@ -1861,7 +1861,7 @@ impl MissionStore {
         let Some(helicopter) = existing else {
             return Ok(false);
         };
-        self.ensure_mission_mutable(&helicopter.mission_id).await?;
+        self.ensure_mission_writable_for_data(&helicopter.mission_id).await?;
 
         let mut tx = self
             .pool
@@ -1900,7 +1900,7 @@ impl MissionStore {
         &self,
         input: UpsertGpxTrackImportInput,
     ) -> Result<GpxTrackImport, String> {
-        self.ensure_mission_mutable(&input.mission_id).await?;
+        self.ensure_mission_writable_for_data(&input.mission_id).await?;
 
         let existing_import = sqlx::query_as::<_, GpxTrackImport>(
             r#"
@@ -2033,7 +2033,7 @@ impl MissionStore {
         let Some(gpx_import) = existing_import else {
             return Ok(false);
         };
-        self.ensure_mission_mutable(&gpx_import.mission_id).await?;
+        self.ensure_mission_writable_for_data(&gpx_import.mission_id).await?;
 
         let mut tx = self
             .pool
@@ -2092,7 +2092,7 @@ impl MissionStore {
         &self,
         input: UpsertLayerCatalogEntryInput,
     ) -> Result<LayerCatalogEntry, String> {
-        self.ensure_mission_mutable(&input.mission_id).await?;
+        self.ensure_mission_writable_for_data(&input.mission_id).await?;
 
         let timestamp = Utc::now().to_rfc3339();
         sqlx::query(
@@ -2143,7 +2143,7 @@ impl MissionStore {
     }
 
     pub async fn clear_layer_catalog_entries(&self, mission_id: String) -> Result<(), String> {
-        self.ensure_mission_mutable(&mission_id).await?;
+        self.ensure_mission_writable_for_data(&mission_id).await?;
         self.get_mission(mission_id.clone()).await?;
 
         let mut tx = self.pool.begin().await.map_err(|error| {
@@ -2549,12 +2549,39 @@ impl MissionStore {
         .await
     }
 
-    async fn ensure_mission_mutable(&self, mission_id: &str) -> Result<Mission, String> {
+    /// Lifecycle-only guard. Permits writes on any mission that is not yet
+    /// `Finalized`. Reserved for future lifecycle seams that need to reach
+    /// through from `Finished`; the current lifecycle helpers
+    /// (`update_mission_status`, `set_non_operational_status_with_event`) each
+    /// assert their own status preconditions, so this guard has no internal
+    /// callers today. Kept in the API so that new lifecycle code has a clearly
+    /// weaker guard to opt into when a data-level guard would be wrong.
+    #[allow(dead_code)]
+    async fn ensure_mission_writable_for_lifecycle(
+        &self,
+        mission_id: &str,
+    ) -> Result<Mission, String> {
         let mission = self.get_mission(mission_id.to_string()).await?;
         if mission.status == MissionStatus::Finalized {
             return Err(
                 "Finalized missions are read-only until an admin unlocks them.".to_string(),
             );
+        }
+
+        Ok(mission)
+    }
+
+    /// Data-bearing guard. Blocks writes on both `Finished` and `Finalized`
+    /// missions so the closed incident record cannot silently mutate. The
+    /// error is surfaced verbatim through Tauri to the operator UI, so it must
+    /// stay actionable.
+    async fn ensure_mission_writable_for_data(&self, mission_id: &str) -> Result<Mission, String> {
+        let mission = self.get_mission(mission_id.to_string()).await?;
+        if mission.status == MissionStatus::Finished || mission.status == MissionStatus::Finalized {
+            return Err(format!(
+                "Cannot write data to finished mission {}; resume the mission or unlock it first.",
+                mission_id
+            ));
         }
 
         Ok(mission)
@@ -4087,7 +4114,7 @@ mod tests {
             })
             .await
             .expect_err("finalized mission should reject marker writes");
-        assert!(marker_error.contains("read-only"));
+        assert_finished_mission_data_error(&marker_error, &mission.id);
 
         let unlock_error = store
             .unlock_finalized_mission(
@@ -4115,12 +4142,15 @@ mod tests {
             .expect("authorized unlock should succeed");
         assert_eq!(unlocked.status, MissionStatus::Finished);
 
-        let marker = store
+        // Unlock hops Finalized → Finished, not Finalized → Active. The data
+        // guard must remain engaged until the mission is explicitly resumed,
+        // so the closed incident record still cannot silently mutate.
+        let post_unlock_error = store
             .upsert_marker(UpsertMarkerInput {
                 id: None,
                 mission_id: mission.id.clone(),
                 r#type: MarkerType::Clue,
-                name: "Allowed Marker".to_string(),
+                name: "Still Blocked Marker".to_string(),
                 description: None,
                 lat: 52.1,
                 lon: -9.5,
@@ -4141,8 +4171,364 @@ mod tests {
                 attachment_path: None,
             })
             .await
-            .expect("marker should save after unlock");
-        assert_eq!(marker.name, "Allowed Marker");
+            .expect_err("finished mission should still reject marker writes after unlock");
+        assert!(post_unlock_error.contains("finished mission"));
+        assert!(post_unlock_error.contains(&mission.id));
+    }
+
+    async fn finished_mission_for(name: &str) -> (MissionStore, Mission) {
+        let (database_path, backup_path) = temp_paths(name);
+        let store = MissionStore::connect(database_path, backup_path)
+            .await
+            .expect("store should initialize");
+
+        let mission = store
+            .create_mission(CreateMissionInput {
+                name: format!("{name} mission"),
+                start_time: None,
+                notes: None,
+            })
+            .await
+            .expect("mission should be created");
+
+        let finished = store
+            .finish_mission(mission.id.clone())
+            .await
+            .expect("mission should finish");
+        assert_eq!(finished.status, MissionStatus::Finished);
+
+        (store, finished)
+    }
+
+    fn assert_finished_mission_data_error(error: &str, mission_id: &str) {
+        assert!(
+            error.contains("finished mission"),
+            "expected data guard error to mention 'finished mission', got: {error}"
+        );
+        assert!(
+            error.contains(mission_id),
+            "expected data guard error to reference mission id {mission_id}, got: {error}"
+        );
+        assert!(
+            error.contains("resume the mission or unlock it first"),
+            "expected data guard error to include actionable guidance, got: {error}"
+        );
+    }
+
+    #[tokio::test]
+    async fn finished_mission_blocks_upsert_marker() {
+        let (store, mission) = finished_mission_for("finished-marker").await;
+
+        let error = store
+            .upsert_marker(UpsertMarkerInput {
+                id: None,
+                mission_id: mission.id.clone(),
+                r#type: MarkerType::Clue,
+                name: "Blocked Marker".to_string(),
+                description: None,
+                lat: 52.1,
+                lon: -9.5,
+                irish_grid_e: 496584,
+                irish_grid_n: 591256,
+                display_order: 1,
+                subject_category: None,
+                clue_type: None,
+                confidence: None,
+                found_by: None,
+                hazard_type: None,
+                severity: None,
+                condition: None,
+                treatment: None,
+                evacuation_priority: None,
+                updated_by: None,
+                coordinator_ids: None,
+                attachment_path: None,
+            })
+            .await
+            .expect_err("finished mission should reject marker writes");
+        assert_finished_mission_data_error(&error, &mission.id);
+
+        assert!(store
+            .list_markers(mission.id)
+            .await
+            .expect("markers should list on finished mission")
+            .is_empty());
+    }
+
+    #[tokio::test]
+    async fn finished_mission_blocks_upsert_drawing() {
+        let (store, mission) = finished_mission_for("finished-drawing").await;
+
+        let error = store
+            .upsert_drawing(UpsertDrawingInput {
+                id: None,
+                mission_id: mission.id.clone(),
+                r#type: DrawingType::Line,
+                name: "Blocked Line".to_string(),
+                description: None,
+                color: None,
+                width: None,
+                distance_m: None,
+                temporary_measure: None,
+                label: None,
+                display_order: 1,
+                geometry_json:
+                    "{\"type\":\"LineString\",\"coordinates\":[[-9.5,52.0],[-9.4,52.1]]}"
+                        .to_string(),
+                metadata_json: None,
+            })
+            .await
+            .expect_err("finished mission should reject drawing writes");
+        assert_finished_mission_data_error(&error, &mission.id);
+    }
+
+    #[tokio::test]
+    async fn finished_mission_blocks_upsert_helicopter() {
+        let (store, mission) = finished_mission_for("finished-helicopter").await;
+
+        let error = store
+            .upsert_helicopter(UpsertHelicopterInput {
+                id: None,
+                mission_id: mission.id.clone(),
+                slot_key: HelicopterSlotKey::Slot1,
+                call_sign: "Rescue 118".to_string(),
+                hex_id: None,
+                lat: 52.1,
+                lon: -9.5,
+                altitude: None,
+                speed: None,
+                heading: None,
+                last_update: None,
+            })
+            .await
+            .expect_err("finished mission should reject helicopter writes");
+        assert_finished_mission_data_error(&error, &mission.id);
+    }
+
+    #[tokio::test]
+    async fn finished_mission_blocks_upsert_gpx_import() {
+        let (store, mission) = finished_mission_for("finished-gpx").await;
+
+        let error = store
+            .upsert_gpx_import(UpsertGpxTrackImportInput {
+                id: None,
+                mission_id: mission.id.clone(),
+                source_path: "/tracks/blocked.gpx".to_string(),
+                file_name: "blocked.gpx".to_string(),
+                display_name: "Blocked Track".to_string(),
+                geometry_json:
+                    "{\"type\":\"MultiLineString\",\"coordinates\":[[[-9.7,52.0],[-9.71,52.01]]]}"
+                        .to_string(),
+                metadata_json: None,
+            })
+            .await
+            .expect_err("finished mission should reject GPX import writes");
+        assert_finished_mission_data_error(&error, &mission.id);
+    }
+
+    #[tokio::test]
+    async fn finished_mission_blocks_add_position() {
+        let (database_path, backup_path) = temp_paths("finished-position");
+        let store = MissionStore::connect(database_path, backup_path)
+            .await
+            .expect("store should initialize");
+
+        let mission = store
+            .create_mission(CreateMissionInput {
+                name: "Position Mission".to_string(),
+                start_time: None,
+                notes: None,
+            })
+            .await
+            .expect("mission should be created");
+
+        // Devices need to be registered while the mission is still writable,
+        // so positions can be exercised once the mission is sealed.
+        store
+            .upsert_device(UpsertDeviceInput {
+                mission_id: mission.id.clone(),
+                device_id: "tracker-finished".to_string(),
+                name: "Rescuer Finished".to_string(),
+                color: "#00AAFF".to_string(),
+                status: DeviceStatus::Unknown,
+                last_seen: None,
+            })
+            .await
+            .expect("device should upsert while mission is active");
+
+        store
+            .finish_mission(mission.id.clone())
+            .await
+            .expect("mission should finish");
+
+        let error = store
+            .add_position(AddPositionInput {
+                mission_id: mission.id.clone(),
+                device_id: "tracker-finished".to_string(),
+                name: None,
+                lat: 52.0,
+                lon: -9.5,
+                altitude: None,
+                speed: None,
+                battery: None,
+                accuracy: None,
+                source: None,
+                timestamp: None,
+                data_origin: None,
+            })
+            .await
+            .expect_err("finished mission should reject position writes");
+        assert_finished_mission_data_error(&error, &mission.id);
+
+        assert!(store
+            .list_positions(mission.id.clone(), None)
+            .await
+            .expect("positions should list on finished mission")
+            .is_empty());
+    }
+
+    #[tokio::test]
+    async fn finished_mission_blocks_clear_layer_catalog_entries() {
+        let (store, mission) = finished_mission_for("finished-layer-catalog").await;
+
+        let error = store
+            .clear_layer_catalog_entries(mission.id.clone())
+            .await
+            .expect_err("finished mission should reject layer catalog clears");
+        assert_finished_mission_data_error(&error, &mission.id);
+    }
+
+    #[tokio::test]
+    async fn finished_mission_permits_finalize_lifecycle_transition() {
+        let (store, mission) = finished_mission_for("finished-finalize-ok").await;
+
+        let result = store
+            .finalize_mission(mission.id.clone())
+            .await
+            .expect("lifecycle finalize should succeed from finished");
+        assert_eq!(result.mission.status, MissionStatus::Finalized);
+    }
+
+    #[tokio::test]
+    async fn finished_mission_permits_read_only_queries() {
+        let (database_path, backup_path) = temp_paths("finished-reads");
+        let store = MissionStore::connect(database_path, backup_path)
+            .await
+            .expect("store should initialize");
+
+        let mission = store
+            .create_mission(CreateMissionInput {
+                name: "Read Mission".to_string(),
+                start_time: None,
+                notes: None,
+            })
+            .await
+            .expect("mission should be created");
+
+        store
+            .upsert_device(UpsertDeviceInput {
+                mission_id: mission.id.clone(),
+                device_id: "tracker-read".to_string(),
+                name: "Rescuer Read".to_string(),
+                color: "#00AAFF".to_string(),
+                status: DeviceStatus::Unknown,
+                last_seen: None,
+            })
+            .await
+            .expect("device should upsert");
+
+        store
+            .add_position(AddPositionInput {
+                mission_id: mission.id.clone(),
+                device_id: "tracker-read".to_string(),
+                name: Some("Rescuer Read".to_string()),
+                lat: 52.0,
+                lon: -9.5,
+                altitude: None,
+                speed: None,
+                battery: None,
+                accuracy: None,
+                source: Some("traccar".to_string()),
+                timestamp: None,
+                data_origin: Some("live".to_string()),
+            })
+            .await
+            .expect("position should insert while active");
+
+        store
+            .upsert_marker(UpsertMarkerInput {
+                id: None,
+                mission_id: mission.id.clone(),
+                r#type: MarkerType::Clue,
+                name: "Readable Marker".to_string(),
+                description: None,
+                lat: 52.1,
+                lon: -9.5,
+                irish_grid_e: 496584,
+                irish_grid_n: 591256,
+                display_order: 1,
+                subject_category: None,
+                clue_type: None,
+                confidence: None,
+                found_by: None,
+                hazard_type: None,
+                severity: None,
+                condition: None,
+                treatment: None,
+                evacuation_priority: None,
+                updated_by: None,
+                coordinator_ids: None,
+                attachment_path: None,
+            })
+            .await
+            .expect("marker should upsert while active");
+
+        store
+            .upsert_drawing(UpsertDrawingInput {
+                id: None,
+                mission_id: mission.id.clone(),
+                r#type: DrawingType::Line,
+                name: "Readable Line".to_string(),
+                description: None,
+                color: None,
+                width: None,
+                distance_m: None,
+                temporary_measure: None,
+                label: None,
+                display_order: 1,
+                geometry_json:
+                    "{\"type\":\"LineString\",\"coordinates\":[[-9.5,52.0],[-9.4,52.1]]}"
+                        .to_string(),
+                metadata_json: None,
+            })
+            .await
+            .expect("drawing should upsert while active");
+
+        store
+            .finish_mission(mission.id.clone())
+            .await
+            .expect("mission should finish");
+
+        let markers = store
+            .list_markers(mission.id.clone())
+            .await
+            .expect("markers should list after finish");
+        assert_eq!(markers.len(), 1);
+        assert_eq!(markers[0].name, "Readable Marker");
+
+        let drawings = store
+            .list_drawings(mission.id.clone())
+            .await
+            .expect("drawings should list after finish");
+        assert_eq!(drawings.len(), 1);
+        assert_eq!(drawings[0].name, "Readable Line");
+
+        let positions = store
+            .list_positions(mission.id.clone(), None)
+            .await
+            .expect("positions should list after finish");
+        assert_eq!(positions.len(), 1);
+        assert_eq!(positions[0].device_id, "tracker-read");
     }
 
     #[tokio::test]
@@ -4299,7 +4685,7 @@ mod tests {
 
         let error = store
             .upsert_layer_catalog_entry(UpsertLayerCatalogEntryInput {
-                mission_id: mission.id,
+                mission_id: mission.id.clone(),
                 node_id: "group:tracking".to_string(),
                 parent_node_id: Some("root:mission-catalog".to_string()),
                 node_kind: LayerCatalogNodeKind::Group,
@@ -4312,7 +4698,7 @@ mod tests {
             .await
             .expect_err("finalized mission should reject catalog writes");
 
-        assert!(error.contains("read-only"));
+        assert_finished_mission_data_error(&error, &mission.id);
     }
 
     #[tokio::test]

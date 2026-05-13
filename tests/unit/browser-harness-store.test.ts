@@ -83,7 +83,7 @@ describe('browser harness store', () => {
         irish_grid_n: 591256,
         display_order: 1,
       }),
-    ).rejects.toThrow('read-only')
+    ).rejects.toThrow(/Cannot write data to finished mission .* resume the mission or unlock it first/)
 
     const unlocked = await store.unlockFinalizedMission({
       mission_id: mission.id,

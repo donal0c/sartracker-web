@@ -891,8 +891,10 @@ function requireMission(missionId: string, missions: readonly Mission[]): Missio
 
 function ensureMissionMutable(missionId: string, missions: readonly Mission[]): Mission {
   const mission = requireMission(missionId, missions)
-  if (mission.status === 'finalized') {
-    throw new Error('Finalized missions are read-only until an admin unlocks them.')
+  if (mission.status === 'finished' || mission.status === 'finalized') {
+    throw new Error(
+      `Cannot write data to finished mission ${missionId}; resume the mission or unlock it first.`,
+    )
   }
 
   return mission

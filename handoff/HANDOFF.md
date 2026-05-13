@@ -13,6 +13,7 @@
 
 ## Last Updated
 
+- 2026-05-13 by Claude (T03 finished-mission write guard — split `ensure_mission_mutable` into data vs lifecycle guards; Finished now blocks every data-bearing upsert with a clear operator error)
 - 2026-05-13 by Claude (T02 governance atomicity — finalize + unlock status/audit writes now share one sqlx transaction)
 - 2026-05-13 by Claude (T01 docs reconciliation — OVERVIEW/bead-readiness/parity banners + bead repo-ID fix)
 - 2026-05-13 by Codex (hygiene pass on temporary hardening board)
@@ -22,6 +23,18 @@
 - 2026-05-13 by Codex (tracking visual readability + visibility regression hardening)
 - 2026-05-13 by Codex (HTTP tracking mock-server Chrome validation + per-device map filter fix)
 - 2026-05-12 by Codex (operator manual added and linked from app Help)
+
+## T03 Finished-Mission Write Guard — Baton Note (2026-05-13, Claude)
+
+Phase 1 task T03 is complete. Data-bearing mutations are now blocked at the persistence boundary for any mission in `Finished` or `Finalized` status — previously only `Finalized` was guarded, which meant clicking "Finish" and then editing a marker silently mutated the sealed incident record.
+
+- `src-tauri/src/persistence.rs`: renamed the single `ensure_mission_mutable` guard to `ensure_mission_writable_for_lifecycle` (blocks `Finalized` only — no behaviour change, `#[allow(dead_code)]` because lifecycle helpers enforce preconditions themselves) and added a stricter sibling `ensure_mission_writable_for_data` that also blocks `Finished`. Error text is verbatim `Cannot write data to finished mission {id}; resume the mission or unlock it first.` so operator UIs can surface it as-is.
+- Migrated all 13 data-bearing call sites (`upsert_device`, `add_position`, `upsert_marker`, `ingest_marker_attachment`, `delete_marker`, `upsert_drawing`, `delete_drawing`, `upsert_helicopter`, `delete_helicopter`, `upsert_gpx_import`, `delete_gpx_import`, `upsert_layer_catalog_entry`, `clear_layer_catalog_entries`) to the new data guard.
+- Tests: added 8 new Rust tests covering finished-mission reject paths for markers, drawings, helicopters, GPX imports, positions, and layer catalog clears; plus lifecycle-finalize-from-finished OK, and read-only queries OK after finish. Rewrote the existing `blocks_mutations_for_finalized_missions_until_admin_unlock` test — the old "marker should save after unlock" assertion was outdated because unlock hops Finalized → Finished, which is now also data-locked; the test now asserts the data guard remains engaged until the mission is explicitly resumed. Also tightened an existing `rejects_layer_catalog_writes_for_finalized_missions` assertion and introduced a `assert_finished_mission_data_error` helper so the operator-actionable error phrase is pinned from every angle.
+- Browser harness mirror: `src/features/browser-validation/browser-harness-store.ts` and `src/infrastructure/layer-catalog-store/tauri-layer-catalog-store.ts` now apply the same Finished+Finalized check with the same error text, so `?missionHarness=1` validation exercises the fix faithfully. `tests/unit/browser-harness-store.test.ts` updated to match.
+- Verification: `cargo test` → 37/37; `cargo clippy` → no new warnings (8 pre-existing in unrelated files); `npm run lint` clean; `npm run build` clean; `npm run test` → 362/362; `npm run test:e2e` → 89/89. Manual browser harness check: placed a marker, finished the mission, confirmed clicking the map no longer opens the marker dialog, confirmed a direct harness `upsertMarker` throws the guard error verbatim, confirmed the original marker remained in both the Layers tree and harness state.
+- Backlog board updated: `docs/hardening-backlog/INDEX.md` T03 row ticked; `docs/hardening-backlog/T03-finished-mission-write-guard.md` header set to `Complete`; §8 Notes carries the call-site classification table and a short note explaining why the renamed lifecycle guard is intentionally unused.
+- Next recommended task: T04 (cap tracking exponential backoff and isolate per-device breadcrumb faults) — independent of T02/T03.
 
 ## T02 Governance Atomicity — Baton Note (2026-05-13, Claude)
 
