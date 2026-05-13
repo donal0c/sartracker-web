@@ -1,3 +1,5 @@
+import { useState } from 'react'
+
 import { useDrawingStore } from '../features/drawings/drawing-store'
 import { LPB_CATEGORIES } from '../features/drawings/lpb-data'
 import { useMeasurementStore } from '../features/measurements/measurement-store'
@@ -27,71 +29,98 @@ export function DrawingToolbar() {
 
   const disabled = controller === null || missionId === null || missionPhase === 'recovery'
   const activeDefinition = DRAWING_TOOL_OPTIONS.find((option) => option.value === activeTool)
+  const [expanded, setExpanded] = useState(false)
 
   return (
     <div
-      className="absolute left-4 top-24 z-20 w-[18rem] rounded-2xl border border-stone-700 bg-stone-950/90 p-3 shadow-2xl shadow-black/40 backdrop-blur-sm"
+      className="sar-control-dock absolute left-4 top-24 z-20 rounded"
       data-testid="drawing-toolbar"
     >
-      <div className="flex items-center justify-between gap-3">
-        <div>
-          <p className="text-[11px] uppercase tracking-[0.3em] text-amber-300">Drawing Tools</p>
-          <p className="mt-1 text-xs text-stone-400">
-            One active tool at a time. `Esc` cancels. Double-click or right-click finishes multi-point tools.
-          </p>
-        </div>
-        <div className="rounded-full border border-stone-700 bg-stone-900 px-3 py-1 text-[11px] uppercase tracking-[0.2em] text-stone-300">
-          Active: {activeDefinition?.label ?? 'Select'}
-        </div>
-      </div>
-
-      <div className="mt-3 grid grid-cols-2 gap-2">
-        {DRAWING_TOOL_OPTIONS.map((option) => {
-          const isActive = activeTool === option.value
-
-          return (
+      {expanded ? (
+        <div className="max-h-[calc(100vh-9rem)] w-[8.75rem] overflow-y-auto p-3">
+          <div className="space-y-2">
+            <div>
+              <p className="text-[10px] font-black uppercase tracking-[0.24em] text-amber-200">Drawing Tools</p>
+              <p className="mt-1 font-mono text-[10px] font-bold uppercase tracking-[0.12em] text-stone-500">
+                {disabled ? 'mission required' : 'armed'}
+              </p>
+            </div>
             <button
-              className={`min-h-12 rounded-xl border px-3 py-3 text-left text-sm transition ${
-                isActive
-                  ? 'border-amber-300 bg-amber-300/10 text-amber-50'
-                  : 'border-stone-700 bg-stone-900 text-stone-200 hover:border-stone-500'
-              } disabled:cursor-not-allowed disabled:opacity-40`}
-              data-testid={`drawing-tool-${option.value}`}
-              disabled={disabled}
-              key={option.value}
-              onClick={() => {
-                if (controller === null) {
-                  return
-                }
-
-                if (measurementController !== null && measurementMode === 'armed') {
-                  measurementController.cancelMeasurement()
-                }
-
-                if (option.value === 'select') {
-                  controller.cancelActiveTool()
-                  return
-                }
-
-                if (activeTool === option.value && dialog === null) {
-                  controller.cancelActiveTool()
-                  return
-                }
-
-                controller.setActiveTool(option.value)
-              }}
+              className="sar-button w-full px-2 py-1.5 text-[10px] font-bold uppercase tracking-[0.1em]"
+              data-testid="drawing-toolbar-collapse"
+              onClick={() => setExpanded(false)}
               type="button"
             >
-              <span className="block font-semibold">{option.label}</span>
-              <span className="mt-1 block text-xs text-stone-400">{option.hint}</span>
+              Collapse
             </button>
-          )
-        })}
-      </div>
+          </div>
 
-      <p className="mt-3 text-xs text-stone-500">
-        LPB categories: {Object.values(LPB_CATEGORIES).map((category) => category.label).join(' · ')}
-      </p>
+          <div className="mt-3 border border-[var(--sar-line)] bg-[var(--sar-panel-sunken)] px-2 py-2 text-center text-[10px] font-black uppercase tracking-[0.16em] text-stone-100">
+            Active: {activeDefinition?.label ?? 'Select'}
+          </div>
+
+          <div className="mt-3 grid gap-2">
+            {DRAWING_TOOL_OPTIONS.map((option) => {
+              const isActive = activeTool === option.value
+
+              return (
+                <button
+                  className={`min-h-14 border px-2 py-2 text-center text-[11px] uppercase tracking-[0.08em] transition ${
+                    isActive
+                      ? 'border-amber-300 bg-amber-300/14 text-amber-50 shadow-[inset_0_0_0_1px_rgba(244,183,74,0.24)]'
+                      : 'border-stone-700 bg-[var(--sar-panel-raised)] text-stone-200 hover:border-stone-400 hover:bg-stone-800'
+                  } disabled:cursor-not-allowed disabled:opacity-55`}
+                  data-testid={`drawing-tool-${option.value}`}
+                  disabled={disabled}
+                  key={option.value}
+                  onClick={() => {
+                    if (controller === null) {
+                      return
+                    }
+
+                    if (measurementController !== null && measurementMode === 'armed') {
+                      measurementController.cancelMeasurement()
+                    }
+
+                    if (option.value === 'select') {
+                      controller.cancelActiveTool()
+                      return
+                    }
+
+                    if (activeTool === option.value && dialog === null) {
+                      controller.cancelActiveTool()
+                      return
+                    }
+
+                    controller.setActiveTool(option.value)
+                  }}
+                  type="button"
+                >
+                  <span className="block font-black">{option.label}</span>
+                </button>
+              )
+            })}
+          </div>
+          <p className="mt-3 border-t border-[var(--sar-line)] pt-2 text-[10px] font-bold uppercase tracking-[0.1em] text-stone-500">
+            LPB {Object.values(LPB_CATEGORIES).length} categories
+          </p>
+        </div>
+      ) : (
+        <button
+          className="flex items-center gap-3 px-4 py-3"
+          data-testid="drawing-toolbar-expand"
+          onClick={() => setExpanded(true)}
+          type="button"
+        >
+          <span className="text-[10px] font-black uppercase tracking-[0.24em] text-amber-200">Drawing Tools</span>
+          <span className="border border-[var(--sar-line)] bg-[var(--sar-panel-raised)] px-3 py-1 text-[11px] font-bold uppercase tracking-[0.14em] text-stone-200">
+            Active: {activeDefinition?.label ?? 'Select'}
+          </span>
+          <svg className="h-4 w-4 text-stone-400" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+            <path d="M19 9l-7 7-7-7" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        </button>
+      )}
     </div>
   )
 }

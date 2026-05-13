@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 
 import { openExternalPath } from '../infrastructure/file-launcher/tauri-file-launcher'
+import { WorkspaceOverlay, WorkspaceHeader } from './workspace-overlay'
 import { useMapTargetStore } from '../features/map/map-target-store'
 import {
   filterMissionReviewMarkers,
@@ -13,6 +14,8 @@ import { useMissionReviewStore } from '../features/mission-review/mission-review
 import { useMissionReviewWorkspaceStore } from '../features/mission-review/mission-review-workspace-store'
 
 type ReviewTab = 'mission-details' | 'marker-log' | 'layer-console'
+
+const MISSION_REVIEW_WORKSPACE_TITLE_ID = 'mission-review-workspace-title'
 
 /**
  * Renders the mission review workspace for audit, marker review, and mission details.
@@ -74,41 +77,32 @@ export function MissionReviewWorkspace() {
     )
   }, [filteredMarkers])
 
-  if (!open) {
-    return null
-  }
-
   return (
-    <div className="fixed inset-0 z-50 flex bg-stone-950/80 backdrop-blur-sm">
-      <div className="ml-auto flex h-full w-full max-w-7xl flex-col border-l border-stone-800 bg-stone-950 shadow-2xl">
-        <header className="flex items-center justify-between border-b border-stone-800 px-6 py-5">
-          <div>
-            <p className="text-[10px] font-bold uppercase tracking-[0.3em] text-amber-300/80">
-              Mission Review
-            </p>
-            <h2 className="mt-1 font-mono text-2xl font-bold text-stone-50">Audit Workspace</h2>
-          </div>
-          <div className="flex items-center gap-3">
-            <button
-              className="rounded-lg border border-stone-700 bg-stone-900 px-3 py-2 text-[11px] font-bold uppercase tracking-wider text-stone-300 disabled:opacity-50"
-              data-testid="mission-review-refresh"
-              disabled={controller === null || refreshing}
-              onClick={() => void controller?.refreshSelectedMission()}
-              type="button"
-            >
-              {refreshing ? 'Refreshing…' : 'Refresh'}
-            </button>
-            <button
-              className="rounded-lg border border-stone-700 bg-stone-900 px-3 py-2 text-[11px] font-bold uppercase tracking-wider text-stone-300"
-              onClick={closeWorkspace}
-              type="button"
-            >
-              Close
-            </button>
-          </div>
-        </header>
+    <WorkspaceOverlay
+      labelledBy={MISSION_REVIEW_WORKSPACE_TITLE_ID}
+      open={open}
+      onClose={closeWorkspace}
+      maxWidth="max-w-7xl"
+    >
+      <WorkspaceHeader
+        subtitle="Mission Review"
+        titleId={MISSION_REVIEW_WORKSPACE_TITLE_ID}
+        title="Audit Workspace"
+        onClose={closeWorkspace}
+        actions={
+          <button
+            className="rounded-lg border border-stone-600 bg-stone-800 px-3 py-2 text-xs font-semibold text-stone-200 disabled:opacity-50"
+            data-testid="mission-review-refresh"
+            disabled={controller === null || refreshing}
+            onClick={() => void controller?.refreshSelectedMission()}
+            type="button"
+          >
+            {refreshing ? 'Refreshing…' : 'Refresh'}
+          </button>
+        }
+      />
 
-        <div className="grid flex-1 overflow-hidden lg:grid-cols-[minmax(18rem,0.8fr)_minmax(0,2fr)]">
+      <div className="grid flex-1 overflow-hidden lg:grid-cols-[minmax(18rem,0.8fr)_minmax(0,2fr)]">
           <aside className="border-r border-stone-800 px-5 py-5">
             <div className="rounded-2xl border border-stone-800 bg-stone-900/30 p-4">
               <p className="text-[11px] font-bold uppercase tracking-wider text-stone-400">
@@ -215,8 +209,7 @@ export function MissionReviewWorkspace() {
             </div>
           </section>
         </div>
-      </div>
-    </div>
+    </WorkspaceOverlay>
   )
 
   async function handleOpenPath(path: string | null): Promise<void> {
@@ -416,7 +409,7 @@ function MarkerLogTab(props: {
                 </p>
               </div>
               <button
-                className="rounded-lg border border-stone-700 bg-stone-900 px-3 py-2 text-[11px] font-bold uppercase tracking-wider text-stone-300"
+                className="rounded-lg border border-stone-600 bg-stone-800 px-3 py-2 text-xs font-semibold text-stone-200"
                 data-testid="mission-review-marker-zoom"
                 onClick={props.onZoomMarker}
                 type="button"
@@ -440,7 +433,7 @@ function MarkerLogTab(props: {
 
             <div className="mt-4 flex gap-3">
               <button
-                className="rounded-lg border border-stone-700 bg-stone-900 px-3 py-2 text-[11px] font-bold uppercase tracking-wider text-stone-300"
+                className="rounded-lg border border-stone-600 bg-stone-800 px-3 py-2 text-xs font-semibold text-stone-200"
                 data-testid="mission-review-marker-open-attachment"
                 disabled={selectedMarker.attachmentPath === null}
                 onClick={() => props.onOpenPath(selectedMarker.attachmentPath)}

@@ -16,7 +16,6 @@ describe('tracking colors', () => {
     const ids = ['1', '2', '3', '4', '5', '6', '7', '8']
     const colors = ids.map(createDeviceColor)
     const unique = new Set(colors)
-    // With 8 devices and a 12-colour palette, expect at least 4 distinct colours
-    expect(unique.size).toBeGreaterThanOrEqual(4)
+    expect(unique.size).toBe(8)
   })
 })

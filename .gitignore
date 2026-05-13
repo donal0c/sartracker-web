@@ -40,3 +40,4 @@ tools/mock-traccar/node_modules/
 *.njsproj
 *.sln
 *.sw?
+.vercel

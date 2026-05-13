@@ -11,6 +11,7 @@ test.describe('M17 layer tree workflows', () => {
     await page.getByTestId('mission-start-btn').click()
     await expect(page.getByTestId('mission-control')).toContainText('active')
     await seedLayerPanelData(page)
+    await page.getByTestId('sidebar-tab-layers').click()
   })
 
   test('renders the nested layer tree and inspection workspace', async ({ page }) => {
@@ -58,6 +59,7 @@ test.describe('M17 layer tree workflows', () => {
     await expect(page.getByTestId('mission-recovery-dialog')).toBeVisible()
     await page.getByRole('button', { name: 'Resume' }).click()
     await seedLayerPanelData(page)
+    await page.getByTestId('sidebar-tab-layers').click()
 
     await expect(page.getByTestId('layer-visibility-feature-device-bravo')).not.toBeChecked()
     await expect(page.getByTestId('layer-visibility-feature-marker-marker-1')).not.toBeChecked()

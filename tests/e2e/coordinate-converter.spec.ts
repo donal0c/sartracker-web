@@ -43,4 +43,20 @@ test.describe('M18 coordinate converter', () => {
     await page.getByTestId('coordinate-convert-btn').click()
     await expect(page.getByTestId('coordinate-result-itm')).toContainText('480245')
   })
+
+  test('uses dialog semantics, traps focus, and returns focus on Escape', async ({ page }) => {
+    const opener = page.getByTestId('open-coordinate-converter')
+    await opener.click()
+
+    const dialog = page.getByRole('dialog', { name: 'Convert WGS84, ITM, and TM65' })
+    await expect(dialog).toBeVisible()
+    await expect(dialog.getByRole('button', { name: 'Close' })).toBeFocused()
+
+    await page.keyboard.press('Shift+Tab')
+    await expect(dialog.getByRole('button', { name: 'Reset' })).toBeFocused()
+
+    await page.keyboard.press('Escape')
+    await expect(dialog).toBeHidden()
+    await expect(opener).toBeFocused()
+  })
 })

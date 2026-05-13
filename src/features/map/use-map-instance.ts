@@ -10,7 +10,7 @@ import {
 } from '../../lib/map-health'
 import { createTileHealthTracker } from '../../lib/tile-health-tracker'
 import { persistBasemapPreference, readStoredBasemap } from '../../lib/map-preferences'
-import { createRasterStyle, KERRY_MAX_BOUNDS } from './map-style'
+import { createRasterStyle, IRELAND_MAX_BOUNDS } from './map-style'
 import { applyMapStylePreservingCamera } from './apply-map-style-preserving-camera'
 
 export type HoverCoordinate = {
@@ -75,7 +75,7 @@ export function useMapInstance(): MapInstanceController {
       style: initialStyleRef.current,
       center: [...MAP_CENTER],
       zoom: MAP_DEFAULT_ZOOM,
-      maxBounds: KERRY_MAX_BOUNDS,
+      maxBounds: IRELAND_MAX_BOUNDS,
     })
 
     map.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), 'top-right')

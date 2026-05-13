@@ -3,6 +3,7 @@ import type maplibregl from 'maplibre-gl'
 
 import { useHelicopterStore } from '../helicopters/helicopter-store'
 import { syncHelicopterOverlay } from '../helicopters/sync-helicopter-overlay'
+import { getEffectiveHelicopterSlotVisibility } from '../layers/effective-overlay-visibility'
 import { useLayerVisibilityStore } from '../layers/layer-visibility-store'
 import type { BasemapId } from '../../lib/map-config'
 import { registerMapStyleSync } from './map-style-sync'
@@ -15,6 +16,7 @@ type UseMapHelicopterOverlaysOptions = {
 
 export function useMapHelicopterOverlays(options: UseMapHelicopterOverlaysOptions): void {
   const helicopters = useHelicopterStore((state) => state.helicopters)
+  const groupVisibility = useLayerVisibilityStore((state) => state.groupVisibility)
   const hiddenHelicopterIds = useLayerVisibilityStore((state) => state.hiddenHelicopterIds)
   const helicopterSlotVisibility = useLayerVisibilityStore(
     (state) => state.helicopterSlotVisibility,
@@ -35,7 +37,7 @@ export function useMapHelicopterOverlays(options: UseMapHelicopterOverlaysOption
       void syncHelicopterOverlay(
         map,
         helicopters,
-        helicopterSlotVisibility,
+        getEffectiveHelicopterSlotVisibility(groupVisibility, helicopterSlotVisibility),
         hiddenHelicopterIds,
       )
     }
@@ -43,6 +45,7 @@ export function useMapHelicopterOverlays(options: UseMapHelicopterOverlaysOption
     return registerMapStyleSync(map, synchronizeOverlay)
   }, [
     helicopters,
+    groupVisibility,
     helicopterSlotVisibility,
     hiddenHelicopterIds,
     options.activeBasemapId,

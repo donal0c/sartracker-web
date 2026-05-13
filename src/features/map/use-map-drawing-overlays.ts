@@ -6,6 +6,7 @@ import {
   syncDrawingOverlay,
   syncDrawingPreviewOverlay,
 } from '../drawings/sync-drawing-overlay'
+import { getEffectiveDrawingTypeVisibility } from '../layers/effective-overlay-visibility'
 import { useLayerVisibilityStore } from '../layers/layer-visibility-store'
 import type { BasemapId } from '../../lib/map-config'
 import { registerMapStyleSync } from './map-style-sync'
@@ -24,6 +25,7 @@ export function useMapDrawingOverlays(options: UseMapDrawingOverlaysOptions): vo
   const selectedDrawingId = useDrawingStore((state) => state.selectedDrawingId)
   const sketch = useDrawingStore((state) => state.sketch)
   const activeTool = useDrawingStore((state) => state.activeTool)
+  const groupVisibility = useLayerVisibilityStore((state) => state.groupVisibility)
   const drawingTypeVisibility = useLayerVisibilityStore((state) => state.drawingTypeVisibility)
   const hiddenDrawingIds = useLayerVisibilityStore((state) => state.hiddenDrawingIds)
 
@@ -43,7 +45,7 @@ export function useMapDrawingOverlays(options: UseMapDrawingOverlaysOptions): vo
         map,
         drawings,
         hiddenDrawingIds,
-        drawingTypeVisibility,
+        getEffectiveDrawingTypeVisibility(groupVisibility, drawingTypeVisibility),
         selectedDrawingId,
       )
     }
@@ -52,6 +54,7 @@ export function useMapDrawingOverlays(options: UseMapDrawingOverlaysOptions): vo
   }, [
     activeTool,
     drawings,
+    groupVisibility,
     drawingTypeVisibility,
     hiddenDrawingIds,
     options.activeBasemapId,
@@ -73,11 +76,18 @@ export function useMapDrawingOverlays(options: UseMapDrawingOverlaysOptions): vo
       }
 
       syncDrawingPreviewOverlay(map, {
-        sketch,
-        activeTool,
+        sketch: groupVisibility.mapTools ? sketch : null,
+        activeTool: groupVisibility.mapTools ? activeTool : 'select',
       })
     }
 
     return registerMapStyleSync(map, synchronizePreview)
-  }, [activeTool, options.activeBasemapId, options.mapReadyVersion, options.mapRef, sketch])
+  }, [
+    activeTool,
+    groupVisibility,
+    options.activeBasemapId,
+    options.mapReadyVersion,
+    options.mapRef,
+    sketch,
+  ])
 }

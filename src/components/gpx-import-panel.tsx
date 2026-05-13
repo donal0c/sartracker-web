@@ -27,19 +27,19 @@ export function GpxImportPanel() {
 
   return (
     <section
-      className="rounded-2xl border border-stone-800 bg-stone-950/40 p-5 text-sm"
+      className="rounded-2xl border border-stone-800/60 bg-stone-950/30 p-4 text-sm"
       data-testid="gpx-import-panel"
     >
       <div className="flex items-start justify-between gap-3">
         <div>
-          <h3 className="text-[11px] font-bold uppercase tracking-widest text-stone-400">
+          <h3 className="text-[13px] font-semibold uppercase tracking-wider text-stone-400">
             GPX Tracks
           </h3>
-          <p className="mt-1 text-[10px] text-stone-600">
+          <p className="mt-1 text-xs text-stone-400">
             Import files, ingest folders, and watch operational refresh paths.
           </p>
         </div>
-        <span className="rounded-full border border-stone-800 bg-stone-900 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-stone-400">
+        <span className="rounded-full border border-stone-800 bg-stone-900 px-2 py-1 text-[11px] font-semibold uppercase tracking-wider text-stone-400">
           {importSummary}
         </span>
       </div>
@@ -89,7 +89,7 @@ export function GpxImportPanel() {
 
       <div className="mt-4 space-y-3">
         <PanelList
-          emptyMessage="No watched folders yet."
+          emptyMessage="No watched folders. Use Watch Folder above to auto-import new tracks."
           items={watchedDirectories.map((directoryPath) => ({
             id: directoryPath,
             primary: directoryPath,
@@ -105,7 +105,7 @@ export function GpxImportPanel() {
         />
 
         <PanelList
-          emptyMessage="No GPX tracks imported yet."
+          emptyMessage="No GPX tracks imported. Use the buttons above to import files or folders."
           items={imports.map((entry) => ({
             id: entry.id,
             primary: entry.display_name,
@@ -211,7 +211,7 @@ function ActionButton(props: {
 }) {
   return (
     <button
-      className="rounded-lg border border-stone-700 bg-stone-900 px-3 py-2 text-[11px] font-bold uppercase tracking-wider text-stone-300 disabled:cursor-not-allowed disabled:opacity-40"
+      className="rounded-lg border border-stone-600 bg-stone-800 px-3 py-2 text-xs font-semibold text-stone-200 disabled:cursor-not-allowed disabled:opacity-40"
       data-testid={props.testId}
       disabled={props.disabled}
       onClick={props.onClick}
@@ -236,12 +236,12 @@ function PanelList(props: {
 }) {
   return (
     <div className="rounded-xl border border-stone-800/60 bg-stone-900/30 p-3">
-      <p className="text-[10px] font-bold uppercase tracking-widest text-stone-500">
+      <p className="text-[13px] font-semibold uppercase tracking-wider text-stone-400">
         {props.title}
       </p>
       <div className="mt-3 space-y-2" data-testid={props.testId}>
         {props.items.length === 0 ? (
-          <p className="text-xs italic text-stone-600">{props.emptyMessage}</p>
+          <p className="text-xs font-medium italic text-stone-500">{props.emptyMessage}</p>
         ) : (
           props.items.map((item) => (
             <div
@@ -253,7 +253,7 @@ function PanelList(props: {
                 <p className="truncate text-[11px] text-stone-500">{item.secondary}</p>
               </div>
               <button
-                className="rounded-lg border border-stone-700 bg-stone-900 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-stone-300"
+                className="rounded-lg border border-stone-600 bg-stone-800 px-2 py-1 text-[11px] font-semibold text-stone-200"
                 data-testid={`${props.testId}-${item.id.replace(/[^a-zA-Z0-9]+/g, '-')}`}
                 onClick={item.onAction}
                 type="button"

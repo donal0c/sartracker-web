@@ -9,6 +9,9 @@ import {
 } from '../features/coordinates/coordinate-tool'
 import { useCoordinateToolStore } from '../features/coordinates/coordinate-tool-store'
 import { useMapTargetStore } from '../features/map/map-target-store'
+import { DialogOverlay } from './dialog-overlay'
+
+const COORDINATE_CONVERTER_TITLE_ID = 'coordinate-converter-title'
 
 /**
  * Renders the coordinate conversion utility with copy and go-to actions.
@@ -33,42 +36,42 @@ export function CoordinateConverterDialog() {
     setCopiedKind(null)
   }, [open])
 
-  if (!open) {
-    return null
-  }
-
   return (
-    <div
-      className="fixed inset-0 z-40 flex items-center justify-center bg-stone-950/70 px-4 py-8 backdrop-blur-sm"
-      data-testid="coordinate-converter-dialog"
+    <DialogOverlay
+      labelledBy={COORDINATE_CONVERTER_TITLE_ID}
+      open={open}
+      onClose={closeDialog}
+      testId="coordinate-converter-dialog"
     >
-      <div className="w-full max-w-3xl rounded-3xl border border-stone-700 bg-stone-900 p-6 shadow-2xl shadow-black/40">
-        <div className="flex items-center justify-between gap-3">
-          <div>
-            <p className="text-xs uppercase tracking-[0.3em] text-amber-300">Coordinate Converter</p>
-            <h2 className="mt-2 text-xl font-semibold text-stone-50">
-              Convert WGS84, ITM, and TM65
-            </h2>
-          </div>
-          <button
-            className="rounded-lg border border-stone-600 bg-stone-950 px-3 py-2 text-sm text-stone-200"
-            onClick={() => closeDialog()}
-            type="button"
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <p className="sar-section-label text-amber-300">Coordinate Converter</p>
+          <h2
+            className="mt-2 text-xl font-semibold text-stone-50"
+            id={COORDINATE_CONVERTER_TITLE_ID}
           >
-            Close
-          </button>
+            Convert WGS84, ITM, and TM65
+          </h2>
         </div>
+        <button
+          className="sar-button px-3 py-2 text-sm font-semibold"
+          onClick={() => closeDialog()}
+          type="button"
+        >
+          Close
+        </button>
+      </div>
 
-        <div className="mt-6 space-y-6">
+      <div className="mt-6 space-y-6">
           <section>
-            <p className="text-xs uppercase tracking-[0.2em] text-stone-300">Input Mode</p>
+            <p className="sar-section-label">Input Mode</p>
             <div className="mt-3 grid gap-2 sm:grid-cols-3">
               {(['wgs84', 'itm', 'tm65'] as const).map((mode) => (
                 <label
-                  className={`rounded-xl border px-3 py-2 text-sm ${
+                  className={`border px-3 py-2 text-sm font-semibold transition ${
                     draft.mode === mode
-                      ? 'border-amber-300 bg-amber-300/10 text-amber-100'
-                      : 'border-stone-700 bg-stone-950 text-stone-200'
+                      ? 'sar-tab-active'
+                      : 'sar-button'
                   }`}
                   data-testid={`coordinate-mode-${mode}`}
                   key={mode}
@@ -135,7 +138,7 @@ export function CoordinateConverterDialog() {
 
           <div className="flex gap-3">
             <button
-              className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-4 py-2 text-sm text-emerald-100"
+              className="border border-emerald-400/30 bg-emerald-400/10 px-4 py-2 text-sm font-semibold text-emerald-100 transition hover:bg-emerald-400/20"
               data-testid="coordinate-convert-btn"
               onClick={() => {
                 try {
@@ -156,7 +159,7 @@ export function CoordinateConverterDialog() {
               Convert
             </button>
             <button
-              className="rounded-lg border border-stone-600 bg-stone-950 px-4 py-2 text-sm text-stone-200"
+              className="sar-button px-4 py-2 text-sm font-semibold"
               onClick={() => {
                 setDraft(createCoordinateConverterDraft())
                 setResult(null)
@@ -197,7 +200,7 @@ export function CoordinateConverterDialog() {
 
               <div className="md:col-span-3 flex justify-end">
                 <button
-                  className="rounded-lg border border-amber-400/30 bg-amber-400/10 px-4 py-2 text-sm text-amber-100"
+                  className="sar-button-focus px-4 py-2 text-sm font-semibold"
                   data-testid="coordinate-go-to-btn"
                   onClick={() => {
                     queueTarget(result.latitude, result.longitude, 'Coordinate Target')
@@ -211,8 +214,7 @@ export function CoordinateConverterDialog() {
             </section>
           ) : null}
         </div>
-      </div>
-    </div>
+    </DialogOverlay>
   )
 
   async function copyValue(kind: 'wgs84' | 'itm' | 'tm65'): Promise<void> {
@@ -244,9 +246,9 @@ function Field(props: {
 }) {
   return (
     <label className="block text-sm text-stone-200">
-      <span className="text-xs uppercase tracking-[0.2em] text-stone-300">{props.label}</span>
+      <span className="sar-section-label">{props.label}</span>
       <input
-        className="mt-2 w-full rounded-lg border border-stone-700 bg-stone-950 px-3 py-2 text-sm text-stone-100"
+        className="sar-input mt-2 w-full px-3 py-2 text-sm"
         data-testid={props.testId}
         onChange={(event) => props.onChange(event.target.value)}
         value={props.value}
@@ -263,11 +265,11 @@ function ResultCard(props: {
   readonly testId: string
 }) {
   return (
-    <div className="rounded-2xl border border-stone-700 bg-stone-950/60 p-4" data-testid={props.testId}>
+    <div className="sar-module p-4" data-testid={props.testId}>
       <div className="flex items-center justify-between gap-3">
-        <p className="text-xs uppercase tracking-[0.2em] text-stone-300">{props.label}</p>
+        <p className="sar-section-label">{props.label}</p>
         <button
-          className="rounded-lg border border-stone-700 bg-stone-900 px-2 py-1 text-[11px] text-stone-200"
+          className="sar-button px-2 py-1 text-[11px]"
           data-testid={`${props.testId}-copy`}
           onClick={props.onCopy}
           type="button"

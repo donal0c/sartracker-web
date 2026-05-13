@@ -3,6 +3,7 @@ import type maplibregl from 'maplibre-gl'
 
 import { useGpxStore } from '../gpx/gpx-store'
 import { syncGpxOverlay } from '../gpx/sync-gpx-overlay'
+import { getEffectiveGpxTracksVisible } from '../layers/effective-overlay-visibility'
 import { useLayerVisibilityStore } from '../layers/layer-visibility-store'
 import type { BasemapId } from '../../lib/map-config'
 import { registerMapStyleSync } from './map-style-sync'
@@ -18,6 +19,7 @@ type UseMapGpxOverlaysOptions = {
  */
 export function useMapGpxOverlays(options: UseMapGpxOverlaysOptions): void {
   const imports = useGpxStore((state) => state.imports)
+  const groupVisibility = useLayerVisibilityStore((state) => state.groupVisibility)
   const hiddenImportIds = useLayerVisibilityStore((state) => state.hiddenGpxImportIds)
 
   useEffect(() => {
@@ -32,9 +34,22 @@ export function useMapGpxOverlays(options: UseMapGpxOverlaysOptions): void {
         return
       }
 
-      syncGpxOverlay(map, imports, hiddenImportIds)
+      syncGpxOverlay(
+        map,
+        imports,
+        getEffectiveGpxTracksVisible(groupVisibility)
+          ? hiddenImportIds
+          : imports.map((candidate) => candidate.id),
+      )
     }
 
     return registerMapStyleSync(map, synchronizeOverlay)
-  }, [hiddenImportIds, imports, options.activeBasemapId, options.mapReadyVersion, options.mapRef])
+  }, [
+    groupVisibility,
+    hiddenImportIds,
+    imports,
+    options.activeBasemapId,
+    options.mapReadyVersion,
+    options.mapRef,
+  ])
 }

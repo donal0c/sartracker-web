@@ -58,7 +58,7 @@ export async function finishMission(page: Page): Promise<void> {
 }
 
 /**
- * Standard 3-device tracking scenario for Kerry Mountain Rescue.
+ * Standard 3-device tracking scenario for Mountain Rescue validation.
  * Alpha: online, near Carrauntoohil summit ridge
  * Bravo: online, near Hag's Tooth col
  * Charlie: offline/stale, lower slopes
@@ -205,7 +205,9 @@ export async function clickMap(
   page: Page,
   position: { x: number; y: number },
 ): Promise<void> {
-  await page.getByTestId('map-container').click({ position, force: true })
+  const target = page.locator('.maplibregl-canvas').first()
+  await target.waitFor({ state: 'visible', timeout: 15000 })
+  await target.click({ position, force: true })
 }
 
 /** Right-click a position on the map container. */
@@ -213,7 +215,9 @@ export async function rightClickMap(
   page: Page,
   position: { x: number; y: number },
 ): Promise<void> {
-  await page.getByTestId('map-container').click({ position, button: 'right', force: true })
+  const target = page.locator('.maplibregl-canvas').first()
+  await target.waitFor({ state: 'visible', timeout: 15000 })
+  await target.click({ position, button: 'right', force: true })
 }
 
 /** Read the persisted browser harness state. */

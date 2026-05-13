@@ -27,6 +27,7 @@ export function HelicopterPanel() {
   const [drafts, setDrafts] = useState<Record<HelicopterSlotKey, HelicopterDraftState>>(
     createEmptyDraftState,
   )
+  const [expandedSlots, setExpandedSlots] = useState<Set<HelicopterSlotKey>>(new Set())
 
   const helicoptersBySlot = useMemo(
     () => new Map(helicopters.map((helicopter) => [helicopter.slot_key, helicopter])),
@@ -39,20 +40,20 @@ export function HelicopterPanel() {
 
   return (
     <section
-      className="rounded-2xl border border-stone-800 bg-stone-950/40 p-5 text-sm"
+      className="rounded-2xl border border-stone-800/60 bg-stone-950/30 p-4 text-sm"
       data-testid="helicopter-panel"
     >
       <div className="flex items-start justify-between gap-3">
         <div>
-          <h3 className="text-[11px] font-bold uppercase tracking-widest text-stone-400">
+          <h3 className="text-[13px] font-semibold uppercase tracking-wider text-stone-400">
             Helicopters
           </h3>
-          <p className="mt-1 text-[10px] text-stone-600">
+          <p className="mt-1 text-xs text-stone-400">
             Reserve four aviation slots with operational position details.
           </p>
         </div>
-        <span className="rounded-full border border-stone-800 bg-stone-900 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-stone-400">
-          {helicopters.length} active
+        <span className="rounded-full border border-stone-800 bg-stone-900 px-2 py-1 text-[11px] font-semibold uppercase tracking-wider text-stone-400">
+          {helicopters.length} ACTIVE
         </span>
       </div>
 
@@ -70,25 +71,58 @@ export function HelicopterPanel() {
             !isCoordinateValue(values.lat, -90, 90) ||
             !isCoordinateValue(values.lon, -180, 180)
 
+          const isExpanded = expandedSlots.has(slot.slotKey)
+          const summaryText = helicopter === null
+            ? 'Empty slot'
+            : `${helicopter.call_sign} @ ${helicopter.lat.toFixed(2)}°N`
+
           return (
             <div
               className="rounded-xl border border-stone-800/70 bg-stone-900/30 p-4"
               data-testid={`helicopter-slot-${slot.slotKey}`}
               key={slot.slotKey}
             >
-              <div className="flex items-center justify-between gap-3">
+              <button
+                className="flex w-full items-center justify-between gap-3 text-left"
+                data-testid={`helicopter-toggle-${slot.slotKey}`}
+                onClick={() => {
+                  setExpandedSlots((current) => {
+                    const next = new Set(current)
+                    if (next.has(slot.slotKey)) {
+                      next.delete(slot.slotKey)
+                    } else {
+                      next.add(slot.slotKey)
+                    }
+                    return next
+                  })
+                }}
+                type="button"
+              >
                 <div className="flex items-center gap-3">
                   <span className={`h-3 w-3 rounded-full ${slot.color}`} />
                   <div>
-                    <p className="text-sm font-semibold text-stone-100">{slot.title}</p>
-                    <p className="text-[11px] text-stone-500">{slot.slotKey.replace('_', ' ')}</p>
+                    <p className="text-[13px] font-semibold text-stone-100">{slot.title}</p>
+                    <p className="text-[11px] text-stone-500">{summaryText}</p>
                   </div>
                 </div>
-                <span className="text-[10px] uppercase tracking-wider text-stone-500">
-                  {helicopter === null ? 'Empty slot' : 'Configured'}
-                </span>
-              </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-[11px] font-semibold uppercase tracking-wider text-stone-500">
+                    {helicopter === null ? 'EMPTY' : 'SET'}
+                  </span>
+                  <svg
+                    className={`h-4 w-4 text-stone-500 transition-transform ${isExpanded ? 'rotate-180' : ''}`}
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth={2}
+                    viewBox="0 0 24 24"
+                  >
+                    <path d="M19 9l-7 7-7-7" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                </div>
+              </button>
 
+              {isExpanded ? (
+              <>
               <div className="mt-3 grid gap-2 sm:grid-cols-2">
                 <Field
                   label="Call Sign"
@@ -142,16 +176,16 @@ export function HelicopterPanel() {
 
               <div className="mt-3 flex gap-2">
                 <button
-                  className="rounded-lg border border-stone-700 bg-stone-900 px-3 py-2 text-[11px] font-bold uppercase tracking-wider text-stone-300 disabled:opacity-40"
+                  className="rounded-lg border border-stone-600 bg-stone-800 px-3 py-2 text-xs font-semibold text-stone-200 disabled:opacity-40"
                   data-testid={`helicopter-save-${slot.slotKey}`}
                   disabled={saveDisabled}
                   onClick={() => void saveSlot(slot.slotKey)}
                   type="button"
                 >
-                  Save Slot
+                  Save slot
                 </button>
                 <button
-                  className="rounded-lg border border-stone-700 bg-stone-900 px-3 py-2 text-[11px] font-bold uppercase tracking-wider text-stone-300 disabled:opacity-40"
+                  className="rounded-lg border border-stone-600 bg-stone-800 px-3 py-2 text-xs font-semibold text-stone-200 disabled:opacity-40"
                   data-testid={`helicopter-clear-${slot.slotKey}`}
                   disabled={controller === null || helicopter === null || saving}
                   onClick={() => void clearSlot(slot.slotKey)}
@@ -164,6 +198,8 @@ export function HelicopterPanel() {
                 <p className="mt-2 text-xs text-amber-300">
                   Enter a valid latitude/longitude before saving this slot.
                 </p>
+              ) : null}
+              </>
               ) : null}
             </div>
           )
@@ -240,7 +276,7 @@ function Field(props: {
   readonly onChange: (value: string) => void
 }) {
   return (
-    <label className="grid gap-1 text-[11px] uppercase tracking-wider text-stone-500">
+    <label className="grid gap-1 text-[11px] font-medium text-stone-300">
       <span>{props.label}</span>
       <input
         className="rounded-lg border border-stone-700 bg-stone-950 px-3 py-2 text-sm text-stone-100"

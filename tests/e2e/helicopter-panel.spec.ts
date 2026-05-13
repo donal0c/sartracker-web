@@ -15,6 +15,7 @@ test.describe('M23 helicopter layer parity', () => {
   test('persists helicopter slots, renders the overlay, and supports visibility toggles', async ({
     page,
   }) => {
+    await page.getByTestId('helicopter-toggle-slot_1').click()
     await page.getByTestId('helicopter-call-sign-slot_1').fill('Rescue 118')
     await page.getByTestId('helicopter-hex-id-slot_1').fill('4CA118')
     await page.getByTestId('helicopter-lat-slot_1').fill('52.0599')
@@ -38,8 +39,9 @@ test.describe('M23 helicopter layer parity', () => {
     })
     expect(helicopterId).not.toBeNull()
 
-    await expect(page.getByTestId('helicopter-panel')).toContainText('1 active')
+    await expect(page.getByTestId('helicopter-panel')).toContainText('1 ACTIVE')
 
+    await page.getByTestId('sidebar-tab-layers').click()
     await page.getByTestId('layer-expand-group-helicopters').click()
     await page.getByTestId('layer-expand-layer-helicopters-slot-1').click()
     await expect(page.getByTestId('layer-tree')).toContainText('Rescue 118')

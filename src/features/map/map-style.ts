@@ -2,9 +2,9 @@ import { type LngLatBoundsLike, type StyleSpecification } from 'maplibre-gl'
 
 import { getBasemapById, type BasemapId } from '../../lib/map-config'
 
-export const KERRY_MAX_BOUNDS: LngLatBoundsLike = [
-  [-10.7, 51.55],
-  [-9.1, 52.6],
+export const IRELAND_MAX_BOUNDS: LngLatBoundsLike = [
+  [-10.85, 51.25],
+  [-5.25, 55.55],
 ]
 
 /**

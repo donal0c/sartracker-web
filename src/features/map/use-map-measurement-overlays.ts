@@ -2,6 +2,7 @@ import { useEffect, type RefObject } from 'react'
 import type maplibregl from 'maplibre-gl'
 
 import type { BasemapId } from '../../lib/map-config'
+import { getEffectiveMeasurementsVisible } from '../layers/effective-overlay-visibility'
 import { useMeasurementStore } from '../measurements/measurement-store'
 import {
   syncMeasurementOverlay,
@@ -25,6 +26,7 @@ export function useMapMeasurementOverlays(
   const measurements = useMeasurementStore((state) => state.measurements)
   const draftStart = useMeasurementStore((state) => state.draftStart)
   const hoverPoint = useMeasurementStore((state) => state.hoverPoint)
+  const groupVisibility = useLayerVisibilityStore((state) => state.groupVisibility)
   const measurementsVisible = useLayerVisibilityStore((state) => state.measurementsVisible)
 
   useEffect(() => {
@@ -38,11 +40,21 @@ export function useMapMeasurementOverlays(
         return
       }
 
-      syncMeasurementOverlay(map, measurementsVisible ? measurements : [])
+      syncMeasurementOverlay(
+        map,
+        getEffectiveMeasurementsVisible(groupVisibility, measurementsVisible) ? measurements : [],
+      )
     }
 
     return registerMapStyleSync(map, synchronizeOverlay)
-  }, [measurements, measurementsVisible, options.activeBasemapId, options.mapReadyVersion, options.mapRef])
+  }, [
+    groupVisibility,
+    measurements,
+    measurementsVisible,
+    options.activeBasemapId,
+    options.mapReadyVersion,
+    options.mapRef,
+  ])
 
   useEffect(() => {
     const map = options.mapRef.current
@@ -56,11 +68,23 @@ export function useMapMeasurementOverlays(
       }
 
       syncMeasurementPreviewOverlay(map, {
-        draftStart,
-        hoverPoint,
+        draftStart: getEffectiveMeasurementsVisible(groupVisibility, measurementsVisible)
+          ? draftStart
+          : null,
+        hoverPoint: getEffectiveMeasurementsVisible(groupVisibility, measurementsVisible)
+          ? hoverPoint
+          : null,
       })
     }
 
     return registerMapStyleSync(map, synchronizePreview)
-  }, [draftStart, hoverPoint, options.activeBasemapId, options.mapReadyVersion, options.mapRef])
+  }, [
+    draftStart,
+    groupVisibility,
+    hoverPoint,
+    measurementsVisible,
+    options.activeBasemapId,
+    options.mapReadyVersion,
+    options.mapRef,
+  ])
 }

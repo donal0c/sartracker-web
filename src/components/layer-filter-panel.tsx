@@ -20,6 +20,11 @@ import {
   hasNodeChildren,
 } from '../features/layers/layer-catalog-tree'
 import type { LayerCatalogRootNode } from '../features/layers/layer-catalog-types'
+import {
+  buildLayerInspectionRows,
+  getLayerNodeCountLabel,
+  toLayerTreeTestId,
+} from '../features/layers/layer-panel-model'
 import { useLayerTreeUiStore } from '../features/layers/layer-tree-ui-store'
 import { useLayerVisibilityStore } from '../features/layers/layer-visibility-store'
 import type {
@@ -75,20 +80,20 @@ export function LayerFilterPanel() {
 
   return (
     <section
-      className="rounded-2xl border border-stone-800 bg-stone-950/40 p-5 text-sm"
+      className="sar-panel p-4 text-sm"
       data-testid="layer-panel"
     >
-      <div className="mb-4 flex items-center justify-between gap-3">
+      <div className="mb-4 flex items-center justify-between gap-3 border-b border-[var(--sar-line)] pb-3">
         <div>
-          <h3 className="text-[11px] font-bold uppercase tracking-widest text-stone-400">
+          <h3 className="sar-section-label text-amber-300/90">
             Layer Workspace
           </h3>
-          <p className="mt-1 text-[10px] text-stone-600">
-            Catalog, visibility, aliases, and inspection.
+          <p className="mt-1 text-[11px] uppercase tracking-[0.12em] text-stone-500">
+            visibility and inspection
           </p>
         </div>
         <button
-          className="rounded-lg bg-stone-800 px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider text-stone-300 transition-colors hover:bg-stone-700 active:bg-stone-900"
+          className="sar-button px-3 py-1.5 text-xs font-bold uppercase tracking-[0.08em]"
           data-testid="layer-panel-toggle"
           onClick={() => setPanelExpanded(!panelExpanded)}
           type="button"
@@ -100,7 +105,7 @@ export function LayerFilterPanel() {
       {panelExpanded ? (
         <div className="space-y-4">
           <input
-            className="w-full rounded-lg border border-stone-700 bg-stone-950 px-3 py-2 text-xs text-stone-100 placeholder:text-stone-700 outline-none transition-colors focus:border-amber-500/50"
+            className="sar-input w-full px-3 py-2 text-xs"
             data-testid="layer-tree-search"
             onChange={(event) => setSearchQuery(event.target.value)}
             placeholder="Search layers and features..."
@@ -109,7 +114,7 @@ export function LayerFilterPanel() {
 
           <div className="flex flex-wrap items-center gap-2">
             <label
-              className="flex items-center gap-1.5 text-[10px] text-stone-400"
+              className="sar-toggle flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-medium text-stone-300"
               data-testid="layer-show-hidden-toggle"
             >
               <input
@@ -121,7 +126,7 @@ export function LayerFilterPanel() {
               Show Hidden
             </label>
             <button
-              className="rounded-lg bg-stone-800 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-stone-400 transition-colors hover:bg-stone-700 hover:text-stone-200 active:bg-stone-900"
+              className="sar-button px-2 py-1 text-[11px] font-semibold"
               data-testid="layer-expand-all-btn"
               onClick={() => resetExpandedNodeIds(collectAllExpandableNodeIds(root))}
               type="button"
@@ -129,7 +134,7 @@ export function LayerFilterPanel() {
               Expand All
             </button>
             <button
-              className="rounded-lg bg-stone-800 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-stone-400 transition-colors hover:bg-stone-700 hover:text-stone-200 active:bg-stone-900"
+              className="sar-button px-2 py-1 text-[11px] font-semibold"
               data-testid="layer-refresh-btn"
               onClick={() => void catalogController?.forceRefresh()}
               type="button"
@@ -142,9 +147,9 @@ export function LayerFilterPanel() {
             <EmptyState message={catalogError} testId="layer-tree-error" />
           ) : null}
 
-          <div className="rounded-xl border border-stone-800/60 bg-stone-900/30">
+          <div className="sar-module">
             <div className="border-b border-stone-800/60 px-3 py-2">
-              <p className="text-[10px] font-bold uppercase tracking-widest text-stone-500">
+              <p className="sar-section-label">
                 Layer Tree
               </p>
             </div>
@@ -203,26 +208,28 @@ function TreeNodeRow(props: {
 }) {
   const isExpanded = props.expandedNodeIds.includes(props.node.id)
   const children = getNodeChildren(props.node)
-  const childCount = getNodeCountLabel(
+  const childCount = getLayerNodeCountLabel(
     props.node,
-    props.trackingBreadcrumbCount,
-    props.measurementCount,
+    {
+      trackingBreadcrumbCount: props.trackingBreadcrumbCount,
+      measurementCount: props.measurementCount,
+    },
   )
   const rowSelected = props.selectedNodeId === props.node.id
 
   return (
     <div>
       <div
-        className={`flex items-center gap-2 rounded-lg px-2 py-1.5 text-xs transition-colors ${
-          rowSelected ? 'bg-amber-500/10 text-amber-100' : 'text-stone-300 hover:bg-stone-900/50'
+        className={`sar-tree-row mb-1 flex items-center gap-2 px-2 py-1.5 text-xs transition-colors ${
+          rowSelected ? 'sar-tree-row-active' : 'text-stone-300'
         }`}
-        data-testid={`layer-row-${toTestId(props.node.id)}`}
+        data-testid={`layer-row-${toLayerTreeTestId(props.node.id)}`}
         style={{ paddingLeft: `${props.depth * 16 + 8}px` }}
       >
         {hasNodeChildren(props.node) ? (
           <button
             className="w-5 text-stone-500"
-            data-testid={`layer-expand-${toTestId(props.node.id)}`}
+            data-testid={`layer-expand-${toLayerTreeTestId(props.node.id)}`}
             onClick={() => props.toggleNodeExpanded(props.node.id)}
             type="button"
           >
@@ -236,7 +243,7 @@ function TreeNodeRow(props: {
           <input
             checked={props.node.isVisible}
             className="rounded border-stone-700 bg-stone-950 text-amber-500 focus:ring-amber-500/30"
-            data-testid={`layer-visibility-${toTestId(props.node.id)}`}
+            data-testid={`layer-visibility-${toLayerTreeTestId(props.node.id)}`}
             onChange={(event) =>
               void setSubtreeVisibility(
                 props.root,
@@ -251,7 +258,7 @@ function TreeNodeRow(props: {
 
         <button
           className="min-w-0 flex-1 truncate text-left"
-          data-testid={`layer-select-${toTestId(props.node.id)}`}
+          data-testid={`layer-select-${toLayerTreeTestId(props.node.id)}`}
           onClick={() => props.onSelect(props.node.id)}
           type="button"
         >
@@ -260,12 +267,12 @@ function TreeNodeRow(props: {
 
         {props.node.kind !== 'root' ? (
           <button
-            className={`rounded px-1.5 py-0.5 text-[10px] ${
+            className={`px-1.5 py-0.5 text-[11px] ${
               props.node.isFavorite
                 ? 'bg-amber-500/20 text-amber-200'
                 : 'text-stone-600 hover:bg-stone-800 hover:text-stone-300'
             }`}
-            data-testid={`layer-favorite-${toTestId(props.node.id)}`}
+            data-testid={`layer-favorite-${toLayerTreeTestId(props.node.id)}`}
             onClick={() => void props.controller?.toggleFavorite(props.node.id)}
             type="button"
           >
@@ -273,7 +280,7 @@ function TreeNodeRow(props: {
           </button>
         ) : null}
 
-        <span className="min-w-[2rem] text-right font-mono text-[10px] text-stone-500">
+        <span className="min-w-[2rem] text-right font-mono text-[11px] text-stone-500">
           {childCount}
         </span>
       </div>
@@ -311,28 +318,30 @@ function LayerInspector(props: {
   const [aliasDraft, setAliasDraft] = useState(selectedNode?.alias ?? '')
 
   if (selectedNode === null) {
-    return <EmptyState message="Select a layer or feature to inspect it." testId="layer-inspector-empty" />
+    return <EmptyState message="Select a layer or feature from the tree above to inspect its properties." testId="layer-inspector-empty" />
   }
 
   const siblings = getSiblingNodeIds(props.root, selectedNode.id)
   const selectedIndex = siblings.indexOf(selectedNode.id)
   const canMoveUp = selectedIndex > 0
   const canMoveDown = selectedIndex !== -1 && selectedIndex < siblings.length - 1
-  const inspectionRows = buildInspectionRows(
+  const inspectionRows = buildLayerInspectionRows(
     selectedNode,
-    props.trackingDeviceCount,
-    props.trackingBreadcrumbCount,
-    props.measurementCount,
+    {
+      trackingDeviceCount: props.trackingDeviceCount,
+      trackingBreadcrumbCount: props.trackingBreadcrumbCount,
+      measurementCount: props.measurementCount,
+    },
   )
 
   return (
     <div
-      className="rounded-xl border border-stone-800/60 bg-stone-900/30 p-4"
+      className="sar-module p-4"
       data-testid="layer-inspector"
     >
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <p className="text-[10px] font-bold uppercase tracking-widest text-stone-500">
+          <p className="sar-section-label">
             Inspection
           </p>
           <h4
@@ -341,15 +350,15 @@ function LayerInspector(props: {
           >
             {selectedNode.displayLabel}
           </h4>
-          <p className="mt-1 text-[10px] uppercase tracking-wider text-stone-600">
+          <p className="mt-1 text-[11px] font-semibold uppercase tracking-wider text-stone-500">
             {selectedNode.kind.replace('_', ' ')}
           </p>
         </div>
         <button
-          className={`rounded px-2 py-1 text-[10px] font-bold uppercase tracking-wider ${
+          className={`border px-2 py-1 text-[11px] font-semibold ${
             selectedNode.isFavorite
-              ? 'bg-amber-500/20 text-amber-200'
-              : 'bg-stone-800 text-stone-300 hover:bg-stone-700'
+              ? 'border-amber-400/40 bg-amber-400/20 text-amber-200'
+              : 'sar-button'
           }`}
           data-testid="layer-inspector-favorite"
           onClick={() =>
@@ -366,18 +375,18 @@ function LayerInspector(props: {
       {selectedNode.kind !== 'root' ? (
         <div className="mt-4 grid gap-3">
           <label className="grid gap-1">
-            <span className="text-[10px] font-bold uppercase tracking-wider text-stone-500">
+            <span className="text-[11px] font-medium text-stone-300">
               Alias
             </span>
-            <div className="flex gap-2">
+            <div className="flex flex-wrap gap-2">
               <input
-                className="flex-1 rounded-lg border border-stone-700 bg-stone-950 px-3 py-2 text-xs text-stone-100 outline-none transition-colors focus:border-amber-500/50"
+                className="sar-input min-w-40 flex-1 px-3 py-2 text-xs"
                 data-testid="layer-alias-input"
                 onChange={(event) => setAliasDraft(event.target.value)}
                 value={aliasDraft}
               />
               <button
-                className="rounded-lg bg-stone-800 px-3 py-2 text-[10px] font-bold uppercase tracking-wider text-stone-300 hover:bg-stone-700"
+                className="sar-button px-3 py-2 text-[11px] font-semibold"
                 data-testid="layer-alias-save"
                 onClick={() =>
                   void props.controller?.renameNode(
@@ -390,7 +399,7 @@ function LayerInspector(props: {
                 Save
               </button>
               <button
-                className="rounded-lg bg-stone-800 px-3 py-2 text-[10px] font-bold uppercase tracking-wider text-stone-300 hover:bg-stone-700"
+                className="sar-button px-3 py-2 text-[11px] font-semibold"
                 data-testid="layer-alias-clear"
                 onClick={() => {
                   setAliasDraft('')
@@ -405,7 +414,7 @@ function LayerInspector(props: {
 
           <div className="flex gap-2">
             <button
-              className="rounded-lg bg-stone-800 px-3 py-2 text-[10px] font-bold uppercase tracking-wider text-stone-300 hover:bg-stone-700 disabled:cursor-not-allowed disabled:opacity-40"
+              className="sar-button px-3 py-2 text-[11px] font-semibold disabled:cursor-not-allowed disabled:opacity-40"
               data-testid="layer-move-up"
               disabled={!canMoveUp}
               onClick={() =>
@@ -421,7 +430,7 @@ function LayerInspector(props: {
               Move Up
             </button>
             <button
-              className="rounded-lg bg-stone-800 px-3 py-2 text-[10px] font-bold uppercase tracking-wider text-stone-300 hover:bg-stone-700 disabled:cursor-not-allowed disabled:opacity-40"
+              className="sar-button px-3 py-2 text-[11px] font-semibold disabled:cursor-not-allowed disabled:opacity-40"
               data-testid="layer-move-down"
               disabled={!canMoveDown}
               onClick={() =>
@@ -440,8 +449,8 @@ function LayerInspector(props: {
         </div>
       ) : null}
 
-      <div className="mt-4 rounded-lg border border-stone-800/60 bg-stone-950/40 p-3">
-        <p className="mb-2 text-[10px] font-bold uppercase tracking-widest text-stone-500">
+      <div className="sar-readout mt-4 p-3">
+        <p className="sar-section-label mb-2">
           Details
         </p>
         <dl className="space-y-2" data-testid="layer-inspector-details">
@@ -455,87 +464,6 @@ function LayerInspector(props: {
       </div>
     </div>
   )
-}
-
-function buildInspectionRows(
-  node: LayerCatalogNode,
-  trackingDeviceCount: number,
-  trackingBreadcrumbCount: number,
-  measurementCount: number,
-): readonly { readonly label: string; readonly value: string }[] {
-  if (node.kind === 'group') {
-    return [
-      { label: 'Group Key', value: node.groupKey },
-      { label: 'Child Layers', value: String(node.children.length) },
-      { label: 'Visible', value: node.isVisible ? 'Yes' : 'No' },
-    ]
-  }
-
-  if (node.kind === 'layer') {
-    if (node.id === 'layer:tracking:breadcrumbs') {
-      return [
-        { label: 'Layer Key', value: node.layerKey },
-        { label: 'Breadcrumb Points', value: String(trackingBreadcrumbCount) },
-        { label: 'Visible', value: node.isVisible ? 'Yes' : 'No' },
-      ]
-    }
-    if (node.id === 'layer:tracking:devices') {
-      return [
-        { label: 'Layer Key', value: node.layerKey },
-        { label: 'Tracking Devices', value: String(trackingDeviceCount) },
-        { label: 'Visible', value: node.isVisible ? 'Yes' : 'No' },
-      ]
-    }
-    if (node.id === 'layer:map-tools:measurements') {
-      return [
-        { label: 'Layer Key', value: node.layerKey },
-        { label: 'Active Measurements', value: String(measurementCount) },
-        { label: 'Visible', value: node.isVisible ? 'Yes' : 'No' },
-      ]
-    }
-    return [
-      { label: 'Layer Key', value: node.layerKey },
-      { label: 'Visible Items', value: `${node.summary.visibleCount}/${node.summary.totalCount}` },
-      { label: 'Visible', value: node.isVisible ? 'Yes' : 'No' },
-    ]
-  }
-
-  if (node.kind === 'feature_item') {
-    if (node.entity?.type === 'device') {
-      return [
-        { label: 'Device ID', value: node.entity.device.device_id },
-        { label: 'Status', value: node.entity.device.status },
-        { label: 'Last Seen', value: node.entity.device.last_seen ?? 'No fix' },
-      ]
-    }
-    if (node.entity?.type === 'marker') {
-      return [
-        { label: 'Marker Type', value: node.entity.marker.type },
-        { label: 'Coordinates', value: `${node.entity.marker.lat.toFixed(4)}, ${node.entity.marker.lon.toFixed(4)}` },
-        { label: 'Updated', value: node.entity.marker.updated_at },
-      ]
-    }
-    if (node.entity?.type === 'drawing') {
-      return [
-        { label: 'Drawing Type', value: node.entity.drawing.type },
-        { label: 'Label', value: node.entity.drawing.label ?? 'None' },
-        { label: 'Updated', value: node.entity.drawing.updated_at },
-      ]
-    }
-    if (node.entity?.type === 'gpx_import') {
-      return [
-        { label: 'Source Path', value: node.entity.gpxImport.source_path },
-        { label: 'File Name', value: node.entity.gpxImport.file_name },
-        { label: 'Imported', value: node.entity.gpxImport.imported_at },
-      ]
-    }
-  }
-
-  return [
-    { label: 'Node ID', value: node.id },
-    { label: 'Visible', value: node.isVisible ? 'Yes' : 'No' },
-    { label: 'Favorite', value: node.isFavorite ? 'Yes' : 'No' },
-  ]
 }
 
 async function setSubtreeVisibility(
@@ -708,34 +636,10 @@ async function reorderNodeRelative(
   await controller.reorderNode(node.parentId, siblings)
 }
 
-function getNodeCountLabel(
-  node: LayerCatalogNode,
-  trackingBreadcrumbCount: number,
-  measurementCount: number,
-): string {
-  if (node.kind === 'group') {
-    return String(node.children.length)
-  }
-  if (node.kind === 'layer') {
-    if (node.id === 'layer:tracking:breadcrumbs') {
-      return String(trackingBreadcrumbCount)
-    }
-    if (node.id === 'layer:map-tools:measurements') {
-      return String(measurementCount)
-    }
-    return String(node.summary.totalCount)
-  }
-  return ''
-}
-
-function toTestId(value: string): string {
-  return value.replace(/[^a-zA-Z0-9]+/g, '-')
-}
-
 function EmptyState(props: { readonly message: string; readonly testId?: string }) {
   return (
     <div
-      className="rounded-xl border border-dashed border-stone-800 bg-stone-950/20 px-3 py-2 text-[10px] font-medium italic text-stone-600"
+      className="rounded-lg border border-dashed border-stone-800 bg-stone-950/20 px-3 py-2 text-xs font-medium italic text-stone-500"
       data-testid={props.testId}
     >
       {props.message}

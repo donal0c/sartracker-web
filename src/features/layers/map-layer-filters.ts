@@ -1,3 +1,4 @@
+import type { FilterSpecification } from '@maplibre/maplibre-gl-style-spec'
 import type { ExpressionSpecification } from 'maplibre-gl'
 
 import type {
@@ -9,12 +10,12 @@ import type {
 
 export function buildTrackingLayerFilter(
   hiddenDeviceIds: readonly string[],
-): ExpressionSpecification | null {
+): FilterSpecification | null {
   if (hiddenDeviceIds.length === 0) {
     return null
   }
 
-  return ['!', ['in', ['get', 'deviceId'], ['literal', [...hiddenDeviceIds]]]]
+  return ['!in', 'deviceId', ...hiddenDeviceIds]
 }
 
 export function buildMarkerLayerFilter(

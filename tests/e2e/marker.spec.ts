@@ -74,6 +74,28 @@ test.describe('M6 marker workflows', () => {
 
     expect(persistedState?.markers).toHaveLength(0)
   })
+
+  test('uses dialog semantics, traps focus, and cancels with Escape', async ({ page }) => {
+    await clickMapCentre(page)
+
+    const dialog = page.getByRole('dialog', { name: 'Marker Details' })
+    await expect(dialog).toBeVisible()
+    await expect(dialog).toHaveAttribute('aria-modal', 'true')
+
+    await expect(dialog.getByRole('button', { name: 'Close' })).toBeFocused()
+    await page.keyboard.press('Shift+Tab')
+    await expect(dialog.getByRole('button', { name: 'Save' })).toBeFocused()
+
+    await page.keyboard.press('Escape')
+    await expect(page.getByTestId('marker-dialog')).toBeHidden()
+
+    const persistedState = await page.evaluate(() => {
+      const raw = window.sessionStorage.getItem('sartracker:browser-harness')
+      return raw === null ? null : JSON.parse(raw)
+    })
+
+    expect(persistedState?.markers ?? []).toHaveLength(0)
+  })
 })
 
 async function clickMapCentre(page: Parameters<typeof test>[0]['page']) {

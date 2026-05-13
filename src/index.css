@@ -3,6 +3,18 @@
 @tailwind utilities;
 
 :root {
+  --sar-ink: #090807;
+  --sar-panel: #11100e;
+  --sar-panel-raised: #1b1915;
+  --sar-panel-sunken: #090807;
+  --sar-line: rgba(214, 204, 190, 0.15);
+  --sar-line-strong: rgba(245, 158, 11, 0.42);
+  --sar-text: #f4f1ec;
+  --sar-text-muted: #a8a29e;
+  --sar-amber: #f4b74a;
+  --sar-amber-strong: #f59e0b;
+  --sar-emerald: #34d399;
+  --sar-danger: #e11d48;
   font-family:
     Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
     "Segoe UI", sans-serif;
@@ -24,4 +36,277 @@ body,
 
 body {
   margin: 0;
+}
+
+@layer components {
+  .sar-shell {
+    background:
+      radial-gradient(circle at 72% 0%, rgba(244, 183, 74, 0.055), transparent 22rem),
+      linear-gradient(90deg, rgba(0, 0, 0, 0.22), transparent 34%),
+      var(--sar-ink);
+    color: var(--sar-text);
+  }
+
+  .sar-sidebar {
+    border-left: 1px solid var(--sar-line);
+    background:
+      linear-gradient(180deg, rgba(244, 183, 74, 0.055), transparent 14rem),
+      linear-gradient(90deg, rgba(255, 255, 255, 0.025), transparent 7rem),
+      var(--sar-panel);
+    box-shadow:
+      -34px 0 70px rgba(0, 0, 0, 0.5),
+      inset 1px 0 rgba(255, 255, 255, 0.035);
+  }
+
+  .sar-command-mast {
+    border-bottom: 1px solid rgba(214, 204, 190, 0.12);
+    background:
+      linear-gradient(180deg, rgba(255, 255, 255, 0.03), transparent),
+      linear-gradient(90deg, rgba(244, 183, 74, 0.08), transparent 55%),
+      #15130f;
+    box-shadow: inset 0 -1px rgba(0, 0, 0, 0.42);
+  }
+
+  .sar-global-mast {
+    border-bottom: 1px solid rgba(214, 204, 190, 0.13);
+    background:
+      linear-gradient(180deg, rgba(255, 255, 255, 0.035), transparent 52%),
+      linear-gradient(90deg, rgba(244, 183, 74, 0.08), transparent 34%),
+      #12100d;
+    box-shadow:
+      0 18px 42px rgba(0, 0, 0, 0.28),
+      inset 0 -1px rgba(0, 0, 0, 0.48);
+  }
+
+  .sar-mast-button {
+    min-width: 82px;
+    border-left: 1px solid var(--sar-line);
+    background:
+      linear-gradient(180deg, rgba(255, 255, 255, 0.035), transparent),
+      rgba(9, 8, 7, 0.34);
+    color: var(--sar-text);
+    padding: 0 0.65rem;
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    white-space: nowrap;
+    transition:
+      background-color 150ms ease,
+      color 150ms ease;
+  }
+
+  .sar-mast-button:hover {
+    background: rgba(244, 183, 74, 0.11);
+    color: #fde9b5;
+  }
+
+  .sar-panel {
+    border: 1px solid var(--sar-line);
+    background:
+      linear-gradient(180deg, rgba(255, 255, 255, 0.035), transparent 45%),
+      linear-gradient(90deg, rgba(244, 183, 74, 0.025), transparent 55%),
+      var(--sar-panel);
+    box-shadow:
+      0 18px 44px rgba(0, 0, 0, 0.22),
+      inset 0 1px rgba(255, 255, 255, 0.035);
+  }
+
+  .sar-panel-raised {
+    border: 1px solid var(--sar-line);
+    background: var(--sar-panel-raised);
+    box-shadow: inset 0 1px rgba(255, 255, 255, 0.025);
+  }
+
+  .sar-module {
+    border: 1px solid rgba(214, 204, 190, 0.14);
+    background:
+      linear-gradient(180deg, rgba(255, 255, 255, 0.028), transparent 42%),
+      rgba(9, 8, 7, 0.44);
+    box-shadow:
+      inset 0 1px rgba(255, 255, 255, 0.025),
+      0 14px 34px rgba(0, 0, 0, 0.16);
+  }
+
+  .sar-workspace-header {
+    border-bottom: 1px solid var(--sar-line);
+    background:
+      linear-gradient(180deg, rgba(244, 183, 74, 0.04), transparent),
+      var(--sar-panel);
+  }
+
+  .sar-workspace-footer {
+    border-top: 1px solid var(--sar-line);
+    background: rgba(13, 12, 10, 0.92);
+  }
+
+  .sar-readout {
+    border: 1px solid rgba(168, 162, 158, 0.13);
+    background:
+      linear-gradient(180deg, rgba(255, 255, 255, 0.025), transparent),
+      var(--sar-panel-sunken);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.025),
+      inset 0 -18px 34px rgba(0, 0, 0, 0.18);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .sar-section-label {
+    color: var(--sar-text-muted);
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+  }
+
+  .sar-button {
+    border: 1px solid rgba(168, 162, 158, 0.2);
+    background:
+      linear-gradient(180deg, rgba(255, 255, 255, 0.04), transparent),
+      #24211e;
+    color: var(--sar-text);
+    box-shadow:
+      inset 0 1px rgba(255, 255, 255, 0.04),
+      0 8px 20px rgba(0, 0, 0, 0.18);
+    transition:
+      border-color 150ms ease,
+      background-color 150ms ease,
+      color 150ms ease;
+  }
+
+  .sar-button:hover {
+    border-color: rgba(244, 183, 74, 0.35);
+    background: #2d2925;
+  }
+
+  .sar-action-primary {
+    border: 1px solid rgba(244, 183, 74, 0.8);
+    background:
+      linear-gradient(180deg, rgba(255, 255, 255, 0.18), transparent 42%),
+      var(--sar-amber);
+    color: #16110a;
+    box-shadow:
+      inset 0 1px rgba(255, 255, 255, 0.22),
+      0 14px 28px rgba(0, 0, 0, 0.3);
+  }
+
+  .sar-action-primary:hover {
+    background:
+      linear-gradient(180deg, rgba(255, 255, 255, 0.22), transparent 42%),
+      #f8c65c;
+  }
+
+  .sar-action-danger {
+    border: 1px solid rgba(244, 63, 94, 0.55);
+    background:
+      linear-gradient(180deg, rgba(255, 255, 255, 0.08), transparent 44%),
+      #b91c3c;
+    color: #fff7f7;
+    box-shadow:
+      inset 0 1px rgba(255, 255, 255, 0.12),
+      0 14px 28px rgba(0, 0, 0, 0.28);
+  }
+
+  .sar-action-danger:hover {
+    background:
+      linear-gradient(180deg, rgba(255, 255, 255, 0.1), transparent 44%),
+      #d01846;
+  }
+
+  .sar-button-focus {
+    border: 1px solid var(--sar-line-strong);
+    background: rgba(244, 183, 74, 0.1);
+    color: #fde9b5;
+  }
+
+  .sar-button-focus:hover {
+    background: rgba(244, 183, 74, 0.16);
+  }
+
+  .sar-input {
+    border: 1px solid rgba(168, 162, 158, 0.2);
+    background: var(--sar-panel-sunken);
+    color: var(--sar-text);
+    box-shadow: inset 0 1px rgba(255, 255, 255, 0.025);
+    outline: none;
+    transition:
+      border-color 150ms ease,
+      box-shadow 150ms ease,
+      background-color 150ms ease;
+  }
+
+  .sar-input:focus {
+    border-color: rgba(244, 183, 74, 0.5);
+    box-shadow:
+      0 0 0 1px rgba(244, 183, 74, 0.18),
+      inset 0 1px rgba(255, 255, 255, 0.025);
+  }
+
+  .sar-input::placeholder {
+    color: rgba(168, 162, 158, 0.62);
+  }
+
+  .sar-toggle {
+    border: 1px solid rgba(168, 162, 158, 0.16);
+    background: var(--sar-panel-sunken);
+  }
+
+  .sar-inline-alert {
+    border: 1px solid rgba(244, 183, 74, 0.28);
+    background: rgba(120, 72, 18, 0.16);
+  }
+
+  .sar-status-row {
+    border-top: 1px solid rgba(168, 162, 158, 0.11);
+  }
+
+  .sar-tab-active {
+    border: 1px solid rgba(244, 183, 74, 0.35);
+    background: rgba(244, 183, 74, 0.12);
+    color: #fde9b5;
+  }
+
+  .sar-control-dock {
+    border: 1px solid rgba(214, 204, 190, 0.17);
+    background:
+      linear-gradient(180deg, rgba(255, 255, 255, 0.04), transparent),
+      rgba(9, 8, 7, 0.94);
+    box-shadow:
+      0 18px 46px rgba(0, 0, 0, 0.36),
+      inset 0 1px rgba(255, 255, 255, 0.04);
+  }
+
+  .sar-instrument-strip {
+    border-top: 1px solid rgba(214, 204, 190, 0.13);
+    background:
+      linear-gradient(90deg, rgba(0, 0, 0, 0.96), rgba(9, 8, 7, 0.9) 68%, rgba(9, 8, 7, 0.76)),
+      var(--sar-ink);
+    box-shadow:
+      0 -20px 44px rgba(0, 0, 0, 0.34),
+      inset 0 1px rgba(255, 255, 255, 0.035);
+  }
+
+  .sar-rail-section {
+    border: 1px solid rgba(214, 204, 190, 0.13);
+    background:
+      linear-gradient(180deg, rgba(255, 255, 255, 0.03), transparent),
+      rgba(9, 8, 7, 0.38);
+    box-shadow: inset 0 1px rgba(255, 255, 255, 0.025);
+  }
+
+  .sar-tree-row {
+    border: 1px solid transparent;
+    background: rgba(9, 8, 7, 0.12);
+  }
+
+  .sar-tree-row:hover {
+    border-color: rgba(214, 204, 190, 0.12);
+    background: rgba(255, 255, 255, 0.035);
+  }
+
+  .sar-tree-row-active {
+    border-color: rgba(244, 183, 74, 0.28);
+    background: rgba(244, 183, 74, 0.11);
+    color: #fde9b5;
+  }
 }

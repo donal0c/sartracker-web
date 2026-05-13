@@ -2,7 +2,7 @@
 
 ## ⚠️ LIFE-SAFETY CRITICAL APPLICATION
 
-This application is used by Kerry Mountain Rescue Team during real search and rescue operations. Incorrect coordinates, broken tracking, or data loss could endanger lives. Treat every change with the seriousness that demands.
+This application is used by Mountain Rescue teams during real search and rescue operations. Incorrect coordinates, broken tracking, or data loss could endanger lives. Treat every change with the seriousness that demands.
 
 This repo should feel like mission software, not a prototype. The standard is not merely "works on my machine" or "passes the tests." The target is software that is calm, explicit, trustworthy, and unusually well-structured under pressure.
 
@@ -20,6 +20,10 @@ Aim for work that feels closer to a 9.5-10/10 engineering result than a fast acc
 1. **Read this file completely**
 2. **Read `handoff/HANDOFF.md` immediately after this file**
 3. **Read the relevant bead** for whatever you're working on (`bd list`, `bd show <id>`)
+
+## Branch Discipline
+
+Work directly on `master` unless the user explicitly asks for another branch. Do not create feature branches for ordinary local work, fixes, validation, deployment, or cleanup in this repo.
 
 ## Project Intent
 
@@ -92,8 +96,9 @@ Use Claude for each batch at the end, after tests and docs are updated.
 For each batch, after completing work:
 1. update `handoff/HANDOFF.md`,
 2. update the relevant bead(s),
-3. run the verification suite,
-4. record exactly what was verified, what remains open, and what Claude should validate next directly in `handoff/HANDOFF.md`.
+3. update the operator manual when app behaviour, UI, settings, workflows, or known gaps changed,
+4. run the verification suite,
+5. record exactly what was verified, what remains open, and what Claude should validate next directly in `handoff/HANDOFF.md`.
 
 There is no separate packet layer. The handoff file must contain the current baton state.
 
@@ -101,8 +106,9 @@ There is no separate packet layer. The handoff file must contain the current bat
 
 1. **Update handoff/HANDOFF.md** — what you did, what's next, any blockers
 2. **Update the bead** — close it, add comments, update status
-3. **Commit with a descriptive message** referencing the bead ID
-4. **Run the full test suite** — nothing ships without green tests
+3. **Update the operator manual** — if the app changed in any user-visible way, keep `public/manual/index.html` and any screenshots in `public/manual/assets/` current
+4. **Commit with a descriptive message** referencing the bead ID
+5. **Run the full test suite** — nothing ships without green tests
 
 ### Finish Protocol (required)
 
@@ -111,9 +117,10 @@ At the end of a work cycle, do not stop at "the code is written."
 Before finishing, the agent should:
 1. run the relevant verification for the slice that changed
 2. run Playwright coverage when UI, map, workflow, or runtime behavior was affected
-3. confirm the result meets the repo's quality bar, aiming for roughly 9.5-10/10 quality rather than "probably fine"
-4. update `handoff/HANDOFF.md` with a short baton-ready summary
-5. update the relevant bead(s)
+3. update `public/manual/index.html` when operator-facing behaviour, UI, settings, workflow, screenshots, or known gaps changed
+4. confirm the result meets the repo's quality bar, aiming for roughly 9.5-10/10 quality rather than "probably fine"
+5. update `handoff/HANDOFF.md` with a short baton-ready summary
+6. update the relevant bead(s)
 
 If, and only if, the agent is highly confident that:
 - the change is complete for this chunk
@@ -122,9 +129,9 @@ If, and only if, the agent is highly confident that:
 - the code quality is genuinely high
 
 then the agent should also:
-6. `git add` the intended files
-7. create a descriptive commit referencing the bead ID
-8. `git push`
+7. `git add` the intended files
+8. create a descriptive commit referencing the bead ID
+9. `git push`
 
 The default desired end state is a clean worktree on the remote branch so the next agent can begin from a stable baseline.
 
@@ -221,6 +228,7 @@ A bead is not done just because tests pass.
 - The code must be clean enough that the next bead can extend it without workaround structure
 - The main risks and failure modes must be covered by tests
 - Shared docs (`CLAUDE.md`, bead comments, `handoff/HANDOFF.md`) must reflect any decisions made during the work
+- The operator manual (`public/manual/index.html`) must reflect any user-visible app change, including changed controls, workflows, settings, screenshots, or known gaps
 - Remaining debt, if any, must be explicit, small, and intentional
 
 ### Coordinate Safety
@@ -428,13 +436,16 @@ All spikes passed. Use them as reference implementations and test fixtures:
 # Unit tests
 npm run test
 
-# E2E tests (standard project only — excludes visual)
+# E2E tests (all configured Playwright projects)
 npm run test:e2e
 
 # Visual verification E2E tests
 npx playwright test --project=visual
 
-# All tests (unit + all E2E including visual)
+# Backend/Tauri tests
+npm run test:backend
+
+# All tests (unit + all Playwright projects + backend)
 npm run test:all
 ```
 

@@ -16,8 +16,10 @@ test.describe('M10 full mission integration flow', () => {
     await injectMockTracking(page)
     await expect(page.getByTestId('tracking-status')).toContainText('online')
     await expect(page.getByTestId('tracking-status')).toContainText('2')
+    await page.getByTestId('sidebar-tab-layers').click()
     await expect(page.getByText('Alpha Team')).toBeVisible()
     await expect(page.getByText('Bravo Team')).toBeVisible()
+    await page.getByTestId('sidebar-tab-tracking').click()
 
     await clickMap(page, { x: 640, y: 250 })
     await expect(page.getByTestId('marker-dialog')).toBeVisible()
@@ -35,6 +37,7 @@ test.describe('M10 full mission integration flow', () => {
     await page.getByTestId('marker-save-btn').click()
     await expect(page.getByTestId('marker-dialog')).toBeHidden()
 
+    await page.getByTestId('drawing-toolbar-expand').click()
     await page.getByTestId('drawing-tool-search_area').click()
     await clickMap(page, { x: 420, y: 180 })
     await clickMap(page, { x: 620, y: 180 })
@@ -67,11 +70,13 @@ test.describe('M10 full mission integration flow', () => {
     await page.getByTestId('drawing-save-btn').click()
     await expect(page.getByTestId('drawing-dialog')).toBeHidden()
 
+    await page.getByTestId('sidebar-tab-layers').click()
     const bravoVisibilityToggle = page.getByTestId('layer-visibility-feature-device-bravo')
     await expect(bravoVisibilityToggle).toBeVisible({ timeout: 15000 })
     await bravoVisibilityToggle.click()
     await expect(bravoVisibilityToggle).not.toBeChecked()
 
+    await page.getByTestId('sidebar-tab-tools').click()
     await page.getByTestId('measurement-arm-btn').click()
     await clickMap(page, { x: 460, y: 240 })
     await clickMap(page, { x: 580, y: 285 })
@@ -100,6 +105,7 @@ test.describe('M10 full mission integration flow', () => {
     await expect(page.getByTestId('mission-recovery-dialog')).toBeVisible()
     await page.getByRole('button', { name: 'Resume' }).click()
     await expect(page.getByTestId('mission-control')).toContainText('active')
+    await page.getByTestId('sidebar-tab-layers').click()
     await expect(page.getByText('Alpha Team')).toBeVisible()
 
     await page.getByTestId('mission-finish-btn').click()
@@ -108,6 +114,7 @@ test.describe('M10 full mission integration flow', () => {
       .getByRole('button', { name: 'Confirm Finish' })
       .click()
     await expect(page.getByTestId('mission-control')).toContainText('idle')
+    await page.getByTestId('sidebar-tab-tools').click()
     await expect(page.getByTestId('measurement-count')).toHaveText('0')
 
     const state = await readHarnessState(page)
@@ -235,14 +242,18 @@ async function clickMap(
   page: import('@playwright/test').Page,
   position: { x: number; y: number },
 ) {
-  await page.getByTestId('map-container').click({ position })
+  const target = page.locator('.maplibregl-canvas').first()
+  await target.waitFor({ state: 'visible', timeout: 15000 })
+  await target.click({ position, force: true })
 }
 
 async function rightClickMap(
   page: import('@playwright/test').Page,
   position: { x: number; y: number },
 ) {
-  await page.getByTestId('map-container').click({ position, button: 'right' })
+  const target = page.locator('.maplibregl-canvas').first()
+  await target.waitFor({ state: 'visible', timeout: 15000 })
+  await target.click({ position, button: 'right', force: true })
 }
 
 function parseDuration(value: string | null): number {

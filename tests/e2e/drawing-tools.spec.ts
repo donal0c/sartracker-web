@@ -8,10 +8,11 @@ test.describe('M8 drawing workflows', () => {
     await page.getByTestId('mission-name-input').fill('Drawing Mission')
     await page.getByTestId('mission-start-btn').click()
     await expect(page.getByTestId('mission-control')).toContainText('active')
+    await page.getByTestId('drawing-toolbar-expand').click()
   })
 
   test('creates a line drawing from the toolbar and persists it', async ({ page }) => {
-    await page.getByTestId('drawing-tool-line').click()
+    await page.getByTestId('drawing-tool-line').click({ force: true })
     await clickMap(page, { x: 420, y: 240 })
     await clickMap(page, { x: 560, y: 300 })
     await rightClickMap(page, { x: 560, y: 300 })
@@ -26,7 +27,7 @@ test.describe('M8 drawing workflows', () => {
   })
 
   test('creates a search area with metadata', async ({ page }) => {
-    await page.getByTestId('drawing-tool-search_area').click()
+    await page.getByTestId('drawing-tool-search_area').click({ force: true })
     await clickMap(page, { x: 440, y: 180 })
     await clickMap(page, { x: 620, y: 180 })
     await clickMap(page, { x: 540, y: 340 })
@@ -37,6 +38,7 @@ test.describe('M8 drawing workflows', () => {
     await page.getByTestId('drawing-search-area-team-input').fill('Team 1')
     await page.getByTestId('drawing-search-area-status-input').selectOption('Assigned')
     await page.getByTestId('drawing-search-area-poa-input').fill('35')
+    await expect(page.getByTestId('drawing-search-area-terrain-input')).toBeEditable()
     await page.getByTestId('drawing-search-area-terrain-input').fill('Rocky ground')
     await page.getByTestId('drawing-search-area-notes-input').fill('Approach from east ridge')
     await page.getByTestId('drawing-save-btn').click()
@@ -49,7 +51,7 @@ test.describe('M8 drawing workflows', () => {
   })
 
   test('creates LPB range rings and bearing lines with conversion', async ({ page }) => {
-    await page.getByTestId('drawing-tool-range_ring').click()
+    await page.getByTestId('drawing-tool-range_ring').click({ force: true })
     await clickMap(page, { x: 500, y: 240 })
 
     await expect(page.getByTestId('drawing-dialog')).toBeVisible()
@@ -58,7 +60,7 @@ test.describe('M8 drawing workflows', () => {
     await page.getByTestId('drawing-range-ring-lpb-category-input').selectOption('hiker')
     await page.getByTestId('drawing-save-btn').click()
 
-    await page.getByTestId('drawing-tool-bearing_line').click()
+    await page.getByTestId('drawing-tool-bearing_line').click({ force: true })
     await clickMap(page, { x: 620, y: 260 })
 
     await expect(page.getByTestId('drawing-dialog')).toBeVisible()
@@ -75,7 +77,7 @@ test.describe('M8 drawing workflows', () => {
   })
 
   test('creates a search sector and supports escape cancellation', async ({ page }) => {
-    await page.getByTestId('drawing-tool-search_sector').click()
+    await page.getByTestId('drawing-tool-search_sector').click({ force: true })
     await clickMap(page, { x: 360, y: 260 })
 
     await expect(page.getByTestId('drawing-dialog')).toBeVisible()
@@ -85,7 +87,7 @@ test.describe('M8 drawing workflows', () => {
     await page.getByTestId('drawing-sector-radius-input').fill('1500')
     await page.getByTestId('drawing-save-btn').click()
 
-    await page.getByTestId('drawing-tool-line').click()
+    await page.getByTestId('drawing-tool-line').click({ force: true })
     await page.keyboard.press('Escape')
     await expect(page.getByText('Active: Select')).toBeVisible()
 
@@ -94,7 +96,7 @@ test.describe('M8 drawing workflows', () => {
   })
 
   test('creates, edits, and exposes text labels through the layer tree', async ({ page }) => {
-    await page.getByTestId('drawing-tool-text_label').click()
+    await page.getByTestId('drawing-tool-text_label').click({ force: true })
     await clickMap(page, { x: 540, y: 220 })
 
     await expect(page.getByTestId('drawing-dialog')).toBeVisible()
@@ -111,6 +113,7 @@ test.describe('M8 drawing workflows', () => {
     await page.getByTestId('drawing-text-label-text-input').fill('Updated Landing Zone')
     await page.getByTestId('drawing-save-btn').click()
 
+    await page.getByTestId('sidebar-tab-layers').click()
     await page.getByTestId('layer-panel').scrollIntoViewIfNeeded()
     await page.getByTestId('layer-tree-search').fill('Updated Landing')
     await expect(page.getByText('Text Labels')).toBeVisible()
@@ -118,7 +121,7 @@ test.describe('M8 drawing workflows', () => {
   })
 
   test('edits and deletes an existing drawing through select mode', async ({ page }) => {
-    await page.getByTestId('drawing-tool-line').click()
+    await page.getByTestId('drawing-tool-line').click({ force: true })
     await clickMap(page, { x: 420, y: 240 })
     await clickMap(page, { x: 560, y: 300 })
     await rightClickMap(page, { x: 560, y: 300 })
@@ -143,11 +146,32 @@ test.describe('M8 drawing workflows', () => {
   })
 
   test('does not open the marker modal while a drawing tool is active', async ({ page }) => {
-    await page.getByTestId('drawing-tool-range_ring').click()
+    await page.getByTestId('drawing-tool-range_ring').click({ force: true })
     await clickMap(page, { x: 500, y: 240 })
 
     await expect(page.getByTestId('drawing-dialog')).toBeVisible()
     await expect(page.getByTestId('marker-dialog')).toBeHidden()
+  })
+
+  test('uses dialog semantics, traps focus, and cancels with Escape', async ({ page }) => {
+    await page.getByTestId('drawing-tool-line').click({ force: true })
+    await clickMap(page, { x: 420, y: 240 })
+    await clickMap(page, { x: 560, y: 300 })
+    await rightClickMap(page, { x: 560, y: 300 })
+
+    const dialog = page.getByRole('dialog', { name: 'Line Details' })
+    await expect(dialog).toBeVisible()
+    await expect(dialog).toHaveAttribute('aria-modal', 'true')
+
+    await expect(dialog.getByRole('button', { name: 'Close' })).toBeFocused()
+    await page.keyboard.press('Shift+Tab')
+    await expect(dialog.getByRole('button', { name: 'Save' })).toBeFocused()
+
+    await page.keyboard.press('Escape')
+    await expect(page.getByTestId('drawing-dialog')).toBeHidden()
+
+    const drawings = await readMissionDrawings(page)
+    expect(drawings).toHaveLength(0)
   })
 })
 
@@ -155,14 +179,18 @@ async function clickMap(
   page: import('@playwright/test').Page,
   position: { x: number; y: number },
 ) {
-  await page.getByTestId('map-container').click({ position })
+  const target = page.locator('.maplibregl-canvas').first()
+  await target.waitFor({ state: 'visible', timeout: 15000 })
+  await target.click({ position, force: true })
 }
 
 async function rightClickMap(
   page: import('@playwright/test').Page,
   position: { x: number; y: number },
 ) {
-  await page.getByTestId('map-container').click({ position, button: 'right' })
+  const target = page.locator('.maplibregl-canvas').first()
+  await target.waitFor({ state: 'visible', timeout: 15000 })
+  await target.click({ position, button: 'right', force: true })
 }
 
 async function readMissionDrawings(page: import('@playwright/test').Page) {

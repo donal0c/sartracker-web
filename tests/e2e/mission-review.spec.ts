@@ -25,7 +25,11 @@ test.describe('M15 mission review workspace', () => {
     await page.getByTestId('open-mission-review-workspace').click()
     await expect(page.getByTestId('mission-review-workspace')).toBeVisible()
     await expect(page.getByTestId('mission-review-workspace').getByText('Review Mission', { exact: true })).toBeVisible()
-    await expect(page.getByTestId('mission-review-workspace')).toContainText('finalized')
+    await expect
+      .poll(async () => page.getByTestId('mission-review-workspace').textContent(), {
+        timeout: 10000,
+      })
+      .toContain('finalized')
     await expect(page.getByTestId('mission-review-workspace')).toContainText('Mission Finalized')
     await expect(page.getByTestId('mission-review-workspace')).toContainText('Boot Print')
 

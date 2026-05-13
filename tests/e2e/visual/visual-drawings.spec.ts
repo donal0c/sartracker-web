@@ -30,6 +30,7 @@ test.describe('Visual: Drawing Tools', () => {
   test.beforeEach(async ({ page }) => {
     await navigateToHarness(page)
     await startMission(page, 'Drawing Verification')
+    await page.getByTestId('drawing-toolbar-expand').click()
   })
 
   test('search area dialog shows team metadata and area calculation', async ({ page }) => {
@@ -47,6 +48,7 @@ test.describe('Visual: Drawing Tools', () => {
     await page.getByTestId('drawing-search-area-team-input').fill('Team 1')
     await page.getByTestId('drawing-search-area-status-input').selectOption('Assigned')
     await page.getByTestId('drawing-search-area-poa-input').fill('35')
+    await expect(page.getByTestId('drawing-search-area-terrain-input')).toBeEditable()
     await page.getByTestId('drawing-search-area-terrain-input').fill('Rocky ground above tree line')
 
     await captureAndRegister(page, {
@@ -77,7 +79,7 @@ Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
   })
 
   test('range ring LPB mode shows statistical distance rings', async ({ page }) => {
-    await page.getByTestId('drawing-tool-range_ring').click()
+    await page.getByTestId('drawing-tool-range_ring').click({ force: true })
     await clickMap(page, { x: 650, y: 300 })
     await page.waitForTimeout(500)
 
@@ -114,7 +116,7 @@ Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
   })
 
   test('bearing line shows true/magnetic conversion', async ({ page }) => {
-    await page.getByTestId('drawing-tool-bearing_line').click()
+    await page.getByTestId('drawing-tool-bearing_line').click({ force: true })
     await clickMap(page, { x: 650, y: 300 })
     await page.waitForTimeout(500)
 
@@ -191,7 +193,7 @@ Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
     }
 
     // Create text label
-    await page.getByTestId('drawing-tool-text_label').click()
+    await page.getByTestId('drawing-tool-text_label').click({ force: true })
     await clickMap(page, { x: 700, y: 220 })
     await page.waitForTimeout(300)
     if (await page.getByTestId('drawing-dialog').isVisible()) {

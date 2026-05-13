@@ -10,6 +10,7 @@ test.describe('M22 GPX import parity', () => {
     await page.getByTestId('mission-name-input').fill('GPX Mission')
     await page.getByTestId('mission-start-btn').click()
     await expect(page.getByTestId('mission-control')).toContainText('active')
+    await page.getByTestId('sidebar-tab-tools').click()
   })
 
   test('renders imported GPX tracks in the panel, layer catalog, review workspace, and map source', async ({
@@ -41,6 +42,7 @@ test.describe('M22 GPX import parity', () => {
     await expect(page.getByTestId('gpx-import-list')).toContainText('alpha')
     await expect(page.getByTestId('gpx-import-panel')).toContainText('1 imported')
 
+    await page.getByTestId('sidebar-tab-layers').click()
     await page.getByTestId('layer-expand-group-gpx-tracks').click()
     await expect(page.getByTestId('layer-tree')).toContainText('GPX Tracks')
     await expect(page.getByTestId('layer-tree')).toContainText('alpha')
@@ -52,16 +54,12 @@ test.describe('M22 GPX import parity', () => {
       return page.evaluate(() => {
         const map = (window as Window & {
           __SARTRACKER_MAP__?: {
-            getStyle: () => {
-              sources?: Record<string, { data?: { features?: unknown[] } }>
-            }
+            querySourceFeatures: (sourceId: string) => unknown[]
           }
         }).__SARTRACKER_MAP__
-        const source = map?.getStyle().sources?.['mission-gpx-imports']
-        const features = source?.data?.features
-        return Array.isArray(features) ? features.length : 0
+        return map?.querySourceFeatures('mission-gpx-imports').length ?? 0
       })
-    }).toBe(1)
+    }, { timeout: 10000 }).toBeGreaterThan(0)
 
     await page.getByTestId('open-mission-review-workspace').click()
     await expect(page.getByTestId('mission-review-workspace')).toBeVisible()

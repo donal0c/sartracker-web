@@ -9,6 +9,9 @@ import {
   SUBJECT_CATEGORIES,
 } from '../features/markers/marker-definitions'
 import type { MarkerType } from '../infrastructure/mission-store/tauri-mission-store'
+import { DialogOverlay } from './dialog-overlay'
+
+const MARKER_DIALOG_TITLE_ID = 'marker-dialog-title'
 
 const MARKER_TYPE_OPTIONS: readonly { value: MarkerType; label: string }[] = [
   { value: 'ipp_lkp', label: 'IPP/LKP' },
@@ -32,55 +35,57 @@ export function MarkerDialog() {
   const draft = dialog.draft
 
   return (
-    <div
-      className="fixed inset-0 z-40 flex items-center justify-center bg-stone-950/70 px-4 py-8 backdrop-blur-sm"
-      data-testid="marker-dialog"
+    <DialogOverlay
+      labelledBy={MARKER_DIALOG_TITLE_ID}
+      onClose={() => controller.closeDialog()}
+      open={dialog !== null}
+      panelClassName="max-h-[calc(100vh-4rem)] w-full max-w-2xl overflow-y-auto rounded-3xl border border-stone-700 bg-stone-900 p-6 shadow-2xl shadow-black/40"
+      testId="marker-dialog"
     >
-      <div className="max-h-[calc(100vh-4rem)] w-full max-w-2xl overflow-y-auto rounded-3xl border border-stone-700 bg-stone-900 p-6 shadow-2xl shadow-black/40">
-        <div className="flex items-center justify-between">
-          <div>
-            <p className="text-xs uppercase tracking-[0.3em] text-amber-300">
-              {dialog.mode === 'create' ? 'New Marker' : 'Edit Marker'}
-            </p>
-            <h2 className="mt-2 text-xl font-semibold text-stone-50">Marker Details</h2>
-          </div>
-          <button
-            className="rounded-lg border border-stone-600 bg-stone-950 px-3 py-2 text-sm text-stone-200 disabled:opacity-50"
-            disabled={saving}
-            onClick={() => controller.closeDialog()}
-            type="button"
-          >
-            Close
-          </button>
+      <div className="flex items-center justify-between">
+        <div>
+          <p className="text-xs uppercase tracking-[0.3em] text-amber-300">
+            {dialog.mode === 'create' ? 'New Marker' : 'Edit Marker'}
+          </p>
+          <h2 className="mt-2 text-xl font-semibold text-stone-50" id={MARKER_DIALOG_TITLE_ID}>Marker Details</h2>
         </div>
+        <button
+          className="rounded-lg border border-stone-600 bg-stone-950 px-3 py-2 text-sm text-stone-200 disabled:opacity-50"
+          disabled={saving}
+          onClick={() => controller.closeDialog()}
+          type="button"
+        >
+          Close
+        </button>
+      </div>
 
-        <div className="mt-6 space-y-6">
-          <section>
-            <p className="text-xs uppercase tracking-[0.2em] text-stone-300">Marker Type</p>
-            <div className="mt-3 grid gap-2 sm:grid-cols-4">
-              {MARKER_TYPE_OPTIONS.map((option) => (
-                <label
-                  className={`rounded-xl border px-3 py-2 text-sm ${
-                    draft.type === option.value
-                      ? 'border-amber-300 bg-amber-300/10 text-amber-100'
-                      : 'border-stone-700 bg-stone-950 text-stone-200'
-                  }`}
-                  key={option.value}
-                >
-                  <input
-                    checked={draft.type === option.value}
-                    className="sr-only"
-                    disabled={saving}
-                    name="marker-type"
-                    onChange={() => controller.changeDraftType(option.value)}
-                    type="radio"
-                    value={option.value}
-                  />
-                  {option.label}
-                </label>
-              ))}
-            </div>
-          </section>
+      <div className="mt-6 space-y-6">
+        <section>
+          <p className="text-xs uppercase tracking-[0.2em] text-stone-300">Marker Type</p>
+          <div className="mt-3 grid gap-2 sm:grid-cols-4">
+            {MARKER_TYPE_OPTIONS.map((option) => (
+              <label
+                className={`rounded-xl border px-3 py-2 text-sm ${
+                  draft.type === option.value
+                    ? 'border-amber-300 bg-amber-300/10 text-amber-100'
+                    : 'border-stone-700 bg-stone-950 text-stone-200'
+                }`}
+                key={option.value}
+              >
+                <input
+                  checked={draft.type === option.value}
+                  className="sr-only"
+                  disabled={saving}
+                  name="marker-type"
+                  onChange={() => controller.changeDraftType(option.value)}
+                  type="radio"
+                  value={option.value}
+                />
+                {option.label}
+              </label>
+            ))}
+          </div>
+        </section>
 
           <section className="grid gap-4 md:grid-cols-2">
             <ReadOnlyField label="WGS84" value={draft.coordinates.wgs84Display} />
@@ -296,9 +301,8 @@ export function MarkerDialog() {
               </button>
             </div>
           </div>
-        </div>
       </div>
-    </div>
+    </DialogOverlay>
   )
 }
 

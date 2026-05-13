@@ -25,15 +25,15 @@ export function MeasurementPanel() {
 
   return (
     <section
-      className="rounded-2xl border border-stone-800 bg-stone-950/40 p-5 text-sm"
+      className="rounded-2xl border border-stone-800 bg-stone-950/40 p-4 text-sm"
       data-testid="measurement-panel"
     >
       <div className="mb-4 flex items-center justify-between">
-        <span className="text-[11px] font-bold uppercase tracking-wider text-stone-400">
+        <span className="text-[13px] font-semibold uppercase tracking-wider text-stone-400">
           Measurement
         </span>
         <span
-          className={`text-[11px] font-bold uppercase ${
+          className={`text-[11px] font-semibold uppercase ${
             mode === 'armed' ? 'text-cyan-300' : 'text-stone-500'
           }`}
           data-testid="measurement-mode"
@@ -43,7 +43,7 @@ export function MeasurementPanel() {
       </div>
 
       <p
-        className="rounded-xl border border-stone-800 bg-stone-900/30 px-3 py-2 text-[11px] text-stone-300"
+        className="rounded-xl border border-stone-800 bg-stone-900/30 px-3 py-2 text-[13px] text-stone-300"
         data-testid="measurement-status"
       >
         {statusMessage}
@@ -51,7 +51,7 @@ export function MeasurementPanel() {
 
       <div className="mt-4 grid gap-2 sm:grid-cols-2">
         <button
-          className="rounded-lg bg-cyan-700 px-3 py-2.5 text-[11px] font-bold uppercase tracking-wider text-white transition hover:bg-cyan-600 disabled:cursor-not-allowed disabled:opacity-20 disabled:grayscale"
+          className="rounded-lg bg-cyan-700 px-3 py-2.5 text-[13px] font-semibold text-white transition hover:bg-cyan-600 disabled:cursor-not-allowed disabled:opacity-20 disabled:grayscale"
           data-testid="measurement-arm-btn"
           disabled={disabled}
           onClick={() => {
@@ -75,7 +75,7 @@ export function MeasurementPanel() {
           {mode === 'armed' ? 'Cancel Measure' : 'Measure'}
         </button>
         <button
-          className="rounded-lg bg-stone-800 px-3 py-2.5 text-[11px] font-bold uppercase tracking-wider text-stone-300 transition hover:bg-stone-700 disabled:cursor-not-allowed disabled:opacity-20 disabled:grayscale"
+          className="rounded-lg border border-stone-600 bg-stone-800 px-3 py-2.5 text-[13px] font-semibold text-stone-200 transition hover:bg-stone-700 disabled:cursor-not-allowed disabled:opacity-20 disabled:grayscale"
           data-testid="measurement-clear-btn"
           disabled={controller === null || measurements.length === 0}
           onClick={() => controller?.clearMeasurements()}
@@ -86,14 +86,14 @@ export function MeasurementPanel() {
       </div>
 
       <div className="mt-4 border-t border-stone-800 pt-4">
-        <div className="mb-2 flex items-center justify-between text-[10px] font-bold uppercase tracking-wider text-stone-500">
-          <span>Active measurements</span>
+        <div className="mb-2 flex items-center justify-between text-[13px] font-semibold uppercase tracking-wider text-stone-400">
+          <span>Active Measurements</span>
           <span data-testid="measurement-count">{measurements.length}</span>
         </div>
         <div className="space-y-2" data-testid="measurement-list">
           {measurements.length === 0 ? (
-            <div className="rounded-xl border border-dashed border-stone-800 bg-stone-950/20 px-3 py-2 text-[10px] font-medium italic text-stone-600">
-              No active measurements.
+            <div className="rounded-xl border border-dashed border-stone-800 bg-stone-950/20 px-3 py-2 text-xs font-medium italic text-stone-500">
+              No active measurements. Click Measure above to start.
             </div>
           ) : (
             measurements.map((measurement) => (

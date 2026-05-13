@@ -8,16 +8,28 @@ import type {
 } from '../../infrastructure/mission-store/tauri-mission-store'
 import type { LayerCatalogRootNode } from './layer-catalog-types'
 import {
+  GPX_TRACKS_GROUP_NODE_ID,
   getDrawingLayerNodeId,
   getHelicopterLayerNodeId,
   getMarkerLayerNodeId,
+  HELICOPTERS_GROUP_NODE_ID,
+  MAP_TOOLS_GROUP_NODE_ID,
   MEASUREMENTS_LAYER_NODE_ID,
+  TRACKING_GROUP_NODE_ID,
   TRACKING_BREADCRUMBS_LAYER_NODE_ID,
   TRACKING_DEVICES_LAYER_NODE_ID,
 } from './layer-catalog-ids'
 
+export type LayerGroupVisibility = {
+  readonly tracking: boolean
+  readonly helicopters: boolean
+  readonly mapTools: boolean
+  readonly gpxTracks: boolean
+}
+
 type LayerVisibilityState = {
   readonly hydratedMissionId: string | null
+  readonly groupVisibility: LayerGroupVisibility
   readonly hiddenDeviceIds: readonly string[]
   readonly hiddenMarkerIds: readonly string[]
   readonly hiddenHelicopterIds: readonly string[]
@@ -69,8 +81,16 @@ const DEFAULT_HELICOPTER_SLOT_VISIBILITY: Record<HelicopterSlotKey, boolean> = {
   slot_4: true,
 }
 
+const DEFAULT_GROUP_VISIBILITY: LayerGroupVisibility = {
+  tracking: true,
+  helicopters: true,
+  mapTools: true,
+  gpxTracks: true,
+}
+
 export const useLayerVisibilityStore = create<LayerVisibilityState>((set) => ({
   hydratedMissionId: null,
+  groupVisibility: DEFAULT_GROUP_VISIBILITY,
   hiddenDeviceIds: [],
   hiddenMarkerIds: [],
   hiddenHelicopterIds: [],
@@ -148,6 +168,12 @@ export const useLayerVisibilityStore = create<LayerVisibilityState>((set) => ({
       const nextHiddenHelicopterIds = collectHiddenHelicopterIds(root)
       const nextHiddenGpxImportIds = collectHiddenGpxImportIds(root)
       const nextHiddenDrawingIds = collectHiddenDrawingIds(root)
+      const nextGroupVisibility: LayerGroupVisibility = {
+        tracking: readGroupVisibility(root, TRACKING_GROUP_NODE_ID),
+        helicopters: readGroupVisibility(root, HELICOPTERS_GROUP_NODE_ID),
+        mapTools: readGroupVisibility(root, MAP_TOOLS_GROUP_NODE_ID),
+        gpxTracks: readGroupVisibility(root, GPX_TRACKS_GROUP_NODE_ID),
+      }
       const nextMarkerTypeVisibility: Record<MarkerType, boolean> = {
         ipp_lkp: readLayerVisibility(root, getMarkerLayerNodeId('ipp_lkp')),
         clue: readLayerVisibility(root, getMarkerLayerNodeId('clue')),
@@ -191,6 +217,9 @@ export const useLayerVisibilityStore = create<LayerVisibilityState>((set) => ({
       const hiddenDrawingIds = shallowStringArrayEqual(state.hiddenDrawingIds, nextHiddenDrawingIds)
         ? state.hiddenDrawingIds
         : nextHiddenDrawingIds
+      const groupVisibility = shallowRecordEqual(state.groupVisibility, nextGroupVisibility)
+        ? state.groupVisibility
+        : nextGroupVisibility
       const markerTypeVisibility = shallowRecordEqual(state.markerTypeVisibility, nextMarkerTypeVisibility)
         ? state.markerTypeVisibility
         : nextMarkerTypeVisibility
@@ -211,6 +240,7 @@ export const useLayerVisibilityStore = create<LayerVisibilityState>((set) => ({
         hiddenHelicopterIds === state.hiddenHelicopterIds &&
         hiddenGpxImportIds === state.hiddenGpxImportIds &&
         hiddenDrawingIds === state.hiddenDrawingIds &&
+        groupVisibility === state.groupVisibility &&
         markerTypeVisibility === state.markerTypeVisibility &&
         helicopterSlotVisibility === state.helicopterSlotVisibility &&
         drawingTypeVisibility === state.drawingTypeVisibility &&
@@ -227,6 +257,7 @@ export const useLayerVisibilityStore = create<LayerVisibilityState>((set) => ({
         hiddenHelicopterIds,
         hiddenGpxImportIds,
         hiddenDrawingIds,
+        groupVisibility,
         markerTypeVisibility,
         helicopterSlotVisibility,
         drawingTypeVisibility,
@@ -269,6 +300,11 @@ function readLayerVisibility(root: LayerCatalogRootNode, layerId: string): boole
     .find((candidate) => candidate.id === layerId)
 
   return layer?.isVisible ?? true
+}
+
+function readGroupVisibility(root: LayerCatalogRootNode, groupId: string): boolean {
+  const group = root.children.find((candidate) => candidate.id === groupId)
+  return group?.isVisible ?? true
 }
 
 function collectHiddenDeviceIds(root: LayerCatalogRootNode): readonly string[] {

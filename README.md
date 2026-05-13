@@ -1,6 +1,6 @@
 # SAR Tracker Web
 
-**Standalone Search & Rescue Tracking Console for Kerry Mountain Rescue**
+**Standalone Search & Rescue Tracking Console for Mountain Rescue**
 
 A bespoke desktop application for real-time GPS tracking, mission management, and search area planning during mountain rescue operations.
 
@@ -18,24 +18,22 @@ This application is used during real search and rescue operations. Accuracy, rel
 
 ## What It Does
 
-- **Map operations shell** with Kerry-centred MapLibre rendering and 4 selectable basemaps
+- **Map operations shell** with mountain-region MapLibre rendering and 4 selectable basemaps
 - **Mission management** — start, pause, resume, finish, recover on restart, dual timers
 - **Real-time GPS tracking runtime** via Traccar HTTP polling with breadcrumb/history persistence
 - **Map markers** — IPP/LKP, clues, hazards, casualties with metadata and map-edit flows
-- **Layer filtering** for people, markers, and persisted drawing records
+- **Layer workspace** for people, helicopters, markers, drawings, measurements, and GPX overlays
+- **Drawing and measurement tools** — lines, search areas, range rings, bearings, sectors, text labels, and quick distance/bearing checks
+- **GPX and helicopter operations** — GPX import/watch surfaces and four aviation slot records in the desktop app
 - **Irish Grid coordinates** — WGS84, ITM, and TM65 display in the operator UI
 - **Tile caching after view** via service worker for limited offline resilience
+- **Operator manual** — bundled at `public/manual/index.html` and linked from the app Help button
 
 ## Current Build Status
 
-The current implementation line is:
+The current implementation line has moved past the original M1-M10 scaffold. The app now has a real map shell, mission lifecycle, tracking runtime, marker CRUD, drawing tools, measurement tools, GPX surfaces, helicopter slots, diagnostics, mission review, persistence, and a richer layer workspace.
 
-- `M1-M7` complete
-- `M8` drawing tools: not implemented yet
-- `M9` measurement tool: not implemented yet
-- `M10` full mission-flow E2E: not implemented yet
-
-That means the app already has a real map shell, mission lifecycle, tracking runtime, marker CRUD, persistence, and the right-sidebar layer panel. It does not yet have operator drawing tools, measurement tools, or bundled offline topo maps.
+Known remaining parity gaps include full packaged offline map bundles, replay/training mode parity, richer mission metadata capture, and final QGIS replacement acceptance.
 
 ## Stack
 
@@ -61,10 +59,13 @@ npm run dev
 # Run Tauri desktop development shell
 npm run tauri dev
 
-# Run tests
-npm run test        # unit tests (vitest)
-npm run test:e2e    # browser tests (Playwright)
-npm run test:all    # everything
+# Run verification
+npm run lint         # static analysis
+npm run build        # TypeScript, Vite, and bundle budgets
+npm run test         # JS unit tests (Vitest)
+npm run test:e2e     # browser tests (Playwright projects)
+npm run test:backend # Tauri/Rust backend tests (Cargo)
+npm run test:all     # JS unit + Playwright + backend tests
 ```
 
 ### Browser Validation Harness
@@ -89,7 +90,7 @@ This project replaces the [SAR Tracker QGIS Plugin](https://github.com/donal0c/s
 
 ## Built For
 
-[Kerry Mountain Rescue Team](https://www.kerrymountainrescue.ie/), Ireland 🏔️
+Mountain Rescue teams operating in demanding field conditions.
 
 ---
 

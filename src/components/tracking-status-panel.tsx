@@ -13,13 +13,18 @@ export function TrackingStatusPanel() {
 
   return (
     <div
-      className="rounded-2xl border border-stone-800 bg-stone-950/40 p-5 text-sm"
+      className="sar-panel p-4 text-sm"
       data-testid="tracking-status"
     >
-      <div className="flex items-center justify-between mb-4">
-        <span className="font-bold uppercase tracking-wider text-stone-400 text-[11px]">Tracking System</span>
-        <div className="flex items-center gap-2">
-          <div className={`h-2 w-2 rounded-full ${status.mode === 'online' ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]' : 'bg-amber-500 animate-pulse'}`} />
+      <div className="mb-4 flex items-center justify-between border-b border-[var(--sar-line)] pb-3">
+        <div>
+          <span className="sar-section-label text-amber-300/90">Tracking System</span>
+          <p className="mt-1 text-[11px] uppercase tracking-[0.12em] text-stone-500">
+            telemetry stream
+          </p>
+        </div>
+        <div className="flex items-center gap-2 border border-emerald-400/20 bg-emerald-400/10 px-2 py-1">
+          <div className={`h-2 w-2 rounded-full ${status.mode === 'online' ? 'bg-emerald-400' : 'bg-amber-500 animate-pulse'}`} />
           <span
             className={`font-bold uppercase text-[11px] ${
               status.mode === 'online'
@@ -34,29 +39,29 @@ export function TrackingStatusPanel() {
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-y-2 border-t border-stone-800 pt-4 font-mono text-[11px] uppercase tracking-tight text-stone-400">
-        <div className="flex justify-between border-r border-stone-800 pr-3">
-          <span>Devices</span>
-          <span className="font-bold text-stone-200">{snapshot.devices.length}</span>
+      <div className="grid grid-cols-4 border border-[var(--sar-line)] bg-[var(--sar-panel-sunken)] font-mono text-[13px] tracking-tight text-stone-300">
+        <div className="border-r border-[var(--sar-line)] px-3 py-3">
+          <span className="block text-[10px] font-bold uppercase tracking-[0.12em] text-stone-500">Devices</span>
+          <span className="mt-1 block text-lg font-black text-stone-100">{snapshot.devices.length}</span>
         </div>
-        <div className="flex justify-between pl-3">
-          <span>Positions</span>
-          <span className="font-bold text-stone-200">{snapshot.positions.length}</span>
+        <div className="border-r border-[var(--sar-line)] px-3 py-3">
+          <span className="block text-[10px] font-bold uppercase tracking-[0.12em] text-stone-500">Fixes</span>
+          <span className="mt-1 block text-lg font-black text-stone-100">{snapshot.positions.length}</span>
         </div>
-        <div className="flex justify-between border-r border-stone-800 pr-3">
-          <span>Cached</span>
-          <span className="font-bold text-amber-400">{cachedDeviceCount}</span>
+        <div className="border-r border-[var(--sar-line)] px-3 py-3">
+          <span className="block text-[10px] font-bold uppercase tracking-[0.12em] text-stone-500">Cache</span>
+          <span className="mt-1 block text-lg font-black text-amber-400">{cachedDeviceCount}</span>
         </div>
-        <div className="flex justify-between pl-3">
-          <span>Stale</span>
-          <span className={`font-bold ${staleDeviceCount > 0 ? 'text-rose-400' : 'text-stone-500'}`}>{staleDeviceCount}</span>
+        <div className="px-3 py-3">
+          <span className="block text-[10px] font-bold uppercase tracking-[0.12em] text-stone-500">Stale</span>
+          <span className={`mt-1 block text-lg font-black ${staleDeviceCount > 0 ? 'text-rose-400' : 'text-stone-500'}`}>{staleDeviceCount}</span>
         </div>
       </div>
 
-      <div className="mt-4 space-y-2 border-t border-stone-800 pt-4">
-        <div className="flex justify-end">
+      <div className="mt-4 space-y-3 border-t border-[var(--sar-line)] pt-4">
+        <div className="flex">
           <button
-            className="rounded-lg border border-stone-700 bg-stone-900 px-3 py-2 text-[11px] font-bold uppercase tracking-wider text-stone-300"
+            className="sar-button w-full px-3 py-2 text-xs font-bold uppercase tracking-[0.1em]"
             data-testid="open-devices-workspace"
             onClick={() => openWorkspace()}
             type="button"
@@ -64,13 +69,13 @@ export function TrackingStatusPanel() {
             Open Devices
           </button>
         </div>
-        <div className="flex items-center justify-between text-[10px] uppercase tracking-wider text-stone-500">
-          <span>Last Success</span>
+        <div className="sar-readout flex items-center justify-between px-3 py-2 text-[11px] font-medium text-stone-300">
+          <span>Last success</span>
           <span className="font-mono font-bold text-stone-300">
             {status.lastSuccessAt ? new Date(status.lastSuccessAt).toLocaleTimeString() : 'N/A'}
           </span>
         </div>
-        <p className={`text-[11px] font-medium leading-relaxed ${status.warning ? 'text-amber-400' : 'text-stone-500 italic'}`}>
+        <p className={`border-l-2 px-3 py-2 text-xs font-normal leading-relaxed ${status.warning ? 'border-l-amber-400 bg-amber-400/10 text-amber-300' : 'border-l-emerald-400/60 bg-emerald-400/10 text-emerald-300'}`}>
           {status.warning ?? 'Telemetry stream healthy'}
         </p>
       </div>

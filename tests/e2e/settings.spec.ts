@@ -37,7 +37,7 @@ test.describe('M12 settings workspace', () => {
     await page.getByRole('button', { name: 'TM65 first' }).click()
     await page.getByTestId('settings-save').click()
     await expect(page.getByTestId('settings-feedback')).toContainText('Settings saved.')
-    await page.getByRole('button', { name: 'Close' }).click()
+    await page.getByTestId('workspace-close-btn').click()
 
     await page.reload()
     await page.getByTestId('open-settings-workspace').click()
@@ -45,5 +45,24 @@ test.describe('M12 settings workspace', () => {
     await expect(page.getByTestId('settings-primary-root')).toHaveValue('/missions/primary')
     await expect(page.getByTestId('settings-tracking-cache-enabled')).not.toBeChecked()
     await expect(page.getByRole('button', { name: 'TM65 first' })).toHaveClass(/bg-amber-500/)
+  })
+
+  test('keeps keyboard focus inside the settings dialog and returns focus on Escape', async ({
+    page,
+  }) => {
+    const opener = page.getByTestId('open-settings-workspace')
+    await opener.click()
+
+    const dialog = page.getByRole('dialog', { name: 'Operational Settings' })
+    await expect(dialog).toBeVisible()
+    await expect(page.getByTestId('settings-save-connect')).toBeVisible()
+    await expect(page.getByTestId('workspace-close-btn')).toBeFocused()
+
+    await page.keyboard.press('Shift+Tab')
+    await expect(page.getByTestId('settings-save-connect')).toBeFocused()
+
+    await page.keyboard.press('Escape')
+    await expect(dialog).toBeHidden()
+    await expect(opener).toBeFocused()
   })
 })

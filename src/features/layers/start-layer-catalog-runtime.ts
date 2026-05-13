@@ -73,6 +73,8 @@ export async function startLayerCatalogRuntime(
   let lastHelicopters: readonly Helicopter[] = []
   let lastGpxImports: readonly GpxTrackImport[] = []
   let nodeIndex = buildNodeIndex(root)
+  let latestRefreshRequestId = 0
+  let refreshInvalidationVersion = 0
 
   publishRuntime()
 
@@ -96,10 +98,19 @@ export async function startLayerCatalogRuntime(
         return
       }
 
+      const requestId = ++latestRefreshRequestId
+      const invalidationVersionAtStart = refreshInvalidationVersion
       loading = true
       publishRuntime()
       try {
-        metadataEntries = await dependencies.layerCatalogStore.listMetadata(missionId)
+        const nextMetadataEntries = await dependencies.layerCatalogStore.listMetadata(missionId)
+        if (
+          requestId !== latestRefreshRequestId ||
+          invalidationVersionAtStart !== refreshInvalidationVersion
+        ) {
+          return
+        }
+        metadataEntries = nextMetadataEntries
         rebuild()
       } catch (runtimeError) {
         loading = false
@@ -117,7 +128,16 @@ export async function startLayerCatalogRuntime(
       error = null
       publishRuntime()
       try {
-        metadataEntries = await dependencies.layerCatalogStore.listMetadata(missionId)
+        const requestId = ++latestRefreshRequestId
+        const invalidationVersionAtStart = refreshInvalidationVersion
+        const nextMetadataEntries = await dependencies.layerCatalogStore.listMetadata(missionId)
+        if (
+          requestId !== latestRefreshRequestId ||
+          invalidationVersionAtStart !== refreshInvalidationVersion
+        ) {
+          return
+        }
+        metadataEntries = nextMetadataEntries
         rebuild()
       } catch (runtimeError) {
         loading = false
@@ -140,6 +160,7 @@ export async function startLayerCatalogRuntime(
       await persistNodePatch(nodeId, { isVisible: visible })
     },
     reorderNode: async (parentNodeId, orderedNodeIds) => {
+      refreshInvalidationVersion += 1
       const parent = requireNode(parentNodeId)
       const currentOrder = getChildNodeIds(parent)
       const nextOrder = mergeChildOrder(currentOrder, orderedNodeIds)
@@ -168,6 +189,7 @@ export async function startLayerCatalogRuntime(
     nodeId: string,
     patch: Partial<Pick<LayerCatalogMetadataEntry, 'alias' | 'isFavorite' | 'isVisible'>>,
   ): Promise<void> {
+    refreshInvalidationVersion += 1
     const node = requireNode(nodeId)
     const entry = findEntry(nodeId)
     const next = await dependencies.layerCatalogStore.upsertMetadata({
