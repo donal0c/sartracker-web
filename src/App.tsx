@@ -29,6 +29,7 @@ import { useFocusModeStore } from './features/focus-mode/focus-mode-store'
 import { useMissionStore } from './features/mission/mission-store'
 import { calculateMissionTimerState, formatMissionDuration } from './features/mission/mission-timers'
 import { useTrackingStore } from './features/tracking/tracking-store'
+import { APP_VERSION } from './lib/app-version'
 
 const MapView = lazy(async () => {
   const module = await import('./components/map-view')
@@ -208,6 +209,9 @@ function CommandMast(props: {
               SAR Tracker
             </h1>
           </div>
+          <p className="mt-2 min-w-0 truncate font-mono text-[10px] uppercase tracking-[0.12em] text-stone-400">
+            {APP_VERSION}
+          </p>
         </div>
 
         <div className="min-w-0 border-r border-[var(--sar-line)] px-4 py-4">

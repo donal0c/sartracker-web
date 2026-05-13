@@ -13,6 +13,7 @@
 
 ## Last Updated
 
+- 2026-05-13 by Codex (build stamp + visible version in mast)
 - 2026-05-13 by Codex (tracking visual readability + visibility regression hardening)
 - 2026-05-13 by Codex (HTTP tracking mock-server Chrome validation + per-device map filter fix)
 - 2026-05-12 by Codex (operator manual added and linked from app Help)
@@ -28,6 +29,10 @@
 - Offline map resilience has advanced from readiness-only to current-view preflight: operators now get explicit viewed-tile cache readiness and can check whether the current visible map tiles are actually cached. Online map navigation is no longer Kerry-bound and now allows Ireland-wide panning. Full packaged offline map bundles and saved coverage manifests remain parity gaps.
 - The layer tree/catalog and the live map overlays now share an authoritative visibility path again.
 - The normal full verification path now includes backend/Tauri Cargo tests via `npm run test:all`; `npm run test:backend` is the explicit backend-only gate.
+- Build visibility is now tracked and shown in-app:
+  - `npm run build` writes `src/lib/version.generated.ts` from the current package version and git build metadata.
+  - the command mast shows the resolved `APP_VERSION` string.
+  - diagnostics continues to surface the same build value in `summaryRows` and exported support text.
 - Layer Workspace inspection/count/test-id derivation has started moving out of React into a tested feature model (`src/features/layers/layer-panel-model.ts`), reducing the largest layer panel component without changing operator behavior.
 - A living operator manual now ships from `public/manual/index.html` and is linked from the command mast Help button. It includes current screenshots for the app shell, layer workspace, tools/map, settings, and diagnostics.
 - The specific `Map Tools` failure reported in live use is fixed:
@@ -228,6 +233,10 @@
     - `git diff --check` ✅
     - `npm run lint` ✅
     - `npm run build` ✅
+  - Build stamp + version chip batch:
+    - `npm run build` ✅
+    - `npm run test -- tests/unit/app-version.test.ts` ✅
+    - `npm run lint` ✅
 
 - Current verification-gate / layer-panel model batch:
   - Red tests confirmed before implementation:
