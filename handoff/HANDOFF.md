@@ -13,6 +13,8 @@
 
 ## Last Updated
 
+- 2026-05-13 by Codex (tracking visual readability + visibility regression hardening)
+- 2026-05-13 by Codex (HTTP tracking mock-server Chrome validation + per-device map filter fix)
 - 2026-05-12 by Codex (operator manual added and linked from app Help)
 
 ## Current State
@@ -35,6 +37,16 @@
 - Playwright concurrency is intentionally reduced to `2` workers for deterministic local validation. This is slower, but it makes the harness reliable under full-suite load.
 
 ## Last Work Done
+
+**HTTP tracking mock-server validation**
+
+- Re-read the tracking runtime, Traccar client, polling manager, breadcrumb accumulation, map overlay sync, layer catalog, devices workspace, and mock Traccar server.
+- Ran the repo-local mock Traccar server against the real browser harness tracking runtime using Chrome at `http://127.0.0.1:1420/?missionHarness=1&liveTracking=1`.
+- Validated a two-hour Glenagenty scenario with 8 roster devices, 7 current fixes, 1 offline device, ~1,000 breadcrumb points, stale/unknown device states, device workspace health, and layer tree counts.
+- Found and fixed a tracking layer visibility bug: individual device and People-layer hides updated UI state but did not remove tracking point/label overlays from the map. `buildTrackingLayerFilter` now emits the MapLibre layer-filter form honored by `setFilter`.
+- Hardened multi-team map readability: numeric device ids now get distinct high-visibility colors, breadcrumb trails render with a dark casing under the colored route, current-location dots render with a dark halo, and labels use each device color with a stronger dark halo.
+- Fresh Chrome screenshots are in `tmp/tracking-visual-fix-proof/`: main dots/trails proof, layer counts, devices workspace, Team Alpha hidden, and People layer hidden.
+- Mock-server validation note: accelerated playback is useful for current-position progression, but realistic historical breadcrumb validation should use `--start-offset` with mission backdating so the app's `from/to=now` breadcrumb query window includes the simulated history.
 
 **Operator manual + Help link**
 
@@ -181,6 +193,26 @@
 4. Keep Playwright workers at `2` unless the harness/runtime model changes enough to justify re-raising concurrency.
 
 ## Verification Snapshot
+
+- Current HTTP tracking validation batch:
+  - Mock Traccar API ✅
+    - `/health` public and reporting scenario time
+    - `/api/devices` returned 8 roster devices with online/unknown/offline states
+    - `/api/positions` returned 7 current fixes, excluding offline Team Echo
+    - historical `/api/positions?deviceId=...&from=...&to=...` returned multi-hour breadcrumb histories for devices with tracks
+  - Chrome harness validation ✅
+    - loaded `http://127.0.0.1:1420/?missionHarness=1&liveTracking=1`
+    - started a backdated 2-hour validation mission against the real HTTP tracking runtime
+    - confirmed Tracking System showed online, 8 devices, 7 fixes, and 1 stale fix
+    - confirmed Layer Workspace showed People 8 and Breadcrumbs around 1,000 points (`994` in the final visual-fix run)
+    - confirmed Devices Workspace showed EOC/Team Alpha online, Team Echo offline/no fix, Team Delta stale, and other teams unknown/live
+    - confirmed hiding a single device removes its map marker/label after the filter fix
+    - confirmed hiding the People layer removes tracking markers and breadcrumb trails
+    - captured final screenshots in `tmp/tracking-visual-fix-proof/`
+  - Automated verification ✅
+    - `npx vitest run tests/unit/mock-traccar-hardening.test.ts tests/unit/traccar-client.test.ts tests/unit/polling-manager.test.ts tests/unit/tracking-geojson.test.ts tests/unit/sync-tracking-overlay.test.ts tests/unit/tracking-viewport.test.ts tests/unit/map-layer-filters.test.ts tests/unit/effective-overlay-visibility.test.ts tests/unit/tracking-color.test.ts` → 9 files / 56 tests
+    - `npm run lint`
+    - `npm run build`
 
 - Current operator manual batch:
   - Chrome harness validation ✅

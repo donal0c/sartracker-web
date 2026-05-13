@@ -7,18 +7,18 @@
  * contrast against dark terrain, light terrain, and satellite green.
  */
 const SAR_PALETTE: readonly string[] = [
-  '#E6194B', // red
-  '#3CB44B', // green
-  '#4363D8', // blue
-  '#F58231', // orange
-  '#911EB4', // purple
-  '#42D4F4', // cyan
+  '#00B8FF', // sky blue
+  '#FFB000', // amber
+  '#FF4F79', // rose
+  '#B8F000', // lime
+  '#8B5CF6', // violet
+  '#00E0A4', // mint
+  '#FF7A00', // orange
   '#F032E6', // magenta
-  '#BFEF45', // lime
-  '#FABED4', // pink
-  '#DCBEFF', // lavender
-  '#9A6324', // brown (lighter, high-sat)
-  '#FFD700', // gold
+  '#4363D8', // blue
+  '#F0E442', // yellow
+  '#D55E00', // vermilion
+  '#CC79A7', // purple-pink
 ] as const
 
 /**
@@ -29,8 +29,13 @@ const SAR_PALETTE: readonly string[] = [
  * colour is bright enough to see on any terrain.
  */
 export function createDeviceColor(deviceId: string): string {
+  const numericDeviceId = Number(deviceId)
+  if (Number.isInteger(numericDeviceId) && numericDeviceId > 0) {
+    return SAR_PALETTE[(numericDeviceId - 1) % SAR_PALETTE.length] ?? '#00B8FF'
+  }
+
   const seed = createStableHash(deviceId)
-  return SAR_PALETTE[seed % SAR_PALETTE.length] ?? '#E6194B'
+  return SAR_PALETTE[seed % SAR_PALETTE.length] ?? '#00B8FF'
 }
 
 function createStableHash(value: string): number {

@@ -55,9 +55,27 @@ function getCircleLayer(map: ReturnType<typeof createMockMap>): LayerSpec {
   return layer
 }
 
+function getHaloLayer(map: ReturnType<typeof createMockMap>): LayerSpec {
+  const layer = map.layers.get('tracking-devices-halo')
+  if (!layer) throw new Error('Halo layer not added')
+  return layer
+}
+
 function getLabelLayer(map: ReturnType<typeof createMockMap>): LayerSpec {
   const layer = map.layers.get('tracking-devices-label')
   if (!layer) throw new Error('Label layer not added')
+  return layer
+}
+
+function getBreadcrumbCasingLayer(map: ReturnType<typeof createMockMap>): LayerSpec {
+  const layer = map.layers.get('tracking-breadcrumbs-casing')
+  if (!layer) throw new Error('Breadcrumb casing layer not added')
+  return layer
+}
+
+function getBreadcrumbLayer(map: ReturnType<typeof createMockMap>): LayerSpec {
+  const layer = map.layers.get('tracking-breadcrumbs-line')
+  if (!layer) throw new Error('Breadcrumb layer not added')
   return layer
 }
 
@@ -86,11 +104,11 @@ describe('tracking overlay marker configuration', () => {
   })
 
   describe('device circle markers', () => {
-    it('has a circle radius of at least 10px for cross-basemap visibility', () => {
+    it('has a circle radius of at least 12px for cross-basemap visibility', () => {
       const layer = getCircleLayer(map)
       const radius = layer.paint?.['circle-radius']
-      expect(radius).toBeGreaterThanOrEqual(10)
-      expect(radius).toBeLessThanOrEqual(12)
+      expect(radius).toBeGreaterThanOrEqual(12)
+      expect(radius).toBeLessThanOrEqual(14)
     })
 
     it('uses deterministic colour from the GeoJSON feature', () => {
@@ -103,6 +121,13 @@ describe('tracking overlay marker configuration', () => {
       const strokeWidth = layer.paint?.['circle-stroke-width']
       // Stroke should be at least 2px on all states
       expect(strokeWidth).toBeDefined()
+    })
+
+    it('renders a dark halo below each current-location marker', () => {
+      const layer = getHaloLayer(map)
+      expect(layer.paint?.['circle-color']).toBe('#020617')
+      expect(layer.paint?.['circle-radius']).toBeGreaterThanOrEqual(16)
+      expect(layer.paint?.['circle-opacity']).toBeGreaterThanOrEqual(0.75)
     })
   })
 
@@ -126,14 +151,29 @@ describe('tracking overlay marker configuration', () => {
 
     it('has a dark halo for readability on light backgrounds', () => {
       const layer = getLabelLayer(map)
-      expect(layer.paint?.['text-halo-width']).toBeGreaterThanOrEqual(2)
-      expect(layer.paint?.['text-halo-color']).toBeDefined()
+      expect(layer.paint?.['text-color']).toEqual(['get', 'color'])
+      expect(layer.paint?.['text-halo-width']).toBeGreaterThanOrEqual(3)
+      expect(layer.paint?.['text-halo-color']).toBe('#020617')
     })
 
     it('uses a text size readable at operational zoom levels', () => {
       const layer = getLabelLayer(map)
       const textSize = layer.layout?.['text-size']
       expect(textSize).toBeGreaterThanOrEqual(12)
+    })
+  })
+
+  describe('breadcrumb trails', () => {
+    it('draws a dark casing below coloured breadcrumb trails', () => {
+      const casing = getBreadcrumbCasingLayer(map)
+      const trail = getBreadcrumbLayer(map)
+
+      expect(casing.paint?.['line-color']).toBe('#020617')
+      expect(casing.paint?.['line-width']).toBeGreaterThan(
+        Number(trail.paint?.['line-width']),
+      )
+      expect(trail.paint?.['line-color']).toEqual(['get', 'color'])
+      expect(trail.paint?.['line-opacity']).toBeGreaterThanOrEqual(0.9)
     })
   })
 })

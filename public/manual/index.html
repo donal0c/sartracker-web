@@ -481,11 +481,21 @@
             from cached positions, keeps last-good data when the provider is unreachable, and marks stale
             devices rather than silently clearing them from the map.
           </p>
+          <figure class="screenshot">
+            <img src="assets/tracking-map.png" alt="Map showing current team dots and breadcrumb trails from a live tracking simulation" />
+            <figcaption>Tracking overlay with current device dots and breadcrumb trails from a multi-team simulation.</figcaption>
+          </figure>
           <div class="card-grid">
             <div class="card"><strong>Devices</strong><br />Number of tracked devices known to the current snapshot.</div>
             <div class="card"><strong>Fixes</strong><br />Current position fixes rendered for devices.</div>
             <div class="card"><strong>Cache and stale</strong><br />Counts positions served from cache or considered stale.</div>
           </div>
+          <p>
+            Each tracked device renders as a colored current-location dot with a matching label. Breadcrumb
+            trails use the same device color with a dark casing so previous movement remains visible across
+            satellite, topo, and street basemaps. Hiding a device, the <strong>People</strong> layer, or
+            <strong>Breadcrumbs</strong> from Layers removes the matching overlay from the map.
+          </p>
           <h3>Devices Workspace</h3>
           <p>
             Press <strong>Open Devices</strong> from the Tracking tab to inspect the roster. The workspace
