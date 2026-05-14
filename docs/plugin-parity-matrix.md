@@ -1,7 +1,7 @@
 # QGIS Plugin Replacement Parity Matrix
 
 > **This file is the canonical source of truth for plugin parity status.**
-> When this file disagrees with `docs/web-parity-verification-matrix.md`, `docs/qgis-replacement-roadmap.md`, or `docs/parity-execution-protocol.md`, this file wins.
+> When this file disagrees with `docs/web-parity-verification-matrix.md`, `docs/qgis-replacement-roadmap.md`, or `docs/parity-execution-protocol.md`, this file wins for QGIS replacement capability. Browser-vs-Tauri runtime parity is tracked separately in `docs/hosted-browser-testing-plan.md`.
 
 ## Purpose
 
@@ -40,6 +40,7 @@ This matrix is based on:
 - `TM65` is display/input support, not the working persisted CRS.
 - Magnetic declination baseline is `-4.5°` for Ireland.
 - `sartracker-web` status below is based on the current codebase, not older README wording.
+- The matrix describes the installed app capability unless the row explicitly says hosted browser mode. Hosted Vercel/browser testing has its own runtime limitations and plan in `docs/hosted-browser-testing-plan.md`.
 
 ## Parity Matrix
 
@@ -152,6 +153,7 @@ This matrix is based on:
 | Operator tooling | Mission log viewer | Plugin has operational logs/audit visibility | Missing | audit events backend exists, but no viewer | Gap |
 | Operator tooling | GPX import/watch | Plugin docs/code mention GPX support workflows | Missing | no GPX import/watch surface found | Gap |
 | Operator tooling | Browser/E2E validation harness | Not a plugin feature, but valuable replacement quality tooling | Complete | `src/features/browser-validation/`, Playwright coverage | Strong internal quality support, though not operator-facing |
+| Browser deployment | Hosted Vercel testing mode | Not a plugin feature; new distribution/testing path | Partial | `docs/hosted-browser-testing-plan.md`, `api/session.js`, `api/devices.js`, `api/positions.js`, `src/features/browser-validation/` | Phase 0 is now the priority: enable browser mission testing with clear session-storage limitations, then harden toward IndexedDB/runtime parity |
 
 ## Summary By Domain
 

@@ -20,7 +20,34 @@ Use this document before implementation to decide how much parallel research, pl
 
 ## Current Assessments
 
-Last updated: 2026-05-13 by Claude (T01 docs reconciliation)
+Last updated: 2026-05-14 by Codex (hosted browser testing plan added)
+
+## Hosted Browser Runtime
+
+Canonical plan: `docs/hosted-browser-testing-plan.md`
+
+### Phase 0: Hosted browser testing unblock
+
+- Research required: `Low`
+- Implementation readiness: `5/5`
+- Recommended action: **Implement now**
+- Why: The team needs to test the current app from Vercel immediately. Session storage is acceptable for this test release as long as the app visibly labels the limitation.
+- Locked decisions:
+  - Hosted browser testing mode is opt-in via `?missionHarness=1`.
+  - Phase 0 can use session storage.
+  - Phase 0 must not be described as live-incident-grade persistence.
+  - Traccar access uses the already-deployed same-origin Vercel HTTPS proxy.
+- Open questions:
+  - Exact long-term browser persistence design: IndexedDB only, export/import, or server-backed shared missions.
+  - Final browser secret-handling model.
+  - Which desktop filesystem workflows must become browser-native before hosted browser can leave testing status.
+
+### Phase 1: Browser runtime hardening
+
+- Research required: `Medium`
+- Implementation readiness: `3/5`
+- Recommended action: **Short design pass before implementation**
+- Why: The direction is clear, but persistence, secrets, exports, and attachment/file workflows need explicit product decisions before implementation.
 
 ## QGIS Replacement Program
 

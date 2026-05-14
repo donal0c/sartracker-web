@@ -33,7 +33,15 @@ This application is used during real search and rescue operations. Accuracy, rel
 
 The current implementation line has moved past the original M1-M10 scaffold. The app now has a real map shell, mission lifecycle, tracking runtime, marker CRUD, drawing tools, measurement tools, GPX surfaces, helicopter slots, diagnostics, mission review, persistence, and a richer layer workspace.
 
-Known remaining parity gaps include full packaged offline map bundles, replay/training mode parity, richer mission metadata capture, and final QGIS replacement acceptance.
+Known remaining parity gaps include full packaged offline map bundles, replay/training mode parity, richer mission metadata capture, hosted browser hardening, and final QGIS replacement acceptance.
+
+## Hosted Browser Testing
+
+The Vercel-hosted app is a testing and possible future deployment path, but it is not automatically equivalent to the installed Tauri app.
+
+Current plan: [`docs/hosted-browser-testing-plan.md`](/Users/donalocallaghan/workspace/vibes/sartracker-web/docs/hosted-browser-testing-plan.md)
+
+Phase 0 intentionally uses browser session storage so teams can test the current operator surface quickly. The installed Tauri app remains the durable runtime with SQLite, WAL mode, backup mirror, and desktop filesystem adapters.
 
 ## Stack
 
@@ -77,6 +85,8 @@ For fast manual testing of mission and marker flows without the Tauri backend:
 3. Start a mission, click the map to create/edit markers, and test recovery by reloading
 
 The harness uses the real runtime/controller flow in browser mode and stores state in `sessionStorage`.
+
+Hosted browser testing follows the same temporary persistence model and must be opened with `?missionHarness=1` until the browser runtime is hardened.
 
 ### Prerequisites
 

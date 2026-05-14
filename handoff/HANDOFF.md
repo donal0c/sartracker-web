@@ -13,6 +13,7 @@
 
 ## Last Updated
 
+- 2026-05-14 by Codex (hosted browser testing plan + Phase 0 start — `docs/hosted-browser-testing-plan.md`, `sartracker-web-vpz`, Vercel opt-in mission harness, visible browser-testing banner)
 - 2026-05-14 by Codex (Vercel HTTPS Traccar proxy — added same-origin `/api/session`, `/api/devices`, `/api/positions` bridge for team-managed HTTP Traccar server)
 - 2026-05-14 by Codex (real Traccar settings/connectivity fix — browser validation now performs real auth/device checks; live KMRT server validated with 18 devices / 14 fixes online)
 - 2026-05-14 by Codex (T04 review — strengthened breadcrumb-order regression, reran lint/unit/build/backend, manual unchanged)
@@ -183,6 +184,18 @@ Follow-up for hosted Vercel testing: browsers block the HTTPS app from calling t
 - Operator instruction for hosted Vercel: use `https://sartracker-web.vercel.app` as the Traccar provider base URL, then `apiuser` / `apiuser` with Basic auth.
 - Added unit coverage in `tests/unit/traccar-proxy.test.ts`.
 - Docs updated: `DEPLOY.md`, operator manual, and parity matrix.
+
+## Hosted Browser Testing Phase 0 — Baton Note (2026-05-14, Codex)
+
+The hosted browser path is now explicitly tracked as a product/runtime plan, not an accidental validation surface.
+
+- New source-of-truth plan: `docs/hosted-browser-testing-plan.md`.
+- New bead: `sartracker-web-vpz` — Hosted browser testing mode and parity hardening.
+- Phase 0 decision: use `?missionHarness=1` on Vercel to enable browser-backed mission testing with session storage, clear warning copy, and the existing HTTPS Traccar proxy. This is testing-only until browser persistence/recovery are hardened.
+- Implementation started: browser harness gating now allows non-Tauri production browser builds to opt in with `?missionHarness=1`, while production Tauri cannot be forced into harness mode by query string. App shell now shows an amber browser-testing banner when the hosted harness is active.
+- Docs updated: README, operator manual, plugin parity matrix, bead readiness, and the hosted browser plan.
+- Verification so far: `npm run lint` ✅; targeted harness-gating unit test ✅; `npm run test` → 81 files / 377 tests ✅; `npm run build` ✅; `npm run test:backend` → 37/37 ✅.
+- Still to finish for Phase 0: deploy this release to Vercel, validate the hosted `?missionHarness=1` flow with live Traccar credentials, and record final proof here.
 
 ## Last Work Done
 

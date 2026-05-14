@@ -8,6 +8,7 @@ import {
 import { startCoreFeatureRuntimes } from '../runtime/start-core-feature-runtimes'
 import { applyAppRuntimeController } from '../runtime/app-runtime-controller'
 import { useMissionStore } from './mission-store'
+import { isTauriRuntimeAvailable } from '../../lib/tauri-runtime'
 import { readTrackingRuntimeConfig } from '../tracking/tracking-runtime-config'
 import { createTraccarClient } from '../tracking/traccar-client'
 import {
@@ -17,15 +18,40 @@ import {
 import { startTrackingRuntime } from '../tracking/start-tracking-runtime'
 import { applyTrackingSnapshot, applyTrackingStatus } from '../tracking/tracking-store'
 
+type BrowserHarnessContext = {
+  readonly search: string
+  readonly dev: boolean
+  readonly tauriAvailable: boolean
+}
+
+/**
+ * Evaluates whether a browser harness should run for a concrete runtime
+ * context. Hosted browser builds may opt in with `?missionHarness=1`; Tauri
+ * production builds must never be forced into the harness by a query string.
+ */
+export function shouldEnableMissionBrowserHarnessForContext(
+  context: BrowserHarnessContext,
+): boolean {
+  if (new URLSearchParams(context.search).get('missionHarness') !== '1') {
+    return false
+  }
+
+  return context.dev || !context.tauriAvailable
+}
+
 /**
  * Returns whether the browser mission harness should be enabled for validation.
  */
 export function shouldEnableMissionBrowserHarness(): boolean {
-  if (!import.meta.env.DEV || typeof window === 'undefined') {
+  if (typeof window === 'undefined') {
     return false
   }
 
-  return new URLSearchParams(window.location.search).get('missionHarness') === '1'
+  return shouldEnableMissionBrowserHarnessForContext({
+    search: window.location.search,
+    dev: import.meta.env.DEV,
+    tauriAvailable: isTauriRuntimeAvailable(),
+  })
 }
 
 function shouldEnableBrowserHarnessLiveTracking(): boolean {

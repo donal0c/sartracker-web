@@ -27,6 +27,7 @@ import { GpxRuntimeBridge } from './features/gpx/gpx-runtime-bridge'
 import { HelicopterRuntimeBridge } from './features/helicopters/helicopter-runtime-bridge'
 import { useFocusModeStore } from './features/focus-mode/focus-mode-store'
 import { useMissionStore } from './features/mission/mission-store'
+import { shouldEnableMissionBrowserHarness } from './features/mission/mission-browser-harness'
 import { calculateMissionTimerState, formatMissionDuration } from './features/mission/mission-timers'
 import { useTrackingStore } from './features/tracking/tracking-store'
 import { APP_VERSION } from './lib/app-version'
@@ -52,6 +53,7 @@ function App() {
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [sidebarTab, setSidebarTab] = useState<SidebarTab>('tracking')
   const openDiagnosticsWorkspace = useDiagnosticsWorkspaceStore((state) => state.openWorkspace)
+  const browserTestingMode = shouldEnableMissionBrowserHarness()
 
   return (
     <main
@@ -75,6 +77,7 @@ function App() {
           status={status}
         />
       )}
+      {focusModeActive || !browserTestingMode ? null : <HostedBrowserTestingBanner />}
 
       <div className="flex min-h-0 flex-1">
         {/* Map Area - Expanded */}
@@ -169,6 +172,17 @@ function App() {
 }
 
 export default App
+
+function HostedBrowserTestingBanner() {
+  return (
+    <div
+      className="border-b border-amber-400/30 bg-amber-400/10 px-5 py-2 text-[12px] font-semibold text-amber-100"
+      data-testid="hosted-browser-testing-banner"
+    >
+      Browser testing mode: mission data is stored in this browser session. Use for team testing only, not live incidents.
+    </div>
+  )
+}
 
 function CommandMast(props: {
   readonly status: string

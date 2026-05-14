@@ -396,6 +396,15 @@
               </ol>
             </div>
             <div class="card">
+              <h3>Hosted browser testing</h3>
+              <ol>
+                <li>Open <strong>https://sartracker-web.vercel.app/?missionHarness=1</strong>.</li>
+                <li>Confirm the amber browser testing banner is visible.</li>
+                <li>Use <strong>Settings</strong> to configure Traccar before starting the mission.</li>
+                <li>Start the mission from <strong>Mission Control</strong> after tracking connection succeeds.</li>
+              </ol>
+            </div>
+            <div class="card">
               <h3>For a maintainer</h3>
               <ol>
                 <li>Keep this manual factual and tied to app behavior.</li>
@@ -519,6 +528,11 @@
             Secrets are intentionally kept out of mission SQLite and browser storage. If a stored secret
             already exists, Settings can show that one is present and can clear it on save. The password
             or token field is cleared after saving so stored secrets are not echoed back into the form.
+          </div>
+          <div class="warning">
+            <strong>Hosted browser testing:</strong> when the app is opened with <strong>?missionHarness=1</strong>,
+            mission data is stored in the browser session so the team can test the current workflow from
+            Vercel. Use it for testing only until the browser runtime has durable storage and recovery.
           </div>
         </section>
 
@@ -668,6 +682,7 @@
             <li><strong>Replay mode:</strong> settings expose replay defaults, but full replay/training workflow parity is still active work.</li>
             <li><strong>Mission metadata:</strong> richer coordinator/metadata capture at mission start remains a parity gap.</li>
             <li><strong>Layer parity:</strong> the app has a grouped layer tree with visibility, aliases, favorites, and reorder controls, but final parity acceptance is still pending.</li>
+            <li><strong>Hosted browser testing:</strong> Vercel browser mode currently uses session storage for mission data. It is intended to unblock team testing, not replace the installed app for live incidents yet.</li>
             <li><strong>Browser harness differences:</strong> desktop-only actions such as GPX file picking and marker file attachments are limited or unavailable in browser validation mode.</li>
           </ul>
         </section>
