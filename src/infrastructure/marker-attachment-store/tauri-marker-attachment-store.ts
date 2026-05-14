@@ -3,11 +3,12 @@ import { invoke } from '@tauri-apps/api/core'
 import { getBrowserHarnessStore } from '../../features/browser-validation/browser-harness-store'
 import { shouldEnableMissionBrowserHarness } from '../../features/mission/mission-browser-harness'
 import { isTauriRuntimeAvailable } from '../../lib/tauri-runtime'
+import type {
+  IngestedMarkerAttachment,
+  MarkerAttachmentBoundary,
+} from './marker-attachment-boundary'
 
-export type IngestedMarkerAttachment = {
-  readonly storedPath: string
-  readonly fileName: string
-}
+export type { IngestedMarkerAttachment, MarkerAttachmentBoundary }
 
 type IngestMarkerAttachmentInput = {
   readonly missionId: string
@@ -16,6 +17,10 @@ type IngestMarkerAttachmentInput = {
 }
 
 const MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024
+
+export const tauriMarkerAttachmentAdapter: MarkerAttachmentBoundary = {
+  ingest: ingestMarkerAttachment,
+}
 
 export async function ingestMarkerAttachment(
   missionId: string,

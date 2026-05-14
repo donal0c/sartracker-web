@@ -1,29 +1,11 @@
-import type {
-  MissionStore,
-} from '../../infrastructure/mission-store/tauri-mission-store'
-import { applyDrawingController, applyDrawingRuntime } from '../drawings/drawing-store'
-import { startDrawingRuntime } from '../drawings/start-drawing-runtime'
+import { noopMarkerAttachmentAdapter } from '../../infrastructure/marker-attachment-store/noop-marker-attachment-adapter'
 import { getBrowserHarnessStore } from '../browser-validation/browser-harness-store'
-import { applyGpxController, applyGpxRuntime } from '../gpx/gpx-store'
-import { startGpxRuntime } from '../gpx/start-gpx-runtime'
-import { applyHelicopterController, applyHelicopterRuntime } from '../helicopters/helicopter-store'
-import { startHelicopterRuntime } from '../helicopters/start-helicopter-runtime'
-import { ingestMarkerAttachment } from '../../infrastructure/marker-attachment-store/tauri-marker-attachment-store'
 import {
   hydrateTrackingFromBrowserHarness,
   installBrowserHarnessApi,
 } from '../browser-validation/browser-harness-api'
-import { applyMarkerController, applyMarkerRuntime } from '../markers/marker-store'
-import { startMarkerRuntime } from '../markers/start-marker-runtime'
-import {
-  applyMissionGovernanceController,
-  applyMissionGovernanceRuntime,
-  applyMissionRuntime,
-  applyMissionRuntimeController,
-  useMissionStore,
-} from './mission-store'
-import { startMissionGovernanceRuntime } from './start-mission-governance-runtime'
-import { startMissionRuntime } from './start-mission-runtime'
+import { startCoreFeatureRuntimes } from '../runtime/start-core-feature-runtimes'
+import { useMissionStore } from './mission-store'
 import { readTrackingRuntimeConfig } from '../tracking/tracking-runtime-config'
 import { createTraccarClient } from '../tracking/traccar-client'
 import {
@@ -54,6 +36,11 @@ function shouldEnableBrowserHarnessLiveTracking(): boolean {
 
 /**
  * Starts a browser-only mission runtime harness for headless validation.
+ *
+ * The harness deliberately omits autosave and settings-reload — both depend on
+ * Tauri-backed adapters and are therefore production-only. The harness also
+ * passes `gpxWatchSource: undefined`: GPX file watching requires a Tauri
+ * filesystem and is intentionally not available in browser-harness mode.
  */
 export async function startMissionBrowserHarness(): Promise<void> {
   if (typeof window === 'undefined') {
@@ -62,69 +49,14 @@ export async function startMissionBrowserHarness(): Promise<void> {
 
   installBrowserHarnessApi()
 
-  const browserStore = getBrowserHarnessStore() as Pick<
-    MissionStore,
-    | 'createMission'
-    | 'listMissions'
-    | 'getActiveMission'
-    | 'getRecoverableMission'
-    | 'pauseMission'
-    | 'resumeMission'
-    | 'finishMission'
-    | 'finalizeMission'
-    | 'unlockFinalizedMission'
-    | 'listDevices'
-    | 'upsertDevice'
-    | 'addPosition'
-    | 'listPositions'
-    | 'listMarkers'
-    | 'upsertMarker'
-    | 'deleteMarker'
-    | 'listDrawings'
-    | 'upsertDrawing'
-    | 'deleteDrawing'
-    | 'listHelicopters'
-    | 'upsertHelicopter'
-    | 'deleteHelicopter'
-    | 'listGpxImports'
-    | 'upsertGpxImport'
-    | 'deleteGpxImport'
-  >
-  const controller = await startMissionRuntime({
+  const browserStore = getBrowserHarnessStore()
+  // Intentional: GPX file watching is not available in browser-harness mode, so
+  // gpxWatchSource is omitted entirely (with exactOptionalPropertyTypes a
+  // present-but-undefined property is rejected at the type boundary).
+  await startCoreFeatureRuntimes({
     missionStore: browserStore,
-    applyRuntime: applyMissionRuntime,
-    now: () => new Date(),
+    attachmentAdapter: noopMarkerAttachmentAdapter,
   })
-
-  applyMissionRuntimeController(controller)
-  const governanceController = await startMissionGovernanceRuntime({
-    missionStore: browserStore,
-    applyRuntime: applyMissionGovernanceRuntime,
-  })
-  applyMissionGovernanceController(governanceController)
-  const markerController = await startMarkerRuntime({
-    markerStore: browserStore,
-    attachmentStore: {
-      ingest: ingestMarkerAttachment,
-    },
-    applyRuntime: applyMarkerRuntime,
-  })
-  applyMarkerController(markerController)
-  const drawingController = await startDrawingRuntime({
-    drawingStore: browserStore,
-    applyRuntime: applyDrawingRuntime,
-  })
-  applyDrawingController(drawingController)
-  const helicopterController = await startHelicopterRuntime({
-    helicopterStore: browserStore,
-    applyRuntime: applyHelicopterRuntime,
-  })
-  applyHelicopterController(helicopterController)
-  const gpxController = await startGpxRuntime({
-    gpxStore: browserStore,
-    applyRuntime: applyGpxRuntime,
-  })
-  applyGpxController(gpxController)
 
   await hydrateTrackingFromBrowserHarness()
 

@@ -13,6 +13,8 @@
 
 ## Last Updated
 
+- 2026-05-14 by Codex (T05 review — tightened tests/commentary, reran lint/build/full test gate, manual unchanged)
+- 2026-05-14 by Claude (T05 unified runtime bootstrap — single `startCoreFeatureRuntimes` now wires all six feature controllers; harness mode no longer imports any Tauri infrastructure)
 - 2026-05-13 by Claude (T03 finished-mission write guard — split `ensure_mission_mutable` into data vs lifecycle guards; Finished now blocks every data-bearing upsert with a clear operator error)
 - 2026-05-13 by Claude (T02 governance atomicity — finalize + unlock status/audit writes now share one sqlx transaction)
 - 2026-05-13 by Claude (T01 docs reconciliation — OVERVIEW/bead-readiness/parity banners + bead repo-ID fix)
@@ -23,6 +25,32 @@
 - 2026-05-13 by Codex (tracking visual readability + visibility regression hardening)
 - 2026-05-13 by Codex (HTTP tracking mock-server Chrome validation + per-device map filter fix)
 - 2026-05-12 by Codex (operator manual added and linked from app Help)
+
+## T05 Unified Runtime Bootstrap — Baton Note (2026-05-14, Claude)
+
+Phase 1 task T05 is complete. There is now one canonical function that wires all six core feature controllers, and the browser-harness boot path no longer imports any Tauri infrastructure module.
+
+- New: `src/features/runtime/start-core-feature-runtimes.ts` exports `startCoreFeatureRuntimes(options)`. It calls `startMissionRuntime`, `startMissionGovernanceRuntime`, `startMarkerRuntime`, `startDrawingRuntime`, `startHelicopterRuntime`, `startGpxRuntime` in that exact order, registers each controller with its global store, and returns a `dispose()` that walks per-feature cleanups in reverse registration order. Cleanup callbacks are no-ops today (no controller exposes a cleanup hook); the seam exists so T06/T08/T10/T13 can wire real cleanup without changing boot ordering.
+- New: `src/infrastructure/marker-attachment-store/marker-attachment-boundary.ts` defines the shared `MarkerAttachmentBoundary` interface used by both adapters.
+- New: `src/infrastructure/marker-attachment-store/noop-marker-attachment-adapter.ts` is a `MarkerAttachmentBoundary` for harness mode. The Tauri attachment store now also exports `tauriMarkerAttachmentAdapter` so the production boot path passes an adapter rather than a free function.
+- New: `src/features/browser-validation/browser-harness-layer-catalog-store.ts` — a sessionStorage-backed `LayerCatalogStore` that the harness uses directly. The persistence key matches the Tauri module's non-Tauri fallback so existing harness data continues to round-trip.
+- Refactored `start-app-runtime.ts` to delegate the six feature wirings to `startCoreFeatureRuntimes` while keeping autosave, settings reload, and tracking startup exactly where they were. No production behaviour change.
+- Refactored `start-mission-browser-harness.ts` to delegate the same six wirings to `startCoreFeatureRuntimes` and pass the noop attachment adapter. Removed every `infrastructure/*` import except the noop. `gpxWatchSource` is now omitted entirely (per `exactOptionalPropertyTypes`); the absence is documented in line as intentional.
+- Bridges hardened: `LayerCatalogRuntimeBridge`, `MissionReviewRuntimeBridge`, and `DiagnosticsRuntimeBridge` now all gate on `shouldEnableMissionBrowserHarness()` for both the mission store and the layer-catalog store. Diagnostics' mission-store check was already correct; its layer-catalog check has been brought into line.
+- Tests:
+  - New `tests/unit/start-core-feature-runtimes.test.ts` (5 tests) — verifies registration order, that the mission store flows to each controller, that `gpxWatchSource` is forwarded when provided and omitted when absent, and that the disposer is callable.
+  - New `tests/e2e/harness-no-tauri-leak.spec.ts` — boots the harness, runs start-mission + place-marker, and asserts no `ipc://` or `tauri://` requests fire and `__TAURI_INTERNALS__` is absent. Replaces the literal `__INVOKE_CALLS__` patching strategy from the task spec because `@tauri-apps/api/core#invoke` is a static import resolved before any `addInitScript` runs.
+- Verification:
+  - `npm run lint` ✅
+  - `npm run build` ✅ (bundle budgets pass)
+  - `npm run test` → 78 files / 367 tests ✅
+  - `npx playwright test --project=chromium` → 67/67 ✅
+  - `npx playwright test --project=visual` → 23/23 ✅
+  - `cargo test --manifest-path src-tauri/Cargo.toml` → 37/37 ✅
+  - `npm run test:all` → green ✅
+- Backlog: `docs/hardening-backlog/INDEX.md` T05 row ticked; `docs/hardening-backlog/T05-unified-runtime-bootstrap.md` marked Complete with §8 notes covering adapter placement, bridge strategy, disposer semantics, what was deliberately not changed, and the rationale for the alternate IPC-leak verification approach.
+- Codex review follow-up: removed a present-but-undefined `gpxWatchSource` from the unit test so it matches the `exactOptionalPropertyTypes` contract, corrected one harness-store comment, reran `npm run lint`, `npm run build`, and `npm run test:all` successfully. No operator-facing behaviour changed, so `public/manual/index.html` did not need an update.
+- Next recommended task: T04 (cap tracking exponential backoff and isolate per-device breadcrumb faults — independent), T06 (render gate, depends on T05 — now unblocked), or T10 (autosave on lifecycle, also unblocked).
 
 ## T03 Finished-Mission Write Guard — Baton Note (2026-05-13, Claude)
 

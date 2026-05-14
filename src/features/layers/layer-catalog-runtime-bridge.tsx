@@ -4,7 +4,9 @@ import { useDrawingStore } from '../drawings/drawing-store'
 import { useGpxStore } from '../gpx/gpx-store'
 import { useHelicopterStore } from '../helicopters/helicopter-store'
 import { createTauriLayerCatalogStore } from '../../infrastructure/layer-catalog-store/tauri-layer-catalog-store'
+import { getBrowserHarnessLayerCatalogStore } from '../browser-validation/browser-harness-layer-catalog-store'
 import { useMarkerStore } from '../markers/marker-store'
+import { shouldEnableMissionBrowserHarness } from '../mission/mission-browser-harness'
 import { useMissionStore } from '../mission/mission-store'
 import { useTrackingStore } from '../tracking/tracking-store'
 import { applyLayerCatalogController, applyLayerCatalogRuntime, useLayerCatalogStore } from './layer-catalog-store'
@@ -13,6 +15,10 @@ import { startLayerCatalogRuntime } from './start-layer-catalog-runtime'
 /**
  * Starts the layer catalog runtime and keeps mission-scoped catalog metadata
  * aligned with the current tracking, marker, and drawing snapshots.
+ *
+ * Picks the layer-catalog store at mount time based on whether the browser
+ * harness is active so harness mode never invokes Tauri IPC for catalog
+ * persistence.
  */
 export function LayerCatalogRuntimeBridge() {
   const controller = useLayerCatalogStore((state) => state.controller)
@@ -29,8 +35,12 @@ export function LayerCatalogRuntimeBridge() {
     }
 
     let cancelled = false
+    const layerCatalogStore = shouldEnableMissionBrowserHarness()
+      ? getBrowserHarnessLayerCatalogStore()
+      : createTauriLayerCatalogStore()
+
     void startLayerCatalogRuntime({
-      layerCatalogStore: createTauriLayerCatalogStore(),
+      layerCatalogStore,
       applyRuntime: applyLayerCatalogRuntime,
     }).then((nextController) => {
       if (!cancelled) {

@@ -5,32 +5,16 @@ import {
   type MissionStore,
 } from '../../infrastructure/mission-store/tauri-mission-store'
 import { createTauriGpxImportSource } from '../../infrastructure/gpx-import-source/tauri-gpx-import-source'
-import { ingestMarkerAttachment } from '../../infrastructure/marker-attachment-store/tauri-marker-attachment-store'
+import { tauriMarkerAttachmentAdapter } from '../../infrastructure/marker-attachment-store/tauri-marker-attachment-store'
 import { createTauriTrackingCache } from '../../infrastructure/tracking-cache/tauri-tracking-cache'
 import { loadRuntimeBootstrapSettings } from '../../infrastructure/settings-store/tauri-settings-store'
 import { registerServiceWorker } from '../../lib/register-service-worker'
 import { isTauriRuntimeAvailable } from '../../lib/tauri-runtime'
-import { applyGpxController, applyGpxRuntime } from '../gpx/gpx-store'
 import { startGpxRuntime } from '../gpx/start-gpx-runtime'
-import {
-  applyHelicopterController,
-  applyHelicopterRuntime,
-} from '../helicopters/helicopter-store'
 import { startHelicopterRuntime } from '../helicopters/start-helicopter-runtime'
-import { applyMarkerController, applyMarkerRuntime } from '../markers/marker-store'
 import { startMarkerRuntime } from '../markers/start-marker-runtime'
-import {
-  applyDrawingController,
-  applyDrawingRuntime,
-} from '../drawings/drawing-store'
 import { startDrawingRuntime } from '../drawings/start-drawing-runtime'
-import {
-  applyMissionGovernanceController,
-  applyMissionGovernanceRuntime,
-  applyMissionRuntime,
-  applyMissionRuntimeController,
-  useMissionStore,
-} from '../mission/mission-store'
+import { useMissionStore } from '../mission/mission-store'
 import { startMissionGovernanceRuntime } from '../mission/start-mission-governance-runtime'
 import { startMissionRuntime } from '../mission/start-mission-runtime'
 import {
@@ -50,6 +34,7 @@ import {
   createNoopRuntimeServiceHandles,
   stopRuntimeServices,
 } from './runtime-managed-services'
+import { startCoreFeatureRuntimes } from './start-core-feature-runtimes'
 
 type StartAppRuntimeDependencies = {
   readonly registerServiceWorker: () => Promise<void>
@@ -120,40 +105,17 @@ export async function startAppRuntime(
   let activeServices = createNoopRuntimeServiceHandles()
   let reloadGeneration = 0
 
-  const missionRuntimeController = await resolvedDependencies.startMissionRuntime({
+  await startCoreFeatureRuntimes({
     missionStore,
-    applyRuntime: applyMissionRuntime,
+    attachmentAdapter: tauriMarkerAttachmentAdapter,
+    gpxWatchSource: gpxImportSource,
+    startMissionRuntime: resolvedDependencies.startMissionRuntime,
+    startMissionGovernanceRuntime: resolvedDependencies.startMissionGovernanceRuntime,
+    startMarkerRuntime: resolvedDependencies.startMarkerRuntime,
+    startDrawingRuntime: resolvedDependencies.startDrawingRuntime,
+    startHelicopterRuntime: resolvedDependencies.startHelicopterRuntime,
+    startGpxRuntime: resolvedDependencies.startGpxRuntime,
   })
-  applyMissionRuntimeController(missionRuntimeController)
-  const missionGovernanceController = await resolvedDependencies.startMissionGovernanceRuntime({
-    missionStore,
-    applyRuntime: applyMissionGovernanceRuntime,
-  })
-  applyMissionGovernanceController(missionGovernanceController)
-  const markerRuntimeController = await resolvedDependencies.startMarkerRuntime({
-    markerStore: missionStore,
-    attachmentStore: {
-      ingest: ingestMarkerAttachment,
-    },
-    applyRuntime: applyMarkerRuntime,
-  })
-  applyMarkerController(markerRuntimeController)
-  const drawingRuntimeController = await resolvedDependencies.startDrawingRuntime({
-    drawingStore: missionStore,
-    applyRuntime: applyDrawingRuntime,
-  })
-  applyDrawingController(drawingRuntimeController)
-  const helicopterRuntimeController = await resolvedDependencies.startHelicopterRuntime({
-    helicopterStore: missionStore,
-    applyRuntime: applyHelicopterRuntime,
-  })
-  applyHelicopterController(helicopterRuntimeController)
-  const gpxRuntimeController = await resolvedDependencies.startGpxRuntime({
-    gpxStore: missionStore,
-    watchSource: gpxImportSource,
-    applyRuntime: applyGpxRuntime,
-  })
-  applyGpxController(gpxRuntimeController)
   await reloadSettings()
   return {
     reloadSettings,

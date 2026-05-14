@@ -1,6 +1,7 @@
 import { useEffect } from 'react'
 
 import { createTauriLayerCatalogStore } from '../../infrastructure/layer-catalog-store/tauri-layer-catalog-store'
+import { getBrowserHarnessLayerCatalogStore } from '../browser-validation/browser-harness-layer-catalog-store'
 import { getBrowserHarnessStore } from '../browser-validation/browser-harness-store'
 import { exportDiagnosticsReport } from '../../infrastructure/support-report/tauri-support-report-store'
 import { createTauriMissionStore } from '../../infrastructure/mission-store/tauri-mission-store'
@@ -42,7 +43,9 @@ export function DiagnosticsRuntimeBridge() {
       missionStore: shouldEnableMissionBrowserHarness()
         ? getBrowserHarnessStore()
         : createTauriMissionStore(),
-      layerCatalogStore: createTauriLayerCatalogStore(),
+      layerCatalogStore: shouldEnableMissionBrowserHarness()
+        ? getBrowserHarnessLayerCatalogStore()
+        : createTauriLayerCatalogStore(),
       readMissionRuntime: () => {
         const state = useMissionStore.getState()
         return {

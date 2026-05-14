@@ -10,16 +10,13 @@ import {
   type MarkerDraft,
 } from './marker-draft'
 import type { MarkerDialogState, MarkerRuntimeState } from './marker-store'
-import type { IngestedMarkerAttachment } from '../../infrastructure/marker-attachment-store/tauri-marker-attachment-store'
+import type { MarkerAttachmentBoundary } from '../../infrastructure/marker-attachment-store/marker-attachment-boundary'
 
 type MarkerStoreBoundary = Pick<MissionStore, 'listMarkers' | 'upsertMarker' | 'deleteMarker'>
-type MarkerAttachmentStoreBoundary = {
-  readonly ingest: (missionId: string, file: File) => Promise<IngestedMarkerAttachment>
-}
 
 type StartMarkerRuntimeDependencies = {
   readonly markerStore: MarkerStoreBoundary
-  readonly attachmentStore: MarkerAttachmentStoreBoundary
+  readonly attachmentStore: MarkerAttachmentBoundary
   readonly applyRuntime: (runtime: MarkerRuntimeState) => void
 }
 
