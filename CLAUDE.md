@@ -19,7 +19,8 @@ Aim for work that feels closer to a 9.5-10/10 engineering result than a fast acc
 
 1. **Read this file completely**
 2. **Read `handoff/HANDOFF.md` immediately after this file**
-3. **Read the relevant bead** for whatever you're working on (`bd list`, `bd show <id>`)
+3. **Read `docs/two-track-execution-workplan.md`** unless the user has explicitly named a different bead/task
+4. **Read the relevant bead** for whatever you're working on (`bd list`, `bd show <id>`)
 
 ## Branch Discipline
 
@@ -52,7 +53,8 @@ That means:
 Every agent must be able to resume the project by reading only:
 1. `CLAUDE.md`
 2. `handoff/HANDOFF.md`
-3. the relevant bead(s)
+3. `docs/two-track-execution-workplan.md`
+4. the relevant bead(s)
 
 When you finish a chunk of work, update `handoff/HANDOFF.md` so the next agent can continue without reconstructing context from commit history, old chat context, or deleted packet files.
 
@@ -77,7 +79,8 @@ Do not use `handoff/HANDOFF.md` for:
 
 Use these locations instead:
 - beads: tracked feature / bug / hardening work
-- `docs/areas-to-investigate.md`: rolling improvement queue and fixed improvement-mode prompt
+- `docs/two-track-execution-workplan.md`: the single active planning path and next-task queue
+- `docs/areas-to-investigate.md`: improvement-mode guardrail only; any real task must be folded into the two-track workplan before implementation
 - parity docs: row-level parity evidence
 - `handoff/archive/`: older detailed history
 
@@ -416,7 +419,7 @@ sartracker-web/
 │   └── fixtures/          ← test data (golden datasets, mock responses)
 ├── spikes/                ← ARCHIVED spike code (reference only, do not modify)
 ├── specs/                 ← architecture specs
-└── docs/                  ← reference documentation
+└── docs/                  ← reference docs; `two-track-execution-workplan.md` is the single active planning queue
 ```
 
 Avoid introducing `src/utils/` unless there is a very strong reason and the file has one precise responsibility.

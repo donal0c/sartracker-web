@@ -20,7 +20,7 @@ Use this document before implementation to decide how much parallel research, pl
 
 ## Current Assessments
 
-Last updated: 2026-05-14 by Codex (deployment strategy folded into hosted browser plan)
+Last updated: 2026-05-14 by Codex (planning consolidated into the two-track workplan)
 
 ## Hosted Browser Runtime
 
@@ -30,9 +30,9 @@ Strategic stance: hosted browser is the fast feedback/testing lane; Tauri deskto
 
 Execution docs:
 
-- `docs/two-track-execution-workplan.md`
-- `docs/team-testing-feedback-loop.md`
-- `docs/tauri-beta-release-plan.md`
+- `docs/two-track-execution-workplan.md` — canonical active queue
+- `docs/team-testing-feedback-loop.md` — supporting tester instructions
+- `docs/tauri-beta-release-plan.md` — supporting beta release detail
 
 ### Phase 0: Hosted browser testing unblock
 
@@ -108,7 +108,7 @@ Last updated: 2026-05-13 by Claude (T01 docs reconciliation)
 | Bead | Score | Recommended action | Why |
 |------|-------|--------------------|-----|
 | `sartracker-web-2jk.1` — M12 Settings workspace parity | Complete | Implemented; see HANDOFF | Settings workspace shipped |
-| `sartracker-web-2jk.2` — M13 Replay / training mode parity | 4/5 | Open — next major bead after hardening | Clear plugin gap with strong guardrails already evidenced in plugin tests/docs |
+| `sartracker-web-2jk.2` — M13 Replay / training mode parity | 4/5 | Open — route through the two-track workplan when prioritized | Clear plugin gap with strong guardrails already evidenced in plugin tests/docs |
 | `sartracker-web-2jk.3` — M14 Mission finalization, archive, and admin unlock | Complete | Implemented; see HANDOFF | Finalize/archive/unlock workflows shipped with audit coverage |
 | `sartracker-web-2jk.4` — M15 Mission logs and audit review workspace | Complete | Implemented; see HANDOFF | Mission review workspace shipped |
 | `sartracker-web-2jk.5` — M16 Layer catalog domain and grouped layer model | Complete | Implemented; see HANDOFF | Grouped layer catalog is the authoritative source for the layer tree |
@@ -152,7 +152,7 @@ Last updated: 2026-05-13 by Claude (T01 docs reconciliation)
 
 ### Currently Open Parity Beads
 
-- `sartracker-web-2jk.2` — M13 replay / training mode parity (blocked — next major bead after hardening)
+- `sartracker-web-2jk.2` — M13 replay / training mode parity (route through the two-track workplan when prioritized)
 - `sartracker-web-2jk.14` — M25 offline map resilience parity (readiness + current-view preflight shipped; full packaged offline bundles remain)
 - `sartracker-web-2jk.15` — M26 QGIS replacement parity acceptance sweep (blocked — run last)
 - `sartracker-web-bsl` — sections 13–16 not yet triple-verified in deep UI validation

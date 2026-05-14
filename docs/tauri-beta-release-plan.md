@@ -1,6 +1,6 @@
 # Tauri Beta Release Plan
 
-> Phase 1 working plan. Use this when preparing the first installable desktop beta while the team continues hosted browser testing.
+> Supporting Phase 1 beta detail. The active queue and next-task order live in `docs/two-track-execution-workplan.md`; update that workplan before treating new beta work as planned.
 
 ## Purpose
 
@@ -143,4 +143,3 @@ Before sharing a desktop beta outside the dev machine:
 - Where should beta artifacts live?
 - How often can the team reasonably install beta updates?
 - Who on the team will test desktop installation?
-

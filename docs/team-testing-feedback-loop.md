@@ -1,6 +1,6 @@
 # Team Testing Feedback Loop
 
-> Use this while the team is testing the hosted browser build.
+> Supporting tester instructions. The active queue and triage decisions live in `docs/two-track-execution-workplan.md`; fold any new work there before implementation.
 
 ## Testing URL
 
@@ -88,4 +88,3 @@ Do not enter the direct HTTP Traccar URL in the hosted browser app. Browsers blo
 - Batch UI changes where possible so testers are not chasing a moving layout every hour.
 - Keep a short changelog for each Vercel update.
 - Promote only coherent, tested batches to Tauri beta.
-

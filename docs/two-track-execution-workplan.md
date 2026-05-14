@@ -1,25 +1,46 @@
 # Two-Track Execution Workplan
 
-> Start here when deciding what to do next while team testing is active.
+> **Canonical planning path.** Start here when deciding what to do next. All new planning, hardening, feedback, release, map, UI, verification, and parity work must either fit into this queue or update this queue before implementation starts.
+
+## Planning Rule
+
+There is one active work queue: this file.
+
+Supporting docs may explain a specific area, but they must not become separate task boards. If a task is discovered in a report, chat, test run, review, bug report, or support note, fold it into this file as a chunk before treating it as planned work.
+
+Do not create new planning queues under other names. Do not revive the old hardening backlog as an active board. Historical reports are evidence only; this file decides the next task.
+
+When a chunk is finished:
+
+1. Update this file if the queue changed.
+2. Update the relevant bead.
+3. Update `handoff/HANDOFF.md` with only the current baton.
+4. Update the operator manual if operator-facing behavior changed.
+5. Run the relevant verification for the chunk.
 
 ## Operating Model
 
-Run two tracks in parallel.
+Run two delivery tracks in parallel, with shared-foundation work feeding both.
 
-**Track A: Team feedback and fast browser iteration**
+**Track A: Hosted team testing**
 
-- Primary runtime: Vercel hosted browser testing mode.
+- Runtime: Vercel hosted browser testing mode.
 - URL: `https://sartracker-web.vercel.app/?missionHarness=1`
 - Purpose: let the team learn the app, find bugs, request UI changes, and test tracking/layers/workflows quickly.
 - Release style: small, frequent Vercel deploys.
 - Persistence expectation: session storage only; testing/training, not live incidents.
 
-**Track B: Phase 1 Tauri beta readiness**
+**Track B: Tauri operational readiness**
 
-- Primary runtime: packaged Tauri desktop app.
+- Runtime: packaged Tauri desktop app.
 - Purpose: prepare the operational release lane without waiting for all UI feedback to finish.
-- Release style: quieter background work, then versioned beta packages when the surface has settled enough to be worth desktop testing.
+- Release style: quieter background work, then versioned beta packages when a coherent batch is ready.
 - Persistence expectation: SQLite, filesystem adapters, recovery, diagnostics, and local map packages.
+
+**Shared foundation**
+
+- Runtime boot, mission lifecycle, tracking, layer visibility, map overlays, and verification hardening that affects both tracks.
+- These chunks should be pulled forward when they reduce confusion, unblock UI changes, or lower operational risk.
 
 ## Decision Rule
 
@@ -29,31 +50,50 @@ When new work arrives, classify it before implementing:
 | --- | --- |
 | Confusing UI, wording, control placement, layer visibility, tracking display | Track A |
 | Bug visible in hosted browser testing mode | Track A first, then confirm whether Tauri is also affected |
+| Runtime boot, startup failure visibility, shared mission/layer/tracking correctness | Shared foundation |
 | Mission persistence, recovery, filesystem, GPX watch, diagnostics export, archive | Track B |
-| High-definition mountain map integration | Track B / Phase 3, desktop-first |
-| Browser IndexedDB, browser backups, browser file workflows | Defer until the Phase 4 browser hardening decision |
+| High-definition mountain map integration | Track B / desktop-first |
+| Browser IndexedDB, browser backups, browser file workflows | Defer until the browser-hardening decision |
 | Security concern about public map hosting | Track B / local map package support; do not host proprietary maps |
+| New hardening finding | Add it here as Shared, Track A, Track B, Verification, or Deferred |
 
 ## Current Priority
 
 1. Keep hosted browser testing smooth enough for the team to give real feedback.
-2. Prepare a repeatable Tauri beta release path in the background.
-3. Do not start heavy browser hardening unless testing proves browser operational deployment is genuinely needed.
-4. Treat high-definition mountain maps as local desktop map packages unless the map provider gives requirements that change this.
+2. Burn down shared foundation issues that make startup, mission control, tracking, layers, or map behavior ambiguous.
+3. Prepare a repeatable Tauri beta release path in the background.
+4. Avoid heavy browser hardening unless testing proves browser operational deployment is genuinely needed.
+5. Treat high-definition mountain maps as local desktop map packages unless the map provider gives requirements that change this.
+
+## Next Task Order
+
+This is the default order when the user says “work on the next task.”
+
+| Order | Chunk | Track | Bead | Status |
+| --- | --- | --- | --- | --- |
+| 1 | A2: Hosted Mode Guardrails | Track A | `sartracker-web-vpz.3` | Ready |
+| 2 | S1: Runtime Boot/Fault Guard | Shared | Create/update bead before starting | Ready |
+| 3 | A1: Hosted Testing Instructions And Feedback Intake | Track A | `sartracker-web-vpz.1` | Ready |
+| 4 | B1: Tauri Beta Packaging Recon | Track B | `sartracker-web-vpz.2` | Ready |
+| 5 | S2: Autosave Lifecycle Hardening | Shared / Track B | Create/update bead before starting | Ready after S1 |
+| 6 | S3: Layer Visibility Service Extraction | Shared / Track A | Create/update bead before starting | Ready |
+| 7 | A3: Team Feedback Triage Pass | Track A | Create/update beads from feedback | As feedback arrives |
+| 8 | B2: Tauri Beta Release Template | Track B | Create/update bead before starting | Ready after B1 |
+| 9 | B3: First Internal Tauri Smoke Build | Track B | Create/update bead before starting | Ready after B1/B2 |
+| 10 | S4: Map Overlay Consolidation And Camera Race Fix | Shared / Track B | Create/update bead before starting | Ready after S3 preferred |
+| 11 | S5: Mission Control View Model Extraction | Shared / Track A | Create/update bead before starting | Best after real UI feedback |
+| 12 | V1: Regression E2E Coverage | Verification | Create/update bead before starting | Ready |
+| 13 | V2: Visual Review Automation | Verification | Create/update bead before starting | Ready |
+| 14 | B4: GPX And Drawing Hit-Test Hardening | Track B | Create/update bead before starting | Ready |
+| 15 | C1: Local Proprietary Map Package Requirements | Track B / Maps | Create/update bead before starting | Waiting for map facts |
 
 ## Ready Work Chunks
 
-### Chunk A1: Hosted Testing Instructions And Feedback Intake
+### A1: Hosted Testing Instructions And Feedback Intake
 
 Bead: `sartracker-web-vpz.1`
 
 Goal: make it easy for the team to test and report issues consistently.
-
-Inputs:
-
-- Current hosted URL.
-- Current Traccar credentials.
-- Current operator manual.
 
 Tasks:
 
@@ -82,13 +122,13 @@ Acceptance:
 Verification:
 
 - Manual doc read-through.
-- Optional Chrome validation of the hosted flow when explicitly allowed.
+- Hosted flow check only with the inbuilt browser unless the user explicitly asks for Playwright/Chrome DevTools.
 
-### Chunk A2: Hosted Mode Guardrails
+### A2: Hosted Mode Guardrails
 
 Bead: `sartracker-web-vpz.3`
 
-Goal: reduce avoidable confusion during browser testing.
+Goal: reduce avoidable Traccar URL confusion during browser testing.
 
 Tasks:
 
@@ -99,17 +139,17 @@ Tasks:
 
 Acceptance:
 
-- A tester who enters `http://kmrtsar.ddns.net:8082` in hosted mode gets a clear in-app explanation before chasing DevTools/network failures.
+- A tester who enters `http://kmrtsar.ddns.net:8082` in hosted mode gets a clear in-app explanation before chasing network failures.
 - Desktop settings remain flexible for direct provider URLs.
 
 Verification:
 
 - Unit coverage for hosted-mode URL validation/helper.
-- Manual hosted settings check.
+- Manual hosted settings check with the inbuilt browser.
 
-### Chunk A3: Team Feedback Triage Pass
+### A3: Team Feedback Triage Pass
 
-Goal: convert raw feedback into actionable beads.
+Goal: convert raw feedback into actionable chunks and beads.
 
 Tasks:
 
@@ -122,6 +162,7 @@ Tasks:
   - layout/UI preferences
   - desktop-only/runtime concerns
 - Create or update beads for recurring issues.
+- Route each item into this file as Track A, Track B, Shared, Verification, or Deferred.
 - Mark quick fixes separately from design questions.
 - Keep `handoff/HANDOFF.md` short: only current state, blockers, next actions.
 
@@ -133,19 +174,13 @@ Acceptance:
 Verification:
 
 - `bd list` shows new/updated work items.
-- Handoff has the current baton without becoming a diary.
+- This file and the handoff agree on the current next task.
 
-### Chunk B1: Tauri Beta Packaging Recon
+### B1: Tauri Beta Packaging Recon
 
 Bead: `sartracker-web-vpz.2`
 
 Goal: find the shortest reliable path to a first desktop beta artifact.
-
-Inputs:
-
-- `src-tauri/`
-- existing npm scripts
-- target team machine information, if available
 
 Tasks:
 
@@ -165,7 +200,7 @@ Verification:
 - Build command either succeeds, or the blocker is concrete and reproducible.
 - Results are recorded in `docs/tauri-beta-release-plan.md`.
 
-### Chunk B2: Tauri Beta Release Template
+### B2: Tauri Beta Release Template
 
 Goal: make desktop beta drops repeatable.
 
@@ -194,7 +229,7 @@ Verification:
 
 - Dry-run release notes from the current version.
 
-### Chunk B3: First Internal Tauri Smoke Build
+### B3: First Internal Tauri Smoke Build
 
 Goal: prove the desktop runtime can launch and execute the core path before involving the team.
 
@@ -203,7 +238,7 @@ Tasks:
 - Build the app.
 - Install/open locally.
 - Start a mission.
-- Configure Traccar directly or through whatever desktop settings path is appropriate.
+- Configure Traccar directly or through the appropriate desktop settings path.
 - Confirm mission persistence across app restart.
 - Confirm diagnostics/version visibility.
 
@@ -216,9 +251,32 @@ Verification:
 - Screenshot or notes in handoff.
 - Build artifact path recorded.
 
-### Chunk C1: Local Proprietary Map Package Requirements
+### B4: GPX And Drawing Hit-Test Hardening
 
-Goal: prepare for the team-provided high-definition mountain maps without creating a hosting/security problem.
+Former hardening item: T11.
+
+Goal: reduce map-interaction ambiguity around GPX and drawing hit-testing before field-oriented map work.
+
+Tasks:
+
+- Review GPX and drawing hit-test boundaries.
+- Make hit-test decisions explicit and testable.
+- Avoid silent ambiguity when overlapping map features are selectable.
+- Keep operator behavior calm and predictable under dense map state.
+
+Acceptance:
+
+- GPX/drawing selection rules are explicit in code and covered by tests.
+- Ambiguous interactions fail visibly or choose the documented priority order.
+
+Verification:
+
+- Unit tests for the hit-test rules.
+- Targeted map interaction check with the inbuilt browser.
+
+### C1: Local Proprietary Map Package Requirements
+
+Goal: prepare for team-provided high-definition mountain maps without creating a hosting/security problem.
 
 Tasks:
 
@@ -249,3 +307,229 @@ Acceptance:
 Verification:
 
 - Requirements captured in `docs/local-map-package-plan.md` when enough details exist.
+
+## Shared Foundation Chunks
+
+### S1: Runtime Boot/Fault Guard
+
+Former hardening item: T06.
+
+Goal: startup must be observable. The app should never render a broken console with disabled controls and no explanation.
+
+Tasks:
+
+- Add a small runtime boot-state store with phases `booting`, `ready`, and `failed`.
+- Transition to `ready` only after app or browser-harness runtime startup succeeds.
+- Transition to `failed` with a clear error string if startup fails.
+- Gate the app shell:
+  - booting: show a minimal preparing message
+  - failed: show a clear fault banner and Reload action
+  - ready: show the normal app
+- Make `applyAppRuntimeController` dispose the previous controller before replacing it.
+- Ensure runtime controller disposal is idempotent and releases autosave/tracking resources.
+
+Acceptance:
+
+- Startup failure is visible to the operator.
+- Double runtime initialization cannot leak the previous controller.
+- Normal hosted and Tauri startup behavior remains unchanged apart from the brief boot state.
+
+Verification:
+
+- Unit tests for boot-state transitions.
+- Unit tests for dispose-before-replace and idempotent dispose.
+- Targeted app-start check with the inbuilt browser.
+- Use Playwright only if explicitly requested for this chunk.
+
+### S2: Autosave Lifecycle Hardening
+
+Former hardening item: T10.
+
+Goal: mission lifecycle transitions should request an immediate durable sync, and autosave failures should not be invisible.
+
+Tasks:
+
+- Add or expose an autosave `requestSync()` path.
+- Trigger autosave on important mission lifecycle transitions such as start, pause, resume, finish/finalize, and unlock where appropriate.
+- Track autosave status and last failure.
+- Surface a subtle but visible command-mast warning when autosave is stale or failing.
+- Preserve known backup-audit behavior: backup sync events only exist when an active mission exists.
+
+Acceptance:
+
+- Lifecycle transitions no longer wait only for interval/visibility/pagehide autosave.
+- Operators get a visible signal when autosave is failing or stale.
+- Finished/finalized mission semantics remain intact.
+
+Verification:
+
+- Unit tests around lifecycle-triggered sync.
+- Unit tests for autosave failure/status state.
+- Targeted browser or desktop smoke check depending on the touched surface.
+
+### S3: Layer Visibility Service Extraction
+
+Former hardening item: T07.
+
+Goal: make layer visibility rules independent of the React layer panel before UI relocation or redesign work.
+
+Tasks:
+
+- Extract visibility patch logic from `src/components/layer-filter-panel.tsx` into `src/features/layers/layer-visibility-service.ts`.
+- Use `src/features/layers/layer-catalog-ids.ts` as the single node-ID/entity translator.
+- Keep the service pure; apply Zustand/store updates through a thin adapter.
+- Remove duplicate layer-catalog visibility hydration so there is one authoritative call site.
+- Preserve existing layer panel behavior and visual output.
+
+Acceptance:
+
+- The layer panel no longer owns domain visibility logic.
+- New entity types cannot silently no-op visibility updates.
+- Future UI movement can reuse the service without copying logic.
+
+Verification:
+
+- Unit tests for device, marker, drawing, branch, leaf, and unknown-node visibility behavior.
+- Existing layer visibility tests remain green.
+- Manual/inbuilt-browser layer hide/show check.
+
+### S4: Map Overlay Consolidation And Camera Race Fix
+
+Former hardening item: T12.
+
+Goal: reduce duplicated MapLibre overlay primitives and fix the basemap camera-preservation race.
+
+Tasks:
+
+- Create shared overlay helpers for:
+  - ensure GeoJSON source
+  - ensure layer
+  - combine map filters
+  - load SVG icon
+- Refactor drawing, marker, measurement, GPX, helicopter, and tracking sync modules to use the shared helpers.
+- Fix basemap style switching so camera restoration is applied exactly once at the safe style event point, not immediately and again later.
+- Prefer doing this after S3 so layer visibility and overlay changes do not collide.
+
+Acceptance:
+
+- Overlay modules share primitives without losing per-feature clarity.
+- Basemap switching does not fight operator camera movement.
+
+Verification:
+
+- Unit tests for shared overlay helpers.
+- Unit test for style-switch camera preservation.
+- Existing sync module tests remain green.
+- Targeted basemap/map interaction check.
+
+### S5: Mission Control View Model Extraction
+
+Former hardening item: T08.
+
+Goal: make mission-control behavior easier to change once team UI feedback starts landing.
+
+Tasks:
+
+- Extract mission timer logic into `useMissionTimer`.
+- Extract mission-control state/actions into `useMissionControlViewModel`.
+- Keep rendering components thin and predictable.
+- Preserve current control enablement rules.
+- Do this after S1 where practical, and after S3 if layer/mast UI changes are happening nearby.
+
+Acceptance:
+
+- Mission control rendering is separated from lifecycle/timer orchestration.
+- Future UI repositioning does not require reworking mission rules.
+
+Verification:
+
+- Unit tests for timer/view-model behavior where practical.
+- Existing mission lifecycle tests remain green.
+- Manual/inbuilt-browser mission start/pause/resume/finish check.
+
+## Verification Chunks
+
+### V1: Regression E2E Coverage
+
+Former hardening item: T13.
+
+Goal: add integration-level guards for previously live regressions and cold-start-offline behavior.
+
+Tasks:
+
+- Add E2E coverage for tracking layer visibility filters.
+- Add E2E coverage for stale layer-catalog refresh not overwriting a just-clicked visibility toggle.
+- Add E2E or mock-server coverage that a healthy poll does not flip to transport failure.
+- Add unit and E2E coverage for cold-start-offline showing cached positions with an unambiguous warning.
+- Replace brittle fixed waits in parity visibility specs with state-based waits.
+
+Acceptance:
+
+- The known regressions fail red if their fixes are reverted.
+- Cold-start-offline is covered at a meaningful seam.
+- Visibility specs avoid fixed propagation waits.
+
+Verification:
+
+- Targeted new specs.
+- `npm run test`.
+- E2E only with explicit user permission if using Playwright from Codex.
+
+### V2: Visual Review Automation
+
+Former hardening item: T09.
+
+Goal: make the existing visual verification workflow less manual and easier to repeat.
+
+Tasks:
+
+- Automate or script the second-layer visual review pass for screenshots in `test-results/visual-verification/`.
+- Keep the manifest prompts and evidence trail understandable.
+- Do not add new visual specs in this chunk; this is workflow automation.
+
+Acceptance:
+
+- A future verification run has a repeatable way to collect AI visual review outcomes.
+- Visual review failures are recorded clearly enough to act on.
+
+Verification:
+
+- Dry run against a small visual manifest set.
+- Document the exact command or agent workflow in this file or the visual test docs.
+
+## Deferred / Decision-Gated Work
+
+### Browser Operational Hardening
+
+Do not start this until the team has tested the hosted app and we decide the browser should be more than a testing/training lane.
+
+Possible future work:
+
+- IndexedDB-backed mission store.
+- Browser mission export/import.
+- Browser-compatible diagnostics export.
+- Browser file import and attachment handling.
+- Browser secret handling design.
+- Browser offline map strategy.
+
+### Stable Desktop Release
+
+Do not start this until at least one beta path is repeatable and tested.
+
+Possible future work:
+
+- Signing/notarization.
+- Auto-update.
+- Release promotion checklist.
+- Team install/update guide.
+
+## Supporting Docs
+
+These docs support this queue but do not define a separate queue:
+
+- `docs/hosted-browser-testing-plan.md` — deployment/product strategy.
+- `docs/team-testing-feedback-loop.md` — tester instructions and feedback template.
+- `docs/tauri-beta-release-plan.md` — beta packaging/release details.
+- `docs/reports/deep-hardening-investigation-2026-05-13.md` — historical evidence for the former T01-T13 hardening items.
+- `docs/plugin-parity-matrix.md` — canonical parity evidence.
+- `docs/bead-readiness.md` — readiness notes for larger beads.

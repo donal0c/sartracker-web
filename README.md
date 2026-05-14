@@ -43,9 +43,10 @@ Current plan: [`docs/hosted-browser-testing-plan.md`](/Users/donalocallaghan/wor
 
 Phase 0 intentionally uses browser session storage so teams can test the current operator surface quickly. The installed Tauri app remains the durable runtime with SQLite, WAL mode, backup mirror, and desktop filesystem adapters.
 
-Execution guides:
+Planning rule: [`docs/two-track-execution-workplan.md`](/Users/donalocallaghan/workspace/vibes/sartracker-web/docs/two-track-execution-workplan.md) is the single active queue. Supporting docs explain details, but new tasks must be folded into that workplan before implementation.
 
-- [`docs/two-track-execution-workplan.md`](/Users/donalocallaghan/workspace/vibes/sartracker-web/docs/two-track-execution-workplan.md) — current two-track work queue
+Supporting execution guides:
+
 - [`docs/team-testing-feedback-loop.md`](/Users/donalocallaghan/workspace/vibes/sartracker-web/docs/team-testing-feedback-loop.md) — hosted testing instructions and bug triage
 - [`docs/tauri-beta-release-plan.md`](/Users/donalocallaghan/workspace/vibes/sartracker-web/docs/tauri-beta-release-plan.md) — Phase 1 desktop beta plan
 

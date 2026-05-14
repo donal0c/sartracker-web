@@ -17,9 +17,9 @@ Tracking bead: `sartracker-web-vpz` — Hosted browser testing mode and parity h
 
 Supporting execution docs:
 
-- `docs/two-track-execution-workplan.md` — next-work queue for hosted feedback and Tauri beta readiness.
-- `docs/team-testing-feedback-loop.md` — tester instructions, bug template, and triage buckets.
-- `docs/tauri-beta-release-plan.md` — Phase 1 desktop beta packaging and release-note plan.
+- `docs/two-track-execution-workplan.md` — single active planning path and next-work queue.
+- `docs/team-testing-feedback-loop.md` — supporting tester instructions, bug template, and triage buckets.
+- `docs/tauri-beta-release-plan.md` — supporting Phase 1 desktop beta packaging and release-note details.
 
 ## Product Position
 
