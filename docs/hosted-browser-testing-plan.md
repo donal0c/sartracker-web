@@ -1,32 +1,82 @@
-# Hosted Browser Testing And Parity Plan
+# Deployment Strategy And Hosted Browser Testing Plan
 
-> **Current browser-product source of truth.** This document supersedes older assumptions that the Vercel-hosted app is automatically equivalent to the installed Tauri app. Keep it folded into `docs/plugin-parity-matrix.md`, `docs/bead-readiness.md`, and `handoff/HANDOFF.md` whenever browser capability changes.
+> **Current deployment-product source of truth.** This document supersedes older assumptions that the Vercel-hosted app is automatically equivalent to the installed Tauri app. Keep it folded into `docs/plugin-parity-matrix.md`, `docs/bead-readiness.md`, and `handoff/HANDOFF.md` whenever browser, desktop, map, or release-channel capability changes.
 
 ## Purpose
 
-The hosted Vercel app is now an important testing and possible deployment path. The immediate need is to let the team exercise the current operator surface from a browser while we are honest about durability gaps.
+The team needs fast access to the app for feedback, but the eventual field runtime must be reliable under search-and-rescue conditions: durable mission records, offline/high-definition maps, clear recovery, controlled credentials, and predictable deployments.
 
-The target direction is browser and Tauri feature parity wherever technically possible. The short-term release can use browser session storage to unblock testing, but it must be labelled as a testing mode and must not be represented as live-incident-grade persistence.
+The strategy is **not** to force browser and Tauri into full parity immediately. The strategy is to use each runtime where it is strongest:
+
+- Vercel/hosted browser for rapid surface-level testing and team feedback.
+- Tauri desktop for operational readiness, field use, large map bundles, filesystem integration, and durable persistence.
+
+Shared React UI and domain logic should stay common. Platform-specific concerns should live behind explicit adapters.
 
 Tracking bead: `sartracker-web-vpz` — Hosted browser testing mode and parity hardening.
 
 ## Product Position
 
-- **Tauri desktop app:** current operational-grade runtime with SQLite persistence, WAL mode, backup mirror, filesystem integration, and desktop adapters.
-- **Hosted browser testing mode:** near-term Vercel runtime for team testing, backed by browser storage and the HTTPS Traccar proxy.
-- **Future browser app:** hardened browser runtime with durable IndexedDB persistence, explicit backup/export/import, and browser-native file handling where appropriate.
+- **Hosted browser testing mode:** the fast feedback channel. It should let the team test the app surface, tracking, layers, mission controls, drawing/marker flows, devices, and general ergonomics with minimum deployment friction.
+- **Tauri desktop beta:** the operational rehearsal channel. It should be used once a batch needs persistence, filesystem, map-package, or restart/recovery validation.
+- **Tauri desktop stable:** the field-readiness channel. It should be used for real incident preparation only after beta validation and explicit release notes.
+- **Future hardened browser app:** optional. It becomes first-class only if the team has a real need for browser deployment beyond testing/training and we deliberately solve browser persistence, backups, secrets, offline maps, and file workflows.
 
-## Phase 0: Unblock Team Testing Now
+## Strategic Decision
 
-Goal: make the hosted app usable for structured team testing of the current UI and workflows.
+Tauri should be the primary operational runtime for the foreseeable future.
 
-Scope:
+Reasons:
 
-- Enable mission runtime on Vercel when the URL explicitly opts into hosted browser testing mode.
-- Keep session storage as the temporary mission store.
-- Keep the Vercel HTTPS Traccar proxy for the team-managed HTTP Traccar server.
-- Add visible operator copy that says browser testing mode is temporary/local and not for live incidents.
-- Add a manual section with exact setup steps for hosted testing.
+- High-definition mountain maps are likely to be large local packages. Desktop filesystem access is the cleaner and safer path for storing, indexing, validating, and updating them.
+- SQLite with WAL mode and backup mirror already gives us a strong mission-record foundation.
+- Field use needs fewer surprises around browser storage quotas, cache eviction, permissions, and offline behavior.
+- GPX watch/import, marker attachments, diagnostics exports, and incident archives are naturally desktop/file workflows.
+- The team still needs fast iteration; Vercel is excellent for that, but it should remain a testing lane until hardened.
+
+This means we should not spend early energy trying to make the browser app operationally equal to Tauri. We should instead keep the browser path useful, honest, and intentionally limited while the desktop path becomes the field app.
+
+## Release Lanes
+
+| Lane | URL / artifact | Purpose | Persistence | Who uses it | Release cadence |
+| --- | --- | --- | --- | --- | --- |
+| Hosted browser latest | `https://sartracker-web.vercel.app/?missionHarness=1` | Fast testing of the current surface | Browser session storage | Team testers and product reviewers | Every useful change |
+| Hosted browser preview | Vercel preview deployments | Review a branch before it becomes latest | Browser session storage | Maintainers/testers | Per change/PR when useful |
+| Tauri beta | Versioned installer/package from GitHub Releases or equivalent | Validate operational runtime, persistence, files, maps, recovery | SQLite + filesystem | Smaller trusted test group | After coherent batches |
+| Tauri stable | Promoted beta build | Field-ready operational release | SQLite + filesystem | Operational users | Deliberate, less frequent |
+
+## Phase 0: Surface-Level Hosted Testing
+
+Goal: make the hosted app useful for structured team testing without pretending it is operational-grade.
+
+This is the current phase.
+
+What the team should test in this phase:
+
+- app shell and layout
+- mission start/pause/resume/finish as an operator workflow
+- live Traccar connection via the Vercel proxy
+- tracking display, devices workspace, stale/offline states
+- layer visibility, filtering, inspection, and map overlay behavior
+- markers, drawings, measurements, coordinate display
+- general usability, terminology, button placement, and confusion points
+
+What the team should not treat as final in this phase:
+
+- mission durability after browser/session loss
+- field offline readiness
+- long-term incident records
+- secrets storage
+- desktop file workflows
+- high-definition mountain map package handling
+
+Implementation scope:
+
+- Use `?missionHarness=1` to enable browser testing mode on Vercel.
+- Use session storage as the temporary mission store.
+- Use the Vercel HTTPS Traccar proxy for the team-managed HTTP Traccar server.
+- Keep visible operator copy that says browser testing mode is temporary/local and not for live incidents.
+- Keep manual instructions with exact setup steps for hosted testing.
 - Validate the hosted flow end to end:
   - open hosted browser testing URL
   - configure Traccar with `https://sartracker-web.vercel.app`
@@ -43,20 +93,102 @@ Out of scope for Phase 0:
 - full offline map packages
 - browser-native replacement for every desktop filesystem workflow
 
-Phase 0 release standard:
+Phase 0 exit standard:
 
 - The team can test as much of the current app as possible from Vercel.
 - The app clearly labels the hosted runtime as browser testing mode.
 - Known browser limitations are documented in the app/manual, not hidden in chat history.
 - No operator should be able to mistake the Phase 0 browser mode for the installed app's durability model.
+- Feedback from the team is triaged into:
+  - app-surface fixes that can ship quickly to Vercel
+  - desktop-runtime issues that need Tauri beta validation
+  - future hardening items
 
-## Phase 1: Harden Browser Runtime
+## Phase 1: Tauri Beta Release Foundation
 
-Goal: turn browser testing mode into a credible standalone browser runtime.
+Goal: make it easy to give the team packaged desktop builds without turning every small change into a manual deployment chore.
+
+Scope:
+
+- Define a repeatable Tauri build command and artifact location.
+- Produce versioned beta builds with visible app version/build ID.
+- Write a short beta release note template:
+  - what changed
+  - what to test
+  - known limitations
+  - rollback/reinstall guidance
+- Decide initial distribution mechanism:
+  - GitHub Releases is enough for beta unless signing/auto-update becomes urgent.
+  - Auto-update can come later, after build/signing/release cadence is stable.
+- Confirm installer/package behavior on target team machines.
+- Keep Vercel as the fast feedback lane between desktop beta batches.
+
+Phase 1 exit standard:
+
+- A maintainer can produce a desktop beta build repeatably.
+- The team can install/run it without bespoke developer help each time.
+- Each desktop beta has a matching release note and build ID.
+- The same workflow tested on Vercel can be re-tested against the desktop runtime for persistence/file/map behavior.
+
+## Phase 2: Desktop Operational Core
+
+Goal: make Tauri the trustworthy operational runtime.
+
+Scope:
+
+- Validate SQLite mission lifecycle, recovery, backup mirror, archive/export, and audit behavior in the packaged app.
+- Validate real Traccar connectivity and credential handling in desktop settings.
+- Validate GPX import/watch, marker attachments, diagnostics export/open, and mission review flows against the filesystem.
+- Add operator-facing recovery guidance for interrupted/paused missions.
+- Keep browser testing available for fast UI feedback, but do not use it as proof of desktop persistence correctness.
+
+Phase 2 exit standard:
+
+- A desktop beta can run a full mission rehearsal without relying on browser-only storage.
+- Operators can recover from restart/interruption in the packaged app.
+- The team can export or inspect incident records according to the current workflow.
+
+## Phase 3: High-Definition Mountain Maps And Offline Readiness
+
+Goal: integrate the provided mountain maps in the runtime most likely to behave well in the field.
+
+Default stance: desktop-first.
+
+Scope:
+
+- Inventory the map deliverables:
+  - format
+  - projection/CRS
+  - file size
+  - tiling strategy
+  - update cadence
+  - license/usage constraints
+- Decide map packaging:
+  - bundled with the app
+  - separate downloadable map package
+  - local folder selected by operator/maintainer
+  - versioned map pack managed alongside app releases
+- Validate map rendering and coordinate alignment against known points.
+- Validate offline behavior with network disabled.
+- Add visible map package/version/readiness status in the app.
+- Keep browser map use limited to hosted/online test layers unless a separate browser offline-map design is justified.
+
+Phase 3 exit standard:
+
+- Desktop app can use the high-definition mountain maps predictably.
+- Operators can see whether the required map package is available.
+- Offline map failure modes are visible, not silent.
+
+## Phase 4: Browser Hardening Decision
+
+Goal: decide whether browser should remain a testing lane or become a first-class operational option.
+
+Only start this after the team has tested the surface and we understand whether browser deployment solves a real operational problem.
 
 Work items:
 
-- Replace session storage mission state with IndexedDB behind the same mission-store interface where practical.
+- Decide if browser operational mode is actually needed.
+- If yes, replace session storage mission state with IndexedDB behind the same mission-store interface where practical.
 - Add explicit browser backup/export/import for missions.
 - Add restart/recovery behavior equivalent to desktop where possible.
 - Decide and document browser secret handling:
@@ -68,17 +200,44 @@ Work items:
 - Decide whether marker attachments use IndexedDB, browser File System Access API, or remain desktop-only.
 - Add automated browser-mode parity tests for mission lifecycle, tracking, layers, review, diagnostics, and import/export.
 
-## Phase 2: Deployment Choice
+Phase 4 exit standard:
 
-Goal: make browser vs desktop a product choice, not a capability accident.
+- Either browser is formally kept as testing/training only, or it has a real persistence/export/recovery design and release criteria.
+- The team is not left with two confusing "sort of operational" versions.
 
-Decision questions:
+## Phase 5: Stable Operational Release
+
+Goal: promote a tested desktop build to the recommended operational release.
+
+Scope:
+
+- Freeze a release candidate.
+- Run full verification:
+  - unit tests
+  - backend tests
+  - E2E/visual workflow coverage
+  - packaged Tauri smoke test
+  - live Traccar test
+  - offline map test
+  - mission recovery test
+- Publish release notes and known limitations.
+- Provide install/update instructions.
+- Keep Vercel latest available for ongoing feedback, clearly labelled as testing.
+
+## Open Product Questions
+
+These should be answered before browser or desktop stable claims expand:
 
 - Is the hosted browser app only for testing/training, or can it become field-operational?
 - Does the team need shared multi-machine mission state?
 - Are mission records allowed to stay local to a browser profile?
 - What are the retention and export expectations for incident records?
 - Which file workflows must work in browser before the hosted app can be recommended outside testing?
+- How large are the provided mountain map datasets, and how often will they change?
+- Do teams expect automatic desktop updates, or is a controlled manual beta/stable release acceptable at first?
+- What operating systems and machine restrictions do the team laptops have?
+- Who is allowed to configure tracking credentials and map packages?
+- What is the minimum field-offline guarantee before the desktop app is considered operationally useful?
 
 Possible outcomes:
 
@@ -102,6 +261,7 @@ Possible outcomes:
 | Marker attachments/files | Limited or unavailable | Desktop filesystem-backed path |
 | Diagnostics export/open path | Browser-compatible path still needed | Desktop filesystem-backed |
 | Offline map resilience | Viewed-tile browser cache only | Viewed-tile cache today; stronger packaged offline work still open |
+| High-definition mountain maps | Not planned for Phase 0 | Desktop-first integration target |
 
 ## Immediate Phase 0 Implementation Checklist
 

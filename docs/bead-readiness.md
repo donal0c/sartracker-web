@@ -20,11 +20,13 @@ Use this document before implementation to decide how much parallel research, pl
 
 ## Current Assessments
 
-Last updated: 2026-05-14 by Codex (hosted browser testing plan added)
+Last updated: 2026-05-14 by Codex (deployment strategy folded into hosted browser plan)
 
 ## Hosted Browser Runtime
 
 Canonical plan: `docs/hosted-browser-testing-plan.md`
+
+Strategic stance: hosted browser is the fast feedback/testing lane; Tauri desktop is the operational lane. Do not try to make both fully equivalent before the team has completed surface-level testing and the high-definition mountain map requirements are known.
 
 ### Phase 0: Hosted browser testing unblock
 
@@ -42,12 +44,48 @@ Canonical plan: `docs/hosted-browser-testing-plan.md`
   - Final browser secret-handling model.
   - Which desktop filesystem workflows must become browser-native before hosted browser can leave testing status.
 
-### Phase 1: Browser runtime hardening
+### Browser runtime hardening — deferred
+
+- Research required: `Medium`
+- Implementation readiness: `3/5`
+- Recommended action: **Defer until after Phase 0 team feedback and the desktop beta foundation**
+- Why: Browser hardening may be valuable later, but the near-term operational path is Tauri. IndexedDB/secrets/export work should not outrank the desktop release pipeline and offline map path.
+
+### Phase 1: Tauri beta release foundation
+
+- Research required: `Medium`
+- Implementation readiness: `4/5`
+- Recommended action: **Plan next after Phase 0 unblocks team testing**
+- Why: The team needs fast Vercel iteration, but the operational release path needs repeatable packaged desktop builds, release notes, and install guidance.
+- Locked decisions:
+  - Vercel remains the rapid test channel.
+  - Tauri beta becomes the runtime for persistence, filesystem, map package, and recovery validation.
+  - GitHub Releases or equivalent versioned artifacts are enough before auto-update/signing is tackled.
+- Open questions:
+  - Which OS/package formats the team needs first.
+  - Whether unsigned beta builds are acceptable during testing.
+  - How frequently the team can absorb desktop beta updates.
+
+### Phase 2: Desktop operational core
+
+- Research required: `Medium`
+- Implementation readiness: `3/5`
+- Recommended action: **Implement after beta release flow is repeatable**
+- Why: Persistence, recovery, Traccar credentials, GPX, diagnostics, archive, and filesystem workflows need packaged-app validation rather than browser harness proof.
+
+### Phase 3: High-definition mountain maps and offline readiness
+
+- Research required: `High`
+- Implementation readiness: `2/5`
+- Recommended action: **Research before implementation**
+- Why: Map format, size, CRS, tiling, packaging, licensing, and update cadence are unknown. This should be desktop-first unless evidence strongly supports browser delivery.
+
+### Phase 4: Browser runtime hardening decision
 
 - Research required: `Medium`
 - Implementation readiness: `3/5`
 - Recommended action: **Short design pass before implementation**
-- Why: The direction is clear, but persistence, secrets, exports, and attachment/file workflows need explicit product decisions before implementation.
+- Why: The direction is clear if browser becomes operational, but persistence, secrets, exports, and attachment/file workflows need explicit product decisions before implementation. This should follow team feedback and desktop beta learnings, not lead them.
 
 ## QGIS Replacement Program
 

@@ -13,6 +13,7 @@
 
 ## Last Updated
 
+- 2026-05-14 by Codex (deployment strategy folded into hosted browser plan — Vercel as rapid test lane, Tauri as operational lane, desktop-first HD maps/offline path)
 - 2026-05-14 by Codex (hosted browser testing plan + Phase 0 start — `docs/hosted-browser-testing-plan.md`, `sartracker-web-vpz`, Vercel opt-in mission harness, visible browser-testing banner)
 - 2026-05-14 by Codex (Vercel HTTPS Traccar proxy — added same-origin `/api/session`, `/api/devices`, `/api/positions` bridge for team-managed HTTP Traccar server)
 - 2026-05-14 by Codex (real Traccar settings/connectivity fix — browser validation now performs real auth/device checks; live KMRT server validated with 18 devices / 14 fixes online)
@@ -187,11 +188,12 @@ Follow-up for hosted Vercel testing: browsers block the HTTPS app from calling t
 
 ## Hosted Browser Testing Phase 0 — Baton Note (2026-05-14, Codex)
 
-The hosted browser path is now explicitly tracked as a product/runtime plan, not an accidental validation surface.
+The hosted browser path is now explicitly tracked as a product/runtime plan, not an accidental validation surface. Follow-up deployment strategy added on 2026-05-14: Vercel is the rapid surface-testing lane, Tauri is the operational desktop lane, and high-definition mountain maps/offline readiness should be desktop-first unless later evidence strongly supports browser delivery.
 
 - New source-of-truth plan: `docs/hosted-browser-testing-plan.md`.
 - New bead: `sartracker-web-vpz` — Hosted browser testing mode and parity hardening.
 - Phase 0 decision: use `?missionHarness=1` on Vercel to enable browser-backed mission testing with session storage, clear warning copy, and the existing HTTPS Traccar proxy. This is testing-only until browser persistence/recovery are hardened.
+- Deployment/release direction: Phase 0 keeps browser testing surface-level; Phase 1 creates repeatable Tauri beta packaging; Phase 2 validates the desktop operational core; Phase 3 integrates high-definition mountain maps/offline readiness; Phase 4 decides whether browser should ever become operational; Phase 5 promotes a stable desktop release.
 - Implementation started: browser harness gating now allows non-Tauri production browser builds to opt in with `?missionHarness=1`, while production Tauri cannot be forced into harness mode by query string. App shell now shows an amber browser-testing banner when the hosted harness is active.
 - Docs updated: README, operator manual, plugin parity matrix, bead readiness, and the hosted browser plan.
 - Verification so far: `npm run lint` ✅; targeted harness-gating unit test ✅; `npm run test` → 81 files / 377 tests ✅; `npm run build` ✅; `npm run test:backend` → 37/37 ✅.
