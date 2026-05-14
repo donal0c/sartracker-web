@@ -15,6 +15,12 @@ Shared React UI and domain logic should stay common. Platform-specific concerns 
 
 Tracking bead: `sartracker-web-vpz` — Hosted browser testing mode and parity hardening.
 
+Supporting execution docs:
+
+- `docs/two-track-execution-workplan.md` — next-work queue for hosted feedback and Tauri beta readiness.
+- `docs/team-testing-feedback-loop.md` — tester instructions, bug template, and triage buckets.
+- `docs/tauri-beta-release-plan.md` — Phase 1 desktop beta packaging and release-note plan.
+
 ## Product Position
 
 - **Hosted browser testing mode:** the fast feedback channel. It should let the team test the app surface, tracking, layers, mission controls, drawing/marker flows, devices, and general ergonomics with minimum deployment friction.
@@ -129,6 +135,8 @@ Phase 1 exit standard:
 - The team can install/run it without bespoke developer help each time.
 - Each desktop beta has a matching release note and build ID.
 - The same workflow tested on Vercel can be re-tested against the desktop runtime for persistence/file/map behavior.
+
+Detailed Phase 1 execution plan: `docs/tauri-beta-release-plan.md`.
 
 ## Phase 2: Desktop Operational Core
 

@@ -13,6 +13,7 @@
 
 ## Last Updated
 
+- 2026-05-14 by Codex (two-track execution docs added — hosted feedback loop, next-work chunks, Tauri beta release plan)
 - 2026-05-14 by Codex (deployment strategy folded into hosted browser plan — Vercel as rapid test lane, Tauri as operational lane, desktop-first HD maps/offline path)
 - 2026-05-14 by Codex (hosted browser testing plan + Phase 0 start — `docs/hosted-browser-testing-plan.md`, `sartracker-web-vpz`, Vercel opt-in mission harness, visible browser-testing banner)
 - 2026-05-14 by Codex (Vercel HTTPS Traccar proxy — added same-origin `/api/session`, `/api/devices`, `/api/positions` bridge for team-managed HTTP Traccar server)
@@ -191,6 +192,7 @@ Follow-up for hosted Vercel testing: browsers block the HTTPS app from calling t
 The hosted browser path is now explicitly tracked as a product/runtime plan, not an accidental validation surface. Follow-up deployment strategy added on 2026-05-14: Vercel is the rapid surface-testing lane, Tauri is the operational desktop lane, and high-definition mountain maps/offline readiness should be desktop-first unless later evidence strongly supports browser delivery.
 
 - New source-of-truth plan: `docs/hosted-browser-testing-plan.md`.
+- New execution docs: `docs/two-track-execution-workplan.md`, `docs/team-testing-feedback-loop.md`, and `docs/tauri-beta-release-plan.md`.
 - New bead: `sartracker-web-vpz` — Hosted browser testing mode and parity hardening.
 - Phase 0 decision: use `?missionHarness=1` on Vercel to enable browser-backed mission testing with session storage, clear warning copy, and the existing HTTPS Traccar proxy. This is testing-only until browser persistence/recovery are hardened.
 - Deployment/release direction: Phase 0 keeps browser testing surface-level; Phase 1 creates repeatable Tauri beta packaging; Phase 2 validates the desktop operational core; Phase 3 integrates high-definition mountain maps/offline readiness; Phase 4 decides whether browser should ever become operational; Phase 5 promotes a stable desktop release.
@@ -200,6 +202,12 @@ The hosted browser path is now explicitly tracked as a product/runtime plan, not
 - Deployment: production deploy `dpl_FBbQciAPjPxbzCy6MhyD3KjxKrjy`, aliased to `https://sartracker-web.vercel.app`, ready on 2026-05-14.
 - Hosted command-line verification after deploy: `https://sartracker-web.vercel.app/?missionHarness=1` served the new `index-Cg-hDGcg.js` asset; the production JS contains the browser-testing banner text; `/api/session` returned 200 for `apiuser`/`apiuser`; `/api/devices` returned the 18-device roster; `/api/positions` returned 14 positions.
 - Still to finish for Phase 0: validate the full hosted browser UI flow interactively from `https://sartracker-web.vercel.app/?missionHarness=1` (start mission, see banner, connect tracking, confirm map/devices). This was not run with Playwright because repo instructions require explicit user permission for Playwright; the user can test directly now or explicitly ask for browser automation.
+
+Next ready chunks:
+
+1. `sartracker-web-vpz.1` / A1 — hosted testing instructions and feedback intake.
+2. `sartracker-web-vpz.3` / A2 — hosted-mode guardrails for direct HTTP Traccar URL confusion.
+3. `sartracker-web-vpz.2` / B1 — Tauri beta packaging reconnaissance.
 
 ## Last Work Done
 

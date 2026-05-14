@@ -28,6 +28,12 @@ Canonical plan: `docs/hosted-browser-testing-plan.md`
 
 Strategic stance: hosted browser is the fast feedback/testing lane; Tauri desktop is the operational lane. Do not try to make both fully equivalent before the team has completed surface-level testing and the high-definition mountain map requirements are known.
 
+Execution docs:
+
+- `docs/two-track-execution-workplan.md`
+- `docs/team-testing-feedback-loop.md`
+- `docs/tauri-beta-release-plan.md`
+
 ### Phase 0: Hosted browser testing unblock
 
 - Research required: `Low`
@@ -55,7 +61,7 @@ Strategic stance: hosted browser is the fast feedback/testing lane; Tauri deskto
 
 - Research required: `Medium`
 - Implementation readiness: `4/5`
-- Recommended action: **Plan next after Phase 0 unblocks team testing**
+- Recommended action: **Start lightweight prep now while Phase 0 team testing runs**
 - Why: The team needs fast Vercel iteration, but the operational release path needs repeatable packaged desktop builds, release notes, and install guidance.
 - Locked decisions:
   - Vercel remains the rapid test channel.
