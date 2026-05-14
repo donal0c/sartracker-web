@@ -13,6 +13,7 @@
 
 ## Last Updated
 
+- 2026-05-14 by Codex (Vercel HTTPS Traccar proxy — added same-origin `/api/session`, `/api/devices`, `/api/positions` bridge for team-managed HTTP Traccar server)
 - 2026-05-14 by Codex (real Traccar settings/connectivity fix — browser validation now performs real auth/device checks; live KMRT server validated with 18 devices / 14 fixes online)
 - 2026-05-14 by Codex (T04 review — strengthened breadcrumb-order regression, reran lint/unit/build/backend, manual unchanged)
 - 2026-05-14 by Claude (T04 tracking backoff cap + per-device breadcrumb isolation — backoff clamped to 60 s; one device's 500 no longer aborts the poll cycle or trips OFFLINE MODE)
@@ -172,6 +173,16 @@ Team-reported issue: entering `http://kmrtsar.ddns.net:8082` with `apiuser` / `a
   - App state: tracking `ONLINE`, 18 devices, 14 current fixes, S-Tab visible in Devices workspace.
 - Docs updated: operator manual secret behavior, `docs/plugin-parity-matrix.md`, `docs/web-parity-verification-matrix.md`, and `docs/web-operator-verification-checklists.md`.
 - Verification: `npm run lint` ✅; `npm run test` → 79 files / 371 tests ✅; `npm run build` ✅; `npx playwright test tests/e2e/settings.spec.ts --project=chromium` → 5/5 ✅; `npm run test:e2e` → 92/92 ✅; `npm run test:backend` → 37/37 ✅.
+
+## Vercel HTTPS Traccar Proxy — Baton Note (2026-05-14, Codex)
+
+Follow-up for hosted Vercel testing: browsers block the HTTPS app from calling the team-managed HTTP Traccar server directly.
+
+- Added a narrow Vercel proxy surface: `/api/session`, `/api/devices`, and `/api/positions`. These endpoints forward only the methods the app needs to `TRACCAR_UPSTREAM_URL` (default `http://kmrtsar.ddns.net:8082`).
+- The proxy is intentionally not an open proxy: the endpoint path is fixed by function file, unsupported methods return 405, credentials/bodies are not logged, and upstream `Set-Cookie` is not forwarded to the browser.
+- Operator instruction for hosted Vercel: use `https://sartracker-web.vercel.app` as the Traccar provider base URL, then `apiuser` / `apiuser` with Basic auth.
+- Added unit coverage in `tests/unit/traccar-proxy.test.ts`.
+- Docs updated: `DEPLOY.md`, operator manual, and parity matrix.
 
 ## Last Work Done
 
