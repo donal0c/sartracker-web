@@ -13,6 +13,7 @@
 
 ## Last Updated
 
+- 2026-05-14 by Codex (real Traccar settings/connectivity fix — browser validation now performs real auth/device checks; live KMRT server validated with 18 devices / 14 fixes online)
 - 2026-05-14 by Codex (T04 review — strengthened breadcrumb-order regression, reran lint/unit/build/backend, manual unchanged)
 - 2026-05-14 by Claude (T04 tracking backoff cap + per-device breadcrumb isolation — backoff clamped to 60 s; one device's 500 no longer aborts the poll cycle or trips OFFLINE MODE)
 - 2026-05-14 by Codex (T05 review — tightened tests/commentary, reran lint/build/full test gate, manual unchanged)
@@ -153,6 +154,24 @@ Scores at a glance: architecture 8.0/10, UI modularity 6.5/10, safety/resilience
   - stale layer-catalog refreshes can no longer overwrite a just-clicked visibility change
   - layer-catalog runtime now hydrates the visibility store at the store/runtime boundary instead of relying on a fragile React bridge effect
 - Playwright concurrency is intentionally reduced to `2` workers for deterministic local validation. This is slower, but it makes the harness reliable under full-suite load.
+
+## Real Traccar Settings/Connectivity Fix — Baton Note (2026-05-14, Codex)
+
+Team-reported issue: entering `http://kmrtsar.ddns.net:8082` with `apiuser` / `apiuser` appeared to blank the password after Save/Test, and operators could not prove the app was actually connecting.
+
+- Root cause: browser validation mode returned a cosmetic success (`connection shape looks valid`) and used a placeholder `browser-secret` for runtime bootstrap. That meant the deployed/browser validation path could look configured without actually authenticating to the configured Traccar server or using the entered password.
+- Fix: browser validation settings now keep the secret only in memory for the current session, never in localStorage; `Test Connection` performs a real `/api/session` auth and `/api/devices` access check; `Save & Connect` reloads browser-harness tracking with the entered in-memory secret.
+- The password/token input still clears after save by design. This is the intended non-echo behavior for stored secrets; the UI shows `Stored secret present` separately.
+- Added regression coverage:
+  - `tests/unit/browser-settings-store.test.ts`
+  - `tests/e2e/settings.spec.ts` for real connection-test behavior and Save & Connect starting live tracking from settings.
+- Live validation with Playwright against the actual team server succeeded:
+  - URL: `http://kmrtsar.ddns.net:8082`
+  - Username/email: `apiuser`
+  - Result: `/api/session` 200, `/api/devices` 200, `/api/positions` 200, all per-device breadcrumb requests 200.
+  - App state: tracking `ONLINE`, 18 devices, 14 current fixes, S-Tab visible in Devices workspace.
+- Docs updated: operator manual secret behavior, `docs/plugin-parity-matrix.md`, `docs/web-parity-verification-matrix.md`, and `docs/web-operator-verification-checklists.md`.
+- Verification: `npm run lint` ✅; `npm run test` → 79 files / 371 tests ✅; `npm run build` ✅; `npx playwright test tests/e2e/settings.spec.ts --project=chromium` → 5/5 ✅; `npm run test:e2e` → 92/92 ✅; `npm run test:backend` → 37/37 ✅.
 
 ## Last Work Done
 

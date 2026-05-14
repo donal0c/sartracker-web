@@ -1,10 +1,12 @@
 import { noopMarkerAttachmentAdapter } from '../../infrastructure/marker-attachment-store/noop-marker-attachment-adapter'
+import { loadRuntimeBootstrapSettings } from '../../infrastructure/settings-store/tauri-settings-store'
 import { getBrowserHarnessStore } from '../browser-validation/browser-harness-store'
 import {
   hydrateTrackingFromBrowserHarness,
   installBrowserHarnessApi,
 } from '../browser-validation/browser-harness-api'
 import { startCoreFeatureRuntimes } from '../runtime/start-core-feature-runtimes'
+import { applyAppRuntimeController } from '../runtime/app-runtime-controller'
 import { useMissionStore } from './mission-store'
 import { readTrackingRuntimeConfig } from '../tracking/tracking-runtime-config'
 import { createTraccarClient } from '../tracking/traccar-client'
@@ -60,16 +62,21 @@ export async function startMissionBrowserHarness(): Promise<void> {
 
   await hydrateTrackingFromBrowserHarness()
 
-  // If Traccar env vars are present, start real HTTP polling against the mock/live server
-  const trackingConfig = readTrackingRuntimeConfig()
-  if (trackingConfig !== null && shouldEnableBrowserHarnessLiveTracking()) {
-    console.log('[browser-harness] Starting real tracking polling against', trackingConfig.baseUrl)
-    await startTrackingRuntime({
+  let activeTrackingStop: () => void = () => undefined
+  let reloadGeneration = 0
+
+  const reloadSettings = async (options?: { readonly forceConnect?: boolean }) => {
+    const generation = ++reloadGeneration
+    const runtimeSettings = await loadRuntimeBootstrapSettings(options?.forceConnect ?? false)
+    const envTrackingConfig =
+      shouldEnableBrowserHarnessLiveTracking() ? readTrackingRuntimeConfig() : null
+    const trackingConfig = runtimeSettings.trackingConfig ?? envTrackingConfig
+    const stopTracking = await startTrackingRuntime({
       config: trackingConfig,
       createClient: createTraccarClient,
       createPoller: (client, hooks) =>
         createPollingManager(client as TrackingPollerClient, {
-          intervalMs: 10_000,
+          intervalMs: runtimeSettings.trackingPollIntervalMs,
           staleThresholdMs: 60 * 60 * 1000,
           maxBackoffMs: 60_000,
           getPollingMode: () => {
@@ -83,10 +90,31 @@ export async function startMissionBrowserHarness(): Promise<void> {
           },
           ...hooks,
         }),
-      cache: { read: async () => null, write: async (c: string) => c },
+      cache: { read: async () => null, write: async (contents: string) => contents },
       missionStore: browserStore,
       applySnapshot: applyTrackingSnapshot,
       applyStatus: applyTrackingStatus,
     })
+
+    if (generation !== reloadGeneration) {
+      stopTracking()
+      return
+    }
+
+    const previousTrackingStop = activeTrackingStop
+    activeTrackingStop = stopTracking
+    previousTrackingStop()
   }
+
+  applyAppRuntimeController({
+    reloadSettings,
+    dispose: () => {
+      reloadGeneration += 1
+      const previousTrackingStop = activeTrackingStop
+      activeTrackingStop = () => undefined
+      previousTrackingStop()
+    },
+  })
+
+  await reloadSettings()
 }

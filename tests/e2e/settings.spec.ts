@@ -21,8 +21,80 @@ test.describe('M12 settings workspace', () => {
 
     await page.getByTestId('settings-provider-email').fill('ops@example.com')
     await page.getByTestId('settings-provider-secret').fill('secret')
+    await expect(page.getByTestId('settings-test-connection')).toBeEnabled()
+    await expect(page.getByTestId('settings-save')).toBeEnabled()
+  })
+
+  test('tests Traccar credentials against the configured server in browser validation mode', async ({
+    page,
+  }) => {
+    const sessionRequests: string[] = []
+    const deviceRequests: string[] = []
+
+    await page.route('http://traccar.test:8082/api/session', async (route, request) => {
+      sessionRequests.push(request.postData() ?? '')
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        headers: {
+          'Set-Cookie': 'JSESSIONID=session-123; Path=/; HttpOnly',
+        },
+        body: JSON.stringify({ id: 4, email: 'apiuser' }),
+      })
+    })
+
+    await page.route('http://traccar.test:8082/api/devices', async (route, request) => {
+      deviceRequests.push(request.headers().authorization ?? '')
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify([{ id: 1, name: 'S-Tab', status: 'online' }]),
+      })
+    })
+
+    await page.getByTestId('open-settings-workspace').click()
+    await expect(page.getByTestId('settings-workspace')).toBeVisible()
+
+    await page.getByRole('button', { name: 'Traccar HTTP' }).click()
+    await page.getByTestId('settings-provider-url').fill('http://traccar.test:8082')
+    await page.getByTestId('settings-provider-email').fill('apiuser')
+    await page.getByTestId('settings-provider-secret').fill('apiuser')
     await page.getByTestId('settings-test-connection').click()
-    await expect(page.getByTestId('settings-feedback')).toContainText('connection shape looks valid')
+
+    await expect(page.getByTestId('settings-feedback')).toContainText('Connection successful.')
+    expect(sessionRequests).toEqual(['email=apiuser&password=apiuser'])
+    expect(deviceRequests).toEqual(['Basic YXBpdXNlcjphcGl1c2Vy'])
+  })
+
+  test('save and connect starts live tracking from browser validation settings', async ({
+    page,
+  }) => {
+    await routeTraccarSuccess(page)
+
+    await page.getByTestId('open-settings-workspace').click()
+    await expect(page.getByTestId('settings-workspace')).toBeVisible()
+
+    await page.getByRole('button', { name: 'Traccar HTTP' }).click()
+    await page.getByTestId('settings-provider-url').fill('http://traccar.test:8082')
+    await page.getByTestId('settings-provider-email').fill('apiuser')
+    await page.getByTestId('settings-provider-secret').fill('apiuser')
+    await page.getByTestId('settings-save').click()
+    await expect(page.getByTestId('settings-feedback')).toContainText('Settings saved.')
+    await page.getByTestId('workspace-close-btn').click()
+
+    await page.getByTestId('mission-name-input').fill('Live Tracking Mission')
+    await page.getByTestId('mission-start-btn').click()
+    await expect(page.getByTestId('mission-control')).toContainText('active')
+
+    await page.getByTestId('open-settings-workspace').click()
+    await page.getByTestId('settings-save-connect').click()
+    await expect(page.getByTestId('settings-feedback')).toContainText('Settings saved and tracking reloaded.')
+    await page.getByTestId('workspace-close-btn').click()
+
+    await expect(page.getByTestId('tracking-status')).toContainText('online')
+    await expect(page.getByTestId('tracking-status')).toContainText('1')
+    await page.getByTestId('open-devices-workspace').click()
+    await expect(page.getByTestId('devices-workspace')).toContainText('S-Tab')
   })
 
   test('persists mission defaults and coordinate display preference in browser validation mode', async ({
@@ -66,3 +138,61 @@ test.describe('M12 settings workspace', () => {
     await expect(opener).toBeFocused()
   })
 })
+
+async function routeTraccarSuccess(page: import('@playwright/test').Page) {
+  await page.route('http://traccar.test:8082/api/session', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      headers: {
+        'Set-Cookie': 'JSESSIONID=session-123; Path=/; HttpOnly',
+      },
+      body: JSON.stringify({ id: 4, email: 'apiuser' }),
+    })
+  })
+
+  await page.route('http://traccar.test:8082/api/devices', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify([
+        {
+          id: 1,
+          name: 'S-Tab',
+          status: 'online',
+          lastUpdate: '2026-05-14T17:29:40.391Z',
+          uniqueId: '52959800',
+          category: 'person',
+        },
+      ]),
+    })
+  })
+
+  await page.route('http://traccar.test:8082/api/positions**', async (route, request) => {
+    const url = new URL(request.url())
+    if (url.searchParams.has('deviceId')) {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify([]),
+      })
+      return
+    }
+
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify([
+        {
+          id: 396947,
+          deviceId: 1,
+          latitude: 51.99917,
+          longitude: -9.74406,
+          fixTime: '2026-05-14T17:29:40.391Z',
+          valid: true,
+          attributes: { batteryLevel: 82 },
+        },
+      ]),
+    })
+  })
+}

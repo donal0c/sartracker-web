@@ -1,3 +1,3 @@
 export const APP_VERSION_BASE = "0.1.0"
-export const APP_VERSION_BUILD_ID = "sha.0f9a3bcfa3c1"
+export const APP_VERSION_BUILD_ID = "sha.4f6b06a7f953"
 

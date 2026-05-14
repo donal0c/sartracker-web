@@ -512,12 +512,13 @@
             <li>Enter the provider base URL.</li>
             <li>Choose <strong>Basic</strong> or <strong>Bearer</strong> authentication.</li>
             <li>Enter the email/password or bearer token.</li>
-            <li>Use <strong>Test Connection</strong> before saving for live use.</li>
+            <li>Use <strong>Test Connection</strong> before saving for live use; it authenticates against the configured Traccar server and checks device access.</li>
             <li>Use <strong>Save & Connect</strong> to reload tracking immediately.</li>
           </ol>
           <div class="note">
             Secrets are intentionally kept out of mission SQLite and browser storage. If a stored secret
-            already exists, Settings can show that one is present and can clear it on save.
+            already exists, Settings can show that one is present and can clear it on save. The password
+            or token field is cleared after saving so stored secrets are not echoed back into the form.
           </div>
         </section>
 

@@ -6,9 +6,11 @@ import {
   type AppSettings,
   type AppSettingsDraft,
   type RuntimeBootstrapSettings,
+  type TrackingAuthMode,
 } from '../../features/settings/settings-types'
 
 const BROWSER_SETTINGS_STORAGE_KEY = 'sartracker:browser-settings'
+const browserSecrets: Partial<Record<TrackingAuthMode, string>> = {}
 
 type TestConnectionResult = {
   readonly ok: boolean
@@ -35,7 +37,8 @@ export async function saveAppSettings(input: AppSettingsDraft): Promise<AppSetti
   }
 
   const next = toBrowserSettings(input)
-  window.localStorage.setItem(BROWSER_SETTINGS_STORAGE_KEY, JSON.stringify(next))
+  updateBrowserSecret(input)
+  window.localStorage.setItem(BROWSER_SETTINGS_STORAGE_KEY, JSON.stringify(withoutBrowserSecretState(next)))
   return next
 }
 
@@ -55,7 +58,12 @@ export async function testTrackingConnection(input: AppSettingsDraft): Promise<T
     return { ok: false, message: 'Enter a Traccar base URL first.' }
   }
 
-  return { ok: true, message: 'Browser validation mode: connection shape looks valid.' }
+  const secret = resolveBrowserSecret(input)
+  if (secret === null) {
+    return { ok: false, message: 'A provider secret is required before testing the connection.' }
+  }
+
+  return testBrowserTrackingConnection(input, secret)
 }
 
 /**
@@ -69,10 +77,12 @@ export async function loadRuntimeBootstrapSettings(
   }
 
   const settings = readBrowserSettings()
+  const secret = browserSecrets[settings.dataSource.authMode]
   const shouldConnect =
     settings.dataSource.providerType === 'traccar_http' &&
     (forceConnect || settings.dataSource.autoConnect) &&
-    settings.missionDefaults.autoRefreshEnabled
+    settings.missionDefaults.autoRefreshEnabled &&
+    secret !== undefined
 
   return {
     autosaveEnabled: settings.missionDefaults.autoSaveEnabled,
@@ -86,9 +96,9 @@ export async function loadRuntimeBootstrapSettings(
             ...(settings.dataSource.authMode === 'basic'
               ? {
                   email: settings.dataSource.email,
-                  password: 'browser-secret',
+                  password: secret,
                 }
-              : { token: 'browser-secret' }),
+              : { token: secret }),
           }
         : null,
   }
@@ -114,6 +124,7 @@ function readBrowserSettings(): AppSettings {
       dataSource: {
         ...DEFAULT_APP_SETTINGS.dataSource,
         ...parsed.dataSource,
+        secretPresent: browserSecrets[parsed.dataSource?.authMode as TrackingAuthMode] !== undefined,
       },
       advanced: {
         ...DEFAULT_APP_SETTINGS.advanced,
@@ -128,6 +139,7 @@ function readBrowserSettings(): AppSettings {
 function toBrowserSettings(input: AppSettingsDraft): AppSettings {
   const replayEnabled =
     input.dataSource.providerType === 'traccar_http' && input.dataSource.replayEnabled
+  const secret = resolveBrowserSecret(input)
 
   return {
     missionDefaults: input.missionDefaults,
@@ -141,8 +153,95 @@ function toBrowserSettings(input: AppSettingsDraft): AppSettings {
       replayEnabled,
       replayStart: replayEnabled ? input.dataSource.replayStart : '',
       replayDurationHours: input.dataSource.replayDurationHours,
-      secretPresent: input.dataSource.clearSecret ? false : input.dataSource.secretPresent || input.dataSource.secretInput.trim() !== '',
+      secretPresent: secret !== null,
     },
     advanced: DEFAULT_APP_SETTINGS.advanced,
+  }
+}
+
+function updateBrowserSecret(input: AppSettingsDraft): void {
+  if (input.dataSource.clearSecret) {
+    delete browserSecrets[input.dataSource.authMode]
+    return
+  }
+
+  const nextSecret = input.dataSource.secretInput.trim()
+  if (nextSecret !== '') {
+    browserSecrets[input.dataSource.authMode] = nextSecret
+  }
+}
+
+function resolveBrowserSecret(input: AppSettingsDraft): string | null {
+  if (input.dataSource.clearSecret) {
+    return null
+  }
+
+  const nextSecret = input.dataSource.secretInput.trim()
+  if (nextSecret !== '') {
+    return nextSecret
+  }
+
+  return browserSecrets[input.dataSource.authMode] ?? null
+}
+
+function withoutBrowserSecretState(settings: AppSettings): AppSettings {
+  return {
+    ...settings,
+    dataSource: {
+      ...settings.dataSource,
+      secretPresent: false,
+    },
+  }
+}
+
+async function testBrowserTrackingConnection(
+  input: AppSettingsDraft,
+  secret: string,
+): Promise<TestConnectionResult> {
+  const baseUrl = input.dataSource.baseUrl.trim().replace(/\/+$/, '')
+
+  if (input.dataSource.authMode === 'basic') {
+    const sessionResponse = await window.fetch(`${baseUrl}/api/session`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body: new URLSearchParams({
+        email: input.dataSource.email.trim(),
+        password: secret,
+      }).toString(),
+    })
+
+    if (!sessionResponse.ok) {
+      return { ok: false, message: `Authentication failed: ${sessionResponse.status}` }
+    }
+
+    const devicesResponse = await window.fetch(`${baseUrl}/api/devices`, {
+      headers: {
+        Accept: 'application/json',
+        Authorization: `Basic ${window.btoa(`${input.dataSource.email.trim()}:${secret}`)}`,
+      },
+    })
+
+    return {
+      ok: devicesResponse.ok,
+      message: devicesResponse.ok
+        ? 'Connection successful.'
+        : `Device fetch failed: ${devicesResponse.status}`,
+    }
+  }
+
+  const devicesResponse = await window.fetch(`${baseUrl}/api/devices`, {
+    headers: {
+      Accept: 'application/json',
+      Authorization: `Bearer ${secret}`,
+    },
+  })
+
+  return {
+    ok: devicesResponse.ok,
+    message: devicesResponse.ok
+      ? 'Connection successful.'
+      : `Device fetch failed: ${devicesResponse.status}`,
   }
 }
