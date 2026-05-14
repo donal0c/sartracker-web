@@ -71,6 +71,7 @@ export async function startMissionBrowserHarness(): Promise<void> {
         createPollingManager(client as TrackingPollerClient, {
           intervalMs: 10_000,
           staleThresholdMs: 60 * 60 * 1000,
+          maxBackoffMs: 60_000,
           getPollingMode: () => {
             const phase = useMissionStore.getState().phase
             return phase === 'active' || phase === 'paused' ? phase : 'idle'

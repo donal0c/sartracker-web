@@ -13,6 +13,8 @@
 
 ## Last Updated
 
+- 2026-05-14 by Codex (T04 review — strengthened breadcrumb-order regression, reran lint/unit/build/backend, manual unchanged)
+- 2026-05-14 by Claude (T04 tracking backoff cap + per-device breadcrumb isolation — backoff clamped to 60 s; one device's 500 no longer aborts the poll cycle or trips OFFLINE MODE)
 - 2026-05-14 by Codex (T05 review — tightened tests/commentary, reran lint/build/full test gate, manual unchanged)
 - 2026-05-14 by Claude (T05 unified runtime bootstrap — single `startCoreFeatureRuntimes` now wires all six feature controllers; harness mode no longer imports any Tauri infrastructure)
 - 2026-05-13 by Claude (T03 finished-mission write guard — split `ensure_mission_mutable` into data vs lifecycle guards; Finished now blocks every data-bearing upsert with a clear operator error)
@@ -25,6 +27,25 @@
 - 2026-05-13 by Codex (tracking visual readability + visibility regression hardening)
 - 2026-05-13 by Codex (HTTP tracking mock-server Chrome validation + per-device map filter fix)
 - 2026-05-12 by Codex (operator manual added and linked from app Help)
+
+## T04 Tracking Backoff Cap + Breadcrumb Isolation — Baton Note (2026-05-14, Claude)
+
+Phase 1 task T04 is complete. Two life-safety degradation modes in the tracking poller are fixed:
+
+- **Backoff is now bounded.** `createPollingManager` accepts `maxBackoffMs` (default `60_000`) and clamps the computed retry delay with `Math.min(unbounded, maxBackoffMs)`. Previously, after ~10 consecutive failures the next retry was scheduled 512 s away; at 13 failures, ~68 minutes. The app would show "OFFLINE MODE" but had effectively stopped reconnecting. Both call sites (`start-app-runtime.ts`, `mission-browser-harness.ts`) pass the cap explicitly so the value is visible at construction.
+- **Per-device breadcrumb faults no longer poison the cycle.** `fetchIncrementalBreadcrumbs` now uses `Promise.allSettled`. Healthy devices' breadcrumbs are returned in original device order; failures emit one structured `logger.warn('Tracking breadcrumb fetch failed for device.', { deviceId, deviceName, error })` and are skipped. Because the function no longer throws on a single 500, `consecutiveFailures` is no longer incremented when `getDevices` and `getCurrentPositions` both succeeded — one sick device can no longer make the whole tracking system look offline. A new optional `logger` option (default `console.warn`) routes the warning so production keeps a visible signal without using `console.error`.
+
+Tests:
+- 3 new unit tests in `tests/unit/polling-manager.test.ts`: backoff clamp at failure 7, partial-aggregate-on-single-fault, and `console.error` non-use. All 11 polling-manager tests still green; existing tests unchanged.
+- E2E §7.4 (mock-Traccar forces one device to 500) deliberately deferred — `tools/mock-traccar` has no fault-injection switch and adding one would widen scope. T13 is the natural home if/when that infrastructure lands. Rationale recorded in T04 §9.
+
+Verification: `npm run lint` ✅; `npm run build` ✅; `npm run test` → 78 files / 370 tests ✅; `npx playwright test` → 90/90 across chromium + visual ✅; `cargo test` → 37/37 ✅. One unrelated flake (`LPV-246` group-visibility cascade — `app-title` waitFor timeout on first run) cleared on re-run.
+
+Backlog: `docs/hardening-backlog/INDEX.md` T04 row ticked; `docs/hardening-backlog/T04-tracking-backoff-cap.md` header set to `Complete`; checklist filled in (one item explicitly marked skipped with reason); §9 carries the implementation summary, the deferred §7.4 rationale, and the manual-update reasoning. Operator manual untouched — the change is failure-mode-only with no UI surface.
+
+Codex review follow-up: strengthened the partial-breadcrumb unit test so it now asserts healthy device breadcrumbs are aggregated in original device order while the failed device is skipped. Reran `npm run lint`, targeted polling tests, `npm run test`, `npm run build`, and `cargo test --manifest-path src-tauri/Cargo.toml` successfully. Playwright was not rerun in this pass because the repo instruction says not to use it unless explicitly requested; Claude's prior T04 pass had already run 90/90 chromium + visual coverage.
+
+Next recommended task: T06 (render gate — depends on T05, now unblocked) or T10 (autosave on lifecycle, also unblocked).
 
 ## T05 Unified Runtime Bootstrap — Baton Note (2026-05-14, Claude)
 

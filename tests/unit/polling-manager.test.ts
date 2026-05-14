@@ -261,6 +261,148 @@ describe('polling manager', () => {
     poller.stop()
   })
 
+  it('clamps the retry delay to maxBackoffMs once the unbounded value would exceed it', async () => {
+    const client = createClient({
+      getDevices: vi.fn().mockRejectedValue(new Error('offline')),
+    })
+    const setTimeoutSpy = vi.fn(window.setTimeout.bind(window)) as unknown as typeof window.setTimeout
+    const onStatusChange = vi.fn()
+
+    const poller = createPollingManager(client, {
+      intervalMs: 30_000,
+      staleThresholdMs: 60 * 60 * 1000,
+      onSnapshot: vi.fn(),
+      onStatusChange,
+      retryBaseMs: 1_000,
+      maxBackoffMs: 60_000,
+      now: () => new Date('2026-04-06T10:35:00.000Z'),
+      setTimeout: setTimeoutSpy,
+    })
+
+    poller.start()
+
+    // Drain enough failures to cross the cap. Failure 7 would compute 64_000 ms unclamped.
+    for (let i = 0; i < 10; i += 1) {
+      // Each iteration: advance the currently scheduled retry, then let the next
+      // poll/await chain settle so the next setTimeout is scheduled.
+      const lastDelay = (setTimeoutSpy as unknown as { mock: { calls: unknown[][] } }).mock.calls.at(-1)?.[1] as number
+      await vi.advanceTimersByTimeAsync(lastDelay ?? 1)
+    }
+
+    const recordedDelays = (setTimeoutSpy as unknown as { mock: { calls: [() => void, number][] } }).mock.calls.map(
+      (call) => call[1],
+    )
+
+    // Failure 1 -> 1_000, 2 -> 2_000, 3 -> 4_000, 4 -> 8_000, 5 -> 16_000, 6 -> 32_000.
+    // Failure 7 onwards -> clamped at 60_000.
+    expect(recordedDelays.slice(0, 6)).toEqual([1_000, 2_000, 4_000, 8_000, 16_000, 32_000])
+    expect(recordedDelays.slice(6)).toEqual(recordedDelays.slice(6).map(() => 60_000))
+    expect(recordedDelays.length).toBeGreaterThanOrEqual(7)
+
+    poller.stop()
+  })
+
+  it('continues aggregating breadcrumbs from healthy devices when one device fails', async () => {
+    const onSnapshot = vi.fn()
+    const onStatusChange = vi.fn()
+    const logger = { warn: vi.fn() }
+    const devices = [
+      NORMALIZED_DEVICES[0],
+      NORMALIZED_DEVICES[1],
+      { ...NORMALIZED_DEVICES[0], device_id: '3', name: 'Hill team' },
+    ] satisfies readonly NormalizedTrackingDevice[]
+    const deviceOneBreadcrumb = {
+      ...NORMALIZED_BREADCRUMBS[0],
+      id: 'breadcrumb-device-1',
+      device_id: '1',
+    } satisfies NormalizedTrackingPosition
+    const deviceThreeBreadcrumb = {
+      ...NORMALIZED_BREADCRUMBS[0],
+      id: 'breadcrumb-device-3',
+      device_id: '3',
+    } satisfies NormalizedTrackingPosition
+
+    const client = createClient({
+      getDevices: vi.fn().mockResolvedValue(devices),
+      getBreadcrumbs: vi.fn().mockImplementation((deviceId: string) => {
+        if (deviceId === '2') {
+          return Promise.reject(new Error('HTTP 500'))
+        }
+        if (deviceId === '3') {
+          return Promise.resolve([deviceThreeBreadcrumb])
+        }
+        return Promise.resolve([deviceOneBreadcrumb])
+      }),
+    })
+
+    const poller = createPollingManager(client, {
+      intervalMs: 5_000,
+      staleThresholdMs: 60 * 60 * 1000,
+      onSnapshot,
+      onStatusChange,
+      retryBaseMs: 1_000,
+      maxBackoffMs: 60_000,
+      logger,
+      now: () => new Date('2026-04-06T10:35:00.000Z'),
+    })
+
+    poller.start()
+    await vi.advanceTimersByTimeAsync(0)
+
+    const firstSnapshot = onSnapshot.mock.calls[0]?.[0] as {
+      breadcrumbs: readonly NormalizedTrackingPosition[]
+    }
+    expect(firstSnapshot.breadcrumbs.map((breadcrumb) => breadcrumb.device_id)).toEqual([
+      '1',
+      '3',
+    ])
+
+    expect(onStatusChange).toHaveBeenCalledWith(
+      expect.objectContaining({ mode: 'online', consecutiveFailures: 0 }),
+    )
+    expect(onStatusChange).not.toHaveBeenCalledWith(
+      expect.objectContaining({ mode: 'offline' }),
+    )
+
+    expect(logger.warn).toHaveBeenCalledTimes(1)
+    const warnCall = logger.warn.mock.calls[0]
+    expect(warnCall?.[0]).toContain('breadcrumb')
+    expect(warnCall?.[1]).toEqual(
+      expect.objectContaining({ deviceId: '2' }),
+    )
+
+    poller.stop()
+  })
+
+  it('routes per-device breadcrumb failures through logger.warn rather than console.error', async () => {
+    const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    try {
+      const logger = { warn: vi.fn() }
+      const client = createClient({
+        getBreadcrumbs: vi.fn().mockRejectedValue(new Error('HTTP 500')),
+      })
+
+      const poller = createPollingManager(client, {
+        intervalMs: 5_000,
+        staleThresholdMs: 60 * 60 * 1000,
+        onSnapshot: vi.fn(),
+        onStatusChange: vi.fn(),
+        logger,
+        now: () => new Date('2026-04-06T10:35:00.000Z'),
+      })
+
+      poller.start()
+      await vi.advanceTimersByTimeAsync(0)
+
+      expect(logger.warn).toHaveBeenCalled()
+      expect(consoleErrorSpy).not.toHaveBeenCalled()
+
+      poller.stop()
+    } finally {
+      consoleErrorSpy.mockRestore()
+    }
+  })
+
   it('resets breadcrumb history when a new mission session starts', async () => {
     const client = createClient()
     const onSnapshot = vi.fn()

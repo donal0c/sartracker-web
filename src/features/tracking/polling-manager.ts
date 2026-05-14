@@ -18,18 +18,32 @@ export type TrackingPollerClient = {
   ) => Promise<readonly NormalizedTrackingPosition[]>
 }
 
+type PollingManagerLogger = {
+  readonly warn: (message: string, context: Record<string, unknown>) => void
+}
+
 type PollingManagerOptions = {
   readonly intervalMs: number
   readonly staleThresholdMs: number
   readonly retryBaseMs?: number
+  readonly maxBackoffMs?: number
   readonly getPollingMode?: () => 'active' | 'paused' | 'idle'
   readonly getHistoryResetKey?: () => string | null
   readonly getInitialBreadcrumbFrom?: () => Date | null
   readonly onSnapshot: (snapshot: TrackingSnapshot) => void
   readonly onStatusChange: (status: TrackingConnectionStatus) => void
+  readonly logger?: PollingManagerLogger
   readonly now?: () => Date
   readonly setTimeout?: typeof window.setTimeout
   readonly clearTimeout?: typeof window.clearTimeout
+}
+
+const DEFAULT_MAX_BACKOFF_MS = 60_000
+
+const DEFAULT_LOGGER: PollingManagerLogger = {
+  warn: (message, context) => {
+    console.warn(message, context)
+  },
 }
 
 type PollingManager = {
@@ -47,6 +61,8 @@ export function createPollingManager(
   const now = options.now ?? (() => new Date())
   const scheduleTimeout = options.setTimeout ?? window.setTimeout.bind(window)
   const clearScheduledTimeout = options.clearTimeout ?? window.clearTimeout.bind(window)
+  const maxBackoffMs = options.maxBackoffMs ?? DEFAULT_MAX_BACKOFF_MS
+  const logger = options.logger ?? DEFAULT_LOGGER
 
   let authenticated = false
   let running = false
@@ -166,7 +182,8 @@ export function createPollingManager(
         warning: 'OFFLINE MODE — showing last known positions.',
       })
 
-      const backoffDelay = (options.retryBaseMs ?? 1_000) * 2 ** (consecutiveFailures - 1)
+      const unboundedDelay = (options.retryBaseMs ?? 1_000) * 2 ** (consecutiveFailures - 1)
+      const backoffDelay = Math.min(unboundedDelay, maxBackoffMs)
       scheduleNextPoll(backoffDelay)
     }
   }
@@ -193,7 +210,7 @@ export function createPollingManager(
     devices: readonly NormalizedTrackingDevice[],
   ): Promise<readonly NormalizedTrackingPosition[]> {
     const fetchUntil = now()
-    const results = await Promise.all(
+    const settled = await Promise.allSettled(
       devices.map(async (device) => {
         const lastTimestamp = latestBreadcrumbTimestampByDevice.get(device.device_id)
         const fetchFrom =
@@ -212,6 +229,25 @@ export function createPollingManager(
       }),
     )
 
-    return results.flat()
+    const aggregated: NormalizedTrackingPosition[] = []
+    for (let index = 0; index < settled.length; index += 1) {
+      const result = settled[index]
+      if (result === undefined) {
+        continue
+      }
+      if (result.status === 'fulfilled') {
+        aggregated.push(...result.value)
+        continue
+      }
+
+      const failedDevice = devices[index]
+      logger.warn('Tracking breadcrumb fetch failed for device.', {
+        deviceId: failedDevice?.device_id ?? null,
+        deviceName: failedDevice?.name ?? null,
+        error: result.reason instanceof Error ? result.reason.message : String(result.reason),
+      })
+    }
+
+    return aggregated
   }
 }

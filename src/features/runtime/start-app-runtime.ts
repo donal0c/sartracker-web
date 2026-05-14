@@ -144,6 +144,7 @@ export async function startAppRuntime(
         createPollingManager(client as TrackingPollerClient, {
           intervalMs: runtimeSettings.trackingPollIntervalMs,
           staleThresholdMs: 60 * 60 * 1000,
+          maxBackoffMs: 60_000,
           getPollingMode: () => {
             const phase = useMissionStore.getState().phase
             return phase === 'active' || phase === 'paused' ? phase : 'idle'
