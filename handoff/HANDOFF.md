@@ -195,7 +195,9 @@ The hosted browser path is now explicitly tracked as a product/runtime plan, not
 - Implementation started: browser harness gating now allows non-Tauri production browser builds to opt in with `?missionHarness=1`, while production Tauri cannot be forced into harness mode by query string. App shell now shows an amber browser-testing banner when the hosted harness is active.
 - Docs updated: README, operator manual, plugin parity matrix, bead readiness, and the hosted browser plan.
 - Verification so far: `npm run lint` ✅; targeted harness-gating unit test ✅; `npm run test` → 81 files / 377 tests ✅; `npm run build` ✅; `npm run test:backend` → 37/37 ✅.
-- Still to finish for Phase 0: deploy this release to Vercel, validate the hosted `?missionHarness=1` flow with live Traccar credentials, and record final proof here.
+- Deployment: production deploy `dpl_FBbQciAPjPxbzCy6MhyD3KjxKrjy`, aliased to `https://sartracker-web.vercel.app`, ready on 2026-05-14.
+- Hosted command-line verification after deploy: `https://sartracker-web.vercel.app/?missionHarness=1` served the new `index-Cg-hDGcg.js` asset; the production JS contains the browser-testing banner text; `/api/session` returned 200 for `apiuser`/`apiuser`; `/api/devices` returned the 18-device roster; `/api/positions` returned 14 positions.
+- Still to finish for Phase 0: validate the full hosted browser UI flow interactively from `https://sartracker-web.vercel.app/?missionHarness=1` (start mission, see banner, connect tracking, confirm map/devices). This was not run with Playwright because repo instructions require explicit user permission for Playwright; the user can test directly now or explicitly ask for browser automation.
 
 ## Last Work Done
 

@@ -110,6 +110,7 @@ Possible outcomes:
 - [x] Add hosted browser testing instructions to the operator manual.
 - [x] Update README and parity docs to name the hosted runtime explicitly.
 - [x] Add or update tests for hosted browser testing mode gating.
-- [ ] Deploy to Vercel.
-- [ ] Validate the hosted flow with live Traccar credentials.
-- [ ] Record final proof and remaining limits in `handoff/HANDOFF.md`.
+- [x] Deploy to Vercel.
+- [x] Validate hosted asset/proxy delivery with live Traccar credentials by command-line checks.
+- [ ] Validate the full browser UI flow from the hosted page.
+- [x] Record final proof and remaining limits in `handoff/HANDOFF.md`.
