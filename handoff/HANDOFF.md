@@ -76,6 +76,7 @@ Most recent completed verification:
 - `npm run build` passed.
 - `npm run test:backend` passed.
 - Focused `tests/unit/settings-workspace.test.ts` passed.
+- Production redeployed with the documented Vercel prebuilt flow for the Settings save-close fix; live bundle contains the new close-on-success labels and handler.
 - Hosted proxy command-line checks against live Traccar succeeded.
 - Production deployed with the documented Vercel prebuilt flow; alias `https://sartracker-web.vercel.app` is live.
 - Inbuilt browser confirmed the hosted Settings guidance is visible on the live alias.
