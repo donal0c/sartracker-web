@@ -75,4 +75,6 @@ Most recent completed verification for A2:
 - `npm run build` passed.
 - `npm run test:backend` passed.
 - Hosted proxy command-line checks against live Traccar succeeded.
-- Hosted Settings UI guardrail still needs confirmation on the deployed page after the pushed Vercel build is live.
+- Production deployed with the documented Vercel prebuilt flow; alias `https://sartracker-web.vercel.app` is live.
+- Inbuilt browser confirmed the hosted Settings guidance is visible on the live alias.
+- Deployed bundle contains the direct-HTTP validation message and `Use Hosted Proxy` action.
