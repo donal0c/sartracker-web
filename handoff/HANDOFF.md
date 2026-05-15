@@ -4,7 +4,7 @@
 
 ## Last Updated
 
-- 2026-05-15 by Codex — A2 hosted-mode Traccar URL guardrails completed.
+- 2026-05-15 by Codex — Settings save-close UX fixed after A2.
 
 ## Operating Rule
 
@@ -30,6 +30,7 @@ Supporting docs may explain details, but they must not become separate queues. T
   - Traccar provider base URL in hosted mode: `https://sartracker-web.vercel.app`
   - direct `http://kmrtsar.ddns.net:8082` is valid for desktop/Tauri, but browsers block it from the HTTPS hosted app.
 - Hosted Settings now warns on direct `http://` Traccar provider URLs, blocks Test/Save through validation, offers a hosted-proxy action, and prevents browser tracking bootstrap from stale direct-HTTP settings.
+- Settings successful save actions now close the workspace after persistence/reload completes. Failed saves keep the workspace open and show the error.
 - Latest deployed production URL has command-line validation for proxy endpoints:
   - `/api/session` returned 200 for the team credentials
   - `/api/devices` returned the 18-device roster
@@ -68,13 +69,15 @@ Older parity/UI beads still exist, but new work should be selected through the t
 
 ## Verification Snapshot
 
-Most recent completed verification for A2:
+Most recent completed verification:
 
 - `npm run lint` passed.
 - `npm run test` passed.
 - `npm run build` passed.
 - `npm run test:backend` passed.
+- Focused `tests/unit/settings-workspace.test.ts` passed.
 - Hosted proxy command-line checks against live Traccar succeeded.
 - Production deployed with the documented Vercel prebuilt flow; alias `https://sartracker-web.vercel.app` is live.
 - Inbuilt browser confirmed the hosted Settings guidance is visible on the live alias.
 - Deployed bundle contains the direct-HTTP validation message and `Use Hosted Proxy` action.
+- Inbuilt browser loaded local app for save-close validation, but click automation timed out on the Settings mast button; jsdom component coverage is the verification source for this small UX fix.

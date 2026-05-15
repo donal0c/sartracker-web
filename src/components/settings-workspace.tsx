@@ -507,7 +507,7 @@ export function SettingsWorkspace({ open, onClose }: SettingsWorkspaceProps) {
               }}
               type="button"
             >
-              {saving ? 'Saving…' : 'Save'}
+              {saving ? 'Saving…' : 'Save & Close'}
             </button>
             <button
               className="sar-action-primary px-4 py-2 text-[11px] font-bold uppercase tracking-wider transition disabled:opacity-40"
@@ -523,7 +523,7 @@ export function SettingsWorkspace({ open, onClose }: SettingsWorkspaceProps) {
               }}
               type="button"
             >
-              {saving ? 'Saving…' : 'Save & Connect'}
+              {saving ? 'Saving…' : 'Save, Connect & Close'}
             </button>
           </div>
         </footer>
@@ -566,7 +566,7 @@ export function SettingsWorkspace({ open, onClose }: SettingsWorkspaceProps) {
       if (controller !== null) {
         await controller.reloadSettings({ forceConnect })
       }
-      setFeedback(forceConnect ? 'Settings saved and tracking reloaded.' : 'Settings saved.')
+      onClose()
     } catch (saveError) {
       setError(toErrorMessage(saveError))
     } finally {

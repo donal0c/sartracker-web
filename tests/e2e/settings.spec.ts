@@ -79,8 +79,7 @@ test.describe('M12 settings workspace', () => {
     await page.getByTestId('settings-provider-email').fill('apiuser')
     await page.getByTestId('settings-provider-secret').fill('apiuser')
     await page.getByTestId('settings-save').click()
-    await expect(page.getByTestId('settings-feedback')).toContainText('Settings saved.')
-    await page.getByTestId('workspace-close-btn').click()
+    await expect(page.getByTestId('settings-workspace')).toBeHidden()
 
     await page.getByTestId('mission-name-input').fill('Live Tracking Mission')
     await page.getByTestId('mission-start-btn').click()
@@ -88,8 +87,7 @@ test.describe('M12 settings workspace', () => {
 
     await page.getByTestId('open-settings-workspace').click()
     await page.getByTestId('settings-save-connect').click()
-    await expect(page.getByTestId('settings-feedback')).toContainText('Settings saved and tracking reloaded.')
-    await page.getByTestId('workspace-close-btn').click()
+    await expect(page.getByTestId('settings-workspace')).toBeHidden()
 
     await expect(page.getByTestId('tracking-status')).toContainText('online')
     await expect(page.getByTestId('tracking-status')).toContainText('1')
@@ -108,8 +106,7 @@ test.describe('M12 settings workspace', () => {
     await page.getByTestId('settings-tracking-cache-enabled').uncheck()
     await page.getByRole('button', { name: 'TM65 first' }).click()
     await page.getByTestId('settings-save').click()
-    await expect(page.getByTestId('settings-feedback')).toContainText('Settings saved.')
-    await page.getByTestId('workspace-close-btn').click()
+    await expect(page.getByTestId('settings-workspace')).toBeHidden()
 
     await page.reload()
     await page.getByTestId('open-settings-workspace').click()
