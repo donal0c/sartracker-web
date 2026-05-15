@@ -401,6 +401,7 @@
                 <li>Open <strong>https://sartracker-web.vercel.app/?missionHarness=1</strong>.</li>
                 <li>Confirm the amber browser testing banner is visible.</li>
                 <li>Use <strong>Settings</strong> to configure Traccar before starting the mission.</li>
+                <li>Use <strong>https://sartracker-web.vercel.app</strong> as the provider base URL.</li>
                 <li>Start the mission from <strong>Mission Control</strong> after tracking connection succeeds.</li>
               </ol>
             </div>
@@ -519,6 +520,7 @@
             <li>Open <strong>Settings</strong>.</li>
             <li>In <strong>Data Sources</strong>, choose <strong>Traccar HTTP</strong>.</li>
             <li>Enter the provider base URL. On the hosted Vercel app, use <strong>https://sartracker-web.vercel.app</strong>; the app proxies securely to the team-managed HTTP Traccar server.</li>
+            <li>Do not use the direct HTTP Traccar URL in hosted browser testing. Settings will warn and ask for the hosted HTTPS proxy instead.</li>
             <li>Choose <strong>Basic</strong> or <strong>Bearer</strong> authentication.</li>
             <li>Enter the email/password or bearer token.</li>
             <li>Use <strong>Test Connection</strong> before saving for live use; it authenticates against the configured Traccar server and checks device access.</li>
@@ -532,7 +534,9 @@
           <div class="warning">
             <strong>Hosted browser testing:</strong> when the app is opened with <strong>?missionHarness=1</strong>,
             mission data is stored in the browser session so the team can test the current workflow from
-            Vercel. Use it for testing only until the browser runtime has durable storage and recovery.
+            Vercel. Direct HTTP Traccar URLs are blocked from this HTTPS page, so use the hosted proxy
+            base URL shown above. Use browser mode for testing only until the browser runtime has durable
+            storage and recovery.
           </div>
         </section>
 
@@ -665,7 +669,7 @@
             </thead>
             <tbody>
               <tr><td>Mission Defaults</td><td>Auto-refresh, auto-save, mission roots, coordinator roster, admin roster, and coordinate display preference.</td></tr>
-              <tr><td>Data Sources</td><td>Provider type, Traccar URL, authentication mode, secret handling, auto-connect, tracking cache, and replay defaults.</td></tr>
+              <tr><td>Data Sources</td><td>Provider type, Traccar URL, authentication mode, secret handling, auto-connect, tracking cache, replay defaults, and hosted-browser proxy guidance when the app is running from Vercel.</td></tr>
               <tr><td>Advanced Settings</td><td>Reserved repair/support actions. Some actions may remain disabled until the matching milestone is complete.</td></tr>
             </tbody>
           </table>

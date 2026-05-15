@@ -8,6 +8,11 @@ import {
   type RuntimeBootstrapSettings,
   type TrackingAuthMode,
 } from '../../features/settings/settings-types'
+import {
+  HOSTED_TRACCAR_PROXY_BASE_URL,
+  getHostedTraccarBaseUrlError,
+  type SettingsValidationContext,
+} from '../../features/settings/settings-validation'
 
 const BROWSER_SETTINGS_STORAGE_KEY = 'sartracker:browser-settings'
 const browserSecrets: Partial<Record<TrackingAuthMode, string>> = {}
@@ -58,6 +63,14 @@ export async function testTrackingConnection(input: AppSettingsDraft): Promise<T
     return { ok: false, message: 'Enter a Traccar base URL first.' }
   }
 
+  const hostedUrlError = getHostedTraccarBaseUrlError(
+    input.dataSource.baseUrl,
+    createBrowserSettingsValidationContext(),
+  )
+  if (hostedUrlError !== undefined) {
+    return { ok: false, message: hostedUrlError }
+  }
+
   const secret = resolveBrowserSecret(input)
   if (secret === null) {
     return { ok: false, message: 'A provider secret is required before testing the connection.' }
@@ -78,11 +91,16 @@ export async function loadRuntimeBootstrapSettings(
 
   const settings = readBrowserSettings()
   const secret = browserSecrets[settings.dataSource.authMode]
+  const hostedUrlError = getHostedTraccarBaseUrlError(
+    settings.dataSource.baseUrl,
+    createBrowserSettingsValidationContext(),
+  )
   const shouldConnect =
     settings.dataSource.providerType === 'traccar_http' &&
     (forceConnect || settings.dataSource.autoConnect) &&
     settings.missionDefaults.autoRefreshEnabled &&
-    secret !== undefined
+    secret !== undefined &&
+    hostedUrlError === undefined
 
   return {
     autosaveEnabled: settings.missionDefaults.autoSaveEnabled,
@@ -101,6 +119,17 @@ export async function loadRuntimeBootstrapSettings(
               : { token: secret }),
           }
         : null,
+  }
+}
+
+function createBrowserSettingsValidationContext(): SettingsValidationContext | undefined {
+  if (typeof window === 'undefined' || window.location.protocol !== 'https:') {
+    return undefined
+  }
+
+  return {
+    hostedBrowserMode: true,
+    hostedProxyBaseUrl: HOSTED_TRACCAR_PROXY_BASE_URL,
   }
 }
 

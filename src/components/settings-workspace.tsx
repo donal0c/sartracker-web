@@ -7,8 +7,10 @@ import {
   type AppSettingsDraft,
 } from '../features/settings/settings-types'
 import {
+  HOSTED_TRACCAR_PROXY_BASE_URL,
   formatRosterInput,
   normalizeRosterInput,
+  type SettingsValidationContext,
   validateSettingsDraft,
 } from '../features/settings/settings-validation'
 import {
@@ -20,6 +22,7 @@ import {
   persistCoordinateDisplayMode,
   readCoordinateDisplayMode,
 } from '../lib/coordinate-preferences'
+import { isTauriRuntimeAvailable } from '../lib/tauri-runtime'
 
 type SettingsWorkspaceProps = {
   readonly open: boolean
@@ -39,6 +42,7 @@ export function SettingsWorkspace({ open, onClose }: SettingsWorkspaceProps) {
   const [feedback, setFeedback] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [coordinateDisplayMode, setCoordinateDisplayMode] = useState(readCoordinateDisplayMode)
+  const settingsValidationContext = useMemo(createSettingsValidationContext, [])
 
   useEffect(() => {
     if (!open) {
@@ -74,8 +78,8 @@ export function SettingsWorkspace({ open, onClose }: SettingsWorkspaceProps) {
   }, [open])
 
   const validationErrors = useMemo(
-    () => (draft === null ? {} : validateSettingsDraft(draft)),
-    [draft],
+    () => (draft === null ? {} : validateSettingsDraft(draft, settingsValidationContext)),
+    [draft, settingsValidationContext],
   )
 
   return (
@@ -228,6 +232,34 @@ export function SettingsWorkspace({ open, onClose }: SettingsWorkspaceProps) {
 
               <Section title="Data Sources" description="Provider configuration and startup behavior.">
                 <div className="space-y-4">
+                  {settingsValidationContext?.hostedBrowserMode === true ? (
+                    <div
+                      className="border border-amber-400/40 bg-amber-950/30 px-4 py-3 text-sm text-amber-100"
+                      data-testid="hosted-traccar-url-guidance"
+                    >
+                      <p>
+                        Hosted browser testing must use the HTTPS proxy as the Traccar provider base URL. Direct HTTP Traccar server URLs are blocked by browsers from this HTTPS app.
+                      </p>
+                      <button
+                        className="sar-button mt-3 px-3 py-2 text-[11px] font-bold uppercase tracking-wider"
+                        data-testid="use-hosted-traccar-proxy"
+                        onClick={() =>
+                          updateDraft(setDraft, (current) => ({
+                            ...current,
+                            dataSource: {
+                              ...current.dataSource,
+                              providerType: 'traccar_http',
+                              baseUrl: settingsValidationContext.hostedProxyBaseUrl,
+                            },
+                          }))
+                        }
+                        type="button"
+                      >
+                        Use Hosted Proxy
+                      </button>
+                    </div>
+                  ) : null}
+
                   <div className="space-y-2">
                     <p className="sar-section-label">
                       Provider
@@ -668,6 +700,21 @@ function updateDraft(
 function parseInteger(value: string, fallback: number): number {
   const parsed = Number.parseInt(value, 10)
   return Number.isNaN(parsed) ? fallback : parsed
+}
+
+function createSettingsValidationContext(): SettingsValidationContext | undefined {
+  if (typeof window === 'undefined' || isTauriRuntimeAvailable()) {
+    return undefined
+  }
+
+  if (window.location.protocol !== 'https:') {
+    return undefined
+  }
+
+  return {
+    hostedBrowserMode: true,
+    hostedProxyBaseUrl: HOSTED_TRACCAR_PROXY_BASE_URL,
+  }
 }
 
 function toErrorMessage(error: unknown): string {

@@ -19,7 +19,7 @@ Email: apiuser
 Password: apiuser
 ```
 
-Do not enter the direct HTTP Traccar URL in the hosted browser app. Browsers block HTTPS pages from calling HTTP services directly; the Vercel URL is the HTTPS proxy.
+Do not enter the direct HTTP Traccar URL in the hosted browser app. Browsers block HTTPS pages from calling HTTP services directly; the Vercel URL is the HTTPS proxy. Settings now warns on direct `http://` provider URLs in hosted browser mode and offers the hosted proxy as the safe default.
 
 ## What We Want The Team To Test Now
 

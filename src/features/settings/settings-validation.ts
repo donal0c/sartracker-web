@@ -2,10 +2,49 @@ import type { AppSettingsDraft } from './settings-types'
 
 export type SettingsValidationErrors = Partial<Record<string, string>>
 
+export const HOSTED_TRACCAR_PROXY_BASE_URL = 'https://sartracker-web.vercel.app'
+
+export type SettingsValidationContext = {
+  readonly hostedBrowserMode: boolean
+  readonly hostedProxyBaseUrl: string
+}
+
+/**
+ * Builds the hosted browser guidance shown when HTTPS browser testing cannot call
+ * a direct HTTP Traccar server.
+ */
+export function createHostedTraccarHttpUrlMessage(hostedProxyBaseUrl: string): string {
+  return `Hosted browser mode cannot call direct HTTP Traccar URLs from the HTTPS app. Use ${hostedProxyBaseUrl} as the provider base URL for hosted testing.`
+}
+
+/**
+ * Returns the hosted-browser base URL error for direct HTTP Traccar URLs.
+ */
+export function getHostedTraccarBaseUrlError(
+  baseUrl: string,
+  context?: SettingsValidationContext,
+): string | undefined {
+  if (context?.hostedBrowserMode !== true) {
+    return undefined
+  }
+
+  try {
+    const parsed = new URL(baseUrl)
+    return parsed.protocol === 'http:'
+      ? createHostedTraccarHttpUrlMessage(context.hostedProxyBaseUrl)
+      : undefined
+  } catch {
+    return undefined
+  }
+}
+
 /**
  * Validates the settings draft before it can be tested or saved.
  */
-export function validateSettingsDraft(draft: AppSettingsDraft): SettingsValidationErrors {
+export function validateSettingsDraft(
+  draft: AppSettingsDraft,
+  context?: SettingsValidationContext,
+): SettingsValidationErrors {
   const errors: SettingsValidationErrors = {}
 
   if (
@@ -29,6 +68,11 @@ export function validateSettingsDraft(draft: AppSettingsDraft): SettingsValidati
       const parsed = new URL(draft.dataSource.baseUrl)
       if (!['http:', 'https:'].includes(parsed.protocol)) {
         errors.baseUrl = 'Provider URL must use http or https.'
+      } else {
+        const hostedUrlError = getHostedTraccarBaseUrlError(draft.dataSource.baseUrl, context)
+        if (hostedUrlError !== undefined) {
+          errors.baseUrl = hostedUrlError
+        }
       }
     } catch {
       errors.baseUrl = 'Provider URL must be a valid absolute URL.'

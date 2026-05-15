@@ -71,8 +71,8 @@ This is the default order when the user says “work on the next task.”
 
 | Order | Chunk | Track | Bead | Status |
 | --- | --- | --- | --- | --- |
-| 1 | A2: Hosted Mode Guardrails | Track A | `sartracker-web-vpz.3` | Ready |
-| 2 | S1: Runtime Boot/Fault Guard | Shared | Create/update bead before starting | Ready |
+| 1 | S1: Runtime Boot/Fault Guard | Shared | Create/update bead before starting | Ready |
+| Done | A2: Hosted Mode Guardrails | Track A | `sartracker-web-vpz.3` | Done 2026-05-15 |
 | 3 | A1: Hosted Testing Instructions And Feedback Intake | Track A | `sartracker-web-vpz.1` | Ready |
 | 4 | B1: Tauri Beta Packaging Recon | Track B | `sartracker-web-vpz.2` | Ready |
 | 5 | S2: Autosave Lifecycle Hardening | Shared / Track B | Create/update bead before starting | Ready after S1 |
@@ -144,8 +144,9 @@ Acceptance:
 
 Verification:
 
-- Unit coverage for hosted-mode URL validation/helper.
-- Manual hosted settings check with the inbuilt browser.
+- Done 2026-05-15: unit coverage for hosted-mode URL validation/helper.
+- Done 2026-05-15: hosted Settings UI guardrail and hosted-proxy action added.
+- Done 2026-05-15: manual hosted settings check with the inbuilt browser.
 
 ### A3: Team Feedback Triage Pass
 

@@ -81,6 +81,7 @@ Implementation scope:
 - Use `?missionHarness=1` to enable browser testing mode on Vercel.
 - Use session storage as the temporary mission store.
 - Use the Vercel HTTPS Traccar proxy for the team-managed HTTP Traccar server.
+- Guard hosted Settings against direct `http://` Traccar provider URLs, and offer the hosted proxy base URL as the safe default.
 - Keep visible operator copy that says browser testing mode is temporary/local and not for live incidents.
 - Keep manual instructions with exact setup steps for hosted testing.
 - Validate the hosted flow end to end:
@@ -276,6 +277,7 @@ Possible outcomes:
 - [x] Enable `?missionHarness=1` on hosted Vercel browser builds.
 - [x] Add a visible browser-testing banner or status treatment in the app shell.
 - [x] Add hosted browser testing instructions to the operator manual.
+- [x] Add hosted Settings guardrails for direct HTTP Traccar URLs.
 - [x] Update README and parity docs to name the hosted runtime explicitly.
 - [x] Add or update tests for hosted browser testing mode gating.
 - [x] Deploy to Vercel.

@@ -5,6 +5,7 @@ import {
   DEFAULT_APP_SETTINGS,
 } from '../../src/features/settings/settings-types'
 import {
+  HOSTED_TRACCAR_PROXY_BASE_URL,
   normalizeRosterInput,
   validateSettingsDraft,
 } from '../../src/features/settings/settings-validation'
@@ -43,6 +44,34 @@ describe('settings validation', () => {
     expect(validateSettingsDraft(draft)).toMatchObject({
       replayEnabled: 'Replay defaults are only available for the Traccar HTTP provider.',
     })
+  })
+
+  it('blocks direct HTTP Traccar URLs in hosted HTTPS browser mode', () => {
+    const draft = createSettingsDraft(DEFAULT_APP_SETTINGS)
+    draft.dataSource.providerType = 'traccar_http'
+    draft.dataSource.baseUrl = 'http://kmrtsar.ddns.net:8082'
+    draft.dataSource.email = 'ops@example.com'
+    draft.dataSource.secretInput = 'secret'
+
+    expect(
+      validateSettingsDraft(draft, {
+        hostedBrowserMode: true,
+        hostedProxyBaseUrl: HOSTED_TRACCAR_PROXY_BASE_URL,
+      }),
+    ).toMatchObject({
+      baseUrl:
+        'Hosted browser mode cannot call direct HTTP Traccar URLs from the HTTPS app. Use https://sartracker-web.vercel.app as the provider base URL for hosted testing.',
+    })
+  })
+
+  it('allows direct HTTP Traccar URLs outside hosted browser mode', () => {
+    const draft = createSettingsDraft(DEFAULT_APP_SETTINGS)
+    draft.dataSource.providerType = 'traccar_http'
+    draft.dataSource.baseUrl = 'http://kmrtsar.ddns.net:8082'
+    draft.dataSource.email = 'ops@example.com'
+    draft.dataSource.secretInput = 'secret'
+
+    expect(validateSettingsDraft(draft)).not.toHaveProperty('baseUrl')
   })
 
   it('normalizes roster input into unique trimmed names', () => {

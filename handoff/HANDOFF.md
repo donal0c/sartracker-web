@@ -4,7 +4,7 @@
 
 ## Last Updated
 
-- 2026-05-14 by Codex — planning docs consolidated into one active path: `docs/two-track-execution-workplan.md`.
+- 2026-05-15 by Codex — A2 hosted-mode Traccar URL guardrails completed.
 
 ## Operating Rule
 
@@ -29,11 +29,11 @@ Supporting docs may explain details, but they must not become separate queues. T
   - app URL: `https://sartracker-web.vercel.app/?missionHarness=1`
   - Traccar provider base URL in hosted mode: `https://sartracker-web.vercel.app`
   - direct `http://kmrtsar.ddns.net:8082` is valid for desktop/Tauri, but browsers block it from the HTTPS hosted app.
+- Hosted Settings now warns on direct `http://` Traccar provider URLs, blocks Test/Save through validation, offers a hosted-proxy action, and prevents browser tracking bootstrap from stale direct-HTTP settings.
 - Latest deployed production URL has command-line validation for proxy endpoints:
   - `/api/session` returned 200 for the team credentials
   - `/api/devices` returned the 18-device roster
   - `/api/positions` returned 14 positions
-- Full hosted UI validation from the live page still needs an interactive browser pass unless the user tests it directly.
 
 ## Active Planning Docs
 
@@ -47,18 +47,15 @@ Supporting docs may explain details, but they must not become separate queues. T
 
 Default next task when the user says “go” or “work on the next task”:
 
-1. `A2: Hosted Mode Guardrails` in `docs/two-track-execution-workplan.md`
-2. Bead: `sartracker-web-vpz.3`
-3. Goal: stop testers entering the direct HTTP Traccar URL in hosted browser mode and getting confusing browser/network failures.
-
-After A2, the default next task is `S1: Runtime Boot/Fault Guard`, folded from the former hardening T06 item.
+1. `S1: Runtime Boot/Fault Guard` in `docs/two-track-execution-workplan.md`
+2. Bead: create/update before starting.
+3. Goal: make startup observable so the app never renders a broken shell with disabled controls and no explanation.
 
 ## Open Beads That Matter Now
 
 - `sartracker-web-vpz` — Hosted browser testing mode and parity hardening.
 - `sartracker-web-vpz.1` — A1 hosted testing instructions and feedback intake.
 - `sartracker-web-vpz.2` — B1 Tauri beta packaging reconnaissance.
-- `sartracker-web-vpz.3` — A2 hosted mode guardrails for Traccar URL confusion.
 
 Older parity/UI beads still exist, but new work should be selected through the two-track workplan unless the user explicitly asks for a specific bead.
 
@@ -71,12 +68,11 @@ Older parity/UI beads still exist, but new work should be selected through the t
 
 ## Verification Snapshot
 
-Most recent completed verification before this planning cleanup:
+Most recent completed verification for A2:
 
 - `npm run lint` passed.
 - `npm run test` passed.
 - `npm run build` passed.
 - `npm run test:backend` passed.
 - Hosted proxy command-line checks against live Traccar succeeded.
-
-This planning cleanup is documentation-only. No runtime tests were required.
+- Hosted Settings UI guardrail still needs confirmation on the deployed page after the pushed Vercel build is live.
