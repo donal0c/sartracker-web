@@ -1,4 +1,4 @@
-import { Suspense, lazy, useEffect, useMemo, useState } from 'react'
+import { Suspense, lazy, useEffect, useMemo, useRef, useState } from 'react'
 
 import { DrawingRuntimeBridge } from './features/drawings/drawing-runtime-bridge'
 import { DiagnosticsRuntimeBridge } from './features/diagnostics/diagnostics-runtime-bridge'
@@ -38,6 +38,7 @@ import {
   type RuntimeBootPhase,
   useRuntimeBootStore,
 } from './features/runtime/runtime-boot-store'
+import { reloadRuntimeFaultShell } from './features/runtime/runtime-fault-reload'
 import { useTrackingStore } from './features/tracking/tracking-store'
 import { APP_VERSION } from './lib/app-version'
 
@@ -79,7 +80,7 @@ function App() {
     return (
       <RuntimeBootGate
         error={runtimeBootError}
-        onReload={() => window.location.reload()}
+        onReload={() => reloadRuntimeFaultShell()}
         phase={runtimeBootPhase}
       />
     )
@@ -207,6 +208,14 @@ export function RuntimeBootGate(props: {
   readonly error: string | null
   readonly onReload: () => void
 }) {
+  const reloadButtonRef = useRef<HTMLButtonElement>(null)
+
+  useEffect(() => {
+    if (props.phase === 'failed') {
+      reloadButtonRef.current?.focus()
+    }
+  }, [props.phase])
+
   if (props.phase === 'booting') {
     return (
       <main
@@ -220,7 +229,7 @@ export function RuntimeBootGate(props: {
           <h1 className="mt-2 font-mono text-[22px] font-black text-stone-50">
             Preparing operational runtime
           </h1>
-          <p className="mt-2 text-sm text-stone-400" role="status">
+          <p aria-live="polite" className="mt-2 text-sm text-stone-400" role="status">
             Loading mission, tracking, and map services...
           </p>
         </div>
@@ -234,7 +243,9 @@ export function RuntimeBootGate(props: {
       data-testid="runtime-failed-shell"
     >
       <section
+        aria-describedby="runtime-fault-guidance runtime-fault-detail"
         aria-labelledby="runtime-fault-title"
+        aria-live="assertive"
         className="max-w-xl border border-rose-300/40 bg-rose-950/30 p-6 shadow-2xl"
         role="alert"
       >
@@ -247,20 +258,29 @@ export function RuntimeBootGate(props: {
         >
           Runtime startup failed
         </h1>
-        <p className="mt-3 text-sm leading-relaxed text-stone-200">
+        <p
+          className="mt-3 text-sm leading-relaxed text-stone-200"
+          id="runtime-fault-guidance"
+        >
           SAR Tracker could not start the runtime services needed for mission
-          operations. Reload the app; if the fault returns, capture diagnostics
-          before continuing operational use.
+          operations. Before reloading, copy or screenshot this fault message if
+          you are in an incident. Reload starts from a clean operational URL and
+          removes browser testing flags.
         </p>
-        <pre className="mt-4 whitespace-pre-wrap border border-rose-200/20 bg-stone-950/70 p-3 text-left text-xs text-rose-100">
+        <pre
+          className="mt-4 whitespace-pre-wrap border border-rose-200/20 bg-stone-950/70 p-3 text-left text-xs text-rose-100"
+          id="runtime-fault-detail"
+        >
           {props.error ?? 'Unknown startup failure.'}
         </pre>
         <button
+          autoFocus
           className="sar-action-primary mt-5 px-4 py-2 text-[12px] font-black uppercase tracking-[0.08em]"
           onClick={props.onReload}
+          ref={reloadButtonRef}
           type="button"
         >
-          Reload
+          Reload clean runtime
         </button>
       </section>
     </main>

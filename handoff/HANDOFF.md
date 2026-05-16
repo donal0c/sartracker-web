@@ -4,7 +4,7 @@
 
 ## Last Updated
 
-- 2026-05-16 by Codex — R6 startup rollback fixed; R7 still blocks S3 unless explicitly accepted.
+- 2026-05-16 by Codex — R7 runtime fault path hardened; S3 is no longer blocked by R1-R7.
 
 ## Operating Rule
 
@@ -40,6 +40,7 @@ Supporting docs may explain details, but they must not become separate queues. T
 - Lifecycle backup failures after start, pause, resume, finish, finalize, or unlock now show a persistent non-dismissible alert below the mast. The chosen backend contract is that `sync_backup()` succeeds after non-active lifecycle transitions, but backup audit events remain active-mission-only.
 - Runtime controller replacement now catches and logs failures from disposing the previous app runtime controller, so a new controller can still be installed during reload/replacement. Active controller disposal remains idempotent and clears the registry even if underlying cleanup throws.
 - App runtime startup now disposes started core feature runtimes if the initial settings reload fails, so a boot fault panel does not leave mission/marker/drawing/helicopter/GPX subscriptions live behind it.
+- Runtime boot state now uses generation tokens plus a 30s watchdog so stale/interleaved startup attempts cannot overwrite newer state and a stuck booting state surfaces as an operator-visible fault. The fault panel focuses the clean reload action, announces assertively, tells operators to copy/screenshot the fault, and reloads to a clean URL without harness query flags.
 - Hosted browser mode now reports `Browser test` / `Session storage only` in the command mast, keeps the amber hosted warning visible in Focus Mode, uses hosted-specific operational notes, and fails visibly if a non-Tauri runtime starts without the explicit browser harness.
 - A multi-agent review of S1/A1/B1/S2 found operator-trust issues around autosave visibility, hosted-mode honesty, lifecycle backup surfacing, runtime controller replacement, and startup rollback. The findings are now filed as remediation beads R1-R11 in `docs/two-track-execution-workplan.md`.
 - Latest deployed production URL has command-line validation for proxy endpoints:
@@ -80,15 +81,16 @@ Use these only for team testing, not as a production secret model.
 
 Default next task when the user says “go” or “work on the next task”:
 
-1. `R7: Harden Runtime Fault Reload Flow` in `docs/two-track-execution-workplan.md`
-2. Bead: `sartracker-web-syi`
-3. Goal: make the boot fault Reload action refresh runtime state cleanly instead of relying only on a full page reload.
-4. Do not start `S3: Layer Visibility Service Extraction` until R7 is fixed or explicitly accepted.
+1. `R8: Add Tauri Beta Gatekeeper Guidance` in `docs/two-track-execution-workplan.md`
+2. Bead: `sartracker-web-977`
+3. Goal: document the unsigned/ad-hoc macOS beta app behavior and Gatekeeper expectations before sharing beta artifacts.
+4. `S3: Layer Visibility Service Extraction` is available next if we want to resume feature-foundation work instead of follow-up docs.
 
 ## Open Beads That Matter Now
 
 - `sartracker-web-vpz` — Hosted browser testing mode and parity hardening.
-- `sartracker-web-syi` — R7 harden runtime fault reload flow.
+- `sartracker-web-977` — R8 add Tauri beta Gatekeeper guidance.
+- `sartracker-web-ahp` — R9 add checked-in boot/fault/autosave UI regression coverage.
 
 Older parity/UI beads still exist, but new work should be selected through the two-track workplan unless the user explicitly asks for a specific bead.
 
@@ -103,10 +105,13 @@ Older parity/UI beads still exist, but new work should be selected through the t
 
 Most recent completed verification:
 
-- R6 unit coverage proves started core feature runtimes are disposed when the initial settings reload fails during app runtime startup.
+- R7 unit coverage proves runtime boot generation guards ignore stale/interleaved startup completions and late success after failure.
+- R7 unit coverage proves the boot watchdog surfaces a stuck startup as a failed boot, and the fault panel has focused clean reload guidance with assertive live-region semantics.
+- R7 browser-backed coverage proves a runtime fault shows the clean reload action and strips `missionHarness=1` from the URL after reload.
 - `npm run lint` passed.
-- `npm run test -- --run tests/unit/start-app-runtime.test.ts tests/unit/bootstrap-app-runtime.test.ts tests/unit/start-core-feature-runtimes.test.ts` passed: 3 files, 17 tests.
-- `npm run test -- --run` passed: 86 files, 410 tests.
+- `npm run test -- --run tests/unit/runtime-boot-store.test.ts tests/unit/runtime-boot-gate.test.ts tests/unit/bootstrap-app-runtime.test.ts` passed: 3 files, 16 tests.
+- `npm run test -- --run` passed: 86 files, 414 tests.
 - `npm run build` passed.
 - `npm run test:backend` passed: 38 Rust tests.
-- `npm run test:e2e -- --project=chromium tests/e2e/map.spec.ts` passed: 9 browser workflow tests.
+- `npm run test:e2e -- --project=chromium tests/e2e/map.spec.ts` passed: 10 browser workflow tests.
+- `npm run test:e2e -- --project=chromium` passed: 71 browser workflow tests.

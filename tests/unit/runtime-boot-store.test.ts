@@ -39,4 +39,35 @@ describe('runtime boot store', () => {
       error: 'Runtime startup failed before the application became operational.',
     })
   })
+
+  it('ignores stale boot completions from older startup attempts', () => {
+    const firstBoot = markRuntimeBooting()
+    const secondBoot = markRuntimeBooting()
+
+    markRuntimeBootFailed(new Error('older startup failed'), firstBoot)
+
+    expect(getRuntimeBootState()).toEqual({
+      phase: 'booting',
+      error: null,
+    })
+
+    markRuntimeBootReady(secondBoot)
+
+    expect(getRuntimeBootState()).toEqual({
+      phase: 'ready',
+      error: null,
+    })
+  })
+
+  it('does not let a late success override a failed boot for the same attempt', () => {
+    const boot = markRuntimeBooting()
+
+    markRuntimeBootFailed(new Error('startup timed out'), boot)
+    markRuntimeBootReady(boot)
+
+    expect(getRuntimeBootState()).toEqual({
+      phase: 'failed',
+      error: 'startup timed out',
+    })
+  })
 })

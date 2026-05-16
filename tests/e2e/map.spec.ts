@@ -200,4 +200,28 @@ test.describe('M2 map shell', () => {
     await expect(alert).toContainText('backup volume unavailable')
     await expect(alert.getByRole('button')).toHaveCount(0)
   })
+
+  test('shows runtime faults with a clean reload action', async ({ page }) => {
+    await page.evaluate(async () => {
+      const { useRuntimeBootStore } = await import(
+        '/src/features/runtime/runtime-boot-store.ts'
+      )
+      useRuntimeBootStore.setState({
+        phase: 'failed',
+        error: 'Injected startup fault.',
+        generation: 99,
+      })
+    })
+
+    await expect(page.getByTestId('runtime-failed-shell')).toBeVisible()
+    await expect(page.getByRole('alert')).toContainText('Injected startup fault.')
+    await expect(page.getByText('copy or screenshot this fault message')).toBeVisible()
+
+    const reloadButton = page.getByRole('button', { name: 'Reload clean runtime' })
+    await expect(reloadButton).toBeFocused()
+    await reloadButton.click()
+
+    await expect(page).toHaveURL(/\/$/)
+    expect(page.url()).not.toContain('missionHarness=1')
+  })
 })

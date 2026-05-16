@@ -1,9 +1,20 @@
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import type { AppRuntimeController } from '../../src/features/runtime/app-runtime-controller'
 import { bootstrapAppRuntime } from '../../src/features/runtime/bootstrap-app-runtime'
+import {
+  getRuntimeBootState,
+  markRuntimeBootFailed,
+  markRuntimeBootReady,
+  markRuntimeBooting,
+} from '../../src/features/runtime/runtime-boot-store'
 
 describe('bootstrap app runtime', () => {
+  afterEach(() => {
+    vi.useRealTimers()
+    markRuntimeBooting()
+  })
+
   it('marks Tauri startup ready only after applying the runtime controller', async () => {
     const controller = createController()
     const events: string[] = []
@@ -77,7 +88,7 @@ describe('bootstrap app runtime', () => {
       markRuntimeBootFailed,
     })
 
-    expect(markRuntimeBootFailed).toHaveBeenCalledWith(error)
+    expect(markRuntimeBootFailed).toHaveBeenCalledWith(error, undefined)
   })
 
   it('marks startup failed when no operational controller is available outside hosted harness mode', async () => {
@@ -94,10 +105,45 @@ describe('bootstrap app runtime', () => {
       markRuntimeBootFailed,
     })
 
-    expect(markRuntimeBootFailed).toHaveBeenCalledWith(expect.any(Error))
+    expect(markRuntimeBootFailed).toHaveBeenCalledWith(expect.any(Error), undefined)
     expect((markRuntimeBootFailed.mock.calls[0]?.[0] as Error).message).toContain(
       'No operational runtime controller',
     )
+  })
+
+  it('surfaces a stuck booting state through the runtime boot watchdog', async () => {
+    vi.useFakeTimers()
+    let resolveStartup: ((controller: AppRuntimeController | null) => void) | null = null
+
+    const boot = bootstrapAppRuntime({
+      registerServiceWorker: vi.fn(async () => undefined),
+      shouldEnableMissionBrowserHarness: vi.fn(() => false),
+      startAppRuntime: vi.fn(
+        () =>
+          new Promise((resolve) => {
+            resolveStartup = resolve
+          }),
+      ),
+      startMissionBrowserHarness: vi.fn(),
+      applyAppRuntimeController: vi.fn(),
+      markRuntimeBooting,
+      markRuntimeBootReady,
+      markRuntimeBootFailed,
+    })
+
+    await Promise.resolve()
+    vi.advanceTimersByTime(30_000)
+
+    expect(getRuntimeBootState()).toEqual({
+      phase: 'failed',
+      error:
+        'Runtime startup is taking longer than expected. Reload SAR Tracker from a clean runtime; if this repeats, capture the fault message before operational use.',
+    })
+
+    resolveStartup?.(createController())
+    await boot
+
+    expect(getRuntimeBootState().phase).toBe('failed')
   })
 })
 

@@ -8,11 +8,18 @@ import {
   type AppRuntimeController,
 } from './app-runtime-controller'
 import {
+  type RuntimeBootGeneration,
   markRuntimeBootFailed,
   markRuntimeBooting,
   markRuntimeBootReady,
 } from './runtime-boot-store'
 import { startAppRuntime } from './start-app-runtime'
+
+const RUNTIME_BOOT_WATCHDOG_MS = 30_000
+const RUNTIME_BOOT_WATCHDOG_FAILURE =
+  'Runtime startup is taking longer than expected. Reload SAR Tracker from a clean runtime; if this repeats, capture the fault message before operational use.'
+
+type RuntimeBootWatchdogHandle = ReturnType<typeof globalThis.setTimeout>
 
 type BootstrapAppRuntimeDependencies = {
   readonly registerServiceWorker: () => Promise<void>
@@ -20,9 +27,17 @@ type BootstrapAppRuntimeDependencies = {
   readonly startMissionBrowserHarness: () => Promise<void>
   readonly startAppRuntime: () => Promise<AppRuntimeController | null>
   readonly applyAppRuntimeController: (controller: AppRuntimeController) => void
-  readonly markRuntimeBooting: () => void
-  readonly markRuntimeBootReady: () => void
-  readonly markRuntimeBootFailed: (error: unknown) => void
+  readonly markRuntimeBooting: () => RuntimeBootGeneration | undefined
+  readonly markRuntimeBootReady: (generation?: RuntimeBootGeneration) => void
+  readonly markRuntimeBootFailed: (
+    error: unknown,
+    generation?: RuntimeBootGeneration,
+  ) => void
+  readonly scheduleRuntimeBootWatchdog?: (
+    callback: () => void,
+    delayMs: number,
+  ) => RuntimeBootWatchdogHandle
+  readonly clearRuntimeBootWatchdog?: (handle: RuntimeBootWatchdogHandle) => void
 }
 
 const DEFAULT_DEPENDENCIES: BootstrapAppRuntimeDependencies = {
@@ -37,6 +52,9 @@ const DEFAULT_DEPENDENCIES: BootstrapAppRuntimeDependencies = {
   markRuntimeBooting,
   markRuntimeBootReady,
   markRuntimeBootFailed,
+  scheduleRuntimeBootWatchdog: (callback, delayMs) =>
+    globalThis.setTimeout(callback, delayMs),
+  clearRuntimeBootWatchdog: (handle) => globalThis.clearTimeout(handle),
 }
 
 const MISSING_OPERATIONAL_RUNTIME_CONTROLLER =
@@ -49,14 +67,27 @@ const MISSING_OPERATIONAL_RUNTIME_CONTROLLER =
 export async function bootstrapAppRuntime(
   dependencies: BootstrapAppRuntimeDependencies = DEFAULT_DEPENDENCIES,
 ): Promise<void> {
-  dependencies.markRuntimeBooting()
+  const bootGeneration = dependencies.markRuntimeBooting()
+  const scheduleWatchdog =
+    dependencies.scheduleRuntimeBootWatchdog ??
+    DEFAULT_DEPENDENCIES.scheduleRuntimeBootWatchdog
+  const clearWatchdog =
+    dependencies.clearRuntimeBootWatchdog ?? DEFAULT_DEPENDENCIES.clearRuntimeBootWatchdog
+  const watchdogHandle = scheduleWatchdog?.(
+    () =>
+      dependencies.markRuntimeBootFailed(
+        new Error(RUNTIME_BOOT_WATCHDOG_FAILURE),
+        bootGeneration,
+      ),
+    RUNTIME_BOOT_WATCHDOG_MS,
+  )
 
   try {
     await dependencies.registerServiceWorker()
 
     if (dependencies.shouldEnableMissionBrowserHarness()) {
       await dependencies.startMissionBrowserHarness()
-      dependencies.markRuntimeBootReady()
+      dependencies.markRuntimeBootReady(bootGeneration)
       return
     }
 
@@ -67,8 +98,12 @@ export async function bootstrapAppRuntime(
     }
 
     dependencies.applyAppRuntimeController(controller)
-    dependencies.markRuntimeBootReady()
+    dependencies.markRuntimeBootReady(bootGeneration)
   } catch (error) {
-    dependencies.markRuntimeBootFailed(error)
+    dependencies.markRuntimeBootFailed(error, bootGeneration)
+  } finally {
+    if (watchdogHandle !== undefined) {
+      clearWatchdog?.(watchdogHandle)
+    }
   }
 }

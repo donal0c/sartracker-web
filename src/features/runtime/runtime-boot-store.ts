@@ -1,13 +1,16 @@
 import { create } from 'zustand'
 
 export type RuntimeBootPhase = 'booting' | 'ready' | 'failed'
+export type RuntimeBootGeneration = number
 
 export type RuntimeBootSnapshot = {
   readonly phase: RuntimeBootPhase
   readonly error: string | null
 }
 
-type RuntimeBootStore = RuntimeBootSnapshot
+type RuntimeBootStore = RuntimeBootSnapshot & {
+  readonly generation: RuntimeBootGeneration
+}
 
 const UNKNOWN_RUNTIME_STARTUP_FAILURE =
   'Runtime startup failed before the application became operational.'
@@ -15,6 +18,7 @@ const UNKNOWN_RUNTIME_STARTUP_FAILURE =
 export const useRuntimeBootStore = create<RuntimeBootStore>(() => ({
   phase: 'booting',
   error: null,
+  generation: 0,
 }))
 
 /**
@@ -32,30 +36,52 @@ export function getRuntimeBootState(): RuntimeBootSnapshot {
 /**
  * Marks the runtime as preparing and clears any previous failure message.
  */
-export function markRuntimeBooting(): void {
+export function markRuntimeBooting(): RuntimeBootGeneration {
+  const generation = useRuntimeBootStore.getState().generation + 1
+
   useRuntimeBootStore.setState({
     phase: 'booting',
     error: null,
+    generation,
   })
+
+  return generation
 }
 
 /**
  * Marks the runtime as ready for normal operator interaction.
  */
-export function markRuntimeBootReady(): void {
-  useRuntimeBootStore.setState({
-    phase: 'ready',
-    error: null,
+export function markRuntimeBootReady(generation?: RuntimeBootGeneration): void {
+  useRuntimeBootStore.setState((state) => {
+    if (!bootGenerationCanTransition(state, generation)) {
+      return state
+    }
+
+    return {
+      ...state,
+      phase: 'ready',
+      error: null,
+    }
   })
 }
 
 /**
  * Marks startup as failed with a message safe to show in the app shell.
  */
-export function markRuntimeBootFailed(error: unknown): void {
-  useRuntimeBootStore.setState({
-    phase: 'failed',
-    error: runtimeBootFailureMessage(error),
+export function markRuntimeBootFailed(
+  error: unknown,
+  generation?: RuntimeBootGeneration,
+): void {
+  useRuntimeBootStore.setState((state) => {
+    if (!bootGenerationCanTransition(state, generation)) {
+      return state
+    }
+
+    return {
+      ...state,
+      phase: 'failed',
+      error: runtimeBootFailureMessage(error),
+    }
   })
 }
 
@@ -72,4 +98,16 @@ export function runtimeBootFailureMessage(error: unknown): string {
   }
 
   return UNKNOWN_RUNTIME_STARTUP_FAILURE
+}
+
+/** Returns true when an in-flight boot still owns the current boot state. */
+function bootGenerationCanTransition(
+  state: RuntimeBootStore,
+  generation?: RuntimeBootGeneration,
+): boolean {
+  if (generation === undefined) {
+    return true
+  }
+
+  return state.generation === generation && state.phase === 'booting'
 }

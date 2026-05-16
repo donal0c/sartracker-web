@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { CommandMast, RuntimeBootGate, RuntimeSafetyBanner } from '../../src/App'
 import { useAutosaveStatusStore } from '../../src/features/persistence/autosave-status-store'
+import { runtimeFaultReloadTarget } from '../../src/features/runtime/runtime-fault-reload'
 
 describe('RuntimeBootGate', () => {
   let root: Root | null = null
@@ -115,8 +116,20 @@ describe('RuntimeBootGate', () => {
     expect(document.querySelector('[data-testid="runtime-failed-shell"]')).not.toBeNull()
     expect(document.body.textContent).toContain('Runtime startup failed')
     expect(document.body.textContent).toContain('SQLite mission store unavailable.')
+    expect(document.body.textContent).toContain('copy or screenshot this fault message')
+    expect(button?.textContent).toContain('Reload clean runtime')
+    expect(document.activeElement).toBe(button)
+    expect(document.querySelector('[aria-live="assertive"]')).not.toBeNull()
     button?.click()
     expect(onReload).toHaveBeenCalledTimes(1)
+  })
+
+  it('builds a clean fault reload URL without browser harness flags', () => {
+    expect(
+      runtimeFaultReloadTarget(
+        'https://sartracker.example/app/?missionHarness=1&liveTracking=1#fault',
+      ),
+    ).toBe('https://sartracker.example/app/')
   })
 
   function render(element: React.ReactElement): void {
