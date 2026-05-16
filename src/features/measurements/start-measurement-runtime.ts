@@ -159,7 +159,7 @@ export function createMeasurement(
     distanceM,
     trueBearing,
     magneticBearing,
-    label: formatMeasurementLabel(distanceM, trueBearing, magneticBearing),
+    label: formatMeasurementLabel(distanceM, trueBearing),
   }
 }
 
@@ -169,7 +169,6 @@ export function createMeasurement(
 export function formatMeasurementLabel(
   distanceM: number,
   trueBearing: number,
-  magneticBearing: number,
 ): string {
-  return `${formatDistance(distanceM)} · T ${trueBearing.toFixed(1)}° · M ${magneticBearing.toFixed(1)}°`
+  return `${formatDistance(distanceM)} ${Math.round(trueBearing)}°`
 }

@@ -23,6 +23,11 @@ export function BasemapSwitcher({
   const activeBasemap = BASEMAPS.find((basemap) => basemap.id === activeBasemapId) ?? BASEMAPS[0]!
   const checkingCoverage = coverage?.status === 'checking'
 
+  function handleBasemapSelection(basemapId: BasemapId): void {
+    onBasemapChange(basemapId)
+    setMenuOpen(false)
+  }
+
   return (
     <div
       className="sar-control-dock absolute left-4 top-4 z-30 rounded px-2 py-2"
@@ -60,7 +65,7 @@ export function BasemapSwitcher({
                 }`}
                 data-testid={`basemap-btn-${basemap.id}`}
                 key={basemap.id}
-                onClick={() => onBasemapChange(basemap.id)}
+                onClick={() => handleBasemapSelection(basemap.id)}
                 type="button"
               >
                 {basemap.label}

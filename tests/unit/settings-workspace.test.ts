@@ -92,6 +92,23 @@ describe('SettingsWorkspace', () => {
     expect(document.body.textContent).toContain('Settings store unavailable.')
   })
 
+  it('does not strip roster spaces while an operator is typing a name', async () => {
+    const onClose = vi.fn()
+    const { SettingsWorkspace } = await import('../../src/components/settings-workspace')
+    mocks.loadAppSettings.mockResolvedValue(DEFAULT_APP_SETTINGS)
+    mocks.saveAppSettings.mockResolvedValue(DEFAULT_APP_SETTINGS)
+    mocks.getAppRuntimeController.mockReturnValue(null)
+    mocks.readCoordinateDisplayMode.mockReturnValue('wgs84_first')
+    mocks.isTauriRuntimeAvailable.mockReturnValue(false)
+
+    render(React.createElement(SettingsWorkspace, { open: true, onClose }))
+    const rosterInput = await waitForTextArea('[data-testid="settings-coordinator-roster"]')
+
+    setTextAreaValue(rosterInput, 'Cathal ')
+
+    expect(rosterInput.value).toBe('Cathal ')
+  })
+
   function render(element: React.ReactElement): void {
     host = document.createElement('div')
     document.body.append(host)
@@ -121,4 +138,21 @@ function getButton(selector: string): HTMLButtonElement {
     throw new Error(`Expected ${selector} to be a button.`)
   }
   return element
+}
+
+async function waitForTextArea(selector: string): Promise<HTMLTextAreaElement> {
+  const element = await waitForElement(selector)
+  if (!(element instanceof HTMLTextAreaElement)) {
+    throw new Error(`Expected ${selector} to be a textarea.`)
+  }
+  return element
+}
+
+function setTextAreaValue(input: HTMLTextAreaElement, value: string): void {
+  act(() => {
+    const valueSetter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set
+    valueSetter?.call(input, value)
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+    input.dispatchEvent(new Event('change', { bubbles: true }))
+  })
 }

@@ -8,6 +8,7 @@ import {
 } from 'react'
 
 import { loadAppSettings } from '../infrastructure/settings-store/tauri-settings-store'
+import { useFocusModeStore } from '../features/focus-mode/focus-mode-store'
 import { useMissionStore } from '../features/mission/mission-store'
 import { useMissionReviewWorkspaceStore } from '../features/mission-review/mission-review-workspace-store'
 import {
@@ -36,6 +37,7 @@ export function MissionControlPanel() {
   const governanceMission = useMissionStore((state) => state.governanceMission)
   const governanceController = useMissionStore((state) => state.governanceController)
   const openReviewWorkspace = useMissionReviewWorkspaceStore((state) => state.openWorkspace)
+  const focusModeActive = useFocusModeStore((state) => state.active)
   const [missionName, setMissionName] = useState('')
   const [startOffsetHours, setStartOffsetHours] = useState('0')
   const [now, setNow] = useState(() => new Date())
@@ -367,14 +369,14 @@ export function MissionControlPanel() {
               />
             </div>
           </div>
-        ) : (
+        ) : focusModeActive ? (
           <div className="sar-readout border-l-4 border-l-emerald-400 px-3 py-3">
              <p className="mb-1 text-[10px] font-bold uppercase tracking-[0.12em] text-stone-400">Current Mission</p>
              <p className="text-[13px] font-bold text-stone-100" data-testid="current-mission-name">
               {currentMission?.name}
             </p>
           </div>
-        )}
+        ) : null}
 
         {/* Status Messages */}
         <div className="empty:hidden">

@@ -67,7 +67,7 @@ export function MarkerAtGridPanel() {
               setGridReference(event.target.value.toUpperCase())
               setError(null)
             }}
-            placeholder="V 80011 84363"
+            placeholder="Q 99842 04015"
             value={gridReference}
           />
         </label>
@@ -88,8 +88,16 @@ export function MarkerAtGridPanel() {
           onClick={() => {
             try {
               const draft = createMarkerDraftFromIrishGridReference(gridReference, markerType)
-              markerController?.beginCreateAt(draft.coordinates.lat, draft.coordinates.lon, markerType)
-              setError(null)
+              void markerController?.refreshMission(missionId).then(() => {
+                markerController.beginCreateAt(draft.coordinates.lat, draft.coordinates.lon, markerType)
+                setError(null)
+              }).catch((runtimeError: unknown) => {
+                setError(
+                  runtimeError instanceof Error
+                    ? runtimeError.message
+                    : 'Marker mission refresh failed.',
+                )
+              })
             } catch (runtimeError) {
               setError(runtimeError instanceof Error ? runtimeError.message : 'Invalid grid reference.')
             }

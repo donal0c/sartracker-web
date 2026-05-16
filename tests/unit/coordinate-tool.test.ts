@@ -7,51 +7,67 @@ import {
 } from '../../src/features/coordinates/coordinate-tool'
 
 describe('coordinate converter', () => {
-  it('converts WGS84 input into ITM and TM65 outputs', () => {
-    const result = convertCoordinates({
-      ...createCoordinateConverterDraft(),
-      mode: 'wgs84',
-      latitude: '51.99917',
-      longitude: '-9.74406',
-    })
-
-    expect(result.itmDisplay).toBe('480245, 584452')
-    expect(result.tm65GridRef).toBe('V 80011 84363')
+  it('defaults to the team-requested Irish Grid first flow', () => {
+    expect(createCoordinateConverterDraft().mode).toBe('ig')
   })
 
-  it('converts ITM input back into WGS84 and TM65 outputs', () => {
+  it('converts Irish Grid input into DD and DMS outputs', () => {
     const result = convertCoordinates({
       ...createCoordinateConverterDraft(),
-      mode: 'itm',
-      itmEasting: '480245',
-      itmNorthing: '584452',
+      mode: 'ig',
+      irishGridRef: 'Q 99842 04015',
     })
 
-    expect(result.wgs84Display).toContain('51.999')
-    expect(result.tm65GridRef).toBe('V 80011 84364')
+    expect(result.ddDisplay).toBe('52.179336, -9.464944')
+    expect(result.dmsDisplay).toBe('52°10\'45.609"N, 9°27\'53.800"W')
+    expect(result.irishGridRef).toBe('Q 99842 04015')
+    expect(result.w3wDisplay).toBe('W3W unavailable offline')
   })
 
-  it('converts TM65 grid references back into WGS84 and ITM outputs', () => {
+  it('converts DD input into Irish Grid and DMS outputs', () => {
     const result = convertCoordinates({
       ...createCoordinateConverterDraft(),
-      mode: 'tm65',
-      tm65GridRef: 'V 80011 84363',
+      mode: 'dd',
+      latitude: '52.179337',
+      longitude: '-9.464944',
     })
 
-    expect(result.wgs84Display).toContain('51.999')
-    expect(result.itmDisplay).toBe('480245, 584451')
+    expect(result.irishGridRef).toBe('Q 99842 04015')
+    expect(result.dmsDisplay).toBe('52°10\'45.613"N, 9°27\'53.798"W')
+  })
+
+  it('converts DMS input into Irish Grid and DD outputs', () => {
+    const result = convertCoordinates({
+      ...createCoordinateConverterDraft(),
+      mode: 'dms',
+      dmsLatitude: '52°10\'45.613"N',
+      dmsLongitude: '9°27\'53.798"W',
+    })
+
+    expect(result.ddDisplay).toBe('52.179337, -9.464944')
+    expect(result.irishGridRef).toBe('Q 99842 04015')
+  })
+
+  it('keeps W3W decision-gated until API, licensing, and offline behavior are settled', () => {
+    expect(() =>
+      convertCoordinates({
+        ...createCoordinateConverterDraft(),
+        mode: 'w3w',
+        w3wWords: 'filled.count.soap',
+      }),
+    ).toThrow(/W3W conversion is not available/)
   })
 
   it('formats clipboard values using the operator-facing display strings', () => {
     const result = convertCoordinates({
       ...createCoordinateConverterDraft(),
-      mode: 'wgs84',
-      latitude: '52.274681',
-      longitude: '-9.530912',
+      mode: 'dd',
+      latitude: '52.179337',
+      longitude: '-9.464944',
     })
 
-    expect(formatCoordinateClipboardValue(result, 'wgs84')).toContain('°N')
-    expect(formatCoordinateClipboardValue(result, 'itm')).toMatch(/^\d+, \d+$/)
-    expect(formatCoordinateClipboardValue(result, 'tm65')).toMatch(/^[A-Z] \d{5} \d{5}$/)
+    expect(formatCoordinateClipboardValue(result, 'ig')).toBe('Q 99842 04015')
+    expect(formatCoordinateClipboardValue(result, 'dd')).toBe('52.179337, -9.464944')
+    expect(formatCoordinateClipboardValue(result, 'dms')).toBe('52°10\'45.613"N, 9°27\'53.798"W')
   })
 })

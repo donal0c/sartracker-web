@@ -117,7 +117,7 @@ export function validateSettingsDraft(
 
 export function normalizeRosterInput(value: string): readonly string[] {
   return value
-    .split('\n')
+    .split(/[\n,]/)
     .map((line) => line.trim())
     .filter((line, index, values) => line !== '' && values.indexOf(line) === index)
 }

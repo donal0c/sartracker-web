@@ -16,7 +16,7 @@ const DRAWING_TOOL_OPTIONS = [
 ] as const
 
 /**
- * Renders the map-local drawing toolbar with one active tool at a time.
+ * Renders the map-local tool toolbar with one active tool at a time.
  */
 export function DrawingToolbar() {
   const controller = useDrawingStore((state) => state.controller)
@@ -28,7 +28,10 @@ export function DrawingToolbar() {
   const missionPhase = useMissionStore((state) => state.phase)
 
   const disabled = controller === null || missionId === null || missionPhase === 'recovery'
-  const activeDefinition = DRAWING_TOOL_OPTIONS.find((option) => option.value === activeTool)
+  const activeDefinition =
+    measurementMode === 'armed'
+      ? { label: 'Measure' }
+      : DRAWING_TOOL_OPTIONS.find((option) => option.value === activeTool)
   const [expanded, setExpanded] = useState(false)
 
   return (
@@ -46,7 +49,7 @@ export function DrawingToolbar() {
             type="button"
           >
             <div>
-              <p className="text-[10px] font-black uppercase tracking-[0.24em] text-amber-200">Drawing Tools</p>
+              <p className="text-[10px] font-black uppercase tracking-[0.24em] text-amber-200">Map Tools</p>
               <p
                 className="mt-1 font-mono text-[10px] font-bold uppercase tracking-[0.12em] text-stone-300"
                 data-testid="drawing-toolbar-active-mode"
@@ -97,6 +100,31 @@ export function DrawingToolbar() {
                 </button>
               )
             })}
+            <button
+              className={`min-h-14 border px-2 py-2 text-center text-[11px] uppercase tracking-[0.08em] transition ${
+                measurementMode === 'armed'
+                  ? 'border-amber-300 bg-amber-300/14 text-amber-50 shadow-[inset_0_0_0_1px_rgba(244,183,74,0.24)]'
+                  : 'border-stone-700 bg-[var(--sar-panel-raised)] text-stone-200 hover:border-stone-400 hover:bg-stone-800'
+              } disabled:cursor-not-allowed disabled:opacity-55`}
+              data-testid="drawing-tool-measure"
+              disabled={disabled || measurementController === null}
+              onClick={() => {
+                if (controller === null || measurementController === null) {
+                  return
+                }
+
+                if (measurementMode === 'armed') {
+                  measurementController.cancelMeasurement()
+                  return
+                }
+
+                controller.cancelActiveTool()
+                measurementController.armMeasurement()
+              }}
+              type="button"
+            >
+              <span className="block font-black">Measure</span>
+            </button>
           </div>
           <p className="mt-3 border-t border-[var(--sar-line)] pt-2 text-[10px] font-bold uppercase tracking-[0.1em] text-stone-500">
             LPB {Object.values(LPB_CATEGORIES).length} categories
@@ -110,7 +138,7 @@ export function DrawingToolbar() {
           onClick={() => setExpanded(true)}
           type="button"
         >
-          <span className="text-[10px] font-black uppercase tracking-[0.24em] text-amber-200">Drawing Tools</span>
+          <span className="text-[10px] font-black uppercase tracking-[0.24em] text-amber-200">Map Tools</span>
           <span
             className="border border-[var(--sar-line)] bg-[var(--sar-panel-raised)] px-3 py-1 text-[11px] font-bold uppercase tracking-[0.14em] text-stone-200"
             data-testid="drawing-toolbar-active-mode"

@@ -101,16 +101,16 @@ This is the default order when the user says “work on the next task.”
 | Done | A3.3: Simplify Map And Drawing Tool Chrome | Track A | `sartracker-web-6y3.3` | Done 2026-05-16 |
 | Done | A3.7: Add Marker At Grid Reference Workflow | Track A / Parity | `sartracker-web-6y3.7` | Done 2026-05-16 |
 | Done | R8: Add Tauri Beta Gatekeeper Guidance | Track B / Docs | `sartracker-web-977` | Done 2026-05-16 |
-| 1 | A3.10: Investigate And Fix Irish Grid Conversion Accuracy | Track A / Shared | `sartracker-web-6y3.10` | Ready, urgent map-trust bug |
-| 2 | A3.11: Stabilize Marker Placement From Coordinate Entry | Track A / Shared | `sartracker-web-6y3.11` | Ready, urgent map-trust bug |
-| 3 | A3.12: Fix Roster Name Entry Spacing | Track A | `sartracker-web-6y3.12` | Ready |
-| 4 | A3.13: Rework Coordinate Converter Formats And Naming | Track A / Coordinates | `sartracker-web-6y3.13` | Ready after A3.10 preferred |
-| 5 | A3.14: Rename Drawing Tools To Map Tools And Add Measure | Track A / Map Tools | `sartracker-web-6y3.14` | Ready |
+| Done | A3.10: Investigate And Fix Irish Grid Conversion Accuracy | Track A / Shared | `sartracker-web-6y3.10` | Done locally 2026-05-16 |
+| Done | A3.11: Stabilize Marker Placement From Coordinate Entry | Track A / Shared | `sartracker-web-6y3.11` | Done locally 2026-05-16 |
+| Done | A3.12: Fix Roster Name Entry Spacing | Track A | `sartracker-web-6y3.12` | Done locally 2026-05-16 |
+| Done | A3.13: Rework Coordinate Converter Formats And Naming | Track A / Coordinates | `sartracker-web-6y3.13` | Done locally 2026-05-16 |
+| Done | A3.14: Rename Drawing Tools To Map Tools And Add Measure | Track A / Map Tools | `sartracker-web-6y3.14` | Done locally 2026-05-16 |
 | Done | R9: Add Checked-In Boot/Fault/Autosave UI Regression Coverage | Verification | `sartracker-web-ahp` | Done 2026-05-16 |
 | 7 | R10: Compress Handoff And Annotate Historical Docs | Process / Docs | `sartracker-web-419` | Ready |
 | 8 | R11: Add Browser Harness Storage Non-Goals Note | Track A / Docs | `sartracker-web-mh5` | Ready |
 | 9 | S3: Layer Visibility Service Extraction | Shared / Track A | Create/update bead before starting | Ready |
-| 10 | A3.4: Clean Up Mission Mast And Right-Panel Duplication | Track A / Shared | `sartracker-web-6y3.4` | Best with S5 |
+| Done | A3.4: Clean Up Mission Mast And Right-Panel Duplication | Track A / Shared | `sartracker-web-6y3.4` | Done locally 2026-05-16 |
 | 11 | B2: Tauri Beta Release Template | Track B | Create/update bead before starting | Ready |
 | 12 | B3: First Internal Tauri Smoke Build | Track B | Create/update bead before starting | Ready after B2 |
 | 13 | S4: Map Overlay Consolidation And Camera Race Fix | Shared / Track B | Create/update bead before starting | Ready after S3 preferred |
@@ -119,7 +119,7 @@ This is the default order when the user says “work on the next task.”
 | 16 | V2: Visual Review Automation | Verification | Create/update bead before starting | Ready |
 | 17 | B4: GPX And Drawing Hit-Test Hardening | Track B | Create/update bead before starting | Ready |
 | 18 | A3.5: Add Operational Contrast/Theme Pass | Track A / UI | `sartracker-web-6y3.5` | Planned, not urgent |
-| 19 | A3.6: Move Static Operational Notes Out Of Primary Map Chrome | Track A / UI | `sartracker-web-6y3.6` | Planned, keep warnings visible |
+| Done | A3.6: Move Static Operational Notes Out Of Primary Map Chrome | Track A / UI | `sartracker-web-6y3.6` | Done locally 2026-05-16 |
 | 20 | A3.9: Add Configurable Weather Links Menu | Track A / UI | `sartracker-web-6y3.9` | Planned, external links only |
 | 21 | C1: Local Proprietary Map Package Requirements | Track B / Maps | Create/update bead before starting | Waiting for map facts |
 
@@ -343,8 +343,8 @@ Acceptance:
 
 Verification:
 
-- Browser-backed active and paused mission checks.
-- Existing mission lifecycle tests remain green.
+- Done locally 2026-05-16: normal sidebar no longer repeats the active mission name card while the command mast is visible; Focus Mode still keeps current mission context because the mast is hidden there.
+- Done locally 2026-05-16: `git diff --check`, `npm run lint`, `npm run build`, and `npm run test:all` passed.
 
 ### A3.5: Add Operational Contrast/Theme Pass
 
@@ -387,7 +387,8 @@ Acceptance:
 
 Verification:
 
-- Browser-backed hosted-mode and Focus Mode checks.
+- Done locally 2026-05-16: static Operational Notes were removed from the normal Layers tab while runtime, hosted-mode, autosave, and lifecycle backup warnings remain visible through the mast/banner paths.
+- Done locally 2026-05-16: `git diff --check`, `npm run lint`, `npm run build`, and `npm run test:all` passed.
 
 ### A3.7: Add Marker At Grid Reference Workflow
 
@@ -493,8 +494,8 @@ Acceptance:
 
 Verification:
 
-- Coordinate unit/golden tests.
-- Browser-backed Marker At GR and coordinate-converter check at the reported point.
+- Done locally 2026-05-16: `tests/unit/coordinates.test.ts` includes Eamonn's Outdoor Active reference. Root cause was the TM65 Helmert `towgs84` Y translation sign; fixing it aligns DD `52.179337, -9.464944` with `Q 99842 04015`.
+- Done locally 2026-05-16: focused coordinate, converter, marker, build, and browser verification passed; final `git diff --check`, `npm run lint`, `npm run build`, and `npm run test:all` passed.
 
 ### A3.11: Stabilize Marker Placement From Coordinate Entry
 
@@ -516,8 +517,8 @@ Acceptance:
 
 Verification:
 
-- Unit/integration coverage where the bug is found.
-- Browser-backed repeated marker placement, pan/zoom, and layer-refresh checks.
+- Done locally 2026-05-16: `tests/unit/marker-at-grid-panel.test.ts` covers refreshing marker runtime to the active mission before opening the coordinate-created marker draft.
+- Done locally 2026-05-16: Marker At GR E2E passed at `Q 99842 04015`.
 
 ### A3.12: Fix Roster Name Entry Spacing
 
@@ -540,8 +541,8 @@ Acceptance:
 
 Verification:
 
-- Unit coverage for roster parsing/serialization if applicable.
-- Browser-backed Settings roster entry check.
+- Done locally 2026-05-16: `tests/unit/settings-validation.test.ts` covers comma/newline roster parsing with internal spaces.
+- Done locally 2026-05-16: `tests/unit/settings-workspace.test.ts` covers preserving spaces while an operator types roster names.
 
 ### A3.13: Rework Coordinate Converter Formats And Naming
 
@@ -565,8 +566,8 @@ Acceptance:
 
 Verification:
 
-- Unit tests for supported conversions.
-- Browser-backed converter flow check.
+- Done locally 2026-05-16: `tests/unit/coordinate-tool.test.ts` covers IG, DD, DMS, W3W gated behavior, and clipboard formatting.
+- Done locally 2026-05-16: Chromium coordinate converter E2E passed for DD, IG, DMS, W3W gated copy/go-to flows.
 
 ### A3.14: Rename Drawing Tools To Map Tools And Add Measure
 
@@ -589,7 +590,7 @@ Acceptance:
 
 Verification:
 
-- Browser-backed Map Tools/Measure workflow check.
+- Done locally 2026-05-16: Chromium measurement E2E passed for Map Tools Measure, drawing/measurement handoff, simplified measurement labels, and mission-finish cleanup.
 
 ### B1: Tauri Beta Packaging Recon
 

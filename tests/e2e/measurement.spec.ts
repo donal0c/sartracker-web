@@ -22,8 +22,10 @@ test.describe('M9 measurement workflows', () => {
     await clickMap(page, { x: 560, y: 300 })
 
     await expect(page.getByTestId('measurement-count')).toHaveText('1')
-    await expect(page.getByTestId('measurement-list')).toContainText('T ')
-    await expect(page.getByTestId('measurement-list')).toContainText('M ')
+    await expect(page.getByTestId('measurement-list')).toContainText(/km|m/)
+    await expect(page.getByTestId('measurement-list')).toContainText('°')
+    await expect(page.getByTestId('measurement-list')).not.toContainText('T ')
+    await expect(page.getByTestId('measurement-list')).not.toContainText('M ')
 
     await clickMap(page, { x: 500, y: 200 })
     await clickMap(page, { x: 650, y: 230 })
@@ -68,11 +70,25 @@ test.describe('M9 measurement workflows', () => {
 
     await page.getByTestId('measurement-arm-btn').click()
     await expect(page.getByTestId('measurement-mode')).toHaveText('armed')
-    await expect(page.getByTestId('drawing-toolbar-active-mode')).toContainText('Select')
+    await expect(page.getByTestId('drawing-toolbar-active-mode')).toContainText('Measure')
 
     await page.getByTestId('drawing-tool-search_area').click()
     await expect(page.getByTestId('measurement-mode')).toHaveText('idle')
     await expect(page.getByTestId('drawing-toolbar-active-mode')).toContainText('Search Area')
+  })
+
+  test('arms measurement from the Map Tools toolbar', async ({ page }) => {
+    await page.getByTestId('drawing-toolbar-expand').click()
+    await expect(page.getByTestId('drawing-toolbar')).toContainText('Map Tools')
+
+    await page.getByTestId('drawing-tool-measure').click()
+    await expect(page.getByTestId('measurement-mode')).toHaveText('armed')
+    await expect(page.getByTestId('drawing-toolbar-active-mode')).toContainText('Measure')
+
+    await clickMap(page, { x: 420, y: 240 })
+    await clickMap(page, { x: 560, y: 300 })
+    await expect(page.getByTestId('measurement-count')).toHaveText('1')
+    await expect(page.getByTestId('measurement-list')).toContainText('°')
   })
 })
 

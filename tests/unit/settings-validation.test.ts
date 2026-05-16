@@ -81,4 +81,12 @@ describe('settings validation', () => {
       'Charlie',
     ])
   })
+
+  it('normalizes comma and newline separated roster names while preserving internal spaces', () => {
+    expect(normalizeRosterInput('Cathal Cudden, Tim Murphy\nJohn Cronin')).toEqual([
+      'Cathal Cudden',
+      'Tim Murphy',
+      'John Cronin',
+    ])
+  })
 })

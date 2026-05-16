@@ -133,7 +133,7 @@ Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
       verificationPrompt: `Verify this screenshot of the SAR Tracker in full operational mode:
 1. LEFT SIDE - MAP: A topographic map should be visible showing the Kerry mountains
 2. LEFT SIDE - DEVICES: Device markers with team names should be visible on the map
-3. LEFT SIDE - TOOLBAR: The drawing toolbar should be on the left side of the map
+3. LEFT SIDE - TOOLBAR: The Map Tools toolbar should be on the left side of the map
 4. LEFT SIDE - COORDS: A coordinate bar should be at the bottom of the map
 5. TOP HEADER: "Mountain Rescue" and "SAR Tracker" branding
 6. RIGHT SIDE - MISSION: Mission Control panel pinned at top showing "ACTIVE" status with running timers

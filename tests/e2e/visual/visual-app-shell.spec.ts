@@ -5,7 +5,7 @@
  * - Application branding and layout
  * - Map rendering with correct basemap
  * - Sidebar panels in their default states
- * - Drawing toolbar presence and completeness
+ * - Map Tools toolbar presence and completeness
  * - Coordinate bar functionality
  *
  * Each test captures a screenshot with a verification manifest entry.
@@ -47,7 +47,7 @@ test.describe('Visual: App Shell', () => {
 4. There should be a "TRACKING" section showing idle status (active tab by default)
 5. The left side should show a topographic map (OpenTopoMap basemap with terrain contours)
 6. The top of the map should have 4 basemap switcher buttons (OpenTopoMap, ESRI World Topo, OpenStreetMap, ESRI Satellite)
-7. A collapsed drawing toolbar should be visible on the left side with a Drawing Tools label and current active tool
+7. A collapsed map toolbar should be visible on the left side with a Map Tools label and current active tool
 8. A coordinate bar should be visible at the bottom of the map
 9. The overall theme should be dark (dark backgrounds with light text)
 Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
@@ -62,7 +62,7 @@ Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
     })
   })
 
-  test('drawing toolbar shows all 7 tools with correct labels', async ({ page }) => {
+  test('map toolbar shows all tools with correct labels', async ({ page }) => {
     await expect(page.getByTestId('drawing-toolbar')).toBeVisible()
     await page.getByTestId('drawing-toolbar-expand').click()
     await expect(page.getByTestId('drawing-tool-line')).toBeVisible()
@@ -71,15 +71,16 @@ Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
     await expect(page.getByTestId('drawing-tool-bearing_line')).toBeVisible()
     await expect(page.getByTestId('drawing-tool-search_sector')).toBeVisible()
     await expect(page.getByTestId('drawing-tool-text_label')).toBeVisible()
+    await expect(page.getByTestId('drawing-tool-measure')).toBeVisible()
 
     await captureElementAndRegister(page, 'drawing-toolbar', {
       testId: 'shell-drawing-toolbar',
-      testName: 'Drawing toolbar completeness',
+      testName: 'Map toolbar completeness',
       area: 'app-shell',
       severity: 'critical',
-      verificationPrompt: `Verify this screenshot of the SAR Tracker drawing toolbar:
-1. There should be exactly 7 drawing tool buttons arranged in a vertical toolbar
-2. The tools should be labeled: "Select", "Line", "Search Area", "Range Rings", "Bearing", "Sector", "Text Label"
+      verificationPrompt: `Verify this screenshot of the SAR Tracker Map Tools toolbar:
+1. There should be exactly 8 map tool buttons arranged in a vertical toolbar
+2. The tools should be labeled: "Select", "Line", "Search Area", "Range Rings", "Bearing", "Sector", "Text Label", "Measure"
 3. The "Select" tool should appear to be currently active (highlighted)
 4. There should be an "ACTIVE: SELECT" indicator at the top
 Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
@@ -90,6 +91,7 @@ Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
         'drawing-tool-bearing_line is visible',
         'drawing-tool-search_sector is visible',
         'drawing-tool-text_label is visible',
+        'drawing-tool-measure is visible',
       ],
     })
   })
@@ -188,7 +190,7 @@ Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
 4. Tracking status should still be visible in the reduced sidebar
 5. Layer Workspace presence should remain visible in the reduced sidebar so operators know layer controls are still available
 6. A mirrored focus coordinate display should be visible on top of the map
-7. The drawing toolbar and map health/status badge should remain visible on the map
+7. The Map Tools toolbar and map health/status badge should remain visible on the map
 Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
       playwrightAssertions: [
         'app-shell data-focus-mode is true',

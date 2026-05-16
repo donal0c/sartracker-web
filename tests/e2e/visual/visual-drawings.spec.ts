@@ -24,7 +24,7 @@ import {
   captureAndRegister,
 } from './helpers/verification-manifest'
 
-test.describe('Visual: Drawing Tools', () => {
+test.describe('Visual: Map Tools', () => {
   test.setTimeout(45000)
 
   test.beforeEach(async ({ page }) => {
@@ -215,7 +215,7 @@ Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
 3. A bearing line should be visible (a line extending in one direction from a point)
 4. A "Command Post" text label should be visible on the map
 5. All drawings should be on the topographic map of the Kerry mountains area
-6. The drawing toolbar on the left should show "Active: Select" (back to select mode after creating)
+6. The Map Tools toolbar on the left should show "Active: Select" (back to select mode after creating)
 7. The mission control panel should still show the mission is active
 8. Multiple SAR drawing types being visible simultaneously confirms the overlay system works correctly
 Report PASS or FAIL for each item, then an overall PASS/FAIL.`,

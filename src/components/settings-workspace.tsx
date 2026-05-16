@@ -42,6 +42,8 @@ export function SettingsWorkspace({ open, onClose }: SettingsWorkspaceProps) {
   const [feedback, setFeedback] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [coordinateDisplayMode, setCoordinateDisplayMode] = useState(readCoordinateDisplayMode)
+  const [coordinatorRosterText, setCoordinatorRosterText] = useState('')
+  const [adminRosterText, setAdminRosterText] = useState('')
   const settingsValidationContext = useMemo(createSettingsValidationContext, [])
 
   useEffect(() => {
@@ -58,6 +60,8 @@ export function SettingsWorkspace({ open, onClose }: SettingsWorkspaceProps) {
       .then((settings) => {
         if (!cancelled) {
           setDraft(createSettingsDraft(settings))
+          setCoordinatorRosterText(formatRosterInput(settings.missionDefaults.coordinatorRoster))
+          setAdminRosterText(formatRosterInput(settings.missionDefaults.adminRoster))
           setCoordinateDisplayMode(readCoordinateDisplayMode())
         }
       })
@@ -185,8 +189,9 @@ export function SettingsWorkspace({ open, onClose }: SettingsWorkspaceProps) {
                 <TextAreaField
                   label="Coordinator roster"
                   testId="settings-coordinator-roster"
-                  value={formatRosterInput(draft.missionDefaults.coordinatorRoster)}
-                  onChange={(value) =>
+                  value={coordinatorRosterText}
+                  onChange={(value) => {
+                    setCoordinatorRosterText(value)
                     updateDraft(setDraft, (current) => ({
                       ...current,
                       missionDefaults: {
@@ -194,13 +199,14 @@ export function SettingsWorkspace({ open, onClose }: SettingsWorkspaceProps) {
                         coordinatorRoster: normalizeRosterInput(value),
                       },
                     }))
-                  }
+                  }}
                 />
                 <TextAreaField
                   label="Admin roster"
                   testId="settings-admin-roster"
-                  value={formatRosterInput(draft.missionDefaults.adminRoster)}
-                  onChange={(value) =>
+                  value={adminRosterText}
+                  onChange={(value) => {
+                    setAdminRosterText(value)
                     updateDraft(setDraft, (current) => ({
                       ...current,
                       missionDefaults: {
@@ -208,7 +214,7 @@ export function SettingsWorkspace({ open, onClose }: SettingsWorkspaceProps) {
                         adminRoster: normalizeRosterInput(value),
                       },
                     }))
-                  }
+                  }}
                 />
 
                 <div className="space-y-2">

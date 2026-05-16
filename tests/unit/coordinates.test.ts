@@ -35,7 +35,7 @@ describe('map coordinate formatting', () => {
 
   it('formats the combined coordinate bar string', () => {
     expect(formatMapCoordinateBar(52.274681, -9.530912)).toBe(
-      '52.274681°N, 9.530912°W  |  Q 95296 14688',
+      '52.274681°N, 9.530912°W  |  Q 95554 14717',
     )
   })
 
@@ -57,10 +57,18 @@ describe('wgs84 to TM65 conversion', () => {
     })
 
     expect(gridRefs).toEqual([
-      { name: 'Carrauntoohil Summit', ref: 'V 80011 84363' },
-      { name: 'Killarney Town Centre', ref: 'V 96415 90706' },
-      { name: 'Tralee Town Centre', ref: 'Q 83589 14525' },
+      { name: 'Carrauntoohil Summit', ref: 'V 80269 84392' },
+      { name: 'Killarney Town Centre', ref: 'V 96673 90735' },
+      { name: 'Tralee Town Centre', ref: 'Q 83848 14554' },
     ])
+  })
+
+  it('keeps Eamonn Outdoor Active DD and TM65 references aligned', () => {
+    const [easting, northing] = wgs84ToTM65(52.179337, -9.464944)
+
+    expect(Math.round(easting)).toBe(99842)
+    expect(Math.round(northing)).toBe(104015)
+    expect(formatIrishGridReference(easting, northing)).toBe('Q 99842 04015')
   })
 })
 
@@ -94,8 +102,16 @@ describe('reverse Irish coordinate conversions', () => {
   })
 
   it('converts TM65 coordinates back into WGS84 within operational tolerance', () => {
-    const [lat, lon] = tm65ToWgs84(80011, 84363)
+    const [lat, lon] = tm65ToWgs84(80269, 84392)
     expect(lat).toBeCloseTo(51.99917, 4)
     expect(lon).toBeCloseTo(-9.74406, 4)
+  })
+
+  it('parses Eamonn Outdoor Active TM65 reference back to the reported DD point', () => {
+    const [easting, northing] = parseIrishGridReference('Q 99842 04015')
+    const [lat, lon] = tm65ToWgs84(easting, northing)
+
+    expect(lat).toBeCloseTo(52.179337, 5)
+    expect(lon).toBeCloseTo(-9.464944, 5)
   })
 })

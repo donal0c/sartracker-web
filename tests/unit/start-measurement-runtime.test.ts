@@ -24,8 +24,7 @@ describe('startMeasurementRuntime', () => {
     expect(runtime?.mode).toBe('armed')
     expect(runtime?.draftStart).toBeNull()
     expect(runtime?.measurements).toHaveLength(1)
-    expect(runtime?.measurements[0]?.label).toContain('T ')
-    expect(runtime?.measurements[0]?.label).toContain('M ')
+    expect(runtime?.measurements[0]?.label).toMatch(/^\d+(\.\d+)? (m|km) \d+°$/)
   })
 
   it('clears transient state when the mission changes or is removed', () => {

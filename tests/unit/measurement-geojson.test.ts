@@ -28,7 +28,7 @@ describe('measurement geojson', () => {
     expect(collection.features[1]?.properties?.featureKind).toBe('preview')
   })
 
-  it('formats the permanent measurement label with distance and true/magnetic bearings', () => {
-    expect(formatMeasurementLabel(1532, 94.5, 90)).toBe('1.53 km · T 94.5° · M 90.0°')
+  it('formats the permanent measurement label with distance and map bearing only', () => {
+    expect(formatMeasurementLabel(1532, 94.5)).toBe('1.53 km 95°')
   })
 })

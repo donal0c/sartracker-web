@@ -506,7 +506,7 @@
             application version chip, which is stamped from the git commit at build time so teams can
             confirm they are running the same build. The right rail is split into
             <strong>Tracking</strong>, <strong>Tools</strong>, and <strong>Layers</strong>. The map itself
-            carries compact Maps and Drawing Tools controls, map health, offline tile status, and the
+            carries compact Maps and Map Tools controls, map health, offline tile status, and the
             coordinate instrument strip.
           </p>
           <figure class="screenshot">
@@ -515,7 +515,7 @@
           </figure>
           <div class="card-grid">
             <div class="card"><strong>Command mast</strong><br />Mission name, phase, timers, device counts, system state, autosave warning state, current app version, Diagnostics, Focus Mode, Settings, and Help.</div>
-            <div class="card"><strong>Map workspace</strong><br />Maps menu, Drawing Tools menu, live map canvas, health badge, offline-readiness badge, and coordinate strip.</div>
+            <div class="card"><strong>Map workspace</strong><br />Maps menu, Map Tools menu, live map canvas, health badge, offline-readiness badge, and coordinate strip.</div>
             <div class="card"><strong>Right rail</strong><br />Pinned Mission Control plus tabs for tracking, tools, and layer inspection.</div>
           </div>
         </section>
@@ -557,7 +557,7 @@
           </p>
           <div class="card-grid">
             <div class="card"><strong>Maps menu</strong><br />OpenTopoMap, ESRI World Topo, OpenStreetMap, ESRI Satellite, and the current-view offline tile check.</div>
-            <div class="card"><strong>Coordinate converter</strong><br />Accepts WGS84, ITM, or TM65 and can copy results or jump the map to the converted point.</div>
+            <div class="card"><strong>Coordinate converter</strong><br />Accepts IG, DD, and DMS, shows W3W as unavailable until integration decisions are settled, and can copy results or jump the map to the converted point.</div>
             <div class="card"><strong>Offline badge</strong><br />Keeps the offline tile readiness warning visible without exposing routine cache controls until the Maps menu is open.</div>
           </div>
           <p>
@@ -677,22 +677,22 @@
             To place a marker from a TM65 Irish Grid reference instead of a map click, open the
             <strong>Tools</strong> tab, use <strong>Marker At GR</strong>, choose the marker type, enter
             the grid reference, and create the marker. Valid references open the normal marker form with
-            WGS84, ITM, and TM65 coordinates prefilled. Invalid references fail visibly and do not create
+            WGS84, ITM, and TM65 coordinates prefilled. The marker runtime refreshes to the active mission before opening the form so coordinate-created markers do not silently vanish. Invalid references fail visibly and do not create
             a marker.
           </p>
         </section>
 
         <section id="tools">
-          <h2>Drawing And Measurement</h2>
+          <h2>Map Tools And Measurement</h2>
           <p>
-            Drawing tools are armed from the map toolbar. They require an active mission and are disabled
+            Map tools are armed from the map toolbar. They require an active mission and are disabled
             during recovery. Only one drawing or measurement mode should be active at a time; arming one
             cancels the other. Armed placement tools show a crosshair cursor; drag to pan without placing
             a drawing, then click intentionally to place.
           </p>
           <figure class="screenshot">
-            <img src="assets/tools-and-map.png" alt="Drawing tools expanded next to map and measurement panel" />
-            <figcaption>Drawing toolbar expanded with the Tools tab open.</figcaption>
+            <img src="assets/tools-and-map.png" alt="Map Tools expanded next to map and measurement panel" />
+            <figcaption>Map Tools toolbar expanded with the Tools tab open.</figcaption>
           </figure>
           <table>
             <thead>
@@ -706,7 +706,7 @@
               <tr><td>Bearing</td><td>Create a bearing line from an origin, distance, and true or magnetic bearing.</td></tr>
               <tr><td>Sector</td><td>Create a search sector from center, start bearing, end bearing, and radius.</td></tr>
               <tr><td>Text Label</td><td>Place map text with size, color, and rotation.</td></tr>
-              <tr><td>Measurement</td><td>Temporary two-point distance and bearing measurement from the Tools tab.</td></tr>
+              <tr><td>Measure</td><td>Temporary two-point distance and map-bearing measurement from Map Tools or the Tools tab.</td></tr>
             </tbody>
           </table>
           <div class="callout">

@@ -4,6 +4,7 @@ import {
   convertCoordinates,
   createCoordinateConverterDraft,
   formatCoordinateClipboardValue,
+  type CoordinateClipboardKind,
   type CoordinateConversionResult,
   type CoordinateConverterMode,
 } from '../features/coordinates/coordinate-tool'
@@ -23,7 +24,7 @@ export function CoordinateConverterDialog() {
   const [draft, setDraft] = useState(createCoordinateConverterDraft)
   const [result, setResult] = useState<CoordinateConversionResult | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [copiedKind, setCopiedKind] = useState<'wgs84' | 'itm' | 'tm65' | null>(null)
+  const [copiedKind, setCopiedKind] = useState<CoordinateClipboardKind | null>(null)
 
   useEffect(() => {
     if (!open) {
@@ -50,7 +51,7 @@ export function CoordinateConverterDialog() {
             className="mt-2 text-xl font-semibold text-stone-50"
             id={COORDINATE_CONVERTER_TITLE_ID}
           >
-            Convert WGS84, ITM, and TM65
+            Convert IG, DD, DMS, and W3W
           </h2>
         </div>
         <button
@@ -65,8 +66,8 @@ export function CoordinateConverterDialog() {
       <div className="mt-6 space-y-6">
           <section>
             <p className="sar-section-label">Input Mode</p>
-            <div className="mt-3 grid gap-2 sm:grid-cols-3">
-              {(['wgs84', 'itm', 'tm65'] as const).map((mode) => (
+            <div className="mt-3 grid gap-2 sm:grid-cols-4">
+              {(['ig', 'dd', 'dms', 'w3w'] as const).map((mode) => (
                 <label
                   className={`border px-3 py-2 text-sm font-semibold transition ${
                     draft.mode === mode
@@ -93,7 +94,16 @@ export function CoordinateConverterDialog() {
             </div>
           </section>
 
-          {draft.mode === 'wgs84' ? (
+          {draft.mode === 'ig' ? (
+            <Field
+              label="Irish Grid"
+              onChange={(value) => setDraft((current) => ({ ...current, irishGridRef: value }))}
+              testId="coordinate-input-irish-grid-ref"
+              value={draft.irishGridRef}
+            />
+          ) : null}
+
+          {draft.mode === 'dd' ? (
             <section className="grid gap-4 md:grid-cols-2">
               <Field
                 label="Latitude"
@@ -110,29 +120,29 @@ export function CoordinateConverterDialog() {
             </section>
           ) : null}
 
-          {draft.mode === 'itm' ? (
+          {draft.mode === 'dms' ? (
             <section className="grid gap-4 md:grid-cols-2">
               <Field
-                label="ITM Easting"
-                onChange={(value) => setDraft((current) => ({ ...current, itmEasting: value }))}
-                testId="coordinate-input-itm-easting"
-                value={draft.itmEasting}
+                label="Latitude DMS"
+                onChange={(value) => setDraft((current) => ({ ...current, dmsLatitude: value }))}
+                testId="coordinate-input-dms-latitude"
+                value={draft.dmsLatitude}
               />
               <Field
-                label="ITM Northing"
-                onChange={(value) => setDraft((current) => ({ ...current, itmNorthing: value }))}
-                testId="coordinate-input-itm-northing"
-                value={draft.itmNorthing}
+                label="Longitude DMS"
+                onChange={(value) => setDraft((current) => ({ ...current, dmsLongitude: value }))}
+                testId="coordinate-input-dms-longitude"
+                value={draft.dmsLongitude}
               />
             </section>
           ) : null}
 
-          {draft.mode === 'tm65' ? (
+          {draft.mode === 'w3w' ? (
             <Field
-              label="TM65 Grid Ref"
-              onChange={(value) => setDraft((current) => ({ ...current, tm65GridRef: value }))}
-              testId="coordinate-input-tm65-grid-ref"
-              value={draft.tm65GridRef}
+              label="What3Words"
+              onChange={(value) => setDraft((current) => ({ ...current, w3wWords: value }))}
+              testId="coordinate-input-w3w"
+              value={draft.w3wWords}
             />
           ) : null}
 
@@ -177,25 +187,30 @@ export function CoordinateConverterDialog() {
           {result !== null ? (
             <section className="grid gap-4 md:grid-cols-3">
               <ResultCard
-                copied={copiedKind === 'wgs84'}
-                label="WGS84"
-                onCopy={() => void copyValue('wgs84')}
-                testId="coordinate-result-wgs84"
-                value={result.wgs84Display}
+                copied={copiedKind === 'ig'}
+                label="IG"
+                onCopy={() => void copyValue('ig')}
+                testId="coordinate-result-ig"
+                value={result.irishGridRef}
               />
               <ResultCard
-                copied={copiedKind === 'itm'}
-                label="ITM"
-                onCopy={() => void copyValue('itm')}
-                testId="coordinate-result-itm"
-                value={result.itmDisplay}
+                copied={copiedKind === 'dd'}
+                label="DD"
+                onCopy={() => void copyValue('dd')}
+                testId="coordinate-result-dd"
+                value={result.ddDisplay}
               />
               <ResultCard
-                copied={copiedKind === 'tm65'}
-                label="TM65"
-                onCopy={() => void copyValue('tm65')}
-                testId="coordinate-result-tm65"
-                value={result.tm65GridRef}
+                copied={copiedKind === 'dms'}
+                label="DMS"
+                onCopy={() => void copyValue('dms')}
+                testId="coordinate-result-dms"
+                value={result.dmsDisplay}
+              />
+              <StaticResultCard
+                label="W3W"
+                testId="coordinate-result-w3w"
+                value={result.w3wDisplay}
               />
 
               <div className="md:col-span-3 flex justify-end">
@@ -217,7 +232,7 @@ export function CoordinateConverterDialog() {
     </DialogOverlay>
   )
 
-  async function copyValue(kind: 'wgs84' | 'itm' | 'tm65'): Promise<void> {
+  async function copyValue(kind: CoordinateClipboardKind): Promise<void> {
     if (result === null || typeof navigator === 'undefined' || navigator.clipboard === undefined) {
       return
     }
@@ -229,12 +244,14 @@ export function CoordinateConverterDialog() {
 
 function renderModeLabel(mode: CoordinateConverterMode): string {
   switch (mode) {
-    case 'wgs84':
-      return 'WGS84'
-    case 'itm':
-      return 'ITM'
-    case 'tm65':
-      return 'TM65'
+    case 'ig':
+      return 'IG'
+    case 'dd':
+      return 'DD'
+    case 'dms':
+      return 'DMS'
+    case 'w3w':
+      return 'W3W'
   }
 }
 
@@ -277,6 +294,19 @@ function ResultCard(props: {
           {props.copied ? 'Copied' : 'Copy'}
         </button>
       </div>
+      <p className="mt-2 font-mono text-sm text-stone-100">{props.value}</p>
+    </div>
+  )
+}
+
+function StaticResultCard(props: {
+  readonly label: string
+  readonly value: string
+  readonly testId: string
+}) {
+  return (
+    <div className="sar-module p-4" data-testid={props.testId}>
+      <p className="sar-section-label">{props.label}</p>
       <p className="mt-2 font-mono text-sm text-stone-100">{props.value}</p>
     </div>
   )

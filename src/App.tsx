@@ -181,7 +181,6 @@ function App() {
               {sidebarTab === 'layers' && (
                 <>
                   <LayerFilterPanel />
-                  <OperationalNotes runtimeMode={runtimeMode} />
                 </>
               )}
             </div>
@@ -415,7 +414,10 @@ export function CommandMast(props: {
             <span className="sar-section-label text-amber-300/90">Mission</span>
             <span className={phasePillClassName(phase)}>{phase}</span>
           </div>
-          <p className="mt-2 truncate text-sm font-bold text-stone-100">
+          <p
+            className="mt-2 truncate text-sm font-bold text-stone-100"
+            data-testid="current-mission-name"
+          >
             {currentMission?.name ?? 'No active mission'}
           </p>
           <p className="mt-1 truncate font-mono text-[11px] uppercase tracking-[0.12em] text-stone-500">
@@ -493,34 +495,6 @@ export function CommandMast(props: {
         </a>
       </div>
     </header>
-  )
-}
-
-function OperationalNotes(props: { readonly runtimeMode: RuntimeMode }) {
-  const notes =
-    props.runtimeMode === 'hosted-browser'
-      ? [
-          'ITM (EPSG:2157) is the working CRS.',
-          'WGS84 for GPS and map rendering.',
-          'Browser session storage only; use for testing and training.',
-          'SQLite/WAL mission persistence is desktop-only.',
-        ]
-      : [
-          'ITM (EPSG:2157) is the working CRS.',
-          'WGS84 for GPS and map rendering.',
-          'Service worker caching active for viewed tiles.',
-          'SQLite persistence active (WAL mode).',
-        ]
-
-  return (
-    <div className="sar-rail-section p-3 text-[13px] leading-relaxed text-stone-400">
-      <p className="mb-2 text-[11px] font-bold uppercase tracking-[0.12em] text-stone-300">Operational Notes</p>
-      <ul className="list-disc pl-4 space-y-1">
-        {notes.map((note) => (
-          <li key={note}>{note}</li>
-        ))}
-      </ul>
-    </div>
   )
 }
 

@@ -62,6 +62,7 @@ test.describe('M2 map shell', () => {
     await page.getByTestId('basemap-menu-toggle').click()
     await page.getByTestId('basemap-btn-esri_topo').click()
     await expect(page.getByTestId('basemap-menu-toggle')).toContainText('ESRI World Topo')
+    await expect(page.getByTestId('basemap-btn-esri_topo')).toBeHidden()
 
     await page.reload()
     await page.waitForSelector('canvas', { timeout: 15000 })
@@ -114,7 +115,7 @@ test.describe('M2 map shell', () => {
 
     await page.getByTestId('basemap-menu-toggle').click()
     await page.getByTestId('basemap-btn-esri_topo').click()
-    await expect(page.getByTestId('basemap-btn-esri_topo')).toHaveClass(/bg-amber-300/)
+    await expect(page.getByTestId('basemap-btn-esri_topo')).toBeHidden()
 
     const after = await page.evaluate(() => {
       const map = (window as Window & { __SARTRACKER_MAP__?: {

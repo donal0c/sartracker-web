@@ -10,45 +10,51 @@ test.describe('M18 coordinate converter', () => {
     await page.waitForSelector('canvas', { timeout: 15000 })
   })
 
-  test('converts WGS84 input, copies results, and activates a go-to target', async ({ page }) => {
+  test('converts DD input, copies results, and activates a go-to target', async ({ page }) => {
     await page.getByTestId('open-coordinate-converter').click()
     await expect(page.getByTestId('coordinate-converter-dialog')).toBeVisible()
 
-    await page.getByTestId('coordinate-input-latitude').fill('51.99917')
-    await page.getByTestId('coordinate-input-longitude').fill('-9.74406')
+    await page.getByTestId('coordinate-mode-dd').click()
+    await page.getByTestId('coordinate-input-latitude').fill('52.179337')
+    await page.getByTestId('coordinate-input-longitude').fill('-9.464944')
     await page.getByTestId('coordinate-convert-btn').click()
 
-    await expect(page.getByTestId('coordinate-result-itm')).toContainText('480245, 584452')
-    await expect(page.getByTestId('coordinate-result-tm65')).toContainText('V 80011 84363')
+    await expect(page.getByTestId('coordinate-result-ig')).toContainText('Q 99842 04015')
+    await expect(page.getByTestId('coordinate-result-dms')).toContainText('52°10')
 
-    await page.getByTestId('coordinate-result-tm65-copy').click()
-    await expect(page.getByTestId('coordinate-result-tm65-copy')).toContainText('Copied')
+    await page.getByTestId('coordinate-result-ig-copy').click()
+    await expect(page.getByTestId('coordinate-result-ig-copy')).toContainText('Copied')
 
     await page.getByTestId('coordinate-go-to-btn').click()
     await expect(page.getByTestId('coordinate-converter-dialog')).toBeHidden()
     await expect(page.getByTestId('coordinate-target-indicator')).toBeVisible()
   })
 
-  test('converts ITM and TM65 flows with the same modal', async ({ page }) => {
+  test('converts IG and DMS flows with the same modal and gates W3W', async ({ page }) => {
     await page.getByTestId('open-coordinate-converter').click()
 
-    await page.getByTestId('coordinate-mode-itm').click()
-    await page.getByTestId('coordinate-input-itm-easting').fill('480245')
-    await page.getByTestId('coordinate-input-itm-northing').fill('584452')
+    await page.getByTestId('coordinate-mode-ig').click()
+    await page.getByTestId('coordinate-input-irish-grid-ref').fill('Q 99842 04015')
     await page.getByTestId('coordinate-convert-btn').click()
-    await expect(page.getByTestId('coordinate-result-wgs84')).toContainText('51.999')
+    await expect(page.getByTestId('coordinate-result-dd')).toContainText('52.179336')
 
-    await page.getByTestId('coordinate-mode-tm65').click()
-    await page.getByTestId('coordinate-input-tm65-grid-ref').fill('V 80011 84363')
+    await page.getByTestId('coordinate-mode-dms').click()
+    await page.getByTestId('coordinate-input-dms-latitude').fill('52°10\'45.613"N')
+    await page.getByTestId('coordinate-input-dms-longitude').fill('9°27\'53.798"W')
     await page.getByTestId('coordinate-convert-btn').click()
-    await expect(page.getByTestId('coordinate-result-itm')).toContainText('480245')
+    await expect(page.getByTestId('coordinate-result-ig')).toContainText('Q 99842 04015')
+
+    await page.getByTestId('coordinate-mode-w3w').click()
+    await page.getByTestId('coordinate-input-w3w').fill('filled.count.soap')
+    await page.getByTestId('coordinate-convert-btn').click()
+    await expect(page.getByText(/W3W conversion is not available/)).toBeVisible()
   })
 
   test('uses dialog semantics, traps focus, and returns focus on Escape', async ({ page }) => {
     const opener = page.getByTestId('open-coordinate-converter')
     await opener.click()
 
-    const dialog = page.getByRole('dialog', { name: 'Convert WGS84, ITM, and TM65' })
+    const dialog = page.getByRole('dialog', { name: 'Convert IG, DD, DMS, and W3W' })
     await expect(dialog).toBeVisible()
     await expect(dialog.getByRole('button', { name: 'Close' })).toBeFocused()
 
