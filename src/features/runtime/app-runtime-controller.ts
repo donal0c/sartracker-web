@@ -10,7 +10,12 @@ let controller: AppRuntimeController | null = null
  */
 export function applyAppRuntimeController(nextController: AppRuntimeController): void {
   const previousController = controller
-  previousController?.dispose()
+  if (previousController !== null) {
+    safelyDisposeController(
+      previousController,
+      'Failed to dispose previous app runtime controller during replacement.',
+    )
+  }
 
   let disposed = false
   const wrappedController: AppRuntimeController = {
@@ -27,10 +32,12 @@ export function applyAppRuntimeController(nextController: AppRuntimeController):
       }
 
       disposed = true
-      nextController.dispose()
-
-      if (controller === wrappedController) {
-        controller = null
+      try {
+        nextController.dispose()
+      } finally {
+        if (controller === wrappedController) {
+          controller = null
+        }
       }
     },
   }
@@ -49,6 +56,20 @@ export function getAppRuntimeController(): AppRuntimeController | null {
  * Clears the global controller registry for unit tests that need isolation.
  */
 export function clearAppRuntimeControllerForTest(): void {
-  controller?.dispose()
+  if (controller !== null) {
+    safelyDisposeController(
+      controller,
+      'Failed to dispose app runtime controller while clearing test state.',
+    )
+  }
   controller = null
+}
+
+/** Disposes a controller without letting cleanup failures corrupt controller state. */
+function safelyDisposeController(targetController: AppRuntimeController, message: string): void {
+  try {
+    targetController.dispose()
+  } catch (error) {
+    console.error(message, error)
+  }
 }

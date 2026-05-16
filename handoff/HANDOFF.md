@@ -4,7 +4,7 @@
 
 ## Last Updated
 
-- 2026-05-16 by Codex — R4 lifecycle backup failure alert fixed; R5-R7 still block S3 unless explicitly accepted.
+- 2026-05-16 by Codex — R5 runtime controller replacement is exception-isolated; R6-R7 still block S3 unless explicitly accepted.
 
 ## Operating Rule
 
@@ -38,6 +38,7 @@ Supporting docs may explain details, but they must not become separate queues. T
 - Tauri packaging recon found a working macOS arm64 `.app` path: `npm run tauri build -- --bundles app` -> `src-tauri/target/release/bundle/macos/sartracker-web.app`. Full `npm run tauri build` currently fails at DMG bundling; unsigned/ad-hoc app is rejected by `spctl`, so first beta notes must call out Gatekeeper limitations.
 - Autosave now has an explicit forced `requestSync()` path. Mission start, pause, resume, finish, recover-resume, start-fresh, finalize, and unlock request immediate backup sync after the lifecycle database write. Lifecycle-forced autosave failures remain visible after unrelated successful syncs and clear only when the matching lifecycle sync succeeds. Autosave stale warnings use observed command-mast tick time rather than wall-clock subtraction, so clock jumps or laptop sleep do not create immediate false stale warnings.
 - Lifecycle backup failures after start, pause, resume, finish, finalize, or unlock now show a persistent non-dismissible alert below the mast. The chosen backend contract is that `sync_backup()` succeeds after non-active lifecycle transitions, but backup audit events remain active-mission-only.
+- Runtime controller replacement now catches and logs failures from disposing the previous app runtime controller, so a new controller can still be installed during reload/replacement. Active controller disposal remains idempotent and clears the registry even if underlying cleanup throws.
 - Hosted browser mode now reports `Browser test` / `Session storage only` in the command mast, keeps the amber hosted warning visible in Focus Mode, uses hosted-specific operational notes, and fails visibly if a non-Tauri runtime starts without the explicit browser harness.
 - A multi-agent review of S1/A1/B1/S2 found operator-trust issues around autosave visibility, hosted-mode honesty, lifecycle backup surfacing, runtime controller replacement, and startup rollback. The findings are now filed as remediation beads R1-R11 in `docs/two-track-execution-workplan.md`.
 - Latest deployed production URL has command-line validation for proxy endpoints:
@@ -78,15 +79,14 @@ Use these only for team testing, not as a production secret model.
 
 Default next task when the user says “go” or “work on the next task”:
 
-1. `R5: Make Runtime Controller Swap Exception-Safe` in `docs/two-track-execution-workplan.md`
-2. Bead: `sartracker-web-qdh`
-3. Goal: prevent runtime-controller replacement from leaving the app with a disposed current controller if new controller startup fails.
-4. Do not start `S3: Layer Visibility Service Extraction` until R5-R7 are fixed or explicitly accepted.
+1. `R6: Roll Back Core Runtimes When Initial Settings Reload Fails` in `docs/two-track-execution-workplan.md`
+2. Bead: `sartracker-web-10q`
+3. Goal: ensure core feature runtimes are disposed if initial settings reload fails during app runtime startup.
+4. Do not start `S3: Layer Visibility Service Extraction` until R6-R7 are fixed or explicitly accepted.
 
 ## Open Beads That Matter Now
 
 - `sartracker-web-vpz` — Hosted browser testing mode and parity hardening.
-- `sartracker-web-qdh` — R5 make runtime controller swap exception-safe.
 - `sartracker-web-10q` — R6 roll back core runtimes when initial settings reload fails.
 - `sartracker-web-syi` — R7 harden runtime fault reload flow.
 
@@ -103,13 +103,11 @@ Older parity/UI beads still exist, but new work should be selected through the t
 
 Most recent completed verification:
 
-- R4 unit and E2E coverage proves lifecycle backup failures render as a persistent non-dismissible alert outside the command mast.
-- R4 backend coverage proves `sync_backup()` succeeds after finish/finalize while keeping backup audit events active-mission-only.
-- The long browser-harness quota stress test now has an explicit 15s timeout to avoid false full-suite timeouts while preserving the same assertions.
+- R5 unit coverage proves a throwing previous app-runtime dispose is logged without blocking replacement controller installation.
+- R5 unit coverage also proves active controller disposal clears the registry and remains idempotent even if underlying cleanup throws.
 - `npm run lint` passed.
-- `npm run test -- --run tests/unit/runtime-boot-gate.test.ts` passed: 1 file, 5 tests.
-- `npm run test:e2e -- --project=chromium tests/e2e/map.spec.ts` passed: 9 browser workflow tests.
-- `npm run test -- --run` passed: 86 files, 407 tests.
+- `npm run test -- --run tests/unit/app-runtime-controller.test.ts tests/unit/bootstrap-app-runtime.test.ts tests/unit/start-app-runtime.test.ts` passed: 3 files, 15 tests.
+- `npm run test -- --run` passed: 86 files, 409 tests.
 - `npm run build` passed.
 - `npm run test:backend` passed: 38 Rust tests.
-- `npm run test:e2e -- --project=chromium` passed: 70 browser workflow tests.
+- `npm run test:e2e -- --project=chromium tests/e2e/map.spec.ts` passed: 9 browser workflow tests.
