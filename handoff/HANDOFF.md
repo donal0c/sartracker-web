@@ -4,6 +4,7 @@
 
 ## Last Updated
 
+- 2026-05-16 by Codex — Traccar upstream/proxy test credentials added for future agents.
 - 2026-05-15 by Codex — Settings save-close UX fixed after A2.
 
 ## Operating Rule
@@ -35,6 +36,19 @@ Supporting docs may explain details, but they must not become separate queues. T
   - `/api/session` returned 200 for the team credentials
   - `/api/devices` returned the 18-device roster
   - `/api/positions` returned 14 positions
+
+## Traccar Test Details
+
+Use these only for team testing, not as a production secret model.
+
+- Upstream team Traccar server: `http://kmrtsar.ddns.net:8082`
+- Hosted browser provider base URL: `https://sartracker-web.vercel.app`
+- Hosted proxy endpoints: `/api/session`, `/api/devices`, `/api/positions`
+- Auth mode: `Basic`
+- Email/username: `apiuser`
+- Password: `apiuser`
+- Hosted browser rule: do not enter the direct HTTP upstream URL in the hosted app; use the Vercel provider base URL above.
+- Desktop/Tauri rule: the direct HTTP upstream URL is acceptable because the browser mixed-content block does not apply.
 
 ## Active Planning Docs
 
