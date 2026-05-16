@@ -5,10 +5,50 @@ export type AppRuntimeController = {
 
 let controller: AppRuntimeController | null = null
 
+/**
+ * Replaces the active app runtime controller after disposing the previous one.
+ */
 export function applyAppRuntimeController(nextController: AppRuntimeController): void {
-  controller = nextController
+  const previousController = controller
+  previousController?.dispose()
+
+  let disposed = false
+  const wrappedController: AppRuntimeController = {
+    reloadSettings: async (options) => {
+      if (disposed) {
+        throw new Error('App runtime controller has been disposed.')
+      }
+
+      await nextController.reloadSettings(options)
+    },
+    dispose: () => {
+      if (disposed) {
+        return
+      }
+
+      disposed = true
+      nextController.dispose()
+
+      if (controller === wrappedController) {
+        controller = null
+      }
+    },
+  }
+
+  controller = wrappedController
 }
 
+/**
+ * Returns the currently active app runtime controller, when startup succeeded.
+ */
 export function getAppRuntimeController(): AppRuntimeController | null {
   return controller
+}
+
+/**
+ * Clears the global controller registry for unit tests that need isolation.
+ */
+export function clearAppRuntimeControllerForTest(): void {
+  controller?.dispose()
+  controller = null
 }

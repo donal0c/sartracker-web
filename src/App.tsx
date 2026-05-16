@@ -29,6 +29,10 @@ import { useFocusModeStore } from './features/focus-mode/focus-mode-store'
 import { useMissionStore } from './features/mission/mission-store'
 import { shouldEnableMissionBrowserHarness } from './features/mission/mission-browser-harness'
 import { calculateMissionTimerState, formatMissionDuration } from './features/mission/mission-timers'
+import {
+  type RuntimeBootPhase,
+  useRuntimeBootStore,
+} from './features/runtime/runtime-boot-store'
 import { useTrackingStore } from './features/tracking/tracking-store'
 import { APP_VERSION } from './lib/app-version'
 
@@ -54,6 +58,18 @@ function App() {
   const [sidebarTab, setSidebarTab] = useState<SidebarTab>('tracking')
   const openDiagnosticsWorkspace = useDiagnosticsWorkspaceStore((state) => state.openWorkspace)
   const browserTestingMode = shouldEnableMissionBrowserHarness()
+  const runtimeBootPhase = useRuntimeBootStore((state) => state.phase)
+  const runtimeBootError = useRuntimeBootStore((state) => state.error)
+
+  if (runtimeBootPhase !== 'ready') {
+    return (
+      <RuntimeBootGate
+        error={runtimeBootError}
+        onReload={() => window.location.reload()}
+        phase={runtimeBootPhase}
+      />
+    )
+  }
 
   return (
     <main
@@ -172,6 +188,74 @@ function App() {
 }
 
 export default App
+
+/**
+ * Blocks operator interaction until runtime startup either succeeds or fails visibly.
+ */
+export function RuntimeBootGate(props: {
+  readonly phase: RuntimeBootPhase
+  readonly error: string | null
+  readonly onReload: () => void
+}) {
+  if (props.phase === 'booting') {
+    return (
+      <main
+        className="sar-shell flex h-screen w-screen items-center justify-center"
+        data-testid="runtime-booting-shell"
+      >
+        <div className="border border-[var(--sar-line)] bg-[var(--sar-panel)] px-6 py-5 text-center shadow-2xl">
+          <p className="text-[11px] font-black uppercase tracking-[0.16em] text-amber-300">
+            SAR Tracker
+          </p>
+          <h1 className="mt-2 font-mono text-[22px] font-black text-stone-50">
+            Preparing operational runtime
+          </h1>
+          <p className="mt-2 text-sm text-stone-400" role="status">
+            Loading mission, tracking, and map services...
+          </p>
+        </div>
+      </main>
+    )
+  }
+
+  return (
+    <main
+      className="sar-shell flex h-screen w-screen items-center justify-center p-6"
+      data-testid="runtime-failed-shell"
+    >
+      <section
+        aria-labelledby="runtime-fault-title"
+        className="max-w-xl border border-rose-300/40 bg-rose-950/30 p-6 shadow-2xl"
+        role="alert"
+      >
+        <p className="text-[11px] font-black uppercase tracking-[0.16em] text-rose-200">
+          Startup fault
+        </p>
+        <h1
+          className="mt-2 font-mono text-[24px] font-black text-stone-50"
+          id="runtime-fault-title"
+        >
+          Runtime startup failed
+        </h1>
+        <p className="mt-3 text-sm leading-relaxed text-stone-200">
+          SAR Tracker could not start the runtime services needed for mission
+          operations. Reload the app; if the fault returns, capture diagnostics
+          before continuing operational use.
+        </p>
+        <pre className="mt-4 whitespace-pre-wrap border border-rose-200/20 bg-stone-950/70 p-3 text-left text-xs text-rose-100">
+          {props.error ?? 'Unknown startup failure.'}
+        </pre>
+        <button
+          className="sar-action-primary mt-5 px-4 py-2 text-[12px] font-black uppercase tracking-[0.08em]"
+          onClick={props.onReload}
+          type="button"
+        >
+          Reload
+        </button>
+      </section>
+    </main>
+  )
+}
 
 function HostedBrowserTestingBanner() {
   return (

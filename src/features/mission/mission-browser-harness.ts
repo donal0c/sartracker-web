@@ -90,8 +90,13 @@ export async function startMissionBrowserHarness(): Promise<void> {
 
   let activeTrackingStop: () => void = () => undefined
   let reloadGeneration = 0
+  let disposed = false
 
   const reloadSettings = async (options?: { readonly forceConnect?: boolean }) => {
+    if (disposed) {
+      throw new Error('Browser harness runtime has already been disposed.')
+    }
+
     const generation = ++reloadGeneration
     const runtimeSettings = await loadRuntimeBootstrapSettings(options?.forceConnect ?? false)
     const envTrackingConfig =
@@ -135,6 +140,11 @@ export async function startMissionBrowserHarness(): Promise<void> {
   applyAppRuntimeController({
     reloadSettings,
     dispose: () => {
+      if (disposed) {
+        return
+      }
+
+      disposed = true
       reloadGeneration += 1
       const previousTrackingStop = activeTrackingStop
       activeTrackingStop = () => undefined

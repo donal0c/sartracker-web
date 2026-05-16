@@ -86,7 +86,7 @@ const DEFAULT_DEPENDENCIES: StartAppRuntimeDependencies = {
  * Starts non-React application runtime services behind a small orchestration boundary.
  */
 export async function startAppRuntime(
-  dependencies: StartAppRuntimeDependencies = DEFAULT_DEPENDENCIES,
+  dependencies: Partial<StartAppRuntimeDependencies> = {},
 ): Promise<AppRuntimeController | null> {
   const resolvedDependencies = {
     ...DEFAULT_DEPENDENCIES,
@@ -105,7 +105,7 @@ export async function startAppRuntime(
   let activeServices = createNoopRuntimeServiceHandles()
   let reloadGeneration = 0
 
-  await startCoreFeatureRuntimes({
+  const coreFeatureRuntimes = await startCoreFeatureRuntimes({
     missionStore,
     attachmentAdapter: tauriMarkerAttachmentAdapter,
     gpxWatchSource: gpxImportSource,
@@ -117,13 +117,27 @@ export async function startAppRuntime(
     startGpxRuntime: resolvedDependencies.startGpxRuntime,
   })
   await reloadSettings()
+  let disposed = false
+
   return {
-    reloadSettings,
+    reloadSettings: async (options) => {
+      if (disposed) {
+        throw new Error('App runtime has already been disposed.')
+      }
+
+      await reloadSettings(options)
+    },
     dispose: () => {
+      if (disposed) {
+        return
+      }
+
+      disposed = true
       reloadGeneration += 1
       const previousServices = activeServices
       activeServices = createNoopRuntimeServiceHandles()
       stopRuntimeServices(previousServices)
+      coreFeatureRuntimes.dispose()
     },
   }
 

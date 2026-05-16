@@ -4,6 +4,7 @@
 
 ## Last Updated
 
+- 2026-05-16 by Codex — S1 Runtime Boot/Fault Guard completed; next default task is A1 hosted testing instructions and feedback intake.
 - 2026-05-16 by Codex — Hosted Traccar breadcrumb quota bug fixed; 48h mission start offset enabled.
 - 2026-05-15 by Codex — Settings save-close UX fixed after A2.
 
@@ -34,6 +35,7 @@ Supporting docs may explain details, but they must not become separate queues. T
 - Hosted browser tracking history now caps persisted breadcrumb positions/events before writing to session storage, with an emergency quota fallback. Live map rendering still receives the loaded tracking snapshot in the current session.
 - Mission Start Offset now accepts 0-48 hours, matching the planned tracking history window. Use larger offsets when the test Traccar server has no movement in the last few hours.
 - Settings successful save actions now close the workspace after persistence/reload completes. Failed saves keep the workspace open and show the error.
+- Startup now has an explicit boot/fault guard. The app shell stays gated while runtime services prepare, startup failures show a fault panel with Reload, and runtime controller replacement disposes the previous controller before installing the next one.
 - Latest deployed production URL has command-line validation for proxy endpoints:
   - `/api/session` returned 200 for the team credentials
   - `/api/devices` returned the 18-device roster
@@ -68,9 +70,9 @@ Use these only for team testing, not as a production secret model.
 
 Default next task when the user says “go” or “work on the next task”:
 
-1. `S1: Runtime Boot/Fault Guard` in `docs/two-track-execution-workplan.md`
-2. Bead: create/update before starting.
-3. Goal: make startup observable so the app never renders a broken shell with disabled controls and no explanation.
+1. `A1: Hosted Testing Instructions And Feedback Intake` in `docs/two-track-execution-workplan.md`
+2. Bead: `sartracker-web-vpz.1`
+3. Goal: make it easy for the team to find the hosted URL, start a mission, connect tracking, and report issues without relying on chat history.
 
 ## Open Beads That Matter Now
 
@@ -91,13 +93,10 @@ Older parity/UI beads still exist, but new work should be selected through the t
 
 Most recent completed verification:
 
+- S1 targeted unit tests passed: runtime boot store, bootstrap orchestration, app runtime controller registry, app runtime disposal, and boot/fault shell rendering.
 - `npm run lint` passed.
-- `npm run test -- --run` passed: 82 files / 382 tests.
+- `npm run test -- --run` passed: 86 files / 393 tests.
 - `npm run build` passed.
-- `npm run test:backend` passed.
-- `npx playwright test tests/e2e/mission.spec.ts --project=chromium` passed.
-- Live Traccar evidence on 2026-05-16: 5h breadcrumb window returned 0 points; 12h returned 485 points; 24h returned 13,695 points; 48h returned 14,567 points.
-- Pre-fix local UI reproduced the team error at 24h: `QuotaExceededError` on `sartracker:browser-harness`.
-- Fixed local UI validated with real Traccar via the hosted proxy at 24h and 48h: 18 devices, 14 current fixes, visible current markers and breadcrumb tracks, no session storage quota warnings.
-- Production Vercel validated with Playwright at `https://sartracker-web.vercel.app/?missionHarness=1` using 48h offset and real Traccar credentials: online, 18 devices, 14 fixes, 2,000 persisted positions, 2,037 events, 1,438,523 session storage bytes, no relevant console errors/warnings.
-- Production screenshot evidence: `test-results/live-traccar-validation/production-48h-traccar-viewport.png`.
+- `npm run test:backend` passed: 37 backend tests.
+- Inbuilt browser smoke at `http://127.0.0.1:5173/?missionHarness=1` passed: normal app shell visible, no boot/fault gate left visible, hosted-testing banner present.
+- Claude review invited on agent thread `thr_b24uuz`; no reply had arrived within the initial wait, so a Codex heartbeat is watching for a bounded follow-up.

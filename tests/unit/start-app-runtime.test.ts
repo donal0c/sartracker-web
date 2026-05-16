@@ -244,6 +244,33 @@ describe('app runtime startup', () => {
     expect(activeAutosaveStop).toHaveBeenCalledTimes(1)
     expect(activeTrackingStop).toHaveBeenCalledTimes(1)
   })
+
+  it('keeps runtime disposal idempotent when called more than once', async () => {
+    const store: MissionStore & AutosaveStore = createMissionStoreStub()
+    const activeAutosaveStop = vi.fn()
+    const activeTrackingStop = vi.fn()
+
+    const runtime = await startAppRuntime({
+      registerServiceWorker: vi.fn().mockResolvedValue(undefined),
+      isTauriRuntimeAvailable: vi.fn().mockReturnValue(true),
+      createMissionStore: vi.fn().mockReturnValue(store),
+      readRuntimeBootstrapSettings: vi.fn().mockResolvedValue(createBootstrapSettings()),
+      startMissionAutosave: vi.fn().mockReturnValue(activeAutosaveStop),
+      startMissionRuntime: vi.fn().mockResolvedValue({}),
+      startMissionGovernanceRuntime: vi.fn().mockResolvedValue({}),
+      startMarkerRuntime: vi.fn().mockResolvedValue({}),
+      startDrawingRuntime: vi.fn().mockResolvedValue({}),
+      startGpxRuntime: vi.fn().mockResolvedValue({}),
+      startTrackingRuntime: vi.fn().mockResolvedValue(activeTrackingStop),
+    })
+
+    runtime?.dispose()
+    runtime?.dispose()
+
+    expect(activeAutosaveStop).toHaveBeenCalledTimes(1)
+    expect(activeTrackingStop).toHaveBeenCalledTimes(1)
+    await expect(runtime?.reloadSettings()).rejects.toThrow('already been disposed')
+  })
 })
 
 function createMissionStoreStub(): MissionStore & AutosaveStore {

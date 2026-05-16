@@ -653,6 +653,14 @@
             configuration, warnings, and a support report preview. It can copy or export the report and
             can reset layer catalog metadata for a selected mission.
           </p>
+          <h3>Startup Faults</h3>
+          <p>
+            During startup, SAR Tracker shows a preparing screen until runtime services are ready. If the
+            runtime cannot start, the app shows a startup fault panel instead of a partially disabled
+            mission console. Use Reload once. If the same fault returns, do not treat the app as ready for
+            operational use; record the fault message and capture diagnostics after the app becomes
+            available again.
+          </p>
           <figure class="screenshot">
             <img src="assets/diagnostics-workspace.png" alt="Diagnostics workspace showing summary, storage, tracking, and report" />
             <figcaption>Diagnostics in browser harness mode with tracking intentionally unconfigured.</figcaption>

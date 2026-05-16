@@ -79,23 +79,23 @@ This is the default order when the user says “work on the next task.”
 
 | Order | Chunk | Track | Bead | Status |
 | --- | --- | --- | --- | --- |
-| 1 | S1: Runtime Boot/Fault Guard | Shared | Create/update bead before starting | Ready |
+| Done | S1: Runtime Boot/Fault Guard | Shared | `sartracker-web-3rl` | Done 2026-05-16 |
 | Done | A2: Hosted Mode Guardrails | Track A | `sartracker-web-vpz.3` | Done 2026-05-15 |
 | Done | Settings Save-Close UX | Track A | `sartracker-web-fnc` | Done 2026-05-15 |
 | Done | Hosted Tracking History Quota + 48h Offset | Track A | `sartracker-web-vpz.4` | Done 2026-05-16 |
-| 3 | A1: Hosted Testing Instructions And Feedback Intake | Track A | `sartracker-web-vpz.1` | Ready |
-| 4 | B1: Tauri Beta Packaging Recon | Track B | `sartracker-web-vpz.2` | Ready |
-| 5 | S2: Autosave Lifecycle Hardening | Shared / Track B | Create/update bead before starting | Ready after S1 |
-| 6 | S3: Layer Visibility Service Extraction | Shared / Track A | Create/update bead before starting | Ready |
-| 7 | A3: Team Feedback Triage Pass | Track A | Create/update beads from feedback | As feedback arrives |
-| 8 | B2: Tauri Beta Release Template | Track B | Create/update bead before starting | Ready after B1 |
-| 9 | B3: First Internal Tauri Smoke Build | Track B | Create/update bead before starting | Ready after B1/B2 |
-| 10 | S4: Map Overlay Consolidation And Camera Race Fix | Shared / Track B | Create/update bead before starting | Ready after S3 preferred |
-| 11 | S5: Mission Control View Model Extraction | Shared / Track A | Create/update bead before starting | Best after real UI feedback |
-| 12 | V1: Regression E2E Coverage | Verification | Create/update bead before starting | Ready |
-| 13 | V2: Visual Review Automation | Verification | Create/update bead before starting | Ready |
-| 14 | B4: GPX And Drawing Hit-Test Hardening | Track B | Create/update bead before starting | Ready |
-| 15 | C1: Local Proprietary Map Package Requirements | Track B / Maps | Create/update bead before starting | Waiting for map facts |
+| 1 | A1: Hosted Testing Instructions And Feedback Intake | Track A | `sartracker-web-vpz.1` | Ready |
+| 2 | B1: Tauri Beta Packaging Recon | Track B | `sartracker-web-vpz.2` | Ready |
+| 3 | S2: Autosave Lifecycle Hardening | Shared / Track B | Create/update bead before starting | Ready |
+| 4 | S3: Layer Visibility Service Extraction | Shared / Track A | Create/update bead before starting | Ready |
+| 5 | A3: Team Feedback Triage Pass | Track A | Create/update beads from feedback | As feedback arrives |
+| 6 | B2: Tauri Beta Release Template | Track B | Create/update bead before starting | Ready after B1 |
+| 7 | B3: First Internal Tauri Smoke Build | Track B | Create/update bead before starting | Ready after B1/B2 |
+| 8 | S4: Map Overlay Consolidation And Camera Race Fix | Shared / Track B | Create/update bead before starting | Ready after S3 preferred |
+| 9 | S5: Mission Control View Model Extraction | Shared / Track A | Create/update bead before starting | Best after real UI feedback |
+| 10 | V1: Regression E2E Coverage | Verification | Create/update bead before starting | Ready |
+| 11 | V2: Visual Review Automation | Verification | Create/update bead before starting | Ready |
+| 12 | B4: GPX And Drawing Hit-Test Hardening | Track B | Create/update bead before starting | Ready |
+| 13 | C1: Local Proprietary Map Package Requirements | Track B / Maps | Create/update bead before starting | Waiting for map facts |
 
 ## Ready Work Chunks
 
@@ -347,11 +347,9 @@ Acceptance:
 
 Verification:
 
-- Unit tests for boot-state transitions.
-- Unit tests for dispose-before-replace and idempotent dispose.
-- Targeted app-start check in the actual rendered app.
-- Playwright regression coverage for boot/failure states when automatable.
-- Chrome or Chrome DevTools MCP if startup failure needs browser/network/runtime inspection that Playwright cannot expose.
+- Done 2026-05-16: unit tests for boot-state transitions, boot/fault shell rendering, startup orchestration, dispose-before-replace, and idempotent disposal.
+- Done 2026-05-16: `npm run lint`, `npm run test -- --run`, `npm run build`, and `npm run test:backend` passed.
+- Done 2026-05-16: targeted app-start check with the inbuilt browser at `http://127.0.0.1:5173/?missionHarness=1` showed the normal app shell and hosted-testing banner with no boot/fault gate left visible.
 
 ### S2: Autosave Lifecycle Hardening
 
