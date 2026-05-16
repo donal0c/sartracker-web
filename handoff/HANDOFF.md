@@ -4,12 +4,7 @@
 
 ## Last Updated
 
-- 2026-05-16 by Codex — S2 autosave lifecycle hardening completed; next default task is S3 layer visibility service extraction.
-- 2026-05-16 by Codex — B1 Tauri beta packaging recon completed; next default task is S2 autosave lifecycle hardening.
-- 2026-05-16 by Codex — A1 hosted testing instructions and feedback intake completed; next default task is B1 Tauri beta packaging reconnaissance.
-- 2026-05-16 by Codex — S1 Runtime Boot/Fault Guard completed; next default task is A1 hosted testing instructions and feedback intake.
-- 2026-05-16 by Codex — Hosted Traccar breadcrumb quota bug fixed; 48h mission start offset enabled.
-- 2026-05-15 by Codex — Settings save-close UX fixed after A2.
+- 2026-05-16 by Codex — S1/A1/B1/S2 multi-agent review folded into the plan; R1-R7 now block S3 unless explicitly accepted.
 
 ## Operating Rule
 
@@ -42,6 +37,7 @@ Supporting docs may explain details, but they must not become separate queues. T
 - Hosted tester instructions now have a concise quick-start run sheet, URL/base-URL rules, bug-report template fields, and triage buckets. The operator manual has a hosted testing and feedback section.
 - Tauri packaging recon found a working macOS arm64 `.app` path: `npm run tauri build -- --bundles app` -> `src-tauri/target/release/bundle/macos/sartracker-web.app`. Full `npm run tauri build` currently fails at DMG bundling; unsigned/ad-hoc app is rejected by `spctl`, so first beta notes must call out Gatekeeper limitations.
 - Autosave now has an explicit forced `requestSync()` path. Mission start, pause, resume, finish, recover-resume, start-fresh, finalize, and unlock request immediate backup sync after the lifecycle database write. Autosave status tracks last success/failure and the command mast shows an amber autosave warning if sync is failing or stale.
+- A multi-agent review of S1/A1/B1/S2 found operator-trust issues around autosave visibility, hosted-mode honesty, lifecycle backup surfacing, runtime controller replacement, and startup rollback. The findings are now filed as remediation beads R1-R11 in `docs/two-track-execution-workplan.md`.
 - Latest deployed production URL has command-line validation for proxy endpoints:
   - `/api/session` returned 200 for the team credentials
   - `/api/devices` returned the 18-device roster
@@ -80,13 +76,21 @@ Use these only for team testing, not as a production secret model.
 
 Default next task when the user says “go” or “work on the next task”:
 
-1. `S3: Layer Visibility Service Extraction` in `docs/two-track-execution-workplan.md`
-2. Bead: create/update before starting.
-3. Goal: move layer visibility patch/cascade rules out of the React layer panel into a pure service while preserving current panel and map behavior.
+1. `R1: Preserve Lifecycle Autosave Failure Visibility` in `docs/two-track-execution-workplan.md`
+2. Bead: `sartracker-web-dfx`
+3. Goal: make sure lifecycle-forced autosave failures remain operator-visible until the matching lifecycle sync succeeds or a deliberate acknowledgement path exists.
+4. Do not start `S3: Layer Visibility Service Extraction` until R1-R7 are fixed or explicitly accepted.
 
 ## Open Beads That Matter Now
 
 - `sartracker-web-vpz` — Hosted browser testing mode and parity hardening.
+- `sartracker-web-dfx` — R1 preserve lifecycle autosave failure visibility.
+- `sartracker-web-5ps` — R2 replace autosave wall-clock stale detection.
+- `sartracker-web-3dv` — R3 make hosted browser system status honest.
+- `sartracker-web-57m` — R4 surface lifecycle backup failures non-dismissably.
+- `sartracker-web-qdh` — R5 make runtime controller swap exception-safe.
+- `sartracker-web-10q` — R6 roll back core runtimes when initial settings reload fails.
+- `sartracker-web-syi` — R7 harden runtime fault reload flow.
 
 Older parity/UI beads still exist, but new work should be selected through the two-track workplan unless the user explicitly asks for a specific bead.
 
