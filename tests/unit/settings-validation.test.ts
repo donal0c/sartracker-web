@@ -7,6 +7,7 @@ import {
 import {
   HOSTED_TRACCAR_PROXY_BASE_URL,
   normalizeRosterInput,
+  normalizeWeatherLinks,
   validateSettingsDraft,
 } from '../../src/features/settings/settings-validation'
 
@@ -87,6 +88,46 @@ describe('settings validation', () => {
       'Cathal Cudden',
       'Tim Murphy',
       'John Cronin',
+    ])
+  })
+
+  it('validates weather links as named external http or https URLs', () => {
+    const draft = createSettingsDraft(DEFAULT_APP_SETTINGS)
+    draft.weather.links = [
+      { name: '', url: 'https://www.met.ie/' },
+      { name: 'Unsafe script', url: 'javascript:alert(1)' },
+      { name: 'Relative URL', url: '/weather' },
+    ]
+
+    expect(validateSettingsDraft(draft)).toMatchObject({
+      'weather.links.0.name': 'Weather link name is required.',
+      'weather.links.1.url': 'Weather link URL must use http or https.',
+      'weather.links.2.url': 'Weather link URL must be a valid absolute URL.',
+    })
+  })
+
+  it('limits weather links to a small operational list', () => {
+    const draft = createSettingsDraft(DEFAULT_APP_SETTINGS)
+    draft.weather.links = Array.from({ length: 6 }, (_, index) => ({
+      name: `Weather ${index + 1}`,
+      url: `https://weather-${index + 1}.example.com/`,
+    }))
+
+    expect(validateSettingsDraft(draft)).toMatchObject({
+      'weather.links': 'Configure no more than 5 weather links.',
+    })
+  })
+
+  it('normalizes weather links for persistence and menu display', () => {
+    expect(
+      normalizeWeatherLinks([
+        { name: ' Met Éireann ', url: 'https://www.met.ie///' },
+        { name: '  ', url: 'https://blank-name.example.com' },
+        { name: 'Mountain Forecast', url: ' https://mountain-forecast.example.com/kerry ' },
+      ]),
+    ).toEqual([
+      { name: 'Met Éireann', url: 'https://www.met.ie' },
+      { name: 'Mountain Forecast', url: 'https://mountain-forecast.example.com/kerry' },
     ])
   })
 })

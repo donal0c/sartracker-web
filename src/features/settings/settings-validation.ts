@@ -1,8 +1,9 @@
-import type { AppSettingsDraft } from './settings-types'
+import type { AppSettingsDraft, WeatherLinkSettings } from './settings-types'
 
 export type SettingsValidationErrors = Partial<Record<string, string>>
 
 export const HOSTED_TRACCAR_PROXY_BASE_URL = 'https://sartracker-web.vercel.app'
+export const MAX_WEATHER_LINKS = 5
 
 export type SettingsValidationContext = {
   readonly hostedBrowserMode: boolean
@@ -112,7 +113,33 @@ export function validateSettingsDraft(
     errors.replayEnabled = 'Replay defaults are only available for the Traccar HTTP provider.'
   }
 
+  validateWeatherLinks(draft.weather.links, errors)
+
   return errors
+}
+
+function validateWeatherLinks(
+  links: readonly WeatherLinkSettings[],
+  errors: SettingsValidationErrors,
+): void {
+  if (links.length > MAX_WEATHER_LINKS) {
+    errors['weather.links'] = `Configure no more than ${MAX_WEATHER_LINKS} weather links.`
+  }
+
+  links.forEach((link, index) => {
+    if (link.name.trim() === '') {
+      errors[`weather.links.${index}.name`] = 'Weather link name is required.'
+    }
+
+    try {
+      const parsed = new URL(link.url.trim())
+      if (!['http:', 'https:'].includes(parsed.protocol)) {
+        errors[`weather.links.${index}.url`] = 'Weather link URL must use http or https.'
+      }
+    } catch {
+      errors[`weather.links.${index}.url`] = 'Weather link URL must be a valid absolute URL.'
+    }
+  })
 }
 
 export function normalizeRosterInput(value: string): readonly string[] {
@@ -124,4 +151,26 @@ export function normalizeRosterInput(value: string): readonly string[] {
 
 export function formatRosterInput(values: readonly string[]): string {
   return values.join('\n')
+}
+
+/**
+ * Normalizes operator-configured weather links before persistence or menu display.
+ */
+export function normalizeWeatherLinks(
+  links: readonly WeatherLinkSettings[],
+): readonly WeatherLinkSettings[] {
+  return links
+    .map((link) => ({
+      name: link.name.trim(),
+      url: normalizeWeatherUrl(link.url),
+    }))
+    .filter((link) => link.name !== '')
+}
+
+function normalizeWeatherUrl(value: string): string {
+  const parsed = new URL(value.trim())
+  parsed.hash = ''
+  parsed.pathname = parsed.pathname.replace(/\/+$/, '')
+
+  return parsed.toString().replace(/\/$/, '')
 }

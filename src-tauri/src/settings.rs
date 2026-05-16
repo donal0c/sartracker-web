@@ -12,6 +12,7 @@ const SETTINGS_FILE_NAME: &str = "settings.json";
 const SECRET_SERVICE: &str = "ie.kmrt.sartracker-web";
 const PASSWORD_SECRET_KEY: &str = "traccar_basic_password";
 const TOKEN_SECRET_KEY: &str = "traccar_bearer_token";
+const MAX_WEATHER_LINKS: usize = 5;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
@@ -64,9 +65,23 @@ pub struct AdvancedSettings {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+pub struct WeatherLinkSettings {
+    pub name: String,
+    pub url: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct WeatherSettings {
+    pub links: Vec<WeatherLinkSettings>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
 pub struct AppSettingsView {
     pub mission_defaults: MissionDefaultsSettings,
     pub data_source: DataSourceSettings,
+    pub weather: WeatherSettings,
     pub advanced: AdvancedSettings,
 }
 
@@ -75,6 +90,7 @@ pub struct AppSettingsView {
 pub struct AppSettingsDraft {
     pub mission_defaults: MissionDefaultsSettings,
     pub data_source: DataSourceDraft,
+    pub weather: WeatherSettings,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -124,6 +140,7 @@ pub struct TestConnectionResult {
 struct PersistedSettings {
     mission_defaults: MissionDefaultsSettings,
     data_source: PersistedDataSourceSettings,
+    weather: WeatherSettings,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -147,6 +164,7 @@ impl Default for PersistedSettings {
                 ..MissionDefaultsSettings::default()
             },
             data_source: PersistedDataSourceSettings::default(),
+            weather: WeatherSettings::default(),
         }
     }
 }
@@ -255,6 +273,7 @@ impl SettingsStore {
         let next = PersistedSettings {
             mission_defaults: normalize_mission_defaults(draft.mission_defaults),
             data_source: normalize_data_source(&draft.data_source),
+            weather: normalize_weather_settings(draft.weather),
         };
 
         write_settings_file(&self.settings_path, &next)?;
@@ -451,6 +470,7 @@ impl SettingsStore {
                 replay_duration_hours: persisted.data_source.replay_duration_hours,
                 secret_present,
             },
+            weather: persisted.weather.clone(),
             advanced: AdvancedSettings {
                 repair_layer_structure_available: false,
             },
@@ -579,6 +599,35 @@ fn normalize_roster(values: Vec<String>) -> Vec<String> {
     normalized
 }
 
+fn normalize_weather_settings(input: WeatherSettings) -> WeatherSettings {
+    WeatherSettings {
+        links: input
+            .links
+            .into_iter()
+            .filter_map(|link| {
+                let name = link.name.trim();
+                if name.is_empty() {
+                    return None;
+                }
+
+                Some(WeatherLinkSettings {
+                    name: name.to_string(),
+                    url: normalize_weather_url(&link.url),
+                })
+            })
+            .collect(),
+    }
+}
+
+fn normalize_weather_url(value: &str) -> String {
+    let mut url =
+        reqwest::Url::parse(value.trim()).expect("weather URL validated before normalize");
+    url.set_fragment(None);
+    let path = url.path().trim_end_matches('/').to_string();
+    url.set_path(if path.is_empty() { "/" } else { &path });
+    url.to_string().trim_end_matches('/').to_string()
+}
+
 fn update_secret(
     secret_store: &dyn SecretStore,
     key: &str,
@@ -661,6 +710,30 @@ fn validate_settings_draft(
         }
     }
 
+    validate_weather_links(&draft.weather.links)?;
+
+    Ok(())
+}
+
+fn validate_weather_links(links: &[WeatherLinkSettings]) -> Result<(), String> {
+    if links.len() > MAX_WEATHER_LINKS {
+        return Err(format!(
+            "Configure no more than {MAX_WEATHER_LINKS} weather links."
+        ));
+    }
+
+    for link in links {
+        if link.name.trim().is_empty() {
+            return Err(String::from("Weather link name is required."));
+        }
+
+        let url = reqwest::Url::parse(link.url.trim())
+            .map_err(|error| format!("Weather link URL must be a valid absolute URL: {error}"))?;
+        if !matches!(url.scheme(), "http" | "https") {
+            return Err(String::from("Weather link URL must use http or https."));
+        }
+    }
+
     Ok(())
 }
 
@@ -726,12 +799,25 @@ mod tests {
                     secret_input: String::from("topsecret"),
                     clear_secret: false,
                 },
+                weather: WeatherSettings {
+                    links: vec![WeatherLinkSettings {
+                        name: String::from("Met Éireann"),
+                        url: String::from("https://www.met.ie/"),
+                    }],
+                },
             })
             .expect("save settings");
 
         assert!(view.data_source.secret_present);
         let reloaded = store.load_view().expect("load settings");
         assert_eq!(reloaded.data_source.base_url, "https://traccar.example.com");
+        assert_eq!(
+            reloaded.weather.links,
+            vec![WeatherLinkSettings {
+                name: String::from("Met Éireann"),
+                url: String::from("https://www.met.ie")
+            }]
+        );
         assert!(reloaded.data_source.secret_present);
 
         let _ = fs::remove_file(path);
@@ -761,6 +847,7 @@ mod tests {
                     replay_start: String::new(),
                     replay_duration_hours: 4,
                 },
+                weather: WeatherSettings::default(),
             },
         )
         .expect("write settings");
@@ -807,8 +894,50 @@ mod tests {
         assert!(loaded.data_source.tracking_cache_enabled);
         assert!(!loaded.data_source.replay_enabled);
         assert_eq!(loaded.data_source.replay_duration_hours, 4);
+        assert!(loaded.weather.links.is_empty());
 
         let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn rejects_unsafe_weather_links() {
+        let mut draft = AppSettingsDraft {
+            mission_defaults: PersistedSettings::default().mission_defaults,
+            data_source: DataSourceDraft {
+                provider_type: TrackingProviderType::None,
+                base_url: String::new(),
+                auth_mode: TrackingAuthMode::Basic,
+                email: String::new(),
+                auto_connect: true,
+                tracking_cache_enabled: true,
+                replay_enabled: false,
+                replay_start: String::new(),
+                replay_duration_hours: 4,
+                secret_input: String::new(),
+                clear_secret: false,
+            },
+            weather: WeatherSettings {
+                links: vec![WeatherLinkSettings {
+                    name: String::from("Unsafe"),
+                    url: String::from("javascript:alert(1)"),
+                }],
+            },
+        };
+
+        assert_eq!(
+            validate_settings_draft(&draft, false).expect_err("unsafe scheme"),
+            "Weather link URL must use http or https."
+        );
+
+        draft.weather.links = vec![WeatherLinkSettings {
+            name: String::new(),
+            url: String::from("https://www.met.ie/"),
+        }];
+
+        assert_eq!(
+            validate_settings_draft(&draft, false).expect_err("blank name"),
+            "Weather link name is required."
+        );
     }
 
     fn unique_settings_path(label: &str) -> PathBuf {

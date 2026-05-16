@@ -504,7 +504,9 @@
             <strong>Browser test</strong> and <strong>Session storage only</strong> so the testing lane is
             not confused with desktop operational persistence. The right side of the mast shows the current
             application version chip, which is stamped from the git commit at build time so teams can
-            confirm they are running the same build. The right rail is split into
+            confirm they are running the same build. The mast also includes a compact
+            <strong>Weather</strong> menu for configured external weather websites; it does not fetch,
+            parse, or forecast weather inside SAR Tracker. The right rail is split into
             <strong>Tracking</strong>, <strong>Tools</strong>, and <strong>Layers</strong>. The map itself
             carries compact Maps and Map Tools controls, map health, offline tile status, and the
             coordinate instrument strip.
@@ -514,7 +516,7 @@
             <figcaption>Main operational shell during an active browser-harness mission.</figcaption>
           </figure>
           <div class="card-grid">
-            <div class="card"><strong>Command mast</strong><br />Mission name, phase, timers, device counts, system state, autosave warning state, current app version, Diagnostics, Focus Mode, Settings, and Help.</div>
+            <div class="card"><strong>Command mast</strong><br />Mission name, phase, timers, device counts, system state, autosave warning state, current app version, Diagnostics, Focus Mode, Settings, Weather, and Help.</div>
             <div class="card"><strong>Map workspace</strong><br />Maps menu, Map Tools menu, live map canvas, health badge, offline-readiness badge, and coordinate strip.</div>
             <div class="card"><strong>Right rail</strong><br />Pinned Mission Control plus tabs for tracking, tools, and layer inspection.</div>
           </div>
@@ -769,8 +771,8 @@
         <section id="settings">
           <h2>Settings</h2>
           <p>
-            Settings is where mission defaults, tracking provider configuration, coordinate display mode,
-            and advanced repair placeholders live.
+            Settings is where mission defaults, tracking provider configuration, weather links,
+            coordinate display mode, and advanced repair placeholders live.
           </p>
           <figure class="screenshot">
             <img src="assets/settings-workspace.png" alt="Settings workspace showing mission defaults and data source configuration" />
@@ -783,6 +785,7 @@
             <tbody>
               <tr><td>Mission Defaults</td><td>Auto-refresh, auto-save, mission roots, coordinator roster, admin roster, and coordinate display preference.</td></tr>
               <tr><td>Data Sources</td><td>Provider type, Traccar URL, authentication mode, secret handling, auto-connect, tracking cache, replay defaults, and hosted-browser proxy guidance when the app is running from Vercel.</td></tr>
+              <tr><td>Weather Links</td><td>A small named list of external weather URLs, such as Met Éireann. URLs must be absolute <code>http</code> or <code>https</code> links. These links open external websites only; SAR Tracker does not import weather data.</td></tr>
               <tr><td>Advanced Settings</td><td>Reserved repair/support actions. Some actions may remain disabled until the matching milestone is complete.</td></tr>
             </tbody>
           </table>

@@ -108,21 +108,21 @@ This is the default order when the user says “work on the next task.”
 | Done | A3.14: Rename Drawing Tools To Map Tools And Add Measure | Track A / Map Tools | `sartracker-web-6y3.14` | Done locally 2026-05-16 |
 | Done | Live Validation: Team Feedback Batch | Verification | A3 batch | Passed on Vercel 2026-05-16, build `0.1.0+SHA.FCE7C9E58607` |
 | Done | R9: Add Checked-In Boot/Fault/Autosave UI Regression Coverage | Verification | `sartracker-web-ahp` | Done 2026-05-16 |
-| 7 | R10: Compress Handoff And Annotate Historical Docs | Process / Docs | `sartracker-web-419` | Ready |
-| 8 | R11: Add Browser Harness Storage Non-Goals Note | Track A / Docs | `sartracker-web-mh5` | Ready |
-| 9 | S3: Layer Visibility Service Extraction | Shared / Track A | Create/update bead before starting | Ready |
 | Done | A3.4: Clean Up Mission Mast And Right-Panel Duplication | Track A / Shared | `sartracker-web-6y3.4` | Done locally 2026-05-16 |
-| 11 | B2: Tauri Beta Release Template | Track B | Create/update bead before starting | Ready |
-| 12 | B3: First Internal Tauri Smoke Build | Track B | Create/update bead before starting | Ready after B2 |
-| 13 | S4: Map Overlay Consolidation And Camera Race Fix | Shared / Track B | Create/update bead before starting | Ready after S3 preferred |
-| 14 | S5: Mission Control View Model Extraction | Shared / Track A | Create/update bead before starting | Pair with A3.4 if selected |
-| 15 | V1: Regression E2E Coverage | Verification | Create/update bead before starting | Ready |
-| 16 | V2: Visual Review Automation | Verification | Create/update bead before starting | Ready |
-| 17 | B4: GPX And Drawing Hit-Test Hardening | Track B | Create/update bead before starting | Ready |
 | Done | A3.5: Add Operational Contrast/Theme Pass | Track A / UI | `sartracker-web-6y3.5` | Done locally 2026-05-16 |
 | Done | A3.6: Move Static Operational Notes Out Of Primary Map Chrome | Track A / UI | `sartracker-web-6y3.6` | Done locally 2026-05-16 |
-| 20 | A3.9: Add Configurable Weather Links Menu | Track A / UI | `sartracker-web-6y3.9` | Planned, external links only |
-| 21 | C1: Local Proprietary Map Package Requirements | Track B / Maps | Create/update bead before starting | Waiting for map facts |
+| Done | A3.9: Add Configurable Weather Links Menu | Track A / UI | `sartracker-web-6y3.9` | Done locally 2026-05-16, external links only |
+| Done | R10: Compress Handoff And Annotate Historical Docs | Process / Docs | `sartracker-web-419` | Done locally 2026-05-16 |
+| Done | R11: Add Browser Harness Storage Non-Goals Note | Track A / Docs | `sartracker-web-mh5` | Done locally 2026-05-16 |
+| 1 | S3: Layer Visibility Service Extraction | Shared / Track A | Create/update bead before starting | Ready |
+| 2 | B2: Tauri Beta Release Template | Track B | Create/update bead before starting | Ready |
+| 3 | B3: First Internal Tauri Smoke Build | Track B | Create/update bead before starting | Ready after B2 |
+| 4 | S4: Map Overlay Consolidation And Camera Race Fix | Shared / Track B | Create/update bead before starting | Ready after S3 preferred |
+| 5 | S5: Mission Control View Model Extraction | Shared / Track A | Create/update bead before starting | Pair with A3.4 if selected |
+| 6 | V1: Regression E2E Coverage | Verification | Create/update bead before starting | Ready |
+| 7 | V2: Visual Review Automation | Verification | Create/update bead before starting | Ready |
+| 8 | B4: GPX And Drawing Hit-Test Hardening | Track B | Create/update bead before starting | Ready |
+| 9 | C1: Local Proprietary Map Package Requirements | Track B / Maps | Create/update bead before starting | Waiting for map facts |
 
 ## Ready Work Chunks
 
@@ -144,12 +144,12 @@ Completed remediation:
 - `sartracker-web-977` — R8: Tauri beta docs and manual now include unsigned macOS app expectations, Gatekeeper warning language, quarantine removal guidance, and the internal-beta-only caveat.
 - `sartracker-web-ahp` — R9: checked-in browser and visual regression coverage now pins runtime booting, startup fault, autosave stale, autosave failure, focus-mode autosave visibility, and autosave warning accessibility.
 
-Follow-up remediation:
+Completed follow-up remediation:
 
-- `sartracker-web-419` — R10: Compress handoff and annotate historical docs.
-- `sartracker-web-mh5` — R11: Add browser harness storage non-goals note.
+- `sartracker-web-419` — R10: handoff compressed back to a baton-shaped current state; historical/supporting docs already point back to this workplan as the active queue.
+- `sartracker-web-mh5` — R11: browser harness storage now has a module-level non-goals note clarifying session-storage testing scope versus Tauri/SQLite operational persistence.
 
-Review finding files are under `tmp/review-s1-a1-b1-s2/` while being triaged and can be deleted once the remediation beads carry enough detail.
+Review finding files under `tmp/review-s1-a1-b1-s2/` are historical triage evidence only; the durable remediation state is now in the beads and this workplan.
 
 ### A1: Hosted Testing Instructions And Feedback Intake
 
@@ -472,8 +472,9 @@ Acceptance:
 
 Verification:
 
-- Unit coverage for URL validation/config shaping.
-- Browser-backed configured, empty, and invalid states.
+- Done locally 2026-05-16: unit coverage in `tests/unit/settings-validation.test.ts` and `tests/unit/browser-settings-store.test.ts` covers weather link validation, normalization, list limit, and browser settings persistence.
+- Done locally 2026-05-16: Chromium E2E in `tests/e2e/weather.spec.ts` covers empty Weather menu state, invalid URL rejection in Settings, and configured link opening in a new tab.
+- Done locally 2026-05-16: operator manual updated to describe Weather as external links only, not a weather integration.
 
 ### A3.10: Investigate And Fix Irish Grid Conversion Accuracy
 

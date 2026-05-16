@@ -23,6 +23,8 @@ import { useAppStore } from './lib/app-store'
 import { MissionReviewRuntimeBridge } from './features/mission-review/mission-review-runtime-bridge'
 import { TrackingStatusPanel } from './components/tracking-status-panel'
 import { SettingsWorkspace } from './components/settings-workspace'
+import { loadAppSettings } from './infrastructure/settings-store/tauri-settings-store'
+import type { WeatherLinkSettings } from './features/settings/settings-types'
 import { useDiagnosticsWorkspaceStore } from './features/diagnostics/diagnostics-workspace-store'
 import { GpxRuntimeBridge } from './features/gpx/gpx-runtime-bridge'
 import { HelicopterRuntimeBridge } from './features/helicopters/helicopter-runtime-bridge'
@@ -386,7 +388,7 @@ export function CommandMast(props: {
 
   return (
     <header className="sar-global-mast flex-shrink-0" data-testid="command-mast">
-      <div className="grid min-h-[88px] w-full grid-cols-[250px_176px_112px_112px_64px_64px_160px_92px_92px_92px_92px] items-stretch overflow-hidden">
+      <div className="grid min-h-[88px] w-full grid-cols-[250px_176px_112px_112px_64px_64px_160px_92px_92px_92px_92px_92px] items-stretch overflow-hidden">
         <div className="flex min-w-0 items-center gap-3 border-r border-[var(--sar-line)] px-4">
           <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center border border-amber-300/35 bg-amber-300/10 font-mono text-[11px] font-black text-amber-200">
             MR
@@ -482,6 +484,7 @@ export function CommandMast(props: {
         >
           Settings
         </button>
+        <WeatherMenu />
         <a
           className="sar-mast-button inline-flex items-center justify-center"
           data-testid="open-help-manual"
@@ -494,6 +497,85 @@ export function CommandMast(props: {
       </div>
     </header>
   )
+}
+
+/** Compact mast menu for operator-configured external weather resources. */
+function WeatherMenu() {
+  const [open, setOpen] = useState(false)
+  const [loading, setLoading] = useState(false)
+  const [links, setLinks] = useState<readonly WeatherLinkSettings[]>([])
+  const [error, setError] = useState<string | null>(null)
+
+  return (
+    <div className="relative flex min-w-0 border-r border-[var(--sar-line)]">
+      <button
+        aria-expanded={open}
+        className="sar-mast-button w-full"
+        data-testid="weather-menu-trigger"
+        onClick={() => {
+          if (open) {
+            setOpen(false)
+            return
+          }
+          setOpen(true)
+          void loadWeatherLinks()
+        }}
+        type="button"
+      >
+        Weather
+      </button>
+      {open ? (
+        <div
+          className="absolute right-0 top-full z-50 mt-1 w-72 border border-[var(--sar-line)] bg-[var(--sar-panel)] p-3 text-sm shadow-2xl"
+          data-testid="weather-menu"
+        >
+          <p className="sar-section-label text-amber-300">External Weather Links</p>
+          <p className="sar-helper-text mt-1">
+            Opens configured websites in a new tab. No weather data is fetched by SAR Tracker.
+          </p>
+          {loading ? (
+            <p className="mt-3 text-sm text-stone-300">Loading weather links...</p>
+          ) : error !== null ? (
+            <p className="mt-3 text-sm font-semibold text-rose-300">{error}</p>
+          ) : links.length === 0 ? (
+            <p className="mt-3 text-sm text-stone-300">
+              No weather links configured. Add named weather URLs in Settings.
+            </p>
+          ) : (
+            <div className="mt-3 space-y-2">
+              {links.map((link, index) => (
+                <a
+                  className="sar-button flex w-full items-center justify-between px-3 py-2 text-left text-[12px] font-bold text-stone-100"
+                  data-testid={`weather-link-open-${index}`}
+                  href={link.url}
+                  key={`${link.name}-${link.url}`}
+                  rel="noreferrer noopener"
+                  target="_blank"
+                >
+                  <span className="truncate">{link.name}</span>
+                  <span aria-hidden="true" className="ml-3 text-amber-300">Open</span>
+                </a>
+              ))}
+            </div>
+          )}
+        </div>
+      ) : null}
+    </div>
+  )
+
+  async function loadWeatherLinks(): Promise<void> {
+    setLoading(true)
+    setError(null)
+    try {
+      const settings = await loadAppSettings()
+      setLinks(settings.weather.links)
+    } catch (loadError) {
+      setError(toErrorMessage(loadError))
+      setLinks([])
+    } finally {
+      setLoading(false)
+    }
+  }
 }
 
 function TopReadout(props: {
@@ -589,4 +671,8 @@ function formatTime(value: string): string {
     minute: '2-digit',
     second: '2-digit',
   })
+}
+
+function toErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error)
 }

@@ -32,9 +32,19 @@ export type AdvancedSettings = {
   readonly repairLayerStructureAvailable: boolean
 }
 
+export type WeatherLinkSettings = {
+  readonly name: string
+  readonly url: string
+}
+
+export type WeatherSettings = {
+  readonly links: readonly WeatherLinkSettings[]
+}
+
 export type AppSettings = {
   readonly missionDefaults: MissionDefaultsSettings
   readonly dataSource: DataSourceSettings
+  readonly weather: WeatherSettings
   readonly advanced: AdvancedSettings
 }
 
@@ -43,6 +53,9 @@ export type AppSettingsDraft = {
   readonly dataSource: DataSourceSettings & {
     readonly secretInput: string
     readonly clearSecret: boolean
+  }
+  readonly weather: {
+    readonly links: readonly WeatherLinkSettings[]
   }
 }
 
@@ -83,6 +96,9 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
     replayDurationHours: 4,
     secretPresent: false,
   },
+  weather: {
+    links: [],
+  },
   advanced: {
     repairLayerStructureAvailable: false,
   },
@@ -99,6 +115,9 @@ export function createSettingsDraft(settings: AppSettings): AppSettingsDraft {
       ...settings.dataSource,
       secretInput: '',
       clearSecret: false,
+    },
+    weather: {
+      links: [...settings.weather.links],
     },
   }
 }

@@ -11,6 +11,7 @@ import {
 import {
   HOSTED_TRACCAR_PROXY_BASE_URL,
   getHostedTraccarBaseUrlError,
+  normalizeWeatherLinks,
   type SettingsValidationContext,
 } from '../../features/settings/settings-validation'
 
@@ -191,6 +192,11 @@ function readBrowserSettings(): AppSettings {
         ...parsed.dataSource,
         secretPresent: browserSecrets[parsed.dataSource?.authMode as TrackingAuthMode] !== undefined,
       },
+      weather: {
+        ...DEFAULT_APP_SETTINGS.weather,
+        ...parsed.weather,
+        links: normalizeWeatherLinks(parsed.weather?.links ?? []),
+      },
       advanced: {
         ...DEFAULT_APP_SETTINGS.advanced,
         ...parsed.advanced,
@@ -219,6 +225,9 @@ function toBrowserSettings(input: AppSettingsDraft): AppSettings {
       replayStart: replayEnabled ? input.dataSource.replayStart : '',
       replayDurationHours: input.dataSource.replayDurationHours,
       secretPresent: secret !== null,
+    },
+    weather: {
+      links: normalizeWeatherLinks(input.weather.links),
     },
     advanced: DEFAULT_APP_SETTINGS.advanced,
   }

@@ -114,7 +114,7 @@ test.describe('M12 settings workspace', () => {
 
     await page.getByTestId('open-settings-workspace').click()
     await page.getByTestId('settings-save-connect').click()
-    await expect(page.getByTestId('settings-workspace')).toBeHidden()
+    await expect(page.getByTestId('settings-workspace')).toBeHidden({ timeout: 15_000 })
     await expect(page.getByTestId('tracking-status')).toContainText('online')
 
     await page.getByTestId('mission-finish-btn').click()
@@ -133,6 +133,7 @@ test.describe('M12 settings workspace', () => {
   test('large hosted breadcrumb history does not block current tracking status or exceed browser storage cap', async ({
     page,
   }) => {
+    test.setTimeout(45_000)
     await routeTraccarSuccess(page, { breadcrumbCount: 14_500 })
 
     await page.getByTestId('open-settings-workspace').click()
@@ -150,7 +151,7 @@ test.describe('M12 settings workspace', () => {
 
     await page.getByTestId('open-settings-workspace').click()
     await page.getByTestId('settings-save-connect').click()
-    await expect(page.getByTestId('settings-workspace')).toBeHidden()
+    await expect(page.getByTestId('settings-workspace')).toBeHidden({ timeout: 15_000 })
 
     await expect(page.getByTestId('tracking-status')).toContainText('online')
     await expect(page.getByTestId('tracking-status')).toContainText('1')

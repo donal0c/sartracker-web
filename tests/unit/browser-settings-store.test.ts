@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import {
+  loadAppSettings,
   loadRuntimeBootstrapSettings,
   saveAppSettings,
   testTrackingConnection,
@@ -64,5 +65,26 @@ describe('browser settings store', () => {
       window.fetch = originalFetch
       window.localStorage.clear()
     }
+  })
+
+  it('persists configured weather links in browser validation settings', async () => {
+    window.localStorage.clear()
+    const draft = createSettingsDraft(DEFAULT_APP_SETTINGS)
+    draft.weather.links = [
+      { name: 'Met Éireann', url: 'https://www.met.ie/' },
+      { name: 'Mountain Forecast', url: 'https://mountain-forecast.example.com/kerry' },
+    ]
+
+    await saveAppSettings(draft)
+
+    expect(await loadAppSettings()).toMatchObject({
+      weather: {
+        links: [
+          { name: 'Met Éireann', url: 'https://www.met.ie' },
+          { name: 'Mountain Forecast', url: 'https://mountain-forecast.example.com/kerry' },
+        ],
+      },
+    })
+    window.localStorage.clear()
   })
 })

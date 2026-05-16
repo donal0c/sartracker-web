@@ -20,6 +20,14 @@ import type {
   UpsertMarkerInput,
 } from '../../infrastructure/mission-store/tauri-mission-store'
 
+/**
+ * Browser validation store for hosted/team-testing mode only.
+ *
+ * This sessionStorage-backed harness is not operational mission persistence,
+ * not a backup system, and not a browser replacement for the Tauri/SQLite
+ * mission store. It exists to exercise UI flows and hosted feedback sessions
+ * without leaking Tauri APIs into the browser test lane.
+ */
 type BrowserHarnessState = {
   readonly missions: readonly Mission[]
   readonly devices: readonly Device[]
