@@ -72,4 +72,43 @@ describe('tracking geojson', () => {
     expect(collection.features[0]?.geometry.type).toBe('LineString')
     expect(collection.features[0]?.properties.deviceId).toBe('1')
   })
+
+  it('builds a large single-device breadcrumb line without dropping current positions', () => {
+    const breadcrumbs = Array.from({ length: 14_500 }, (_, index) =>
+      normalizeTraccarPosition(
+        {
+          id: index + 1,
+          deviceId: 2,
+          latitude: 52 + index / 1_000_000,
+          longitude: -9.7 - index / 1_000_000,
+          fixTime: new Date(Date.UTC(2026, 4, 14, 10, 0, index)).toISOString(),
+        },
+        'live',
+      ),
+    )
+
+    const collection = createBreadcrumbFeatureCollection(
+      {
+        devices: devicesFixture.map((device) => normalizeTraccarDevice(device)),
+        positions: [
+          normalizeTraccarPosition(
+            {
+              id: 20_000,
+              deviceId: 2,
+              latitude: 52.1,
+              longitude: -9.8,
+              fixTime: '2026-05-16T10:30:00.000Z',
+            },
+            'live',
+          ),
+        ],
+        breadcrumbs,
+      },
+      5 * 60 * 1000,
+    )
+
+    expect(collection.features).toHaveLength(1)
+    expect(collection.features[0]?.geometry.type).toBe('LineString')
+    expect(collection.features[0]?.geometry.coordinates).toHaveLength(14_500)
+  })
 })

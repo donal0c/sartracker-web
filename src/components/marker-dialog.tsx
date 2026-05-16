@@ -39,7 +39,7 @@ export function MarkerDialog() {
       labelledBy={MARKER_DIALOG_TITLE_ID}
       onClose={() => controller.closeDialog()}
       open={dialog !== null}
-      panelClassName="max-h-[calc(100vh-4rem)] w-full max-w-2xl overflow-y-auto rounded-3xl border border-stone-700 bg-stone-900 p-6 shadow-2xl shadow-black/40"
+      panelClassName="max-h-[calc(100vh-1.5rem)] w-full max-w-2xl overflow-y-auto rounded-3xl border border-stone-700 bg-stone-900 p-5 shadow-2xl shadow-black/40"
       testId="marker-dialog"
     >
       <div className="flex items-center justify-between">
@@ -59,7 +59,7 @@ export function MarkerDialog() {
         </button>
       </div>
 
-      <div className="mt-6 space-y-6">
+      <div className="mt-5 space-y-4">
         <section>
           <p className="text-xs uppercase tracking-[0.2em] text-stone-300">Marker Type</p>
           <div className="mt-3 grid gap-2 sm:grid-cols-4">
@@ -227,7 +227,7 @@ export function MarkerDialog() {
 
           {runtimeError !== null ? <p className="text-sm text-rose-300">{runtimeError}</p> : null}
 
-          <section className="rounded-2xl border border-stone-800 bg-stone-950/40 p-4">
+          <section className="mb-16 rounded-2xl border border-stone-800 bg-stone-950/40 p-3">
             <div className="flex items-center justify-between gap-3">
               <div>
                 <p className="text-xs uppercase tracking-[0.2em] text-stone-300">Evidence Attachment</p>
@@ -247,7 +247,7 @@ export function MarkerDialog() {
                 </button>
               ) : null}
             </div>
-            <label className="mt-4 block text-sm text-stone-200">
+            <label className="mt-2 block text-sm text-stone-200">
               <span className="text-xs uppercase tracking-[0.2em] text-stone-300">Choose File</span>
               <input
                 className="mt-2 block w-full rounded-lg border border-stone-700 bg-stone-950 px-3 py-2 text-sm text-stone-100 file:mr-3 file:rounded-lg file:border-0 file:bg-amber-300/10 file:px-3 file:py-2 file:text-xs file:font-semibold file:text-amber-100"
@@ -263,12 +263,12 @@ export function MarkerDialog() {
                 type="file"
               />
             </label>
-            <p className="mt-3 text-sm text-stone-300" data-testid="marker-attachment-summary">
+            <p className="mt-2 text-sm text-stone-300" data-testid="marker-attachment-summary">
               {draft.attachmentName ?? 'No attachment selected.'}
             </p>
           </section>
 
-          <div className="flex justify-between gap-3">
+          <div className="sticky bottom-0 -mx-5 -mb-5 flex justify-between gap-3 border-t border-stone-700 bg-stone-900/95 px-5 py-3 shadow-[0_-18px_36px_rgba(0,0,0,0.42)] backdrop-blur">
             <div>
               {dialog.mode === 'edit' ? (
                 <button

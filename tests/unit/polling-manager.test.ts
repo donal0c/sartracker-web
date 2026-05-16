@@ -66,7 +66,7 @@ describe('polling manager', () => {
     expect(client.getDevices).toHaveBeenCalledTimes(2)
     expect(client.getCurrentPositions).toHaveBeenCalledTimes(2)
     expect(client.getBreadcrumbs).toHaveBeenCalled()
-    expect(onSnapshot).toHaveBeenCalledTimes(2)
+    expect(onSnapshot).toHaveBeenCalledTimes(4)
 
     poller.stop()
   })
@@ -91,7 +91,7 @@ describe('polling manager', () => {
 
     await vi.advanceTimersByTimeAsync(5_000)
 
-    expect(onSnapshot).toHaveBeenCalledTimes(2)
+    expect(onSnapshot).toHaveBeenCalledTimes(3)
     expect(onStatusChange).toHaveBeenCalledWith(
       expect.objectContaining({
         mode: 'offline',
@@ -261,6 +261,47 @@ describe('polling manager', () => {
     poller.stop()
   })
 
+  it('does not publish a fresh online snapshot if the mission becomes inactive mid-poll', async () => {
+    let pollingMode: 'active' | 'paused' | 'idle' = 'active'
+    const client = createClient({
+      getCurrentPositions: vi.fn().mockImplementation(() => {
+        pollingMode = 'idle'
+        return Promise.resolve(NORMALIZED_POSITIONS as readonly NormalizedTrackingPosition[])
+      }),
+    })
+    const onSnapshot = vi.fn()
+    const onStatusChange = vi.fn()
+
+    const poller = createPollingManager(client, {
+      intervalMs: 5_000,
+      staleThresholdMs: 60 * 60 * 1000,
+      onSnapshot,
+      onStatusChange,
+      getPollingMode: () => pollingMode,
+      now: () => new Date('2026-04-06T10:35:00.000Z'),
+    })
+
+    poller.start()
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect(onSnapshot).toHaveBeenCalledWith({
+      devices: [],
+      positions: [],
+      breadcrumbs: [],
+    })
+    expect(onStatusChange).toHaveBeenCalledWith(
+      expect.objectContaining({
+        mode: 'idle',
+        warning: 'Waiting for an active mission.',
+      }),
+    )
+    expect(onStatusChange).not.toHaveBeenCalledWith(
+      expect.objectContaining({ mode: 'online' }),
+    )
+
+    poller.stop()
+  })
+
   it('clamps the retry delay to maxBackoffMs once the unbounded value would exceed it', async () => {
     const client = createClient({
       getDevices: vi.fn().mockRejectedValue(new Error('offline')),
@@ -349,10 +390,10 @@ describe('polling manager', () => {
     poller.start()
     await vi.advanceTimersByTimeAsync(0)
 
-    const firstSnapshot = onSnapshot.mock.calls[0]?.[0] as {
+    const firstSnapshotWithBreadcrumbs = onSnapshot.mock.calls.at(-1)?.[0] as {
       breadcrumbs: readonly NormalizedTrackingPosition[]
     }
-    expect(firstSnapshot.breadcrumbs.map((breadcrumb) => breadcrumb.device_id)).toEqual([
+    expect(firstSnapshotWithBreadcrumbs.breadcrumbs.map((breadcrumb) => breadcrumb.device_id)).toEqual([
       '1',
       '3',
     ])
@@ -436,8 +477,8 @@ describe('polling manager', () => {
       new Date('2026-04-06T09:00:00.000Z'),
       expect.any(Date),
     )
-    expect(onSnapshot.mock.calls[0]?.[0].breadcrumbs).toHaveLength(3)
     expect(onSnapshot.mock.calls[1]?.[0].breadcrumbs).toHaveLength(3)
+    expect(onSnapshot.mock.calls[3]?.[0].breadcrumbs).toHaveLength(3)
 
     poller.stop()
   })

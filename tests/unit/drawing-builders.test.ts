@@ -122,6 +122,12 @@ describe('drawing builders', () => {
     expect(input.metadata_json).toContain('"rotation":15')
   })
 
+  it('defaults new text labels to a high-contrast map colour', () => {
+    const draft = createTextLabelDraft([-9.744, 51.999])
+
+    expect(draft.color).toBe('#FAFAF9')
+  })
+
   it('parses persisted drawing geometry and metadata', () => {
     const parsed = parsePersistedDrawing({
       id: 'drawing-1',

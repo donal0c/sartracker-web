@@ -57,6 +57,7 @@ export type RuntimeBootstrapSettings = {
     readonly password?: string
     readonly token?: string
   } | null
+  readonly trackingDisabledReason?: string
 }
 
 export const DEFAULT_APP_SETTINGS: AppSettings = {

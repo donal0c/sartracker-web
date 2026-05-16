@@ -7,6 +7,12 @@ import type {
 import { appendBreadcrumbPositions } from './breadcrumb-accumulator'
 import { annotateTrackingSnapshotHealth } from './tracking-snapshot-health'
 
+const EMPTY_TRACKING_SNAPSHOT: TrackingSnapshot = {
+  devices: [],
+  positions: [],
+  breadcrumbs: [],
+}
+
 export type TrackingPollerClient = {
   readonly authenticate: () => Promise<void>
   readonly getDevices: () => Promise<readonly NormalizedTrackingDevice[]>
@@ -116,13 +122,15 @@ export function createPollingManager(
 
       const pollingMode = options.getPollingMode?.() ?? 'active'
       if (pollingMode !== 'active') {
-        if (lastGoodSnapshot !== null) {
+        if (pollingMode === 'paused' && lastGoodSnapshot !== null) {
           options.onSnapshot(
             annotateTrackingSnapshotHealth(lastGoodSnapshot, {
               now: now(),
               deviceStaleThresholdMs: options.staleThresholdMs,
             }),
           )
+        } else if (pollingMode === 'idle') {
+          options.onSnapshot(EMPTY_TRACKING_SNAPSHOT)
         }
 
         publishStatus({
@@ -143,14 +151,47 @@ export function createPollingManager(
         client.getCurrentPositions(),
       ])
 
+      const currentPollingMode = options.getPollingMode?.() ?? 'active'
+      if (currentPollingMode !== 'active') {
+        publishInactiveMissionSnapshot(currentPollingMode)
+        scheduleNextPoll(options.intervalMs)
+        return
+      }
+
+      const recovered = consecutiveFailures > 0
+      consecutiveFailures = 0
+      lastSuccessAt = now().toISOString()
+      const currentSnapshot = { devices, positions, breadcrumbs: breadcrumbPositions }
+      lastGoodSnapshot = currentSnapshot
+      options.onSnapshot(
+        annotateTrackingSnapshotHealth(currentSnapshot, {
+          now: now(),
+          deviceStaleThresholdMs: options.staleThresholdMs,
+        }),
+      )
+      publishStatus({
+        mode: 'online',
+        recovered,
+        warning:
+          breadcrumbPositions.length === 0
+            ? 'Current fixes loaded; loading breadcrumb history.'
+            : recovered
+              ? 'CONNECTION RESTORED'
+              : null,
+      })
+
       const breadcrumbs = await fetchIncrementalBreadcrumbs(devices)
       breadcrumbPositions = appendBreadcrumbPositions(breadcrumbPositions, breadcrumbs)
 
       const rawSnapshot = { devices, positions, breadcrumbs: breadcrumbPositions }
+      const latestPollingMode = options.getPollingMode?.() ?? 'active'
+      if (latestPollingMode !== 'active') {
+        publishInactiveMissionSnapshot(latestPollingMode)
+        scheduleNextPoll(options.intervalMs)
+        return
+      }
+
       lastGoodSnapshot = rawSnapshot
-      const recovered = consecutiveFailures > 0
-      consecutiveFailures = 0
-      lastSuccessAt = now().toISOString()
 
       options.onSnapshot(
         annotateTrackingSnapshotHealth(rawSnapshot, {
@@ -186,6 +227,27 @@ export function createPollingManager(
       const backoffDelay = Math.min(unboundedDelay, maxBackoffMs)
       scheduleNextPoll(backoffDelay)
     }
+  }
+
+  function publishInactiveMissionSnapshot(pollingMode: 'paused' | 'idle'): void {
+    if (pollingMode === 'paused' && lastGoodSnapshot !== null) {
+      options.onSnapshot(
+        annotateTrackingSnapshotHealth(lastGoodSnapshot, {
+          now: now(),
+          deviceStaleThresholdMs: options.staleThresholdMs,
+        }),
+      )
+    } else if (pollingMode === 'idle') {
+      options.onSnapshot(EMPTY_TRACKING_SNAPSHOT)
+    }
+
+    publishStatus({
+      mode: 'idle',
+      warning:
+        pollingMode === 'paused'
+          ? 'Live refresh suspended while mission is paused.'
+          : 'Waiting for an active mission.',
+    })
   }
 
   return {

@@ -37,7 +37,7 @@ export function DrawingToolbar() {
       data-testid="drawing-toolbar"
     >
       {expanded ? (
-        <div className="max-h-[calc(100vh-9rem)] w-[8.75rem] overflow-y-auto p-3">
+        <div className="max-h-[calc(100vh-20rem)] w-[8.75rem] overflow-y-auto p-3">
           <div className="space-y-2">
             <div>
               <p className="text-[10px] font-black uppercase tracking-[0.24em] text-amber-200">Drawing Tools</p>

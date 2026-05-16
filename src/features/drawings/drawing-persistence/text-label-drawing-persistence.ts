@@ -69,7 +69,7 @@ export function createTextLabelDraftFromDrawing(drawing: Drawing): TextLabelDraw
     type: 'text_label',
     text: metadata?.text ?? parsed.label ?? parsed.name,
     fontSize: (metadata?.fontSize ?? 12).toString(),
-    color: metadata?.color ?? parsed.color ?? '#000000',
+    color: metadata?.color ?? parsed.color ?? '#FAFAF9',
     rotation: (metadata?.rotation ?? 0).toString(),
     point: metadata?.point ?? toLonLat(geometry.coordinates),
   }

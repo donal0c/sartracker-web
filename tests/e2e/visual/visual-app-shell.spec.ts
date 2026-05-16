@@ -46,8 +46,8 @@ test.describe('Visual: App Shell', () => {
 3. Below Mission Control, there should be a segmented tab control with Tracking / Tools / Layers
 4. There should be a "TRACKING" section showing idle status (active tab by default)
 5. The left side should show a topographic map (OpenTopoMap basemap with terrain contours)
-6. The top of the map should have 4 basemap switcher buttons (OpenTopoMap, ESRI Topo, OpenStreetMap, ESRI Satellite)
-7. A drawing toolbar should be visible on the left side with tools: Select, Line, Search Area, Range Rings, Bearing, Sector, Text Label
+6. The top of the map should have 4 basemap switcher buttons (OpenTopoMap, ESRI World Topo, OpenStreetMap, ESRI Satellite)
+7. A collapsed drawing toolbar should be visible on the left side with a Drawing Tools label and current active tool
 8. A coordinate bar should be visible at the bottom of the map
 9. The overall theme should be dark (dark backgrounds with light text)
 Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
@@ -78,12 +78,10 @@ Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
       area: 'app-shell',
       severity: 'critical',
       verificationPrompt: `Verify this screenshot of the SAR Tracker drawing toolbar:
-1. There should be exactly 7 drawing tool buttons arranged in a grid
+1. There should be exactly 7 drawing tool buttons arranged in a vertical toolbar
 2. The tools should be labeled: "Select", "Line", "Search Area", "Range Rings", "Bearing", "Sector", "Text Label"
-3. Each tool card should have a brief description of how to use it
-4. The "Select" tool should appear to be currently active (highlighted)
-5. There should be an "ACTIVE: SELECT" indicator at the top
-6. LPB category labels should be listed at the bottom (Child, Hiker, Hunter, Elderly, Dementia, etc.)
+3. The "Select" tool should appear to be currently active (highlighted)
+4. There should be an "ACTIVE: SELECT" indicator at the top
 Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
       playwrightAssertions: [
         'drawing-tool-line is visible',
@@ -112,7 +110,7 @@ Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
       severity: 'high',
       verificationPrompt: `Verify this screenshot of the SAR Tracker with basemap switcher:
 1. There should be exactly 4 basemap buttons in a horizontal row near the top of the map
-2. The buttons should be labeled: "OpenTopoMap", "ESRI Topo", "OpenStreetMap", "ESRI Satellite"
+2. The buttons should be labeled: "OpenTopoMap", "ESRI World Topo", "OpenStreetMap", "ESRI Satellite"
 3. The "OpenTopoMap" button should appear selected/highlighted (different color from others)
 4. The map itself should show a topographic map style with elevation contours and terrain features
 5. The map should be centered roughly on the Kerry mountains area in Ireland
@@ -148,7 +146,7 @@ Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
       verificationPrompt: `Verify this screenshot showing the SAR Tracker coordinate bar:
 1. At the bottom of the map area, there should be a coordinate bar
 2. The coordinate bar should display coordinates with degree symbols (°)
-3. The coordinates should show both WGS84 (lat/lon) and Irish Grid reference formats separated by a pipe (|)
+3. The coordinates should show both WGS84 (lat/lon) and Irish Grid reference formats in clearly separated fields
 4. The coordinates should be reasonable for Ireland (latitude ~51-53°N, longitude ~9-10°W)
 Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
       playwrightAssertions: [
@@ -187,7 +185,7 @@ Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
 2. The normal full sidebar header/tabs should be replaced by a reduced Focus Mode Plus sidebar
 3. The reduced sidebar should keep Mission Control visible with the active mission name and timers
 4. Tracking status should still be visible in the reduced sidebar
-5. Layer Workspace controls should remain visible in the reduced sidebar
+5. Layer Workspace presence should remain visible in the reduced sidebar so operators know layer controls are still available
 6. A mirrored focus coordinate display should be visible on top of the map
 7. The drawing toolbar and map health/status badge should remain visible on the map
 Report PASS or FAIL for each item, then an overall PASS/FAIL.`,

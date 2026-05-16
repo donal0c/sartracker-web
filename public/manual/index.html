@@ -581,6 +581,8 @@
             Secrets are intentionally kept out of mission SQLite and browser storage. If a stored secret
             already exists, Settings can show that one is present and can clear it on save. The password
             or token field is cleared after saving so stored secrets are not echoed back into the form.
+            In hosted browser testing, re-enter the password after a full page reload before reconnecting
+            live tracking, because browser-mode Traccar secrets are memory-only.
           </div>
           <div class="warning">
             <strong>Hosted browser testing:</strong> when the app is opened with <strong>?missionHarness=1</strong>,

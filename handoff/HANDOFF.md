@@ -4,7 +4,7 @@
 
 ## Last Updated
 
-- 2026-05-16 by Codex — R7 runtime fault path hardened; S3 is no longer blocked by R1-R7.
+- 2026-05-16 by Codex — Hosted verification follow-up fixes completed locally; deploy is still pending.
 
 ## Operating Rule
 
@@ -32,6 +32,10 @@ Supporting docs may explain details, but they must not become separate queues. T
 - Hosted Settings now warns on direct `http://` Traccar provider URLs, blocks Test/Save through validation, offers a hosted-proxy action, and prevents browser tracking bootstrap from stale direct-HTTP settings.
 - Hosted browser tracking history now caps persisted breadcrumb positions/events before writing to session storage, with an emergency quota fallback. Live map rendering still receives the loaded tracking snapshot in the current session.
 - Mission Start Offset now accepts 0-48 hours, matching the planned tracking history window. Use larger offsets when the test Traccar server has no movement in the last few hours.
+- The 48h offset is now aligned across the UI input, mission runtime validation, and browser E2E coverage. The older native-input max drift has been fixed locally.
+- Tracking now publishes current fixes before long breadcrumb history completes, caps browser-harness mission persistence to avoid session-storage quota pressure, and keeps the live map snapshot uncapped in the current session.
+- Mission finish/recovery now drives tracking to an honest idle state instead of leaving stale `ONLINE` telemetry visible after the mission is inactive. Hosted reloads with memory-only Traccar secrets now explain that the password must be re-entered before reconnecting.
+- Marker dialogs keep Save/Cancel visible with a sticky footer, and mission recovery copy now explicitly explains the interrupted-session decision.
 - Settings successful save actions now close the workspace after persistence/reload completes. Failed saves keep the workspace open and show the error.
 - Startup now has an explicit boot/fault guard. The app shell stays gated while runtime services prepare, startup failures show a fault panel with Reload, and runtime controller replacement disposes the previous controller before installing the next one.
 - Hosted tester instructions now have a concise quick-start run sheet, URL/base-URL rules, bug-report template fields, and triage buckets. The operator manual has a hosted testing and feedback section.
@@ -55,6 +59,7 @@ Supporting docs may explain details, but they must not become separate queues. T
   - deployment: `dpl_7Zk49528gSC3gpGdFCyvMF2sJCHG`
   - alias: `https://sartracker-web.vercel.app`
   - validated with production manual and hosted Settings checks.
+- Current local head has additional hosted verification fixes after the latest production deployment above. Do not claim the Vercel URL includes these fixes until the next deploy is completed and verified.
 
 ## Traccar Test Details
 
@@ -105,13 +110,10 @@ Older parity/UI beads still exist, but new work should be selected through the t
 
 Most recent completed verification:
 
-- R7 unit coverage proves runtime boot generation guards ignore stale/interleaved startup completions and late success after failure.
-- R7 unit coverage proves the boot watchdog surfaces a stuck startup as a failed boot, and the fault panel has focused clean reload guidance with assertive live-region semantics.
-- R7 browser-backed coverage proves a runtime fault shows the clean reload action and strips `missionHarness=1` from the URL after reload.
+- `npm run test` passed: 87 files, 421 tests.
 - `npm run lint` passed.
-- `npm run test -- --run tests/unit/runtime-boot-store.test.ts tests/unit/runtime-boot-gate.test.ts tests/unit/bootstrap-app-runtime.test.ts` passed: 3 files, 16 tests.
-- `npm run test -- --run` passed: 86 files, 414 tests.
-- `npm run build` passed.
+- `npm run build` passed, including bundle budget check.
 - `npm run test:backend` passed: 38 Rust tests.
-- `npm run test:e2e -- --project=chromium tests/e2e/map.spec.ts` passed: 10 browser workflow tests.
-- `npm run test:e2e -- --project=chromium` passed: 71 browser workflow tests.
+- `npm run test:e2e` passed: 97 Playwright tests across Chromium and visual projects.
+- Targeted final visual rerun passed for app shell and drawing overlays: 9 visual tests.
+- Independent visual re-review passed the corrected screenshots for drawing toolbar, coordinate bar, focus mode, marker dialogs, and multi-drawing map evidence.

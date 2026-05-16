@@ -97,7 +97,7 @@ export function createTextLabelDraft(point: LonLat): TextLabelDrawingDraft {
     type: 'text_label',
     text: '',
     fontSize: '12',
-    color: '#000000',
+    color: '#FAFAF9',
     rotation: '0',
     point,
   }

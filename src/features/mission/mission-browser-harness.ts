@@ -17,6 +17,9 @@ import {
 } from '../tracking/polling-manager'
 import { startTrackingRuntime } from '../tracking/start-tracking-runtime'
 import { applyTrackingSnapshot, applyTrackingStatus } from '../tracking/tracking-store'
+import { startMissionTrackingStatusBridge } from '../tracking/mission-tracking-status-bridge'
+
+const BROWSER_HARNESS_MAX_PERSISTED_TRACKING_POSITIONS = 2_000
 
 type BrowserHarnessContext = {
   readonly search: string
@@ -125,15 +128,30 @@ export async function startMissionBrowserHarness(): Promise<void> {
       missionStore: browserStore,
       applySnapshot: applyTrackingSnapshot,
       applyStatus: applyTrackingStatus,
+      maxPersistedPositionsPerSnapshot: BROWSER_HARNESS_MAX_PERSISTED_TRACKING_POSITIONS,
+      writeCache: false,
+      ...(runtimeSettings.trackingDisabledReason === undefined
+        ? {}
+        : { idleWarning: runtimeSettings.trackingDisabledReason }),
     })
+    const stopTrackingStatusBridge = trackingConfig === null
+      ? () => undefined
+      : startMissionTrackingStatusBridge({
+          applySnapshot: applyTrackingSnapshot,
+          applyStatus: applyTrackingStatus,
+        })
 
     if (generation !== reloadGeneration) {
       stopTracking()
+      stopTrackingStatusBridge()
       return
     }
 
     const previousTrackingStop = activeTrackingStop
-    activeTrackingStop = stopTracking
+    activeTrackingStop = () => {
+      stopTrackingStatusBridge()
+      stopTracking()
+    }
     previousTrackingStop()
   }
 

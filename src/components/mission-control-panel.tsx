@@ -358,7 +358,7 @@ export function MissionControlPanel() {
                 data-testid="mission-offset-input"
                 disabled={controller === null}
                 id={MISSION_OFFSET_INPUT_ID}
-                max="5"
+                max={String(MAX_START_OFFSET_HOURS)}
                 min="0"
                 onChange={(event) => setStartOffsetHours(event.target.value)}
                 step="0.5"
@@ -479,9 +479,14 @@ export function MissionControlPanel() {
             <p>{recoverableMission.name}</p>
             <p>Started: {new Date(recoverableMission.start_time).toLocaleString()}</p>
           </div>
+          <p className="mt-3 text-[12px] leading-relaxed text-amber-100/80">
+            A recoverable mission was found after a reload or interrupted session. Resume it
+            to continue the same operational record, or start fresh only if this is not the
+            current incident.
+          </p>
           <div className="mt-4 flex gap-2">
             <button
-              className="flex-1 bg-emerald-600 px-3 py-2 text-[12px] font-semibold text-white hover:bg-emerald-500"
+              className="flex-1 bg-amber-600 px-3 py-2 text-[12px] font-semibold text-white hover:bg-amber-500"
               onClick={() => void handleResumeRecoverable()}
               type="button"
             >

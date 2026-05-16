@@ -95,6 +95,12 @@ export async function loadRuntimeBootstrapSettings(
     settings.dataSource.baseUrl,
     createBrowserSettingsValidationContext(),
   )
+  const trackingDisabledReason = resolveBrowserTrackingDisabledReason({
+    settings,
+    secretPresent: secret !== undefined,
+    hostedUrlError,
+    forceConnect,
+  })
   const shouldConnect =
     settings.dataSource.providerType === 'traccar_http' &&
     (forceConnect || settings.dataSource.autoConnect) &&
@@ -119,7 +125,37 @@ export async function loadRuntimeBootstrapSettings(
               : { token: secret }),
           }
         : null,
+    ...(trackingDisabledReason !== undefined ? { trackingDisabledReason } : {}),
   }
+}
+
+function resolveBrowserTrackingDisabledReason(input: {
+  readonly settings: AppSettings
+  readonly secretPresent: boolean
+  readonly hostedUrlError: string | undefined
+  readonly forceConnect: boolean
+}): string | undefined {
+  if (input.settings.dataSource.providerType !== 'traccar_http') {
+    return 'Tracking is not configured.'
+  }
+
+  if (input.hostedUrlError !== undefined) {
+    return input.hostedUrlError
+  }
+
+  if (!input.settings.missionDefaults.autoRefreshEnabled) {
+    return 'Tracking auto-refresh is disabled in Settings.'
+  }
+
+  if (!input.secretPresent) {
+    return 'Browser testing does not persist Traccar passwords. Re-enter the password and Save, Connect & Close to reconnect.'
+  }
+
+  if (!input.forceConnect && !input.settings.dataSource.autoConnect) {
+    return 'Tracking auto-connect is off. Use Save, Connect & Close to start live tracking.'
+  }
+
+  return undefined
 }
 
 function createBrowserSettingsValidationContext(): SettingsValidationContext | undefined {

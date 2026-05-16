@@ -228,6 +228,62 @@ describe('startTrackingRuntime', () => {
       expect.any(Error),
     )
   })
+
+  it('can cap browser-only mission persistence without trimming the live map snapshot', async () => {
+    const applySnapshot = vi.fn()
+    const cacheWrite = vi.fn().mockResolvedValue('/tmp/tracking-cache.json')
+    const addPosition = vi.fn().mockResolvedValue(undefined)
+    const breadcrumbs = Array.from({ length: 5 }, (_, index) => ({
+      ...SNAPSHOT.breadcrumbs[0]!,
+      id: `breadcrumb-${index}`,
+      timestamp: new Date(Date.UTC(2026, 3, 6, 10, index, 0)).toISOString(),
+    }))
+    const largeSnapshot = {
+      ...SNAPSHOT,
+      breadcrumbs,
+    } satisfies TrackingSnapshot
+    let pollerHooks:
+      | {
+          onSnapshot: (snapshot: TrackingSnapshot) => void | Promise<void>
+          onStatusChange: (status: TrackingConnectionStatus) => void
+        }
+      | undefined
+
+    await startTrackingRuntime({
+      config: { baseUrl: 'http://test:8082' },
+      createClient: vi.fn().mockReturnValue({}),
+      createPoller: vi.fn().mockImplementation((_client, hooks) => {
+        pollerHooks = hooks
+        return { start: vi.fn(), stop: vi.fn() }
+      }),
+      cache: {
+        read: vi.fn().mockResolvedValue(null),
+        write: cacheWrite,
+      },
+      missionStore: createMissionStoreStub({
+        getActiveMission: vi.fn().mockResolvedValue({ id: 'mission-1' }),
+        listPositions: vi.fn().mockResolvedValue([]),
+        addPosition,
+      }),
+      applySnapshot,
+      applyStatus: vi.fn(),
+      maxPersistedPositionsPerSnapshot: SNAPSHOT.positions.length + 2,
+      writeCache: false,
+      now: () => new Date('2026-04-06T10:35:00.000Z'),
+    })
+
+    await pollerHooks?.onSnapshot(largeSnapshot)
+
+    expect(applySnapshot).toHaveBeenCalledWith(largeSnapshot)
+    expect(cacheWrite).not.toHaveBeenCalled()
+    expect(addPosition).toHaveBeenCalledTimes(SNAPSHOT.positions.length + 2)
+    expect(addPosition.mock.calls.map((call) => call[0].timestamp)).toEqual([
+      breadcrumbs[3]!.timestamp,
+      breadcrumbs[4]!.timestamp,
+      SNAPSHOT.positions[0]!.timestamp,
+      SNAPSHOT.positions[1]!.timestamp,
+    ])
+  })
 })
 
 function createMissionStoreStub(overrides: Record<string, unknown> = {}) {

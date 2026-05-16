@@ -21,7 +21,8 @@ type StartMissionInput = {
   readonly startTime?: string
 }
 
-const MAX_START_OFFSET_MILLISECONDS = 5 * 60 * 60 * 1000
+const MAX_START_OFFSET_HOURS = 48
+const MAX_START_OFFSET_MILLISECONDS = MAX_START_OFFSET_HOURS * 60 * 60 * 1000
 
 export type MissionRuntimeController = {
   readonly startMission: (input: StartMissionInput) => Promise<Mission>
@@ -165,7 +166,9 @@ function buildCreateMissionInput(input: StartMissionInput, now?: Date): CreateMi
   }
 
   if (now !== undefined && now.getTime() - normalizedStartTime.getTime() > MAX_START_OFFSET_MILLISECONDS) {
-    throw new Error('Mission start time cannot be more than 5 hours in the past.')
+    throw new Error(
+      `Mission start time cannot be more than ${MAX_START_OFFSET_HOURS} hours in the past.`,
+    )
   }
 
   return {

@@ -20,6 +20,36 @@ test.describe('M5 mission control workflows', () => {
     await expect(page.getByTestId('mission-elapsed')).toHaveText(/^02:0\d:\d\d$/)
   })
 
+  test('accepts the hosted testing 48 hour start offset without native validity drift', async ({
+    page,
+  }) => {
+    const offsetInput = page.getByTestId('mission-offset-input')
+    await expect(offsetInput).toHaveAttribute('max', '48')
+    await page.getByTestId('mission-name-input').fill('Forty Eight Hour History')
+    await offsetInput.fill('48')
+
+    const validity = await offsetInput.evaluate((input) => {
+      const element = input as HTMLInputElement
+      return {
+        value: element.value,
+        max: element.max,
+        valid: element.checkValidity(),
+        validationMessage: element.validationMessage,
+      }
+    })
+    expect(validity).toEqual({
+      value: '48',
+      max: '48',
+      valid: true,
+      validationMessage: '',
+    })
+
+    await page.getByTestId('mission-start-btn').click()
+
+    await expect(page.getByTestId('mission-control')).toContainText('active')
+    await expect(page.getByTestId('mission-elapsed')).toHaveText(/^48:0\d:\d\d$/)
+  })
+
   test('pauses and resumes while keeping elapsed time moving and active time frozen', async ({ page }) => {
     await page.getByTestId('mission-name-input').fill('Training Mission')
     await page.getByTestId('mission-start-btn').click()

@@ -79,6 +79,9 @@ type StartTrackingRuntimeDependencies = {
   readonly missionStore: TrackingRuntimeMissionStore
   readonly applySnapshot: (snapshot: TrackingSnapshot) => void
   readonly applyStatus: (status: TrackingConnectionStatus) => void
+  readonly idleWarning?: string
+  readonly maxPersistedPositionsPerSnapshot?: number
+  readonly writeCache?: boolean
   readonly logger?: TrackingRuntimeLogger
   readonly now?: () => Date
 }
@@ -97,6 +100,7 @@ export async function startTrackingRuntime(
 ): Promise<() => void> {
   const now = dependencies.now ?? (() => new Date())
   const logger = dependencies.logger ?? DEFAULT_TRACKING_RUNTIME_LOGGER
+  const writeCache = dependencies.writeCache ?? true
 
   if (dependencies.config === null) {
     dependencies.applyStatus({
@@ -104,7 +108,7 @@ export async function startTrackingRuntime(
       consecutiveFailures: 0,
       recovered: false,
       lastSuccessAt: null,
-      warning: 'Tracking is not configured.',
+      warning: dependencies.idleWarning ?? 'Tracking is not configured.',
     })
 
     return () => {}
@@ -135,23 +139,38 @@ export async function startTrackingRuntime(
   const poller = dependencies.createPoller(client, {
     onSnapshot: async (snapshot) => {
       dependencies.applySnapshot(snapshot)
-      await Promise.allSettled([
-        dependencies.cache.write(
+      const sideEffects: Promise<unknown>[] = [
+        persistTrackingSnapshot(
+          limitSnapshotForMissionPersistence(
+            snapshot,
+            dependencies.maxPersistedPositionsPerSnapshot,
+          ),
+          dependencies.missionStore,
+        ),
+      ]
+
+      if (writeCache) {
+        sideEffects.unshift(
+          dependencies.cache.write(
           serializeTrackingCachePayload({
             cached_at: now().toISOString(),
             devices: snapshot.devices,
             positions: snapshot.positions,
             breadcrumbs: snapshot.breadcrumbs,
           }),
-        ),
-        persistTrackingSnapshot(snapshot, dependencies.missionStore),
-      ]).then((results) => {
-        const cacheWriteResult = results[0]
-        if (cacheWriteResult !== undefined && cacheWriteResult.status === 'rejected') {
-          logger.warn('Tracking cache update failed.', cacheWriteResult.reason)
+          ),
+        )
+      }
+
+      await Promise.allSettled(sideEffects).then((results) => {
+        if (writeCache) {
+          const cacheWriteResult = results[0]
+          if (cacheWriteResult !== undefined && cacheWriteResult.status === 'rejected') {
+            logger.warn('Tracking cache update failed.', cacheWriteResult.reason)
+          }
         }
 
-        const missionPersistenceResult = results[1]
+        const missionPersistenceResult = results[writeCache ? 1 : 0]
         if (missionPersistenceResult !== undefined && missionPersistenceResult.status === 'rejected') {
           logger.warn('Tracking mission persistence failed.', missionPersistenceResult.reason)
         }
@@ -165,6 +184,27 @@ export async function startTrackingRuntime(
   poller.start()
   return () => {
     poller.stop()
+  }
+}
+
+function limitSnapshotForMissionPersistence(
+  snapshot: TrackingSnapshot,
+  maxPersistedPositionsPerSnapshot: number | undefined,
+): TrackingSnapshot {
+  if (maxPersistedPositionsPerSnapshot === undefined) {
+    return snapshot
+  }
+
+  const maxBreadcrumbs = Math.max(0, maxPersistedPositionsPerSnapshot - snapshot.positions.length)
+  if (snapshot.breadcrumbs.length <= maxBreadcrumbs) {
+    return snapshot
+  }
+
+  return {
+    ...snapshot,
+    breadcrumbs: [...snapshot.breadcrumbs]
+      .sort((left, right) => Date.parse(left.timestamp) - Date.parse(right.timestamp))
+      .slice(-maxBreadcrumbs),
   }
 }
 

@@ -6,6 +6,7 @@ import type {
 import type { AutosaveSyncReason } from '../persistence/autosave-status-store'
 import { useAutosaveStatusStore } from '../persistence/autosave-status-store'
 import type { TrackingRuntimeMissionStore } from '../tracking/start-tracking-runtime'
+import { startMissionTrackingStatusBridge } from '../tracking/mission-tracking-status-bridge'
 
 const NOOP_STOP = () => undefined
 
@@ -25,6 +26,7 @@ export type RuntimeBootstrapSettings = {
     readonly password?: string
     readonly token?: string
   } | null
+  readonly trackingDisabledReason?: string
 }
 
 export type RuntimeServiceHandles = {
@@ -60,6 +62,9 @@ type CreateManagedRuntimeServicesDependencies = {
     readonly missionStore: TrackingRuntimeMissionStore
     readonly applySnapshot: (snapshot: import('../tracking/tracking-types').TrackingSnapshot) => void
     readonly applyStatus: (status: import('../tracking/tracking-types').TrackingConnectionStatus) => void
+    readonly idleWarning?: string
+    readonly maxPersistedPositionsPerSnapshot?: number
+    readonly writeCache?: boolean
   }) => Promise<() => void>
   readonly createClient: (config: NonNullable<RuntimeBootstrapSettings['trackingConfig']>) => unknown
   readonly createPoller: (
@@ -117,10 +122,11 @@ export async function createManagedRuntimeServices(
       }
 
   try {
-    const stopTracking = await dependencies.startTrackingRuntime({
-      config:
-        dependencies.runtimeSettings.trackingConfig ??
-        dependencies.readTrackingRuntimeConfig(),
+    const trackingConfig =
+      dependencies.runtimeSettings.trackingConfig ??
+      dependencies.readTrackingRuntimeConfig()
+    const stopTrackingPoller = await dependencies.startTrackingRuntime({
+      config: trackingConfig,
       createClient: dependencies.createClient,
       createPoller: dependencies.createPoller,
       cache: dependencies.runtimeSettings.trackingCacheEnabled
@@ -129,12 +135,24 @@ export async function createManagedRuntimeServices(
       missionStore: dependencies.missionStore,
       applySnapshot: dependencies.applySnapshot,
       applyStatus: dependencies.applyStatus,
+      ...(dependencies.runtimeSettings.trackingDisabledReason === undefined
+        ? {}
+        : { idleWarning: dependencies.runtimeSettings.trackingDisabledReason }),
     })
+    const stopTrackingStatusBridge = trackingConfig === null
+      ? NOOP_STOP
+      : startMissionTrackingStatusBridge({
+          applySnapshot: dependencies.applySnapshot,
+          applyStatus: dependencies.applyStatus,
+        })
 
     return {
       stopAutosave: autosave.stop,
       requestAutosaveSync: autosave.requestSync,
-      stopTracking,
+      stopTracking: () => {
+        stopTrackingStatusBridge()
+        stopTrackingPoller()
+      },
     }
   } catch (error) {
     autosave.stop()

@@ -51,7 +51,7 @@ test.describe('Visual: Mission Lifecycle', () => {
 5. The timers should show roughly the same time since the mission just started
 6. The current mission name "RIDGE SEARCH ALPHA" should be displayed
 7. There should be "PAUSE" and "FINISH" buttons that appear enabled/clickable
-8. There should be a "START" button that appears disabled/grayed out
+8. The start form/button should no longer be available while the mission is active
 Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
       playwrightAssertions: [
         'mission-control contains "active"',
@@ -94,10 +94,13 @@ Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
     await startMission(page, 'Pause Test Mission')
     await page.waitForTimeout(2000)
     await pauseMission(page)
-    await page.waitForTimeout(1500)
+    await page.waitForTimeout(3500)
 
     await expect(page.getByTestId('mission-pause-resume-btn')).toHaveText('Resume')
     await expect(page.getByTestId('mission-finish-btn')).toBeEnabled()
+    await expect(page.getByTestId('mission-elapsed')).not.toHaveText(
+      await page.getByTestId('mission-active-search').innerText(),
+    )
 
     await captureElementAndRegister(page, 'mission-control', {
       testId: 'mission-paused-state',
@@ -132,10 +135,10 @@ Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
       area: 'mission',
       severity: 'critical',
       verificationPrompt: `Verify this screenshot showing the mission finish confirmation dialog:
-1. A modal/dialog should be overlaid on the main application
+1. An alertdialog confirmation should be visible inside Mission Control
 2. The dialog should contain a "Confirm Finish" button or similar confirmation text
 3. The dialog should clearly communicate that finishing the mission is a significant action
-4. The main application should be visible but dimmed/blurred behind the dialog
+4. The dialog should trap focus and be visually distinct from the surrounding Mission Control content
 5. The mission should still show as "ACTIVE" in the background until confirmed
 Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
       playwrightAssertions: [
@@ -202,9 +205,9 @@ Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
       verificationPrompt: `Verify this screenshot of the SAR Tracker mission recovery section (embedded in the right sidebar, NOT a modal overlay):
 1. There should be a "RESUME MISSION" section or heading indicating a previous mission can be resumed
 2. The interrupted mission name "Recovery Scenario" should be displayed
-3. There should be a "Resume" button (amber/yellow colored) to continue the interrupted mission
+3. There should be a prominent "Resume" button to continue the interrupted mission
 4. There should be a "Start Fresh" button to abandon the interrupted mission and begin a new one
-5. The recovery section should clearly communicate that a previous mission was interrupted and needs operator decision
+5. The recovery section should clearly communicate that a previous mission was interrupted and needs an operator decision before continuing
 6. This is critical for operator safety — if the app crashes during a real SAR operation, the operator must be clearly prompted to resume
 Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
       playwrightAssertions: [

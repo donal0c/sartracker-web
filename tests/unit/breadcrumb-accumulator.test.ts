@@ -23,6 +23,14 @@ describe('breadcrumb accumulator', () => {
     expect(deduplicated).toHaveLength(3)
   })
 
+  it('does not rebuild breadcrumb history when an incremental poll has no new positions', () => {
+    const positions = breadcrumbsFixture.map((position) =>
+      normalizeTraccarPosition(position, 'live'),
+    )
+
+    expect(appendBreadcrumbPositions(positions, [])).toBe(positions)
+  })
+
   it('segments trails when time gaps exceed the configured threshold', () => {
     const positions = [
       normalizeTraccarPosition(

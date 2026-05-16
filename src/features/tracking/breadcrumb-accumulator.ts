@@ -9,6 +9,10 @@ export function appendBreadcrumbPositions(
   existing: readonly NormalizedTrackingPosition[],
   incoming: readonly NormalizedTrackingPosition[],
 ): readonly NormalizedTrackingPosition[] {
+  if (incoming.length === 0) {
+    return existing
+  }
+
   const deduplicated = new Map<string, NormalizedTrackingPosition>()
 
   for (const position of [...existing, ...incoming]) {
@@ -31,7 +35,7 @@ export function createBreadcrumbSegments(
     return []
   }
 
-  const [firstPosition, ...remainingPositions] = positions
+  const firstPosition = positions[0]
   if (firstPosition === undefined) {
     return []
   }
@@ -40,7 +44,12 @@ export function createBreadcrumbSegments(
   let currentSegment: NormalizedTrackingPosition[] = [firstPosition]
   let previous = firstPosition
 
-  for (const next of remainingPositions) {
+  for (let index = 1; index < positions.length; index += 1) {
+    const next = positions[index]
+    if (next === undefined) {
+      continue
+    }
+
     const gapMs = Date.parse(next.timestamp) - Date.parse(previous.timestamp)
 
     if (gapMs > gapThresholdMs) {

@@ -74,10 +74,15 @@ export function createBreadcrumbFeatureCollection(
   snapshot: TrackingSnapshot,
   gapThresholdMs: number,
 ): FeatureCollection<LineString> {
-  const breadcrumbsByDevice = new Map<string, typeof snapshot.breadcrumbs>()
+  const breadcrumbsByDevice = new Map<string, TrackingSnapshot['breadcrumbs'][number][]>()
   for (const breadcrumb of snapshot.breadcrumbs) {
-    const existing = breadcrumbsByDevice.get(breadcrumb.device_id) ?? []
-    breadcrumbsByDevice.set(breadcrumb.device_id, [...existing, breadcrumb])
+    const existing = breadcrumbsByDevice.get(breadcrumb.device_id)
+    if (existing === undefined) {
+      breadcrumbsByDevice.set(breadcrumb.device_id, [breadcrumb])
+      continue
+    }
+
+    existing.push(breadcrumb)
   }
 
   const features: GeoJsonLineFeature[] = []

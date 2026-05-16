@@ -95,6 +95,81 @@ test.describe('M12 settings workspace', () => {
     await expect(page.getByTestId('devices-workspace')).toContainText('S-Tab')
   })
 
+  test('connected tracking stops advertising online telemetry after mission finish', async ({
+    page,
+  }) => {
+    await routeTraccarSuccess(page)
+
+    await page.getByTestId('open-settings-workspace').click()
+    await page.getByRole('button', { name: 'Traccar HTTP' }).click()
+    await page.getByTestId('settings-provider-url').fill('http://traccar.test:8082')
+    await page.getByTestId('settings-provider-email').fill('apiuser')
+    await page.getByTestId('settings-provider-secret').fill('apiuser')
+    await page.getByTestId('settings-save').click()
+    await expect(page.getByTestId('settings-workspace')).toBeHidden()
+
+    await page.getByTestId('mission-name-input').fill('Connected Finish Mission')
+    await page.getByTestId('mission-start-btn').click()
+    await expect(page.getByTestId('mission-control')).toContainText('active')
+
+    await page.getByTestId('open-settings-workspace').click()
+    await page.getByTestId('settings-save-connect').click()
+    await expect(page.getByTestId('settings-workspace')).toBeHidden()
+    await expect(page.getByTestId('tracking-status')).toContainText('online')
+
+    await page.getByTestId('mission-finish-btn').click()
+    await page
+      .getByTestId('mission-finish-dialog')
+      .getByRole('button', { name: 'Confirm Finish' })
+      .click()
+
+    await expect(page.getByTestId('mission-control')).toContainText('idle')
+    await expect(page.getByTestId('tracking-status')).toContainText('idle')
+    await expect(page.getByTestId('tracking-status')).toContainText('Waiting for an active mission.')
+    await expect(page.getByTestId('tracking-status')).toContainText('0')
+    await expect(page.getByTestId('tracking-status')).not.toContainText('online')
+  })
+
+  test('large hosted breadcrumb history does not block current tracking status or exceed browser storage cap', async ({
+    page,
+  }) => {
+    await routeTraccarSuccess(page, { breadcrumbCount: 14_500 })
+
+    await page.getByTestId('open-settings-workspace').click()
+    await page.getByRole('button', { name: 'Traccar HTTP' }).click()
+    await page.getByTestId('settings-provider-url').fill('http://traccar.test:8082')
+    await page.getByTestId('settings-provider-email').fill('apiuser')
+    await page.getByTestId('settings-provider-secret').fill('apiuser')
+    await page.getByTestId('settings-save').click()
+    await expect(page.getByTestId('settings-workspace')).toBeHidden()
+
+    await page.getByTestId('mission-name-input').fill('Large History Mission')
+    await page.getByTestId('mission-offset-input').fill('48')
+    await page.getByTestId('mission-start-btn').click()
+    await expect(page.getByTestId('mission-control')).toContainText('active')
+
+    await page.getByTestId('open-settings-workspace').click()
+    await page.getByTestId('settings-save-connect').click()
+    await expect(page.getByTestId('settings-workspace')).toBeHidden()
+
+    await expect(page.getByTestId('tracking-status')).toContainText('online')
+    await expect(page.getByTestId('tracking-status')).toContainText('1')
+
+    await expect
+      .poll(async () =>
+        page.evaluate(() => {
+          const raw = window.sessionStorage.getItem('sartracker:browser-harness')
+          if (raw === null) {
+            return null
+          }
+
+          const parsed = JSON.parse(raw) as { positions?: unknown[] }
+          return parsed.positions?.length ?? 0
+        }),
+      )
+      .toBe(2_000)
+  })
+
   test('persists mission defaults and coordinate display preference in browser validation mode', async ({
     page,
   }) => {
@@ -136,7 +211,10 @@ test.describe('M12 settings workspace', () => {
   })
 })
 
-async function routeTraccarSuccess(page: import('@playwright/test').Page) {
+async function routeTraccarSuccess(
+  page: import('@playwright/test').Page,
+  options: { readonly breadcrumbCount?: number } = {},
+) {
   await page.route('http://traccar.test:8082/api/session', async (route) => {
     await route.fulfill({
       status: 200,
@@ -168,10 +246,21 @@ async function routeTraccarSuccess(page: import('@playwright/test').Page) {
   await page.route('http://traccar.test:8082/api/positions**', async (route, request) => {
     const url = new URL(request.url())
     if (url.searchParams.has('deviceId')) {
+      const breadcrumbCount = options.breadcrumbCount ?? 0
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
-        body: JSON.stringify([]),
+        body: JSON.stringify(
+          Array.from({ length: breadcrumbCount }, (_, index) => ({
+            id: 400_000 + index,
+            deviceId: 1,
+            latitude: 51.99917 + index / 1_000_000,
+            longitude: -9.74406 - index / 1_000_000,
+            fixTime: new Date(Date.UTC(2026, 4, 14, 10, 0, index)).toISOString(),
+            valid: true,
+            attributes: { batteryLevel: 82 },
+          })),
+        ),
       })
       return
     }

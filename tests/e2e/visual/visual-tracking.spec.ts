@@ -65,7 +65,7 @@ Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
       const map = (window as Window & { __SARTRACKER_MAP__?: {
         jumpTo: (opts: { center: [number, number]; zoom: number }) => void
       } }).__SARTRACKER_MAP__
-      map?.jumpTo({ center: [-9.7426, 51.9985], zoom: 14 })
+      map?.jumpTo({ center: [-9.7415, 51.9964], zoom: 13.2 })
     })
     await page.waitForTimeout(1500) // let map tiles load at new zoom
 
@@ -101,19 +101,17 @@ Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
     await expect(page.getByText('Bravo Team')).toBeVisible()
     await expect(page.getByText('Charlie Team')).toBeVisible()
 
-    await captureElementAndRegister(page, 'layer-panel', {
+    await captureElementAndRegister(page, 'layer-tree', {
       testId: 'tracking-layer-panel',
       testName: 'Layer panel with tracked devices',
       area: 'layers',
       severity: 'critical',
-      verificationPrompt: `Verify this screenshot of the SAR Tracker layer panel with tracking devices:
-1. There should be a "LAYER WORKSPACE" header
-2. Under "Tracking" group, there should be a "People" subgroup
-3. The People group should list exactly 3 devices: "Alpha Team", "Bravo Team", "Charlie Team"
-4. Each device should have a visibility checkbox (checked by default)
-5. There should be a "Breadcrumbs" item under Tracking
-6. There may be a "Map Tools" section with marker type categories (IPP/LKP, Clues, Hazards, Casualties)
-7. The count next to "People" should show 3
+      verificationPrompt: `Verify this screenshot of the SAR Tracker Layer Tree with tracking devices:
+1. Under the "Tracking" group, there should be a "People" subgroup
+2. The People group should list exactly 3 devices: "Alpha Team", "Bravo Team", "Charlie Team"
+3. Each device should have a visibility checkbox (checked by default)
+4. There should be a "Breadcrumbs" item under Tracking
+5. The count next to "People" should show 3
 Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
       playwrightAssertions: [
         'layer-panel is visible',
@@ -125,6 +123,8 @@ Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
   })
 
   test('full operational view with tracking and all sidebar panels', async ({ page }) => {
+    await expect(page.getByTestId('mission-elapsed')).not.toHaveText('00:00:00')
+
     await captureAndRegister(page, {
       testId: 'tracking-full-operational',
       testName: 'Full operational view with active tracking',
