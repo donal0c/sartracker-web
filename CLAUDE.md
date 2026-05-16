@@ -107,11 +107,12 @@ There is no separate packet layer. The handoff file must contain the current bat
 
 ## After Every Chunk of Work
 
-1. **Update handoff/HANDOFF.md** — what you did, what's next, any blockers
-2. **Update the bead** — close it, add comments, update status
-3. **Update the operator manual** — if the app changed in any user-visible way, keep `public/manual/index.html` and any screenshots in `public/manual/assets/` current
-4. **Commit with a descriptive message** referencing the bead ID
-5. **Run the full test suite** — nothing ships without green tests
+1. **Verify the changed behavior first** — do not write closeout docs or mark beads done from unverified assumptions
+2. **Update handoff/HANDOFF.md** — what you did, what's next, any blockers, and exactly what was verified
+3. **Update the bead** — close it, add comments, update status
+4. **Update the operator manual** — if the app changed in any user-visible way, keep `public/manual/index.html` and any screenshots in `public/manual/assets/` current
+5. **Commit with a descriptive message** referencing the bead ID
+6. **Run the full test suite** — nothing ships without green tests
 
 ### Finish Protocol (required)
 
@@ -119,11 +120,22 @@ At the end of a work cycle, do not stop at "the code is written."
 
 Before finishing, the agent should:
 1. run the relevant verification for the slice that changed
-2. run Playwright coverage when UI, map, workflow, or runtime behavior was affected
+2. run browser-backed UI verification whenever UI, map, workflow, runtime, deployment, or operator-facing behavior was affected
 3. update `public/manual/index.html` when operator-facing behaviour, UI, settings, workflow, screenshots, or known gaps changed
 4. confirm the result meets the repo's quality bar, aiming for roughly 9.5-10/10 quality rather than "probably fine"
 5. update `handoff/HANDOFF.md` with a short baton-ready summary
 6. update the relevant bead(s)
+
+### Browser Verification Policy (required)
+
+The user should not need to remember to ask for browser validation. For any behavior-bearing change, choose the strongest appropriate verification tool and record what was checked.
+
+- Use the inbuilt browser for quick manual sanity checks when that is enough.
+- Use Playwright automatically for repeatable UI, map, workflow, hosted-mode, deployment, or regression checks.
+- Use Chrome or Chrome DevTools MCP when validation depends on the user's real browser profile, existing tabs, browser-specific failures, network/devtools evidence, or when Playwright cannot reproduce the issue.
+- For UI/layout changes, capture visual evidence where practical and check the actual rendered surface, not only DOM or unit assertions.
+- For hosted/Vercel changes, validate the deployed URL after deployment, not only the local build.
+- Verification must happen before closing the bead or writing final handoff claims. Handoff and bead comments must say exactly which commands and browser flows passed, and any parts that were not verified.
 
 If, and only if, the agent is highly confident that:
 - the change is complete for this chunk

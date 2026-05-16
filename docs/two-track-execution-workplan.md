@@ -18,6 +18,14 @@ When a chunk is finished:
 4. Update the operator manual if operator-facing behavior changed.
 5. Run the relevant verification for the chunk.
 
+Verification is not optional closeout ceremony. For any UI, map, workflow, runtime, hosted deployment, or operator-facing change, Codex should choose and run the appropriate browser-backed verification before recording final docs or closing the bead. The default ladder is:
+
+- Inbuilt browser for quick manual sanity checks.
+- Playwright for repeatable UI/workflow/regression checks.
+- Chrome or Chrome DevTools MCP when the issue depends on the user's real browser profile, existing tabs, DevTools/network evidence, or browser-specific behavior.
+
+The user should not need to repeat this in every prompt. Each chunk's handoff/bead update must state the exact browser flow or deployed URL that was verified, or explicitly say why UI verification was not relevant.
+
 ## Operating Model
 
 Run two delivery tracks in parallel, with shared-foundation work feeding both.
@@ -124,7 +132,7 @@ Acceptance:
 Verification:
 
 - Manual doc read-through.
-- Hosted flow check only with the inbuilt browser unless the user explicitly asks for Playwright/Chrome DevTools.
+- Hosted flow check with the strongest appropriate browser tool; use Playwright for repeatable hosted-flow evidence and Chrome/DevTools when real browser state or network evidence matters.
 
 ### A2: Hosted Mode Guardrails
 
@@ -341,8 +349,9 @@ Verification:
 
 - Unit tests for boot-state transitions.
 - Unit tests for dispose-before-replace and idempotent dispose.
-- Targeted app-start check with the inbuilt browser.
-- Use Playwright only if explicitly requested for this chunk.
+- Targeted app-start check in the actual rendered app.
+- Playwright regression coverage for boot/failure states when automatable.
+- Chrome or Chrome DevTools MCP if startup failure needs browser/network/runtime inspection that Playwright cannot expose.
 
 ### S2: Autosave Lifecycle Hardening
 
@@ -476,7 +485,7 @@ Verification:
 
 - Targeted new specs.
 - `npm run test`.
-- E2E only with explicit user permission if using Playwright from Codex.
+- Playwright E2E for any user-visible regression coverage added by this chunk.
 
 ### V2: Visual Review Automation
 
