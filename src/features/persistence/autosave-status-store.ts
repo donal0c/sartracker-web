@@ -46,6 +46,10 @@ type AutosaveSyncFailedInput = {
   readonly now?: Date
 }
 
+type AutosaveObservedElapsedInput = {
+  readonly elapsedMs: number
+}
+
 const LIFECYCLE_SYNC_REASONS = new Set<AutosaveSyncReason>([
   'mission-start',
   'mission-pause',
@@ -67,11 +71,13 @@ export type AutosaveStatusState = {
   readonly lastSuccessReason: AutosaveSyncReason | null
   readonly lastBackupPath: string | null
   readonly lastFailure: AutosaveFailure | null
+  readonly observedMsSinceLastSuccess: number
   readonly configure: (input: AutosaveConfigureInput) => void
   readonly markDisabled: () => void
   readonly markSyncStarted: (input: AutosaveSyncStartedInput) => void
   readonly markSyncSucceeded: (input: AutosaveSyncSucceededInput) => void
   readonly markSyncFailed: (input: AutosaveSyncFailedInput) => void
+  readonly markObservedElapsed: (input: AutosaveObservedElapsedInput) => void
   readonly reset: () => void
 }
 
@@ -87,6 +93,7 @@ const INITIAL_STATE = {
   lastSuccessReason: null,
   lastBackupPath: null,
   lastFailure: null,
+  observedMsSinceLastSuccess: 0,
 }
 
 export const useAutosaveStatusStore = create<AutosaveStatusState>((set) => ({
@@ -99,6 +106,7 @@ export const useAutosaveStatusStore = create<AutosaveStatusState>((set) => ({
       staleAfterMs: input.intervalMs * STALE_INTERVAL_MULTIPLIER,
       lastAttemptAt: toIso(input.now),
       lastFailure: null,
+      observedMsSinceLastSuccess: 0,
     }),
   markDisabled: () =>
     set({
@@ -121,6 +129,7 @@ export const useAutosaveStatusStore = create<AutosaveStatusState>((set) => ({
         lastSuccessReason: input.reason,
         lastBackupPath: input.backupPath,
         lastFailure,
+        observedMsSinceLastSuccess: 0,
       }
     }),
   markSyncFailed: (input) =>
@@ -134,6 +143,21 @@ export const useAutosaveStatusStore = create<AutosaveStatusState>((set) => ({
         at: toIso(input.now),
       },
     }),
+  markObservedElapsed: (input) =>
+    set((state) => {
+      if (
+        !state.enabled ||
+        state.phase === 'disabled' ||
+        state.lastSuccessAt === null ||
+        input.elapsedMs <= 0
+      ) {
+        return state
+      }
+
+      return {
+        observedMsSinceLastSuccess: state.observedMsSinceLastSuccess + input.elapsedMs,
+      }
+    }),
   reset: () =>
     set({
       ...INITIAL_STATE,
@@ -143,10 +167,7 @@ export const useAutosaveStatusStore = create<AutosaveStatusState>((set) => ({
 /**
  * Returns the operator-facing autosave warning for the current status snapshot.
  */
-export function selectAutosaveWarning(
-  state: AutosaveStatusState,
-  now: Date = new Date(),
-): string | null {
+export function selectAutosaveWarning(state: AutosaveStatusState): string | null {
   if (!state.enabled || state.phase === 'disabled') {
     return null
   }
@@ -159,8 +180,7 @@ export function selectAutosaveWarning(
     return null
   }
 
-  const elapsedMs = now.getTime() - Date.parse(state.lastSuccessAt)
-  if (elapsedMs <= state.staleAfterMs) {
+  if (state.observedMsSinceLastSuccess <= state.staleAfterMs) {
     return null
   }
 

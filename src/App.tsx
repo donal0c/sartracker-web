@@ -286,7 +286,7 @@ export function CommandMast(props: {
   const [now, setNow] = useState(() => new Date())
   const staleCount = snapshot.positions.filter((position) => position.device_cache_stale).length
   const autosaveWarning = selectCommandMastAutosaveWarning(
-    selectAutosaveWarning(autosaveStatus, now),
+    selectAutosaveWarning(autosaveStatus),
     currentMission,
   )
   const timerState = useMemo(
@@ -295,7 +295,10 @@ export function CommandMast(props: {
   )
 
   useEffect(() => {
-    const timer = window.setInterval(() => setNow(new Date()), 1000)
+    const timer = window.setInterval(() => {
+      setNow(new Date())
+      useAutosaveStatusStore.getState().markObservedElapsed({ elapsedMs: 1000 })
+    }, 1000)
     return () => window.clearInterval(timer)
   }, [])
 

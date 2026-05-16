@@ -4,7 +4,7 @@
 
 ## Last Updated
 
-- 2026-05-16 by Codex — R1 autosave failure visibility fixed; R2-R7 still block S3 unless explicitly accepted.
+- 2026-05-16 by Codex — R2 autosave stale detection fixed; R3-R7 still block S3 unless explicitly accepted.
 
 ## Operating Rule
 
@@ -36,7 +36,7 @@ Supporting docs may explain details, but they must not become separate queues. T
 - Startup now has an explicit boot/fault guard. The app shell stays gated while runtime services prepare, startup failures show a fault panel with Reload, and runtime controller replacement disposes the previous controller before installing the next one.
 - Hosted tester instructions now have a concise quick-start run sheet, URL/base-URL rules, bug-report template fields, and triage buckets. The operator manual has a hosted testing and feedback section.
 - Tauri packaging recon found a working macOS arm64 `.app` path: `npm run tauri build -- --bundles app` -> `src-tauri/target/release/bundle/macos/sartracker-web.app`. Full `npm run tauri build` currently fails at DMG bundling; unsigned/ad-hoc app is rejected by `spctl`, so first beta notes must call out Gatekeeper limitations.
-- Autosave now has an explicit forced `requestSync()` path. Mission start, pause, resume, finish, recover-resume, start-fresh, finalize, and unlock request immediate backup sync after the lifecycle database write. Lifecycle-forced autosave failures remain visible after unrelated successful syncs and clear only when the matching lifecycle sync succeeds. Autosave status tracks last success/failure and the command mast shows an amber autosave warning if sync is failing or stale.
+- Autosave now has an explicit forced `requestSync()` path. Mission start, pause, resume, finish, recover-resume, start-fresh, finalize, and unlock request immediate backup sync after the lifecycle database write. Lifecycle-forced autosave failures remain visible after unrelated successful syncs and clear only when the matching lifecycle sync succeeds. Autosave stale warnings use observed command-mast tick time rather than wall-clock subtraction, so clock jumps or laptop sleep do not create immediate false stale warnings.
 - A multi-agent review of S1/A1/B1/S2 found operator-trust issues around autosave visibility, hosted-mode honesty, lifecycle backup surfacing, runtime controller replacement, and startup rollback. The findings are now filed as remediation beads R1-R11 in `docs/two-track-execution-workplan.md`.
 - Latest deployed production URL has command-line validation for proxy endpoints:
   - `/api/session` returned 200 for the team credentials
@@ -76,15 +76,14 @@ Use these only for team testing, not as a production secret model.
 
 Default next task when the user says “go” or “work on the next task”:
 
-1. `R2: Replace Autosave Wall-Clock Stale Detection` in `docs/two-track-execution-workplan.md`
-2. Bead: `sartracker-web-5ps`
-3. Goal: replace wall-clock-only autosave stale detection with a safer signal that does not mislead operators when mission/runtime state changes.
-4. Do not start `S3: Layer Visibility Service Extraction` until R2-R7 are fixed or explicitly accepted.
+1. `R3: Make Hosted Browser System Status Honest` in `docs/two-track-execution-workplan.md`
+2. Bead: `sartracker-web-3dv`
+3. Goal: make hosted browser mode report system/persistence status honestly instead of implying desktop-grade autosave or durability.
+4. Do not start `S3: Layer Visibility Service Extraction` until R3-R7 are fixed or explicitly accepted.
 
 ## Open Beads That Matter Now
 
 - `sartracker-web-vpz` — Hosted browser testing mode and parity hardening.
-- `sartracker-web-5ps` — R2 replace autosave wall-clock stale detection.
 - `sartracker-web-3dv` — R3 make hosted browser system status honest.
 - `sartracker-web-57m` — R4 surface lifecycle backup failures non-dismissably.
 - `sartracker-web-qdh` — R5 make runtime controller swap exception-safe.
@@ -104,9 +103,11 @@ Older parity/UI beads still exist, but new work should be selected through the t
 
 Most recent completed verification:
 
-- R1 red/green unit coverage proves unrelated interval success does not clear a lifecycle autosave failure, while matching lifecycle success does clear it.
+- R2 red/green unit coverage proves wall-clock jumps alone do not create stale autosave warnings, while observed tick elapsed time still does.
 - `npm run lint` passed.
-- `npm run test -- --run` passed: 86 files, 403 tests.
+- `npm run test -- --run tests/unit/mission-autosave.test.ts tests/unit/runtime-boot-gate.test.ts` passed: 2 files, 18 tests.
+- `npm run test -- --run tests/unit/browser-harness-store.test.ts` passed after one full-suite run hit the known quota-test timeout under concurrent load.
+- `npm run test -- --run` passed: 86 files, 404 tests.
 - `npm run build` passed.
 - `npm run test:backend` passed: 37 Rust tests.
-- Browser/Playwright verification was not run for R1 because this was a pure status-store semantics fix and the repo instruction requires explicit user approval before Playwright.
+- `npm run test:e2e -- --project=chromium` passed: 69 browser workflow tests.

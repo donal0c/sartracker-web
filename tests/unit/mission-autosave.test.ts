@@ -133,7 +133,23 @@ describe('mission autosave', () => {
     autosave.stop()
   })
 
-  it('reports stale autosave status after the configured interval grace expires', () => {
+  it('does not report stale autosave status from wall-clock jumps alone', () => {
+    vi.setSystemTime(new Date('2026-05-16T09:00:00.000Z'))
+    useAutosaveStatusStore.getState().configure({
+      enabled: true,
+      intervalMs: 10_000,
+    })
+    useAutosaveStatusStore.getState().markSyncSucceeded({
+      reason: 'interval',
+      backupPath: '/tmp/mission.sqlite',
+    })
+
+    vi.setSystemTime(new Date('2026-05-16T10:00:00.000Z'))
+
+    expect(selectAutosaveWarning(useAutosaveStatusStore.getState())).toBeNull()
+  })
+
+  it('reports stale autosave status after observed tick time exceeds the configured grace', () => {
     useAutosaveStatusStore.getState().configure({
       enabled: true,
       intervalMs: 10_000,
@@ -145,17 +161,14 @@ describe('mission autosave', () => {
       now: new Date('2026-05-16T09:00:00.000Z'),
     })
 
+    useAutosaveStatusStore.getState().markObservedElapsed({ elapsedMs: 19_000 })
+
+    expect(selectAutosaveWarning(useAutosaveStatusStore.getState())).toBeNull()
+
+    useAutosaveStatusStore.getState().markObservedElapsed({ elapsedMs: 2_000 })
+
     expect(
-      selectAutosaveWarning(
-        useAutosaveStatusStore.getState(),
-        new Date('2026-05-16T09:00:19.000Z'),
-      ),
-    ).toBeNull()
-    expect(
-      selectAutosaveWarning(
-        useAutosaveStatusStore.getState(),
-        new Date('2026-05-16T09:00:21.000Z'),
-      ),
+      selectAutosaveWarning(useAutosaveStatusStore.getState()),
     ).toContain('Autosave stale')
   })
 
