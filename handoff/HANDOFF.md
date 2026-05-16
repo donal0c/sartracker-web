@@ -46,6 +46,10 @@ Supporting docs may explain details, but they must not become separate queues. T
   - deployment: `dpl_HvDGvhLedbYeBVQQsKwC5NQR5RyU`
   - alias: `https://sartracker-web.vercel.app`
   - validated at 48h offset with real Traccar credentials.
+- Latest production deployment for A1 hosted testing docs:
+  - deployment: `dpl_7Zk49528gSC3gpGdFCyvMF2sJCHG`
+  - alias: `https://sartracker-web.vercel.app`
+  - validated with production manual and hosted Settings checks.
 
 ## Traccar Test Details
 
@@ -79,7 +83,6 @@ Default next task when the user says “go” or “work on the next task”:
 ## Open Beads That Matter Now
 
 - `sartracker-web-vpz` — Hosted browser testing mode and parity hardening.
-- `sartracker-web-vpz.1` — A1 hosted testing instructions and feedback intake.
 - `sartracker-web-vpz.2` — B1 Tauri beta packaging reconnaissance.
 
 Older parity/UI beads still exist, but new work should be selected through the two-track workplan unless the user explicitly asks for a specific bead.
