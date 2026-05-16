@@ -38,6 +38,10 @@ Supporting docs may explain details, but they must not become separate queues. T
   - `/api/session` returned 200 for the team credentials
   - `/api/devices` returned the 18-device roster
   - `/api/positions` returned 14 positions
+- Latest production deployment for hosted tracking quota fix:
+  - deployment: `dpl_HvDGvhLedbYeBVQQsKwC5NQR5RyU`
+  - alias: `https://sartracker-web.vercel.app`
+  - validated at 48h offset with real Traccar credentials.
 
 ## Traccar Test Details
 
@@ -71,7 +75,6 @@ Default next task when the user says “go” or “work on the next task”:
 ## Open Beads That Matter Now
 
 - `sartracker-web-vpz` — Hosted browser testing mode and parity hardening.
-- `sartracker-web-vpz.4` — Hosted tracking history quota and 48h offset. Fixed; close after production verification/deploy evidence is recorded.
 - `sartracker-web-vpz.1` — A1 hosted testing instructions and feedback intake.
 - `sartracker-web-vpz.2` — B1 Tauri beta packaging reconnaissance.
 
@@ -96,3 +99,5 @@ Most recent completed verification:
 - Live Traccar evidence on 2026-05-16: 5h breadcrumb window returned 0 points; 12h returned 485 points; 24h returned 13,695 points; 48h returned 14,567 points.
 - Pre-fix local UI reproduced the team error at 24h: `QuotaExceededError` on `sartracker:browser-harness`.
 - Fixed local UI validated with real Traccar via the hosted proxy at 24h and 48h: 18 devices, 14 current fixes, visible current markers and breadcrumb tracks, no session storage quota warnings.
+- Production Vercel validated with Playwright at `https://sartracker-web.vercel.app/?missionHarness=1` using 48h offset and real Traccar credentials: online, 18 devices, 14 fixes, 2,000 persisted positions, 2,037 events, 1,438,523 session storage bytes, no relevant console errors/warnings.
+- Production screenshot evidence: `test-results/live-traccar-validation/production-48h-traccar-viewport.png`.
