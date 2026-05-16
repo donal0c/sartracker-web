@@ -180,4 +180,24 @@ test.describe('M2 map shell', () => {
     await expect(page.getByTestId('mission-control')).toContainText('idle')
     await expect(page.getByTestId('mission-start-btn')).toBeEnabled()
   })
+
+  test('shows lifecycle backup failures as a persistent alert', async ({ page }) => {
+    await page.evaluate(async () => {
+      const { useAutosaveStatusStore } = await import(
+        '/src/features/persistence/autosave-status-store.ts'
+      )
+      useAutosaveStatusStore.getState().markSyncFailed({
+        reason: 'mission-finish',
+        message: 'backup volume unavailable',
+        now: new Date('2026-05-16T09:00:00.000Z'),
+      })
+    })
+
+    const alert = page.getByTestId('lifecycle-backup-failure-banner')
+    await expect(alert).toBeVisible()
+    await expect(alert).toContainText('Lifecycle backup failed')
+    await expect(alert).toContainText('mission finish')
+    await expect(alert).toContainText('backup volume unavailable')
+    await expect(alert.getByRole('button')).toHaveCount(0)
+  })
 })

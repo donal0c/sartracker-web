@@ -466,7 +466,11 @@
             The main screen is map-first. The top command mast gives mission, timing, tracking, system,
             diagnostics, focus mode, settings, and help. If mission backup autosave becomes stale or
             fails, the System Status area shows an amber autosave warning so the operator does not have
-            to discover the problem in logs. In hosted browser testing mode, System Status shows
+            to discover the problem in logs. If a mission lifecycle backup fails after start, pause,
+            resume, finish, finalize, or unlock, the app also shows a persistent amber/rose alert below
+            the mast. Keep the app open, capture diagnostics, and do not treat the backup copy as
+            current until that alert clears after a matching successful lifecycle backup. In hosted
+            browser testing mode, System Status shows
             <strong>Browser test</strong> and <strong>Session storage only</strong> so the testing lane is
             not confused with desktop operational persistence. The right side of the mast shows the current
             application version chip, which is stamped from the git commit at build time so teams can

@@ -23,6 +23,12 @@ type AutosaveFailure = {
   readonly at: string
 }
 
+export type LifecycleBackupFailureAlert = {
+  readonly reason: AutosaveSyncReason
+  readonly reasonLabel: string
+  readonly message: string
+}
+
 type AutosaveConfigureInput = {
   readonly enabled: boolean
   readonly intervalMs: number
@@ -187,6 +193,24 @@ export function selectAutosaveWarning(state: AutosaveStatusState): string | null
   return `Autosave stale: last backup ${formatTime(state.lastSuccessAt)}`
 }
 
+/**
+ * Returns a high-prominence alert only for lifecycle-forced backup failures.
+ */
+export function selectLifecycleBackupFailureAlert(
+  state: AutosaveStatusState,
+): LifecycleBackupFailureAlert | null {
+  const failure = state.lastFailure
+  if (failure === null || !LIFECYCLE_SYNC_REASONS.has(failure.reason)) {
+    return null
+  }
+
+  return {
+    reason: failure.reason,
+    reasonLabel: formatReasonLabel(failure.reason),
+    message: failure.message,
+  }
+}
+
 /** Returns the provided time, or the current wall-clock time, as an ISO timestamp. */
 function toIso(now?: Date): string {
   return (now ?? new Date()).toISOString()
@@ -206,6 +230,11 @@ function selectRemainingFailure(
   }
 
   return lastFailure.reason === successReason ? null : lastFailure
+}
+
+/** Converts sync reason ids into readable operator-facing words. */
+function formatReasonLabel(reason: AutosaveSyncReason): string {
+  return reason.replace(/^mission-/, 'mission ').replaceAll('-', ' ')
 }
 
 /** Formats an ISO timestamp for compact mast and warning copy. */

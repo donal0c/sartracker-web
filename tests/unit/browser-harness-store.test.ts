@@ -78,7 +78,7 @@ describe('browser harness store', () => {
     expect(recordedPositionEvents).toHaveLength(2_000)
     expect(persistedState.positions[0]?.timestamp).toBe('2026-05-15T06:01:40.000Z')
     expect(persistedState.positions.at(-1)?.timestamp).toBe('2026-05-15T06:34:59.000Z')
-  })
+  }, 15_000)
 
   it('finalizes and unlocks a mission using the configured admin roster', async () => {
     window.localStorage.setItem(

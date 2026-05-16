@@ -3,7 +3,7 @@ import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { CommandMast, RuntimeBootGate } from '../../src/App'
+import { CommandMast, RuntimeBootGate, RuntimeSafetyBanner } from '../../src/App'
 import { useAutosaveStatusStore } from '../../src/features/persistence/autosave-status-store'
 
 describe('RuntimeBootGate', () => {
@@ -61,6 +61,29 @@ describe('RuntimeBootGate', () => {
     expect(document.querySelector('[data-testid="system-status-value"]')?.className).toContain(
       'text-amber-300',
     )
+  })
+
+  it('surfaces lifecycle backup failures as a persistent alert outside the mast', () => {
+    useAutosaveStatusStore.getState().markSyncFailed({
+      reason: 'mission-finish',
+      message: 'backup volume unavailable',
+      now: new Date('2026-05-16T09:00:00.000Z'),
+    })
+
+    render(
+      React.createElement(RuntimeSafetyBanner, {
+        browserTestingMode: false,
+        focusModeActive: false,
+      }),
+    )
+
+    const alert = document.querySelector('[data-testid="lifecycle-backup-failure-banner"]')
+    expect(alert).not.toBeNull()
+    expect(alert?.getAttribute('role')).toBe('alert')
+    expect(alert?.textContent).toContain('Lifecycle backup failed')
+    expect(alert?.textContent).toContain('mission finish')
+    expect(alert?.textContent).toContain('backup volume unavailable')
+    expect(alert?.querySelector('button')).toBeNull()
   })
 
   it('shows a calm preparing state during runtime startup', () => {

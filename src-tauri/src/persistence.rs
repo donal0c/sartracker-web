@@ -3132,6 +3132,51 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn backup_sync_succeeds_after_non_active_lifecycle_transitions_without_audit_event() {
+        let (database_path, backup_path) = temp_paths("backup-after-lifecycle");
+        let store = MissionStore::connect(database_path, backup_path.clone())
+            .await
+            .expect("store should initialize");
+
+        let mission = store
+            .create_mission(CreateMissionInput {
+                name: "Lifecycle Backup Mission".to_string(),
+                start_time: None,
+                notes: None,
+            })
+            .await
+            .expect("mission should be created");
+
+        store
+            .finish_mission(mission.id.clone())
+            .await
+            .expect("mission should finish");
+        let finished_backup = store
+            .sync_backup()
+            .await
+            .expect("finished mission backup should succeed");
+        assert_eq!(finished_backup, backup_path.to_string_lossy());
+
+        let finalized = store
+            .finalize_mission(mission.id.clone())
+            .await
+            .expect("mission should finalize");
+        assert_eq!(finalized.mission.status, MissionStatus::Finalized);
+        store
+            .sync_backup()
+            .await
+            .expect("finalized mission backup should succeed");
+
+        let events = store
+            .list_mission_events(mission.id)
+            .await
+            .expect("events should list");
+        assert!(!events
+            .iter()
+            .any(|event| event.event_type == "mission_backup_synced"));
+    }
+
+    #[tokio::test]
     async fn enforces_single_active_mission_and_lifecycle_transitions() {
         let (database_path, backup_path) = temp_paths("lifecycle");
         let store = MissionStore::connect(database_path, backup_path)

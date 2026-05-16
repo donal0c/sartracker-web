@@ -30,6 +30,7 @@ import { useMissionStore } from './features/mission/mission-store'
 import { shouldEnableMissionBrowserHarness } from './features/mission/mission-browser-harness'
 import { calculateMissionTimerState, formatMissionDuration } from './features/mission/mission-timers'
 import {
+  selectLifecycleBackupFailureAlert,
   selectAutosaveWarning,
   useAutosaveStatusStore,
 } from './features/persistence/autosave-status-store'
@@ -266,19 +267,24 @@ export function RuntimeBootGate(props: {
   )
 }
 
-function RuntimeSafetyBanner(props: {
+export function RuntimeSafetyBanner(props: {
   readonly browserTestingMode: boolean
   readonly focusModeActive: boolean
 }) {
   const currentMission = useMissionStore((state) => state.currentMission)
   const autosaveStatus = useAutosaveStatusStore()
+  const lifecycleBackupFailure = selectLifecycleBackupFailureAlert(autosaveStatus)
   const autosaveWarning = selectCommandMastAutosaveWarning(
     selectAutosaveWarning(autosaveStatus),
     currentMission,
   )
   const focusAutosaveWarning = props.focusModeActive ? autosaveWarning : null
 
-  if (!props.browserTestingMode && focusAutosaveWarning === null) {
+  if (
+    !props.browserTestingMode &&
+    focusAutosaveWarning === null &&
+    lifecycleBackupFailure === null
+  ) {
     return null
   }
 
@@ -296,6 +302,29 @@ function RuntimeSafetyBanner(props: {
         <p className="mt-1" data-testid="focus-autosave-warning">
           {focusAutosaveWarning}
         </p>
+      )}
+      {lifecycleBackupFailure === null ? null : (
+        <div
+          className="mt-2 border border-rose-200/45 bg-rose-950/45 p-3 text-rose-50"
+          data-testid="lifecycle-backup-failure-banner"
+          role="alert"
+        >
+          <p className="font-black uppercase tracking-[0.1em]">
+            Lifecycle backup failed
+          </p>
+          <p className="mt-1 font-mono text-[11px] uppercase tracking-[0.08em] text-rose-100">
+            {lifecycleBackupFailure.reasonLabel}
+          </p>
+          <p className="mt-1 text-[12px] leading-relaxed">
+            SAR Tracker saved the mission state change, but the safety backup did not complete:
+            {' '}
+            {lifecycleBackupFailure.message}
+          </p>
+          <p className="mt-1 text-[12px] leading-relaxed text-rose-100">
+            Keep the app open, capture diagnostics, and do not treat the backup copy as current
+            until this alert clears after a matching successful lifecycle backup.
+          </p>
+        </div>
       )}
     </div>
   )
