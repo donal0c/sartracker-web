@@ -130,9 +130,10 @@ Before finishing, the agent should:
 
 The user should not need to remember to ask for browser validation. For any behavior-bearing change, choose the strongest appropriate verification tool and record what was checked.
 
-- Use the inbuilt browser for quick manual sanity checks when that is enough.
-- Use Playwright automatically for repeatable UI, map, workflow, hosted-mode, deployment, or regression checks.
-- Use Chrome or Chrome DevTools MCP when validation depends on the user's real browser profile, existing tabs, browser-specific failures, network/devtools evidence, or when Playwright cannot reproduce the issue.
+- Use `$browser:browser` / the inbuilt browser for quick manual sanity checks when that is enough.
+- Use `$playwright` automatically for repeatable UI, map, workflow, hosted-mode, deployment, or regression checks.
+- Use `$chrome:Chrome` when validation depends on the user's real Chrome profile, existing tabs, cookies, extensions, or a browser state the inbuilt browser cannot see.
+- Use `$chrome-devtools-cli` when the job needs DevTools-grade network, console, performance, storage, or screenshot evidence.
 - For UI/layout changes, capture visual evidence where practical and check the actual rendered surface, not only DOM or unit assertions.
 - For hosted/Vercel changes, validate the deployed URL after deployment, not only the local build.
 - Verification must happen before closing the bead or writing final handoff claims. Handoff and bead comments must say exactly which commands and browser flows passed, and any parts that were not verified.

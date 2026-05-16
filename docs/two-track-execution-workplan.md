@@ -24,7 +24,7 @@ Verification is not optional closeout ceremony. For any UI, map, workflow, runti
 - Playwright for repeatable UI/workflow/regression checks.
 - Chrome or Chrome DevTools MCP when the issue depends on the user's real browser profile, existing tabs, DevTools/network evidence, or browser-specific behavior.
 
-The user should not need to repeat this in every prompt. Each chunk's handoff/bead update must state the exact browser flow or deployed URL that was verified, or explicitly say why UI verification was not relevant.
+The user should not need to repeat this in every prompt. The available browser tools are all acceptable when they are the right fit: `$browser:browser`, `$chrome:Chrome`, `$chrome-devtools-cli`, and `$playwright`. Each chunk's handoff/bead update must state the exact browser flow or deployed URL that was verified, or explicitly say why UI verification was not relevant.
 
 ## Operating Model
 
