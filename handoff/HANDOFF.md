@@ -4,7 +4,7 @@
 
 ## Last Updated
 
-- 2026-05-16 by Codex — A3 closeout batch is implemented locally: A3.9 Weather links, R10 handoff compression, and R11 browser harness storage non-goals note. Full verification/deploy status should be checked in the Verification Snapshot below.
+- 2026-05-16 by Codex — A3 closeout batch is complete: A3.9 Weather links, R10 handoff compression, R11 browser harness storage non-goals note, full verification, commit/push, and Vercel production deployment via DEPLOY.md.
 
 ## Operating Rule
 
@@ -95,4 +95,4 @@ Most recent local verification in this turn:
 - Passed after bead/doc updates: `npm run lint && npm run build`
 - Passed: `git diff --check`
 - Inbuilt-browser sanity check at `http://127.0.0.1:1420/?missionHarness=1` confirmed the Weather mast control and Settings Weather Links section rendered. Direct manual clicking in the inbuilt browser was unreliable because of element coordinate/runtime issues, so the full configure/open flow is covered by the checked-in Chromium E2E instead.
-- Deploy status: pending in this closeout turn.
+- Deploy status: completed via the documented Vercel production prebuilt flow; production alias is `https://sartracker-web.vercel.app`.

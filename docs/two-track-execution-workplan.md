@@ -111,7 +111,7 @@ This is the default order when the user says “work on the next task.”
 | Done | A3.4: Clean Up Mission Mast And Right-Panel Duplication | Track A / Shared | `sartracker-web-6y3.4` | Done locally 2026-05-16 |
 | Done | A3.5: Add Operational Contrast/Theme Pass | Track A / UI | `sartracker-web-6y3.5` | Done locally 2026-05-16 |
 | Done | A3.6: Move Static Operational Notes Out Of Primary Map Chrome | Track A / UI | `sartracker-web-6y3.6` | Done locally 2026-05-16 |
-| Done | A3.9: Add Configurable Weather Links Menu | Track A / UI | `sartracker-web-6y3.9` | Done locally 2026-05-16, external links only |
+| Done | A3.9: Add Configurable Weather Links Menu | Track A / UI | `sartracker-web-6y3.9` | Done and deployed 2026-05-16, external links only |
 | Done | R10: Compress Handoff And Annotate Historical Docs | Process / Docs | `sartracker-web-419` | Done locally 2026-05-16 |
 | Done | R11: Add Browser Harness Storage Non-Goals Note | Track A / Docs | `sartracker-web-mh5` | Done locally 2026-05-16 |
 | 1 | S3: Layer Visibility Service Extraction | Shared / Track A | Create/update bead before starting | Ready |
@@ -475,6 +475,7 @@ Verification:
 - Done locally 2026-05-16: unit coverage in `tests/unit/settings-validation.test.ts` and `tests/unit/browser-settings-store.test.ts` covers weather link validation, normalization, list limit, and browser settings persistence.
 - Done locally 2026-05-16: Chromium E2E in `tests/e2e/weather.spec.ts` covers empty Weather menu state, invalid URL rejection in Settings, and configured link opening in a new tab.
 - Done locally 2026-05-16: operator manual updated to describe Weather as external links only, not a weather integration.
+- Deployed 2026-05-16 via the documented Vercel production prebuilt flow.
 
 ### A3.10: Investigate And Fix Irish Grid Conversion Accuracy
 
