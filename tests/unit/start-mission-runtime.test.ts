@@ -222,6 +222,93 @@ describe('startMissionRuntime', () => {
     )
   })
 
+  it('requests immediate autosave sync after successful lifecycle transitions', async () => {
+    const requestAutosaveSync = vi.fn().mockResolvedValue(undefined)
+    const runtime = await startMissionRuntime({
+      missionStore: createMissionStoreStub({
+        createMission: vi.fn().mockResolvedValue(ACTIVE_MISSION),
+        pauseMission: vi.fn().mockResolvedValue(PAUSED_MISSION),
+        resumeMission: vi.fn().mockResolvedValue(ACTIVE_MISSION),
+        finishMission: vi.fn().mockResolvedValue({
+          ...ACTIVE_MISSION,
+          status: 'finished',
+          finish_time: '2026-04-09T12:00:00.000Z',
+        }),
+      }),
+      applyRuntime: vi.fn(),
+      requestAutosaveSync,
+      now: () => new Date('2026-04-09T11:00:00.000Z'),
+    })
+
+    await runtime.startMission({ name: 'Active Mission' })
+    await runtime.pauseMission()
+    await runtime.resumeMission()
+    await runtime.finishMission()
+
+    expect(requestAutosaveSync).toHaveBeenNthCalledWith(1, 'mission-start')
+    expect(requestAutosaveSync).toHaveBeenNthCalledWith(2, 'mission-pause')
+    expect(requestAutosaveSync).toHaveBeenNthCalledWith(3, 'mission-resume')
+    expect(requestAutosaveSync).toHaveBeenNthCalledWith(4, 'mission-finish')
+  })
+
+  it('does not fail a completed lifecycle transition when the autosave request reports failure', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    try {
+      const runtime = await startMissionRuntime({
+        missionStore: createMissionStoreStub({
+          createMission: vi.fn().mockResolvedValue(ACTIVE_MISSION),
+        }),
+        applyRuntime: vi.fn(),
+        requestAutosaveSync: vi.fn().mockRejectedValue(new Error('backup unavailable')),
+        now: () => new Date('2026-04-09T11:00:00.000Z'),
+      })
+
+      await expect(runtime.startMission({ name: 'Active Mission' })).resolves.toEqual(
+        ACTIVE_MISSION,
+      )
+    } finally {
+      warn.mockRestore()
+    }
+  })
+
+  it('requests immediate autosave sync after recovery lifecycle decisions', async () => {
+    const requestAutosaveSync = vi.fn().mockResolvedValue(undefined)
+    const resumeMission = vi.fn().mockResolvedValue(ACTIVE_MISSION)
+    const finishMission = vi.fn().mockResolvedValue({
+      ...PAUSED_MISSION,
+      status: 'finished',
+      finish_time: '2026-04-09T12:00:00.000Z',
+    })
+    const runtime = await startMissionRuntime({
+      missionStore: createMissionStoreStub({
+        getRecoverableMission: vi.fn().mockResolvedValue(PAUSED_MISSION),
+        resumeMission,
+        finishMission,
+      }),
+      applyRuntime: vi.fn(),
+      requestAutosaveSync,
+      now: () => new Date('2026-04-09T11:00:00.000Z'),
+    })
+
+    await runtime.resumeRecoverableMission()
+
+    expect(requestAutosaveSync).toHaveBeenCalledWith('mission-recover-resume')
+
+    const secondRuntime = await startMissionRuntime({
+      missionStore: createMissionStoreStub({
+        getRecoverableMission: vi.fn().mockResolvedValue(PAUSED_MISSION),
+        finishMission,
+      }),
+      applyRuntime: vi.fn(),
+      requestAutosaveSync,
+      now: () => new Date('2026-04-09T11:00:00.000Z'),
+    })
+
+    await secondRuntime.startFresh()
+
+    expect(requestAutosaveSync).toHaveBeenCalledWith('mission-start-fresh')
+  })
+
   it('warns when a mission name matches an existing mission', async () => {
     const runtime = await startMissionRuntime({
       missionStore: createMissionStoreStub({

@@ -25,6 +25,7 @@ import {
 } from '../mission/mission-store'
 import { startMissionGovernanceRuntime } from '../mission/start-mission-governance-runtime'
 import { startMissionRuntime } from '../mission/start-mission-runtime'
+import type { AutosaveSyncReason } from '../persistence/autosave-status-store'
 
 /**
  * Mission store surface required by the six core feature runtimes. Derived
@@ -66,6 +67,7 @@ export type CoreFeatureRuntimeOptions = {
   readonly missionStore: CoreFeatureRuntimeMissionStore
   readonly attachmentAdapter: MarkerAttachmentBoundary
   readonly gpxWatchSource?: GpxWatchSource
+  readonly requestAutosaveSync?: (reason: AutosaveSyncReason) => Promise<void>
   readonly now?: () => Date
   readonly startMissionRuntime?: typeof startMissionRuntime
   readonly startMissionGovernanceRuntime?: typeof startMissionGovernanceRuntime
@@ -120,6 +122,9 @@ export async function startCoreFeatureRuntimes(
   const missionRuntimeController = await startMission({
     missionStore: options.missionStore,
     applyRuntime: applyMissionRuntime,
+    ...(options.requestAutosaveSync !== undefined
+      ? { requestAutosaveSync: options.requestAutosaveSync }
+      : {}),
     ...(options.now !== undefined ? { now: options.now } : {}),
   })
   applyMissionRuntimeController(missionRuntimeController)
@@ -128,6 +133,9 @@ export async function startCoreFeatureRuntimes(
   const missionGovernanceController = await startGovernance({
     missionStore: options.missionStore,
     applyRuntime: applyMissionGovernanceRuntime,
+    ...(options.requestAutosaveSync !== undefined
+      ? { requestAutosaveSync: options.requestAutosaveSync }
+      : {}),
   })
   applyMissionGovernanceController(missionGovernanceController)
   cleanups.push(() => undefined)

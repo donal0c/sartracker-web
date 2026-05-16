@@ -4,6 +4,7 @@ import type {
   MissionStore,
   UnlockFinalizedMissionInput,
 } from '../../infrastructure/mission-store/tauri-mission-store'
+import type { AutosaveSyncReason } from '../persistence/autosave-status-store'
 
 type MissionGovernanceStoreBoundary = Pick<
   MissionStore,
@@ -17,6 +18,7 @@ export type MissionGovernanceRuntimeState = {
 type StartMissionGovernanceRuntimeDependencies = {
   readonly missionStore: MissionGovernanceStoreBoundary
   readonly applyRuntime: (runtime: MissionGovernanceRuntimeState) => void
+  readonly requestAutosaveSync?: (reason: AutosaveSyncReason) => Promise<void>
 }
 
 export type MissionGovernanceController = {
@@ -40,11 +42,13 @@ export async function startMissionGovernanceRuntime(
     finalizeGovernanceMission: async (missionId) => {
       const result = await dependencies.missionStore.finalizeMission(missionId)
       await refreshGovernanceMission()
+      await requestAutosaveSync('mission-finalize')
       return result
     },
     unlockGovernanceMission: async (input) => {
       const mission = await dependencies.missionStore.unlockFinalizedMission(input)
       await refreshGovernanceMission()
+      await requestAutosaveSync('mission-unlock')
       return mission
     },
   }
@@ -59,5 +63,13 @@ export async function startMissionGovernanceRuntime(
 
   function publishRuntime(): void {
     dependencies.applyRuntime({ governanceMission })
+  }
+
+  async function requestAutosaveSync(reason: AutosaveSyncReason): Promise<void> {
+    try {
+      await dependencies.requestAutosaveSync?.(reason)
+    } catch (error) {
+      console.warn('Mission governance autosave request failed.', error)
+    }
   }
 }

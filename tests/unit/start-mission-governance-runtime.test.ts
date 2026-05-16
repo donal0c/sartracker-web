@@ -44,6 +44,7 @@ describe('startMissionGovernanceRuntime', () => {
 
   it('refreshes governance mission after finalizing', async () => {
     const applyRuntime = vi.fn()
+    const requestAutosaveSync = vi.fn().mockResolvedValue(undefined)
     const archive: MissionArchiveInfo = {
       mission_id: FINISHED_MISSION.id,
       archive_path: '/tmp/mission-finished.zip',
@@ -66,10 +67,12 @@ describe('startMissionGovernanceRuntime', () => {
         finalizeMission,
       }),
       applyRuntime,
+      requestAutosaveSync,
     })
 
     await expect(runtime.finalizeGovernanceMission(FINISHED_MISSION.id)).resolves.toEqual(finalizeResult)
     expect(finalizeMission).toHaveBeenCalledWith(FINISHED_MISSION.id)
+    expect(requestAutosaveSync).toHaveBeenCalledWith('mission-finalize')
     expect(applyRuntime).toHaveBeenLastCalledWith({
       governanceMission: FINALIZED_MISSION,
     })
@@ -77,6 +80,7 @@ describe('startMissionGovernanceRuntime', () => {
 
   it('refreshes governance mission after unlocking', async () => {
     const applyRuntime = vi.fn()
+    const requestAutosaveSync = vi.fn().mockResolvedValue(undefined)
     const listMissions = vi
       .fn()
       .mockResolvedValueOnce([FINALIZED_MISSION])
@@ -89,6 +93,7 @@ describe('startMissionGovernanceRuntime', () => {
         unlockFinalizedMission,
       }),
       applyRuntime,
+      requestAutosaveSync,
     })
 
     await expect(
@@ -104,9 +109,43 @@ describe('startMissionGovernanceRuntime', () => {
       admin_name: 'Ops Lead',
       reason: 'Need to edit mission data',
     })
+    expect(requestAutosaveSync).toHaveBeenCalledWith('mission-unlock')
     expect(applyRuntime).toHaveBeenLastCalledWith({
       governanceMission: FINISHED_MISSION,
     })
+  })
+
+  it('does not fail a completed governance transition when autosave request reports failure', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    const archive: MissionArchiveInfo = {
+      mission_id: FINISHED_MISSION.id,
+      archive_path: '/tmp/mission-finished.zip',
+      created_at: '2026-04-10T13:00:00.000Z',
+    }
+    const finalizeResult: FinalizeMissionResult = {
+      mission: FINALIZED_MISSION,
+      archive,
+    }
+
+    try {
+      const runtime = await startMissionGovernanceRuntime({
+        missionStore: createMissionGovernanceStoreStub({
+          listMissions: vi
+            .fn()
+            .mockResolvedValueOnce([FINISHED_MISSION])
+            .mockResolvedValueOnce([FINALIZED_MISSION]),
+          finalizeMission: vi.fn().mockResolvedValue(finalizeResult),
+        }),
+        applyRuntime: vi.fn(),
+        requestAutosaveSync: vi.fn().mockRejectedValue(new Error('backup unavailable')),
+      })
+
+      await expect(runtime.finalizeGovernanceMission(FINISHED_MISSION.id)).resolves.toEqual(
+        finalizeResult,
+      )
+    } finally {
+      warn.mockRestore()
+    }
   })
 })
 

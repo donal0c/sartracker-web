@@ -27,7 +27,10 @@ describe('runtime-managed-services', () => {
       createManagedRuntimeServices({
         runtimeSettings: BASE_SETTINGS,
         missionStore: createMissionStoreStub(),
-        startMissionAutosave: vi.fn().mockReturnValue(stopAutosave),
+        startMissionAutosave: vi.fn().mockReturnValue({
+          stop: stopAutosave,
+          requestSync: vi.fn().mockResolvedValue(undefined),
+        }),
         startTrackingRuntime: vi.fn().mockRejectedValue(new Error('tracking unavailable')),
         createClient: vi.fn().mockReturnValue({}),
         createPoller: vi.fn(),
@@ -56,7 +59,10 @@ describe('runtime-managed-services', () => {
         trackingCacheEnabled: false,
       },
       missionStore: createMissionStoreStub(),
-      startMissionAutosave: vi.fn().mockReturnValue(vi.fn()),
+      startMissionAutosave: vi.fn().mockReturnValue({
+        stop: vi.fn(),
+        requestSync: vi.fn().mockResolvedValue(undefined),
+      }),
       startTrackingRuntime: vi.fn().mockResolvedValue(vi.fn()),
       createClient: vi.fn().mockReturnValue({}),
       createPoller: vi.fn(),

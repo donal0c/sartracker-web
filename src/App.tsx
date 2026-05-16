@@ -30,6 +30,10 @@ import { useMissionStore } from './features/mission/mission-store'
 import { shouldEnableMissionBrowserHarness } from './features/mission/mission-browser-harness'
 import { calculateMissionTimerState, formatMissionDuration } from './features/mission/mission-timers'
 import {
+  selectAutosaveWarning,
+  useAutosaveStatusStore,
+} from './features/persistence/autosave-status-store'
+import {
   type RuntimeBootPhase,
   useRuntimeBootStore,
 } from './features/runtime/runtime-boot-store'
@@ -73,7 +77,7 @@ function App() {
 
   return (
     <main
-      className="sar-shell flex h-screen w-screen flex-col overflow-hidden"
+      className="sar-shell flex h-screen w-full flex-col overflow-hidden"
       data-focus-mode={focusModeActive ? 'true' : 'false'}
       data-testid="app-shell"
     >
@@ -268,7 +272,8 @@ function HostedBrowserTestingBanner() {
   )
 }
 
-function CommandMast(props: {
+/** Renders the top operational mast with mission, tracking, diagnostics, and runtime health. */
+export function CommandMast(props: {
   readonly status: string
   readonly onOpenDiagnostics: () => void
   readonly onOpenSettings: () => void
@@ -277,8 +282,13 @@ function CommandMast(props: {
   const currentMission = useMissionStore((state) => state.currentMission)
   const snapshot = useTrackingStore((state) => state.snapshot)
   const trackingStatus = useTrackingStore((state) => state.status)
+  const autosaveStatus = useAutosaveStatusStore()
   const [now, setNow] = useState(() => new Date())
   const staleCount = snapshot.positions.filter((position) => position.device_cache_stale).length
+  const autosaveWarning = selectCommandMastAutosaveWarning(
+    selectAutosaveWarning(autosaveStatus, now),
+    currentMission,
+  )
   const timerState = useMemo(
     () => (currentMission === null ? null : calculateMissionTimerState(currentMission, now)),
     [currentMission, now],
@@ -291,7 +301,7 @@ function CommandMast(props: {
 
   return (
     <header className="sar-global-mast flex-shrink-0" data-testid="command-mast">
-      <div className="grid min-h-[88px] w-full grid-cols-[260px_minmax(220px,1fr)_124px_124px_72px_72px_120px_128px_128px_128px_96px] items-stretch overflow-hidden">
+      <div className="grid min-h-[88px] w-full grid-cols-[250px_186px_112px_112px_64px_64px_80px_102px_102px_102px_102px] items-stretch overflow-hidden">
         <div className="flex min-w-0 items-center gap-3 border-r border-[var(--sar-line)] px-4">
           <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center border border-amber-300/35 bg-amber-300/10 font-mono text-[11px] font-black text-amber-200">
             MR
@@ -340,9 +350,22 @@ function CommandMast(props: {
 
         <div className="flex min-w-0 flex-col justify-center border-l border-r border-[var(--sar-line)] px-4">
           <p className="sar-section-label">System Status</p>
-          <p className="mt-1 font-mono text-sm font-black uppercase tracking-[0.14em] text-emerald-300">
+          <p
+            className={`mt-1 font-mono text-sm font-black uppercase tracking-[0.14em] ${
+              autosaveWarning === null ? 'text-emerald-300' : 'text-amber-300'
+            }`}
+          >
             {props.status}
           </p>
+          {autosaveWarning === null ? null : (
+            <p
+              className="mt-1 truncate text-[10px] font-black uppercase tracking-[0.08em] text-amber-300"
+              data-testid="autosave-warning"
+              title={autosaveWarning}
+            >
+              Autosave warning
+            </p>
+          )}
         </div>
         <button
           className="sar-mast-button"
@@ -397,6 +420,22 @@ function TopReadout(props: {
       </p>
     </div>
   )
+}
+
+/** Keeps stale autosave warnings mission-scoped while preserving failure visibility. */
+function selectCommandMastAutosaveWarning(
+  warning: string | null,
+  currentMission: unknown,
+): string | null {
+  if (warning === null) {
+    return null
+  }
+
+  if (warning.startsWith('Autosave failing')) {
+    return warning
+  }
+
+  return currentMission === null ? null : warning
 }
 
 function phasePillClassName(phase: string): string {

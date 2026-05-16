@@ -3,6 +3,7 @@ import type {
   Mission,
   MissionStore,
 } from '../../infrastructure/mission-store/tauri-mission-store'
+import type { AutosaveSyncReason } from '../persistence/autosave-status-store'
 import type { MissionRuntimeState } from './mission-store'
 
 type StartMissionRuntimeDependencies = {
@@ -11,6 +12,7 @@ type StartMissionRuntimeDependencies = {
     'createMission' | 'listMissions' | 'getRecoverableMission' | 'pauseMission' | 'resumeMission' | 'finishMission'
   >
   readonly applyRuntime: (runtime: MissionRuntimeState) => void
+  readonly requestAutosaveSync?: (reason: AutosaveSyncReason) => Promise<void>
   readonly now?: () => Date
 }
 
@@ -59,6 +61,7 @@ export async function startMissionRuntime(
       currentMission = mission
       currentRecoverableMission = null
       publishRuntime()
+      await requestAutosaveSync('mission-start')
       return mission
     },
     hasMissionNameConflict: async (name) => {
@@ -78,6 +81,7 @@ export async function startMissionRuntime(
       const mission = await dependencies.missionStore.pauseMission(currentMission.id)
       currentMission = mission
       publishRuntime()
+      await requestAutosaveSync('mission-pause')
       return mission
     },
     resumeMission: async () => {
@@ -88,6 +92,7 @@ export async function startMissionRuntime(
       const mission = await dependencies.missionStore.resumeMission(currentMission.id)
       currentMission = mission
       publishRuntime()
+      await requestAutosaveSync('mission-resume')
       return mission
     },
     finishMission: async () => {
@@ -99,6 +104,7 @@ export async function startMissionRuntime(
       currentMission = null
       currentRecoverableMission = null
       publishRuntime()
+      await requestAutosaveSync('mission-finish')
       return mission
     },
     resumeRecoverableMission: async () => {
@@ -110,6 +116,7 @@ export async function startMissionRuntime(
       currentMission = mission
       currentRecoverableMission = null
       publishRuntime()
+      await requestAutosaveSync('mission-recover-resume')
       return mission
     },
     startFresh: async () => {
@@ -124,12 +131,21 @@ export async function startMissionRuntime(
       currentMission = null
       currentRecoverableMission = null
       publishRuntime()
+      await requestAutosaveSync('mission-start-fresh')
       return mission
     },
   }
 
   function publishRuntime(): void {
     dependencies.applyRuntime(toRuntimeState(currentMission, currentRecoverableMission))
+  }
+
+  async function requestAutosaveSync(reason: AutosaveSyncReason): Promise<void> {
+    try {
+      await dependencies.requestAutosaveSync?.(reason)
+    } catch (error) {
+      console.warn('Mission lifecycle autosave request failed.', error)
+    }
   }
 }
 

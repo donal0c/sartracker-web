@@ -1,5 +1,10 @@
 import type { TrackingCache } from '../../infrastructure/tracking-cache/tauri-tracking-cache'
-import type { AutosaveStore } from '../persistence/mission-autosave'
+import type {
+  AutosaveStore,
+  MissionAutosaveController,
+} from '../persistence/mission-autosave'
+import type { AutosaveSyncReason } from '../persistence/autosave-status-store'
+import { useAutosaveStatusStore } from '../persistence/autosave-status-store'
 import type { TrackingRuntimeMissionStore } from '../tracking/start-tracking-runtime'
 
 const NOOP_STOP = () => undefined
@@ -24,6 +29,7 @@ export type RuntimeBootstrapSettings = {
 
 export type RuntimeServiceHandles = {
   readonly stopAutosave: () => void
+  readonly requestAutosaveSync: (reason: AutosaveSyncReason) => Promise<void>
   readonly stopTracking: () => void
 }
 
@@ -33,7 +39,7 @@ type CreateManagedRuntimeServicesDependencies = {
   readonly startMissionAutosave: (
     store: AutosaveStore,
     options?: { readonly intervalMs?: number },
-  ) => () => void
+  ) => MissionAutosaveController
   readonly startTrackingRuntime: (input: {
     readonly config: RuntimeBootstrapSettings['trackingConfig']
     readonly createClient: (config: NonNullable<RuntimeBootstrapSettings['trackingConfig']>) => unknown
@@ -78,6 +84,7 @@ type CreateManagedRuntimeServicesDependencies = {
 export function createNoopRuntimeServiceHandles(): RuntimeServiceHandles {
   return {
     stopAutosave: NOOP_STOP,
+    requestAutosaveSync: async () => undefined,
     stopTracking: NOOP_STOP,
   }
 }
@@ -96,11 +103,18 @@ export function stopRuntimeServices(handles: RuntimeServiceHandles): void {
 export async function createManagedRuntimeServices(
   dependencies: CreateManagedRuntimeServicesDependencies,
 ): Promise<RuntimeServiceHandles> {
-  const stopAutosave = dependencies.runtimeSettings.autosaveEnabled
+  if (!dependencies.runtimeSettings.autosaveEnabled) {
+    useAutosaveStatusStore.getState().markDisabled()
+  }
+
+  const autosave = dependencies.runtimeSettings.autosaveEnabled
     ? dependencies.startMissionAutosave(dependencies.missionStore, {
         intervalMs: dependencies.runtimeSettings.autosaveIntervalMs,
       })
-    : NOOP_STOP
+    : {
+        stop: NOOP_STOP,
+        requestSync: async () => undefined,
+      }
 
   try {
     const stopTracking = await dependencies.startTrackingRuntime({
@@ -118,11 +132,12 @@ export async function createManagedRuntimeServices(
     })
 
     return {
-      stopAutosave,
+      stopAutosave: autosave.stop,
+      requestAutosaveSync: autosave.requestSync,
       stopTracking,
     }
   } catch (error) {
-    stopAutosave()
+    autosave.stop()
     throw error
   }
 }

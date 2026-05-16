@@ -3,7 +3,8 @@ import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { RuntimeBootGate } from '../../src/App'
+import { CommandMast, RuntimeBootGate } from '../../src/App'
+import { useAutosaveStatusStore } from '../../src/features/persistence/autosave-status-store'
 
 describe('RuntimeBootGate', () => {
   let root: Root | null = null
@@ -16,6 +17,28 @@ describe('RuntimeBootGate', () => {
     host?.remove()
     root = null
     host = null
+    useAutosaveStatusStore.getState().reset()
+  })
+
+  it('surfaces an autosave warning in the command mast when backup sync is failing', () => {
+    useAutosaveStatusStore.getState().markSyncFailed({
+      reason: 'mission-finish',
+      message: 'disk full',
+      now: new Date('2026-05-16T09:00:00.000Z'),
+    })
+
+    render(
+      React.createElement(CommandMast, {
+        status: 'ready',
+        onOpenDiagnostics: vi.fn(),
+        onOpenSettings: vi.fn(),
+      }),
+    )
+
+    const warning = document.querySelector('[data-testid="autosave-warning"]')
+    expect(warning).not.toBeNull()
+    expect(warning?.textContent).toContain('Autosave warning')
+    expect(warning?.getAttribute('title')).toContain('Autosave failing')
   })
 
   it('shows a calm preparing state during runtime startup', () => {

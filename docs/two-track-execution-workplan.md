@@ -85,17 +85,17 @@ This is the default order when the user says “work on the next task.”
 | Done | Hosted Tracking History Quota + 48h Offset | Track A | `sartracker-web-vpz.4` | Done 2026-05-16 |
 | Done | A1: Hosted Testing Instructions And Feedback Intake | Track A | `sartracker-web-vpz.1` | Done 2026-05-16 |
 | Done | B1: Tauri Beta Packaging Recon | Track B | `sartracker-web-vpz.2` | Done 2026-05-16 |
-| 1 | S2: Autosave Lifecycle Hardening | Shared / Track B | Create/update bead before starting | Ready |
-| 2 | S3: Layer Visibility Service Extraction | Shared / Track A | Create/update bead before starting | Ready |
-| 3 | A3: Team Feedback Triage Pass | Track A | Create/update beads from feedback | As feedback arrives |
-| 4 | B2: Tauri Beta Release Template | Track B | Create/update bead before starting | Ready |
-| 5 | B3: First Internal Tauri Smoke Build | Track B | Create/update bead before starting | Ready after B2 |
-| 6 | S4: Map Overlay Consolidation And Camera Race Fix | Shared / Track B | Create/update bead before starting | Ready after S3 preferred |
-| 7 | S5: Mission Control View Model Extraction | Shared / Track A | Create/update bead before starting | Best after real UI feedback |
-| 8 | V1: Regression E2E Coverage | Verification | Create/update bead before starting | Ready |
-| 9 | V2: Visual Review Automation | Verification | Create/update bead before starting | Ready |
-| 10 | B4: GPX And Drawing Hit-Test Hardening | Track B | Create/update bead before starting | Ready |
-| 11 | C1: Local Proprietary Map Package Requirements | Track B / Maps | Create/update bead before starting | Waiting for map facts |
+| Done | S2: Autosave Lifecycle Hardening | Shared / Track B | `sartracker-web-vpz.5` | Done 2026-05-16 |
+| 1 | S3: Layer Visibility Service Extraction | Shared / Track A | Create/update bead before starting | Ready |
+| 2 | A3: Team Feedback Triage Pass | Track A | Create/update beads from feedback | As feedback arrives |
+| 3 | B2: Tauri Beta Release Template | Track B | Create/update bead before starting | Ready |
+| 4 | B3: First Internal Tauri Smoke Build | Track B | Create/update bead before starting | Ready after B2 |
+| 5 | S4: Map Overlay Consolidation And Camera Race Fix | Shared / Track B | Create/update bead before starting | Ready after S3 preferred |
+| 6 | S5: Mission Control View Model Extraction | Shared / Track A | Create/update bead before starting | Best after real UI feedback |
+| 7 | V1: Regression E2E Coverage | Verification | Create/update bead before starting | Ready |
+| 8 | V2: Visual Review Automation | Verification | Create/update bead before starting | Ready |
+| 9 | B4: GPX And Drawing Hit-Test Hardening | Track B | Create/update bead before starting | Ready |
+| 10 | C1: Local Proprietary Map Package Requirements | Track B / Maps | Create/update bead before starting | Waiting for map facts |
 
 ## Ready Work Chunks
 
@@ -355,6 +355,8 @@ Verification:
 
 ### S2: Autosave Lifecycle Hardening
 
+Bead: `sartracker-web-vpz.5`
+
 Former hardening item: T10.
 
 Goal: mission lifecycle transitions should request an immediate durable sync, and autosave failures should not be invisible.
@@ -375,9 +377,9 @@ Acceptance:
 
 Verification:
 
-- Unit tests around lifecycle-triggered sync.
-- Unit tests for autosave failure/status state.
-- Targeted browser or desktop smoke check depending on the touched surface.
+- Done 2026-05-16: unit coverage added for forced `requestSync()`, queued lifecycle sync behind in-flight interval sync, stale/failing autosave status, mission lifecycle sync calls, and finalize/unlock sync calls.
+- Done 2026-05-16: command mast warning rendering covered by unit test and inbuilt-browser validation at `http://127.0.0.1:1420/?missionHarness=1`.
+- Done 2026-05-16: `npm run lint`, `npm run test -- --run`, `npm run build`, `npm run test:backend`, and `npm run test:e2e -- --project=chromium` passed.
 
 ### S3: Layer Visibility Service Extraction
 

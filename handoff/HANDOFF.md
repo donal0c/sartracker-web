@@ -4,6 +4,7 @@
 
 ## Last Updated
 
+- 2026-05-16 by Codex — S2 autosave lifecycle hardening completed; next default task is S3 layer visibility service extraction.
 - 2026-05-16 by Codex — B1 Tauri beta packaging recon completed; next default task is S2 autosave lifecycle hardening.
 - 2026-05-16 by Codex — A1 hosted testing instructions and feedback intake completed; next default task is B1 Tauri beta packaging reconnaissance.
 - 2026-05-16 by Codex — S1 Runtime Boot/Fault Guard completed; next default task is A1 hosted testing instructions and feedback intake.
@@ -40,6 +41,7 @@ Supporting docs may explain details, but they must not become separate queues. T
 - Startup now has an explicit boot/fault guard. The app shell stays gated while runtime services prepare, startup failures show a fault panel with Reload, and runtime controller replacement disposes the previous controller before installing the next one.
 - Hosted tester instructions now have a concise quick-start run sheet, URL/base-URL rules, bug-report template fields, and triage buckets. The operator manual has a hosted testing and feedback section.
 - Tauri packaging recon found a working macOS arm64 `.app` path: `npm run tauri build -- --bundles app` -> `src-tauri/target/release/bundle/macos/sartracker-web.app`. Full `npm run tauri build` currently fails at DMG bundling; unsigned/ad-hoc app is rejected by `spctl`, so first beta notes must call out Gatekeeper limitations.
+- Autosave now has an explicit forced `requestSync()` path. Mission start, pause, resume, finish, recover-resume, start-fresh, finalize, and unlock request immediate backup sync after the lifecycle database write. Autosave status tracks last success/failure and the command mast shows an amber autosave warning if sync is failing or stale.
 - Latest deployed production URL has command-line validation for proxy endpoints:
   - `/api/session` returned 200 for the team credentials
   - `/api/devices` returned the 18-device roster
@@ -78,9 +80,9 @@ Use these only for team testing, not as a production secret model.
 
 Default next task when the user says “go” or “work on the next task”:
 
-1. `S2: Autosave Lifecycle Hardening` in `docs/two-track-execution-workplan.md`
+1. `S3: Layer Visibility Service Extraction` in `docs/two-track-execution-workplan.md`
 2. Bead: create/update before starting.
-3. Goal: request immediate durable sync on important mission lifecycle transitions and surface autosave failure/staleness.
+3. Goal: move layer visibility patch/cascade rules out of the React layer panel into a pure service while preserving current panel and map behavior.
 
 ## Open Beads That Matter Now
 
@@ -99,9 +101,10 @@ Older parity/UI beads still exist, but new work should be selected through the t
 
 Most recent completed verification:
 
-- B1 environment captured: Node `v22.17.1`, npm `10.9.2`, Rust/Cargo `1.94.1`, Tauri CLI `2.10.1`.
-- `npm run tauri build` compiled the release binary and `.app`, then failed during DMG bundling at `bundle_dmg.sh`.
-- `npm run tauri build -- --bundles app` passed and produced `src-tauri/target/release/bundle/macos/sartracker-web.app`.
-- Zipped artifact path was proven locally: `tmp/beta-artifacts/sartracker-web_0.1.0_aarch64.app.zip`.
-- Signing/notarization check: app is ad-hoc signed only; `spctl -a -vvv -t open` rejects it with `source=Insufficient Context`.
-- Results and open beta questions are recorded in `docs/tauri-beta-release-plan.md`.
+- S2 targeted unit suite passed for autosave status/request sync, mission lifecycle sync triggers, governance sync triggers, managed services, app runtime, and command mast warning.
+- `npm run lint` passed.
+- `npm run test -- --run` passed: 86 files, 401 tests. An earlier concurrent run timed out in the large browser-harness quota test; rerunning that file alone passed before the full suite passed.
+- `npm run build` passed.
+- `npm run test:backend` passed: 37 Rust tests.
+- `npm run test:e2e -- --project=chromium` passed: 69 browser workflow tests.
+- Inbuilt browser validation at `http://127.0.0.1:1420/?missionHarness=1` confirmed the command mast renders, hosted banner appears, no false autosave warning appears in browser harness mode, and the mast fits at 1280px without horizontal overflow.

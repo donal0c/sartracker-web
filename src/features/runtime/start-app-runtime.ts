@@ -1,5 +1,9 @@
-import type { AutosaveStore } from '../persistence/mission-autosave'
+import type {
+  AutosaveStore,
+  MissionAutosaveController,
+} from '../persistence/mission-autosave'
 import { startMissionAutosave } from '../persistence/mission-autosave'
+import type { AutosaveSyncReason } from '../persistence/autosave-status-store'
 import {
   createTauriMissionStore,
   type MissionStore,
@@ -57,7 +61,7 @@ type StartAppRuntimeDependencies = {
   readonly startMissionAutosave: (
     store: AutosaveStore,
     options?: { readonly intervalMs?: number },
-  ) => () => void
+  ) => MissionAutosaveController
   readonly startMissionRuntime: typeof startMissionRuntime
   readonly startMissionGovernanceRuntime: typeof startMissionGovernanceRuntime
   readonly startMarkerRuntime: typeof startMarkerRuntime
@@ -109,6 +113,8 @@ export async function startAppRuntime(
     missionStore,
     attachmentAdapter: tauriMarkerAttachmentAdapter,
     gpxWatchSource: gpxImportSource,
+    requestAutosaveSync: (reason: AutosaveSyncReason) =>
+      activeServices.requestAutosaveSync(reason),
     startMissionRuntime: resolvedDependencies.startMissionRuntime,
     startMissionGovernanceRuntime: resolvedDependencies.startMissionGovernanceRuntime,
     startMarkerRuntime: resolvedDependencies.startMarkerRuntime,

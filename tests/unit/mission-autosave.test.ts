@@ -7,6 +7,10 @@ import {
 } from '../../src/features/persistence/autosave-config'
 import type { MissionAutosaveRuntime } from '../../src/features/persistence/mission-autosave-runtime'
 import { startMissionAutosave } from '../../src/features/persistence/mission-autosave'
+import {
+  selectAutosaveWarning,
+  useAutosaveStatusStore,
+} from '../../src/features/persistence/autosave-status-store'
 
 describe('mission autosave', () => {
   beforeEach(() => {
@@ -14,6 +18,7 @@ describe('mission autosave', () => {
   })
 
   afterEach(() => {
+    useAutosaveStatusStore.getState().reset()
     vi.useRealTimers()
   })
 
@@ -31,14 +36,15 @@ describe('mission autosave', () => {
       syncBackup: vi.fn().mockResolvedValue('/tmp/mission.sqlite'),
     }
 
-    const stop = startMissionAutosave(store, { intervalMs: 5_000 })
+    const autosave = startMissionAutosave(store, { intervalMs: 5_000 })
 
     await vi.advanceTimersByTimeAsync(5_000)
 
     expect(store.getActiveMission).toHaveBeenCalledTimes(1)
     expect(store.syncBackup).toHaveBeenCalledTimes(1)
+    expect(useAutosaveStatusStore.getState().lastSuccessAt).not.toBeNull()
 
-    stop()
+    autosave.stop()
   })
 
   it('does nothing when there is no active mission', async () => {
@@ -47,14 +53,14 @@ describe('mission autosave', () => {
       syncBackup: vi.fn(),
     }
 
-    const stop = startMissionAutosave(store, { intervalMs: 5_000 })
+    const autosave = startMissionAutosave(store, { intervalMs: 5_000 })
 
     await vi.advanceTimersByTimeAsync(5_000)
 
     expect(store.getActiveMission).toHaveBeenCalledTimes(1)
     expect(store.syncBackup).not.toHaveBeenCalled()
 
-    stop()
+    autosave.stop()
   })
 
   it('logs and survives autosave failures', async () => {
@@ -64,13 +70,93 @@ describe('mission autosave', () => {
       syncBackup: vi.fn().mockRejectedValue(new Error('disk full')),
     }
 
-    const stop = startMissionAutosave(store, { intervalMs: 5_000, logger })
+    const autosave = startMissionAutosave(store, { intervalMs: 5_000, logger })
 
     await vi.advanceTimersByTimeAsync(5_000)
 
     expect(logger.warn).toHaveBeenCalledWith('Mission autosave failed.', expect.any(Error))
+    expect(useAutosaveStatusStore.getState().lastFailure?.message).toBe('disk full')
+    expect(selectAutosaveWarning(useAutosaveStatusStore.getState())).toContain(
+      'Autosave failing',
+    )
 
-    stop()
+    autosave.stop()
+  })
+
+  it('exposes a forced requestSync path that writes a backup even without an active mission', async () => {
+    const store = {
+      getActiveMission: vi.fn().mockResolvedValue(null),
+      syncBackup: vi.fn().mockResolvedValue('/tmp/mission.sqlite'),
+    }
+
+    const autosave = startMissionAutosave(store, { intervalMs: 5_000 })
+
+    await autosave.requestSync('mission-finish')
+
+    expect(store.getActiveMission).not.toHaveBeenCalled()
+    expect(store.syncBackup).toHaveBeenCalledTimes(1)
+    expect(useAutosaveStatusStore.getState().lastSuccessReason).toBe('mission-finish')
+
+    autosave.stop()
+  })
+
+  it('queues a forced lifecycle sync behind an in-flight interval sync', async () => {
+    let resolveSync: ((value: string) => void) | null = null
+    let syncCalls = 0
+    const store = {
+      getActiveMission: vi.fn().mockResolvedValue({ id: 'm-1' }),
+      syncBackup: vi.fn().mockImplementation(() => {
+        syncCalls += 1
+        if (syncCalls === 1) {
+          return new Promise<string>((resolve) => {
+            resolveSync = resolve
+          })
+        }
+
+        return Promise.resolve('/tmp/mission.sqlite')
+      }),
+    }
+
+    const autosave = startMissionAutosave(store, { intervalMs: 5_000 })
+
+    await vi.advanceTimersByTimeAsync(5_000)
+    const forcedSync = autosave.requestSync('mission-pause')
+
+    expect(store.syncBackup).toHaveBeenCalledTimes(1)
+
+    resolveSync?.('/tmp/mission.sqlite')
+    await forcedSync
+
+    expect(store.syncBackup).toHaveBeenCalledTimes(2)
+    expect(useAutosaveStatusStore.getState().lastSuccessReason).toBe('mission-pause')
+
+    autosave.stop()
+  })
+
+  it('reports stale autosave status after the configured interval grace expires', () => {
+    useAutosaveStatusStore.getState().configure({
+      enabled: true,
+      intervalMs: 10_000,
+      now: new Date('2026-05-16T09:00:00.000Z'),
+    })
+    useAutosaveStatusStore.getState().markSyncSucceeded({
+      reason: 'interval',
+      backupPath: '/tmp/mission.sqlite',
+      now: new Date('2026-05-16T09:00:00.000Z'),
+    })
+
+    expect(
+      selectAutosaveWarning(
+        useAutosaveStatusStore.getState(),
+        new Date('2026-05-16T09:00:19.000Z'),
+      ),
+    ).toBeNull()
+    expect(
+      selectAutosaveWarning(
+        useAutosaveStatusStore.getState(),
+        new Date('2026-05-16T09:00:21.000Z'),
+      ),
+    ).toContain('Autosave stale')
   })
 
   it('attempts a final sync when the page is hidden', async () => {
@@ -79,7 +165,7 @@ describe('mission autosave', () => {
       syncBackup: vi.fn().mockResolvedValue('/tmp/mission.sqlite'),
     }
 
-    const stop = startMissionAutosave(store, { intervalMs: 5_000 })
+    const autosave = startMissionAutosave(store, { intervalMs: 5_000 })
 
     Object.defineProperty(document, 'visibilityState', {
       configurable: true,
@@ -91,7 +177,7 @@ describe('mission autosave', () => {
 
     expect(store.syncBackup).toHaveBeenCalledTimes(1)
 
-    stop()
+    autosave.stop()
   })
 
   it('does not start overlapping syncs from timer and lifecycle triggers', async () => {
@@ -106,7 +192,7 @@ describe('mission autosave', () => {
       ),
     }
 
-    const stop = startMissionAutosave(store, { intervalMs: 5_000 })
+    const autosave = startMissionAutosave(store, { intervalMs: 5_000 })
 
     Object.defineProperty(document, 'visibilityState', {
       configurable: true,
@@ -120,11 +206,11 @@ describe('mission autosave', () => {
     resolveSync?.('/tmp/mission.sqlite')
     await Promise.resolve()
     await Promise.resolve()
-    stop()
+    autosave.stop()
   })
 
   it('returns a no-op stop function when browser lifecycle APIs are unavailable', () => {
-    const stop = startMissionAutosave(
+    const autosave = startMissionAutosave(
       {
         getActiveMission: vi.fn(),
         syncBackup: vi.fn(),
@@ -134,8 +220,9 @@ describe('mission autosave', () => {
       },
     )
 
-    expect(stop).toBeTypeOf('function')
-    expect(() => stop()).not.toThrow()
+    expect(autosave.stop).toBeTypeOf('function')
+    expect(autosave.requestSync).toBeTypeOf('function')
+    expect(() => autosave.stop()).not.toThrow()
   })
 
   it('removes timer and lifecycle listeners on stop', () => {
@@ -164,7 +251,7 @@ describe('mission autosave', () => {
       }),
     }
 
-    const stop = startMissionAutosave(
+    const autosave = startMissionAutosave(
       {
         getActiveMission: vi.fn().mockResolvedValue(null),
         syncBackup: vi.fn(),
@@ -177,7 +264,7 @@ describe('mission autosave', () => {
     expect(listeners.document).toHaveLength(1)
     expect(listeners.window).toHaveLength(1)
 
-    stop()
+    autosave.stop()
 
     expect(runtime.clearInterval).toHaveBeenCalledWith(42)
     expect(runtime.removeDocumentEventListener).toHaveBeenCalledTimes(1)

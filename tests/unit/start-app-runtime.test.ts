@@ -28,7 +28,7 @@ describe('app runtime startup', () => {
   it('starts mission autosave only inside a Tauri runtime', async () => {
     const store: MissionStore & AutosaveStore = createMissionStoreStub()
     const createMissionStore = vi.fn().mockReturnValue(store)
-    const startMissionAutosave = vi.fn().mockReturnValue(vi.fn())
+    const startMissionAutosave = vi.fn().mockReturnValue(createAutosaveController())
     const startMissionRuntime = vi.fn().mockResolvedValue({})
     const startMissionGovernanceRuntime = vi.fn().mockResolvedValue({})
     const startMarkerRuntime = vi.fn().mockResolvedValue({})
@@ -68,10 +68,12 @@ describe('app runtime startup', () => {
     expect(startMissionRuntime).toHaveBeenCalledWith({
       missionStore: store,
       applyRuntime: expect.any(Function),
+      requestAutosaveSync: expect.any(Function),
     })
     expect(startMissionGovernanceRuntime).toHaveBeenCalledWith({
       missionStore: store,
       applyRuntime: expect.any(Function),
+      requestAutosaveSync: expect.any(Function),
     })
     expect(startMarkerRuntime).toHaveBeenCalledWith({
       markerStore: store,
@@ -124,7 +126,7 @@ describe('app runtime startup', () => {
     const initialTrackingStop = vi.fn()
     const startMissionAutosave = vi
       .fn()
-      .mockReturnValueOnce(initialAutosaveStop)
+      .mockReturnValueOnce(createAutosaveController(initialAutosaveStop))
     const startTrackingRuntime = vi
       .fn()
       .mockResolvedValueOnce(initialTrackingStop)
@@ -176,9 +178,9 @@ describe('app runtime startup', () => {
 
     const startMissionAutosave = vi
       .fn()
-      .mockReturnValueOnce(initialAutosaveStop)
-      .mockReturnValueOnce(latestAutosaveStop)
-      .mockReturnValueOnce(staleAutosaveStop)
+      .mockReturnValueOnce(createAutosaveController(initialAutosaveStop))
+      .mockReturnValueOnce(createAutosaveController(latestAutosaveStop))
+      .mockReturnValueOnce(createAutosaveController(staleAutosaveStop))
 
     const startTrackingRuntime = vi
       .fn()
@@ -230,7 +232,7 @@ describe('app runtime startup', () => {
       isTauriRuntimeAvailable: vi.fn().mockReturnValue(true),
       createMissionStore: vi.fn().mockReturnValue(store),
       readRuntimeBootstrapSettings: vi.fn().mockResolvedValue(createBootstrapSettings()),
-      startMissionAutosave: vi.fn().mockReturnValue(activeAutosaveStop),
+      startMissionAutosave: vi.fn().mockReturnValue(createAutosaveController(activeAutosaveStop)),
       startMissionRuntime: vi.fn().mockResolvedValue({}),
       startMissionGovernanceRuntime: vi.fn().mockResolvedValue({}),
       startMarkerRuntime: vi.fn().mockResolvedValue({}),
@@ -255,7 +257,7 @@ describe('app runtime startup', () => {
       isTauriRuntimeAvailable: vi.fn().mockReturnValue(true),
       createMissionStore: vi.fn().mockReturnValue(store),
       readRuntimeBootstrapSettings: vi.fn().mockResolvedValue(createBootstrapSettings()),
-      startMissionAutosave: vi.fn().mockReturnValue(activeAutosaveStop),
+      startMissionAutosave: vi.fn().mockReturnValue(createAutosaveController(activeAutosaveStop)),
       startMissionRuntime: vi.fn().mockResolvedValue({}),
       startMissionGovernanceRuntime: vi.fn().mockResolvedValue({}),
       startMarkerRuntime: vi.fn().mockResolvedValue({}),
@@ -304,6 +306,13 @@ function createMissionStoreStub(): MissionStore & AutosaveStore {
     upsertGpxImport: vi.fn(),
     listGpxImports: vi.fn(),
     deleteGpxImport: vi.fn(),
+  }
+}
+
+function createAutosaveController(stop: () => void = vi.fn()) {
+  return {
+    stop,
+    requestSync: vi.fn().mockResolvedValue(undefined),
   }
 }
 
