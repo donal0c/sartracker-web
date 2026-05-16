@@ -2,15 +2,20 @@
 
 > Supporting tester instructions. The active queue and triage decisions live in `docs/two-track-execution-workplan.md`; fold any new work there before implementation.
 
-## Testing URL
+## Quick Start For Testers
 
-Open:
+Use this hosted browser lane for training and feedback only. It is not the
+installed field app and it does not provide durable incident persistence.
+
+1. Open the hosted app:
 
 ```text
 https://sartracker-web.vercel.app/?missionHarness=1
 ```
 
-In hosted browser mode, Traccar settings should use:
+2. Confirm the amber **Browser testing mode** banner is visible.
+3. Open **Settings** -> **Data Sources**.
+4. Configure Traccar with:
 
 ```text
 Provider base URL: https://sartracker-web.vercel.app
@@ -19,13 +24,28 @@ Email: apiuser
 Password: apiuser
 ```
 
-Direct team Traccar server:
+5. Use **Test Connection**. It should authenticate and find the team device roster.
+6. Use **Save, Connect & Close**.
+7. Start a mission from **Mission Control**.
+8. If breadcrumbs look empty, start another test mission with **Start Offset** set to
+   24 or 48 hours. The team test server sometimes has no movement in the last few
+   hours even when current device fixes exist.
+
+## URL Rules
 
 ```text
-http://kmrtsar.ddns.net:8082
+Hosted app URL: https://sartracker-web.vercel.app/?missionHarness=1
+Hosted Traccar provider base URL: https://sartracker-web.vercel.app
+Desktop/Tauri direct Traccar URL: http://kmrtsar.ddns.net:8082
 ```
 
-Do not enter the direct HTTP Traccar URL in the hosted browser app. Browsers block HTTPS pages from calling HTTP services directly; the Vercel URL is the HTTPS proxy. Settings now warns on direct `http://` provider URLs in hosted browser mode and offers the hosted proxy as the safe default.
+Do not enter the direct HTTP Traccar URL in the hosted browser app. Browsers
+block HTTPS pages from calling HTTP services directly; the Vercel URL is the
+HTTPS proxy. Settings warns on direct `http://` provider URLs in hosted browser
+mode and offers the hosted proxy as the safe default.
+
+The direct HTTP URL is still valid in the installed desktop app because the
+browser mixed-content rule does not apply there.
 
 ## What We Want The Team To Test Now
 
@@ -66,10 +86,13 @@ Do not enter the direct HTTP Traccar URL in the hosted browser app. Browsers blo
 ## What happened instead?
 
 
-## Where were you?
+## Where and when did it happen?
 
 - URL:
 - Mission name:
+- Mission start time or Start Offset:
+- Browser:
+- Machine / operating system:
 - Settings/provider state:
 
 ## Evidence
@@ -85,10 +108,14 @@ Do not enter the direct HTTP Traccar URL in the hosted browser app. Browsers blo
 - Nice-to-have
 ```
 
+Use one report per issue. If several people hit the same problem, add their
+browser/machine details to the same issue rather than creating separate copies.
+
 ## Triage Buckets
 
 | Bucket | Meaning | Typical action |
 | --- | --- | --- |
+| Hosted-only | Only happens on Vercel/browser mode, especially session storage, HTTPS proxy, or browser restrictions | Track/Fix in hosted lane, then decide whether browser hardening is worth it |
 | Critical hosted blocker | They cannot start mission, connect tracking, see map, or continue testing | Fix immediately, redeploy Vercel |
 | Shared app bug | Real bug likely affects browser and Tauri | Fix with tests, deploy Vercel, later verify desktop |
 | UI/wording/layout feedback | The app works but feels confusing or awkward | Batch into focused UI iterations |

@@ -4,6 +4,7 @@
 
 ## Last Updated
 
+- 2026-05-16 by Codex — A1 hosted testing instructions and feedback intake completed; next default task is B1 Tauri beta packaging reconnaissance.
 - 2026-05-16 by Codex — S1 Runtime Boot/Fault Guard completed; next default task is A1 hosted testing instructions and feedback intake.
 - 2026-05-16 by Codex — Hosted Traccar breadcrumb quota bug fixed; 48h mission start offset enabled.
 - 2026-05-15 by Codex — Settings save-close UX fixed after A2.
@@ -36,6 +37,7 @@ Supporting docs may explain details, but they must not become separate queues. T
 - Mission Start Offset now accepts 0-48 hours, matching the planned tracking history window. Use larger offsets when the test Traccar server has no movement in the last few hours.
 - Settings successful save actions now close the workspace after persistence/reload completes. Failed saves keep the workspace open and show the error.
 - Startup now has an explicit boot/fault guard. The app shell stays gated while runtime services prepare, startup failures show a fault panel with Reload, and runtime controller replacement disposes the previous controller before installing the next one.
+- Hosted tester instructions now have a concise quick-start run sheet, URL/base-URL rules, bug-report template fields, and triage buckets. The operator manual has a hosted testing and feedback section.
 - Latest deployed production URL has command-line validation for proxy endpoints:
   - `/api/session` returned 200 for the team credentials
   - `/api/devices` returned the 18-device roster
@@ -70,9 +72,9 @@ Use these only for team testing, not as a production secret model.
 
 Default next task when the user says “go” or “work on the next task”:
 
-1. `A1: Hosted Testing Instructions And Feedback Intake` in `docs/two-track-execution-workplan.md`
-2. Bead: `sartracker-web-vpz.1`
-3. Goal: make it easy for the team to find the hosted URL, start a mission, connect tracking, and report issues without relying on chat history.
+1. `B1: Tauri Beta Packaging Recon` in `docs/two-track-execution-workplan.md`
+2. Bead: `sartracker-web-vpz.2`
+3. Goal: find the shortest reliable path to a first desktop beta artifact and record exact build/package outputs.
 
 ## Open Beads That Matter Now
 
@@ -93,10 +95,10 @@ Older parity/UI beads still exist, but new work should be selected through the t
 
 Most recent completed verification:
 
-- S1 targeted unit tests passed: runtime boot store, bootstrap orchestration, app runtime controller registry, app runtime disposal, and boot/fault shell rendering.
-- `npm run lint` passed.
-- `npm run test -- --run` passed: 86 files / 393 tests.
+- A1 docs read-through completed for `docs/team-testing-feedback-loop.md` and `public/manual/index.html`.
 - `npm run build` passed.
-- `npm run test:backend` passed: 37 backend tests.
-- Inbuilt browser smoke at `http://127.0.0.1:5173/?missionHarness=1` passed: normal app shell visible, no boot/fault gate left visible, hosted-testing banner present.
-- Post-implementation Playwright UI verification passed against the local Vite app: ready shell, forced booting shell, forced startup fault shell with Reload, and ready-restored shell all rendered correctly. Screenshot evidence is in `test-results/ui-verification/`.
+- Production hosted manual/app verification passed after Vercel deploy:
+  - `/manual/` contains the hosted testing and feedback section.
+  - `/?missionHarness=1` shows the browser testing banner.
+  - Settings exposes the hosted proxy action and Traccar data-source controls.
+- Previous S1 verification remains valid: lint, full Vitest, build, backend tests, inbuilt browser smoke, and Playwright boot/fault UI verification all passed.

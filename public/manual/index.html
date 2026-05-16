@@ -340,6 +340,7 @@
         <nav aria-label="Manual sections">
           <p class="toc-label">Contents</p>
           <a href="#start">Start Here</a>
+          <a href="#hosted-testing">Hosted Testing</a>
           <a href="#screen">Main Screen</a>
           <a href="#mission">Mission Control</a>
           <a href="#map">Map And Coordinates</a>
@@ -415,6 +416,46 @@
               </ol>
             </div>
           </div>
+        </section>
+
+        <section id="hosted-testing">
+          <h2>Hosted Testing And Feedback</h2>
+          <div class="warning">
+            <strong>Testing lane only:</strong> the hosted Vercel app uses browser session storage and
+            is intended for training, feedback, and quick surface checks. Do not use it as proof that
+            mission records, filesystem actions, offline maps, or restart recovery are ready for live
+            incidents.
+          </div>
+
+          <h3>Hosted test setup</h3>
+          <ol>
+            <li>Open <strong>https://sartracker-web.vercel.app/?missionHarness=1</strong>.</li>
+            <li>Confirm the amber browser testing banner is visible.</li>
+            <li>Open <strong>Settings</strong>, then <strong>Data Sources</strong>.</li>
+            <li>Use <strong>https://sartracker-web.vercel.app</strong> as the Traccar provider base URL.</li>
+            <li>Use <strong>Basic</strong> authentication with the team testing credentials.</li>
+            <li>Run <strong>Test Connection</strong>, then <strong>Save, Connect &amp; Close</strong>.</li>
+            <li>Start a mission. Use a 24 or 48 hour <strong>Start Offset</strong> if breadcrumb history looks empty.</li>
+          </ol>
+
+          <div class="note">
+            The hosted app URL and the hosted Traccar provider base URL are different on purpose.
+            Open the app with <strong>?missionHarness=1</strong>; enter only
+            <strong>https://sartracker-web.vercel.app</strong> in Settings. Do not enter the direct
+            <strong>http://kmrtsar.ddns.net:8082</strong> Traccar URL in hosted browser mode.
+          </div>
+
+          <h3>What to report</h3>
+          <p>
+            Report anything that blocks testing, makes the map or mission state ambiguous, hides useful
+            tracker information, makes layers hard to trust, or feels awkward under pressure. Include the
+            URL, mission name, mission start time or Start Offset, browser, machine, expected result,
+            actual result, and a screenshot or video when possible.
+          </p>
+          <p>
+            Use <code>docs/team-testing-feedback-loop.md</code> as the shared testing checklist, bug
+            report template, and triage guide.
+          </p>
         </section>
 
         <section id="screen">
