@@ -207,11 +207,11 @@ test.describe('M5 mission control workflows', () => {
 
   test('rejects invalid start offsets before creating a mission', async ({ page }) => {
     await page.getByTestId('mission-name-input').fill('Offset Guardrails')
-    await page.getByTestId('mission-offset-input').fill('6')
+    await page.getByTestId('mission-offset-input').fill('49')
     await page.getByTestId('mission-start-btn').click()
 
     await expect(page.getByTestId('mission-control')).toContainText(
-      'Start offset must be between 0 and 5 hours.',
+      'Start offset must be between 0 and 48 hours.',
     )
     await expect(page.getByTestId('mission-control')).toContainText('idle')
   })

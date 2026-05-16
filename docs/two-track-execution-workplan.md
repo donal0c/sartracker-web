@@ -74,6 +74,7 @@ This is the default order when the user says “work on the next task.”
 | 1 | S1: Runtime Boot/Fault Guard | Shared | Create/update bead before starting | Ready |
 | Done | A2: Hosted Mode Guardrails | Track A | `sartracker-web-vpz.3` | Done 2026-05-15 |
 | Done | Settings Save-Close UX | Track A | `sartracker-web-fnc` | Done 2026-05-15 |
+| Done | Hosted Tracking History Quota + 48h Offset | Track A | `sartracker-web-vpz.4` | Done 2026-05-16 |
 | 3 | A1: Hosted Testing Instructions And Feedback Intake | Track A | `sartracker-web-vpz.1` | Ready |
 | 4 | B1: Tauri Beta Packaging Recon | Track B | `sartracker-web-vpz.2` | Ready |
 | 5 | S2: Autosave Lifecycle Hardening | Shared / Track B | Create/update bead before starting | Ready after S1 |

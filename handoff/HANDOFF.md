@@ -4,7 +4,7 @@
 
 ## Last Updated
 
-- 2026-05-16 by Codex — Traccar upstream/proxy test credentials added for future agents.
+- 2026-05-16 by Codex — Hosted Traccar breadcrumb quota bug fixed; 48h mission start offset enabled.
 - 2026-05-15 by Codex — Settings save-close UX fixed after A2.
 
 ## Operating Rule
@@ -31,6 +31,8 @@ Supporting docs may explain details, but they must not become separate queues. T
   - Traccar provider base URL in hosted mode: `https://sartracker-web.vercel.app`
   - direct `http://kmrtsar.ddns.net:8082` is valid for desktop/Tauri, but browsers block it from the HTTPS hosted app.
 - Hosted Settings now warns on direct `http://` Traccar provider URLs, blocks Test/Save through validation, offers a hosted-proxy action, and prevents browser tracking bootstrap from stale direct-HTTP settings.
+- Hosted browser tracking history now caps persisted breadcrumb positions/events before writing to session storage, with an emergency quota fallback. Live map rendering still receives the loaded tracking snapshot in the current session.
+- Mission Start Offset now accepts 0-48 hours, matching the planned tracking history window. Use larger offsets when the test Traccar server has no movement in the last few hours.
 - Settings successful save actions now close the workspace after persistence/reload completes. Failed saves keep the workspace open and show the error.
 - Latest deployed production URL has command-line validation for proxy endpoints:
   - `/api/session` returned 200 for the team credentials
@@ -69,6 +71,7 @@ Default next task when the user says “go” or “work on the next task”:
 ## Open Beads That Matter Now
 
 - `sartracker-web-vpz` — Hosted browser testing mode and parity hardening.
+- `sartracker-web-vpz.4` — Hosted tracking history quota and 48h offset. Fixed; close after production verification/deploy evidence is recorded.
 - `sartracker-web-vpz.1` — A1 hosted testing instructions and feedback intake.
 - `sartracker-web-vpz.2` — B1 Tauri beta packaging reconnaissance.
 
@@ -86,13 +89,10 @@ Older parity/UI beads still exist, but new work should be selected through the t
 Most recent completed verification:
 
 - `npm run lint` passed.
-- `npm run test` passed.
+- `npm run test -- --run` passed: 82 files / 382 tests.
 - `npm run build` passed.
 - `npm run test:backend` passed.
-- Focused `tests/unit/settings-workspace.test.ts` passed.
-- Production redeployed with the documented Vercel prebuilt flow for the Settings save-close fix; live bundle contains the new close-on-success labels and handler.
-- Hosted proxy command-line checks against live Traccar succeeded.
-- Production deployed with the documented Vercel prebuilt flow; alias `https://sartracker-web.vercel.app` is live.
-- Inbuilt browser confirmed the hosted Settings guidance is visible on the live alias.
-- Deployed bundle contains the direct-HTTP validation message and `Use Hosted Proxy` action.
-- Inbuilt browser loaded local app for save-close validation, but click automation timed out on the Settings mast button; jsdom component coverage is the verification source for this small UX fix.
+- `npx playwright test tests/e2e/mission.spec.ts --project=chromium` passed.
+- Live Traccar evidence on 2026-05-16: 5h breadcrumb window returned 0 points; 12h returned 485 points; 24h returned 13,695 points; 48h returned 14,567 points.
+- Pre-fix local UI reproduced the team error at 24h: `QuotaExceededError` on `sartracker:browser-harness`.
+- Fixed local UI validated with real Traccar via the hosted proxy at 24h and 48h: 18 devices, 14 current fixes, visible current markers and breadcrumb tracks, no session storage quota warnings.

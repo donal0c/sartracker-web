@@ -54,6 +54,32 @@ describe('browser harness store', () => {
     expect(persistedState.missionEvents.map((event) => event.event_type)).toContain('position_recorded')
   })
 
+  it('caps browser-only tracking persistence so large breadcrumb imports do not exceed session storage', async () => {
+    const store = getBrowserHarnessStore()
+    const mission = await store.createMission({ name: 'Large Tracking Mission' })
+
+    for (let index = 0; index < 2_100; index += 1) {
+      await store.addPosition({
+        mission_id: mission.id,
+        device_id: 'alpha',
+        lat: 52 + index / 100_000,
+        lon: -9.7 - index / 100_000,
+        timestamp: new Date(Date.UTC(2026, 4, 15, 6, 0, index)).toISOString(),
+        data_origin: 'live',
+      })
+    }
+
+    const persistedState = readBrowserHarnessState()
+    const recordedPositionEvents = persistedState.missionEvents.filter(
+      (event) => event.event_type === 'position_recorded',
+    )
+
+    expect(persistedState.positions).toHaveLength(2_000)
+    expect(recordedPositionEvents).toHaveLength(2_000)
+    expect(persistedState.positions[0]?.timestamp).toBe('2026-05-15T06:01:40.000Z')
+    expect(persistedState.positions.at(-1)?.timestamp).toBe('2026-05-15T06:34:59.000Z')
+  })
+
   it('finalizes and unlocks a mission using the configured admin roster', async () => {
     window.localStorage.setItem(
       'sartracker:browser-settings',

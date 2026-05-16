@@ -35,6 +35,8 @@ type BrowserHarnessState = {
 }
 
 const BROWSER_HARNESS_STORAGE_KEY = 'sartracker:browser-harness'
+const MAX_PERSISTED_TRACKING_POSITIONS = 2_000
+const EMERGENCY_PERSISTED_TRACKING_POSITIONS = 500
 
 type BrowserHarnessStore = {
   readonly createMission: (input: CreateMissionInput) => Promise<Mission>
@@ -80,7 +82,29 @@ export function getBrowserHarnessStore(): BrowserHarnessStore {
   let state = readHarnessState()
 
   const save = () => {
-    window.sessionStorage.setItem(BROWSER_HARNESS_STORAGE_KEY, JSON.stringify(state))
+    state = pruneTrackingPersistence(state, MAX_PERSISTED_TRACKING_POSITIONS)
+
+    try {
+      window.sessionStorage.setItem(BROWSER_HARNESS_STORAGE_KEY, JSON.stringify(state))
+      return
+    } catch (error) {
+      if (!isStorageQuotaError(error)) {
+        throw error
+      }
+    }
+
+    state = pruneTrackingPersistence(state, EMERGENCY_PERSISTED_TRACKING_POSITIONS)
+    try {
+      window.sessionStorage.setItem(BROWSER_HARNESS_STORAGE_KEY, JSON.stringify(state))
+    } catch (error) {
+      if (!isStorageQuotaError(error)) {
+        throw error
+      }
+      console.warn(
+        'Browser harness tracking persistence exceeded session storage quota; live map state remains in memory.',
+        error,
+      )
+    }
   }
 
   browserHarnessStore = {
@@ -823,6 +847,57 @@ function readHarnessState(): BrowserHarnessState {
       recoverableMissionId: null,
     }
   }
+}
+
+function pruneTrackingPersistence(
+  state: BrowserHarnessState,
+  maxPositions: number,
+): BrowserHarnessState {
+  if (state.positions.length <= maxPositions) {
+    return state
+  }
+
+  const keptPositions = [...state.positions]
+    .sort((left, right) => Date.parse(left.timestamp) - Date.parse(right.timestamp))
+    .slice(-maxPositions)
+  const keptPositionIds = new Set(keptPositions.map((position) => position.id))
+  const keptPositionEvents = state.missionEvents
+    .filter((event) => event.event_type === 'position_recorded')
+    .filter((event) => {
+      const positionId = readPositionIdFromEvent(event)
+      return positionId !== null && keptPositionIds.has(positionId)
+    })
+  const nonPositionEvents = state.missionEvents.filter(
+    (event) => event.event_type !== 'position_recorded',
+  )
+
+  return {
+    ...state,
+    positions: keptPositions,
+    missionEvents: [...nonPositionEvents, ...keptPositionEvents].sort(
+      (left, right) => Date.parse(left.timestamp) - Date.parse(right.timestamp),
+    ),
+  }
+}
+
+function readPositionIdFromEvent(event: MissionEvent): string | null {
+  if (event.details_json === null) {
+    return null
+  }
+
+  try {
+    const details = JSON.parse(event.details_json) as { position_id?: unknown }
+    return typeof details.position_id === 'string' ? details.position_id : null
+  } catch {
+    return null
+  }
+}
+
+function isStorageQuotaError(error: unknown): boolean {
+  return (
+    error instanceof DOMException &&
+    (error.name === 'QuotaExceededError' || error.name === 'NS_ERROR_DOM_QUOTA_REACHED')
+  )
 }
 
 function readBrowserSettings(): {

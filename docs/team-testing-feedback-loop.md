@@ -32,11 +32,18 @@ Do not enter the direct HTTP Traccar URL in the hosted browser app. Browsers blo
 - Can they start a mission without confusion?
 - Can they connect tracking and see devices?
 - Are tracked devices readable on the map?
+- Can they see breadcrumb tracks after using a suitable Start Offset? The hosted app now allows 0-48 hours; use a larger offset when the test server has no movement in the last few hours.
 - Do layers hide/show exactly what they expect?
 - Do Devices, Layers, Settings, and Diagnostics make sense?
 - Are the mission controls in the right place?
 - Are labels, colors, and statuses understandable?
 - What UI layout changes would make this calmer under pressure?
+
+## Current Tracking Test Notes
+
+- The live team Traccar server can return current device records even when recent breadcrumb history is empty.
+- If tracks do not appear, first try a larger mission Start Offset such as 24 or 48 hours.
+- Hosted browser mode stores mission data in session storage for testing. Very large tracker-history imports are capped for persisted browser storage so session storage quota is not exceeded; the live map still draws the loaded tracker snapshot during the current session.
 
 ## What We Are Not Asking Them To Validate Yet
 

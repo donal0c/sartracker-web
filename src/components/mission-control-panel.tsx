@@ -23,6 +23,7 @@ const MISSION_FINALIZE_DESCRIPTION_ID = 'mission-finalize-dialog-description'
 const MISSION_UNLOCK_TITLE_ID = 'mission-unlock-dialog-title'
 const MISSION_FINISH_TITLE_ID = 'mission-finish-dialog-title'
 const MISSION_FINISH_DESCRIPTION_ID = 'mission-finish-dialog-description'
+const MAX_START_OFFSET_HOURS = 48
 
 /**
  * Renders mission lifecycle controls and timer state for operators.
@@ -115,8 +116,8 @@ export function MissionControlPanel() {
     }
 
     const parsedOffset = Number(startOffsetHours)
-    if (!Number.isFinite(parsedOffset) || parsedOffset < 0 || parsedOffset > 5) {
-      setStartError('Start offset must be between 0 and 5 hours.')
+    if (!Number.isFinite(parsedOffset) || parsedOffset < 0 || parsedOffset > MAX_START_OFFSET_HOURS) {
+      setStartError(`Start offset must be between 0 and ${MAX_START_OFFSET_HOURS} hours.`)
       return
     }
 

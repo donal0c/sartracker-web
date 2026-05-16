@@ -453,7 +453,7 @@
             </thead>
             <tbody>
               <tr><td>Mission Name</td><td>Names the active incident record.</td><td>Use a name that field coordinators will recognize later.</td></tr>
-              <tr><td>Start Offset</td><td>Backdates the mission start by up to 5 hours.</td><td>Use only when the search already began before logging in the app.</td></tr>
+              <tr><td>Start Offset</td><td>Backdates the mission start by up to 48 hours.</td><td>Use only when the search already began before logging in the app, or when hosted testing needs older tracker history.</td></tr>
               <tr><td>Pause / Resume</td><td>Stops or restarts active-search timing without ending the mission.</td><td>Elapsed time keeps running; active-search time pauses.</td></tr>
               <tr><td>Finish</td><td>Opens a confirmation before ending the mission.</td><td>Confirm only when operations are genuinely complete.</td></tr>
               <tr><td>Review</td><td>Opens mission details, marker log, layer console, and audit records.</td><td>Use after or during operations to inspect saved mission state.</td></tr>
@@ -537,6 +537,12 @@
             Vercel. Direct HTTP Traccar URLs are blocked from this HTTPS page, so use the hosted proxy
             base URL shown above. Use browser mode for testing only until the browser runtime has durable
             storage and recovery.
+          </div>
+          <div class="note">
+            <strong>Hosted tracking history:</strong> browser testing mode keeps enough persisted
+            breadcrumb history for reload/testing, but caps very large live imports so the browser does
+            not exceed session storage quota. The live map can still draw the loaded tracker snapshot
+            during the current session.
           </div>
         </section>
 
@@ -686,7 +692,7 @@
             <li><strong>Replay mode:</strong> settings expose replay defaults, but full replay/training workflow parity is still active work.</li>
             <li><strong>Mission metadata:</strong> richer coordinator/metadata capture at mission start remains a parity gap.</li>
             <li><strong>Layer parity:</strong> the app has a grouped layer tree with visibility, aliases, favorites, and reorder controls, but final parity acceptance is still pending.</li>
-            <li><strong>Hosted browser testing:</strong> Vercel browser mode currently uses session storage for mission data. It is intended to unblock team testing, not replace the installed app for live incidents yet.</li>
+            <li><strong>Hosted browser testing:</strong> Vercel browser mode currently uses session storage for mission data and caps very large persisted tracker histories. It is intended to unblock team testing, not replace the installed app for live incidents yet.</li>
             <li><strong>Browser harness differences:</strong> desktop-only actions such as GPX file picking and marker file attachments are limited or unavailable in browser validation mode.</li>
           </ul>
         </section>
