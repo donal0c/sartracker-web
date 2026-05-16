@@ -69,6 +69,7 @@ type StartAppRuntimeDependencies = {
   readonly startHelicopterRuntime: typeof startHelicopterRuntime
   readonly startGpxRuntime: typeof startGpxRuntime
   readonly startTrackingRuntime: typeof startTrackingRuntime
+  readonly startCoreFeatureRuntimes: typeof startCoreFeatureRuntimes
 }
 
 const DEFAULT_DEPENDENCIES: StartAppRuntimeDependencies = {
@@ -84,6 +85,7 @@ const DEFAULT_DEPENDENCIES: StartAppRuntimeDependencies = {
   startHelicopterRuntime,
   startGpxRuntime,
   startTrackingRuntime,
+  startCoreFeatureRuntimes,
 }
 
 /**
@@ -109,7 +111,7 @@ export async function startAppRuntime(
   let activeServices = createNoopRuntimeServiceHandles()
   let reloadGeneration = 0
 
-  const coreFeatureRuntimes = await startCoreFeatureRuntimes({
+  const coreFeatureRuntimes = await resolvedDependencies.startCoreFeatureRuntimes({
     missionStore,
     attachmentAdapter: tauriMarkerAttachmentAdapter,
     gpxWatchSource: gpxImportSource,
@@ -122,7 +124,12 @@ export async function startAppRuntime(
     startHelicopterRuntime: resolvedDependencies.startHelicopterRuntime,
     startGpxRuntime: resolvedDependencies.startGpxRuntime,
   })
-  await reloadSettings()
+  try {
+    await reloadSettings()
+  } catch (error) {
+    coreFeatureRuntimes.dispose()
+    throw error
+  }
   let disposed = false
 
   return {

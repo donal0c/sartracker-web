@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest'
 import type { AutosaveStore } from '../../src/features/persistence/mission-autosave'
 import type { MissionStore } from '../../src/infrastructure/mission-store/tauri-mission-store'
 import { startAppRuntime } from '../../src/features/runtime/start-app-runtime'
+import type { CoreFeatureRuntimeHandles } from '../../src/features/runtime/start-core-feature-runtimes'
 
 describe('app runtime startup', () => {
   it('registers the service worker on startup', async () => {
@@ -152,6 +153,35 @@ describe('app runtime startup', () => {
     await expect(runtime?.reloadSettings()).rejects.toThrow('settings unavailable')
     expect(initialAutosaveStop).not.toHaveBeenCalled()
     expect(initialTrackingStop).not.toHaveBeenCalled()
+  })
+
+  it('disposes core feature runtimes when initial settings reload fails', async () => {
+    const store: MissionStore & AutosaveStore = createMissionStoreStub()
+    const disposeCoreFeatureRuntimes = vi.fn()
+    const readRuntimeBootstrapSettings = vi
+      .fn()
+      .mockRejectedValueOnce(new Error('settings unavailable'))
+
+    await expect(
+      startAppRuntime({
+        registerServiceWorker: vi.fn().mockResolvedValue(undefined),
+        isTauriRuntimeAvailable: vi.fn().mockReturnValue(true),
+        createMissionStore: vi.fn().mockReturnValue(store),
+        readRuntimeBootstrapSettings,
+        startMissionAutosave: vi.fn(),
+        startMissionRuntime: vi.fn(),
+        startMissionGovernanceRuntime: vi.fn(),
+        startMarkerRuntime: vi.fn(),
+        startDrawingRuntime: vi.fn(),
+        startGpxRuntime: vi.fn(),
+        startTrackingRuntime: vi.fn(),
+        startCoreFeatureRuntimes: vi
+          .fn()
+          .mockResolvedValue(createCoreFeatureRuntimeHandles(disposeCoreFeatureRuntimes)),
+      }),
+    ).rejects.toThrow('settings unavailable')
+
+    expect(disposeCoreFeatureRuntimes).toHaveBeenCalledTimes(1)
   })
 
   it('applies only the latest overlapping settings reload', async () => {
@@ -314,6 +344,18 @@ function createAutosaveController(stop: () => void = vi.fn()) {
     stop,
     requestSync: vi.fn().mockResolvedValue(undefined),
   }
+}
+
+function createCoreFeatureRuntimeHandles(dispose: () => void): CoreFeatureRuntimeHandles {
+  return {
+    missionRuntimeController: {},
+    missionGovernanceController: {},
+    markerRuntimeController: {},
+    drawingRuntimeController: {},
+    helicopterRuntimeController: {},
+    gpxRuntimeController: {},
+    dispose,
+  } as CoreFeatureRuntimeHandles
 }
 
 function createBootstrapSettings(overrides?: Partial<{
