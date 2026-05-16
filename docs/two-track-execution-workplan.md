@@ -101,22 +101,27 @@ This is the default order when the user says “work on the next task.”
 | Done | A3.3: Simplify Map And Drawing Tool Chrome | Track A | `sartracker-web-6y3.3` | Done 2026-05-16 |
 | Done | A3.7: Add Marker At Grid Reference Workflow | Track A / Parity | `sartracker-web-6y3.7` | Done 2026-05-16 |
 | Done | R8: Add Tauri Beta Gatekeeper Guidance | Track B / Docs | `sartracker-web-977` | Done 2026-05-16 |
-| 1 | R9: Add Checked-In Boot/Fault/Autosave UI Regression Coverage | Verification | `sartracker-web-ahp` | Ready |
-| 2 | R10: Compress Handoff And Annotate Historical Docs | Process / Docs | `sartracker-web-419` | Ready |
-| 3 | R11: Add Browser Harness Storage Non-Goals Note | Track A / Docs | `sartracker-web-mh5` | Ready |
-| 4 | S3: Layer Visibility Service Extraction | Shared / Track A | Create/update bead before starting | Ready |
-| 5 | A3.4: Clean Up Mission Mast And Right-Panel Duplication | Track A / Shared | `sartracker-web-6y3.4` | Best with S5 |
-| 6 | B2: Tauri Beta Release Template | Track B | Create/update bead before starting | Ready |
-| 7 | B3: First Internal Tauri Smoke Build | Track B | Create/update bead before starting | Ready after B2 |
-| 8 | S4: Map Overlay Consolidation And Camera Race Fix | Shared / Track B | Create/update bead before starting | Ready after S3 preferred |
-| 9 | S5: Mission Control View Model Extraction | Shared / Track A | Create/update bead before starting | Pair with A3.4 if selected |
-| 10 | V1: Regression E2E Coverage | Verification | Create/update bead before starting | Ready |
-| 11 | V2: Visual Review Automation | Verification | Create/update bead before starting | Ready |
-| 12 | B4: GPX And Drawing Hit-Test Hardening | Track B | Create/update bead before starting | Ready |
-| 13 | A3.5: Add Operational Contrast/Theme Pass | Track A / UI | `sartracker-web-6y3.5` | Planned, not urgent |
-| 14 | A3.6: Move Static Operational Notes Out Of Primary Map Chrome | Track A / UI | `sartracker-web-6y3.6` | Planned, keep warnings visible |
-| 15 | A3.9: Add Configurable Weather Links Menu | Track A / UI | `sartracker-web-6y3.9` | Planned, external links only |
-| 16 | C1: Local Proprietary Map Package Requirements | Track B / Maps | Create/update bead before starting | Waiting for map facts |
+| 1 | A3.10: Investigate And Fix Irish Grid Conversion Accuracy | Track A / Shared | `sartracker-web-6y3.10` | Ready, urgent map-trust bug |
+| 2 | A3.11: Stabilize Marker Placement From Coordinate Entry | Track A / Shared | `sartracker-web-6y3.11` | Ready, urgent map-trust bug |
+| 3 | A3.12: Fix Roster Name Entry Spacing | Track A | `sartracker-web-6y3.12` | Ready |
+| 4 | A3.13: Rework Coordinate Converter Formats And Naming | Track A / Coordinates | `sartracker-web-6y3.13` | Ready after A3.10 preferred |
+| 5 | A3.14: Rename Drawing Tools To Map Tools And Add Measure | Track A / Map Tools | `sartracker-web-6y3.14` | Ready |
+| Done | R9: Add Checked-In Boot/Fault/Autosave UI Regression Coverage | Verification | `sartracker-web-ahp` | Done 2026-05-16 |
+| 7 | R10: Compress Handoff And Annotate Historical Docs | Process / Docs | `sartracker-web-419` | Ready |
+| 8 | R11: Add Browser Harness Storage Non-Goals Note | Track A / Docs | `sartracker-web-mh5` | Ready |
+| 9 | S3: Layer Visibility Service Extraction | Shared / Track A | Create/update bead before starting | Ready |
+| 10 | A3.4: Clean Up Mission Mast And Right-Panel Duplication | Track A / Shared | `sartracker-web-6y3.4` | Best with S5 |
+| 11 | B2: Tauri Beta Release Template | Track B | Create/update bead before starting | Ready |
+| 12 | B3: First Internal Tauri Smoke Build | Track B | Create/update bead before starting | Ready after B2 |
+| 13 | S4: Map Overlay Consolidation And Camera Race Fix | Shared / Track B | Create/update bead before starting | Ready after S3 preferred |
+| 14 | S5: Mission Control View Model Extraction | Shared / Track A | Create/update bead before starting | Pair with A3.4 if selected |
+| 15 | V1: Regression E2E Coverage | Verification | Create/update bead before starting | Ready |
+| 16 | V2: Visual Review Automation | Verification | Create/update bead before starting | Ready |
+| 17 | B4: GPX And Drawing Hit-Test Hardening | Track B | Create/update bead before starting | Ready |
+| 18 | A3.5: Add Operational Contrast/Theme Pass | Track A / UI | `sartracker-web-6y3.5` | Planned, not urgent |
+| 19 | A3.6: Move Static Operational Notes Out Of Primary Map Chrome | Track A / UI | `sartracker-web-6y3.6` | Planned, keep warnings visible |
+| 20 | A3.9: Add Configurable Weather Links Menu | Track A / UI | `sartracker-web-6y3.9` | Planned, external links only |
+| 21 | C1: Local Proprietary Map Package Requirements | Track B / Maps | Create/update bead before starting | Waiting for map facts |
 
 ## Ready Work Chunks
 
@@ -124,7 +129,7 @@ This is the default order when the user says “work on the next task.”
 
 Source: multi-agent review of S1 Runtime Boot/Fault Guard, A1 Hosted Testing Instructions, B1 Tauri Beta Packaging Recon, S2 Autosave Lifecycle Hardening, plus adjacent code.
 
-Verdict folded into this plan: R1-R8 are fixed. S3 can start when selected, while R9-R11 remain follow-up remediation/docs/verification tasks.
+Verdict folded into this plan: R1-R9 are fixed. S3 can start when selected, while R10-R11 remain follow-up docs/verification-adjacent tasks.
 
 Completed remediation:
 
@@ -136,10 +141,10 @@ Completed remediation:
 - `sartracker-web-10q` — R6: app runtime startup disposes core feature runtimes if initial settings reload fails after those runtimes start.
 - `sartracker-web-syi` — R7: Harden runtime fault reload flow.
 - `sartracker-web-977` — R8: Tauri beta docs and manual now include unsigned macOS app expectations, Gatekeeper warning language, quarantine removal guidance, and the internal-beta-only caveat.
+- `sartracker-web-ahp` — R9: checked-in browser and visual regression coverage now pins runtime booting, startup fault, autosave stale, autosave failure, focus-mode autosave visibility, and autosave warning accessibility.
 
 Follow-up remediation:
 
-- `sartracker-web-ahp` — R9: Add checked-in boot/fault/autosave UI regression coverage.
 - `sartracker-web-419` — R10: Compress handoff and annotate historical docs.
 - `sartracker-web-mh5` — R11: Add browser harness storage non-goals note.
 
@@ -214,6 +219,7 @@ Latest sources:
 
 - Ned/Eamonn email `Sartracker`, received 2026-05-16 12:48. The email screenshots were used for triage only and are not retained as source-of-truth artifacts.
 - Ned/Eamonn email `Sartracker`, received 2026-05-16 13:33. Requests: Marker at GR, Weather links menu, line distance/bearing labels, range-ring clean rendering/layer hiding, drawing delete flow, and search-area styling/clean rendering/layer hiding. The email screenshots were used for triage only and are not retained as source-of-truth artifacts.
+- Eamonn email pasted into chat on 2026-05-16. Requests: IG/TM65 conversion accuracy discrepancy against DD reference, intermittent marker placement/disappearing after pan, roster name spacing, coordinate converter order/naming (`IG` -> `DD` -> `DMS` -> `W3W`, no UTM), rename Drawing Tools to Map Tools, and move Measure into Map Tools. The pasted screenshots were used for triage only and are not retained as source-of-truth artifacts.
 
 Tasks:
 
@@ -458,6 +464,132 @@ Verification:
 
 - Unit coverage for URL validation/config shaping.
 - Browser-backed configured, empty, and invalid states.
+
+### A3.10: Investigate And Fix Irish Grid Conversion Accuracy
+
+Bead: `sartracker-web-6y3.10`
+
+Goal: resolve the reported difference between a DD marker and an IG/TM65 marker for the same physical location.
+
+Reported reference:
+
+- DD: `52.179337, -9.464944`
+- IG/TM65: `Q 99842 04015`
+- Source context: Outdoor Active screenshot from Eamonn; Eamonn says the same discrepancy existed in the QGIS plugin.
+
+Tasks:
+
+- Add the Outdoor Active reference as a golden coordinate test case.
+- Compare DD, IG/TM65, ITM/display, and marker placement outputs for the same point.
+- Determine whether the discrepancy is caused by parser precision, datum/projection transform, grid-reference semantics, rounding, or a mismatch in the supplied reference data.
+- Decide and document the acceptable operational tolerance before closing.
+- If the app is wrong, fix conversion/marker placement. If the source/plugin reference is wrong, surface that clearly in docs/bead notes.
+
+Acceptance:
+
+- The reported point has deterministic tests.
+- DD and IG/TM65 placement either agree within an explicitly accepted tolerance or the discrepancy is documented as unsafe/unresolved.
+- Marker At GR and coordinate converter behavior are verified against the reference point.
+
+Verification:
+
+- Coordinate unit/golden tests.
+- Browser-backed Marker At GR and coordinate-converter check at the reported point.
+
+### A3.11: Stabilize Marker Placement From Coordinate Entry
+
+Bead: `sartracker-web-6y3.11`
+
+Goal: coordinate-created markers must never appear intermittently or disappear after map movement.
+
+Tasks:
+
+- Reproduce marker placement from lat/long and converted coordinates repeatedly.
+- Check create/save ordering, overlay source updates, layer visibility filters, basemap/style reload behavior, and map pan/zoom refresh behavior.
+- Make success/failure explicit: no ghost marker, no disappearing saved marker, and no silent failure.
+
+Acceptance:
+
+- Markers created from lat/long or converted coordinates persist before the dialog closes.
+- Saved markers remain visible after pan, zoom, and basemap/style changes.
+- Failed placement shows an actionable error and does not leave a temporary marker behind.
+
+Verification:
+
+- Unit/integration coverage where the bug is found.
+- Browser-backed repeated marker placement, pan/zoom, and layer-refresh checks.
+
+### A3.12: Fix Roster Name Entry Spacing
+
+Bead: `sartracker-web-6y3.12`
+
+Goal: coordinator/admin roster entry should support normal person names while typing.
+
+Tasks:
+
+- Fix roster input/tokenization so internal spaces are allowed.
+- Preserve comma/newline-separated roster entries.
+- Trim accidental boundary whitespace without removing intended internal spaces.
+- Confirm coordinator and admin rosters persist and reload correctly.
+
+Acceptance:
+
+- Names such as `Cathal Cudden, Tim Murphy, John Cronin` can be entered naturally.
+- Spaces are not stripped while typing.
+- Saved rosters reload without mangling names.
+
+Verification:
+
+- Unit coverage for roster parsing/serialization if applicable.
+- Browser-backed Settings roster entry check.
+
+### A3.13: Rework Coordinate Converter Formats And Naming
+
+Bead: `sartracker-web-6y3.13`
+
+Goal: align the converter with the formats the coordinators actually use.
+
+Tasks:
+
+- Rename/reorder converter modes as `IG`, `DD`, `DMS`, `W3W`.
+- Remove UTM from the primary operator converter.
+- Keep DD and IG as the most prominent workflows.
+- Treat W3W as decision-gated unless API, licensing, offline behavior, and operational accuracy requirements are settled.
+
+Acceptance:
+
+- The converter presents `IG`, `DD`, `DMS`, `W3W` in that order.
+- UTM is not part of the primary operator converter flow.
+- DD/IG/DMS work with deterministic tests.
+- W3W is either implemented behind a documented integration decision or clearly marked unavailable/deferred.
+
+Verification:
+
+- Unit tests for supported conversions.
+- Browser-backed converter flow check.
+
+### A3.14: Rename Drawing Tools To Map Tools And Add Measure
+
+Bead: `sartracker-web-6y3.14`
+
+Goal: make measurement easier to find and align tool naming with the team's language.
+
+Tasks:
+
+- Rename the primary `Drawing Tools` chrome to `Map Tools`.
+- Keep drawing tools available under that grouping.
+- Move or duplicate Measure into Map Tools.
+- Keep the measure output simple: distance and map bearing only, e.g. `1.3 km 230°`.
+
+Acceptance:
+
+- Operators can open Map Tools and find Measure there.
+- Measurement mode outputs distance and map bearing clearly.
+- Exiting Measure returns to the normal pan/select behavior without accidental drawing placement.
+
+Verification:
+
+- Browser-backed Map Tools/Measure workflow check.
 
 ### B1: Tauri Beta Packaging Recon
 

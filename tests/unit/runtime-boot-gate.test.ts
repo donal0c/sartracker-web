@@ -41,6 +41,8 @@ describe('RuntimeBootGate', () => {
     expect(warning).not.toBeNull()
     expect(warning?.textContent).toContain('Autosave warning')
     expect(warning?.getAttribute('title')).toContain('Autosave failing')
+    expect(warning?.getAttribute('aria-label')).toContain('Autosave failing')
+    expect(warning?.getAttribute('role')).toBe('status')
   })
 
   it('labels hosted browser mode as session-only testing instead of green operational readiness', () => {

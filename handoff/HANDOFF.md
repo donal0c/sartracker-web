@@ -4,7 +4,7 @@
 
 ## Last Updated
 
-- 2026-05-16 by Codex — R8 shipped locally: Tauri beta Gatekeeper guidance is in the beta release plan and operator manual, verified, and the bead is closed.
+- 2026-05-16 by Codex — R9 shipped locally: checked-in boot/fault/autosave browser and visual regression coverage now guards runtime safety surfaces.
 
 ## Operating Rule
 
@@ -67,6 +67,8 @@ Supporting docs may explain details, but they must not become separate queues. T
   - validated 48h hosted mission, Vercel Traccar proxy, 18 devices, 14 current fixes, 14,575 breadcrumb points, reload/reconnect honesty, finish-to-idle tracking state, and no quota failures.
 - Ned/Eamonn's 2026-05-16 feedback emails are folded into the canonical workplan as A3. The email screenshots were used for triage only and deleted; the durable source of truth is the A3 workplan/beads. The urgent items are accidental placement while panning and drawing rendering/layer visibility across text labels, sectors, search areas, and range rings.
 - A3.1/A3.2/A3.8/A3.3/A3.7 are complete locally. Map click-vs-drag suppression, clean drawing rendering/layer visibility, drawing distance/bearing/style/delete improvements, compact Maps/Drawing Tools chrome, and Marker At GR are covered by unit/E2E/visual verification. Operator manual screenshots for the app shell and tools map were refreshed locally.
+- Latest Eamonn feedback pasted into chat on 2026-05-16 is folded into A3. New urgent items are `A3.10` Irish Grid conversion accuracy and `A3.11` coordinate-created marker stability. Other new items are roster spacing (`A3.12`), coordinate converter order/naming (`A3.13`), and renaming Drawing Tools to Map Tools with Measure moved into that menu (`A3.14`).
+- R9 is complete locally. Runtime booting, startup fault, autosave stale, autosave failure, focus-mode autosave visibility, and autosave warning accessibility now have checked-in browser/visual regression coverage. The command mast System Status column was widened enough for the autosave warning chip to remain visibly legible, and the manual app-shell screenshot was refreshed.
 
 ## Traccar Test Details
 
@@ -93,16 +95,20 @@ Use these only for team testing, not as a production secret model.
 
 Default next task when the user says “go” or “work on the next task”:
 
-1. `R9: Add Checked-In Boot/Fault/Autosave UI Regression Coverage` in `docs/two-track-execution-workplan.md`
-2. Bead: `sartracker-web-ahp`
-3. Goal: add checked-in UI regression coverage around the boot/fault/autosave hardening rather than relying only on manual or ad-hoc validation.
-4. Then do `R10: Compress Handoff And Annotate Historical Docs` (`sartracker-web-419`) unless the user redirects.
+1. `A3.10: Investigate And Fix Irish Grid Conversion Accuracy` in `docs/two-track-execution-workplan.md`
+2. Bead: `sartracker-web-6y3.10`
+3. Goal: resolve the reported DD vs IG/TM65 marker discrepancy for Eamonn's Outdoor Active reference point before relying further on coordinate-entry workflows.
+4. Then do `A3.11: Stabilize Marker Placement From Coordinate Entry` (`sartracker-web-6y3.11`).
 
 ## Open Beads That Matter Now
 
 - `sartracker-web-vpz` — Hosted browser testing mode and parity hardening.
 - `sartracker-web-6y3` — A3 team feedback remediation batch.
-- `sartracker-web-ahp` — R9 add checked-in boot/fault/autosave UI regression coverage.
+- `sartracker-web-6y3.10` — A3.10 investigate and fix Irish Grid conversion accuracy.
+- `sartracker-web-6y3.11` — A3.11 stabilize marker placement from coordinate entry.
+- `sartracker-web-6y3.12` — A3.12 fix roster name entry spacing.
+- `sartracker-web-6y3.13` — A3.13 rework coordinate converter formats and naming.
+- `sartracker-web-6y3.14` — A3.14 rename Drawing Tools to Map Tools and add Measure.
 
 Older parity/UI beads still exist, but new work should be selected through the two-track workplan unless the user explicitly asks for a specific bead.
 
@@ -117,6 +123,7 @@ Older parity/UI beads still exist, but new work should be selected through the t
 
 Most recent completed verification:
 
+- Local R9 verification passed 2026-05-16: `git diff --check`, `npm run lint`, `npm run build`, and `npm run test:all`. Unit tests passed 87 files / 428 tests; Playwright passed 106 Chromium + visual tests; backend passed 38 Rust tests. Focused R9 visual screenshots were written under `test-results/visual-verification/` for runtime booting, runtime failed, autosave stale mast, and autosave failure in Focus Mode.
 - Local A3.8/A3.3/A3.7 verification passed 2026-05-16: `npm run lint`, `npm run build`, and `npm run test:all`. Unit tests passed 87 files / 428 tests; Playwright passed 100 Chromium + visual tests; backend passed 38 Rust tests.
 - Targeted browser verification covered line distance/bearing/endpoint readouts, styled search-area persistence, LPB range rings, layer-panel drawing edit entry, confirmed drawing deletion, compact Maps menu, compact Drawing Tools open/close, 900px narrow operator viewport, Marker At GR success, and invalid grid-reference rejection.
 - Local R8 verification passed 2026-05-16: confirmed the macOS `.app` bundle exists, `spctl -a -vvv -t open` rejects it with `source=Insufficient Context`, `codesign -dv --verbose=4` reports ad-hoc/no-team signing, `git diff --check` passed, `npm run lint`, `npm run build`, and `npm run test:all` passed.

@@ -389,7 +389,7 @@ export function CommandMast(props: {
 
   return (
     <header className="sar-global-mast flex-shrink-0" data-testid="command-mast">
-      <div className="grid min-h-[88px] w-full grid-cols-[250px_186px_112px_112px_64px_64px_80px_102px_102px_102px_102px] items-stretch overflow-hidden">
+      <div className="grid min-h-[88px] w-full grid-cols-[250px_176px_112px_112px_64px_64px_160px_92px_92px_92px_92px] items-stretch overflow-hidden">
         <div className="flex min-w-0 items-center gap-3 border-r border-[var(--sar-line)] px-4">
           <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center border border-amber-300/35 bg-amber-300/10 font-mono text-[11px] font-black text-amber-200">
             MR
@@ -455,8 +455,10 @@ export function CommandMast(props: {
           </p>
           {autosaveWarning === null ? null : (
             <p
-              className="mt-1 truncate text-[10px] font-black uppercase tracking-[0.08em] text-amber-300"
+              aria-label={autosaveWarning}
+              className="mt-1 truncate text-[9px] font-black uppercase tracking-[0.02em] text-amber-300"
               data-testid="autosave-warning"
+              role="status"
               title={autosaveWarning}
             >
               Autosave warning

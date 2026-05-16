@@ -222,6 +222,48 @@ test.describe('M2 map shell', () => {
     await expect(alert.getByRole('button')).toHaveCount(0)
   })
 
+  test('keeps command mast autosave warnings visible and accessible', async ({ page }) => {
+    await page.evaluate(async () => {
+      const { useAutosaveStatusStore } = await import(
+        '/src/features/persistence/autosave-status-store.ts'
+      )
+      useAutosaveStatusStore.getState().markSyncFailed({
+        reason: 'mission-finish',
+        message: 'backup volume unavailable',
+        now: new Date('2026-05-16T09:00:00.000Z'),
+      })
+    })
+
+    const warning = page.getByTestId('autosave-warning')
+    await expect(warning).toBeVisible()
+    await expect(warning).toContainText('Autosave warning')
+    await expect(warning).toHaveAttribute('title', /Autosave failing: backup volume unavailable/)
+    await expect(warning).toHaveAttribute(
+      'aria-label',
+      /Autosave failing: backup volume unavailable/,
+    )
+    await expect(warning).toHaveAttribute('role', 'status')
+  })
+
+  test('shows the runtime booting shell while startup is still preparing', async ({ page }) => {
+    await page.evaluate(async () => {
+      const { useRuntimeBootStore } = await import(
+        '/src/features/runtime/runtime-boot-store.ts'
+      )
+      useRuntimeBootStore.setState({
+        phase: 'booting',
+        error: null,
+        generation: 100,
+      })
+    })
+
+    await expect(page.getByTestId('runtime-booting-shell')).toBeVisible()
+    await expect(page.getByRole('status')).toContainText(
+      'Loading mission, tracking, and map services...',
+    )
+    await expect(page.getByTestId('app-shell')).toHaveCount(0)
+  })
+
   test('shows runtime faults with a clean reload action', async ({ page }) => {
     await page.evaluate(async () => {
       const { useRuntimeBootStore } = await import(
