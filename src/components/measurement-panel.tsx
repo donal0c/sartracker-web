@@ -25,16 +25,16 @@ export function MeasurementPanel() {
 
   return (
     <section
-      className="rounded-2xl border border-stone-800 bg-stone-950/40 p-4 text-sm"
+      className="sar-module p-4 text-sm"
       data-testid="measurement-panel"
     >
       <div className="mb-4 flex items-center justify-between">
-        <span className="text-[13px] font-semibold uppercase tracking-wider text-stone-400">
+        <span className="text-[13px] font-semibold uppercase tracking-wider text-stone-100">
           Measurement
         </span>
         <span
-          className={`text-[11px] font-semibold uppercase ${
-            mode === 'armed' ? 'text-cyan-300' : 'text-stone-500'
+          className={`text-[11px] font-bold uppercase ${
+            mode === 'armed' ? 'text-cyan-200' : 'text-stone-300'
           }`}
           data-testid="measurement-mode"
         >
@@ -43,7 +43,7 @@ export function MeasurementPanel() {
       </div>
 
       <p
-        className="rounded-xl border border-stone-800 bg-stone-900/30 px-3 py-2 text-[13px] text-stone-300"
+        className="sar-readout px-3 py-2 text-[13px] text-stone-100"
         data-testid="measurement-status"
       >
         {statusMessage}
@@ -51,7 +51,7 @@ export function MeasurementPanel() {
 
       <div className="mt-4 grid gap-2 sm:grid-cols-2">
         <button
-          className="rounded-lg bg-cyan-700 px-3 py-2.5 text-[13px] font-semibold text-white transition hover:bg-cyan-600 disabled:cursor-not-allowed disabled:opacity-20 disabled:grayscale"
+          className="rounded-lg border border-cyan-400/55 bg-cyan-700 px-3 py-2.5 text-[13px] font-bold uppercase tracking-[0.08em] text-white transition hover:bg-cyan-600 disabled:cursor-not-allowed disabled:opacity-45 disabled:saturate-50"
           data-testid="measurement-arm-btn"
           disabled={disabled}
           onClick={() => {
@@ -75,7 +75,7 @@ export function MeasurementPanel() {
           {mode === 'armed' ? 'Cancel Measure' : 'Measure'}
         </button>
         <button
-          className="rounded-lg border border-stone-600 bg-stone-800 px-3 py-2.5 text-[13px] font-semibold text-stone-200 transition hover:bg-stone-700 disabled:cursor-not-allowed disabled:opacity-20 disabled:grayscale"
+          className="sar-button px-3 py-2.5 text-[13px] font-bold uppercase tracking-[0.08em]"
           data-testid="measurement-clear-btn"
           disabled={controller === null || measurements.length === 0}
           onClick={() => controller?.clearMeasurements()}
@@ -85,24 +85,24 @@ export function MeasurementPanel() {
         </button>
       </div>
 
-      <div className="mt-4 border-t border-stone-800 pt-4">
-        <div className="mb-2 flex items-center justify-between text-[13px] font-semibold uppercase tracking-wider text-stone-400">
+      <div className="mt-4 border-t border-[var(--sar-line)] pt-4">
+        <div className="mb-2 flex items-center justify-between text-[13px] font-semibold uppercase tracking-wider text-stone-200">
           <span>Active Measurements</span>
           <span data-testid="measurement-count">{measurements.length}</span>
         </div>
         <div className="space-y-2" data-testid="measurement-list">
           {measurements.length === 0 ? (
-            <div className="rounded-xl border border-dashed border-stone-800 bg-stone-950/20 px-3 py-2 text-xs font-medium italic text-stone-500">
+            <div className="rounded-xl border border-dashed border-stone-600 bg-stone-950/30 px-3 py-2 text-xs font-medium italic text-stone-300">
               No active measurements. Click Measure above to start.
             </div>
           ) : (
             measurements.map((measurement) => (
               <div
-                className="rounded-xl border border-stone-800/50 bg-stone-900/30 px-3 py-2"
+                className="rounded-xl border border-stone-700 bg-stone-900/40 px-3 py-2"
                 data-testid={`measurement-item-${measurement.id}`}
                 key={measurement.id}
               >
-                <p className="font-mono text-[11px] text-cyan-100">{measurement.label}</p>
+                <p className="font-mono text-[12px] font-semibold text-cyan-100">{measurement.label}</p>
               </div>
             ))
           )}

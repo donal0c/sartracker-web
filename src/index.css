@@ -7,10 +7,15 @@
   --sar-panel: #11100e;
   --sar-panel-raised: #1b1915;
   --sar-panel-sunken: #090807;
-  --sar-line: rgba(214, 204, 190, 0.15);
-  --sar-line-strong: rgba(245, 158, 11, 0.42);
+  --sar-line: rgba(214, 204, 190, 0.22);
+  --sar-line-strong: rgba(245, 158, 11, 0.5);
   --sar-text: #f4f1ec;
-  --sar-text-muted: #a8a29e;
+  /** Primary body text alternate – legible at distance. */
+  --sar-text-strong: #ece8e1;
+  /** Secondary text – meets WCAG AA on the panel backgrounds. */
+  --sar-text-muted: #c2bdb5;
+  /** Tertiary chrome labels – section headings, telemetry caps. */
+  --sar-text-dim: #9c958b;
   --sar-amber: #f4b74a;
   --sar-amber-strong: #f59e0b;
   --sar-emerald: #34d399;
@@ -119,13 +124,13 @@ body {
   }
 
   .sar-module {
-    border: 1px solid rgba(214, 204, 190, 0.14);
+    border: 1px solid rgba(214, 204, 190, 0.22);
     background:
       linear-gradient(180deg, rgba(255, 255, 255, 0.028), transparent 42%),
       rgba(9, 8, 7, 0.44);
     box-shadow:
-      inset 0 1px rgba(255, 255, 255, 0.025),
-      0 14px 34px rgba(0, 0, 0, 0.16);
+      inset 0 1px rgba(255, 255, 255, 0.04),
+      0 14px 34px rgba(0, 0, 0, 0.18);
   }
 
   .sar-workspace-header {
@@ -141,13 +146,13 @@ body {
   }
 
   .sar-readout {
-    border: 1px solid rgba(168, 162, 158, 0.13);
+    border: 1px solid rgba(168, 162, 158, 0.22);
     background:
-      linear-gradient(180deg, rgba(255, 255, 255, 0.025), transparent),
+      linear-gradient(180deg, rgba(255, 255, 255, 0.03), transparent),
       var(--sar-panel-sunken);
     box-shadow:
-      inset 0 1px 0 rgba(255, 255, 255, 0.025),
-      inset 0 -18px 34px rgba(0, 0, 0, 0.18);
+      inset 0 1px 0 rgba(255, 255, 255, 0.04),
+      inset 0 -18px 34px rgba(0, 0, 0, 0.22);
     font-variant-numeric: tabular-nums;
   }
 
@@ -159,68 +164,117 @@ body {
     text-transform: uppercase;
   }
 
+  /** Field hint/description text. Calm, legible on dark panels. */
+  .sar-helper-text {
+    color: var(--sar-text-muted);
+    font-size: 12px;
+    line-height: 1.5;
+  }
+
+  /** Tertiary chrome label for telemetry caps and instrument labels. */
+  .sar-meta-label {
+    color: var(--sar-text-dim);
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+  }
+
   .sar-button {
-    border: 1px solid rgba(168, 162, 158, 0.2);
+    border: 1px solid rgba(168, 162, 158, 0.32);
     background:
-      linear-gradient(180deg, rgba(255, 255, 255, 0.04), transparent),
-      #24211e;
+      linear-gradient(180deg, rgba(255, 255, 255, 0.05), transparent),
+      #28241f;
     color: var(--sar-text);
     box-shadow:
-      inset 0 1px rgba(255, 255, 255, 0.04),
-      0 8px 20px rgba(0, 0, 0, 0.18);
+      inset 0 1px rgba(255, 255, 255, 0.06),
+      0 8px 20px rgba(0, 0, 0, 0.22);
     transition:
       border-color 150ms ease,
       background-color 150ms ease,
       color 150ms ease;
   }
 
-  .sar-button:hover {
-    border-color: rgba(244, 183, 74, 0.35);
-    background: #2d2925;
+  .sar-button:hover:not(:disabled) {
+    border-color: rgba(244, 183, 74, 0.55);
+    background: #322d28;
+  }
+
+  .sar-button:focus-visible,
+  .sar-button-focus:focus-visible,
+  .sar-action-primary:focus-visible,
+  .sar-action-danger:focus-visible,
+  .sar-mast-button:focus-visible {
+    outline: 2px solid rgba(244, 183, 74, 0.85);
+    outline-offset: 2px;
+  }
+
+  .sar-button:disabled {
+    cursor: not-allowed;
+    opacity: 0.4;
+    filter: saturate(0.6);
   }
 
   .sar-action-primary {
-    border: 1px solid rgba(244, 183, 74, 0.8);
+    border: 1px solid rgba(244, 183, 74, 0.85);
     background:
       linear-gradient(180deg, rgba(255, 255, 255, 0.18), transparent 42%),
       var(--sar-amber);
     color: #16110a;
     box-shadow:
       inset 0 1px rgba(255, 255, 255, 0.22),
-      0 14px 28px rgba(0, 0, 0, 0.3);
+      0 14px 28px rgba(0, 0, 0, 0.32);
   }
 
-  .sar-action-primary:hover {
+  .sar-action-primary:hover:not(:disabled) {
     background:
       linear-gradient(180deg, rgba(255, 255, 255, 0.22), transparent 42%),
       #f8c65c;
   }
 
+  .sar-action-primary:disabled {
+    cursor: not-allowed;
+    opacity: 0.42;
+    filter: saturate(0.5);
+  }
+
   .sar-action-danger {
-    border: 1px solid rgba(244, 63, 94, 0.55);
+    border: 1px solid rgba(244, 63, 94, 0.7);
     background:
       linear-gradient(180deg, rgba(255, 255, 255, 0.08), transparent 44%),
       #b91c3c;
     color: #fff7f7;
     box-shadow:
-      inset 0 1px rgba(255, 255, 255, 0.12),
-      0 14px 28px rgba(0, 0, 0, 0.28);
+      inset 0 1px rgba(255, 255, 255, 0.14),
+      0 14px 28px rgba(0, 0, 0, 0.3);
   }
 
-  .sar-action-danger:hover {
+  .sar-action-danger:hover:not(:disabled) {
     background:
       linear-gradient(180deg, rgba(255, 255, 255, 0.1), transparent 44%),
       #d01846;
   }
 
+  .sar-action-danger:disabled {
+    cursor: not-allowed;
+    opacity: 0.42;
+    filter: saturate(0.5);
+  }
+
   .sar-button-focus {
     border: 1px solid var(--sar-line-strong);
-    background: rgba(244, 183, 74, 0.1);
+    background: rgba(244, 183, 74, 0.14);
     color: #fde9b5;
   }
 
-  .sar-button-focus:hover {
-    background: rgba(244, 183, 74, 0.16);
+  .sar-button-focus:hover:not(:disabled) {
+    background: rgba(244, 183, 74, 0.22);
+  }
+
+  .sar-button-focus:disabled {
+    cursor: not-allowed;
+    opacity: 0.42;
+    filter: saturate(0.5);
   }
 
   .sar-input {
@@ -243,7 +297,20 @@ body {
   }
 
   .sar-input::placeholder {
-    color: rgba(168, 162, 158, 0.62);
+    color: rgba(194, 189, 181, 0.7);
+  }
+
+  .sar-input:disabled {
+    background: rgba(9, 8, 7, 0.6);
+    color: rgba(244, 241, 236, 0.55);
+    cursor: not-allowed;
+  }
+
+  /** Operational disabled state – grey-out without being unreadable. */
+  .sar-disabled-soft:disabled {
+    cursor: not-allowed;
+    opacity: 0.45;
+    filter: saturate(0.6);
   }
 
   .sar-toggle {
@@ -252,8 +319,23 @@ body {
   }
 
   .sar-inline-alert {
-    border: 1px solid rgba(244, 183, 74, 0.28);
-    background: rgba(120, 72, 18, 0.16);
+    border: 1px solid rgba(244, 183, 74, 0.45);
+    background: rgba(120, 72, 18, 0.22);
+    color: #fde9b5;
+  }
+
+  /** Critical alert chrome – non-dismissable backup/safety failures. */
+  .sar-inline-critical {
+    border: 1px solid rgba(244, 63, 94, 0.55);
+    background: rgba(76, 5, 25, 0.55);
+    color: #fee2e2;
+  }
+
+  /** Operational success chrome – mission start banners, etc. */
+  .sar-inline-success {
+    border: 1px solid rgba(52, 211, 153, 0.45);
+    background: rgba(6, 78, 59, 0.35);
+    color: #a7f3d0;
   }
 
   .sar-status-row {
@@ -261,29 +343,41 @@ body {
   }
 
   .sar-tab-active {
-    border: 1px solid rgba(244, 183, 74, 0.35);
-    background: rgba(244, 183, 74, 0.12);
+    border: 1px solid rgba(244, 183, 74, 0.55);
+    background: rgba(244, 183, 74, 0.18);
     color: #fde9b5;
+    box-shadow: inset 0 -2px rgba(244, 183, 74, 0.55);
+  }
+
+  .sar-tab-inactive {
+    color: var(--sar-text-muted);
+  }
+
+  .sar-tab-inactive:hover {
+    color: var(--sar-text-strong);
+    background: rgba(255, 255, 255, 0.04);
   }
 
   .sar-control-dock {
-    border: 1px solid rgba(214, 204, 190, 0.17);
+    border: 1px solid rgba(214, 204, 190, 0.32);
     background:
-      linear-gradient(180deg, rgba(255, 255, 255, 0.04), transparent),
-      rgba(9, 8, 7, 0.94);
+      linear-gradient(180deg, rgba(255, 255, 255, 0.05), transparent),
+      rgba(9, 8, 7, 0.96);
     box-shadow:
-      0 18px 46px rgba(0, 0, 0, 0.36),
-      inset 0 1px rgba(255, 255, 255, 0.04);
+      0 18px 46px rgba(0, 0, 0, 0.5),
+      0 0 0 1px rgba(0, 0, 0, 0.6),
+      inset 0 1px rgba(255, 255, 255, 0.06);
+    color: var(--sar-text);
   }
 
   .sar-instrument-strip {
-    border-top: 1px solid rgba(214, 204, 190, 0.13);
+    border-top: 1px solid rgba(214, 204, 190, 0.22);
     background:
-      linear-gradient(90deg, rgba(0, 0, 0, 0.96), rgba(9, 8, 7, 0.9) 68%, rgba(9, 8, 7, 0.76)),
+      linear-gradient(90deg, rgba(0, 0, 0, 0.97), rgba(9, 8, 7, 0.93) 68%, rgba(9, 8, 7, 0.84)),
       var(--sar-ink);
     box-shadow:
-      0 -20px 44px rgba(0, 0, 0, 0.34),
-      inset 0 1px rgba(255, 255, 255, 0.035);
+      0 -20px 44px rgba(0, 0, 0, 0.42),
+      inset 0 1px rgba(255, 255, 255, 0.05);
   }
 
   .sar-rail-section {
@@ -305,8 +399,49 @@ body {
   }
 
   .sar-tree-row-active {
-    border-color: rgba(244, 183, 74, 0.28);
-    background: rgba(244, 183, 74, 0.11);
+    border-color: rgba(244, 183, 74, 0.5);
+    background: rgba(244, 183, 74, 0.16);
     color: #fde9b5;
+  }
+
+  /**
+   * Pill used for chrome floating over the map (Maps, Map Tools, Measure
+   * readouts). Provides enough contrast against bright satellite tiles.
+   */
+  .sar-map-chip {
+    border: 1px solid rgba(214, 204, 190, 0.4);
+    background: rgba(9, 8, 7, 0.92);
+    color: var(--sar-text);
+    box-shadow:
+      0 0 0 1px rgba(0, 0, 0, 0.6),
+      0 12px 28px rgba(0, 0, 0, 0.45);
+  }
+
+  /** Status chip with explicit semantic backing for green/online states. */
+  .sar-status-chip-success {
+    border: 1px solid rgba(52, 211, 153, 0.5);
+    background: rgba(6, 78, 59, 0.45);
+    color: #a7f3d0;
+  }
+
+  /** Status chip for warning/amber states (paused, recovery, offline soon). */
+  .sar-status-chip-warning {
+    border: 1px solid rgba(245, 158, 11, 0.55);
+    background: rgba(120, 72, 18, 0.42);
+    color: #fde68a;
+  }
+
+  /** Status chip for danger/critical (failures, finished without backup). */
+  .sar-status-chip-danger {
+    border: 1px solid rgba(244, 63, 94, 0.55);
+    background: rgba(76, 5, 25, 0.55);
+    color: #fecaca;
+  }
+
+  /** Status chip for neutral/idle states. */
+  .sar-status-chip-neutral {
+    border: 1px solid rgba(168, 162, 158, 0.4);
+    background: rgba(9, 8, 7, 0.7);
+    color: var(--sar-text-muted);
   }
 }

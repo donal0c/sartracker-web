@@ -161,7 +161,7 @@ export function WorkspaceHeader({
   titleId,
   subtitle,
   title,
-  subtitleColor = 'text-amber-300/80',
+  subtitleColor = 'text-amber-300',
   onClose,
   actions,
 }: WorkspaceHeaderProps) {
@@ -185,7 +185,7 @@ export function WorkspaceHeader({
             <path d="M6 18L18 6M6 6l12 12" strokeLinecap="round" strokeLinejoin="round" />
           </svg>
           Close
-          <kbd className="ml-1 border border-stone-700 bg-stone-950 px-1.5 py-0.5 font-mono text-[10px] text-stone-400">Esc</kbd>
+          <kbd className="ml-1 border border-stone-600 bg-stone-950 px-1.5 py-0.5 font-mono text-[10px] text-stone-200">Esc</kbd>
         </button>
       </div>
     </header>

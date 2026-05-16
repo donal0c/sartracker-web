@@ -5,9 +5,9 @@ type MapStatusBadgeProps = {
 }
 
 const STATUS_CLASSES: Record<MapHealth['status'], string> = {
-  loading: 'border-amber-400/45 bg-stone-950/92 text-amber-100',
-  ready: 'border-emerald-400/45 bg-stone-950/92 text-emerald-100',
-  degraded: 'border-rose-400/45 bg-stone-950/92 text-rose-100',
+  loading: 'border-amber-300/70 bg-stone-950/95 text-amber-100',
+  ready: 'border-emerald-300/70 bg-stone-950/95 text-emerald-100',
+  degraded: 'border-rose-300/75 bg-stone-950/95 text-rose-50',
 }
 
 export function MapStatusBadge({ health }: MapStatusBadgeProps) {

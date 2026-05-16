@@ -102,15 +102,15 @@ export function HelicopterPanel() {
                   <span className={`h-3 w-3 rounded-full ${slot.color}`} />
                   <div>
                     <p className="text-[13px] font-semibold text-stone-100">{slot.title}</p>
-                    <p className="text-[11px] text-stone-500">{summaryText}</p>
+                    <p className="text-[11px] text-stone-300">{summaryText}</p>
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
-                  <span className="text-[11px] font-semibold uppercase tracking-wider text-stone-500">
+                  <span className={`text-[11px] font-bold uppercase tracking-wider ${helicopter === null ? 'text-stone-300' : 'text-emerald-300'}`}>
                     {helicopter === null ? 'EMPTY' : 'SET'}
                   </span>
                   <svg
-                    className={`h-4 w-4 text-stone-500 transition-transform ${isExpanded ? 'rotate-180' : ''}`}
+                    className={`h-4 w-4 text-stone-300 transition-transform ${isExpanded ? 'rotate-180' : ''}`}
                     fill="none"
                     stroke="currentColor"
                     strokeWidth={2}

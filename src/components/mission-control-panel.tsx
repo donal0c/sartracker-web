@@ -272,8 +272,8 @@ export function MissionControlPanel() {
     >
       <div className="mb-4 flex items-center justify-between border-b border-[var(--sar-line)] pb-3">
         <div>
-          <span className="sar-section-label text-amber-300/90">Mission Control</span>
-          <p className="mt-1 text-[11px] uppercase tracking-[0.12em] text-stone-500">
+          <span className="sar-section-label text-amber-300">Mission Control</span>
+          <p className="mt-1 text-[11px] uppercase tracking-[0.12em] text-stone-300">
             lifecycle and timing
           </p>
         </div>
@@ -293,12 +293,12 @@ export function MissionControlPanel() {
           <span
             className={`font-semibold uppercase text-[11px] ${
               phase === 'active'
-                ? 'text-emerald-400'
+                ? 'text-emerald-300'
                 : phase === 'paused'
-                  ? 'text-amber-400'
+                  ? 'text-amber-300'
                   : phase === 'recovery'
                     ? 'text-amber-200'
-                    : 'text-stone-500'
+                    : 'text-stone-300'
             }`}
           >
             {phase}
@@ -310,13 +310,13 @@ export function MissionControlPanel() {
         {/* Primary Telemetry */}
         <div className="grid gap-3 sm:grid-cols-2">
           <div className="sar-readout p-3">
-            <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-stone-400">Elapsed</p>
+            <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-stone-300">Elapsed</p>
             <p className="mt-1 font-mono text-[26px] font-black leading-none text-stone-100" data-testid="mission-elapsed">
               {formatMissionDuration(timerState?.elapsedSeconds ?? 0)}
             </p>
           </div>
           <div className="sar-readout p-3">
-            <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-stone-400">Active Search</p>
+            <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-stone-300">Active Search</p>
             <p className="mt-1 font-mono text-[26px] font-black leading-none text-emerald-400" data-testid="mission-active-search">
               {formatMissionDuration(timerState?.activeSeconds ?? 0)}
             </p>
@@ -328,7 +328,7 @@ export function MissionControlPanel() {
           <div className="sar-module space-y-4 p-4">
             <div>
               <label
-                className="block text-[11px] font-bold uppercase tracking-[0.1em] text-stone-400"
+                className="block text-[11px] font-bold uppercase tracking-[0.1em] text-stone-300"
                 htmlFor={MISSION_NAME_INPUT_ID}
               >
                 Mission Name
@@ -350,7 +350,7 @@ export function MissionControlPanel() {
 
             <div>
               <label
-                className="block text-[11px] font-bold uppercase tracking-[0.1em] text-stone-400"
+                className="block text-[11px] font-bold uppercase tracking-[0.1em] text-stone-300"
                 htmlFor={MISSION_OFFSET_INPUT_ID}
               >
                 Start Offset (Hours)
@@ -371,7 +371,7 @@ export function MissionControlPanel() {
           </div>
         ) : focusModeActive ? (
           <div className="sar-readout border-l-4 border-l-emerald-400 px-3 py-3">
-             <p className="mb-1 text-[10px] font-bold uppercase tracking-[0.12em] text-stone-400">Current Mission</p>
+             <p className="mb-1 text-[10px] font-bold uppercase tracking-[0.12em] text-stone-300">Current Mission</p>
              <p className="text-[13px] font-bold text-stone-100" data-testid="current-mission-name">
               {currentMission?.name}
             </p>
@@ -427,7 +427,7 @@ export function MissionControlPanel() {
           >
             <div className="flex items-center justify-between gap-3">
               <div>
-                <p className="text-[13px] font-semibold uppercase tracking-wide text-sky-300/80">
+                <p className="text-[13px] font-semibold uppercase tracking-wide text-sky-200">
                   Mission Governance
                 </p>
                 <p className="mt-1 text-sm font-semibold text-stone-100">
@@ -437,7 +437,7 @@ export function MissionControlPanel() {
                   Status: <span className="font-mono uppercase">{governanceMission.status}</span>
                 </p>
                 {governanceMission.finish_time ? (
-                  <p className="mt-1 text-[13px] text-stone-400">
+                  <p className="mt-1 text-[13px] text-stone-300">
                     Finished: {new Date(governanceMission.finish_time).toLocaleString()}
                   </p>
                 ) : null}
@@ -476,12 +476,12 @@ export function MissionControlPanel() {
 
       {phase === 'recovery' && recoverableMission !== null ? (
         <div className="mt-4 border border-amber-500/30 bg-amber-950/50 p-4 shadow-xl" data-testid="mission-recovery-dialog">
-          <p className="font-semibold text-amber-400 uppercase text-[13px] tracking-wide">Resume Mission?</p>
+          <p className="font-semibold text-amber-300 uppercase text-[13px] tracking-wide">Resume Mission?</p>
           <div className="mt-2 font-mono text-[13px] leading-relaxed text-stone-300">
             <p>{recoverableMission.name}</p>
             <p>Started: {new Date(recoverableMission.start_time).toLocaleString()}</p>
           </div>
-          <p className="mt-3 text-[12px] leading-relaxed text-amber-100/80">
+          <p className="mt-3 text-[12px] leading-relaxed text-amber-100">
             A recoverable mission was found after a reload or interrupted session. Resume it
             to continue the same operational record, or start fresh only if this is not the
             current incident.

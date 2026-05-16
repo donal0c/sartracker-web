@@ -102,7 +102,7 @@ export function SettingsWorkspace({ open, onClose }: SettingsWorkspaceProps) {
 
       <div className="flex-1 space-y-6 overflow-y-auto px-6 py-6" data-testid="settings-workspace">
           {loading || draft === null ? (
-            <div className="sar-module p-5 text-sm text-stone-400">
+            <div className="sar-module p-5 text-sm text-stone-200">
               Loading settings…
             </div>
           ) : (
@@ -240,7 +240,7 @@ export function SettingsWorkspace({ open, onClose }: SettingsWorkspaceProps) {
                 <div className="space-y-4">
                   {settingsValidationContext?.hostedBrowserMode === true ? (
                     <div
-                      className="border border-amber-400/40 bg-amber-950/30 px-4 py-3 text-sm text-amber-100"
+                      className="sar-inline-alert px-4 py-3 text-sm leading-relaxed"
                       data-testid="hosted-traccar-url-guidance"
                     >
                       <p>
@@ -589,10 +589,10 @@ function Section(props: {
   return (
     <section className="sar-module p-5">
       <div className="mb-4">
-        <h3 className="text-[12px] font-bold uppercase tracking-wider text-stone-200">
+        <h3 className="text-[12px] font-bold uppercase tracking-wider text-stone-100">
           {props.title}
         </h3>
-        <p className="mt-1 text-sm text-stone-500">{props.description}</p>
+        <p className="sar-helper-text mt-1">{props.description}</p>
       </div>
       <div className="space-y-4">{props.children}</div>
     </section>
@@ -664,9 +664,10 @@ function ToggleField(props: {
 }) {
   return (
     <label className="sar-toggle flex items-center justify-between gap-4 px-3 py-2">
-      <span className="text-sm text-stone-200">{props.label}</span>
+      <span className="text-sm text-stone-100">{props.label}</span>
       <input
         checked={props.checked}
+        className="h-4 w-4 cursor-pointer accent-amber-400"
         data-testid={props.testId}
         disabled={props.disabled}
         onChange={(event) => props.onChange(event.target.checked)}

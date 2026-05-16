@@ -27,10 +27,10 @@ export function MarkerAtGridPanel() {
   return (
     <section className="sar-module p-4" data-testid="marker-at-grid-panel">
       <div>
-        <h3 className="sar-section-label text-amber-300/90">
+        <h3 className="sar-section-label text-amber-300">
           Marker At GR
         </h3>
-        <p className="mt-1 text-[11px] uppercase tracking-[0.12em] text-stone-500">
+        <p className="mt-1 text-[11px] uppercase tracking-[0.12em] text-stone-300">
           TM65 entry into marker form
         </p>
       </div>
@@ -41,7 +41,7 @@ export function MarkerAtGridPanel() {
             Marker Type
           </span>
           <select
-            className="mt-2 w-full rounded-lg border border-stone-700 bg-stone-950 px-3 py-2 text-sm text-stone-100"
+            className="sar-input mt-2 w-full px-3 py-2 text-sm"
             data-testid="marker-at-grid-type-input"
             disabled={disabled}
             onChange={(event) => setMarkerType(event.target.value as MarkerType)}
@@ -60,7 +60,7 @@ export function MarkerAtGridPanel() {
             TM65 Grid Reference
           </span>
           <input
-            className="mt-2 w-full rounded-lg border border-stone-700 bg-stone-950 px-3 py-2 font-mono text-sm text-stone-100"
+            className="sar-input mt-2 w-full px-3 py-2 font-mono text-sm"
             data-testid="marker-at-grid-reference-input"
             disabled={disabled}
             onChange={(event) => {
@@ -74,7 +74,7 @@ export function MarkerAtGridPanel() {
 
         {error !== null ? (
           <p
-            className="rounded-lg border border-rose-400/40 bg-rose-950/40 px-3 py-2 text-xs text-rose-100"
+            className="sar-inline-critical px-3 py-2 text-xs"
             data-testid="marker-at-grid-error"
           >
             {error}

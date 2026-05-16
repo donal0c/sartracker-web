@@ -148,9 +148,7 @@ function App() {
                 {SIDEBAR_TABS.map((tab) => (
                   <button
                     className={`px-3 py-2 text-[12px] font-bold uppercase tracking-[0.08em] transition-colors ${
-                      sidebarTab === tab.id
-                        ? 'sar-tab-active shadow-sm'
-                        : 'text-stone-400 hover:text-stone-200'
+                      sidebarTab === tab.id ? 'sar-tab-active shadow-sm' : 'sar-tab-inactive'
                     }`}
                     data-testid={`sidebar-tab-${tab.id}`}
                     key={tab.id}
@@ -311,7 +309,7 @@ export function RuntimeSafetyBanner(props: {
 
   return (
     <div
-      className="border-b border-amber-400/30 bg-amber-400/10 px-5 py-2 text-[12px] font-semibold text-amber-100"
+      className="border-b border-amber-400/55 bg-amber-400/15 px-5 py-2 text-[12px] font-semibold text-amber-100 shadow-[inset_0_-1px_rgba(0,0,0,0.4)]"
       data-testid="hosted-browser-testing-banner"
     >
       {props.browserTestingMode ? (
@@ -326,7 +324,7 @@ export function RuntimeSafetyBanner(props: {
       )}
       {lifecycleBackupFailure === null ? null : (
         <div
-          className="mt-2 border border-rose-200/45 bg-rose-950/45 p-3 text-rose-50"
+          className="sar-inline-critical mt-2 p-3"
           data-testid="lifecycle-backup-failure-banner"
           role="alert"
         >
@@ -403,7 +401,7 @@ export function CommandMast(props: {
             >
               SAR Tracker
             </h1>
-            <p className="mt-1 min-w-0 truncate font-mono text-[10px] uppercase tracking-[0.12em] text-stone-400">
+            <p className="mt-1 min-w-0 truncate font-mono text-[10px] uppercase tracking-[0.12em] text-stone-300">
               {APP_VERSION}
             </p>
           </div>
@@ -411,7 +409,7 @@ export function CommandMast(props: {
 
         <div className="min-w-0 border-r border-[var(--sar-line)] px-4 py-4">
           <div className="flex items-center gap-2">
-            <span className="sar-section-label text-amber-300/90">Mission</span>
+            <span className="sar-section-label text-amber-300">Mission</span>
             <span className={phasePillClassName(phase)}>{phase}</span>
           </div>
           <p
@@ -420,7 +418,7 @@ export function CommandMast(props: {
           >
             {currentMission?.name ?? 'No active mission'}
           </p>
-          <p className="mt-1 truncate font-mono text-[11px] uppercase tracking-[0.12em] text-stone-500">
+          <p className="mt-1 truncate font-mono text-[11px] uppercase tracking-[0.12em] text-stone-300">
             {currentMission === null ? 'Ready to start' : `Started ${formatTime(currentMission.start_time)}`}
           </p>
         </div>
@@ -449,7 +447,7 @@ export function CommandMast(props: {
             {systemStatus.value}
           </p>
           <p
-            className="mt-1 truncate text-[10px] font-black uppercase tracking-[0.08em] text-stone-400"
+            className="mt-1 truncate text-[10px] font-black uppercase tracking-[0.08em] text-stone-300"
             data-testid="system-status-detail"
             title={systemStatus.detail}
           >
@@ -458,7 +456,7 @@ export function CommandMast(props: {
           {autosaveWarning === null ? null : (
             <p
               aria-label={autosaveWarning}
-              className="mt-1 truncate text-[9px] font-black uppercase tracking-[0.02em] text-amber-300"
+              className="sar-status-chip-warning mt-1 inline-flex w-fit max-w-full truncate px-1.5 py-0.5 text-[10px] font-black uppercase tracking-[0.04em]"
               data-testid="autosave-warning"
               role="status"
               title={autosaveWarning}
@@ -512,7 +510,7 @@ function TopReadout(props: {
 
   return (
     <div className="flex min-w-0 flex-col justify-center border-r border-[var(--sar-line)] px-4">
-      <p className="text-[10px] font-black uppercase tracking-[0.14em] text-stone-500">
+      <p className="text-[10px] font-black uppercase tracking-[0.14em] text-stone-300">
         {props.label}
       </p>
       <p className={`mt-1 font-mono text-xl font-black leading-none ${toneClassName}`}>
@@ -571,15 +569,18 @@ function selectCommandMastAutosaveWarning(
 }
 
 function phasePillClassName(phase: string): string {
+  const base =
+    'px-2 py-0.5 font-mono text-[10px] font-black uppercase tracking-[0.12em]'
+
   if (phase === 'active') {
-    return 'border border-emerald-400/30 bg-emerald-400/10 px-2 py-0.5 font-mono text-[10px] font-black uppercase tracking-[0.12em] text-emerald-300'
+    return `${base} sar-status-chip-success`
   }
 
   if (phase === 'paused' || phase === 'recovery') {
-    return 'border border-amber-400/30 bg-amber-400/10 px-2 py-0.5 font-mono text-[10px] font-black uppercase tracking-[0.12em] text-amber-300'
+    return `${base} sar-status-chip-warning`
   }
 
-  return 'border border-stone-700 bg-stone-950 px-2 py-0.5 font-mono text-[10px] font-black uppercase tracking-[0.12em] text-stone-500'
+  return `${base} sar-status-chip-neutral`
 }
 
 function formatTime(value: string): string {

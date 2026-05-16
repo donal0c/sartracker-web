@@ -106,6 +106,7 @@ This is the default order when the user says “work on the next task.”
 | Done | A3.12: Fix Roster Name Entry Spacing | Track A | `sartracker-web-6y3.12` | Done locally 2026-05-16 |
 | Done | A3.13: Rework Coordinate Converter Formats And Naming | Track A / Coordinates | `sartracker-web-6y3.13` | Done locally 2026-05-16 |
 | Done | A3.14: Rename Drawing Tools To Map Tools And Add Measure | Track A / Map Tools | `sartracker-web-6y3.14` | Done locally 2026-05-16 |
+| Done | Live Validation: Team Feedback Batch | Verification | A3 batch | Passed on Vercel 2026-05-16, build `0.1.0+SHA.FCE7C9E58607` |
 | Done | R9: Add Checked-In Boot/Fault/Autosave UI Regression Coverage | Verification | `sartracker-web-ahp` | Done 2026-05-16 |
 | 7 | R10: Compress Handoff And Annotate Historical Docs | Process / Docs | `sartracker-web-419` | Ready |
 | 8 | R11: Add Browser Harness Storage Non-Goals Note | Track A / Docs | `sartracker-web-mh5` | Ready |
@@ -118,7 +119,7 @@ This is the default order when the user says “work on the next task.”
 | 15 | V1: Regression E2E Coverage | Verification | Create/update bead before starting | Ready |
 | 16 | V2: Visual Review Automation | Verification | Create/update bead before starting | Ready |
 | 17 | B4: GPX And Drawing Hit-Test Hardening | Track B | Create/update bead before starting | Ready |
-| 18 | A3.5: Add Operational Contrast/Theme Pass | Track A / UI | `sartracker-web-6y3.5` | Planned, not urgent |
+| Done | A3.5: Add Operational Contrast/Theme Pass | Track A / UI | `sartracker-web-6y3.5` | Done locally 2026-05-16 |
 | Done | A3.6: Move Static Operational Notes Out Of Primary Map Chrome | Track A / UI | `sartracker-web-6y3.6` | Done locally 2026-05-16 |
 | 20 | A3.9: Add Configurable Weather Links Menu | Track A / UI | `sartracker-web-6y3.9` | Planned, external links only |
 | 21 | C1: Local Proprietary Map Package Requirements | Track B / Maps | Create/update bead before starting | Waiting for map facts |
@@ -352,11 +353,19 @@ Bead: `sartracker-web-6y3.5`
 
 Goal: address the team's concern that the current colour scheme is not suitable for all testers without turning this into an open-ended redesign.
 
+Decision: ship one improved high-contrast operational theme rather than a theme toggle. Reasoning: a single theme audited surface-by-surface against the actual operator chrome is cheaper, preserves a single semantic palette, and avoids drift between theme variants. The decision can be revisited if a separate light-environment field theme is later requested.
+
 Tasks:
 
-- Decide whether the right first move is one improved high-contrast operational theme or a small theme toggle.
-- Use the QGIS plugin style as a contrast/readability reference, not as a requirement to copy the old UI.
-- Preserve distinct meanings for critical/amber/disabled/online/offline states.
+- Lift body-label contrast above WCAG AA on dark panels by introducing semantic text tokens (`--sar-text-strong` / `--sar-text-muted` / `--sar-text-dim`) and helper utilities (`.sar-helper-text`, `.sar-meta-label`).
+- Replace ad-hoc phase/tracking pills with semantic chips (`.sar-status-chip-success/warning/danger/neutral`) so online/offline/active/paused/recovery/idle/critical meanings stay distinct.
+- Promote critical alerts (lifecycle backup failure, marker placement errors) to a shared `.sar-inline-critical` chrome.
+- Promote the autosave warning chip from text-[9px] to a visible warning chip in the command mast.
+- Strengthen panel/module/readout/control-dock/instrument-strip borders for hierarchy and for satellite-tile readability.
+- Standardize disabled-button treatment to `opacity 0.4 + saturate 0.6` instead of `opacity 0.2`.
+- Add `:focus-visible` outlines on operator buttons.
+- Apply tokens through the main shell, mast, sidebar, mission-control, tracking, layers, settings, diagnostics, devices, marker-at-grid, measurement, drawing-toolbar, coordinate-bar, and map-overlay badge components.
+- Preserve every existing semantic color contract.
 
 Acceptance:
 
@@ -365,8 +374,8 @@ Acceptance:
 
 Verification:
 
-- Browser-backed visual check across the main operator surfaces.
-- Update visual tests/screenshots if this changes expected appearance.
+- Done locally 2026-05-16: `npm run lint`, `npx tsc --noEmit`, `npm run build`, `npm run test` (88 files / 435 tests), `npm run test:e2e` (80 chromium + 27 visual), and `npm run test:backend` (38 Rust tests) all green.
+- Done locally 2026-05-16: browser-backed verification via Playwright at `http://127.0.0.1:1420/?missionHarness=1`. Before/after evidence under `tmp/contrast-audit/{before,after}/` covers main shell, mast (idle and active), sidebar tracking/tools/layers, settings, diagnostics, narrow viewports (1024 + 900), ESRI Satellite basemap, drawing toolbar expanded, Marker At GR error and dialog, and coordinate converter.
 
 ### A3.6: Move Static Operational Notes Out Of Primary Map Chrome
 

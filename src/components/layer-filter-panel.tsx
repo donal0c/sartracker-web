@@ -86,10 +86,10 @@ export function LayerFilterPanel() {
     >
       <div className="mb-4 flex items-center justify-between gap-3 border-b border-[var(--sar-line)] pb-3">
         <div>
-          <h3 className="sar-section-label text-amber-300/90">
+          <h3 className="sar-section-label text-amber-300">
             Layer Workspace
           </h3>
-          <p className="mt-1 text-[11px] uppercase tracking-[0.12em] text-stone-500">
+          <p className="mt-1 text-[11px] uppercase tracking-[0.12em] text-stone-300">
             visibility and inspection
           </p>
         </div>
@@ -229,7 +229,7 @@ function TreeNodeRow(props: {
       >
         {hasNodeChildren(props.node) ? (
           <button
-            className="w-5 text-stone-500"
+            className="w-5 text-stone-300 hover:text-amber-200"
             data-testid={`layer-expand-${toLayerTreeTestId(props.node.id)}`}
             onClick={() => props.toggleNodeExpanded(props.node.id)}
             type="button"
@@ -237,7 +237,7 @@ function TreeNodeRow(props: {
             {isExpanded ? '▾' : '▸'}
           </button>
         ) : (
-          <span className="w-5 text-stone-700">•</span>
+          <span className="w-5 text-stone-500">•</span>
         )}
 
         {props.node.kind !== 'root' ? (
@@ -271,7 +271,7 @@ function TreeNodeRow(props: {
             className={`px-1.5 py-0.5 text-[11px] ${
               props.node.isFavorite
                 ? 'bg-amber-500/20 text-amber-200'
-                : 'text-stone-600 hover:bg-stone-800 hover:text-stone-300'
+                : 'text-stone-400 hover:bg-stone-800 hover:text-amber-200'
             }`}
             data-testid={`layer-favorite-${toLayerTreeTestId(props.node.id)}`}
             onClick={() => void props.controller?.toggleFavorite(props.node.id)}
@@ -281,7 +281,7 @@ function TreeNodeRow(props: {
           </button>
         ) : null}
 
-        <span className="min-w-[2rem] text-right font-mono text-[11px] text-stone-500">
+        <span className="min-w-[2rem] text-right font-mono text-[11px] text-stone-300">
           {childCount}
         </span>
       </div>
@@ -356,7 +356,7 @@ function LayerInspector(props: {
           >
             {selectedNode.displayLabel}
           </h4>
-          <p className="mt-1 text-[11px] font-semibold uppercase tracking-wider text-stone-500">
+          <p className="mt-1 text-[11px] font-semibold uppercase tracking-wider text-stone-300">
             {selectedNode.kind.replace('_', ' ')}
           </p>
         </div>
@@ -473,7 +473,7 @@ function LayerInspector(props: {
         <dl className="space-y-2" data-testid="layer-inspector-details">
           {inspectionRows.map((row) => (
             <div className="flex items-start justify-between gap-4 text-xs" key={row.label}>
-              <dt className="text-stone-500">{row.label}</dt>
+              <dt className="text-stone-300">{row.label}</dt>
               <dd className="text-right font-mono text-stone-200">{row.value}</dd>
             </div>
           ))}
@@ -656,7 +656,7 @@ async function reorderNodeRelative(
 function EmptyState(props: { readonly message: string; readonly testId?: string }) {
   return (
     <div
-      className="rounded-lg border border-dashed border-stone-800 bg-stone-950/20 px-3 py-2 text-xs font-medium italic text-stone-500"
+      className="rounded-lg border border-dashed border-stone-600 bg-stone-950/30 px-3 py-2 text-xs font-medium italic text-stone-300"
       data-testid={props.testId}
     >
       {props.message}

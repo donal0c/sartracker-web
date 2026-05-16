@@ -87,10 +87,10 @@ export function DevicesWorkspace() {
                   <p
                     className={`mt-1 text-sm font-semibold ${
                       summary.mode === 'online'
-                        ? 'text-emerald-400'
+                        ? 'text-emerald-300'
                         : summary.mode === 'offline'
-                          ? 'text-amber-400'
-                          : 'text-stone-400'
+                          ? 'text-amber-300'
+                          : 'text-stone-300'
                     }`}
                     data-testid="devices-tracking-mode"
                   >
@@ -98,15 +98,15 @@ export function DevicesWorkspace() {
                   </p>
                 </div>
                 <div className="text-right">
-                  <p className="text-[11px] uppercase tracking-wider text-stone-500">Last Success</p>
-                  <p className="font-mono text-sm text-stone-200" data-testid="devices-last-success">
+                  <p className="sar-meta-label">Last Success</p>
+                  <p className="font-mono text-sm text-stone-100" data-testid="devices-last-success">
                     {summary.lastSuccessAtDisplay}
                   </p>
                 </div>
               </div>
               <p
                 className={`mt-3 text-sm ${
-                  summary.warning === null ? 'text-stone-500 italic' : 'text-amber-300'
+                  summary.warning === null ? 'text-emerald-200 italic' : 'text-amber-200'
                 }`}
                 data-testid="devices-tracking-warning"
               >
@@ -120,7 +120,7 @@ export function DevicesWorkspace() {
             </div>
 
             <div className="mt-4 overflow-hidden rounded-2xl border border-stone-800 bg-stone-900/40">
-              <div className="grid grid-cols-[minmax(0,1.4fr)_7rem_8rem_7rem_7rem_7rem] border-b border-stone-800 px-4 py-3 text-[11px] font-bold uppercase tracking-wider text-stone-500">
+              <div className="grid grid-cols-[minmax(0,1.4fr)_7rem_8rem_7rem_7rem_7rem] border-b border-stone-700 px-4 py-3 text-[11px] font-bold uppercase tracking-wider text-stone-200">
                 <span>Device</span>
                 <span>Status</span>
                 <span>Last Seen</span>
@@ -147,17 +147,17 @@ export function DevicesWorkspace() {
                         type="button"
                       >
                         <p className="truncate font-semibold text-stone-100">{row.name}</p>
-                        <p className="truncate font-mono text-[11px] text-stone-500">
+                        <p className="truncate font-mono text-[11px] text-stone-300">
                           {row.deviceId}
                         </p>
                       </button>
                       <span
                         className={`font-semibold uppercase ${
                           row.status === 'online'
-                            ? 'text-emerald-400'
+                            ? 'text-emerald-300'
                             : row.status === 'offline'
-                              ? 'text-amber-400'
-                              : 'text-stone-400'
+                              ? 'text-amber-300'
+                              : 'text-stone-300'
                         }`}
                         data-testid={`device-status-${row.deviceId}`}
                       >
@@ -212,22 +212,20 @@ export function DevicesWorkspace() {
 
           <aside className="px-6 py-6" data-testid="devices-inspector">
             {selectedRow === null ? (
-              <div className="rounded-2xl border border-dashed border-stone-800 bg-stone-900/20 p-5 text-sm italic text-stone-500">
+              <div className="rounded-2xl border border-dashed border-stone-600 bg-stone-900/30 p-5 text-sm italic text-stone-300">
                 No devices available. Configure a tracking provider in Settings to see devices here.
               </div>
             ) : (
               <div className="space-y-4 rounded-2xl border border-stone-800 bg-stone-900/40 p-5">
                 <div>
-                  <p className="text-[11px] font-bold uppercase tracking-wider text-stone-400">
-                    Selected Device
-                  </p>
+                  <p className="sar-meta-label">Selected Device</p>
                   <h3
                     className="mt-2 text-xl font-semibold text-stone-50"
                     data-testid="devices-inspector-title"
                   >
                     {selectedRow.name}
                   </h3>
-                  <p className="mt-1 font-mono text-xs text-stone-500">{selectedRow.deviceId}</p>
+                  <p className="mt-1 font-mono text-xs text-stone-300">{selectedRow.deviceId}</p>
                 </div>
 
                 <dl className="space-y-3 text-sm text-stone-300">
@@ -292,10 +290,8 @@ export function DevicesWorkspace() {
 
 function SummaryCard(props: { readonly label: string; readonly value: string }) {
   return (
-    <div className="rounded-2xl border border-stone-800 bg-stone-900/40 p-4">
-      <p className="text-[11px] font-bold uppercase tracking-wider text-stone-500">
-        {props.label}
-      </p>
+    <div className="rounded-2xl border border-stone-700 bg-stone-900/40 p-4">
+      <p className="sar-meta-label">{props.label}</p>
       <p className="mt-2 font-mono text-xl text-stone-100">{props.value}</p>
     </div>
   )
@@ -304,10 +300,8 @@ function SummaryCard(props: { readonly label: string; readonly value: string }) 
 function Detail(props: { readonly label: string; readonly value: string }) {
   return (
     <div className="flex items-center justify-between gap-4">
-      <dt className="text-[11px] font-bold uppercase tracking-wider text-stone-500">
-        {props.label}
-      </dt>
-      <dd className="font-mono text-right text-stone-200">{props.value}</dd>
+      <dt className="sar-meta-label">{props.label}</dt>
+      <dd className="font-mono text-right text-stone-100">{props.value}</dd>
     </div>
   )
 }

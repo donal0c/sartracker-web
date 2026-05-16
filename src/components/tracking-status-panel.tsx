@@ -18,43 +18,49 @@ export function TrackingStatusPanel() {
     >
       <div className="mb-4 flex items-center justify-between border-b border-[var(--sar-line)] pb-3">
         <div>
-          <span className="sar-section-label text-amber-300/90">Tracking System</span>
-          <p className="mt-1 text-[11px] uppercase tracking-[0.12em] text-stone-500">
+          <span className="sar-section-label text-amber-300">Tracking System</span>
+          <p className="mt-1 text-[11px] uppercase tracking-[0.12em] text-stone-300">
             telemetry stream
           </p>
         </div>
-        <div className="flex items-center gap-2 border border-emerald-400/20 bg-emerald-400/10 px-2 py-1">
-          <div className={`h-2 w-2 rounded-full ${status.mode === 'online' ? 'bg-emerald-400' : 'bg-amber-500 animate-pulse'}`} />
-          <span
-            className={`font-bold uppercase text-[11px] ${
+        <div
+          className={`flex items-center gap-2 px-2 py-1 ${
+            status.mode === 'online'
+              ? 'sar-status-chip-success'
+              : status.mode === 'offline'
+                ? 'sar-status-chip-warning'
+                : 'sar-status-chip-neutral'
+          }`}
+        >
+          <div
+            className={`h-2 w-2 rounded-full ${
               status.mode === 'online'
-                ? 'text-emerald-400'
+                ? 'bg-emerald-300'
                 : status.mode === 'offline'
-                  ? 'text-amber-400'
-                  : 'text-stone-500'
+                  ? 'bg-amber-300 animate-pulse'
+                  : 'bg-stone-300'
             }`}
-          >
-            {status.mode}
-          </span>
+          />
+          <span className="font-bold uppercase text-[11px]">{status.mode}</span>
         </div>
       </div>
 
-      <div className="grid grid-cols-4 border border-[var(--sar-line)] bg-[var(--sar-panel-sunken)] font-mono text-[13px] tracking-tight text-stone-300">
+      <div className="grid grid-cols-4 border border-[var(--sar-line)] bg-[var(--sar-panel-sunken)] font-mono text-[13px] tracking-tight text-stone-100">
         <div className="border-r border-[var(--sar-line)] px-3 py-3">
-          <span className="block text-[10px] font-bold uppercase tracking-[0.12em] text-stone-500">Devices</span>
+          <span className="block text-[10px] font-bold uppercase tracking-[0.12em] text-stone-300">Devices</span>
           <span className="mt-1 block text-lg font-black text-stone-100">{snapshot.devices.length}</span>
         </div>
         <div className="border-r border-[var(--sar-line)] px-3 py-3">
-          <span className="block text-[10px] font-bold uppercase tracking-[0.12em] text-stone-500">Fixes</span>
+          <span className="block text-[10px] font-bold uppercase tracking-[0.12em] text-stone-300">Fixes</span>
           <span className="mt-1 block text-lg font-black text-stone-100">{snapshot.positions.length}</span>
         </div>
         <div className="border-r border-[var(--sar-line)] px-3 py-3">
-          <span className="block text-[10px] font-bold uppercase tracking-[0.12em] text-stone-500">Cache</span>
+          <span className="block text-[10px] font-bold uppercase tracking-[0.12em] text-stone-300">Cache</span>
           <span className="mt-1 block text-lg font-black text-amber-400">{cachedDeviceCount}</span>
         </div>
         <div className="px-3 py-3">
-          <span className="block text-[10px] font-bold uppercase tracking-[0.12em] text-stone-500">Stale</span>
-          <span className={`mt-1 block text-lg font-black ${staleDeviceCount > 0 ? 'text-rose-400' : 'text-stone-500'}`}>{staleDeviceCount}</span>
+          <span className="block text-[10px] font-bold uppercase tracking-[0.12em] text-stone-300">Stale</span>
+          <span className={`mt-1 block text-lg font-black ${staleDeviceCount > 0 ? 'text-rose-300' : 'text-stone-200'}`}>{staleDeviceCount}</span>
         </div>
       </div>
 
@@ -75,7 +81,7 @@ export function TrackingStatusPanel() {
             {status.lastSuccessAt ? new Date(status.lastSuccessAt).toLocaleTimeString() : 'N/A'}
           </span>
         </div>
-        <p className={`border-l-2 px-3 py-2 text-xs font-normal leading-relaxed ${status.warning ? 'border-l-amber-400 bg-amber-400/10 text-amber-300' : 'border-l-emerald-400/60 bg-emerald-400/10 text-emerald-300'}`}>
+        <p className={`border-l-4 px-3 py-2 text-xs font-medium leading-relaxed ${status.warning ? 'border-l-amber-400 bg-amber-400/15 text-amber-100' : 'border-l-emerald-400 bg-emerald-400/10 text-emerald-200'}`}>
           {status.warning ?? 'Telemetry stream healthy'}
         </p>
       </div>

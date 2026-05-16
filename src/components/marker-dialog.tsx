@@ -235,8 +235,8 @@ export function MarkerDialog() {
           <section className="mb-16 rounded-2xl border border-stone-800 bg-stone-950/40 p-3">
             <div className="flex items-center justify-between gap-3">
               <div>
-                <p className="text-xs uppercase tracking-[0.2em] text-stone-300">Evidence Attachment</p>
-                <p className="mt-1 text-sm text-stone-400">
+                <p className="sar-meta-label">Evidence Attachment</p>
+                <p className="sar-helper-text mt-1">
                   Attach a photo or file that should travel with this marker.
                 </p>
               </div>

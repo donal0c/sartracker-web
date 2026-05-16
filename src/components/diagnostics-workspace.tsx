@@ -43,7 +43,7 @@ export function DiagnosticsWorkspace() {
     >
       <WorkspaceHeader
         subtitle="Diagnostics Workspace"
-        subtitleColor="text-amber-300/80"
+        subtitleColor="text-amber-300"
         titleId={DIAGNOSTICS_WORKSPACE_TITLE_ID}
         title="Operational Diagnostics"
         onClose={closeWorkspace}
@@ -51,7 +51,7 @@ export function DiagnosticsWorkspace() {
 
       <div className="flex-1 overflow-y-auto px-6 py-6" data-testid="diagnostics-workspace">
           {loading || snapshot === null ? (
-            <div className="sar-module p-5 text-sm text-stone-400">
+            <div className="sar-module p-5 text-sm text-stone-200">
               Loading diagnostics…
             </div>
           ) : (
@@ -69,8 +69,8 @@ export function DiagnosticsWorkspace() {
                     <p className="sar-section-label">
                       Repair Tooling
                     </p>
-                    <p className="text-sm text-stone-300">{snapshot.repair.targetMissionLabel}</p>
-                    <p className="text-xs text-stone-500">
+                    <p className="text-sm text-stone-100">{snapshot.repair.targetMissionLabel}</p>
+                    <p className="sar-helper-text">
                       Cached controller snapshots are used here. No live network probes run from diagnostics.
                     </p>
                   </div>
@@ -122,7 +122,7 @@ export function DiagnosticsWorkspace() {
                   </p>
                 ) : null}
                 {exportPath !== null ? (
-                  <p className="mt-3 break-all text-xs text-stone-400" data-testid="diagnostics-export-path">
+                  <p className="mt-3 break-all text-xs text-stone-200" data-testid="diagnostics-export-path">
                     {exportPath}
                   </p>
                 ) : null}
@@ -214,7 +214,7 @@ function DiagnosticsSection(props: {
       <div className="mt-4 space-y-3">
         {props.rows.map((row) => (
           <div className="sar-status-row flex items-start justify-between gap-4 pt-3 text-sm first:border-t-0 first:pt-0" key={`${props.title}-${row.label}`}>
-            <span className="text-stone-400">{row.label}</span>
+            <span className="text-stone-200">{row.label}</span>
             <span className={rowToneClassName(row.tone)}>{row.value}</span>
           </div>
         ))}

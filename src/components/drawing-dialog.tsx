@@ -356,7 +356,7 @@ function RangeRingSection(props: {
             <div className="mt-3 grid gap-2 md:grid-cols-4">
               {LPB_PERCENTILE_ORDER.map((percentile) => (
                 <div className="rounded-xl border border-stone-800 bg-stone-900/70 px-3 py-2" key={percentile}>
-                  <p className="text-xs text-stone-400">
+                  <p className="text-xs font-bold text-stone-200">
                     <span style={{ color: LPB_RING_COLORS[percentile] }}>{percentile.slice(1)}%</span>
                   </p>
                   <p className="mt-1 text-sm text-stone-100">

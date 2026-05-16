@@ -4,7 +4,7 @@
 
 ## Last Updated
 
-- 2026-05-16 by Codex — A3.10/A3.11/A3.12/A3.13/A3.14/A3.4/A3.6 shipped locally for the team-reported coordinate, marker, roster, converter, map-tools, mission-duplication, and static-notes feedback.
+- 2026-05-16 by Claude — A3.5 operational contrast/theme pass shipped locally on top of the team-feedback batch. Main shell, mast, sidebar, settings, diagnostics, drawing/map tools chrome, and map overlay badges now meet a noticeably stronger field-readability bar without any workflow, lifecycle, persistence, coordinate, or tracking change.
 
 ## Operating Rule
 
@@ -69,7 +69,9 @@ Supporting docs may explain details, but they must not become separate queues. T
 - A3.1/A3.2/A3.8/A3.3/A3.7 are complete locally. Map click-vs-drag suppression, clean drawing rendering/layer visibility, drawing distance/bearing/style/delete improvements, compact Maps/Map Tools chrome, and Marker At GR are covered by unit/E2E/visual verification. Operator manual screenshots for the app shell and tools map were refreshed locally.
 - Live-validation follow-up on A3.3: selecting a basemap now closes the Maps dropdown so it cannot overlap/intercept the next Drawing Tools click.
 - A3.10/A3.11/A3.12/A3.13/A3.14/A3.4/A3.6 are complete locally. The TM65 datum transform now aligns Eamonn's DD `52.179337, -9.464944` with `Q 99842 04015`; coordinate-created markers refresh marker runtime before opening the draft; roster text preserves normal spaces while typing; the converter is now `IG -> DD -> DMS -> W3W` with W3W gated; Drawing Tools is now Map Tools with Measure; normal-sidebar mission duplication and static Operational Notes were reduced.
+- Live production validation passed for the completed team-feedback batch at `https://sartracker-web.vercel.app/?missionHarness=1` on build `0.1.0+SHA.FCE7C9E58607`. The validation used a 48h mission offset and real Traccar proxy data: `/api/session` 200, `/api/devices` 200 with 18 devices, `/api/positions` 200 with 14 current positions, real breadcrumbs/trails visible in Kerry, no captured console/page errors, and no sessionStorage quota issue. Artifact: `output/playwright/live-team-feedback-validation/final-rerun/validation-summary.json`.
 - R9 is complete locally. Runtime booting, startup fault, autosave stale, autosave failure, focus-mode autosave visibility, and autosave warning accessibility now have checked-in browser/visual regression coverage. The command mast System Status column was widened enough for the autosave warning chip to remain visibly legible, and the manual app-shell screenshot was refreshed.
+- A3.5 is complete locally. Introduced semantic CSS tokens for status chips, helper text, meta labels, and inline alerts; lifted body/label contrast above WCAG AA across the main shell, mast, sidebar, mission-control, tracking, layers, settings, diagnostics, devices, marker-at-grid, measurement, drawing-toolbar, coordinate-bar, and map-overlay badges; promoted the autosave warning to a visible chip; promoted the lifecycle-backup-failure banner to a critical chrome; tightened control-dock and instrument-strip borders for satellite-tile readability; preserved every existing semantic color contract (online/offline/active/paused/recovery/idle/critical). No workflow, lifecycle, persistence, coordinate, or tracking semantics were changed.
 
 ## Traccar Test Details
 
@@ -96,16 +98,15 @@ Use these only for team testing, not as a production secret model.
 
 Default next task when the user says “go” or “work on the next task”:
 
-1. `A3.5: Add Operational Contrast/Theme Pass` in `docs/two-track-execution-workplan.md`
-2. Bead: `sartracker-web-6y3.5`
-3. Goal: make the main shell, map overlays, settings, and drawing/map controls more readable without turning it into a broad redesign.
-4. Then do `A3.9: Add Configurable Weather Links Menu` (`sartracker-web-6y3.9`) unless the user wants to switch to shared foundation or Tauri beta work.
+1. `A3.9: Add Configurable Weather Links Menu` in `docs/two-track-execution-workplan.md`
+2. Bead: `sartracker-web-6y3.9`
+3. Goal: give operators quick access to external weather resources via a small Settings-managed link list, without claiming a built-in weather integration.
+4. Otherwise, the ready-and-not-yet-started shared/process queue is `sartracker-web-419` (R10 compress handoff/historical docs) and `sartracker-web-mh5` (R11 browser harness storage non-goals).
 
 ## Open Beads That Matter Now
 
 - `sartracker-web-vpz` — Hosted browser testing mode and parity hardening.
 - `sartracker-web-6y3` — A3 team feedback remediation batch.
-- `sartracker-web-6y3.5` — A3.5 operational contrast/theme pass.
 - `sartracker-web-6y3.9` — A3.9 configurable weather links menu.
 - `sartracker-web-419` — R10 compress handoff and annotate historical docs.
 - `sartracker-web-mh5` — R11 browser harness storage non-goals note.
@@ -123,6 +124,8 @@ Older parity/UI beads still exist, but new work should be selected through the t
 
 Most recent completed verification:
 
+- Local A3.5 verification passed 2026-05-16: `npm run lint`, `npx tsc --noEmit`, `npm run build`, `npm run test` (88 files / 435 tests), `npm run test:e2e` (80 chromium + 27 visual = 107 Playwright tests), and `npm run test:backend` (38 Rust tests). Browser-backed verification via Playwright at `http://127.0.0.1:1420/?missionHarness=1` captured before/after evidence in `tmp/contrast-audit/{before,after}/` for the main shell, mast in idle and active mission, sidebar tracking/tools/layers tabs, settings workspace, diagnostics workspace, narrow viewports (1024 + 900), ESRI Satellite basemap with overlays, drawing toolbar expanded (Map Tools), Marker At GR error and dialog, and coordinate converter. No workflow, lifecycle, persistence, coordinate, or tracking semantics changed.
+- Live production A3 team-feedback validation passed 2026-05-16 on `https://sartracker-web.vercel.app/?missionHarness=1`, build `0.1.0+SHA.FCE7C9E58607`: A3.10 DD/IG conversion passed (`52.179337, -9.464944` -> `Q 99842 04015`, reverse `52.179336, -9.464944`); A3.11 Marker At GR persisted through pan/zoom/basemap/reload; A3.12 roster spacing passed; A3.13 converter order/gating passed; A3.14 Map Tools + Measure passed; A3.4 duplication cleanup passed; A3.6 operational notes relocation passed; A3.3 Maps dropdown follow-up passed. Minor notes: there is no separate direct-DD marker creation UI, so DD was validated via conversion and marker stability through Marker At GR; one script assertion expected tracking data in a specific parsed sessionStorage field, but UI/network evidence showed tracking working, so this is treated as a script assumption rather than product failure.
 - Local A3.10/A3.11/A3.12/A3.13/A3.14/A3.4/A3.6 full verification passed 2026-05-16: `git diff --check`, `npm run lint`, `npm run build`, and `npm run test:all`. Unit tests passed 88 files / 435 tests; Playwright passed 107 Chromium + visual tests; backend passed 38 Rust tests. Two initially parallel focused Playwright invocations collided on port 1420; rerun sequentially passed before the final full suite.
 - Local R9 verification passed 2026-05-16: `git diff --check`, `npm run lint`, `npm run build`, and `npm run test:all`. Unit tests passed 87 files / 428 tests; Playwright passed 106 Chromium + visual tests; backend passed 38 Rust tests. Focused R9 visual screenshots were written under `test-results/visual-verification/` for runtime booting, runtime failed, autosave stale mast, and autosave failure in Focus Mode.
 - Local A3.3 live-validation follow-up verification passed 2026-05-16: `npm run lint`, `npm run build`, and `npm run test` (87 files / 428 tests). The checked-in map E2E expectation now asserts the Maps dropdown is hidden after selecting a basemap; Playwright/browser rerun was not executed in that turn because explicit approval was not requested.

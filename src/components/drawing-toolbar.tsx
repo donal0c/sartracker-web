@@ -67,9 +67,9 @@ export function DrawingToolbar() {
                 <button
                   className={`min-h-14 border px-2 py-2 text-center text-[11px] uppercase tracking-[0.08em] transition ${
                     isActive
-                      ? 'border-amber-300 bg-amber-300/14 text-amber-50 shadow-[inset_0_0_0_1px_rgba(244,183,74,0.24)]'
-                      : 'border-stone-700 bg-[var(--sar-panel-raised)] text-stone-200 hover:border-stone-400 hover:bg-stone-800'
-                  } disabled:cursor-not-allowed disabled:opacity-55`}
+                      ? 'border-amber-300 bg-amber-300/22 text-amber-50 shadow-[inset_0_0_0_1px_rgba(244,183,74,0.4)]'
+                      : 'border-stone-500 bg-[var(--sar-panel-raised)] text-stone-100 hover:border-amber-300 hover:bg-stone-800'
+                  } disabled:cursor-not-allowed disabled:opacity-50`}
                   data-testid={`drawing-tool-${option.value}`}
                   disabled={disabled}
                   key={option.value}
@@ -103,9 +103,9 @@ export function DrawingToolbar() {
             <button
               className={`min-h-14 border px-2 py-2 text-center text-[11px] uppercase tracking-[0.08em] transition ${
                 measurementMode === 'armed'
-                  ? 'border-amber-300 bg-amber-300/14 text-amber-50 shadow-[inset_0_0_0_1px_rgba(244,183,74,0.24)]'
-                  : 'border-stone-700 bg-[var(--sar-panel-raised)] text-stone-200 hover:border-stone-400 hover:bg-stone-800'
-              } disabled:cursor-not-allowed disabled:opacity-55`}
+                  ? 'border-cyan-300 bg-cyan-300/22 text-cyan-50 shadow-[inset_0_0_0_1px_rgba(103,232,249,0.4)]'
+                  : 'border-stone-500 bg-[var(--sar-panel-raised)] text-stone-100 hover:border-cyan-300 hover:bg-stone-800'
+              } disabled:cursor-not-allowed disabled:opacity-50`}
               data-testid="drawing-tool-measure"
               disabled={disabled || measurementController === null}
               onClick={() => {
@@ -126,7 +126,7 @@ export function DrawingToolbar() {
               <span className="block font-black">Measure</span>
             </button>
           </div>
-          <p className="mt-3 border-t border-[var(--sar-line)] pt-2 text-[10px] font-bold uppercase tracking-[0.1em] text-stone-500">
+          <p className="mt-3 border-t border-[var(--sar-line)] pt-2 text-[10px] font-bold uppercase tracking-[0.1em] text-stone-300">
             LPB {Object.values(LPB_CATEGORIES).length} categories
           </p>
         </div>
@@ -140,12 +140,12 @@ export function DrawingToolbar() {
         >
           <span className="text-[10px] font-black uppercase tracking-[0.24em] text-amber-200">Map Tools</span>
           <span
-            className="border border-[var(--sar-line)] bg-[var(--sar-panel-raised)] px-3 py-1 text-[11px] font-bold uppercase tracking-[0.14em] text-stone-200"
+            className="border border-stone-500 bg-[var(--sar-panel-raised)] px-3 py-1 text-[11px] font-bold uppercase tracking-[0.14em] text-stone-50"
             data-testid="drawing-toolbar-active-mode"
           >
             {activeDefinition?.label ?? 'Select'}
           </span>
-          <svg className="h-4 w-4 text-stone-400" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+          <svg className="h-4 w-4 text-stone-200" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
             <path d="M19 9l-7 7-7-7" strokeLinecap="round" strokeLinejoin="round" />
           </svg>
         </button>

@@ -15,7 +15,7 @@ export function FocusModeSidebar() {
       <header className="flex-shrink-0 border-b border-[var(--sar-line-strong)] px-4 py-4">
         <div className="flex items-center justify-between gap-3">
           <div>
-            <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-amber-300/80">
+            <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-amber-300">
               Focus Mode Plus
             </p>
             <h1

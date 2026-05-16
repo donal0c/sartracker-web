@@ -48,7 +48,7 @@ export function CoordinateBar({ latitude, longitude }: CoordinateBarProps) {
         <InstrumentCell label={mode === 'tm65_first' ? 'Coordinates' : 'Irish Grid'}>
           {wgs84Display !== null && gridDisplay !== null ? (
             mode === 'tm65_first' ? (
-              <span className="text-stone-300" data-testid="coords-wgs84">{wgs84Display}</span>
+              <span className="text-stone-100" data-testid="coords-wgs84">{wgs84Display}</span>
             ) : (
               <span className="text-amber-100" data-testid="coords-grid">{gridDisplay}</span>
             )
@@ -58,11 +58,11 @@ export function CoordinateBar({ latitude, longitude }: CoordinateBarProps) {
         </InstrumentCell>
 
         <InstrumentCell label="Map CRS">
-          <span className="text-stone-300">WGS84</span>
+          <span className="text-stone-100">WGS84</span>
         </InstrumentCell>
 
         <InstrumentCell label="Work CRS">
-          <span className="text-stone-300">ITM</span>
+          <span className="text-stone-100">ITM</span>
         </InstrumentCell>
 
         <div className="flex items-center gap-2 border-l border-[var(--sar-line)] px-4">
@@ -94,7 +94,7 @@ function InstrumentCell(props: {
 }) {
   return (
     <div className="flex min-w-0 flex-col justify-center border-l border-[var(--sar-line)] px-4 first:border-l-0">
-      <p className="text-[10px] font-black uppercase tracking-[0.14em] text-stone-500">
+      <p className="sar-meta-label">
         {props.label}
       </p>
       <p className="mt-1 truncate text-[17px] font-black leading-none">
