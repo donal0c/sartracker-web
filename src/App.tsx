@@ -48,6 +48,7 @@ const MapView = lazy(async () => {
 
 /** Sidebar tab identifiers for the segmented control below Mission Control. */
 type SidebarTab = 'tracking' | 'tools' | 'layers'
+type RuntimeMode = 'tauri' | 'hosted-browser'
 
 const SIDEBAR_TABS: readonly { readonly id: SidebarTab; readonly label: string }[] = [
   { id: 'tracking', label: 'Tracking' },
@@ -62,8 +63,16 @@ function App() {
   const [sidebarTab, setSidebarTab] = useState<SidebarTab>('tracking')
   const openDiagnosticsWorkspace = useDiagnosticsWorkspaceStore((state) => state.openWorkspace)
   const browserTestingMode = shouldEnableMissionBrowserHarness()
+  const runtimeMode: RuntimeMode = browserTestingMode ? 'hosted-browser' : 'tauri'
   const runtimeBootPhase = useRuntimeBootStore((state) => state.phase)
   const runtimeBootError = useRuntimeBootStore((state) => state.error)
+
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      useAutosaveStatusStore.getState().markObservedElapsed({ elapsedMs: 1000 })
+    }, 1000)
+    return () => window.clearInterval(timer)
+  }, [])
 
   if (runtimeBootPhase !== 'ready') {
     return (
@@ -94,10 +103,14 @@ function App() {
         <CommandMast
           onOpenDiagnostics={openDiagnosticsWorkspace}
           onOpenSettings={() => setSettingsOpen(true)}
+          runtimeMode={runtimeMode}
           status={status}
         />
       )}
-      {focusModeActive || !browserTestingMode ? null : <HostedBrowserTestingBanner />}
+      <RuntimeSafetyBanner
+        browserTestingMode={browserTestingMode}
+        focusModeActive={focusModeActive}
+      />
 
       <div className="flex min-h-0 flex-1">
         {/* Map Area - Expanded */}
@@ -164,15 +177,7 @@ function App() {
               {sidebarTab === 'layers' && (
                 <>
                   <LayerFilterPanel />
-                  <div className="sar-rail-section p-3 text-[13px] leading-relaxed text-stone-400">
-                    <p className="mb-2 text-[11px] font-bold uppercase tracking-[0.12em] text-stone-300">Operational Notes</p>
-                    <ul className="list-disc pl-4 space-y-1">
-                      <li>ITM (EPSG:2157) is the working CRS.</li>
-                      <li>WGS84 for GPS and map rendering.</li>
-                      <li>Service worker caching active for viewed tiles.</li>
-                      <li>SQLite persistence active (WAL mode).</li>
-                    </ul>
-                  </div>
+                  <OperationalNotes runtimeMode={runtimeMode} />
                 </>
               )}
             </div>
@@ -261,13 +266,37 @@ export function RuntimeBootGate(props: {
   )
 }
 
-function HostedBrowserTestingBanner() {
+function RuntimeSafetyBanner(props: {
+  readonly browserTestingMode: boolean
+  readonly focusModeActive: boolean
+}) {
+  const currentMission = useMissionStore((state) => state.currentMission)
+  const autosaveStatus = useAutosaveStatusStore()
+  const autosaveWarning = selectCommandMastAutosaveWarning(
+    selectAutosaveWarning(autosaveStatus),
+    currentMission,
+  )
+  const focusAutosaveWarning = props.focusModeActive ? autosaveWarning : null
+
+  if (!props.browserTestingMode && focusAutosaveWarning === null) {
+    return null
+  }
+
   return (
     <div
       className="border-b border-amber-400/30 bg-amber-400/10 px-5 py-2 text-[12px] font-semibold text-amber-100"
       data-testid="hosted-browser-testing-banner"
     >
-      Browser testing mode: mission data is stored in this browser session. Use for team testing only, not live incidents.
+      {props.browserTestingMode ? (
+        <p>
+          Browser testing mode: mission data is stored in this browser session. Use for team testing only, not live incidents.
+        </p>
+      ) : null}
+      {focusAutosaveWarning === null ? null : (
+        <p className="mt-1" data-testid="focus-autosave-warning">
+          {focusAutosaveWarning}
+        </p>
+      )}
     </div>
   )
 }
@@ -275,6 +304,7 @@ function HostedBrowserTestingBanner() {
 /** Renders the top operational mast with mission, tracking, diagnostics, and runtime health. */
 export function CommandMast(props: {
   readonly status: string
+  readonly runtimeMode: RuntimeMode
   readonly onOpenDiagnostics: () => void
   readonly onOpenSettings: () => void
 }) {
@@ -289,6 +319,11 @@ export function CommandMast(props: {
     selectAutosaveWarning(autosaveStatus),
     currentMission,
   )
+  const systemStatus = resolveCommandMastSystemStatus({
+    runtimeMode: props.runtimeMode,
+    status: props.status,
+    autosaveWarning,
+  })
   const timerState = useMemo(
     () => (currentMission === null ? null : calculateMissionTimerState(currentMission, now)),
     [currentMission, now],
@@ -297,7 +332,6 @@ export function CommandMast(props: {
   useEffect(() => {
     const timer = window.setInterval(() => {
       setNow(new Date())
-      useAutosaveStatusStore.getState().markObservedElapsed({ elapsedMs: 1000 })
     }, 1000)
     return () => window.clearInterval(timer)
   }, [])
@@ -355,10 +389,18 @@ export function CommandMast(props: {
           <p className="sar-section-label">System Status</p>
           <p
             className={`mt-1 font-mono text-sm font-black uppercase tracking-[0.14em] ${
-              autosaveWarning === null ? 'text-emerald-300' : 'text-amber-300'
+              systemStatus.tone === 'success' ? 'text-emerald-300' : 'text-amber-300'
             }`}
+            data-testid="system-status-value"
           >
-            {props.status}
+            {systemStatus.value}
+          </p>
+          <p
+            className="mt-1 truncate text-[10px] font-black uppercase tracking-[0.08em] text-stone-400"
+            data-testid="system-status-detail"
+            title={systemStatus.detail}
+          >
+            {systemStatus.detail}
           </p>
           {autosaveWarning === null ? null : (
             <p
@@ -401,6 +443,34 @@ export function CommandMast(props: {
   )
 }
 
+function OperationalNotes(props: { readonly runtimeMode: RuntimeMode }) {
+  const notes =
+    props.runtimeMode === 'hosted-browser'
+      ? [
+          'ITM (EPSG:2157) is the working CRS.',
+          'WGS84 for GPS and map rendering.',
+          'Browser session storage only; use for testing and training.',
+          'SQLite/WAL mission persistence is desktop-only.',
+        ]
+      : [
+          'ITM (EPSG:2157) is the working CRS.',
+          'WGS84 for GPS and map rendering.',
+          'Service worker caching active for viewed tiles.',
+          'SQLite persistence active (WAL mode).',
+        ]
+
+  return (
+    <div className="sar-rail-section p-3 text-[13px] leading-relaxed text-stone-400">
+      <p className="mb-2 text-[11px] font-bold uppercase tracking-[0.12em] text-stone-300">Operational Notes</p>
+      <ul className="list-disc pl-4 space-y-1">
+        {notes.map((note) => (
+          <li key={note}>{note}</li>
+        ))}
+      </ul>
+    </div>
+  )
+}
+
 function TopReadout(props: {
   readonly label: string
   readonly value: string
@@ -423,6 +493,38 @@ function TopReadout(props: {
       </p>
     </div>
   )
+}
+
+function resolveCommandMastSystemStatus(input: {
+  readonly runtimeMode: RuntimeMode
+  readonly status: string
+  readonly autosaveWarning: string | null
+}): {
+  readonly value: string
+  readonly detail: string
+  readonly tone: 'success' | 'warning'
+} {
+  if (input.runtimeMode === 'hosted-browser') {
+    return {
+      value: 'Browser test',
+      detail: 'Session storage only',
+      tone: 'warning',
+    }
+  }
+
+  if (input.autosaveWarning !== null) {
+    return {
+      value: input.status,
+      detail: 'Autosave warning',
+      tone: 'warning',
+    }
+  }
+
+  return {
+    value: input.status,
+    detail: 'Desktop persistence',
+    tone: 'success',
+  }
 }
 
 /** Keeps stale autosave warnings mission-scoped while preserving failure visibility. */

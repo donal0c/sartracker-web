@@ -18,6 +18,9 @@ test.describe('M24 focus mode parity', () => {
     await expect(page.getByTestId('app-shell')).toHaveAttribute('data-focus-mode', 'true')
     await expect(page.getByTestId('focus-mode-sidebar')).toBeVisible()
     await expect(page.getByTestId('operational-sidebar')).toHaveCount(0)
+    await expect(page.getByTestId('hosted-browser-testing-banner')).toContainText(
+      'Browser testing mode',
+    )
     await expect(page.getByTestId('focus-mode-layer-controls')).toBeVisible()
     await expect(page.getByTestId('layer-panel')).toBeVisible()
 
@@ -34,6 +37,9 @@ test.describe('M24 focus mode parity', () => {
     await waitForShell(page)
     await expect(page.getByTestId('app-shell')).toHaveAttribute('data-focus-mode', 'true')
     await expect(page.getByTestId('focus-mode-sidebar')).toBeVisible()
+    await expect(page.getByTestId('hosted-browser-testing-banner')).toContainText(
+      'Browser testing mode',
+    )
     await expect(page.getByTestId('focus-mode-toggle')).toContainText('Exit Focus Mode Plus')
 
     await page.getByTestId('focus-mode-toggle').click()

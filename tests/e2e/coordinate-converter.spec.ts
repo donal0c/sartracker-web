@@ -3,7 +3,7 @@ import { expect, test } from '@playwright/test'
 test.describe('M18 coordinate converter', () => {
   test.beforeEach(async ({ page, context }) => {
     await context.grantPermissions(['clipboard-read', 'clipboard-write'])
-    await page.goto('/')
+    await page.goto('/?missionHarness=1')
     const title = page.getByTestId('app-title')
     await title.waitFor({ state: 'visible', timeout: 10000 })
     await expect(title).toContainText('SAR Tracker')

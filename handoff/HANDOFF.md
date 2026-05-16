@@ -4,7 +4,7 @@
 
 ## Last Updated
 
-- 2026-05-16 by Codex — R2 autosave stale detection fixed; R3-R7 still block S3 unless explicitly accepted.
+- 2026-05-16 by Codex — R3 hosted browser system status fixed; R4-R7 still block S3 unless explicitly accepted.
 
 ## Operating Rule
 
@@ -37,6 +37,7 @@ Supporting docs may explain details, but they must not become separate queues. T
 - Hosted tester instructions now have a concise quick-start run sheet, URL/base-URL rules, bug-report template fields, and triage buckets. The operator manual has a hosted testing and feedback section.
 - Tauri packaging recon found a working macOS arm64 `.app` path: `npm run tauri build -- --bundles app` -> `src-tauri/target/release/bundle/macos/sartracker-web.app`. Full `npm run tauri build` currently fails at DMG bundling; unsigned/ad-hoc app is rejected by `spctl`, so first beta notes must call out Gatekeeper limitations.
 - Autosave now has an explicit forced `requestSync()` path. Mission start, pause, resume, finish, recover-resume, start-fresh, finalize, and unlock request immediate backup sync after the lifecycle database write. Lifecycle-forced autosave failures remain visible after unrelated successful syncs and clear only when the matching lifecycle sync succeeds. Autosave stale warnings use observed command-mast tick time rather than wall-clock subtraction, so clock jumps or laptop sleep do not create immediate false stale warnings.
+- Hosted browser mode now reports `Browser test` / `Session storage only` in the command mast, keeps the amber hosted warning visible in Focus Mode, uses hosted-specific operational notes, and fails visibly if a non-Tauri runtime starts without the explicit browser harness.
 - A multi-agent review of S1/A1/B1/S2 found operator-trust issues around autosave visibility, hosted-mode honesty, lifecycle backup surfacing, runtime controller replacement, and startup rollback. The findings are now filed as remediation beads R1-R11 in `docs/two-track-execution-workplan.md`.
 - Latest deployed production URL has command-line validation for proxy endpoints:
   - `/api/session` returned 200 for the team credentials
@@ -76,15 +77,14 @@ Use these only for team testing, not as a production secret model.
 
 Default next task when the user says “go” or “work on the next task”:
 
-1. `R3: Make Hosted Browser System Status Honest` in `docs/two-track-execution-workplan.md`
-2. Bead: `sartracker-web-3dv`
-3. Goal: make hosted browser mode report system/persistence status honestly instead of implying desktop-grade autosave or durability.
-4. Do not start `S3: Layer Visibility Service Extraction` until R3-R7 are fixed or explicitly accepted.
+1. `R4: Surface Lifecycle Backup Failures Non-Dismissably` in `docs/two-track-execution-workplan.md`
+2. Bead: `sartracker-web-57m`
+3. Goal: make lifecycle backup failures unavoidable enough that operators cannot miss or accidentally dismiss a failed mission-transition backup.
+4. Do not start `S3: Layer Visibility Service Extraction` until R4-R7 are fixed or explicitly accepted.
 
 ## Open Beads That Matter Now
 
 - `sartracker-web-vpz` — Hosted browser testing mode and parity hardening.
-- `sartracker-web-3dv` — R3 make hosted browser system status honest.
 - `sartracker-web-57m` — R4 surface lifecycle backup failures non-dismissably.
 - `sartracker-web-qdh` — R5 make runtime controller swap exception-safe.
 - `sartracker-web-10q` — R6 roll back core runtimes when initial settings reload fails.
@@ -103,11 +103,11 @@ Older parity/UI beads still exist, but new work should be selected through the t
 
 Most recent completed verification:
 
-- R2 red/green unit coverage proves wall-clock jumps alone do not create stale autosave warnings, while observed tick elapsed time still does.
+- R3 unit coverage proves hosted browser mode shows `Browser test` / `Session storage only`, and the no-controller non-harness runtime path fails visibly.
 - `npm run lint` passed.
-- `npm run test -- --run tests/unit/mission-autosave.test.ts tests/unit/runtime-boot-gate.test.ts` passed: 2 files, 18 tests.
-- `npm run test -- --run tests/unit/browser-harness-store.test.ts` passed after one full-suite run hit the known quota-test timeout under concurrent load.
-- `npm run test -- --run` passed: 86 files, 404 tests.
+- `npm run test -- --run tests/unit/runtime-boot-gate.test.ts tests/unit/bootstrap-app-runtime.test.ts` passed: 2 files, 8 tests.
+- `npm run test:e2e -- --project=chromium tests/e2e/map.spec.ts tests/e2e/layer-panel.spec.ts tests/e2e/focus-mode.spec.ts` passed: 13 browser workflow tests.
+- `npm run test -- --run` passed: 86 files, 406 tests.
 - `npm run build` passed.
 - `npm run test:backend` passed: 37 Rust tests.
 - `npm run test:e2e -- --project=chromium` passed: 69 browser workflow tests.

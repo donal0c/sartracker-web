@@ -30,6 +30,7 @@ describe('RuntimeBootGate', () => {
     render(
       React.createElement(CommandMast, {
         status: 'ready',
+        runtimeMode: 'tauri',
         onOpenDiagnostics: vi.fn(),
         onOpenSettings: vi.fn(),
       }),
@@ -39,6 +40,27 @@ describe('RuntimeBootGate', () => {
     expect(warning).not.toBeNull()
     expect(warning?.textContent).toContain('Autosave warning')
     expect(warning?.getAttribute('title')).toContain('Autosave failing')
+  })
+
+  it('labels hosted browser mode as session-only testing instead of green operational readiness', () => {
+    render(
+      React.createElement(CommandMast, {
+        status: 'ready',
+        runtimeMode: 'hosted-browser',
+        onOpenDiagnostics: vi.fn(),
+        onOpenSettings: vi.fn(),
+      }),
+    )
+
+    expect(document.querySelector('[data-testid="system-status-value"]')?.textContent).toBe(
+      'Browser test',
+    )
+    expect(document.querySelector('[data-testid="system-status-detail"]')?.textContent).toBe(
+      'Session storage only',
+    )
+    expect(document.querySelector('[data-testid="system-status-value"]')?.className).toContain(
+      'text-amber-300',
+    )
   })
 
   it('shows a calm preparing state during runtime startup', () => {

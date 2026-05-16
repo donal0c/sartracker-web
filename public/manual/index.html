@@ -401,6 +401,7 @@
               <ol>
                 <li>Open <strong>https://sartracker-web.vercel.app/?missionHarness=1</strong>.</li>
                 <li>Confirm the amber browser testing banner is visible.</li>
+                <li>Confirm <strong>System Status</strong> says <strong>Browser test</strong> and <strong>Session storage only</strong>.</li>
                 <li>Use <strong>Settings</strong> to configure Traccar before starting the mission.</li>
                 <li>Use <strong>https://sartracker-web.vercel.app</strong> as the provider base URL.</li>
                 <li>Start the mission from <strong>Mission Control</strong> after tracking connection succeeds.</li>
@@ -431,6 +432,7 @@
           <ol>
             <li>Open <strong>https://sartracker-web.vercel.app/?missionHarness=1</strong>.</li>
             <li>Confirm the amber browser testing banner is visible.</li>
+            <li>Confirm the command mast reports <strong>Browser test</strong> and <strong>Session storage only</strong>, not desktop persistence.</li>
             <li>Open <strong>Settings</strong>, then <strong>Data Sources</strong>.</li>
             <li>Use <strong>https://sartracker-web.vercel.app</strong> as the Traccar provider base URL.</li>
             <li>Use <strong>Basic</strong> authentication with the team testing credentials.</li>
@@ -464,7 +466,9 @@
             The main screen is map-first. The top command mast gives mission, timing, tracking, system,
             diagnostics, focus mode, settings, and help. If mission backup autosave becomes stale or
             fails, the System Status area shows an amber autosave warning so the operator does not have
-            to discover the problem in logs. The right side of the mast shows the current
+            to discover the problem in logs. In hosted browser testing mode, System Status shows
+            <strong>Browser test</strong> and <strong>Session storage only</strong> so the testing lane is
+            not confused with desktop operational persistence. The right side of the mast shows the current
             application version chip, which is stamped from the git commit at build time so teams can
             confirm they are running the same build. The right rail is split into
             <strong>Tracking</strong>, <strong>Tools</strong>, and <strong>Layers</strong>. The map itself

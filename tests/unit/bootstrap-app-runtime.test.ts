@@ -79,6 +79,26 @@ describe('bootstrap app runtime', () => {
 
     expect(markRuntimeBootFailed).toHaveBeenCalledWith(error)
   })
+
+  it('marks startup failed when no operational controller is available outside hosted harness mode', async () => {
+    const markRuntimeBootFailed = vi.fn()
+
+    await bootstrapAppRuntime({
+      registerServiceWorker: vi.fn(async () => undefined),
+      shouldEnableMissionBrowserHarness: vi.fn(() => false),
+      startAppRuntime: vi.fn(async () => null),
+      startMissionBrowserHarness: vi.fn(),
+      applyAppRuntimeController: vi.fn(),
+      markRuntimeBooting: vi.fn(),
+      markRuntimeBootReady: vi.fn(),
+      markRuntimeBootFailed,
+    })
+
+    expect(markRuntimeBootFailed).toHaveBeenCalledWith(expect.any(Error))
+    expect((markRuntimeBootFailed.mock.calls[0]?.[0] as Error).message).toContain(
+      'No operational runtime controller',
+    )
+  })
 })
 
 function createController(): AppRuntimeController {

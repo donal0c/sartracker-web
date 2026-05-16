@@ -2,13 +2,15 @@ import { expect, test } from '@playwright/test'
 
 test.describe('M2 map shell', () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto('/')
+    await page.goto('/?missionHarness=1')
     const title = page.getByTestId('app-title'); await title.waitFor({ state: 'visible', timeout: 10000 }); await expect(title).toContainText('SAR Tracker')
     await page.waitForSelector('canvas', { timeout: 15000 })
   })
 
   test('renders the map canvas and basemap controls', async ({ page }) => {
     await expect(page.locator('canvas').first()).toBeVisible()
+    await expect(page.getByTestId('system-status-value')).toContainText('Browser test')
+    await expect(page.getByTestId('system-status-detail')).toContainText('Session storage only')
     await expect(page.getByTestId('basemap-switcher')).toBeVisible()
     await expect(page.getByTestId('map-health')).toContainText('basemap')
     await expect(page.getByTestId('basemap-btn-opentopomap')).toBeVisible()
@@ -176,6 +178,6 @@ test.describe('M2 map shell', () => {
     await expect(page.getByTestId('mission-control')).toBeVisible()
     await expect(page.getByTestId('mission-control')).toContainText('Mission Control')
     await expect(page.getByTestId('mission-control')).toContainText('idle')
-    await expect(page.getByTestId('mission-start-btn')).toBeDisabled()
+    await expect(page.getByTestId('mission-start-btn')).toBeEnabled()
   })
 })

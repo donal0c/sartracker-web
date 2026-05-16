@@ -18,6 +18,8 @@ test.describe('M17 layer tree workflows', () => {
     await expect(page.getByTestId('layer-tree')).toBeVisible()
     await expect(page.getByTestId('layer-row-group-tracking')).toBeVisible()
     await expect(page.getByTestId('layer-row-group-map-tools')).toBeVisible()
+    await expect(page.getByText('Browser session storage only')).toBeVisible()
+    await expect(page.getByText('SQLite persistence active (WAL mode).')).toHaveCount(0)
 
     await page.getByTestId('layer-select-feature-device-alpha').click()
     await expect(page.getByTestId('layer-inspector-title')).toContainText('Alpha Team')

@@ -89,25 +89,25 @@ This is the default order when the user says “work on the next task.”
 | Done | S2: Autosave Lifecycle Hardening | Shared / Track B | `sartracker-web-vpz.5` | Done 2026-05-16 |
 | Done | R1: Preserve Lifecycle Autosave Failure Visibility | Shared / Track B | `sartracker-web-dfx` | Done 2026-05-16 |
 | Done | R2: Replace Autosave Wall-Clock Stale Detection | Shared / Track B | `sartracker-web-5ps` | Done 2026-05-16 |
-| 1 | R3: Make Hosted Browser System Status Honest | Track A / Shared | `sartracker-web-3dv` | Blocks S3 |
-| 2 | R4: Surface Lifecycle Backup Failures Non-Dismissably | Shared / Track B | `sartracker-web-57m` | Blocks S3 |
-| 3 | R5: Make Runtime Controller Swap Exception-Safe | Shared | `sartracker-web-qdh` | Blocks S3 |
-| 4 | R6: Roll Back Core Runtimes When Initial Settings Reload Fails | Shared | `sartracker-web-10q` | Blocks S3 |
-| 5 | R7: Harden Runtime Fault Reload Flow | Shared / Track A | `sartracker-web-syi` | Blocks S3 |
-| 6 | R8: Add Tauri Beta Gatekeeper Guidance | Track B / Docs | `sartracker-web-977` | Before beta artifact sharing |
-| 7 | R9: Add Checked-In Boot/Fault/Autosave UI Regression Coverage | Verification | `sartracker-web-ahp` | Ready |
-| 8 | R10: Compress Handoff And Annotate Historical Docs | Process / Docs | `sartracker-web-419` | Ready |
-| 9 | R11: Add Browser Harness Storage Non-Goals Note | Track A / Docs | `sartracker-web-mh5` | Ready |
-| 10 | S3: Layer Visibility Service Extraction | Shared / Track A | Create/update bead before starting | Ready after R3-R7, or explicit acceptance |
-| 11 | A3: Team Feedback Triage Pass | Track A | Create/update beads from feedback | As feedback arrives |
-| 12 | B2: Tauri Beta Release Template | Track B | Create/update bead before starting | Ready |
-| 13 | B3: First Internal Tauri Smoke Build | Track B | Create/update bead before starting | Ready after B2 |
-| 14 | S4: Map Overlay Consolidation And Camera Race Fix | Shared / Track B | Create/update bead before starting | Ready after S3 preferred |
-| 15 | S5: Mission Control View Model Extraction | Shared / Track A | Create/update bead before starting | Best after real UI feedback |
-| 16 | V1: Regression E2E Coverage | Verification | Create/update bead before starting | Ready |
-| 17 | V2: Visual Review Automation | Verification | Create/update bead before starting | Ready |
-| 18 | B4: GPX And Drawing Hit-Test Hardening | Track B | Create/update bead before starting | Ready |
-| 19 | C1: Local Proprietary Map Package Requirements | Track B / Maps | Create/update bead before starting | Waiting for map facts |
+| Done | R3: Make Hosted Browser System Status Honest | Track A / Shared | `sartracker-web-3dv` | Done 2026-05-16 |
+| 1 | R4: Surface Lifecycle Backup Failures Non-Dismissably | Shared / Track B | `sartracker-web-57m` | Blocks S3 |
+| 2 | R5: Make Runtime Controller Swap Exception-Safe | Shared | `sartracker-web-qdh` | Blocks S3 |
+| 3 | R6: Roll Back Core Runtimes When Initial Settings Reload Fails | Shared | `sartracker-web-10q` | Blocks S3 |
+| 4 | R7: Harden Runtime Fault Reload Flow | Shared / Track A | `sartracker-web-syi` | Blocks S3 |
+| 5 | R8: Add Tauri Beta Gatekeeper Guidance | Track B / Docs | `sartracker-web-977` | Before beta artifact sharing |
+| 6 | R9: Add Checked-In Boot/Fault/Autosave UI Regression Coverage | Verification | `sartracker-web-ahp` | Ready |
+| 7 | R10: Compress Handoff And Annotate Historical Docs | Process / Docs | `sartracker-web-419` | Ready |
+| 8 | R11: Add Browser Harness Storage Non-Goals Note | Track A / Docs | `sartracker-web-mh5` | Ready |
+| 9 | S3: Layer Visibility Service Extraction | Shared / Track A | Create/update bead before starting | Ready after R4-R7, or explicit acceptance |
+| 10 | A3: Team Feedback Triage Pass | Track A | Create/update beads from feedback | As feedback arrives |
+| 11 | B2: Tauri Beta Release Template | Track B | Create/update bead before starting | Ready |
+| 12 | B3: First Internal Tauri Smoke Build | Track B | Create/update bead before starting | Ready after B2 |
+| 13 | S4: Map Overlay Consolidation And Camera Race Fix | Shared / Track B | Create/update bead before starting | Ready after S3 preferred |
+| 14 | S5: Mission Control View Model Extraction | Shared / Track A | Create/update bead before starting | Best after real UI feedback |
+| 15 | V1: Regression E2E Coverage | Verification | Create/update bead before starting | Ready |
+| 16 | V2: Visual Review Automation | Verification | Create/update bead before starting | Ready |
+| 17 | B4: GPX And Drawing Hit-Test Hardening | Track B | Create/update bead before starting | Ready |
+| 18 | C1: Local Proprietary Map Package Requirements | Track B / Maps | Create/update bead before starting | Waiting for map facts |
 
 ## Ready Work Chunks
 
@@ -115,16 +115,16 @@ This is the default order when the user says “work on the next task.”
 
 Source: multi-agent review of S1 Runtime Boot/Fault Guard, A1 Hosted Testing Instructions, B1 Tauri Beta Packaging Recon, S2 Autosave Lifecycle Hardening, plus adjacent code.
 
-Verdict folded into this plan: do not start S3 until R3-R7 are fixed or explicitly accepted. The review found that the S1/S2 architecture is directionally sound, but several operator-trust signals can currently mislead the user about autosave, hosted-mode persistence, startup failure, or lifecycle backup state.
+Verdict folded into this plan: do not start S3 until R4-R7 are fixed or explicitly accepted. The review found that the S1/S2 architecture is directionally sound, but several operator-trust signals can currently mislead the user about autosave, hosted-mode persistence, startup failure, or lifecycle backup state.
 
 Completed remediation:
 
 - `sartracker-web-dfx` — R1: lifecycle autosave failures stay visible after unrelated successful syncs and clear after the matching lifecycle sync succeeds.
 - `sartracker-web-5ps` — R2: autosave stale warnings use observed tick time instead of wall-clock subtraction.
+- `sartracker-web-3dv` — R3: hosted browser mode reports browser-test/session-storage status, keeps warnings visible in Focus Mode, and fails visibly without the explicit harness.
 
 Blocking remediation:
 
-- `sartracker-web-3dv` — R3: Make hosted browser system status honest.
 - `sartracker-web-57m` — R4: Surface lifecycle backup failures non-dismissably.
 - `sartracker-web-qdh` — R5: Make runtime controller swap exception-safe.
 - `sartracker-web-10q` — R6: Roll back core runtimes when initial settings reload fails.

@@ -39,6 +39,9 @@ const DEFAULT_DEPENDENCIES: BootstrapAppRuntimeDependencies = {
   markRuntimeBootFailed,
 }
 
+const MISSING_OPERATIONAL_RUNTIME_CONTROLLER =
+  'No operational runtime controller is available. Open hosted browser testing with ?missionHarness=1, or run SAR Tracker inside the Tauri desktop app for operational use.'
+
 /**
  * Starts the correct app runtime path and advances the boot state only after
  * that runtime has successfully installed its operator-facing controller.
@@ -59,10 +62,11 @@ export async function bootstrapAppRuntime(
 
     const controller = await dependencies.startAppRuntime()
 
-    if (controller !== null) {
-      dependencies.applyAppRuntimeController(controller)
+    if (controller === null) {
+      throw new Error(MISSING_OPERATIONAL_RUNTIME_CONTROLLER)
     }
 
+    dependencies.applyAppRuntimeController(controller)
     dependencies.markRuntimeBootReady()
   } catch (error) {
     dependencies.markRuntimeBootFailed(error)
