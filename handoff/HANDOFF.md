@@ -4,7 +4,7 @@
 
 ## Last Updated
 
-- 2026-05-16 by Codex — Hosted verification follow-up fixes completed locally; deploy is still pending.
+- 2026-05-16 by Codex — Hosted verification follow-up fixes deployed and live-verified; Ned/Eamonn team feedback triaged into A3 beads.
 
 ## Operating Rule
 
@@ -59,7 +59,13 @@ Supporting docs may explain details, but they must not become separate queues. T
   - deployment: `dpl_7Zk49528gSC3gpGdFCyvMF2sJCHG`
   - alias: `https://sartracker-web.vercel.app`
   - validated with production manual and hosted Settings checks.
-- Current local head has additional hosted verification fixes after the latest production deployment above. Do not claim the Vercel URL includes these fixes until the next deploy is completed and verified.
+- Latest production deployment for hosted verification follow-up fixes:
+  - deployment: `dpl_36Tk4Rhdni4XtbsVc7t7EfbA53w3`
+  - commit: `cda7af9`
+  - alias: `https://sartracker-web.vercel.app`
+  - live verification artifact: `test-results/live-verification-2026-05-16T12-18-59-773Z/evidence.json`
+  - validated 48h hosted mission, Vercel Traccar proxy, 18 devices, 14 current fixes, 14,575 breadcrumb points, reload/reconnect honesty, finish-to-idle tracking state, and no quota failures.
+- Ned/Eamonn's 2026-05-16 feedback email is folded into the canonical workplan as A3. The email screenshots were used for triage only and deleted; the durable source of truth is the A3 workplan/beads. The urgent items are accidental placement while panning and text-label/sector rendering/layer visibility.
 
 ## Traccar Test Details
 
@@ -86,14 +92,17 @@ Use these only for team testing, not as a production secret model.
 
 Default next task when the user says “go” or “work on the next task”:
 
-1. `R8: Add Tauri Beta Gatekeeper Guidance` in `docs/two-track-execution-workplan.md`
-2. Bead: `sartracker-web-977`
-3. Goal: document the unsigned/ad-hoc macOS beta app behavior and Gatekeeper expectations before sharing beta artifacts.
-4. `S3: Layer Visibility Service Extraction` is available next if we want to resume feature-foundation work instead of follow-up docs.
+1. `A3.1: Prevent Accidental Map Placement While Panning` in `docs/two-track-execution-workplan.md`
+2. Bead: `sartracker-web-6y3.1`
+3. Goal: make pan vs placement unmistakable so testers cannot accidentally create/edit map objects while moving the map.
+4. Then do `A3.2: Fix Text Label And Sector Rendering/Layer Visibility` (`sartracker-web-6y3.2`) before returning to R8/R9/S3 unless the user explicitly redirects.
 
 ## Open Beads That Matter Now
 
 - `sartracker-web-vpz` — Hosted browser testing mode and parity hardening.
+- `sartracker-web-6y3` — A3 team feedback remediation batch.
+- `sartracker-web-6y3.1` — A3.1 prevent accidental map placement while panning.
+- `sartracker-web-6y3.2` — A3.2 fix text label and sector rendering/layer visibility.
 - `sartracker-web-977` — R8 add Tauri beta Gatekeeper guidance.
 - `sartracker-web-ahp` — R9 add checked-in boot/fault/autosave UI regression coverage.
 
@@ -117,3 +126,4 @@ Most recent completed verification:
 - `npm run test:e2e` passed: 97 Playwright tests across Chromium and visual projects.
 - Targeted final visual rerun passed for app shell and drawing overlays: 9 visual tests.
 - Independent visual re-review passed the corrected screenshots for drawing toolbar, coordinate bar, focus mode, marker dialogs, and multi-drawing map evidence.
+- Vercel production alias was redeployed and live-verified at `https://sartracker-web.vercel.app/?missionHarness=1` with mission `Live Fix Verification 2026-05-16T12-18-59-773Z`: 48h offset accepted, hosted mode/status honesty visible, `/api/session` and `/api/devices` returned 200, `/api/devices` returned 18 devices, `/api/positions` returned 14 current fixes, per-device breadcrumb requests returned 14,575 points, browser harness persisted 1,998 capped positions without quota errors, reload required re-entering the memory-only Traccar password, reconnect restored online tracking, and finish returned tracking to idle with zero visible counts.

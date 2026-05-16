@@ -67,8 +67,8 @@ When new work arrives, classify it before implementing:
 
 ## Current Priority
 
-1. Fix the S1/S2 review remediation items that affect operator trust signals before starting S3.
-2. Keep hosted browser testing smooth enough for the team to give real feedback.
+1. Keep hosted browser testing smooth enough for the team to give real feedback.
+2. Fix the 2026-05-16 team feedback items that affect map trust before returning to broader foundation work.
 3. Burn down shared foundation issues that make startup, mission control, tracking, layers, or map behavior ambiguous.
 4. Prepare a repeatable Tauri beta release path in the background.
 5. Avoid heavy browser hardening unless testing proves browser operational deployment is genuinely needed.
@@ -94,21 +94,26 @@ This is the default order when the user says “work on the next task.”
 | Done | R5: Make Runtime Controller Swap Exception-Safe | Shared | `sartracker-web-qdh` | Done 2026-05-16 |
 | Done | R6: Roll Back Core Runtimes When Initial Settings Reload Fails | Shared | `sartracker-web-10q` | Done 2026-05-16 |
 | Done | R7: Harden Runtime Fault Reload Flow | Shared / Track A | `sartracker-web-syi` | Done 2026-05-16 |
-| Done | Hosted Verification Follow-up Fixes | Track A / Shared | `sartracker-web-vpz` | Done locally 2026-05-16; deploy pending |
-| 1 | R8: Add Tauri Beta Gatekeeper Guidance | Track B / Docs | `sartracker-web-977` | Before beta artifact sharing |
-| 2 | R9: Add Checked-In Boot/Fault/Autosave UI Regression Coverage | Verification | `sartracker-web-ahp` | Ready |
-| 3 | R10: Compress Handoff And Annotate Historical Docs | Process / Docs | `sartracker-web-419` | Ready |
-| 4 | R11: Add Browser Harness Storage Non-Goals Note | Track A / Docs | `sartracker-web-mh5` | Ready |
-| 5 | S3: Layer Visibility Service Extraction | Shared / Track A | Create/update bead before starting | Ready |
-| 6 | A3: Team Feedback Triage Pass | Track A | Create/update beads from feedback | As feedback arrives |
-| 7 | B2: Tauri Beta Release Template | Track B | Create/update bead before starting | Ready |
-| 8 | B3: First Internal Tauri Smoke Build | Track B | Create/update bead before starting | Ready after B2 |
-| 9 | S4: Map Overlay Consolidation And Camera Race Fix | Shared / Track B | Create/update bead before starting | Ready after S3 preferred |
-| 10 | S5: Mission Control View Model Extraction | Shared / Track A | Create/update bead before starting | Best after real UI feedback |
-| 11 | V1: Regression E2E Coverage | Verification | Create/update bead before starting | Ready |
-| 12 | V2: Visual Review Automation | Verification | Create/update bead before starting | Ready |
-| 13 | B4: GPX And Drawing Hit-Test Hardening | Track B | Create/update bead before starting | Ready |
-| 14 | C1: Local Proprietary Map Package Requirements | Track B / Maps | Create/update bead before starting | Waiting for map facts |
+| Done | Hosted Verification Follow-up Fixes | Track A / Shared | `sartracker-web-vpz` | Deployed and live-verified 2026-05-16 |
+| 1 | A3.1: Prevent Accidental Map Placement While Panning | Track A / Shared | `sartracker-web-6y3.1` | Ready |
+| 2 | A3.2: Fix Text Label And Sector Rendering/Layer Visibility | Track A / Shared | `sartracker-web-6y3.2` | Ready |
+| 3 | A3.3: Simplify Map And Drawing Tool Chrome | Track A | `sartracker-web-6y3.3` | Ready after A3.1/A3.2 preferred |
+| 4 | R8: Add Tauri Beta Gatekeeper Guidance | Track B / Docs | `sartracker-web-977` | Before beta artifact sharing |
+| 5 | R9: Add Checked-In Boot/Fault/Autosave UI Regression Coverage | Verification | `sartracker-web-ahp` | Ready |
+| 6 | R10: Compress Handoff And Annotate Historical Docs | Process / Docs | `sartracker-web-419` | Ready |
+| 7 | R11: Add Browser Harness Storage Non-Goals Note | Track A / Docs | `sartracker-web-mh5` | Ready |
+| 8 | S3: Layer Visibility Service Extraction | Shared / Track A | Create/update bead before starting | Ready |
+| 9 | A3.4: Clean Up Mission Mast And Right-Panel Duplication | Track A / Shared | `sartracker-web-6y3.4` | Best with S5 |
+| 10 | B2: Tauri Beta Release Template | Track B | Create/update bead before starting | Ready |
+| 11 | B3: First Internal Tauri Smoke Build | Track B | Create/update bead before starting | Ready after B2 |
+| 12 | S4: Map Overlay Consolidation And Camera Race Fix | Shared / Track B | Create/update bead before starting | Ready after S3 preferred |
+| 13 | S5: Mission Control View Model Extraction | Shared / Track A | Create/update bead before starting | Pair with A3.4 if selected |
+| 14 | V1: Regression E2E Coverage | Verification | Create/update bead before starting | Ready |
+| 15 | V2: Visual Review Automation | Verification | Create/update bead before starting | Ready |
+| 16 | B4: GPX And Drawing Hit-Test Hardening | Track B | Create/update bead before starting | Ready |
+| 17 | A3.5: Add Operational Contrast/Theme Pass | Track A / UI | `sartracker-web-6y3.5` | Planned, not urgent |
+| 18 | A3.6: Move Static Operational Notes Out Of Primary Map Chrome | Track A / UI | `sartracker-web-6y3.6` | Planned, keep warnings visible |
+| 19 | C1: Local Proprietary Map Package Requirements | Track B / Maps | Create/update bead before starting | Waiting for map facts |
 
 ## Ready Work Chunks
 
@@ -198,7 +203,11 @@ Verification:
 
 ### A3: Team Feedback Triage Pass
 
+Parent bead: `sartracker-web-6y3`
+
 Goal: convert raw feedback into actionable chunks and beads.
+
+Latest source: Ned/Eamonn email `Sartracker`, received 2026-05-16. The email screenshots were used for triage only and are not retained as source-of-truth artifacts.
 
 Tasks:
 
@@ -224,6 +233,148 @@ Verification:
 
 - `bd list` shows new/updated work items.
 - This file and the handoff agree on the current next task.
+
+### A3.1: Prevent Accidental Map Placement While Panning
+
+Bead: `sartracker-web-6y3.1`
+
+Goal: make map panning and map placement unmistakably separate so testers do not accidentally create markers or drawings while moving the map.
+
+Tasks:
+
+- Distinguish click from drag/pan before map-placement handlers run.
+- Prevent point-based drawing or marker placement when the pointer movement was a pan.
+- Add crosshair cursor treatment only for intentional placement tools.
+- Keep normal hand/pan affordance for navigation.
+- Be cautious with double-click placement because double-click already overlaps map zoom and drawing completion behavior.
+
+Acceptance:
+
+- Panning with marker/drawing tools armed does not create or edit map objects.
+- Intentional point placement still works.
+- Placement mode visibly differs from panning mode.
+
+Verification:
+
+- Unit or integration coverage for click-vs-drag gating where practical.
+- Browser-backed map interaction check showing pan does not place an item and click does.
+
+### A3.2: Fix Text Label And Sector Rendering/Layer Visibility
+
+Bead: `sartracker-web-6y3.2`
+
+Goal: map objects must look like what the operator intended and hide reliably through layers.
+
+Tasks:
+
+- Fix text-label rendering so saved text labels do not appear as ordinary round marker dots.
+- Keep text label text, color, size, and rotation visible/editable in a clear way.
+- Fix search-sector rendering so outer arc vertex points/spurious points are not visible unless deliberately part of edit/preview state.
+- Confirm text labels and search sectors hide by type and by item through the layer panel.
+- Capture before/after browser evidence for the same classes of examples described by Ned/Eamonn.
+
+Acceptance:
+
+- Text labels render as text, not marker dots.
+- Search sectors render as clean sector geometry.
+- Layer visibility controls hide text labels and sectors predictably.
+
+Verification:
+
+- Unit tests around drawing GeoJSON/filter behavior where practical.
+- Browser-backed visual check with text labels, sectors, and layer hide/show.
+
+### A3.3: Simplify Map And Drawing Tool Chrome
+
+Bead: `sartracker-web-6y3.3`
+
+Goal: reduce map-surface clutter while preserving fast access to the tools testers need most.
+
+Tasks:
+
+- Replace the always-visible basemap row with a compact `Maps` control/menu.
+- Replace the expanded drawing-toolbar mode/collapse pattern with one compact `Drawing Tools` open/close control.
+- Remove redundant active-select/collapse controls if the simplified control makes them unnecessary.
+- Move routine map-tile cache controls out of the primary map surface where safe.
+- Keep operational warnings visible when they matter; do not hide hosted/runtime/autosave/tracking warnings merely to reduce clutter.
+
+Acceptance:
+
+- Map and drawing controls are easier to find and create less visual clutter.
+- Tool selection remains explicit and reversible.
+- Safety-critical warnings remain visible.
+
+Verification:
+
+- Browser-backed desktop and narrow-width check.
+- Existing drawing/map E2E coverage remains green or is updated.
+
+### A3.4: Clean Up Mission Mast And Right-Panel Duplication
+
+Bead: `sartracker-web-6y3.4`
+
+Goal: make mission identity, phase, and timing scan-friendly without repeating the same information in multiple panels.
+
+Tasks:
+
+- Remove duplicate mission time display from the right panel if the mast remains the authoritative timer location.
+- Place mission name/status near the SAR Tracker mast area in a calm, readable layout.
+- Preserve mission lifecycle enablement rules.
+- Prefer pairing this with `S5: Mission Control View Model Extraction` if implementation would otherwise tangle layout and lifecycle logic.
+
+Acceptance:
+
+- Mission time has one authoritative visible location.
+- Mission name/status remain easy to see.
+- The right panel gains useful space without changing mission lifecycle behavior.
+
+Verification:
+
+- Browser-backed active and paused mission checks.
+- Existing mission lifecycle tests remain green.
+
+### A3.5: Add Operational Contrast/Theme Pass
+
+Bead: `sartracker-web-6y3.5`
+
+Goal: address the team's concern that the current colour scheme is not suitable for all testers without turning this into an open-ended redesign.
+
+Tasks:
+
+- Decide whether the right first move is one improved high-contrast operational theme or a small theme toggle.
+- Use the QGIS plugin style as a contrast/readability reference, not as a requirement to copy the old UI.
+- Preserve distinct meanings for critical/amber/disabled/online/offline states.
+
+Acceptance:
+
+- The main shell, map overlays, settings, and drawing controls are more readable.
+- Status colors remain semantically clear.
+
+Verification:
+
+- Browser-backed visual check across the main operator surfaces.
+- Update visual tests/screenshots if this changes expected appearance.
+
+### A3.6: Move Static Operational Notes Out Of Primary Map Chrome
+
+Bead: `sartracker-web-6y3.6`
+
+Goal: reduce map clutter by moving static reference notes out of the primary map surface while keeping live risk signals visible.
+
+Tasks:
+
+- Move static operational notes to Settings/manual or another non-primary surface.
+- Keep hosted browser, persistence, autosave, runtime, tracking, and map-readiness warnings visible when relevant.
+- Confirm Focus Mode still surfaces warnings that operators must not miss.
+
+Acceptance:
+
+- Static notes no longer take map/sidebar space during normal operation.
+- Safety-critical warnings are still visible and hard to miss.
+
+Verification:
+
+- Browser-backed hosted-mode and Focus Mode checks.
 
 ### B1: Tauri Beta Packaging Recon
 
