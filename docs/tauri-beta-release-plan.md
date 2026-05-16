@@ -84,6 +84,49 @@ Recommendation for the first internal beta:
 - Do not treat DMG packaging as ready. Create a follow-up blocker if a DMG is required before the first internal beta.
 - Do not promise Windows install behavior until B1-equivalent packaging has been run on a Windows machine or CI runner.
 
+### Internal macOS Gatekeeper Guidance
+
+Status: internal beta guidance only. This is not a substitute for Developer ID signing,
+notarization, stapling, a polished installer, or a production release process.
+
+The current macOS beta artifact is an ad-hoc signed Apple Silicon `.app` bundle. On the
+current development machine, `spctl` rejects it with `source=Insufficient Context`, and
+`codesign -dv --verbose=4` reports `Signature=adhoc`, `TeamIdentifier=not set`,
+`Info.plist=not bound`, and `Sealed Resources=none`. Treat this as expected for the
+first internal beta, not as an operator-ready distribution state.
+
+Beta release notes must tell testers to expect one of these macOS outcomes:
+
+- macOS may refuse to open the app and say Apple cannot verify it, the developer cannot
+  be verified, or the app may be damaged or untrusted.
+- A right-click / Control-click followed by **Open** may allow the app to launch, depending
+  on local security policy.
+- If the app was downloaded from a browser or shared drive, quarantine may need to be
+  removed manually before launch.
+
+Only share the quarantine-removal command with testers who understand that they are
+opening a trusted internal beta artifact from this project:
+
+```bash
+xattr -dr com.apple.quarantine /Applications/sartracker-web.app
+```
+
+If the app is opened from the extracted folder rather than `/Applications`, replace the
+path with the actual extracted `.app` path, for example:
+
+```bash
+xattr -dr com.apple.quarantine ~/Downloads/sartracker-web.app
+```
+
+The beta note must also include these cautions:
+
+- Run this command only for a SAR Tracker beta artifact supplied through the agreed
+  internal channel.
+- Do not use the internal beta for live incidents until the specific beta has passed the
+  desktop smoke checklist.
+- If a team Mac blocks unsigned apps by policy, stop and record that as a beta blocker
+  rather than asking non-technical volunteers to bypass managed security settings.
+
 ### B2: Release Note Template
 
 Status: ready. B1 found a usable macOS `.app` path, so release notes can now target that artifact while DMG packaging remains a known limitation.
@@ -99,6 +142,7 @@ Each beta release note should use this shape:
 - Platform:
 - Install/open steps:
 - Known OS warnings:
+- macOS unsigned app guidance:
 
 ## What Changed
 
@@ -123,6 +167,7 @@ Each beta release note should use this shape:
 - [ ] npm run test
 - [ ] npm run test:backend
 - [ ] packaged app launches
+- [ ] release note includes unsigned/Gatekeeper warning if sharing an unsigned macOS beta
 - [ ] mission can be started
 - [ ] app restart/recovery path checked
 - [ ] tracking settings checked where relevant
@@ -175,7 +220,7 @@ Before sharing a desktop beta outside the dev machine:
 ## Open Questions
 
 - Which OS should be targeted first? Current recon only proves macOS arm64 packaging.
-- Are unsigned beta builds acceptable for the first testing pass? Current app is ad-hoc signed and rejected by `spctl`.
+- Are unsigned beta builds acceptable for the first testing pass after explicit Gatekeeper guidance? Current app is ad-hoc signed and rejected by `spctl`.
 - Where should beta artifacts live? The recon zip is local only under `tmp/beta-artifacts/`.
 - How often can the team reasonably install beta updates?
 - Who on the team will test desktop installation?

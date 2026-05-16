@@ -100,23 +100,23 @@ This is the default order when the user says “work on the next task.”
 | Done | A3.8: Improve Drawing Labels, Styles, And Delete Flow | Track A | `sartracker-web-6y3.8` | Done 2026-05-16 |
 | Done | A3.3: Simplify Map And Drawing Tool Chrome | Track A | `sartracker-web-6y3.3` | Done 2026-05-16 |
 | Done | A3.7: Add Marker At Grid Reference Workflow | Track A / Parity | `sartracker-web-6y3.7` | Done 2026-05-16 |
-| 1 | R8: Add Tauri Beta Gatekeeper Guidance | Track B / Docs | `sartracker-web-977` | Before beta artifact sharing |
-| 2 | R9: Add Checked-In Boot/Fault/Autosave UI Regression Coverage | Verification | `sartracker-web-ahp` | Ready |
-| 3 | R10: Compress Handoff And Annotate Historical Docs | Process / Docs | `sartracker-web-419` | Ready |
-| 4 | R11: Add Browser Harness Storage Non-Goals Note | Track A / Docs | `sartracker-web-mh5` | Ready |
-| 5 | S3: Layer Visibility Service Extraction | Shared / Track A | Create/update bead before starting | Ready |
-| 6 | A3.4: Clean Up Mission Mast And Right-Panel Duplication | Track A / Shared | `sartracker-web-6y3.4` | Best with S5 |
-| 7 | B2: Tauri Beta Release Template | Track B | Create/update bead before starting | Ready |
-| 8 | B3: First Internal Tauri Smoke Build | Track B | Create/update bead before starting | Ready after B2 |
-| 9 | S4: Map Overlay Consolidation And Camera Race Fix | Shared / Track B | Create/update bead before starting | Ready after S3 preferred |
-| 10 | S5: Mission Control View Model Extraction | Shared / Track A | Create/update bead before starting | Pair with A3.4 if selected |
-| 11 | V1: Regression E2E Coverage | Verification | Create/update bead before starting | Ready |
-| 12 | V2: Visual Review Automation | Verification | Create/update bead before starting | Ready |
-| 13 | B4: GPX And Drawing Hit-Test Hardening | Track B | Create/update bead before starting | Ready |
-| 14 | A3.5: Add Operational Contrast/Theme Pass | Track A / UI | `sartracker-web-6y3.5` | Planned, not urgent |
-| 15 | A3.6: Move Static Operational Notes Out Of Primary Map Chrome | Track A / UI | `sartracker-web-6y3.6` | Planned, keep warnings visible |
-| 16 | A3.9: Add Configurable Weather Links Menu | Track A / UI | `sartracker-web-6y3.9` | Planned, external links only |
-| 17 | C1: Local Proprietary Map Package Requirements | Track B / Maps | Create/update bead before starting | Waiting for map facts |
+| Done | R8: Add Tauri Beta Gatekeeper Guidance | Track B / Docs | `sartracker-web-977` | Done 2026-05-16 |
+| 1 | R9: Add Checked-In Boot/Fault/Autosave UI Regression Coverage | Verification | `sartracker-web-ahp` | Ready |
+| 2 | R10: Compress Handoff And Annotate Historical Docs | Process / Docs | `sartracker-web-419` | Ready |
+| 3 | R11: Add Browser Harness Storage Non-Goals Note | Track A / Docs | `sartracker-web-mh5` | Ready |
+| 4 | S3: Layer Visibility Service Extraction | Shared / Track A | Create/update bead before starting | Ready |
+| 5 | A3.4: Clean Up Mission Mast And Right-Panel Duplication | Track A / Shared | `sartracker-web-6y3.4` | Best with S5 |
+| 6 | B2: Tauri Beta Release Template | Track B | Create/update bead before starting | Ready |
+| 7 | B3: First Internal Tauri Smoke Build | Track B | Create/update bead before starting | Ready after B2 |
+| 8 | S4: Map Overlay Consolidation And Camera Race Fix | Shared / Track B | Create/update bead before starting | Ready after S3 preferred |
+| 9 | S5: Mission Control View Model Extraction | Shared / Track A | Create/update bead before starting | Pair with A3.4 if selected |
+| 10 | V1: Regression E2E Coverage | Verification | Create/update bead before starting | Ready |
+| 11 | V2: Visual Review Automation | Verification | Create/update bead before starting | Ready |
+| 12 | B4: GPX And Drawing Hit-Test Hardening | Track B | Create/update bead before starting | Ready |
+| 13 | A3.5: Add Operational Contrast/Theme Pass | Track A / UI | `sartracker-web-6y3.5` | Planned, not urgent |
+| 14 | A3.6: Move Static Operational Notes Out Of Primary Map Chrome | Track A / UI | `sartracker-web-6y3.6` | Planned, keep warnings visible |
+| 15 | A3.9: Add Configurable Weather Links Menu | Track A / UI | `sartracker-web-6y3.9` | Planned, external links only |
+| 16 | C1: Local Proprietary Map Package Requirements | Track B / Maps | Create/update bead before starting | Waiting for map facts |
 
 ## Ready Work Chunks
 
@@ -124,7 +124,7 @@ This is the default order when the user says “work on the next task.”
 
 Source: multi-agent review of S1 Runtime Boot/Fault Guard, A1 Hosted Testing Instructions, B1 Tauri Beta Packaging Recon, S2 Autosave Lifecycle Hardening, plus adjacent code.
 
-Verdict folded into this plan: R1-R7 are fixed. S3 can start when selected, while R8-R11 remain follow-up remediation/docs/verification tasks.
+Verdict folded into this plan: R1-R8 are fixed. S3 can start when selected, while R9-R11 remain follow-up remediation/docs/verification tasks.
 
 Completed remediation:
 
@@ -135,10 +135,10 @@ Completed remediation:
 - `sartracker-web-qdh` — R5: app runtime controller replacement logs cleanup failures from the previous controller without blocking the next controller installation, and active disposal clears the registry even if underlying cleanup throws.
 - `sartracker-web-10q` — R6: app runtime startup disposes core feature runtimes if initial settings reload fails after those runtimes start.
 - `sartracker-web-syi` — R7: Harden runtime fault reload flow.
+- `sartracker-web-977` — R8: Tauri beta docs and manual now include unsigned macOS app expectations, Gatekeeper warning language, quarantine removal guidance, and the internal-beta-only caveat.
 
 Follow-up remediation:
 
-- `sartracker-web-977` — R8: Add Tauri beta Gatekeeper guidance.
 - `sartracker-web-ahp` — R9: Add checked-in boot/fault/autosave UI regression coverage.
 - `sartracker-web-419` — R10: Compress handoff and annotate historical docs.
 - `sartracker-web-mh5` — R11: Add browser harness storage non-goals note.
