@@ -86,22 +86,18 @@ Use these locations instead:
 
 If you make `HANDOFF.md` materially longer, compress it before finishing.
 
-### When We Involve Claude (required)
+### When We Involve Claude (optional)
 
-Use Claude for each batch at the end, after tests and docs are updated.
+Claude review is no longer required for every batch. Do not start agent-chat threads,
+Claude review loops, heartbeats, or inter-agent automations as a routine finish step.
 
-- Always invite Claude review when a bead touches life-safety behavior:
-  - tracking, layer visibility/state, mission lifecycle, persistence, or operator workflow.
-- Always invite Claude review before marking any batch as complete.
-- Involve Claude if there is ambiguity in requirements or behavior from the legacy plugin.
-- Involve Claude when a single test run still has red risks despite implementation being mostly in place.
+Use Claude only when the user explicitly asks, or when a deliberately chosen high-risk
+change would benefit from an intermittent second pass. Good candidates are broad
+architecture changes, large safety-critical rewrites, or ambiguous legacy-plugin
+behaviour that cannot be resolved from the repo and tests alone.
 
-For each batch, after completing work:
-1. update `handoff/HANDOFF.md`,
-2. update the relevant bead(s),
-3. update the operator manual when app behaviour, UI, settings, workflows, or known gaps changed,
-4. run the verification suite,
-5. record exactly what was verified, what remains open, and what Claude should validate next directly in `handoff/HANDOFF.md`.
+For ordinary chunks, finish with local verification, browser-backed validation where
+relevant, bead updates, handoff updates, and the normal commit/push protocol.
 
 There is no separate packet layer. The handoff file must contain the current baton state.
 

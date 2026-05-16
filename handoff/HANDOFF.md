@@ -100,4 +100,3 @@ Most recent completed verification:
 - `npm run test:backend` passed: 37 backend tests.
 - Inbuilt browser smoke at `http://127.0.0.1:5173/?missionHarness=1` passed: normal app shell visible, no boot/fault gate left visible, hosted-testing banner present.
 - Post-implementation Playwright UI verification passed against the local Vite app: ready shell, forced booting shell, forced startup fault shell with Reload, and ready-restored shell all rendered correctly. Screenshot evidence is in `test-results/ui-verification/`.
-- Claude review invited on agent thread `thr_b24uuz`; no reply had arrived within the initial wait, so a Codex heartbeat is watching for a bounded follow-up.
