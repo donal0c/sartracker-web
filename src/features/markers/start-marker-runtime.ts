@@ -1,5 +1,6 @@
 import type {
   Marker,
+  MarkerType,
   MissionStore,
 } from '../../infrastructure/mission-store/tauri-mission-store'
 import {
@@ -22,7 +23,7 @@ type StartMarkerRuntimeDependencies = {
 
 export type MarkerRuntimeController = {
   readonly refreshMission: (missionId: string | null) => Promise<void>
-  readonly beginCreateAt: (lat: number, lon: number) => void
+  readonly beginCreateAt: (lat: number, lon: number, type?: MarkerType) => void
   readonly beginEdit: (markerId: string) => void
   readonly updateDraft: (patch: Partial<MarkerDraft>) => void
   readonly changeDraftType: (type: MarkerDraft['type']) => void
@@ -83,14 +84,14 @@ export async function startMarkerRuntime(
         }
       }
     },
-    beginCreateAt: (lat, lon) => {
+    beginCreateAt: (lat, lon, type) => {
       if (activeMissionId === null) {
         return
       }
 
       dialog = {
         mode: 'create',
-        draft: createMarkerDraftAtCoordinate(lat, lon),
+        draft: createMarkerDraftAtCoordinate(lat, lon, type),
       }
       error = null
       publishRuntime()

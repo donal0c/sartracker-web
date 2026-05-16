@@ -87,6 +87,12 @@ export function createDrawingFeatureCollection(
             rotation: parsed.metadata.rotation,
             color: parsed.metadata.color,
           }
+        : parsed.metadata?.kind === 'search_area'
+          ? {
+              fontSize: parsed.metadata.labelFontSize ?? 11,
+              rotation: 0,
+              color: parsed.metadata.fillColor ?? drawing.color ?? baseStyle.labelColor,
+            }
         : {
             fontSize: 11,
             rotation: 0,

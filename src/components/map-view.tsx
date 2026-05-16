@@ -34,15 +34,15 @@ export function MapView() {
     <div className="relative h-full w-full overflow-hidden bg-stone-950">
       <BasemapSwitcher
         activeBasemapId={activeBasemapId}
+        coverage={coverage}
         onBasemapChange={handleBasemapChange}
+        onCheckCoverage={checkCurrentViewCoverage}
       />
       <DrawingToolbar />
       <div className="h-full w-full" data-testid="map-container" ref={containerRef} />
       <div className="pointer-events-none absolute bottom-20 right-3 z-10 flex max-w-[min(18rem,calc(100%-2rem))] flex-col items-end gap-2">
         <MapStatusBadge health={mapHealth} />
         <OfflineMapReadinessBadge
-          coverage={coverage}
-          onCheckCoverage={checkCurrentViewCoverage}
           readiness={offlineMapReadiness}
         />
       </div>

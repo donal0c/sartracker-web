@@ -13,10 +13,13 @@ test.describe('M2 map shell', () => {
     await expect(page.getByTestId('system-status-detail')).toContainText('Session storage only')
     await expect(page.getByTestId('basemap-switcher')).toBeVisible()
     await expect(page.getByTestId('map-health')).toContainText('basemap')
+    await expect(page.getByTestId('basemap-menu-toggle')).toBeVisible()
+    await page.getByTestId('basemap-menu-toggle').click()
     await expect(page.getByTestId('basemap-btn-opentopomap')).toBeVisible()
     await expect(page.getByTestId('basemap-btn-esri_topo')).toBeVisible()
     await expect(page.getByTestId('basemap-btn-openstreetmap')).toBeVisible()
     await expect(page.getByTestId('basemap-btn-esri_satellite')).toBeVisible()
+    await expect(page.getByTestId('check-offline-map-coverage')).toBeVisible()
   })
 
   test('keeps the live map container at a non-zero height', async ({ page }) => {
@@ -41,13 +44,30 @@ test.describe('M2 map shell', () => {
     expect(dimensions?.height ?? 0).toBeGreaterThan(100)
   })
 
+  test('keeps compact map controls usable on a narrow operator viewport', async ({ page }) => {
+    await page.setViewportSize({ width: 900, height: 700 })
+    await expect(page.getByTestId('basemap-menu-toggle')).toBeVisible()
+    await expect(page.getByTestId('drawing-toolbar-expand')).toBeVisible()
+
+    await page.getByTestId('basemap-menu-toggle').click()
+    await expect(page.getByTestId('basemap-btn-esri_satellite')).toBeVisible()
+    await page.getByTestId('basemap-menu-toggle').click()
+
+    await page.getByTestId('drawing-toolbar-expand').click()
+    await expect(page.getByTestId('drawing-tool-line')).toBeVisible()
+    await expect(page.getByTestId('drawing-toolbar-active-mode')).toContainText('Mission required')
+  })
+
   test('persists the selected basemap', async ({ page }) => {
+    await page.getByTestId('basemap-menu-toggle').click()
     await page.getByTestId('basemap-btn-esri_topo').click()
-    await expect(page.getByTestId('basemap-btn-esri_topo')).toHaveClass(/bg-amber-300/)
+    await expect(page.getByTestId('basemap-menu-toggle')).toContainText('ESRI World Topo')
 
     await page.reload()
     await page.waitForSelector('canvas', { timeout: 15000 })
 
+    await expect(page.getByTestId('basemap-menu-toggle')).toContainText('ESRI World Topo')
+    await page.getByTestId('basemap-menu-toggle').click()
     await expect(page.getByTestId('basemap-btn-esri_topo')).toHaveClass(/bg-amber-300/)
   })
 
@@ -92,6 +112,7 @@ test.describe('M2 map shell', () => {
 
     expect(before).not.toBeNull()
 
+    await page.getByTestId('basemap-menu-toggle').click()
     await page.getByTestId('basemap-btn-esri_topo').click()
     await expect(page.getByTestId('basemap-btn-esri_topo')).toHaveClass(/bg-amber-300/)
 

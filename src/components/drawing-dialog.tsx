@@ -1,6 +1,9 @@
+import { useState } from 'react'
+
 import { useDrawingStore } from '../features/drawings/drawing-store'
 import {
   formatDistance,
+  geodesicBearing,
   geodesicDistance,
   geodesicPolygonArea,
   magneticToTrue,
@@ -20,6 +23,7 @@ export function DrawingDialog() {
   const dialog = useDrawingStore((state) => state.dialog)
   const saving = useDrawingStore((state) => state.saving)
   const runtimeError = useDrawingStore((state) => state.error)
+  const [deleteConfirmationVisible, setDeleteConfirmationVisible] = useState(false)
 
   if (dialog === null || controller === null) {
     return null
@@ -115,14 +119,45 @@ export function DrawingDialog() {
           <div className="flex justify-between gap-3">
             <div>
               {dialog.mode === 'edit' ? (
-                <button
-                  className="rounded-lg border border-rose-500/30 bg-rose-500/10 px-4 py-2 text-sm text-rose-100"
-                  data-testid="drawing-delete-btn"
-                  onClick={() => void controller.deleteSelectedDrawing()}
-                  type="button"
-                >
-                  Delete
-                </button>
+                deleteConfirmationVisible ? (
+                  <div
+                    className="rounded-xl border border-rose-400/40 bg-rose-950/40 p-3 text-sm text-rose-100"
+                    data-testid="drawing-delete-confirmation"
+                  >
+                    <p className="font-semibold">Delete this drawing?</p>
+                    <p className="mt-1 text-xs text-rose-100/80">
+                      This removes it from the mission layer set.
+                    </p>
+                    <div className="mt-3 flex gap-2">
+                      <button
+                        className="rounded-lg border border-rose-300/50 bg-rose-400/20 px-3 py-1.5 text-xs font-semibold text-rose-50"
+                        data-testid="drawing-delete-confirm-btn"
+                        disabled={saving}
+                        onClick={() => void controller.deleteSelectedDrawing()}
+                        type="button"
+                      >
+                        Delete Drawing
+                      </button>
+                      <button
+                        className="rounded-lg border border-stone-600 bg-stone-950 px-3 py-1.5 text-xs font-semibold text-stone-200"
+                        onClick={() => setDeleteConfirmationVisible(false)}
+                        type="button"
+                      >
+                        Keep
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <button
+                    className="rounded-lg border border-rose-500/30 bg-rose-500/10 px-4 py-2 text-sm text-rose-100"
+                    data-testid="drawing-delete-btn"
+                    disabled={saving}
+                    onClick={() => setDeleteConfirmationVisible(true)}
+                    type="button"
+                  >
+                    Delete
+                  </button>
+                )
               ) : null}
             </div>
             <div className="flex gap-3">
@@ -152,12 +187,34 @@ export function DrawingDialog() {
 function LineSection(props: { readonly draft: Extract<DrawingDraft, { type: 'line' }> }) {
   const pointCount = props.draft.points.length
   const distanceM = calculatePolylineDistance(props.draft.points)
+  const trueBearing = calculateEndpointBearing(props.draft.points)
+  const magneticBearing = Number.isFinite(trueBearing) ? trueToMagnetic(trueBearing) : Number.NaN
+  const startPoint = props.draft.points[0]
+  const endPoint = props.draft.points.at(-1)
 
   return (
     <ReadOnlyGrid
       items={[
         { label: 'Vertices', value: pointCount.toString() },
-        { label: 'Distance', value: formatDistance(distanceM) },
+        {
+          label: 'Distance',
+          testId: 'drawing-line-distance-readout',
+          value: formatDistance(distanceM),
+        },
+        {
+          label: 'Bearing to endpoint',
+          testId: 'drawing-line-bearing-readout',
+          value: Number.isFinite(trueBearing) && Number.isFinite(magneticBearing)
+            ? `True ${trueBearing.toFixed(1)}° / Magnetic ${magneticBearing.toFixed(1)}°`
+            : 'Add a second point',
+        },
+        {
+          label: 'End point',
+          testId: 'drawing-line-endpoint-readout',
+          value: startPoint !== undefined && endPoint !== undefined
+            ? `${formatLonLat(endPoint)} from ${formatLonLat(startPoint)}`
+            : 'Not set',
+        },
       ]}
     />
   )
@@ -197,6 +254,18 @@ function SearchAreaSection(props: {
           onChange={(value) => props.onChange({ ...props.draft, poaPercent: value })}
           testId="drawing-search-area-poa-input"
           value={props.draft.poaPercent}
+        />
+        <Field
+          label="Label Size"
+          onChange={(value) => props.onChange({ ...props.draft, labelFontSize: value })}
+          testId="drawing-search-area-label-font-size-input"
+          value={props.draft.labelFontSize}
+        />
+        <Field
+          label="Fill Colour"
+          onChange={(value) => props.onChange({ ...props.draft, fillColor: value })}
+          testId="drawing-search-area-fill-color-input"
+          value={props.draft.fillColor}
         />
         <Field
           label="Terrain"
@@ -507,12 +576,16 @@ function SelectField<TOption extends string>(props: {
 }
 
 function ReadOnlyGrid(props: {
-  readonly items: readonly { label: string; value: string }[]
+  readonly items: readonly { label: string; value: string; testId?: string }[]
 }) {
   return (
     <section className="grid gap-4 md:grid-cols-2">
       {props.items.map((item) => (
-        <div className="rounded-2xl border border-stone-700 bg-stone-950/60 p-4" key={item.label}>
+        <div
+          className="rounded-2xl border border-stone-700 bg-stone-950/60 p-4"
+          data-testid={item.testId}
+          key={item.label}
+        >
           <p className="text-xs uppercase tracking-[0.2em] text-stone-300">{item.label}</p>
           <p className="mt-2 text-sm text-stone-100">{item.value}</p>
         </div>
@@ -532,6 +605,20 @@ function calculatePolylineDistance(points: readonly (readonly [number, number])[
   }
 
   return distance
+}
+
+function calculateEndpointBearing(points: readonly (readonly [number, number])[]): number {
+  const startPoint = points[0]
+  const endPoint = points.at(-1)
+  if (startPoint === undefined || endPoint === undefined || points.length < 2) {
+    return Number.NaN
+  }
+
+  return geodesicBearing(startPoint[0], startPoint[1], endPoint[0], endPoint[1])
+}
+
+function formatLonLat(point: readonly [number, number]): string {
+  return `${point[1].toFixed(5)}, ${point[0].toFixed(5)}`
 }
 
 function closeRing(points: readonly (readonly [number, number])[]): readonly (readonly [number, number])[] {

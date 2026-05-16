@@ -2,6 +2,8 @@ import type { Drawing } from '../../../infrastructure/mission-store/tauri-missio
 import type { DrawingDraft, DrawingMetadata, PersistedDrawing } from '../drawing-types'
 import type { LonLat } from '../drawing-math'
 
+const HEX_COLOR_PATTERN = /^#[0-9A-F]{6}$/i
+
 export type BuildDrawingInputArgs = {
   readonly missionId: string
   readonly displayOrder: number
@@ -83,6 +85,18 @@ export function parseRequiredPositiveInteger(value: string, label: string): numb
   }
 
   return parsed
+}
+
+/**
+ * Normalizes six-digit hex colours before storing operator-facing map styles.
+ */
+export function normalizeHexColor(value: string, label: string = 'Colour'): string {
+  const normalized = value.trim().toUpperCase()
+  if (!HEX_COLOR_PATTERN.test(normalized)) {
+    throw new Error(`${label} must be a valid 6-digit hex value.`)
+  }
+
+  return normalized
 }
 
 /**

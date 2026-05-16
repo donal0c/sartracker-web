@@ -75,6 +75,7 @@ export function MarkerDialog() {
                 <input
                   checked={draft.type === option.value}
                   className="sr-only"
+                  data-testid={`marker-type-${option.value}`}
                   disabled={saving}
                   name="marker-type"
                   onChange={() => controller.changeDraftType(option.value)}
@@ -93,7 +94,11 @@ export function MarkerDialog() {
               label="ITM"
               value={`${draft.coordinates.irishGridE}, ${draft.coordinates.irishGridN}`}
             />
-            <ReadOnlyField label="TM65 Grid Ref" value={draft.coordinates.tm65GridRef} />
+            <ReadOnlyField
+              label="TM65 Grid Ref"
+              testId="marker-tm65-readout"
+              value={draft.coordinates.tm65GridRef}
+            />
           </section>
 
           <section className="grid gap-4 md:grid-cols-2">
@@ -356,9 +361,16 @@ function SelectField<TOption extends string>(props: {
   )
 }
 
-function ReadOnlyField(props: { readonly label: string; readonly value: string }) {
+function ReadOnlyField(props: {
+  readonly label: string
+  readonly value: string
+  readonly testId?: string
+}) {
   return (
-    <div className="rounded-2xl border border-stone-800 bg-stone-950/80 p-4">
+    <div
+      className="rounded-2xl border border-stone-800 bg-stone-950/80 p-4"
+      data-testid={props.testId}
+    >
       <p className="text-xs uppercase tracking-[0.2em] text-stone-300">{props.label}</p>
       <p className="mt-2 text-sm text-stone-100">{props.value}</p>
     </div>

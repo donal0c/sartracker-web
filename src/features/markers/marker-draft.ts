@@ -11,6 +11,8 @@ import {
 import {
   formatIrishGridReference,
   formatWGS84Degrees,
+  parseIrishGridReference,
+  tm65ToWgs84,
   wgs84ToITM,
   wgs84ToTM65,
 } from '../../lib/coordinates'
@@ -52,6 +54,9 @@ type BuildMarkerSaveInputArgs = {
   readonly draft: MarkerDraft
 }
 
+/**
+ * Creates a marker draft at a validated WGS84 coordinate.
+ */
 export function createMarkerDraftAtCoordinate(
   lat: number,
   lon: number,
@@ -80,6 +85,21 @@ export function createMarkerDraftAtCoordinate(
   }
 }
 
+/**
+ * Creates a marker draft from an operator-entered TM65 Irish Grid reference.
+ */
+export function createMarkerDraftFromIrishGridReference(
+  gridReference: string,
+  type: MarkerType = 'ipp_lkp',
+): MarkerDraft {
+  const [tm65Easting, tm65Northing] = parseIrishGridReference(gridReference)
+  const [lat, lon] = tm65ToWgs84(tm65Easting, tm65Northing)
+  return createMarkerDraftAtCoordinate(lat, lon, type)
+}
+
+/**
+ * Creates an editable draft from a persisted marker.
+ */
 export function createMarkerDraftFromMarker(marker: Marker): MarkerDraft {
   return {
     id: marker.id,
@@ -111,6 +131,9 @@ export function createMarkerDraftFromMarker(marker: Marker): MarkerDraft {
   }
 }
 
+/**
+ * Changes the marker type while clearing fields that no longer apply.
+ */
 export function changeMarkerDraftType(
   draft: MarkerDraft,
   type: MarkerType,
@@ -134,6 +157,9 @@ export function changeMarkerDraftType(
   }
 }
 
+/**
+ * Builds the backend persistence payload for a marker draft.
+ */
 export function buildMarkerSaveInput({
   missionId,
   displayOrder,

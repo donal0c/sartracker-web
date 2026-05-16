@@ -5,6 +5,7 @@ import {
   buildMarkerSaveInput,
   changeMarkerDraftType,
   createMarkerDraftAtCoordinate,
+  createMarkerDraftFromIrishGridReference,
   createMarkerDraftFromMarker,
 } from '../../src/features/markers/marker-draft'
 
@@ -46,6 +47,23 @@ describe('marker draft helpers', () => {
     expect(draft.coordinates.tm65GridRef).toMatch(/^[A-Z] \d{5} \d{5}$/)
     expect(draft.coordinates.irishGridE).toBeGreaterThan(400_000)
     expect(draft.coordinates.irishGridN).toBeGreaterThan(500_000)
+  })
+
+  it('creates a typed marker draft from a TM65 Irish Grid reference', () => {
+    const draft = createMarkerDraftFromIrishGridReference('V 80011 84363', 'hazard')
+
+    expect(draft.type).toBe('hazard')
+    expect(draft.coordinates.lat).toBeGreaterThan(51.99)
+    expect(draft.coordinates.lat).toBeLessThan(52.01)
+    expect(draft.coordinates.lon).toBeGreaterThan(-9.75)
+    expect(draft.coordinates.lon).toBeLessThan(-9.73)
+    expect(draft.coordinates.tm65GridRef).toBe('V 80011 84363')
+  })
+
+  it('rejects malformed TM65 grid references before opening a marker draft', () => {
+    expect(() => createMarkerDraftFromIrishGridReference('not a grid ref')).toThrow(
+      /grid reference/i,
+    )
   })
 
   it('rebuilds a draft from an existing persisted marker', () => {

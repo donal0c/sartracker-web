@@ -95,6 +95,7 @@ Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
   })
 
   test('basemap switcher shows all 4 options and selection persists', async ({ page }) => {
+    await page.getByTestId('basemap-menu-toggle').click()
     await expect(page.getByTestId('basemap-btn-opentopomap')).toBeVisible()
     await expect(page.getByTestId('basemap-btn-esri_topo')).toBeVisible()
     await expect(page.getByTestId('basemap-btn-openstreetmap')).toBeVisible()
@@ -108,8 +109,8 @@ Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
       testName: 'Basemap switcher with default selection',
       area: 'app-shell',
       severity: 'high',
-      verificationPrompt: `Verify this screenshot of the SAR Tracker with basemap switcher:
-1. There should be exactly 4 basemap buttons in a horizontal row near the top of the map
+      verificationPrompt: `Verify this screenshot of the SAR Tracker with the compact Maps menu open:
+1. There should be exactly 4 basemap buttons in the Maps menu near the top-left of the map
 2. The buttons should be labeled: "OpenTopoMap", "ESRI World Topo", "OpenStreetMap", "ESRI Satellite"
 3. The "OpenTopoMap" button should appear selected/highlighted (different color from others)
 4. The map itself should show a topographic map style with elevation contours and terrain features

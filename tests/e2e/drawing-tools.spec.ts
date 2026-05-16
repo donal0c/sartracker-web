@@ -18,6 +18,10 @@ test.describe('M8 drawing workflows', () => {
     await rightClickMap(page, { x: 560, y: 300 })
 
     await expect(page.getByTestId('drawing-dialog')).toBeVisible()
+    await expect(page.getByTestId('drawing-line-distance-readout')).toContainText('Distance')
+    await expect(page.getByTestId('drawing-line-bearing-readout')).toContainText('True')
+    await expect(page.getByTestId('drawing-line-bearing-readout')).toContainText('Magnetic')
+    await expect(page.getByTestId('drawing-line-endpoint-readout')).toContainText('End point')
     await page.getByTestId('drawing-name-input').fill('Ingress Line')
     await page.getByTestId('drawing-save-btn').click()
     await expect(page.getByTestId('drawing-dialog')).toBeHidden()
@@ -38,6 +42,8 @@ test.describe('M8 drawing workflows', () => {
     await page.getByTestId('drawing-search-area-team-input').fill('Team 1')
     await page.getByTestId('drawing-search-area-status-input').selectOption('Assigned')
     await page.getByTestId('drawing-search-area-poa-input').fill('35')
+    await page.getByTestId('drawing-search-area-label-font-size-input').fill('16')
+    await page.getByTestId('drawing-search-area-fill-color-input').fill('#0EA5E9')
     await expect(page.getByTestId('drawing-search-area-terrain-input')).toBeEditable()
     await page.getByTestId('drawing-search-area-terrain-input').fill('Rocky ground')
     await page.getByTestId('drawing-search-area-notes-input').fill('Approach from east ridge')
@@ -48,6 +54,8 @@ test.describe('M8 drawing workflows', () => {
     expect(drawing?.type).toBe('search_area')
     expect(drawing?.metadata_json).toContain('Assigned')
     expect(drawing?.metadata_json).toContain('Team 1')
+    expect(drawing?.metadata_json).toContain('"labelFontSize":16')
+    expect(drawing?.metadata_json).toContain('"fillColor":"#0EA5E9"')
   })
 
   test('creates LPB range rings and bearing lines with conversion', async ({ page }) => {
@@ -89,7 +97,7 @@ test.describe('M8 drawing workflows', () => {
 
     await page.getByTestId('drawing-tool-line').click({ force: true })
     await page.keyboard.press('Escape')
-    await expect(page.getByText('Active: Select')).toBeVisible()
+    await expect(page.getByTestId('drawing-toolbar-active-mode')).toContainText('Select')
 
     const drawings = await readMissionDrawings(page)
     expect(drawings.some((drawing) => drawing.name === 'Sector North' && drawing.type === 'search_sector')).toBe(true)
@@ -136,9 +144,14 @@ test.describe('M8 drawing workflows', () => {
     let drawings = await readMissionDrawings(page)
     expect(drawings.some((drawing) => drawing.name === 'Edited Name' && drawing.type === 'line')).toBe(true)
 
-    await clickMap(page, { x: 490, y: 270 })
+    await page.getByTestId('sidebar-tab-layers').click()
+    await page.getByTestId('layer-tree-search').fill('Edited Name')
+    await page.getByTestId('layer-tree').getByRole('button', { name: 'Edited Name' }).click()
+    await page.getByTestId('layer-edit-drawing-btn').click()
     await expect(page.getByTestId('drawing-dialog')).toBeVisible()
     await page.getByTestId('drawing-delete-btn').click()
+    await expect(page.getByTestId('drawing-delete-confirmation')).toBeVisible()
+    await page.getByTestId('drawing-delete-confirm-btn').click()
     await expect(page.getByTestId('drawing-dialog')).toBeHidden()
 
     drawings = await readMissionDrawings(page)

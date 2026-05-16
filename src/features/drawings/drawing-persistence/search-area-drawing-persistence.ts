@@ -3,9 +3,11 @@ import { geodesicPolygonArea } from '../drawing-math'
 import type { SearchAreaDrawingDraft } from '../drawing-types'
 import {
   assertValidName,
+  normalizeHexColor,
   normalizeOptionalNumber,
   normalizeOptionalText,
   parsePersistedDrawing,
+  parseRequiredPositiveInteger,
   toLonLat,
   toMutableCoordinate,
 } from './shared'
@@ -21,6 +23,8 @@ export function buildSearchAreaDrawingInput(
   assertValidName(draft.name)
   const ring = closeRing(draft.points)
   const areaSqM = geodesicPolygonArea(ring)
+  const labelFontSize = parseRequiredPositiveInteger(draft.labelFontSize, 'Search area label size')
+  const fillColor = normalizeHexColor(draft.fillColor, 'Search area fill colour')
 
   return {
     id: draft.id,
@@ -28,6 +32,7 @@ export function buildSearchAreaDrawingInput(
     type: 'search_area' as const,
     name: draft.name.trim(),
     description: normalizeOptionalText(draft.description),
+    color: fillColor,
     display_order: displayOrder,
     geometry_json: JSON.stringify({
       type: 'Polygon',
@@ -41,6 +46,8 @@ export function buildSearchAreaDrawingInput(
       terrain: normalizeOptionalText(draft.terrain),
       notes: normalizeOptionalText(draft.notes),
       areaSqM,
+      labelFontSize,
+      fillColor,
     }),
     label: draft.name.trim(),
   }
@@ -68,6 +75,8 @@ export function createSearchAreaDraftFromDrawing(
     team: metadata?.team ?? '',
     status: metadata?.status ?? 'Planned',
     poaPercent: metadata?.poaPercent?.toString() ?? '',
+    labelFontSize: (metadata?.labelFontSize ?? 12).toString(),
+    fillColor: metadata?.fillColor ?? parsed.color ?? '#F59E0B',
     terrain: metadata?.terrain ?? '',
     notes: metadata?.notes ?? '',
   }

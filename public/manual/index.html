@@ -476,8 +476,8 @@
             application version chip, which is stamped from the git commit at build time so teams can
             confirm they are running the same build. The right rail is split into
             <strong>Tracking</strong>, <strong>Tools</strong>, and <strong>Layers</strong>. The map itself
-            carries basemap controls, drawing tools, map health, offline tile status, and the coordinate
-            instrument strip.
+            carries compact Maps and Drawing Tools controls, map health, offline tile status, and the
+            coordinate instrument strip.
           </p>
           <figure class="screenshot">
             <img src="assets/app-shell.png" alt="SAR Tracker app shell with active mission and map" />
@@ -485,7 +485,7 @@
           </figure>
           <div class="card-grid">
             <div class="card"><strong>Command mast</strong><br />Mission name, phase, timers, device counts, system state, autosave warning state, current app version, Diagnostics, Focus Mode, Settings, and Help.</div>
-            <div class="card"><strong>Map workspace</strong><br />Basemaps, drawing tools, live map canvas, health badge, offline-readiness badge, and coordinate strip.</div>
+            <div class="card"><strong>Map workspace</strong><br />Maps menu, Drawing Tools menu, live map canvas, health badge, offline-readiness badge, and coordinate strip.</div>
             <div class="card"><strong>Right rail</strong><br />Pinned Mission Control plus tabs for tracking, tools, and layer inspection.</div>
           </div>
         </section>
@@ -526,14 +526,14 @@
             the <strong>Convert</strong> button.
           </p>
           <div class="card-grid">
-            <div class="card"><strong>Basemaps</strong><br />OpenTopoMap, ESRI World Topo, OpenStreetMap, and ESRI Satellite.</div>
+            <div class="card"><strong>Maps menu</strong><br />OpenTopoMap, ESRI World Topo, OpenStreetMap, ESRI Satellite, and the current-view offline tile check.</div>
             <div class="card"><strong>Coordinate converter</strong><br />Accepts WGS84, ITM, or TM65 and can copy results or jump the map to the converted point.</div>
-            <div class="card"><strong>Offline badge</strong><br />Shows whether viewed tiles are available and lets operators check the current view before relying on offline tiles.</div>
+            <div class="card"><strong>Offline badge</strong><br />Keeps the offline tile readiness warning visible without exposing routine cache controls until the Maps menu is open.</div>
           </div>
           <p>
             Offline map behavior is currently <strong>viewed tile caching</strong>, not a complete
-            packaged offline map bundle. Use <strong>Check View</strong> for the current map view before
-            assuming an area is cached.
+            packaged offline map bundle. Open <strong>Maps</strong> and use <strong>Check View</strong>
+            for the current map view before assuming an area is cached.
           </p>
         </section>
 
@@ -621,6 +621,7 @@
               <tr><td>Show Hidden</td><td>Include hidden nodes so they can be inspected or restored.</td></tr>
               <tr><td>Favorite</td><td>Mark an important layer or feature for future operator emphasis.</td></tr>
               <tr><td>Alias</td><td>Rename a layer or feature without changing its underlying record.</td></tr>
+              <tr><td>Edit Drawing</td><td>For drawing feature rows, open the normal drawing form so misplaced drawings can be corrected or deleted with confirmation.</td></tr>
               <tr><td>Move Up / Move Down</td><td>Reorder siblings in the tree where the current node supports it.</td></tr>
             </tbody>
           </table>
@@ -642,6 +643,13 @@
             <div class="card"><strong>Evidence attachment</strong><br />Attach a photo or file that should travel with the marker in desktop mode.</div>
             <div class="card"><strong>Coordinates</strong><br />Every marker shows WGS84, ITM, and TM65 readouts in the form.</div>
           </div>
+          <p>
+            To place a marker from a TM65 Irish Grid reference instead of a map click, open the
+            <strong>Tools</strong> tab, use <strong>Marker At GR</strong>, choose the marker type, enter
+            the grid reference, and create the marker. Valid references open the normal marker form with
+            WGS84, ITM, and TM65 coordinates prefilled. Invalid references fail visibly and do not create
+            a marker.
+          </p>
         </section>
 
         <section id="tools">
@@ -661,9 +669,9 @@
               <tr><th>Tool</th><th>Typical Use</th></tr>
             </thead>
             <tbody>
-              <tr><td>Select</td><td>Edit or delete existing drawings.</td></tr>
-              <tr><td>Line</td><td>Draw route lines and see measured distance.</td></tr>
-              <tr><td>Search Area</td><td>Draw polygons with team, status, POA, terrain, and notes.</td></tr>
+              <tr><td>Select</td><td>Edit existing drawings from the map; Layers can also open drawing edits.</td></tr>
+              <tr><td>Line</td><td>Draw route lines and see measured distance plus true/magnetic bearing to the endpoint.</td></tr>
+              <tr><td>Search Area</td><td>Draw polygons with team, status, POA, label size, fill colour, terrain, and notes.</td></tr>
               <tr><td>Range Rings</td><td>Create manual rings or LPB percentile rings from a point.</td></tr>
               <tr><td>Bearing</td><td>Create a bearing line from an origin, distance, and true or magnetic bearing.</td></tr>
               <tr><td>Sector</td><td>Create a search sector from center, start bearing, end bearing, and radius.</td></tr>
@@ -678,6 +686,8 @@
           <div class="callout">
             Text labels render as text only. Range rings render as clean ring lines. Use the Layers
             workspace to hide drawing types or individual drawings when the map needs less visual load.
+            To delete a misplaced drawing, open it through Select mode or the Layers inspection panel,
+            press <strong>Delete</strong>, and confirm the destructive action.
           </div>
         </section>
 

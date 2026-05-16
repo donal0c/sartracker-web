@@ -104,6 +104,47 @@ describe('drawing geojson', () => {
     })
   })
 
+  it('applies persisted search-area fill and label styling to map features', () => {
+    const collection = createDrawingFeatureCollection(
+      [
+        createDrawing({
+          id: 'search-area-styled',
+          type: 'search_area',
+          name: 'Sector Alpha',
+          color: '#0EA5E9',
+          label: 'Sector Alpha',
+          metadata_json: JSON.stringify({
+            kind: 'search_area',
+            team: 'Team 1',
+            status: 'Assigned',
+            poaPercent: 35,
+            terrain: 'Rocky ground',
+            notes: null,
+            areaSqM: 100,
+            labelFontSize: 16,
+            fillColor: '#0EA5E9',
+          }),
+        }),
+      ],
+      null,
+    )
+
+    const geometry = collection.features.find((feature) => feature.properties?.featureKind === 'geometry')
+    const label = collection.features.find((feature) => feature.properties?.featureKind === 'label')
+
+    expect(geometry?.properties).toMatchObject({
+      drawingId: 'search-area-styled',
+      strokeColor: '#0EA5E9',
+      fillColor: '#0EA5E922',
+    })
+    expect(label?.properties).toMatchObject({
+      drawingId: 'search-area-styled',
+      label: 'Sector Alpha',
+      labelColor: '#0EA5E9',
+      fontSize: 16,
+    })
+  })
+
   it('creates preview line and vertex features while sketching', () => {
     const collection = createDrawingPreviewFeatureCollection(
       {

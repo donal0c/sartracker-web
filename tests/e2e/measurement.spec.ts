@@ -64,15 +64,15 @@ test.describe('M9 measurement workflows', () => {
   }) => {
     await page.getByTestId('drawing-toolbar-expand').click()
     await page.getByTestId('drawing-tool-line').click()
-    await expect(page.getByText('Active: Line')).toBeVisible()
+    await expect(page.getByTestId('drawing-toolbar-active-mode')).toContainText('Line')
 
     await page.getByTestId('measurement-arm-btn').click()
     await expect(page.getByTestId('measurement-mode')).toHaveText('armed')
-    await expect(page.getByText('Active: Select')).toBeVisible()
+    await expect(page.getByTestId('drawing-toolbar-active-mode')).toContainText('Select')
 
     await page.getByTestId('drawing-tool-search_area').click()
     await expect(page.getByTestId('measurement-mode')).toHaveText('idle')
-    await expect(page.getByText('Active: Search Area')).toBeVisible()
+    await expect(page.getByTestId('drawing-toolbar-active-mode')).toContainText('Search Area')
   })
 })
 

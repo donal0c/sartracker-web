@@ -31,6 +31,7 @@ import type {
   DrawingType,
   MarkerType,
 } from '../infrastructure/mission-store/tauri-mission-store'
+import { useDrawingStore } from '../features/drawings/drawing-store'
 import { useMeasurementStore } from '../features/measurements/measurement-store'
 import { useTrackingStore } from '../features/tracking/tracking-store'
 
@@ -316,6 +317,7 @@ function LayerInspector(props: {
 }) {
   const selectedNode = props.selectedNode
   const [aliasDraft, setAliasDraft] = useState(selectedNode?.alias ?? '')
+  const drawingController = useDrawingStore((state) => state.controller)
 
   if (selectedNode === null) {
     return <EmptyState message="Select a layer or feature from the tree above to inspect its properties." testId="layer-inspector-empty" />
@@ -325,6 +327,10 @@ function LayerInspector(props: {
   const selectedIndex = siblings.indexOf(selectedNode.id)
   const canMoveUp = selectedIndex > 0
   const canMoveDown = selectedIndex !== -1 && selectedIndex < siblings.length - 1
+  const editableDrawingId =
+    selectedNode.kind === 'feature_item' && selectedNode.entity?.type === 'drawing'
+      ? selectedNode.entity.drawing.id
+      : null
   const inspectionRows = buildLayerInspectionRows(
     selectedNode,
     {
@@ -413,6 +419,17 @@ function LayerInspector(props: {
           </label>
 
           <div className="flex gap-2">
+            {editableDrawingId !== null ? (
+              <button
+                className="sar-button px-3 py-2 text-[11px] font-semibold disabled:cursor-not-allowed disabled:opacity-40"
+                data-testid="layer-edit-drawing-btn"
+                disabled={drawingController === null}
+                onClick={() => drawingController?.beginEdit(editableDrawingId)}
+                type="button"
+              >
+                Edit Drawing
+              </button>
+            ) : null}
             <button
               className="sar-button px-3 py-2 text-[11px] font-semibold disabled:cursor-not-allowed disabled:opacity-40"
               data-testid="layer-move-up"

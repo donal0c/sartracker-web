@@ -38,6 +38,8 @@ export type SearchAreaDrawingDraft = {
   readonly team: string
   readonly status: SearchAreaStatus
   readonly poaPercent: string
+  readonly labelFontSize: string
+  readonly fillColor: string
   readonly terrain: string
   readonly notes: string
 }
@@ -109,6 +111,9 @@ export type DrawingSketchState =
 export type DrawingMetadata =
   | {
       readonly kind: 'line'
+      readonly distanceM?: number
+      readonly trueBearing?: number
+      readonly magneticBearing?: number
     }
   | {
       readonly kind: 'search_area'
@@ -118,6 +123,8 @@ export type DrawingMetadata =
       readonly terrain: string | null
       readonly notes: string | null
       readonly areaSqM: number
+      readonly labelFontSize?: number
+      readonly fillColor?: string
     }
   | {
       readonly kind: 'range_ring'

@@ -2,12 +2,11 @@ import type { Drawing } from '../../../infrastructure/mission-store/tauri-missio
 import type { TextLabelDrawingDraft } from '../drawing-types'
 import {
   parsePersistedDrawing,
+  normalizeHexColor,
   parseRequiredBearing,
   parseRequiredPositiveInteger,
   toLonLat,
 } from './shared'
-
-const HEX_COLOR_PATTERN = /^#[0-9A-F]{6}$/i
 
 /**
  * Builds the persisted payload for a text-label drawing draft.
@@ -27,7 +26,7 @@ export function buildTextLabelDrawingInput(
 
   const fontSize = parseRequiredPositiveInteger(draft.fontSize, 'Font size')
   const rotation = parseRequiredBearing(draft.rotation, 'Rotation')
-  const color = normalizeHexColor(draft.color)
+  const color = normalizeHexColor(draft.color, 'Label color')
 
   return {
     id: draft.id,
@@ -73,13 +72,4 @@ export function createTextLabelDraftFromDrawing(drawing: Drawing): TextLabelDraw
     rotation: (metadata?.rotation ?? 0).toString(),
     point: metadata?.point ?? toLonLat(geometry.coordinates),
   }
-}
-
-function normalizeHexColor(value: string): string {
-  const normalized = value.trim().toUpperCase()
-  if (!HEX_COLOR_PATTERN.test(normalized)) {
-    throw new Error('Label color must be a valid 6-digit hex value.')
-  }
-
-  return normalized
 }

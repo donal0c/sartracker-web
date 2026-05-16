@@ -39,6 +39,44 @@ test.describe('M6 marker workflows', () => {
     })
   })
 
+  test('creates a marker from a TM65 grid reference through the tools panel', async ({ page }) => {
+    await page.getByTestId('sidebar-tab-tools').click()
+    await expect(page.getByTestId('marker-at-grid-panel')).toBeVisible()
+    await page.getByTestId('marker-at-grid-type-input').selectOption('hazard')
+    await page.getByTestId('marker-at-grid-reference-input').fill('V 80011 84363')
+    await page.getByTestId('marker-at-grid-create-btn').click()
+
+    const dialog = page.getByTestId('marker-dialog')
+    await expect(dialog).toBeVisible()
+    await expect(page.getByTestId('marker-type-hazard')).toBeChecked()
+    await expect(page.getByTestId('marker-tm65-readout')).toContainText('V 80011 84363')
+
+    await page.getByTestId('marker-name-input').fill('Grid reference hazard')
+    await page.getByTestId('marker-hazard-type-input').selectOption('Water Hazard')
+    await page.getByTestId('marker-save-btn').click()
+
+    const persistedState = await page.evaluate(() => {
+      const raw = window.sessionStorage.getItem('sartracker:browser-harness')
+      return raw === null ? null : JSON.parse(raw)
+    })
+
+    expect(persistedState?.markers).toHaveLength(1)
+    expect(persistedState?.markers[0]).toMatchObject({
+      type: 'hazard',
+      name: 'Grid reference hazard',
+      hazard_type: 'Water Hazard',
+    })
+  })
+
+  test('rejects invalid marker grid references without opening the marker dialog', async ({ page }) => {
+    await page.getByTestId('sidebar-tab-tools').click()
+    await page.getByTestId('marker-at-grid-reference-input').fill('bad ref')
+    await page.getByTestId('marker-at-grid-create-btn').click()
+
+    await expect(page.getByTestId('marker-at-grid-error')).toBeVisible()
+    await expect(page.getByTestId('marker-dialog')).toBeHidden()
+  })
+
   test('edits and deletes an existing marker through the modal flow', async ({ page }) => {
     await clickMapCentre(page)
     const dialog = page.getByTestId('marker-dialog')

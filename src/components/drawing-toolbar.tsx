@@ -38,26 +38,23 @@ export function DrawingToolbar() {
     >
       {expanded ? (
         <div className="max-h-[calc(100vh-20rem)] w-[8.75rem] overflow-y-auto p-3">
-          <div className="space-y-2">
+          <button
+            aria-expanded="true"
+            className="w-full text-left"
+            data-testid="drawing-toolbar-collapse"
+            onClick={() => setExpanded(false)}
+            type="button"
+          >
             <div>
               <p className="text-[10px] font-black uppercase tracking-[0.24em] text-amber-200">Drawing Tools</p>
-              <p className="mt-1 font-mono text-[10px] font-bold uppercase tracking-[0.12em] text-stone-500">
-                {disabled ? 'mission required' : 'armed'}
+              <p
+                className="mt-1 font-mono text-[10px] font-bold uppercase tracking-[0.12em] text-stone-300"
+                data-testid="drawing-toolbar-active-mode"
+              >
+                {disabled ? 'Mission required' : activeDefinition?.label ?? 'Select'}
               </p>
             </div>
-            <button
-              className="sar-button w-full px-2 py-1.5 text-[10px] font-bold uppercase tracking-[0.1em]"
-              data-testid="drawing-toolbar-collapse"
-              onClick={() => setExpanded(false)}
-              type="button"
-            >
-              Collapse
-            </button>
-          </div>
-
-          <div className="mt-3 border border-[var(--sar-line)] bg-[var(--sar-panel-sunken)] px-2 py-2 text-center text-[10px] font-black uppercase tracking-[0.16em] text-stone-100">
-            Active: {activeDefinition?.label ?? 'Select'}
-          </div>
+          </button>
 
           <div className="mt-3 grid gap-2">
             {DRAWING_TOOL_OPTIONS.map((option) => {
@@ -108,13 +105,17 @@ export function DrawingToolbar() {
       ) : (
         <button
           className="flex items-center gap-3 px-4 py-3"
+          aria-expanded="false"
           data-testid="drawing-toolbar-expand"
           onClick={() => setExpanded(true)}
           type="button"
         >
           <span className="text-[10px] font-black uppercase tracking-[0.24em] text-amber-200">Drawing Tools</span>
-          <span className="border border-[var(--sar-line)] bg-[var(--sar-panel-raised)] px-3 py-1 text-[11px] font-bold uppercase tracking-[0.14em] text-stone-200">
-            Active: {activeDefinition?.label ?? 'Select'}
+          <span
+            className="border border-[var(--sar-line)] bg-[var(--sar-panel-raised)] px-3 py-1 text-[11px] font-bold uppercase tracking-[0.14em] text-stone-200"
+            data-testid="drawing-toolbar-active-mode"
+          >
+            {activeDefinition?.label ?? 'Select'}
           </span>
           <svg className="h-4 w-4 text-stone-400" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
             <path d="M19 9l-7 7-7-7" strokeLinecap="round" strokeLinejoin="round" />

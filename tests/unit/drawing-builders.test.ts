@@ -12,7 +12,7 @@ import {
 } from '../../src/features/drawings/drawing-builders'
 
 describe('drawing builders', () => {
-  it('builds persisted line input with computed distance label', () => {
+  it('builds persisted line input with computed distance and bearing labels', () => {
     const input = buildDrawingInput({
       missionId: 'mission-1',
       displayOrder: 1,
@@ -28,9 +28,17 @@ describe('drawing builders', () => {
     expect(input.type).toBe('line')
     expect(input.distance_m).toBeGreaterThan(1000)
     expect(input.label).toContain('km')
+    expect(input.label).toContain('°T')
+    expect(input.label).toContain('°M')
+    expect(JSON.parse(input.metadata_json ?? '{}')).toMatchObject({
+      kind: 'line',
+      distanceM: expect.any(Number),
+      trueBearing: expect.any(Number),
+      magneticBearing: expect.any(Number),
+    })
   })
 
-  it('builds search area input with metadata and polygon geometry', () => {
+  it('builds search area input with metadata, polygon geometry, and operator styling', () => {
     const input = buildDrawingInput({
       missionId: 'mission-1',
       displayOrder: 2,
@@ -43,12 +51,21 @@ describe('drawing builders', () => {
         name: 'Area Alpha',
         team: 'Team 1',
         poaPercent: '45',
+        labelFontSize: '16',
+        fillColor: '#0EA5E9',
       },
     })
 
     expect(input.type).toBe('search_area')
-    expect(input.metadata_json).toContain('"team":"Team 1"')
+    expect(input.color).toBe('#0EA5E9')
     expect(input.geometry_json).toContain('"Polygon"')
+    expect(JSON.parse(input.metadata_json ?? '{}')).toMatchObject({
+      kind: 'search_area',
+      team: 'Team 1',
+      poaPercent: 45,
+      labelFontSize: 16,
+      fillColor: '#0EA5E9',
+    })
   })
 
   it('builds LPB range rings using the locked category data', () => {

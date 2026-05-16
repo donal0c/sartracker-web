@@ -34,6 +34,8 @@ export function createSearchAreaDraft(points: readonly LonLat[]): SearchAreaDraw
     team: '',
     status: 'Planned',
     poaPercent: '',
+    labelFontSize: '12',
+    fillColor: '#F59E0B',
     terrain: '',
     notes: '',
   }

@@ -1,5 +1,5 @@
 import type { Drawing } from '../../../infrastructure/mission-store/tauri-mission-store'
-import { formatDistance, geodesicDistance } from '../drawing-math'
+import { formatDistance, geodesicBearing, geodesicDistance, trueToMagnetic } from '../drawing-math'
 import type { LineDrawingDraft } from '../drawing-types'
 import {
   assertValidName,
@@ -20,6 +20,8 @@ export function buildLineDrawingInput(
   assertValidName(draft.name)
   const coordinates = draft.points.map(toMutableCoordinate)
   const distanceM = totalDistance(draft.points)
+  const trueBearing = lineEndpointBearing(draft.points)
+  const magneticBearing = trueToMagnetic(trueBearing)
 
   return {
     id: draft.id,
@@ -34,9 +36,12 @@ export function buildLineDrawingInput(
     } satisfies GeoJSON.LineString),
     metadata_json: JSON.stringify({
       kind: 'line',
+      distanceM,
+      trueBearing,
+      magneticBearing,
     }),
     distance_m: distanceM,
-    label: formatDistance(distanceM),
+    label: formatLineLabel(distanceM, trueBearing, magneticBearing),
   }
 }
 
@@ -69,4 +74,18 @@ function totalDistance(points: readonly (readonly [number, number])[]): number {
   }
 
   return distance
+}
+
+function lineEndpointBearing(points: readonly (readonly [number, number])[]): number {
+  const first = points[0]
+  const last = points.at(-1)
+  if (first === undefined || last === undefined || first === last) {
+    throw new Error('Lines require distinct start and end points.')
+  }
+
+  return geodesicBearing(first[0], first[1], last[0], last[1])
+}
+
+function formatLineLabel(distanceM: number, trueBearing: number, magneticBearing: number): string {
+  return `${formatDistance(distanceM)} @ ${trueBearing.toFixed(1)}°T / ${magneticBearing.toFixed(1)}°M`
 }
