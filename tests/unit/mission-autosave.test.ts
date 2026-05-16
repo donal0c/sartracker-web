@@ -159,6 +159,52 @@ describe('mission autosave', () => {
     ).toContain('Autosave stale')
   })
 
+  it('keeps lifecycle sync failures visible after unrelated sync successes', () => {
+    useAutosaveStatusStore.getState().configure({
+      enabled: true,
+      intervalMs: 10_000,
+      now: new Date('2026-05-16T09:00:00.000Z'),
+    })
+    useAutosaveStatusStore.getState().markSyncFailed({
+      reason: 'mission-finish',
+      message: 'backup target unavailable',
+      now: new Date('2026-05-16T09:00:01.000Z'),
+    })
+
+    useAutosaveStatusStore.getState().markSyncSucceeded({
+      reason: 'interval',
+      backupPath: '/tmp/mission.sqlite',
+      now: new Date('2026-05-16T09:00:10.000Z'),
+    })
+
+    expect(useAutosaveStatusStore.getState().lastFailure?.reason).toBe('mission-finish')
+    expect(selectAutosaveWarning(useAutosaveStatusStore.getState())).toContain(
+      'backup target unavailable',
+    )
+  })
+
+  it('clears a lifecycle sync failure after the matching lifecycle sync succeeds', () => {
+    useAutosaveStatusStore.getState().configure({
+      enabled: true,
+      intervalMs: 10_000,
+      now: new Date('2026-05-16T09:00:00.000Z'),
+    })
+    useAutosaveStatusStore.getState().markSyncFailed({
+      reason: 'mission-finish',
+      message: 'backup target unavailable',
+      now: new Date('2026-05-16T09:00:01.000Z'),
+    })
+
+    useAutosaveStatusStore.getState().markSyncSucceeded({
+      reason: 'mission-finish',
+      backupPath: '/tmp/mission.sqlite',
+      now: new Date('2026-05-16T09:00:10.000Z'),
+    })
+
+    expect(useAutosaveStatusStore.getState().lastFailure).toBeNull()
+    expect(selectAutosaveWarning(useAutosaveStatusStore.getState())).toBeNull()
+  })
+
   it('attempts a final sync when the page is hidden', async () => {
     const store = {
       getActiveMission: vi.fn().mockResolvedValue({ id: 'm-1' }),

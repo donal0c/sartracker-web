@@ -46,6 +46,17 @@ type AutosaveSyncFailedInput = {
   readonly now?: Date
 }
 
+const LIFECYCLE_SYNC_REASONS = new Set<AutosaveSyncReason>([
+  'mission-start',
+  'mission-pause',
+  'mission-resume',
+  'mission-finish',
+  'mission-recover-resume',
+  'mission-start-fresh',
+  'mission-finalize',
+  'mission-unlock',
+])
+
 export type AutosaveStatusState = {
   readonly phase: AutosavePhase
   readonly enabled: boolean
@@ -100,14 +111,17 @@ export const useAutosaveStatusStore = create<AutosaveStatusState>((set) => ({
       lastAttemptAt: toIso(input.now),
     }),
   markSyncSucceeded: (input) =>
-    set({
-      phase: 'synced',
-      enabled: true,
-      lastAttemptAt: toIso(input.now),
-      lastSuccessAt: toIso(input.now),
-      lastSuccessReason: input.reason,
-      lastBackupPath: input.backupPath,
-      lastFailure: null,
+    set((state) => {
+      const lastFailure = selectRemainingFailure(state.lastFailure, input.reason)
+      return {
+        phase: lastFailure === null ? 'synced' : 'failed',
+        enabled: true,
+        lastAttemptAt: toIso(input.now),
+        lastSuccessAt: toIso(input.now),
+        lastSuccessReason: input.reason,
+        lastBackupPath: input.backupPath,
+        lastFailure,
+      }
     }),
   markSyncFailed: (input) =>
     set({
@@ -156,6 +170,22 @@ export function selectAutosaveWarning(
 /** Returns the provided time, or the current wall-clock time, as an ISO timestamp. */
 function toIso(now?: Date): string {
   return (now ?? new Date()).toISOString()
+}
+
+/** Preserves lifecycle-specific failures until the matching lifecycle write succeeds. */
+function selectRemainingFailure(
+  lastFailure: AutosaveFailure | null,
+  successReason: AutosaveSyncReason,
+): AutosaveFailure | null {
+  if (lastFailure === null) {
+    return null
+  }
+
+  if (!LIFECYCLE_SYNC_REASONS.has(lastFailure.reason)) {
+    return null
+  }
+
+  return lastFailure.reason === successReason ? null : lastFailure
 }
 
 /** Formats an ISO timestamp for compact mast and warning copy. */
