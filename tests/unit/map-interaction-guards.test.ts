@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import {
+  createMapPanClickGuard,
   isPointInsideMapContainer,
   shouldIgnoreMapInteraction,
 } from '../../src/features/map/map-interaction-guards'
@@ -91,5 +92,26 @@ describe('map interaction guards', () => {
         { left: 100, right: 300, top: 50, bottom: 250 },
       ),
     ).toBe(false)
+  })
+
+  it('does not suppress a deliberate click with small pointer jitter', () => {
+    const guard = createMapPanClickGuard()
+
+    guard.recordPointerDown({ x: 200, y: 120 })
+    guard.recordPointerMove({ x: 202, y: 123 })
+    guard.recordPointerUp()
+
+    expect(guard.consumeClickSuppression()).toBe(false)
+  })
+
+  it('suppresses exactly one click after pointer movement crosses the pan threshold', () => {
+    const guard = createMapPanClickGuard()
+
+    guard.recordPointerDown({ x: 200, y: 120 })
+    guard.recordPointerMove({ x: 212, y: 128 })
+    guard.recordPointerUp()
+
+    expect(guard.consumeClickSuppression()).toBe(true)
+    expect(guard.consumeClickSuppression()).toBe(false)
   })
 })

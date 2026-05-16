@@ -5,6 +5,7 @@ import { findNearestDrawingId } from '../drawings/drawing-hit-testing'
 import { useDrawingStore } from '../drawings/drawing-store'
 import { useMissionStore } from '../mission/mission-store'
 import {
+  createMapPanClickGuard,
   getInteractiveDrawingLayerIds,
   isPointInsideMapContainer,
   resolveClickedDrawingId,
@@ -49,6 +50,20 @@ export function useMapDrawingInteractions(
   }, [activeTool, options.mapRef])
 
   useEffect(() => {
+    const map = options.mapRef.current
+    if (map === null) {
+      return
+    }
+
+    const canvas = map.getCanvas()
+    canvas.style.cursor = activeTool === 'select' ? '' : 'crosshair'
+
+    return () => {
+      canvas.style.cursor = ''
+    }
+  }, [activeTool, options.mapRef])
+
+  useEffect(() => {
     if (controller === null) {
       return
     }
@@ -79,6 +94,8 @@ export function useMapDrawingInteractions(
       return
     }
 
+    const panClickGuard = createMapPanClickGuard()
+
     const resolveMapPoint = (event: MouseEvent) => {
       const containerBounds = mapContainer.getBoundingClientRect()
       if (
@@ -99,11 +116,43 @@ export function useMapDrawingInteractions(
       }
     }
 
+    const handlePointerDown = (event: PointerEvent) => {
+      if (event.button !== 0) {
+        panClickGuard.cancel()
+        return
+      }
+
+      const resolved = resolveMapPoint(event)
+      if (resolved === null) {
+        panClickGuard.cancel()
+        return
+      }
+
+      panClickGuard.recordPointerDown(resolved.point)
+    }
+
+    const handlePointerMove = (event: PointerEvent) => {
+      const resolved = resolveMapPoint(event)
+      if (resolved === null) {
+        return
+      }
+
+      panClickGuard.recordPointerMove(resolved.point)
+    }
+
+    const handlePointerUp = () => {
+      panClickGuard.recordPointerUp()
+    }
+
     const handleClick = (event: MouseEvent) => {
       if (
         interactionMode === 'measurement_armed' ||
         shouldIgnoreDrawingMapClick(currentMissionId, missionPhase, event.target)
       ) {
+        return
+      }
+
+      if (panClickGuard.consumeClickSuppression()) {
         return
       }
 
@@ -188,11 +237,17 @@ export function useMapDrawingInteractions(
       controller.completeSketch()
     }
 
+    window.addEventListener('pointerdown', handlePointerDown, true)
+    window.addEventListener('pointermove', handlePointerMove, true)
+    window.addEventListener('pointerup', handlePointerUp, true)
     window.addEventListener('click', handleClick, true)
     window.addEventListener('dblclick', handleDoubleClick, true)
     window.addEventListener('contextmenu', handleContextMenu, true)
 
     return () => {
+      window.removeEventListener('pointerdown', handlePointerDown, true)
+      window.removeEventListener('pointermove', handlePointerMove, true)
+      window.removeEventListener('pointerup', handlePointerUp, true)
       window.removeEventListener('click', handleClick, true)
       window.removeEventListener('dblclick', handleDoubleClick, true)
       window.removeEventListener('contextmenu', handleContextMenu, true)

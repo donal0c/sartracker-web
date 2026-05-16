@@ -631,7 +631,8 @@
           <p>
             Markers are map records for incident planning and field evidence. Click the map during an
             active mission to create a marker, then complete the marker form. Existing markers can be
-            selected from the map or inspected through the mission review and layer surfaces.
+            selected from the map or inspected through the mission review and layer surfaces. Dragging
+            the map pans the view and does not create a marker.
           </p>
           <div class="card-grid">
             <div class="card"><strong>IPP / LKP</strong><br />Initial or last known position with subject category.</div>
@@ -648,7 +649,8 @@
           <p>
             Drawing tools are armed from the map toolbar. They require an active mission and are disabled
             during recovery. Only one drawing or measurement mode should be active at a time; arming one
-            cancels the other.
+            cancels the other. Armed placement tools show a crosshair cursor; drag to pan without placing
+            a drawing, then click intentionally to place.
           </p>
           <figure class="screenshot">
             <img src="assets/tools-and-map.png" alt="Drawing tools expanded next to map and measurement panel" />
@@ -672,6 +674,10 @@
           <div class="callout">
             Bearing conversion uses the Ireland magnetic declination rule documented for this project:
             true to magnetic subtracts 4.5 degrees; magnetic to true adds 4.5 degrees.
+          </div>
+          <div class="callout">
+            Text labels render as text only. Range rings render as clean ring lines. Use the Layers
+            workspace to hide drawing types or individual drawings when the map needs less visual load.
           </div>
         </section>
 

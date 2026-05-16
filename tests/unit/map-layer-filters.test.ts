@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import {
   buildDrawingVisibilitySummary,
+  buildDrawingLayerFilter,
   buildMarkerLayerFilter,
   buildTrackingLayerFilter,
 } from '../../src/features/layers/map-layer-filters'
@@ -51,6 +52,30 @@ describe('map layer filter helpers', () => {
       visibleCount: 0,
       totalCount: 2,
     })
+  })
+
+  it('keeps drawing labels and geometry aligned with type and item visibility', () => {
+    const visibility = {
+      line: true,
+      search_area: true,
+      range_ring: true,
+      bearing_line: true,
+      search_sector: true,
+      text_label: false,
+    }
+
+    expect(buildDrawingLayerFilter(visibility, ['drawing-2'], 'label')).toEqual([
+      'all',
+      ['==', ['get', 'featureKind'], 'label'],
+      ['in', ['get', 'drawingType'], ['literal', [
+        'line',
+        'search_area',
+        'range_ring',
+        'bearing_line',
+        'search_sector',
+      ]]],
+      ['!', ['in', ['get', 'drawingId'], ['literal', ['drawing-2']]]],
+    ])
   })
 })
 

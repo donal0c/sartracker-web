@@ -98,12 +98,13 @@ export function createDrawingFeatureCollection(
       parsed.parsedGeometry.coordinates.forEach((coordinates, index) => {
         const ringStroke = metadata?.colors[index] ?? strokeColor
         const ringLabel = metadata?.labels[index] ?? label
+        const outerRing = coordinates[0] ?? []
         features.push(
           createGeometryFeature({
             drawing,
             geometry: {
-              type: 'Polygon',
-              coordinates,
+              type: 'LineString',
+              coordinates: outerRing,
             },
             strokeColor: ringStroke,
             fillColor: `${ringStroke}12`,
@@ -139,17 +140,19 @@ export function createDrawingFeatureCollection(
       continue
     }
 
-    features.push(
-      createGeometryFeature({
-        drawing,
-        geometry: parsed.parsedGeometry,
-        strokeColor,
-        fillColor,
-        label,
-        width,
-        selected: isSelected,
-      }),
-    )
+    if (drawing.type !== 'text_label') {
+      features.push(
+        createGeometryFeature({
+          drawing,
+          geometry: parsed.parsedGeometry,
+          strokeColor,
+          fillColor,
+          label,
+          width,
+          selected: isSelected,
+        }),
+      )
+    }
 
     const labelCoordinate = resolveLabelCoordinate(parsed)
     if (labelCoordinate !== null) {

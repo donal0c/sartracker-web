@@ -4,7 +4,7 @@
 
 ## Last Updated
 
-- 2026-05-16 by Codex — Hosted verification follow-up fixes deployed and live-verified; Ned/Eamonn team feedback triaged into A3 beads.
+- 2026-05-16 by Codex — A3.1/A3.2 shipped locally: pan no longer places map objects, text labels render without marker dots, range rings render as line rings, and drawing layer toggles were browser-checked.
 
 ## Operating Rule
 
@@ -65,7 +65,8 @@ Supporting docs may explain details, but they must not become separate queues. T
   - alias: `https://sartracker-web.vercel.app`
   - live verification artifact: `test-results/live-verification-2026-05-16T12-18-59-773Z/evidence.json`
   - validated 48h hosted mission, Vercel Traccar proxy, 18 devices, 14 current fixes, 14,575 breadcrumb points, reload/reconnect honesty, finish-to-idle tracking state, and no quota failures.
-- Ned/Eamonn's 2026-05-16 feedback email is folded into the canonical workplan as A3. The email screenshots were used for triage only and deleted; the durable source of truth is the A3 workplan/beads. The urgent items are accidental placement while panning and text-label/sector rendering/layer visibility.
+- Ned/Eamonn's 2026-05-16 feedback emails are folded into the canonical workplan as A3. The email screenshots were used for triage only and deleted; the durable source of truth is the A3 workplan/beads. The urgent items are accidental placement while panning and drawing rendering/layer visibility across text labels, sectors, search areas, and range rings.
+- A3.1/A3.2 are complete locally. Map click-vs-drag suppression is covered by unit tests and inbuilt-browser verification; armed drawing tools show a crosshair cursor, while panning no longer creates marker/drawing dialogs. Text labels are label-only map features, range rings render as line features, and drawing type/item visibility filters cover label and geometry features.
 
 ## Traccar Test Details
 
@@ -92,17 +93,18 @@ Use these only for team testing, not as a production secret model.
 
 Default next task when the user says “go” or “work on the next task”:
 
-1. `A3.1: Prevent Accidental Map Placement While Panning` in `docs/two-track-execution-workplan.md`
-2. Bead: `sartracker-web-6y3.1`
-3. Goal: make pan vs placement unmistakable so testers cannot accidentally create/edit map objects while moving the map.
-4. Then do `A3.2: Fix Text Label And Sector Rendering/Layer Visibility` (`sartracker-web-6y3.2`) before returning to R8/R9/S3 unless the user explicitly redirects.
+1. `A3.8: Improve Drawing Labels, Styles, And Delete Flow` in `docs/two-track-execution-workplan.md`
+2. Bead: `sartracker-web-6y3.8`
+3. Goal: make saved drawings more informative and easier to correct, including line distance/bearing labels, clearer endpoint indication, search-area styling controls, and a more obvious delete flow for misplaced drawings.
+4. Then do `A3.3: Simplify Map And Drawing Tool Chrome` (`sartracker-web-6y3.3`) unless the user explicitly redirects to Marker at GR or Tauri beta work.
 
 ## Open Beads That Matter Now
 
 - `sartracker-web-vpz` — Hosted browser testing mode and parity hardening.
 - `sartracker-web-6y3` — A3 team feedback remediation batch.
-- `sartracker-web-6y3.1` — A3.1 prevent accidental map placement while panning.
-- `sartracker-web-6y3.2` — A3.2 fix text label and sector rendering/layer visibility.
+- `sartracker-web-6y3.8` — A3.8 improve drawing labels, styles, and delete flow.
+- `sartracker-web-6y3.3` — A3.3 simplify map and drawing tool chrome.
+- `sartracker-web-6y3.7` — A3.7 add Marker at Grid Reference workflow.
 - `sartracker-web-977` — R8 add Tauri beta Gatekeeper guidance.
 - `sartracker-web-ahp` — R9 add checked-in boot/fault/autosave UI regression coverage.
 
@@ -127,3 +129,4 @@ Most recent completed verification:
 - Targeted final visual rerun passed for app shell and drawing overlays: 9 visual tests.
 - Independent visual re-review passed the corrected screenshots for drawing toolbar, coordinate bar, focus mode, marker dialogs, and multi-drawing map evidence.
 - Vercel production alias was redeployed and live-verified at `https://sartracker-web.vercel.app/?missionHarness=1` with mission `Live Fix Verification 2026-05-16T12-18-59-773Z`: 48h offset accepted, hosted mode/status honesty visible, `/api/session` and `/api/devices` returned 200, `/api/devices` returned 18 devices, `/api/positions` returned 14 current fixes, per-device breadcrumb requests returned 14,575 points, browser harness persisted 1,998 capped positions without quota errors, reload required re-entering the memory-only Traccar password, reconnect restored online tracking, and finish returned tracking to idle with zero visible counts.
+- Local A3.1/A3.2 verification passed 2026-05-16: `npm run test` (87 files, 425 tests), `npm run lint`, `npm run build`, `npm run test:backend` (38 Rust tests), and inbuilt-browser checks at `http://127.0.0.1:1420/?missionHarness=1`. Browser evidence confirmed marker/drawing drag did not open placement dialogs, deliberate clicks still did, the drawing cursor changed to crosshair, range rings/text labels were created, and range-ring/text-label layer toggles were present and hideable. Screenshot: `test-results/a3-map-drawing-verification/drawing-layer-toggle-hidden.png`.

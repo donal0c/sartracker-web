@@ -5,6 +5,7 @@ import {
   getMarkerSymbolLayerId,
 } from '../markers/sync-marker-overlay'
 import {
+  createMapPanClickGuard,
   isPointInsideMapContainer,
   shouldIgnoreMapInteraction,
 } from './map-interaction-guards'
@@ -50,4 +51,4 @@ export function resolveClickedMarkerId(
   return typeof renderedMarkerId === 'string' ? renderedMarkerId : nearestMarkerId
 }
 
-export { isPointInsideMapContainer }
+export { createMapPanClickGuard, isPointInsideMapContainer }

@@ -8,6 +8,7 @@ import {
   DRAWING_POINT_LAYER_ID,
 } from '../drawings/sync-drawing-overlay'
 import {
+  createMapPanClickGuard,
   isPointInsideMapContainer,
   shouldIgnoreMapInteraction,
 } from './map-interaction-guards'
@@ -41,4 +42,4 @@ export function resolveClickedDrawingId(renderedDrawingId: unknown): string | nu
   return typeof renderedDrawingId === 'string' ? renderedDrawingId : null
 }
 
-export { isPointInsideMapContainer }
+export { createMapPanClickGuard, isPointInsideMapContainer }

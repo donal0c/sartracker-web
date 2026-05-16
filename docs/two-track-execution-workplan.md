@@ -95,9 +95,11 @@ This is the default order when the user says “work on the next task.”
 | Done | R6: Roll Back Core Runtimes When Initial Settings Reload Fails | Shared | `sartracker-web-10q` | Done 2026-05-16 |
 | Done | R7: Harden Runtime Fault Reload Flow | Shared / Track A | `sartracker-web-syi` | Done 2026-05-16 |
 | Done | Hosted Verification Follow-up Fixes | Track A / Shared | `sartracker-web-vpz` | Deployed and live-verified 2026-05-16 |
-| 1 | A3.1: Prevent Accidental Map Placement While Panning | Track A / Shared | `sartracker-web-6y3.1` | Ready |
-| 2 | A3.2: Fix Text Label And Sector Rendering/Layer Visibility | Track A / Shared | `sartracker-web-6y3.2` | Ready |
-| 3 | A3.3: Simplify Map And Drawing Tool Chrome | Track A | `sartracker-web-6y3.3` | Ready after A3.1/A3.2 preferred |
+| Done | A3.1: Prevent Accidental Map Placement While Panning | Track A / Shared | `sartracker-web-6y3.1` | Done 2026-05-16 |
+| Done | A3.2: Fix Drawing Rendering And Layer Visibility | Track A / Shared | `sartracker-web-6y3.2` | Done 2026-05-16 |
+| 1 | A3.8: Improve Drawing Labels, Styles, And Delete Flow | Track A | `sartracker-web-6y3.8` | Ready |
+| 2 | A3.3: Simplify Map And Drawing Tool Chrome | Track A | `sartracker-web-6y3.3` | Ready after A3.1/A3.2 preferred |
+| 3 | A3.7: Add Marker At Grid Reference Workflow | Track A / Parity | `sartracker-web-6y3.7` | Ready |
 | 4 | R8: Add Tauri Beta Gatekeeper Guidance | Track B / Docs | `sartracker-web-977` | Before beta artifact sharing |
 | 5 | R9: Add Checked-In Boot/Fault/Autosave UI Regression Coverage | Verification | `sartracker-web-ahp` | Ready |
 | 6 | R10: Compress Handoff And Annotate Historical Docs | Process / Docs | `sartracker-web-419` | Ready |
@@ -113,7 +115,8 @@ This is the default order when the user says “work on the next task.”
 | 16 | B4: GPX And Drawing Hit-Test Hardening | Track B | Create/update bead before starting | Ready |
 | 17 | A3.5: Add Operational Contrast/Theme Pass | Track A / UI | `sartracker-web-6y3.5` | Planned, not urgent |
 | 18 | A3.6: Move Static Operational Notes Out Of Primary Map Chrome | Track A / UI | `sartracker-web-6y3.6` | Planned, keep warnings visible |
-| 19 | C1: Local Proprietary Map Package Requirements | Track B / Maps | Create/update bead before starting | Waiting for map facts |
+| 19 | A3.9: Add Configurable Weather Links Menu | Track A / UI | `sartracker-web-6y3.9` | Planned, external links only |
+| 20 | C1: Local Proprietary Map Package Requirements | Track B / Maps | Create/update bead before starting | Waiting for map facts |
 
 ## Ready Work Chunks
 
@@ -207,7 +210,10 @@ Parent bead: `sartracker-web-6y3`
 
 Goal: convert raw feedback into actionable chunks and beads.
 
-Latest source: Ned/Eamonn email `Sartracker`, received 2026-05-16. The email screenshots were used for triage only and are not retained as source-of-truth artifacts.
+Latest sources:
+
+- Ned/Eamonn email `Sartracker`, received 2026-05-16 12:48. The email screenshots were used for triage only and are not retained as source-of-truth artifacts.
+- Ned/Eamonn email `Sartracker`, received 2026-05-16 13:33. Requests: Marker at GR, Weather links menu, line distance/bearing labels, range-ring clean rendering/layer hiding, drawing delete flow, and search-area styling/clean rendering/layer hiding. The email screenshots were used for triage only and are not retained as source-of-truth artifacts.
 
 Tasks:
 
@@ -256,10 +262,10 @@ Acceptance:
 
 Verification:
 
-- Unit or integration coverage for click-vs-drag gating where practical.
-- Browser-backed map interaction check showing pan does not place an item and click does.
+- Done 2026-05-16: unit coverage for click-vs-drag suppression in `tests/unit/map-interaction-guards.test.ts`.
+- Done 2026-05-16: inbuilt-browser check at `http://127.0.0.1:1420/?missionHarness=1` confirmed map drag did not open marker/drawing dialogs, intentional clicks still opened them, and armed drawing tools showed a crosshair cursor.
 
-### A3.2: Fix Text Label And Sector Rendering/Layer Visibility
+### A3.2: Fix Drawing Rendering And Layer Visibility
 
 Bead: `sartracker-web-6y3.2`
 
@@ -269,20 +275,21 @@ Tasks:
 
 - Fix text-label rendering so saved text labels do not appear as ordinary round marker dots.
 - Keep text label text, color, size, and rotation visible/editable in a clear way.
-- Fix search-sector rendering so outer arc vertex points/spurious points are not visible unless deliberately part of edit/preview state.
-- Confirm text labels and search sectors hide by type and by item through the layer panel.
+- Fix search-sector and search-area rendering so outer arc/outline vertex points and spurious points are not visible unless deliberately part of edit/preview state.
+- Fix range-ring rendering so LPB/manual rings can render as simple clean lines without persistent marker dots.
+- Confirm text labels, search sectors, search areas, and range rings hide by type and by item through the layer panel.
 - Capture before/after browser evidence for the same classes of examples described by Ned/Eamonn.
 
 Acceptance:
 
 - Text labels render as text, not marker dots.
-- Search sectors render as clean sector geometry.
-- Layer visibility controls hide text labels and sectors predictably.
+- Search sectors, search areas, and range rings render as clean operational geometry.
+- Layer visibility controls hide the affected drawing types predictably.
 
 Verification:
 
-- Unit tests around drawing GeoJSON/filter behavior where practical.
-- Browser-backed visual check with text labels, sectors, and layer hide/show.
+- Done 2026-05-16: unit coverage in `tests/unit/drawing-geojson.test.ts` and `tests/unit/map-layer-filters.test.ts` confirms text labels are label-only, range rings render as line features, and drawing label/geometry filters respect type/item visibility.
+- Done 2026-05-16: inbuilt-browser check at `http://127.0.0.1:1420/?missionHarness=1` created range rings and a text label, expanded the Layers workspace, and confirmed range-ring/text-label layer visibility toggles. Evidence screenshot: `test-results/a3-map-drawing-verification/drawing-layer-toggle-hidden.png`.
 
 ### A3.3: Simplify Map And Drawing Tool Chrome
 
@@ -375,6 +382,82 @@ Acceptance:
 Verification:
 
 - Browser-backed hosted-mode and Focus Mode checks.
+
+### A3.7: Add Marker At Grid Reference Workflow
+
+Bead: `sartracker-web-6y3.7`
+
+Goal: add the QGIS-style marker entry path where an operator can place a marker from a TM65 Irish Grid reference instead of clicking the map.
+
+Tasks:
+
+- Add a `Marker at GR` entry path near the normal marker workflow.
+- Let the operator choose marker type before or during the grid-reference entry.
+- Validate TM65 Irish Grid references with clear errors.
+- Convert the grid reference using the existing coordinate utilities and continue into the normal marker form with coordinates prefilled.
+- Keep coordinate semantics explicit: TM65 is display/input support; ITM remains the working CRS and WGS84 remains map display/GPS.
+
+Acceptance:
+
+- A valid TM65 grid reference opens the normal marker form with the converted coordinates prefilled.
+- Invalid references fail visibly and do not create a marker.
+- The flow is covered by tests at the coordinate/validation seam and browser-backed UI verification.
+
+Verification:
+
+- Unit tests for accepted/rejected grid-reference inputs.
+- Browser-backed marker-at-GR success and invalid-input checks.
+
+### A3.8: Improve Drawing Labels, Styles, And Delete Flow
+
+Bead: `sartracker-web-6y3.8`
+
+Goal: make saved drawings more informative and easier to correct when placed in the wrong location.
+
+Tasks:
+
+- Add distance and bearing information to line drawings where useful.
+- Show a clear indication of where a line is drawn to.
+- Add useful search-area label font-size and fill-colour controls without overloading the form.
+- Provide an obvious delete flow for user-created drawings/layer items such as misplaced range rings.
+- Keep destructive actions confirmed and auditable where they mutate mission data.
+
+Acceptance:
+
+- Line drawings can show distance and bearing.
+- Search areas have useful style controls.
+- Misplaced user-created drawings can be deleted through an obvious edit/layer flow.
+- Drawing persistence and mission mutability rules remain intact.
+
+Verification:
+
+- Unit coverage for any new drawing metadata/persistence shaping.
+- Browser-backed line, search-area, range-ring, and delete-flow checks.
+
+### A3.9: Add Configurable Weather Links Menu
+
+Bead: `sartracker-web-6y3.9`
+
+Goal: give operators quick access to external weather resources without pretending the app has a built-in weather integration.
+
+Tasks:
+
+- Add Settings support for a small list of named weather URLs.
+- Add a compact `Weather` control in a sensible top-panel location.
+- Open selected weather links safely.
+- Reject invalid URLs with clear copy.
+- Treat this as external links for now; do not fetch/weather-normalize data inside the app unless a later bead expands the requirement.
+
+Acceptance:
+
+- Operators can configure and open named weather links such as `https://www.met.ie/`.
+- Empty state is clear when no weather links are configured.
+- Invalid URLs are rejected before save/use.
+
+Verification:
+
+- Unit coverage for URL validation/config shaping.
+- Browser-backed configured, empty, and invalid states.
 
 ### B1: Tauri Beta Packaging Recon
 

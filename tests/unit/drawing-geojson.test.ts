@@ -33,7 +33,7 @@ describe('drawing geojson', () => {
     expect(collection.features[1]?.properties?.label).toBe('1.57 km')
   })
 
-  it('creates one polygon feature per LPB ring plus labels', () => {
+  it('creates one line feature per LPB ring plus labels', () => {
     const collection = createDrawingFeatureCollection(
       [
         createDrawing({
@@ -60,8 +60,48 @@ describe('drawing geojson', () => {
       null,
     )
 
-    expect(collection.features.filter((feature) => feature.geometry.type === 'Polygon')).toHaveLength(2)
+    expect(collection.features.filter((feature) => feature.geometry.type === 'LineString')).toHaveLength(2)
+    expect(collection.features.filter((feature) => feature.geometry.type === 'Polygon')).toHaveLength(0)
     expect(collection.features.filter((feature) => feature.geometry.type === 'Point')).toHaveLength(2)
+  })
+
+  it('creates text labels as label-only point features so the visible point layer does not draw a marker dot', () => {
+    const collection = createDrawingFeatureCollection(
+      [
+        createDrawing({
+          id: 'text-label',
+          type: 'text_label',
+          name: 'Landing Zone',
+          color: '#FFCC00',
+          geometry_json: JSON.stringify({
+            type: 'Point',
+            coordinates: [-9.7, 52.0],
+          }),
+          metadata_json: JSON.stringify({
+            kind: 'text_label',
+            text: 'Landing Zone',
+            fontSize: 18,
+            color: '#FFCC00',
+            rotation: 25,
+            point: [-9.7, 52.0],
+          }),
+          label: 'Landing Zone',
+        }),
+      ],
+      null,
+    )
+
+    expect(collection.features).toHaveLength(1)
+    expect(collection.features[0]?.geometry.type).toBe('Point')
+    expect(collection.features[0]?.properties?.featureKind).toBe('label')
+    expect(collection.features[0]?.properties).toMatchObject({
+      drawingId: 'text-label',
+      drawingType: 'text_label',
+      label: 'Landing Zone',
+      labelColor: '#FFCC00',
+      fontSize: 18,
+      rotation: 25,
+    })
   })
 
   it('creates preview line and vertex features while sketching', () => {

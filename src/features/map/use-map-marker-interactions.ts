@@ -5,6 +5,7 @@ import { useMissionStore } from '../mission/mission-store'
 import { findNearestMarkerId } from '../markers/marker-hit-testing'
 import { useMarkerStore } from '../markers/marker-store'
 import {
+  createMapPanClickGuard,
   getInteractiveMarkerLayerIds,
   isPointInsideMapContainer,
   resolveClickedMarkerId,
@@ -38,15 +39,9 @@ export function useMapMarkerInteractions(
       return
     }
 
-    const handleMarkerClick = (event: MouseEvent) => {
-      if (shouldIgnoreMarkerMapClick(currentMissionId, missionPhase, event.target)) {
-        return
-      }
+    const panClickGuard = createMapPanClickGuard()
 
-      if (interactionMode !== 'idle') {
-        return
-      }
-
+    const resolveContainerPoint = (event: MouseEvent | PointerEvent) => {
       const containerBounds = mapContainer.getBoundingClientRect()
       if (
         !isPointInsideMapContainer(
@@ -54,13 +49,61 @@ export function useMapMarkerInteractions(
           containerBounds,
         )
       ) {
-        return
+        return null
       }
 
-      const point = {
+      return {
         x: event.clientX - containerBounds.left,
         y: event.clientY - containerBounds.top,
       }
+    }
+
+    const handlePointerDown = (event: PointerEvent) => {
+      if (event.button !== 0) {
+        panClickGuard.cancel()
+        return
+      }
+
+      const point = resolveContainerPoint(event)
+      if (point === null) {
+        panClickGuard.cancel()
+        return
+      }
+
+      panClickGuard.recordPointerDown(point)
+    }
+
+    const handlePointerMove = (event: PointerEvent) => {
+      const point = resolveContainerPoint(event)
+      if (point === null) {
+        return
+      }
+
+      panClickGuard.recordPointerMove(point)
+    }
+
+    const handlePointerUp = () => {
+      panClickGuard.recordPointerUp()
+    }
+
+    const handleMarkerClick = (event: MouseEvent) => {
+      if (shouldIgnoreMarkerMapClick(currentMissionId, missionPhase, event.target)) {
+        return
+      }
+
+      if (panClickGuard.consumeClickSuppression()) {
+        return
+      }
+
+      if (interactionMode !== 'idle') {
+        return
+      }
+
+      const point = resolveContainerPoint(event)
+      if (point === null) {
+        return
+      }
+
       const queryPoint: [number, number] = [point.x, point.y]
       const interactiveMarkerLayers = getInteractiveMarkerLayerIds(
         (layerId) => map.getLayer(layerId) !== undefined,
@@ -97,9 +140,15 @@ export function useMapMarkerInteractions(
       markerController.beginCreateAt(lngLat.lat, lngLat.lng)
     }
 
+    window.addEventListener('pointerdown', handlePointerDown, true)
+    window.addEventListener('pointermove', handlePointerMove, true)
+    window.addEventListener('pointerup', handlePointerUp, true)
     window.addEventListener('click', handleMarkerClick, true)
 
     return () => {
+      window.removeEventListener('pointerdown', handlePointerDown, true)
+      window.removeEventListener('pointermove', handlePointerMove, true)
+      window.removeEventListener('pointerup', handlePointerUp, true)
       window.removeEventListener('click', handleMarkerClick, true)
     }
   }, [
