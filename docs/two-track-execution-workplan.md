@@ -291,6 +291,8 @@ Tasks:
 - Configure Traccar directly or through the appropriate desktop settings path.
 - Confirm mission persistence across app restart.
 - Confirm diagnostics/version visibility.
+- Confirm post-finish `sync_backup` writes the backup mirror without logging a misleading backup audit row when no active mission remains.
+- Note the teardown edge case: forced lifecycle sync requests that arrive after autosave has stopped currently no-op; treat as acceptable unless desktop smoke testing shows operator-visible loss.
 
 Acceptance:
 
@@ -300,6 +302,7 @@ Verification:
 
 - Screenshot or notes in handoff.
 - Build artifact path recorded.
+- Backend/audit note confirming post-finish backup behavior.
 
 ### B4: GPX And Drawing Hit-Test Hardening
 
