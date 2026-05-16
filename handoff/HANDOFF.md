@@ -4,6 +4,7 @@
 
 ## Last Updated
 
+- 2026-05-16 by Codex — B1 Tauri beta packaging recon completed; next default task is S2 autosave lifecycle hardening.
 - 2026-05-16 by Codex — A1 hosted testing instructions and feedback intake completed; next default task is B1 Tauri beta packaging reconnaissance.
 - 2026-05-16 by Codex — S1 Runtime Boot/Fault Guard completed; next default task is A1 hosted testing instructions and feedback intake.
 - 2026-05-16 by Codex — Hosted Traccar breadcrumb quota bug fixed; 48h mission start offset enabled.
@@ -38,6 +39,7 @@ Supporting docs may explain details, but they must not become separate queues. T
 - Settings successful save actions now close the workspace after persistence/reload completes. Failed saves keep the workspace open and show the error.
 - Startup now has an explicit boot/fault guard. The app shell stays gated while runtime services prepare, startup failures show a fault panel with Reload, and runtime controller replacement disposes the previous controller before installing the next one.
 - Hosted tester instructions now have a concise quick-start run sheet, URL/base-URL rules, bug-report template fields, and triage buckets. The operator manual has a hosted testing and feedback section.
+- Tauri packaging recon found a working macOS arm64 `.app` path: `npm run tauri build -- --bundles app` -> `src-tauri/target/release/bundle/macos/sartracker-web.app`. Full `npm run tauri build` currently fails at DMG bundling; unsigned/ad-hoc app is rejected by `spctl`, so first beta notes must call out Gatekeeper limitations.
 - Latest deployed production URL has command-line validation for proxy endpoints:
   - `/api/session` returned 200 for the team credentials
   - `/api/devices` returned the 18-device roster
@@ -76,14 +78,13 @@ Use these only for team testing, not as a production secret model.
 
 Default next task when the user says “go” or “work on the next task”:
 
-1. `B1: Tauri Beta Packaging Recon` in `docs/two-track-execution-workplan.md`
-2. Bead: `sartracker-web-vpz.2`
-3. Goal: find the shortest reliable path to a first desktop beta artifact and record exact build/package outputs.
+1. `S2: Autosave Lifecycle Hardening` in `docs/two-track-execution-workplan.md`
+2. Bead: create/update before starting.
+3. Goal: request immediate durable sync on important mission lifecycle transitions and surface autosave failure/staleness.
 
 ## Open Beads That Matter Now
 
 - `sartracker-web-vpz` — Hosted browser testing mode and parity hardening.
-- `sartracker-web-vpz.2` — B1 Tauri beta packaging reconnaissance.
 
 Older parity/UI beads still exist, but new work should be selected through the two-track workplan unless the user explicitly asks for a specific bead.
 
@@ -98,10 +99,9 @@ Older parity/UI beads still exist, but new work should be selected through the t
 
 Most recent completed verification:
 
-- A1 docs read-through completed for `docs/team-testing-feedback-loop.md` and `public/manual/index.html`.
-- `npm run build` passed.
-- Production hosted manual/app verification passed after Vercel deploy:
-  - `/manual/` contains the hosted testing and feedback section.
-  - `/?missionHarness=1` shows the browser testing banner.
-  - Settings exposes the hosted proxy action and Traccar data-source controls.
-- Previous S1 verification remains valid: lint, full Vitest, build, backend tests, inbuilt browser smoke, and Playwright boot/fault UI verification all passed.
+- B1 environment captured: Node `v22.17.1`, npm `10.9.2`, Rust/Cargo `1.94.1`, Tauri CLI `2.10.1`.
+- `npm run tauri build` compiled the release binary and `.app`, then failed during DMG bundling at `bundle_dmg.sh`.
+- `npm run tauri build -- --bundles app` passed and produced `src-tauri/target/release/bundle/macos/sartracker-web.app`.
+- Zipped artifact path was proven locally: `tmp/beta-artifacts/sartracker-web_0.1.0_aarch64.app.zip`.
+- Signing/notarization check: app is ad-hoc signed only; `spctl -a -vvv -t open` rejects it with `source=Insufficient Context`.
+- Results and open beta questions are recorded in `docs/tauri-beta-release-plan.md`.
