@@ -3,6 +3,7 @@ mod gpx;
 mod opener;
 mod persistence;
 mod settings;
+mod traccar_http;
 mod tracking_cache;
 
 use std::sync::Arc;
@@ -18,15 +19,16 @@ use tauri::Manager;
 use opener::open_external_path;
 use persistence::{
     add_position, build_mission_store, clear_layer_catalog_entries, create_mission,
-    create_mission_archive, delete_drawing, delete_gpx_import, delete_marker, finalize_mission,
-    finish_mission, get_active_mission, get_device, get_drawing, get_marker, get_mission,
-    get_recoverable_mission, ingest_marker_attachment, latest_positions, list_devices,
+    create_mission_archive, delete_drawing, delete_gpx_import, delete_helicopter, delete_marker,
+    finalize_mission, finish_mission, get_active_mission, get_device, get_drawing, get_marker,
+    get_mission, get_recoverable_mission, ingest_marker_attachment, latest_positions, list_devices,
     list_drawings, list_gpx_imports, list_helicopters, list_layer_catalog_entries, list_markers,
     list_mission_events, list_missions, list_positions, mission_store_info, pause_mission,
     resume_mission, sync_mission_store_backup, unlock_finalized_mission, upsert_device,
     upsert_drawing, upsert_gpx_import, upsert_helicopter, upsert_layer_catalog_entry,
-    upsert_marker, delete_helicopter, MissionStoreState,
+    upsert_marker, MissionStoreState,
 };
+use traccar_http::traccar_http_request;
 use tracking_cache::{read_tracking_cache, write_tracking_cache};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -91,6 +93,7 @@ pub fn run() {
             save_app_settings,
             test_tracking_connection,
             load_runtime_bootstrap_settings,
+            traccar_http_request,
             read_tracking_cache,
             write_tracking_cache,
             open_external_path,

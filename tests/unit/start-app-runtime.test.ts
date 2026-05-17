@@ -91,12 +91,44 @@ describe('app runtime startup', () => {
     expect(startTrackingRuntime).toHaveBeenCalledWith(
       expect.objectContaining({
         config: expect.objectContaining({ baseUrl: 'https://traccar.example.com' }),
+        createClient: expect.any(Function),
         cache: expect.objectContaining({
           read: expect.any(Function),
           write: expect.any(Function),
         }),
       }),
     )
+  })
+
+  it('uses the Tauri-backed Traccar client factory for desktop tracking', async () => {
+    const store: MissionStore & AutosaveStore = createMissionStoreStub()
+    let createClient: ((config: {
+      readonly baseUrl: string
+      readonly email?: string
+      readonly password?: string
+      readonly token?: string
+    }) => unknown) | null = null
+    const startTrackingRuntime = vi.fn().mockImplementation(async (input) => {
+      createClient = input.createClient
+      return vi.fn()
+    })
+
+    await startAppRuntime({
+      registerServiceWorker: vi.fn().mockResolvedValue(undefined),
+      isTauriRuntimeAvailable: vi.fn().mockReturnValue(true),
+      createMissionStore: vi.fn().mockReturnValue(store),
+      readRuntimeBootstrapSettings: vi.fn().mockResolvedValue(createBootstrapSettings()),
+      startMissionAutosave: vi.fn().mockReturnValue(createAutosaveController()),
+      startMissionRuntime: vi.fn().mockResolvedValue({}),
+      startMissionGovernanceRuntime: vi.fn().mockResolvedValue({}),
+      startMarkerRuntime: vi.fn().mockResolvedValue({}),
+      startDrawingRuntime: vi.fn().mockResolvedValue({}),
+      startGpxRuntime: vi.fn().mockResolvedValue({}),
+      startTrackingRuntime,
+    })
+
+    expect(createClient).not.toBeNull()
+    expect(createClient?.name).toBe('createTauriTraccarClient')
   })
 
   it('does not create the mission store outside Tauri', async () => {

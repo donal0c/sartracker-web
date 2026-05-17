@@ -11,6 +11,7 @@ import {
 import { createTauriGpxImportSource } from '../../infrastructure/gpx-import-source/tauri-gpx-import-source'
 import { tauriMarkerAttachmentAdapter } from '../../infrastructure/marker-attachment-store/tauri-marker-attachment-store'
 import { createTauriTrackingCache } from '../../infrastructure/tracking-cache/tauri-tracking-cache'
+import { createTauriTraccarClient } from '../../infrastructure/traccar-http/tauri-traccar-fetch'
 import { loadRuntimeBootstrapSettings } from '../../infrastructure/settings-store/tauri-settings-store'
 import { registerServiceWorker } from '../../lib/register-service-worker'
 import { isTauriRuntimeAvailable } from '../../lib/tauri-runtime'
@@ -25,7 +26,6 @@ import {
   createPollingManager,
   type TrackingPollerClient,
 } from '../tracking/polling-manager'
-import { createTraccarClient } from '../tracking/traccar-client'
 import { applyTrackingSnapshot, applyTrackingStatus } from '../tracking/tracking-store'
 import { readTrackingRuntimeConfig } from '../tracking/tracking-runtime-config'
 import {
@@ -166,7 +166,7 @@ export async function startAppRuntime(
       missionStore: trackingMissionStore,
       startMissionAutosave: resolvedDependencies.startMissionAutosave,
       startTrackingRuntime: resolvedDependencies.startTrackingRuntime,
-      createClient: createTraccarClient,
+      createClient: createTauriTraccarClient,
       createPoller: (client, hooks) =>
         createPollingManager(client as TrackingPollerClient, {
           intervalMs: runtimeSettings.trackingPollIntervalMs,

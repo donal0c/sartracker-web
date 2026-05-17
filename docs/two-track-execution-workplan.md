@@ -123,18 +123,18 @@ This is the default order when the user says “work on the next task.”
 | Done | S4: Map Overlay Consolidation And Camera Race Fix | Shared / Track B | `sartracker-web-s5v` | Done locally 2026-05-17 |
 | Done | S5: Mission Control View Model Extraction | Shared / Track A | `sartracker-web-cgx` | Done locally 2026-05-17 |
 | Done | V1: Regression E2E Coverage | Verification | `sartracker-web-8gw` | Done locally 2026-05-17 |
-| 1 | Route renderer Traccar fetch via Rust reqwest (remove ATS blanket) | Track B | `sartracker-web-qmr` | P2 follow-up before signed/notarised distribution; useful before wider desktop packaging |
-| 2 | V2: Visual Review Automation | Verification | Create/update bead before starting | Ready |
-| 3 | B6: GPX And Drawing Hit-Test Hardening | Track B / Shared | Create/update bead before starting | Ready |
-| 4 | B4: Set up cross-platform Tauri beta distribution | Track B / Release | `sartracker-web-y6a` | Deferred until after qmr, V2, and B6; prepare Windows/Linux artifacts, download channel, and tester instructions |
-| 5 | B5: Triage first web and Tauri beta feedback | Track A / Track B | `sartracker-web-s8m` | After deployed-web validation and cross-platform beta setup produce feedback |
-| 6 | C1: Local Proprietary Map Package Requirements | Track B / Maps | Create/update bead before starting | Waiting for map facts |
+| Done | Route renderer Traccar fetch via Rust reqwest (remove ATS blanket) | Track B | `sartracker-web-qmr` | Implemented locally 2026-05-17; desktop Traccar polling now uses a Tauri reqwest command and the ATS blanket plist was removed. Final real-server smoke is blocked until keychain access is available |
+| 1 | V2: Visual Review Automation | Verification | Create/update bead before starting | Ready |
+| 2 | B6: GPX And Drawing Hit-Test Hardening | Track B / Shared | Create/update bead before starting | Ready |
+| 3 | B4: Set up cross-platform Tauri beta distribution | Track B / Release | `sartracker-web-y6a` | Deferred until after V2 and B6; prepare Windows/Linux artifacts, download channel, and tester instructions |
+| 4 | B5: Triage first web and Tauri beta feedback | Track A / Track B | `sartracker-web-s8m` | After deployed-web validation and cross-platform beta setup produce feedback |
+| 5 | C1: Local Proprietary Map Package Requirements | Track B / Maps | Create/update bead before starting | Waiting for map facts |
 
 ## Ready Work Chunks
 
 ### Desktop Beta Distribution Rule
 
-Windows/Linux team testers should not be pointed at a macOS `.app` artifact. Desktop beta distribution is deliberately deferred until `sartracker-web-y6a` sets up a cross-platform process, but that process should wait until a little more app and verification work lands. Current intended order is `sartracker-web-qmr`, V2, and B6 before B4. B4 should then prepare Windows and Linux artifacts, a download channel, OS-specific tester instructions, and explicit unsigned-app caveats. Until then, the hosted web app remains the broad team-testing lane, while B3 evidence remains the internal desktop smoke baseline.
+Windows/Linux team testers should not be pointed at a macOS `.app` artifact. Desktop beta distribution is deliberately deferred until `sartracker-web-y6a` sets up a cross-platform process, but that process should wait until a little more app and verification work lands. Current intended order is V2 and B6 before B4. B4 should then prepare Windows and Linux artifacts, a download channel, OS-specific tester instructions, and explicit unsigned-app caveats. Until then, the hosted web app remains the broad team-testing lane, while B3 evidence remains the internal desktop smoke baseline.
 
 ### R0: S1/S2 Review Remediation Gate
 

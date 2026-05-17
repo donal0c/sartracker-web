@@ -4,6 +4,7 @@
 
 ## Last Updated
 
+- 2026-05-17 by Codex — `sartracker-web-qmr` implemented locally. Desktop Traccar polling now uses a Tauri command backed by Rust `reqwest`, preserving the existing TypeScript Traccar client contract while moving HTTP out of WKWebView `fetch()`. Removed the macOS ATS blanket workaround file (`src-tauri/Info.plist`) because desktop plain-HTTP Traccar calls no longer need `NSAllowsArbitraryLoads`. Verified with unit, backend, build, browser E2E, visual E2E, macOS `.app` packaging, and packaged `Info.plist` inspection. Final live desktop poll against the real Traccar server was attempted on the packaged app but not counted as passed because keychain access was unavailable; repeat that live smoke when the keychain password can be entered.
 - 2026-05-17 by Claude — V1 Regression E2E Coverage (`sartracker-web-8gw`) completed locally. Cold-start-from-cache now publishes an explicit `OFFLINE MODE — showing last known positions from cache.` status so operators do not silently view stale positions before the first live poll succeeds. Added regression coverage at three seams: unit (start-tracking-runtime cache-hydration status, polling-manager healthy-poll-no-offline guard, layer stale-refresh integration), and E2E (`tests/e2e/v1-regression.spec.ts`) covering the MapLibre device-filter path and the operator-visible "showing last known positions" warning. Replaced the five `waitForTimeout` calls in `tests/e2e/parity-visibility.spec.ts` with state-based `expect.poll` predicates.
 - 2026-05-17 by Codex — S5 Mission Control View Model Extraction (`sartracker-web-cgx`) completed locally. Added `useMissionTimer` and shared it between Command Mast and Mission Control; added `useMissionControlViewModel` for lifecycle, recovery, governance, duplicate-name, admin-roster, busy/error, and control-enable state; `MissionControlPanel` now delegates mission orchestration to the hook and keeps rendering/focus-dialog responsibilities.
 - 2026-05-17 by Codex — S4 Map Overlay Consolidation And Camera Race Fix (`sartracker-web-s5v`) completed locally. Added shared MapLibre overlay primitives for GeoJSON source sync, idempotent layer creation, filter combination, and SVG icon loading; refactored drawing, marker, measurement, GPX, helicopter, and tracking overlay sync modules onto those primitives; changed basemap style switching to restore the captured camera once on `styledata` instead of immediately and again on `idle`.
@@ -30,6 +31,7 @@ Supporting docs may explain details, but they must not become separate queues.
 ## Current State
 
 - `master` is the canonical working branch.
+- Desktop Traccar polling routes renderer requests through Rust `reqwest` via Tauri IPC. The previous macOS `NSAllowsArbitraryLoads` plist workaround has been removed.
 - Hosted team testing runs at `https://sartracker-web.vercel.app/?missionHarness=1`.
 - Hosted browser mode is testing/training only. It uses browser session storage and is not operational mission persistence.
 - Hosted Traccar testing uses the Vercel same-origin proxy:
@@ -69,12 +71,12 @@ Use these only for team testing, not as a production secret model.
 
 ## Next Task
 
-Default next chunks come from `docs/two-track-execution-workplan.md`: B4 cross-platform Tauri beta distribution setup (`sartracker-web-y6a`), then `sartracker-web-qmr` (route renderer Traccar fetch through Rust `reqwest` to remove the ATS blanket exception), then V2 Visual Review Automation. Desktop beta distribution is deliberately deferred until `sartracker-web-y6a` sets up a Windows/Linux-capable release path and tester instructions.
+Default next chunks come from `docs/two-track-execution-workplan.md`: V2 Visual Review Automation, then B6 GPX and drawing hit-test hardening, then B4 cross-platform Tauri beta distribution setup (`sartracker-web-y6a`). Desktop beta distribution is deliberately deferred until `sartracker-web-y6a` sets up a Windows/Linux-capable release path and tester instructions.
 
 ## Open Beads That Matter Now
 
-- `sartracker-web-y6a` — B4: set up cross-platform Tauri beta distribution for Windows/Linux testers; deferred until after the next app/foundation chunks.
-- `sartracker-web-qmr` — P2: route renderer Traccar fetch through Rust `reqwest` to remove the ATS `NSAllowsArbitraryLoads` blanket. Internal-beta scope is acceptable as-is; this lands before any signed/notarised distribution.
+- `sartracker-web-y6a` — B4: set up cross-platform Tauri beta distribution for Windows/Linux testers; deferred until after V2 and B6.
+- `sartracker-web-qmr` — implementation completed locally 2026-05-17; keep open only for the final keychain-backed live desktop Traccar smoke.
 - `sartracker-web-vpz` — Hosted browser testing mode and parity hardening.
 - `sartracker-web-6y3` — A3 team feedback remediation batch; should be closed/reframed once A3.9 verification/deploy is complete.
 - `sartracker-web-8gw` — V1 Regression E2E Coverage (closed 2026-05-17).
@@ -96,6 +98,20 @@ Older parity/UI beads still exist, but new work should be selected through the t
 - High-definition mountain maps should be local desktop map packages unless requirements change.
 
 ## Verification Snapshot
+
+Most recent local verification in this turn (`sartracker-web-qmr`):
+
+- Red-then-green: `npm run test -- tests/unit/tauri-traccar-fetch.test.ts tests/unit/start-app-runtime.test.ts` failed before the Tauri fetch adapter/runtime wiring existed, then passed after implementation.
+- Passed: `npm run test -- tests/unit/tauri-traccar-fetch.test.ts tests/unit/start-app-runtime.test.ts tests/unit/traccar-client.test.ts` — 16 tests.
+- Passed: `cargo test traccar_http_request --lib` from `src-tauri/` — 2 tests.
+- Passed: `npx tsc --noEmit`, `npm run lint`, `npm run build`.
+- Passed: `npm run test` — 95 files / 476 tests.
+- Passed: `npm run test:backend` — 43 passed / 1 ignored.
+- Passed: `npx playwright test --project=chromium` — 85 tests.
+- Passed: `npx playwright test --project=visual` — 27 tests.
+- Passed: `npm run tauri build -- --bundles app`; output app at `src-tauri/target/release/bundle/macos/sartracker-web.app`.
+- Passed: packaged app `Info.plist` inspection confirmed `NSAppTransportSecurity` does not exist, so there is no `NSAllowsArbitraryLoads` blanket in the built `.app`.
+- Not passed/not counted: live desktop Traccar poll on the packaged app. It was attempted after relaunching the new `.app`, but keychain access was unavailable and the cache did not refresh from the real server. Repeat this live smoke when a user can unlock the keychain.
 
 Most recent local verification in this turn (V1 Regression E2E Coverage):
 
