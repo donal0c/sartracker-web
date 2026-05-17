@@ -116,16 +116,18 @@ This is the default order when the user says “work on the next task.”
 | Done | R11: Add Browser Harness Storage Non-Goals Note | Track A / Docs | `sartracker-web-mh5` | Done locally 2026-05-16 |
 | Done | S3: Layer Visibility Service Extraction | Shared / Track A | `sartracker-web-4a1` | Done 2026-05-17 |
 | Done | B2: Tauri Beta Release Template | Track B | `sartracker-web-xhz` | Done 2026-05-17 |
-| Blocked | B3: First Internal Tauri Smoke Build | Track B | `sartracker-web-ppr` | Smoke 2026-05-17 surfaced P0 `sartracker-web-zl4` and P1 `sartracker-web-el9`; beta not promoted |
-| 1 | Z1: Fix active-mission-finished-on-quit (desktop) | Track B / Critical | `sartracker-web-zl4` | P0 blocker for desktop beta |
-| 2 | Z2: Fix runtime tracking warns "not configured" with provider saved | Track B / UX | `sartracker-web-el9` | P1 blocker for desktop beta |
-| 3 | B3 rerun: First Internal Tauri Smoke Build | Track B | `sartracker-web-ppr` | Re-runs after Z1 + Z2 |
-| 4 | S4: Map Overlay Consolidation And Camera Race Fix | Shared / Track B | Create/update bead before starting | Ready after S3 preferred |
-| 5 | S5: Mission Control View Model Extraction | Shared / Track A | Create/update bead before starting | Pair with A3.4 if selected |
-| 6 | V1: Regression E2E Coverage | Verification | Create/update bead before starting | Ready |
-| 7 | V2: Visual Review Automation | Verification | Create/update bead before starting | Ready |
-| 8 | B4: GPX And Drawing Hit-Test Hardening | Track B | Create/update bead before starting | Ready |
-| 9 | C1: Local Proprietary Map Package Requirements | Track B / Maps | Create/update bead before starting | Waiting for map facts |
+| Done | Z1: keyring crate had no platform features | Track B / Critical | `sartracker-web-el9` | Fixed 2026-05-17 in 000f7d1; cross-platform features added; new Rust + TS regression tests |
+| Done | Z2: macOS ATS blocked WKWebView fetch to plain-HTTP Traccar | Track B / Critical | `sartracker-web-el9` | Fixed 2026-05-17 in 603771f; src-tauri/Info.plist NSAllowsArbitraryLoads (internal-beta scope) |
+| Done | Z3: zl4 active-mission-finished-on-quit | Track B | `sartracker-web-zl4` | Closed 2026-05-17 as false positive; regression test added in 000f7d1 |
+| Done | B3 rerun: First Internal Tauri Smoke Build | Track B | `sartracker-web-ppr` | Done 2026-05-17 on 0.1.0+sha.603771f65431; all 6 smoke items categorically proven incl. live 18-device tracking poll |
+| 1 | Promote 0.1.0-beta-DRAFT release note and upload zip | Track B | `sartracker-web-ppr` follow-up | Drop -DRAFT, push to GitHub Releases draft/prerelease channel once distribution audience is confirmed |
+| 2 | Route renderer Traccar fetch via Rust reqwest (remove ATS blanket) | Track B | `sartracker-web-qmr` | P2 follow-up; replaces NSAllowsArbitraryLoads with reqwest-backed Tauri command |
+| 3 | S4: Map Overlay Consolidation And Camera Race Fix | Shared / Track B | Create/update bead before starting | Ready after S3 preferred |
+| 4 | S5: Mission Control View Model Extraction | Shared / Track A | Create/update bead before starting | Pair with A3.4 if selected |
+| 5 | V1: Regression E2E Coverage | Verification | Create/update bead before starting | Ready |
+| 6 | V2: Visual Review Automation | Verification | Create/update bead before starting | Ready |
+| 7 | B4: GPX And Drawing Hit-Test Hardening | Track B | Create/update bead before starting | Ready |
+| 8 | C1: Local Proprietary Map Package Requirements | Track B / Maps | Create/update bead before starting | Waiting for map facts |
 
 ## Ready Work Chunks
 

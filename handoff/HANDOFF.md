@@ -4,7 +4,11 @@
 
 ## Last Updated
 
-- 2026-05-17 by Claude — B3 First Internal Tauri Smoke Build (`sartracker-web-ppr`) executed against build `0.1.0+sha.e7ead2eb093a`. Automated portion (lint/build/test/test:backend/package) all PASS. Manual smoke surfaced two desktop-only blockers and the artifact was NOT promoted: P0 `sartracker-web-zl4` (active mission transitions to `finished` on app quit — direct SQLite confirms `mission_finished` row at the quit timestamp with no preceding user lifecycle event) and P1 `sartracker-web-el9` (runtime tracking shows "not configured" while Traccar provider is saved with auto-connect on). Beta draft retained at `docs/releases/sartracker-web-0.1.0-beta-DRAFT.md` as the worked example of how to document a smoke-blocked draft. Evidence under `tmp/beta-artifacts/smoke/`.
+- 2026-05-17 by Claude — B3 First Internal Tauri Smoke Build (`sartracker-web-ppr`) **completed end-to-end on packaged build `0.1.0+sha.603771f65431`**. Two desktop bugs uncovered during the original smoke pass were fixed and categorically proven in the live `.app`:
+  - `sartracker-web-el9`: keyring crate had no platform features (mock backend in use). Fixed in `000f7d1` by adding `apple-native`, `windows-native`, `sync-secret-service` to the keyring dependency. Symmetric Rust unit, real-keychain integration test (verifies via `security find-generic-password` from a separate process), and TS poller-start unit test added.
+  - `sartracker-web-el9` (second root cause): macOS App Transport Security blocked the WKWebView renderer's `fetch()` to plain-HTTP Traccar URLs. Fixed in `603771f` by adding `src-tauri/Info.plist` with `NSAllowsArbitraryLoads = true` (internal-beta scope). `sartracker-web-qmr` filed as P2 follow-up to route renderer fetch through Rust `reqwest` and remove the blanket exception.
+  - `sartracker-web-zl4`: closed as false positive. Rust persistence regression test `active_mission_survives_process_restart_without_explicit_finish` added in `000f7d1` to pin the contract. No code path automatically transitions an active mission to finished; the original B3 finding was operator-driven.
+- Live end-to-end proof on the packaged `.app`: keychain seeded, active mission seeded, app launched, operator clicked Resume, `tracking-cache.json` populated from 85 bytes (empty placeholder) → 6,231 bytes within 30 seconds, SQLite `devices=18 / positions=14`, mast showed `DEVICES ONLINE 18 / SYSTEM STATUS ONLINE`, 14 trackpoints rendered on the map. Final quit confirmed mission stays active in SQLite (no `mission_finished` event). Evidence under `tmp/beta-artifacts/smoke-rerun/`.
 
 ## Operating Rule
 
@@ -37,7 +41,7 @@ Supporting docs may explain details, but they must not become separate queues.
 - S3 added explicit layer-visibility service tests and kept parity visibility E2E coverage green.
 - Tauri packaging recon found a working macOS arm64 `.app` path: `npm run tauri build -- --bundles app` -> `src-tauri/target/release/bundle/macos/sartracker-web.app`. Full `npm run tauri build` still fails at DMG bundling; unsigned/ad-hoc app is rejected by Gatekeeper as expected for the current internal-beta lane.
 - B2 (`sartracker-web-xhz`) made desktop beta drops repeatable. Future beta cuts must run `npm run beta:verify` (no `--steps` filters), copy `docs/releases/TEMPLATE.md` into a `sartracker-web-<version>-beta-DRAFT.md`, attach the JSON report path from `tmp/beta-artifacts/`, then drop the `-DRAFT` suffix once the artifact is uploaded and the smoke checklist is signed off. Distribution channel is GitHub Releases draft/prerelease on `donal0c/sartracker-web` with the "internal beta" tag in the title.
-- B3 (`sartracker-web-ppr`) ran the gate against `0.1.0+sha.e7ead2eb093a`. Automated steps PASS; smoke surfaced two desktop-only blockers and the artifact was NOT promoted: P0 `sartracker-web-zl4` (active mission becomes `finished` on app quit; reproduced by direct SQLite query against `mission-store.sqlite` showing `mission_finished` row at the quit timestamp with no preceding user lifecycle event) and P1 `sartracker-web-el9` (runtime tracking warns "not configured" while Traccar provider is saved with auto-connect on). Beta draft retained at `docs/releases/sartracker-web-0.1.0-beta-DRAFT.md` as the worked example of a smoke-blocked draft. Evidence under `tmp/beta-artifacts/smoke/`.
+- B3 (`sartracker-web-ppr`) initial run on `0.1.0+sha.e7ead2eb093a` surfaced `sartracker-web-zl4` (claim of active-mission-finished-on-quit) and `sartracker-web-el9` (runtime tracking warns "not configured"). The follow-up investigation closed both: zl4 was a false positive (operator-driven finish, not quit-driven), pinned by the new `active_mission_survives_process_restart_without_explicit_finish` Rust persistence test. el9 had two distinct desktop-only root causes — keyring crate had no platform features (mock backend) and macOS App Transport Security blocked WKWebView fetch to plain-HTTP Traccar — both fixed in `000f7d1` (keyring features) and `603771f` (Info.plist NSAllowsArbitraryLoads). End-to-end live test on the rebuilt `.app` (`0.1.0+sha.603771f65431`) populated `tracking-cache.json` with 18 real Traccar devices and rendered live trackpoints on the map within 30 seconds of clicking Resume. `sartracker-web-qmr` filed as P2 follow-up to remove the ATS blanket exception by routing renderer fetch through Rust `reqwest`.
 
 ## Traccar Test Details
 
@@ -62,17 +66,18 @@ Use these only for team testing, not as a production secret model.
 
 ## Next Task
 
-Default next chunk is `sartracker-web-zl4` (active-mission-finished-on-quit, P0). Triage entry points listed in the bead: shutdown / before_quit hooks in `src-tauri/src/lib.rs` and `src-tauri/src/main.rs`, `finish_mission` callers in `src-tauri/src/persistence/`, renderer-side teardown in `src/lib/app-runtime-controller.ts` and `src/features/mission/**`. Add a regression test in the Rust persistence suite covering "quitting an app with an active mission must not transition the mission to finished" before fixing. After Z1 lands, fix `sartracker-web-el9` (runtime tracking false-warning), then rerun `sartracker-web-ppr` (B3) end-to-end against the next packaged build.
+Default next chunk is to revise `docs/releases/sartracker-web-0.1.0-beta-DRAFT.md` to reflect the post-fix build (`0.1.0+sha.603771f65431`), drop the `-DRAFT` suffix once the artifact is uploaded to GitHub Releases draft/prerelease channel, and confirm distribution audience. After that, `sartracker-web-qmr` (P2 ATS-blanket replacement via Rust reqwest) is the natural Track-B follow-up.
 
 ## Open Beads That Matter Now
 
-- `sartracker-web-zl4` — P0: active mission transitions to `finished` on app quit (desktop). Blocks `sartracker-web-ppr`.
-- `sartracker-web-el9` — P1: runtime tracking warns "not configured" while Traccar provider is saved with auto-connect on (desktop). Blocks `sartracker-web-ppr`.
-- `sartracker-web-ppr` — B3 First Internal Tauri Smoke Build, blocked on the two beads above.
+- `sartracker-web-qmr` — P2: route renderer Traccar fetch through Rust `reqwest` to remove the ATS `NSAllowsArbitraryLoads` blanket. Internal-beta scope is acceptable as-is; this lands before any signed/notarised distribution.
 - `sartracker-web-vpz` — Hosted browser testing mode and parity hardening.
 - `sartracker-web-6y3` — A3 team feedback remediation batch; should be closed/reframed once A3.9 verification/deploy is complete.
 - `sartracker-web-4a1` — S3 Layer Visibility Service Extraction (completed 2026-05-17; ready to close if no follow-up findings).
 - `sartracker-web-xhz` — B2 Tauri Beta Release Template (completed 2026-05-17; ready to close if no follow-up findings).
+- `sartracker-web-zl4` — closed 2026-05-17 as false positive; regression test added.
+- `sartracker-web-el9` — closed 2026-05-17 with categorical end-to-end proof on packaged `.app` build `0.1.0+sha.603771f65431`.
+- `sartracker-web-ppr` — B3 closed 2026-05-17 after re-run on the post-fix build.
 
 Older parity/UI beads still exist, but new work should be selected through the two-track workplan unless the user explicitly asks for a specific bead.
 
@@ -85,13 +90,19 @@ Older parity/UI beads still exist, but new work should be selected through the t
 
 ## Verification Snapshot
 
-Most recent local verification in this turn (B3):
+Most recent local verification in this turn (B3 re-run on `0.1.0+sha.603771f65431`):
 
-- Passed: `npm run beta:verify -- --no-smoke` end-to-end (lint, build, test 460/460, test-backend 39/39, package). Report at `tmp/beta-artifacts/verify-0.1.0-sha.e7ead2eb093a-2026-05-17T06-55-19Z.json`.
-- Packaged `.app` produced at `src-tauri/target/release/bundle/macos/sartracker-web.app` (25 MB) and zipped via `ditto` to `tmp/beta-artifacts/sartracker-web_0.1.0_aarch64.app.zip` (15.3 MB, SHA-256 `a809e9865cba89561058dd32677749b24859805118b79aae8c63ac5da30753c3`).
-- Manual smoke (driven via `open` + `osascript` + `screencapture` from this session, with operator confirmation for click-required items): items 1, 2, 3, 6 PASS; item 4 FAIL (`sartracker-web-zl4`); item 5 PARTIAL FAIL (`sartracker-web-el9`).
-- Direct evidence: `tmp/beta-artifacts/smoke/{01-initial-launch.png,01d-mast-full.png,02-mission-started-tracking-warnings.png,03-before-quit.png,04b-after-restart.png,04c-after-restart-front.png,diagnostics-report-2026-05-17T07-05-55-676Z.txt,mission-events-fdsfdsf.tsv}`.
-- Beta artifact NOT promoted; `docs/releases/sartracker-web-0.1.0-beta-DRAFT.md` retained as the worked example of a smoke-blocked draft.
+- Passed: `npm run beta:verify -- --no-smoke` end-to-end (lint, build, test 461/461, test-backend 41/41 + 1 ignored, package). Report at `tmp/beta-artifacts/verify-0.1.0-sha.603771f65431-2026-05-17T08-01-33Z.json`.
+- New regression tests, all passing: `active_mission_survives_process_restart_without_explicit_finish` (Rust), `builds_runtime_bootstrap_with_traccar_config_when_auto_connect_is_enabled_and_secret_present` (Rust), `keyring_secret_store_writes_to_real_macos_keychain` (Rust, `#[ignore]`'d, run locally with `--ignored` and confirmed against the real macOS keychain), `starts the poller when the runtime config is present` (TS).
+- Live end-to-end smoke on the packaged `.app` (`src-tauri/target/release/bundle/macos/sartracker-web.app`, build `0.1.0+sha.603771f65431`):
+  - Item 1 (launches): PASS — multiple PIDs across the session.
+  - Item 2 (version chip): PASS — mast read `0.1.0+SHA.603771F65431` in screenshot `09-tracking-live-with-devices.png`.
+  - Item 3 (start mission): PASS — direct UI Start initially, then SQLite seed + Resume click in the post-fix run; mast read `MISSION ACTIVE` with elapsed/active timers ticking.
+  - Item 4 (persists across quit/restart): PASS — `kill -TERM` and AppleScript quit both leave mission status unchanged in SQLite, no `mission_finished` event ever emitted.
+  - Item 5 (tracking save + actually polls): PASS — `tracking-cache.json` populated 85 → 6,231 bytes within 30 seconds; SQLite `devices=18 / positions=14`; mast `DEVICES ONLINE 18 / SYSTEM STATUS ONLINE`.
+  - Item 6 (diagnostics export): PASS — file written, version line matches mast.
+- Evidence kept under `tmp/beta-artifacts/smoke-rerun/` (01-initial-launch through 09-tracking-live-with-devices PNGs, `devices.tsv`, etc.) and `tmp/beta-artifacts/smoke/` (initial run pre-fix evidence).
+- Beta artifact still pending promotion: `docs/releases/sartracker-web-0.1.0-beta-DRAFT.md` should be revised to point at the post-fix build before being uploaded to GitHub Releases draft/prerelease.
 
 Earlier B2 verification (kept for context):
 
