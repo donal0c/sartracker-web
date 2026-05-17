@@ -4,7 +4,7 @@
 
 ## Last Updated
 
-- 2026-05-17 by Codex — `sartracker-web-qmr` implemented locally. Desktop Traccar polling now uses a Tauri command backed by Rust `reqwest`, preserving the existing TypeScript Traccar client contract while moving HTTP out of WKWebView `fetch()`. Removed the macOS ATS blanket workaround file (`src-tauri/Info.plist`) because desktop plain-HTTP Traccar calls no longer need `NSAllowsArbitraryLoads`. Verified with unit, backend, build, browser E2E, visual E2E, macOS `.app` packaging, and packaged `Info.plist` inspection. Final live desktop poll against the real Traccar server was attempted on the packaged app but not counted as passed because keychain access was unavailable; repeat that live smoke when the keychain password can be entered.
+- 2026-05-17 by Codex — `sartracker-web-qmr` closed after live desktop smoke. Desktop Traccar polling now uses a Tauri command backed by Rust `reqwest`, preserving the existing TypeScript Traccar client contract while moving HTTP out of WKWebView `fetch()`. Removed the macOS ATS blanket workaround file (`src-tauri/Info.plist`) because desktop plain-HTTP Traccar calls no longer need `NSAllowsArbitraryLoads`. Verified with unit, backend, build, browser E2E, visual E2E, macOS `.app` packaging, packaged `Info.plist` inspection, and a packaged-app live poll against the real Traccar server after resuming the recovered mission.
 - 2026-05-17 by Claude — V1 Regression E2E Coverage (`sartracker-web-8gw`) completed locally. Cold-start-from-cache now publishes an explicit `OFFLINE MODE — showing last known positions from cache.` status so operators do not silently view stale positions before the first live poll succeeds. Added regression coverage at three seams: unit (start-tracking-runtime cache-hydration status, polling-manager healthy-poll-no-offline guard, layer stale-refresh integration), and E2E (`tests/e2e/v1-regression.spec.ts`) covering the MapLibre device-filter path and the operator-visible "showing last known positions" warning. Replaced the five `waitForTimeout` calls in `tests/e2e/parity-visibility.spec.ts` with state-based `expect.poll` predicates.
 - 2026-05-17 by Codex — S5 Mission Control View Model Extraction (`sartracker-web-cgx`) completed locally. Added `useMissionTimer` and shared it between Command Mast and Mission Control; added `useMissionControlViewModel` for lifecycle, recovery, governance, duplicate-name, admin-roster, busy/error, and control-enable state; `MissionControlPanel` now delegates mission orchestration to the hook and keeps rendering/focus-dialog responsibilities.
 - 2026-05-17 by Codex — S4 Map Overlay Consolidation And Camera Race Fix (`sartracker-web-s5v`) completed locally. Added shared MapLibre overlay primitives for GeoJSON source sync, idempotent layer creation, filter combination, and SVG icon loading; refactored drawing, marker, measurement, GPX, helicopter, and tracking overlay sync modules onto those primitives; changed basemap style switching to restore the captured camera once on `styledata` instead of immediately and again on `idle`.
@@ -76,7 +76,7 @@ Default next chunks come from `docs/two-track-execution-workplan.md`: V2 Visual 
 ## Open Beads That Matter Now
 
 - `sartracker-web-y6a` — B4: set up cross-platform Tauri beta distribution for Windows/Linux testers; deferred until after V2 and B6.
-- `sartracker-web-qmr` — implementation completed locally 2026-05-17; keep open only for the final keychain-backed live desktop Traccar smoke.
+- `sartracker-web-qmr` — closed 2026-05-17 after keychain-backed packaged-app live Traccar smoke.
 - `sartracker-web-vpz` — Hosted browser testing mode and parity hardening.
 - `sartracker-web-6y3` — A3 team feedback remediation batch; should be closed/reframed once A3.9 verification/deploy is complete.
 - `sartracker-web-8gw` — V1 Regression E2E Coverage (closed 2026-05-17).
@@ -111,7 +111,8 @@ Most recent local verification in this turn (`sartracker-web-qmr`):
 - Passed: `npx playwright test --project=visual` — 27 tests.
 - Passed: `npm run tauri build -- --bundles app`; output app at `src-tauri/target/release/bundle/macos/sartracker-web.app`.
 - Passed: packaged app `Info.plist` inspection confirmed `NSAppTransportSecurity` does not exist, so there is no `NSAllowsArbitraryLoads` blanket in the built `.app`.
-- Not passed/not counted: live desktop Traccar poll on the packaged app. It was attempted after relaunching the new `.app`, but keychain access was unavailable and the cache did not refresh from the real server. Repeat this live smoke when a user can unlock the keychain.
+- Passed: keychain-backed live desktop Traccar smoke on the packaged `.app`. After resuming the recovered mission, the mast showed `DEVICES 18 ONLINE 14/14`, the tracking panel showed `ONLINE DEVICES 18 FIXES 14`, `tracking-cache.json` refreshed from the 85-byte placeholder to 499,490 bytes, and SQLite held `devices=18 / positions=1884`.
+- Cleanup: stopped the packaged app process after the smoke so it was not left polling in the background.
 
 Most recent local verification in this turn (V1 Regression E2E Coverage):
 

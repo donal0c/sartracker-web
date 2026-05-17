@@ -123,7 +123,7 @@ This is the default order when the user says “work on the next task.”
 | Done | S4: Map Overlay Consolidation And Camera Race Fix | Shared / Track B | `sartracker-web-s5v` | Done locally 2026-05-17 |
 | Done | S5: Mission Control View Model Extraction | Shared / Track A | `sartracker-web-cgx` | Done locally 2026-05-17 |
 | Done | V1: Regression E2E Coverage | Verification | `sartracker-web-8gw` | Done locally 2026-05-17 |
-| Done | Route renderer Traccar fetch via Rust reqwest (remove ATS blanket) | Track B | `sartracker-web-qmr` | Implemented locally 2026-05-17; desktop Traccar polling now uses a Tauri reqwest command and the ATS blanket plist was removed. Final real-server smoke is blocked until keychain access is available |
+| Done | Route renderer Traccar fetch via Rust reqwest (remove ATS blanket) | Track B | `sartracker-web-qmr` | Closed 2026-05-17; desktop Traccar polling now uses a Tauri reqwest command, the ATS blanket plist was removed, and packaged-app live Traccar smoke passed |
 | 1 | V2: Visual Review Automation | Verification | Create/update bead before starting | Ready |
 | 2 | B6: GPX And Drawing Hit-Test Hardening | Track B / Shared | Create/update bead before starting | Ready |
 | 3 | B4: Set up cross-platform Tauri beta distribution | Track B / Release | `sartracker-web-y6a` | Deferred until after V2 and B6; prepare Windows/Linux artifacts, download channel, and tester instructions |
