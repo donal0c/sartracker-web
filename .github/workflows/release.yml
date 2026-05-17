@@ -180,7 +180,10 @@ jobs:
           - label: windows-x86_64
             runner: windows-2022
             target: x86_64-pc-windows-msvc
-            args: '--target x86_64-pc-windows-msvc --bundles nsis,msi'
+            # MSI deliberately omitted: Tauri's MSI bundler rejects alphanumeric
+            # pre-release suffixes (e.g. "-beta.2"). See sartracker-web-g1u to
+            # re-add when the version scheme supports it.
+            args: '--target x86_64-pc-windows-msvc --bundles nsis'
           # macOS arm64 deliberately dropped from the matrix; see sartracker-web-590.
           # macOS builds are produced locally via npm run beta:verify (Path B).
     runs-on: ${{ matrix.runner }}
@@ -279,9 +282,8 @@ jobs:
           releaseDraft: true
           prerelease: true
           args: ${{ matrix.args }}
-          releaseAssetNamePattern: 'sartracker-web_[version]_[platform]_[arch][ext]'
-          uploadUpdaterJson: false
-          uploadUpdaterSignatures: false
+          assetNamePattern: 'sartracker-web_[version]_[platform]_[arch][ext]'
+          includeUpdaterJson: false
           retryAttempts: 1
 
       - name: Build only (dry run)

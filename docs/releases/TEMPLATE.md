@@ -18,8 +18,7 @@
 | --- | --- | --- |
 | Linux x86_64 | `sartracker-web_<version>_linux_amd64.AppImage` | Single-file portable run; no install required. Most testers. |
 | Linux x86_64 | `sartracker-web_<version>_linux_amd64.deb` | System install on Ubuntu/Debian/Mint/Pop_OS. |
-| Windows x86_64 | `sartracker-web_<version>_windows_amd64.exe` | NSIS installer, current-user install (no admin required). Most testers. |
-| Windows x86_64 | `sartracker-web_<version>_windows_amd64.msi` | MSI installer, machine-wide (admin required). For IT-managed deployment. |
+| Windows x86_64 | `sartracker-web_<version>_windows_amd64.exe` | NSIS installer, current-user install (no admin required). |
 | All | `SHA256SUMS` | Checksum sidecar to verify downloaded artifacts. |
 
 macOS is not produced by CI in this beta lane (see `sartracker-web-590` for the
@@ -101,13 +100,11 @@ unknown. The warnings are expected for an unsigned app and the install does
 6. On first launch, the app may briefly install Microsoft WebView2 if it is not
    already on your machine. This requires internet for that one step.
 
-### MSI installer (admin required; for IT-managed deployment)
+### MSI installer (deferred)
 
-1. Download `sartracker-web_<version>_windows_amd64.msi`.
-2. Verify the checksum as above.
-3. Run as administrator. UAC will prompt for elevation.
-4. SmartScreen warning is the same as the NSIS path; click **More info** →
-   **Run anyway**.
+Tauri's MSI bundler does not currently support our pre-release version
+suffix (`-beta.N`). Beta releases ship NSIS only. MSI will return when the
+version scheme allows it. See `sartracker-web-g1u`.
 
 ### Windows blockers we cannot work around in the unsigned beta
 
@@ -196,8 +193,8 @@ Before promoting this draft to a published release:
 
 - [ ] CI workflow run `OVERALL: PASS` (linked above)
 - [ ] All CI release assets present on the draft release: Linux `.AppImage`,
-      Linux `.deb`, Windows `.exe` (NSIS), Windows `.msi`. macOS, if needed,
-      uploaded separately from a local build.
+      Linux `.deb`, Windows `.exe` (NSIS). macOS and MSI deferred (see
+      `sartracker-web-590` and `sartracker-web-g1u`).
 - [ ] `SHA256SUMS` present and matches local computation against downloaded assets
 - [ ] Local smoke pass on the primary platform (Linux): packaged app launches,
       mission can be started, mission persists after restart, tracking settings
