@@ -78,11 +78,11 @@ Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
       testName: 'Map toolbar completeness',
       area: 'app-shell',
       severity: 'critical',
-      verificationPrompt: `Verify this screenshot of the SAR Tracker Map Tools toolbar:
-1. There should be exactly 8 map tool buttons arranged in a vertical toolbar
-2. The tools should be labeled: "Select", "Line", "Search Area", "Range Rings", "Bearing", "Sector", "Text Label", "Measure"
-3. The "Select" tool should appear to be currently active (highlighted)
-4. There should be an "ACTIVE: SELECT" indicator at the top
+      verificationPrompt: `Verify this screenshot of the SAR Tracker Map Tools toolbar in its expanded state. NOTE: no mission is active in this idle-state shell capture, so tool buttons are intentionally disabled and the active-mode chip shows "Mission required" — this is the correct disabled-state appearance and should NOT be flagged. Check:
+1. There should be a "MAP TOOLS" header label at the top of the toolbar
+2. Directly under the header, the active-mode chip should read "Mission required" (the tools are disabled because no mission is active)
+3. There should be a vertical column of map tool buttons including "Line", "Search Area", "Range Rings", "Bearing", "Sector", "Text Label", and "Measure". Confirm at least 7 distinct tool buttons are visible and clearly labelled.
+4. All tool buttons should appear visually disabled/dimmed (reduced opacity), reflecting the "Mission required" state
 Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
       playwrightAssertions: [
         'drawing-tool-line is visible',

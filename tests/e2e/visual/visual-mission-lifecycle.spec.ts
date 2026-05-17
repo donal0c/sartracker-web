@@ -43,15 +43,14 @@ test.describe('Visual: Mission Lifecycle', () => {
       testName: 'Mission control in active state',
       area: 'mission',
       severity: 'critical',
-      verificationPrompt: `Verify this screenshot of the SAR Tracker Mission Control panel in active state:
-1. It should show "MISSION CONTROL" as the section header
-2. There should be an "ACTIVE" status indicator, likely with a green dot
-3. There should be two timer displays: "ELAPSED" and "ACTIVE SEARCH"
+      verificationPrompt: `Verify this screenshot of the SAR Tracker Mission Control panel in active state. NOTE: this capture is the Mission Control panel only — the mission name is rendered on the command mast outside this element and is verified by separate shell tests. Check only what is in frame:
+1. The section header should show "MISSION CONTROL" with a "lifecycle and timing" subtitle
+2. There should be an "ACTIVE" status indicator at the top right of the panel header, accompanied by a green dot
+3. There should be two timer displays labelled "ELAPSED" and "ACTIVE SEARCH"
 4. Both timers should show a time greater than 00:00:00 (they should be running)
 5. The timers should show roughly the same time since the mission just started
-6. The current mission name "RIDGE SEARCH ALPHA" should be displayed
-7. There should be "PAUSE" and "FINISH" buttons that appear enabled/clickable
-8. The start form/button should no longer be available while the mission is active
+6. There should be "Pause" and "Finish" buttons that appear enabled/clickable
+7. The mission name input and Start button should NOT be visible while the mission is active
 Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
       playwrightAssertions: [
         'mission-control contains "active"',
@@ -76,12 +75,13 @@ Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
       testName: 'Mission with 2-hour back-dated start',
       area: 'mission',
       severity: 'critical',
-      verificationPrompt: `Verify this screenshot of a back-dated SAR mission:
-1. The ELAPSED timer should show approximately 02:00:XX (about 2 hours)
-2. The ACTIVE SEARCH timer should show approximately 02:00:XX (about 2 hours)
-3. The mission name "DELAYED START" should be visible
-4. The status should show "ACTIVE"
-5. Both timers being at ~2 hours confirms the back-dating offset is working correctly
+      verificationPrompt: `Verify this screenshot of the Mission Control panel for a back-dated SAR mission. NOTE: this capture is the Mission Control panel only — the mission name renders on the command mast outside this element. Check only what is in frame:
+1. The section header should show "MISSION CONTROL"
+2. The status indicator should show "ACTIVE" with a green dot
+3. The ELAPSED timer should show approximately 02:00:XX (about 2 hours), confirming the back-dating offset
+4. The ACTIVE SEARCH timer should show approximately 02:00:XX (about 2 hours)
+5. Pause and Finish buttons should be visible and appear enabled
+6. The mission name input and Start button should NOT be visible
 Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
       playwrightAssertions: [
         'mission-control contains "active"',
@@ -107,13 +107,14 @@ Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
       testName: 'Mission control in paused state',
       area: 'mission',
       severity: 'critical',
-      verificationPrompt: `Verify this screenshot of the SAR Tracker Mission Control in paused state:
-1. The status should show "PAUSED" (not "ACTIVE")
-2. There should be two timer displays: "ELAPSED" and "ACTIVE SEARCH"
-3. The ELAPSED timer should be greater than the ACTIVE SEARCH timer (elapsed keeps running, active freezes on pause)
-4. The mission name "PAUSE TEST MISSION" should be visible
+      verificationPrompt: `Verify this screenshot of the Mission Control panel in paused state. NOTE: this capture is the Mission Control panel only — the mission name renders on the command mast outside this element. Check only what is in frame:
+1. The section header should show "MISSION CONTROL"
+2. The status indicator should show "PAUSED" (not "ACTIVE"), typically in amber
+3. There should be two timer displays labelled "ELAPSED" and "ACTIVE SEARCH"
+4. The ELAPSED timer should be greater than the ACTIVE SEARCH timer (elapsed keeps running, active freezes on pause)
 5. There should be a "Resume" button (not "Pause")
-6. There should be a "FINISH" button that appears enabled
+6. There should be a "Finish" button that appears enabled
+7. The mission name input and Start button should NOT be visible
 Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
       playwrightAssertions: [
         'mission-control contains "paused"',

@@ -38,13 +38,14 @@ test.describe('Visual: Tracking', () => {
       testName: 'Tracking status panel with 3 devices',
       area: 'tracking',
       severity: 'critical',
-      verificationPrompt: `Verify this screenshot of the SAR Tracker tracking status panel:
-1. It should show "Tracking" as the section header
-2. The connection status should show "online" (not "idle" or "offline")
-3. There should be a count showing 3 devices tracked
-4. Device names "Alpha Team", "Bravo Team", and/or "Charlie Team" may be visible
-5. There should be position count information showing how many GPS positions have been received
-6. The status should clearly communicate that tracking is active and receiving data
+      verificationPrompt: `Verify this screenshot of the SAR Tracker tracking status panel. NOTE: this panel is the summary card only — individual device names render in the Layers tab (separate test) and are NOT expected here. Check only what is in frame:
+1. The section header should read "Tracking System" with a "telemetry stream" subtitle (a header of "TRACKING SYSTEM / TELEMETRY STREAM" is correct)
+2. The connection status chip in the header should show "ONLINE" with a green/emerald dot (not "idle" or "offline")
+3. There should be a 4-column counters strip with labels "DEVICES", "FIXES", "CACHE", "STALE"
+4. The DEVICES counter should show "3"
+5. The FIXES counter should be a non-zero number (3 or more, reflecting received GPS fixes)
+6. There should be an "Open Devices" button below the counters
+7. There should be a "Last success" line showing a time, and a healthy/warning status message line at the bottom
 Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
       playwrightAssertions: [
         'tracking-status contains "online"',
