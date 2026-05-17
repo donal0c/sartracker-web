@@ -120,16 +120,21 @@ This is the default order when the user says “work on the next task.”
 | Done | Z2: macOS ATS blocked WKWebView fetch to plain-HTTP Traccar | Track B / Critical | `sartracker-web-el9` | Fixed 2026-05-17 in 603771f; src-tauri/Info.plist NSAllowsArbitraryLoads (internal-beta scope) |
 | Done | Z3: zl4 active-mission-finished-on-quit | Track B | `sartracker-web-zl4` | Closed 2026-05-17 as false positive; regression test added in 000f7d1 |
 | Done | B3 rerun: First Internal Tauri Smoke Build | Track B | `sartracker-web-ppr` | Done 2026-05-17 on 0.1.0+sha.603771f65431; all 6 smoke items categorically proven incl. live 18-device tracking poll |
-| 1 | Promote 0.1.0-beta-DRAFT release note and upload zip | Track B | `sartracker-web-ppr` follow-up | Drop -DRAFT, push to GitHub Releases draft/prerelease channel once distribution audience is confirmed |
-| 2 | Route renderer Traccar fetch via Rust reqwest (remove ATS blanket) | Track B | `sartracker-web-qmr` | P2 follow-up; replaces NSAllowsArbitraryLoads with reqwest-backed Tauri command |
-| 3 | S4: Map Overlay Consolidation And Camera Race Fix | Shared / Track B | Create/update bead before starting | Ready after S3 preferred |
-| 4 | S5: Mission Control View Model Extraction | Shared / Track A | Create/update bead before starting | Pair with A3.4 if selected |
-| 5 | V1: Regression E2E Coverage | Verification | Create/update bead before starting | Ready |
-| 6 | V2: Visual Review Automation | Verification | Create/update bead before starting | Ready |
-| 7 | B4: GPX And Drawing Hit-Test Hardening | Track B | Create/update bead before starting | Ready |
+| Done | S4: Map Overlay Consolidation And Camera Race Fix | Shared / Track B | `sartracker-web-s5v` | Done locally 2026-05-17 |
+| 1 | S5: Mission Control View Model Extraction | Shared / Track A | Create/update bead before starting | Pair with A3.4 if selected |
+| 2 | V1: Regression E2E Coverage | Verification | Create/update bead before starting | Ready |
+| 3 | B4: Set up cross-platform Tauri beta distribution | Track B / Release | `sartracker-web-y6a` | Deferred until after the next app/foundation chunks; prepare Windows/Linux artifacts, download channel, and tester instructions |
+| 4 | Route renderer Traccar fetch via Rust reqwest (remove ATS blanket) | Track B | `sartracker-web-qmr` | P2 follow-up before signed/notarised distribution; not a blocker for current app chunks |
+| 5 | V2: Visual Review Automation | Verification | Create/update bead before starting | Ready |
+| 6 | B5: Triage first web and Tauri beta feedback | Track A / Track B | `sartracker-web-s8m` | After deployed-web validation and cross-platform beta setup produce feedback |
+| 7 | B6: GPX And Drawing Hit-Test Hardening | Track B | Create/update bead before starting | Ready |
 | 8 | C1: Local Proprietary Map Package Requirements | Track B / Maps | Create/update bead before starting | Waiting for map facts |
 
 ## Ready Work Chunks
+
+### Desktop Beta Distribution Rule
+
+Windows/Linux team testers should not be pointed at a macOS `.app` artifact. Desktop beta distribution is deliberately deferred until `sartracker-web-y6a` sets up a cross-platform process. That chunk should prepare Windows and Linux artifacts, a download channel, OS-specific tester instructions, and explicit unsigned-app caveats. Until then, the hosted web app remains the broad team-testing lane, while B3 evidence remains the internal desktop smoke baseline.
 
 ### R0: S1/S2 Review Remediation Gate
 
@@ -858,10 +863,13 @@ Acceptance:
 
 Verification:
 
-- Unit tests for shared overlay helpers.
-- Unit test for style-switch camera preservation.
-- Existing sync module tests remain green.
-- Targeted basemap/map interaction check.
+- Done 2026-05-17: added `src/features/map/map-overlay-primitives.ts` with shared GeoJSON source, style layer, filter-combination, and SVG icon loading helpers.
+- Done 2026-05-17: refactored drawing, marker, measurement, GPX, helicopter, and tracking overlay sync modules to use the shared primitives while preserving their feature-specific layer specs.
+- Done 2026-05-17: changed basemap style camera preservation to restore once on `styledata`, removing the immediate restore plus later `idle` restore that could fight operator camera movement.
+- Done 2026-05-17: red-then-green coverage added in `tests/unit/map-overlay-primitives.test.ts` and `tests/unit/apply-map-style-preserving-camera.test.ts`.
+- Passed 2026-05-17: focused unit suite for overlay primitives, camera preservation, tracking overlay, layer filters, and overlay GeoJSON builders.
+- Passed 2026-05-17: `npm run lint`, `npm run test` (91 files / 465 tests), `npm run build`, and `npm run test:backend` (41 passed / 1 ignored).
+- Not run: Playwright E2E, because local repo instructions say not to use Playwright unless explicitly requested.
 
 ### S5: Mission Control View Model Extraction
 

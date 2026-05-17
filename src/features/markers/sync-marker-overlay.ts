@@ -1,7 +1,7 @@
 import type maplibregl from 'maplibre-gl'
-import type { GeoJsonProperties, Point } from 'geojson'
 
 import { buildMarkerLayerFilter } from '../layers/map-layer-filters'
+import { ensureGeoJsonSource, ensureLayer, loadSvgIcon } from '../map/map-overlay-primitives'
 import type { Marker, MarkerType } from '../../infrastructure/mission-store/tauri-mission-store'
 import { createMarkerFeatureCollection } from './marker-geojson'
 
@@ -20,60 +20,54 @@ export async function syncMarkerOverlay(
   hiddenMarkerIds: readonly string[],
 ): Promise<void> {
   await ensureMarkerImages(map)
-  ensureMarkerSource(map, createMarkerFeatureCollection(markers))
+  ensureGeoJsonSource(map, MARKER_SOURCE_ID, createMarkerFeatureCollection(markers))
 
-  if (!map.getLayer(MARKER_HITBOX_LAYER_ID)) {
-    map.addLayer({
-      id: MARKER_HITBOX_LAYER_ID,
-      type: 'circle',
-      source: MARKER_SOURCE_ID,
-      paint: {
-        'circle-radius': 16,
-        'circle-color': '#000000',
-        'circle-opacity': 0,
-        'circle-stroke-width': 0,
-      },
-    })
-  }
+  ensureLayer(map, {
+    id: MARKER_HITBOX_LAYER_ID,
+    type: 'circle',
+    source: MARKER_SOURCE_ID,
+    paint: {
+      'circle-radius': 16,
+      'circle-color': '#000000',
+      'circle-opacity': 0,
+      'circle-stroke-width': 0,
+    },
+  })
 
   for (const markerType of MARKER_TYPES) {
     const symbolLayerId = getMarkerSymbolLayerId(markerType)
     const labelLayerId = getMarkerLabelLayerId(markerType)
 
-    if (!map.getLayer(symbolLayerId)) {
-      map.addLayer({
-        id: symbolLayerId,
-        type: 'symbol',
-        source: MARKER_SOURCE_ID,
-        layout: {
-          'icon-image': ['get', 'iconId'],
-          'icon-allow-overlap': true,
-          'icon-ignore-placement': true,
-        },
-      })
-    }
+    ensureLayer(map, {
+      id: symbolLayerId,
+      type: 'symbol',
+      source: MARKER_SOURCE_ID,
+      layout: {
+        'icon-image': ['get', 'iconId'],
+        'icon-allow-overlap': true,
+        'icon-ignore-placement': true,
+      },
+    })
 
-    if (!map.getLayer(labelLayerId)) {
-      map.addLayer({
-        id: labelLayerId,
-        type: 'symbol',
-        source: MARKER_SOURCE_ID,
-        layout: {
-          'text-field': ['get', 'name'],
-          'text-size': 10,
-          'text-font': ['Open Sans Semibold', 'Arial Unicode MS Bold'],
-          'text-allow-overlap': true,
-          'text-ignore-placement': true,
-          'text-offset': [0, 1.1],
-          'text-anchor': 'top',
-        },
-        paint: {
-          'text-color': ['get', 'labelColor'],
-          'text-halo-color': '#FFFFFF',
-          'text-halo-width': 1.4,
-        },
-      })
-    }
+    ensureLayer(map, {
+      id: labelLayerId,
+      type: 'symbol',
+      source: MARKER_SOURCE_ID,
+      layout: {
+        'text-field': ['get', 'name'],
+        'text-size': 10,
+        'text-font': ['Open Sans Semibold', 'Arial Unicode MS Bold'],
+        'text-allow-overlap': true,
+        'text-ignore-placement': true,
+        'text-offset': [0, 1.1],
+        'text-anchor': 'top',
+      },
+      paint: {
+        'text-color': ['get', 'labelColor'],
+        'text-halo-color': '#FFFFFF',
+        'text-halo-width': 1.4,
+      },
+    })
 
     const typeFilter = buildMarkerLayerFilter(
       markerType,
@@ -103,54 +97,15 @@ export function getMarkerLabelLayerId(markerType: MarkerType): string {
   return `mission-markers-label-${markerType}`
 }
 
-function ensureMarkerSource(
-  map: maplibregl.Map,
-  data: GeoJSON.FeatureCollection<Point, GeoJsonProperties>,
-): void {
-  const source = map.getSource(MARKER_SOURCE_ID) as maplibregl.GeoJSONSource | undefined
-  if (source !== undefined) {
-    source.setData(data)
-    return
-  }
-
-  map.addSource(MARKER_SOURCE_ID, {
-    type: 'geojson',
-    data,
-  })
-}
-
 async function ensureMarkerImages(map: maplibregl.Map): Promise<void> {
   for (const [imageId, svg] of Object.entries(MARKER_IMAGE_SVGS)) {
     if (map.hasImage(imageId)) {
       continue
     }
 
-    const image = await loadSvgImage(svg)
+    const image = await loadSvgIcon(svg, 'Marker')
     map.addImage(imageId, image)
   }
-}
-
-async function loadSvgImage(svg: string): Promise<ImageData> {
-  const image = await loadHtmlImage(svg)
-  const canvas = document.createElement('canvas')
-  canvas.width = image.width
-  canvas.height = image.height
-  const context = canvas.getContext('2d')
-  if (context === null) {
-    throw new Error('Marker icon canvas context was unavailable.')
-  }
-
-  context.drawImage(image, 0, 0)
-  return context.getImageData(0, 0, canvas.width, canvas.height)
-}
-
-function loadHtmlImage(svg: string): Promise<HTMLImageElement> {
-  return new Promise((resolve, reject) => {
-    const image = new Image()
-    image.onload = () => resolve(image)
-    image.onerror = () => reject(new Error('Marker icon failed to load.'))
-    image.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`
-  })
 }
 
 const MARKER_IMAGE_SVGS: Record<string, string> = {

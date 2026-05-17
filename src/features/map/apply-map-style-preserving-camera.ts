@@ -21,8 +21,7 @@ export function applyMapStylePreservingCamera(
 ): void {
   const snapshot = captureCameraSnapshot(map)
   map.setStyle(style)
-  map.jumpTo(snapshot)
-  map.once('idle', () => {
+  map.once('styledata', () => {
     map.jumpTo(snapshot)
   })
 }

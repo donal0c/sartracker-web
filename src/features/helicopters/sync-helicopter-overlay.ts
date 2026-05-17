@@ -5,6 +5,7 @@ import type {
   HelicopterSlotKey,
 } from '../../infrastructure/mission-store/tauri-mission-store'
 import { buildHelicopterLayerFilter } from '../layers/map-layer-filters'
+import { ensureGeoJsonSource, ensureLayer, loadSvgIcon } from '../map/map-overlay-primitives'
 import { createHelicopterFeatureCollection } from './helicopter-geojson'
 
 export const HELICOPTER_SOURCE_ID = 'mission-helicopters'
@@ -18,62 +19,45 @@ export async function syncHelicopterOverlay(
   hiddenHelicopterIds: readonly string[],
 ): Promise<void> {
   await ensureHelicopterImages(map)
-  ensureHelicopterSource(map, createHelicopterFeatureCollection(helicopters))
+  ensureGeoJsonSource(map, HELICOPTER_SOURCE_ID, createHelicopterFeatureCollection(helicopters))
 
-  if (!map.getLayer(HELICOPTER_SYMBOL_LAYER_ID)) {
-    map.addLayer({
-      id: HELICOPTER_SYMBOL_LAYER_ID,
-      type: 'symbol',
-      source: HELICOPTER_SOURCE_ID,
-      layout: {
-        'icon-image': ['get', 'iconId'],
-        'icon-size': 1,
-        'icon-rotate': ['get', 'heading'],
-        'icon-rotation-alignment': 'map',
-        'icon-allow-overlap': true,
-        'icon-ignore-placement': true,
-      },
-    })
-  }
+  ensureLayer(map, {
+    id: HELICOPTER_SYMBOL_LAYER_ID,
+    type: 'symbol',
+    source: HELICOPTER_SOURCE_ID,
+    layout: {
+      'icon-image': ['get', 'iconId'],
+      'icon-size': 1,
+      'icon-rotate': ['get', 'heading'],
+      'icon-rotation-alignment': 'map',
+      'icon-allow-overlap': true,
+      'icon-ignore-placement': true,
+    },
+  })
 
-  if (!map.getLayer(HELICOPTER_LABEL_LAYER_ID)) {
-    map.addLayer({
-      id: HELICOPTER_LABEL_LAYER_ID,
-      type: 'symbol',
-      source: HELICOPTER_SOURCE_ID,
-      layout: {
-        'text-field': ['get', 'callSign'],
-        'text-size': 11,
-        'text-font': ['Open Sans Semibold', 'Arial Unicode MS Bold'],
-        'text-offset': [0, 1.2],
-        'text-anchor': 'top',
-        'text-allow-overlap': true,
-        'text-ignore-placement': true,
-      },
-      paint: {
-        'text-color': ['get', 'color'],
-        'text-halo-color': '#020617',
-        'text-halo-width': 1.4,
-      },
-    })
-  }
+  ensureLayer(map, {
+    id: HELICOPTER_LABEL_LAYER_ID,
+    type: 'symbol',
+    source: HELICOPTER_SOURCE_ID,
+    layout: {
+      'text-field': ['get', 'callSign'],
+      'text-size': 11,
+      'text-font': ['Open Sans Semibold', 'Arial Unicode MS Bold'],
+      'text-offset': [0, 1.2],
+      'text-anchor': 'top',
+      'text-allow-overlap': true,
+      'text-ignore-placement': true,
+    },
+    paint: {
+      'text-color': ['get', 'color'],
+      'text-halo-color': '#020617',
+      'text-halo-width': 1.4,
+    },
+  })
 
   const filter = buildHelicopterLayerFilter(slotVisibility, hiddenHelicopterIds)
   map.setFilter(HELICOPTER_SYMBOL_LAYER_ID, filter)
   map.setFilter(HELICOPTER_LABEL_LAYER_ID, filter)
-}
-
-function ensureHelicopterSource(map: maplibregl.Map, data: GeoJSON.FeatureCollection): void {
-  const source = map.getSource(HELICOPTER_SOURCE_ID) as maplibregl.GeoJSONSource | undefined
-  if (source !== undefined) {
-    source.setData(data)
-    return
-  }
-
-  map.addSource(HELICOPTER_SOURCE_ID, {
-    type: 'geojson',
-    data,
-  })
 }
 
 async function ensureHelicopterImages(map: maplibregl.Map): Promise<void> {
@@ -90,7 +74,7 @@ async function ensureHelicopterImages(map: maplibregl.Map): Promise<void> {
       continue
     }
 
-    const image = await loadSvgImage(svg)
+    const image = await loadSvgIcon(svg, 'Helicopter')
     map.addImage(imageId, image)
   }
 }
@@ -102,27 +86,4 @@ function svgForColor(color: string): string {
       <circle cx="22" cy="18" r="3" fill="#FFFFFF" />
     </svg>
   `
-}
-
-async function loadSvgImage(svg: string): Promise<ImageData> {
-  const image = await loadHtmlImage(svg)
-  const canvas = document.createElement('canvas')
-  canvas.width = image.width
-  canvas.height = image.height
-  const context = canvas.getContext('2d')
-  if (context === null) {
-    throw new Error('Helicopter icon canvas context was unavailable.')
-  }
-
-  context.drawImage(image, 0, 0)
-  return context.getImageData(0, 0, canvas.width, canvas.height)
-}
-
-function loadHtmlImage(svg: string): Promise<HTMLImageElement> {
-  return new Promise((resolve, reject) => {
-    const image = new Image()
-    image.onload = () => resolve(image)
-    image.onerror = () => reject(new Error('Helicopter icon failed to load.'))
-    image.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`
-  })
 }

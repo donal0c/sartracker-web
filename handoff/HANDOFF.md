@@ -4,6 +4,7 @@
 
 ## Last Updated
 
+- 2026-05-17 by Codex — S4 Map Overlay Consolidation And Camera Race Fix (`sartracker-web-s5v`) completed locally. Added shared MapLibre overlay primitives for GeoJSON source sync, idempotent layer creation, filter combination, and SVG icon loading; refactored drawing, marker, measurement, GPX, helicopter, and tracking overlay sync modules onto those primitives; changed basemap style switching to restore the captured camera once on `styledata` instead of immediately and again on `idle`.
 - 2026-05-17 by Claude — B3 First Internal Tauri Smoke Build (`sartracker-web-ppr`) **completed end-to-end on packaged build `0.1.0+sha.603771f65431`**. Two desktop bugs uncovered during the original smoke pass were fixed and categorically proven in the live `.app`:
   - `sartracker-web-el9`: keyring crate had no platform features (mock backend in use). Fixed in `000f7d1` by adding `apple-native`, `windows-native`, `sync-secret-service` to the keyring dependency. Symmetric Rust unit, real-keychain integration test (verifies via `security find-generic-password` from a separate process), and TS poller-start unit test added.
   - `sartracker-web-el9` (second root cause): macOS App Transport Security blocked the WKWebView renderer's `fetch()` to plain-HTTP Traccar URLs. Fixed in `603771f` by adding `src-tauri/Info.plist` with `NSAllowsArbitraryLoads = true` (internal-beta scope). `sartracker-web-qmr` filed as P2 follow-up to route renderer fetch through Rust `reqwest` and remove the blanket exception.
@@ -66,13 +67,15 @@ Use these only for team testing, not as a production secret model.
 
 ## Next Task
 
-Default next chunk is to revise `docs/releases/sartracker-web-0.1.0-beta-DRAFT.md` to reflect the post-fix build (`0.1.0+sha.603771f65431`), drop the `-DRAFT` suffix once the artifact is uploaded to GitHub Releases draft/prerelease channel, and confirm distribution audience. After that, `sartracker-web-qmr` (P2 ATS-blanket replacement via Rust reqwest) is the natural Track-B follow-up.
+Default next chunks come from `docs/two-track-execution-workplan.md`: S5 Mission Control View Model Extraction, then V1 Regression E2E Coverage. Desktop beta distribution is deliberately deferred until `sartracker-web-y6a` sets up a Windows/Linux-capable release path and tester instructions.
 
 ## Open Beads That Matter Now
 
+- `sartracker-web-y6a` — B4: set up cross-platform Tauri beta distribution for Windows/Linux testers; deferred until after the next app/foundation chunks.
 - `sartracker-web-qmr` — P2: route renderer Traccar fetch through Rust `reqwest` to remove the ATS `NSAllowsArbitraryLoads` blanket. Internal-beta scope is acceptable as-is; this lands before any signed/notarised distribution.
 - `sartracker-web-vpz` — Hosted browser testing mode and parity hardening.
 - `sartracker-web-6y3` — A3 team feedback remediation batch; should be closed/reframed once A3.9 verification/deploy is complete.
+- `sartracker-web-s5v` — S4 Map Overlay Consolidation And Camera Race Fix (closed 2026-05-17).
 - `sartracker-web-4a1` — S3 Layer Visibility Service Extraction (completed 2026-05-17; ready to close if no follow-up findings).
 - `sartracker-web-xhz` — B2 Tauri Beta Release Template (completed 2026-05-17; ready to close if no follow-up findings).
 - `sartracker-web-zl4` — closed 2026-05-17 as false positive; regression test added.
@@ -90,6 +93,17 @@ Older parity/UI beads still exist, but new work should be selected through the t
 
 ## Verification Snapshot
 
+Most recent local verification in this turn (S4 overlay/camera consolidation):
+
+- Red checks first: new overlay primitive test failed on missing module; camera preservation test failed because the current implementation restored on `idle` and jumped immediately.
+- Passed: `npm run test -- tests/unit/map-overlay-primitives.test.ts tests/unit/apply-map-style-preserving-camera.test.ts tests/unit/sync-tracking-overlay.test.ts tests/unit/map-layer-filters.test.ts tests/unit/drawing-geojson.test.ts tests/unit/marker-geojson.test.ts tests/unit/measurement-geojson.test.ts tests/unit/gpx-geojson.test.ts tests/unit/start-helicopter-runtime.test.ts`.
+- Passed: `npx tsc --noEmit`.
+- Passed: `npm run lint`.
+- Passed: `npm run test` — 91 files / 465 tests.
+- Passed: `npm run build`.
+- Passed: `npm run test:backend` — 41 passed / 1 ignored.
+- Not run: Playwright E2E/browser automation because local instructions require explicit user approval before using Playwright. The app code path affected is covered by unit/build checks; use the inbuilt browser or an explicitly approved E2E pass for rendered basemap switching if needed.
+
 Most recent local verification in this turn (B3 re-run on `0.1.0+sha.603771f65431`):
 
 - Passed: `npm run beta:verify -- --no-smoke` end-to-end (lint, build, test 461/461, test-backend 41/41 + 1 ignored, package). Report at `tmp/beta-artifacts/verify-0.1.0-sha.603771f65431-2026-05-17T08-01-33Z.json`.
@@ -102,7 +116,7 @@ Most recent local verification in this turn (B3 re-run on `0.1.0+sha.603771f6543
   - Item 5 (tracking save + actually polls): PASS — `tracking-cache.json` populated 85 → 6,231 bytes within 30 seconds; SQLite `devices=18 / positions=14`; mast `DEVICES ONLINE 18 / SYSTEM STATUS ONLINE`.
   - Item 6 (diagnostics export): PASS — file written, version line matches mast.
 - Evidence kept under `tmp/beta-artifacts/smoke-rerun/` (01-initial-launch through 09-tracking-live-with-devices PNGs, `devices.tsv`, etc.) and `tmp/beta-artifacts/smoke/` (initial run pre-fix evidence).
-- Beta artifact still pending promotion: `docs/releases/sartracker-web-0.1.0-beta-DRAFT.md` should be revised to point at the post-fix build before being uploaded to GitHub Releases draft/prerelease.
+- Beta artifact promotion is deferred: do not upload or push desktop artifacts to the Windows/Linux tester group until `sartracker-web-y6a` defines the cross-platform build/download/instructions process. The current macOS `.app` smoke remains useful internal evidence, not the team distribution path.
 
 Earlier B2 verification (kept for context):
 

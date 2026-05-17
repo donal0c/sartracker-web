@@ -2,6 +2,7 @@ import type maplibregl from 'maplibre-gl'
 
 import type { GpxTrackImport } from '../../infrastructure/mission-store/tauri-mission-store'
 import { buildGpxLayerFilter } from '../layers/map-layer-filters'
+import { ensureGeoJsonSource, ensureLayer } from '../map/map-overlay-primitives'
 import { createGpxFeatureCollection } from './gpx-geojson'
 
 export const GPX_SOURCE_ID = 'mission-gpx-imports'
@@ -15,30 +16,8 @@ export function syncGpxOverlay(
   imports: readonly GpxTrackImport[],
   hiddenImportIds: readonly string[],
 ): void {
-  ensureGpxSource(map, createGpxFeatureCollection(imports))
-  ensureGpxLayers(map)
-  map.setFilter(GPX_LINE_LAYER_ID, buildGpxLayerFilter(hiddenImportIds))
-}
-
-function ensureGpxSource(map: maplibregl.Map, data: GeoJSON.FeatureCollection): void {
-  const source = map.getSource(GPX_SOURCE_ID) as maplibregl.GeoJSONSource | undefined
-  if (source !== undefined) {
-    source.setData(data)
-    return
-  }
-
-  map.addSource(GPX_SOURCE_ID, {
-    type: 'geojson',
-    data,
-  })
-}
-
-function ensureGpxLayers(map: maplibregl.Map): void {
-  if (map.getLayer(GPX_LINE_LAYER_ID)) {
-    return
-  }
-
-  map.addLayer({
+  ensureGeoJsonSource(map, GPX_SOURCE_ID, createGpxFeatureCollection(imports))
+  ensureLayer(map, {
     id: GPX_LINE_LAYER_ID,
     type: 'line',
     source: GPX_SOURCE_ID,
@@ -53,4 +32,5 @@ function ensureGpxLayers(map: maplibregl.Map): void {
       'line-join': 'round',
     },
   })
+  map.setFilter(GPX_LINE_LAYER_ID, buildGpxLayerFilter(hiddenImportIds))
 }
