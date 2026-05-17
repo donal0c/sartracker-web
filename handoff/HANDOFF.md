@@ -4,6 +4,7 @@
 
 ## Last Updated
 
+- 2026-05-17 by Claude — **B4 first end-to-end CI run SUCCESS on `v0.1.0-beta.3`** (run `26002563213`, ~24m wall-clock). All four jobs green: gates (7m7s), bundle linux-x86_64 (11m9s), bundle windows-x86_64 (16m5s), SHA256SUMS (18s), summary (4s). Draft release at https://github.com/donal0c/sartracker-web/releases (look for `v0.1.0-beta.3 (internal beta)`) with three artifacts plus checksum sidecar: AppImage 92.9 MB, .deb 15.8 MB, NSIS .exe 12.9 MB, SHA256SUMS 335 B. Filenames match the documented `_linux_amd64`/`_windows_x64` pattern. **Awaiting:** local Linux smoke test against AppImage on a real Linux box, then `gh release edit v0.1.0-beta.3 --repo donal0c/sartracker-web --draft=false` to publish for tester downloads. Stale `v0.1.0-beta.2` draft (Linux assets only, never promoted) and failed-tag markers `v0.1.0-beta.1`/`v0.1.0-beta.2` are intentionally retained per the project's tag-immutability rule. SHA256s recorded in the bead `sartracker-web-y6a` final comment for future audit.
 - 2026-05-17 by Claude — Re-cut as `v0.1.0-beta.3` after `v0.1.0-beta.2` had a partial-success run: Linux bundle uploaded AppImage + .deb cleanly, Windows bundle failed because Tauri's MSI bundler rejects alphanumeric pre-release suffixes (`-beta.N`). Fixes in this cut: (a) drop MSI from Windows args (NSIS only); follow-up bead `sartracker-web-g1u` tracks MSI re-add when version scheme supports it; (b) rename tauri-action inputs to v0.6.2 names (`assetNamePattern`, `includeUpdaterJson`; dropped `uploadUpdaterSignatures`) — fixes the "Unexpected input" warnings that caused beta.2 assets to land with default Tauri names rather than our `_linux_amd64.<ext>` pattern; (c) bump version to `0.1.0-beta.3`. Failed tag history: `v0.1.0-beta.1` (gates failed) and `v0.1.0-beta.2` (Windows MSI failed) retained on remote per immutability rule.
 - 2026-05-17 by Claude — Re-cut first CI-driven beta as `v0.1.0-beta.2` after `v0.1.0-beta.1` failed at the gates → cargo test step (Linux gates job did not install GTK/WebKit apt deps, so `gdk-sys` could not link). Fix added an identical apt step to the gates job. No draft release was created on the v0.1.0-beta.1 run (gates failed before bundle). Per project policy in `docs/releases/README.md`, tags are immutable; failed tag `v0.1.0-beta.1` retained as a marker.
 - 2026-05-17 by Claude — B4 cross-platform Tauri beta distribution (`sartracker-web-y6a`) implemented locally on `master`. New workflow `.github/workflows/release.yml` builds Linux (AppImage + .deb on `ubuntu-22.04`, primary target — most of our team are on Linux), Windows (NSIS `currentUser` + MSI on `windows-2022`, secondary target), and macOS arm64 (.dmg + .app.tar.gz on `macos-latest`, parity-only) on `v*` tag push or `workflow_dispatch`. Architecture: `gates` job (Linux, lint/test/build + version-trio assertion + release-notes existence check) → `bundle` matrix (3 OSes via `tauri-apps/tauri-action@v0.6.2`, `fail-fast: false`) → `checksums` job (downloads release assets, generates SHA256SUMS, uploads as a release asset) → `summary` job. Releases land DRAFT + prerelease for human review before publish. Tauri config updated: Windows section now sets NSIS `installMode: currentUser` (no admin/UAC), WebView2 `downloadBootstrapper` with `silent: true` (0 MB bundle overhead), LZMA compression. Operator-facing docs rewritten: `docs/releases/TEMPLATE.md` has per-OS install sections (AppImage chmod+x flow, .deb apt install, NSIS-with-SmartScreen runbook, MSI admin path, macOS Gatekeeper); `docs/releases/README.md` documents Path A (CI-driven) vs Path B (local macOS-only); `docs/tauri-beta-release-plan.md` records B4 outcome and preconditions for wider/signed distribution; operator manual Desktop Beta section rewritten Linux/Windows/macOS. Three research files at `tmp/b4-research/` ({linux,windows,github-actions}-tauri2-2026.md, ~1500 lines combined) capture the 2026-current sources. End-to-end CI run verification is deferred until the first real beta tag is cut. Local verification all green.
@@ -79,12 +80,16 @@ Use these only for team testing, not as a production secret model.
 
 ## Next Task
 
-B4 cross-platform Tauri beta distribution (`sartracker-web-y6a`) completed locally. The default next chunk from `docs/two-track-execution-workplan.md` is now B5 feedback triage (`sartracker-web-s8m`) once a real beta tag is cut and testers have something to react to. First-real-tag end-to-end CI verification is the natural next operator-driven step: bump `package.json` and `src-tauri/tauri.conf.json` to `0.1.0-beta.1`, copy `docs/releases/TEMPLATE.md` to `docs/releases/sartracker-web-0.1.0-beta.1-beta.md`, fill in the changelog, commit, tag `v0.1.0-beta.1`, push the tag, watch the workflow, smoke-test the Linux AppImage on a real Linux box, then `gh release edit v0.1.0-beta.1 --draft=false`. The parity sweep findings walk-through (`sartracker-web-l7c`) remains queued for a dedicated Codex+Donal session before any matrix rewrite or per-gap bead creation. C1/local-map work remains deferred until the team can provide concrete map-package facts.
+**Smoke + publish v0.1.0-beta.3.** The CI run is green and the draft release has all three artifacts. Pull the AppImage onto a real Linux box (`gh release download v0.1.0-beta.3 --repo donal0c/sartracker-web --pattern '*.AppImage' --pattern SHA256SUMS`), verify the checksum, run the AppImage, walk through the smoke checklist in `docs/releases/sartracker-web-0.1.0-beta.3-beta.md` (mission start, persistence-across-restart, tracking save, diagnostics export). When green, publish: `gh release edit v0.1.0-beta.3 --repo donal0c/sartracker-web --draft=false`, then share the release URL with testers. After that the default next chunk from `docs/two-track-execution-workplan.md` is B5 feedback triage (`sartracker-web-s8m`). The parity sweep findings walk-through (`sartracker-web-l7c`) remains queued for a dedicated Codex+Donal session before any matrix rewrite or per-gap bead creation. C1/local-map work remains deferred until the team can provide concrete map-package facts.
+
+Optional cleanup: the stale `v0.1.0-beta.2` draft release on GitHub holds Linux-only assets from the partial-success run. Delete it via the Releases UI or `gh release delete v0.1.0-beta.2 --repo donal0c/sartracker-web --yes` once you do not need the evidence trail.
 
 ## Open Beads That Matter Now
 
-- `sartracker-web-y6a` — B4 cross-platform Tauri beta distribution. Implemented locally 2026-05-17; ready to close after first end-to-end CI run on a real beta tag confirms the workflow produces clean artifacts on all three runners. Until then, mark as "implemented, awaiting first real-tag verification".
-- `sartracker-web-s8m` — B5: triage first web and Tauri beta feedback. Now next-task default after B4 implementation lands a real CI run.
+- `sartracker-web-y6a` — B4 cross-platform Tauri beta distribution. End-to-end CI run on `v0.1.0-beta.3` succeeded 2026-05-17. Closing after smoke + publish.
+- `sartracker-web-590` — Re-add macOS arm64 to release CI matrix when build cadence stabilizes. P3, deferred.
+- `sartracker-web-g1u` — Re-add Windows MSI artifact when version scheme supports it. P3, deferred (MSI bundler requires numeric-only pre-release suffixes which `-beta.N` is not).
+- `sartracker-web-s8m` — B5: triage first web and Tauri beta feedback. Next-task default once testers have published artifacts to react to.
 - `sartracker-web-l7c` — Parity sweep findings walk-through (Codex + Donal). P3, queued. Reads `tmp/parity-sweep/sweep-report.md` and triages C1–C13 with Donal.
 - `sartracker-web-ag1` — QGIS Parity Residual-Gap Sweep (closed 2026-05-17). Outputs under `tmp/parity-sweep/`.
 - `sartracker-web-fy5` — B6 GPX And Drawing Hit-Test Hardening (completed 2026-05-17; ready to close).
@@ -117,19 +122,30 @@ Older parity/UI beads still exist, but new work should be selected through the t
 
 ## Verification Snapshot
 
-Most recent local verification in this turn (B4 cross-platform beta distribution, `sartracker-web-y6a`):
+Most recent CI verification (B4 first end-to-end run on `v0.1.0-beta.3`):
 
+- Run ID `26002563213` — https://github.com/donal0c/sartracker-web/actions/runs/26002563213
+- Started 2026-05-17 20:59 UTC, finished 21:23 UTC, total ~24 min wall-clock.
+- Conclusion: SUCCESS for every job.
+- Gates (ubuntu-22.04): 7m7s. Tag/version trio matched, release-notes file found, lint clean, vitest 559 pass, web build clean (bundle budgets OK), cargo test 43 pass.
+- Bundle linux-x86_64 (ubuntu-22.04): 11m9s. Produced `sartracker-web_0.1.0-beta.3_linux_amd64.AppImage` (92.9 MB) and `sartracker-web_0.1.0-beta.3_linux_amd64.deb` (15.8 MB).
+- Bundle windows-x86_64 (windows-2022): 16m5s. Produced `sartracker-web_0.1.0-beta.3_windows_x64.exe` (12.9 MB) — NSIS, currentUser install.
+- Checksums (ubuntu-22.04): 18s. Generated and uploaded `SHA256SUMS` (335 bytes).
+- Asset name pattern landed correctly (linux_amd64 / windows_x64); zero "Unexpected input" warnings on this run.
+- Artifact SHA256s recorded in the bead `sartracker-web-y6a` final comment for audit; SHA256SUMS asset on the draft release is the source of truth.
+
+Failed runs prior to success this turn (per immutability rule, retained on remote):
+- `v0.1.0-beta.1` (run `26001753808`, 3m56s): gates failed at cargo test — gates job did not install GTK/WebKit apt deps. Fix: add the same apt step to gates.
+- `v0.1.0-beta.2` (run `26001903566`, 23m38s): Linux bundle succeeded (assets uploaded to draft release `v0.1.0-beta.2`); Windows MSI bundler rejected the `-beta.N` pre-release suffix (`pre-release identifier must be numeric-only and cannot be greater than 65535 for msi target`). Fix: drop MSI from beta lane; tracked by `sartracker-web-g1u`. Stale `v0.1.0-beta.2` draft release retained on GitHub Releases for evidence; safe to delete via `gh release delete v0.1.0-beta.2 --repo donal0c/sartracker-web --yes` when convenient.
+
+Local verification of the workflow + config edits (pre-tag):
 - Workflow YAML parses cleanly via Python `yaml.safe_load`.
 - `actionlint` (1.7.12) passes with no findings on `.github/workflows/release.yml`.
-- `npm run tauri info` confirms `tauri.conf.json` validates against the config schema after the Windows section additions (NSIS `currentUser`, WebView2 `downloadBootstrapper`, LZMA compression). First attempt with `installMode: perUser` was rejected — confirmed the schema requires `currentUser`/`perMachine`/`both` and corrected.
-- `cargo check --quiet` from `src-tauri/` returns clean — Rust still builds with the config edits.
-- `npm run lint` — clean.
-- `npm run test` — 100 files / 559 tests pass.
-- `npm run build` — bundle budgets clean.
-- `npm run test:backend` — 43 passed / 1 ignored.
-- Not run: `npx playwright test` (no UI/runtime change to validate).
-- Not run: end-to-end GitHub Actions release run. This is the first deferred verification step and is naturally gated on the first real beta tag (`v0.1.0-beta.1`). The recommended first cut is documented in `docs/tauri-beta-release-plan.md` § Cut a beta.
-- Research artefacts retained at `tmp/b4-research/`: `w1-linux-tauri2-2026.md`, `w1-windows-tauri2-2026.md`, `w1-github-actions-tauri-release-2026.md` (combined ~1500 lines covering Linux runner choice, Tauri 2 bundle flags, apt deps, WebKit floor, AppImage caveats, Windows runner choice, NSIS vs MSI, WebView2 distribution, unsigned-tester runbook, Azure Trusted Signing roadmap, `tauri-action` pinning, two-job topology, fail-fast policy, asset naming, and version-trio assertion).
+- `npm run tauri info` confirms `tauri.conf.json` validates against the config schema (NSIS `currentUser`, WebView2 `downloadBootstrapper`, LZMA compression). First attempt with `installMode: perUser` was rejected — schema requires `currentUser`/`perMachine`/`both`.
+- `cargo check --quiet` from `src-tauri/` returns clean.
+- `npm run lint` clean. `npm run test` 559/559. `npm run build` bundle budgets clean. `npm run test:backend` 43 pass / 1 ignored.
+
+Research artefacts retained at `tmp/b4-research/`: `w1-linux-tauri2-2026.md`, `w1-windows-tauri2-2026.md`, `w1-github-actions-tauri-release-2026.md` (~1500 lines combined).
 
 Most recent local verification in this turn (polish chunk: `sartracker-web-wn6`, `sartracker-web-zq9`, `sartracker-web-2xp`):
 
