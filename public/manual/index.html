@@ -464,37 +464,99 @@
         <section id="desktop-beta">
           <h2>Desktop Beta Install Notes</h2>
           <div class="warning">
-            <strong>Internal beta only:</strong> the current macOS desktop beta path is for controlled
-            team testing. It is not signed with a Developer ID, not notarized by Apple, and should not be
-            treated as a production incident build until a specific beta has passed the desktop smoke
-            checklist.
+            <strong>Internal beta only:</strong> desktop betas are for controlled team testing. They are
+            not code-signed and should not be treated as production incident builds until a specific beta
+            has passed the desktop smoke checklist and a maintainer has signed off in
+            <code>handoff/HANDOFF.md</code>.
           </div>
           <p>
-            The first proven desktop artifact is the macOS Apple Silicon app bundle
-            <code>src-tauri/target/release/bundle/macos/sartracker-web.app</code>, usually shared as a
-            zipped <code>.app</code>. After unzipping, testers can copy <strong>sartracker-web.app</strong>
-            to <strong>/Applications</strong> or open it from the extracted folder for local smoke testing.
+            Each desktop beta drop has a written release note under <code>docs/releases/</code> in the
+            project repository. Do not run a beta that does not have a matching release note: the note
+            records the version, build tag, install steps, what changed, what to test, known limitations,
+            rollback guidance, and the CI run / verification report. If you are asked to test a beta and
+            the maintainer has not pointed you at a specific release note, stop and ask for one before
+            opening the app.
           </p>
           <p>
-            Because this internal beta is ad-hoc signed, macOS Gatekeeper may refuse to open it and may
-            say Apple cannot verify the app, the developer cannot be verified, or the app is damaged or
+            Cross-platform betas are produced by the GitHub Actions release workflow. Every beta has a
+            <code>SHA256SUMS</code> file alongside the artifacts; verify your download against it before
+            running the binary.
+          </p>
+
+          <h3>Linux (primary distribution target)</h3>
+          <p>
+            Two artifacts are published per Linux beta: a portable
+            <code>.AppImage</code> and a Debian <code>.deb</code> package, both x86_64. Compatibility floor
+            is Ubuntu 22.04 / Debian 12 / Fedora 38 or any equivalent distro shipping WebKitGTK 4.1.
+            Operators on Ubuntu 20.04 must upgrade.
+          </p>
+          <p>
+            <strong>AppImage:</strong> verify with
+            <code>sha256sum -c SHA256SUMS --ignore-missing</code>, then
+            <code>chmod +x sartracker-web_&lt;version&gt;_linux_amd64.AppImage</code> and run it. If you see
+            <code>dlopen(): error loading libfuse.so.2</code>, install
+            <code>libfuse2t64</code> on Ubuntu 24.04 / Debian 13 or <code>libfuse2</code> on Ubuntu 22.04 /
+            Debian 12. AppImages do not auto-register a desktop menu entry. Use the
+            <code>.deb</code> if you want a permanent system install.
+          </p>
+          <p>
+            <strong>.deb:</strong> verify the checksum, then
+            <code>sudo apt install ./sartracker-web_&lt;version&gt;_linux_amd64.deb</code>. The package's
+            runtime dependencies are pulled in automatically.
+          </p>
+          <p>
+            On minimal Linux setups without GNOME Keyring or KDE Wallet, the app cannot save Traccar
+            credentials to a system keyring. Install <code>gnome-keyring</code> or <code>kwalletmanager</code>
+            and log out / log in before configuring tracking.
+          </p>
+
+          <h3>Windows (secondary distribution target)</h3>
+          <p>
+            Two artifacts are published per Windows beta: an NSIS <code>-setup.exe</code> (current-user
+            install, no admin required) and an MSI installer (machine-wide, admin required). Most testers
+            should use the NSIS installer. Both are x86_64.
+          </p>
+          <p>
+            The beta is unsigned, so Windows will show a SmartScreen warning that the publisher is unknown.
+            This is expected. To install the NSIS package:
+          </p>
+          <ol>
+            <li>Verify the checksum from PowerShell:
+              <code>Get-FileHash sartracker-web_&lt;version&gt;_windows_amd64.exe -Algorithm SHA256</code>
+              and compare against <code>SHA256SUMS</code>.</li>
+            <li>Right-click the <code>.exe</code> → <strong>Properties</strong> → tick <strong>Unblock</strong>
+              → <strong>OK</strong>.</li>
+            <li>Double-click to run. SmartScreen will say <em>"Windows protected your PC — Unknown
+              publisher."</em> Click <strong>More info</strong>, then <strong>Run anyway</strong>.</li>
+            <li>The installer runs without prompting for admin. The app installs to
+              <code>%LOCALAPPDATA%\Programs\sartracker-web</code>.</li>
+            <li>On first launch, the app may briefly install Microsoft WebView2 if it is not already
+              present. This step requires internet.</li>
+          </ol>
+          <p>
+            If your machine is managed by your team or workplace and Windows blocks the install entirely
+            with no <strong>Run anyway</strong> option, you are on a locked-down policy
+            (WDAC / AppLocker / SmartScreen for Business). There is no workaround for an unsigned binary;
+            use a personal machine, or wait for the signed build.
+          </p>
+
+          <h3>macOS (parity build only)</h3>
+          <p>
+            macOS arm64 builds are produced by CI for parity and evidence, but Linux and Windows are the
+            primary desktop distribution targets. Mac users should still test the artifact, but it is not
+            the focus of this beta lane.
+          </p>
+          <p>
+            Because this internal beta is ad-hoc signed, macOS Gatekeeper may refuse to open it and may say
+            Apple cannot verify the app, the developer cannot be verified, or the app is damaged or
             untrusted. Try <strong>Control-click / right-click → Open</strong> first. If the beta was
             supplied through the agreed internal channel and a maintainer asks you to remove quarantine,
             use:
           </p>
           <p><code>xattr -dr com.apple.quarantine /Applications/sartracker-web.app</code></p>
           <p>
-            If the app is still in Downloads or another extracted folder, replace the path with the actual
-            <code>sartracker-web.app</code> path. Do not run this command for app bundles from an
-            untrusted source, and do not bypass managed Mac security policy; record that as a beta blocker.
-          </p>
-          <p>
-            Each desktop beta drop has a written release note under
-            <code>docs/releases/</code> in the project repository. Do not run a beta that does not have a
-            matching release note: the note records the version, build tag, install steps, what changed,
-            what to test, known limitations, rollback guidance, and the verification report path. If you
-            are asked to test a beta and the maintainer has not pointed you at a specific release note,
-            stop and ask for one before opening the app.
+            Do not run this command for app bundles from an untrusted source, and do not bypass managed
+            Mac security policy; record that as a beta blocker.
           </p>
         </section>
 
