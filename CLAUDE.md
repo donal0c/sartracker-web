@@ -360,17 +360,40 @@ This two-layer approach is required because this is a life-safety application. D
 
 **Running visual tests:**
 ```bash
-# Visual tests only (22 tests, ~25s)
+# Visual tests only (27 tests, ~55s)
 npx playwright test --project=visual
 
-# Standard E2E tests only (55 tests, ~30s, visual tests excluded)
+# Standard E2E tests only (~30s, visual tests excluded)
 npx playwright test --project=chromium
 
 # Both projects
 npx playwright test
 ```
 
-**After running visual tests**, screenshots and `.entry.json` manifest files are written to `test-results/visual-verification/`. To complete verification, spawn Opus subagents that read each screenshot and verify against the manifest prompt. Each entry includes:
+**After running visual tests**, screenshots and `.entry.json` manifest files are written to `test-results/visual-verification/`. Run the visual review automation to complete verification:
+
+```bash
+# Full review (every entry), with caching
+npm run visual:review
+
+# Single entry while iterating on a spec
+npm run visual:review -- --only shell-idle-state
+
+# Bypass the cache (forces a fresh model call per entry)
+npm run visual:review -- --no-cache
+
+# Dry run (no model calls; exercise the runner end-to-end)
+npm run visual:review -- --dry-run
+
+# Stricter gating
+npm run visual:review -- --fail-on critical
+```
+
+The runner spawns one `claude --print` subprocess per entry, hands it the screenshot path and the manifest's `verificationPrompt`, and parses a structured pass/fail reply. Per-entry results land in `test-results/visual-verification/results/<testId>.review.json`; an aggregate report lands under `test-results/visual-verification/reports/visual-review-<timestamp>.json`. Successful runs are cached under `test-results/visual-verification/.cache/` so unchanged screenshots are not re-billed.
+
+Exit codes: `0` all entries passed gating, `1` at least one entry failed at or above `--fail-on` severity, `2` reviewer errored (always blocks), `3` manifest had zero entries (visual project did not run).
+
+Each manifest entry includes:
 - `screenshotPath` — absolute path to the PNG
 - `verificationPrompt` — detailed checklist for the visual reviewer
 - `severity` — `critical` | `high` | `medium`
@@ -382,14 +405,19 @@ tests/e2e/visual/
 ├── helpers/
 │   ├── test-setup.ts            — shared harness setup, mission, tracking injection
 │   └── verification-manifest.ts — parallel-safe manifest (per-entry JSON files)
-├── visual-app-shell.spec.ts     — 4 tests: layout, toolbar, basemaps, coordinates
-├── visual-mission-lifecycle.spec.ts — 6 tests: active, backdated, paused, finish, governance, recovery
-├── visual-tracking.spec.ts      — 4 tests: status panel, map devices, layer panel, full operational
-├── visual-markers.spec.ts       — 4 tests: IPP/LKP, Clue, Hazard, Casualty dialogs
-└── visual-drawings.spec.ts      — 4 tests: search area, LPB rings, bearing conversion, multi-drawing
+├── visual-app-shell.spec.ts     — layout, toolbar, basemaps, coordinates, focus mode
+├── visual-mission-lifecycle.spec.ts — active, backdated, paused, finish, governance, recovery
+├── visual-tracking.spec.ts      — status panel, map devices, layer panel, full operational
+├── visual-markers.spec.ts       — IPP/LKP, Clue, Hazard, Casualty dialogs
+├── visual-drawings.spec.ts      — search area, LPB rings, bearing conversion, multi-drawing
+└── visual-runtime-safety.spec.ts — booting shell, fault shell, autosave warnings
+
+scripts/visual-review.mjs        — runner; spawns claude subprocesses per entry
+build/visual-review-lib.js       — pure helpers (CLI parsing, manifest loading,
+                                    reply parsing, severity gating, cache key)
 ```
 
-**Adding new visual tests:** Use `captureAndRegister()` for full-page screenshots or `captureElementAndRegister()` for element-scoped screenshots. Write verification prompts as numbered checklists — each item should be independently verifiable from the screenshot alone. Set `severity: 'critical'` for anything that affects operator safety.
+**Adding new visual tests:** Use `captureAndRegister()` for full-page screenshots or `captureElementAndRegister()` for element-scoped screenshots. Write verification prompts as numbered checklists — each item must be independently verifiable from the screenshot frame the test actually captures. If a checklist item asks for text or chrome that lives outside the captured element, either widen the capture or rewrite the item. Set `severity: 'critical'` for anything that affects operator safety. Validate new prompts by running `npm run visual:review -- --only <new-test-id>` and reading the model's failedItems before merging.
 
 **Key design decisions:**
 - The `visual` Playwright project uses `1440x900` viewport for consistent screenshot dimensions

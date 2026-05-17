@@ -4,6 +4,7 @@
 
 ## Last Updated
 
+- 2026-05-17 by Claude — V2 Visual Review Automation (`sartracker-web-n9i`) completed locally on `master`. `npm run visual:review` now reads every manifest entry under `test-results/visual-verification/`, spawns one `claude --print --output-format json` reviewer per entry, parses the structured pass/fail reply, and writes per-entry plus aggregate JSON reports. Severity gating via `--fail-on critical|high|medium`; reviewer errors always block; content-hash cache (model + verificationPrompt + screenshot bytes) under `.cache/`. Discovery: full live review surfaced 5 visual specs whose verificationPrompt drifted from the captured element — filed as `sartracker-web-b3c` (P2 bug) for follow-up. CLAUDE.md visual-tests section rewritten to point at the new command.
 - 2026-05-17 by Codex — `sartracker-web-qmr` closed after live desktop smoke. Desktop Traccar polling now uses a Tauri command backed by Rust `reqwest`, preserving the existing TypeScript Traccar client contract while moving HTTP out of WKWebView `fetch()`. Removed the macOS ATS blanket workaround file (`src-tauri/Info.plist`) because desktop plain-HTTP Traccar calls no longer need `NSAllowsArbitraryLoads`. Verified with unit, backend, build, browser E2E, visual E2E, macOS `.app` packaging, packaged `Info.plist` inspection, and a packaged-app live poll against the real Traccar server after resuming the recovered mission.
 - 2026-05-17 by Claude — V1 Regression E2E Coverage (`sartracker-web-8gw`) completed locally. Cold-start-from-cache now publishes an explicit `OFFLINE MODE — showing last known positions from cache.` status so operators do not silently view stale positions before the first live poll succeeds. Added regression coverage at three seams: unit (start-tracking-runtime cache-hydration status, polling-manager healthy-poll-no-offline guard, layer stale-refresh integration), and E2E (`tests/e2e/v1-regression.spec.ts`) covering the MapLibre device-filter path and the operator-visible "showing last known positions" warning. Replaced the five `waitForTimeout` calls in `tests/e2e/parity-visibility.spec.ts` with state-based `expect.poll` predicates.
 - 2026-05-17 by Codex — S5 Mission Control View Model Extraction (`sartracker-web-cgx`) completed locally. Added `useMissionTimer` and shared it between Command Mast and Mission Control; added `useMissionControlViewModel` for lifecycle, recovery, governance, duplicate-name, admin-roster, busy/error, and control-enable state; `MissionControlPanel` now delegates mission orchestration to the hook and keeps rendering/focus-dialog responsibilities.
@@ -71,11 +72,13 @@ Use these only for team testing, not as a production secret model.
 
 ## Next Task
 
-Default next chunks come from `docs/two-track-execution-workplan.md`: V2 Visual Review Automation, then B6 GPX and drawing hit-test hardening, then B4 cross-platform Tauri beta distribution setup (`sartracker-web-y6a`). Desktop beta distribution is deliberately deferred until `sartracker-web-y6a` sets up a Windows/Linux-capable release path and tester instructions.
+V2 done. Default next chunks come from `docs/two-track-execution-workplan.md`: B6 GPX and drawing hit-test hardening, then B4 cross-platform Tauri beta distribution setup (`sartracker-web-y6a`). `sartracker-web-b3c` (V2-discovered visual prompt drift across 5 specs) is also ready and small; pick it up alongside B6 if useful.
 
 ## Open Beads That Matter Now
 
-- `sartracker-web-y6a` — B4: set up cross-platform Tauri beta distribution for Windows/Linux testers; deferred until after V2 and B6.
+- `sartracker-web-n9i` — V2 Visual Review Automation (completed 2026-05-17; ready to close).
+- `sartracker-web-b3c` — V2-discovered: 5 visual specs whose verificationPrompt drifted from the captured element. Small, ready to start.
+- `sartracker-web-y6a` — B4: set up cross-platform Tauri beta distribution for Windows/Linux testers; deferred until after B6.
 - `sartracker-web-qmr` — closed 2026-05-17 after keychain-backed packaged-app live Traccar smoke.
 - `sartracker-web-vpz` — Hosted browser testing mode and parity hardening.
 - `sartracker-web-6y3` — A3 team feedback remediation batch; should be closed/reframed once A3.9 verification/deploy is complete.
@@ -98,6 +101,23 @@ Older parity/UI beads still exist, but new work should be selected through the t
 - High-definition mountain maps should be local desktop map packages unless requirements change.
 
 ## Verification Snapshot
+
+Most recent local verification in this turn (V2 Visual Review Automation, `sartracker-web-n9i`):
+
+- Red-then-green: new `tests/unit/visual-review-lib.test.ts` failed red against the missing `build/visual-review-lib.js`, then 44/44 pass after implementation.
+- Passed: `npm run test` — 96 files / 520 tests (was 476 before V2; added 44 unit tests).
+- Passed: `npm run lint`.
+- Passed: `npx tsc --noEmit`.
+- Passed: `npm run build` — bundle budgets clean.
+- Passed: `npx playwright test --project=chromium` — 85 tests.
+- Passed: `npx playwright test --project=visual` — 27 tests.
+- Passed: `npm run test:backend` — 43 passed / 1 ignored.
+- Live single-entry review with real Opus call: `npm run visual:review -- --only shell-idle-state` returned PASS in ~11 s; per-entry result file written.
+- Live full-batch review: `npm run visual:review --no-cache --concurrency 3` produced 22 PASS / 5 FAIL / 0 ERROR across 27 entries with deterministic output. The 5 FAILs are real spec-drift findings filed as `sartracker-web-b3c` (verification prompts asking for content outside the captured element); these are out of scope for V2.
+- Cached re-run: `npm run visual:review` returned 27/27 cache hits, total runtime under 2 seconds, exit code 1 (matching the live findings).
+- Empty-manifest run returns exit 3 (`OVERALL: FAIL  (no manifest entries — did the visual Playwright project run?)`).
+- `--only nonexistent` returns exit 2 with a clear error message.
+- Cleanup: no background processes left running.
 
 Most recent local verification in this turn (`sartracker-web-qmr`):
 

@@ -124,17 +124,17 @@ This is the default order when the user says “work on the next task.”
 | Done | S5: Mission Control View Model Extraction | Shared / Track A | `sartracker-web-cgx` | Done locally 2026-05-17 |
 | Done | V1: Regression E2E Coverage | Verification | `sartracker-web-8gw` | Done locally 2026-05-17 |
 | Done | Route renderer Traccar fetch via Rust reqwest (remove ATS blanket) | Track B | `sartracker-web-qmr` | Closed 2026-05-17; desktop Traccar polling now uses a Tauri reqwest command, the ATS blanket plist was removed, and packaged-app live Traccar smoke passed |
-| 1 | V2: Visual Review Automation | Verification | Create/update bead before starting | Ready |
-| 2 | B6: GPX And Drawing Hit-Test Hardening | Track B / Shared | Create/update bead before starting | Ready |
-| 3 | B4: Set up cross-platform Tauri beta distribution | Track B / Release | `sartracker-web-y6a` | Deferred until after V2 and B6; prepare Windows/Linux artifacts, download channel, and tester instructions |
-| 4 | B5: Triage first web and Tauri beta feedback | Track A / Track B | `sartracker-web-s8m` | After deployed-web validation and cross-platform beta setup produce feedback |
-| 5 | C1: Local Proprietary Map Package Requirements | Track B / Maps | Create/update bead before starting | Waiting for map facts |
+| Done | V2: Visual Review Automation | Verification | `sartracker-web-n9i` | Done locally 2026-05-17; `npm run visual:review` automates the second-layer Opus review with caching, severity gating, and structured exit codes. Discovery: spec drift in 5 visual prompts filed as `sartracker-web-b3c` |
+| 1 | B6: GPX And Drawing Hit-Test Hardening | Track B / Shared | Create/update bead before starting | Ready |
+| 2 | B4: Set up cross-platform Tauri beta distribution | Track B / Release | `sartracker-web-y6a` | Deferred until after B6; prepare Windows/Linux artifacts, download channel, and tester instructions |
+| 3 | B5: Triage first web and Tauri beta feedback | Track A / Track B | `sartracker-web-s8m` | After deployed-web validation and cross-platform beta setup produce feedback |
+| 4 | C1: Local Proprietary Map Package Requirements | Track B / Maps | Create/update bead before starting | Waiting for map facts |
 
 ## Ready Work Chunks
 
 ### Desktop Beta Distribution Rule
 
-Windows/Linux team testers should not be pointed at a macOS `.app` artifact. Desktop beta distribution is deliberately deferred until `sartracker-web-y6a` sets up a cross-platform process, but that process should wait until a little more app and verification work lands. Current intended order is V2 and B6 before B4. B4 should then prepare Windows and Linux artifacts, a download channel, OS-specific tester instructions, and explicit unsigned-app caveats. Until then, the hosted web app remains the broad team-testing lane, while B3 evidence remains the internal desktop smoke baseline.
+Windows/Linux team testers should not be pointed at a macOS `.app` artifact. Desktop beta distribution is deliberately deferred until `sartracker-web-y6a` sets up a cross-platform process, but that process should wait until a little more app and verification work lands. V2 is now done; current intended order is B6 before B4. B4 should then prepare Windows and Linux artifacts, a download channel, OS-specific tester instructions, and explicit unsigned-app caveats. Until then, the hosted web app remains the broad team-testing lane, while B3 evidence remains the internal desktop smoke baseline.
 
 ### R0: S1/S2 Review Remediation Gate
 
@@ -953,27 +953,29 @@ Verification:
   because the only operator-facing runtime change is the cold-start-offline
   status copy, which is exercised by the new E2E.
 
-### V2: Visual Review Automation
+### V2: Visual Review Automation — Done 2026-05-17
 
-Former hardening item: T09.
+Former hardening item: T09. Bead: `sartracker-web-n9i`.
 
 Goal: make the existing visual verification workflow less manual and easier to repeat.
 
-Tasks:
+Outcome:
 
-- Automate or script the second-layer visual review pass for screenshots in `test-results/visual-verification/`.
-- Keep the manifest prompts and evidence trail understandable.
-- Do not add new visual specs in this chunk; this is workflow automation.
+- `npm run visual:review` reads every `*.entry.json` under `test-results/visual-verification/`, spawns one `claude --print` reviewer subprocess per entry, parses a structured pass/fail reply, and writes a per-entry `<testId>.review.json` plus an aggregate `visual-review-<timestamp>.json` report.
+- Pure shaping/parsing logic lives in `build/visual-review-lib.js`; runner in `scripts/visual-review.mjs`. 44 unit tests cover CLI parsing, manifest loading, reply parsing, severity gating, cache key stability, and summary formatting.
+- Severity gating is configurable via `--fail-on critical|high|medium`; default is `high`. Reviewer process errors always block (exit 2).
+- Caching: each (screenshot bytes + verification prompt + model) tuple is content-hashed and cached under `test-results/visual-verification/.cache/`. Repeat runs return in <2s with no model calls. `--no-cache` forces a fresh review.
+- `--dry-run` exercises the runner end-to-end without spawning reviewers, useful while iterating on the script itself.
+- `--only <testId>` runs a single entry, useful while iterating on a visual spec.
+- Live verification: full 27-entry review on the current visual manifest produced 22 PASS / 5 FAIL / 0 ERROR with deterministic per-entry verdicts. The 5 FAIL entries are real findings — visual prompts that drifted from the captured frame — filed as `sartracker-web-b3c` for follow-up.
+- CLAUDE.md visual-tests section updated to point at `npm run visual:review` instead of the old "spawn Opus subagents" manual workflow.
 
-Acceptance:
+Exit codes (also documented in CLAUDE.md):
 
-- A future verification run has a repeatable way to collect AI visual review outcomes.
-- Visual review failures are recorded clearly enough to act on.
-
-Verification:
-
-- Dry run against a small visual manifest set.
-- Document the exact command or agent workflow in this file or the visual test docs.
+- `0` every entry passed gating
+- `1` at least one entry failed at or above `--fail-on` severity
+- `2` reviewer errored on at least one entry (always blocks)
+- `3` manifest had zero entries (visual project did not run)
 
 ### B5: Triage First Web And Tauri Beta Feedback
 
