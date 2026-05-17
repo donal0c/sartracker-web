@@ -823,6 +823,123 @@ mod tests {
         let _ = fs::remove_file(path);
     }
 
+    /// Regression: when settings.json has provider=traccar_http, auto_refresh_enabled=true,
+    /// auto_connect=true, and the keychain holds a non-empty secret, runtime_bootstrap must
+    /// return tracking_config: Some(_). This is the symmetric positive of
+    /// builds_runtime_bootstrap_without_connecting_when_auto_connect_is_disabled and
+    /// pins the boot-time gate that drives bug `sartracker-web-el9`.
+    #[test]
+    fn builds_runtime_bootstrap_with_traccar_config_when_auto_connect_is_enabled_and_secret_present() {
+        let path = unique_settings_path("runtime-positive");
+        let secret_store = Arc::new(MemorySecretStore::default());
+        let store = SettingsStore::new(path.clone(), secret_store.clone()).expect("store");
+        secret_store
+            .set_secret(PASSWORD_SECRET_KEY, "operator-pw")
+            .expect("set secret");
+
+        write_settings_file(
+            &path,
+            &PersistedSettings {
+                mission_defaults: PersistedSettings::default().mission_defaults,
+                data_source: PersistedDataSourceSettings {
+                    provider_type: TrackingProviderType::TraccarHttp,
+                    base_url: String::from("https://traccar.example.com"),
+                    auth_mode: TrackingAuthMode::Basic,
+                    email: String::from("ops@example.com"),
+                    auto_connect: true,
+                    tracking_cache_enabled: true,
+                    replay_enabled: false,
+                    replay_start: String::new(),
+                    replay_duration_hours: 4,
+                },
+                weather: WeatherSettings::default(),
+            },
+        )
+        .expect("write settings");
+        *store.persisted.lock().expect("lock") = read_settings_file(&path).expect("read");
+
+        let runtime = store.runtime_bootstrap(false).expect("runtime");
+        let tracking = runtime
+            .tracking_config
+            .expect("tracking_config must be populated when auto_connect=true and secret present");
+        assert_eq!(tracking.base_url, "https://traccar.example.com");
+        assert_eq!(tracking.email.as_deref(), Some("ops@example.com"));
+        assert_eq!(tracking.password.as_deref(), Some("operator-pw"));
+        assert!(tracking.token.is_none());
+        assert!(runtime.tracking_cache_enabled);
+
+        let _ = fs::remove_file(path);
+    }
+
+    /// Regression for `sartracker-web-el9` root cause. The `keyring` crate selects an
+    /// in-memory mock backend unless platform-native features are enabled. With the mock
+    /// backend, secrets appear to save during the same process but vanish across restarts,
+    /// which is exactly the failure mode observed on the dev machine.
+    ///
+    /// On macOS this test writes a secret via `KeyringSecretStore`, then shells out to
+    /// `security find-generic-password` (a separate process talking directly to the OS
+    /// Keychain) and asserts the secret is found. The mock backend cannot satisfy that
+    /// assertion because it never writes to the OS Keychain at all — only the real
+    /// `apple-native` keyring feature can.
+    ///
+    /// Marked `#[ignore]` because CI may not have an unlocked login keychain available
+    /// to write into. Run locally with:
+    ///   cargo test --manifest-path src-tauri/Cargo.toml -- --ignored \
+    ///     keyring_secret_store_writes_to_real_macos_keychain
+    #[cfg(target_os = "macos")]
+    #[test]
+    #[ignore = "exercises the real OS keychain; run locally on macOS dev machines"]
+    fn keyring_secret_store_writes_to_real_macos_keychain() {
+        use std::process::Command;
+        use std::time::{SystemTime, UNIX_EPOCH};
+
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("time")
+            .as_nanos();
+        let unique_key = format!("sartracker-test-{nonce}");
+        let value = format!("test-secret-{nonce}");
+
+        let store = KeyringSecretStore;
+        store
+            .set_secret(&unique_key, &value)
+            .expect("real keyring set must succeed");
+
+        // Confirm via a separate process that the entry actually landed in the OS
+        // Keychain. With the mock backend this command exits non-zero with
+        // "item could not be found".
+        let probe = Command::new("security")
+            .args([
+                "find-generic-password",
+                "-s",
+                SECRET_SERVICE,
+                "-a",
+                &unique_key,
+                "-w", // print the password to stdout on success
+            ])
+            .output()
+            .expect("`security` command must be available on macOS");
+
+        // Always clean up before asserting, so a failed assert does not leak entries.
+        let _ = store.delete_secret(&unique_key);
+
+        assert!(
+            probe.status.success(),
+            "expected the entry to exist in the macOS Keychain after KeyringSecretStore::set_secret. \
+             stdout={:?} stderr={:?}. \
+             A failure here indicates the keyring crate fell back to its mock backend; \
+             ensure src-tauri/Cargo.toml declares keyring with the `apple-native` feature.",
+            String::from_utf8_lossy(&probe.stdout),
+            String::from_utf8_lossy(&probe.stderr),
+        );
+
+        let recovered_password = String::from_utf8(probe.stdout)
+            .expect("password output should be utf-8")
+            .trim()
+            .to_string();
+        assert_eq!(recovered_password, value);
+    }
+
     #[test]
     fn builds_runtime_bootstrap_without_connecting_when_auto_connect_is_disabled() {
         let path = unique_settings_path("runtime");

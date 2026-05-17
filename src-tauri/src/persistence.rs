@@ -4946,4 +4946,85 @@ mod tests {
             "no mission_unlocked audit event should exist after rollback"
         );
     }
+
+    /// Regression: an active mission must survive simulated process exit (drop the store,
+    /// reopen the same on-disk database). If a previous session left a mission active,
+    /// the next boot must surface it as a recoverable active mission, not as `finished`.
+    /// Pins the contract that nothing in the persistence layer transitions a mission to
+    /// finished without an explicit `finish_mission` call. Backs `sartracker-web-zl4`.
+    #[tokio::test]
+    async fn active_mission_survives_process_restart_without_explicit_finish() {
+        let (database_path, backup_path) = temp_paths("survive-restart");
+
+        let mission_id_after_first_session: String;
+        {
+            let store = MissionStore::connect(database_path.clone(), backup_path.clone())
+                .await
+                .expect("store should initialize");
+            let mission = store
+                .create_mission(CreateMissionInput {
+                    name: "Live mission across restart".to_string(),
+                    start_time: None,
+                    notes: None,
+                })
+                .await
+                .expect("mission should be created");
+            mission_id_after_first_session = mission.id.clone();
+
+            // Sanity: the in-flight session must observe the mission as active.
+            let active = store
+                .get_active_mission()
+                .await
+                .expect("active should load");
+            assert_eq!(
+                active.as_ref().map(|m| (m.id.clone(), m.status.clone())),
+                Some((mission.id.clone(), MissionStatus::Active))
+            );
+        }
+        // Store dropped here; this is the closest persistence-layer analog to a process
+        // exit. No `finish_mission` was called and no Drop impl on MissionStore should
+        // mutate state.
+
+        let resumed_store = MissionStore::connect(database_path.clone(), backup_path.clone())
+            .await
+            .expect("store should reinitialize on the same database after restart");
+
+        let recoverable = resumed_store
+            .get_recoverable_mission()
+            .await
+            .expect("recoverable mission should load");
+        assert!(
+            recoverable.is_some(),
+            "an active mission from the previous session must be discoverable as recoverable"
+        );
+        let recovered = recoverable.expect("recoverable present");
+        assert_eq!(recovered.id, mission_id_after_first_session);
+        assert_eq!(
+            recovered.status,
+            MissionStatus::Active,
+            "mission status must remain Active across restart; \
+             a finish-on-quit regression would land here as MissionStatus::Finished"
+        );
+
+        let active_after_restart = resumed_store
+            .get_active_mission()
+            .await
+            .expect("active should load after restart");
+        assert_eq!(
+            active_after_restart.as_ref().map(|m| m.id.clone()),
+            Some(mission_id_after_first_session.clone()),
+            "get_active_mission must continue to return the same active mission after restart"
+        );
+
+        let events = resumed_store
+            .list_mission_events(mission_id_after_first_session)
+            .await
+            .expect("events should list");
+        assert!(
+            !events
+                .iter()
+                .any(|event| event.event_type == "mission_finished"),
+            "no mission_finished audit event must exist when only a restart occurred"
+        );
+    }
 }

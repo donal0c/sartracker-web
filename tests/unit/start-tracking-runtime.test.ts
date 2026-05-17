@@ -47,6 +47,37 @@ describe('startTrackingRuntime', () => {
     stop()
   })
 
+  // Regression for `sartracker-web-el9`: when a non-null tracking config arrives at
+  // bootstrap (provider=traccar_http, auto_connect=true, secret present in OS keychain),
+  // the runtime must construct AND start the poller. Without this assertion, a regression
+  // that builds the poller but forgets to start it would silently produce the same
+  // operator-visible "no devices, last success: never" failure mode as the original bug.
+  it('starts the poller when the runtime config is present', async () => {
+    const start = vi.fn()
+    const stop = vi.fn()
+    const createPoller = vi.fn().mockReturnValue({ start, stop })
+    const applyStatus = vi.fn()
+
+    await startTrackingRuntime({
+      config: { baseUrl: 'http://test:8082' },
+      createClient: vi.fn().mockReturnValue({}),
+      createPoller,
+      cache: { read: vi.fn().mockResolvedValue(null), write: vi.fn() },
+      missionStore: createMissionStoreStub(),
+      applySnapshot: vi.fn(),
+      applyStatus,
+      now: () => new Date('2026-04-06T10:35:00.000Z'),
+    })
+
+    expect(createPoller).toHaveBeenCalledTimes(1)
+    expect(start).toHaveBeenCalledTimes(1)
+    expect(applyStatus).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        warning: expect.stringMatching(/not configured/i),
+      }),
+    )
+  })
+
   it('hydrates the UI from cache before polling starts', async () => {
     const applySnapshot = vi.fn()
     const createPoller = vi.fn().mockReturnValue({ start: vi.fn(), stop: vi.fn() })

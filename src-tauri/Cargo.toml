@@ -23,7 +23,11 @@ chrono = { version = "0.4", default-features = false, features = ["clock", "serd
 serde_json = "1.0"
 serde = { version = "1.0", features = ["derive"] }
 log = "0.4"
-keyring = "3.6.3"
+# Default-feature keyring 3.x falls back to an in-memory mock backend that vanishes on
+# process exit. Explicit platform-native features ensure the Traccar Basic-auth password
+# (and Bearer token) actually land in the OS keychain on macOS, Windows, and Linux.
+# Pinned by `sartracker-web-el9`.
+keyring = { version = "3.6.3", features = ["apple-native", "windows-native", "sync-secret-service"] }
 open = "5.3.2"
 reqwest = { version = "0.12", default-features = false, features = ["cookies", "json", "rustls-tls"] }
 sqlx = { version = "0.8", default-features = false, features = ["sqlite", "runtime-tokio-rustls"] }
