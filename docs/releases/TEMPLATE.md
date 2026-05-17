@@ -20,8 +20,12 @@
 | Linux x86_64 | `sartracker-web_<version>_linux_amd64.deb` | System install on Ubuntu/Debian/Mint/Pop_OS. |
 | Windows x86_64 | `sartracker-web_<version>_windows_amd64.exe` | NSIS installer, current-user install (no admin required). Most testers. |
 | Windows x86_64 | `sartracker-web_<version>_windows_amd64.msi` | MSI installer, machine-wide (admin required). For IT-managed deployment. |
-| macOS arm64 | `sartracker-web_<version>_darwin_aarch64.dmg` | Apple Silicon Macs. |
 | All | `SHA256SUMS` | Checksum sidecar to verify downloaded artifacts. |
+
+macOS is not produced by CI in this beta lane (see `sartracker-web-590` for the
+deferred CI re-add). When a macOS artifact is needed, it is produced locally
+via `npm run beta:verify` (Path B in `docs/releases/README.md`) and uploaded
+separately. If this beta drop includes a macOS artifact, list it here.
 
 ## Install — Linux (primary target)
 
@@ -112,19 +116,15 @@ install entirely with no **Run anyway** option, you are on a locked-down policy
 (WDAC / AppLocker / SmartScreen for Business). There is no workaround for an
 unsigned binary. Use a personal machine, or wait for the signed build.
 
-## Install — macOS (parity build only)
+## Install — macOS
 
-This drop's macOS artifact is a parity build for evidence purposes; the active
-desktop lane for the team is Linux + Windows. Mac users should still test it,
-but Mac is not the primary distribution target for this beta.
+macOS is not produced by CI in this beta lane (see `sartracker-web-590`). If a
+macOS artifact is supplied separately for this drop (built locally via
+`npm run beta:verify`), it will appear in the release as a zipped `.app`.
 
-1. Download `sartracker-web_<version>_darwin_aarch64.dmg` and the `SHA256SUMS` file.
-2. Verify the checksum:
-   ```bash
-   shasum -a 256 -c SHA256SUMS --ignore-missing
-   ```
-3. Mount the DMG and drag `sartracker-web.app` to `/Applications`.
-4. The app is ad-hoc signed only. macOS Gatekeeper may refuse to open it.
+1. Download the macOS artifact and verify its checksum if one is provided.
+2. Unzip and copy `sartracker-web.app` to `/Applications`.
+3. The app is ad-hoc signed only. macOS Gatekeeper may refuse to open it.
    Try **Control-click / right-click → Open** first. If quarantine blocks
    launch, run the project-supplied quarantine-removal command:
    ```bash
@@ -148,8 +148,8 @@ but Mac is not the primary distribution target for this beta.
 
 - &lt;explicit limitations the tester must understand before running the beta&gt;
 - For the current internal beta lane this normally includes:
-  - Linux x86_64 + Windows x86_64 + macOS arm64 only. No Linux ARM, no Windows
-    ARM, no macOS Intel.
+  - Linux x86_64 + Windows x86_64 only from CI. macOS is supplied separately
+    (built locally) when needed. No Linux ARM, no Windows ARM, no macOS Intel.
   - All artifacts are unsigned. Expect SmartScreen / Gatekeeper warnings.
   - Tauri auto-updater is not enabled. Each beta is a fresh download.
   - High-definition mountain map packages are not bundled with this build.
@@ -167,7 +167,8 @@ The workflow runs:
 - Unit tests (`npm run test`)
 - Backend tests (`npm run test:backend`)
 - Web build (`npm run build`)
-- Per-OS Tauri bundle on `ubuntu-22.04`, `windows-2022`, and `macos-latest`
+- Per-OS Tauri bundle on `ubuntu-22.04` and `windows-2022` (macOS deferred,
+  see `sartracker-web-590`)
 - SHA256SUMS sidecar generation
 - Draft release upload
 
@@ -194,8 +195,9 @@ locally before the release is promoted from draft to published. See
 Before promoting this draft to a published release:
 
 - [ ] CI workflow run `OVERALL: PASS` (linked above)
-- [ ] All four release assets present on the draft release: Linux `.AppImage`,
-      Linux `.deb`, Windows `.exe` (NSIS), macOS `.dmg`
+- [ ] All CI release assets present on the draft release: Linux `.AppImage`,
+      Linux `.deb`, Windows `.exe` (NSIS), Windows `.msi`. macOS, if needed,
+      uploaded separately from a local build.
 - [ ] `SHA256SUMS` present and matches local computation against downloaded assets
 - [ ] Local smoke pass on the primary platform (Linux): packaged app launches,
       mission can be started, mission persists after restart, tracking settings

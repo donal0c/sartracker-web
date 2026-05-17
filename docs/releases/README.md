@@ -18,22 +18,28 @@ is exclusively for the desktop operational lane.
 There are now **two** ways to produce a desktop beta. Both must end with a
 matching release note in this directory.
 
-### Path A: CI-driven cross-platform release (default after B4)
+### Path A: CI-driven Linux + Windows release (default after B4)
 
 This is the new default. The release pipeline at
-`.github/workflows/release.yml` builds Linux, Windows, and macOS arm64
-artifacts in parallel from a single tag, drafts a GitHub release, and uploads
-all assets plus a `SHA256SUMS` sidecar.
+`.github/workflows/release.yml` builds Linux and Windows artifacts in parallel
+from a single tag, drafts a GitHub release, and uploads all assets plus a
+`SHA256SUMS` sidecar.
 
 Use this path for any beta that needs Linux or Windows artifacts. After B4
 this is the only supported way to produce Linux or Windows artifacts.
 
-### Path B: Local-only macOS smoke build
+macOS arm64 was deliberately dropped from the CI matrix to keep GitHub Actions
+billed minutes inside the free tier (macOS bills at 10x the rate of Linux).
+See `sartracker-web-590` for the deferred re-add when build cadence
+stabilizes. Until then macOS uses Path B.
 
-Retained for fast macOS iteration when CI is overkill. Only produces a macOS
-arm64 `.app` zip. Use the older `npm run beta:verify` flow described in
-`docs/tauri-beta-release-plan.md`. This path **must not** be used to ship a
-beta to Linux or Windows testers.
+### Path B: Local-only macOS build
+
+Retained for macOS artifacts. Produces a macOS arm64 `.app` zip via
+`npm run beta:verify` as described in `docs/tauri-beta-release-plan.md`.
+Upload the resulting zip to the GitHub release manually with
+`gh release upload <tag> <file>` if a macOS artifact needs to ship alongside
+the CI-built Linux/Windows assets.
 
 ## Authoring Workflow — Path A (CI-driven)
 

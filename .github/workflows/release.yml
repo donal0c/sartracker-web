@@ -10,11 +10,17 @@ name: Release (Tauri Beta)
 # Architecture:
 #   1. `gates` (Linux only): version-trio assertion, release-notes existence,
 #      lint, vitest, cargo test, web build. Fast-fail before any bundling.
-#   2. `bundle` (matrix): Linux/Windows/macOS-arm64 in parallel via tauri-action.
-#      First runner to finish creates the draft release; the others upload to it.
+#   2. `bundle` (matrix): Linux + Windows in parallel via tauri-action.
+#      First runner to finish creates the draft release; the other uploads to it.
 #   3. `checksums` (Linux only): downloads release assets, generates SHA256SUMS,
 #      uploads as a release asset.
 #   4. `summary` (always): posts a Markdown summary with provenance.
+#
+# macOS arm64 was deliberately dropped from the CI matrix to keep billed minutes
+# inside the GitHub Actions free tier (macOS runners bill at 10x). The macOS
+# build is produced locally via `npm run beta:verify` (Path B in
+# docs/releases/README.md). Re-adding macOS to CI is tracked by
+# `sartracker-web-590` and gated on a stable lower release cadence.
 #
 # See docs/tauri-beta-release-plan.md for the broader release strategy.
 
@@ -166,10 +172,8 @@ jobs:
             runner: windows-2022
             target: x86_64-pc-windows-msvc
             args: '--target x86_64-pc-windows-msvc --bundles nsis,msi'
-          - label: macos-aarch64
-            runner: macos-latest
-            target: aarch64-apple-darwin
-            args: '--target aarch64-apple-darwin --bundles app,dmg'
+          # macOS arm64 deliberately dropped from the matrix; see sartracker-web-590.
+          # macOS builds are produced locally via npm run beta:verify (Path B).
     runs-on: ${{ matrix.runner }}
     steps:
       - name: Checkout

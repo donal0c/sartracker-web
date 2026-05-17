@@ -230,12 +230,16 @@ Delivered:
 - `.github/workflows/release.yml` — tag-driven release workflow (`v*` tags +
   `workflow_dispatch` escape hatch). Splits into a `gates` job (Linux,
   lint/test/build/version-trio assertion/release-notes existence check), a
-  `bundle` matrix (`ubuntu-22.04` / `windows-2022` / `macos-latest`) using
+  `bundle` matrix (`ubuntu-22.04` + `windows-2022`) using
   `tauri-apps/tauri-action@v0.6.2`, a `checksums` job that generates a
   `SHA256SUMS` sidecar from the uploaded assets, and a `summary` job.
 - Linux artifacts: AppImage + `.deb`, x86_64.
 - Windows artifacts: NSIS `.exe` (current-user, no admin) + MSI, x86_64.
-- macOS artifacts: `.dmg` + `.app.tar.gz`, arm64 (parity build).
+- macOS arm64 was dropped from the CI matrix to keep GitHub Actions billed
+  minutes inside the free tier (macOS bills at 10x the rate of Linux).
+  Re-adding macOS to CI is tracked by `sartracker-web-590` and gated on a
+  stable monthly-cadence release rhythm. Until then macOS is built locally
+  via Path B (`npm run beta:verify`) and uploaded manually if needed.
 - `tauri.conf.json` Windows section configured for unsigned-tester ergonomics:
   NSIS `installMode: currentUser`, WebView2 `downloadBootstrapper` with
   `silent: true`, LZMA compression.
@@ -248,8 +252,8 @@ Delivered:
 
 Decisions locked:
 
-- **Linux primary, Windows secondary, macOS arm64 parity.** Most operators are
-  on Linux.
+- **Linux primary, Windows secondary.** Most operators are on Linux. macOS
+  arm64 deferred from CI per `sartracker-web-590`.
 - **Build Linux on `ubuntu-22.04`** (not `ubuntu-latest`, not `ubuntu-24.04`).
   glibc forward-compatibility means a 22.04 build runs on 22.04+, 24.04, Debian
   12+, Fedora 38+, Mint 21+, Pop_OS 22.04+. Building on 24.04 cuts off 22.04

@@ -130,7 +130,7 @@ This is the default order when the user says “work on the next task.”
 | Done | Visual review prompt drift fixes | Verification | `sartracker-web-wn6` | Done locally 2026-05-17. Rewrote `marker-hazard-dialog` and `shell-idle-state` verificationPrompts to match the actual captured frames; both PASS via `npm run visual:review --only <id> --no-cache`. |
 | Done | Mast tracking ratio visual ambiguity | Track A / UI | `sartracker-web-zq9` | Done locally 2026-05-17. Replaced `${positions.length}/${staleCount}` with separate FIX / STALE chips behind a pure selector. New unit + chromium regressions + new visual entry `mast-tracking-cell-active` (visual review PASS). |
 | Done | OpenTopoMap "tiles failed to load" badge over-eager | Track A / UI | `sartracker-web-2xp` | Done locally 2026-05-17. Tile-only filter at `src/features/map/is-tile-error-event.ts` and widened defaults (5-in-30s) in `src/lib/tile-health-tracker.ts`. Interactive Playwright proof at `tmp/2xp-verification/`. |
-| Done | B4: Set up cross-platform Tauri beta distribution | Track B / Release | `sartracker-web-y6a` | Done locally 2026-05-17. `.github/workflows/release.yml` builds Linux (AppImage + .deb), Windows (NSIS + MSI), and macOS arm64 (.dmg + .app.tar.gz) on `v*` tag push, drafts a GitHub release, generates `SHA256SUMS` sidecar. Linux primary, Windows secondary, macOS parity. NSIS `currentUser` install (no admin), WebView2 `downloadBootstrapper`. Release notes sourced from `docs/releases/sartracker-web-<version>-beta.md`. CI run verification deferred until first real tag. |
+| Done | B4: Set up cross-platform Tauri beta distribution | Track B / Release | `sartracker-web-y6a` | Done locally 2026-05-17. `.github/workflows/release.yml` builds Linux (AppImage + .deb) and Windows (NSIS + MSI) on `v*` tag push, drafts a GitHub release, generates `SHA256SUMS` sidecar. Linux primary, Windows secondary. macOS arm64 deferred from CI per `sartracker-web-590` to stay inside the GitHub Actions free tier (macOS bills at 10x); macOS uses Path B (`npm run beta:verify`) until cadence stabilizes. NSIS `currentUser` install (no admin), WebView2 `downloadBootstrapper`. Release notes sourced from `docs/releases/sartracker-web-<version>-beta.md`. |
 | 1 | B5: Triage first web and Tauri beta feedback | Track A / Track B | `sartracker-web-s8m` | After deployed-web validation and cross-platform beta setup produce feedback |
 | 2 | V3: Smoke deployed hosted app after blocker fixes | Verification | `sartracker-web-998` | Hosted regression smoke once a deploy lands |
 | 3 | Parity sweep findings walk-through (Codex + Donal) | Parity / Discussion | `sartracker-web-l7c` | Walk Codex through `tmp/parity-sweep/sweep-report.md`; decide which of C1–C13 become beads, which become matrix corrections, and which are out of scope |
@@ -738,17 +738,20 @@ Verification:
 
 Bead: `sartracker-web-y6a`. Closed locally on 2026-05-17.
 
-Outcome: cross-platform release pipeline at `.github/workflows/release.yml`
-builds Linux (AppImage + .deb), Windows (NSIS + MSI, current-user install with
-WebView2 download-bootstrapper), and macOS arm64 (.dmg + .app.tar.gz) artifacts
-on `v*` tag push or `workflow_dispatch`. Splits into a `gates` job (Linux,
-runs lint/test/build/version-trio assertion/release-notes existence check),
-a parallel `bundle` matrix using `tauri-apps/tauri-action@v0.6.2`, a
+Outcome: release pipeline at `.github/workflows/release.yml` builds Linux
+(AppImage + .deb) and Windows (NSIS + MSI, current-user install with
+WebView2 download-bootstrapper) artifacts on `v*` tag push or
+`workflow_dispatch`. Splits into a `gates` job (Linux, runs
+lint/test/build/version-trio assertion/release-notes existence check), a
+parallel `bundle` matrix using `tauri-apps/tauri-action@v0.6.2`, a
 `checksums` job that generates a SHA256SUMS sidecar, and a `summary` job.
 Releases land in DRAFT + prerelease state for human review before publish.
 
 Locked decisions: Linux primary (most operators are on Linux), Windows
-secondary, macOS arm64 parity-only. Linux runner pinned to `ubuntu-22.04`
+secondary. macOS arm64 deferred from CI per `sartracker-web-590` to keep
+billed minutes inside the GitHub Actions free tier (macOS bills at 10x);
+macOS continues to be built locally via Path B (`npm run beta:verify`) and
+uploaded manually when needed. Linux runner pinned to `ubuntu-22.04`
 (NOT `latest`) for glibc forward-compat. Windows runner pinned to
 `windows-2022` (NOT `latest`, which is now `windows-2025`). NSIS install
 mode is `currentUser` (no admin/UAC). WebView2 strategy is

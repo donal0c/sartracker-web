@@ -540,11 +540,11 @@
             use a personal machine, or wait for the signed build.
           </p>
 
-          <h3>macOS (parity build only)</h3>
+          <h3>macOS</h3>
           <p>
-            macOS arm64 builds are produced by CI for parity and evidence, but Linux and Windows are the
-            primary desktop distribution targets. Mac users should still test the artifact, but it is not
-            the focus of this beta lane.
+            macOS arm64 builds are not produced by the release CI pipeline. When a macOS artifact is needed
+            it is built locally and uploaded separately to the GitHub release. Linux and Windows are the
+            primary desktop distribution targets for this beta lane.
           </p>
           <p>
             Because this internal beta is ad-hoc signed, macOS Gatekeeper may refuse to open it and may say
