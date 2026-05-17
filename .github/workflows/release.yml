@@ -120,6 +120,15 @@ jobs:
           fi
           echo "Release notes verified: $NOTES_FILE ($(wc -c < "$NOTES_FILE") bytes)"
 
+      - name: Install Linux build deps (needed for cargo test which pulls gdk-sys etc.)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libappindicator3-dev \
+            librsvg2-dev \
+            patchelf
+
       - name: Setup Node
         uses: actions/setup-node@v4
         with:

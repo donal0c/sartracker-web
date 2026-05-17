@@ -1,11 +1,11 @@
-# SAR Tracker Desktop Beta 0.1.0-beta.1 (first CI-driven cut)
+# SAR Tracker Desktop Beta 0.1.0-beta.2 (first CI-driven cut)
 
 > **Internal beta only.** Not a production release. Do not use for live
 > incidents until this beta has passed the desktop smoke checklist below and
 > a team member has signed off in writing.
 
-- **Version:** 0.1.0-beta.1
-- **Build tag:** v0.1.0-beta.1 (CI-driven; commit SHA + run URL appended by the workflow)
+- **Version:** 0.1.0-beta.2
+- **Build tag:** v0.1.0-beta.2 (CI-driven, supersedes failed v0.1.0-beta.1; commit SHA + run URL appended by the workflow)
 - **Cut date (UTC):** 2026-05-17
 - **Cut by:** Claude Opus 4.7 (B4 first end-to-end CI run)
 - **Bead reference:** sartracker-web-y6a (B4); sartracker-web-590 (deferred macOS CI re-add)
@@ -16,10 +16,10 @@
 
 | Platform | Artifact | Recommended use |
 | --- | --- | --- |
-| Linux x86_64 | `sartracker-web_0.1.0-beta.1_linux_amd64.AppImage` | Single-file portable run; no install required. Most testers. |
-| Linux x86_64 | `sartracker-web_0.1.0-beta.1_linux_amd64.deb` | System install on Ubuntu/Debian/Mint/Pop_OS. |
-| Windows x86_64 | `sartracker-web_0.1.0-beta.1_windows_amd64.exe` | NSIS installer, current-user install (no admin required). Most testers. |
-| Windows x86_64 | `sartracker-web_0.1.0-beta.1_windows_amd64.msi` | MSI installer, machine-wide (admin required). For IT-managed deployment. |
+| Linux x86_64 | `sartracker-web_0.1.0-beta.2_linux_amd64.AppImage` | Single-file portable run; no install required. Most testers. |
+| Linux x86_64 | `sartracker-web_0.1.0-beta.2_linux_amd64.deb` | System install on Ubuntu/Debian/Mint/Pop_OS. |
+| Windows x86_64 | `sartracker-web_0.1.0-beta.2_windows_amd64.exe` | NSIS installer, current-user install (no admin required). Most testers. |
+| Windows x86_64 | `sartracker-web_0.1.0-beta.2_windows_amd64.msi` | MSI installer, machine-wide (admin required). For IT-managed deployment. |
 | All | `SHA256SUMS` | Checksum sidecar to verify downloaded artifacts. |
 
 macOS is not produced by CI in this beta lane (deferred per `sartracker-web-590`
@@ -31,7 +31,7 @@ the rate of Linux). When a macOS artifact is needed it is built locally via
 
 ### AppImage (zero-install, recommended for first-time testers)
 
-1. Download `sartracker-web_0.1.0-beta.1_linux_amd64.AppImage` and the
+1. Download `sartracker-web_0.1.0-beta.2_linux_amd64.AppImage` and the
    `SHA256SUMS` file.
 2. Verify the checksum:
    ```bash
@@ -40,8 +40,8 @@ the rate of Linux). When a macOS artifact is needed it is built locally via
    The line for the AppImage must say **OK**. If it does not, stop and report.
 3. Mark executable and run:
    ```bash
-   chmod +x sartracker-web_0.1.0-beta.1_linux_amd64.AppImage
-   ./sartracker-web_0.1.0-beta.1_linux_amd64.AppImage
+   chmod +x sartracker-web_0.1.0-beta.2_linux_amd64.AppImage
+   ./sartracker-web_0.1.0-beta.2_linux_amd64.AppImage
    ```
 4. If you see `dlopen(): error loading libfuse.so.2`, install libfuse2:
    - Ubuntu 24.04 / Debian 13: `sudo apt install libfuse2t64`
@@ -51,12 +51,12 @@ the rate of Linux). When a macOS artifact is needed it is built locally via
 
 ### .deb (system install on Debian-derivatives)
 
-1. Download `sartracker-web_0.1.0-beta.1_linux_amd64.deb` and the `SHA256SUMS`
+1. Download `sartracker-web_0.1.0-beta.2_linux_amd64.deb` and the `SHA256SUMS`
    file.
 2. Verify the checksum (as above).
 3. Install:
    ```bash
-   sudo apt install ./sartracker-web_0.1.0-beta.1_linux_amd64.deb
+   sudo apt install ./sartracker-web_0.1.0-beta.2_linux_amd64.deb
    ```
 4. Launch from your application menu (look for *SAR Tracker Web*).
 
@@ -82,11 +82,11 @@ unknown. The warnings are expected for an unsigned app and the install does
 
 ### NSIS installer (recommended; no admin required)
 
-1. Download `sartracker-web_0.1.0-beta.1_windows_amd64.exe` and the
+1. Download `sartracker-web_0.1.0-beta.2_windows_amd64.exe` and the
    `SHA256SUMS` file.
 2. Verify the checksum from PowerShell:
    ```powershell
-   Get-FileHash sartracker-web_0.1.0-beta.1_windows_amd64.exe -Algorithm SHA256
+   Get-FileHash sartracker-web_0.1.0-beta.2_windows_amd64.exe -Algorithm SHA256
    ```
    Compare the output against the matching line in `SHA256SUMS`.
 3. Right-click the downloaded `.exe` → **Properties** → tick **Unblock** → **OK**.
@@ -110,6 +110,22 @@ install entirely with no **Run anyway** option, you are on a locked-down policy
 personal machine or wait for the signed build.
 
 ## What Changed
+
+### Since the failed v0.1.0-beta.1 cut (2026-05-17)
+
+`v0.1.0-beta.1` was the first CI-driven cut and failed during the gates job:
+the backend tests step (`npm run test:backend` → `cargo test`) could not link
+`gdk-sys` because the Linux GTK/WebKit system libraries were not installed in
+the gates job — only the bundle job had the apt step. No artifacts were
+produced and no draft release was created. Per project policy
+(`docs/releases/README.md`: tags are immutable), the failed tag was retained
+on the remote and this release is cut as `v0.1.0-beta.2`.
+
+Fix: the gates job now installs `libwebkit2gtk-4.1-dev`, `libappindicator3-dev`,
+`librsvg2-dev`, and `patchelf` before running cargo test. The bundle job's
+identical apt step is unchanged.
+
+### Project changes since the start of the project
 
 This is the first CI-driven cross-platform desktop beta cut. Everything that
 has landed on `master` since the start of the project is included. Notable
