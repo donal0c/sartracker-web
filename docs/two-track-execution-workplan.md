@@ -125,16 +125,16 @@ This is the default order when the user says “work on the next task.”
 | Done | V1: Regression E2E Coverage | Verification | `sartracker-web-8gw` | Done locally 2026-05-17 |
 | Done | Route renderer Traccar fetch via Rust reqwest (remove ATS blanket) | Track B | `sartracker-web-qmr` | Closed 2026-05-17; desktop Traccar polling now uses a Tauri reqwest command, the ATS blanket plist was removed, and packaged-app live Traccar smoke passed |
 | Done | V2: Visual Review Automation | Verification | `sartracker-web-n9i` | Done locally 2026-05-17; `npm run visual:review` automates the second-layer Opus review with caching, severity gating, and structured exit codes. Discovery: spec drift in 5 visual prompts filed as `sartracker-web-b3c` |
-| 1 | B6: GPX And Drawing Hit-Test Hardening | Track B / Shared | Create/update bead before starting | Ready |
-| 2 | B4: Set up cross-platform Tauri beta distribution | Track B / Release | `sartracker-web-y6a` | Deferred until after B6; prepare Windows/Linux artifacts, download channel, and tester instructions |
-| 3 | B5: Triage first web and Tauri beta feedback | Track A / Track B | `sartracker-web-s8m` | After deployed-web validation and cross-platform beta setup produce feedback |
-| 4 | C1: Local Proprietary Map Package Requirements | Track B / Maps | Create/update bead before starting | Waiting for map facts |
+| Done | B6: GPX And Drawing Hit-Test Hardening | Track B / Shared | `sartracker-web-fy5` | Done locally 2026-05-17; new pure resolver names the priority `marker > drawing > empty`, fixes the marker-stacked-under-polygon swallow bug, adds GPX line-segment hit-testing as a soft signal, +21 unit tests, +2 E2E tests, and an interactive Playwright sanity check |
+| 1 | B4: Set up cross-platform Tauri beta distribution | Track B / Release | `sartracker-web-y6a` | Prepare Windows/Linux artifacts, download channel, and tester instructions |
+| 2 | B5: Triage first web and Tauri beta feedback | Track A / Track B | `sartracker-web-s8m` | After deployed-web validation and cross-platform beta setup produce feedback |
+| 3 | C1: Local Proprietary Map Package Requirements | Track B / Maps | Create/update bead before starting | Waiting for map facts |
 
 ## Ready Work Chunks
 
 ### Desktop Beta Distribution Rule
 
-Windows/Linux team testers should not be pointed at a macOS `.app` artifact. Desktop beta distribution is deliberately deferred until `sartracker-web-y6a` sets up a cross-platform process, but that process should wait until a little more app and verification work lands. V2 is now done; current intended order is B6 before B4. B4 should then prepare Windows and Linux artifacts, a download channel, OS-specific tester instructions, and explicit unsigned-app caveats. Until then, the hosted web app remains the broad team-testing lane, while B3 evidence remains the internal desktop smoke baseline.
+Windows/Linux team testers should not be pointed at a macOS `.app` artifact. Desktop beta distribution is deliberately deferred until `sartracker-web-y6a` sets up a cross-platform process. V2 and B6 are both done; B4 is the next backlog priority and should prepare Windows and Linux artifacts, a download channel, OS-specific tester instructions, and explicit unsigned-app caveats. Until then, the hosted web app remains the broad team-testing lane, while B3 evidence remains the internal desktop smoke baseline.
 
 ### R0: S1/S2 Review Remediation Gate
 
@@ -693,7 +693,11 @@ Verification:
 - Build artifact path recorded.
 - Backend/audit note confirming post-finish backup behavior.
 
-### B6: GPX And Drawing Hit-Test Hardening
+### B6: GPX And Drawing Hit-Test Hardening — Done 2026-05-17
+
+Bead: `sartracker-web-fy5`. Closed locally on 2026-05-17.
+
+Outcome: documented click priority `marker > drawing > empty` in a single pure resolver (`src/features/map/map-click-target-resolver.ts`); fixed the headline marker-stacked-under-polygon swallow bug; added GPX line-segment hit-testing as a soft signal for future GPX UI surface work; refactored `useMapMarkerInteractions` and `useMapDrawingInteractions` to consult the resolver instead of racing via `event.stopImmediatePropagation`. Coverage: 21 new unit tests across 2 new files, 2 new Playwright E2E specs (one pinning the marker-wins case, one pinning the polygon-fallthrough case), and an interactive Playwright sanity check captured under `tmp/b6-verification/` showing both behaviors against a live `npm run dev` server.
 
 Former hardening item: T11.
 

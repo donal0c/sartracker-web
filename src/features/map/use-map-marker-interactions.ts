@@ -1,16 +1,16 @@
 import { useEffect, type RefObject } from 'react'
 import type maplibregl from 'maplibre-gl'
 
+import { useDrawingStore } from '../drawings/drawing-store'
+import { useGpxStore } from '../gpx/gpx-store'
 import { useMissionStore } from '../mission/mission-store'
-import { findNearestMarkerId } from '../markers/marker-hit-testing'
 import { useMarkerStore } from '../markers/marker-store'
 import {
   createMapPanClickGuard,
-  getInteractiveMarkerLayerIds,
   isPointInsideMapContainer,
-  resolveClickedMarkerId,
   shouldIgnoreMarkerMapClick,
 } from './map-marker-interactions'
+import { resolveClickedMapTarget } from './map-click-target-resolver'
 import { useMapInteractionMode } from './use-map-interaction-mode'
 
 type UseMapMarkerInteractionsOptions = {
@@ -27,6 +27,8 @@ export function useMapMarkerInteractions(
   const markerActiveMissionId = useMarkerStore((state) => state.activeMissionId)
   const markerController = useMarkerStore((state) => state.controller)
   const markerState = useMarkerStore((state) => state.markers)
+  const drawings = useDrawingStore((state) => state.drawings)
+  const gpxImports = useGpxStore((state) => state.imports)
   const interactionMode = useMapInteractionMode()
   const missionPhase = useMissionStore((state) => state.phase)
   const currentMissionId = useMissionStore((state) => state.currentMission?.id ?? null)
@@ -104,28 +106,20 @@ export function useMapMarkerInteractions(
         return
       }
 
-      const queryPoint: [number, number] = [point.x, point.y]
-      const interactiveMarkerLayers = getInteractiveMarkerLayerIds(
-        (layerId) => map.getLayer(layerId) !== undefined,
-      )
-      const markerFeature =
-        interactiveMarkerLayers.length === 0
-          ? null
-          : map.queryRenderedFeatures(queryPoint, {
-              layers: interactiveMarkerLayers,
-            })[0] ?? null
+      const target = resolveClickedMapTarget({
+        map,
+        point,
+        markers: markerState,
+        drawings,
+        gpxImports,
+      })
 
-      const renderedMarkerId =
-        markerFeature?.properties && 'markerId' in markerFeature.properties
-          ? markerFeature.properties.markerId
-          : null
-      const markerId = resolveClickedMarkerId(
-        renderedMarkerId,
-        findNearestMarkerId(map, point, markerState),
-      )
+      if (target.kind === 'marker' && target.id !== null) {
+        markerController.beginEdit(target.id)
+        return
+      }
 
-      if (markerId !== null) {
-        markerController.beginEdit(markerId)
+      if (target.kind === 'drawing') {
         return
       }
 
@@ -153,6 +147,8 @@ export function useMapMarkerInteractions(
     }
   }, [
     currentMissionId,
+    drawings,
+    gpxImports,
     interactionMode,
     markerActiveMissionId,
     markerController,

@@ -4,6 +4,7 @@
 
 ## Last Updated
 
+- 2026-05-17 by Claude — B6 GPX And Drawing Hit-Test Hardening (`sartracker-web-fy5`) completed locally on `master`. Made marker/drawing/GPX click priority explicit, named, and testable. Headline bug fixed: a marker stacked under or near a drawing (e.g. an LKP placed inside a search-area polygon) is no longer silently swallowed by the enclosing drawing — the marker now wins the click. New pure module `src/features/map/map-click-target-resolver.ts` declares the rule **marker > drawing > empty** in a top-of-file comment, runs all three hit-tests in one place, and returns a structured verdict including a soft `gpxNearbyImportId` signal for future GPX surface work. New pure module `src/features/gpx/gpx-hit-testing.ts` adds projected-segment hit-testing for GPX MultiLineString tracks. Both `useMapMarkerInteractions` and `useMapDrawingInteractions` now consult the resolver instead of racing via `event.stopImmediatePropagation`. New unit suites `tests/unit/gpx-hit-testing.test.ts` (7 tests) and `tests/unit/map-click-target-resolver.test.ts` (14 tests). New Playwright spec `tests/e2e/hit-test-priority.spec.ts` (2 tests) pins the marker-under-polygon fix and the polygon-fallthrough behavior. Operator manual updated with an explicit click-priority paragraph in the Markers section.
 - 2026-05-17 by Claude — `sartracker-web-b3c` closed. Updated the 5 V2-discovered drifted verificationPrompts so each describes what its captured element actually contains: the three mission-control panel captures (`mission-active-state`, `mission-backdated-offset`, `mission-paused-state`) drop the mission-name check (rendered on the command mast outside the panel) and verify panel-only invariants instead; `shell-drawing-toolbar` describes the no-mission disabled state ("Mission required" chip, dimmed tool buttons) rather than the post-mission "ACTIVE: SELECT" state and drops the LPB footer item that sits below the toolbar's scroll viewport; `drawing-multiple-on-map` now verifies only the range-ring drawing (the reliably-created one in the headless flow) plus the surrounding operational shell, and explicitly tells the reviewer not to fail on absent polygons / bearings / text labels. Also fixed `tracking-status-panel` (same class, surfaced when the full review re-ran): prompt now matches the "Tracking System / telemetry stream" header and the 4-column DEVICES/FIXES/CACHE/STALE counters strip. Each fix verified PASS via `npm run visual:review --only <id> --no-cache`. Two further drift findings (`marker-hazard-dialog` active-tab ambiguity, `shell-idle-state` map-tiles-loading + collapsed Maps menu) filed as follow-up `sartracker-web-wn6`.
 - 2026-05-17 by Claude — V2 Visual Review Automation (`sartracker-web-n9i`) completed locally on `master`. `npm run visual:review` now reads every manifest entry under `test-results/visual-verification/`, spawns one `claude --print --output-format json` reviewer per entry, parses the structured pass/fail reply, and writes per-entry plus aggregate JSON reports. Severity gating via `--fail-on critical|high|medium`; reviewer errors always block; content-hash cache (model + verificationPrompt + screenshot bytes) under `.cache/`. Discovery: full live review surfaced 5 visual specs whose verificationPrompt drifted from the captured element — filed as `sartracker-web-b3c` (P2 bug) for follow-up. CLAUDE.md visual-tests section rewritten to point at the new command.
 - 2026-05-17 by Codex — `sartracker-web-qmr` closed after live desktop smoke. Desktop Traccar polling now uses a Tauri command backed by Rust `reqwest`, preserving the existing TypeScript Traccar client contract while moving HTTP out of WKWebView `fetch()`. Removed the macOS ATS blanket workaround file (`src-tauri/Info.plist`) because desktop plain-HTTP Traccar calls no longer need `NSAllowsArbitraryLoads`. Verified with unit, backend, build, browser E2E, visual E2E, macOS `.app` packaging, packaged `Info.plist` inspection, and a packaged-app live poll against the real Traccar server after resuming the recovered mission.
@@ -73,14 +74,15 @@ Use these only for team testing, not as a production secret model.
 
 ## Next Task
 
-V2 done; b3c done. Default next chunks come from `docs/two-track-execution-workplan.md`: B6 GPX and drawing hit-test hardening, then B4 cross-platform Tauri beta distribution setup (`sartracker-web-y6a`). `sartracker-web-wn6` (newly-surfaced visual prompt drift on `marker-hazard-dialog` and `shell-idle-state`) is also ready and small.
+B6 done. Default next chunks come from `docs/two-track-execution-workplan.md`: B4 cross-platform Tauri beta distribution setup (`sartracker-web-y6a`). `sartracker-web-wn6` (visual prompt drift on `marker-hazard-dialog` and `shell-idle-state`) is also ready and small.
 
 ## Open Beads That Matter Now
 
+- `sartracker-web-fy5` — B6 GPX And Drawing Hit-Test Hardening (completed 2026-05-17; ready to close).
 - `sartracker-web-n9i` — V2 Visual Review Automation (completed 2026-05-17; ready to close).
 - `sartracker-web-b3c` — closed 2026-05-17 after updating the 5 drifted verificationPrompts and re-verifying each via the V2 review runner.
 - `sartracker-web-wn6` — V2-discovered follow-up: 2 further visual prompt drifts (`marker-hazard-dialog` active-tab ambiguity, `shell-idle-state` map-tiles-loading + collapsed Maps menu). Small, ready to start.
-- `sartracker-web-y6a` — B4: set up cross-platform Tauri beta distribution for Windows/Linux testers; deferred until after B6.
+- `sartracker-web-y6a` — B4: set up cross-platform Tauri beta distribution for Windows/Linux testers.
 - `sartracker-web-qmr` — closed 2026-05-17 after keychain-backed packaged-app live Traccar smoke.
 - `sartracker-web-vpz` — Hosted browser testing mode and parity hardening.
 - `sartracker-web-6y3` — A3 team feedback remediation batch; should be closed/reframed once A3.9 verification/deploy is complete.
@@ -103,6 +105,19 @@ Older parity/UI beads still exist, but new work should be selected through the t
 - High-definition mountain maps should be local desktop map packages unless requirements change.
 
 ## Verification Snapshot
+
+Most recent local verification in this turn (B6 hit-test hardening, `sartracker-web-fy5`):
+
+- Red-then-green: new `tests/unit/gpx-hit-testing.test.ts` and `tests/unit/map-click-target-resolver.test.ts` failed red on the missing modules, then 21/21 pass after implementation.
+- Passed: `npm run test` — 98 files / 541 tests (was 96 files / 520 tests before B6; +2 new test files, +21 new tests).
+- Passed: `npx tsc --noEmit`.
+- Passed: `npm run lint`.
+- Passed: `npm run build` — bundle budgets clean.
+- Passed: `npx playwright test --project=chromium` — 87 tests (was 85; +2 new `tests/e2e/hit-test-priority.spec.ts` cases pinning marker-wins-stacked and polygon-wins-empty).
+- Passed: `npx playwright test --project=visual` — 27 tests.
+- Passed: `npm run test:backend` — 44 passed / 1 ignored.
+- Interactive Playwright sanity check (script `tmp/b6-verification/verify-b6.py`) against a live `npm run dev` server: marker placed at (700,420), polygon drawn around it, Select tool, click on marker pixel → marker edit dialog opened with the saved name `LKP under polygon` (screenshot `tmp/b6-verification/03-MARKER-WINS-priority-fix.png`). Subsequent click on empty polygon area → polygon edit dialog opened with the saved name `Search Area Verify` (screenshot `tmp/b6-verification/04-POLYGON-WINS-when-marker-out-of-radius.png`). Confirms the documented priority `marker > drawing > empty` end-to-end.
+- Cleanup: dev server stopped after verification; no background processes left running.
 
 Most recent local verification in this turn (V2 Visual Review Automation, `sartracker-web-n9i`):
 

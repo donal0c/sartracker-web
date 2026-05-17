@@ -1,16 +1,16 @@
 import { useEffect, type RefObject } from 'react'
 import type maplibregl from 'maplibre-gl'
 
-import { findNearestDrawingId } from '../drawings/drawing-hit-testing'
 import { useDrawingStore } from '../drawings/drawing-store'
+import { useGpxStore } from '../gpx/gpx-store'
+import { useMarkerStore } from '../markers/marker-store'
 import { useMissionStore } from '../mission/mission-store'
 import {
   createMapPanClickGuard,
-  getInteractiveDrawingLayerIds,
   isPointInsideMapContainer,
-  resolveClickedDrawingId,
   shouldIgnoreDrawingMapClick,
 } from './map-drawing-interactions'
+import { resolveClickedMapTarget } from './map-click-target-resolver'
 import { useMapInteractionMode } from './use-map-interaction-mode'
 
 type UseMapDrawingInteractionsOptions = {
@@ -28,6 +28,8 @@ export function useMapDrawingInteractions(
   const activeTool = useDrawingStore((state) => state.activeTool)
   const dialog = useDrawingStore((state) => state.dialog)
   const drawings = useDrawingStore((state) => state.drawings)
+  const markers = useMarkerStore((state) => state.markers)
+  const gpxImports = useGpxStore((state) => state.imports)
   const interactionMode = useMapInteractionMode()
   const currentMissionId = useMissionStore((state) => state.currentMission?.id ?? null)
   const missionPhase = useMissionStore((state) => state.phase)
@@ -164,23 +166,18 @@ export function useMapDrawingInteractions(
       const { point } = resolved
 
       if (activeTool === 'select') {
-        const interactiveDrawingLayers = getInteractiveDrawingLayerIds(
-          (layerId) => map.getLayer(layerId) !== undefined,
-        )
-        const drawingFeature =
-          interactiveDrawingLayers.length === 0
-            ? null
-            : map.queryRenderedFeatures([point.x, point.y], {
-                layers: interactiveDrawingLayers,
-              })[0] ?? null
-        const drawingId = resolveClickedDrawingId(drawingFeature?.properties?.drawingId)
-        const resolvedDrawingId =
-          drawingId ?? findNearestDrawingId(map, point, drawings)
+        const target = resolveClickedMapTarget({
+          map,
+          point,
+          markers,
+          drawings,
+          gpxImports,
+        })
 
-        if (resolvedDrawingId !== null) {
+        if (target.kind === 'drawing' && target.id !== null) {
           event.preventDefault()
           event.stopImmediatePropagation()
-          controller.beginEdit(resolvedDrawingId)
+          controller.beginEdit(target.id)
         }
 
         return
@@ -257,7 +254,9 @@ export function useMapDrawingInteractions(
     controller,
     currentMissionId,
     drawings,
+    gpxImports,
     interactionMode,
+    markers,
     missionPhase,
     options.containerRef,
     options.mapRef,
