@@ -126,15 +126,22 @@ This is the default order when the user says “work on the next task.”
 | Done | Route renderer Traccar fetch via Rust reqwest (remove ATS blanket) | Track B | `sartracker-web-qmr` | Closed 2026-05-17; desktop Traccar polling now uses a Tauri reqwest command, the ATS blanket plist was removed, and packaged-app live Traccar smoke passed |
 | Done | V2: Visual Review Automation | Verification | `sartracker-web-n9i` | Done locally 2026-05-17; `npm run visual:review` automates the second-layer Opus review with caching, severity gating, and structured exit codes. Discovery: spec drift in 5 visual prompts filed as `sartracker-web-b3c` |
 | Done | B6: GPX And Drawing Hit-Test Hardening | Track B / Shared | `sartracker-web-fy5` | Done locally 2026-05-17; new pure resolver names the priority `marker > drawing > empty`, fixes the marker-stacked-under-polygon swallow bug, adds GPX line-segment hit-testing as a soft signal, +21 unit tests, +2 E2E tests, and an interactive Playwright sanity check |
+| Done | QGIS Parity Residual-Gap Sweep | Verification / Parity | `sartracker-web-ag1` | Done 2026-05-17; synthesis at `tmp/parity-sweep/sweep-report.md`. Matrix significantly understates current state (11+ rows mis-stated). Genuine residual blockers C1–C13 captured. No child beads filed; triage walk-through filed as `sartracker-web-l7c`. |
+| Done | Visual review prompt drift fixes | Verification | `sartracker-web-wn6` | Done locally 2026-05-17. Rewrote `marker-hazard-dialog` and `shell-idle-state` verificationPrompts to match the actual captured frames; both PASS via `npm run visual:review --only <id> --no-cache`. |
+| Done | Mast tracking ratio visual ambiguity | Track A / UI | `sartracker-web-zq9` | Done locally 2026-05-17. Replaced `${positions.length}/${staleCount}` with separate FIX / STALE chips behind a pure selector. New unit + chromium regressions + new visual entry `mast-tracking-cell-active` (visual review PASS). |
+| Done | OpenTopoMap "tiles failed to load" badge over-eager | Track A / UI | `sartracker-web-2xp` | Done locally 2026-05-17. Tile-only filter at `src/features/map/is-tile-error-event.ts` and widened defaults (5-in-30s) in `src/lib/tile-health-tracker.ts`. Interactive Playwright proof at `tmp/2xp-verification/`. |
 | 1 | B4: Set up cross-platform Tauri beta distribution | Track B / Release | `sartracker-web-y6a` | Prepare Windows/Linux artifacts, download channel, and tester instructions |
 | 2 | B5: Triage first web and Tauri beta feedback | Track A / Track B | `sartracker-web-s8m` | After deployed-web validation and cross-platform beta setup produce feedback |
-| 3 | C1: Local Proprietary Map Package Requirements | Track B / Maps | Create/update bead before starting | Waiting for map facts |
+| 3 | V3: Smoke deployed hosted app after blocker fixes | Verification | `sartracker-web-998` | Hosted regression smoke once a deploy lands |
+| 4 | Parity sweep findings walk-through (Codex + Donal) | Parity / Discussion | `sartracker-web-l7c` | Walk Codex through `tmp/parity-sweep/sweep-report.md`; decide which of C1–C13 become beads, which become matrix corrections, and which are out of scope |
+| 5 | C1: Local Proprietary Map Package Requirements | Track B / Maps | Create/update bead after team discussion | Deferred until the team can provide map package facts |
+| 6 | Offline / Local Map Readiness Follow-up | Track B / Maps | Create/update bead after C1 | Shape the desktop-first local/offline map package path once C1 facts are known |
 
 ## Ready Work Chunks
 
 ### Desktop Beta Distribution Rule
 
-Windows/Linux team testers should not be pointed at a macOS `.app` artifact. Desktop beta distribution is deliberately deferred until `sartracker-web-y6a` sets up a cross-platform process. V2 and B6 are both done; B4 is the next backlog priority and should prepare Windows and Linux artifacts, a download channel, OS-specific tester instructions, and explicit unsigned-app caveats. Until then, the hosted web app remains the broad team-testing lane, while B3 evidence remains the internal desktop smoke baseline.
+Windows/Linux team testers should not be pointed at a macOS `.app` artifact. Desktop beta distribution is deliberately deferred until `sartracker-web-y6a` sets up a cross-platform process, but C1/local-map work is also deferred until the team can provide concrete map-package facts. Current intended order is a QGIS parity residual-gap sweep, then B4 cross-platform beta setup, then B5 feedback triage. B4 should prepare Windows and Linux artifacts, a download channel, OS-specific tester instructions, and explicit unsigned-app caveats. Until then, the hosted web app remains the broad team-testing lane, while B3 evidence remains the internal desktop smoke baseline.
 
 ### R0: S1/S2 Review Remediation Gate
 

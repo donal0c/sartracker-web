@@ -3,7 +3,12 @@
  * transient tile failures from triggering operator-visible degradation alerts.
  *
  * Only declares degradation when errors exceed a configurable threshold
- * within a rolling time window (default: 3 errors in 10 seconds).
+ * within a rolling time window (default: 5 errors in 30 seconds).
+ *
+ * Thresholds were widened in sartracker-web-2xp because the previous
+ * 3-in-10s defaults caused the OpenTopoMap "tiles failed to load" badge to
+ * fire on first paint and during normal pan/zoom under upstream rate-limit
+ * pressure, training operators to ignore a life-safety trust signal.
  */
 
 export type TileHealthDecision = 'no-change' | 'degrade'
@@ -27,8 +32,8 @@ export type TileHealthTracker = {
   readonly shouldRecover: (now: number) => boolean
 }
 
-const DEFAULT_THRESHOLD = 3
-const DEFAULT_WINDOW_MS = 10_000
+const DEFAULT_THRESHOLD = 5
+const DEFAULT_WINDOW_MS = 30_000
 
 /**
  * Creates a tile health tracker with threshold-based degradation detection.

@@ -131,12 +131,12 @@ Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
       area: 'markers',
       severity: 'critical',
       verificationPrompt: `Verify this screenshot of the SAR Tracker Hazard marker dialog:
-1. The "Hazard" tab should be selected/active
-2. There should be a "HAZARD TYPE" dropdown showing "Cliff/Drop-off"
-3. There should be a "SEVERITY" dropdown showing "Critical"
-4. The marker name should show "Cliff Edge West Face"
-5. Coordinate information should be displayed
-6. This is a life-safety critical marker type — hazard markers warn search teams about dangerous terrain
+1. Among the four marker type tabs (IPP/LKP, Clue, Hazard, Casualty), the "Hazard" tab is the visibly active selection — its background is filled with a solid amber/orange tone, while the other three tabs (IPP/LKP, Clue, Casualty) sit on a darker background. PASS as long as the Hazard tab has clearly different chrome from the other three; do not require a specific border style or label colour beyond that contrast.
+2. There is a "HAZARD TYPE" select/dropdown field whose visible value reads "Cliff/Drop-off".
+3. There is a "SEVERITY" select/dropdown field whose visible value reads "Critical".
+4. The "NAME" input contains the text "Cliff Edge West Face".
+5. The dialog shows coordinate information: at least one of the WGS84 (lat/lon with degree symbol), ITM, or TM65 GRID REF readouts is populated with numeric values (not just placeholder dashes).
+6. This is a life-safety critical marker type — hazard markers warn search teams about dangerous terrain.
 Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
       playwrightAssertions: [
         'marker-dialog is visible',

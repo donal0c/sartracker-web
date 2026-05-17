@@ -177,6 +177,63 @@ test.describe('V1 regression: cold-start-offline operator-visible warning', () =
   })
 })
 
+test.describe('Mast tracking cell never reads as a positions/stale ratio (sartracker-web-zq9)', () => {
+  test.setTimeout(45_000)
+
+  test('the mast splits FIX and STALE into separate values', async ({ page }) => {
+    await page.goto('/?missionHarness=1')
+    await waitForShell(page)
+    await page.getByTestId('mission-name-input').fill('Mast Tracking Ratio Regression')
+    await page.getByTestId('mission-start-btn').click()
+    await expect(page.getByTestId('mission-control')).toContainText('active')
+
+    // Two healthy positions, one stale-cached. Pre-fix this rendered as the
+    // visually impossible "ONLINE 3/1" ratio in the mast.
+    await page.evaluate(async () => {
+      const [{ applyTrackingSnapshot, applyTrackingStatus }] = await Promise.all([
+        import('/src/features/tracking/tracking-store.ts'),
+      ])
+      applyTrackingSnapshot({
+        devices: [
+          { device_id: 'd1', name: 'Team 1', status: 'online', last_seen: '2026-04-09T16:00:00.000Z', unique_id: null, category: null },
+          { device_id: 'd2', name: 'Team 2', status: 'online', last_seen: '2026-04-09T15:50:00.000Z', unique_id: null, category: null },
+          { device_id: 'd3', name: 'Team 3', status: 'offline', last_seen: '2026-04-09T15:00:00.000Z', unique_id: null, category: null },
+        ],
+        positions: [
+          { id: 'p1', device_id: 'd1', lat: 51.95, lon: -9.85, altitude: null, speed: null, battery: null, accuracy: null, timestamp: '2026-04-09T16:00:00.000Z', source: null, data_origin: 'live' as const, cache_age_seconds: null, device_cache_stale: false },
+          { id: 'p2', device_id: 'd2', lat: 51.96, lon: -9.84, altitude: null, speed: null, battery: null, accuracy: null, timestamp: '2026-04-09T15:50:00.000Z', source: null, data_origin: 'live' as const, cache_age_seconds: null, device_cache_stale: false },
+          { id: 'p3', device_id: 'd3', lat: 51.97, lon: -9.83, altitude: null, speed: null, battery: null, accuracy: null, timestamp: '2026-04-09T15:00:00.000Z', source: null, data_origin: 'cache' as const, cache_age_seconds: 600, device_cache_stale: true },
+        ],
+        breadcrumbs: [],
+      })
+      applyTrackingStatus({ mode: 'online', consecutiveFailures: 0, recovered: false, lastSuccessAt: '2026-04-09T16:00:01.000Z', warning: null })
+    })
+
+    const cell = page.getByTestId('mast-tracking-cell')
+    await expect(cell).toBeVisible()
+    await expect(page.getByTestId('mast-tracking-mode')).toHaveText('ONLINE')
+    await expect(page.getByTestId('mast-tracking-fix-value')).toHaveText('3')
+    await expect(page.getByTestId('mast-tracking-stale-value')).toHaveText('1')
+    // Defends against the pre-fix `${positions.length}/${staleCount}` regression
+    // that produced impossible ratios such as "3/1" inside the cell.
+    const cellText = (await cell.textContent()) ?? ''
+    expect(cellText).not.toMatch(/\b\d+\s*\/\s*\d+\b/)
+  })
+
+  test('idle state shows zero fix and zero stale with no ratio chrome', async ({ page }) => {
+    await page.goto('/?missionHarness=1')
+    await waitForShell(page)
+
+    const cell = page.getByTestId('mast-tracking-cell')
+    await expect(cell).toBeVisible()
+    await expect(page.getByTestId('mast-tracking-mode')).toHaveText('IDLE')
+    await expect(page.getByTestId('mast-tracking-fix-value')).toHaveText('0')
+    await expect(page.getByTestId('mast-tracking-stale-value')).toHaveText('0')
+    const cellText = (await cell.textContent()) ?? ''
+    expect(cellText).not.toMatch(/\b\d+\s*\/\s*\d+\b/)
+  })
+})
+
 test.describe('V1 regression: tracking visibility filter through to MapLibre', () => {
   test.setTimeout(45_000)
 

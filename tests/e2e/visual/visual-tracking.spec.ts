@@ -123,6 +123,67 @@ Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
     })
   })
 
+  test('mast tracking cell shows separate fix and stale chips, never a ratio', async ({ page }) => {
+    // Inject a fresh snapshot where one of the three latest positions is
+    // marked stale so both chips have visible numbers and the warning tone is
+    // exercised. This pins the regression that the original mast cell read
+    // "ONLINE 3/1" — visually scanning as the impossible ratio "3 of 1".
+    await page.evaluate(async () => {
+      const snapshot = {
+        devices: [
+          { device_id: 'alpha', name: 'Alpha Team', status: 'online' as const, last_seen: '2026-04-10T12:00:00.000Z', unique_id: null, category: 'person' },
+          { device_id: 'bravo', name: 'Bravo Team', status: 'online' as const, last_seen: '2026-04-10T11:58:00.000Z', unique_id: null, category: 'person' },
+          { device_id: 'charlie', name: 'Charlie Team', status: 'offline' as const, last_seen: '2026-04-10T10:30:00.000Z', unique_id: null, category: 'person' },
+        ],
+        positions: [
+          { id: 'pos-alpha', device_id: 'alpha', lat: 51.9985, lon: -9.7426, altitude: 320, speed: 1, battery: 85, accuracy: 8, timestamp: '2026-04-10T12:00:00.000Z', source: 'osmand', data_origin: 'live' as const, cache_age_seconds: null, device_cache_stale: false },
+          { id: 'pos-bravo', device_id: 'bravo', lat: 52.0012, lon: -9.7501, altitude: 280, speed: 0.5, battery: 42, accuracy: 15, timestamp: '2026-04-10T11:58:00.000Z', source: 'osmand', data_origin: 'live' as const, cache_age_seconds: null, device_cache_stale: false },
+          { id: 'pos-charlie', device_id: 'charlie', lat: 51.995, lon: -9.738, altitude: 350, speed: 0, battery: 12, accuracy: 20, timestamp: '2026-04-10T10:30:00.000Z', source: 'cache' as const, cache_age_seconds: 600, device_cache_stale: true },
+        ],
+        breadcrumbs: [],
+      }
+
+      await window.__SARTRACKER_BROWSER_HARNESS__?.injectTrackingSnapshot(snapshot, {
+        mode: 'online',
+        consecutiveFailures: 0,
+        recovered: false,
+        lastSuccessAt: '2026-04-10T12:00:01.000Z',
+        warning: null,
+      })
+    })
+    await page.waitForTimeout(400)
+
+    const cell = page.getByTestId('mast-tracking-cell')
+    await expect(cell).toBeVisible()
+    // Three glance-readable values — never combined as a single n/n ratio.
+    await expect(page.getByTestId('mast-tracking-mode')).toHaveText('ONLINE')
+    await expect(page.getByTestId('mast-tracking-fix-value')).toHaveText('3')
+    await expect(page.getByTestId('mast-tracking-stale-value')).toHaveText('1')
+    const cellText = (await cell.textContent()) ?? ''
+    expect(cellText).not.toMatch(/\b\d+\s*\/\s*\d+\b/)
+
+    await captureElementAndRegister(page, 'command-mast', {
+      testId: 'mast-tracking-cell-active',
+      testName: 'Mast tracking cell during an active mission',
+      area: 'tracking',
+      severity: 'critical',
+      verificationPrompt: `Verify this screenshot of the SAR Tracker command mast (the top header strip) during an active mission:
+1. The mast contains a tracking cell labelled with the current tracking mode in uppercase (one of "ONLINE", "OFFLINE", or "IDLE"). For this capture the mode label should be "ONLINE".
+2. The same cell shows two separate stat rows underneath the mode label: a row whose label is "FIX" with a numeric value (a small whole number such as 3), and a row whose label is "STALE" with a separate numeric value (a small whole number such as 1).
+3. The FIX and STALE values are rendered as two distinct numbers in two separate rows. They are NOT combined into a single value like "3/1" or "FIX/STALE 3/1" or "1/3" — that exact regression is what this test exists to prevent. Mark item 3 FAIL only if you see a single visible "<digits>/<digits>" string treated as one value inside the tracking cell.
+4. The cell sits between the "DEVICES" cell on its left and the "SYSTEM STATUS" cell on its right. Both neighbours should still be visible and labelled.
+5. The overall theme is dark with amber accents; tone for the STALE row is amber/warning when the value is greater than zero.
+Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
+      playwrightAssertions: [
+        'mast-tracking-cell visible',
+        'mast-tracking-mode is "ONLINE"',
+        'mast-tracking-fix-value is "3"',
+        'mast-tracking-stale-value is "1"',
+        'mast-tracking-cell does not match a digits/digits ratio',
+      ],
+    })
+  })
+
   test('full operational view with tracking and all sidebar panels', async ({ page }) => {
     await expect(page.getByTestId('mission-elapsed')).not.toHaveText('00:00:00')
 

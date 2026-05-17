@@ -44,6 +44,7 @@ import {
 } from './features/runtime/runtime-boot-store'
 import { reloadRuntimeFaultShell } from './features/runtime/runtime-fault-reload'
 import { useTrackingStore } from './features/tracking/tracking-store'
+import { selectCommandMastTrackingReadout } from './features/tracking/command-mast-tracking-readout'
 import { APP_VERSION } from './lib/app-version'
 
 const MapView = lazy(async () => {
@@ -422,10 +423,12 @@ export function CommandMast(props: {
           value={formatMissionDuration(timerState?.activeSeconds ?? 0)}
         />
         <TopReadout label="Devices" value={String(snapshot.devices.length)} />
-        <TopReadout
-          label={trackingStatus.mode}
-          tone={trackingStatus.mode === 'online' ? 'success' : staleCount > 0 ? 'warning' : 'default'}
-          value={`${snapshot.positions.length}/${staleCount}`}
+        <TrackingMastCell
+          readout={selectCommandMastTrackingReadout({
+            mode: trackingStatus.mode,
+            fixCount: snapshot.positions.length,
+            staleCount,
+          })}
         />
 
         <div className="flex min-w-0 flex-col justify-center border-l border-r border-[var(--sar-line)] px-4">
@@ -588,6 +591,55 @@ function TopReadout(props: {
       <p className={`mt-1 font-mono text-xl font-black leading-none ${toneClassName}`}>
         {props.value}
       </p>
+    </div>
+  )
+}
+
+function TrackingMastCell(props: {
+  readonly readout: ReturnType<typeof selectCommandMastTrackingReadout>
+}) {
+  const labelToneClassName =
+    props.readout.tone === 'success'
+      ? 'text-emerald-300'
+      : props.readout.tone === 'warning'
+        ? 'text-amber-300'
+        : 'text-stone-300'
+  const staleToneClassName =
+    props.readout.stale.tone === 'warning' ? 'text-amber-300' : 'text-stone-400'
+
+  return (
+    <div
+      className="flex min-w-0 flex-col justify-center border-r border-[var(--sar-line)] px-3"
+      data-testid="mast-tracking-cell"
+    >
+      <p
+        className={`text-[10px] font-black uppercase tracking-[0.14em] ${labelToneClassName}`}
+        data-testid="mast-tracking-mode"
+      >
+        {props.readout.label}
+      </p>
+      <div className="mt-1 flex items-baseline justify-between gap-1">
+        <span className="text-[9px] font-bold uppercase tracking-[0.08em] text-stone-300">
+          {props.readout.fix.label}
+        </span>
+        <span
+          className="font-mono text-sm font-black leading-none text-stone-100"
+          data-testid="mast-tracking-fix-value"
+        >
+          {props.readout.fix.value}
+        </span>
+      </div>
+      <div className="mt-1 flex items-baseline justify-between gap-1">
+        <span className={`text-[9px] font-bold uppercase tracking-[0.08em] ${staleToneClassName}`}>
+          {props.readout.stale.label}
+        </span>
+        <span
+          className={`font-mono text-sm font-black leading-none ${staleToneClassName}`}
+          data-testid="mast-tracking-stale-value"
+        >
+          {props.readout.stale.value}
+        </span>
+      </div>
     </div>
   )
 }

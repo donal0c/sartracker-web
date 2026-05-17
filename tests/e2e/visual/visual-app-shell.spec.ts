@@ -40,16 +40,21 @@ test.describe('Visual: App Shell', () => {
       testName: 'App shell in idle state',
       area: 'app-shell',
       severity: 'critical',
-      verificationPrompt: `Verify this screenshot of the SAR Tracker application in idle state:
-1. The command mast should show "Mountain Rescue" and "SAR Tracker" title text
-2. There should be a "MISSION CONTROL" section pinned at top showing "idle" state with timers at 00:00:00
-3. Below Mission Control, there should be a segmented tab control with Tracking / Tools / Layers
-4. There should be a "TRACKING" section showing idle status (active tab by default)
-5. The left side should show a topographic map (OpenTopoMap basemap with terrain contours)
-6. The top of the map should have 4 basemap switcher buttons (OpenTopoMap, ESRI World Topo, OpenStreetMap, ESRI Satellite)
-7. A collapsed map toolbar should be visible on the left side with a Map Tools label and current active tool
-8. A coordinate bar should be visible at the bottom of the map
-9. The overall theme should be dark (dark backgrounds with light text)
+      verificationPrompt: `Verify this screenshot of the SAR Tracker application in idle state.
+
+Important context for the reviewer:
+- This capture is taken in a headless browser shortly after first paint. Map tiles are still loading, so the map area may show a partially-rendered topographic surface or an overlaid "Loading OpenTopoMap basemap" status badge — both are acceptable idle-state appearances. Do NOT fail the screenshot just because the basemap raster is incomplete or because a "Loading" / "Some tiles failed to load" health badge is visible.
+- The compact Maps menu is closed by default in this idle-state capture and renders as a single "MAPS" / "OpenTopoMap" dropdown control near the top-left of the map. Do NOT expect four visible basemap buttons here — the four-button switcher is a separate test that opens the menu.
+
+Check:
+1. The command mast (top header strip) shows "Mountain Rescue" and "SAR Tracker" title text near the top-left.
+2. A "MISSION CONTROL" section is pinned in the right-hand sidebar showing "idle" status with both timers at "00:00:00".
+3. Below Mission Control there is a segmented tab control with three tabs labelled "Tracking", "Tools", and "Layers".
+4. A "TRACKING" section is visible (the Tracking tab is active by default), showing an idle / no-active-mission state. Empty / placeholder content is correct here.
+5. A compact Maps control is visible near the top-left of the map area — a single dropdown-style chip labelled "MAPS" with the currently selected basemap name (e.g. "OpenTopoMap"). It does NOT need to be expanded.
+6. A collapsed Map Tools toolbar is visible on the left side of the map, showing a "MAP TOOLS" header with the current active mode label (for example "SELECT" or "Mission required").
+7. A coordinate bar is visible along the bottom edge of the map area.
+8. The overall theme is dark (dark stone/black backgrounds with light text and amber accents).
 Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
       playwrightAssertions: [
         'app-title contains "SAR Tracker"',

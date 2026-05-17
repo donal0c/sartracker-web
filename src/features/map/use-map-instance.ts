@@ -12,6 +12,7 @@ import { createTileHealthTracker } from '../../lib/tile-health-tracker'
 import { persistBasemapPreference, readStoredBasemap } from '../../lib/map-preferences'
 import { createRasterStyle, IRELAND_MAX_BOUNDS } from './map-style'
 import { applyMapStylePreservingCamera } from './apply-map-style-preserving-camera'
+import { isTileErrorEvent } from './is-tile-error-event'
 
 export type HoverCoordinate = {
   readonly latitude: number | null
@@ -100,7 +101,14 @@ export function useMapInstance(): MapInstanceController {
         return createReadyMapHealth(getBasemapById(activeBasemapIdRef.current).label)
       })
     })
-    map.on('error', () => {
+    map.on('error', (event) => {
+      // Only count tile-level failures against the operator-facing trust
+      // signal. Maplibre also raises `error` for style errors, image-source
+      // errors, etc. — counting those caused the false-positive "tiles
+      // failed to load" badge tracked in sartracker-web-2xp.
+      if (!isTileErrorEvent(event)) {
+        return
+      }
       const decision = tileHealthTrackerRef.current.recordError(Date.now())
       if (decision === 'degrade') {
         setMapHealth(
