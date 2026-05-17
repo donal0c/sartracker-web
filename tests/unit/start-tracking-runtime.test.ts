@@ -117,6 +117,63 @@ describe('startTrackingRuntime', () => {
     expect(createPoller).toHaveBeenCalledTimes(1)
   })
 
+  // V1 regression coverage (sartracker-web-8gw):
+  // Cold-start-offline must show an unambiguous warning so operators do not silently
+  // act on stale cached positions. Before this guard, the runtime hydrated cached
+  // tracking but published no status warning, leaving the operator to assume live data.
+  it('publishes an offline warning when cold-starting from cache before the first live poll succeeds', async () => {
+    const applyStatus = vi.fn()
+
+    await startTrackingRuntime({
+      config: { baseUrl: 'http://test:8082' },
+      createClient: vi.fn().mockReturnValue({}),
+      createPoller: vi.fn().mockReturnValue({ start: vi.fn(), stop: vi.fn() }),
+      cache: {
+        read: vi.fn().mockResolvedValue(
+          JSON.stringify({
+            cached_at: '2026-04-06T10:33:00.000Z',
+            devices: CACHED_SNAPSHOT.devices,
+            positions: CACHED_SNAPSHOT.positions,
+            breadcrumbs: CACHED_SNAPSHOT.breadcrumbs,
+          }),
+        ),
+        write: vi.fn(),
+      },
+      missionStore: createMissionStoreStub(),
+      applySnapshot: vi.fn(),
+      applyStatus,
+      now: () => new Date('2026-04-06T10:35:00.000Z'),
+    })
+
+    expect(applyStatus).toHaveBeenCalledWith(
+      expect.objectContaining({
+        mode: 'offline',
+        warning: expect.stringMatching(/cache|cached|last known|offline/i),
+        lastSuccessAt: '2026-04-06T10:33:00.000Z',
+      }),
+    )
+  })
+
+  it('does not publish an offline warning if no usable cache exists', async () => {
+    const applyStatus = vi.fn()
+
+    await startTrackingRuntime({
+      config: { baseUrl: 'http://test:8082' },
+      createClient: vi.fn().mockReturnValue({}),
+      createPoller: vi.fn().mockReturnValue({ start: vi.fn(), stop: vi.fn() }),
+      cache: {
+        read: vi.fn().mockResolvedValue(null),
+        write: vi.fn(),
+      },
+      missionStore: createMissionStoreStub(),
+      applySnapshot: vi.fn(),
+      applyStatus,
+      now: () => new Date('2026-04-06T10:35:00.000Z'),
+    })
+
+    expect(applyStatus).not.toHaveBeenCalled()
+  })
+
   it('ignores cache snapshots older than the max cache age', async () => {
     const applySnapshot = vi.fn()
 

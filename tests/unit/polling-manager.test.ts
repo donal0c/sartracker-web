@@ -71,6 +71,34 @@ describe('polling manager', () => {
     poller.stop()
   })
 
+  // V1 regression coverage (sartracker-web-8gw): a healthy poll cycle must never
+  // briefly flip to 'offline'. A previous regression published an 'offline'
+  // intermediate status in some healthy paths, which made operators see a
+  // transport-failure warning even while the poll was succeeding. This guard
+  // pins the contract that a successful single poll cycle only publishes
+  // 'online' modes (and possibly 'idle' before the mission is active).
+  it('never publishes an offline status during a single healthy poll cycle', async () => {
+    const client = createClient()
+    const onStatusChange = vi.fn()
+
+    const poller = createPollingManager(client, {
+      intervalMs: 5_000,
+      staleThresholdMs: 60 * 60 * 1000,
+      onSnapshot: vi.fn(),
+      onStatusChange,
+      now: () => new Date('2026-04-06T10:35:00.000Z'),
+    })
+
+    poller.start()
+    await vi.advanceTimersByTimeAsync(0)
+
+    const modes = onStatusChange.mock.calls.map((call) => call[0]?.mode)
+    expect(modes).not.toContain('offline')
+    expect(modes).toContain('online')
+
+    poller.stop()
+  })
+
   it('serves the last-good snapshot on fetch failure without clearing data', async () => {
     const client = createClient()
     const onSnapshot = vi.fn()

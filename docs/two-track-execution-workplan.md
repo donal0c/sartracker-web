@@ -122,19 +122,19 @@ This is the default order when the user says “work on the next task.”
 | Done | B3 rerun: First Internal Tauri Smoke Build | Track B | `sartracker-web-ppr` | Done 2026-05-17 on 0.1.0+sha.603771f65431; all 6 smoke items categorically proven incl. live 18-device tracking poll |
 | Done | S4: Map Overlay Consolidation And Camera Race Fix | Shared / Track B | `sartracker-web-s5v` | Done locally 2026-05-17 |
 | Done | S5: Mission Control View Model Extraction | Shared / Track A | `sartracker-web-cgx` | Done locally 2026-05-17 |
-| 1 | V1: Regression E2E Coverage | Verification | Create/update bead before starting | Ready |
-| 2 | B4: Set up cross-platform Tauri beta distribution | Track B / Release | `sartracker-web-y6a` | Deferred until after the next app/foundation chunks; prepare Windows/Linux artifacts, download channel, and tester instructions |
-| 3 | Route renderer Traccar fetch via Rust reqwest (remove ATS blanket) | Track B | `sartracker-web-qmr` | P2 follow-up before signed/notarised distribution; not a blocker for current app chunks |
-| 4 | V2: Visual Review Automation | Verification | Create/update bead before starting | Ready |
+| Done | V1: Regression E2E Coverage | Verification | `sartracker-web-8gw` | Done locally 2026-05-17 |
+| 1 | Route renderer Traccar fetch via Rust reqwest (remove ATS blanket) | Track B | `sartracker-web-qmr` | P2 follow-up before signed/notarised distribution; useful before wider desktop packaging |
+| 2 | V2: Visual Review Automation | Verification | Create/update bead before starting | Ready |
+| 3 | B6: GPX And Drawing Hit-Test Hardening | Track B / Shared | Create/update bead before starting | Ready |
+| 4 | B4: Set up cross-platform Tauri beta distribution | Track B / Release | `sartracker-web-y6a` | Deferred until after qmr, V2, and B6; prepare Windows/Linux artifacts, download channel, and tester instructions |
 | 5 | B5: Triage first web and Tauri beta feedback | Track A / Track B | `sartracker-web-s8m` | After deployed-web validation and cross-platform beta setup produce feedback |
-| 6 | B6: GPX And Drawing Hit-Test Hardening | Track B | Create/update bead before starting | Ready |
-| 7 | C1: Local Proprietary Map Package Requirements | Track B / Maps | Create/update bead before starting | Waiting for map facts |
+| 6 | C1: Local Proprietary Map Package Requirements | Track B / Maps | Create/update bead before starting | Waiting for map facts |
 
 ## Ready Work Chunks
 
 ### Desktop Beta Distribution Rule
 
-Windows/Linux team testers should not be pointed at a macOS `.app` artifact. Desktop beta distribution is deliberately deferred until `sartracker-web-y6a` sets up a cross-platform process. That chunk should prepare Windows and Linux artifacts, a download channel, OS-specific tester instructions, and explicit unsigned-app caveats. Until then, the hosted web app remains the broad team-testing lane, while B3 evidence remains the internal desktop smoke baseline.
+Windows/Linux team testers should not be pointed at a macOS `.app` artifact. Desktop beta distribution is deliberately deferred until `sartracker-web-y6a` sets up a cross-platform process, but that process should wait until a little more app and verification work lands. Current intended order is `sartracker-web-qmr`, V2, and B6 before B4. B4 should then prepare Windows and Linux artifacts, a download channel, OS-specific tester instructions, and explicit unsigned-app caveats. Until then, the hosted web app remains the broad team-testing lane, while B3 evidence remains the internal desktop smoke baseline.
 
 ### R0: S1/S2 Review Remediation Gate
 
@@ -693,7 +693,7 @@ Verification:
 - Build artifact path recorded.
 - Backend/audit note confirming post-finish backup behavior.
 
-### B4: GPX And Drawing Hit-Test Hardening
+### B6: GPX And Drawing Hit-Test Hardening
 
 Former hardening item: T11.
 
@@ -903,29 +903,55 @@ Verification:
 
 ### V1: Regression E2E Coverage
 
+Status: done 2026-05-17 (`sartracker-web-8gw`).
+
 Former hardening item: T13.
 
-Goal: add integration-level guards for previously live regressions and cold-start-offline behavior.
+Delivered:
 
-Tasks:
+- `tests/unit/start-tracking-runtime.test.ts` pins cold-start-offline status:
+  the runtime now publishes
+  `OFFLINE MODE — showing last known positions from cache.` (mode `offline`,
+  `lastSuccessAt: cached_at`) after hydrating a usable cache, and publishes no
+  status when no usable cache exists. Implemented in
+  `src/features/tracking/start-tracking-runtime.ts`.
+- `tests/unit/polling-manager.test.ts` pins that a single healthy poll cycle
+  never publishes an `offline` status (guards against transient transport-flip
+  regressions).
+- `tests/unit/layer-stale-refresh-integration.test.ts` wires the real layer
+  catalog runtime + catalog store + visibility store + panel adapter helper
+  together and pins that a stale refresh resolving after a click does not
+  clobber the just-applied visibility. Confirmed to fail red if the
+  invalidation guard in `start-layer-catalog-runtime.ts` is reverted.
+- `tests/e2e/v1-regression.spec.ts` adds two operator-facing regressions:
+  a per-device tracking visibility toggle flips the MapLibre device-circle
+  filter, and a cold-start-from-cache snapshot+status renders an explicit
+  "showing last known positions" warning in the tracking status panel.
+- `tests/e2e/parity-visibility.spec.ts` no longer uses fixed `waitForTimeout`.
+  The 200ms read-state nap and four 500ms cascade naps were replaced with
+  `expect.poll` against the actual conditions (group flag flipped, hidden
+  device IDs, breadcrumbs visibility). The `beforeEach` now polls the catalog
+  feature IDs before opening the Layers tab.
 
-- Add E2E coverage for tracking layer visibility filters.
-- Add E2E coverage for stale layer-catalog refresh not overwriting a just-clicked visibility toggle.
-- Add E2E or mock-server coverage that a healthy poll does not flip to transport failure.
-- Add unit and E2E coverage for cold-start-offline showing cached positions with an unambiguous warning.
-- Replace brittle fixed waits in parity visibility specs with state-based waits.
+Acceptance met:
 
-Acceptance:
-
-- The known regressions fail red if their fixes are reverted.
-- Cold-start-offline is covered at a meaningful seam.
-- Visibility specs avoid fixed propagation waits.
+- Known regressions fail red if their fixes are reverted (verified by
+  temporarily disabling the catalog invalidation guard).
+- Cold-start-offline is covered at the runtime seam (unit) and at the
+  operator surface (E2E).
+- Visibility specs no longer rely on fixed propagation waits.
 
 Verification:
 
-- Targeted new specs.
-- `npm run test`.
-- Playwright E2E for any user-visible regression coverage added by this chunk.
+- Passed: `npm run test` (94 files / 474 tests).
+- Passed: `npx tsc --noEmit`, `npm run lint`, `npm run build`.
+- Passed: `npx playwright test --project=chromium` (85 tests).
+- Passed: `npx playwright test --project=visual` (27 tests).
+- Passed: `npm run test:backend` (41 passed / 1 ignored).
+- Browser-backed verification ran via Playwright at
+  `http://127.0.0.1:1420/?missionHarness=1`. No Vercel redeploy was needed
+  because the only operator-facing runtime change is the cold-start-offline
+  status copy, which is exercised by the new E2E.
 
 ### V2: Visual Review Automation
 
@@ -948,6 +974,33 @@ Verification:
 
 - Dry run against a small visual manifest set.
 - Document the exact command or agent workflow in this file or the visual test docs.
+
+### B5: Triage First Web And Tauri Beta Feedback
+
+Bead: `sartracker-web-s8m`
+
+Goal: classify real tester feedback before starting another fix loop, so hosted-web issues, desktop/Tauri issues, shared app bugs, docs/training problems, and product preferences do not collapse into one foggy backlog.
+
+Entry gate:
+
+- Hosted web app has been tested from the production URL, not a local dev server.
+- Tauri app has been tested from the distributed artifact, not only from a local developer build.
+- Evidence is captured before triage starts: version/build ID, OS/browser, tester path, screenshots or notes, diagnostics export when relevant, and clear pass/fail observations.
+- Feedback is classified before implementation starts.
+
+Tasks:
+
+- Review feedback from hosted web testing and the first Tauri beta distribution.
+- Classify each item as hosted-only, desktop/Tauri-only, shared app bug, docs/training issue, or product/UI preference.
+- Create or update beads for actionable items.
+- Decide whether to widen Tauri beta, repeat blocker fixes, or keep desktop paused while hosted testing continues.
+- Update this workplan and `handoff/HANDOFF.md` with the decision.
+
+Acceptance:
+
+- No tester finding remains only in chat, email, or memory.
+- Each actionable finding has a lane and bead.
+- The plan clearly says whether Tauri beta can expand, needs another blocker-fix loop, or should pause.
 
 ## Deferred / Decision-Gated Work
 

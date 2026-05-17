@@ -132,6 +132,16 @@ export async function startTrackingRuntime(
           },
         ),
       )
+      // Cold-start visibility: until the first live poll succeeds, the operator
+      // is looking at last-known cached positions. Surface that explicitly so
+      // they cannot mistake cached data for a live feed.
+      dependencies.applyStatus({
+        mode: 'offline',
+        consecutiveFailures: 0,
+        recovered: false,
+        lastSuccessAt: cachedSnapshot.cached_at,
+        warning: 'OFFLINE MODE — showing last known positions from cache.',
+      })
     }
   }
 

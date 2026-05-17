@@ -22,15 +22,13 @@ async function waitForShell(page: Page) {
 
 /**
  * Reads the current visibility store state from the running app.
- * Waits briefly for React's async useEffect cycle to propagate
- * catalog tree changes through the bridge to the visibility store.
+ *
+ * This is a synchronous read — callers that have just triggered an async cycle
+ * (cascade toggle, catalog refresh) should use `expect.poll(() => readVisibilityState(...))`
+ * with a predicate, instead of relying on a fixed sleep, so the test waits for
+ * the actual condition rather than a guessed propagation delay.
  */
 async function readVisibilityState(page: Page) {
-  // Allow React's useEffect cycle (bridge → hydrateCatalogVisibility) to fire.
-  // The bridge effect is scheduled after the render commit, so a microtask
-  // wait is needed before the visibility store reflects tree changes.
-  await page.waitForTimeout(200)
-
   return page.evaluate(async () => {
     const { useLayerVisibilityStore } = await import(
       '/src/features/layers/layer-visibility-store.ts'
@@ -286,8 +284,32 @@ test.describe('Batch 1: Critical visibility parity (LPV-240 to LPV-247)', () => 
     await page.getByTestId('mission-start-btn').click()
     await expect(page.getByTestId('mission-control')).toContainText('active')
     await seedVisibilityTestData(page)
-    // Wait for the catalog to process the new data
-    await page.waitForTimeout(500)
+    // Wait for the catalog runtime to ingest the seeded data and surface the
+    // expected device/marker/drawing nodes. State-based wait keeps the test
+    // robust under load instead of guessing a propagation delay.
+    await expect
+      .poll(
+        async () =>
+          page.evaluate(async () => {
+            const { useLayerCatalogStore } = await import(
+              '/src/features/layers/layer-catalog-store.ts'
+            )
+            const root = useLayerCatalogStore.getState().root
+            const featureIds = root.children
+              .flatMap((group) => group.children)
+              .flatMap((layer) => layer.children.map((feature) => feature.id))
+            return featureIds
+          }),
+        { timeout: 10_000 },
+      )
+      .toEqual(
+        expect.arrayContaining([
+          'feature:device:alpha',
+          'feature:device:bravo',
+          'feature:marker:marker-clue-1',
+          'feature:drawing:drawing-line-1',
+        ]),
+      )
     await page.getByTestId('sidebar-tab-layers').click()
   })
 
@@ -422,24 +444,33 @@ test.describe('Batch 1: Critical visibility parity (LPV-240 to LPV-247)', () => 
     const trackingGroupToggle = page.getByTestId('layer-visibility-group-tracking')
     await expect(trackingGroupToggle).toBeVisible({ timeout: 10000 })
     await trackingGroupToggle.click()
-    // Wait for cascade persist + rebuild cycle
-    await page.waitForTimeout(500)
 
     // CRITICAL: Are all devices now hidden in the visibility store?
-    const after = await readVisibilityState(page)
-    expect(after.hiddenDeviceIds).toContain('alpha')
-    expect(after.hiddenDeviceIds).toContain('bravo')
-    // Breadcrumbs should also be hidden when tracking group is hidden
-    expect(after.breadcrumbsVisible).toBe(false)
+    // Poll the actual condition rather than guessing the cascade-persist delay.
+    await expect
+      .poll(async () => (await readVisibilityState(page)).hiddenDeviceIds.sort(), {
+        timeout: 5_000,
+      })
+      .toEqual(['alpha', 'bravo'])
+    await expect
+      .poll(async () => (await readVisibilityState(page)).breadcrumbsVisible, {
+        timeout: 5_000,
+      })
+      .toBe(false)
 
     // Re-enable group
     await trackingGroupToggle.click()
-    await page.waitForTimeout(500)
 
-    const restored = await readVisibilityState(page)
-    // Previous child visibility should be restored
-    expect(restored.hiddenDeviceIds).toEqual([])
-    expect(restored.breadcrumbsVisible).toBe(true)
+    await expect
+      .poll(async () => (await readVisibilityState(page)).hiddenDeviceIds, {
+        timeout: 5_000,
+      })
+      .toEqual([])
+    await expect
+      .poll(async () => (await readVisibilityState(page)).breadcrumbsVisible, {
+        timeout: 5_000,
+      })
+      .toBe(true)
   })
 
   test('LPV-246a: Map Tools group visibility cascade propagates to all map-tool runtime channels', async ({
@@ -457,7 +488,14 @@ test.describe('Batch 1: Critical visibility parity (LPV-240 to LPV-247)', () => 
     const mapToolsGroupToggle = page.getByTestId('layer-visibility-group-map-tools')
     await expect(mapToolsGroupToggle).toBeVisible({ timeout: 10000 })
     await mapToolsGroupToggle.click()
-    await page.waitForTimeout(500)
+
+    // Wait on the actual cascade signal (mapTools group flag flipped) rather than
+    // a fixed delay; everything else under it propagates synchronously by then.
+    await expect
+      .poll(async () => (await readVisibilityState(page)).groupVisibility.mapTools, {
+        timeout: 5_000,
+      })
+      .toBe(false)
 
     const after = await readVisibilityState(page)
     expect(after.groupVisibility.mapTools).toBe(false)
@@ -480,7 +518,11 @@ test.describe('Batch 1: Critical visibility parity (LPV-240 to LPV-247)', () => 
       .toContain('__hidden__')
 
     await mapToolsGroupToggle.click()
-    await page.waitForTimeout(500)
+    await expect
+      .poll(async () => (await readVisibilityState(page)).groupVisibility.mapTools, {
+        timeout: 5_000,
+      })
+      .toBe(true)
 
     const restored = await readVisibilityState(page)
     await expect
