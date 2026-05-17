@@ -121,14 +121,14 @@ This is the default order when the user says “work on the next task.”
 | Done | Z3: zl4 active-mission-finished-on-quit | Track B | `sartracker-web-zl4` | Closed 2026-05-17 as false positive; regression test added in 000f7d1 |
 | Done | B3 rerun: First Internal Tauri Smoke Build | Track B | `sartracker-web-ppr` | Done 2026-05-17 on 0.1.0+sha.603771f65431; all 6 smoke items categorically proven incl. live 18-device tracking poll |
 | Done | S4: Map Overlay Consolidation And Camera Race Fix | Shared / Track B | `sartracker-web-s5v` | Done locally 2026-05-17 |
-| 1 | S5: Mission Control View Model Extraction | Shared / Track A | Create/update bead before starting | Pair with A3.4 if selected |
-| 2 | V1: Regression E2E Coverage | Verification | Create/update bead before starting | Ready |
-| 3 | B4: Set up cross-platform Tauri beta distribution | Track B / Release | `sartracker-web-y6a` | Deferred until after the next app/foundation chunks; prepare Windows/Linux artifacts, download channel, and tester instructions |
-| 4 | Route renderer Traccar fetch via Rust reqwest (remove ATS blanket) | Track B | `sartracker-web-qmr` | P2 follow-up before signed/notarised distribution; not a blocker for current app chunks |
-| 5 | V2: Visual Review Automation | Verification | Create/update bead before starting | Ready |
-| 6 | B5: Triage first web and Tauri beta feedback | Track A / Track B | `sartracker-web-s8m` | After deployed-web validation and cross-platform beta setup produce feedback |
-| 7 | B6: GPX And Drawing Hit-Test Hardening | Track B | Create/update bead before starting | Ready |
-| 8 | C1: Local Proprietary Map Package Requirements | Track B / Maps | Create/update bead before starting | Waiting for map facts |
+| Done | S5: Mission Control View Model Extraction | Shared / Track A | `sartracker-web-cgx` | Done locally 2026-05-17 |
+| 1 | V1: Regression E2E Coverage | Verification | Create/update bead before starting | Ready |
+| 2 | B4: Set up cross-platform Tauri beta distribution | Track B / Release | `sartracker-web-y6a` | Deferred until after the next app/foundation chunks; prepare Windows/Linux artifacts, download channel, and tester instructions |
+| 3 | Route renderer Traccar fetch via Rust reqwest (remove ATS blanket) | Track B | `sartracker-web-qmr` | P2 follow-up before signed/notarised distribution; not a blocker for current app chunks |
+| 4 | V2: Visual Review Automation | Verification | Create/update bead before starting | Ready |
+| 5 | B5: Triage first web and Tauri beta feedback | Track A / Track B | `sartracker-web-s8m` | After deployed-web validation and cross-platform beta setup produce feedback |
+| 6 | B6: GPX And Drawing Hit-Test Hardening | Track B | Create/update bead before starting | Ready |
+| 7 | C1: Local Proprietary Map Package Requirements | Track B / Maps | Create/update bead before starting | Waiting for map facts |
 
 ## Ready Work Chunks
 
@@ -892,9 +892,12 @@ Acceptance:
 
 Verification:
 
-- Unit tests for timer/view-model behavior where practical.
-- Existing mission lifecycle tests remain green.
-- Manual/inbuilt-browser mission start/pause/resume/finish check.
+- Done 2026-05-17: added `src/features/mission/use-mission-timer.ts` and moved the mast plus Mission Control timer displays onto it.
+- Done 2026-05-17: added `src/features/mission/use-mission-control-view-model.ts` for mission lifecycle, recovery, governance, duplicate-name warning, admin roster, busy/error state, and control enablement.
+- Done 2026-05-17: `MissionControlPanel` now delegates lifecycle/timer orchestration to the view model and remains focused on rendering, focus trapping, and accessible dialogs.
+- Passed 2026-05-17: red-then-green hook tests in `tests/unit/use-mission-timer.test.ts` and `tests/unit/use-mission-control-view-model.test.ts`.
+- Passed 2026-05-17: focused mission tests, `npx tsc --noEmit`, `npm run lint`, `npm run test` (93 files / 470 tests), `npm run build`, and `npm run test:backend` (41 passed / 1 ignored).
+- Not run: Playwright E2E/browser automation because local instructions require explicit user approval before using Playwright.
 
 ## Verification Chunks
 

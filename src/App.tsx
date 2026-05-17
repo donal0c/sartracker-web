@@ -1,4 +1,4 @@
-import { Suspense, lazy, useEffect, useMemo, useRef, useState } from 'react'
+import { Suspense, lazy, useEffect, useRef, useState } from 'react'
 
 import { DrawingRuntimeBridge } from './features/drawings/drawing-runtime-bridge'
 import { DiagnosticsRuntimeBridge } from './features/diagnostics/diagnostics-runtime-bridge'
@@ -31,7 +31,8 @@ import { HelicopterRuntimeBridge } from './features/helicopters/helicopter-runti
 import { useFocusModeStore } from './features/focus-mode/focus-mode-store'
 import { useMissionStore } from './features/mission/mission-store'
 import { shouldEnableMissionBrowserHarness } from './features/mission/mission-browser-harness'
-import { calculateMissionTimerState, formatMissionDuration } from './features/mission/mission-timers'
+import { formatMissionDuration } from './features/mission/mission-timers'
+import { useMissionTimer } from './features/mission/use-mission-timer'
 import {
   selectLifecycleBackupFailureAlert,
   selectAutosaveWarning,
@@ -363,7 +364,6 @@ export function CommandMast(props: {
   const snapshot = useTrackingStore((state) => state.snapshot)
   const trackingStatus = useTrackingStore((state) => state.status)
   const autosaveStatus = useAutosaveStatusStore()
-  const [now, setNow] = useState(() => new Date())
   const staleCount = snapshot.positions.filter((position) => position.device_cache_stale).length
   const autosaveWarning = selectCommandMastAutosaveWarning(
     selectAutosaveWarning(autosaveStatus),
@@ -374,17 +374,7 @@ export function CommandMast(props: {
     status: props.status,
     autosaveWarning,
   })
-  const timerState = useMemo(
-    () => (currentMission === null ? null : calculateMissionTimerState(currentMission, now)),
-    [currentMission, now],
-  )
-
-  useEffect(() => {
-    const timer = window.setInterval(() => {
-      setNow(new Date())
-    }, 1000)
-    return () => window.clearInterval(timer)
-  }, [])
+  const timerState = useMissionTimer(currentMission)
 
   return (
     <header className="sar-global-mast flex-shrink-0" data-testid="command-mast">

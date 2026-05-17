@@ -1,20 +1,12 @@
 import {
   useEffect,
-  useMemo,
   useRef,
-  useState,
   type KeyboardEvent as ReactKeyboardEvent,
   type ReactNode,
 } from 'react'
 
-import { loadAppSettings } from '../infrastructure/settings-store/tauri-settings-store'
-import { useFocusModeStore } from '../features/focus-mode/focus-mode-store'
-import { useMissionStore } from '../features/mission/mission-store'
-import { useMissionReviewWorkspaceStore } from '../features/mission-review/mission-review-workspace-store'
-import {
-  calculateMissionTimerState,
-  formatMissionDuration,
-} from '../features/mission/mission-timers'
+import { useMissionControlViewModel } from '../features/mission/use-mission-control-view-model'
+import { formatMissionDuration } from '../features/mission/mission-timers'
 import { focusFirstElement, restoreFocus, trapTabKey } from '../lib/focus-management'
 
 const MISSION_NAME_INPUT_ID = 'mission-name-input'
@@ -30,240 +22,47 @@ const MAX_START_OFFSET_HOURS = 48
  * Renders mission lifecycle controls and timer state for operators.
  */
 export function MissionControlPanel() {
-  const phase = useMissionStore((state) => state.phase)
-  const currentMission = useMissionStore((state) => state.currentMission)
-  const recoverableMission = useMissionStore((state) => state.recoverableMission)
-  const controller = useMissionStore((state) => state.controller)
-  const governanceMission = useMissionStore((state) => state.governanceMission)
-  const governanceController = useMissionStore((state) => state.governanceController)
-  const openReviewWorkspace = useMissionReviewWorkspaceStore((state) => state.openWorkspace)
-  const focusModeActive = useFocusModeStore((state) => state.active)
-  const [missionName, setMissionName] = useState('')
-  const [startOffsetHours, setStartOffsetHours] = useState('0')
-  const [now, setNow] = useState(() => new Date())
-  const [startError, setStartError] = useState<string | null>(null)
-  const [actionError, setActionError] = useState<string | null>(null)
-  const [duplicateWarning, setDuplicateWarning] = useState<string | null>(null)
-  const [duplicateAcknowledged, setDuplicateAcknowledged] = useState(false)
-  const [showFinishDialog, setShowFinishDialog] = useState(false)
-  const [showFinalizeDialog, setShowFinalizeDialog] = useState(false)
-  const [showUnlockDialog, setShowUnlockDialog] = useState(false)
-  const [governanceBusy, setGovernanceBusy] = useState(false)
-  const [governanceFeedback, setGovernanceFeedback] = useState<string | null>(null)
-  const [adminRoster, setAdminRoster] = useState<readonly string[]>([])
-  const [selectedAdmin, setSelectedAdmin] = useState('')
-  const [unlockReason, setUnlockReason] = useState('')
-
-  useEffect(() => {
-    const timer = window.setInterval(() => {
-      setNow(new Date())
-    }, 1000)
-
-    return () => {
-      window.clearInterval(timer)
-    }
-  }, [])
-
-  useEffect(() => {
-    if (!showUnlockDialog) {
-      return
-    }
-
-    let cancelled = false
-
-    void loadAppSettings()
-      .then((settings) => {
-        if (cancelled) {
-          return
-        }
-
-        setAdminRoster(settings.missionDefaults.adminRoster)
-        setSelectedAdmin((current) =>
-          current !== '' && settings.missionDefaults.adminRoster.includes(current)
-            ? current
-            : (settings.missionDefaults.adminRoster[0] ?? ''),
-        )
-      })
-      .catch((error) => {
-        if (!cancelled) {
-          setActionError(toErrorMessage(error))
-        }
-      })
-
-    return () => {
-      cancelled = true
-    }
-  }, [showUnlockDialog])
-
-  const timerState = useMemo(() => {
-    if (currentMission === null) {
-      return null
-    }
-
-    return calculateMissionTimerState(currentMission, now)
-  }, [currentMission, now])
-
-  async function handleStartMission(): Promise<void> {
-    if (controller === null) {
-      return
-    }
-
-    setStartError(null)
-    setActionError(null)
-
-    const normalizedName = missionName.trim()
-    if (normalizedName === '') {
-      setStartError('Mission name is required.')
-      return
-    }
-
-    const parsedOffset = Number(startOffsetHours)
-    if (!Number.isFinite(parsedOffset) || parsedOffset < 0 || parsedOffset > MAX_START_OFFSET_HOURS) {
-      setStartError(`Start offset must be between 0 and ${MAX_START_OFFSET_HOURS} hours.`)
-      return
-    }
-
-    const hasConflict = await controller.hasMissionNameConflict(normalizedName)
-    if (hasConflict && !duplicateAcknowledged) {
-      setDuplicateWarning(
-        'Mission name already exists. Starting anyway will create a separate mission record.',
-      )
-      setDuplicateAcknowledged(true)
-      return
-    }
-
-    try {
-      await controller.startMission({
-        name: normalizedName,
-        ...(parsedOffset === 0
-          ? {}
-          : { startTime: new Date(now.getTime() - parsedOffset * 60 * 60 * 1000).toISOString() }),
-      })
-
-      setMissionName('')
-      setStartOffsetHours('0')
-      setStartError(null)
-      setDuplicateWarning(null)
-      setDuplicateAcknowledged(false)
-      setNow(new Date())
-    } catch (error) {
-      setStartError(toErrorMessage(error))
-    }
-  }
-
-  async function handlePauseOrResume(): Promise<void> {
-    if (controller === null) {
-      return
-    }
-
-    setActionError(null)
-
-    try {
-      if (phase === 'paused') {
-        await controller.resumeMission()
-        setNow(new Date())
-        return
-      }
-
-      await controller.pauseMission()
-      setNow(new Date())
-    } catch (error) {
-      setActionError(toErrorMessage(error))
-    }
-  }
-
-  async function handleConfirmFinish(): Promise<void> {
-    if (controller === null) {
-      return
-    }
-
-    setActionError(null)
-
-    try {
-      await controller.finishMission()
-      await governanceController?.refreshGovernanceMission()
-      setNow(new Date())
-      setShowFinishDialog(false)
-    } catch (error) {
-      setActionError(toErrorMessage(error))
-    }
-  }
-
-  async function handleResumeRecoverable(): Promise<void> {
-    if (controller === null) {
-      return
-    }
-
-    setActionError(null)
-
-    try {
-      await controller.resumeRecoverableMission()
-      setNow(new Date())
-    } catch (error) {
-      setActionError(toErrorMessage(error))
-    }
-  }
-
-  async function handleStartFresh(): Promise<void> {
-    if (controller === null) {
-      return
-    }
-
-    setActionError(null)
-
-    try {
-      await controller.startFresh()
-      await governanceController?.refreshGovernanceMission()
-      setNow(new Date())
-    } catch (error) {
-      setActionError(toErrorMessage(error))
-    }
-  }
-
-  async function handleConfirmFinalize(): Promise<void> {
-    if (governanceController === null || governanceMission === null) {
-      return
-    }
-
-    setGovernanceBusy(true)
-    setActionError(null)
-    setGovernanceFeedback(null)
-
-    try {
-      const result = await governanceController.finalizeGovernanceMission(governanceMission.id)
-      setGovernanceFeedback(`Mission archived to ${result.archive.archive_path}`)
-      setShowFinalizeDialog(false)
-    } catch (error) {
-      setActionError(toErrorMessage(error))
-    } finally {
-      setGovernanceBusy(false)
-    }
-  }
-
-  async function handleConfirmUnlock(): Promise<void> {
-    if (governanceController === null || governanceMission === null) {
-      return
-    }
-
-    setGovernanceBusy(true)
-    setActionError(null)
-    setGovernanceFeedback(null)
-
-    try {
-      const mission = await governanceController.unlockGovernanceMission({
-        mission_id: governanceMission.id,
-        admin_name: selectedAdmin,
-        reason: unlockReason,
-      })
-      setGovernanceFeedback(`Mission unlocked by ${selectedAdmin}. Status is now ${mission.status}.`)
-      setShowUnlockDialog(false)
-      setUnlockReason('')
-    } catch (error) {
-      setActionError(toErrorMessage(error))
-    } finally {
-      setGovernanceBusy(false)
-    }
-  }
+  const {
+    phase,
+    currentMission,
+    recoverableMission,
+    governanceMission,
+    focusModeActive,
+    timerState,
+    missionName,
+    setMissionName,
+    startOffsetHours,
+    setStartOffsetHours,
+    startError,
+    actionError,
+    duplicateWarning,
+    showFinishDialog,
+    setShowFinishDialog,
+    showFinalizeDialog,
+    setShowFinalizeDialog,
+    showUnlockDialog,
+    setShowUnlockDialog,
+    governanceBusy,
+    governanceFeedback,
+    adminRoster,
+    selectedAdmin,
+    setSelectedAdmin,
+    unlockReason,
+    setUnlockReason,
+    canOpenReview,
+    openReviewWorkspace,
+    canStart,
+    canPauseOrResume,
+    pauseResumeLabel,
+    canFinish,
+    startMission,
+    pauseOrResume,
+    confirmFinish,
+    resumeRecoverable,
+    startFresh,
+    confirmFinalize,
+    confirmUnlock,
+  } = useMissionControlViewModel()
 
   return (
     <section
@@ -281,7 +80,7 @@ export function MissionControlPanel() {
           <button
             className="sar-button px-3 py-1.5 text-[12px] font-semibold uppercase tracking-[0.08em]"
             data-testid="open-mission-review-workspace"
-            disabled={currentMission === null && governanceMission === null && recoverableMission === null}
+            disabled={!canOpenReview}
             onClick={() => openReviewWorkspace()}
             type="button"
           >
@@ -336,13 +135,9 @@ export function MissionControlPanel() {
               <input
                 className="sar-input mt-2 w-full px-3 py-2 text-sm"
                 data-testid="mission-name-input"
-                disabled={controller === null}
+                disabled={!canStart}
                 id={MISSION_NAME_INPUT_ID}
-                onChange={(event) => {
-                  setMissionName(event.target.value)
-                  setDuplicateWarning(null)
-                  setDuplicateAcknowledged(false)
-                }}
+                onChange={(event) => setMissionName(event.target.value)}
                 placeholder="Search Operation Name"
                 value={missionName}
               />
@@ -358,7 +153,7 @@ export function MissionControlPanel() {
               <input
                 className="sar-input mt-2 w-full px-3 py-2 text-sm"
                 data-testid="mission-offset-input"
-                disabled={controller === null}
+                disabled={!canStart}
                 id={MISSION_OFFSET_INPUT_ID}
                 max={String(MAX_START_OFFSET_HOURS)}
                 min="0"
@@ -392,8 +187,8 @@ export function MissionControlPanel() {
           <button
             className={`${phase === 'idle' ? 'sar-action-primary w-full px-4 py-3 text-[14px] font-black uppercase tracking-[0.12em] transition-all active:bg-amber-500 disabled:cursor-not-allowed disabled:opacity-20 disabled:grayscale' : 'sr-only'}`}
             data-testid="mission-start-btn"
-            disabled={controller === null || phase !== 'idle'}
-            onClick={() => void handleStartMission()}
+            disabled={!canStart}
+            onClick={() => void startMission()}
             type="button"
           >
             Start
@@ -402,16 +197,16 @@ export function MissionControlPanel() {
             <button
               className="sar-button-focus px-3 py-2.5 text-[13px] font-bold uppercase tracking-[0.1em] transition-all disabled:cursor-not-allowed disabled:opacity-20 disabled:grayscale"
               data-testid="mission-pause-resume-btn"
-              disabled={controller === null || (phase !== 'active' && phase !== 'paused')}
-              onClick={() => void handlePauseOrResume()}
+              disabled={!canPauseOrResume}
+              onClick={() => void pauseOrResume()}
               type="button"
             >
-              {phase === 'paused' ? 'Resume' : 'Pause'}
+              {pauseResumeLabel}
             </button>
             <button
               className="sar-action-danger px-3 py-2.5 text-[13px] font-bold uppercase tracking-[0.1em] transition-all active:bg-rose-700 disabled:cursor-not-allowed disabled:opacity-20 disabled:grayscale"
               data-testid="mission-finish-btn"
-              disabled={controller === null || (phase !== 'active' && phase !== 'paused')}
+              disabled={!canFinish}
               onClick={() => setShowFinishDialog(true)}
               type="button"
             >
@@ -489,14 +284,14 @@ export function MissionControlPanel() {
           <div className="mt-4 flex gap-2">
             <button
               className="flex-1 bg-amber-600 px-3 py-2 text-[12px] font-semibold text-white hover:bg-amber-500"
-              onClick={() => void handleResumeRecoverable()}
+              onClick={() => void resumeRecoverable()}
               type="button"
             >
               Resume
             </button>
             <button
               className="flex-1 bg-stone-800 px-3 py-2 text-[12px] font-semibold text-stone-200 hover:bg-stone-700"
-              onClick={() => void handleStartFresh()}
+              onClick={() => void startFresh()}
               type="button"
             >
               Start Fresh
@@ -531,7 +326,7 @@ export function MissionControlPanel() {
               className="flex-1 bg-sky-600 px-3 py-2 text-[12px] font-semibold text-white disabled:opacity-40 hover:bg-sky-500"
               data-testid="mission-finalize-confirm"
               disabled={governanceBusy}
-              onClick={() => void handleConfirmFinalize()}
+              onClick={() => void confirmFinalize()}
               type="button"
             >
               {governanceBusy ? 'Finalizing…' : 'Confirm Archive & Lock'}
@@ -599,7 +394,7 @@ export function MissionControlPanel() {
               className="flex-1 bg-amber-600 px-3 py-2 text-[12px] font-semibold text-white disabled:opacity-40 hover:bg-amber-500"
               data-testid="mission-unlock-confirm"
               disabled={selectedAdmin.trim() === '' || unlockReason.trim() === '' || governanceBusy}
-              onClick={() => void handleConfirmUnlock()}
+              onClick={() => void confirmUnlock()}
               type="button"
             >
               {governanceBusy ? 'Unlocking…' : 'Confirm Unlock'}
@@ -638,7 +433,7 @@ export function MissionControlPanel() {
           <div className="mt-4 flex gap-2">
             <button
               className="flex-1 bg-rose-600 px-3 py-2 text-[12px] font-semibold text-white hover:bg-rose-500"
-              onClick={() => void handleConfirmFinish()}
+              onClick={() => void confirmFinish()}
               type="button"
             >
               Confirm Finish
@@ -709,8 +504,4 @@ function InlineDecisionDialog(props: {
       {props.children}
     </div>
   )
-}
-
-function toErrorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : 'Mission action failed.'
 }

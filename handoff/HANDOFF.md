@@ -4,6 +4,7 @@
 
 ## Last Updated
 
+- 2026-05-17 by Codex — S5 Mission Control View Model Extraction (`sartracker-web-cgx`) completed locally. Added `useMissionTimer` and shared it between Command Mast and Mission Control; added `useMissionControlViewModel` for lifecycle, recovery, governance, duplicate-name, admin-roster, busy/error, and control-enable state; `MissionControlPanel` now delegates mission orchestration to the hook and keeps rendering/focus-dialog responsibilities.
 - 2026-05-17 by Codex — S4 Map Overlay Consolidation And Camera Race Fix (`sartracker-web-s5v`) completed locally. Added shared MapLibre overlay primitives for GeoJSON source sync, idempotent layer creation, filter combination, and SVG icon loading; refactored drawing, marker, measurement, GPX, helicopter, and tracking overlay sync modules onto those primitives; changed basemap style switching to restore the captured camera once on `styledata` instead of immediately and again on `idle`.
 - 2026-05-17 by Claude — B3 First Internal Tauri Smoke Build (`sartracker-web-ppr`) **completed end-to-end on packaged build `0.1.0+sha.603771f65431`**. Two desktop bugs uncovered during the original smoke pass were fixed and categorically proven in the live `.app`:
   - `sartracker-web-el9`: keyring crate had no platform features (mock backend in use). Fixed in `000f7d1` by adding `apple-native`, `windows-native`, `sync-secret-service` to the keyring dependency. Symmetric Rust unit, real-keychain integration test (verifies via `security find-generic-password` from a separate process), and TS poller-start unit test added.
@@ -67,7 +68,7 @@ Use these only for team testing, not as a production secret model.
 
 ## Next Task
 
-Default next chunks come from `docs/two-track-execution-workplan.md`: S5 Mission Control View Model Extraction, then V1 Regression E2E Coverage. Desktop beta distribution is deliberately deferred until `sartracker-web-y6a` sets up a Windows/Linux-capable release path and tester instructions.
+Default next chunks come from `docs/two-track-execution-workplan.md`: V1 Regression E2E Coverage, then B4 cross-platform Tauri beta distribution setup. Desktop beta distribution is deliberately deferred until `sartracker-web-y6a` sets up a Windows/Linux-capable release path and tester instructions.
 
 ## Open Beads That Matter Now
 
@@ -75,6 +76,7 @@ Default next chunks come from `docs/two-track-execution-workplan.md`: S5 Mission
 - `sartracker-web-qmr` — P2: route renderer Traccar fetch through Rust `reqwest` to remove the ATS `NSAllowsArbitraryLoads` blanket. Internal-beta scope is acceptable as-is; this lands before any signed/notarised distribution.
 - `sartracker-web-vpz` — Hosted browser testing mode and parity hardening.
 - `sartracker-web-6y3` — A3 team feedback remediation batch; should be closed/reframed once A3.9 verification/deploy is complete.
+- `sartracker-web-cgx` — S5 Mission Control View Model Extraction (closed 2026-05-17).
 - `sartracker-web-s5v` — S4 Map Overlay Consolidation And Camera Race Fix (closed 2026-05-17).
 - `sartracker-web-4a1` — S3 Layer Visibility Service Extraction (completed 2026-05-17; ready to close if no follow-up findings).
 - `sartracker-web-xhz` — B2 Tauri Beta Release Template (completed 2026-05-17; ready to close if no follow-up findings).
@@ -92,6 +94,18 @@ Older parity/UI beads still exist, but new work should be selected through the t
 - High-definition mountain maps should be local desktop map packages unless requirements change.
 
 ## Verification Snapshot
+
+Most recent local verification in this turn (S5 mission-control view-model extraction):
+
+- Red checks first: new hook tests failed because `use-mission-timer` and `use-mission-control-view-model` did not exist.
+- Passed: `npm run test -- tests/unit/use-mission-timer.test.ts tests/unit/use-mission-control-view-model.test.ts`.
+- Passed: `npm run test -- tests/unit/use-mission-timer.test.ts tests/unit/use-mission-control-view-model.test.ts tests/unit/start-mission-runtime.test.ts tests/unit/mission-tracking-status-bridge.test.ts`.
+- Passed: `npx tsc --noEmit`.
+- Passed: `npm run lint`.
+- Passed: `npm run test` — 93 files / 470 tests.
+- Passed: `npm run build`.
+- Passed: `npm run test:backend` — 41 passed / 1 ignored.
+- Not run: Playwright E2E/browser automation because local instructions require explicit user approval before using Playwright.
 
 Most recent local verification in this turn (S4 overlay/camera consolidation):
 
