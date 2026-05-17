@@ -4,7 +4,7 @@
 
 ## Last Updated
 
-- 2026-05-17 by Claude — B2 Tauri Beta Release Template completed (`sartracker-web-xhz`): canonical release-note template + README + dry-run draft live under `docs/releases/`, repeatable `npm run beta:verify` gate (lint/build/test/test-backend/package/smoke) writes JSON evidence reports to `tmp/beta-artifacts/`, distribution channel locked to GitHub Releases draft/prerelease for the shared zip with notes in `docs/releases/` as the source of truth, supporting docs and operator manual updated.
+- 2026-05-17 by Claude — B3 First Internal Tauri Smoke Build (`sartracker-web-ppr`) executed against build `0.1.0+sha.e7ead2eb093a`. Automated portion (lint/build/test/test:backend/package) all PASS. Manual smoke surfaced two desktop-only blockers and the artifact was NOT promoted: P0 `sartracker-web-zl4` (active mission transitions to `finished` on app quit — direct SQLite confirms `mission_finished` row at the quit timestamp with no preceding user lifecycle event) and P1 `sartracker-web-el9` (runtime tracking shows "not configured" while Traccar provider is saved with auto-connect on). Beta draft retained at `docs/releases/sartracker-web-0.1.0-beta-DRAFT.md` as the worked example of how to document a smoke-blocked draft. Evidence under `tmp/beta-artifacts/smoke/`.
 
 ## Operating Rule
 
@@ -37,6 +37,7 @@ Supporting docs may explain details, but they must not become separate queues.
 - S3 added explicit layer-visibility service tests and kept parity visibility E2E coverage green.
 - Tauri packaging recon found a working macOS arm64 `.app` path: `npm run tauri build -- --bundles app` -> `src-tauri/target/release/bundle/macos/sartracker-web.app`. Full `npm run tauri build` still fails at DMG bundling; unsigned/ad-hoc app is rejected by Gatekeeper as expected for the current internal-beta lane.
 - B2 (`sartracker-web-xhz`) made desktop beta drops repeatable. Future beta cuts must run `npm run beta:verify` (no `--steps` filters), copy `docs/releases/TEMPLATE.md` into a `sartracker-web-<version>-beta-DRAFT.md`, attach the JSON report path from `tmp/beta-artifacts/`, then drop the `-DRAFT` suffix once the artifact is uploaded and the smoke checklist is signed off. Distribution channel is GitHub Releases draft/prerelease on `donal0c/sartracker-web` with the "internal beta" tag in the title.
+- B3 (`sartracker-web-ppr`) ran the gate against `0.1.0+sha.e7ead2eb093a`. Automated steps PASS; smoke surfaced two desktop-only blockers and the artifact was NOT promoted: P0 `sartracker-web-zl4` (active mission becomes `finished` on app quit; reproduced by direct SQLite query against `mission-store.sqlite` showing `mission_finished` row at the quit timestamp with no preceding user lifecycle event) and P1 `sartracker-web-el9` (runtime tracking warns "not configured" while Traccar provider is saved with auto-connect on). Beta draft retained at `docs/releases/sartracker-web-0.1.0-beta-DRAFT.md` as the worked example of a smoke-blocked draft. Evidence under `tmp/beta-artifacts/smoke/`.
 
 ## Traccar Test Details
 
@@ -61,10 +62,13 @@ Use these only for team testing, not as a production secret model.
 
 ## Next Task
 
-Default next chunk is `B3: First Internal Tauri Smoke Build` from `docs/two-track-execution-workplan.md`. B3 should run `npm run beta:verify` end to end (no `--steps` filters), copy `docs/releases/TEMPLATE.md` to a new draft note, and only drop the `-DRAFT` suffix once the artifact is uploaded and the smoke checklist is signed off.
+Default next chunk is `sartracker-web-zl4` (active-mission-finished-on-quit, P0). Triage entry points listed in the bead: shutdown / before_quit hooks in `src-tauri/src/lib.rs` and `src-tauri/src/main.rs`, `finish_mission` callers in `src-tauri/src/persistence/`, renderer-side teardown in `src/lib/app-runtime-controller.ts` and `src/features/mission/**`. Add a regression test in the Rust persistence suite covering "quitting an app with an active mission must not transition the mission to finished" before fixing. After Z1 lands, fix `sartracker-web-el9` (runtime tracking false-warning), then rerun `sartracker-web-ppr` (B3) end-to-end against the next packaged build.
 
 ## Open Beads That Matter Now
 
+- `sartracker-web-zl4` — P0: active mission transitions to `finished` on app quit (desktop). Blocks `sartracker-web-ppr`.
+- `sartracker-web-el9` — P1: runtime tracking warns "not configured" while Traccar provider is saved with auto-connect on (desktop). Blocks `sartracker-web-ppr`.
+- `sartracker-web-ppr` — B3 First Internal Tauri Smoke Build, blocked on the two beads above.
 - `sartracker-web-vpz` — Hosted browser testing mode and parity hardening.
 - `sartracker-web-6y3` — A3 team feedback remediation batch; should be closed/reframed once A3.9 verification/deploy is complete.
 - `sartracker-web-4a1` — S3 Layer Visibility Service Extraction (completed 2026-05-17; ready to close if no follow-up findings).
@@ -81,14 +85,19 @@ Older parity/UI beads still exist, but new work should be selected through the t
 
 ## Verification Snapshot
 
-Most recent local verification in this turn (B2):
+Most recent local verification in this turn (B3):
+
+- Passed: `npm run beta:verify -- --no-smoke` end-to-end (lint, build, test 460/460, test-backend 39/39, package). Report at `tmp/beta-artifacts/verify-0.1.0-sha.e7ead2eb093a-2026-05-17T06-55-19Z.json`.
+- Packaged `.app` produced at `src-tauri/target/release/bundle/macos/sartracker-web.app` (25 MB) and zipped via `ditto` to `tmp/beta-artifacts/sartracker-web_0.1.0_aarch64.app.zip` (15.3 MB, SHA-256 `a809e9865cba89561058dd32677749b24859805118b79aae8c63ac5da30753c3`).
+- Manual smoke (driven via `open` + `osascript` + `screencapture` from this session, with operator confirmation for click-required items): items 1, 2, 3, 6 PASS; item 4 FAIL (`sartracker-web-zl4`); item 5 PARTIAL FAIL (`sartracker-web-el9`).
+- Direct evidence: `tmp/beta-artifacts/smoke/{01-initial-launch.png,01d-mast-full.png,02-mission-started-tracking-warnings.png,03-before-quit.png,04b-after-restart.png,04c-after-restart-front.png,diagnostics-report-2026-05-17T07-05-55-676Z.txt,mission-events-fdsfdsf.tsv}`.
+- Beta artifact NOT promoted; `docs/releases/sartracker-web-0.1.0-beta-DRAFT.md` retained as the worked example of a smoke-blocked draft.
+
+Earlier B2 verification (kept for context):
 
 - Red-then-green: `npm run test -- tests/unit/beta-verify-lib.test.ts` failed first against the missing `build/beta-verify-lib.js`, then passed 15/15 after implementing the helpers.
-- Passed: `npm run beta:verify -- --steps lint --no-smoke --report-dir tmp/beta-artifacts` end-to-end through the new runner; report written to `tmp/beta-artifacts/verify-0.1.0-sha.5d3ba8ad7603-2026-05-17T06-34-52Z.json` and overall PASS with the expected `WARNING: skipped` line for the iteration-only subset.
-- Passed: `npm run lint`
-- Passed: `npm run build`
-- Passed: `npm run test`
-- Heavy gates not rerun in this turn because B1 already proved `npm run tauri build -- --bundles app` and the chunk did not change runtime behaviour: `npm run test:backend`, full `npm run test:e2e`, and the packaged-app smoke remain on the next agent (B3) to run via `npm run beta:verify` without `--steps` filters.
+- Passed: `npm run beta:verify -- --steps lint --no-smoke --report-dir tmp/beta-artifacts` end-to-end through the new runner; report written to `tmp/beta-artifacts/verify-0.1.0-sha.5d3ba8ad7603-2026-05-17T06-34-52Z.json`.
+- Passed: `npm run lint`, `npm run build`, `npm run test`.
 
 Earlier S3 verification (kept for context):
 
