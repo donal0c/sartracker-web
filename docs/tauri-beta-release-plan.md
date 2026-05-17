@@ -129,57 +129,54 @@ The beta note must also include these cautions:
 
 ### B2: Release Note Template
 
-Status: ready. B1 found a usable macOS `.app` path, so release notes can now target that artifact while DMG packaging remains a known limitation.
+Status: done 2026-05-17 (`sartracker-web-xhz`). The canonical release-note
+template, repeatable verification gate, and release-channel decision are now
+checked into the repo.
 
-Each beta release note should use this shape:
+Where the deliverables live:
 
-```md
-# SAR Tracker Desktop Beta <version/build>
+- `docs/releases/TEMPLATE.md` — canonical release-note template. Copy, do
+  not edit in place.
+- `docs/releases/README.md` — authoring workflow, distribution channel, and
+  storage rules.
+- `docs/releases/sartracker-web-0.1.0-beta-DRAFT.md` — first dry-run release
+  note, kept in the repo as the worked example future agents copy from.
+- `scripts/beta-verify.mjs` and `build/beta-verify-lib.js` — the
+  `npm run beta:verify` gate that runs lint, build, test, test:backend,
+  package (`npm run tauri build -- --bundles app`), and the manual smoke
+  checklist, then writes a JSON evidence report to `tmp/beta-artifacts/`.
+- `tests/unit/beta-verify-lib.test.ts` — unit coverage for the gate's pure
+  helpers (step parsing, formatting, summary, report filename).
 
-## Install
+Distribution decision (locked by B2):
 
-- Artifact:
-- Platform:
-- Install/open steps:
-- Known OS warnings:
-- macOS unsigned app guidance:
+- Primary channel for the first internal betas: GitHub Releases on
+  `donal0c/sartracker-web`, marked as **draft** and **prerelease**, with
+  access limited to the team via the "internal beta" tag in the title.
+- Release notes in `docs/releases/` are the single source of truth.
+- macOS arm64 `.app` zips are the only currently proven artifact; do not
+  upload other platforms until packaging is proven on a real build host.
+- Build artifacts must not be committed. Local working copies stay under
+  `tmp/beta-artifacts/` (gitignored). Verification JSON reports stay in the
+  same folder and are referenced from the release note by relative path.
 
-## What Changed
+Verification gate contract:
 
--
-
-## What To Test
-
--
-
-## Known Limitations
-
--
-
-## Rollback / Reinstall
-
--
-
-## Verification Before Sharing
-
-- [ ] npm run lint
-- [ ] npm run build
-- [ ] npm run test
-- [ ] npm run test:backend
-- [ ] packaged app launches
-- [ ] release note includes unsigned/Gatekeeper warning if sharing an unsigned macOS beta
-- [ ] mission can be started
-- [ ] app restart/recovery path checked
-- [ ] tracking settings checked where relevant
-```
-
-Deliverable:
-
-- Add the first draft beta release note under `docs/releases/` or another agreed release-notes location when the first beta artifact exists.
+- `npm run beta:verify` runs the full chain in canonical order. The first
+  failing step short-circuits the rest, every step result is captured in
+  the JSON report, and the script exits non-zero on any failure.
+- A gate that ends with `OVERALL: PASS` but a `WARNING: ... skipped` line
+  is not shareable. The release note checklist must mirror the JSON report.
+- Subset runs are supported with `--steps` for iteration only; the real
+  beta cut runs without `--steps` filters.
 
 ### B3: First Internal Smoke Build
 
-Status: ready after B2 release-note template. B1 identified a usable macOS `.app` output, but the smoke pass should use a release note or at least the B2 template so testers receive the known unsigned-app limitations with the artifact.
+Status: ready. B2 (`sartracker-web-xhz`) provides the release-note template
+and the `npm run beta:verify` gate. The smoke pass should run that gate end
+to end (no `--steps` filters), copy `docs/releases/TEMPLATE.md` to a new
+`sartracker-web-<version>-beta-DRAFT.md`, and only drop the `-DRAFT` suffix
+once the artifact is uploaded and the smoke checklist is signed off.
 
 Smoke path:
 
@@ -221,7 +218,13 @@ Before sharing a desktop beta outside the dev machine:
 
 - Which OS should be targeted first? Current recon only proves macOS arm64 packaging.
 - Are unsigned beta builds acceptable for the first testing pass after explicit Gatekeeper guidance? Current app is ad-hoc signed and rejected by `spctl`.
-- Where should beta artifacts live? The recon zip is local only under `tmp/beta-artifacts/`.
 - How often can the team reasonably install beta updates?
 - Who on the team will test desktop installation?
 - Is a DMG required for the first internal beta, or is a zipped `.app` acceptable?
+
+Resolved by B2 (`sartracker-web-xhz`):
+
+- Where beta artifacts live: GitHub Releases draft/prerelease on
+  `donal0c/sartracker-web` for the shared zip; `tmp/beta-artifacts/` for
+  local working copies and verification reports; release notes in
+  `docs/releases/` as the single source of truth.

@@ -4,7 +4,7 @@
 
 ## Last Updated
 
-- 2026-05-17 by Codex — S3 Layer Visibility Service Extraction completed and rereviewed (`sartracker-web-4a1`): visibility patch logic moved out of `layer-filter-panel`, pure layer-visibility service covers group/device/marker/drawing/helicopter/GPX nodes, duplicate layer-catalog hydration path consolidated, Playwright visibility regressions and full suite green.
+- 2026-05-17 by Claude — B2 Tauri Beta Release Template completed (`sartracker-web-xhz`): canonical release-note template + README + dry-run draft live under `docs/releases/`, repeatable `npm run beta:verify` gate (lint/build/test/test-backend/package/smoke) writes JSON evidence reports to `tmp/beta-artifacts/`, distribution channel locked to GitHub Releases draft/prerelease for the shared zip with notes in `docs/releases/` as the source of truth, supporting docs and operator manual updated.
 
 ## Operating Rule
 
@@ -36,6 +36,7 @@ Supporting docs may explain details, but they must not become separate queues.
 - S3 extracted subtree visibility patching into `src/features/layers/layer-visibility-service.ts`, with `layer-filter-panel` now acting as a thin adapter for catalog persistence + service invocation. Follow-up review added immediate group, helicopter, and GPX overlay-store patching so those nodes do not rely only on async catalog hydration.
 - S3 added explicit layer-visibility service tests and kept parity visibility E2E coverage green.
 - Tauri packaging recon found a working macOS arm64 `.app` path: `npm run tauri build -- --bundles app` -> `src-tauri/target/release/bundle/macos/sartracker-web.app`. Full `npm run tauri build` still fails at DMG bundling; unsigned/ad-hoc app is rejected by Gatekeeper as expected for the current internal-beta lane.
+- B2 (`sartracker-web-xhz`) made desktop beta drops repeatable. Future beta cuts must run `npm run beta:verify` (no `--steps` filters), copy `docs/releases/TEMPLATE.md` into a `sartracker-web-<version>-beta-DRAFT.md`, attach the JSON report path from `tmp/beta-artifacts/`, then drop the `-DRAFT` suffix once the artifact is uploaded and the smoke checklist is signed off. Distribution channel is GitHub Releases draft/prerelease on `donal0c/sartracker-web` with the "internal beta" tag in the title.
 
 ## Traccar Test Details
 
@@ -60,13 +61,14 @@ Use these only for team testing, not as a production secret model.
 
 ## Next Task
 
-Default next chunk is `B2: Tauri Beta Release Template` from `docs/two-track-execution-workplan.md`.
+Default next chunk is `B3: First Internal Tauri Smoke Build` from `docs/two-track-execution-workplan.md`. B3 should run `npm run beta:verify` end to end (no `--steps` filters), copy `docs/releases/TEMPLATE.md` to a new draft note, and only drop the `-DRAFT` suffix once the artifact is uploaded and the smoke checklist is signed off.
 
 ## Open Beads That Matter Now
 
 - `sartracker-web-vpz` — Hosted browser testing mode and parity hardening.
 - `sartracker-web-6y3` — A3 team feedback remediation batch; should be closed/reframed once A3.9 verification/deploy is complete.
 - `sartracker-web-4a1` — S3 Layer Visibility Service Extraction (completed 2026-05-17; ready to close if no follow-up findings).
+- `sartracker-web-xhz` — B2 Tauri Beta Release Template (completed 2026-05-17; ready to close if no follow-up findings).
 
 Older parity/UI beads still exist, but new work should be selected through the two-track workplan unless the user explicitly asks for a specific bead.
 
@@ -79,7 +81,16 @@ Older parity/UI beads still exist, but new work should be selected through the t
 
 ## Verification Snapshot
 
-Most recent local verification in this turn:
+Most recent local verification in this turn (B2):
+
+- Red-then-green: `npm run test -- tests/unit/beta-verify-lib.test.ts` failed first against the missing `build/beta-verify-lib.js`, then passed 15/15 after implementing the helpers.
+- Passed: `npm run beta:verify -- --steps lint --no-smoke --report-dir tmp/beta-artifacts` end-to-end through the new runner; report written to `tmp/beta-artifacts/verify-0.1.0-sha.5d3ba8ad7603-2026-05-17T06-34-52Z.json` and overall PASS with the expected `WARNING: skipped` line for the iteration-only subset.
+- Passed: `npm run lint`
+- Passed: `npm run build`
+- Passed: `npm run test`
+- Heavy gates not rerun in this turn because B1 already proved `npm run tauri build -- --bundles app` and the chunk did not change runtime behaviour: `npm run test:backend`, full `npm run test:e2e`, and the packaged-app smoke remain on the next agent (B3) to run via `npm run beta:verify` without `--steps` filters.
+
+Earlier S3 verification (kept for context):
 
 - Passed: `npm run test -- tests/unit/layer-visibility-service.test.ts tests/unit/layer-catalog-store.test.ts tests/unit/layer-visibility-store.test.ts`
 - Passed: `npm run test:e2e -- tests/e2e/layer-panel.spec.ts tests/e2e/parity-visibility.spec.ts --project=chromium`

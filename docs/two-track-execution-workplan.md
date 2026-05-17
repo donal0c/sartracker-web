@@ -115,14 +115,14 @@ This is the default order when the user says “work on the next task.”
 | Done | R10: Compress Handoff And Annotate Historical Docs | Process / Docs | `sartracker-web-419` | Done locally 2026-05-16 |
 | Done | R11: Add Browser Harness Storage Non-Goals Note | Track A / Docs | `sartracker-web-mh5` | Done locally 2026-05-16 |
 | Done | S3: Layer Visibility Service Extraction | Shared / Track A | `sartracker-web-4a1` | Done 2026-05-17 |
-| 1 | B2: Tauri Beta Release Template | Track B | Create/update bead before starting | Ready |
-| 2 | B3: First Internal Tauri Smoke Build | Track B | Create/update bead before starting | Ready after B2 |
-| 3 | S4: Map Overlay Consolidation And Camera Race Fix | Shared / Track B | Create/update bead before starting | Ready after S3 preferred |
-| 4 | S5: Mission Control View Model Extraction | Shared / Track A | Create/update bead before starting | Pair with A3.4 if selected |
-| 5 | V1: Regression E2E Coverage | Verification | Create/update bead before starting | Ready |
-| 6 | V2: Visual Review Automation | Verification | Create/update bead before starting | Ready |
-| 7 | B4: GPX And Drawing Hit-Test Hardening | Track B | Create/update bead before starting | Ready |
-| 8 | C1: Local Proprietary Map Package Requirements | Track B / Maps | Create/update bead before starting | Waiting for map facts |
+| Done | B2: Tauri Beta Release Template | Track B | `sartracker-web-xhz` | Done 2026-05-17 |
+| 1 | B3: First Internal Tauri Smoke Build | Track B | Create/update bead before starting | Ready (uses B2 template + `npm run beta:verify`) |
+| 2 | S4: Map Overlay Consolidation And Camera Race Fix | Shared / Track B | Create/update bead before starting | Ready after S3 preferred |
+| 3 | S5: Mission Control View Model Extraction | Shared / Track A | Create/update bead before starting | Pair with A3.4 if selected |
+| 4 | V1: Regression E2E Coverage | Verification | Create/update bead before starting | Ready |
+| 5 | V2: Visual Review Automation | Verification | Create/update bead before starting | Ready |
+| 6 | B4: GPX And Drawing Hit-Test Hardening | Track B | Create/update bead before starting | Ready |
+| 7 | C1: Local Proprietary Map Package Requirements | Track B / Maps | Create/update bead before starting | Waiting for map facts |
 
 ## Ready Work Chunks
 
@@ -631,32 +631,32 @@ Verification:
 
 ### B2: Tauri Beta Release Template
 
-Goal: make desktop beta drops repeatable.
+Status: done 2026-05-17 (`sartracker-web-xhz`).
 
-Tasks:
+Delivered:
 
-- Create a release note template with:
-  - build/version
-  - install instructions
-  - what changed
-  - what to test
-  - known limitations
-  - rollback/reinstall guidance
-- Define minimum verification before sharing a beta:
-  - `npm run lint`
-  - `npm run build`
-  - `npm run test`
-  - `npm run test:backend`
-  - packaged app smoke test
-- Decide where beta artifacts will live initially.
+- `docs/releases/TEMPLATE.md` — canonical release-note template covering
+  install, what changed, what to test, known limitations, rollback, and the
+  pre-share verification checklist.
+- `docs/releases/README.md` — authoring workflow, distribution channel, and
+  storage rules.
+- `docs/releases/sartracker-web-0.1.0-beta-DRAFT.md` — first dry-run release
+  note kept in the repo as the worked example.
+- `scripts/beta-verify.mjs` and `build/beta-verify-lib.js` — the
+  `npm run beta:verify` gate that runs lint, build, test, test:backend,
+  package (`npm run tauri build -- --bundles app`), and the manual smoke
+  checklist, then writes a JSON evidence report to `tmp/beta-artifacts/`.
+- `tests/unit/beta-verify-lib.test.ts` — unit coverage for the gate's pure
+  helpers.
+- Locked the beta artifact distribution decision in
+  `docs/tauri-beta-release-plan.md` and `docs/releases/README.md`: GitHub
+  Releases draft/prerelease for the shared zip, `tmp/beta-artifacts/` for
+  local working copies, release notes in `docs/releases/` as the source of
+  truth.
 
-Acceptance:
-
-- A future agent can create a Tauri beta with release notes without inventing the process.
-
-Verification:
-
-- Dry-run release notes from the current version.
+Acceptance met: a future agent can copy the template, run
+`npm run beta:verify`, attach the JSON report, and produce a Tauri beta
+without inventing process.
 
 ### B3: First Internal Tauri Smoke Build
 
