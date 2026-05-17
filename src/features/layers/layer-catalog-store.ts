@@ -28,18 +28,22 @@ const EMPTY_LAYER_CATALOG_RUNTIME: LayerCatalogRuntimeState = {
 export const useLayerCatalogStore = create<LayerCatalogStoreState>((set) => ({
   ...EMPTY_LAYER_CATALOG_RUNTIME,
   controller: null,
-  applyRuntime: (runtime) => {
-    set(runtime)
-    useLayerVisibilityStore.getState().hydrateCatalogVisibility(runtime.missionId, runtime.root)
-  },
+  applyRuntime: (runtime) => applyCatalogRuntimeWithVisibilityHydration(runtime, set),
   applyController: (controller) => set({ controller }),
 }))
 
 export function applyLayerCatalogRuntime(runtime: LayerCatalogRuntimeState): void {
-  useLayerCatalogStore.setState(runtime)
-  useLayerVisibilityStore.getState().hydrateCatalogVisibility(runtime.missionId, runtime.root)
+  applyCatalogRuntimeWithVisibilityHydration(runtime, useLayerCatalogStore.setState)
 }
 
 export function applyLayerCatalogController(controller: LayerCatalogController): void {
   useLayerCatalogStore.setState({ controller })
+}
+
+function applyCatalogRuntimeWithVisibilityHydration(
+  runtime: LayerCatalogRuntimeState,
+  applyRuntimeState: (runtime: LayerCatalogRuntimeState) => void,
+): void {
+  applyRuntimeState(runtime)
+  useLayerVisibilityStore.getState().hydrateCatalogVisibility(runtime.missionId, runtime.root)
 }

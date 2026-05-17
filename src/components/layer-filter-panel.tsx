@@ -1,25 +1,16 @@
 import { useEffect, useMemo, useState } from 'react'
 
 import { useLayerCatalogStore } from '../features/layers/layer-catalog-store'
-import {
-  getDrawingLayerNodeId,
-  getMarkerLayerNodeId,
-  MEASUREMENTS_LAYER_NODE_ID,
-  TRACKING_BREADCRUMBS_LAYER_NODE_ID,
-  TRACKING_DEVICES_LAYER_NODE_ID,
-} from '../features/layers/layer-catalog-ids'
 import type { LayerCatalogNode } from '../features/layers/layer-catalog-tree'
 import {
   collectAllExpandableNodeIds,
   filterCatalogTree,
   filterHiddenNodes,
   findCatalogNode,
-  getDescendantNodeIds,
   getNodeChildren,
   getSiblingNodeIds,
   hasNodeChildren,
 } from '../features/layers/layer-catalog-tree'
-import type { LayerCatalogRootNode } from '../features/layers/layer-catalog-types'
 import {
   buildLayerInspectionRows,
   getLayerNodeCountLabel,
@@ -27,10 +18,10 @@ import {
 } from '../features/layers/layer-panel-model'
 import { useLayerTreeUiStore } from '../features/layers/layer-tree-ui-store'
 import { useLayerVisibilityStore } from '../features/layers/layer-visibility-store'
-import type {
-  DrawingType,
-  MarkerType,
-} from '../infrastructure/mission-store/tauri-mission-store'
+import {
+  applyVisibilityForNodeIds,
+  collectSubtreeNodeIds,
+} from '../features/layers/layer-visibility-service'
 import { useDrawingStore } from '../features/drawings/drawing-store'
 import { useMeasurementStore } from '../features/measurements/measurement-store'
 import { useTrackingStore } from '../features/tracking/tracking-store'
@@ -498,129 +489,14 @@ async function setSubtreeVisibility(
     return
   }
 
-  const nodeIds = [node.id, ...getDescendantNodeIds(node)]
+  const nodeIds = collectSubtreeNodeIds(root, node.id)
 
   // 1. Persist visibility metadata to the catalog (for durability across reload).
   void Promise.all(nodeIds.map((candidateNodeId) => controller.setNodeVisibility(candidateNodeId, visible)))
 
   // 2. Immediately push to the visibility store so MapLibre filters update
   //    without waiting for the async persist → rebuild → bridge effect cycle.
-  applyVisibilityForNodes(root, nodeIds, visible)
-}
-
-const MARKER_TYPE_BY_LAYER_ID: Readonly<Record<string, MarkerType>> = {
-  [getMarkerLayerNodeId('ipp_lkp')]: 'ipp_lkp',
-  [getMarkerLayerNodeId('clue')]: 'clue',
-  [getMarkerLayerNodeId('hazard')]: 'hazard',
-  [getMarkerLayerNodeId('casualty')]: 'casualty',
-}
-
-const DRAWING_TYPE_BY_LAYER_ID: Readonly<Record<string, DrawingType>> = {
-  [getDrawingLayerNodeId('line')]: 'line',
-  [getDrawingLayerNodeId('search_area')]: 'search_area',
-  [getDrawingLayerNodeId('range_ring')]: 'range_ring',
-  [getDrawingLayerNodeId('bearing_line')]: 'bearing_line',
-  [getDrawingLayerNodeId('search_sector')]: 'search_sector',
-  [getDrawingLayerNodeId('text_label')]: 'text_label',
-}
-
-/**
- * Directly pushes visibility changes to the Zustand visibility store so MapLibre
- * filters update immediately. This complements the async catalog persistence path
- * and avoids depending on React's useEffect cycle for map responsiveness.
- */
-function applyVisibilityForNodes(
-  root: LayerCatalogRootNode,
-  nodeIds: readonly string[],
-  visible: boolean,
-): void {
-  const store = useLayerVisibilityStore.getState()
-
-  for (const nodeId of nodeIds) {
-    // Device feature item: feature:device:{deviceId}
-    if (nodeId.startsWith('feature:device:')) {
-      const deviceId = nodeId.slice('feature:device:'.length)
-      const hidden = store.hiddenDeviceIds.includes(deviceId)
-      if (visible && hidden) {
-        store.toggleDeviceVisibility(deviceId)
-      } else if (!visible && !hidden) {
-        store.toggleDeviceVisibility(deviceId)
-      }
-      continue
-    }
-
-    // Marker feature item: feature:marker:{markerId}
-    if (nodeId.startsWith('feature:marker:')) {
-      const markerId = nodeId.slice('feature:marker:'.length)
-      const hidden = store.hiddenMarkerIds.includes(markerId)
-      if (visible && hidden) {
-        store.toggleMarkerVisibility(markerId)
-      } else if (!visible && !hidden) {
-        store.toggleMarkerVisibility(markerId)
-      }
-      continue
-    }
-
-    // Drawing feature item: feature:drawing:{drawingId}
-    if (nodeId.startsWith('feature:drawing:')) {
-      const drawingId = nodeId.slice('feature:drawing:'.length)
-      const hidden = store.hiddenDrawingIds.includes(drawingId)
-      if (visible && hidden) {
-        store.toggleDrawingVisibility(drawingId)
-      } else if (!visible && !hidden) {
-        store.toggleDrawingVisibility(drawingId)
-      }
-      continue
-    }
-
-    // Marker type layer
-    const markerType = MARKER_TYPE_BY_LAYER_ID[nodeId]
-    if (markerType !== undefined) {
-      store.setMarkerTypeVisibility(markerType, visible)
-      continue
-    }
-
-    // Drawing type layer
-    const drawingType = DRAWING_TYPE_BY_LAYER_ID[nodeId]
-    if (drawingType !== undefined) {
-      store.setDrawingTypeVisibility(drawingType, visible)
-      continue
-    }
-
-    // Breadcrumbs layer
-    if (nodeId === TRACKING_BREADCRUMBS_LAYER_NODE_ID) {
-      store.setBreadcrumbsVisible(visible)
-      continue
-    }
-
-    // Measurements layer
-    if (nodeId === MEASUREMENTS_LAYER_NODE_ID) {
-      store.setMeasurementsVisible(visible)
-      continue
-    }
-
-    // Device layer: when hiding the entire device layer, hide all device children
-    if (nodeId === TRACKING_DEVICES_LAYER_NODE_ID) {
-      const deviceLayer = root.children
-        .flatMap((group) => group.children)
-        .find((layer) => layer.id === TRACKING_DEVICES_LAYER_NODE_ID)
-      if (deviceLayer !== undefined) {
-        const allDeviceIds = deviceLayer.children
-          .flatMap((child) =>
-            child.entity?.type === 'device' ? [child.entity.device.device_id] : [],
-          )
-        if (visible) {
-          store.showAllDevices()
-        } else {
-          store.hideAllDevices(allDeviceIds)
-        }
-      }
-      continue
-    }
-
-    // Groups and other structural nodes: no direct store action needed
-    // (their children are handled individually via getDescendantNodeIds)
-  }
+  applyVisibilityForNodeIds(root, nodeIds, visible, useLayerVisibilityStore.getState())
 }
 
 async function reorderNodeRelative(

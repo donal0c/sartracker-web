@@ -79,3 +79,22 @@ export function getHelicopterLayerNodeId(slotKey: HelicopterSlotKey): string {
 export function getHelicopterFeatureNodeId(helicopterId: string): string {
   return `feature:helicopter:${helicopterId}`
 }
+
+/**
+ * Parses a feature node id into its entity type and entity id.
+ */
+export function parseFeatureNodeId(
+  nodeId: string,
+): { readonly entityType: string; readonly entityId: string } | null {
+  const match = /^feature:([^:]+):(.+)$/.exec(nodeId)
+  if (match === null) {
+    return null
+  }
+
+  const entityType = match[1]
+  const entityId = match[2]
+  if (entityType === undefined || entityId === undefined) {
+    return null
+  }
+  return { entityType, entityId }
+}

@@ -114,15 +114,15 @@ This is the default order when the user says “work on the next task.”
 | Done | A3.9: Add Configurable Weather Links Menu | Track A / UI | `sartracker-web-6y3.9` | Done and deployed 2026-05-16, external links only |
 | Done | R10: Compress Handoff And Annotate Historical Docs | Process / Docs | `sartracker-web-419` | Done locally 2026-05-16 |
 | Done | R11: Add Browser Harness Storage Non-Goals Note | Track A / Docs | `sartracker-web-mh5` | Done locally 2026-05-16 |
-| 1 | S3: Layer Visibility Service Extraction | Shared / Track A | Create/update bead before starting | Ready |
-| 2 | B2: Tauri Beta Release Template | Track B | Create/update bead before starting | Ready |
-| 3 | B3: First Internal Tauri Smoke Build | Track B | Create/update bead before starting | Ready after B2 |
-| 4 | S4: Map Overlay Consolidation And Camera Race Fix | Shared / Track B | Create/update bead before starting | Ready after S3 preferred |
-| 5 | S5: Mission Control View Model Extraction | Shared / Track A | Create/update bead before starting | Pair with A3.4 if selected |
-| 6 | V1: Regression E2E Coverage | Verification | Create/update bead before starting | Ready |
-| 7 | V2: Visual Review Automation | Verification | Create/update bead before starting | Ready |
-| 8 | B4: GPX And Drawing Hit-Test Hardening | Track B | Create/update bead before starting | Ready |
-| 9 | C1: Local Proprietary Map Package Requirements | Track B / Maps | Create/update bead before starting | Waiting for map facts |
+| Done | S3: Layer Visibility Service Extraction | Shared / Track A | `sartracker-web-4a1` | Done 2026-05-17 |
+| 1 | B2: Tauri Beta Release Template | Track B | Create/update bead before starting | Ready |
+| 2 | B3: First Internal Tauri Smoke Build | Track B | Create/update bead before starting | Ready after B2 |
+| 3 | S4: Map Overlay Consolidation And Camera Race Fix | Shared / Track B | Create/update bead before starting | Ready after S3 preferred |
+| 4 | S5: Mission Control View Model Extraction | Shared / Track A | Create/update bead before starting | Pair with A3.4 if selected |
+| 5 | V1: Regression E2E Coverage | Verification | Create/update bead before starting | Ready |
+| 6 | V2: Visual Review Automation | Verification | Create/update bead before starting | Ready |
+| 7 | B4: GPX And Drawing Hit-Test Hardening | Track B | Create/update bead before starting | Ready |
+| 8 | C1: Local Proprietary Map Package Requirements | Track B / Maps | Create/update bead before starting | Waiting for map facts |
 
 ## Ready Work Chunks
 
@@ -822,9 +822,11 @@ Acceptance:
 
 Verification:
 
-- Unit tests for device, marker, drawing, branch, leaf, and unknown-node visibility behavior.
-- Existing layer visibility tests remain green.
-- Manual/inbuilt-browser layer hide/show check.
+- Done 2026-05-17: extracted visibility patching to `src/features/layers/layer-visibility-service.ts` and switched `layer-filter-panel` to a thin adapter.
+- Done 2026-05-17: added `tests/unit/layer-visibility-service.test.ts` covering device/marker/drawing features, tracking devices branch, measurements/breadcrumbs layers, and unknown node behavior.
+- Done 2026-05-17: `npm run test -- tests/unit/layer-visibility-service.test.ts tests/unit/layer-catalog-store.test.ts tests/unit/layer-visibility-store.test.ts`.
+- Done 2026-05-17: `npm run test:e2e -- tests/e2e/layer-panel.spec.ts tests/e2e/parity-visibility.spec.ts --project=chromium`.
+- Done 2026-05-17: full verification passed (`npm run lint`, `npm run build`, `npm run test:all`).
 
 ### S4: Map Overlay Consolidation And Camera Race Fix
 
