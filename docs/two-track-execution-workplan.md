@@ -130,7 +130,7 @@ This is the default order when the user says “work on the next task.”
 | Done | Visual review prompt drift fixes | Verification | `sartracker-web-wn6` | Done locally 2026-05-17. Rewrote `marker-hazard-dialog` and `shell-idle-state` verificationPrompts to match the actual captured frames; both PASS via `npm run visual:review --only <id> --no-cache`. |
 | Done | Mast tracking ratio visual ambiguity | Track A / UI | `sartracker-web-zq9` | Done locally 2026-05-17. Replaced `${positions.length}/${staleCount}` with separate FIX / STALE chips behind a pure selector. New unit + chromium regressions + new visual entry `mast-tracking-cell-active` (visual review PASS). |
 | Done | OpenTopoMap "tiles failed to load" badge over-eager | Track A / UI | `sartracker-web-2xp` | Done locally 2026-05-17. Tile-only filter at `src/features/map/is-tile-error-event.ts` and widened defaults (5-in-30s) in `src/lib/tile-health-tracker.ts`. Interactive Playwright proof at `tmp/2xp-verification/`. |
-| Done | B4: Set up cross-platform Tauri beta distribution | Track B / Release | `sartracker-web-y6a` | Done locally 2026-05-17. `.github/workflows/release.yml` builds Linux (AppImage + .deb) and Windows (NSIS + MSI) on `v*` tag push, drafts a GitHub release, generates `SHA256SUMS` sidecar. Linux primary, Windows secondary. macOS arm64 deferred from CI per `sartracker-web-590` to stay inside the GitHub Actions free tier (macOS bills at 10x); macOS uses Path B (`npm run beta:verify`) until cadence stabilizes. NSIS `currentUser` install (no admin), WebView2 `downloadBootstrapper`. Release notes sourced from `docs/releases/sartracker-web-<version>-beta.md`. |
+| Done | B4: Set up cross-platform Tauri beta distribution | Track B / Release | `sartracker-web-y6a` | Done 2026-05-17. `.github/workflows/release.yml` builds Linux (AppImage + .deb) and Windows (NSIS) on `v*` tag push, drafts a GitHub release, generates `SHA256SUMS` sidecar. First published release: `v0.1.0-beta.3` at https://github.com/donal0c/sartracker-web/releases/tag/v0.1.0-beta.3. Linux primary, Windows secondary. macOS arm64 deferred from CI per `sartracker-web-590` to stay inside the GitHub Actions free tier (macOS bills at 10x); macOS uses Path B (`npm run beta:verify`) until cadence stabilizes. Windows MSI deferred per `sartracker-web-g1u` because Tauri's MSI bundler rejects alphanumeric pre-release suffixes. NSIS `currentUser` install (no admin), WebView2 `downloadBootstrapper`. Release notes sourced from `docs/releases/sartracker-web-<version>-beta.md`. |
 | 1 | B5: Triage first web and Tauri beta feedback | Track A / Track B | `sartracker-web-s8m` | After deployed-web validation and cross-platform beta setup produce feedback |
 | 2 | V3: Smoke deployed hosted app after blocker fixes | Verification | `sartracker-web-998` | Hosted regression smoke once a deploy lands |
 | 3 | Parity sweep findings walk-through (Codex + Donal) | Parity / Discussion | `sartracker-web-l7c` | Walk Codex through `tmp/parity-sweep/sweep-report.md`; decide which of C1–C13 become beads, which become matrix corrections, and which are out of scope |
@@ -141,14 +141,15 @@ This is the default order when the user says “work on the next task.”
 
 ### Desktop Beta Distribution Rule
 
-Cross-platform beta distribution is now wired up via `.github/workflows/release.yml`
+Cross-platform beta distribution is wired up via `.github/workflows/release.yml`
 (`sartracker-web-y6a` done 2026-05-17). Tag push (`v*`) triggers a draft GitHub
-Release with Linux AppImage + .deb (primary), Windows NSIS + MSI (secondary),
-and macOS arm64 .dmg + .app.tar.gz (parity), plus a `SHA256SUMS` sidecar.
-First end-to-end run will happen when the first real beta tag is cut. Until that
-happens, hosted web remains the broad team-testing lane and the existing macOS
-B3 evidence remains the internal desktop smoke baseline. C1/local-map work is
-still deferred until the team can provide concrete map-package facts.
+Release with Linux AppImage + .deb (primary) and Windows NSIS .exe (secondary),
+plus a `SHA256SUMS` sidecar. macOS arm64 deferred from CI per
+`sartracker-web-590`; Windows MSI deferred per `sartracker-web-g1u`. First
+published release: `v0.1.0-beta.3` at
+https://github.com/donal0c/sartracker-web/releases/tag/v0.1.0-beta.3. Hosted
+web remains the broad team-testing lane in parallel. C1/local-map work is still
+deferred until the team can provide concrete map-package facts.
 
 ### R0: S1/S2 Review Remediation Gate
 
@@ -736,29 +737,46 @@ Verification:
 
 ### B4: Cross-Platform Tauri Beta Distribution — Done 2026-05-17
 
-Bead: `sartracker-web-y6a`. Closed locally on 2026-05-17.
+Bead: `sartracker-web-y6a`. Closed 2026-05-17.
 
 Outcome: release pipeline at `.github/workflows/release.yml` builds Linux
-(AppImage + .deb) and Windows (NSIS + MSI, current-user install with
-WebView2 download-bootstrapper) artifacts on `v*` tag push or
-`workflow_dispatch`. Splits into a `gates` job (Linux, runs
-lint/test/build/version-trio assertion/release-notes existence check), a
-parallel `bundle` matrix using `tauri-apps/tauri-action@v0.6.2`, a
-`checksums` job that generates a SHA256SUMS sidecar, and a `summary` job.
-Releases land in DRAFT + prerelease state for human review before publish.
+(AppImage + .deb) and Windows (NSIS, current-user install with WebView2
+download-bootstrapper) artifacts on `v*` tag push or `workflow_dispatch`.
+Splits into a `gates` job (Linux, runs lint/test/build/version-trio
+assertion/release-notes existence check), a parallel `bundle` matrix using
+`tauri-apps/tauri-action@v0.6.2`, a `checksums` job that generates a
+SHA256SUMS sidecar, and a `summary` job. Releases land in DRAFT + prerelease
+state for human review before publish.
+
+First published release: **v0.1.0-beta.3** at
+https://github.com/donal0c/sartracker-web/releases/tag/v0.1.0-beta.3 with
+4 assets (Linux AppImage, Linux .deb, Windows NSIS .exe, SHA256SUMS).
+
+Failure history before success (per immutability rule, retained on remote):
+
+- `v0.1.0-beta.1`: gates failed (Linux GTK/WebKit apt deps not installed in
+  the gates job; `cargo test` could not link `gdk-sys`). Fix: add the same
+  apt step to the gates job.
+- `v0.1.0-beta.2`: Linux bundle succeeded (assets uploaded to a draft
+  release that was never promoted); Windows MSI bundler rejected the
+  `-beta.N` pre-release suffix as non-numeric. Fix: drop MSI from beta lane
+  (`sartracker-web-g1u`); also rename `tauri-action` inputs to v0.6.2 names
+  (`assetNamePattern`, `includeUpdaterJson`; drop `uploadUpdaterSignatures`).
 
 Locked decisions: Linux primary (most operators are on Linux), Windows
 secondary. macOS arm64 deferred from CI per `sartracker-web-590` to keep
 billed minutes inside the GitHub Actions free tier (macOS bills at 10x);
 macOS continues to be built locally via Path B (`npm run beta:verify`) and
-uploaded manually when needed. Linux runner pinned to `ubuntu-22.04`
-(NOT `latest`) for glibc forward-compat. Windows runner pinned to
-`windows-2022` (NOT `latest`, which is now `windows-2025`). NSIS install
-mode is `currentUser` (no admin/UAC). WebView2 strategy is
-`downloadBootstrapper` with `silent: true` (0 MB bundle overhead). x86_64
-only — Linux ARM and Windows ARM deliberately out of scope. No code signing.
-Release notes sourced from `docs/releases/sartracker-web-<version>-beta.md`,
-required to exist before the bundle matrix runs.
+uploaded manually when needed. Windows MSI deferred per `sartracker-web-g1u`
+until the version scheme supports MSI's numeric-only-suffix constraint.
+Linux runner pinned to `ubuntu-22.04` (NOT `latest`) for glibc forward-compat.
+Windows runner pinned to `windows-2022` (NOT `latest`, which is now
+`windows-2025`). NSIS install mode is `currentUser` (no admin/UAC). WebView2
+strategy is `downloadBootstrapper` with `silent: true` (0 MB bundle
+overhead). x86_64 only — Linux ARM and Windows ARM deliberately out of
+scope. No code signing. Release notes sourced from
+`docs/releases/sartracker-web-<version>-beta.md`, required to exist before
+the bundle matrix runs.
 
 Tauri config update: `src-tauri/tauri.conf.json` Windows section configured
 for unsigned-tester ergonomics (`installMode: currentUser`, WebView2
@@ -772,10 +790,14 @@ B4 outcome and preconditions for wider/signed distribution; operator manual
 Desktop Beta section rewritten to cover Linux primary / Windows secondary /
 macOS parity.
 
-End-to-end CI run verification is deferred until the first real beta tag
-is cut. Local verification covered: workflow YAML parses cleanly, actionlint
-passes, tauri.conf.json validates against the schema (`npm run tauri info`
-green), `npm run lint` green, `cargo check` green.
+End-to-end CI verification: succeeded on `v0.1.0-beta.3` (run
+`26002563213`, ~24m wall-clock; gates 7m7s, bundle linux-x86_64 11m9s,
+bundle windows-x86_64 16m5s, checksums 18s, summary 4s). Two failures
+preceded the green run: `v0.1.0-beta.1` (gates apt deps missing) and
+`v0.1.0-beta.2` (Windows MSI rejected pre-release suffix). Local
+pre-tag verification covered: workflow YAML parses cleanly, actionlint
+passes, tauri.conf.json validates against the schema, lint/test/build
+all green.
 
 Preconditions for wider/signed distribution captured in
 `docs/tauri-beta-release-plan.md` § Preconditions for Wider / Signed

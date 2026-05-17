@@ -284,21 +284,30 @@ Decisions locked:
   uploads settle. Testers verify with `sha256sum -c` (Linux) /
   `Get-FileHash` (Windows) / `shasum -a 256 -c` (macOS).
 
-Cut a beta:
+Cut a beta (replace `<v>` with the new version, e.g. `0.1.0-beta.4`):
 
 ```bash
-# Bump version in both places (must match exactly)
+# Bump version in three places (must match exactly):
 # - package.json#version
 # - src-tauri/tauri.conf.json#version
-# Copy docs/releases/TEMPLATE.md to docs/releases/sartracker-web-<version>-beta.md and fill it in.
-git commit -am "chore(release): cut v0.1.0-beta.1"
-git tag v0.1.0-beta.1
+# - src-tauri/Cargo.toml [package].version
+# (Cargo.lock auto-updates when you run `cd src-tauri && cargo check`.)
+# Copy docs/releases/TEMPLATE.md to docs/releases/sartracker-web-<v>-beta.md and fill it in.
+git commit -am "chore(release): cut v<v>"
+git tag v<v>
 git push origin master
-git push origin v0.1.0-beta.1
+git push origin v<v>
 # Watch the workflow at https://github.com/donal0c/sartracker-web/actions
 # When green, smoke-test the primary platform locally, then:
-gh release edit v0.1.0-beta.1 --repo donal0c/sartracker-web --draft=false
+gh release edit v<v> --repo donal0c/sartracker-web --draft=false
 ```
+
+History so far:
+
+- `v0.1.0-beta.1` (failed: gates missing apt deps), `v0.1.0-beta.2`
+  (partial: MSI rejected suffix), `v0.1.0-beta.3` (published
+  2026-05-17 — first working cut). Failed tags retained per the
+  immutability rule.
 
 ## Preconditions for Wider / Signed Distribution
 

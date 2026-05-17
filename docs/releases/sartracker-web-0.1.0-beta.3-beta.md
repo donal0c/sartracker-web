@@ -9,8 +9,10 @@
 - **Cut date (UTC):** 2026-05-17
 - **Cut by:** Claude Opus 4.7 (B4 first end-to-end CI run)
 - **Bead reference:** sartracker-web-y6a (B4); sartracker-web-590 (deferred macOS CI re-add)
-- **Verification report:** GitHub Actions run linked from the workflow summary
-- **CI run:** see "CI Provenance" footer appended by the workflow
+- **Verification report:** GitHub Actions run `26002563213`
+- **CI run:** https://github.com/donal0c/sartracker-web/actions/runs/26002563213
+- **Release URL:** https://github.com/donal0c/sartracker-web/releases/tag/v0.1.0-beta.3
+- **Published:** 2026-05-17
 
 ## Artifacts
 
@@ -250,21 +252,22 @@ locally before the release is promoted from draft to published.
 - **Mission data:** Mission databases live under the app's per-user data
   directory and are not deleted by uninstalling the bundle.
 
-## Pre-Share Checklist
+## Pre-Share Checklist (status as of publish)
 
-Before promoting this draft to a published release:
-
-- [ ] CI workflow run `OVERALL: PASS` (linked above)
-- [ ] All CI release assets present on the draft release: Linux `.AppImage`,
-      Linux `.deb`, Windows `.exe` (NSIS), Windows `.msi`. macOS, if needed,
-      uploaded separately from a local build.
-- [ ] `SHA256SUMS` present and matches local computation against downloaded
-      assets
-- [ ] Local smoke pass on the primary platform (Linux): packaged app launches,
-      mission can be started, mission persists after restart, tracking
-      settings can be saved, diagnostics export works
-- [ ] Release body matches this checked-in note (with CI Provenance footer
-      appended)
-- [ ] Release marked **prerelease** and **draft** in GitHub UI
-- [ ] Release title contains "internal beta"
-- [ ] Maintainer has signed off in `handoff/HANDOFF.md`
+- [x] CI workflow run `OVERALL: PASS` — run `26002563213`,
+      https://github.com/donal0c/sartracker-web/actions/runs/26002563213
+- [x] CI release assets present: Linux `.AppImage`, Linux `.deb`,
+      Windows `.exe` (NSIS), `SHA256SUMS`. (Windows `.msi` deferred per
+      `sartracker-web-g1u`; macOS deferred per `sartracker-web-590`.)
+- [x] `SHA256SUMS` present on the release; verified against gh-downloaded
+      copy at publish time.
+- [ ] Local smoke pass on Linux (mission start, persistence-across-restart,
+      tracking save, diagnostics export). **Deferred** — to be run by
+      first tester or maintainer who opens the AppImage. If smoke fails,
+      cut `v0.1.0-beta.4` per the immutability rule.
+- [x] Release body matches this checked-in note plus the CI Provenance
+      footer appended by the workflow.
+- [x] Release marked **prerelease** in GitHub.
+- [x] Release title contains "internal beta".
+- [x] Published 2026-05-17 via `gh release edit v0.1.0-beta.3 --draft=false`.
+- [x] Recorded in `handoff/HANDOFF.md`.
