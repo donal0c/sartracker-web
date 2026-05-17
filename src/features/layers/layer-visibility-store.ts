@@ -40,14 +40,18 @@ type LayerVisibilityState = {
   readonly hiddenDrawingIds: readonly string[]
   readonly breadcrumbsVisible: boolean
   readonly measurementsVisible: boolean
+  readonly setGroupVisibility: (group: keyof LayerGroupVisibility, visible: boolean) => void
   readonly toggleDeviceVisibility: (deviceId: string) => void
   readonly toggleMarkerVisibility: (markerId: string) => void
+  readonly toggleHelicopterVisibility: (helicopterId: string) => void
+  readonly toggleGpxImportVisibility: (importId: string) => void
   readonly showAllDevices: () => void
   readonly hideAllDevices: (deviceIds: readonly string[]) => void
   readonly setMarkerTypeVisibility: (type: MarkerType, visible: boolean) => void
   readonly showAllMarkerTypes: () => void
   readonly hideAllMarkerTypes: () => void
   readonly setDrawingTypeVisibility: (type: DrawingType, visible: boolean) => void
+  readonly setHelicopterSlotVisibility: (slotKey: HelicopterSlotKey, visible: boolean) => void
   readonly showAllDrawingTypes: () => void
   readonly hideAllDrawingTypes: () => void
   readonly toggleDrawingVisibility: (drawingId: string) => void
@@ -101,6 +105,13 @@ export const useLayerVisibilityStore = create<LayerVisibilityState>((set) => ({
   hiddenDrawingIds: [],
   breadcrumbsVisible: true,
   measurementsVisible: true,
+  setGroupVisibility: (group, visible) =>
+    set((state) => ({
+      groupVisibility: {
+        ...state.groupVisibility,
+        [group]: visible,
+      },
+    })),
   toggleDeviceVisibility: (deviceId) =>
     set((state) => ({
       hiddenDeviceIds: state.hiddenDeviceIds.includes(deviceId)
@@ -112,6 +123,18 @@ export const useLayerVisibilityStore = create<LayerVisibilityState>((set) => ({
       hiddenMarkerIds: state.hiddenMarkerIds.includes(markerId)
         ? state.hiddenMarkerIds.filter((candidate) => candidate !== markerId)
         : [...state.hiddenMarkerIds, markerId],
+    })),
+  toggleHelicopterVisibility: (helicopterId) =>
+    set((state) => ({
+      hiddenHelicopterIds: state.hiddenHelicopterIds.includes(helicopterId)
+        ? state.hiddenHelicopterIds.filter((candidate) => candidate !== helicopterId)
+        : [...state.hiddenHelicopterIds, helicopterId],
+    })),
+  toggleGpxImportVisibility: (importId) =>
+    set((state) => ({
+      hiddenGpxImportIds: state.hiddenGpxImportIds.includes(importId)
+        ? state.hiddenGpxImportIds.filter((candidate) => candidate !== importId)
+        : [...state.hiddenGpxImportIds, importId],
     })),
   showAllDevices: () => set({ hiddenDeviceIds: [] }),
   hideAllDevices: (deviceIds) => set({ hiddenDeviceIds: [...deviceIds] }),
@@ -137,6 +160,13 @@ export const useLayerVisibilityStore = create<LayerVisibilityState>((set) => ({
       drawingTypeVisibility: {
         ...state.drawingTypeVisibility,
         [type]: visible,
+      },
+    })),
+  setHelicopterSlotVisibility: (slotKey, visible) =>
+    set((state) => ({
+      helicopterSlotVisibility: {
+        ...state.helicopterSlotVisibility,
+        [slotKey]: visible,
       },
     })),
   showAllDrawingTypes: () => set({ drawingTypeVisibility: DEFAULT_DRAWING_TYPE_VISIBILITY }),

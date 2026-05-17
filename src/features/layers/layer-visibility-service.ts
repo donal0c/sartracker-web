@@ -1,14 +1,25 @@
-import type { DrawingType, MarkerType } from '../../infrastructure/mission-store/tauri-mission-store'
+import type {
+  DrawingType,
+  HelicopterSlotKey,
+  MarkerType,
+} from '../../infrastructure/mission-store/tauri-mission-store'
 import {
+  GPX_TRACKS_GROUP_NODE_ID,
   getDrawingLayerNodeId,
+  getHelicopterLayerNodeId,
   getMarkerLayerNodeId,
+  HELICOPTERS_GROUP_NODE_ID,
+  MAP_TOOLS_GROUP_NODE_ID,
   MEASUREMENTS_LAYER_NODE_ID,
+  parseGpxImportLayerNodeId,
   parseFeatureNodeId,
   TRACKING_BREADCRUMBS_LAYER_NODE_ID,
   TRACKING_DEVICES_LAYER_NODE_ID,
+  TRACKING_GROUP_NODE_ID,
 } from './layer-catalog-ids'
 import { findCatalogNode, getDescendantNodeIds } from './layer-catalog-tree'
 import type { LayerCatalogRootNode } from './layer-catalog-types'
+import type { LayerGroupVisibility } from './layer-visibility-store'
 
 const MARKER_TYPE_BY_LAYER_ID: Readonly<Record<string, MarkerType>> = {
   [getMarkerLayerNodeId('ipp_lkp')]: 'ipp_lkp',
@@ -26,15 +37,35 @@ const DRAWING_TYPE_BY_LAYER_ID: Readonly<Record<string, DrawingType>> = {
   [getDrawingLayerNodeId('text_label')]: 'text_label',
 }
 
+const HELICOPTER_SLOT_BY_LAYER_ID: Readonly<Record<string, HelicopterSlotKey>> = {
+  [getHelicopterLayerNodeId('slot_1')]: 'slot_1',
+  [getHelicopterLayerNodeId('slot_2')]: 'slot_2',
+  [getHelicopterLayerNodeId('slot_3')]: 'slot_3',
+  [getHelicopterLayerNodeId('slot_4')]: 'slot_4',
+}
+
+const GROUP_BY_NODE_ID: Readonly<Record<string, keyof LayerGroupVisibility>> = {
+  [TRACKING_GROUP_NODE_ID]: 'tracking',
+  [HELICOPTERS_GROUP_NODE_ID]: 'helicopters',
+  [MAP_TOOLS_GROUP_NODE_ID]: 'mapTools',
+  [GPX_TRACKS_GROUP_NODE_ID]: 'gpxTracks',
+}
+
 export type LayerVisibilityStoreAdapter = {
   readonly hiddenDeviceIds: readonly string[]
   readonly hiddenMarkerIds: readonly string[]
   readonly hiddenDrawingIds: readonly string[]
+  readonly hiddenHelicopterIds: readonly string[]
+  readonly hiddenGpxImportIds: readonly string[]
+  readonly setGroupVisibility: (group: keyof LayerGroupVisibility, visible: boolean) => void
   readonly toggleDeviceVisibility: (deviceId: string) => void
   readonly toggleMarkerVisibility: (markerId: string) => void
   readonly toggleDrawingVisibility: (drawingId: string) => void
+  readonly toggleHelicopterVisibility: (helicopterId: string) => void
+  readonly toggleGpxImportVisibility: (importId: string) => void
   readonly setMarkerTypeVisibility: (type: MarkerType, visible: boolean) => void
   readonly setDrawingTypeVisibility: (type: DrawingType, visible: boolean) => void
+  readonly setHelicopterSlotVisibility: (slotKey: HelicopterSlotKey, visible: boolean) => void
   readonly setBreadcrumbsVisible: (visible: boolean) => void
   readonly setMeasurementsVisible: (visible: boolean) => void
   readonly showAllDevices: () => void
@@ -68,6 +99,12 @@ export function applyVisibilityForNodeIds(
   store: LayerVisibilityStoreAdapter,
 ): void {
   for (const nodeId of nodeIds) {
+    const group = GROUP_BY_NODE_ID[nodeId]
+    if (group !== undefined) {
+      store.setGroupVisibility(group, visible)
+      continue
+    }
+
     const featureNode = parseFeatureNodeId(nodeId)
     if (featureNode !== null) {
       if (featureNode.entityType === 'device') {
@@ -76,6 +113,10 @@ export function applyVisibilityForNodeIds(
         toggleByHiddenList(featureNode.entityId, visible, store.hiddenMarkerIds, store.toggleMarkerVisibility)
       } else if (featureNode.entityType === 'drawing') {
         toggleByHiddenList(featureNode.entityId, visible, store.hiddenDrawingIds, store.toggleDrawingVisibility)
+      } else if (featureNode.entityType === 'helicopter') {
+        toggleByHiddenList(featureNode.entityId, visible, store.hiddenHelicopterIds, store.toggleHelicopterVisibility)
+      } else if (featureNode.entityType === 'gpx') {
+        toggleByHiddenList(featureNode.entityId, visible, store.hiddenGpxImportIds, store.toggleGpxImportVisibility)
       }
       continue
     }
@@ -89,6 +130,18 @@ export function applyVisibilityForNodeIds(
     const drawingType = DRAWING_TYPE_BY_LAYER_ID[nodeId]
     if (drawingType !== undefined) {
       store.setDrawingTypeVisibility(drawingType, visible)
+      continue
+    }
+
+    const helicopterSlot = HELICOPTER_SLOT_BY_LAYER_ID[nodeId]
+    if (helicopterSlot !== undefined) {
+      store.setHelicopterSlotVisibility(helicopterSlot, visible)
+      continue
+    }
+
+    const gpxImportId = parseGpxImportLayerNodeId(nodeId)
+    if (gpxImportId !== null) {
+      toggleByHiddenList(gpxImportId, visible, store.hiddenGpxImportIds, store.toggleGpxImportVisibility)
       continue
     }
 

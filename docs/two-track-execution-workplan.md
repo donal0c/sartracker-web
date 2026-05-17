@@ -827,6 +827,7 @@ Verification:
 - Done 2026-05-17: `npm run test -- tests/unit/layer-visibility-service.test.ts tests/unit/layer-catalog-store.test.ts tests/unit/layer-visibility-store.test.ts`.
 - Done 2026-05-17: `npm run test:e2e -- tests/e2e/layer-panel.spec.ts tests/e2e/parity-visibility.spec.ts --project=chromium`.
 - Done 2026-05-17: full verification passed (`npm run lint`, `npm run build`, `npm run test:all`).
+- Follow-up 2026-05-17: review found helicopter/GPX/group nodes still relied on async hydration for immediate overlay patching; service/store now handle group visibility, helicopter slots/items, and GPX import layer/items directly. Full verification passed again.
 
 ### S4: Map Overlay Consolidation And Camera Race Fix
 

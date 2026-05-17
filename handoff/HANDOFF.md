@@ -4,7 +4,7 @@
 
 ## Last Updated
 
-- 2026-05-17 by Codex — S3 Layer Visibility Service Extraction completed (`sartracker-web-4a1`): visibility patch logic moved out of `layer-filter-panel`, new pure layer-visibility service + unit coverage, duplicate layer-catalog hydration path consolidated, Playwright visibility regressions and full suite green.
+- 2026-05-17 by Codex — S3 Layer Visibility Service Extraction completed and rereviewed (`sartracker-web-4a1`): visibility patch logic moved out of `layer-filter-panel`, pure layer-visibility service covers group/device/marker/drawing/helicopter/GPX nodes, duplicate layer-catalog hydration path consolidated, Playwright visibility regressions and full suite green.
 
 ## Operating Rule
 
@@ -33,7 +33,7 @@ Supporting docs may explain details, but they must not become separate queues.
 - A3.9 adds Settings-managed named weather URLs and a compact Weather mast menu. This is external-link navigation only; SAR Tracker does not fetch, parse, or forecast weather.
 - R10 compressed this handoff back to a current-state baton. Historical investigation/supporting docs already point to `docs/two-track-execution-workplan.md` as the active queue.
 - R11 added a module-level non-goals note to the browser harness store clarifying that sessionStorage is for hosted validation only, not a browser substitute for Tauri/SQLite persistence.
-- S3 extracted subtree visibility patching into `src/features/layers/layer-visibility-service.ts`, with `layer-filter-panel` now acting as a thin adapter for catalog persistence + service invocation.
+- S3 extracted subtree visibility patching into `src/features/layers/layer-visibility-service.ts`, with `layer-filter-panel` now acting as a thin adapter for catalog persistence + service invocation. Follow-up review added immediate group, helicopter, and GPX overlay-store patching so those nodes do not rely only on async catalog hydration.
 - S3 added explicit layer-visibility service tests and kept parity visibility E2E coverage green.
 - Tauri packaging recon found a working macOS arm64 `.app` path: `npm run tauri build -- --bundles app` -> `src-tauri/target/release/bundle/macos/sartracker-web.app`. Full `npm run tauri build` still fails at DMG bundling; unsigned/ad-hoc app is rejected by Gatekeeper as expected for the current internal-beta lane.
 
@@ -83,9 +83,11 @@ Most recent local verification in this turn:
 
 - Passed: `npm run test -- tests/unit/layer-visibility-service.test.ts tests/unit/layer-catalog-store.test.ts tests/unit/layer-visibility-store.test.ts`
 - Passed: `npm run test:e2e -- tests/e2e/layer-panel.spec.ts tests/e2e/parity-visibility.spec.ts --project=chromium`
+- Passed after rereview fix: `npm run test -- tests/unit/layer-visibility-service.test.ts tests/unit/layer-visibility-store.test.ts`
+- Passed after rereview fix: `npm run test:e2e -- tests/e2e/layer-panel.spec.ts tests/e2e/parity-visibility.spec.ts tests/e2e/helicopter-panel.spec.ts tests/e2e/gpx-import.spec.ts --project=chromium`
 - Passed: `npm run lint`
 - Passed: `npm run build`
-- Passed: `npm run test:all` — 89 unit files / 444 tests, 110 browser + visual E2E tests, 39 backend tests
+- Passed after rereview fix: `npm run test:all` — 89 unit files / 445 tests, 110 browser + visual E2E tests, 39 backend tests
 
 - Focused A3.9 red checks failed before implementation for the missing weather settings model and Weather menu; the same focused checks passed after implementation.
 - Passed: `npm run test -- tests/unit/settings-validation.test.ts tests/unit/browser-settings-store.test.ts`

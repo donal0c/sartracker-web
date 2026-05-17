@@ -64,31 +64,76 @@ describe('layer visibility service', () => {
     expect(store.setMeasurementsVisible).toHaveBeenCalledWith(false)
   })
 
+  it('handles group, helicopter, and GPX visibility nodes without waiting for hydration', () => {
+    const store = createStoreAdapter({
+      hiddenHelicopterIds: ['heli-1'],
+      hiddenGpxImportIds: ['import-1'],
+    })
+    const root = createRoot()
+
+    applyVisibilityForNodeIds(
+      root,
+      [
+        'group:helicopters',
+        'group:gpx-tracks',
+        'layer:helicopters:slot-1',
+        'feature:helicopter:heli-1',
+        'layer:gpx:import-1',
+        'feature:gpx:import-1',
+      ],
+      true,
+      store,
+    )
+
+    expect(store.setGroupVisibility).toHaveBeenCalledWith('helicopters', true)
+    expect(store.setGroupVisibility).toHaveBeenCalledWith('gpxTracks', true)
+    expect(store.setHelicopterSlotVisibility).toHaveBeenCalledWith('slot_1', true)
+    expect(store.toggleHelicopterVisibility).toHaveBeenCalledWith('heli-1')
+    expect(store.toggleGpxImportVisibility).toHaveBeenCalledWith('import-1')
+  })
+
   it('ignores unknown structural nodes without mutating store', () => {
     const store = createStoreAdapter()
-    applyVisibilityForNodeIds(createRoot(), ['group:tracking', 'layer:unknown', 'feature:gpx:test'], false, store)
+    applyVisibilityForNodeIds(createRoot(), ['group:unknown', 'layer:unknown', 'feature:unknown:test'], false, store)
 
     expect(store.toggleDeviceVisibility).not.toHaveBeenCalled()
     expect(store.toggleMarkerVisibility).not.toHaveBeenCalled()
     expect(store.toggleDrawingVisibility).not.toHaveBeenCalled()
+    expect(store.toggleHelicopterVisibility).not.toHaveBeenCalled()
+    expect(store.toggleGpxImportVisibility).not.toHaveBeenCalled()
     expect(store.setMarkerTypeVisibility).not.toHaveBeenCalled()
     expect(store.setDrawingTypeVisibility).not.toHaveBeenCalled()
+    expect(store.setHelicopterSlotVisibility).not.toHaveBeenCalled()
+    expect(store.setGroupVisibility).not.toHaveBeenCalled()
     expect(store.hideAllDevices).not.toHaveBeenCalled()
   })
 })
 
 function createStoreAdapter(
-  overrides: Partial<Pick<LayerVisibilityStoreAdapter, 'hiddenDeviceIds' | 'hiddenMarkerIds' | 'hiddenDrawingIds'>> = {},
+  overrides: Partial<Pick<
+    LayerVisibilityStoreAdapter,
+    | 'hiddenDeviceIds'
+    | 'hiddenMarkerIds'
+    | 'hiddenDrawingIds'
+    | 'hiddenHelicopterIds'
+    | 'hiddenGpxImportIds'
+  >> = {},
 ): LayerVisibilityStoreAdapter {
   return {
     hiddenDeviceIds: overrides.hiddenDeviceIds ?? [],
     hiddenMarkerIds: overrides.hiddenMarkerIds ?? [],
     hiddenDrawingIds: overrides.hiddenDrawingIds ?? [],
+    hiddenHelicopterIds: overrides.hiddenHelicopterIds ?? [],
+    hiddenGpxImportIds: overrides.hiddenGpxImportIds ?? [],
     toggleDeviceVisibility: vi.fn(),
     toggleMarkerVisibility: vi.fn(),
     toggleDrawingVisibility: vi.fn(),
+    toggleHelicopterVisibility: vi.fn(),
+    toggleGpxImportVisibility: vi.fn(),
     setMarkerTypeVisibility: vi.fn(),
     setDrawingTypeVisibility: vi.fn(),
+    setHelicopterSlotVisibility: vi.fn(),
+    setGroupVisibility: vi.fn(),
     setBreadcrumbsVisible: vi.fn(),
     setMeasurementsVisible: vi.fn(),
     showAllDevices: vi.fn(),

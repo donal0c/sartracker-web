@@ -59,6 +59,19 @@ export function getGpxImportLayerNodeId(importId: string): string {
   return `layer:gpx:${importId}`
 }
 
+/**
+ * Parses a GPX import layer node id into its import id.
+ */
+export function parseGpxImportLayerNodeId(nodeId: string): string | null {
+  const prefix = 'layer:gpx:'
+  if (!nodeId.startsWith(prefix)) {
+    return null
+  }
+
+  const importId = nodeId.slice(prefix.length)
+  return importId.length > 0 ? importId : null
+}
+
 export function getGpxImportFeatureNodeId(importId: string): string {
   return `feature:gpx:${importId}`
 }
