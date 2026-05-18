@@ -182,7 +182,9 @@ Two complementary tiers:
   `26041016902` passed gates plus Linux/Windows launch smoke, and its Linux
   screenshot showed OpenTopoMap tiles visible; the map-region threshold was
   added after Donal confirmed team devices track on `:8082` but maps remain
-  black on tester machines.
+  black on tester machines. Final rerun `26041435928` passed with the
+  map-region threshold in place; Linux map-region grayscale mean was `0.556917`
+  (`>0.18` required) and the screenshot showed OpenTopoMap tiles visible.
 - **Tier 2 (still required)**: smoke `v0.1.0-beta.3` or the next beta
   (`sartracker-web_0.1.0-beta.3_linux_amd64.AppImage`,
   `sartracker-web_0.1.0-beta.3_linux_amd64.deb`,
@@ -216,16 +218,27 @@ Acceptance:
 
 Verification:
 
-- One follow-up CI run with the map-region threshold in place against the existing
-  `v0.1.0-beta.3` artifacts (or a fresh test tag) — live dependency preflight
-  plus both launch-smoke jobs must pass green. For existing assets, run
-  workflow_dispatch with
-  `tag=v0.1.0-beta.3` and `smoke_existing_release=true` so the job does not
-  rebuild or re-upload duplicate release assets.
+- Done: `26041435928` ran with the map-region threshold in place against the
+  existing `v0.1.0-beta.3` artifacts and passed gates, live dependency
+  preflight, Linux AppImage launch smoke, and Windows NSIS launch smoke.
 - Run `26040183978` captured the first failure proof: Linux screenshot showed a
   runtime fault despite a successful window launch, and Windows failed in the
   harness before launching because of a PowerShell array-construction bug.
 - Real-hardware smoke evidence committed under `tmp/b7-prerelease-smoke/`.
+
+Current tester-environment investigation:
+
+- Traccar is no longer suspect: team feedback confirms tracking appears when
+  using `http://kmrtsar.eu:8082`.
+- CI AppImage evidence is not enough to clear the map issue because the same
+  artifact renders OpenTopoMap in the runner while tester machines show a black
+  map.
+- Ask testers to try all three raster providers from the Maps menu:
+  OpenTopoMap, ESRI World Topo, and OpenStreetMap.
+- Ask for Diagnostics export plus distro, desktop session (Wayland/X11), GPU
+  and driver, and whether launching with
+  `WEBKIT_DISABLE_DMABUF_RENDERER=1 ./sartracker-web_0.1.0-beta.3_linux_amd64.AppImage`
+  changes the map.
 
 Related: `DON-13` (re-add macOS arm64 to CI), `DON-14` (re-add Windows MSI),
 `DON-11` (B5 triage — feeds off post-share findings).

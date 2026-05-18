@@ -388,6 +388,21 @@ First smoke run evidence:
   After Donal confirmed team tracking works on `:8082` but maps remain black,
   the Linux smoke was tightened again to record and threshold-check a cropped
   map-region image.
+- Final rerun `26041435928` passed with the black-map detector active. Gates
+  and live dependency preflight passed, Linux AppImage smoke passed, Windows
+  NSIS smoke passed, and the Linux map-region grayscale mean was `0.556917`
+  against a required threshold of `>0.18`.
+
+Current map-failure diagnostic:
+
+- The release artifact can render OpenTopoMap in GitHub's Ubuntu runner, so the
+  tester black map is not a universal packaging failure.
+- Online research points to two likely classes: tile provider/network blocking
+  on the tester network, or Linux WebKitGTK/WebGL/GPU rendering issues.
+- Ask testers to try ESRI World Topo and OpenStreetMap from the Maps menu. If
+  those render, OpenTopoMap is the suspect. If all are black, gather
+  distro/GPU/driver/session details and try launching once with
+  `WEBKIT_DISABLE_DMABUF_RENDERER=1`.
 
 Remaining required real-machine smoke:
 
