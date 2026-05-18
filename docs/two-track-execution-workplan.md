@@ -176,8 +176,13 @@ Two complementary tiers:
   assets (`26040183978`) proved gates and Linux process/window launch, but the
   screenshot showed a runtime startup fault because the headless runner lacked
   freedesktop Secret Service. The Linux job now provisions a DBus/keyring
-  session and OCR-fails on boot/fault shells. The Windows failure in that run
-  was a workflow PowerShell `Join-Path` comma bug, not app evidence.
+  session, OCR-fails on boot/fault shells, and thresholds a cropped map region
+  so a black basemap fails the smoke. The Windows failure in that run was a
+  workflow PowerShell `Join-Path` comma bug, not app evidence. Follow-up run
+  `26041016902` passed gates plus Linux/Windows launch smoke, and its Linux
+  screenshot showed OpenTopoMap tiles visible; the map-region threshold was
+  added after Donal confirmed team devices track on `:8082` but maps remain
+  black on tester machines.
 - **Tier 2 (still required)**: smoke `v0.1.0-beta.3` or the next beta
   (`sartracker-web_0.1.0-beta.3_linux_amd64.AppImage`,
   `sartracker-web_0.1.0-beta.3_linux_amd64.deb`,
@@ -211,7 +216,7 @@ Acceptance:
 
 Verification:
 
-- One follow-up CI run with the hardened jobs against the existing
+- One follow-up CI run with the map-region threshold in place against the existing
   `v0.1.0-beta.3` artifacts (or a fresh test tag) — live dependency preflight
   plus both launch-smoke jobs must pass green. For existing assets, run
   workflow_dispatch with

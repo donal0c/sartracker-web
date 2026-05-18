@@ -436,6 +436,20 @@ jobs:
           sleep 5
           import -window root smoke-evidence/linux-appimage-launch.png
           test -s smoke-evidence/linux-appimage-launch.png
+          convert smoke-evidence/linux-appimage-launch.png \
+            -crop 420x430+0+100 \
+            smoke-evidence/linux-map-region.png
+          MAP_REGION_MEAN="$(convert smoke-evidence/linux-map-region.png \
+            -colorspace Gray \
+            -format '%[fx:mean]' \
+            info:)"
+          echo "$MAP_REGION_MEAN" > smoke-evidence/linux-map-region-mean.txt
+          awk -v mean="$MAP_REGION_MEAN" 'BEGIN { exit !(mean > 0.18) }' || {
+            echo "::error::AppImage map region is too dark; basemap tiles may not be rendering."
+            echo "Map region grayscale mean: $MAP_REGION_MEAN"
+            kill "$APP_PID" 2>/dev/null || true
+            exit 1
+          }
 
           tesseract smoke-evidence/linux-appimage-launch.png stdout \
             > smoke-evidence/linux-appimage-ocr.txt \

@@ -358,8 +358,9 @@ New protection:
   tile URLs before bundling starts.
 - `launch-smoke-linux` downloads the draft AppImage, runs it under Xvfb on
   `ubuntu-22.04` inside a DBus/keyring session, asserts that the SAR Tracker
-  window appears, OCR-checks that the screenshot is not the boot/fault shell,
-  and uploads a screenshot/log artifact.
+  window appears, crops the map viewport to fail if the basemap is visually
+  black, OCR-checks that the screenshot is not the boot/fault shell, and
+  uploads a screenshot/log artifact.
 - `launch-smoke-windows` downloads the draft NSIS installer, installs it
   silently on `windows-2022`, starts the installed app, asserts the process
   stays alive, and uploads a screenshot/log artifact.
@@ -381,6 +382,12 @@ First smoke run evidence:
 - The first Windows harness failed before launch because of a PowerShell
   `Join-Path` array-comma bug. The path discovery step now uses explicit
   subexpressions and logs candidate roots.
+- A follow-up run (`26041016902`) passed gates, Linux launch smoke, and Windows
+  launch smoke against the existing `v0.1.0-beta.3` assets. The Linux
+  screenshot showed OpenTopoMap tiles visible and `OpenTopoMap basemap ready`.
+  After Donal confirmed team tracking works on `:8082` but maps remain black,
+  the Linux smoke was tightened again to record and threshold-check a cropped
+  map-region image.
 
 Remaining required real-machine smoke:
 
