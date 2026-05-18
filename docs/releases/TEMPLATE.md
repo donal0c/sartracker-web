@@ -18,7 +18,7 @@
 | --- | --- | --- |
 | Linux x86_64 | `sartracker-web_<version>_linux_amd64.AppImage` | Single-file portable run; no install required. Most testers. |
 | Linux x86_64 | `sartracker-web_<version>_linux_amd64.deb` | System install on Ubuntu/Debian/Mint/Pop_OS. |
-| Windows x86_64 | `sartracker-web_<version>_windows_amd64.exe` | NSIS installer, current-user install (no admin required). |
+| Windows x86_64 | `sartracker-web_<version>_windows_x64.exe` | NSIS installer, current-user install (no admin required). |
 | All | `SHA256SUMS` | Checksum sidecar to verify downloaded artifacts. |
 
 macOS is not produced by CI in this beta lane (see `sartracker-web-590` for the
@@ -83,10 +83,10 @@ This beta is **not yet code-signed.** Windows will warn that the publisher is
 unknown. The warnings are expected for an unsigned app and the install does
 **not** require admin rights or any change to your security settings.
 
-1. Download `sartracker-web_<version>_windows_amd64.exe` and the `SHA256SUMS` file.
+1. Download `sartracker-web_<version>_windows_x64.exe` and the `SHA256SUMS` file.
 2. Verify the checksum from PowerShell:
    ```powershell
-   Get-FileHash sartracker-web_<version>_windows_amd64.exe -Algorithm SHA256
+   Get-FileHash sartracker-web_<version>_windows_x64.exe -Algorithm SHA256
    ```
    Compare the output against the matching line in `SHA256SUMS`. If they do not
    match, stop and report.
@@ -164,14 +164,24 @@ The workflow runs:
 - Unit tests (`npm run test`)
 - Backend tests (`npm run test:backend`)
 - Web build (`npm run build`)
+- Live beta dependency preflight: Traccar API session/devices on the documented
+  web/API endpoint and representative OpenTopoMap/OpenStreetMap/ESRI tile URLs
 - Per-OS Tauri bundle on `ubuntu-22.04` and `windows-2022` (macOS deferred,
   see `sartracker-web-590`)
+- Native launch smoke for Linux AppImage and Windows NSIS. Each smoke starts
+  the installed artifact on its platform runner and uploads a screenshot plus
+  logs as workflow evidence.
 - SHA256SUMS sidecar generation
 - Draft release upload
 
-The workflow does **not** run the manual smoke checklist. That step happens
-locally before the release is promoted from draft to published. See
-`docs/tauri-beta-release-plan.md` for the manual smoke gate.
+The workflow launch smoke proves that the bundles boot. The manual smoke
+checklist still covers operator workflows such as mission persistence, tracking
+connection, diagnostics export, and map tile loading before the release is
+promoted from draft to published. See `docs/tauri-beta-release-plan.md`.
+
+To smoke an existing release without rebuilding or re-uploading assets, run the
+release workflow manually with `tag=<version tag>` and
+`smoke_existing_release=true`.
 
 ## Rollback / Reinstall
 
@@ -196,9 +206,12 @@ Before promoting this draft to a published release:
       Linux `.deb`, Windows `.exe` (NSIS). macOS and MSI deferred (see
       `sartracker-web-590` and `sartracker-web-g1u`).
 - [ ] `SHA256SUMS` present and matches local computation against downloaded assets
-- [ ] Local smoke pass on the primary platform (Linux): packaged app launches,
-      mission can be started, mission persists after restart, tracking settings
-      can be saved, diagnostics export works
+- [ ] CI launch-smoke artifacts reviewed: Linux AppImage screenshot/log and
+      Windows NSIS screenshot/log.
+- [ ] Real-machine smoke pass on the primary platform (Linux): packaged app
+      launches, OpenTopoMap tiles load on a normal network, mission can be
+      started, mission persists after restart, tracking settings connect to the
+      Traccar web/API base URL, diagnostics export works.
 - [ ] Release body matches this checked-in note (with CI Provenance footer
       appended)
 - [ ] Release marked **prerelease** and **draft** in GitHub UI

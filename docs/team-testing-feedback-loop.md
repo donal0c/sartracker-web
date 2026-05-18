@@ -36,7 +36,8 @@ Password: apiuser
 ```text
 Hosted app URL: https://sartracker-web.vercel.app/?missionHarness=1
 Hosted Traccar provider base URL: https://sartracker-web.vercel.app
-Desktop/Tauri direct Traccar URL: http://kmrtsar.ddns.net:8082
+Desktop/Tauri direct Traccar URL: http://kmrtsar.eu:8082
+Legacy/direct fallback URL: http://kmrtsar.ddns.net:8082
 ```
 
 Do not enter the direct HTTP Traccar URL in the hosted browser app. Browsers
@@ -45,7 +46,10 @@ HTTPS proxy. Settings warns on direct `http://` provider URLs in hosted browser
 mode and offers the hosted proxy as the safe default.
 
 The direct HTTP URL is still valid in the installed desktop app because the
-browser mixed-content rule does not apply there.
+browser mixed-content rule does not apply there. Use the Traccar web/API port
+(`8082` for the team test server). Do not use tracker/device listener ports
+such as `5055` in SAR Tracker settings; those ports are for devices sending
+positions to Traccar and will fail the app connection test.
 
 ## What We Want The Team To Test Now
 

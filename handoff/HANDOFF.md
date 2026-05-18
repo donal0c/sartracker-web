@@ -4,6 +4,7 @@
 
 ## Last Updated
 
+- 2026-05-18 by Codex — First Linux tester feedback investigated. Traccar failure screenshot is reproducible against `http://kmrtsar.eu:5055`: that port returns bare `400 Bad Request` for root, `/api/server`, and POST `/api/session`; the same credentials succeed against the Traccar web/API endpoint `http://kmrtsar.eu:8082` (18 devices visible), and the older fallback `http://kmrtsar.ddns.net:8082` also succeeds. Settings now reports `400` from `/api/session` as a provider-base-URL/API-port problem, with a specific `5055` listener-port hint, instead of calling it generic authentication failure. Release gating was hardened: `.github/workflows/release.yml` now runs a live dependency preflight (Traccar `:8082` session/devices + representative OpenTopoMap/OpenStreetMap/ESRI tile URLs), then native Linux AppImage and Windows NSIS launch-smoke jobs with screenshot/log artifacts before `SHA256SUMS`. Docs/manual updated to use `http://kmrtsar.eu:8082` and warn against tracker listener ports such as `5055`. Local verification passed: `actionlint .github/workflows/release.yml`, live dependency preflight, `npm run lint`, `npm run test` (559), `npm run build`, `npm run test:backend` (45 passed / 1 ignored). Repo-wide `cargo fmt --check` still reports pre-existing formatting drift in `src-tauri/src/persistence.rs`; not changed here.
 - 2026-05-17 by Claude — **`v0.1.0-beta.3` PUBLISHED.** Live release page: https://github.com/donal0c/sartracker-web/releases/tag/v0.1.0-beta.3 — `draft: false`, `prerelease: true`. Four assets attached: `sartracker-web_0.1.0-beta.3_linux_amd64.AppImage` (92.9 MB), `sartracker-web_0.1.0-beta.3_linux_amd64.deb` (15.8 MB), `sartracker-web_0.1.0-beta.3_windows_x64.exe` (12.9 MB, NSIS currentUser install), `SHA256SUMS` (335 B). Filenames match the documented `_linux_amd64`/`_windows_x64` pattern. Smoke testing on a real Linux box was deferred at user request; the release is shareable with testers who have repo access to `donal0c/sartracker-web` (the repo is private). Failed-tag markers `v0.1.0-beta.1` (gates failed) and `v0.1.0-beta.2` (Windows MSI rejected pre-release suffix; Linux-only stale draft still on GitHub Releases) intentionally retained per the project's tag-immutability rule — safe to delete the beta.2 draft via `gh release delete v0.1.0-beta.2 --repo donal0c/sartracker-web --yes` when convenient. SHA256s recorded in the Linear issue `sartracker-web-y6a` final comment for future audit.
 - 2026-05-17 by Claude — **B4 first end-to-end CI run SUCCESS on `v0.1.0-beta.3`** (run `26002563213`, ~24m wall-clock). All four jobs green: gates (7m7s), bundle linux-x86_64 (11m9s), bundle windows-x86_64 (16m5s), SHA256SUMS (18s), summary (4s).
 - 2026-05-17 by Claude — Re-cut as `v0.1.0-beta.3` after `v0.1.0-beta.2` had a partial-success run: Linux bundle uploaded AppImage + .deb cleanly, Windows bundle failed because Tauri's MSI bundler rejects alphanumeric pre-release suffixes (`-beta.N`). Fixes in this cut: (a) drop MSI from Windows args (NSIS only); follow-up Linear issue `sartracker-web-g1u` tracks MSI re-add when version scheme supports it; (b) rename tauri-action inputs to v0.6.2 names (`assetNamePattern`, `includeUpdaterJson`; dropped `uploadUpdaterSignatures`) — fixes the "Unexpected input" warnings that caused beta.2 assets to land with default Tauri names rather than our `_linux_amd64.<ext>` pattern; (c) bump version to `0.1.0-beta.3`. Failed tag history: `v0.1.0-beta.1` (gates failed) and `v0.1.0-beta.2` (Windows MSI failed) retained on remote per immutability rule.
@@ -47,7 +48,7 @@ Supporting docs may explain details, but they must not become separate queues.
 - Hosted Traccar testing uses the Vercel same-origin proxy:
   - app URL: `https://sartracker-web.vercel.app/?missionHarness=1`
   - hosted provider base URL: `https://sartracker-web.vercel.app`
-  - direct `http://kmrtsar.ddns.net:8082` is valid for desktop/Tauri, but browsers block it from the HTTPS hosted app.
+  - direct `http://kmrtsar.eu:8082` is valid for desktop/Tauri, but browsers block it from the HTTPS hosted app. `http://kmrtsar.ddns.net:8082` remains a working fallback. Do not use listener/device ports such as `:5055` as the provider base URL.
 - The A3 team-feedback remediation batch is complete locally, pending final verification/deploy for this closeout turn. Completed A3 surfaces include map placement guardrails, drawing rendering/layers, compact Maps/Map Tools, Marker At GR, coordinate conversion accuracy, roster spacing, converter naming/order, Measure in Map Tools, mission mast cleanup, contrast/theme, static operational notes relocation, and A3.9 Weather links.
 - A3.9 adds Settings-managed named weather URLs and a compact Weather mast menu. This is external-link navigation only; SAR Tracker does not fetch, parse, or forecast weather.
 - R10 compressed this handoff back to a current-state baton. Historical investigation/supporting docs already point to `docs/two-track-execution-workplan.md` as the active queue.
@@ -62,7 +63,8 @@ Supporting docs may explain details, but they must not become separate queues.
 
 Use these only for team testing, not as a production secret model.
 
-- Upstream team Traccar server: `http://kmrtsar.ddns.net:8082`
+- Upstream team Traccar server: `http://kmrtsar.eu:8082`
+- Fallback direct Traccar server: `http://kmrtsar.ddns.net:8082`
 - Hosted browser provider base URL: `https://sartracker-web.vercel.app`
 - Hosted proxy endpoints: `/api/session`, `/api/devices`, `/api/positions`
 - Auth mode: `Basic`
@@ -81,7 +83,7 @@ Use these only for team testing, not as a production secret model.
 
 ## Next Task
 
-**B5: triage first web and Tauri beta feedback** (`sartracker-web-s8m`). `v0.1.0-beta.3` is published and shareable; once testers run the artifacts and report findings, classify each as hosted-only, desktop/Tauri-only, shared app bug, docs/training issue, or product/UI preference, and update this queue. The parity sweep findings walk-through (`sartracker-web-l7c`) remains queued for a dedicated Codex+Donal session before any matrix rewrite or per-gap Linear issue creation. C1/local-map work remains deferred until the team can provide concrete map-package facts.
+**B7 follow-through** (`DON-24`). The release workflow now has live dependency preflight plus Linux/Windows launch-smoke jobs, but those jobs have not yet run in GitHub Actions. Next release action: run `gh workflow run release.yml --repo donal0c/sartracker-web -f tag=v0.1.0-beta.3 -f smoke_existing_release=true`, review the launch screenshots/logs, then do a real Linux machine smoke before sending artifacts wider. If smoke fails, cut `v0.1.0-beta.4` per the immutability rule. B5 feedback triage (`sartracker-web-s8m` / `DON-11`) follows once the artifact gate is clean.
 
 Smoke testing on a real Linux box was not done in this session at user direction; the smoke checklist in `docs/releases/sartracker-web-0.1.0-beta.3-beta.md` (mission start, persistence-across-restart, tracking save, diagnostics export) should be run by whoever first opens the AppImage on a Linux machine. If smoke fails, cut `v0.1.0-beta.4` per the immutability rule.
 
@@ -92,6 +94,7 @@ Optional cleanup: the stale `v0.1.0-beta.2` draft release on GitHub holds Linux-
 - `sartracker-web-y6a` — B4 cross-platform Tauri beta distribution. CLOSED 2026-05-17 after the published `v0.1.0-beta.3` release.
 - `sartracker-web-590` — Re-add macOS arm64 to release CI matrix when build cadence stabilizes. P3, deferred.
 - `sartracker-web-g1u` — Re-add Windows MSI artifact when version scheme supports it. P3, deferred (MSI bundler requires numeric-only pre-release suffixes which `-beta.N` is not).
+- `DON-24` — B7: Pre-tester smoke + CI launch-smoke for cross-platform Tauri builds. Local workflow hardening implemented 2026-05-18; needs next release workflow run and real-machine Linux smoke.
 - `sartracker-web-s8m` — B5: triage first web and Tauri beta feedback. Next-task default once testers have published artifacts to react to.
 - `sartracker-web-l7c` — Parity sweep findings walk-through (Codex + Donal). P3, queued. Reads `tmp/parity-sweep/sweep-report.md` and triages C1–C13 with Donal.
 - `sartracker-web-ag1` — QGIS Parity Residual-Gap Sweep (closed 2026-05-17). Outputs under `tmp/parity-sweep/`.

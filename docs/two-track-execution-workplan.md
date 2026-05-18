@@ -131,7 +131,7 @@ This is the default order when the user says “work on the next task.”
 | Done | Mast tracking ratio visual ambiguity | Track A / UI | `sartracker-web-zq9` | Done locally 2026-05-17. Replaced `${positions.length}/${staleCount}` with separate FIX / STALE chips behind a pure selector. New unit + chromium regressions + new visual entry `mast-tracking-cell-active` (visual review PASS). |
 | Done | OpenTopoMap "tiles failed to load" badge over-eager | Track A / UI | `sartracker-web-2xp` | Done locally 2026-05-17. Tile-only filter at `src/features/map/is-tile-error-event.ts` and widened defaults (5-in-30s) in `src/lib/tile-health-tracker.ts`. Interactive Playwright proof at `tmp/2xp-verification/`. |
 | Done | B4: Set up cross-platform Tauri beta distribution | Track B / Release | `sartracker-web-y6a` | Done 2026-05-17. `.github/workflows/release.yml` builds Linux (AppImage + .deb) and Windows (NSIS) on `v*` tag push, drafts a GitHub release, generates `SHA256SUMS` sidecar. First published release: `v0.1.0-beta.3` at https://github.com/donal0c/sartracker-web/releases/tag/v0.1.0-beta.3. Linux primary, Windows secondary. macOS arm64 deferred from CI per `sartracker-web-590` to stay inside the GitHub Actions free tier (macOS bills at 10x); macOS uses Path B (`npm run beta:verify`) until cadence stabilizes. Windows MSI deferred per `sartracker-web-g1u` because Tauri's MSI bundler rejects alphanumeric pre-release suffixes. NSIS `currentUser` install (no admin), WebView2 `downloadBootstrapper`. Release notes sourced from `docs/releases/sartracker-web-<version>-beta.md`. |
-| 1 | B7: Pre-tester smoke + CI launch-smoke for cross-platform Tauri builds | Track B / Release / Verification | `DON-24` | Tier 2: smoke `v0.1.0-beta.3` AppImage/.deb/.exe on real Linux + Windows hardware (cloud VM) before sharing with testers; record evidence under `tmp/b7-prerelease-smoke/`. Tier 1: add `launch-smoke-linux` and `launch-smoke-windows` jobs to `.github/workflows/release.yml` so every future tag asserts the bundles actually launch. Optional Tier 4 static asserts (`dpkg-deb -I`, AppImage `--appimage-extract`, PE structure) on the gates job. Should run before B5 because testers should not receive cold artifacts. |
+| 1 | B7: Pre-tester smoke + CI launch-smoke for cross-platform Tauri builds | Track B / Release / Verification | `DON-24` | In progress locally 2026-05-18 after first Linux tester feedback. Implemented live dependency preflight (Traccar `:8082` + map tile URLs), Linux AppImage launch-smoke, Windows NSIS launch-smoke, and clearer `:5055` connection-test diagnostics/docs. Still needs a new release workflow run and real Linux smoke before sharing the next beta. |
 | 2 | B5: Triage first web and Tauri beta feedback | Track A / Track B | `sartracker-web-s8m` / `DON-11` | After deployed-web validation and cross-platform beta setup produce feedback |
 | 3 | V3: Smoke deployed hosted app after blocker fixes | Verification | `sartracker-web-998` / `DON-10` | Hosted regression smoke once a deploy lands (DON-10 closed 2026-05-18 as Done; reopen if a new blocker-fix wave needs another smoke) |
 | 4 | Parity sweep findings walk-through (Codex + Donal) | Parity / Discussion | `sartracker-web-l7c` / `DON-12` | Walk Codex through `tmp/parity-sweep/sweep-report.md`; decide which of C1–C13 become Linear issues, which become matrix corrections, and which are out of scope |
@@ -146,11 +146,34 @@ Linear issue: `DON-24`.
 
 Goal: get real launch confidence on the Linux/Windows artifacts the maintainer
 cannot run on the macOS build host, before testers see them. CI proves the
-bundles build; this chunk proves they boot.
+bundles build; this chunk proves they boot and that the live beta dependencies
+are reachable from the release environment.
+
+2026-05-18 tester feedback changed this from planned hardening into an active
+blocker: two Linux testers saw connection failure and no map tiles. Root-cause
+evidence so far:
+
+- `http://kmrtsar.eu:5055` returns bare `400 Bad Request` for root,
+  `/api/server`, and POST `/api/session`.
+- `http://kmrtsar.eu:8082` authenticates with the team test credentials and
+  returns the device roster; `http://kmrtsar.ddns.net:8082` also works.
+- Representative OpenTopoMap/OpenStreetMap/ESRI tile URLs are reachable from
+  the current machine, so the tester map failure still needs packaged-Linux
+  evidence rather than assuming a universal tile outage.
 
 Two complementary tiers:
 
-- **Tier 2 (one-shot, do first)**: smoke `v0.1.0-beta.3`
+- **Tier 0 (implemented locally 2026-05-18)**: release gates now authenticate
+  against the documented Traccar web/API endpoint (`http://kmrtsar.eu:8082`),
+  assert the device roster is visible, and check representative
+  OpenTopoMap/OpenStreetMap/ESRI tile URLs before any bundle starts.
+- **Tier 1 (implemented locally 2026-05-18, needs workflow proof)**: extend
+  `.github/workflows/release.yml` with `launch-smoke-linux` and
+  `launch-smoke-windows` jobs that boot each bundled artifact on its native
+  runner (`xvfb-run` on Linux; silent NSIS install + `Start-Process` on
+  Windows), assert the app launches, capture a screenshot/log artifact, and
+  fail red on launch failure.
+- **Tier 2 (still required)**: smoke `v0.1.0-beta.3` or the next beta
   (`sartracker-web_0.1.0-beta.3_linux_amd64.AppImage`,
   `sartracker-web_0.1.0-beta.3_linux_amd64.deb`,
   `sartracker-web_0.1.0-beta.3_windows_x64.exe`) on real x86_64 hardware.
@@ -159,13 +182,6 @@ Two complementary tiers:
   `docs/releases/sartracker-web-0.1.0-beta.3-beta.md` end-to-end. Record
   evidence under `tmp/b7-prerelease-smoke/`. If smoke fails, cut
   `v0.1.0-beta.4` per the immutability rule before sharing with testers.
-- **Tier 1 (durable)**: extend `.github/workflows/release.yml` with
-  `launch-smoke-linux` and `launch-smoke-windows` jobs that boot each bundled
-  artifact on its native runner (`xvfb-run` on Linux; silent NSIS install +
-  `Start-Process` on Windows), assert the process is alive, capture a
-  non-trivial screenshot, and fail red on launch failure. Asserts target the
-  "doesn't even start" failure class — missing GTK/WebKit, wrong arch,
-  packaging defect, MSVCRT mismatch.
 - **Tier 4 (optional add-on)**: cheap static asserts in the gates/checksums
   job — `dpkg-deb -I`, AppImage `--appimage-extract`, PE structure on the
   `.exe` — that would have caught beta.1/beta.2 packaging defects pre-tag.
@@ -177,7 +193,11 @@ notarization, macOS coverage (deferred per `sartracker-web-590` / `DON-13`).
 Acceptance:
 
 - Tier 2 smoke complete; either green-and-shareable, or beta.4 cut.
-- Tier 1 jobs added and verified red on an intentionally-broken bundle.
+- Tier 0 live dependency preflight and Tier 1 launch-smoke jobs pass in a real
+  release workflow run.
+- Tier 1 jobs verified red on an intentionally-broken bundle, or a documented
+  equivalent failure proof is attached if deliberately breaking a release
+  artifact is too costly.
 - `docs/tauri-beta-release-plan.md` updated with the new pre-tester smoke
   procedure (Tier 2) and the new automatic protection (Tier 1).
 - `handoff/HANDOFF.md` and this workplan updated.
@@ -185,7 +205,10 @@ Acceptance:
 Verification:
 
 - One CI run with the new jobs against the existing `v0.1.0-beta.3` artifacts
-  (or a fresh test tag) — both jobs must pass green.
+  (or a fresh test tag) — live dependency preflight plus both launch-smoke jobs
+  must pass green. For existing assets, run workflow_dispatch with
+  `tag=v0.1.0-beta.3` and `smoke_existing_release=true` so the job does not
+  rebuild or re-upload duplicate release assets.
 - One CI run with an intentionally-broken bundle — both jobs must fail red.
 - Real-hardware smoke evidence committed under `tmp/b7-prerelease-smoke/`.
 

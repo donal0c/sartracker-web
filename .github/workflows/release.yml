@@ -9,12 +9,15 @@ name: Release (Tauri Beta)
 #
 # Architecture:
 #   1. `gates` (Linux only): version-trio assertion, release-notes existence,
-#      lint, vitest, cargo test, web build. Fast-fail before any bundling.
+#      lint, vitest, cargo test, web build, live beta dependency preflight.
+#      Fast-fail before any bundling.
 #   2. `bundle` (matrix): Linux + Windows in parallel via tauri-action.
 #      First runner to finish creates the draft release; the other uploads to it.
-#   3. `checksums` (Linux only): downloads release assets, generates SHA256SUMS,
+#   3. `launch-smoke-linux` / `launch-smoke-windows`: download the just-built
+#      release assets, start them on native runners, and capture screenshots.
+#   4. `checksums` (Linux only): downloads release assets, generates SHA256SUMS,
 #      uploads as a release asset.
-#   4. `summary` (always): posts a Markdown summary with provenance.
+#   5. `summary` (always): posts a Markdown summary with provenance.
 #
 # macOS arm64 was deliberately dropped from the CI matrix to keep billed minutes
 # inside the GitHub Actions free tier (macOS runners bill at 10x). The macOS
@@ -36,6 +39,11 @@ on:
         type: string
       dry_run:
         description: 'Run gates and bundles but skip release upload'
+        required: false
+        type: boolean
+        default: false
+      smoke_existing_release:
+        description: 'Skip bundling/upload and run launch smoke against assets already attached to the tag release'
         required: false
         type: boolean
         default: false
@@ -163,9 +171,41 @@ jobs:
       - name: Backend tests (cargo test)
         run: npm run test:backend
 
+      - name: Live beta dependency preflight
+        env:
+          TRACCAR_BASE_URL: 'http://kmrtsar.eu:8082'
+          TRACCAR_EMAIL: 'apiuser'
+          TRACCAR_PASSWORD: 'apiuser'
+        run: |
+          set -euo pipefail
+          COOKIE_JAR="$RUNNER_TEMP/traccar.cookies"
+          DEVICES_JSON="$RUNNER_TEMP/traccar-devices.json"
+
+          curl --fail-with-body --silent --show-error --max-time 15 \
+            --cookie-jar "$COOKIE_JAR" \
+            --request POST \
+            --header 'Content-Type: application/x-www-form-urlencoded' \
+            --data-urlencode "email=${TRACCAR_EMAIL}" \
+            --data-urlencode "password=${TRACCAR_PASSWORD}" \
+            "${TRACCAR_BASE_URL}/api/session" >/dev/null
+
+          curl --fail-with-body --silent --show-error --max-time 15 \
+            --cookie "$COOKIE_JAR" \
+            "${TRACCAR_BASE_URL}/api/devices" > "$DEVICES_JSON"
+
+          node -e "const fs=require('fs'); const devices=JSON.parse(fs.readFileSync(process.argv[1], 'utf8')); if (!Array.isArray(devices) || devices.length === 0) { throw new Error('Traccar preflight returned no devices'); } console.log('Traccar devices visible:', devices.length);" "$DEVICES_JSON"
+
+          curl --fail --silent --show-error --head --max-time 15 \
+            'https://tile.opentopomap.org/12/1939/1355.png' >/dev/null
+          curl --fail --silent --show-error --head --max-time 15 \
+            'https://tile.openstreetmap.org/12/1939/1355.png' >/dev/null
+          curl --fail --silent --show-error --head --max-time 15 \
+            'https://services.arcgisonline.com/arcgis/rest/services/World_Topo_Map/MapServer/tile/12/1355/1939' >/dev/null
+
   bundle:
     name: Bundle (${{ matrix.label }})
     needs: gates
+    if: ${{ github.event.inputs.smoke_existing_release != 'true' }}
     timeout-minutes: 60
     permissions:
       contents: write
@@ -301,10 +341,179 @@ jobs:
             \) -print 2>/dev/null || true
           fi
 
+  launch-smoke-linux:
+    name: Launch smoke (Linux AppImage)
+    needs: [gates, bundle]
+    if: ${{ always() && needs.gates.result == 'success' && (github.event.inputs.smoke_existing_release == 'true' || (github.event.inputs.dry_run != 'true' && needs.bundle.result == 'success')) }}
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - name: Install launch smoke deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-0 \
+            libgtk-3-0 \
+            libayatana-appindicator3-1 \
+            librsvg2-2 \
+            libfuse2 \
+            xvfb \
+            xdotool \
+            imagemagick
+
+      - name: Download Linux AppImage
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.gates.outputs.tag }}
+        run: |
+          set -euo pipefail
+          mkdir -p smoke-assets smoke-evidence
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" \
+            --pattern '*linux_amd64.AppImage' \
+            --dir smoke-assets
+          ls -lh smoke-assets
+
+      - name: Launch AppImage under Xvfb and capture evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          APPIMAGE="$(find smoke-assets -maxdepth 1 -name '*linux_amd64.AppImage' -print -quit)"
+          if [ -z "$APPIMAGE" ]; then
+            echo "::error::Linux AppImage asset not found."
+            exit 1
+          fi
+          chmod +x "$APPIMAGE"
+          export APPIMAGE
+
+          xvfb-run -a --server-args='-screen 0 1280x900x24' bash <<'EOF'
+          set -euo pipefail
+          "$APPIMAGE" > smoke-evidence/linux-appimage.log 2>&1 &
+          APP_PID=$!
+          echo "$APP_PID" > smoke-evidence/linux-appimage.pid
+
+          WINDOW_FOUND=0
+          for _ in $(seq 1 30); do
+            if ! kill -0 "$APP_PID" 2>/dev/null; then
+              echo "::error::AppImage process exited before a window appeared."
+              cat smoke-evidence/linux-appimage.log || true
+              exit 1
+            fi
+            if xdotool search --name 'SAR Tracker Web' > smoke-evidence/linux-window-ids.txt 2>/dev/null; then
+              WINDOW_FOUND=1
+              break
+            fi
+            sleep 1
+          done
+
+          if [ "$WINDOW_FOUND" != "1" ]; then
+            echo "::error::SAR Tracker Web window did not appear within 30 seconds."
+            cat smoke-evidence/linux-appimage.log || true
+            kill "$APP_PID" 2>/dev/null || true
+            exit 1
+          fi
+
+          sleep 5
+          import -window root smoke-evidence/linux-appimage-launch.png
+          test -s smoke-evidence/linux-appimage-launch.png
+          kill "$APP_PID" 2>/dev/null || true
+          wait "$APP_PID" 2>/dev/null || true
+          EOF
+
+      - name: Upload Linux launch evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: launch-smoke-linux-${{ needs.gates.outputs.tag }}
+          path: smoke-evidence
+          if-no-files-found: warn
+
+  launch-smoke-windows:
+    name: Launch smoke (Windows NSIS)
+    needs: [gates, bundle]
+    if: ${{ always() && needs.gates.result == 'success' && (github.event.inputs.smoke_existing_release == 'true' || (github.event.inputs.dry_run != 'true' && needs.bundle.result == 'success')) }}
+    runs-on: windows-2022
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - name: Download Windows installer
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.gates.outputs.tag }}
+        run: |
+          New-Item -ItemType Directory -Force smoke-assets, smoke-evidence | Out-Null
+          gh release download "$env:TAG" --repo "$env:GITHUB_REPOSITORY" --pattern "*windows_x64.exe" --dir smoke-assets
+          Get-ChildItem smoke-assets | Format-Table Name, Length
+
+      - name: Silent install, launch, and capture evidence
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $installer = Get-ChildItem smoke-assets -Filter "*windows_x64.exe" | Select-Object -First 1
+          if ($null -eq $installer) {
+            throw "Windows NSIS installer asset not found."
+          }
+
+          $installLog = Join-Path (Resolve-Path smoke-evidence) "windows-install.txt"
+          "Installing $($installer.FullName)" | Out-File $installLog
+          $install = Start-Process -FilePath $installer.FullName -ArgumentList "/S" -Wait -PassThru
+          "Installer exit code: $($install.ExitCode)" | Out-File $installLog -Append
+          if ($install.ExitCode -ne 0) {
+            throw "NSIS installer failed with exit code $($install.ExitCode)."
+          }
+
+          $candidateRoots = @(
+            Join-Path $env:LOCALAPPDATA "Programs\sartracker-web",
+            Join-Path $env:LOCALAPPDATA "sartracker-web"
+          )
+          $app = $null
+          foreach ($root in $candidateRoots) {
+            if (Test-Path $root) {
+              $app = Get-ChildItem $root -Recurse -Filter "sartracker-web.exe" | Select-Object -First 1
+              if ($null -ne $app) { break }
+            }
+          }
+          if ($null -eq $app) {
+            throw "Installed sartracker-web.exe was not found under LOCALAPPDATA."
+          }
+
+          $process = Start-Process -FilePath $app.FullName -PassThru
+          Start-Sleep -Seconds 12
+          if ($process.HasExited) {
+            throw "sartracker-web.exe exited during launch smoke with code $($process.ExitCode)."
+          }
+
+          Add-Type -AssemblyName System.Windows.Forms
+          Add-Type -AssemblyName System.Drawing
+          $bounds = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
+          $bitmap = New-Object System.Drawing.Bitmap $bounds.Width, $bounds.Height
+          $graphics = [System.Drawing.Graphics]::FromImage($bitmap)
+          $graphics.CopyFromScreen($bounds.Location, [System.Drawing.Point]::Empty, $bounds.Size)
+          $screenshot = Join-Path (Resolve-Path smoke-evidence) "windows-nsis-launch.png"
+          $bitmap.Save($screenshot, [System.Drawing.Imaging.ImageFormat]::Png)
+          $graphics.Dispose()
+          $bitmap.Dispose()
+          if ((Get-Item $screenshot).Length -le 0) {
+            throw "Windows launch screenshot was empty."
+          }
+
+          Stop-Process -Id $process.Id -Force
+
+      - name: Upload Windows launch evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: launch-smoke-windows-${{ needs.gates.outputs.tag }}
+          path: smoke-evidence
+          if-no-files-found: warn
+
   checksums:
     name: SHA256SUMS sidecar
-    needs: [gates, bundle]
-    if: ${{ github.event.inputs.dry_run != 'true' && needs.bundle.result == 'success' }}
+    needs: [gates, bundle, launch-smoke-linux, launch-smoke-windows]
+    if: ${{ always() && github.event.inputs.dry_run != 'true' && github.event.inputs.smoke_existing_release != 'true' && needs.bundle.result == 'success' && needs.launch-smoke-linux.result == 'success' && needs.launch-smoke-windows.result == 'success' }}
     runs-on: ubuntu-22.04
     timeout-minutes: 10
     permissions:
@@ -351,7 +560,7 @@ jobs:
 
   summary:
     name: Summary
-    needs: [gates, bundle, checksums]
+    needs: [gates, bundle, launch-smoke-linux, launch-smoke-windows, checksums]
     if: always()
     runs-on: ubuntu-22.04
     steps:

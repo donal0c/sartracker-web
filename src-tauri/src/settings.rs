@@ -412,7 +412,7 @@ impl SettingsStore {
                 if !response.status().is_success() {
                     return Ok(TestConnectionResult {
                         ok: false,
-                        message: format!("Authentication failed: {}", response.status()),
+                        message: describe_traccar_session_failure(response.status(), &base_url),
                     });
                 }
 
@@ -737,6 +737,32 @@ fn validate_weather_links(links: &[WeatherLinkSettings]) -> Result<(), String> {
     Ok(())
 }
 
+fn describe_traccar_session_failure(status: reqwest::StatusCode, base_url: &str) -> String {
+    if status == reqwest::StatusCode::BAD_REQUEST {
+        let mut message = format!(
+            "Traccar API rejected the session request: {status}. Check the provider base URL points to the Traccar web/API server, not a tracker device listener port."
+        );
+
+        if configured_port(base_url) == Some(5055) {
+            message.push_str(
+                " The configured port 5055 is commonly used by GPS devices to send positions; operators normally need the Traccar web/API port instead.",
+            );
+        }
+
+        return message;
+    }
+
+    if status == reqwest::StatusCode::UNAUTHORIZED || status == reqwest::StatusCode::FORBIDDEN {
+        return format!("Authentication failed: {status}");
+    }
+
+    format!("Traccar session request failed: {status}")
+}
+
+fn configured_port(base_url: &str) -> Option<u16> {
+    reqwest::Url::parse(base_url.trim()).ok()?.port()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -869,6 +895,29 @@ mod tests {
         assert!(runtime.tracking_cache_enabled);
 
         let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn describes_bad_request_from_common_tracker_listener_port_as_provider_url_problem() {
+        let message = describe_traccar_session_failure(
+            reqwest::StatusCode::BAD_REQUEST,
+            "http://kmrtsar.eu:5055",
+        );
+
+        assert!(message.contains("Traccar API rejected the session request: 400 Bad Request"));
+        assert!(message.contains("provider base URL"));
+        assert!(message.contains("5055"));
+        assert!(message.contains("web/API port"));
+    }
+
+    #[test]
+    fn keeps_unauthorized_session_failures_focused_on_authentication() {
+        let message = describe_traccar_session_failure(
+            reqwest::StatusCode::UNAUTHORIZED,
+            "http://kmrtsar.eu:8082",
+        );
+
+        assert_eq!(message, "Authentication failed: 401 Unauthorized");
     }
 
     /// Regression for `sartracker-web-el9` root cause. The `keyring` crate selects an

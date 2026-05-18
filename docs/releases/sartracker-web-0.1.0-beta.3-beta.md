@@ -20,7 +20,7 @@
 | --- | --- | --- |
 | Linux x86_64 | `sartracker-web_0.1.0-beta.3_linux_amd64.AppImage` | Single-file portable run; no install required. Most testers. |
 | Linux x86_64 | `sartracker-web_0.1.0-beta.3_linux_amd64.deb` | System install on Ubuntu/Debian/Mint/Pop_OS. |
-| Windows x86_64 | `sartracker-web_0.1.0-beta.3_windows_amd64.exe` | NSIS installer, current-user install (no admin required). |
+| Windows x86_64 | `sartracker-web_0.1.0-beta.3_windows_x64.exe` | NSIS installer, current-user install (no admin required). |
 | All | `SHA256SUMS` | Checksum sidecar to verify downloaded artifacts. |
 
 macOS is not produced by CI in this beta lane (deferred per `sartracker-web-590`
@@ -83,11 +83,11 @@ unknown. The warnings are expected for an unsigned app and the install does
 
 ### NSIS installer (recommended; no admin required)
 
-1. Download `sartracker-web_0.1.0-beta.3_windows_amd64.exe` and the
+1. Download `sartracker-web_0.1.0-beta.3_windows_x64.exe` and the
    `SHA256SUMS` file.
 2. Verify the checksum from PowerShell:
    ```powershell
-   Get-FileHash sartracker-web_0.1.0-beta.3_windows_amd64.exe -Algorithm SHA256
+   Get-FileHash sartracker-web_0.1.0-beta.3_windows_x64.exe -Algorithm SHA256
    ```
    Compare the output against the matching line in `SHA256SUMS`.
 3. Right-click the downloaded `.exe` → **Properties** → tick **Unblock** → **OK**.
@@ -201,9 +201,12 @@ second:
 - [ ] Pause / resume / finish the mission.
 - [ ] Restart the app and confirm the mission persists across the restart.
 - [ ] Configure a Traccar provider in Settings (use the test credentials in
-      `handoff/HANDOFF.md` § Traccar Test Details). Confirm tracking devices
-      appear and the FIX count increments. Mast `STALE` count should remain
-      sane (zero on a healthy server).
+      `handoff/HANDOFF.md` § Traccar Test Details). Use the Traccar web/API
+      base URL, for example `http://kmrtsar.eu:8082` or the documented fallback
+      `http://kmrtsar.ddns.net:8082`; do not use tracker/device listener ports
+      such as `5055`. Confirm tracking devices appear and the FIX count
+      increments. Mast `STALE` count should remain sane (zero on a healthy
+      server).
 - [ ] Place a marker by clicking the map and another via Marker At Grid
       Reference. Both must persist after restart.
 - [ ] Draw a search-area polygon and a range ring. Both must render cleanly,
