@@ -199,7 +199,7 @@ Deliverable:
 
 - Record result in `handoff/HANDOFF.md`.
 - If smoke passes, create a shareable beta release note.
-- If smoke fails, create a bead for the blocker.
+- If smoke fails, create a Linear issue for the blocker.
 
 ## Beta Release Gate
 
@@ -314,7 +314,7 @@ History so far:
 These must be cleared before promoting beyond the internal team or moving to a
 signed distribution lane:
 
-1. **Auto-updater work is gated on `sartracker-web-qmr` follow-up.** That bead
+1. **Auto-updater work is gated on `sartracker-web-qmr` follow-up.** That Linear issue
    removed the macOS ATS blanket exception by routing renderer Traccar fetch
    through Rust `reqwest`. The same posture applies to other plain-HTTP
    exceptions and signing-key handling — no auto-updater until those are
@@ -324,7 +324,7 @@ signed distribution lane:
 3. **Windows signing:** Azure Trusted Signing ($9.99/month, 2026 path,
    self-employed and small-org eligible since 2025). Gated on the legal entity
    verification process. EV/OV certs are the more expensive fallback. Filed as
-   a separate decision-gated bead, not part of B4.
+   a separate decision-gated Linear issue, not part of B4.
 4. **`reqwest` CA root strategy:** current `Cargo.toml` uses `rustls-tls` with
    no native-roots feature. Self-hosted Traccar servers using internal CAs
    may fail with `UnknownIssuer` until we add `rustls-tls-native-roots` (or

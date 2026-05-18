@@ -14,13 +14,13 @@ If an investigation finds work worth doing, fold it into `docs/two-track-executi
 - Verification
 - Deferred / decision-gated
 
-Then create or update the relevant bead if the work is substantial, safety-critical, or likely to span sessions.
+Then create or update the relevant Linear issue if the work is substantial, safety-critical, or likely to span sessions.
 
 ## Improvement-Mode Prompt
 
 Use this operating prompt in spirit when asked to look for improvements:
 
-`Deeply analyze the codebase and identify 3 to 5 bounded improvements that would make a real difference to the system. For each, give an impact, complexity, and risk score from 1 to 5. Choose the best improvement by highest impact and lowest complexity/risk. Before implementing, fold the chosen improvement into docs/two-track-execution-workplan.md unless it already exists there. Implement only that one. Verify it deeply with the right mix of unit tests, integration tests, and browser checks. Use Playwright or Chrome DevTools only when explicitly requested. Then update the relevant bead and handoff/HANDOFF.md.`
+`Deeply analyze the codebase and identify 3 to 5 bounded improvements that would make a real difference to the system. For each, give an impact, complexity, and risk score from 1 to 5. Choose the best improvement by highest impact and lowest complexity/risk. Before implementing, fold the chosen improvement into docs/two-track-execution-workplan.md unless it already exists there. Implement only that one. Verify it deeply with the right mix of unit tests, integration tests, and browser checks. Use Playwright or Chrome DevTools only when explicitly requested. Then update the relevant Linear issue and handoff/HANDOFF.md.`
 
 ## Historical Investigation
 

@@ -49,13 +49,13 @@ Recommended severity values:
 - `Web Evidence`: file/test/manual note
 - `Gap Summary`: plain-English description of mismatch
 - `Severity`: operational importance
-- `Bead / Follow-up`: linked bead or action
+- `Issue / Follow-up`: linked Linear issue or explicit action
 
 ---
 
 ## Matrix
 
-| LPV ID | Area | Legacy Behavior | Legacy Status | Legacy Evidence | Web Status | Web Evidence | Gap Summary | Severity | Bead / Follow-up |
+| LPV ID | Area | Legacy Behavior | Legacy Status | Legacy Evidence | Web Status | Web Evidence | Gap Summary | Severity | Issue / Follow-up |
 |---|---|---|---|---|---|---|---|---|---|
 | LPV-001 | Primary surfaces | SAR panel exists as docked ops surface | Pending | `ui/sar_panel.py` | Pending |  |  | High |  |
 | LPV-002 | Primary surfaces | Focus Mode Plus toggle exists with coordinate mirroring | Pending | `ui/sar_panel.py`, focus tests | Pending |  |  | Medium |  |

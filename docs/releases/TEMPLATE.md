@@ -134,7 +134,7 @@ macOS artifact is supplied separately for this drop (built locally via
 ## What Changed
 
 - &lt;short, operator-readable bullet list of changes since the previous beta&gt;
-- &lt;include bead IDs in square brackets&gt;
+- &lt;include Linear issue IDs in square brackets&gt;
 
 ## What To Test
 

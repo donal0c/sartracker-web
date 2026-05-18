@@ -13,18 +13,18 @@ Do not create new planning queues under other names. Do not revive the old harde
 When a chunk is finished:
 
 1. Update this file if the queue changed.
-2. Update the relevant bead.
+2. Update the relevant Linear issue.
 3. Update `handoff/HANDOFF.md` with only the current baton.
 4. Update the operator manual if operator-facing behavior changed.
 5. Run the relevant verification for the chunk.
 
-Verification is not optional closeout ceremony. For any UI, map, workflow, runtime, hosted deployment, or operator-facing change, Codex should choose and run the appropriate browser-backed verification before recording final docs or closing the bead. The default ladder is:
+Verification is not optional closeout ceremony. For any UI, map, workflow, runtime, hosted deployment, or operator-facing change, Codex should choose and run the appropriate browser-backed verification before recording final docs or closing the Linear issue. The default ladder is:
 
 - Inbuilt browser for quick manual sanity checks.
 - Playwright for repeatable UI/workflow/regression checks.
 - Chrome or Chrome DevTools MCP when the issue depends on the user's real browser profile, existing tabs, DevTools/network evidence, or browser-specific behavior.
 
-The user should not need to repeat this in every prompt. The available browser tools are all acceptable when they are the right fit: `$browser:browser`, `$chrome:Chrome`, `$chrome-devtools-cli`, and `$playwright`. Each chunk's handoff/bead update must state the exact browser flow or deployed URL that was verified, or explicitly say why UI verification was not relevant.
+The user should not need to repeat this in every prompt. The available browser tools are all acceptable when they are the right fit: `$browser:browser`, `$chrome:Chrome`, `$chrome-devtools-cli`, and `$playwright`. Each chunk's handoff/Linear issue update must state the exact browser flow or deployed URL that was verified, or explicitly say why UI verification was not relevant.
 
 ## Operating Model
 
@@ -78,7 +78,7 @@ When new work arrives, classify it before implementing:
 
 This is the default order when the user says “work on the next task.”
 
-| Order | Chunk | Track | Bead | Status |
+| Order | Chunk | Track | Linear issue | Status |
 | --- | --- | --- | --- | --- |
 | Done | S1: Runtime Boot/Fault Guard | Shared | `sartracker-web-3rl` | Done 2026-05-16 |
 | Done | A2: Hosted Mode Guardrails | Track A | `sartracker-web-vpz.3` | Done 2026-05-15 |
@@ -126,18 +126,71 @@ This is the default order when the user says “work on the next task.”
 | Done | Route renderer Traccar fetch via Rust reqwest (remove ATS blanket) | Track B | `sartracker-web-qmr` | Closed 2026-05-17; desktop Traccar polling now uses a Tauri reqwest command, the ATS blanket plist was removed, and packaged-app live Traccar smoke passed |
 | Done | V2: Visual Review Automation | Verification | `sartracker-web-n9i` | Done locally 2026-05-17; `npm run visual:review` automates the second-layer Opus review with caching, severity gating, and structured exit codes. Discovery: spec drift in 5 visual prompts filed as `sartracker-web-b3c` |
 | Done | B6: GPX And Drawing Hit-Test Hardening | Track B / Shared | `sartracker-web-fy5` | Done locally 2026-05-17; new pure resolver names the priority `marker > drawing > empty`, fixes the marker-stacked-under-polygon swallow bug, adds GPX line-segment hit-testing as a soft signal, +21 unit tests, +2 E2E tests, and an interactive Playwright sanity check |
-| Done | QGIS Parity Residual-Gap Sweep | Verification / Parity | `sartracker-web-ag1` | Done 2026-05-17; synthesis at `tmp/parity-sweep/sweep-report.md`. Matrix significantly understates current state (11+ rows mis-stated). Genuine residual blockers C1–C13 captured. No child beads filed; triage walk-through filed as `sartracker-web-l7c`. |
+| Done | QGIS Parity Residual-Gap Sweep | Verification / Parity | `sartracker-web-ag1` | Done 2026-05-17; synthesis at `tmp/parity-sweep/sweep-report.md`. Matrix significantly understates current state (11+ rows mis-stated). Genuine residual blockers C1–C13 captured. No child Linear issues filed; triage walk-through filed as `sartracker-web-l7c`. |
 | Done | Visual review prompt drift fixes | Verification | `sartracker-web-wn6` | Done locally 2026-05-17. Rewrote `marker-hazard-dialog` and `shell-idle-state` verificationPrompts to match the actual captured frames; both PASS via `npm run visual:review --only <id> --no-cache`. |
 | Done | Mast tracking ratio visual ambiguity | Track A / UI | `sartracker-web-zq9` | Done locally 2026-05-17. Replaced `${positions.length}/${staleCount}` with separate FIX / STALE chips behind a pure selector. New unit + chromium regressions + new visual entry `mast-tracking-cell-active` (visual review PASS). |
 | Done | OpenTopoMap "tiles failed to load" badge over-eager | Track A / UI | `sartracker-web-2xp` | Done locally 2026-05-17. Tile-only filter at `src/features/map/is-tile-error-event.ts` and widened defaults (5-in-30s) in `src/lib/tile-health-tracker.ts`. Interactive Playwright proof at `tmp/2xp-verification/`. |
 | Done | B4: Set up cross-platform Tauri beta distribution | Track B / Release | `sartracker-web-y6a` | Done 2026-05-17. `.github/workflows/release.yml` builds Linux (AppImage + .deb) and Windows (NSIS) on `v*` tag push, drafts a GitHub release, generates `SHA256SUMS` sidecar. First published release: `v0.1.0-beta.3` at https://github.com/donal0c/sartracker-web/releases/tag/v0.1.0-beta.3. Linux primary, Windows secondary. macOS arm64 deferred from CI per `sartracker-web-590` to stay inside the GitHub Actions free tier (macOS bills at 10x); macOS uses Path B (`npm run beta:verify`) until cadence stabilizes. Windows MSI deferred per `sartracker-web-g1u` because Tauri's MSI bundler rejects alphanumeric pre-release suffixes. NSIS `currentUser` install (no admin), WebView2 `downloadBootstrapper`. Release notes sourced from `docs/releases/sartracker-web-<version>-beta.md`. |
-| 1 | B5: Triage first web and Tauri beta feedback | Track A / Track B | `sartracker-web-s8m` | After deployed-web validation and cross-platform beta setup produce feedback |
-| 2 | V3: Smoke deployed hosted app after blocker fixes | Verification | `sartracker-web-998` | Hosted regression smoke once a deploy lands |
-| 3 | Parity sweep findings walk-through (Codex + Donal) | Parity / Discussion | `sartracker-web-l7c` | Walk Codex through `tmp/parity-sweep/sweep-report.md`; decide which of C1–C13 become beads, which become matrix corrections, and which are out of scope |
-| 4 | C1: Local Proprietary Map Package Requirements | Track B / Maps | Create/update bead after team discussion | Deferred until the team can provide map package facts |
-| 5 | Offline / Local Map Readiness Follow-up | Track B / Maps | Create/update bead after C1 | Shape the desktop-first local/offline map package path once C1 facts are known |
+| 1 | B7: Pre-tester smoke + CI launch-smoke for cross-platform Tauri builds | Track B / Release / Verification | `DON-24` | Tier 2: smoke `v0.1.0-beta.3` AppImage/.deb/.exe on real Linux + Windows hardware (cloud VM) before sharing with testers; record evidence under `tmp/b7-prerelease-smoke/`. Tier 1: add `launch-smoke-linux` and `launch-smoke-windows` jobs to `.github/workflows/release.yml` so every future tag asserts the bundles actually launch. Optional Tier 4 static asserts (`dpkg-deb -I`, AppImage `--appimage-extract`, PE structure) on the gates job. Should run before B5 because testers should not receive cold artifacts. |
+| 2 | B5: Triage first web and Tauri beta feedback | Track A / Track B | `sartracker-web-s8m` / `DON-11` | After deployed-web validation and cross-platform beta setup produce feedback |
+| 3 | V3: Smoke deployed hosted app after blocker fixes | Verification | `sartracker-web-998` / `DON-10` | Hosted regression smoke once a deploy lands (DON-10 closed 2026-05-18 as Done; reopen if a new blocker-fix wave needs another smoke) |
+| 4 | Parity sweep findings walk-through (Codex + Donal) | Parity / Discussion | `sartracker-web-l7c` / `DON-12` | Walk Codex through `tmp/parity-sweep/sweep-report.md`; decide which of C1–C13 become Linear issues, which become matrix corrections, and which are out of scope |
+| 5 | C1: Local Proprietary Map Package Requirements | Track B / Maps | Create/update Linear issue after team discussion | Deferred until the team can provide map package facts |
+| 6 | Offline / Local Map Readiness Follow-up | Track B / Maps | Create/update Linear issue after C1 | Shape the desktop-first local/offline map package path once C1 facts are known |
 
 ## Ready Work Chunks
+
+### B7: Pre-tester smoke + CI launch-smoke for cross-platform Tauri builds
+
+Linear issue: `DON-24`.
+
+Goal: get real launch confidence on the Linux/Windows artifacts the maintainer
+cannot run on the macOS build host, before testers see them. CI proves the
+bundles build; this chunk proves they boot.
+
+Two complementary tiers:
+
+- **Tier 2 (one-shot, do first)**: smoke `v0.1.0-beta.3`
+  (`sartracker-web_0.1.0-beta.3_linux_amd64.AppImage`,
+  `sartracker-web_0.1.0-beta.3_linux_amd64.deb`,
+  `sartracker-web_0.1.0-beta.3_windows_x64.exe`) on real x86_64 hardware.
+  Hetzner CX22 (Ubuntu 22.04 desktop, ~€0.01/hr) for Linux, AWS Lightsail
+  Windows Server 2022 (~$0.01/hr) for Windows. Walk
+  `docs/releases/sartracker-web-0.1.0-beta.3-beta.md` end-to-end. Record
+  evidence under `tmp/b7-prerelease-smoke/`. If smoke fails, cut
+  `v0.1.0-beta.4` per the immutability rule before sharing with testers.
+- **Tier 1 (durable)**: extend `.github/workflows/release.yml` with
+  `launch-smoke-linux` and `launch-smoke-windows` jobs that boot each bundled
+  artifact on its native runner (`xvfb-run` on Linux; silent NSIS install +
+  `Start-Process` on Windows), assert the process is alive, capture a
+  non-trivial screenshot, and fail red on launch failure. Asserts target the
+  "doesn't even start" failure class — missing GTK/WebKit, wrong arch,
+  packaging defect, MSVCRT mismatch.
+- **Tier 4 (optional add-on)**: cheap static asserts in the gates/checksums
+  job — `dpkg-deb -I`, AppImage `--appimage-extract`, PE structure on the
+  `.exe` — that would have caught beta.1/beta.2 packaging defects pre-tag.
+
+Out of scope: driving the UI in CI (no clicks/E2E flows yet — revisit with
+`tauri-driver` later if Tier 1 starts being insufficient), code-signing/
+notarization, macOS coverage (deferred per `sartracker-web-590` / `DON-13`).
+
+Acceptance:
+
+- Tier 2 smoke complete; either green-and-shareable, or beta.4 cut.
+- Tier 1 jobs added and verified red on an intentionally-broken bundle.
+- `docs/tauri-beta-release-plan.md` updated with the new pre-tester smoke
+  procedure (Tier 2) and the new automatic protection (Tier 1).
+- `handoff/HANDOFF.md` and this workplan updated.
+
+Verification:
+
+- One CI run with the new jobs against the existing `v0.1.0-beta.3` artifacts
+  (or a fresh test tag) — both jobs must pass green.
+- One CI run with an intentionally-broken bundle — both jobs must fail red.
+- Real-hardware smoke evidence committed under `tmp/b7-prerelease-smoke/`.
+
+Related: `DON-13` (re-add macOS arm64 to CI), `DON-14` (re-add Windows MSI),
+`DON-11` (B5 triage — feeds off post-share findings).
 
 ### Desktop Beta Distribution Rule
 
@@ -174,11 +227,11 @@ Completed follow-up remediation:
 - `sartracker-web-419` — R10: handoff compressed back to a baton-shaped current state; historical/supporting docs already point back to this workplan as the active queue.
 - `sartracker-web-mh5` — R11: browser harness storage now has a module-level non-goals note clarifying session-storage testing scope versus Tauri/SQLite operational persistence.
 
-Review finding files under `tmp/review-s1-a1-b1-s2/` are historical triage evidence only; the durable remediation state is now in the beads and this workplan.
+Review finding files under `tmp/review-s1-a1-b1-s2/` are historical triage evidence only; the durable remediation state is now in the Linear issues and this workplan.
 
 ### A1: Hosted Testing Instructions And Feedback Intake
 
-Bead: `sartracker-web-vpz.1`
+Linear issue: `sartracker-web-vpz.1`
 
 Goal: make it easy for the team to test and report issues consistently.
 
@@ -213,7 +266,7 @@ Verification:
 
 ### A2: Hosted Mode Guardrails
 
-Bead: `sartracker-web-vpz.3`
+Linear issue: `sartracker-web-vpz.3`
 
 Goal: reduce avoidable Traccar URL confusion during browser testing.
 
@@ -237,9 +290,9 @@ Verification:
 
 ### A3: Team Feedback Triage Pass
 
-Parent bead: `sartracker-web-6y3`
+Parent Linear issue: `sartracker-web-6y3`
 
-Goal: convert raw feedback into actionable chunks and beads.
+Goal: convert raw feedback into actionable chunks and Linear issues.
 
 Latest sources:
 
@@ -257,7 +310,7 @@ Tasks:
   - settings/connectivity
   - layout/UI preferences
   - desktop-only/runtime concerns
-- Create or update beads for recurring issues.
+- Create or update Linear issues for recurring issues.
 - Route each item into this file as Track A, Track B, Shared, Verification, or Deferred.
 - Mark quick fixes separately from design questions.
 - Keep `handoff/HANDOFF.md` short: only current state, blockers, next actions.
@@ -269,12 +322,12 @@ Acceptance:
 
 Verification:
 
-- `bd list` shows new/updated work items.
+- Linear queue view shows new/updated work items.
 - This file and the handoff agree on the current next task.
 
 ### A3.1: Prevent Accidental Map Placement While Panning
 
-Bead: `sartracker-web-6y3.1`
+Linear issue: `sartracker-web-6y3.1`
 
 Goal: make map panning and map placement unmistakably separate so testers do not accidentally create markers or drawings while moving the map.
 
@@ -299,7 +352,7 @@ Verification:
 
 ### A3.2: Fix Drawing Rendering And Layer Visibility
 
-Bead: `sartracker-web-6y3.2`
+Linear issue: `sartracker-web-6y3.2`
 
 Goal: map objects must look like what the operator intended and hide reliably through layers.
 
@@ -325,7 +378,7 @@ Verification:
 
 ### A3.3: Simplify Map And Drawing Tool Chrome
 
-Bead: `sartracker-web-6y3.3`
+Linear issue: `sartracker-web-6y3.3`
 
 Goal: reduce map-surface clutter while preserving fast access to the tools testers need most.
 
@@ -350,7 +403,7 @@ Verification:
 
 ### A3.4: Clean Up Mission Mast And Right-Panel Duplication
 
-Bead: `sartracker-web-6y3.4`
+Linear issue: `sartracker-web-6y3.4`
 
 Goal: make mission identity, phase, and timing scan-friendly without repeating the same information in multiple panels.
 
@@ -374,7 +427,7 @@ Verification:
 
 ### A3.5: Add Operational Contrast/Theme Pass
 
-Bead: `sartracker-web-6y3.5`
+Linear issue: `sartracker-web-6y3.5`
 
 Goal: address the team's concern that the current colour scheme is not suitable for all testers without turning this into an open-ended redesign.
 
@@ -404,7 +457,7 @@ Verification:
 
 ### A3.6: Move Static Operational Notes Out Of Primary Map Chrome
 
-Bead: `sartracker-web-6y3.6`
+Linear issue: `sartracker-web-6y3.6`
 
 Goal: reduce map clutter by moving static reference notes out of the primary map surface while keeping live risk signals visible.
 
@@ -426,7 +479,7 @@ Verification:
 
 ### A3.7: Add Marker At Grid Reference Workflow
 
-Bead: `sartracker-web-6y3.7`
+Linear issue: `sartracker-web-6y3.7`
 
 Goal: add the QGIS-style marker entry path where an operator can place a marker from a TM65 Irish Grid reference instead of clicking the map.
 
@@ -451,7 +504,7 @@ Verification:
 
 ### A3.8: Improve Drawing Labels, Styles, And Delete Flow
 
-Bead: `sartracker-web-6y3.8`
+Linear issue: `sartracker-web-6y3.8`
 
 Goal: make saved drawings more informative and easier to correct when placed in the wrong location.
 
@@ -477,7 +530,7 @@ Verification:
 
 ### A3.9: Add Configurable Weather Links Menu
 
-Bead: `sartracker-web-6y3.9`
+Linear issue: `sartracker-web-6y3.9`
 
 Goal: give operators quick access to external weather resources without pretending the app has a built-in weather integration.
 
@@ -487,7 +540,7 @@ Tasks:
 - Add a compact `Weather` control in a sensible top-panel location.
 - Open selected weather links safely.
 - Reject invalid URLs with clear copy.
-- Treat this as external links for now; do not fetch/weather-normalize data inside the app unless a later bead expands the requirement.
+- Treat this as external links for now; do not fetch/weather-normalize data inside the app unless a later Linear issue expands the requirement.
 
 Acceptance:
 
@@ -504,7 +557,7 @@ Verification:
 
 ### A3.10: Investigate And Fix Irish Grid Conversion Accuracy
 
-Bead: `sartracker-web-6y3.10`
+Linear issue: `sartracker-web-6y3.10`
 
 Goal: resolve the reported difference between a DD marker and an IG/TM65 marker for the same physical location.
 
@@ -520,7 +573,7 @@ Tasks:
 - Compare DD, IG/TM65, ITM/display, and marker placement outputs for the same point.
 - Determine whether the discrepancy is caused by parser precision, datum/projection transform, grid-reference semantics, rounding, or a mismatch in the supplied reference data.
 - Decide and document the acceptable operational tolerance before closing.
-- If the app is wrong, fix conversion/marker placement. If the source/plugin reference is wrong, surface that clearly in docs/bead notes.
+- If the app is wrong, fix conversion/marker placement. If the source/plugin reference is wrong, surface that clearly in docs/Linear issue notes.
 
 Acceptance:
 
@@ -535,7 +588,7 @@ Verification:
 
 ### A3.11: Stabilize Marker Placement From Coordinate Entry
 
-Bead: `sartracker-web-6y3.11`
+Linear issue: `sartracker-web-6y3.11`
 
 Goal: coordinate-created markers must never appear intermittently or disappear after map movement.
 
@@ -558,7 +611,7 @@ Verification:
 
 ### A3.12: Fix Roster Name Entry Spacing
 
-Bead: `sartracker-web-6y3.12`
+Linear issue: `sartracker-web-6y3.12`
 
 Goal: coordinator/admin roster entry should support normal person names while typing.
 
@@ -582,7 +635,7 @@ Verification:
 
 ### A3.13: Rework Coordinate Converter Formats And Naming
 
-Bead: `sartracker-web-6y3.13`
+Linear issue: `sartracker-web-6y3.13`
 
 Goal: align the converter with the formats the coordinators actually use.
 
@@ -607,7 +660,7 @@ Verification:
 
 ### A3.14: Rename Drawing Tools To Map Tools And Add Measure
 
-Bead: `sartracker-web-6y3.14`
+Linear issue: `sartracker-web-6y3.14`
 
 Goal: make measurement easier to find and align tool naming with the team's language.
 
@@ -630,7 +683,7 @@ Verification:
 
 ### B1: Tauri Beta Packaging Recon
 
-Bead: `sartracker-web-vpz.2`
+Linear issue: `sartracker-web-vpz.2`
 
 Goal: find the shortest reliable path to a first desktop beta artifact.
 
@@ -710,7 +763,7 @@ Verification:
 
 ### B6: GPX And Drawing Hit-Test Hardening — Done 2026-05-17
 
-Bead: `sartracker-web-fy5`. Closed locally on 2026-05-17.
+Linear issue: `sartracker-web-fy5`. Closed locally on 2026-05-17.
 
 Outcome: documented click priority `marker > drawing > empty` in a single pure resolver (`src/features/map/map-click-target-resolver.ts`); fixed the headline marker-stacked-under-polygon swallow bug; added GPX line-segment hit-testing as a soft signal for future GPX UI surface work; refactored `useMapMarkerInteractions` and `useMapDrawingInteractions` to consult the resolver instead of racing via `event.stopImmediatePropagation`. Coverage: 21 new unit tests across 2 new files, 2 new Playwright E2E specs (one pinning the marker-wins case, one pinning the polygon-fallthrough case), and an interactive Playwright sanity check captured under `tmp/b6-verification/` showing both behaviors against a live `npm run dev` server.
 
@@ -737,7 +790,7 @@ Verification:
 
 ### B4: Cross-Platform Tauri Beta Distribution — Done 2026-05-17
 
-Bead: `sartracker-web-y6a`. Closed 2026-05-17.
+Linear issue: `sartracker-web-y6a`. Closed 2026-05-17.
 
 Outcome: release pipeline at `.github/workflows/release.yml` builds Linux
 (AppImage + .deb) and Windows (NSIS, current-user install with WebView2
@@ -873,7 +926,7 @@ Verification:
 
 ### S2: Autosave Lifecycle Hardening
 
-Bead: `sartracker-web-vpz.5`
+Linear issue: `sartracker-web-vpz.5`
 
 Former hardening item: T10.
 
@@ -1044,7 +1097,7 @@ Verification:
 
 ### V2: Visual Review Automation — Done 2026-05-17
 
-Former hardening item: T09. Bead: `sartracker-web-n9i`.
+Former hardening item: T09. Linear issue: `sartracker-web-n9i`.
 
 Goal: make the existing visual verification workflow less manual and easier to repeat.
 
@@ -1068,7 +1121,7 @@ Exit codes (also documented in CLAUDE.md):
 
 ### B5: Triage First Web And Tauri Beta Feedback
 
-Bead: `sartracker-web-s8m`
+Linear issue: `sartracker-web-s8m`
 
 Goal: classify real tester feedback before starting another fix loop, so hosted-web issues, desktop/Tauri issues, shared app bugs, docs/training problems, and product preferences do not collapse into one foggy backlog.
 
@@ -1083,14 +1136,14 @@ Tasks:
 
 - Review feedback from hosted web testing and the first Tauri beta distribution.
 - Classify each item as hosted-only, desktop/Tauri-only, shared app bug, docs/training issue, or product/UI preference.
-- Create or update beads for actionable items.
+- Create or update Linear issues for actionable items.
 - Decide whether to widen Tauri beta, repeat blocker fixes, or keep desktop paused while hosted testing continues.
 - Update this workplan and `handoff/HANDOFF.md` with the decision.
 
 Acceptance:
 
 - No tester finding remains only in chat, email, or memory.
-- Each actionable finding has a lane and bead.
+- Each actionable finding has a lane and Linear issue.
 - The plan clearly says whether Tauri beta can expand, needs another blocker-fix loop, or should pause.
 
 ## Deferred / Decision-Gated Work
@@ -1128,4 +1181,4 @@ These docs support this queue but do not define a separate queue:
 - `docs/tauri-beta-release-plan.md` — beta packaging/release details.
 - `docs/reports/deep-hardening-investigation-2026-05-13.md` — historical evidence for the former T01-T13 hardening items.
 - `docs/plugin-parity-matrix.md` — canonical parity evidence.
-- `docs/bead-readiness.md` — readiness notes for larger beads.
+- `docs/bead-readiness.md` — readiness notes for larger Linear issues.

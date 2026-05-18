@@ -25,7 +25,6 @@ handoff/
 specs/
 OVERVIEW.md
 CODEX_START.md
-.beads/
 refactor_oppertunities.md
 tmp/
 tools/mock-traccar/node_modules/

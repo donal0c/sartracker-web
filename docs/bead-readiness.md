@@ -1,6 +1,6 @@
-# Bead Readiness Rubric
+# Linear issue Readiness Rubric
 
-Use this document before implementation to decide how much parallel research, planning, or product clarification a bead still needs.
+Use this document before implementation to decide how much parallel research, planning, or product clarification a Linear issue still needs.
 
 ## Readiness Scale
 
@@ -103,9 +103,9 @@ Last updated: 2026-05-13 by Claude (T01 docs reconciliation)
 - Implementation readiness: `5/5`
 - Recommended action: **Phase 2 largely complete; remaining work is M13 replay, M25 offline bundles, and M26 acceptance sweep**
 
-### New Beads Created From The Parity Audit
+### New Linear issues Created From The Parity Audit
 
-| Bead | Score | Recommended action | Why |
+| Linear issue | Score | Recommended action | Why |
 |------|-------|--------------------|-----|
 | `sartracker-web-2jk.1` — M12 Settings workspace parity | Complete | Implemented; see HANDOFF | Settings workspace shipped |
 | `sartracker-web-2jk.2` — M13 Replay / training mode parity | 4/5 | Open — route through the two-track workplan when prioritized | Clear plugin gap with strong guardrails already evidenced in plugin tests/docs |
@@ -125,7 +125,7 @@ Last updated: 2026-05-13 by Claude (T01 docs reconciliation)
 
 ## Completed Milestones
 
-| Bead | Completed | Key Output |
+| Linear issue | Completed | Key Output |
 |------|-----------|------------|
 | M1: Scaffold | 2026-04-07 | Tauri + Vite + React + TS, all tests green |
 | M2: Map | 2026-04-08 | MapLibre, basemaps, coordinate bar, health badge, SW caching |
@@ -150,7 +150,7 @@ Last updated: 2026-05-13 by Claude (T01 docs reconciliation)
 | M23: Helicopter layer (`sartracker-web-2jk.12`) | 2026-04-11 | First-class helicopter slots |
 | M24: Focus mode (`sartracker-web-2jk.13`) | 2026 Phase 2 | Focus Mode Plus, persisted reload, tracking/mission awareness, coordinate mirror |
 
-### Currently Open Parity Beads
+### Currently Open Parity Linear issues
 
 - `sartracker-web-2jk.2` — M13 replay / training mode parity (route through the two-track workplan when prioritized)
 - `sartracker-web-2jk.14` — M25 offline map resilience parity (readiness + current-view preflight shipped; full packaged offline bundles remain)
@@ -303,9 +303,9 @@ None — all resolved.
 ### Locked Decisions
 - Terra Draw for polygons/lines, custom GeoJSON for range rings/bearing lines/sectors
 - Geodesic math proven in S2/S3 spikes
-- All drawing schemas documented in M3 bead
+- All drawing schemas documented in M3 Linear issue
 - Magnetic declination: fixed -4.5° for v1 (true → magnetic: subtract 4.5°, magnetic → true: add 4.5°). Dynamic WMM deferred to Phase 3.
-- LPB distances: Koester/NASAR data locked (9 categories, 4 percentiles each — see bead comment)
+- LPB distances: Koester/NASAR data locked (9 categories, 4 percentiles each — see Linear issue comment)
 - LPB ring colours: 25%=green, 50%=yellow, 75%=orange, 95%=red
 - Tool activation: one-active-at-a-time, ESC cancels, auto-deactivate after feature creation, right-click finishes multi-point tools
 
@@ -344,7 +344,7 @@ None — all resolved.
 
 ## Summary
 
-| Bead | Score | Status |
+| Linear issue | Score | Status |
 |------|-------|--------|
 | M2: Map | 5/5 | ✅ Ready |
 | M3: Persistence | 5/5 | ✅ Ready |
@@ -358,7 +358,7 @@ None — all resolved.
 
 ---
 
-## Cross-Bead Investigation Checklist
+## Cross-Linear issue Investigation Checklist
 
 | # | Question | Status |
 |---|----------|--------|

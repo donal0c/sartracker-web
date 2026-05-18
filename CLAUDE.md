@@ -19,8 +19,8 @@ Aim for work that feels closer to a 9.5-10/10 engineering result than a fast acc
 
 1. **Read this file completely**
 2. **Read `handoff/HANDOFF.md` immediately after this file**
-3. **Read `docs/two-track-execution-workplan.md`** unless the user has explicitly named a different bead/task
-4. **Read the relevant bead** for whatever you're working on (`bd list`, `bd show <id>`)
+3. **Read `docs/two-track-execution-workplan.md`** unless the user has explicitly named a different Linear issue/task
+4. **Read the relevant Linear issue(s)** for whatever you're working on (project board, linear issue views, and comments)
 
 ## Branch Discipline
 
@@ -32,7 +32,7 @@ This project exists to replace a legacy QGIS SAR workflow with a standalone appl
 
 That means a fresh agent should assume:
 - correctness matters more than speed
-- maintainability matters because many future beads will build on today's boundaries
+- maintainability matters because many future Linear issues will build on today's boundaries
 - ambiguity in safety-critical behavior should be surfaced, not silently coded through
 - "good enough for now" is usually the wrong tradeoff here
 
@@ -54,7 +54,7 @@ Every agent must be able to resume the project by reading only:
 1. `CLAUDE.md`
 2. `handoff/HANDOFF.md`
 3. `docs/two-track-execution-workplan.md`
-4. the relevant bead(s)
+4. the relevant Linear issue(s)
 
 When you finish a chunk of work, update `handoff/HANDOFF.md` so the next agent can continue without reconstructing context from commit history, old chat context, or deleted packet files.
 
@@ -65,7 +65,7 @@ When you finish a chunk of work, update `handoff/HANDOFF.md` so the next agent c
 It should contain only:
 - current state
 - active work
-- open beads that matter now
+- open Linear issues that matter now
 - known parity gaps
 - next actions
 - a short verification snapshot
@@ -74,11 +74,11 @@ It should contain only:
 Do not use `handoff/HANDOFF.md` for:
 - long chronological diaries
 - speculative improvement lists
-- duplicate copies of bead details
+- duplicate copies of Linear issue details
 - duplicate copies of parity matrices
 
 Use these locations instead:
-- beads: tracked feature / bug / hardening work
+- Linear issues: tracked feature / bug / hardening work
 - `docs/two-track-execution-workplan.md`: the single active planning path and next-task queue
 - `docs/areas-to-investigate.md`: improvement-mode guardrail only; any real task must be folded into the two-track workplan before implementation
 - parity docs: row-level parity evidence
@@ -97,17 +97,17 @@ architecture changes, large safety-critical rewrites, or ambiguous legacy-plugin
 behaviour that cannot be resolved from the repo and tests alone.
 
 For ordinary chunks, finish with local verification, browser-backed validation where
-relevant, bead updates, handoff updates, and the normal commit/push protocol.
+relevant, Linear issue updates, handoff updates, and the normal commit/push protocol.
 
 There is no separate packet layer. The handoff file must contain the current baton state.
 
 ## After Every Chunk of Work
 
-1. **Verify the changed behavior first** — do not write closeout docs or mark beads done from unverified assumptions
+1. **Verify the changed behavior first** — do not write closeout docs or mark Linear issues done from unverified assumptions
 2. **Update handoff/HANDOFF.md** — what you did, what's next, any blockers, and exactly what was verified
-3. **Update the bead** — close it, add comments, update status
+3. **Update the Linear issue** — close it, add comments, update status
 4. **Update the operator manual** — if the app changed in any user-visible way, keep `public/manual/index.html` and any screenshots in `public/manual/assets/` current
-5. **Commit with a descriptive message** referencing the bead ID
+5. **Commit with a descriptive message** referencing the Linear issue ID
 6. **Run the full test suite** — nothing ships without green tests
 
 ### Finish Protocol (required)
@@ -120,7 +120,7 @@ Before finishing, the agent should:
 3. update `public/manual/index.html` when operator-facing behaviour, UI, settings, workflow, screenshots, or known gaps changed
 4. confirm the result meets the repo's quality bar, aiming for roughly 9.5-10/10 quality rather than "probably fine"
 5. update `handoff/HANDOFF.md` with a short baton-ready summary
-6. update the relevant bead(s)
+6. update the relevant Linear issue(s)
 
 ### Browser Verification Policy (required)
 
@@ -132,7 +132,7 @@ The user should not need to remember to ask for browser validation. For any beha
 - Use `$chrome-devtools-cli` when the job needs DevTools-grade network, console, performance, storage, or screenshot evidence.
 - For UI/layout changes, capture visual evidence where practical and check the actual rendered surface, not only DOM or unit assertions.
 - For hosted/Vercel changes, validate the deployed URL after deployment, not only the local build.
-- Verification must happen before closing the bead or writing final handoff claims. Handoff and bead comments must say exactly which commands and browser flows passed, and any parts that were not verified.
+- Verification must happen before closing the Linear issue or writing final handoff claims. Handoff and Linear issue comments must say exactly which commands and browser flows passed, and any parts that were not verified.
 
 If, and only if, the agent is highly confident that:
 - the change is complete for this chunk
@@ -142,7 +142,7 @@ If, and only if, the agent is highly confident that:
 
 then the agent should also:
 7. `git add` the intended files
-8. create a descriptive commit referencing the bead ID
+8. create a descriptive commit referencing the Linear issue ID
 9. `git push`
 
 The default desired end state is a clean worktree on the remote branch so the next agent can begin from a stable baseline.
@@ -150,7 +150,7 @@ The default desired end state is a clean worktree on the remote branch so the ne
 Do not commit or push:
 - when tests are failing
 - when verification is incomplete for a behavior-bearing change
-- when the handoff or bead state is stale
+- when the handoff or Linear issue state is stale
 - when confidence is still low and the right next step is another validation/fix pass
 
 ## Development Rules
@@ -165,16 +165,16 @@ Do not commit or push:
 7. Every user-facing flow gets Playwright E2E tests
 
 ### Feature Delivery Workflow
-For every feature bead after scaffolding:
+For every feature Linear issue after scaffolding:
 1. Do a short design pass before implementation
 2. Write down the safety invariants and failure modes
 3. Define the test plan before writing production code
 4. Start with failing tests for the core behaviour
 5. Only then implement the feature
-6. Stop for a refactor pass before calling the bead complete
-7. Re-evaluate whether the resulting structure is still the one we want future beads to build on
+6. Stop for a refactor pass before calling the Linear issue complete
+7. Re-evaluate whether the resulting structure is still the one we want future Linear issues to build on
 
-For scaffold and tooling beads, be pragmatic. For behaviour-bearing features, tests-first is the default and should only be skipped with an explicit reason recorded in `handoff/HANDOFF.md`.
+For scaffold and tooling Linear issues, be pragmatic. For behaviour-bearing features, tests-first is the default and should only be skipped with an explicit reason recorded in `handoff/HANDOFF.md`.
 
 ### Code Quality
 - TypeScript strict mode — no `any` types
@@ -187,7 +187,7 @@ For scaffold and tooling beads, be pragmatic. For behaviour-bearing features, te
 - If a safety-critical path fails, fail loudly and visibly rather than silently falling back
 
 ### Near-Perfect Code Standard
-This repo should be biased toward code that is unusually clean, explicit, and resilient. Avoid “good enough for now” decisions that create drag for later beads.
+This repo should be biased toward code that is unusually clean, explicit, and resilient. Avoid “good enough for now” decisions that create drag for later Linear issues.
 
 - Prefer forward-looking structure over quick local convenience
 - Every new module should have a single, obvious responsibility
@@ -196,11 +196,11 @@ This repo should be biased toward code that is unusually clean, explicit, and re
 - A small amount of deliberate structure now is cheaper than broad cleanup later
 - Before adding new code, check whether the right move is to extract, rename, or simplify existing code first
 - Do not leave behind “we can clean this up later” structure in safety-critical or high-churn areas
-- If a warning, rough edge, or weak boundary is discovered during a bead, either fix it in that bead or record a specific reason it is being deferred
+- If a warning, rough edge, or weak boundary is discovered during a Linear issue, either fix it in that Linear issue or record a specific reason it is being deferred
 
 Think in terms of craft, not just delivery:
 - the next agent should be able to understand the change quickly
-- the next bead should be easier because of this bead, not harder
+- the next Linear issue should be easier because of this Linear issue, not harder
 - the safest design is usually the one with the clearest boundaries and the least hidden behavior
 
 ### Anti-Sprawl Rules
@@ -228,18 +228,18 @@ Record meaningful refactors in `handoff/HANDOFF.md` so the next agent understand
 ### Ambiguity Protocol
 Do not code through ambiguity in life-safety or architecture-bearing areas.
 
-- If a bead contains contradictory rules, stop and record the contradiction before implementation
-- If a key operator behaviour, persistence rule, or state transition is unclear, add it to the bead as an open question instead of inventing the answer in code
+- If a Linear issue contains contradictory rules, stop and record the contradiction before implementation
+- If a key operator behaviour, persistence rule, or state transition is unclear, add it to the Linear issue as an open question instead of inventing the answer in code
 - Prefer a short research follow-up over embedding speculative behaviour into the application
-- When a bead is implementation-ready except for minor UI polish, proceed and record the assumption
-- When a bead is missing a core domain decision, do not start implementation until that decision is locked
+- When a Linear issue is implementation-ready except for minor UI polish, proceed and record the assumption
+- When a Linear issue is missing a core domain decision, do not start implementation until that decision is locked
 
 ### Definition Of Done
-A bead is not done just because tests pass.
+A Linear issue is not done just because tests pass.
 
-- The code must be clean enough that the next bead can extend it without workaround structure
+- The code must be clean enough that the next Linear issue can extend it without workaround structure
 - The main risks and failure modes must be covered by tests
-- Shared docs (`CLAUDE.md`, bead comments, `handoff/HANDOFF.md`) must reflect any decisions made during the work
+- Shared docs (`CLAUDE.md`, Linear issue comments, `handoff/HANDOFF.md`) must reflect any decisions made during the work
 - The operator manual (`public/manual/index.html`) must reflect any user-visible app change, including changed controls, workflows, settings, screenshots, or known gaps
 - Remaining debt, if any, must be explicit, small, and intentional
 
@@ -251,12 +251,12 @@ A bead is not done just because tests pass.
 - Magnetic declination for Ireland: -4.5° (true → magnetic: subtract, magnetic → true: add)
 
 ### Commits
-- Reference bead IDs in commit messages: `feat(tracking): add device polling [sartracker-web-xyz]`
+- Reference Linear issue IDs in commit messages: `feat(tracking): add device polling [sartracker-web-xyz]`
 - Atomic commits — one logical change per commit
 - Never commit failing tests
 
-### Bead Planning Checklist
-Before implementing a feature bead, capture these explicitly in the bead notes, handoff, or working notes:
+### Linear issue Planning Checklist
+Before implementing a feature Linear issue, capture these explicitly in the Linear issue notes, handoff, or working notes:
 - Goal and non-goals
 - Safety invariants
 - Failure modes
@@ -267,8 +267,8 @@ Before implementing a feature bead, capture these explicitly in the bead notes, 
 
 If an architectural decision is made during execution, record it in `handoff/HANDOFF.md` so the next coding agent inherits the same assumptions.
 
-### Bead Readiness Rubric
-Use a readiness pass before implementation so the planning/research team can work ahead on ambiguous beads while coding continues on the current one.
+### Linear issue Readiness Rubric
+Use a readiness pass before implementation so the planning/research team can work ahead on ambiguous Linear issues while coding continues on the current one.
 
 #### Research Required Rating
 - `Low` — Ready to implement. Only minor product or UX choices remain.
@@ -283,7 +283,7 @@ Use a readiness pass before implementation so the planning/research team can wor
 - `1/5` — Not ready for implementation.
 
 #### Readiness Template
-For each upcoming bead, capture:
+For each upcoming Linear issue, capture:
 - Research required
 - Implementation readiness score
 - Recommended action: implement now, implement after short design pass, or research before implementation
@@ -293,7 +293,7 @@ For each upcoming bead, capture:
 - Evidence / references
 - Ready-to-start checklist
 
-The project’s current working version of this rubric lives in `docs/bead-readiness.md`. Update that file as beads become clearer.
+The project’s current working version of this rubric lives in `docs/bead-readiness.md`. Update that file as Linear issues become clearer.
 
 ## Architecture
 

@@ -13,7 +13,7 @@ The strategy is **not** to force browser and Tauri into full parity immediately.
 
 Shared React UI and domain logic should stay common. Platform-specific concerns should live behind explicit adapters.
 
-Tracking bead: `sartracker-web-vpz` — Hosted browser testing mode and parity hardening.
+Tracking Linear issue: `sartracker-web-vpz` — Hosted browser testing mode and parity hardening.
 
 Supporting execution docs:
 
