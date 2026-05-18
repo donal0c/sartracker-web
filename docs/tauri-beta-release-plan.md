@@ -339,7 +339,8 @@ History so far:
 ## B7: Pre-Tester Launch Smoke
 
 Status: implemented locally 2026-05-18 after first Linux tester feedback;
-verify on the next release workflow run before sharing another beta.
+partially exercised by workflow run `26040183978`; rerun the hardened smoke
+jobs before sharing another beta.
 
 Why this exists:
 
@@ -356,8 +357,9 @@ New protection:
 - The gates job now checks the live Traccar API endpoint and representative map
   tile URLs before bundling starts.
 - `launch-smoke-linux` downloads the draft AppImage, runs it under Xvfb on
-  `ubuntu-22.04`, asserts that the SAR Tracker window appears, and uploads a
-  screenshot/log artifact.
+  `ubuntu-22.04` inside a DBus/keyring session, asserts that the SAR Tracker
+  window appears, OCR-checks that the screenshot is not the boot/fault shell,
+  and uploads a screenshot/log artifact.
 - `launch-smoke-windows` downloads the draft NSIS installer, installs it
   silently on `windows-2022`, starts the installed app, asserts the process
   stays alive, and uploads a screenshot/log artifact.
@@ -366,6 +368,19 @@ New protection:
   uploads while still validating already-shared artifacts.
 - `checksums` now waits for both launch-smoke jobs to pass; if either fails,
   the release remains an unpublished draft without a checksum sidecar.
+
+First smoke run evidence:
+
+- `26040183978` against existing `v0.1.0-beta.3` assets proved the live
+  dependency preflight: Traccar `:8082` session/devices and representative map
+  tile URLs passed.
+- The first Linux harness version only checked that a window existed; the
+  captured screenshot showed `Runtime startup failed` because the GitHub runner
+  lacked freedesktop Secret Service. The job now starts an explicit
+  DBus/keyring session and fails if OCR sees the boot/fault shell.
+- The first Windows harness failed before launch because of a PowerShell
+  `Join-Path` array-comma bug. The path discovery step now uses explicit
+  subexpressions and logs candidate roots.
 
 Remaining required real-machine smoke:
 

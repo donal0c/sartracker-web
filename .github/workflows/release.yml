@@ -359,9 +359,12 @@ jobs:
             libayatana-appindicator3-1 \
             librsvg2-2 \
             libfuse2 \
+            dbus-x11 \
+            gnome-keyring \
             xvfb \
             xdotool \
-            imagemagick
+            imagemagick \
+            tesseract-ocr
 
       - name: Download Linux AppImage
         env:
@@ -387,8 +390,24 @@ jobs:
           chmod +x "$APPIMAGE"
           export APPIMAGE
 
-          xvfb-run -a --server-args='-screen 0 1280x900x24' bash <<'EOF'
+          xvfb-run -a --server-args='-screen 0 1280x900x24' dbus-run-session -- bash <<'EOF'
           set -euo pipefail
+          export NO_AT_BRIDGE=1
+          export WEBKIT_DISABLE_DMABUF_RENDERER=1
+
+          # The Linux AppImage uses the freedesktop Secret Service backend for
+          # stored Traccar credentials. GitHub runners are headless, so provide
+          # an unlocked session keyring before launching the app.
+          printf '\n' | gnome-keyring-daemon --unlock --components=secrets \
+            > smoke-evidence/linux-keyring-env.txt \
+            2> smoke-evidence/linux-keyring.log || true
+          if [ -s smoke-evidence/linux-keyring-env.txt ]; then
+            set -a
+            # shellcheck disable=SC1091
+            . smoke-evidence/linux-keyring-env.txt
+            set +a
+          fi
+
           "$APPIMAGE" > smoke-evidence/linux-appimage.log 2>&1 &
           APP_PID=$!
           echo "$APP_PID" > smoke-evidence/linux-appimage.pid
@@ -417,6 +436,18 @@ jobs:
           sleep 5
           import -window root smoke-evidence/linux-appimage-launch.png
           test -s smoke-evidence/linux-appimage-launch.png
+
+          tesseract smoke-evidence/linux-appimage-launch.png stdout \
+            > smoke-evidence/linux-appimage-ocr.txt \
+            2> smoke-evidence/linux-appimage-ocr.log || true
+          if grep -E 'Runtime startup failed|Startup fault|Preparing operational runtime' \
+            smoke-evidence/linux-appimage-ocr.txt; then
+            echo "::error::AppImage opened a runtime boot/fault shell instead of the operational app shell."
+            cat smoke-evidence/linux-appimage-ocr.txt
+            kill "$APP_PID" 2>/dev/null || true
+            exit 1
+          fi
+
           kill "$APP_PID" 2>/dev/null || true
           wait "$APP_PID" 2>/dev/null || true
           EOF
@@ -466,12 +497,16 @@ jobs:
           }
 
           $candidateRoots = @(
-            Join-Path $env:LOCALAPPDATA "Programs\sartracker-web",
-            Join-Path $env:LOCALAPPDATA "sartracker-web"
+            (Join-Path $env:LOCALAPPDATA "Programs\sartracker-web")
+            (Join-Path $env:LOCALAPPDATA "sartracker-web")
+            (Join-Path $env:LOCALAPPDATA "Programs")
           )
+          "Candidate roots:" | Out-File $installLog -Append
+          $candidateRoots | ForEach-Object { "  $_" | Out-File $installLog -Append }
           $app = $null
           foreach ($root in $candidateRoots) {
             if (Test-Path $root) {
+              "Searching $root" | Out-File $installLog -Append
               $app = Get-ChildItem $root -Recurse -Filter "sartracker-web.exe" | Select-Object -First 1
               if ($null -ne $app) { break }
             }
@@ -479,6 +514,7 @@ jobs:
           if ($null -eq $app) {
             throw "Installed sartracker-web.exe was not found under LOCALAPPDATA."
           }
+          "Launching $($app.FullName)" | Out-File $installLog -Append
 
           $process = Start-Process -FilePath $app.FullName -PassThru
           Start-Sleep -Seconds 12

@@ -131,7 +131,7 @@ This is the default order when the user says “work on the next task.”
 | Done | Mast tracking ratio visual ambiguity | Track A / UI | `sartracker-web-zq9` | Done locally 2026-05-17. Replaced `${positions.length}/${staleCount}` with separate FIX / STALE chips behind a pure selector. New unit + chromium regressions + new visual entry `mast-tracking-cell-active` (visual review PASS). |
 | Done | OpenTopoMap "tiles failed to load" badge over-eager | Track A / UI | `sartracker-web-2xp` | Done locally 2026-05-17. Tile-only filter at `src/features/map/is-tile-error-event.ts` and widened defaults (5-in-30s) in `src/lib/tile-health-tracker.ts`. Interactive Playwright proof at `tmp/2xp-verification/`. |
 | Done | B4: Set up cross-platform Tauri beta distribution | Track B / Release | `sartracker-web-y6a` | Done 2026-05-17. `.github/workflows/release.yml` builds Linux (AppImage + .deb) and Windows (NSIS) on `v*` tag push, drafts a GitHub release, generates `SHA256SUMS` sidecar. First published release: `v0.1.0-beta.3` at https://github.com/donal0c/sartracker-web/releases/tag/v0.1.0-beta.3. Linux primary, Windows secondary. macOS arm64 deferred from CI per `sartracker-web-590` to stay inside the GitHub Actions free tier (macOS bills at 10x); macOS uses Path B (`npm run beta:verify`) until cadence stabilizes. Windows MSI deferred per `sartracker-web-g1u` because Tauri's MSI bundler rejects alphanumeric pre-release suffixes. NSIS `currentUser` install (no admin), WebView2 `downloadBootstrapper`. Release notes sourced from `docs/releases/sartracker-web-<version>-beta.md`. |
-| 1 | B7: Pre-tester smoke + CI launch-smoke for cross-platform Tauri builds | Track B / Release / Verification | `DON-24` | In progress locally 2026-05-18 after first Linux tester feedback. Implemented live dependency preflight (Traccar `:8082` + map tile URLs), Linux AppImage launch-smoke, Windows NSIS launch-smoke, and clearer `:5055` connection-test diagnostics/docs. Still needs a new release workflow run and real Linux smoke before sharing the next beta. |
+| 1 | B7: Pre-tester smoke + CI launch-smoke for cross-platform Tauri builds | Track B / Release / Verification | `DON-24` | In progress 2026-05-18 after first Linux tester feedback. Implemented live dependency preflight (Traccar `:8082` + map tile URLs), Linux AppImage launch-smoke, Windows NSIS launch-smoke, and clearer `:5055` connection-test diagnostics/docs. First existing-release run `26040183978` proved dependency preflight and exposed launch-smoke harness gaps now fixed locally. Still needs a follow-up workflow run and real Linux smoke before sharing the next beta. |
 | 2 | B5: Triage first web and Tauri beta feedback | Track A / Track B | `sartracker-web-s8m` / `DON-11` | After deployed-web validation and cross-platform beta setup produce feedback |
 | 3 | V3: Smoke deployed hosted app after blocker fixes | Verification | `sartracker-web-998` / `DON-10` | Hosted regression smoke once a deploy lands (DON-10 closed 2026-05-18 as Done; reopen if a new blocker-fix wave needs another smoke) |
 | 4 | Parity sweep findings walk-through (Codex + Donal) | Parity / Discussion | `sartracker-web-l7c` / `DON-12` | Walk Codex through `tmp/parity-sweep/sweep-report.md`; decide which of C1–C13 become Linear issues, which become matrix corrections, and which are out of scope |
@@ -167,12 +167,17 @@ Two complementary tiers:
   against the documented Traccar web/API endpoint (`http://kmrtsar.eu:8082`),
   assert the device roster is visible, and check representative
   OpenTopoMap/OpenStreetMap/ESRI tile URLs before any bundle starts.
-- **Tier 1 (implemented locally 2026-05-18, needs workflow proof)**: extend
+- **Tier 1 (implemented locally 2026-05-18, partial workflow proof)**: extend
   `.github/workflows/release.yml` with `launch-smoke-linux` and
   `launch-smoke-windows` jobs that boot each bundled artifact on its native
   runner (`xvfb-run` on Linux; silent NSIS install + `Start-Process` on
   Windows), assert the app launches, capture a screenshot/log artifact, and
-  fail red on launch failure.
+  fail red on launch failure. First run against existing `v0.1.0-beta.3`
+  assets (`26040183978`) proved gates and Linux process/window launch, but the
+  screenshot showed a runtime startup fault because the headless runner lacked
+  freedesktop Secret Service. The Linux job now provisions a DBus/keyring
+  session and OCR-fails on boot/fault shells. The Windows failure in that run
+  was a workflow PowerShell `Join-Path` comma bug, not app evidence.
 - **Tier 2 (still required)**: smoke `v0.1.0-beta.3` or the next beta
   (`sartracker-web_0.1.0-beta.3_linux_amd64.AppImage`,
   `sartracker-web_0.1.0-beta.3_linux_amd64.deb`,
@@ -195,21 +200,26 @@ Acceptance:
 - Tier 2 smoke complete; either green-and-shareable, or beta.4 cut.
 - Tier 0 live dependency preflight and Tier 1 launch-smoke jobs pass in a real
   release workflow run.
-- Tier 1 jobs verified red on an intentionally-broken bundle, or a documented
-  equivalent failure proof is attached if deliberately breaking a release
-  artifact is too costly.
+- Tier 1 jobs verified red on a runtime fault / intentionally-broken bundle, or
+  a documented equivalent failure proof is attached if deliberately breaking a
+  release artifact is too costly. Run `26040183978` is the current equivalent
+  proof for the Linux blind spot: window launch alone was insufficient because
+  the screenshot contained the startup fault shell.
 - `docs/tauri-beta-release-plan.md` updated with the new pre-tester smoke
   procedure (Tier 2) and the new automatic protection (Tier 1).
 - `handoff/HANDOFF.md` and this workplan updated.
 
 Verification:
 
-- One CI run with the new jobs against the existing `v0.1.0-beta.3` artifacts
-  (or a fresh test tag) — live dependency preflight plus both launch-smoke jobs
-  must pass green. For existing assets, run workflow_dispatch with
+- One follow-up CI run with the hardened jobs against the existing
+  `v0.1.0-beta.3` artifacts (or a fresh test tag) — live dependency preflight
+  plus both launch-smoke jobs must pass green. For existing assets, run
+  workflow_dispatch with
   `tag=v0.1.0-beta.3` and `smoke_existing_release=true` so the job does not
   rebuild or re-upload duplicate release assets.
-- One CI run with an intentionally-broken bundle — both jobs must fail red.
+- Run `26040183978` captured the first failure proof: Linux screenshot showed a
+  runtime fault despite a successful window launch, and Windows failed in the
+  harness before launching because of a PowerShell array-construction bug.
 - Real-hardware smoke evidence committed under `tmp/b7-prerelease-smoke/`.
 
 Related: `DON-13` (re-add macOS arm64 to CI), `DON-14` (re-add Windows MSI),
