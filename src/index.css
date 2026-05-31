@@ -2,6 +2,32 @@
 @tailwind components;
 @tailwind utilities;
 
+.sar-leaflet-drawing-label {
+  background: rgba(12, 10, 9, 0.9);
+  border: 1px solid rgba(245, 158, 11, 0.85);
+  color: #fafaf9;
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1.2;
+  padding: 2px 5px;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.sar-leaflet-drawing-label span {
+  display: inline-block;
+  transform: translate(-50%, -50%);
+}
+
+.leaflet-tooltip.sar-leaflet-label {
+  background: rgba(12, 10, 9, 0.88);
+  border: 1px solid rgba(250, 250, 249, 0.62);
+  box-shadow: 0 8px 18px rgba(0, 0, 0, 0.34);
+  color: #fafaf9;
+  font-size: 11px;
+  font-weight: 800;
+}
+
 :root {
   --sar-ink: #090807;
   --sar-panel: #11100e;

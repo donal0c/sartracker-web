@@ -23,6 +23,7 @@ import { applyTrackingSnapshot, applyTrackingStatus } from '../tracking/tracking
 import { startMissionTrackingStatusBridge } from '../tracking/mission-tracking-status-bridge'
 
 const BROWSER_HARNESS_MAX_PERSISTED_TRACKING_POSITIONS = 2_000
+const LEAFLET_FALLBACK_SEED_MISSION_NAME = 'DON-27 Leaflet fallback surface'
 
 type BrowserHarnessContext = {
   readonly search: string
@@ -86,6 +87,7 @@ export async function startMissionBrowserHarness(): Promise<void> {
   installBrowserHarnessApi()
 
   const browserStore = getBrowserHarnessStore()
+  await seedLeafletFallbackSurfaceIfRequested(browserStore)
   // Intentional: GPX file watching is not available in browser-harness mode, so
   // gpxWatchSource is omitted entirely (with exactOptionalPropertyTypes a
   // present-but-undefined property is rejected at the type boundary).
@@ -179,4 +181,87 @@ export async function startMissionBrowserHarness(): Promise<void> {
   })
 
   await reloadSettings()
+}
+
+async function seedLeafletFallbackSurfaceIfRequested(
+  browserStore: ReturnType<typeof getBrowserHarnessStore>,
+): Promise<void> {
+  if (new URLSearchParams(window.location.search).get('leafletFallbackSeed') !== '1') {
+    return
+  }
+
+  const existingSeedMission = (await browserStore.listMissions()).find(
+    (mission) => mission.name === LEAFLET_FALLBACK_SEED_MISSION_NAME,
+  )
+  if (existingSeedMission !== undefined) {
+    return
+  }
+
+  const mission = await browserStore.createMission({
+    name: LEAFLET_FALLBACK_SEED_MISSION_NAME,
+    start_time: '2026-05-31T14:00:00.000Z',
+  })
+
+  await browserStore.upsertDevice({
+    mission_id: mission.id,
+    device_id: 'alpha',
+    name: 'Alpha Team',
+    color: '#38bdf8',
+    status: 'online',
+    last_seen: '2026-05-31T14:10:00.000Z',
+  })
+  await browserStore.addPosition({
+    mission_id: mission.id,
+    device_id: 'alpha',
+    name: 'Alpha Team',
+    lat: 51.9989,
+    lon: -9.7444,
+    speed: 3.1,
+    battery: 83,
+    timestamp: '2026-05-31T14:08:00.000Z',
+  })
+  await browserStore.addPosition({
+    mission_id: mission.id,
+    device_id: 'alpha',
+    name: 'Alpha Team',
+    lat: 51.99917,
+    lon: -9.74406,
+    speed: 3.5,
+    battery: 82,
+    timestamp: '2026-05-31T14:10:00.000Z',
+  })
+  await browserStore.upsertMarker({
+    id: 'marker-lkp',
+    mission_id: mission.id,
+    type: 'ipp_lkp',
+    name: 'LKP',
+    lat: 51.9999,
+    lon: -9.7434,
+    irish_grid_e: 490000,
+    irish_grid_n: 590000,
+    display_order: 1,
+  })
+  await browserStore.upsertDrawing({
+    id: 'drawing-sector-alpha',
+    mission_id: mission.id,
+    type: 'search_area',
+    name: 'Sector Alpha',
+    color: '#F59E0B',
+    width: 2,
+    label: 'Sector Alpha',
+    display_order: 1,
+    geometry_json: JSON.stringify({
+      type: 'Polygon',
+      coordinates: [[[-9.758, 51.992], [-9.738, 52.008], [-9.718, 51.992], [-9.758, 51.992]]],
+    }),
+    metadata_json: JSON.stringify({
+      kind: 'search_area',
+      team: null,
+      status: 'Planned',
+      poaPercent: null,
+      terrain: null,
+      notes: null,
+      areaSqM: 100,
+    }),
+  })
 }

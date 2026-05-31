@@ -1,5 +1,11 @@
 import { applyTrackingSnapshot, applyTrackingStatus } from '../tracking/tracking-store'
+import { useDrawingStore } from '../drawings/drawing-store'
 import { useGpxStore } from '../gpx/gpx-store'
+import { useMarkerStore } from '../markers/marker-store'
+import type {
+  UpsertDrawingInput,
+  UpsertMarkerInput,
+} from '../../infrastructure/mission-store/tauri-mission-store'
 import type {
   TrackingConnectionStatus,
   TrackingSnapshot,
@@ -23,6 +29,10 @@ type BrowserHarnessApi = {
       readonly contents: string
     }[],
   ) => Promise<void>
+  readonly seedReadOnlyMapSurface: (input: {
+    readonly markers?: readonly UpsertMarkerInput[]
+    readonly drawings?: readonly UpsertDrawingInput[]
+  }) => Promise<void>
   readonly readState: () => ReturnType<typeof readBrowserHarnessState>
   readonly reset: () => void
 }
@@ -103,6 +113,25 @@ export function installBrowserHarnessApi(): void {
       }
 
       await controller.importFiles(files)
+    },
+    seedReadOnlyMapSurface: async (input) => {
+      const store = getBrowserHarnessStore()
+      const state = readBrowserHarnessState()
+      const missionId = state.currentMissionId ?? state.recoverableMissionId
+      if (missionId === null) {
+        throw new Error('No active or recoverable mission is available for map-surface seeding.')
+      }
+
+      for (const marker of input.markers ?? []) {
+        await store.upsertMarker({ ...marker, mission_id: missionId })
+      }
+
+      for (const drawing of input.drawings ?? []) {
+        await store.upsertDrawing({ ...drawing, mission_id: missionId })
+      }
+
+      await useMarkerStore.getState().controller?.refreshMission(missionId)
+      await useDrawingStore.getState().controller?.refreshMission(missionId)
     },
     readState: () => readBrowserHarnessState(),
     reset: () => {

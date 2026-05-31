@@ -6,6 +6,8 @@ import { DrawingToolbar } from './drawing-toolbar'
 import { FocusModeCoordinateMirror } from './focus-mode-coordinate-mirror'
 import { MapStatusBadge } from './map-status-badge'
 import { OfflineMapReadinessBadge } from './offline-map-readiness-badge'
+import { LeafletFallbackMapView } from './leaflet-fallback-map-view'
+import { getMapRendererMode } from '../features/map/map-renderer-mode'
 import { useFocusModeStore } from '../features/focus-mode/focus-mode-store'
 import { useOfflineMapCoverage } from '../features/map/use-offline-map-coverage'
 import { useMapController } from '../features/map/use-map-controller'
@@ -15,6 +17,14 @@ import { useOfflineMapReadiness } from '../features/map/use-offline-map-readines
  * Renders the operator-facing map shell around the map controller state.
  */
 export function MapView() {
+  if (getMapRendererMode() === 'leaflet') {
+    return <LeafletFallbackMapView />
+  }
+
+  return <MapLibreMapView />
+}
+
+function MapLibreMapView() {
   const focusModeActive = useFocusModeStore((state) => state.active)
   const {
     activeBasemapId,

@@ -184,7 +184,7 @@ This is the default order when the user says “work on the next task.”
 | Done | Mast tracking ratio visual ambiguity | Track A / UI | `sartracker-web-zq9` | Done locally 2026-05-17. Replaced `${positions.length}/${staleCount}` with separate FIX / STALE chips behind a pure selector. New unit + chromium regressions + new visual entry `mast-tracking-cell-active` (visual review PASS). |
 | Done | OpenTopoMap "tiles failed to load" badge over-eager | Track A / UI | `sartracker-web-2xp` | Done locally 2026-05-17. Tile-only filter at `src/features/map/is-tile-error-event.ts` and widened defaults (5-in-30s) in `src/lib/tile-health-tracker.ts`. Interactive Playwright proof at `tmp/2xp-verification/`. |
 | Done | B4: Set up cross-platform Tauri beta distribution | Track B / Release | `sartracker-web-y6a` | Done 2026-05-17. `.github/workflows/release.yml` builds Linux (AppImage + .deb) and Windows (NSIS) on `v*` tag push, drafts a GitHub release, generates `SHA256SUMS` sidecar. First published release: `v0.1.0-beta.3` at https://github.com/donal0c/sartracker-web/releases/tag/v0.1.0-beta.3. Linux primary, Windows secondary. macOS arm64 deferred from CI per `sartracker-web-590` to stay inside the GitHub Actions free tier (macOS bills at 10x); macOS uses Path B (`npm run beta:verify`) until cadence stabilizes. Windows MSI deferred per `sartracker-web-g1u` because Tauri's MSI bundler rejects alphanumeric pre-release suffixes. NSIS `currentUser` install (no admin), WebView2 `downloadBootstrapper`. Release notes sourced from `docs/releases/sartracker-web-<version>-beta.md`. |
-| 1 | S8: Linux runtime reliability path | Track B / Maps / Runtime | `DON-25` | In progress 2026-05-18. Research converges on Electron shell + Leaflet raster fallback as separate workstreams. `DON-26` S8a is done after Donal's old Ubuntu machine plus two PCLinuxOS team machines rendered maps in Electron. `DON-28` is now the active Electron shell parity parent, split into `DON-31` through `DON-35`. |
+| 1 | S8: Linux runtime reliability path | Track B / Maps / Runtime | `DON-25` | In progress 2026-05-18. Research converges on Electron shell + Leaflet raster fallback as separate workstreams. `DON-26` S8a is done after Donal's old Ubuntu machine plus two PCLinuxOS team machines rendered maps in Electron. `DON-27` is done locally as a read-only Leaflet fallback proof. `DON-28` is now the active Electron shell parity parent, split into `DON-31` through `DON-35`. |
 | 2 | B7: Pre-tester smoke + CI launch-smoke for cross-platform Tauri builds | Track B / Release / Verification | `DON-24` | Superseded as the immediate blocker by S8 for the Linux black-map investigation. CI launch smoke is green on GitHub runners, but real tester machines still black-map under Tauri/WebKitGTK. Keep B7 open for release-smoke process work. |
 | 3 | B5: Triage first web and Tauri beta feedback | Track A / Track B | `sartracker-web-s8m` / `DON-11` | After deployed-web validation and cross-platform beta setup produce feedback |
 | 3 | V3: Smoke deployed hosted app after blocker fixes | Verification | `sartracker-web-998` / `DON-10` | Hosted regression smoke once a deploy lands (DON-10 closed 2026-05-18 as Done; reopen if a new blocker-fix wave needs another smoke) |
@@ -208,7 +208,7 @@ to validate Electron empirically and separately prove a non-WebGL fallback.
 Child issues:
 
 - `DON-26` — S8a empirical Electron MapLibre Linux validation. Done.
-- `DON-27` — S8b Leaflet raster fallback spike. Todo.
+- `DON-27` — S8b Leaflet raster fallback spike. Done locally 2026-05-31; read-only fallback proved behind `?mapRenderer=leaflet`.
 - `DON-28` — S8c Electron shell bridge and Linux packaging PoC. In Progress.
 - `DON-29` — S8d runtime decision checkpoint. Backlog.
 - `DON-31` — S8c.1 Electron settings and secret storage parity. Done locally.
@@ -279,6 +279,13 @@ S8b recon note:
   `terra-draw ^1.0.0` and `leaflet ^1.9.4`.
 - First fallback implementation should prove read-only field visibility
   (basemap, tracks, markers, drawing GeoJSON) before edit parity.
+- 2026-05-31 result: DON-27 now proves the fallback-only/read-only path behind
+  `?mapRenderer=leaflet`. It renders raster basemap tiles, tracking
+  points/breadcrumbs, markers, and drawing GeoJSON by reusing the existing
+  layer/domain stores and GeoJSON builders; MapLibre remains the default
+  renderer. Browser-harness seed `?leafletFallbackSeed=1` exists only for
+  validation evidence. Do not pursue Leaflet edit parity until DON-29 decides
+  degraded-mode editing is actually required.
 
 S8c / DON-28 current state:
 
