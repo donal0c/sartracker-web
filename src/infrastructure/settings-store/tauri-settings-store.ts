@@ -1,6 +1,7 @@
 import { invoke } from '@tauri-apps/api/core'
 
 import { isTauriRuntimeAvailable } from '../../lib/tauri-runtime'
+import { isElectronRuntimeAvailable } from '../../lib/desktop-runtime'
 import {
   DEFAULT_APP_SETTINGS,
   type AppSettings,
@@ -14,6 +15,7 @@ import {
   normalizeWeatherLinks,
   type SettingsValidationContext,
 } from '../../features/settings/settings-validation'
+import { createElectronTraccarFetch } from '../traccar-http/electron-traccar-fetch'
 
 const BROWSER_SETTINGS_STORAGE_KEY = 'sartracker:browser-settings'
 const browserSecrets: Partial<Record<TrackingAuthMode, string>> = {}
@@ -31,6 +33,10 @@ export async function loadAppSettings(): Promise<AppSettings> {
     return invoke<AppSettings>('load_app_settings')
   }
 
+  if (isElectronRuntimeAvailable()) {
+    return getElectronSettingsBridge().loadAppSettings()
+  }
+
   return readBrowserSettings()
 }
 
@@ -40,6 +46,10 @@ export async function loadAppSettings(): Promise<AppSettings> {
 export async function saveAppSettings(input: AppSettingsDraft): Promise<AppSettings> {
   if (isTauriRuntimeAvailable()) {
     return invoke<AppSettings>('save_app_settings', { input })
+  }
+
+  if (isElectronRuntimeAvailable()) {
+    return getElectronSettingsBridge().saveAppSettings(input)
   }
 
   const next = toBrowserSettings(input)
@@ -62,6 +72,13 @@ export async function testTrackingConnection(input: AppSettingsDraft): Promise<T
 
   if (input.dataSource.baseUrl.trim() === '') {
     return { ok: false, message: 'Enter a Traccar base URL first.' }
+  }
+
+  if (isElectronRuntimeAvailable()) {
+    const bridge = getElectronSettingsBridge()
+    if (bridge.testTrackingConnection !== undefined) {
+      return bridge.testTrackingConnection(input)
+    }
   }
 
   const hostedUrlError = getHostedTraccarBaseUrlError(
@@ -88,6 +105,10 @@ export async function loadRuntimeBootstrapSettings(
 ): Promise<RuntimeBootstrapSettings> {
   if (isTauriRuntimeAvailable()) {
     return invoke<RuntimeBootstrapSettings>('load_runtime_bootstrap_settings', { forceConnect })
+  }
+
+  if (isElectronRuntimeAvailable()) {
+    return getElectronSettingsBridge().loadRuntimeBootstrapSettings(forceConnect)
   }
 
   const settings = readBrowserSettings()
@@ -207,6 +228,14 @@ function readBrowserSettings(): AppSettings {
   }
 }
 
+function getElectronSettingsBridge() {
+  const bridge = window.sartrackerElectron
+  if (bridge === undefined) {
+    throw new Error('Electron settings bridge is not available.')
+  }
+  return bridge
+}
+
 function toBrowserSettings(input: AppSettingsDraft): AppSettings {
   const replayEnabled =
     input.dataSource.providerType === 'traccar_http' && input.dataSource.replayEnabled
@@ -273,9 +302,12 @@ async function testBrowserTrackingConnection(
   secret: string,
 ): Promise<TestConnectionResult> {
   const baseUrl = input.dataSource.baseUrl.trim().replace(/\/+$/, '')
+  const fetchFn = isElectronRuntimeAvailable()
+    ? createElectronTraccarFetch({ timeoutMs: 10_000 })
+    : window.fetch.bind(window)
 
   if (input.dataSource.authMode === 'basic') {
-    const sessionResponse = await window.fetch(`${baseUrl}/api/session`, {
+    const sessionResponse = await fetchFn(`${baseUrl}/api/session`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded',
@@ -290,7 +322,7 @@ async function testBrowserTrackingConnection(
       return { ok: false, message: `Authentication failed: ${sessionResponse.status}` }
     }
 
-    const devicesResponse = await window.fetch(`${baseUrl}/api/devices`, {
+    const devicesResponse = await fetchFn(`${baseUrl}/api/devices`, {
       headers: {
         Accept: 'application/json',
         Authorization: `Basic ${window.btoa(`${input.dataSource.email.trim()}:${secret}`)}`,
@@ -305,7 +337,7 @@ async function testBrowserTrackingConnection(
     }
   }
 
-  const devicesResponse = await window.fetch(`${baseUrl}/api/devices`, {
+  const devicesResponse = await fetchFn(`${baseUrl}/api/devices`, {
     headers: {
       Accept: 'application/json',
       Authorization: `Bearer ${secret}`,

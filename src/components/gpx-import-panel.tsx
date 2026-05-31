@@ -1,10 +1,11 @@
 import { useMemo, useState } from 'react'
 
-import { createTauriGpxImportSource } from '../infrastructure/gpx-import-source/tauri-gpx-import-source'
+import { createDesktopGpxImportSource } from '../infrastructure/gpx-import-source/desktop-gpx-import-source'
 import { useGpxStore } from '../features/gpx/gpx-store'
 import { isTauriRuntimeAvailable } from '../lib/tauri-runtime'
+import { isElectronRuntimeAvailable } from '../lib/desktop-runtime'
 
-const gpxImportSource = createTauriGpxImportSource()
+const gpxImportSource = createDesktopGpxImportSource()
 
 /**
  * Renders GPX import and watched-folder controls for operational track ingest.
@@ -18,7 +19,7 @@ export function GpxImportPanel() {
   const error = useGpxStore((state) => state.error)
   const [statusMessage, setStatusMessage] = useState<string | null>(null)
 
-  const desktopAvailable = isTauriRuntimeAvailable()
+  const desktopAvailable = isTauriRuntimeAvailable() || isElectronRuntimeAvailable()
   const canImport = controller !== null && desktopAvailable && !loading && !importing
   const importSummary = useMemo(
     () => `${imports.length} imported · ${watchedDirectories.length} watched`,
@@ -73,7 +74,7 @@ export function GpxImportPanel() {
 
       {!desktopAvailable ? (
         <p className="sar-helper-text mt-3" data-testid="gpx-import-desktop-note">
-          GPX import controls are available in the Tauri desktop app.
+          GPX import controls are available in the desktop app.
         </p>
       ) : null}
       {error !== null ? (

@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import type { AutosaveStore } from '../../src/features/persistence/mission-autosave'
 import type { MissionStore } from '../../src/infrastructure/mission-store/tauri-mission-store'
@@ -6,6 +6,10 @@ import { startAppRuntime } from '../../src/features/runtime/start-app-runtime'
 import type { CoreFeatureRuntimeHandles } from '../../src/features/runtime/start-core-feature-runtimes'
 
 describe('app runtime startup', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
   it('registers the service worker on startup', async () => {
     const registerServiceWorker = vi.fn().mockResolvedValue(undefined)
 
@@ -129,6 +133,56 @@ describe('app runtime startup', () => {
 
     expect(createClient).not.toBeNull()
     expect(createClient?.name).toBe('createTauriTraccarClient')
+  })
+
+  it('uses Electron mission, tracking, and cache adapters inside an Electron runtime', async () => {
+    const store: MissionStore & AutosaveStore = createMissionStoreStub()
+    const createMissionStore = vi.fn().mockReturnValue(store)
+    const bridge = {
+      sartrackerElectron: {
+        readTrackingCache: vi.fn().mockResolvedValue('cached'),
+        writeTrackingCache: vi.fn().mockResolvedValue('written'),
+      },
+    }
+    vi.stubGlobal('window', bridge)
+    let createClient: ((config: {
+      readonly baseUrl: string
+      readonly email?: string
+      readonly password?: string
+      readonly token?: string
+    }) => unknown) | null = null
+    let trackingCache: {
+      readonly read: () => Promise<string | null>
+      readonly write: (contents: string) => Promise<string>
+    } | null = null
+    const startTrackingRuntime = vi.fn().mockImplementation(async (input) => {
+      createClient = input.createClient
+      trackingCache = input.cache
+      return vi.fn()
+    })
+
+    await startAppRuntime({
+      registerServiceWorker: vi.fn().mockResolvedValue(undefined),
+      isTauriRuntimeAvailable: vi.fn().mockReturnValue(false),
+      isElectronRuntimeAvailable: vi.fn().mockReturnValue(true),
+      createMissionStore,
+      readRuntimeBootstrapSettings: vi
+        .fn()
+        .mockResolvedValue(createBootstrapSettings({ trackingCacheEnabled: true })),
+      startMissionAutosave: vi.fn().mockReturnValue(createAutosaveController()),
+      startMissionRuntime: vi.fn().mockResolvedValue({}),
+      startMissionGovernanceRuntime: vi.fn().mockResolvedValue({}),
+      startMarkerRuntime: vi.fn().mockResolvedValue({}),
+      startDrawingRuntime: vi.fn().mockResolvedValue({}),
+      startGpxRuntime: vi.fn().mockResolvedValue({}),
+      startTrackingRuntime,
+    })
+
+    expect(createMissionStore).toHaveBeenCalledWith('electron')
+    expect(createClient).not.toBeNull()
+    expect(createClient?.name).toBe('createElectronTraccarClient')
+    expect(await trackingCache?.read()).toBe('cached')
+    expect(await trackingCache?.write('next')).toBe('written')
   })
 
   it('does not create the mission store outside Tauri', async () => {
@@ -357,6 +411,9 @@ function createMissionStoreStub(): MissionStore & AutosaveStore {
     getDrawing: vi.fn(),
     listDrawings: vi.fn(),
     deleteDrawing: vi.fn(),
+    upsertHelicopter: vi.fn(),
+    listHelicopters: vi.fn(),
+    deleteHelicopter: vi.fn(),
     getMission: vi.fn(),
     listMissions: vi.fn(),
     getActiveMission: vi.fn(),
@@ -364,6 +421,8 @@ function createMissionStoreStub(): MissionStore & AutosaveStore {
     pauseMission: vi.fn(),
     resumeMission: vi.fn(),
     finishMission: vi.fn(),
+    finalizeMission: vi.fn(),
+    unlockFinalizedMission: vi.fn(),
     syncBackup: vi.fn(),
     upsertGpxImport: vi.fn(),
     listGpxImports: vi.fn(),

@@ -1,14 +1,17 @@
 import { useEffect } from 'react'
 
 import { createTauriLayerCatalogStore } from '../../infrastructure/layer-catalog-store/tauri-layer-catalog-store'
+import { createElectronLayerCatalogStore } from '../../infrastructure/layer-catalog-store/electron-layer-catalog-store'
 import { getBrowserHarnessLayerCatalogStore } from '../browser-validation/browser-harness-layer-catalog-store'
 import { getBrowserHarnessStore } from '../browser-validation/browser-harness-store'
 import { exportDiagnosticsReport } from '../../infrastructure/support-report/tauri-support-report-store'
+import { createElectronMissionStore } from '../../infrastructure/mission-store/electron-mission-store'
 import { createTauriMissionStore } from '../../infrastructure/mission-store/tauri-mission-store'
 import { loadAppSettings, loadRuntimeBootstrapSettings } from '../../infrastructure/settings-store/tauri-settings-store'
 import { APP_VERSION } from '../../lib/app-version'
 import { getDependencySmoke } from '../../lib/dependency-smoke'
 import { isTauriRuntimeAvailable } from '../../lib/tauri-runtime'
+import { isElectronRuntimeAvailable } from '../../lib/desktop-runtime'
 import { useLayerCatalogStore } from '../layers/layer-catalog-store'
 import { useDrawingStore } from '../drawings/drawing-store'
 import { useGpxStore } from '../gpx/gpx-store'
@@ -32,6 +35,18 @@ export function DiagnosticsRuntimeBridge() {
     }
 
     let cancelled = false
+    const harnessActive = shouldEnableMissionBrowserHarness()
+    const electronActive = isElectronRuntimeAvailable()
+    const missionStore = harnessActive
+      ? getBrowserHarnessStore()
+      : electronActive
+        ? createElectronMissionStore()
+        : createTauriMissionStore()
+    const layerCatalogStore = harnessActive
+      ? getBrowserHarnessLayerCatalogStore()
+      : electronActive
+        ? createElectronLayerCatalogStore()
+        : createTauriLayerCatalogStore()
 
     void startDiagnosticsRuntime({
       appVersion: APP_VERSION,
@@ -40,12 +55,8 @@ export function DiagnosticsRuntimeBridge() {
       getDependencySmoke,
       loadSettings: loadAppSettings,
       loadRuntimeBootstrapSettings: () => loadRuntimeBootstrapSettings(false),
-      missionStore: shouldEnableMissionBrowserHarness()
-        ? getBrowserHarnessStore()
-        : createTauriMissionStore(),
-      layerCatalogStore: shouldEnableMissionBrowserHarness()
-        ? getBrowserHarnessLayerCatalogStore()
-        : createTauriLayerCatalogStore(),
+      missionStore,
+      layerCatalogStore,
       readMissionRuntime: () => {
         const state = useMissionStore.getState()
         return {

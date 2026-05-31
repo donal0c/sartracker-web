@@ -1,0 +1,24 @@
+{
+  "appId": "ie.sartracker.validation",
+  "productName": "SAR Tracker Electron Validation",
+  "artifactName": "sartracker-electron-validation_${version}_${os}_${arch}.${ext}",
+  "directories": {
+    "output": "tmp/electron-dist"
+  },
+  "files": [
+    "dist/**",
+    "electron/**",
+    "package.json"
+  ],
+  "asar": true,
+  "npmRebuild": true,
+  "linux": {
+    "target": [
+      "AppImage",
+      "deb"
+    ],
+    "category": "Utility",
+    "maintainer": "SAR Tracker",
+    "synopsis": "SAR Tracker Electron validation build"
+  }
+}

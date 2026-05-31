@@ -30,6 +30,41 @@ The user should not need to repeat this in every prompt. The available browser t
 
 Run two delivery tracks in parallel, with shared-foundation work feeding both.
 
+### Verification Cadence
+
+Default to web-first validation for cadence. Building, uploading, installing,
+and testing packaged desktop artifacts is intentionally heavier, so every chunk
+should make a quick runtime-risk call before choosing its verification path.
+
+Use hosted/web validation as the primary fast loop when the change is ordinary
+renderer code: UI layout, wording, panel behaviour, visual styling, layer-list
+presentation, non-persistent map interactions, and most React state changes.
+These should normally behave the same in the browser and Electron because they
+run through the same frontend bundle.
+
+Escalate to a packaged desktop/Electron validation build when the answer to
+this question is yes:
+
+> Could this work in the hosted web app but fail in the packaged desktop app?
+
+Examples that require packaged validation:
+
+- desktop shell, preload bridge, IPC, filesystem, SQLite, keyring/secrets, app
+  paths, diagnostics export, crash/restart recovery, updater/release packaging,
+  AppImage/`.deb`/installer behaviour, native permissions, OS integration, or
+  runtime launch paths
+- map renderer/runtime changes where GPU, WebGL, Electron/Chromium, WebKitGTK,
+  tile cache workers, offline tiles, or black-screen detection are part of the
+  risk
+- tracking/network changes where desktop and hosted paths differ, such as direct
+  Traccar access versus the hosted proxy
+- any fix whose failure mode would only appear after packaging, restart, or
+  local-machine integration
+
+If the chunk is web-validated only, record that as an explicit confidence call
+in the Linear/handoff update. If a packaged build is required, keep the build
+focused on that risk rather than turning every UI change into a release cycle.
+
 **Track A: Hosted team testing**
 
 - Runtime: Vercel hosted browser testing mode.
@@ -64,6 +99,24 @@ When new work arrives, classify it before implementing:
 | Browser IndexedDB, browser backups, browser file workflows | Defer until the browser-hardening decision |
 | Security concern about public map hosting | Track B / local map package support; do not host proprietary maps |
 | New hardening finding | Add it here as Shared, Track A, Track B, Verification, or Deferred |
+
+Then choose the lightest valid verification route:
+
+| Runtime risk | Verification route |
+| --- | --- |
+| Same frontend codepath; no native persistence, filesystem, packaging, runtime, GPU, or direct-network difference | Web/hosted validation is normally enough |
+| Shared frontend behaviour but safety-critical map/tracking/operator visibility impact | Web/hosted validation plus targeted regression coverage; package only if runtime-specific risk exists |
+| Native desktop boundary, Electron/Tauri shell, app paths, secrets, SQLite, filesystem, diagnostics, updater, packaging, OS permissions, GPU/WebGL/runtime, offline tiles, or direct Traccar path | Packaged desktop validation required |
+
+Release diagnostic rule: every tester-facing desktop build must include a
+one-click diagnostics export that is broad enough to avoid slow back-and-forth
+debugging. The report must be allow-listed and sanitized, but should capture the
+runtime facts needed to triage remotely: app/build version, OS/distro/kernel,
+Electron/Chromium/Node versions, GPU/WebGL/map probe status, safeStorage
+backend, configured provider base/auth mode/secret-present only, tracking
+status/cache summary, mission-store path/schema/SQLite/native-module load
+status, diagnostics/export paths, and recent app-owned fault messages. Do not
+ship or ask testers for whole Electron profile zips.
 
 ## Current Priority
 
@@ -131,14 +184,173 @@ This is the default order when the user says “work on the next task.”
 | Done | Mast tracking ratio visual ambiguity | Track A / UI | `sartracker-web-zq9` | Done locally 2026-05-17. Replaced `${positions.length}/${staleCount}` with separate FIX / STALE chips behind a pure selector. New unit + chromium regressions + new visual entry `mast-tracking-cell-active` (visual review PASS). |
 | Done | OpenTopoMap "tiles failed to load" badge over-eager | Track A / UI | `sartracker-web-2xp` | Done locally 2026-05-17. Tile-only filter at `src/features/map/is-tile-error-event.ts` and widened defaults (5-in-30s) in `src/lib/tile-health-tracker.ts`. Interactive Playwright proof at `tmp/2xp-verification/`. |
 | Done | B4: Set up cross-platform Tauri beta distribution | Track B / Release | `sartracker-web-y6a` | Done 2026-05-17. `.github/workflows/release.yml` builds Linux (AppImage + .deb) and Windows (NSIS) on `v*` tag push, drafts a GitHub release, generates `SHA256SUMS` sidecar. First published release: `v0.1.0-beta.3` at https://github.com/donal0c/sartracker-web/releases/tag/v0.1.0-beta.3. Linux primary, Windows secondary. macOS arm64 deferred from CI per `sartracker-web-590` to stay inside the GitHub Actions free tier (macOS bills at 10x); macOS uses Path B (`npm run beta:verify`) until cadence stabilizes. Windows MSI deferred per `sartracker-web-g1u` because Tauri's MSI bundler rejects alphanumeric pre-release suffixes. NSIS `currentUser` install (no admin), WebView2 `downloadBootstrapper`. Release notes sourced from `docs/releases/sartracker-web-<version>-beta.md`. |
-| 1 | B7: Pre-tester smoke + CI launch-smoke for cross-platform Tauri builds | Track B / Release / Verification | `DON-24` | In progress 2026-05-18 after first Linux tester feedback. Implemented live dependency preflight (Traccar `:8082` + map tile URLs), Linux AppImage launch-smoke, Windows NSIS launch-smoke, and clearer `:5055` connection-test diagnostics/docs. First existing-release run `26040183978` proved dependency preflight and exposed launch-smoke harness gaps now fixed locally. Still needs a follow-up workflow run and real Linux smoke before sharing the next beta. |
-| 2 | B5: Triage first web and Tauri beta feedback | Track A / Track B | `sartracker-web-s8m` / `DON-11` | After deployed-web validation and cross-platform beta setup produce feedback |
+| 1 | S8: Linux runtime reliability path | Track B / Maps / Runtime | `DON-25` | In progress 2026-05-18. Research converges on Electron shell + Leaflet raster fallback as separate workstreams. `DON-26` S8a is done after Donal's old Ubuntu machine plus two PCLinuxOS team machines rendered maps in Electron. `DON-28` is now the active Electron shell parity parent, split into `DON-31` through `DON-35`. |
+| 2 | B7: Pre-tester smoke + CI launch-smoke for cross-platform Tauri builds | Track B / Release / Verification | `DON-24` | Superseded as the immediate blocker by S8 for the Linux black-map investigation. CI launch smoke is green on GitHub runners, but real tester machines still black-map under Tauri/WebKitGTK. Keep B7 open for release-smoke process work. |
+| 3 | B5: Triage first web and Tauri beta feedback | Track A / Track B | `sartracker-web-s8m` / `DON-11` | After deployed-web validation and cross-platform beta setup produce feedback |
 | 3 | V3: Smoke deployed hosted app after blocker fixes | Verification | `sartracker-web-998` / `DON-10` | Hosted regression smoke once a deploy lands (DON-10 closed 2026-05-18 as Done; reopen if a new blocker-fix wave needs another smoke) |
 | 4 | Parity sweep findings walk-through (Codex + Donal) | Parity / Discussion | `sartracker-web-l7c` / `DON-12` | Walk Codex through `tmp/parity-sweep/sweep-report.md`; decide which of C1–C13 become Linear issues, which become matrix corrections, and which are out of scope |
 | 5 | C1: Local Proprietary Map Package Requirements | Track B / Maps | Create/update Linear issue after team discussion | Deferred until the team can provide map package facts |
 | 6 | Offline / Local Map Readiness Follow-up | Track B / Maps | Create/update Linear issue after C1 | Shape the desktop-first local/offline map package path once C1 facts are known |
 
 ## Ready Work Chunks
+
+### S8: Linux Runtime Reliability Path
+
+Parent Linear issue: `DON-25`.
+
+This is the active response to the Linux black-map field failure. The release
+smoke runner proves `v0.1.0-beta.3` can render OpenTopoMap on GitHub's Ubuntu
+runner, but team machines still show tracking over a black map. Research from
+Codex subagents and Claude Code converges on the runtime diagnosis: Tauri on
+Linux depends on system WebKitGTK, while MapLibre depends on WebGL. The path is
+to validate Electron empirically and separately prove a non-WebGL fallback.
+
+Child issues:
+
+- `DON-26` — S8a empirical Electron MapLibre Linux validation. Done.
+- `DON-27` — S8b Leaflet raster fallback spike. Todo.
+- `DON-28` — S8c Electron shell bridge and Linux packaging PoC. In Progress.
+- `DON-29` — S8d runtime decision checkpoint. Backlog.
+- `DON-31` — S8c.1 Electron settings and secret storage parity. Done locally.
+- `DON-32` — S8c.2 Electron tracking cache and diagnostics export parity. Done locally.
+- `DON-33` — S8c.3 Electron SQLite mission store parity. Done locally.
+- `DON-34` — S8c.4 Electron filesystem, GPX, attachments, and file opening parity. Done locally.
+- `DON-35` — S8c.5 Electron Linux artifact build and field-validation gate. Local artifact build done; old Ubuntu 18.04 smoke blocked by `better-sqlite3` requiring GLIBC `2.29`.
+
+S8a current artifact state:
+
+- GitHub prerelease:
+  https://github.com/donal0c/sartracker-web/releases/tag/s8a-electron-map-probe-0.1.0
+- The prerelease is explicitly a map-rendering probe, not a SAR Tracker app
+  release.
+- Spike app: `tmp/s8a-electron-maplibre-validation/`
+- Local smoke on macOS passed with Electron `40.10.0`, Chromium
+  `144.0.7559.236`, WebGL renderer `ANGLE (Apple, ANGLE Metal Renderer: Apple
+  M4 Max, Unspecified Version)`, `S8A_MAP_STATUS=ready`, window mean
+  `0.5945162505106207`.
+- Linux x64 artifacts built locally:
+  - `tmp/s8a-electron-maplibre-validation/release/sartracker-s8a-map-validation_0.1.0_amd64.deb`
+    SHA256 `fb65baa21ca7594ca2e276b3c518dc7b54cb49b3eeb92a5aa64edb8ab48b7f5b`
+  - `tmp/s8a-electron-maplibre-validation/release/sartracker-s8a-map-validation_0.1.0_x86_64.AppImage`
+    SHA256 `4576a28106048231a7db17ff94996db16fd02d21018fa3131399003cc33f41d1`
+
+S8a first Linux evidence:
+
+- Evidence directory: `tmp/s8a-old-ubuntu-lenovo-z580/`
+- Machine: Lenovo Z580, Ubuntu 18.04.6 LTS, Intel Core i7-3520M, Intel HD
+  Graphics 4000 (`i915`), kernel `4.15.0-208-generic`.
+- AppImage rendered OpenTopoMap successfully: WebGL2 enabled, renderer
+  `ANGLE (Intel Open Source Technology Center, Mesa DRI Intel(R) HD Graphics 4000 (IVB GT2), OpenGL 4.2)`,
+  tile errors `0`, window mean `0.5188348907271214`.
+- `.deb` package installed successfully despite the installer UI appearing
+  stuck around 67%; `dpkg -s` reports `install ok installed`.
+- Installed `.deb` smoke also rendered successfully: `S8A_MAP_STATUS=ready`,
+  tile errors `0`, window mean `0.5693155126633966`.
+
+S8a first team-machine Linux evidence:
+
+- Evidence directory: `tmp/s8a-team-pclinuxos-nvidia-p620/`
+- Machine class: PCLinuxOS/X11/NVIDIA Quadro P620, Linux `6.18.31-pclos1`,
+  NVIDIA driver `580.159.03`.
+- Packaging path: AppImage.
+- Tester reported that maps displayed.
+- Diagnostics: Electron `40.10.0`, Chromium `144.0.7559.236`, WebGL2
+  renderer
+  `ANGLE (NVIDIA Corporation, Quadro P620/PCIe/SSE2, OpenGL 4.5.0)`,
+  Chromium `webgl: enabled`, MapLibre `status: ready`, OpenTopoMap, tile
+  errors `0`, window mean `0.6508919909109476`.
+- This materially increases confidence that the field black-map failure is tied
+  to Tauri/WebKitGTK on Linux rather than MapLibre, the tile providers, or the
+  team network.
+
+S8a decision:
+
+- S8a is complete enough to proceed. Donal's old Ubuntu machine rendered, the
+  PCLinuxOS/NVIDIA tester rendered, and the PCLinuxOS/AMD tester rendered. The
+  Electron direction is no longer only research-backed; it is now backed by
+  representative team-machine evidence.
+- Keep any additional team diagnostics as useful evidence, but do not block
+  DON-28 on more probe runs.
+
+S8b recon note:
+
+- `tmp/s8b-leaflet-fallback-notes.md` records package findings.
+- `terra-draw-leaflet-adapter@1.3.0` is available and peers against
+  `terra-draw ^1.0.0` and `leaflet ^1.9.4`.
+- First fallback implementation should prove read-only field visibility
+  (basemap, tracks, markers, drawing GeoJSON) before edit parity.
+
+S8c / DON-28 current state:
+
+- Status: In Progress as of 2026-05-19.
+- Electron is pinned to `40.10.0`, matching the successful S8a probe family.
+- Added Electron host files: `electron/main.cjs`, `electron/preload.cjs`.
+- Added typed preload bridge surfaces for Traccar HTTP, settings/secrets,
+  tracking cache, sanitized diagnostics export, SQLite mission store,
+  layer-catalog metadata, GPX file/folder dialogs and reads, marker
+  attachments, and external file opening.
+- Added `createElectronTraccarFetch` / `createElectronTraccarClient`.
+- Electron no longer boots through the browser-harness mission store by
+  default. The full app runtime uses Electron adapters when the preload bridge
+  is present, while preserving the existing Tauri path.
+- Settings `Test Connection` uses the Electron bridge when the bridge exists.
+  Electron uses direct Traccar access; it does not use the Vercel proxy.
+- Added `electron-builder.json` plus scripts:
+  `electron:dev`, `electron:preview`, `electron:pack`,
+  `electron:dist:linux`.
+- Local macOS packaging passed and produced
+  `tmp/electron-dist/mac-arm64/SAR Tracker Electron Validation.app`.
+- Linux x64 artifacts built locally from macOS:
+  - `tmp/electron-dist/sartracker-electron-validation_0.1.0-beta.3_linux_x86_64.AppImage`
+    (142 MB)
+  - `tmp/electron-dist/sartracker-electron-validation_0.1.0-beta.3_linux_amd64.deb`
+    (94 MB)
+- Verified `https://kmrtsar.eu` with `sean` / `sean`: 3 devices and 3
+  positions. `https://traccar.kmrtsar.eu` should not be used as the app API
+  base; it behaves like a device/listener endpoint and returns bare `400` for
+  `/api/server`.
+- Remaining DON-28 gap: Linux native-module baseline and then real runtime
+  smoke of the full Electron app on a tester machine. Local Linux artifact
+  generation works, but the old Ubuntu 18.04 machine has GLIBC `2.27` and both
+  the installed `.deb` and AppImage log `GLIBC_2.29 not found` from
+  `better_sqlite3.node`. Cross-building Linux from macOS also rebuilds
+  `better-sqlite3` in local `node_modules` for Linux x64; run
+  `npm rebuild better-sqlite3` afterwards before local macOS unit tests.
+- Future DON-35 release candidate must prove the one-click diagnostics report
+  contains enough sanitized evidence to debug launch, map, tracker, SQLite,
+  safeStorage, and filesystem failures without asking testers for repeated
+  manual details.
+- DON-28 is intentionally split into smaller child issues:
+  - `DON-31`: persist settings under Electron `userData`, store secrets through
+    a safe backend, and refuse or clearly warn when Linux falls back to
+    `basic_text`.
+  - `DON-32`: persist tracking cache and implement an allow-listed sanitized
+    diagnostics export; do not zip the whole Electron/Chromium profile.
+  - `DON-33`: port mission SQLite behind the Electron bridge, preserving the
+    existing mission-store contract and crash-safety expectations.
+  - `DON-34`: port file-system surfaces such as GPX import, attachments, file
+    open, and chooser/dialog workflows.
+  - `DON-35`: build and validate Linux artifacts, with AppImage first-class for
+    PCLinuxOS/RPM-family testers and `.deb` for Ubuntu/Debian where practical.
+
+S8c verification snapshot:
+
+- Passed: focused Electron parity tests across settings/secrets, cache,
+  diagnostics, SQLite mission store, layer catalog, GPX, attachments,
+  file-opening, runtime selection, and harness gating — 12 files / 38 tests.
+- Passed: `npm run test` — 112 files / 587 tests, after restoring the host
+  native module with `npm rebuild better-sqlite3` following Linux cross-build.
+- Passed: `npm run build`.
+- Passed: `npm run lint`.
+- Passed: `node --check electron/main.cjs electron/preload.cjs
+  electron/settings-store.cjs electron/runtime-files.cjs
+  electron/mission-store.cjs electron/file-system.cjs`.
+- Passed: `npm run test:backend` — 45 passed / 1 ignored.
+- Passed: `npm run electron:pack` on macOS; packaged app stayed running for a
+  6-second launch smoke.
+- Passed: `npm run electron:dist:linux`; built AppImage and `.deb` above with
+  `better-sqlite3` rebuilt for Electron Linux x64. Not executed locally because
+  the host is macOS.
 
 ### B7: Pre-tester smoke + CI launch-smoke for cross-platform Tauri builds
 

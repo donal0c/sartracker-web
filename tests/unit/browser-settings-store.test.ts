@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import {
   loadAppSettings,
@@ -12,6 +12,10 @@ import {
 } from '../../src/features/settings/settings-types'
 
 describe('browser settings store', () => {
+  afterEach(() => {
+    Reflect.deleteProperty(window, 'sartrackerElectron')
+  })
+
   it('uses the operator-entered Traccar password for testing and runtime bootstrap without localStorage persistence', async () => {
     const requests: Request[] = []
     const originalFetch = window.fetch
@@ -65,6 +69,95 @@ describe('browser settings store', () => {
       window.fetch = originalFetch
       window.localStorage.clear()
     }
+  })
+
+  it('routes Electron validation connection tests through the preload bridge', async () => {
+    const traccarHttpRequest = vi.fn().mockResolvedValue({
+      status: 200,
+      statusText: 'OK',
+      headers: { 'content-type': 'application/json' },
+      body: '[]',
+    })
+    Object.defineProperty(window, 'sartrackerElectron', {
+      configurable: true,
+      value: { traccarHttpRequest },
+    })
+    const draft = createSettingsDraft(DEFAULT_APP_SETTINGS)
+    draft.dataSource.providerType = 'traccar_http'
+    draft.dataSource.baseUrl = 'https://kmrtsar.eu'
+    draft.dataSource.email = 'sean'
+    draft.dataSource.secretInput = 'sean'
+
+    const connection = await testTrackingConnection(draft)
+
+    expect(connection).toEqual({ ok: true, message: 'Connection successful.' })
+    expect(traccarHttpRequest).toHaveBeenCalledWith(
+      expect.objectContaining({
+        url: 'https://kmrtsar.eu/api/session',
+        method: 'POST',
+        body: 'email=sean&password=sean',
+      }),
+    )
+    expect(traccarHttpRequest).toHaveBeenCalledWith(
+      expect.objectContaining({
+        url: 'https://kmrtsar.eu/api/devices',
+        method: 'GET',
+        headers: { accept: 'application/json', authorization: 'Basic c2VhbjpzZWFu' },
+      }),
+    )
+  })
+
+  it('delegates Electron settings persistence and runtime bootstrap to the preload bridge', async () => {
+    const saved = {
+      ...DEFAULT_APP_SETTINGS,
+      dataSource: {
+        ...DEFAULT_APP_SETTINGS.dataSource,
+        providerType: 'traccar_http' as const,
+        baseUrl: 'https://kmrtsar.eu',
+        email: 'sean',
+        secretPresent: true,
+      },
+    }
+    const loadAppSettingsBridge = vi.fn().mockResolvedValue(saved)
+    const saveAppSettingsBridge = vi.fn().mockResolvedValue(saved)
+    const loadRuntimeBootstrapSettingsBridge = vi.fn().mockResolvedValue({
+      autosaveEnabled: true,
+      autosaveIntervalMs: 30_000,
+      trackingPollIntervalMs: 30_000,
+      trackingCacheEnabled: true,
+      trackingConfig: {
+        baseUrl: 'https://kmrtsar.eu',
+        email: 'sean',
+        password: 'sean',
+      },
+    })
+    Object.defineProperty(window, 'sartrackerElectron', {
+      configurable: true,
+      value: {
+        loadAppSettings: loadAppSettingsBridge,
+        saveAppSettings: saveAppSettingsBridge,
+        loadRuntimeBootstrapSettings: loadRuntimeBootstrapSettingsBridge,
+        traccarHttpRequest: vi.fn(),
+      },
+    })
+    window.localStorage.clear()
+
+    const draft = createSettingsDraft(saved)
+    draft.dataSource.secretInput = 'sean'
+
+    await expect(loadAppSettings()).resolves.toEqual(saved)
+    await expect(saveAppSettings(draft)).resolves.toEqual(saved)
+    await expect(loadRuntimeBootstrapSettings(true)).resolves.toMatchObject({
+      trackingConfig: {
+        baseUrl: 'https://kmrtsar.eu',
+        email: 'sean',
+        password: 'sean',
+      },
+    })
+
+    expect(saveAppSettingsBridge).toHaveBeenCalledWith(draft)
+    expect(loadRuntimeBootstrapSettingsBridge).toHaveBeenCalledWith(true)
+    expect(window.localStorage.getItem('sartracker:browser-settings')).toBeNull()
   })
 
   it('persists configured weather links in browser validation settings', async () => {

@@ -8,13 +8,20 @@ import {
   createTauriMissionStore,
   type MissionStore,
 } from '../../infrastructure/mission-store/tauri-mission-store'
+import { createElectronMissionStore } from '../../infrastructure/mission-store/electron-mission-store'
+import { createElectronGpxImportSource } from '../../infrastructure/gpx-import-source/electron-gpx-import-source'
 import { createTauriGpxImportSource } from '../../infrastructure/gpx-import-source/tauri-gpx-import-source'
+import { electronMarkerAttachmentAdapter } from '../../infrastructure/marker-attachment-store/electron-marker-attachment-store'
+import { noopMarkerAttachmentAdapter } from '../../infrastructure/marker-attachment-store/noop-marker-attachment-adapter'
 import { tauriMarkerAttachmentAdapter } from '../../infrastructure/marker-attachment-store/tauri-marker-attachment-store'
+import { createElectronTrackingCache } from '../../infrastructure/tracking-cache/electron-tracking-cache'
 import { createTauriTrackingCache } from '../../infrastructure/tracking-cache/tauri-tracking-cache'
+import { createElectronTraccarClient } from '../../infrastructure/traccar-http/electron-traccar-fetch'
 import { createTauriTraccarClient } from '../../infrastructure/traccar-http/tauri-traccar-fetch'
 import { loadRuntimeBootstrapSettings } from '../../infrastructure/settings-store/tauri-settings-store'
 import { registerServiceWorker } from '../../lib/register-service-worker'
 import { isTauriRuntimeAvailable } from '../../lib/tauri-runtime'
+import { isElectronRuntimeAvailable, type DesktopRuntimeKind } from '../../lib/desktop-runtime'
 import { startGpxRuntime } from '../gpx/start-gpx-runtime'
 import { startHelicopterRuntime } from '../helicopters/start-helicopter-runtime'
 import { startMarkerRuntime } from '../markers/start-marker-runtime'
@@ -43,7 +50,8 @@ import { startCoreFeatureRuntimes } from './start-core-feature-runtimes'
 type StartAppRuntimeDependencies = {
   readonly registerServiceWorker: () => Promise<void>
   readonly isTauriRuntimeAvailable: () => boolean
-  readonly createMissionStore: () => MissionStore
+  readonly isElectronRuntimeAvailable: () => boolean
+  readonly createMissionStore: (runtimeKind: Exclude<DesktopRuntimeKind, 'browser'>) => MissionStore
   readonly readRuntimeBootstrapSettings: (
     forceConnect?: boolean,
   ) => Promise<{
@@ -75,7 +83,9 @@ type StartAppRuntimeDependencies = {
 const DEFAULT_DEPENDENCIES: StartAppRuntimeDependencies = {
   registerServiceWorker,
   isTauriRuntimeAvailable,
-  createMissionStore: createTauriMissionStore,
+  isElectronRuntimeAvailable,
+  createMissionStore: (runtimeKind) =>
+    runtimeKind === 'electron' ? createElectronMissionStore() : createTauriMissionStore(),
   readRuntimeBootstrapSettings: loadRuntimeBootstrapSettings,
   startMissionAutosave,
   startMissionRuntime,
@@ -101,19 +111,27 @@ export async function startAppRuntime(
 
   await resolvedDependencies.registerServiceWorker()
 
-  if (!resolvedDependencies.isTauriRuntimeAvailable()) {
+  const runtimeKind = resolveOperationalRuntimeKind(resolvedDependencies)
+  if (runtimeKind === null) {
     return null
   }
 
-  const missionStore = resolvedDependencies.createMissionStore()
+  const missionStore = resolvedDependencies.createMissionStore(runtimeKind)
   const trackingMissionStore = missionStore as MissionStore & TrackingRuntimeMissionStore
-  const gpxImportSource = createTauriGpxImportSource()
+  const gpxImportSource =
+    runtimeKind === 'electron' ? createElectronGpxImportSource() : createTauriGpxImportSource()
+  const attachmentAdapter =
+    runtimeKind === 'electron'
+      ? electronMarkerAttachmentAdapter
+      : runtimeKind === 'tauri'
+        ? tauriMarkerAttachmentAdapter
+        : noopMarkerAttachmentAdapter
   let activeServices = createNoopRuntimeServiceHandles()
   let reloadGeneration = 0
 
   const coreFeatureRuntimes = await resolvedDependencies.startCoreFeatureRuntimes({
     missionStore,
-    attachmentAdapter: tauriMarkerAttachmentAdapter,
+    attachmentAdapter,
     gpxWatchSource: gpxImportSource,
     requestAutosaveSync: (reason: AutosaveSyncReason) =>
       activeServices.requestAutosaveSync(reason),
@@ -166,7 +184,8 @@ export async function startAppRuntime(
       missionStore: trackingMissionStore,
       startMissionAutosave: resolvedDependencies.startMissionAutosave,
       startTrackingRuntime: resolvedDependencies.startTrackingRuntime,
-      createClient: createTauriTraccarClient,
+      createClient:
+        runtimeKind === 'electron' ? createElectronTraccarClient : createTauriTraccarClient,
       createPoller: (client, hooks) =>
         createPollingManager(client as TrackingPollerClient, {
           intervalMs: runtimeSettings.trackingPollIntervalMs,
@@ -184,7 +203,8 @@ export async function startAppRuntime(
           onSnapshot: hooks.onSnapshot,
           onStatusChange: hooks.onStatusChange,
         }),
-      createTrackingCache: createTauriTrackingCache,
+      createTrackingCache:
+        runtimeKind === 'electron' ? createElectronTrackingCache : createTauriTrackingCache,
       readTrackingRuntimeConfig,
       applySnapshot: applyTrackingSnapshot,
       applyStatus: applyTrackingStatus,
@@ -199,4 +219,21 @@ export async function startAppRuntime(
     activeServices = nextServices
     stopRuntimeServices(previousServices)
   }
+}
+
+function resolveOperationalRuntimeKind(
+  dependencies: Pick<
+    StartAppRuntimeDependencies,
+    'isTauriRuntimeAvailable' | 'isElectronRuntimeAvailable'
+  >,
+): Exclude<DesktopRuntimeKind, 'browser'> | null {
+  if (dependencies.isTauriRuntimeAvailable()) {
+    return 'tauri'
+  }
+
+  if (dependencies.isElectronRuntimeAvailable()) {
+    return 'electron'
+  }
+
+  return null
 }

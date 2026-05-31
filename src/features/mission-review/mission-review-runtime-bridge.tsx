@@ -1,9 +1,12 @@
 import { useEffect } from 'react'
 
 import { createTauriLayerCatalogStore } from '../../infrastructure/layer-catalog-store/tauri-layer-catalog-store'
+import { createElectronLayerCatalogStore } from '../../infrastructure/layer-catalog-store/electron-layer-catalog-store'
+import { createElectronMissionStore } from '../../infrastructure/mission-store/electron-mission-store'
 import { createTauriMissionStore } from '../../infrastructure/mission-store/tauri-mission-store'
 import { getBrowserHarnessLayerCatalogStore } from '../browser-validation/browser-harness-layer-catalog-store'
 import { getBrowserHarnessStore } from '../browser-validation/browser-harness-store'
+import { isElectronRuntimeAvailable } from '../../lib/desktop-runtime'
 import { shouldEnableMissionBrowserHarness } from '../mission/mission-browser-harness'
 import { useMissionStore } from '../mission/mission-store'
 import {
@@ -36,10 +39,17 @@ export function MissionReviewRuntimeBridge() {
 
     let cancelled = false
     const harnessActive = shouldEnableMissionBrowserHarness()
-    const missionStore = harnessActive ? getBrowserHarnessStore() : createTauriMissionStore()
+    const electronActive = isElectronRuntimeAvailable()
+    const missionStore = harnessActive
+      ? getBrowserHarnessStore()
+      : electronActive
+        ? createElectronMissionStore()
+        : createTauriMissionStore()
     const layerCatalogStore = harnessActive
       ? getBrowserHarnessLayerCatalogStore()
-      : createTauriLayerCatalogStore()
+      : electronActive
+        ? createElectronLayerCatalogStore()
+        : createTauriLayerCatalogStore()
 
     void startMissionReviewRuntime({
       missionStore,

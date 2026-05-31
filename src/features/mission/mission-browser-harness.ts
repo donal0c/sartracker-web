@@ -1,5 +1,6 @@
 import { noopMarkerAttachmentAdapter } from '../../infrastructure/marker-attachment-store/noop-marker-attachment-adapter'
 import { loadRuntimeBootstrapSettings } from '../../infrastructure/settings-store/tauri-settings-store'
+import { createElectronTrackingCache } from '../../infrastructure/tracking-cache/electron-tracking-cache'
 import { getBrowserHarnessStore } from '../browser-validation/browser-harness-store'
 import {
   hydrateTrackingFromBrowserHarness,
@@ -9,8 +10,10 @@ import { startCoreFeatureRuntimes } from '../runtime/start-core-feature-runtimes
 import { applyAppRuntimeController } from '../runtime/app-runtime-controller'
 import { useMissionStore } from './mission-store'
 import { isTauriRuntimeAvailable } from '../../lib/tauri-runtime'
+import { isElectronRuntimeAvailable } from '../../lib/desktop-runtime'
 import { readTrackingRuntimeConfig } from '../tracking/tracking-runtime-config'
 import { createTraccarClient } from '../tracking/traccar-client'
+import { createElectronTraccarClient } from '../../infrastructure/traccar-http/electron-traccar-fetch'
 import {
   createPollingManager,
   type TrackingPollerClient,
@@ -25,12 +28,13 @@ type BrowserHarnessContext = {
   readonly search: string
   readonly dev: boolean
   readonly tauriAvailable: boolean
+  readonly electronAvailable: boolean
 }
 
 /**
  * Evaluates whether a browser harness should run for a concrete runtime
- * context. Hosted browser builds may opt in with `?missionHarness=1`; Tauri
- * production builds must never be forced into the harness by a query string.
+ * context. Hosted browser builds may opt in with `?missionHarness=1`; packaged
+ * desktop runtimes must never be forced into the harness by a query string.
  */
 export function shouldEnableMissionBrowserHarnessForContext(
   context: BrowserHarnessContext,
@@ -39,7 +43,7 @@ export function shouldEnableMissionBrowserHarnessForContext(
     return false
   }
 
-  return context.dev || !context.tauriAvailable
+  return context.dev || (!context.tauriAvailable && !context.electronAvailable)
 }
 
 /**
@@ -54,6 +58,7 @@ export function shouldEnableMissionBrowserHarness(): boolean {
     search: window.location.search,
     dev: import.meta.env.DEV,
     tauriAvailable: isTauriRuntimeAvailable(),
+    electronAvailable: isElectronRuntimeAvailable(),
   })
 }
 
@@ -104,10 +109,11 @@ export async function startMissionBrowserHarness(): Promise<void> {
     const runtimeSettings = await loadRuntimeBootstrapSettings(options?.forceConnect ?? false)
     const envTrackingConfig =
       shouldEnableBrowserHarnessLiveTracking() ? readTrackingRuntimeConfig() : null
+    const electronRuntime = isElectronRuntimeAvailable()
     const trackingConfig = runtimeSettings.trackingConfig ?? envTrackingConfig
     const stopTracking = await startTrackingRuntime({
       config: trackingConfig,
-      createClient: createTraccarClient,
+      createClient: electronRuntime ? createElectronTraccarClient : createTraccarClient,
       createPoller: (client, hooks) =>
         createPollingManager(client as TrackingPollerClient, {
           intervalMs: runtimeSettings.trackingPollIntervalMs,
@@ -124,12 +130,14 @@ export async function startMissionBrowserHarness(): Promise<void> {
           },
           ...hooks,
         }),
-      cache: { read: async () => null, write: async (contents: string) => contents },
+      cache: electronRuntime
+        ? createElectronTrackingCache()
+        : { read: async () => null, write: async (contents: string) => contents },
       missionStore: browserStore,
       applySnapshot: applyTrackingSnapshot,
       applyStatus: applyTrackingStatus,
       maxPersistedPositionsPerSnapshot: BROWSER_HARNESS_MAX_PERSISTED_TRACKING_POSITIONS,
-      writeCache: false,
+      writeCache: electronRuntime && runtimeSettings.trackingCacheEnabled,
       ...(runtimeSettings.trackingDisabledReason === undefined
         ? {}
         : { idleWarning: runtimeSettings.trackingDisabledReason }),

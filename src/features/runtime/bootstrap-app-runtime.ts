@@ -58,7 +58,7 @@ const DEFAULT_DEPENDENCIES: BootstrapAppRuntimeDependencies = {
 }
 
 const MISSING_OPERATIONAL_RUNTIME_CONTROLLER =
-  'No operational runtime controller is available. Open hosted browser testing with ?missionHarness=1, or run SAR Tracker inside the Tauri desktop app for operational use.'
+  'No operational runtime controller is available. Open hosted browser testing with ?missionHarness=1, or run SAR Tracker inside the Tauri or Electron desktop app for operational use.'
 
 /**
  * Starts the correct app runtime path and advances the boot state only after

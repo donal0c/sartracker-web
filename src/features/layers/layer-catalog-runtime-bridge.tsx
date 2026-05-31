@@ -4,9 +4,11 @@ import { useDrawingStore } from '../drawings/drawing-store'
 import { useGpxStore } from '../gpx/gpx-store'
 import { useHelicopterStore } from '../helicopters/helicopter-store'
 import { createTauriLayerCatalogStore } from '../../infrastructure/layer-catalog-store/tauri-layer-catalog-store'
+import { createElectronLayerCatalogStore } from '../../infrastructure/layer-catalog-store/electron-layer-catalog-store'
 import { getBrowserHarnessLayerCatalogStore } from '../browser-validation/browser-harness-layer-catalog-store'
 import { useMarkerStore } from '../markers/marker-store'
 import { shouldEnableMissionBrowserHarness } from '../mission/mission-browser-harness'
+import { isElectronRuntimeAvailable } from '../../lib/desktop-runtime'
 import { useMissionStore } from '../mission/mission-store'
 import { useTrackingStore } from '../tracking/tracking-store'
 import { applyLayerCatalogController, applyLayerCatalogRuntime, useLayerCatalogStore } from './layer-catalog-store'
@@ -37,7 +39,9 @@ export function LayerCatalogRuntimeBridge() {
     let cancelled = false
     const layerCatalogStore = shouldEnableMissionBrowserHarness()
       ? getBrowserHarnessLayerCatalogStore()
-      : createTauriLayerCatalogStore()
+      : isElectronRuntimeAvailable()
+        ? createElectronLayerCatalogStore()
+        : createTauriLayerCatalogStore()
 
     void startLayerCatalogRuntime({
       layerCatalogStore,

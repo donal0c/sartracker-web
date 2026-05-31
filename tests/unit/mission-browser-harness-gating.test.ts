@@ -9,6 +9,7 @@ describe('mission browser harness gating', () => {
         search: '?missionHarness=1',
         dev: false,
         tauriAvailable: false,
+        electronAvailable: false,
       }),
     ).toBe(true)
   })
@@ -19,6 +20,7 @@ describe('mission browser harness gating', () => {
         search: '',
         dev: false,
         tauriAvailable: false,
+        electronAvailable: false,
       }),
     ).toBe(false)
   })
@@ -29,6 +31,18 @@ describe('mission browser harness gating', () => {
         search: '?missionHarness=1',
         dev: false,
         tauriAvailable: true,
+        electronAvailable: false,
+      }),
+    ).toBe(false)
+  })
+
+  it('does not let a production Electron runtime fall back to the browser harness', () => {
+    expect(
+      shouldEnableMissionBrowserHarnessForContext({
+        search: '?missionHarness=1',
+        dev: false,
+        tauriAvailable: false,
+        electronAvailable: true,
       }),
     ).toBe(false)
   })

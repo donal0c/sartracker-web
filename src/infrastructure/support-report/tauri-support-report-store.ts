@@ -1,5 +1,6 @@
 import { invoke } from '@tauri-apps/api/core'
 
+import { isElectronRuntimeAvailable } from '../../lib/desktop-runtime'
 import { isTauriRuntimeAvailable } from '../../lib/tauri-runtime'
 
 const BROWSER_DIAGNOSTICS_REPORTS_KEY = 'sartracker:diagnostics-reports'
@@ -18,6 +19,14 @@ export async function exportDiagnosticsReport(
         contents,
       },
     })
+  }
+
+  if (isElectronRuntimeAvailable()) {
+    const bridge = window.sartrackerElectron
+    if (bridge === undefined) {
+      throw new Error('Electron diagnostics bridge is not available.')
+    }
+    return bridge.exportDiagnosticsReport({ fileName, contents })
   }
 
   const normalizedFileName = fileName.trim()
