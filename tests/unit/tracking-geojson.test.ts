@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import devicesFixture from '../fixtures/traccar-devices.json'
 import positionsFixture from '../fixtures/traccar-positions.json'
+import { appendBreadcrumbPositions } from '../../src/features/tracking/breadcrumb-accumulator'
 import { createBreadcrumbFeatureCollection, createDeviceFeatureCollection } from '../../src/features/tracking/tracking-geojson'
 import {
   normalizeTraccarDevice,
@@ -110,5 +111,38 @@ describe('tracking geojson', () => {
     expect(collection.features).toHaveLength(1)
     expect(collection.features[0]?.geometry.type).toBe('LineString')
     expect(collection.features[0]?.geometry.coordinates).toHaveLength(14_500)
+  })
+
+  it('keeps live breadcrumb snapshots under the long-running browser render budget', () => {
+    const existing = Array.from({ length: 22_000 }, (_, index) =>
+      normalizeTraccarPosition(
+        {
+          id: index + 1,
+          deviceId: (index % 25) + 1,
+          latitude: 52 + index / 1_000_000,
+          longitude: -9.7 - index / 1_000_000,
+          fixTime: new Date(Date.UTC(2026, 4, 14, 10, 0, index)).toISOString(),
+        },
+        'live',
+      ),
+    )
+    const incoming = Array.from({ length: 3_000 }, (_, index) =>
+      normalizeTraccarPosition(
+        {
+          id: 30_000 + index,
+          deviceId: (index % 25) + 1,
+          latitude: 52.1 + index / 1_000_000,
+          longitude: -9.8 - index / 1_000_000,
+          fixTime: new Date(Date.UTC(2026, 4, 14, 16, 0, index)).toISOString(),
+        },
+        'live',
+      ),
+    )
+
+    const accumulated = appendBreadcrumbPositions(existing, incoming)
+
+    expect(accumulated).toHaveLength(20_000)
+    expect(accumulated[0]?.timestamp).toBe('2026-05-14T11:16:40.000Z')
+    expect(accumulated.at(-1)?.timestamp).toBe('2026-05-14T16:49:59.000Z')
   })
 })

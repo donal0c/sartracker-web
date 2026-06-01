@@ -1,6 +1,9 @@
 import type { NormalizedTrackingPosition } from './tracking-types'
 
-const MAX_BREADCRUMB_POSITIONS = 100_000
+// Keep the live map snapshot bounded for long-running hosted sessions. Mission
+// persistence still receives incremental positions before older live points
+// fall out of this render budget.
+const MAX_BREADCRUMB_POSITIONS = 20_000
 
 /**
  * Appends new breadcrumb positions while deduplicating by device and timestamp.
