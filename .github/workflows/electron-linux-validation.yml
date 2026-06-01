@@ -75,7 +75,9 @@ jobs:
         run: npx vitest run tests/unit/vite-config.test.ts
 
       - name: Build Electron Linux artifacts
-        run: npm run electron:dist:linux
+        run: |
+          mkdir -p tmp/electron-validation-evidence
+          npm run electron:dist:linux
 
       - name: Inspect artifacts and native SQLite module
         run: |
