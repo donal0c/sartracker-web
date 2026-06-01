@@ -52,6 +52,7 @@ export type LayerCatalogController = {
   readonly renameNode: (nodeId: string, alias: string | null) => Promise<void>
   readonly toggleFavorite: (nodeId: string) => Promise<void>
   readonly setNodeVisibility: (nodeId: string, visible: boolean) => Promise<void>
+  readonly setNodeVisibilities: (nodeIds: readonly string[], visible: boolean) => Promise<void>
   readonly reorderNode: (
     parentNodeId: string,
     orderedNodeIds: readonly string[],
@@ -159,6 +160,9 @@ export async function startLayerCatalogRuntime(
     setNodeVisibility: async (nodeId, visible) => {
       await persistNodePatch(nodeId, { isVisible: visible })
     },
+    setNodeVisibilities: async (nodeIds, visible) => {
+      await persistNodePatches(nodeIds, { isVisible: visible })
+    },
     reorderNode: async (parentNodeId, orderedNodeIds) => {
       refreshInvalidationVersion += 1
       const parent = requireNode(parentNodeId)
@@ -189,21 +193,36 @@ export async function startLayerCatalogRuntime(
     nodeId: string,
     patch: Partial<Pick<LayerCatalogMetadataEntry, 'alias' | 'isFavorite' | 'isVisible'>>,
   ): Promise<void> {
+    await persistNodePatches([nodeId], patch)
+  }
+
+  async function persistNodePatches(
+    nodeIds: readonly string[],
+    patch: Partial<Pick<LayerCatalogMetadataEntry, 'alias' | 'isFavorite' | 'isVisible'>>,
+  ): Promise<void> {
     refreshInvalidationVersion += 1
-    const node = requireNode(nodeId)
-    const entry = findEntry(nodeId)
-    const next = await dependencies.layerCatalogStore.upsertMetadata({
-      missionId: assertMissionId(),
-      nodeId,
-      parentNodeId: node.parentId,
-      nodeKind: assertMutableNodeKind(node.kind),
-      alias: patch.alias ?? entry?.alias ?? node.alias ?? null,
-      isFavorite: patch.isFavorite ?? entry?.isFavorite ?? node.isFavorite,
-      isVisible: patch.isVisible ?? entry?.isVisible ?? node.isVisible,
-      displayOrder: entry?.displayOrder ?? node.displayOrder,
-      metadataJson: entry?.metadataJson ?? null,
-    })
-    metadataEntries = upsertMetadataEntry(metadataEntries, next)
+    const missionId = assertMissionId()
+    const nextEntries = await Promise.all(
+      nodeIds.map((nodeId) => {
+        const node = requireNode(nodeId)
+        const entry = findEntry(nodeId)
+        return dependencies.layerCatalogStore.upsertMetadata({
+          missionId,
+          nodeId,
+          parentNodeId: node.parentId,
+          nodeKind: assertMutableNodeKind(node.kind),
+          alias: patch.alias ?? entry?.alias ?? node.alias ?? null,
+          isFavorite: patch.isFavorite ?? entry?.isFavorite ?? node.isFavorite,
+          isVisible: patch.isVisible ?? entry?.isVisible ?? node.isVisible,
+          displayOrder: entry?.displayOrder ?? node.displayOrder,
+          metadataJson: entry?.metadataJson ?? null,
+        })
+      }),
+    )
+    metadataEntries = nextEntries.reduce(
+      (currentEntries, nextEntry) => upsertMetadataEntry(currentEntries, nextEntry),
+      metadataEntries,
+    )
     rebuild()
   }
 

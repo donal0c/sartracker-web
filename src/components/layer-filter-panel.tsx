@@ -491,12 +491,13 @@ async function setSubtreeVisibility(
 
   const nodeIds = collectSubtreeNodeIds(root, node.id)
 
-  // 1. Persist visibility metadata to the catalog (for durability across reload).
-  void Promise.all(nodeIds.map((candidateNodeId) => controller.setNodeVisibility(candidateNodeId, visible)))
-
-  // 2. Immediately push to the visibility store so MapLibre filters update
+  // 1. Immediately push to the visibility store so MapLibre filters update
   //    without waiting for the async persist → rebuild → bridge effect cycle.
   applyVisibilityForNodeIds(root, nodeIds, visible, useLayerVisibilityStore.getState())
+
+  // 2. Persist the whole subtree as one catalog mutation. Rebuilding once keeps
+  //    out-of-order child writes from briefly re-showing part of a hidden layer.
+  await controller.setNodeVisibilities(nodeIds, visible)
 }
 
 async function reorderNodeRelative(

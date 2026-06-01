@@ -4,6 +4,7 @@
 
 ## Last Updated
 
+- 2026-06-01 by Codex — `DON-62` completed as the second `DON-60` team-requirements bug pass. Reproduced the intermittent layer visibility failure as a subtree persistence race: hiding a drawing layer pushed the flat visibility store immediately, but descendant metadata writes could resolve before the parent layer write and partially rehydrate the map filters back to visible. Fixed by adding `LayerCatalogController.setNodeVisibilities(...)` so subtree visibility persists as one catalog mutation and rebuilds once, with the layer panel using that batch path after its immediate MapLibre-filter update. Verification passed: red/green `tests/unit/layer-stale-refresh-integration.test.ts`, focused layer suite 5 files / 30 tests, `npm run test` 115 files / 595 tests, `npm run lint`, `npm run build`, `npm run test:backend` 45 passed / 1 ignored, and inbuilt-browser smoke at `http://127.0.0.1:1420/?missionHarness=1` confirmed the shell/map/layer panel renders with no browser console errors. Playwright E2E was intentionally not run per Donal's explicit browser-tool restriction.
 - 2026-06-01 by Codex — `DON-61` completed as the first `DON-60` team-requirements bug pass. Reproduced the long-run failure mode at the tracking breadcrumb accumulator: current code allowed live breadcrumb snapshots to grow past the 20k render budget in a 25-device / 25k-point simulation, matching the reported long-session map/UI slowdown risk. Fixed by capping the live breadcrumb snapshot at 20,000 most-recent deduplicated positions before it reaches React/MapLibre; desktop mission persistence still receives incremental positions as they arrive, while browser harness persistence remains separately capped at 2,000. Verification passed: focused tracking/browser-harness unit suite 4 files / 33 tests, `npm run test` 115 files / 594 tests, `npm run lint`, `npm run build`, `npm run test:backend` 45 passed / 1 ignored, and inbuilt-browser smoke at `http://127.0.0.1:1420/?missionHarness=1` confirmed browser testing shell, map surface, mission surface, and tracking surface render. Playwright E2E was intentionally not run per Donal's explicit browser-tool restriction.
 - 2026-06-01 by Codex — `DON-57` completed: Electron Linux validation artifacts now build natively in GitHub Actions via `.github/workflows/electron-linux-validation.yml` on `ubuntu-22.04`. Successful run `26746757159` at head `32cb2e315ad61449270f40f2bee2bb6a71e0fd56` produced AppImage SHA256 `000f7e4d44692476ce5873a5ef0bd8901a22848c1e8179c512628cfd0438acd2` and `.deb` SHA256 `58aee86e305e504a9a419dcb2873c7a7840fa8922b0233c78c32937f58031915`; packaged `better_sqlite3.node` inspected as ELF x86-64. CI AppImage smoke rendered SAR Tracker/OpenTopoMap under Xvfb with content mean `0.499086`, and the exact GitHub-built AppImage was copied to `donal-Precision-5570` Ubuntu `24.04.2 LTS` and visually confirmed rendering OpenTopoMap. The workflow now fails black/blank AppImage windows after run `26746265336` exposed that a process/window smoke alone was too weak. Remaining Electron release work is `DON-58` Linux secret-store/diagnostics labeling and `DON-59` packaged Linux GPX/attachments/file-opening smoke.
 - 2026-05-31 by Codex — `DON-27` Leaflet raster fallback spike implemented and proved locally behind `?mapRenderer=leaflet`. The fallback is deliberately read-only: it keeps the default MapLibre path unchanged, uses Leaflet `1.9.4` for raster tiles, and reuses the existing tracking, marker, and drawing GeoJSON builders/stores to render critical visibility surfaces without WebGL. Browser-harness validation seed `?leafletFallbackSeed=1` creates a DON-27 mission with one tracked team, an LKP marker, and a search-area drawing. Inbuilt-browser proof on `http://127.0.0.1:1420/?missionHarness=1&mapRenderer=leaflet&leafletFallbackSeed=1` showed Leaflet tiles loaded (`15/15`), no MapLibre canvas, mission `DON-27 Leaflet fallback surface`, tooltips `Alpha Team` and `LKP`, drawing label `Sector Alpha`, and the read-only fallback badge. Verification passed: focused Leaflet tests 2 files / 5 tests, `npm run lint`, `npm run test` 114 files / 592 tests, `npm run build`, and `npm run test:backend` 45 passed / 1 ignored. Recommendation: treat DON-27 as proven for fallback-only/read-only coverage; do not pursue Leaflet edit parity until DON-29 decides that degraded-mode editing is required.
@@ -104,7 +105,7 @@ Use these only for team testing, not as a production secret model.
 
 ## Next Task
 
-Current directed work: continue `DON-60` team-requirements issues one at a time. Bug protocol is reproduce first, then fix, then confirm; feature/change protocol is implement and verify the expected visible behaviour. Each issue should be staged, committed, and pushed separately. Next likely bug: `DON-62` layer visibility toggles not applying to map.
+Current directed work: continue `DON-60` team-requirements issues one at a time. Bug protocol is reproduce first, then fix, then confirm; feature/change protocol is implement and verify the expected visible behaviour. Each issue should be staged, committed, and pushed separately. Next likely item: `DON-63`.
 
 **Resolve DON-35 by clearing its follow-up children before sending the full Electron build wider.** The Dell Ubuntu 24.04 test proves a Linux-native Electron build can render OpenTopoMap and run the packaged `.deb` mission/SQLite/recovery/live-Traccar/tracking-cache/diagnostics path. MacOS-cross-built artifacts are not trustworthy for `better-sqlite3` native modules. Next: `DON-57` moves Electron Linux artifacts to a Linux builder/CI job, `DON-58` fixes/bakes the Linux secret-store launch behavior and diagnostics runtime label, and `DON-59` proves GPX import, marker attachment save/open, and external file opening in the packaged Linux app. Decide separately whether Ubuntu 18.04 is unsupported or needs an older-glibc build. DON-27 now proves the read-only Leaflet fallback route; Electron remains the preferred runtime lane unless DON-29 decides degraded-mode editing is required.
 
@@ -130,8 +131,8 @@ Optional cleanup: the stale `v0.1.0-beta.2` draft release on GitHub holds Linux-
 - `DON-58` — S8c.5b: Fix Linux Electron secret-store launch and diagnostics runtime label. Child of `DON-35`.
 - `DON-59` — S8c.5c: Smoke packaged Linux filesystem workflows. Child of `DON-35`.
 - `DON-60` — B8: 2026-05-28 team requirements from USB ODT. Intake parent for `DON-61` through `DON-75`.
-- `DON-61` — Long-running web slowdown/freeze. Fixed locally 2026-06-01 by bounding live breadcrumb snapshots at 20,000 render points; needs commit/push closeout.
-- `DON-62` — Layer visibility toggles not applying to map. Next bug candidate; reproduce before fixing.
+- `DON-61` — Long-running web slowdown/freeze. Fixed and pushed 2026-06-01 by bounding live breadcrumb snapshots at 20,000 render points.
+- `DON-62` — Layer visibility toggles not applying to map. Fixed locally 2026-06-01 by batching subtree visibility metadata persistence so out-of-order descendant writes cannot partially re-show hidden layers; needs commit/push closeout.
 - `sartracker-web-s8m` — B5: triage first web and Tauri beta feedback. Next-task default once testers have published artifacts to react to.
 - `sartracker-web-l7c` — Parity sweep findings walk-through (Codex + Donal). P3, queued. Reads `tmp/parity-sweep/sweep-report.md` and triages C1–C13 with Donal.
 - `sartracker-web-ag1` — QGIS Parity Residual-Gap Sweep (closed 2026-05-17). Outputs under `tmp/parity-sweep/`.
@@ -165,7 +166,17 @@ Older parity/UI Linear issues still exist, but new work should be selected throu
 
 ## Verification Snapshot
 
-Most recent local verification in this turn (`DON-61` long-running browser slowdown/freeze):
+Most recent local verification in this turn (`DON-62` layer visibility toggles not applying to map):
+
+- Red reproduced: `npx vitest run tests/unit/layer-stale-refresh-integration.test.ts` failed because `controller.setNodeVisibilities` did not exist, exposing the missing atomic subtree visibility persist boundary.
+- Passed after fix: `npx vitest run tests/unit/layer-stale-refresh-integration.test.ts tests/unit/start-layer-catalog-runtime.test.ts tests/unit/layer-visibility-service.test.ts tests/unit/layer-visibility-store.test.ts tests/unit/map-layer-filters.test.ts` — 5 files / 30 tests.
+- Passed: `npm run test` — 115 files / 595 tests.
+- Passed: `npm run lint`.
+- Passed: `npm run build`.
+- Passed: `npm run test:backend` — 45 passed / 1 ignored.
+- Passed: inbuilt-browser smoke at `http://127.0.0.1:1420/?missionHarness=1` confirmed the browser shell, map surface, and Layers panel render; browser console had no errors. Full Playwright E2E was not run because Donal explicitly restricted Playwright/DevTools use unless requested.
+
+Previous local verification in this turn (`DON-61` long-running browser slowdown/freeze):
 
 - Red reproduced: `npx vitest run tests/unit/tracking-geojson.test.ts` failed because a simulated long-run breadcrumb snapshot reached 24,600 live points instead of the 20,000 render budget.
 - Passed after fix: `npx vitest run tests/unit/tracking-geojson.test.ts tests/unit/polling-manager.test.ts tests/unit/start-tracking-runtime.test.ts tests/unit/browser-harness-store.test.ts` — 4 files / 33 tests.

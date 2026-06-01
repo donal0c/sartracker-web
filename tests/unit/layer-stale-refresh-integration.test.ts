@@ -17,7 +17,7 @@ import { startLayerCatalogRuntime } from '../../src/features/layers/start-layer-
 import { useLayerVisibilityStore } from '../../src/features/layers/layer-visibility-store'
 import { applyVisibilityForNodeIds, collectSubtreeNodeIds } from '../../src/features/layers/layer-visibility-service'
 import type { LayerCatalogMetadataEntry } from '../../src/features/layers/layer-catalog-types'
-import type { Device } from '../../src/infrastructure/mission-store/tauri-mission-store'
+import type { Device, Drawing } from '../../src/infrastructure/mission-store/tauri-mission-store'
 
 function deferredPromise<T>() {
   let resolve!: (value: T) => void
@@ -51,6 +51,53 @@ function createDevice(deviceId: string, name: string): Device {
     color: '#38bdf8',
     last_seen: '2026-04-10T10:00:00.000Z',
     status: 'online',
+  }
+}
+
+function createDrawing(id: string, name: string): Drawing {
+  return {
+    id,
+    mission_id: 'mission-1',
+    type: 'line',
+    name,
+    description: null,
+    color: '#f97316',
+    width: 2,
+    distance_m: null,
+    temporary_measure: false,
+    label: null,
+    display_order: 0,
+    geometry_json: JSON.stringify({
+      type: 'LineString',
+      coordinates: [
+        [-8.48, 52.72],
+        [-8.47, 52.73],
+      ],
+    }),
+    metadata_json: null,
+    created_at: '2026-04-10T10:00:00.000Z',
+    updated_at: '2026-04-10T10:00:00.000Z',
+  }
+}
+
+function createMetadataEntry(
+  nodeId: string,
+  parentNodeId: string,
+  nodeKind: LayerCatalogMetadataEntry['nodeKind'],
+  isVisible: boolean,
+  displayOrder: number,
+): LayerCatalogMetadataEntry {
+  return {
+    missionId: 'mission-1',
+    nodeId,
+    parentNodeId,
+    nodeKind,
+    alias: null,
+    isFavorite: false,
+    isVisible,
+    displayOrder,
+    metadataJson: null,
+    updatedAt: '2026-04-10T10:00:00.000Z',
   }
 }
 
@@ -160,5 +207,95 @@ describe('layer catalog stale-refresh integration with visibility store', () => 
       .find((node) => node.id === 'feature:device:bravo')
     expect(bravoNode?.isVisible).toBe(false)
     expect(useLayerVisibilityStore.getState().hiddenDeviceIds).toContain('bravo')
+  })
+
+  it('keeps an entire drawing layer hidden while descendant visibility writes resolve out of order', async () => {
+    const pendingWrites = new Map<string, ReturnType<typeof deferredPromise<LayerCatalogMetadataEntry>>>()
+    let entries: readonly LayerCatalogMetadataEntry[] = []
+
+    const layerCatalogStore = {
+      listMetadata: vi.fn().mockResolvedValue(entries),
+      upsertMetadata: vi.fn().mockImplementation((input) => {
+        const write = deferredPromise<LayerCatalogMetadataEntry>()
+        pendingWrites.set(input.nodeId, write)
+        void write.promise.then((entry) => {
+          entries = upsertEntry(entries, entry)
+        })
+        return write.promise
+      }),
+    }
+
+    const controller = await startLayerCatalogRuntime({
+      layerCatalogStore,
+      applyRuntime: applyLayerCatalogRuntime,
+    })
+    applyLayerCatalogController(controller)
+
+    await controller.refreshCatalog({
+      missionId: 'mission-1',
+      devices: [],
+      markers: [],
+      drawings: [
+        createDrawing('drawing-line-1', 'Line 1'),
+        createDrawing('drawing-line-2', 'Line 2'),
+      ],
+      helicopters: [],
+      gpxImports: [],
+    })
+
+    const root = useLayerCatalogStore.getState().root
+    const nodeIds = collectSubtreeNodeIds(root, 'layer:drawings:line')
+
+    applyVisibilityForNodeIds(root, nodeIds, false, useLayerVisibilityStore.getState())
+    const persistPromise = controller.setNodeVisibilities(nodeIds, false)
+
+    expect(useLayerVisibilityStore.getState().drawingTypeVisibility.line).toBe(false)
+    expect(useLayerVisibilityStore.getState().hiddenDrawingIds).toEqual([
+      'drawing-line-1',
+      'drawing-line-2',
+    ])
+
+    pendingWrites
+      .get('feature:drawing:drawing-line-1')
+      ?.resolve(
+        createMetadataEntry(
+          'feature:drawing:drawing-line-1',
+          'layer:drawings:line',
+          'feature_item',
+          false,
+          0,
+        ),
+      )
+    await Promise.resolve()
+    await Promise.resolve()
+
+    expect(useLayerVisibilityStore.getState().drawingTypeVisibility.line).toBe(false)
+    expect(useLayerVisibilityStore.getState().hiddenDrawingIds).toEqual([
+      'drawing-line-1',
+      'drawing-line-2',
+    ])
+
+    pendingWrites
+      .get('layer:drawings:line')
+      ?.resolve(createMetadataEntry('layer:drawings:line', 'group:drawings', 'layer', false, 0))
+    pendingWrites
+      .get('feature:drawing:drawing-line-2')
+      ?.resolve(
+        createMetadataEntry(
+          'feature:drawing:drawing-line-2',
+          'layer:drawings:line',
+          'feature_item',
+          false,
+          1,
+        ),
+      )
+
+    await persistPromise
+
+    expect(useLayerVisibilityStore.getState().drawingTypeVisibility.line).toBe(false)
+    expect(useLayerVisibilityStore.getState().hiddenDrawingIds).toEqual([
+      'drawing-line-1',
+      'drawing-line-2',
+    ])
   })
 })
