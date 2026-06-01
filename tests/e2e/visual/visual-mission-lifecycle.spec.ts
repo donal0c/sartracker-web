@@ -101,23 +101,33 @@ Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
     await expect(page.getByTestId('mission-elapsed')).not.toHaveText(
       await page.getByTestId('mission-active-search').innerText(),
     )
+    // DON-64: the paused state must be unmistakable — a red alarm chip, an
+    // explicit text banner, and a dedicated in-banner Resume control.
+    await expect(page.getByTestId('mission-phase-chip')).toHaveText('PAUSED')
+    await expect(page.getByTestId('mission-paused-banner')).toBeVisible()
+    await expect(page.getByTestId('mission-paused-banner')).toContainText('Mission paused')
+    await expect(page.getByTestId('mission-paused-banner-resume-btn')).toBeVisible()
 
     await captureElementAndRegister(page, 'mission-control', {
       testId: 'mission-paused-state',
       testName: 'Mission control in paused state',
       area: 'mission',
       severity: 'critical',
-      verificationPrompt: `Verify this screenshot of the Mission Control panel in paused state. NOTE: this capture is the Mission Control panel only — the mission name renders on the command mast outside this element. Check only what is in frame:
+      verificationPrompt: `Verify this screenshot of the Mission Control panel in PAUSED state. NOTE: this capture is the Mission Control panel only — the mission name renders on the command mast outside this element. Check only what is in frame:
 1. The section header should show "MISSION CONTROL"
-2. The status indicator should show "PAUSED" (not "ACTIVE"), typically in amber
-3. There should be two timer displays labelled "ELAPSED" and "ACTIVE SEARCH"
-4. The ELAPSED timer should be greater than the ACTIVE SEARCH timer (elapsed keeps running, active freezes on pause)
-5. There should be a "Resume" button (not "Pause")
-6. There should be a "Finish" button that appears enabled
-7. The mission name input and Start button should NOT be visible
+2. The status indicator near the top-right should show "PAUSED" (not "ACTIVE") rendered as a bright RED alarm chip — paused is deliberately loud, not a soft amber state
+3. A prominent RED banner should be visible directly under the header reading "MISSION PAUSED" with explanatory text noting active-search time is frozen
+4. That red banner should contain a clearly visible "RESUME MISSION" button
+5. There should be two timer displays labelled "ELAPSED" and "ACTIVE SEARCH"
+6. The ELAPSED timer should be greater than the ACTIVE SEARCH timer (elapsed keeps running, active freezes on pause)
+7. The main pause/resume button should read "Resume" (not "Pause")
+8. There should be a "Finish" button that appears enabled
+9. The mission name input and Start button should NOT be visible
 Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
       playwrightAssertions: [
         'mission-control contains "paused"',
+        'mission-phase-chip shows "PAUSED"',
+        'mission-paused-banner is visible with Resume control',
         'pause-resume button shows "Resume"',
         'finish button is enabled',
       ],

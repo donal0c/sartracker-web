@@ -61,6 +61,15 @@ test.describe('M5 mission control workflows', () => {
     await expect(page.getByTestId('mission-control')).toContainText('paused')
     await expect(page.getByTestId('mission-pause-resume-btn')).toHaveText('Resume')
 
+    // DON-64: paused must be unmistakable and the recovery control always reachable.
+    await expect(page.getByTestId('mission-phase-chip')).toHaveText('PAUSED')
+    await expect(page.getByTestId('mission-paused-banner')).toBeVisible()
+    await expect(page.getByTestId('mission-paused-banner')).toContainText('Mission paused')
+    const bannerResume = page.getByTestId('mission-paused-banner-resume-btn')
+    await expect(bannerResume).toBeVisible()
+    await expect(bannerResume).toBeEnabled()
+    await expect(page.getByTestId('mission-control')).toHaveAttribute('data-mission-phase', 'paused')
+
     const activeAtPause = await page.getByTestId('mission-active-search').textContent()
     await page.waitForTimeout(1100)
     const elapsedDuringPause = await page.getByTestId('mission-elapsed').textContent()

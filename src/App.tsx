@@ -73,6 +73,7 @@ function App() {
   const runtimeMode: RuntimeMode = browserTestingMode ? 'hosted-browser' : 'tauri'
   const runtimeBootPhase = useRuntimeBootStore((state) => state.phase)
   const runtimeBootError = useRuntimeBootStore((state) => state.error)
+  const missionPhase = useMissionStore((state) => state.phase)
 
   useEffect(() => {
     const timer = window.setInterval(() => {
@@ -141,8 +142,18 @@ function App() {
             className="sar-sidebar z-20 flex w-[400px] flex-col"
             data-testid="operational-sidebar"
           >
-            {/* Pinned Mission Control — always visible, non-scrolling */}
-            <div className="min-h-0 max-h-[53vh] flex-shrink overflow-y-auto border-b border-[var(--sar-line)] px-5 pb-4 pt-5">
+            {/*
+              Pinned Mission Control — always visible. The height is normally
+              capped so the tab content below stays reachable, but while paused
+              we lift the cap (DON-64) so the paused alarm and Resume control can
+              never be clipped or scrolled out of view.
+            */}
+            <div
+              className={`min-h-0 flex-shrink overflow-y-auto border-b border-[var(--sar-line)] px-5 pb-4 pt-5 ${
+                missionPhase === 'paused' ? '' : 'max-h-[53vh]'
+              }`}
+              data-testid="mission-control-dock"
+            >
               <MissionControlPanel />
             </div>
 
@@ -700,7 +711,13 @@ function phasePillClassName(phase: string): string {
     return `${base} sar-status-chip-success`
   }
 
-  if (phase === 'paused' || phase === 'recovery') {
+  // Paused must read as an alarm, not a soft warning (DON-64): the mast pill
+  // flashes bright red so an operator scanning the top bar cannot miss it.
+  if (phase === 'paused') {
+    return `${base} sar-status-chip-paused`
+  }
+
+  if (phase === 'recovery') {
     return `${base} sar-status-chip-warning`
   }
 

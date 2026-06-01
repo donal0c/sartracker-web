@@ -7,6 +7,7 @@ import {
 
 import { useMissionControlViewModel } from '../features/mission/use-mission-control-view-model'
 import { formatMissionDuration } from '../features/mission/mission-timers'
+import { selectMissionPhasePresentation } from '../features/mission/mission-phase-presentation'
 import { focusFirstElement, restoreFocus, trapTabKey } from '../lib/focus-management'
 
 const MISSION_NAME_INPUT_ID = 'mission-name-input'
@@ -64,9 +65,12 @@ export function MissionControlPanel() {
     confirmUnlock,
   } = useMissionControlViewModel()
 
+  const phasePresentation = selectMissionPhasePresentation(phase)
+
   return (
     <section
-      className="sar-panel p-4 text-sm"
+      className={`sar-panel p-4 text-sm ${phasePresentation.paused ? 'ring-2 ring-red-500/80' : ''}`}
+      data-mission-phase={phase}
       data-testid="mission-control"
     >
       <div className="mb-4 flex items-center justify-between border-b border-[var(--sar-line)] pb-3">
@@ -87,23 +91,74 @@ export function MissionControlPanel() {
             Review
           </button>
           {phase !== 'idle' && (
-            <div className={`h-2 w-2 rounded-full ${phase === 'active' ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]' : 'bg-amber-500 animate-pulse'}`} />
+            <div
+              className={`h-2 w-2 rounded-full ${
+                phase === 'active'
+                  ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]'
+                  : phasePresentation.paused
+                    ? 'bg-red-500 animate-pulse shadow-[0_0_10px_rgba(239,68,68,0.85)]'
+                    : 'bg-amber-500 animate-pulse'
+              }`}
+            />
           )}
-          <span
-            className={`font-semibold uppercase text-[11px] ${
-              phase === 'active'
-                ? 'text-emerald-300'
-                : phase === 'paused'
-                  ? 'text-amber-300'
+          {phasePresentation.paused ? (
+            <span
+              className="sar-status-chip-paused px-2 py-0.5 font-mono text-[11px] uppercase tracking-[0.12em]"
+              data-testid="mission-phase-chip"
+            >
+              {phasePresentation.statusLabel}
+            </span>
+          ) : (
+            <span
+              className={`font-semibold uppercase text-[11px] ${
+                phase === 'active'
+                  ? 'text-emerald-300'
                   : phase === 'recovery'
                     ? 'text-amber-200'
                     : 'text-stone-300'
-            }`}
-          >
-            {phase}
-          </span>
+              }`}
+              data-testid="mission-phase-chip"
+            >
+              {phase}
+            </span>
+          )}
         </div>
       </div>
+
+      {/*
+        Paused-state recovery banner (DON-64). Rendered immediately under the
+        header so the paused state and its recovery action are impossible to
+        miss and are never pushed below a scroll fold. The text spells out the
+        state and consequence so the cue does not rely on colour/animation
+        alone, and the in-banner Resume button guarantees the recovery control
+        stays reachable even when the panel is space-constrained.
+      */}
+      {phasePresentation.banner !== null ? (
+        <div
+          aria-live="assertive"
+          className="sar-status-chip-paused mb-4 flex flex-col gap-3 p-3 sm:flex-row sm:items-center sm:justify-between"
+          data-testid="mission-paused-banner"
+          role="alert"
+        >
+          <div className="min-w-0">
+            <p className="font-mono text-[13px] font-black uppercase tracking-[0.12em]">
+              {phasePresentation.banner.heading}
+            </p>
+            <p className="mt-1 text-[12px] font-semibold leading-snug text-red-50">
+              {phasePresentation.banner.detail}
+            </p>
+          </div>
+          <button
+            className="sar-action-resume-paused flex-shrink-0 px-4 py-2 text-[13px] font-black uppercase tracking-[0.1em] transition-all disabled:cursor-not-allowed disabled:opacity-40"
+            data-testid="mission-paused-banner-resume-btn"
+            disabled={!canPauseOrResume}
+            onClick={() => void pauseOrResume()}
+            type="button"
+          >
+            {phasePresentation.banner.resumeLabel}
+          </button>
+        </div>
+      ) : null}
 
       <div className="space-y-4">
         {/* Primary Telemetry */}
@@ -195,7 +250,11 @@ export function MissionControlPanel() {
           </button>
           <div className="grid gap-2 sm:grid-cols-2">
             <button
-              className="sar-button-focus px-3 py-2.5 text-[13px] font-bold uppercase tracking-[0.1em] transition-all disabled:cursor-not-allowed disabled:opacity-20 disabled:grayscale"
+              className={`px-3 py-2.5 text-[13px] font-bold uppercase tracking-[0.1em] transition-all disabled:cursor-not-allowed disabled:opacity-20 disabled:grayscale ${
+                phasePresentation.paused
+                  ? 'sar-action-resume-paused'
+                  : 'sar-button-focus'
+              }`}
               data-testid="mission-pause-resume-btn"
               disabled={!canPauseOrResume}
               onClick={() => void pauseOrResume()}
