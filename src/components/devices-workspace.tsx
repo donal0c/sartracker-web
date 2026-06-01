@@ -143,7 +143,10 @@ export function DevicesWorkspace() {
                       <button
                         className="block min-w-0 w-full text-left"
                         data-testid={`device-select-${row.deviceId}`}
-                        onClick={() => selectDevice(row.deviceId)}
+                        onClick={(event) => {
+                          event.stopPropagation()
+                          selectDevice(row.deviceId)
+                        }}
                         type="button"
                       >
                         <p className="truncate font-semibold text-stone-100">{row.name}</p>
@@ -160,10 +163,15 @@ export function DevicesWorkspace() {
                               : 'text-stone-300'
                         }`}
                         data-testid={`device-status-${row.deviceId}`}
+                        onClick={(event) => event.stopPropagation()}
                       >
                         {row.status}
                       </span>
-                      <span className="font-mono text-xs text-stone-300">
+                      <span
+                        className="font-mono text-xs text-stone-300"
+                        data-testid={`device-last-seen-${row.deviceId}`}
+                        onClick={(event) => event.stopPropagation()}
+                      >
                         {row.lastSeenDisplay}
                       </span>
                       <span
@@ -174,6 +182,8 @@ export function DevicesWorkspace() {
                               ? 'text-amber-300'
                               : 'text-stone-300'
                         }`}
+                        data-testid={`device-source-${row.deviceId}`}
+                        onClick={(event) => event.stopPropagation()}
                       >
                         {row.sourceDisplay}
                       </span>
@@ -192,7 +202,8 @@ export function DevicesWorkspace() {
                           className="rounded-lg border border-stone-700 bg-stone-950 px-2 py-1 text-[11px] text-stone-200 disabled:opacity-40"
                           data-testid={`device-zoom-${row.deviceId}`}
                           disabled={!row.hasFix}
-                          onClick={() => {
+                          onClick={(event) => {
+                            event.stopPropagation()
                             selectDevice(row.deviceId)
                             if (row.latitude !== null && row.longitude !== null) {
                               queueTarget(row.latitude, row.longitude, row.name)
