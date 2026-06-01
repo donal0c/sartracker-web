@@ -5,6 +5,7 @@ import type {
   HelicopterSlotKey,
 } from '../infrastructure/mission-store/tauri-mission-store'
 import { useHelicopterStore } from '../features/helicopters/helicopter-store'
+import { selectHelicopterPanelSlots } from '../features/helicopters/helicopter-panel-slots'
 
 const SLOT_CONFIG: readonly {
   readonly slotKey: HelicopterSlotKey
@@ -28,10 +29,20 @@ export function HelicopterPanel() {
     createEmptyDraftState,
   )
   const [expandedSlots, setExpandedSlots] = useState<Set<HelicopterSlotKey>>(new Set())
+  const [showEmptySlots, setShowEmptySlots] = useState(false)
 
   const helicoptersBySlot = useMemo(
     () => new Map(helicopters.map((helicopter) => [helicopter.slot_key, helicopter])),
     [helicopters],
+  )
+
+  const slotVisibility = useMemo(
+    () =>
+      selectHelicopterPanelSlots({
+        assignedSlots: helicopters.map((helicopter) => helicopter.slot_key),
+        showEmptySlots,
+      }),
+    [helicopters, showEmptySlots],
   )
 
   useEffect(() => {
@@ -49,7 +60,7 @@ export function HelicopterPanel() {
             Helicopters
           </h3>
           <p className="mt-1 text-xs text-stone-400">
-            Reserve four aviation slots with operational position details.
+            Reserve up to four aviation slots with operational position details.
           </p>
         </div>
         <span className="rounded-full border border-stone-800 bg-stone-900 px-2 py-1 text-[11px] font-semibold uppercase tracking-wider text-stone-400">
@@ -57,8 +68,17 @@ export function HelicopterPanel() {
         </span>
       </div>
 
+      {slotVisibility.assignedCount === 0 && !showEmptySlots ? (
+        <p
+          className="mt-4 rounded-xl border border-dashed border-stone-800/70 bg-stone-900/20 px-4 py-3 text-xs text-stone-400"
+          data-testid="helicopter-empty-state"
+        >
+          No helicopters assigned. Aviation slots stay hidden until you add one.
+        </p>
+      ) : null}
+
       <div className="mt-4 grid gap-3">
-        {SLOT_CONFIG.map((slot) => {
+        {SLOT_CONFIG.filter((slot) => slotVisibility.visibleSlots.includes(slot.slotKey)).map((slot) => {
           const helicopter = helicoptersBySlot.get(slot.slotKey) ?? null
           const draft = drafts[slot.slotKey]
           const values = draft
@@ -205,6 +225,27 @@ export function HelicopterPanel() {
           )
         })}
       </div>
+
+      {showEmptySlots ? (
+        <button
+          className="mt-3 w-full rounded-lg border border-stone-800 bg-stone-900/40 px-3 py-2 text-[11px] font-semibold uppercase tracking-wider text-stone-400 transition-colors hover:text-stone-200"
+          data-testid="helicopter-hide-empty-slots"
+          onClick={() => setShowEmptySlots(false)}
+          type="button"
+        >
+          Hide empty slots
+        </button>
+      ) : slotVisibility.hiddenEmptyCount > 0 ? (
+        <button
+          className="mt-3 w-full rounded-lg border border-stone-800 bg-stone-900/40 px-3 py-2 text-[11px] font-semibold uppercase tracking-wider text-stone-300 transition-colors hover:text-stone-100"
+          data-testid="helicopter-add-slot"
+          onClick={() => setShowEmptySlots(true)}
+          type="button"
+        >
+          {slotVisibility.assignedCount === 0 ? 'Add helicopter' : 'Add another helicopter'} (
+          {slotVisibility.hiddenEmptyCount} slot{slotVisibility.hiddenEmptyCount === 1 ? '' : 's'} free)
+        </button>
+      ) : null}
 
       {error !== null ? (
         <p className="mt-3 text-sm text-rose-300" data-testid="helicopter-error">

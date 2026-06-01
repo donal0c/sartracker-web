@@ -15,6 +15,13 @@ test.describe('M23 helicopter layer parity', () => {
   test('persists helicopter slots, renders the overlay, and supports visibility toggles', async ({
     page,
   }) => {
+    // Helicopters are opt-in (DON-75): empty reserve slots stay hidden until the
+    // operator deliberately reveals them.
+    await expect(page.getByTestId('helicopter-empty-state')).toBeVisible()
+    await expect(page.getByTestId('helicopter-slot-slot_1')).toHaveCount(0)
+    await page.getByTestId('helicopter-add-slot').click()
+    await expect(page.getByTestId('helicopter-slot-slot_1')).toBeVisible()
+
     await page.getByTestId('helicopter-toggle-slot_1').click()
     await page.getByTestId('helicopter-call-sign-slot_1').fill('Rescue 118')
     await page.getByTestId('helicopter-hex-id-slot_1').fill('4CA118')
