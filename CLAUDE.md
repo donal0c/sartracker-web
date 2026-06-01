@@ -122,6 +122,14 @@ Before finishing, the agent should:
 5. update `handoff/HANDOFF.md` with a short baton-ready summary
 6. update the relevant Linear issue(s)
 
+### Linear Issue Execution Protocol (required)
+
+When working through team requirements or any Linear issue, match the workflow to the issue type:
+
+- **Bugs:** reproduce the bug first, ideally with a failing automated regression or a clearly recorded UI reproduction. Do not start by guessing at a fix. After the fix, confirm the original reproduction no longer fails and validate the affected operator-facing behavior in the UI.
+- **Features and changes:** define the expected visible behavior before implementation, then validate that behavior through the UI wherever the requirement has an operator-facing surface.
+- **UI validation:** use the strongest practical browser-backed path for the risk level. The inbuilt browser is fine for quick manual checks; Playwright should be used for repeatable UI, map, workflow, hosted-mode, deployment, or regression checks when the change can be validated that way.
+
 ### Browser Verification Policy (required)
 
 The user should not need to remember to ask for browser validation. For any behavior-bearing change, choose the strongest appropriate verification tool and record what was checked.
