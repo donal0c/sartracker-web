@@ -4,6 +4,7 @@ import { createManualChunk } from './build/vite-manual-chunks'
 
 // https://vite.dev/config/
 export default defineConfig({
+  base: './',
   plugins: [react()],
   build: {
     chunkSizeWarningLimit: 1100,

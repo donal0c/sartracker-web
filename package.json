@@ -2,6 +2,7 @@
   "name": "sartracker-web",
   "private": true,
   "version": "0.1.0-beta.3",
+  "homepage": "https://github.com/donal0c/sartracker-web",
   "type": "module",
   "main": "electron/main.cjs",
   "scripts": {

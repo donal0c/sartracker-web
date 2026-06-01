@@ -1,0 +1,186 @@
+name: Electron Linux Validation Build
+
+# Builds the Electron validation app on Linux so native modules are produced by
+# a Linux toolchain instead of macOS cross-builds. This is the DON-57 path for
+# generating AppImage/.deb artifacts before wider tester handoff.
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - '.github/workflows/electron-linux-validation.yml'
+      - 'electron/**'
+      - 'src/**'
+      - 'tests/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'electron-builder.json'
+      - 'vite.config.ts'
+      - 'tsconfig*.json'
+      - 'build/**'
+      - 'scripts/**'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: electron-linux-validation-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: '22'
+
+jobs:
+  build:
+    name: Build and inspect Linux Electron artifacts
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Linux Electron runtime deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            dbus-x11 \
+            gnome-keyring \
+            imagemagick \
+            libasound2 \
+            libatk-bridge2.0-0 \
+            libatk1.0-0 \
+            libcups2 \
+            libdrm2 \
+            libfuse2 \
+            libgbm1 \
+            libgtk-3-0 \
+            libnss3 \
+            libxdamage1 \
+            libxkbcommon0 \
+            libxrandr2 \
+            libxss1 \
+            xdotool \
+            xvfb
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install npm deps
+        run: npm ci
+
+      - name: Unit regression for packaged file URLs
+        run: npx vitest run tests/unit/vite-config.test.ts
+
+      - name: Build Electron Linux artifacts
+        run: npm run electron:dist:linux
+
+      - name: Inspect artifacts and native SQLite module
+        run: |
+          set -euo pipefail
+          mkdir -p tmp/electron-validation-evidence
+
+          APPIMAGE="$(find tmp/electron-dist -maxdepth 1 -type f -name '*.AppImage' -print -quit)"
+          DEB="$(find tmp/electron-dist -maxdepth 1 -type f -name '*.deb' -print -quit)"
+          NATIVE_MODULE="$(find tmp/electron-dist/linux-unpacked -type f -name 'better_sqlite3.node' -print -quit)"
+
+          if [ -z "$APPIMAGE" ]; then
+            echo "::error::Electron AppImage was not produced."
+            exit 1
+          fi
+          if [ -z "$DEB" ]; then
+            echo "::error::Electron .deb was not produced."
+            exit 1
+          fi
+          if [ -z "$NATIVE_MODULE" ]; then
+            echo "::error::Packaged better_sqlite3.node was not found in linux-unpacked."
+            exit 1
+          fi
+
+          file "$NATIVE_MODULE" | tee tmp/electron-validation-evidence/better-sqlite3-file.txt
+          grep -E 'ELF 64-bit LSB shared object, x86-64' \
+            tmp/electron-validation-evidence/better-sqlite3-file.txt
+
+          sha256sum "$APPIMAGE" "$DEB" > tmp/electron-dist/SHA256SUMS
+          cp tmp/electron-dist/SHA256SUMS tmp/electron-validation-evidence/SHA256SUMS
+          {
+            stat --printf='%n %s bytes\n' "$APPIMAGE"
+            stat --printf='%n %s bytes\n' "$DEB"
+          } | tee tmp/electron-validation-evidence/artifacts.txt
+
+      - name: Launch AppImage smoke
+        run: |
+          set -euo pipefail
+          APPIMAGE="$(find tmp/electron-dist -maxdepth 1 -type f -name '*.AppImage' -print -quit)"
+          chmod +x "$APPIMAGE"
+          export APPIMAGE
+
+          xvfb-run -a --server-args='-screen 0 1440x900x24' dbus-run-session -- bash <<'EOF'
+          set -euo pipefail
+          export NO_AT_BRIDGE=1
+
+          printf '\n' | gnome-keyring-daemon --unlock --components=secrets \
+            > tmp/electron-validation-evidence/keyring-env.txt \
+            2> tmp/electron-validation-evidence/keyring.log || true
+          if [ -s tmp/electron-validation-evidence/keyring-env.txt ]; then
+            set -a
+            # shellcheck disable=SC1091
+            . tmp/electron-validation-evidence/keyring-env.txt
+            set +a
+          fi
+
+          "$APPIMAGE" --no-sandbox \
+            > tmp/electron-validation-evidence/appimage.log \
+            2>&1 &
+          APP_PID=$!
+          echo "$APP_PID" > tmp/electron-validation-evidence/appimage.pid
+
+          WINDOW_FOUND=0
+          for _ in $(seq 1 30); do
+            if ! kill -0 "$APP_PID" 2>/dev/null; then
+              echo "::error::AppImage exited before a window appeared."
+              cat tmp/electron-validation-evidence/appimage.log || true
+              exit 1
+            fi
+            if xdotool search --name 'SAR Tracker Web' \
+              > tmp/electron-validation-evidence/window-ids.txt 2>/dev/null; then
+              WINDOW_FOUND=1
+              break
+            fi
+            sleep 1
+          done
+
+          if [ "$WINDOW_FOUND" != "1" ]; then
+            echo "::error::SAR Tracker Web window did not appear."
+            cat tmp/electron-validation-evidence/appimage.log || true
+            kill "$APP_PID" 2>/dev/null || true
+            exit 1
+          fi
+
+          sleep 5
+          import -window root tmp/electron-validation-evidence/appimage-launch.png
+          test -s tmp/electron-validation-evidence/appimage-launch.png
+
+          kill "$APP_PID" 2>/dev/null || true
+          wait "$APP_PID" 2>/dev/null || true
+          EOF
+
+      - name: Upload Electron Linux artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: electron-linux-artifacts-${{ github.sha }}
+          path: |
+            tmp/electron-dist/*.AppImage
+            tmp/electron-dist/*.deb
+            tmp/electron-dist/SHA256SUMS
+          if-no-files-found: error
+
+      - name: Upload validation evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: electron-linux-validation-evidence-${{ github.sha }}
+          path: tmp/electron-validation-evidence
+          if-no-files-found: warn

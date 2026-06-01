@@ -215,7 +215,7 @@ Child issues:
 - `DON-32` — S8c.2 Electron tracking cache and diagnostics export parity. Done locally.
 - `DON-33` — S8c.3 Electron SQLite mission store parity. Done locally.
 - `DON-34` — S8c.4 Electron filesystem, GPX, attachments, and file opening parity. Done locally.
-- `DON-35` — S8c.5 Electron Linux artifact build and field-validation gate. Local artifact build done; old Ubuntu 18.04 smoke blocked by `better-sqlite3` requiring GLIBC `2.29`.
+- `DON-35` — S8c.5 Electron Linux artifact build and field-validation gate. Dell Ubuntu 24.04 native AppImage + `.deb` smoke rendered OpenTopoMap, proved mission SQLite/recovery, live Traccar, tracking cache, and diagnostics export. Remaining work is split into `DON-57` native Linux CI build, `DON-58` Linux secret-store/diagnostics runtime fix, and `DON-59` packaged Linux filesystem smoke.
 
 S8a current artifact state:
 
@@ -316,17 +316,22 @@ S8c / DON-28 current state:
   positions. `https://traccar.kmrtsar.eu` should not be used as the app API
   base; it behaves like a device/listener endpoint and returns bare `400` for
   `/api/server`.
-- Remaining DON-28 gap: Linux native-module baseline and then real runtime
-  smoke of the full Electron app on a tester machine. Local Linux artifact
-  generation works, but the old Ubuntu 18.04 machine has GLIBC `2.27` and both
-  the installed `.deb` and AppImage log `GLIBC_2.29 not found` from
-  `better_sqlite3.node`. Cross-building Linux from macOS also rebuilds
-  `better-sqlite3` in local `node_modules` for Linux x64; run
-  `npm rebuild better-sqlite3` afterwards before local macOS unit tests.
-- Future DON-35 release candidate must prove the one-click diagnostics report
-  contains enough sanitized evidence to debug launch, map, tracker, SQLite,
-  safeStorage, and filesystem failures without asking testers for repeated
-  manual details.
+- Remaining DON-28 gap: make Linux-native Electron artifact generation
+  repeatable before publishing wider. The old Ubuntu 18.04 machine has GLIBC
+  `2.27` and failed before app validation; the Dell Ubuntu 24.04 machine
+  rendered OpenTopoMap from native AppImage and `.deb` builds, and the packaged
+  `.deb` now has field evidence for mission create, SQLite WAL persistence,
+  restart recovery/resume, live Traccar, tracking cache, and diagnostics
+  export. MacOS cross-built artifacts are not trustworthy for `better-sqlite3`:
+  one package contained a macOS arm64 `better_sqlite3.node` and failed with
+  `invalid ELF header`. Use a Linux builder/CI job for Electron Linux artifacts.
+- Future DON-35 release candidate must bake or fix Linux secret-store behavior:
+  on the Dell, saving Traccar credentials failed until the app was relaunched
+  with `--password-store=gnome-libsecret`, after which diagnostics reported
+  `safeStorage backend: gnome_libsecret` and save/connect worked. Diagnostics
+  also currently labels Electron as `browser validation`; correct that before
+  tester release. Packaged Linux still needs GPX import, marker attachment
+  save/open, and external file-opening smoke evidence.
 - DON-28 is intentionally split into smaller child issues:
   - `DON-31`: persist settings under Electron `userData`, store secrets through
     a safe backend, and refuse or clearly warn when Linux falls back to
@@ -339,6 +344,16 @@ S8c / DON-28 current state:
     open, and chooser/dialog workflows.
   - `DON-35`: build and validate Linux artifacts, with AppImage first-class for
     PCLinuxOS/RPM-family testers and `.deb` for Ubuntu/Debian where practical.
+  - `DON-57`: make Electron Linux AppImage/`.deb` artifacts build natively in
+    Linux CI, including ELF x86-64 SQLite native-module inspection. Initial
+    workflow is `.github/workflows/electron-linux-validation.yml`: it runs on
+    `ubuntu-22.04`, builds AppImage + `.deb`, writes SHA256SUMS, checks the
+    packaged `better_sqlite3.node` with `file`, performs a light AppImage Xvfb
+    launch screenshot, and uploads artifacts/evidence.
+  - `DON-58`: fix Linux Electron secret-store launch behavior and diagnostics
+    runtime labeling before tester release.
+  - `DON-59`: smoke packaged Linux GPX import, marker attachments, and external
+    file opening.
 
 S8c verification snapshot:
 
@@ -355,9 +370,24 @@ S8c verification snapshot:
 - Passed: `npm run test:backend` — 45 passed / 1 ignored.
 - Passed: `npm run electron:pack` on macOS; packaged app stayed running for a
   6-second launch smoke.
-- Passed: `npm run electron:dist:linux`; built AppImage and `.deb` above with
-  `better-sqlite3` rebuilt for Electron Linux x64. Not executed locally because
-  the host is macOS.
+- Passed on Dell Ubuntu 24.04: native Linux AppImage and `.deb` build, both
+  rendering the SAR Tracker app and OpenTopoMap. AppImage required
+  `--no-sandbox` on Ubuntu 24; `.deb` launched without that workaround.
+- Passed on Dell Ubuntu 24.04 packaged `.deb`: UI-created mission persisted to
+  SQLite WAL, `pragma integrity_check` returned `ok`, process restart exposed
+  recovery, Resume returned the mission to active, live Traccar connected to
+  `https://kmrtsar.eu`, map markers rendered, SQLite held 33 devices plus live
+  positions, `tracking-cache.json` held 33 devices / 5 positions, and
+  diagnostics export wrote a sanitized report without credential text.
+- Caveats from Dell Ubuntu 24.04: Traccar secret save/connect required
+  relaunching with `--password-store=gnome-libsecret`; diagnostics runtime
+  label incorrectly reports `browser validation` inside Electron; GPX import,
+  marker attachments, and external file opening remain unproved in the
+  packaged Linux UI.
+- Added for DON-57: `.github/workflows/electron-linux-validation.yml`, verified
+  locally with `actionlint`, focused Vite config regression, and
+  `git diff --check`. The workflow still needs a GitHub run before it can be
+  treated as release evidence.
 
 ### B7: Pre-tester smoke + CI launch-smoke for cross-platform Tauri builds
 
