@@ -133,7 +133,10 @@ jobs:
             set +a
           fi
 
-          "$APPIMAGE" --no-sandbox \
+          "$APPIMAGE" \
+            --no-sandbox \
+            --ignore-gpu-blocklist \
+            --enable-unsafe-swiftshader \
             > tmp/electron-validation-evidence/appimage.log \
             2>&1 &
           APP_PID=$!
@@ -164,6 +167,21 @@ jobs:
           sleep 5
           import -window root tmp/electron-validation-evidence/appimage-launch.png
           test -s tmp/electron-validation-evidence/appimage-launch.png
+          convert tmp/electron-validation-evidence/appimage-launch.png \
+            -crop 1440x820+0+60 \
+            tmp/electron-validation-evidence/appimage-content.png
+          CONTENT_MEAN="$(convert tmp/electron-validation-evidence/appimage-content.png \
+            -colorspace Gray \
+            -format '%[fx:mean]' \
+            info:)"
+          echo "$CONTENT_MEAN" > tmp/electron-validation-evidence/appimage-content-mean.txt
+          awk -v mean="$CONTENT_MEAN" 'BEGIN { exit !(mean > 0.05) }' || {
+            echo "::error::AppImage content region is too dark; the packaged app may have opened a black window."
+            echo "Content grayscale mean: $CONTENT_MEAN"
+            cat tmp/electron-validation-evidence/appimage.log || true
+            kill "$APP_PID" 2>/dev/null || true
+            exit 1
+          }
 
           kill "$APP_PID" 2>/dev/null || true
           wait "$APP_PID" 2>/dev/null || true
