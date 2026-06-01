@@ -215,7 +215,7 @@ Child issues:
 - `DON-32` — S8c.2 Electron tracking cache and diagnostics export parity. Done locally.
 - `DON-33` — S8c.3 Electron SQLite mission store parity. Done locally.
 - `DON-34` — S8c.4 Electron filesystem, GPX, attachments, and file opening parity. Done locally.
-- `DON-35` — S8c.5 Electron Linux artifact build and field-validation gate. Dell Ubuntu 24.04 native AppImage + `.deb` smoke rendered OpenTopoMap, proved mission SQLite/recovery, live Traccar, tracking cache, and diagnostics export. Remaining work is split into `DON-57` native Linux CI build, `DON-58` Linux secret-store/diagnostics runtime fix, and `DON-59` packaged Linux filesystem smoke.
+- `DON-35` — S8c.5 Electron Linux artifact build and field-validation gate. Dell Ubuntu 24.04 native AppImage + `.deb` smoke rendered OpenTopoMap, proved mission SQLite/recovery, live Traccar, tracking cache, and diagnostics export. `DON-57` has now made the Linux build repeatable in GitHub Actions; remaining work is `DON-58` Linux secret-store/diagnostics runtime fix and `DON-59` packaged Linux filesystem smoke.
 
 S8a current artifact state:
 
@@ -344,12 +344,13 @@ S8c / DON-28 current state:
     open, and chooser/dialog workflows.
   - `DON-35`: build and validate Linux artifacts, with AppImage first-class for
     PCLinuxOS/RPM-family testers and `.deb` for Ubuntu/Debian where practical.
-  - `DON-57`: make Electron Linux AppImage/`.deb` artifacts build natively in
-    Linux CI, including ELF x86-64 SQLite native-module inspection. Initial
-    workflow is `.github/workflows/electron-linux-validation.yml`: it runs on
-    `ubuntu-22.04`, builds AppImage + `.deb`, writes SHA256SUMS, checks the
-    packaged `better_sqlite3.node` with `file`, performs a light AppImage Xvfb
-    launch screenshot, and uploads artifacts/evidence.
+  - `DON-57`: done 2026-06-01. Electron Linux AppImage/`.deb` artifacts now
+    build natively in GitHub Actions via
+    `.github/workflows/electron-linux-validation.yml`; run `26746757159` built
+    artifacts on `ubuntu-22.04`, wrote SHA256SUMS, checked packaged
+    `better_sqlite3.node` as ELF x86-64, rendered OpenTopoMap under Xvfb, and
+    rejected the earlier black-window blind spot with a screenshot content
+    mean gate.
   - `DON-58`: fix Linux Electron secret-store launch behavior and diagnostics
     runtime labeling before tester release.
   - `DON-59`: smoke packaged Linux GPX import, marker attachments, and external
@@ -384,10 +385,20 @@ S8c verification snapshot:
   label incorrectly reports `browser validation` inside Electron; GPX import,
   marker attachments, and external file opening remain unproved in the
   packaged Linux UI.
-- Added for DON-57: `.github/workflows/electron-linux-validation.yml`, verified
-  locally with `actionlint`, focused Vite config regression, and
-  `git diff --check`. The workflow still needs a GitHub run before it can be
-  treated as release evidence.
+- Passed for DON-57: GitHub Actions run `26746757159` on head
+  `32cb2e315ad61449270f40f2bee2bb6a71e0fd56` built Electron Linux artifacts
+  natively on `ubuntu-22.04`. Artifacts: AppImage SHA256
+  `000f7e4d44692476ce5873a5ef0bd8901a22848c1e8179c512628cfd0438acd2`;
+  `.deb` SHA256
+  `58aee86e305e504a9a419dcb2873c7a7840fa8922b0233c78c32937f58031915`.
+  Packaged SQLite native module inspection reported `better_sqlite3.node` as
+  ELF 64-bit x86-64. CI AppImage screenshot rendered SAR Tracker and
+  OpenTopoMap with content mean `0.499086`, and the exact GitHub-built
+  AppImage was copied to the Dell Ubuntu 24.04 machine and visually confirmed
+  rendering OpenTopoMap there too. Local verification around the workflow
+  passed: `actionlint .github/workflows/*.yml`, focused Vite config regression,
+  `npm run lint`, `npm run build`, `npm run test` (115 files / 593 tests),
+  `npm run test:backend` (45 passed / 1 ignored), and `git diff --check`.
 
 ### B7: Pre-tester smoke + CI launch-smoke for cross-platform Tauri builds
 
