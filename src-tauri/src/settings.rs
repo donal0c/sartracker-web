@@ -620,12 +620,21 @@ fn normalize_weather_settings(input: WeatherSettings) -> WeatherSettings {
 }
 
 fn normalize_weather_url(value: &str) -> String {
-    let mut url =
-        reqwest::Url::parse(value.trim()).expect("weather URL validated before normalize");
+    let mut url = reqwest::Url::parse(&weather_url_with_scheme(value))
+        .expect("weather URL validated before normalize");
     url.set_fragment(None);
     let path = url.path().trim_end_matches('/').to_string();
     url.set_path(if path.is_empty() { "/" } else { &path });
     url.to_string().trim_end_matches('/').to_string()
+}
+
+fn weather_url_with_scheme(value: &str) -> String {
+    let trimmed = value.trim();
+    if trimmed.contains(':') || trimmed.starts_with('/') {
+        return trimmed.to_string();
+    }
+
+    format!("https://{trimmed}")
 }
 
 fn update_secret(
@@ -727,7 +736,7 @@ fn validate_weather_links(links: &[WeatherLinkSettings]) -> Result<(), String> {
             return Err(String::from("Weather link name is required."));
         }
 
-        let url = reqwest::Url::parse(link.url.trim())
+        let url = reqwest::Url::parse(&weather_url_with_scheme(&link.url))
             .map_err(|error| format!("Weather link URL must be a valid absolute URL: {error}"))?;
         if !matches!(url.scheme(), "http" | "https") {
             return Err(String::from("Weather link URL must use http or https."));
@@ -1103,6 +1112,41 @@ mod tests {
         assert_eq!(
             validate_settings_draft(&draft, false).expect_err("blank name"),
             "Weather link name is required."
+        );
+    }
+
+    #[test]
+    fn normalizes_bare_domain_weather_links() {
+        let draft = AppSettingsDraft {
+            mission_defaults: PersistedSettings::default().mission_defaults,
+            data_source: DataSourceDraft {
+                provider_type: TrackingProviderType::None,
+                base_url: String::new(),
+                auth_mode: TrackingAuthMode::Basic,
+                email: String::new(),
+                auto_connect: true,
+                tracking_cache_enabled: true,
+                replay_enabled: false,
+                replay_start: String::new(),
+                replay_duration_hours: 4,
+                secret_input: String::new(),
+                clear_secret: false,
+            },
+            weather: WeatherSettings {
+                links: vec![WeatherLinkSettings {
+                    name: String::from("Met Éireann"),
+                    url: String::from("met.ie"),
+                }],
+            },
+        };
+
+        validate_settings_draft(&draft, false).expect("bare weather domains are valid");
+        assert_eq!(
+            normalize_weather_settings(draft.weather).links,
+            vec![WeatherLinkSettings {
+                name: String::from("Met Éireann"),
+                url: String::from("https://met.ie")
+            }]
         );
     }
 

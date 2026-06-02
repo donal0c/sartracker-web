@@ -85,6 +85,19 @@ describe('electron settings store', () => {
     expect(rawSettings).not.toContain('field-secret')
   })
 
+  it('normalizes bare-domain weather links before persistence', async () => {
+    const store = await createStore({ backend: 'gnome_libsecret' })
+    const draft = createSettingsDraft(DEFAULT_APP_SETTINGS)
+    draft.weather.links = [{ name: 'Met Éireann', url: 'met.ie' }]
+
+    const saved = await store.saveAppSettings(draft)
+
+    expect(saved.weather.links).toEqual([{ name: 'Met Éireann', url: 'https://met.ie' }])
+    const rawSettings = await readFile(path.join(userDataPath!, 'settings.json'), 'utf8')
+    expect(rawSettings).toContain('https://met.ie')
+    expect(rawSettings).not.toContain('"url":"met.ie"')
+  })
+
   it('preserves an existing secret when saving non-secret settings', async () => {
     const store = await createStore({ backend: 'gnome_libsecret' })
     const initial = createSettingsDraft(DEFAULT_APP_SETTINGS)

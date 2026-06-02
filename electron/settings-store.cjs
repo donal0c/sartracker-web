@@ -395,12 +395,19 @@ function normalizeWeatherUrl(input) {
   }
 
   try {
-    const url = new URL(raw)
+    const url = new URL(addWeatherSchemeIfMissing(raw))
     url.hash = ''
     return url.toString().replace(/\/$/, '')
   } catch {
     return raw
   }
+}
+
+function addWeatherSchemeIfMissing(input) {
+  if (input.includes(':') || input.startsWith('/')) {
+    return input
+  }
+  return `https://${input}`
 }
 
 function normalizeRoster(input) {
