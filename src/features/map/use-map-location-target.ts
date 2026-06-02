@@ -13,6 +13,11 @@ type UseMapLocationTargetOptions = {
   readonly mapRef: RefObject<maplibregl.Map | null>
 }
 
+type CoordinateTargetLayerSpecs = {
+  readonly ringLayer: maplibregl.CircleLayerSpecification
+  readonly dotLayer: maplibregl.CircleLayerSpecification
+}
+
 /**
  * Handles coordinate-tool go-to requests and renders the temporary target marker.
  */
@@ -104,32 +109,39 @@ function ensureCoordinateTargetOverlay(
   }
 
   if (!map.getLayer(TARGET_RING_LAYER_ID)) {
-    map.addLayer({
+    map.addLayer(createCoordinateTargetLayerSpecs().ringLayer)
+  }
+
+  if (!map.getLayer(TARGET_DOT_LAYER_ID)) {
+    map.addLayer(createCoordinateTargetLayerSpecs().dotLayer)
+  }
+}
+
+export function createCoordinateTargetLayerSpecs(): CoordinateTargetLayerSpecs {
+  return {
+    ringLayer: {
       id: TARGET_RING_LAYER_ID,
       type: 'circle',
       source: TARGET_SOURCE_ID,
       paint: {
-        'circle-radius': 18,
+        'circle-radius': 28,
         'circle-color': '#000000',
         'circle-opacity': 0,
-        'circle-stroke-color': '#FCD34D',
-        'circle-stroke-width': 2,
+        'circle-stroke-color': '#EF4444',
+        'circle-stroke-width': 4,
       },
-    })
-  }
-
-  if (!map.getLayer(TARGET_DOT_LAYER_ID)) {
-    map.addLayer({
+    },
+    dotLayer: {
       id: TARGET_DOT_LAYER_ID,
       type: 'circle',
       source: TARGET_SOURCE_ID,
       paint: {
-        'circle-radius': 5,
-        'circle-color': '#FCD34D',
-        'circle-stroke-color': '#78350F',
-        'circle-stroke-width': 2,
+        'circle-radius': 7,
+        'circle-color': '#DC2626',
+        'circle-stroke-color': '#FFFFFF',
+        'circle-stroke-width': 3,
       },
-    })
+    },
   }
 }
 

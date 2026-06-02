@@ -365,7 +365,7 @@ function DeviceRow(props: {
   return (
     <div
       className={`grid cursor-pointer grid-cols-[minmax(0,1.4fr)_4rem_7rem_8rem_7rem_7rem_10rem] items-center border-b border-stone-800/70 px-4 py-3 text-sm ${
-        props.selected ? 'bg-amber-500/10' : 'bg-transparent'
+        props.selected ? 'sar-selected-row' : 'bg-transparent'
       }`}
       data-testid={rowTestId}
       onClick={() => props.onSelectDevice(props.row.deviceId)}

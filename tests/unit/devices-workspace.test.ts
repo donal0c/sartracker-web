@@ -110,6 +110,7 @@ describe('DevicesWorkspace', () => {
     render(React.createElement(DevicesWorkspace))
     await waitForElement('[data-testid="devices-workspace"]')
     expect(getText('[data-testid="devices-inspector-title"]')).toContain('Alpha Team')
+    expect(getElement('[data-testid="device-row-alpha"]').className).toContain('sar-selected-row')
 
     click('[data-testid="device-status-bravo"]')
     click('[data-testid="device-last-seen-bravo"]')
@@ -224,9 +225,13 @@ function changeInput(selector: string, value: string): void {
 }
 
 function getText(selector: string): string {
+  return getElement(selector).textContent ?? ''
+}
+
+function getElement(selector: string): Element {
   const element = document.querySelector(selector)
   if (element === null) {
     throw new Error(`Expected ${selector} to exist.`)
   }
-  return element.textContent ?? ''
+  return element
 }

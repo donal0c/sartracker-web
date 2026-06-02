@@ -430,6 +430,16 @@ body {
     color: #fde9b5;
   }
 
+  .sar-selected-row {
+    border-color: rgba(250, 204, 21, 0.72) !important;
+    background:
+      linear-gradient(90deg, rgba(250, 204, 21, 0.22), rgba(120, 72, 18, 0.18)) !important;
+    box-shadow:
+      inset 4px 0 #facc15,
+      inset 0 0 0 1px rgba(250, 250, 249, 0.08);
+    color: #fff7d6;
+  }
+
   /**
    * Pill used for chrome floating over the map (Maps, Map Tools, Measure
    * readouts). Provides enough contrast against bright satellite tiles.

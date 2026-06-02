@@ -787,7 +787,9 @@
             Map tools are armed from the map toolbar. They require an active mission and are disabled
             during recovery. Only one drawing or measurement mode should be active at a time; arming one
             cancels the other. Armed placement tools show a crosshair cursor; drag to pan without placing
-            a drawing, then click intentionally to place.
+            a drawing, then click intentionally to place. The placement crosshair and temporary go-to
+            target are red with a white outline so they remain visible over bright raster tiles and dark
+            terrain.
           </p>
           <figure class="screenshot">
             <img src="assets/tools-and-map.png" alt="Map Tools expanded next to map and measurement panel" />
@@ -817,6 +819,11 @@
             workspace to hide drawing types or individual drawings when the map needs less visual load.
             To delete a misplaced drawing, open it through Select mode or the Layers inspection panel,
             press <strong>Delete</strong>, and confirm the destructive action.
+          </div>
+          <div class="note">
+            <strong>Contrast:</strong> selected rows in high-use workspaces use a brighter selected-state
+            bar and stronger amber fill. This makes the current device, mission, or marker selection
+            easier to identify without changing the overall dark operational theme.
           </div>
         </section>
 

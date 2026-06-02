@@ -10,6 +10,7 @@ import {
   type MissionReviewEventRow,
   type MissionReviewSnapshot,
 } from '../features/mission-review/mission-review-model'
+import { getMissionReviewSelectionClassName } from '../features/mission-review/mission-review-selection-style'
 import { useMissionReviewStore } from '../features/mission-review/mission-review-store'
 import { useMissionReviewWorkspaceStore } from '../features/mission-review/mission-review-workspace-store'
 
@@ -122,7 +123,7 @@ export function MissionReviewWorkspace() {
                     <button
                       className={`block w-full rounded-xl border px-3 py-3 text-left ${
                         selected
-                          ? 'border-amber-500/40 bg-amber-500/10'
+                          ? getMissionReviewSelectionClassName(true)
                           : 'border-stone-800 bg-stone-950/40 hover:border-stone-700'
                       }`}
                       data-testid={`mission-review-select-${mission.id}`}
@@ -373,7 +374,9 @@ function MarkerLogTab(props: {
             {props.markers.map((marker) => (
               <button
                 className={`grid w-full grid-cols-[6rem_minmax(0,1fr)_9rem_9rem] border-b border-stone-800/70 px-4 py-3 text-left text-sm ${
-                  props.selectedMarker?.id === marker.id ? 'bg-amber-500/10' : 'bg-transparent'
+                  props.selectedMarker?.id === marker.id
+                    ? getMissionReviewSelectionClassName(true)
+                    : 'bg-transparent'
                 }`}
                 data-testid={`mission-review-marker-${marker.id}`}
                 key={marker.id}
