@@ -642,13 +642,15 @@
           <p>
             The map renders in WGS84 for display, while ITM is the working coordinate reference system
             for operational records. TM65 Irish Grid is available for operator display and input. The
-            coordinate strip updates as the cursor moves and exposes the coordinate converter through
-            the <strong>Convert</strong> button. Fixed CRS details are kept out of the live footer so the
-            operational surface stays focused on coordinates operators actively use.
+            coordinate strip updates as the cursor moves and shows the current point in
+            <strong>DD</strong>, <strong>Irish Grid</strong>, and <strong>DMS</strong>. The
+            <strong>Convert</strong> button stays in the strip beside those live values. Fixed CRS details
+            are kept out of the live footer so the operational surface stays focused on coordinates
+            operators actively use.
           </p>
           <div class="card-grid">
             <div class="card"><strong>Maps menu</strong><br />OpenTopoMap, ESRI World Topo, OpenStreetMap, ESRI Satellite, and the current-view offline tile check.</div>
-            <div class="card"><strong>Coordinate converter</strong><br />Accepts IG, DD, and DMS, shows W3W as unavailable until integration decisions are settled, and can copy results or jump the map to the converted point.</div>
+            <div class="card"><strong>Coordinate converter</strong><br />Accepts IG, DD, and DMS, shows W3W as unavailable until integration decisions are settled, and can copy results, jump the map to the converted point, or open the normal marker form at that point.</div>
             <div class="card"><strong>Offline badge</strong><br />Keeps the offline tile readiness warning visible without exposing routine cache controls until the Maps menu is open.</div>
           </div>
           <p>
@@ -786,6 +788,11 @@
             the grid reference, and create the marker. Valid references open the normal marker form with
             WGS84, ITM, and TM65 coordinates prefilled. The marker runtime refreshes to the active mission before opening the form so coordinate-created markers do not silently vanish. Invalid references fail visibly and do not create
             a marker.
+          </p>
+          <p>
+            The coordinate converter can also open the marker form after any successful IG, DD, or DMS
+            conversion. Use <strong>Create Marker Here</strong> after conversion when the converted point
+            should become an operational marker.
           </p>
         </section>
 

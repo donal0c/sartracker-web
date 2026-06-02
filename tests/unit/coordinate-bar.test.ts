@@ -22,6 +22,8 @@ describe('CoordinateBar', () => {
     render(React.createElement(CoordinateBar, { latitude: 52.274681, longitude: -9.530912 }))
 
     expect(text('[data-testid="coordinate-display"]')).toContain('52.274681')
+    expect(text('[data-testid="coordinate-display"]')).toContain('52°16')
+    expect(query('[data-testid="coords-dms"]')).not.toBeNull()
     expect(text('[data-testid="coordinate-display"]')).not.toContain('Map CRS')
     expect(text('[data-testid="coordinate-display"]')).not.toContain('Work CRS')
     expect(query('[data-testid="open-coordinate-converter"]')).not.toBeNull()

@@ -241,6 +241,19 @@ export function formatWGS84Degrees(lat: number, lon: number, precision = 6): str
 }
 
 /**
+ * Formats WGS84 latitude/longitude as DMS coordinates with directional suffixes.
+ */
+export function formatWGS84Dms(lat: number, lon: number): string {
+  const context = 'format_wgs84_dms'
+  const safeLat = validateNumeric(lat, 'latitude', context)
+  const safeLon = validateNumeric(lon, 'longitude', context)
+
+  validateWGS84Range(safeLat, safeLon, context)
+
+  return `${formatDmsCoordinate(safeLat, 'lat')}, ${formatDmsCoordinate(safeLon, 'lon')}`
+}
+
+/**
  * Formats the operator coordinate bar with both WGS84 and TM65 values.
  */
 export function formatMapCoordinateBar(
@@ -252,6 +265,21 @@ export function formatMapCoordinateBar(
   const wgs84 = formatWGS84Degrees(lat, lon)
   const tm65 = formatIrishGridReference(easting, northing)
   return mode === 'tm65_first' ? `${tm65}  |  ${wgs84}` : `${wgs84}  |  ${tm65}`
+}
+
+function formatDmsCoordinate(value: number, axis: 'lat' | 'lon'): string {
+  const direction = axis === 'lat'
+    ? value >= 0 ? 'N' : 'S'
+    : value >= 0 ? 'E' : 'W'
+  const totalSeconds = Math.round(Math.abs(value) * 3_600_000) / 1_000
+  const degrees = Math.floor(totalSeconds / 3_600)
+  const remainingSeconds = totalSeconds - degrees * 3_600
+  const minutes = Math.floor(remainingSeconds / 60)
+  const seconds = remainingSeconds - minutes * 60
+
+  return `${degrees}°${minutes.toString().padStart(2, '0')}'${seconds
+    .toFixed(3)
+    .padStart(6, '0')}"${direction}`
 }
 
 function findIrishGridLetterPosition(letter: string): { easting: number; northing: number } | null {

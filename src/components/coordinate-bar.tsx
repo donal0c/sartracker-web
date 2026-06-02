@@ -1,9 +1,13 @@
 import type { ReactNode } from 'react'
 
-import { formatWGS84Degrees, formatIrishGridReference, wgs84ToTM65, formatMapCoordinateBar } from '../lib/coordinates'
+import {
+  formatIrishGridReference,
+  formatWGS84Degrees,
+  formatWGS84Dms,
+  wgs84ToTM65,
+} from '../lib/coordinates'
 import { useCoordinateToolStore } from '../features/coordinates/coordinate-tool-store'
 import { useMapTargetStore } from '../features/map/map-target-store'
-import { readCoordinateDisplayMode } from '../lib/coordinate-preferences'
 
 type CoordinateBarProps = {
   readonly latitude: number | null
@@ -11,53 +15,48 @@ type CoordinateBarProps = {
 }
 
 export function CoordinateBar({ latitude, longitude }: CoordinateBarProps) {
-  const mode = readCoordinateDisplayMode()
   const openDialog = useCoordinateToolStore((state) => state.openDialog)
   const activeTarget = useMapTargetStore((state) => state.activeTarget)
-  const content =
-    latitude === null || longitude === null ? '—' : formatMapCoordinateBar(latitude, longitude, mode)
 
   let wgs84Display: string | null = null
   let gridDisplay: string | null = null
+  let dmsDisplay: string | null = null
   if (latitude !== null && longitude !== null) {
     wgs84Display = formatWGS84Degrees(latitude, longitude)
     const [easting, northing] = wgs84ToTM65(latitude, longitude)
     gridDisplay = formatIrishGridReference(easting, northing)
+    dmsDisplay = formatWGS84Dms(latitude, longitude)
   }
+  const content =
+    wgs84Display !== null && gridDisplay !== null && dmsDisplay !== null
+      ? `${wgs84Display}  |  ${gridDisplay}  |  ${dmsDisplay}`
+      : '—'
 
   return (
     <div
       className="sar-instrument-strip absolute inset-x-0 bottom-0 z-10 font-mono text-base font-semibold text-stone-100"
       data-testid="coordinate-display"
     >
-      <div className="grid min-h-[72px] grid-cols-[minmax(15rem,1.25fr)_minmax(12rem,1fr)_auto]">
+      <div className="grid min-h-[72px] grid-cols-[minmax(13rem,1fr)_minmax(11rem,0.9fr)_auto_minmax(14rem,1.1fr)]">
         <span data-testid="coords-combined" className="sr-only">{content}</span>
 
-        <InstrumentCell label={mode === 'tm65_first' ? 'Irish Grid' : 'Coordinates'}>
-          {wgs84Display !== null && gridDisplay !== null ? (
-            mode === 'tm65_first' ? (
-              <span className="text-amber-100" data-testid="coords-grid">{gridDisplay}</span>
-            ) : (
-              <span className="text-stone-100" data-testid="coords-wgs84">{wgs84Display}</span>
-            )
+        <InstrumentCell label="DD">
+          {wgs84Display !== null ? (
+            <span className="text-stone-100" data-testid="coords-wgs84">{wgs84Display}</span>
           ) : (
             <span>—</span>
           )}
         </InstrumentCell>
 
-        <InstrumentCell label={mode === 'tm65_first' ? 'Coordinates' : 'Irish Grid'}>
-          {wgs84Display !== null && gridDisplay !== null ? (
-            mode === 'tm65_first' ? (
-              <span className="text-stone-100" data-testid="coords-wgs84">{wgs84Display}</span>
-            ) : (
-              <span className="text-amber-100" data-testid="coords-grid">{gridDisplay}</span>
-            )
+        <InstrumentCell label="Irish Grid">
+          {gridDisplay !== null ? (
+            <span className="text-amber-100" data-testid="coords-grid">{gridDisplay}</span>
           ) : (
             <span>—</span>
           )}
         </InstrumentCell>
 
-        <div className="flex items-center gap-2 border-l border-[var(--sar-line)] px-4">
+        <div className="flex items-center justify-center gap-2 border-l border-[var(--sar-line)] px-4">
           {activeTarget !== null ? (
             <span
               className="border border-amber-500/40 bg-amber-500/12 px-2 py-1 text-[11px] font-sans font-bold uppercase tracking-[0.2em] text-amber-100"
@@ -75,6 +74,14 @@ export function CoordinateBar({ latitude, longitude }: CoordinateBarProps) {
             Convert
           </button>
         </div>
+
+        <InstrumentCell label="DMS">
+          {dmsDisplay !== null ? (
+            <span className="text-stone-100" data-testid="coords-dms">{dmsDisplay}</span>
+          ) : (
+            <span>—</span>
+          )}
+        </InstrumentCell>
       </div>
     </div>
   )

@@ -3,6 +3,7 @@ import {
   formatITMCoordinates,
   formatIrishGridReference,
   formatMapCoordinateBar,
+  formatWGS84Dms,
   formatWGS84Degrees,
   itmToWgs84,
   parseIrishGridReference,
@@ -37,6 +38,10 @@ describe('map coordinate formatting', () => {
     expect(formatMapCoordinateBar(52.274681, -9.530912)).toBe(
       '52.274681°N, 9.530912°W  |  Q 95554 14717',
     )
+  })
+
+  it('rolls DMS seconds up instead of showing 60 seconds', () => {
+    expect(formatWGS84Dms(51.97, -9.7)).toBe('51°58\'12.000"N, 9°42\'00.000"W')
   })
 
   it('formats ITM coordinates as rounded easting/northing pairs', () => {

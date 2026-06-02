@@ -1,5 +1,6 @@
 import {
   formatIrishGridReference,
+  formatWGS84Dms,
   parseIrishGridReference,
   tm65ToWgs84,
   wgs84ToTM65,
@@ -55,7 +56,7 @@ export function convertCoordinates(
     latitude,
     longitude,
     ddDisplay: formatDecimalDegrees(latitude, longitude),
-    dmsDisplay: `${formatDmsCoordinate(latitude, 'lat')}, ${formatDmsCoordinate(longitude, 'lon')}`,
+    dmsDisplay: formatWGS84Dms(latitude, longitude),
     tm65Easting,
     tm65Northing,
     irishGridRef: formatIrishGridReference(tm65Easting, tm65Northing),
@@ -122,21 +123,6 @@ function parseRequiredNumber(value: string, label: string): number {
 
 function formatDecimalDegrees(latitude: number, longitude: number): string {
   return `${latitude.toFixed(6)}, ${longitude.toFixed(6)}`
-}
-
-function formatDmsCoordinate(value: number, axis: 'lat' | 'lon'): string {
-  const direction = axis === 'lat'
-    ? value >= 0 ? 'N' : 'S'
-    : value >= 0 ? 'E' : 'W'
-  const absolute = Math.abs(value)
-  const degrees = Math.floor(absolute)
-  const minutesFloat = (absolute - degrees) * 60
-  const minutes = Math.floor(minutesFloat)
-  const seconds = (minutesFloat - minutes) * 60
-
-  return `${degrees}°${minutes.toString().padStart(2, '0')}'${seconds
-    .toFixed(3)
-    .padStart(6, '0')}"${direction}`
 }
 
 function parseDmsCoordinate(value: string, label: string): number {

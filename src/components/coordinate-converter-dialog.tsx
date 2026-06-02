@@ -10,6 +10,8 @@ import {
 } from '../features/coordinates/coordinate-tool'
 import { useCoordinateToolStore } from '../features/coordinates/coordinate-tool-store'
 import { useMapTargetStore } from '../features/map/map-target-store'
+import { useMarkerStore } from '../features/markers/marker-store'
+import { useMissionStore } from '../features/mission/mission-store'
 import { DialogOverlay } from './dialog-overlay'
 
 const COORDINATE_CONVERTER_TITLE_ID = 'coordinate-converter-title'
@@ -21,10 +23,15 @@ export function CoordinateConverterDialog() {
   const open = useCoordinateToolStore((state) => state.open)
   const closeDialog = useCoordinateToolStore((state) => state.closeDialog)
   const queueTarget = useMapTargetStore((state) => state.queueTarget)
+  const markerController = useMarkerStore((state) => state.controller)
+  const missionId = useMissionStore((state) => state.currentMission?.id ?? null)
+  const missionPhase = useMissionStore((state) => state.phase)
   const [draft, setDraft] = useState(createCoordinateConverterDraft)
   const [result, setResult] = useState<CoordinateConversionResult | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [copiedKind, setCopiedKind] = useState<CoordinateClipboardKind | null>(null)
+  const markerCreationDisabled =
+    result === null || markerController === null || missionId === null || missionPhase === 'recovery'
 
   useEffect(() => {
     if (!open) {
@@ -213,7 +220,7 @@ export function CoordinateConverterDialog() {
                 value={result.w3wDisplay}
               />
 
-              <div className="md:col-span-3 flex justify-end">
+              <div className="md:col-span-3 flex flex-wrap justify-end gap-3">
                 <button
                   className="sar-button-focus px-4 py-2 text-sm font-semibold"
                   data-testid="coordinate-go-to-btn"
@@ -224,6 +231,15 @@ export function CoordinateConverterDialog() {
                   type="button"
                 >
                   Go To Location
+                </button>
+                <button
+                  className="sar-action-primary px-4 py-2 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-40"
+                  data-testid="coordinate-create-marker-btn"
+                  disabled={markerCreationDisabled}
+                  onClick={() => void createMarkerFromResult()}
+                  type="button"
+                >
+                  Create Marker Here
                 </button>
               </div>
             </section>
@@ -239,6 +255,30 @@ export function CoordinateConverterDialog() {
 
     await navigator.clipboard.writeText(formatCoordinateClipboardValue(result, kind))
     setCopiedKind(kind)
+  }
+
+  async function createMarkerFromResult(): Promise<void> {
+    if (
+      result === null ||
+      markerController === null ||
+      missionId === null ||
+      missionPhase === 'recovery'
+    ) {
+      return
+    }
+
+    try {
+      await markerController.refreshMission(missionId)
+      markerController.beginCreateAt(result.latitude, result.longitude)
+      setError(null)
+      closeDialog()
+    } catch (runtimeError) {
+      setError(
+        runtimeError instanceof Error
+          ? runtimeError.message
+          : 'Marker mission refresh failed.',
+      )
+    }
   }
 }
 
