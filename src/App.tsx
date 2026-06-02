@@ -391,12 +391,12 @@ export function CommandMast(props: {
 
   return (
     <header className="sar-global-mast flex-shrink-0" data-testid="command-mast">
-      <div className="grid min-h-[88px] w-full grid-cols-[250px_176px_112px_112px_64px_64px_160px_92px_92px_92px_92px_92px] items-stretch overflow-hidden">
-        <div className="flex min-w-0 items-center gap-3 border-r border-[var(--sar-line)] px-4">
-          <div className="relative flex h-12 w-12 flex-shrink-0 items-center justify-center overflow-hidden border border-amber-300/35 bg-stone-950/80">
+      <div className="grid min-h-[112px] w-full grid-cols-[330px_176px_112px_112px_64px_64px_160px_92px_92px_92px_92px_92px] items-stretch overflow-hidden">
+        <div className="flex min-w-0 items-center gap-4 border-r border-[var(--sar-line)] px-4">
+          <div className="relative flex h-24 w-28 flex-shrink-0 items-center justify-center overflow-hidden border border-stone-200/40 bg-white">
             <img
               alt="Mountain Rescue team logo"
-              className="h-full w-full object-contain p-1.5"
+              className="h-full w-full object-contain"
               onError={(event) => {
                 event.currentTarget.hidden = true
                 event.currentTarget.nextElementSibling?.removeAttribute('hidden')

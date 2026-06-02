@@ -13,12 +13,12 @@ export function FocusModeSidebar() {
       data-testid="focus-mode-sidebar"
     >
       <header className="flex-shrink-0 border-b border-[var(--sar-line-strong)] px-4 py-4">
-        <div className="flex items-center justify-between gap-3">
+        <div className="flex flex-col gap-3">
           <div className="flex min-w-0 items-center gap-3">
-            <div className="relative flex h-11 w-11 flex-shrink-0 items-center justify-center overflow-hidden border border-amber-300/35 bg-stone-950/80">
+            <div className="relative flex h-20 w-24 flex-shrink-0 items-center justify-center overflow-hidden border border-stone-200/40 bg-white">
               <img
                 alt="Mountain Rescue team logo"
-                className="h-full w-full object-contain p-1.5"
+                className="h-full w-full object-contain"
                 onError={(event) => {
                   event.currentTarget.hidden = true
                   event.currentTarget.nextElementSibling?.removeAttribute('hidden')
@@ -41,7 +41,7 @@ export function FocusModeSidebar() {
               </h1>
             </div>
           </div>
-          <FocusModeToggle className="sar-button-focus rounded-lg px-3 py-2 text-[11px] font-bold" />
+          <FocusModeToggle className="sar-button-focus self-start rounded-lg px-3 py-2 text-[11px] font-bold" />
         </div>
       </header>
 
