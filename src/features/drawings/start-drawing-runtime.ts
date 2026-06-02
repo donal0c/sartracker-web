@@ -1,5 +1,6 @@
 import type { Drawing, MissionStore } from '../../infrastructure/mission-store/tauri-mission-store'
 import { buildDrawingInput } from './drawing-builders'
+import { buildMovedTextLabelDrawingInput } from './drawing-persistence/text-label-drawing-persistence'
 import {
   appendDrawingSketchPoint,
   beginDrawingDialogAtPoint,
@@ -53,6 +54,7 @@ export type DrawingRuntimeController = {
   readonly updateDraft: (draft: DrawingDraft) => void
   readonly closeDialog: () => void
   readonly saveDialog: () => Promise<Drawing | null>
+  readonly moveTextLabel: (drawingId: string, lon: number, lat: number) => Promise<Drawing | null>
   readonly deleteSelectedDrawing: () => Promise<boolean>
   readonly selectDrawing: (drawingId: string | null) => void
 }
@@ -135,6 +137,33 @@ export async function startDrawingRuntime(
             displayOrder: getNextDrawingDisplayOrder(state, state.dialog.draft.id),
             draft: state.dialog.draft,
           }),
+        )
+
+        applyDrawingSaveSuccess(state, drawing)
+        publishRuntime()
+        return drawing
+      } catch (runtimeError) {
+        applyDrawingSaveFailure(state, toErrorMessage(runtimeError))
+        publishRuntime()
+        throw runtimeError
+      }
+    },
+    moveTextLabel: async (drawingId, lon, lat) => {
+      if (state.activeMissionId === null) {
+        return null
+      }
+
+      const target = state.drawings.find((candidate) => candidate.id === drawingId)
+      if (target === undefined || target.type !== 'text_label') {
+        return null
+      }
+
+      beginDrawingSave(state)
+      publishRuntime()
+
+      try {
+        const drawing = await dependencies.drawingStore.upsertDrawing(
+          buildMovedTextLabelDrawingInput(target, lon, lat),
         )
 
         applyDrawingSaveSuccess(state, drawing)

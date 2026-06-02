@@ -14,6 +14,7 @@ import { createDrawingFeatureCollection, createDrawingPreviewFeatureCollection }
 export const DRAWING_SOURCE_ID = 'mission-drawings'
 export const DRAWING_PREVIEW_SOURCE_ID = 'mission-drawing-preview'
 export const DRAWING_FILL_LAYER_ID = 'mission-drawings-fill'
+export const DRAWING_LINE_CASING_LAYER_ID = 'mission-drawings-line-casing'
 export const DRAWING_LINE_LAYER_ID = 'mission-drawings-line'
 export const DRAWING_LABEL_LAYER_ID = 'mission-drawings-label'
 export const DRAWING_POINT_LAYER_ID = 'mission-drawings-point'
@@ -23,6 +24,20 @@ export const DRAWING_FILL_HITBOX_LAYER_ID = 'mission-drawings-fill-hitbox'
 export const DRAWING_PREVIEW_FILL_LAYER_ID = 'mission-drawing-preview-fill'
 export const DRAWING_PREVIEW_LINE_LAYER_ID = 'mission-drawing-preview-line'
 export const DRAWING_PREVIEW_POINT_LAYER_ID = 'mission-drawing-preview-point'
+
+/**
+ * Modern expression-form geometry-kind selectors.
+ *
+ * MapLibre 5 silently DROPS a filter that nests the legacy `['==','$type',X]`
+ * selector inside an `['all', …]` expression (setFilter does not throw, but
+ * getFilter then returns undefined and the layer renders unfiltered). The
+ * expression form below survives nesting, so visibility and geometry-kind
+ * filters actually apply.
+ */
+const IS_POINT_GEOMETRY: MapOverlayFilter = ['==', ['geometry-type'], 'Point']
+const IS_LINE_GEOMETRY: MapOverlayFilter = ['==', ['geometry-type'], 'LineString']
+const IS_POLYGON_GEOMETRY: MapOverlayFilter = ['==', ['geometry-type'], 'Polygon']
+const IS_GEOMETRY_KIND: MapOverlayFilter = ['==', ['get', 'featureKind'], 'geometry']
 
 export function syncDrawingOverlay(
   map: maplibregl.Map,
@@ -45,28 +60,31 @@ export function syncDrawingOverlay(
     'label',
   )
 
-  map.setFilter(DRAWING_FILL_LAYER_ID, combineMapFilters(['==', '$type', 'Polygon'], geometryVisibilityFilter))
+  map.setFilter(DRAWING_FILL_LAYER_ID, combineMapFilters(IS_POLYGON_GEOMETRY, geometryVisibilityFilter))
   map.setFilter(
     DRAWING_FILL_HITBOX_LAYER_ID,
-    combineMapFilters(['==', '$type', 'Polygon'], geometryVisibilityFilter),
+    combineMapFilters(IS_POLYGON_GEOMETRY, geometryVisibilityFilter),
+  )
+  // Both the casing and the coloured line render every geometry feature so that
+  // polygon boundaries (search areas, sectors) get the same crisp, haloed
+  // outline as plain lines and range rings.
+  map.setFilter(
+    DRAWING_LINE_CASING_LAYER_ID,
+    combineMapFilters(IS_GEOMETRY_KIND, geometryVisibilityFilter),
   )
   map.setFilter(
     DRAWING_LINE_LAYER_ID,
-    combineMapFilters(['==', '$type', 'LineString'], geometryVisibilityFilter),
+    combineMapFilters(IS_GEOMETRY_KIND, geometryVisibilityFilter),
   )
   map.setFilter(
     DRAWING_LINE_HITBOX_LAYER_ID,
-    combineMapFilters(['==', '$type', 'LineString'], geometryVisibilityFilter),
+    combineMapFilters(IS_LINE_GEOMETRY, geometryVisibilityFilter),
   )
   map.setFilter(
     DRAWING_LABEL_LAYER_ID,
     combineMapFilters(['==', ['get', 'featureKind'], 'label'], labelVisibilityFilter),
   )
-  const geometryPointFilter = [
-    'all',
-    ['==', '$type', 'Point'],
-    ['==', ['get', 'featureKind'], 'geometry'],
-  ] as MapOverlayFilter
+  const geometryPointFilter = ['all', IS_POINT_GEOMETRY, IS_GEOMETRY_KIND] as MapOverlayFilter
   map.setFilter(
     DRAWING_POINT_LAYER_ID,
     combineMapFilters(geometryPointFilter, geometryVisibilityFilter),
@@ -107,6 +125,29 @@ function ensureDrawingLayers(map: maplibregl.Map): void {
     paint: {
       'fill-color': '#000000',
       'fill-opacity': 0,
+    },
+  })
+
+  // Dark casing drawn underneath the coloured stroke so any drawing colour
+  // stays legible against busy topographic terrain (matches the tracking
+  // breadcrumb casing treatment).
+  ensureLayer(map, {
+    id: DRAWING_LINE_CASING_LAYER_ID,
+    type: 'line',
+    source: DRAWING_SOURCE_ID,
+    paint: {
+      'line-color': '#020617',
+      'line-width': [
+        'case',
+        ['boolean', ['get', 'selected'], false],
+        ['+', ['get', 'width'], 4.5],
+        ['+', ['get', 'width'], 3],
+      ],
+      'line-opacity': 0.85,
+    },
+    layout: {
+      'line-cap': 'round',
+      'line-join': 'round',
     },
   })
 

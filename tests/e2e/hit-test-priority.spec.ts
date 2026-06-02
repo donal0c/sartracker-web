@@ -43,8 +43,8 @@ test.describe('B6 hit-test priority', () => {
     await page.getByTestId('drawing-save-btn').click()
     await expect(drawingDialog).toBeHidden()
 
-    await page.getByTestId('drawing-tool-select').click({ force: true })
-
+    // Saving returns the editor to the internal select/fallback mode (DON-72
+    // removed the visible Select button), so a plain map click edits.
     await clickMap(page, { x: markerScreenX, y: markerScreenY })
 
     const reopenedMarkerDialog = page.getByTestId('marker-dialog')
@@ -73,8 +73,7 @@ test.describe('B6 hit-test priority', () => {
     await page.getByTestId('drawing-save-btn').click()
     await expect(drawingDialog).toBeHidden()
 
-    await page.getByTestId('drawing-tool-select').click({ force: true })
-
+    // Saving returns the editor to the internal select/fallback mode (DON-72).
     await clickMap(page, { x: 500, y: 280 })
 
     const reopenedDrawingDialog = page.getByTestId('drawing-dialog')

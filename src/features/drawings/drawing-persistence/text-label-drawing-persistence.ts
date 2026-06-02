@@ -56,6 +56,26 @@ export function buildTextLabelDrawingInput(
 }
 
 /**
+ * Builds an upsert payload that moves an existing text label to a new anchor,
+ * preserving its text and styling. Used by the click-and-drag move workflow.
+ */
+export function buildMovedTextLabelDrawingInput(
+  drawing: Drawing,
+  lon: number,
+  lat: number,
+) {
+  if (!Number.isFinite(lon) || !Number.isFinite(lat)) {
+    throw new Error('Moved text label requires finite coordinates.')
+  }
+
+  const draft = createTextLabelDraftFromDrawing(drawing)
+  return buildTextLabelDrawingInput(drawing.mission_id, drawing.display_order, {
+    ...draft,
+    point: [lon, lat],
+  })
+}
+
+/**
  * Creates an editable text-label draft from a persisted drawing.
  */
 export function createTextLabelDraftFromDrawing(drawing: Drawing): TextLabelDrawingDraft {

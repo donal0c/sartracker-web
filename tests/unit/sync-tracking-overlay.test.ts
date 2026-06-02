@@ -83,6 +83,19 @@ function getBreadcrumbLayer(map: ReturnType<typeof createMockMap>): LayerSpec {
 /*  Tests                                                              */
 /* ------------------------------------------------------------------ */
 
+/**
+ * Recursively asserts that a filter expression never uses the legacy `$type`
+ * selector, which MapLibre 5 drops when nested under `['all', …]`.
+ */
+function assertNoLegacyTypeSelector(filter: unknown): void {
+  if (Array.isArray(filter)) {
+    expect(filter).not.toContain('$type')
+    for (const part of filter) {
+      assertNoLegacyTypeSelector(part)
+    }
+  }
+}
+
 describe('tracking overlay marker configuration', () => {
   let map: ReturnType<typeof createMockMap>
 
@@ -101,6 +114,20 @@ describe('tracking overlay marker configuration', () => {
     }
 
     syncTrackingOverlay(map as never, emptySnapshot, [], true)
+  })
+
+  describe('filter syntax', () => {
+    it('never sets a layer filter that uses the legacy $type selector', () => {
+      for (const call of map.setFilter.mock.calls) {
+        assertNoLegacyTypeSelector(call[1])
+      }
+    })
+
+    it('never adds a layer whose filter uses the legacy $type selector', () => {
+      for (const [, layer] of map.layers) {
+        assertNoLegacyTypeSelector(layer.filter)
+      }
+    })
   })
 
   describe('device circle markers', () => {

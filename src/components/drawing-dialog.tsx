@@ -185,7 +185,6 @@ export function DrawingDialog() {
 }
 
 function LineSection(props: { readonly draft: Extract<DrawingDraft, { type: 'line' }> }) {
-  const pointCount = props.draft.points.length
   const distanceM = calculatePolylineDistance(props.draft.points)
   const trueBearing = calculateEndpointBearing(props.draft.points)
   const magneticBearing = Number.isFinite(trueBearing) ? trueToMagnetic(trueBearing) : Number.NaN
@@ -195,7 +194,6 @@ function LineSection(props: { readonly draft: Extract<DrawingDraft, { type: 'lin
   return (
     <ReadOnlyGrid
       items={[
-        { label: 'Vertices', value: pointCount.toString() },
         {
           label: 'Distance',
           testId: 'drawing-line-distance-readout',
@@ -231,7 +229,6 @@ function SearchAreaSection(props: {
     <>
       <ReadOnlyGrid
         items={[
-          { label: 'Vertices', value: props.draft.points.length.toString() },
           { label: 'Area', value: `${areaSqM.toFixed(0)} m²` },
         ]}
       />

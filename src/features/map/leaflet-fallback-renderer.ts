@@ -193,21 +193,37 @@ function renderDrawingFeature(layerGroup: L.LayerGroup, feature: Feature<Geometr
   const selected = readBooleanProperty(properties, 'selected')
 
   if (feature.geometry.type === 'LineString') {
-    L.polyline(toLatLngs(feature.geometry.coordinates), {
+    const latLngs = toLatLngs(feature.geometry.coordinates)
+    const strokeWeight = selected ? weight + 2 : weight
+    // Dark casing under the coloured stroke for legibility on busy terrain.
+    L.polyline(latLngs, {
+      color: '#020617',
+      opacity: 0.85,
+      weight: strokeWeight + 3,
+    }).addTo(layerGroup)
+    L.polyline(latLngs, {
       color: strokeColor,
       opacity: 0.95,
-      weight: selected ? weight + 2 : weight,
+      weight: strokeWeight,
     }).addTo(layerGroup)
     return
   }
 
   if (feature.geometry.type === 'Polygon') {
-    L.polygon(feature.geometry.coordinates.map(toLatLngs), {
+    const rings = feature.geometry.coordinates.map(toLatLngs)
+    const strokeWeight = selected ? weight + 1.5 : weight
+    L.polygon(rings, {
+      color: '#020617',
+      fill: false,
+      opacity: 0.85,
+      weight: strokeWeight + 3,
+    }).addTo(layerGroup)
+    L.polygon(rings, {
       color: strokeColor,
       fillColor,
       fillOpacity: selected ? 0.32 : 0.18,
       opacity: 0.95,
-      weight: selected ? weight + 1.5 : weight,
+      weight: strokeWeight,
     }).addTo(layerGroup)
     return
   }

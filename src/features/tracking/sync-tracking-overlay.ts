@@ -1,7 +1,12 @@
 import type maplibregl from 'maplibre-gl'
 
 import { buildTrackingLayerFilter } from '../layers/map-layer-filters'
-import { combineMapFilters, ensureGeoJsonSource, ensureLayer } from '../map/map-overlay-primitives'
+import {
+  combineMapFilters,
+  ensureGeoJsonSource,
+  ensureLayer,
+  type MapOverlayFilter,
+} from '../map/map-overlay-primitives'
 import { createTrackingFeatureCollection } from './tracking-geojson'
 import {
   DEFAULT_BREADCRUMB_SIZE,
@@ -16,6 +21,14 @@ export const TRACKING_DEVICE_HALO_LAYER_ID = 'tracking-devices-halo'
 export const TRACKING_DEVICE_LAYER_ID = 'tracking-devices-circle'
 export const TRACKING_DEVICE_LABEL_LAYER_ID = 'tracking-devices-label'
 export const TRACKING_BREADCRUMB_LAYER_ID = 'tracking-breadcrumbs-line'
+
+/**
+ * Modern expression-form geometry-kind selectors. The legacy `['==','$type',X]`
+ * form is silently dropped by MapLibre 5 when nested inside `['all', …]`, so
+ * these expression equivalents are used everywhere a filter may be combined.
+ */
+const IS_POINT_GEOMETRY: MapOverlayFilter = ['==', ['geometry-type'], 'Point']
+const IS_LINE_GEOMETRY: MapOverlayFilter = ['==', ['geometry-type'], 'LineString']
 
 /**
  * Synchronizes tracking source/layers and applies the current device visibility filters.
@@ -38,7 +51,7 @@ export function syncTrackingOverlay(
     id: TRACKING_BREADCRUMB_CASING_LAYER_ID,
     type: 'line',
     source: TRACKING_SOURCE_ID,
-    filter: ['==', '$type', 'LineString'],
+    filter: IS_LINE_GEOMETRY,
     paint: {
       'line-color': '#020617',
       'line-width': breadcrumbSize + 3,
@@ -54,7 +67,7 @@ export function syncTrackingOverlay(
     id: TRACKING_BREADCRUMB_LAYER_ID,
     type: 'line',
     source: TRACKING_SOURCE_ID,
-    filter: ['==', '$type', 'LineString'],
+    filter: IS_LINE_GEOMETRY,
     paint: {
       'line-color': ['get', 'color'],
       'line-width': breadcrumbSize,
@@ -70,7 +83,7 @@ export function syncTrackingOverlay(
     id: TRACKING_DEVICE_HALO_LAYER_ID,
     type: 'circle',
     source: TRACKING_SOURCE_ID,
-    filter: ['==', '$type', 'Point'],
+    filter: IS_POINT_GEOMETRY,
     paint: {
       'circle-color': '#020617',
       'circle-radius': 17,
@@ -82,7 +95,7 @@ export function syncTrackingOverlay(
     id: TRACKING_DEVICE_LAYER_ID,
     type: 'circle',
     source: TRACKING_SOURCE_ID,
-    filter: ['==', '$type', 'Point'],
+    filter: IS_POINT_GEOMETRY,
     paint: {
       'circle-color': ['get', 'color'],
       'circle-radius': 12,
@@ -111,7 +124,7 @@ export function syncTrackingOverlay(
     id: TRACKING_DEVICE_LABEL_LAYER_ID,
     type: 'symbol',
     source: TRACKING_SOURCE_ID,
-    filter: ['==', '$type', 'Point'],
+    filter: IS_POINT_GEOMETRY,
     layout: {
       'text-field': ['get', 'name'],
       'text-font': ['Open Sans Regular', 'Arial Unicode MS Regular'],
@@ -132,22 +145,22 @@ export function syncTrackingOverlay(
   map.setFilter(
     TRACKING_BREADCRUMB_CASING_LAYER_ID,
     breadcrumbsVisible
-      ? combineMapFilters(['==', '$type', 'LineString'], visibilityFilter)
+      ? combineMapFilters(IS_LINE_GEOMETRY, visibilityFilter)
       : ['==', ['get', 'deviceId'], '__hidden__'],
   )
   map.setFilter(
     TRACKING_BREADCRUMB_LAYER_ID,
     breadcrumbsVisible
-      ? combineMapFilters(['==', '$type', 'LineString'], visibilityFilter)
+      ? combineMapFilters(IS_LINE_GEOMETRY, visibilityFilter)
       : ['==', ['get', 'deviceId'], '__hidden__'],
   )
   map.setFilter(
     TRACKING_DEVICE_HALO_LAYER_ID,
-    combineMapFilters(['==', '$type', 'Point'], visibilityFilter),
+    combineMapFilters(IS_POINT_GEOMETRY, visibilityFilter),
   )
-  map.setFilter(TRACKING_DEVICE_LAYER_ID, combineMapFilters(['==', '$type', 'Point'], visibilityFilter))
+  map.setFilter(TRACKING_DEVICE_LAYER_ID, combineMapFilters(IS_POINT_GEOMETRY, visibilityFilter))
   map.setFilter(
     TRACKING_DEVICE_LABEL_LAYER_ID,
-    combineMapFilters(['==', '$type', 'Point'], visibilityFilter),
+    combineMapFilters(IS_POINT_GEOMETRY, visibilityFilter),
   )
 }

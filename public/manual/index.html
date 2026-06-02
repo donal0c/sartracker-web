@@ -812,6 +812,11 @@
             target are red with a white outline so they remain visible over bright raster tiles and dark
             terrain.
           </p>
+          <p>
+            There is no separate <strong>Select</strong> button. When no tool is armed the map is in its
+            normal select state: click a drawing to open its edit form, and click empty terrain to place a
+            marker. After you save or cancel a tool the map returns to this select state automatically.
+          </p>
           <figure class="screenshot">
             <img src="assets/tools-and-map.png" alt="Map Tools expanded next to map and measurement panel" />
             <figcaption>Map Tools toolbar expanded with the Tools tab open.</figcaption>
@@ -821,13 +826,12 @@
               <tr><th>Tool</th><th>Typical Use</th></tr>
             </thead>
             <tbody>
-              <tr><td>Select</td><td>Edit existing drawings from the map; Layers can also open drawing edits.</td></tr>
               <tr><td>Line</td><td>Draw route lines and see measured distance plus true/magnetic bearing to the endpoint.</td></tr>
               <tr><td>Search Area</td><td>Draw polygons with team, status, POA, label size, fill colour, terrain, and notes.</td></tr>
               <tr><td>Range Rings</td><td>Create manual rings or LPB percentile rings from a point.</td></tr>
               <tr><td>Bearing</td><td>Create a bearing line from an origin, distance, and true or magnetic bearing.</td></tr>
               <tr><td>Sector</td><td>Create a search sector from center, start bearing, end bearing, and radius.</td></tr>
-              <tr><td>Text Label</td><td>Place map text with size, color, and rotation.</td></tr>
+              <tr><td>Text Label</td><td>Place map text with size, color, and rotation. Click and drag a placed label to move it; the new position is saved.</td></tr>
               <tr><td>Measure</td><td>Temporary two-point distance and map-bearing measurement from Map Tools or the Tools tab.</td></tr>
             </tbody>
           </table>
@@ -836,10 +840,14 @@
             true to magnetic subtracts 4.5 degrees; magnetic to true adds 4.5 degrees.
           </div>
           <div class="callout">
-            Text labels render as text only. Range rings render as clean ring lines. Use the Layers
-            workspace to hide drawing types or individual drawings when the map needs less visual load.
-            To delete a misplaced drawing, open it through Select mode or the Layers inspection panel,
-            press <strong>Delete</strong>, and confirm the destructive action.
+            Normal map display is kept clean: drawings show as continuous lines with a dark casing for
+            contrast against busy terrain, and no editing dots appear on range rings, search sectors, or
+            search-area outlines during normal reading. Text labels render as text only and can be dragged
+            to reposition. Range ring, sector, and search-area outlines use higher-contrast default colours;
+            LPB percentile rings keep their statistical colour coding. Use the Layers workspace to hide
+            drawing types or individual drawings when the map needs less visual load. To delete a misplaced
+            drawing, click it to open its form (or use the Layers inspection panel), press
+            <strong>Delete</strong>, and confirm the destructive action.
           </div>
           <div class="note">
             <strong>Contrast:</strong> selected rows in high-use workspaces use a brighter selected-state

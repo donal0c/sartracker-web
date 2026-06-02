@@ -59,8 +59,8 @@ test.describe('Visual: Map Tools', () => {
       verificationPrompt: `Verify this screenshot of the SAR Tracker Search Area drawing dialog:
 1. The dialog should show "NEW DRAWING" and "Search Area Details" header
 2. NAME field should contain "Sector Alpha"
-3. VERTICES count should show "3" (triangle)
-4. AREA should show a calculated area in square meters (m²)
+3. AREA should show a calculated area in square meters (m²)
+4. There should be NO "Vertices" readout (it was removed for operators)
 5. TEAM field should show "Team 1"
 6. STATUS dropdown should show "Assigned"
 7. POA % field should show "35" (probability of area)

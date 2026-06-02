@@ -5,8 +5,11 @@ import { LPB_CATEGORIES } from '../features/drawings/lpb-data'
 import { useMeasurementStore } from '../features/measurements/measurement-store'
 import { useMissionStore } from '../features/mission/mission-store'
 
+// "Select" is intentionally absent from the operator-facing tool list: it is
+// the internal default/fallback mode the editor returns to after a tool
+// completes or is cancelled (DON-72). Existing drawings stay editable via a
+// normal map click in that fallback mode or through the Layers panel.
 const DRAWING_TOOL_OPTIONS = [
-  { value: 'select', label: 'Select', hint: 'Edit and delete existing drawings' },
   { value: 'line', label: 'Line', hint: 'Click points, double-click or right-click to finish' },
   { value: 'search_area', label: 'Search Area', hint: 'Draw polygon then fill in search metadata' },
   { value: 'range_ring', label: 'Range Rings', hint: 'Click a centre point, then configure rings' },
@@ -80,11 +83,6 @@ export function DrawingToolbar() {
 
                     if (measurementController !== null && measurementMode === 'armed') {
                       measurementController.cancelMeasurement()
-                    }
-
-                    if (option.value === 'select') {
-                      controller.cancelActiveTool()
-                      return
                     }
 
                     if (activeTool === option.value && dialog === null) {

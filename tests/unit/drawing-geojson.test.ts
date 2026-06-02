@@ -145,6 +145,70 @@ describe('drawing geojson', () => {
     })
   })
 
+  it('uses a high-contrast default stroke and wider line for range rings', () => {
+    const collection = createDrawingFeatureCollection(
+      [
+        createDrawing({
+          id: 'range-default',
+          type: 'range_ring',
+          color: null,
+          width: null,
+          geometry_json: JSON.stringify({
+            type: 'MultiPolygon',
+            coordinates: [
+              [[[-9.7, 52.0], [-9.69, 52.0], [-9.69, 52.01], [-9.7, 52.01], [-9.7, 52.0]]],
+            ],
+          }),
+          metadata_json: JSON.stringify({
+            kind: 'range_ring',
+            mode: 'manual',
+            center: [-9.7, 52.0],
+            radiiM: [800],
+            colors: [],
+            labels: ['800 m'],
+            lpbCategory: null,
+          }),
+        }),
+      ],
+      null,
+    )
+
+    const ring = collection.features.find((feature) => feature.geometry.type === 'LineString')
+    // Muddy green is illegible on the topo basemap; the default must be a
+    // higher-contrast colour and the stroke must be wide enough to carry over
+    // contour clutter.
+    expect(ring?.properties?.strokeColor).not.toBe('#22C55E')
+    expect(ring?.properties?.width).toBeGreaterThanOrEqual(3)
+  })
+
+  it('uses an operationally legible default stroke width for search sectors', () => {
+    const collection = createDrawingFeatureCollection(
+      [
+        createDrawing({
+          id: 'sector-default',
+          type: 'search_sector',
+          color: null,
+          width: null,
+          geometry_json: JSON.stringify({
+            type: 'Polygon',
+            coordinates: [[[-9.7, 52.0], [-9.69, 52.0], [-9.69, 52.01], [-9.7, 52.0]]],
+          }),
+          metadata_json: JSON.stringify({
+            kind: 'search_sector',
+            center: [-9.7, 52.0],
+            startBearing: 0,
+            endBearing: 90,
+            radiusM: 1000,
+          }),
+        }),
+      ],
+      null,
+    )
+
+    const geometry = collection.features.find((feature) => feature.properties?.featureKind === 'geometry')
+    expect(geometry?.properties?.width).toBeGreaterThanOrEqual(3)
+  })
+
   it('creates preview line and vertex features while sketching', () => {
     const collection = createDrawingPreviewFeatureCollection(
       {

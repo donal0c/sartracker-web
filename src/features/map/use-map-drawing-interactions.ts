@@ -11,6 +11,10 @@ import {
   shouldIgnoreDrawingMapClick,
 } from './map-drawing-interactions'
 import { resolveClickedMapTarget } from './map-click-target-resolver'
+import {
+  createTextLabelDragState,
+  resolveDraggableTextLabelId,
+} from './text-label-drag'
 import { useMapInteractionMode } from './use-map-interaction-mode'
 
 type UseMapDrawingInteractionsOptions = {
@@ -99,6 +103,7 @@ export function useMapDrawingInteractions(
     }
 
     const panClickGuard = createMapPanClickGuard()
+    let labelDrag: ReturnType<typeof createTextLabelDragState> | null = null
 
     const resolveMapPoint = (event: MouseEvent) => {
       const containerBounds = mapContainer.getBoundingClientRect()
@@ -133,6 +138,21 @@ export function useMapDrawingInteractions(
       }
 
       panClickGuard.recordPointerDown(resolved.point)
+
+      // In the internal select/fallback mode a pointer-down over a text label
+      // begins a drag-to-move. The map's own drag-pan is suspended so the label
+      // follows the pointer instead of panning the map.
+      if (activeTool === 'select' && interactionMode === 'idle') {
+        const labelId = resolveDraggableTextLabelId({
+          drawings,
+          point: resolved.point,
+          project: (coordinate) => map.project(coordinate),
+        })
+        if (labelId !== null) {
+          labelDrag = createTextLabelDragState(labelId, resolved.point)
+          map.dragPan.disable()
+        }
+      }
     }
 
     const handlePointerMove = (event: PointerEvent) => {
@@ -142,10 +162,28 @@ export function useMapDrawingInteractions(
       }
 
       panClickGuard.recordPointerMove(resolved.point)
+
+      if (labelDrag !== null) {
+        labelDrag.recordMove(resolved.point)
+      }
     }
 
-    const handlePointerUp = () => {
+    const handlePointerUp = (event: PointerEvent) => {
       panClickGuard.recordPointerUp()
+
+      if (labelDrag !== null) {
+        const activeDrag = labelDrag
+        labelDrag = null
+        map.dragPan.enable()
+
+        if (activeDrag.hasMoved()) {
+          const resolved = resolveMapPoint(event)
+          if (resolved !== null) {
+            const lngLat = map.unproject([resolved.point.x, resolved.point.y])
+            void controller.moveTextLabel(activeDrag.drawingId, lngLat.lng, lngLat.lat)
+          }
+        }
+      }
     }
 
     const handleClick = (event: MouseEvent) => {

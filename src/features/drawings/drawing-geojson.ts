@@ -32,31 +32,34 @@ const DEFAULT_DRAWING_STYLE: Record<
     strokeColor: '#38BDF8',
     fillColor: '#38BDF833',
     labelColor: '#E0F2FE',
-    width: 3,
+    width: 3.5,
   },
   search_area: {
-    strokeColor: '#F59E0B',
-    fillColor: '#F59E0B33',
+    strokeColor: '#FBBF24',
+    fillColor: '#FBBF2433',
     labelColor: '#FEF3C7',
-    width: 2,
+    width: 3,
   },
   range_ring: {
-    strokeColor: '#22C55E',
-    fillColor: '#22C55E10',
-    labelColor: '#DCFCE7',
-    width: 2,
+    // Cyan reads far better than green on OpenTopoMap's green/khaki terrain.
+    // LPB percentile rings keep their semantic colours via metadata; this is
+    // only the manual/fallback default.
+    strokeColor: '#22D3EE',
+    fillColor: '#22D3EE10',
+    labelColor: '#CFFAFE',
+    width: 3,
   },
   bearing_line: {
-    strokeColor: '#A78BFA',
-    fillColor: '#A78BFA20',
+    strokeColor: '#C4B5FD',
+    fillColor: '#C4B5FD20',
     labelColor: '#E9D5FF',
-    width: 2,
+    width: 3,
   },
   search_sector: {
-    strokeColor: '#F97316',
-    fillColor: '#F9731630',
+    strokeColor: '#FB923C',
+    fillColor: '#FB923C30',
     labelColor: '#FFEDD5',
-    width: 2,
+    width: 3,
   },
   text_label: {
     strokeColor: '#E7E5E4',
