@@ -129,14 +129,14 @@ Rows:
   - **Result: Match.** Verified by Batch 1 fix. Layer-level toggles (e.g., `layer:markers:clues`, `layer:drawings:range-ring`, `layer:map-tools:measurements`) propagate to the visibility store via `applyVisibilityForNodes()` and update MapLibre filters. Playwright: `parity-visibility.spec.ts` LPV-241, LPV-243, LPV-245.
 - [x] `LPV-066` Confirm item-level visibility toggles change the map.
   - **Result: Match.** Item-level toggles (e.g., `feature:device:bravo`, `feature:marker:marker-clue-1`, `feature:drawing:drawing-line-1`) propagate correctly. Playwright: `parity-visibility.spec.ts` LPV-240, LPV-242, LPV-244.
-- [x] `LPV-067` Confirm alias, favorite, and reorder behavior where parity requires it.
-  - **Result: Match.** All three exist in the inspector pane: alias input/save/clear (`layer-filter-panel.tsx:330-368`), favorite button (`layer-filter-panel.tsx:225-238`), Move Up/Down buttons (`layer-filter-panel.tsx:370-403`). Persisted via `controller.renameNode`, `controller.toggleFavorite`, `controller.reorderNode`. E2E: `layer-panel.spec.ts` tests alias save and favorite toggle, including persistence across reload.
+- [x] `LPV-067` Confirm alias and reorder behavior where parity requires it.
+  - **Result: Partial / intentionally adjusted.** Alias input/save/clear and Move Up/Down controls exist in the inspector pane and persist through the layer catalog runtime. Favorite was intentionally removed from the live UI in `DON-73` because it had no operational consumer yet; the persisted `isFavorite` metadata field remains for compatibility, but there is no `toggleFavorite` controller action or Favorite control in the current Layer Workspace.
 - [x] `LPV-068` Confirm context menu actions exist and behave correctly where applicable.
-  - **Result: Missing.** No right-click context menu exists in `layer-filter-panel.tsx`. Legacy context menu provides select / rename / delete / zoom / export / duplicate per feature. The web inspector pane provides rename and favorite, but not delete, zoom, export, or duplicate from the tree.
+  - **Result: Missing.** No right-click context menu exists in `layer-filter-panel.tsx`. Legacy context menu provides select / rename / delete / zoom / export / duplicate per feature. The web inspector pane provides rename and reorder, but not delete, zoom, export, duplicate, or the removed Favorite action.
 - [x] `LPV-069` Confirm bulk actions and protected-layer restrictions behave correctly.
-  - **Result: Missing.** No bulk delete, bulk export, or team assignment actions exist. No tracking layer protection logic is implemented. The catalog controller (`start-layer-catalog-runtime.ts:42-52`) only exposes `refreshCatalog`, `selectNode`, `renameNode`, `toggleFavorite`, `setNodeVisibility`, `reorderNode` — no delete or export.
+  - **Result: Missing.** No bulk delete, bulk export, or team assignment actions exist. No tracking layer protection logic is implemented. The catalog controller only exposes refresh, select, rename, visibility, batch visibility, and reorder operations — no delete or export.
 - [x] `LPV-070` Confirm tree state and rendered state remain synchronized after edits and toggles.
-  - **Result: Match.** Verified by Batch 1 LPV-247 test. Tree toggles now propagate to the visibility store synchronously via `applyVisibilityForNodes()`. Alias and favorite changes persist across reload. Playwright: `parity-visibility.spec.ts` LPV-247 + `layer-panel.spec.ts` persistence test.
+  - **Result: Match.** Verified by Batch 1 LPV-247 test. Tree toggles now propagate to the visibility store synchronously via `applyVisibilityForNodes()`. Alias and visibility changes persist across reload. Playwright: `parity-visibility.spec.ts` LPV-247 + `layer-panel.spec.ts` persistence test.
 
 ---
 
