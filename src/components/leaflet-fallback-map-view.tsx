@@ -26,7 +26,7 @@ import { useMarkerStore } from '../features/markers/marker-store'
 import { useTrackingStore } from '../features/tracking/tracking-store'
 import { useActiveMissionDevicesStore } from '../features/tracking/active-mission-devices-store'
 import { selectMissionTrackingSnapshot } from '../features/tracking/mission-active-tracking'
-import { useTrackingStyleStore } from '../features/tracking/tracking-style-store'
+import { useTrackingStylePreferences } from '../features/tracking/tracking-style-store'
 import { useMissionStore } from '../features/mission/mission-store'
 import {
   createLeafletBasemapLayer,
@@ -70,10 +70,7 @@ export function LeafletFallbackMapView() {
   const trackingSnapshot = useTrackingStore((state) => state.snapshot)
   const missionId = useMissionStore((state) => state.currentMission?.id ?? null)
   const activeDeviceIds = useActiveMissionDevicesStore((state) => state.getActiveDeviceIds(missionId))
-  const trackingStyle = useTrackingStyleStore((state) => ({
-    deviceColors: state.deviceColors,
-    breadcrumbSize: state.breadcrumbSize,
-  }))
+  const trackingStyle = useTrackingStylePreferences()
   const missionTrackingSnapshot = useMemo(
     () => selectMissionTrackingSnapshot(trackingSnapshot, activeDeviceIds),
     [activeDeviceIds, trackingSnapshot],

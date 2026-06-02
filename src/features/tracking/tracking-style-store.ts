@@ -1,3 +1,4 @@
+import { useMemo } from 'react'
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 
@@ -54,6 +55,23 @@ export const useTrackingStyleStore = create<TrackingStyleStoreState>()(
     },
   ),
 )
+
+/**
+ * Returns the map-renderer style preferences without using an object-literal
+ * Zustand selector, which can trigger uncached external-store snapshots.
+ */
+export function useTrackingStylePreferences(): TrackingStylePreferences {
+  const deviceColors = useTrackingStyleStore((state) => state.deviceColors)
+  const breadcrumbSize = useTrackingStyleStore((state) => state.breadcrumbSize)
+
+  return useMemo(
+    () => ({
+      deviceColors,
+      breadcrumbSize,
+    }),
+    [breadcrumbSize, deviceColors],
+  )
+}
 
 /**
  * Normalizes browser colour-input values into uppercase hex colours.
