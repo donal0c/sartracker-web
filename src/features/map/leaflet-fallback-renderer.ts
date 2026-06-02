@@ -7,12 +7,18 @@ import type { TrackingSnapshot } from '../tracking/tracking-types'
 import { createDrawingFeatureCollection } from '../drawings/drawing-geojson'
 import { createMarkerFeatureCollection } from '../markers/marker-geojson'
 import { createTrackingFeatureCollection } from '../tracking/tracking-geojson'
+import {
+  DEFAULT_BREADCRUMB_SIZE,
+  clampBreadcrumbSize,
+  type TrackingStylePreferences,
+} from '../tracking/tracking-style-store'
 
 export type LeafletFallbackOverlayInput = {
   readonly trackingSnapshot: TrackingSnapshot
   readonly trackingVisible: boolean
   readonly breadcrumbsVisible: boolean
   readonly hiddenDeviceIds: readonly string[]
+  readonly trackingStyle?: TrackingStylePreferences
   readonly markers: readonly Marker[]
   readonly markerTypeVisibility: Record<MarkerType, boolean>
   readonly hiddenMarkerIds: readonly string[]
@@ -74,7 +80,16 @@ export function renderLeafletFallbackOverlays(
 
 function renderTrackingOverlay(layerGroup: L.LayerGroup, input: LeafletFallbackOverlayInput): void {
   const hiddenDeviceIds = new Set(input.hiddenDeviceIds)
-  const tracking = createTrackingFeatureCollection(input.trackingSnapshot, 5 * 60 * 1000)
+  const trackingStyle = input.trackingStyle ?? {
+    deviceColors: {},
+    breadcrumbSize: DEFAULT_BREADCRUMB_SIZE,
+  }
+  const breadcrumbSize = clampBreadcrumbSize(trackingStyle.breadcrumbSize)
+  const tracking = createTrackingFeatureCollection(
+    input.trackingSnapshot,
+    5 * 60 * 1000,
+    trackingStyle,
+  )
 
   for (const feature of tracking.features) {
     const properties = feature.properties ?? {}
@@ -90,7 +105,7 @@ function renderTrackingOverlay(layerGroup: L.LayerGroup, input: LeafletFallbackO
       L.polyline(toLatLngs(feature.geometry.coordinates), {
         color: readStringProperty(properties, 'color') ?? '#38BDF8',
         opacity: 0.92,
-        weight: 4,
+        weight: breadcrumbSize,
       }).addTo(layerGroup)
       continue
     }

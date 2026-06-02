@@ -8,6 +8,7 @@ import { useMapTargetStore } from '../../src/features/map/map-target-store'
 import { useMissionStore } from '../../src/features/mission/mission-store'
 import { useActiveMissionDevicesStore } from '../../src/features/tracking/active-mission-devices-store'
 import { useDeviceWorkspaceStore } from '../../src/features/tracking/device-workspace-store'
+import { useTrackingStyleStore } from '../../src/features/tracking/tracking-style-store'
 import { useTrackingStore } from '../../src/features/tracking/tracking-store'
 import type {
   TrackingConnectionStatus,
@@ -95,6 +96,7 @@ describe('DevicesWorkspace', () => {
     useDeviceWorkspaceStore.setState(useDeviceWorkspaceStore.getInitialState())
     useTrackingStore.setState(useTrackingStore.getInitialState())
     useActiveMissionDevicesStore.setState(useActiveMissionDevicesStore.getInitialState())
+    useTrackingStyleStore.setState(useTrackingStyleStore.getInitialState())
     useMissionStore.setState(useMissionStore.getInitialState())
     useLayerVisibilityStore.setState(useLayerVisibilityStore.getInitialState())
     useMapTargetStore.setState(useMapTargetStore.getInitialState())
@@ -162,6 +164,21 @@ describe('DevicesWorkspace', () => {
     )
   })
 
+  it('updates per-device breadcrumb colour and global breadcrumb size controls', async () => {
+    const { DevicesWorkspace } = await import('../../src/components/devices-workspace')
+    useTrackingStore.setState({ snapshot: SNAPSHOT, status: STATUS })
+    useDeviceWorkspaceStore.setState({ open: true, selectedDeviceId: 'alpha' })
+
+    render(React.createElement(DevicesWorkspace))
+    await waitForElement('[data-testid="devices-workspace"]')
+
+    changeInput('[data-testid="device-breadcrumb-color-alpha"]', '#f97316')
+    changeInput('[data-testid="breadcrumb-size-control"]', '7')
+
+    expect(useTrackingStyleStore.getState().deviceColors.alpha).toBe('#F97316')
+    expect(useTrackingStyleStore.getState().breadcrumbSize).toBe(7)
+  })
+
   function render(element: React.ReactElement): void {
     host = document.createElement('div')
     document.body.append(host)
@@ -191,6 +208,19 @@ function click(selector: string): void {
     throw new Error(`Expected ${selector} to be an HTML element.`)
   }
   act(() => element.click())
+}
+
+function changeInput(selector: string, value: string): void {
+  const element = document.querySelector(selector)
+  if (!(element instanceof HTMLInputElement)) {
+    throw new Error(`Expected ${selector} to be an input element.`)
+  }
+
+  act(() => {
+    element.value = value
+    element.dispatchEvent(new Event('input', { bubbles: true }))
+    element.dispatchEvent(new Event('change', { bubbles: true }))
+  })
 }
 
 function getText(selector: string): string {

@@ -3,6 +3,11 @@ import type maplibregl from 'maplibre-gl'
 import { buildTrackingLayerFilter } from '../layers/map-layer-filters'
 import { combineMapFilters, ensureGeoJsonSource, ensureLayer } from '../map/map-overlay-primitives'
 import { createTrackingFeatureCollection } from './tracking-geojson'
+import {
+  DEFAULT_BREADCRUMB_SIZE,
+  clampBreadcrumbSize,
+  type TrackingStylePreferences,
+} from './tracking-style-store'
 import type { TrackingSnapshot } from './tracking-types'
 
 export const TRACKING_SOURCE_ID = 'tracking'
@@ -20,8 +25,14 @@ export function syncTrackingOverlay(
   snapshot: TrackingSnapshot,
   hiddenDeviceIds: readonly string[],
   breadcrumbsVisible: boolean,
+  style: TrackingStylePreferences = { deviceColors: {}, breadcrumbSize: DEFAULT_BREADCRUMB_SIZE },
 ): void {
-  ensureGeoJsonSource(map, TRACKING_SOURCE_ID, createTrackingFeatureCollection(snapshot, 5 * 60 * 1000))
+  const breadcrumbSize = clampBreadcrumbSize(style.breadcrumbSize)
+  ensureGeoJsonSource(
+    map,
+    TRACKING_SOURCE_ID,
+    createTrackingFeatureCollection(snapshot, 5 * 60 * 1000, style),
+  )
 
   ensureLayer(map, {
     id: TRACKING_BREADCRUMB_CASING_LAYER_ID,
@@ -30,7 +41,7 @@ export function syncTrackingOverlay(
     filter: ['==', '$type', 'LineString'],
     paint: {
       'line-color': '#020617',
-      'line-width': 7,
+      'line-width': breadcrumbSize + 3,
       'line-opacity': 0.78,
     },
     layout: {
@@ -46,7 +57,7 @@ export function syncTrackingOverlay(
     filter: ['==', '$type', 'LineString'],
     paint: {
       'line-color': ['get', 'color'],
-      'line-width': 4,
+      'line-width': breadcrumbSize,
       'line-opacity': 0.92,
     },
     layout: {

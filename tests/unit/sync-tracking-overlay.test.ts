@@ -175,5 +175,31 @@ describe('tracking overlay marker configuration', () => {
       expect(trail.paint?.['line-color']).toEqual(['get', 'color'])
       expect(trail.paint?.['line-opacity']).toBeGreaterThanOrEqual(0.9)
     })
+
+    it('applies the global breadcrumb size to line and casing widths', async () => {
+      map = createMockMap()
+      const { syncTrackingOverlay } = await import(
+        '../../src/features/tracking/sync-tracking-overlay'
+      )
+
+      syncTrackingOverlay(
+        map as never,
+        {
+          devices: [],
+          positions: [],
+          breadcrumbs: [],
+          connectionHealth: { status: 'connected' as const, lastSuccessfulPoll: null },
+        },
+        [],
+        true,
+        { deviceColors: {}, breadcrumbSize: 7 },
+      )
+
+      const casing = getBreadcrumbCasingLayer(map)
+      const trail = getBreadcrumbLayer(map)
+
+      expect(trail.paint?.['line-width']).toBe(7)
+      expect(casing.paint?.['line-width']).toBe(10)
+    })
   })
 })

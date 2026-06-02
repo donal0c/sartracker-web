@@ -52,6 +52,45 @@ describe('Leaflet fallback renderer', () => {
     expect(Object.keys(group.getLayers())).toHaveLength(addLayer.mock.calls.length)
   })
 
+  it('applies configured breadcrumb colour and size to fallback breadcrumb lines', () => {
+    const group = L.layerGroup()
+
+    renderLeafletFallbackOverlays(group, {
+      trackingSnapshot: createTrackingSnapshot(),
+      trackingVisible: true,
+      breadcrumbsVisible: true,
+      hiddenDeviceIds: [],
+      trackingStyle: {
+        deviceColors: { alpha: '#F97316' },
+        breadcrumbSize: 7,
+      },
+      markers: [],
+      markerTypeVisibility: {
+        ipp_lkp: true,
+        clue: true,
+        hazard: true,
+        casualty: true,
+      },
+      hiddenMarkerIds: [],
+      drawings: [],
+      drawingTypeVisibility: {
+        line: true,
+        search_area: true,
+        range_ring: true,
+        bearing_line: true,
+        search_sector: true,
+        text_label: true,
+      },
+      hiddenDrawingIds: [],
+      selectedDrawingId: null,
+    })
+
+    const breadcrumbLine = group.getLayers().find((layer) => layer instanceof L.Polyline)
+    expect(breadcrumbLine).toBeDefined()
+    expect((breadcrumbLine as L.Polyline).options.color).toBe('#F97316')
+    expect((breadcrumbLine as L.Polyline).options.weight).toBe(7)
+  })
+
   it('honours hidden device, marker, and drawing visibility inputs', () => {
     const group = L.layerGroup()
     const addLayer = vi.spyOn(group, 'addLayer')

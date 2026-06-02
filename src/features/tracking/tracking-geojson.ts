@@ -2,6 +2,7 @@ import type { Feature, FeatureCollection, Geometry, LineString, Point } from 'ge
 
 import { createBreadcrumbSegments } from './breadcrumb-accumulator'
 import { createDeviceColor } from './tracking-color'
+import type { TrackingStylePreferences } from './tracking-style-store'
 import type { TrackingSnapshot } from './tracking-types'
 
 type GeoJsonPointFeature = Feature<
@@ -26,12 +27,13 @@ type GeoJsonLineFeature = Feature<
 export function createTrackingFeatureCollection(
   snapshot: TrackingSnapshot,
   gapThresholdMs: number,
+  style: TrackingStylePreferences = { deviceColors: {}, breadcrumbSize: 4 },
 ): FeatureCollection<Geometry> {
   return {
     type: 'FeatureCollection',
     features: [
-      ...createBreadcrumbFeatureCollection(snapshot, gapThresholdMs).features,
-      ...createDeviceFeatureCollection(snapshot).features,
+      ...createBreadcrumbFeatureCollection(snapshot, gapThresholdMs, style).features,
+      ...createDeviceFeatureCollection(snapshot, style).features,
     ],
   }
 }
@@ -41,6 +43,7 @@ export function createTrackingFeatureCollection(
  */
 export function createDeviceFeatureCollection(
   snapshot: TrackingSnapshot,
+  style: Pick<TrackingStylePreferences, 'deviceColors'> = { deviceColors: {} },
 ): FeatureCollection<Point> {
   const deviceNameById = new Map(
     snapshot.devices.map((device) => [device.device_id, device.name] as const),
@@ -55,7 +58,7 @@ export function createDeviceFeatureCollection(
     properties: {
       deviceId: position.device_id,
       name: deviceNameById.get(position.device_id) ?? position.device_id,
-      color: createDeviceColor(position.device_id),
+      color: getStyledDeviceColor(position.device_id, style.deviceColors),
       stale: position.device_cache_stale,
       dataOrigin: position.data_origin,
     },
@@ -73,6 +76,7 @@ export function createDeviceFeatureCollection(
 export function createBreadcrumbFeatureCollection(
   snapshot: TrackingSnapshot,
   gapThresholdMs: number,
+  style: Pick<TrackingStylePreferences, 'deviceColors'> = { deviceColors: {} },
 ): FeatureCollection<LineString> {
   const breadcrumbsByDevice = new Map<string, TrackingSnapshot['breadcrumbs'][number][]>()
   for (const breadcrumb of snapshot.breadcrumbs) {
@@ -102,7 +106,7 @@ export function createBreadcrumbFeatureCollection(
         },
         properties: {
           deviceId,
-          color: createDeviceColor(deviceId),
+          color: getStyledDeviceColor(deviceId, style.deviceColors),
         },
       })
     }
@@ -112,4 +116,11 @@ export function createBreadcrumbFeatureCollection(
     type: 'FeatureCollection',
     features,
   }
+}
+
+function getStyledDeviceColor(
+  deviceId: string,
+  deviceColors: Readonly<Record<string, string>>,
+): string {
+  return deviceColors[deviceId] ?? createDeviceColor(deviceId)
 }

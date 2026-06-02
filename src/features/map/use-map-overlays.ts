@@ -12,6 +12,7 @@ import { useMissionStore } from '../mission/mission-store'
 import { syncTrackingOverlay } from '../tracking/sync-tracking-overlay'
 import { useActiveMissionDevicesStore } from '../tracking/active-mission-devices-store'
 import { selectMissionTrackingSnapshot } from '../tracking/mission-active-tracking'
+import { useTrackingStyleStore } from '../tracking/tracking-style-store'
 import { buildTrackingInitialExtent } from '../tracking/tracking-viewport'
 import { useTrackingStore } from '../tracking/tracking-store'
 import type { BasemapId } from '../../lib/map-config'
@@ -40,6 +41,10 @@ export function useMapOverlays(options: UseMapOverlaysOptions): void {
   const markerState = useMarkerStore((state) => state.markers)
   const missionId = useMissionStore((state) => state.currentMission?.id ?? null)
   const activeDeviceIds = useActiveMissionDevicesStore((state) => state.getActiveDeviceIds(missionId))
+  const trackingStyle = useTrackingStyleStore((state) => ({
+    deviceColors: state.deviceColors,
+    breadcrumbSize: state.breadcrumbSize,
+  }))
   const missionTrackingSnapshot = useMemo(
     () => selectMissionTrackingSnapshot(trackingSnapshot, activeDeviceIds),
     [activeDeviceIds, trackingSnapshot],
@@ -63,6 +68,7 @@ export function useMapOverlays(options: UseMapOverlaysOptions): void {
         getEffectiveTrackingVisible(groupVisibility) ? missionTrackingSnapshot : emptyTrackingSnapshot(),
         hiddenDeviceIds,
         getEffectiveTrackingVisible(groupVisibility) && breadcrumbsVisible,
+        trackingStyle,
       )
 
       if (missionId === null) {
@@ -94,6 +100,7 @@ export function useMapOverlays(options: UseMapOverlaysOptions): void {
     breadcrumbsVisible,
     groupVisibility,
     hiddenDeviceIds,
+    trackingStyle,
     activeDeviceIds,
     missionId,
     missionTrackingSnapshot,

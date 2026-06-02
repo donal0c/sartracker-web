@@ -10,6 +10,12 @@ import {
 import { useMissionStore } from '../features/mission/mission-store'
 import { useActiveMissionDevicesStore } from '../features/tracking/active-mission-devices-store'
 import { useDeviceWorkspaceStore } from '../features/tracking/device-workspace-store'
+import { createDeviceColor } from '../features/tracking/tracking-color'
+import {
+  MAX_BREADCRUMB_SIZE,
+  MIN_BREADCRUMB_SIZE,
+  useTrackingStyleStore,
+} from '../features/tracking/tracking-style-store'
 import { useTrackingStore } from '../features/tracking/tracking-store'
 import { useLayerVisibilityStore } from '../features/layers/layer-visibility-store'
 import { useMapTargetStore } from '../features/map/map-target-store'
@@ -31,6 +37,10 @@ export function DevicesWorkspace() {
     state.getActiveDeviceIds(currentMissionId),
   )
   const setDeviceActive = useActiveMissionDevicesStore((state) => state.setDeviceActive)
+  const deviceColors = useTrackingStyleStore((state) => state.deviceColors)
+  const breadcrumbSize = useTrackingStyleStore((state) => state.breadcrumbSize)
+  const setDeviceColor = useTrackingStyleStore((state) => state.setDeviceColor)
+  const setBreadcrumbSize = useTrackingStyleStore((state) => state.setBreadcrumbSize)
   const hiddenDeviceIds = useLayerVisibilityStore((state) => state.hiddenDeviceIds)
   const toggleDeviceVisibility = useLayerVisibilityStore((state) => state.toggleDeviceVisibility)
   const queueTarget = useMapTargetStore((state) => state.queueTarget)
@@ -129,6 +139,28 @@ export function DevicesWorkspace() {
               ) : null}
             </div>
 
+            <div className="mt-4 rounded-2xl border border-stone-800 bg-stone-900/40 p-4">
+              <label className="flex flex-wrap items-center justify-between gap-3 text-sm text-stone-200">
+                <span>
+                  <span className="block text-[11px] font-bold uppercase tracking-wider text-stone-400">
+                    Breadcrumb Size
+                  </span>
+                  <span className="font-mono text-xs text-stone-300">{breadcrumbSize}px trail width</span>
+                </span>
+                <input
+                  className="w-44 accent-amber-400"
+                  data-testid="breadcrumb-size-control"
+                  max={MAX_BREADCRUMB_SIZE}
+                  min={MIN_BREADCRUMB_SIZE}
+                  onChange={(event) => setBreadcrumbSize(event.currentTarget.valueAsNumber)}
+                  onInput={(event) => setBreadcrumbSize(event.currentTarget.valueAsNumber)}
+                  step={1}
+                  type="range"
+                  value={breadcrumbSize}
+                />
+              </label>
+            </div>
+
             <DeviceRowsSection
               emptyMessage="No active mission devices selected. Until a device is added, the map continues showing every tracked device."
               rows={activeRows}
@@ -136,7 +168,9 @@ export function DevicesWorkspace() {
               selectedDeviceId={selectedRow?.deviceId ?? null}
               testId="active-devices"
               testPrefix="active-device"
+              deviceColors={deviceColors}
               onSelectDevice={selectDevice}
+              onSetDeviceColor={setDeviceColor}
               onToggleActive={(deviceId) => {
                 if (currentMissionId !== null) {
                   setDeviceActive(currentMissionId, deviceId, false)
@@ -153,7 +187,9 @@ export function DevicesWorkspace() {
               selectedDeviceId={selectedRow?.deviceId ?? null}
               testId="all-devices"
               testPrefix="device"
+              deviceColors={deviceColors}
               onSelectDevice={selectDevice}
+              onSetDeviceColor={setDeviceColor}
               onToggleActive={(deviceId, active) => {
                 if (currentMissionId !== null) {
                   setDeviceActive(currentMissionId, deviceId, active)
@@ -255,8 +291,10 @@ function DeviceRowsSection(props: {
   readonly selectedDeviceId: string | null
   readonly testId: string
   readonly testPrefix: 'active-device' | 'device'
+  readonly deviceColors: Readonly<Record<string, string>>
   readonly emptyMessage: string
   readonly onSelectDevice: (deviceId: string | null) => void
+  readonly onSetDeviceColor: (deviceId: string, color: string) => void
   readonly onToggleActive: (deviceId: string, active: boolean) => void
   readonly onToggleVisibility: (deviceId: string) => void
   readonly onZoomDevice: (row: DeviceWorkspaceRow) => void
@@ -277,8 +315,9 @@ function DeviceRowsSection(props: {
         </p>
       ) : (
         <>
-          <div className="grid grid-cols-[minmax(0,1.4fr)_7rem_8rem_7rem_7rem_10rem] border-b border-stone-800 px-4 py-2 text-[11px] font-bold uppercase tracking-wider text-stone-300">
+          <div className="grid grid-cols-[minmax(0,1.4fr)_4rem_7rem_8rem_7rem_7rem_10rem] border-b border-stone-800 px-4 py-2 text-[11px] font-bold uppercase tracking-wider text-stone-300">
             <span>Device</span>
+            <span>Trail</span>
             <span>Status</span>
             <span>Last Seen</span>
             <span>Source</span>
@@ -292,7 +331,9 @@ function DeviceRowsSection(props: {
                 row={row}
                 selected={row.deviceId === props.selectedDeviceId}
                 testPrefix={props.testPrefix}
+                deviceColor={props.deviceColors[row.deviceId] ?? createDeviceColor(row.deviceId)}
                 onSelectDevice={props.onSelectDevice}
+                onSetDeviceColor={props.onSetDeviceColor}
                 onToggleActive={props.onToggleActive}
                 onToggleVisibility={props.onToggleVisibility}
                 onZoomDevice={props.onZoomDevice}
@@ -309,7 +350,9 @@ function DeviceRow(props: {
   readonly row: DeviceWorkspaceRow
   readonly selected: boolean
   readonly testPrefix: 'active-device' | 'device'
+  readonly deviceColor: string
   readonly onSelectDevice: (deviceId: string | null) => void
+  readonly onSetDeviceColor: (deviceId: string, color: string) => void
   readonly onToggleActive: (deviceId: string, active: boolean) => void
   readonly onToggleVisibility: (deviceId: string) => void
   readonly onZoomDevice: (row: DeviceWorkspaceRow) => void
@@ -321,7 +364,7 @@ function DeviceRow(props: {
 
   return (
     <div
-      className={`grid cursor-pointer grid-cols-[minmax(0,1.4fr)_7rem_8rem_7rem_7rem_10rem] items-center border-b border-stone-800/70 px-4 py-3 text-sm ${
+      className={`grid cursor-pointer grid-cols-[minmax(0,1.4fr)_4rem_7rem_8rem_7rem_7rem_10rem] items-center border-b border-stone-800/70 px-4 py-3 text-sm ${
         props.selected ? 'bg-amber-500/10' : 'bg-transparent'
       }`}
       data-testid={rowTestId}
@@ -341,6 +384,18 @@ function DeviceRow(props: {
           {props.row.deviceId}
         </p>
       </button>
+      <label className="flex items-center" title="Breadcrumb trail colour">
+        <input
+          aria-label={`${props.row.name} breadcrumb trail colour`}
+          className="h-8 w-8 cursor-pointer rounded border border-stone-700 bg-stone-950 p-0"
+          data-testid={`${props.testPrefix}-breadcrumb-color-${props.row.deviceId}`}
+          onChange={(event) => props.onSetDeviceColor(props.row.deviceId, event.currentTarget.value)}
+          onInput={(event) => props.onSetDeviceColor(props.row.deviceId, event.currentTarget.value)}
+          onClick={(event) => event.stopPropagation()}
+          type="color"
+          value={props.deviceColor}
+        />
+      </label>
       <span
         className={`font-semibold uppercase ${
           props.row.status === 'online'

@@ -74,6 +74,41 @@ describe('tracking geojson', () => {
     expect(collection.features[0]?.properties.deviceId).toBe('1')
   })
 
+  it('uses operator-configured breadcrumb colours per device', () => {
+    const collection = createBreadcrumbFeatureCollection(
+      {
+        devices: devicesFixture.map((device) => normalizeTraccarDevice(device)),
+        positions: [],
+        breadcrumbs: [
+          normalizeTraccarPosition(
+            {
+              id: 1,
+              deviceId: 1,
+              latitude: 52.0,
+              longitude: -9.7,
+              fixTime: '2026-04-06T10:00:00.000Z',
+            },
+            'live',
+          ),
+          normalizeTraccarPosition(
+            {
+              id: 2,
+              deviceId: 1,
+              latitude: 52.0002,
+              longitude: -9.7002,
+              fixTime: '2026-04-06T10:03:00.000Z',
+            },
+            'live',
+          ),
+        ],
+      },
+      5 * 60 * 1000,
+      { deviceColors: { '1': '#F97316' }, breadcrumbSize: 6 },
+    )
+
+    expect(collection.features[0]?.properties.color).toBe('#F97316')
+  })
+
   it('builds a large single-device breadcrumb line without dropping current positions', () => {
     const breadcrumbs = Array.from({ length: 14_500 }, (_, index) =>
       normalizeTraccarPosition(
