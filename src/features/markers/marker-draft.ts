@@ -158,6 +158,26 @@ export function changeMarkerDraftType(
 }
 
 /**
+ * Appends an operator treatment update while preserving previous casualty notes.
+ */
+export function appendTreatmentUpdate(input: {
+  readonly existingTreatment: string
+  readonly note: string
+  readonly timestamp: Date
+  readonly updatedBy: string
+}): string {
+  const note = input.note.trim()
+  if (note === '') {
+    throw new Error('Treatment update is required.')
+  }
+
+  const entry = `${formatTreatmentUpdatePrefix(input.timestamp, input.updatedBy)}${note}`
+  const existingTreatment = input.existingTreatment.trim()
+
+  return existingTreatment === '' ? entry : `${existingTreatment}\n\n${entry}`
+}
+
+/**
  * Builds the backend persistence payload for a marker draft.
  */
 export function buildMarkerSaveInput({
@@ -217,6 +237,21 @@ function createMarkerDraftCoordinates(lat: number, lon: number): MarkerDraftCoor
 function normalizeOptionalText(value: string): string | null {
   const normalized = value.trim()
   return normalized === '' ? null : normalized
+}
+
+function formatTreatmentUpdatePrefix(timestamp: Date, updatedBy: string): string {
+  if (Number.isNaN(timestamp.getTime())) {
+    throw new Error('Treatment update timestamp is invalid.')
+  }
+
+  const dateTime = `${timestamp.getFullYear()}-${padDatePart(timestamp.getMonth() + 1)}-${padDatePart(timestamp.getDate())} ${padDatePart(timestamp.getHours())}:${padDatePart(timestamp.getMinutes())}`
+  const author = updatedBy.trim()
+
+  return author === '' ? `[${dateTime}] ` : `[${dateTime}] ${author}: `
+}
+
+function padDatePart(value: number): string {
+  return value.toString().padStart(2, '0')
 }
 
 function normalizeConfidence(value: ConfidenceLevel | ''): number | null {

@@ -1,4 +1,7 @@
+import { useState } from 'react'
+
 import { useMarkerStore } from '../features/markers/marker-store'
+import { appendTreatmentUpdate } from '../features/markers/marker-draft'
 import {
   CASUALTY_CONDITIONS,
   CLUE_TYPES,
@@ -28,6 +31,7 @@ export function MarkerDialog() {
   const controller = useMarkerStore((state) => state.controller)
   const saving = useMarkerStore((state) => state.saving)
   const runtimeError = useMarkerStore((state) => state.error)
+  const [treatmentUpdate, setTreatmentUpdate] = useState('')
 
   if (dialog === null || controller === null) {
     return null
@@ -214,19 +218,60 @@ export function MarkerDialog() {
                 value={draft.evacuationPriority}
               />
               <Field
-                label="Treatment"
-                disabled={saving}
-                onChange={(value) => controller.updateDraft({ treatment: value })}
-                testId="marker-treatment-input"
-                value={draft.treatment}
-              />
-              <Field
                 label="Found By"
                 disabled={saving}
                 onChange={(value) => controller.updateDraft({ foundBy: value })}
                 testId="marker-found-by-input"
                 value={draft.foundBy}
               />
+              <section className="md:col-span-2 rounded-2xl border border-stone-800 bg-stone-950/40 p-4">
+                <div>
+                  <p className="text-xs uppercase tracking-[0.2em] text-stone-300">
+                    Treatment Log
+                  </p>
+                  <p className="mt-1 text-xs leading-relaxed text-stone-400">
+                    Add each treatment update as a separate timestamped entry. Earlier entries stay in
+                    the log for handoff and review.
+                  </p>
+                </div>
+                <TextAreaField
+                  className="min-h-44 font-mono"
+                  disabled={saving}
+                  label="Existing Treatment Notes"
+                  onChange={(value) => controller.updateDraft({ treatment: value })}
+                  testId="marker-treatment-log-input"
+                  value={draft.treatment}
+                />
+                <div className="mt-4 grid gap-3 md:grid-cols-[1fr_auto] md:items-end">
+                  <TextAreaField
+                    className="min-h-28"
+                    disabled={saving}
+                    label="New Treatment Update"
+                    onChange={setTreatmentUpdate}
+                    testId="marker-treatment-update-input"
+                    value={treatmentUpdate}
+                  />
+                  <button
+                    className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-4 py-2 text-sm font-semibold text-emerald-100 disabled:cursor-not-allowed disabled:opacity-40"
+                    data-testid="marker-treatment-append-btn"
+                    disabled={saving || treatmentUpdate.trim() === ''}
+                    onClick={() => {
+                      controller.updateDraft({
+                        treatment: appendTreatmentUpdate({
+                          existingTreatment: draft.treatment,
+                          note: treatmentUpdate,
+                          timestamp: new Date(),
+                          updatedBy: draft.updatedBy,
+                        }),
+                      })
+                      setTreatmentUpdate('')
+                    }}
+                    type="button"
+                  >
+                    Add Update
+                  </button>
+                </div>
+              </section>
             </div>
           ) : null}
 
@@ -308,6 +353,28 @@ export function MarkerDialog() {
           </div>
       </div>
     </DialogOverlay>
+  )
+}
+
+function TextAreaField(props: {
+  readonly label: string
+  readonly value: string
+  readonly disabled?: boolean
+  readonly onChange: (value: string) => void
+  readonly testId: string
+  readonly className?: string
+}) {
+  return (
+    <label className="mt-3 block text-sm text-stone-200">
+      <span className="text-xs uppercase tracking-[0.2em] text-stone-300">{props.label}</span>
+      <textarea
+        className={`mt-2 w-full rounded-lg border border-stone-700 bg-stone-950 px-3 py-2 text-sm text-stone-100 ${props.className ?? ''}`}
+        data-testid={props.testId}
+        disabled={props.disabled}
+        onChange={(event) => props.onChange(event.target.value)}
+        value={props.value}
+      />
+    </label>
   )
 }
 

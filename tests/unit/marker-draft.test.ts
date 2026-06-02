@@ -4,6 +4,7 @@ import type { Marker } from '../../src/infrastructure/mission-store/tauri-missio
 import {
   buildMarkerSaveInput,
   changeMarkerDraftType,
+  appendTreatmentUpdate,
   createMarkerDraftAtCoordinate,
   createMarkerDraftFromIrishGridReference,
   createMarkerDraftFromMarker,
@@ -132,6 +133,30 @@ describe('marker draft helpers', () => {
       hazard_type: null,
       severity: null,
     })
+  })
+
+  it('appends timestamped treatment updates without overwriting previous notes', () => {
+    const treatment = appendTreatmentUpdate({
+      existingTreatment: '[2026-06-02 10:00] Alpha: Blanket applied',
+      note: 'Warm drink given',
+      timestamp: new Date('2026-06-02T10:15:00.000+01:00'),
+      updatedBy: '  Bravo  ',
+    })
+
+    expect(treatment).toBe(
+      '[2026-06-02 10:00] Alpha: Blanket applied\n\n[2026-06-02 10:15] Bravo: Warm drink given',
+    )
+  })
+
+  it('rejects empty treatment updates', () => {
+    expect(() =>
+      appendTreatmentUpdate({
+        existingTreatment: '',
+        note: '   ',
+        timestamp: new Date('2026-06-02T10:15:00.000+01:00'),
+        updatedBy: '',
+      }),
+    ).toThrow(/Treatment update is required/)
   })
 
   it('normalizes audit metadata and attachments into the save payload', () => {
