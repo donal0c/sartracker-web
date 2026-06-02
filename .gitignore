@@ -29,6 +29,11 @@ refactor_oppertunities.md
 tmp/
 tools/mock-traccar/node_modules/
 
+# Local team reference assets (not committed)
+KMRT evacuation log 2026.pdf
+KMRT logo.png
+public/brand/kmrt-logo.png
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

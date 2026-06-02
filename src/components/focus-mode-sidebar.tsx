@@ -14,16 +14,32 @@ export function FocusModeSidebar() {
     >
       <header className="flex-shrink-0 border-b border-[var(--sar-line-strong)] px-4 py-4">
         <div className="flex items-center justify-between gap-3">
-          <div>
-            <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-amber-300">
-              Focus Mode Plus
-            </p>
-            <h1
-              className="mt-1 font-mono text-lg font-bold text-stone-50"
-              data-testid="app-title"
-            >
-              SAR Tracker
-            </h1>
+          <div className="flex min-w-0 items-center gap-3">
+            <div className="relative flex h-11 w-11 flex-shrink-0 items-center justify-center overflow-hidden border border-amber-300/35 bg-stone-950/80">
+              <img
+                alt="Mountain Rescue team logo"
+                className="h-full w-full object-contain p-1.5"
+                onError={(event) => {
+                  event.currentTarget.hidden = true
+                  event.currentTarget.nextElementSibling?.removeAttribute('hidden')
+                }}
+                src="/brand/kmrt-logo.png"
+              />
+              <span className="font-mono text-[11px] font-black text-amber-200" hidden>
+                MR
+              </span>
+            </div>
+            <div className="min-w-0">
+              <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-amber-300">
+                Focus Mode Plus
+              </p>
+              <h1
+                className="mt-1 truncate font-mono text-lg font-bold text-stone-50"
+                data-testid="app-title"
+              >
+                SAR Tracker
+              </h1>
+            </div>
           </div>
           <FocusModeToggle className="sar-button-focus rounded-lg px-3 py-2 text-[11px] font-bold" />
         </div>

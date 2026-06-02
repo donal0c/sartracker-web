@@ -393,7 +393,21 @@ export function CommandMast(props: {
     <header className="sar-global-mast flex-shrink-0" data-testid="command-mast">
       <div className="grid min-h-[88px] w-full grid-cols-[250px_176px_112px_112px_64px_64px_160px_92px_92px_92px_92px_92px] items-stretch overflow-hidden">
         <div className="flex min-w-0 items-center gap-3 border-r border-[var(--sar-line)] px-4">
-          <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center border border-amber-300/35 bg-amber-300/10 font-mono text-[11px] font-black text-amber-200">
+          <div className="relative flex h-12 w-12 flex-shrink-0 items-center justify-center overflow-hidden border border-amber-300/35 bg-stone-950/80">
+            <img
+              alt="Mountain Rescue team logo"
+              className="h-full w-full object-contain p-1.5"
+              onError={(event) => {
+                event.currentTarget.hidden = true
+                event.currentTarget.nextElementSibling?.removeAttribute('hidden')
+              }}
+              src="/brand/kmrt-logo.png"
+            />
+            <span className="font-mono text-[11px] font-black text-amber-200" hidden>
+              MR
+            </span>
+          </div>
+          <div className="sr-only">
             MR
           </div>
           <div className="min-w-0">
