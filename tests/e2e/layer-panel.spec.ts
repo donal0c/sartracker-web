@@ -26,7 +26,7 @@ test.describe('M17 layer tree workflows', () => {
     await expect(page.getByTestId('layer-inspector-details')).toContainText('Device ID')
   })
 
-  test('supports search, selection, aliasing, favorites, and item visibility', async ({
+  test('supports search, selection, aliasing, and item visibility', async ({
     page,
   }) => {
     await page.getByTestId('layer-tree-search').fill('Boot')
@@ -39,11 +39,54 @@ test.describe('M17 layer tree workflows', () => {
     await page.getByTestId('layer-alias-save').click()
     await expect(page.getByTestId('layer-select-layer-markers-clues')).toContainText('Evidence')
 
-    await page.getByTestId('layer-inspector-favorite').click()
-    await expect(page.getByTestId('layer-inspector-favorite')).toContainText('Favorited')
-
     await page.getByTestId('layer-visibility-feature-marker-marker-1').click()
     await expect(page.getByTestId('layer-visibility-feature-marker-marker-1')).not.toBeChecked()
+  })
+
+  test('the inert Favorite control is gone from the tree row and inspector', async ({
+    page,
+  }) => {
+    await expect(page.getByTestId('layer-inspector-favorite')).toHaveCount(0)
+    await page.getByTestId('layer-select-layer-markers-clues').click()
+    await expect(page.getByTestId('layer-inspector-favorite')).toHaveCount(0)
+    await expect(page.getByTestId('layer-favorite-feature-device-alpha')).toHaveCount(0)
+    await expect(page.getByTestId('layer-inspector-details')).not.toContainText('Favorite')
+  })
+
+  test('Move Up reorders a feature item within its layer', async ({ page }) => {
+    // Alpha sorts before Bravo by default. Selecting Bravo and moving it up must
+    // visibly place Bravo above Alpha in the People layer.
+    const peopleItems = page
+      .getByTestId('layer-tree')
+      .locator('[data-testid^="layer-row-feature-device-"]')
+
+    await expect(peopleItems.first()).toHaveAttribute(
+      'data-testid',
+      'layer-row-feature-device-alpha',
+    )
+
+    await page.getByTestId('layer-select-feature-device-bravo').click()
+    const moveUp = page.getByTestId('layer-move-up')
+    await expect(moveUp).toBeEnabled()
+    await moveUp.click()
+
+    await expect(peopleItems.first()).toHaveAttribute(
+      'data-testid',
+      'layer-row-feature-device-bravo',
+    )
+  })
+
+  test('Collapse All hides nested items and Expand All restores them', async ({
+    page,
+  }) => {
+    await expect(page.getByTestId('layer-row-feature-device-alpha')).toBeVisible()
+
+    await page.getByTestId('layer-collapse-all-btn').click()
+    await expect(page.getByTestId('layer-row-feature-device-alpha')).toBeHidden()
+    await expect(page.getByTestId('layer-row-group-tracking')).toBeVisible()
+
+    await page.getByTestId('layer-expand-all-btn').click()
+    await expect(page.getByTestId('layer-row-feature-device-alpha')).toBeVisible()
   })
 
   test('persists tree metadata and visibility across reload within the mission harness', async ({
@@ -52,7 +95,6 @@ test.describe('M17 layer tree workflows', () => {
     await page.getByTestId('layer-select-layer-markers-clues').click()
     await page.getByTestId('layer-alias-input').fill('Evidence')
     await page.getByTestId('layer-alias-save').click()
-    await page.getByTestId('layer-inspector-favorite').click()
     await page.getByTestId('layer-visibility-feature-device-bravo').click()
     await page.getByTestId('layer-visibility-feature-marker-marker-1').click()
 
@@ -66,8 +108,6 @@ test.describe('M17 layer tree workflows', () => {
     await expect(page.getByTestId('layer-visibility-feature-device-bravo')).not.toBeChecked()
     await expect(page.getByTestId('layer-visibility-feature-marker-marker-1')).not.toBeChecked()
     await expect(page.getByTestId('layer-select-layer-markers-clues')).toContainText('Evidence')
-    await page.getByTestId('layer-select-layer-markers-clues').click()
-    await expect(page.getByTestId('layer-inspector-favorite')).toContainText('Favorited')
   })
 })
 

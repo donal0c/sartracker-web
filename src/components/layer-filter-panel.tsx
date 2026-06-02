@@ -127,6 +127,14 @@ export function LayerFilterPanel() {
             </button>
             <button
               className="sar-button px-2 py-1 text-[11px] font-semibold"
+              data-testid="layer-collapse-all-btn"
+              onClick={() => resetExpandedNodeIds([])}
+              type="button"
+            >
+              Collapse All
+            </button>
+            <button
+              className="sar-button px-2 py-1 text-[11px] font-semibold"
               data-testid="layer-refresh-btn"
               onClick={() => void catalogController?.forceRefresh()}
               type="button"
@@ -257,21 +265,6 @@ function TreeNodeRow(props: {
           <span className="truncate font-medium">{props.node.displayLabel}</span>
         </button>
 
-        {props.node.kind !== 'root' ? (
-          <button
-            className={`px-1.5 py-0.5 text-[11px] ${
-              props.node.isFavorite
-                ? 'bg-amber-500/20 text-amber-200'
-                : 'text-stone-400 hover:bg-stone-800 hover:text-amber-200'
-            }`}
-            data-testid={`layer-favorite-${toLayerTreeTestId(props.node.id)}`}
-            onClick={() => void props.controller?.toggleFavorite(props.node.id)}
-            type="button"
-          >
-            ★
-          </button>
-        ) : null}
-
         <span className="min-w-[2rem] text-right font-mono text-[11px] text-stone-300">
           {childCount}
         </span>
@@ -336,37 +329,19 @@ function LayerInspector(props: {
       className="sar-module p-4"
       data-testid="layer-inspector"
     >
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <p className="sar-section-label">
-            Inspection
-          </p>
-          <h4
-            className="mt-1 truncate font-mono text-sm font-bold text-stone-100"
-            data-testid="layer-inspector-title"
-          >
-            {selectedNode.displayLabel}
-          </h4>
-          <p className="mt-1 text-[11px] font-semibold uppercase tracking-wider text-stone-300">
-            {selectedNode.kind.replace('_', ' ')}
-          </p>
-        </div>
-        <button
-          className={`border px-2 py-1 text-[11px] font-semibold ${
-            selectedNode.isFavorite
-              ? 'border-amber-400/40 bg-amber-400/20 text-amber-200'
-              : 'sar-button'
-          }`}
-          data-testid="layer-inspector-favorite"
-          onClick={() =>
-            selectedNode.kind !== 'root'
-              ? void props.controller?.toggleFavorite(selectedNode.id)
-              : undefined
-          }
-          type="button"
+      <div className="min-w-0">
+        <p className="sar-section-label">
+          Inspection
+        </p>
+        <h4
+          className="mt-1 truncate font-mono text-sm font-bold text-stone-100"
+          data-testid="layer-inspector-title"
         >
-          {selectedNode.isFavorite ? 'Favorited' : 'Favorite'}
-        </button>
+          {selectedNode.displayLabel}
+        </h4>
+        <p className="mt-1 text-[11px] font-semibold uppercase tracking-wider text-stone-300">
+          {selectedNode.kind.replace('_', ' ')}
+        </p>
       </div>
 
       {selectedNode.kind !== 'root' ? (

@@ -50,7 +50,6 @@ export type LayerCatalogController = {
   readonly forceRefresh: () => Promise<void>
   readonly selectNode: (nodeId: string | null) => void
   readonly renameNode: (nodeId: string, alias: string | null) => Promise<void>
-  readonly toggleFavorite: (nodeId: string) => Promise<void>
   readonly setNodeVisibility: (nodeId: string, visible: boolean) => Promise<void>
   readonly setNodeVisibilities: (nodeIds: readonly string[], visible: boolean) => Promise<void>
   readonly reorderNode: (
@@ -152,10 +151,6 @@ export async function startLayerCatalogRuntime(
     },
     renameNode: async (nodeId, alias) => {
       await persistNodePatch(nodeId, { alias })
-    },
-    toggleFavorite: async (nodeId) => {
-      const entry = findEntry(nodeId)
-      await persistNodePatch(nodeId, { isFavorite: !(entry?.isFavorite ?? false) })
     },
     setNodeVisibility: async (nodeId, visible) => {
       await persistNodePatch(nodeId, { isVisible: visible })

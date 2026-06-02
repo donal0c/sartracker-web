@@ -106,6 +106,58 @@ describe('startLayerCatalogRuntime', () => {
     )
   })
 
+  it('re-sorts the published tree so a reordered feature item visibly moves up', async () => {
+    let entries: readonly LayerCatalogMetadataEntry[] = []
+    const applyRuntime = vi.fn()
+    const layerCatalogStore = {
+      listMetadata: vi.fn().mockImplementation(async () => entries),
+      upsertMetadata: vi.fn().mockImplementation(async (input) => {
+        const nextEntry: LayerCatalogMetadataEntry = {
+          missionId: input.missionId,
+          nodeId: input.nodeId,
+          parentNodeId: input.parentNodeId,
+          nodeKind: input.nodeKind,
+          alias: input.alias ?? null,
+          isFavorite: input.isFavorite ?? false,
+          isVisible: input.isVisible ?? true,
+          displayOrder: input.displayOrder ?? 0,
+          metadataJson: input.metadataJson ?? null,
+          updatedAt: '2026-04-10T10:00:00.000Z',
+        }
+        entries = upsertEntry(entries, nextEntry)
+        return nextEntry
+      }),
+    }
+
+    const runtime = await startLayerCatalogRuntime({ layerCatalogStore, applyRuntime })
+
+    await runtime.refreshCatalog({
+      missionId: 'mission-1',
+      devices: [createDevice('alpha', 'Alpha Team'), createDevice('bravo', 'Bravo Team')],
+      markers: [],
+      drawings: [],
+      helicopters: [],
+      gpxImports: [],
+    })
+
+    expect(featureOrder(applyRuntime)).toEqual([
+      'feature:device:alpha',
+      'feature:device:bravo',
+    ])
+
+    await runtime.reorderNode('layer:tracking:devices', [
+      'feature:device:bravo',
+      'feature:device:alpha',
+    ])
+
+    // The operator observes the *rebuilt* tree, not the persistence calls. After
+    // moving Bravo up, the published devices layer must list Bravo before Alpha.
+    expect(featureOrder(applyRuntime)).toEqual([
+      'feature:device:bravo',
+      'feature:device:alpha',
+    ])
+  })
+
   it('persists helicopter feature-item aliases with the canonical helicopter layer parent', async () => {
     const upsertMetadata = vi.fn().mockImplementation(async (input) => ({
       missionId: input.missionId,
@@ -214,6 +266,17 @@ describe('startLayerCatalogRuntime', () => {
     expect(latestRuntime.root.children[0]?.children[0]?.children[0]?.isVisible).toBe(false)
   })
 })
+
+function featureOrder(applyRuntime: ReturnType<typeof vi.fn>): readonly string[] {
+  const latestRuntime = applyRuntime.mock.calls.at(-1)?.[0]
+  const trackingGroup = latestRuntime.root.children.find(
+    (group: { readonly id: string }) => group.id === 'group:tracking',
+  )
+  const devicesLayer = trackingGroup?.children.find(
+    (layer: { readonly id: string }) => layer.id === 'layer:tracking:devices',
+  )
+  return (devicesLayer?.children ?? []).map((item: { readonly id: string }) => item.id)
+}
 
 function upsertEntry(
   entries: readonly LayerCatalogMetadataEntry[],

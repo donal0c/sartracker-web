@@ -99,7 +99,6 @@ export function buildLayerInspectionRows(
   return [
     { label: 'Node ID', value: node.id },
     { label: 'Visible', value: node.isVisible ? 'Yes' : 'No' },
-    { label: 'Favorite', value: node.isFavorite ? 'Yes' : 'No' },
   ]
 }
 

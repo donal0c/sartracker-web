@@ -729,13 +729,13 @@
             </thead>
             <tbody>
               <tr><td>Checkbox</td><td>Show or hide a group, layer, or feature on the map.</td></tr>
-              <tr><td>Expand / collapse</td><td>Open or close grouped layer sections.</td></tr>
+              <tr><td>Expand / collapse row</td><td>Open or close a single grouped layer section using its ▸ / ▾ control.</td></tr>
+              <tr><td>Expand All / Collapse All</td><td>Open or close every group and layer in the tree at once.</td></tr>
               <tr><td>Search</td><td>Filter the tree to matching layers and features.</td></tr>
               <tr><td>Show Hidden</td><td>Include hidden nodes so they can be inspected or restored.</td></tr>
-              <tr><td>Favorite</td><td>Mark an important layer or feature for future operator emphasis.</td></tr>
               <tr><td>Alias</td><td>Rename a layer or feature without changing its underlying record.</td></tr>
               <tr><td>Edit Drawing</td><td>For drawing feature rows, open the normal drawing form so misplaced drawings can be corrected or deleted with confirmation.</td></tr>
-              <tr><td>Move Up / Move Down</td><td>Reorder siblings in the tree where the current node supports it.</td></tr>
+              <tr><td>Move Up / Move Down</td><td>Select a layer or feature, then reorder it among its siblings in the tree. The new order is saved with the mission.</td></tr>
             </tbody>
           </table>
         </section>
@@ -897,7 +897,7 @@
             <li><strong>Offline maps:</strong> viewed tile caching and current-view preflight exist, but full packaged offline map bundles and saved coverage manifests are still open work.</li>
             <li><strong>Replay mode:</strong> settings expose replay defaults, but full replay/training workflow parity is still active work.</li>
             <li><strong>Mission metadata:</strong> richer coordinator/metadata capture at mission start remains a parity gap.</li>
-            <li><strong>Layer parity:</strong> the app has a grouped layer tree with visibility, aliases, favorites, and reorder controls, but final parity acceptance is still pending.</li>
+            <li><strong>Layer parity:</strong> the app has a grouped layer tree with visibility, aliases, expand/collapse all, and reorder controls, but final parity acceptance is still pending.</li>
             <li><strong>Desktop beta distribution:</strong> current macOS beta artifacts are internal, unsigned/ad-hoc signed app bundles. Developer ID signing, notarization, DMG packaging, and Windows installer behavior remain open release work.</li>
             <li><strong>Hosted browser testing:</strong> Vercel browser mode currently uses session storage for mission data and caps very large persisted tracker histories. It is intended to unblock team testing, not replace the installed app for live incidents yet.</li>
             <li><strong>Browser harness differences:</strong> desktop-only actions such as GPX file picking and marker file attachments are limited or unavailable in browser validation mode.</li>

@@ -152,4 +152,18 @@ test.describe('Batch 2 follow-up: layer console controls (LPV-063, LPV-064, LPV-
     await expandAllBtn.click()
     await expect(page.getByTestId('layer-row-feature-device-alpha')).toBeVisible()
   })
+
+  test('LPV-066: collapse-all button collapses all tree nodes', async ({ page }) => {
+    const collapseAllBtn = page.getByTestId('layer-collapse-all-btn')
+    await expect(collapseAllBtn).toBeVisible({ timeout: 5000 })
+    await expect(collapseAllBtn).toHaveText('Collapse All')
+
+    // Device item is visible while the tracking group is expanded
+    await expect(page.getByTestId('layer-row-feature-device-alpha')).toBeVisible()
+
+    // Click Collapse All — nested items collapse but top-level groups remain
+    await collapseAllBtn.click()
+    await expect(page.getByTestId('layer-row-feature-device-alpha')).toBeHidden()
+    await expect(page.getByTestId('layer-row-group-tracking')).toBeVisible()
+  })
 })
