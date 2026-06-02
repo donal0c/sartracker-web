@@ -11,6 +11,7 @@ import {
 } from '../features/drawings/drawing-math'
 import { LPB_CATEGORIES, LPB_PERCENTILE_ORDER, LPB_RING_COLORS } from '../features/drawings/lpb-data'
 import { SEARCH_AREA_STATUSES, type DrawingDraft } from '../features/drawings/drawing-types'
+import { ColorPaletteInput } from './color-palette-input'
 import { DialogOverlay } from './dialog-overlay'
 
 const DRAWING_DIALOG_TITLE_ID = 'drawing-dialog-title'
@@ -258,7 +259,7 @@ function SearchAreaSection(props: {
           testId="drawing-search-area-label-font-size-input"
           value={props.draft.labelFontSize}
         />
-        <Field
+        <ColorPaletteInput
           label="Fill Colour"
           onChange={(value) => props.onChange({ ...props.draft, fillColor: value })}
           testId="drawing-search-area-fill-color-input"
@@ -483,18 +484,12 @@ function TextLabelSection(props: {
         testId="drawing-text-label-text-input"
         value={props.draft.text}
       />
-      <section className="grid gap-4 md:grid-cols-3">
+      <section className="grid gap-4 md:grid-cols-2">
         <Field
           label="Font Size"
           onChange={(value) => props.onChange({ ...props.draft, fontSize: value })}
           testId="drawing-text-label-font-size-input"
           value={props.draft.fontSize}
-        />
-        <Field
-          label="Color"
-          onChange={(value) => props.onChange({ ...props.draft, color: value })}
-          testId="drawing-text-label-color-input"
-          value={props.draft.color}
         />
         <Field
           label="Rotation (°)"
@@ -503,6 +498,12 @@ function TextLabelSection(props: {
           value={props.draft.rotation}
         />
       </section>
+      <ColorPaletteInput
+        label="Color"
+        onChange={(value) => props.onChange({ ...props.draft, color: value })}
+        testId="drawing-text-label-color-input"
+        value={props.draft.color}
+      />
     </>
   )
 }

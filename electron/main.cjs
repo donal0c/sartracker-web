@@ -21,6 +21,7 @@ const READ_GPX_FILES_CHANNEL = 'sartracker:read-gpx-files'
 const LIST_GPX_DIRECTORY_FILES_CHANNEL = 'sartracker:list-gpx-directory-files'
 const INGEST_MARKER_ATTACHMENT_CHANNEL = 'sartracker:ingest-marker-attachment'
 const OPEN_EXTERNAL_PATH_CHANNEL = 'sartracker:open-external-path'
+const OPEN_EXTERNAL_URL_CHANNEL = 'sartracker:open-external-url'
 
 const MISSION_STORE_CHANNELS = {
   info: 'sartracker:mission-store:info',
@@ -212,6 +213,17 @@ function registerIpcHandlers(settingsStore, runtimeFiles, missionStore, fileSyst
   ipcMain.handle(OPEN_EXTERNAL_PATH_CHANNEL, (event, inputPath) => {
     validateIpcSender(event)
     return fileSystem.openExternalPath(inputPath)
+  })
+  ipcMain.handle(OPEN_EXTERNAL_URL_CHANNEL, (event, inputUrl) => {
+    validateIpcSender(event)
+    const normalized = (inputUrl ?? '').trim()
+    if (normalized === '') {
+      throw new Error('URL is required.')
+    }
+    if (!normalized.startsWith('http://') && !normalized.startsWith('https://')) {
+      throw new Error('URL scheme must be http:// or https://')
+    }
+    return shell.openExternal(normalized)
   })
   registerMissionStoreHandlers(missionStore)
   registerLayerCatalogStoreHandlers(missionStore)

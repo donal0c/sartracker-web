@@ -24,6 +24,7 @@ import { MissionReviewRuntimeBridge } from './features/mission-review/mission-re
 import { TrackingStatusPanel } from './components/tracking-status-panel'
 import { SettingsWorkspace } from './components/settings-workspace'
 import { loadAppSettings } from './infrastructure/settings-store/tauri-settings-store'
+import { openExternalUrl } from './infrastructure/url-opener/open-external-url'
 import type { WeatherLinkSettings } from './features/settings/settings-types'
 import { useDiagnosticsWorkspaceStore } from './features/diagnostics/diagnostics-workspace-store'
 import { GpxRuntimeBridge } from './features/gpx/gpx-runtime-bridge'
@@ -548,17 +549,16 @@ function WeatherMenu() {
           ) : (
             <div className="mt-3 space-y-2">
               {links.map((link, index) => (
-                <a
+                <button
                   className="sar-button flex w-full items-center justify-between px-3 py-2 text-left text-[12px] font-bold text-stone-100"
                   data-testid={`weather-link-open-${index}`}
-                  href={link.url}
                   key={`${link.name}-${link.url}`}
-                  rel="noreferrer noopener"
-                  target="_blank"
+                  onClick={() => void openExternalUrl(link.url)}
+                  type="button"
                 >
                   <span className="truncate">{link.name}</span>
                   <span aria-hidden="true" className="ml-3 text-amber-300">Open</span>
-                </a>
+                </button>
               ))}
             </div>
           )}

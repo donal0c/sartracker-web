@@ -14,6 +14,7 @@ const READ_GPX_FILES_CHANNEL = 'sartracker:read-gpx-files'
 const LIST_GPX_DIRECTORY_FILES_CHANNEL = 'sartracker:list-gpx-directory-files'
 const INGEST_MARKER_ATTACHMENT_CHANNEL = 'sartracker:ingest-marker-attachment'
 const OPEN_EXTERNAL_PATH_CHANNEL = 'sartracker:open-external-path'
+const OPEN_EXTERNAL_URL_CHANNEL = 'sartracker:open-external-url'
 
 const MISSION_STORE_CHANNELS = {
   info: 'sartracker:mission-store:info',
@@ -97,6 +98,9 @@ contextBridge.exposeInMainWorld('sartrackerElectron', {
   },
   openExternalPath(path) {
     return ipcRenderer.invoke(OPEN_EXTERNAL_PATH_CHANNEL, path)
+  },
+  openExternalUrl(url) {
+    return ipcRenderer.invoke(OPEN_EXTERNAL_URL_CHANNEL, url)
   },
   missionStore: Object.fromEntries(
     Object.entries(MISSION_STORE_CHANNELS).map(([methodName, channel]) => [

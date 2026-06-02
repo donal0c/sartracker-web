@@ -165,7 +165,7 @@ describe('DevicesWorkspace', () => {
     )
   })
 
-  it('updates per-device breadcrumb colour and global breadcrumb size controls', async () => {
+  it('updates per-device breadcrumb colour via palette swatch and global breadcrumb size', async () => {
     const { DevicesWorkspace } = await import('../../src/components/devices-workspace')
     useTrackingStore.setState({ snapshot: SNAPSHOT, status: STATUS })
     useDeviceWorkspaceStore.setState({ open: true, selectedDeviceId: 'alpha' })
@@ -173,10 +173,13 @@ describe('DevicesWorkspace', () => {
     render(React.createElement(DevicesWorkspace))
     await waitForElement('[data-testid="devices-workspace"]')
 
-    changeInput('[data-testid="device-breadcrumb-color-alpha"]', '#f97316')
+    click('[data-testid="device-breadcrumb-color-alpha"]')
+    await waitForElement('[data-testid="device-color-popover-alpha"]')
+    click('[data-testid="device-color-option-FF7A00"]')
+
     changeInput('[data-testid="breadcrumb-size-control"]', '7')
 
-    expect(useTrackingStyleStore.getState().deviceColors.alpha).toBe('#F97316')
+    expect(useTrackingStyleStore.getState().deviceColors.alpha).toBe('#FF7A00')
     expect(useTrackingStyleStore.getState().breadcrumbSize).toBe(7)
   })
 

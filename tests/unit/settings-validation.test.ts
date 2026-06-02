@@ -5,6 +5,7 @@ import {
   DEFAULT_APP_SETTINGS,
 } from '../../src/features/settings/settings-types'
 import {
+  addSchemeIfMissing,
   HOSTED_TRACCAR_PROXY_BASE_URL,
   normalizeRosterInput,
   normalizeWeatherLinks,
@@ -129,5 +130,38 @@ describe('settings validation', () => {
       { name: 'Met Éireann', url: 'https://www.met.ie' },
       { name: 'Mountain Forecast', url: 'https://mountain-forecast.example.com/kerry' },
     ])
+  })
+
+  it('normalizes bare domain weather links by prepending https://', () => {
+    expect(
+      normalizeWeatherLinks([
+        { name: 'Met Éireann', url: 'met.ie' },
+        { name: 'Yr.no', url: 'www.yr.no' },
+      ]),
+    ).toEqual([
+      { name: 'Met Éireann', url: 'https://met.ie' },
+      { name: 'Yr.no', url: 'https://www.yr.no' },
+    ])
+  })
+
+  it('validates bare domain weather links as valid once scheme is added', () => {
+    const draft = createSettingsDraft(DEFAULT_APP_SETTINGS)
+    draft.weather.links = [
+      { name: 'Met Éireann', url: 'met.ie' },
+      { name: 'Yr.no', url: 'yr.no' },
+      { name: 'With www', url: 'www.met.ie' },
+    ]
+
+    const errors = validateSettingsDraft(draft)
+    expect(errors['weather.links.0.url']).toBeUndefined()
+    expect(errors['weather.links.1.url']).toBeUndefined()
+    expect(errors['weather.links.2.url']).toBeUndefined()
+  })
+
+  it('addSchemeIfMissing prepends https:// to bare domains', () => {
+    expect(addSchemeIfMissing('met.ie')).toBe('https://met.ie')
+    expect(addSchemeIfMissing('www.yr.no')).toBe('https://www.yr.no')
+    expect(addSchemeIfMissing('https://www.met.ie')).toBe('https://www.met.ie')
+    expect(addSchemeIfMissing('http://example.com')).toBe('http://example.com')
   })
 })

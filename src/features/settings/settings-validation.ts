@@ -132,7 +132,7 @@ function validateWeatherLinks(
     }
 
     try {
-      const parsed = new URL(link.url.trim())
+      const parsed = new URL(addSchemeIfMissing(link.url.trim()))
       if (!['http:', 'https:'].includes(parsed.protocol)) {
         errors[`weather.links.${index}.url`] = 'Weather link URL must use http or https.'
       }
@@ -168,9 +168,25 @@ export function normalizeWeatherLinks(
 }
 
 function normalizeWeatherUrl(value: string): string {
-  const parsed = new URL(value.trim())
+  const parsed = new URL(addSchemeIfMissing(value.trim()))
   parsed.hash = ''
   parsed.pathname = parsed.pathname.replace(/\/+$/, '')
 
   return parsed.toString().replace(/\/$/, '')
+}
+
+/**
+ * Prepends https:// when the user enters a bare domain like met.ie or www.yr.no.
+ * Does not normalize values that already contain a scheme or start with a slash/special character.
+ */
+export function addSchemeIfMissing(value: string): string {
+  if (value.startsWith('http://') || value.startsWith('https://')) {
+    return value
+  }
+
+  if (value.includes(':') || value.startsWith('/')) {
+    return value
+  }
+
+  return `https://${value}`
 }

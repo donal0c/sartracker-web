@@ -17,3 +17,20 @@ pub async fn open_external_path(path: String) -> Result<(), String> {
 
     Ok(())
 }
+
+#[tauri::command]
+pub async fn open_external_url(url: String) -> Result<(), String> {
+    let normalized = url.trim();
+    if normalized.is_empty() {
+        return Err("URL is required.".to_string());
+    }
+
+    if !normalized.starts_with("http://") && !normalized.starts_with("https://") {
+        return Err("URL scheme must be http:// or https://".to_string());
+    }
+
+    open::that(normalized)
+        .map_err(|error| format!("Failed to open URL in default browser: {error}"))?;
+
+    Ok(())
+}

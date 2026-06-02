@@ -16,7 +16,7 @@ use settings::{
 };
 use tauri::Manager;
 
-use opener::open_external_path;
+use opener::{open_external_path, open_external_url};
 use persistence::{
     add_position, build_mission_store, clear_layer_catalog_entries, create_mission,
     create_mission_archive, delete_drawing, delete_gpx_import, delete_helicopter, delete_marker,
@@ -97,6 +97,7 @@ pub fn run() {
             read_tracking_cache,
             write_tracking_cache,
             open_external_path,
+            open_external_url,
             export_diagnostics_report,
             read_gpx_files,
             list_gpx_directory_files

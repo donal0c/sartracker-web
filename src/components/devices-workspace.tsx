@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 
 import { getAppRuntimeController } from '../features/runtime/app-runtime-controller'
 import { WorkspaceOverlay, WorkspaceHeader } from './workspace-overlay'
@@ -10,6 +10,7 @@ import {
 import { useMissionStore } from '../features/mission/mission-store'
 import { useActiveMissionDevicesStore } from '../features/tracking/active-mission-devices-store'
 import { useDeviceWorkspaceStore } from '../features/tracking/device-workspace-store'
+import { SAR_PALETTE } from './color-palette-input'
 import { createDeviceColor } from '../features/tracking/tracking-color'
 import {
   MAX_BREADCRUMB_SIZE,
@@ -384,18 +385,13 @@ function DeviceRow(props: {
           {props.row.deviceId}
         </p>
       </button>
-      <label className="flex items-center" title="Breadcrumb trail colour">
-        <input
-          aria-label={`${props.row.name} breadcrumb trail colour`}
-          className="h-8 w-8 cursor-pointer rounded border border-stone-700 bg-stone-950 p-0"
-          data-testid={`${props.testPrefix}-breadcrumb-color-${props.row.deviceId}`}
-          onChange={(event) => props.onSetDeviceColor(props.row.deviceId, event.currentTarget.value)}
-          onInput={(event) => props.onSetDeviceColor(props.row.deviceId, event.currentTarget.value)}
-          onClick={(event) => event.stopPropagation()}
-          type="color"
-          value={props.deviceColor}
-        />
-      </label>
+      <DeviceColorSwatch
+        color={props.deviceColor}
+        deviceId={props.row.deviceId}
+        deviceName={props.row.name}
+        onSetColor={props.onSetDeviceColor}
+        testPrefix={props.testPrefix}
+      />
       <span
         className={`font-semibold uppercase ${
           props.row.status === 'online'
@@ -486,6 +482,60 @@ function Detail(props: { readonly label: string; readonly value: string }) {
     <div className="flex items-center justify-between gap-4">
       <dt className="sar-meta-label">{props.label}</dt>
       <dd className="font-mono text-right text-stone-100">{props.value}</dd>
+    </div>
+  )
+}
+
+function DeviceColorSwatch(props: {
+  readonly color: string
+  readonly deviceId: string
+  readonly deviceName: string
+  readonly onSetColor: (deviceId: string, color: string) => void
+  readonly testPrefix: string
+}) {
+  const [open, setOpen] = useState(false)
+  const containerRef = useRef<HTMLDivElement>(null)
+
+  return (
+    <div
+      className="relative flex items-center"
+      onClick={(event) => event.stopPropagation()}
+      ref={containerRef}
+    >
+      <button
+        aria-label={`${props.deviceName} breadcrumb trail colour`}
+        className="h-7 w-7 rounded border-2 border-stone-700 hover:border-stone-400"
+        data-testid={`${props.testPrefix}-breadcrumb-color-${props.deviceId}`}
+        onClick={() => setOpen(!open)}
+        style={{ backgroundColor: props.color }}
+        type="button"
+      />
+      {open ? (
+        <div
+          className="absolute left-0 top-full z-50 mt-1 grid grid-cols-6 gap-1 rounded border border-stone-700 bg-stone-900 p-2 shadow-xl"
+          data-testid={`${props.testPrefix}-color-popover-${props.deviceId}`}
+          onMouseLeave={() => setOpen(false)}
+        >
+          {SAR_PALETTE.map((color) => (
+            <button
+              aria-label={color}
+              className={`h-6 w-6 rounded border ${
+                props.color.toUpperCase() === color
+                  ? 'border-white scale-110'
+                  : 'border-stone-600 hover:border-stone-300'
+              }`}
+              data-testid={`${props.testPrefix}-color-option-${color.replace('#', '')}`}
+              key={color}
+              onClick={() => {
+                props.onSetColor(props.deviceId, color)
+                setOpen(false)
+              }}
+              style={{ backgroundColor: color }}
+              type="button"
+            />
+          ))}
+        </div>
+      ) : null}
     </div>
   )
 }

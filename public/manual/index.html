@@ -692,8 +692,8 @@
             empty tracking picture. Once active devices are selected, the map, labels, initial tracking
             frame, and breadcrumb trails focus on that active set while the full roster remains available
             for lookup. Each row still shows device health, last seen time, source, visibility, and a
-            <strong>Zoom</strong> action for devices with a valid fix. Use the trail color swatch on a
-            device row to set that device's breadcrumb and label color. The
+            <strong>Zoom</strong> action for devices with a valid fix. Click the trail colour swatch on a
+            device row to open a palette of high-contrast SAR colours for that device's breadcrumb and label. The
             <strong>Breadcrumb Size</strong> control changes the trail width globally for all breadcrumb
             history so dense missions can be made calmer or more prominent without editing devices one
             by one. <strong>Reconnect</strong> reloads settings and forces the tracking provider to reconnect.
@@ -827,11 +827,11 @@
             </thead>
             <tbody>
               <tr><td>Line</td><td>Draw route lines and see measured distance plus true/magnetic bearing to the endpoint.</td></tr>
-              <tr><td>Search Area</td><td>Draw polygons with team, status, POA, label size, fill colour, terrain, and notes.</td></tr>
+              <tr><td>Search Area</td><td>Draw polygons with team, status, POA, label size, fill colour (palette swatches or typed hex), terrain, and notes.</td></tr>
               <tr><td>Range Rings</td><td>Create manual rings or LPB percentile rings from a point.</td></tr>
               <tr><td>Bearing</td><td>Create a bearing line from an origin, distance, and true or magnetic bearing.</td></tr>
               <tr><td>Sector</td><td>Create a search sector from center, start bearing, end bearing, and radius.</td></tr>
-              <tr><td>Text Label</td><td>Place map text with size, color, and rotation. Click and drag a placed label to move it; the new position is saved.</td></tr>
+              <tr><td>Text Label</td><td>Place map text with size, colour (palette swatches or typed hex), and rotation. Click and drag a placed label to move it; the new position is saved.</td></tr>
               <tr><td>Measure</td><td>Temporary two-point distance and map-bearing measurement from Map Tools or the Tools tab.</td></tr>
             </tbody>
           </table>
@@ -926,7 +926,7 @@
             <tbody>
               <tr><td>Mission Defaults</td><td>Auto-refresh, auto-save, mission roots, coordinator roster, admin roster, and coordinate display preference.</td></tr>
               <tr><td>Data Sources</td><td>Provider type, Traccar web/API URL, authentication mode, secret handling, auto-connect, tracking cache, replay defaults, and hosted-browser proxy guidance when the app is running from Vercel. For the team test server, desktop builds use the Traccar API port <code>8082</code>; tracker listener ports such as <code>5055</code> are not valid provider base URLs.</td></tr>
-              <tr><td>Weather Links</td><td>A small named list of external weather URLs, such as Met Éireann. URLs must be absolute <code>http</code> or <code>https</code> links. These links open external websites only; SAR Tracker does not import weather data.</td></tr>
+              <tr><td>Weather Links</td><td>A small named list of external weather URLs, such as Met Éireann. Bare domains like <code>met.ie</code> or <code>www.yr.no</code> are accepted and automatically normalized to <code>https://</code>. These links open in the system default browser; SAR Tracker does not import weather data.</td></tr>
               <tr><td>Advanced Settings</td><td>Reserved repair/support actions. Some actions may remain disabled until the matching milestone is complete.</td></tr>
             </tbody>
           </table>
