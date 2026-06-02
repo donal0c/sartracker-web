@@ -5,7 +5,10 @@ import { WorkspaceOverlay, WorkspaceHeader } from './workspace-overlay'
 import {
   buildDeviceWorkspaceRows,
   buildDeviceWorkspaceSummary,
+  type DeviceWorkspaceRow,
 } from '../features/tracking/device-workspace-model'
+import { useMissionStore } from '../features/mission/mission-store'
+import { useActiveMissionDevicesStore } from '../features/tracking/active-mission-devices-store'
 import { useDeviceWorkspaceStore } from '../features/tracking/device-workspace-store'
 import { useTrackingStore } from '../features/tracking/tracking-store'
 import { useLayerVisibilityStore } from '../features/layers/layer-visibility-store'
@@ -23,6 +26,11 @@ export function DevicesWorkspace() {
   const selectDevice = useDeviceWorkspaceStore((state) => state.selectDevice)
   const trackingSnapshot = useTrackingStore((state) => state.snapshot)
   const trackingStatus = useTrackingStore((state) => state.status)
+  const currentMissionId = useMissionStore((state) => state.currentMission?.id ?? null)
+  const activeDeviceIds = useActiveMissionDevicesStore((state) =>
+    state.getActiveDeviceIds(currentMissionId),
+  )
+  const setDeviceActive = useActiveMissionDevicesStore((state) => state.setDeviceActive)
   const hiddenDeviceIds = useLayerVisibilityStore((state) => state.hiddenDeviceIds)
   const toggleDeviceVisibility = useLayerVisibilityStore((state) => state.toggleDeviceVisibility)
   const queueTarget = useMapTargetStore((state) => state.queueTarget)
@@ -30,9 +38,10 @@ export function DevicesWorkspace() {
   const [error, setError] = useState<string | null>(null)
 
   const rows = useMemo(
-    () => buildDeviceWorkspaceRows(trackingSnapshot, hiddenDeviceIds),
-    [hiddenDeviceIds, trackingSnapshot],
+    () => buildDeviceWorkspaceRows(trackingSnapshot, hiddenDeviceIds, activeDeviceIds),
+    [activeDeviceIds, hiddenDeviceIds, trackingSnapshot],
   )
+  const activeRows = useMemo(() => rows.filter((row) => row.active), [rows])
   const summary = useMemo(
     () => buildDeviceWorkspaceSummary(rows, trackingStatus),
     [rows, trackingStatus],
@@ -70,8 +79,9 @@ export function DevicesWorkspace() {
             className="border-r border-stone-800 px-6 py-6"
             data-testid="devices-workspace"
           >
-            <div className="grid gap-3 sm:grid-cols-5">
+            <div className="grid gap-3 sm:grid-cols-6">
               <SummaryCard label="Devices" value={String(summary.totalDevices)} />
+              <SummaryCard label="Active" value={String(summary.activeDevices)} />
               <SummaryCard label="Online" value={String(summary.onlineDevices)} />
               <SummaryCard label="Hidden" value={String(summary.hiddenDevices)} />
               <SummaryCard label="Stale" value={String(summary.staleDevices)} />
@@ -119,106 +129,39 @@ export function DevicesWorkspace() {
               ) : null}
             </div>
 
-            <div className="mt-4 overflow-hidden rounded-2xl border border-stone-800 bg-stone-900/40">
-              <div className="grid grid-cols-[minmax(0,1.4fr)_7rem_8rem_7rem_7rem_7rem] border-b border-stone-700 px-4 py-3 text-[11px] font-bold uppercase tracking-wider text-stone-200">
-                <span>Device</span>
-                <span>Status</span>
-                <span>Last Seen</span>
-                <span>Source</span>
-                <span>Visible</span>
-                <span className="text-right">Actions</span>
-              </div>
-              <div className="max-h-[32rem] overflow-y-auto">
-                {rows.map((row) => {
-                  const selected = row.deviceId === selectedRow?.deviceId
-                  return (
-                    <div
-                      className={`grid cursor-pointer grid-cols-[minmax(0,1.4fr)_7rem_8rem_7rem_7rem_7rem] items-center border-b border-stone-800/70 px-4 py-3 text-sm ${
-                        selected ? 'bg-amber-500/10' : 'bg-transparent'
-                      }`}
-                      data-testid={`device-row-${row.deviceId}`}
-                      key={row.deviceId}
-                      onClick={() => selectDevice(row.deviceId)}
-                    >
-                      <button
-                        className="block min-w-0 w-full text-left"
-                        data-testid={`device-select-${row.deviceId}`}
-                        onClick={(event) => {
-                          event.stopPropagation()
-                          selectDevice(row.deviceId)
-                        }}
-                        type="button"
-                      >
-                        <p className="truncate font-semibold text-stone-100">{row.name}</p>
-                        <p className="truncate font-mono text-[11px] text-stone-300">
-                          {row.deviceId}
-                        </p>
-                      </button>
-                      <span
-                        className={`font-semibold uppercase ${
-                          row.status === 'online'
-                            ? 'text-emerald-300'
-                            : row.status === 'offline'
-                              ? 'text-amber-300'
-                              : 'text-stone-300'
-                        }`}
-                        data-testid={`device-status-${row.deviceId}`}
-                        onClick={(event) => event.stopPropagation()}
-                      >
-                        {row.status}
-                      </span>
-                      <span
-                        className="font-mono text-xs text-stone-300"
-                        data-testid={`device-last-seen-${row.deviceId}`}
-                        onClick={(event) => event.stopPropagation()}
-                      >
-                        {row.lastSeenDisplay}
-                      </span>
-                      <span
-                        className={`text-xs font-semibold ${
-                          row.sourceDisplay === 'Stale'
-                            ? 'text-rose-300'
-                            : row.sourceDisplay === 'Cache'
-                              ? 'text-amber-300'
-                              : 'text-stone-300'
-                        }`}
-                        data-testid={`device-source-${row.deviceId}`}
-                        onClick={(event) => event.stopPropagation()}
-                      >
-                        {row.sourceDisplay}
-                      </span>
-                      <label className="flex items-center gap-2 text-xs text-stone-300">
-                        <input
-                          checked={!row.hidden}
-                          data-testid={`device-visibility-${row.deviceId}`}
-                          onChange={() => toggleDeviceVisibility(row.deviceId)}
-                          onClick={(event) => event.stopPropagation()}
-                          type="checkbox"
-                        />
-                        {row.hidden ? 'Hidden' : 'Shown'}
-                      </label>
-                      <div className="flex justify-end gap-2">
-                        <button
-                          className="rounded-lg border border-stone-700 bg-stone-950 px-2 py-1 text-[11px] text-stone-200 disabled:opacity-40"
-                          data-testid={`device-zoom-${row.deviceId}`}
-                          disabled={!row.hasFix}
-                          onClick={(event) => {
-                            event.stopPropagation()
-                            selectDevice(row.deviceId)
-                            if (row.latitude !== null && row.longitude !== null) {
-                              queueTarget(row.latitude, row.longitude, row.name)
-                            }
-                          }}
-                          type="button"
-                        >
-                          Zoom
-                        </button>
-                      </div>
-                    </div>
-                  )
-                })}
-              </div>
-            </div>
+            <DeviceRowsSection
+              emptyMessage="No active mission devices selected. Until a device is added, the map continues showing every tracked device."
+              rows={activeRows}
+              sectionLabel="Active Mission Devices"
+              selectedDeviceId={selectedRow?.deviceId ?? null}
+              testId="active-devices"
+              testPrefix="active-device"
+              onSelectDevice={selectDevice}
+              onToggleActive={(deviceId) => {
+                if (currentMissionId !== null) {
+                  setDeviceActive(currentMissionId, deviceId, false)
+                }
+              }}
+              onToggleVisibility={toggleDeviceVisibility}
+              onZoomDevice={zoomDevice}
+            />
+
+            <DeviceRowsSection
+              emptyMessage="No devices available. Configure a tracking provider in Settings to see devices here."
+              rows={rows}
+              sectionLabel="All Devices"
+              selectedDeviceId={selectedRow?.deviceId ?? null}
+              testId="all-devices"
+              testPrefix="device"
+              onSelectDevice={selectDevice}
+              onToggleActive={(deviceId, active) => {
+                if (currentMissionId !== null) {
+                  setDeviceActive(currentMissionId, deviceId, active)
+                }
+              }}
+              onToggleVisibility={toggleDeviceVisibility}
+              onZoomDevice={zoomDevice}
+            />
           </section>
 
           <aside className="px-6 py-6" data-testid="devices-inspector">
@@ -297,6 +240,181 @@ export function DevicesWorkspace() {
       setRefreshing(false)
     }
   }
+
+  function zoomDevice(row: DeviceWorkspaceRow): void {
+    selectDevice(row.deviceId)
+    if (row.latitude !== null && row.longitude !== null) {
+      queueTarget(row.latitude, row.longitude, row.name)
+    }
+  }
+}
+
+function DeviceRowsSection(props: {
+  readonly sectionLabel: string
+  readonly rows: readonly DeviceWorkspaceRow[]
+  readonly selectedDeviceId: string | null
+  readonly testId: string
+  readonly testPrefix: 'active-device' | 'device'
+  readonly emptyMessage: string
+  readonly onSelectDevice: (deviceId: string | null) => void
+  readonly onToggleActive: (deviceId: string, active: boolean) => void
+  readonly onToggleVisibility: (deviceId: string) => void
+  readonly onZoomDevice: (row: DeviceWorkspaceRow) => void
+}) {
+  return (
+    <div className="mt-4 overflow-hidden rounded-2xl border border-stone-800 bg-stone-900/40" data-testid={`${props.testId}-section`}>
+      <div className="border-b border-stone-700 px-4 py-3">
+        <p className="text-[11px] font-bold uppercase tracking-wider text-stone-200">
+          {props.sectionLabel}
+        </p>
+      </div>
+      {props.rows.length === 0 ? (
+        <p
+          className="px-4 py-3 text-xs text-stone-300"
+          data-testid={`${props.testId}-empty-state`}
+        >
+          {props.emptyMessage}
+        </p>
+      ) : (
+        <>
+          <div className="grid grid-cols-[minmax(0,1.4fr)_7rem_8rem_7rem_7rem_10rem] border-b border-stone-800 px-4 py-2 text-[11px] font-bold uppercase tracking-wider text-stone-300">
+            <span>Device</span>
+            <span>Status</span>
+            <span>Last Seen</span>
+            <span>Source</span>
+            <span>Visible</span>
+            <span className="text-right">Actions</span>
+          </div>
+          <div className="max-h-[18rem] overflow-y-auto">
+            {props.rows.map((row) => (
+              <DeviceRow
+                key={row.deviceId}
+                row={row}
+                selected={row.deviceId === props.selectedDeviceId}
+                testPrefix={props.testPrefix}
+                onSelectDevice={props.onSelectDevice}
+                onToggleActive={props.onToggleActive}
+                onToggleVisibility={props.onToggleVisibility}
+                onZoomDevice={props.onZoomDevice}
+              />
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  )
+}
+
+function DeviceRow(props: {
+  readonly row: DeviceWorkspaceRow
+  readonly selected: boolean
+  readonly testPrefix: 'active-device' | 'device'
+  readonly onSelectDevice: (deviceId: string | null) => void
+  readonly onToggleActive: (deviceId: string, active: boolean) => void
+  readonly onToggleVisibility: (deviceId: string) => void
+  readonly onZoomDevice: (row: DeviceWorkspaceRow) => void
+}) {
+  const rowTestId =
+    props.testPrefix === 'active-device'
+      ? `active-device-row-${props.row.deviceId}`
+      : `device-row-${props.row.deviceId}`
+
+  return (
+    <div
+      className={`grid cursor-pointer grid-cols-[minmax(0,1.4fr)_7rem_8rem_7rem_7rem_10rem] items-center border-b border-stone-800/70 px-4 py-3 text-sm ${
+        props.selected ? 'bg-amber-500/10' : 'bg-transparent'
+      }`}
+      data-testid={rowTestId}
+      onClick={() => props.onSelectDevice(props.row.deviceId)}
+    >
+      <button
+        className="block min-w-0 w-full text-left"
+        data-testid={`${props.testPrefix}-select-${props.row.deviceId}`}
+        onClick={(event) => {
+          event.stopPropagation()
+          props.onSelectDevice(props.row.deviceId)
+        }}
+        type="button"
+      >
+        <p className="truncate font-semibold text-stone-100">{props.row.name}</p>
+        <p className="truncate font-mono text-[11px] text-stone-300">
+          {props.row.deviceId}
+        </p>
+      </button>
+      <span
+        className={`font-semibold uppercase ${
+          props.row.status === 'online'
+            ? 'text-emerald-300'
+            : props.row.status === 'offline'
+              ? 'text-amber-300'
+              : 'text-stone-300'
+        }`}
+        data-testid={`${props.testPrefix}-status-${props.row.deviceId}`}
+        onClick={(event) => event.stopPropagation()}
+      >
+        {props.row.status}
+      </span>
+      <span
+        className="font-mono text-xs text-stone-300"
+        data-testid={`${props.testPrefix}-last-seen-${props.row.deviceId}`}
+        onClick={(event) => event.stopPropagation()}
+      >
+        {props.row.lastSeenDisplay}
+      </span>
+      <span
+        className={`text-xs font-semibold ${
+          props.row.sourceDisplay === 'Stale'
+            ? 'text-rose-300'
+            : props.row.sourceDisplay === 'Cache'
+              ? 'text-amber-300'
+              : 'text-stone-300'
+        }`}
+        data-testid={`${props.testPrefix}-source-${props.row.deviceId}`}
+        onClick={(event) => event.stopPropagation()}
+      >
+        {props.row.sourceDisplay}
+      </span>
+      <label className="flex items-center gap-2 text-xs text-stone-300">
+        <input
+          checked={!props.row.hidden}
+          data-testid={`${props.testPrefix}-visibility-${props.row.deviceId}`}
+          onChange={() => props.onToggleVisibility(props.row.deviceId)}
+          onClick={(event) => event.stopPropagation()}
+          type="checkbox"
+        />
+        {props.row.hidden ? 'Hidden' : 'Shown'}
+      </label>
+      <div className="flex justify-end gap-2">
+        <button
+          className="rounded-lg border border-stone-700 bg-stone-950 px-2 py-1 text-[11px] text-stone-200 disabled:opacity-40"
+          data-testid={`${props.testPrefix}-zoom-${props.row.deviceId}`}
+          disabled={!props.row.hasFix}
+          onClick={(event) => {
+            event.stopPropagation()
+            props.onZoomDevice(props.row)
+          }}
+          type="button"
+        >
+          Zoom
+        </button>
+        <button
+          className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-2 py-1 text-[11px] font-semibold text-amber-100"
+          data-testid={
+            props.testPrefix === 'active-device'
+              ? `active-device-remove-${props.row.deviceId}`
+              : `device-active-toggle-${props.row.deviceId}`
+          }
+          onClick={(event) => {
+            event.stopPropagation()
+            props.onToggleActive(props.row.deviceId, !props.row.active)
+          }}
+          type="button"
+        >
+          {props.row.active ? 'Remove' : 'Add'}
+        </button>
+      </div>
+    </div>
+  )
 }
 
 function SummaryCard(props: { readonly label: string; readonly value: string }) {

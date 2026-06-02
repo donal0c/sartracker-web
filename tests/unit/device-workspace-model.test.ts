@@ -70,29 +70,45 @@ const STATUS: TrackingConnectionStatus = {
 
 describe('device workspace model', () => {
   it('builds readable roster rows from the tracking snapshot', () => {
-    const rows = buildDeviceWorkspaceRows(SNAPSHOT, ['bravo'])
+    const rows = buildDeviceWorkspaceRows(SNAPSHOT, ['bravo'], ['alpha'])
 
     expect(rows).toHaveLength(2)
     expect(rows[0]).toMatchObject({
       deviceId: 'alpha',
       sourceDisplay: 'Live',
       hidden: false,
+      active: true,
       batteryDisplay: '82%',
     })
     expect(rows[1]).toMatchObject({
       deviceId: 'bravo',
       sourceDisplay: 'Stale',
       hidden: true,
+      active: false,
       speedDisplay: '—',
     })
   })
 
+  it('splits active mission devices from the full roster without hiding names', () => {
+    const rows = buildDeviceWorkspaceRows(SNAPSHOT, [], ['bravo'])
+    const activeRows = rows.filter((row) => row.active)
+
+    expect(activeRows).toHaveLength(1)
+    expect(activeRows[0]).toMatchObject({
+      deviceId: 'bravo',
+      name: 'Bravo Team',
+      active: true,
+    })
+    expect(rows.map((row) => row.name)).toEqual(['Alpha Team', 'Bravo Team'])
+  })
+
   it('builds workspace summary counters aligned with tracking status', () => {
-    const rows = buildDeviceWorkspaceRows(SNAPSHOT, ['bravo'])
+    const rows = buildDeviceWorkspaceRows(SNAPSHOT, ['bravo'], ['alpha'])
     const summary = buildDeviceWorkspaceSummary(rows, STATUS)
 
     expect(summary).toMatchObject({
       totalDevices: 2,
+      activeDevices: 1,
       onlineDevices: 1,
       hiddenDevices: 1,
       staleDevices: 1,

@@ -4,6 +4,7 @@ export type DeviceWorkspaceRow = {
   readonly deviceId: string
   readonly name: string
   readonly status: 'online' | 'offline' | 'unknown'
+  readonly active: boolean
   readonly hidden: boolean
   readonly hasFix: boolean
   readonly latitude: number | null
@@ -19,6 +20,7 @@ export type DeviceWorkspaceRow = {
 
 export type DeviceWorkspaceSummary = {
   readonly totalDevices: number
+  readonly activeDevices: number
   readonly onlineDevices: number
   readonly hiddenDevices: number
   readonly staleDevices: number
@@ -31,10 +33,12 @@ export type DeviceWorkspaceSummary = {
 export function buildDeviceWorkspaceRows(
   snapshot: TrackingSnapshot,
   hiddenDeviceIds: readonly string[],
+  activeDeviceIds: readonly string[] = [],
 ): readonly DeviceWorkspaceRow[] {
   const latestPositionByDevice = new Map(
     snapshot.positions.map((position) => [position.device_id, position] as const),
   )
+  const activeDeviceIdSet = new Set(activeDeviceIds)
 
   return [...snapshot.devices]
     .map((device) => {
@@ -43,6 +47,7 @@ export function buildDeviceWorkspaceRows(
         deviceId: device.device_id,
         name: device.name,
         status: device.status,
+        active: activeDeviceIdSet.has(device.device_id),
         hidden: hiddenDeviceIds.includes(device.device_id),
         hasFix: position !== null,
         latitude: position?.lat ?? null,
@@ -74,6 +79,7 @@ export function buildDeviceWorkspaceSummary(
 ): DeviceWorkspaceSummary {
   return {
     totalDevices: rows.length,
+    activeDevices: rows.filter((row) => row.active).length,
     onlineDevices: rows.filter((row) => row.status === 'online').length,
     hiddenDevices: rows.filter((row) => row.hidden).length,
     staleDevices: rows.filter((row) => row.stale).length,

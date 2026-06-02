@@ -1,4 +1,4 @@
-import { useEffect, useRef, type RefObject } from 'react'
+import { useEffect, useMemo, useRef, type RefObject } from 'react'
 import type maplibregl from 'maplibre-gl'
 
 import {
@@ -10,6 +10,8 @@ import { useMarkerStore } from '../markers/marker-store'
 import { syncMarkerOverlay } from '../markers/sync-marker-overlay'
 import { useMissionStore } from '../mission/mission-store'
 import { syncTrackingOverlay } from '../tracking/sync-tracking-overlay'
+import { useActiveMissionDevicesStore } from '../tracking/active-mission-devices-store'
+import { selectMissionTrackingSnapshot } from '../tracking/mission-active-tracking'
 import { buildTrackingInitialExtent } from '../tracking/tracking-viewport'
 import { useTrackingStore } from '../tracking/tracking-store'
 import type { BasemapId } from '../../lib/map-config'
@@ -37,6 +39,11 @@ export function useMapOverlays(options: UseMapOverlaysOptions): void {
   const hiddenMarkerIds = useLayerVisibilityStore((state) => state.hiddenMarkerIds)
   const markerState = useMarkerStore((state) => state.markers)
   const missionId = useMissionStore((state) => state.currentMission?.id ?? null)
+  const activeDeviceIds = useActiveMissionDevicesStore((state) => state.getActiveDeviceIds(missionId))
+  const missionTrackingSnapshot = useMemo(
+    () => selectMissionTrackingSnapshot(trackingSnapshot, activeDeviceIds),
+    [activeDeviceIds, trackingSnapshot],
+  )
   const missionInitialFitRef = useRef<Record<string, boolean>>({})
 
   useEffect(() => {
@@ -53,7 +60,7 @@ export function useMapOverlays(options: UseMapOverlaysOptions): void {
 
       syncTrackingOverlay(
         map,
-        getEffectiveTrackingVisible(groupVisibility) ? trackingSnapshot : emptyTrackingSnapshot(),
+        getEffectiveTrackingVisible(groupVisibility) ? missionTrackingSnapshot : emptyTrackingSnapshot(),
         hiddenDeviceIds,
         getEffectiveTrackingVisible(groupVisibility) && breadcrumbsVisible,
       )
@@ -66,7 +73,7 @@ export function useMapOverlays(options: UseMapOverlaysOptions): void {
         return
       }
 
-      const extent = buildTrackingInitialExtent(trackingSnapshot)
+      const extent = buildTrackingInitialExtent(missionTrackingSnapshot)
       if (extent === null) {
         return
       }
@@ -87,7 +94,9 @@ export function useMapOverlays(options: UseMapOverlaysOptions): void {
     breadcrumbsVisible,
     groupVisibility,
     hiddenDeviceIds,
+    activeDeviceIds,
     missionId,
+    missionTrackingSnapshot,
     trackingSnapshot,
   ])
 

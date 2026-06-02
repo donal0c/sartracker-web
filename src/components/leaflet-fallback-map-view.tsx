@@ -24,6 +24,9 @@ import { useLayerVisibilityStore } from '../features/layers/layer-visibility-sto
 import { useDrawingStore } from '../features/drawings/drawing-store'
 import { useMarkerStore } from '../features/markers/marker-store'
 import { useTrackingStore } from '../features/tracking/tracking-store'
+import { useActiveMissionDevicesStore } from '../features/tracking/active-mission-devices-store'
+import { selectMissionTrackingSnapshot } from '../features/tracking/mission-active-tracking'
+import { useMissionStore } from '../features/mission/mission-store'
 import {
   createLeafletBasemapLayer,
   createLeafletFallbackMap,
@@ -64,6 +67,12 @@ export function LeafletFallbackMapView() {
   )
 
   const trackingSnapshot = useTrackingStore((state) => state.snapshot)
+  const missionId = useMissionStore((state) => state.currentMission?.id ?? null)
+  const activeDeviceIds = useActiveMissionDevicesStore((state) => state.getActiveDeviceIds(missionId))
+  const missionTrackingSnapshot = useMemo(
+    () => selectMissionTrackingSnapshot(trackingSnapshot, activeDeviceIds),
+    [activeDeviceIds, trackingSnapshot],
+  )
   const markers = useMarkerStore((state) => state.markers)
   const drawings = useDrawingStore((state) => state.drawings)
   const selectedDrawingId = useDrawingStore((state) => state.selectedDrawingId)
@@ -156,7 +165,7 @@ export function LeafletFallbackMapView() {
     }
 
     renderLeafletFallbackOverlays(layerGroup, {
-      trackingSnapshot,
+      trackingSnapshot: missionTrackingSnapshot,
       trackingVisible: getEffectiveTrackingVisible(groupVisibility),
       breadcrumbsVisible,
       hiddenDeviceIds,
@@ -178,6 +187,8 @@ export function LeafletFallbackMapView() {
     hiddenDrawingIds,
     hiddenMarkerIds,
     markers,
+    activeDeviceIds,
+    missionTrackingSnapshot,
     selectedDrawingId,
     trackingSnapshot,
   ])

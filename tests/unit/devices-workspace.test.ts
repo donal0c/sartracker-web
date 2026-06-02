@@ -5,6 +5,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { useLayerVisibilityStore } from '../../src/features/layers/layer-visibility-store'
 import { useMapTargetStore } from '../../src/features/map/map-target-store'
+import { useMissionStore } from '../../src/features/mission/mission-store'
+import { useActiveMissionDevicesStore } from '../../src/features/tracking/active-mission-devices-store'
 import { useDeviceWorkspaceStore } from '../../src/features/tracking/device-workspace-store'
 import { useTrackingStore } from '../../src/features/tracking/tracking-store'
 import type {
@@ -92,6 +94,8 @@ describe('DevicesWorkspace', () => {
     vi.clearAllMocks()
     useDeviceWorkspaceStore.setState(useDeviceWorkspaceStore.getInitialState())
     useTrackingStore.setState(useTrackingStore.getInitialState())
+    useActiveMissionDevicesStore.setState(useActiveMissionDevicesStore.getInitialState())
+    useMissionStore.setState(useMissionStore.getInitialState())
     useLayerVisibilityStore.setState(useLayerVisibilityStore.getInitialState())
     useMapTargetStore.setState(useMapTargetStore.getInitialState())
   })
@@ -111,6 +115,51 @@ describe('DevicesWorkspace', () => {
 
     expect(useDeviceWorkspaceStore.getState().selectedDeviceId).toBe('alpha')
     expect(getText('[data-testid="devices-inspector-title"]')).toContain('Alpha Team')
+  })
+
+  it('adds and removes mission-active devices while keeping the full roster visible', async () => {
+    const { DevicesWorkspace } = await import('../../src/components/devices-workspace')
+    useTrackingStore.setState({ snapshot: SNAPSHOT, status: STATUS })
+    useMissionStore.setState({
+      currentMission: {
+        id: 'mission-1',
+        name: 'Devices Mission',
+        status: 'active',
+        start_time: '2026-04-10T17:00:00.000Z',
+        pause_time: null,
+        finish_time: null,
+        paused_seconds: 0,
+        notes: null,
+        schema_version: 1,
+      },
+      phase: 'active',
+    })
+    useDeviceWorkspaceStore.setState({ open: true, selectedDeviceId: 'alpha' })
+
+    render(React.createElement(DevicesWorkspace))
+    await waitForElement('[data-testid="devices-workspace"]')
+
+    expect(getText('[data-testid="active-devices-empty-state"]')).toContain(
+      'No active mission devices selected',
+    )
+    expect(document.querySelector('[data-testid="device-row-alpha"]')).not.toBeNull()
+    expect(document.querySelector('[data-testid="device-row-bravo"]')).not.toBeNull()
+
+    click('[data-testid="device-active-toggle-bravo"]')
+
+    expect(useActiveMissionDevicesStore.getState().getActiveDeviceIds('mission-1')).toEqual([
+      'bravo',
+    ])
+    expect(getText('[data-testid="active-device-row-bravo"]')).toContain('Bravo Team')
+    expect(document.querySelector('[data-testid="device-row-alpha"]')).not.toBeNull()
+    expect(document.querySelector('[data-testid="device-row-bravo"]')).not.toBeNull()
+
+    click('[data-testid="active-device-remove-bravo"]')
+
+    expect(useActiveMissionDevicesStore.getState().getActiveDeviceIds('mission-1')).toEqual([])
+    expect(getText('[data-testid="active-devices-empty-state"]')).toContain(
+      'No active mission devices selected',
+    )
   })
 
   function render(element: React.ReactElement): void {
