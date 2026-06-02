@@ -610,6 +610,7 @@
               <tr><td>Pause / Resume</td><td>Stops or restarts active-search timing without ending the mission.</td><td>Elapsed time keeps running; active-search time pauses.</td></tr>
               <tr><td>Finish</td><td>Opens a confirmation before ending the mission.</td><td>Confirm only when operations are genuinely complete.</td></tr>
               <tr><td>Review</td><td>Opens mission details, marker log, layer console, and audit records.</td><td>Use after or during operations to inspect saved mission state.</td></tr>
+              <tr><td>Minimize / Expand</td><td>Collapses the active mission controls after setup to free right-rail space.</td><td>The control is not available while paused; expand before pausing, finishing, or changing lifecycle state.</td></tr>
             </tbody>
           </table>
           <div class="note">
@@ -628,6 +629,12 @@
             as well as colour, so it stays clear on washed-out displays and when reduced-motion is enabled
             (the colour stays red but stops flashing).
           </div>
+          <div class="note">
+            <strong>Panel space:</strong> after an active mission is configured, Mission Control can be
+            minimized from its header. The top command mast still carries the mission phase and timers,
+            while the full pause, finish, review, recovery, and governance controls return when the panel
+            is expanded.
+          </div>
         </section>
 
         <section id="map">
@@ -636,7 +643,8 @@
             The map renders in WGS84 for display, while ITM is the working coordinate reference system
             for operational records. TM65 Irish Grid is available for operator display and input. The
             coordinate strip updates as the cursor moves and exposes the coordinate converter through
-            the <strong>Convert</strong> button.
+            the <strong>Convert</strong> button. Fixed CRS details are kept out of the live footer so the
+            operational surface stays focused on coordinates operators actively use.
           </p>
           <div class="card-grid">
             <div class="card"><strong>Maps menu</strong><br />OpenTopoMap, ESRI World Topo, OpenStreetMap, ESRI Satellite, and the current-view offline tile check.</div>

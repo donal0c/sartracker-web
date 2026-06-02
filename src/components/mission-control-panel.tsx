@@ -1,6 +1,7 @@
 import {
   useEffect,
   useRef,
+  useState,
   type KeyboardEvent as ReactKeyboardEvent,
   type ReactNode,
 } from 'react'
@@ -66,6 +67,9 @@ export function MissionControlPanel() {
   } = useMissionControlViewModel()
 
   const phasePresentation = selectMissionPhasePresentation(phase)
+  const canCollapsePanel = phase === 'active' && currentMission !== null && !focusModeActive
+  const [collapsed, setCollapsed] = useState(false)
+  const effectiveCollapsed = canCollapsePanel && collapsed
 
   return (
     <section
@@ -90,6 +94,21 @@ export function MissionControlPanel() {
           >
             Review
           </button>
+          {canCollapsePanel ? (
+            <button
+              aria-expanded={!effectiveCollapsed}
+              className="sar-button px-3 py-1.5 text-[12px] font-semibold uppercase tracking-[0.08em]"
+              data-testid={
+                effectiveCollapsed
+                  ? 'mission-control-expand-btn'
+                  : 'mission-control-collapse-btn'
+              }
+              onClick={() => setCollapsed((isCollapsed) => !isCollapsed)}
+              type="button"
+            >
+              {effectiveCollapsed ? 'Expand' : 'Minimize'}
+            </button>
+          ) : null}
           {phase !== 'idle' && (
             <div
               className={`h-2 w-2 rounded-full ${
@@ -125,6 +144,24 @@ export function MissionControlPanel() {
         </div>
       </div>
 
+      {effectiveCollapsed ? (
+        <div
+          className="sar-readout border-l-4 border-l-emerald-400 px-3 py-3"
+          data-testid="mission-control-collapsed-summary"
+        >
+          <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-stone-300">
+            Mission Control collapsed
+          </p>
+          <p className="mt-1 text-[13px] font-bold text-stone-100">
+            {currentMission.name}
+          </p>
+          <p className="mt-1 text-[12px] leading-snug text-stone-300">
+            Mission timers remain visible in the command mast. Expand to pause, finish,
+            or review full lifecycle controls.
+          </p>
+        </div>
+      ) : (
+        <>
       {/*
         Paused-state recovery banner (DON-64). Rendered immediately under the
         header so the paused state and its recovery action are impossible to
@@ -507,6 +544,8 @@ export function MissionControlPanel() {
           </div>
         </InlineDecisionDialog>
       ) : null}
+        </>
+      )}
     </section>
   )
 }

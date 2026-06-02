@@ -30,7 +30,7 @@ export function CoordinateBar({ latitude, longitude }: CoordinateBarProps) {
       className="sar-instrument-strip absolute inset-x-0 bottom-0 z-10 font-mono text-base font-semibold text-stone-100"
       data-testid="coordinate-display"
     >
-      <div className="grid min-h-[72px] grid-cols-[minmax(15rem,1.2fr)_minmax(12rem,1fr)_8rem_8rem_auto]">
+      <div className="grid min-h-[72px] grid-cols-[minmax(15rem,1.25fr)_minmax(12rem,1fr)_auto]">
         <span data-testid="coords-combined" className="sr-only">{content}</span>
 
         <InstrumentCell label={mode === 'tm65_first' ? 'Irish Grid' : 'Coordinates'}>
@@ -55,14 +55,6 @@ export function CoordinateBar({ latitude, longitude }: CoordinateBarProps) {
           ) : (
             <span>—</span>
           )}
-        </InstrumentCell>
-
-        <InstrumentCell label="Map CRS">
-          <span className="text-stone-100">WGS84</span>
-        </InstrumentCell>
-
-        <InstrumentCell label="Work CRS">
-          <span className="text-stone-100">ITM</span>
         </InstrumentCell>
 
         <div className="flex items-center gap-2 border-l border-[var(--sar-line)] px-4">
