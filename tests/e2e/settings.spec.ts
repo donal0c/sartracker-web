@@ -11,6 +11,7 @@ test.describe('M12 settings workspace', () => {
   test('opens the workspace and validates Traccar provider inputs', async ({ page }) => {
     await page.getByTestId('open-settings-workspace').click()
     await expect(page.getByTestId('settings-workspace')).toBeVisible()
+    await expect(page.getByTestId('official-map-source-status')).toContainText('Official maps are not configured.')
 
     await page.getByRole('button', { name: 'Traccar HTTP' }).click()
     await page.getByTestId('settings-provider-url').fill('https://traccar.example.com')

@@ -1,3 +1,8 @@
+import type {
+  OfficialMapId,
+} from '../../lib/map-config'
+import type { OfficialMapSourceStatus } from './official-map-source'
+
 export type CoordinateDisplayMode = 'wgs84_first' | 'tm65_first'
 
 export type TrackingProviderType = 'none' | 'traccar_http'
@@ -41,9 +46,22 @@ export type WeatherSettings = {
   readonly links: readonly WeatherLinkSettings[]
 }
 
+export type OfficialMapSourceType = 'none' | 'mapgenie_file'
+
+export type OfficialMapSettings = {
+  readonly sourceType: OfficialMapSourceType
+  readonly sourcePath: string
+  readonly status: OfficialMapSourceStatus
+  readonly username: string
+  readonly availableSources: readonly OfficialMapId[]
+  readonly serviceCount: number
+  readonly message: string
+}
+
 export type AppSettings = {
   readonly missionDefaults: MissionDefaultsSettings
   readonly dataSource: DataSourceSettings
+  readonly officialMaps: OfficialMapSettings
   readonly weather: WeatherSettings
   readonly advanced: AdvancedSettings
 }
@@ -54,6 +72,7 @@ export type AppSettingsDraft = {
     readonly secretInput: string
     readonly clearSecret: boolean
   }
+  readonly officialMaps: OfficialMapSettings
   readonly weather: {
     readonly links: readonly WeatherLinkSettings[]
   }
@@ -96,6 +115,15 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
     replayDurationHours: 4,
     secretPresent: false,
   },
+  officialMaps: {
+    sourceType: 'none',
+    sourcePath: '',
+    status: 'not_configured',
+    username: '',
+    availableSources: [],
+    serviceCount: 0,
+    message: 'Official maps are not configured.',
+  },
   weather: {
     links: [],
   },
@@ -105,6 +133,12 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
 }
 
 export function createSettingsDraft(settings: AppSettings): AppSettingsDraft {
+  const officialMaps = {
+    ...DEFAULT_APP_SETTINGS.officialMaps,
+    ...settings.officialMaps,
+    availableSources: [...(settings.officialMaps?.availableSources ?? [])],
+  }
+
   return {
     missionDefaults: {
       ...settings.missionDefaults,
@@ -115,6 +149,9 @@ export function createSettingsDraft(settings: AppSettings): AppSettingsDraft {
       ...settings.dataSource,
       secretInput: '',
       clearSecret: false,
+    },
+    officialMaps: {
+      ...officialMaps,
     },
     weather: {
       links: [...settings.weather.links],

@@ -78,6 +78,7 @@ export function buildDiagnosticsSnapshot(
     undefined
   const reportFileName = `diagnostics-report-${safeTimestamp(input.generatedAt)}.txt`
   const warnings = collectWarnings(input)
+  const officialMapStatus = input.settings.officialMaps?.status ?? 'not_configured'
   const summaryRows: readonly DiagnosticsRow[] = [
     {
       label: 'Runtime',
@@ -122,6 +123,11 @@ export function buildDiagnosticsSnapshot(
     {
       label: 'Tracking cache',
       value: input.settings.dataSource.trackingCacheEnabled ? 'enabled' : 'disabled',
+    },
+    {
+      label: 'Official maps',
+      value: officialMapStatus.replaceAll('_', ' '),
+      tone: officialMapStatus === 'configured' ? 'success' : 'warning',
     },
     {
       label: 'Autosave interval',
@@ -175,6 +181,9 @@ function buildSupportReport(
 ): string {
   const missionName = input.missionRuntime.currentMission?.name ?? 'none'
   const governanceMission = input.governanceRuntime.governanceMission?.name ?? 'none'
+  const officialMapStatus = input.settings.officialMaps?.status ?? 'not_configured'
+  const officialMapSourceType = input.settings.officialMaps?.sourceType ?? 'none'
+  const officialMapServiceCount = input.settings.officialMaps?.serviceCount ?? 0
 
   return [
     'Diagnostics Report',
@@ -207,6 +216,9 @@ function buildSupportReport(
     `auth mode: ${input.settings.dataSource.authMode}`,
     `auto connect: ${booleanWord(input.settings.dataSource.autoConnect)}`,
     `tracking cache: ${booleanWord(input.settings.dataSource.trackingCacheEnabled)}`,
+    `official maps: ${officialMapStatus.replaceAll('_', ' ')}`,
+    `official map source type: ${officialMapSourceType}`,
+    `official map services: ${officialMapServiceCount}`,
     `runtime tracking configured: ${booleanWord(input.runtimeBootstrap.trackingConfig !== null)}`,
     `autosave interval ms: ${input.runtimeBootstrap.autosaveIntervalMs}`,
     `tracking poll interval ms: ${input.runtimeBootstrap.trackingPollIntervalMs}`,

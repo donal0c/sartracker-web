@@ -41,10 +41,13 @@ describe('diagnostics model', () => {
     expect(snapshot.summaryRows.some((row) => row.label === 'Runtime' && row.value === 'Tauri desktop')).toBe(true)
     expect(snapshot.summaryRows.some((row) => row.label === 'Tracking mode' && row.value === 'online')).toBe(true)
     expect(snapshot.storageRows.some((row) => row.label === 'Schema version' && row.value === '3')).toBe(true)
+    expect(snapshot.configurationRows.some((row) => row.label === 'Official maps' && row.value === 'configured')).toBe(true)
     expect(snapshot.repair.targetMissionLabel).toContain('Night Ops')
     expect(snapshot.supportReport).toContain('Diagnostics Report')
     expect(snapshot.supportReport).toContain('Night Ops')
     expect(snapshot.supportReport).toContain('https://traccar.example.com')
+    expect(snapshot.supportReport).toContain('official maps: configured')
+    expect(snapshot.supportReport).not.toContain('mountainrescue_org.txt')
     expect(snapshot.supportReport).toContain('layer metadata entries: 3')
   })
 
@@ -136,6 +139,18 @@ function createSettings(): AppSettings {
       replayStart: '',
       replayDurationHours: 4,
       secretPresent: true,
+    },
+    officialMaps: {
+      sourceType: 'mapgenie_file',
+      sourcePath: '/private/maps/mountainrescue_org.txt',
+      status: 'configured',
+      username: 'mountainrescue_org',
+      availableSources: ['official_discovery_topo'],
+      serviceCount: 1,
+      message: 'Official Discovery Topo source configured.',
+    },
+    weather: {
+      links: [],
     },
     advanced: {
       repairLayerStructureAvailable: true,

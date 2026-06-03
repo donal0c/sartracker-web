@@ -15,10 +15,8 @@ describe('map layer filter helpers', () => {
 
   it('builds a tracking exclusion filter when some devices are hidden', () => {
     expect(buildTrackingLayerFilter(['alpha', 'bravo'])).toEqual([
-      '!in',
-      'deviceId',
-      'alpha',
-      'bravo',
+      '!',
+      ['in', ['get', 'deviceId'], ['literal', ['alpha', 'bravo']]],
     ])
   })
 

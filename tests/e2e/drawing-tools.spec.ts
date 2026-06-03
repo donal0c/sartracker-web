@@ -43,7 +43,7 @@ test.describe('M8 drawing workflows', () => {
     await page.getByTestId('drawing-search-area-status-input').selectOption('Assigned')
     await page.getByTestId('drawing-search-area-poa-input').fill('35')
     await page.getByTestId('drawing-search-area-label-font-size-input').fill('16')
-    await page.getByTestId('drawing-search-area-fill-color-input').fill('#0EA5E9')
+    await page.getByTestId('drawing-search-area-fill-color-input-hex').fill('#0EA5E9')
     await expect(page.getByTestId('drawing-search-area-terrain-input')).toBeEditable()
     await page.getByTestId('drawing-search-area-terrain-input').fill('Rocky ground')
     await page.getByTestId('drawing-search-area-notes-input').fill('Approach from east ridge')
@@ -110,7 +110,7 @@ test.describe('M8 drawing workflows', () => {
     await expect(page.getByTestId('drawing-dialog')).toBeVisible()
     await page.getByTestId('drawing-text-label-text-input').fill('Landing Zone')
     await page.getByTestId('drawing-text-label-font-size-input').fill('18')
-    await page.getByTestId('drawing-text-label-color-input').fill('#FFCC00')
+    await page.getByTestId('drawing-text-label-color-input-hex').fill('#FFCC00')
     await page.getByTestId('drawing-save-btn').click()
 
     const drawings = await readMissionDrawings(page)

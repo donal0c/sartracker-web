@@ -29,6 +29,15 @@ const DEFAULT_APP_SETTINGS = Object.freeze({
     replayDurationHours: 4,
     secretPresent: false,
   }),
+  officialMaps: Object.freeze({
+    sourceType: 'none',
+    sourcePath: '',
+    status: 'not_configured',
+    username: '',
+    availableSources: Object.freeze([]),
+    serviceCount: 0,
+    message: 'Official maps are not configured.',
+  }),
   weather: Object.freeze({
     links: Object.freeze([]),
   }),
@@ -67,6 +76,7 @@ function createElectronSettingsStore(options) {
     const next = {
       missionDefaults: normalizeMissionDefaults(input.missionDefaults),
       dataSource: normalizeDataSource(input.dataSource),
+      officialMaps: await normalizeOfficialMaps(input.officialMaps),
       weather: normalizeWeather(input.weather),
     }
 
@@ -276,6 +286,7 @@ async function readSettings(settingsPath) {
       ...readObject(parsed.dataSource),
       secretPresent: false,
     },
+    officialMaps: normalizePersistedOfficialMaps(parsed.officialMaps),
     weather: {
       links: normalizeWeatherLinks(parsed.weather?.links),
     },
@@ -312,6 +323,7 @@ function toView(persisted, secretPresent) {
       ...persisted.dataSource,
       secretPresent,
     },
+    officialMaps: persisted.officialMaps,
     weather: persisted.weather,
     advanced: DEFAULT_APP_SETTINGS.advanced,
   }
@@ -369,6 +381,70 @@ function normalizeBaseUrl(baseUrl) {
   return readOptionalString(baseUrl).trim().replace(/\/+$/, '')
 }
 
+async function normalizeOfficialMaps(input) {
+  const sourceType = input?.sourceType === 'mapgenie_file' ? 'mapgenie_file' : 'none'
+  const sourcePath = readOptionalString(input?.sourcePath).trim()
+
+  if (sourceType === 'none') {
+    return DEFAULT_APP_SETTINGS.officialMaps
+  }
+
+  if (sourcePath === '') {
+    return {
+      ...DEFAULT_APP_SETTINGS.officialMaps,
+      sourceType: 'mapgenie_file',
+      status: 'missing',
+      message: 'Choose the MapGenie source file before enabling official maps.',
+    }
+  }
+
+  try {
+    const metadata = parseMapGenieSourceDetails(await fs.readFile(sourcePath, 'utf8'))
+    return {
+      sourceType: 'mapgenie_file',
+      sourcePath,
+      ...metadata,
+    }
+  } catch (error) {
+    if (error?.code === 'ENOENT') {
+      return {
+        ...DEFAULT_APP_SETTINGS.officialMaps,
+        sourceType: 'mapgenie_file',
+        sourcePath,
+        status: 'missing',
+        message: 'MapGenie source file was not found.',
+      }
+    }
+    return {
+      ...DEFAULT_APP_SETTINGS.officialMaps,
+      sourceType: 'mapgenie_file',
+      sourcePath,
+      status: 'invalid',
+      message: 'MapGenie source file could not be read.',
+    }
+  }
+}
+
+function normalizePersistedOfficialMaps(input) {
+  const parsed = readObject(input)
+  const sourceType = parsed.sourceType === 'mapgenie_file' ? 'mapgenie_file' : 'none'
+  if (sourceType === 'none') {
+    return DEFAULT_APP_SETTINGS.officialMaps
+  }
+
+  return {
+    sourceType,
+    sourcePath: readOptionalString(parsed.sourcePath).trim(),
+    status: ['configured', 'missing', 'invalid'].includes(parsed.status)
+      ? parsed.status
+      : 'not_configured',
+    username: readOptionalString(parsed.username).trim(),
+    availableSources: readOfficialMapSources(parsed.availableSources),
+    serviceCount: Number.isFinite(Number(parsed.serviceCount)) ? Number(parsed.serviceCount) : 0,
+    message: readOptionalString(parsed.message).trim() || 'Official map source status unavailable.',
+  }
+}
+
 function normalizeWeather(input) {
   return {
     links: normalizeWeatherLinks(input?.links),
@@ -401,6 +477,36 @@ function normalizeWeatherUrl(input) {
   } catch {
     return raw
   }
+}
+
+const OFFICIAL_SOURCE_PATTERNS = [
+  ['official_discovery_topo', /\bdiscovery\b/i],
+  ['official_premium_basemap', /\bbasemap_premium\b/i],
+  ['official_aerial_imagery', /\bortho\b/i],
+  ['official_high_resolution_imagery', /\bNational_High_Resolution_Imagery\b/i],
+]
+
+function parseMapGenieSourceDetails(contents) {
+  const username = /^Username:\s*(\S+)/im.exec(contents)?.[1] ?? ''
+  const availableSources = OFFICIAL_SOURCE_PATTERNS
+    .filter(([, pattern]) => pattern.test(contents))
+    .map(([id]) => id)
+  const hasDiscovery = availableSources.includes('official_discovery_topo')
+
+  return {
+    status: hasDiscovery ? 'configured' : 'invalid',
+    username,
+    availableSources,
+    serviceCount: availableSources.length,
+    message: hasDiscovery
+      ? 'Official Discovery Topo source configured.'
+      : 'MapGenie source file is missing the Discovery Topo service.',
+  }
+}
+
+function readOfficialMapSources(input) {
+  const allowed = new Set(OFFICIAL_SOURCE_PATTERNS.map(([id]) => id))
+  return readStringArray(input).filter((source) => allowed.has(source))
 }
 
 function addWeatherSchemeIfMissing(input) {

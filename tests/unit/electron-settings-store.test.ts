@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { createRequire } from 'node:module'
@@ -96,6 +96,40 @@ describe('electron settings store', () => {
     const rawSettings = await readFile(path.join(userDataPath!, 'settings.json'), 'utf8')
     expect(rawSettings).toContain('https://met.ie')
     expect(rawSettings).not.toContain('"url":"met.ie"')
+  })
+
+  it('persists official map source metadata without copying the MapGenie password into settings JSON', async () => {
+    const store = await createStore({ backend: 'gnome_libsecret' })
+    const sourcePath = path.join(userDataPath!, 'mountainrescue_org.txt')
+    await writeFile(
+      sourcePath,
+      [
+        'Customer: Mountain Rescue Ireland',
+        'Username: mountainrescue_org',
+        'Password: field-secret',
+        'discovery ITM https://ogcmapgenie.osi.ie/data/rest/services/ITM/discovery/MapServer/wmts',
+        'basemap_premium ITM https://ogcmapgenie.osi.ie/data/rest/services/ITM/basemap_premium/MapServer/wmts',
+      ].join('\n'),
+      'utf8',
+    )
+    const draft = createSettingsDraft(DEFAULT_APP_SETTINGS)
+    draft.officialMaps.sourceType = 'mapgenie_file'
+    draft.officialMaps.sourcePath = sourcePath
+
+    const saved = await store.saveAppSettings(draft)
+
+    expect(saved.officialMaps).toMatchObject({
+      sourceType: 'mapgenie_file',
+      sourcePath,
+      status: 'configured',
+      username: 'mountainrescue_org',
+      availableSources: ['official_discovery_topo', 'official_premium_basemap'],
+      serviceCount: 2,
+    })
+    const rawSettings = await readFile(path.join(userDataPath!, 'settings.json'), 'utf8')
+    expect(rawSettings).toContain(sourcePath)
+    expect(rawSettings).not.toContain('field-secret')
+    expect(rawSettings).not.toContain('Password')
   })
 
   it('preserves an existing secret when saving non-secret settings', async () => {

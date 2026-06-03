@@ -213,6 +213,13 @@ function readBrowserSettings(): AppSettings {
         ...parsed.dataSource,
         secretPresent: browserSecrets[parsed.dataSource?.authMode as TrackingAuthMode] !== undefined,
       },
+      officialMaps: {
+        ...DEFAULT_APP_SETTINGS.officialMaps,
+        ...parsed.officialMaps,
+        availableSources: Array.isArray(parsed.officialMaps?.availableSources)
+          ? parsed.officialMaps.availableSources
+          : DEFAULT_APP_SETTINGS.officialMaps.availableSources,
+      },
       weather: {
         ...DEFAULT_APP_SETTINGS.weather,
         ...parsed.weather,
@@ -255,6 +262,7 @@ function toBrowserSettings(input: AppSettingsDraft): AppSettings {
       replayDurationHours: input.dataSource.replayDurationHours,
       secretPresent: secret !== null,
     },
+    officialMaps: input.officialMaps,
     weather: {
       links: normalizeWeatherLinks(input.weather.links),
     },

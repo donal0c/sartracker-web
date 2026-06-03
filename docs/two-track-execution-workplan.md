@@ -189,8 +189,8 @@ This is the default order when the user says “work on the next task.”
 | Active | Official Irish Map Provider Integration | Track B / Maps, with Track A catalogue UX | `DON-76` | Parent map lane. Licensed map data and credentials are private/customer-provided: do not commit to GitHub, do not bundle into public release artifacts, and do not expose through hosted web. Verified local USB copy lives at `/Users/donalocallaghan/SARTracker-private-map-assets/team-usb-2026-06-03`. |
 | Done | Evaluate MapGenie sources and choose operational default | Maps / Product decision | `DON-77` | Done 2026-06-03. Private visual comparison across MacGillycuddy Reeks, Galtymore/Galtees, and Wicklow/Glendalough plus Donal's team-context confirmation locks `discovery` as the default official operational topo map. `basemap_premium` is a secondary clean reference map; `ortho` and `National_High_Resolution_Imagery` are imagery reference layers. |
 | Done | Add grouped map catalogue UX for official and public maps | Track A / Shared UX | `DON-78` | Done locally 2026-06-03. Maps menu now groups `Official maps` and `Public fallback maps`; official Discovery/Premium/Imagery entries render as not configured in hosted/browser mode; public fallback maps remain selectable and persisted. Official map naming: `Discovery Topo`, `Premium Basemap`, `Aerial Imagery`, and `High-Resolution Imagery`. |
-| 1 | Add local official map source import and configuration for Electron | Track B / Maps / Local config | `DON-80` | Next map chunk. Users/admins add licensed map access or map files locally after installing the Electron app. App may reference an external private folder first, then later import/copy/convert into app-owned data where reliability requires it. |
-| 2 | Prototype local MapGenie rendering via ArcGIS export | Track B / Maps / Rendering | `DON-79` | Use the proven ArcGIS REST export path first because it can return Web Mercator PNG imagery compatible with the current MapLibre renderer. Packaged Electron validation required once app runtime code is involved. |
+| Done | Add local official map source import and configuration for Electron | Track B / Maps / Local config | `DON-80` | Done 2026-06-03. Settings and Electron persistence can point at the local MapGenie source file while storing only safe metadata (status, username, available source IDs, service count, message). Credentials/file contents stay out of app settings, diagnostics, source control, and Linear. |
+| 1 | Prototype local MapGenie rendering via ArcGIS export | Track B / Maps / Rendering | `DON-79` | Next map chunk. Use the proven ArcGIS REST export path first because it can return Web Mercator PNG imagery compatible with the current MapLibre renderer. Packaged Electron validation required once app runtime code is involved. |
 | 3 | Plan mission-area prefetch and offline official-map path | Track B / Maps / Offline | `DON-81` / `DON-7` | Evaluate viewed-cache, mission-area prefetch, local raster package import, and regional/national packages after default/rendering/import path is understood. |
 | 4 | Classify relief and slope rasters as optional map overlays | Track B / Maps / Overlays | `DON-82` | Defer until the primary basemap and local import/rendering model are proven. Treat `relief_byte.tif` and `Slope_30plus.tif` as optional overlays, not primary basemaps. |
 | 5 | S8: Linux runtime reliability path | Track B / Runtime | `DON-25` | In progress 2026-05-18. Electron hardening continues in parallel: clear `DON-58` and `DON-59` before sending full Electron builds wider. |
@@ -1206,8 +1206,8 @@ Work sequence:
 
 - `DON-77` — evaluate MapGenie sources and choose operational default. Done 2026-06-03.
 - `DON-78` — grouped map catalogue UX for official/private and public fallback maps. Done locally 2026-06-03.
-- `DON-80` — local official map source import/configuration for Electron. Next.
-- `DON-79` — local MapGenie rendering via ArcGIS export.
+- `DON-80` — local official map source import/configuration for Electron. Done 2026-06-03.
+- `DON-79` — local MapGenie rendering via ArcGIS export. Next.
 - `DON-81` / `DON-7` — mission-area prefetch and offline official-map path.
 - `DON-82` — relief/slope overlays.
 
@@ -1221,6 +1221,7 @@ Acceptance:
 Verification:
 
 - Research-only `DON-77` verification is the generated private comparison sheet and successful MapGenie export responses.
+- `DON-80` verification: parser/settings tests, Electron settings/runtime-file tests, diagnostics tests, Settings E2E, `npm run test:all` (unit + 121 Playwright including visual + backend), plus `npm run lint` and `npm run build`.
 - UI/runtime children require targeted tests and browser/Electron validation according to the verification cadence above.
 
 ## Shared Foundation Chunks

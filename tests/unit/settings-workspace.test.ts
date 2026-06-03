@@ -109,6 +109,51 @@ describe('SettingsWorkspace', () => {
     expect(rosterInput.value).toBe('Cathal ')
   })
 
+  it('shows official map source status and lets an admin enter a MapGenie source path', async () => {
+    const onClose = vi.fn()
+    const { SettingsWorkspace } = await import('../../src/components/settings-workspace')
+    mocks.loadAppSettings.mockResolvedValue({
+      ...DEFAULT_APP_SETTINGS,
+      officialMaps: {
+        ...DEFAULT_APP_SETTINGS.officialMaps,
+        sourceType: 'mapgenie_file',
+        sourcePath: '/private/maps/mountainrescue_org.txt',
+        status: 'configured',
+        username: 'mountainrescue_org',
+        availableSources: ['official_discovery_topo'],
+        serviceCount: 1,
+        message: 'Official Discovery Topo source configured.',
+      },
+    })
+    mocks.saveAppSettings.mockResolvedValue(DEFAULT_APP_SETTINGS)
+    mocks.getAppRuntimeController.mockReturnValue(null)
+    mocks.readCoordinateDisplayMode.mockReturnValue('wgs84_first')
+    mocks.isTauriRuntimeAvailable.mockReturnValue(false)
+
+    render(React.createElement(SettingsWorkspace, { open: true, onClose }))
+
+    const sourcePathInput = await waitForInput('[data-testid="official-map-source-path"]')
+    expect(document.body.textContent).toContain('Official Maps')
+    expect(document.body.textContent).toContain('Official Discovery Topo source configured.')
+    expect(document.body.textContent).toContain('mountainrescue_org')
+    expect(sourcePathInput.value).toBe('/private/maps/mountainrescue_org.txt')
+
+    setInputValue(sourcePathInput, '/Volumes/Untitled/mountainrescue_org.txt')
+
+    await act(async () => {
+      getButton('[data-testid="settings-save"]').click()
+    })
+
+    expect(mocks.saveAppSettings).toHaveBeenCalledWith(
+      expect.objectContaining({
+        officialMaps: expect.objectContaining({
+          sourceType: 'mapgenie_file',
+          sourcePath: '/Volumes/Untitled/mountainrescue_org.txt',
+        }),
+      }),
+    )
+  })
+
   function render(element: React.ReactElement): void {
     host = document.createElement('div')
     document.body.append(host)
@@ -146,6 +191,23 @@ async function waitForTextArea(selector: string): Promise<HTMLTextAreaElement> {
     throw new Error(`Expected ${selector} to be a textarea.`)
   }
   return element
+}
+
+async function waitForInput(selector: string): Promise<HTMLInputElement> {
+  const element = await waitForElement(selector)
+  if (!(element instanceof HTMLInputElement)) {
+    throw new Error(`Expected ${selector} to be an input.`)
+  }
+  return element
+}
+
+function setInputValue(input: HTMLInputElement, value: string): void {
+  act(() => {
+    const valueSetter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set
+    valueSetter?.call(input, value)
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+    input.dispatchEvent(new Event('change', { bubbles: true }))
+  })
 }
 
 function setTextAreaValue(input: HTMLTextAreaElement, value: string): void {

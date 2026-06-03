@@ -462,6 +462,93 @@ export function SettingsWorkspace({ open, onClose }: SettingsWorkspaceProps) {
               </Section>
 
               <Section
+                title="Official Maps"
+                description="Licensed map access stays local. Configure the MapGenie source file in Electron/local app builds."
+              >
+                <div className="space-y-4">
+                  <div
+                    className="border border-[var(--sar-line)] bg-[var(--sar-panel-sunken)] px-4 py-3 text-sm text-stone-200"
+                    data-testid="official-map-source-status"
+                  >
+                    <p className="font-semibold text-stone-100">{draft.officialMaps.message}</p>
+                    <dl className="mt-2 grid gap-2 text-xs text-stone-300 md:grid-cols-3">
+                      <div>
+                        <dt className="sar-section-label">Status</dt>
+                        <dd>{formatOfficialMapStatus(draft.officialMaps.status)}</dd>
+                      </div>
+                      <div>
+                        <dt className="sar-section-label">Username</dt>
+                        <dd>{draft.officialMaps.username || 'Not configured'}</dd>
+                      </div>
+                      <div>
+                        <dt className="sar-section-label">Services</dt>
+                        <dd>{draft.officialMaps.serviceCount}</dd>
+                      </div>
+                    </dl>
+                  </div>
+
+                  {settingsValidationContext?.hostedBrowserMode === true ? (
+                    <div
+                      className="sar-inline-alert px-4 py-3 text-sm leading-relaxed"
+                      data-testid="hosted-official-map-guidance"
+                    >
+                      Hosted browser testing does not load private MapGenie credentials or licensed map files. Official maps stay not configured here unless a controlled hosted test source is added later.
+                    </div>
+                  ) : null}
+
+                  <div className="space-y-2">
+                    <p className="sar-section-label">Official map source</p>
+                    <div className="flex gap-3">
+                      <ChoiceButton
+                        active={draft.officialMaps.sourceType === 'none'}
+                        label="None"
+                        onClick={() =>
+                          updateDraft(setDraft, (current) => ({
+                            ...current,
+                            officialMaps: {
+                              ...current.officialMaps,
+                              sourceType: 'none',
+                              sourcePath: '',
+                            },
+                          }))
+                        }
+                      />
+                      <ChoiceButton
+                        active={draft.officialMaps.sourceType === 'mapgenie_file'}
+                        label="MapGenie file"
+                        onClick={() =>
+                          updateDraft(setDraft, (current) => ({
+                            ...current,
+                            officialMaps: {
+                              ...current.officialMaps,
+                              sourceType: 'mapgenie_file',
+                            },
+                          }))
+                        }
+                      />
+                    </div>
+                  </div>
+
+                  <TextField
+                    label="MapGenie source file"
+                    testId="official-map-source-path"
+                    value={draft.officialMaps.sourcePath}
+                    error={undefined}
+                    onChange={(value) =>
+                      updateDraft(setDraft, (current) => ({
+                        ...current,
+                        officialMaps: {
+                          ...current.officialMaps,
+                          sourceType: value.trim() === '' ? current.officialMaps.sourceType : 'mapgenie_file',
+                          sourcePath: value,
+                        },
+                      }))
+                    }
+                  />
+                </div>
+              </Section>
+
+              <Section
                 title="Weather Links"
                 description="External weather resources only. SAR Tracker does not fetch, parse, or forecast weather."
               >
@@ -800,6 +887,19 @@ function updateDraft(
 function parseInteger(value: string, fallback: number): number {
   const parsed = Number.parseInt(value, 10)
   return Number.isNaN(parsed) ? fallback : parsed
+}
+
+function formatOfficialMapStatus(status: AppSettingsDraft['officialMaps']['status']): string {
+  switch (status) {
+    case 'configured':
+      return 'Configured'
+    case 'missing':
+      return 'Missing'
+    case 'invalid':
+      return 'Invalid'
+    default:
+      return 'Not configured'
+  }
 }
 
 function createSettingsValidationContext(): SettingsValidationContext | undefined {

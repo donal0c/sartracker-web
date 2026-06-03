@@ -80,6 +80,8 @@ describe('electron runtime files', () => {
     expect(report).toContain('safeStorage backend: gnome_libsecret')
     expect(report).toContain('provider url: https://kmrtsar.eu')
     expect(report).toContain('secret present: yes')
+    expect(report).toContain('official maps: configured')
+    expect(report).not.toContain('mountainrescue_org.txt')
     expect(report).not.toContain('field-secret')
     for (const forbidden of FORBIDDEN_DIAGNOSTICS_PATH_SEGMENTS) {
       expect(report).not.toContain(forbidden)
@@ -102,6 +104,12 @@ describe('electron runtime files', () => {
           baseUrl: 'https://kmrtsar.eu',
           authMode: 'basic',
           secretPresent: true,
+        },
+        officialMaps: {
+          status: 'configured',
+          sourceType: 'mapgenie_file',
+          sourcePath: '/private/maps/mountainrescue_org.txt',
+          serviceCount: 4,
         },
       }),
     })
