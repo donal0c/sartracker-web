@@ -125,7 +125,8 @@ ship or ask testers for whole Electron profile zips.
 3. Burn down shared foundation issues that make startup, mission control, tracking, layers, or map behavior ambiguous.
 4. Prepare a repeatable Tauri beta release path in the background.
 5. Avoid heavy browser hardening unless testing proves browser operational deployment is genuinely needed.
-6. Treat high-definition mountain maps as local desktop map packages unless the map provider gives requirements that change this.
+6. Treat licensed Irish/OSI map sources as local/customer-provided assets unless the map provider gives requirements that change this.
+7. Start the official map lane now: `DON-76` is the parent, with `DON-77` first to lock the operational default and source naming before UI/import/rendering work.
 
 ## Next Task Order
 
@@ -185,13 +186,18 @@ This is the default order when the user says “work on the next task.”
 | Done | OpenTopoMap "tiles failed to load" badge over-eager | Track A / UI | `sartracker-web-2xp` | Done locally 2026-05-17. Tile-only filter at `src/features/map/is-tile-error-event.ts` and widened defaults (5-in-30s) in `src/lib/tile-health-tracker.ts`. Interactive Playwright proof at `tmp/2xp-verification/`. |
 | Done | B4: Set up cross-platform Tauri beta distribution | Track B / Release | `sartracker-web-y6a` | Done 2026-05-17. `.github/workflows/release.yml` builds Linux (AppImage + .deb) and Windows (NSIS) on `v*` tag push, drafts a GitHub release, generates `SHA256SUMS` sidecar. First published release: `v0.1.0-beta.3` at https://github.com/donal0c/sartracker-web/releases/tag/v0.1.0-beta.3. Linux primary, Windows secondary. macOS arm64 deferred from CI per `sartracker-web-590` to stay inside the GitHub Actions free tier (macOS bills at 10x); macOS uses Path B (`npm run beta:verify`) until cadence stabilizes. Windows MSI deferred per `sartracker-web-g1u` because Tauri's MSI bundler rejects alphanumeric pre-release suffixes. NSIS `currentUser` install (no admin), WebView2 `downloadBootstrapper`. Release notes sourced from `docs/releases/sartracker-web-<version>-beta.md`. |
 | Active | B8: Team requirements from USB ODT | Track A / Shared / Track B | `DON-60` | User-directed pass through `DON-61` through `DON-75`. Bugs: reproduce, fix, confirm. Features/changes: implement and verify expected visible behavior. Commit and push each issue separately. `DON-61` through `DON-66`, `DON-68` through `DON-75` are complete. `DON-67` is parked for team input. |
-| 1 | S8: Linux runtime reliability path | Track B / Maps / Runtime | `DON-25` | In progress 2026-05-18. Research converges on Electron shell + Leaflet raster fallback as separate workstreams. `DON-26` S8a is done after Donal's old Ubuntu machine plus two PCLinuxOS team machines rendered maps in Electron. `DON-27` is done locally as a read-only Leaflet fallback proof. `DON-28` is now the active Electron shell parity parent, split into `DON-31` through `DON-35`. |
-| 2 | B7: Pre-tester smoke + CI launch-smoke for cross-platform Tauri builds | Track B / Release / Verification | `DON-24` | Superseded as the immediate blocker by S8 for the Linux black-map investigation. CI launch smoke is green on GitHub runners, but real tester machines still black-map under Tauri/WebKitGTK. Keep B7 open for release-smoke process work. |
-| 3 | B5: Triage first web and Tauri beta feedback | Track A / Track B | `sartracker-web-s8m` / `DON-11` | After deployed-web validation and cross-platform beta setup produce feedback |
-| 3 | V3: Smoke deployed hosted app after blocker fixes | Verification | `sartracker-web-998` / `DON-10` | Hosted regression smoke once a deploy lands (DON-10 closed 2026-05-18 as Done; reopen if a new blocker-fix wave needs another smoke) |
-| 4 | Parity sweep findings walk-through (Codex + Donal) | Parity / Discussion | `sartracker-web-l7c` / `DON-12` | Walk Codex through `tmp/parity-sweep/sweep-report.md`; decide which of C1–C13 become Linear issues, which become matrix corrections, and which are out of scope |
-| 5 | C1: Local Proprietary Map Package Requirements | Track B / Maps | Create/update Linear issue after team discussion | Deferred until the team can provide map package facts |
-| 6 | Offline / Local Map Readiness Follow-up | Track B / Maps | Create/update Linear issue after C1 | Shape the desktop-first local/offline map package path once C1 facts are known |
+| Active | Official Irish Map Provider Integration | Track B / Maps, with Track A catalogue UX | `DON-76` | Parent map lane. Licensed map data and credentials are private/customer-provided: do not commit to GitHub, do not bundle into public release artifacts, and do not expose through hosted web. Verified local USB copy lives at `/Users/donalocallaghan/SARTracker-private-map-assets/team-usb-2026-06-03`. |
+| Done | Evaluate MapGenie sources and choose operational default | Maps / Product decision | `DON-77` | Done 2026-06-03. Private visual comparison across MacGillycuddy Reeks, Galtymore/Galtees, and Wicklow/Glendalough plus Donal's team-context confirmation locks `discovery` as the default official operational topo map. `basemap_premium` is a secondary clean reference map; `ortho` and `National_High_Resolution_Imagery` are imagery reference layers. |
+| Done | Add grouped map catalogue UX for official and public maps | Track A / Shared UX | `DON-78` | Done locally 2026-06-03. Maps menu now groups `Official maps` and `Public fallback maps`; official Discovery/Premium/Imagery entries render as not configured in hosted/browser mode; public fallback maps remain selectable and persisted. Official map naming: `Discovery Topo`, `Premium Basemap`, `Aerial Imagery`, and `High-Resolution Imagery`. |
+| 1 | Add local official map source import and configuration for Electron | Track B / Maps / Local config | `DON-80` | Next map chunk. Users/admins add licensed map access or map files locally after installing the Electron app. App may reference an external private folder first, then later import/copy/convert into app-owned data where reliability requires it. |
+| 2 | Prototype local MapGenie rendering via ArcGIS export | Track B / Maps / Rendering | `DON-79` | Use the proven ArcGIS REST export path first because it can return Web Mercator PNG imagery compatible with the current MapLibre renderer. Packaged Electron validation required once app runtime code is involved. |
+| 3 | Plan mission-area prefetch and offline official-map path | Track B / Maps / Offline | `DON-81` / `DON-7` | Evaluate viewed-cache, mission-area prefetch, local raster package import, and regional/national packages after default/rendering/import path is understood. |
+| 4 | Classify relief and slope rasters as optional map overlays | Track B / Maps / Overlays | `DON-82` | Defer until the primary basemap and local import/rendering model are proven. Treat `relief_byte.tif` and `Slope_30plus.tif` as optional overlays, not primary basemaps. |
+| 5 | S8: Linux runtime reliability path | Track B / Runtime | `DON-25` | In progress 2026-05-18. Electron hardening continues in parallel: clear `DON-58` and `DON-59` before sending full Electron builds wider. |
+| 6 | B7: Pre-tester smoke + CI launch-smoke for cross-platform Tauri builds | Track B / Release / Verification | `DON-24` | Superseded as the immediate blocker by S8 for the Linux black-map investigation. CI launch smoke is green on GitHub runners, but real tester machines still black-map under Tauri/WebKitGTK. Keep B7 open for release-smoke process work. |
+| 7 | B5: Triage first web and Tauri beta feedback | Track A / Track B | `sartracker-web-s8m` / `DON-11` | After deployed-web validation and cross-platform beta setup produce feedback |
+| 8 | V3: Smoke deployed hosted app after blocker fixes | Verification | `sartracker-web-998` / `DON-10` | Hosted regression smoke once a deploy lands (DON-10 closed 2026-05-18 as Done; reopen if a new blocker-fix wave needs another smoke) |
+| 9 | Parity sweep findings walk-through (Codex + Donal) | Parity / Discussion | `sartracker-web-l7c` / `DON-12` | Walk Codex through `tmp/parity-sweep/sweep-report.md`; decide which of C1–C13 become Linear issues, which become matrix corrections, and which are out of scope |
 
 ## Ready Work Chunks
 
@@ -1170,39 +1176,52 @@ Distribution: macOS Developer ID + notarization, Windows code signing
 (Azure Trusted Signing recommended), `reqwest` CA roots strategy for
 self-hosted Traccar HTTPS, Tauri updater signing keys.
 
-### C1: Local Proprietary Map Package Requirements
+### Official Irish Map Provider Integration
 
-Goal: prepare for team-provided high-definition mountain maps without creating a hosting/security problem.
+Parent Linear issue: `DON-76`.
 
-Tasks:
+Goal: support the team's licensed Irish map sources without turning private map data into public GitHub, Vercel, or release-artifact content.
 
-- Ask/record map package facts:
-  - format
-  - file/folder structure
-  - size
-  - CRS/projection
-  - raster vs vector
-  - tile scheme
-  - expected update cadence
-  - sample/test file availability
-- Confirm the plan:
-  - app is distributed separately
-  - map is installed locally by trusted team members
-  - map is never hosted by Vercel/GitHub
-- Draft the app workflow:
-  - Settings -> Maps -> Add Local Map Package
-  - validate map
-  - store local path/checksum/version
-  - show map readiness
+Locked decisions:
+
+- Licensed map files and credentials are private/customer-provided assets.
+- Do not commit licensed map files to GitHub.
+- Do not bundle licensed map files into public release artifacts.
+- Do not make the hosted web app fetch private MapGenie sources.
+- Electron/local users or admins add licensed map access/packages after installing the app.
+- Public fallback maps stay available until official map rendering is proven and accepted.
+
+Current evidence:
+
+- Verified local USB copy: `/Users/donalocallaghan/SARTracker-private-map-assets/team-usb-2026-06-03`.
+- Local copy manifest: `/Users/donalocallaghan/SARTracker-private-map-assets/team-usb-2026-06-03-COPY-MANIFEST.txt`.
+- Private visual comparison evidence: `/Users/donalocallaghan/SARTracker-private-map-assets/map-source-evaluation-2026-06-03/mapgenie-source-comparison.png`.
+- `DON-77` generated 12 successful MapGenie ArcGIS export samples: 4 sources across MacGillycuddy Reeks, Galtymore/Galtees, and Wicklow/Glendalough.
+- Discovery is the locked default official operational topo map from the visual evidence and Donal's team-context confirmation.
+- `basemap_premium` is a secondary clean reference basemap.
+- `ortho` and `National_High_Resolution_Imagery` are imagery/reference layers.
+- `relief_byte.tif` and `Slope_30plus.tif` are overlay candidates, not primary basemaps.
+
+Work sequence:
+
+- `DON-77` — evaluate MapGenie sources and choose operational default. Done 2026-06-03.
+- `DON-78` — grouped map catalogue UX for official/private and public fallback maps. Done locally 2026-06-03.
+- `DON-80` — local official map source import/configuration for Electron. Next.
+- `DON-79` — local MapGenie rendering via ArcGIS export.
+- `DON-81` / `DON-7` — mission-area prefetch and offline official-map path.
+- `DON-82` — relief/slope overlays.
 
 Acceptance:
 
-- We know enough about the map format to design the local map adapter.
-- The security model is clear: local side-load, no public hosting.
+- Discovery remains the default official operational topo map unless later map-owner feedback explicitly contradicts it.
+- Operators see official map options grouped separately from public fallback maps.
+- Electron/local can configure private map access/assets without committing or bundling licensed map data.
+- Offline planning is based on the selected operational source and real local asset formats, not speculation.
 
 Verification:
 
-- Requirements captured in `docs/local-map-package-plan.md` when enough details exist.
+- Research-only `DON-77` verification is the generated private comparison sheet and successful MapGenie export responses.
+- UI/runtime children require targeted tests and browser/Electron validation according to the verification cadence above.
 
 ## Shared Foundation Chunks
 

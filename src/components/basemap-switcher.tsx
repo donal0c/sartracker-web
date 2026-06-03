@@ -1,6 +1,6 @@
 import { useState } from 'react'
 
-import { BASEMAPS, type BasemapId } from '../lib/map-config'
+import { BASEMAPS, MAP_CATALOGUE_GROUPS, type BasemapId } from '../lib/map-config'
 import type { OfflineMapCoverage } from '../features/map/offline-map-coverage'
 
 type BasemapSwitcherProps = {
@@ -52,26 +52,50 @@ export function BasemapSwitcher({
       </button>
 
       {menuOpen ? (
-        <div className="mt-2 grid min-w-44 gap-1.5 border-t border-[var(--sar-line)] pt-2">
-          {BASEMAPS.map((basemap) => {
-            const isActive = basemap.id === activeBasemapId
+        <div className="mt-2 grid min-w-56 gap-2 border-t border-[var(--sar-line)] pt-2">
+          {MAP_CATALOGUE_GROUPS.map((group) => (
+            <section data-testid={`map-catalogue-group-${group.id}`} key={group.id}>
+              <h3 className="mb-1 px-1 text-[10px] font-black uppercase tracking-[0.16em] text-stone-300">
+                {group.label}
+              </h3>
+              <div className="grid gap-1.5">
+                {group.items.map((item) => {
+                  const basemapId = item.basemapId
+                  const isActive = basemapId === activeBasemapId
+                  const isAvailable = item.availability === 'available' && basemapId !== undefined
 
-            return (
-              <button
-                className={`border px-2.5 py-1.5 text-left text-[11px] font-bold transition ${
-                  isActive
-                    ? 'border-amber-300 bg-amber-300 text-stone-950 shadow-inner'
-                    : 'border-stone-500 bg-stone-950/65 text-stone-100 hover:border-amber-300 hover:bg-stone-900/85'
-                }`}
-                data-testid={`basemap-btn-${basemap.id}`}
-                key={basemap.id}
-                onClick={() => handleBasemapSelection(basemap.id)}
-                type="button"
-              >
-                {basemap.label}
-              </button>
-            )
-          })}
+                  return (
+                    <button
+                      className={`border px-2.5 py-1.5 text-left text-[11px] font-bold transition ${
+                        isActive
+                          ? 'border-amber-300 bg-amber-300 text-stone-950 shadow-inner'
+                          : isAvailable
+                            ? 'border-stone-500 bg-stone-950/65 text-stone-100 hover:border-amber-300 hover:bg-stone-900/85'
+                            : 'cursor-not-allowed border-stone-700 bg-stone-950/35 text-stone-400'
+                      }`}
+                      data-testid={`basemap-btn-${item.id}`}
+                      disabled={!isAvailable}
+                      key={item.id}
+                      onClick={() => {
+                        if (basemapId !== undefined) {
+                          handleBasemapSelection(basemapId)
+                        }
+                      }}
+                      title={item.description}
+                      type="button"
+                    >
+                      <span>{item.label}</span>
+                      {!isAvailable ? (
+                        <span className="ml-2 text-[9px] font-black uppercase tracking-[0.12em] text-stone-500">
+                          Not configured
+                        </span>
+                      ) : null}
+                    </button>
+                  )
+                })}
+              </div>
+            </section>
+          ))}
           {coverage !== undefined && onCheckCoverage !== undefined ? (
             <div
               className="mt-1 border-t border-[var(--sar-line)] pt-2 text-[11px] text-stone-100"

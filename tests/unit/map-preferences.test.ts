@@ -15,6 +15,12 @@ describe('map preference persistence', () => {
     expect(readStoredBasemap()).toBe('opentopomap')
   })
 
+  it('does not restore an official map before that source is configured', () => {
+    window.localStorage.setItem(BASEMAP_STORAGE_KEY, 'official_discovery_topo')
+
+    expect(readStoredBasemap()).toBe('opentopomap')
+  })
+
   it('persists the selected basemap when storage is available', () => {
     persistBasemapPreference('openstreetmap')
 

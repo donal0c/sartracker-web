@@ -101,8 +101,14 @@ Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
     })
   })
 
-  test('basemap switcher shows all 4 options and selection persists', async ({ page }) => {
+  test('basemap switcher groups official and public fallback maps', async ({ page }) => {
     await page.getByTestId('basemap-menu-toggle').click()
+    await expect(page.getByTestId('map-catalogue-group-official')).toContainText('Official maps')
+    await expect(page.getByTestId('basemap-btn-official_discovery_topo')).toBeVisible()
+    await expect(page.getByTestId('basemap-btn-official_discovery_topo')).toBeDisabled()
+    await expect(page.getByTestId('map-catalogue-group-public-fallback')).toContainText(
+      'Public fallback maps',
+    )
     await expect(page.getByTestId('basemap-btn-opentopomap')).toBeVisible()
     await expect(page.getByTestId('basemap-btn-esri_topo')).toBeVisible()
     await expect(page.getByTestId('basemap-btn-openstreetmap')).toBeVisible()
@@ -117,13 +123,17 @@ Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
       area: 'app-shell',
       severity: 'high',
       verificationPrompt: `Verify this screenshot of the SAR Tracker with the compact Maps menu open:
-1. There should be exactly 4 basemap buttons in the Maps menu near the top-left of the map
-2. The buttons should be labeled: "OpenTopoMap", "ESRI World Topo", "OpenStreetMap", "ESRI Satellite"
-3. The "OpenTopoMap" button should appear selected/highlighted (different color from others)
-4. The map itself should show a topographic map style with elevation contours and terrain features
-5. The map should be centered roughly on the Kerry mountains area in Ireland
+1. The menu should be grouped with an "Official maps" section and a "Public fallback maps" section
+2. The Official maps section should include "Discovery Topo" and show it as not configured / unavailable
+3. The Public fallback maps section should include "OpenTopoMap", "ESRI World Topo", "OpenStreetMap", and "ESRI Satellite"
+4. The "OpenTopoMap" public fallback button should appear selected/highlighted (different color from others)
+5. The map itself should show a topographic map style with elevation contours and terrain features
+6. The map should be centered roughly on the Kerry mountains area in Ireland
 Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
       playwrightAssertions: [
+        'map-catalogue-group-official is visible',
+        'basemap-btn-official_discovery_topo is visible and disabled',
+        'map-catalogue-group-public-fallback is visible',
         'basemap-btn-opentopomap is visible',
         'basemap-btn-esri_topo is visible',
         'basemap-btn-openstreetmap is visible',

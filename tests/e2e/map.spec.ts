@@ -15,6 +15,14 @@ test.describe('M2 map shell', () => {
     await expect(page.getByTestId('map-health')).toContainText('basemap')
     await expect(page.getByTestId('basemap-menu-toggle')).toBeVisible()
     await page.getByTestId('basemap-menu-toggle').click()
+    await expect(page.getByTestId('map-catalogue-group-official')).toContainText('Official maps')
+    await expect(page.getByTestId('basemap-btn-official_discovery_topo')).toContainText(
+      'Discovery Topo',
+    )
+    await expect(page.getByTestId('basemap-btn-official_discovery_topo')).toBeDisabled()
+    await expect(page.getByTestId('map-catalogue-group-public-fallback')).toContainText(
+      'Public fallback maps',
+    )
     await expect(page.getByTestId('basemap-btn-opentopomap')).toBeVisible()
     await expect(page.getByTestId('basemap-btn-esri_topo')).toBeVisible()
     await expect(page.getByTestId('basemap-btn-openstreetmap')).toBeVisible()
