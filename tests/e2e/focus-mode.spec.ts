@@ -32,6 +32,7 @@ test.describe('M24 focus mode parity', () => {
 
     await moveOverMap(page)
     await expect(page.getByTestId('focus-mode-coordinate-display')).toContainText('°')
+    await expect(page.getByTestId('coordinate-display')).toHaveCount(0)
 
     await page.reload()
     await waitForShell(page)
@@ -41,6 +42,7 @@ test.describe('M24 focus mode parity', () => {
       'Browser testing mode',
     )
     await expect(page.getByTestId('focus-mode-toggle')).toContainText('Exit Focus Mode Plus')
+    await expect(page.getByTestId('coordinate-display')).toHaveCount(0)
 
     await page.getByTestId('focus-mode-toggle').click()
     await expect(page.getByTestId('app-shell')).toHaveAttribute('data-focus-mode', 'false')

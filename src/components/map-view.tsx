@@ -66,10 +66,12 @@ function MapLibreMapView() {
           readiness={offlineMapReadiness}
         />
       </div>
-      <CoordinateBar
-        latitude={hoverCoordinate.latitude}
-        longitude={hoverCoordinate.longitude}
-      />
+      {!focusModeActive ? (
+        <CoordinateBar
+          latitude={hoverCoordinate.latitude}
+          longitude={hoverCoordinate.longitude}
+        />
+      ) : null}
       {focusModeActive ? (
         <FocusModeCoordinateMirror
           latitude={hoverCoordinate.latitude}

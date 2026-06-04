@@ -578,8 +578,9 @@
             <strong>Weather</strong> menu for configured external weather websites; it does not fetch,
             parse, or forecast weather inside SAR Tracker. The right rail is split into
             <strong>Tracking</strong>, <strong>Tools</strong>, and <strong>Layers</strong>. The map itself
-            carries compact Maps and Map Tools controls, map health, offline tile status, and the
-            coordinate instrument strip.
+            carries compact Maps and Map Tools controls, map health, offline tile status, and coordinate readouts.
+            In standard mode this is a bottom strip; in Focus Mode Plus, only the mirrored focus coordinate
+            display is shown so awareness stays while the map surface stays less cluttered.
           </p>
           <figure class="screenshot">
             <img src="assets/app-shell.png" alt="SAR Tracker app shell with active mission and map" />
@@ -587,7 +588,7 @@
           </figure>
           <div class="card-grid">
             <div class="card"><strong>Command mast</strong><br />Mission name, phase, timers, device count, tracking cell (mode plus separate FIX and STALE counts), system state, autosave warning state, current app version, Diagnostics, Focus Mode, Settings, Weather, and Help.</div>
-            <div class="card"><strong>Map workspace</strong><br />Maps menu, Map Tools menu, live map canvas, health badge, offline-readiness badge, and coordinate strip.</div>
+            <div class="card"><strong>Map workspace</strong><br />Maps menu, Map Tools menu, live map canvas, health badge, offline-readiness badge, and coordinate readouts.</div>
             <div class="card"><strong>Right rail</strong><br />Pinned Mission Control plus tabs for tracking, tools, and layer inspection.</div>
           </div>
         </section>
@@ -642,10 +643,12 @@
           <p>
             The map renders in WGS84 for display, while ITM is the working coordinate reference system
             for operational records. TM65 Irish Grid is available for operator display and input. The
-            coordinate strip updates as the cursor moves and shows the current point in
+            coordinate readout updates as the cursor moves and shows the current point in
             <strong>DD</strong>, <strong>Irish Grid</strong>, and <strong>DMS</strong>. The
-            <strong>Convert</strong> button stays in the strip beside those live values. Fixed CRS details
-            are kept out of the live footer so the operational surface stays focused on coordinates
+            <strong>Convert</strong> button sits beside those live values in standard mode. In Focus Mode Plus,
+            the mirrored focus display remains with the same coordinate values so operators keep live
+            location awareness while the bottom strip is intentionally reduced. Fixed CRS details are kept
+            out of the live coordinate area so the operational surface stays focused on coordinates
             operators actively use.
           </p>
           <div class="card-grid">

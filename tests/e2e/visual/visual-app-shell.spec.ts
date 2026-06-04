@@ -192,6 +192,7 @@ Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
       await page.mouse.move(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2)
     }
     await expect(page.getByTestId('focus-mode-coordinate-display')).toContainText('°')
+    await expect(page.getByTestId('coordinate-display')).toHaveCount(0)
 
     await captureAndRegister(page, {
       testId: 'shell-focus-mode',
