@@ -278,6 +278,55 @@ test.describe('M5 mission control workflows', () => {
     await expect(page.getByTestId('mission-control')).toContainText('idle')
     await expect(page.getByTestId('mission-start-btn')).toBeEnabled()
   })
+
+  test('minimizes and restores Mission Control in active missions', async ({ page }) => {
+    await page.getByTestId('mission-name-input').fill('Minimize Flow')
+    await page.getByTestId('mission-start-btn').click()
+
+    await expect(page.getByTestId('mission-control')).toContainText('active')
+    await expect(page.getByTestId('mission-control-collapse-btn')).toBeVisible()
+    await expect(page.getByTestId('mission-pause-resume-btn')).toBeVisible()
+
+    await page.getByTestId('mission-control-collapse-btn').click()
+
+    await expect(page.getByTestId('mission-control-collapsed-summary')).toBeVisible()
+    await expect(page.getByTestId('mission-control-collapsed-summary')).toContainText('Mission Control collapsed')
+    await expect(page.getByTestId('mission-pause-resume-btn')).toBeHidden()
+    await expect(page.getByTestId('mission-control-expand-btn')).toBeVisible()
+
+    await page.getByTestId('mission-control-expand-btn').click()
+
+    await expect(page.getByTestId('mission-control-collapsed-summary')).toBeHidden()
+    await expect(page.getByTestId('mission-control-collapse-btn')).toBeVisible()
+    await expect(page.getByTestId('mission-pause-resume-btn')).toBeVisible()
+  })
+
+  test('does not show minimize in paused mission control', async ({ page }) => {
+    await page.getByTestId('mission-name-input').fill('Paused Minimize Guard')
+    await page.getByTestId('mission-start-btn').click()
+
+    await page.getByTestId('mission-pause-resume-btn').click()
+    await expect(page.getByTestId('mission-control')).toContainText('paused')
+
+    await expect(page.getByTestId('mission-control-collapse-btn')).toHaveCount(0)
+    await expect(page.getByTestId('mission-control-expand-btn')).toHaveCount(0)
+    await expect(page.getByTestId('mission-pause-resume-btn')).toBeVisible()
+    await expect(page.getByTestId('mission-paused-banner')).toBeVisible()
+    await expect(page.getByTestId('mission-paused-banner')).toContainText('Mission paused')
+  })
+
+  test('hides minimize in focus mode', async ({ page }) => {
+    await page.getByTestId('mission-name-input').fill('Focus-Minimize Guard')
+    await page.getByTestId('mission-start-btn').click()
+
+    await page.getByTestId('focus-mode-toggle').click()
+    await expect(page.getByTestId('focus-mode-sidebar')).toBeVisible()
+    await expect(page.getByTestId('mission-control')).toContainText('active')
+    await expect(page.getByTestId('mission-control-collapse-btn')).toHaveCount(0)
+    await expect(page.getByTestId('mission-control-expand-btn')).toHaveCount(0)
+    await expect(page.getByTestId('mission-pause-resume-btn')).toBeVisible()
+  })
+
 })
 
 function parseDuration(value: string | null): number {
