@@ -183,6 +183,27 @@ describe('DevicesWorkspace', () => {
     expect(useTrackingStyleStore.getState().breadcrumbSize).toBe(7)
   })
 
+  it('sets the global trail mode and makes the size control label match that mode', async () => {
+    const { DevicesWorkspace } = await import('../../src/components/devices-workspace')
+    useTrackingStore.setState({ snapshot: SNAPSHOT, status: STATUS })
+    useDeviceWorkspaceStore.setState({ open: true, selectedDeviceId: 'alpha' })
+
+    render(React.createElement(DevicesWorkspace))
+    await waitForElement('[data-testid="devices-workspace"]')
+
+    expect(getText('[data-testid="breadcrumb-size-label"]')).toContain('trail width')
+
+    click('[data-testid="breadcrumb-mode-dots"]')
+
+    expect(useTrackingStyleStore.getState().breadcrumbTrailMode).toBe('dots')
+    expect(getText('[data-testid="breadcrumb-size-label"]')).toContain('dot diameter')
+
+    click('[data-testid="breadcrumb-mode-line"]')
+
+    expect(useTrackingStyleStore.getState().breadcrumbTrailMode).toBe('line')
+    expect(getText('[data-testid="breadcrumb-size-label"]')).toContain('trail width')
+  })
+
   function render(element: React.ReactElement): void {
     host = document.createElement('div')
     document.body.append(host)

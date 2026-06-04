@@ -5,15 +5,20 @@ import { persist } from 'zustand/middleware'
 export const DEFAULT_BREADCRUMB_SIZE = 4
 export const MIN_BREADCRUMB_SIZE = 2
 export const MAX_BREADCRUMB_SIZE = 10
+export const DEFAULT_BREADCRUMB_TRAIL_MODE = 'line' satisfies BreadcrumbTrailMode
+
+export type BreadcrumbTrailMode = 'line' | 'dots'
 
 export type TrackingStylePreferences = {
   readonly deviceColors: Readonly<Record<string, string>>
   readonly breadcrumbSize: number
+  readonly breadcrumbTrailMode: BreadcrumbTrailMode
 }
 
 type TrackingStyleStoreState = TrackingStylePreferences & {
   readonly setDeviceColor: (deviceId: string, color: string) => void
   readonly setBreadcrumbSize: (size: number) => void
+  readonly setBreadcrumbTrailMode: (mode: BreadcrumbTrailMode) => void
   readonly getDeviceColor: (deviceId: string) => string | null
 }
 
@@ -27,6 +32,7 @@ export const useTrackingStyleStore = create<TrackingStyleStoreState>()(
     (set, get) => ({
       deviceColors: {},
       breadcrumbSize: DEFAULT_BREADCRUMB_SIZE,
+      breadcrumbTrailMode: DEFAULT_BREADCRUMB_TRAIL_MODE,
       setDeviceColor: (deviceId, color) => {
         const normalizedColor = normalizeHexColor(color)
         if (normalizedColor === null) {
@@ -44,6 +50,7 @@ export const useTrackingStyleStore = create<TrackingStyleStoreState>()(
         set({
           breadcrumbSize: clampBreadcrumbSize(size),
         }),
+      setBreadcrumbTrailMode: (mode) => set({ breadcrumbTrailMode: mode }),
       getDeviceColor: (deviceId) => get().deviceColors[deviceId] ?? null,
     }),
     {
@@ -51,6 +58,7 @@ export const useTrackingStyleStore = create<TrackingStyleStoreState>()(
       partialize: (state) => ({
         deviceColors: state.deviceColors,
         breadcrumbSize: state.breadcrumbSize,
+        breadcrumbTrailMode: state.breadcrumbTrailMode,
       }),
     },
   ),
@@ -63,13 +71,15 @@ export const useTrackingStyleStore = create<TrackingStyleStoreState>()(
 export function useTrackingStylePreferences(): TrackingStylePreferences {
   const deviceColors = useTrackingStyleStore((state) => state.deviceColors)
   const breadcrumbSize = useTrackingStyleStore((state) => state.breadcrumbSize)
+  const breadcrumbTrailMode = useTrackingStyleStore((state) => state.breadcrumbTrailMode)
 
   return useMemo(
     () => ({
       deviceColors,
       breadcrumbSize,
+      breadcrumbTrailMode,
     }),
-    [breadcrumbSize, deviceColors],
+    [breadcrumbSize, breadcrumbTrailMode, deviceColors],
   )
 }
 

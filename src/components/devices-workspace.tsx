@@ -15,6 +15,7 @@ import { createDeviceColor } from '../features/tracking/tracking-color'
 import {
   MAX_BREADCRUMB_SIZE,
   MIN_BREADCRUMB_SIZE,
+  type BreadcrumbTrailMode,
   useTrackingStyleStore,
 } from '../features/tracking/tracking-style-store'
 import { useTrackingStore } from '../features/tracking/tracking-store'
@@ -42,8 +43,10 @@ export function DevicesWorkspace() {
   const setDeviceActive = useActiveMissionDevicesStore((state) => state.setDeviceActive)
   const deviceColors = useTrackingStyleStore((state) => state.deviceColors)
   const breadcrumbSize = useTrackingStyleStore((state) => state.breadcrumbSize)
+  const breadcrumbTrailMode = useTrackingStyleStore((state) => state.breadcrumbTrailMode)
   const setDeviceColor = useTrackingStyleStore((state) => state.setDeviceColor)
   const setBreadcrumbSize = useTrackingStyleStore((state) => state.setBreadcrumbSize)
+  const setBreadcrumbTrailMode = useTrackingStyleStore((state) => state.setBreadcrumbTrailMode)
   const hiddenDeviceIds = useLayerVisibilityStore((state) => state.hiddenDeviceIds)
   const toggleDeviceVisibility = useLayerVisibilityStore((state) => state.toggleDeviceVisibility)
   const queueTarget = useMapTargetStore((state) => state.queueTarget)
@@ -87,9 +90,9 @@ export function DevicesWorkspace() {
         }
       />
 
-        <div className="grid flex-1 gap-0 lg:grid-cols-[minmax(0,1.4fr)_minmax(20rem,0.8fr)]">
+        <div className="grid min-h-0 flex-1 gap-0 lg:grid-cols-[minmax(0,1.4fr)_minmax(20rem,0.8fr)]">
           <section
-            className="border-r border-stone-800 px-6 py-6"
+            className="overflow-y-auto border-r border-stone-800 px-6 py-6"
             data-testid="devices-workspace"
           >
             <div className="grid gap-3 sm:grid-cols-6">
@@ -143,15 +146,42 @@ export function DevicesWorkspace() {
             </div>
 
             <div className="mt-4 rounded-2xl border border-stone-800 bg-stone-900/40 p-4">
+              <div>
+                <p className="text-[11px] font-bold uppercase tracking-wider text-stone-400">
+                  Breadcrumb Display
+                </p>
+                <div className="mt-3 grid grid-cols-2 border border-[var(--sar-line)] bg-[var(--sar-panel-sunken)] p-1">
+                  {(['line', 'dots'] as const).map((mode) => (
+                    <button
+                      className={`px-3 py-2 text-xs font-bold uppercase tracking-[0.08em] ${
+                        breadcrumbTrailMode === mode ? 'sar-segment-option-active' : 'sar-segment-option'
+                      }`}
+                      data-testid={`breadcrumb-mode-${mode}`}
+                      key={mode}
+                      onClick={() => setBreadcrumbTrailMode(mode)}
+                      type="button"
+                    >
+                      {renderBreadcrumbModeLabel(mode)}
+                    </button>
+                  ))}
+                </div>
+              </div>
               <label className="flex flex-wrap items-center justify-between gap-3 text-sm text-stone-200">
-                <span>
+                <span className="mt-4">
                   <span className="block text-[11px] font-bold uppercase tracking-wider text-stone-400">
                     Breadcrumb Size
                   </span>
-                  <span className="font-mono text-xs text-stone-300">{breadcrumbSize}px trail width</span>
+                  <span className="font-mono text-xs text-stone-300" data-testid="breadcrumb-size-label">
+                    {breadcrumbSize}px {breadcrumbTrailMode === 'dots' ? 'dot diameter' : 'trail width'}
+                  </span>
                 </span>
                 <input
-                  className="w-44 accent-amber-400"
+                  aria-label={
+                    breadcrumbTrailMode === 'dots'
+                      ? 'Breadcrumb dot diameter'
+                      : 'Breadcrumb trail width'
+                  }
+                  className="mt-4 w-44 accent-amber-400"
                   data-testid="breadcrumb-size-control"
                   max={MAX_BREADCRUMB_SIZE}
                   min={MIN_BREADCRUMB_SIZE}
@@ -203,7 +233,7 @@ export function DevicesWorkspace() {
             />
           </section>
 
-          <aside className="px-6 py-6" data-testid="devices-inspector">
+          <aside className="overflow-y-auto px-6 py-6" data-testid="devices-inspector">
             {selectedRow === null ? (
               <div className="rounded-2xl border border-dashed border-stone-600 bg-stone-900/30 p-5 text-sm italic text-stone-300">
                 No devices available. Configure a tracking provider in Settings to see devices here.
@@ -286,6 +316,10 @@ export function DevicesWorkspace() {
       queueTarget(row.latitude, row.longitude, row.name)
     }
   }
+}
+
+function renderBreadcrumbModeLabel(mode: BreadcrumbTrailMode): string {
+  return mode === 'dots' ? 'Breadcrumb dots' : 'Solid line'
 }
 
 function DeviceRowsSection(props: {
@@ -513,16 +547,16 @@ function DeviceColorSwatch(props: {
       />
       {open ? (
         <div
-          className="absolute left-0 top-full z-50 mt-1 grid grid-cols-6 gap-1 rounded border border-stone-700 bg-stone-900 p-2 shadow-xl"
+          className="absolute left-full top-0 z-50 ml-2 flex w-60 flex-wrap gap-2 rounded border border-stone-700 bg-stone-900 p-2 shadow-xl"
           data-testid={`${props.testPrefix}-color-popover-${props.deviceId}`}
           onMouseLeave={() => setOpen(false)}
         >
           {SAR_PALETTE.map((color) => (
             <button
               aria-label={color}
-              className={`h-6 w-6 rounded border ${
+              className={`h-7 w-7 rounded border ${
                 props.color.toUpperCase() === color
-                  ? 'border-white scale-110'
+                  ? 'border-white ring-2 ring-white/50'
                   : 'border-stone-600 hover:border-stone-300'
               }`}
               data-testid={`${props.testPrefix}-color-option-${color.replace('#', '')}`}

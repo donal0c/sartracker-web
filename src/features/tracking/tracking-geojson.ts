@@ -2,13 +2,17 @@ import type { Feature, FeatureCollection, Geometry, LineString, Point } from 'ge
 
 import { createBreadcrumbSegments } from './breadcrumb-accumulator'
 import { createDeviceColor } from './tracking-color'
-import type { TrackingStylePreferences } from './tracking-style-store'
+import {
+  DEFAULT_BREADCRUMB_TRAIL_MODE,
+  type TrackingStylePreferences,
+} from './tracking-style-store'
 import type { TrackingSnapshot } from './tracking-types'
 
 type GeoJsonPointFeature = Feature<
   Point,
   {
     readonly deviceId: string
+    readonly featureKind: 'device'
     readonly name: string
     readonly color: string
     readonly stale: boolean
@@ -20,6 +24,16 @@ type GeoJsonLineFeature = Feature<
   LineString,
   {
     readonly deviceId: string
+    readonly featureKind: 'breadcrumbLine'
+    readonly color: string
+  }
+>
+
+type GeoJsonBreadcrumbPointFeature = Feature<
+  Point,
+  {
+    readonly deviceId: string
+    readonly featureKind: 'breadcrumb'
     readonly color: string
   }
 >
@@ -27,12 +41,21 @@ type GeoJsonLineFeature = Feature<
 export function createTrackingFeatureCollection(
   snapshot: TrackingSnapshot,
   gapThresholdMs: number,
-  style: TrackingStylePreferences = { deviceColors: {}, breadcrumbSize: 4 },
+  style: TrackingStylePreferences = {
+    deviceColors: {},
+    breadcrumbSize: 4,
+    breadcrumbTrailMode: DEFAULT_BREADCRUMB_TRAIL_MODE,
+  },
 ): FeatureCollection<Geometry> {
+  const breadcrumbFeatures =
+    style.breadcrumbTrailMode === 'dots'
+      ? createBreadcrumbPointFeatureCollection(snapshot, style).features
+      : createBreadcrumbFeatureCollection(snapshot, gapThresholdMs, style).features
+
   return {
     type: 'FeatureCollection',
     features: [
-      ...createBreadcrumbFeatureCollection(snapshot, gapThresholdMs, style).features,
+      ...breadcrumbFeatures,
       ...createDeviceFeatureCollection(snapshot, style).features,
     ],
   }
@@ -57,6 +80,7 @@ export function createDeviceFeatureCollection(
     },
     properties: {
       deviceId: position.device_id,
+      featureKind: 'device',
       name: deviceNameById.get(position.device_id) ?? position.device_id,
       color: getStyledDeviceColor(position.device_id, style.deviceColors),
       stale: position.device_cache_stale,
@@ -106,11 +130,38 @@ export function createBreadcrumbFeatureCollection(
         },
         properties: {
           deviceId,
+          featureKind: 'breadcrumbLine',
           color: getStyledDeviceColor(deviceId, style.deviceColors),
         },
       })
     }
   }
+
+  return {
+    type: 'FeatureCollection',
+    features,
+  }
+}
+
+/**
+ * Creates one breadcrumb point feature per historical tracking position.
+ */
+export function createBreadcrumbPointFeatureCollection(
+  snapshot: TrackingSnapshot,
+  style: Pick<TrackingStylePreferences, 'deviceColors'> = { deviceColors: {} },
+): FeatureCollection<Point> {
+  const features: GeoJsonBreadcrumbPointFeature[] = snapshot.breadcrumbs.map((breadcrumb) => ({
+    type: 'Feature',
+    geometry: {
+      type: 'Point',
+      coordinates: [breadcrumb.lon, breadcrumb.lat],
+    },
+    properties: {
+      deviceId: breadcrumb.device_id,
+      featureKind: 'breadcrumb',
+      color: getStyledDeviceColor(breadcrumb.device_id, style.deviceColors),
+    },
+  }))
 
   return {
     type: 'FeatureCollection',

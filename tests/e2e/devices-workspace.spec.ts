@@ -60,7 +60,85 @@ test.describe('M19 devices workspace', () => {
     await page.getByTestId('device-visibility-bravo').click()
     await expect(page.getByTestId('device-visibility-bravo')).not.toBeChecked()
   })
+
+  test('updates rendered breadcrumb colour, size, and global trail mode', async ({ page }) => {
+    await page.getByTestId('open-devices-workspace').click()
+    await expect(page.getByTestId('devices-workspace')).toBeVisible()
+
+    await expect.poll(async () => readTrackingLayerState(page)).toMatchObject({
+      lineWidth: 4,
+      dotRadius: 2,
+    })
+
+    await page.getByTestId('device-breadcrumb-color-alpha').click()
+    await page.getByTestId('device-color-option-FF7A00').click()
+    await page.getByTestId('breadcrumb-size-control').fill('8')
+    await page.getByTestId('breadcrumb-mode-dots').click()
+
+    await expect(page.getByTestId('breadcrumb-size-label')).toContainText('8px dot diameter')
+    await expect.poll(async () => readTrackingLayerState(page)).toMatchObject({
+      dotRadius: 4,
+      alphaBreadcrumbColor: '#FF7A00',
+      breadcrumbFeatureKind: 'breadcrumb',
+    })
+
+    const dotModeState = await readTrackingLayerState(page)
+    expect(JSON.stringify(dotModeState.lineFilter)).toContain('__hidden__')
+    expect(JSON.stringify(dotModeState.dotFilter)).toContain('breadcrumb')
+
+    await page.getByTestId('breadcrumb-mode-line').click()
+    await expect(page.getByTestId('breadcrumb-size-label')).toContainText('8px trail width')
+
+    const lineModeState = await readTrackingLayerState(page)
+    expect(lineModeState.lineWidth).toBe(8)
+    expect(JSON.stringify(lineModeState.dotFilter)).toContain('__hidden__')
+    expect(JSON.stringify(lineModeState.lineFilter)).toContain('breadcrumbLine')
+  })
 })
+
+async function readTrackingLayerState(page: import('@playwright/test').Page) {
+  return page.evaluate(() => {
+    const map = (
+      window as Window & {
+        __SARTRACKER_MAP__?: {
+          getFilter: (layerId: string) => unknown
+          getLayer: (layerId: string) => unknown
+          getPaintProperty: (layerId: string, property: string) => unknown
+          getSource: (sourceId: string) => unknown
+        }
+      }
+    ).__SARTRACKER_MAP__
+
+    if (map === undefined) {
+      throw new Error('Map instance is unavailable.')
+    }
+
+    const alphaBreadcrumb = map.queryRenderedFeatures(undefined, {
+      layers: ['tracking-breadcrumbs-dots'],
+    }).find(
+      (feature) =>
+        feature.properties?.deviceId === 'alpha' &&
+        feature.properties.featureKind === 'breadcrumb',
+    )
+
+    return {
+      lineFilter: map.getLayer('tracking-breadcrumbs-line') === undefined
+        ? null
+        : map.getFilter('tracking-breadcrumbs-line'),
+      dotFilter: map.getLayer('tracking-breadcrumbs-dots') === undefined
+        ? null
+        : map.getFilter('tracking-breadcrumbs-dots'),
+      lineWidth: map.getLayer('tracking-breadcrumbs-line') === undefined
+        ? null
+        : map.getPaintProperty('tracking-breadcrumbs-line', 'line-width'),
+      dotRadius: map.getLayer('tracking-breadcrumbs-dots') === undefined
+        ? null
+        : map.getPaintProperty('tracking-breadcrumbs-dots', 'circle-radius'),
+      alphaBreadcrumbColor: alphaBreadcrumb?.properties?.color,
+      breadcrumbFeatureKind: alphaBreadcrumb?.properties?.featureKind,
+    }
+  })
+}
 
 async function seedTrackingWorkspace(page: import('@playwright/test').Page) {
   await page.evaluate(async () => {
@@ -121,7 +199,38 @@ async function seedTrackingWorkspace(page: import('@playwright/test').Page) {
             device_cache_stale: true,
           },
         ],
-        breadcrumbs: [],
+        breadcrumbs: [
+          {
+            id: 'breadcrumb-alpha-1',
+            device_id: 'alpha',
+            lat: 51.9975,
+            lon: -9.7462,
+            altitude: null,
+            speed: 2.5,
+            battery: 84,
+            accuracy: null,
+            timestamp: '2026-04-10T16:50:00.000Z',
+            source: null,
+            data_origin: 'live',
+            cache_age_seconds: null,
+            device_cache_stale: false,
+          },
+          {
+            id: 'breadcrumb-alpha-2',
+            device_id: 'alpha',
+            lat: 51.9982,
+            lon: -9.7451,
+            altitude: null,
+            speed: 2.9,
+            battery: 83,
+            accuracy: null,
+            timestamp: '2026-04-10T16:55:00.000Z',
+            source: null,
+            data_origin: 'live',
+            cache_age_seconds: null,
+            device_cache_stale: false,
+          },
+        ],
       },
       {
         mode: 'offline',

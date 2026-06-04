@@ -9,6 +9,7 @@ import { createMarkerFeatureCollection } from '../markers/marker-geojson'
 import { createTrackingFeatureCollection } from '../tracking/tracking-geojson'
 import {
   DEFAULT_BREADCRUMB_SIZE,
+  DEFAULT_BREADCRUMB_TRAIL_MODE,
   clampBreadcrumbSize,
   type TrackingStylePreferences,
 } from '../tracking/tracking-style-store'
@@ -83,6 +84,7 @@ function renderTrackingOverlay(layerGroup: L.LayerGroup, input: LeafletFallbackO
   const trackingStyle = input.trackingStyle ?? {
     deviceColors: {},
     breadcrumbSize: DEFAULT_BREADCRUMB_SIZE,
+    breadcrumbTrailMode: DEFAULT_BREADCRUMB_TRAIL_MODE,
   }
   const breadcrumbSize = clampBreadcrumbSize(trackingStyle.breadcrumbSize)
   const tracking = createTrackingFeatureCollection(
@@ -111,6 +113,22 @@ function renderTrackingOverlay(layerGroup: L.LayerGroup, input: LeafletFallbackO
     }
 
     if (feature.geometry.type === 'Point') {
+      if (readStringProperty(properties, 'featureKind') === 'breadcrumb') {
+        if (!input.breadcrumbsVisible) {
+          continue
+        }
+
+        L.circleMarker(toLatLng(feature.geometry.coordinates), {
+          radius: breadcrumbSize / 2,
+          color: '#020617',
+          fillColor: readStringProperty(properties, 'color') ?? '#38BDF8',
+          fillOpacity: 0.95,
+          opacity: 1,
+          weight: 2,
+        }).addTo(layerGroup)
+        continue
+      }
+
       L.circleMarker(toLatLng(feature.geometry.coordinates), {
         radius: 9,
         color: readBooleanProperty(properties, 'stale') ? '#FACC15' : '#FFFFFF',

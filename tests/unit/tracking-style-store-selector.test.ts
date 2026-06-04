@@ -26,6 +26,7 @@ describe('useTrackingStylePreferences', () => {
   it('returns the persisted tracking style through a stable selector-safe hook', () => {
     useTrackingStyleStore.setState({
       breadcrumbSize: 7,
+      breadcrumbTrailMode: 'dots',
       deviceColors: {
         alpha: '#F97316',
       },
@@ -33,13 +34,13 @@ describe('useTrackingStylePreferences', () => {
 
     render(React.createElement(TrackingStyleProbe))
 
-    expect(host?.textContent).toBe(`alpha:#F97316|size:7`)
+    expect(host?.textContent).toBe(`alpha:#F97316|size:7|mode:dots`)
   })
 
   it('uses the default style when no operator preferences exist', () => {
     render(React.createElement(TrackingStyleProbe))
 
-    expect(host?.textContent).toBe(`alpha:none|size:${DEFAULT_BREADCRUMB_SIZE}`)
+    expect(host?.textContent).toBe(`alpha:none|size:${DEFAULT_BREADCRUMB_SIZE}|mode:line`)
   })
 
   function render(element: React.ReactElement): void {
@@ -59,6 +60,6 @@ function TrackingStyleProbe(): React.ReactElement {
   return React.createElement(
     'output',
     null,
-    `alpha:${alphaColor}|size:${trackingStyle.breadcrumbSize}`,
+    `alpha:${alphaColor}|size:${trackingStyle.breadcrumbSize}|mode:${trackingStyle.breadcrumbTrailMode}`,
   )
 }

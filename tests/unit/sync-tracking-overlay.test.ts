@@ -42,6 +42,17 @@ function createMockMap() {
       sources.set(id, config)
     }),
     setFilter: vi.fn(),
+    setPaintProperty: vi.fn((layerId: string, property: string, value: unknown) => {
+      const layer = layers.get(layerId)
+      if (layer === undefined) {
+        return
+      }
+
+      layer.paint = {
+        ...(layer.paint ?? {}),
+        [property]: value,
+      }
+    }),
   }
 }
 
@@ -76,6 +87,12 @@ function getBreadcrumbCasingLayer(map: ReturnType<typeof createMockMap>): LayerS
 function getBreadcrumbLayer(map: ReturnType<typeof createMockMap>): LayerSpec {
   const layer = map.layers.get('tracking-breadcrumbs-line')
   if (!layer) throw new Error('Breadcrumb layer not added')
+  return layer
+}
+
+function getBreadcrumbDotsLayer(map: ReturnType<typeof createMockMap>): LayerSpec {
+  const layer = map.layers.get('tracking-breadcrumbs-dots')
+  if (!layer) throw new Error('Breadcrumb dots layer not added')
   return layer
 }
 
@@ -219,7 +236,7 @@ describe('tracking overlay marker configuration', () => {
         },
         [],
         true,
-        { deviceColors: {}, breadcrumbSize: 7 },
+        { deviceColors: {}, breadcrumbSize: 7, breadcrumbTrailMode: 'line' },
       )
 
       const casing = getBreadcrumbCasingLayer(map)
@@ -227,6 +244,47 @@ describe('tracking overlay marker configuration', () => {
 
       expect(trail.paint?.['line-width']).toBe(7)
       expect(casing.paint?.['line-width']).toBe(10)
+    })
+
+    it('supports breadcrumb-dot mode without rendering the solid line trail', async () => {
+      map = createMockMap()
+      const { syncTrackingOverlay } = await import(
+        '../../src/features/tracking/sync-tracking-overlay'
+      )
+
+      syncTrackingOverlay(
+        map as never,
+        {
+          devices: [],
+          positions: [],
+          breadcrumbs: [],
+          connectionHealth: { status: 'connected' as const, lastSuccessfulPoll: null },
+        },
+        [],
+        true,
+        { deviceColors: {}, breadcrumbSize: 8, breadcrumbTrailMode: 'dots' },
+      )
+
+      const dots = getBreadcrumbDotsLayer(map)
+      const lineFilter = map.setFilter.mock.calls.find(
+        ([layerId]) => layerId === 'tracking-breadcrumbs-line',
+      )?.[1]
+      const dotsFilter = map.setFilter.mock.calls.find(
+        ([layerId]) => layerId === 'tracking-breadcrumbs-dots',
+      )?.[1]
+
+      expect(dots.paint?.['circle-radius']).toBe(4)
+      expect(dots.paint?.['circle-color']).toEqual(['get', 'color'])
+      expect(JSON.stringify(lineFilter)).toContain('__hidden__')
+      expect(JSON.stringify(dotsFilter)).toContain('breadcrumb')
+    })
+
+    it('filters current-device marker layers away from breadcrumb point features', () => {
+      const circle = getCircleLayer(map)
+      const label = getLabelLayer(map)
+
+      expect(JSON.stringify(circle.filter)).toContain('device')
+      expect(JSON.stringify(label.filter)).toContain('device')
     })
   })
 })

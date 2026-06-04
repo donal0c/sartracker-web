@@ -63,6 +63,7 @@ describe('Leaflet fallback renderer', () => {
       trackingStyle: {
         deviceColors: { alpha: '#F97316' },
         breadcrumbSize: 7,
+        breadcrumbTrailMode: 'line',
       },
       markers: [],
       markerTypeVisibility: {
