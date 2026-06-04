@@ -22,6 +22,8 @@ import { useLayerVisibilityStore } from '../features/layers/layer-visibility-sto
 import { useMapTargetStore } from '../features/map/map-target-store'
 
 const DEVICES_WORKSPACE_TITLE_ID = 'devices-workspace-title'
+const DEVICE_ROW_GRID_COLUMNS =
+  'grid-cols-[minmax(8rem,1.4fr)_4rem_6rem_7rem_5.5rem_6rem_8rem]'
 
 /**
  * Renders the dedicated tracking devices workspace used for roster-scale operations.
@@ -65,7 +67,7 @@ export function DevicesWorkspace() {
       labelledBy={DEVICES_WORKSPACE_TITLE_ID}
       open={open}
       onClose={closeWorkspace}
-      maxWidth="max-w-5xl"
+      maxWidth="max-w-7xl"
     >
       <WorkspaceHeader
         subtitle="Devices Workspace"
@@ -316,7 +318,9 @@ function DeviceRowsSection(props: {
         </p>
       ) : (
         <>
-          <div className="grid grid-cols-[minmax(0,1.4fr)_4rem_7rem_8rem_7rem_7rem_10rem] border-b border-stone-800 px-4 py-2 text-[11px] font-bold uppercase tracking-wider text-stone-300">
+          <div
+            className={`grid ${DEVICE_ROW_GRID_COLUMNS} border-b border-stone-800 px-4 py-2 text-[11px] font-bold uppercase tracking-wider text-stone-300`}
+          >
             <span>Device</span>
             <span>Trail</span>
             <span>Status</span>
@@ -365,7 +369,7 @@ function DeviceRow(props: {
 
   return (
     <div
-      className={`grid cursor-pointer grid-cols-[minmax(0,1.4fr)_4rem_7rem_8rem_7rem_7rem_10rem] items-center border-b border-stone-800/70 px-4 py-3 text-sm ${
+      className={`grid cursor-pointer ${DEVICE_ROW_GRID_COLUMNS} items-center border-b border-stone-800/70 px-4 py-3 text-sm ${
         props.selected ? 'sar-selected-row' : 'bg-transparent'
       }`}
       data-testid={rowTestId}
@@ -401,14 +405,12 @@ function DeviceRow(props: {
               : 'text-stone-300'
         }`}
         data-testid={`${props.testPrefix}-status-${props.row.deviceId}`}
-        onClick={(event) => event.stopPropagation()}
       >
         {props.row.status}
       </span>
       <span
         className="font-mono text-xs text-stone-300"
         data-testid={`${props.testPrefix}-last-seen-${props.row.deviceId}`}
-        onClick={(event) => event.stopPropagation()}
       >
         {props.row.lastSeenDisplay}
       </span>
@@ -421,7 +423,6 @@ function DeviceRow(props: {
               : 'text-stone-300'
         }`}
         data-testid={`${props.testPrefix}-source-${props.row.deviceId}`}
-        onClick={(event) => event.stopPropagation()}
       >
         {props.row.sourceDisplay}
       </span>

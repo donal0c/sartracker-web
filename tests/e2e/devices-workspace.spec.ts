@@ -42,7 +42,7 @@ test.describe('M19 devices workspace', () => {
     await page.getByTestId('device-source-bravo').click()
 
     await expect(page.getByTestId('devices-workspace')).toBeVisible()
-    await expect(page.getByTestId('devices-inspector-title')).toContainText('Alpha Team')
+    await expect(page.getByTestId('devices-inspector-title')).toContainText('Bravo Team')
     await expect(page.getByTestId('tracking-status')).toBeVisible()
     await expect(page.getByTestId('marker-at-grid-panel')).toBeHidden()
 

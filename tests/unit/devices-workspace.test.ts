@@ -102,7 +102,7 @@ describe('DevicesWorkspace', () => {
     useMapTargetStore.setState(useMapTargetStore.getInitialState())
   })
 
-  it('does not select a different device when passive status, time, or source cells are clicked', async () => {
+  it('selects a device when non-control status, time, or source cells are clicked', async () => {
     const { DevicesWorkspace } = await import('../../src/components/devices-workspace')
     useTrackingStore.setState({ snapshot: SNAPSHOT, status: STATUS })
     useDeviceWorkspaceStore.setState({ open: true, selectedDeviceId: 'alpha' })
@@ -116,8 +116,8 @@ describe('DevicesWorkspace', () => {
     click('[data-testid="device-last-seen-bravo"]')
     click('[data-testid="device-source-bravo"]')
 
-    expect(useDeviceWorkspaceStore.getState().selectedDeviceId).toBe('alpha')
-    expect(getText('[data-testid="devices-inspector-title"]')).toContain('Alpha Team')
+    expect(useDeviceWorkspaceStore.getState().selectedDeviceId).toBe('bravo')
+    expect(getText('[data-testid="devices-inspector-title"]')).toContain('Bravo Team')
   })
 
   it('adds and removes mission-active devices while keeping the full roster visible', async () => {

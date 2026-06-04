@@ -78,7 +78,7 @@ export function CoordinateConverterDialog() {
                 <label
                   className={`border px-3 py-2 text-sm font-semibold transition ${
                     draft.mode === mode
-                      ? 'sar-tab-active'
+                      ? 'sar-tab-active bg-amber-400/25 text-amber-50 ring-1 ring-inset ring-amber-300/70'
                       : 'sar-button'
                   }`}
                   data-testid={`coordinate-mode-${mode}`}
