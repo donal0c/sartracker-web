@@ -97,6 +97,22 @@ describe('CoordinateConverterDialog marker workflow', () => {
     )
   })
 
+  it('renders coordinate modes with distinct active and inactive tab chrome', async () => {
+    useCoordinateToolStore.setState({ open: true })
+
+    render(React.createElement(CoordinateConverterDialog))
+
+    await act(async () => {
+      getElement('[data-testid="coordinate-mode-dd"]').click()
+    })
+
+    expect(getElement('[data-testid="coordinate-mode-dd"]').className).toContain('sar-segment-option-active')
+    expect(getElement('[data-testid="coordinate-mode-dd"]').className).not.toContain('bg-amber')
+    expect(getElement('[data-testid="coordinate-mode-ig"]').className).toContain('sar-segment-option')
+    expect(getElement('[data-testid="coordinate-mode-ig"]').className).not.toContain('sar-segment-option-active')
+    expect(getElement('[data-testid="coordinate-mode-ig"]').className).not.toContain('sar-button')
+  })
+
   function render(element: React.ReactElement): void {
     host = document.createElement('div')
     document.body.append(host)
@@ -157,6 +173,14 @@ function getButton(selector: string): HTMLButtonElement {
   const element = document.querySelector(selector)
   if (!(element instanceof HTMLButtonElement)) {
     throw new Error(`Expected ${selector} to be a button.`)
+  }
+  return element
+}
+
+function getElement(selector: string): HTMLElement {
+  const element = document.querySelector(selector)
+  if (!(element instanceof HTMLElement)) {
+    throw new Error(`Expected ${selector} to be an element.`)
   }
   return element
 }
