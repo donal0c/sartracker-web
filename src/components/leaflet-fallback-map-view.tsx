@@ -5,8 +5,7 @@ import L from 'leaflet'
 
 import { BasemapSwitcher } from './basemap-switcher'
 import { CoordinateBar } from './coordinate-bar'
-import { MapStatusBadge } from './map-status-badge'
-import { OfflineMapReadinessBadge } from './offline-map-readiness-badge'
+import { MapDegradedAlert } from './map-degraded-alert'
 import {
   createDegradedMapHealth,
   createLoadingMapHealth,
@@ -223,9 +222,8 @@ export function LeafletFallbackMapView() {
         >
           Leaflet fallback renderer: read-only
         </div>
-        <MapStatusBadge health={mapHealth} />
-        <OfflineMapReadinessBadge readiness={LEAFLET_OFFLINE_READINESS} />
       </div>
+      <MapDegradedAlert mapHealth={mapHealth} offlineReadiness={LEAFLET_OFFLINE_READINESS} />
       <CoordinateBar
         latitude={hoverCoordinate.latitude}
         longitude={hoverCoordinate.longitude}

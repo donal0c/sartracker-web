@@ -12,7 +12,6 @@ test.describe('M2 map shell', () => {
     await expect(page.getByTestId('system-status-value')).toContainText('Browser test')
     await expect(page.getByTestId('system-status-detail')).toContainText('Session storage only')
     await expect(page.getByTestId('basemap-switcher')).toBeVisible()
-    await expect(page.getByTestId('map-health')).toContainText('basemap')
     await expect(page.getByTestId('basemap-menu-toggle')).toBeVisible()
     await page.getByTestId('basemap-menu-toggle').click()
     await expect(page.getByTestId('map-catalogue-group-official')).toContainText('Official maps')
@@ -27,6 +26,8 @@ test.describe('M2 map shell', () => {
     await expect(page.getByTestId('basemap-btn-esri_topo')).toBeVisible()
     await expect(page.getByTestId('basemap-btn-openstreetmap')).toBeVisible()
     await expect(page.getByTestId('basemap-btn-esri_satellite')).toBeVisible()
+    await expect(page.getByTestId('basemap-map-health')).toContainText('basemap')
+    await expect(page.getByTestId('basemap-offline-readiness')).toBeVisible()
     await expect(page.getByTestId('check-offline-map-coverage')).toBeVisible()
   })
 

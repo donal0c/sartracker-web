@@ -6,12 +6,16 @@ import {
   type MapCatalogueGroup,
   type RenderableMapId,
 } from '../lib/map-config'
+import type { MapHealth } from '../lib/map-health'
 import type { OfflineMapCoverage } from '../features/map/offline-map-coverage'
+import type { OfflineMapReadiness } from '../features/map/offline-map-readiness'
 
 type BasemapSwitcherProps = {
   readonly activeBasemapId: RenderableMapId
   readonly catalogueGroups?: readonly MapCatalogueGroup[]
   readonly coverage?: OfflineMapCoverage
+  readonly mapHealth?: MapHealth
+  readonly offlineReadiness?: OfflineMapReadiness
   readonly onBasemapChange: (basemapId: RenderableMapId) => void
   readonly onCheckCoverage?: () => void
 }
@@ -23,6 +27,8 @@ export function BasemapSwitcher({
   activeBasemapId,
   catalogueGroups = MAP_CATALOGUE_GROUPS,
   coverage,
+  mapHealth,
+  offlineReadiness,
   onBasemapChange,
   onCheckCoverage,
 }: BasemapSwitcherProps) {
@@ -102,26 +108,56 @@ export function BasemapSwitcher({
               </div>
             </section>
           ))}
-          {coverage !== undefined && onCheckCoverage !== undefined ? (
-            <div
-              className="mt-1 border-t border-[var(--sar-line)] pt-2 text-[11px] text-stone-100"
-              data-testid="basemap-offline-coverage"
-            >
-              <div className="flex items-center justify-between gap-2">
-                <span className="font-semibold">{coverage.label}</span>
-                <button
-                  className="border border-stone-400 px-2 py-1 text-[10px] font-black uppercase tracking-[0.14em] text-stone-100 transition hover:border-amber-300 hover:bg-white/10 disabled:cursor-wait disabled:opacity-60"
-                  data-testid="check-offline-map-coverage"
-                  disabled={checkingCoverage}
-                  onClick={onCheckCoverage}
-                  type="button"
-                >
-                  {checkingCoverage ? 'Checking' : 'Check View'}
-                </button>
+          <div
+            className="mt-1 space-y-2 border-t border-[var(--sar-line)] pt-2 text-[11px]"
+            data-testid="basemap-status-section"
+          >
+            {mapHealth !== undefined ? (
+              <div className="flex items-center gap-2" data-testid="basemap-map-health">
+                <span
+                  className={`h-1.5 w-1.5 shrink-0 rounded-full ${
+                    mapHealth.status === 'ready'
+                      ? 'bg-emerald-400'
+                      : mapHealth.status === 'loading'
+                        ? 'bg-amber-400 animate-pulse'
+                        : 'bg-rose-400'
+                  }`}
+                />
+                <span className="text-stone-200">{mapHealth.message}</span>
               </div>
-              <p className="mt-1 text-[10px] text-stone-300">{coverage.detail}</p>
-            </div>
-          ) : null}
+            ) : null}
+            {offlineReadiness !== undefined ? (
+              <div className="flex items-center gap-2" data-testid="basemap-offline-readiness">
+                <span
+                  className={`h-1.5 w-1.5 shrink-0 rounded-full ${
+                    offlineReadiness.tone === 'success'
+                      ? 'bg-emerald-400'
+                      : offlineReadiness.tone === 'warning'
+                        ? 'bg-amber-400'
+                        : 'bg-rose-400'
+                  }`}
+                />
+                <span className="text-stone-200">{offlineReadiness.label}</span>
+              </div>
+            ) : null}
+            {coverage !== undefined && onCheckCoverage !== undefined ? (
+              <div data-testid="basemap-offline-coverage">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="font-semibold text-stone-100">{coverage.label}</span>
+                  <button
+                    className="border border-stone-400 px-2 py-1 text-[10px] font-black uppercase tracking-[0.14em] text-stone-100 transition hover:border-amber-300 hover:bg-white/10 disabled:cursor-wait disabled:opacity-60"
+                    data-testid="check-offline-map-coverage"
+                    disabled={checkingCoverage}
+                    onClick={onCheckCoverage}
+                    type="button"
+                  >
+                    {checkingCoverage ? 'Checking' : 'Check View'}
+                  </button>
+                </div>
+                <p className="mt-1 text-[10px] text-stone-300">{coverage.detail}</p>
+              </div>
+            ) : null}
+          </div>
         </div>
       ) : null}
     </div>

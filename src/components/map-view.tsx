@@ -6,8 +6,7 @@ import { CoordinateBar } from './coordinate-bar'
 import { BasemapSwitcher } from './basemap-switcher'
 import { DrawingToolbar } from './drawing-toolbar'
 import { FocusModeCoordinateMirror } from './focus-mode-coordinate-mirror'
-import { MapStatusBadge } from './map-status-badge'
-import { OfflineMapReadinessBadge } from './offline-map-readiness-badge'
+import { MapDegradedAlert } from './map-degraded-alert'
 import { LeafletFallbackMapView } from './leaflet-fallback-map-view'
 import { getMapRendererMode } from '../features/map/map-renderer-mode'
 import { useFocusModeStore } from '../features/focus-mode/focus-mode-store'
@@ -55,17 +54,14 @@ function MapLibreMapView() {
         activeBasemapId={activeBasemapId}
         catalogueGroups={catalogueGroups}
         coverage={coverage}
+        mapHealth={mapHealth}
+        offlineReadiness={offlineMapReadiness}
         onBasemapChange={handleBasemapChange}
         onCheckCoverage={checkCurrentViewCoverage}
       />
       <DrawingToolbar />
       <div className="h-full w-full" data-testid="map-container" ref={containerRef} />
-      <div className="pointer-events-none absolute bottom-20 right-3 z-10 flex max-w-[min(18rem,calc(100%-2rem))] flex-col items-end gap-2">
-        <MapStatusBadge health={mapHealth} />
-        <OfflineMapReadinessBadge
-          readiness={offlineMapReadiness}
-        />
-      </div>
+      <MapDegradedAlert mapHealth={mapHealth} offlineReadiness={offlineMapReadiness} />
       {!focusModeActive ? (
         <CoordinateBar
           latitude={hoverCoordinate.latitude}
