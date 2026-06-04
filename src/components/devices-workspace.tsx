@@ -24,7 +24,7 @@ import { useMapTargetStore } from '../features/map/map-target-store'
 
 const DEVICES_WORKSPACE_TITLE_ID = 'devices-workspace-title'
 const DEVICE_ROW_GRID_COLUMNS =
-  'grid-cols-[minmax(8rem,1.4fr)_4rem_6rem_7rem_5.5rem_6rem_8rem]'
+  'grid-cols-[minmax(7.5rem,1fr)_minmax(9rem,1.2fr)_4rem_6rem_7rem_5.5rem_6rem_8rem]'
 
 /**
  * Renders the dedicated tracking devices workspace used for roster-scale operations.
@@ -356,6 +356,7 @@ function DeviceRowsSection(props: {
             className={`grid ${DEVICE_ROW_GRID_COLUMNS} border-b border-stone-800 px-4 py-2 text-[11px] font-bold uppercase tracking-wider text-stone-300`}
           >
             <span>Device</span>
+            <span>Name</span>
             <span>Trail</span>
             <span>Status</span>
             <span>Last Seen</span>
@@ -418,10 +419,20 @@ function DeviceRow(props: {
         }}
         type="button"
       >
-        <p className="truncate font-semibold text-stone-100">{props.row.name}</p>
         <p className="truncate font-mono text-[11px] text-stone-300">
           {props.row.deviceId}
         </p>
+      </button>
+      <button
+        className="block min-w-0 w-full text-left"
+        data-testid={`${props.testPrefix}-select-name-${props.row.deviceId}`}
+        onClick={(event) => {
+          event.stopPropagation()
+          props.onSelectDevice(props.row.deviceId)
+        }}
+        type="button"
+      >
+        <p className="truncate font-semibold text-stone-100">{props.row.name}</p>
       </button>
       <DeviceColorSwatch
         color={props.deviceColor}
