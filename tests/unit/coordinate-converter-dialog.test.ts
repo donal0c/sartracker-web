@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { CoordinateConverterDialog } from '../../src/components/coordinate-converter-dialog'
 import { useCoordinateToolStore } from '../../src/features/coordinates/coordinate-tool-store'
+import { useMapTargetStore } from '../../src/features/map/map-target-store'
 import { useMarkerStore } from '../../src/features/markers/marker-store'
 import type { MarkerRuntimeController } from '../../src/features/markers/start-marker-runtime'
 import { useMissionStore } from '../../src/features/mission/mission-store'
@@ -23,6 +24,7 @@ describe('CoordinateConverterDialog marker workflow', () => {
     host = null
     vi.clearAllMocks()
     useCoordinateToolStore.setState(useCoordinateToolStore.getInitialState())
+    useMapTargetStore.setState(useMapTargetStore.getInitialState())
     useMarkerStore.setState(useMarkerStore.getInitialState())
     useMissionStore.setState(useMissionStore.getInitialState())
   })
@@ -53,6 +55,46 @@ describe('CoordinateConverterDialog marker workflow', () => {
       expect.closeTo(-9.464944, 5),
     )
     expect(useCoordinateToolStore.getState().open).toBe(false)
+  })
+
+  it('keeps marker creation available after going to a converted grid location', async () => {
+    const controller = createController()
+    useCoordinateToolStore.setState({ open: true })
+    useMarkerStore.setState({ controller })
+    useMissionStore.setState({
+      phase: 'active',
+      currentMission: createMission('mission-1'),
+      recoverableMission: null,
+    })
+
+    render(React.createElement(CoordinateConverterDialog))
+    setInputValue('[data-testid="coordinate-input-irish-grid-ref"]', 'Q 99842 04015')
+
+    await act(async () => {
+      getButton('[data-testid="coordinate-convert-btn"]').click()
+    })
+    await act(async () => {
+      getButton('[data-testid="coordinate-go-to-btn"]').click()
+    })
+
+    expect(useMapTargetStore.getState().activeTarget).toEqual(
+      expect.objectContaining({
+        label: 'Coordinate Target',
+        latitude: expect.closeTo(52.179337, 5),
+        longitude: expect.closeTo(-9.464944, 5),
+      }),
+    )
+    expect(useCoordinateToolStore.getState().open).toBe(true)
+    expect(getButton('[data-testid="coordinate-create-marker-btn"]').disabled).toBe(false)
+
+    await act(async () => {
+      getButton('[data-testid="coordinate-create-marker-btn"]').click()
+    })
+
+    expect(controller.beginCreateAt).toHaveBeenCalledWith(
+      expect.closeTo(52.179337, 5),
+      expect.closeTo(-9.464944, 5),
+    )
   })
 
   function render(element: React.ReactElement): void {

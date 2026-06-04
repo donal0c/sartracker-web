@@ -93,6 +93,10 @@ test.describe('M8 drawing workflows', () => {
     await page.getByTestId('drawing-sector-start-input').fill('350')
     await page.getByTestId('drawing-sector-end-input').fill('20')
     await page.getByTestId('drawing-sector-radius-input').fill('1500')
+    await expect(page.getByTestId('drawing-name-input')).toHaveValue('Sector North')
+    await expect(page.getByTestId('drawing-sector-start-input')).toHaveValue('350')
+    await expect(page.getByTestId('drawing-sector-end-input')).toHaveValue('20')
+    await expect(page.getByTestId('drawing-sector-radius-input')).toHaveValue('1500')
     await page.getByTestId('drawing-save-btn').click()
 
     await page.getByTestId('drawing-tool-line').click({ force: true })

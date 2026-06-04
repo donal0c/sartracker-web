@@ -27,8 +27,10 @@ test.describe('A3.9 weather links menu', () => {
   test('configures and opens a named weather link safely', async ({ page }) => {
     await page.getByTestId('open-settings-workspace').click()
     await page.getByTestId('weather-link-add').click()
-    await page.getByTestId('weather-link-name-0').fill('Met Éireann')
-    await page.getByTestId('weather-link-url-0').fill('https://www.met.ie/')
+    await page.getByTestId('weather-link-name-0').type('Met Éireann')
+    await expect(page.getByTestId('weather-link-name-0')).toHaveValue('Met Éireann')
+    await page.getByTestId('weather-link-url-0').type('met.ie')
+    await expect(page.getByTestId('weather-link-url-0')).toHaveValue('met.ie')
     await page.getByTestId('settings-save').click()
     await expect(page.getByTestId('settings-workspace')).toBeHidden()
 
@@ -40,5 +42,24 @@ test.describe('A3.9 weather links menu', () => {
     const popup = await popupPromise
     expect(popup.url()).toContain('https://www.met.ie')
     await popup.close()
+  })
+
+  test('normalizes multiple bare weather domains', async ({ page }) => {
+    await page.getByTestId('open-settings-workspace').click()
+
+    await page.getByTestId('weather-link-add').click()
+    await page.getByTestId('weather-link-name-0').fill('Met Éireann')
+    await page.getByTestId('weather-link-url-0').fill('met.ie')
+
+    await page.getByTestId('weather-link-add').click()
+    await page.getByTestId('weather-link-name-1').fill('YR')
+    await page.getByTestId('weather-link-url-1').fill('yr.no')
+
+    await page.getByTestId('settings-save').click()
+    await expect(page.getByTestId('settings-workspace')).toBeHidden()
+
+    await page.getByTestId('open-settings-workspace').click()
+    await expect(page.getByTestId('weather-link-url-0')).toHaveValue('https://met.ie')
+    await expect(page.getByTestId('weather-link-url-1')).toHaveValue('https://yr.no')
   })
 })

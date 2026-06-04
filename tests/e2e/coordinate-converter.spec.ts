@@ -26,7 +26,7 @@ test.describe('M18 coordinate converter', () => {
     await expect(page.getByTestId('coordinate-result-ig-copy')).toContainText('Copied')
 
     await page.getByTestId('coordinate-go-to-btn').click()
-    await expect(page.getByTestId('coordinate-converter-dialog')).toBeHidden()
+    await expect(page.getByTestId('coordinate-converter-dialog')).toBeVisible()
     await expect(page.getByTestId('coordinate-target-indicator')).toBeVisible()
   })
 

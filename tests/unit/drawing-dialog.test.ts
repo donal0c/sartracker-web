@@ -6,6 +6,7 @@ import { useDrawingStore } from '../../src/features/drawings/drawing-store'
 import type {
   LineDrawingDraft,
   SearchAreaDrawingDraft,
+  SearchSectorDrawingDraft,
 } from '../../src/features/drawings/drawing-types'
 
 /**
@@ -42,6 +43,17 @@ const SEARCH_AREA_DRAFT: SearchAreaDrawingDraft = {
   fillColor: '#F59E0B',
   terrain: '',
   notes: '',
+}
+
+const SEARCH_SECTOR_DRAFT: SearchSectorDrawingDraft = {
+  id: null,
+  type: 'search_sector',
+  name: '',
+  description: '',
+  center: [-9.7, 52],
+  startBearing: '0',
+  endBearing: '90',
+  radiusM: '1000',
 }
 
 describe('DrawingDialog vertices readout', () => {
@@ -88,6 +100,37 @@ describe('DrawingDialog vertices readout', () => {
     expect(document.body.textContent).not.toContain('Vertices')
   })
 
+  it('preserves search sector details when the radius control is used', async () => {
+    const updateDraft = vi.fn((nextDraft: SearchSectorDrawingDraft) => {
+      useDrawingStore.setState({
+        dialog: {
+          mode: 'create',
+          draft: nextDraft,
+        },
+      })
+    })
+    useDrawingStore.setState({
+      controller: {
+        closeDialog: vi.fn(),
+        updateDraft,
+        saveDialog: vi.fn(),
+        deleteSelectedDrawing: vi.fn(),
+      } as never,
+      dialog: { mode: 'create', draft: SEARCH_SECTOR_DRAFT },
+    })
+    await renderDialog()
+
+    setInputValue('[data-testid="drawing-name-input"]', 'Sector North')
+    setInputValue('[data-testid="drawing-sector-start-input"]', '350')
+    setInputValue('[data-testid="drawing-sector-end-input"]', '20')
+    setInputValue('[data-testid="drawing-sector-radius-input"]', '1500')
+
+    expect(getInput('[data-testid="drawing-name-input"]').value).toBe('Sector North')
+    expect(getInput('[data-testid="drawing-sector-start-input"]').value).toBe('350')
+    expect(getInput('[data-testid="drawing-sector-end-input"]').value).toBe('20')
+    expect(getInput('[data-testid="drawing-sector-radius-input"]').value).toBe('1500')
+  })
+
   async function renderDialog(): Promise<void> {
     const { DrawingDialog } = await import('../../src/components/drawing-dialog')
     host = document.createElement('div')
@@ -98,3 +141,22 @@ describe('DrawingDialog vertices readout', () => {
     })
   }
 })
+
+function setInputValue(selector: string, value: string): void {
+  const input = getInput(selector)
+  act(() => {
+    const valueSetter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set
+    valueSetter?.call(input, value)
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+    input.dispatchEvent(new Event('change', { bubbles: true }))
+  })
+}
+
+function getInput(selector: string): HTMLInputElement {
+  const element = document.querySelector(selector)
+  if (!(element instanceof HTMLInputElement)) {
+    throw new Error(`Expected ${selector} to be an input.`)
+  }
+
+  return element
+}

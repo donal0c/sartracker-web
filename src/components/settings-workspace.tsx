@@ -564,7 +564,7 @@ export function SettingsWorkspace({ open, onClose }: SettingsWorkspaceProps) {
                     {draft.weather.links.map((link, index) => (
                       <div
                         className="grid gap-3 border border-[var(--sar-line)] bg-[var(--sar-panel-sunken)] p-3 md:grid-cols-[1fr_1.6fr_auto]"
-                        key={`${index}-${link.name}-${link.url}`}
+                        key={index}
                       >
                         <TextField
                           label="Name"

@@ -109,6 +109,39 @@ describe('SettingsWorkspace', () => {
     expect(rosterInput.value).toBe('Cathal ')
   })
 
+  it('keeps focus while an operator types weather link names and URLs', async () => {
+    const onClose = vi.fn()
+    const { SettingsWorkspace } = await import('../../src/components/settings-workspace')
+    mocks.loadAppSettings.mockResolvedValue(DEFAULT_APP_SETTINGS)
+    mocks.saveAppSettings.mockResolvedValue(DEFAULT_APP_SETTINGS)
+    mocks.getAppRuntimeController.mockReturnValue(null)
+    mocks.readCoordinateDisplayMode.mockReturnValue('wgs84_first')
+    mocks.isTauriRuntimeAvailable.mockReturnValue(false)
+
+    render(React.createElement(SettingsWorkspace, { open: true, onClose }))
+    await waitForElement('[data-testid="settings-save"]')
+
+    await act(async () => {
+      getButton('[data-testid="weather-link-add"]').click()
+    })
+
+    const nameInput = await waitForInput('[data-testid="weather-link-name-0"]')
+    nameInput.focus()
+    setInputValue(nameInput, 'M')
+
+    expect(document.activeElement).toBe(nameInput)
+
+    setInputValue(nameInput, 'Met Éireann')
+    expect(nameInput.value).toBe('Met Éireann')
+
+    const urlInput = await waitForInput('[data-testid="weather-link-url-0"]')
+    urlInput.focus()
+    setInputValue(urlInput, 'met.ie')
+
+    expect(document.activeElement).toBe(urlInput)
+    expect(urlInput.value).toBe('met.ie')
+  })
+
   it('shows official map source status and lets an admin enter a MapGenie source path', async () => {
     const onClose = vi.fn()
     const { SettingsWorkspace } = await import('../../src/components/settings-workspace')

@@ -226,7 +226,6 @@ export function CoordinateConverterDialog() {
                   data-testid="coordinate-go-to-btn"
                   onClick={() => {
                     queueTarget(result.latitude, result.longitude, 'Coordinate Target')
-                    closeDialog()
                   }}
                   type="button"
                 >
