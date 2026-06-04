@@ -50,6 +50,35 @@ test.describe('M18 coordinate converter', () => {
     await expect(page.getByText(/W3W conversion is not available/)).toBeVisible()
   })
 
+  test('converts pasted DD and DMS coordinate pairs from the first field', async ({ page }) => {
+    await page.getByTestId('open-coordinate-converter').click()
+
+    await page.getByTestId('coordinate-mode-dd').click()
+    await page.getByTestId('coordinate-input-latitude').fill('52.004677 -9.748060')
+    await page.getByTestId('coordinate-input-longitude').fill('')
+    await page.getByTestId('coordinate-convert-btn').click()
+    await expect(page.getByTestId('coordinate-result-dd')).toContainText('52.004677, -9.748060')
+    await expect(page.getByTestId('coordinate-result-ig')).toContainText('V 80009 85011')
+
+    await page.getByTestId('coordinate-mode-dms').click()
+    await page.getByTestId('coordinate-input-dms-latitude').fill('52°10\'45.613"N 9°27\'53.798"W')
+    await page.getByTestId('coordinate-input-dms-longitude').fill('')
+    await page.getByTestId('coordinate-convert-btn').click()
+    await expect(page.getByTestId('coordinate-result-dd')).toContainText('52.179337, -9.464944')
+    await expect(page.getByTestId('coordinate-result-ig')).toContainText('Q 99842 04015')
+  })
+
+  test('shows a clear instruction for incomplete pasted DD pairs', async ({ page }) => {
+    await page.getByTestId('open-coordinate-converter').click()
+    await page.getByTestId('coordinate-mode-dd').click()
+    await page.getByTestId('coordinate-input-latitude').fill('52.004677 west')
+    await page.getByTestId('coordinate-input-longitude').fill('')
+    await page.getByTestId('coordinate-convert-btn').click()
+
+    await expect(page.getByText('DD input must include both latitude and longitude.')).toBeVisible()
+    await expect(page.getByText('Latitude must be a finite number.')).toBeHidden()
+  })
+
   test('uses dialog semantics, traps focus, and returns focus on Escape', async ({ page }) => {
     const opener = page.getByTestId('open-coordinate-converter')
     await opener.click()

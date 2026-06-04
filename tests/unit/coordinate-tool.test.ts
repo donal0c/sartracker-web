@@ -36,6 +36,40 @@ describe('coordinate converter', () => {
     expect(result.dmsDisplay).toBe('52°10\'45.613"N, 9°27\'53.798"W')
   })
 
+  it('converts pasted DD latitude and longitude pairs from the latitude field', () => {
+    const result = convertCoordinates({
+      ...createCoordinateConverterDraft(),
+      mode: 'dd',
+      latitude: '52.004677 -9.748060',
+      longitude: '',
+    })
+
+    expect(result.ddDisplay).toBe('52.004677, -9.748060')
+    expect(result.irishGridRef).toBe('V 80009 85011')
+  })
+
+  it('converts pasted comma-separated DD pairs from the latitude field', () => {
+    const result = convertCoordinates({
+      ...createCoordinateConverterDraft(),
+      mode: 'dd',
+      latitude: '52.004677, -9.748060',
+      longitude: '',
+    })
+
+    expect(result.ddDisplay).toBe('52.004677, -9.748060')
+  })
+
+  it('converts pasted DD pairs with hemisphere suffixes', () => {
+    const result = convertCoordinates({
+      ...createCoordinateConverterDraft(),
+      mode: 'dd',
+      latitude: '52.004677°N 9.748060°W',
+      longitude: '',
+    })
+
+    expect(result.ddDisplay).toBe('52.004677, -9.748060')
+  })
+
   it('converts DMS input into Irish Grid and DD outputs', () => {
     const result = convertCoordinates({
       ...createCoordinateConverterDraft(),
@@ -46,6 +80,31 @@ describe('coordinate converter', () => {
 
     expect(result.ddDisplay).toBe('52.179337, -9.464944')
     expect(result.irishGridRef).toBe('Q 99842 04015')
+  })
+
+  it('converts pasted DMS latitude and longitude pairs from the latitude field', () => {
+    const result = convertCoordinates({
+      ...createCoordinateConverterDraft(),
+      mode: 'dms',
+      dmsLatitude: '52°10\'45.613"N 9°27\'53.798"W',
+      dmsLongitude: '',
+    })
+
+    expect(result.ddDisplay).toBe('52.179337, -9.464944')
+    expect(result.irishGridRef).toBe('Q 99842 04015')
+  })
+
+  it('gives a clear error when a pasted DD pair is incomplete', () => {
+    expect(() =>
+      convertCoordinates({
+        ...createCoordinateConverterDraft(),
+        mode: 'dd',
+        latitude: '52.004677 west',
+        longitude: '',
+      }),
+    ).toThrow(
+      'DD input must include both latitude and longitude. Paste a pair like 52.004677, -9.748060, or split the values into Latitude and Longitude.',
+    )
   })
 
   it('keeps W3W decision-gated until API, licensing, and offline behavior are settled', () => {

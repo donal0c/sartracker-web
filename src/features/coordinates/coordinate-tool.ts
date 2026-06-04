@@ -99,26 +99,110 @@ function parseIrishGridDraft(draft: CoordinateConverterDraft): [number, number] 
 }
 
 function parseDecimalDegreesDraft(draft: CoordinateConverterDraft): [number, number] {
+  if (draft.longitude.trim() === '') {
+    return parseDecimalDegreesPair(draft.latitude)
+  }
+
   return [
-    parseRequiredNumber(draft.latitude, 'Latitude'),
-    parseRequiredNumber(draft.longitude, 'Longitude'),
+    parseDecimalCoordinate(draft.latitude, 'Latitude', ['N', 'S']),
+    parseDecimalCoordinate(draft.longitude, 'Longitude', ['E', 'W']),
   ]
 }
 
 function parseDmsDraft(draft: CoordinateConverterDraft): [number, number] {
+  if (draft.dmsLongitude.trim() === '') {
+    return parseDmsPair(draft.dmsLatitude)
+  }
+
   return [
     parseDmsCoordinate(draft.dmsLatitude, 'Latitude'),
     parseDmsCoordinate(draft.dmsLongitude, 'Longitude'),
   ]
 }
 
-function parseRequiredNumber(value: string, label: string): number {
-  const parsed = Number(value.trim())
+function parseDecimalDegreesPair(value: string): [number, number] {
+  const tokens = tokenizeDecimalCoordinates(value)
+  if (tokens.length !== 2) {
+    throw new Error(
+      'DD input must include both latitude and longitude. Paste a pair like 52.004677, -9.748060, or split the values into Latitude and Longitude.',
+    )
+  }
+
+  return [
+    parseDecimalToken(tokens[0]!, 'Latitude', ['N', 'S']),
+    parseDecimalToken(tokens[1]!, 'Longitude', ['E', 'W']),
+  ]
+}
+
+function parseDecimalCoordinate(
+  value: string,
+  label: 'Latitude' | 'Longitude',
+  allowedDirections: readonly CardinalDirection[],
+): number {
+  const tokens = tokenizeDecimalCoordinates(value)
+  if (tokens.length !== 1) {
+    throw new Error(`${label} must contain one decimal-degree value.`)
+  }
+
+  return parseDecimalToken(tokens[0]!, label, allowedDirections)
+}
+
+type DecimalCoordinateToken = {
+  readonly value: string
+  readonly direction: CardinalDirection | null
+}
+
+type CardinalDirection = 'N' | 'S' | 'E' | 'W'
+
+function tokenizeDecimalCoordinates(value: string): readonly DecimalCoordinateToken[] {
+  const trimmed = value.trim().toUpperCase()
+  const tokens: DecimalCoordinateToken[] = []
+  let leftover = ''
+  let lastIndex = 0
+  const pattern = /[+-]?\d+(?:\.\d+)?\s*°?\s*[NSEW]?/g
+  let match: RegExpExecArray | null
+
+  while ((match = pattern.exec(trimmed)) !== null) {
+    const rawToken = match[0]
+    leftover += trimmed.slice(lastIndex, match.index)
+    lastIndex = pattern.lastIndex
+    const tokenMatch = rawToken.trim().match(/^([+-]?\d+(?:\.\d+)?)\s*°?\s*([NSEW])?$/)
+    if (tokenMatch === null) {
+      continue
+    }
+
+    tokens.push({
+      value: tokenMatch[1]!,
+      direction: (tokenMatch[2] as CardinalDirection | undefined) ?? null,
+    })
+  }
+  leftover += trimmed.slice(lastIndex)
+
+  if (tokens.length === 0 || leftover.replace(/[,\s;/]+/g, '') !== '') {
+    return []
+  }
+
+  return tokens
+}
+
+function parseDecimalToken(
+  token: DecimalCoordinateToken,
+  label: 'Latitude' | 'Longitude',
+  allowedDirections: readonly CardinalDirection[],
+): number {
+  const parsed = Number(token.value)
   if (!Number.isFinite(parsed)) {
     throw new Error(`${label} must be a finite number.`)
   }
 
-  return parsed
+  if (token.direction !== null && !allowedDirections.includes(token.direction)) {
+    throw new Error(`${label} direction must be ${allowedDirections.join(' or ')}.`)
+  }
+
+  const signed =
+    token.direction === 'S' || token.direction === 'W' ? -Math.abs(parsed) : parsed
+  validateCoordinateRange(signed, label)
+  return signed
 }
 
 function formatDecimalDegrees(latitude: number, longitude: number): string {
@@ -135,15 +219,62 @@ function parseDmsCoordinate(value: string, label: string): number {
     throw new Error(`${label} must use DMS format like 52°10'45.613"N.`)
   }
 
+  return parseDmsMatch(match, label)
+}
+
+function parseDmsPair(value: string): [number, number] {
+  const normalized = value.trim().toUpperCase()
+  const matches = Array.from(
+    normalized.matchAll(/(\d{1,3})(?:°|\s+)\s*(\d{1,2})(?:'|\s+)\s*(\d{1,2}(?:\.\d+)?)(?:"|\s*)\s*([NSEW])/g),
+  )
+
+  if (matches.length !== 2) {
+    throw new Error(
+      'DMS input must include both latitude and longitude. Paste a pair like 52°10\'45.613"N, 9°27\'53.798"W, or split the values into Latitude DMS and Longitude DMS.',
+    )
+  }
+
+  const leftover = matches.reduce(
+    (remaining, match) => remaining.replace(match[0], ','),
+    normalized,
+  )
+  if (leftover.replace(/[,\s;/]+/g, '') !== '') {
+    throw new Error(
+      'DMS input must include both latitude and longitude. Paste a pair like 52°10\'45.613"N, 9°27\'53.798"W, or split the values into Latitude DMS and Longitude DMS.',
+    )
+  }
+
+  return [
+    parseDmsMatch(matches[0]!, 'Latitude'),
+    parseDmsMatch(matches[1]!, 'Longitude'),
+  ]
+}
+
+function parseDmsMatch(match: RegExpMatchArray, label: string): number {
   const degrees = Number(match[1])
   const minutes = Number(match[2])
   const seconds = Number(match[3])
-  const direction = match[4]
+  const direction = match[4] as CardinalDirection
 
   if (minutes >= 60 || seconds >= 60) {
     throw new Error(`${label} DMS minutes and seconds must be below 60.`)
   }
+  if (label === 'Latitude' && direction !== 'N' && direction !== 'S') {
+    throw new Error('Latitude direction must be N or S.')
+  }
+  if (label === 'Longitude' && direction !== 'E' && direction !== 'W') {
+    throw new Error('Longitude direction must be E or W.')
+  }
 
   const unsigned = degrees + minutes / 60 + seconds / 3600
-  return direction === 'S' || direction === 'W' ? -unsigned : unsigned
+  const signed = direction === 'S' || direction === 'W' ? -unsigned : unsigned
+  validateCoordinateRange(signed, label)
+  return signed
+}
+
+function validateCoordinateRange(value: number, label: string): void {
+  const limit = label === 'Latitude' ? 90 : 180
+  if (Math.abs(value) > limit) {
+    throw new Error(`${label} must be between -${limit} and ${limit} degrees.`)
+  }
 }
