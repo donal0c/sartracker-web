@@ -1,7 +1,7 @@
 import { useEffect, type RefObject } from 'react'
 import type maplibregl from 'maplibre-gl'
 
-import type { BasemapId } from '../../lib/map-config'
+import type { RenderableMapId } from '../../lib/map-config'
 import { getEffectiveMeasurementsVisible } from '../layers/effective-overlay-visibility'
 import { useMeasurementStore } from '../measurements/measurement-store'
 import {
@@ -12,7 +12,7 @@ import { useLayerVisibilityStore } from '../layers/layer-visibility-store'
 import { registerMapStyleSync } from './map-style-sync'
 
 type UseMapMeasurementOverlaysOptions = {
-  readonly activeBasemapId: BasemapId
+  readonly activeBasemapId: RenderableMapId
   readonly mapRef: RefObject<maplibregl.Map | null>
   readonly mapReadyVersion: number
 }

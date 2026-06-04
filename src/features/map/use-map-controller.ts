@@ -1,6 +1,6 @@
 import type { RefObject } from 'react'
 import type maplibregl from 'maplibre-gl'
-import type { BasemapId } from '../../lib/map-config'
+import type { RenderableMapId } from '../../lib/map-config'
 import type { MapHealth } from '../../lib/map-health'
 import type { HoverCoordinate } from './use-map-instance'
 import { useMapInstance } from './use-map-instance'
@@ -15,12 +15,12 @@ import { useMapOverlays } from './use-map-overlays'
 import { useMapLocationTarget } from './use-map-location-target'
 
 type MapController = {
-  readonly activeBasemapId: BasemapId
+  readonly activeBasemapId: RenderableMapId
   readonly containerRef: RefObject<HTMLDivElement | null>
   readonly hoverCoordinate: HoverCoordinate
   readonly mapHealth: MapHealth
   readonly mapRef: RefObject<maplibregl.Map | null>
-  readonly handleBasemapChange: (nextBasemapId: BasemapId) => void
+  readonly handleBasemapChange: (nextBasemapId: RenderableMapId) => void
 }
 
 /**

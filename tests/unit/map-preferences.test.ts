@@ -15,7 +15,7 @@ describe('map preference persistence', () => {
     expect(readStoredBasemap()).toBe('opentopomap')
   })
 
-  it('does not restore an official map before that source is configured', () => {
+  it('does not restore official maps before local source configuration is known', () => {
     window.localStorage.setItem(BASEMAP_STORAGE_KEY, 'official_discovery_topo')
 
     expect(readStoredBasemap()).toBe('opentopomap')

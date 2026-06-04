@@ -1,7 +1,11 @@
 import { useCallback, useMemo, useState, type RefObject } from 'react'
 import type maplibregl from 'maplibre-gl'
 
-import { getBasemapById, type BasemapId } from '../../lib/map-config'
+import {
+  getBasemapById,
+  isOfficialMapId,
+  type RenderableMapId,
+} from '../../lib/map-config'
 import {
   MAP_TILE_CACHE_NAME,
   buildOfflineCoverageTileUrls,
@@ -19,7 +23,7 @@ type CacheStorageWindow = Window & {
 }
 
 type OfflineMapCoverageState = {
-  readonly basemapId: BasemapId
+  readonly basemapId: RenderableMapId
   readonly coverage: OfflineMapCoverage
 }
 
@@ -32,7 +36,7 @@ export type OfflineMapCoverageController = {
  * Provides an operator-triggered preflight check for visible offline tile coverage.
  */
 export function useOfflineMapCoverage(
-  activeBasemapId: BasemapId,
+  activeBasemapId: RenderableMapId,
   mapRef: RefObject<maplibregl.Map | null>,
 ): OfflineMapCoverageController {
   const uncheckedCoverage = useMemo(() => createUncheckedOfflineMapCoverage(), [])
@@ -46,6 +50,16 @@ export function useOfflineMapCoverage(
   const checkCurrentViewCoverage = useCallback(async () => {
     const map = mapRef.current
     const cacheStorage = (window as CacheStorageWindow).caches
+
+    if (isOfficialMapId(activeBasemapId)) {
+      setCoverageState({
+        basemapId: activeBasemapId,
+        coverage: createUnavailableOfflineMapCoverage(
+          'Official map offline coverage is planned separately from public tile cache checks.',
+        ),
+      })
+      return
+    }
 
     if (map === null) {
       setCoverageState({

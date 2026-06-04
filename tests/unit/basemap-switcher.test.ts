@@ -54,11 +54,48 @@ describe('BasemapSwitcher', () => {
     expect(onBasemapChange).toHaveBeenCalledWith('esri_topo')
   })
 
-  function renderSwitcher(onBasemapChange: (basemapId: never) => void = vi.fn()): void {
+  it('enables configured official maps and returns their map id on selection', () => {
+    const onBasemapChange = vi.fn()
+    renderSwitcher(onBasemapChange, [
+      {
+        id: 'official',
+        label: 'Official maps',
+        items: [
+          {
+            id: 'official_discovery_topo',
+            mapId: 'official_discovery_topo',
+            label: 'Discovery Topo',
+            description: 'Default official operational map.',
+            availability: 'available',
+          },
+        ],
+      },
+      {
+        id: 'public-fallback',
+        label: 'Public fallback maps',
+        items: [],
+      },
+    ])
+    click('[data-testid="basemap-menu-toggle"]')
+
+    const discovery = host.querySelector('[data-testid="basemap-btn-official_discovery_topo"]')
+    expect(discovery).toBeInstanceOf(HTMLButtonElement)
+    expect((discovery as HTMLButtonElement).disabled).toBe(false)
+
+    click('[data-testid="basemap-btn-official_discovery_topo"]')
+
+    expect(onBasemapChange).toHaveBeenCalledWith('official_discovery_topo')
+  })
+
+  function renderSwitcher(
+    onBasemapChange: (basemapId: never) => void = vi.fn(),
+    catalogueGroups?: never,
+  ): void {
     act(() => {
       root.render(
         React.createElement(BasemapSwitcher, {
           activeBasemapId: 'opentopomap',
+          catalogueGroups,
           onBasemapChange,
         }),
       )

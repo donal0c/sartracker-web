@@ -5,11 +5,11 @@ import { useHelicopterStore } from '../helicopters/helicopter-store'
 import { syncHelicopterOverlay } from '../helicopters/sync-helicopter-overlay'
 import { getEffectiveHelicopterSlotVisibility } from '../layers/effective-overlay-visibility'
 import { useLayerVisibilityStore } from '../layers/layer-visibility-store'
-import type { BasemapId } from '../../lib/map-config'
+import type { RenderableMapId } from '../../lib/map-config'
 import { registerMapStyleSync } from './map-style-sync'
 
 type UseMapHelicopterOverlaysOptions = {
-  readonly activeBasemapId: BasemapId
+  readonly activeBasemapId: RenderableMapId
   readonly mapRef: RefObject<maplibregl.Map | null>
   readonly mapReadyVersion: number
 }

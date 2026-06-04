@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 
-import { getBasemapById, type BasemapId } from '../../lib/map-config'
+import { getRenderableMapLabel, type RenderableMapId } from '../../lib/map-config'
 import {
   describeOfflineMapReadiness,
   type OfflineMapReadiness,
@@ -13,7 +13,7 @@ type ServiceWorkerNavigator = Navigator & {
 /**
  * Reads browser runtime support for viewed-tile offline map reuse.
  */
-export function useOfflineMapReadiness(activeBasemapId: BasemapId): OfflineMapReadiness {
+export function useOfflineMapReadiness(activeBasemapId: RenderableMapId): OfflineMapReadiness {
   const [readiness, setReadiness] = useState(() => readOfflineMapReadiness(activeBasemapId))
 
   useEffect(() => {
@@ -48,11 +48,11 @@ export function useOfflineMapReadiness(activeBasemapId: BasemapId): OfflineMapRe
 /**
  * Converts browser service-worker/cache support into operator-facing map readiness.
  */
-function readOfflineMapReadiness(activeBasemapId: BasemapId): OfflineMapReadiness {
+function readOfflineMapReadiness(activeBasemapId: RenderableMapId): OfflineMapReadiness {
   const serviceWorker = (navigator as ServiceWorkerNavigator).serviceWorker
 
   return describeOfflineMapReadiness({
-    basemapLabel: getBasemapById(activeBasemapId).label,
+    basemapLabel: getRenderableMapLabel(activeBasemapId),
     cacheStorageSupported: 'caches' in window,
     online: navigator.onLine,
     serviceWorkerReady: serviceWorker?.controller !== null && serviceWorker?.controller !== undefined,

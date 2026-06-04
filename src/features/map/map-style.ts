@@ -1,6 +1,12 @@
 import { type LngLatBoundsLike, type StyleSpecification } from 'maplibre-gl'
 
-import { getBasemapById, type BasemapId } from '../../lib/map-config'
+import {
+  getBasemapById,
+  getOfficialMapById,
+  isOfficialMapId,
+  type RenderableMapId,
+} from '../../lib/map-config'
+import { buildOfficialMapTileTemplate } from './official-map-export'
 
 export const IRELAND_MAX_BOUNDS: LngLatBoundsLike = [
   [-10.85, 51.25],
@@ -10,25 +16,30 @@ export const IRELAND_MAX_BOUNDS: LngLatBoundsLike = [
 /**
  * Builds the raster-only MapLibre style used by the v1 basemap shell.
  */
-export function createRasterStyle(basemapId: BasemapId): StyleSpecification {
-  const basemap = getBasemapById(basemapId)
+export function createRasterStyle(mapId: RenderableMapId): StyleSpecification {
+  const mapSource = isOfficialMapId(mapId)
+    ? {
+        ...getOfficialMapById(mapId),
+        tiles: [buildOfficialMapTileTemplate(mapId)] as const,
+      }
+    : getBasemapById(mapId)
 
   return {
     version: 8,
     sources: {
-      [basemap.id]: {
+      [mapSource.id]: {
         type: 'raster',
-        tiles: [...basemap.tiles],
-        tileSize: basemap.tileSize,
-        attribution: basemap.attribution,
-        maxzoom: basemap.maxZoom,
+        tiles: [...mapSource.tiles],
+        tileSize: mapSource.tileSize,
+        attribution: mapSource.attribution,
+        maxzoom: mapSource.maxZoom,
       },
     },
     layers: [
       {
-        id: `${basemap.id}-layer`,
+        id: `${mapSource.id}-layer`,
         type: 'raster',
-        source: basemap.id,
+        source: mapSource.id,
       },
     ],
   }

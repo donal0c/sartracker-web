@@ -13,7 +13,7 @@ import {
   createReadyMapHealth,
   type MapHealth,
 } from '../lib/map-health'
-import { getBasemapById, type BasemapId } from '../lib/map-config'
+import { getBasemapById, isOfficialMapId, type BasemapId, type RenderableMapId } from '../lib/map-config'
 import { persistBasemapPreference, readStoredBasemap } from '../lib/map-preferences'
 import {
   getEffectiveDrawingTypeVisibility,
@@ -101,6 +101,14 @@ export function LeafletFallbackMapView() {
   function handleBasemapChange(nextBasemapId: BasemapId): void {
     setMapHealth(createLoadingMapHealth(getBasemapById(nextBasemapId).label))
     setActiveBasemapId(nextBasemapId)
+  }
+
+  function handleRenderableMapChange(nextMapId: RenderableMapId): void {
+    if (isOfficialMapId(nextMapId)) {
+      return
+    }
+
+    handleBasemapChange(nextMapId)
   }
 
   useEffect(() => {
@@ -201,7 +209,7 @@ export function LeafletFallbackMapView() {
     <div className="relative h-full w-full overflow-hidden bg-stone-950">
       <BasemapSwitcher
         activeBasemapId={activeBasemapId}
-        onBasemapChange={handleBasemapChange}
+        onBasemapChange={handleRenderableMapChange}
       />
       <div
         className="h-full w-full"

@@ -29,4 +29,26 @@ describe('map style creation', () => {
       ],
     })
   })
+
+  it('builds an app-owned raster style for configured official MapGenie maps', () => {
+    expect(createRasterStyle('official_discovery_topo')).toEqual({
+      version: 8,
+      sources: {
+        official_discovery_topo: {
+          type: 'raster',
+          tiles: ['sartracker-official-map://tile/official_discovery_topo/{z}/{x}/{y}.png'],
+          tileSize: 256,
+          attribution: '© Tailte Éireann / MapGenie licensed data',
+          maxzoom: 19,
+        },
+      },
+      layers: [
+        {
+          id: 'official_discovery_topo-layer',
+          type: 'raster',
+          source: 'official_discovery_topo',
+        },
+      ],
+    })
+  })
 })

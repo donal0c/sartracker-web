@@ -1,12 +1,18 @@
 import { useState } from 'react'
 
-import { BASEMAPS, MAP_CATALOGUE_GROUPS, type BasemapId } from '../lib/map-config'
+import {
+  MAP_CATALOGUE_GROUPS,
+  getRenderableMapLabel,
+  type MapCatalogueGroup,
+  type RenderableMapId,
+} from '../lib/map-config'
 import type { OfflineMapCoverage } from '../features/map/offline-map-coverage'
 
 type BasemapSwitcherProps = {
-  readonly activeBasemapId: BasemapId
+  readonly activeBasemapId: RenderableMapId
+  readonly catalogueGroups?: readonly MapCatalogueGroup[]
   readonly coverage?: OfflineMapCoverage
-  readonly onBasemapChange: (basemapId: BasemapId) => void
+  readonly onBasemapChange: (basemapId: RenderableMapId) => void
   readonly onCheckCoverage?: () => void
 }
 
@@ -15,15 +21,15 @@ type BasemapSwitcherProps = {
  */
 export function BasemapSwitcher({
   activeBasemapId,
+  catalogueGroups = MAP_CATALOGUE_GROUPS,
   coverage,
   onBasemapChange,
   onCheckCoverage,
 }: BasemapSwitcherProps) {
   const [menuOpen, setMenuOpen] = useState(false)
-  const activeBasemap = BASEMAPS.find((basemap) => basemap.id === activeBasemapId) ?? BASEMAPS[0]!
   const checkingCoverage = coverage?.status === 'checking'
 
-  function handleBasemapSelection(basemapId: BasemapId): void {
+  function handleBasemapSelection(basemapId: RenderableMapId): void {
     onBasemapChange(basemapId)
     setMenuOpen(false)
   }
@@ -44,7 +50,7 @@ export function BasemapSwitcher({
           Maps
         </span>
         <span className="border border-stone-500 bg-[var(--sar-panel-raised)] px-2 py-1 text-[11px] font-bold text-stone-50">
-          {activeBasemap.label}
+          {getRenderableMapLabel(activeBasemapId)}
         </span>
         <span aria-hidden="true" className="text-stone-200">
           {menuOpen ? '^' : 'v'}
@@ -53,16 +59,16 @@ export function BasemapSwitcher({
 
       {menuOpen ? (
         <div className="mt-2 grid min-w-56 gap-2 border-t border-[var(--sar-line)] pt-2">
-          {MAP_CATALOGUE_GROUPS.map((group) => (
+          {catalogueGroups.map((group) => (
             <section data-testid={`map-catalogue-group-${group.id}`} key={group.id}>
               <h3 className="mb-1 px-1 text-[10px] font-black uppercase tracking-[0.16em] text-stone-300">
                 {group.label}
               </h3>
               <div className="grid gap-1.5">
                 {group.items.map((item) => {
-                  const basemapId = item.basemapId
-                  const isActive = basemapId === activeBasemapId
-                  const isAvailable = item.availability === 'available' && basemapId !== undefined
+                  const mapId = item.mapId
+                  const isActive = mapId === activeBasemapId
+                  const isAvailable = item.availability === 'available' && mapId !== undefined
 
                   return (
                     <button
@@ -77,8 +83,8 @@ export function BasemapSwitcher({
                       disabled={!isAvailable}
                       key={item.id}
                       onClick={() => {
-                        if (basemapId !== undefined) {
-                          handleBasemapSelection(basemapId)
+                        if (mapId !== undefined) {
+                          handleBasemapSelection(mapId)
                         }
                       }}
                       title={item.description}

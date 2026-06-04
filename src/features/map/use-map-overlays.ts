@@ -15,11 +15,11 @@ import { selectMissionTrackingSnapshot } from '../tracking/mission-active-tracki
 import { useTrackingStylePreferences } from '../tracking/tracking-style-store'
 import { buildTrackingInitialExtent } from '../tracking/tracking-viewport'
 import { useTrackingStore } from '../tracking/tracking-store'
-import type { BasemapId } from '../../lib/map-config'
+import type { RenderableMapId } from '../../lib/map-config'
 import { registerMapStyleSync } from './map-style-sync'
 
 type UseMapOverlaysOptions = {
-  readonly activeBasemapId: BasemapId
+  readonly activeBasemapId: RenderableMapId
   readonly mapRef: RefObject<maplibregl.Map | null>
   readonly mapReadyVersion: number
 }

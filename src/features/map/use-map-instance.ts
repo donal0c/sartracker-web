@@ -1,7 +1,12 @@
 import { useEffect, useMemo, useRef, useState, type RefObject } from 'react'
 import maplibregl from 'maplibre-gl'
 
-import { MAP_CENTER, MAP_DEFAULT_ZOOM, getBasemapById, type BasemapId } from '../../lib/map-config'
+import {
+  MAP_CENTER,
+  MAP_DEFAULT_ZOOM,
+  getRenderableMapLabel,
+  type RenderableMapId,
+} from '../../lib/map-config'
 import {
   createDegradedMapHealth,
   createLoadingMapHealth,
@@ -13,6 +18,7 @@ import { persistBasemapPreference, readStoredBasemap } from '../../lib/map-prefe
 import { createRasterStyle, IRELAND_MAX_BOUNDS } from './map-style'
 import { applyMapStylePreservingCamera } from './apply-map-style-preserving-camera'
 import { isTileErrorEvent } from './is-tile-error-event'
+import { registerOfficialMapProtocol } from './official-map-protocol'
 
 export type HoverCoordinate = {
   readonly latitude: number | null
@@ -25,13 +31,13 @@ const EMPTY_HOVER_COORDINATE: HoverCoordinate = {
 }
 
 export type MapInstanceController = {
-  readonly activeBasemapId: BasemapId
+  readonly activeBasemapId: RenderableMapId
   readonly containerRef: RefObject<HTMLDivElement | null>
   readonly hoverCoordinate: HoverCoordinate
   readonly mapHealth: MapHealth
   readonly mapRef: RefObject<maplibregl.Map | null>
   readonly mapReadyVersion: number
-  readonly handleBasemapChange: (nextBasemapId: BasemapId) => void
+  readonly handleBasemapChange: (nextBasemapId: RenderableMapId) => void
 }
 
 /**
@@ -44,25 +50,27 @@ export function useMapInstance(): MapInstanceController {
   const initialStyleRef = useRef(createRasterStyle(initialBasemapId))
   const containerRef = useRef<HTMLDivElement | null>(null)
   const mapRef = useRef<maplibregl.Map | null>(null)
-  const previousBasemapIdRef = useRef<BasemapId | null>(null)
-  const activeBasemapIdRef = useRef<BasemapId>(initialBasemapId)
+  const previousBasemapIdRef = useRef<RenderableMapId | null>(null)
+  const activeBasemapIdRef = useRef<RenderableMapId>(initialBasemapId)
   const tileHealthTrackerRef = useRef(createTileHealthTracker())
-  const [activeBasemapId, setActiveBasemapId] = useState<BasemapId>(initialBasemapId)
+  const [activeBasemapId, setActiveBasemapId] = useState<RenderableMapId>(initialBasemapId)
   const [mapReadyVersion, setMapReadyVersion] = useState(0)
   const [hoverCoordinate, setHoverCoordinate] = useState<HoverCoordinate>(EMPTY_HOVER_COORDINATE)
   const [mapHealth, setMapHealth] = useState<MapHealth>(() =>
-    createLoadingMapHealth(getBasemapById(initialBasemapId).label),
+    createLoadingMapHealth(getRenderableMapLabel(initialBasemapId)),
   )
   const style = useMemo(() => createRasterStyle(activeBasemapId), [activeBasemapId])
+
+  useEffect(() => registerOfficialMapProtocol(maplibregl), [])
 
   useEffect(() => {
     persistBasemapPreference(activeBasemapId)
   }, [activeBasemapId])
 
-  function handleBasemapChange(nextBasemapId: BasemapId) {
+  function handleBasemapChange(nextBasemapId: RenderableMapId) {
     activeBasemapIdRef.current = nextBasemapId
     tileHealthTrackerRef.current.reset()
-    setMapHealth(createLoadingMapHealth(getBasemapById(nextBasemapId).label))
+    setMapHealth(createLoadingMapHealth(getRenderableMapLabel(nextBasemapId)))
     setActiveBasemapId(nextBasemapId)
   }
 
@@ -93,12 +101,12 @@ export function useMapInstance(): MapInstanceController {
         if (current.status === 'degraded') {
           if (tracker.shouldRecover(Date.now())) {
             tracker.reset()
-            return createReadyMapHealth(getBasemapById(activeBasemapIdRef.current).label)
+            return createReadyMapHealth(getRenderableMapLabel(activeBasemapIdRef.current))
           }
           return current
         }
         tracker.reset()
-        return createReadyMapHealth(getBasemapById(activeBasemapIdRef.current).label)
+        return createReadyMapHealth(getRenderableMapLabel(activeBasemapIdRef.current))
       })
     })
     map.on('error', (event) => {
@@ -112,20 +120,20 @@ export function useMapInstance(): MapInstanceController {
       const decision = tileHealthTrackerRef.current.recordError(Date.now())
       if (decision === 'degrade') {
         setMapHealth(
-          createDegradedMapHealth(getBasemapById(activeBasemapIdRef.current).label),
+          createDegradedMapHealth(getRenderableMapLabel(activeBasemapIdRef.current)),
         )
       }
     })
     map.on('webglcontextlost', () => {
       setMapHealth(
         createDegradedMapHealth(
-          getBasemapById(activeBasemapIdRef.current).label,
+          getRenderableMapLabel(activeBasemapIdRef.current),
           'WebGL context lost',
         ),
       )
     })
     map.on('webglcontextrestored', () => {
-      setMapHealth(createLoadingMapHealth(getBasemapById(activeBasemapIdRef.current).label))
+      setMapHealth(createLoadingMapHealth(getRenderableMapLabel(activeBasemapIdRef.current)))
     })
     map.on('mousemove', (event) => {
       setHoverCoordinate({

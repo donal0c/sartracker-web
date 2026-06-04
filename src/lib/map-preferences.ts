@@ -1,4 +1,10 @@
-import { DEFAULT_BASEMAP_ID, getBasemapById, type BasemapId } from './map-config'
+import {
+  DEFAULT_BASEMAP_ID,
+  getBasemapById,
+  isOfficialMapId,
+  type BasemapId,
+  type RenderableMapId,
+} from './map-config'
 
 export const BASEMAP_STORAGE_KEY = 'sartracker.map.basemap'
 
@@ -17,6 +23,10 @@ export function readStoredBasemap(): BasemapId {
       return DEFAULT_BASEMAP_ID
     }
 
+    if (isOfficialMapId(candidate as RenderableMapId)) {
+      return DEFAULT_BASEMAP_ID
+    }
+
     return getBasemapById(candidate as BasemapId).id
   } catch {
     return DEFAULT_BASEMAP_ID
@@ -26,7 +36,7 @@ export function readStoredBasemap(): BasemapId {
 /**
  * Persists the operator's basemap preference when storage is available.
  */
-export function persistBasemapPreference(basemapId: BasemapId): void {
+export function persistBasemapPreference(basemapId: RenderableMapId): void {
   if (typeof window === 'undefined') {
     return
   }

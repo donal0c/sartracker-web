@@ -5,11 +5,11 @@ import { useGpxStore } from '../gpx/gpx-store'
 import { syncGpxOverlay } from '../gpx/sync-gpx-overlay'
 import { getEffectiveGpxTracksVisible } from '../layers/effective-overlay-visibility'
 import { useLayerVisibilityStore } from '../layers/layer-visibility-store'
-import type { BasemapId } from '../../lib/map-config'
+import type { RenderableMapId } from '../../lib/map-config'
 import { registerMapStyleSync } from './map-style-sync'
 
 type UseMapGpxOverlaysOptions = {
-  readonly activeBasemapId: BasemapId
+  readonly activeBasemapId: RenderableMapId
   readonly mapRef: RefObject<maplibregl.Map | null>
   readonly mapReadyVersion: number
 }

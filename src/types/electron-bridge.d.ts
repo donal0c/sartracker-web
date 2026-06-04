@@ -22,6 +22,11 @@ export type ElectronTraccarHttpResponse = {
   readonly body: string
 }
 
+export type ElectronOfficialMapTileResponse = {
+  readonly contentType: string
+  readonly bytesBase64: string
+}
+
 export type SarTrackerElectronBridge = {
   readonly loadAppSettings: () => Promise<AppSettings>
   readonly saveAppSettings: (input: AppSettingsDraft) => Promise<AppSettings>
@@ -53,6 +58,7 @@ export type SarTrackerElectronBridge = {
   }) => Promise<string>
   readonly openExternalPath: (path: string) => Promise<void>
   readonly openExternalUrl?: (url: string) => Promise<void>
+  readonly fetchOfficialMapTile?: (url: string) => Promise<ElectronOfficialMapTileResponse>
   readonly missionStore: MissionStore
   readonly layerCatalogStore: LayerCatalogStore
   readonly traccarHttpRequest: (

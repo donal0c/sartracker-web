@@ -11,6 +11,7 @@ export type OfficialMapId =
   | 'official_high_resolution_imagery'
 
 export type MapCatalogueItemId = BasemapId | OfficialMapId
+export type RenderableMapId = BasemapId | OfficialMapId
 export type MapCatalogueAvailability = 'available' | 'not_configured'
 export type MapCatalogueGroupId = 'official' | 'public-fallback'
 
@@ -28,13 +29,18 @@ export type MapCatalogueItem = {
   readonly label: string
   readonly description: string
   readonly availability: MapCatalogueAvailability
-  readonly basemapId?: BasemapId
+  readonly mapId?: RenderableMapId
 }
 
 export type MapCatalogueGroup = {
   readonly id: MapCatalogueGroupId
   readonly label: string
   readonly items: readonly MapCatalogueItem[]
+}
+
+export type OfficialMapAvailabilityInput = {
+  readonly status: string
+  readonly availableSources: readonly OfficialMapId[]
 }
 
 export const DEFAULT_BASEMAP_ID: BasemapId = 'opentopomap'
@@ -81,36 +87,58 @@ export const BASEMAPS: readonly Basemap[] = [
   },
 ] as const
 
+export const OFFICIAL_MAPS: readonly {
+  readonly id: OfficialMapId
+  readonly label: string
+  readonly description: string
+  readonly attribution: string
+  readonly tileSize: 256
+  readonly maxZoom: number
+}[] = [
+  {
+    id: 'official_discovery_topo',
+    label: 'Discovery Topo',
+    description: 'Default official operational map when licensed maps are configured.',
+    attribution: '© Tailte Éireann / MapGenie licensed data',
+    tileSize: 256,
+    maxZoom: 19,
+  },
+  {
+    id: 'official_premium_basemap',
+    label: 'Premium Basemap',
+    description: 'Clean official reference basemap.',
+    attribution: '© Tailte Éireann / MapGenie licensed data',
+    tileSize: 256,
+    maxZoom: 19,
+  },
+  {
+    id: 'official_aerial_imagery',
+    label: 'Aerial Imagery',
+    description: 'Official imagery reference layer.',
+    attribution: '© Tailte Éireann / MapGenie licensed data',
+    tileSize: 256,
+    maxZoom: 19,
+  },
+  {
+    id: 'official_high_resolution_imagery',
+    label: 'High-Resolution Imagery',
+    description: 'High-resolution imagery reference layer.',
+    attribution: '© Tailte Éireann / MapGenie licensed data',
+    tileSize: 256,
+    maxZoom: 19,
+  },
+] as const
+
 export const MAP_CATALOGUE_GROUPS: readonly MapCatalogueGroup[] = [
   {
     id: 'official',
     label: 'Official maps',
-    items: [
-      {
-        id: 'official_discovery_topo',
-        label: 'Discovery Topo',
-        description: 'Default official operational map when licensed maps are configured.',
-        availability: 'not_configured',
-      },
-      {
-        id: 'official_premium_basemap',
-        label: 'Premium Basemap',
-        description: 'Clean official reference basemap.',
-        availability: 'not_configured',
-      },
-      {
-        id: 'official_aerial_imagery',
-        label: 'Aerial Imagery',
-        description: 'Official imagery reference layer.',
-        availability: 'not_configured',
-      },
-      {
-        id: 'official_high_resolution_imagery',
-        label: 'High-Resolution Imagery',
-        description: 'High-resolution imagery reference layer.',
-        availability: 'not_configured',
-      },
-    ],
+    items: OFFICIAL_MAPS.map((map) => ({
+      id: map.id,
+      label: map.label,
+      description: map.description,
+      availability: 'not_configured' as const,
+    })),
   },
   {
     id: 'public-fallback',
@@ -120,7 +148,7 @@ export const MAP_CATALOGUE_GROUPS: readonly MapCatalogueGroup[] = [
       label: basemap.label,
       description: 'Public fallback map source.',
       availability: 'available' as const,
-      basemapId: basemap.id,
+      mapId: basemap.id,
     })),
   },
 ] as const
@@ -149,6 +177,66 @@ export function getBasemapById(id: BasemapId): Basemap {
   }
 
   return basemap
+}
+
+/**
+ * Resolves an official map identifier to its locked rendering metadata.
+ */
+export function getOfficialMapById(id: OfficialMapId): (typeof OFFICIAL_MAPS)[number] {
+  const map = OFFICIAL_MAPS.find((candidate) => candidate.id === id)
+
+  if (!map) {
+    throw new RangeError(`Unknown official map id: ${id}`)
+  }
+
+  return map
+}
+
+/**
+ * Resolves a renderable map identifier to its operator-facing label.
+ */
+export function getRenderableMapLabel(id: RenderableMapId): string {
+  if (isOfficialMapId(id)) {
+    return getOfficialMapById(id).label
+  }
+
+  return getBasemapById(id).label
+}
+
+/**
+ * Builds the map catalogue for the current safe official-map settings metadata.
+ */
+export function buildMapCatalogueGroups(
+  officialMaps?: OfficialMapAvailabilityInput,
+): readonly MapCatalogueGroup[] {
+  const configuredSources = new Set(
+    officialMaps?.status === 'configured' ? officialMaps.availableSources : [],
+  )
+
+  return [
+    {
+      id: 'official',
+      label: 'Official maps',
+      items: OFFICIAL_MAPS.map((map) => {
+        const available = configuredSources.has(map.id)
+        return {
+          id: map.id,
+          label: map.label,
+          description: map.description,
+          availability: available ? 'available' : 'not_configured',
+          ...(available ? { mapId: map.id } : {}),
+        }
+      }),
+    },
+    MAP_CATALOGUE_GROUPS[1]!,
+  ]
+}
+
+/**
+ * Returns true when a map id belongs to the licensed official catalogue.
+ */
+export function isOfficialMapId(id: RenderableMapId): id is OfficialMapId {
+  return id.startsWith('official_')
 }
 
 /**

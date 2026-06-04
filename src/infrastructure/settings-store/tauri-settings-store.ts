@@ -45,17 +45,17 @@ export async function loadAppSettings(): Promise<AppSettings> {
  */
 export async function saveAppSettings(input: AppSettingsDraft): Promise<AppSettings> {
   if (isTauriRuntimeAvailable()) {
-    return invoke<AppSettings>('save_app_settings', { input })
+    return notifySettingsUpdated(await invoke<AppSettings>('save_app_settings', { input }))
   }
 
   if (isElectronRuntimeAvailable()) {
-    return getElectronSettingsBridge().saveAppSettings(input)
+    return notifySettingsUpdated(await getElectronSettingsBridge().saveAppSettings(input))
   }
 
   const next = toBrowserSettings(input)
   updateBrowserSecret(input)
   window.localStorage.setItem(BROWSER_SETTINGS_STORAGE_KEY, JSON.stringify(withoutBrowserSecretState(next)))
-  return next
+  return notifySettingsUpdated(next)
 }
 
 /**
@@ -178,6 +178,13 @@ function resolveBrowserTrackingDisabledReason(input: {
   }
 
   return undefined
+}
+
+function notifySettingsUpdated(settings: AppSettings): AppSettings {
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new Event('sartracker:settings-updated'))
+  }
+  return settings
 }
 
 function createBrowserSettingsValidationContext(): SettingsValidationContext | undefined {

@@ -3,6 +3,7 @@ import {
   DEFAULT_BASEMAP_ID,
   DEFAULT_OFFICIAL_BASEMAP_ID,
   MAP_CATALOGUE_GROUPS,
+  buildMapCatalogueGroups,
   buildTileUrl,
   getDefaultBasemapIdForCatalogue,
   getBasemapById,
@@ -48,6 +49,25 @@ describe('map basemap catalogue', () => {
 
   it('falls back to OpenTopoMap when official maps are not configured', () => {
     expect(getDefaultBasemapIdForCatalogue('public-fallback')).toBe(DEFAULT_BASEMAP_ID)
+  })
+
+  it('marks configured official sources available from safe settings metadata', () => {
+    const groups = buildMapCatalogueGroups({
+      sourceType: 'mapgenie_file',
+      sourcePath: '/private/maps/mountainrescue_org.txt',
+      status: 'configured',
+      username: 'mountainrescue_org',
+      availableSources: ['official_discovery_topo', 'official_aerial_imagery'],
+      serviceCount: 2,
+      message: 'Official Discovery Topo source configured.',
+    })
+
+    expect(groups[0]?.items.map((item) => [item.id, item.availability, item.mapId])).toEqual([
+      ['official_discovery_topo', 'available', 'official_discovery_topo'],
+      ['official_premium_basemap', 'not_configured', undefined],
+      ['official_aerial_imagery', 'available', 'official_aerial_imagery'],
+      ['official_high_resolution_imagery', 'not_configured', undefined],
+    ])
   })
 
   it('builds tile urls with the correct placeholder order', () => {

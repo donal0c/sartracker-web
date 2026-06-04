@@ -6,6 +6,7 @@ const { createElectronSettingsStore } = require('./settings-store.cjs')
 const { createElectronRuntimeFiles } = require('./runtime-files.cjs')
 const { createElectronMissionStore } = require('./mission-store.cjs')
 const { createElectronFileSystem } = require('./file-system.cjs')
+const { createElectronOfficialMapProxy } = require('./official-map-proxy.cjs')
 
 const TRACCAR_REQUEST_CHANNEL = 'sartracker:traccar-http-request'
 const LOAD_SETTINGS_CHANNEL = 'sartracker:load-app-settings'
@@ -22,6 +23,7 @@ const LIST_GPX_DIRECTORY_FILES_CHANNEL = 'sartracker:list-gpx-directory-files'
 const INGEST_MARKER_ATTACHMENT_CHANNEL = 'sartracker:ingest-marker-attachment'
 const OPEN_EXTERNAL_PATH_CHANNEL = 'sartracker:open-external-path'
 const OPEN_EXTERNAL_URL_CHANNEL = 'sartracker:open-external-url'
+const FETCH_OFFICIAL_MAP_TILE_CHANNEL = 'sartracker:fetch-official-map-tile'
 
 const MISSION_STORE_CHANNELS = {
   info: 'sartracker:mission-store:info',
@@ -64,6 +66,11 @@ const LAYER_CATALOG_STORE_CHANNELS = {
   listMetadata: 'sartracker:layer-catalog-store:list-metadata',
   upsertMetadata: 'sartracker:layer-catalog-store:upsert-metadata',
   clearMetadata: 'sartracker:layer-catalog-store:clear-metadata',
+}
+
+const validationUserDataPath = process.env.SARTRACKER_ELECTRON_USER_DATA_PATH
+if (validationUserDataPath !== undefined && validationUserDataPath.trim() !== '') {
+  app.setPath('userData', path.resolve(validationUserDataPath))
 }
 
 /**
@@ -148,7 +155,7 @@ async function handleTraccarHttpRequest(event, input) {
 /**
  * Registers the narrow Electron IPC surface used by the renderer.
  */
-function registerIpcHandlers(settingsStore, runtimeFiles, missionStore, fileSystem) {
+function registerIpcHandlers(settingsStore, runtimeFiles, missionStore, fileSystem, officialMapProxy) {
   ipcMain.handle(TRACCAR_REQUEST_CHANNEL, handleTraccarHttpRequest)
   ipcMain.handle(LOAD_SETTINGS_CHANNEL, (event) => {
     validateIpcSender(event)
@@ -224,6 +231,13 @@ function registerIpcHandlers(settingsStore, runtimeFiles, missionStore, fileSyst
       throw new Error('URL scheme must be http:// or https://')
     }
     return shell.openExternal(normalized)
+  })
+  ipcMain.handle(FETCH_OFFICIAL_MAP_TILE_CHANNEL, (event, inputUrl) => {
+    validateIpcSender(event)
+    if (typeof inputUrl !== 'string') {
+      throw new Error('Official map tile URL must be a string.')
+    }
+    return officialMapProxy.fetchOfficialMapTile(inputUrl)
   })
   registerMissionStoreHandlers(missionStore)
   registerLayerCatalogStoreHandlers(missionStore)
@@ -371,7 +385,11 @@ app.whenReady().then(async () => {
     shell,
     getBrowserWindow: () => BrowserWindow.getFocusedWindow(),
   })
-  registerIpcHandlers(settingsStore, runtimeFiles, missionStore, fileSystem)
+  const officialMapProxy = createElectronOfficialMapProxy({
+    fetch,
+    loadSettings: settingsStore.loadAppSettings,
+  })
+  registerIpcHandlers(settingsStore, runtimeFiles, missionStore, fileSystem, officialMapProxy)
   await createWindow()
 })
 

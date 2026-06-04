@@ -160,6 +160,21 @@ describe('browser settings store', () => {
     expect(window.localStorage.getItem('sartracker:browser-settings')).toBeNull()
   })
 
+  it('announces settings saves so map source selectors can refresh after local configuration changes', async () => {
+    const onSettingsUpdated = vi.fn()
+    window.addEventListener('sartracker:settings-updated', onSettingsUpdated)
+    const draft = createSettingsDraft(DEFAULT_APP_SETTINGS)
+
+    try {
+      await saveAppSettings(draft)
+
+      expect(onSettingsUpdated).toHaveBeenCalledOnce()
+    } finally {
+      window.removeEventListener('sartracker:settings-updated', onSettingsUpdated)
+      window.localStorage.clear()
+    }
+  })
+
   it('persists configured weather links in browser validation settings', async () => {
     window.localStorage.clear()
     const draft = createSettingsDraft(DEFAULT_APP_SETTINGS)
