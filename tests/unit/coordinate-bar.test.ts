@@ -23,7 +23,12 @@ describe('CoordinateBar', () => {
 
     expect(text('[data-testid="coordinate-display"]')).toContain('52.274681')
     expect(text('[data-testid="coordinate-display"]')).toContain('52°16')
+    expect(query('[data-testid="coords-wgs84"]')).not.toBeNull()
+    expect(text('[data-testid="coords-wgs84"]')).toContain('52.274681')
+    expect(query('[data-testid="coords-grid"]')).not.toBeNull()
+    expect(text('[data-testid="coords-grid"]')).toContain('Q')
     expect(query('[data-testid="coords-dms"]')).not.toBeNull()
+    expect(text('[data-testid="coords-dms"]')).toContain('°')
     expect(text('[data-testid="coordinate-display"]')).not.toContain('Map CRS')
     expect(text('[data-testid="coordinate-display"]')).not.toContain('Work CRS')
     expect(query('[data-testid="open-coordinate-converter"]')).not.toBeNull()
