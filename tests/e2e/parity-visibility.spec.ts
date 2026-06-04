@@ -66,10 +66,103 @@ async function readMapFilterState(page: Page) {
       map.getLayer(layerId) === undefined ? null : (map.getFilter(layerId) ?? null)
 
     return {
+      deviceCircle: readFilter('tracking-devices-circle'),
+      deviceLabel: readFilter('tracking-devices-label'),
+      breadcrumbLine: readFilter('tracking-breadcrumbs-line'),
       drawingLine: readFilter('mission-drawings-line'),
       drawingLabel: readFilter('mission-drawings-label'),
       clueMarkers: readFilter('mission-markers-symbol-clue'),
     }
+  })
+}
+
+async function resyncTrackingSnapshot(page: Page): Promise<void> {
+  await page.evaluate(async () => {
+    const { applyTrackingSnapshot } = await import('/src/features/tracking/tracking-store.ts')
+    applyTrackingSnapshot({
+      devices: [
+        {
+          device_id: 'alpha',
+          name: 'Alpha Team',
+          status: 'online',
+          last_seen: '2026-04-09T16:01:00.000Z',
+          unique_id: null,
+          category: null,
+        },
+        {
+          device_id: 'bravo',
+          name: 'Bravo Team',
+          status: 'online',
+          last_seen: '2026-04-09T15:51:00.000Z',
+          unique_id: null,
+          category: null,
+        },
+      ],
+      positions: [
+        {
+          id: 'pos-alpha-resync',
+          device_id: 'alpha',
+          lat: 51.951,
+          lon: -9.851,
+          altitude: null,
+          speed: null,
+          battery: null,
+          accuracy: null,
+          timestamp: '2026-04-09T16:01:00.000Z',
+          source: null,
+          data_origin: 'live' as const,
+          cache_age_seconds: null,
+          device_cache_stale: false,
+        },
+        {
+          id: 'pos-bravo-resync',
+          device_id: 'bravo',
+          lat: 51.961,
+          lon: -9.841,
+          altitude: null,
+          speed: null,
+          battery: null,
+          accuracy: null,
+          timestamp: '2026-04-09T15:51:00.000Z',
+          source: null,
+          data_origin: 'live' as const,
+          cache_age_seconds: null,
+          device_cache_stale: false,
+        },
+      ],
+      breadcrumbs: [
+        {
+          id: 'bc-alpha-resync',
+          device_id: 'alpha',
+          lat: 51.946,
+          lon: -9.856,
+          altitude: null,
+          speed: null,
+          battery: null,
+          accuracy: null,
+          timestamp: '2026-04-09T15:56:00.000Z',
+          source: null,
+          data_origin: 'live' as const,
+          cache_age_seconds: null,
+          device_cache_stale: false,
+        },
+        {
+          id: 'bc-bravo-resync',
+          device_id: 'bravo',
+          lat: 51.956,
+          lon: -9.846,
+          altitude: null,
+          speed: null,
+          battery: null,
+          accuracy: null,
+          timestamp: '2026-04-09T15:46:00.000Z',
+          source: null,
+          data_origin: 'live' as const,
+          cache_age_seconds: null,
+          device_cache_stale: false,
+        },
+      ],
+    })
   })
 }
 
@@ -577,5 +670,72 @@ test.describe('Batch 1: Critical visibility parity (LPV-240 to LPV-247)', () => 
     await lineToggle.click()
     const state5 = await readVisibilityState(page)
     expect(state5.drawingTypeVisibility.line).toBe(false)
+  })
+
+  test('DON-85: hidden layers stay hidden after catalog refresh and tracking resync', async ({
+    page,
+  }) => {
+    const trackingGroupToggle = page.getByTestId('layer-visibility-group-tracking')
+    const mapToolsGroupToggle = page.getByTestId('layer-visibility-group-map-tools')
+
+    await expect(trackingGroupToggle).toBeVisible({ timeout: 10000 })
+    await expect(mapToolsGroupToggle).toBeVisible({ timeout: 10000 })
+    await trackingGroupToggle.click()
+    await mapToolsGroupToggle.click()
+
+    await expect
+      .poll(async () => {
+        const state = await readVisibilityState(page)
+        return {
+          devices: state.hiddenDeviceIds.sort(),
+          mapTools: state.groupVisibility.mapTools,
+        }
+      }, { timeout: 5_000 })
+      .toEqual({ devices: ['alpha', 'bravo'], mapTools: false })
+    await expect
+      .poll(async () => JSON.stringify(await readMapFilterState(page)), { timeout: 5_000 })
+      .toContain('__hidden__')
+    await expect
+      .poll(async () => JSON.stringify((await readMapFilterState(page)).deviceCircle), {
+        timeout: 5_000,
+      })
+      .toContain('bravo')
+
+    await page.getByTestId('layer-refresh-btn').click()
+    await resyncTrackingSnapshot(page)
+
+    await expect
+      .poll(async () => {
+        const state = await readVisibilityState(page)
+        const filters = await readMapFilterState(page)
+        return {
+          devices: state.hiddenDeviceIds.sort(),
+          mapTools: state.groupVisibility.mapTools,
+          deviceCircle: JSON.stringify(filters.deviceCircle),
+          deviceLabel: JSON.stringify(filters.deviceLabel),
+          breadcrumbLine: JSON.stringify(filters.breadcrumbLine),
+          drawingLabel: JSON.stringify(filters.drawingLabel),
+          clueMarkers: JSON.stringify(filters.clueMarkers),
+        }
+      }, { timeout: 5_000 })
+      .toMatchObject({
+        devices: ['alpha', 'bravo'],
+        mapTools: false,
+        deviceCircle: expect.stringContaining('bravo'),
+        deviceLabel: expect.stringContaining('bravo'),
+        breadcrumbLine: expect.stringContaining('__hidden__'),
+        drawingLabel: expect.stringContaining('__hidden__'),
+        clueMarkers: expect.stringContaining('__hidden__'),
+      })
+
+    await page.waitForTimeout(3500)
+
+    const finalState = await readVisibilityState(page)
+    const finalFilters = await readMapFilterState(page)
+    expect(finalState.hiddenDeviceIds.sort()).toEqual(['alpha', 'bravo'])
+    expect(finalState.groupVisibility.mapTools).toBe(false)
+    expect(JSON.stringify(finalFilters.deviceCircle)).toContain('bravo')
+    expect(JSON.stringify(finalFilters.drawingLabel)).toContain('__hidden__')
+    expect(JSON.stringify(finalFilters.clueMarkers)).toContain('__hidden__')
   })
 })
