@@ -30,6 +30,30 @@ test.describe('M19 devices workspace', () => {
     await expect(page.getByTestId('coordinate-target-indicator')).toContainText('Alpha Team')
   })
 
+  test('keeps passive row clicks inside Devices instead of opening marker tools', async ({
+    page,
+  }) => {
+    await page.getByTestId('open-devices-workspace').click()
+    await expect(page.getByTestId('devices-workspace')).toBeVisible()
+    await expect(page.getByTestId('devices-inspector-title')).toContainText('Alpha Team')
+
+    await page.getByTestId('device-status-bravo').click()
+    await page.getByTestId('device-last-seen-bravo').click()
+    await page.getByTestId('device-source-bravo').click()
+
+    await expect(page.getByTestId('devices-workspace')).toBeVisible()
+    await expect(page.getByTestId('devices-inspector-title')).toContainText('Alpha Team')
+    await expect(page.getByTestId('tracking-status')).toBeVisible()
+    await expect(page.getByTestId('marker-at-grid-panel')).toBeHidden()
+
+    await page.getByTestId('device-zoom-alpha').click()
+
+    await expect(page.getByTestId('devices-workspace')).toBeVisible()
+    await expect(page.getByTestId('tracking-status')).toBeVisible()
+    await expect(page.getByTestId('marker-at-grid-panel')).toBeHidden()
+    await expect(page.getByTestId('coordinate-target-indicator')).toContainText('Alpha Team')
+  })
+
   test('toggles per-device visibility from the workspace', async ({ page }) => {
     await page.getByTestId('open-devices-workspace').click()
     await expect(page.getByTestId('device-visibility-bravo')).toBeChecked()
