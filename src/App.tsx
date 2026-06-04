@@ -391,7 +391,7 @@ export function CommandMast(props: {
 
   return (
     <header className="sar-global-mast flex-shrink-0" data-testid="command-mast">
-      <div className="grid min-h-[112px] w-full grid-cols-[330px_176px_112px_112px_64px_64px_160px_92px_92px_92px_92px_92px] items-stretch overflow-hidden">
+      <div className="grid min-h-[112px] w-full grid-cols-[320px_164px_118px_118px_76px_64px_148px_repeat(5,minmax(0,1fr))] items-stretch overflow-hidden">
         <div className="flex min-w-0 items-center gap-4 border-r border-[var(--sar-line)] px-4">
           <div className="relative flex h-24 w-28 flex-shrink-0 items-center justify-center overflow-hidden border border-stone-200/40 bg-white">
             <img
@@ -457,10 +457,10 @@ export function CommandMast(props: {
           })}
         />
 
-        <div className="flex min-w-0 flex-col justify-center border-l border-r border-[var(--sar-line)] px-4">
+        <div className="flex min-w-0 flex-col justify-center border-l border-r border-[var(--sar-line)] px-3">
           <p className="sar-section-label">System Status</p>
           <p
-            className={`mt-1 font-mono text-sm font-black uppercase tracking-[0.14em] ${
+            className={`mt-1 font-mono text-sm font-black uppercase tracking-[0.08em] ${
               systemStatus.tone === 'success' ? 'text-emerald-300' : 'text-amber-300'
             }`}
             data-testid="system-status-value"
