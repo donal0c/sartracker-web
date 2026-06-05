@@ -193,13 +193,15 @@ This is the default order when the user says “work on the next task.”
 | Done | Add local official map source import and configuration for Electron | Track B / Maps / Local config | `DON-80` | Done 2026-06-03. Settings and Electron persistence can point at the local MapGenie source file while storing only safe metadata (status, username, available source IDs, service count, message). Credentials/file contents stay out of app settings, diagnostics, source control, and Linear. |
 | Done | Prototype local MapGenie rendering via ArcGIS export | Track B / Maps / Rendering | `DON-79` | Done 2026-06-04. Electron/local runtime renders Discovery Topo and Aerial Imagery via ArcGIS export over Carrauntoohil/Reeks from local configured MapGenie source; credentials stay out of URLs/settings/diagnostics/source control. |
 | Done | Plan official-map offline package path | Track B / Maps / Offline | `DON-81` / `DON-7` | Done 2026-06-05. Decision: local official-map library after app install, first via prepared MBTiles-style package for the standard operating area; hosted web remains public-map-only. See `docs/official-map-offline-strategy.md`. |
-| 3 | Spike standard-region Discovery conversion to local MBTiles package | Track B / Maps / Offline | `DON-103` / `DON-7` | Next map task. Convert a representative standard region from local licensed Discovery sources, measure package size/conversion time/tile reads, and confirm whether MBTiles is viable. |
-| 4 | Add cross-platform Electron official map package registry | Track B / Maps / Electron | `DON-104` / `DON-7` | Register local packages with safe metadata only across Linux, macOS, and Windows. |
-| 5 | Serve local official map package tiles through Electron map proxy | Track B / Maps / Electron | `DON-105` / `DON-7` | Extend the existing official-map protocol/proxy to read local package tiles before online MapGenie fallback. |
-| 6 | Add official offline map readiness UI and diagnostics | Track B / Maps / UI | `DON-106` / `DON-7` | Show operator states such as ready, outside offline area, package missing/unreadable, online source configured, and public fallback only. |
-| 7 | Validate packaged Electron official maps offline cross-platform | Track B / Maps / Release | `DON-107` / `DON-7` | Prove Linux first, then macOS and Windows packaged Electron with network disabled. |
-| 8 | Measure full-national Discovery package size/performance | Track B / Maps / Offline | `DON-108` / `DON-7` | Decide whether full-national install/import is supported, warning-only, or deferred. |
-| 9 | Classify relief and slope rasters as optional map overlays | Track B / Maps / Overlays | `DON-82` | Defer until the primary official offline basemap path is proven. Treat `relief_byte.tif` and `Slope_30plus.tif` as optional overlays, not primary basemaps. |
+| Done | Spike standard-region Discovery conversion to local MBTiles package | Track B / Maps / Offline | `DON-103` / `DON-7` | Done 2026-06-05. Real Reeks / west Kerry z9-z16 PNG MBTiles package generated outside the repo from the licensed Discovery GeoTIFF: 1.1 GB, 31,729 tiles, 447.83 s initial conversion + 450.93 s overviews, fast SQLite tile-read validation. MBTiles is viable for v1. |
+| 4 | Fix Linux Electron secret-store launch and diagnostics runtime label | Track B / Electron | `DON-58` / `DON-35` | Next sequenced task after `DON-103`; clears desktop runtime confidence before building more offline-map Electron surface. |
+| 5 | Smoke packaged Linux filesystem workflows | Track B / Electron | `DON-59` / `DON-35` | Prove packaged filesystem flows before the map package registry depends on local file paths. |
+| 6 | Add cross-platform Electron official map package registry | Track B / Maps / Electron | `DON-104` / `DON-7` | Register local packages with safe metadata only across Linux, macOS, and Windows. |
+| 7 | Serve local official map package tiles through Electron map proxy | Track B / Maps / Electron | `DON-105` / `DON-7` | Extend the existing official-map protocol/proxy to read local package tiles before online MapGenie fallback. |
+| 8 | Add official offline map readiness UI and diagnostics | Track B / Maps / UI | `DON-106` / `DON-7` | Show operator states such as ready, outside offline area, package missing/unreadable, online source configured, and public fallback only. |
+| 9 | Validate packaged Electron official maps offline cross-platform | Track B / Maps / Release | `DON-107` / `DON-7` | Prove Linux first, then macOS and Windows packaged Electron with network disabled. |
+| 10 | Measure full-national Discovery package size/performance | Track B / Maps / Offline | `DON-108` / `DON-7` | Decide whether full-national install/import is supported, warning-only, or deferred. |
+| 11 | Classify relief and slope rasters as optional map overlays | Track B / Maps / Overlays | `DON-82` | Defer until the primary official offline basemap path is proven. Treat `relief_byte.tif` and `Slope_30plus.tif` as optional overlays, not primary basemaps. |
 | 5 | S8: Linux runtime reliability path | Track B / Runtime | `DON-25` | In progress 2026-05-18. Electron hardening continues in parallel: clear `DON-58` and `DON-59` before sending full Electron builds wider. |
 | 6 | B7: Pre-tester smoke + CI launch-smoke for cross-platform Tauri builds | Track B / Release / Verification | `DON-24` | Superseded as the immediate blocker by S8 for the Linux black-map investigation. CI launch smoke is green on GitHub runners, but real tester machines still black-map under Tauri/WebKitGTK. Keep B7 open for release-smoke process work. |
 | 7 | B5: Triage first web and Tauri beta feedback | Track A / Track B | `sartracker-web-s8m` / `DON-11` | After deployed-web validation and cross-platform beta setup produce feedback |
@@ -1218,8 +1220,10 @@ Work sequence:
 - `DON-80` — local official map source import/configuration for Electron. Done 2026-06-03.
 - `DON-79` — local MapGenie rendering via ArcGIS export. Done 2026-06-04.
 - `DON-81` / `DON-7` — official-map offline package strategy. Done 2026-06-05.
-- `DON-103` — standard-region Discovery conversion to local MBTiles package. Next.
-- `DON-104` — cross-platform Electron official map package registry.
+- `DON-103` — standard-region Discovery conversion to local MBTiles package. Done 2026-06-05; MBTiles is viable for v1. See `docs/official-map-mbtiles-spike-don-103.md`.
+- `DON-58` — next sequenced blocker in `S2 Electron`: fix Linux Electron secret-store launch and diagnostics runtime label.
+- `DON-59` — next `S2 Electron` blocker after `DON-58`: smoke packaged Linux filesystem workflows.
+- `DON-104` — cross-platform Electron official map package registry after `DON-58`/`DON-59`.
 - `DON-105` — local official map package tile serving through Electron proxy.
 - `DON-106` — official offline map readiness UI and diagnostics.
 - `DON-107` — packaged Electron official offline map validation on Linux, macOS, and Windows.

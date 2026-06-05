@@ -42,12 +42,14 @@ Reasons:
 
 PMTiles remains worth evaluating later. It has strong MapLibre support through a protocol plugin and is attractive as a single-file static archive, but in this app it would still need careful Electron local-file/range access handling. MBTiles is the lower-risk v1 because the app already owns an Electron SQLite boundary.
 
+`DON-103` validated the MBTiles path with a real standard-region Discovery export. A broad Reeks / west Kerry package at z9-z16 was generated from the local Discovery GeoTIFF outside the repo; the output was 1.1 GB, contained 31,729 PNG tiles, opened as EPSG:3857, and passed direct SQLite tile-read validation. See `docs/official-map-mbtiles-spike-don-103.md`.
+
 Relevant references:
 
 - MapLibre raster sources use raster tile URL templates: https://maplibre.org/maplibre-style-spec/sources/
 - MapLibre has an example raster tile source using `{z}/{x}/{y}` tiles: https://maplibre.org/maplibre-gl-js/docs/examples/add-a-raster-tile-source/
 - MBTiles stores tiled map data in SQLite and supports raster tiles: https://github.com/mapbox/mbtiles-spec
-- GDAL can create/read raster MBTiles, but GDAL tooling is not currently installed on this machine: https://gdal.org/en/stable/drivers/raster/mbtiles.html
+- GDAL can create/read raster MBTiles. This spike used QGIS LTR's bundled GDAL 3.3.2 on macOS: https://gdal.org/en/stable/drivers/raster/mbtiles.html
 - PMTiles has MapLibre protocol support and can support raster archives: https://docs.protomaps.com/pmtiles/maplibre
 
 ## Operator Workflow
@@ -85,12 +87,11 @@ The package format should be platform-neutral. MBTiles/SQLite fits that requirem
 
 ## Follow-Up Tasks
 
-1. Spike converting a standard Discovery region to MBTiles.
-2. Add an Electron local official-map package registry.
-3. Extend the official-map proxy to serve local package tiles before online MapGenie exports.
-4. Add operator-facing official offline readiness and area coverage states.
-5. Validate a packaged Electron build fully offline against the local map package.
-6. Separately measure full-national package size and performance before deciding whether it is a supported install option.
+1. Add an Electron local official-map package registry.
+2. Extend the official-map proxy to serve local package tiles before online MapGenie exports.
+3. Add operator-facing official offline readiness and area coverage states.
+4. Validate a packaged Electron build fully offline against the local map package.
+5. Separately measure full-national package size and performance before deciding whether it is a supported install option.
 
 ## Open Questions
 
