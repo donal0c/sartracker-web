@@ -1,4 +1,4 @@
-const { app, BrowserWindow, dialog, ipcMain, safeStorage, shell } = require('electron')
+const { app, BrowserWindow, dialog, ipcMain, safeStorage, session, shell } = require('electron')
 const path = require('node:path')
 const { pathToFileURL } = require('node:url')
 
@@ -138,6 +138,22 @@ function addValidationQueryIfRequested(url) {
   if (process.env.SARTRACKER_ELECTRON_VALIDATION_HARNESS === '1') {
     url.searchParams.set('missionHarness', '1')
   }
+}
+
+/**
+ * Blocks renderer HTTP/S egress for packaged official-map offline validation.
+ */
+function installValidationNetworkBlock() {
+  if (process.env.SARTRACKER_ELECTRON_BLOCK_NETWORK !== '1') {
+    return
+  }
+
+  session.defaultSession.webRequest.onBeforeRequest(
+    { urls: ['http://*/*', 'https://*/*'] },
+    (_details, callback) => {
+      callback({ cancel: true })
+    },
+  )
 }
 
 /**
@@ -379,6 +395,7 @@ function normalizeTimeout(value) {
 }
 
 app.whenReady().then(async () => {
+  installValidationNetworkBlock()
   const settingsStore = createElectronSettingsStore({
     userDataPath: app.getPath('userData'),
     safeStorage,

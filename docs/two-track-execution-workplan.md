@@ -199,8 +199,8 @@ This is the default order when the user says “work on the next task.”
 | Done | Add cross-platform Electron official map package registry | Track B / Maps / Electron | `DON-104` / `DON-7` | Done 2026-06-05; Electron settings validates local MBTiles packages, records safe package metadata, and diagnostics omit package paths. |
 | Done | Serve local official map package tiles through Electron map proxy | Track B / Maps / Electron | `DON-105` / `DON-7` | Done 2026-06-05; the existing official-map protocol now serves local MBTiles tiles before online MapGenie fallback, with visible missing/unreadable package errors. |
 | Done | Add official offline map readiness UI and diagnostics | Track B / Maps / UI | `DON-106` / `DON-7` | Done 2026-06-05; map/status UI, Settings, diagnostics, manual, and browser validation cover ready, outside-area, missing, unreadable, online-source, unavailable, and public-fallback states. |
-| 9 | Validate packaged Electron official maps offline cross-platform | Track B / Maps / Release | `DON-107` / `DON-7` | Prove Linux first, then macOS and Windows packaged Electron with network disabled. |
-| 10 | Measure full-national Discovery package size/performance | Track B / Maps / Offline | `DON-108` / `DON-7` | Decide whether full-national install/import is supported, warning-only, or deferred. |
+| Done | Validate packaged Electron official maps offline cross-platform | Track B / Maps / Release | `DON-107` / `DON-7` | Done 2026-06-05; macOS and Dell Ubuntu packaged smokes passed with network blocked, official package tiles rendered from local MBTiles, readiness/diagnostics validated, and Windows remains an explicit unverified gap until a Windows machine is available. |
+| 10 | Measure full-national Discovery package size/performance | Track B / Maps / Offline | `DON-108` / `DON-7` | Next map-lane task; decide whether full-national install/import is supported, warning-only, or deferred. |
 | 11 | Classify relief and slope rasters as optional map overlays | Track B / Maps / Overlays | `DON-82` | Defer until the primary official offline basemap path is proven. Treat `relief_byte.tif` and `Slope_30plus.tif` as optional overlays, not primary basemaps. |
 | 5 | S8: Linux runtime reliability path | Track B / Runtime | `DON-25` | In progress 2026-05-18. Electron hardening continues in parallel: clear `DON-58` and `DON-59` before sending full Electron builds wider. |
 | 6 | B7: Pre-tester smoke + CI launch-smoke for cross-platform Tauri builds | Track B / Release / Verification | `DON-24` | Superseded as the immediate blocker by S8 for the Linux black-map investigation. CI launch smoke is green on GitHub runners, but real tester machines still black-map under Tauri/WebKitGTK. Keep B7 open for release-smoke process work. |
@@ -1257,7 +1257,7 @@ Work sequence:
 - `DON-104` — cross-platform Electron official map package registry after `DON-58`/`DON-59`.
 - `DON-105` — local official map package tile serving through Electron proxy.
 - `DON-106` — official offline map readiness UI and diagnostics.
-- `DON-107` — packaged Electron official offline map validation on Linux, macOS, and Windows.
+- `DON-107` — packaged Electron official offline map validation done for macOS and Dell Ubuntu Linux; Windows is the documented unverified gap until a Windows machine is available.
 - `DON-108` — full-national Discovery package size/performance measurement before support decision.
 - `DON-82` — relief/slope overlays, after the primary official offline basemap path is proven.
 

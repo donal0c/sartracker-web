@@ -12,6 +12,7 @@
   ],
   "asar": true,
   "npmRebuild": true,
+  "buildDependenciesFromSource": true,
   "linux": {
     "target": [
       "AppImage",
