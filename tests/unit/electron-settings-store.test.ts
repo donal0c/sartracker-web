@@ -11,12 +11,22 @@ import {
 } from '../../src/features/settings/settings-types'
 
 const require = createRequire(import.meta.url)
+type SqliteStatement = {
+  readonly run: (...params: readonly unknown[]) => unknown
+}
+type SqliteDatabase = {
+  readonly exec: (sql: string) => void
+  readonly prepare: (sql: string) => SqliteStatement
+  readonly close: () => void
+}
+const Database = require('better-sqlite3') as new (filename: string) => SqliteDatabase
 const { createElectronSettingsStore } = require('../../electron/settings-store.cjs') as {
   readonly createElectronSettingsStore: (options: {
     readonly userDataPath: string
     readonly safeStorage: MockSafeStorage
     readonly fetchFn?: typeof fetch
     readonly platform?: NodeJS.Platform
+    readonly now?: () => Date
   }) => ElectronSettingsStore
 }
 
@@ -132,6 +142,100 @@ describe('electron settings store', () => {
     expect(rawSettings).not.toContain('Password')
   })
 
+  it('registers a valid local MBTiles official map package with safe metadata only', async () => {
+    const verifiedAt = '2026-06-05T10:11:12.000Z'
+    const store = await createStore({
+      backend: 'gnome_libsecret',
+      now: () => new Date(verifiedAt),
+    })
+    const packagePath = path.join(userDataPath!, 'reeks-standard-60km-z16.mbtiles')
+    createMbtilesPackage(packagePath)
+    const draft = createSettingsDraft(DEFAULT_APP_SETTINGS)
+    draft.officialMaps.packages = [
+      {
+        sourceType: 'mbtiles',
+        mapId: 'official_discovery_topo',
+        packagePath,
+      },
+    ]
+
+    const saved = await store.saveAppSettings(draft)
+
+    expect(saved.officialMaps.packages).toHaveLength(1)
+    expect(saved.officialMaps.packages[0]).toMatchObject({
+      sourceType: 'mbtiles',
+      mapId: 'official_discovery_topo',
+      packagePath,
+      status: 'ready',
+      bounds: [-10.25, 51.85, -9.45, 52.35],
+      minZoom: 9,
+      maxZoom: 16,
+      tileCount: 2,
+      tileFormat: 'png',
+      verifiedAt,
+      message: 'Official Discovery Topo package is ready.',
+    })
+    expect(saved.officialMaps.packages[0]?.id).toMatch(/^official_discovery_topo-[a-f0-9]{12}$/u)
+    expect(saved.officialMaps.packages[0]?.id).not.toContain(packagePath)
+    expect(saved.officialMaps.packages[0]?.createdAt).toMatch(/^\d{4}-\d{2}-\d{2}T/u)
+    const rawSettings = await readFile(path.join(userDataPath!, 'settings.json'), 'utf8')
+    expect(rawSettings).toContain(packagePath)
+    expect(rawSettings).not.toContain('tile-bytes')
+  })
+
+  it('keeps missing and invalid local official map packages visible without throwing', async () => {
+    const verifiedAt = '2026-06-05T10:11:12.000Z'
+    const store = await createStore({
+      backend: 'gnome_libsecret',
+      now: () => new Date(verifiedAt),
+    })
+    const missingPath = path.join(userDataPath!, 'missing.mbtiles')
+    const invalidPath = path.join(userDataPath!, 'not-a-database.mbtiles')
+    await writeFile(invalidPath, 'not sqlite', 'utf8')
+    const draft = createSettingsDraft(DEFAULT_APP_SETTINGS)
+    draft.officialMaps.packages = [
+      {
+        sourceType: 'mbtiles',
+        mapId: 'official_discovery_topo',
+        packagePath: missingPath,
+      },
+      {
+        sourceType: 'mbtiles',
+        mapId: 'official_discovery_topo',
+        packagePath: invalidPath,
+      },
+    ]
+
+    const saved = await store.saveAppSettings(draft)
+
+    expect(saved.officialMaps.packages).toEqual([
+      expect.objectContaining({
+        sourceType: 'mbtiles',
+        mapId: 'official_discovery_topo',
+        packagePath: missingPath,
+        status: 'missing',
+        bounds: null,
+        minZoom: null,
+        maxZoom: null,
+        tileCount: 0,
+        verifiedAt,
+        message: 'Official map package file was not found.',
+      }),
+      expect.objectContaining({
+        sourceType: 'mbtiles',
+        mapId: 'official_discovery_topo',
+        packagePath: invalidPath,
+        status: 'invalid',
+        bounds: null,
+        minZoom: null,
+        maxZoom: null,
+        tileCount: 0,
+        verifiedAt,
+        message: 'Official map package could not be read as MBTiles.',
+      }),
+    ])
+  })
+
   it('preserves an existing secret when saving non-secret settings', async () => {
     const store = await createStore({ backend: 'gnome_libsecret' })
     const initial = createSettingsDraft(DEFAULT_APP_SETTINGS)
@@ -217,6 +321,7 @@ describe('electron settings store', () => {
     readonly backend: string
     readonly platform?: NodeJS.Platform
     readonly fetchFn?: typeof fetch
+    readonly now?: () => Date
   }): Promise<ElectronSettingsStore> {
     userDataPath = await mkdtemp(path.join(tmpdir(), 'sartracker-electron-settings-'))
     return createElectronSettingsStore({
@@ -224,9 +329,38 @@ describe('electron settings store', () => {
       safeStorage: createMockSafeStorage(options.backend),
       fetchFn: options.fetchFn,
       platform: options.platform ?? 'linux',
+      now: options.now,
     })
   }
 })
+
+function createMbtilesPackage(packagePath: string): void {
+  const db = new Database(packagePath)
+  try {
+    db.exec(`
+      CREATE TABLE metadata (name TEXT NOT NULL, value TEXT NOT NULL);
+      CREATE TABLE tiles (
+        zoom_level INTEGER NOT NULL,
+        tile_column INTEGER NOT NULL,
+        tile_row INTEGER NOT NULL,
+        tile_data BLOB NOT NULL
+      );
+    `)
+    const insertMetadata = db.prepare('INSERT INTO metadata (name, value) VALUES (?, ?)')
+    insertMetadata.run('name', 'Reeks standard 60km z16')
+    insertMetadata.run('format', 'png')
+    insertMetadata.run('bounds', '-10.25,51.85,-9.45,52.35')
+    insertMetadata.run('minzoom', '9')
+    insertMetadata.run('maxzoom', '16')
+    const insertTile = db.prepare(
+      'INSERT INTO tiles (zoom_level, tile_column, tile_row, tile_data) VALUES (?, ?, ?, ?)',
+    )
+    insertTile.run(9, 246, 166, Buffer.from('tile-bytes-z9', 'utf8'))
+    insertTile.run(16, 31514, 21318, Buffer.from('tile-bytes-z16', 'utf8'))
+  } finally {
+    db.close()
+  }
+}
 
 function createMockSafeStorage(backend: string): MockSafeStorage {
   return {

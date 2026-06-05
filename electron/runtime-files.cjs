@@ -76,11 +76,59 @@ function buildElectronDiagnosticsReport(input) {
     `official maps: ${input.settings.officialMaps?.status ?? 'not_configured'}`,
     `official map source type: ${input.settings.officialMaps?.sourceType ?? 'none'}`,
     `official map services: ${input.settings.officialMaps?.serviceCount ?? 0}`,
+    ...formatOfficialMapPackages(input.settings.officialMaps?.packages),
     '',
     '[support-report]',
     redactSecrets(input.contents),
     '',
   ].join('\n')
+}
+
+function formatOfficialMapPackages(input) {
+  const packages = Array.isArray(input) ? input : []
+  const readyCount = packages.filter((mapPackage) => mapPackage?.status === 'ready').length
+  return [
+    `official map packages: ${packages.length}`,
+    `official map packages ready: ${readyCount}`,
+    ...packages.map((mapPackage, index) => formatOfficialMapPackage(mapPackage, index + 1)),
+  ]
+}
+
+function formatOfficialMapPackage(mapPackage, index) {
+  const mapId = readDiagnosticsValue(mapPackage?.mapId, 'unknown')
+  const status = readDiagnosticsValue(mapPackage?.status, 'unknown')
+  const sourceType = readDiagnosticsValue(mapPackage?.sourceType, 'unknown')
+  const details = [`official map package ${index}: ${mapId} ${status} ${sourceType}`]
+  if (Number.isFinite(mapPackage?.minZoom) && Number.isFinite(mapPackage?.maxZoom)) {
+    details.push(`z${mapPackage.minZoom}-z${mapPackage.maxZoom}`)
+  }
+  if (Number.isFinite(mapPackage?.tileCount) && mapPackage.tileCount > 0) {
+    details.push(`tiles=${mapPackage.tileCount}`)
+  }
+  const tileFormat = readDiagnosticsValue(mapPackage?.tileFormat, '')
+  if (tileFormat !== '') {
+    details.push(`format=${tileFormat}`)
+  }
+  if (Array.isArray(mapPackage?.bounds) && mapPackage.bounds.length === 4) {
+    details.push(`bounds=${mapPackage.bounds.map(formatCoordinate).join(',')}`)
+  }
+  const verifiedAt = readDiagnosticsValue(mapPackage?.verifiedAt, '')
+  if (verifiedAt !== '') {
+    details.push(`verified=${verifiedAt}`)
+  }
+  return details.join(' ')
+}
+
+function readDiagnosticsValue(input, fallback) {
+  return typeof input === 'string' && input.trim() !== '' ? input.trim() : fallback
+}
+
+function formatCoordinate(input) {
+  const value = Number(input)
+  if (!Number.isFinite(value)) {
+    return 'unknown'
+  }
+  return Number.isInteger(value) ? String(value) : value.toFixed(2)
 }
 
 async function writeTextAtomically(filePath, contents) {

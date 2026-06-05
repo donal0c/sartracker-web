@@ -20,13 +20,31 @@ const {
     }
     readonly platform: string
     readonly safeStorageBackend: () => string
-    readonly loadSettings: () => Promise<{
-      readonly dataSource: {
-        readonly baseUrl: string
-        readonly authMode: string
-        readonly secretPresent: boolean
-      }
-    }>
+      readonly loadSettings: () => Promise<{
+        readonly dataSource: {
+          readonly baseUrl: string
+          readonly authMode: string
+          readonly secretPresent: boolean
+        }
+        readonly officialMaps?: {
+          readonly status?: string
+          readonly sourceType?: string
+          readonly sourcePath?: string
+          readonly serviceCount?: number
+          readonly packages?: readonly {
+            readonly sourceType: string
+            readonly mapId: string
+            readonly packagePath: string
+            readonly status: string
+            readonly bounds: readonly [number, number, number, number] | null
+            readonly minZoom: number | null
+            readonly maxZoom: number | null
+            readonly tileCount: number
+            readonly tileFormat: string
+            readonly verifiedAt: string
+          }[]
+        }
+      }>
   }) => {
     readonly readTrackingCache: () => Promise<string | null>
     readonly writeTrackingCache: (contents: string) => Promise<string>
@@ -81,7 +99,14 @@ describe('electron runtime files', () => {
     expect(report).toContain('provider url: https://kmrtsar.eu')
     expect(report).toContain('secret present: yes')
     expect(report).toContain('official maps: configured')
+    expect(report).toContain('official map packages: 2')
+    expect(report).toContain('official map packages ready: 1')
+    expect(report).toContain(
+      'official map package 1: official_discovery_topo ready mbtiles z9-z16 tiles=31729 format=png bounds=-10.17,51.84,-9.40,52.38 verified=2026-06-05T10:11:12.000Z',
+    )
+    expect(report).toContain('official map package 2: official_discovery_topo missing mbtiles')
     expect(report).not.toContain('mountainrescue_org.txt')
+    expect(report).not.toContain('reeks-standard-60km-z16.mbtiles')
     expect(report).not.toContain('field-secret')
     for (const forbidden of FORBIDDEN_DIAGNOSTICS_PATH_SEGMENTS) {
       expect(report).not.toContain(forbidden)
@@ -110,6 +135,32 @@ describe('electron runtime files', () => {
           sourceType: 'mapgenie_file',
           sourcePath: '/private/maps/mountainrescue_org.txt',
           serviceCount: 4,
+          packages: [
+            {
+              sourceType: 'mbtiles',
+              mapId: 'official_discovery_topo',
+              packagePath: '/private/maps/reeks-standard-60km-z16.mbtiles',
+              status: 'ready',
+              bounds: [-10.17, 51.84, -9.4, 52.38],
+              minZoom: 9,
+              maxZoom: 16,
+              tileCount: 31_729,
+              tileFormat: 'png',
+              verifiedAt: '2026-06-05T10:11:12.000Z',
+            },
+            {
+              sourceType: 'mbtiles',
+              mapId: 'official_discovery_topo',
+              packagePath: '/private/maps/missing.mbtiles',
+              status: 'missing',
+              bounds: null,
+              minZoom: null,
+              maxZoom: null,
+              tileCount: 0,
+              tileFormat: '',
+              verifiedAt: '2026-06-05T10:11:12.000Z',
+            },
+          ],
         },
       }),
     })

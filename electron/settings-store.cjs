@@ -1,5 +1,8 @@
 const fs = require('node:fs/promises')
 const path = require('node:path')
+const { createHash } = require('node:crypto')
+
+const Database = require('better-sqlite3')
 
 const SETTINGS_FILE_NAME = 'settings.json'
 const SECRETS_FILE_NAME = 'secrets.json'
@@ -37,6 +40,7 @@ const DEFAULT_APP_SETTINGS = Object.freeze({
     availableSources: Object.freeze([]),
     serviceCount: 0,
     message: 'Official maps are not configured.',
+    packages: Object.freeze([]),
   }),
   weather: Object.freeze({
     links: Object.freeze([]),
@@ -56,6 +60,7 @@ function createElectronSettingsStore(options) {
   const safeStorage = options.safeStorage
   const fetchFn = options.fetchFn ?? fetch
   const platform = options.platform ?? process.platform
+  const now = options.now ?? (() => new Date())
 
   return {
     loadAppSettings,
@@ -76,7 +81,7 @@ function createElectronSettingsStore(options) {
     const next = {
       missionDefaults: normalizeMissionDefaults(input.missionDefaults),
       dataSource: normalizeDataSource(input.dataSource),
-      officialMaps: await normalizeOfficialMaps(input.officialMaps),
+      officialMaps: await normalizeOfficialMaps(input.officialMaps, now),
       weather: normalizeWeather(input.weather),
     }
 
@@ -381,12 +386,16 @@ function normalizeBaseUrl(baseUrl) {
   return readOptionalString(baseUrl).trim().replace(/\/+$/, '')
 }
 
-async function normalizeOfficialMaps(input) {
+async function normalizeOfficialMaps(input, now) {
   const sourceType = input?.sourceType === 'mapgenie_file' ? 'mapgenie_file' : 'none'
   const sourcePath = readOptionalString(input?.sourcePath).trim()
+  const packages = await normalizeOfficialMapPackages(input?.packages, now)
 
   if (sourceType === 'none') {
-    return DEFAULT_APP_SETTINGS.officialMaps
+    return {
+      ...DEFAULT_APP_SETTINGS.officialMaps,
+      packages,
+    }
   }
 
   if (sourcePath === '') {
@@ -395,6 +404,7 @@ async function normalizeOfficialMaps(input) {
       sourceType: 'mapgenie_file',
       status: 'missing',
       message: 'Choose the MapGenie source file before enabling official maps.',
+      packages,
     }
   }
 
@@ -404,6 +414,7 @@ async function normalizeOfficialMaps(input) {
       sourceType: 'mapgenie_file',
       sourcePath,
       ...metadata,
+      packages,
     }
   } catch (error) {
     if (error?.code === 'ENOENT') {
@@ -413,6 +424,7 @@ async function normalizeOfficialMaps(input) {
         sourcePath,
         status: 'missing',
         message: 'MapGenie source file was not found.',
+        packages,
       }
     }
     return {
@@ -421,6 +433,7 @@ async function normalizeOfficialMaps(input) {
       sourcePath,
       status: 'invalid',
       message: 'MapGenie source file could not be read.',
+      packages,
     }
   }
 }
@@ -428,21 +441,260 @@ async function normalizeOfficialMaps(input) {
 function normalizePersistedOfficialMaps(input) {
   const parsed = readObject(input)
   const sourceType = parsed.sourceType === 'mapgenie_file' ? 'mapgenie_file' : 'none'
-  if (sourceType === 'none') {
-    return DEFAULT_APP_SETTINGS.officialMaps
-  }
 
   return {
+    ...DEFAULT_APP_SETTINGS.officialMaps,
     sourceType,
     sourcePath: readOptionalString(parsed.sourcePath).trim(),
-    status: ['configured', 'missing', 'invalid'].includes(parsed.status)
-      ? parsed.status
-      : 'not_configured',
+    status:
+      sourceType === 'none'
+        ? 'not_configured'
+        : ['configured', 'missing', 'invalid'].includes(parsed.status)
+          ? parsed.status
+          : 'not_configured',
     username: readOptionalString(parsed.username).trim(),
     availableSources: readOfficialMapSources(parsed.availableSources),
     serviceCount: Number.isFinite(Number(parsed.serviceCount)) ? Number(parsed.serviceCount) : 0,
     message: readOptionalString(parsed.message).trim() || 'Official map source status unavailable.',
+    packages: normalizePersistedOfficialMapPackages(parsed.packages),
   }
+}
+
+async function normalizeOfficialMapPackages(input, now) {
+  if (!Array.isArray(input)) {
+    return []
+  }
+
+  const output = []
+  const seen = new Set()
+  for (const candidate of input) {
+    const parsed = readObject(candidate)
+    const packagePath = readOptionalString(parsed.packagePath).trim()
+    if (packagePath === '') {
+      continue
+    }
+    const mapId = readOfficialMapId(parsed.mapId)
+    const dedupeKey = `${mapId}\0${packagePath}`
+    if (seen.has(dedupeKey)) {
+      continue
+    }
+    seen.add(dedupeKey)
+    output.push(await validateOfficialMapPackage({ mapId, packagePath, now }))
+  }
+  return output
+}
+
+function normalizePersistedOfficialMapPackages(input) {
+  if (!Array.isArray(input)) {
+    return []
+  }
+
+  return input
+    .map((candidate) => {
+      const parsed = readObject(candidate)
+      const packagePath = readOptionalString(parsed.packagePath).trim()
+      if (packagePath === '') {
+        return null
+      }
+      const mapId = readOfficialMapId(parsed.mapId)
+      const status = ['ready', 'missing', 'invalid'].includes(parsed.status)
+        ? parsed.status
+        : 'invalid'
+      return {
+        id: readOfficialMapPackageId(parsed.id, mapId, packagePath),
+        sourceType: 'mbtiles',
+        mapId,
+        packagePath,
+        status,
+        bounds: readOfficialMapBounds(parsed.bounds),
+        minZoom: readOptionalNumber(parsed.minZoom),
+        maxZoom: readOptionalNumber(parsed.maxZoom),
+        tileCount: readNonNegativeInteger(parsed.tileCount),
+        tileFormat: readOptionalString(parsed.tileFormat).trim(),
+        createdAt: readOptionalString(parsed.createdAt).trim(),
+        verifiedAt: readOptionalString(parsed.verifiedAt).trim(),
+        message:
+          readOptionalString(parsed.message).trim() ||
+          packageStatusMessage(mapId, status),
+      }
+    })
+    .filter(Boolean)
+}
+
+async function validateOfficialMapPackage(input) {
+  const verifiedAt = input.now().toISOString()
+  const base = {
+    id: createOfficialMapPackageId(input.mapId, input.packagePath),
+    sourceType: 'mbtiles',
+    mapId: input.mapId,
+    packagePath: input.packagePath,
+    bounds: null,
+    minZoom: null,
+    maxZoom: null,
+    tileCount: 0,
+    tileFormat: '',
+    createdAt: '',
+    verifiedAt,
+  }
+
+  try {
+    const stats = await fs.stat(input.packagePath)
+    if (!stats.isFile()) {
+      return {
+        ...base,
+        status: 'invalid',
+        createdAt: toIsoTimestamp(stats.birthtime),
+        message: 'Official map package path is not a file.',
+      }
+    }
+
+    const metadata = readMbtilesMetadata(input.packagePath)
+    return {
+      ...base,
+      ...metadata,
+      status: 'ready',
+      createdAt: toIsoTimestamp(stats.birthtime),
+      message: packageStatusMessage(input.mapId, 'ready'),
+    }
+  } catch (error) {
+    if (error?.code === 'ENOENT') {
+      return {
+        ...base,
+        status: 'missing',
+        message: 'Official map package file was not found.',
+      }
+    }
+    return {
+      ...base,
+      status: 'invalid',
+      message: 'Official map package could not be read as MBTiles.',
+    }
+  }
+}
+
+function readMbtilesMetadata(packagePath) {
+  const db = new Database(packagePath, { readonly: true, fileMustExist: true })
+  try {
+    const tableRows = db
+      .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name IN ('metadata', 'tiles')")
+      .all()
+    const tableNames = new Set(tableRows.map((row) => row.name))
+    if (!tableNames.has('metadata') || !tableNames.has('tiles')) {
+      throw new Error('MBTiles metadata and tiles tables are required.')
+    }
+
+    const metadataRows = db.prepare('SELECT name, value FROM metadata').all()
+    const metadata = new Map(
+      metadataRows.map((row) => [String(row.name).toLowerCase(), String(row.value)]),
+    )
+    const tileCount = readNonNegativeInteger(db.prepare('SELECT COUNT(*) AS count FROM tiles').get()?.count)
+    if (tileCount === 0) {
+      throw new Error('MBTiles package has no tiles.')
+    }
+
+    const zoomRange = db
+      .prepare('SELECT MIN(zoom_level) AS minZoom, MAX(zoom_level) AS maxZoom FROM tiles')
+      .get()
+    return {
+      bounds: readOfficialMapBounds(metadata.get('bounds')),
+      minZoom: readZoomValue(metadata.get('minzoom'), zoomRange?.minZoom),
+      maxZoom: readZoomValue(metadata.get('maxzoom'), zoomRange?.maxZoom),
+      tileCount,
+      tileFormat: readOptionalString(metadata.get('format')).trim().toLowerCase(),
+    }
+  } finally {
+    db.close()
+  }
+}
+
+function readZoomValue(primary, fallback) {
+  const value = Number(primary)
+  if (Number.isInteger(value) && value >= 0) {
+    return value
+  }
+  return readOptionalNumber(fallback)
+}
+
+function readOfficialMapBounds(input) {
+  const values = Array.isArray(input)
+    ? input
+    : readOptionalString(input)
+        .split(',')
+        .map((value) => value.trim())
+  if (values.length !== 4) {
+    return null
+  }
+  const numbers = values.map((value) => Number(value))
+  const [west, south, east, north] = numbers
+  if (
+    numbers.every(Number.isFinite) &&
+    west >= -180 &&
+    west <= 180 &&
+    east >= -180 &&
+    east <= 180 &&
+    south >= -90 &&
+    south <= 90 &&
+    north >= -90 &&
+    north <= 90 &&
+    west < east &&
+    south < north
+  ) {
+    return [west, south, east, north]
+  }
+  return null
+}
+
+function readOfficialMapId(input) {
+  const allowed = new Set(OFFICIAL_SOURCE_PATTERNS.map(([id]) => id))
+  const value = readOptionalString(input).trim()
+  return allowed.has(value) ? value : 'official_discovery_topo'
+}
+
+function readOfficialMapPackageId(input, mapId, packagePath) {
+  const value = readOptionalString(input).trim()
+  if (new RegExp(`^${mapId}-[a-f0-9]{12}$`, 'u').test(value)) {
+    return value
+  }
+  return createOfficialMapPackageId(mapId, packagePath)
+}
+
+function createOfficialMapPackageId(mapId, packagePath) {
+  const digest = createHash('sha256').update(`${mapId}\0${packagePath}`).digest('hex').slice(0, 12)
+  return `${mapId}-${digest}`
+}
+
+function packageStatusMessage(mapId, status) {
+  if (status === 'ready') {
+    return `${officialMapLabel(mapId)} package is ready.`
+  }
+  if (status === 'missing') {
+    return 'Official map package file was not found.'
+  }
+  return 'Official map package could not be read as MBTiles.'
+}
+
+function officialMapLabel(mapId) {
+  const labels = {
+    official_discovery_topo: 'Official Discovery Topo',
+    official_premium_basemap: 'Official Premium Basemap',
+    official_aerial_imagery: 'Official Aerial Imagery',
+    official_high_resolution_imagery: 'Official High-Resolution Imagery',
+  }
+  return labels[mapId] ?? 'Official map'
+}
+
+function readOptionalNumber(input) {
+  const value = Number(input)
+  return Number.isFinite(value) ? value : null
+}
+
+function readNonNegativeInteger(input) {
+  const value = Number(input)
+  return Number.isInteger(value) && value >= 0 ? value : 0
+}
+
+function toIsoTimestamp(input) {
+  return input instanceof Date && Number.isFinite(input.getTime()) ? input.toISOString() : ''
 }
 
 function normalizeWeather(input) {

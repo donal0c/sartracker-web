@@ -226,6 +226,9 @@ function readBrowserSettings(): AppSettings {
         availableSources: Array.isArray(parsed.officialMaps?.availableSources)
           ? parsed.officialMaps.availableSources
           : DEFAULT_APP_SETTINGS.officialMaps.availableSources,
+        packages: Array.isArray(parsed.officialMaps?.packages)
+          ? parsed.officialMaps.packages
+          : DEFAULT_APP_SETTINGS.officialMaps.packages,
       },
       weather: {
         ...DEFAULT_APP_SETTINGS.weather,

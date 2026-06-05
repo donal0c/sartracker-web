@@ -48,6 +48,26 @@ export type WeatherSettings = {
 
 export type OfficialMapSourceType = 'none' | 'mapgenie_file'
 
+export type OfficialMapPackageSourceType = 'mbtiles'
+
+export type OfficialMapPackageStatus = 'ready' | 'missing' | 'invalid'
+
+export type OfficialMapPackageSettings = {
+  readonly id: string
+  readonly sourceType: OfficialMapPackageSourceType
+  readonly mapId: OfficialMapId
+  readonly packagePath: string
+  readonly status: OfficialMapPackageStatus
+  readonly bounds: readonly [number, number, number, number] | null
+  readonly minZoom: number | null
+  readonly maxZoom: number | null
+  readonly tileCount: number
+  readonly tileFormat: string
+  readonly createdAt: string
+  readonly verifiedAt: string
+  readonly message: string
+}
+
 export type OfficialMapSettings = {
   readonly sourceType: OfficialMapSourceType
   readonly sourcePath: string
@@ -56,6 +76,7 @@ export type OfficialMapSettings = {
   readonly availableSources: readonly OfficialMapId[]
   readonly serviceCount: number
   readonly message: string
+  readonly packages: readonly OfficialMapPackageSettings[]
 }
 
 export type AppSettings = {
@@ -123,6 +144,7 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
     availableSources: [],
     serviceCount: 0,
     message: 'Official maps are not configured.',
+    packages: [],
   },
   weather: {
     links: [],
@@ -137,6 +159,7 @@ export function createSettingsDraft(settings: AppSettings): AppSettingsDraft {
     ...DEFAULT_APP_SETTINGS.officialMaps,
     ...settings.officialMaps,
     availableSources: [...(settings.officialMaps?.availableSources ?? [])],
+    packages: [...(settings.officialMaps?.packages ?? [])],
   }
 
   return {
