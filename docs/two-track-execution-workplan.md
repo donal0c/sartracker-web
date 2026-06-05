@@ -186,14 +186,20 @@ This is the default order when the user says “work on the next task.”
 | Done | OpenTopoMap "tiles failed to load" badge over-eager | Track A / UI | `sartracker-web-2xp` | Done locally 2026-05-17. Tile-only filter at `src/features/map/is-tile-error-event.ts` and widened defaults (5-in-30s) in `src/lib/tile-health-tracker.ts`. Interactive Playwright proof at `tmp/2xp-verification/`. |
 | Done | B4: Set up cross-platform Tauri beta distribution | Track B / Release | `sartracker-web-y6a` | Done 2026-05-17. `.github/workflows/release.yml` builds Linux (AppImage + .deb) and Windows (NSIS) on `v*` tag push, drafts a GitHub release, generates `SHA256SUMS` sidecar. First published release: `v0.1.0-beta.3` at https://github.com/donal0c/sartracker-web/releases/tag/v0.1.0-beta.3. Linux primary, Windows secondary. macOS arm64 deferred from CI per `sartracker-web-590` to stay inside the GitHub Actions free tier (macOS bills at 10x); macOS uses Path B (`npm run beta:verify`) until cadence stabilizes. Windows MSI deferred per `sartracker-web-g1u` because Tauri's MSI bundler rejects alphanumeric pre-release suffixes. NSIS `currentUser` install (no admin), WebView2 `downloadBootstrapper`. Release notes sourced from `docs/releases/sartracker-web-<version>-beta.md`. |
 | Active | B8: Team requirements from USB ODT | Track A / Shared / Track B | `DON-60` | User-directed pass through `DON-61` through `DON-75`. Bugs: reproduce, fix, confirm. Features/changes: implement and verify expected visible behavior. Commit and push each issue separately. `DON-61` through `DON-66`, `DON-68` through `DON-75` are complete. `DON-67` is parked for team input. |
-| Active | 3-6-26 team feedback intake | Track A / Shared | `DON-83` | Parent for fresh team-reported bugs and requests from `team-feedback/3-6-26Updates.odt`. `DON-84` through `DON-92` are complete and verified. `DON-99` and `DON-100` are blocked pending coordinator/team clarification. Continue the remaining unblocked children by priority unless Donal redirects. |
+| Done | 3-6-26 team feedback intake | Track A / Shared | `DON-83` | Done 2026-06-04. Immediate bugs and non-blocked UI requests are complete; `DON-99` through `DON-102` are parked in Backlog for coordinator clarification. |
 | Active | Official Irish Map Provider Integration | Track B / Maps, with Track A catalogue UX | `DON-76` | Parent map lane. Licensed map data and credentials are private/customer-provided: do not commit to GitHub, do not bundle into public release artifacts, and do not expose through hosted web. Verified local USB copy lives at `/Users/donalocallaghan/SARTracker-private-map-assets/team-usb-2026-06-03`. |
 | Done | Evaluate MapGenie sources and choose operational default | Maps / Product decision | `DON-77` | Done 2026-06-03. Private visual comparison across MacGillycuddy Reeks, Galtymore/Galtees, and Wicklow/Glendalough plus Donal's team-context confirmation locks `discovery` as the default official operational topo map. `basemap_premium` is a secondary clean reference map; `ortho` and `National_High_Resolution_Imagery` are imagery reference layers. |
 | Done | Add grouped map catalogue UX for official and public maps | Track A / Shared UX | `DON-78` | Done locally 2026-06-03. Maps menu now groups `Official maps` and `Public fallback maps`; official Discovery/Premium/Imagery entries render as not configured in hosted/browser mode; public fallback maps remain selectable and persisted. Official map naming: `Discovery Topo`, `Premium Basemap`, `Aerial Imagery`, and `High-Resolution Imagery`. |
 | Done | Add local official map source import and configuration for Electron | Track B / Maps / Local config | `DON-80` | Done 2026-06-03. Settings and Electron persistence can point at the local MapGenie source file while storing only safe metadata (status, username, available source IDs, service count, message). Credentials/file contents stay out of app settings, diagnostics, source control, and Linear. |
 | Done | Prototype local MapGenie rendering via ArcGIS export | Track B / Maps / Rendering | `DON-79` | Done 2026-06-04. Electron/local runtime renders Discovery Topo and Aerial Imagery via ArcGIS export over Carrauntoohil/Reeks from local configured MapGenie source; credentials stay out of URLs/settings/diagnostics/source control. |
-| 3 | Plan mission-area prefetch and offline official-map path | Track B / Maps / Offline | `DON-81` / `DON-7` | Evaluate viewed-cache, mission-area prefetch, local raster package import, and regional/national packages after default/rendering/import path is understood. |
-| 4 | Classify relief and slope rasters as optional map overlays | Track B / Maps / Overlays | `DON-82` | Defer until the primary basemap and local import/rendering model are proven. Treat `relief_byte.tif` and `Slope_30plus.tif` as optional overlays, not primary basemaps. |
+| Done | Plan official-map offline package path | Track B / Maps / Offline | `DON-81` / `DON-7` | Done 2026-06-05. Decision: local official-map library after app install, first via prepared MBTiles-style package for the standard operating area; hosted web remains public-map-only. See `docs/official-map-offline-strategy.md`. |
+| 3 | Spike standard-region Discovery conversion to local MBTiles package | Track B / Maps / Offline | `DON-103` / `DON-7` | Next map task. Convert a representative standard region from local licensed Discovery sources, measure package size/conversion time/tile reads, and confirm whether MBTiles is viable. |
+| 4 | Add cross-platform Electron official map package registry | Track B / Maps / Electron | `DON-104` / `DON-7` | Register local packages with safe metadata only across Linux, macOS, and Windows. |
+| 5 | Serve local official map package tiles through Electron map proxy | Track B / Maps / Electron | `DON-105` / `DON-7` | Extend the existing official-map protocol/proxy to read local package tiles before online MapGenie fallback. |
+| 6 | Add official offline map readiness UI and diagnostics | Track B / Maps / UI | `DON-106` / `DON-7` | Show operator states such as ready, outside offline area, package missing/unreadable, online source configured, and public fallback only. |
+| 7 | Validate packaged Electron official maps offline cross-platform | Track B / Maps / Release | `DON-107` / `DON-7` | Prove Linux first, then macOS and Windows packaged Electron with network disabled. |
+| 8 | Measure full-national Discovery package size/performance | Track B / Maps / Offline | `DON-108` / `DON-7` | Decide whether full-national install/import is supported, warning-only, or deferred. |
+| 9 | Classify relief and slope rasters as optional map overlays | Track B / Maps / Overlays | `DON-82` | Defer until the primary official offline basemap path is proven. Treat `relief_byte.tif` and `Slope_30plus.tif` as optional overlays, not primary basemaps. |
 | 5 | S8: Linux runtime reliability path | Track B / Runtime | `DON-25` | In progress 2026-05-18. Electron hardening continues in parallel: clear `DON-58` and `DON-59` before sending full Electron builds wider. |
 | 6 | B7: Pre-tester smoke + CI launch-smoke for cross-platform Tauri builds | Track B / Release / Verification | `DON-24` | Superseded as the immediate blocker by S8 for the Linux black-map investigation. CI launch smoke is green on GitHub runners, but real tester machines still black-map under Tauri/WebKitGTK. Keep B7 open for release-smoke process work. |
 | 7 | B5: Triage first web and Tauri beta feedback | Track A / Track B | `sartracker-web-s8m` / `DON-11` | After deployed-web validation and cross-platform beta setup produce feedback |
@@ -1203,6 +1209,7 @@ Current evidence:
 - `ortho` and `National_High_Resolution_Imagery` are imagery/reference layers.
 - `relief_byte.tif` and `Slope_30plus.tif` are overlay candidates, not primary basemaps.
 - `DON-79` proved Electron/local rendering via ArcGIS export for Discovery Topo and Aerial Imagery over Carrauntoohil/Reeks with `loaded=true` / `areTilesLoaded=true`.
+- `DON-81` produced `docs/official-map-offline-strategy.md`: official offline maps should be a local post-install map library, first via an MBTiles-style package for the team's standard operating area, with mission-specific package/prefetch secondary and hosted web public-map-only.
 
 Work sequence:
 
@@ -1210,8 +1217,14 @@ Work sequence:
 - `DON-78` — grouped map catalogue UX for official/private and public fallback maps. Done locally 2026-06-03.
 - `DON-80` — local official map source import/configuration for Electron. Done 2026-06-03.
 - `DON-79` — local MapGenie rendering via ArcGIS export. Done 2026-06-04.
-- `DON-81` / `DON-7` — mission-area prefetch and offline official-map path. Next.
-- `DON-82` — relief/slope overlays.
+- `DON-81` / `DON-7` — official-map offline package strategy. Done 2026-06-05.
+- `DON-103` — standard-region Discovery conversion to local MBTiles package. Next.
+- `DON-104` — cross-platform Electron official map package registry.
+- `DON-105` — local official map package tile serving through Electron proxy.
+- `DON-106` — official offline map readiness UI and diagnostics.
+- `DON-107` — packaged Electron official offline map validation on Linux, macOS, and Windows.
+- `DON-108` — full-national Discovery package size/performance measurement before support decision.
+- `DON-82` — relief/slope overlays, after the primary official offline basemap path is proven.
 
 Acceptance:
 
