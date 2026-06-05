@@ -19,6 +19,7 @@ import {
 } from './layer-catalog-ids'
 import { findCatalogNode, getDescendantNodeIds } from './layer-catalog-tree'
 import type { LayerCatalogRootNode } from './layer-catalog-types'
+import type { LayerCatalogController } from './start-layer-catalog-runtime'
 import type { LayerGroupVisibility } from './layer-visibility-store'
 
 const MARKER_TYPE_BY_LAYER_ID: Readonly<Record<string, MarkerType>> = {
@@ -70,6 +71,21 @@ export type LayerVisibilityStoreAdapter = {
   readonly setMeasurementsVisible: (visible: boolean) => void
   readonly showAllDevices: () => void
   readonly hideAllDevices: (deviceIds: readonly string[]) => void
+}
+
+/**
+ * Reveals the Map Tools group and one operational child layer before arming a
+ * map tool, so operators cannot create invisible measurements or drawings.
+ */
+export function revealMapToolLayerForOperation(
+  root: LayerCatalogRootNode,
+  controller: LayerCatalogController | null,
+  childLayerNodeId: string,
+  store: LayerVisibilityStoreAdapter,
+): void {
+  const nodeIds = [MAP_TOOLS_GROUP_NODE_ID, childLayerNodeId]
+  applyVisibilityForNodeIds(root, nodeIds, true, store)
+  void controller?.setNodeVisibilities(nodeIds, true)
 }
 
 /**

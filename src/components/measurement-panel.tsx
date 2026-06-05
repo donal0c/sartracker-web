@@ -1,5 +1,9 @@
 import { useMeasurementStore } from '../features/measurements/measurement-store'
 import { useDrawingStore } from '../features/drawings/drawing-store'
+import { MEASUREMENTS_LAYER_NODE_ID } from '../features/layers/layer-catalog-ids'
+import { useLayerCatalogStore } from '../features/layers/layer-catalog-store'
+import { useLayerVisibilityStore } from '../features/layers/layer-visibility-store'
+import { revealMapToolLayerForOperation } from '../features/layers/layer-visibility-service'
 import { useMissionStore } from '../features/mission/mission-store'
 
 /**
@@ -12,6 +16,8 @@ export function MeasurementPanel() {
   const draftStart = useMeasurementStore((state) => state.draftStart)
   const drawingController = useDrawingStore((state) => state.controller)
   const drawingTool = useDrawingStore((state) => state.activeTool)
+  const layerCatalogRoot = useLayerCatalogStore((state) => state.root)
+  const layerCatalogController = useLayerCatalogStore((state) => state.controller)
   const missionId = useMissionStore((state) => state.currentMission?.id ?? null)
   const missionPhase = useMissionStore((state) => state.phase)
 
@@ -68,6 +74,12 @@ export function MeasurementPanel() {
               drawingController.cancelActiveTool()
             }
 
+            revealMapToolLayerForOperation(
+              layerCatalogRoot,
+              layerCatalogController,
+              MEASUREMENTS_LAYER_NODE_ID,
+              useLayerVisibilityStore.getState(),
+            )
             controller.armMeasurement()
           }}
           type="button"

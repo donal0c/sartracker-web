@@ -2,6 +2,10 @@ import { useState } from 'react'
 
 import { useDrawingStore } from '../features/drawings/drawing-store'
 import { LPB_CATEGORIES } from '../features/drawings/lpb-data'
+import { getDrawingLayerNodeId, MEASUREMENTS_LAYER_NODE_ID } from '../features/layers/layer-catalog-ids'
+import { useLayerCatalogStore } from '../features/layers/layer-catalog-store'
+import { useLayerVisibilityStore } from '../features/layers/layer-visibility-store'
+import { revealMapToolLayerForOperation } from '../features/layers/layer-visibility-service'
 import { useMeasurementStore } from '../features/measurements/measurement-store'
 import { useMissionStore } from '../features/mission/mission-store'
 
@@ -27,6 +31,8 @@ export function DrawingToolbar() {
   const dialog = useDrawingStore((state) => state.dialog)
   const measurementController = useMeasurementStore((state) => state.controller)
   const measurementMode = useMeasurementStore((state) => state.mode)
+  const layerCatalogRoot = useLayerCatalogStore((state) => state.root)
+  const layerCatalogController = useLayerCatalogStore((state) => state.controller)
   const missionId = useMissionStore((state) => state.currentMission?.id ?? null)
   const missionPhase = useMissionStore((state) => state.phase)
 
@@ -90,6 +96,12 @@ export function DrawingToolbar() {
                       return
                     }
 
+                    revealMapToolLayerForOperation(
+                      layerCatalogRoot,
+                      layerCatalogController,
+                      getDrawingLayerNodeId(option.value),
+                      useLayerVisibilityStore.getState(),
+                    )
                     controller.setActiveTool(option.value)
                   }}
                   type="button"
@@ -117,6 +129,12 @@ export function DrawingToolbar() {
                 }
 
                 controller.cancelActiveTool()
+                revealMapToolLayerForOperation(
+                  layerCatalogRoot,
+                  layerCatalogController,
+                  MEASUREMENTS_LAYER_NODE_ID,
+                  useLayerVisibilityStore.getState(),
+                )
                 measurementController.armMeasurement()
               }}
               type="button"
