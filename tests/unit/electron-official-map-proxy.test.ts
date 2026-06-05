@@ -1,10 +1,22 @@
 import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
+import { createRequire } from 'node:module'
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { DEFAULT_APP_SETTINGS } from '../../src/features/settings/settings-types'
+
+const require = createRequire(import.meta.url)
+type SqliteStatement = {
+  readonly run: (...params: readonly unknown[]) => unknown
+}
+type SqliteDatabase = {
+  readonly exec: (sql: string) => void
+  readonly prepare: (sql: string) => SqliteStatement
+  readonly close: () => void
+}
+const Database = require('better-sqlite3') as new (filename: string) => SqliteDatabase
 
 const { createElectronOfficialMapProxy } = (await import('../../electron/official-map-proxy.cjs')) as {
   readonly createElectronOfficialMapProxy: (options: {
@@ -89,6 +101,211 @@ describe('Electron official map proxy', () => {
     expect(fetchMock.mock.calls[1]![0]).toContain('/ortho/MapServer/export?')
   })
 
+  it('serves a local MBTiles official map tile before using online MapGenie', async () => {
+    tempDir = await mkdtemp(path.join(os.tmpdir(), 'sartracker-official-mbtiles-'))
+    const packagePath = path.join(tempDir, 'reeks.mbtiles')
+    createMbtilesPackage(packagePath, [
+      {
+        z: 12,
+        x: 1935,
+        xyzY: 1344,
+        bytes: Uint8Array.from([10, 20, 30, 40]),
+      },
+    ])
+    const fetchMock = vi.fn()
+    const proxy = createElectronOfficialMapProxy({
+      fetch: fetchMock as never,
+      loadSettings: async () => ({
+        ...DEFAULT_APP_SETTINGS,
+        officialMaps: {
+          ...DEFAULT_APP_SETTINGS.officialMaps,
+          packages: [
+            {
+              id: 'official_discovery_topo-test',
+              sourceType: 'mbtiles',
+              mapId: 'official_discovery_topo',
+              packagePath,
+              status: 'ready',
+              bounds: [-10.25, 51.85, -9.45, 52.35],
+              minZoom: 9,
+              maxZoom: 16,
+              tileCount: 1,
+              tileFormat: 'png',
+              createdAt: '2026-06-05T10:00:00.000Z',
+              verifiedAt: '2026-06-05T10:11:12.000Z',
+              message: 'Official Discovery Topo package is ready.',
+            },
+          ],
+        },
+      }),
+    })
+
+    const response = await proxy.fetchOfficialMapTile(
+      'sartracker-official-map://tile/official_discovery_topo/12/1935/1344.png',
+    )
+
+    expect(response).toEqual({
+      contentType: 'image/png',
+      bytesBase64: 'ChQeKA==',
+    })
+    expect(fetchMock).not.toHaveBeenCalled()
+    expect(JSON.stringify(response)).not.toContain(packagePath)
+  })
+
+  it('falls back to online MapGenie when a ready local package does not contain the requested tile', async () => {
+    tempDir = await mkdtemp(path.join(os.tmpdir(), 'sartracker-official-mbtiles-fallback-'))
+    const packagePath = path.join(tempDir, 'reeks.mbtiles')
+    createMbtilesPackage(packagePath, [
+      {
+        z: 12,
+        x: 1935,
+        xyzY: 1344,
+        bytes: Uint8Array.from([10, 20, 30, 40]),
+      },
+    ])
+    const sourcePath = path.join(tempDir, 'mountainrescue_org.txt')
+    await writeFile(
+      sourcePath,
+      [
+        'Username: mountainrescue_org',
+        'Password: field-secret',
+        'discovery ITM https://ogcmapgenie.osi.ie/data/rest/services/ITM/discovery/MapServer/wmts',
+      ].join('\n'),
+      'utf8',
+    )
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      headers: new Headers({ 'content-type': 'image/png' }),
+      arrayBuffer: async () => Uint8Array.from([1, 2, 3, 4]).buffer,
+    })
+    const proxy = createElectronOfficialMapProxy({
+      fetch: fetchMock as never,
+      loadSettings: async () => ({
+        ...DEFAULT_APP_SETTINGS,
+        officialMaps: {
+          ...DEFAULT_APP_SETTINGS.officialMaps,
+          sourceType: 'mapgenie_file',
+          sourcePath,
+          status: 'configured',
+          availableSources: ['official_discovery_topo'],
+          serviceCount: 1,
+          packages: [
+            {
+              id: 'official_discovery_topo-test',
+              sourceType: 'mbtiles',
+              mapId: 'official_discovery_topo',
+              packagePath,
+              status: 'ready',
+              bounds: [-10.25, 51.85, -9.45, 52.35],
+              minZoom: 9,
+              maxZoom: 16,
+              tileCount: 1,
+              tileFormat: 'png',
+              createdAt: '2026-06-05T10:00:00.000Z',
+              verifiedAt: '2026-06-05T10:11:12.000Z',
+              message: 'Official Discovery Topo package is ready.',
+            },
+          ],
+        },
+      }),
+    })
+
+    const response = await proxy.fetchOfficialMapTile(
+      'sartracker-official-map://tile/official_discovery_topo/12/1936/1344.png',
+    )
+
+    expect(response).toEqual({
+      contentType: 'image/png',
+      bytesBase64: 'AQIDBA==',
+    })
+    expect(fetchMock).toHaveBeenCalledOnce()
+    expect(fetchMock.mock.calls[0]![0]).not.toContain('field-secret')
+  })
+
+  it('reports a registered package that is missing and has no online fallback', async () => {
+    const fetchMock = vi.fn()
+    const proxy = createElectronOfficialMapProxy({
+      fetch: fetchMock as never,
+      loadSettings: async () => ({
+        ...DEFAULT_APP_SETTINGS,
+        officialMaps: {
+          ...DEFAULT_APP_SETTINGS.officialMaps,
+          packages: [
+            {
+              id: 'official_discovery_topo-test',
+              sourceType: 'mbtiles',
+              mapId: 'official_discovery_topo',
+              packagePath: '/private/maps/missing.mbtiles',
+              status: 'missing',
+              bounds: null,
+              minZoom: null,
+              maxZoom: null,
+              tileCount: 0,
+              tileFormat: '',
+              createdAt: '',
+              verifiedAt: '2026-06-05T10:11:12.000Z',
+              message: 'Official map package file was not found.',
+            },
+          ],
+        },
+      }),
+    })
+
+    await expect(
+      proxy.fetchOfficialMapTile('sartracker-official-map://tile/official_discovery_topo/12/1935/1344.png'),
+    ).rejects.toThrow('Official map package is missing.')
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it('reports a ready package that becomes unreadable instead of falling back silently', async () => {
+    tempDir = await mkdtemp(path.join(os.tmpdir(), 'sartracker-official-unreadable-'))
+    const packagePath = path.join(tempDir, 'not-a-database.mbtiles')
+    await writeFile(packagePath, 'not sqlite', 'utf8')
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      headers: new Headers({ 'content-type': 'image/png' }),
+      arrayBuffer: async () => Uint8Array.from([1, 2, 3, 4]).buffer,
+    })
+    const proxy = createElectronOfficialMapProxy({
+      fetch: fetchMock as never,
+      loadSettings: async () => ({
+        ...DEFAULT_APP_SETTINGS,
+        officialMaps: {
+          ...DEFAULT_APP_SETTINGS.officialMaps,
+          sourceType: 'mapgenie_file',
+          sourcePath: path.join(tempDir!, 'mountainrescue_org.txt'),
+          status: 'configured',
+          availableSources: ['official_discovery_topo'],
+          serviceCount: 1,
+          packages: [
+            {
+              id: 'official_discovery_topo-test',
+              sourceType: 'mbtiles',
+              mapId: 'official_discovery_topo',
+              packagePath,
+              status: 'ready',
+              bounds: [-10.25, 51.85, -9.45, 52.35],
+              minZoom: 9,
+              maxZoom: 16,
+              tileCount: 1,
+              tileFormat: 'png',
+              createdAt: '2026-06-05T10:00:00.000Z',
+              verifiedAt: '2026-06-05T10:11:12.000Z',
+              message: 'Official Discovery Topo package is ready.',
+            },
+          ],
+        },
+      }),
+    })
+
+    await expect(
+      proxy.fetchOfficialMapTile('sartracker-official-map://tile/official_discovery_topo/12/1935/1344.png'),
+    ).rejects.toThrow('Official map package is unreadable.')
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
   it('fails explicitly when official maps are not configured', async () => {
     const proxy = createElectronOfficialMapProxy({
       fetch: vi.fn() as never,
@@ -100,3 +317,40 @@ describe('Electron official map proxy', () => {
     ).rejects.toThrow('Official maps are not configured.')
   })
 })
+
+function createMbtilesPackage(
+  packagePath: string,
+  tiles: readonly {
+    readonly z: number
+    readonly x: number
+    readonly xyzY: number
+    readonly bytes: Uint8Array
+  }[],
+): void {
+  const db = new Database(packagePath)
+  try {
+    db.exec(`
+      CREATE TABLE metadata (name TEXT NOT NULL, value TEXT NOT NULL);
+      CREATE TABLE tiles (
+        zoom_level INTEGER NOT NULL,
+        tile_column INTEGER NOT NULL,
+        tile_row INTEGER NOT NULL,
+        tile_data BLOB NOT NULL
+      );
+    `)
+    const insertMetadata = db.prepare('INSERT INTO metadata (name, value) VALUES (?, ?)')
+    insertMetadata.run('format', 'png')
+    const insertTile = db.prepare(
+      'INSERT INTO tiles (zoom_level, tile_column, tile_row, tile_data) VALUES (?, ?, ?, ?)',
+    )
+    for (const tile of tiles) {
+      insertTile.run(tile.z, tile.x, xyzToTmsY(tile.z, tile.xyzY), Buffer.from(tile.bytes))
+    }
+  } finally {
+    db.close()
+  }
+}
+
+function xyzToTmsY(z: number, xyzY: number): number {
+  return 2 ** z - 1 - xyzY
+}

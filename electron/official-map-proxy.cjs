@@ -1,5 +1,7 @@
 const fs = require('node:fs/promises')
 
+const Database = require('better-sqlite3')
+
 const OFFICIAL_MAP_TILE_PATTERN = /^\/?tile\/([^/]+)\/(\d+)\/(\d+)\/(\d+)\.png$/
 const WEB_MERCATOR_HALF_WORLD_METRES = 20037508.342789244
 const TILE_SIZE = 256
@@ -23,16 +25,32 @@ function createElectronOfficialMapProxy(options) {
 async function fetchOfficialMapTile(options, url) {
   const settings = await options.loadSettings()
   const officialMaps = settings?.officialMaps
+  const tile = parseOfficialMapTileUrl(url)
+
+  const localTile = readLocalPackageTile(officialMaps, tile)
+  if (localTile.status === 'hit') {
+    return localTile.response
+  }
+  if (localTile.status === 'package_error') {
+    throw new Error(localTile.message)
+  }
+
+  return fetchMapGenieTile(options, officialMaps, tile, localTile.status === 'miss')
+}
+
+async function fetchMapGenieTile(options, officialMaps, tile, hadLocalMiss) {
   if (
     officialMaps?.sourceType !== 'mapgenie_file' ||
     officialMaps.status !== 'configured' ||
     typeof officialMaps.sourcePath !== 'string' ||
     officialMaps.sourcePath.trim() === ''
   ) {
+    if (hadLocalMiss) {
+      throw new Error('Official map package does not contain the requested tile.')
+    }
     throw new Error('Official maps are not configured.')
   }
 
-  const tile = parseOfficialMapTileUrl(url)
   if (!Array.isArray(officialMaps.availableSources) || !officialMaps.availableSources.includes(tile.mapId)) {
     throw new Error('Requested official map source is not configured.')
   }
@@ -66,6 +84,84 @@ async function fetchOfficialMapTile(options, url) {
     contentType: response.headers.get('content-type') ?? 'image/png',
     bytesBase64: Buffer.from(await response.arrayBuffer()).toString('base64'),
   }
+}
+
+function readLocalPackageTile(officialMaps, tile) {
+  const packages = Array.isArray(officialMaps?.packages) ? officialMaps.packages : []
+  const matchingPackages = packages.filter((mapPackage) => mapPackage?.mapId === tile.mapId)
+  if (matchingPackages.length === 0) {
+    return { status: 'not_configured' }
+  }
+
+  const readyPackages = matchingPackages.filter(
+    (mapPackage) => mapPackage?.sourceType === 'mbtiles' && mapPackage?.status === 'ready',
+  )
+  if (readyPackages.length === 0) {
+    const missingPackage = matchingPackages.find((mapPackage) => mapPackage?.status === 'missing')
+    if (missingPackage !== undefined) {
+      return { status: 'package_error', message: 'Official map package is missing.' }
+    }
+    return { status: 'package_error', message: 'Official map package is unreadable.' }
+  }
+
+  for (const mapPackage of readyPackages) {
+    const row = readMbtilesTile(mapPackage.packagePath, tile)
+    if (row.status === 'hit') {
+      return {
+        status: 'hit',
+        response: {
+          contentType: contentTypeForTileFormat(mapPackage.tileFormat),
+          bytesBase64: Buffer.from(row.bytes).toString('base64'),
+        },
+      }
+    }
+    if (row.status === 'package_error') {
+      return { status: 'package_error', message: 'Official map package is unreadable.' }
+    }
+  }
+
+  return { status: 'miss' }
+}
+
+function readMbtilesTile(packagePath, tile) {
+  if (typeof packagePath !== 'string' || packagePath.trim() === '') {
+    return { status: 'package_error' }
+  }
+
+  let db
+  try {
+    db = new Database(packagePath, { readonly: true, fileMustExist: true })
+    const row = db
+      .prepare(
+        'SELECT tile_data AS tileData FROM tiles WHERE zoom_level = ? AND tile_column = ? AND tile_row = ? LIMIT 1',
+      )
+      .get(tile.z, tile.x, xyzToTmsY(tile.z, tile.y))
+    if (row?.tileData === undefined) {
+      return { status: 'miss' }
+    }
+    return { status: 'hit', bytes: row.tileData }
+  } catch {
+    return { status: 'package_error' }
+  } finally {
+    if (db !== undefined) {
+      db.close()
+    }
+  }
+}
+
+function xyzToTmsY(z, xyzY) {
+  return 2 ** z - 1 - xyzY
+}
+
+function contentTypeForTileFormat(format) {
+  const normalized = typeof format === 'string' ? format.trim().toLowerCase() : ''
+  if (normalized === 'jpg' || normalized === 'jpeg') {
+    return 'image/jpeg'
+  }
+  if (normalized === 'webp') {
+    return 'image/webp'
+  }
+  return 'image/png'
 }
 
 function parseSourceDetails(contents) {
