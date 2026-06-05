@@ -1,8 +1,15 @@
 import { useEffect, useState } from 'react'
 
-import { getRenderableMapLabel, type RenderableMapId } from '../../lib/map-config'
+import {
+  getRenderableMapLabel,
+  isOfficialMapId,
+  type RenderableMapId,
+} from '../../lib/map-config'
+import { loadAppSettings } from '../../infrastructure/settings-store/tauri-settings-store'
+import { DEFAULT_APP_SETTINGS, type AppSettings } from '../settings/settings-types'
 import {
   describeOfflineMapReadiness,
+  describeOfficialMapReadiness,
   type OfflineMapReadiness,
 } from './offline-map-readiness'
 
@@ -14,14 +21,42 @@ type ServiceWorkerNavigator = Navigator & {
  * Reads browser runtime support for viewed-tile offline map reuse.
  */
 export function useOfflineMapReadiness(activeBasemapId: RenderableMapId): OfflineMapReadiness {
-  const [readiness, setReadiness] = useState(() => readOfflineMapReadiness(activeBasemapId))
+  const [settings, setSettings] = useState<AppSettings>(DEFAULT_APP_SETTINGS)
+  const [readiness, setReadiness] = useState(() =>
+    readOfflineMapReadiness(activeBasemapId, DEFAULT_APP_SETTINGS),
+  )
+
+  useEffect(() => {
+    let cancelled = false
+
+    const refreshSettings = () => {
+      void loadAppSettings()
+        .then((nextSettings) => {
+          if (!cancelled) {
+            setSettings(nextSettings)
+          }
+        })
+        .catch(() => {
+          if (!cancelled) {
+            setSettings(DEFAULT_APP_SETTINGS)
+          }
+        })
+    }
+
+    refreshSettings()
+    window.addEventListener('sartracker:settings-updated', refreshSettings)
+    return () => {
+      cancelled = true
+      window.removeEventListener('sartracker:settings-updated', refreshSettings)
+    }
+  }, [])
 
   useEffect(() => {
     let cancelled = false
 
     function updateReadiness(): void {
       if (!cancelled) {
-        setReadiness(readOfflineMapReadiness(activeBasemapId))
+        setReadiness(readOfflineMapReadiness(activeBasemapId, settings))
       }
     }
 
@@ -40,7 +75,7 @@ export function useOfflineMapReadiness(activeBasemapId: RenderableMapId): Offlin
       window.removeEventListener('offline', updateReadiness)
       serviceWorker?.removeEventListener('controllerchange', updateReadiness)
     }
-  }, [activeBasemapId])
+  }, [activeBasemapId, settings])
 
   return readiness
 }
@@ -48,7 +83,17 @@ export function useOfflineMapReadiness(activeBasemapId: RenderableMapId): Offlin
 /**
  * Converts browser service-worker/cache support into operator-facing map readiness.
  */
-function readOfflineMapReadiness(activeBasemapId: RenderableMapId): OfflineMapReadiness {
+function readOfflineMapReadiness(
+  activeBasemapId: RenderableMapId,
+  settings: AppSettings,
+): OfflineMapReadiness {
+  if (isOfficialMapId(activeBasemapId) || settings.officialMaps.status !== 'configured') {
+    return describeOfficialMapReadiness({
+      activeMapId: activeBasemapId,
+      officialMaps: settings.officialMaps,
+    })
+  }
+
   const serviceWorker = (navigator as ServiceWorkerNavigator).serviceWorker
 
   return describeOfflineMapReadiness({

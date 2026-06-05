@@ -656,12 +656,14 @@
           <div class="card-grid">
             <div class="card"><strong>Maps menu</strong><br />Groups official maps and public fallback maps. Discovery Topo is the default official operational map once licensed maps are configured; hosted/browser testing keeps official maps marked not configured until a controlled private source is added.</div>
             <div class="card"><strong>Coordinate converter</strong><br />Accepts IG, DD, and DMS, including pasted DD/DMS latitude-longitude pairs in the first field. W3W stays unavailable until integration decisions are settled. Results can be copied, used to jump the map, or used to open the normal marker form at that point.</div>
-            <div class="card"><strong>Offline badge</strong><br />Keeps the offline tile readiness warning visible without exposing routine cache controls until the Maps menu is open.</div>
+            <div class="card"><strong>Offline badge</strong><br />Shows whether the active map is a public fallback, an online official source, or a ready/missing/unreadable official offline package. Warnings also appear on the map when the active map cannot be trusted offline.</div>
           </div>
           <p>
-            Offline map behavior is currently <strong>viewed tile caching</strong>, not a complete
-            packaged offline map bundle. Open <strong>Maps</strong> and use <strong>Check View</strong>
-            for the current map view before assuming an area is cached.
+            Public fallback maps still use <strong>viewed tile caching</strong>. Official Discovery maps
+            use local MBTiles packages in Electron builds when a package is registered. Open
+            <strong>Maps</strong> and use <strong>Check View</strong> before relying on the current
+            area: the app will report whether the view is inside the registered official offline area
+            or outside it.
           </p>
         </section>
 
@@ -934,7 +936,7 @@
             <tbody>
               <tr><td>Mission Defaults</td><td>Auto-refresh, auto-save, mission roots, coordinator roster, admin roster, and coordinate display preference.</td></tr>
               <tr><td>Data Sources</td><td>Provider type, Traccar web/API URL, authentication mode, secret handling, auto-connect, tracking cache, replay defaults, and hosted-browser proxy guidance when the app is running from Vercel. For the team test server, desktop builds use the Traccar API port <code>8082</code>; tracker listener ports such as <code>5055</code> are not valid provider base URLs.</td></tr>
-              <tr><td>Official Maps</td><td>Local/Electron configuration for the licensed MapGenie source file. Settings records only the source path and safe metadata such as status, username, and service count; it does not copy the password into app settings, diagnostics, screenshots, or source control. Hosted browser testing keeps official maps unavailable unless a controlled private hosted source is added later.</td></tr>
+              <tr><td>Official Maps</td><td>Local/Electron configuration for the licensed MapGenie source file and registered official offline packages. Settings records only safe metadata such as source status, username, service count, package status, zoom range, tile count, and verification time. It does not copy map package contents, passwords, or package paths into diagnostics, screenshots, or source control. Hosted browser testing keeps official maps unavailable unless a controlled private hosted source is added later.</td></tr>
               <tr><td>Weather Links</td><td>A small named list of external weather URLs, such as Met Éireann. Bare domains like <code>met.ie</code> or <code>www.yr.no</code> are accepted and automatically normalized to <code>https://</code>. These links open in the system default browser; SAR Tracker does not import weather data.</td></tr>
               <tr><td>Advanced Settings</td><td>Reserved repair/support actions. Some actions may remain disabled until the matching milestone is complete.</td></tr>
             </tbody>
@@ -948,7 +950,7 @@
             than to infer reliability from a polished interface.
           </p>
           <ul>
-            <li><strong>Offline maps:</strong> viewed tile caching and current-view preflight exist, but full packaged offline map bundles and saved coverage manifests are still open work.</li>
+            <li><strong>Offline maps:</strong> public maps use viewed-tile caching. Electron can register and serve local official MBTiles packages, and the map can report ready, outside-area, missing, unreadable, online-source, unavailable, and public-fallback states. A self-service package import workflow and saved coverage manifests are still open work.</li>
             <li><strong>Replay mode:</strong> settings expose replay defaults, but full replay/training workflow parity is still active work.</li>
             <li><strong>Mission metadata:</strong> richer coordinator/metadata capture at mission start remains a parity gap.</li>
             <li><strong>Layer parity:</strong> the app has a grouped layer tree with visibility, aliases, expand/collapse all, and reorder controls, but final parity acceptance is still pending.</li>

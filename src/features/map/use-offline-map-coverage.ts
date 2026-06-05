@@ -3,9 +3,11 @@ import type maplibregl from 'maplibre-gl'
 
 import {
   getBasemapById,
+  getRenderableMapLabel,
   isOfficialMapId,
   type RenderableMapId,
 } from '../../lib/map-config'
+import { loadAppSettings } from '../../infrastructure/settings-store/tauri-settings-store'
 import {
   MAP_TILE_CACHE_NAME,
   buildOfflineCoverageTileUrls,
@@ -13,6 +15,7 @@ import {
   createErroredOfflineMapCoverage,
   createUnavailableOfflineMapCoverage,
   createUncheckedOfflineMapCoverage,
+  describeOfficialOfflineMapCoverage,
   describeOfflineMapCoverage,
   type OfflineMapCoverage,
   type OfflineMapCoverageBounds,
@@ -49,17 +52,13 @@ export function useOfflineMapCoverage(
 
   const checkCurrentViewCoverage = useCallback(async () => {
     const map = mapRef.current
-    const cacheStorage = (window as CacheStorageWindow).caches
 
     if (isOfficialMapId(activeBasemapId)) {
-      setCoverageState({
-        basemapId: activeBasemapId,
-        coverage: createUnavailableOfflineMapCoverage(
-          'Official map offline coverage is planned separately from public tile cache checks.',
-        ),
-      })
+      await checkOfficialMapCoverage(activeBasemapId, map, setCoverageState)
       return
     }
+
+    const cacheStorage = (window as CacheStorageWindow).caches
 
     if (map === null) {
       setCoverageState({
@@ -112,6 +111,74 @@ export function useOfflineMapCoverage(
     coverage,
     checkCurrentViewCoverage,
   }
+}
+
+async function checkOfficialMapCoverage(
+  activeBasemapId: RenderableMapId,
+  map: maplibregl.Map | null,
+  setCoverageState: (state: OfflineMapCoverageState) => void,
+): Promise<void> {
+  if (map === null) {
+    setCoverageState({
+      basemapId: activeBasemapId,
+      coverage: createUnavailableOfflineMapCoverage('Map is not ready yet.'),
+    })
+    return
+  }
+
+  setCoverageState({
+    basemapId: activeBasemapId,
+    coverage: createCheckingOfflineMapCoverage(),
+  })
+
+  try {
+    const settings = await loadAppSettings()
+    const packageForMap = settings.officialMaps.packages.find(
+      (mapPackage) => mapPackage.mapId === activeBasemapId,
+    )
+    const readyPackage = settings.officialMaps.packages.find(
+      (mapPackage) => mapPackage.mapId === activeBasemapId && mapPackage.status === 'ready',
+    )
+
+    if (readyPackage?.bounds !== null && readyPackage?.bounds !== undefined) {
+      setCoverageState({
+        basemapId: activeBasemapId,
+        coverage: describeOfficialOfflineMapCoverage({
+          basemapLabel: getRenderableMapLabel(activeBasemapId),
+          packageBounds: readyPackage.bounds,
+          viewBounds: readMapBounds(map),
+          zoom: Math.max(0, Math.floor(map.getZoom())),
+        }),
+      })
+      return
+    }
+
+    setCoverageState({
+      basemapId: activeBasemapId,
+      coverage: createUnavailableOfflineMapCoverage(
+        describeUnavailableOfficialCoverage(activeBasemapId, packageForMap?.status),
+      ),
+    })
+  } catch {
+    setCoverageState({
+      basemapId: activeBasemapId,
+      coverage: createErroredOfflineMapCoverage(),
+    })
+  }
+}
+
+function describeUnavailableOfficialCoverage(
+  activeBasemapId: RenderableMapId,
+  packageStatus: string | undefined,
+): string {
+  const label = getRenderableMapLabel(activeBasemapId)
+  if (packageStatus === 'missing') {
+    return `${label}: the registered official map package is missing.`
+  }
+  if (packageStatus === 'invalid') {
+    return `${label}: the registered official map package is unreadable.`
+  }
+  return `${label}: no ready official offline package is registered.`
 }
 
 /**

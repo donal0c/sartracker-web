@@ -70,6 +70,27 @@ describe('map basemap catalogue', () => {
     ])
   })
 
+  it('marks official maps available from ready local packages', () => {
+    const groups = buildMapCatalogueGroups({
+      status: 'not_configured',
+      availableSources: [],
+      packages: [
+        {
+          mapId: 'official_discovery_topo',
+          status: 'ready',
+        },
+      ],
+    })
+
+    expect(groups[0]?.items.map((item) => [item.id, item.availability, item.mapId])).toEqual([
+      ['official_discovery_topo', 'available', 'official_discovery_topo'],
+      ['official_premium_basemap', 'not_configured', undefined],
+      ['official_aerial_imagery', 'not_configured', undefined],
+      ['official_high_resolution_imagery', 'not_configured', undefined],
+    ])
+  })
+
+
   it('builds tile urls with the correct placeholder order', () => {
     expect(buildTileUrl(getBasemapById('opentopomap').tiles[0], 12, 345, 678)).toBe(
       'https://tile.opentopomap.org/12/345/678.png',

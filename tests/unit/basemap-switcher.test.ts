@@ -87,15 +87,31 @@ describe('BasemapSwitcher', () => {
     expect(onBasemapChange).toHaveBeenCalledWith('official_discovery_topo')
   })
 
+  it('shows official offline readiness in the maps status area', () => {
+    renderSwitcher(vi.fn(), undefined, {
+      detail: 'OpenTopoMap is a public fallback map. Licensed official map packages are not active for this view.',
+      label: 'Public fallback only',
+      status: 'limited',
+      tone: 'neutral',
+    })
+    click('[data-testid="basemap-menu-toggle"]')
+
+    const readiness = host.querySelector('[data-testid="basemap-offline-readiness"]')
+    expect(readiness?.textContent).toContain('Public fallback only')
+    expect(readiness?.querySelector('span')?.className).toContain('bg-stone-400')
+  })
+
   function renderSwitcher(
     onBasemapChange: (basemapId: never) => void = vi.fn(),
     catalogueGroups?: never,
+    offlineReadiness?: never,
   ): void {
     act(() => {
       root.render(
         React.createElement(BasemapSwitcher, {
           activeBasemapId: 'opentopomap',
           catalogueGroups,
+          offlineReadiness,
           onBasemapChange,
         }),
       )

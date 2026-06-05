@@ -23,6 +23,7 @@ import {
   persistCoordinateDisplayMode,
   readCoordinateDisplayMode,
 } from '../lib/coordinate-preferences'
+import { getRenderableMapLabel } from '../lib/map-config'
 import { isTauriRuntimeAvailable } from '../lib/tauri-runtime'
 
 type SettingsWorkspaceProps = {
@@ -266,6 +267,8 @@ export function SettingsWorkspace({ open, onClose }: SettingsWorkspaceProps) {
                       </button>
                     </div>
                   ) : null}
+
+                  <OfficialMapPackageStatus draft={draft} />
 
                   <div className="space-y-2">
                     <p className="sar-section-label">
@@ -761,6 +764,54 @@ export function SettingsWorkspace({ open, onClose }: SettingsWorkspaceProps) {
   }
 }
 
+function OfficialMapPackageStatus({ draft }: { readonly draft: AppSettingsDraft }) {
+  const packages = draft.officialMaps.packages
+  const readyCount = packages.filter((mapPackage) => mapPackage.status === 'ready').length
+
+  return (
+    <div
+      className="border border-[var(--sar-line)] bg-[var(--sar-panel-sunken)] px-4 py-3 text-sm text-stone-200"
+      data-testid="official-map-package-status"
+    >
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="font-semibold text-stone-100">Official offline packages</p>
+        <span className="text-xs font-bold text-stone-300">
+          {readyCount}/{packages.length} ready
+        </span>
+      </div>
+      {packages.length === 0 ? (
+        <p className="mt-2 text-xs text-stone-300">
+          No local official map package is registered. Electron can still use a configured online MapGenie source when available.
+        </p>
+      ) : (
+        <div className="mt-3 grid gap-2">
+          {packages.map((mapPackage) => (
+            <div
+              className="grid gap-2 border border-[var(--sar-line)] bg-stone-950/45 px-3 py-2 text-xs md:grid-cols-[1.2fr_auto_auto]"
+              key={mapPackage.id}
+            >
+              <div>
+                <p className="font-semibold text-stone-100">
+                  {getRenderableMapLabel(mapPackage.mapId)}
+                </p>
+                <p className="mt-0.5 text-stone-300">
+                  {formatOfficialPackageDetail(mapPackage)}
+                </p>
+              </div>
+              <span className={`self-start border px-2 py-1 font-black uppercase tracking-[0.12em] ${officialPackageStatusClass(mapPackage.status)}`}>
+                {formatOfficialPackageStatus(mapPackage.status)}
+              </span>
+              <span className="self-start text-right font-semibold text-stone-300">
+                {formatPackageVerifiedAt(mapPackage.verifiedAt)}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 function Section(props: {
   readonly title: string
   readonly description: string
@@ -900,6 +951,61 @@ function formatOfficialMapStatus(status: AppSettingsDraft['officialMaps']['statu
     default:
       return 'Not configured'
   }
+}
+
+function formatOfficialPackageStatus(
+  status: AppSettingsDraft['officialMaps']['packages'][number]['status'],
+): string {
+  switch (status) {
+    case 'ready':
+      return 'Ready'
+    case 'missing':
+      return 'Missing'
+    case 'invalid':
+      return 'Unreadable'
+  }
+}
+
+function officialPackageStatusClass(
+  status: AppSettingsDraft['officialMaps']['packages'][number]['status'],
+): string {
+  switch (status) {
+    case 'ready':
+      return 'border-emerald-300/60 bg-emerald-950/50 text-emerald-100'
+    case 'missing':
+    case 'invalid':
+      return 'border-rose-300/60 bg-rose-950/50 text-rose-50'
+  }
+}
+
+function formatOfficialPackageDetail(
+  mapPackage: AppSettingsDraft['officialMaps']['packages'][number],
+): string {
+  if (mapPackage.status !== 'ready') {
+    return mapPackage.message
+  }
+
+  return [
+    mapPackage.tileCount > 0 ? `${mapPackage.tileCount.toLocaleString()} tiles` : 'tile count unavailable',
+    formatPackageZoomRange(mapPackage),
+    mapPackage.tileFormat !== '' ? mapPackage.tileFormat.toUpperCase() : 'format unknown',
+  ].join(' · ')
+}
+
+function formatPackageZoomRange(
+  mapPackage: AppSettingsDraft['officialMaps']['packages'][number],
+): string {
+  if (mapPackage.minZoom !== null && mapPackage.maxZoom !== null) {
+    return `z${mapPackage.minZoom}-z${mapPackage.maxZoom}`
+  }
+  return 'zoom range unavailable'
+}
+
+function formatPackageVerifiedAt(value: string): string {
+  if (value.trim() === '') {
+    return 'Not verified'
+  }
+  return `Verified ${new Date(value).toLocaleDateString()}`
 }
 
 function createSettingsValidationContext(): SettingsValidationContext | undefined {

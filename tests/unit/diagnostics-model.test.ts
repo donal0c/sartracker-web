@@ -42,12 +42,18 @@ describe('diagnostics model', () => {
     expect(snapshot.summaryRows.some((row) => row.label === 'Tracking mode' && row.value === 'online')).toBe(true)
     expect(snapshot.storageRows.some((row) => row.label === 'Schema version' && row.value === '3')).toBe(true)
     expect(snapshot.configurationRows.some((row) => row.label === 'Official maps' && row.value === 'configured')).toBe(true)
+    expect(snapshot.configurationRows.some((row) => row.label === 'Official packages' && row.value === '1 ready / 2 registered')).toBe(true)
     expect(snapshot.repair.targetMissionLabel).toContain('Night Ops')
     expect(snapshot.supportReport).toContain('Diagnostics Report')
     expect(snapshot.supportReport).toContain('Night Ops')
     expect(snapshot.supportReport).toContain('https://traccar.example.com')
     expect(snapshot.supportReport).toContain('official maps: configured')
+    expect(snapshot.supportReport).toContain('official map packages: 2')
+    expect(snapshot.supportReport).toContain('official map packages ready: 1')
+    expect(snapshot.supportReport).toContain('official map package 1: official_discovery_topo ready mbtiles z8-z16 tiles=31729 format=png')
+    expect(snapshot.supportReport).toContain('official map package 2: official_discovery_topo missing mbtiles')
     expect(snapshot.supportReport).not.toContain('mountainrescue_org.txt')
+    expect(snapshot.supportReport).not.toContain('reeks-standard-60km-z16.mbtiles')
     expect(snapshot.supportReport).toContain('layer metadata entries: 3')
   })
 
@@ -183,6 +189,38 @@ function createSettings(): AppSettings {
       availableSources: ['official_discovery_topo'],
       serviceCount: 1,
       message: 'Official Discovery Topo source configured.',
+      packages: [
+        {
+          id: 'official_discovery_topo-ready',
+          sourceType: 'mbtiles',
+          mapId: 'official_discovery_topo',
+          packagePath: '/private/maps/reeks-standard-60km-z16.mbtiles',
+          status: 'ready',
+          bounds: [-10.25, 51.85, -9.45, 52.35],
+          minZoom: 8,
+          maxZoom: 16,
+          tileCount: 31_729,
+          tileFormat: 'png',
+          createdAt: '2026-06-05T10:00:00.000Z',
+          verifiedAt: '2026-06-05T10:11:12.000Z',
+          message: 'Official Discovery Topo package is ready.',
+        },
+        {
+          id: 'official_discovery_topo-missing',
+          sourceType: 'mbtiles',
+          mapId: 'official_discovery_topo',
+          packagePath: '/private/maps/missing.mbtiles',
+          status: 'missing',
+          bounds: null,
+          minZoom: null,
+          maxZoom: null,
+          tileCount: 0,
+          tileFormat: '',
+          createdAt: '',
+          verifiedAt: '2026-06-05T10:12:12.000Z',
+          message: 'Official map package file was not found.',
+        },
+      ],
     },
     weather: {
       links: [],

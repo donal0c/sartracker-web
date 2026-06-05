@@ -9,6 +9,7 @@ type OfflineMapReadinessBadgeProps = {
 
 const TONE_CLASSES: Record<OfflineMapReadiness['tone'], string> = {
   danger: 'border-rose-300/75 bg-stone-950/96 text-rose-50',
+  neutral: 'border-stone-400/70 bg-stone-950/96 text-stone-100',
   success: 'border-emerald-300/70 bg-stone-950/96 text-emerald-100',
   warning: 'border-amber-300/75 bg-stone-950/96 text-amber-100',
 }

@@ -43,6 +43,13 @@ export type OfflineMapCoverageSummaryInput = {
   readonly zoom: number
 }
 
+export type OfficialOfflineMapCoverageInput = {
+  readonly basemapLabel: string
+  readonly packageBounds: readonly [number, number, number, number]
+  readonly viewBounds: OfflineMapCoverageBounds
+  readonly zoom: number
+}
+
 const WEB_MERCATOR_LATITUDE_LIMIT = 85.05112878
 
 /**
@@ -150,6 +157,48 @@ export function describeOfflineMapCoverage(
     totalTiles: input.totalTiles,
     zoom: input.zoom,
   }
+}
+
+/**
+ * Summarizes whether the visible official-map viewport is inside the local package bounds.
+ */
+export function describeOfficialOfflineMapCoverage(
+  input: OfficialOfflineMapCoverageInput,
+): OfflineMapCoverage {
+  if (isViewInsidePackageBounds(input.viewBounds, input.packageBounds)) {
+    return {
+      cachedTiles: null,
+      detail: `${input.basemapLabel}: current view is inside the registered official offline package at z${input.zoom}.`,
+      label: 'Current view inside official offline area',
+      status: 'complete',
+      tone: 'success',
+      totalTiles: null,
+      zoom: input.zoom,
+    }
+  }
+
+  return {
+    cachedTiles: null,
+    detail: `${input.basemapLabel}: current view is outside the registered official offline package. Use online maps or switch to a public fallback.`,
+    label: 'Outside official offline area',
+    status: 'missing',
+    tone: 'danger',
+    totalTiles: null,
+    zoom: input.zoom,
+  }
+}
+
+function isViewInsidePackageBounds(
+  viewBounds: OfflineMapCoverageBounds,
+  packageBounds: readonly [number, number, number, number],
+): boolean {
+  const [west, south, east, north] = packageBounds
+  return (
+    viewBounds.west >= west &&
+    viewBounds.east <= east &&
+    viewBounds.south >= south &&
+    viewBounds.north <= north
+  )
 }
 
 /**

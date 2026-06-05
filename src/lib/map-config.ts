@@ -41,6 +41,10 @@ export type MapCatalogueGroup = {
 export type OfficialMapAvailabilityInput = {
   readonly status: string
   readonly availableSources: readonly OfficialMapId[]
+  readonly packages?: readonly {
+    readonly mapId: OfficialMapId
+    readonly status: string
+  }[]
 }
 
 export const DEFAULT_BASEMAP_ID: BasemapId = 'opentopomap'
@@ -212,13 +216,18 @@ export function buildMapCatalogueGroups(
   const configuredSources = new Set(
     officialMaps?.status === 'configured' ? officialMaps.availableSources : [],
   )
+  const readyPackageSources = new Set(
+    officialMaps?.packages
+      ?.filter((mapPackage) => mapPackage.status === 'ready')
+      .map((mapPackage) => mapPackage.mapId) ?? [],
+  )
 
   return [
     {
       id: 'official',
       label: 'Official maps',
       items: OFFICIAL_MAPS.map((map) => {
-        const available = configuredSources.has(map.id)
+        const available = configuredSources.has(map.id) || readyPackageSources.has(map.id)
         return {
           id: map.id,
           label: map.label,

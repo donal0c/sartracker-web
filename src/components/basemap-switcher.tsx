@@ -134,7 +134,9 @@ export function BasemapSwitcher({
                       ? 'bg-emerald-400'
                       : offlineReadiness.tone === 'warning'
                         ? 'bg-amber-400'
-                        : 'bg-rose-400'
+                        : offlineReadiness.tone === 'danger'
+                          ? 'bg-rose-400'
+                          : 'bg-stone-400'
                   }`}
                 />
                 <span className="text-stone-200">{offlineReadiness.label}</span>

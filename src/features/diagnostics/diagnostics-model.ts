@@ -80,6 +80,7 @@ export function buildDiagnosticsSnapshot(
   const reportFileName = `diagnostics-report-${safeTimestamp(input.generatedAt)}.txt`
   const warnings = collectWarnings(input)
   const officialMapStatus = input.settings.officialMaps?.status ?? 'not_configured'
+  const officialMapPackageSummary = summarizeOfficialMapPackages(input.settings.officialMaps?.packages)
   const runtimeLabel = formatRuntimeLabel(input.runtimeKind)
   const summaryRows: readonly DiagnosticsRow[] = [
     {
@@ -130,6 +131,11 @@ export function buildDiagnosticsSnapshot(
       label: 'Official maps',
       value: officialMapStatus.replaceAll('_', ' '),
       tone: officialMapStatus === 'configured' ? 'success' : 'warning',
+    },
+    {
+      label: 'Official packages',
+      value: officialMapPackageSummary,
+      tone: officialMapPackageSummary.startsWith('0 ready') ? 'warning' : 'success',
     },
     {
       label: 'Autosave interval',
@@ -186,6 +192,7 @@ function buildSupportReport(
   const officialMapStatus = input.settings.officialMaps?.status ?? 'not_configured'
   const officialMapSourceType = input.settings.officialMaps?.sourceType ?? 'none'
   const officialMapServiceCount = input.settings.officialMaps?.serviceCount ?? 0
+  const officialMapPackages = formatOfficialMapPackageReport(input.settings.officialMaps?.packages)
 
   return [
     'Diagnostics Report',
@@ -221,6 +228,7 @@ function buildSupportReport(
     `official maps: ${officialMapStatus.replaceAll('_', ' ')}`,
     `official map source type: ${officialMapSourceType}`,
     `official map services: ${officialMapServiceCount}`,
+    ...officialMapPackages,
     `runtime tracking configured: ${booleanWord(input.runtimeBootstrap.trackingConfig !== null)}`,
     `autosave interval ms: ${input.runtimeBootstrap.autosaveIntervalMs}`,
     `tracking poll interval ms: ${input.runtimeBootstrap.trackingPollIntervalMs}`,
@@ -237,6 +245,50 @@ function buildSupportReport(
     '[warnings]',
     ...(input.warnings.length === 0 ? ['none'] : input.warnings),
   ].join('\n')
+}
+
+function summarizeOfficialMapPackages(
+  input: AppSettings['officialMaps']['packages'] | undefined,
+): string {
+  const packages = Array.isArray(input) ? input : []
+  const readyCount = packages.filter((mapPackage) => mapPackage.status === 'ready').length
+  return `${readyCount} ready / ${packages.length} registered`
+}
+
+function formatOfficialMapPackageReport(
+  input: AppSettings['officialMaps']['packages'] | undefined,
+): readonly string[] {
+  const packages = Array.isArray(input) ? input : []
+  const readyCount = packages.filter((mapPackage) => mapPackage.status === 'ready').length
+  return [
+    `official map packages: ${packages.length}`,
+    `official map packages ready: ${readyCount}`,
+    ...packages.map((mapPackage, index) => formatOfficialMapPackageLine(mapPackage, index + 1)),
+  ]
+}
+
+function formatOfficialMapPackageLine(
+  mapPackage: AppSettings['officialMaps']['packages'][number],
+  index: number,
+): string {
+  return [
+    `official map package ${index}:`,
+    mapPackage.mapId,
+    mapPackage.status,
+    mapPackage.sourceType,
+    formatPackageZoomRange(mapPackage),
+    mapPackage.tileCount > 0 ? `tiles=${mapPackage.tileCount}` : '',
+    mapPackage.tileFormat !== '' ? `format=${mapPackage.tileFormat}` : '',
+  ].filter((value) => value !== '').join(' ')
+}
+
+function formatPackageZoomRange(
+  mapPackage: AppSettings['officialMaps']['packages'][number],
+): string {
+  if (mapPackage.minZoom !== null && mapPackage.maxZoom !== null) {
+    return `z${mapPackage.minZoom}-z${mapPackage.maxZoom}`
+  }
+  return ''
 }
 
 function collectWarnings(input: BuildDiagnosticsSnapshotInput): readonly string[] {

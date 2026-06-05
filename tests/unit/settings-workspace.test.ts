@@ -187,6 +187,65 @@ describe('SettingsWorkspace', () => {
     )
   })
 
+  it('shows sanitized official map package readiness in settings', async () => {
+    const onClose = vi.fn()
+    const { SettingsWorkspace } = await import('../../src/components/settings-workspace')
+    mocks.loadAppSettings.mockResolvedValue({
+      ...DEFAULT_APP_SETTINGS,
+      officialMaps: {
+        ...DEFAULT_APP_SETTINGS.officialMaps,
+        packages: [
+          {
+            id: 'official_discovery_topo-ready',
+            sourceType: 'mbtiles',
+            mapId: 'official_discovery_topo',
+            packagePath: '/private/maps/reeks-standard-60km-z16.mbtiles',
+            status: 'ready',
+            bounds: [-10.25, 51.85, -9.45, 52.35],
+            minZoom: 8,
+            maxZoom: 16,
+            tileCount: 31_729,
+            tileFormat: 'png',
+            createdAt: '2026-06-05T10:00:00.000Z',
+            verifiedAt: '2026-06-05T10:11:12.000Z',
+            message: 'Official Discovery Topo package is ready.',
+          },
+          {
+            id: 'official_discovery_topo-missing',
+            sourceType: 'mbtiles',
+            mapId: 'official_discovery_topo',
+            packagePath: '/private/maps/missing.mbtiles',
+            status: 'missing',
+            bounds: null,
+            minZoom: null,
+            maxZoom: null,
+            tileCount: 0,
+            tileFormat: '',
+            createdAt: '',
+            verifiedAt: '2026-06-05T10:12:12.000Z',
+            message: 'Official map package file was not found.',
+          },
+        ],
+      },
+    })
+    mocks.saveAppSettings.mockResolvedValue(DEFAULT_APP_SETTINGS)
+    mocks.getAppRuntimeController.mockReturnValue(null)
+    mocks.readCoordinateDisplayMode.mockReturnValue('wgs84_first')
+    mocks.isTauriRuntimeAvailable.mockReturnValue(false)
+
+    render(React.createElement(SettingsWorkspace, { open: true, onClose }))
+
+    const packageStatus = await waitForElement('[data-testid="official-map-package-status"]')
+    expect(packageStatus.textContent).toContain('Official offline packages')
+    expect(packageStatus.textContent).toContain('Discovery Topo')
+    expect(packageStatus.textContent).toContain('Ready')
+    expect(packageStatus.textContent).toContain('Missing')
+    expect(packageStatus.textContent).toContain('31,729 tiles')
+    expect(packageStatus.textContent).toContain('z8-z16')
+    expect(packageStatus.textContent).not.toContain('/private/maps')
+    expect(packageStatus.textContent).not.toContain('reeks-standard-60km-z16.mbtiles')
+  })
+
   function render(element: React.ReactElement): void {
     host = document.createElement('div')
     document.body.append(host)

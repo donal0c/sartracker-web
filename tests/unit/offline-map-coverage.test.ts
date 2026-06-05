@@ -5,6 +5,7 @@ import {
   createErroredOfflineMapCoverage,
   createUnavailableOfflineMapCoverage,
   createUncheckedOfflineMapCoverage,
+  describeOfficialOfflineMapCoverage,
   describeOfflineMapCoverage,
   getTileCoordinatesForBounds,
   latitudeToTileY,
@@ -99,6 +100,54 @@ describe('offline map coverage', () => {
       tone: 'danger',
       totalTiles: null,
       zoom: null,
+    })
+  })
+
+  it('describes current view inside an official offline package area', () => {
+    expect(
+      describeOfficialOfflineMapCoverage({
+        basemapLabel: 'Discovery Topo',
+        packageBounds: [-10.25, 51.85, -9.45, 52.35],
+        viewBounds: {
+          west: -9.9,
+          south: 51.95,
+          east: -9.7,
+          north: 52.1,
+        },
+        zoom: 13,
+      }),
+    ).toEqual({
+      cachedTiles: null,
+      detail: 'Discovery Topo: current view is inside the registered official offline package at z13.',
+      label: 'Current view inside official offline area',
+      status: 'complete',
+      tone: 'success',
+      totalTiles: null,
+      zoom: 13,
+    })
+  })
+
+  it('describes current view outside an official offline package area', () => {
+    expect(
+      describeOfficialOfflineMapCoverage({
+        basemapLabel: 'Discovery Topo',
+        packageBounds: [-10.25, 51.85, -9.45, 52.35],
+        viewBounds: {
+          west: -8.5,
+          south: 53,
+          east: -8.2,
+          north: 53.2,
+        },
+        zoom: 13,
+      }),
+    ).toEqual({
+      cachedTiles: null,
+      detail: 'Discovery Topo: current view is outside the registered official offline package. Use online maps or switch to a public fallback.',
+      label: 'Outside official offline area',
+      status: 'missing',
+      tone: 'danger',
+      totalTiles: null,
+      zoom: 13,
     })
   })
 
