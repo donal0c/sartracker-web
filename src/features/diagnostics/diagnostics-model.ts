@@ -3,6 +3,7 @@ import type { MissionGovernanceRuntimeState } from '../mission/start-mission-gov
 import type { AppSettings, RuntimeBootstrapSettings } from '../settings/settings-types'
 import type { TrackingConnectionStatus, TrackingSnapshot } from '../tracking/tracking-types'
 import type { Mission, MissionStoreInfo } from '../../infrastructure/mission-store/tauri-mission-store'
+import type { DesktopRuntimeKind } from '../../lib/desktop-runtime'
 
 type DependencySmoke = {
   readonly hasMapLibre: boolean
@@ -45,7 +46,7 @@ export type DiagnosticsSnapshot = {
 type BuildDiagnosticsSnapshotInput = {
   readonly generatedAt: string
   readonly appVersion: string
-  readonly isTauriRuntimeAvailable: boolean
+  readonly runtimeKind: DesktopRuntimeKind
   readonly userAgent: string
   readonly dependencySmoke: DependencySmoke
   readonly settings: AppSettings
@@ -79,10 +80,11 @@ export function buildDiagnosticsSnapshot(
   const reportFileName = `diagnostics-report-${safeTimestamp(input.generatedAt)}.txt`
   const warnings = collectWarnings(input)
   const officialMapStatus = input.settings.officialMaps?.status ?? 'not_configured'
+  const runtimeLabel = formatRuntimeLabel(input.runtimeKind)
   const summaryRows: readonly DiagnosticsRow[] = [
     {
       label: 'Runtime',
-      value: input.isTauriRuntimeAvailable ? 'Tauri desktop' : 'Browser validation',
+      value: runtimeLabel.summary,
     },
     { label: 'App version', value: input.appVersion },
     { label: 'Mission phase', value: input.missionRuntime.phase },
@@ -191,7 +193,7 @@ function buildSupportReport(
     `report file: ${input.reportFileName}`,
     '',
     '[environment]',
-    `runtime: ${input.isTauriRuntimeAvailable ? 'tauri desktop' : 'browser validation'}`,
+    `runtime: ${formatRuntimeLabel(input.runtimeKind).report}`,
     `app version: ${input.appVersion}`,
     `user agent: ${input.userAgent}`,
     `dependencies: maplibre=${booleanWord(input.dependencySmoke.hasMapLibre)}, proj4=${booleanWord(input.dependencySmoke.hasProj4)}, turf=${booleanWord(input.dependencySmoke.hasTurf)}, zustand=${booleanWord(input.dependencySmoke.hasZustand)}, terradraw=${booleanWord(input.dependencySmoke.hasTerraDraw)}`,
@@ -283,6 +285,20 @@ function toneForTrackingMode(mode: TrackingConnectionStatus['mode']): Diagnostic
 
 function humanizeProvider(providerType: AppSettings['dataSource']['providerType']): string {
   return providerType === 'traccar_http' ? 'Traccar HTTP' : 'None'
+}
+
+function formatRuntimeLabel(runtimeKind: DesktopRuntimeKind): {
+  readonly summary: string
+  readonly report: string
+} {
+  switch (runtimeKind) {
+    case 'electron':
+      return { summary: 'Electron desktop', report: 'electron desktop' }
+    case 'tauri':
+      return { summary: 'Tauri desktop', report: 'tauri desktop' }
+    case 'browser':
+      return { summary: 'Browser validation', report: 'browser validation' }
+  }
 }
 
 function booleanWord(value: boolean): string {

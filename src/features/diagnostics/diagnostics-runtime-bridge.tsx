@@ -10,8 +10,7 @@ import { createTauriMissionStore } from '../../infrastructure/mission-store/taur
 import { loadAppSettings, loadRuntimeBootstrapSettings } from '../../infrastructure/settings-store/tauri-settings-store'
 import { APP_VERSION } from '../../lib/app-version'
 import { getDependencySmoke } from '../../lib/dependency-smoke'
-import { isTauriRuntimeAvailable } from '../../lib/tauri-runtime'
-import { isElectronRuntimeAvailable } from '../../lib/desktop-runtime'
+import { getDesktopRuntimeKind, isElectronRuntimeAvailable } from '../../lib/desktop-runtime'
 import { useLayerCatalogStore } from '../layers/layer-catalog-store'
 import { useDrawingStore } from '../drawings/drawing-store'
 import { useGpxStore } from '../gpx/gpx-store'
@@ -50,7 +49,7 @@ export function DiagnosticsRuntimeBridge() {
 
     void startDiagnosticsRuntime({
       appVersion: APP_VERSION,
-      isTauriRuntimeAvailable,
+      getRuntimeKind: getDesktopRuntimeKind,
       getUserAgent: () => (typeof navigator === 'undefined' ? 'unknown' : navigator.userAgent),
       getDependencySmoke,
       loadSettings: loadAppSettings,

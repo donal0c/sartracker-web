@@ -73,6 +73,27 @@ if (validationUserDataPath !== undefined && validationUserDataPath.trim() !== ''
   app.setPath('userData', path.resolve(validationUserDataPath))
 }
 
+configureLinuxSecretStorage()
+
+/**
+ * Selects the secure freedesktop Secret Service backend before safeStorage is
+ * initialized on Linux desktops.
+ */
+function configureLinuxSecretStorage() {
+  if (process.platform !== 'linux') {
+    return
+  }
+
+  if (
+    typeof app.commandLine.hasSwitch === 'function' &&
+    app.commandLine.hasSwitch('password-store')
+  ) {
+    return
+  }
+
+  app.commandLine.appendSwitch('password-store', 'gnome-libsecret')
+}
+
 /**
  * Creates the main SAR Tracker Electron validation window.
  */

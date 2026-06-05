@@ -9,7 +9,7 @@ describe('startDiagnosticsRuntime', () => {
     const applyRuntime = vi.fn()
     const runtime = await startDiagnosticsRuntime({
       appVersion: '0.1.0',
-      isTauriRuntimeAvailable: () => true,
+      getRuntimeKind: () => 'tauri',
       getUserAgent: () => 'SARTrackerTest/1.0',
       getDependencySmoke: () => ({
         hasMapLibre: true,
@@ -85,7 +85,7 @@ describe('startDiagnosticsRuntime', () => {
     const applyRuntime = vi.fn()
     const runtime = await startDiagnosticsRuntime({
       appVersion: '0.1.0',
-      isTauriRuntimeAvailable: () => true,
+      getRuntimeKind: () => 'tauri',
       getUserAgent: () => 'SARTrackerTest/1.0',
       getDependencySmoke: () => ({
         hasMapLibre: true,

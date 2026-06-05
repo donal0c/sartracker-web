@@ -5,6 +5,7 @@ import type { MissionGovernanceRuntimeState } from '../mission/start-mission-gov
 import type { AppSettings, RuntimeBootstrapSettings } from '../settings/settings-types'
 import type { TrackingConnectionStatus, TrackingSnapshot } from '../tracking/tracking-types'
 import type { Mission, MissionStore } from '../../infrastructure/mission-store/tauri-mission-store'
+import type { DesktopRuntimeKind } from '../../lib/desktop-runtime'
 
 type DependencySmoke = {
   readonly hasMapLibre: boolean
@@ -21,7 +22,7 @@ type DiagnosticsLayerCatalogBoundary = {
 
 type StartDiagnosticsRuntimeDependencies = {
   readonly appVersion: string
-  readonly isTauriRuntimeAvailable: () => boolean
+  readonly getRuntimeKind: () => DesktopRuntimeKind
   readonly getUserAgent: () => string
   readonly getDependencySmoke: () => DependencySmoke
   readonly loadSettings: () => Promise<AppSettings>
@@ -183,7 +184,7 @@ export async function startDiagnosticsRuntime(
       const snapshot = buildDiagnosticsSnapshot({
         generatedAt: now(dependencies).toISOString(),
         appVersion: dependencies.appVersion,
-        isTauriRuntimeAvailable: dependencies.isTauriRuntimeAvailable(),
+        runtimeKind: dependencies.getRuntimeKind(),
         userAgent: dependencies.getUserAgent(),
         dependencySmoke: dependencies.getDependencySmoke(),
         settings,

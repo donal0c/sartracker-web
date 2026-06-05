@@ -12,7 +12,7 @@ describe('diagnostics model', () => {
     const snapshot = buildDiagnosticsSnapshot({
       generatedAt: '2026-04-11T00:30:00.000Z',
       appVersion: '0.1.0',
-      isTauriRuntimeAvailable: true,
+      runtimeKind: 'tauri',
       userAgent: 'SARTrackerTest/1.0',
       dependencySmoke: {
         hasMapLibre: true,
@@ -55,7 +55,7 @@ describe('diagnostics model', () => {
     const snapshot = buildDiagnosticsSnapshot({
       generatedAt: '2026-04-11T00:45:00.000Z',
       appVersion: '0.1.0',
-      isTauriRuntimeAvailable: false,
+      runtimeKind: 'browser',
       userAgent: 'BrowserHarness/1.0',
       dependencySmoke: {
         hasMapLibre: true,
@@ -113,6 +113,41 @@ describe('diagnostics model', () => {
     expect(snapshot.warnings).toContain('Tracking feed is offline.')
     expect(snapshot.supportReport).toContain('tracking mode: offline')
     expect(snapshot.supportReport).toContain('repair target: unavailable')
+  })
+
+  it('labels Electron desktop diagnostics separately from browser validation', () => {
+    const snapshot = buildDiagnosticsSnapshot({
+      generatedAt: '2026-04-11T00:50:00.000Z',
+      appVersion: '0.1.0',
+      runtimeKind: 'electron',
+      userAgent: 'Electron/40.10.0 SARTrackerTest/1.0',
+      dependencySmoke: {
+        hasMapLibre: true,
+        hasProj4: true,
+        hasTurf: true,
+        hasZustand: true,
+        hasTerraDraw: true,
+      },
+      settings: createSettings(),
+      runtimeBootstrap: createRuntimeBootstrap(),
+      missionStoreInfo: createStoreInfo(),
+      missions: [createMission()],
+      missionRuntime: createMissionRuntime(),
+      governanceRuntime: createGovernanceRuntime(),
+      trackingStatus: createTrackingStatus(),
+      trackingSnapshot: createTrackingSnapshot(),
+      layerCatalogState: {
+        missionId: 'mission-1',
+        loading: false,
+        error: null,
+        metadataEntryCount: 3,
+      },
+      selectedMissionId: 'mission-1',
+    })
+
+    expect(snapshot.summaryRows).toContainEqual({ label: 'Runtime', value: 'Electron desktop' })
+    expect(snapshot.supportReport).toContain('runtime: electron desktop')
+    expect(snapshot.supportReport).not.toContain('runtime: browser validation')
   })
 })
 

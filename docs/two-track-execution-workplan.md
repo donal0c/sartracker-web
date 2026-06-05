@@ -367,8 +367,14 @@ S8c / DON-28 current state:
     `better_sqlite3.node` as ELF x86-64, rendered OpenTopoMap under Xvfb, and
     rejected the earlier black-window blind spot with a screenshot content
     mean gate.
-  - `DON-58`: fix Linux Electron secret-store launch behavior and diagnostics
-    runtime labeling before tester release.
+  - `DON-58`: code fix implemented locally 2026-06-05 for Linux
+    `--password-store=gnome-libsecret` startup and Electron diagnostics runtime
+    labeling. Local verification is green. Dell Ubuntu 24.04 remote
+    package-content smoke from the Linux-built `.deb` contents proved Settings
+    save/connect without a manual `--password-store` flag, live Traccar online,
+    diagnostics `Electron desktop`, and exported report
+    `safeStorage backend: gnome_libsecret`. Caveat: true `dpkg -i` install
+    smoke needs sudo.
   - `DON-59`: smoke packaged Linux GPX import, marker attachments, and external
     file opening.
 
@@ -396,11 +402,18 @@ S8c verification snapshot:
   `https://kmrtsar.eu`, map markers rendered, SQLite held 33 devices plus live
   positions, `tracking-cache.json` held 33 devices / 5 positions, and
   diagnostics export wrote a sanitized report without credential text.
-- Caveats from Dell Ubuntu 24.04: Traccar secret save/connect required
-  relaunching with `--password-store=gnome-libsecret`; diagnostics runtime
-  label incorrectly reports `browser validation` inside Electron; GPX import,
-  marker attachments, and external file opening remain unproved in the
-  packaged Linux UI.
+- Passed for DON-58 on Dell Ubuntu 24.04 from Linux-built `.deb` contents:
+  Settings Traccar save/connect worked without manually passing
+  `--password-store=gnome-libsecret`, live tracking went online with 33 devices
+  / 5 fixes, Diagnostics displayed `Electron desktop`, and the exported report
+  included `safeStorage backend: gnome_libsecret` plus
+  `runtime: electron desktop`. Artifact hashes: AppImage
+  `98a7fcf703e7f20cd8560759551edabd9aa305c8264ff5aef575754e0b716c33`;
+  `.deb` `423300dfde7a45bb4c9e49208a845741fc9c54cce23a52bc3ee009d3393c1ac2`.
+  Caveat: `sudo -n dpkg -i` failed because a password is required, so this was
+  an extracted-package smoke with `--no-sandbox` for the extracted Chromium
+  sandbox only. GPX import, marker attachments, and external file opening remain
+  unproved in the packaged Linux UI for `DON-59`.
 - Passed for DON-57: GitHub Actions run `26746757159` on head
   `32cb2e315ad61449270f40f2bee2bb6a71e0fd56` built Electron Linux artifacts
   natively on `ubuntu-22.04`. Artifacts: AppImage SHA256
@@ -1221,8 +1234,8 @@ Work sequence:
 - `DON-79` — local MapGenie rendering via ArcGIS export. Done 2026-06-04.
 - `DON-81` / `DON-7` — official-map offline package strategy. Done 2026-06-05.
 - `DON-103` — standard-region Discovery conversion to local MBTiles package. Done 2026-06-05; MBTiles is viable for v1. See `docs/official-map-mbtiles-spike-don-103.md`.
-- `DON-58` — next sequenced blocker in `S2 Electron`: fix Linux Electron secret-store launch and diagnostics runtime label.
-- `DON-59` — next `S2 Electron` blocker after `DON-58`: smoke packaged Linux filesystem workflows.
+- `DON-58` — fixed Linux Electron secret-store launch and diagnostics runtime label; remote Dell Ubuntu package-content smoke passed, with true `dpkg -i` install smoke pending sudo if installer-level proof is required.
+- `DON-59` — next `S2 Electron` blocker: smoke packaged Linux filesystem workflows.
 - `DON-104` — cross-platform Electron official map package registry after `DON-58`/`DON-59`.
 - `DON-105` — local official map package tile serving through Electron proxy.
 - `DON-106` — official offline map readiness UI and diagnostics.
