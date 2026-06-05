@@ -376,15 +376,13 @@ S8c / DON-28 current state:
     `safeStorage backend: gnome_libsecret`; true `dpkg -i` install also passed
     during DON-59.
   - `DON-59`: done 2026-06-05 on Dell Ubuntu 24.04 installed `.deb`.
-    Validated native chooser opens for GPX import, installed Electron
-    filesystem bridge reads GPX files and lists `.gpx` directory entries,
+    Human-assisted native chooser validation completed `Import Files`,
+    `Import Folder`, and `Watch Folder`; the installed app showed
+    `3 imported · 1 watched`. Installed Electron filesystem bridge also read
+    GPX files and listed `.gpx` directory entries during the remote-only pass,
     SQLite persisted 3 GPX imports, marker attachment ingest stored under
     app `userData`, Mission Review showed and opened the attachment through the
     OS default app, and diagnostics exported safe Electron/app path details.
-    Caveat: GNOME Wayland native chooser completion was not remotely
-    automatable via synthetic keyboard (`wtype` unsupported; `ydotool` uinput
-    unavailable), so file-picker completion used bridge/path proof rather than
-    full remote keystroke selection.
 
 S8c verification snapshot:
 
@@ -422,17 +420,18 @@ S8c verification snapshot:
 - Passed for DON-59 on Dell Ubuntu 24.04 installed `.deb`: package status
   `install ok installed`, installed app launched from
   `/opt/SAR Tracker Electron Validation/sartracker-web` without `--no-sandbox`,
-  native chooser opened for GPX import, installed bridge read `alpha-track.gpx`
-  and listed `.gpx` files in a watched folder while ignoring `not-gpx.txt`,
-  SQLite persisted 3 GPX imports, Mission Review showed 3 GPX imports, marker
-  attachment ingest stored `marker-evidence.txt` under app `userData`, Mission
-  Review showed the attachment path and launched GNOME Text Editor on it, and
-  diagnostics exported `runtime: electron desktop`, schema 3, database/backup
-  paths, and `safeStorage backend: gnome_libsecret`. Artifact hashes: AppImage
+  human-assisted native chooser completion imported `alpha-track.gpx`, imported
+  `bravo-track.gpx` plus `charlie-track.gpx` from `gpx-folder`, and registered
+  that folder as watched (`3 imported · 1 watched`). Installed bridge also read
+  `alpha-track.gpx` and listed `.gpx` files in a watched folder while ignoring
+  `not-gpx.txt`; SQLite persisted 3 GPX imports; Mission Review showed 3 GPX
+  imports; marker attachment ingest stored `marker-evidence.txt` under app
+  `userData`; Mission Review showed the attachment path and launched GNOME Text
+  Editor on it; diagnostics exported `runtime: electron desktop`, schema 3,
+  database/backup paths, and `safeStorage backend: gnome_libsecret`. Artifact
+  hashes: AppImage
   `fa7cd66aad14decd3bac91acd4a00b590fc69f9b59a2e84355a0ef64491f980d`; `.deb`
   `acac5db8fbca5ce36952f48d61c160693132fefc9c9c85d0e3b106539f7842b4`.
-  Remote-only caveat: GNOME Wayland did not allow synthetic-keyboard completion
-  of the native file chooser over SSH, despite installing `wtype`/`ydotool`.
 - Passed for DON-57: GitHub Actions run `26746757159` on head
   `32cb2e315ad61449270f40f2bee2bb6a71e0fd56` built Electron Linux artifacts
   natively on `ubuntu-22.04`. Artifacts: AppImage SHA256
@@ -1254,7 +1253,7 @@ Work sequence:
 - `DON-81` / `DON-7` — official-map offline package strategy. Done 2026-06-05.
 - `DON-103` — standard-region Discovery conversion to local MBTiles package. Done 2026-06-05; MBTiles is viable for v1. See `docs/official-map-mbtiles-spike-don-103.md`.
 - `DON-58` — fixed Linux Electron secret-store launch and diagnostics runtime label; remote Dell Ubuntu package-content and true `.deb` install smoke passed.
-- `DON-59` — packaged Linux filesystem workflows done on Dell Ubuntu installed `.deb`; native chooser opens, GPX bridge/path reads and persistence, marker attachment store/open, diagnostics, paths, and permissions smoke passed.
+- `DON-59` — packaged Linux filesystem workflows done on Dell Ubuntu installed `.deb`; native chooser completion, GPX file/folder/watch import, marker attachment store/open, diagnostics, paths, and permissions smoke passed.
 - `DON-104` — cross-platform Electron official map package registry after `DON-58`/`DON-59`.
 - `DON-105` — local official map package tile serving through Electron proxy.
 - `DON-106` — official offline map readiness UI and diagnostics.
