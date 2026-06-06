@@ -68,7 +68,7 @@ const LAYER_DEFINITIONS: readonly {
   { key: 'drawing_search_area', id: getDrawingLayerNodeId('search_area'), parentId: MAP_TOOLS_GROUP_NODE_ID, label: 'Search Areas', displayOrder: 60 },
   { key: 'drawing_range_ring', id: getDrawingLayerNodeId('range_ring'), parentId: MAP_TOOLS_GROUP_NODE_ID, label: 'Range Rings', displayOrder: 70 },
   { key: 'drawing_bearing_line', id: getDrawingLayerNodeId('bearing_line'), parentId: MAP_TOOLS_GROUP_NODE_ID, label: 'Bearing Lines', displayOrder: 80 },
-  { key: 'drawing_search_sector', id: getDrawingLayerNodeId('search_sector'), parentId: MAP_TOOLS_GROUP_NODE_ID, label: 'Search Sectors', displayOrder: 90 },
+  { key: 'drawing_search_sector', id: getDrawingLayerNodeId('search_sector'), parentId: MAP_TOOLS_GROUP_NODE_ID, label: 'Sectors', displayOrder: 90 },
   { key: 'drawing_text_label', id: getDrawingLayerNodeId('text_label'), parentId: MAP_TOOLS_GROUP_NODE_ID, label: 'Text Labels', displayOrder: 100 },
   { key: 'measurement', id: MEASUREMENTS_LAYER_NODE_ID, parentId: MAP_TOOLS_GROUP_NODE_ID, label: 'Measurements', displayOrder: 110 },
 ]

@@ -8,7 +8,7 @@ export const DRAWING_TYPE_LABELS: Record<DrawingType, string> = {
   search_area: 'Search Areas',
   range_ring: 'Range Rings',
   bearing_line: 'Bearing Lines',
-  search_sector: 'Search Sectors',
+  search_sector: 'Sectors',
   text_label: 'Text Labels',
 }
 
