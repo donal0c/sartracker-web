@@ -8,20 +8,20 @@
 - **Hosted testing:** `https://sartracker-web.vercel.app/?missionHarness=1`
 - **Desktop:** Electron validation shell present (MapLibre + direct HTTPS Traccar). Tauri desktop routes Traccar through Rust `reqwest`.
 - **Browser mode:** testing/training only (sessionStorage, not operational persistence).
-- **Latest test counts:** 144 unit files / 756 tests; ~105 Playwright E2E; 46 backend tests.
+- **Latest test counts:** 144 unit files / 761 tests; ~105 Playwright E2E; 46 backend tests.
 
 ## Last Work Done
 
-DON-109 (S1 maps) — Electron Settings now has a self-service official-map setup path:
-- `Choose MapGenie File` selects the local source details `.txt` through a narrow Electron dialog bridge.
-- `Add Discovery Package` selects an existing `.mbtiles` package from disk/USB and shows it as pending until Settings save.
-- Save reuses the existing Electron official-map registry to validate the package and return ready/missing/unreadable metadata.
-- Hosted/browser mode remains public-map-only; the Electron-only import buttons are not exposed there.
-- Operator manual and `docs/two-track-execution-workplan.md` are updated.
+DON-110 (S1 maps) — official map packages now import into app-owned Electron storage:
+- `Add Discovery Package` copies selected `.mbtiles` files into `userData/official-map-packages/` before registration.
+- Import preflights disk space, dedupes/replaces by map id, and returns only safe copy metadata to the renderer.
+- Settings save validates the copied package and records safe metadata including package size, not private paths in diagnostics.
+- Settings can remove a registered package; app-owned files removed from saved settings are cleaned up by the Electron settings store.
+- Browser/hosted mode remains public-map-only; Electron validation proved the original source package can be removed after import while the copied package stays ready.
 
 ## What's Next
 
-Next S1 map task is `DON-110`: copy imported official map packages into app-owned storage so the USB can be unplugged, with disk preflight, replace/remove, duplicate handling, and safe diagnostics. S2 Electron remains `DON-29`.
+Next S1 map task is `DON-111`: official map package coverage manifest and readiness certificate. S2 Electron remains `DON-29`.
 
 ## Traccar Test Details
 
@@ -50,13 +50,13 @@ Next S1 map task is `DON-110`: copy imported official map packages into app-owne
 
 ## Latest Verification
 
-- `npx vitest run tests/unit/settings-workspace.test.ts tests/unit/electron-file-system.test.ts tests/unit/electron-settings-store.test.ts tests/unit/electron-official-map-proxy.test.ts tests/unit/map-config.test.ts tests/unit/offline-map-readiness.test.ts tests/unit/diagnostics-model.test.ts`
+- `npx vitest run tests/unit/electron-file-system.test.ts tests/unit/settings-workspace.test.ts tests/unit/electron-settings-store.test.ts tests/unit/electron-runtime-files.test.ts tests/unit/diagnostics-model.test.ts`
 - `npm run test`
 - `npm run lint`
 - `npm run build`
 - `npm run test:backend`
-- Playwright browser proof: `output/playwright/don-109/01-browser-settings-official-maps.png` and `browser-validation.json`
-- Electron CDP proof: `output/playwright/don-109/02-electron-settings-official-map-import-controls.png` and `electron-validation.json`
+- Playwright browser proof: `output/playwright/don-110/01-browser-settings-official-maps.png` and `browser-validation.json`
+- Electron CDP proof: `output/playwright/don-110/02-electron-settings-app-owned-package.png` and `electron-validation.json`
 
 ## Known Limits
 

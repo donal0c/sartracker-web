@@ -278,6 +278,7 @@ function formatOfficialMapPackageLine(
     mapPackage.sourceType,
     formatPackageZoomRange(mapPackage),
     mapPackage.tileCount > 0 ? `tiles=${mapPackage.tileCount}` : '',
+    mapPackage.sizeBytes !== undefined && mapPackage.sizeBytes > 0 ? `size=${mapPackage.sizeBytes}` : '',
     mapPackage.tileFormat !== '' ? `format=${mapPackage.tileFormat}` : '',
   ].filter((value) => value !== '').join(' ')
 }

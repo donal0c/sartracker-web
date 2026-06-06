@@ -20,6 +20,7 @@ const CHOOSE_GPX_FILE_PATHS_CHANNEL = 'sartracker:choose-gpx-file-paths'
 const CHOOSE_GPX_DIRECTORY_PATH_CHANNEL = 'sartracker:choose-gpx-directory-path'
 const CHOOSE_OFFICIAL_MAP_SOURCE_FILE_PATH_CHANNEL = 'sartracker:choose-official-map-source-file-path'
 const CHOOSE_OFFICIAL_MAP_PACKAGE_PATH_CHANNEL = 'sartracker:choose-official-map-package-path'
+const IMPORT_OFFICIAL_MAP_PACKAGE_CHANNEL = 'sartracker:import-official-map-package'
 const READ_GPX_FILES_CHANNEL = 'sartracker:read-gpx-files'
 const LIST_GPX_DIRECTORY_FILES_CHANNEL = 'sartracker:list-gpx-directory-files'
 const INGEST_MARKER_ATTACHMENT_CHANNEL = 'sartracker:ingest-marker-attachment'
@@ -245,6 +246,13 @@ function registerIpcHandlers(settingsStore, runtimeFiles, missionStore, fileSyst
   ipcMain.handle(CHOOSE_OFFICIAL_MAP_PACKAGE_PATH_CHANNEL, (event) => {
     validateIpcSender(event)
     return fileSystem.chooseOfficialMapPackagePath()
+  })
+  ipcMain.handle(IMPORT_OFFICIAL_MAP_PACKAGE_CHANNEL, (event, input) => {
+    validateIpcSender(event)
+    if (typeof input !== 'object' || input === null) {
+      throw new Error('Official map package import payload is invalid.')
+    }
+    return fileSystem.importOfficialMapPackage(input)
   })
   ipcMain.handle(READ_GPX_FILES_CHANNEL, (event, paths) => {
     validateIpcSender(event)

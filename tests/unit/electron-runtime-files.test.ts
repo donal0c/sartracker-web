@@ -102,7 +102,7 @@ describe('electron runtime files', () => {
     expect(report).toContain('official map packages: 2')
     expect(report).toContain('official map packages ready: 1')
     expect(report).toContain(
-      'official map package 1: official_discovery_topo ready mbtiles z9-z16 tiles=31729 format=png bounds=-10.17,51.84,-9.40,52.38 verified=2026-06-05T10:11:12.000Z',
+      'official map package 1: official_discovery_topo ready mbtiles z9-z16 tiles=31729 size=1100000000 format=png bounds=-10.17,51.84,-9.40,52.38 verified=2026-06-05T10:11:12.000Z',
     )
     expect(report).toContain('official map package 2: official_discovery_topo missing mbtiles')
     expect(report).not.toContain('mountainrescue_org.txt')
@@ -145,6 +145,7 @@ describe('electron runtime files', () => {
               minZoom: 9,
               maxZoom: 16,
               tileCount: 31_729,
+              sizeBytes: 1_100_000_000,
               tileFormat: 'png',
               verifiedAt: '2026-06-05T10:11:12.000Z',
             },

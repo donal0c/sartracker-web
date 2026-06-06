@@ -12,6 +12,7 @@ const CHOOSE_GPX_FILE_PATHS_CHANNEL = 'sartracker:choose-gpx-file-paths'
 const CHOOSE_GPX_DIRECTORY_PATH_CHANNEL = 'sartracker:choose-gpx-directory-path'
 const CHOOSE_OFFICIAL_MAP_SOURCE_FILE_PATH_CHANNEL = 'sartracker:choose-official-map-source-file-path'
 const CHOOSE_OFFICIAL_MAP_PACKAGE_PATH_CHANNEL = 'sartracker:choose-official-map-package-path'
+const IMPORT_OFFICIAL_MAP_PACKAGE_CHANNEL = 'sartracker:import-official-map-package'
 const READ_GPX_FILES_CHANNEL = 'sartracker:read-gpx-files'
 const LIST_GPX_DIRECTORY_FILES_CHANNEL = 'sartracker:list-gpx-directory-files'
 const INGEST_MARKER_ATTACHMENT_CHANNEL = 'sartracker:ingest-marker-attachment'
@@ -95,6 +96,9 @@ contextBridge.exposeInMainWorld('sartrackerElectron', {
   },
   chooseOfficialMapPackagePath() {
     return ipcRenderer.invoke(CHOOSE_OFFICIAL_MAP_PACKAGE_PATH_CHANNEL)
+  },
+  importOfficialMapPackage(input) {
+    return ipcRenderer.invoke(IMPORT_OFFICIAL_MAP_PACKAGE_CHANNEL, input)
   },
   readGpxFiles(paths) {
     return ipcRenderer.invoke(READ_GPX_FILES_CHANNEL, paths)

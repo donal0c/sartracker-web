@@ -2,6 +2,7 @@ const fs = require('node:fs/promises')
 const path = require('node:path')
 
 const MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024
+const OFFICIAL_MAP_PACKAGE_DIRECTORY = 'official-map-packages'
 
 /**
  * Creates Electron main-process filesystem helpers behind narrow IPC handlers.
@@ -34,6 +35,44 @@ function createElectronFileSystem(options) {
         filters: [{ name: 'Official map packages', extensions: ['mbtiles'] }],
       })
       return result.canceled ? null : result.filePaths[0] ?? null
+    },
+    importOfficialMapPackage: async (input) => {
+      const sourcePath = normalizeRequiredPath(input?.sourcePath, 'Official map package')
+      if (path.extname(sourcePath).toLowerCase() !== '.mbtiles') {
+        throw new Error('Official map package must be a .mbtiles file.')
+      }
+
+      const sourceStat = await fs.stat(sourcePath).catch((error) => {
+        if (error?.code === 'ENOENT') {
+          throw new Error('Official map package file was not found.')
+        }
+        throw error
+      })
+      if (!sourceStat.isFile()) {
+        throw new Error('Official map package path is not a file.')
+      }
+
+      const mapId = normalizeOfficialMapId(input?.mapId)
+      const destinationDirectory = path.join(options.userDataPath, OFFICIAL_MAP_PACKAGE_DIRECTORY)
+      const destinationPath = path.join(destinationDirectory, `${mapId}.mbtiles`)
+      await fs.mkdir(destinationDirectory, { recursive: true })
+      await assertEnoughDiskSpace(options, destinationDirectory, sourceStat.size)
+
+      const replacedExisting = await fs.stat(destinationPath)
+        .then((stat) => stat.isFile())
+        .catch(() => false)
+      const temporaryPath = `${destinationPath}.tmp-${process.pid}-${Date.now()}`
+      await fs.copyFile(sourcePath, temporaryPath)
+      await fs.rename(temporaryPath, destinationPath)
+
+      return {
+        packagePath: destinationPath,
+        sizeBytes: sourceStat.size,
+        replacedExisting,
+        message: replacedExisting
+          ? 'Official map package replaced in SAR Tracker storage.'
+          : 'Official map package copied into SAR Tracker storage.',
+      }
     },
     readGpxFiles: async (paths) => {
       return Promise.all(paths.map((filePath) => readGpxFile(filePath)))
@@ -93,6 +132,19 @@ function createElectronFileSystem(options) {
         throw new Error(`Failed to open path with default application: ${errorMessage}`)
       }
     },
+  }
+}
+
+async function assertEnoughDiskSpace(options, directoryPath, requiredBytes) {
+  const statfs = options.statfs ?? fs.statfs
+  if (typeof statfs !== 'function') {
+    return
+  }
+
+  const stats = await statfs(directoryPath)
+  const availableBytes = Number(stats.bavail) * Number(stats.bsize)
+  if (Number.isFinite(availableBytes) && availableBytes < requiredBytes) {
+    throw new Error('Not enough free disk space to import the official map package.')
   }
 }
 
@@ -161,6 +213,17 @@ function readString(input, key) {
 
 function isGpxPath(filePath) {
   return path.extname(filePath).toLowerCase() === '.gpx'
+}
+
+function normalizeOfficialMapId(input) {
+  const value = typeof input === 'string' ? input.trim() : ''
+  const allowed = new Set([
+    'official_discovery_topo',
+    'official_premium_basemap',
+    'official_aerial_imagery',
+    'official_high_resolution_imagery',
+  ])
+  return allowed.has(value) ? value : 'official_discovery_topo'
 }
 
 async function writeFileAtomically(destinationPath, bytes) {

@@ -577,7 +577,20 @@ export function SettingsWorkspace({ open, onClose }: SettingsWorkspaceProps) {
                     </div>
                   ) : null}
 
-                  <OfficialMapPackageStatus draft={draft} />
+                  <OfficialMapPackageStatus
+                    draft={draft}
+                    onRemove={(packageId) =>
+                      updateDraft(setDraft, (current) => ({
+                        ...current,
+                        officialMaps: {
+                          ...current.officialMaps,
+                          packages: current.officialMaps.packages.filter(
+                            (mapPackage) => mapPackage.id !== packageId,
+                          ),
+                        },
+                      }))
+                    }
+                  />
                 </div>
               </Section>
 
@@ -831,13 +844,26 @@ export function SettingsWorkspace({ open, onClose }: SettingsWorkspaceProps) {
       if (chooser === undefined) {
         throw new Error('Official map package chooser is only available in the Electron app.')
       }
+      const importer = window.sartrackerElectron?.importOfficialMapPackage
+      if (importer === undefined) {
+        throw new Error('Official map package import is only available in the Electron app.')
+      }
       const packagePath = await chooser()
       if (packagePath !== null) {
+        const imported = await importer({
+          sourcePath: packagePath,
+          mapId: 'official_discovery_topo',
+        })
         updateDraft(setDraft, (current) => ({
           ...current,
           officialMaps: {
             ...current.officialMaps,
-            packages: addPendingOfficialMapPackage(current.officialMaps.packages, packagePath),
+            packages: addPendingOfficialMapPackage({
+              packages: current.officialMaps.packages,
+              packagePath: imported.packagePath,
+              message: imported.message,
+              sizeBytes: imported.sizeBytes,
+            }),
           },
         }))
       }
@@ -849,7 +875,13 @@ export function SettingsWorkspace({ open, onClose }: SettingsWorkspaceProps) {
   }
 }
 
-function OfficialMapPackageStatus({ draft }: { readonly draft: AppSettingsDraft }) {
+function OfficialMapPackageStatus({
+  draft,
+  onRemove,
+}: {
+  readonly draft: AppSettingsDraft
+  readonly onRemove: (packageId: string) => void
+}) {
   const packages = draft.officialMaps.packages
   const readyCount = packages.filter((mapPackage) => mapPackage.status === 'ready').length
 
@@ -872,7 +904,7 @@ function OfficialMapPackageStatus({ draft }: { readonly draft: AppSettingsDraft 
         <div className="mt-3 grid gap-2">
           {packages.map((mapPackage) => (
             <div
-              className="grid gap-2 border border-[var(--sar-line)] bg-stone-950/45 px-3 py-2 text-xs md:grid-cols-[1.2fr_auto_auto]"
+              className="grid gap-2 border border-[var(--sar-line)] bg-stone-950/45 px-3 py-2 text-xs md:grid-cols-[1.2fr_auto_auto_auto]"
               key={mapPackage.id}
             >
               <div>
@@ -889,6 +921,14 @@ function OfficialMapPackageStatus({ draft }: { readonly draft: AppSettingsDraft 
               <span className="self-start text-right font-semibold text-stone-300">
                 {formatPackageVerifiedAt(mapPackage.verifiedAt)}
               </span>
+              <button
+                className="sar-button self-start px-2 py-1 text-[10px] font-bold uppercase tracking-wider"
+                data-testid={`remove-official-map-package-${mapPackage.id}`}
+                onClick={() => onRemove(mapPackage.id)}
+                type="button"
+              >
+                Remove
+              </button>
             </div>
           ))}
         </div>
@@ -897,13 +937,15 @@ function OfficialMapPackageStatus({ draft }: { readonly draft: AppSettingsDraft 
   )
 }
 
-function addPendingOfficialMapPackage(
-  packages: AppSettingsDraft['officialMaps']['packages'],
-  packagePath: string,
-): AppSettingsDraft['officialMaps']['packages'] {
-  const normalizedPath = packagePath.trim()
+function addPendingOfficialMapPackage(input: {
+  readonly packages: AppSettingsDraft['officialMaps']['packages']
+  readonly packagePath: string
+  readonly message: string
+  readonly sizeBytes: number
+}): AppSettingsDraft['officialMaps']['packages'] {
+  const normalizedPath = input.packagePath.trim()
   if (normalizedPath === '') {
-    return packages
+    return input.packages
   }
 
   const pendingPackage: AppSettingsDraft['officialMaps']['packages'][number] = {
@@ -917,13 +959,14 @@ function addPendingOfficialMapPackage(
     maxZoom: null,
     tileCount: 0,
     tileFormat: '',
+    sizeBytes: input.sizeBytes,
     createdAt: '',
     verifiedAt: '',
-    message: 'Pending validation after save.',
+    message: `${input.message} Pending validation after save.`,
   }
 
   return [
-    ...packages.filter(
+    ...input.packages.filter(
       (mapPackage) =>
         mapPackage.mapId !== pendingPackage.mapId ||
         mapPackage.packagePath !== pendingPackage.packagePath,

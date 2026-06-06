@@ -258,6 +258,12 @@ describe('SettingsWorkspace', () => {
     const bridge = {
       chooseOfficialMapSourceFilePath: vi.fn().mockResolvedValue('/Volumes/team/mountainrescue_org.txt'),
       chooseOfficialMapPackagePath: vi.fn().mockResolvedValue('/Volumes/team/reeks-standard-60km-z16.mbtiles'),
+      importOfficialMapPackage: vi.fn().mockResolvedValue({
+        packagePath: '/Users/test/Library/Application Support/SAR Tracker/official-map-packages/official_discovery_topo.mbtiles',
+        sizeBytes: 1_100_000_000,
+        replacedExisting: false,
+        message: 'Official map package copied into SAR Tracker storage.',
+      }),
     }
     Object.defineProperty(window, 'sartrackerElectron', {
       configurable: true,
@@ -293,7 +299,12 @@ describe('SettingsWorkspace', () => {
     })
 
     expect(bridge.chooseOfficialMapPackagePath).toHaveBeenCalledOnce()
+    expect(bridge.importOfficialMapPackage).toHaveBeenCalledWith({
+      sourcePath: '/Volumes/team/reeks-standard-60km-z16.mbtiles',
+      mapId: 'official_discovery_topo',
+    })
     expect(document.body.textContent).toContain('Pending validation after save')
+    expect(document.body.textContent).toContain('copied into SAR Tracker storage')
 
     await act(async () => {
       getButton('[data-testid="settings-save"]').click()
@@ -308,9 +319,60 @@ describe('SettingsWorkspace', () => {
             expect.objectContaining({
               sourceType: 'mbtiles',
               mapId: 'official_discovery_topo',
-              packagePath: '/Volumes/team/reeks-standard-60km-z16.mbtiles',
+              packagePath: '/Users/test/Library/Application Support/SAR Tracker/official-map-packages/official_discovery_topo.mbtiles',
             }),
           ],
+        }),
+      }),
+    )
+  })
+
+  it('lets an Electron admin remove a registered official map package before saving', async () => {
+    const onClose = vi.fn()
+    const { SettingsWorkspace } = await import('../../src/components/settings-workspace')
+    mocks.loadAppSettings.mockResolvedValue({
+      ...DEFAULT_APP_SETTINGS,
+      officialMaps: {
+        ...DEFAULT_APP_SETTINGS.officialMaps,
+        packages: [
+          {
+            id: 'official_discovery_topo-ready',
+            sourceType: 'mbtiles',
+            mapId: 'official_discovery_topo',
+            packagePath: '/private/app/official-map-packages/official_discovery_topo.mbtiles',
+            status: 'ready',
+            bounds: [-10.25, 51.85, -9.45, 52.35],
+            minZoom: 9,
+            maxZoom: 16,
+            tileCount: 31_729,
+            tileFormat: 'png',
+            createdAt: '2026-06-05T10:00:00.000Z',
+            verifiedAt: '2026-06-05T10:11:12.000Z',
+            message: 'Official Discovery Topo package is ready.',
+          },
+        ],
+      },
+    })
+    mocks.saveAppSettings.mockResolvedValue(DEFAULT_APP_SETTINGS)
+    mocks.getAppRuntimeController.mockReturnValue(null)
+    mocks.readCoordinateDisplayMode.mockReturnValue('wgs84_first')
+    mocks.isTauriRuntimeAvailable.mockReturnValue(false)
+    mocks.isElectronRuntimeAvailable.mockReturnValue(true)
+
+    render(React.createElement(SettingsWorkspace, { open: true, onClose }))
+
+    await waitForElement('[data-testid="remove-official-map-package-official_discovery_topo-ready"]')
+    await act(async () => {
+      getButton('[data-testid="remove-official-map-package-official_discovery_topo-ready"]').click()
+    })
+    await act(async () => {
+      getButton('[data-testid="settings-save"]').click()
+    })
+
+    expect(mocks.saveAppSettings).toHaveBeenCalledWith(
+      expect.objectContaining({
+        officialMaps: expect.objectContaining({
+          packages: [],
         }),
       }),
     )

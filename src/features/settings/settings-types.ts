@@ -63,6 +63,7 @@ export type OfficialMapPackageSettings = {
   readonly maxZoom: number | null
   readonly tileCount: number
   readonly tileFormat: string
+  readonly sizeBytes?: number
   readonly createdAt: string
   readonly verifiedAt: string
   readonly message: string

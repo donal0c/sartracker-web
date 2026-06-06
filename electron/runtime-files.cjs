@@ -105,6 +105,9 @@ function formatOfficialMapPackage(mapPackage, index) {
   if (Number.isFinite(mapPackage?.tileCount) && mapPackage.tileCount > 0) {
     details.push(`tiles=${mapPackage.tileCount}`)
   }
+  if (Number.isFinite(mapPackage?.sizeBytes) && mapPackage.sizeBytes > 0) {
+    details.push(`size=${mapPackage.sizeBytes}`)
+  }
   const tileFormat = readDiagnosticsValue(mapPackage?.tileFormat, '')
   if (tileFormat !== '') {
     details.push(`format=${tileFormat}`)

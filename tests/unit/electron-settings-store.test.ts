@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { access, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { createRequire } from 'node:module'
@@ -234,6 +234,42 @@ describe('electron settings store', () => {
         message: 'Official map package could not be read as MBTiles.',
       }),
     ])
+  })
+
+  it('removes app-owned official map package files when the registration is removed', async () => {
+    const store = await createStore({ backend: 'gnome_libsecret' })
+    const appOwnedPackagePath = path.join(
+      userDataPath!,
+      'official-map-packages',
+      'official_discovery_topo.mbtiles',
+    )
+    await mkdir(path.dirname(appOwnedPackagePath), { recursive: true })
+    createMbtilesPackage(appOwnedPackagePath)
+    const externalPackagePath = path.join(userDataPath!, 'external.mbtiles')
+    createMbtilesPackage(externalPackagePath)
+    const initial = createSettingsDraft(DEFAULT_APP_SETTINGS)
+    initial.officialMaps.packages = [
+      {
+        sourceType: 'mbtiles',
+        mapId: 'official_discovery_topo',
+        packagePath: appOwnedPackagePath,
+      },
+      {
+        sourceType: 'mbtiles',
+        mapId: 'official_discovery_topo',
+        packagePath: externalPackagePath,
+      },
+    ]
+    await store.saveAppSettings(initial)
+
+    const next = createSettingsDraft(await store.loadAppSettings())
+    next.officialMaps.packages = next.officialMaps.packages.filter(
+      (mapPackage) => mapPackage.packagePath !== appOwnedPackagePath,
+    )
+    await store.saveAppSettings(next)
+
+    await expect(access(appOwnedPackagePath)).rejects.toThrow()
+    await expect(access(externalPackagePath)).resolves.toBeUndefined()
   })
 
   it('preserves an existing secret when saving non-secret settings', async () => {

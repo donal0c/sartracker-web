@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { access, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { createRequire } from 'node:module'
@@ -25,6 +25,15 @@ type ElectronFileSystem = {
   readonly chooseGpxDirectoryPath: () => Promise<string | null>
   readonly chooseOfficialMapSourceFilePath: () => Promise<string | null>
   readonly chooseOfficialMapPackagePath: () => Promise<string | null>
+  readonly importOfficialMapPackage: (input: {
+    readonly sourcePath: string
+    readonly mapId: string
+  }) => Promise<{
+    readonly packagePath: string
+    readonly sizeBytes: number
+    readonly replacedExisting: boolean
+    readonly message: string
+  }>
   readonly readGpxFiles: (paths: readonly string[]) => Promise<readonly {
     readonly sourcePath: string
     readonly fileName: string
@@ -151,6 +160,70 @@ describe('Electron filesystem service', () => {
     })
   })
 
+  it('imports official map packages into app-owned storage with duplicate replacement', async () => {
+    const service = await createService()
+    const sourcePath = path.join(userDataPath!, 'usb', 'Reeks Standard 60km.mbtiles')
+    await mkdir(path.dirname(sourcePath), { recursive: true })
+    await writeFile(sourcePath, 'first package')
+
+    const imported = await service.importOfficialMapPackage({
+      sourcePath,
+      mapId: 'official_discovery_topo',
+    })
+
+    expect(imported).toMatchObject({
+      packagePath: path.join(userDataPath!, 'official-map-packages', 'official_discovery_topo.mbtiles'),
+      sizeBytes: 13,
+      replacedExisting: false,
+      message: 'Official map package copied into SAR Tracker storage.',
+    })
+    await expect(readFile(imported.packagePath, 'utf8')).resolves.toBe('first package')
+    await rm(sourcePath)
+    await expect(access(sourcePath)).rejects.toThrow()
+    await expect(readFile(imported.packagePath, 'utf8')).resolves.toBe('first package')
+
+    await writeFile(sourcePath, 'replacement package')
+    const replacement = await service.importOfficialMapPackage({
+      sourcePath,
+      mapId: 'official_discovery_topo',
+    })
+
+    expect(replacement).toMatchObject({
+      packagePath: imported.packagePath,
+      sizeBytes: 19,
+      replacedExisting: true,
+    })
+    await expect(readFile(imported.packagePath, 'utf8')).resolves.toBe('replacement package')
+  })
+
+  it('rejects invalid package paths before copying', async () => {
+    const service = await createService()
+    const textPath = path.join(userDataPath!, 'not-mbtiles.txt')
+    await writeFile(textPath, 'nope')
+
+    await expect(
+      service.importOfficialMapPackage({
+        sourcePath: textPath,
+        mapId: 'official_discovery_topo',
+      }),
+    ).rejects.toThrow('Official map package must be a .mbtiles file.')
+  })
+
+  it('preflights disk space before copying official map packages', async () => {
+    const service = await createService({
+      statfs: vi.fn().mockResolvedValue({ bavail: 1, bsize: 1 }),
+    })
+    const sourcePath = path.join(userDataPath!, 'reeks.mbtiles')
+    await writeFile(sourcePath, 'package larger than one byte')
+
+    await expect(
+      service.importOfficialMapPackage({
+        sourcePath,
+        mapId: 'official_discovery_topo',
+      }),
+    ).rejects.toThrow('Not enough free disk space to import the official map package.')
+  })
+
   async function createService(overrides?: Partial<{
     readonly dialog: {
       readonly showOpenDialog: (...args: unknown[]) => Promise<{
@@ -159,6 +232,7 @@ describe('Electron filesystem service', () => {
       }>
     }
     readonly shell: { readonly openPath: (path: string) => Promise<string> }
+    readonly statfs: (path: string) => Promise<{ readonly bavail: number; readonly bsize: number }>
   }>): Promise<ElectronFileSystem> {
     userDataPath = await mkdtemp(path.join(tmpdir(), 'sartracker-electron-files-'))
     return createElectronFileSystem({
@@ -167,6 +241,7 @@ describe('Electron filesystem service', () => {
         showOpenDialog: vi.fn().mockResolvedValue({ canceled: true, filePaths: [] }),
       },
       shell: overrides?.shell ?? { openPath: vi.fn().mockResolvedValue('') },
+      statfs: overrides?.statfs,
       getBrowserWindow: () => null,
     })
   }

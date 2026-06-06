@@ -50,7 +50,7 @@ describe('diagnostics model', () => {
     expect(snapshot.supportReport).toContain('official maps: configured')
     expect(snapshot.supportReport).toContain('official map packages: 2')
     expect(snapshot.supportReport).toContain('official map packages ready: 1')
-    expect(snapshot.supportReport).toContain('official map package 1: official_discovery_topo ready mbtiles z8-z16 tiles=31729 format=png')
+    expect(snapshot.supportReport).toContain('official map package 1: official_discovery_topo ready mbtiles z8-z16 tiles=31729 size=1100000000 format=png')
     expect(snapshot.supportReport).toContain('official map package 2: official_discovery_topo missing mbtiles')
     expect(snapshot.supportReport).not.toContain('mountainrescue_org.txt')
     expect(snapshot.supportReport).not.toContain('reeks-standard-60km-z16.mbtiles')
@@ -201,6 +201,7 @@ function createSettings(): AppSettings {
           maxZoom: 16,
           tileCount: 31_729,
           tileFormat: 'png',
+          sizeBytes: 1_100_000_000,
           createdAt: '2026-06-05T10:00:00.000Z',
           verifiedAt: '2026-06-05T10:11:12.000Z',
           message: 'Official Discovery Topo package is ready.',

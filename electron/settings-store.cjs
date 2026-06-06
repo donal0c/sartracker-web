@@ -77,6 +77,7 @@ function createElectronSettingsStore(options) {
   async function saveAppSettings(input) {
     const existingSecretPresent = await hasSecret(input.dataSource.authMode)
     validateSettingsDraft(input, existingSecretPresent)
+    const previous = await readSettings(settingsPath)
 
     const next = {
       missionDefaults: normalizeMissionDefaults(input.missionDefaults),
@@ -88,6 +89,7 @@ function createElectronSettingsStore(options) {
     await writeJsonAtomically(settingsPath, next)
     await updateSecrets(input.dataSource)
     await removeInactiveSecret(next.dataSource.authMode)
+    await removeDeletedAppOwnedOfficialMapPackages(previous.officialMaps.packages, next.officialMaps.packages, userDataPath)
 
     return toView(next, await hasSecret(next.dataSource.authMode))
   }
@@ -511,6 +513,7 @@ function normalizePersistedOfficialMapPackages(input) {
         maxZoom: readOptionalNumber(parsed.maxZoom),
         tileCount: readNonNegativeInteger(parsed.tileCount),
         tileFormat: readOptionalString(parsed.tileFormat).trim(),
+        sizeBytes: readNonNegativeInteger(parsed.sizeBytes),
         createdAt: readOptionalString(parsed.createdAt).trim(),
         verifiedAt: readOptionalString(parsed.verifiedAt).trim(),
         message:
@@ -533,6 +536,7 @@ async function validateOfficialMapPackage(input) {
     maxZoom: null,
     tileCount: 0,
     tileFormat: '',
+    sizeBytes: 0,
     createdAt: '',
     verifiedAt,
   }
@@ -553,6 +557,7 @@ async function validateOfficialMapPackage(input) {
       ...base,
       ...metadata,
       status: 'ready',
+      sizeBytes: stats.size,
       createdAt: toIsoTimestamp(stats.birthtime),
       message: packageStatusMessage(input.mapId, 'ready'),
     }
@@ -570,6 +575,27 @@ async function validateOfficialMapPackage(input) {
       message: 'Official map package could not be read as MBTiles.',
     }
   }
+}
+
+async function removeDeletedAppOwnedOfficialMapPackages(previousPackages, nextPackages, userDataPath) {
+  const nextPaths = new Set(
+    nextPackages
+      .map((mapPackage) => path.resolve(mapPackage.packagePath))
+      .filter((packagePath) => isAppOwnedOfficialMapPackagePath(packagePath, userDataPath)),
+  )
+
+  for (const mapPackage of previousPackages) {
+    const packagePath = path.resolve(mapPackage.packagePath)
+    if (!isAppOwnedOfficialMapPackagePath(packagePath, userDataPath) || nextPaths.has(packagePath)) {
+      continue
+    }
+    await fs.rm(packagePath, { force: true })
+  }
+}
+
+function isAppOwnedOfficialMapPackagePath(packagePath, userDataPath) {
+  const libraryDirectory = path.resolve(userDataPath, 'official-map-packages')
+  return packagePath === libraryDirectory || packagePath.startsWith(`${libraryDirectory}${path.sep}`)
 }
 
 function readMbtilesMetadata(packagePath) {
