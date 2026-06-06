@@ -290,8 +290,9 @@ test.describe('M5 mission control workflows', () => {
     await page.getByTestId('mission-control-collapse-btn').click()
 
     await expect(page.getByTestId('mission-control-collapsed-summary')).toBeVisible()
-    await expect(page.getByTestId('mission-control-collapsed-summary')).toContainText('Mission Control collapsed')
-    await expect(page.getByTestId('mission-pause-resume-btn')).toBeHidden()
+    await expect(page.getByTestId('mission-control-collapsed-summary')).toContainText('Minimize Flow')
+    await expect(page.getByTestId('mission-pause-resume-btn')).toBeVisible()
+    await expect(page.getByTestId('mission-finish-btn')).toBeVisible()
     await expect(page.getByTestId('mission-control-expand-btn')).toBeVisible()
 
     await page.getByTestId('mission-control-expand-btn').click()
@@ -315,16 +316,21 @@ test.describe('M5 mission control workflows', () => {
     await expect(page.getByTestId('mission-paused-banner')).toContainText('Mission paused')
   })
 
-  test('hides minimize in focus mode', async ({ page }) => {
+  test('defaults to collapsed Mission Control in focus mode with safety controls visible', async ({ page }) => {
     await page.getByTestId('mission-name-input').fill('Focus-Minimize Guard')
     await page.getByTestId('mission-start-btn').click()
 
     await page.getByTestId('focus-mode-toggle').click()
     await expect(page.getByTestId('focus-mode-sidebar')).toBeVisible()
     await expect(page.getByTestId('mission-control')).toContainText('active')
-    await expect(page.getByTestId('mission-control-collapse-btn')).toHaveCount(0)
-    await expect(page.getByTestId('mission-control-expand-btn')).toHaveCount(0)
+    await expect(page.getByTestId('mission-control-collapsed-summary')).toBeVisible()
     await expect(page.getByTestId('mission-pause-resume-btn')).toBeVisible()
+    await expect(page.getByTestId('mission-finish-btn')).toBeVisible()
+    await expect(page.getByTestId('mission-control-expand-btn')).toBeVisible()
+
+    await page.getByTestId('mission-control-expand-btn').click()
+    await expect(page.getByTestId('mission-control-collapsed-summary')).toBeHidden()
+    await expect(page.getByTestId('mission-elapsed')).toBeVisible()
   })
 
 })

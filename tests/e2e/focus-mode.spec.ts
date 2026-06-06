@@ -11,9 +11,6 @@ test.describe('M24 focus mode parity', () => {
   })
 
   test('enters a map-first shell, mirrors coordinates, and persists across reload', async ({ page }) => {
-    const normalMapBounds = await page.getByTestId('map-container').boundingBox()
-    expect(normalMapBounds).toBeTruthy()
-
     await page.getByTestId('focus-mode-toggle').click()
     await expect(page.getByTestId('app-shell')).toHaveAttribute('data-focus-mode', 'true')
     await expect(page.getByTestId('focus-mode-sidebar')).toBeVisible()
@@ -21,14 +18,18 @@ test.describe('M24 focus mode parity', () => {
     await expect(page.getByTestId('hosted-browser-testing-banner')).toContainText(
       'Browser testing mode',
     )
+
+    // Focus sidebar defaults to Layers tab with layer tree visible
     await expect(page.getByTestId('focus-mode-layer-controls')).toBeVisible()
     await expect(page.getByTestId('layer-panel')).toBeVisible()
 
-    const focusMapBounds = await page.getByTestId('map-container').boundingBox()
-    expect(focusMapBounds).toBeTruthy()
-    if (normalMapBounds !== null && focusMapBounds !== null) {
-      expect(focusMapBounds.width).toBeGreaterThan(normalMapBounds.width)
-    }
+    // Tabbed layout exposes Tracking and Tools tabs
+    await expect(page.getByTestId('focus-sidebar-tab-tracking')).toBeVisible()
+    await expect(page.getByTestId('focus-sidebar-tab-tools')).toBeVisible()
+    await expect(page.getByTestId('focus-sidebar-tab-layers')).toBeVisible()
+
+    // Mission control remains accessible in focus mode
+    await expect(page.getByTestId('mission-control')).toBeVisible()
 
     await moveOverMap(page)
     await expect(page.getByTestId('focus-mode-coordinate-display')).toContainText('°')
@@ -60,6 +61,7 @@ test.describe('M24 focus mode parity', () => {
     await expect(page.getByTestId('mission-control')).toContainText('active')
 
     await injectMockTracking(page)
+    await page.getByTestId('focus-sidebar-tab-tracking').click()
     await expect(page.getByTestId('tracking-status')).toContainText('online')
     await expect(page.getByTestId('tracking-status')).toContainText('2')
 

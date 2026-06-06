@@ -34,7 +34,7 @@ describe('MissionControlPanel collapse behavior', () => {
     vi.clearAllMocks()
   })
 
-  it('collapses active mission controls while keeping the restore affordance visible', async () => {
+  it('collapses active mission controls while keeping safety controls and restore affordance visible', async () => {
     const { MissionControlPanel } = await import('../../src/components/mission-control-panel')
     missionControlMock.model = createModel({ phase: 'active' })
 
@@ -43,9 +43,10 @@ describe('MissionControlPanel collapse behavior', () => {
 
     click('[data-testid="mission-control-collapse-btn"]')
 
-    expect(query('[data-testid="mission-pause-resume-btn"]')).toBeNull()
+    expect(query('[data-testid="mission-pause-resume-btn"]')).not.toBeNull()
+    expect(query('[data-testid="mission-finish-btn"]')).not.toBeNull()
     expect(text('[data-testid="mission-control-collapsed-summary"]')).toContain(
-      'Mission Control collapsed',
+      'Panel Space Mission',
     )
     expect(query('[data-testid="mission-control-expand-btn"]')).not.toBeNull()
   })

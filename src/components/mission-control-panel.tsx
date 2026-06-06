@@ -67,8 +67,8 @@ export function MissionControlPanel() {
   } = useMissionControlViewModel()
 
   const phasePresentation = selectMissionPhasePresentation(phase)
-  const canCollapsePanel = phase === 'active' && currentMission !== null && !focusModeActive
-  const [collapsed, setCollapsed] = useState(false)
+  const canCollapsePanel = phase === 'active' && currentMission !== null
+  const [collapsed, setCollapsed] = useState(focusModeActive)
   const effectiveCollapsed = canCollapsePanel && collapsed
 
   return (
@@ -149,16 +149,39 @@ export function MissionControlPanel() {
           className="sar-readout border-l-4 border-l-emerald-400 px-3 py-3"
           data-testid="mission-control-collapsed-summary"
         >
-          <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-stone-300">
-            Mission Control collapsed
-          </p>
-          <p className="mt-1 text-[13px] font-bold text-stone-100">
-            {currentMission.name}
-          </p>
-          <p className="mt-1 text-[12px] leading-snug text-stone-300">
-            Mission timers remain visible in the command mast. Expand to pause, finish,
-            or review full lifecycle controls.
-          </p>
+          <div className="flex items-center justify-between gap-3">
+            <div className="min-w-0">
+              <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-stone-300">
+                Active Mission
+              </p>
+              <p className="mt-1 truncate text-[13px] font-bold text-stone-100">
+                {currentMission.name}
+              </p>
+            </div>
+            <div className="flex flex-shrink-0 items-center gap-2">
+              <button
+                className="sar-button-focus px-3 py-1.5 text-[11px] font-bold uppercase tracking-[0.06em]"
+                data-testid="mission-pause-resume-btn"
+                disabled={!canPauseOrResume}
+                onClick={() => void pauseOrResume()}
+                type="button"
+              >
+                {pauseResumeLabel}
+              </button>
+              <button
+                className="sar-action-danger px-3 py-1.5 text-[11px] font-bold uppercase tracking-[0.06em] disabled:cursor-not-allowed disabled:opacity-20"
+                data-testid="mission-finish-btn"
+                disabled={!canFinish}
+                onClick={() => {
+                  setCollapsed(false)
+                  setShowFinishDialog(true)
+                }}
+                type="button"
+              >
+                Finish
+              </button>
+            </div>
+          </div>
         </div>
       ) : (
         <>
