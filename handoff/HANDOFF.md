@@ -8,20 +8,22 @@
 - **Hosted testing:** `https://sartracker-web.vercel.app/?missionHarness=1`
 - **Desktop:** Electron validation shell present (MapLibre + direct HTTPS Traccar). Tauri desktop routes Traccar through Rust `reqwest`.
 - **Browser mode:** testing/training only (sessionStorage, not operational persistence).
-- **Latest test counts:** 144 unit files / 761 tests; ~105 Playwright E2E; 46 backend tests.
+- **Latest test counts:** 145 unit files / 793 tests; ~105 Playwright E2E; 46 backend tests.
 
 ## Last Work Done
 
-DON-110 (S1 maps) — official map packages now import into app-owned Electron storage:
-- `Add Discovery Package` copies selected `.mbtiles` files into `userData/official-map-packages/` before registration.
-- Import preflights disk space, dedupes/replaces by map id, and returns only safe copy metadata to the renderer.
-- Settings save validates the copied package and records safe metadata including package size, not private paths in diagnostics.
-- Settings can remove a registered package; app-owned files removed from saved settings are cleaned up by the Electron settings store.
-- Browser/hosted mode remains public-map-only; Electron validation proved the original source package can be removed after import while the copied package stays ready.
+DON-111 (S1 maps) — official map package coverage manifest and readiness certificate:
+- New `src/features/map/official-map-manifest.ts` module: builds sanitized manifest entries, coverage checks, and readiness certificates from package settings.
+- Settings UI upgraded: each package now shows a full manifest card (map type, zoom range, tile count, size, bounds, timestamps, status).
+- Coverage check button per package: compares current map viewport against package bounds, shows success/danger result inline.
+- Export Readiness Certificate button: generates a sanitized text report suitable for sharing or pre-mission checks. No paths, credentials, or source URLs leak.
+- Diagnostics support report already includes safe package metadata (from DON-110).
+- 32 new unit tests covering manifest building, bounds formatting, coverage inside/outside/unknown, certificate generation, and sanitization.
+- Browser-validated: coverage check works for both inside (Kerry) and outside (Dublin) cases.
 
 ## What's Next
 
-Next S1 map task is `DON-111`: official map package coverage manifest and readiness certificate. S2 Electron remains `DON-29`.
+Next S1 map task after DON-111 is `DON-114` (field-ready official map checklist and operator manual updates) and `DON-115` (cross-platform official map import release smoke). S2 Electron remains `DON-29`.
 
 ## Traccar Test Details
 
@@ -50,13 +52,13 @@ Next S1 map task is `DON-111`: official map package coverage manifest and readin
 
 ## Latest Verification
 
-- `npx vitest run tests/unit/electron-file-system.test.ts tests/unit/settings-workspace.test.ts tests/unit/electron-settings-store.test.ts tests/unit/electron-runtime-files.test.ts tests/unit/diagnostics-model.test.ts`
-- `npm run test`
-- `npm run lint`
-- `npm run build`
-- `npm run test:backend`
-- Playwright browser proof: `output/playwright/don-110/01-browser-settings-official-maps.png` and `browser-validation.json`
-- Electron CDP proof: `output/playwright/don-110/02-electron-settings-app-owned-package.png` and `electron-validation.json`
+- `npm run test` — 145 files, 793 tests passed
+- `npm run lint` — clean
+- `npm run build` — bundle budgets passed
+- `npx tsc --noEmit` — clean
+- `npm run test:backend` — 46 passed
+- `npx playwright test --project=chromium` — 104 passed (1 pre-existing flake: breadcrumb trail mode)
+- Browser validation: manifest card rendering, coverage check inside/outside, certificate export — `output/don-111/`
 
 ## Known Limits
 
