@@ -911,14 +911,27 @@ function OfficialMapPackageStatus({
       return
     }
 
-    const bounds = map.getBounds()
-    const result = checkManifestCoverage(mapPackage, {
-      west: bounds.getWest(),
-      south: bounds.getSouth(),
-      east: bounds.getEast(),
-      north: bounds.getNorth(),
-    })
-    setCoverageChecks((prev) => ({ ...prev, [mapPackage.id]: result }))
+    try {
+      const bounds = map.getBounds()
+      const result = checkManifestCoverage(mapPackage, {
+        west: bounds.getWest(),
+        south: bounds.getSouth(),
+        east: bounds.getEast(),
+        north: bounds.getNorth(),
+      })
+      setCoverageChecks((prev) => ({ ...prev, [mapPackage.id]: result }))
+    } catch {
+      setCoverageChecks((prev) => ({
+        ...prev,
+        [mapPackage.id]: {
+          packageId: mapPackage.id,
+          status: 'unknown',
+          tone: 'neutral',
+          label: 'Map not ready',
+          detail: 'The map must be loaded to check coverage against the current view.',
+        },
+      }))
+    }
   }
 
   async function handleExportCertificate(): Promise<void> {
@@ -926,11 +939,9 @@ function OfficialMapPackageStatus({
     setExportFeedback(null)
 
     try {
-      const certificate = buildReadinessCertificate(
-        packages,
-        new Date().toISOString(),
-      )
-      const fileName = `readiness-certificate-${new Date().toISOString().replaceAll(':', '-').replaceAll('.', '-')}.txt`
+      const generatedAt = new Date().toISOString()
+      const certificate = buildReadinessCertificate(packages, generatedAt)
+      const fileName = `readiness-certificate-${generatedAt.replaceAll(':', '-').replaceAll('.', '-')}.txt`
       const exportedPath = await exportDiagnosticsReport(fileName, certificate.reportText)
       setExportFeedback(`Certificate exported: ${exportedPath}`)
     } catch {

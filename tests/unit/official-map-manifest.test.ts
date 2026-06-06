@@ -173,6 +173,14 @@ describe('official map manifest', () => {
       expect(result.detail).toContain('extends beyond')
     })
 
+    it('reports covered when the view exactly matches package bounds', () => {
+      const exactBounds = { west: -10.8, south: 51.2, east: -9.2, north: 52.5 }
+      const result = checkManifestCoverage(createReadyPackage(), exactBounds)
+
+      expect(result.status).toBe('covered')
+      expect(result.tone).toBe('success')
+    })
+
     it('reports outside when the view partially overlaps', () => {
       const result = checkManifestCoverage(createReadyPackage(), viewPartiallyOutside)
 
