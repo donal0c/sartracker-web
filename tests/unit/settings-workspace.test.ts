@@ -14,6 +14,7 @@ const mocks = vi.hoisted(() => ({
   readCoordinateDisplayMode: vi.fn(),
   persistCoordinateDisplayMode: vi.fn(),
   isTauriRuntimeAvailable: vi.fn(),
+  isElectronRuntimeAvailable: vi.fn(),
 }))
 
 vi.mock('../../src/infrastructure/settings-store/tauri-settings-store', () => ({
@@ -35,6 +36,10 @@ vi.mock('../../src/lib/tauri-runtime', () => ({
   isTauriRuntimeAvailable: mocks.isTauriRuntimeAvailable,
 }))
 
+vi.mock('../../src/lib/desktop-runtime', () => ({
+  isElectronRuntimeAvailable: mocks.isElectronRuntimeAvailable,
+}))
+
 describe('SettingsWorkspace', () => {
   let root: Root | null = null
   let host: HTMLDivElement | null = null
@@ -47,6 +52,7 @@ describe('SettingsWorkspace', () => {
     root = null
     host = null
     vi.clearAllMocks()
+    vi.unstubAllGlobals()
   })
 
   it('closes after a successful save', async () => {
@@ -244,6 +250,70 @@ describe('SettingsWorkspace', () => {
     expect(packageStatus.textContent).toContain('z8-z16')
     expect(packageStatus.textContent).not.toContain('/private/maps')
     expect(packageStatus.textContent).not.toContain('reeks-standard-60km-z16.mbtiles')
+  })
+
+  it('lets an Electron admin choose a MapGenie source file and Discovery MBTiles package', async () => {
+    const onClose = vi.fn()
+    const { SettingsWorkspace } = await import('../../src/components/settings-workspace')
+    const bridge = {
+      chooseOfficialMapSourceFilePath: vi.fn().mockResolvedValue('/Volumes/team/mountainrescue_org.txt'),
+      chooseOfficialMapPackagePath: vi.fn().mockResolvedValue('/Volumes/team/reeks-standard-60km-z16.mbtiles'),
+    }
+    Object.defineProperty(window, 'sartrackerElectron', {
+      configurable: true,
+      value: bridge,
+    })
+    mocks.loadAppSettings.mockResolvedValue(DEFAULT_APP_SETTINGS)
+    mocks.saveAppSettings.mockResolvedValue(DEFAULT_APP_SETTINGS)
+    mocks.getAppRuntimeController.mockReturnValue(null)
+    mocks.readCoordinateDisplayMode.mockReturnValue('wgs84_first')
+    mocks.isTauriRuntimeAvailable.mockReturnValue(false)
+    mocks.isElectronRuntimeAvailable.mockReturnValue(true)
+
+    render(React.createElement(SettingsWorkspace, { open: true, onClose }))
+
+    await waitForElement('[data-testid="choose-official-map-source-file"]')
+    await act(async () => {
+      getButton('[data-testid="choose-official-map-source-file"]').click()
+    })
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    expect(bridge.chooseOfficialMapSourceFilePath).toHaveBeenCalledOnce()
+    expect((await waitForInput('[data-testid="official-map-source-path"]')).value).toBe(
+      '/Volumes/team/mountainrescue_org.txt',
+    )
+
+    await act(async () => {
+      getButton('[data-testid="choose-official-map-package"]').click()
+    })
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    expect(bridge.chooseOfficialMapPackagePath).toHaveBeenCalledOnce()
+    expect(document.body.textContent).toContain('Pending validation after save')
+
+    await act(async () => {
+      getButton('[data-testid="settings-save"]').click()
+    })
+
+    expect(mocks.saveAppSettings).toHaveBeenCalledWith(
+      expect.objectContaining({
+        officialMaps: expect.objectContaining({
+          sourceType: 'mapgenie_file',
+          sourcePath: '/Volumes/team/mountainrescue_org.txt',
+          packages: [
+            expect.objectContaining({
+              sourceType: 'mbtiles',
+              mapId: 'official_discovery_topo',
+              packagePath: '/Volumes/team/reeks-standard-60km-z16.mbtiles',
+            }),
+          ],
+        }),
+      }),
+    )
   })
 
   function render(element: React.ReactElement): void {

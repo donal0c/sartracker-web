@@ -23,6 +23,7 @@ import {
   persistCoordinateDisplayMode,
   readCoordinateDisplayMode,
 } from '../lib/coordinate-preferences'
+import { isElectronRuntimeAvailable } from '../lib/desktop-runtime'
 import { getRenderableMapLabel } from '../lib/map-config'
 import { isTauriRuntimeAvailable } from '../lib/tauri-runtime'
 
@@ -41,6 +42,8 @@ export function SettingsWorkspace({ open, onClose }: SettingsWorkspaceProps) {
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
   const [testing, setTesting] = useState(false)
+  const [choosingOfficialMapSource, setChoosingOfficialMapSource] = useState(false)
+  const [choosingOfficialMapPackage, setChoosingOfficialMapPackage] = useState(false)
   const [feedback, setFeedback] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [coordinateDisplayMode, setCoordinateDisplayMode] = useState(readCoordinateDisplayMode)
@@ -267,8 +270,6 @@ export function SettingsWorkspace({ open, onClose }: SettingsWorkspaceProps) {
                       </button>
                     </div>
                   ) : null}
-
-                  <OfficialMapPackageStatus draft={draft} />
 
                   <div className="space-y-2">
                     <p className="sar-section-label">
@@ -548,6 +549,35 @@ export function SettingsWorkspace({ open, onClose }: SettingsWorkspaceProps) {
                       }))
                     }
                   />
+
+                  {isElectronRuntimeAvailable() ? (
+                    <div className="grid gap-3 md:grid-cols-2">
+                      <button
+                        className="sar-button px-4 py-3 text-[11px] font-bold uppercase tracking-wider disabled:opacity-40"
+                        data-testid="choose-official-map-source-file"
+                        disabled={choosingOfficialMapSource}
+                        onClick={() => {
+                          void handleChooseOfficialMapSourceFile()
+                        }}
+                        type="button"
+                      >
+                        {choosingOfficialMapSource ? 'Choosing…' : 'Choose MapGenie File'}
+                      </button>
+                      <button
+                        className="sar-button px-4 py-3 text-[11px] font-bold uppercase tracking-wider disabled:opacity-40"
+                        data-testid="choose-official-map-package"
+                        disabled={choosingOfficialMapPackage}
+                        onClick={() => {
+                          void handleChooseOfficialMapPackage()
+                        }}
+                        type="button"
+                      >
+                        {choosingOfficialMapPackage ? 'Choosing…' : 'Add Discovery Package'}
+                      </button>
+                    </div>
+                  ) : null}
+
+                  <OfficialMapPackageStatus draft={draft} />
                 </div>
               </Section>
 
@@ -762,6 +792,61 @@ export function SettingsWorkspace({ open, onClose }: SettingsWorkspaceProps) {
       setSaving(false)
     }
   }
+
+  async function handleChooseOfficialMapSourceFile(): Promise<void> {
+    setChoosingOfficialMapSource(true)
+    setError(null)
+    setFeedback(null)
+
+    try {
+      const chooser = window.sartrackerElectron?.chooseOfficialMapSourceFilePath
+      if (chooser === undefined) {
+        throw new Error('Official map source file chooser is only available in the Electron app.')
+      }
+      const sourcePath = await chooser()
+      if (sourcePath !== null) {
+        updateDraft(setDraft, (current) => ({
+          ...current,
+          officialMaps: {
+            ...current.officialMaps,
+            sourceType: 'mapgenie_file',
+            sourcePath,
+          },
+        }))
+      }
+    } catch (chooseError) {
+      setError(toErrorMessage(chooseError))
+    } finally {
+      setChoosingOfficialMapSource(false)
+    }
+  }
+
+  async function handleChooseOfficialMapPackage(): Promise<void> {
+    setChoosingOfficialMapPackage(true)
+    setError(null)
+    setFeedback(null)
+
+    try {
+      const chooser = window.sartrackerElectron?.chooseOfficialMapPackagePath
+      if (chooser === undefined) {
+        throw new Error('Official map package chooser is only available in the Electron app.')
+      }
+      const packagePath = await chooser()
+      if (packagePath !== null) {
+        updateDraft(setDraft, (current) => ({
+          ...current,
+          officialMaps: {
+            ...current.officialMaps,
+            packages: addPendingOfficialMapPackage(current.officialMaps.packages, packagePath),
+          },
+        }))
+      }
+    } catch (chooseError) {
+      setError(toErrorMessage(chooseError))
+    } finally {
+      setChoosingOfficialMapPackage(false)
+    }
+  }
 }
 
 function OfficialMapPackageStatus({ draft }: { readonly draft: AppSettingsDraft }) {
@@ -810,6 +895,41 @@ function OfficialMapPackageStatus({ draft }: { readonly draft: AppSettingsDraft 
       )}
     </div>
   )
+}
+
+function addPendingOfficialMapPackage(
+  packages: AppSettingsDraft['officialMaps']['packages'],
+  packagePath: string,
+): AppSettingsDraft['officialMaps']['packages'] {
+  const normalizedPath = packagePath.trim()
+  if (normalizedPath === '') {
+    return packages
+  }
+
+  const pendingPackage: AppSettingsDraft['officialMaps']['packages'][number] = {
+    id: 'official_discovery_topo-pending',
+    sourceType: 'mbtiles',
+    mapId: 'official_discovery_topo',
+    packagePath: normalizedPath,
+    status: 'pending',
+    bounds: null,
+    minZoom: null,
+    maxZoom: null,
+    tileCount: 0,
+    tileFormat: '',
+    createdAt: '',
+    verifiedAt: '',
+    message: 'Pending validation after save.',
+  }
+
+  return [
+    ...packages.filter(
+      (mapPackage) =>
+        mapPackage.mapId !== pendingPackage.mapId ||
+        mapPackage.packagePath !== pendingPackage.packagePath,
+    ),
+    pendingPackage,
+  ]
 }
 
 function Section(props: {
@@ -957,6 +1077,8 @@ function formatOfficialPackageStatus(
   status: AppSettingsDraft['officialMaps']['packages'][number]['status'],
 ): string {
   switch (status) {
+    case 'pending':
+      return 'Pending'
     case 'ready':
       return 'Ready'
     case 'missing':
@@ -970,6 +1092,8 @@ function officialPackageStatusClass(
   status: AppSettingsDraft['officialMaps']['packages'][number]['status'],
 ): string {
   switch (status) {
+    case 'pending':
+      return 'border-sky-300/60 bg-sky-950/50 text-sky-100'
     case 'ready':
       return 'border-emerald-300/60 bg-emerald-950/50 text-emerald-100'
     case 'missing':

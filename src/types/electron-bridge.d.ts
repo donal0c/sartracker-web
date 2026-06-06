@@ -45,6 +45,8 @@ export type SarTrackerElectronBridge = {
   }) => Promise<string>
   readonly chooseGpxFilePaths: () => Promise<readonly string[]>
   readonly chooseGpxDirectoryPath: () => Promise<string | null>
+  readonly chooseOfficialMapSourceFilePath?: () => Promise<string | null>
+  readonly chooseOfficialMapPackagePath?: () => Promise<string | null>
   readonly readGpxFiles: (
     paths: readonly string[],
   ) => Promise<readonly GpxImportFileInput[]>

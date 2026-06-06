@@ -21,6 +21,20 @@ function createElectronFileSystem(options) {
       })
       return result.canceled ? null : result.filePaths[0] ?? null
     },
+    chooseOfficialMapSourceFilePath: async () => {
+      const result = await showOpenDialog(options, {
+        properties: ['openFile'],
+        filters: [{ name: 'MapGenie source details', extensions: ['txt'] }],
+      })
+      return result.canceled ? null : result.filePaths[0] ?? null
+    },
+    chooseOfficialMapPackagePath: async () => {
+      const result = await showOpenDialog(options, {
+        properties: ['openFile'],
+        filters: [{ name: 'Official map packages', extensions: ['mbtiles'] }],
+      })
+      return result.canceled ? null : result.filePaths[0] ?? null
+    },
     readGpxFiles: async (paths) => {
       return Promise.all(paths.map((filePath) => readGpxFile(filePath)))
     },

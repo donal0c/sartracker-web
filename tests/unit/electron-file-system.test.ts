@@ -23,6 +23,8 @@ const { createElectronFileSystem } = require('../../electron/file-system.cjs') a
 type ElectronFileSystem = {
   readonly chooseGpxFilePaths: () => Promise<readonly string[]>
   readonly chooseGpxDirectoryPath: () => Promise<string | null>
+  readonly chooseOfficialMapSourceFilePath: () => Promise<string | null>
+  readonly chooseOfficialMapPackagePath: () => Promise<string | null>
   readonly readGpxFiles: (paths: readonly string[]) => Promise<readonly {
     readonly sourcePath: string
     readonly fileName: string
@@ -117,13 +119,51 @@ describe('Electron filesystem service', () => {
     expect(shell.openPath).toHaveBeenCalledWith(filePath)
   })
 
+  it('chooses official map setup files with constrained file filters', async () => {
+    const dialog = {
+      showOpenDialog: vi
+        .fn()
+        .mockResolvedValueOnce({
+          canceled: false,
+          filePaths: ['/Volumes/team/mountainrescue_org.txt'],
+        })
+        .mockResolvedValueOnce({
+          canceled: false,
+          filePaths: ['/Volumes/team/reeks-standard-60km-z16.mbtiles'],
+        }),
+    }
+    const service = await createService({ dialog })
+
+    await expect(service.chooseOfficialMapSourceFilePath()).resolves.toBe(
+      '/Volumes/team/mountainrescue_org.txt',
+    )
+    await expect(service.chooseOfficialMapPackagePath()).resolves.toBe(
+      '/Volumes/team/reeks-standard-60km-z16.mbtiles',
+    )
+
+    expect(dialog.showOpenDialog).toHaveBeenNthCalledWith(1, {
+      properties: ['openFile'],
+      filters: [{ name: 'MapGenie source details', extensions: ['txt'] }],
+    })
+    expect(dialog.showOpenDialog).toHaveBeenNthCalledWith(2, {
+      properties: ['openFile'],
+      filters: [{ name: 'Official map packages', extensions: ['mbtiles'] }],
+    })
+  })
+
   async function createService(overrides?: Partial<{
+    readonly dialog: {
+      readonly showOpenDialog: (...args: unknown[]) => Promise<{
+        readonly canceled: boolean
+        readonly filePaths: readonly string[]
+      }>
+    }
     readonly shell: { readonly openPath: (path: string) => Promise<string> }
   }>): Promise<ElectronFileSystem> {
     userDataPath = await mkdtemp(path.join(tmpdir(), 'sartracker-electron-files-'))
     return createElectronFileSystem({
       userDataPath,
-      dialog: {
+      dialog: overrides?.dialog ?? {
         showOpenDialog: vi.fn().mockResolvedValue({ canceled: true, filePaths: [] }),
       },
       shell: overrides?.shell ?? { openPath: vi.fn().mockResolvedValue('') },

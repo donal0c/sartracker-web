@@ -8,21 +8,20 @@
 - **Hosted testing:** `https://sartracker-web.vercel.app/?missionHarness=1`
 - **Desktop:** Electron validation shell present (MapLibre + direct HTTPS Traccar). Tauri desktop routes Traccar through Rust `reqwest`.
 - **Browser mode:** testing/training only (sessionStorage, not operational persistence).
-- **Latest test counts:** 144 unit files / 754 tests; ~105 Playwright E2E; 46 backend tests.
+- **Latest test counts:** 144 unit files / 756 tests; ~105 Playwright E2E; 46 backend tests.
 
 ## Last Work Done
 
-DON-117 (6-6-26 feedback batch) — actionable immediate children DON-118 through DON-133 are now Done; coordinator-confirmation items DON-134 through DON-140 remain Backlog:
-- DON-132: Layer workspace fills available RHS vertical space
-- DON-129: Manual range rings require explicit radius
-- DON-126: Breadcrumb dot density and size improvements
-- DON-121: Per-measurement visibility in layer tree
-- **DON-133**: Reworked Focus Mode — compact auto-collapsed Mission Control with inline safety controls + full tabbed workspace (Tracking/Tools/Layers) defaulting to Layers tab
-- **DON-125**: Redesigned Devices workspace — 6 filter tabs (Devices/Active/Hidden/Online/Stale/NoFix) with counts, full-height scrollable device list, unified single-list design
+DON-109 (S1 maps) — Electron Settings now has a self-service official-map setup path:
+- `Choose MapGenie File` selects the local source details `.txt` through a narrow Electron dialog bridge.
+- `Add Discovery Package` selects an existing `.mbtiles` package from disk/USB and shows it as pending until Settings save.
+- Save reuses the existing Electron official-map registry to validate the package and return ready/missing/unreadable metadata.
+- Hosted/browser mode remains public-map-only; the Electron-only import buttons are not exposed there.
+- Operator manual and `docs/two-track-execution-workplan.md` are updated.
 
 ## What's Next
 
-Query Linear for current work. DON-117 is fully complete. Check children of `DON-7` (S1 maps), `DON-25` (S2 Electron), or `DON-5` (parity) for next streams.
+Next S1 map task is `DON-110`: copy imported official map packages into app-owned storage so the USB can be unplugged, with disk preflight, replace/remove, duplicate handling, and safe diagnostics. S2 Electron remains `DON-29`.
 
 ## Traccar Test Details
 
@@ -48,6 +47,16 @@ Query Linear for current work. DON-117 is fully complete. Check children of `DON
 - **Type check:** `npx tsc --noEmit`
 - **Deploy:** push to `master` → Vercel auto-deploys to production
 - **Desktop beta:** tag `v*` → GitHub Actions release workflow → draft prerelease
+
+## Latest Verification
+
+- `npx vitest run tests/unit/settings-workspace.test.ts tests/unit/electron-file-system.test.ts tests/unit/electron-settings-store.test.ts tests/unit/electron-official-map-proxy.test.ts tests/unit/map-config.test.ts tests/unit/offline-map-readiness.test.ts tests/unit/diagnostics-model.test.ts`
+- `npm run test`
+- `npm run lint`
+- `npm run build`
+- `npm run test:backend`
+- Playwright browser proof: `output/playwright/don-109/01-browser-settings-official-maps.png` and `browser-validation.json`
+- Electron CDP proof: `output/playwright/don-109/02-electron-settings-official-map-import-controls.png` and `electron-validation.json`
 
 ## Known Limits
 

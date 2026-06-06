@@ -50,7 +50,7 @@ export type OfficialMapSourceType = 'none' | 'mapgenie_file'
 
 export type OfficialMapPackageSourceType = 'mbtiles'
 
-export type OfficialMapPackageStatus = 'ready' | 'missing' | 'invalid'
+export type OfficialMapPackageStatus = 'ready' | 'missing' | 'invalid' | 'pending'
 
 export type OfficialMapPackageSettings = {
   readonly id: string

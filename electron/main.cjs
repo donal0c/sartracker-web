@@ -18,6 +18,8 @@ const WRITE_TRACKING_CACHE_CHANNEL = 'sartracker:write-tracking-cache'
 const EXPORT_DIAGNOSTICS_REPORT_CHANNEL = 'sartracker:export-diagnostics-report'
 const CHOOSE_GPX_FILE_PATHS_CHANNEL = 'sartracker:choose-gpx-file-paths'
 const CHOOSE_GPX_DIRECTORY_PATH_CHANNEL = 'sartracker:choose-gpx-directory-path'
+const CHOOSE_OFFICIAL_MAP_SOURCE_FILE_PATH_CHANNEL = 'sartracker:choose-official-map-source-file-path'
+const CHOOSE_OFFICIAL_MAP_PACKAGE_PATH_CHANNEL = 'sartracker:choose-official-map-package-path'
 const READ_GPX_FILES_CHANNEL = 'sartracker:read-gpx-files'
 const LIST_GPX_DIRECTORY_FILES_CHANNEL = 'sartracker:list-gpx-directory-files'
 const INGEST_MARKER_ATTACHMENT_CHANNEL = 'sartracker:ingest-marker-attachment'
@@ -235,6 +237,14 @@ function registerIpcHandlers(settingsStore, runtimeFiles, missionStore, fileSyst
   ipcMain.handle(CHOOSE_GPX_DIRECTORY_PATH_CHANNEL, (event) => {
     validateIpcSender(event)
     return fileSystem.chooseGpxDirectoryPath()
+  })
+  ipcMain.handle(CHOOSE_OFFICIAL_MAP_SOURCE_FILE_PATH_CHANNEL, (event) => {
+    validateIpcSender(event)
+    return fileSystem.chooseOfficialMapSourceFilePath()
+  })
+  ipcMain.handle(CHOOSE_OFFICIAL_MAP_PACKAGE_PATH_CHANNEL, (event) => {
+    validateIpcSender(event)
+    return fileSystem.chooseOfficialMapPackagePath()
   })
   ipcMain.handle(READ_GPX_FILES_CHANNEL, (event, paths) => {
     validateIpcSender(event)
