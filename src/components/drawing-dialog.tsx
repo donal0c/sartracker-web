@@ -9,6 +9,7 @@ import {
   magneticToTrue,
   trueToMagnetic,
 } from '../features/drawings/drawing-math'
+import { isDrawingDraftSaveable } from '../features/drawings/drawing-draft-factories'
 import { LPB_CATEGORIES, LPB_PERCENTILE_ORDER, LPB_RING_COLORS } from '../features/drawings/lpb-data'
 import { SEARCH_AREA_STATUSES, type DrawingDraft } from '../features/drawings/drawing-types'
 import { ColorPaletteInput } from './color-palette-input'
@@ -172,7 +173,7 @@ export function DrawingDialog() {
               <button
                 className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-4 py-2 text-sm text-emerald-100 disabled:opacity-50"
                 data-testid="drawing-save-btn"
-                disabled={saving}
+                disabled={saving || !isDrawingDraftSaveable(draft)}
                 onClick={() => void controller.saveDialog()}
                 type="button"
               >
@@ -338,6 +339,14 @@ function RangeRingSection(props: {
             testId="drawing-range-ring-count-input"
             value={props.draft.manualRingCount}
           />
+          {props.draft.manualRadiusM.trim() === '' ? (
+            <p
+              className="col-span-full text-xs font-semibold text-amber-300"
+              data-testid="drawing-range-ring-radius-required"
+            >
+              Enter a radius to create the range ring.
+            </p>
+          ) : null}
         </section>
       ) : (
         <>

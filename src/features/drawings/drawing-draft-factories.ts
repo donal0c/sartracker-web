@@ -1,5 +1,6 @@
 import type {
   BearingLineDrawingDraft,
+  DrawingDraft,
   LineDrawingDraft,
   RangeRingDrawingDraft,
   SearchAreaDrawingDraft,
@@ -7,6 +8,21 @@ import type {
   TextLabelDrawingDraft,
 } from './drawing-types'
 import type { LonLat } from './drawing-math'
+
+/**
+ * Returns whether a drawing draft has the minimum required fields for save.
+ * Range rings require explicit radius (manual) or category selection (LPB).
+ */
+export function isDrawingDraftSaveable(draft: DrawingDraft): boolean {
+  if (draft.type === 'range_ring') {
+    if (draft.mode === 'manual') {
+      const radius = Number(draft.manualRadiusM)
+      return draft.manualRadiusM.trim() !== '' && Number.isFinite(radius) && radius > 0
+    }
+    return true
+  }
+  return true
+}
 
 /**
  * Creates an empty line draft from captured sketch points.
@@ -43,6 +59,7 @@ export function createSearchAreaDraft(points: readonly LonLat[]): SearchAreaDraw
 
 /**
  * Creates an empty range-ring draft from a selected center point.
+ * Manual radius starts empty to force the operator to enter an explicit value.
  */
 export function createRangeRingDraft(center: LonLat): RangeRingDrawingDraft {
   return {
@@ -52,7 +69,7 @@ export function createRangeRingDraft(center: LonLat): RangeRingDrawingDraft {
     description: '',
     center,
     mode: 'manual',
-    manualRadiusM: '500',
+    manualRadiusM: '',
     manualRingCount: '3',
     lpbCategory: 'hiker',
   }

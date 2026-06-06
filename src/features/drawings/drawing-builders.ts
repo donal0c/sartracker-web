@@ -10,4 +10,5 @@ export {
   createSearchAreaDraft,
   createSearchSectorDraft,
   createTextLabelDraft,
+  isDrawingDraftSaveable,
 } from './drawing-draft-factories'

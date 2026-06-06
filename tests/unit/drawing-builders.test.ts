@@ -8,6 +8,7 @@ import {
   createSearchAreaDraft,
   createSearchSectorDraft,
   createTextLabelDraft,
+  isDrawingDraftSaveable,
   parsePersistedDrawing,
 } from '../../src/features/drawings/drawing-builders'
 
@@ -166,5 +167,33 @@ describe('drawing builders', () => {
 
     expect(parsed.parsedGeometry.type).toBe('LineString')
     expect(parsed.metadata).toEqual({ kind: 'line' })
+  })
+})
+
+describe('isDrawingDraftSaveable [DON-129]', () => {
+  it('rejects a new manual range ring with empty radius', () => {
+    const draft = createRangeRingDraft([-9.744, 51.999])
+    expect(draft.manualRadiusM).toBe('')
+    expect(isDrawingDraftSaveable(draft)).toBe(false)
+  })
+
+  it('accepts a manual range ring once radius is entered', () => {
+    const draft = { ...createRangeRingDraft([-9.744, 51.999]), manualRadiusM: '500' }
+    expect(isDrawingDraftSaveable(draft)).toBe(true)
+  })
+
+  it('rejects a manual range ring with invalid radius', () => {
+    const draft = { ...createRangeRingDraft([-9.744, 51.999]), manualRadiusM: '0' }
+    expect(isDrawingDraftSaveable(draft)).toBe(false)
+  })
+
+  it('accepts an LPB range ring with default category', () => {
+    const draft = { ...createRangeRingDraft([-9.744, 51.999]), mode: 'lpb' as const }
+    expect(isDrawingDraftSaveable(draft)).toBe(true)
+  })
+
+  it('accepts non-range-ring drafts without restriction', () => {
+    expect(isDrawingDraftSaveable(createLineDraft([[-9.7, 52]]))).toBe(true)
+    expect(isDrawingDraftSaveable(createSearchAreaDraft([[-9.7, 52]]))).toBe(true)
   })
 })
