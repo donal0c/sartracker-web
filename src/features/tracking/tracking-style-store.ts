@@ -2,9 +2,9 @@ import { useMemo } from 'react'
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 
-export const DEFAULT_BREADCRUMB_SIZE = 4
+export const DEFAULT_BREADCRUMB_SIZE = 8
 export const MIN_BREADCRUMB_SIZE = 2
-export const MAX_BREADCRUMB_SIZE = 10
+export const MAX_BREADCRUMB_SIZE = 16
 export const DEFAULT_BREADCRUMB_TRAIL_MODE = 'line' satisfies BreadcrumbTrailMode
 
 export type BreadcrumbTrailMode = 'line' | 'dots'

@@ -113,11 +113,16 @@ export function syncTrackingOverlay(
       'circle-color': ['get', 'color'],
       'circle-radius': breadcrumbDotRadius,
       'circle-stroke-color': '#020617',
-      'circle-stroke-width': 2,
+      'circle-stroke-width': Math.max(2, breadcrumbDotRadius * 0.4),
       'circle-opacity': 0.95,
     },
   })
   map.setPaintProperty(TRACKING_BREADCRUMB_DOTS_LAYER_ID, 'circle-radius', breadcrumbDotRadius)
+  map.setPaintProperty(
+    TRACKING_BREADCRUMB_DOTS_LAYER_ID,
+    'circle-stroke-width',
+    Math.max(2, breadcrumbDotRadius * 0.4),
+  )
 
   ensureLayer(map, {
     id: TRACKING_DEVICE_HALO_LAYER_ID,

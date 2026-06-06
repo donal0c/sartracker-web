@@ -66,18 +66,18 @@ test.describe('M19 devices workspace', () => {
     await expect(page.getByTestId('devices-workspace')).toBeVisible()
 
     await expect.poll(async () => readTrackingLayerState(page)).toMatchObject({
-      lineWidth: 4,
-      dotRadius: 2,
+      lineWidth: 8,
+      dotRadius: 4,
     })
 
     await page.getByTestId('device-breadcrumb-color-alpha').click()
     await page.getByTestId('device-color-option-FF7A00').click()
-    await page.getByTestId('breadcrumb-size-control').fill('8')
+    await page.getByTestId('breadcrumb-size-control').fill('12')
     await page.getByTestId('breadcrumb-mode-dots').click()
 
-    await expect(page.getByTestId('breadcrumb-size-label')).toContainText('8px dot diameter')
+    await expect(page.getByTestId('breadcrumb-size-label')).toContainText('12px dot diameter')
     await expect.poll(async () => readTrackingLayerState(page)).toMatchObject({
-      dotRadius: 4,
+      dotRadius: 6,
       alphaBreadcrumbColor: '#FF7A00',
       breadcrumbFeatureKind: 'breadcrumb',
     })
@@ -87,10 +87,10 @@ test.describe('M19 devices workspace', () => {
     expect(JSON.stringify(dotModeState.dotFilter)).toContain('breadcrumb')
 
     await page.getByTestId('breadcrumb-mode-line').click()
-    await expect(page.getByTestId('breadcrumb-size-label')).toContainText('8px trail width')
+    await expect(page.getByTestId('breadcrumb-size-label')).toContainText('12px trail width')
 
     const lineModeState = await readTrackingLayerState(page)
-    expect(lineModeState.lineWidth).toBe(8)
+    expect(lineModeState.lineWidth).toBe(12)
     expect(JSON.stringify(lineModeState.dotFilter)).toContain('__hidden__')
     expect(JSON.stringify(lineModeState.lineFilter)).toContain('breadcrumbLine')
   })
