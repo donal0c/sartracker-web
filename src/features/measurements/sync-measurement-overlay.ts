@@ -13,12 +13,18 @@ export const MEASUREMENT_PREVIEW_POINT_LAYER_ID = 'mission-measurement-preview-p
 
 /**
  * Synchronizes completed measurement lines and labels into the current map style.
+ * Filters out measurements whose IDs appear in `hiddenMeasurementIds`.
  */
 export function syncMeasurementOverlay(
   map: maplibregl.Map,
   measurements: readonly Measurement[],
+  hiddenMeasurementIds: readonly string[] = [],
 ): void {
-  ensureGeoJsonSource(map, MEASUREMENT_SOURCE_ID, createMeasurementFeatureCollection(measurements))
+  const visibleMeasurements =
+    hiddenMeasurementIds.length === 0
+      ? measurements
+      : measurements.filter((m) => !hiddenMeasurementIds.includes(m.id))
+  ensureGeoJsonSource(map, MEASUREMENT_SOURCE_ID, createMeasurementFeatureCollection(visibleMeasurements))
   ensureMeasurementLayers(map)
 }
 

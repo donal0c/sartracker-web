@@ -4,6 +4,7 @@ import type {
   Helicopter,
   Marker,
 } from '../../infrastructure/mission-store/tauri-mission-store'
+import type { Measurement } from '../measurements/measurement-types'
 import type { NormalizedTrackingDevice } from '../tracking/tracking-types'
 import { buildLayerCatalogTree } from './layer-catalog-builder'
 import type { LayerCatalogNode } from './layer-catalog-tree'
@@ -43,6 +44,7 @@ type RefreshCatalogInput = {
   readonly drawings: readonly Drawing[]
   readonly helicopters: readonly Helicopter[]
   readonly gpxImports: readonly GpxTrackImport[]
+  readonly measurements: readonly Measurement[]
 }
 
 export type LayerCatalogController = {
@@ -72,6 +74,7 @@ export async function startLayerCatalogRuntime(
   let lastDrawings: readonly Drawing[] = []
   let lastHelicopters: readonly Helicopter[] = []
   let lastGpxImports: readonly GpxTrackImport[] = []
+  let lastMeasurements: readonly Measurement[] = []
   let nodeIndex = buildNodeIndex(root)
   let latestRefreshRequestId = 0
   let refreshInvalidationVersion = 0
@@ -86,6 +89,7 @@ export async function startLayerCatalogRuntime(
       lastDrawings = input.drawings
       lastHelicopters = input.helicopters
       lastGpxImports = input.gpxImports
+      lastMeasurements = input.measurements
       error = null
 
       if (missionId === null) {
@@ -229,6 +233,7 @@ export async function startLayerCatalogRuntime(
       drawings: lastDrawings,
       helicopters: lastHelicopters,
       gpxImports: lastGpxImports,
+      measurements: lastMeasurements,
       metadataEntries,
     })
     nodeIndex = buildNodeIndex(root)

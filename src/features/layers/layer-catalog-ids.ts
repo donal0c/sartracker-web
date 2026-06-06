@@ -93,6 +93,10 @@ export function getHelicopterFeatureNodeId(helicopterId: string): string {
   return `feature:helicopter:${helicopterId}`
 }
 
+export function getMeasurementFeatureNodeId(measurementId: string): string {
+  return `feature:measurement:${measurementId}`
+}
+
 /**
  * Parses a feature node id into its entity type and entity id.
  */

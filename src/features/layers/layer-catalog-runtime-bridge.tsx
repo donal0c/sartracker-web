@@ -3,6 +3,7 @@ import { useEffect } from 'react'
 import { useDrawingStore } from '../drawings/drawing-store'
 import { useGpxStore } from '../gpx/gpx-store'
 import { useHelicopterStore } from '../helicopters/helicopter-store'
+import { useMeasurementStore } from '../measurements/measurement-store'
 import { createTauriLayerCatalogStore } from '../../infrastructure/layer-catalog-store/tauri-layer-catalog-store'
 import { createElectronLayerCatalogStore } from '../../infrastructure/layer-catalog-store/electron-layer-catalog-store'
 import { getBrowserHarnessLayerCatalogStore } from '../browser-validation/browser-harness-layer-catalog-store'
@@ -30,6 +31,7 @@ export function LayerCatalogRuntimeBridge() {
   const drawings = useDrawingStore((state) => state.drawings)
   const helicopters = useHelicopterStore((state) => state.helicopters)
   const gpxImports = useGpxStore((state) => state.imports)
+  const measurements = useMeasurementStore((state) => state.measurements)
 
   useEffect(() => {
     if (controller !== null) {
@@ -69,8 +71,9 @@ export function LayerCatalogRuntimeBridge() {
       drawings,
       helicopters,
       gpxImports,
+      measurements,
     })
-  }, [controller, devices, drawings, gpxImports, helicopters, markers, missionId])
+  }, [controller, devices, drawings, gpxImports, helicopters, markers, measurements, missionId])
 
   return null
 }

@@ -91,6 +91,7 @@ export function buildMissionReviewSnapshot(
     drawings: input.drawings.filter((drawing) => drawing.temporary_measure !== true),
     helicopters: input.helicopters,
     gpxImports: input.gpxImports,
+    measurements: [],
     metadataEntries: input.layerMetadata,
   })
   const layerCount = catalogRoot.children.reduce((count, group) => count + group.children.length, 0)

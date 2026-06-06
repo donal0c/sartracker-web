@@ -38,6 +38,7 @@ type LayerVisibilityState = {
   readonly helicopterSlotVisibility: Record<HelicopterSlotKey, boolean>
   readonly drawingTypeVisibility: Record<DrawingType, boolean>
   readonly hiddenDrawingIds: readonly string[]
+  readonly hiddenMeasurementIds: readonly string[]
   readonly breadcrumbsVisible: boolean
   readonly measurementsVisible: boolean
   readonly setGroupVisibility: (group: keyof LayerGroupVisibility, visible: boolean) => void
@@ -57,6 +58,7 @@ type LayerVisibilityState = {
   readonly toggleDrawingVisibility: (drawingId: string) => void
   readonly showAllDrawings: () => void
   readonly hideAllDrawings: (drawings: readonly Drawing[]) => void
+  readonly toggleMeasurementVisibility: (measurementId: string) => void
   readonly setBreadcrumbsVisible: (visible: boolean) => void
   readonly setMeasurementsVisible: (visible: boolean) => void
   readonly hydrateCatalogVisibility: (missionId: string | null, root: LayerCatalogRootNode) => void
@@ -103,6 +105,7 @@ export const useLayerVisibilityStore = create<LayerVisibilityState>((set) => ({
   helicopterSlotVisibility: DEFAULT_HELICOPTER_SLOT_VISIBILITY,
   drawingTypeVisibility: DEFAULT_DRAWING_TYPE_VISIBILITY,
   hiddenDrawingIds: [],
+  hiddenMeasurementIds: [],
   breadcrumbsVisible: true,
   measurementsVisible: true,
   setGroupVisibility: (group, visible) =>
@@ -189,6 +192,12 @@ export const useLayerVisibilityStore = create<LayerVisibilityState>((set) => ({
     })),
   showAllDrawings: () => set({ hiddenDrawingIds: [] }),
   hideAllDrawings: (drawings) => set({ hiddenDrawingIds: drawings.map((drawing) => drawing.id) }),
+  toggleMeasurementVisibility: (measurementId) =>
+    set((state) => ({
+      hiddenMeasurementIds: state.hiddenMeasurementIds.includes(measurementId)
+        ? state.hiddenMeasurementIds.filter((candidate) => candidate !== measurementId)
+        : [...state.hiddenMeasurementIds, measurementId],
+    })),
   setBreadcrumbsVisible: (visible) => set({ breadcrumbsVisible: visible }),
   setMeasurementsVisible: (visible) => set({ measurementsVisible: visible }),
   hydrateCatalogVisibility: (missionId, root) =>
@@ -198,6 +207,7 @@ export const useLayerVisibilityStore = create<LayerVisibilityState>((set) => ({
       const nextHiddenHelicopterIds = collectHiddenHelicopterIds(root)
       const nextHiddenGpxImportIds = collectHiddenGpxImportIds(root)
       const nextHiddenDrawingIds = collectHiddenDrawingIds(root)
+      const nextHiddenMeasurementIds = collectHiddenMeasurementIds(root)
       const nextGroupVisibility: LayerGroupVisibility = {
         tracking: readGroupVisibility(root, TRACKING_GROUP_NODE_ID),
         helicopters: readGroupVisibility(root, HELICOPTERS_GROUP_NODE_ID),
@@ -247,6 +257,9 @@ export const useLayerVisibilityStore = create<LayerVisibilityState>((set) => ({
       const hiddenDrawingIds = shallowStringArrayEqual(state.hiddenDrawingIds, nextHiddenDrawingIds)
         ? state.hiddenDrawingIds
         : nextHiddenDrawingIds
+      const hiddenMeasurementIds = shallowStringArrayEqual(state.hiddenMeasurementIds, nextHiddenMeasurementIds)
+        ? state.hiddenMeasurementIds
+        : nextHiddenMeasurementIds
       const groupVisibility = shallowRecordEqual(state.groupVisibility, nextGroupVisibility)
         ? state.groupVisibility
         : nextGroupVisibility
@@ -270,6 +283,7 @@ export const useLayerVisibilityStore = create<LayerVisibilityState>((set) => ({
         hiddenHelicopterIds === state.hiddenHelicopterIds &&
         hiddenGpxImportIds === state.hiddenGpxImportIds &&
         hiddenDrawingIds === state.hiddenDrawingIds &&
+        hiddenMeasurementIds === state.hiddenMeasurementIds &&
         groupVisibility === state.groupVisibility &&
         markerTypeVisibility === state.markerTypeVisibility &&
         helicopterSlotVisibility === state.helicopterSlotVisibility &&
@@ -287,6 +301,7 @@ export const useLayerVisibilityStore = create<LayerVisibilityState>((set) => ({
         hiddenHelicopterIds,
         hiddenGpxImportIds,
         hiddenDrawingIds,
+        hiddenMeasurementIds,
         groupVisibility,
         markerTypeVisibility,
         helicopterSlotVisibility,
@@ -365,6 +380,17 @@ function collectHiddenDrawingIds(root: LayerCatalogRootNode): readonly string[] 
     .flatMap((layer) =>
       layer.children.flatMap((child) =>
         child.entity?.type === 'drawing' && !child.isVisible ? [child.entity.drawing.id] : [],
+      ),
+    )
+}
+
+function collectHiddenMeasurementIds(root: LayerCatalogRootNode): readonly string[] {
+  return root.children
+    .flatMap((group) => group.children)
+    .filter((layer) => layer.id === MEASUREMENTS_LAYER_NODE_ID)
+    .flatMap((layer) =>
+      layer.children.flatMap((child) =>
+        child.entity?.type === 'measurement' && !child.isVisible ? [child.entity.measurement.id] : [],
       ),
     )
 }

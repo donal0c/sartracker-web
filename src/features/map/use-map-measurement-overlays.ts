@@ -28,6 +28,7 @@ export function useMapMeasurementOverlays(
   const hoverPoint = useMeasurementStore((state) => state.hoverPoint)
   const groupVisibility = useLayerVisibilityStore((state) => state.groupVisibility)
   const measurementsVisible = useLayerVisibilityStore((state) => state.measurementsVisible)
+  const hiddenMeasurementIds = useLayerVisibilityStore((state) => state.hiddenMeasurementIds)
 
   useEffect(() => {
     const map = options.mapRef.current
@@ -43,12 +44,14 @@ export function useMapMeasurementOverlays(
       syncMeasurementOverlay(
         map,
         getEffectiveMeasurementsVisible(groupVisibility, measurementsVisible) ? measurements : [],
+        hiddenMeasurementIds,
       )
     }
 
     return registerMapStyleSync(map, synchronizeOverlay)
   }, [
     groupVisibility,
+    hiddenMeasurementIds,
     measurements,
     measurementsVisible,
     options.activeBasemapId,

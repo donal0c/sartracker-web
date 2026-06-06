@@ -4,6 +4,7 @@ import type {
   Helicopter,
   Marker,
 } from '../../infrastructure/mission-store/tauri-mission-store'
+import type { Measurement } from '../measurements/measurement-types'
 import type { NormalizedTrackingDevice } from '../tracking/tracking-types'
 import {
   type LayerCatalogBuildInput,
@@ -26,6 +27,7 @@ import {
   getHelicopterLayerNodeId,
   getMarkerFeatureNodeId,
   getMarkerLayerNodeId,
+  getMeasurementFeatureNodeId,
   GPX_TRACKS_GROUP_NODE_ID,
   HELICOPTERS_GROUP_NODE_ID,
   MAP_TOOLS_GROUP_NODE_ID,
@@ -82,6 +84,7 @@ export function buildLayerCatalogTree(input: LayerCatalogBuildInput): LayerCatal
   addHelicopterItems(featureItemsByLayer, input.helicopters ?? [], metadataIndex)
   addMarkerItems(featureItemsByLayer, input.markers, metadataIndex)
   addDrawingItems(featureItemsByLayer, input.drawings, metadataIndex)
+  addMeasurementItems(featureItemsByLayer, input.measurements ?? [], metadataIndex)
 
   const layers = [
     ...LAYER_DEFINITIONS.map((layer) => {
@@ -292,6 +295,25 @@ function addDrawingItems(
   for (const [layerId, items] of groups) {
     target.set(layerId, items)
   }
+}
+
+function addMeasurementItems(
+  target: Map<string, LayerCatalogFeatureItemNode[]>,
+  measurements: readonly Measurement[],
+  metadataIndex: Map<string, LayerCatalogMetadataEntry>,
+): void {
+  const layerId = MEASUREMENTS_LAYER_NODE_ID
+  const items = measurements.map((measurement, index) =>
+    createFeatureItem({
+      id: getMeasurementFeatureNodeId(measurement.id),
+      parentId: layerId,
+      label: measurement.label,
+      fallbackOrder: index,
+      metadataIndex,
+      entity: { type: 'measurement', measurement },
+    }),
+  )
+  target.set(layerId, items)
 }
 
 function createFeatureItem(args: {
