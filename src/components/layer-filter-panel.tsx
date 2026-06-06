@@ -331,7 +331,7 @@ function LayerInspector(props: {
     >
       <div className="min-w-0">
         <p className="sar-section-label">
-          Inspection
+          Selected Layer
         </p>
         <h4
           className="mt-1 truncate font-mono text-sm font-bold text-stone-100"
@@ -432,19 +432,23 @@ function LayerInspector(props: {
         </div>
       ) : null}
 
-      <div className="sar-readout mt-4 p-3">
-        <p className="sar-section-label mb-2">
-          Details
-        </p>
-        <dl className="space-y-2" data-testid="layer-inspector-details">
-          {inspectionRows.map((row) => (
-            <div className="flex items-start justify-between gap-4 text-xs" key={row.label}>
-              <dt className="text-stone-300">{row.label}</dt>
-              <dd className="text-right font-mono text-stone-200">{row.value}</dd>
-            </div>
-          ))}
-        </dl>
-      </div>
+      {inspectionRows.length > 0 ? (
+        <details className="mt-4">
+          <summary className="sar-section-label cursor-pointer select-none text-[11px] text-stone-400 hover:text-stone-200">
+            Details
+          </summary>
+          <div className="sar-readout mt-2 p-3">
+            <dl className="space-y-2" data-testid="layer-inspector-details">
+              {inspectionRows.map((row) => (
+                <div className="flex items-start justify-between gap-4 text-xs" key={row.label}>
+                  <dt className="text-stone-300">{row.label}</dt>
+                  <dd className="text-right font-mono text-stone-200">{row.value}</dd>
+                </div>
+              ))}
+            </dl>
+          </div>
+        </details>
+      ) : null}
     </div>
   )
 }
