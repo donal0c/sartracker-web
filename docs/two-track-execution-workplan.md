@@ -126,7 +126,7 @@ ship or ask testers for whole Electron profile zips.
 4. Prepare a repeatable Tauri beta release path in the background.
 5. Avoid heavy browser hardening unless testing proves browser operational deployment is genuinely needed.
 6. Treat licensed Irish/OSI map sources as local/customer-provided assets unless the map provider gives requirements that change this.
-7. Start the official map lane now: `DON-76` is the parent, with `DON-77` first to lock the operational default and source naming before UI/import/rendering work.
+7. Continue the official map lane through the team-ready Electron import workflow: `DON-7` is now the active offline-map parent for `DON-109` through `DON-115`, while `DON-76` remains the broader official-provider parent and overlay lane.
 
 ## Next Task Order
 
@@ -202,6 +202,14 @@ This is the default order when the user says “work on the next task.”
 | Done | Validate packaged Electron official maps offline cross-platform | Track B / Maps / Release | `DON-107` / `DON-7` | Done 2026-06-05; macOS and Dell Ubuntu packaged smokes passed with network blocked, official package tiles rendered from local MBTiles, readiness/diagnostics validated, and Windows remains an explicit unverified gap until a Windows machine is available. |
 | Done | Measure full-national Discovery package size/performance | Track B / Maps / Offline | `DON-108` / `DON-7` | Done 2026-06-06; full-national Discovery is technically practical but should be supported only with explicit admin warnings, not as the default v1 package. National z14 probe measured 4.2 GB / 103,491 tiles / ~54 min prep, macOS and Dell Ubuntu packaged Electron smokes passed with network blocked, and full z16 is estimated around 56-73 GiB. See `docs/official-map-national-package-measurement-don-108.md`. |
 | Done | Classify relief and slope rasters as optional map overlays | Track B / Maps / Overlays | `DON-82` | Done 2026-06-06; `relief_byte.tif` and `Slope_30plus.tif` are optional local terrain overlays, not basemaps and not part of first-pass Discovery. Relief should be low-opacity terrain context; slope should be a transparent steep-ground warning overlay with clear caveats. See `docs/official-map-terrain-overlays-don-82.md`. |
+| Next | Official map setup wizard and package import UI | S1 Maps / S2 Electron | `DON-109` / `DON-7` | Next S1 implementation task. Add an Electron Settings workflow to choose/import the MapGenie source file and select/validate a local official `.mbtiles` package without manual settings edits. |
+| Then | App-owned official map library copy and package management | S1 Maps / S2 Electron | `DON-110` / `DON-7` | After `DON-109`. Copy imported packages into app-owned storage so the team can unplug the USB; add disk preflight, replace/remove, duplicate handling, and safe diagnostics. |
+| Then | Official map package coverage manifest and readiness certificate | S1 Maps | `DON-111` / `DON-7` | After `DON-109`. Display/export safe bounds, zooms, tile count, status, and current-view coverage so operators can prove the map covers the search area. |
+| Then | Official map package choice guardrails | S1 Maps | `DON-112` / `DON-7` | After `DON-109`/`DON-108`. Make standard Kerry/Reeks the recommended package, mission-area packages the normal away-area prep path, and national packages explicit admin/large-disk options. |
+| Parallel | Admin package preparation workflow for standard and mission-area official maps | S1 Maps | `DON-113` / `DON-7` | Can run in parallel with import work once package metadata expectations are clear. Productize the private conversion workflow for standard and mission-area packages. |
+| Then | Field-ready official map checklist and operator manual updates | S1 Maps / S2 Electron | `DON-114` / `DON-7` | After `DON-109`-`DON-112`. Make the app/manual answer: official Discovery ready offline, current view covered, fallback status known, diagnostics available. |
+| Final gate | Cross-platform official map import release smoke | S1 Maps / S2 Electron | `DON-115` / `DON-7` | Final map release gate. Validate a downloaded packaged Electron app can import/register official maps and render offline on macOS, Windows, and Linux with sanitized evidence. |
+| Later | Relief and slope overlay package conversion spike | S1 Maps / Overlays | `DON-116` / `DON-76` | Optional terrain overlay lane after basemap workflow. Convert representative relief/slope packages and decide whether to implement overlay registry/rendering. |
 | 5 | S8: Linux runtime reliability path | Track B / Runtime | `DON-25` | In progress 2026-05-18. Electron hardening continues in parallel: clear `DON-58` and `DON-59` before sending full Electron builds wider. |
 | 6 | B7: Pre-tester smoke + CI launch-smoke for cross-platform Tauri builds | Track B / Release / Verification | `DON-24` | Superseded as the immediate blocker by S8 for the Linux black-map investigation. CI launch smoke is green on GitHub runners, but real tester machines still black-map under Tauri/WebKitGTK. Keep B7 open for release-smoke process work. |
 | 7 | B5: Triage first web and Tauri beta feedback | Track A / Track B | `sartracker-web-s8m` / `DON-11` | After deployed-web validation and cross-platform beta setup produce feedback |
@@ -1260,6 +1268,14 @@ Work sequence:
 - `DON-107` — packaged Electron official offline map validation done for macOS and Dell Ubuntu Linux; Windows is the documented unverified gap until a Windows machine is available.
 - `DON-108` — full-national Discovery package size/performance measurement done 2026-06-06; support as optional/admin-prepared with warnings, keep standard-region package as v1 default. See `docs/official-map-national-package-measurement-don-108.md`.
 - `DON-82` — relief/slope overlay classification done 2026-06-06; implementation should be separate overlay package/import/rendering work. See `docs/official-map-terrain-overlays-don-82.md`.
+- `DON-109` — official map setup wizard and package import UI. Next map implementation task.
+- `DON-110` — app-owned official map library copy and package management.
+- `DON-111` — official map package coverage manifest and readiness certificate.
+- `DON-112` — package choice guardrails for standard Kerry/Reeks, mission-area, and national packages.
+- `DON-113` — admin package preparation workflow for standard and mission-area official maps.
+- `DON-114` — field-ready official map checklist and operator manual updates.
+- `DON-115` — cross-platform official map import release smoke on macOS, Windows, and Linux.
+- `DON-116` — optional relief/slope overlay package conversion spike.
 
 Acceptance:
 
@@ -1267,6 +1283,7 @@ Acceptance:
 - Operators see official map options grouped separately from public fallback maps.
 - Electron/local can configure private map access/assets without committing or bundling licensed map data.
 - Offline planning is based on the selected operational source and real local asset formats, not speculation.
+- The map stream is not complete until a fresh packaged Electron install can import/register a licensed package through the UI, keep it local after USB removal, prove current-area offline readiness, export sanitized diagnostics, and pass macOS/Windows/Linux packaged validation.
 
 Verification:
 
