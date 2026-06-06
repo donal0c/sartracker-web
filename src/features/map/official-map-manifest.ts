@@ -1,6 +1,60 @@
 import { getRenderableMapLabel, type OfficialMapId } from '../../lib/map-config'
 import type { OfficialMapPackageSettings } from '../settings/settings-types'
 
+export type PackageCategory = 'standard' | 'mission_area' | 'national'
+
+export type PackageCategoryInfo = {
+  readonly category: PackageCategory
+  readonly label: string
+  readonly tone: 'success' | 'warning' | 'neutral'
+  readonly guidance: string
+}
+
+const TWO_GB = 2 * 1024 * 1024 * 1024
+const FOUR_GB = 4 * 1024 * 1024 * 1024
+
+/**
+ * Classifies a package by size into standard, mission-area, or national.
+ */
+export function classifyPackageCategory(sizeBytes: number | undefined | null): PackageCategoryInfo {
+  if (sizeBytes === undefined || sizeBytes === null || sizeBytes <= 0) {
+    return {
+      category: 'standard',
+      label: 'Standard',
+      tone: 'success',
+      guidance: 'Standard operating-area package. Recommended for most operations.',
+    }
+  }
+
+  if (sizeBytes >= FOUR_GB) {
+    return {
+      category: 'national',
+      label: 'National',
+      tone: 'warning',
+      guidance:
+        'Large package — prepare before a mission, not during one. ' +
+        'Full-national Discovery maps require sufficient free disk space ' +
+        'and should be prepared by an admin in advance.',
+    }
+  }
+
+  if (sizeBytes >= TWO_GB) {
+    return {
+      category: 'mission_area',
+      label: 'Mission Area',
+      tone: 'neutral',
+      guidance: 'Mission-area package — verify coverage matches the intended search area before deployment.',
+    }
+  }
+
+  return {
+    category: 'standard',
+    label: 'Standard',
+    tone: 'success',
+    guidance: 'Standard operating-area package. Recommended for most operations.',
+  }
+}
+
 export type ManifestCoverageStatus = 'covered' | 'outside' | 'unknown'
 
 export type ManifestCoverageTone = 'success' | 'danger' | 'neutral'

@@ -4,6 +4,7 @@ import {
   buildPackageManifestEntry,
   buildReadinessCertificate,
   checkManifestCoverage,
+  classifyPackageCategory,
 } from '../../src/features/map/official-map-manifest'
 import type { OfficialMapPackageSettings } from '../../src/features/settings/settings-types'
 
@@ -329,6 +330,89 @@ describe('official map manifest', () => {
       const cert = buildReadinessCertificate([createReadyPackage()], generatedAt)
 
       expect(cert.entries[0]!.size).toBe('500.0 MB')
+    })
+  })
+
+  describe('classifyPackageCategory', () => {
+    it('classifies undefined size as standard', () => {
+      const result = classifyPackageCategory(undefined)
+
+      expect(result.category).toBe('standard')
+      expect(result.tone).toBe('success')
+      expect(result.label).toBe('Standard')
+    })
+
+    it('classifies null size as standard', () => {
+      const result = classifyPackageCategory(null)
+
+      expect(result.category).toBe('standard')
+      expect(result.tone).toBe('success')
+    })
+
+    it('classifies zero size as standard', () => {
+      const result = classifyPackageCategory(0)
+
+      expect(result.category).toBe('standard')
+      expect(result.tone).toBe('success')
+    })
+
+    it('classifies 1.1 GB (standard Kerry package) as standard', () => {
+      const onePointOneGB = 1.1 * 1024 * 1024 * 1024
+      const result = classifyPackageCategory(onePointOneGB)
+
+      expect(result.category).toBe('standard')
+      expect(result.tone).toBe('success')
+      expect(result.label).toBe('Standard')
+    })
+
+    it('classifies 2.5 GB as mission_area', () => {
+      const twoPointFiveGB = 2.5 * 1024 * 1024 * 1024
+      const result = classifyPackageCategory(twoPointFiveGB)
+
+      expect(result.category).toBe('mission_area')
+      expect(result.tone).toBe('neutral')
+      expect(result.label).toBe('Mission Area')
+    })
+
+    it('classifies exactly 2 GB as mission_area', () => {
+      const twoGB = 2 * 1024 * 1024 * 1024
+      const result = classifyPackageCategory(twoGB)
+
+      expect(result.category).toBe('mission_area')
+      expect(result.tone).toBe('neutral')
+    })
+
+    it('classifies 4.2 GB (national z14 probe) as national', () => {
+      const fourPointTwoGB = 4.2 * 1024 * 1024 * 1024
+      const result = classifyPackageCategory(fourPointTwoGB)
+
+      expect(result.category).toBe('national')
+      expect(result.tone).toBe('warning')
+      expect(result.label).toBe('National')
+    })
+
+    it('classifies exactly 4 GB as national', () => {
+      const fourGB = 4 * 1024 * 1024 * 1024
+      const result = classifyPackageCategory(fourGB)
+
+      expect(result.category).toBe('national')
+      expect(result.tone).toBe('warning')
+    })
+
+    it('includes admin preparation guidance for national packages', () => {
+      const sixtyGB = 60 * 1024 * 1024 * 1024
+      const result = classifyPackageCategory(sixtyGB)
+
+      expect(result.category).toBe('national')
+      expect(result.guidance).toContain('prepare before a mission')
+      expect(result.guidance).toContain('admin')
+    })
+
+    it('includes coverage verification guidance for mission-area packages', () => {
+      const threeGB = 3 * 1024 * 1024 * 1024
+      const result = classifyPackageCategory(threeGB)
+
+      expect(result.guidance).toContain('verify coverage')
     })
   })
 })

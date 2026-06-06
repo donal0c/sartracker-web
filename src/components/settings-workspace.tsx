@@ -5,6 +5,7 @@ import {
   buildPackageManifestEntry,
   buildReadinessCertificate,
   checkManifestCoverage,
+  classifyPackageCategory,
   type PackageManifestCoverageCheck,
 } from '../features/map/official-map-manifest'
 import { WorkspaceOverlay, WorkspaceHeader } from './workspace-overlay'
@@ -474,7 +475,7 @@ export function SettingsWorkspace({ open, onClose }: SettingsWorkspaceProps) {
 
               <Section
                 title="Official Maps"
-                description="Licensed map access stays local. Configure the MapGenie source file in Electron/local app builds."
+                description="The standard Kerry/West operating-area package is recommended for most operations. Mission-area or national packages can be imported for specific deployments but are larger and should be prepared in advance."
               >
                 <div className="space-y-4">
                   <div
@@ -1013,6 +1014,7 @@ function OfficialMapPackageManifestCard({
   readonly onRemove: () => void
 }) {
   const manifest = buildPackageManifestEntry(mapPackage)
+  const categoryInfo = classifyPackageCategory(mapPackage.sizeBytes)
 
   return (
     <div
@@ -1024,10 +1026,31 @@ function OfficialMapPackageManifestCard({
           <p className="font-semibold text-stone-100">{manifest.mapLabel}</p>
           <p className="mt-0.5 text-stone-400">{manifest.sourceType} · {manifest.tileFormat}</p>
         </div>
-        <span className={`border px-2 py-1 font-black uppercase tracking-[0.12em] ${officialPackageStatusClass(mapPackage.status)}`}>
-          {formatOfficialPackageStatus(mapPackage.status)}
-        </span>
+        <div className="flex items-center gap-2">
+          <span
+            className={`border px-2 py-1 text-[10px] font-bold uppercase tracking-wider ${packageCategoryBadgeClass(categoryInfo.tone)}`}
+            data-testid={`package-category-${mapPackage.id}`}
+          >
+            {categoryInfo.label}
+          </span>
+          <span className={`border px-2 py-1 font-black uppercase tracking-[0.12em] ${officialPackageStatusClass(mapPackage.status)}`}>
+            {formatOfficialPackageStatus(mapPackage.status)}
+          </span>
+        </div>
       </div>
+
+      {categoryInfo.tone === 'warning' ? (
+        <div
+          className="mt-2 border border-amber-400/40 bg-amber-950/40 px-3 py-2 text-xs text-amber-100"
+          data-testid={`package-warning-${mapPackage.id}`}
+        >
+          {categoryInfo.guidance}
+        </div>
+      ) : (
+        <p className="mt-1 text-[11px] text-stone-400" data-testid={`package-guidance-${mapPackage.id}`}>
+          {categoryInfo.guidance}
+        </p>
+      )}
 
       {manifest.statusMessage !== '' && manifest.status !== 'ready' ? (
         <p className="mt-2 text-stone-300">{manifest.statusMessage}</p>
@@ -1102,6 +1125,17 @@ function coverageCheckClass(tone: PackageManifestCoverageCheck['tone']): string 
       return 'border-rose-400/40 bg-rose-950/40 text-rose-100'
     default:
       return 'border-stone-500/40 bg-stone-900/40 text-stone-200'
+  }
+}
+
+function packageCategoryBadgeClass(tone: 'success' | 'warning' | 'neutral'): string {
+  switch (tone) {
+    case 'success':
+      return 'border-emerald-400/50 bg-emerald-950/50 text-emerald-200'
+    case 'warning':
+      return 'border-amber-400/50 bg-amber-950/50 text-amber-200'
+    default:
+      return 'border-sky-400/50 bg-sky-950/50 text-sky-200'
   }
 }
 
