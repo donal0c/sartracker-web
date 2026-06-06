@@ -431,7 +431,7 @@ function Field(props: {
   readonly label: string
   readonly value: string
   readonly disabled?: boolean
-  readonly error?: string
+  readonly error?: string | undefined
   readonly onChange: (value: string) => void
   readonly testId: string
 }) {
@@ -458,7 +458,7 @@ function SelectField<TOption extends string>(props: {
   readonly label: string
   readonly value: TOption | ''
   readonly disabled?: boolean
-  readonly error?: string
+  readonly error?: string | undefined
   readonly onChange: (value: TOption | '') => void
   readonly options: readonly TOption[]
   readonly testId: string

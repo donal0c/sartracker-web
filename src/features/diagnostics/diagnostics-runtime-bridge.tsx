@@ -16,6 +16,7 @@ import { useDrawingStore } from '../drawings/drawing-store'
 import { useGpxStore } from '../gpx/gpx-store'
 import { useHelicopterStore } from '../helicopters/helicopter-store'
 import { useMarkerStore } from '../markers/marker-store'
+import { useMeasurementStore } from '../measurements/measurement-store'
 import { useMissionStore } from '../mission/mission-store'
 import { useTrackingStore } from '../tracking/tracking-store'
 import { shouldEnableMissionBrowserHarness } from '../mission/mission-browser-harness'
@@ -98,6 +99,7 @@ export function DiagnosticsRuntimeBridge() {
           drawings: useDrawingStore.getState().drawings,
           helicopters: useHelicopterStore.getState().helicopters,
           gpxImports: useGpxStore.getState().imports,
+          measurements: useMeasurementStore.getState().measurements,
         })
       },
       applyRuntime: applyDiagnosticsRuntime,
