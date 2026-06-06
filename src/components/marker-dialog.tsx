@@ -1,7 +1,7 @@
 import { useState } from 'react'
 
 import { useMarkerStore } from '../features/markers/marker-store'
-import { appendTreatmentUpdate } from '../features/markers/marker-draft'
+import { appendTreatmentUpdate, getCasualtyValidationErrors, type CasualtyRequiredField } from '../features/markers/marker-draft'
 import {
   CASUALTY_CONDITIONS,
   CLUE_TYPES,
@@ -32,11 +32,19 @@ export function MarkerDialog() {
   const saving = useMarkerStore((state) => state.saving)
   const runtimeError = useMarkerStore((state) => state.error)
   const [treatmentUpdate, setTreatmentUpdate] = useState('')
+  const [deleteConfirmForId, setDeleteConfirmForId] = useState<string | null>(null)
+  const currentDraftId = dialog?.draft.id ?? null
+  const deleteConfirmationVisible = deleteConfirmForId !== null && deleteConfirmForId === currentDraftId
+  const showDeleteConfirmation = () => setDeleteConfirmForId(currentDraftId)
+  const hideDeleteConfirmation = () => setDeleteConfirmForId(null)
 
   if (dialog === null || controller === null) {
     return null
   }
   const draft = dialog.draft
+  const casualtyErrors = getCasualtyValidationErrors(draft)
+  const hasCasualtyErrors = casualtyErrors.length > 0
+  const isMissingField = (field: CasualtyRequiredField): boolean => casualtyErrors.includes(field)
 
   return (
     <DialogOverlay
@@ -109,6 +117,7 @@ export function MarkerDialog() {
             <Field
               label="Name"
               disabled={saving}
+              error={isMissingField('name') ? 'Required' : undefined}
               onChange={(value) => controller.updateDraft({ name: value })}
               testId="marker-name-input"
               value={draft.name}
@@ -204,6 +213,7 @@ export function MarkerDialog() {
               <SelectField
                 label="Condition"
                 disabled={saving}
+                error={isMissingField('condition') ? 'Required' : undefined}
                 onChange={(value) => controller.updateDraft({ condition: value })}
                 options={CASUALTY_CONDITIONS}
                 testId="marker-condition-input"
@@ -212,6 +222,7 @@ export function MarkerDialog() {
               <SelectField
                 label="Evacuation Priority"
                 disabled={saving}
+                error={isMissingField('evacuationPriority') ? 'Required' : undefined}
                 onChange={(value) => controller.updateDraft({ evacuationPriority: value })}
                 options={EVACUATION_PRIORITIES}
                 testId="marker-evacuation-priority-input"
@@ -275,6 +286,12 @@ export function MarkerDialog() {
             </div>
           ) : null}
 
+          {hasCasualtyErrors ? (
+            <p className="text-sm text-rose-300" data-testid="marker-casualty-validation-error" role="alert">
+              Casualty markers require Name, Condition, and Evacuation Priority before placement.
+            </p>
+          ) : null}
+
           {runtimeError !== null ? <p className="text-sm text-rose-300">{runtimeError}</p> : null}
 
           <section className="mb-16 rounded-2xl border border-stone-800 bg-stone-950/40 p-3">
@@ -321,14 +338,46 @@ export function MarkerDialog() {
           <div className="sticky bottom-0 -mx-5 -mb-5 flex justify-between gap-3 border-t border-stone-700 bg-stone-900/95 px-5 py-3 shadow-[0_-18px_36px_rgba(0,0,0,0.42)] backdrop-blur">
             <div>
               {dialog.mode === 'edit' ? (
-                <button
-                  className="rounded-lg border border-rose-500/30 bg-rose-500/10 px-4 py-2 text-sm text-rose-100"
-                  data-testid="marker-delete-btn"
-                  onClick={() => void controller.deleteEditingMarker()}
-                  type="button"
-                >
-                  Delete
-                </button>
+                deleteConfirmationVisible ? (
+                  <div
+                    className="rounded-xl border border-rose-400/40 bg-rose-950/40 p-3 text-sm text-rose-100"
+                    data-testid="marker-delete-confirmation"
+                  >
+                    <p className="font-semibold">Delete this {draft.type === 'ipp_lkp' ? 'IPP/LKP' : draft.type} marker?</p>
+                    <p className="mt-1 text-xs text-rose-100/80">
+                      This permanently removes the marker and all associated data from the mission.
+                    </p>
+                    <div className="mt-3 flex gap-2">
+                      <button
+                        className="rounded-lg border border-rose-300/50 bg-rose-400/20 px-3 py-1.5 text-xs font-semibold text-rose-50"
+                        data-testid="marker-delete-confirm-btn"
+                        disabled={saving}
+                        onClick={() => void controller.deleteEditingMarker()}
+                        type="button"
+                      >
+                        Delete Marker
+                      </button>
+                      <button
+                        className="rounded-lg border border-stone-600 bg-stone-950 px-3 py-1.5 text-xs font-semibold text-stone-200"
+                        data-testid="marker-delete-keep-btn"
+                        onClick={() => hideDeleteConfirmation()}
+                        type="button"
+                      >
+                        Keep
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <button
+                    className="rounded-lg border border-rose-500/30 bg-rose-500/10 px-4 py-2 text-sm text-rose-100"
+                    data-testid="marker-delete-btn"
+                    disabled={saving}
+                    onClick={() => showDeleteConfirmation()}
+                    type="button"
+                  >
+                    Delete
+                  </button>
+                )
               ) : null}
             </div>
             <div className="flex gap-3">
@@ -343,7 +392,7 @@ export function MarkerDialog() {
               <button
                 className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-4 py-2 text-sm text-emerald-100 disabled:opacity-50"
                 data-testid="marker-save-btn"
-                disabled={saving}
+                disabled={saving || hasCasualtyErrors}
                 onClick={() => void controller.saveDraft()}
                 type="button"
               >
@@ -382,19 +431,25 @@ function Field(props: {
   readonly label: string
   readonly value: string
   readonly disabled?: boolean
+  readonly error?: string
   readonly onChange: (value: string) => void
   readonly testId: string
 }) {
+  const hasError = props.error !== undefined
   return (
     <label className="block text-sm text-stone-200">
-      <span className="text-xs uppercase tracking-[0.2em] text-stone-300">{props.label}</span>
+      <span className={`text-xs uppercase tracking-[0.2em] ${hasError ? 'text-rose-300' : 'text-stone-300'}`}>
+        {props.label}{hasError ? ' *' : ''}
+      </span>
       <input
-        className="mt-2 w-full rounded-lg border border-stone-700 bg-stone-950 px-3 py-2 text-sm text-stone-100"
+        aria-invalid={hasError || undefined}
+        className={`mt-2 w-full rounded-lg border px-3 py-2 text-sm text-stone-100 bg-stone-950 ${hasError ? 'border-rose-500' : 'border-stone-700'}`}
         data-testid={props.testId}
         disabled={props.disabled}
         onChange={(event) => props.onChange(event.target.value)}
         value={props.value}
       />
+      {hasError ? <span className="mt-1 block text-xs text-rose-300">{props.error}</span> : null}
     </label>
   )
 }
@@ -403,15 +458,20 @@ function SelectField<TOption extends string>(props: {
   readonly label: string
   readonly value: TOption | ''
   readonly disabled?: boolean
+  readonly error?: string
   readonly onChange: (value: TOption | '') => void
   readonly options: readonly TOption[]
   readonly testId: string
 }) {
+  const hasError = props.error !== undefined
   return (
     <label className="block text-sm text-stone-200">
-      <span className="text-xs uppercase tracking-[0.2em] text-stone-300">{props.label}</span>
+      <span className={`text-xs uppercase tracking-[0.2em] ${hasError ? 'text-rose-300' : 'text-stone-300'}`}>
+        {props.label}{hasError ? ' *' : ''}
+      </span>
       <select
-        className="mt-2 w-full rounded-lg border border-stone-700 bg-stone-950 px-3 py-2 text-sm text-stone-100"
+        aria-invalid={hasError || undefined}
+        className={`mt-2 w-full rounded-lg border px-3 py-2 text-sm text-stone-100 bg-stone-950 ${hasError ? 'border-rose-500' : 'border-stone-700'}`}
         data-testid={props.testId}
         disabled={props.disabled}
         onChange={(event) => props.onChange(event.target.value as TOption | '')}
@@ -424,6 +484,7 @@ function SelectField<TOption extends string>(props: {
           </option>
         ))}
       </select>
+      {hasError ? <span className="mt-1 block text-xs text-rose-300">{props.error}</span> : null}
     </label>
   )
 }

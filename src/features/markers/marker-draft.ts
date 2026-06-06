@@ -177,6 +177,26 @@ export function appendTreatmentUpdate(input: {
   return existingTreatment === '' ? entry : `${existingTreatment}\n\n${entry}`
 }
 
+export type CasualtyRequiredField = 'name' | 'condition' | 'evacuationPriority'
+
+/**
+ * Returns the list of missing required fields for a casualty marker.
+ * Non-casualty markers always return an empty array.
+ */
+export function getCasualtyValidationErrors(
+  draft: Pick<MarkerDraft, 'type' | 'name' | 'condition' | 'evacuationPriority'>,
+): readonly CasualtyRequiredField[] {
+  if (draft.type !== 'casualty') {
+    return []
+  }
+
+  const missing: CasualtyRequiredField[] = []
+  if (draft.name.trim() === '') missing.push('name')
+  if (draft.condition.trim() === '') missing.push('condition')
+  if (draft.evacuationPriority.trim() === '') missing.push('evacuationPriority')
+  return missing
+}
+
 /**
  * Builds the backend persistence payload for a marker draft.
  */
@@ -188,6 +208,15 @@ export function buildMarkerSaveInput({
   const normalizedName = draft.name.trim()
   if (normalizedName === '') {
     throw new Error('Marker name is required.')
+  }
+
+  if (draft.type === 'casualty') {
+    if (draft.condition.trim() === '') {
+      throw new Error('Condition is required for casualty markers.')
+    }
+    if (draft.evacuationPriority.trim() === '') {
+      throw new Error('Evacuation Priority is required for casualty markers.')
+    }
   }
 
   return {

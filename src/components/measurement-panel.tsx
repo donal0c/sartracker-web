@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { useMeasurementStore } from '../features/measurements/measurement-store'
 import { useDrawingStore } from '../features/drawings/drawing-store'
 import { MEASUREMENTS_LAYER_NODE_ID } from '../features/layers/layer-catalog-ids'
@@ -21,6 +22,7 @@ export function MeasurementPanel() {
   const missionId = useMissionStore((state) => state.currentMission?.id ?? null)
   const missionPhase = useMissionStore((state) => state.phase)
 
+  const [clearConfirmationVisible, setClearConfirmationVisible] = useState(false)
   const disabled = controller === null || missionId === null || missionPhase === 'recovery'
   const statusMessage =
     mode === 'armed'
@@ -86,15 +88,45 @@ export function MeasurementPanel() {
         >
           {mode === 'armed' ? 'Cancel Measure' : 'Measure'}
         </button>
-        <button
-          className="sar-button px-3 py-2.5 text-[13px] font-bold uppercase tracking-[0.08em]"
-          data-testid="measurement-clear-btn"
-          disabled={controller === null || measurements.length === 0}
-          onClick={() => controller?.clearMeasurements()}
-          type="button"
-        >
-          Clear Measurements
-        </button>
+        {clearConfirmationVisible ? (
+          <div
+            className="col-span-full rounded-xl border border-rose-400/40 bg-rose-950/40 p-3 text-sm text-rose-100"
+            data-testid="measurement-clear-confirmation"
+          >
+            <p className="font-semibold text-xs">Clear all {measurements.length} measurement{measurements.length !== 1 ? 's' : ''}?</p>
+            <div className="mt-2 flex gap-2">
+              <button
+                className="rounded-lg border border-rose-300/50 bg-rose-400/20 px-3 py-1.5 text-xs font-semibold text-rose-50"
+                data-testid="measurement-clear-confirm-btn"
+                onClick={() => {
+                  controller?.clearMeasurements()
+                  setClearConfirmationVisible(false)
+                }}
+                type="button"
+              >
+                Clear All
+              </button>
+              <button
+                className="rounded-lg border border-stone-600 bg-stone-950 px-3 py-1.5 text-xs font-semibold text-stone-200"
+                data-testid="measurement-clear-keep-btn"
+                onClick={() => setClearConfirmationVisible(false)}
+                type="button"
+              >
+                Keep
+              </button>
+            </div>
+          </div>
+        ) : (
+          <button
+            className="sar-button px-3 py-2.5 text-[13px] font-bold uppercase tracking-[0.08em]"
+            data-testid="measurement-clear-btn"
+            disabled={controller === null || measurements.length === 0}
+            onClick={() => setClearConfirmationVisible(true)}
+            type="button"
+          >
+            Clear Measurements
+          </button>
+        )}
       </div>
 
       <div className="mt-4 border-t border-[var(--sar-line)] pt-4">

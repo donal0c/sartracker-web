@@ -805,10 +805,25 @@
             point available, so a marker can still be created after the map moves to that location.
           </p>
           <p>
+            <strong>Casualty required fields:</strong> casualty markers require
+            <strong>Name</strong>, <strong>Condition</strong>, and <strong>Evacuation Priority</strong>
+            before the marker can be saved. Missing fields are highlighted with a red border and
+            &ldquo;Required&rdquo; label, and the Save button remains disabled until all three are
+            filled. This prevents incomplete casualty records from being placed on the operational map.
+          </p>
+          <p>
             Casualty markers keep treatment notes as a log. Enter each new treatment in
             <strong>New Treatment Update</strong> and choose <strong>Add Update</strong>; the app appends
             a timestamped entry to <strong>Existing Treatment Notes</strong> without overwriting earlier
             notes.
+          </p>
+          <p>
+            <strong>Deletion protection:</strong> deleting any marker requires two-stage confirmation.
+            Clicking <strong>Delete</strong> shows a confirmation panel naming the marker type and the
+            consequence; a second click on <strong>Delete Marker</strong> executes the deletion.
+            Choosing <strong>Keep</strong> cancels the deletion and preserves the marker unchanged.
+            The same two-stage pattern applies to measurements (<strong>Clear Measurements</strong>)
+            and drawings.
           </p>
         </section>
 

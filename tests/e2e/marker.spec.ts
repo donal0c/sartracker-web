@@ -103,6 +103,8 @@ test.describe('M6 marker workflows', () => {
 
     await clickMapCentre(page)
     await page.getByTestId('marker-delete-btn').click()
+    await expect(page.getByTestId('marker-delete-confirmation')).toBeVisible()
+    await page.getByTestId('marker-delete-confirm-btn').click()
     await expect(page.getByTestId('marker-dialog')).toBeHidden()
 
     persistedState = await page.evaluate(() => {
@@ -133,6 +135,48 @@ test.describe('M6 marker workflows', () => {
     })
 
     expect(persistedState?.markers ?? []).toHaveLength(0)
+  })
+
+  test('blocks casualty marker save until Name, Condition, and Evacuation Priority are filled', async ({ page }) => {
+    await clickMapCentre(page)
+
+    const dialog = page.getByTestId('marker-dialog')
+    await expect(dialog).toBeVisible()
+
+    await dialog.getByText('Casualty', { exact: true }).click()
+
+    const saveBtn = page.getByTestId('marker-save-btn')
+    await expect(saveBtn).toBeDisabled()
+    await expect(page.getByTestId('marker-casualty-validation-error')).toBeVisible()
+
+    const conditionSelect = page.getByTestId('marker-condition-input')
+    await expect(conditionSelect).toHaveAttribute('aria-invalid', 'true')
+
+    await page.getByTestId('marker-name-input').fill('Subject Alpha')
+    await expect(saveBtn).toBeDisabled()
+
+    await conditionSelect.selectOption('Injured - Conscious')
+    await expect(saveBtn).toBeDisabled()
+
+    await page.getByTestId('marker-evacuation-priority-input').selectOption('Urgent')
+    await expect(saveBtn).toBeEnabled()
+    await expect(page.getByTestId('marker-casualty-validation-error')).toBeHidden()
+
+    await saveBtn.click()
+    await expect(page.getByTestId('marker-dialog')).toBeHidden()
+
+    const persistedState = await page.evaluate(() => {
+      const raw = window.sessionStorage.getItem('sartracker:browser-harness')
+      return raw === null ? null : JSON.parse(raw)
+    })
+
+    expect(persistedState?.markers).toHaveLength(1)
+    expect(persistedState?.markers[0]).toMatchObject({
+      type: 'casualty',
+      name: 'Subject Alpha',
+      condition: 'Injured - Conscious',
+      evacuation_priority: 'Urgent',
+    })
   })
 })
 

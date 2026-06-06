@@ -32,6 +32,8 @@ test.describe('M9 measurement workflows', () => {
     await expect(page.getByTestId('measurement-count')).toHaveText('2')
 
     await page.getByTestId('measurement-clear-btn').click()
+    await expect(page.getByTestId('measurement-clear-confirmation')).toBeVisible()
+    await page.getByTestId('measurement-clear-confirm-btn').click()
     await expect(page.getByTestId('measurement-count')).toHaveText('0')
     await expect(page.getByTestId('measurement-list')).toContainText('No active measurements.')
   })

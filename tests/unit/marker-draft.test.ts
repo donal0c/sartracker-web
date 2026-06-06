@@ -8,6 +8,7 @@ import {
   createMarkerDraftAtCoordinate,
   createMarkerDraftFromIrishGridReference,
   createMarkerDraftFromMarker,
+  getCasualtyValidationErrors,
 } from '../../src/features/markers/marker-draft'
 
 const EXISTING_MARKER: Marker = {
@@ -186,5 +187,75 @@ describe('marker draft helpers', () => {
         },
       }),
     ).toThrow(/Marker name is required/)
+  })
+
+  it('rejects casualty save without condition', () => {
+    expect(() =>
+      buildMarkerSaveInput({
+        missionId: 'mission-1',
+        displayOrder: 1,
+        draft: {
+          ...createMarkerDraftAtCoordinate(52.0599, -9.5045),
+          type: 'casualty',
+          name: 'Subject A',
+          condition: '',
+          evacuationPriority: 'Urgent',
+        },
+      }),
+    ).toThrow(/Condition is required/)
+  })
+
+  it('rejects casualty save without evacuation priority', () => {
+    expect(() =>
+      buildMarkerSaveInput({
+        missionId: 'mission-1',
+        displayOrder: 1,
+        draft: {
+          ...createMarkerDraftAtCoordinate(52.0599, -9.5045),
+          type: 'casualty',
+          name: 'Subject B',
+          condition: 'Injured - Conscious',
+          evacuationPriority: '',
+        },
+      }),
+    ).toThrow(/Evacuation Priority is required/)
+  })
+
+  it('validates all casualty required fields and reports the first missing', () => {
+    const errors = getCasualtyValidationErrors({
+      ...createMarkerDraftAtCoordinate(52.0599, -9.5045),
+      type: 'casualty',
+      name: '',
+      condition: '',
+      evacuationPriority: '',
+    })
+
+    expect(errors).toContain('name')
+    expect(errors).toContain('condition')
+    expect(errors).toContain('evacuationPriority')
+  })
+
+  it('returns no casualty validation errors when all required fields are filled', () => {
+    const errors = getCasualtyValidationErrors({
+      ...createMarkerDraftAtCoordinate(52.0599, -9.5045),
+      type: 'casualty',
+      name: 'Subject C',
+      condition: 'Injured - Conscious',
+      evacuationPriority: 'Immediate',
+    })
+
+    expect(errors).toHaveLength(0)
+  })
+
+  it('returns no casualty validation errors for non-casualty markers with empty fields', () => {
+    const errors = getCasualtyValidationErrors({
+      ...createMarkerDraftAtCoordinate(52.0599, -9.5045),
+      type: 'hazard',
+      name: 'Cliff edge',
+      condition: '',
+      evacuationPriority: '',
+    })
+
+    expect(errors).toHaveLength(0)
   })
 })
