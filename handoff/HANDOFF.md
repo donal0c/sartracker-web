@@ -4,6 +4,7 @@
 
 ## Last Updated
 
+- 2026-06-06 by Codex — New tester feedback ODT copied from `/Users/donalocallaghan/Downloads/6-6-26.odt` into `team-feedback/6-6-26.odt`, extracted to `team-feedback/6-6-26.txt`, `team-feedback/6-6-26.md`, and `team-feedback/6-6-26-assets/`. Linear parent `DON-117` now owns the 6-6-26 feedback batch. Immediate Todo children are `DON-118` through `DON-133`; coordinator-confirmation Backlog children are `DON-134` through `DON-140`. Existing `DON-100` was updated with the repeated multi-day mission layer-grouping feedback instead of creating a duplicate. Next S3 feedback task is `DON-118` (Map Tools/Measure failing until layer catalog metadata reset), with safety-critical `DON-123` casualty required fields and `DON-124` two-stage deletion close behind.
 - 2026-06-06 by Codex — Full open Linear cleanup completed after the map-spine pass. Current active parents are `DON-5` parity umbrella, `DON-7` S1 maps/offline package workflow, `DON-25` S2 Electron/runtime reliability, and `DON-76` official map provider umbrella. Closed as done/superseded: `DON-15`, `DON-16`, `DON-19`, `DON-22`, `DON-28`, `DON-35`, `DON-60`, `DON-99`, `DON-101`, `DON-102`. Marked `DON-67` duplicate of canonical `DON-100`. Moved deferred work to Backlog: `DON-6`, `DON-8`, `DON-11`, `DON-12`, `DON-13`, `DON-14`, `DON-21`, `DON-30`, `DON-100`, `DON-116`. Current next tasks by stream: S1 Maps `DON-109`; S2 Electron `DON-29`; S3/Web-parity has no immediate blocker, with backlog `DON-100` only after coordinator decision and `DON-11` only after fresh tester feedback.
 - 2026-06-06 by Codex — Linear map-stream audit completed. The previous map foundation issues are done, but the team-ready workflow was missing from the queue, so `DON-7` is now In Progress and owns the official offline-map completion spine: `DON-109` setup wizard/package import UI, `DON-110` app-owned package library/copy management, `DON-111` coverage manifest/readiness certificate, `DON-112` standard/mission/national package guardrails, `DON-113` admin package preparation workflow, `DON-114` field-ready checklist/manual updates, and `DON-115` cross-platform official-map import release smoke. `DON-116` was added under `DON-76` as the optional relief/slope overlay conversion spike. Policy remains: licensed map files, credentials, generated packages, and private paths stay local/customer-provided and must not be committed, publicly bundled, or exposed via hosted web. Next S1 task is `DON-109`.
 - 2026-06-06 by Codex — `DON-82` completed as the relief/slope raster classification pass. Inspected the private USB rasters with QGIS LTR GDAL and generated private previews outside the repo. Decision: `relief_byte.tif` and `Slope_30plus.tif` are optional local terrain overlays, not basemaps and not part of first-pass Discovery. Relief is a 621 MB RGB 10 m ITM terrain-shading context layer and should be off by default at ~20-30% opacity. Slope is a 53 MB Float32 10 m ITM sparse 30-degree-plus steep-ground mask with NoData 0 and ~0.35% valid pixels; it should be a transparent amber/red warning overlay with explicit copy that unhighlighted ground is not necessarily safe. Both require preprocessing to Web Mercator tile packages before MapLibre runtime use, separate overlay registry/legend/readiness from official basemap packages, and no hosted-web/private-data exposure. Details in `docs/official-map-terrain-overlays-don-82.md`.
@@ -143,19 +144,24 @@ Use these only for team testing, not as a production secret model.
 
 ## Next Task
 
-Default next task in this maps chat: `DON-109` official map setup wizard/package import UI.
+Default next task depends on stream:
+
+- S3 fresh feedback: `DON-118` Map Tools/Measure failing until layer catalog metadata reset.
+- S1 maps: `DON-109` official map setup wizard/package import UI.
+- S2 Electron: `DON-29` runtime decision checkpoint.
 
 Current stream order:
 
 - S1 Maps: `DON-109` -> `DON-110` -> `DON-111`/`DON-112` -> `DON-113` in parallel when metadata expectations are clear -> `DON-114` -> `DON-115`. `DON-116` relief/slope overlays stays Backlog until Discovery basemap import is field-ready.
 - S2 Electron: `DON-29` runtime decision checkpoint is next for the Electron chat; `DON-30` support plan is Backlog after the decision. `DON-28` and `DON-35` are closed.
-- S3 Web/parity: no immediate implementation task. `DON-100` multi-day mission grouping waits on coordinator decision; `DON-11` waits for fresh tester feedback; `DON-6`, `DON-8`, `DON-12`, `DON-13`, `DON-14`, and `DON-21` are Backlog.
+- S3 Web/parity: `DON-117` owns fresh 6-6-26 tester feedback. Immediate order starts with `DON-118`, then safety-critical `DON-123`/`DON-124`, then the remaining Todo children `DON-119`-`DON-133` by priority/reproduction confidence. `DON-134`-`DON-140` and `DON-100` remain Backlog pending coordinator confirmation.
 
 ## Open Linear issues That Matter Now
 
 - Active parents: `DON-5`, `DON-7`, `DON-25`, `DON-76`.
-- Current Todo: `DON-109` through `DON-115`, plus `DON-29`.
-- Backlog kept intentionally: `DON-6`, `DON-8`, `DON-11`, `DON-12`, `DON-13`, `DON-14`, `DON-21`, `DON-30`, `DON-100`, `DON-116`.
+- Active feedback parent: `DON-117`.
+- Current Todo: `DON-118`-`DON-133`, `DON-109` through `DON-115`, plus `DON-29`.
+- Backlog kept intentionally: `DON-6`, `DON-8`, `DON-11`, `DON-12`, `DON-13`, `DON-14`, `DON-21`, `DON-30`, `DON-100`, `DON-116`, `DON-134`-`DON-140`.
 - Closed/superseded in the 2026-06-06 cleanup: `DON-15`, `DON-16`, `DON-19`, `DON-22`, `DON-28`, `DON-35`, `DON-60`, `DON-99`, `DON-101`, `DON-102`.
 - Duplicate: `DON-67` -> `DON-100`.
 
@@ -168,7 +174,13 @@ Current stream order:
 
 ## Verification Snapshot
 
-Most recent verification in this turn (`DON-82` relief/slope overlay classification):
+Latest intake verification (6-6-26 feedback):
+
+- Copied `/Users/donalocallaghan/Downloads/6-6-26.odt` to `team-feedback/6-6-26.odt`.
+- Extracted text with `pandoc --to=plain` and Markdown/assets with `pandoc --extract-media`; ODT contained 7 embedded images.
+- Created Linear parent `DON-117`, child issues `DON-118`-`DON-140`, and updated canonical multi-day issue `DON-100` with the repeated 6-6 feedback.
+
+Previous verification (`DON-82` relief/slope overlay classification):
 
 - Passed GDAL metadata/statistics inspection on private `relief_byte.tif`: EPSG:2157 / ITM, 10 m, 32,122 x 45,202 px, RGB Byte, 621 MB, broad Ireland footprint, 100% valid pixels.
 - Passed GDAL metadata/statistics inspection on private `Slope_30plus.tif`: EPSG:2157 / ITM, 10 m, 32,122 x 45,202 px, Float32, 53 MB, NoData 0, valid pixels ~0.3466%, values 30 to ~89.97 degrees.
