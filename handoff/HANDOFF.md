@@ -8,22 +8,24 @@
 - **Hosted testing:** `https://sartracker-web.vercel.app/?missionHarness=1`
 - **Desktop:** Electron validation shell present (MapLibre + direct HTTPS Traccar). Tauri desktop routes Traccar through Rust `reqwest`.
 - **Browser mode:** testing/training only (sessionStorage, not operational persistence).
-- **Latest test counts:** 145 unit files / 793 tests; ~105 Playwright E2E; 46 backend tests.
+- **Latest test counts:** 145 unit files / 804 tests; ~105 Playwright E2E; 46 backend tests.
 
 ## Last Work Done
 
-DON-111 (S1 maps) — official map package coverage manifest and readiness certificate:
-- New `src/features/map/official-map-manifest.ts` module: builds sanitized manifest entries, coverage checks, and readiness certificates from package settings.
-- Settings UI upgraded: each package now shows a full manifest card (map type, zoom range, tile count, size, bounds, timestamps, status).
-- Coverage check button per package: compares current map viewport against package bounds, shows success/danger result inline.
-- Export Readiness Certificate button: generates a sanitized text report suitable for sharing or pre-mission checks. No paths, credentials, or source URLs leak.
-- Diagnostics support report already includes safe package metadata (from DON-110).
-- 32 new unit tests covering manifest building, bounds formatting, coverage inside/outside/unknown, certificate generation, and sanitization.
-- Browser-validated: coverage check works for both inside (Kerry) and outside (Dublin) cases.
+DON-112 (S1 maps) — official map package choice guardrails:
+- New `classifyPackageCategory()` in `src/features/map/official-map-manifest.ts`: classifies packages as Standard (< 2 GB, recommended), Mission Area (2–4 GB), or National (> 4 GB, admin-prepared).
+- Settings UI shows a colour-coded category badge on each package manifest card (emerald/sky/amber).
+- National packages show a persistent amber warning panel with admin preparation guidance.
+- Standard packages show "Recommended for most operations" guidance.
+- Mission-area packages show "verify coverage matches the intended search area" guidance.
+- Section description updated to recommend the standard Kerry/West package first.
+- Operator manual updated with package category policy.
+- 11 new unit tests for category classification thresholds and guidance content.
+- E2E-validated: all three badges and guidance/warning panels render correctly in browser mode.
 
 ## What's Next
 
-Next S1 map task after DON-111 is `DON-114` (field-ready official map checklist and operator manual updates) and `DON-115` (cross-platform official map import release smoke). S2 Electron remains `DON-29`.
+Next S1 map tasks: `DON-114` (field-ready official map checklist and operator manual updates) and `DON-115` (cross-platform official map import release smoke). S2 Electron: `DON-29` (runtime decision checkpoint) is Done — Electron confirmed as production shell. `DON-30` (ongoing support policy) is Done — policy at `docs/desktop-runtime-support-policy.md`.
 
 ## Traccar Test Details
 
@@ -74,5 +76,6 @@ Next S1 map task after DON-111 is `DON-114` (field-ready official map checklist 
 ## Planning Docs
 
 - `docs/two-track-execution-workplan.md` — canonical queue
+- `docs/desktop-runtime-support-policy.md` — Electron runtime support, update cadence, release channels, diagnostics, rollback (DON-30)
 - `docs/hosted-browser-testing-plan.md` — deployment strategy
 - `docs/team-testing-feedback-loop.md` — tester instructions
