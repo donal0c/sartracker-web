@@ -120,7 +120,7 @@ describe('DevicesWorkspace', () => {
     expect(getText('[data-testid="devices-inspector-title"]')).toContain('Bravo Team')
   })
 
-  it('adds and removes mission-active devices while keeping the full roster visible', async () => {
+  it('adds and removes mission-active devices via filter tabs', async () => {
     const { DevicesWorkspace } = await import('../../src/components/devices-workspace')
     useTrackingStore.setState({ snapshot: SNAPSHOT, status: STATUS })
     useMissionStore.setState({
@@ -142,9 +142,6 @@ describe('DevicesWorkspace', () => {
     render(React.createElement(DevicesWorkspace))
     await waitForElement('[data-testid="devices-workspace"]')
 
-    expect(getText('[data-testid="active-devices-empty-state"]')).toContain(
-      'No active mission devices selected',
-    )
     expect(document.querySelector('[data-testid="device-row-alpha"]')).not.toBeNull()
     expect(document.querySelector('[data-testid="device-row-bravo"]')).not.toBeNull()
 
@@ -153,14 +150,16 @@ describe('DevicesWorkspace', () => {
     expect(useActiveMissionDevicesStore.getState().getActiveDeviceIds('mission-1')).toEqual([
       'bravo',
     ])
-    expect(getText('[data-testid="active-device-row-bravo"]')).toContain('Bravo Team')
-    expect(document.querySelector('[data-testid="device-row-alpha"]')).not.toBeNull()
-    expect(document.querySelector('[data-testid="device-row-bravo"]')).not.toBeNull()
 
-    click('[data-testid="active-device-remove-bravo"]')
+    click('[data-testid="device-filter-active"]')
+
+    expect(document.querySelector('[data-testid="device-row-bravo"]')).not.toBeNull()
+    expect(document.querySelector('[data-testid="device-row-alpha"]')).toBeNull()
+
+    click('[data-testid="device-active-toggle-bravo"]')
 
     expect(useActiveMissionDevicesStore.getState().getActiveDeviceIds('mission-1')).toEqual([])
-    expect(getText('[data-testid="active-devices-empty-state"]')).toContain(
+    expect(getText('[data-testid="device-filter-empty-state"]')).toContain(
       'No active mission devices selected',
     )
   })

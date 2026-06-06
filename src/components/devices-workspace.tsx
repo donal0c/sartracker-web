@@ -26,6 +26,8 @@ const DEVICES_WORKSPACE_TITLE_ID = 'devices-workspace-title'
 const DEVICE_ROW_GRID_COLUMNS =
   'grid-cols-[minmax(7.5rem,1fr)_minmax(9rem,1.2fr)_4rem_6rem_7rem_5.5rem_6rem_8rem]'
 
+type DeviceFilter = 'all' | 'active' | 'hidden' | 'online' | 'nofix' | 'stale'
+
 /**
  * Renders the dedicated tracking devices workspace used for roster-scale operations.
  */
@@ -52,18 +54,30 @@ export function DevicesWorkspace() {
   const queueTarget = useMapTargetStore((state) => state.queueTarget)
   const [refreshing, setRefreshing] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [activeFilter, setActiveFilter] = useState<DeviceFilter>('all')
 
   const rows = useMemo(
     () => buildDeviceWorkspaceRows(trackingSnapshot, hiddenDeviceIds, activeDeviceIds),
     [activeDeviceIds, hiddenDeviceIds, trackingSnapshot],
   )
-  const activeRows = useMemo(() => rows.filter((row) => row.active), [rows])
   const summary = useMemo(
     () => buildDeviceWorkspaceSummary(rows, trackingStatus),
     [rows, trackingStatus],
   )
+
+  const filteredRows = useMemo(() => applyDeviceFilter(rows, activeFilter), [rows, activeFilter])
+
   const selectedRow =
     rows.find((row) => row.deviceId === selectedDeviceId) ?? rows[0] ?? null
+
+  const filterTabs: readonly { readonly id: DeviceFilter; readonly label: string; readonly count: number }[] = [
+    { id: 'all', label: 'Devices', count: summary.totalDevices },
+    { id: 'active', label: 'Active', count: summary.activeDevices },
+    { id: 'hidden', label: 'Hidden', count: summary.hiddenDevices },
+    { id: 'online', label: 'Online', count: summary.onlineDevices },
+    { id: 'stale', label: 'Stale', count: summary.staleDevices },
+    { id: 'nofix', label: 'NoFix', count: rows.filter((row) => !row.hasFix).length },
+  ]
 
   return (
     <WorkspaceOverlay
@@ -92,19 +106,11 @@ export function DevicesWorkspace() {
 
         <div className="grid min-h-0 flex-1 gap-0 lg:grid-cols-[minmax(0,1.4fr)_minmax(20rem,0.8fr)]">
           <section
-            className="overflow-y-auto border-r border-stone-800 px-6 py-6"
+            className="flex min-h-0 flex-col overflow-hidden border-r border-stone-800"
             data-testid="devices-workspace"
           >
-            <div className="grid gap-3 sm:grid-cols-6">
-              <SummaryCard label="Devices" value={String(summary.totalDevices)} />
-              <SummaryCard label="Active" value={String(summary.activeDevices)} />
-              <SummaryCard label="Online" value={String(summary.onlineDevices)} />
-              <SummaryCard label="Hidden" value={String(summary.hiddenDevices)} />
-              <SummaryCard label="Stale" value={String(summary.staleDevices)} />
-              <SummaryCard label="Cached" value={String(summary.cachedDevices)} />
-            </div>
-
-            <div className="mt-4 rounded-2xl border border-stone-800 bg-stone-900/40 p-4">
+            {/* Tracking health + breadcrumb controls */}
+            <div className="flex-shrink-0 space-y-4 border-b border-stone-800 px-6 py-4">
               <div className="flex items-center justify-between gap-4">
                 <div>
                   <p className="text-[11px] font-bold uppercase tracking-wider text-stone-400">
@@ -131,7 +137,7 @@ export function DevicesWorkspace() {
                 </div>
               </div>
               <p
-                className={`mt-3 text-sm ${
+                className={`text-sm ${
                   summary.warning === null ? 'text-emerald-200 italic' : 'text-amber-200'
                 }`}
                 data-testid="devices-tracking-warning"
@@ -139,18 +145,16 @@ export function DevicesWorkspace() {
                 {summary.warning ?? 'Tracking feed healthy.'}
               </p>
               {error !== null ? (
-                <p className="mt-2 text-sm text-rose-300" data-testid="devices-refresh-error">
+                <p className="text-sm text-rose-300" data-testid="devices-refresh-error">
                   {error}
                 </p>
               ) : null}
-            </div>
 
-            <div className="mt-4 rounded-2xl border border-stone-800 bg-stone-900/40 p-4">
               <div>
                 <p className="text-[11px] font-bold uppercase tracking-wider text-stone-400">
                   Breadcrumb Display
                 </p>
-                <div className="mt-3 grid grid-cols-2 border border-[var(--sar-line)] bg-[var(--sar-panel-sunken)] p-1">
+                <div className="mt-2 grid grid-cols-2 border border-[var(--sar-line)] bg-[var(--sar-panel-sunken)] p-1">
                   {(['line', 'dots'] as const).map((mode) => (
                     <button
                       className={`px-3 py-2 text-xs font-bold uppercase tracking-[0.08em] ${
@@ -165,72 +169,100 @@ export function DevicesWorkspace() {
                     </button>
                   ))}
                 </div>
+                <label className="mt-2 flex flex-wrap items-center justify-between gap-3 text-sm text-stone-200">
+                  <span>
+                    <span className="block text-[11px] font-bold uppercase tracking-wider text-stone-400">
+                      Breadcrumb Size
+                    </span>
+                    <span className="font-mono text-xs text-stone-300" data-testid="breadcrumb-size-label">
+                      {breadcrumbSize}px {breadcrumbTrailMode === 'dots' ? 'dot diameter' : 'trail width'}
+                    </span>
+                  </span>
+                  <input
+                    aria-label={
+                      breadcrumbTrailMode === 'dots'
+                        ? 'Breadcrumb dot diameter'
+                        : 'Breadcrumb trail width'
+                    }
+                    className="w-44 accent-amber-400"
+                    data-testid="breadcrumb-size-control"
+                    max={MAX_BREADCRUMB_SIZE}
+                    min={MIN_BREADCRUMB_SIZE}
+                    onChange={(event) => setBreadcrumbSize(event.currentTarget.valueAsNumber)}
+                    onInput={(event) => setBreadcrumbSize(event.currentTarget.valueAsNumber)}
+                    step={1}
+                    type="range"
+                    value={breadcrumbSize}
+                  />
+                </label>
               </div>
-              <label className="flex flex-wrap items-center justify-between gap-3 text-sm text-stone-200">
-                <span className="mt-4">
-                  <span className="block text-[11px] font-bold uppercase tracking-wider text-stone-400">
-                    Breadcrumb Size
-                  </span>
-                  <span className="font-mono text-xs text-stone-300" data-testid="breadcrumb-size-label">
-                    {breadcrumbSize}px {breadcrumbTrailMode === 'dots' ? 'dot diameter' : 'trail width'}
-                  </span>
-                </span>
-                <input
-                  aria-label={
-                    breadcrumbTrailMode === 'dots'
-                      ? 'Breadcrumb dot diameter'
-                      : 'Breadcrumb trail width'
-                  }
-                  className="mt-4 w-44 accent-amber-400"
-                  data-testid="breadcrumb-size-control"
-                  max={MAX_BREADCRUMB_SIZE}
-                  min={MIN_BREADCRUMB_SIZE}
-                  onChange={(event) => setBreadcrumbSize(event.currentTarget.valueAsNumber)}
-                  onInput={(event) => setBreadcrumbSize(event.currentTarget.valueAsNumber)}
-                  step={1}
-                  type="range"
-                  value={breadcrumbSize}
-                />
-              </label>
             </div>
 
-            <DeviceRowsSection
-              emptyMessage="No active mission devices selected. Until a device is added, the map continues showing every tracked device."
-              rows={activeRows}
-              sectionLabel="Active Mission Devices"
-              selectedDeviceId={selectedRow?.deviceId ?? null}
-              testId="active-devices"
-              testPrefix="active-device"
-              deviceColors={deviceColors}
-              onSelectDevice={selectDevice}
-              onSetDeviceColor={setDeviceColor}
-              onToggleActive={(deviceId) => {
-                if (currentMissionId !== null) {
-                  setDeviceActive(currentMissionId, deviceId, false)
-                }
-              }}
-              onToggleVisibility={toggleDeviceVisibility}
-              onZoomDevice={zoomDevice}
-            />
+            {/* Filter tabs */}
+            <div className="flex-shrink-0 border-b border-stone-800 px-6 py-3" data-testid="device-filter-tabs">
+              <div className="grid grid-cols-6 gap-2">
+                {filterTabs.map((tab) => (
+                  <button
+                    className={`flex flex-col items-center rounded-lg border px-2 py-2 text-center transition-colors ${
+                      activeFilter === tab.id
+                        ? 'border-amber-500/60 bg-amber-500/10 text-amber-200'
+                        : 'border-stone-700 bg-stone-900/40 text-stone-300 hover:border-stone-500'
+                    }`}
+                    data-testid={`device-filter-${tab.id}`}
+                    key={tab.id}
+                    onClick={() => setActiveFilter(tab.id)}
+                    type="button"
+                  >
+                    <span className="font-mono text-lg font-bold">{tab.count}</span>
+                    <span className="text-[10px] font-bold uppercase tracking-wider">{tab.label}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
 
-            <DeviceRowsSection
-              emptyMessage="No devices available. Configure a tracking provider in Settings to see devices here."
-              rows={rows}
-              sectionLabel="All Devices"
-              selectedDeviceId={selectedRow?.deviceId ?? null}
-              testId="all-devices"
-              testPrefix="device"
-              deviceColors={deviceColors}
-              onSelectDevice={selectDevice}
-              onSetDeviceColor={setDeviceColor}
-              onToggleActive={(deviceId, active) => {
-                if (currentMissionId !== null) {
-                  setDeviceActive(currentMissionId, deviceId, active)
-                }
-              }}
-              onToggleVisibility={toggleDeviceVisibility}
-              onZoomDevice={zoomDevice}
-            />
+            {/* Device list — fills remaining vertical space */}
+            <div className="min-h-0 flex-1 overflow-y-auto" data-testid="device-list-scroll">
+              {filteredRows.length === 0 ? (
+                <p
+                  className="px-6 py-6 text-sm text-stone-300"
+                  data-testid="device-filter-empty-state"
+                >
+                  {getEmptyStateMessage(activeFilter)}
+                </p>
+              ) : (
+                <>
+                  <div
+                    className={`sticky top-0 z-10 grid ${DEVICE_ROW_GRID_COLUMNS} border-b border-stone-800 bg-[var(--sar-panel)] px-4 py-2 text-[11px] font-bold uppercase tracking-wider text-stone-300`}
+                  >
+                    <span>Device</span>
+                    <span>Name</span>
+                    <span>Trail</span>
+                    <span>Status</span>
+                    <span>Last Seen</span>
+                    <span>Source</span>
+                    <span>Visible</span>
+                    <span className="text-right">Actions</span>
+                  </div>
+                  {filteredRows.map((row) => (
+                    <DeviceRow
+                      key={row.deviceId}
+                      row={row}
+                      selected={row.deviceId === selectedRow?.deviceId}
+                      deviceColor={deviceColors[row.deviceId] ?? createDeviceColor(row.deviceId)}
+                      onSelectDevice={selectDevice}
+                      onSetDeviceColor={setDeviceColor}
+                      onToggleActive={(deviceId, active) => {
+                        if (currentMissionId !== null) {
+                          setDeviceActive(currentMissionId, deviceId, active)
+                        }
+                      }}
+                      onToggleVisibility={toggleDeviceVisibility}
+                      onZoomDevice={zoomDevice}
+                    />
+                  ))}
+                </>
+              )}
+            </div>
           </section>
 
           <aside className="overflow-y-auto px-6 py-6" data-testid="devices-inspector">
@@ -318,78 +350,50 @@ export function DevicesWorkspace() {
   }
 }
 
-function renderBreadcrumbModeLabel(mode: BreadcrumbTrailMode): string {
-  return mode === 'dots' ? 'Breadcrumb dots' : 'Solid line'
+function applyDeviceFilter(
+  rows: readonly DeviceWorkspaceRow[],
+  filter: DeviceFilter,
+): readonly DeviceWorkspaceRow[] {
+  switch (filter) {
+    case 'all':
+      return rows
+    case 'active':
+      return rows.filter((row) => row.active)
+    case 'hidden':
+      return rows.filter((row) => row.hidden)
+    case 'online':
+      return rows.filter((row) => row.status === 'online')
+    case 'nofix':
+      return rows.filter((row) => !row.hasFix)
+    case 'stale':
+      return rows.filter((row) => row.stale)
+  }
 }
 
-function DeviceRowsSection(props: {
-  readonly sectionLabel: string
-  readonly rows: readonly DeviceWorkspaceRow[]
-  readonly selectedDeviceId: string | null
-  readonly testId: string
-  readonly testPrefix: 'active-device' | 'device'
-  readonly deviceColors: Readonly<Record<string, string>>
-  readonly emptyMessage: string
-  readonly onSelectDevice: (deviceId: string | null) => void
-  readonly onSetDeviceColor: (deviceId: string, color: string) => void
-  readonly onToggleActive: (deviceId: string, active: boolean) => void
-  readonly onToggleVisibility: (deviceId: string) => void
-  readonly onZoomDevice: (row: DeviceWorkspaceRow) => void
-}) {
-  return (
-    <div className="mt-4 overflow-hidden rounded-2xl border border-stone-800 bg-stone-900/40" data-testid={`${props.testId}-section`}>
-      <div className="border-b border-stone-700 px-4 py-3">
-        <p className="text-[11px] font-bold uppercase tracking-wider text-stone-200">
-          {props.sectionLabel}
-        </p>
-      </div>
-      {props.rows.length === 0 ? (
-        <p
-          className="px-4 py-3 text-xs text-stone-300"
-          data-testid={`${props.testId}-empty-state`}
-        >
-          {props.emptyMessage}
-        </p>
-      ) : (
-        <>
-          <div
-            className={`grid ${DEVICE_ROW_GRID_COLUMNS} border-b border-stone-800 px-4 py-2 text-[11px] font-bold uppercase tracking-wider text-stone-300`}
-          >
-            <span>Device</span>
-            <span>Name</span>
-            <span>Trail</span>
-            <span>Status</span>
-            <span>Last Seen</span>
-            <span>Source</span>
-            <span>Visible</span>
-            <span className="text-right">Actions</span>
-          </div>
-          <div className="max-h-[18rem] overflow-y-auto">
-            {props.rows.map((row) => (
-              <DeviceRow
-                key={row.deviceId}
-                row={row}
-                selected={row.deviceId === props.selectedDeviceId}
-                testPrefix={props.testPrefix}
-                deviceColor={props.deviceColors[row.deviceId] ?? createDeviceColor(row.deviceId)}
-                onSelectDevice={props.onSelectDevice}
-                onSetDeviceColor={props.onSetDeviceColor}
-                onToggleActive={props.onToggleActive}
-                onToggleVisibility={props.onToggleVisibility}
-                onZoomDevice={props.onZoomDevice}
-              />
-            ))}
-          </div>
-        </>
-      )}
-    </div>
-  )
+function getEmptyStateMessage(filter: DeviceFilter): string {
+  switch (filter) {
+    case 'all':
+      return 'No devices available. Configure a tracking provider in Settings to see devices here.'
+    case 'active':
+      return 'No active mission devices selected. Add devices from the All filter to track them during this mission.'
+    case 'hidden':
+      return 'No hidden devices. Toggle visibility on individual devices to hide them from the map.'
+    case 'online':
+      return 'No devices currently online. Devices will appear here when they report a live position.'
+    case 'nofix':
+      return 'All devices have a GPS fix. Devices without position data will appear here.'
+    case 'stale':
+      return 'No stale devices. Devices that stop reporting for more than 5 minutes will appear here.'
+  }
+}
+
+function renderBreadcrumbModeLabel(mode: BreadcrumbTrailMode): string {
+  return mode === 'dots' ? 'Breadcrumb dots' : 'Solid line'
 }
 
 function DeviceRow(props: {
   readonly row: DeviceWorkspaceRow
   readonly selected: boolean
-  readonly testPrefix: 'active-device' | 'device'
   readonly deviceColor: string
   readonly onSelectDevice: (deviceId: string | null) => void
   readonly onSetDeviceColor: (deviceId: string, color: string) => void
@@ -397,10 +401,7 @@ function DeviceRow(props: {
   readonly onToggleVisibility: (deviceId: string) => void
   readonly onZoomDevice: (row: DeviceWorkspaceRow) => void
 }) {
-  const rowTestId =
-    props.testPrefix === 'active-device'
-      ? `active-device-row-${props.row.deviceId}`
-      : `device-row-${props.row.deviceId}`
+  const rowTestId = `device-row-${props.row.deviceId}`
 
   return (
     <div
@@ -412,7 +413,7 @@ function DeviceRow(props: {
     >
       <button
         className="block min-w-0 w-full text-left"
-        data-testid={`${props.testPrefix}-select-${props.row.deviceId}`}
+        data-testid={`device-select-${props.row.deviceId}`}
         onClick={(event) => {
           event.stopPropagation()
           props.onSelectDevice(props.row.deviceId)
@@ -425,7 +426,7 @@ function DeviceRow(props: {
       </button>
       <button
         className="block min-w-0 w-full text-left"
-        data-testid={`${props.testPrefix}-select-name-${props.row.deviceId}`}
+        data-testid={`device-select-name-${props.row.deviceId}`}
         onClick={(event) => {
           event.stopPropagation()
           props.onSelectDevice(props.row.deviceId)
@@ -439,7 +440,6 @@ function DeviceRow(props: {
         deviceId={props.row.deviceId}
         deviceName={props.row.name}
         onSetColor={props.onSetDeviceColor}
-        testPrefix={props.testPrefix}
       />
       <span
         className={`font-semibold uppercase ${
@@ -449,13 +449,13 @@ function DeviceRow(props: {
               ? 'text-amber-300'
               : 'text-stone-300'
         }`}
-        data-testid={`${props.testPrefix}-status-${props.row.deviceId}`}
+        data-testid={`device-status-${props.row.deviceId}`}
       >
         {props.row.status}
       </span>
       <span
         className="font-mono text-xs text-stone-300"
-        data-testid={`${props.testPrefix}-last-seen-${props.row.deviceId}`}
+        data-testid={`device-last-seen-${props.row.deviceId}`}
       >
         {props.row.lastSeenDisplay}
       </span>
@@ -467,14 +467,14 @@ function DeviceRow(props: {
               ? 'text-amber-300'
               : 'text-stone-300'
         }`}
-        data-testid={`${props.testPrefix}-source-${props.row.deviceId}`}
+        data-testid={`device-source-${props.row.deviceId}`}
       >
         {props.row.sourceDisplay}
       </span>
       <label className="flex items-center gap-2 text-xs text-stone-300">
         <input
           checked={!props.row.hidden}
-          data-testid={`${props.testPrefix}-visibility-${props.row.deviceId}`}
+          data-testid={`device-visibility-${props.row.deviceId}`}
           onChange={() => props.onToggleVisibility(props.row.deviceId)}
           onClick={(event) => event.stopPropagation()}
           type="checkbox"
@@ -484,7 +484,7 @@ function DeviceRow(props: {
       <div className="flex justify-end gap-2">
         <button
           className="rounded-lg border border-stone-700 bg-stone-950 px-2 py-1 text-[11px] text-stone-200 disabled:opacity-40"
-          data-testid={`${props.testPrefix}-zoom-${props.row.deviceId}`}
+          data-testid={`device-zoom-${props.row.deviceId}`}
           disabled={!props.row.hasFix}
           onClick={(event) => {
             event.stopPropagation()
@@ -496,11 +496,7 @@ function DeviceRow(props: {
         </button>
         <button
           className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-2 py-1 text-[11px] font-semibold text-amber-100"
-          data-testid={
-            props.testPrefix === 'active-device'
-              ? `active-device-remove-${props.row.deviceId}`
-              : `device-active-toggle-${props.row.deviceId}`
-          }
+          data-testid={`device-active-toggle-${props.row.deviceId}`}
           onClick={(event) => {
             event.stopPropagation()
             props.onToggleActive(props.row.deviceId, !props.row.active)
@@ -510,15 +506,6 @@ function DeviceRow(props: {
           {props.row.active ? 'Remove' : 'Add'}
         </button>
       </div>
-    </div>
-  )
-}
-
-function SummaryCard(props: { readonly label: string; readonly value: string }) {
-  return (
-    <div className="rounded-2xl border border-stone-700 bg-stone-900/40 p-4">
-      <p className="sar-meta-label">{props.label}</p>
-      <p className="mt-2 font-mono text-xl text-stone-100">{props.value}</p>
     </div>
   )
 }
@@ -537,7 +524,6 @@ function DeviceColorSwatch(props: {
   readonly deviceId: string
   readonly deviceName: string
   readonly onSetColor: (deviceId: string, color: string) => void
-  readonly testPrefix: string
 }) {
   const [open, setOpen] = useState(false)
   const containerRef = useRef<HTMLDivElement>(null)
@@ -551,7 +537,7 @@ function DeviceColorSwatch(props: {
       <button
         aria-label={`${props.deviceName} breadcrumb trail colour`}
         className="h-7 w-7 rounded border-2 border-stone-700 hover:border-stone-400"
-        data-testid={`${props.testPrefix}-breadcrumb-color-${props.deviceId}`}
+        data-testid={`device-breadcrumb-color-${props.deviceId}`}
         onClick={() => setOpen(!open)}
         style={{ backgroundColor: props.color }}
         type="button"
@@ -559,7 +545,7 @@ function DeviceColorSwatch(props: {
       {open ? (
         <div
           className="absolute left-full top-0 z-50 ml-2 flex w-60 flex-wrap gap-2 rounded border border-stone-700 bg-stone-900 p-2 shadow-xl"
-          data-testid={`${props.testPrefix}-color-popover-${props.deviceId}`}
+          data-testid={`device-color-popover-${props.deviceId}`}
           onMouseLeave={() => setOpen(false)}
         >
           {SAR_PALETTE.map((color) => (
@@ -570,7 +556,7 @@ function DeviceColorSwatch(props: {
                   ? 'border-white ring-2 ring-white/50'
                   : 'border-stone-600 hover:border-stone-300'
               }`}
-              data-testid={`${props.testPrefix}-color-option-${color.replace('#', '')}`}
+              data-testid={`device-color-option-${color.replace('#', '')}`}
               key={color}
               onClick={() => {
                 props.onSetColor(props.deviceId, color)
