@@ -45,10 +45,10 @@ export function FocusModeSidebar() {
         </div>
       </header>
 
-      <div className="flex-1 space-y-4 overflow-y-auto px-4 py-4">
+      <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-4 py-4">
         <MissionControlPanel />
         <TrackingStatusPanel />
-        <section data-testid="focus-mode-layer-controls">
+        <section className="flex min-h-fit flex-1 flex-col" data-testid="focus-mode-layer-controls">
           <LayerFilterPanel />
         </section>
       </div>

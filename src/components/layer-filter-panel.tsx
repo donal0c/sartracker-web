@@ -72,7 +72,7 @@ export function LayerFilterPanel() {
 
   return (
     <section
-      className="sar-panel p-4 text-sm"
+      className="sar-panel flex min-h-0 flex-1 flex-col p-4 text-sm"
       data-testid="layer-panel"
     >
       <div className="mb-4 flex items-center justify-between gap-3 border-b border-[var(--sar-line)] pb-3">
@@ -95,7 +95,7 @@ export function LayerFilterPanel() {
       </div>
 
       {panelExpanded ? (
-        <div className="space-y-4">
+        <div className="flex min-h-0 flex-1 flex-col gap-4">
           <input
             className="sar-input w-full px-3 py-2 text-xs"
             data-testid="layer-tree-search"
@@ -147,14 +147,14 @@ export function LayerFilterPanel() {
             <EmptyState message={catalogError} testId="layer-tree-error" />
           ) : null}
 
-          <div className="sar-module">
-            <div className="border-b border-stone-800/60 px-3 py-2">
+          <div className="sar-module flex min-h-[12rem] flex-1 flex-col">
+            <div className="flex-shrink-0 border-b border-stone-800/60 px-3 py-2">
               <p className="sar-section-label">
                 Layer Tree
               </p>
             </div>
 
-            <div className="max-h-[24rem] overflow-y-auto px-2 py-2" data-testid="layer-tree">
+            <div className="min-h-0 flex-1 overflow-y-auto px-2 py-2" data-testid="layer-tree">
               {catalogLoading ? (
                 <EmptyState message="Syncing layer catalog..." />
               ) : filteredRoot.children.length === 0 ? (
@@ -326,7 +326,7 @@ function LayerInspector(props: {
 
   return (
     <div
-      className="sar-module p-4"
+      className="sar-module flex-shrink-0 p-4"
       data-testid="layer-inspector"
     >
       <div className="min-w-0">

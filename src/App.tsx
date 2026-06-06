@@ -178,7 +178,10 @@ function App() {
             </div>
 
             {/* Tab Content — scrollable */}
-            <div className="flex-1 space-y-5 overflow-y-auto px-5 py-4">
+            <div
+              className={`flex-1 overflow-y-auto px-5 py-4 ${sidebarTab === 'layers' ? 'flex flex-col' : 'space-y-5'}`}
+              data-testid="sidebar-tab-content"
+            >
               {sidebarTab === 'tracking' && (
                 <>
                   <TrackingStatusPanel />

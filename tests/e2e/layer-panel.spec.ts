@@ -89,6 +89,29 @@ test.describe('M17 layer tree workflows', () => {
     await expect(page.getByTestId('layer-row-feature-device-alpha')).toBeVisible()
   })
 
+  test('expanded layer workspace fills available RHS vertical space [DON-132]', async ({
+    page,
+  }) => {
+    const layerPanel = page.getByTestId('layer-panel')
+    await expect(layerPanel).toBeVisible()
+
+    // The layer tree should not have a small fixed max-height cap.
+    // It should grow to fill the available space in the sidebar tab content.
+    const layerTree = page.getByTestId('layer-tree')
+    await expect(layerTree).toBeVisible()
+
+    const tabContent = page.locator('[data-testid="operational-sidebar"] [data-testid="sidebar-tab-content"]')
+    await expect(tabContent).toBeVisible()
+
+    // The layer panel should use most of the tab content height (at least 60%),
+    // not be cramped into a small fixed-height box.
+    const tabContentBox = await tabContent.boundingBox()
+    const layerPanelBox = await layerPanel.boundingBox()
+    expect(tabContentBox).not.toBeNull()
+    expect(layerPanelBox).not.toBeNull()
+    expect(layerPanelBox!.height).toBeGreaterThan(tabContentBox!.height * 0.6)
+  })
+
   test('persists tree metadata and visibility across reload within the mission harness', async ({
     page,
   }) => {
