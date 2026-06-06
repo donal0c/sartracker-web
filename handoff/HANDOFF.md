@@ -12,7 +12,7 @@
 
 ## Last Work Done
 
-DON-117 (6-6-26 feedback batch) — all 6 children now Done:
+DON-117 (6-6-26 feedback batch) — actionable immediate children DON-118 through DON-133 are now Done; coordinator-confirmation items DON-134 through DON-140 remain Backlog:
 - DON-132: Layer workspace fills available RHS vertical space
 - DON-129: Manual range rings require explicit radius
 - DON-126: Breadcrumb dot density and size improvements
@@ -58,7 +58,7 @@ Query Linear for current work. DON-117 is fully complete. Check children of `DON
 
 ## Active Linear Parents
 
-`DON-5` (parity), `DON-7` (S1 maps), `DON-25` (S2 Electron), `DON-76` (official maps), `DON-117` (6-6-26 feedback — complete).
+`DON-5` (parity), `DON-7` (S1 maps), `DON-25` (S2 Electron), `DON-76` (official maps).
 
 ## Planning Docs
 
