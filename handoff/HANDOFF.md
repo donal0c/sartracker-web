@@ -4,6 +4,7 @@
 
 ## Last Updated
 
+- 2026-06-06 by Codex — Full open Linear cleanup completed after the map-spine pass. Current active parents are `DON-5` parity umbrella, `DON-7` S1 maps/offline package workflow, `DON-25` S2 Electron/runtime reliability, and `DON-76` official map provider umbrella. Closed as done/superseded: `DON-15`, `DON-16`, `DON-19`, `DON-22`, `DON-28`, `DON-35`, `DON-60`, `DON-99`, `DON-101`, `DON-102`. Marked `DON-67` duplicate of canonical `DON-100`. Moved deferred work to Backlog: `DON-6`, `DON-8`, `DON-11`, `DON-12`, `DON-13`, `DON-14`, `DON-21`, `DON-30`, `DON-100`, `DON-116`. Current next tasks by stream: S1 Maps `DON-109`; S2 Electron `DON-29`; S3/Web-parity has no immediate blocker, with backlog `DON-100` only after coordinator decision and `DON-11` only after fresh tester feedback.
 - 2026-06-06 by Codex — Linear map-stream audit completed. The previous map foundation issues are done, but the team-ready workflow was missing from the queue, so `DON-7` is now In Progress and owns the official offline-map completion spine: `DON-109` setup wizard/package import UI, `DON-110` app-owned package library/copy management, `DON-111` coverage manifest/readiness certificate, `DON-112` standard/mission/national package guardrails, `DON-113` admin package preparation workflow, `DON-114` field-ready checklist/manual updates, and `DON-115` cross-platform official-map import release smoke. `DON-116` was added under `DON-76` as the optional relief/slope overlay conversion spike. Policy remains: licensed map files, credentials, generated packages, and private paths stay local/customer-provided and must not be committed, publicly bundled, or exposed via hosted web. Next S1 task is `DON-109`.
 - 2026-06-06 by Codex — `DON-82` completed as the relief/slope raster classification pass. Inspected the private USB rasters with QGIS LTR GDAL and generated private previews outside the repo. Decision: `relief_byte.tif` and `Slope_30plus.tif` are optional local terrain overlays, not basemaps and not part of first-pass Discovery. Relief is a 621 MB RGB 10 m ITM terrain-shading context layer and should be off by default at ~20-30% opacity. Slope is a 53 MB Float32 10 m ITM sparse 30-degree-plus steep-ground mask with NoData 0 and ~0.35% valid pixels; it should be a transparent amber/red warning overlay with explicit copy that unhighlighted ground is not necessarily safe. Both require preprocessing to Web Mercator tile packages before MapLibre runtime use, separate overlay registry/legend/readiness from official basemap packages, and no hosted-web/private-data exposure. Details in `docs/official-map-terrain-overlays-don-82.md`.
 - 2026-06-06 by Codex — `DON-108` completed as the full-national Discovery package measurement and support decision. Generated a private full-national z14 MBTiles probe outside the repo: 4.2 GB / 103,491 tiles / z5-z14 after overviews, with ~30.2 min translate + ~24.1 min overview generation and ~3 GB peak memory. SQLite random tile reads were fast on macOS and Dell Ubuntu 24.04; packaged Electron smokes on macOS and Dell Ubuntu rendered Discovery Topo from the local package with network blocked, reported inside-package coverage over Ireland, reported outside-package coverage over London, showed Settings `1/1 ready`, and exported sanitized diagnostics. Full z16 national PNG MBTiles is estimated around 56-73 GiB, so the decision is: keep the standard-region package as the v1 default, support full-national only as an optional/admin-prepared package with explicit disk/time warnings, and do not support private full-national packages in hosted web. Details in `docs/official-map-national-package-measurement-don-108.md`. Windows large-package validation remains unverified until a Windows machine is available.
@@ -142,94 +143,21 @@ Use these only for team testing, not as a production secret model.
 
 ## Next Task
 
-Current map lane: `DON-76` has `DON-77`, `DON-78`, `DON-79`, `DON-80`, `DON-81`, `DON-82`, `DON-103`, `DON-104`, `DON-105`, `DON-106`, `DON-107`, and `DON-108` done. Electron can register local MBTiles official-map packages, serve their tiles through the official-map proxy before online MapGenie fallback, show operator-facing official offline readiness/current-view states, run packaged offline smokes on macOS/Linux with outbound network blocked, has a measured policy for full-national Discovery packages, and has classified relief/slope as optional terrain overlays. The missing team workflow is now tracked under `DON-7`: next task is `DON-109` official map setup wizard/package import UI, followed by `DON-110` app-owned package library, `DON-111` coverage manifest, `DON-112` package guardrails, `DON-113` admin package prep, `DON-114` field-ready checklist/manual, and `DON-115` cross-platform import release smoke. `DON-116` is the later overlay conversion spike. Windows packaged official-map import validation remains an explicit gap until the `DON-115` release smoke.
+Default next task in this maps chat: `DON-109` official map setup wizard/package import UI.
 
-Team feedback lane: `DON-83` is closed; immediate children are done, and `DON-99` through `DON-102` are parked in Backlog for coordinator clarification.
+Current stream order:
 
-**Resolve DON-35 by clearing its follow-up children before sending the full Electron build wider.** The Dell Ubuntu 24.04 test proves a Linux-native Electron build can render OpenTopoMap and run the packaged `.deb` mission/SQLite/recovery/live-Traccar/tracking-cache/diagnostics path. MacOS-cross-built artifacts are not trustworthy for `better-sqlite3` native modules. Next: `DON-57` moves Electron Linux artifacts to a Linux builder/CI job, `DON-58` fixes/bakes the Linux secret-store launch behavior and diagnostics runtime label, and `DON-59` proves GPX import, marker attachment save/open, and external file opening in the packaged Linux app. Decide separately whether Ubuntu 18.04 is unsupported or needs an older-glibc build. DON-27 now proves the read-only Leaflet fallback route; Electron remains the preferred runtime lane unless DON-29 decides degraded-mode editing is required.
-
-Optional cleanup: the stale `v0.1.0-beta.2` draft release on GitHub holds Linux-only assets from the partial-success run. Delete via `gh release delete v0.1.0-beta.2 --repo donal0c/sartracker-web --yes` once you do not need the evidence trail.
+- S1 Maps: `DON-109` -> `DON-110` -> `DON-111`/`DON-112` -> `DON-113` in parallel when metadata expectations are clear -> `DON-114` -> `DON-115`. `DON-116` relief/slope overlays stays Backlog until Discovery basemap import is field-ready.
+- S2 Electron: `DON-29` runtime decision checkpoint is next for the Electron chat; `DON-30` support plan is Backlog after the decision. `DON-28` and `DON-35` are closed.
+- S3 Web/parity: no immediate implementation task. `DON-100` multi-day mission grouping waits on coordinator decision; `DON-11` waits for fresh tester feedback; `DON-6`, `DON-8`, `DON-12`, `DON-13`, `DON-14`, and `DON-21` are Backlog.
 
 ## Open Linear issues That Matter Now
 
-- `sartracker-web-y6a` — B4 cross-platform Tauri beta distribution. CLOSED 2026-05-17 after the published `v0.1.0-beta.3` release.
-- `sartracker-web-590` — Re-add macOS arm64 to release CI matrix when build cadence stabilizes. P3, deferred.
-- `sartracker-web-g1u` — Re-add Windows MSI artifact when version scheme supports it. P3, deferred (MSI bundler requires numeric-only pre-release suffixes which `-beta.N` is not).
-- `DON-24` — B7: Pre-tester smoke + CI launch-smoke for cross-platform Tauri builds. Local workflow hardening implemented 2026-05-18; first CI smoke run `26040183978` exposed harness gaps now fixed locally; needs follow-up release workflow run and real-machine Linux smoke.
-- `DON-25` — S8: Linux runtime reliability path for SAR Tracker desktop. Parent issue, In Progress.
-- `DON-26` — S8a: Empirical Electron MapLibre Linux validation. Done after old Ubuntu plus two PCLinuxOS team machines rendered maps in Electron.
-- `DON-27` — S8b: Add non-WebGL Leaflet raster fallback spike. **Closed 2026-06-02.** Read-only fallback proved behind `?mapRenderer=leaflet`; Leaflet 1.9.4 renders basemap + all critical overlays without WebGL; edit parity deferred to DON-29.
-- `DON-28` — S8c: Electron shell bridge and Linux packaging PoC. In Progress; parent for `DON-31` through `DON-35`.
-- `DON-29` — S8d: Linux runtime decision checkpoint. Backlog.
-- `DON-31` — S8c.1: Electron settings and secret storage parity. Done locally.
-- `DON-32` — S8c.2: Electron tracking cache and diagnostics export parity. Done locally.
-- `DON-33` — S8c.3: Electron SQLite mission store parity. Done locally.
-- `DON-34` — S8c.4: Electron filesystem, GPX, attachments, and file opening parity. Done locally.
-- `DON-35` — S8c.5: Electron Linux artifact build and field-validation gate. Dell Ubuntu 24.04 native AppImage + `.deb` smoke rendered OpenTopoMap; packaged `.deb` also proved SQLite mission lifecycle/recovery, live Traccar, tracking cache, and diagnostics export after forcing `--password-store=gnome-libsecret`. MacOS cross-build produced invalid native module and must be replaced with a Linux-native build path.
-- `DON-57` — S8c.5a: Build Electron Linux artifacts natively in CI. Done 2026-06-01; GitHub run `26746757159` built AppImage + `.deb`, checked packaged `better_sqlite3.node` as ELF x86-64, generated SHA256SUMS, failed black-window risk with a content-mean gate, rendered OpenTopoMap in CI, and the exact AppImage rendered on the Dell Ubuntu 24.04 machine.
-- `DON-58` — S8c.5b: Fix Linux Electron secret-store launch and diagnostics runtime label. Done locally and remotely 2026-06-05; true `.deb` install also succeeded during DON-59.
-- `DON-59` — S8c.5c: Smoke packaged Linux filesystem workflows. Done 2026-06-05 on Dell Ubuntu installed `.deb`; native chooser completion, GPX file/folder/watch import, marker attachment store/open, app paths, SQLite integrity, and diagnostics export all proved.
-- `DON-60` — B8: 2026-05-28 team requirements from USB ODT. Intake parent for `DON-61` through `DON-75`.
-- `DON-76` — Official Irish Map Provider Integration. Parent map lane. Private/local map policy is locked: do not commit licensed map files or credentials, do not bundle them into public releases, and do not expose them through hosted web. Local verified USB copy lives at `/Users/donalocallaghan/SARTracker-private-map-assets/team-usb-2026-06-03`.
-- `DON-77` — Evaluate MapGenie sources and choose operational default. Done 2026-06-03: `discovery` is the locked default official operational topo map.
-- `DON-78` — Add grouped map catalogue UX for official and public maps. Done 2026-06-03.
-- `DON-79` — Prototype local MapGenie rendering via ArcGIS export. Done 2026-06-04: Electron/local runtime renders Discovery Topo and Aerial Imagery via ArcGIS export over Carrauntoohil/Reeks from local configured MapGenie source, with credentials kept out of URLs/settings/diagnostics.
-- `DON-80` — Add local official map source import and configuration for Electron. Done 2026-06-03: Settings and Electron persistence can reference the local MapGenie source file while storing only safe metadata and keeping credentials out of diagnostics/source control.
-- `DON-81` — Plan official-map offline package path. Done 2026-06-05: local post-install map library, first via prepared MBTiles-style standard-region package; hosted web remains public-map-only.
-- `DON-103` — Spike standard-region Discovery conversion to local MBTiles package. Done 2026-06-05: Reeks/west Kerry z9-z16 PNG MBTiles generated outside repo; 1.1 GB, 31,729 tiles, validated readable. MBTiles is viable for v1.
-- `DON-104` — Add cross-platform Electron official map package registry. Done 2026-06-05: Electron settings validates local MBTiles packages and diagnostics expose safe package metadata without paths.
-- `DON-105` — Serve local official map package tiles through Electron map proxy. Done 2026-06-05: local MBTiles tiles are served before online MapGenie fallback; missing/unreadable packages fail visibly.
-- `DON-106` — Add official offline map readiness UI and diagnostics. Done 2026-06-05: readiness states, current-view package coverage, Settings package status, diagnostics, manual, and browser validation complete.
-- `DON-107` — Validate packaged Electron official maps offline on Linux, macOS, and Windows. Done 2026-06-05 for macOS and Dell Ubuntu Linux with network blocked and explicit Windows gap documented.
-- `DON-108` — Measure full-national Discovery package size and performance before support decision. Done 2026-06-06; optional/admin-prepared with warnings, not default.
-- `DON-82` — Classify relief and slope rasters as optional map overlays. Done 2026-06-06; implementation deferred to separate overlay package/import/rendering work.
-- `DON-109` — Official map setup wizard and package import UI. Next S1 Maps implementation task.
-- `DON-110` — App-owned official map library copy and package management. Blocks field-ready USB-removal workflow.
-- `DON-111` — Official map package coverage manifest and readiness certificate.
-- `DON-112` — Official map package choice guardrails for standard Kerry/Reeks, mission-area, and national packages.
-- `DON-113` — Admin package preparation workflow for standard and mission-area official maps.
-- `DON-114` — Field-ready official map checklist and operator manual updates.
-- `DON-115` — Cross-platform official map import release smoke on macOS, Windows, and Linux.
-- `DON-116` — Spike relief and slope overlay package conversion. Later/optional overlay lane.
-- `DON-75` — Review tracking-panel helicopter visibility defaults. Done 2026-06-01: helicopter aviation slots are now opt-in in the Tracking panel (assigned slots always show; empty slots collapse behind an Add-helicopter reveal; map visibility unchanged). Committed `26a06c7`, pushed.
-- `DON-74` — Fix weather links and colour palette controls. Done 2026-06-02: weather links now accept bare domains (auto-prepends `https://`) before validation/persistence in browser, Tauri, and Electron, and open via the system browser across runtimes; colour-capable controls (drawing fill, text label, device breadcrumb) use a 12-swatch SAR palette plus typed hex instead of plain text or native `<input type="color">`.
-- `DON-72` — Clean up drawing/sector/range-ring/search-area map rendering. Done 2026-06-02: root-caused the per-vertex dots and broken visibility toggles to MapLibre 5 dropping nested legacy `$type` filters; switched drawing+tracking overlays to `['geometry-type']` expression filters; added dark line casing, wider strokes, higher-contrast default colours (LPB percentile colours kept); removed the Select button (internal fallback retained) and the Vertices readouts; added text-label drag-to-move persisted via the existing upsert path. Committed and pushed.
-- `DON-73` — Layer workspace controls (Collapse All, Move Up/Down, Favorite). Done 2026-06-02: Collapse All added beside Expand All; Move Up/Down verified working end-to-end (reproduction proved it, was a discoverability not a logic bug); inert Favorite controls removed (persisted `isFavorite` schema kept). Committed and pushed.
-- `DON-61` — Long-running web slowdown/freeze. Fixed and pushed 2026-06-01 by bounding live breadcrumb snapshots at 20,000 render points.
-- `DON-62` — Layer visibility toggles not applying to map. Fixed and pushed 2026-06-01 by batching subtree visibility metadata persistence so out-of-order descendant writes cannot partially re-show hidden layers.
-- `DON-63` — Device list focus behavior opens marker list / defocuses map. Fixed and pushed 2026-06-01 by stopping passive device-list cells and nested controls from bubbling into row selection. Committed `6583ee2`.
-- `DON-64` — Make paused mission state unmistakable. Fixed and pushed 2026-06-01: flashing bright-red PAUSED chip on mast + Mission Control, red paused banner with frozen-time text and a dedicated Resume Mission button, panel ring, non-collapsible dock while paused, reduced-motion fallback. Pure selector `mission-phase-presentation.ts`. Committed `921e0ae`.
-- `DON-65` — Active mission device selection. Done 2026-06-02: Devices Workspace now separates Active Mission Devices from the full roster, supports Add/Remove per device, and filters mission map overlays/breadcrumbs to the active set once selected while preserving the all-devices fallback when no active devices are selected.
-- `DON-66` — Per-device breadcrumb trail styling and global breadcrumb size. Done 2026-06-02: Devices Workspace has device colour swatches plus a global Breadcrumb Size slider; configured colours/sizes drive MapLibre and Leaflet fallback breadcrumb rendering through a small persisted frontend style store.
-- `DON-67` — Multi-day mission layer grouping. Parked 2026-06-02 for team input; Linear comment lists the operational questions to ask before implementation.
-- `DON-68` — Operational contrast/theme/crosshair visibility. Done 2026-06-02: red/white placement cursor, larger red coordinate target, and stronger selected-row treatment for high-use workspace rows.
-- `DON-69` — Reduce mission/control panel clutter and relocate low-use status details. Done 2026-06-02: active configured missions can minimize Mission Control while paused/recovery states stay expanded; coordinate footer dropped low-use CRS cells and keeps live coordinates plus Convert.
-- `DON-70` — Improve coordinate footer and converter marker workflow. Done 2026-06-02: footer shows DD, Irish Grid, and DMS; converter can open the normal marker form at a converted coordinate.
-- `DON-94` — Reduce mission/control panel clutter and relocate low-use status details. Done 2026-06-04: active configured missions can minimize Mission Control while paused/recovery states stay expanded; coordinate footer keeps live readouts plus Convert and no fixed-CRS labels.
-- `DON-71` — Redesign casualty treatment notes for repeated updates. Done 2026-06-02: casualty marker treatment notes now append timestamped updates into the existing treatment log, preserving earlier entries while avoiding new medical-record schema semantics.
-- `sartracker-web-s8m` — B5: triage first web and Tauri beta feedback. Next-task default once testers have published artifacts to react to.
-- `sartracker-web-l7c` — Parity sweep findings walk-through (Codex + Donal). P3, queued. Reads `tmp/parity-sweep/sweep-report.md` and triages C1–C13 with Donal.
-- `sartracker-web-ag1` — QGIS Parity Residual-Gap Sweep (closed 2026-05-17). Outputs under `tmp/parity-sweep/`.
-- `sartracker-web-fy5` — B6 GPX And Drawing Hit-Test Hardening (completed 2026-05-17; ready to close).
-- `sartracker-web-n9i` — V2 Visual Review Automation (completed 2026-05-17; ready to close).
-- `sartracker-web-b3c` — closed 2026-05-17 after updating the 5 drifted verificationPrompts and re-verifying each via the V2 review runner.
-- `sartracker-web-wn6` — Closed 2026-05-17 after rewriting the two drifted verificationPrompts and re-verifying each via `npm run visual:review --only <id> --no-cache`.
-- `sartracker-web-zq9` — Closed 2026-05-17. Mast tracking ratio replaced by separate FIX / STALE chips behind a pure selector; new chromium regressions in `tests/e2e/v1-regression.spec.ts` and a new visual entry `mast-tracking-cell-active` (visual review PASS).
-- `sartracker-web-2xp` — Closed 2026-05-17. Tile-only filter at `src/features/map/is-tile-error-event.ts` plus widened defaults (5-in-30s) in `src/lib/tile-health-tracker.ts`; interactive Playwright proof at `tmp/2xp-verification/`.
-- `sartracker-web-y6a` — B4: set up cross-platform Tauri beta distribution for Windows/Linux testers.
-- `sartracker-web-qmr` — closed 2026-05-17 after keychain-backed packaged-app live Traccar smoke.
-- `sartracker-web-vpz` — Hosted browser testing mode and parity hardening.
-- `sartracker-web-6y3` — A3 team feedback remediation batch; should be closed/reframed once A3.9 verification/deploy is complete.
-- `sartracker-web-8gw` — V1 Regression E2E Coverage (closed 2026-05-17).
-- `sartracker-web-cgx` — S5 Mission Control View Model Extraction (closed 2026-05-17).
-- `sartracker-web-s5v` — S4 Map Overlay Consolidation And Camera Race Fix (closed 2026-05-17).
-- `sartracker-web-4a1` — S3 Layer Visibility Service Extraction (completed 2026-05-17; ready to close if no follow-up findings).
-- `sartracker-web-xhz` — B2 Tauri Beta Release Template (completed 2026-05-17; ready to close if no follow-up findings).
-- `sartracker-web-zl4` — closed 2026-05-17 as false positive; regression test added.
-- `sartracker-web-el9` — closed 2026-05-17 with categorical end-to-end proof on packaged `.app` build `0.1.0+sha.603771f65431`.
-- `sartracker-web-ppr` — B3 closed 2026-05-17 after re-run on the post-fix build.
-
-Older parity/UI Linear issues still exist, but new work should be selected through the two-track workplan unless the user explicitly asks for a specific Linear issue.
+- Active parents: `DON-5`, `DON-7`, `DON-25`, `DON-76`.
+- Current Todo: `DON-109` through `DON-115`, plus `DON-29`.
+- Backlog kept intentionally: `DON-6`, `DON-8`, `DON-11`, `DON-12`, `DON-13`, `DON-14`, `DON-21`, `DON-30`, `DON-100`, `DON-116`.
+- Closed/superseded in the 2026-06-06 cleanup: `DON-15`, `DON-16`, `DON-19`, `DON-22`, `DON-28`, `DON-35`, `DON-60`, `DON-99`, `DON-101`, `DON-102`.
+- Duplicate: `DON-67` -> `DON-100`.
 
 ## Known Limits
 
