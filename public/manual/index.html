@@ -667,6 +667,101 @@
           </p>
         </section>
 
+        <section id="official-maps">
+          <h2>Official Maps: Field Readiness</h2>
+          <div class="warning">
+            <strong>Licensed data:</strong> official Discovery maps are private team assets. They are
+            never committed to source control, bundled into public releases, or served through the
+            hosted web app. The hosted Vercel app remains public-fallback-map only.
+          </div>
+
+          <h3>Fresh Install To Offline Readiness</h3>
+          <p>Follow these steps on a fresh Electron desktop install to reach field-ready official maps:</p>
+          <ol>
+            <li>Install the SAR Tracker Electron app from the release artifacts (AppImage on Linux, installer on Windows, .app on macOS).</li>
+            <li>Obtain the team USB drive or folder containing the MapGenie source details file and any prepared <code>.mbtiles</code> Discovery packages.</li>
+            <li>Open <strong>Settings → Official Maps</strong>.</li>
+            <li>Click <strong>Choose MapGenie File</strong> and select the source details file from the USB. The app extracts safe metadata (username, available sources, service count) without storing credentials.</li>
+            <li>Click <strong>Add Discovery Package</strong> and select a prepared <code>.mbtiles</code> package. The app copies the package into its own storage — you can remove the USB afterward.</li>
+            <li>Click <strong>Save Settings</strong>. The app validates the copied package and reports its status as ready, missing, or unreadable.</li>
+            <li>Switch to <strong>Discovery Topo</strong> in the <strong>Maps</strong> menu. The map renders from the local offline package.</li>
+            <li>Open the <strong>Maps</strong> menu and check the <strong>Field Readiness</strong> panel. All items should show green ticks.</li>
+            <li>Use <strong>Check View</strong> over your intended mission area to confirm it falls inside the offline package bounds.</li>
+          </ol>
+
+          <h3>Package Types</h3>
+          <table>
+            <thead>
+              <tr><th>Category</th><th>Size</th><th>Guidance</th></tr>
+            </thead>
+            <tbody>
+              <tr><td><strong>Standard</strong></td><td>Under 2 GB</td><td>The Kerry/West operating-area package. Recommended for most operations. Import directly from USB.</td></tr>
+              <tr><td><strong>Mission Area</strong></td><td>2–4 GB</td><td>Prepared for a specific search area. Verify coverage matches the intended deployment before relying on it.</td></tr>
+              <tr><td><strong>National</strong></td><td>Over 4 GB</td><td>Full national Discovery. Must be prepared by an admin in advance — not during a mission. Requires sufficient disk space and preparation time.</td></tr>
+            </tbody>
+          </table>
+
+          <h3>App-Owned Package Storage</h3>
+          <p>
+            When you import a <code>.mbtiles</code> package, the app copies it into its own internal
+            storage directory. The original USB or source disk is no longer needed after import.
+            Packages can be removed from <strong>Settings → Official Maps</strong> by clicking the
+            remove button on each package card.
+          </p>
+
+          <h3>Field Readiness Checklist</h3>
+          <p>
+            The <strong>Maps</strong> menu shows a consolidated <strong>Field Readiness</strong> panel
+            when an official map is selected. It checks four conditions before field deployment:
+          </p>
+          <table>
+            <thead>
+              <tr><th>Check</th><th>What It Means</th></tr>
+            </thead>
+            <tbody>
+              <tr><td>Official package registered</td><td>A validated local offline package exists for the active map type.</td></tr>
+              <tr><td>Current view covered</td><td>The visible operational area is inside the offline package bounds.</td></tr>
+              <tr><td>Fallback source available</td><td>An online MapGenie source or a sufficient local package is available if the operator leaves the primary area.</td></tr>
+              <tr><td>Recently verified</td><td>The package has been validated (Save Settings re-validates packages automatically).</td></tr>
+            </tbody>
+          </table>
+          <p>
+            When all items pass, the panel shows <strong>Field ready</strong> with a green indicator.
+            When the package is missing or unregistered, it shows <strong>Not field ready</strong> in red.
+            When coverage or fallback checks fail but the package itself is ready, it shows
+            <strong>Partially ready</strong> in amber — pan to your mission area or import a broader package.
+          </p>
+
+          <h3>Readiness Certificate Export</h3>
+          <p>
+            In <strong>Settings → Official Maps</strong>, click <strong>Export Readiness Certificate</strong>
+            to save a text file with sanitized package metadata: map type, status, zoom range, tile count,
+            size, coverage bounds, and verification timestamps. This certificate is suitable for
+            pre-mission audit without exposing private paths or credentials.
+          </p>
+
+          <h3>Troubleshooting</h3>
+          <table>
+            <thead>
+              <tr><th>Symptom</th><th>Action</th></tr>
+            </thead>
+            <tbody>
+              <tr><td>Package shows <em>missing</em></td><td>The registered package file is no longer accessible. Re-import from USB or check the source disk.</td></tr>
+              <tr><td>Package shows <em>unreadable</em></td><td>The file exists but cannot be read as a valid MBTiles package. Re-download or re-prepare the package.</td></tr>
+              <tr><td>View outside package</td><td>The current map viewport extends beyond the offline package. Pan to your mission area or import a broader package.</td></tr>
+              <tr><td>Official maps show <em>Not configured</em></td><td>No MapGenie source file has been selected. Use <strong>Choose MapGenie File</strong> in Settings.</td></tr>
+              <tr><td>Maps menu shows <em>Not configured</em> in hosted mode</td><td>Expected behavior. Hosted web is public-map-only. Official maps require the Electron desktop app.</td></tr>
+            </tbody>
+          </table>
+
+          <div class="note">
+            <strong>Diagnostics safety:</strong> the app never exposes package file paths, MapGenie
+            credentials, source URLs, or tile contents in diagnostics exports, screenshots, or error
+            messages. Only safe metadata (status, tile count, zoom range, file size, bounds, timestamps)
+            is included.
+          </div>
+        </section>
+
         <section id="tracking">
           <h2>Tracking And Devices</h2>
           <p>
@@ -965,7 +1060,7 @@
             than to infer reliability from a polished interface.
           </p>
           <ul>
-            <li><strong>Offline maps:</strong> public maps use viewed-tile caching. Electron can import, validate, remove, and serve local official MBTiles packages from app-owned storage, so the original USB or source disk can be unplugged after import. The map can report ready, outside-area, missing, unreadable, online-source, unavailable, and public-fallback states. Saved coverage manifests and field-ready checklist export remain open S1 map work.</li>
+            <li><strong>Offline maps:</strong> public maps use viewed-tile caching. Electron can import, validate, remove, and serve local official MBTiles packages from app-owned storage, so the original USB or source disk can be unplugged after import. The map reports ready, outside-area, missing, unreadable, online-source, unavailable, and public-fallback states. The Maps menu includes a field-readiness checklist and Settings can export a readiness certificate.</li>
             <li><strong>Replay mode:</strong> settings expose replay defaults, but full replay/training workflow parity is still active work.</li>
             <li><strong>Mission metadata:</strong> richer coordinator/metadata capture at mission start remains a parity gap.</li>
             <li><strong>Layer parity:</strong> the app has a grouped layer tree with visibility, aliases, expand/collapse all, and reorder controls, but final parity acceptance is still pending.</li>

@@ -7,6 +7,7 @@ import {
   type RenderableMapId,
 } from '../lib/map-config'
 import type { MapHealth } from '../lib/map-health'
+import type { FieldReadinessChecklist } from '../features/map/field-readiness-checklist'
 import type { OfflineMapCoverage } from '../features/map/offline-map-coverage'
 import type { OfflineMapReadiness } from '../features/map/offline-map-readiness'
 
@@ -14,6 +15,7 @@ type BasemapSwitcherProps = {
   readonly activeBasemapId: RenderableMapId
   readonly catalogueGroups?: readonly MapCatalogueGroup[]
   readonly coverage?: OfflineMapCoverage
+  readonly fieldReadiness?: FieldReadinessChecklist | undefined
   readonly mapHealth?: MapHealth
   readonly offlineReadiness?: OfflineMapReadiness
   readonly onBasemapChange: (basemapId: RenderableMapId) => void
@@ -27,6 +29,7 @@ export function BasemapSwitcher({
   activeBasemapId,
   catalogueGroups = MAP_CATALOGUE_GROUPS,
   coverage,
+  fieldReadiness,
   mapHealth,
   offlineReadiness,
   onBasemapChange,
@@ -159,8 +162,71 @@ export function BasemapSwitcher({
                 <p className="mt-1 text-[10px] text-stone-300">{coverage.detail}</p>
               </div>
             ) : null}
+            {fieldReadiness !== undefined ? (
+              <FieldReadinessPanel fieldReadiness={fieldReadiness} />
+            ) : null}
           </div>
         </div>
+      ) : null}
+    </div>
+  )
+}
+
+const FIELD_READINESS_TONE_CLASSES: Record<string, string> = {
+  success: 'border-emerald-400/60 bg-emerald-950/50',
+  warning: 'border-amber-400/60 bg-amber-950/50',
+  danger: 'border-rose-400/60 bg-rose-950/50',
+}
+
+function FieldReadinessPanel({
+  fieldReadiness,
+}: {
+  readonly fieldReadiness: FieldReadinessChecklist
+}) {
+  return (
+    <div
+      className={`mt-1 border px-2.5 py-2 ${FIELD_READINESS_TONE_CLASSES[fieldReadiness.tone] ?? ''}`}
+      data-testid="field-readiness-checklist"
+    >
+      <div className="flex items-center gap-2">
+        <span
+          className={`h-2 w-2 shrink-0 rounded-full ${
+            fieldReadiness.tone === 'success'
+              ? 'bg-emerald-400'
+              : fieldReadiness.tone === 'warning'
+                ? 'bg-amber-400'
+                : 'bg-rose-400'
+          }`}
+        />
+        <span
+          className="text-[11px] font-bold text-stone-50"
+          data-testid="field-readiness-verdict"
+        >
+          {fieldReadiness.summaryLabel}
+        </span>
+      </div>
+      <p className="mt-1 text-[10px] text-stone-300">{fieldReadiness.summaryDetail}</p>
+      <ul className="mt-2 grid gap-1">
+        {fieldReadiness.items.map((item) => (
+          <li
+            className="flex items-start gap-1.5 text-[10px]"
+            data-testid={`field-readiness-item-${item.id}`}
+            key={item.id}
+          >
+            <span className={`mt-0.5 shrink-0 ${item.passed ? 'text-emerald-400' : 'text-rose-400'}`}>
+              {item.passed ? '✓' : '✗'}
+            </span>
+            <span className="text-stone-200">
+              <span className="font-semibold">{item.label}</span>
+              <span className="ml-1 text-stone-400">{item.detail}</span>
+            </span>
+          </li>
+        ))}
+      </ul>
+      {fieldReadiness.lastVerifiedAt !== null ? (
+        <p className="mt-1.5 text-[9px] text-stone-400" data-testid="field-readiness-last-verified">
+          Package verified: {new Date(fieldReadiness.lastVerifiedAt).toLocaleString('en-IE', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+        </p>
       ) : null}
     </div>
   )

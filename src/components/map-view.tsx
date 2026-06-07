@@ -10,6 +10,7 @@ import { MapDegradedAlert } from './map-degraded-alert'
 import { LeafletFallbackMapView } from './leaflet-fallback-map-view'
 import { getMapRendererMode } from '../features/map/map-renderer-mode'
 import { useFocusModeStore } from '../features/focus-mode/focus-mode-store'
+import { useFieldReadinessChecklist } from '../features/map/use-field-readiness-checklist'
 import { useOfflineMapCoverage } from '../features/map/use-offline-map-coverage'
 import { useMapController } from '../features/map/use-map-controller'
 import { useOfflineMapReadiness } from '../features/map/use-offline-map-readiness'
@@ -46,6 +47,7 @@ function MapLibreMapView() {
     activeBasemapId,
     mapRef,
   )
+  const fieldReadiness = useFieldReadinessChecklist(activeBasemapId, mapRef)
   const catalogueGroups = useOfficialMapCatalogueGroups()
 
   return (
@@ -54,6 +56,7 @@ function MapLibreMapView() {
         activeBasemapId={activeBasemapId}
         catalogueGroups={catalogueGroups}
         coverage={coverage}
+        fieldReadiness={fieldReadiness ?? undefined}
         mapHealth={mapHealth}
         offlineReadiness={offlineMapReadiness}
         onBasemapChange={handleBasemapChange}
