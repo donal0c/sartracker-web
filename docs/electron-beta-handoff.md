@@ -104,19 +104,23 @@ Before any tester receives an Electron artifact:
 2. Verified `sha256sum -c SHA256SUMS --ignore-missing` returned `OK`.
 3. Inspected the `.deb`: package `sartracker-web`, version `0.1.0~beta.3`,
    architecture `amd64`, expected Electron runtime dependencies.
-4. Extracted the `.deb` payload and launched the packaged app from
-   `opt/SAR Tracker Electron Validation/sartracker-web`.
-5. Ran the official offline map smoke with the private Reeks Discovery package.
+4. Installed the `.deb` with `sudo apt install`.
+5. Confirmed `dpkg -s sartracker-web` reports `install ok installed`, version
+   `0.1.0~beta.3`, architecture `amd64`.
+6. Launched the installed app from
+   `/opt/SAR Tracker Electron Validation/sartracker-web`.
+7. Ran the official offline map smoke with the private Reeks Discovery package.
 
 Result: packaged app launched, renderer HTTP/S was blocked, local Discovery
 tile reads worked, readiness was **Field ready** inside the package area,
 outside-area warning appeared, Settings showed the package ready, and
 diagnostics contained safe package metadata only.
 
-Limit: the literal `sudo apt install ./...deb` step was not run over SSH because
-the Ubuntu machine requires an interactive sudo password. The package payload
-and map workflow are validated; the privileged install prompt remains a normal
-tester-machine step.
+Evidence directory on Ubuntu:
+
+```text
+~/sartracker-release-smoke/electron-v0.1.0-beta.3/installed-smoke-evidence
+```
 
 ## Discovery Map Loading Instructions
 
