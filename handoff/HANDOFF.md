@@ -16,10 +16,11 @@ DON-142 (S2 Electron/S1 maps) — Electron beta handoff release and Discovery ma
 - Added `docs/electron-beta-handoff.md` as the active runbook for the current Electron app handoff, Discovery package loading, offline confidence checks, diagnostics, and private-data rules.
 - Updated `docs/releases/README.md` and `docs/releases/TEMPLATE.md` so future agents do not follow the obsolete Tauri beta path for Electron handoff.
 - Published GitHub prerelease `electron-v0.1.0-beta.3` with Linux `.deb`, Linux AppImage, macOS arm64 zip, and `SHA256SUMS`. Discovery maps are not included.
+- Tidy-up: `DON-142` closed; `DON-143` reparented to `DON-25`; `DON-115`, `DON-141`, and `DON-113` moved to Backlog while waiting for Windows/team feedback/admin-prep priority.
 
 ## What's Next
 
-For immediate team testing, share the GitHub prerelease URL `https://github.com/donal0c/sartracker-web/releases/tag/electron-v0.1.0-beta.3` and keep Discovery map packages separate. `DON-143` owns the durable GitHub Actions Electron release workflow. Finish `DON-115` with the Windows laptop smoke (`DON-141`) before claiming full cross-platform official-map handoff readiness. `DON-113` remains useful admin/back-office package preparation work, but it is not blocking the operator import/readiness release gate.
+Pause implementation while the team tests `https://github.com/donal0c/sartracker-web/releases/tag/electron-v0.1.0-beta.3`. If work resumes before feedback arrives, the next non-feedback chunk is `DON-143`: migrate/supersede the old Tauri GitHub release workflow with an Electron release workflow. `DON-115`/`DON-141` are parked until Windows is available. `DON-113` is useful admin package-prep work, but not a beta blocker.
 
 ## Traccar Test Details
 
