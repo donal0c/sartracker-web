@@ -209,7 +209,7 @@ This is the default order when the user says “work on the next task.”
 | Done | Official map package choice guardrails | S1 Maps | `DON-112` / `DON-7` | Done 2026-06-06. Package category classification (standard < 2 GB, mission-area 2–4 GB, national > 4 GB) with persistent badge and guidance on each manifest card. National packages show amber warning with admin-preparation language. Section description recommends standard package. Manual documents the policy. |
 | Parallel | Admin package preparation workflow for standard and mission-area official maps | S1 Maps | `DON-113` / `DON-7` | Can run in parallel with import work once package metadata expectations are clear. Productize the private conversion workflow for standard and mission-area packages. |
 | Done | Field-ready official map checklist and operator manual updates | S1 Maps / S2 Electron | `DON-114` / `DON-7` | Done 2026-06-07. Maps menu now gives a consolidated official-map field-readiness verdict for package registration, current-view coverage, fallback source status, and last verification; operator manual covers fresh Electron install through offline Discovery readiness, hosted-web limits, certificate export, and troubleshooting. |
-| Next | Cross-platform official map import release smoke | S1 Maps / S2 Electron | `DON-115` / `DON-7` | Final map release gate. Validate a downloaded packaged Electron app can import/register official maps and render offline on macOS, Windows, and Linux with sanitized evidence. |
+| In progress | Cross-platform official map import release smoke | S1 Maps / S2 Electron | `DON-115` / `DON-7` | macOS and Ubuntu 24.04 packaged Electron official-map smokes passed 2026-06-07 with renderer network blocked, private Reeks MBTiles package, local Discovery rendering, inside/outside readiness, Settings package status, and sanitized diagnostics. Windows remains the only unverified gate and must pass before closing. |
 | Backlog | Relief and slope overlay package conversion spike | S1 Maps / Overlays | `DON-116` / `DON-76` | Optional terrain overlay lane after basemap workflow. Keep out of the current map queue until Discovery basemap import is field-ready. |
 | Done | Linux runtime decision checkpoint | Track B / Runtime | `DON-29` / `DON-25` | Done 2026-06-06. Electron confirmed as production shell through incremental evidence (S8a→S8c). |
 | Done | Ongoing desktop runtime support plan | Track B / Release / Support | `DON-30` / `DON-25` | Done 2026-06-06. Policy at `docs/desktop-runtime-support-policy.md`. Covers OS matrix, packaging, update cadence, release channels, diagnostics, rollback, and operator guidance. |
@@ -1279,7 +1279,7 @@ Work sequence:
 - `DON-112` — package choice guardrails for standard Kerry/Reeks, mission-area, and national packages.
 - `DON-113` — admin package preparation workflow for standard and mission-area official maps.
 - `DON-114` — field-ready official map checklist and operator manual updates done 2026-06-07.
-- `DON-115` — cross-platform official map import release smoke on macOS, Windows, and Linux. Next map implementation task.
+- `DON-115` — cross-platform official map import release smoke on macOS, Windows, and Linux. In progress: macOS + Ubuntu passed 2026-06-07; Windows laptop smoke remains.
 - `DON-116` — optional relief/slope overlay package conversion spike.
 
 Acceptance:

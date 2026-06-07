@@ -12,15 +12,15 @@
 
 ## Last Work Done
 
-DON-114 (S1 maps) — field-ready official map checklist and operator manual updates:
-- Maps menu now includes a consolidated field-readiness checklist for official maps: package registered, current view covered, fallback source status, and last verified timestamp.
-- Checklist gives clear `Field ready`, `Partially ready`, or `Not field ready` language before operators rely on offline Discovery maps.
-- Operator manual now covers the fresh Electron install to offline Discovery readiness flow, package choices, app-owned storage, hosted-web public-map-only limits, certificate export, and troubleshooting without private paths or secrets.
-- Unit coverage added for ready, missing, invalid, public fallback, outside-bounds, no-bounds, source fallback, and verification timestamp states.
+DON-115 (S1 maps/S2 Electron) — cross-platform official map import release smoke, partial:
+- macOS packaged Electron smoke passed with the private Reeks/West Kerry Discovery MBTiles package, renderer network blocked, local official tile read, inside/outside coverage checks, field-readiness checklist, Settings package status, and sanitized diagnostics export.
+- Ubuntu 24.04 Dell packaged Electron smoke passed from a fresh Linux-built package on the active Wayland desktop with `--no-sandbox`: local official tile read, network-blocked Discovery rendering, inside/outside coverage checks, field-readiness checklist, Settings package status, and sanitized diagnostics export.
+- Linux artifacts from Ubuntu build: AppImage SHA256 `1ae8667f7d74eba9204162b9b91ac46defd7bb07a6c19d2381d60da0b55a2d07`; `.deb` SHA256 `20f3660a7b8ccc67cfbdd7c4d239e111a21c5c94517f39fd8e89928f5697c8ae`.
+- Evidence is local only under `tmp/don115-macos-official-map-offline/` and `tmp/don115-linux-official-map-offline/`; do not commit private map packages or screenshots unless explicitly sanitized for sharing.
 
 ## What's Next
 
-Next S1 map task: `DON-115` (cross-platform official map import release smoke). `DON-113` remains useful admin/back-office package preparation work, but it is not blocking the operator import/readiness release gate. S2 Electron: `DON-29` (runtime decision checkpoint) is Done — Electron confirmed as production shell. `DON-30` (ongoing support policy) is Done — policy at `docs/desktop-runtime-support-policy.md`.
+Finish `DON-115` with the Windows laptop smoke: build/install Windows Electron package, import the same private Discovery package through the UI, block network, prove inside/outside readiness, and export sanitized diagnostics. `DON-113` remains useful admin/back-office package preparation work, but it is not blocking the operator import/readiness release gate.
 
 ## Traccar Test Details
 
@@ -49,13 +49,9 @@ Next S1 map task: `DON-115` (cross-platform official map import release smoke). 
 
 ## Latest Verification
 
-- `npm run test -- tests/unit/field-readiness-checklist.test.ts tests/unit/basemap-switcher.test.ts` — 2 files / 24 tests passed
-- `npm run test` — 146 files / 824 tests passed
-- `npm run lint` — clean
-- `npm run build` — bundle budgets passed
-- `npx tsc --noEmit` — clean
-- `npm run test:backend` — 46 passed / 1 ignored
-- `npx playwright test tests/e2e/map.spec.ts --project=chromium` — 13 passed
+- macOS DON-115: `npm run electron:pack -- --mac --arm64` passed; `npm run electron:smoke:official-offline -- --app tmp/electron-dist/mac-arm64/SAR\ Tracker\ Electron\ Validation.app/Contents/MacOS/SAR\ Tracker\ Electron\ Validation --package <private Reeks MBTiles> --evidence-dir tmp/don115-macos-official-map-offline --platform darwin` passed.
+- Ubuntu DON-115: synced current repo to `donal@192.168.18.31:~/sartracker-don115-validation/repo`, ran `npm ci`, `npm run electron:dist:linux`, focused readiness unit tests, and `npm run electron:smoke:official-offline -- --app tmp/electron-dist/linux-unpacked/sartracker-web --package <private Reeks MBTiles> --evidence-dir tmp/don115-linux-official-map-offline --platform linux --app-arg --no-sandbox --app-arg --ozone-platform=wayland --app-arg --ignore-gpu-blocklist`.
+- Ubuntu focused tests: `npm run test -- tests/unit/field-readiness-checklist.test.ts tests/unit/basemap-switcher.test.ts` — 24 passed.
 
 ## Known Limits
 
