@@ -126,12 +126,32 @@ Evidence directory on Ubuntu:
 
 These are the operator-facing steps for the team.
 
+The current beta does **not** import the original USB/source files directly.
+The team must receive the prepared MBTiles package separately through a private
+channel.
+
+Do not tell testers to select these USB/source files in the app:
+
+- `Discovery_National.zip`
+- `Discovery_RGB_95pct_C70_high30.1953.tif`
+- `relief_byte.tif`
+- `Slope_30plus.tif`
+- `mountainrescue_org.txt`
+
+For this beta, give testers the prepared package:
+
+```text
+reeks-standard-60km-z16.mbtiles
+SHA256: e317fd016b02d88f0fdc0e4f97653a2c4758acc46779bad7ffb55ac2807b6589
+Coverage: Reeks / west Kerry standard operating area
+```
+
 1. Install or open the Electron app for your operating system.
-2. Keep the private Discovery MBTiles package on a USB drive, external disk, or
-   other private team storage. Do not email it publicly or upload it to GitHub.
+2. Keep `reeks-standard-60km-z16.mbtiles` on a USB drive, local disk, or other
+   private team storage. Do not email it publicly or upload it to GitHub.
 3. Open **Settings**.
 4. In **Official Maps**, choose **Add Discovery Package**.
-5. Select the private Discovery `.mbtiles` file.
+5. Select `reeks-standard-60km-z16.mbtiles`.
 6. Save Settings. The app imports the package into app-owned storage.
 7. Wait until the package card shows **READY**.
 8. Open **Maps** and choose **Discovery Topo**.
@@ -189,3 +209,10 @@ The target release flow is:
 The current `.github/workflows/release.yml` is still Tauri-era. Do not use it
 as the source of truth for Electron app handoff until it has been migrated or
 replaced under `DON-143`.
+
+## Open Workflow Gap
+
+`DON-144` owns the map-package distribution and raw-source packaging workflow.
+Operators should not be expected to convert raw USB files. Until that workflow
+is implemented, Donal/admin must prepare and privately distribute `.mbtiles`
+packages for testers.

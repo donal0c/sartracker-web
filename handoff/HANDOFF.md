@@ -17,10 +17,11 @@ DON-142 (S2 Electron/S1 maps) — Electron beta handoff release and Discovery ma
 - Updated `docs/releases/README.md` and `docs/releases/TEMPLATE.md` so future agents do not follow the obsolete Tauri beta path for Electron handoff.
 - Published GitHub prerelease `electron-v0.1.0-beta.3` with Linux `.deb`, Linux AppImage, macOS arm64 zip, and `SHA256SUMS`. Discovery maps are not included.
 - Tidy-up: `DON-142` closed; `DON-143` reparented to `DON-25`; `DON-115`, `DON-141`, and `DON-113` moved to Backlog while waiting for Windows/team feedback/admin-prep priority.
+- Team map handoff correction: the beta does not load raw USB/source files directly. Testers need the prepared private package `reeks-standard-60km-z16.mbtiles` (SHA256 `e317fd016b02d88f0fdc0e4f97653a2c4758acc46779bad7ffb55ac2807b6589`). `DON-144` owns private map-package distribution plus the future raw-source packaging workflow.
 
 ## What's Next
 
-Pause implementation while the team tests `https://github.com/donal0c/sartracker-web/releases/tag/electron-v0.1.0-beta.3`. If work resumes before feedback arrives, the next non-feedback chunk is `DON-143`: migrate/supersede the old Tauri GitHub release workflow with an Electron release workflow. `DON-115`/`DON-141` are parked until Windows is available. `DON-113` is useful admin package-prep work, but not a beta blocker.
+Immediate correction: send the team both the app link and the prepared `.mbtiles` package through private storage. Do not ask them to select `Discovery_National.zip`, `Discovery_RGB_95pct_C70_high30.1953.tif`, `relief_byte.tif`, `Slope_30plus.tif`, or `mountainrescue_org.txt` in the app. Next non-feedback chunks are `DON-144` (map package distribution/raw-source packaging workflow) and `DON-143` (Electron GitHub release workflow).
 
 ## Traccar Test Details
 
