@@ -1,8 +1,14 @@
 # SAR Tracker Desktop Beta Releases
 
-This directory holds the source-controlled record of every Tauri beta we share
-with the team. Hosted Vercel iteration has its own change cadence; this folder
-is exclusively for the desktop operational lane.
+This directory holds the source-controlled record of desktop beta releases we
+share with the team. Hosted Vercel iteration has its own change cadence; this
+folder is exclusively for the desktop operational lane.
+
+> **Current status:** Electron is now the production desktop shell. The older
+> Tauri release workflow and historical notes remain here for traceability, but
+> they are not the current handoff path. Use
+> `docs/electron-beta-handoff.md` for the active Electron app + Discovery map
+> loading process.
 
 ## Purpose
 
@@ -13,10 +19,26 @@ is exclusively for the desktop operational lane.
 - Keep evidence (verification reports, smoke notes, CI run links) close to
   the release note so that incidents can be traced after the fact.
 
-## Two Production Paths
+## Current Electron Handoff
 
-There are now **two** ways to produce a desktop beta. Both must end with a
-matching release note in this directory.
+For `DON-142`, the immediate Electron handoff is an internal validation drop:
+
+- Build Linux artifacts on Ubuntu with `npm run electron:dist:linux`.
+- Build macOS locally with `npm run electron:pack -- --mac --arm64`.
+- Generate checksums.
+- Share app artifacts only. Do not share private Discovery map packages through
+  GitHub.
+- Use `docs/electron-beta-handoff.md` as the team-facing runbook.
+- Keep `DON-115` open until the Windows official-map smoke (`DON-141`) passes.
+
+The preferred long-term handoff channel is GitHub Releases draft/prerelease for
+Electron app artifacts and `SHA256SUMS`, with private map packages distributed
+through a separate private team channel.
+
+## Historical Tauri Paths
+
+The following Tauri paths describe the old beta lane and should not be used for
+new Electron handoffs without first updating the workflow.
 
 ### Path A: CI-driven Linux + Windows release (default after B4)
 

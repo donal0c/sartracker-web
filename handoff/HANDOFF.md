@@ -12,15 +12,14 @@
 
 ## Last Work Done
 
-DON-115 (S1 maps/S2 Electron) — cross-platform official map import release smoke, partial:
-- macOS packaged Electron smoke passed with the private Reeks/West Kerry Discovery MBTiles package, renderer network blocked, local official tile read, inside/outside coverage checks, field-readiness checklist, Settings package status, and sanitized diagnostics export.
-- Ubuntu 24.04 Dell packaged Electron smoke passed from a fresh Linux-built package on the active Wayland desktop with `--no-sandbox`: local official tile read, network-blocked Discovery rendering, inside/outside coverage checks, field-readiness checklist, Settings package status, and sanitized diagnostics export.
-- Linux artifacts from Ubuntu build: AppImage SHA256 `1ae8667f7d74eba9204162b9b91ac46defd7bb07a6c19d2381d60da0b55a2d07`; `.deb` SHA256 `20f3660a7b8ccc67cfbdd7c4d239e111a21c5c94517f39fd8e89928f5697c8ae`.
-- Evidence is local only under `tmp/don115-macos-official-map-offline/` and `tmp/don115-linux-official-map-offline/`; do not commit private map packages or screenshots unless explicitly sanitized for sharing.
+DON-142 (S2 Electron/S1 maps) — Electron beta handoff release and Discovery map loading instructions:
+- Added `docs/electron-beta-handoff.md` as the active runbook for the current Electron app handoff, Discovery package loading, offline confidence checks, diagnostics, and private-data rules.
+- Updated `docs/releases/README.md` and `docs/releases/TEMPLATE.md` so future agents do not follow the obsolete Tauri beta path for Electron handoff.
+- Created local interim artifact bundle under `tmp/don142-electron-handoff/` with Linux AppImage, Linux `.deb`, macOS arm64 zip, and `SHA256SUMS`. These are not committed.
 
 ## What's Next
 
-Finish `DON-115` with the Windows laptop smoke: build/install Windows Electron package, import the same private Discovery package through the UI, block network, prove inside/outside readiness, and export sanitized diagnostics. `DON-113` remains useful admin/back-office package preparation work, but it is not blocking the operator import/readiness release gate.
+Decide whether to share the current Linux/macOS interim validation artifacts directly or wait for `DON-141` Windows smoke before publishing a GitHub draft/prerelease. Finish `DON-115` with the Windows laptop smoke before claiming full cross-platform official-map handoff readiness. `DON-113` remains useful admin/back-office package preparation work, but it is not blocking the operator import/readiness release gate.
 
 ## Traccar Test Details
 
@@ -45,13 +44,14 @@ Finish `DON-115` with the Windows laptop smoke: build/install Windows Electron p
 - **Lint:** `npm run lint`
 - **Type check:** `npx tsc --noEmit`
 - **Deploy:** push to `master` → Vercel auto-deploys to production
-- **Desktop beta:** tag `v*` → GitHub Actions release workflow → draft prerelease
+- **Electron handoff:** see `docs/electron-beta-handoff.md`; current GitHub release workflow is Tauri-era and must not be used for Electron artifacts until migrated.
 
 ## Latest Verification
 
 - macOS DON-115: `npm run electron:pack -- --mac --arm64` passed; `npm run electron:smoke:official-offline -- --app tmp/electron-dist/mac-arm64/SAR\ Tracker\ Electron\ Validation.app/Contents/MacOS/SAR\ Tracker\ Electron\ Validation --package <private Reeks MBTiles> --evidence-dir tmp/don115-macos-official-map-offline --platform darwin` passed.
 - Ubuntu DON-115: synced current repo to `donal@192.168.18.31:~/sartracker-don115-validation/repo`, ran `npm ci`, `npm run electron:dist:linux`, focused readiness unit tests, and `npm run electron:smoke:official-offline -- --app tmp/electron-dist/linux-unpacked/sartracker-web --package <private Reeks MBTiles> --evidence-dir tmp/don115-linux-official-map-offline --platform linux --app-arg --no-sandbox --app-arg --ozone-platform=wayland --app-arg --ignore-gpu-blocklist`.
 - Ubuntu focused tests: `npm run test -- tests/unit/field-readiness-checklist.test.ts tests/unit/basemap-switcher.test.ts` — 24 passed.
+- DON-142 artifact bundle: `tmp/don142-electron-handoff/SHA256SUMS` generated for Linux AppImage, Linux `.deb`, and macOS arm64 zip.
 
 ## Known Limits
 
@@ -67,6 +67,7 @@ Finish `DON-115` with the Windows laptop smoke: build/install Windows Electron p
 ## Planning Docs
 
 - `docs/two-track-execution-workplan.md` — canonical queue
+- `docs/electron-beta-handoff.md` — active Electron app handoff and Discovery map loading runbook
 - `docs/desktop-runtime-support-policy.md` — Electron runtime support, update cadence, release channels, diagnostics, rollback (DON-30)
 - `docs/hosted-browser-testing-plan.md` — deployment strategy
 - `docs/team-testing-feedback-loop.md` — tester instructions
