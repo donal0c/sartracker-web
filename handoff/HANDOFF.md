@@ -15,11 +15,11 @@
 DON-142 (S2 Electron/S1 maps) — Electron beta handoff release and Discovery map loading instructions:
 - Added `docs/electron-beta-handoff.md` as the active runbook for the current Electron app handoff, Discovery package loading, offline confidence checks, diagnostics, and private-data rules.
 - Updated `docs/releases/README.md` and `docs/releases/TEMPLATE.md` so future agents do not follow the obsolete Tauri beta path for Electron handoff.
-- Created local interim artifact bundle under `tmp/don142-electron-handoff/` with Linux AppImage, Linux `.deb`, macOS arm64 zip, and `SHA256SUMS`. These are not committed.
+- Published GitHub prerelease `electron-v0.1.0-beta.3` with Linux `.deb`, Linux AppImage, macOS arm64 zip, and `SHA256SUMS`. Discovery maps are not included.
 
 ## What's Next
 
-For immediate team testing, share the current Linux/macOS interim validation artifacts through a private/direct channel and keep Discovery map packages separate. `DON-143` now owns the durable Electron GitHub Releases workflow. Finish `DON-115` with the Windows laptop smoke (`DON-141`) before claiming full cross-platform official-map handoff readiness. `DON-113` remains useful admin/back-office package preparation work, but it is not blocking the operator import/readiness release gate.
+For immediate team testing, share the GitHub prerelease URL `https://github.com/donal0c/sartracker-web/releases/tag/electron-v0.1.0-beta.3` and keep Discovery map packages separate. `DON-143` owns the durable GitHub Actions Electron release workflow. Finish `DON-115` with the Windows laptop smoke (`DON-141`) before claiming full cross-platform official-map handoff readiness. `DON-113` remains useful admin/back-office package preparation work, but it is not blocking the operator import/readiness release gate.
 
 ## Traccar Test Details
 
@@ -44,7 +44,7 @@ For immediate team testing, share the current Linux/macOS interim validation art
 - **Lint:** `npm run lint`
 - **Type check:** `npx tsc --noEmit`
 - **Deploy:** push to `master` → Vercel auto-deploys to production
-- **Electron handoff:** see `docs/electron-beta-handoff.md`; current GitHub release workflow is Tauri-era and must not be used for Electron artifacts until migrated under `DON-143`.
+- **Electron handoff:** see `docs/electron-beta-handoff.md`; current team prerelease is `https://github.com/donal0c/sartracker-web/releases/tag/electron-v0.1.0-beta.3`. The automated GitHub release workflow is still Tauri-era until migrated under `DON-143`.
 
 ## Latest Verification
 

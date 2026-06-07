@@ -4,22 +4,28 @@
 > older Tauri beta release instructions for the operational desktop lane.
 >
 > **Linear:** `DON-142`
-> **Current state:** interim internal validation drop, not a stable field release
+> **Current state:** GitHub prerelease internal validation drop, not a stable field release
 
 ## Current Answer
 
-For the immediate team handoff, use the Electron artifacts produced and smoked
-locally/through the Ubuntu builder. They are not yet a fully published GitHub
-Release because the Windows official-map smoke remains open under `DON-141`.
-
-Current local artifact bundle:
+For the immediate team handoff, use the Electron prerelease uploaded to GitHub:
 
 ```text
-tmp/don142-electron-handoff/
-  sartracker-electron-validation_0.1.0-beta.3_linux_x86_64.AppImage
-  sartracker-electron-validation_0.1.0-beta.3_linux_amd64.deb
-  sartracker-electron-validation_0.1.0-beta.3_macos_arm64.zip
-  SHA256SUMS
+https://github.com/donal0c/sartracker-web/releases/tag/electron-v0.1.0-beta.3
+```
+
+This prerelease uses Electron artifacts produced and smoked locally/through the
+Ubuntu builder. It is not the final repeatable GitHub Actions release path
+because the Electron release workflow is still tracked under `DON-143` and the
+Windows official-map smoke remains open under `DON-141`.
+
+Uploaded prerelease assets:
+
+```text
+sartracker-electron-validation_0.1.0-beta.3_linux_x86_64.AppImage
+sartracker-electron-validation_0.1.0-beta.3_linux_amd64.deb
+sartracker-electron-validation_0.1.0-beta.3_macos_arm64.zip
+SHA256SUMS
 ```
 
 Checksums:
@@ -38,16 +44,19 @@ public GitHub release.
 
 Until `DON-141` proves Windows, treat this as an internal validation drop:
 
-- Linux testers: share the AppImage first. Use `.deb` for Ubuntu/Debian users
-  who want a normal install.
+- Linux testers: share the GitHub prerelease URL. Recommend the `.deb` for
+  Ubuntu/Debian users who want a normal install; use AppImage for a portable
+  no-install run.
 - macOS testers: share the zipped `.app` only if they are comfortable with
   unsigned internal builds and Gatekeeper warnings.
 - Windows testers: wait for `DON-141`.
 
-The preferred long-term channel is a GitHub draft/prerelease containing app
-artifacts and checksums only. The map package remains distributed through the
-team's private channel, not GitHub. The Electron-specific GitHub Releases
-workflow is tracked separately by `DON-143`.
+The preferred long-term channel is still a GitHub Actions-produced
+draft/prerelease containing app artifacts and checksums only. The current
+prerelease was uploaded manually from validated local/Linux artifacts so the
+team can start testing. The map package remains distributed through the team's
+private channel, not GitHub. The Electron-specific GitHub Releases workflow is
+tracked separately by `DON-143`.
 
 ## Build Commands
 
