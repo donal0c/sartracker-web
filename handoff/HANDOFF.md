@@ -8,24 +8,19 @@
 - **Hosted testing:** `https://sartracker-web.vercel.app/?missionHarness=1`
 - **Desktop:** Electron validation shell present (MapLibre + direct HTTPS Traccar). Tauri desktop routes Traccar through Rust `reqwest`.
 - **Browser mode:** testing/training only (sessionStorage, not operational persistence).
-- **Latest test counts:** 145 unit files / 804 tests; ~105 Playwright E2E; 46 backend tests.
+- **Latest test counts:** 146 unit files / 824 tests; ~105 Playwright E2E; 46 backend tests.
 
 ## Last Work Done
 
-DON-112 (S1 maps) — official map package choice guardrails:
-- New `classifyPackageCategory()` in `src/features/map/official-map-manifest.ts`: classifies packages as Standard (< 2 GB, recommended), Mission Area (2–4 GB), or National (> 4 GB, admin-prepared).
-- Settings UI shows a colour-coded category badge on each package manifest card (emerald/sky/amber).
-- National packages show a persistent amber warning panel with admin preparation guidance.
-- Standard packages show "Recommended for most operations" guidance.
-- Mission-area packages show "verify coverage matches the intended search area" guidance.
-- Section description updated to recommend the standard Kerry/West package first.
-- Operator manual updated with package category policy.
-- 11 new unit tests for category classification thresholds and guidance content.
-- E2E-validated: all three badges and guidance/warning panels render correctly in browser mode.
+DON-114 (S1 maps) — field-ready official map checklist and operator manual updates:
+- Maps menu now includes a consolidated field-readiness checklist for official maps: package registered, current view covered, fallback source status, and last verified timestamp.
+- Checklist gives clear `Field ready`, `Partially ready`, or `Not field ready` language before operators rely on offline Discovery maps.
+- Operator manual now covers the fresh Electron install to offline Discovery readiness flow, package choices, app-owned storage, hosted-web public-map-only limits, certificate export, and troubleshooting without private paths or secrets.
+- Unit coverage added for ready, missing, invalid, public fallback, outside-bounds, no-bounds, source fallback, and verification timestamp states.
 
 ## What's Next
 
-Next S1 map tasks: `DON-114` (field-ready official map checklist and operator manual updates) and `DON-115` (cross-platform official map import release smoke). S2 Electron: `DON-29` (runtime decision checkpoint) is Done — Electron confirmed as production shell. `DON-30` (ongoing support policy) is Done — policy at `docs/desktop-runtime-support-policy.md`.
+Next S1 map task: `DON-115` (cross-platform official map import release smoke). `DON-113` remains useful admin/back-office package preparation work, but it is not blocking the operator import/readiness release gate. S2 Electron: `DON-29` (runtime decision checkpoint) is Done — Electron confirmed as production shell. `DON-30` (ongoing support policy) is Done — policy at `docs/desktop-runtime-support-policy.md`.
 
 ## Traccar Test Details
 
@@ -54,18 +49,18 @@ Next S1 map tasks: `DON-114` (field-ready official map checklist and operator ma
 
 ## Latest Verification
 
-- `npm run test` — 145 files, 793 tests passed
+- `npm run test -- tests/unit/field-readiness-checklist.test.ts tests/unit/basemap-switcher.test.ts` — 2 files / 24 tests passed
+- `npm run test` — 146 files / 824 tests passed
 - `npm run lint` — clean
 - `npm run build` — bundle budgets passed
 - `npx tsc --noEmit` — clean
-- `npm run test:backend` — 46 passed
-- `npx playwright test --project=chromium` — 104 passed (1 pre-existing flake: breadcrumb trail mode)
-- Browser validation: manifest card rendering, coverage check inside/outside, certificate export — `output/don-111/`
+- `npm run test:backend` — 46 passed / 1 ignored
+- `npx playwright test tests/e2e/map.spec.ts --project=chromium` — 13 passed
 
 ## Known Limits
 
 - Browser mode is not durable for live incidents (no IndexedDB persistence, no filesystem).
-- Desktop/Tauri is the operational lane (SQLite, filesystem, diagnostics, GPX, offline maps).
+- Electron desktop is the operational lane (SQLite, filesystem, diagnostics, GPX, offline maps).
 - High-definition maps are local desktop packages only.
 - Pre-existing flake: `devices-workspace.spec.ts` breadcrumb trail mode test intermittently fails on map layer state assertions.
 
