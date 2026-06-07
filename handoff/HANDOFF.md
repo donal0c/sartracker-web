@@ -19,7 +19,7 @@ DON-142 (S2 Electron/S1 maps) — Electron beta handoff release and Discovery ma
 
 ## What's Next
 
-Decide whether to share the current Linux/macOS interim validation artifacts directly or wait for `DON-141` Windows smoke before publishing a GitHub draft/prerelease. Finish `DON-115` with the Windows laptop smoke before claiming full cross-platform official-map handoff readiness. `DON-113` remains useful admin/back-office package preparation work, but it is not blocking the operator import/readiness release gate.
+For immediate team testing, share the current Linux/macOS interim validation artifacts through a private/direct channel and keep Discovery map packages separate. `DON-143` now owns the durable Electron GitHub Releases workflow. Finish `DON-115` with the Windows laptop smoke (`DON-141`) before claiming full cross-platform official-map handoff readiness. `DON-113` remains useful admin/back-office package preparation work, but it is not blocking the operator import/readiness release gate.
 
 ## Traccar Test Details
 
@@ -44,7 +44,7 @@ Decide whether to share the current Linux/macOS interim validation artifacts dir
 - **Lint:** `npm run lint`
 - **Type check:** `npx tsc --noEmit`
 - **Deploy:** push to `master` → Vercel auto-deploys to production
-- **Electron handoff:** see `docs/electron-beta-handoff.md`; current GitHub release workflow is Tauri-era and must not be used for Electron artifacts until migrated.
+- **Electron handoff:** see `docs/electron-beta-handoff.md`; current GitHub release workflow is Tauri-era and must not be used for Electron artifacts until migrated under `DON-143`.
 
 ## Latest Verification
 

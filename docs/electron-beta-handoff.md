@@ -46,7 +46,8 @@ Until `DON-141` proves Windows, treat this as an internal validation drop:
 
 The preferred long-term channel is a GitHub draft/prerelease containing app
 artifacts and checksums only. The map package remains distributed through the
-team's private channel, not GitHub.
+team's private channel, not GitHub. The Electron-specific GitHub Releases
+workflow is tracked separately by `DON-143`.
 
 ## Build Commands
 
@@ -152,4 +153,4 @@ The target release flow is:
 
 The current `.github/workflows/release.yml` is still Tauri-era. Do not use it
 as the source of truth for Electron app handoff until it has been migrated or
-replaced.
+replaced under `DON-143`.
