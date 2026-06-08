@@ -404,7 +404,7 @@ export function CommandMast(props: {
                 event.currentTarget.hidden = true
                 event.currentTarget.nextElementSibling?.removeAttribute('hidden')
               }}
-              src="/brand/kmrt-logo.png"
+              src="./brand/kmrt-logo-compact.png"
             />
             <span className="font-mono text-[11px] font-black text-amber-200" hidden>
               MR
