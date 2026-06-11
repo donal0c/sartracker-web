@@ -87,6 +87,7 @@ function createElectronMock(
         mkdirSync(testUserDataPath, { recursive: true })
         return testUserDataPath
       }),
+      getVersion: vi.fn(() => '0.1.0-test'),
       on: vi.fn(),
       quit: vi.fn(),
       setPath: vi.fn(),
@@ -95,8 +96,10 @@ function createElectronMock(
     BrowserWindow: vi.fn(function MockBrowserWindow() {
       return {
         loadURL: vi.fn(() => Promise.resolve()),
+        webContents: { on: vi.fn() },
       }
     }),
+    crashReporter: { start: vi.fn() },
     dialog: {},
     ipcMain: { handle: vi.fn() },
     safeStorage: {

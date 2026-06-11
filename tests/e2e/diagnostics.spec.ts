@@ -95,6 +95,12 @@ test.describe('M21 diagnostics workspace', () => {
     await expect(page.getByTestId('diagnostics-feedback')).toContainText('Exported')
     await expect(page.getByTestId('diagnostics-export-path')).toContainText('diagnostics-report')
 
+    // The support bundle export reuses the diagnostics report in browser mode (no
+    // crash/runtime history) but must produce a distinct support-bundle file name.
+    await page.getByTestId('diagnostics-export-support-bundle').click()
+    await expect(page.getByTestId('diagnostics-feedback')).toContainText('support bundle')
+    await expect(page.getByTestId('diagnostics-export-path')).toContainText('support-bundle')
+
     await page.getByTestId('diagnostics-repair-layer-catalog').click()
     await expect(page.getByTestId('diagnostics-feedback')).toContainText('Layer catalog metadata reset')
 

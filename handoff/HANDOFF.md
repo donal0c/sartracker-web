@@ -8,9 +8,17 @@
 - **Hosted testing:** `https://sartracker-web.vercel.app/?missionHarness=1`
 - **Desktop:** Electron validation shell present (MapLibre + direct HTTPS Traccar). Tauri desktop routes Traccar through Rust `reqwest`.
 - **Browser mode:** testing/training only (sessionStorage, not operational persistence).
-- **Latest test counts:** 148 unit files / 831 tests; 106 standard Playwright E2E; 47 backend tests.
+- **Latest test counts:** 151 unit files / 843 tests; 106 standard Playwright E2E; 47 backend tests.
 
 ## Last Work Done
+
+DON-147 (S2 Electron, Feature) — Crash capture, runtime logging, and support-bundle export. Shipped the fully-verifiable core (per agreed "testable slice first" scope):
+- New `electron/runtime-log.cjs` (bounded JSON-line ring buffer, rotates to one `.1` backup, sanitizes secrets + home-path usernames) and `electron/crash-log.cjs` (capped structured crash log + clean-exit marker for unclean-shutdown detection). Both fully unit-tested.
+- `main.cjs` wires `crashReporter.start` (uploadToServer:false), `uncaughtException`/`unhandledRejection`/`render-process-gone` capture, logs `app_start`, and marks clean exit on `before-quit`.
+- `runtime-files.cjs` gained `exportSupportBundle` (environment snapshot + crash history + recent runtime log) + new IPC channels (`export-support-bundle`, `read-crash-recovery-state`) wired through `preload.cjs`.
+- Renderer: support-report store gained `exportSupportBundle`/`readCrashRecoveryState` (fall back to plain report in Tauri/browser); diagnostics runtime + UI gained an "Export Support Bundle" button and a dismissible unclean-shutdown banner. Manual documents the feature + per-platform crash/log file locations.
+- Verified: unit 843 (+12), chromium E2E 106 (incl. new diagnostics bundle assertion), lint+tsc clean, Playwright screenshot of the new button/feedback read & confirmed. No Rust touched (backend unchanged at 47).
+- **Follow-up not done:** real native minidump capture can only be confirmed by crashing a packaged build (same constraint as DON-146, ideally the Ubuntu box). JS-level crash capture + rotation/recovery logic are tested; the `crashReporter` minidump path is wired but unverified on a packaged build.
 
 DON-148 (S3 Web App, Bug) — Mission Review froze the UI on missions with large event counts (93k–193k events in the field; `device_updated` heartbeats from 33 devices polling every 10s dominated). Fixed at the query layer so the unbounded set never crosses IPC:
 - New `listAuditEvents(missionId, { includeTelemetry, limit })` on all three stores (Rust `persistence.rs`, Electron `mission-store.cjs`, browser harness) + Tauri command `list_audit_events` + auto-wired Electron channel. Telemetry (`device_updated`/`position_recorded`) excluded by default; newest-first, capped (default 500 / max 5000). `listMissionEvents` kept for export/archive.

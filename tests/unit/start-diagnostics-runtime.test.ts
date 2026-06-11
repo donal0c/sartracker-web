@@ -152,6 +152,75 @@ describe('startDiagnosticsRuntime', () => {
       }),
     )
   })
+  it('exports a support bundle under a distinct file name and surfaces the path', async () => {
+    const exportSupportBundle = vi.fn().mockResolvedValue('/tmp/diagnostics/support-bundle.txt')
+    const applyRuntime = vi.fn()
+    const runtime = await startDiagnosticsRuntime({
+      appVersion: '0.1.0',
+      getRuntimeKind: () => 'electron',
+      getUserAgent: () => 'SARTrackerTest/1.0',
+      getDependencySmoke: () => ({
+        hasMapLibre: true,
+        hasProj4: true,
+        hasTurf: true,
+        hasZustand: true,
+        hasTerraDraw: true,
+      }),
+      loadSettings: vi.fn().mockResolvedValue(createSettings()),
+      loadRuntimeBootstrapSettings: vi.fn().mockResolvedValue(createRuntimeBootstrap()),
+      missionStore: {
+        info: vi.fn().mockResolvedValue({
+          schema_version: 3,
+          database_path: '/tmp/mission-store.sqlite',
+          backup_path: '/tmp/mission-store.backup.sqlite',
+        }),
+        listMissions: vi.fn().mockResolvedValue([createMission()]),
+      },
+      layerCatalogStore: { clearMetadata: vi.fn() },
+      readMissionRuntime: () => ({
+        phase: 'active',
+        currentMission: createMission(),
+        recoverableMission: null,
+      }),
+      readMissionGovernanceRuntime: () => ({ governanceMission: null }),
+      readTrackingRuntime: () => ({
+        status: {
+          mode: 'online',
+          consecutiveFailures: 0,
+          recovered: false,
+          lastSuccessAt: '2026-04-11T01:00:00.000Z',
+          warning: null,
+        },
+        snapshot: { devices: [], positions: [], breadcrumbs: [] },
+      }),
+      readLayerCatalogRuntime: () => ({
+        missionId: 'mission-1',
+        metadataEntryCount: 4,
+        loading: false,
+        error: null,
+      }),
+      exportReport: vi.fn().mockResolvedValue('/tmp/diagnostics/report.txt'),
+      exportSupportBundle,
+      refreshLayerCatalogIfActive: vi.fn().mockResolvedValue(undefined),
+      applyRuntime,
+      now: () => new Date('2026-04-11T01:00:00.000Z'),
+    })
+
+    await runtime.load()
+    const exportPath = await runtime.exportSupportBundle()
+
+    expect(exportPath).toBe('/tmp/diagnostics/support-bundle.txt')
+    const [fileName] = exportSupportBundle.mock.calls[0]!
+    expect(fileName).toContain('support-bundle')
+    expect(fileName).toMatch(/\.txt$/)
+    expect(applyRuntime).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        exporting: false,
+        exportPath: '/tmp/diagnostics/support-bundle.txt',
+        feedback: expect.stringContaining('support bundle'),
+      }),
+    )
+  })
 })
 
 function createSettings(): AppSettings {

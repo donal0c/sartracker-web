@@ -27,6 +27,18 @@ export type ElectronOfficialMapTileResponse = {
   readonly bytesBase64: string
 }
 
+export type CrashRecoveryCrash = {
+  readonly ts: string
+  readonly kind: string
+  readonly summary: string
+  readonly detail?: string
+}
+
+export type CrashRecoveryState = {
+  readonly uncleanShutdown: boolean
+  readonly lastCrash: CrashRecoveryCrash | null
+}
+
 export type SarTrackerElectronBridge = {
   readonly loadAppSettings: () => Promise<AppSettings>
   readonly saveAppSettings: (input: AppSettingsDraft) => Promise<AppSettings>
@@ -43,6 +55,11 @@ export type SarTrackerElectronBridge = {
     readonly fileName: string
     readonly contents: string
   }) => Promise<string>
+  readonly exportSupportBundle?: (input: {
+    readonly fileName: string
+    readonly contents: string
+  }) => Promise<string>
+  readonly readCrashRecoveryState?: () => Promise<CrashRecoveryState>
   readonly chooseGpxFilePaths: () => Promise<readonly string[]>
   readonly chooseGpxDirectoryPath: () => Promise<string | null>
   readonly chooseOfficialMapSourceFilePath?: () => Promise<string | null>

@@ -2,6 +2,8 @@ import { useEffect, useMemo, useState } from 'react'
 
 import { useDiagnosticsStore } from '../features/diagnostics/diagnostics-store'
 import { useDiagnosticsWorkspaceStore } from '../features/diagnostics/diagnostics-workspace-store'
+import { readCrashRecoveryState } from '../infrastructure/support-report/tauri-support-report-store'
+import type { CrashRecoveryState } from '../types/electron-bridge'
 import { WorkspaceOverlay, WorkspaceHeader } from './workspace-overlay'
 
 const DIAGNOSTICS_WORKSPACE_TITLE_ID = 'diagnostics-workspace-title'
@@ -22,6 +24,7 @@ export function DiagnosticsWorkspace() {
   const runtimeFeedback = useDiagnosticsStore((state) => state.feedback)
   const exportPath = useDiagnosticsStore((state) => state.exportPath)
   const [localFeedback, setLocalFeedback] = useState<string | null>(null)
+  const [crashRecovery, setCrashRecovery] = useState<CrashRecoveryState | null>(null)
 
   useEffect(() => {
     if (!open || controller === null) {
@@ -30,6 +33,16 @@ export function DiagnosticsWorkspace() {
 
     setLocalFeedback(null)
     void controller.load()
+
+    let cancelled = false
+    void readCrashRecoveryState().then((state) => {
+      if (!cancelled) {
+        setCrashRecovery(state)
+      }
+    })
+    return () => {
+      cancelled = true
+    }
   }, [controller, open])
 
   const feedback = localFeedback ?? runtimeFeedback
@@ -50,6 +63,35 @@ export function DiagnosticsWorkspace() {
       />
 
       <div className="flex-1 overflow-y-auto px-6 py-6" data-testid="diagnostics-workspace">
+          {crashRecovery?.uncleanShutdown === true ? (
+            <section
+              className="mb-6 border border-amber-400/40 bg-amber-400/10 p-4"
+              data-testid="diagnostics-crash-recovery-notice"
+            >
+              <p className="text-[11px] font-bold uppercase tracking-wider text-amber-300">
+                Unexpected Shutdown Detected
+              </p>
+              <p className="mt-2 text-sm text-amber-100">
+                The app closed unexpectedly last time
+                {crashRecovery.lastCrash !== null
+                  ? ` (${crashRecovery.lastCrash.summary})`
+                  : ''}
+                . Export a support bundle to help us investigate.
+              </p>
+              <button
+                className="sar-button mt-3 px-4 py-2 text-sm font-semibold disabled:opacity-50"
+                data-testid="diagnostics-crash-recovery-export"
+                disabled={exporting || snapshot === null}
+                onClick={() => {
+                  setLocalFeedback(null)
+                  void controller?.exportSupportBundle()
+                }}
+                type="button"
+              >
+                {exporting ? 'Exporting...' : 'Export Support Bundle'}
+              </button>
+            </section>
+          ) : null}
           {loading || snapshot === null ? (
             <div className="sar-module p-5 text-sm text-stone-200">
               Loading diagnostics…
@@ -95,6 +137,18 @@ export function DiagnosticsWorkspace() {
                       type="button"
                     >
                       {exporting ? 'Exporting...' : 'Export Report'}
+                    </button>
+                    <button
+                      className="sar-button px-4 py-2 text-sm font-semibold disabled:opacity-50"
+                      data-testid="diagnostics-export-support-bundle"
+                      disabled={exporting || snapshot === null}
+                      onClick={() => {
+                        setLocalFeedback(null)
+                        void controller?.exportSupportBundle()
+                      }}
+                      type="button"
+                    >
+                      {exporting ? 'Exporting...' : 'Export Support Bundle'}
                     </button>
                     <button
                       className="border border-amber-400/40 bg-amber-400/10 px-4 py-2 text-sm font-semibold text-amber-100 transition hover:bg-amber-400/20 disabled:opacity-50"

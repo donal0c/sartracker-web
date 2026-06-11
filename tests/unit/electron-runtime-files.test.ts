@@ -20,6 +20,8 @@ const {
     }
     readonly platform: string
     readonly safeStorageBackend: () => string
+    readonly readRecentCrashes?: () => Promise<readonly unknown[]>
+    readonly readRecentLog?: () => Promise<readonly unknown[]>
       readonly loadSettings: () => Promise<{
         readonly dataSource: {
           readonly baseUrl: string
@@ -49,6 +51,10 @@ const {
     readonly readTrackingCache: () => Promise<string | null>
     readonly writeTrackingCache: (contents: string) => Promise<string>
     readonly exportDiagnosticsReport: (input: {
+      readonly fileName: string
+      readonly contents: string
+    }) => Promise<string>
+    readonly exportSupportBundle: (input: {
       readonly fileName: string
       readonly contents: string
     }) => Promise<string>
@@ -113,9 +119,65 @@ describe('electron runtime files', () => {
     }
   })
 
-  async function createRuntimeFiles() {
+  it('exports a support bundle combining environment, crash history, and recent runtime log', async () => {
+    const files = await createRuntimeFiles({
+      readRecentCrashes: async () => [
+        { ts: '2026-06-09T21:58:00.000Z', kind: 'render-process-gone', summary: 'crashed (exit 139)' },
+        { ts: '2026-06-09T22:01:00.000Z', kind: 'uncaughtException', summary: 'TypeError: boom' },
+      ],
+      readRecentLog: async () => [
+        { ts: '2026-06-09T21:50:00.000Z', level: 'info', event: 'app_start', version: '0.1.0-beta.3' },
+        { ts: '2026-06-09T21:55:00.000Z', level: 'warn', event: 'tracking_disconnected' },
+      ],
+    })
+
+    const exportPath = await files.exportSupportBundle({
+      fileName: 'support-bundle.txt',
+      contents: ['Diagnostics Report', 'provider url: https://kmrtsar.eu'].join('\n'),
+    })
+
+    expect(exportPath).toBe(path.join(userDataPath!, 'diagnostics-reports', 'support-bundle.txt'))
+    const bundle = await readFile(exportPath, 'utf8')
+    // Environment snapshot section is reused from the diagnostics report.
+    expect(bundle).toContain('[electron]')
+    expect(bundle).toContain('electron: 40.10.0')
+    expect(bundle).toContain('provider url: https://kmrtsar.eu')
+    // Crash history section.
+    expect(bundle).toContain('[crash-history]')
+    expect(bundle).toContain('crash count: 2')
+    expect(bundle).toContain('render-process-gone')
+    expect(bundle).toContain('TypeError: boom')
+    // Runtime log section.
+    expect(bundle).toContain('[runtime-log]')
+    expect(bundle).toContain('app_start')
+    expect(bundle).toContain('tracking_disconnected')
+  })
+
+  it('exports a support bundle with explicit empty sections when no logs exist', async () => {
+    const files = await createRuntimeFiles()
+
+    const exportPath = await files.exportSupportBundle({
+      fileName: 'support-bundle.txt',
+      contents: 'Diagnostics Report',
+    })
+
+    const bundle = await readFile(exportPath, 'utf8')
+    expect(bundle).toContain('[crash-history]')
+    expect(bundle).toContain('crash count: 0')
+    expect(bundle).toContain('[runtime-log]')
+    expect(bundle).toContain('no runtime log entries recorded')
+  })
+
+  async function createRuntimeFiles(
+    logOverrides: {
+      readonly readRecentCrashes?: () => Promise<readonly unknown[]>
+      readonly readRecentLog?: () => Promise<readonly unknown[]>
+    } = {},
+  ) {
     userDataPath = await mkdtemp(path.join(tmpdir(), 'sartracker-electron-runtime-'))
     return createElectronRuntimeFiles({
+      readRecentCrashes: logOverrides.readRecentCrashes,
+      readRecentLog: logOverrides.readRecentLog,
       userDataPath,
       versions: {
         electron: '40.10.0',

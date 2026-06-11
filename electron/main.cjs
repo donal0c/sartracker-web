@@ -1,4 +1,13 @@
-const { app, BrowserWindow, dialog, ipcMain, safeStorage, session, shell } = require('electron')
+const {
+  app,
+  BrowserWindow,
+  crashReporter,
+  dialog,
+  ipcMain,
+  safeStorage,
+  session,
+  shell,
+} = require('electron')
 const path = require('node:path')
 const { pathToFileURL } = require('node:url')
 
@@ -7,6 +16,8 @@ const { createElectronRuntimeFiles } = require('./runtime-files.cjs')
 const { createElectronMissionStore } = require('./mission-store.cjs')
 const { createElectronFileSystem } = require('./file-system.cjs')
 const { createElectronOfficialMapProxy } = require('./official-map-proxy.cjs')
+const { createRuntimeLog } = require('./runtime-log.cjs')
+const { createCrashLog } = require('./crash-log.cjs')
 
 const TRACCAR_REQUEST_CHANNEL = 'sartracker:traccar-http-request'
 const LOAD_SETTINGS_CHANNEL = 'sartracker:load-app-settings'
@@ -16,6 +27,8 @@ const LOAD_RUNTIME_BOOTSTRAP_CHANNEL = 'sartracker:load-runtime-bootstrap-settin
 const READ_TRACKING_CACHE_CHANNEL = 'sartracker:read-tracking-cache'
 const WRITE_TRACKING_CACHE_CHANNEL = 'sartracker:write-tracking-cache'
 const EXPORT_DIAGNOSTICS_REPORT_CHANNEL = 'sartracker:export-diagnostics-report'
+const EXPORT_SUPPORT_BUNDLE_CHANNEL = 'sartracker:export-support-bundle'
+const READ_CRASH_RECOVERY_STATE_CHANNEL = 'sartracker:read-crash-recovery-state'
 const CHOOSE_GPX_FILE_PATHS_CHANNEL = 'sartracker:choose-gpx-file-paths'
 const CHOOSE_GPX_DIRECTORY_PATH_CHANNEL = 'sartracker:choose-gpx-directory-path'
 const CHOOSE_OFFICIAL_MAP_SOURCE_FILE_PATH_CHANNEL = 'sartracker:choose-official-map-source-file-path'
@@ -101,7 +114,7 @@ function configureLinuxSecretStorage() {
 /**
  * Creates the main SAR Tracker Electron validation window.
  */
-async function createWindow() {
+async function createWindow(crashLog, runtimeLog) {
   const window = new BrowserWindow({
     width: 1440,
     height: 900,
@@ -116,6 +129,22 @@ async function createWindow() {
       sandbox: true,
     },
   })
+
+  if (crashLog !== undefined) {
+    // A renderer crash leaves the operator with a blank or frozen window; record
+    // it so the next launch can surface a recovery notice with the exit reason.
+    window.webContents.on('render-process-gone', (_event, details) => {
+      const summary = `renderer ${details?.reason ?? 'gone'}${
+        typeof details?.exitCode === 'number' ? ` (exit ${details.exitCode})` : ''
+      }`
+      void crashLog.record({ kind: 'render-process-gone', summary })
+      void runtimeLog?.append({
+        level: 'error',
+        event: 'render_process_gone',
+        fields: { reason: details?.reason ?? 'unknown', exitCode: details?.exitCode ?? null },
+      })
+    })
+  }
 
   const rendererUrl = process.env.ELECTRON_RENDERER_URL
   if (rendererUrl !== undefined && rendererUrl.trim() !== '') {
@@ -142,6 +171,54 @@ function addValidationQueryIfRequested(url) {
   if (process.env.SARTRACKER_ELECTRON_VALIDATION_HARNESS === '1') {
     url.searchParams.set('missionHarness', '1')
   }
+}
+
+/**
+ * Installs crash and unhandled-error capture for the main process.
+ *
+ * Native minidumps are written by Electron's crashReporter to `userData/crashes/`;
+ * JavaScript-level faults (uncaught exceptions, unhandled rejections) are recorded as
+ * structured entries so an operator can export them without crash-file archaeology.
+ */
+function installCrashCapture(crashLog, runtimeLog) {
+  try {
+    crashReporter.start({
+      productName: 'SAR Tracker',
+      companyName: 'Kerry Mountain Rescue',
+      submitURL: '',
+      uploadToServer: false,
+      compress: true,
+    })
+  } catch {
+    // crashReporter is unavailable in some headless/test contexts; structured
+    // JS-level capture below still works regardless.
+  }
+
+  process.on('uncaughtException', (error) => {
+    void crashLog.record({
+      kind: 'uncaughtException',
+      summary: error?.message ? `${error.name}: ${error.message}` : 'Uncaught exception',
+      detail: typeof error?.stack === 'string' ? error.stack : undefined,
+    })
+    void runtimeLog.append({
+      level: 'error',
+      event: 'uncaught_exception',
+      fields: { name: error?.name ?? 'Error' },
+    })
+  })
+
+  process.on('unhandledRejection', (reason) => {
+    const message =
+      reason instanceof Error
+        ? `${reason.name}: ${reason.message}`
+        : `Unhandled rejection: ${String(reason)}`
+    void crashLog.record({
+      kind: 'unhandledRejection',
+      summary: message,
+      detail: reason instanceof Error && typeof reason.stack === 'string' ? reason.stack : undefined,
+    })
+    void runtimeLog.append({ level: 'error', event: 'unhandled_rejection' })
+  })
 }
 
 /**
@@ -196,7 +273,14 @@ async function handleTraccarHttpRequest(event, input) {
 /**
  * Registers the narrow Electron IPC surface used by the renderer.
  */
-function registerIpcHandlers(settingsStore, runtimeFiles, missionStore, fileSystem, officialMapProxy) {
+function registerIpcHandlers(
+  settingsStore,
+  runtimeFiles,
+  missionStore,
+  fileSystem,
+  officialMapProxy,
+  crashLog,
+) {
   ipcMain.handle(TRACCAR_REQUEST_CHANNEL, handleTraccarHttpRequest)
   ipcMain.handle(LOAD_SETTINGS_CHANNEL, (event) => {
     validateIpcSender(event)
@@ -231,6 +315,24 @@ function registerIpcHandlers(settingsStore, runtimeFiles, missionStore, fileSyst
       throw new Error('Diagnostics export payload is invalid.')
     }
     return runtimeFiles.exportDiagnosticsReport(input)
+  })
+  ipcMain.handle(EXPORT_SUPPORT_BUNDLE_CHANNEL, (event, input) => {
+    validateIpcSender(event)
+    if (typeof input !== 'object' || input === null) {
+      throw new Error('Support bundle export payload is invalid.')
+    }
+    return runtimeFiles.exportSupportBundle(input)
+  })
+  ipcMain.handle(READ_CRASH_RECOVERY_STATE_CHANNEL, async (event) => {
+    validateIpcSender(event)
+    const [uncleanShutdown, recentCrashes] = await Promise.all([
+      crashLog.hadUncleanShutdown(),
+      crashLog.readRecent(1),
+    ])
+    return {
+      uncleanShutdown,
+      lastCrash: recentCrashes[recentCrashes.length - 1] ?? null,
+    }
   })
   ipcMain.handle(CHOOSE_GPX_FILE_PATHS_CHANNEL, (event) => {
     validateIpcSender(event)
@@ -415,12 +517,25 @@ function normalizeTimeout(value) {
 
 app.whenReady().then(async () => {
   installValidationNetworkBlock()
+  const userDataPath = app.getPath('userData')
+  const runtimeLog = createRuntimeLog({ userDataPath })
+  const crashLog = createCrashLog({ userDataPath })
+  installCrashCapture(crashLog, runtimeLog)
+  void runtimeLog.append({
+    level: 'info',
+    event: 'app_start',
+    fields: {
+      version: app.getVersion(),
+      platform: process.platform,
+      electron: process.versions.electron,
+    },
+  })
   const settingsStore = createElectronSettingsStore({
-    userDataPath: app.getPath('userData'),
+    userDataPath,
     safeStorage,
   })
   const runtimeFiles = createElectronRuntimeFiles({
-    userDataPath: app.getPath('userData'),
+    userDataPath,
     versions: process.versions,
     platform: process.platform,
     safeStorageBackend: () =>
@@ -428,6 +543,8 @@ app.whenReady().then(async () => {
         ? safeStorage.getSelectedStorageBackend()
         : 'unavailable',
     loadSettings: settingsStore.loadAppSettings,
+    readRecentCrashes: () => crashLog.readRecent(10),
+    readRecentLog: () => runtimeLog.readRecent(1000),
   })
   const missionStore = createElectronMissionStore({
     userDataPath: app.getPath('userData'),
@@ -446,8 +563,21 @@ app.whenReady().then(async () => {
     fetch,
     loadSettings: settingsStore.loadAppSettings,
   })
-  registerIpcHandlers(settingsStore, runtimeFiles, missionStore, fileSystem, officialMapProxy)
-  await createWindow()
+  registerIpcHandlers(
+    settingsStore,
+    runtimeFiles,
+    missionStore,
+    fileSystem,
+    officialMapProxy,
+    crashLog,
+  )
+  await createWindow(crashLog, runtimeLog)
+
+  app.on('before-quit', () => {
+    // Record an intentional shutdown so the next launch does not show a false
+    // crash-recovery notice. Best-effort; never block quit on it.
+    void crashLog.markCleanExit()
+  })
 })
 
 app.on('window-all-closed', () => {

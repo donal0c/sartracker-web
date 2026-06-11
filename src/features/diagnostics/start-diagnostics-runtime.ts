@@ -42,6 +42,11 @@ type StartDiagnosticsRuntimeDependencies = {
     readonly error: string | null
   }
   readonly exportReport: (fileName: string, contents: string) => Promise<string>
+  /**
+   * Exports a support bundle (environment + crash history + runtime log). Optional:
+   * runtimes without crash/log history fall back to the plain diagnostics report.
+   */
+  readonly exportSupportBundle?: (fileName: string, contents: string) => Promise<string>
   readonly refreshLayerCatalogIfActive: (missionId: string) => Promise<void>
   readonly applyRuntime: (runtime: DiagnosticsRuntimeState) => void
   readonly now?: () => Date
@@ -138,6 +143,45 @@ export async function startDiagnosticsRuntime(
           ...state,
           exporting: false,
           error: toErrorMessage(error, 'Diagnostics report export failed.'),
+        }
+        publishRuntime()
+        throw error
+      }
+    },
+    exportSupportBundle: async () => {
+      const snapshot = state.snapshot
+      if (snapshot === null) {
+        return null
+      }
+
+      state = {
+        ...state,
+        exporting: true,
+        error: null,
+        feedback: null,
+      }
+      publishRuntime()
+
+      try {
+        const exportBundle = dependencies.exportSupportBundle ?? dependencies.exportReport
+        const fileName = snapshot.reportFileName.replace(
+          /^diagnostics-report-/,
+          'support-bundle-',
+        )
+        const exportPath = await exportBundle(fileName, snapshot.supportReport)
+        state = {
+          ...state,
+          exporting: false,
+          exportPath,
+          feedback: `Exported support bundle to ${exportPath}`,
+        }
+        publishRuntime()
+        return exportPath
+      } catch (error) {
+        state = {
+          ...state,
+          exporting: false,
+          error: toErrorMessage(error, 'Support bundle export failed.'),
         }
         publishRuntime()
         throw error

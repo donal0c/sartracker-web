@@ -4,7 +4,10 @@ import { createTauriLayerCatalogStore } from '../../infrastructure/layer-catalog
 import { createElectronLayerCatalogStore } from '../../infrastructure/layer-catalog-store/electron-layer-catalog-store'
 import { getBrowserHarnessLayerCatalogStore } from '../browser-validation/browser-harness-layer-catalog-store'
 import { getBrowserHarnessStore } from '../browser-validation/browser-harness-store'
-import { exportDiagnosticsReport } from '../../infrastructure/support-report/tauri-support-report-store'
+import {
+  exportDiagnosticsReport,
+  exportSupportBundle,
+} from '../../infrastructure/support-report/tauri-support-report-store'
 import { createElectronMissionStore } from '../../infrastructure/mission-store/electron-mission-store'
 import { createTauriMissionStore } from '../../infrastructure/mission-store/tauri-mission-store'
 import { loadAppSettings, loadRuntimeBootstrapSettings } from '../../infrastructure/settings-store/tauri-settings-store'
@@ -85,6 +88,7 @@ export function DiagnosticsRuntimeBridge() {
         }
       },
       exportReport: exportDiagnosticsReport,
+      exportSupportBundle,
       refreshLayerCatalogIfActive: async (targetMissionId) => {
         const layerCatalogController = useLayerCatalogStore.getState().controller
         const missionId = useMissionStore.getState().currentMission?.id ?? null

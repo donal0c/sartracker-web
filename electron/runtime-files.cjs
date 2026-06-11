@@ -21,10 +21,16 @@ function createElectronRuntimeFiles(options) {
   const userDataPath = options.userDataPath
   const trackingCachePath = path.join(userDataPath, TRACKING_CACHE_FILE_NAME)
 
+  const readRecentCrashes =
+    typeof options.readRecentCrashes === 'function' ? options.readRecentCrashes : async () => []
+  const readRecentLog =
+    typeof options.readRecentLog === 'function' ? options.readRecentLog : async () => []
+
   return {
     readTrackingCache,
     writeTrackingCache,
     exportDiagnosticsReport,
+    exportSupportBundle,
   }
 
   async function readTrackingCache() {
@@ -44,20 +50,76 @@ function createElectronRuntimeFiles(options) {
   }
 
   async function exportDiagnosticsReport(input) {
-    const fileName = sanitizeReportFileName(input.fileName)
-    const reportPath = path.join(userDataPath, DIAGNOSTICS_DIR_NAME, fileName)
+    return writeReport(input.fileName, await buildReport(input.contents))
+  }
+
+  async function exportSupportBundle(input) {
+    const [report, crashes, logEntries] = await Promise.all([
+      buildReport(input.contents),
+      readRecentCrashes().catch(() => []),
+      readRecentLog().catch(() => []),
+    ])
+    const bundle = [
+      report,
+      formatCrashHistory(crashes),
+      '',
+      formatRuntimeLog(logEntries),
+      '',
+    ].join('\n')
+    return writeReport(input.fileName, bundle)
+  }
+
+  async function buildReport(contents) {
     const settings = await options.loadSettings()
-    const report = buildElectronDiagnosticsReport({
-      contents: input.contents,
+    return buildElectronDiagnosticsReport({
+      contents,
       settings,
       versions: options.versions,
       platform: options.platform,
       userDataPath,
       safeStorageBackend: options.safeStorageBackend(),
     })
-    await writeTextAtomically(reportPath, report)
+  }
+
+  async function writeReport(fileName, contents) {
+    const safeName = sanitizeReportFileName(fileName)
+    const reportPath = path.join(userDataPath, DIAGNOSTICS_DIR_NAME, safeName)
+    await writeTextAtomically(reportPath, contents)
     return reportPath
   }
+}
+
+function formatCrashHistory(crashes) {
+  const entries = Array.isArray(crashes) ? crashes : []
+  const lines = ['[crash-history]', `crash count: ${entries.length}`]
+  if (entries.length === 0) {
+    lines.push('no crashes recorded since last clean exit')
+    return lines.join('\n')
+  }
+  for (const crash of entries) {
+    const ts = readDiagnosticsValue(crash?.ts, 'unknown-time')
+    const kind = readDiagnosticsValue(crash?.kind, 'unknown')
+    const summary = readDiagnosticsValue(crash?.summary, '(no summary)')
+    lines.push(`${ts} ${kind}: ${summary}`)
+    const detail = readDiagnosticsValue(crash?.detail, '')
+    if (detail !== '') {
+      lines.push(`  detail: ${detail}`)
+    }
+  }
+  return lines.join('\n')
+}
+
+function formatRuntimeLog(logEntries) {
+  const entries = Array.isArray(logEntries) ? logEntries : []
+  const lines = ['[runtime-log]']
+  if (entries.length === 0) {
+    lines.push('no runtime log entries recorded')
+    return lines.join('\n')
+  }
+  for (const entry of entries) {
+    lines.push(redactSecrets(JSON.stringify(entry)))
+  }
+  return lines.join('\n')
 }
 
 function buildElectronDiagnosticsReport(input) {

@@ -18,6 +18,7 @@ export type DiagnosticsController = {
   readonly selectMission: (missionId: string) => Promise<void>
   readonly repairLayerCatalog: () => Promise<void>
   readonly exportSupportReport: () => Promise<string | null>
+  readonly exportSupportBundle: () => Promise<string | null>
   readonly clearFeedback: () => void
 }
 
