@@ -5,6 +5,25 @@ const CRASH_DIR_NAME = 'crashes'
 const CRASH_LOG_FILE_NAME = 'crash-log.json'
 const CLEAN_EXIT_FILE_NAME = 'last-clean-exit'
 const DEFAULT_MAX_ENTRIES = 10
+
+// `render-process-gone` fires on normal window teardown (`clean-exit`) as well as on
+// genuine faults. Only these reasons represent an actual crash worth recording.
+const RENDERER_FAULT_REASONS = new Set([
+  'crashed',
+  'oom',
+  'abnormal-exit',
+  'killed',
+  'launch-failed',
+  'integrity-failure',
+])
+
+/**
+ * Returns true only for `render-process-gone` reasons that represent a genuine fault,
+ * so normal renderer teardown (`clean-exit`) is never logged as a crash.
+ */
+function isRendererFaultReason(reason) {
+  return typeof reason === 'string' && RENDERER_FAULT_REASONS.has(reason)
+}
 const SECRET_TOKEN_PATTERN = /\b(password|secret|token|credential|api[-_]?key)\b\s*[:=]\s*\S+/gi
 
 /**
@@ -143,4 +162,5 @@ async function writeJsonAtomically(filePath, value) {
 
 module.exports = {
   createCrashLog,
+  isRendererFaultReason,
 }

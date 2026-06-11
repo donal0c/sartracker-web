@@ -6,12 +6,13 @@ import { createRequire } from 'node:module'
 import { afterEach, describe, expect, it } from 'vitest'
 
 const require = createRequire(import.meta.url)
-const { createCrashLog } = require('../../electron/crash-log.cjs') as {
+const { createCrashLog, isRendererFaultReason } = require('../../electron/crash-log.cjs') as {
   readonly createCrashLog: (options: {
     readonly userDataPath: string
     readonly maxEntries?: number
     readonly now?: () => string
   }) => CrashLog
+  readonly isRendererFaultReason: (reason: unknown) => boolean
 }
 
 type CrashEntry = {
@@ -93,6 +94,19 @@ describe('electron crash log', () => {
     // Marking a clean exit clears the flag again.
     await log.markCleanExit()
     await expect(log.hadUncleanShutdown()).resolves.toBe(false)
+  })
+
+  it('treats only genuine fault reasons as renderer crashes', () => {
+    // Normal teardown reasons must NOT be recorded as crashes.
+    expect(isRendererFaultReason('clean-exit')).toBe(false)
+    expect(isRendererFaultReason(undefined)).toBe(false)
+    expect(isRendererFaultReason(null)).toBe(false)
+    // Genuine fault reasons must be recorded.
+    expect(isRendererFaultReason('crashed')).toBe(true)
+    expect(isRendererFaultReason('oom')).toBe(true)
+    expect(isRendererFaultReason('abnormal-exit')).toBe(true)
+    expect(isRendererFaultReason('launch-failed')).toBe(true)
+    expect(isRendererFaultReason('integrity-failure')).toBe(true)
   })
 
   async function createLog(

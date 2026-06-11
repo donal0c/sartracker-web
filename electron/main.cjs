@@ -17,7 +17,7 @@ const { createElectronMissionStore } = require('./mission-store.cjs')
 const { createElectronFileSystem } = require('./file-system.cjs')
 const { createElectronOfficialMapProxy } = require('./official-map-proxy.cjs')
 const { createRuntimeLog } = require('./runtime-log.cjs')
-const { createCrashLog } = require('./crash-log.cjs')
+const { createCrashLog, isRendererFaultReason } = require('./crash-log.cjs')
 
 const TRACCAR_REQUEST_CHANNEL = 'sartracker:traccar-http-request'
 const LOAD_SETTINGS_CHANNEL = 'sartracker:load-app-settings'
@@ -134,6 +134,11 @@ async function createWindow(crashLog, runtimeLog) {
     // A renderer crash leaves the operator with a blank or frozen window; record
     // it so the next launch can surface a recovery notice with the exit reason.
     window.webContents.on('render-process-gone', (_event, details) => {
+      // `clean-exit` fires on normal window teardown; only record genuine faults so a
+      // normal quit never writes a spurious crash or trips the recovery notice.
+      if (!isRendererFaultReason(details?.reason)) {
+        return
+      }
       const summary = `renderer ${details?.reason ?? 'gone'}${
         typeof details?.exitCode === 'number' ? ` (exit ${details.exitCode})` : ''
       }`
