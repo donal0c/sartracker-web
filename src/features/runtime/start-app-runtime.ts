@@ -200,6 +200,7 @@ export async function startAppRuntime(
             const mission = useMissionStore.getState().currentMission
             return mission === null ? null : new Date(mission.start_time)
           },
+          getInitialBreadcrumbs: hooks.getInitialBreadcrumbs,
           onSnapshot: hooks.onSnapshot,
           onStatusChange: hooks.onStatusChange,
         }),

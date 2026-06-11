@@ -36,6 +36,7 @@ type PollingManagerOptions = {
   readonly getPollingMode?: () => 'active' | 'paused' | 'idle'
   readonly getHistoryResetKey?: () => string | null
   readonly getInitialBreadcrumbFrom?: () => Date | null
+  readonly getInitialBreadcrumbs?: () => Promise<readonly NormalizedTrackingPosition[]>
   readonly onSnapshot: (snapshot: TrackingSnapshot) => void
   readonly onStatusChange: (status: TrackingConnectionStatus) => void
   readonly logger?: PollingManagerLogger
@@ -78,6 +79,7 @@ export function createPollingManager(
   let lastSuccessAt: string | null = null
   let breadcrumbPositions: readonly NormalizedTrackingPosition[] = []
   let activeHistoryResetKey: string | null = null
+  let initialBreadcrumbsLoaded = false
   const latestBreadcrumbTimestampByDevice = new Map<string, string>()
 
   const publishStatus = (overrides: Partial<TrackingConnectionStatus> = {}) => {
@@ -116,6 +118,7 @@ export function createPollingManager(
       if (nextHistoryResetKey !== activeHistoryResetKey) {
         activeHistoryResetKey = nextHistoryResetKey
         breadcrumbPositions = []
+        initialBreadcrumbsLoaded = false
         latestBreadcrumbTimestampByDevice.clear()
         lastGoodSnapshot = null
       }
@@ -157,6 +160,8 @@ export function createPollingManager(
         scheduleNextPoll(options.intervalMs)
         return
       }
+
+      await seedInitialBreadcrumbs()
 
       const recovered = consecutiveFailures > 0
       consecutiveFailures = 0
@@ -272,6 +277,7 @@ export function createPollingManager(
     devices: readonly NormalizedTrackingDevice[],
   ): Promise<readonly NormalizedTrackingPosition[]> {
     const fetchUntil = now()
+    await seedInitialBreadcrumbs()
     const settled = await Promise.allSettled(
       devices.map(async (device) => {
         const lastTimestamp = latestBreadcrumbTimestampByDevice.get(device.device_id)
@@ -311,5 +317,41 @@ export function createPollingManager(
     }
 
     return aggregated
+  }
+
+  async function seedInitialBreadcrumbs(): Promise<void> {
+    if (
+      initialBreadcrumbsLoaded ||
+      options.getInitialBreadcrumbs === undefined
+    ) {
+      return
+    }
+
+    try {
+      const persistedBreadcrumbs = await options.getInitialBreadcrumbs()
+      breadcrumbPositions = appendBreadcrumbPositions(breadcrumbPositions, persistedBreadcrumbs)
+      seedLatestBreadcrumbTimestamps(persistedBreadcrumbs)
+      initialBreadcrumbsLoaded = true
+    } catch (error) {
+      logger.warn('Tracking breadcrumb cursor load failed.', {
+        error: error instanceof Error ? error.message : String(error),
+      })
+    }
+  }
+
+  function seedLatestBreadcrumbTimestamps(
+    breadcrumbs: readonly NormalizedTrackingPosition[],
+  ): void {
+    for (const breadcrumb of breadcrumbs) {
+      const timestampMs = Date.parse(breadcrumb.timestamp)
+      if (Number.isNaN(timestampMs)) {
+        continue
+      }
+
+      const existingTimestamp = latestBreadcrumbTimestampByDevice.get(breadcrumb.device_id)
+      if (existingTimestamp === undefined || timestampMs > Date.parse(existingTimestamp)) {
+        latestBreadcrumbTimestampByDevice.set(breadcrumb.device_id, breadcrumb.timestamp)
+      }
+    }
   }
 }

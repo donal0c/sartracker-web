@@ -204,6 +204,57 @@ describe('polling manager', () => {
     poller.stop()
   })
 
+  it('uses persisted breadcrumbs for the first history fetch and published trail', async () => {
+    const client = createClient({
+      getBreadcrumbs: vi.fn().mockResolvedValue([]),
+    })
+    const persistedBreadcrumbs = [
+      {
+        ...NORMALIZED_BREADCRUMBS[0]!,
+        device_id: '1',
+        timestamp: '2026-04-06T10:10:00.000Z',
+      },
+      {
+        ...NORMALIZED_BREADCRUMBS[1]!,
+        device_id: '2',
+        timestamp: '2026-04-06T10:20:00.000Z',
+      },
+    ] satisfies readonly NormalizedTrackingPosition[]
+    const onSnapshot = vi.fn()
+
+    const poller = createPollingManager(client, {
+      intervalMs: 5_000,
+      staleThresholdMs: 60 * 60 * 1000,
+      onSnapshot,
+      onStatusChange: vi.fn(),
+      getInitialBreadcrumbFrom: () => new Date('2026-04-06T07:00:00.000Z'),
+      getInitialBreadcrumbs: async () => persistedBreadcrumbs,
+      now: () => new Date('2026-04-06T10:35:00.000Z'),
+    })
+
+    poller.start()
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect(client.getBreadcrumbs).toHaveBeenCalledWith(
+      '1',
+      new Date('2026-04-06T10:10:01.000Z'),
+      expect.any(Date),
+    )
+    expect(client.getBreadcrumbs).toHaveBeenCalledWith(
+      '2',
+      new Date('2026-04-06T10:20:01.000Z'),
+      expect.any(Date),
+    )
+    expect(client.getBreadcrumbs).not.toHaveBeenCalledWith(
+      '1',
+      new Date('2026-04-06T07:00:00.000Z'),
+      expect.any(Date),
+    )
+    expect(onSnapshot.mock.calls[0]?.[0].breadcrumbs).toEqual(persistedBreadcrumbs)
+
+    poller.stop()
+  })
+
   it('marks aged live positions as stale in published snapshots', async () => {
     const client = createClient({
       getCurrentPositions: vi.fn().mockResolvedValue([

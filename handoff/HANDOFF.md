@@ -8,9 +8,16 @@
 - **Hosted testing:** `https://sartracker-web.vercel.app/?missionHarness=1`
 - **Desktop:** Electron validation shell present (MapLibre + direct HTTPS Traccar). Tauri desktop routes Traccar through Rust `reqwest`.
 - **Browser mode:** testing/training only (sessionStorage, not operational persistence).
-- **Latest test counts:** 151 unit files / 844 tests; 106 standard Playwright E2E; 47 backend tests.
+- **Latest test counts:** 149 unit files / 847 tests; 106 standard Playwright E2E; 47 backend tests.
 
 ## Last Work Done
+
+DON-151 (S2 Electron, Urgent Bug) — Electron launch slowed after tracking history accumulated on Ubuntu beta. Root cause was launch/poll-cycle tracking work, distinct from DON-148 Mission Review:
+- On restart, the UI could hydrate cached breadcrumbs, but the live poller fetched breadcrumbs from mission start for every device because its per-device cursors were not seeded from persisted mission positions. With 33 devices / 4.5k breadcrumbs / 5s polling this rebuilt history and the map overlay unnecessarily.
+- Each tracking snapshot also reloaded every persisted position from SQLite and re-deduped the full breadcrumb history, creating repeated main-process work during active tracking.
+- Fix: poller now accepts validated active-mission persisted breadcrumbs before first live history fetch, preserves the visible trail, and resumes per-device Traccar history from latest persisted timestamps. Runtime persistence now keeps a mission-scoped `device_id:timestamp` key cache and serializes snapshot persistence, so repeated snapshots do not re-query all positions.
+- Verified: `npm run test` (149/847), `npm run lint`, `npm run build`. Linear issue created: `DON-151`, In Review.
+- Not yet done: packaged Electron beta smoke/release. Next Electron build should include DON-147 + DON-148 + DON-151 before asking the team to retest Ubuntu.
 
 DON-147 — DONE & on-device verified (HEAD `4ad6673`). Crash capture, runtime logging, support-bundle export.
 - On-device verification on the Dell Ubuntu box (`192.168.18.31`, **24.04.2**, not 26.04): built packaged `.deb`/AppImage, confirmed `crashReporter` writes a real native minidump on main-process SIGSEGV (`Crashpad/pending/*.dmp`), JS `uncaughtException` writes a structured `crash-log.json`, unclean-shutdown flag sets/clears correctly, and `exportSupportBundle` assembles env+crash+log sections. Live-renderer crash not drivable headless (GPU process won't start over SSH) — renderer-fault logic is unit-tested instead.
@@ -41,7 +48,7 @@ DON-142 (S2 Electron/S1 maps) — Electron beta handoff release and Discovery ma
 
 ## What's Next
 
-Immediate correction: send the team both the app link and the prepared `.mbtiles` package through private storage. Do not ask them to select `Discovery_National.zip`, `Discovery_RGB_95pct_C70_high30.1953.tif`, `relief_byte.tif`, `Slope_30plus.tif`, or `mountainrescue_org.txt` in the app. Next non-feedback chunks are `DON-144` (map package distribution/raw-source packaging workflow) and `DON-143` (Electron GitHub release workflow).
+Next: package and smoke a new Electron beta containing DON-147, DON-148, and DON-151 before sending the team back to Ubuntu testing. After that, continue `DON-144` (private Discovery package distribution/raw-source packaging workflow) and `DON-143` (Electron GitHub release workflow).
 
 ## Traccar Test Details
 

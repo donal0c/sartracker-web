@@ -50,6 +50,7 @@ type CreateManagedRuntimeServicesDependencies = {
       hooks: {
         readonly onSnapshot: (snapshot: import('../tracking/tracking-types').TrackingSnapshot) => Promise<void>
         readonly onStatusChange: (status: import('../tracking/tracking-types').TrackingConnectionStatus) => void
+        readonly getInitialBreadcrumbs: () => Promise<readonly import('../tracking/tracking-types').NormalizedTrackingPosition[]>
       },
     ) => {
       readonly start: () => void
@@ -72,6 +73,7 @@ type CreateManagedRuntimeServicesDependencies = {
     hooks: {
       readonly onSnapshot: (snapshot: import('../tracking/tracking-types').TrackingSnapshot) => Promise<void>
       readonly onStatusChange: (status: import('../tracking/tracking-types').TrackingConnectionStatus) => void
+      readonly getInitialBreadcrumbs: () => Promise<readonly import('../tracking/tracking-types').NormalizedTrackingPosition[]>
     },
   ) => {
     readonly start: () => void

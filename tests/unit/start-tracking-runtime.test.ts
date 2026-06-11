@@ -272,6 +272,127 @@ describe('startTrackingRuntime', () => {
     )
   })
 
+  it('reuses persisted position keys across snapshots for the same active mission', async () => {
+    const listPositions = vi.fn().mockResolvedValue([
+      {
+        device_id: SNAPSHOT.positions[0].device_id,
+        timestamp: SNAPSHOT.positions[0].timestamp,
+      },
+    ])
+    const addPosition = vi.fn().mockResolvedValue(undefined)
+    let pollerHooks:
+      | {
+          onSnapshot: (snapshot: TrackingSnapshot) => void | Promise<void>
+          onStatusChange: (status: TrackingConnectionStatus) => void
+        }
+      | undefined
+
+    await startTrackingRuntime({
+      config: { baseUrl: 'http://test:8082' },
+      createClient: vi.fn().mockReturnValue({}),
+      createPoller: vi.fn().mockImplementation((_client, hooks) => {
+        pollerHooks = hooks
+        return { start: vi.fn(), stop: vi.fn() }
+      }),
+      cache: {
+        read: vi.fn().mockResolvedValue(null),
+        write: vi.fn().mockResolvedValue('/tmp/tracking-cache.json'),
+      },
+      missionStore: createMissionStoreStub({
+        getActiveMission: vi.fn().mockResolvedValue({ id: 'mission-1' }),
+        listPositions,
+        addPosition,
+      }),
+      applySnapshot: vi.fn(),
+      applyStatus: vi.fn(),
+      now: () => new Date('2026-04-06T10:35:00.000Z'),
+    })
+
+    await pollerHooks?.onSnapshot(SNAPSHOT)
+    await pollerHooks?.onSnapshot(SNAPSHOT)
+
+    expect(listPositions).toHaveBeenCalledTimes(1)
+    expect(addPosition).toHaveBeenCalledTimes(1)
+  })
+
+  it('provides persisted mission positions as initial poller breadcrumbs', async () => {
+    let pollerHooks:
+      | {
+          onSnapshot: (snapshot: TrackingSnapshot) => void | Promise<void>
+          onStatusChange: (status: TrackingConnectionStatus) => void
+          getInitialBreadcrumbs: () => Promise<readonly TrackingSnapshot['breadcrumbs'][number][]>
+        }
+      | undefined
+
+    await startTrackingRuntime({
+      config: { baseUrl: 'http://test:8082' },
+      createClient: vi.fn().mockReturnValue({}),
+      createPoller: vi.fn().mockImplementation((_client, hooks) => {
+        pollerHooks = hooks
+        return { start: vi.fn(), stop: vi.fn() }
+      }),
+      cache: {
+        read: vi.fn().mockResolvedValue(null),
+        write: vi.fn().mockResolvedValue('/tmp/tracking-cache.json'),
+      },
+      missionStore: createMissionStoreStub({
+        getActiveMission: vi.fn().mockResolvedValue({ id: 'mission-1' }),
+        listPositions: vi.fn().mockResolvedValue([
+          {
+            id: 'pos-1',
+            device_id: '1',
+            lat: 52.01,
+            lon: -9.01,
+            altitude: null,
+            speed: null,
+            battery: null,
+            accuracy: null,
+            source: 'traccar',
+            timestamp: '2026-04-06T10:05:00.000Z',
+            data_origin: 'live',
+          },
+          {
+            id: 'pos-2',
+            device_id: '2',
+            lat: 52.02,
+            lon: -9.02,
+            altitude: null,
+            speed: null,
+            battery: null,
+            accuracy: null,
+            source: 'traccar',
+            timestamp: '2026-04-06T10:03:00.000Z',
+            data_origin: 'cache',
+          },
+        ]),
+      }),
+      applySnapshot: vi.fn(),
+      applyStatus: vi.fn(),
+      now: () => new Date('2026-04-06T10:35:00.000Z'),
+    })
+
+    await expect(
+      pollerHooks?.getInitialBreadcrumbs(),
+    ).resolves.toEqual([
+      expect.objectContaining({
+        id: 'pos-1',
+        device_id: '1',
+        lat: 52.01,
+        lon: -9.01,
+        timestamp: '2026-04-06T10:05:00.000Z',
+        data_origin: 'live',
+      }),
+      expect.objectContaining({
+        id: 'pos-2',
+        device_id: '2',
+        lat: 52.02,
+        lon: -9.02,
+        timestamp: '2026-04-06T10:03:00.000Z',
+        data_origin: 'cache',
+      }),
+    ])
+  })
+
   it('keeps the live snapshot applied when cache and mission persistence side effects fail', async () => {
     const applySnapshot = vi.fn()
     const logger = { warn: vi.fn() }
