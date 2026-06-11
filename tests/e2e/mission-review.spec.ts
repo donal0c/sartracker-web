@@ -49,6 +49,34 @@ test.describe('M15 mission review workspace', () => {
     expect(openedPaths.some((path) => path.endsWith('.zip'))).toBe(true)
   })
 
+  test('hides tracking telemetry from the audit log by default and reveals it on toggle', async ({
+    page,
+  }) => {
+    await createMarker(page, { name: 'Boot Print', typeLabel: 'Clue', position: { x: 460, y: 260 } })
+    // Inject tracking positions — each one records a position_recorded telemetry event.
+    await injectTrackingSnapshot(page)
+
+    await page.getByTestId('open-mission-review-workspace').click()
+    await expect(page.getByTestId('mission-review-workspace')).toBeVisible()
+
+    const auditLog = page.getByTestId('mission-review-event-log')
+    await expect(auditLog).toBeVisible()
+
+    // Operator-meaningful events are shown; tracking telemetry is hidden by default.
+    await expect(auditLog).toContainText('Marker Created')
+    await expect(auditLog).not.toContainText('position_recorded')
+    await expect(auditLog).not.toContainText('device_updated')
+
+    // Enabling the toggle reloads the log with telemetry included.
+    await page.getByTestId('mission-review-telemetry-toggle').locator('input').check()
+    await expect(auditLog).toContainText('position_recorded')
+
+    // Disabling the toggle returns to the operator-only view.
+    await page.getByTestId('mission-review-telemetry-toggle').locator('input').uncheck()
+    await expect(auditLog).not.toContainText('position_recorded')
+    await expect(auditLog).toContainText('Marker Created')
+  })
+
   test('filters marker log rows and shows selected marker detail', async ({ page }) => {
     await createMarker(page, { name: 'Boot Print', typeLabel: 'Clue', position: { x: 440, y: 220 } })
     await createMarker(page, { name: 'Loose Scree', typeLabel: 'Hazard', position: { x: 560, y: 310 } })

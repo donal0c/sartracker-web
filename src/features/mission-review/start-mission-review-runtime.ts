@@ -6,12 +6,13 @@ import type {
 } from '../../infrastructure/mission-store/tauri-mission-store'
 import type { LayerCatalogStore } from '../../infrastructure/layer-catalog-store/tauri-layer-catalog-store'
 import { buildMissionReviewSnapshot, type MissionReviewSnapshot } from './mission-review-model'
+import { DEFAULT_AUDIT_EVENT_LIMIT } from './audit-events'
 
 type MissionReviewStoreBoundary = Pick<
   MissionStore,
   | 'info'
   | 'listMissions'
-  | 'listMissionEvents'
+  | 'listAuditEvents'
   | 'listMarkers'
   | 'listDevices'
   | 'listPositions'
@@ -27,12 +28,18 @@ export type MissionReviewRuntimeState = {
   readonly loading: boolean
   readonly refreshing: boolean
   readonly error: string | null
+  /** Whether high-volume tracking telemetry is included in the audit log. */
+  readonly includeTelemetry: boolean
+  /** True when the audit log was capped and older events are not shown. */
+  readonly auditLogTruncated: boolean
 }
 
 export type MissionReviewController = {
   readonly load: (preferredMissionId?: string | null) => Promise<void>
   readonly selectMission: (missionId: string) => Promise<void>
   readonly refreshSelectedMission: () => Promise<void>
+  /** Reloads the selected mission with telemetry events shown or hidden. */
+  readonly setIncludeTelemetry: (includeTelemetry: boolean) => Promise<void>
 }
 
 type StartMissionReviewRuntimeDependencies = {
@@ -48,6 +55,8 @@ const EMPTY_RUNTIME: MissionReviewRuntimeState = {
   loading: false,
   refreshing: false,
   error: null,
+  includeTelemetry: false,
+  auditLogTruncated: false,
 }
 
 export async function startMissionReviewRuntime(
@@ -66,6 +75,10 @@ export async function startMissionReviewRuntime(
       await loadMission(missionId, true)
     },
     refreshSelectedMission: async () => {
+      await loadMission(state.selectedMissionId, true)
+    },
+    setIncludeTelemetry: async (includeTelemetry) => {
+      state = { ...state, includeTelemetry }
       await loadMission(state.selectedMissionId, true)
     },
   }
@@ -90,21 +103,28 @@ export async function startMissionReviewRuntime(
 
       if (selectedMission === null) {
         state = {
+          ...state,
           missions,
           selectedMissionId: null,
           snapshot: null,
           loading: false,
           refreshing: false,
           error: null,
+          auditLogTruncated: false,
         }
         publishIfCurrent(currentToken)
         return
       }
 
-      const [info, events, markers, devices, positions, drawings, helicopters, gpxImports, layerMetadata] =
+      // Request one extra event so a full page signals there is more history than shown.
+      const auditEventLimit = DEFAULT_AUDIT_EVENT_LIMIT
+      const [auditEvents, info, markers, devices, positions, drawings, helicopters, gpxImports, layerMetadata] =
         await Promise.all([
+          dependencies.missionStore.listAuditEvents(selectedMission.id, {
+            includeTelemetry: state.includeTelemetry,
+            limit: auditEventLimit + 1,
+          }),
           dependencies.missionStore.info(),
-          dependencies.missionStore.listMissionEvents(selectedMission.id),
           dependencies.missionStore.listMarkers(selectedMission.id),
           dependencies.missionStore.listDevices(selectedMission.id),
           dependencies.missionStore.listPositions(selectedMission.id),
@@ -116,7 +136,13 @@ export async function startMissionReviewRuntime(
           dependencies.layerCatalogStore.listMetadata(selectedMission.id),
         ])
 
+      const auditLogTruncated = auditEvents.length > auditEventLimit
+      // Stores return audit events newest-first and capped; the snapshot model expects
+      // chronological order, so trim to the page size and reverse to ascending.
+      const events = auditEvents.slice(0, auditEventLimit).slice().reverse()
+
       state = {
+        ...state,
         missions,
         selectedMissionId: selectedMission.id,
         snapshot: buildMissionReviewSnapshot({
@@ -134,6 +160,7 @@ export async function startMissionReviewRuntime(
         loading: false,
         refreshing: false,
         error: null,
+        auditLogTruncated,
       }
       publishIfCurrent(currentToken)
     } catch (error) {

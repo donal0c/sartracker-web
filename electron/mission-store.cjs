@@ -42,6 +42,7 @@ function createElectronMissionStore(options) {
     latestPositions: async (missionId) => latestPositions(db, missionId),
     listMissionEvents: async (missionId) =>
       all(db, 'SELECT * FROM mission_events WHERE mission_id = ? ORDER BY timestamp ASC, id ASC', missionId),
+    listAuditEvents: async (missionId, options) => listAuditEvents(db, missionId, options),
     upsertMarker: async (input) => upsertById(db, 'markers', input, markerDefaults),
     getMarker: async (markerId) => getById(db, 'markers', markerId, 'Marker'),
     listMarkers: async (missionId) =>
@@ -410,6 +411,55 @@ function latestPositions(db, missionId) {
     ) latest ON p.device_id = latest.device_id AND p.timestamp = latest.max_timestamp
     WHERE p.mission_id = ?
     ORDER BY p.device_id ASC`, missionId, missionId)
+}
+
+// High-volume tracking heartbeats excluded from the review audit log by default.
+// Mirrors src/features/mission-review/audit-events.ts (kept in sync by tests).
+const TELEMETRY_EVENT_TYPES = ['device_updated', 'position_recorded']
+const DEFAULT_AUDIT_EVENT_LIMIT = 500
+const MAX_AUDIT_EVENT_LIMIT = 5000
+
+/**
+ * Returns operator-meaningful mission events for the review audit log, ordered most
+ * recent first and capped, so a long mission never transfers an unbounded event set
+ * across IPC. Telemetry heartbeats are excluded unless `includeTelemetry` is set.
+ */
+function listAuditEvents(db, missionId, options) {
+  const includeTelemetry = options?.includeTelemetry === true
+  const requestedLimit = options?.limit
+  const limit = clampAuditLimit(requestedLimit)
+
+  if (includeTelemetry) {
+    return all(
+      db,
+      'SELECT * FROM mission_events WHERE mission_id = ? ORDER BY timestamp DESC, id DESC LIMIT ?',
+      missionId,
+      limit,
+    )
+  }
+
+  const placeholders = TELEMETRY_EVENT_TYPES.map(() => '?').join(', ')
+  return all(
+    db,
+    `SELECT * FROM mission_events
+     WHERE mission_id = ? AND event_type NOT IN (${placeholders})
+     ORDER BY timestamp DESC, id DESC
+     LIMIT ?`,
+    missionId,
+    ...TELEMETRY_EVENT_TYPES,
+    limit,
+  )
+}
+
+function clampAuditLimit(requestedLimit) {
+  if (typeof requestedLimit !== 'number' || !Number.isFinite(requestedLimit)) {
+    return DEFAULT_AUDIT_EVENT_LIMIT
+  }
+  const rounded = Math.floor(requestedLimit)
+  if (rounded < 1) {
+    return 1
+  }
+  return Math.min(rounded, MAX_AUDIT_EVENT_LIMIT)
 }
 
 function upsertHelicopter(db, input) {

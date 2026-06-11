@@ -31,6 +31,8 @@ export function MissionReviewWorkspace() {
   const loading = useMissionReviewStore((state) => state.loading)
   const refreshing = useMissionReviewStore((state) => state.refreshing)
   const error = useMissionReviewStore((state) => state.error)
+  const includeTelemetry = useMissionReviewStore((state) => state.includeTelemetry)
+  const auditLogTruncated = useMissionReviewStore((state) => state.auditLogTruncated)
   const queueTarget = useMapTargetStore((state) => state.queueTarget)
   const [activeTab, setActiveTab] = useState<ReviewTab>('mission-details')
   const [missionQuery, setMissionQuery] = useState('')
@@ -177,8 +179,11 @@ export function MissionReviewWorkspace() {
               {snapshot !== null && error === null ? (
                 activeTab === 'mission-details' ? (
                   <MissionDetailsTab
+                    auditLogTruncated={auditLogTruncated}
                     events={snapshot.eventRows}
+                    includeTelemetry={includeTelemetry}
                     onOpenPath={(path) => void handleOpenPath(path)}
+                    onToggleTelemetry={(next) => void controller?.setIncludeTelemetry(next)}
                     pathError={pathError}
                     pathFeedback={pathFeedback}
                     summary={snapshot.summary}
@@ -234,6 +239,9 @@ export function MissionReviewWorkspace() {
 function MissionDetailsTab(props: {
   readonly summary: MissionReviewSummary
   readonly events: readonly MissionReviewEventRow[]
+  readonly includeTelemetry: boolean
+  readonly auditLogTruncated: boolean
+  readonly onToggleTelemetry: (includeTelemetry: boolean) => void
   readonly onOpenPath: (path: string | null) => void
   readonly pathFeedback: string | null
   readonly pathError: string | null
@@ -273,9 +281,36 @@ function MissionDetailsTab(props: {
         </section>
 
         <section className="rounded-2xl border border-stone-800 bg-stone-900/30 p-5">
-          <h3 className="text-[11px] font-bold uppercase tracking-wider text-stone-400">
-            Audit Log
-          </h3>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <h3 className="text-[11px] font-bold uppercase tracking-wider text-stone-400">
+              Audit Log
+            </h3>
+            <label
+              className="flex cursor-pointer items-center gap-2 text-[11px] font-semibold uppercase tracking-wider text-stone-400"
+              data-testid="mission-review-telemetry-toggle"
+            >
+              <input
+                checked={props.includeTelemetry}
+                className="h-3.5 w-3.5 accent-amber-500"
+                onChange={(event) => props.onToggleTelemetry(event.target.checked)}
+                type="checkbox"
+              />
+              Show tracking telemetry
+            </label>
+          </div>
+          <p className="mt-2 text-[11px] leading-relaxed text-stone-500">
+            {props.includeTelemetry
+              ? 'Showing all events, including high-volume device and position telemetry.'
+              : 'Showing operator events only. Device and position telemetry are hidden.'}
+          </p>
+          {props.auditLogTruncated ? (
+            <p
+              className="mt-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-[11px] leading-relaxed text-amber-200"
+              data-testid="mission-review-audit-truncated"
+            >
+              Showing the most recent events only. Older events are not displayed.
+            </p>
+          ) : null}
           <div className="mt-4 max-h-[38rem] space-y-3 overflow-y-auto" data-testid="mission-review-event-log">
             {props.events.map((event) => (
               <div className="rounded-xl border border-stone-800 bg-stone-950/30 p-4" key={event.id}>

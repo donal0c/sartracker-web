@@ -7,6 +7,7 @@ import type {
   GpxTrackImport,
   Helicopter,
   Marker,
+  ListAuditEventsOptions,
   Mission,
   MissionEvent,
   MissionArchiveInfo,
@@ -19,6 +20,10 @@ import type {
   UpsertHelicopterInput,
   UpsertMarkerInput,
 } from '../../infrastructure/mission-store/tauri-mission-store'
+import {
+  DEFAULT_AUDIT_EVENT_LIMIT,
+  isTelemetryEventType,
+} from '../mission-review/audit-events'
 
 /**
  * Browser validation store for hosted/team-testing mode only.
@@ -53,6 +58,10 @@ type BrowserHarnessStore = {
   readonly getRecoverableMission: () => Promise<Mission | null>
   readonly info: () => Promise<MissionStoreInfo>
   readonly listMissionEvents: (missionId: string) => Promise<readonly MissionEvent[]>
+  readonly listAuditEvents: (
+    missionId: string,
+    options?: ListAuditEventsOptions,
+  ) => Promise<readonly MissionEvent[]>
   readonly openExternalPath: (path: string) => Promise<void>
   readonly pauseMission: (missionId: string) => Promise<Mission>
   readonly resumeMission: (missionId: string) => Promise<Mission>
@@ -156,6 +165,15 @@ export function getBrowserHarnessStore(): BrowserHarnessStore {
       state.missionEvents
         .filter((event) => event.mission_id === missionId)
         .sort((left, right) => Date.parse(left.timestamp) - Date.parse(right.timestamp)),
+    listAuditEvents: async (missionId, options) => {
+      const includeTelemetry = options?.includeTelemetry === true
+      const limit = clampAuditLimit(options?.limit)
+      return state.missionEvents
+        .filter((event) => event.mission_id === missionId)
+        .filter((event) => includeTelemetry || !isTelemetryEventType(event.event_type))
+        .sort((left, right) => Date.parse(right.timestamp) - Date.parse(left.timestamp))
+        .slice(0, limit)
+    },
     openExternalPath: async (path) => {
       if (path.trim() === '') {
         throw new Error('Path is required.')
@@ -855,6 +873,22 @@ function readHarnessState(): BrowserHarnessState {
       recoverableMissionId: null,
     }
   }
+}
+
+const MAX_AUDIT_EVENT_LIMIT = 5_000
+
+/**
+ * Clamps a requested audit-event limit to the bounded range, defaulting when unset.
+ */
+function clampAuditLimit(requestedLimit: number | undefined): number {
+  if (typeof requestedLimit !== 'number' || !Number.isFinite(requestedLimit)) {
+    return DEFAULT_AUDIT_EVENT_LIMIT
+  }
+  const rounded = Math.floor(requestedLimit)
+  if (rounded < 1) {
+    return 1
+  }
+  return Math.min(rounded, MAX_AUDIT_EVENT_LIMIT)
 }
 
 function pruneTrackingPersistence(

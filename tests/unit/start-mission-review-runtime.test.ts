@@ -36,10 +36,86 @@ describe('startMissionReviewRuntime', () => {
     )
   })
 
+  it('requests a bounded, telemetry-free audit log by default', async () => {
+    const applyRuntime = vi.fn()
+    const listAuditEvents = vi.fn().mockResolvedValue([])
+    const runtime = await startMissionReviewRuntime({
+      missionStore: createMissionReviewStoreStub({
+        listMissions: vi.fn().mockResolvedValue([FIRST_MISSION]),
+        listAuditEvents,
+      }),
+      layerCatalogStore: { listMetadata: vi.fn().mockResolvedValue([]) },
+      applyRuntime,
+    })
+
+    await runtime.load(FIRST_MISSION.id)
+
+    expect(listAuditEvents).toHaveBeenCalledWith(
+      FIRST_MISSION.id,
+      expect.objectContaining({ includeTelemetry: false }),
+    )
+    const options = listAuditEvents.mock.calls[0]?.[1] as { readonly limit: number }
+    expect(options.limit).toBeGreaterThan(0)
+    expect(applyRuntime).toHaveBeenLastCalledWith(
+      expect.objectContaining({ includeTelemetry: false, auditLogTruncated: false }),
+    )
+  })
+
+  it('reloads with telemetry included when the toggle is enabled', async () => {
+    const applyRuntime = vi.fn()
+    const listAuditEvents = vi.fn().mockResolvedValue([])
+    const runtime = await startMissionReviewRuntime({
+      missionStore: createMissionReviewStoreStub({
+        listMissions: vi.fn().mockResolvedValue([FIRST_MISSION]),
+        listAuditEvents,
+      }),
+      layerCatalogStore: { listMetadata: vi.fn().mockResolvedValue([]) },
+      applyRuntime,
+    })
+
+    await runtime.load(FIRST_MISSION.id)
+    await runtime.setIncludeTelemetry(true)
+
+    expect(listAuditEvents).toHaveBeenLastCalledWith(
+      FIRST_MISSION.id,
+      expect.objectContaining({ includeTelemetry: true }),
+    )
+    expect(applyRuntime).toHaveBeenLastCalledWith(
+      expect.objectContaining({ includeTelemetry: true }),
+    )
+  })
+
+  it('flags the audit log as truncated when more events exist than the page size', async () => {
+    const applyRuntime = vi.fn()
+    // Return one more event than the runtime's page size to trigger the truncation flag.
+    const overflowEvents = Array.from({ length: 501 }, (_unused, index) => ({
+      id: `event-${index}`,
+      mission_id: FIRST_MISSION.id,
+      event_type: 'marker_created',
+      timestamp: `2026-04-10T09:${String(index % 60).padStart(2, '0')}:00.000Z`,
+      details_json: '{"name":"Marker"}',
+    }))
+    const runtime = await startMissionReviewRuntime({
+      missionStore: createMissionReviewStoreStub({
+        listMissions: vi.fn().mockResolvedValue([FIRST_MISSION]),
+        listAuditEvents: vi.fn().mockResolvedValue(overflowEvents),
+      }),
+      layerCatalogStore: { listMetadata: vi.fn().mockResolvedValue([]) },
+      applyRuntime,
+    })
+
+    await runtime.load(FIRST_MISSION.id)
+
+    const lastCall = applyRuntime.mock.calls.at(-1)?.[0]
+    expect(lastCall?.auditLogTruncated).toBe(true)
+    // The snapshot must not render more than the page size.
+    expect(lastCall?.snapshot?.eventRows.length).toBe(500)
+  })
+
   it('keeps the latest refresh result when requests resolve out of order', async () => {
     const applyRuntime = vi.fn()
     let resolveFirstMission: ((value: readonly MissionEvent[]) => void) | null = null
-    const listMissionEvents = vi
+    const listAuditEvents = vi
       .fn()
       .mockImplementationOnce(
         () =>
@@ -60,7 +136,7 @@ describe('startMissionReviewRuntime', () => {
     const runtime = await startMissionReviewRuntime({
       missionStore: createMissionReviewStoreStub({
         listMissions: vi.fn().mockResolvedValue([SECOND_MISSION, FIRST_MISSION]),
-        listMissionEvents,
+        listAuditEvents,
       }),
       layerCatalogStore: {
         listMetadata: vi.fn().mockResolvedValue([]),
@@ -264,7 +340,7 @@ function createMissionReviewStoreStub(overrides: Record<string, unknown> = {}) {
   return {
     info: vi.fn().mockResolvedValue(info),
     listMissions: vi.fn().mockResolvedValue([FIRST_MISSION]),
-    listMissionEvents: vi.fn().mockResolvedValue([]),
+    listAuditEvents: vi.fn().mockResolvedValue([]),
     listMarkers: vi.fn().mockResolvedValue([marker]),
     listDevices: vi.fn().mockResolvedValue([device]),
     listPositions: vi.fn().mockResolvedValue([position]),

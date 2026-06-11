@@ -8,9 +8,15 @@
 - **Hosted testing:** `https://sartracker-web.vercel.app/?missionHarness=1`
 - **Desktop:** Electron validation shell present (MapLibre + direct HTTPS Traccar). Tauri desktop routes Traccar through Rust `reqwest`.
 - **Browser mode:** testing/training only (sessionStorage, not operational persistence).
-- **Latest test counts:** 146 unit files / 824 tests; ~105 Playwright E2E; 46 backend tests.
+- **Latest test counts:** 148 unit files / 831 tests; 106 standard Playwright E2E; 47 backend tests.
 
 ## Last Work Done
+
+DON-148 (S3 Web App, Bug) — Mission Review froze the UI on missions with large event counts (93k–193k events in the field; `device_updated` heartbeats from 33 devices polling every 10s dominated). Fixed at the query layer so the unbounded set never crosses IPC:
+- New `listAuditEvents(missionId, { includeTelemetry, limit })` on all three stores (Rust `persistence.rs`, Electron `mission-store.cjs`, browser harness) + Tauri command `list_audit_events` + auto-wired Electron channel. Telemetry (`device_updated`/`position_recorded`) excluded by default; newest-first, capped (default 500 / max 5000). `listMissionEvents` kept for export/archive.
+- Shared classification: `src/features/mission-review/audit-events.ts` (the `.cjs`/Rust copies mirror it, covered by tests).
+- Review runtime exposes `includeTelemetry`/`auditLogTruncated` + `setIncludeTelemetry`; UI added a "Show tracking telemetry" toggle and truncation notice. Manual updated.
+- Verified: unit 831, backend 47, chromium E2E 106 (incl. new telemetry-toggle test), lint+tsc clean, Playwright screenshots read & confirmed. DON-148 closed; DON-149 was a duplicate (cancelled).
 
 DON-142 (S2 Electron/S1 maps) — Electron beta handoff release and Discovery map loading instructions:
 - Added `docs/electron-beta-handoff.md` as the active runbook for the current Electron app handoff, Discovery package loading, offline confidence checks, diagnostics, and private-data rules.

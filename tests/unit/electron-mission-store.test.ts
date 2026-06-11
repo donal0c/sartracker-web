@@ -28,6 +28,10 @@ type ElectronMissionStore = {
   readonly resumeMission: (missionId: string) => Promise<{ readonly status: string }>
   readonly finishMission: (missionId: string) => Promise<{ readonly status: string }>
   readonly listMissionEvents: (missionId: string) => Promise<readonly { readonly event_type: string }[]>
+  readonly listAuditEvents: (
+    missionId: string,
+    options?: { readonly includeTelemetry?: boolean; readonly limit?: number },
+  ) => Promise<readonly { readonly event_type: string; readonly timestamp: string }[]>
   readonly upsertDevice: (input: {
     readonly mission_id: string
     readonly device_id: string
@@ -139,6 +143,51 @@ describe('electron mission store', () => {
         'mission_finished',
       ]),
     )
+  })
+
+  it('excludes telemetry events and bounds the result for the review audit log', async () => {
+    store = await createStore()
+    const mission = await store.createMission({ name: 'Audit Mission' })
+    await store.upsertDevice({
+      mission_id: mission.id,
+      device_id: 'tracker-1',
+      name: 'Tracker One',
+      color: '#00AAFF',
+      status: 'unknown',
+    })
+
+    // Generate a burst of telemetry that would dominate an unfiltered query.
+    for (let index = 0; index < 50; index += 1) {
+      await store.addPosition({
+        mission_id: mission.id,
+        device_id: 'tracker-1',
+        lat: 52.0599,
+        lon: -9.5045,
+        timestamp: `2026-05-19T12:${String(index).padStart(2, '0')}:00.000Z`,
+      })
+    }
+
+    const auditEvents = await store.listAuditEvents(mission.id)
+    const auditTypes = auditEvents.map((event) => event.event_type)
+    expect(auditTypes).toContain('mission_created')
+    // device upsert + GPS fixes are telemetry heartbeats and must be filtered out.
+    expect(auditTypes).not.toContain('position_recorded')
+    expect(auditTypes).not.toContain('device_updated')
+
+    // Telemetry can be opted back in, but still respects the bound.
+    const withTelemetry = await store.listAuditEvents(mission.id, {
+      includeTelemetry: true,
+      limit: 10,
+    })
+    expect(withTelemetry).toHaveLength(10)
+    // Bounded query returns the most recent events.
+    expect(withTelemetry.some((event) => event.event_type === 'position_recorded')).toBe(true)
+    for (let index = 1; index < withTelemetry.length; index += 1) {
+      expect(
+        Date.parse(withTelemetry[index - 1]!.timestamp) >=
+          Date.parse(withTelemetry[index]!.timestamp),
+      ).toBe(true)
+    }
   })
 
   it('persists layer catalog metadata in the same userData SQLite database', async () => {

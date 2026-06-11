@@ -182,6 +182,15 @@ export type MissionEvent = {
   readonly details_json: string | null
 }
 
+/**
+ * Options for the bounded review audit-event query. Defaults exclude high-volume
+ * tracking telemetry and cap the result so the UI never receives an unbounded set.
+ */
+export type ListAuditEventsOptions = {
+  readonly includeTelemetry?: boolean
+  readonly limit?: number
+}
+
 export type CreateMissionInput = {
   readonly name: string
   readonly start_time?: string
@@ -268,6 +277,10 @@ export type MissionStore = {
   ) => Promise<readonly Position[]>
   readonly latestPositions: (missionId: string) => Promise<readonly Position[]>
   readonly listMissionEvents: (missionId: string) => Promise<readonly MissionEvent[]>
+  readonly listAuditEvents: (
+    missionId: string,
+    options?: ListAuditEventsOptions,
+  ) => Promise<readonly MissionEvent[]>
   readonly upsertMarker: (input: UpsertMarkerInput) => Promise<Marker>
   readonly getMarker: (markerId: string) => Promise<Marker>
   readonly listMarkers: (missionId: string) => Promise<readonly Marker[]>
@@ -310,6 +323,12 @@ export function createTauriMissionStore(): MissionStore {
       invoke<readonly Position[]>('latest_positions', { missionId }),
     listMissionEvents: (missionId) =>
       invoke<readonly MissionEvent[]>('list_mission_events', { missionId }),
+    listAuditEvents: (missionId, options) =>
+      invoke<readonly MissionEvent[]>('list_audit_events', {
+        missionId,
+        includeTelemetry: options?.includeTelemetry ?? false,
+        limit: options?.limit ?? null,
+      }),
     upsertMarker: (input) => invoke<Marker>('upsert_marker', { input }),
     getMarker: (markerId) => invoke<Marker>('get_marker', { markerId }),
     listMarkers: (missionId) => invoke<readonly Marker[]>('list_markers', { missionId }),

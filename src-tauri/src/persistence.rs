@@ -2255,6 +2255,52 @@ impl MissionStore {
         .map_err(|error| format!("Failed to list mission events: {error}"))
     }
 
+    /// Returns operator-meaningful mission events for the review audit log, ordered
+    /// most recent first and capped. High-volume tracking telemetry
+    /// (`device_updated`, `position_recorded`) is excluded unless `include_telemetry`
+    /// is set, so a long mission never transfers an unbounded event set to the UI.
+    pub async fn list_audit_events(
+        &self,
+        mission_id: String,
+        include_telemetry: bool,
+        limit: Option<i64>,
+    ) -> Result<Vec<MissionEvent>, String> {
+        let bounded_limit = clamp_audit_limit(limit);
+
+        if include_telemetry {
+            sqlx::query_as::<_, MissionEvent>(
+                r#"
+                SELECT id, mission_id, event_type, timestamp, details_json
+                FROM mission_events
+                WHERE mission_id = ?
+                ORDER BY timestamp DESC, id DESC
+                LIMIT ?
+                "#,
+            )
+            .bind(mission_id)
+            .bind(bounded_limit)
+            .fetch_all(&self.pool)
+            .await
+            .map_err(|error| format!("Failed to list audit events: {error}"))
+        } else {
+            sqlx::query_as::<_, MissionEvent>(
+                r#"
+                SELECT id, mission_id, event_type, timestamp, details_json
+                FROM mission_events
+                WHERE mission_id = ?
+                  AND event_type NOT IN ('device_updated', 'position_recorded')
+                ORDER BY timestamp DESC, id DESC
+                LIMIT ?
+                "#,
+            )
+            .bind(mission_id)
+            .bind(bounded_limit)
+            .fetch_all(&self.pool)
+            .await
+            .map_err(|error| format!("Failed to list audit events: {error}"))
+        }
+    }
+
     pub async fn pause_mission(&self, mission_id: String) -> Result<Mission, String> {
         let mission = self.get_mission(mission_id.clone()).await?;
         if mission.status != MissionStatus::Active {
@@ -2646,6 +2692,21 @@ impl MissionStore {
     }
 }
 
+/// Default cap on audit events returned to the review UI when no limit is requested.
+const DEFAULT_AUDIT_EVENT_LIMIT: i64 = 500;
+/// Upper bound on a requested audit-event limit, so a caller cannot ask for an
+/// effectively unbounded result set.
+const MAX_AUDIT_EVENT_LIMIT: i64 = 5_000;
+
+/// Clamps a requested audit-event limit into the supported range, defaulting when unset.
+fn clamp_audit_limit(requested: Option<i64>) -> i64 {
+    match requested {
+        None => DEFAULT_AUDIT_EVENT_LIMIT,
+        Some(value) if value < 1 => 1,
+        Some(value) => value.min(MAX_AUDIT_EVENT_LIMIT),
+    }
+}
+
 fn calculate_additional_paused_seconds(
     mission: &Mission,
     transition_timestamp: &str,
@@ -2979,6 +3040,19 @@ pub async fn list_mission_events(
     mission_id: String,
 ) -> Result<Vec<MissionEvent>, String> {
     store.0.list_mission_events(mission_id).await
+}
+
+#[tauri::command]
+pub async fn list_audit_events(
+    store: State<'_, MissionStoreState>,
+    mission_id: String,
+    include_telemetry: bool,
+    limit: Option<i64>,
+) -> Result<Vec<MissionEvent>, String> {
+    store
+        .0
+        .list_audit_events(mission_id, include_telemetry, limit)
+        .await
 }
 
 #[tauri::command]
@@ -4008,6 +4082,83 @@ mod tests {
                 "drawing_deleted",
             ]
         );
+    }
+
+    #[tokio::test]
+    async fn list_audit_events_excludes_telemetry_and_bounds_results() {
+        let (database_path, backup_path) = temp_paths("audit-events-bounded");
+        let store = MissionStore::connect(database_path, backup_path)
+            .await
+            .expect("store should initialize");
+
+        let mission = store
+            .create_mission(CreateMissionInput {
+                name: "Bounded Audit Mission".to_string(),
+                start_time: None,
+                notes: None,
+            })
+            .await
+            .expect("mission should be created");
+
+        store
+            .upsert_device(UpsertDeviceInput {
+                mission_id: mission.id.clone(),
+                device_id: "tracker-1".to_string(),
+                name: "Rescuer One".to_string(),
+                color: "#00AAFF".to_string(),
+                status: DeviceStatus::Unknown,
+                last_seen: None,
+            })
+            .await
+            .expect("device should upsert");
+
+        // Generate a burst of position telemetry that would dominate an unfiltered query.
+        for index in 0..60 {
+            store
+                .add_position(AddPositionInput {
+                    mission_id: mission.id.clone(),
+                    device_id: "tracker-1".to_string(),
+                    name: None,
+                    lat: 52.1,
+                    lon: -9.5,
+                    altitude: None,
+                    speed: None,
+                    battery: None,
+                    accuracy: None,
+                    source: Some("traccar".to_string()),
+                    timestamp: Some(format!("2026-05-19T12:{:02}:00.000Z", index)),
+                    data_origin: Some("live".to_string()),
+                })
+                .await
+                .expect("position should insert");
+        }
+
+        // Default: telemetry excluded, only operator-meaningful events remain.
+        let audit_events = store
+            .list_audit_events(mission.id.clone(), false, None)
+            .await
+            .expect("audit events should list");
+        assert!(audit_events
+            .iter()
+            .all(|event| event.event_type != "position_recorded"
+                && event.event_type != "device_updated"));
+        assert!(audit_events
+            .iter()
+            .any(|event| event.event_type == "mission_created"));
+
+        // Telemetry can be opted back in, but the limit is still enforced and the
+        // results are ordered most-recent-first.
+        let limited = store
+            .list_audit_events(mission.id.clone(), true, Some(10))
+            .await
+            .expect("audit events should list");
+        assert_eq!(limited.len(), 10);
+        assert!(limited
+            .iter()
+            .any(|event| event.event_type == "position_recorded"));
+        for pair in limited.windows(2) {
+            assert!(pair[0].timestamp >= pair[1].timestamp);
+        }
     }
 
     #[tokio::test]

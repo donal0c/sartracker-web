@@ -40,6 +40,7 @@ const MISSION_STORE_CHANNELS = {
   listPositions: 'sartracker:mission-store:list-positions',
   latestPositions: 'sartracker:mission-store:latest-positions',
   listMissionEvents: 'sartracker:mission-store:list-mission-events',
+  listAuditEvents: 'sartracker:mission-store:list-audit-events',
   upsertMarker: 'sartracker:mission-store:upsert-marker',
   getMarker: 'sartracker:mission-store:get-marker',
   listMarkers: 'sartracker:mission-store:list-markers',
