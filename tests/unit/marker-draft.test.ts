@@ -140,7 +140,8 @@ describe('marker draft helpers', () => {
     const treatment = appendTreatmentUpdate({
       existingTreatment: '[2026-06-02 10:00] Alpha: Blanket applied',
       note: 'Warm drink given',
-      timestamp: new Date('2026-06-02T10:15:00.000+01:00'),
+      // Local-time components so the rendered prefix is "10:15" in any timezone.
+      timestamp: new Date(2026, 5, 2, 10, 15, 0),
       updatedBy: '  Bravo  ',
     })
 
@@ -154,7 +155,7 @@ describe('marker draft helpers', () => {
       appendTreatmentUpdate({
         existingTreatment: '',
         note: '   ',
-        timestamp: new Date('2026-06-02T10:15:00.000+01:00'),
+        timestamp: new Date(2026, 5, 2, 10, 15, 0),
         updatedBy: '',
       }),
     ).toThrow(/Treatment update is required/)

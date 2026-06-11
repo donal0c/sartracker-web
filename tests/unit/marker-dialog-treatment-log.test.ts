@@ -26,7 +26,9 @@ describe('MarkerDialog casualty treatment log', () => {
 
   it('appends treatment updates while preserving earlier treatment notes', () => {
     vi.useFakeTimers()
-    vi.setSystemTime(new Date('2026-06-02T10:15:00.000+01:00'))
+    // Local-time components so the rendered prefix (which uses local time, as
+    // operators expect) is "10:15" in any timezone the test runs in.
+    vi.setSystemTime(new Date(2026, 5, 2, 10, 15, 0))
     const controller = createController()
     useMarkerStore.setState({
       controller,
