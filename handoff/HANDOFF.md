@@ -12,6 +12,14 @@
 
 ## Last Work Done
 
+DON-143 (S2 Electron, Feature) — Electron GitHub release workflow; Tauri release lane retired. DONE & CI-verified & on-device smoked.
+- New `.github/workflows/electron-release.yml`: `electron-v*` tag trigger (distinct from legacy Tauri `v*`). Jobs: gates (version-match + release-notes + lint/test/build) → bundle-linux (native AppImage+.deb, asserts packaged `better_sqlite3.node` is ELF x86-64, guards against `.mbtiles`/licensed data) → launch-smoke-linux (Xvfb window + non-black + no fault shell) → release (downloads built artifacts, generates `SHA256SUMS`, creates the draft prerelease — only after a green smoke) → summary. Artifacts pass between jobs via the workflow-artifact store, not the draft-release-by-tag API (which excludes drafts).
+- Windows NSIS scaffolded (`electron-builder.json` win/nsis + `electron:dist:win`) but gated OFF behind `enable_windows` dispatch input pending DON-141. macOS arm64 stays local/manual. Deleted `release.yml`. Docs updated: `docs/releases/README.md`, `docs/electron-beta-handoff.md`, `docs/releases/TEMPLATE.md`; superseded banner on `docs/tauri-beta-release-plan.md`. New release-note naming: `sartracker-electron-<version>.md`.
+- Found + fixed a pre-existing **timezone-dependent test bug** the CI surfaced: `marker-draft` / `marker-dialog-treatment-log` treatment-log tests used a hardcoded `+01:00` Date and asserted fixed local-time output, so they passed only on UTC+1 machines (green locally in Dublin, red in CI's UTC). Now built from local-time components; verified under TZ=UTC/Dublin/New_York. Production formatter (local-time rendering) was correct and unchanged. (Lesson: `npm run test` locally can false-green on TZ; CI runs UTC.)
+- CI: `electron-v0.1.0-beta.4` run **green end-to-end** (run #3 `27367822502`); draft prerelease created with AppImage + `.deb` + `SHA256SUMS`, no map data. The draft is unpublished — promote with `gh release edit electron-v0.1.0-beta.4 --draft=false` or delete it.
+- On-device smoke (Ubuntu 24.04.2 / kernel 6.14, `192.168.18.31`, real Wayland display, CI-built artifact, checksum OK): all 6 highest-risk areas pass. (1) AppImage launches, real window, no SIGTRAP. (2) **Mission persists across full restart** — recovery prompt shows the created mission name + start time (SQLite schema v3 + backup mirror). (3) Live Traccar **"Connection successful."** over `https://kmrtsar.eu` (note: box network blocks plain-HTTP `:8082`; HTTPS works). (4) Discovery offline tiles read from SQLite (verified PNG bytes, network blocked), inside=Field ready / outside=warning, real GPU. (5) Coordinate readout (DD/Irish Grid/DMS) renders correctly + 847 golden-dataset unit tests. (6) Diagnostics export sanitized, `secret present: no`. Evidence on box: `~/sartracker-don143-smoke/{offline-evidence,persist-evidence}`.
+- Verified locally: actionlint clean, unit 847/847 (under UTC), lint, build, local electron-builder `--dir` pack.
+
 DON-151 (S2 Electron, Urgent Bug) — Electron launch slowed after tracking history accumulated on Ubuntu beta. Root cause was launch/poll-cycle tracking work, distinct from DON-148 Mission Review:
 - On restart, the UI could hydrate cached breadcrumbs, but the live poller fetched breadcrumbs from mission start for every device because its per-device cursors were not seeded from persisted mission positions. With 33 devices / 4.5k breadcrumbs / 5s polling this rebuilt history and the map overlay unnecessarily.
 - Each tracking snapshot also reloaded every persisted position from SQLite and re-deduped the full breadcrumb history, creating repeated main-process work during active tracking.
@@ -48,7 +56,9 @@ DON-142 (S2 Electron/S1 maps) — Electron beta handoff release and Discovery ma
 
 ## What's Next
 
-Next: package and smoke a new Electron beta containing DON-147, DON-148, and DON-151 before sending the team back to Ubuntu testing. After that, continue `DON-144` (private Discovery package distribution/raw-source packaging workflow) and `DON-143` (Electron GitHub release workflow).
+Next: decide whether to **promote the `electron-v0.1.0-beta.4` draft prerelease** (it already contains DON-147 + DON-148 + DON-151, CI-green and on-device smoked) so the team can retest on Ubuntu, or delete the draft and cut a later beta. To promote: `gh release edit electron-v0.1.0-beta.4 --repo donal0c/sartracker-web --draft=false` (optionally attach a local macOS arm64 zip + regenerate SHA256SUMS first). After that, continue `DON-144` (private Discovery package distribution / raw-source packaging workflow).
+
+DON-146 (Electron 40→42) is parked in Backlog, **blocked on upstream `better-sqlite3` PR #1475** (does not compile against Electron 42's V8; no published fix). See the DON-146 comment for the decision + resume checklist.
 
 ## Traccar Test Details
 
