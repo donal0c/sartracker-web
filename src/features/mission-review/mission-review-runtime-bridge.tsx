@@ -14,7 +14,10 @@ import {
   applyMissionReviewRuntime,
   useMissionReviewStore,
 } from './mission-review-store'
-import { startMissionReviewRuntime } from './start-mission-review-runtime'
+import {
+  createMissionReviewRuntimeState,
+  startMissionReviewRuntime,
+} from './start-mission-review-runtime'
 
 /**
  * Starts the mission review runtime so the review workspace can inspect persisted mission data.
@@ -60,14 +63,11 @@ export function MissionReviewRuntimeBridge() {
         applyMissionReviewController(nextController)
       }
     }).catch((error: unknown) => {
-      applyMissionReviewRuntime({
-        missions: [],
-        selectedMissionId: null,
-        snapshot: null,
-        loading: false,
-        refreshing: false,
-        error: error instanceof Error ? error.message : 'Mission review failed to start.',
-      })
+      applyMissionReviewRuntime(
+        createMissionReviewRuntimeState({
+          error: error instanceof Error ? error.message : 'Mission review failed to start.',
+        }),
+      )
     })
 
     return () => {
