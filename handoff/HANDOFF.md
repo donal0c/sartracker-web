@@ -8,11 +8,17 @@
 - **Hosted testing:** `https://sartracker-web.vercel.app/?missionHarness=1`
 - **Desktop:** Electron validation shell present (MapLibre + direct HTTPS Traccar). Tauri desktop routes Traccar through Rust `reqwest`.
 - **Browser mode:** testing/training only (sessionStorage, not operational persistence).
-- **Latest test counts:** 151 unit files / 843 tests; 106 standard Playwright E2E; 47 backend tests.
+- **Latest test counts:** 151 unit files / 844 tests; 106 standard Playwright E2E; 47 backend tests.
 
 ## Last Work Done
 
-DON-147 (S2 Electron, Feature) — Crash capture, runtime logging, and support-bundle export. Shipped the fully-verifiable core (per agreed "testable slice first" scope):
+DON-147 — DONE & on-device verified (HEAD `4ad6673`). Crash capture, runtime logging, support-bundle export.
+- On-device verification on the Dell Ubuntu box (`192.168.18.31`, **24.04.2**, not 26.04): built packaged `.deb`/AppImage, confirmed `crashReporter` writes a real native minidump on main-process SIGSEGV (`Crashpad/pending/*.dmp`), JS `uncaughtException` writes a structured `crash-log.json`, unclean-shutdown flag sets/clears correctly, and `exportSupportBundle` assembles env+crash+log sections. Live-renderer crash not drivable headless (GPU process won't start over SSH) — renderer-fault logic is unit-tested instead.
+- Two fixes found during testing: (`4ad6673`) `render-process-gone` was recording `clean-exit` as a crash → now gated by `isRendererFaultReason()`; (`c448021`) **DON-148 had broken `npm run build`** — runtime-bridge error-catch missed the new state fields; `tsc -b` caught it, `tsc --noEmit` didn't. **Lesson: verify with `npm run build`, not `tsc --noEmit`.**
+- Box note: `~/sartracker-don147-validation` (1.7G) left on the machine per prior convention; temp `/tmp/don147-*` cleaned.
+- Remaining out-of-scope follow-up: confirm against real Ubuntu 26.04 (folds into DON-146).
+
+(original scope notes:) Shipped the fully-verifiable core (per agreed "testable slice first" scope):
 - New `electron/runtime-log.cjs` (bounded JSON-line ring buffer, rotates to one `.1` backup, sanitizes secrets + home-path usernames) and `electron/crash-log.cjs` (capped structured crash log + clean-exit marker for unclean-shutdown detection). Both fully unit-tested.
 - `main.cjs` wires `crashReporter.start` (uploadToServer:false), `uncaughtException`/`unhandledRejection`/`render-process-gone` capture, logs `app_start`, and marks clean exit on `before-quit`.
 - `runtime-files.cjs` gained `exportSupportBundle` (environment snapshot + crash history + recent runtime log) + new IPC channels (`export-support-bundle`, `read-crash-recovery-state`) wired through `preload.cjs`.
