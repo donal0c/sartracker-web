@@ -167,8 +167,10 @@ or screenshots showing private paths to GitHub.
 ## Verification (CI-driven)
 
 This section must name the workflow or local build process that produced the
-Electron artifacts. The old `.github/workflows/release.yml` is Tauri-era and
-must not be cited for Electron artifacts unless it has been migrated.
+Electron artifacts. The current pipeline is
+`.github/workflows/electron-release.yml`, triggered by an `electron-v*` tag.
+(The old Tauri `release.yml` has been removed and must never be cited for
+Electron artifacts.)
 
 Minimum verification for an Electron official-map handoff:
 

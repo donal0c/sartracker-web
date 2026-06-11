@@ -4,11 +4,12 @@ This directory holds the source-controlled record of desktop beta releases we
 share with the team. Hosted Vercel iteration has its own change cadence; this
 folder is exclusively for the desktop operational lane.
 
-> **Current status:** Electron is now the production desktop shell. The older
-> Tauri release workflow and historical notes remain here for traceability, but
-> they are not the current handoff path. Use
-> `docs/electron-beta-handoff.md` for the active Electron app + Discovery map
-> loading process.
+> **Current status:** Electron is the production desktop shell. The current
+> release pipeline is `.github/workflows/electron-release.yml`, triggered by an
+> `electron-v*` tag. The old Tauri `release.yml` has been **removed** (DON-143)
+> so it can never be mistaken for the live path; its history is recoverable from
+> git if ever needed. Use `docs/electron-beta-handoff.md` for the active
+> Electron app + Discovery map loading process.
 
 ## Purpose
 
@@ -19,94 +20,83 @@ folder is exclusively for the desktop operational lane.
 - Keep evidence (verification reports, smoke notes, CI run links) close to
   the release note so that incidents can be traced after the fact.
 
-## Current Electron Handoff
+## Current Electron Release Path (DON-143)
 
-For `DON-142`, the immediate Electron handoff is an internal validation drop:
+The live release pipeline is `.github/workflows/electron-release.yml`. It is
+triggered by an `electron-v*` tag push (or manual `workflow_dispatch`) and:
 
-- Build Linux artifacts on Ubuntu with `npm run electron:dist:linux`.
-- Build macOS locally with `npm run electron:pack -- --mac --arm64`.
-- Generate checksums.
-- Share app artifacts only. Do not share private Discovery map packages through
-  GitHub.
-- Use `docs/electron-beta-handoff.md` as the team-facing runbook.
-- Keep `DON-115` open until the Windows official-map smoke (`DON-141`) passes.
+- builds the **Linux** AppImage + `.deb` on a native Linux runner (so
+  `better-sqlite3` is real Linux x86-64; the workflow asserts this);
+- creates a **draft + prerelease** GitHub release and uploads the Linux assets;
+- runs an **Xvfb launch smoke** against the just-built AppImage (real window,
+  non-black content, no runtime fault shell);
+- generates and uploads a `SHA256SUMS` sidecar over every release asset;
+- leaves the release in **DRAFT** for a human to review and publish.
 
-The preferred long-term handoff channel is GitHub Releases draft/prerelease for
-Electron app artifacts and `SHA256SUMS`, with private map packages distributed
-through a separate private team channel.
+App artifacts only. The build output is guarded against `.mbtiles` / licensed
+map data, and no credentials, source URLs, or raw diagnostics are ever attached.
 
-## Historical Tauri Paths
+### Windows (opt-in, default OFF)
 
-The following Tauri paths describe the old beta lane and should not be used for
-new Electron handoffs without first updating the workflow.
+Windows NSIS is scaffolded (`electron-builder.json` `win`/`nsis`, the
+`electron:dist:win` script, and a gated `bundle-windows` job) but **disabled by
+default**. It only runs when `workflow_dispatch` is invoked with
+`enable_windows=true`, which must not happen until the Windows official-map
+smoke (`DON-141`) passes. We do not attach an unsmoked Windows installer to a
+release.
 
-### Path A: CI-driven Linux + Windows release (default after B4)
+### macOS (local, manual)
 
-This is the new default. The release pipeline at
-`.github/workflows/release.yml` builds Linux and Windows artifacts in parallel
-from a single tag, drafts a GitHub release, and uploads all assets plus a
-`SHA256SUMS` sidecar.
+macOS arm64 is **not** built in CI (GitHub macOS runners bill at 10x). Produce
+it locally and attach it to the draft release:
 
-Use this path for any beta that needs Linux or Windows artifacts. After B4
-this is the only supported way to produce Linux or Windows artifacts.
+```bash
+npm run electron:pack -- --mac --arm64
+ditto -c -k --sequesterRsrc --keepParent \
+  "tmp/electron-dist/mac-arm64/SAR Tracker Electron Validation.app" \
+  "tmp/sartracker-electron-validation_<version>_macos_arm64.zip"
+gh release upload electron-v<version> --repo donal0c/sartracker-web \
+  "tmp/sartracker-electron-validation_<version>_macos_arm64.zip"
+```
 
-macOS arm64 was deliberately dropped from the CI matrix to keep GitHub Actions
-billed minutes inside the free tier (macOS bills at 10x the rate of Linux).
-See `sartracker-web-590` for the deferred re-add when build cadence
-stabilizes. Until then macOS uses Path B.
+If you add a macOS asset after CI ran, regenerate `SHA256SUMS` so it covers the
+macOS zip too (either re-run the `checksums` job via `workflow_dispatch`, or
+hash locally and `gh release upload --clobber SHA256SUMS`).
 
-### Path B: Local-only macOS build
+## Authoring Workflow — Electron release
 
-Retained for macOS artifacts. Produces a macOS arm64 `.app` zip via
-`npm run beta:verify` as described in `docs/tauri-beta-release-plan.md`.
-Upload the resulting zip to the GitHub release manually with
-`gh release upload <tag> <file>` if a macOS artifact needs to ship alongside
-the CI-built Linux/Windows assets.
-
-## Authoring Workflow — Path A (CI-driven)
-
-1. Confirm the version trio agrees:
-   - `package.json#version`
-   - `src-tauri/tauri.conf.json#version`
-   - the tag you are about to push (without the `v` prefix)
-2. Copy `TEMPLATE.md` to `sartracker-web-<version>-beta.md` (NO `-DRAFT`
-   suffix at this point — see step 6). Fill in every required section. The
-   workflow will fail loudly if this file is missing.
-3. Commit the bumped version and the new release note in one commit, e.g.
-   `chore(release): cut v0.1.0-beta.1`.
-4. Tag the commit: `git tag v0.1.0-beta.1 && git push origin v0.1.0-beta.1`.
-5. Watch the workflow at
-   `https://github.com/donal0c/sartracker-web/actions`. Resolve any failure
-   before proceeding — never paper over a red gate.
-6. When the workflow ends green:
-   - The draft release exists with all artifacts and `SHA256SUMS`.
-   - Run the local smoke checklist on the primary platform (Linux) before
-     publishing. The CI gate covers lint/test/build but cannot prove the
-     packaged app actually launches and persists missions.
-   - Update the release note with the smoke result and the CI run link.
+1. Confirm `package.json#version` equals the version you are about to tag
+   (the tag is `electron-v<version>`, e.g. `electron-v0.1.0-beta.4`). The
+   workflow fails loudly if the tag and `package.json` disagree.
+2. Copy `TEMPLATE.md` to `sartracker-electron-<version>.md` (e.g.
+   `sartracker-electron-0.1.0-beta.4.md`). Fill in every required section.
+   The workflow fails if this file is missing or empty.
+3. Commit the version bump and the new release note in one commit, e.g.
+   `chore(release): cut electron-v0.1.0-beta.4`.
+4. Tag and push:
+   `git tag electron-v0.1.0-beta.4 && git push origin electron-v0.1.0-beta.4`.
+   (Optional: dry-run first via the Actions UI with `dry_run=true` to exercise
+   gates + Linux bundle without creating a release.)
+5. Watch the run at `https://github.com/donal0c/sartracker-web/actions`.
+   Resolve any failure before proceeding — never paper over a red gate.
+6. When the run ends green:
+   - The draft prerelease exists with the Linux assets, the launch-smoke
+     evidence, and `SHA256SUMS`.
+   - Build and attach the macOS arm64 zip (see above) if macOS is in scope.
+   - Run any remaining manual smoke (e.g. the official-offline map check) that
+     CI cannot cover. CI proves lint/test/build + that the packaged AppImage
+     launches; it does not prove mission persistence or offline maps.
+   - Update the release note with smoke results and the CI run link.
    - Promote the draft:
-     `gh release edit v0.1.0-beta.1 --repo donal0c/sartracker-web --draft=false`.
+     `gh release edit electron-v0.1.0-beta.4 --repo donal0c/sartracker-web --draft=false`.
    - Record the release in `handoff/HANDOFF.md` with the CI run URL and the
      final asset list.
 
-## Authoring Workflow — Path B (local macOS only)
-
-Use this only when you explicitly do not need Linux or Windows artifacts.
-
-1. Run `npm run beta:verify`. Resolve any failures before writing release
-   notes — never paper over a red gate.
-2. Copy `TEMPLATE.md` to `sartracker-web-<version>-beta-DRAFT.md`. Fill in
-   the macOS section only; explicitly mark Linux and Windows artifacts as
-   "not produced by this drop". Promote `-DRAFT` to a real note when the
-   smoke checklist is signed off and the artifact is uploaded.
-3. Reference the JSON evidence report path written by `beta-verify` under
-   `tmp/beta-artifacts/`.
-
 ## Distribution
 
-- Primary channel for the first internal betas: GitHub Releases on
+- Primary channel for the internal betas: GitHub Releases on
   `donal0c/sartracker-web`, marked as **draft** and **prerelease**, with
-  the title containing "internal beta".
+  the title containing "internal validation".
 - Release notes (this directory) are the single source of truth. The GitHub
   release description is built from the matching MD file plus a CI provenance
   footer; the description should not duplicate what is here, only reference
@@ -120,21 +110,21 @@ Use this only when you explicitly do not need Linux or Windows artifacts.
 Only the markdown notes live in this directory. Build artifacts (the
 installers themselves) must not be checked in:
 
-- Local working copies stay under `tmp/beta-artifacts/` (gitignored).
+- Local working copies stay under `tmp/electron-dist/` (gitignored).
 - Shareable artifacts go to GitHub Releases via the draft/prerelease channel
-  above. CI uploads them automatically; the local Path B flow uploads
-  manually via `gh release upload`.
-- Verification reports (Path B) stay under `tmp/beta-artifacts/` for the
-  agent's local evidence and are referenced by relative path in the release
-  note. CI runs are the equivalent evidence for Path A.
+  above. CI uploads the Linux assets and `SHA256SUMS` automatically; the macOS
+  zip is uploaded manually via `gh release upload`.
+- CI run pages (logs + launch-smoke evidence artifacts) are the evidence for
+  the Linux build. Any manual smoke (offline maps, macOS launch) is recorded in
+  the release note.
 
 ## When To Re-Cut
 
 - Tag is immutable once pushed. If a build fails after upload, **do not
-  delete the tag**. Bump to the next beta number (`v0.1.0-beta.2`) and cut
-  again. The failed draft release should be deleted from GitHub Releases
-  (not `git tag -d`) and the failure recorded in the new note's "What
-  Changed" section.
+  delete the tag**. Bump to the next beta number
+  (`electron-v0.1.0-beta.5`) and cut again. The failed draft release should be
+  deleted from GitHub Releases (not `git tag -d`) and the failure recorded in
+  the new note's "What Changed" section.
 - If a release is published (draft = false) and a critical issue is found,
   the next beta should explicitly call out the regression in its
   "What Changed" section and link the prior beta's known issue.

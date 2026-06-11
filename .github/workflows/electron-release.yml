@@ -1,0 +1,557 @@
+name: Release (Electron Desktop)
+
+# Cross-platform Electron desktop release for SAR Tracker.
+#
+# This is the CURRENT release path for the operational desktop lane. It
+# supersedes the retired Tauri `release.yml`. It builds Electron app artifacts
+# only (no Discovery map packages, no credentials, no raw diagnostics) and
+# uploads them to a DRAFT + prerelease GitHub release that a human reviews and
+# publishes.
+#
+# Triggered by an `electron-v*` tag push or manual workflow_dispatch. The
+# `electron-v` tag namespace is deliberately distinct from the legacy Tauri
+# `v*` tags so the two lanes can never be confused.
+#
+# Jobs:
+#   1. gates          (Linux): version-match assertion, release-notes existence,
+#                      lint, vitest, web build. Fast-fail before any bundling.
+#   2. bundle-linux    (Linux): native AppImage + .deb via electron-builder,
+#                      verifies the packaged better_sqlite3.node is real Linux
+#                      x86-64, creates the draft prerelease, uploads assets.
+#   3. bundle-windows  (Windows, OPT-IN): NSIS .exe. Disabled by default and
+#                      gated behind the `enable_windows` dispatch input until
+#                      DON-141 (Windows official-map smoke) passes. We do not
+#                      ship an unsmoked Windows installer for a life-safety app.
+#   4. launch-smoke-linux: downloads the just-built AppImage, launches it under
+#                      Xvfb, asserts a real window with non-black content and no
+#                      runtime fault shell.
+#   5. checksums       (Linux): hashes every release asset into SHA256SUMS.
+#   6. summary         (always): provenance + publish instructions.
+#
+# macOS arm64 is NOT built in CI (GitHub macOS runners bill at 10x). It is
+# produced locally via `npm run electron:pack -- --mac --arm64` and uploaded
+# manually with `gh release upload`. See docs/releases/README.md.
+#
+# See docs/electron-beta-handoff.md for the team-facing handoff runbook.
+
+on:
+  push:
+    tags:
+      - 'electron-v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to build (must already exist, e.g. electron-v0.1.0-beta.4)'
+        required: true
+        type: string
+      dry_run:
+        description: 'Run gates and bundles but skip all release creation/upload'
+        required: false
+        type: boolean
+        default: false
+      enable_windows:
+        description: 'Also build and attach the Windows NSIS installer (only after DON-141 Windows smoke passes)'
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: electron-release-${{ github.event.inputs.tag || github.ref }}
+  cancel-in-progress: false
+
+env:
+  NODE_VERSION: '22'
+
+jobs:
+  gates:
+    name: Gates (lint, test, build)
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    outputs:
+      tag: ${{ steps.resolve_tag.outputs.tag }}
+      version: ${{ steps.resolve_tag.outputs.version }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+          fetch-depth: 0
+
+      - name: Resolve tag and version
+        id: resolve_tag
+        run: |
+          set -euo pipefail
+          if [ -n "${{ github.event.inputs.tag }}" ]; then
+            TAG="${{ github.event.inputs.tag }}"
+          else
+            TAG="${GITHUB_REF#refs/tags/}"
+          fi
+          if [ -z "$TAG" ]; then
+            echo "::error::Could not resolve tag from event or input."
+            exit 1
+          fi
+          if [[ ! "$TAG" =~ ^electron-v[0-9] ]]; then
+            echo "::error::Tag must start with 'electron-v' followed by a digit. Got: $TAG"
+            exit 1
+          fi
+          VERSION="${TAG#electron-v}"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Resolved tag=$TAG version=$VERSION"
+
+      - name: Verify version matches package.json
+        env:
+          EXPECTED_VERSION: ${{ steps.resolve_tag.outputs.version }}
+        run: |
+          set -euo pipefail
+          PKG_VERSION=$(node -p "require('./package.json').version")
+          echo "Tag version:  $EXPECTED_VERSION"
+          echo "package.json: $PKG_VERSION"
+          if [ "$PKG_VERSION" != "$EXPECTED_VERSION" ]; then
+            echo "::error::Version mismatch. Tag=$EXPECTED_VERSION package.json=$PKG_VERSION. They must match. Refusing to build a release with inconsistent version metadata."
+            exit 1
+          fi
+
+      - name: Verify release notes exist
+        env:
+          VERSION: ${{ steps.resolve_tag.outputs.version }}
+        run: |
+          set -euo pipefail
+          NOTES_FILE="docs/releases/sartracker-electron-${VERSION}.md"
+          if [ ! -f "$NOTES_FILE" ]; then
+            echo "::error::Release notes file missing: $NOTES_FILE"
+            echo "::error::Copy docs/releases/TEMPLATE.md to that path, fill it in, commit, and re-tag."
+            exit 1
+          fi
+          if [ ! -s "$NOTES_FILE" ]; then
+            echo "::error::Release notes file is empty: $NOTES_FILE"
+            exit 1
+          fi
+          echo "Release notes verified: $NOTES_FILE ($(wc -c < "$NOTES_FILE") bytes)"
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install npm deps
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Unit tests
+        run: npm run test
+
+      - name: Web build (also runs bundle-size check)
+        run: npm run build
+
+  bundle-linux:
+    name: Bundle (linux-x86_64)
+    needs: gates
+    runs-on: ubuntu-22.04
+    timeout-minutes: 45
+    permissions:
+      contents: write
+    outputs:
+      appimage: ${{ steps.inspect.outputs.appimage }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.gates.outputs.tag }}
+
+      - name: Install Linux Electron runtime deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            dbus-x11 \
+            gnome-keyring \
+            libasound2 \
+            libatk-bridge2.0-0 \
+            libatk1.0-0 \
+            libcups2 \
+            libdrm2 \
+            libfuse2 \
+            libgbm1 \
+            libgtk-3-0 \
+            libnss3 \
+            libxdamage1 \
+            libxkbcommon0 \
+            libxrandr2 \
+            libxss1
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install npm deps
+        run: npm ci
+
+      - name: Build Electron Linux artifacts
+        run: npm run electron:dist:linux
+
+      - name: Inspect artifacts and native SQLite module
+        id: inspect
+        run: |
+          set -euo pipefail
+          APPIMAGE="$(find tmp/electron-dist -maxdepth 1 -type f -name '*.AppImage' -print -quit)"
+          DEB="$(find tmp/electron-dist -maxdepth 1 -type f -name '*.deb' -print -quit)"
+          NATIVE_MODULE="$(find tmp/electron-dist/linux-unpacked -type f -name 'better_sqlite3.node' -print -quit)"
+
+          if [ -z "$APPIMAGE" ]; then
+            echo "::error::Electron AppImage was not produced."
+            exit 1
+          fi
+          if [ -z "$DEB" ]; then
+            echo "::error::Electron .deb was not produced."
+            exit 1
+          fi
+          if [ -z "$NATIVE_MODULE" ]; then
+            echo "::error::Packaged better_sqlite3.node was not found in linux-unpacked."
+            exit 1
+          fi
+
+          file "$NATIVE_MODULE" | tee /tmp/better-sqlite3-file.txt
+          grep -E 'ELF 64-bit LSB shared object, x86-64' /tmp/better-sqlite3-file.txt
+
+          echo "appimage=$(basename "$APPIMAGE")" >> "$GITHUB_OUTPUT"
+          echo "Built artifacts:"
+          stat --printf='%n %s bytes\n' "$APPIMAGE" "$DEB"
+
+      - name: Guard against private map data in artifacts
+        run: |
+          set -euo pipefail
+          # Belt-and-braces: the build only packages dist/ + electron/, but make
+          # absolutely sure no .mbtiles or licensed source ever rides along.
+          if find tmp/electron-dist -type f \( -iname '*.mbtiles' -o -iname '*discovery*' -o -iname 'mountainrescue_org*' \) -print | grep -q .; then
+            echo "::error::Map/licensed data found in build output. Releases must contain app artifacts only."
+            find tmp/electron-dist -type f \( -iname '*.mbtiles' -o -iname '*discovery*' -o -iname 'mountainrescue_org*' \) -print
+            exit 1
+          fi
+          echo "No map/licensed data present in build output."
+
+      - name: Create draft prerelease and upload Linux assets
+        if: ${{ github.event.inputs.dry_run != 'true' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.gates.outputs.tag }}
+          VERSION: ${{ needs.gates.outputs.version }}
+        run: |
+          set -euo pipefail
+          NOTES_FILE="docs/releases/sartracker-electron-${VERSION}.md"
+          BODY_FILE="$RUNNER_TEMP/release-body.md"
+          {
+            cat "$NOTES_FILE"
+            echo ""
+            echo "---"
+            echo ""
+            echo "## CI Provenance"
+            echo ""
+            echo "- Build commit: \`${GITHUB_SHA}\`"
+            echo "- Run: [#${GITHUB_RUN_NUMBER}](${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID})"
+            echo "- Workflow: \`.github/workflows/electron-release.yml\`"
+          } > "$BODY_FILE"
+
+          # Create the draft prerelease only if it does not already exist
+          # (idempotent across re-runs; the tag is immutable once pushed).
+          if ! gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release create "$TAG" \
+              --repo "$GITHUB_REPOSITORY" \
+              --title "SAR Tracker Electron $TAG (internal validation)" \
+              --notes-file "$BODY_FILE" \
+              --draft \
+              --prerelease
+          else
+            echo "Release $TAG already exists; reusing it."
+          fi
+
+          gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" --clobber \
+            tmp/electron-dist/*.AppImage \
+            tmp/electron-dist/*.deb
+
+      - name: Upload build artifacts (workflow run)
+        uses: actions/upload-artifact@v4
+        with:
+          name: electron-linux-artifacts-${{ needs.gates.outputs.tag }}
+          path: |
+            tmp/electron-dist/*.AppImage
+            tmp/electron-dist/*.deb
+          if-no-files-found: error
+
+  bundle-windows:
+    name: Bundle (windows-x86_64)
+    needs: [gates, bundle-linux]
+    # OPT-IN ONLY. Disabled until DON-141 (Windows official-map smoke) passes.
+    # We refuse to attach an unsmoked Windows installer to a release.
+    if: ${{ github.event.inputs.enable_windows == 'true' && github.event.inputs.dry_run != 'true' }}
+    runs-on: windows-2022
+    timeout-minutes: 45
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.gates.outputs.tag }}
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install npm deps
+        run: npm ci
+
+      - name: Build Electron Windows NSIS artifact
+        run: npm run electron:dist:win
+
+      - name: Upload Windows asset to release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.gates.outputs.tag }}
+        run: |
+          set -euo pipefail
+          EXE="$(find tmp/electron-dist -maxdepth 1 -type f -name '*.exe' -print -quit)"
+          if [ -z "$EXE" ]; then
+            echo "::error::Windows NSIS .exe was not produced."
+            exit 1
+          fi
+          gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" --clobber "$EXE"
+
+  launch-smoke-linux:
+    name: Launch smoke (Linux AppImage)
+    needs: [gates, bundle-linux]
+    if: ${{ github.event.inputs.dry_run != 'true' && needs.bundle-linux.result == 'success' }}
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - name: Install launch smoke deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            dbus-x11 \
+            gnome-keyring \
+            imagemagick \
+            libfuse2 \
+            libgtk-3-0 \
+            libnss3 \
+            xdotool \
+            xvfb
+
+      - name: Download Linux AppImage from release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.gates.outputs.tag }}
+        run: |
+          set -euo pipefail
+          mkdir -p smoke-assets smoke-evidence
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" \
+            --pattern '*.AppImage' \
+            --dir smoke-assets
+          ls -lh smoke-assets
+
+      - name: Launch AppImage under Xvfb and capture evidence
+        run: |
+          set -euo pipefail
+          APPIMAGE="$(find smoke-assets -maxdepth 1 -type f -name '*.AppImage' -print -quit)"
+          if [ -z "$APPIMAGE" ]; then
+            echo "::error::Linux AppImage asset not found."
+            exit 1
+          fi
+          chmod +x "$APPIMAGE"
+          export APPIMAGE
+
+          xvfb-run -a --server-args='-screen 0 1440x900x24' dbus-run-session -- bash <<'EOF'
+          set -euo pipefail
+          export NO_AT_BRIDGE=1
+
+          printf '\n' | gnome-keyring-daemon --unlock --components=secrets \
+            > smoke-evidence/keyring-env.txt \
+            2> smoke-evidence/keyring.log || true
+          if [ -s smoke-evidence/keyring-env.txt ]; then
+            set -a
+            # shellcheck disable=SC1091
+            . smoke-evidence/keyring-env.txt
+            set +a
+          fi
+
+          "$APPIMAGE" \
+            --no-sandbox \
+            --ignore-gpu-blocklist \
+            --enable-unsafe-swiftshader \
+            > smoke-evidence/appimage.log \
+            2>&1 &
+          APP_PID=$!
+
+          WINDOW_FOUND=0
+          for _ in $(seq 1 30); do
+            if ! kill -0 "$APP_PID" 2>/dev/null; then
+              echo "::error::AppImage exited before a window appeared."
+              cat smoke-evidence/appimage.log || true
+              exit 1
+            fi
+            if xdotool search --name 'SAR Tracker Web' \
+              > smoke-evidence/window-ids.txt 2>/dev/null; then
+              WINDOW_FOUND=1
+              break
+            fi
+            sleep 1
+          done
+
+          if [ "$WINDOW_FOUND" != "1" ]; then
+            echo "::error::SAR Tracker Web window did not appear."
+            cat smoke-evidence/appimage.log || true
+            kill "$APP_PID" 2>/dev/null || true
+            exit 1
+          fi
+
+          sleep 5
+          import -window root smoke-evidence/appimage-launch.png
+          test -s smoke-evidence/appimage-launch.png
+          convert smoke-evidence/appimage-launch.png \
+            -crop 1440x820+0+60 \
+            smoke-evidence/appimage-content.png
+          CONTENT_MEAN="$(convert smoke-evidence/appimage-content.png \
+            -colorspace Gray \
+            -format '%[fx:mean]' \
+            info:)"
+          echo "$CONTENT_MEAN" > smoke-evidence/appimage-content-mean.txt
+          awk -v mean="$CONTENT_MEAN" 'BEGIN { exit !(mean > 0.05) }' || {
+            echo "::error::AppImage content region is too dark; the packaged app may have opened a black window."
+            echo "Content grayscale mean: $CONTENT_MEAN"
+            cat smoke-evidence/appimage.log || true
+            kill "$APP_PID" 2>/dev/null || true
+            exit 1
+          }
+
+          kill "$APP_PID" 2>/dev/null || true
+          wait "$APP_PID" 2>/dev/null || true
+          EOF
+
+      - name: Upload Linux launch evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: launch-smoke-linux-${{ needs.gates.outputs.tag }}
+          path: smoke-evidence
+          if-no-files-found: warn
+
+  checksums:
+    name: SHA256SUMS sidecar
+    needs: [gates, bundle-linux, bundle-windows, launch-smoke-linux]
+    # Run whenever the Linux bundle + smoke succeeded and this is a real release
+    # upload. bundle-windows is allowed to be skipped (default-off).
+    if: ${{ always() && github.event.inputs.dry_run != 'true' && needs.bundle-linux.result == 'success' && needs.launch-smoke-linux.result == 'success' && needs.bundle-windows.result != 'failure' }}
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - name: Download release assets
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.gates.outputs.tag }}
+        run: |
+          set -euo pipefail
+          mkdir -p assets
+          # Brief settle window in case GitHub's release-asset index is behind.
+          sleep 10
+          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json assets \
+            --jq '.assets[].name' \
+            | grep -v '^SHA256SUMS$' \
+            | while read -r NAME; do
+                echo "Downloading $NAME"
+                gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern "$NAME" --dir assets
+              done
+
+      - name: Generate SHA256SUMS
+        run: |
+          set -euo pipefail
+          cd assets
+          shopt -s nullglob
+          files=( * )
+          if [ ${#files[@]} -eq 0 ]; then
+            echo "::error::No release assets found to hash."
+            exit 1
+          fi
+          sha256sum -- "${files[@]}" > SHA256SUMS
+          echo "Generated SHA256SUMS:"
+          cat SHA256SUMS
+
+      - name: Upload SHA256SUMS to release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.gates.outputs.tag }}
+        run: |
+          gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" --clobber assets/SHA256SUMS
+
+  summary:
+    name: Summary
+    needs: [gates, bundle-linux, bundle-windows, launch-smoke-linux, checksums]
+    if: always()
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Build summary
+        env:
+          TAG: ${{ needs.gates.outputs.tag }}
+          GATES_RESULT: ${{ needs.gates.result }}
+          BUNDLE_LINUX_RESULT: ${{ needs.bundle-linux.result }}
+          BUNDLE_WINDOWS_RESULT: ${{ needs.bundle-windows.result }}
+          SMOKE_RESULT: ${{ needs.launch-smoke-linux.result }}
+          CHECKSUMS_RESULT: ${{ needs.checksums.result }}
+          DRY_RUN: ${{ github.event.inputs.dry_run || 'false' }}
+          ENABLE_WINDOWS: ${{ github.event.inputs.enable_windows || 'false' }}
+        run: |
+          {
+            echo "# Electron release run summary"
+            echo ""
+            echo "- Tag: \`${TAG:-(unresolved)}\`"
+            echo "- Commit: \`${GITHUB_SHA}\`"
+            echo "- Run: [#${GITHUB_RUN_NUMBER}](${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID})"
+            echo "- Trigger: \`${GITHUB_EVENT_NAME}\`"
+            echo "- Dry run: \`${DRY_RUN}\`"
+            echo "- Windows enabled: \`${ENABLE_WINDOWS}\`"
+            echo ""
+            echo "## Job results"
+            echo ""
+            echo "| Job | Result |"
+            echo "| --- | --- |"
+            echo "| gates | ${GATES_RESULT} |"
+            echo "| bundle-linux | ${BUNDLE_LINUX_RESULT} |"
+            echo "| bundle-windows | ${BUNDLE_WINDOWS_RESULT} |"
+            echo "| launch-smoke-linux | ${SMOKE_RESULT} |"
+            echo "| checksums | ${CHECKSUMS_RESULT} |"
+            echo ""
+            echo "## macOS"
+            echo ""
+            echo "macOS arm64 is not built in CI. Produce it locally with"
+            echo "\`npm run electron:pack -- --mac --arm64\`, zip the .app, and attach it"
+            echo "with \`gh release upload\`. Re-run the checksums job afterwards if you"
+            echo "add a macOS asset (or regenerate SHA256SUMS locally)."
+            echo ""
+            echo "## Next step"
+            echo ""
+            if [ "$BUNDLE_LINUX_RESULT" = "success" ] && [ "$SMOKE_RESULT" = "success" ] && [ "$DRY_RUN" != "true" ]; then
+              echo "The release for \`${TAG}\` is in **DRAFT**. Review the assets and body, run any remaining manual smokes, then publish with:"
+              echo ""
+              echo '```bash'
+              echo "gh release view ${TAG} --repo ${GITHUB_REPOSITORY}"
+              echo "gh release edit ${TAG} --repo ${GITHUB_REPOSITORY} --draft=false"
+              echo '```'
+            elif [ "$DRY_RUN" = "true" ]; then
+              echo "Dry run: gates and Linux bundle ran but no release was created or uploaded."
+            else
+              echo "The Linux bundle or smoke did not complete cleanly. Investigate the failed jobs above before publishing."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"

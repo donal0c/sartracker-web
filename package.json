@@ -12,6 +12,7 @@
     "electron:preview": "npm run build && electron electron/main.cjs",
     "electron:pack": "node scripts/electron-package.mjs --dir",
     "electron:dist:linux": "node scripts/electron-package.mjs --linux AppImage deb --x64 --publish never",
+    "electron:dist:win": "node scripts/electron-package.mjs --win nsis --x64 --publish never",
     "electron:smoke:official-offline": "node scripts/electron-official-map-offline-smoke.mjs",
     "lint": "eslint .",
     "preview": "vite preview",

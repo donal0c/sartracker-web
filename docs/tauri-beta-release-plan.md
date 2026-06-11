@@ -1,5 +1,13 @@
 # Tauri Beta Release Plan
 
+> **⚠️ SUPERSEDED (DON-143).** Electron is the production desktop shell and the
+> Tauri release lane has been retired. The CI workflow this document describes
+> (`.github/workflows/release.yml`) has been **removed**. The current release
+> pipeline is `.github/workflows/electron-release.yml` (triggered by an
+> `electron-v*` tag); see `docs/releases/README.md` and
+> `docs/electron-beta-handoff.md`. This file is retained for historical context
+> only — do not follow its Tauri/`v*`-tag instructions for new releases.
+
 > Supporting Phase 1 beta detail. The active queue and next-task order live in `docs/two-track-execution-workplan.md`; update that workplan before treating new beta work as planned.
 
 ## Purpose

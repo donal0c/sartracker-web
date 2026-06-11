@@ -21,5 +21,16 @@
     "category": "Utility",
     "maintainer": "SAR Tracker",
     "synopsis": "SAR Tracker Electron validation build"
+  },
+  "win": {
+    "target": [
+      "nsis"
+    ]
+  },
+  "nsis": {
+    "oneClick": false,
+    "perMachine": false,
+    "allowToChangeInstallationDirectory": true,
+    "deleteAppDataOnUninstall": false
   }
 }

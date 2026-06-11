@@ -197,18 +197,26 @@ count, format, bounds, and ready/not-ready state.
 
 ## Going Forward
 
-The target release flow is:
+The release flow (now implemented under `DON-143`) is:
 
-1. Electron Linux and Windows builds are produced by GitHub Actions.
-2. macOS is either added to CI later or uploaded manually as a zipped `.app`.
-3. GitHub Releases hold app artifacts and `SHA256SUMS`.
-4. Private map packages remain outside GitHub.
-5. Each release note states exactly which OS/map smokes passed.
-6. `DON-115` closes only after Windows official-map smoke (`DON-141`) passes.
+1. Electron Linux builds are produced by GitHub Actions
+   (`.github/workflows/electron-release.yml`, triggered by an `electron-v*`
+   tag). The job verifies the packaged `better-sqlite3` is native Linux x86-64
+   and runs an Xvfb launch smoke on the built AppImage.
+2. macOS arm64 is built locally and uploaded manually as a zipped `.app`
+   (GitHub macOS runners bill at 10x).
+3. Windows NSIS is scaffolded but **disabled by default**; it only builds when
+   the workflow is dispatched with `enable_windows=true`, which waits on the
+   Windows official-map smoke (`DON-141`).
+4. GitHub Releases hold app artifacts and `SHA256SUMS` only. The build output is
+   guarded against `.mbtiles` / licensed map data.
+5. Private map packages remain outside GitHub.
+6. Each release note states exactly which OS/map smokes passed.
+7. `DON-115` closes only after Windows official-map smoke (`DON-141`) passes.
 
-The current `.github/workflows/release.yml` is still Tauri-era. Do not use it
-as the source of truth for Electron app handoff until it has been migrated or
-replaced under `DON-143`.
+The old Tauri `.github/workflows/release.yml` has been **removed** so it cannot
+be mistaken for the Electron path. See `docs/releases/README.md` for the full
+authoring workflow.
 
 ## Open Workflow Gap
 
