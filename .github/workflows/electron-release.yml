@@ -156,7 +156,7 @@ jobs:
     runs-on: ubuntu-22.04
     timeout-minutes: 45
     permissions:
-      contents: write
+      contents: read
     outputs:
       appimage: ${{ steps.inspect.outputs.appimage }}
     steps:
@@ -237,53 +237,21 @@ jobs:
           fi
           echo "No map/licensed data present in build output."
 
-      - name: Create draft prerelease and upload Linux assets
-        if: ${{ github.event.inputs.dry_run != 'true' }}
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAG: ${{ needs.gates.outputs.tag }}
-          VERSION: ${{ needs.gates.outputs.version }}
-        run: |
-          set -euo pipefail
-          NOTES_FILE="docs/releases/sartracker-electron-${VERSION}.md"
-          BODY_FILE="$RUNNER_TEMP/release-body.md"
-          {
-            cat "$NOTES_FILE"
-            echo ""
-            echo "---"
-            echo ""
-            echo "## CI Provenance"
-            echo ""
-            echo "- Build commit: \`${GITHUB_SHA}\`"
-            echo "- Run: [#${GITHUB_RUN_NUMBER}](${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID})"
-            echo "- Workflow: \`.github/workflows/electron-release.yml\`"
-          } > "$BODY_FILE"
-
-          # Create the draft prerelease only if it does not already exist
-          # (idempotent across re-runs; the tag is immutable once pushed).
-          if ! gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            gh release create "$TAG" \
-              --repo "$GITHUB_REPOSITORY" \
-              --title "SAR Tracker Electron $TAG (internal validation)" \
-              --notes-file "$BODY_FILE" \
-              --draft \
-              --prerelease
-          else
-            echo "Release $TAG already exists; reusing it."
-          fi
-
-          gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" --clobber \
-            tmp/electron-dist/*.AppImage \
-            tmp/electron-dist/*.deb
-
-      - name: Upload build artifacts (workflow run)
+      # Hand the built artifacts to downstream jobs via the workflow-artifact
+      # store. We deliberately do NOT create the GitHub release here: the draft
+      # release is only created after the launch smoke passes (the `release`
+      # job), so an unsmoked build is never published. Passing bytes through
+      # upload/download-artifact also avoids the by-tag release API, which does
+      # not return draft releases.
+      - name: Upload built artifacts for downstream jobs
         uses: actions/upload-artifact@v4
         with:
-          name: electron-linux-artifacts-${{ needs.gates.outputs.tag }}
+          name: electron-linux-artifacts
           path: |
             tmp/electron-dist/*.AppImage
             tmp/electron-dist/*.deb
           if-no-files-found: error
+          retention-days: 7
 
   bundle-windows:
     name: Bundle (windows-x86_64)
@@ -294,7 +262,7 @@ jobs:
     runs-on: windows-2022
     timeout-minutes: 45
     permissions:
-      contents: write
+      contents: read
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -313,11 +281,8 @@ jobs:
       - name: Build Electron Windows NSIS artifact
         run: npm run electron:dist:win
 
-      - name: Upload Windows asset to release
+      - name: Verify NSIS artifact exists
         shell: bash
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAG: ${{ needs.gates.outputs.tag }}
         run: |
           set -euo pipefail
           EXE="$(find tmp/electron-dist -maxdepth 1 -type f -name '*.exe' -print -quit)"
@@ -325,7 +290,15 @@ jobs:
             echo "::error::Windows NSIS .exe was not produced."
             exit 1
           fi
-          gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" --clobber "$EXE"
+          echo "Built: $EXE"
+
+      - name: Upload Windows artifact for downstream jobs
+        uses: actions/upload-artifact@v4
+        with:
+          name: electron-windows-artifacts
+          path: tmp/electron-dist/*.exe
+          if-no-files-found: error
+          retention-days: 7
 
   launch-smoke-linux:
     name: Launch smoke (Linux AppImage)
@@ -349,16 +322,16 @@ jobs:
             xdotool \
             xvfb
 
-      - name: Download Linux AppImage from release
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAG: ${{ needs.gates.outputs.tag }}
+      - name: Download built artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: electron-linux-artifacts
+          path: smoke-assets
+
+      - name: Prepare evidence dir and list assets
         run: |
           set -euo pipefail
-          mkdir -p smoke-assets smoke-evidence
-          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" \
-            --pattern '*.AppImage' \
-            --dir smoke-assets
+          mkdir -p smoke-evidence
           ls -lh smoke-assets
 
       - name: Launch AppImage under Xvfb and capture evidence
@@ -447,37 +420,36 @@ jobs:
           path: smoke-evidence
           if-no-files-found: warn
 
-  checksums:
-    name: SHA256SUMS sidecar
+  release:
+    name: Draft prerelease + SHA256SUMS
     needs: [gates, bundle-linux, bundle-windows, launch-smoke-linux]
-    # Run whenever the Linux bundle + smoke succeeded and this is a real release
-    # upload. bundle-windows is allowed to be skipped (default-off).
+    # Only publish AFTER the launch smoke passes, and never on a dry run.
+    # bundle-windows is allowed to be skipped (default-off) but not failed.
     if: ${{ always() && github.event.inputs.dry_run != 'true' && needs.bundle-linux.result == 'success' && needs.launch-smoke-linux.result == 'success' && needs.bundle-windows.result != 'failure' }}
     runs-on: ubuntu-22.04
     timeout-minutes: 10
     permissions:
       contents: write
     steps:
-      - name: Download release assets
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAG: ${{ needs.gates.outputs.tag }}
+      - name: Checkout (for release notes)
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.gates.outputs.tag }}
+
+      - name: Download all built artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts-staging
+          merge-multiple: true
+
+      - name: Collect assets and generate SHA256SUMS
         run: |
           set -euo pipefail
           mkdir -p assets
-          # Brief settle window in case GitHub's release-asset index is behind.
-          sleep 10
-          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json assets \
-            --jq '.assets[].name' \
-            | grep -v '^SHA256SUMS$' \
-            | while read -r NAME; do
-                echo "Downloading $NAME"
-                gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern "$NAME" --dir assets
-              done
-
-      - name: Generate SHA256SUMS
-        run: |
-          set -euo pipefail
+          # Gather only the distributable installers (AppImage/.deb/.exe);
+          # ignore any launch-smoke evidence that may have been downloaded.
+          find artifacts-staging -type f \( -name '*.AppImage' -o -name '*.deb' -o -name '*.exe' \) \
+            -exec cp -v {} assets/ \;
           cd assets
           shopt -s nullglob
           files=( * )
@@ -489,16 +461,45 @@ jobs:
           echo "Generated SHA256SUMS:"
           cat SHA256SUMS
 
-      - name: Upload SHA256SUMS to release
+      - name: Create draft prerelease and upload all assets
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ needs.gates.outputs.tag }}
+          VERSION: ${{ needs.gates.outputs.version }}
         run: |
-          gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" --clobber assets/SHA256SUMS
+          set -euo pipefail
+          NOTES_FILE="docs/releases/sartracker-electron-${VERSION}.md"
+          BODY_FILE="$RUNNER_TEMP/release-body.md"
+          {
+            cat "$NOTES_FILE"
+            echo ""
+            echo "---"
+            echo ""
+            echo "## CI Provenance"
+            echo ""
+            echo "- Build commit: \`${GITHUB_SHA}\`"
+            echo "- Run: [#${GITHUB_RUN_NUMBER}](${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID})"
+            echo "- Workflow: \`.github/workflows/electron-release.yml\`"
+            echo "- Linux launch smoke: passed"
+          } > "$BODY_FILE"
+
+          # Idempotent across re-runs: create the draft only if absent.
+          if ! gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release create "$TAG" \
+              --repo "$GITHUB_REPOSITORY" \
+              --title "SAR Tracker Electron $TAG (internal validation)" \
+              --notes-file "$BODY_FILE" \
+              --draft \
+              --prerelease
+          else
+            echo "Release $TAG already exists; reusing it."
+          fi
+
+          gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" --clobber assets/*
 
   summary:
     name: Summary
-    needs: [gates, bundle-linux, bundle-windows, launch-smoke-linux, checksums]
+    needs: [gates, bundle-linux, bundle-windows, launch-smoke-linux, release]
     if: always()
     runs-on: ubuntu-22.04
     steps:
@@ -509,7 +510,7 @@ jobs:
           BUNDLE_LINUX_RESULT: ${{ needs.bundle-linux.result }}
           BUNDLE_WINDOWS_RESULT: ${{ needs.bundle-windows.result }}
           SMOKE_RESULT: ${{ needs.launch-smoke-linux.result }}
-          CHECKSUMS_RESULT: ${{ needs.checksums.result }}
+          RELEASE_RESULT: ${{ needs.release.result }}
           DRY_RUN: ${{ github.event.inputs.dry_run || 'false' }}
           ENABLE_WINDOWS: ${{ github.event.inputs.enable_windows || 'false' }}
         run: |
@@ -531,7 +532,7 @@ jobs:
             echo "| bundle-linux | ${BUNDLE_LINUX_RESULT} |"
             echo "| bundle-windows | ${BUNDLE_WINDOWS_RESULT} |"
             echo "| launch-smoke-linux | ${SMOKE_RESULT} |"
-            echo "| checksums | ${CHECKSUMS_RESULT} |"
+            echo "| release | ${RELEASE_RESULT} |"
             echo ""
             echo "## macOS"
             echo ""
