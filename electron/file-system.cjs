@@ -39,7 +39,7 @@ function createElectronFileSystem(options) {
     importOfficialMapPackage: async (input) => {
       const sourcePath = normalizeRequiredPath(input?.sourcePath, 'Official map package')
       if (path.extname(sourcePath).toLowerCase() !== '.mbtiles') {
-        throw new Error('Official map package must be a .mbtiles file.')
+        throw new Error(getOfficialMapPackageExtensionError(sourcePath))
       }
 
       const sourceStat = await fs.stat(sourcePath).catch((error) => {
@@ -224,6 +224,17 @@ function normalizeOfficialMapId(input) {
     'official_high_resolution_imagery',
   ])
   return allowed.has(value) ? value : 'official_discovery_topo'
+}
+
+function getOfficialMapPackageExtensionError(sourcePath) {
+  const extension = path.extname(sourcePath).toLowerCase()
+  if (extension === '.tif' || extension === '.tiff') {
+    return 'This beta cannot import raw Discovery .tif/.tiff source files. Use Add Discovery Package with a prepared .mbtiles package, such as reeks-standard-60km-z16.mbtiles, or ask the map admin to prepare one from the licensed source.'
+  }
+  if (extension === '.zip') {
+    return 'This beta cannot import raw Discovery .zip source files. Use Add Discovery Package with a prepared .mbtiles package, such as reeks-standard-60km-z16.mbtiles, or ask the map admin to prepare one from the licensed source.'
+  }
+  return 'Official map package must be a .mbtiles file.'
 }
 
 async function writeFileAtomically(destinationPath, bytes) {

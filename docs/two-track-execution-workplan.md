@@ -73,9 +73,9 @@ focused on that risk rather than turning every UI change into a release cycle.
 - Release style: small, frequent Vercel deploys.
 - Persistence expectation: session storage only; testing/training, not live incidents.
 
-**Track B: Tauri operational readiness**
+**Track B: Electron operational readiness**
 
-- Runtime: packaged Tauri desktop app.
+- Runtime: packaged Electron desktop app.
 - Purpose: prepare the operational release lane without waiting for all UI feedback to finish.
 - Release style: quieter background work, then versioned beta packages when a coherent batch is ready.
 - Persistence expectation: SQLite, filesystem adapters, recovery, diagnostics, and local map packages.
@@ -92,7 +92,7 @@ When new work arrives, classify it before implementing:
 | Work type | Route |
 | --- | --- |
 | Confusing UI, wording, control placement, layer visibility, tracking display | Track A |
-| Bug visible in hosted browser testing mode | Track A first, then confirm whether Tauri is also affected |
+| Bug visible in hosted browser testing mode | Track A first, then confirm whether Electron is also affected |
 | Runtime boot, startup failure visibility, shared mission/layer/tracking correctness | Shared foundation |
 | Mission persistence, recovery, filesystem, GPX watch, diagnostics export, archive | Track B |
 | High-definition mountain map integration | Track B / desktop-first |
@@ -106,7 +106,7 @@ Then choose the lightest valid verification route:
 | --- | --- |
 | Same frontend codepath; no native persistence, filesystem, packaging, runtime, GPU, or direct-network difference | Web/hosted validation is normally enough |
 | Shared frontend behaviour but safety-critical map/tracking/operator visibility impact | Web/hosted validation plus targeted regression coverage; package only if runtime-specific risk exists |
-| Native desktop boundary, Electron/Tauri shell, app paths, secrets, SQLite, filesystem, diagnostics, updater, packaging, OS permissions, GPU/WebGL/runtime, offline tiles, or direct Traccar path | Packaged desktop validation required |
+| Native desktop boundary, Electron shell, app paths, secrets, SQLite, filesystem, diagnostics, updater, packaging, OS permissions, GPU/WebGL/runtime, offline tiles, or direct Traccar path | Packaged desktop validation required |
 
 Release diagnostic rule: every tester-facing desktop build must include a
 one-click diagnostics export that is broad enough to avoid slow back-and-forth
@@ -123,7 +123,7 @@ ship or ask testers for whole Electron profile zips.
 1. Keep hosted browser testing smooth enough for the team to give real feedback.
 2. Fix the 2026-05-16 team feedback items that affect map trust before returning to broader foundation work.
 3. Burn down shared foundation issues that make startup, mission control, tracking, layers, or map behavior ambiguous.
-4. Prepare a repeatable Tauri beta release path in the background.
+4. Keep the repeatable Electron beta release path healthy and use it for team desktop retest builds.
 5. Avoid heavy browser hardening unless testing proves browser operational deployment is genuinely needed.
 6. Treat licensed Irish/OSI map sources as local/customer-provided assets unless the map provider gives requirements that change this.
 7. Continue the official map lane through the team-ready Electron import workflow: `DON-7` is now the active offline-map parent for `DON-109` through `DON-115`, while `DON-76` remains the broader official-provider parent and overlay lane.
@@ -211,9 +211,9 @@ This is the default order when the user says “work on the next task.”
 | Done | Field-ready official map checklist and operator manual updates | S1 Maps / S2 Electron | `DON-114` / `DON-7` | Done 2026-06-07. Maps menu now gives a consolidated official-map field-readiness verdict for package registration, current-view coverage, fallback source status, and last verification; operator manual covers fresh Electron install through offline Discovery readiness, hosted-web limits, certificate export, and troubleshooting. |
 | Backlog | Cross-platform official map import release smoke | S1 Maps / S2 Electron | `DON-115` / `DON-7` | Parked until Windows is available. macOS smoke passed, and Ubuntu GitHub prerelease `.deb` was downloaded, checksum-verified, installed with `sudo apt install`, and smoke-tested from the installed binary. Windows remains the only unverified gate and must pass before closing unless the platform requirement changes. |
 | Done | Prepare Electron beta handoff release and Discovery map loading instructions | S2 Electron / S1 Maps | `DON-142` / `DON-25` | GitHub prerelease `electron-v0.1.0-beta.3` published with Linux `.deb`, Linux AppImage, macOS arm64 zip, `SHA256SUMS`, and Discovery loading instructions. Release docs warn that the old Tauri workflow is not the current Electron handoff path. Durable GitHub Actions release automation remains split to `DON-143`; Windows remains `DON-141`. |
-| In Review | Fix Electron launch slowdown after tracking history accumulates | S2 Electron / Tracking | `DON-151` / `DON-25` | Local fix in working tree 2026-06-11. Poller now seeds first live history fetch from active-mission persisted breadcrumbs and runtime persistence reuses mission-scoped position keys instead of reloading all positions each snapshot. Verified: `npm run test` (149/847), `npm run lint`, `npm run build`. Needs packaged Electron smoke/release with DON-147 and DON-148 before team retest. |
-| Todo | Define private Discovery map package distribution and raw-source packaging workflow | S1 Maps / S2 Electron | `DON-144` / `DON-7` | Urgent workflow correction from team feedback. The beta expects prepared `.mbtiles`, but the team has raw USB/source files. Choose private hosting/distribution, give operators exact package instructions, and define admin raw-source-to-package workflow. |
-| Todo | Migrate GitHub release workflow to Electron desktop artifacts | S2 Electron / Release | `DON-143` / `DON-25` | Next non-feedback chunk. Create or migrate an Electron-specific GitHub draft/prerelease workflow for app binaries and `SHA256SUMS` only. This is the durable release path; the current manual GitHub prerelease is valid for team testing. |
+| In Review | Fix Electron launch slowdown after tracking history accumulates | S2 Electron / Tracking | `DON-151` / `DON-25` | Fix included in published `electron-v0.1.0-beta.4`. Poller seeds first live history fetch from active-mission persisted breadcrumbs and runtime persistence reuses mission-scoped position keys instead of reloading all positions each snapshot. Verified: `npm run test` (149/847), `npm run lint`, `npm run build`, beta.4 CI, and Ubuntu on-device smoke. Awaiting team retest of the original Ubuntu slowdown scenario before closing. |
+| Todo | Define private Discovery map package distribution and raw-source packaging workflow | S1 Maps / S2 Electron | `DON-144` / `DON-7` | Urgent workflow correction from team feedback. The beta expects prepared `.mbtiles`, but the team has raw USB/source files. Partial independent progress: beta.4 import now gives specific wrong-file guidance for raw `.tif`/`.tiff`/`.zip`; manual/handoff distinguish MapGenie source metadata from package import. Still needs private hosting/distribution owner/channel and repeatable admin raw-source-to-package workflow decision. |
+| Done | Migrate GitHub release workflow to Electron desktop artifacts | S2 Electron / Release | `DON-143` / `DON-25` | Done 2026-06-11. `.github/workflows/electron-release.yml` builds native Linux AppImage + `.deb`, asserts `better_sqlite3.node` is Linux x86-64, guards against `.mbtiles`/licensed map data, runs Xvfb launch smoke, creates `SHA256SUMS`, and publishes app-artifact-only prereleases from `electron-v*` tags. `electron-v0.1.0-beta.4` is published and on-device smoked. |
 | Backlog | Relief and slope overlay package conversion spike | S1 Maps / Overlays | `DON-116` / `DON-76` | Optional terrain overlay lane after basemap workflow. Keep out of the current map queue until Discovery basemap import is field-ready. |
 | Done | Linux runtime decision checkpoint | Track B / Runtime | `DON-29` / `DON-25` | Done 2026-06-06. Electron confirmed as production shell through incremental evidence (S8a→S8c). |
 | Done | Ongoing desktop runtime support plan | Track B / Release / Support | `DON-30` / `DON-25` | Done 2026-06-06. Policy at `docs/desktop-runtime-support-policy.md`. Covers OS matrix, packaging, update cadence, release channels, diagnostics, rollback, and operator guidance. |

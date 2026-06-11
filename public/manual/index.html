@@ -478,22 +478,23 @@
             opening the app.
           </p>
           <p>
-            Cross-platform betas are produced by the GitHub Actions release workflow. Every beta has a
+            Electron betas are produced by the GitHub Actions release workflow. Every beta has a
             <code>SHA256SUMS</code> file alongside the artifacts; verify your download against it before
-            running the binary.
+            running the binary. The current CI-produced beta is Linux x86_64; macOS builds remain local/manual
+            and Windows waits for the official-map smoke gate.
           </p>
 
           <h3>Linux (primary distribution target)</h3>
           <p>
             Two artifacts are published per Linux beta: a portable
-            <code>.AppImage</code> and a Debian <code>.deb</code> package, both x86_64. Compatibility floor
-            is Ubuntu 22.04 / Debian 12 / Fedora 38 or any equivalent distro shipping WebKitGTK 4.1.
-            Operators on Ubuntu 20.04 must upgrade.
+            <code>.AppImage</code> and a Debian <code>.deb</code> package, both x86_64. The beta.4 artifacts
+            are named <code>sartracker-electron-validation_&lt;version&gt;_linux_x86_64.AppImage</code> and
+            <code>sartracker-electron-validation_&lt;version&gt;_linux_amd64.deb</code>.
           </p>
           <p>
             <strong>AppImage:</strong> verify with
             <code>sha256sum -c SHA256SUMS --ignore-missing</code>, then
-            <code>chmod +x sartracker-web_&lt;version&gt;_linux_amd64.AppImage</code> and run it. If you see
+            <code>chmod +x sartracker-electron-validation_&lt;version&gt;_linux_x86_64.AppImage</code> and run it. If you see
             <code>dlopen(): error loading libfuse.so.2</code>, install
             <code>libfuse2t64</code> on Ubuntu 24.04 / Debian 13 or <code>libfuse2</code> on Ubuntu 22.04 /
             Debian 12. AppImages do not auto-register a desktop menu entry. Use the
@@ -501,7 +502,7 @@
           </p>
           <p>
             <strong>.deb:</strong> verify the checksum, then
-            <code>sudo apt install ./sartracker-web_&lt;version&gt;_linux_amd64.deb</code>. The package's
+            <code>sudo apt install ./sartracker-electron-validation_&lt;version&gt;_linux_amd64.deb</code>. The package's
             runtime dependencies are pulled in automatically.
           </p>
           <p>
@@ -683,6 +684,7 @@
             <li>Open <strong>Settings → Official Maps</strong>.</li>
             <li>Click <strong>Choose MapGenie File</strong> and select the source details file from the USB. The app extracts safe metadata (username, available sources, service count) without storing credentials.</li>
             <li>Click <strong>Add Discovery Package</strong> and select a prepared <code>.mbtiles</code> package. The app copies the package into its own storage — you can remove the USB afterward.</li>
+            <li>Do not select raw Discovery source files such as <code>Discovery_National.zip</code>, <code>Discovery_RGB_95pct_C70_high30.1953.tif</code>, <code>relief_byte.tif</code>, or <code>Slope_30plus.tif</code> with <strong>Add Discovery Package</strong>. The beta expects an admin-prepared <code>.mbtiles</code> package.</li>
             <li>Click <strong>Save Settings</strong>. The app validates the copied package and reports its status as ready, missing, or unreadable.</li>
             <li>Switch to <strong>Discovery Topo</strong> in the <strong>Maps</strong> menu. The map renders from the local offline package.</li>
             <li>Open the <strong>Maps</strong> menu and check the <strong>Field Readiness</strong> panel. All items should show green ticks.</li>
@@ -1088,7 +1090,7 @@
             <tbody>
               <tr><td>Mission Defaults</td><td>Auto-refresh, auto-save, mission roots, coordinator roster, admin roster, and coordinate display preference.</td></tr>
               <tr><td>Data Sources</td><td>Provider type, Traccar web/API URL, authentication mode, secret handling, auto-connect, tracking cache, replay defaults, and hosted-browser proxy guidance when the app is running from Vercel. For the team test server, desktop builds use the Traccar API port <code>8082</code>; tracker listener ports such as <code>5055</code> are not valid provider base URLs.</td></tr>
-              <tr><td>Official Maps</td><td>Local/Electron configuration for the licensed MapGenie source file and registered official offline packages. In Electron builds, use <strong>Choose MapGenie File</strong> to select the source details file and <strong>Add Discovery Package</strong> to import an existing <code>.mbtiles</code> package from disk or USB into SAR Tracker storage. Save Settings to validate the copied package and refresh its ready, missing, or unreadable status. Each package is automatically classified as <strong>Standard</strong> (recommended, under 2 GB — the Kerry/West operating-area package), <strong>Mission Area</strong> (2–4 GB — prepared for a specific search area), or <strong>National</strong> (over 4 GB — large admin-prepared package with explicit warnings). The standard operating-area package is recommended for most operations. National packages should be prepared by an admin before a mission, not generated during one. Settings records only safe metadata such as source status, username, service count, package status, zoom range, tile count, safe file size, and verification time. It does not expose map package contents, passwords, or package paths in diagnostics, screenshots, or source control. Hosted browser testing keeps official maps unavailable unless a controlled private hosted source is added later.</td></tr>
+              <tr><td>Official Maps</td><td>Local/Electron configuration for the licensed MapGenie source file and registered official offline packages. In Electron builds, use <strong>Choose MapGenie File</strong> to select the source details file and <strong>Add Discovery Package</strong> to import an existing <code>.mbtiles</code> package from disk or USB into SAR Tracker storage. Raw Discovery <code>.zip</code>, <code>.tif</code>, and <code>.tiff</code> source files are not app-ready packages in the current beta; a map admin must prepare a <code>.mbtiles</code> package first. Save Settings to validate the copied package and refresh its ready, missing, or unreadable status. Each package is automatically classified as <strong>Standard</strong> (recommended, under 2 GB — the Kerry/West operating-area package), <strong>Mission Area</strong> (2–4 GB — prepared for a specific search area), or <strong>National</strong> (over 4 GB — large admin-prepared package with explicit warnings). The standard operating-area package is recommended for most operations. National packages should be prepared by an admin before a mission, not generated during one. Settings records only safe metadata such as source status, username, service count, package status, zoom range, tile count, safe file size, and verification time. It does not expose map package contents, passwords, or package paths in diagnostics, screenshots, or source control. Hosted browser testing keeps official maps unavailable unless a controlled private hosted source is added later.</td></tr>
               <tr><td>Weather Links</td><td>A small named list of external weather URLs, such as Met Éireann. Bare domains like <code>met.ie</code> or <code>www.yr.no</code> are accepted and automatically normalized to <code>https://</code>. These links open in the system default browser; SAR Tracker does not import weather data.</td></tr>
               <tr><td>Advanced Settings</td><td>Reserved repair/support actions. Some actions may remain disabled until the matching milestone is complete.</td></tr>
             </tbody>

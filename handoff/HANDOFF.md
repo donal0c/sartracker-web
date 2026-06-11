@@ -6,7 +6,7 @@
 
 - **Branch:** `master` is the canonical working branch.
 - **Hosted testing:** `https://sartracker-web.vercel.app/?missionHarness=1`
-- **Desktop:** Electron validation shell present (MapLibre + direct HTTPS Traccar). Tauri desktop routes Traccar through Rust `reqwest`.
+- **Desktop:** Electron is the operational desktop lane (MapLibre + direct HTTPS Traccar, SQLite, filesystem, diagnostics, official map packages). Tauri remains historical/reference.
 - **Browser mode:** testing/training only (sessionStorage, not operational persistence).
 - **Latest test counts:** 149 unit files / 847 tests; 106 standard Playwright E2E; 47 backend tests.
 
@@ -16,7 +16,7 @@ DON-143 (S2 Electron, Feature) — Electron GitHub release workflow; Tauri relea
 - New `.github/workflows/electron-release.yml`: `electron-v*` tag trigger (distinct from legacy Tauri `v*`). Jobs: gates (version-match + release-notes + lint/test/build) → bundle-linux (native AppImage+.deb, asserts packaged `better_sqlite3.node` is ELF x86-64, guards against `.mbtiles`/licensed data) → launch-smoke-linux (Xvfb window + non-black + no fault shell) → release (downloads built artifacts, generates `SHA256SUMS`, creates the draft prerelease — only after a green smoke) → summary. Artifacts pass between jobs via the workflow-artifact store, not the draft-release-by-tag API (which excludes drafts).
 - Windows NSIS scaffolded (`electron-builder.json` win/nsis + `electron:dist:win`) but gated OFF behind `enable_windows` dispatch input pending DON-141. macOS arm64 stays local/manual. Deleted `release.yml`. Docs updated: `docs/releases/README.md`, `docs/electron-beta-handoff.md`, `docs/releases/TEMPLATE.md`; superseded banner on `docs/tauri-beta-release-plan.md`. New release-note naming: `sartracker-electron-<version>.md`.
 - Found + fixed a pre-existing **timezone-dependent test bug** the CI surfaced: `marker-draft` / `marker-dialog-treatment-log` treatment-log tests used a hardcoded `+01:00` Date and asserted fixed local-time output, so they passed only on UTC+1 machines (green locally in Dublin, red in CI's UTC). Now built from local-time components; verified under TZ=UTC/Dublin/New_York. Production formatter (local-time rendering) was correct and unchanged. (Lesson: `npm run test` locally can false-green on TZ; CI runs UTC.)
-- CI: `electron-v0.1.0-beta.4` run **green end-to-end** (run #3 `27367822502`); draft prerelease created with AppImage + `.deb` + `SHA256SUMS`, no map data. The draft is unpublished — promote with `gh release edit electron-v0.1.0-beta.4 --draft=false` or delete it.
+- CI: `electron-v0.1.0-beta.4` run **green end-to-end** (run #3 `27367822502`); prerelease published with Linux AppImage + `.deb` + `SHA256SUMS`, no map data: `https://github.com/donal0c/sartracker-web/releases/tag/electron-v0.1.0-beta.4`.
 - On-device smoke (Ubuntu 24.04.2 / kernel 6.14, `192.168.18.31`, real Wayland display, CI-built artifact, checksum OK): all 6 highest-risk areas pass. (1) AppImage launches, real window, no SIGTRAP. (2) **Mission persists across full restart** — recovery prompt shows the created mission name + start time (SQLite schema v3 + backup mirror). (3) Live Traccar **"Connection successful."** over `https://kmrtsar.eu` (note: box network blocks plain-HTTP `:8082`; HTTPS works). (4) Discovery offline tiles read from SQLite (verified PNG bytes, network blocked), inside=Field ready / outside=warning, real GPU. (5) Coordinate readout (DD/Irish Grid/DMS) renders correctly + 847 golden-dataset unit tests. (6) Diagnostics export sanitized, `secret present: no`. Evidence on box: `~/sartracker-don143-smoke/{offline-evidence,persist-evidence}`.
 - Verified locally: actionlint clean, unit 847/847 (under UTC), lint, build, local electron-builder `--dir` pack.
 
@@ -24,8 +24,7 @@ DON-151 (S2 Electron, Urgent Bug) — Electron launch slowed after tracking hist
 - On restart, the UI could hydrate cached breadcrumbs, but the live poller fetched breadcrumbs from mission start for every device because its per-device cursors were not seeded from persisted mission positions. With 33 devices / 4.5k breadcrumbs / 5s polling this rebuilt history and the map overlay unnecessarily.
 - Each tracking snapshot also reloaded every persisted position from SQLite and re-deduped the full breadcrumb history, creating repeated main-process work during active tracking.
 - Fix: poller now accepts validated active-mission persisted breadcrumbs before first live history fetch, preserves the visible trail, and resumes per-device Traccar history from latest persisted timestamps. Runtime persistence now keeps a mission-scoped `device_id:timestamp` key cache and serializes snapshot persistence, so repeated snapshots do not re-query all positions.
-- Verified: `npm run test` (149/847), `npm run lint`, `npm run build`. Linear issue created: `DON-151`, In Review.
-- Not yet done: packaged Electron beta smoke/release. Next Electron build should include DON-147 + DON-148 + DON-151 before asking the team to retest Ubuntu.
+- Verified before release: `npm run test` (149/847), `npm run lint`, `npm run build`. Included in published `electron-v0.1.0-beta.4`, whose CI build and Ubuntu on-device smoke passed. Linear issue `DON-151` remains In Review pending team retest of the original Ubuntu slowdown scenario.
 
 DON-147 — DONE & on-device verified (HEAD `4ad6673`). Crash capture, runtime logging, support-bundle export.
 - On-device verification on the Dell Ubuntu box (`192.168.18.31`, **24.04.2**, not 26.04): built packaged `.deb`/AppImage, confirmed `crashReporter` writes a real native minidump on main-process SIGSEGV (`Crashpad/pending/*.dmp`), JS `uncaughtException` writes a structured `crash-log.json`, unclean-shutdown flag sets/clears correctly, and `exportSupportBundle` assembles env+crash+log sections. Live-renderer crash not drivable headless (GPU process won't start over SSH) — renderer-fault logic is unit-tested instead.
@@ -54,9 +53,14 @@ DON-142 (S2 Electron/S1 maps) — Electron beta handoff release and Discovery ma
 - Tidy-up: `DON-142` closed; `DON-143` reparented to `DON-25`; `DON-115`, `DON-141`, and `DON-113` moved to Backlog while waiting for Windows/team feedback/admin-prep priority.
 - Team map handoff correction: the beta does not load raw USB/source files directly. Testers need the prepared private package `reeks-standard-60km-z16.mbtiles` (SHA256 `e317fd016b02d88f0fdc0e4f97653a2c4758acc46779bad7ffb55ac2807b6589`). `DON-144` owns private map-package distribution plus the future raw-source packaging workflow.
 
+DON-144 partial independent progress — beta wrong-file guardrail:
+- Electron official-map package import now gives specific operator/admin guidance for raw Discovery `.tif`/`.tiff` and `.zip` selections: beta packages must be prepared `.mbtiles`, such as `reeks-standard-60km-z16.mbtiles`, or prepared by a map admin from the licensed source.
+- Operator manual and `docs/electron-beta-handoff.md` now distinguish **Choose MapGenie File** (`mountainrescue_org.txt` / source metadata) from **Add Discovery Package** (`.mbtiles` only). The larger DON-144 workflow decision remains open: private distribution owner/channel and repeatable admin raw-source-to-package process.
+- Verified focused regression: `npm run test -- tests/unit/electron-file-system.test.ts`.
+
 ## What's Next
 
-Next: decide whether to **promote the `electron-v0.1.0-beta.4` draft prerelease** (it already contains DON-147 + DON-148 + DON-151, CI-green and on-device smoked) so the team can retest on Ubuntu, or delete the draft and cut a later beta. To promote: `gh release edit electron-v0.1.0-beta.4 --repo donal0c/sartracker-web --draft=false` (optionally attach a local macOS arm64 zip + regenerate SHA256SUMS first). After that, continue `DON-144` (private Discovery package distribution / raw-source packaging workflow).
+Next: have the team retest Ubuntu with the published `electron-v0.1.0-beta.4` prerelease, especially the DON-151 launch/panning slowdown after accumulated tracking history. In parallel, continue `DON-144`: choose the private Discovery package distribution owner/channel and lock the repeatable admin raw-source-to-package workflow. `DON-143` is closed in Linear.
 
 DON-146 (Electron 40→42) is parked in Backlog, **blocked on upstream `better-sqlite3` PR #1475** (does not compile against Electron 42's V8; no published fix). See the DON-146 comment for the decision + resume checklist.
 
@@ -83,7 +87,7 @@ DON-146 (Electron 40→42) is parked in Backlog, **blocked on upstream `better-s
 - **Lint:** `npm run lint`
 - **Type check:** `npx tsc --noEmit`
 - **Deploy:** push to `master` → Vercel auto-deploys to production
-- **Electron handoff:** see `docs/electron-beta-handoff.md`; current team prerelease is `https://github.com/donal0c/sartracker-web/releases/tag/electron-v0.1.0-beta.3`. The automated GitHub release workflow is still Tauri-era until migrated under `DON-143`.
+- **Electron handoff:** see `docs/electron-beta-handoff.md`; current Linux team prerelease is `https://github.com/donal0c/sartracker-web/releases/tag/electron-v0.1.0-beta.4`. The Electron GitHub release workflow is implemented under `DON-143`; Windows remains gated by `DON-141`.
 
 ## Latest Verification
 
@@ -92,6 +96,7 @@ DON-146 (Electron 40→42) is parked in Backlog, **blocked on upstream `better-s
 - Ubuntu focused tests: `npm run test -- tests/unit/field-readiness-checklist.test.ts tests/unit/basemap-switcher.test.ts` — 24 passed.
 - DON-142 artifact bundle: `tmp/don142-electron-handoff/SHA256SUMS` generated for Linux AppImage, Linux `.deb`, and macOS arm64 zip.
 - Ubuntu release-asset smoke: downloaded GitHub prerelease `.deb` and `SHA256SUMS` from `electron-v0.1.0-beta.3` to `donal@192.168.18.31:~/sartracker-release-smoke/electron-v0.1.0-beta.3`, verified checksum `OK`, ran the real `sudo apt install` path, confirmed `dpkg -s sartracker-web` reports `install ok installed` version `0.1.0~beta.3`, and ran `npm run electron:smoke:official-offline` against the installed binary at `/opt/SAR Tracker Electron Validation/sartracker-web` with the private Reeks package. Smoke passed with renderer network blocked, local Discovery tile read, inside field-ready verdict, outside warning, Settings ready status, and sanitized diagnostics. Evidence: `~/sartracker-release-smoke/electron-v0.1.0-beta.3/installed-smoke-evidence`.
+- Ubuntu beta.4 on-device smoke: CI-built AppImage from `electron-v0.1.0-beta.4`, checksum OK, launched on Ubuntu 24.04.2 / kernel 6.14 real Wayland display, mission persistence across restart passed, live HTTPS Traccar connection passed, Discovery offline tile reads from SQLite passed with renderer network blocked, coordinates rendered, diagnostics sanitized. Evidence on box: `~/sartracker-don143-smoke/{offline-evidence,persist-evidence}`.
 
 ## Known Limits
 

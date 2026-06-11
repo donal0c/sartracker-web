@@ -4,7 +4,7 @@
 
 A bespoke desktop application for real-time GPS tracking, mission management, and search area planning during mountain rescue operations.
 
-![Tauri 2](https://img.shields.io/badge/Tauri-2.0-blue)
+![Electron](https://img.shields.io/badge/Electron-desktop-blue)
 ![TypeScript](https://img.shields.io/badge/TypeScript-strict-blue)
 ![License](https://img.shields.io/badge/License-GPL--2.0-green)
 
@@ -37,24 +37,25 @@ Known remaining parity gaps include full packaged offline map bundles, replay/tr
 
 ## Hosted Browser Testing
 
-The Vercel-hosted app is a testing and possible future deployment path, but it is not automatically equivalent to the installed Tauri app.
+The Vercel-hosted app is a testing and possible future deployment path, but it is not automatically equivalent to the installed Electron app.
 
 Current plan: [`docs/hosted-browser-testing-plan.md`](/Users/donalocallaghan/workspace/vibes/sartracker-web/docs/hosted-browser-testing-plan.md)
 
-Phase 0 intentionally uses browser session storage so teams can test the current operator surface quickly. The installed Tauri app remains the durable runtime with SQLite, WAL mode, backup mirror, and desktop filesystem adapters.
+Phase 0 intentionally uses browser session storage so teams can test the current operator surface quickly. The installed Electron app is the durable runtime with SQLite, WAL mode, backup mirror, diagnostics, local official-map packages, and desktop filesystem adapters.
 
 Planning rule: [`docs/two-track-execution-workplan.md`](/Users/donalocallaghan/workspace/vibes/sartracker-web/docs/two-track-execution-workplan.md) is the single active queue. Supporting docs explain details, but new tasks must be folded into that workplan before implementation.
 
 Supporting execution guides:
 
 - [`docs/team-testing-feedback-loop.md`](/Users/donalocallaghan/workspace/vibes/sartracker-web/docs/team-testing-feedback-loop.md) — hosted testing instructions and bug triage
-- [`docs/tauri-beta-release-plan.md`](/Users/donalocallaghan/workspace/vibes/sartracker-web/docs/tauri-beta-release-plan.md) — Phase 1 desktop beta plan
+- [`docs/electron-beta-handoff.md`](/Users/donalocallaghan/workspace/vibes/sartracker-web/docs/electron-beta-handoff.md) — current Electron app handoff and Discovery map loading runbook
+- [`docs/tauri-beta-release-plan.md`](/Users/donalocallaghan/workspace/vibes/sartracker-web/docs/tauri-beta-release-plan.md) — superseded Tauri beta plan retained for history
 
 ## Stack
 
 | Component | Technology |
 |-----------|-----------|
-| Desktop | Tauri 2 |
+| Desktop | Electron |
 | UI | React + TypeScript + Vite |
 | Maps | MapLibre GL JS |
 | Drawing | Terra Draw + Turf.js |
@@ -71,21 +72,21 @@ npm install
 # Run browser development shell
 npm run dev
 
-# Run Tauri desktop development shell
-npm run tauri dev
+# Run Electron desktop development shell
+npm run electron:dev
 
 # Run verification
 npm run lint         # static analysis
 npm run build        # TypeScript, Vite, and bundle budgets
 npm run test         # JS unit tests (Vitest)
 npm run test:e2e     # browser tests (Playwright projects)
-npm run test:backend # Tauri/Rust backend tests (Cargo)
+npm run test:backend # legacy Tauri/Rust backend tests (Cargo)
 npm run test:all     # JS unit + Playwright + backend tests
 ```
 
 ### Browser Validation Harness
 
-For fast manual testing of mission and marker flows without the Tauri backend:
+For fast manual testing of mission and marker flows without a desktop backend:
 
 1. Run `npm run dev`
 2. Open `http://127.0.0.1:1420/?missionHarness=1`
@@ -99,7 +100,8 @@ Hosted browser testing follows the same temporary persistence model and must be 
 
 - [Rust](https://rustup.rs/) 1.70+
 - [Node.js](https://nodejs.org/) 18+
-- Platform dependencies for [Tauri](https://v2.tauri.app/start/prerequisites/)
+- Electron packaging dependencies for the target OS when building desktop artifacts
+- Rust/Tauri prerequisites only when working on the retained Tauri backend/tests
 
 ## Background
 

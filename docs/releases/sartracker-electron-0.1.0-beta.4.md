@@ -5,12 +5,13 @@
 > a team member has signed off in writing.
 
 - **Version:** 0.1.0-beta.4
-- **Build tag:** run.<n>.sha.<commit> (filled by CI)
+- **Build tag:** `electron-v0.1.0-beta.4`
 - **Cut date (UTC):** 2026-06-11
 - **Cut by:** Claude Code agent (Donal supervising)
 - **Linear reference:** DON-143 (release workflow); carries DON-147, DON-148, DON-151
 - **Verification report:** CI run (linked below) + Ubuntu real-machine smoke
-- **CI run:** <link to the GitHub Actions run that produced these artifacts>
+- **CI run:** https://github.com/donal0c/sartracker-web/actions/runs/27367822502
+- **GitHub release:** https://github.com/donal0c/sartracker-web/releases/tag/electron-v0.1.0-beta.4
 
 ## Artifacts
 
@@ -82,10 +83,28 @@ Since `0.1.0-beta.3`:
 ## Verification (CI-driven)
 
 Produced by `.github/workflows/electron-release.yml` on the `electron-v0.1.0-beta.4`
-tag. CI proves: lint, 847 unit tests, web build, native Linux AppImage + `.deb`
-build, the packaged `better_sqlite3.node` is real Linux x86-64, an Xvfb launch
-smoke (real window, non-black content, no fault shell), and `SHA256SUMS`
-generation. A real-machine Ubuntu smoke (below) covers what CI cannot.
+tag. CI run `27367822502` passed: lint, 847 unit tests, web build, native Linux
+AppImage + `.deb` build, the packaged `better_sqlite3.node` is real Linux
+x86-64, an Xvfb launch smoke (real window, non-black content, no fault shell),
+and `SHA256SUMS` generation.
+
+Real-machine Ubuntu smoke also passed on Ubuntu 24.04.2 / kernel 6.14 with the
+CI-built artifact and verified checksum:
+
+- AppImage launched on a real Wayland display with no SIGTRAP/crash.
+- Mission persisted across full restart and showed the recovery prompt.
+- Live Traccar connection succeeded over `https://kmrtsar.eu`.
+- Discovery offline tiles read from SQLite with renderer network blocked.
+- Current-view readiness reported **Field ready** inside package coverage and
+  warned outside coverage.
+- DD / Irish Grid / DMS coordinate readout rendered correctly.
+- Diagnostics export was sanitized (`secret present: no`).
+
+Evidence on the Ubuntu box:
+
+```text
+~/sartracker-don143-smoke/{offline-evidence,persist-evidence}
+```
 
 ## Rollback / Reinstall
 
@@ -94,16 +113,8 @@ generation. A real-machine Ubuntu smoke (below) covers what CI cannot.
   by uninstalling the bundle. If corruption is suspected, capture diagnostics
   first and do not delete anything until recorded.
 
-## Pre-Share Checklist
+## Publication State
 
-Before promoting this draft to a published release:
-
-- [ ] CI run green (linked above)
-- [ ] Linux `.AppImage`, Linux `.deb`, and `SHA256SUMS` present on the draft release
-- [ ] `SHA256SUMS` matches local computation against downloaded assets
-- [ ] CI launch-smoke evidence reviewed
-- [ ] Real-machine Ubuntu smoke pass: launch, mission persists after restart,
-      Traccar connects, basemap renders, diagnostics export safe
-- [ ] Release body matches this note (with CI Provenance footer appended)
-- [ ] Release marked **draft** + **prerelease**
-- [ ] Maintainer signed off in `handoff/HANDOFF.md`
+Published as an internal prerelease on 2026-06-11. The release is no longer a
+draft. Linux `.AppImage`, Linux `.deb`, and `SHA256SUMS` are attached; no
+private Discovery map packages are attached.

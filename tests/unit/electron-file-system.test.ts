@@ -209,6 +209,32 @@ describe('Electron filesystem service', () => {
     ).rejects.toThrow('Official map package must be a .mbtiles file.')
   })
 
+  it('explains raw Discovery source files cannot be imported as beta packages', async () => {
+    const service = await createService()
+    const geoTiffPath = path.join(userDataPath!, 'Discovery_RGB_95pct_C70_high30.1953.tif')
+    const zipPath = path.join(userDataPath!, 'Discovery_National.zip')
+    await writeFile(geoTiffPath, 'raw geotiff')
+    await writeFile(zipPath, 'raw zip')
+
+    await expect(
+      service.importOfficialMapPackage({
+        sourcePath: geoTiffPath,
+        mapId: 'official_discovery_topo',
+      }),
+    ).rejects.toThrow(
+      'This beta cannot import raw Discovery .tif/.tiff source files. Use Add Discovery Package with a prepared .mbtiles package, such as reeks-standard-60km-z16.mbtiles, or ask the map admin to prepare one from the licensed source.',
+    )
+
+    await expect(
+      service.importOfficialMapPackage({
+        sourcePath: zipPath,
+        mapId: 'official_discovery_topo',
+      }),
+    ).rejects.toThrow(
+      'This beta cannot import raw Discovery .zip source files. Use Add Discovery Package with a prepared .mbtiles package, such as reeks-standard-60km-z16.mbtiles, or ask the map admin to prepare one from the licensed source.',
+    )
+  })
+
   it('preflights disk space before copying official map packages', async () => {
     const service = await createService({
       statfs: vi.fn().mockResolvedValue({ bavail: 1, bsize: 1 }),

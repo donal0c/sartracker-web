@@ -95,8 +95,10 @@ hash locally and `gh release upload --clobber SHA256SUMS`).
 ## Distribution
 
 - Primary channel for the internal betas: GitHub Releases on
-  `donal0c/sartracker-web`, marked as **draft** and **prerelease**, with
-  the title containing "internal validation".
+  `donal0c/sartracker-web`. The workflow creates a **draft prerelease** first;
+  after CI evidence, manual smoke evidence, and release notes are checked, the
+  release is promoted to a published **prerelease** with "internal validation"
+  in the title.
 - Release notes (this directory) are the single source of truth. The GitHub
   release description is built from the matching MD file plus a CI provenance
   footer; the description should not duplicate what is here, only reference

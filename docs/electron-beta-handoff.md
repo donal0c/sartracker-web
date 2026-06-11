@@ -11,29 +11,28 @@
 For the immediate team handoff, use the Electron prerelease uploaded to GitHub:
 
 ```text
-https://github.com/donal0c/sartracker-web/releases/tag/electron-v0.1.0-beta.3
+https://github.com/donal0c/sartracker-web/releases/tag/electron-v0.1.0-beta.4
 ```
 
-This prerelease uses Electron artifacts produced and smoked locally/through the
-Ubuntu builder. It is not the final repeatable GitHub Actions release path
-because the Electron release workflow is still tracked under `DON-143` and the
-Windows official-map smoke remains open under `DON-141`.
+This prerelease is the first release produced by the Electron-specific GitHub
+Actions path from `DON-143`. The workflow builds Linux artifacts, checks that
+the packaged native SQLite module is Linux x86-64, guards against licensed map
+data, runs a launch smoke, creates `SHA256SUMS`, and publishes app artifacts
+only. Windows official-map smoke remains open under `DON-141`.
 
 Uploaded prerelease assets:
 
 ```text
-sartracker-electron-validation_0.1.0-beta.3_linux_x86_64.AppImage
-sartracker-electron-validation_0.1.0-beta.3_linux_amd64.deb
-sartracker-electron-validation_0.1.0-beta.3_macos_arm64.zip
+sartracker-electron-validation_0.1.0-beta.4_linux_x86_64.AppImage
+sartracker-electron-validation_0.1.0-beta.4_linux_amd64.deb
 SHA256SUMS
 ```
 
 Checksums:
 
 ```text
-20f3660a7b8ccc67cfbdd7c4d239e111a21c5c94517f39fd8e89928f5697c8ae  sartracker-electron-validation_0.1.0-beta.3_linux_amd64.deb
-1ae8667f7d74eba9204162b9b91ac46defd7bb07a6c19d2381d60da0b55a2d07  sartracker-electron-validation_0.1.0-beta.3_linux_x86_64.AppImage
-f7b7b9ae193bb12e6621a5f606494c56ec46cfe4ba2324254e750278a8164463  sartracker-electron-validation_0.1.0-beta.3_macos_arm64.zip
+2c321e6a292797102fc69fa87b51c0ecb463a521a4a19e42a58b20cfa4bf65d4  sartracker-electron-validation_0.1.0-beta.4_linux_amd64.deb
+92a7bd68f8c9965e1d53ea17e6a6d1646aff6fbbc936d6465f73f6e16f93ed09  sartracker-electron-validation_0.1.0-beta.4_linux_x86_64.AppImage
 ```
 
 Do not attach private Discovery map packages, MapGenie credentials, source USB
@@ -51,12 +50,11 @@ Until `DON-141` proves Windows, treat this as an internal validation drop:
   unsigned internal builds and Gatekeeper warnings.
 - Windows testers: wait for `DON-141`.
 
-The preferred long-term channel is still a GitHub Actions-produced
-draft/prerelease containing app artifacts and checksums only. The current
-prerelease was uploaded manually from validated local/Linux artifacts so the
-team can start testing. The map package remains distributed through the team's
-private channel, not GitHub. The Electron-specific GitHub Releases workflow is
-tracked separately by `DON-143`.
+The preferred long-term channel is now in place: GitHub Actions produces an
+Electron prerelease containing app artifacts and checksums only. The map package
+remains distributed through the team's private channel, not GitHub. `DON-143`
+tracks the completed release workflow; `DON-141` tracks the remaining Windows
+smoke gate.
 
 ## Build Commands
 
@@ -66,7 +64,7 @@ macOS arm64 package:
 npm run electron:pack -- --mac --arm64
 ditto -c -k --sequesterRsrc --keepParent \
   "tmp/electron-dist/mac-arm64/SAR Tracker Electron Validation.app" \
-  "tmp/don142-electron-handoff/sartracker-electron-validation_0.1.0-beta.3_macos_arm64.zip"
+  "tmp/sartracker-electron-validation_<version>_macos_arm64.zip"
 ```
 
 Linux AppImage and `.deb` must be built on Linux so `better-sqlite3` is native
@@ -98,6 +96,29 @@ Before any tester receives an Electron artifact:
 
 ## Current Ubuntu Release-Asset Smoke
 
+`electron-v0.1.0-beta.4` has been checked on the Ubuntu machine with the
+CI-built AppImage:
+
+1. Verified the release checksum against the downloaded artifact.
+2. Launched the AppImage on Ubuntu 24.04.2 / kernel 6.14 with a real Wayland
+   display.
+3. Confirmed a real window opened with no SIGTRAP/crash.
+4. Confirmed mission persistence across full restart: the recovery prompt showed
+   the created mission name and start time.
+5. Confirmed live Traccar **"Connection successful."** over `https://kmrtsar.eu`.
+6. Confirmed Discovery offline tiles read from SQLite with renderer network
+   blocked; inside package area reports **Field ready**, outside warns.
+7. Confirmed DD / Irish Grid / DMS coordinate readout renders correctly.
+8. Confirmed diagnostics export is sanitized (`secret present: no`).
+
+Evidence directory on Ubuntu:
+
+```text
+~/sartracker-don143-smoke/{offline-evidence,persist-evidence}
+```
+
+## Previous Ubuntu Release-Asset Smoke
+
 `electron-v0.1.0-beta.3` has been checked on the Ubuntu machine via SSH:
 
 1. Downloaded the GitHub prerelease `.deb` and `SHA256SUMS`.
@@ -126,17 +147,21 @@ Evidence directory on Ubuntu:
 
 These are the operator-facing steps for the team.
 
-The current beta does **not** import the original USB/source files directly.
-The team must receive the prepared MBTiles package separately through a private
-channel.
+The current beta does **not** import raw Discovery raster/source files as map
+packages. The team must receive the prepared MBTiles package separately through
+a private channel.
 
-Do not tell testers to select these USB/source files in the app:
+Do not tell testers to select these files with **Add Discovery Package**:
 
 - `Discovery_National.zip`
 - `Discovery_RGB_95pct_C70_high30.1953.tif`
 - `relief_byte.tif`
 - `Slope_30plus.tif`
-- `mountainrescue_org.txt`
+
+If a tester selects a raw `.zip` or `.tif` there, beta.4 now explains that raw
+Discovery source files need an admin-prepared `.mbtiles` package instead.
+`mountainrescue_org.txt` is different: select it only with **Choose MapGenie
+File** when configuring the optional online/source metadata path.
 
 For this beta, give testers the prepared package:
 
@@ -150,13 +175,15 @@ Coverage: Reeks / west Kerry standard operating area
 2. Keep `reeks-standard-60km-z16.mbtiles` on a USB drive, local disk, or other
    private team storage. Do not email it publicly or upload it to GitHub.
 3. Open **Settings**.
-4. In **Official Maps**, choose **Add Discovery Package**.
-5. Select `reeks-standard-60km-z16.mbtiles`.
-6. Save Settings. The app imports the package into app-owned storage.
-7. Wait until the package card shows **READY**.
-8. Open **Maps** and choose **Discovery Topo**.
-9. Use **Check View Coverage** over the intended search area.
-10. Confirm the field-readiness checklist says **Field ready** before relying on
+4. Optional: choose **Choose MapGenie File** only if you are configuring the
+   provider/source metadata file, such as `mountainrescue_org.txt`.
+5. In **Official Maps**, choose **Add Discovery Package**.
+6. Select `reeks-standard-60km-z16.mbtiles`.
+7. Save Settings. The app imports the package into app-owned storage.
+8. Wait until the package card shows **READY**.
+9. Open **Maps** and choose **Discovery Topo**.
+10. Use **Check View Coverage** over the intended search area.
+11. Confirm the field-readiness checklist says **Field ready** before relying on
     the official offline map.
 
 After import, the original USB/source disk should not be needed for ordinary
