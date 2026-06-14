@@ -236,8 +236,20 @@ function limitSnapshotForMissionPersistence(
   }
 
   const maxBreadcrumbs = Math.max(0, maxPersistedPositionsPerSnapshot - snapshot.positions.length)
-  if (snapshot.breadcrumbs.length <= maxBreadcrumbs) {
+  const persistenceBreadcrumbs = getBreadcrumbsForMissionPersistence(snapshot)
+  if (persistenceBreadcrumbs.length <= maxBreadcrumbs) {
     return snapshot
+  }
+
+  const limitedPersistenceBreadcrumbs = [...persistenceBreadcrumbs]
+    .sort((left, right) => Date.parse(left.timestamp) - Date.parse(right.timestamp))
+    .slice(-maxBreadcrumbs)
+
+  if (snapshot.rawBreadcrumbsForPersistence !== undefined) {
+    return {
+      ...snapshot,
+      rawBreadcrumbsForPersistence: limitedPersistenceBreadcrumbs,
+    }
   }
 
   return {
@@ -247,9 +259,7 @@ function limitSnapshotForMissionPersistence(
     // future operational cap must be per-device fair, matching the live
     // breadcrumb render budget, so one noisy tracker cannot evict another
     // rescuer's stored mission trail.
-    breadcrumbs: [...snapshot.breadcrumbs]
-      .sort((left, right) => Date.parse(left.timestamp) - Date.parse(right.timestamp))
-      .slice(-maxBreadcrumbs),
+    breadcrumbs: limitedPersistenceBreadcrumbs,
   }
 }
 
@@ -286,7 +296,7 @@ async function persistTrackingSnapshot(
     })
   }
 
-  for (const position of [...snapshot.breadcrumbs, ...snapshot.positions]) {
+  for (const position of [...getBreadcrumbsForMissionPersistence(snapshot), ...snapshot.positions]) {
     const positionKey = createPositionKey(position.device_id, position.timestamp)
     if (nextPositionKeyCache.keys.has(positionKey)) {
       continue
@@ -309,6 +319,15 @@ async function persistTrackingSnapshot(
   }
 
   return nextPositionKeyCache
+}
+
+/**
+ * Returns the un-decimated breadcrumb payload for mission storage when present.
+ */
+function getBreadcrumbsForMissionPersistence(
+  snapshot: TrackingSnapshot,
+): readonly NormalizedTrackingPosition[] {
+  return snapshot.rawBreadcrumbsForPersistence ?? snapshot.breadcrumbs
 }
 
 function createPositionKey(deviceId: string, timestamp: string): string {

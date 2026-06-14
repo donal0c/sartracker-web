@@ -34,6 +34,7 @@ export function annotateTrackingSnapshotHealth(
     breadcrumbs: snapshot.breadcrumbs.map((position) =>
       annotatePositionHealth(position, options.now, deviceStaleThresholdMs, cacheAgeMs, cacheStaleTtlMs),
     ),
+    rawBreadcrumbsForPersistence: snapshot.rawBreadcrumbsForPersistence,
     breadcrumbMetadata: snapshot.breadcrumbMetadata,
   }
 }

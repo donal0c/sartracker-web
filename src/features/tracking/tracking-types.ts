@@ -46,6 +46,7 @@ export type TrackingSnapshot = {
   readonly devices: readonly NormalizedTrackingDevice[]
   readonly positions: readonly NormalizedTrackingPosition[]
   readonly breadcrumbs: readonly NormalizedTrackingPosition[]
+  readonly rawBreadcrumbsForPersistence?: readonly NormalizedTrackingPosition[] | undefined
   readonly breadcrumbMetadata?: BreadcrumbSnapshotMetadata | undefined
 }
 

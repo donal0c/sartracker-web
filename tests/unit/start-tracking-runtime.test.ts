@@ -556,6 +556,65 @@ describe('startTrackingRuntime', () => {
       ),
     ).toHaveLength(3)
   })
+
+  it('persists raw newly fetched breadcrumbs even when the render snapshot is budgeted [DON-159]', async () => {
+    const addPosition = vi.fn().mockResolvedValue(undefined)
+    const rawBreadcrumbs = Array.from({ length: 6_001 }, (_, index) => ({
+      ...SNAPSHOT.breadcrumbs[0]!,
+      id: `raw-eoc-${index}`,
+      device_id: '2',
+      timestamp: new Date(Date.UTC(2026, 5, 13, 0, 0, index)).toISOString(),
+    }))
+    const renderedBreadcrumbs = rawBreadcrumbs.filter((_position, index) => index % 2 === 0).slice(0, 5_000)
+    const snapshot = {
+      ...SNAPSHOT,
+      breadcrumbs: renderedBreadcrumbs,
+      rawBreadcrumbsForPersistence: rawBreadcrumbs,
+    } satisfies TrackingSnapshot
+    let pollerHooks:
+      | {
+          onSnapshot: (snapshot: TrackingSnapshot) => void | Promise<void>
+          onStatusChange: (status: TrackingConnectionStatus) => void
+        }
+      | undefined
+
+    await startTrackingRuntime({
+      config: { baseUrl: 'http://test:8082' },
+      createClient: vi.fn().mockReturnValue({}),
+      createPoller: vi.fn().mockImplementation((_client, hooks) => {
+        pollerHooks = hooks
+        return { start: vi.fn(), stop: vi.fn() }
+      }),
+      cache: {
+        read: vi.fn().mockResolvedValue(null),
+        write: vi.fn().mockResolvedValue('/tmp/tracking-cache.json'),
+      },
+      missionStore: createMissionStoreStub({
+        getActiveMission: vi.fn().mockResolvedValue({ id: 'mission-1' }),
+        listPositions: vi.fn().mockResolvedValue([]),
+        addPosition,
+      }),
+      applySnapshot: vi.fn(),
+      applyStatus: vi.fn(),
+      writeCache: false,
+      now: () => new Date('2026-06-13T21:48:51.654Z'),
+    })
+
+    await pollerHooks?.onSnapshot(snapshot)
+
+    expect(addPosition).toHaveBeenCalledTimes(rawBreadcrumbs.length + SNAPSHOT.positions.length)
+    expect(
+      addPosition.mock.calls.filter(
+        (call) => call[0].device_id === '2' && String(call[0].timestamp).startsWith('2026-06-13'),
+      ),
+    ).toHaveLength(rawBreadcrumbs.length)
+    expect(addPosition).toHaveBeenCalledWith(
+      expect.objectContaining({
+        device_id: '2',
+        timestamp: rawBreadcrumbs[1]!.timestamp,
+      }),
+    )
+  })
 })
 
 function createMissionStoreStub(overrides: Record<string, unknown> = {}) {

@@ -198,7 +198,13 @@ export function createPollingManager(
       breadcrumbPositions = breadcrumbResult.positions
       breadcrumbMetadata = breadcrumbResult.metadata
 
-      const rawSnapshot = { devices, positions, breadcrumbs: breadcrumbPositions, breadcrumbMetadata }
+      const rawSnapshot = {
+        devices,
+        positions,
+        breadcrumbs: breadcrumbPositions,
+        rawBreadcrumbsForPersistence: breadcrumbs,
+        breadcrumbMetadata,
+      }
       const latestPollingMode = options.getPollingMode?.() ?? 'active'
       if (latestPollingMode !== 'active') {
         publishInactiveMissionSnapshot(latestPollingMode)

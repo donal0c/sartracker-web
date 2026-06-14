@@ -542,6 +542,14 @@ describe('polling manager', () => {
 
     const latestSnapshot = onSnapshot.mock.calls.at(-1)?.[0]
     expect(latestSnapshot?.breadcrumbs.some((position) => position.device_id === '25')).toBe(true)
+    expect(latestSnapshot?.breadcrumbs).toHaveLength(8_280)
+    expect(latestSnapshot?.rawBreadcrumbsForPersistence).toHaveLength(28_280)
+    expect(
+      latestSnapshot?.rawBreadcrumbsForPersistence?.filter((position) => position.device_id === '2'),
+    ).toHaveLength(25_000)
+    expect(
+      latestSnapshot?.rawBreadcrumbsForPersistence?.filter((position) => position.device_id === '25'),
+    ).toHaveLength(3_280)
     expect(latestSnapshot?.breadcrumbMetadata?.deviceBudgets).toContainEqual(
       expect.objectContaining({
         deviceId: '2',
