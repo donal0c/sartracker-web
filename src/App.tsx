@@ -56,7 +56,7 @@ const MapView = lazy(async () => {
 
 /** Sidebar tab identifiers for the segmented control below Mission Control. */
 type SidebarTab = 'tracking' | 'tools' | 'layers'
-type RuntimeMode = 'tauri' | 'hosted-browser'
+type RuntimeMode = 'electron' | 'hosted-browser'
 
 const SIDEBAR_TABS: readonly { readonly id: SidebarTab; readonly label: string }[] = [
   { id: 'tracking', label: 'Tracking' },
@@ -71,7 +71,7 @@ function App() {
   const [sidebarTab, setSidebarTab] = useState<SidebarTab>('tracking')
   const openDiagnosticsWorkspace = useDiagnosticsWorkspaceStore((state) => state.openWorkspace)
   const browserTestingMode = shouldEnableMissionBrowserHarness()
-  const runtimeMode: RuntimeMode = browserTestingMode ? 'hosted-browser' : 'tauri'
+  const runtimeMode: RuntimeMode = browserTestingMode ? 'hosted-browser' : 'electron'
   const runtimeBootPhase = useRuntimeBootStore((state) => state.phase)
   const runtimeBootError = useRuntimeBootStore((state) => state.error)
   const missionPhase = useMissionStore((state) => state.phase)

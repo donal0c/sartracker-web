@@ -228,12 +228,12 @@ function resolveOperationalRuntimeKind(
     'isTauriRuntimeAvailable' | 'isElectronRuntimeAvailable'
   >,
 ): Exclude<DesktopRuntimeKind, 'browser'> | null {
-  if (dependencies.isTauriRuntimeAvailable()) {
-    return 'tauri'
-  }
-
   if (dependencies.isElectronRuntimeAvailable()) {
     return 'electron'
+  }
+
+  if (dependencies.isTauriRuntimeAvailable()) {
+    return 'tauri'
   }
 
   return null

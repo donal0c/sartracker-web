@@ -306,13 +306,13 @@ The project’s current working version of this rubric lives in `docs/bead-readi
 ## Architecture
 
 ### Stack
-- **Tauri 2** — desktop wrapper
+- **Electron** — operational desktop wrapper
 - **Vite + React + TypeScript** — UI
 - **MapLibre GL JS** — map rendering
 - **Terra Draw** — drawing interactions (polygons, lines)
 - **Turf.js** — geospatial calculations
 - **proj4js** — coordinate conversion
-- **SQLite mission store behind Tauri commands** — mission persistence (WAL mode)
+- **SQLite mission store behind desktop IPC adapters** — mission persistence (WAL mode)
 
 ### Layer Architecture (from S6 spike)
 - **Hybrid approach**: 3 sources (tracking, markers, drawings) + ~15 style layers
@@ -430,7 +430,7 @@ build/visual-review-lib.js       — pure helpers (CLI parsing, manifest loading
 **Key design decisions:**
 - The `visual` Playwright project uses `1440x900` viewport for consistent screenshot dimensions
 - Manifest entries are written as individual `.entry.json` files (parallel-safe across Playwright workers)
-- The `?missionHarness=1` URL parameter enables browser validation mode (mock Tauri backend via sessionStorage)
+- The `?missionHarness=1` URL parameter enables browser validation mode (mock desktop backend via sessionStorage)
 - Map clicks use `{ force: true }` to bypass the drawing toolbar overlay
 - Tracking data is injected via `window.__SARTRACKER_BROWSER_HARNESS__.injectTrackingSnapshot()`
 
@@ -455,7 +455,7 @@ sartracker-web/
 │   ├── lib/               ← stable shared libraries (coordinates, config, validation)
 │   ├── components/        ← React components
 │   ├── domain/            ← mission rules and safety-critical business logic (emerge as needed)
-│   ├── infrastructure/    ← Tauri-facing adapters: mission-store, settings-store, tracking-cache, gpx-import-source, marker-attachment-store, layer-catalog-store, support-report, file-launcher
+│   ├── infrastructure/    ← desktop/runtime adapters: mission-store, settings-store, tracking-cache, gpx-import-source, marker-attachment-store, layer-catalog-store, support-report, file-launcher
 │   └── types/             ← TypeScript type definitions
 ├── tests/
 │   ├── unit/              ← vitest unit tests
@@ -490,7 +490,7 @@ npm run test:e2e
 # Visual verification E2E tests
 npx playwright test --project=visual
 
-# Backend/Tauri tests
+# Legacy Rust backend tests
 npm run test:backend
 
 # All tests (unit + all Playwright projects + backend)

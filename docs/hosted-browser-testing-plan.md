@@ -1,15 +1,15 @@
 # Deployment Strategy And Hosted Browser Testing Plan
 
-> **Current deployment-product source of truth.** This document supersedes older assumptions that the Vercel-hosted app is automatically equivalent to the installed Tauri app. Keep it folded into `docs/plugin-parity-matrix.md`, `docs/bead-readiness.md`, and `handoff/HANDOFF.md` whenever browser, desktop, map, or release-channel capability changes.
+> **Current deployment-product source of truth.** This document supersedes older assumptions that the Vercel-hosted app is automatically equivalent to the installed desktop app. Keep it folded into `docs/plugin-parity-matrix.md`, `docs/bead-readiness.md`, and `handoff/HANDOFF.md` whenever browser, desktop, map, or release-channel capability changes.
 
 ## Purpose
 
 The team needs fast access to the app for feedback, but the eventual field runtime must be reliable under search-and-rescue conditions: durable mission records, offline/high-definition maps, clear recovery, controlled credentials, and predictable deployments.
 
-The strategy is **not** to force browser and Tauri into full parity immediately. The strategy is to use each runtime where it is strongest:
+The strategy is **not** to force browser and Electron into full parity immediately. The strategy is to use each runtime where it is strongest:
 
 - Vercel/hosted browser for rapid surface-level testing and team feedback.
-- Tauri desktop for operational readiness, field use, large map bundles, filesystem integration, and durable persistence.
+- Electron desktop for operational readiness, field use, large map bundles, filesystem integration, and durable persistence.
 
 Shared React UI and domain logic should stay common. Platform-specific concerns should live behind explicit adapters.
 
@@ -19,18 +19,18 @@ Supporting execution docs:
 
 - `docs/two-track-execution-workplan.md` — single active planning path and next-work queue.
 - `docs/team-testing-feedback-loop.md` — supporting tester instructions, bug template, and triage buckets.
-- `docs/tauri-beta-release-plan.md` — supporting Phase 1 desktop beta packaging and release-note details.
+- `docs/electron-beta-handoff.md` — current Electron desktop handoff and Discovery map loading runbook.
 
 ## Product Position
 
 - **Hosted browser testing mode:** the fast feedback channel. It should let the team test the app surface, tracking, layers, mission controls, drawing/marker flows, devices, and general ergonomics with minimum deployment friction.
-- **Tauri desktop beta:** the operational rehearsal channel. It should be used once a batch needs persistence, filesystem, map-package, or restart/recovery validation.
-- **Tauri desktop stable:** the field-readiness channel. It should be used for real incident preparation only after beta validation and explicit release notes.
+- **Electron desktop beta:** the operational rehearsal channel. It should be used once a batch needs persistence, filesystem, map-package, or restart/recovery validation.
+- **Electron desktop stable:** the field-readiness channel. It should be used for real incident preparation only after beta validation and explicit release notes.
 - **Future hardened browser app:** optional. It becomes first-class only if the team has a real need for browser deployment beyond testing/training and we deliberately solve browser persistence, backups, secrets, offline maps, and file workflows.
 
 ## Strategic Decision
 
-Tauri should be the primary operational runtime for the foreseeable future.
+Electron is the primary operational runtime for the foreseeable future.
 
 Reasons:
 
@@ -40,7 +40,7 @@ Reasons:
 - GPX watch/import, marker attachments, diagnostics exports, and incident archives are naturally desktop/file workflows.
 - The team still needs fast iteration; Vercel is excellent for that, but it should remain a testing lane until hardened.
 
-This means we should not spend early energy trying to make the browser app operationally equal to Tauri. We should instead keep the browser path useful, honest, and intentionally limited while the desktop path becomes the field app.
+This means we should not spend early energy trying to make the browser app operationally equal to Electron. We should instead keep the browser path useful, honest, and intentionally limited while the desktop path becomes the field app.
 
 ## Release Lanes
 
@@ -48,8 +48,8 @@ This means we should not spend early energy trying to make the browser app opera
 | --- | --- | --- | --- | --- | --- |
 | Hosted browser latest | `https://sartracker-web.vercel.app/?missionHarness=1` | Fast testing of the current surface | Browser session storage | Team testers and product reviewers | Every useful change |
 | Hosted browser preview | Vercel preview deployments | Review a branch before it becomes latest | Browser session storage | Maintainers/testers | Per change/PR when useful |
-| Tauri beta | Versioned installer/package from GitHub Releases or equivalent | Validate operational runtime, persistence, files, maps, recovery | SQLite + filesystem | Smaller trusted test group | After coherent batches |
-| Tauri stable | Promoted beta build | Field-ready operational release | SQLite + filesystem | Operational users | Deliberate, less frequent |
+| Electron beta | Versioned installer/package from GitHub Releases or equivalent | Validate operational runtime, persistence, files, maps, recovery | SQLite + filesystem | Smaller trusted test group | After coherent batches |
+| Electron stable | Promoted beta build | Field-ready operational release | SQLite + filesystem | Operational users | Deliberate, less frequent |
 
 ## Phase 0: Surface-Level Hosted Testing
 
@@ -108,16 +108,16 @@ Phase 0 exit standard:
 - No operator should be able to mistake the Phase 0 browser mode for the installed app's durability model.
 - Feedback from the team is triaged into:
   - app-surface fixes that can ship quickly to Vercel
-  - desktop-runtime issues that need Tauri beta validation
+  - desktop-runtime issues that need Electron beta validation
   - future hardening items
 
-## Phase 1: Tauri Beta Release Foundation
+## Phase 1: Electron Beta Release Foundation
 
 Goal: make it easy to give the team packaged desktop builds without turning every small change into a manual deployment chore.
 
 Scope:
 
-- Define a repeatable Tauri build command and artifact location.
+- Define a repeatable Electron build command and artifact location.
 - Produce versioned beta builds with visible app version/build ID.
 - Write a short beta release note template:
   - what changed
@@ -137,11 +137,11 @@ Phase 1 exit standard:
 - Each desktop beta has a matching release note and build ID.
 - The same workflow tested on Vercel can be re-tested against the desktop runtime for persistence/file/map behavior.
 
-Detailed Phase 1 execution plan: `docs/tauri-beta-release-plan.md`.
+Detailed current handoff and release path: `docs/electron-beta-handoff.md`.
 
 ## Phase 2: Desktop Operational Core
 
-Goal: make Tauri the trustworthy operational runtime.
+Goal: make Electron the trustworthy operational runtime.
 
 Scope:
 
@@ -225,7 +225,7 @@ Scope:
   - unit tests
   - backend tests
   - E2E/visual workflow coverage
-  - packaged Tauri smoke test
+  - packaged Electron smoke test
   - live Traccar test
   - offline map test
   - mission recovery test
@@ -250,13 +250,13 @@ These should be answered before browser or desktop stable claims expand:
 
 Possible outcomes:
 
-- Tauri remains the recommended live-incident app; browser remains training/testing.
+- Electron remains the recommended live-incident app; browser remains training/testing.
 - Browser becomes a first-class local-only runtime with IndexedDB plus export/import.
 - Browser grows a backend for shared missions, audit records, and managed credentials.
 
-## Current Browser/Tauri Capability Snapshot
+## Current Browser/Electron Capability Snapshot
 
-| Capability | Hosted browser Phase 0 | Tauri desktop |
+| Capability | Hosted browser Phase 0 | Electron desktop |
 | --- | --- | --- |
 | App shell and map | Available | Available |
 | Mission start/pause/resume/finish | Available once browser testing mode is enabled | Available |

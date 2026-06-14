@@ -15,7 +15,7 @@ describe('bootstrap app runtime', () => {
     markRuntimeBooting()
   })
 
-  it('marks Tauri startup ready only after applying the runtime controller', async () => {
+  it('marks desktop startup ready only after applying the runtime controller', async () => {
     const controller = createController()
     const events: string[] = []
 

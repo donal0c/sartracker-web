@@ -30,7 +30,7 @@ describe('app runtime startup', () => {
     expect(registerServiceWorker).toHaveBeenCalledTimes(1)
   })
 
-  it('starts mission autosave only inside a Tauri runtime', async () => {
+  it('starts mission autosave inside the Electron desktop runtime', async () => {
     const store: MissionStore & AutosaveStore = createMissionStoreStub()
     const createMissionStore = vi.fn().mockReturnValue(store)
     const startMissionAutosave = vi.fn().mockReturnValue(createAutosaveController())
@@ -53,7 +53,8 @@ describe('app runtime startup', () => {
 
     await startAppRuntime({
       registerServiceWorker: vi.fn().mockResolvedValue(undefined),
-      isTauriRuntimeAvailable: vi.fn().mockReturnValue(true),
+      isTauriRuntimeAvailable: vi.fn().mockReturnValue(false),
+      isElectronRuntimeAvailable: vi.fn().mockReturnValue(true),
       createMissionStore,
       readRuntimeBootstrapSettings,
       startMissionAutosave,
@@ -104,7 +105,7 @@ describe('app runtime startup', () => {
     )
   })
 
-  it('uses the Tauri-backed Traccar client factory for desktop tracking', async () => {
+  it('keeps the legacy Tauri-backed Traccar client factory available for retained builds', async () => {
     const store: MissionStore & AutosaveStore = createMissionStoreStub()
     let createClient: ((config: {
       readonly baseUrl: string
@@ -185,7 +186,29 @@ describe('app runtime startup', () => {
     expect(await trackingCache?.write('next')).toBe('written')
   })
 
-  it('does not create the mission store outside Tauri', async () => {
+  it('prefers Electron when both desktop runtime markers are present', async () => {
+    const store: MissionStore & AutosaveStore = createMissionStoreStub()
+    const createMissionStore = vi.fn().mockReturnValue(store)
+
+    await startAppRuntime({
+      registerServiceWorker: vi.fn().mockResolvedValue(undefined),
+      isTauriRuntimeAvailable: vi.fn().mockReturnValue(true),
+      isElectronRuntimeAvailable: vi.fn().mockReturnValue(true),
+      createMissionStore,
+      readRuntimeBootstrapSettings: vi.fn().mockResolvedValue(createBootstrapSettings()),
+      startMissionAutosave: vi.fn().mockReturnValue(createAutosaveController()),
+      startMissionRuntime: vi.fn().mockResolvedValue({}),
+      startMissionGovernanceRuntime: vi.fn().mockResolvedValue({}),
+      startMarkerRuntime: vi.fn().mockResolvedValue({}),
+      startDrawingRuntime: vi.fn().mockResolvedValue({}),
+      startGpxRuntime: vi.fn().mockResolvedValue({}),
+      startTrackingRuntime: vi.fn().mockResolvedValue(vi.fn()),
+    })
+
+    expect(createMissionStore).toHaveBeenCalledWith('electron')
+  })
+
+  it('does not create the mission store outside a desktop runtime', async () => {
     const createMissionStore = vi.fn()
     const startMissionAutosave = vi.fn()
 

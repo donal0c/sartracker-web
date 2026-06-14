@@ -12,7 +12,7 @@
 
 ## Purpose
 
-The hosted browser build is the fast feedback lane. The Tauri beta lane is where we validate the operational runtime: durable mission records, filesystem-backed workflows, local map packages, recovery, diagnostics, and install/update friction.
+The hosted browser build was the fast feedback lane. The retired Tauri beta lane was where we first explored operational runtime concerns: durable mission records, filesystem-backed workflows, local map packages, recovery, diagnostics, and install/update friction. Electron has since replaced this lane for current desktop work.
 
 The first beta does not need to be polished or auto-updating. It needs to be repeatable, identifiable, and honest about limitations.
 
@@ -25,8 +25,8 @@ Produce a repeatable desktop beta process that lets the team test the installed 
 - Initial beta artifacts are distributed through GitHub Releases on
   `donal0c/sartracker-web` as draft prereleases with the title containing
   "internal beta".
-- Cross-platform Linux + Windows + macOS arm64 artifacts are produced by the
-  CI release workflow at `.github/workflows/release.yml`. See B4 below.
+- The historical Tauri workflow used `.github/workflows/release.yml`; the
+  current Electron release workflow is `.github/workflows/electron-release.yml`.
 - Code signing, notarization, Windows SmartScreen reputation, and auto-update
   are important, but they do not need to block the internal beta lane unless
   the team machines reject unsigned builds.

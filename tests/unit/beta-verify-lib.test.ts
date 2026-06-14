@@ -69,7 +69,7 @@ describe('formatBetaStepResult', () => {
   it('formats a skipped step without duration or exit code', () => {
     const result: BetaStepResult = {
       step: 'package',
-      command: 'npm run tauri build -- --bundles app',
+      command: 'npm run electron:pack',
       status: 'skip',
       exitCode: null,
       durationMs: 0,
@@ -77,7 +77,7 @@ describe('formatBetaStepResult', () => {
     }
 
     expect(formatBetaStepResult(result)).toBe(
-      'SKIP  package     npm run tauri build -- --bundles app  skipped via --steps',
+      'SKIP  package     npm run electron:pack  skipped via --steps',
     )
   })
 })
@@ -110,7 +110,7 @@ describe('summarizeBetaReport', () => {
       results: [
         passed('lint', 'npm run lint', 1000),
         failed('test', 'npm run test', 5000, 1, 'one test failing'),
-        skipped('package', 'npm run tauri build -- --bundles app'),
+        skipped('package', 'npm run electron:pack'),
       ],
     }
 
@@ -128,7 +128,7 @@ describe('summarizeBetaReport', () => {
       finishedAt: '2026-05-17T12:05:00Z',
       results: [
         passed('lint', 'npm run lint', 1000),
-        skipped('package', 'npm run tauri build -- --bundles app'),
+        skipped('package', 'npm run electron:pack'),
       ],
     }
 

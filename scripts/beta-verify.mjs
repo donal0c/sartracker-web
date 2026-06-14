@@ -2,13 +2,13 @@
 /**
  * Beta verification gate.
  *
- * Runs the lint/build/test/test:backend/package/smoke chain that the Tauri
+ * Runs the lint/build/test/test:backend/package/smoke chain that the Electron
  * beta release plan calls "Verification Before Sharing". On success it writes
  * a JSON evidence report to tmp/beta-artifacts/ that the agent cutting the
  * beta can attach to the release note.
  *
  * The script is intentionally cautious about heavy work:
- * - The `package` step runs `npm run tauri build -- --bundles app` which can
+ * - The `package` step runs `npm run electron:pack` which can
  *   take many minutes. Skip it with `--steps lint,build,test,test-backend`
  *   when iterating, but never skip it before sharing a beta.
  * - The `smoke` step is a manual checklist gate. The script prompts the
@@ -45,7 +45,7 @@ const STEP_COMMANDS = {
   build: ['npm', ['run', 'build']],
   test: ['npm', ['run', 'test']],
   'test-backend': ['npm', ['run', 'test:backend']],
-  package: ['npm', ['run', 'tauri', 'build', '--', '--bundles', 'app']],
+  package: ['npm', ['run', 'electron:pack']],
   // smoke is handled in-process via a manual checklist; no shell command runs.
   smoke: ['__smoke__', []],
 }

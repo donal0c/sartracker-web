@@ -12,6 +12,8 @@
 
 ## Last Work Done
 
+Tauri reference cleanup — current docs/tooling now name Electron as the operational desktop lane. Updated `CLAUDE.md`, hosted/deployment docs, support policy, operator manual, testing guide, parity docs, `beta:verify`, and runtime mast mode so active surfaces no longer describe Tauri as the current app path. Electron is now preferred if both desktop runtime markers are present. Retained `src-tauri`, Tauri adapter tests, and superseded release docs as explicit legacy/history until a separate removal decision.
+
 DON-143 (S2 Electron, Feature) — Electron GitHub release workflow; Tauri release lane retired. DONE & CI-verified & on-device smoked.
 - New `.github/workflows/electron-release.yml`: `electron-v*` tag trigger (distinct from legacy Tauri `v*`). Jobs: gates (version-match + release-notes + lint/test/build) → bundle-linux (native AppImage+.deb, asserts packaged `better_sqlite3.node` is ELF x86-64, guards against `.mbtiles`/licensed data) → launch-smoke-linux (Xvfb window + non-black + no fault shell) → release (downloads built artifacts, generates `SHA256SUMS`, creates the draft prerelease — only after a green smoke) → summary. Artifacts pass between jobs via the workflow-artifact store, not the draft-release-by-tag API (which excludes drafts).
 - Windows NSIS scaffolded (`electron-builder.json` win/nsis + `electron:dist:win`) but gated OFF behind `enable_windows` dispatch input pending DON-141. macOS arm64 stays local/manual. Deleted `release.yml`. Docs updated: `docs/releases/README.md`, `docs/electron-beta-handoff.md`, `docs/releases/TEMPLATE.md`; superseded banner on `docs/tauri-beta-release-plan.md`. New release-note naming: `sartracker-electron-<version>.md`.

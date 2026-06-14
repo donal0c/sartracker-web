@@ -9,7 +9,7 @@ This file is retained only as a guardrail for broad improvement investigations. 
 If an investigation finds work worth doing, fold it into `docs/two-track-execution-workplan.md` as one of:
 
 - Track A: hosted team testing
-- Track B: Tauri operational readiness
+- Track B: Electron operational readiness
 - Shared foundation
 - Verification
 - Deferred / decision-gated

@@ -81,7 +81,7 @@ Electron's bundled Chromium, the app has two defenses:
 | Tier | Version | Packaging | Evidence |
 | --- | --- | --- | --- |
 | Tier 2 (CI-built, not field-validated) | Windows 10+ x86_64 | NSIS `.exe` (current-user) | CI launch smoke on windows-2022; no real machine available |
-| Deferred | Windows MSI | — | Tauri MSI bundler rejects `-beta.N` suffix |
+| Deferred | Windows MSI | — | NSIS is the current beta path; MSI can wait until Windows field validation justifies enterprise packaging |
 | Gap | Real-machine operator validation | — | Blocked until a Windows machine is available |
 
 ---
@@ -93,23 +93,22 @@ Electron's bundled Chromium, the app has two defenses:
 | AppImage | All Linux, especially RPM-family (PCLinuxOS) | Yes | Zero-install; requires libfuse2 on Ubuntu 24.04+. Configured in `electron-builder.json`. |
 | `.deb` | Ubuntu, Debian, Mint, Pop_OS | Yes | System install with desktop integration. Configured in `electron-builder.json`. |
 | `.rpm` | Fedora, openSUSE, PCLinuxOS native | No (deferred) | Only if AppImage proves insufficient; team uses AppImage successfully |
-| NSIS `.exe` | Windows | Gap | Not yet configured in `electron-builder.json`. The existing CI Windows build uses Tauri/WebView2. Electron Windows packaging must be added before the Tauri release path is retired. |
+| NSIS `.exe` | Windows | Gap | Configured in `electron-builder.json` and gated in `.github/workflows/electron-release.yml` behind `enable_windows` pending real-machine validation. |
 | MSI | Windows enterprise/managed | Deferred | Depends on Electron Windows packaging being implemented first |
 | `.app` zip | macOS | Yes (manual build) | Built locally via `npm run electron:pack -- --mac`. Ad-hoc signed; not CI-built until billing decision resolves. Not configured in `electron-builder.json` (uses CLI flags). |
 
 **Build host pinning:**
 - Linux artifacts: built on `ubuntu-22.04` via `electron-linux-validation.yml`
   (glibc 2.35 floor for forward-compatibility).
-- Windows artifacts: gap — Electron Windows build not yet configured. Current
-  CI Windows lane uses the Tauri bundler (to be retired).
+- Windows artifacts: gated — Electron Windows NSIS build is configured but
+  disabled in release workflow by default until a Windows machine can validate
+  install, launch, persistence, diagnostics, and official-map import.
 - macOS artifacts: built locally on the development machine (arm64) using
   `npm run electron:pack -- --mac`.
 
 **Packaging migration note:** The move from Tauri to Electron as the
-production shell means the Windows packaging lane needs migration from
-Tauri's NSIS bundler to electron-builder's NSIS target. Until that work is
-complete, the existing Tauri Windows CI build remains the interim Windows
-artifact path. This is tracked as future work (Section 14).
+production shell is complete for the active release workflow. The remaining
+Windows gap is validation, not the existence of an Electron packaging path.
 
 ---
 
@@ -222,7 +221,7 @@ reproducible builds. Version drift only happens via explicit `npm update`.
 1. A tested rollback mechanism exists (not just "reinstall the old version").
 2. Release channel separation prevents validation/pre-release builds from
    reaching stable-channel machines.
-3. The Tauri/Electron updater signing key infrastructure is in place.
+3. The Electron updater signing key infrastructure is in place.
 4. At least one full release cycle has been completed with manual updates
    to prove the release process is reliable.
 
@@ -255,7 +254,7 @@ must pass all of the following on a representative machine:
 - [ ] Version trio assertion (tag, package.json, electron-builder config)
 - [ ] Lint clean
 - [ ] Unit tests pass (all files)
-- [ ] Backend/Tauri tests pass
+- [ ] Legacy Rust backend tests pass while retained in the repo
 - [ ] Web build succeeds
 - [ ] Live dependency preflight (Traccar API reachable, tile URLs respond)
 - [ ] Native Linux AppImage launch smoke (window appears, map renders)
@@ -337,7 +336,7 @@ included.
 
 **Included in diagnostics:**
 - App version, build tag, commit SHA
-- Runtime type (`electron desktop` / `browser validation` / `tauri desktop`)
+- Runtime type (`electron desktop` / `browser validation`; `tauri desktop` only for historical builds)
 - Electron version, Chromium version, Node version
 - OS platform, arch, kernel version
 - GPU feature status (from Electron `app.getGPUFeatureStatus()`)
@@ -522,10 +521,9 @@ explicitly promoted after full smoke.
 
 These items are acknowledged but intentionally deferred:
 
-- **Electron Windows packaging:** Migrate the Windows build from Tauri NSIS
-  to electron-builder NSIS. Until complete, the existing Tauri CI Windows
-  lane remains the interim Windows artifact path. Must be resolved before
-  Tauri code is removed from the repo.
+- **Windows field validation:** Run the gated electron-builder NSIS artifact on
+  a real Windows laptop. It must pass launch, mission persistence, diagnostics,
+  and official-map import before Windows is advertised as supported.
 - **Auto-update mechanism:** Requires updater signing keys, channel
   separation, and tested rollback. Tracked separately.
 - **Code signing:** macOS Developer ID + notarization, Windows Azure Trusted

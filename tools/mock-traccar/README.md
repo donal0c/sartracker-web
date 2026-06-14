@@ -174,7 +174,7 @@ curl http://127.0.0.1:8082/health | jq
 The browser validation harness (`src/features/mission/mission-browser-harness.ts`) can optionally start real HTTP polling when `VITE_TRACCAR_BASE_URL` is set and the URL includes `liveTracking=1`. When you open the app at `http://127.0.0.1:1420/?missionHarness=1&liveTracking=1`:
 
 1. The browser harness starts the mission runtime, marker runtime, drawing runtime, and governance runtime as usual.
-2. It detects the Traccar env vars and starts the **real tracking runtime** — the same `startTrackingRuntime` function used in the Tauri desktop app.
+2. It detects the Traccar env vars and starts the **real tracking runtime** — the same `startTrackingRuntime` function used in the Electron desktop app.
 3. The tracking runtime creates a real `TraccarClient`, connects to the mock server, authenticates, and begins polling at 10-second intervals.
 4. Each poll fetches `/api/devices` and `/api/positions` in parallel, then fetches incremental breadcrumbs per device.
 5. Position data flows through the normalization layer, gets persisted to the browser harness store, and is applied to the Zustand tracking store — which triggers map overlay re-renders.

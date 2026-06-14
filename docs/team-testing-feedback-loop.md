@@ -36,7 +36,7 @@ Password: apiuser
 ```text
 Hosted app URL: https://sartracker-web.vercel.app/?missionHarness=1
 Hosted Traccar provider base URL: https://sartracker-web.vercel.app
-Desktop/Tauri direct Traccar URL: http://kmrtsar.eu:8082
+Desktop/Electron direct Traccar URL: http://kmrtsar.eu:8082
 Legacy/direct fallback URL: http://kmrtsar.ddns.net:8082
 ```
 
@@ -121,9 +121,9 @@ browser/machine details to the same issue rather than creating separate copies.
 | --- | --- | --- |
 | Hosted-only | Only happens on Vercel/browser mode, especially session storage, HTTPS proxy, or browser restrictions | Track/Fix in hosted lane, then decide whether browser hardening is worth it |
 | Critical hosted blocker | They cannot start mission, connect tracking, see map, or continue testing | Fix immediately, redeploy Vercel |
-| Shared app bug | Real bug likely affects browser and Tauri | Fix with tests, deploy Vercel, later verify desktop |
+| Shared app bug | Real bug likely affects browser and Electron | Fix with tests, deploy Vercel, later verify desktop |
 | UI/wording/layout feedback | The app works but feels confusing or awkward | Batch into focused UI iterations |
-| Desktop-runtime candidate | Persistence, recovery, filesystem, diagnostics, GPX watch, map packages | Route to Phase 1/2 Tauri work |
+| Desktop-runtime candidate | Persistence, recovery, filesystem, diagnostics, GPX watch, map packages | Route to Phase 1/2 Electron work |
 | Future hardening | IndexedDB, browser operational mode, shared missions | Defer until explicit browser-hardening decision |
 
 ## Response Cadence
@@ -131,4 +131,4 @@ browser/machine details to the same issue rather than creating separate copies.
 - Fix critical hosted blockers as soon as possible.
 - Batch UI changes where possible so testers are not chasing a moving layout every hour.
 - Keep a short changelog for each Vercel update.
-- Promote only coherent, tested batches to Tauri beta.
+- Promote only coherent, tested batches to Electron beta.

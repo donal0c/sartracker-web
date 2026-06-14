@@ -31,7 +31,7 @@ describe('RuntimeBootGate', () => {
     render(
       React.createElement(CommandMast, {
         status: 'ready',
-        runtimeMode: 'tauri',
+        runtimeMode: 'electron',
         onOpenDiagnostics: vi.fn(),
         onOpenSettings: vi.fn(),
       }),

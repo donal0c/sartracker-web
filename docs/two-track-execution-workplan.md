@@ -651,7 +651,7 @@ Tasks:
 - Add hosted-mode copy near Settings/Data Sources explaining that direct HTTP Traccar URLs are blocked by browsers from HTTPS pages.
 - In hosted mode, detect `http://` provider URLs and show a specific message directing operators to use `https://sartracker-web.vercel.app`.
 - Consider a one-click hosted default for the known testing proxy.
-- Keep Tauri desktop behavior unchanged; direct HTTP server URLs are valid there.
+- Keep Electron desktop behavior unchanged; direct HTTP server URLs are valid there.
 
 Acceptance:
 
@@ -1096,10 +1096,10 @@ Delivered:
   storage rules.
 - `docs/releases/sartracker-web-0.1.0-beta-DRAFT.md` — first dry-run release
   note kept in the repo as the worked example.
-- `scripts/beta-verify.mjs` and `build/beta-verify-lib.js` — the
-  `npm run beta:verify` gate that runs lint, build, test, test:backend,
-  package (`npm run tauri build -- --bundles app`), and the manual smoke
-  checklist, then writes a JSON evidence report to `tmp/beta-artifacts/`.
+- Historical at delivery time: `scripts/beta-verify.mjs` and
+  `build/beta-verify-lib.js` provided the Tauri beta gate. The script has since
+  been repointed at Electron packaging, so the old Tauri command belongs only
+  to the superseded `docs/tauri-beta-release-plan.md` record.
 - `tests/unit/beta-verify-lib.test.ts` — unit coverage for the gate's pure
   helpers.
 - Locked the beta artifact distribution decision in
@@ -1108,9 +1108,10 @@ Delivered:
   local working copies, release notes in `docs/releases/` as the source of
   truth.
 
-Acceptance met: a future agent can copy the template, run
-`npm run beta:verify`, attach the JSON report, and produce a Tauri beta
-without inventing process.
+Acceptance at the time: a future agent could copy the template, run the then-
+current beta verifier, attach the JSON report, and produce the retired Tauri
+beta without inventing process. Current desktop release work uses the Electron
+workflow.
 
 ### B3: First Internal Tauri Smoke Build
 
@@ -1528,32 +1529,32 @@ Exit codes (also documented in CLAUDE.md):
 - `2` reviewer errored on at least one entry (always blocks)
 - `3` manifest had zero entries (visual project did not run)
 
-### B5: Triage First Web And Tauri Beta Feedback
+### B5: Triage First Web And Desktop Beta Feedback
 
 Linear issue: `sartracker-web-s8m`
 
-Goal: classify real tester feedback before starting another fix loop, so hosted-web issues, desktop/Tauri issues, shared app bugs, docs/training problems, and product preferences do not collapse into one foggy backlog.
+Goal: classify real tester feedback before starting another fix loop, so hosted-web issues, desktop/Electron issues, shared app bugs, docs/training problems, and product preferences do not collapse into one foggy backlog.
 
 Entry gate:
 
 - Hosted web app has been tested from the production URL, not a local dev server.
-- Tauri app has been tested from the distributed artifact, not only from a local developer build.
+- Electron app has been tested from the distributed artifact, not only from a local developer build.
 - Evidence is captured before triage starts: version/build ID, OS/browser, tester path, screenshots or notes, diagnostics export when relevant, and clear pass/fail observations.
 - Feedback is classified before implementation starts.
 
 Tasks:
 
-- Review feedback from hosted web testing and the first Tauri beta distribution.
-- Classify each item as hosted-only, desktop/Tauri-only, shared app bug, docs/training issue, or product/UI preference.
+- Review feedback from hosted web testing and the first Electron beta distribution.
+- Classify each item as hosted-only, desktop/Electron-only, shared app bug, docs/training issue, or product/UI preference.
 - Create or update Linear issues for actionable items.
-- Decide whether to widen Tauri beta, repeat blocker fixes, or keep desktop paused while hosted testing continues.
+- Decide whether to widen Electron beta, repeat blocker fixes, or keep desktop paused while hosted testing continues.
 - Update this workplan and `handoff/HANDOFF.md` with the decision.
 
 Acceptance:
 
 - No tester finding remains only in chat, email, or memory.
 - Each actionable finding has a lane and Linear issue.
-- The plan clearly says whether Tauri beta can expand, needs another blocker-fix loop, or should pause.
+- The plan clearly says whether Electron beta can expand, needs another blocker-fix loop, or should pause.
 
 ## Deferred / Decision-Gated Work
 

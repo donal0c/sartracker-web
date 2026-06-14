@@ -26,13 +26,13 @@ Last updated: 2026-05-14 by Codex (planning consolidated into the two-track work
 
 Canonical plan: `docs/hosted-browser-testing-plan.md`
 
-Strategic stance: hosted browser is the fast feedback/testing lane; Tauri desktop is the operational lane. Do not try to make both fully equivalent before the team has completed surface-level testing and the high-definition mountain map requirements are known.
+Strategic stance: hosted browser is the fast feedback/testing lane; Electron desktop is the operational lane. Do not try to make both fully equivalent before the team has completed surface-level testing and the high-definition mountain map requirements are known.
 
 Execution docs:
 
 - `docs/two-track-execution-workplan.md` — canonical active queue
 - `docs/team-testing-feedback-loop.md` — supporting tester instructions
-- `docs/tauri-beta-release-plan.md` — supporting beta release detail
+- `docs/electron-beta-handoff.md` — current Electron handoff and release detail
 
 ### Phase 0: Hosted browser testing unblock
 
@@ -55,9 +55,9 @@ Execution docs:
 - Research required: `Medium`
 - Implementation readiness: `3/5`
 - Recommended action: **Defer until after Phase 0 team feedback and the desktop beta foundation**
-- Why: Browser hardening may be valuable later, but the near-term operational path is Tauri. IndexedDB/secrets/export work should not outrank the desktop release pipeline and offline map path.
+- Why: Browser hardening may be valuable later, but the near-term operational path is Electron. IndexedDB/secrets/export work should not outrank the desktop release pipeline and offline map path.
 
-### Phase 1: Tauri beta release foundation
+### Phase 1: Electron beta release foundation
 
 - Research required: `Medium`
 - Implementation readiness: `4/5`
@@ -65,7 +65,7 @@ Execution docs:
 - Why: The team needs fast Vercel iteration, but the operational release path needs repeatable packaged desktop builds, release notes, and install guidance.
 - Locked decisions:
   - Vercel remains the rapid test channel.
-  - Tauri beta becomes the runtime for persistence, filesystem, map package, and recovery validation.
+  - Electron beta becomes the runtime for persistence, filesystem, map package, and recovery validation.
   - GitHub Releases or equivalent versioned artifacts are enough before auto-update/signing is tackled.
 - Open questions:
   - Which OS/package formats the team needs first.
