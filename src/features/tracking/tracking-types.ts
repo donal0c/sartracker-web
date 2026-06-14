@@ -27,10 +27,26 @@ export type NormalizedTrackingPosition = {
   readonly device_cache_stale: boolean
 }
 
+export type BreadcrumbDeviceBudget = {
+  readonly deviceId: string
+  readonly retained: number
+  readonly total: number
+  readonly firstTimestamp: string | null
+  readonly lastTimestamp: string | null
+  readonly truncated: boolean
+}
+
+export type BreadcrumbSnapshotMetadata = {
+  readonly totalRetained: number
+  readonly totalObserved: number
+  readonly deviceBudgets: readonly BreadcrumbDeviceBudget[]
+}
+
 export type TrackingSnapshot = {
   readonly devices: readonly NormalizedTrackingDevice[]
   readonly positions: readonly NormalizedTrackingPosition[]
   readonly breadcrumbs: readonly NormalizedTrackingPosition[]
+  readonly breadcrumbMetadata?: BreadcrumbSnapshotMetadata | undefined
 }
 
 export type TrackingConnectionStatus = {

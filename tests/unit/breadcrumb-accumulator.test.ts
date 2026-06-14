@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import breadcrumbsFixture from '../fixtures/traccar-breadcrumbs.json'
 import {
+  accumulateBreadcrumbPositions,
   appendBreadcrumbPositions,
   createBreadcrumbSegments,
   decimateBreadcrumbsForDots,
@@ -30,6 +31,59 @@ describe('breadcrumb accumulator', () => {
     )
 
     expect(appendBreadcrumbPositions(positions, [])).toBe(positions)
+  })
+
+  it('does not let a noisy device evict another device from the live breadcrumb budget [DON-159]', () => {
+    const noisyDeviceBreadcrumbs = Array.from({ length: 25_000 }, (_, index) =>
+      normalizeTraccarPosition(
+        {
+          id: index + 1,
+          deviceId: 2,
+          latitude: 52 + index / 1_000_000,
+          longitude: -9.7 - index / 1_000_000,
+          fixTime: new Date(Date.UTC(2026, 5, 13, 0, 0, index)).toISOString(),
+        },
+        'live',
+      ),
+    )
+    const quietDeviceBreadcrumbs = Array.from({ length: 3_280 }, (_, index) =>
+      normalizeTraccarPosition(
+        {
+          id: 50_000 + index,
+          deviceId: 25,
+          latitude: 51.99 + index / 1_000_000,
+          longitude: -9.74 - index / 1_000_000,
+          fixTime: new Date(Date.UTC(2026, 5, 12, 12, 0, index)).toISOString(),
+        },
+        'live',
+      ),
+    )
+
+    const result = accumulateBreadcrumbPositions(
+      [],
+      [...quietDeviceBreadcrumbs, ...noisyDeviceBreadcrumbs],
+    )
+
+    expect(result.positions.some((position) => position.device_id === '25')).toBe(true)
+    expect(result.positions.filter((position) => position.device_id === '25')).toHaveLength(3_280)
+    expect(result.metadata.deviceBudgets).toContainEqual(
+      expect.objectContaining({
+        deviceId: '2',
+        retained: 5_000,
+        total: 25_000,
+        firstTimestamp: noisyDeviceBreadcrumbs[0]!.timestamp,
+        lastTimestamp: noisyDeviceBreadcrumbs.at(-1)!.timestamp,
+        truncated: true,
+      }),
+    )
+    expect(result.metadata.deviceBudgets).toContainEqual(
+      expect.objectContaining({
+        deviceId: '25',
+        retained: 3_280,
+        total: 3_280,
+        truncated: false,
+      }),
+    )
   })
 
   it('segments trails when time gaps exceed the configured threshold', () => {

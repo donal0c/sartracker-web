@@ -241,6 +241,7 @@ function buildSupportReport(
     `devices in snapshot: ${input.trackingSnapshot.devices.length}`,
     `positions in snapshot: ${input.trackingSnapshot.positions.length}`,
     `breadcrumbs in snapshot: ${input.trackingSnapshot.breadcrumbs.length}`,
+    ...formatBreadcrumbMetadataReport(input.trackingSnapshot.breadcrumbMetadata),
     '',
     '[warnings]',
     ...(input.warnings.length === 0 ? ['none'] : input.warnings),
@@ -307,8 +308,38 @@ function collectWarnings(input: BuildDiagnosticsSnapshotInput): readonly string[
   if (input.runtimeBootstrap.trackingConfig === null && input.settings.dataSource.providerType === 'traccar_http') {
     warnings.push('Tracking provider is configured but runtime tracking is not connected.')
   }
+  const truncatedBreadcrumbDeviceCount =
+    input.trackingSnapshot.breadcrumbMetadata?.deviceBudgets.filter((budget) => budget.truncated)
+      .length ?? 0
+  if (truncatedBreadcrumbDeviceCount > 0) {
+    warnings.push(
+      `Breadcrumb history is render-budgeted for ${truncatedBreadcrumbDeviceCount} device${truncatedBreadcrumbDeviceCount === 1 ? '' : 's'}; exported diagnostics include per-device counts.`,
+    )
+  }
 
   return warnings
+}
+
+function formatBreadcrumbMetadataReport(
+  metadata: TrackingSnapshot['breadcrumbMetadata'],
+): readonly string[] {
+  if (metadata === undefined) {
+    return []
+  }
+
+  return [
+    `breadcrumb render retained: ${metadata.totalRetained} of ${metadata.totalObserved}`,
+    ...metadata.deviceBudgets.map((budget) =>
+      [
+        `breadcrumb device ${budget.deviceId}:`,
+        `retained=${budget.retained}`,
+        `total=${budget.total}`,
+        `first=${budget.firstTimestamp ?? 'none'}`,
+        `last=${budget.lastTimestamp ?? 'none'}`,
+        `truncated=${budget.truncated ? 'yes' : 'no'}`,
+      ].join(' '),
+    ),
+  ]
 }
 
 function resolveRepairMission(

@@ -1,9 +1,18 @@
-import type { NormalizedTrackingPosition } from './tracking-types'
+import type {
+  BreadcrumbSnapshotMetadata,
+  NormalizedTrackingPosition,
+} from './tracking-types'
 
-// Keep the live map snapshot bounded for long-running hosted sessions. Mission
-// persistence still receives incremental positions before older live points
-// fall out of this render budget.
-const MAX_BREADCRUMB_POSITIONS = 20_000
+// Keep each live device trail bounded independently while preserving the shape
+// of the full requested window. A high-frequency tracker must not evict another
+// rescuer's route, and its own older route must not disappear just because the
+// device keeps reporting later fixes.
+const MAX_BREADCRUMB_POSITIONS_PER_DEVICE = 5_000
+
+export type BreadcrumbAccumulationResult = {
+  readonly positions: readonly NormalizedTrackingPosition[]
+  readonly metadata: BreadcrumbSnapshotMetadata
+}
 
 /**
  * Appends new breadcrumb positions while deduplicating by device and timestamp.
@@ -16,15 +25,57 @@ export function appendBreadcrumbPositions(
     return existing
   }
 
+  return accumulateBreadcrumbPositions(existing, incoming).positions
+}
+
+/**
+ * Appends new breadcrumb positions with per-device render-budget metadata.
+ */
+export function accumulateBreadcrumbPositions(
+  existing: readonly NormalizedTrackingPosition[],
+  incoming: readonly NormalizedTrackingPosition[],
+): BreadcrumbAccumulationResult {
   const deduplicated = new Map<string, NormalizedTrackingPosition>()
 
   for (const position of [...existing, ...incoming]) {
     deduplicated.set(createPositionKey(position), position)
   }
 
-  return [...deduplicated.values()]
-    .sort((left, right) => Date.parse(left.timestamp) - Date.parse(right.timestamp))
-    .slice(-MAX_BREADCRUMB_POSITIONS)
+  const retained: NormalizedTrackingPosition[] = []
+  const deviceBudgets = [...groupPositionsByDevice([...deduplicated.values()]).entries()]
+    .sort(([leftDeviceId], [rightDeviceId]) => leftDeviceId.localeCompare(rightDeviceId))
+    .map(([deviceId, positions]) => {
+      const chronological = positions.sort(
+        (left, right) => Date.parse(left.timestamp) - Date.parse(right.timestamp),
+      )
+      const deviceRetained = retainDeviceTrailAcrossWindow(
+        chronological,
+        MAX_BREADCRUMB_POSITIONS_PER_DEVICE,
+      )
+      retained.push(...deviceRetained)
+
+      return {
+        deviceId,
+        retained: deviceRetained.length,
+        total: chronological.length,
+        firstTimestamp: deviceRetained[0]?.timestamp ?? null,
+        lastTimestamp: deviceRetained.at(-1)?.timestamp ?? null,
+        truncated: chronological.length > deviceRetained.length,
+      }
+    })
+
+  const positions = retained.sort(
+    (left, right) => Date.parse(left.timestamp) - Date.parse(right.timestamp),
+  )
+
+  return {
+    positions,
+    metadata: {
+      totalRetained: positions.length,
+      totalObserved: deduplicated.size,
+      deviceBudgets,
+    },
+  }
 }
 
 /**
@@ -130,6 +181,54 @@ function haversineDistance(lat1: number, lon1: number, lat2: number, lon2: numbe
       Math.cos((lat2 * Math.PI) / 180) *
       Math.sin(dLon / 2) ** 2
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
+}
+
+function groupPositionsByDevice(
+  positions: readonly NormalizedTrackingPosition[],
+): Map<string, NormalizedTrackingPosition[]> {
+  const byDevice = new Map<string, NormalizedTrackingPosition[]>()
+  for (const position of positions) {
+    const existing = byDevice.get(position.device_id)
+    if (existing === undefined) {
+      byDevice.set(position.device_id, [position])
+    } else {
+      existing.push(position)
+    }
+  }
+  return byDevice
+}
+
+function retainDeviceTrailAcrossWindow(
+  chronological: readonly NormalizedTrackingPosition[],
+  maxPositions: number,
+): readonly NormalizedTrackingPosition[] {
+  if (chronological.length <= maxPositions) {
+    return chronological
+  }
+  if (maxPositions <= 0) {
+    return []
+  }
+  if (maxPositions === 1) {
+    return [chronological[chronological.length - 1]!]
+  }
+
+  const retained: NormalizedTrackingPosition[] = []
+  let previousIndex = -1
+  for (let retainedIndex = 0; retainedIndex < maxPositions; retainedIndex += 1) {
+    const sourceIndex = Math.round(
+      (retainedIndex * (chronological.length - 1)) / (maxPositions - 1),
+    )
+    if (sourceIndex === previousIndex) {
+      continue
+    }
+    const position = chronological[sourceIndex]
+    if (position !== undefined) {
+      retained.push(position)
+      previousIndex = sourceIndex
+    }
+  }
+
+  return retained
 }
 
 function createPositionKey(position: NormalizedTrackingPosition): string {

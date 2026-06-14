@@ -4,7 +4,7 @@ import type {
   TrackingConnectionStatus,
   TrackingSnapshot,
 } from './tracking-types'
-import { appendBreadcrumbPositions } from './breadcrumb-accumulator'
+import { accumulateBreadcrumbPositions } from './breadcrumb-accumulator'
 import { annotateTrackingSnapshotHealth } from './tracking-snapshot-health'
 
 const EMPTY_TRACKING_SNAPSHOT: TrackingSnapshot = {
@@ -37,6 +37,7 @@ type PollingManagerOptions = {
   readonly getHistoryResetKey?: () => string | null
   readonly getInitialBreadcrumbFrom?: () => Date | null
   readonly getInitialBreadcrumbs?: () => Promise<readonly NormalizedTrackingPosition[]>
+  readonly getBreadcrumbDeviceIds?: () => readonly string[] | null
   readonly onSnapshot: (snapshot: TrackingSnapshot) => void
   readonly onStatusChange: (status: TrackingConnectionStatus) => void
   readonly logger?: PollingManagerLogger
@@ -78,6 +79,7 @@ export function createPollingManager(
   let lastGoodSnapshot: TrackingSnapshot | null = null
   let lastSuccessAt: string | null = null
   let breadcrumbPositions: readonly NormalizedTrackingPosition[] = []
+  let breadcrumbMetadata: TrackingSnapshot['breadcrumbMetadata'] | undefined = undefined
   let activeHistoryResetKey: string | null = null
   let initialBreadcrumbsLoaded = false
   const latestBreadcrumbTimestampByDevice = new Map<string, string>()
@@ -118,6 +120,7 @@ export function createPollingManager(
       if (nextHistoryResetKey !== activeHistoryResetKey) {
         activeHistoryResetKey = nextHistoryResetKey
         breadcrumbPositions = []
+        breadcrumbMetadata = undefined
         initialBreadcrumbsLoaded = false
         latestBreadcrumbTimestampByDevice.clear()
         lastGoodSnapshot = null
@@ -166,7 +169,12 @@ export function createPollingManager(
       const recovered = consecutiveFailures > 0
       consecutiveFailures = 0
       lastSuccessAt = now().toISOString()
-      const currentSnapshot = { devices, positions, breadcrumbs: breadcrumbPositions }
+      const currentSnapshot = {
+        devices,
+        positions,
+        breadcrumbs: breadcrumbPositions,
+        breadcrumbMetadata,
+      }
       lastGoodSnapshot = currentSnapshot
       options.onSnapshot(
         annotateTrackingSnapshotHealth(currentSnapshot, {
@@ -186,9 +194,11 @@ export function createPollingManager(
       })
 
       const breadcrumbs = await fetchIncrementalBreadcrumbs(devices)
-      breadcrumbPositions = appendBreadcrumbPositions(breadcrumbPositions, breadcrumbs)
+      const breadcrumbResult = accumulateBreadcrumbPositions(breadcrumbPositions, breadcrumbs)
+      breadcrumbPositions = breadcrumbResult.positions
+      breadcrumbMetadata = breadcrumbResult.metadata
 
-      const rawSnapshot = { devices, positions, breadcrumbs: breadcrumbPositions }
+      const rawSnapshot = { devices, positions, breadcrumbs: breadcrumbPositions, breadcrumbMetadata }
       const latestPollingMode = options.getPollingMode?.() ?? 'active'
       if (latestPollingMode !== 'active') {
         publishInactiveMissionSnapshot(latestPollingMode)
@@ -278,8 +288,18 @@ export function createPollingManager(
   ): Promise<readonly NormalizedTrackingPosition[]> {
     const fetchUntil = now()
     await seedInitialBreadcrumbs()
+    const requestedDeviceIds = options.getBreadcrumbDeviceIds?.() ?? null
+    const requestedDeviceIdSet =
+      requestedDeviceIds === null || requestedDeviceIds.length === 0
+        ? null
+        : new Set(requestedDeviceIds)
+    const breadcrumbDevices =
+      requestedDeviceIdSet === null
+        ? devices
+        : devices.filter((device) => requestedDeviceIdSet.has(device.device_id))
+
     const settled = await Promise.allSettled(
-      devices.map(async (device) => {
+      breadcrumbDevices.map(async (device) => {
         const lastTimestamp = latestBreadcrumbTimestampByDevice.get(device.device_id)
         const fetchFrom =
           lastTimestamp === undefined
@@ -308,7 +328,7 @@ export function createPollingManager(
         continue
       }
 
-      const failedDevice = devices[index]
+      const failedDevice = breadcrumbDevices[index]
       logger.warn('Tracking breadcrumb fetch failed for device.', {
         deviceId: failedDevice?.device_id ?? null,
         deviceName: failedDevice?.name ?? null,
@@ -329,7 +349,9 @@ export function createPollingManager(
 
     try {
       const persistedBreadcrumbs = await options.getInitialBreadcrumbs()
-      breadcrumbPositions = appendBreadcrumbPositions(breadcrumbPositions, persistedBreadcrumbs)
+      const breadcrumbResult = accumulateBreadcrumbPositions(breadcrumbPositions, persistedBreadcrumbs)
+      breadcrumbPositions = breadcrumbResult.positions
+      breadcrumbMetadata = breadcrumbResult.metadata
       seedLatestBreadcrumbTimestamps(persistedBreadcrumbs)
       initialBreadcrumbsLoaded = true
     } catch (error) {

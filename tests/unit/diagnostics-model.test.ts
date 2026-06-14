@@ -155,6 +155,71 @@ describe('diagnostics model', () => {
     expect(snapshot.supportReport).toContain('runtime: electron desktop')
     expect(snapshot.supportReport).not.toContain('runtime: browser validation')
   })
+
+  it('reports per-device breadcrumb render budgets and warnings [DON-159]', () => {
+    const snapshot = buildDiagnosticsSnapshot({
+      generatedAt: '2026-06-13T21:48:51.654Z',
+      appVersion: '0.1.0-beta.4',
+      runtimeKind: 'electron',
+      userAgent: 'Electron/40.10.0 SARTrackerTest/1.0',
+      dependencySmoke: {
+        hasMapLibre: true,
+        hasProj4: true,
+        hasTurf: true,
+        hasZustand: true,
+        hasTerraDraw: true,
+      },
+      settings: createSettings(),
+      runtimeBootstrap: createRuntimeBootstrap(),
+      missionStoreInfo: createStoreInfo(),
+      missions: [createMission()],
+      missionRuntime: createMissionRuntime(),
+      governanceRuntime: createGovernanceRuntime(),
+      trackingStatus: createTrackingStatus(),
+      trackingSnapshot: {
+        ...createTrackingSnapshot(),
+        breadcrumbs: [],
+        breadcrumbMetadata: {
+          totalObserved: 28_280,
+          totalRetained: 8_280,
+          deviceBudgets: [
+            {
+              deviceId: '2',
+              retained: 5_000,
+              total: 25_000,
+              firstTimestamp: '2026-06-13T01:00:00.000Z',
+              lastTimestamp: '2026-06-13T21:30:00.000Z',
+              truncated: true,
+            },
+            {
+              deviceId: '25',
+              retained: 3_280,
+              total: 3_280,
+              firstTimestamp: '2026-06-12T11:59:28.481Z',
+              lastTimestamp: '2026-06-12T18:30:03.974Z',
+              truncated: false,
+            },
+          ],
+        },
+      },
+      layerCatalogState: {
+        missionId: 'mission-1',
+        loading: false,
+        error: null,
+        metadataEntryCount: 3,
+      },
+      selectedMissionId: 'mission-1',
+    })
+
+    expect(snapshot.supportReport).toContain('breadcrumb render retained: 8280 of 28280')
+    expect(snapshot.supportReport).toContain('breadcrumb device 2: retained=5000 total=25000')
+    expect(snapshot.supportReport).toContain('truncated=yes')
+    expect(snapshot.supportReport).toContain('breadcrumb device 25: retained=3280 total=3280')
+    expect(snapshot.supportReport).toContain('truncated=no')
+    expect(snapshot.warnings).toContain(
+      'Breadcrumb history is render-budgeted for 1 device; exported diagnostics include per-device counts.',
+    )
+  })
 })
 
 function createSettings(): AppSettings {

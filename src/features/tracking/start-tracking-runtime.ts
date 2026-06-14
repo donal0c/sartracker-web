@@ -242,6 +242,11 @@ function limitSnapshotForMissionPersistence(
 
   return {
     ...snapshot,
+    // This cap is currently used only by browser validation storage limits.
+    // Do not enable a real desktop persistence cap with this global slice: a
+    // future operational cap must be per-device fair, matching the live
+    // breadcrumb render budget, so one noisy tracker cannot evict another
+    // rescuer's stored mission trail.
     breadcrumbs: [...snapshot.breadcrumbs]
       .sort((left, right) => Date.parse(left.timestamp) - Date.parse(right.timestamp))
       .slice(-maxBreadcrumbs),

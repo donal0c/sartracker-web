@@ -2,7 +2,10 @@ import { describe, expect, it } from 'vitest'
 
 import devicesFixture from '../fixtures/traccar-devices.json'
 import positionsFixture from '../fixtures/traccar-positions.json'
-import { appendBreadcrumbPositions } from '../../src/features/tracking/breadcrumb-accumulator'
+import {
+  accumulateBreadcrumbPositions,
+  appendBreadcrumbPositions,
+} from '../../src/features/tracking/breadcrumb-accumulator'
 import {
   createBreadcrumbFeatureCollection,
   createDeviceFeatureCollection,
@@ -206,7 +209,7 @@ describe('tracking geojson', () => {
     expect(collection.features[0]?.geometry.coordinates).toHaveLength(14_500)
   })
 
-  it('keeps live breadcrumb snapshots under the long-running browser render budget', () => {
+  it('does not apply one global render budget across all device breadcrumbs [DON-159]', () => {
     const existing = Array.from({ length: 22_000 }, (_, index) =>
       normalizeTraccarPosition(
         {
@@ -234,8 +237,38 @@ describe('tracking geojson', () => {
 
     const accumulated = appendBreadcrumbPositions(existing, incoming)
 
-    expect(accumulated).toHaveLength(20_000)
-    expect(accumulated[0]?.timestamp).toBe('2026-05-14T11:16:40.000Z')
+    expect(accumulated).toHaveLength(24_600)
+    expect(accumulated[0]?.timestamp).toBe('2026-05-14T10:00:00.000Z')
     expect(accumulated.at(-1)?.timestamp).toBe('2026-05-14T16:49:59.000Z')
+  })
+
+  it('keeps worst-case per-device retained trail rendering bounded [DON-159]', () => {
+    const breadcrumbs = Array.from({ length: 33 * 6_000 }, (_, index) => {
+      const deviceId = (index % 33) + 1
+      return normalizeTraccarPosition(
+        {
+          id: index + 1,
+          deviceId,
+          latitude: 52 + index / 10_000_000,
+          longitude: -9.7 - index / 10_000_000,
+          fixTime: new Date(Date.UTC(2026, 5, 13, 0, 0, index)).toISOString(),
+        },
+        'live',
+      )
+    })
+
+    const accumulated = accumulateBreadcrumbPositions([], breadcrumbs)
+    const collection = createBreadcrumbFeatureCollection(
+      {
+        devices: [],
+        positions: [],
+        breadcrumbs: accumulated.positions,
+      },
+      5 * 60 * 1000,
+    )
+
+    expect(accumulated.positions).toHaveLength(33 * 5_000)
+    expect(accumulated.metadata.deviceBudgets.every((budget) => budget.retained === 5_000)).toBe(true)
+    expect(collection.features).toHaveLength(33)
   })
 })

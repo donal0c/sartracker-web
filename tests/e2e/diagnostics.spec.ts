@@ -137,4 +137,114 @@ test.describe('M21 diagnostics workspace', () => {
     await expect(dialog).toBeHidden()
     await expect(opener).toBeFocused()
   })
+
+  test('includes per-device breadcrumb render budget details in copied diagnostics [DON-159]', async ({
+    page,
+  }) => {
+    await page.getByTestId('mission-name-input').fill('Breadcrumb Diagnostics')
+    await page.getByTestId('mission-start-btn').click()
+    await expect(page.getByTestId('mission-control')).toContainText('active')
+
+    await page.evaluate(async () => {
+      const harness = window.__SARTRACKER_BROWSER_HARNESS__
+      if (harness === undefined) {
+        throw new Error('Browser harness unavailable.')
+      }
+
+      await harness.injectTrackingSnapshot({
+        devices: [
+          {
+            device_id: '2',
+            name: 'Eamonn O Connor',
+            status: 'online',
+            last_seen: '2026-06-13T21:30:00.000Z',
+            unique_id: null,
+            category: null,
+          },
+          {
+            device_id: '25',
+            name: 'Richard Morrison',
+            status: 'online',
+            last_seen: '2026-06-12T18:30:03.974Z',
+            unique_id: null,
+            category: null,
+          },
+        ],
+        positions: [
+          {
+            id: 'eoc-current',
+            device_id: '2',
+            lat: 52.1,
+            lon: -9.7,
+            altitude: null,
+            speed: null,
+            battery: null,
+            accuracy: null,
+            timestamp: '2026-06-13T21:30:00.000Z',
+            source: 'traccar',
+            data_origin: 'live',
+            cache_age_seconds: null,
+            device_cache_stale: false,
+          },
+          {
+            id: 'richard-current',
+            device_id: '25',
+            lat: 51.99,
+            lon: -9.74,
+            altitude: null,
+            speed: null,
+            battery: null,
+            accuracy: null,
+            timestamp: '2026-06-12T18:30:03.974Z',
+            source: 'traccar',
+            data_origin: 'live',
+            cache_age_seconds: null,
+            device_cache_stale: false,
+          },
+        ],
+        breadcrumbs: [],
+        breadcrumbMetadata: {
+          totalObserved: 28_280,
+          totalRetained: 8_280,
+          deviceBudgets: [
+            {
+              deviceId: '2',
+              retained: 5_000,
+              total: 25_000,
+              firstTimestamp: '2026-06-13T01:00:00.000Z',
+              lastTimestamp: '2026-06-13T21:30:00.000Z',
+              truncated: true,
+            },
+            {
+              deviceId: '25',
+              retained: 3_280,
+              total: 3_280,
+              firstTimestamp: '2026-06-12T11:59:28.481Z',
+              lastTimestamp: '2026-06-12T18:30:03.974Z',
+              truncated: false,
+            },
+          ],
+        },
+      })
+    })
+
+    await page.getByTestId('open-diagnostics-workspace').click()
+    await expect(page.getByTestId('diagnostics-workspace')).toBeVisible()
+    await expect(page.getByTestId('diagnostics-workspace')).toContainText('Breadcrumb points')
+
+    await page.getByTestId('diagnostics-copy-report').click()
+    await expect(page.getByTestId('diagnostics-feedback')).toContainText('copied')
+    await expect.poll(async () => page.evaluate(() => navigator.clipboard.readText())).toContain(
+      'breadcrumb render retained: 8280 of 28280',
+    )
+    await expect.poll(async () => page.evaluate(() => navigator.clipboard.readText())).toContain(
+      'breadcrumb device 2: retained=5000 total=25000',
+    )
+    await expect.poll(async () => page.evaluate(() => navigator.clipboard.readText())).toContain(
+      'breadcrumb device 25: retained=3280 total=3280',
+    )
+    await expect.poll(async () => page.evaluate(() => navigator.clipboard.readText())).toContain(
+      'Breadcrumb history is render-budgeted for 1 device',
+    )
+  })
 })

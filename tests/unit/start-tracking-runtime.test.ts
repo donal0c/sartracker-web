@@ -493,6 +493,69 @@ describe('startTrackingRuntime', () => {
       SNAPSHOT.positions[1]!.timestamp,
     ])
   })
+
+  it('leaves Electron mission persistence uncapped by default [DON-159]', async () => {
+    const addPosition = vi.fn().mockResolvedValue(undefined)
+    const noisyBreadcrumbs = Array.from({ length: 8 }, (_, index) => ({
+      ...SNAPSHOT.breadcrumbs[0]!,
+      id: `noisy-${index}`,
+      device_id: '2',
+      timestamp: new Date(Date.UTC(2026, 5, 13, 0, 0, index)).toISOString(),
+    }))
+    const quietBreadcrumbs = Array.from({ length: 3 }, (_, index) => ({
+      ...SNAPSHOT.breadcrumbs[0]!,
+      id: `quiet-${index}`,
+      device_id: '25',
+      timestamp: new Date(Date.UTC(2026, 5, 12, 12, 0, index)).toISOString(),
+    }))
+    const snapshot = {
+      ...SNAPSHOT,
+      breadcrumbs: [...quietBreadcrumbs, ...noisyBreadcrumbs],
+    } satisfies TrackingSnapshot
+    let pollerHooks:
+      | {
+          onSnapshot: (snapshot: TrackingSnapshot) => void | Promise<void>
+          onStatusChange: (status: TrackingConnectionStatus) => void
+        }
+      | undefined
+
+    await startTrackingRuntime({
+      config: { baseUrl: 'http://test:8082' },
+      createClient: vi.fn().mockReturnValue({}),
+      createPoller: vi.fn().mockImplementation((_client, hooks) => {
+        pollerHooks = hooks
+        return { start: vi.fn(), stop: vi.fn() }
+      }),
+      cache: {
+        read: vi.fn().mockResolvedValue(null),
+        write: vi.fn().mockResolvedValue('/tmp/tracking-cache.json'),
+      },
+      missionStore: createMissionStoreStub({
+        getActiveMission: vi.fn().mockResolvedValue({ id: 'mission-1' }),
+        listPositions: vi.fn().mockResolvedValue([]),
+        addPosition,
+      }),
+      applySnapshot: vi.fn(),
+      applyStatus: vi.fn(),
+      writeCache: false,
+      now: () => new Date('2026-06-13T21:48:51.654Z'),
+    })
+
+    await pollerHooks?.onSnapshot(snapshot)
+
+    expect(addPosition).toHaveBeenCalledWith(expect.objectContaining({ device_id: '2' }))
+    expect(addPosition).toHaveBeenCalledWith(expect.objectContaining({ device_id: '25' }))
+    expect(
+      addPosition.mock.calls.filter(
+        (call) => call[0].device_id === '2' && String(call[0].timestamp).startsWith('2026-06-13'),
+      ),
+    ).toHaveLength(8)
+    expect(
+      addPosition.mock.calls.filter(
+        (call) => call[0].device_id === '25' && String(call[0].timestamp).startsWith('2026-06-12'),
+      ),
+    ).toHaveLength(3)
+  })
 })
 
 function createMissionStoreStub(overrides: Record<string, unknown> = {}) {

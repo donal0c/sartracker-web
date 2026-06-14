@@ -494,6 +494,99 @@ describe('polling manager', () => {
     poller.stop()
   })
 
+  it('keeps quiet-device breadcrumbs when another device exceeds the render budget [DON-159]', async () => {
+    const onSnapshot = vi.fn()
+    const devices = [
+      { ...NORMALIZED_DEVICES[0]!, device_id: '2', name: 'Eamonn O Connor' },
+      { ...NORMALIZED_DEVICES[1]!, device_id: '25', name: 'Richard Morrison' },
+    ] satisfies readonly NormalizedTrackingDevice[]
+    const noisyDeviceBreadcrumbs = Array.from({ length: 25_000 }, (_, index) => ({
+      ...NORMALIZED_BREADCRUMBS[0]!,
+      id: `eoc-${index}`,
+      device_id: '2',
+      lat: 52 + index / 1_000_000,
+      lon: -9.7 - index / 1_000_000,
+      timestamp: new Date(Date.UTC(2026, 5, 13, 0, 0, index)).toISOString(),
+    }))
+    const quietDeviceBreadcrumbs = Array.from({ length: 3_280 }, (_, index) => ({
+      ...NORMALIZED_BREADCRUMBS[0]!,
+      id: `richard-${index}`,
+      device_id: '25',
+      lat: 51.99 + index / 1_000_000,
+      lon: -9.74 - index / 1_000_000,
+      timestamp: new Date(Date.UTC(2026, 5, 12, 12, 0, index)).toISOString(),
+    }))
+    const client = createClient({
+      getDevices: vi.fn().mockResolvedValue(devices),
+      getBreadcrumbs: vi.fn().mockImplementation((deviceId: string) => {
+        if (deviceId === '2') {
+          return Promise.resolve(noisyDeviceBreadcrumbs)
+        }
+        if (deviceId === '25') {
+          return Promise.resolve(quietDeviceBreadcrumbs)
+        }
+        return Promise.resolve([])
+      }),
+    })
+
+    const poller = createPollingManager(client, {
+      intervalMs: 5_000,
+      staleThresholdMs: 60 * 60 * 1000,
+      onSnapshot,
+      onStatusChange: vi.fn(),
+      now: () => new Date('2026-06-13T21:48:51.654Z'),
+    })
+
+    poller.start()
+    await vi.advanceTimersByTimeAsync(0)
+
+    const latestSnapshot = onSnapshot.mock.calls.at(-1)?.[0]
+    expect(latestSnapshot?.breadcrumbs.some((position) => position.device_id === '25')).toBe(true)
+    expect(latestSnapshot?.breadcrumbMetadata?.deviceBudgets).toContainEqual(
+      expect.objectContaining({
+        deviceId: '2',
+        firstTimestamp: noisyDeviceBreadcrumbs[0]!.timestamp,
+        lastTimestamp: noisyDeviceBreadcrumbs.at(-1)!.timestamp,
+        truncated: true,
+      }),
+    )
+    expect(latestSnapshot?.breadcrumbMetadata?.deviceBudgets).toContainEqual(
+      expect.objectContaining({ deviceId: '25', retained: 3_280, truncated: false }),
+    )
+
+    poller.stop()
+  })
+
+  it('can restrict breadcrumb history fetches to requested device ids [DON-159]', async () => {
+    const devices = [
+      { ...NORMALIZED_DEVICES[0]!, device_id: '2', name: 'Eamonn O Connor' },
+      { ...NORMALIZED_DEVICES[1]!, device_id: '25', name: 'Richard Morrison' },
+      { ...NORMALIZED_DEVICES[0]!, device_id: '99', name: 'Cold roster device' },
+    ] satisfies readonly NormalizedTrackingDevice[]
+    const client = createClient({
+      getDevices: vi.fn().mockResolvedValue(devices),
+      getBreadcrumbs: vi.fn().mockResolvedValue([]),
+    })
+
+    const poller = createPollingManager(client, {
+      intervalMs: 5_000,
+      staleThresholdMs: 60 * 60 * 1000,
+      onSnapshot: vi.fn(),
+      onStatusChange: vi.fn(),
+      getBreadcrumbDeviceIds: () => ['2', '25'],
+      now: () => new Date('2026-06-13T21:48:51.654Z'),
+    })
+
+    poller.start()
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect(client.getBreadcrumbs).toHaveBeenCalledWith('2', expect.any(Date), expect.any(Date))
+    expect(client.getBreadcrumbs).toHaveBeenCalledWith('25', expect.any(Date), expect.any(Date))
+    expect(client.getBreadcrumbs).not.toHaveBeenCalledWith('99', expect.any(Date), expect.any(Date))
+
+    poller.stop()
+  })
+
   it('routes per-device breadcrumb failures through logger.warn rather than console.error', async () => {
     const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
     try {
