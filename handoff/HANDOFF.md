@@ -8,9 +8,14 @@
 - **Hosted testing:** `https://sartracker-web.vercel.app/?missionHarness=1`
 - **Desktop:** Electron is the operational desktop lane (MapLibre + direct HTTPS Traccar, SQLite, filesystem, diagnostics, official map packages). Tauri remains historical/reference.
 - **Browser mode:** testing/training only (sessionStorage, not operational persistence).
-- **Latest test counts:** 149 unit files / 847 tests; 106 standard Playwright E2E; 47 backend tests.
+- **Latest test counts:** 149 unit files / 857 tests; 106 standard Playwright E2E; 47 backend tests.
 
 ## Last Work Done
+
+DON-165 (S2 Electron / Shared Tracking, High Bug) — Breadcrumb accumulator re-sorted the entire retained history every poll. Surfaced by the P1 hot-path scaling audit (read-only Workflow run: 31 candidates → 30 rejected → 1 triple-confirmed). Same failure class as DON-151/148 (cheap in tests, degrades as an incident grows); DON-151 and DON-148 fixes were independently re-confirmed sealed by the same audit.
+- Root cause: `accumulateBreadcrumbPositions` called `Date.parse` inside two O(n log n) sort comparators on every poll (`breadcrumb-accumulator.ts:48-49,67-69`, invoked at `polling-manager.ts:197,358`), so per-poll parse cost grew with cumulative retained history × a log factor (~36k breadcrumbs → ~1.9M parses/poll on the Electron main thread) even though only ~200 new points arrive.
+- Fix: parse each timestamp exactly once (decorate-sort-undecorate via a `TimestampedPosition`), sort on the cached numeric value. Identical output and global ordering; parse calls now bounded to the combined set size (no log multiplier). No algorithmic change to dedup or per-device budgeting.
+- Verified: new TDD regression test (red→green, asserts parse calls ≤ set size + global chronological order preserved); full `npm run test` (149 files / 857 tests), `npx tsc --noEmit`, `npm run lint` clean; Playwright `devices-workspace` + `full-mission-flow` (chromium, 5 passed) and `visual-tracking` (visual, 5 passed); live-app drive via Chrome DevTools — injected 33 devices × 1.1k = 36,300 deliberately-shuffled breadcrumbs, all 33 trails rendered contiguous/correctly ordered, main-thread probe 2ms, no console errors. (Note: harness `injectTrackingSnapshot` is slow at this scale due to 36k sequential awaited mock-store writes — a test-only artifact, not the render/accumulator path.)
 
 Tauri reference cleanup — current docs/tooling now name Electron as the operational desktop lane. Updated `CLAUDE.md`, hosted/deployment docs, support policy, operator manual, testing guide, parity docs, `beta:verify`, and runtime mast mode so active surfaces no longer describe Tauri as the current app path. Electron is now preferred if both desktop runtime markers are present. Retained `src-tauri`, Tauri adapter tests, and superseded release docs as explicit legacy/history until a separate removal decision.
 

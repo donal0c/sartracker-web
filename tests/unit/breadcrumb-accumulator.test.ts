@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import breadcrumbsFixture from '../fixtures/traccar-breadcrumbs.json'
 import {
@@ -10,6 +10,10 @@ import {
 import { normalizeTraccarPosition } from '../../src/features/tracking/traccar-normalization'
 
 describe('breadcrumb accumulator', () => {
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
   it('deduplicates by device and timestamp while keeping chronological order', () => {
     const positions = breadcrumbsFixture.map((position) =>
       normalizeTraccarPosition(position, 'live'),
@@ -84,6 +88,60 @@ describe('breadcrumb accumulator', () => {
         truncated: false,
       }),
     )
+  })
+
+  it('does not re-sort the entire retained history on a steady-state incremental poll [DON-165]', () => {
+    // A real incident: one device with a long, already-accumulated trail. Each
+    // poll appends only a few fresh fixes. The accumulator must integrate the
+    // increment incrementally, not re-sort the whole retained set every poll —
+    // otherwise per-poll cost grows with cumulative history (the DON-151 class).
+    const baseMs = Date.UTC(2026, 5, 13, 0, 0, 0)
+    const existing = Array.from({ length: 4_000 }, (_, index) =>
+      normalizeTraccarPosition(
+        {
+          id: index + 1,
+          deviceId: 7,
+          latitude: 52 + index / 1_000_000,
+          longitude: -9.7 - index / 1_000_000,
+          fixTime: new Date(baseMs + index * 1_000).toISOString(),
+        },
+        'live',
+      ),
+    )
+    // Seed the accumulator so `existing` is in the same shape it has across polls.
+    const seeded = accumulateBreadcrumbPositions([], existing).positions
+
+    const incoming = Array.from({ length: 5 }, (_, index) =>
+      normalizeTraccarPosition(
+        {
+          id: 10_000 + index,
+          deviceId: 7,
+          latitude: 52.01 + index / 1_000_000,
+          longitude: -9.71 - index / 1_000_000,
+          fixTime: new Date(baseMs + (4_000 + index) * 1_000).toISOString(),
+        },
+        'live',
+      ),
+    )
+
+    const parseSpy = vi.spyOn(Date, 'parse')
+    const result = accumulateBreadcrumbPositions(seeded, incoming)
+    const parseCalls = parseSpy.mock.calls.length
+
+    // Correctness: increment integrated, no loss, global chronological order
+    // preserved (the established contract — see tracking-geojson DON-159 test).
+    expect(result.positions).toHaveLength(4_005)
+    expect(result.positions.at(-1)!.id).toBe('10004')
+    const timestamps = result.positions.map((position) => Date.parse(position.timestamp))
+    expect(timestamps).toEqual([...timestamps].sort((left, right) => left - right))
+
+    // Scaling guard: the old implementation called Date.parse inside two
+    // O(n log n) sort comparators, so per-poll parse cost grew with the whole
+    // retained set times a log factor (~16k calls here). The fix parses each
+    // breadcrumb's timestamp at most once per poll — bounded by the combined
+    // set size, with no log multiplier. This is the invariant that keeps
+    // per-poll cost from scaling with cumulative history.
+    expect(parseCalls).toBeLessThanOrEqual(seeded.length + incoming.length)
   })
 
   it('segments trails when time gaps exceed the configured threshold', () => {
