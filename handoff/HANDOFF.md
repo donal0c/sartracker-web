@@ -9,7 +9,7 @@
 - **Desktop:** Electron is the operational desktop lane (MapLibre + direct HTTPS Traccar, SQLite, filesystem, diagnostics, official map packages). Tauri remains historical/reference.
 - **Browser mode:** testing/training only (sessionStorage, not operational persistence).
 - **Latest test counts:** 150 unit files / 922 tests; 107 standard Playwright E2E; 47 backend tests.
-- **Next Electron beta candidate:** `0.1.0-beta.5` / `electron-v0.1.0-beta.5` is prepared for GitHub Actions release build and Ubuntu smoke; `0.1.0-beta.4` remains the last published team artifact until those gates pass.
+- **Latest published Electron beta:** `0.1.0-beta.5` / `electron-v0.1.0-beta.5` — built by GitHub Actions (run `27570596320`, green), Ubuntu 24.04.2 on-device smoke passed, **published** at `https://github.com/donal0c/sartracker-web/releases/tag/electron-v0.1.0-beta.5` (Linux AppImage + `.deb` + `SHA256SUMS`). This supersedes beta.4 as the team artifact.
 
 ## Last Work Done
 
@@ -87,7 +87,11 @@ DON-144 partial independent progress — beta wrong-file guardrail:
 
 ## What's Next
 
-Next: cut `electron-v0.1.0-beta.5` on GitHub, let `.github/workflows/electron-release.yml` build the Linux AppImage/`.deb` draft prerelease, then run the Ubuntu release-asset smoke before telling the team it is ready. The smoke should cover launch, restart persistence, live Traccar, Discovery offline tile read if the private package is available, diagnostics sanitization, finalized-mission delete refusal, standalone finalization archive, the Saturday breadcrumb scenario, and the separate DON-151 launch/panning slowdown. In parallel after the release gate, continue `DON-144`: choose the private Discovery package distribution owner/channel and lock the repeatable admin raw-source-to-package workflow.
+DONE: `electron-v0.1.0-beta.5` cut, built green by `.github/workflows/electron-release.yml` (run `27570596320`), Ubuntu 24.04.2 on-device release-asset smoke passed (launch, mission start, marker create, restart persistence/recovery, finish→finalize, standalone archive in `userData/archives`, out-of-Ireland coordinate rejection, sanitized diagnostics), and **published** to GitHub. Smoke ran against the CI-built AppImage with the real SQLite backend and renderer network blocked; evidence on the box at `~/sartracker-beta5-smoke/evidence{,2}/`.
+
+Not yet retested in the beta.5 smoke (needs real tracking data/server access): live Traccar connection, Discovery offline tile read with the private package, the Saturday multi-device breadcrumb scenario, and the DON-151 launch/panning slowdown. Fold these into the next on-device session when the team can supply tracking history / the private MBTiles package. DON-159/DON-151/DON-160 stay In Review pending that team field retest on beta.5.
+
+Next: continue `DON-144` — choose the private Discovery package distribution owner/channel and lock the repeatable admin raw-source-to-package workflow.
 
 DON-146 (Electron 40→42) is parked in Backlog, **blocked on upstream `better-sqlite3` PR #1475** (does not compile against Electron 42's V8; no published fix). See the DON-146 comment for the decision + resume checklist.
 

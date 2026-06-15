@@ -9,9 +9,9 @@
 - **Cut date (UTC):** 2026-06-15
 - **Cut by:** Codex agent (Donal supervising)
 - **Linear reference:** DON-159, DON-160, DON-165, DON-167
-- **Verification report:** Pending GitHub Actions run for `electron-v0.1.0-beta.5`
-- **CI run:** Pending
-- **GitHub release:** Pending draft prerelease at `electron-v0.1.0-beta.5`
+- **Verification report:** GitHub Actions run #4 green (gates, native Linux bundle, private-map guard, Xvfb launch smoke, SHA256SUMS) + Ubuntu 24.04.2 on-device smoke passed
+- **CI run:** `electron-release.yml` run `27570596320` — success
+- **GitHub release:** Published prerelease at `electron-v0.1.0-beta.5` (Linux AppImage + `.deb` + `SHA256SUMS`)
 
 ## Artifacts
 
@@ -112,5 +112,29 @@ must have:
 
 ## Publication State
 
-Prepared for the `electron-v0.1.0-beta.5` GitHub Actions build. Do not publish
-or tell the team this beta is ready until CI and the Ubuntu smoke both pass.
+Published prerelease `electron-v0.1.0-beta.5` on 2026-06-15 after CI run
+`27570596320` and the Ubuntu 24.04.2 on-device smoke both passed.
+
+### Ubuntu Release-Asset Smoke (2026-06-15)
+
+CI-built AppImage downloaded to `192.168.18.31:~/sartracker-beta5-smoke`,
+`sha256sum -c SHA256SUMS` returned **OK**, launched against the real SQLite
+backend on a live Wayland display (`--ozone-platform=wayland`,
+`SARTRACKER_ELECTRON_BLOCK_NETWORK=1`), driven via Playwright over CDP. Runtime:
+Electron 40.10.0, app version `0.1.0-beta.5+run.4.sha.725a683`, schema v3.
+
+All gates passed:
+
+1. Launch: app-shell + map canvas rendered, no fault shell.
+2. Mission start on the real backend.
+3. Marker created and saved.
+4. Persistence: mission recovered after a full app restart (recovery dialog → Resume).
+5. Mission finished, then finalized (governance card shows `finalized`).
+6. Standalone finalization archive written to `userData/archives` (4,984 bytes).
+7. Coordinate safety: out-of-Ireland DD (Paris) flagged "Coordinate outside
+   Ireland…" rather than emitting a false Irish grid reference.
+8. Diagnostics export sanitized: `secret present: no`, provider URL not
+   configured, no credential leakage.
+
+Evidence on the box: `~/sartracker-beta5-smoke/evidence{,2}/` (screenshots +
+`app.log` + exported diagnostics report).
