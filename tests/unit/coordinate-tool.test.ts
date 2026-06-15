@@ -117,6 +117,57 @@ describe('coordinate converter', () => {
     ).toThrow(/W3W conversion is not available/)
   })
 
+  describe('sign-vs-direction conflict (DON-172 / B2-PARSERS)', () => {
+    it('rejects a negative value paired with an East direction', () => {
+      // '-6.0E' is ambiguous: the minus sign says West, the cardinal says East.
+      // Silently returning -6.0 sent the operator ~800 km off target. Throw instead.
+      expect(() =>
+        convertCoordinates({
+          ...createCoordinateConverterDraft(),
+          mode: 'dd',
+          latitude: '53.0',
+          longitude: '-6.0E',
+        }),
+      ).toThrow(/ambiguous/i)
+    })
+
+    it('rejects a negative value paired with a North direction', () => {
+      expect(() =>
+        convertCoordinates({
+          ...createCoordinateConverterDraft(),
+          mode: 'dd',
+          latitude: '-53.0N',
+          longitude: '-9.0',
+        }),
+      ).toThrow(/ambiguous/i)
+    })
+
+    it('still accepts a positive N latitude and W longitude (normal Irish case)', () => {
+      // All of Ireland is N/W, so the valid normal case for this app is N + W.
+      const result = convertCoordinates({
+        ...createCoordinateConverterDraft(),
+        mode: 'dd',
+        latitude: '52.179337N',
+        longitude: '9.464944W',
+      })
+
+      expect(result.latitude).toBeCloseTo(52.179337, 6)
+      expect(result.longitude).toBeCloseTo(-9.464944, 6)
+    })
+
+    it('still accepts a bare signed value with no direction suffix', () => {
+      const result = convertCoordinates({
+        ...createCoordinateConverterDraft(),
+        mode: 'dd',
+        latitude: '52.179337',
+        longitude: '-9.464944',
+      })
+
+      expect(result.latitude).toBeCloseTo(52.179337, 6)
+      expect(result.longitude).toBeCloseTo(-9.464944, 6)
+    })
+  })
+
   it('formats clipboard values using the operator-facing display strings', () => {
     const result = convertCoordinates({
       ...createCoordinateConverterDraft(),

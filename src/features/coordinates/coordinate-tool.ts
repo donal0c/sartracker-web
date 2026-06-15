@@ -199,6 +199,17 @@ function parseDecimalToken(
     throw new Error(`${label} direction must be ${allowedDirections.join(' or ')}.`)
   }
 
+  // A negative numeric value paired with a positive-direction cardinal (N or E) is
+  // contradictory: the sign says South/West, the cardinal says North/East. Silently
+  // honouring either one could place the coordinate ~hundreds of km off target, so we
+  // refuse the ambiguous input rather than guess the operator's intent.
+  if ((token.direction === 'N' || token.direction === 'E') && parsed < 0) {
+    throw new Error(
+      `${label}: a negative value with direction '${token.direction}' is ambiguous. ` +
+        `Use a positive value with '${token.direction}', or drop the direction suffix.`,
+    )
+  }
+
   const signed =
     token.direction === 'S' || token.direction === 'W' ? -Math.abs(parsed) : parsed
   validateCoordinateRange(signed, label)
