@@ -136,5 +136,19 @@ All gates passed:
 8. Diagnostics export sanitized: `secret present: no`, provider URL not
    configured, no credential leakage.
 
-Evidence on the box: `~/sartracker-beta5-smoke/evidence{,2}/` (screenshots +
-`app.log` + exported diagnostics report).
+Live tracking (separate run, using the operator's persisted provider config):
+
+9. Provider config loads from local userData (`~/.config/sartracker-web/settings.json`
+   → `https://kmrtsar.eu`, user `sean`, `autoConnect`). Password is an encrypted
+   blob in `secrets.json` (gnome_libsecret), not stored in plaintext.
+10. Live Traccar connection test: **"Connection successful."**
+11. With an active mission, Save & Connect brings tracking **online with 33 real
+    devices / 7 fixes** from the live server. Network was not blocked for this run.
+
+The live-tracking run seeded a throwaway userData with copies of the operator's
+`settings.json` + `secrets.json` (same machine → same keyring decrypts the
+secret); the real mission database under `~/.config/sartracker-web/` was not
+touched.
+
+Evidence on the box: `~/sartracker-beta5-smoke/evidence{,2,-tracking}/`
+(screenshots + `app.log` + exported diagnostics report).
