@@ -111,6 +111,7 @@ DON-146 (Electron 40→42) is parked in Backlog, **blocked on upstream `better-s
 
 ## Verification & Deploy
 
+- **On-device Electron smoke (incl. LIVE TRACKER):** see `SMOKE-TESTING.md` at the repo root (gitignored, local-only). It is the full runbook for smoke-testing an `electron-v*` beta on the Ubuntu box, including how the Traccar server is stored locally (`~/.config/sartracker-web/settings.json` + encrypted `secrets.json`) and how to reuse it for a live connection test. Read it before smoking a new beta.
 - **Unit tests:** `npm run test`
 - **E2E (standard):** `npx playwright test --project=chromium`
 - **E2E (visual AI):** `npx playwright test --project=visual` then `npm run visual:review`
