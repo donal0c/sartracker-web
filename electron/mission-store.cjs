@@ -354,17 +354,26 @@ function upsertDevice(db, input) {
   ensureWritableMission(db, input.mission_id)
   const id = randomUUID()
   const timestamp = input.last_seen ?? now()
-  db.prepare(`INSERT INTO devices (id, mission_id, device_id, name, color, last_seen, status)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
-    ON CONFLICT(mission_id, device_id) DO UPDATE SET
-      name = excluded.name, color = excluded.color, last_seen = excluded.last_seen, status = excluded.status`)
-    .run(id, input.mission_id, input.device_id, input.name, input.color, input.last_seen ?? null, input.status)
-  appendEvent(db, input.mission_id, 'device_updated', {
-    device_id: input.device_id,
-    name: input.name,
-    status: input.status,
-    color: input.color,
-  }, timestamp)
+  // First contact emits `device_created` (a non-telemetry event that surfaces in the
+  // default review feed); subsequent updates emit the telemetry-filtered `device_updated`.
+  // Mirrors Rust (`persistence.rs`) and the browser harness.
+  const existing = db
+    .prepare('SELECT id FROM devices WHERE mission_id = ? AND device_id = ?')
+    .get(input.mission_id, input.device_id)
+  const transaction = db.transaction(() => {
+    db.prepare(`INSERT INTO devices (id, mission_id, device_id, name, color, last_seen, status)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(mission_id, device_id) DO UPDATE SET
+        name = excluded.name, color = excluded.color, last_seen = excluded.last_seen, status = excluded.status`)
+      .run(id, input.mission_id, input.device_id, input.name, input.color, input.last_seen ?? null, input.status)
+    insertEvent(db, input.mission_id, existing === undefined ? 'device_created' : 'device_updated', timestamp, {
+      device_id: input.device_id,
+      name: input.name,
+      status: input.status,
+      color: input.color,
+    })
+  })
+  transaction()
   return getDevice(db, input.mission_id, input.device_id)
 }
 
@@ -468,14 +477,103 @@ function upsertHelicopter(db, input) {
   const existing = db.prepare('SELECT id FROM helicopters WHERE mission_id = ? AND slot_key = ?').get(input.mission_id, input.slot_key)
   const id = input.id ?? existing?.id ?? randomUUID()
   const timestamp = input.last_update ?? now()
-  db.prepare(`INSERT INTO helicopters (id, mission_id, slot_key, call_sign, hex_id, lat, lon, altitude, speed, heading, last_update, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    ON CONFLICT(mission_id, slot_key) DO UPDATE SET
-      call_sign = excluded.call_sign, hex_id = excluded.hex_id, lat = excluded.lat, lon = excluded.lon,
-      altitude = excluded.altitude, speed = excluded.speed, heading = excluded.heading,
-      last_update = excluded.last_update, updated_at = excluded.updated_at`)
-    .run(id, input.mission_id, input.slot_key, input.call_sign, input.hex_id ?? null, input.lat, input.lon, input.altitude ?? null, input.speed ?? null, input.heading ?? null, timestamp, timestamp, timestamp)
+  const audit = AUDIT_EVENT_TABLES.helicopters
+  const transaction = db.transaction(() => {
+    db.prepare(`INSERT INTO helicopters (id, mission_id, slot_key, call_sign, hex_id, lat, lon, altitude, speed, heading, last_update, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(mission_id, slot_key) DO UPDATE SET
+        call_sign = excluded.call_sign, hex_id = excluded.hex_id, lat = excluded.lat, lon = excluded.lon,
+        altitude = excluded.altitude, speed = excluded.speed, heading = excluded.heading,
+        last_update = excluded.last_update, updated_at = excluded.updated_at`)
+      .run(id, input.mission_id, input.slot_key, input.call_sign, input.hex_id ?? null, input.lat, input.lon, input.altitude ?? null, input.speed ?? null, input.heading ?? null, timestamp, timestamp, timestamp)
+    insertEvent(
+      db,
+      input.mission_id,
+      existing === undefined ? audit.created : audit.updated,
+      timestamp,
+      audit.upsertDetails({ id, slot_key: input.slot_key, call_sign: input.call_sign, hex_id: input.hex_id ?? null }),
+    )
+  })
+  transaction()
   return getById(db, 'helicopters', id, 'Helicopter')
+}
+
+/**
+ * Audit-event metadata for the generic upsert/delete helpers, keeping Electron's
+ * emitted event types and detail payloads in lock-step with the Rust reference
+ * (`src-tauri/src/persistence.rs`) and the browser harness. Each entry names the
+ * create/update/delete event types and builds the operator-facing detail object
+ * recorded against the mission timeline.
+ */
+const AUDIT_EVENT_TABLES = {
+  markers: {
+    created: 'marker_created',
+    updated: 'marker_updated',
+    deleted: 'marker_deleted',
+    upsertDetails: (row) => ({
+      marker_id: row.id,
+      marker_type: row.type,
+      name: row.name,
+      display_order: row.display_order,
+      updated_by: row.updated_by ?? null,
+      coordinator_ids: row.coordinator_ids ?? null,
+      attachment_path: row.attachment_path ?? null,
+    }),
+    deleteDetails: (row) => ({
+      marker_id: row.id,
+      marker_type: row.type,
+      name: row.name,
+    }),
+  },
+  drawings: {
+    created: 'drawing_created',
+    updated: 'drawing_updated',
+    deleted: 'drawing_deleted',
+    upsertDetails: (row) => ({
+      drawing_id: row.id,
+      drawing_type: row.type,
+      name: row.name,
+      display_order: row.display_order,
+    }),
+    deleteDetails: (row) => ({
+      drawing_id: row.id,
+      drawing_type: row.type,
+      name: row.name,
+    }),
+  },
+  helicopters: {
+    created: 'helicopter_created',
+    updated: 'helicopter_updated',
+    deleted: 'helicopter_deleted',
+    upsertDetails: (row) => ({
+      helicopter_id: row.id,
+      slot_key: row.slot_key,
+      call_sign: row.call_sign,
+      hex_id: row.hex_id ?? null,
+    }),
+    deleteDetails: (row) => ({
+      helicopter_id: row.id,
+      slot_key: row.slot_key,
+      call_sign: row.call_sign,
+    }),
+  },
+  gpx_track_imports: {
+    created: 'gpx_import_created',
+    updated: 'gpx_import_updated',
+    deleted: 'gpx_import_deleted',
+    upsertDetails: (row) => ({
+      gpx_import_id: row.id,
+      source_path: row.source_path,
+      file_name: row.file_name,
+      display_name: row.display_name,
+    }),
+    deleteDetails: (row) => ({
+      gpx_import_id: row.id,
+      source_path: row.source_path,
+      file_name: row.file_name,
+      display_name: row.display_name,
+    }),
+  },
 }
 
 function upsertById(db, table, input, defaults) {
@@ -484,8 +582,20 @@ function upsertById(db, table, input, defaults) {
   const columns = Object.keys(row)
   const placeholders = columns.map(() => '?').join(', ')
   const assignments = columns.filter((column) => column !== 'id').map((column) => `${column} = excluded.${column}`).join(', ')
-  db.prepare(`INSERT INTO ${table} (${columns.join(', ')}) VALUES (${placeholders})
-    ON CONFLICT(id) DO UPDATE SET ${assignments}`).run(...columns.map((column) => row[column]))
+  const audit = AUDIT_EVENT_TABLES[table]
+  const existing = db.prepare(`SELECT id FROM ${table} WHERE id = ?`).get(row.id)
+  const transaction = db.transaction(() => {
+    db.prepare(`INSERT INTO ${table} (${columns.join(', ')}) VALUES (${placeholders})
+      ON CONFLICT(id) DO UPDATE SET ${assignments}`).run(...columns.map((column) => row[column]))
+    insertEvent(
+      db,
+      input.mission_id,
+      existing === undefined ? audit.created : audit.updated,
+      row.updated_at ?? now(),
+      audit.upsertDetails(row),
+    )
+  })
+  transaction()
   return getById(db, table, row.id, table)
 }
 
@@ -640,8 +750,25 @@ function getById(db, table, id, label) {
   return row
 }
 
+/**
+ * Deletes a row by id, mirroring the Rust reference: a no-op (returns false) when the
+ * row is absent, otherwise enforcing the writable-mission guard so records on a
+ * finished/finalized (locked) mission cannot be silently destroyed, and emitting the
+ * matching `*_deleted` audit event inside the same transaction as the row removal.
+ */
 function deleteById(db, table, id) {
-  return db.prepare(`DELETE FROM ${table} WHERE id = ?`).run(id).changes > 0
+  const existing = db.prepare(`SELECT * FROM ${table} WHERE id = ?`).get(id)
+  if (existing === undefined) {
+    return false
+  }
+  ensureWritableMission(db, existing.mission_id)
+  const audit = AUDIT_EVENT_TABLES[table]
+  const transaction = db.transaction(() => {
+    db.prepare(`DELETE FROM ${table} WHERE id = ?`).run(id)
+    insertEvent(db, existing.mission_id, audit.deleted, now(), audit.deleteDetails(existing))
+  })
+  transaction()
+  return true
 }
 
 function all(db, sql, ...params) {
