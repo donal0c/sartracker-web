@@ -8,9 +8,16 @@
 - **Hosted testing:** `https://sartracker-web.vercel.app/?missionHarness=1`
 - **Desktop:** Electron is the operational desktop lane (MapLibre + direct HTTPS Traccar, SQLite, filesystem, diagnostics, official map packages). Tauri remains historical/reference.
 - **Browser mode:** testing/training only (sessionStorage, not operational persistence).
-- **Latest test counts:** 150 unit files / 873 tests; 106 standard Playwright E2E; 47 backend tests.
+- **Latest test counts:** 150 unit files / 922 tests; 107 standard Playwright E2E; 47 backend tests.
 
 ## Last Work Done
+
+DON-167 (B2 coordinate-safety adversarial sweep) — all 7 sub-issues fixed, each Opus-reviewed, on `master` (commits `c130511`, `73a2220`, `8671bf3`, `84261a7`).
+- DON-169/170/173/174 (`drawing-math.ts`): radius>0 guards on sector/circle; full-circle `360→0` arc now returns 360 (was 0 → invisible search circle); `geodesicBearingEndpoint` rejects negative distance; `geodesicBearing` returns `number|null` for identical points (threaded through line-persistence, measurement runtime, drawing-dialog).
+- DON-168/171 (`coordinates.ts`): Irish geographic + ITM bounds. Design = **warn-not-throw in hot path** (user-approved): transforms throw on offshore input, but live display uses non-throwing `isWithinIreland()` and shows "Outside Ireland"; commit paths (marker create, converter) surface a clear error; reopening a persisted out-of-bounds marker degrades gracefully. **Bounds derived from real Irish extremes, NOT the issue's literal constants** (those rejected Skellig Michael + Mizen Head). Verified invariant (dense sample, 0 violations): ITM box fully contains the proj4 image of the WGS84 box, so no point that passes `isWithinIreland` can fail ITM validation. Documented residual: a bbox can't exclude near-coast sea (B2-C1).
+- DON-172 (`coordinate-tool.ts`): ambiguous sign-vs-direction DD input (e.g. `-6.0E`) now throws instead of silently inverting hemisphere.
+- Verified: unit 922 (+49 TDD cases), `tsc --noEmit`, full `eslint`, `npm run build`, `test:backend` 47 — all clean. Chromium E2E for drawings/coords/markers/measurement 25/25 incl. new full-circle sector regression; casualty/multi-drawing visual failures confirmed **pre-existing on baseline `79a2605`** (disabled-save-btn timeout + multi-drawing timing), not regressions. AI visual review of casualty dialog (shows ITM/TM65) PASS. Manual updated (Irish bounds safety paragraph).
+- **Remaining:** broader visual E2E sweep was deferred (heavy; two known pre-existing flakes in that suite). No code follow-ups.
 
 DON-160 children — B1 persistence-parity drift, all four Electron findings fixed (In Review, awaiting packaged on-device repro for the two criticals). Commits `b6eec80` + `f2d8db3` on `master`.
 - DON-161 (critical) + DON-163 (high ×8) + DON-164 (medium) closed with one helper-level change to `electron/mission-store.cjs`: `upsertById`/`deleteById` (and `upsertHelicopter`, `upsertDevice`) now detect create-vs-update, emit the correct per-table `*_created/_updated/_deleted` (and `device_created`) audit event **inside the same transaction** as the row write, and `deleteById` enforces `ensureWritableMission` so deletes on finished/finalized missions throw instead of silently destroying locked records. New `AUDIT_EVENT_TABLES` map keeps event names/detail shapes in lock-step with Rust.

@@ -659,6 +659,19 @@
             out of the live coordinate area so the operational surface stays focused on coordinates
             operators actively use.
           </p>
+          <p>
+            <strong>Irish bounds safety.</strong> The Irish Grid is only meaningful inside Ireland, so
+            when the cursor or a coordinate falls outside Ireland the readout shows
+            <strong>Outside Ireland</strong> in place of the grid reference rather than inventing a
+            plausible-looking grid value. For the same reason, creating a marker or converting a
+            coordinate that lies grossly offshore is rejected with a clear error instead of being
+            silently transformed — this protects against faults such as a GPS unit reporting a reset
+            (0, 0) position. A coordinate a short distance off the coast can still resolve, because the
+            check is a bounding box around Ireland and its islands; it is a guard against gross errors,
+            not a land/sea test. The coordinate converter also refuses contradictory direction input,
+            such as a negative value tagged <strong>E</strong> or <strong>N</strong>, rather than
+            guessing the intended hemisphere.
+          </p>
           <div class="card-grid">
             <div class="card"><strong>Maps menu</strong><br />Groups official maps and public fallback maps. Discovery Topo is the default official operational map once licensed maps are configured; hosted/browser testing keeps official maps marked not configured until a controlled private source is added.</div>
             <div class="card"><strong>Coordinate converter</strong><br />Accepts IG, DD, and DMS, including pasted DD/DMS latitude-longitude pairs in the first field. W3W stays unavailable until integration decisions are settled. Results can be copied, used to jump the map, or used to open the normal marker form at that point.</div>
