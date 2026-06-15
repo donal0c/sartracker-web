@@ -82,6 +82,22 @@ describe('marker draft helpers', () => {
     expect(draft.attachmentName).toBe('boot-print.jpg')
   })
 
+  it('reopens a persisted marker stored outside Ireland without throwing (DON-171)', () => {
+    // A marker persisted before Irish-bounds validation existed (or any out-of-bounds
+    // record) must still open for edit. The grid reference is shown as "Outside Ireland"
+    // rather than crashing the dialog.
+    const offshoreMarker: Marker = {
+      ...EXISTING_MARKER,
+      lat: 50.0,
+      lon: -9.0, // Bay of Biscay — outside the Irish envelope
+    }
+
+    const draft = createMarkerDraftFromMarker(offshoreMarker)
+
+    expect(draft.coordinates.lat).toBe(50.0)
+    expect(draft.coordinates.tm65GridRef).toBe('Outside Ireland')
+  })
+
   it('keeps shared fields while resetting irrelevant marker-specific fields on type change', () => {
     const changed = changeMarkerDraftType(
       {

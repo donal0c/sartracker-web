@@ -11,6 +11,7 @@ import {
 import {
   formatIrishGridReference,
   formatWGS84Degrees,
+  isWithinIreland,
   parseIrishGridReference,
   tm65ToWgs84,
   wgs84ToITM,
@@ -112,7 +113,7 @@ export function createMarkerDraftFromMarker(marker: Marker): MarkerDraft {
       irishGridE: marker.irish_grid_e,
       irishGridN: marker.irish_grid_n,
       wgs84Display: formatWGS84Degrees(marker.lat, marker.lon),
-      tm65GridRef: formatIrishGridReference(...wgs84ToTM65(marker.lat, marker.lon)),
+      tm65GridRef: describeIrishGridRef(marker.lat, marker.lon),
     },
     subjectCategory: marker.subject_category ?? '',
     clueType: marker.clue_type ?? '',
@@ -250,6 +251,8 @@ export function buildMarkerSaveInput({
 }
 
 function createMarkerDraftCoordinates(lat: number, lon: number): MarkerDraftCoordinates {
+  // New markers must sit inside Ireland: wgs84ToITM/wgs84ToTM65 throw on offshore input,
+  // and that throw is surfaced to the operator by the marker runtime's beginCreateAt.
   const [irishGridE, irishGridN] = wgs84ToITM(lat, lon)
   const [tm65Easting, tm65Northing] = wgs84ToTM65(lat, lon)
 
@@ -261,6 +264,21 @@ function createMarkerDraftCoordinates(lat: number, lon: number): MarkerDraftCoor
     wgs84Display: formatWGS84Degrees(lat, lon),
     tm65GridRef: formatIrishGridReference(tm65Easting, tm65Northing),
   }
+}
+
+/**
+ * Formats a persisted marker's Irish Grid reference for display without throwing.
+ *
+ * Reopening an existing marker must never fail. A marker persisted before Irish-bounds
+ * validation existed (or any future out-of-bounds record) is shown with an explicit
+ * "Outside Ireland" label rather than crashing the edit dialog.
+ */
+function describeIrishGridRef(lat: number, lon: number): string {
+  if (!isWithinIreland(lat, lon)) {
+    return 'Outside Ireland'
+  }
+
+  return formatIrishGridReference(...wgs84ToTM65(lat, lon))
 }
 
 function normalizeOptionalText(value: string): string | null {

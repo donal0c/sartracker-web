@@ -4,6 +4,7 @@ import {
   formatIrishGridReference,
   formatWGS84Degrees,
   formatWGS84Dms,
+  isWithinIreland,
   wgs84ToTM65,
 } from '../lib/coordinates'
 import { useCoordinateToolStore } from '../features/coordinates/coordinate-tool-store'
@@ -23,9 +24,16 @@ export function CoordinateBar({ latitude, longitude }: CoordinateBarProps) {
   let dmsDisplay: string | null = null
   if (latitude !== null && longitude !== null) {
     wgs84Display = formatWGS84Degrees(latitude, longitude)
-    const [easting, northing] = wgs84ToTM65(latitude, longitude)
-    gridDisplay = formatIrishGridReference(easting, northing)
     dmsDisplay = formatWGS84Dms(latitude, longitude)
+    // The Irish Grid / TM65 reference is only meaningful inside Ireland. The cursor
+    // routinely tracks out to sea, so we show an explicit "outside Ireland" state
+    // rather than fabricating a plausible-looking grid reference for an offshore point.
+    if (isWithinIreland(latitude, longitude)) {
+      const [easting, northing] = wgs84ToTM65(latitude, longitude)
+      gridDisplay = formatIrishGridReference(easting, northing)
+    } else {
+      gridDisplay = 'Outside Ireland'
+    }
   }
   const content =
     wgs84Display !== null && gridDisplay !== null && dmsDisplay !== null

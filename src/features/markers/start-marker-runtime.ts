@@ -89,10 +89,21 @@ export async function startMarkerRuntime(
         return
       }
 
-      dialog = {
-        mode: 'create',
-        draft: createMarkerDraftAtCoordinate(lat, lon, type),
+      // Deriving the marker's Irish Grid / ITM references rejects coordinates outside
+      // Ireland (e.g. a map click far out to sea). Surface that as an operator-facing
+      // error instead of letting it throw uncaught from the click handler, which would
+      // make the marker silently fail to appear.
+      let draft: MarkerDraft
+      try {
+        draft = createMarkerDraftAtCoordinate(lat, lon, type)
+      } catch (runtimeError) {
+        dialog = null
+        error = toErrorMessage(runtimeError)
+        publishRuntime()
+        return
       }
+
+      dialog = { mode: 'create', draft }
       error = null
       publishRuntime()
     },
@@ -104,10 +115,20 @@ export async function startMarkerRuntime(
         return
       }
 
-      dialog = {
-        mode: 'edit',
-        draft: createMarkerDraftFromMarker(marker),
+      // Building the edit draft reformats persisted coordinates. Guard against a
+      // malformed stored coordinate so reopening a marker can never throw uncaught and
+      // leave the dialog silently unopened.
+      let draft: MarkerDraft
+      try {
+        draft = createMarkerDraftFromMarker(marker)
+      } catch (runtimeError) {
+        dialog = null
+        error = toErrorMessage(runtimeError)
+        publishRuntime()
+        return
       }
+
+      dialog = { mode: 'edit', draft }
       error = null
       publishRuntime()
     },

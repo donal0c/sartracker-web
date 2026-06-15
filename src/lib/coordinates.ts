@@ -24,6 +24,32 @@ const WGS84_LAT_MIN = -90
 const WGS84_LAT_MAX = 90
 const WGS84_LON_MIN = -180
 const WGS84_LON_MAX = 180
+
+// Irish geographic envelope (WGS84), sized to contain the whole island of Ireland
+// including its outlying inhabited/rescue-relevant islands, with a small margin.
+// Southern extreme: Fastnet/Mizen area (~51.4°N). Northern extreme: Inishtrahull /
+// Malin Head (~55.5°N). Western extreme: Tearaght / Blasket Islands (~-10.7°W).
+// Eastern extreme: Co. Down / Wexford coast (~-5.9°W). These bounds intentionally
+// err toward inclusiveness: a real Irish coordinate must never be rejected, even at
+// the cost of admitting some near-coast sea (a rectangle cannot separate the two).
+const IRELAND_LAT_MIN = 51.3
+const IRELAND_LAT_MAX = 55.6
+const IRELAND_LON_MIN = -10.8
+const IRELAND_LON_MAX = -5.8
+
+// ITM (EPSG:2157) easting/northing envelope for the same Irish extent. These bounds
+// must fully CONTAIN the proj4 image of the WGS84 box above (sampled densely:
+// E≈404768..753402, N≈505239..987279), so that any point accepted by
+// `isWithinIreland` / `validateIrishWGS84Range` can never subsequently fail ITM
+// validation — otherwise a genuine Irish coordinate could convert but fail to format.
+// The northern edge in particular must clear Inishtrahull (N≈965951), Ireland's
+// northernmost island, and the east must clear Wicklow Head (E≈734629). A small margin
+// is added. GPS zero-fill (ITM 0,0 → mid-Atlantic ~46.5°N) sits far below E_MIN, so it
+// is still rejected.
+const ITM_EASTING_MIN = 400_000
+const ITM_EASTING_MAX = 760_000
+const ITM_NORTHING_MIN = 500_000
+const ITM_NORTHING_MAX = 990_000
 const IRISH_GRID_ROWS = ['ABCDE', 'FGHJK', 'LMNOP', 'QRSTU', 'VWXYZ']
 const IRISH_GRID_SIZE = 100_000
 const IRISH_GRID_DIM = 5
@@ -60,7 +86,59 @@ function validateWGS84Range(lat: number, lon: number, context: string): void {
 }
 
 /**
+ * Reports whether a WGS84 coordinate falls inside Ireland's geographic envelope.
+ *
+ * This is a non-throwing predicate intended for hot paths such as the live coordinate
+ * readout, which tracks the mouse cursor over the map (frequently out to sea) and must
+ * never raise. It is deliberately inclusive at the coast: a `true` result guarantees
+ * the point is within the Irish bounding box, but does not guarantee it is on land.
+ * Non-finite inputs return `false`.
+ */
+export function isWithinIreland(lat: number, lon: number): boolean {
+  if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
+    return false
+  }
+
+  return (
+    lat >= IRELAND_LAT_MIN &&
+    lat <= IRELAND_LAT_MAX &&
+    lon >= IRELAND_LON_MIN &&
+    lon <= IRELAND_LON_MAX
+  )
+}
+
+/**
+ * Throws when a WGS84 coordinate falls outside Ireland's geographic envelope.
+ *
+ * Used on authoritative/commit paths (deriving an Irish grid reference or ITM
+ * coordinate that an operator will act on) so a grossly out-of-area input cannot be
+ * silently transformed into a plausible-looking Irish reference.
+ */
+function validateIrishWGS84Range(lat: number, lon: number, context: string): void {
+  if (!isWithinIreland(lat, lon)) {
+    throw new RangeError(
+      `Coordinate outside Ireland during ${context}: lat=${lat.toFixed(4)}, lon=${lon.toFixed(4)}`,
+    )
+  }
+}
+
+/**
+ * Throws when an ITM easting/northing pair falls outside Ireland's projected extent.
+ */
+function validateITMRange(easting: number, northing: number, context: string): void {
+  if (easting < ITM_EASTING_MIN || easting >= ITM_EASTING_MAX) {
+    throw new RangeError(`ITM easting outside valid range during ${context}`)
+  }
+  if (northing < ITM_NORTHING_MIN || northing >= ITM_NORTHING_MAX) {
+    throw new RangeError(`ITM northing outside valid range during ${context}`)
+  }
+}
+
+/**
  * Converts WGS84 latitude/longitude coordinates into ITM easting/northing.
+ *
+ * Rejects coordinates outside Ireland: ITM is only meaningful for Irish territory, and
+ * an offshore input would otherwise produce a plausible-looking but wrong ITM value.
  */
 export function wgs84ToITM(lat: number, lon: number): [number, number] {
   const context = 'wgs84_to_itm'
@@ -68,12 +146,16 @@ export function wgs84ToITM(lat: number, lon: number): [number, number] {
   const safeLon = validateNumeric(lon, 'longitude', context)
 
   validateWGS84Range(safeLat, safeLon, context)
+  validateIrishWGS84Range(safeLat, safeLon, context)
 
   return proj4('EPSG:4326', 'EPSG:2157', [safeLon, safeLat]) as [number, number]
 }
 
 /**
  * Converts WGS84 latitude/longitude coordinates into TM65 easting/northing.
+ *
+ * Rejects coordinates outside Ireland: an offshore input would otherwise be formatted
+ * into an authentic-looking Irish grid reference with no indication it is wrong.
  */
 export function wgs84ToTM65(lat: number, lon: number): [number, number] {
   const context = 'wgs84_to_tm65'
@@ -81,17 +163,25 @@ export function wgs84ToTM65(lat: number, lon: number): [number, number] {
   const safeLon = validateNumeric(lon, 'longitude', context)
 
   validateWGS84Range(safeLat, safeLon, context)
+  validateIrishWGS84Range(safeLat, safeLon, context)
 
   return proj4('EPSG:4326', 'TM65', [safeLon, safeLat]) as [number, number]
 }
 
 /**
  * Converts ITM easting/northing coordinates into WGS84 latitude/longitude.
+ *
+ * Guards the ITM input against Ireland's projected extent, mirroring `tm65ToWgs84`.
+ * This rejects GPS zero-fill faults: `itmToWgs84(0, 0)` would otherwise back-project to
+ * a globally valid WGS84 point ~700 km out in the Atlantic and pass silently.
  */
 export function itmToWgs84(easting: number, northing: number): [number, number] {
   const context = 'itm_to_wgs84'
   const safeEasting = validateNumeric(easting, 'easting', context)
   const safeNorthing = validateNumeric(northing, 'northing', context)
+
+  validateITMRange(safeEasting, safeNorthing, context)
+
   const [lon, lat] = proj4('EPSG:2157', 'EPSG:4326', [safeEasting, safeNorthing]) as [
     number,
     number,
@@ -209,11 +299,17 @@ export function parseIrishGridReference(value: string): [number, number] {
 
 /**
  * Formats ITM coordinates for operator display.
+ *
+ * Guards the ITM range so an offshore-derived pair cannot be presented as a valid Irish
+ * ITM coordinate. This restores symmetry with the TM65 (`formatIrishGridReference`)
+ * formatter, which already enforces its domain bounds.
  */
 export function formatITMCoordinates(easting: number, northing: number): string {
   const context = 'format_itm_coordinates'
   const safeEasting = validateNumeric(easting, 'easting', context)
   const safeNorthing = validateNumeric(northing, 'northing', context)
+
+  validateITMRange(safeEasting, safeNorthing, context)
 
   return `${Math.round(safeEasting)}, ${Math.round(safeNorthing)}`
 }
@@ -255,15 +351,20 @@ export function formatWGS84Dms(lat: number, lon: number): string {
 
 /**
  * Formats the operator coordinate bar with both WGS84 and TM65 values.
+ *
+ * This is a live-display helper that tracks the cursor, which routinely moves out to
+ * sea, so it never throws on an offshore point: the Irish Grid segment falls back to an
+ * explicit "Outside Ireland" label rather than a fabricated grid reference.
  */
 export function formatMapCoordinateBar(
   lat: number,
   lon: number,
   mode: CoordinateDisplayMode = 'wgs84_first',
 ): string {
-  const [easting, northing] = wgs84ToTM65(lat, lon)
   const wgs84 = formatWGS84Degrees(lat, lon)
-  const tm65 = formatIrishGridReference(easting, northing)
+  const tm65 = isWithinIreland(lat, lon)
+    ? formatIrishGridReference(...wgs84ToTM65(lat, lon))
+    : 'Outside Ireland'
   return mode === 'tm65_first' ? `${tm65}  |  ${wgs84}` : `${wgs84}  |  ${tm65}`
 }
 
