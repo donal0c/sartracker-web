@@ -621,7 +621,9 @@ function calculateEndpointBearing(points: readonly (readonly [number, number])[]
     return Number.NaN
   }
 
-  return geodesicBearing(startPoint[0], startPoint[1], endPoint[0], endPoint[1])
+  // A null bearing (identical start/end) is surfaced as NaN, which the existing
+  // Number.isFinite guards downstream already render as a blank bearing.
+  return geodesicBearing(startPoint[0], startPoint[1], endPoint[0], endPoint[1]) ?? Number.NaN
 }
 
 function formatLonLat(point: readonly [number, number]): string {

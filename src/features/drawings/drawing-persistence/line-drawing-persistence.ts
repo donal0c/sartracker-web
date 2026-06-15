@@ -83,7 +83,12 @@ function lineEndpointBearing(points: readonly (readonly [number, number])[]): nu
     throw new Error('Lines require distinct start and end points.')
   }
 
-  return geodesicBearing(first[0], first[1], last[0], last[1])
+  const bearing = geodesicBearing(first[0], first[1], last[0], last[1])
+  if (bearing === null) {
+    throw new Error('Lines require distinct start and end points.')
+  }
+
+  return bearing
 }
 
 function formatLineLabel(distanceM: number, trueBearing: number, magneticBearing: number): string {

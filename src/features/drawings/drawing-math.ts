@@ -34,12 +34,20 @@ export function trueToMagnetic(trueBearing: number): number {
   return normalizeBearing(trueBearing + IRELAND_MAGNETIC_DECLINATION)
 }
 
+/**
+ * Computes the initial true bearing (degrees, 0–360) from origin to destination.
+ *
+ * Returns `null` when origin and destination are the same location: the bearing of a
+ * zero-length vector is mathematically undefined, and reporting `0` (due north) would
+ * misrepresent a stationary device or a degenerate drawing as heading north. Callers
+ * must handle the `null` case explicitly (e.g. show "–" rather than a fabricated heading).
+ */
 export function geodesicBearing(
   originLon: number,
   originLat: number,
   destLon: number,
   destLat: number,
-): number {
+): number | null {
   const lat1 = originLat * DEG_TO_RAD
   const lat2 = destLat * DEG_TO_RAD
   const dLon = (destLon - originLon) * DEG_TO_RAD
@@ -49,15 +57,33 @@ export function geodesicBearing(
     Math.cos(lat1) * Math.sin(lat2) -
     Math.sin(lat1) * Math.cos(lat2) * Math.cos(dLon)
 
+  if (x === 0 && y === 0) {
+    return null
+  }
+
   return normalizeBearing(Math.atan2(x, y) * RAD_TO_DEG)
 }
 
+/**
+ * Computes the WGS84 endpoint reached by travelling `distanceM` metres along a great
+ * circle from the origin at the given true bearing.
+ *
+ * A negative `distanceM` is rejected: it would reflect the endpoint to the opposite
+ * side of the origin (because `sin(-d) = -sin(d)`), silently placing a computed point
+ * in the wrong direction. A zero distance is allowed and returns the origin.
+ */
 export function geodesicBearingEndpoint(
   originLon: number,
   originLat: number,
   bearing: number,
   distanceM: number,
 ): LonLat {
+  if (distanceM < 0) {
+    throw new RangeError(
+      `geodesicBearingEndpoint: distanceM must be non-negative, got ${distanceM}`,
+    )
+  }
+
   const bearingRad = bearing * DEG_TO_RAD
   const lat1 = originLat * DEG_TO_RAD
   const lon1 = originLon * DEG_TO_RAD
@@ -96,12 +122,24 @@ export function geodesicDistance(
   return earthRadiusAtLat((lat1Rad + lat2Rad) / 2) * c
 }
 
+/**
+ * Generates the WGS84 ring of a geodesic circle of `radiusM` metres around the centre.
+ *
+ * `radiusM` must be strictly positive: a non-positive radius produces a degenerate or
+ * mirrored ring with no visual cue that the geometry is wrong.
+ */
 export function geodesicCirclePoints(
   centerLon: number,
   centerLat: number,
   radiusM: number,
   segments: number = 64,
 ): readonly LonLat[] {
+  if (radiusM <= 0) {
+    throw new RangeError(
+      `geodesicCirclePoints: radiusM must be positive, got ${radiusM}`,
+    )
+  }
+
   const latRad = centerLat * DEG_TO_RAD
   const earthRadius = earthRadiusAtLat(latRad)
   const angularDistance = radiusM / earthRadius
@@ -129,24 +167,26 @@ export function geodesicCirclePoints(
   return points
 }
 
+/**
+ * Returns the angular sweep (0–360°) of a search sector from `startBearing` to
+ * `endBearing`, measured clockwise.
+ *
+ * When the two normalised bearings coincide the sweep is ambiguous between a zero-arc
+ * and a full circle. A raw difference of exactly 360° (e.g. `360 → 0` or `0 → 360`,
+ * the natural ways an operator expresses a full search circle) is treated as a full
+ * circle and returns 360; a true zero-length input (e.g. `45 → 45`) returns 0.
+ */
 export function calculateSectorArcLength(startBearing: number, endBearing: number): number {
   const start = normalizeBearing(startBearing)
   const end = normalizeBearing(endBearing)
 
   if (start === end) {
-    const difference = Math.abs(endBearing - startBearing)
-    const startNormalized = startBearing >= 0 && startBearing < 360
-    const endNormalized = endBearing >= 0 && endBearing < 360
-
-    if (difference === 360 && startNormalized && !endNormalized) {
-      return 360
-    }
-
-    if (difference > 180 && difference < 360) {
-      return 360
-    }
-
-    return 0
+    // The two bearings normalise to the same heading, so their raw difference is always
+    // a multiple of 360. A non-zero multiple (e.g. 360→0, 0→360) is the operator's way
+    // of expressing a full search circle and sweeps 360°; an exact zero difference
+    // (e.g. 45→45) is a genuine zero-length arc. Using the absolute difference avoids
+    // the previous bug where a strict `< 360` range check excluded a startBearing of 360.
+    return Math.abs(endBearing - startBearing) >= 360 ? 360 : 0
   }
 
   const adjustedEnd = end < start ? end + 360 : end
@@ -159,6 +199,14 @@ export function calculateSectorArcLength(startBearing: number, endBearing: numbe
   return arcLength
 }
 
+/**
+ * Generates the closed WGS84 polygon ring of a search sector: centre → arc → centre.
+ *
+ * `radiusM` must be strictly positive. A non-positive radius mirrors the sector across
+ * the origin into the opposite quadrant (~10 km displacement for a 5 km sector) while
+ * still producing a valid-looking, well-formed polygon — exactly the kind of silent,
+ * confident error this guard exists to prevent.
+ */
 export function geodesicSectorPoints(
   centerLon: number,
   centerLat: number,
@@ -167,6 +215,12 @@ export function geodesicSectorPoints(
   radiusM: number,
   segments: number = 36,
 ): readonly LonLat[] {
+  if (radiusM <= 0) {
+    throw new RangeError(
+      `geodesicSectorPoints: radiusM must be positive, got ${radiusM}`,
+    )
+  }
+
   const angleRange = calculateSectorArcLength(startBearing, endBearing)
   const lat1 = centerLat * DEG_TO_RAD
   const lon1 = centerLon * DEG_TO_RAD

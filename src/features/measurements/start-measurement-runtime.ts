@@ -87,6 +87,15 @@ export function startMeasurementRuntime(
         return null
       }
 
+      // A second click on the exact start point would describe a zero-length measurement
+      // with an undefined bearing. Ignore it and keep waiting for a distinct endpoint
+      // rather than committing a degenerate measurement.
+      if (nextPoint[0] === state.draftStart[0] && nextPoint[1] === state.draftStart[1]) {
+        state.hoverPoint = null
+        publishRuntime()
+        return null
+      }
+
       const measurement = createMeasurement(
         state.activeMissionId,
         state.draftStart,
@@ -147,6 +156,9 @@ export function createMeasurement(
 ): Measurement {
   const distanceM = geodesicDistance(start[0], start[1], end[0], end[1])
   const trueBearing = geodesicBearing(start[0], start[1], end[0], end[1])
+  if (trueBearing === null) {
+    throw new Error('A measurement requires two distinct points.')
+  }
   const magneticBearing = trueToMagnetic(trueBearing)
   const midpoint = geodesicBearingEndpoint(start[0], start[1], trueBearing, distanceM / 2)
 
