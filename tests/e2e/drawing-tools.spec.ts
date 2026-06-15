@@ -107,6 +107,34 @@ test.describe('M8 drawing workflows', () => {
     expect(drawings.some((drawing) => drawing.name === 'Sector North' && drawing.type === 'search_sector')).toBe(true)
   })
 
+  test('renders a visible full-circle search sector entered as 360 -> 0 (DON-170)', async ({ page }) => {
+    await page.getByTestId('drawing-tool-search_sector').click({ force: true })
+    await clickMap(page, { x: 360, y: 260 })
+
+    await expect(page.getByTestId('drawing-dialog')).toBeVisible()
+    await page.getByTestId('drawing-name-input').fill('Full Circle')
+    // 360 -> 0 is the natural way an operator expresses a full search circle. Before the
+    // fix this collapsed to a zero-area, invisible polygon.
+    await page.getByTestId('drawing-sector-start-input').fill('360')
+    await page.getByTestId('drawing-sector-end-input').fill('0')
+    await page.getByTestId('drawing-sector-radius-input').fill('1500')
+    await page.getByTestId('drawing-save-btn').click()
+    await expect(page.getByTestId('drawing-dialog')).toBeHidden()
+
+    const geometry = await readSearchSectorGeometry(page, 'Full Circle')
+    expect(geometry).not.toBeNull()
+    const ring = geometry!.coordinates[0]!
+    // A genuine full circle produces the full arc (37 points) plus the centre close,
+    // not a degenerate spike, and spans a real longitude/latitude extent.
+    expect(ring.length).toBeGreaterThan(10)
+    const lons = ring.map((point) => point[0])
+    const lats = ring.map((point) => point[1])
+    const lonSpan = Math.max(...lons) - Math.min(...lons)
+    const latSpan = Math.max(...lats) - Math.min(...lats)
+    expect(lonSpan).toBeGreaterThan(0.005)
+    expect(latSpan).toBeGreaterThan(0.005)
+  })
+
   test('creates, edits, and exposes text labels through the layer tree', async ({ page }) => {
     await page.getByTestId('drawing-tool-text_label').click({ force: true })
     await clickMap(page, { x: 540, y: 220 })
@@ -227,4 +255,28 @@ async function readMissionDrawings(page: import('@playwright/test').Page) {
 
     return parsed.drawings ?? []
   })
+}
+
+async function readSearchSectorGeometry(
+  page: import('@playwright/test').Page,
+  name: string,
+): Promise<{ coordinates: number[][][] } | null> {
+  return page.evaluate((targetName) => {
+    const raw = window.sessionStorage.getItem('sartracker:browser-harness')
+    if (raw === null) {
+      return null
+    }
+
+    const parsed = JSON.parse(raw) as {
+      drawings?: Array<{ name: string; type: string; geometry_json: string | null }>
+    }
+    const drawing = (parsed.drawings ?? []).find(
+      (candidate) => candidate.name === targetName && candidate.type === 'search_sector',
+    )
+    if (drawing?.geometry_json == null) {
+      return null
+    }
+
+    return JSON.parse(drawing.geometry_json) as { coordinates: number[][][] }
+  }, name)
 }
