@@ -8,13 +8,17 @@
 
 ## Current Answer
 
-For the immediate team handoff, use the Electron prerelease uploaded to GitHub:
+For the immediate team handoff, the last published Electron prerelease is:
 
 ```text
 https://github.com/donal0c/sartracker-web/releases/tag/electron-v0.1.0-beta.4
 ```
 
-This prerelease is the first release produced by the Electron-specific GitHub
+The next candidate is `electron-v0.1.0-beta.5`. It must be built by GitHub
+Actions, smoke-tested on the Ubuntu machine, and only then shared with the
+team.
+
+The published beta.4 prerelease was the first release produced by the Electron-specific GitHub
 Actions path from `DON-143`. The workflow builds Linux artifacts, checks that
 the packaged native SQLite module is Linux x86-64, guards against licensed map
 data, runs a launch smoke, creates `SHA256SUMS`, and publishes app artifacts
@@ -93,6 +97,24 @@ Before any tester receives an Electron artifact:
 5. Confirm diagnostics and any shared evidence do not contain private map paths,
    credentials, source URLs, or licensed data.
 6. Record whether Windows remains unverified.
+
+## Next Candidate Smoke Focus
+
+For `electron-v0.1.0-beta.5`, the Ubuntu smoke should prove the new release
+artifact, not only local source:
+
+1. Verify the downloaded AppImage or `.deb` against `SHA256SUMS`.
+2. Launch the packaged app on the Ubuntu machine with a real display.
+3. Confirm a mission can start, survive full app restart, and recover cleanly.
+4. Confirm a finalized mission refuses destructive edits/deletes.
+5. Confirm finalizing a mission creates a standalone archive under app-owned
+   user data and that a later mission finalize does not overwrite it.
+6. Confirm live Traccar connects over the supported team API URL.
+7. Confirm Discovery offline tiles read from the private MBTiles package if it
+   is available on the Ubuntu machine.
+8. Confirm diagnostics export is sanitized.
+9. Retest the Saturday breadcrumb scenario and the separate DON-151 launch /
+   panning slowdown if the needed tracking history/test data is available.
 
 ## Current Ubuntu Release-Asset Smoke
 

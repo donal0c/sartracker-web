@@ -9,6 +9,7 @@
 - **Desktop:** Electron is the operational desktop lane (MapLibre + direct HTTPS Traccar, SQLite, filesystem, diagnostics, official map packages). Tauri remains historical/reference.
 - **Browser mode:** testing/training only (sessionStorage, not operational persistence).
 - **Latest test counts:** 150 unit files / 922 tests; 107 standard Playwright E2E; 47 backend tests.
+- **Next Electron beta candidate:** `0.1.0-beta.5` / `electron-v0.1.0-beta.5` is prepared for GitHub Actions release build and Ubuntu smoke; `0.1.0-beta.4` remains the last published team artifact until those gates pass.
 
 ## Last Work Done
 
@@ -86,7 +87,7 @@ DON-144 partial independent progress — beta wrong-file guardrail:
 
 ## What's Next
 
-Next: ship a new Electron beta containing `DON-159`, then have the team retest the Saturday breadcrumb scenario and the separate DON-151 launch/panning slowdown. In parallel, continue `DON-144`: choose the private Discovery package distribution owner/channel and lock the repeatable admin raw-source-to-package workflow. `DON-143` is closed in Linear.
+Next: cut `electron-v0.1.0-beta.5` on GitHub, let `.github/workflows/electron-release.yml` build the Linux AppImage/`.deb` draft prerelease, then run the Ubuntu release-asset smoke before telling the team it is ready. The smoke should cover launch, restart persistence, live Traccar, Discovery offline tile read if the private package is available, diagnostics sanitization, finalized-mission delete refusal, standalone finalization archive, the Saturday breadcrumb scenario, and the separate DON-151 launch/panning slowdown. In parallel after the release gate, continue `DON-144`: choose the private Discovery package distribution owner/channel and lock the repeatable admin raw-source-to-package workflow.
 
 DON-146 (Electron 40→42) is parked in Backlog, **blocked on upstream `better-sqlite3` PR #1475** (does not compile against Electron 42's V8; no published fix). See the DON-146 comment for the decision + resume checklist.
 
@@ -113,7 +114,7 @@ DON-146 (Electron 40→42) is parked in Backlog, **blocked on upstream `better-s
 - **Lint:** `npm run lint`
 - **Type check:** `npx tsc --noEmit`
 - **Deploy:** push to `master` → Vercel auto-deploys to production
-- **Electron handoff:** see `docs/electron-beta-handoff.md`; current Linux team prerelease is `https://github.com/donal0c/sartracker-web/releases/tag/electron-v0.1.0-beta.4`. The Electron GitHub release workflow is implemented under `DON-143`; Windows remains gated by `DON-141`.
+- **Electron handoff:** see `docs/electron-beta-handoff.md`; current published Linux team prerelease is `https://github.com/donal0c/sartracker-web/releases/tag/electron-v0.1.0-beta.4`, and the next candidate is `electron-v0.1.0-beta.5` pending GitHub Actions + Ubuntu smoke. The Electron GitHub release workflow is implemented under `DON-143`; Windows remains gated by `DON-141`.
 
 ## Latest Verification
 
