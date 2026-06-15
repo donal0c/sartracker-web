@@ -602,7 +602,12 @@
             Mission Control owns the mission lifecycle. A mission starts in <strong>idle</strong>, moves
             to <strong>active</strong>, can be <strong>paused</strong> and resumed, and can be
             <strong>finished</strong>. Finished missions can be reviewed and, in the governance flow,
-            archived and locked.
+            archived and locked. Finalizing a mission writes a standalone, immutable archive file
+            (a compressed snapshot of that mission's database, manifest, and any marker attachments)
+            into the app's <code>archives</code> folder; each mission keeps its own archive, and the
+            confirmation message reports the exact file path. Once finalized, a mission is locked: its
+            markers, drawings, helicopters, and GPX imports can no longer be edited or deleted until an
+            authorized admin unlocks it.
           </p>
           <table>
             <thead>

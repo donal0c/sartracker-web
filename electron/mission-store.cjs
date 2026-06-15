@@ -4,9 +4,13 @@ const { randomUUID } = require('node:crypto')
 
 const Database = require('better-sqlite3')
 
+const { createZipArchive, readZipArchive } = require('./zip-archive.cjs')
+
 const CURRENT_SCHEMA_VERSION = 3
 const DATABASE_FILE_NAME = 'mission-store.sqlite'
 const BACKUP_FILE_NAME = 'mission-store.backup.sqlite'
+const ARCHIVE_DIRECTORY_NAME = 'archives'
+const ARCHIVE_VERSION = 1
 
 /**
  * Creates the Electron SQLite mission store.
@@ -14,6 +18,7 @@ const BACKUP_FILE_NAME = 'mission-store.backup.sqlite'
 function createElectronMissionStore(options) {
   const databasePath = path.join(options.userDataPath, DATABASE_FILE_NAME)
   const backupPath = path.join(options.userDataPath, BACKUP_FILE_NAME)
+  const archiveDirectory = path.join(options.userDataPath, ARCHIVE_DIRECTORY_NAME)
   const db = new Database(databasePath)
   db.pragma('journal_mode = WAL')
   db.pragma('foreign_keys = ON')
@@ -27,9 +32,7 @@ function createElectronMissionStore(options) {
       backup_path: backupPath,
     }),
     syncBackup: async () => syncBackup(db, backupPath),
-    createMissionArchive: async (missionId) => {
-      throw new Error(`Electron mission archive export is tracked by DON-34 and is not available yet for mission ${missionId}.`)
-    },
+    createMissionArchive: async (missionId) => createMissionArchive(db, missionId, backupPath, archiveDirectory),
     createMission: async (input) => createMission(db, input),
     upsertDevice: async (input) => upsertDevice(db, input),
     getDevice: async (missionId, deviceId) => getDevice(db, missionId, deviceId),
@@ -41,7 +44,10 @@ function createElectronMissionStore(options) {
         : all(db, 'SELECT * FROM positions WHERE mission_id = ? AND device_id = ? ORDER BY timestamp ASC', missionId, deviceId),
     latestPositions: async (missionId) => latestPositions(db, missionId),
     listMissionEvents: async (missionId) =>
-      all(db, 'SELECT * FROM mission_events WHERE mission_id = ? ORDER BY timestamp ASC, id ASC', missionId),
+      // Tie-break on the implicit monotonic rowid so events written within the same
+      // millisecond (e.g. the finalize sequence) keep their true insertion order
+      // rather than ordering by a random UUID.
+      all(db, 'SELECT * FROM mission_events WHERE mission_id = ? ORDER BY timestamp ASC, rowid ASC', missionId),
     listAuditEvents: async (missionId, options) => listAuditEvents(db, missionId, options),
     upsertMarker: async (input) => upsertById(db, 'markers', input, markerDefaults),
     getMarker: async (markerId) => getById(db, 'markers', markerId, 'Marker'),
@@ -71,7 +77,7 @@ function createElectronMissionStore(options) {
     pauseMission: async (missionId) => transitionMission(db, missionId, 'active', 'paused'),
     resumeMission: async (missionId) => transitionMission(db, missionId, 'paused', 'active'),
     finishMission: async (missionId) => finishMission(db, missionId),
-    finalizeMission: async (missionId) => finalizeMission(db, missionId, backupPath),
+    finalizeMission: async (missionId) => finalizeMission(db, missionId, backupPath, archiveDirectory),
     unlockFinalizedMission: async (input) => unlockFinalizedMission(db, input, options.readAdminRoster),
   }
 }
@@ -301,20 +307,154 @@ function finishMission(db, missionId) {
   return getMission(db, missionId)
 }
 
-async function finalizeMission(db, missionId, backupPath) {
+/**
+ * Builds a real, immutable, standalone archive for a finished or finalized mission and
+ * returns its location. Mirrors the Rust reference (`persistence.rs`): a fresh SQLite
+ * snapshot plus a manifest, the mission record, and every marker attachment, written to
+ * a temporary file and atomically renamed into the per-mission `archives/` directory so
+ * a partially-written archive can never be observed. Unlike the shared rolling backup,
+ * each archive is uniquely named and is never overwritten by a later mission.
+ *
+ * @param {boolean} [recordArchiveEvent] when true, append a `mission_archived` event
+ *   (matching Rust); finalize passes false because it records its own event sequence.
+ */
+async function createMissionArchive(db, missionId, backupPath, archiveDirectory, recordArchiveEvent = true) {
+  const mission = getMission(db, missionId)
+  if (mission.status !== 'finished' && mission.status !== 'finalized') {
+    throw new Error('Only finished or finalized missions can be archived.')
+  }
+
+  const createdAt = now()
+  await syncBackup(db, backupPath)
+  const snapshotBytes = await fs.readFile(backupPath)
+  if (snapshotBytes.length === 0) {
+    throw new Error('Mission archive cannot be created from an empty database snapshot.')
+  }
+
+  const manifestBytes = Buffer.from(
+    JSON.stringify(
+      {
+        archive_version: ARCHIVE_VERSION,
+        created_at: createdAt,
+        mission_id: missionId,
+        schema_version: CURRENT_SCHEMA_VERSION,
+        snapshot_format: 'sqlite',
+      },
+      null,
+      2,
+    ),
+    'utf8',
+  )
+  const missionBytes = Buffer.from(JSON.stringify(mission, null, 2), 'utf8')
+
+  const entries = [
+    { name: 'manifest.json', data: manifestBytes },
+    { name: 'mission.json', data: missionBytes },
+    { name: 'mission-store.sqlite', data: snapshotBytes },
+  ]
+
+  for (const attachmentPath of listMarkerAttachmentPaths(db, missionId)) {
+    let attachmentBytes
+    try {
+      attachmentBytes = await fs.readFile(attachmentPath)
+    } catch {
+      throw new Error(
+        `Mission archive cannot be created because marker attachment is missing: ${attachmentPath}`,
+      )
+    }
+    entries.push({ name: `attachments/${path.basename(attachmentPath)}`, data: attachmentBytes })
+  }
+
+  const archiveBuffer = createZipArchive(entries)
+
+  await fs.mkdir(archiveDirectory, { recursive: true })
+  const archiveName = `${missionId}-${createdAt.replace(/:/g, '-')}.zip`
+  const temporaryPath = path.join(archiveDirectory, `${archiveName}.tmp`)
+  const finalPath = path.join(archiveDirectory, archiveName)
+
+  await fs.writeFile(temporaryPath, archiveBuffer)
+  try {
+    validateArchiveFile(archiveBuffer, missionId)
+  } catch (error) {
+    await fs.rm(temporaryPath, { force: true })
+    throw error
+  }
+  await fs.rename(temporaryPath, finalPath)
+
+  if (recordArchiveEvent) {
+    appendEvent(db, missionId, 'mission_archived', { archive_path: finalPath }, createdAt)
+  }
+
+  return { mission_id: missionId, archive_path: finalPath, created_at: createdAt }
+}
+
+function listMarkerAttachmentPaths(db, missionId) {
+  return all(
+    db,
+    `SELECT attachment_path FROM markers
+      WHERE mission_id = ? AND attachment_path IS NOT NULL AND TRIM(attachment_path) != ''
+      ORDER BY display_order ASC, created_at ASC`,
+    missionId,
+  ).map((row) => row.attachment_path)
+}
+
+/**
+ * Verifies a freshly-built archive can be re-read, its CRCs match, the required entries
+ * are present, the snapshot is non-empty, and the manifest/mission identify the mission —
+ * the same guarantees the Rust reader checks. Surfaces corruption loudly before the
+ * archive is committed via atomic rename.
+ */
+function validateArchiveFile(archiveBuffer, missionId) {
+  const entries = readZipArchive(archiveBuffer)
+  const manifestEntry = entries.get('manifest.json')
+  if (manifestEntry === undefined) {
+    throw new Error('Mission archive is missing manifest.json.')
+  }
+  const manifest = JSON.parse(manifestEntry.toString('utf8'))
+  if (manifest.mission_id !== missionId) {
+    throw new Error('Mission archive manifest does not match the requested mission.')
+  }
+  const missionEntry = entries.get('mission.json')
+  if (missionEntry === undefined) {
+    throw new Error('Mission archive is missing mission.json.')
+  }
+  const archivedMission = JSON.parse(missionEntry.toString('utf8'))
+  if (archivedMission.id !== missionId) {
+    throw new Error('Mission archive payload does not match the requested mission.')
+  }
+  const snapshotEntry = entries.get('mission-store.sqlite')
+  if (snapshotEntry === undefined || snapshotEntry.length === 0) {
+    throw new Error('Mission archive contains an empty mission-store.sqlite snapshot.')
+  }
+}
+
+async function finalizeMission(db, missionId, backupPath, archiveDirectory) {
   const mission = getMission(db, missionId)
   if (mission.status !== 'finished') {
     throw new Error('Only finished missions can be finalized.')
   }
-  await syncBackup(db, backupPath)
-  const archive = {
-    mission_id: missionId,
-    archive_path: backupPath,
-    created_at: now(),
+
+  appendEvent(db, missionId, 'mission_finalize_requested', { resulting_status: 'finished' })
+
+  let archive
+  try {
+    archive = await createMissionArchive(db, missionId, backupPath, archiveDirectory, false)
+  } catch (error) {
+    appendEvent(db, missionId, 'mission_archive_failed', {
+      resulting_status: 'finished',
+      error: error instanceof Error ? error.message : String(error),
+    })
+    throw error
   }
+
+  appendEvent(db, missionId, 'mission_archive_succeeded', {
+    resulting_status: 'finished',
+    archive_path: archive.archive_path,
+  })
+
   const transaction = db.transaction(() => {
     db.prepare('UPDATE missions SET status = ? WHERE id = ?').run('finalized', missionId)
-    insertEvent(db, missionId, 'mission_finalized', archive.created_at, {
+    insertEvent(db, missionId, 'mission_finalized', now(), {
       resulting_status: 'finalized',
       archive_path: archive.archive_path,
     })
@@ -441,7 +581,7 @@ function listAuditEvents(db, missionId, options) {
   if (includeTelemetry) {
     return all(
       db,
-      'SELECT * FROM mission_events WHERE mission_id = ? ORDER BY timestamp DESC, id DESC LIMIT ?',
+      'SELECT * FROM mission_events WHERE mission_id = ? ORDER BY timestamp DESC, rowid DESC LIMIT ?',
       missionId,
       limit,
     )
@@ -452,7 +592,7 @@ function listAuditEvents(db, missionId, options) {
     db,
     `SELECT * FROM mission_events
      WHERE mission_id = ? AND event_type NOT IN (${placeholders})
-     ORDER BY timestamp DESC, id DESC
+     ORDER BY timestamp DESC, rowid DESC
      LIMIT ?`,
     missionId,
     ...TELEMETRY_EVENT_TYPES,

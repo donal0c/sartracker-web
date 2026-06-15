@@ -92,6 +92,10 @@ type ElectronMissionStore = {
   readonly finalizeMission: (
     missionId: string,
   ) => Promise<{ readonly mission: { readonly status: string }; readonly archive: { readonly archive_path: string; readonly created_at: string } }>
+  readonly createMissionArchive: (
+    missionId: string,
+  ) => Promise<{ readonly mission_id: string; readonly archive_path: string; readonly created_at: string }>
+  readonly getMarker: (markerId: string) => Promise<{ readonly id: string }>
   readonly listLayerCatalogMetadata: (
     missionId: string,
   ) => Promise<readonly { readonly missionId: string; readonly nodeId: string; readonly isVisible: boolean }[]>
@@ -435,6 +439,100 @@ describe('electron mission store', () => {
 
     await expect(store.deleteMarker(marker.id)).rejects.toThrow(/finalized mission|finished mission/)
     await expect(store.listMarkers(mission.id)).resolves.toHaveLength(1)
+  })
+
+  // --- DON-162: real per-mission archive + finalize event sequence ---
+
+  it('writes a real, standalone per-mission archive zip on finalize (DON-162)', async () => {
+    const { readZipArchive } = require('../../electron/zip-archive.cjs') as {
+      readonly readZipArchive: (buffer: Buffer) => ReadonlyMap<string, Buffer>
+    }
+
+    store = await createStore()
+    const mission = await store.createMission({ name: 'Archive Mission' })
+    await store.upsertMarker({ mission_id: mission.id, ...SAMPLE_MARKER })
+    await store.finishMission(mission.id)
+
+    const result = await store.finalizeMission(mission.id)
+    const archivePath = result.archive.archive_path
+
+    // The archive must be a real, standalone file — NOT the shared rolling backup.
+    expect(archivePath).not.toBe(path.join(userDataPath!, 'mission-store.backup.sqlite'))
+    expect(path.dirname(archivePath)).toBe(path.join(userDataPath!, 'archives'))
+    const { access } = await import('node:fs/promises')
+    await expect(access(archivePath)).resolves.toBeUndefined()
+
+    const { readFile } = await import('node:fs/promises')
+    const entries = readZipArchive(await readFile(archivePath))
+    expect([...entries.keys()]).toEqual(
+      expect.arrayContaining(['manifest.json', 'mission.json', 'mission-store.sqlite']),
+    )
+    const manifest = JSON.parse(entries.get('manifest.json')!.toString('utf8'))
+    expect(manifest.mission_id).toBe(mission.id)
+    const archivedMission = JSON.parse(entries.get('mission.json')!.toString('utf8'))
+    expect(archivedMission.id).toBe(mission.id)
+    expect(entries.get('mission-store.sqlite')!.length).toBeGreaterThan(0)
+  })
+
+  it('does not overwrite an earlier mission archive when a later mission finalizes (DON-162)', async () => {
+    const { readFile } = await import('node:fs/promises')
+    store = await createStore()
+
+    const first = await store.createMission({ name: 'First Mission' })
+    await store.finishMission(first.id)
+    const firstArchive = (await store.finalizeMission(first.id)).archive.archive_path
+    const firstBytes = await readFile(firstArchive)
+
+    const second = await store.createMission({ name: 'Second Mission' })
+    await store.finishMission(second.id)
+    const secondArchive = (await store.finalizeMission(second.id)).archive.archive_path
+
+    expect(secondArchive).not.toBe(firstArchive)
+    // The first archive must still exist, unmodified, after the second finalize.
+    await expect(readFile(firstArchive)).resolves.toEqual(firstBytes)
+  })
+
+  it('emits the full finalize event sequence matching Rust (DON-162)', async () => {
+    store = await createStore()
+    const mission = await store.createMission({ name: 'Finalize Sequence Mission' })
+    await store.finishMission(mission.id)
+    await store.finalizeMission(mission.id)
+
+    const types = (await store.listMissionEvents(mission.id)).map((event) => event.event_type)
+    const finalizeSlice = types.filter((type) =>
+      [
+        'mission_finished',
+        'mission_finalize_requested',
+        'mission_archive_succeeded',
+        'mission_finalized',
+      ].includes(type),
+    )
+    expect(finalizeSlice).toEqual([
+      'mission_finished',
+      'mission_finalize_requested',
+      'mission_archive_succeeded',
+      'mission_finalized',
+    ])
+  })
+
+  it('createMissionArchive builds an archive for a finished mission (DON-162 / DON-34)', async () => {
+    store = await createStore()
+    const mission = await store.createMission({ name: 'Direct Archive Mission' })
+    await store.finishMission(mission.id)
+
+    const archive = await store.createMissionArchive(mission.id)
+    expect(archive.mission_id).toBe(mission.id)
+    expect(path.dirname(archive.archive_path)).toBe(path.join(userDataPath!, 'archives'))
+    const { access } = await import('node:fs/promises')
+    await expect(access(archive.archive_path)).resolves.toBeUndefined()
+  })
+
+  it('createMissionArchive refuses missions that are not finished or finalized (DON-162)', async () => {
+    store = await createStore()
+    const mission = await store.createMission({ name: 'Active Archive Mission' })
+    await expect(store.createMissionArchive(mission.id)).rejects.toThrow(
+      /finished or finalized/,
+    )
   })
 
   async function createStore(): Promise<ElectronMissionStore> {
