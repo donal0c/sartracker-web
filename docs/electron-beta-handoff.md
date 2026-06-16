@@ -14,12 +14,14 @@ For the immediate team handoff, the last **published** Electron prerelease is:
 https://github.com/donal0c/sartracker-web/releases/tag/electron-v0.1.0-beta.5
 ```
 
-The next candidate is `electron-v0.1.0-beta.6` (DON-175 Linux keyring/startup
-hotfix). It has been built by GitHub Actions and fully smoke-tested on the
-Ubuntu machine (see "Latest Ubuntu Release-Asset Smoke" below) — all
-release-blocking gates passed. Its GitHub prerelease remains a **draft, held
-pending explicit promotion approval**; do not share the beta.6 URL until it is
-published.
+The next candidate is `electron-v0.1.0-beta.7` (DON-177 app-owned local
+credential storage + DON-176 docked Review + the DON-175 keyring guard). It has
+been built by GitHub Actions and fully deep-smoke-tested on the Ubuntu machine
+(see "Latest Ubuntu Release-Asset Smoke" below) — all release-blocking gates
+passed. Its GitHub prerelease remains a **draft, held pending explicit promotion
+approval**; do not share the beta.7 URL until it is published. beta.7 supersedes
+the unpublished `electron-v0.1.0-beta.6` (DON-175-only hotfix), whose draft was
+deleted — there is no need to install beta.6.
 
 The published beta.4 prerelease was the first release produced by the Electron-specific GitHub
 Actions path from `DON-143`. The workflow builds Linux artifacts, checks that
@@ -127,7 +129,49 @@ artifact, not only local source:
 10. Retest the Saturday breadcrumb scenario and the separate DON-151 launch /
    panning slowdown if the needed tracking history/test data is available.
 
-## Latest Ubuntu Release-Asset Smoke (beta.6 — DON-175 keyring hotfix)
+## Latest Ubuntu Release-Asset Smoke (beta.7 — local credential storage + docked Review)
+
+`electron-v0.1.0-beta.7` (DON-177 app-owned local credential storage, DON-176
+docked Review, DON-175 keyring guard) is built and deep-smoked but **NOT yet
+promoted** — the draft GitHub prerelease is held pending promotion approval.
+
+- CI: `.github/workflows/electron-release.yml` run `27601812958` — success.
+- Artifact: `sartracker-electron-validation_0.1.0-beta.7_linux_x86_64.AppImage`,
+  SHA256 `848eb06321536c76f831a4e566450be82695f4d3b6c8336fce3fbcb4926ca4a7`,
+  `sha256sum -c` => OK. App version `0.1.0-beta.7+run.7.sha.396c3c2`,
+  Electron 40.10.0, schema v3. Ubuntu 24.04.2 / kernel 6.14, real Wayland.
+
+All gates passed against the CI-built artifact:
+
+1. **DON-177 credential matrix (3/3):** fresh install with provider configured →
+   tracking not online, no credential file, no startup fault; saved app-owned
+   `credentials.json` → read at startup and survives a full restart with a
+   broken/locked keyring (no keyring dependency); migrated credential → read and
+   legacy `secrets.json` left untouched.
+2. **Undecryptable-legacy bad-secret gate (release-blocking): PASS** — normal
+   shell, no fault, re-enter warning, Settings recovers.
+3. **Live Traccar — real same-machine keyring migration: PASS.** Copied the
+   operator's legacy `secrets.json`; the app decrypted it and created
+   `credentials.json` (0600) in the throwaway profile (legacy left intact);
+   "Connection successful.", online 33 devices / 8 fixes. The real operator
+   profile was not migrated and the real mission DB was untouched.
+4. **DON-176 docked Review (6/6):** no full-screen backdrop, read-only note,
+   Pause/Finish operable while Review open, map clickable in the clear band,
+   Review stays open while operating controls, Esc closes it.
+5. Core lifecycle (launch → mission → marker → restart/recovery → finish →
+   finalize → standalone archive in `userData/archives`).
+6. Out-of-Ireland coordinate rejected; diagnostics sanitized
+   (`secret present: no`, `credential storage: local-file`, no credential leak).
+
+Note: beta.7 was rebuilt once after the first packaged smoke found docked Review
+did not close on Esc after a map click (focus had left the panel); the
+document-level Esc fix was added, the tag moved, CI rebuilt, and all gates
+re-run green on the corrected artifact (the SHA above).
+
+Evidence on the box:
+`~/sartracker-beta7-smoke/{evidence,evidence2,evidence-bad-secret,evidence-credentials,evidence-tracking,evidence-review2,SMOKE-SUMMARY.md}`.
+
+## Previous Ubuntu Release-Asset Smoke (beta.6 — DON-175 keyring hotfix, unpublished/superseded)
 
 `electron-v0.1.0-beta.6` is the keyring/startup hotfix candidate for DON-175.
 It is **built and fully smoked but NOT yet promoted** — the draft GitHub
