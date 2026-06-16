@@ -322,6 +322,28 @@ describe('electron settings store', () => {
     )
   })
 
+  it('starts without tracking when a stored Electron secret cannot be decrypted', async () => {
+    const store = await createStore({
+      backend: 'gnome_libsecret',
+      decryptString: () => {
+        throw new Error('Error while decrypting the ciphertext provided to safeStorage.decryptString.')
+      },
+    })
+    const draft = createSettingsDraft(DEFAULT_APP_SETTINGS)
+    draft.dataSource.providerType = 'traccar_http'
+    draft.dataSource.baseUrl = 'https://kmrtsar.eu'
+    draft.dataSource.email = 'sean'
+    draft.dataSource.secretInput = 'field-secret'
+    await store.saveAppSettings(draft)
+
+    const runtime = await store.loadRuntimeBootstrapSettings(true)
+
+    expect(runtime.trackingConfig).toBeNull()
+    expect(runtime.trackingDisabledReason).toBe(
+      'Stored Traccar credentials could not be decrypted. Re-enter the password or token in Settings.',
+    )
+  })
+
   it('uses the encrypted secret from main when testing a connection without a new secret input', async () => {
     const fetchFn = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const request = new Request(input, init)
@@ -358,11 +380,12 @@ describe('electron settings store', () => {
     readonly platform?: NodeJS.Platform
     readonly fetchFn?: typeof fetch
     readonly now?: () => Date
+    readonly decryptString?: (encrypted: Buffer) => string
   }): Promise<ElectronSettingsStore> {
     userDataPath = await mkdtemp(path.join(tmpdir(), 'sartracker-electron-settings-'))
     return createElectronSettingsStore({
       userDataPath,
-      safeStorage: createMockSafeStorage(options.backend),
+      safeStorage: createMockSafeStorage(options.backend, options.decryptString),
       fetchFn: options.fetchFn,
       platform: options.platform ?? 'linux',
       now: options.now,
@@ -398,12 +421,15 @@ function createMbtilesPackage(packagePath: string): void {
   }
 }
 
-function createMockSafeStorage(backend: string): MockSafeStorage {
+function createMockSafeStorage(
+  backend: string,
+  decryptString?: (encrypted: Buffer) => string,
+): MockSafeStorage {
   return {
     isEncryptionAvailable: () => true,
     getSelectedStorageBackend: () => backend,
     encryptString: (plainText) => Buffer.from(`encrypted:${plainText}`, 'utf8'),
-    decryptString: (encrypted) =>
-      encrypted.toString('utf8').replace(/^encrypted:/, ''),
+    decryptString: decryptString ?? ((encrypted) =>
+      encrypted.toString('utf8').replace(/^encrypted:/, '')),
   }
 }

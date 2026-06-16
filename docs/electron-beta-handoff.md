@@ -94,9 +94,14 @@ Before any tester receives an Electron artifact:
 3. Run the relevant package launch smoke.
 4. For official maps, run or manually perform the Discovery import/readiness
    smoke with the private MBTiles package outside the repo.
-5. Confirm diagnostics and any shared evidence do not contain private map paths,
+5. Run the bad stored-secret smoke:
+   `npm run electron:smoke:bad-secret -- --app <AppImage-or-binary>`. This
+   seeds a throwaway profile with an undecryptable Traccar secret and must prove
+   the app starts with tracking disabled rather than showing the startup fault
+   shell.
+6. Confirm diagnostics and any shared evidence do not contain private map paths,
    credentials, source URLs, or licensed data.
-6. Record whether Windows remains unverified.
+7. Record whether Windows remains unverified.
 
 ## Next Candidate Smoke Focus
 
@@ -112,8 +117,11 @@ artifact, not only local source:
 6. Confirm live Traccar connects over the supported team API URL.
 7. Confirm Discovery offline tiles read from the private MBTiles package if it
    is available on the Ubuntu machine.
-8. Confirm diagnostics export is sanitized.
-9. Retest the Saturday breadcrumb scenario and the separate DON-151 launch /
+8. Confirm an undecryptable stored Traccar secret does not block startup:
+   normal shell appears, tracking is disabled with a clear warning, and Settings
+   can be opened to re-enter the password/token.
+9. Confirm diagnostics export is sanitized.
+10. Retest the Saturday breadcrumb scenario and the separate DON-151 launch /
    panning slowdown if the needed tracking history/test data is available.
 
 ## Current Ubuntu Release-Asset Smoke

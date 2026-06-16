@@ -27,6 +27,9 @@ describe('project verification scripts', () => {
     expect(manifest.scripts?.['electron:smoke:official-offline']).toBe(
       'node scripts/electron-official-map-offline-smoke.mjs',
     )
+    expect(manifest.scripts?.['electron:smoke:bad-secret']).toBe(
+      'node scripts/electron-bad-secret-smoke.mjs',
+    )
   })
 
   it('forces Electron packaged native dependencies to rebuild from source', () => {

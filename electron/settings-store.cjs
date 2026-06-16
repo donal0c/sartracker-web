@@ -8,6 +8,8 @@ const SETTINGS_FILE_NAME = 'settings.json'
 const SECRETS_FILE_NAME = 'secrets.json'
 const UNSAFE_SECRET_MESSAGE =
   'Electron cannot store Traccar secrets safely on this Linux desktop because safeStorage selected the basic_text backend. Install or unlock a supported desktop secret service, then try again.'
+const UNDECRYPTABLE_SECRET_MESSAGE =
+  'Stored Traccar credentials could not be decrypted. Re-enter the password or token in Settings.'
 
 const DEFAULT_APP_SETTINGS = Object.freeze({
   missionDefaults: Object.freeze({
@@ -193,8 +195,12 @@ function createElectronSettingsStore(options) {
       return { value: null, unsafeReason: status.message }
     }
 
-    return {
-      value: safeStorage.decryptString(Buffer.from(encrypted, 'base64')),
+    try {
+      return {
+        value: safeStorage.decryptString(Buffer.from(encrypted, 'base64')),
+      }
+    } catch {
+      return { value: null, unsafeReason: UNDECRYPTABLE_SECRET_MESSAGE }
     }
   }
 

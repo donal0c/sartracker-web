@@ -75,6 +75,82 @@ describe('runtime-managed-services', () => {
     expect(createTrackingCache).not.toHaveBeenCalled()
   })
 
+  it('does not fall back to environment tracking config when bootstrap disables tracking', async () => {
+    const startTrackingRuntime = vi.fn().mockResolvedValue(vi.fn())
+    const readTrackingRuntimeConfig = vi.fn().mockReturnValue({
+      baseUrl: 'https://env-traccar.example.com',
+      email: 'env@example.com',
+      password: 'env-secret',
+    })
+
+    await createManagedRuntimeServices({
+      runtimeSettings: {
+        ...BASE_SETTINGS,
+        trackingConfig: null,
+        trackingDisabledReason: 'Stored Traccar credentials could not be decrypted.',
+      },
+      missionStore: createMissionStoreStub(),
+      startMissionAutosave: vi.fn().mockReturnValue({
+        stop: vi.fn(),
+        requestSync: vi.fn().mockResolvedValue(undefined),
+      }),
+      startTrackingRuntime,
+      createClient: vi.fn().mockReturnValue({}),
+      createPoller: vi.fn(),
+      createTrackingCache: vi.fn().mockReturnValue({
+        read: vi.fn().mockResolvedValue(null),
+        write: vi.fn().mockResolvedValue('/tmp/tracking-cache.json'),
+      }),
+      applySnapshot: vi.fn(),
+      applyStatus: vi.fn(),
+      readTrackingRuntimeConfig,
+    })
+
+    expect(readTrackingRuntimeConfig).not.toHaveBeenCalled()
+    expect(startTrackingRuntime).toHaveBeenCalledWith(
+      expect.objectContaining({
+        config: null,
+        idleWarning: 'Stored Traccar credentials could not be decrypted.',
+      }),
+    )
+  })
+
+  it('uses environment tracking config only when bootstrap omits the config field', async () => {
+    const startTrackingRuntime = vi.fn().mockResolvedValue(vi.fn())
+    const envConfig = {
+      baseUrl: 'https://env-traccar.example.com',
+      email: 'env@example.com',
+      password: 'env-secret',
+    }
+    const readTrackingRuntimeConfig = vi.fn().mockReturnValue(envConfig)
+    const runtimeSettings = { ...BASE_SETTINGS } as Record<string, unknown>
+    delete runtimeSettings.trackingConfig
+
+    await createManagedRuntimeServices({
+      runtimeSettings: runtimeSettings as unknown as RuntimeBootstrapSettings,
+      missionStore: createMissionStoreStub(),
+      startMissionAutosave: vi.fn().mockReturnValue({
+        stop: vi.fn(),
+        requestSync: vi.fn().mockResolvedValue(undefined),
+      }),
+      startTrackingRuntime,
+      createClient: vi.fn().mockReturnValue({}),
+      createPoller: vi.fn(),
+      createTrackingCache: vi.fn().mockReturnValue({
+        read: vi.fn().mockResolvedValue(null),
+        write: vi.fn().mockResolvedValue('/tmp/tracking-cache.json'),
+      }),
+      applySnapshot: vi.fn(),
+      applyStatus: vi.fn(),
+      readTrackingRuntimeConfig,
+    })
+
+    expect(readTrackingRuntimeConfig).toHaveBeenCalledTimes(1)
+    expect(startTrackingRuntime).toHaveBeenCalledWith(
+      expect.objectContaining({ config: envConfig }),
+    )
+  })
+
   it('stops both services through the shared lifecycle helpers', () => {
     const stopAutosave = vi.fn()
     const stopTracking = vi.fn()

@@ -56,6 +56,7 @@ const SMOKE_CHECKLIST = [
   'A new mission can be started.',
   'Mission persists after closing and reopening the app.',
   'Tracking settings can be opened and saved.',
+  'Packaged app starts with a corrupt/undecryptable stored Traccar secret and shows tracking disabled, not a startup fault.',
   'Diagnostics export/open works.',
 ]
 

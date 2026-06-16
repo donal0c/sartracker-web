@@ -124,9 +124,12 @@ export async function createManagedRuntimeServices(
       }
 
   try {
-    const trackingConfig =
-      dependencies.runtimeSettings.trackingConfig ??
-      dependencies.readTrackingRuntimeConfig()
+    const trackingConfig = Object.prototype.hasOwnProperty.call(
+      dependencies.runtimeSettings,
+      'trackingConfig',
+    )
+      ? dependencies.runtimeSettings.trackingConfig
+      : dependencies.readTrackingRuntimeConfig()
     const stopTrackingPoller = await dependencies.startTrackingRuntime({
       config: trackingConfig,
       createClient: dependencies.createClient,

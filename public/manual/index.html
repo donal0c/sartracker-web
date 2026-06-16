@@ -1087,6 +1087,12 @@
             operational use; record the fault message and capture diagnostics after the app becomes
             available again.
           </p>
+          <p>
+            On Linux desktops, a locked or changed login keyring can make stored Traccar credentials
+            unreadable. SAR Tracker should still open in that case, with tracking disabled and a warning to
+            re-enter the password or token in Settings. This protects the mission record while avoiding a
+            startup block caused only by the stored tracking secret.
+          </p>
           <figure class="screenshot">
             <img src="assets/diagnostics-workspace.png" alt="Diagnostics workspace showing summary, storage, tracking, and report" />
             <figcaption>Diagnostics in browser harness mode with tracking intentionally unconfigured.</figcaption>
