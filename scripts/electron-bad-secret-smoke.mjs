@@ -1,5 +1,16 @@
 #!/usr/bin/env node
 
+// Packaged-app smoke for the undecryptable-legacy-secret startup path.
+//
+// Seeds a throwaway userData with a beta.5-style keyring-encrypted
+// secrets.json whose ciphertext cannot be decrypted on this session (locked or
+// changed login keyring, copied profile state, stale ciphertext). Under the
+// DON-177 app-owned credential model this is the legacy-migration failure
+// case: migration cannot recover the secret, so the app must still reach the
+// normal shell, leave tracking disabled with a clear warning, and let the
+// operator re-enter the password/token in Settings. The legacy secrets.json is
+// never modified. This must remain a release-blocking gate.
+
 import { spawn } from 'node:child_process'
 import { mkdir, writeFile } from 'node:fs/promises'
 import net from 'node:net'

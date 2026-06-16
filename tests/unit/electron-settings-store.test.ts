@@ -1,4 +1,4 @@
-import { access, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { access, mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { createRequire } from 'node:module'
@@ -93,6 +93,75 @@ describe('electron settings store', () => {
     const rawSettings = await readFile(path.join(userDataPath!, 'settings.json'), 'utf8')
     expect(rawSettings).not.toContain('secretInput')
     expect(rawSettings).not.toContain('field-secret')
+    // DON-177: the secret lives in the app-owned local credential file, not
+    // settings.json and not the legacy keyring-encrypted secrets.json.
+    const rawCredentials = await readFile(path.join(userDataPath!, 'credentials.json'), 'utf8')
+    expect(rawCredentials).toContain('field-secret')
+    await expect(access(path.join(userDataPath!, 'secrets.json'))).rejects.toThrow()
+  })
+
+  it('persists the Traccar secret with restrictive file permissions where supported', async () => {
+    const store = await createStore({ backend: 'gnome_libsecret' })
+    const draft = createSettingsDraft(DEFAULT_APP_SETTINGS)
+    draft.dataSource.providerType = 'traccar_http'
+    draft.dataSource.baseUrl = 'https://kmrtsar.eu'
+    draft.dataSource.email = 'sean'
+    draft.dataSource.secretInput = 'field-secret'
+
+    await store.saveAppSettings(draft)
+
+    const stats = await stat(path.join(userDataPath!, 'credentials.json'))
+    // Best-effort 0600 on POSIX; never block startup if the platform cannot set it.
+    if (process.platform !== 'win32') {
+      expect(stats.mode & 0o777).toBe(0o600)
+    }
+  })
+
+  it('reads a saved local credential after a fresh store restart without any keyring', async () => {
+    const first = await createStore({ backend: 'gnome_libsecret' })
+    const draft = createSettingsDraft(DEFAULT_APP_SETTINGS)
+    draft.dataSource.providerType = 'traccar_http'
+    draft.dataSource.baseUrl = 'https://kmrtsar.eu'
+    draft.dataSource.email = 'sean'
+    draft.dataSource.secretInput = 'field-secret'
+    await first.saveAppSettings(draft)
+
+    // New store instance over the same userData, with a safeStorage that always
+    // throws — proves runtime no longer depends on the OS keyring once the local
+    // credential exists.
+    const second = createElectronSettingsStore({
+      userDataPath: userDataPath!,
+      safeStorage: createBrokenSafeStorage(),
+      platform: 'linux',
+    })
+    const runtime = await second.loadRuntimeBootstrapSettings(true)
+    expect(runtime.trackingConfig).toEqual({
+      baseUrl: 'https://kmrtsar.eu',
+      email: 'sean',
+      password: 'field-secret',
+    })
+  })
+
+  it('starts a fresh install with tracking disabled and a clear warning when no credential exists', async () => {
+    const store = await createStore({ backend: 'gnome_libsecret' })
+    await writeFile(
+      path.join(userDataPath!, 'settings.json'),
+      JSON.stringify({
+        dataSource: {
+          providerType: 'traccar_http',
+          baseUrl: 'https://kmrtsar.eu',
+          authMode: 'basic',
+          email: 'sean',
+          autoConnect: true,
+        },
+      }),
+      'utf8',
+    )
+
+    const runtime = await store.loadRuntimeBootstrapSettings(true)
+
+    expect(runtime.trackingConfig).toBeNull()
+    expect(runtime.trackingDisabledReason).toBe('A provider secret is required before tracking can start.')
   })
 
   it('normalizes bare-domain weather links before persistence', async () => {
@@ -309,32 +378,114 @@ describe('electron settings store', () => {
     expect(runtime.trackingDisabledReason).toBe('A provider secret is required before tracking can start.')
   })
 
-  it('refuses to persist a secret when Linux safeStorage falls back to basic_text', async () => {
+  it('persists a Traccar secret on Linux even when safeStorage would fall back to basic_text', async () => {
+    // DON-177: local app-owned credential storage no longer depends on the OS
+    // keyring, so a basic_text safeStorage backend must NOT block saving.
     const store = await createStore({ backend: 'basic_text', platform: 'linux' })
     const draft = createSettingsDraft(DEFAULT_APP_SETTINGS)
     draft.dataSource.providerType = 'traccar_http'
     draft.dataSource.baseUrl = 'https://kmrtsar.eu'
     draft.dataSource.email = 'sean'
-    draft.dataSource.secretInput = 'sean'
+    draft.dataSource.secretInput = 'field-secret'
 
-    await expect(store.saveAppSettings(draft)).rejects.toThrow(
-      'Electron cannot store Traccar secrets safely on this Linux desktop',
-    )
+    const saved = await store.saveAppSettings(draft)
+
+    expect(saved.dataSource.secretPresent).toBe(true)
+    const runtime = await store.loadRuntimeBootstrapSettings(true)
+    expect(runtime.trackingConfig).toMatchObject({ password: 'field-secret' })
   })
 
-  it('starts without tracking when a stored Electron secret cannot be decrypted', async () => {
-    const store = await createStore({
-      backend: 'gnome_libsecret',
-      decryptString: () => {
-        throw new Error('Error while decrypting the ciphertext provided to safeStorage.decryptString.')
-      },
+  it('clears the stored credential authoritatively so a legacy secrets.json cannot resurrect it', async () => {
+    // DON-177: Clear must persist an authoritative "no secret" state, otherwise
+    // the next boot would re-migrate from the still-present legacy secrets.json.
+    const store = await createStore({ backend: 'gnome_libsecret' })
+    await seedLegacySecret(userDataPath!, 'basic', 'legacy-secret')
+    // First boot migrates the legacy secret into the local credential file.
+    await writeFile(
+      path.join(userDataPath!, 'settings.json'),
+      JSON.stringify({
+        dataSource: {
+          providerType: 'traccar_http',
+          baseUrl: 'https://kmrtsar.eu',
+          authMode: 'basic',
+          email: 'sean',
+          autoConnect: true,
+        },
+      }),
+      'utf8',
+    )
+    const migrated = await store.loadRuntimeBootstrapSettings(true)
+    expect(migrated.trackingConfig).toMatchObject({ password: 'legacy-secret' })
+
+    const clearDraft = createSettingsDraft(await store.loadAppSettings())
+    clearDraft.dataSource.providerType = 'traccar_http'
+    clearDraft.dataSource.baseUrl = 'https://kmrtsar.eu'
+    clearDraft.dataSource.email = 'sean'
+    clearDraft.dataSource.clearSecret = true
+    const saved = await store.saveAppSettings(clearDraft)
+
+    expect(saved.dataSource.secretPresent).toBe(false)
+    const runtime = await store.loadRuntimeBootstrapSettings(true)
+    expect(runtime.trackingConfig).toBeNull()
+    expect(runtime.trackingDisabledReason).toBe('A provider secret is required before tracking can start.')
+  })
+
+  it('migrates a decryptable legacy secrets.json into the local credential file and leaves it intact', async () => {
+    const store = await createStore({ backend: 'gnome_libsecret' })
+    await seedLegacySecret(userDataPath!, 'basic', 'legacy-secret')
+    await writeFile(
+      path.join(userDataPath!, 'settings.json'),
+      JSON.stringify({
+        dataSource: {
+          providerType: 'traccar_http',
+          baseUrl: 'https://kmrtsar.eu',
+          authMode: 'basic',
+          email: 'sean',
+          autoConnect: true,
+        },
+      }),
+      'utf8',
+    )
+
+    const runtime = await store.loadRuntimeBootstrapSettings(true)
+
+    expect(runtime.trackingConfig).toEqual({
+      baseUrl: 'https://kmrtsar.eu',
+      email: 'sean',
+      password: 'legacy-secret',
     })
-    const draft = createSettingsDraft(DEFAULT_APP_SETTINGS)
-    draft.dataSource.providerType = 'traccar_http'
-    draft.dataSource.baseUrl = 'https://kmrtsar.eu'
-    draft.dataSource.email = 'sean'
-    draft.dataSource.secretInput = 'field-secret'
-    await store.saveAppSettings(draft)
+    // New local credential file now holds the secret...
+    const rawCredentials = await readFile(path.join(userDataPath!, 'credentials.json'), 'utf8')
+    expect(rawCredentials).toContain('legacy-secret')
+    // ...and the legacy secrets.json is left untouched (decision (a)).
+    await expect(access(path.join(userDataPath!, 'secrets.json'))).resolves.toBeUndefined()
+  })
+
+  it('starts without tracking when only an undecryptable legacy secrets.json exists', async () => {
+    const store = createElectronSettingsStore({
+      userDataPath: (userDataPath = await mkdtemp(path.join(tmpdir(), 'sartracker-electron-settings-'))),
+      safeStorage: createBrokenSafeStorage(),
+      platform: 'linux',
+    })
+    // Legacy ciphertext present but undecryptable on this session (locked/changed keyring).
+    await writeFile(
+      path.join(userDataPath, 'secrets.json'),
+      JSON.stringify({ basic: { encrypted: Buffer.from('stale-ciphertext', 'utf8').toString('base64') } }),
+      'utf8',
+    )
+    await writeFile(
+      path.join(userDataPath, 'settings.json'),
+      JSON.stringify({
+        dataSource: {
+          providerType: 'traccar_http',
+          baseUrl: 'https://kmrtsar.eu',
+          authMode: 'basic',
+          email: 'sean',
+          autoConnect: true,
+        },
+      }),
+      'utf8',
+    )
 
     const runtime = await store.loadRuntimeBootstrapSettings(true)
 
@@ -342,6 +493,32 @@ describe('electron settings store', () => {
     expect(runtime.trackingDisabledReason).toBe(
       'Stored Traccar credentials could not be decrypted. Re-enter the password or token in Settings.',
     )
+    // Migration must not delete or rewrite the legacy file (decision (a)).
+    await expect(access(path.join(userDataPath, 'secrets.json'))).resolves.toBeUndefined()
+  })
+
+  it('lets the operator re-enter a credential after an undecryptable legacy secret, without keyring', async () => {
+    const store = createElectronSettingsStore({
+      userDataPath: (userDataPath = await mkdtemp(path.join(tmpdir(), 'sartracker-electron-settings-'))),
+      safeStorage: createBrokenSafeStorage(),
+      platform: 'linux',
+    })
+    await writeFile(
+      path.join(userDataPath, 'secrets.json'),
+      JSON.stringify({ basic: { encrypted: Buffer.from('stale-ciphertext', 'utf8').toString('base64') } }),
+      'utf8',
+    )
+
+    const draft = createSettingsDraft(DEFAULT_APP_SETTINGS)
+    draft.dataSource.providerType = 'traccar_http'
+    draft.dataSource.baseUrl = 'https://kmrtsar.eu'
+    draft.dataSource.email = 'sean'
+    draft.dataSource.secretInput = 'replacement-secret'
+    const saved = await store.saveAppSettings(draft)
+
+    expect(saved.dataSource.secretPresent).toBe(true)
+    const runtime = await store.loadRuntimeBootstrapSettings(true)
+    expect(runtime.trackingConfig).toMatchObject({ password: 'replacement-secret' })
   })
 
   it('uses the encrypted secret from main when testing a connection without a new secret input', async () => {
@@ -432,4 +609,36 @@ function createMockSafeStorage(
     decryptString: decryptString ?? ((encrypted) =>
       encrypted.toString('utf8').replace(/^encrypted:/, '')),
   }
+}
+
+/**
+ * safeStorage stand-in whose decrypt always throws — models a locked/changed
+ * Linux login keyring or copied profile state, exactly the field failure mode.
+ */
+function createBrokenSafeStorage(): MockSafeStorage {
+  return {
+    isEncryptionAvailable: () => true,
+    getSelectedStorageBackend: () => 'gnome_libsecret',
+    encryptString: (plainText) => Buffer.from(`encrypted:${plainText}`, 'utf8'),
+    decryptString: () => {
+      throw new Error('Error while decrypting the ciphertext provided to safeStorage.decryptString.')
+    },
+  }
+}
+
+/**
+ * Writes a legacy beta.5-style secrets.json entry whose ciphertext decrypts
+ * under the default mock safeStorage (`encrypted:<value>` round-trip).
+ */
+async function seedLegacySecret(
+  targetUserDataPath: string,
+  authMode: 'basic' | 'bearer',
+  secret: string,
+): Promise<void> {
+  const encrypted = Buffer.from(`encrypted:${secret}`, 'utf8').toString('base64')
+  await writeFile(
+    path.join(targetUserDataPath, 'secrets.json'),
+    JSON.stringify({ [authMode]: { encrypted } }),
+    'utf8',
+  )
 }

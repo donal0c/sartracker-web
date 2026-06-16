@@ -5,9 +5,17 @@ const { createHash } = require('node:crypto')
 const Database = require('better-sqlite3')
 
 const SETTINGS_FILE_NAME = 'settings.json'
-const SECRETS_FILE_NAME = 'secrets.json'
-const UNSAFE_SECRET_MESSAGE =
-  'Electron cannot store Traccar secrets safely on this Linux desktop because safeStorage selected the basic_text backend. Install or unlock a supported desktop secret service, then try again.'
+// Legacy keyring-encrypted secret file (beta.5 and earlier). Read-only now:
+// kept for one-time migration into the app-owned local credential file, never
+// written or deleted by this store (DON-177 migration decision (a)).
+const LEGACY_SECRETS_FILE_NAME = 'secrets.json'
+// App-owned local credential file (DON-177). Plaintext on a trusted team
+// machine, written with best-effort 0600 permissions. Presence of an authMode
+// entry is authoritative: it suppresses legacy migration so clearing a secret
+// cannot be resurrected from an old secrets.json on the next boot.
+const CREDENTIALS_FILE_NAME = 'credentials.json'
+const CREDENTIALS_FILE_VERSION = 1
+const CREDENTIAL_FILE_MODE = 0o600
 const UNDECRYPTABLE_SECRET_MESSAGE =
   'Stored Traccar credentials could not be decrypted. Re-enter the password or token in Settings.'
 
@@ -58,7 +66,8 @@ const DEFAULT_APP_SETTINGS = Object.freeze({
 function createElectronSettingsStore(options) {
   const userDataPath = options.userDataPath
   const settingsPath = path.join(userDataPath, SETTINGS_FILE_NAME)
-  const secretsPath = path.join(userDataPath, SECRETS_FILE_NAME)
+  const legacySecretsPath = path.join(userDataPath, LEGACY_SECRETS_FILE_NAME)
+  const credentialsPath = path.join(userDataPath, CREDENTIALS_FILE_NAME)
   const safeStorage = options.safeStorage
   const fetchFn = options.fetchFn ?? fetch
   const platform = options.platform ?? process.platform
@@ -90,7 +99,6 @@ function createElectronSettingsStore(options) {
 
     await writeJsonAtomically(settingsPath, next)
     await updateSecrets(input.dataSource)
-    await removeInactiveSecret(next.dataSource.authMode)
     await removeDeletedAppOwnedOfficialMapPackages(previous.officialMaps.packages, next.officialMaps.packages, userDataPath)
 
     return toView(next, await hasSecret(next.dataSource.authMode))
@@ -159,7 +167,9 @@ function createElectronSettingsStore(options) {
   async function updateSecrets(dataSource) {
     const secretInput = readOptionalString(dataSource.secretInput).trim()
     if (dataSource.clearSecret) {
-      await deleteSecret(dataSource.authMode)
+      // Authoritative clear: persist an explicit "no secret" entry so a legacy
+      // secrets.json cannot resurrect the credential on the next boot.
+      await writeCredential(dataSource.authMode, null)
       return
     }
 
@@ -167,72 +177,78 @@ function createElectronSettingsStore(options) {
       return
     }
 
-    const status = getSecretStorageStatus()
-    if (!status.safe) {
-      throw new Error(status.message)
-    }
-
-    const encrypted = safeStorage.encryptString(secretInput).toString('base64')
-    const secrets = await readSecrets(secretsPath)
-    secrets[dataSource.authMode] = { encrypted }
-    await writeJsonAtomically(secretsPath, secrets)
+    await writeCredential(dataSource.authMode, secretInput)
   }
 
   async function hasSecret(authMode) {
-    const secrets = await readSecrets(secretsPath)
-    return secrets[authMode]?.encrypted !== undefined
+    const credentials = await readCredentials(credentialsPath)
+    const entry = credentials.traccar?.[authMode]
+    if (entry !== undefined) {
+      return typeof entry.secret === 'string' && entry.secret !== ''
+    }
+    // No app-owned entry yet: fall back to the legacy file's presence so the
+    // Settings "stored secret present" view is accurate before first migration.
+    const legacy = await readLegacySecrets()
+    return legacy[authMode]?.encrypted !== undefined
   }
 
   async function readSecret(authMode) {
-    const secrets = await readSecrets(secretsPath)
-    const encrypted = secrets[authMode]?.encrypted
+    const credentials = await readCredentials(credentialsPath)
+    const entry = credentials.traccar?.[authMode]
+    if (entry !== undefined) {
+      // App-owned entry is authoritative. An explicit null means the operator
+      // cleared the secret; do not migrate from the legacy file.
+      const secret = typeof entry.secret === 'string' && entry.secret !== '' ? entry.secret : null
+      return { value: secret }
+    }
+
+    return migrateLegacySecret(authMode)
+  }
+
+  /**
+   * One-time migration of a beta.5-style keyring-encrypted secret into the
+   * app-owned local credential file. The legacy secrets.json is never modified
+   * or deleted (DON-177 decision (a)).
+   */
+  async function migrateLegacySecret(authMode) {
+    const legacy = await readLegacySecrets()
+    const encrypted = legacy[authMode]?.encrypted
     if (encrypted === undefined) {
       return { value: null }
     }
 
-    const status = getSecretStorageStatus()
-    if (!status.safe) {
-      return { value: null, unsafeReason: status.message }
+    if (!safeStorage.isEncryptionAvailable()) {
+      return { value: null, unsafeReason: UNDECRYPTABLE_SECRET_MESSAGE }
     }
 
+    let decrypted
     try {
-      return {
-        value: safeStorage.decryptString(Buffer.from(encrypted, 'base64')),
-      }
+      decrypted = safeStorage.decryptString(Buffer.from(encrypted, 'base64'))
     } catch {
       return { value: null, unsafeReason: UNDECRYPTABLE_SECRET_MESSAGE }
     }
+
+    await writeCredential(authMode, decrypted)
+    return { value: decrypted }
   }
 
-  async function deleteSecret(authMode) {
-    const secrets = await readSecrets(secretsPath)
-    delete secrets[authMode]
-    await writeJsonAtomically(secretsPath, secrets)
+  async function readLegacySecrets() {
+    return readObject(await readJson(legacySecretsPath, {}))
   }
 
-  async function removeInactiveSecret(activeAuthMode) {
-    const inactiveAuthMode = activeAuthMode === 'basic' ? 'bearer' : 'basic'
-    await deleteSecret(inactiveAuthMode)
-  }
-
-  function getSecretStorageStatus() {
-    if (!safeStorage.isEncryptionAvailable()) {
-      return {
-        safe: false,
-        message: 'Electron cannot store Traccar secrets because OS encryption is unavailable.',
-      }
+  /**
+   * Writes the active authMode credential to the app-owned local file. A null
+   * secret persists an authoritative "cleared" entry. Other authMode entries
+   * are dropped so only one provider credential is ever stored at a time.
+   */
+  async function writeCredential(authMode, secret) {
+    const next = {
+      version: CREDENTIALS_FILE_VERSION,
+      traccar: {
+        [authMode]: { secret: typeof secret === 'string' ? secret : null },
+      },
     }
-
-    const backend =
-      typeof safeStorage.getSelectedStorageBackend === 'function'
-        ? safeStorage.getSelectedStorageBackend()
-        : ''
-
-    if (platform === 'linux' && (backend === 'basic_text' || backend === 'unknown')) {
-      return { safe: false, message: UNSAFE_SECRET_MESSAGE }
-    }
-
-    return { safe: true }
+    await writeJsonAtomically(credentialsPath, next, { mode: CREDENTIAL_FILE_MODE })
   }
 
   async function testTraccarConnection(dataSource, secret) {
@@ -306,9 +322,28 @@ async function readSettings(settingsPath) {
   }
 }
 
-async function readSecrets(secretsPath) {
-  const parsed = await readJson(secretsPath, {})
-  return readObject(parsed)
+/**
+ * Reads the app-owned local credential file. A missing or corrupt file must
+ * never block mission startup, so any read/parse failure degrades to an empty
+ * credential set (tracking is then disabled with a clear warning).
+ */
+async function readCredentials(credentialsPath) {
+  let raw
+  try {
+    raw = await fs.readFile(credentialsPath, 'utf8')
+  } catch (error) {
+    if (error?.code === 'ENOENT') {
+      return { version: CREDENTIALS_FILE_VERSION, traccar: {} }
+    }
+    throw error
+  }
+
+  try {
+    const parsed = readObject(JSON.parse(raw))
+    return { ...parsed, traccar: readObject(parsed.traccar) }
+  } catch {
+    return { version: CREDENTIALS_FILE_VERSION, traccar: {} }
+  }
 }
 
 async function readJson(filePath, fallback) {
@@ -322,10 +357,24 @@ async function readJson(filePath, fallback) {
   }
 }
 
-async function writeJsonAtomically(filePath, payload) {
+async function writeJsonAtomically(filePath, payload, options = {}) {
   await fs.mkdir(path.dirname(filePath), { recursive: true })
   const tempPath = `${filePath}.${process.pid}.${Date.now()}.tmp`
-  await fs.writeFile(tempPath, `${JSON.stringify(payload, null, 2)}\n`, 'utf8')
+  const writeOptions = { encoding: 'utf8' }
+  if (typeof options.mode === 'number') {
+    writeOptions.mode = options.mode
+  }
+  await fs.writeFile(tempPath, `${JSON.stringify(payload, null, 2)}\n`, writeOptions)
+  // Atomic rename preserves the temp file's mode; enforce it again in case the
+  // temp file pre-existed with a wider umask. Best-effort: a chmod failure must
+  // not block saving on platforms/filesystems that do not support POSIX modes.
+  if (typeof options.mode === 'number') {
+    try {
+      await fs.chmod(tempPath, options.mode)
+    } catch {
+      // ignore — permission hardening is best-effort (see DON-177 scope)
+    }
+  }
   await fs.rename(tempPath, filePath)
 }
 
@@ -869,6 +918,5 @@ function readOptionalString(input) {
 }
 
 module.exports = {
-  UNSAFE_SECRET_MESSAGE,
   createElectronSettingsStore,
 }

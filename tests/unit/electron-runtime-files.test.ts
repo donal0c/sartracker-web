@@ -102,6 +102,7 @@ describe('electron runtime files', () => {
     expect(report).toContain('electron: 40.10.0')
     expect(report).toContain('chrome: 144.0.7559.236')
     expect(report).toContain('safeStorage backend: gnome_libsecret')
+    expect(report).toContain('credential storage: local-file')
     expect(report).toContain('provider url: https://kmrtsar.eu')
     expect(report).toContain('secret present: yes')
     expect(report).toContain('official maps: configured')

@@ -132,6 +132,7 @@ function buildElectronDiagnosticsReport(input) {
     `os release: ${os.release()}`,
     `userData path: ${input.userDataPath}`,
     `safeStorage backend: ${input.safeStorageBackend}`,
+    `credential storage: local-file`,
     `provider url: ${input.settings.dataSource.baseUrl || 'not configured'}`,
     `auth mode: ${input.settings.dataSource.authMode}`,
     `secret present: ${input.settings.dataSource.secretPresent ? 'yes' : 'no'}`,
