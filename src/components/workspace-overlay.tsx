@@ -102,6 +102,25 @@ export function WorkspaceOverlay({
     return () => cancelAnimationFrame(focusFrame)
   }, [mounted, docked])
 
+  // Docked mode does not trap focus, so the operator can click the map or
+  // mission rail and move focus out of the panel. Listen for Escape at the
+  // document level so Esc still closes Review regardless of where focus is
+  // (DON-176). Modal mode keeps its panel-scoped handler (focus is trapped).
+  useEffect(() => {
+    if (!mounted || !docked) {
+      return
+    }
+
+    const onDocumentKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault()
+        onClose()
+      }
+    }
+    document.addEventListener('keydown', onDocumentKeyDown)
+    return () => document.removeEventListener('keydown', onDocumentKeyDown)
+  }, [mounted, docked, onClose])
+
   function handleKeyDown(event: ReactKeyboardEvent<HTMLDivElement>): void {
     if (event.key === 'Escape') {
       event.preventDefault()

@@ -77,6 +77,12 @@ test.describe('M15 mission review workspace', () => {
 
     // Review is still open the whole time.
     await expect(page.getByTestId('mission-review-workspace')).toBeVisible()
+
+    // Esc must still close docked Review even though focus has left the panel
+    // (the map click above moved focus out). Docked mode is non-modal, so this
+    // relies on a document-level Escape handler, not a panel-scoped one.
+    await page.keyboard.press('Escape')
+    await expect(page.getByTestId('mission-review-workspace')).toBeHidden()
   })
 
   test('hides tracking telemetry from the audit log by default and reveals it on toggle', async ({
