@@ -11,17 +11,16 @@
 For the immediate team handoff, the last **published** Electron prerelease is:
 
 ```text
-https://github.com/donal0c/sartracker-web/releases/tag/electron-v0.1.0-beta.5
+https://github.com/donal0c/sartracker-web/releases/tag/electron-v0.1.0-beta.7
 ```
 
-The next candidate is `electron-v0.1.0-beta.7` (DON-177 app-owned local
-credential storage + DON-176 docked Review + the DON-175 keyring guard). It has
-been built by GitHub Actions and fully deep-smoke-tested on the Ubuntu machine
-(see "Latest Ubuntu Release-Asset Smoke" below) — all release-blocking gates
-passed. Its GitHub prerelease remains a **draft, held pending explicit promotion
-approval**; do not share the beta.7 URL until it is published. beta.7 supersedes
-the unpublished `electron-v0.1.0-beta.6` (DON-175-only hotfix), whose draft was
-deleted — there is no need to install beta.6.
+`electron-v0.1.0-beta.7` (DON-177 app-owned local credential storage + DON-176
+docked Review + the DON-175 keyring guard) was **published on 2026-06-16** after
+GitHub Actions run `27601812958` and the full deep Ubuntu on-device smoke both
+passed (see "Latest Ubuntu Release-Asset Smoke" below). It supersedes
+`electron-v0.1.0-beta.5` as the current team artifact. beta.7 also supersedes the
+unpublished `electron-v0.1.0-beta.6` (DON-175-only hotfix), whose draft + tag
+were deleted — there is no need to install beta.6.
 
 The published beta.4 prerelease was the first release produced by the Electron-specific GitHub
 Actions path from `DON-143`. The workflow builds Linux artifacts, checks that
@@ -132,8 +131,8 @@ artifact, not only local source:
 ## Latest Ubuntu Release-Asset Smoke (beta.7 — local credential storage + docked Review)
 
 `electron-v0.1.0-beta.7` (DON-177 app-owned local credential storage, DON-176
-docked Review, DON-175 keyring guard) is built and deep-smoked but **NOT yet
-promoted** — the draft GitHub prerelease is held pending promotion approval.
+docked Review, DON-175 keyring guard) is built, deep-smoked, and **published**
+(2026-06-16) — the current team prerelease.
 
 - CI: `.github/workflows/electron-release.yml` run `27601812958` — success.
 - Artifact: `sartracker-electron-validation_0.1.0-beta.7_linux_x86_64.AppImage`,

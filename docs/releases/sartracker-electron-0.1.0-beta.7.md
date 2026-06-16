@@ -11,7 +11,8 @@
 - **Linear reference:** DON-177 (app-owned local credential storage), DON-176 (docked Review), DON-175 (keyring startup guard — first shipped to the team in this beta)
 - **Verification report:** to be filled after the GitHub Actions release run + Ubuntu on-device smoke
 - **CI run:** to be filled after `electron-release.yml` run completes
-- **GitHub release:** draft prerelease at `electron-v0.1.0-beta.7` (Linux AppImage + `.deb` + `SHA256SUMS`) — held until the deep Ubuntu packaged smoke passes on the CI-built artifact and Donal approves promotion
+- **CI run:** `electron-release.yml` run `27601812958` — success
+- **GitHub release:** **Published** prerelease at `https://github.com/donal0c/sartracker-web/releases/tag/electron-v0.1.0-beta.7` (Linux AppImage + `.deb` + `SHA256SUMS`) on 2026-06-16 after the deep Ubuntu packaged smoke passed and Donal approved promotion
 
 ## Supersedes beta.6
 
@@ -160,6 +161,30 @@ have:
 
 ## Publication State
 
-Draft prerelease, not yet published. Promotion to a shared team prerelease is
-held until the deep Ubuntu packaged smoke passes on the CI-built artifact and
-Donal approves promotion.
+**Published** as a prerelease on 2026-06-16 after CI run `27601812958` and the
+deep Ubuntu packaged smoke both passed, and Donal approved promotion. This is
+now the current team artifact, superseding `electron-v0.1.0-beta.5`.
+
+### Ubuntu deep smoke (2026-06-16)
+
+CI-built AppImage (SHA256 `848eb06321536c76f831a4e566450be82695f4d3b6c8336fce3fbcb4926ca4a7`,
+`sha256sum -c` OK) on Ubuntu 24.04.2 / kernel 6.14, real Wayland, driven via
+Playwright over CDP against the real SQLite backend. App version
+`0.1.0-beta.7+run.7.sha.396c3c2`, Electron 40.10.0, schema v3. All gates passed:
+
+1. Core lifecycle: launch, mission start, marker, full restart → recovery →
+   resume, finish, finalize, standalone archive in `userData/archives`.
+2. Out-of-Ireland coordinate rejected; diagnostics sanitized
+   (`secret present: no`, `credential storage: local-file`, no credential leak).
+3. DON-177 credential matrix (3/3): fresh → tracking disabled, no startup fault;
+   saved app-owned credential survives a restart with a broken/locked keyring;
+   migrated credential read, legacy `secrets.json` left untouched.
+4. Undecryptable-legacy bad-secret (release-blocking): normal shell, no fault,
+   re-enter warning, Settings recovery.
+5. Live Traccar — real same-machine keyring migration: "Connection successful.",
+   online 33 devices / 8 fixes; throwaway profile only, real mission DB untouched.
+6. DON-176 docked Review (6/6): no backdrop, read-only note, Pause/Finish and the
+   map operable while Review is open, Esc closes.
+
+Evidence on the Ubuntu box:
+`~/sartracker-beta7-smoke/{evidence,evidence2,evidence-bad-secret,evidence-credentials,evidence-tracking,evidence-review2,SMOKE-SUMMARY.md}`.
