@@ -110,13 +110,24 @@ DON-144 partial independent progress — beta wrong-file guardrail:
 
 DONE: `electron-v0.1.0-beta.7` **published** to the team on 2026-06-16 (run `27601812958`, deep Ubuntu smoke green) — DON-177 local credential storage + DON-176 docked Review + DON-175 keyring guard. Current team artifact, supersedes beta.5. beta.6 (DON-175-only) was never published; its draft + tag were deleted.
 
-Next field-retest asks for beta.7 (team): confirm a saved Traccar credential reconnects after restart with no keyring prompt; confirm an upgrade from an older beta keeps tracking working (migration); confirm Review no longer blocks Pause/Finish during an active mission. Plus the still-outstanding beta.5 items below.
+Next field-retest asks for beta.7 (team) — new beta.7 behaviour:
+1. **DON-177** — a saved Traccar credential reconnects after a full restart with no keyring prompt, on the machine that originally showed the locked-keyring failure.
+2. **DON-177 migration** — upgrading in place from an older beta (existing `secrets.json`) keeps tracking working on first launch.
+3. **DON-176** — opening Review during an active mission no longer blocks map tools / Pause / Finish.
+
+Also retest on beta.7 to close long-standing In-Review fixes that shipped in earlier betas but never had a confirmed team field retest (all carried unchanged into beta.7; not re-smoked this round):
+4. **DON-159** — Saturday multi-device breadcrumb scenario: full per-device routes render (no global truncation).
+5. **DON-151** — launch / map-panning is responsive after large tracking history has accumulated.
+6. **DON-165** — no per-poll slowdown as retained breadcrumb history grows during a long mission.
+7. **DON-161/162/163/164** (B1 persistence parity, shipped beta.5) — finalized-mission deletes are refused, finalize writes a real standalone archive, and marker/drawing/helicopter/GPX edits + device first-contact appear in the Review audit feed.
+
+If 4–7 retest clean on beta.7, close DON-159 / DON-151 / DON-165 and the DON-160 B1 children. Still needs specific data: the private MBTiles offline-map read (package not on the smoke box).
 
 DONE: `electron-v0.1.0-beta.5` cut, built green by `.github/workflows/electron-release.yml` (run `27570596320`), Ubuntu 24.04.2 on-device release-asset smoke passed (launch, mission start, marker create, restart persistence/recovery, finish→finalize, standalone archive in `userData/archives`, out-of-Ireland coordinate rejection, sanitized diagnostics), and **published** to GitHub. Smoke ran against the CI-built AppImage with the real SQLite backend and renderer network blocked; evidence on the box at `~/sartracker-beta5-smoke/evidence{,2}/`.
 
 Live Traccar ALSO confirmed on beta.5: connection test "Connection successful." against `https://kmrtsar.eu` and tracking online with **33 real devices / 7 fixes**, using the operator's locally-persisted provider config. Server URL/user live in `~/.config/sartracker-web/settings.json`; the basic-auth password is an encrypted blob in `secrets.json` (gnome_libsecret). The live run seeded a throwaway userData with copies of those two files (same machine → same keyring decrypts) and did NOT block network or touch the real mission DB. Evidence: `~/sartracker-beta5-smoke/evidence-tracking/`.
 
-Still not retested on beta.5 (need specific data): Discovery offline tile read with the private MBTiles package, the Saturday multi-device breadcrumb scenario, and the DON-151 launch/panning slowdown after history accumulates. Fold into the next on-device session when the private package / tracking history is available. DON-159/DON-151/DON-160 stay In Review pending that team field retest.
+(Superseded by the beta.7 retest asks above — DON-159/DON-151/DON-165/DON-160-children stay In Review pending that team field retest; the private-MBTiles offline-map read still needs the package on a test box.)
 
 Next: continue `DON-144` — choose the private Discovery package distribution owner/channel and lock the repeatable admin raw-source-to-package workflow.
 
