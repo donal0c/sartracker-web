@@ -13,6 +13,7 @@ import {
 import { getMissionReviewSelectionClassName } from '../features/mission-review/mission-review-selection-style'
 import { useMissionReviewStore } from '../features/mission-review/mission-review-store'
 import { useMissionReviewWorkspaceStore } from '../features/mission-review/mission-review-workspace-store'
+import { useMissionStore } from '../features/mission/mission-store'
 
 type ReviewTab = 'mission-details' | 'marker-log' | 'layer-console'
 
@@ -24,6 +25,12 @@ const MISSION_REVIEW_WORKSPACE_TITLE_ID = 'mission-review-workspace-title'
 export function MissionReviewWorkspace() {
   const open = useMissionReviewWorkspaceStore((state) => state.open)
   const closeWorkspace = useMissionReviewWorkspaceStore((state) => state.closeWorkspace)
+  const missionPhase = useMissionStore((state) => state.phase)
+  // While a mission is live, Review must not block the mission-control rail or
+  // map (DON-176): render it as a non-blocking docked, read-only panel. When
+  // there is no live mission (idle/recovery review), there are no live controls
+  // to protect, so it stays a full-screen modal review surface.
+  const docked = missionPhase === 'active' || missionPhase === 'paused'
   const controller = useMissionReviewStore((state) => state.controller)
   const missions = useMissionReviewStore((state) => state.missions)
   const selectedMissionId = useMissionReviewStore((state) => state.selectedMissionId)
@@ -85,7 +92,8 @@ export function MissionReviewWorkspace() {
       labelledBy={MISSION_REVIEW_WORKSPACE_TITLE_ID}
       open={open}
       onClose={closeWorkspace}
-      maxWidth="max-w-7xl"
+      maxWidth={docked ? 'max-w-xl' : 'max-w-7xl'}
+      docked={docked}
     >
       <WorkspaceHeader
         subtitle="Mission Review"
@@ -105,8 +113,29 @@ export function MissionReviewWorkspace() {
         }
       />
 
-      <div className="grid flex-1 overflow-hidden lg:grid-cols-[minmax(18rem,0.8fr)_minmax(0,2fr)]">
-          <aside className="border-r border-stone-800 px-5 py-5">
+      {docked ? (
+        <p
+          className="border-b border-amber-400/40 bg-amber-400/10 px-6 py-2 text-[12px] font-semibold text-amber-100"
+          data-testid="mission-review-docked-readonly-note"
+          role="status"
+        >
+          Review is read-only. Mission controls and the map stay live next to it — close Review or
+          press Esc to return full width.
+        </p>
+      ) : null}
+
+      <div
+        className={`grid flex-1 overflow-hidden ${
+          docked ? '' : 'lg:grid-cols-[minmax(18rem,0.8fr)_minmax(0,2fr)]'
+        }`}
+      >
+          {/*
+            Docked Review is scoped to the live mission, so the mission selector
+            is hidden to keep the narrow panel usable (DON-176). The runtime
+            auto-selects the active/paused mission. Full-screen modal Review
+            (no live mission) keeps the selector for cross-mission audit.
+          */}
+          <aside className={`border-r border-stone-800 px-5 py-5 ${docked ? 'hidden' : ''}`}>
             <div className="rounded-2xl border border-stone-800 bg-stone-900/30 p-4">
               <p className="text-[11px] font-bold uppercase tracking-wider text-stone-400">
                 Mission Selector
@@ -180,6 +209,7 @@ export function MissionReviewWorkspace() {
                 activeTab === 'mission-details' ? (
                   <MissionDetailsTab
                     auditLogTruncated={auditLogTruncated}
+                    compact={docked}
                     events={snapshot.eventRows}
                     includeTelemetry={includeTelemetry}
                     onOpenPath={(path) => void handleOpenPath(path)}
@@ -190,6 +220,7 @@ export function MissionReviewWorkspace() {
                   />
                 ) : activeTab === 'marker-log' ? (
                   <MarkerLogTab
+                    compact={docked}
                     markerQuery={markerQuery}
                     markerType={markerType}
                     markers={filteredMarkers}
@@ -241,6 +272,7 @@ function MissionDetailsTab(props: {
   readonly events: readonly MissionReviewEventRow[]
   readonly includeTelemetry: boolean
   readonly auditLogTruncated: boolean
+  readonly compact: boolean
   readonly onToggleTelemetry: (includeTelemetry: boolean) => void
   readonly onOpenPath: (path: string | null) => void
   readonly pathFeedback: string | null
@@ -248,7 +280,7 @@ function MissionDetailsTab(props: {
 }) {
   return (
     <div className="space-y-5">
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      <div className={`grid gap-3 ${props.compact ? 'grid-cols-2' : 'sm:grid-cols-2 xl:grid-cols-4'}`}>
         <SummaryCard label="Status" value={props.summary.missionStatus} />
         <SummaryCard label="Markers" value={String(props.summary.markerCount)} />
         <SummaryCard label="Devices" value={String(props.summary.trackingDeviceCount)} />
@@ -256,7 +288,7 @@ function MissionDetailsTab(props: {
         <SummaryCard label="GPX Imports" value={String(props.summary.gpxImportCount)} />
       </div>
 
-      <div className="grid gap-5 lg:grid-cols-[minmax(0,1.2fr)_minmax(22rem,0.8fr)]">
+      <div className={`grid gap-5 ${props.compact ? '' : 'lg:grid-cols-[minmax(0,1.2fr)_minmax(22rem,0.8fr)]'}`}>
         <section className="rounded-2xl border border-stone-800 bg-stone-900/30 p-5">
           <h3 className="text-[11px] font-bold uppercase tracking-wider text-stone-400">
             Mission Details
@@ -361,6 +393,7 @@ function MarkerLogTab(props: {
   readonly selectedMarker: MissionReviewMarkerRow | null
   readonly markerQuery: string
   readonly markerType: 'all' | 'ipp_lkp' | 'clue' | 'hazard' | 'casualty'
+  readonly compact: boolean
   readonly onMarkerQueryChange: (value: string) => void
   readonly onMarkerTypeChange: (value: 'all' | 'ipp_lkp' | 'clue' | 'hazard' | 'casualty') => void
   readonly onSelectMarker: (markerId: string) => void
@@ -370,7 +403,7 @@ function MarkerLogTab(props: {
   const selectedMarker = props.selectedMarker
 
   return (
-    <div className="grid gap-5 lg:grid-cols-[minmax(0,1.2fr)_minmax(22rem,0.8fr)]">
+    <div className={`grid gap-5 ${props.compact ? '' : 'lg:grid-cols-[minmax(0,1.2fr)_minmax(22rem,0.8fr)]'}`}>
       <section className="rounded-2xl border border-stone-800 bg-stone-900/30 p-5">
         <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_10rem]">
           <input

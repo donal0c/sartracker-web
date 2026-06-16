@@ -18,21 +18,32 @@ type WorkspaceOverlayProps = {
   readonly maxWidth?: string
   /** Element id for the visible workspace title. */
   readonly labelledBy: string
+  /**
+   * Docked (non-blocking) mode. When true the workspace renders as a right-side
+   * panel that does NOT mount a full-screen dismiss backdrop and does NOT trap
+   * focus, so controls underneath (e.g. the active-mission rail and the map)
+   * stay operable while it is open (DON-176). The panel is non-modal in this
+   * mode. Defaults to false (full-screen modal) for Settings/Diagnostics/Devices.
+   */
+  readonly docked?: boolean
   /** Content rendered inside the sliding panel. */
   readonly children: ReactNode
 }
 
 /**
- * Shared workspace overlay with slide-in/out animation, backdrop dismiss, and Esc key support.
+ * Shared workspace overlay with slide-in/out animation and Esc key support.
  *
- * All workspace panels (Settings, Diagnostics, Devices, Mission Review) use this wrapper
- * for consistent entry/exit transitions and close affordance.
+ * All workspace panels (Settings, Diagnostics, Devices, Mission Review) use this
+ * wrapper for consistent entry/exit transitions and close affordance. By default
+ * it is a focus-trapping modal with a backdrop. In `docked` mode it becomes a
+ * non-blocking side panel (see {@link WorkspaceOverlayProps.docked}).
  */
 export function WorkspaceOverlay({
   open,
   onClose,
   maxWidth = 'max-w-4xl',
   labelledBy,
+  docked = false,
   children,
 }: WorkspaceOverlayProps) {
   const [mounted, setMounted] = useState(false)
@@ -81,13 +92,15 @@ export function WorkspaceOverlay({
 
   useEffect(() => {
     const panel = panelRef.current
-    if (!mounted || panel === null) {
+    // Docked mode is non-modal: do not steal focus from the operator's current
+    // control (e.g. the active-mission rail) when the panel opens (DON-176).
+    if (!mounted || panel === null || docked) {
       return
     }
 
     const focusFrame = requestAnimationFrame(() => focusFirstElement(panel))
     return () => cancelAnimationFrame(focusFrame)
-  }, [mounted])
+  }, [mounted, docked])
 
   function handleKeyDown(event: ReactKeyboardEvent<HTMLDivElement>): void {
     if (event.key === 'Escape') {
@@ -96,13 +109,47 @@ export function WorkspaceOverlay({
       return
     }
 
-    if (panelRef.current !== null) {
+    // Docked mode is non-modal: never trap Tab, or the operator could not move
+    // keyboard focus back to the active-mission controls (DON-176).
+    if (!docked && panelRef.current !== null) {
       trapTabKey(event.nativeEvent, panelRef.current)
     }
   }
 
   if (!mounted) {
     return null
+  }
+
+  // Docked mode: the container must not capture pointer events outside the
+  // panel, so the active-mission rail and map underneath stay clickable. There
+  // is no dismiss backdrop and no focus trap; Esc and the header close button
+  // remain the close affordances.
+  if (docked) {
+    return (
+      <div
+        className="pointer-events-none fixed inset-0 z-30 flex"
+        onTransitionEnd={handleTransitionEnd}
+      >
+        {/*
+          Docked panel is left-aligned over the map so it never covers the
+          right-hand operational sidebar where Pause/Finish live (DON-176). A
+          fixed, modest width keeps a usable map band clear to its right. It
+          slides in from the left edge.
+        */}
+        <div
+          aria-labelledby={labelledBy}
+          className={`sar-sidebar pointer-events-auto mr-auto flex h-full w-full ${maxWidth} flex-col border-r border-[var(--sar-line)] shadow-2xl transition-transform duration-250 ${
+            visible ? 'translate-x-0 ease-out' : '-translate-x-full ease-in'
+          }`}
+          onKeyDown={handleKeyDown}
+          ref={panelRef}
+          role="dialog"
+          tabIndex={-1}
+        >
+          {children}
+        </div>
+      </div>
+    )
   }
 
   return (

@@ -49,6 +49,36 @@ test.describe('M15 mission review workspace', () => {
     expect(openedPaths.some((path) => path.endsWith('.zip'))).toBe(true)
   })
 
+  test('DON-176: Review is docked and leaves active-mission controls operable', async ({ page }) => {
+    // Open Review while a mission is active. The docked workspace must NOT cover
+    // or intercept the mission-control rail or the map underneath.
+    await page.getByTestId('open-mission-review-workspace').click()
+    await expect(page.getByTestId('mission-review-workspace')).toBeVisible()
+
+    // No full-screen "Close workspace" backdrop should be intercepting clicks.
+    await expect(page.getByRole('button', { name: 'Close workspace' })).toHaveCount(0)
+
+    // The docked review surface is explicitly marked read-only for operators.
+    await expect(page.getByTestId('mission-review-docked-readonly-note')).toBeVisible()
+
+    // Critical active-mission controls remain operable WITHOUT closing Review.
+    await expect(page.getByTestId('mission-pause-resume-btn')).toBeEnabled()
+    await page.getByTestId('mission-pause-resume-btn').click()
+    await expect(page.getByTestId('mission-control')).toContainText('paused')
+    await page.getByTestId('mission-pause-resume-btn').click()
+    await expect(page.getByTestId('mission-control')).toContainText('active')
+
+    // The map remains clickable (marker dialog opens) while Review stays open.
+    // Click in the clear map band to the right of the docked panel and left of
+    // the operational sidebar.
+    await page.getByTestId('map-container').click({ position: { x: 720, y: 300 } })
+    await expect(page.getByTestId('marker-dialog')).toBeVisible()
+    await page.getByTestId('marker-dialog').getByRole('button', { name: 'Cancel' }).click()
+
+    // Review is still open the whole time.
+    await expect(page.getByTestId('mission-review-workspace')).toBeVisible()
+  })
+
   test('hides tracking telemetry from the audit log by default and reveals it on toggle', async ({
     page,
   }) => {
