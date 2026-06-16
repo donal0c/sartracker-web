@@ -1030,6 +1030,14 @@
             back to markers when a marker has valid coordinates.
           </p>
           <p>
+            When a mission is <strong>active or paused</strong>, Review opens as a docked, read-only panel
+            on the left of the map instead of a full-screen window. The mission-control rail (Pause, Finish)
+            and the map stay live and usable next to it, so reviewing the audit history never blocks
+            operating the incident. A note at the top of the panel confirms it is read-only. Close Review or
+            press <strong>Esc</strong> to return the map to full width. When there is no active mission,
+            Review opens full-screen with the mission selector for cross-mission audit.
+          </p>
+          <p>
             The Audit Log shows operator-meaningful events by default — mission lifecycle changes, marker
             and drawing edits, GPX imports, and governance actions. High-volume tracking telemetry (device
             and position heartbeats, which can number in the tens of thousands on a multi-day mission) is
@@ -1088,10 +1096,21 @@
             available again.
           </p>
           <p>
-            On Linux desktops, a locked or changed login keyring can make stored Traccar credentials
-            unreadable. SAR Tracker should still open in that case, with tracking disabled and a warning to
-            re-enter the password or token in Settings. This protects the mission record while avoiding a
-            startup block caused only by the stored tracking secret.
+            SAR Tracker stores the Traccar password or token in an app-owned credential file in its own
+            data folder, not in the operating-system keyring. This keeps tracking startup predictable on
+            trusted team machines: the app does not depend on the Linux login keyring being unlocked to
+            connect to devices. The credential value is never written to the settings file, diagnostics, or
+            support bundles &mdash; diagnostics only report whether a secret is present and that credential
+            storage is the local file.
+          </p>
+          <p>
+            On first launch after upgrading from an older beta, an existing keyring-encrypted credential is
+            migrated automatically into the new local credential file when it can still be read. If an older
+            stored credential cannot be read (for example a login keyring that was locked or changed on a
+            previous version), SAR Tracker still opens normally with tracking disabled and a warning to
+            re-enter the password or token in Settings. You can re-enter or clear the Traccar credential at
+            any time from Settings without touching any files. This protects the mission record while
+            avoiding a startup block caused only by the stored tracking secret.
           </p>
           <figure class="screenshot">
             <img src="assets/diagnostics-workspace.png" alt="Diagnostics workspace showing summary, storage, tracking, and report" />
