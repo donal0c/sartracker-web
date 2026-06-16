@@ -8,15 +8,18 @@
 
 ## Current Answer
 
-For the immediate team handoff, the last published Electron prerelease is:
+For the immediate team handoff, the last **published** Electron prerelease is:
 
 ```text
-https://github.com/donal0c/sartracker-web/releases/tag/electron-v0.1.0-beta.4
+https://github.com/donal0c/sartracker-web/releases/tag/electron-v0.1.0-beta.5
 ```
 
-The next candidate is `electron-v0.1.0-beta.5`. It must be built by GitHub
-Actions, smoke-tested on the Ubuntu machine, and only then shared with the
-team.
+The next candidate is `electron-v0.1.0-beta.6` (DON-175 Linux keyring/startup
+hotfix). It has been built by GitHub Actions and fully smoke-tested on the
+Ubuntu machine (see "Latest Ubuntu Release-Asset Smoke" below) — all
+release-blocking gates passed. Its GitHub prerelease remains a **draft, held
+pending explicit promotion approval**; do not share the beta.6 URL until it is
+published.
 
 The published beta.4 prerelease was the first release produced by the Electron-specific GitHub
 Actions path from `DON-143`. The workflow builds Linux artifacts, checks that
@@ -124,7 +127,45 @@ artifact, not only local source:
 10. Retest the Saturday breadcrumb scenario and the separate DON-151 launch /
    panning slowdown if the needed tracking history/test data is available.
 
-## Current Ubuntu Release-Asset Smoke
+## Latest Ubuntu Release-Asset Smoke (beta.6 — DON-175 keyring hotfix)
+
+`electron-v0.1.0-beta.6` is the keyring/startup hotfix candidate for DON-175.
+It is **built and fully smoked but NOT yet promoted** — the draft GitHub
+prerelease is held pending explicit promotion approval.
+
+- CI: `.github/workflows/electron-release.yml` run `27596864861` — success.
+- Artifact: `sartracker-electron-validation_0.1.0-beta.6_linux_x86_64.AppImage`,
+  SHA256 `555e1a6c5d78da4b88c432c477d6c4382d0bf5ed29dea5c43cf41c48f22b2656`,
+  `sha256sum -c` => OK. App version `0.1.0-beta.6+run.5.sha.ab6545e`,
+  Electron 40.10.0, schema v3. Ubuntu 24.04.2 / kernel 6.14, real Wayland.
+
+All release-blocking gates passed against the CI-built artifact:
+
+1. **Bad stored-secret / keyring gate (the path beta.5 missed): PASS.** Throwaway
+   userData seeded with undecryptable Traccar ciphertext, network blocked — app
+   reached the normal shell, no runtime fault shell, the warning "Stored Traccar
+   credentials could not be decrypted. Re-enter the password or token in
+   Settings." was shown, tracking stayed idle, and Settings accepted a
+   replacement secret.
+2. Core lifecycle (fresh userData, network blocked): launch, mission start,
+   marker, full restart → recovery dialog → resume, finish → finalize, standalone
+   archive (4987 bytes) under `userData/archives`. No write to real
+   `~/.config/sartracker-web`.
+3. Out-of-Ireland DD coordinate flagged "Coordinate outside Ireland".
+4. Diagnostics export sanitized: `secret present: no`, provider not configured,
+   no credential/token/Authorization leakage.
+5. Live Traccar (network not blocked, same-machine keyring): "Connection
+   successful.", tracking online with 33 devices / 8 fixes.
+
+Known issue carried into beta.6 (documented Known Limitation, NOT a DON-175
+regression): **DON-176** — opening Mission Review during an active mission blocks
+map tools / Finish until Review is closed (full-screen `WorkspaceOverlay`
+backdrop intercepts clicks). Characterized in the same smoke session.
+
+Evidence on the box:
+`~/sartracker-beta6-smoke/{evidence,evidence2,evidence-bad-secret,evidence-tracking,evidence-review,SMOKE-SUMMARY.md}`.
+
+## Previous Ubuntu Release-Asset Smoke (beta.4)
 
 `electron-v0.1.0-beta.4` has been checked on the Ubuntu machine with the
 CI-built AppImage:
