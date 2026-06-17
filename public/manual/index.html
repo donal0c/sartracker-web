@@ -345,6 +345,7 @@
           <a href="#screen">Main Screen</a>
           <a href="#mission">Mission Control</a>
           <a href="#map">Map And Coordinates</a>
+          <a href="#official-maps">Official Maps</a>
           <a href="#tracking">Tracking And Devices</a>
           <a href="#layers">Layers</a>
           <a href="#markers">Markers</a>
@@ -369,10 +370,10 @@
               review.
             </p>
             <div class="meta-grid">
-              <div class="card"><span class="kpi">Verified</span><span class="kpi-value">12 May 2026</span></div>
-              <div class="card"><span class="kpi">Branch</span><span class="kpi-value">feat/ui-ux-audit-critical</span></div>
-              <div class="card"><span class="kpi">Runtime Checked</span><span class="kpi-value">Browser harness</span></div>
-              <div class="card"><span class="kpi">Desktop Shell</span><span class="kpi-value">Electron</span></div>
+              <div class="card"><span class="kpi">Verified</span><span class="kpi-value">17 June 2026</span></div>
+              <div class="card"><span class="kpi">Branch</span><span class="kpi-value">master</span></div>
+              <div class="card"><span class="kpi">Runtime Checked</span><span class="kpi-value">Browser harness + source audit</span></div>
+              <div class="card"><span class="kpi">Desktop Shell</span><span class="kpi-value">Electron beta lane</span></div>
             </div>
           </div>
         </section>
@@ -486,9 +487,9 @@
 
           <h3>Linux (primary distribution target)</h3>
           <p>
-            Two artifacts are published per Linux beta: a portable
-            <code>.AppImage</code> and a Debian <code>.deb</code> package, both x86_64. The beta.4 artifacts
-            are named <code>sartracker-electron-validation_&lt;version&gt;_linux_x86_64.AppImage</code> and
+            Two artifacts are published per CI Linux beta: a portable
+            <code>.AppImage</code> and a Debian <code>.deb</code> package, both x86_64. Current Electron beta
+            artifacts are named <code>sartracker-electron-validation_&lt;version&gt;_linux_x86_64.AppImage</code> and
             <code>sartracker-electron-validation_&lt;version&gt;_linux_amd64.deb</code>.
           </p>
           <p>
@@ -506,15 +507,19 @@
             runtime dependencies are pulled in automatically.
           </p>
           <p>
-            On minimal Linux setups without GNOME Keyring or KDE Wallet, the app cannot save Traccar
-            credentials to a system keyring. Install <code>gnome-keyring</code> or <code>kwalletmanager</code>
-            and log out / log in before configuring tracking.
+            Current Electron betas store Traccar passwords or tokens in SAR Tracker's app-owned local
+            credential file, not the operating-system keyring. A locked or missing Linux login keyring
+            should not block app startup or tracking configuration. If tracking reports that no credential
+            is available, re-enter the password or token in Settings.
           </p>
 
           <h3>Windows (secondary distribution target)</h3>
           <p>
-            Beta releases publish a single NSIS <code>-setup.exe</code> for Windows x86_64 (current-user
-            install, no admin required). MSI is deferred until the version scheme supports it; see
+            Windows packaging is scaffolded as a single NSIS <code>-setup.exe</code> for Windows x86_64
+            (current-user install, no admin required), but the release workflow does not attach a Windows
+            installer to team betas until the Windows official-map smoke gate passes. Do not expect a
+            Windows artifact on the current Linux-only beta unless a maintainer explicitly says Windows
+            was enabled for that release. MSI is deferred until the version scheme supports it; see
             <code>sartracker-web-g1u</code>.
           </p>
           <p>
@@ -544,8 +549,8 @@
           <h3>macOS</h3>
           <p>
             macOS arm64 builds are not produced by the release CI pipeline. When a macOS artifact is needed
-            it is built locally and uploaded separately to the GitHub release. Linux and Windows are the
-            primary desktop distribution targets for this beta lane.
+            it is built locally and uploaded separately to the GitHub release. Linux is the primary CI
+            distribution target for the current beta lane; Windows is held until its smoke gate passes.
           </p>
           <p>
             Because this internal beta is ad-hoc signed, macOS Gatekeeper may refuse to open it and may say
@@ -697,7 +702,7 @@
           <h3>Fresh Install To Offline Readiness</h3>
           <p>Follow these steps on a fresh Electron desktop install to reach field-ready official maps:</p>
           <ol>
-            <li>Install the SAR Tracker Electron app from the release artifacts (AppImage on Linux, installer on Windows, .app on macOS).</li>
+            <li>Install the SAR Tracker Electron app from the release artifacts. Current CI betas publish Linux AppImage and <code>.deb</code> artifacts; use Windows or macOS artifacts only when a maintainer has explicitly supplied them for that beta.</li>
             <li>Obtain the team USB drive or folder containing the MapGenie source details file and any prepared <code>.mbtiles</code> Discovery packages.</li>
             <li>Open <strong>Settings → Official Maps</strong>.</li>
             <li>Click <strong>Choose MapGenie File</strong> and select the source details file from the USB. The app extracts safe metadata (username, available sources, service count) without storing credentials.</li>
@@ -971,7 +976,7 @@
               <tr><td>Range Rings</td><td>Create manual rings or LPB percentile rings from a point.</td></tr>
               <tr><td>Bearing</td><td>Create a bearing line from an origin, distance, and true or magnetic bearing.</td></tr>
               <tr><td>Sector</td><td>Create a search sector from center, start bearing, end bearing, and radius.</td></tr>
-              <tr><td>Text Label</td><td>Place map text with size, colour (palette swatches or typed hex), and rotation. Click and drag a placed label to move it; the new position is saved.</td></tr>
+              <tr><td>Text Label</td><td>Place map text with an anchor point, size, colour (palette swatches or typed hex), and rotation. Click and drag a placed label to move it; the new position is saved.</td></tr>
               <tr><td>Measure</td><td>Temporary two-point distance and map-bearing measurement from Map Tools or the Tools tab.</td></tr>
             </tbody>
           </table>
@@ -1046,11 +1051,17 @@
             those events when needed. The log shows the most recent events; if older events exist beyond the
             display limit, a note indicates the list was trimmed.
           </p>
+          <figure class="screenshot">
+            <img src="assets/mission-review.png" alt="Docked Mission Review workspace beside an active mission map" />
+            <figcaption>Docked Mission Review beside the live map and mission controls during an active browser-harness mission.</figcaption>
+          </figure>
           <h3>Diagnostics</h3>
           <p>
             Diagnostics shows runtime mode, app version, mission phase, storage health, tracking snapshot,
             configuration, warnings, and a support report preview. It can copy or export the report and
-            can reset layer catalog metadata for a selected mission. When very dense breadcrumb history is
+            can reset layer catalog metadata for a selected mission. It can also export an incident-time
+            bundle around a known problem time so recent crash summaries and runtime logs are focused on
+            the evidence window instead of only the current app state. When very dense breadcrumb history is
             render-budgeted, the support report lists retained and observed breadcrumb counts per device and
             marks which device trails were simplified for display.
           </p>
@@ -1077,7 +1088,7 @@
             <li>
               <strong>Unexpected-shutdown notice.</strong> If the app closed unexpectedly the previous time,
               a calm amber notice appears at the top of Diagnostics with a direct
-              <em>Export Support Bundle</em> button. It is dismissible and never blocks an active mission.
+              <em>Export Support Bundle</em> button. It never blocks an active mission.
             </li>
           </ul>
           <p>
@@ -1164,7 +1175,7 @@
             <li><strong>Replay mode:</strong> settings expose replay defaults, but full replay/training workflow parity is still active work.</li>
             <li><strong>Mission metadata:</strong> richer coordinator/metadata capture at mission start remains a parity gap.</li>
             <li><strong>Layer parity:</strong> the app has a grouped layer tree with visibility, aliases, expand/collapse all, and reorder controls, but final parity acceptance is still pending.</li>
-            <li><strong>Desktop beta distribution:</strong> current macOS beta artifacts are internal, unsigned/ad-hoc signed app bundles. Developer ID signing, notarization, DMG packaging, and Windows installer behavior remain open release work.</li>
+            <li><strong>Desktop beta distribution:</strong> current CI beta artifacts are Linux x86_64 AppImage and <code>.deb</code> packages. macOS artifacts are local/manual when needed, and Windows NSIS artifacts remain gated until the Windows official-map smoke passes. Developer ID signing, notarization, DMG packaging, and signed Windows installer behavior remain open release work.</li>
             <li><strong>Hosted browser testing:</strong> Vercel browser mode currently uses session storage for mission data and caps very large persisted tracker histories. It is intended to unblock team testing, not replace the installed app for live incidents yet.</li>
             <li><strong>Browser harness differences:</strong> desktop-only actions such as GPX file picking and marker file attachments are limited or unavailable in browser validation mode.</li>
           </ul>
@@ -1184,8 +1195,9 @@
         </section>
 
         <footer>
-          SAR Tracker Operator Manual. First living-manual draft generated from the current code,
-          documentation, tests, and Chrome browser-harness validation on 12 May 2026.
+          SAR Tracker Operator Manual. DON-150 audit refreshed from current code, release notes,
+          documentation, tests, Linear issue context, and Playwright browser-harness validation on
+          17 June 2026.
         </footer>
       </main>
     </div>

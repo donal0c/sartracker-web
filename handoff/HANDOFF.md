@@ -14,6 +14,11 @@
 
 ## Last Work Done
 
+DON-150 operator manual audit/refresh — **DONE locally; ready to push.**
+- Audited `public/manual/index.html` against current source, beta.7 release notes, DON-150 Linear context, and browser-harness UI. Refreshed all existing manual screenshots and added a docked Mission Review screenshot.
+- Fixed stale manual claims: May feature-branch verification metadata, beta.4 artifact wording, Linux keyring credential guidance, Windows artifact availability, official-map install wording, text-label anchor controls, incident-time diagnostics export, and the non-dismissible crash-recovery notice.
+- Verified: manual render smoke (7 images loaded, nav anchors OK, no desktop/mobile horizontal overflow); `npm run lint`; `npm run build`; focused Chromium E2E for Settings/Diagnostics/Mission Review/Devices/Layers/Map Tools (35/35); `npm run test` (150 files / 938 tests); `npm run test:backend` (47 passed / 1 ignored); full `npm run test:e2e:chromium` (109/109).
+
 Diagnostics supportability chunk — **DONE locally; ready for beta.8 after packaged smoke/release gate.**
 - DON-179: startup-fault shell now exports a local startup-fault support bundle before the normal Diagnostics workspace is available. The red fault shell still autofocuses `Reload clean runtime`; export is an adjacent explicit action.
 - DON-158: Diagnostics workspace now supports a known incident time and exports a time-framed support bundle. The selected window is 30 minutes before and 30 minutes after the incident time; Electron filters crash history/runtime log sections to that window while preserving the standard support report context.
@@ -181,7 +186,7 @@ DON-146 (Electron 40→42) is parked in Backlog, **blocked on upstream `better-s
 - **Lint:** `npm run lint`
 - **Type check:** `npx tsc --noEmit`
 - **Deploy:** push to `master` → Vercel auto-deploys to production
-- **Electron handoff:** see `docs/electron-beta-handoff.md`; current published Linux team prerelease is `https://github.com/donal0c/sartracker-web/releases/tag/electron-v0.1.0-beta.4`, and the next candidate is `electron-v0.1.0-beta.5` pending GitHub Actions + Ubuntu smoke. The Electron GitHub release workflow is implemented under `DON-143`; Windows remains gated by `DON-141`.
+- **Electron handoff:** see `docs/electron-beta-handoff.md`; current published Linux team prerelease is `https://github.com/donal0c/sartracker-web/releases/tag/electron-v0.1.0-beta.7`. The next candidate is beta.8 after DON-180 packaged duplicate-launch smoke plus the normal release gates. The Electron GitHub release workflow is implemented under `DON-143`; Windows remains gated by `DON-141`.
 
 ## Latest Verification
 
