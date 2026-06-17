@@ -67,6 +67,51 @@ describe('Electron main startup', () => {
     handler({ url: 'https://tile.openstreetmap.org/1/1/1.png' }, callback)
     expect(callback).toHaveBeenCalledWith({ cancel: true })
   })
+
+  it('quits immediately when another Electron instance already owns the app lock', async () => {
+    const electronMock = createElectronMock(vi.fn(), undefined, true)
+    electronMock.app.requestSingleInstanceLock.mockReturnValue(false)
+    Module._load = ((request: string, parent: NodeJS.Module | null, isMain: boolean) => {
+      if (request === 'electron') {
+        return electronMock
+      }
+      return originalLoad(request, parent, isMain)
+    }) as typeof Module._load
+
+    require('../../electron/main.cjs')
+    await Promise.resolve()
+
+    expect(electronMock.app.quit).toHaveBeenCalledTimes(1)
+    expect(electronMock.app.whenReady).not.toHaveBeenCalled()
+    expect(electronMock.BrowserWindow).not.toHaveBeenCalled()
+  })
+
+  it('focuses the existing window when a second launch is routed to the running instance', () => {
+    const existingWindow = {
+      focus: vi.fn(),
+      isMinimized: vi.fn(() => true),
+      restore: vi.fn(),
+    }
+    const electronMock = createElectronMock(vi.fn(), undefined, false, [existingWindow])
+    Module._load = ((request: string, parent: NodeJS.Module | null, isMain: boolean) => {
+      if (request === 'electron') {
+        return electronMock
+      }
+      return originalLoad(request, parent, isMain)
+    }) as typeof Module._load
+
+    require('../../electron/main.cjs')
+
+    const secondInstanceHandler = electronMock.app.on.mock.calls.find(
+      ([eventName]) => eventName === 'second-instance',
+    )?.[1]
+    expect(secondInstanceHandler).toEqual(expect.any(Function))
+
+    secondInstanceHandler()
+
+    expect(existingWindow.restore).toHaveBeenCalledTimes(1)
+    expect(existingWindow.focus).toHaveBeenCalledTimes(1)
+  })
 })
 
 function createElectronMock(
@@ -79,7 +124,17 @@ function createElectronMock(
     },
   },
   ready = false,
+  existingWindows: unknown[] = [],
 ) {
+  const BrowserWindow = vi.fn(function MockBrowserWindow() {
+    return {
+      loadURL: vi.fn(() => Promise.resolve()),
+      webContents: { on: vi.fn() },
+    }
+  })
+  BrowserWindow.getAllWindows = vi.fn(() => existingWindows)
+  BrowserWindow.getFocusedWindow = vi.fn(() => null)
+
   return {
     app: {
       commandLine: { appendSwitch },
@@ -90,15 +145,11 @@ function createElectronMock(
       getVersion: vi.fn(() => '0.1.0-test'),
       on: vi.fn(),
       quit: vi.fn(),
+      requestSingleInstanceLock: vi.fn(() => true),
       setPath: vi.fn(),
       whenReady: vi.fn(() => (ready ? Promise.resolve() : new Promise<never>(() => {}))),
     },
-    BrowserWindow: vi.fn(function MockBrowserWindow() {
-      return {
-        loadURL: vi.fn(() => Promise.resolve()),
-        webContents: { on: vi.fn() },
-      }
-    }),
+    BrowserWindow,
     crashReporter: { start: vi.fn() },
     dialog: {},
     ipcMain: { handle: vi.fn() },

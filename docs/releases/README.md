@@ -25,6 +25,10 @@ folder is exclusively for the desktop operational lane.
 The live release pipeline is `.github/workflows/electron-release.yml`. It is
 triggered by an `electron-v*` tag push (or manual `workflow_dispatch`) and:
 
+- refuses to continue unless release notes exist and the tag matches
+  `package.json#version`;
+- runs lint, unit tests, backend tests, web build, and the standard Chromium
+  Playwright E2E suite before any artifact is bundled;
 - builds the **Linux** AppImage + `.deb` on a native Linux runner (so
   `better-sqlite3` is real Linux x86-64; the workflow asserts this);
 - creates a **draft + prerelease** GitHub release and uploads the Linux assets;
@@ -84,8 +88,9 @@ hash locally and `gh release upload --clobber SHA256SUMS`).
      evidence, and `SHA256SUMS`.
    - Build and attach the macOS arm64 zip (see above) if macOS is in scope.
    - Run any remaining manual smoke (e.g. the official-offline map check) that
-     CI cannot cover. CI proves lint/test/build + that the packaged AppImage
-     launches; it does not prove mission persistence or offline maps.
+     CI cannot cover. CI proves lint/unit/backend/build, standard Chromium E2E,
+     and that the packaged AppImage launches; it does not prove mission
+     persistence, live Traccar, duplicate-launch behavior, or offline maps.
    - Update the release note with smoke results and the CI run link.
    - Promote the draft:
      `gh release edit electron-v0.1.0-beta.4 --repo donal0c/sartracker-web --draft=false`.
@@ -103,6 +108,10 @@ hash locally and `gh release upload --clobber SHA256SUMS`).
   release description is built from the matching MD file plus a CI provenance
   footer; the description should not duplicate what is here, only reference
   it.
+- Draft releases are not shared with testers until the release note includes
+  a completed smoke matrix for the CI-built artifact. Any unexplained flake,
+  failed smoke, missing browser validation, or stale handoff/Linear state is a
+  release blocker.
 - A `SHA256SUMS` asset is generated on every CI-driven release. Testers
   should be told to verify their download against this file before running
   the artifact.

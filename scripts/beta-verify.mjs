@@ -2,15 +2,16 @@
 /**
  * Beta verification gate.
  *
- * Runs the lint/build/test/test:backend/package/smoke chain that the Electron
+ * Runs the lint/build/test/test:backend/e2e/package/smoke chain that the Electron
  * beta release plan calls "Verification Before Sharing". On success it writes
  * a JSON evidence report to tmp/beta-artifacts/ that the agent cutting the
  * beta can attach to the release note.
  *
  * The script is intentionally cautious about heavy work:
  * - The `package` step runs `npm run electron:pack` which can
- *   take many minutes. Skip it with `--steps lint,build,test,test-backend`
- *   when iterating, but never skip it before sharing a beta.
+ *   take many minutes. Skip it with
+ *   `--steps lint,build,test,test-backend,e2e-chromium` when iterating, but
+ *   never skip it before sharing a beta.
  * - The `smoke` step is a manual checklist gate. The script prompts the
  *   operator to confirm each item rather than launching a GUI app headlessly.
  *
@@ -45,6 +46,7 @@ const STEP_COMMANDS = {
   build: ['npm', ['run', 'build']],
   test: ['npm', ['run', 'test']],
   'test-backend': ['npm', ['run', 'test:backend']],
+  'e2e-chromium': ['npm', ['run', 'test:e2e:chromium']],
   package: ['npm', ['run', 'electron:pack']],
   // smoke is handled in-process via a manual checklist; no shell command runs.
   smoke: ['__smoke__', []],

@@ -14,7 +14,8 @@ name: Release (Electron Desktop)
 #
 # Jobs:
 #   1. gates          (Linux): version-match assertion, release-notes existence,
-#                      lint, vitest, web build. Fast-fail before any bundling.
+#                      lint, vitest, backend tests, web build, and standard
+#                      Chromium Playwright E2E. Fast-fail before any bundling.
 #   2. bundle-linux    (Linux): native AppImage + .deb via electron-builder,
 #                      verifies the packaged better_sqlite3.node is real Linux
 #                      x86-64, creates the draft prerelease, uploads assets.
@@ -67,9 +68,9 @@ env:
 
 jobs:
   gates:
-    name: Gates (lint, test, build)
+    name: Gates (lint, tests, build, E2E)
     runs-on: ubuntu-22.04
-    timeout-minutes: 30
+    timeout-minutes: 60
     outputs:
       tag: ${{ steps.resolve_tag.outputs.tag }}
       version: ${{ steps.resolve_tag.outputs.version }}
@@ -147,8 +148,17 @@ jobs:
       - name: Unit tests
         run: npm run test
 
+      - name: Backend tests
+        run: npm run test:backend
+
       - name: Web build (also runs bundle-size check)
         run: npm run build
+
+      - name: Install Chromium browser for Playwright
+        run: npx playwright install --with-deps chromium
+
+      - name: Standard Chromium E2E
+        run: npm run test:e2e:chromium
 
   bundle-linux:
     name: Bundle (linux-x86_64)
@@ -480,6 +490,7 @@ jobs:
             echo "- Build commit: \`${GITHUB_SHA}\`"
             echo "- Run: [#${GITHUB_RUN_NUMBER}](${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID})"
             echo "- Workflow: \`.github/workflows/electron-release.yml\`"
+            echo "- Release gates: lint, unit tests, backend tests, web build, standard Chromium E2E"
             echo "- Linux launch smoke: passed"
           } > "$BODY_FILE"
 

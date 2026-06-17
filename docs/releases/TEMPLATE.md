@@ -174,12 +174,33 @@ Electron artifacts.)
 
 Minimum verification for an Electron official-map handoff:
 
-- `npm run build`
+- tag-driven `.github/workflows/electron-release.yml` run green
+- release gates: `npm run lint`, `npm run test`, `npm run test:backend`,
+  `npm run build`, `npm run test:e2e:chromium`
 - focused or full unit tests relevant to the slice
 - Electron package build on the target OS
 - official Discovery package import/readiness smoke where applicable
 - diagnostics export checked for private-data leakage
 - `SHA256SUMS` generated for shared artifacts
+
+## Packaged Smoke Matrix
+
+The draft release must not be published until the CI-built artifact has passed
+the applicable packaged smoke gates below. Mark any out-of-scope gate with a
+short reason.
+
+| Gate | Result | Evidence |
+| --- | --- | --- |
+| Checksum verified against `SHA256SUMS` | TODO | TODO |
+| Packaged AppImage launches to normal shell | TODO | TODO |
+| Core lifecycle: start mission, marker, restart/recovery, finish/finalize | TODO | TODO |
+| Standalone archive written and survives restart | TODO | TODO |
+| Out-of-Ireland coordinate rejected visibly | TODO | TODO |
+| Diagnostics export succeeds and is sanitized | TODO | TODO |
+| Bad/corrupt stored credential reaches shell, not runtime fault | TODO | TODO |
+| Live Traccar connection / tracking smoke, if tracking changed | TODO | TODO |
+| Official offline map package smoke, if map/runtime changed | TODO | TODO |
+| Beta-specific regressions, e.g. duplicate launch for DON-180 | TODO | TODO |
 
 ## Rollback / Reinstall
 
@@ -198,17 +219,19 @@ Minimum verification for an Electron official-map handoff:
 
 Before promoting this draft to a published release:
 
-- [ ] CI workflow run `OVERALL: PASS` (linked above)
-- [ ] All CI release assets present on the draft release: Linux `.AppImage`,
-      Linux `.deb`, Windows `.exe` (NSIS). macOS and MSI deferred (see
-      `sartracker-web-590` and `sartracker-web-g1u`).
+- [ ] Tag-driven CI workflow run is green and linked above
+- [ ] CI release gates passed: lint, unit tests, backend tests, web build,
+      standard Chromium E2E, Linux bundle, Linux launch smoke
+- [ ] All expected CI release assets present on the draft release: Linux
+      `.AppImage`, Linux `.deb`; Windows `.exe` only if explicitly enabled
+      after DON-141; macOS zip only if built/uploaded manually for this beta.
 - [ ] `SHA256SUMS` present and matches local computation against downloaded assets
-- [ ] CI launch-smoke artifacts reviewed: Linux AppImage screenshot/log and
-      Windows NSIS screenshot/log.
+- [ ] CI launch-smoke artifacts reviewed: Linux AppImage screenshot/log.
 - [ ] Real-machine smoke pass on the primary platform (Linux): packaged app
       launches, OpenTopoMap tiles load on a normal network, mission can be
       started, mission persists after restart, tracking settings connect to the
       Traccar web/API base URL, diagnostics export works.
+- [ ] Packaged smoke matrix above is complete, with evidence paths or run links
 - [ ] Release body matches this checked-in note (with CI Provenance footer
       appended)
 - [ ] Release marked **prerelease** and **draft** in GitHub UI

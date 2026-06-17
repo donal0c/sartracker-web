@@ -76,25 +76,34 @@ test.describe('M19 devices workspace', () => {
     await page.getByTestId('breadcrumb-mode-dots').click()
 
     await expect(page.getByTestId('breadcrumb-size-label')).toContainText('12px dot diameter')
-    await expect.poll(async () => readTrackingLayerState(page)).toMatchObject({
+    await expect.poll(async () => formatTrackingLayerState(page)).toMatchObject({
       dotRadius: 6,
       alphaBreadcrumbColor: '#FF7A00',
       breadcrumbFeatureKind: 'breadcrumb',
+      lineFilter: expect.stringContaining('__hidden__'),
+      dotFilter: expect.stringContaining('breadcrumb'),
     })
-
-    const dotModeState = await readTrackingLayerState(page)
-    expect(JSON.stringify(dotModeState.lineFilter)).toContain('__hidden__')
-    expect(JSON.stringify(dotModeState.dotFilter)).toContain('breadcrumb')
 
     await page.getByTestId('breadcrumb-mode-line').click()
     await expect(page.getByTestId('breadcrumb-size-label')).toContainText('12px trail width')
 
-    const lineModeState = await readTrackingLayerState(page)
-    expect(lineModeState.lineWidth).toBe(12)
-    expect(JSON.stringify(lineModeState.dotFilter)).toContain('__hidden__')
-    expect(JSON.stringify(lineModeState.lineFilter)).toContain('breadcrumbLine')
+    await expect.poll(async () => formatTrackingLayerState(page)).toMatchObject({
+      lineWidth: 12,
+      dotFilter: expect.stringContaining('__hidden__'),
+      lineFilter: expect.stringContaining('breadcrumbLine'),
+    })
   })
 })
+
+async function formatTrackingLayerState(page: import('@playwright/test').Page) {
+  const state = await readTrackingLayerState(page)
+
+  return {
+    ...state,
+    lineFilter: JSON.stringify(state.lineFilter),
+    dotFilter: JSON.stringify(state.dotFilter),
+  }
+}
 
 async function readTrackingLayerState(page: import('@playwright/test').Page) {
   return page.evaluate(() => {

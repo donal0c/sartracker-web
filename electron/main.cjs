@@ -92,6 +92,15 @@ if (validationUserDataPath !== undefined && validationUserDataPath.trim() !== ''
 
 configureLinuxSecretStorage()
 
+const ownsSingleInstanceLock = app.requestSingleInstanceLock()
+if (!ownsSingleInstanceLock) {
+  app.quit()
+} else {
+  app.on('second-instance', () => {
+    focusExistingWindow()
+  })
+}
+
 /**
  * Selects the secure freedesktop Secret Service backend before safeStorage is
  * initialized on Linux desktops.
@@ -160,6 +169,21 @@ async function createWindow(crashLog, runtimeLog) {
   const indexUrl = pathToFileURL(path.join(__dirname, '..', 'dist', 'index.html'))
   addValidationQueryIfRequested(indexUrl)
   await window.loadURL(indexUrl.toString())
+}
+
+/**
+ * Brings the existing operational window forward when the user launches the app again.
+ */
+function focusExistingWindow() {
+  const [existingWindow] = BrowserWindow.getAllWindows()
+  if (existingWindow === undefined) {
+    return
+  }
+
+  if (typeof existingWindow.isMinimized === 'function' && existingWindow.isMinimized()) {
+    existingWindow.restore()
+  }
+  existingWindow.focus()
 }
 
 /**
@@ -520,7 +544,14 @@ function normalizeTimeout(value) {
   return value
 }
 
-app.whenReady().then(async () => {
+if (ownsSingleInstanceLock) {
+  app.whenReady().then(startElectronApp)
+}
+
+/**
+ * Starts the SAR Tracker runtime once this process owns the single-instance lock.
+ */
+async function startElectronApp() {
   installValidationNetworkBlock()
   const userDataPath = app.getPath('userData')
   const runtimeLog = createRuntimeLog({ userDataPath })
@@ -583,7 +614,7 @@ app.whenReady().then(async () => {
     // crash-recovery notice. Best-effort; never block quit on it.
     void crashLog.markCleanExit()
   })
-})
+}
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {

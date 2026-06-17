@@ -1,8 +1,8 @@
 /**
  * Pure helpers for the beta verification gate.
  *
- * The gate runs the lint/build/test/test:backend/package/smoke chain that the
- * beta release plan calls "Verification Before Sharing". This module owns the
+ * The gate runs the lint/build/test/test:backend/e2e/package/smoke chain that
+ * the beta release plan calls "Verification Before Sharing". This module owns the
  * shaping logic only — process execution lives in scripts/beta-verify.mjs so
  * that the helpers stay deterministic and unit-testable.
  *
@@ -12,7 +12,7 @@
  */
 
 /**
- * @typedef {'lint' | 'build' | 'test' | 'test-backend' | 'package' | 'smoke'} BetaStep
+ * @typedef {'lint' | 'build' | 'test' | 'test-backend' | 'e2e-chromium' | 'package' | 'smoke'} BetaStep
  *
  * @typedef {Object} BetaStepResult
  * @property {BetaStep} step
@@ -31,7 +31,15 @@
  */
 
 /** Canonical ordered list of beta verification steps. */
-export const ALL_BETA_STEPS = ['lint', 'build', 'test', 'test-backend', 'package', 'smoke']
+export const ALL_BETA_STEPS = [
+  'lint',
+  'build',
+  'test',
+  'test-backend',
+  'e2e-chromium',
+  'package',
+  'smoke',
+]
 
 /**
  * Padding width used for step labels in terminal output. Aligns short step

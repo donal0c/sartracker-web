@@ -342,8 +342,10 @@ The release flow (now implemented under `DON-143`) is:
 
 1. Electron Linux builds are produced by GitHub Actions
    (`.github/workflows/electron-release.yml`, triggered by an `electron-v*`
-   tag). The job verifies the packaged `better-sqlite3` is native Linux x86-64
-   and runs an Xvfb launch smoke on the built AppImage.
+   tag). The gate runs lint, unit tests, backend tests, web build, and standard
+   Chromium E2E before packaging. The job verifies the packaged
+   `better-sqlite3` is native Linux x86-64 and runs an Xvfb launch smoke on the
+   built AppImage.
 2. macOS arm64 is built locally and uploaded manually as a zipped `.app`
    (GitHub macOS runners bill at 10x).
 3. Windows NSIS is scaffolded but **disabled by default**; it only builds when
@@ -354,6 +356,11 @@ The release flow (now implemented under `DON-143`) is:
 5. Private map packages remain outside GitHub.
 6. Each release note states exactly which OS/map smokes passed.
 7. `DON-115` closes only after Windows official-map smoke (`DON-141`) passes.
+
+Do not publish a draft Electron beta until the CI-built artifact has passed the
+release note's packaged smoke matrix. Any unexplained flake, failed smoke,
+missing browser validation, stale handoff/Linear state, or unverified
+beta-specific regression blocks sharing the build with the team.
 
 The old Tauri `.github/workflows/release.yml` has been **removed** so it cannot
 be mistaken for the Electron path. See `docs/releases/README.md` for the full

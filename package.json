@@ -21,6 +21,7 @@
     "test": "vitest run",
     "test:backend": "cargo test --manifest-path src-tauri/Cargo.toml",
     "test:e2e": "playwright test",
+    "test:e2e:chromium": "playwright test --project=chromium",
     "test:all": "npm run test && npm run test:e2e && npm run test:backend",
     "beta:verify": "node scripts/beta-verify.mjs",
     "visual:review": "node scripts/visual-review.mjs",

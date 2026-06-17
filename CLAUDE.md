@@ -161,6 +161,29 @@ Do not commit or push:
 - when the handoff or Linear issue state is stale
 - when confidence is still low and the right next step is another validation/fix pass
 
+### Beta Release Safety Protocol (required)
+
+Internal beta builds go to active team testers. Treat every beta promotion as
+release-blocking until proven otherwise.
+
+Before publishing any Electron beta:
+- `npm run beta:verify` must pass without skipped steps unless the skipped
+  step is explicitly out of scope and recorded in the release note.
+- The tag-driven `.github/workflows/electron-release.yml` run must be green;
+  local green tests are not enough.
+- The artifact promoted to testers must be the CI-built artifact that was
+  smoked, not a locally rebuilt substitute.
+- The GitHub release must remain a draft until the packaged smoke matrix is
+  complete and recorded in the release note / handoff.
+- Any unexplained flake, failed smoke, missing browser validation, or stale
+  Linear/handoff state blocks publication.
+- The smoke matrix must cover the beta's changed surface. For the current
+  Electron lane, the default release blockers are checksum verification,
+  packaged launch, mission lifecycle/restart/recovery/finalize/archive,
+  coordinate rejection, sanitized diagnostics, live Traccar connection when
+  tracking changed, bad/corrupt credential startup safety, and any
+  beta-specific regression such as duplicate-launch handling.
+
 ## Development Rules
 
 ### Strict TDD — No Exceptions

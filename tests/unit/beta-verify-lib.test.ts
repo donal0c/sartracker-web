@@ -11,6 +11,18 @@ import {
 } from '../../build/beta-verify-lib.js'
 
 describe('parseBetaStepsFlag', () => {
+  it('keeps standard Chromium E2E in the full beta gate before packaging', () => {
+    expect(ALL_BETA_STEPS).toEqual([
+      'lint',
+      'build',
+      'test',
+      'test-backend',
+      'e2e-chromium',
+      'package',
+      'smoke',
+    ])
+  })
+
   it('returns the full ordered step list when the flag is undefined', () => {
     expect(parseBetaStepsFlag(undefined)).toEqual(ALL_BETA_STEPS)
   })
@@ -20,7 +32,12 @@ describe('parseBetaStepsFlag', () => {
   })
 
   it('returns the requested subset preserving canonical order', () => {
-    expect(parseBetaStepsFlag('package,lint,test')).toEqual(['lint', 'test', 'package'])
+    expect(parseBetaStepsFlag('package,lint,e2e-chromium,test')).toEqual([
+      'lint',
+      'test',
+      'e2e-chromium',
+      'package',
+    ])
   })
 
   it('deduplicates repeated step names', () => {

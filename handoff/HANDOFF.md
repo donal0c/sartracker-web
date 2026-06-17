@@ -10,9 +10,22 @@
 - **Browser mode:** testing/training only (sessionStorage, not operational persistence).
 - **Latest test counts:** 150 unit files / 922 tests; 107 standard Playwright E2E; 47 backend tests.
 - **Latest published Electron beta:** `0.1.0-beta.7` / `electron-v0.1.0-beta.7` — DON-177 app-owned local credential storage + DON-176 docked Review + the DON-175 keyring guard. Built by GitHub Actions (run `27601812958`, success), deep Ubuntu 24.04.2 on-device smoke passed against the CI-built AppImage (credential matrix 3/3, real-keyring migration via live Traccar 33 devices/8 fixes, docked Review 6/6, release-blocking bad-secret gate, lifecycle, coord safety, sanitized diagnostics), and **published** at `https://github.com/donal0c/sartracker-web/releases/tag/electron-v0.1.0-beta.7` (Linux AppImage + `.deb` + `SHA256SUMS`) on 2026-06-16. AppImage SHA256 `848eb06321536c76f831a4e566450be82695f4d3b6c8336fce3fbcb4926ca4a7`. This supersedes beta.5 as the team artifact. (beta.6 was a DON-175-only hotfix, built/smoked but never published; its draft + tag were deleted.)
-- **Residual risk on beta.7:** Traccar credentials are now local app-owned plaintext with best-effort `0600` — intentional DON-177 trade for reliability on trusted team machines, not OS-keyring encryption.
+- **Residual risk on beta.7:** Traccar credentials are now local app-owned plaintext with best-effort `0600` — intentional DON-177 trade for reliability on trusted team machines, not OS-keyring encryption. New beta.7 field issue: duplicate Electron instances can be opened by clicking the launcher during/after startup, causing the runtime fault; fixed locally under DON-180, awaiting packaged beta.8 smoke/release.
 
 ## Last Work Done
+
+Release safety hardening — **DONE locally; process now encoded before beta.8 work continues.**
+- Added standard Chromium E2E to the local beta gate: `npm run beta:verify` now includes `e2e-chromium` via `npm run test:e2e:chromium` before package/smoke.
+- Tightened `.github/workflows/electron-release.yml`: tag-driven release gates now run lint, unit tests, backend tests, web build, and standard Chromium E2E before bundling. Draft release notes now record those gates in CI provenance.
+- Encoded the beta promotion rule in `CLAUDE.md`, `docs/releases/README.md`, `docs/releases/TEMPLATE.md`, and `docs/electron-beta-handoff.md`: no draft Electron beta is published until the CI-built artifact passes the packaged smoke matrix; unexplained flakes, failed smoke, missing browser validation, or stale handoff/Linear state block sharing with testers.
+- Hardened the previously documented `devices-workspace` breadcrumb trail-mode E2E flake by polling the MapLibre layer filters after changing trail mode instead of reading the filter once after the UI label changes.
+- Verified: red→green `tests/unit/beta-verify-lib.test.ts`; `node --check scripts/beta-verify.mjs`; `actionlint .github/workflows/electron-release.yml`; `npm run lint`; `npm run build`; `npm run test:backend` (47 passed / 1 ignored); focused `npm run test:e2e:chromium -- tests/e2e/devices-workspace.spec.ts` (4/4); full `npm run test:e2e:chromium` (109/109). First full E2E run reproduced the old devices flake (108/109), then the hardened test passed in isolation and in the full suite.
+
+DON-180 (S2 Electron, Urgent Bug) — **implemented locally; needs packaged Linux smoke before beta.8.** Team PCLinux beta.7 report showed clicking the SAR Tracker launcher at the right/wrong time could open two app windows and produce the runtime startup fault; `X2Diagnostics Report` after Clean Runtime confirmed beta.7 Linux Electron, recovery phase, same `~/.config/sartracker-web` profile, but no pre-fault support log.
+- Root cause: `electron/main.cjs` did not call `app.requestSingleInstanceLock()`, so a duplicate process could initialize the same `userData`, SQLite mission store, cache/log files, and renderer boot path.
+- Fix: claim the single-instance lock before `app.whenReady()`; duplicate processes quit before window/runtime/IPC setup; routed `second-instance` events restore/focus the existing window. Manual now says launcher clicks should focus the existing app and two windows are not expected.
+- Verified locally: red→green `electron-main-startup` regressions (duplicate quits before `whenReady()`/`BrowserWindow`, second launch restores/focuses existing window), `node --check electron/main.cjs`, focused runtime tests 4 files / 19 tests, `npm run lint`, `npm run build`.
+- Remaining: packaged AppImage/Linux smoke for beta.8 — launch once, click launcher again during boot and after ready, confirm only one instance/window remains and no runtime fault.
 
 DON-177 (S2 Electron, High Bug/Improvement) — **DONE & packaged-smoke verified on CI-built beta.7.** App-owned local Traccar credential storage; removes the OS-keyring/`safeStorage` dependency from tracking runtime.
 - New `credentials.json` under `userData` (`{version:1, traccar:{<authMode>:{secret}}}`), atomic write, best-effort `0600`. Secret stays out of `settings.json`. Presence of an authMode entry is **authoritative** — runtime reads the local file, no keyring call — so a successful Settings test uses the same secret the runtime will use.
@@ -122,6 +135,9 @@ Also retest on beta.7 to close long-standing In-Review fixes that shipped in ear
 7. **DON-161/162/163/164** (B1 persistence parity, shipped beta.5) — finalized-mission deletes are refused, finalize writes a real standalone archive, and marker/drawing/helicopter/GPX edits + device first-contact appear in the Review audit feed.
 
 If 4–7 retest clean on beta.7, close DON-159 / DON-151 / DON-165 and the DON-160 B1 children. Still needs specific data: the private MBTiles offline-map read (package not on the smoke box).
+
+Next beta.8 gate before team promotion:
+1. **DON-180** — packaged Linux/AppImage duplicate-launch smoke: click the launcher during boot and after ready; existing window should focus/restore, no second window/process should initialize the same profile, and the runtime startup fault must not appear.
 
 DONE: `electron-v0.1.0-beta.5` cut, built green by `.github/workflows/electron-release.yml` (run `27570596320`), Ubuntu 24.04.2 on-device release-asset smoke passed (launch, mission start, marker create, restart persistence/recovery, finish→finalize, standalone archive in `userData/archives`, out-of-Ireland coordinate rejection, sanitized diagnostics), and **published** to GitHub. Smoke ran against the CI-built AppImage with the real SQLite backend and renderer network blocked; evidence on the box at `~/sartracker-beta5-smoke/evidence{,2}/`.
 
