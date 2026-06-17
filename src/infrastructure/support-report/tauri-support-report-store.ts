@@ -2,7 +2,10 @@ import { invoke } from '@tauri-apps/api/core'
 
 import { isElectronRuntimeAvailable } from '../../lib/desktop-runtime'
 import { isTauriRuntimeAvailable } from '../../lib/tauri-runtime'
-import type { CrashRecoveryState } from '../../types/electron-bridge'
+import type {
+  CrashRecoveryState,
+  SupportBundleExportOptions,
+} from '../../types/electron-bridge'
 
 const BROWSER_DIAGNOSTICS_REPORTS_KEY = 'sartracker:diagnostics-reports'
 
@@ -64,11 +67,12 @@ export async function exportDiagnosticsReport(
 export async function exportSupportBundle(
   fileName: string,
   contents: string,
+  options: SupportBundleExportOptions = {},
 ): Promise<string> {
   if (isElectronRuntimeAvailable()) {
     const bridge = window.sartrackerElectron
     if (bridge?.exportSupportBundle !== undefined) {
-      return bridge.exportSupportBundle({ fileName, contents })
+      return bridge.exportSupportBundle({ fileName, contents, ...options })
     }
   }
 

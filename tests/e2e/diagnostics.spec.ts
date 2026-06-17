@@ -101,6 +101,28 @@ test.describe('M21 diagnostics workspace', () => {
     await expect(page.getByTestId('diagnostics-feedback')).toContainText('support bundle')
     await expect(page.getByTestId('diagnostics-export-path')).toContainText('support-bundle')
 
+    await page.getByTestId('diagnostics-incident-time-input').fill('2026-04-11T01:18')
+    await page.getByTestId('diagnostics-export-time-framed-support-bundle').click()
+    await expect(page.getByTestId('diagnostics-feedback')).toContainText(
+      'time-framed support bundle',
+    )
+    await expect(page.getByTestId('diagnostics-export-path')).toContainText(
+      'support-bundle-incident',
+    )
+    await expect.poll(async () => {
+      return page.evaluate(() => {
+        const raw = window.sessionStorage.getItem('sartracker:diagnostics-reports')
+        if (raw === null) {
+          return null
+        }
+        const reports = JSON.parse(raw) as readonly {
+          readonly fileName: string
+          readonly contents: string
+        }[]
+        return reports.find((report) => report.fileName.includes('support-bundle-incident'))?.contents ?? null
+      })
+    }).toContain('[incident-window]')
+
     await page.getByTestId('diagnostics-repair-layer-catalog').click()
     await expect(page.getByTestId('diagnostics-feedback')).toContainText('Layer catalog metadata reset')
 

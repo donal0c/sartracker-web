@@ -8,11 +8,19 @@
 - **Hosted testing:** `https://sartracker-web.vercel.app/?missionHarness=1`
 - **Desktop:** Electron is the operational desktop lane (MapLibre + direct HTTPS Traccar, SQLite, filesystem, diagnostics, official map packages). Tauri remains historical/reference.
 - **Browser mode:** testing/training only (sessionStorage, not operational persistence).
-- **Latest test counts:** 150 unit files / 922 tests; 107 standard Playwright E2E; 47 backend tests.
+- **Latest test counts:** 150 unit files / 938 tests; 109 standard Playwright E2E; 47 backend tests.
 - **Latest published Electron beta:** `0.1.0-beta.7` / `electron-v0.1.0-beta.7` — DON-177 app-owned local credential storage + DON-176 docked Review + the DON-175 keyring guard. Built by GitHub Actions (run `27601812958`, success), deep Ubuntu 24.04.2 on-device smoke passed against the CI-built AppImage (credential matrix 3/3, real-keyring migration via live Traccar 33 devices/8 fixes, docked Review 6/6, release-blocking bad-secret gate, lifecycle, coord safety, sanitized diagnostics), and **published** at `https://github.com/donal0c/sartracker-web/releases/tag/electron-v0.1.0-beta.7` (Linux AppImage + `.deb` + `SHA256SUMS`) on 2026-06-16. AppImage SHA256 `848eb06321536c76f831a4e566450be82695f4d3b6c8336fce3fbcb4926ca4a7`. This supersedes beta.5 as the team artifact. (beta.6 was a DON-175-only hotfix, built/smoked but never published; its draft + tag were deleted.)
 - **Residual risk on beta.7:** Traccar credentials are now local app-owned plaintext with best-effort `0600` — intentional DON-177 trade for reliability on trusted team machines, not OS-keyring encryption. New beta.7 field issue: duplicate Electron instances can be opened by clicking the launcher during/after startup, causing the runtime fault; fixed locally under DON-180, awaiting packaged beta.8 smoke/release.
 
 ## Last Work Done
+
+Diagnostics supportability chunk — **DONE locally; ready for beta.8 after packaged smoke/release gate.**
+- DON-179: startup-fault shell now exports a local startup-fault support bundle before the normal Diagnostics workspace is available. The red fault shell still autofocuses `Reload clean runtime`; export is an adjacent explicit action.
+- DON-158: Diagnostics workspace now supports a known incident time and exports a time-framed support bundle. The selected window is 30 minutes before and 30 minutes after the incident time; Electron filters crash history/runtime log sections to that window while preserving the standard support report context.
+- Shared sanitization: Electron support bundles now sanitize the support report, crash detail, runtime log, home-directory usernames, forbidden browser/profile path segments, bearer/basic auth headers, and secret-like key/value lines at the export boundary.
+- DON-181: upload/inbox was **not implemented** because no beta diagnostic inbox destination is locked in Linear/repo context. Current behavior remains local export only; testers attach/send the generated bundle through the agreed manual channel until the inbox decision is made.
+- Manual updated, including refreshed Diagnostics screenshot.
+- Verification: TDD red→green focused unit tests; `npm run lint`; `npm run build`; `npm run test` (150 files / 938 tests); `npm run test:backend` (47 passed / 1 ignored); focused Chromium `diagnostics.spec.ts` + `map.spec.ts` (16/16); first full Chromium run 107/109 with two unrelated MapLibre filter-state timing failures, both passed in isolation; second full `npm run test:e2e:chromium` passed 109/109; visual runtime-safety Playwright passed 4/4; `npm run visual:review -- --only runtime-failed-shell` PASS.
 
 Release safety hardening — **DONE locally; process now encoded before beta.8 work continues.**
 - Added standard Chromium E2E to the local beta gate: `npm run beta:verify` now includes `e2e-chromium` via `npm run test:e2e:chromium` before package/smoke.

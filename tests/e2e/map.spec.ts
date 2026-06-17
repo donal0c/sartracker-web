@@ -292,6 +292,10 @@ test.describe('M2 map shell', () => {
 
     const reloadButton = page.getByRole('button', { name: 'Reload clean runtime' })
     await expect(reloadButton).toBeFocused()
+    await page.getByTestId('runtime-fault-export-support-bundle').click()
+    await expect(page.getByTestId('runtime-fault-export-path')).toContainText(
+      'startup-fault-support-bundle',
+    )
     await reloadButton.click()
 
     await expect(page).toHaveURL(/\/$/)

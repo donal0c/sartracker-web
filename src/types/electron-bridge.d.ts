@@ -39,6 +39,16 @@ export type CrashRecoveryState = {
   readonly lastCrash: CrashRecoveryCrash | null
 }
 
+export type SupportBundleTimeFrame = {
+  readonly incidentAt: string
+  readonly beforeMinutes: number
+  readonly afterMinutes: number
+}
+
+export type SupportBundleExportOptions = {
+  readonly timeFrame?: SupportBundleTimeFrame
+}
+
 export type SarTrackerElectronBridge = {
   readonly loadAppSettings: () => Promise<AppSettings>
   readonly saveAppSettings: (input: AppSettingsDraft) => Promise<AppSettings>
@@ -58,6 +68,7 @@ export type SarTrackerElectronBridge = {
   readonly exportSupportBundle?: (input: {
     readonly fileName: string
     readonly contents: string
+    readonly timeFrame?: SupportBundleTimeFrame
   }) => Promise<string>
   readonly readCrashRecoveryState?: () => Promise<CrashRecoveryState>
   readonly chooseGpxFilePaths: () => Promise<readonly string[]>

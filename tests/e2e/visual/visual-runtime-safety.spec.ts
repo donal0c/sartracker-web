@@ -69,6 +69,7 @@ Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
       'Injected startup fault for visual verification.',
     )
     await expect(page.getByRole('button', { name: 'Reload clean runtime' })).toBeFocused()
+    await expect(page.getByRole('button', { name: 'Export support bundle' })).toBeVisible()
     await expect(page.getByTestId('app-shell')).toHaveCount(0)
 
     await captureAndRegister(page, {
@@ -83,11 +84,13 @@ Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
 4. The injected fault detail should be visible in a readable block
 5. The guidance should tell operators to copy or screenshot the fault message
 6. The "Reload clean runtime" action should be prominent
+7. The "Export support bundle" action should be visible before the normal Diagnostics workspace is available
 Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
       playwrightAssertions: [
         'runtime-failed-shell is visible',
         'alert contains injected startup fault',
         'reload clean runtime button is focused',
+        'export support bundle button is visible',
         'app-shell is absent while failed',
       ],
     })

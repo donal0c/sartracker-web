@@ -57,6 +57,11 @@ const {
     readonly exportSupportBundle: (input: {
       readonly fileName: string
       readonly contents: string
+      readonly timeFrame?: {
+        readonly incidentAt: string
+        readonly beforeMinutes: number
+        readonly afterMinutes: number
+      }
     }) => Promise<string>
   }
 }
@@ -152,6 +157,86 @@ describe('electron runtime files', () => {
     expect(bundle).toContain('[runtime-log]')
     expect(bundle).toContain('app_start')
     expect(bundle).toContain('tracking_disconnected')
+  })
+
+  it('exports a time-framed support bundle around a known incident time', async () => {
+    const files = await createRuntimeFiles({
+      readRecentCrashes: async () => [
+        { ts: '2026-06-09T16:35:00.000Z', kind: 'render-process-gone', summary: 'outside before' },
+        { ts: '2026-06-09T17:12:00.000Z', kind: 'uncaughtException', summary: 'inside incident window' },
+        { ts: '2026-06-09T18:05:00.000Z', kind: 'render-process-gone', summary: 'outside after' },
+      ],
+      readRecentLog: async () => [
+        { ts: '2026-06-09T16:40:00.000Z', level: 'info', event: 'outside_before' },
+        { ts: '2026-06-09T17:18:00.000Z', level: 'warn', event: 'incident_click_failed' },
+        { ts: '2026-06-09T18:10:00.000Z', level: 'info', event: 'outside_after' },
+      ],
+    })
+
+    const exportPath = await files.exportSupportBundle({
+      fileName: 'support-bundle-incident.txt',
+      contents: 'Diagnostics Report',
+      timeFrame: {
+        incidentAt: '2026-06-09T17:18:00.000Z',
+        beforeMinutes: 30,
+        afterMinutes: 30,
+      },
+    })
+
+    const bundle = await readFile(exportPath, 'utf8')
+    expect(bundle).toContain('[incident-window]')
+    expect(bundle).toContain('incident time: 2026-06-09T17:18:00.000Z')
+    expect(bundle).toContain('window start: 2026-06-09T16:48:00.000Z')
+    expect(bundle).toContain('window end: 2026-06-09T17:48:00.000Z')
+    expect(bundle).toContain('inside incident window')
+    expect(bundle).toContain('incident_click_failed')
+    expect(bundle).not.toContain('outside before')
+    expect(bundle).not.toContain('outside_after')
+  })
+
+  it('redacts secrets, authorization headers, and private home paths across support bundle sections', async () => {
+    const files = await createRuntimeFiles({
+      readRecentCrashes: async () => [
+        {
+          ts: '2026-06-09T22:01:00.000Z',
+          kind: 'uncaughtException',
+          summary: 'Authorization: Bearer field-secret-token',
+          detail: 'Opened /Users/donalocallaghan/SAR/mission.sqlite with password=field-secret',
+        },
+      ],
+      readRecentLog: async () => [
+        {
+          ts: '2026-06-09T21:50:00.000Z',
+          level: 'warn',
+          event: 'request_failed',
+          authorization: 'Basic ZmllbGQ6c2VjcmV0',
+          path: '/home/fieldoperator/.config/sartracker/Cookies',
+        },
+      ],
+    })
+
+    const exportPath = await files.exportSupportBundle({
+      fileName: 'support-bundle.txt',
+      contents: [
+        'Diagnostics Report',
+        'Authorization: Bearer report-secret-token',
+        'api_key=report-secret',
+        'database path: /Users/donalocallaghan/SAR/mission.sqlite',
+      ].join('\n'),
+    })
+
+    const bundle = await readFile(exportPath, 'utf8')
+    expect(bundle).not.toContain('field-secret')
+    expect(bundle).not.toContain('report-secret')
+    expect(bundle).not.toContain('Bearer')
+    expect(bundle).not.toContain('Basic')
+    expect(bundle).not.toContain('donalocallaghan')
+    expect(bundle).not.toContain('fieldoperator')
+    expect(bundle).toContain('Authorization: [redacted]')
+    expect(bundle).toContain('/Users/[redacted]/SAR/mission.sqlite')
+    expect(bundle).toContain('/home/[redacted]/.config/sartracker/[redacted-path-segment]')
+    expect(bundle).toContain('"event":"request_failed"')
+    expect(bundle).toContain('"authorization":"[redacted]"')
   })
 
   it('exports a support bundle with explicit empty sections when no logs exist', async () => {

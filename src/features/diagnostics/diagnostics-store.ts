@@ -19,6 +19,7 @@ export type DiagnosticsController = {
   readonly repairLayerCatalog: () => Promise<void>
   readonly exportSupportReport: () => Promise<string | null>
   readonly exportSupportBundle: () => Promise<string | null>
+  readonly exportTimeFramedSupportBundle: (incidentAt: string) => Promise<string | null>
   readonly clearFeedback: () => void
 }
 

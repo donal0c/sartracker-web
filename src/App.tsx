@@ -24,6 +24,7 @@ import { MissionReviewRuntimeBridge } from './features/mission-review/mission-re
 import { TrackingStatusPanel } from './components/tracking-status-panel'
 import { SettingsWorkspace } from './components/settings-workspace'
 import { loadAppSettings } from './infrastructure/settings-store/tauri-settings-store'
+import { exportSupportBundle } from './infrastructure/support-report/tauri-support-report-store'
 import { openExternalUrl } from './infrastructure/url-opener/open-external-url'
 import type { WeatherLinkSettings } from './features/settings/settings-types'
 import { useDiagnosticsWorkspaceStore } from './features/diagnostics/diagnostics-workspace-store'
@@ -227,6 +228,9 @@ export function RuntimeBootGate(props: {
   readonly onReload: () => void
 }) {
   const reloadButtonRef = useRef<HTMLButtonElement>(null)
+  const [exporting, setExporting] = useState(false)
+  const [exportPath, setExportPath] = useState<string | null>(null)
+  const [exportError, setExportError] = useState<string | null>(null)
 
   useEffect(() => {
     if (props.phase === 'failed') {
@@ -291,18 +295,95 @@ export function RuntimeBootGate(props: {
         >
           {props.error ?? 'Unknown startup failure.'}
         </pre>
-        <button
-          autoFocus
-          className="sar-action-primary mt-5 px-4 py-2 text-[12px] font-black uppercase tracking-[0.08em]"
-          onClick={props.onReload}
-          ref={reloadButtonRef}
-          type="button"
-        >
-          Reload clean runtime
-        </button>
+        <div className="mt-5 flex flex-wrap gap-3">
+          <button
+            autoFocus
+            className="sar-action-primary px-4 py-2 text-[12px] font-black uppercase tracking-[0.08em]"
+            onClick={props.onReload}
+            ref={reloadButtonRef}
+            type="button"
+          >
+            Reload clean runtime
+          </button>
+          <button
+            className="sar-button px-4 py-2 text-[12px] font-black uppercase tracking-[0.08em] disabled:opacity-50"
+            data-testid="runtime-fault-export-support-bundle"
+            disabled={exporting}
+            onClick={() => void handleStartupFaultExport()}
+            type="button"
+          >
+            {exporting ? 'Exporting...' : 'Export support bundle'}
+          </button>
+        </div>
+        {exportPath !== null ? (
+          <p
+            className="mt-4 break-all text-xs text-emerald-200"
+            data-testid="runtime-fault-export-path"
+          >
+            {exportPath}
+          </p>
+        ) : null}
+        {exportError !== null ? (
+          <p
+            className="mt-4 text-xs text-rose-200"
+            data-testid="runtime-fault-export-error"
+          >
+            {exportError}
+          </p>
+        ) : null}
       </section>
     </main>
   )
+
+  async function handleStartupFaultExport(): Promise<void> {
+    const generatedAt = new Date().toISOString()
+    setExporting(true)
+    setExportPath(null)
+    setExportError(null)
+
+    try {
+      const path = await exportSupportBundle(
+        `startup-fault-support-bundle-${safeRuntimeFaultTimestamp(generatedAt)}.txt`,
+        buildStartupFaultSupportReport({
+          generatedAt,
+          appVersion: APP_VERSION,
+          faultMessage: props.error ?? 'Unknown startup failure.',
+          location: typeof window === 'undefined' ? 'unknown' : window.location.href,
+          userAgent: typeof navigator === 'undefined' ? 'unknown' : navigator.userAgent,
+        }),
+      )
+      setExportPath(path)
+    } catch (error) {
+      setExportError(error instanceof Error ? error.message : 'Startup fault support bundle export failed.')
+    } finally {
+      setExporting(false)
+    }
+  }
+}
+
+function buildStartupFaultSupportReport(input: {
+  readonly generatedAt: string
+  readonly appVersion: string
+  readonly faultMessage: string
+  readonly location: string
+  readonly userAgent: string
+}): string {
+  return [
+    'Startup Fault Support Bundle',
+    `generated at: ${input.generatedAt}`,
+    `app version: ${input.appVersion}`,
+    `location: ${input.location}`,
+    `user agent: ${input.userAgent}`,
+    '',
+    '[startup-fault]',
+    'phase: failed',
+    'fault message:',
+    input.faultMessage,
+  ].join('\n')
+}
+
+function safeRuntimeFaultTimestamp(input: string): string {
+  return input.replace(/[:.]/g, '-')
 }
 
 export function RuntimeSafetyBanner(props: {

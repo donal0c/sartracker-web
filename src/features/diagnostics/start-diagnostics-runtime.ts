@@ -6,6 +6,7 @@ import type { AppSettings, RuntimeBootstrapSettings } from '../settings/settings
 import type { TrackingConnectionStatus, TrackingSnapshot } from '../tracking/tracking-types'
 import type { Mission, MissionStore } from '../../infrastructure/mission-store/tauri-mission-store'
 import type { DesktopRuntimeKind } from '../../lib/desktop-runtime'
+import type { SupportBundleExportOptions } from '../../types/electron-bridge'
 
 type DependencySmoke = {
   readonly hasMapLibre: boolean
@@ -46,11 +47,22 @@ type StartDiagnosticsRuntimeDependencies = {
    * Exports a support bundle (environment + crash history + runtime log). Optional:
    * runtimes without crash/log history fall back to the plain diagnostics report.
    */
-  readonly exportSupportBundle?: (fileName: string, contents: string) => Promise<string>
+  readonly exportSupportBundle?: (
+    fileName: string,
+    contents: string,
+    options?: SupportBundleExportOptions,
+  ) => Promise<string>
+  readonly exportTimeFramedSupportBundle?: (
+    fileName: string,
+    contents: string,
+    options: SupportBundleExportOptions,
+  ) => Promise<string>
   readonly refreshLayerCatalogIfActive: (missionId: string) => Promise<void>
   readonly applyRuntime: (runtime: DiagnosticsRuntimeState) => void
   readonly now?: () => Date
 }
+
+const INCIDENT_WINDOW_MINUTES = 30
 
 const EMPTY_RUNTIME: DiagnosticsRuntimeState = {
   snapshot: null,
@@ -187,6 +199,50 @@ export async function startDiagnosticsRuntime(
         throw error
       }
     },
+    exportTimeFramedSupportBundle: async (incidentAt: string) => {
+      const snapshot = state.snapshot
+      if (snapshot === null) {
+        return null
+      }
+
+      const incident = normalizeIncidentTime(incidentAt)
+      state = {
+        ...state,
+        exporting: true,
+        error: null,
+        feedback: null,
+      }
+      publishRuntime()
+
+      try {
+        const exportBundle = dependencies.exportTimeFramedSupportBundle ?? dependencies.exportSupportBundle ?? dependencies.exportReport
+        const fileName = `support-bundle-incident-${safeTimestamp(incident)}.txt`
+        const contents = buildTimeFramedSupportReport(snapshot.supportReport, incident)
+        const exportPath = await exportBundle(fileName, contents, {
+          timeFrame: {
+            incidentAt: incident,
+            beforeMinutes: INCIDENT_WINDOW_MINUTES,
+            afterMinutes: INCIDENT_WINDOW_MINUTES,
+          },
+        })
+        state = {
+          ...state,
+          exporting: false,
+          exportPath,
+          feedback: `Exported time-framed support bundle to ${exportPath}`,
+        }
+        publishRuntime()
+        return exportPath
+      } catch (error) {
+        state = {
+          ...state,
+          exporting: false,
+          error: toErrorMessage(error, 'Time-framed support bundle export failed.'),
+        }
+        publishRuntime()
+        throw error
+      }
+    },
     clearFeedback: () => {
       state = {
         ...state,
@@ -296,4 +352,35 @@ function now(
 
 function toErrorMessage(error: unknown, fallback: string): string {
   return error instanceof Error ? error.message : fallback
+}
+
+function normalizeIncidentTime(input: string): string {
+  const timestamp = Date.parse(input)
+  if (!Number.isFinite(timestamp)) {
+    throw new Error('Enter a valid incident time before exporting a time-framed support bundle.')
+  }
+  return new Date(timestamp).toISOString()
+}
+
+function buildTimeFramedSupportReport(
+  supportReport: string,
+  incidentAt: string,
+): string {
+  const incidentTimestamp = Date.parse(incidentAt)
+  const startAt = new Date(incidentTimestamp - INCIDENT_WINDOW_MINUTES * 60_000).toISOString()
+  const endAt = new Date(incidentTimestamp + INCIDENT_WINDOW_MINUTES * 60_000).toISOString()
+  return [
+    '[incident-window]',
+    `incident time: ${incidentAt}`,
+    `window start: ${startAt}`,
+    `window end: ${endAt}`,
+    `window before minutes: ${INCIDENT_WINDOW_MINUTES}`,
+    `window after minutes: ${INCIDENT_WINDOW_MINUTES}`,
+    '',
+    supportReport,
+  ].join('\n')
+}
+
+function safeTimestamp(input: string): string {
+  return input.replace(/[:.]/g, '-')
 }

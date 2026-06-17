@@ -1070,6 +1070,11 @@
               chat message when reporting an issue.
             </li>
             <li>
+              <strong>Export Incident Bundle</strong> (Diagnostics workspace) saves the same local bundle
+              with a known incident time and a one-hour evidence window, 30 minutes before and 30 minutes
+              after that time. Desktop bundles use the window to focus crash history and runtime logs.
+            </li>
+            <li>
               <strong>Unexpected-shutdown notice.</strong> If the app closed unexpectedly the previous time,
               a calm amber notice appears at the top of Diagnostics with a direct
               <em>Export Support Bundle</em> button. It is dismissible and never blocks an active mission.
@@ -1091,9 +1096,9 @@
           <p>
             During startup, SAR Tracker shows a preparing screen until runtime services are ready. If the
             runtime cannot start, the app shows a startup fault panel instead of a partially disabled
-            mission console. Use Reload once. If the same fault returns, do not treat the app as ready for
-            operational use; record the fault message and capture diagnostics after the app becomes
-            available again.
+            mission console. The panel can export a startup-fault support bundle before the normal
+            Diagnostics workspace is available. Use Reload once after exporting or recording the fault. If
+            the same fault returns, do not treat the app as ready for operational use.
           </p>
           <p>
             SAR Tracker is a single-instance desktop app. If you click the launcher while it is already

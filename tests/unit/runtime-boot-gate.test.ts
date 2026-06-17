@@ -3,6 +3,12 @@ import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
+const exportSupportBundleMock = vi.hoisted(() => vi.fn())
+
+vi.mock('../../src/infrastructure/support-report/tauri-support-report-store', () => ({
+  exportSupportBundle: exportSupportBundleMock,
+}))
+
 import { CommandMast, RuntimeBootGate, RuntimeSafetyBanner } from '../../src/App'
 import { useAutosaveStatusStore } from '../../src/features/persistence/autosave-status-store'
 import { runtimeFaultReloadTarget } from '../../src/features/runtime/runtime-fault-reload'
@@ -18,6 +24,7 @@ describe('RuntimeBootGate', () => {
     host?.remove()
     root = null
     host = null
+    exportSupportBundleMock.mockReset()
     useAutosaveStatusStore.getState().reset()
   })
 
@@ -124,6 +131,35 @@ describe('RuntimeBootGate', () => {
     expect(document.querySelector('[aria-live="assertive"]')).not.toBeNull()
     button?.click()
     expect(onReload).toHaveBeenCalledTimes(1)
+  })
+
+  it('exports a startup-fault support bundle before the normal diagnostics workspace is available', async () => {
+    exportSupportBundleMock.mockResolvedValue('/tmp/browser-harness/diagnostics/startup-fault-support-bundle.txt')
+
+    render(
+      React.createElement(RuntimeBootGate, {
+        phase: 'failed',
+        error: 'SQLite mission store unavailable.',
+        onReload: vi.fn(),
+      }),
+    )
+
+    const exportButton = document.querySelector('[data-testid="runtime-fault-export-support-bundle"]')
+    expect(exportButton).not.toBeNull()
+
+    await act(async () => {
+      exportButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(exportSupportBundleMock).toHaveBeenCalledTimes(1)
+    const [fileName, contents] = exportSupportBundleMock.mock.calls[0]!
+    expect(fileName).toMatch(/^startup-fault-support-bundle-.+\.txt$/)
+    expect(contents).toContain('Startup Fault Support Bundle')
+    expect(contents).toContain('fault message:')
+    expect(contents).toContain('SQLite mission store unavailable.')
+    expect(document.querySelector('[data-testid="runtime-fault-export-path"]')?.textContent).toContain(
+      '/tmp/browser-harness/diagnostics/startup-fault-support-bundle.txt',
+    )
   })
 
   it('builds a clean fault reload URL without browser harness flags', () => {

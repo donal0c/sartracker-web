@@ -25,6 +25,7 @@ export function DiagnosticsWorkspace() {
   const exportPath = useDiagnosticsStore((state) => state.exportPath)
   const [localFeedback, setLocalFeedback] = useState<string | null>(null)
   const [crashRecovery, setCrashRecovery] = useState<CrashRecoveryState | null>(null)
+  const [incidentTime, setIncidentTime] = useState('')
 
   useEffect(() => {
     if (!open || controller === null) {
@@ -150,6 +151,28 @@ export function DiagnosticsWorkspace() {
                     >
                       {exporting ? 'Exporting...' : 'Export Support Bundle'}
                     </button>
+                    <label className="flex flex-col gap-1 text-xs font-semibold uppercase tracking-[0.08em] text-stone-300">
+                      Incident time
+                      <input
+                        className="sar-input px-3 py-2 text-sm normal-case tracking-normal"
+                        data-testid="diagnostics-incident-time-input"
+                        onChange={(event) => setIncidentTime(event.target.value)}
+                        type="datetime-local"
+                        value={incidentTime}
+                      />
+                    </label>
+                    <button
+                      className="sar-button px-4 py-2 text-sm font-semibold disabled:opacity-50"
+                      data-testid="diagnostics-export-time-framed-support-bundle"
+                      disabled={exporting || snapshot === null || incidentTime === ''}
+                      onClick={() => {
+                        setLocalFeedback(null)
+                        void controller?.exportTimeFramedSupportBundle(toIncidentIso(incidentTime))
+                      }}
+                      type="button"
+                    >
+                      {exporting ? 'Exporting...' : 'Export Incident Bundle'}
+                    </button>
                     <button
                       className="border border-amber-400/40 bg-amber-400/10 px-4 py-2 text-sm font-semibold text-amber-100 transition hover:bg-amber-400/20 disabled:opacity-50"
                       data-testid="diagnostics-repair-layer-catalog"
@@ -252,6 +275,10 @@ export function DiagnosticsWorkspace() {
     setLocalFeedback('Diagnostics report copied to clipboard.')
     controller?.clearFeedback()
   }
+}
+
+function toIncidentIso(value: string): string {
+  return new Date(value).toISOString()
 }
 
 function DiagnosticsSection(props: {

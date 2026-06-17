@@ -13,6 +13,11 @@ const FORBIDDEN_DIAGNOSTICS_PATH_SEGMENTS = Object.freeze([
   'Trust Tokens',
   'Code Cache',
 ])
+const DEFAULT_INCIDENT_WINDOW_MINUTES = 30
+const SECRET_LINE_KEY_PATTERN = /(password|token|secret|credential|api[-_]?key|authorization)\s*[:=]/i
+const SECRET_JSON_KEY_PATTERN = /("(?:password|token|secret|credential|api[-_]?key|authorization)"\s*:\s*)"[^"]*"/gi
+const AUTH_HEADER_PATTERN = /\b(Authorization\s*:\s*)(?:Bearer|Basic)\s+\S+/gi
+const AUTH_TOKEN_PATTERN = /\b(?:Bearer|Basic)\s+[A-Za-z0-9._~+/=-]+/gi
 
 /**
  * Creates Electron main-process file adapters for app-owned runtime state.
@@ -54,6 +59,7 @@ function createElectronRuntimeFiles(options) {
   }
 
   async function exportSupportBundle(input) {
+    const incidentWindow = normalizeIncidentWindow(input?.timeFrame)
     const [report, crashes, logEntries] = await Promise.all([
       buildReport(input.contents),
       readRecentCrashes().catch(() => []),
@@ -61,9 +67,10 @@ function createElectronRuntimeFiles(options) {
     ])
     const bundle = [
       report,
-      formatCrashHistory(crashes),
+      ...(incidentWindow === null ? [] : [formatIncidentWindow(incidentWindow), '']),
+      formatCrashHistory(filterEntriesByIncidentWindow(crashes, incidentWindow)),
       '',
-      formatRuntimeLog(logEntries),
+      formatRuntimeLog(filterEntriesByIncidentWindow(logEntries, incidentWindow)),
       '',
     ].join('\n')
     return writeReport(input.fileName, bundle)
@@ -89,6 +96,17 @@ function createElectronRuntimeFiles(options) {
   }
 }
 
+function formatIncidentWindow(incidentWindow) {
+  return [
+    '[incident-window]',
+    `incident time: ${incidentWindow.incidentAt}`,
+    `window start: ${incidentWindow.startAt}`,
+    `window end: ${incidentWindow.endAt}`,
+    `window before minutes: ${incidentWindow.beforeMinutes}`,
+    `window after minutes: ${incidentWindow.afterMinutes}`,
+  ].join('\n')
+}
+
 function formatCrashHistory(crashes) {
   const entries = Array.isArray(crashes) ? crashes : []
   const lines = ['[crash-history]', `crash count: ${entries.length}`]
@@ -99,9 +117,9 @@ function formatCrashHistory(crashes) {
   for (const crash of entries) {
     const ts = readDiagnosticsValue(crash?.ts, 'unknown-time')
     const kind = readDiagnosticsValue(crash?.kind, 'unknown')
-    const summary = readDiagnosticsValue(crash?.summary, '(no summary)')
+    const summary = sanitizeDiagnosticsText(readDiagnosticsValue(crash?.summary, '(no summary)'))
     lines.push(`${ts} ${kind}: ${summary}`)
-    const detail = readDiagnosticsValue(crash?.detail, '')
+    const detail = sanitizeDiagnosticsText(readDiagnosticsValue(crash?.detail, ''))
     if (detail !== '') {
       lines.push(`  detail: ${detail}`)
     }
@@ -117,7 +135,7 @@ function formatRuntimeLog(logEntries) {
     return lines.join('\n')
   }
   for (const entry of entries) {
-    lines.push(redactSecrets(JSON.stringify(entry)))
+    lines.push(sanitizeDiagnosticsText(JSON.stringify(entry)))
   }
   return lines.join('\n')
 }
@@ -130,7 +148,7 @@ function buildElectronDiagnosticsReport(input) {
     `node: ${input.versions.node}`,
     `platform: ${input.platform}`,
     `os release: ${os.release()}`,
-    `userData path: ${input.userDataPath}`,
+    `userData path: ${sanitizeDiagnosticsText(input.userDataPath)}`,
     `safeStorage backend: ${input.safeStorageBackend}`,
     `credential storage: local-file`,
     `provider url: ${input.settings.dataSource.baseUrl || 'not configured'}`,
@@ -142,7 +160,7 @@ function buildElectronDiagnosticsReport(input) {
     ...formatOfficialMapPackages(input.settings.officialMaps?.packages),
     '',
     '[support-report]',
-    redactSecrets(input.contents),
+    sanitizeDiagnosticsText(input.contents),
     '',
   ].join('\n')
 }
@@ -189,6 +207,50 @@ function readDiagnosticsValue(input, fallback) {
   return typeof input === 'string' && input.trim() !== '' ? input.trim() : fallback
 }
 
+function normalizeIncidentWindow(input) {
+  if (input === null || typeof input !== 'object') {
+    return null
+  }
+  const incidentMs = Date.parse(input.incidentAt)
+  if (!Number.isFinite(incidentMs)) {
+    return null
+  }
+  const beforeMinutes = normalizeWindowMinutes(input.beforeMinutes)
+  const afterMinutes = normalizeWindowMinutes(input.afterMinutes)
+  const startMs = incidentMs - beforeMinutes * 60_000
+  const endMs = incidentMs + afterMinutes * 60_000
+  return {
+    incidentAt: new Date(incidentMs).toISOString(),
+    startAt: new Date(startMs).toISOString(),
+    endAt: new Date(endMs).toISOString(),
+    startMs,
+    endMs,
+    beforeMinutes,
+    afterMinutes,
+  }
+}
+
+function normalizeWindowMinutes(input) {
+  return Number.isFinite(input) && input >= 0 ? input : DEFAULT_INCIDENT_WINDOW_MINUTES
+}
+
+function filterEntriesByIncidentWindow(entries, incidentWindow) {
+  if (incidentWindow === null) {
+    return Array.isArray(entries) ? entries : []
+  }
+  if (!Array.isArray(entries)) {
+    return []
+  }
+  return entries.filter((entry) => {
+    const timestampMs = Date.parse(entry?.ts)
+    return (
+      Number.isFinite(timestampMs) &&
+      timestampMs >= incidentWindow.startMs &&
+      timestampMs <= incidentWindow.endMs
+    )
+  })
+}
+
 function formatCoordinate(input) {
   const value = Number(input)
   if (!Number.isFinite(value)) {
@@ -219,12 +281,29 @@ function sanitizeReportFileName(input) {
   return sanitized
 }
 
-function redactSecrets(contents) {
-  return String(contents)
+function sanitizeDiagnosticsText(contents) {
+  let sanitized = String(contents)
+    .replace(SECRET_JSON_KEY_PATTERN, '$1"[redacted]"')
+    .replace(AUTH_HEADER_PATTERN, '$1[redacted]')
+    .replace(AUTH_TOKEN_PATTERN, '[redacted]')
+    .replace(/(\/(?:home|Users)\/)[^/\s:"]+/g, '$1[redacted]')
+    .replace(/([A-Za-z]:\\Users\\)[^\\\s:"]+/g, '$1[redacted]')
+
+  for (const segment of FORBIDDEN_DIAGNOSTICS_PATH_SEGMENTS) {
+    sanitized = sanitized.replaceAll(segment, '[redacted-path-segment]')
+  }
+
+  return sanitized
     .split('\n')
     .map((line) => {
-      if (/(password|token|secret)\s*[:=]/i.test(line)) {
-        return line.replace(/([:=]\s*).+$/u, '$1[redacted]')
+      if (line.trimStart().startsWith('{')) {
+        return line
+      }
+      if (SECRET_LINE_KEY_PATTERN.test(line)) {
+        return line.replace(
+          /((?:password|token|secret|credential|api[-_]?key|authorization)\s*[:=]\s*).+$/iu,
+          '$1[redacted]',
+        )
       }
       return line
     })
