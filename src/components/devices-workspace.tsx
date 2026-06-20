@@ -1,10 +1,13 @@
-import { useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 
 import { getAppRuntimeController } from '../features/runtime/app-runtime-controller'
 import { WorkspaceOverlay, WorkspaceHeader } from './workspace-overlay'
 import {
   buildDeviceWorkspaceRows,
   buildDeviceWorkspaceSummary,
+  filterDeviceWorkspaceRows,
+  resolveVisibleDeviceSelection,
+  type DeviceWorkspaceFilter,
   type DeviceWorkspaceRow,
 } from '../features/tracking/device-workspace-model'
 import { useMissionStore } from '../features/mission/mission-store'
@@ -25,8 +28,6 @@ import { useMapTargetStore } from '../features/map/map-target-store'
 const DEVICES_WORKSPACE_TITLE_ID = 'devices-workspace-title'
 const DEVICE_ROW_GRID_COLUMNS =
   'grid-cols-[minmax(7.5rem,1fr)_minmax(9rem,1.2fr)_4rem_6rem_7rem_5.5rem_6rem_8rem]'
-
-type DeviceFilter = 'all' | 'active' | 'hidden' | 'online' | 'nofix' | 'stale'
 
 /**
  * Renders the dedicated tracking devices workspace used for roster-scale operations.
@@ -54,7 +55,8 @@ export function DevicesWorkspace() {
   const queueTarget = useMapTargetStore((state) => state.queueTarget)
   const [refreshing, setRefreshing] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [activeFilter, setActiveFilter] = useState<DeviceFilter>('all')
+  const [activeFilter, setActiveFilter] = useState<DeviceWorkspaceFilter>('all')
+  const [deviceQuery, setDeviceQuery] = useState('')
 
   const rows = useMemo(
     () => buildDeviceWorkspaceRows(trackingSnapshot, hiddenDeviceIds, activeDeviceIds),
@@ -65,12 +67,26 @@ export function DevicesWorkspace() {
     [rows, trackingStatus],
   )
 
-  const filteredRows = useMemo(() => applyDeviceFilter(rows, activeFilter), [rows, activeFilter])
+  const filteredRows = useMemo(
+    () => filterDeviceWorkspaceRows(rows, activeFilter, deviceQuery),
+    [activeFilter, deviceQuery, rows],
+  )
+
+  useEffect(() => {
+    if (!open) {
+      return
+    }
+
+    const resolvedSelection = resolveVisibleDeviceSelection(filteredRows, selectedDeviceId)
+    if (resolvedSelection !== selectedDeviceId) {
+      selectDevice(resolvedSelection)
+    }
+  }, [filteredRows, open, selectDevice, selectedDeviceId])
 
   const selectedRow =
-    rows.find((row) => row.deviceId === selectedDeviceId) ?? rows[0] ?? null
+    filteredRows.find((row) => row.deviceId === selectedDeviceId) ?? filteredRows[0] ?? null
 
-  const filterTabs: readonly { readonly id: DeviceFilter; readonly label: string; readonly count: number }[] = [
+  const filterTabs: readonly { readonly id: DeviceWorkspaceFilter; readonly label: string; readonly count: number }[] = [
     { id: 'all', label: 'Devices', count: summary.totalDevices },
     { id: 'active', label: 'Active', count: summary.activeDevices },
     { id: 'hidden', label: 'Hidden', count: summary.hiddenDevices },
@@ -200,7 +216,7 @@ export function DevicesWorkspace() {
 
             {/* Filter tabs */}
             <div className="flex-shrink-0 border-b border-stone-800 px-6 py-3" data-testid="device-filter-tabs">
-              <div className="grid grid-cols-6 gap-2">
+              <div className="grid grid-cols-3 gap-2 xl:grid-cols-6">
                 {filterTabs.map((tab) => (
                   <button
                     className={`flex flex-col items-center rounded-lg border px-2 py-2 text-center transition-colors ${
@@ -218,6 +234,18 @@ export function DevicesWorkspace() {
                   </button>
                 ))}
               </div>
+              <label className="mt-3 block text-sm text-stone-200">
+                <span className="sr-only">Search visible devices</span>
+                <input
+                  className="w-full rounded-lg border border-stone-700 bg-stone-950 px-3 py-2 text-sm text-stone-100 placeholder:text-stone-500 focus:border-amber-500 focus:outline-none"
+                  data-testid="device-list-search"
+                  onChange={(event) => setDeviceQuery(event.currentTarget.value)}
+                  onInput={(event) => setDeviceQuery(event.currentTarget.value)}
+                  placeholder={`Search ${getFilterLabel(activeFilter).toLowerCase()} devices`}
+                  type="search"
+                  value={deviceQuery}
+                />
+              </label>
             </div>
 
             {/* Device list — fills remaining vertical space */}
@@ -227,7 +255,7 @@ export function DevicesWorkspace() {
                   className="px-6 py-6 text-sm text-stone-300"
                   data-testid="device-filter-empty-state"
                 >
-                  {getEmptyStateMessage(activeFilter)}
+                  {getEmptyStateMessage(activeFilter, deviceQuery)}
                 </p>
               ) : (
                 <>
@@ -265,13 +293,13 @@ export function DevicesWorkspace() {
             </div>
           </section>
 
-          <aside className="overflow-y-auto px-6 py-6" data-testid="devices-inspector">
+          <aside className="min-w-0 overflow-y-auto px-6 py-6" data-testid="devices-inspector">
             {selectedRow === null ? (
               <div className="rounded-2xl border border-dashed border-stone-600 bg-stone-900/30 p-5 text-sm italic text-stone-300">
                 No devices available. Configure a tracking provider in Settings to see devices here.
               </div>
             ) : (
-              <div className="space-y-4 rounded-2xl border border-stone-800 bg-stone-900/40 p-5">
+              <div className="min-w-0 space-y-4 rounded-2xl border border-stone-800 bg-stone-900/40 p-5">
                 <div>
                   <p className="sar-meta-label">Selected Device</p>
                   <h3
@@ -299,9 +327,9 @@ export function DevicesWorkspace() {
                   />
                 </dl>
 
-                <div className="flex gap-3">
+                <div className="grid gap-3">
                   <button
-                    className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-[11px] font-bold uppercase tracking-wider text-amber-100 disabled:opacity-40"
+                    className="min-h-10 w-full whitespace-normal rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-[11px] font-bold uppercase tracking-wider text-amber-100 disabled:opacity-40"
                     data-testid="devices-inspector-zoom"
                     disabled={!selectedRow.hasFix}
                     onClick={() => {
@@ -350,27 +378,12 @@ export function DevicesWorkspace() {
   }
 }
 
-function applyDeviceFilter(
-  rows: readonly DeviceWorkspaceRow[],
-  filter: DeviceFilter,
-): readonly DeviceWorkspaceRow[] {
-  switch (filter) {
-    case 'all':
-      return rows
-    case 'active':
-      return rows.filter((row) => row.active)
-    case 'hidden':
-      return rows.filter((row) => row.hidden)
-    case 'online':
-      return rows.filter((row) => row.status === 'online')
-    case 'nofix':
-      return rows.filter((row) => !row.hasFix)
-    case 'stale':
-      return rows.filter((row) => row.stale)
+function getEmptyStateMessage(filter: DeviceWorkspaceFilter, query: string): string {
+  const normalizedQuery = query.trim()
+  if (normalizedQuery !== '') {
+    return `No devices match ${normalizedQuery} in ${getFilterLabel(filter)}.`
   }
-}
 
-function getEmptyStateMessage(filter: DeviceFilter): string {
   switch (filter) {
     case 'all':
       return 'No devices available. Configure a tracking provider in Settings to see devices here.'
@@ -384,6 +397,23 @@ function getEmptyStateMessage(filter: DeviceFilter): string {
       return 'All devices have a GPS fix. Devices without position data will appear here.'
     case 'stale':
       return 'No stale devices. Devices that stop reporting for more than 5 minutes will appear here.'
+  }
+}
+
+function getFilterLabel(filter: DeviceWorkspaceFilter): string {
+  switch (filter) {
+    case 'all':
+      return 'Devices'
+    case 'active':
+      return 'Active'
+    case 'hidden':
+      return 'Hidden'
+    case 'online':
+      return 'Online'
+    case 'nofix':
+      return 'NoFix'
+    case 'stale':
+      return 'Stale'
   }
 }
 

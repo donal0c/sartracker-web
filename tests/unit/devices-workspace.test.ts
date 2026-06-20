@@ -164,6 +164,45 @@ describe('DevicesWorkspace', () => {
     )
   })
 
+  it('keeps selected device and search scoped to the active filter list', async () => {
+    const { DevicesWorkspace } = await import('../../src/components/devices-workspace')
+    useTrackingStore.setState({ snapshot: SNAPSHOT, status: STATUS })
+    useMissionStore.setState({
+      currentMission: {
+        id: 'mission-1',
+        name: 'Devices Mission',
+        status: 'active',
+        start_time: '2026-04-10T17:00:00.000Z',
+        pause_time: null,
+        finish_time: null,
+        paused_seconds: 0,
+        notes: null,
+        schema_version: 1,
+      },
+      phase: 'active',
+    })
+    useActiveMissionDevicesStore.getState().setDeviceActive('mission-1', 'bravo', true)
+    useDeviceWorkspaceStore.setState({ open: true, selectedDeviceId: 'alpha' })
+
+    render(React.createElement(DevicesWorkspace))
+    await waitForElement('[data-testid="devices-workspace"]')
+
+    click('[data-testid="device-filter-active"]')
+
+    expect(useDeviceWorkspaceStore.getState().selectedDeviceId).toBe('bravo')
+    expect(getText('[data-testid="devices-inspector-title"]')).toContain('Bravo Team')
+    expect(document.querySelector('[data-testid="device-row-alpha"]')).toBeNull()
+
+    changeInput('[data-testid="device-list-search"]', 'Alpha')
+
+    expect(document.querySelector('[data-testid="device-row-alpha"]')).toBeNull()
+    expect(document.querySelector('[data-testid="device-row-bravo"]')).toBeNull()
+    expect(getText('[data-testid="device-filter-empty-state"]')).toContain(
+      'No devices match Alpha in Active',
+    )
+    expect(useDeviceWorkspaceStore.getState().selectedDeviceId).toBeNull()
+  })
+
   it('updates per-device breadcrumb colour via palette swatch and global breadcrumb size', async () => {
     const { DevicesWorkspace } = await import('../../src/components/devices-workspace')
     useTrackingStore.setState({ snapshot: SNAPSHOT, status: STATUS })

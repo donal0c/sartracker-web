@@ -62,7 +62,7 @@ test.describe('M19 devices workspace', () => {
 
     const inspector = page.getByTestId('devices-inspector')
     await inspector.click({ position: { x: 24, y: 260 } })
-    await page.getByTestId('device-list-scroll').click({ position: { x: 320, y: 260 } })
+    await clickInsideLowerListArea(page)
 
     await expect(page.getByTestId('devices-workspace')).toBeVisible()
     await expect(page.getByRole('dialog', { name: 'Marker Details' })).toBeHidden()
@@ -74,6 +74,61 @@ test.describe('M19 devices workspace', () => {
     await expect(page.getByTestId('device-visibility-bravo')).toBeChecked()
     await page.getByTestId('device-visibility-bravo').click()
     await expect(page.getByTestId('device-visibility-bravo')).not.toBeChecked()
+  })
+
+  test('keeps selection and search scoped to the active device list [DON-190]', async ({
+    page,
+  }) => {
+    await page.getByTestId('open-devices-workspace').click()
+    await expect(page.getByTestId('devices-workspace')).toBeVisible()
+    await expect(page.getByTestId('devices-inspector-title')).toContainText('Alpha Team')
+
+    await page.getByTestId('device-active-toggle-bravo').click()
+    await page.getByTestId('device-filter-active').click()
+
+    await expect(page.getByTestId('device-row-bravo')).toBeVisible()
+    await expect(page.getByTestId('device-row-alpha')).toBeHidden()
+    await expect(page.getByTestId('devices-inspector-title')).toContainText('Bravo Team')
+
+    await page.getByTestId('device-list-search').fill('Alpha')
+
+    await expect(page.getByTestId('device-row-alpha')).toBeHidden()
+    await expect(page.getByTestId('device-row-bravo')).toBeHidden()
+    await expect(page.getByTestId('device-filter-empty-state')).toContainText(
+      'No devices match Alpha in Active',
+    )
+    await expect(page.getByTestId('devices-inspector-title')).toBeHidden()
+  })
+
+  test('keeps selected device actions visible at constrained desktop width [DON-190]', async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 1100, height: 720 })
+    await page.getByTestId('open-devices-workspace').click()
+    await expect(page.getByTestId('devices-workspace')).toBeVisible()
+
+    const zoomButton = page.getByTestId('devices-inspector-zoom')
+    await expect(zoomButton).toBeVisible()
+    await expect(zoomButton).toBeInViewport()
+
+    const boxes = await page.evaluate(() => {
+      const inspector = document.querySelector('[data-testid="devices-inspector"]')
+      const zoom = document.querySelector('[data-testid="devices-inspector-zoom"]')
+      if (!(inspector instanceof HTMLElement) || !(zoom instanceof HTMLElement)) {
+        throw new Error('Expected inspector and selected-device zoom button.')
+      }
+      const inspectorBox = inspector.getBoundingClientRect()
+      const zoomBox = zoom.getBoundingClientRect()
+      return {
+        inspectorRight: inspectorBox.right,
+        zoomRight: zoomBox.right,
+        zoomLeft: zoomBox.left,
+        inspectorLeft: inspectorBox.left,
+      }
+    })
+
+    expect(boxes.zoomLeft).toBeGreaterThanOrEqual(boxes.inspectorLeft)
+    expect(boxes.zoomRight).toBeLessThanOrEqual(boxes.inspectorRight + 1)
   })
 
   test('updates rendered breadcrumb colour, size, and global trail mode', async ({ page }) => {
@@ -172,6 +227,21 @@ test.describe('M19 devices workspace', () => {
     })
   })
 })
+
+async function clickInsideLowerListArea(page: import('@playwright/test').Page) {
+  const list = page.getByTestId('device-list-scroll')
+  const box = await list.boundingBox()
+  if (box === null) {
+    throw new Error('Device list scroll area is unavailable.')
+  }
+
+  await list.click({
+    position: {
+      x: Math.min(320, Math.max(8, box.width - 8)),
+      y: Math.max(8, box.height - 8),
+    },
+  })
+}
 
 async function formatTrackingLayerState(page: import('@playwright/test').Page) {
   const state = await readTrackingLayerState(page)

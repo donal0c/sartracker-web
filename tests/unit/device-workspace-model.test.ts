@@ -3,6 +3,8 @@ import { describe, expect, it } from 'vitest'
 import {
   buildDeviceWorkspaceRows,
   buildDeviceWorkspaceSummary,
+  filterDeviceWorkspaceRows,
+  resolveVisibleDeviceSelection,
 } from '../../src/features/tracking/device-workspace-model'
 import type { TrackingConnectionStatus, TrackingSnapshot } from '../../src/features/tracking/tracking-types'
 
@@ -117,5 +119,27 @@ describe('device workspace model', () => {
       warning: 'OFFLINE MODE — showing last known positions.',
     })
     expect(summary.lastSuccessAtDisplay).not.toBe('N/A')
+  })
+
+  it('scopes device search to the active list filter', () => {
+    const rows = buildDeviceWorkspaceRows(SNAPSHOT, [], ['bravo'])
+
+    expect(filterDeviceWorkspaceRows(rows, 'active', 'Alpha').map((row) => row.deviceId)).toEqual([])
+    expect(filterDeviceWorkspaceRows(rows, 'active', 'Bravo').map((row) => row.deviceId)).toEqual([
+      'bravo',
+    ])
+    expect(filterDeviceWorkspaceRows(rows, 'all', 'Alpha').map((row) => row.deviceId)).toEqual([
+      'alpha',
+    ])
+  })
+
+  it('resolves selection to the first visible device when the current device is outside the list', () => {
+    const rows = buildDeviceWorkspaceRows(SNAPSHOT, [], ['bravo'])
+    const activeRows = filterDeviceWorkspaceRows(rows, 'active', '')
+    const noFixRows = filterDeviceWorkspaceRows(rows, 'nofix', '')
+
+    expect(resolveVisibleDeviceSelection(activeRows, 'alpha')).toBe('bravo')
+    expect(resolveVisibleDeviceSelection(activeRows, 'bravo')).toBe('bravo')
+    expect(resolveVisibleDeviceSelection(noFixRows, 'alpha')).toBeNull()
   })
 })

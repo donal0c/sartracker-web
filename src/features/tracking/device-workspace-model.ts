@@ -30,6 +30,11 @@ export type DeviceWorkspaceSummary = {
   readonly mode: TrackingConnectionStatus['mode']
 }
 
+export type DeviceWorkspaceFilter = 'all' | 'active' | 'hidden' | 'online' | 'nofix' | 'stale'
+
+/**
+ * Builds the operator-facing device roster rows from the current tracking snapshot.
+ */
 export function buildDeviceWorkspaceRows(
   snapshot: TrackingSnapshot,
   hiddenDeviceIds: readonly string[],
@@ -73,6 +78,49 @@ export function buildDeviceWorkspaceRows(
     .sort((left, right) => left.name.localeCompare(right.name))
 }
 
+/**
+ * Applies the active list tab before search so queries cannot escape the selected context.
+ */
+export function filterDeviceWorkspaceRows(
+  rows: readonly DeviceWorkspaceRow[],
+  filter: DeviceWorkspaceFilter,
+  query: string,
+): readonly DeviceWorkspaceRow[] {
+  const filteredRows = applyDeviceWorkspaceFilter(rows, filter)
+  const normalizedQuery = query.trim().toLowerCase()
+
+  if (normalizedQuery === '') {
+    return filteredRows
+  }
+
+  return filteredRows.filter((row) =>
+    [row.deviceId, row.name, row.status, row.sourceDisplay, row.lastSeenDisplay]
+      .join(' ')
+      .toLowerCase()
+      .includes(normalizedQuery),
+  )
+}
+
+/**
+ * Keeps selection inside the visible list, falling back to the first visible device.
+ */
+export function resolveVisibleDeviceSelection(
+  visibleRows: readonly DeviceWorkspaceRow[],
+  selectedDeviceId: string | null,
+): string | null {
+  if (
+    selectedDeviceId !== null &&
+    visibleRows.some((row) => row.deviceId === selectedDeviceId)
+  ) {
+    return selectedDeviceId
+  }
+
+  return visibleRows[0]?.deviceId ?? null
+}
+
+/**
+ * Summarizes the current workspace rows and tracking status for the Devices workspace header.
+ */
 export function buildDeviceWorkspaceSummary(
   rows: readonly DeviceWorkspaceRow[],
   status: TrackingConnectionStatus,
@@ -87,6 +135,26 @@ export function buildDeviceWorkspaceSummary(
     lastSuccessAtDisplay: formatTimestamp(status.lastSuccessAt),
     warning: status.warning,
     mode: status.mode,
+  }
+}
+
+function applyDeviceWorkspaceFilter(
+  rows: readonly DeviceWorkspaceRow[],
+  filter: DeviceWorkspaceFilter,
+): readonly DeviceWorkspaceRow[] {
+  switch (filter) {
+    case 'all':
+      return rows
+    case 'active':
+      return rows.filter((row) => row.active)
+    case 'hidden':
+      return rows.filter((row) => row.hidden)
+    case 'online':
+      return rows.filter((row) => row.status === 'online')
+    case 'nofix':
+      return rows.filter((row) => !row.hasFix)
+    case 'stale':
+      return rows.filter((row) => row.stale)
   }
 }
 
