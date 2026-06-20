@@ -1,291 +1,86 @@
-# HANDOFF.md — Live Baton
+# HANDOFF.md - Live Baton
 
-> Read this before doing any work. Keep it short. This is the baton, not the project diary.
+> Read this before doing work. Keep it short. This is the current baton, not the project diary. Older history lives in `handoff/archive/` plus commits and Linear.
 
 ## Current State
 
-- **Branch:** `master` is the canonical working branch.
-- **Hosted testing:** `https://sartracker-web.vercel.app/?missionHarness=1`
-- **Desktop:** Electron is the operational desktop lane (MapLibre + direct HTTPS Traccar, SQLite, filesystem, diagnostics, official map packages). Tauri remains historical/reference.
-- **Browser mode:** testing/training only (sessionStorage, not operational persistence).
-- **Latest test counts:** 152 unit files / 968 tests; 121 standard Playwright E2E; 47 backend tests.
-- **Latest published Electron beta:** `0.1.0-beta.7` / `electron-v0.1.0-beta.7` — DON-177 app-owned local credential storage + DON-176 docked Review + the DON-175 keyring guard. Built by GitHub Actions (run `27601812958`, success), deep Ubuntu 24.04.2 on-device smoke passed against the CI-built AppImage (credential matrix 3/3, real-keyring migration via live Traccar 33 devices/8 fixes, docked Review 6/6, release-blocking bad-secret gate, lifecycle, coord safety, sanitized diagnostics), and **published** at `https://github.com/donal0c/sartracker-web/releases/tag/electron-v0.1.0-beta.7` (Linux AppImage + `.deb` + `SHA256SUMS`) on 2026-06-16. AppImage SHA256 `848eb06321536c76f831a4e566450be82695f4d3b6c8336fce3fbcb4926ca4a7`. This supersedes beta.5 as the team artifact. (beta.6 was a DON-175-only hotfix, built/smoked but never published; its draft + tag were deleted.)
-- **Residual risk on beta.7:** Traccar credentials are now local app-owned plaintext with best-effort `0600` — intentional DON-177 trade for reliability on trusted team machines, not OS-keyring encryption. New beta.7 field issue: duplicate Electron instances can be opened by clicking the launcher during/after startup, causing the runtime fault; fixed locally under DON-180, awaiting packaged beta.8 smoke/release.
+- **Branch:** `master` is canonical and should be worked directly unless Donal says otherwise.
+- **Desktop lane:** Electron is operational. Tauri remains historical/reference.
+- **Hosted browser:** `https://sartracker-web.vercel.app/?missionHarness=1` is testing/training only; browser storage is not operational persistence.
+- **Latest published beta:** `electron-v0.1.0-beta.7`, published 2026-06-16 after GitHub Actions run `27601812958` and deep Ubuntu smoke. Team artifact: https://github.com/donal0c/sartracker-web/releases/tag/electron-v0.1.0-beta.7
+- **Next candidate:** beta.8. The web/browser side of the beta.8 candidate is validated; Electron packaged smoke/release is still required before sharing with testers.
 
-## Last Work Done
+## Beta.8 Candidate Status
 
-Final beta.8 candidate smoke/regression gate after DON-190 through DON-199 — **PASSED.**
-- Final gate covered: `npm run lint`; `npm run build`; `npm run test` (152 files / 968 tests); `npm run test:backend` (47 passed / 1 ignored); full `npm run test:e2e:chromium` (121/121); full visual Playwright (34/34); full `npm run visual:review -- --fail-on critical` (39/39, report `test-results/visual-verification/reports/visual-review-2026-06-20T11-20-59Z.json`).
-- The final visual gate caught stale verification harness assumptions, not runtime regressions: the multi-drawing visual flow did not fill the now-required Range Ring radius/count; several broad full-page prompts caused the reviewer to miss visible UI. Updated the visual test flow and prompts so the evidence matches the current product behavior.
-- Remaining release blocker before beta.8 promotion is still packaged Electron beta smoke/release gating, especially DON-180 duplicate-launch packaged smoke and the beta-specific smoke matrix from `CLAUDE.md`.
+DON-190 through DON-199 are complete, committed, pushed, and Linear-closed.
 
-DON-199 Coordinator and settings access-control decision — **DONE as decision/split-ticket work.**
-- Recorded `docs/settings-access-control-decision.md`: current Settings/admin roster behavior is an audit/workflow guard, not authentication; future protected surfaces are coordinator/admin roster edits, mission-affecting settings, finalized-mission unlock, and advanced repair actions; beta direction is a lightweight local privileged-settings guard, not full multi-user auth; mission unlock should stop relying only on the live mutable Settings roster.
-- Follow-ups created: `DON-219` Privileged Settings Mode, `DON-220` Mission Unlock Authority, and `DON-221` Access Recovery.
-- Manual known gaps now state the current trusted-machine access boundary. No app runtime, persistence, map rendering, Electron IPC, SQLite schema, filesystem export, diagnostics, packaging, launch path, offline tile protocol, or Traccar network behavior changed.
-- Verification: `git diff --check`; `npm run lint`; `npm run build`; focused Chromium Settings + Mission regression 22/22; manual render smoke confirmed the Settings access note is visible, no horizontal overflow, and 7/7 images load.
+Main beta.8 batch coverage:
 
-DON-198 Mission preview, map sharing, and external-resource workflow decisions — **DONE as decision/split-ticket work.**
-- Recorded `docs/mission-preview-external-resources-decision.md`: future Mission Preview should be read-only and reuse the mission overlay stack; map sharing should be a local export/print workflow rather than WhatsApp-specific sending; beta.8 external resources should stay with imported GPX/layer visibility until a live-resource ownership/lifecycle model is decided; evacuation/gear logs need a separate workflow decision; `DON-100` remains canonical for multi-day mission layer grouping.
-- Follow-ups created: `DON-215` Mission Preview, `DON-216` Map Export/Print, `DON-217` External Resources, and `DON-218` Evacuation/Gear Logs.
-- This changed planning/coordination only. No app runtime, persistence, map rendering, Electron IPC, SQLite schema, filesystem export, diagnostics, packaging, launch path, offline tile protocol, or Traccar network behavior changed.
-- Verification: `git diff --check`; `npm run lint`; `npm run build`; focused Chromium Mission Review + Layer Tree regression 13/13; focused Chromium GPX import regression 2/2.
+- DON-190 Devices workspace list/search/selection behavior.
+- DON-191 Map Tools / RHS Tools consolidation.
+- DON-192 Mission Control minimize behavior, helicopter move to Tools, top-panel simplification.
+- DON-193 Tracking stale-state visibility and map-label readability.
+- DON-194 Layer Tree and GPX readability controls.
+- DON-195 Map shell scale/readability and smaller-display layout.
+- DON-196 Drawing detail panel simplification and required-field emphasis.
+- DON-197 Casualty terminology/order and marker map-label size.
+- DON-198 Mission preview / map sharing / external-resource decisions split to DON-215-DON-218.
+- DON-199 Settings/coordinator access-control decision split to DON-219-DON-221.
 
-DON-197 Marker and casualty display terminology improvements — **DONE.**
-- Casualty marker UI now uses `Casualty Status` instead of `Condition`, with coordinator-requested status order: Lost, Crag Fast, Medical Emergency, Unknown, Deceased. Evacuation Priority order is now Normal, Urgent, Walk-Off, None, Self-Evacuation.
-- Marker forms now include `Map Label Size`; casualty markers default to a larger 16px map label and all marker label sizes persist through browser harness, Electron SQLite, and Rust/Tauri store paths via schema 4 `label_size`. MapLibre marker label layers read the persisted/default label size from GeoJSON.
-- Operator manual updated for casualty terminology, option order, and marker label-size control. Coordinate-field simplification remains tracked separately in DON-135. This touches marker persistence schema and shared marker rendering, but not Electron launch, diagnostics export, packaging, filesystem picker, offline tile protocol, or direct Traccar network boundaries.
-- Verification: red→green unit coverage for marker option order, draft defaults/save payload, dialog terminology/control, GeoJSON label size, and Electron schema version; focused casualty Chromium Playwright 1/1; focused DON-197 visual Playwright 1/1; visual review PASS for `marker-casualty-dialog` and `marker-casualty-map-label-size`; `npm run lint`; `npm run build`; `npm run test` (152 files / 968 tests); `npm run test:backend` (47 passed / 1 ignored); full `npm run test:e2e:chromium` (121/121).
+Final browser/regression gate passed after the batch:
 
-DON-196 Drawing detail panels and required-field emphasis — **DONE and pushed.**
-- Text Label details no longer show derived Anchor/Rotation controls. Range Rings no longer show derived Centre/Mode readouts and custom-ring Name/Radius fields get rose required-state emphasis. Search Sector no longer shows derived Centre/Radius cards; it shows an Irish Grid centre readout while keeping editable bearings/radius.
-- Search Areas now default to red `#F43F5E`, persist an explicit `showLabel` metadata flag, and can save a named area with no map label when operators need less clutter. GeoJSON label generation respects that flag while preserving drawing names for lists/review.
-- Split the zoomed-out Search Area label-drift concern into Linear follow-up `DON-214` because manual label positioning is a separate map-editing/persistence behaviour; DON-196 covers the lower-risk hide-label control now.
-- Operator manual updated for simplified drawing forms, red Search Area defaults, optional Search Area labels, and the new Range Ring/Sector wording. This is shared frontend drawing UI/MapLibre GeoJSON behaviour only; no Electron IPC, SQLite schema/migration, filesystem, diagnostics export, packaging, launch path, offline tile protocol, or direct Traccar network boundary changed, so packaged validation is deferred to the normal beta.8 release gate.
-- Verification: red→green unit coverage for drawing dialog/builders/GeoJSON; focused DON-196 Chromium Playwright 1/1; focused DON-196 visual Playwright 1/1; visual review PASS for `drawing-text-label-simplified`, `drawing-range-ring-required-fields`, `drawing-sector-grid-required-name`, and `drawing-search-area-hidden-label`; `npm run lint`; `npm run build`; `npm run test` (152 files / 963 tests); `npm run test:backend` (47 passed / 1 ignored); full `npm run test:e2e:chromium` (121/121). During verification, one full Chromium run hit the known timing-sensitive DON-189 breadcrumb check and one hit DON-193 map-filter polling; both passed in isolation, and a final full Chromium run passed 121/121.
+- `npm run lint`
+- `npm run build`
+- `npm run test` - 152 files / 968 tests
+- `npm run test:backend` - 47 passed / 1 ignored
+- `npm run test:e2e:chromium` - 121/121
+- `npx playwright test --project=visual` - 34/34
+- `npm run visual:review -- --fail-on critical` - 39/39
 
-DON-195 Map shell readability and smaller-display scaling — **DONE and pushed.**
-- The map shell now shows a high-contrast metric `MAP SCALE` readout above the lower-left coordinate strip, derived from the current MapLibre camera. The readout updates as zoom/latitude changes and avoids MapLibre's default control placement so it does not collide with the coordinate strip.
-- The standard coordinate strip now groups DD, Irish Grid, and DMS together in the lower centre of the map area, with Convert kept to the right. Smaller desktop validation confirms no horizontal overflow and no scale/coordinate overlap at 1280x720.
-- The Maps menu now records the Discovery-grid limitation explicitly: grid lines are Discovery package/source dependent. SAR Tracker does not draw a synthetic Discovery grid overlay in this beta; the live Irish Grid coordinate readout remains independent of map artwork.
-- Operator manual updated for the visible map scale, lower-centre coordinate grouping, and Discovery grid-source limitation. This is shared frontend UI/MapLibre chrome only; no Electron IPC, SQLite, filesystem, diagnostics export, packaging, launch path, offline tile protocol, or direct Traccar network boundary changed, so packaged validation is deferred to the normal beta.8 release gate.
-- Verification: red→green unit scale-readout coverage; red→green Chromium regression for scale, centred coordinates, and smaller-display overflow; full `map.spec.ts` 15/15; visual app-shell Playwright normal+small 2/2; visual review PASS for `shell-idle-state` and `shell-map-scale-small-display`; `npm run lint`; `npm run build`; `npm run test` (152 files / 956 tests); `npm run test:backend` (47 passed / 1 ignored); full `npm run test:e2e:chromium` (120/120).
+The final visual gate found stale verification harness assumptions, not product regressions. Prompt/test-flow hardening was committed in `2b7765c`.
 
-DON-194 Layer Tree and GPX readability controls — **DONE and pushed.**
-- Imported GPX files now carry an individual metadata-backed colour, exposed in the GPX import list via a palette + hex control and used by the MapLibre GPX line layer. Existing metadata such as track/point counts is preserved when the colour changes.
-- The Layer Tree has larger hit targets and more readable row text/check boxes, including smaller-display overflow validation. Mission Review's muted detail text was lifted one contrast step where it affected operational readability.
-- Operator manual updated for larger Layer Tree controls and per-import GPX colour controls. This is shared frontend UI/MapLibre styling plus existing GPX metadata persistence only; no Electron IPC, SQLite schema/migration, filesystem picker, diagnostics export, packaging, app launch path, or direct Traccar network boundary changed, so packaged validation is deferred to the normal beta.8 release gate.
-- Verification: red→green unit and Playwright coverage for GPX metadata colours, GPX runtime colour updates, and smaller-display Layer Tree readability; focused related units 9 files / 72 tests; focused Chromium GPX/layers/review 15/15; visual GPX/layers Playwright 1/1; visual review PASS for `gpx-colour-controls-small-display` and `layer-tree-readable-small-display`; `npm run lint`; `npm run build`; `npm run test` (151 files / 953 tests); `npm run test:backend` (47 passed / 1 ignored); full `npm run test:e2e:chromium` (119/119).
+## Remaining Beta.8 Gate
 
-DON-193 Tracking stale-state visibility and map-label readability — **DONE and pushed.**
-- Offline/stale tracking states now show a prominent red alert treatment in the Tracking System header area, including `OFFLINE MODE` and paused live-refresh warnings, so clipped panels still expose stale-position risk. The warning remains reduced-motion friendly.
-- Tracking map labels now use dark text with a white halo, and breadcrumb line/dot casing is narrower and less dominant so route colours remain readable at operational zoom levels on Discovery/OSI-style backgrounds.
-- The Layer Tree now separates `Current Location` from `Breadcrumbs`; active team members appear under both, with independent current-location and breadcrumb trail visibility. Mission Review de-duplicates those catalog entries so the feature count does not double-count the same device.
-- Operator manual tracking guidance and screenshot were updated. This is shared frontend tracking/layer/map-rendering behavior only; no Electron IPC, SQLite, filesystem, diagnostics export, packaging, app launch path, or direct Traccar network boundary changed, so packaged validation is deferred to the normal beta.8 release gate.
-- Verification: red→green focused unit coverage for tracking status, MapLibre overlay style/filtering, Layer Tree labels, visibility service, and Leaflet fallback filtering; `npm run lint`; `npm run build`; `npm run test` (151 files / 951 tests); `npm run test:backend` (47 passed / 1 ignored); full `npm run test:e2e:chromium` passed 118/118 after one existing paused-mission timing assertion first passed 3/3 in isolation; visual tracking Playwright 7/7; visual review PASS for `tracking-offline-alert`, `tracking-paused-refresh-alert`, `tracking-map-devices`, and `tracking-layer-panel`.
+Do not promote beta.8 until the packaged Electron release gate passes.
 
-DON-192 Mission-control, helicopter, and top-panel layout simplification — **DONE and pushed.**
-- Minimized active Mission Control now leaves the right rail entirely and is represented in the top command mast with a readable mission summary plus an explicit Expand action. Pause and Finish are not visible while minimized; operators must expand before changing lifecycle state. The minimized state is scoped to the active mission id, so a later mission cannot inherit a previous mission's minimized state. Focus Mode keeps Mission Control expanded because the normal top mast is hidden there.
-- Helicopter slots moved from the Tracking tab into the Tools tab in both standard and Focus Mode sidebars. Tracking now stays focused on telemetry status. The command mast was conservatively trimmed from 112px to 104px while widening the mission cell so the minimized mission state remains readable.
-- Operator manual updated for the mast-owned minimized Mission Control state and Tools-tab helicopter location. This is shared frontend layout behavior only; no Electron IPC, SQLite, filesystem, diagnostics export, packaging, or direct-network boundary changed, so packaged validation is deferred to the normal beta.8 release gate.
-- Verification: red→green unit coverage and Chromium coverage for minimized Mission Control and Focus Mode behavior; `npm run lint`; `npm run build`; `npm run test` (150 files / 946 tests); `npm run test:backend` (47 passed / 1 ignored); full `npm run test:e2e:chromium` (117/117); focused visual mission lifecycle 7/7; app-shell visual 5/5; `npm run visual:review -- --only mission-minimized-mast-state --fail-on critical --no-cache` PASS after a readability fix; `npm run visual:review -- --only shell-idle-state --fail-on critical --no-cache` PASS.
+Required next step once the CI-built beta.8 artifact exists:
 
-DON-191 Map Tools / RHS Tools consolidation — **DONE and pushed.**
-- Map Tools now owns Measure details/clear controls and Marker at GR. The RHS Tools tab, including Focus Mode Tools, no longer duplicates measurement controls or Marker at GR; it is reserved for GPX import space. Measurement is one-shot: after the second point is placed the map returns to select/idle, and measurement mode uses the same high-contrast crosshair cursor as drawing tools. Measurement labels are larger on the map.
-- Operator manual updated and `public/manual/assets/tools-and-map.png` refreshed from the live app to show the new Map Tools layout and GPX-only Tools tab.
-- Verification: red→green unit coverage for one-shot measurement and Map Tools-owned controls; focused Chromium marker/measurement/full-flow/focus/drawing/devices sweep 33/33; `npm run lint`; `npm run build`; `npm run test` (150 files / 945 tests); `npm run test:backend` (47 passed / 1 ignored); full `npm run test:e2e:chromium` (117/117); visual app-shell Playwright 5/5; `npm run visual:review -- --only shell-drawing-toolbar` PASS.
+1. Smoke the **CI-built artifact**, not a local substitute.
+2. Run DON-180 duplicate-launch smoke on packaged Linux/AppImage:
+   - click launcher during startup
+   - click launcher again after ready
+   - existing window focuses/restores
+   - no second runtime/profile initializes
+   - no red startup-fault shell appears
+3. Run the beta smoke matrix from `CLAUDE.md`: checksum, packaged launch, mission lifecycle/restart/recovery/finalize/archive, coordinate rejection, sanitized diagnostics, live Traccar where relevant, bad/corrupt credential startup safety, duplicate launch, and any changed beta.8 surface.
+4. Keep the GitHub release as draft until the packaged smoke evidence is recorded.
 
-DON-190 Devices workspace layout/list behavior — **DONE and pushed.**
-- Devices workspace list tabs now own selection context: switching to Active/Hidden/Online/Stale/NoFix keeps the selected device inside the visible list, falling back to the first visible row or no selection when the filtered list is empty. Added a scoped search box that searches only inside the selected list, so queries cannot jump to hidden devices from another tab. The selected-device Zoom action is full-width/contained at constrained desktop widths.
-- Operator manual updated for tab-scoped search/selection behavior.
-- Verification: red→green unit coverage in `device-workspace-model` and `devices-workspace`; `npx playwright test tests/e2e/devices-workspace.spec.ts --project=chromium` (8/8, normal and constrained widths); `npm run lint`; `npm run build`; `npm run test` (150 files / 943 tests); `npm run test:backend` (47 passed / 1 ignored); first full Chromium run 116/117 with one unrelated mission timing tolerance miss that passed in isolation; second full `npm run test:e2e:chromium` passed 117/117.
+## Current Follow-Ups
 
-Install-tests beta.8 bug batch — **DONE locally; ready to push.**
-- DON-184, DON-185, DON-186, DON-187, DON-188, and DON-189 are fixed in six separate commits. Coverage reproduces and proves: Devices workspace chrome no longer opens Marker Details; first tracking update no longer recenters the operator's map; Map Tools header/chevron clicks stay in the toolbar; expanded Layer Tree keeps scroll position while refreshing; Search Sector radius edits preserve entered details; sparse six-minute breadcrumb cadence renders as a connected trail.
-- Manual checked for affected wording; no operator-manual edit needed because the manual already describes the intended tracking/device/layer/tool behavior without documenting the broken interactions or old implicit auto-fit.
-- Verification: per-bug focused unit/browser checks passed; `npm run lint`; `npm run build`; `npm run test` (150 files / 940 tests); `npm run test:backend` (47 passed / 1 ignored); full relevant Chromium specs for Devices, Drawing Tools, Layer Panel, and Map Shell passed 39/39.
-
-DON-150 operator manual audit/refresh — **DONE locally; ready to push.**
-- Audited `public/manual/index.html` against current source, beta.7 release notes, DON-150 Linear context, and browser-harness UI. Refreshed all existing manual screenshots and added a docked Mission Review screenshot.
-- Fixed stale manual claims: May feature-branch verification metadata, beta.4 artifact wording, Linux keyring credential guidance, Windows artifact availability, official-map install wording, text-label anchor controls, incident-time diagnostics export, and the non-dismissible crash-recovery notice.
-- Verified: manual render smoke (7 images loaded, nav anchors OK, no desktop/mobile horizontal overflow); `npm run lint`; `npm run build`; focused Chromium E2E for Settings/Diagnostics/Mission Review/Devices/Layers/Map Tools (35/35); `npm run test` (150 files / 938 tests); `npm run test:backend` (47 passed / 1 ignored); full `npm run test:e2e:chromium` (109/109).
-
-Diagnostics supportability chunk — **DONE locally; ready for beta.8 after packaged smoke/release gate.**
-- DON-179: startup-fault shell now exports a local startup-fault support bundle before the normal Diagnostics workspace is available. The red fault shell still autofocuses `Reload clean runtime`; export is an adjacent explicit action.
-- DON-158: Diagnostics workspace now supports a known incident time and exports a time-framed support bundle. The selected window is 30 minutes before and 30 minutes after the incident time; Electron filters crash history/runtime log sections to that window while preserving the standard support report context.
-- Shared sanitization: Electron support bundles now sanitize the support report, crash detail, runtime log, home-directory usernames, forbidden browser/profile path segments, bearer/basic auth headers, and secret-like key/value lines at the export boundary.
-- DON-181: upload/inbox was **not implemented** because no beta diagnostic inbox destination is locked in Linear/repo context. Current behavior remains local export only; testers attach/send the generated bundle through the agreed manual channel until the inbox decision is made.
-- Manual updated, including refreshed Diagnostics screenshot.
-- Verification: TDD red→green focused unit tests; `npm run lint`; `npm run build`; `npm run test` (150 files / 938 tests); `npm run test:backend` (47 passed / 1 ignored); focused Chromium `diagnostics.spec.ts` + `map.spec.ts` (16/16); first full Chromium run 107/109 with two unrelated MapLibre filter-state timing failures, both passed in isolation; second full `npm run test:e2e:chromium` passed 109/109; visual runtime-safety Playwright passed 4/4; `npm run visual:review -- --only runtime-failed-shell` PASS.
-
-Release safety hardening — **DONE locally; process now encoded before beta.8 work continues.**
-- Added standard Chromium E2E to the local beta gate: `npm run beta:verify` now includes `e2e-chromium` via `npm run test:e2e:chromium` before package/smoke.
-- Tightened `.github/workflows/electron-release.yml`: tag-driven release gates now run lint, unit tests, backend tests, web build, and standard Chromium E2E before bundling. Draft release notes now record those gates in CI provenance.
-- Encoded the beta promotion rule in `CLAUDE.md`, `docs/releases/README.md`, `docs/releases/TEMPLATE.md`, and `docs/electron-beta-handoff.md`: no draft Electron beta is published until the CI-built artifact passes the packaged smoke matrix; unexplained flakes, failed smoke, missing browser validation, or stale handoff/Linear state block sharing with testers.
-- Hardened the previously documented `devices-workspace` breadcrumb trail-mode E2E flake by polling the MapLibre layer filters after changing trail mode instead of reading the filter once after the UI label changes.
-- Verified: red→green `tests/unit/beta-verify-lib.test.ts`; `node --check scripts/beta-verify.mjs`; `actionlint .github/workflows/electron-release.yml`; `npm run lint`; `npm run build`; `npm run test:backend` (47 passed / 1 ignored); focused `npm run test:e2e:chromium -- tests/e2e/devices-workspace.spec.ts` (4/4); full `npm run test:e2e:chromium` (109/109). First full E2E run reproduced the old devices flake (108/109), then the hardened test passed in isolation and in the full suite.
-
-DON-180 (S2 Electron, Urgent Bug) — **implemented locally; needs packaged Linux smoke before beta.8.** Team PCLinux beta.7 report showed clicking the SAR Tracker launcher at the right/wrong time could open two app windows and produce the runtime startup fault; `X2Diagnostics Report` after Clean Runtime confirmed beta.7 Linux Electron, recovery phase, same `~/.config/sartracker-web` profile, but no pre-fault support log.
-- Root cause: `electron/main.cjs` did not call `app.requestSingleInstanceLock()`, so a duplicate process could initialize the same `userData`, SQLite mission store, cache/log files, and renderer boot path.
-- Fix: claim the single-instance lock before `app.whenReady()`; duplicate processes quit before window/runtime/IPC setup; routed `second-instance` events restore/focus the existing window. Manual now says launcher clicks should focus the existing app and two windows are not expected.
-- Verified locally: red→green `electron-main-startup` regressions (duplicate quits before `whenReady()`/`BrowserWindow`, second launch restores/focuses existing window), `node --check electron/main.cjs`, focused runtime tests 4 files / 19 tests, `npm run lint`, `npm run build`.
-- Remaining: packaged AppImage/Linux smoke for beta.8 — launch once, click launcher again during boot and after ready, confirm only one instance/window remains and no runtime fault.
-
-DON-177 (S2 Electron, High Bug/Improvement) — **DONE & packaged-smoke verified on CI-built beta.7.** App-owned local Traccar credential storage; removes the OS-keyring/`safeStorage` dependency from tracking runtime.
-- New `credentials.json` under `userData` (`{version:1, traccar:{<authMode>:{secret}}}`), atomic write, best-effort `0600`. Secret stays out of `settings.json`. Presence of an authMode entry is **authoritative** — runtime reads the local file, no keyring call — so a successful Settings test uses the same secret the runtime will use.
-- Migration **decision (a) — leave legacy `secrets.json` untouched**: if no local entry, migrate once from legacy `secrets.json` (decryptable → write local + leave legacy intact; undecryptable → tracking disabled + warning, no throw, legacy intact). Clear writes an authoritative empty entry (no resurrection). Dropped the Linux `basic_text` save-block. Corrupt `credentials.json` degrades to no-secret, never a boot throw. Diagnostics add `credential storage: local-file`; secret value redacted.
-- All in `electron/settings-store.cjs` (+ `runtime-files.cjs` diagnostics line). Renderer/IPC contract unchanged; Tauri/browser stores legacy/out-of-scope. Supersedes the `safeStorage` design from DON-31 for Traccar runtime credentials.
-- Verified: strict TDD (red→green) full matrix; `npm run test` 150 files / 931 tests, lint, build, backend 47. **Packaged Ubuntu smoke (CI beta.7, run `27601812958`):** credential matrix 3/3 (fresh/saved-survives-restart-without-keyring/migrated-leaves-legacy-intact), undecryptable-legacy bad-secret PASS, live Traccar PASS with real same-machine keyring migration (created `credentials.json` 0600 in throwaway profile, real profile NOT migrated, real DB untouched), diagnostics sanitized.
-
-DON-176 (S3 Web App, High Bug) — **DONE & packaged-smoke verified on CI-built beta.7.** Non-blocking docked Review (decision locked with Donal).
-- Added opt-in `docked` prop to shared `WorkspaceOverlay` (default false → Settings/Diagnostics/Devices stay modal). Docked = no full-screen backdrop, container `pointer-events-none` + panel `pointer-events-auto`, no focus trap/steal, non-modal. Review passes `docked` only while active/paused; docks **left over the map** so the right Pause/Finish rail stays clear; inner grids collapse to single-column; mission selector hidden (runtime auto-scopes to active mission); read-only note banner. No live mission → full-screen modal cross-mission audit as before.
-- Esc fix found during packaged smoke: docked mode doesn't trap focus, so after a map click the panel-scoped Esc handler didn't fire (header Close still worked) → added a document-level Escape listener for docked overlays (commit `396c3c2`), E2E regression added, tag moved, CI rebuilt, re-smoked green.
-- Verified: E2E red→green; `mission-review` 5/5, full chromium E2E green (lone `devices-workspace` breadcrumb failure is the documented pre-existing flake, passes in isolation), lint + 931 unit tests. **Packaged smoke docked Review 6/6** (no backdrop, read-only note, Pause/Finish operable, map clickable in clear band, stays open while operating, Esc closes). Evidence `~/sartracker-beta7-smoke/evidence-review2/`.
-
-DON-175 (S2 Electron, Urgent Bug) — Linux keyring / undecryptable Traccar secret startup fault. **DONE & packaged-smoke verified on CI-built beta.6 (superseded by DON-177).** Closed in Linear. beta.6 was built and smoked but never published; its keyring guard ships to the team in beta.7. The DON-177 local-credential design is the durable replacement for this stop-gap guard.
-- Root cause: `electron/settings-store.cjs` let `safeStorage.decryptString()` throw out of `loadRuntimeBootstrapSettings()` when `secrets.json` contained ciphertext the current Linux secret-store session could not decrypt (locked login keyring, stale/copied ciphertext, changed key). That blocked app startup with the runtime fault shell.
-- Fix: decrypt failures now become a startup-safe disabled-tracking state with the operator warning `Stored Traccar credentials could not be decrypted. Re-enter the password or token in Settings.` Mission runtime/autosave still starts; tracking stays idle until the operator re-enters the password/token. `runtime-managed-services` now treats explicit `trackingConfig: null` as authoritative instead of falling back through `??` to env config.
-- Smoke hardening: added tracked `npm run electron:smoke:bad-secret` (seeds throwaway userData with invalid encrypted secret and verifies packaged app reaches normal shell + Settings recovery path), added it to `beta:verify`, updated `docs/electron-beta-handoff.md`, local `SMOKE-TESTING.md`, and the operator manual.
-- Verified locally: red→green focused tests; focused set (19), `node --check`, `npm run lint`, `npm run build`, full `npm run test` (150 files / 925 tests), `npm run test:backend` (47).
-- **Packaged Ubuntu smoke (CI-built beta.6 AppImage, run `27596864861`, checksum OK, real Wayland):** bad-secret/keyring gate PASS (normal shell, no fault, decrypt warning shown, Settings recovers secret). Supporting gates PASS on same artifact: core lifecycle (launch→mission→marker→restart/recovery→finalize→archive), out-of-Ireland coordinate rejection, sanitized diagnostics (`secret present: no`), live Traccar online (33 devices / 8 fixes, same-machine keyring). Evidence on box: `~/sartracker-beta6-smoke/{evidence,evidence2,evidence-bad-secret,evidence-tracking,evidence-review,SMOKE-SUMMARY.md}`.
-
-DON-176 (S3 Web App, High Bug) — Review workspace blocks active mission controls while open. **Characterized on beta.6 (still open, NOT a DON-175 regression).** Browser-backed repro on the packaged AppImage: with an active mission and Review open, the full-screen `WorkspaceOverlay` backdrop (`src/components/workspace-overlay.tsx`, `<button absolute inset-0>`) intercepts clicks — mission Finish and the map are both unreachable until Review is closed (Esc restores control). Confirms the field report is modal-overlay blocking, not the DON-148 large-event freeze. Still needs the product decision (non-blocking docked Review vs explicit modal blocking) + regression coverage. Listed under beta.6 release-notes Known Limitations.
-
-DON-167 (B2 coordinate-safety adversarial sweep) — all 7 sub-issues fixed, each Opus-reviewed, on `master` (commits `c130511`, `73a2220`, `8671bf3`, `84261a7`).
-- DON-169/170/173/174 (`drawing-math.ts`): radius>0 guards on sector/circle; full-circle `360→0` arc now returns 360 (was 0 → invisible search circle); `geodesicBearingEndpoint` rejects negative distance; `geodesicBearing` returns `number|null` for identical points (threaded through line-persistence, measurement runtime, drawing-dialog).
-- DON-168/171 (`coordinates.ts`): Irish geographic + ITM bounds. Design = **warn-not-throw in hot path** (user-approved): transforms throw on offshore input, but live display uses non-throwing `isWithinIreland()` and shows "Outside Ireland"; commit paths (marker create, converter) surface a clear error; reopening a persisted out-of-bounds marker degrades gracefully. **Bounds derived from real Irish extremes, NOT the issue's literal constants** (those rejected Skellig Michael + Mizen Head). Verified invariant (dense sample, 0 violations): ITM box fully contains the proj4 image of the WGS84 box, so no point that passes `isWithinIreland` can fail ITM validation. Documented residual: a bbox can't exclude near-coast sea (B2-C1).
-- DON-172 (`coordinate-tool.ts`): ambiguous sign-vs-direction DD input (e.g. `-6.0E`) now throws instead of silently inverting hemisphere.
-- Verified: unit 922 (+49 TDD cases), `tsc --noEmit`, full `eslint`, `npm run build`, `test:backend` 47 — all clean. Chromium E2E for drawings/coords/markers/measurement 25/25 incl. new full-circle sector regression; casualty/multi-drawing visual failures confirmed **pre-existing on baseline `79a2605`** (disabled-save-btn timeout + multi-drawing timing), not regressions. AI visual review of casualty dialog (shows ITM/TM65) PASS. Manual updated (Irish bounds safety paragraph).
-- **Remaining:** broader visual E2E sweep was deferred (heavy; two known pre-existing flakes in that suite). No code follow-ups.
-
-DON-160 children — B1 persistence-parity drift, all four Electron findings fixed (In Review, awaiting packaged on-device repro for the two criticals). Commits `b6eec80` + `f2d8db3` on `master`.
-- DON-161 (critical) + DON-163 (high ×8) + DON-164 (medium) closed with one helper-level change to `electron/mission-store.cjs`: `upsertById`/`deleteById` (and `upsertHelicopter`, `upsertDevice`) now detect create-vs-update, emit the correct per-table `*_created/_updated/_deleted` (and `device_created`) audit event **inside the same transaction** as the row write, and `deleteById` enforces `ensureWritableMission` so deletes on finished/finalized missions throw instead of silently destroying locked records. New `AUDIT_EVENT_TABLES` map keeps event names/detail shapes in lock-step with Rust.
-- DON-162 (critical, also closes the DON-34 archive stub): new dependency-free `electron/zip-archive.cjs` (Node `zlib` + CRC-32, no native-ABI risk). `createMissionArchive` builds a real per-mission archive (manifest + mission.json + SQLite snapshot + marker attachments) via temp-write → validate → atomic rename into a per-mission `archives/` dir; `finalizeMission` now emits the full `finalize_requested → archive_succeeded/_failed → mission_finalized` sequence with `archive_path` pointing at the real standalone archive. `mission_events` ordering tie-breaks on monotonic `rowid` (not random UUID) so same-ms finalize events keep insertion order.
-- All new coverage hits the **real Electron better-sqlite3 backend** (harness previously masked these). Verified: `npm run test` 150 files / **873 tests**, `eslint`, `npm run build`, `test:backend` 47 Rust — all clean; governance/finalize/review E2E (chromium, 20) + visual mission-lifecycle (6) pass; AI visual review governance-card PASS. Manual updated for the real archive + finalized-mission lock.
-- **Remaining:** packaged on-device Electron smoke for the two criticals (refused delete on finalized mission; standalone archive lands in userData `archives/` and survives a later mission's finalize) — fold into the next Electron beta.
-
-DON-165 (S2 Electron / Shared Tracking, High Bug) — Breadcrumb accumulator re-sorted the entire retained history every poll. Surfaced by the P1 hot-path scaling audit (read-only Workflow run: 31 candidates → 30 rejected → 1 triple-confirmed). Same failure class as DON-151/148 (cheap in tests, degrades as an incident grows); DON-151 and DON-148 fixes were independently re-confirmed sealed by the same audit.
-- Root cause: `accumulateBreadcrumbPositions` called `Date.parse` inside two O(n log n) sort comparators on every poll (`breadcrumb-accumulator.ts:48-49,67-69`, invoked at `polling-manager.ts:197,358`), so per-poll parse cost grew with cumulative retained history × a log factor (~36k breadcrumbs → ~1.9M parses/poll on the Electron main thread) even though only ~200 new points arrive.
-- Fix: parse each timestamp exactly once (decorate-sort-undecorate via a `TimestampedPosition`), sort on the cached numeric value. Identical output and global ordering; parse calls now bounded to the combined set size (no log multiplier). No algorithmic change to dedup or per-device budgeting.
-- Verified: new TDD regression test (red→green, asserts parse calls ≤ set size + global chronological order preserved); full `npm run test` (149 files / 857 tests), `npx tsc --noEmit`, `npm run lint` clean; Playwright `devices-workspace` + `full-mission-flow` (chromium, 5 passed) and `visual-tracking` (visual, 5 passed); live-app drive via Chrome DevTools — injected 33 devices × 1.1k = 36,300 deliberately-shuffled breadcrumbs, all 33 trails rendered contiguous/correctly ordered, main-thread probe 2ms, no console errors. (Note: harness `injectTrackingSnapshot` is slow at this scale due to 36k sequential awaited mock-store writes — a test-only artifact, not the render/accumulator path.)
-
-Tauri reference cleanup — current docs/tooling now name Electron as the operational desktop lane. Updated `CLAUDE.md`, hosted/deployment docs, support policy, operator manual, testing guide, parity docs, `beta:verify`, and runtime mast mode so active surfaces no longer describe Tauri as the current app path. Electron is now preferred if both desktop runtime markers are present. Retained `src-tauri`, Tauri adapter tests, and superseded release docs as explicit legacy/history until a separate removal decision.
-
-DON-143 (S2 Electron, Feature) — Electron GitHub release workflow; Tauri release lane retired. DONE & CI-verified & on-device smoked.
-- New `.github/workflows/electron-release.yml`: `electron-v*` tag trigger (distinct from legacy Tauri `v*`). Jobs: gates (version-match + release-notes + lint/test/build) → bundle-linux (native AppImage+.deb, asserts packaged `better_sqlite3.node` is ELF x86-64, guards against `.mbtiles`/licensed data) → launch-smoke-linux (Xvfb window + non-black + no fault shell) → release (downloads built artifacts, generates `SHA256SUMS`, creates the draft prerelease — only after a green smoke) → summary. Artifacts pass between jobs via the workflow-artifact store, not the draft-release-by-tag API (which excludes drafts).
-- Windows NSIS scaffolded (`electron-builder.json` win/nsis + `electron:dist:win`) but gated OFF behind `enable_windows` dispatch input pending DON-141. macOS arm64 stays local/manual. Deleted `release.yml`. Docs updated: `docs/releases/README.md`, `docs/electron-beta-handoff.md`, `docs/releases/TEMPLATE.md`; superseded banner on `docs/tauri-beta-release-plan.md`. New release-note naming: `sartracker-electron-<version>.md`.
-- Found + fixed a pre-existing **timezone-dependent test bug** the CI surfaced: `marker-draft` / `marker-dialog-treatment-log` treatment-log tests used a hardcoded `+01:00` Date and asserted fixed local-time output, so they passed only on UTC+1 machines (green locally in Dublin, red in CI's UTC). Now built from local-time components; verified under TZ=UTC/Dublin/New_York. Production formatter (local-time rendering) was correct and unchanged. (Lesson: `npm run test` locally can false-green on TZ; CI runs UTC.)
-- CI: `electron-v0.1.0-beta.4` run **green end-to-end** (run #3 `27367822502`); prerelease published with Linux AppImage + `.deb` + `SHA256SUMS`, no map data: `https://github.com/donal0c/sartracker-web/releases/tag/electron-v0.1.0-beta.4`.
-- On-device smoke (Ubuntu 24.04.2 / kernel 6.14, `192.168.18.31`, real Wayland display, CI-built artifact, checksum OK): all 6 highest-risk areas pass. (1) AppImage launches, real window, no SIGTRAP. (2) **Mission persists across full restart** — recovery prompt shows the created mission name + start time (SQLite schema v3 + backup mirror). (3) Live Traccar **"Connection successful."** over `https://kmrtsar.eu` (note: box network blocks plain-HTTP `:8082`; HTTPS works). (4) Discovery offline tiles read from SQLite (verified PNG bytes, network blocked), inside=Field ready / outside=warning, real GPU. (5) Coordinate readout (DD/Irish Grid/DMS) renders correctly + 847 golden-dataset unit tests. (6) Diagnostics export sanitized, `secret present: no`. Evidence on box: `~/sartracker-don143-smoke/{offline-evidence,persist-evidence}`.
-- Verified locally: actionlint clean, unit 847/847 (under UTC), lint, build, local electron-builder `--dir` pack.
-
-DON-151 (S2 Electron, Urgent Bug) — Electron launch slowed after tracking history accumulated on Ubuntu beta. Root cause was launch/poll-cycle tracking work, distinct from DON-148 Mission Review:
-- On restart, the UI could hydrate cached breadcrumbs, but the live poller fetched breadcrumbs from mission start for every device because its per-device cursors were not seeded from persisted mission positions. With 33 devices / 4.5k breadcrumbs / 5s polling this rebuilt history and the map overlay unnecessarily.
-- Each tracking snapshot also reloaded every persisted position from SQLite and re-deduped the full breadcrumb history, creating repeated main-process work during active tracking.
-- Fix: poller now accepts validated active-mission persisted breadcrumbs before first live history fetch, preserves the visible trail, and resumes per-device Traccar history from latest persisted timestamps. Runtime persistence now keeps a mission-scoped `device_id:timestamp` key cache and serializes snapshot persistence, so repeated snapshots do not re-query all positions.
-- Verified before release: `npm run test` (149/847), `npm run lint`, `npm run build`. Included in published `electron-v0.1.0-beta.4`, whose CI build and Ubuntu on-device smoke passed. Linear issue `DON-151` remains In Review pending team retest of the original Ubuntu slowdown scenario.
-
-DON-159 (S2 Electron / Shared Tracking, Urgent Bug) — Implemented locally; awaiting team retest in next Electron beta. New beta.4 field report showed Traccar has complete routes but SAR Tracker can display partial/missing breadcrumb trails in long multi-device missions:
-- Evidence from `~/Downloads/diagnostics-report-2026-06-13T21-48-51-654Z.txt`: beta.4, tracking online, 33 devices, 6 current positions, exactly 20,000 breadcrumbs. Current `breadcrumb-accumulator.ts` applies one global last-20k cap after merging all device history, so a high-frequency tracker can evict another rescuer's trail.
-- Live Traccar checks for the team report showed Eamonn/device 2 had ~39.9k points across the likely active mission window while Richard/device 25 had 3.3k Saturday points; Donal later clarified Eamonn is the point of contact and frequently tracks himself outside tests, so the fix preserves full-window route coverage per device rather than keeping only each device's latest points.
-- Fix: live breadcrumb accumulation now uses a per-device 5,000-point render budget sampled across the full retained time window, preserving first/last points so one noisy tracker cannot evict another device and cannot erase its own older route just because later non-mission movement exists. Poller snapshots carry per-device breadcrumb metadata; diagnostics/support reports include retained/observed/truncated counts; runtime persistence uses the raw newly fetched breadcrumb payload before render budgeting, with a guard against future global persistence caps.
-- Verified: focused DON-159 unit set (5 files / 49 tests), full `npm run test` (149 files / 856 tests), `npm run lint`, `npm run build`, `npx playwright test tests/e2e/diagnostics.spec.ts --project=chromium` (3 passed), full `npx playwright test --project=chromium` (107 passed), and `npm run test:backend` (47 passed / 1 ignored). Manual updated for the new diagnostics report content.
-
-DON-147 — DONE & on-device verified (HEAD `4ad6673`). Crash capture, runtime logging, support-bundle export.
-- On-device verification on the Dell Ubuntu box (`192.168.18.31`, **24.04.2**, not 26.04): built packaged `.deb`/AppImage, confirmed `crashReporter` writes a real native minidump on main-process SIGSEGV (`Crashpad/pending/*.dmp`), JS `uncaughtException` writes a structured `crash-log.json`, unclean-shutdown flag sets/clears correctly, and `exportSupportBundle` assembles env+crash+log sections. Live-renderer crash not drivable headless (GPU process won't start over SSH) — renderer-fault logic is unit-tested instead.
-- Two fixes found during testing: (`4ad6673`) `render-process-gone` was recording `clean-exit` as a crash → now gated by `isRendererFaultReason()`; (`c448021`) **DON-148 had broken `npm run build`** — runtime-bridge error-catch missed the new state fields; `tsc -b` caught it, `tsc --noEmit` didn't. **Lesson: verify with `npm run build`, not `tsc --noEmit`.**
-- Box note: `~/sartracker-don147-validation` (1.7G) left on the machine per prior convention; temp `/tmp/don147-*` cleaned.
-- Remaining out-of-scope follow-up: confirm against real Ubuntu 26.04 (folds into DON-146).
-
-(original scope notes:) Shipped the fully-verifiable core (per agreed "testable slice first" scope):
-- New `electron/runtime-log.cjs` (bounded JSON-line ring buffer, rotates to one `.1` backup, sanitizes secrets + home-path usernames) and `electron/crash-log.cjs` (capped structured crash log + clean-exit marker for unclean-shutdown detection). Both fully unit-tested.
-- `main.cjs` wires `crashReporter.start` (uploadToServer:false), `uncaughtException`/`unhandledRejection`/`render-process-gone` capture, logs `app_start`, and marks clean exit on `before-quit`.
-- `runtime-files.cjs` gained `exportSupportBundle` (environment snapshot + crash history + recent runtime log) + new IPC channels (`export-support-bundle`, `read-crash-recovery-state`) wired through `preload.cjs`.
-- Renderer: support-report store gained `exportSupportBundle`/`readCrashRecoveryState` (fall back to plain report in Tauri/browser); diagnostics runtime + UI gained an "Export Support Bundle" button and a dismissible unclean-shutdown banner. Manual documents the feature + per-platform crash/log file locations.
-- Verified: unit 843 (+12), chromium E2E 106 (incl. new diagnostics bundle assertion), lint+tsc clean, Playwright screenshot of the new button/feedback read & confirmed. No Rust touched (backend unchanged at 47).
-- **Follow-up not done:** real native minidump capture can only be confirmed by crashing a packaged build (same constraint as DON-146, ideally the Ubuntu box). JS-level crash capture + rotation/recovery logic are tested; the `crashReporter` minidump path is wired but unverified on a packaged build.
-
-DON-148 (S3 Web App, Bug) — Mission Review froze the UI on missions with large event counts (93k–193k events in the field; `device_updated` heartbeats from 33 devices polling every 10s dominated). Fixed at the query layer so the unbounded set never crosses IPC:
-- New `listAuditEvents(missionId, { includeTelemetry, limit })` on all three stores (Rust `persistence.rs`, Electron `mission-store.cjs`, browser harness) + Tauri command `list_audit_events` + auto-wired Electron channel. Telemetry (`device_updated`/`position_recorded`) excluded by default; newest-first, capped (default 500 / max 5000). `listMissionEvents` kept for export/archive.
-- Shared classification: `src/features/mission-review/audit-events.ts` (the `.cjs`/Rust copies mirror it, covered by tests).
-- Review runtime exposes `includeTelemetry`/`auditLogTruncated` + `setIncludeTelemetry`; UI added a "Show tracking telemetry" toggle and truncation notice. Manual updated.
-- Verified: unit 831, backend 47, chromium E2E 106 (incl. new telemetry-toggle test), lint+tsc clean, Playwright screenshots read & confirmed. DON-148 closed; DON-149 was a duplicate (cancelled).
-
-DON-142 (S2 Electron/S1 maps) — Electron beta handoff release and Discovery map loading instructions:
-- Added `docs/electron-beta-handoff.md` as the active runbook for the current Electron app handoff, Discovery package loading, offline confidence checks, diagnostics, and private-data rules.
-- Updated `docs/releases/README.md` and `docs/releases/TEMPLATE.md` so future agents do not follow the obsolete Tauri beta path for Electron handoff.
-- Published GitHub prerelease `electron-v0.1.0-beta.3` with Linux `.deb`, Linux AppImage, macOS arm64 zip, and `SHA256SUMS`. Discovery maps are not included.
-- Tidy-up: `DON-142` closed; `DON-143` reparented to `DON-25`; `DON-115`, `DON-141`, and `DON-113` moved to Backlog while waiting for Windows/team feedback/admin-prep priority.
-- Team map handoff correction: the beta does not load raw USB/source files directly. Testers need the prepared private package `reeks-standard-60km-z16.mbtiles` (SHA256 `e317fd016b02d88f0fdc0e4f97653a2c4758acc46779bad7ffb55ac2807b6589`). `DON-144` owns private map-package distribution plus the future raw-source packaging workflow.
-
-DON-144 partial independent progress — beta wrong-file guardrail:
-- Electron official-map package import now gives specific operator/admin guidance for raw Discovery `.tif`/`.tiff` and `.zip` selections: beta packages must be prepared `.mbtiles`, such as `reeks-standard-60km-z16.mbtiles`, or prepared by a map admin from the licensed source.
-- Operator manual and `docs/electron-beta-handoff.md` now distinguish **Choose MapGenie File** (`mountainrescue_org.txt` / source metadata) from **Add Discovery Package** (`.mbtiles` only). The larger DON-144 workflow decision remains open: private distribution owner/channel and repeatable admin raw-source-to-package process.
-- Verified focused regression: `npm run test -- tests/unit/electron-file-system.test.ts`.
-
-## What's Next
-
-DONE: `electron-v0.1.0-beta.7` **published** to the team on 2026-06-16 (run `27601812958`, deep Ubuntu smoke green) — DON-177 local credential storage + DON-176 docked Review + DON-175 keyring guard. Current team artifact, supersedes beta.5. beta.6 (DON-175-only) was never published; its draft + tag were deleted.
-
-Next field-retest asks for beta.7 (team) — new beta.7 behaviour:
-1. **DON-177** — a saved Traccar credential reconnects after a full restart with no keyring prompt, on the machine that originally showed the locked-keyring failure.
-2. **DON-177 migration** — upgrading in place from an older beta (existing `secrets.json`) keeps tracking working on first launch.
-3. **DON-176** — opening Review during an active mission no longer blocks map tools / Pause / Finish.
-
-Also retest on beta.7 to close long-standing In-Review fixes that shipped in earlier betas but never had a confirmed team field retest (all carried unchanged into beta.7; not re-smoked this round):
-4. **DON-159** — Saturday multi-device breadcrumb scenario: full per-device routes render (no global truncation).
-5. **DON-151** — launch / map-panning is responsive after large tracking history has accumulated.
-6. **DON-165** — no per-poll slowdown as retained breadcrumb history grows during a long mission.
-7. **DON-161/162/163/164** (B1 persistence parity, shipped beta.5) — finalized-mission deletes are refused, finalize writes a real standalone archive, and marker/drawing/helicopter/GPX edits + device first-contact appear in the Review audit feed.
-
-If 4–7 retest clean on beta.7, close DON-159 / DON-151 / DON-165 and the DON-160 B1 children. Still needs specific data: the private MBTiles offline-map read (package not on the smoke box).
-
-Next beta.8 gate before team promotion:
-1. **DON-180** — packaged Linux/AppImage duplicate-launch smoke: click the launcher during boot and after ready; existing window should focus/restore, no second window/process should initialize the same profile, and the runtime startup fault must not appear.
-
-DONE: `electron-v0.1.0-beta.5` cut, built green by `.github/workflows/electron-release.yml` (run `27570596320`), Ubuntu 24.04.2 on-device release-asset smoke passed (launch, mission start, marker create, restart persistence/recovery, finish→finalize, standalone archive in `userData/archives`, out-of-Ireland coordinate rejection, sanitized diagnostics), and **published** to GitHub. Smoke ran against the CI-built AppImage with the real SQLite backend and renderer network blocked; evidence on the box at `~/sartracker-beta5-smoke/evidence{,2}/`.
-
-Live Traccar ALSO confirmed on beta.5: connection test "Connection successful." against `https://kmrtsar.eu` and tracking online with **33 real devices / 7 fixes**, using the operator's locally-persisted provider config. Server URL/user live in `~/.config/sartracker-web/settings.json`; the basic-auth password is an encrypted blob in `secrets.json` (gnome_libsecret). The live run seeded a throwaway userData with copies of those two files (same machine → same keyring decrypts) and did NOT block network or touch the real mission DB. Evidence: `~/sartracker-beta5-smoke/evidence-tracking/`.
-
-(Superseded by the beta.7 retest asks above — DON-159/DON-151/DON-165/DON-160-children stay In Review pending that team field retest; the private-MBTiles offline-map read still needs the package on a test box.)
-
-Next: continue `DON-144` — choose the private Discovery package distribution owner/channel and lock the repeatable admin raw-source-to-package workflow.
-
-DON-146 (Electron 40→42) is parked in Backlog, **blocked on upstream `better-sqlite3` PR #1475** (does not compile against Electron 42's V8; no published fix). See the DON-146 comment for the decision + resume checklist.
+- `DON-144` remains open: private Discovery package distribution owner/channel and repeatable raw-source-to-MBTiles admin workflow.
+- `DON-214`: Search Area label positioning/zoomed-out drift follow-up.
+- `DON-215`-`DON-218`: mission preview, map export/print, external-resource model, evacuation/gear workflow decisions.
+- `DON-219`-`DON-221`: privileged settings guard, mission unlock authority, and access recovery.
+- `DON-146` remains parked/backlog, blocked on upstream `better-sqlite3` Electron 42 compatibility.
 
 ## Traccar Test Details
 
 - Upstream team server: `http://kmrtsar.eu:8082`
 - HTTPS server: `https://kmrtsar.eu`
 - Validation credentials: `sean` / `sean`
-- Do NOT use `https://traccar.kmrtsar.eu` (device listener, returns 400)
-- Do NOT use port `:5055` (listener port, not API)
-- Fallback: `http://kmrtsar.ddns.net:8082`
-- **Hosted browser proxy:** provider base URL = `https://sartracker-web.vercel.app`, endpoints `/api/session`, `/api/devices`, `/api/positions`, auth `Basic` / `apiuser` / `apiuser`
-- **Desktop rule:** direct HTTP upstream URL is fine (no mixed-content blocking)
-- **Browser rule:** use the Vercel proxy URL, not direct HTTP
+- Do not use `https://traccar.kmrtsar.eu` or port `:5055`; those are listener/non-API paths.
+- Hosted browser proxy: provider base URL `https://sartracker-web.vercel.app`, endpoints `/api/session`, `/api/devices`, `/api/positions`, auth `Basic` / `apiuser` / `apiuser`.
+- Desktop may use direct upstream HTTP/HTTPS; hosted browser must use the Vercel proxy.
 
-## Verification & Deploy
+## Useful Commands
 
-- **On-device Electron smoke (incl. LIVE TRACKER):** see `SMOKE-TESTING.md` at the repo root (gitignored, local-only). It is the full runbook for smoke-testing an `electron-v*` beta on the Ubuntu box, including how the Traccar server is stored locally (`~/.config/sartracker-web/settings.json` + encrypted `secrets.json`) and how to reuse it for a live connection test. Read it before smoking a new beta.
-- **Unit tests:** `npm run test`
-- **E2E (standard):** `npx playwright test --project=chromium`
-- **E2E (visual AI):** `npx playwright test --project=visual` then `npm run visual:review`
-- **Backend/Tauri:** `npm run test:backend`
-- **All:** `npm run test:all`
-- **Build:** `npm run build`
-- **Lint:** `npm run lint`
-- **Type check:** `npx tsc --noEmit`
-- **Deploy:** push to `master` → Vercel auto-deploys to production
-- **Electron handoff:** see `docs/electron-beta-handoff.md`; current published Linux team prerelease is `https://github.com/donal0c/sartracker-web/releases/tag/electron-v0.1.0-beta.7`. The next candidate is beta.8 after DON-180 packaged duplicate-launch smoke plus the normal release gates. The Electron GitHub release workflow is implemented under `DON-143`; Windows remains gated by `DON-141`.
+- Unit: `npm run test`
+- Backend: `npm run test:backend`
+- Standard E2E: `npm run test:e2e:chromium`
+- Visual E2E: `npx playwright test --project=visual`
+- Visual review: `npm run visual:review -- --fail-on critical`
+- Build: `npm run build`
+- Lint: `npm run lint`
+- Local beta gate: `npm run beta:verify`
 
-## Latest Verification
-
-- DON-195 closeout: `npm run test -- tests/unit/map-scale-readout.test.ts` (1 file / 3 tests); `npx playwright test tests/e2e/map.spec.ts --project=chromium` (15/15); `npx playwright test tests/e2e/visual/visual-app-shell.spec.ts --project=visual --grep "idle state|map scale"` (2/2); visual review PASS for `shell-idle-state` and `shell-map-scale-small-display`; `npm run lint`; `npm run build`; `npm run test` (152 files / 956 tests); `npm run test:backend` (47 passed / 1 ignored); `npm run test:e2e:chromium` (120/120).
-- DON-194 closeout: focused related units 9 files / 72 tests; focused Chromium `gpx-import`, `layer-panel`, and `mission-review` 15/15; visual GPX/layers Playwright 1/1; visual review PASS for `gpx-colour-controls-small-display` and `layer-tree-readable-small-display`; `npm run lint`; `npm run build`; `npm run test` (151 files / 953 tests); `npm run test:backend` (47 passed / 1 ignored); `npm run test:e2e:chromium` (119/119).
-- DON-193 closeout: `npm run lint`; `npm run build`; `npm run test` (151 files / 951 tests); `npm run test:backend` (47 passed / 1 ignored); `npm run test:e2e:chromium` (118/118; prior full run had one existing paused-mission timing assertion fail at 2s drift, then the test passed 3/3 in isolation and the full suite passed); `npx playwright test tests/e2e/visual/visual-tracking.spec.ts --project=visual` (7/7); visual review PASS for `tracking-offline-alert`, `tracking-paused-refresh-alert`, `tracking-map-devices`, and `tracking-layer-panel`.
-- macOS DON-115: `npm run electron:pack -- --mac --arm64` passed; `npm run electron:smoke:official-offline -- --app tmp/electron-dist/mac-arm64/SAR\ Tracker\ Electron\ Validation.app/Contents/MacOS/SAR\ Tracker\ Electron\ Validation --package <private Reeks MBTiles> --evidence-dir tmp/don115-macos-official-map-offline --platform darwin` passed.
-- Ubuntu DON-115: synced current repo to `donal@192.168.18.31:~/sartracker-don115-validation/repo`, ran `npm ci`, `npm run electron:dist:linux`, focused readiness unit tests, and `npm run electron:smoke:official-offline -- --app tmp/electron-dist/linux-unpacked/sartracker-web --package <private Reeks MBTiles> --evidence-dir tmp/don115-linux-official-map-offline --platform linux --app-arg --no-sandbox --app-arg --ozone-platform=wayland --app-arg --ignore-gpu-blocklist`.
-- Ubuntu focused tests: `npm run test -- tests/unit/field-readiness-checklist.test.ts tests/unit/basemap-switcher.test.ts` — 24 passed.
-- DON-142 artifact bundle: `tmp/don142-electron-handoff/SHA256SUMS` generated for Linux AppImage, Linux `.deb`, and macOS arm64 zip.
-- Ubuntu release-asset smoke: downloaded GitHub prerelease `.deb` and `SHA256SUMS` from `electron-v0.1.0-beta.3` to `donal@192.168.18.31:~/sartracker-release-smoke/electron-v0.1.0-beta.3`, verified checksum `OK`, ran the real `sudo apt install` path, confirmed `dpkg -s sartracker-web` reports `install ok installed` version `0.1.0~beta.3`, and ran `npm run electron:smoke:official-offline` against the installed binary at `/opt/SAR Tracker Electron Validation/sartracker-web` with the private Reeks package. Smoke passed with renderer network blocked, local Discovery tile read, inside field-ready verdict, outside warning, Settings ready status, and sanitized diagnostics. Evidence: `~/sartracker-release-smoke/electron-v0.1.0-beta.3/installed-smoke-evidence`.
-- Ubuntu beta.4 on-device smoke: CI-built AppImage from `electron-v0.1.0-beta.4`, checksum OK, launched on Ubuntu 24.04.2 / kernel 6.14 real Wayland display, mission persistence across restart passed, live HTTPS Traccar connection passed, Discovery offline tile reads from SQLite passed with renderer network blocked, coordinates rendered, diagnostics sanitized. Evidence on box: `~/sartracker-don143-smoke/{offline-evidence,persist-evidence}`.
-
-## Known Limits
-
-- Browser mode is not durable for live incidents (no IndexedDB persistence, no filesystem).
-- Electron desktop is the operational lane (SQLite, filesystem, diagnostics, GPX, offline maps).
-- High-definition maps are local desktop packages only.
-- Pre-existing flake: `devices-workspace.spec.ts` breadcrumb trail mode test intermittently fails on map layer state assertions.
-
-## Active Linear Parents
-
-`DON-5` (parity), `DON-7` (S1 maps), `DON-25` (S2 Electron), `DON-76` (official maps).
-
-## Planning Docs
-
-- `docs/two-track-execution-workplan.md` — canonical queue
-- `docs/electron-beta-handoff.md` — active Electron app handoff and Discovery map loading runbook
-- `docs/desktop-runtime-support-policy.md` — Electron runtime support, update cadence, release channels, diagnostics, rollback (DON-30)
-- `docs/hosted-browser-testing-plan.md` — deployment strategy
-- `docs/team-testing-feedback-loop.md` — tester instructions
+For packaged Electron smoke details, read local `SMOKE-TESTING.md` and `docs/electron-beta-handoff.md` before starting.
