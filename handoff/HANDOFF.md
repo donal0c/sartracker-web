@@ -14,6 +14,12 @@
 
 ## Last Work Done
 
+DON-198 Mission preview, map sharing, and external-resource workflow decisions — **DONE as decision/split-ticket work.**
+- Recorded `docs/mission-preview-external-resources-decision.md`: future Mission Preview should be read-only and reuse the mission overlay stack; map sharing should be a local export/print workflow rather than WhatsApp-specific sending; beta.8 external resources should stay with imported GPX/layer visibility until a live-resource ownership/lifecycle model is decided; evacuation/gear logs need a separate workflow decision; `DON-100` remains canonical for multi-day mission layer grouping.
+- Follow-ups created: `DON-215` Mission Preview, `DON-216` Map Export/Print, `DON-217` External Resources, and `DON-218` Evacuation/Gear Logs.
+- This changed planning/coordination only. No app runtime, persistence, map rendering, Electron IPC, SQLite schema, filesystem export, diagnostics, packaging, launch path, offline tile protocol, or Traccar network behavior changed.
+- Verification: `git diff --check`; `npm run lint`; `npm run build`; focused Chromium Mission Review + Layer Tree regression 13/13; focused Chromium GPX import regression 2/2.
+
 DON-197 Marker and casualty display terminology improvements — **DONE.**
 - Casualty marker UI now uses `Casualty Status` instead of `Condition`, with coordinator-requested status order: Lost, Crag Fast, Medical Emergency, Unknown, Deceased. Evacuation Priority order is now Normal, Urgent, Walk-Off, None, Self-Evacuation.
 - Marker forms now include `Map Label Size`; casualty markers default to a larger 16px map label and all marker label sizes persist through browser harness, Electron SQLite, and Rust/Tauri store paths via schema 4 `label_size`. MapLibre marker label layers read the persisted/default label size from GeoJSON.
