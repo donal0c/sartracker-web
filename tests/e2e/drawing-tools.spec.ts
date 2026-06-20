@@ -198,6 +198,25 @@ test.describe('M8 drawing workflows', () => {
     await expect(page.getByTestId('marker-dialog')).toBeHidden()
   })
 
+  test('keeps Map Tools header and chevron clicks from opening Marker Details [DON-186]', async ({
+    page,
+  }) => {
+    await page.getByTestId('drawing-toolbar-collapse').click()
+    await expect(page.getByTestId('drawing-toolbar-expand')).toBeVisible()
+
+    const toolbar = page.getByTestId('drawing-toolbar')
+    await toolbar.getByText('Map Tools').click()
+    await expect(page.getByTestId('drawing-tool-line')).toBeVisible()
+    await expect(page.getByRole('dialog', { name: 'Marker Details' })).toBeHidden()
+    await expect(page.getByTestId('marker-dialog')).toBeHidden()
+
+    await page.getByTestId('drawing-toolbar-collapse').click()
+    await toolbar.locator('svg').click()
+    await expect(page.getByTestId('drawing-tool-line')).toBeVisible()
+    await expect(page.getByRole('dialog', { name: 'Marker Details' })).toBeHidden()
+    await expect(page.getByTestId('marker-dialog')).toBeHidden()
+  })
+
   test('uses dialog semantics, traps focus, and cancels with Escape', async ({ page }) => {
     await page.getByTestId('drawing-tool-line').click({ force: true })
     await clickMap(page, { x: 420, y: 240 })

@@ -46,6 +46,7 @@ export function DrawingToolbar() {
   return (
     <div
       className="sar-control-dock absolute left-4 top-24 z-20 rounded"
+      data-map-interaction-boundary="true"
       data-testid="drawing-toolbar"
     >
       {expanded ? (
