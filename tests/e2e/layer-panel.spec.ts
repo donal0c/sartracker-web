@@ -112,6 +112,33 @@ test.describe('M17 layer tree workflows', () => {
     expect(layerPanelBox!.height).toBeGreaterThan(tabContentBox!.height * 0.6)
   })
 
+  test('preserves expanded tree scroll while the catalog refreshes [DON-187]', async ({
+    page,
+  }) => {
+    await page.getByTestId('layer-expand-all-btn').click()
+    const layerTree = page.getByTestId('layer-tree')
+    await expect(layerTree).toBeVisible()
+
+    const before = await layerTree.evaluate((element) => {
+      element.scrollTop = element.scrollHeight
+      return {
+        maxScrollTop: element.scrollHeight - element.clientHeight,
+        scrollTop: element.scrollTop,
+      }
+    })
+    expect(before.maxScrollTop).toBeGreaterThan(0)
+    expect(before.scrollTop).toBeGreaterThan(0)
+
+    await page.evaluate(async () => {
+      const { useLayerCatalogStore } = await import('/src/features/layers/layer-catalog-store.ts')
+      useLayerCatalogStore.setState((current) => ({ ...current, loading: true }))
+    })
+    await expect.poll(async () => layerTree.evaluate((element) => element.scrollTop)).toBeGreaterThan(
+      before.scrollTop - 5,
+    )
+    await expect(page.getByTestId('layer-row-feature-marker-marker-1')).toBeVisible()
+  })
+
   test('persists tree metadata and visibility across reload within the mission harness', async ({
     page,
   }) => {
@@ -207,19 +234,21 @@ async function seedLayerPanelData(page: import('@playwright/test').Page, retries
       })
 
       const harnessStore = getBrowserHarnessStore()
-      await harnessStore.upsertMarker({
-        id: 'marker-1',
-        mission_id: missionId,
-        type: 'clue',
-        name: 'Boot Print',
-        lat: 52,
-        lon: -9.7,
-        irish_grid_e: 480000,
-        irish_grid_n: 580000,
-        display_order: 1,
-        clue_type: 'Footprint',
-        confidence: 0.8,
-      })
+      for (let index = 0; index < 28; index += 1) {
+        await harnessStore.upsertMarker({
+          id: index === 0 ? 'marker-1' : `marker-${index + 1}`,
+          mission_id: missionId,
+          type: 'clue',
+          name: index === 0 ? 'Boot Print' : `Clue ${String(index + 1).padStart(2, '0')}`,
+          lat: 52 + index * 0.0001,
+          lon: -9.7 - index * 0.0001,
+          irish_grid_e: 480000 + index,
+          irish_grid_n: 580000 + index,
+          display_order: index + 1,
+          clue_type: 'Footprint',
+          confidence: 0.8,
+        })
+      }
       await harnessStore.upsertDrawing({
         id: 'drawing-1',
         mission_id: missionId,

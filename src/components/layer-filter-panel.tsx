@@ -155,26 +155,36 @@ export function LayerFilterPanel() {
             </div>
 
             <div className="min-h-0 flex-1 overflow-y-auto px-2 py-2" data-testid="layer-tree">
-              {catalogLoading ? (
+              {catalogLoading && filteredRoot.children.length === 0 ? (
                 <EmptyState message="Syncing layer catalog..." />
               ) : filteredRoot.children.length === 0 ? (
                 <EmptyState message="No catalog nodes match the current filter." />
               ) : (
-                filteredRoot.children.map((node) => (
-                  <TreeNodeRow
-                    controller={catalogController}
-                    depth={0}
-                    expandedNodeIds={expandedNodeIds}
-                    key={node.id}
-                    measurementCount={measurements.length}
-                    onSelect={catalogController?.selectNode ?? (() => undefined)}
-                    root={root}
-                    selectedNodeId={selectedNodeId}
-                    toggleNodeExpanded={toggleNodeExpanded}
-                    trackingBreadcrumbCount={trackingSnapshot.breadcrumbs.length}
-                    node={node}
-                  />
-                ))
+                <>
+                  {catalogLoading ? (
+                    <p
+                      className="mb-2 rounded border border-stone-700 bg-stone-950/50 px-2 py-1 text-[11px] font-semibold uppercase tracking-wider text-stone-300"
+                      data-testid="layer-tree-refreshing"
+                    >
+                      Syncing layer catalog...
+                    </p>
+                  ) : null}
+                  {filteredRoot.children.map((node) => (
+                    <TreeNodeRow
+                      controller={catalogController}
+                      depth={0}
+                      expandedNodeIds={expandedNodeIds}
+                      key={node.id}
+                      measurementCount={measurements.length}
+                      onSelect={catalogController?.selectNode ?? (() => undefined)}
+                      root={root}
+                      selectedNodeId={selectedNodeId}
+                      toggleNodeExpanded={toggleNodeExpanded}
+                      trackingBreadcrumbCount={trackingSnapshot.breadcrumbs.length}
+                      node={node}
+                    />
+                  ))}
+                </>
               )}
             </div>
           </div>
