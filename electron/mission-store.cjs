@@ -19,6 +19,7 @@ function createElectronMissionStore(options) {
   const databasePath = path.join(options.userDataPath, DATABASE_FILE_NAME)
   const backupPath = path.join(options.userDataPath, BACKUP_FILE_NAME)
   const archiveDirectory = path.join(options.userDataPath, ARCHIVE_DIRECTORY_NAME)
+  const finalizeMissionFaultInjection = options.finalizeMissionFaultInjection ?? {}
   const db = new Database(databasePath)
   db.pragma('journal_mode = WAL')
   db.pragma('foreign_keys = ON')
@@ -79,7 +80,8 @@ function createElectronMissionStore(options) {
     pauseMission: async (missionId) => transitionMission(db, missionId, 'active', 'paused'),
     resumeMission: async (missionId) => transitionMission(db, missionId, 'paused', 'active'),
     finishMission: async (missionId) => finishMission(db, missionId),
-    finalizeMission: async (missionId) => finalizeMission(db, missionId, backupPath, archiveDirectory),
+    finalizeMission: async (missionId) =>
+      finalizeMission(db, missionId, backupPath, archiveDirectory, finalizeMissionFaultInjection),
     unlockFinalizedMission: async (input) => unlockFinalizedMission(db, input, options.readAdminRoster),
   }
 }
@@ -445,7 +447,13 @@ function validateArchiveFile(archiveBuffer, missionId) {
   }
 }
 
-async function finalizeMission(db, missionId, backupPath, archiveDirectory) {
+async function finalizeMission(
+  db,
+  missionId,
+  backupPath,
+  archiveDirectory,
+  finalizeMissionFaultInjection = {},
+) {
   const mission = getMission(db, missionId)
   if (mission.status !== 'finished') {
     throw new Error('Only finished missions can be finalized.')
@@ -453,21 +461,27 @@ async function finalizeMission(db, missionId, backupPath, archiveDirectory) {
 
   appendEvent(db, missionId, 'mission_finalize_requested', { resulting_status: 'finished' })
 
-  let archive
-  try {
-    archive = await createMissionArchive(db, missionId, backupPath, archiveDirectory, false)
-  } catch (error) {
-    appendEvent(db, missionId, 'mission_archive_failed', {
+  let archive = await readRecoverableFinalizeArchive(db, missionId)
+  if (archive === null) {
+    try {
+      archive = await createMissionArchive(db, missionId, backupPath, archiveDirectory, false)
+    } catch (error) {
+      appendEvent(db, missionId, 'mission_archive_failed', {
+        resulting_status: 'finished',
+        error: error instanceof Error ? error.message : String(error),
+      })
+      throw error
+    }
+
+    appendEvent(db, missionId, 'mission_archive_succeeded', {
       resulting_status: 'finished',
-      error: error instanceof Error ? error.message : String(error),
+      archive_path: archive.archive_path,
     })
-    throw error
   }
 
-  appendEvent(db, missionId, 'mission_archive_succeeded', {
-    resulting_status: 'finished',
-    archive_path: archive.archive_path,
-  })
+  if (finalizeMissionFaultInjection.afterArchiveSucceededEvent === true) {
+    throw new Error('Injected finalize interruption after archive success.')
+  }
 
   const transaction = db.transaction(() => {
     db.prepare('UPDATE missions SET status = ? WHERE id = ?').run('finalized', missionId)
@@ -478,6 +492,49 @@ async function finalizeMission(db, missionId, backupPath, archiveDirectory) {
   })
   transaction()
   return { mission: getMission(db, missionId), archive }
+}
+
+async function readRecoverableFinalizeArchive(db, missionId) {
+  const row = db.prepare(
+    `SELECT timestamp, details_json FROM mission_events
+      WHERE mission_id = ? AND event_type = ?
+      ORDER BY timestamp DESC, rowid DESC
+      LIMIT 1`,
+  ).get(missionId, 'mission_archive_succeeded')
+  if (row === undefined) {
+    return null
+  }
+
+  const details = readEventDetails(row.details_json)
+  const archivePath = typeof details.archive_path === 'string' ? details.archive_path : ''
+  if (archivePath === '') {
+    return null
+  }
+
+  try {
+    await fs.access(archivePath)
+  } catch {
+    return null
+  }
+
+  return {
+    mission_id: missionId,
+    archive_path: archivePath,
+    created_at: typeof row.timestamp === 'string' ? row.timestamp : now(),
+  }
+}
+
+function readEventDetails(input) {
+  if (typeof input !== 'string' || input.trim() === '') {
+    return {}
+  }
+
+  try {
+    const parsed = JSON.parse(input)
+    return typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed) ? parsed : {}
+  } catch {
+    return {}
+  }
 }
 
 async function unlockFinalizedMission(db, input, readAdminRoster) {

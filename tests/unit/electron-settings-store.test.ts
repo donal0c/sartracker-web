@@ -34,6 +34,8 @@ type ElectronSettingsStore = {
   readonly loadAppSettings: () => Promise<typeof DEFAULT_APP_SETTINGS>
   readonly saveAppSettings: (input: ReturnType<typeof createSettingsDraft>) => Promise<typeof DEFAULT_APP_SETTINGS>
   readonly loadRuntimeBootstrapSettings: (forceConnect?: boolean) => Promise<{
+    readonly autosaveIntervalMs: number
+    readonly trackingPollIntervalMs: number
     readonly trackingConfig: {
       readonly baseUrl: string
       readonly email?: string
@@ -162,6 +164,102 @@ describe('electron settings store', () => {
 
     expect(runtime.trackingConfig).toBeNull()
     expect(runtime.trackingDisabledReason).toBe('A provider secret is required before tracking can start.')
+  })
+
+  it('rejects Traccar provider URLs with embedded credentials before persistence [DON-207]', async () => {
+    const store = await createStore({ backend: 'gnome_libsecret' })
+    const draft = createSettingsDraft(DEFAULT_APP_SETTINGS)
+    draft.dataSource.providerType = 'traccar_http'
+    draft.dataSource.baseUrl = 'https://operator:field-secret@kmrtsar.eu'
+    draft.dataSource.email = 'sean'
+    draft.dataSource.secretInput = 'field-secret'
+
+    await expect(store.saveAppSettings(draft)).rejects.toThrow(
+      /Provider URL must not include embedded credentials/,
+    )
+  })
+
+  it('disables runtime tracking when persisted provider URLs contain embedded credentials [DON-207]', async () => {
+    const store = await createStore({ backend: 'gnome_libsecret' })
+    const draft = createSettingsDraft(DEFAULT_APP_SETTINGS)
+    draft.dataSource.providerType = 'traccar_http'
+    draft.dataSource.baseUrl = 'https://kmrtsar.eu'
+    draft.dataSource.email = 'sean'
+    draft.dataSource.secretInput = 'field-secret'
+    await store.saveAppSettings(draft)
+
+    await writeFile(
+      path.join(userDataPath!, 'settings.json'),
+      JSON.stringify({
+        missionDefaults: {
+          autoRefreshEnabled: true,
+        },
+        dataSource: {
+          providerType: 'traccar_http',
+          baseUrl: 'https://operator:field-secret@kmrtsar.eu',
+          authMode: 'basic',
+          email: 'sean',
+          autoConnect: true,
+        },
+      }),
+      'utf8',
+    )
+
+    const runtime = await store.loadRuntimeBootstrapSettings(true)
+
+    expect(runtime.trackingConfig).toBeNull()
+    expect(runtime.trackingDisabledReason).toBe(
+      'Provider URL must not include embedded credentials. Enter credentials in the authentication fields.',
+    )
+  })
+
+  it('normalizes corrupt persisted tracking intervals to a safe runtime cadence [DON-208]', async () => {
+    const store = await createStore({ backend: 'gnome_libsecret' })
+
+    await writeFile(
+      path.join(userDataPath!, 'settings.json'),
+      JSON.stringify({
+        missionDefaults: {
+          autoRefreshIntervalSeconds: 'bad',
+          autoSaveIntervalSeconds: 'bad',
+        },
+      }),
+      'utf8',
+    )
+    await expect(store.loadRuntimeBootstrapSettings()).resolves.toMatchObject({
+      autosaveIntervalMs: 30_000,
+      trackingPollIntervalMs: 30_000,
+    })
+
+    await writeFile(
+      path.join(userDataPath!, 'settings.json'),
+      JSON.stringify({
+        missionDefaults: {
+          autoRefreshIntervalSeconds: 0,
+          autoSaveIntervalSeconds: 0,
+        },
+      }),
+      'utf8',
+    )
+    await expect(store.loadRuntimeBootstrapSettings()).resolves.toMatchObject({
+      autosaveIntervalMs: 5_000,
+      trackingPollIntervalMs: 5_000,
+    })
+
+    await writeFile(
+      path.join(userDataPath!, 'settings.json'),
+      JSON.stringify({
+        missionDefaults: {
+          autoRefreshIntervalSeconds: 9_999,
+          autoSaveIntervalSeconds: 9_999,
+        },
+      }),
+      'utf8',
+    )
+    await expect(store.loadRuntimeBootstrapSettings()).resolves.toMatchObject({
+      autosaveIntervalMs: 3_600_000,
+      trackingPollIntervalMs: 3_600_000,
+    })
   })
 
   it('normalizes bare-domain weather links before persistence', async () => {

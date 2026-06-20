@@ -9,6 +9,9 @@ import type {
 
 export type TraccarFetch = (url: string, init?: RequestInit) => Promise<Response>
 
+type RawDeviceInput = Parameters<typeof normalizeTraccarDevice>[0]
+type RawPositionInput = Parameters<typeof normalizeTraccarPosition>[0]
+
 type TraccarClientConfig = {
   readonly baseUrl: string
   readonly email?: string
@@ -17,6 +20,7 @@ type TraccarClientConfig = {
   readonly timeoutMs?: number
   readonly maxRetries?: number
   readonly retryBaseMs?: number
+  readonly logger?: TraccarClientLogger
 }
 
 type TraccarClient = {
@@ -30,6 +34,22 @@ type TraccarClient = {
   ) => Promise<readonly NormalizedTrackingPosition[]>
 }
 
+type TraccarClientLogger = {
+  readonly warn: (message: string, context: Record<string, unknown>) => void
+}
+
+type TraccarRowContext = {
+  readonly endpoint: string
+  readonly rowIndex: number
+  readonly deviceId?: string
+}
+
+const DEFAULT_LOGGER: TraccarClientLogger = {
+  warn: (message, context) => {
+    console.warn(message, context)
+  },
+}
+
 /**
  * Creates the Traccar HTTP client used for tracking polling.
  */
@@ -41,6 +61,7 @@ export function createTraccarClient(
   const timeoutMs = config.timeoutMs ?? 10_000
   const maxRetries = config.maxRetries ?? 3
   const retryBaseMs = config.retryBaseMs ?? 1_000
+  const logger = config.logger ?? DEFAULT_LOGGER
   let sessionCookie: string | null = null
 
   const buildHeaders = (): Record<string, string> => {
@@ -143,7 +164,14 @@ export function createTraccarClient(
         throw new Error('Expected an array from /api/devices.')
       }
 
-      return data.map((device) => normalizeTraccarDevice(device))
+      return normalizeTraccarRows({
+        endpoint: '/api/devices',
+        rows: data,
+        emptyMessage: 'No valid Traccar device rows were returned from /api/devices.',
+        warningMessage: 'Dropped malformed Traccar device row.',
+        logger,
+        normalize: (device) => normalizeTraccarDevice(device as RawDeviceInput),
+      })
     },
     getCurrentPositions: async () => {
       const data = await fetchJson('/api/positions')
@@ -151,7 +179,14 @@ export function createTraccarClient(
         throw new Error('Expected an array from /api/positions.')
       }
 
-      return data.map((position) => normalizeTraccarPosition(position, 'live'))
+      return normalizeTraccarRows({
+        endpoint: '/api/positions',
+        rows: data,
+        emptyMessage: 'No valid Traccar position rows were returned from /api/positions.',
+        warningMessage: 'Dropped malformed Traccar position row.',
+        logger,
+        normalize: (position) => normalizeTraccarPosition(position as RawPositionInput, 'live'),
+      })
     },
     getBreadcrumbs: async (deviceId, from, to) => {
       const data = await fetchJson('/api/positions', {
@@ -163,9 +198,64 @@ export function createTraccarClient(
         throw new Error('Expected an array from breadcrumb positions.')
       }
 
-      return data.map((position) => normalizeTraccarPosition(position, 'live'))
+      return normalizeTraccarRows({
+        endpoint: '/api/positions',
+        rows: data,
+        deviceId,
+        emptyMessage: `No valid Traccar breadcrumb rows were returned for device ${deviceId}.`,
+        warningMessage: 'Dropped malformed Traccar breadcrumb row.',
+        logger,
+        normalize: (position) => normalizeTraccarPosition(position as RawPositionInput, 'live'),
+        allowEmptyAfterDrops: true,
+      })
     },
   }
+}
+
+/**
+ * Normalizes Traccar list responses one row at a time so a single malformed
+ * upstream row cannot erase valid live tracking data.
+ */
+function normalizeTraccarRows<T>(input: {
+  readonly endpoint: string
+  readonly rows: readonly unknown[]
+  readonly emptyMessage: string
+  readonly warningMessage: string
+  readonly logger: TraccarClientLogger
+  readonly normalize: (row: unknown) => T
+  readonly deviceId?: string
+  readonly allowEmptyAfterDrops?: boolean
+}): readonly T[] {
+  const accepted: T[] = []
+  for (let rowIndex = 0; rowIndex < input.rows.length; rowIndex += 1) {
+    const row = input.rows[rowIndex]
+    try {
+      accepted.push(input.normalize(row))
+    } catch (error) {
+      input.logger.warn(input.warningMessage, {
+        ...createRowContext(input, rowIndex),
+        reason: error instanceof Error ? error.message : String(error),
+      })
+    }
+  }
+
+  if (accepted.length === 0 && input.rows.length > 0 && input.allowEmptyAfterDrops !== true) {
+    throw new Error(input.emptyMessage)
+  }
+
+  return accepted
+}
+
+/**
+ * Builds the warning context without including raw upstream row payloads.
+ */
+function createRowContext(
+  input: Pick<TraccarRowContext, 'endpoint' | 'deviceId'>,
+  rowIndex: number,
+): TraccarRowContext {
+  return input.deviceId === undefined
+    ? { endpoint: input.endpoint, rowIndex }
+    : { endpoint: input.endpoint, rowIndex, deviceId: input.deviceId }
 }
 
 function sleep(delayMs: number): Promise<void> {

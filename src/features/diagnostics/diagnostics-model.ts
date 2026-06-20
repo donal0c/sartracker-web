@@ -121,7 +121,10 @@ export function buildDiagnosticsSnapshot(
     },
   ]
   const configurationRows: readonly DiagnosticsRow[] = [
-    { label: 'Provider URL', value: input.settings.dataSource.baseUrl || 'Not configured' },
+    {
+      label: 'Provider URL',
+      value: redactProviderUrlCredentials(input.settings.dataSource.baseUrl) || 'Not configured',
+    },
     { label: 'Auth mode', value: input.settings.dataSource.authMode },
     {
       label: 'Tracking cache',
@@ -221,7 +224,7 @@ function buildSupportReport(
     '',
     '[configuration]',
     `provider type: ${input.settings.dataSource.providerType}`,
-    `provider url: ${input.settings.dataSource.baseUrl || 'not configured'}`,
+    `provider url: ${redactProviderUrlCredentials(input.settings.dataSource.baseUrl) || 'not configured'}`,
     `auth mode: ${input.settings.dataSource.authMode}`,
     `auto connect: ${booleanWord(input.settings.dataSource.autoConnect)}`,
     `tracking cache: ${booleanWord(input.settings.dataSource.trackingCacheEnabled)}`,
@@ -395,4 +398,16 @@ function safeTimestamp(value: string): string {
 
 function formatTimestamp(value: string): string {
   return new Date(value).toLocaleString()
+}
+
+/**
+ * Redacts accidental userinfo in provider URLs without changing host/path context.
+ */
+function redactProviderUrlCredentials(input: string): string {
+  const trimmed = input.trim()
+  if (trimmed === '') {
+    return ''
+  }
+
+  return trimmed.replace(/\b(https?:\/\/)[^/\s@]+@/gi, '$1[redacted]@')
 }

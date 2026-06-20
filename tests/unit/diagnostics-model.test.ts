@@ -156,6 +156,52 @@ describe('diagnostics model', () => {
     expect(snapshot.supportReport).not.toContain('runtime: browser validation')
   })
 
+  it('redacts credentials embedded in provider URLs across diagnostics rows and report text [DON-207]', () => {
+    const settings = {
+      ...createSettings(),
+      dataSource: {
+        ...createSettings().dataSource,
+        baseUrl: 'https://operator:field-secret@kmrtsar.eu',
+      },
+    } satisfies AppSettings
+    const snapshot = buildDiagnosticsSnapshot({
+      generatedAt: '2026-04-11T00:55:00.000Z',
+      appVersion: '0.1.0',
+      runtimeKind: 'electron',
+      userAgent: 'Electron/40.10.0 SARTrackerTest/1.0',
+      dependencySmoke: {
+        hasMapLibre: true,
+        hasProj4: true,
+        hasTurf: true,
+        hasZustand: true,
+        hasTerraDraw: true,
+      },
+      settings,
+      runtimeBootstrap: createRuntimeBootstrap(),
+      missionStoreInfo: createStoreInfo(),
+      missions: [createMission()],
+      missionRuntime: createMissionRuntime(),
+      governanceRuntime: createGovernanceRuntime(),
+      trackingStatus: createTrackingStatus(),
+      trackingSnapshot: createTrackingSnapshot(),
+      layerCatalogState: {
+        missionId: 'mission-1',
+        loading: false,
+        error: null,
+        metadataEntryCount: 3,
+      },
+      selectedMissionId: 'mission-1',
+    })
+
+    expect(snapshot.configurationRows).toContainEqual({
+      label: 'Provider URL',
+      value: 'https://[redacted]@kmrtsar.eu',
+    })
+    expect(snapshot.supportReport).toContain('provider url: https://[redacted]@kmrtsar.eu')
+    expect(snapshot.supportReport).not.toContain('operator')
+    expect(snapshot.supportReport).not.toContain('field-secret')
+  })
+
   it('reports per-device breadcrumb render budgets and warnings [DON-159]', () => {
     const snapshot = buildDiagnosticsSnapshot({
       generatedAt: '2026-06-13T21:48:51.654Z',

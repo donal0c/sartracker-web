@@ -10,6 +10,9 @@ const { createElectronMissionStore } = require('../../electron/mission-store.cjs
   readonly createElectronMissionStore: (options: {
     readonly userDataPath: string
     readonly readAdminRoster?: () => Promise<readonly string[]>
+    readonly finalizeMissionFaultInjection?: {
+      readonly afterArchiveSucceededEvent?: boolean
+    }
   }) => ElectronMissionStore
 }
 
@@ -23,7 +26,7 @@ type ElectronMissionStore = {
   readonly syncBackup: () => Promise<string>
   readonly createMission: (input: { readonly name: string; readonly start_time?: string }) => Promise<{ readonly id: string; readonly status: string }>
   readonly getActiveMission: () => Promise<{ readonly id: string; readonly status: string } | null>
-  readonly listMissions: () => Promise<readonly { readonly id: string }[]>
+  readonly listMissions: () => Promise<readonly { readonly id: string; readonly status: string }[]>
   readonly pauseMission: (missionId: string) => Promise<{ readonly status: string }>
   readonly resumeMission: (missionId: string) => Promise<{ readonly status: string }>
   readonly finishMission: (missionId: string) => Promise<{ readonly status: string }>
@@ -639,6 +642,36 @@ describe('electron mission store', () => {
     ])
   })
 
+  it('recovers idempotently when finalization is interrupted after archive success [DON-209]', async () => {
+    store = await createStore({
+      finalizeMissionFaultInjection: {
+        afterArchiveSucceededEvent: true,
+      },
+    })
+    const mission = await store.createMission({ name: 'Interrupted Finalize Mission' })
+    await store.finishMission(mission.id)
+
+    await expect(store.finalizeMission(mission.id)).rejects.toThrow(
+      /Injected finalize interruption after archive success/,
+    )
+    expect((await store.listMissions()).find((entry) => entry.id === mission.id)?.status).toBe(
+      'finished',
+    )
+    let eventTypes = (await store.listMissionEvents(mission.id)).map((event) => event.event_type)
+    expect(eventTypes.filter((eventType) => eventType === 'mission_archive_succeeded')).toHaveLength(1)
+    expect(eventTypes).not.toContain('mission_finalized')
+
+    store.close()
+    store = createElectronMissionStore({ userDataPath: userDataPath! })
+
+    const retry = await store.finalizeMission(mission.id)
+
+    expect(retry.mission.status).toBe('finalized')
+    eventTypes = (await store.listMissionEvents(mission.id)).map((event) => event.event_type)
+    expect(eventTypes.filter((eventType) => eventType === 'mission_archive_succeeded')).toHaveLength(1)
+    expect(eventTypes.filter((eventType) => eventType === 'mission_finalized')).toHaveLength(1)
+  })
+
   it('createMissionArchive builds an archive for a finished mission (DON-162 / DON-34)', async () => {
     store = await createStore()
     const mission = await store.createMission({ name: 'Direct Archive Mission' })
@@ -659,8 +692,12 @@ describe('electron mission store', () => {
     )
   })
 
-  async function createStore(): Promise<ElectronMissionStore> {
+  async function createStore(options: {
+    readonly finalizeMissionFaultInjection?: {
+      readonly afterArchiveSucceededEvent?: boolean
+    }
+  } = {}): Promise<ElectronMissionStore> {
     userDataPath = await mkdtemp(path.join(tmpdir(), 'sartracker-electron-mission-'))
-    return createElectronMissionStore({ userDataPath })
+    return createElectronMissionStore({ userDataPath, ...options })
   }
 })

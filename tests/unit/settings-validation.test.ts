@@ -76,6 +76,30 @@ describe('settings validation', () => {
     expect(validateSettingsDraft(draft)).not.toHaveProperty('baseUrl')
   })
 
+  it('rejects Traccar provider URLs with embedded credentials [DON-207]', () => {
+    const draft = createSettingsDraft(DEFAULT_APP_SETTINGS)
+    draft.dataSource.providerType = 'traccar_http'
+    draft.dataSource.baseUrl = 'https://operator:field-secret@kmrtsar.eu'
+    draft.dataSource.email = 'ops@example.com'
+    draft.dataSource.secretInput = 'secret'
+
+    expect(validateSettingsDraft(draft)).toMatchObject({
+      baseUrl: 'Provider URL must not include embedded credentials. Enter credentials in the authentication fields.',
+    })
+  })
+
+  it('rejects Traccar provider URLs with an embedded username even without a password [DON-207]', () => {
+    const draft = createSettingsDraft(DEFAULT_APP_SETTINGS)
+    draft.dataSource.providerType = 'traccar_http'
+    draft.dataSource.baseUrl = 'https://operator@kmrtsar.eu'
+    draft.dataSource.email = 'ops@example.com'
+    draft.dataSource.secretInput = 'secret'
+
+    expect(validateSettingsDraft(draft)).toMatchObject({
+      baseUrl: 'Provider URL must not include embedded credentials. Enter credentials in the authentication fields.',
+    })
+  })
+
   it('normalizes roster input into unique trimmed names', () => {
     expect(normalizeRosterInput(' Alice \nBob\nAlice\n\nCharlie  ')).toEqual([
       'Alice',

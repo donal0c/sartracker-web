@@ -22,31 +22,31 @@ const {
     readonly safeStorageBackend: () => string
     readonly readRecentCrashes?: () => Promise<readonly unknown[]>
     readonly readRecentLog?: () => Promise<readonly unknown[]>
-      readonly loadSettings: () => Promise<{
-        readonly dataSource: {
-          readonly baseUrl: string
-          readonly authMode: string
-          readonly secretPresent: boolean
-        }
-        readonly officialMaps?: {
-          readonly status?: string
-          readonly sourceType?: string
-          readonly sourcePath?: string
-          readonly serviceCount?: number
-          readonly packages?: readonly {
-            readonly sourceType: string
-            readonly mapId: string
-            readonly packagePath: string
-            readonly status: string
-            readonly bounds: readonly [number, number, number, number] | null
-            readonly minZoom: number | null
-            readonly maxZoom: number | null
-            readonly tileCount: number
-            readonly tileFormat: string
-            readonly verifiedAt: string
-          }[]
-        }
-      }>
+    readonly loadSettings: () => Promise<{
+      readonly dataSource: {
+        readonly baseUrl: string
+        readonly authMode: string
+        readonly secretPresent: boolean
+      }
+      readonly officialMaps?: {
+        readonly status?: string
+        readonly sourceType?: string
+        readonly sourcePath?: string
+        readonly serviceCount?: number
+        readonly packages?: readonly {
+          readonly sourceType: string
+          readonly mapId: string
+          readonly packagePath: string
+          readonly status: string
+          readonly bounds: readonly [number, number, number, number] | null
+          readonly minZoom: number | null
+          readonly maxZoom: number | null
+          readonly tileCount: number
+          readonly tileFormat: string
+          readonly verifiedAt: string
+        }[]
+      }
+    }>
   }) => {
     readonly readTrackingCache: () => Promise<string | null>
     readonly writeTrackingCache: (contents: string) => Promise<string>
@@ -239,6 +239,25 @@ describe('electron runtime files', () => {
     expect(bundle).toContain('"authorization":"[redacted]"')
   })
 
+  it('redacts credentials embedded in provider URLs across Electron diagnostics output [DON-207]', async () => {
+    const files = await createRuntimeFiles({
+      baseUrl: 'https://operator:field-secret@kmrtsar.eu',
+    })
+
+    const exportPath = await files.exportDiagnosticsReport({
+      fileName: 'diagnostics-report.txt',
+      contents: [
+        'Diagnostics Report',
+        'provider url: https://operator:field-secret@kmrtsar.eu',
+      ].join('\n'),
+    })
+
+    const report = await readFile(exportPath, 'utf8')
+    expect(report).toContain('provider url: https://[redacted]@kmrtsar.eu')
+    expect(report).not.toContain('operator')
+    expect(report).not.toContain('field-secret')
+  })
+
   it('exports a support bundle with explicit empty sections when no logs exist', async () => {
     const files = await createRuntimeFiles()
 
@@ -258,6 +277,7 @@ describe('electron runtime files', () => {
     logOverrides: {
       readonly readRecentCrashes?: () => Promise<readonly unknown[]>
       readonly readRecentLog?: () => Promise<readonly unknown[]>
+      readonly baseUrl?: string
     } = {},
   ) {
     userDataPath = await mkdtemp(path.join(tmpdir(), 'sartracker-electron-runtime-'))
@@ -274,7 +294,7 @@ describe('electron runtime files', () => {
       safeStorageBackend: () => 'gnome_libsecret',
       loadSettings: async () => ({
         dataSource: {
-          baseUrl: 'https://kmrtsar.eu',
+          baseUrl: logOverrides.baseUrl ?? 'https://kmrtsar.eu',
           authMode: 'basic',
           secretPresent: true,
         },

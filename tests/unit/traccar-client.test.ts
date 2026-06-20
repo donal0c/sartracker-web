@@ -123,6 +123,88 @@ describe('traccar client', () => {
     expect(positions[0].battery).toBe(85)
   })
 
+  it('preserves valid devices while warning about malformed device rows [DON-206]', async () => {
+    const logger = { warn: vi.fn() }
+    const fetchFn: TraccarFetch = vi.fn(async () =>
+      createJsonResponse([
+        devicesFixture[0],
+        {
+          ...devicesFixture[1],
+          id: 'not-a-device-id',
+        },
+      ]),
+    )
+
+    const config = { baseUrl: 'http://test:8082', logger }
+    const client = createTraccarClient(config, fetchFn)
+
+    await expect(client.getDevices()).resolves.toEqual([
+      expect.objectContaining({ device_id: '1' }),
+    ])
+    expect(logger.warn).toHaveBeenCalledWith(
+      'Dropped malformed Traccar device row.',
+      expect.objectContaining({
+        endpoint: '/api/devices',
+        rowIndex: 1,
+        reason: expect.stringMatching(/device id/i),
+      }),
+    )
+  })
+
+  it('preserves valid current positions while warning about malformed rows [DON-206]', async () => {
+    const logger = { warn: vi.fn() }
+    const fetchFn: TraccarFetch = vi.fn(async () =>
+      createJsonResponse([
+        positionsFixture[0],
+        {
+          ...positionsFixture[1],
+          latitude: 200,
+        },
+      ]),
+    )
+
+    const config = { baseUrl: 'http://test:8082', logger }
+    const client = createTraccarClient(config, fetchFn)
+
+    await expect(client.getCurrentPositions()).resolves.toEqual([
+      expect.objectContaining({ device_id: '1' }),
+    ])
+    expect(logger.warn).toHaveBeenCalledWith(
+      'Dropped malformed Traccar position row.',
+      expect.objectContaining({
+        endpoint: '/api/positions',
+        rowIndex: 1,
+        reason: expect.stringMatching(/latitude/i),
+      }),
+    )
+  })
+
+  it('fails current positions explicitly when every returned row is malformed [DON-206]', async () => {
+    const logger = { warn: vi.fn() }
+    const fetchFn: TraccarFetch = vi.fn(async () =>
+      createJsonResponse([
+        {
+          ...positionsFixture[0],
+          latitude: 200,
+        },
+      ]),
+    )
+
+    const config = { baseUrl: 'http://test:8082', logger }
+    const client = createTraccarClient(config, fetchFn)
+
+    await expect(client.getCurrentPositions()).rejects.toThrow(
+      /No valid Traccar position rows were returned from \/api\/positions/,
+    )
+    expect(logger.warn).toHaveBeenCalledWith(
+      'Dropped malformed Traccar position row.',
+      expect.objectContaining({
+        endpoint: '/api/positions',
+        rowIndex: 0,
+      }),
+    )
+  })
+
   it('fetches breadcrumbs with from/to query parameters', async () => {
     const fetchFn: TraccarFetch = vi.fn(async (url) => {
       const parsed = new URL(url)
@@ -142,6 +224,38 @@ describe('traccar client', () => {
     )
 
     expect(breadcrumbs).toHaveLength(3)
+  })
+
+  it('preserves valid breadcrumbs while warning about malformed breadcrumb rows [DON-206]', async () => {
+    const logger = { warn: vi.fn() }
+    const fetchFn: TraccarFetch = vi.fn(async () =>
+      createJsonResponse([
+        breadcrumbsFixture[0],
+        {
+          ...breadcrumbsFixture[1],
+          fixTime: 'not-a-date',
+        },
+      ]),
+    )
+
+    const config = { baseUrl: 'http://test:8082', logger }
+    const client = createTraccarClient(config, fetchFn)
+    const breadcrumbs = await client.getBreadcrumbs(
+      '1',
+      new Date('2026-04-06T10:00:00.000Z'),
+      new Date('2026-04-06T10:30:00.000Z'),
+    )
+
+    expect(breadcrumbs).toEqual([expect.objectContaining({ id: '200' })])
+    expect(logger.warn).toHaveBeenCalledWith(
+      'Dropped malformed Traccar breadcrumb row.',
+      expect.objectContaining({
+        endpoint: '/api/positions',
+        deviceId: '1',
+        rowIndex: 1,
+        reason: expect.stringMatching(/fixTime/i),
+      }),
+    )
   })
 
   it('retries with exponential backoff on transport failure', async () => {

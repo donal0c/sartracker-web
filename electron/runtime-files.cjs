@@ -18,6 +18,7 @@ const SECRET_LINE_KEY_PATTERN = /(password|token|secret|credential|api[-_]?key|a
 const SECRET_JSON_KEY_PATTERN = /("(?:password|token|secret|credential|api[-_]?key|authorization)"\s*:\s*)"[^"]*"/gi
 const AUTH_HEADER_PATTERN = /\b(Authorization\s*:\s*)(?:Bearer|Basic)\s+\S+/gi
 const AUTH_TOKEN_PATTERN = /\b(?:Bearer|Basic)\s+[A-Za-z0-9._~+/=-]+/gi
+const URL_CREDENTIALS_PATTERN = /\b(https?:\/\/)[^/\s@]+@/gi
 
 /**
  * Creates Electron main-process file adapters for app-owned runtime state.
@@ -151,7 +152,7 @@ function buildElectronDiagnosticsReport(input) {
     `userData path: ${sanitizeDiagnosticsText(input.userDataPath)}`,
     `safeStorage backend: ${input.safeStorageBackend}`,
     `credential storage: local-file`,
-    `provider url: ${input.settings.dataSource.baseUrl || 'not configured'}`,
+    `provider url: ${redactUrlCredentials(input.settings.dataSource.baseUrl) || 'not configured'}`,
     `auth mode: ${input.settings.dataSource.authMode}`,
     `secret present: ${input.settings.dataSource.secretPresent ? 'yes' : 'no'}`,
     `official maps: ${input.settings.officialMaps?.status ?? 'not_configured'}`,
@@ -286,6 +287,7 @@ function sanitizeDiagnosticsText(contents) {
     .replace(SECRET_JSON_KEY_PATTERN, '$1"[redacted]"')
     .replace(AUTH_HEADER_PATTERN, '$1[redacted]')
     .replace(AUTH_TOKEN_PATTERN, '[redacted]')
+    .replace(URL_CREDENTIALS_PATTERN, '$1[redacted]@')
     .replace(/(\/(?:home|Users)\/)[^/\s:"]+/g, '$1[redacted]')
     .replace(/([A-Za-z]:\\Users\\)[^\\\s:"]+/g, '$1[redacted]')
 
@@ -308,6 +310,10 @@ function sanitizeDiagnosticsText(contents) {
       return line
     })
     .join('\n')
+}
+
+function redactUrlCredentials(input) {
+  return readDiagnosticsValue(input, '').replace(URL_CREDENTIALS_PATTERN, '$1[redacted]@')
 }
 
 module.exports = {

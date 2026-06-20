@@ -18,6 +18,11 @@ const CREDENTIALS_FILE_VERSION = 1
 const CREDENTIAL_FILE_MODE = 0o600
 const UNDECRYPTABLE_SECRET_MESSAGE =
   'Stored Traccar credentials could not be decrypted. Re-enter the password or token in Settings.'
+const PROVIDER_URL_CREDENTIALS_ERROR =
+  'Provider URL must not include embedded credentials. Enter credentials in the authentication fields.'
+const DEFAULT_INTERVAL_SECONDS = 30
+const MIN_INTERVAL_SECONDS = 5
+const MAX_INTERVAL_SECONDS = 3600
 
 const DEFAULT_APP_SETTINGS = Object.freeze({
   missionDefaults: Object.freeze({
@@ -304,17 +309,17 @@ function createElectronSettingsStore(options) {
 async function readSettings(settingsPath) {
   const parsed = await readJson(settingsPath, {})
   return {
-    missionDefaults: {
+    missionDefaults: normalizeMissionDefaults({
       ...DEFAULT_APP_SETTINGS.missionDefaults,
       ...readObject(parsed.missionDefaults),
       coordinatorRoster: readStringArray(parsed.missionDefaults?.coordinatorRoster),
       adminRoster: readStringArray(parsed.missionDefaults?.adminRoster),
-    },
-    dataSource: {
+    }),
+    dataSource: normalizeDataSource({
       ...DEFAULT_APP_SETTINGS.dataSource,
       ...readObject(parsed.dataSource),
       secretPresent: false,
-    },
+    }),
     officialMaps: normalizePersistedOfficialMaps(parsed.officialMaps),
     weather: {
       links: normalizeWeatherLinks(parsed.weather?.links),
@@ -396,6 +401,9 @@ function validateSettingsDraft(input, existingSecretPresent) {
     if (normalizeBaseUrl(input.dataSource.baseUrl) === '') {
       throw new Error('Enter a Traccar base URL first.')
     }
+    if (baseUrlIncludesCredentials(input.dataSource.baseUrl)) {
+      throw new Error(PROVIDER_URL_CREDENTIALS_ERROR)
+    }
 
     if (input.dataSource.authMode === 'basic' && input.dataSource.email.trim() === '') {
       throw new Error('Email is required for basic authentication.')
@@ -414,9 +422,9 @@ function validateSettingsDraft(input, existingSecretPresent) {
 function normalizeMissionDefaults(input) {
   return {
     autoRefreshEnabled: Boolean(input.autoRefreshEnabled),
-    autoRefreshIntervalSeconds: Number(input.autoRefreshIntervalSeconds),
+    autoRefreshIntervalSeconds: normalizeIntervalSeconds(input.autoRefreshIntervalSeconds),
     autoSaveEnabled: Boolean(input.autoSaveEnabled),
-    autoSaveIntervalSeconds: Number(input.autoSaveIntervalSeconds),
+    autoSaveIntervalSeconds: normalizeIntervalSeconds(input.autoSaveIntervalSeconds),
     primaryMissionRoot: readOptionalString(input.primaryMissionRoot).trim(),
     backupMissionRoot: readOptionalString(input.backupMissionRoot).trim(),
     coordinatorRoster: normalizeRoster(input.coordinatorRoster),
@@ -441,6 +449,23 @@ function normalizeDataSource(input) {
 
 function normalizeBaseUrl(baseUrl) {
   return readOptionalString(baseUrl).trim().replace(/\/+$/, '')
+}
+
+function normalizeIntervalSeconds(input) {
+  const numeric = Number(input)
+  if (!Number.isFinite(numeric)) {
+    return DEFAULT_INTERVAL_SECONDS
+  }
+  return Math.min(MAX_INTERVAL_SECONDS, Math.max(MIN_INTERVAL_SECONDS, Math.trunc(numeric)))
+}
+
+function baseUrlIncludesCredentials(baseUrl) {
+  try {
+    const parsed = new URL(normalizeBaseUrl(baseUrl))
+    return parsed.username !== '' || parsed.password !== ''
+  } catch {
+    return false
+  }
 }
 
 async function normalizeOfficialMaps(input, now) {
@@ -867,6 +892,10 @@ function resolveTrackingDisabledReason(input) {
 
   if (!input.persisted.missionDefaults.autoRefreshEnabled) {
     return 'Tracking auto-refresh is disabled in Settings.'
+  }
+
+  if (baseUrlIncludesCredentials(input.persisted.dataSource.baseUrl)) {
+    return PROVIDER_URL_CREDENTIALS_ERROR
   }
 
   if (input.secretResult.unsafeReason !== undefined) {

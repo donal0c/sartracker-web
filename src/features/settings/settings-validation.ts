@@ -4,6 +4,8 @@ export type SettingsValidationErrors = Partial<Record<string, string>>
 
 export const HOSTED_TRACCAR_PROXY_BASE_URL = 'https://sartracker-web.vercel.app'
 export const MAX_WEATHER_LINKS = 5
+export const PROVIDER_URL_CREDENTIALS_ERROR =
+  'Provider URL must not include embedded credentials. Enter credentials in the authentication fields.'
 
 export type SettingsValidationContext = {
   readonly hostedBrowserMode: boolean
@@ -69,6 +71,8 @@ export function validateSettingsDraft(
       const parsed = new URL(draft.dataSource.baseUrl)
       if (!['http:', 'https:'].includes(parsed.protocol)) {
         errors.baseUrl = 'Provider URL must use http or https.'
+      } else if (parsed.username !== '' || parsed.password !== '') {
+        errors.baseUrl = PROVIDER_URL_CREDENTIALS_ERROR
       } else {
         const hostedUrlError = getHostedTraccarBaseUrlError(draft.dataSource.baseUrl, context)
         if (hostedUrlError !== undefined) {

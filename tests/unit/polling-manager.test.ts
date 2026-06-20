@@ -422,6 +422,78 @@ describe('polling manager', () => {
     poller.stop()
   })
 
+  it('normalizes invalid success-poll intervals before scheduling the next poll [DON-208]', async () => {
+    const client = createClient()
+    const setTimeoutSpy = vi.fn(window.setTimeout.bind(window)) as unknown as typeof window.setTimeout
+
+    const poller = createPollingManager(client, {
+      intervalMs: Number.NaN,
+      staleThresholdMs: 60 * 60 * 1000,
+      onSnapshot: vi.fn(),
+      onStatusChange: vi.fn(),
+      now: () => new Date('2026-04-06T10:35:00.000Z'),
+      setTimeout: setTimeoutSpy,
+    })
+
+    poller.start()
+    await vi.advanceTimersByTimeAsync(0)
+
+    const recordedDelays = (setTimeoutSpy as unknown as { mock: { calls: [() => void, number][] } }).mock.calls.map(
+      (call) => call[1],
+    )
+    expect(recordedDelays.at(-1)).toBe(30_000)
+
+    poller.stop()
+  })
+
+  it('clamps too-short success-poll intervals to five seconds [DON-208]', async () => {
+    const client = createClient()
+    const setTimeoutSpy = vi.fn(window.setTimeout.bind(window)) as unknown as typeof window.setTimeout
+
+    const poller = createPollingManager(client, {
+      intervalMs: 0,
+      staleThresholdMs: 60 * 60 * 1000,
+      onSnapshot: vi.fn(),
+      onStatusChange: vi.fn(),
+      now: () => new Date('2026-04-06T10:35:00.000Z'),
+      setTimeout: setTimeoutSpy,
+    })
+
+    poller.start()
+    await vi.advanceTimersByTimeAsync(0)
+
+    const recordedDelays = (setTimeoutSpy as unknown as { mock: { calls: [() => void, number][] } }).mock.calls.map(
+      (call) => call[1],
+    )
+    expect(recordedDelays.at(-1)).toBe(5_000)
+
+    poller.stop()
+  })
+
+  it('clamps too-long success-poll intervals to one hour [DON-208]', async () => {
+    const client = createClient()
+    const setTimeoutSpy = vi.fn(window.setTimeout.bind(window)) as unknown as typeof window.setTimeout
+
+    const poller = createPollingManager(client, {
+      intervalMs: 24 * 60 * 60 * 1000,
+      staleThresholdMs: 60 * 60 * 1000,
+      onSnapshot: vi.fn(),
+      onStatusChange: vi.fn(),
+      now: () => new Date('2026-04-06T10:35:00.000Z'),
+      setTimeout: setTimeoutSpy,
+    })
+
+    poller.start()
+    await vi.advanceTimersByTimeAsync(0)
+
+    const recordedDelays = (setTimeoutSpy as unknown as { mock: { calls: [() => void, number][] } }).mock.calls.map(
+      (call) => call[1],
+    )
+    expect(recordedDelays.at(-1)).toBe(60 * 60 * 1000)
+
+    poller.stop()
+  })
+
   it('continues aggregating breadcrumbs from healthy devices when one device fails', async () => {
     const onSnapshot = vi.fn()
     const onStatusChange = vi.fn()

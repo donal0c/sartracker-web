@@ -861,6 +861,7 @@
             <li>Open <strong>Settings</strong>.</li>
             <li>In <strong>Data Sources</strong>, choose <strong>Traccar HTTP</strong>.</li>
             <li>Enter the provider base URL. On the hosted Vercel app, use <strong>https://sartracker-web.vercel.app</strong>; the app proxies securely to the team-managed HTTP Traccar server.</li>
+            <li>Do not put usernames, passwords, or tokens inside the provider URL. Enter credentials only in the authentication fields; URLs such as <code>https://user:password@example.com</code> are rejected.</li>
             <li>Do not use the direct HTTP Traccar URL in hosted browser testing. Settings will warn and ask for the hosted HTTPS proxy instead.</li>
             <li>Choose <strong>Basic</strong> or <strong>Bearer</strong> authentication.</li>
             <li>Enter the email/password or bearer token.</li>
@@ -1168,7 +1169,9 @@
             trusted team machines: the app does not depend on the Linux login keyring being unlocked to
             connect to devices. The credential value is never written to the settings file, diagnostics, or
             support bundles &mdash; diagnostics only report whether a secret is present and that credential
-            storage is the local file.
+            storage is the local file. If an older or manually edited setting contains credentials embedded
+            in the provider URL, diagnostics redact the URL authority before export and live tracking is
+            disabled until the URL is corrected.
           </p>
           <p>
             On first launch after upgrading from an older beta, an existing keyring-encrypted credential is

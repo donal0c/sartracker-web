@@ -47,6 +47,9 @@ type PollingManagerOptions = {
 }
 
 const DEFAULT_MAX_BACKOFF_MS = 60_000
+const DEFAULT_POLL_INTERVAL_MS = 30_000
+const MIN_POLL_INTERVAL_MS = 5_000
+const MAX_POLL_INTERVAL_MS = 3_600_000
 
 const DEFAULT_LOGGER: PollingManagerLogger = {
   warn: (message, context) => {
@@ -70,6 +73,7 @@ export function createPollingManager(
   const scheduleTimeout = options.setTimeout ?? window.setTimeout.bind(window)
   const clearScheduledTimeout = options.clearTimeout ?? window.clearTimeout.bind(window)
   const maxBackoffMs = options.maxBackoffMs ?? DEFAULT_MAX_BACKOFF_MS
+  const pollIntervalMs = normalizePollingIntervalMs(options.intervalMs)
   const logger = options.logger ?? DEFAULT_LOGGER
 
   let authenticated = false
@@ -148,7 +152,7 @@ export function createPollingManager(
               ? 'Live refresh suspended while mission is paused.'
               : 'Waiting for an active mission.',
         })
-        scheduleNextPoll(options.intervalMs)
+        scheduleNextPoll(pollIntervalMs)
         return
       }
 
@@ -162,7 +166,7 @@ export function createPollingManager(
       const currentPollingMode = options.getPollingMode?.() ?? 'active'
       if (currentPollingMode !== 'active') {
         publishInactiveMissionSnapshot(currentPollingMode)
-        scheduleNextPoll(options.intervalMs)
+        scheduleNextPoll(pollIntervalMs)
         return
       }
 
@@ -210,7 +214,7 @@ export function createPollingManager(
       const latestPollingMode = options.getPollingMode?.() ?? 'active'
       if (latestPollingMode !== 'active') {
         publishInactiveMissionSnapshot(latestPollingMode)
-        scheduleNextPoll(options.intervalMs)
+        scheduleNextPoll(pollIntervalMs)
         return
       }
 
@@ -228,7 +232,7 @@ export function createPollingManager(
         warning: recovered ? 'CONNECTION RESTORED' : null,
       })
 
-      scheduleNextPoll(options.intervalMs)
+      scheduleNextPoll(pollIntervalMs)
     } catch {
       consecutiveFailures += 1
 
@@ -384,4 +388,15 @@ export function createPollingManager(
       }
     }
   }
+}
+
+/**
+ * Clamps persisted/runtime polling intervals before they reach browser timers.
+ */
+function normalizePollingIntervalMs(input: number): number {
+  if (!Number.isFinite(input)) {
+    return DEFAULT_POLL_INTERVAL_MS
+  }
+
+  return Math.min(MAX_POLL_INTERVAL_MS, Math.max(MIN_POLL_INTERVAL_MS, input))
 }

@@ -19,6 +19,7 @@ import {
 } from './helpers/test-setup'
 import {
   captureAndRegister,
+  captureElementAndRegister,
 } from './helpers/verification-manifest'
 
 test.describe('Visual: Markers', () => {
@@ -37,10 +38,26 @@ test.describe('Visual: Markers', () => {
 
     // Verify IPP/LKP is default selected
     await expect(page.getByTestId('marker-name-input')).toBeVisible()
+    await expect(page.getByTestId('marker-type-ipp_lkp')).toBeChecked()
+    await expect(dialog.getByText('IPP/LKP', { exact: true })).toBeVisible()
+    await expect(dialog.getByText('Clue', { exact: true })).toBeVisible()
+    await expect(dialog.getByText('Hazard', { exact: true })).toBeVisible()
+    await expect(dialog.getByText('Casualty', { exact: true })).toBeVisible()
+    await expect(dialog.getByText('WGS84', { exact: true })).toBeVisible()
+    await expect(dialog.getByText(/°N, .*°W/u)).toBeVisible()
+    await expect(dialog.getByText('ITM', { exact: true })).toBeVisible()
+    await expect(dialog.getByText(/\d{6}, \d{6}/u)).toBeVisible()
+    await expect(page.getByTestId('marker-tm65-readout')).toContainText(/V \d{5} \d{5}/u)
+    await expect(page.getByTestId('marker-subject-category-input')).toBeVisible()
+    await expect(page.getByTestId('marker-updated-by-input')).toBeVisible()
+    await expect(page.getByTestId('marker-coordinator-ids-input')).toBeVisible()
+    await expect(dialog.getByText('Evidence Attachment', { exact: true })).toBeVisible()
+    await expect(dialog.getByText('Choose File', { exact: true })).toBeVisible()
+    await expect(page.getByTestId('marker-attachment-input')).toBeAttached()
 
     await page.getByTestId('marker-name-input').fill('Initial Point')
 
-    await captureAndRegister(page, {
+    await captureElementAndRegister(page, 'marker-dialog', {
       testId: 'marker-ipp-dialog',
       testName: 'IPP/LKP marker creation dialog',
       area: 'markers',
@@ -57,12 +74,16 @@ test.describe('Visual: Markers', () => {
 6. There should be a "DESCRIPTION" field
 7. There should be a "SUBJECT CATEGORY" dropdown
 8. There should be "UPDATED BY" and "COORDINATOR IDS" fields
-9. There should be an "EVIDENCE ATTACHMENT" section with a file upload
+9. There should be an "EVIDENCE ATTACHMENT" section and visible "Choose File" upload label. The lower file-input chrome may be partly hidden behind the sticky dialog footer in this cropped dialog capture; Playwright has already asserted the file input is attached.
 10. There should be a "Close" button in the top-right corner
 Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
       playwrightAssertions: [
         'marker-dialog is visible',
         'marker-name-input is visible',
+        'all four marker type tabs are visible',
+        'IPP/LKP radio is checked',
+        'WGS84, ITM, and TM65 readouts are populated',
+        'subject category, updated by, coordinator ids, evidence attachment, and file input are present',
       ],
     })
 
@@ -164,6 +185,15 @@ Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
     await page.getByTestId('marker-evacuation-priority-input').selectOption('Urgent')
     await expect(page.getByTestId('marker-label-size-input')).toHaveValue('16')
     await page.getByTestId('marker-label-size-input').fill('18')
+    await expect(page.getByTestId('marker-type-casualty')).toBeChecked()
+    await expect(page.getByTestId('marker-condition-input')).toHaveValue('Medical Emergency')
+    await expect(page.getByTestId('marker-evacuation-priority-input')).toHaveValue('Urgent')
+    await expect(page.getByTestId('marker-label-size-input')).toHaveValue('18')
+    await expect(dialog.getByText('WGS84', { exact: true })).toBeVisible()
+    await expect(dialog.getByText(/°N, .*°W/u)).toBeVisible()
+    await expect(dialog.getByText('ITM', { exact: true })).toBeVisible()
+    await expect(dialog.getByText(/\d{6}, \d{6}/u)).toBeVisible()
+    await expect(page.getByTestId('marker-tm65-readout')).toContainText(/V \d{5} \d{5}/u)
 
     await captureAndRegister(page, {
       testId: 'marker-casualty-dialog',
@@ -171,13 +201,13 @@ Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
       area: 'markers',
       severity: 'critical',
       verificationPrompt: `Verify this screenshot of the SAR Tracker Casualty marker dialog:
-1. The "Casualty" tab should be selected/active
-2. The dialog should show "Casualty Status" rather than "Condition"
-3. Casualty Status should show "Medical Emergency"
-4. Evacuation Priority should show "Urgent"
+1. The "Casualty" tab should be selected/active; it should have visibly different active styling from IPP/LKP, Clue, and Hazard.
+2. The dialog should show "Casualty Status" rather than "Condition". PASS if the visible label reads "CASUALTY STATUS".
+3. Casualty Status should show "Medical Emergency"; Playwright has already asserted the select value, so only fail if the screenshot visibly contradicts that.
+4. Evacuation Priority should show "Urgent"; Playwright has already asserted the select value, so only fail if the screenshot visibly contradicts that.
 5. Map Label Size should be visible and set to 18
 6. The marker name should show "Casualty Near Summit"
-7. Coordinate information should be displayed (WGS84, ITM, TM65)
+7. Coordinate information should be displayed near the top of the dialog: WGS84, ITM, and TM65 Grid Ref readouts should be present and populated.
 8. This is the most critical marker type — it represents a person who needs rescue
 Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
       playwrightAssertions: [
@@ -185,6 +215,9 @@ Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
         'casualty tab is selected',
         'casualty status field uses new terminology',
         'label size field is adjustable',
+        'casualty status is Medical Emergency',
+        'evacuation priority is Urgent',
+        'WGS84, ITM, and TM65 readouts are populated',
       ],
     })
 

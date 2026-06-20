@@ -35,6 +35,13 @@ Additional runtime performance hardening is complete locally for the tracking/El
 - DON-201: Electron official-map proxy reuses readonly MBTiles readers/statements per package and closes stale handles when package metadata changes.
 - DON-202: Mission Review requests a position count instead of loading every tracking row just to show breadcrumb count.
 
+Safety-critical runtime bug fixes are complete locally for the latest sweep:
+
+- DON-206: Traccar device/current-position/breadcrumb list normalization now drops only malformed rows, logs sanitized row context, and keeps single-row normalizers strict. All-invalid current-position responses still fail explicitly.
+- DON-207: Traccar provider URLs with embedded credentials are rejected in renderer/Electron settings, disable live tracking if found in manually edited persisted settings, and are redacted in renderer/Electron diagnostics/support output.
+- DON-208: corrupt persisted autosave/tracking intervals are normalized to 30s default or clamped to 5s-3600s; the polling manager also clamps runtime intervals before scheduling.
+- DON-209: Electron mission finalization can recover idempotently after interruption following `mission_archive_succeeded`; retry reuses the recorded archive and writes exactly one finalization event.
+
 Operator workflow hardening is also complete:
 
 - DON-203: stacked Escape now closes only the top dialog/confirmation above docked Mission Review.
@@ -53,6 +60,22 @@ Final browser/regression gate passed after the hardening batch:
 - `npm run visual:review -- --fail-on critical` - 39/39
 - `node --check electron/main.cjs electron/preload.cjs electron/mission-store.cjs electron/settings-store.cjs`
 - `npm run electron:pack` - local unsigned macOS arm64 directory package, `better-sqlite3` rebuild passed.
+
+DON-206-DON-209 verification snapshot:
+
+- Red-to-green focused regressions: 7 files / 94 tests.
+- `npm run lint`
+- `npm run build`
+- `npm run test` - 152 files / 991 tests
+- `npm run test:backend` - 47 passed / 1 ignored
+- `npm run test:e2e:chromium` - 126/126
+- `npx playwright test --project=visual` - 34/34
+- `npm run visual:review -- --fail-on critical` - 39/39 after hardening stale/ambiguous visual prompts and captures for `marker-ipp-dialog`, `marker-casualty-dialog`, and `mast-tracking-cell-active`; report `test-results/visual-verification/reports/visual-review-2026-06-20T14-12-13Z.json`.
+- `npm run electron:pack` - local unsigned macOS arm64 directory package, `better-sqlite3` rebuild passed.
+- `npm run electron:smoke:bad-secret -- --app "tmp/electron-dist/mac-arm64/SAR Tracker Electron Validation.app/Contents/MacOS/SAR Tracker Electron Validation" --evidence-dir tmp/electron-bad-secret-smoke-don206-209` - passed.
+- `npm run beta:verify -- --no-smoke` - passed lint/build/unit/backend/Chromium/package and wrote `tmp/beta-artifacts/verify-0.1.0-beta.7-sha.cfe1fa36752f-2026-06-20T13-49-43Z.json`; manual smoke was intentionally skipped.
+
+Not done in this sweep: no live/private Traccar call, no private official MBTiles smoke, no manual beta smoke prompt, and no release publication.
 
 The final visual gates initially found two stale/ambiguous harness waits/prompts, not product regressions: mast tracking cell prompt wording and casualty marker map-label capture timing. Both were hardened and the full visual gate reran green.
 The paused-mission finish E2E timing assertion was also hardened for second-boundary scheduler drift after reproducing a 1/3 repeat flake; the focused test passed 5/5 and the full mission/full Chromium suites passed afterward.
