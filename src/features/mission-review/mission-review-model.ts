@@ -7,7 +7,6 @@ import type {
   Mission,
   MissionEvent,
   MissionStoreInfo,
-  Position,
 } from '../../infrastructure/mission-store/tauri-mission-store'
 import { buildLayerCatalogTree } from '../layers/layer-catalog-builder'
 import type {
@@ -74,7 +73,7 @@ type BuildMissionReviewSnapshotInput = {
   readonly events: readonly MissionEvent[]
   readonly markers: readonly Marker[]
   readonly devices: readonly Device[]
-  readonly positions: readonly Position[]
+  readonly breadcrumbCount: number
   readonly drawings: readonly Drawing[]
   readonly helicopters: readonly Helicopter[]
   readonly gpxImports: readonly GpxTrackImport[]
@@ -115,7 +114,7 @@ export function buildMissionReviewSnapshot(
       markerCount: input.markers.length,
       drawingCount: input.drawings.filter((drawing) => drawing.temporary_measure !== true).length,
       trackingDeviceCount: input.devices.length,
-      breadcrumbCount: input.positions.length,
+      breadcrumbCount: input.breadcrumbCount,
       eventCount: input.events.length,
       gpxImportCount: input.gpxImports.length,
     },

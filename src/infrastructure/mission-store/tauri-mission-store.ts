@@ -273,10 +273,15 @@ export type MissionStore = {
   readonly getDevice: (missionId: string, deviceId: string) => Promise<Device>
   readonly listDevices: (missionId: string) => Promise<readonly Device[]>
   readonly addPosition: (input: AddPositionInput) => Promise<Position>
+  readonly addPositionsBulk?: (input: {
+    readonly mission_id: string
+    readonly positions: readonly Omit<AddPositionInput, 'mission_id'>[]
+  }) => Promise<readonly Position[]>
   readonly listPositions: (
     missionId: string,
     deviceId?: string,
   ) => Promise<readonly Position[]>
+  readonly countPositions: (missionId: string, deviceId?: string) => Promise<number>
   readonly latestPositions: (missionId: string) => Promise<readonly Position[]>
   readonly listMissionEvents: (missionId: string) => Promise<readonly MissionEvent[]>
   readonly listAuditEvents: (
@@ -321,6 +326,8 @@ export function createTauriMissionStore(): MissionStore {
     addPosition: (input) => invoke<Position>('add_position', { input }),
     listPositions: (missionId, deviceId) =>
       invoke<readonly Position[]>('list_positions', { missionId, deviceId }),
+    countPositions: async (missionId, deviceId) =>
+      (await invoke<readonly Position[]>('list_positions', { missionId, deviceId })).length,
     latestPositions: (missionId) =>
       invoke<readonly Position[]>('latest_positions', { missionId }),
     listMissionEvents: (missionId) =>

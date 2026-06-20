@@ -22,6 +22,15 @@ const { createElectronOfficialMapProxy } = (await import('../../electron/officia
   readonly createElectronOfficialMapProxy: (options: {
     readonly loadSettings: () => Promise<unknown>
     readonly fetch: typeof fetch
+    readonly createMbtilesReader?: (packagePath: string) => {
+      readonly readTile: (tile: {
+        readonly mapId: string
+        readonly z: number
+        readonly x: number
+        readonly y: number
+      }) => { readonly status: 'hit'; readonly bytes: Uint8Array } | { readonly status: 'miss' } | { readonly status: 'package_error' }
+      readonly close: () => void
+    }
   }) => {
     readonly fetchOfficialMapTile: (url: string) => Promise<{
       readonly contentType: string
@@ -150,6 +159,87 @@ describe('Electron official map proxy', () => {
     })
     expect(fetchMock).not.toHaveBeenCalled()
     expect(JSON.stringify(response)).not.toContain(packagePath)
+  })
+
+  it('reuses a readonly MBTiles reader for consecutive requests from the same package [DON-201]', async () => {
+    const readTile = vi
+      .fn()
+      .mockReturnValueOnce({ status: 'hit', bytes: Uint8Array.from([10, 20, 30, 40]) })
+      .mockReturnValueOnce({ status: 'hit', bytes: Uint8Array.from([50, 60, 70, 80]) })
+    const close = vi.fn()
+    const createMbtilesReader = vi.fn().mockReturnValue({ readTile, close })
+    const packagePath = '/private/app/official-map-packages/reeks.mbtiles'
+    const proxy = createElectronOfficialMapProxy({
+      fetch: vi.fn() as never,
+      createMbtilesReader,
+      loadSettings: async () => createSettingsWithPackage(packagePath),
+    })
+
+    await expect(
+      proxy.fetchOfficialMapTile('sartracker-official-map://tile/official_discovery_topo/12/1935/1344.png'),
+    ).resolves.toEqual({
+      contentType: 'image/png',
+      bytesBase64: 'ChQeKA==',
+    })
+    await expect(
+      proxy.fetchOfficialMapTile('sartracker-official-map://tile/official_discovery_topo/12/1936/1344.png'),
+    ).resolves.toEqual({
+      contentType: 'image/png',
+      bytesBase64: 'MjxGUA==',
+    })
+
+    expect(createMbtilesReader).toHaveBeenCalledOnce()
+    expect(createMbtilesReader).toHaveBeenCalledWith(packagePath)
+    expect(readTile).toHaveBeenCalledTimes(2)
+    expect(close).not.toHaveBeenCalled()
+  })
+
+  it('closes and recreates the MBTiles reader when package metadata changes [DON-201]', async () => {
+    const firstReader = {
+      readTile: vi.fn().mockReturnValue({ status: 'hit', bytes: Uint8Array.from([1, 2, 3, 4]) }),
+      close: vi.fn(),
+    }
+    const secondReader = {
+      readTile: vi.fn().mockReturnValue({ status: 'hit', bytes: Uint8Array.from([5, 6, 7, 8]) }),
+      close: vi.fn(),
+    }
+    const createMbtilesReader = vi
+      .fn()
+      .mockReturnValueOnce(firstReader)
+      .mockReturnValueOnce(secondReader)
+    const packagePath = '/private/app/official-map-packages/reeks.mbtiles'
+    let loadCount = 0
+    const proxy = createElectronOfficialMapProxy({
+      fetch: vi.fn() as never,
+      createMbtilesReader,
+      loadSettings: async () => {
+        loadCount += 1
+        return createSettingsWithPackage(packagePath, {
+          tileCount: loadCount === 1 ? 31_729 : 31_730,
+          verifiedAt:
+            loadCount === 1
+              ? '2026-06-05T10:11:12.000Z'
+              : '2026-06-20T08:00:00.000Z',
+        })
+      },
+    })
+
+    await expect(
+      proxy.fetchOfficialMapTile('sartracker-official-map://tile/official_discovery_topo/12/1935/1344.png'),
+    ).resolves.toEqual({
+      contentType: 'image/png',
+      bytesBase64: 'AQIDBA==',
+    })
+    await expect(
+      proxy.fetchOfficialMapTile('sartracker-official-map://tile/official_discovery_topo/12/1935/1344.png'),
+    ).resolves.toEqual({
+      contentType: 'image/png',
+      bytesBase64: 'BQYHCA==',
+    })
+
+    expect(createMbtilesReader).toHaveBeenCalledTimes(2)
+    expect(firstReader.close).toHaveBeenCalledOnce()
+    expect(secondReader.close).not.toHaveBeenCalled()
   })
 
   it('falls back to online MapGenie when a ready local package does not contain the requested tile', async () => {
@@ -348,6 +438,38 @@ function createMbtilesPackage(
     }
   } finally {
     db.close()
+  }
+}
+
+function createSettingsWithPackage(
+  packagePath: string,
+  overrides: {
+    readonly tileCount?: number
+    readonly verifiedAt?: string
+  } = {},
+) {
+  return {
+    ...DEFAULT_APP_SETTINGS,
+    officialMaps: {
+      ...DEFAULT_APP_SETTINGS.officialMaps,
+      packages: [
+        {
+          id: 'official_discovery_topo-test',
+          sourceType: 'mbtiles',
+          mapId: 'official_discovery_topo',
+          packagePath,
+          status: 'ready',
+          bounds: [-10.25, 51.85, -9.45, 52.35],
+          minZoom: 9,
+          maxZoom: 16,
+          tileCount: overrides.tileCount ?? 31_729,
+          tileFormat: 'png',
+          createdAt: '2026-06-05T10:00:00.000Z',
+          verifiedAt: overrides.verifiedAt ?? '2026-06-05T10:11:12.000Z',
+          message: 'Official Discovery Topo package is ready.',
+        },
+      ],
+    },
   }
 }
 

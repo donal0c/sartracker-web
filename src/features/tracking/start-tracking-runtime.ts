@@ -85,6 +85,21 @@ export type TrackingRuntimeMissionStore = {
     readonly timestamp?: string | null
     readonly data_origin?: 'live' | 'cache'
   }) => Promise<unknown>
+  readonly addPositionsBulk?: (input: {
+    readonly mission_id: string
+    readonly positions: readonly {
+      readonly device_id: string
+      readonly lat: number
+      readonly lon: number
+      readonly altitude?: number | null
+      readonly speed?: number | null
+      readonly battery?: number | null
+      readonly accuracy?: number | null
+      readonly source?: string | null
+      readonly timestamp?: string | null
+      readonly data_origin?: 'live' | 'cache'
+    }[]
+  }) => Promise<unknown>
 }
 
 type StartTrackingRuntimeDependencies = {
@@ -296,14 +311,29 @@ async function persistTrackingSnapshot(
     })
   }
 
+  const newPositions: {
+    readonly device_id: string
+    readonly lat: number
+    readonly lon: number
+    readonly altitude?: number | null
+    readonly speed?: number | null
+    readonly battery?: number | null
+    readonly accuracy?: number | null
+    readonly source?: string | null
+    readonly timestamp?: string | null
+    readonly data_origin?: 'live' | 'cache'
+  }[] = []
+  const newPositionKeys: string[] = []
+  const stagedPositionKeys = new Set<string>()
+
   for (const position of [...getBreadcrumbsForMissionPersistence(snapshot), ...snapshot.positions]) {
     const positionKey = createPositionKey(position.device_id, position.timestamp)
-    if (nextPositionKeyCache.keys.has(positionKey)) {
+    if (nextPositionKeyCache.keys.has(positionKey) || stagedPositionKeys.has(positionKey)) {
       continue
     }
 
-    await missionStore.addPosition({
-      mission_id: activeMission.id,
+    stagedPositionKeys.add(positionKey)
+    newPositions.push({
       device_id: position.device_id,
       lat: position.lat,
       lon: position.lon,
@@ -315,6 +345,28 @@ async function persistTrackingSnapshot(
       timestamp: position.timestamp,
       data_origin: position.data_origin,
     })
+    newPositionKeys.push(positionKey)
+  }
+
+  if (newPositions.length === 0) {
+    return nextPositionKeyCache
+  }
+
+  if (missionStore.addPositionsBulk !== undefined) {
+    await missionStore.addPositionsBulk({
+      mission_id: activeMission.id,
+      positions: newPositions,
+    })
+  } else {
+    for (const position of newPositions) {
+      await missionStore.addPosition({
+        mission_id: activeMission.id,
+        ...position,
+      })
+    }
+  }
+
+  for (const positionKey of newPositionKeys) {
     nextPositionKeyCache.keys.add(positionKey)
   }
 

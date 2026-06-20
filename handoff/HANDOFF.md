@@ -27,6 +27,13 @@ Main beta.8 batch coverage:
 - DON-198 Mission preview / map sharing / external-resource decisions split to DON-215-DON-218.
 - DON-199 Settings/coordinator access-control decision split to DON-219-DON-221.
 
+Additional runtime performance hardening is complete locally for the tracking/Electron data path:
+
+- DON-165: breadcrumb accumulation now keeps per-device ordered state and appends incrementally instead of rebuilding retained history every poll.
+- DON-200: tracking runtime uses an optional bulk mission-store position write; Electron persists bulk rows in one transaction while preserving raw breadcrumb mission truth and telemetry semantics.
+- DON-201: Electron official-map proxy reuses readonly MBTiles readers/statements per package and closes stale handles when package metadata changes.
+- DON-202: Mission Review requests a position count instead of loading every tracking row just to show breadcrumb count.
+
 Final browser/regression gate passed after the batch:
 
 - `npm run lint`
@@ -38,6 +45,22 @@ Final browser/regression gate passed after the batch:
 - `npm run visual:review -- --fail-on critical` - 39/39
 
 The final visual gate found stale verification harness assumptions, not product regressions. Prompt/test-flow hardening was committed in `2b7765c`.
+
+Performance batch verification snapshot:
+
+- Red-to-green focused unit coverage for DON-165/DON-200/DON-201/DON-202: 6 files / 63 tests.
+- Adjacent runtime/map/store contract units: 10 files / 74 tests.
+- `npm run lint`
+- `npm run test` - 152 files / 975 tests
+- `npm run test:backend` - 47 passed / 1 ignored
+- `npm run build`
+- `npm run test:e2e:chromium` - 121/121
+- `npx playwright test --project=visual` - 34/34
+- `npm run visual:review -- --fail-on critical` - 39/39
+- `node --check electron/main.cjs electron/preload.cjs electron/mission-store.cjs electron/official-map-proxy.cjs`
+- `npm run electron:pack` - local unsigned macOS arm64 directory package, `better-sqlite3` rebuild passed.
+
+Not done: no private Discovery MBTiles package smoke and no release publication were attempted in this batch.
 
 ## Remaining Beta.8 Gate
 

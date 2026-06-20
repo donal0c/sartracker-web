@@ -4,6 +4,7 @@ import breadcrumbsFixture from '../fixtures/traccar-breadcrumbs.json'
 import {
   accumulateBreadcrumbPositions,
   appendBreadcrumbPositions,
+  createBreadcrumbAccumulator,
   createBreadcrumbSegments,
   decimateBreadcrumbsForDots,
 } from '../../src/features/tracking/breadcrumb-accumulator'
@@ -142,6 +143,66 @@ describe('breadcrumb accumulator', () => {
     // set size, with no log multiplier. This is the invariant that keeps
     // per-poll cost from scaling with cumulative history.
     expect(parseCalls).toBeLessThanOrEqual(seeded.length + incoming.length)
+  })
+
+  it('merges steady-state appends without reparsing retained breadcrumb history [DON-165]', () => {
+    const baseMs = Date.UTC(2026, 5, 13, 0, 0, 0)
+    const existing = Array.from({ length: 25_000 }, (_, index) =>
+      normalizeTraccarPosition(
+        {
+          id: index + 1,
+          deviceId: 7,
+          latitude: 52 + index / 1_000_000,
+          longitude: -9.7 - index / 1_000_000,
+          fixTime: new Date(baseMs + index * 1_000).toISOString(),
+        },
+        'live',
+      ),
+    )
+    const quietDevice = Array.from({ length: 20 }, (_, index) =>
+      normalizeTraccarPosition(
+        {
+          id: 100_000 + index,
+          deviceId: 25,
+          latitude: 52.2 + index / 1_000_000,
+          longitude: -9.9 - index / 1_000_000,
+          fixTime: new Date(baseMs + index * 2_000).toISOString(),
+        },
+        'live',
+      ),
+    )
+    const accumulator = createBreadcrumbAccumulator()
+    accumulator.reset([...existing, ...quietDevice])
+
+    const incoming = Array.from({ length: 3 }, (_, index) =>
+      normalizeTraccarPosition(
+        {
+          id: 200_000 + index,
+          deviceId: 7,
+          latitude: 52.5 + index / 1_000_000,
+          longitude: -9.5 - index / 1_000_000,
+          fixTime: new Date(baseMs + (25_000 + index) * 1_000).toISOString(),
+        },
+        'live',
+      ),
+    )
+
+    const parseSpy = vi.spyOn(Date, 'parse')
+    const result = accumulator.append(incoming)
+
+    expect(parseSpy.mock.calls.length).toBeLessThanOrEqual(incoming.length)
+    expect(result.positions.filter((position) => position.device_id === '25')).toHaveLength(20)
+    expect(result.metadata.deviceBudgets).toContainEqual(
+      expect.objectContaining({
+        deviceId: '7',
+        retained: 5_000,
+        total: 25_003,
+        firstTimestamp: existing[0]!.timestamp,
+        lastTimestamp: incoming.at(-1)!.timestamp,
+        truncated: true,
+      }),
+    )
+    expect(result.positions.at(-1)!.timestamp).toBe(incoming.at(-1)!.timestamp)
   })
 
   it('segments trails when time gaps exceed the configured threshold', () => {

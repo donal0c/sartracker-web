@@ -615,6 +615,73 @@ describe('startTrackingRuntime', () => {
       }),
     )
   })
+
+  it('bulk-persists raw tracking positions instead of issuing one SQLite write per position [DON-200]', async () => {
+    const addPosition = vi.fn().mockResolvedValue(undefined)
+    const addPositionsBulk = vi.fn().mockResolvedValue(undefined)
+    const rawBreadcrumbs = Array.from({ length: 6_001 }, (_, index) => ({
+      ...SNAPSHOT.breadcrumbs[0]!,
+      id: `raw-bulk-${index}`,
+      device_id: '2',
+      timestamp: new Date(Date.UTC(2026, 5, 13, 0, 0, index)).toISOString(),
+    }))
+    const renderedBreadcrumbs = rawBreadcrumbs.filter((_position, index) => index % 2 === 0).slice(0, 5_000)
+    const snapshot = {
+      ...SNAPSHOT,
+      breadcrumbs: renderedBreadcrumbs,
+      rawBreadcrumbsForPersistence: rawBreadcrumbs,
+    } satisfies TrackingSnapshot
+    let pollerHooks:
+      | {
+          onSnapshot: (snapshot: TrackingSnapshot) => void | Promise<void>
+          onStatusChange: (status: TrackingConnectionStatus) => void
+        }
+      | undefined
+
+    await startTrackingRuntime({
+      config: { baseUrl: 'http://test:8082' },
+      createClient: vi.fn().mockReturnValue({}),
+      createPoller: vi.fn().mockImplementation((_client, hooks) => {
+        pollerHooks = hooks
+        return { start: vi.fn(), stop: vi.fn() }
+      }),
+      cache: {
+        read: vi.fn().mockResolvedValue(null),
+        write: vi.fn().mockResolvedValue('/tmp/tracking-cache.json'),
+      },
+      missionStore: createMissionStoreStub({
+        getActiveMission: vi.fn().mockResolvedValue({ id: 'mission-1' }),
+        listPositions: vi.fn().mockResolvedValue([]),
+        addPosition,
+        addPositionsBulk,
+      }),
+      applySnapshot: vi.fn(),
+      applyStatus: vi.fn(),
+      writeCache: false,
+      now: () => new Date('2026-06-13T21:48:51.654Z'),
+    })
+
+    await pollerHooks?.onSnapshot(snapshot)
+
+    expect(addPosition).not.toHaveBeenCalled()
+    expect(addPositionsBulk).toHaveBeenCalledOnce()
+    expect(addPositionsBulk).toHaveBeenCalledWith({
+      mission_id: 'mission-1',
+      positions: expect.arrayContaining([
+        expect.objectContaining({
+          device_id: '2',
+          timestamp: rawBreadcrumbs[1]!.timestamp,
+        }),
+        expect.objectContaining({
+          device_id: SNAPSHOT.positions[0]!.device_id,
+          timestamp: SNAPSHOT.positions[0]!.timestamp,
+        }),
+      ]),
+    })
+    expect(addPositionsBulk.mock.calls[0]![0].positions).toHaveLength(
+      rawBreadcrumbs.length + SNAPSHOT.positions.length,
+    )
+  })
 })
 
 function createMissionStoreStub(overrides: Record<string, unknown> = {}) {

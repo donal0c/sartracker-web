@@ -14,6 +14,16 @@ export type BreadcrumbAccumulationResult = {
   readonly metadata: BreadcrumbSnapshotMetadata
 }
 
+export type BreadcrumbAccumulator = {
+  readonly append: (
+    incoming: readonly NormalizedTrackingPosition[],
+  ) => BreadcrumbAccumulationResult
+  readonly reset: (
+    positions?: readonly NormalizedTrackingPosition[],
+  ) => BreadcrumbAccumulationResult
+  readonly snapshot: () => BreadcrumbAccumulationResult
+}
+
 /**
  * Appends new breadcrumb positions while deduplicating by device and timestamp.
  */
@@ -35,51 +45,98 @@ export function accumulateBreadcrumbPositions(
   existing: readonly NormalizedTrackingPosition[],
   incoming: readonly NormalizedTrackingPosition[],
 ): BreadcrumbAccumulationResult {
-  // Parse each timestamp exactly once. The previous implementation called
-  // Date.parse inside two O(n log n) sort comparators, so per-poll parse cost
-  // grew with the entire retained history times a log factor — fine in tests,
-  // a hot-path scaling failure during a long multi-device incident [DON-165].
-  // Decorating with a precomputed numeric timestamp keeps the same output and
-  // ordering while bounding parse calls to the combined set size.
-  const deduplicated = new Map<string, TimestampedPosition>()
+  const accumulator = createBreadcrumbAccumulator(existing)
+  return accumulator.append(incoming)
+}
 
-  for (const position of existing) {
-    deduplicated.set(createPositionKey(position), decorateWithTimestamp(position))
+/**
+ * Creates a stateful breadcrumb accumulator for steady-state polling.
+ *
+ * The poller receives small incremental breadcrumb batches after startup. Keeping
+ * ordered per-device state means each normal append parses and merges only the
+ * incoming fixes instead of rebuilding the whole retained incident history.
+ */
+export function createBreadcrumbAccumulator(
+  initialPositions: readonly NormalizedTrackingPosition[] = [],
+): BreadcrumbAccumulator {
+  const deviceStates = new Map<string, DeviceTrailState>()
+  let cachedSnapshot: BreadcrumbAccumulationResult | null = null
+
+  const invalidate = () => {
+    cachedSnapshot = null
   }
-  for (const position of incoming) {
-    deduplicated.set(createPositionKey(position), decorateWithTimestamp(position))
+
+  const append = (
+    incoming: readonly NormalizedTrackingPosition[],
+  ): BreadcrumbAccumulationResult => {
+    if (incoming.length === 0) {
+      return snapshot()
+    }
+
+    for (const position of incoming) {
+      mergePosition(deviceStates, decorateWithTimestamp(position))
+    }
+    invalidate()
+    return snapshot()
   }
 
-  const retained: TimestampedPosition[] = []
-  const deviceBudgets = [...groupTimestampedByDevice([...deduplicated.values()]).entries()]
-    .sort(([leftDeviceId], [rightDeviceId]) => leftDeviceId.localeCompare(rightDeviceId))
-    .map(([deviceId, positions]) => {
-      const chronological = positions.sort(byTimestampMs)
-      const deviceRetained = retainDeviceTrailAcrossWindow(
-        chronological,
-        MAX_BREADCRUMB_POSITIONS_PER_DEVICE,
-      )
-      retained.push(...deviceRetained)
+  const reset = (
+    positions: readonly NormalizedTrackingPosition[] = [],
+  ): BreadcrumbAccumulationResult => {
+    deviceStates.clear()
+    for (const position of positions) {
+      mergePosition(deviceStates, decorateWithTimestamp(position))
+    }
+    invalidate()
+    return snapshot()
+  }
 
-      return {
-        deviceId,
-        retained: deviceRetained.length,
-        total: chronological.length,
-        firstTimestamp: deviceRetained[0]?.position.timestamp ?? null,
-        lastTimestamp: deviceRetained.at(-1)?.position.timestamp ?? null,
-        truncated: chronological.length > deviceRetained.length,
-      }
-    })
+  const snapshot = (): BreadcrumbAccumulationResult => {
+    if (cachedSnapshot !== null) {
+      return cachedSnapshot
+    }
 
-  const positions = retained.sort(byTimestampMs).map((entry) => entry.position)
+    const deviceBudgets = [...deviceStates.values()]
+      .sort((left, right) => left.deviceId.localeCompare(right.deviceId))
+      .map((deviceState) => {
+        const retained = retainDeviceTrailAcrossWindow(
+          deviceState.chronological,
+          MAX_BREADCRUMB_POSITIONS_PER_DEVICE,
+        )
+        deviceState.retained = retained
+
+        return {
+          deviceId: deviceState.deviceId,
+          retained: retained.length,
+          total: deviceState.chronological.length,
+          firstTimestamp: retained[0]?.position.timestamp ?? null,
+          lastTimestamp: retained.at(-1)?.position.timestamp ?? null,
+          truncated: deviceState.chronological.length > retained.length,
+        }
+      })
+
+    const positions = mergeRetainedDeviceTrails([...deviceStates.values()])
+
+    cachedSnapshot = {
+      positions,
+      metadata: {
+        totalRetained: positions.length,
+        totalObserved: [...deviceStates.values()].reduce(
+          (total, deviceState) => total + deviceState.chronological.length,
+          0,
+        ),
+        deviceBudgets,
+      },
+    }
+    return cachedSnapshot
+  }
+
+  reset(initialPositions)
 
   return {
-    positions,
-    metadata: {
-      totalRetained: positions.length,
-      totalObserved: deduplicated.size,
-      deviceBudgets,
-    },
+    append,
+    reset,
+    snapshot,
   }
 }
 
@@ -89,12 +146,15 @@ type TimestampedPosition = {
   readonly timestampMs: number
 }
 
-function decorateWithTimestamp(position: NormalizedTrackingPosition): TimestampedPosition {
-  return { position, timestampMs: Date.parse(position.timestamp) }
+type DeviceTrailState = {
+  readonly deviceId: string
+  readonly byKey: Map<string, TimestampedPosition>
+  readonly chronological: TimestampedPosition[]
+  retained: readonly TimestampedPosition[]
 }
 
-function byTimestampMs(left: TimestampedPosition, right: TimestampedPosition): number {
-  return left.timestampMs - right.timestampMs
+function decorateWithTimestamp(position: NormalizedTrackingPosition): TimestampedPosition {
+  return { position, timestampMs: Date.parse(position.timestamp) }
 }
 
 /**
@@ -202,19 +262,109 @@ function haversineDistance(lat1: number, lon1: number, lat2: number, lon2: numbe
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
 }
 
-function groupTimestampedByDevice(
-  positions: readonly TimestampedPosition[],
-): Map<string, TimestampedPosition[]> {
-  const byDevice = new Map<string, TimestampedPosition[]>()
-  for (const entry of positions) {
-    const existing = byDevice.get(entry.position.device_id)
-    if (existing === undefined) {
-      byDevice.set(entry.position.device_id, [entry])
+function mergePosition(
+  deviceStates: Map<string, DeviceTrailState>,
+  entry: TimestampedPosition,
+): void {
+  const key = createPositionKey(entry.position)
+  let deviceState = deviceStates.get(entry.position.device_id)
+  if (deviceState === undefined) {
+    deviceState = {
+      deviceId: entry.position.device_id,
+      byKey: new Map(),
+      chronological: [],
+      retained: [],
+    }
+    deviceStates.set(entry.position.device_id, deviceState)
+  }
+
+  if (deviceState.byKey.has(key)) {
+    replaceExistingPosition(deviceState, key, entry)
+    return
+  }
+
+  deviceState.byKey.set(key, entry)
+  const lastEntry = deviceState.chronological.at(-1)
+  if (lastEntry === undefined || entry.timestampMs >= lastEntry.timestampMs) {
+    deviceState.chronological.push(entry)
+    return
+  }
+
+  const insertionIndex = findInsertionIndex(deviceState.chronological, entry.timestampMs)
+  deviceState.chronological.splice(insertionIndex, 0, entry)
+}
+
+function replaceExistingPosition(
+  deviceState: DeviceTrailState,
+  key: string,
+  entry: TimestampedPosition,
+): void {
+  deviceState.byKey.set(key, entry)
+  const existingIndex = deviceState.chronological.findIndex(
+    (existing) => createPositionKey(existing.position) === key,
+  )
+  if (existingIndex === -1) {
+    const insertionIndex = findInsertionIndex(deviceState.chronological, entry.timestampMs)
+    deviceState.chronological.splice(insertionIndex, 0, entry)
+    return
+  }
+
+  deviceState.chronological[existingIndex] = entry
+}
+
+function findInsertionIndex(
+  chronological: readonly TimestampedPosition[],
+  timestampMs: number,
+): number {
+  let low = 0
+  let high = chronological.length
+  while (low < high) {
+    const mid = Math.floor((low + high) / 2)
+    if (chronological[mid]!.timestampMs <= timestampMs) {
+      low = mid + 1
     } else {
-      existing.push(entry)
+      high = mid
     }
   }
-  return byDevice
+  return low
+}
+
+function mergeRetainedDeviceTrails(
+  deviceStates: readonly DeviceTrailState[],
+): readonly NormalizedTrackingPosition[] {
+  const cursors = deviceStates
+    .filter((deviceState) => deviceState.retained.length > 0)
+    .map((deviceState) => ({ deviceState, index: 0 }))
+  const positions: NormalizedTrackingPosition[] = []
+
+  while (cursors.length > 0) {
+    let earliestCursorIndex = 0
+    for (let index = 1; index < cursors.length; index += 1) {
+      const candidate = cursors[index]!
+      const current = cursors[earliestCursorIndex]!
+      const candidateEntry = candidate.deviceState.retained[candidate.index]!
+      const currentEntry = current.deviceState.retained[current.index]!
+      if (
+        candidateEntry.timestampMs < currentEntry.timestampMs ||
+        (
+          candidateEntry.timestampMs === currentEntry.timestampMs &&
+          candidate.deviceState.deviceId.localeCompare(current.deviceState.deviceId) < 0
+        )
+      ) {
+        earliestCursorIndex = index
+      }
+    }
+
+    const cursor = cursors[earliestCursorIndex]!
+    const entry = cursor.deviceState.retained[cursor.index]!
+    positions.push(entry.position)
+    cursor.index += 1
+    if (cursor.index >= cursor.deviceState.retained.length) {
+      cursors.splice(earliestCursorIndex, 1)
+    }
+  }
+
+  return positions
 }
 
 function retainDeviceTrailAcrossWindow(

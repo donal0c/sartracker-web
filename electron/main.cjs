@@ -50,7 +50,9 @@ const MISSION_STORE_CHANNELS = {
   getDevice: 'sartracker:mission-store:get-device',
   listDevices: 'sartracker:mission-store:list-devices',
   addPosition: 'sartracker:mission-store:add-position',
+  addPositionsBulk: 'sartracker:mission-store:add-positions-bulk',
   listPositions: 'sartracker:mission-store:list-positions',
+  countPositions: 'sartracker:mission-store:count-positions',
   latestPositions: 'sartracker:mission-store:latest-positions',
   listMissionEvents: 'sartracker:mission-store:list-mission-events',
   listAuditEvents: 'sartracker:mission-store:list-audit-events',
@@ -613,6 +615,7 @@ async function startElectronApp() {
     // Record an intentional shutdown so the next launch does not show a false
     // crash-recovery notice. Best-effort; never block quit on it.
     void crashLog.markCleanExit()
+    officialMapProxy.close?.()
   })
 }
 

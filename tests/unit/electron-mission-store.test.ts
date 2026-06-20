@@ -46,6 +46,26 @@ type ElectronMissionStore = {
     readonly lon: number
     readonly timestamp?: string
   }) => Promise<{ readonly device_id: string }>
+  readonly addPositionsBulk: (input: {
+    readonly mission_id: string
+    readonly positions: readonly {
+      readonly device_id: string
+      readonly lat: number
+      readonly lon: number
+      readonly altitude?: number | null
+      readonly speed?: number | null
+      readonly battery?: number | null
+      readonly accuracy?: number | null
+      readonly source?: string | null
+      readonly timestamp?: string | null
+      readonly data_origin?: 'live' | 'cache'
+    }[]
+  }) => Promise<readonly { readonly device_id: string; readonly timestamp: string }[]>
+  readonly listPositions: (
+    missionId: string,
+    deviceId?: string,
+  ) => Promise<readonly { readonly device_id: string; readonly timestamp: string; readonly data_origin: string }[]>
+  readonly countPositions: (missionId: string, deviceId?: string) => Promise<number>
   readonly latestPositions: (missionId: string) => Promise<readonly { readonly device_id: string; readonly lat: number }[]>
   readonly upsertMarker: (input: {
     readonly id?: string
@@ -194,6 +214,108 @@ describe('electron mission store', () => {
         'mission_finished',
       ]),
     )
+  })
+
+  it('bulk records tracking positions in one mission-store operation while preserving mission truth [DON-200]', async () => {
+    store = await createStore()
+    const mission = await store.createMission({ name: 'Bulk Tracking Mission' })
+    await store.upsertDevice({
+      mission_id: mission.id,
+      device_id: 'tracker-1',
+      name: 'Tracker One',
+      color: '#00AAFF',
+      status: 'unknown',
+    })
+    const positions = Array.from({ length: 2_500 }, (_, index) => ({
+      mission_id: mission.id,
+      device_id: 'tracker-1',
+      lat: 52.0599 + index / 1_000_000,
+      lon: -9.5045 - index / 1_000_000,
+      altitude: index % 3 === 0 ? 120 + index : null,
+      speed: index % 5 === 0 ? 2.5 : null,
+      battery: index % 7 === 0 ? 87 : null,
+      accuracy: index % 11 === 0 ? 4 : null,
+      source: 'traccar',
+      timestamp: new Date(Date.UTC(2026, 5, 13, 0, 0, index)).toISOString(),
+      data_origin: index % 2 === 0 ? 'live' as const : 'cache' as const,
+    }))
+
+    await expect(
+      store.addPositionsBulk({
+        mission_id: mission.id,
+        positions,
+      }),
+    ).resolves.toHaveLength(positions.length)
+
+    await expect(store.countPositions(mission.id)).resolves.toBe(positions.length)
+    const persisted = await store.listPositions(mission.id)
+    expect(persisted).toHaveLength(positions.length)
+    expect(persisted[0]).toMatchObject({
+      device_id: 'tracker-1',
+      timestamp: positions[0]!.timestamp,
+      data_origin: 'live',
+    })
+    expect(persisted.at(-1)).toMatchObject({
+      device_id: 'tracker-1',
+      timestamp: positions.at(-1)!.timestamp,
+      data_origin: 'cache',
+    })
+
+    const telemetry = await store.listAuditEvents(mission.id, {
+      includeTelemetry: true,
+      limit: 5_000,
+    })
+    expect(telemetry.filter((event) => event.event_type === 'position_recorded')).toHaveLength(
+      positions.length,
+    )
+    const auditEvents = await store.listAuditEvents(mission.id)
+    expect(auditEvents.map((event) => event.event_type)).not.toContain('position_recorded')
+  })
+
+  it('counts positions without loading position rows for Mission Review [DON-202]', async () => {
+    store = await createStore()
+    const mission = await store.createMission({ name: 'Review Count Mission' })
+    await store.upsertDevice({
+      mission_id: mission.id,
+      device_id: 'tracker-1',
+      name: 'Tracker One',
+      color: '#00AAFF',
+      status: 'unknown',
+    })
+    await store.upsertDevice({
+      mission_id: mission.id,
+      device_id: 'tracker-2',
+      name: 'Tracker Two',
+      color: '#00BB66',
+      status: 'unknown',
+    })
+    await store.addPositionsBulk({
+      mission_id: mission.id,
+      positions: [
+        {
+          device_id: 'tracker-1',
+          lat: 52.0599,
+          lon: -9.5045,
+          timestamp: '2026-05-19T12:01:00.000Z',
+        },
+        {
+          device_id: 'tracker-1',
+          lat: 52.06,
+          lon: -9.505,
+          timestamp: '2026-05-19T12:02:00.000Z',
+        },
+        {
+          device_id: 'tracker-2',
+          lat: 52.07,
+          lon: -9.506,
+          timestamp: '2026-05-19T12:03:00.000Z',
+        },
+      ],
+    })
+
+    await expect(store.countPositions(mission.id)).resolves.toBe(3)
+    await expect(store.countPositions(mission.id, 'tracker-1')).resolves.toBe(2)
+    await expect(store.countPositions(mission.id, 'tracker-2')).resolves.toBe(1)
   })
 
   it('excludes telemetry events and bounds the result for the review audit log', async () => {

@@ -71,10 +71,15 @@ type BrowserHarnessStore = {
   readonly listDevices: (missionId: string) => Promise<readonly Device[]>
   readonly upsertDevice: (input: UpsertDeviceInput) => Promise<Device>
   readonly addPosition: (input: AddPositionInput) => Promise<Position>
+  readonly addPositionsBulk: (input: {
+    readonly mission_id: string
+    readonly positions: readonly Omit<AddPositionInput, 'mission_id'>[]
+  }) => Promise<readonly Position[]>
   readonly listPositions: (
     missionId: string,
     deviceId?: string,
   ) => Promise<readonly Position[]>
+  readonly countPositions: (missionId: string, deviceId?: string) => Promise<number>
   readonly listMarkers: (missionId: string) => Promise<readonly Marker[]>
   readonly upsertMarker: (input: UpsertMarkerInput) => Promise<Marker>
   readonly deleteMarker: (markerId: string) => Promise<boolean>
@@ -478,6 +483,18 @@ export function getBrowserHarnessStore(): BrowserHarnessStore {
       save()
       return position
     },
+    addPositionsBulk: async (input) => {
+      const positions: Position[] = []
+      for (const position of input.positions) {
+        positions.push(
+          await browserHarnessStore!.addPosition({
+            mission_id: input.mission_id,
+            ...position,
+          }),
+        )
+      }
+      return positions
+    },
     listPositions: async (missionId, deviceId) =>
       state.positions
         .filter((position) => {
@@ -492,6 +509,13 @@ export function getBrowserHarnessStore(): BrowserHarnessStore {
           return position.device_id === deviceId
         })
         .sort((left, right) => Date.parse(left.timestamp) - Date.parse(right.timestamp)),
+    countPositions: async (missionId, deviceId) =>
+      state.positions.filter((position) => {
+        if (position.mission_id !== missionId) {
+          return false
+        }
+        return deviceId === undefined || position.device_id === deviceId
+      }).length,
     listMarkers: async (missionId) =>
       state.markers
         .filter((marker) => marker.mission_id === missionId)

@@ -15,7 +15,7 @@ type MissionReviewStoreBoundary = Pick<
   | 'listAuditEvents'
   | 'listMarkers'
   | 'listDevices'
-  | 'listPositions'
+  | 'countPositions'
   | 'listDrawings'
   | 'listHelicopters'
   | 'listGpxImports'
@@ -118,7 +118,7 @@ export async function startMissionReviewRuntime(
 
       // Request one extra event so a full page signals there is more history than shown.
       const auditEventLimit = DEFAULT_AUDIT_EVENT_LIMIT
-      const [auditEvents, info, markers, devices, positions, drawings, helicopters, gpxImports, layerMetadata] =
+      const [auditEvents, info, markers, devices, breadcrumbCount, drawings, helicopters, gpxImports, layerMetadata] =
         await Promise.all([
           dependencies.missionStore.listAuditEvents(selectedMission.id, {
             includeTelemetry: state.includeTelemetry,
@@ -127,7 +127,7 @@ export async function startMissionReviewRuntime(
           dependencies.missionStore.info(),
           dependencies.missionStore.listMarkers(selectedMission.id),
           dependencies.missionStore.listDevices(selectedMission.id),
-          dependencies.missionStore.listPositions(selectedMission.id),
+          dependencies.missionStore.countPositions(selectedMission.id),
           dependencies.missionStore.listDrawings(selectedMission.id),
           'listHelicopters' in dependencies.missionStore
             ? dependencies.missionStore.listHelicopters(selectedMission.id)
@@ -151,7 +151,7 @@ export async function startMissionReviewRuntime(
           events,
           markers,
           devices,
-          positions,
+          breadcrumbCount,
           drawings,
           helicopters,
           gpxImports,

@@ -17,17 +17,19 @@ const SOURCE_NAMES = {
  * Creates the Electron main-process proxy for licensed official map imagery.
  */
 function createElectronOfficialMapProxy(options) {
+  const mbtilesReaders = createMbtilesReaderCache(options)
   return {
-    fetchOfficialMapTile: (url) => fetchOfficialMapTile(options, url),
+    fetchOfficialMapTile: (url) => fetchOfficialMapTile(options, url, mbtilesReaders),
+    close: () => mbtilesReaders.closeAll(),
   }
 }
 
-async function fetchOfficialMapTile(options, url) {
+async function fetchOfficialMapTile(options, url, mbtilesReaders) {
   const settings = await options.loadSettings()
   const officialMaps = settings?.officialMaps
   const tile = parseOfficialMapTileUrl(url)
 
-  const localTile = readLocalPackageTile(officialMaps, tile)
+  const localTile = readLocalPackageTile(officialMaps, tile, mbtilesReaders)
   if (localTile.status === 'hit') {
     return localTile.response
   }
@@ -86,8 +88,9 @@ async function fetchMapGenieTile(options, officialMaps, tile, hadLocalMiss) {
   }
 }
 
-function readLocalPackageTile(officialMaps, tile) {
+function readLocalPackageTile(officialMaps, tile, mbtilesReaders) {
   const packages = Array.isArray(officialMaps?.packages) ? officialMaps.packages : []
+  mbtilesReaders.synchronize(packages)
   const matchingPackages = packages.filter((mapPackage) => mapPackage?.mapId === tile.mapId)
   if (matchingPackages.length === 0) {
     return { status: 'not_configured' }
@@ -105,7 +108,7 @@ function readLocalPackageTile(officialMaps, tile) {
   }
 
   for (const mapPackage of readyPackages) {
-    const row = readMbtilesTile(mapPackage.packagePath, tile)
+    const row = mbtilesReaders.readTile(mapPackage, tile)
     if (row.status === 'hit') {
       return {
         status: 'hit',
@@ -123,29 +126,132 @@ function readLocalPackageTile(officialMaps, tile) {
   return { status: 'miss' }
 }
 
-function readMbtilesTile(packagePath, tile) {
+function createMbtilesReaderCache(options) {
+  const createReader = options.createMbtilesReader ?? createDefaultMbtilesReader
+  const readers = new Map()
+
+  return {
+    synchronize: (packages) => {
+      const readyFingerprints = new Map()
+      for (const mapPackage of packages) {
+        if (!isReadyMbtilesPackage(mapPackage)) {
+          continue
+        }
+        readyFingerprints.set(mapPackage.packagePath, fingerprintOfficialMapPackage(mapPackage))
+      }
+
+      for (const [packagePath, entry] of readers.entries()) {
+        const currentFingerprint = readyFingerprints.get(packagePath)
+        if (currentFingerprint === entry.fingerprint) {
+          continue
+        }
+        closeReader(entry.reader)
+        readers.delete(packagePath)
+      }
+    },
+    readTile: (mapPackage, tile) => {
+      if (!isReadyMbtilesPackage(mapPackage)) {
+        return { status: 'package_error' }
+      }
+
+      const fingerprint = fingerprintOfficialMapPackage(mapPackage)
+      const existing = readers.get(mapPackage.packagePath)
+      if (existing !== undefined && existing.fingerprint !== fingerprint) {
+        closeReader(existing.reader)
+        readers.delete(mapPackage.packagePath)
+      }
+
+      let entry = readers.get(mapPackage.packagePath)
+      if (entry === undefined) {
+        try {
+          entry = {
+            fingerprint,
+            reader: createReader(mapPackage.packagePath),
+          }
+          readers.set(mapPackage.packagePath, entry)
+        } catch {
+          return { status: 'package_error' }
+        }
+      }
+
+      try {
+        const row = entry.reader.readTile(tile)
+        if (row.status === 'package_error') {
+          closeReader(entry.reader)
+          readers.delete(mapPackage.packagePath)
+        }
+        return row
+      } catch {
+        closeReader(entry.reader)
+        readers.delete(mapPackage.packagePath)
+        return { status: 'package_error' }
+      }
+    },
+    closeAll: () => {
+      for (const entry of readers.values()) {
+        closeReader(entry.reader)
+      }
+      readers.clear()
+    },
+  }
+}
+
+function createDefaultMbtilesReader(packagePath) {
   if (typeof packagePath !== 'string' || packagePath.trim() === '') {
-    return { status: 'package_error' }
+    throw new Error('Official map package path is invalid.')
   }
 
-  let db
-  try {
-    db = new Database(packagePath, { readonly: true, fileMustExist: true })
-    const row = db
-      .prepare(
-        'SELECT tile_data AS tileData FROM tiles WHERE zoom_level = ? AND tile_column = ? AND tile_row = ? LIMIT 1',
-      )
-      .get(tile.z, tile.x, xyzToTmsY(tile.z, tile.y))
-    if (row?.tileData === undefined) {
-      return { status: 'miss' }
-    }
-    return { status: 'hit', bytes: row.tileData }
-  } catch {
-    return { status: 'package_error' }
-  } finally {
-    if (db !== undefined) {
+  const db = new Database(packagePath, { readonly: true, fileMustExist: true })
+  const tileStatement = db.prepare(
+    'SELECT tile_data AS tileData FROM tiles WHERE zoom_level = ? AND tile_column = ? AND tile_row = ? LIMIT 1',
+  )
+
+  return {
+    readTile: (tile) => {
+      try {
+        const row = tileStatement.get(tile.z, tile.x, xyzToTmsY(tile.z, tile.y))
+        if (row?.tileData === undefined) {
+          return { status: 'miss' }
+        }
+        return { status: 'hit', bytes: row.tileData }
+      } catch {
+        return { status: 'package_error' }
+      }
+    },
+    close: () => {
       db.close()
-    }
+    },
+  }
+}
+
+function isReadyMbtilesPackage(mapPackage) {
+  return (
+    mapPackage?.sourceType === 'mbtiles' &&
+    mapPackage?.status === 'ready' &&
+    typeof mapPackage.packagePath === 'string' &&
+    mapPackage.packagePath.trim() !== ''
+  )
+}
+
+function fingerprintOfficialMapPackage(mapPackage) {
+  return JSON.stringify({
+    packagePath: mapPackage.packagePath,
+    mapId: mapPackage.mapId,
+    status: mapPackage.status,
+    tileFormat: mapPackage.tileFormat,
+    tileCount: mapPackage.tileCount,
+    minZoom: mapPackage.minZoom,
+    maxZoom: mapPackage.maxZoom,
+    bounds: mapPackage.bounds,
+    verifiedAt: mapPackage.verifiedAt,
+  })
+}
+
+function closeReader(reader) {
+  try {
+    reader.close()
+  } catch {
+    // Closing a stale readonly MBTiles handle is best-effort during settings churn.
   }
 }
 

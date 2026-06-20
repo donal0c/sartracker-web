@@ -4,7 +4,7 @@ import type {
   TrackingConnectionStatus,
   TrackingSnapshot,
 } from './tracking-types'
-import { accumulateBreadcrumbPositions } from './breadcrumb-accumulator'
+import { createBreadcrumbAccumulator } from './breadcrumb-accumulator'
 import { annotateTrackingSnapshotHealth } from './tracking-snapshot-health'
 
 const EMPTY_TRACKING_SNAPSHOT: TrackingSnapshot = {
@@ -78,6 +78,7 @@ export function createPollingManager(
   let consecutiveFailures = 0
   let lastGoodSnapshot: TrackingSnapshot | null = null
   let lastSuccessAt: string | null = null
+  const breadcrumbAccumulator = createBreadcrumbAccumulator()
   let breadcrumbPositions: readonly NormalizedTrackingPosition[] = []
   let breadcrumbMetadata: TrackingSnapshot['breadcrumbMetadata'] | undefined = undefined
   let activeHistoryResetKey: string | null = null
@@ -119,6 +120,7 @@ export function createPollingManager(
       const nextHistoryResetKey = options.getHistoryResetKey?.() ?? null
       if (nextHistoryResetKey !== activeHistoryResetKey) {
         activeHistoryResetKey = nextHistoryResetKey
+        breadcrumbAccumulator.reset()
         breadcrumbPositions = []
         breadcrumbMetadata = undefined
         initialBreadcrumbsLoaded = false
@@ -194,7 +196,7 @@ export function createPollingManager(
       })
 
       const breadcrumbs = await fetchIncrementalBreadcrumbs(devices)
-      const breadcrumbResult = accumulateBreadcrumbPositions(breadcrumbPositions, breadcrumbs)
+      const breadcrumbResult = breadcrumbAccumulator.append(breadcrumbs)
       breadcrumbPositions = breadcrumbResult.positions
       breadcrumbMetadata = breadcrumbResult.metadata
 
@@ -355,7 +357,7 @@ export function createPollingManager(
 
     try {
       const persistedBreadcrumbs = await options.getInitialBreadcrumbs()
-      const breadcrumbResult = accumulateBreadcrumbPositions(breadcrumbPositions, persistedBreadcrumbs)
+      const breadcrumbResult = breadcrumbAccumulator.append(persistedBreadcrumbs)
       breadcrumbPositions = breadcrumbResult.positions
       breadcrumbMetadata = breadcrumbResult.metadata
       seedLatestBreadcrumbTimestamps(persistedBreadcrumbs)

@@ -112,6 +112,35 @@ describe('startMissionReviewRuntime', () => {
     expect(lastCall?.snapshot?.eventRows.length).toBe(500)
   })
 
+  it('uses a position count query instead of loading every breadcrumb row [DON-202]', async () => {
+    const applyRuntime = vi.fn()
+    const listPositions = vi.fn().mockRejectedValue(new Error('Review must not load all positions'))
+    const countPositions = vi.fn().mockResolvedValue(50_000)
+    const runtime = await startMissionReviewRuntime({
+      missionStore: createMissionReviewStoreStub({
+        listMissions: vi.fn().mockResolvedValue([FIRST_MISSION]),
+        listPositions,
+        countPositions,
+      }),
+      layerCatalogStore: { listMetadata: vi.fn().mockResolvedValue([]) },
+      applyRuntime,
+    })
+
+    await runtime.load(FIRST_MISSION.id)
+
+    expect(countPositions).toHaveBeenCalledWith(FIRST_MISSION.id)
+    expect(listPositions).not.toHaveBeenCalled()
+    expect(applyRuntime).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        snapshot: expect.objectContaining({
+          summary: expect.objectContaining({
+            breadcrumbCount: 50_000,
+          }),
+        }),
+      }),
+    )
+  })
+
   it('keeps the latest refresh result when requests resolve out of order', async () => {
     const applyRuntime = vi.fn()
     let resolveFirstMission: ((value: readonly MissionEvent[]) => void) | null = null
@@ -344,6 +373,7 @@ function createMissionReviewStoreStub(overrides: Record<string, unknown> = {}) {
     listMarkers: vi.fn().mockResolvedValue([marker]),
     listDevices: vi.fn().mockResolvedValue([device]),
     listPositions: vi.fn().mockResolvedValue([position]),
+    countPositions: vi.fn().mockResolvedValue(1),
     listDrawings: vi.fn().mockResolvedValue([drawing]),
     listGpxImports: vi.fn().mockResolvedValue([]),
     ...overrides,

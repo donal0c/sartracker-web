@@ -168,18 +168,18 @@ Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
       'backup volume unavailable',
     )
 
-    await captureAndRegister(page, {
+    await captureElementAndRegister(page, 'hosted-browser-testing-banner', {
       testId: 'runtime-autosave-failure-focus',
       testName: 'Autosave failure visible in focus mode',
       area: 'app-shell',
       severity: 'critical',
-      verificationPrompt: `Verify this screenshot of SAR Tracker Focus Mode with a lifecycle autosave failure:
-1. Focus Mode should be active with the reduced sidebar and dominant map still visible
-2. The amber safety banner should include the specific autosave failure message "backup volume unavailable"
-3. A stronger lifecycle backup failed alert should be visible below the browser testing note
-4. The alert should explain that the mission state change saved but the safety backup did not complete
-5. The alert should not have a dismiss button
-6. The warning should remain obvious even though the normal command mast is hidden in Focus Mode
+      verificationPrompt: `Verify this screenshot of the SAR Tracker focus-mode safety banner stack after a lifecycle autosave failure:
+1. The browser testing notice should remain visible at the top of the banner
+2. The focus-mode autosave warning should include the exact failure message "backup volume unavailable"
+3. A stronger "Lifecycle backup failed" alert should be visible below the browser testing notice
+4. The lifecycle alert should explain that the mission state change saved but the safety backup did not complete
+5. The lifecycle alert should not have a dismiss button
+6. The failure should read as an obvious safety warning, not as a green/ready state
 Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
       playwrightAssertions: [
         'app-shell data-focus-mode is true',

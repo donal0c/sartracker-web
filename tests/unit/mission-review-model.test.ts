@@ -7,7 +7,6 @@ import type {
   Mission,
   MissionEvent,
   MissionStoreInfo,
-  Position,
 } from '../../src/infrastructure/mission-store/tauri-mission-store'
 import type { LayerCatalogMetadataEntry } from '../../src/features/layers/layer-catalog-types'
 import {
@@ -33,7 +32,7 @@ describe('mission review model', () => {
       ],
       markers: [createMarker()],
       devices: [createDevice()],
-      positions: [createPosition()],
+      breadcrumbCount: 1,
       drawings: [createDrawing()],
       gpxImports: [],
       layerMetadata: [] satisfies readonly LayerCatalogMetadataEntry[],
@@ -66,7 +65,7 @@ describe('mission review model', () => {
       events: [],
       markers: [],
       devices: [],
-      positions: [],
+      breadcrumbCount: 0,
       drawings: [],
       gpxImports: [],
       layerMetadata: [],
@@ -90,7 +89,7 @@ describe('mission review model', () => {
       events: [],
       markers: [{ ...createMarker(), lat: NaN, lon: Infinity }],
       devices: [],
-      positions: [],
+      breadcrumbCount: 0,
       drawings: [],
       gpxImports: [],
       layerMetadata: [],
@@ -121,7 +120,7 @@ describe('mission review model', () => {
         },
       ],
       devices: [],
-      positions: [],
+      breadcrumbCount: 0,
       drawings: [],
       gpxImports: [],
       layerMetadata: [],
@@ -203,24 +202,6 @@ function createDevice(): Device {
     color: '#38bdf8',
     last_seen: '2026-04-10T10:00:00.000Z',
     status: 'online',
-  }
-}
-
-function createPosition(): Position {
-  return {
-    id: 'position-1',
-    mission_id: 'mission-1',
-    device_id: 'alpha',
-    name: 'Alpha Team',
-    lat: 52.0599,
-    lon: -9.5045,
-    altitude: null,
-    speed: null,
-    battery: null,
-    accuracy: null,
-    source: 'traccar',
-    timestamp: '2026-04-10T10:00:00.000Z',
-    data_origin: 'live',
   }
 }
 

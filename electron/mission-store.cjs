@@ -38,10 +38,12 @@ function createElectronMissionStore(options) {
     getDevice: async (missionId, deviceId) => getDevice(db, missionId, deviceId),
     listDevices: async (missionId) => all(db, 'SELECT * FROM devices WHERE mission_id = ? ORDER BY name ASC', missionId),
     addPosition: async (input) => addPosition(db, input),
+    addPositionsBulk: async (input) => addPositionsBulk(db, input),
     listPositions: async (missionId, deviceId) =>
       deviceId === undefined
         ? all(db, 'SELECT * FROM positions WHERE mission_id = ? ORDER BY timestamp ASC', missionId)
         : all(db, 'SELECT * FROM positions WHERE mission_id = ? AND device_id = ? ORDER BY timestamp ASC', missionId, deviceId),
+    countPositions: async (missionId, deviceId) => countPositions(db, missionId, deviceId),
     latestPositions: async (missionId) => latestPositions(db, missionId),
     listMissionEvents: async (missionId) =>
       // Tie-break on the implicit monotonic rowid so events written within the same
@@ -563,6 +565,82 @@ function addPosition(db, input) {
   })
   transaction()
   return getById(db, 'positions', id, 'Position')
+}
+
+function addPositionsBulk(db, input) {
+  ensureWritableMission(db, input.mission_id)
+  const positions = Array.isArray(input.positions) ? input.positions : []
+  if (positions.length === 0) {
+    return []
+  }
+
+  const deviceExists = db.prepare('SELECT id FROM devices WHERE mission_id = ? AND device_id = ?')
+  const existingPosition = db.prepare(
+    'SELECT id FROM positions WHERE mission_id = ? AND device_id = ? AND timestamp = ? LIMIT 1',
+  )
+  const insertPosition = db.prepare(`INSERT INTO positions (id, mission_id, device_id, name, lat, lon, altitude, speed, battery, accuracy, source, timestamp, data_origin)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+  const updateDevice = db.prepare("UPDATE devices SET last_seen = ?, status = 'online' WHERE mission_id = ? AND device_id = ?")
+  const seenInBatch = new Set()
+  const insertedIds = []
+
+  const transaction = db.transaction(() => {
+    for (const position of positions) {
+      validateLatLon(position.lat, position.lon, 'Position')
+      if (deviceExists.get(input.mission_id, position.device_id) === undefined) {
+        throw new Error(`Device not found: ${position.device_id}`)
+      }
+
+      const timestamp = position.timestamp ?? now()
+      const positionKey = `${position.device_id}:${timestamp}`
+      if (seenInBatch.has(positionKey)) {
+        continue
+      }
+      seenInBatch.add(positionKey)
+
+      if (existingPosition.get(input.mission_id, position.device_id, timestamp) !== undefined) {
+        continue
+      }
+
+      const id = randomUUID()
+      const dataOrigin = position.data_origin ?? 'live'
+      insertPosition.run(
+        id,
+        input.mission_id,
+        position.device_id,
+        position.name ?? null,
+        position.lat,
+        position.lon,
+        position.altitude ?? null,
+        position.speed ?? null,
+        position.battery ?? null,
+        position.accuracy ?? null,
+        position.source ?? null,
+        timestamp,
+        dataOrigin,
+      )
+      updateDevice.run(timestamp, input.mission_id, position.device_id)
+      insertEvent(db, input.mission_id, 'position_recorded', timestamp, {
+        position_id: id,
+        device_id: position.device_id,
+        timestamp,
+        data_origin: dataOrigin,
+        source: position.source ?? null,
+      })
+      insertedIds.push(id)
+    }
+  })
+
+  transaction()
+  return insertedIds.map((id) => getById(db, 'positions', id, 'Position'))
+}
+
+function countPositions(db, missionId, deviceId) {
+  const row =
+    deviceId === undefined
+      ? db.prepare('SELECT COUNT(*) AS count FROM positions WHERE mission_id = ?').get(missionId)
+      : db.prepare('SELECT COUNT(*) AS count FROM positions WHERE mission_id = ? AND device_id = ?').get(missionId, deviceId)
+  return Number(row?.count ?? 0)
 }
 
 function latestPositions(db, missionId) {
