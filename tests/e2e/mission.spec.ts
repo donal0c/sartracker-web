@@ -223,9 +223,12 @@ test.describe('M5 mission control workflows', () => {
     const elapsedAtFinish = Math.floor(
       (Date.parse(persistedMission!.finish_time ?? '') - Date.parse(persistedMission!.start_time)) / 1000,
     )
+    // The UI text and persisted timestamps are sampled on separate seconds.
+    // Allow the scheduler-boundary drift while still proving active time did
+    // not continue advancing through the paused interval.
     expect(
       Math.abs(Math.max(0, elapsedAtFinish - persistedMission!.paused_seconds) - parseDuration(activeAtPause)),
-    ).toBeLessThanOrEqual(1)
+    ).toBeLessThanOrEqual(2)
   })
 
   test('warns before reusing an existing mission name', async ({ page }) => {

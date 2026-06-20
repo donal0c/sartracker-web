@@ -61,6 +61,29 @@ describe('resolveDraggableTextLabelId', () => {
     expect(id).toBeNull()
   })
 
+  it('returns the text-label id when the click is on visible label text beyond the anchor radius', () => {
+    const project = () => ({ x: 100, y: 100 })
+    const id = resolveDraggableTextLabelId({
+      drawings: [
+        createTextLabel({
+          id: 'long-label',
+          label: 'Landing Zone West Ridge',
+          metadata_json: JSON.stringify({
+            kind: 'text_label',
+            text: 'Landing Zone West Ridge',
+            fontSize: 18,
+            color: '#FFCC00',
+            rotation: 0,
+            point: [-9.7, 52.0],
+          }),
+        }),
+      ],
+      point: { x: 185, y: 100 },
+      project,
+    })
+    expect(id).toBe('long-label')
+  })
+
   it('ignores non-text-label drawings', () => {
     const project = () => ({ x: 100, y: 100 })
     const id = resolveDraggableTextLabelId({

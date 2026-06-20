@@ -63,6 +63,8 @@ export function DialogOverlay({
   function handleKeyDown(event: ReactKeyboardEvent<HTMLDivElement>): void {
     if (event.key === 'Escape') {
       event.preventDefault()
+      event.stopPropagation()
+      event.nativeEvent.stopImmediatePropagation()
       onClose()
       return
     }

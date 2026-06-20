@@ -85,6 +85,36 @@ test.describe('M15 mission review workspace', () => {
     await expect(page.getByTestId('mission-review-workspace')).toBeHidden()
   })
 
+  test('DON-203: Escape closes only the top dialog over docked Review', async ({ page }) => {
+    await page.getByTestId('open-mission-review-workspace').click()
+    await expect(page.getByTestId('mission-review-workspace')).toBeVisible()
+    await expect(page.getByTestId('mission-review-docked-readonly-note')).toBeVisible()
+
+    await page.getByTestId('map-container').click({ position: { x: 720, y: 300 } })
+    await expect(page.getByTestId('marker-dialog')).toBeVisible()
+
+    await page.keyboard.press('Escape')
+    await expect(page.getByTestId('marker-dialog')).toBeHidden()
+    await expect(page.getByTestId('mission-review-workspace')).toBeVisible()
+
+    await page.keyboard.press('Escape')
+    await expect(page.getByTestId('mission-review-workspace')).toBeHidden()
+  })
+
+  test('DON-203: Escape closes only the active-mission confirmation over docked Review', async ({
+    page,
+  }) => {
+    await page.getByTestId('open-mission-review-workspace').click()
+    await expect(page.getByTestId('mission-review-workspace')).toBeVisible()
+
+    await page.getByTestId('mission-finish-btn').click()
+    await expect(page.getByTestId('mission-finish-dialog')).toBeVisible()
+
+    await page.keyboard.press('Escape')
+    await expect(page.getByTestId('mission-finish-dialog')).toBeHidden()
+    await expect(page.getByTestId('mission-review-workspace')).toBeVisible()
+  })
+
   test('hides tracking telemetry from the audit log by default and reveals it on toggle', async ({
     page,
   }) => {

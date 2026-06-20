@@ -102,28 +102,35 @@ export function WorkspaceOverlay({
     return () => cancelAnimationFrame(focusFrame)
   }, [mounted, docked])
 
-  // Docked mode does not trap focus, so the operator can click the map or
-  // mission rail and move focus out of the panel. Listen for Escape at the
-  // document level so Esc still closes Review regardless of where focus is
-  // (DON-176). Modal mode keeps its panel-scoped handler (focus is trapped).
+  // Listen at the document level so Escape remains reliable even when focus has
+  // moved to the map, rail, or a recently dismissed inline confirmation. A
+  // nested/topmost modal or alertdialog owns Escape first.
   useEffect(() => {
-    if (!mounted || !docked) {
+    if (!mounted) {
       return
     }
 
     const onDocumentKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        event.preventDefault()
-        onClose()
+      if (event.key !== 'Escape') {
+        return
       }
+
+      if (hasTopLayerAboveWorkspace(panelRef.current)) {
+        return
+      }
+
+      event.preventDefault()
+      onClose()
     }
     document.addEventListener('keydown', onDocumentKeyDown)
     return () => document.removeEventListener('keydown', onDocumentKeyDown)
-  }, [mounted, docked, onClose])
+  }, [mounted, onClose])
 
   function handleKeyDown(event: ReactKeyboardEvent<HTMLDivElement>): void {
     if (event.key === 'Escape') {
       event.preventDefault()
+      event.stopPropagation()
+      event.nativeEvent.stopImmediatePropagation()
       onClose()
       return
     }
@@ -205,6 +212,25 @@ export function WorkspaceOverlay({
       </div>
     </div>
   )
+}
+
+/**
+ * Returns true when another modal or alert dialog should receive Escape before
+ * the workspace itself.
+ */
+function hasTopLayerAboveWorkspace(panel: HTMLElement | null): boolean {
+  if (panel === null) {
+    return false
+  }
+
+  const topLayers = document.querySelectorAll('[aria-modal="true"], [role="alertdialog"]')
+  for (const layer of topLayers) {
+    if (layer !== panel) {
+      return true
+    }
+  }
+
+  return false
 }
 
 type WorkspaceHeaderProps = {

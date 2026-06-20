@@ -245,10 +245,10 @@ Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
       area: 'tracking',
       severity: 'critical',
       verificationPrompt: `Verify this screenshot of the SAR Tracker command mast (the top header strip) during an active mission:
-1. The mast contains a tracking cell labelled with the current tracking mode in uppercase (one of "ONLINE", "OFFLINE", or "IDLE"). For this capture the mode label should be "ONLINE".
-2. The same cell shows two separate stat rows underneath the mode label: a row whose label is "FIX" with a numeric value (a small whole number such as 3), and a row whose label is "STALE" with a separate numeric value (a small whole number such as 1).
+1. The mast contains a narrow tracking cell labelled with the current tracking mode in uppercase (one of "ONLINE", "OFFLINE", or "IDLE"). For this capture the mode label should be "ONLINE"; it may appear as a compact label at the top/right of the tracking cell, not as a large full-width header.
+2. The same tracking cell shows two separate stat rows: a row whose label is "FIX" with a numeric value (a small whole number such as 3), and a row whose label is "STALE" with a separate numeric value (a small whole number such as 1).
 3. The FIX and STALE values are rendered as two distinct numbers in two separate rows. They are NOT combined into a single value like "3/1" or "FIX/STALE 3/1" or "1/3" — that exact regression is what this test exists to prevent. Mark item 3 FAIL only if you see a single visible "<digits>/<digits>" string treated as one value inside the tracking cell.
-4. The cell sits between the "DEVICES" cell on its left and the "SYSTEM STATUS" cell on its right. Both neighbours should still be visible and labelled.
+4. The tracking cell sits immediately between the "DEVICES" cell on its left and the "SYSTEM STATUS" cell on its right, separated by the mast's vertical boundary lines. Both neighbours should still be visible and labelled.
 5. The overall theme is dark with amber accents; tone for the STALE row is amber/warning when the value is greater than zero.
 Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
       playwrightAssertions: [

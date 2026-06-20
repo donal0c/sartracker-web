@@ -234,6 +234,69 @@ test.describe('M8 drawing workflows', () => {
     await expect(page.getByText('Updated Landing Zone')).toBeVisible()
   })
 
+  test('DON-205: drags a long text label from visible text away from the anchor', async ({
+    page,
+  }) => {
+    await page.getByTestId('drawing-tool-text_label').click({ force: true })
+    await clickMap(page, { x: 540, y: 220 })
+
+    await expect(page.getByTestId('drawing-dialog')).toBeVisible()
+    await page.getByTestId('drawing-text-label-text-input').fill('Landing Zone West Ridge')
+    await page.getByTestId('drawing-text-label-font-size-input').fill('18')
+    await page.getByTestId('drawing-save-btn').click()
+    await expect(page.getByTestId('drawing-dialog')).toBeHidden()
+
+    const before = await readTextLabelCoordinates(page, 'Landing Zone West Ridge')
+    expect(before).not.toBeNull()
+
+    const canvas = page.locator('.maplibregl-canvas').first()
+    await canvas.hover({ position: { x: 620, y: 220 }, force: true })
+    await page.mouse.down()
+    await canvas.hover({ position: { x: 690, y: 270 }, force: true })
+    await page.mouse.up()
+
+    await expect.poll(async () => readTextLabelCoordinates(page, 'Landing Zone West Ridge')).not.toEqual(before)
+    await expect(page.getByTestId('drawing-dialog')).toBeHidden()
+  })
+
+  test('DON-205: does not drag text labels through docked workspace overlays', async ({
+    page,
+  }) => {
+    await page.getByTestId('drawing-tool-text_label').click({ force: true })
+    await clickMap(page, { x: 320, y: 220 })
+
+    await expect(page.getByTestId('drawing-dialog')).toBeVisible()
+    await page.getByTestId('drawing-text-label-text-input').fill('Review Overlay Label')
+    await page.getByTestId('drawing-text-label-font-size-input').fill('18')
+    await page.getByTestId('drawing-save-btn').click()
+    await expect(page.getByTestId('drawing-dialog')).toBeHidden()
+
+    const before = await readTextLabelCoordinates(page, 'Review Overlay Label')
+    expect(before).not.toBeNull()
+
+    const canvas = page.locator('.maplibregl-canvas').first()
+    const box = await canvas.boundingBox()
+    expect(box).not.toBeNull()
+
+    await page.getByTestId('open-mission-review-workspace').click()
+    await expect(page.getByTestId('mission-review-workspace')).toBeVisible()
+
+    const workspaceBox = await page.getByTestId('mission-review-workspace').boundingBox()
+    expect(workspaceBox).not.toBeNull()
+
+    const startX = Math.min(box!.x + 380, workspaceBox!.x + workspaceBox!.width - 40)
+    const startY = box!.y + 220
+    expect(startX).toBeGreaterThanOrEqual(workspaceBox!.x)
+    expect(startX).toBeLessThanOrEqual(workspaceBox!.x + workspaceBox!.width)
+
+    await page.mouse.move(startX, startY)
+    await page.mouse.down()
+    await page.mouse.move(startX + 70, startY + 50)
+    await page.mouse.up()
+
+    await expect.poll(async () => readTextLabelCoordinates(page, 'Review Overlay Label')).toEqual(before)
+  })
+
   test('edits and deletes an existing drawing through select mode', async ({ page }) => {
     await page.getByTestId('drawing-tool-line').click({ force: true })
     await clickMap(page, { x: 420, y: 240 })
@@ -339,17 +402,40 @@ async function readMissionDrawings(page: import('@playwright/test').Page) {
     }
 
     const parsed = JSON.parse(raw) as {
-      drawings?: Array<{
-        name: string
-        type: string
-        color: string | null
-        label: string | null
-        metadata_json: string | null
-      }>
+        drawings?: Array<{
+          name: string
+          type: string
+          color: string | null
+          label: string | null
+          geometry_json: string
+          metadata_json: string | null
+        }>
     }
 
     return parsed.drawings ?? []
   })
+}
+
+async function readTextLabelCoordinates(
+  page: import('@playwright/test').Page,
+  name: string,
+): Promise<readonly [number, number] | null> {
+  const drawings = await readMissionDrawings(page)
+  const drawing = drawings.find((candidate) => candidate.name === name && candidate.type === 'text_label')
+  if (drawing === undefined) {
+    return null
+  }
+
+  const geometry = JSON.parse(drawing.geometry_json) as {
+    readonly type?: string
+    readonly coordinates?: unknown
+  }
+  if (geometry.type !== 'Point' || !Array.isArray(geometry.coordinates)) {
+    return null
+  }
+
+  const [lon, lat] = geometry.coordinates
+  return typeof lon === 'number' && typeof lat === 'number' ? [lon, lat] : null
 }
 
 async function readSearchSectorGeometry(

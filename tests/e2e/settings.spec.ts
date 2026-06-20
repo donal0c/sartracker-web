@@ -211,6 +211,33 @@ test.describe('M12 settings workspace', () => {
     await expect(dialog).toBeHidden()
     await expect(opener).toBeFocused()
   })
+
+  test('DON-204: requires confirmation before discarding unsaved settings edits', async ({
+    page,
+  }) => {
+    const opener = page.getByTestId('open-settings-workspace')
+    await opener.click()
+
+    const dialog = page.getByRole('dialog', { name: 'Operational Settings' })
+    await expect(dialog).toBeVisible()
+    await page.getByTestId('settings-primary-root').fill('/missions/draft-root')
+
+    await page.keyboard.press('Escape')
+    await expect(dialog).toBeVisible()
+    await expect(page.getByTestId('settings-discard-confirmation')).toBeVisible()
+
+    await page.getByTestId('settings-keep-editing').click()
+    await expect(page.getByTestId('settings-discard-confirmation')).toBeHidden()
+    await expect(page.getByTestId('settings-primary-root')).toHaveValue('/missions/draft-root')
+
+    await page.keyboard.press('Escape')
+    await page.getByTestId('settings-discard-changes').click()
+    await expect(dialog).toBeHidden()
+    await expect(opener).toBeFocused()
+
+    await opener.click()
+    await expect(page.getByTestId('settings-primary-root')).not.toHaveValue('/missions/draft-root')
+  })
 })
 
 async function routeTraccarSuccess(

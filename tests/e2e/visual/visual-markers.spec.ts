@@ -190,6 +190,8 @@ Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
 
     await page.getByTestId('marker-save-btn').click()
     await expect(page.getByTestId('marker-dialog')).toBeHidden()
+    await expect.poll(async () => readMarkerNames(page)).toContain('Casualty Near Summit')
+    await page.waitForTimeout(500)
 
     await captureAndRegister(page, {
       testId: 'marker-casualty-map-label-size',
@@ -209,3 +211,20 @@ Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
     })
   })
 })
+
+async function readMarkerNames(page: import('@playwright/test').Page): Promise<readonly string[]> {
+  return page.evaluate(() => {
+    const raw = window.sessionStorage.getItem('sartracker:browser-harness')
+    if (raw === null) {
+      return []
+    }
+
+    const parsed = JSON.parse(raw) as {
+      readonly markers?: readonly { readonly name?: unknown }[]
+    }
+
+    return (parsed.markers ?? [])
+      .map((marker) => marker.name)
+      .filter((name): name is string => typeof name === 'string')
+  })
+}

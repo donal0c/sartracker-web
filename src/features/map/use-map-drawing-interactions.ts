@@ -1,10 +1,11 @@
-import { useEffect, type RefObject } from 'react'
+import { useEffect, useRef, type RefObject } from 'react'
 import type maplibregl from 'maplibre-gl'
 
 import { useDrawingStore } from '../drawings/drawing-store'
 import { useGpxStore } from '../gpx/gpx-store'
 import { useMarkerStore } from '../markers/marker-store'
 import { useMissionStore } from '../mission/mission-store'
+import { DRAWING_LABEL_LAYER_ID } from '../drawings/sync-drawing-overlay'
 import {
   createMapPanClickGuard,
   isPointInsideMapContainer,
@@ -40,6 +41,7 @@ export function useMapDrawingInteractions(
   const interactionMode = useMapInteractionMode()
   const currentMissionId = useMissionStore((state) => state.currentMission?.id ?? null)
   const missionPhase = useMissionStore((state) => state.phase)
+  const suppressLabelDragClickRef = useRef(false)
 
   useEffect(() => {
     const map = options.mapRef.current
@@ -132,6 +134,12 @@ export function useMapDrawingInteractions(
         return
       }
 
+      if (shouldIgnoreDrawingMapClick(currentMissionId, missionPhase, event.target)) {
+        panClickGuard.cancel()
+        labelDrag = null
+        return
+      }
+
       const resolved = resolveMapPoint(event)
       if (resolved === null) {
         panClickGuard.cancel()
@@ -148,6 +156,7 @@ export function useMapDrawingInteractions(
           drawings,
           point: resolved.point,
           project: (coordinate) => map.project(coordinate),
+          renderedLabelDrawingIds: readRenderedTextLabelDrawingIds(map, resolved.point),
         })
         if (labelId !== null) {
           labelDrag = createTextLabelDragState(labelId, resolved.point)
@@ -178,6 +187,7 @@ export function useMapDrawingInteractions(
         map.dragPan.enable()
 
         if (activeDrag.hasMoved()) {
+          suppressLabelDragClickRef.current = true
           const resolved = resolveMapPoint(event)
           if (resolved !== null) {
             const lngLat = map.unproject([resolved.point.x, resolved.point.y])
@@ -196,6 +206,13 @@ export function useMapDrawingInteractions(
       }
 
       if (panClickGuard.consumeClickSuppression()) {
+        return
+      }
+
+      if (suppressLabelDragClickRef.current) {
+        suppressLabelDragClickRef.current = false
+        event.preventDefault()
+        event.stopImmediatePropagation()
         return
       }
 
@@ -302,4 +319,22 @@ export function useMapDrawingInteractions(
     options.containerRef,
     options.mapRef,
   ])
+}
+
+/**
+ * Reads text-label drawing ids from the rendered label layer at a pointer
+ * location. Falls back silently when the layer is not ready yet.
+ */
+function readRenderedTextLabelDrawingIds(
+  map: maplibregl.Map,
+  point: { readonly x: number; readonly y: number },
+): readonly string[] {
+  try {
+    return map
+      .queryRenderedFeatures([point.x, point.y], { layers: [DRAWING_LABEL_LAYER_ID] })
+      .map((feature) => feature.properties?.drawingId)
+      .filter((drawingId): drawingId is string => typeof drawingId === 'string')
+  } catch {
+    return []
+  }
 }

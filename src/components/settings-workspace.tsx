@@ -12,6 +12,7 @@ import { WorkspaceOverlay, WorkspaceHeader } from './workspace-overlay'
 import {
   createSettingsDraft,
   type AppSettingsDraft,
+  type CoordinateDisplayMode,
   type OfficialMapPackageSettings,
 } from '../features/settings/settings-types'
 import {
@@ -57,6 +58,8 @@ export function SettingsWorkspace({ open, onClose }: SettingsWorkspaceProps) {
   const [coordinateDisplayMode, setCoordinateDisplayMode] = useState(readCoordinateDisplayMode)
   const [coordinatorRosterText, setCoordinatorRosterText] = useState('')
   const [adminRosterText, setAdminRosterText] = useState('')
+  const [baselineCloseSnapshot, setBaselineCloseSnapshot] = useState<string | null>(null)
+  const [showDiscardConfirmation, setShowDiscardConfirmation] = useState(false)
   const settingsValidationContext = useMemo(createSettingsValidationContext, [])
 
   useEffect(() => {
@@ -72,10 +75,14 @@ export function SettingsWorkspace({ open, onClose }: SettingsWorkspaceProps) {
     void loadAppSettings()
       .then((settings) => {
         if (!cancelled) {
-          setDraft(createSettingsDraft(settings))
+          const loadedDraft = createSettingsDraft(settings)
+          const loadedCoordinateDisplayMode = readCoordinateDisplayMode()
+          setDraft(loadedDraft)
           setCoordinatorRosterText(formatRosterInput(settings.missionDefaults.coordinatorRoster))
           setAdminRosterText(formatRosterInput(settings.missionDefaults.adminRoster))
-          setCoordinateDisplayMode(readCoordinateDisplayMode())
+          setCoordinateDisplayMode(loadedCoordinateDisplayMode)
+          setBaselineCloseSnapshot(createSettingsCloseSnapshot(loadedDraft, loadedCoordinateDisplayMode))
+          setShowDiscardConfirmation(false)
         }
       })
       .catch((loadError) => {
@@ -103,14 +110,14 @@ export function SettingsWorkspace({ open, onClose }: SettingsWorkspaceProps) {
     <WorkspaceOverlay
       labelledBy={SETTINGS_WORKSPACE_TITLE_ID}
       open={open}
-      onClose={onClose}
+      onClose={handleRequestClose}
       maxWidth="max-w-3xl"
     >
       <WorkspaceHeader
         subtitle="Settings Workspace"
         titleId={SETTINGS_WORKSPACE_TITLE_ID}
         title="Operational Settings"
-        onClose={onClose}
+        onClose={handleRequestClose}
       />
 
       <div className="flex-1 space-y-6 overflow-y-auto px-6 py-6" data-testid="settings-workspace">
@@ -721,9 +728,45 @@ export function SettingsWorkspace({ open, onClose }: SettingsWorkspaceProps) {
         </div>
 
         <footer className="sar-workspace-footer flex flex-col gap-3 px-6 py-4 sm:flex-row sm:items-center sm:justify-between">
-          <p className="text-[11px] text-stone-500">
-            Secrets stay out of mission SQLite and browser storage.
-          </p>
+          <div className="space-y-3">
+            <p className="text-[11px] text-stone-500">
+              Secrets stay out of mission SQLite and browser storage.
+            </p>
+            {showDiscardConfirmation ? (
+              <div
+                aria-describedby="settings-discard-confirmation-description"
+                aria-labelledby="settings-discard-confirmation-title"
+                className="border border-amber-500/50 bg-amber-950/50 p-3 text-sm text-amber-100"
+                data-testid="settings-discard-confirmation"
+                role="alertdialog"
+              >
+                <p className="font-semibold" id="settings-discard-confirmation-title">
+                  Discard unsaved settings?
+                </p>
+                <p className="mt-1 text-xs text-amber-100/80" id="settings-discard-confirmation-description">
+                  Unsaved operational settings will be lost.
+                </p>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <button
+                    className="sar-button px-3 py-1.5 text-[11px] font-bold uppercase tracking-wider"
+                    data-testid="settings-keep-editing"
+                    onClick={() => setShowDiscardConfirmation(false)}
+                    type="button"
+                  >
+                    Keep Editing
+                  </button>
+                  <button
+                    className="border border-rose-400/60 bg-rose-950/70 px-3 py-1.5 text-[11px] font-bold uppercase tracking-wider text-rose-100"
+                    data-testid="settings-discard-changes"
+                    onClick={handleDiscardChanges}
+                    type="button"
+                  >
+                    Discard Changes
+                  </button>
+                </div>
+              </div>
+            ) : null}
+          </div>
           <div className="flex flex-wrap gap-3 sm:justify-end">
             <button
               className="sar-button px-4 py-2 text-[11px] font-bold uppercase tracking-wider disabled:opacity-40"
@@ -789,6 +832,28 @@ export function SettingsWorkspace({ open, onClose }: SettingsWorkspaceProps) {
     }
   }
 
+  function handleRequestClose(): void {
+    if (!hasUnsavedSettingsDraft()) {
+      onClose()
+      return
+    }
+
+    setShowDiscardConfirmation(true)
+  }
+
+  function handleDiscardChanges(): void {
+    setShowDiscardConfirmation(false)
+    onClose()
+  }
+
+  function hasUnsavedSettingsDraft(): boolean {
+    if (draft === null || baselineCloseSnapshot === null) {
+      return false
+    }
+
+    return createSettingsCloseSnapshot(draft, coordinateDisplayMode) !== baselineCloseSnapshot
+  }
+
   async function handleSave(forceConnect: boolean): Promise<void> {
     if (draft === null) {
       return
@@ -801,7 +866,10 @@ export function SettingsWorkspace({ open, onClose }: SettingsWorkspaceProps) {
     try {
       const saved = await saveAppSettings(draft)
       persistCoordinateDisplayMode(coordinateDisplayMode)
-      setDraft(createSettingsDraft(saved))
+      const savedDraft = createSettingsDraft(saved)
+      setDraft(savedDraft)
+      setBaselineCloseSnapshot(createSettingsCloseSnapshot(savedDraft, coordinateDisplayMode))
+      setShowDiscardConfirmation(false)
       const controller = getAppRuntimeController()
       if (controller !== null) {
         await controller.reloadSettings({ forceConnect })
@@ -1298,6 +1366,20 @@ function updateDraft(
   updater: (current: AppSettingsDraft) => AppSettingsDraft,
 ) {
   setDraft((current) => (current === null ? current : updater(current)))
+}
+
+/**
+ * Creates the normalized snapshot used to decide whether closing Settings would
+ * discard operator edits.
+ */
+function createSettingsCloseSnapshot(
+  draft: AppSettingsDraft,
+  coordinateDisplayMode: CoordinateDisplayMode,
+): string {
+  return JSON.stringify({
+    draft,
+    coordinateDisplayMode,
+  })
 }
 
 function parseInteger(value: string, fallback: number): number {

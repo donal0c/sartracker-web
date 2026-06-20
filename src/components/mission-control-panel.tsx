@@ -549,6 +549,7 @@ function InlineDecisionDialog(props: {
   readonly onCancel: () => void
   readonly children: ReactNode
 }) {
+  const { onCancel } = props
   const panelRef = useRef<HTMLDivElement>(null)
   const returnFocusRef = useRef<Element | null>(null)
 
@@ -567,10 +568,28 @@ function InlineDecisionDialog(props: {
     }
   }, [])
 
+  useEffect(() => {
+    const handleDocumentKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') {
+        return
+      }
+
+      event.preventDefault()
+      event.stopPropagation()
+      event.stopImmediatePropagation()
+      onCancel()
+    }
+
+    document.addEventListener('keydown', handleDocumentKeyDown, true)
+    return () => document.removeEventListener('keydown', handleDocumentKeyDown, true)
+  }, [onCancel])
+
   function handleKeyDown(event: ReactKeyboardEvent<HTMLDivElement>): void {
     if (event.key === 'Escape') {
       event.preventDefault()
-      props.onCancel()
+      event.stopPropagation()
+      event.nativeEvent.stopImmediatePropagation()
+      onCancel()
       return
     }
 

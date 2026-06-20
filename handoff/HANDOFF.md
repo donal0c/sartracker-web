@@ -13,6 +13,7 @@
 ## Beta.8 Candidate Status
 
 DON-190 through DON-199 are complete, committed, pushed, and Linear-closed.
+DON-203 through DON-205 are complete and Linear-closed in the operator hardening batch.
 
 Main beta.8 batch coverage:
 
@@ -34,17 +35,27 @@ Additional runtime performance hardening is complete locally for the tracking/El
 - DON-201: Electron official-map proxy reuses readonly MBTiles readers/statements per package and closes stale handles when package metadata changes.
 - DON-202: Mission Review requests a position count instead of loading every tracking row just to show breadcrumb count.
 
-Final browser/regression gate passed after the batch:
+Operator workflow hardening is also complete:
+
+- DON-203: stacked Escape now closes only the top dialog/confirmation above docked Mission Review.
+- DON-204: Settings prompts before discarding unsaved edits.
+- DON-205: Text Label dragging works from visible label text, not only the anchor point; overlay boundary handling prevents docked workspaces from moving labels underneath them.
+- DON-190: Devices workspace layout and selected-list behavior was revalidated without new code changes.
+
+Final browser/regression gate passed after the hardening batch:
 
 - `npm run lint`
 - `npm run build`
-- `npm run test` - 152 files / 968 tests
+- `npm run test` - 152 files / 976 tests
 - `npm run test:backend` - 47 passed / 1 ignored
-- `npm run test:e2e:chromium` - 121/121
+- `npm run test:e2e:chromium` - 126/126
 - `npx playwright test --project=visual` - 34/34
 - `npm run visual:review -- --fail-on critical` - 39/39
+- `node --check electron/main.cjs electron/preload.cjs electron/mission-store.cjs electron/settings-store.cjs`
+- `npm run electron:pack` - local unsigned macOS arm64 directory package, `better-sqlite3` rebuild passed.
 
-The final visual gate found stale verification harness assumptions, not product regressions. Prompt/test-flow hardening was committed in `2b7765c`.
+The final visual gates initially found two stale/ambiguous harness waits/prompts, not product regressions: mast tracking cell prompt wording and casualty marker map-label capture timing. Both were hardened and the full visual gate reran green.
+The paused-mission finish E2E timing assertion was also hardened for second-boundary scheduler drift after reproducing a 1/3 repeat flake; the focused test passed 5/5 and the full mission/full Chromium suites passed afterward.
 
 Performance batch verification snapshot:
 
