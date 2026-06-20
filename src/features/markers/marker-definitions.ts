@@ -49,15 +49,14 @@ export const HAZARD_TYPES = [
 export const HAZARD_SEVERITIES = ['Critical', 'High', 'Medium', 'Low'] as const
 
 export const CASUALTY_CONDITIONS = [
-  'Injured - Conscious',
-  'Injured - Unconscious',
-  'Deceased',
-  'Unresponsive',
+  'Lost',
+  'Crag Fast',
   'Medical Emergency',
   'Unknown',
+  'Deceased',
 ] as const
 
-export const EVACUATION_PRIORITIES = ['Immediate', 'Urgent', 'Delayed', 'None Required'] as const
+export const EVACUATION_PRIORITIES = ['Normal', 'Urgent', 'Walk-Off', 'None', 'Self-Evacuation'] as const
 
 export const MARKER_VISUAL_SPECS: Record<MarkerType, MarkerVisualSpec> = {
   ipp_lkp: {

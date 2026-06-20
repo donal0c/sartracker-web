@@ -133,6 +133,7 @@ pub struct Marker {
     pub condition: Option<String>,
     pub treatment: Option<String>,
     pub evacuation_priority: Option<String>,
+    pub label_size: Option<i64>,
     pub updated_by: Option<String>,
     pub coordinator_ids: Option<String>,
     pub attachment_path: Option<String>,
@@ -332,6 +333,7 @@ pub struct UpsertMarkerInput {
     pub condition: Option<String>,
     pub treatment: Option<String>,
     pub evacuation_priority: Option<String>,
+    pub label_size: Option<i64>,
     pub updated_by: Option<String>,
     pub coordinator_ids: Option<String>,
     pub attachment_path: Option<String>,
@@ -569,6 +571,7 @@ impl MissionStore {
               condition TEXT,
               treatment TEXT,
               evacuation_priority TEXT,
+              label_size INTEGER,
               updated_by TEXT,
               coordinator_ids TEXT,
               attachment_path TEXT,
@@ -676,6 +679,7 @@ impl MissionStore {
         Self::ensure_column_exists(&mut *tx, "markers", "updated_by", "TEXT").await?;
         Self::ensure_column_exists(&mut *tx, "markers", "coordinator_ids", "TEXT").await?;
         Self::ensure_column_exists(&mut *tx, "markers", "attachment_path", "TEXT").await?;
+        Self::ensure_column_exists(&mut *tx, "markers", "label_size", "INTEGER").await?;
 
         sqlx::query(
             "INSERT INTO metadata (key, value) VALUES ('schema_version', ?)
@@ -1262,8 +1266,8 @@ impl MissionStore {
               id, mission_id, type, name, description, lat, lon, irish_grid_e, irish_grid_n,
               created_at, updated_at, display_order, subject_category, clue_type, confidence,
               found_by, hazard_type, severity, condition, treatment, evacuation_priority,
-              updated_by, coordinator_ids, attachment_path
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+              label_size, updated_by, coordinator_ids, attachment_path
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(id) DO UPDATE SET
               mission_id = excluded.mission_id,
               type = excluded.type,
@@ -1284,6 +1288,7 @@ impl MissionStore {
               condition = excluded.condition,
               treatment = excluded.treatment,
               evacuation_priority = excluded.evacuation_priority,
+              label_size = excluded.label_size,
               updated_by = excluded.updated_by,
               coordinator_ids = excluded.coordinator_ids,
               attachment_path = excluded.attachment_path
@@ -1310,6 +1315,7 @@ impl MissionStore {
         .bind(&input.condition)
         .bind(&input.treatment)
         .bind(&input.evacuation_priority)
+        .bind(input.label_size)
         .bind(&input.updated_by)
         .bind(&input.coordinator_ids)
         .bind(&input.attachment_path)
@@ -1357,7 +1363,7 @@ impl MissionStore {
             SELECT id, mission_id, type, name, description, lat, lon,
                    irish_grid_e, irish_grid_n, created_at, updated_at, display_order,
                    subject_category, clue_type, confidence, found_by, hazard_type, severity,
-                   condition, treatment, evacuation_priority, updated_by, coordinator_ids, attachment_path
+                   condition, treatment, evacuation_priority, label_size, updated_by, coordinator_ids, attachment_path
             FROM markers
             WHERE id = ?
             "#,
@@ -1375,7 +1381,7 @@ impl MissionStore {
             SELECT id, mission_id, type, name, description, lat, lon,
                    irish_grid_e, irish_grid_n, created_at, updated_at, display_order,
                    subject_category, clue_type, confidence, found_by, hazard_type, severity,
-                   condition, treatment, evacuation_priority, updated_by, coordinator_ids, attachment_path
+                   condition, treatment, evacuation_priority, label_size, updated_by, coordinator_ids, attachment_path
             FROM markers
             WHERE mission_id = ?
             ORDER BY display_order ASC, created_at ASC
@@ -3566,6 +3572,7 @@ mod tests {
                 condition: None,
                 treatment: None,
                 evacuation_priority: None,
+                label_size: None,
                 updated_by: Some("Ops Lead".to_string()),
                 coordinator_ids: Some("C1, C2".to_string()),
                 attachment_path: Some("/tmp/attachment-a.jpg".to_string()),
@@ -3597,6 +3604,7 @@ mod tests {
                 condition: None,
                 treatment: None,
                 evacuation_priority: None,
+                label_size: None,
                 updated_by: Some("Ops Lead".to_string()),
                 coordinator_ids: Some("C1, C2".to_string()),
                 attachment_path: Some("/tmp/attachment-b.jpg".to_string()),
@@ -3678,6 +3686,7 @@ mod tests {
                 condition: None,
                 treatment: None,
                 evacuation_priority: None,
+                label_size: None,
                 updated_by: None,
                 coordinator_ids: None,
                 attachment_path: Some(original_attachment.to_string_lossy().to_string()),
@@ -3709,6 +3718,7 @@ mod tests {
                 condition: None,
                 treatment: None,
                 evacuation_priority: None,
+                label_size: None,
                 updated_by: None,
                 coordinator_ids: None,
                 attachment_path: Some(replacement_attachment.to_string_lossy().to_string()),
@@ -4023,6 +4033,7 @@ mod tests {
                 condition: None,
                 treatment: None,
                 evacuation_priority: None,
+                label_size: None,
                 updated_by: None,
                 coordinator_ids: None,
                 attachment_path: None,
@@ -4304,6 +4315,7 @@ mod tests {
                 condition: None,
                 treatment: None,
                 evacuation_priority: None,
+                label_size: None,
                 updated_by: None,
                 coordinator_ids: None,
                 attachment_path: None,
@@ -4362,6 +4374,7 @@ mod tests {
                 condition: None,
                 treatment: None,
                 evacuation_priority: None,
+                label_size: None,
                 updated_by: None,
                 coordinator_ids: None,
                 attachment_path: None,
@@ -4436,6 +4449,7 @@ mod tests {
                 condition: None,
                 treatment: None,
                 evacuation_priority: None,
+                label_size: None,
                 updated_by: None,
                 coordinator_ids: None,
                 attachment_path: None,
@@ -4672,6 +4686,7 @@ mod tests {
                 condition: None,
                 treatment: None,
                 evacuation_priority: None,
+                label_size: None,
                 updated_by: None,
                 coordinator_ids: None,
                 attachment_path: None,

@@ -55,7 +55,7 @@ export async function syncMarkerOverlay(
       source: MARKER_SOURCE_ID,
       layout: {
         'text-field': ['get', 'name'],
-        'text-size': 10,
+        'text-size': ['get', 'labelSize'],
         'text-font': ['Open Sans Semibold', 'Arial Unicode MS Bold'],
         'text-allow-overlap': true,
         'text-ignore-placement': true,

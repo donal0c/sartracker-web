@@ -10,6 +10,10 @@ import {
   createMarkerDraftFromMarker,
   getCasualtyValidationErrors,
 } from '../../src/features/markers/marker-draft'
+import {
+  CASUALTY_CONDITIONS,
+  EVACUATION_PRIORITIES,
+} from '../../src/features/markers/marker-definitions'
 
 const EXISTING_MARKER: Marker = {
   id: 'marker-1',
@@ -49,6 +53,30 @@ describe('marker draft helpers', () => {
     expect(draft.coordinates.tm65GridRef).toMatch(/^[A-Z] \d{5} \d{5}$/)
     expect(draft.coordinates.irishGridE).toBeGreaterThan(400_000)
     expect(draft.coordinates.irishGridN).toBeGreaterThan(500_000)
+    expect(draft.labelSize).toBe('12')
+  })
+
+  it('uses a larger default label size for casualty markers', () => {
+    const draft = createMarkerDraftAtCoordinate(52.0599, -9.5045, 'casualty')
+
+    expect(draft.labelSize).toBe('16')
+  })
+
+  it('uses coordinator-requested casualty status and evacuation priority order', () => {
+    expect(CASUALTY_CONDITIONS).toEqual([
+      'Lost',
+      'Crag Fast',
+      'Medical Emergency',
+      'Unknown',
+      'Deceased',
+    ])
+    expect(EVACUATION_PRIORITIES).toEqual([
+      'Normal',
+      'Urgent',
+      'Walk-Off',
+      'None',
+      'Self-Evacuation',
+    ])
   })
 
   it('creates a typed marker draft from a TM65 Irish Grid reference', () => {
@@ -126,6 +154,7 @@ describe('marker draft helpers', () => {
       treatment: 'Warm fluids',
       evacuationPriority: 'Urgent',
       foundBy: 'Alpha team',
+      labelSize: '18',
     }
 
     const input = buildMarkerSaveInput({
@@ -142,6 +171,7 @@ describe('marker draft helpers', () => {
       condition: 'Injured - Conscious',
       treatment: 'Warm fluids',
       evacuation_priority: 'Urgent',
+      label_size: 18,
       found_by: 'Alpha team',
       updated_by: null,
       coordinator_ids: null,
@@ -219,7 +249,7 @@ describe('marker draft helpers', () => {
           evacuationPriority: 'Urgent',
         },
       }),
-    ).toThrow(/Condition is required/)
+    ).toThrow(/Casualty Status is required/)
   })
 
   it('rejects casualty save without evacuation priority', () => {
@@ -231,7 +261,7 @@ describe('marker draft helpers', () => {
           ...createMarkerDraftAtCoordinate(52.0599, -9.5045),
           type: 'casualty',
           name: 'Subject B',
-          condition: 'Injured - Conscious',
+          condition: 'Medical Emergency',
           evacuationPriority: '',
         },
       }),
@@ -257,8 +287,8 @@ describe('marker draft helpers', () => {
       ...createMarkerDraftAtCoordinate(52.0599, -9.5045),
       type: 'casualty',
       name: 'Subject C',
-      condition: 'Injured - Conscious',
-      evacuationPriority: 'Immediate',
+      condition: 'Medical Emergency',
+      evacuationPriority: 'Urgent',
     })
 
     expect(errors).toHaveLength(0)

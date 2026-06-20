@@ -6,7 +6,7 @@ const Database = require('better-sqlite3')
 
 const { createZipArchive, readZipArchive } = require('./zip-archive.cjs')
 
-const CURRENT_SCHEMA_VERSION = 3
+const CURRENT_SCHEMA_VERSION = 4
 const DATABASE_FILE_NAME = 'mission-store.sqlite'
 const BACKUP_FILE_NAME = 'mission-store.backup.sqlite'
 const ARCHIVE_DIRECTORY_NAME = 'archives'
@@ -148,6 +148,7 @@ function migrate(db) {
       condition TEXT,
       treatment TEXT,
       evacuation_priority TEXT,
+      label_size INTEGER,
       updated_by TEXT,
       coordinator_ids TEXT,
       attachment_path TEXT,
@@ -224,6 +225,11 @@ function migrate(db) {
       FOREIGN KEY (mission_id) REFERENCES missions(id) ON DELETE CASCADE
     );
   `)
+  ensureColumnExists(db, 'markers', 'updated_by', 'TEXT')
+  ensureColumnExists(db, 'markers', 'coordinator_ids', 'TEXT')
+  ensureColumnExists(db, 'markers', 'attachment_path', 'TEXT')
+  ensureColumnExists(db, 'markers', 'label_size', 'INTEGER')
+
   db.prepare("INSERT INTO metadata (key, value) VALUES ('schema_version', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value")
     .run(String(CURRENT_SCHEMA_VERSION))
 }
@@ -231,6 +237,15 @@ function migrate(db) {
 function schemaVersion(db) {
   const row = db.prepare("SELECT value FROM metadata WHERE key = 'schema_version'").get()
   return Number(row?.value ?? CURRENT_SCHEMA_VERSION)
+}
+
+function ensureColumnExists(db, tableName, columnName, columnSql) {
+  const existingColumns = db.prepare(`PRAGMA table_info(${tableName})`).all()
+  if (existingColumns.some((column) => column.name === columnName)) {
+    return
+  }
+
+  db.prepare(`ALTER TABLE ${tableName} ADD COLUMN ${columnName} ${columnSql}`).run()
 }
 
 async function syncBackup(db, backupPath) {
@@ -764,6 +779,7 @@ function markerDefaults(input) {
     condition: input.condition ?? null,
     treatment: input.treatment ?? null,
     evacuation_priority: input.evacuation_priority ?? null,
+    label_size: input.label_size ?? null,
     updated_by: input.updated_by ?? null,
     coordinator_ids: input.coordinator_ids ?? null,
     attachment_path: input.attachment_path ?? null,

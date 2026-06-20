@@ -149,7 +149,7 @@ Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
     await page.getByTestId('marker-save-btn').click()
   })
 
-  test('Casualty marker shows condition and evacuation fields', async ({ page }) => {
+  test('DON-197 casualty marker shows status terminology and larger map label', async ({ page }) => {
     await clickMap(page, { x: 650, y: 350 })
     await page.waitForTimeout(500)
 
@@ -160,6 +160,10 @@ Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
     await page.waitForTimeout(300)
 
     await page.getByTestId('marker-name-input').fill('Casualty Near Summit')
+    await page.getByTestId('marker-condition-input').selectOption('Medical Emergency')
+    await page.getByTestId('marker-evacuation-priority-input').selectOption('Urgent')
+    await expect(page.getByTestId('marker-label-size-input')).toHaveValue('16')
+    await page.getByTestId('marker-label-size-input').fill('18')
 
     await captureAndRegister(page, {
       testId: 'marker-casualty-dialog',
@@ -168,17 +172,40 @@ Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
       severity: 'critical',
       verificationPrompt: `Verify this screenshot of the SAR Tracker Casualty marker dialog:
 1. The "Casualty" tab should be selected/active
-2. The dialog should show casualty-specific fields (condition, evacuation priority, or treatment)
-3. The marker name should show "Casualty Near Summit"
-4. Coordinate information should be displayed (WGS84, ITM, TM65)
-5. This is the most critical marker type — it represents a person who needs rescue
+2. The dialog should show "Casualty Status" rather than "Condition"
+3. Casualty Status should show "Medical Emergency"
+4. Evacuation Priority should show "Urgent"
+5. Map Label Size should be visible and set to 18
+6. The marker name should show "Casualty Near Summit"
+7. Coordinate information should be displayed (WGS84, ITM, TM65)
+8. This is the most critical marker type — it represents a person who needs rescue
 Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
       playwrightAssertions: [
         'marker-dialog is visible',
         'casualty tab is selected',
+        'casualty status field uses new terminology',
+        'label size field is adjustable',
       ],
     })
 
     await page.getByTestId('marker-save-btn').click()
+    await expect(page.getByTestId('marker-dialog')).toBeHidden()
+
+    await captureAndRegister(page, {
+      testId: 'marker-casualty-map-label-size',
+      testName: 'Casualty marker map label with increased text size',
+      area: 'markers',
+      severity: 'critical',
+      verificationPrompt: `Verify this screenshot of the SAR Tracker map after saving a casualty marker:
+1. A red casualty marker/star should be visible near the map centre.
+2. The marker label "Casualty Near Summit" should be visible.
+3. The casualty label should be larger than the default small marker label size and readable against the map.
+4. The map shell should remain otherwise normal, with no marker dialog open.
+Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
+      playwrightAssertions: [
+        'casualty marker saved',
+        'marker dialog is closed',
+      ],
+    })
   })
 })

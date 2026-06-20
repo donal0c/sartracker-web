@@ -42,6 +42,7 @@ export type MarkerDraft = {
   readonly condition: string
   readonly treatment: string
   readonly evacuationPriority: string
+  readonly labelSize: string
   readonly updatedBy: string
   readonly coordinatorIds: string
   readonly attachmentPath: string | null
@@ -78,6 +79,7 @@ export function createMarkerDraftAtCoordinate(
     condition: '',
     treatment: '',
     evacuationPriority: '',
+    labelSize: defaultMarkerLabelSize(type).toString(),
     updatedBy: '',
     coordinatorIds: '',
     attachmentPath: null,
@@ -124,6 +126,7 @@ export function createMarkerDraftFromMarker(marker: Marker): MarkerDraft {
     condition: marker.condition ?? '',
     treatment: marker.treatment ?? '',
     evacuationPriority: marker.evacuation_priority ?? '',
+    labelSize: (marker.label_size ?? defaultMarkerLabelSize(marker.type)).toString(),
     updatedBy: marker.updated_by ?? '',
     coordinatorIds: marker.coordinator_ids ?? '',
     attachmentPath: marker.attachment_path,
@@ -151,6 +154,7 @@ export function changeMarkerDraftType(
     condition: type === 'casualty' ? draft.condition : '',
     treatment: type === 'casualty' ? draft.treatment : '',
     evacuationPriority: type === 'casualty' ? draft.evacuationPriority : '',
+    labelSize: defaultMarkerLabelSize(type).toString(),
     updatedBy: draft.updatedBy,
     coordinatorIds: draft.coordinatorIds,
     attachmentPath: draft.attachmentPath,
@@ -213,7 +217,7 @@ export function buildMarkerSaveInput({
 
   if (draft.type === 'casualty') {
     if (draft.condition.trim() === '') {
-      throw new Error('Condition is required for casualty markers.')
+      throw new Error('Casualty Status is required for casualty markers.')
     }
     if (draft.evacuationPriority.trim() === '') {
       throw new Error('Evacuation Priority is required for casualty markers.')
@@ -244,10 +248,15 @@ export function buildMarkerSaveInput({
     treatment: draft.type === 'casualty' ? normalizeOptionalText(draft.treatment) : null,
     evacuation_priority:
       draft.type === 'casualty' ? normalizeOptionalText(draft.evacuationPriority) : null,
+    label_size: normalizeLabelSize(draft.labelSize),
     updated_by: normalizeOptionalText(draft.updatedBy),
     coordinator_ids: normalizeOptionalText(normalizeCoordinatorIds(draft.coordinatorIds)),
     attachment_path: draft.attachmentPath,
   }
+}
+
+export function defaultMarkerLabelSize(type: MarkerType): number {
+  return type === 'casualty' ? 16 : 12
 }
 
 function createMarkerDraftCoordinates(lat: number, lon: number): MarkerDraftCoordinates {
@@ -303,6 +312,15 @@ function padDatePart(value: number): string {
 
 function normalizeConfidence(value: ConfidenceLevel | ''): number | null {
   return value === '' ? null : toConfidenceScore(value)
+}
+
+function normalizeLabelSize(value: string): number {
+  const labelSize = Number(value)
+  if (!Number.isFinite(labelSize) || labelSize < 8 || labelSize > 28) {
+    throw new Error('Marker label size must be between 8 and 28.')
+  }
+
+  return Math.round(labelSize)
 }
 
 function normalizeCoordinatorIds(value: string): string {

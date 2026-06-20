@@ -62,12 +62,39 @@ describe('marker geojson', () => {
       iconId: 'marker-ipp_lkp',
       labelColor: '#0066FF',
       name: 'IPP',
+      labelSize: 12,
     })
     expect(collection.features[1]?.properties).toMatchObject({
       markerId: 'marker-2',
       iconId: 'marker-hazard',
       labelColor: '#8B0000',
       name: 'Cliff edge',
+      labelSize: 12,
+    })
+  })
+
+  it('uses persisted marker label size when present and larger casualty defaults otherwise', () => {
+    const collection = createMarkerFeatureCollection([
+      {
+        ...MARKERS[0]!,
+        id: 'marker-custom',
+        label_size: 18,
+      },
+      {
+        ...MARKERS[0]!,
+        id: 'marker-casualty',
+        type: 'casualty',
+        label_size: null,
+      },
+    ])
+
+    expect(collection.features[0]?.properties).toMatchObject({
+      markerId: 'marker-custom',
+      labelSize: 18,
+    })
+    expect(collection.features[1]?.properties).toMatchObject({
+      markerId: 'marker-casualty',
+      labelSize: 16,
     })
   })
 })

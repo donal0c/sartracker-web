@@ -57,9 +57,10 @@ type ElectronMissionStore = {
     readonly irish_grid_e: number
     readonly irish_grid_n: number
     readonly display_order: number
+    readonly label_size?: number
   }) => Promise<{ readonly id: string }>
   readonly deleteMarker: (markerId: string) => Promise<boolean>
-  readonly listMarkers: (missionId: string) => Promise<readonly { readonly id: string }[]>
+  readonly listMarkers: (missionId: string) => Promise<readonly { readonly id: string; readonly label_size?: number | null }[]>
   readonly listDrawings: (missionId: string) => Promise<readonly { readonly id: string }[]>
   readonly listHelicopters: (missionId: string) => Promise<readonly { readonly id: string }[]>
   readonly listGpxImports: (missionId: string) => Promise<readonly { readonly id: string }[]>
@@ -137,7 +138,7 @@ describe('electron mission store', () => {
     const activeMission = await store.getActiveMission()
 
     expect(info).toMatchObject({
-      schema_version: 3,
+      schema_version: 4,
       database_path: path.join(userDataPath!, 'mission-store.sqlite'),
       backup_path: path.join(userDataPath!, 'mission-store.backup.sqlite'),
     })
@@ -280,6 +281,7 @@ describe('electron mission store', () => {
     irish_grid_e: 480000,
     irish_grid_n: 580000,
     display_order: 0,
+    label_size: 14,
   } as const
   const SAMPLE_DRAWING = {
     type: 'search_area',

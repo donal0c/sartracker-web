@@ -524,6 +524,7 @@ export function getBrowserHarnessStore(): BrowserHarnessStore {
         condition: input.condition ?? null,
         treatment: input.treatment ?? null,
         evacuation_priority: input.evacuation_priority ?? null,
+        label_size: input.label_size ?? null,
         updated_by: input.updated_by ?? null,
         coordinator_ids: input.coordinator_ids ?? null,
         attachment_path: input.attachment_path ?? null,

@@ -8,13 +8,19 @@
 - **Hosted testing:** `https://sartracker-web.vercel.app/?missionHarness=1`
 - **Desktop:** Electron is the operational desktop lane (MapLibre + direct HTTPS Traccar, SQLite, filesystem, diagnostics, official map packages). Tauri remains historical/reference.
 - **Browser mode:** testing/training only (sessionStorage, not operational persistence).
-- **Latest test counts:** 152 unit files / 963 tests; 121 standard Playwright E2E; 47 backend tests.
+- **Latest test counts:** 152 unit files / 968 tests; 121 standard Playwright E2E; 47 backend tests.
 - **Latest published Electron beta:** `0.1.0-beta.7` / `electron-v0.1.0-beta.7` — DON-177 app-owned local credential storage + DON-176 docked Review + the DON-175 keyring guard. Built by GitHub Actions (run `27601812958`, success), deep Ubuntu 24.04.2 on-device smoke passed against the CI-built AppImage (credential matrix 3/3, real-keyring migration via live Traccar 33 devices/8 fixes, docked Review 6/6, release-blocking bad-secret gate, lifecycle, coord safety, sanitized diagnostics), and **published** at `https://github.com/donal0c/sartracker-web/releases/tag/electron-v0.1.0-beta.7` (Linux AppImage + `.deb` + `SHA256SUMS`) on 2026-06-16. AppImage SHA256 `848eb06321536c76f831a4e566450be82695f4d3b6c8336fce3fbcb4926ca4a7`. This supersedes beta.5 as the team artifact. (beta.6 was a DON-175-only hotfix, built/smoked but never published; its draft + tag were deleted.)
 - **Residual risk on beta.7:** Traccar credentials are now local app-owned plaintext with best-effort `0600` — intentional DON-177 trade for reliability on trusted team machines, not OS-keyring encryption. New beta.7 field issue: duplicate Electron instances can be opened by clicking the launcher during/after startup, causing the runtime fault; fixed locally under DON-180, awaiting packaged beta.8 smoke/release.
 
 ## Last Work Done
 
-DON-196 Drawing detail panels and required-field emphasis — **DONE.**
+DON-197 Marker and casualty display terminology improvements — **DONE.**
+- Casualty marker UI now uses `Casualty Status` instead of `Condition`, with coordinator-requested status order: Lost, Crag Fast, Medical Emergency, Unknown, Deceased. Evacuation Priority order is now Normal, Urgent, Walk-Off, None, Self-Evacuation.
+- Marker forms now include `Map Label Size`; casualty markers default to a larger 16px map label and all marker label sizes persist through browser harness, Electron SQLite, and Rust/Tauri store paths via schema 4 `label_size`. MapLibre marker label layers read the persisted/default label size from GeoJSON.
+- Operator manual updated for casualty terminology, option order, and marker label-size control. Coordinate-field simplification remains tracked separately in DON-135. This touches marker persistence schema and shared marker rendering, but not Electron launch, diagnostics export, packaging, filesystem picker, offline tile protocol, or direct Traccar network boundaries.
+- Verification: red→green unit coverage for marker option order, draft defaults/save payload, dialog terminology/control, GeoJSON label size, and Electron schema version; focused casualty Chromium Playwright 1/1; focused DON-197 visual Playwright 1/1; visual review PASS for `marker-casualty-dialog` and `marker-casualty-map-label-size`; `npm run lint`; `npm run build`; `npm run test` (152 files / 968 tests); `npm run test:backend` (47 passed / 1 ignored); full `npm run test:e2e:chromium` (121/121).
+
+DON-196 Drawing detail panels and required-field emphasis — **DONE and pushed.**
 - Text Label details no longer show derived Anchor/Rotation controls. Range Rings no longer show derived Centre/Mode readouts and custom-ring Name/Radius fields get rose required-state emphasis. Search Sector no longer shows derived Centre/Radius cards; it shows an Irish Grid centre readout while keeping editable bearings/radius.
 - Search Areas now default to red `#F43F5E`, persist an explicit `showLabel` metadata flag, and can save a named area with no map label when operators need less clutter. GeoJSON label generation respects that flag while preserving drawing names for lists/review.
 - Split the zoomed-out Search Area label-drift concern into Linear follow-up `DON-214` because manual label positioning is a separate map-editing/persistence behaviour; DON-196 covers the lower-risk hide-label control now.

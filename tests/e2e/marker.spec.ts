@@ -142,7 +142,7 @@ test.describe('M6 marker workflows', () => {
     expect(persistedState?.markers ?? []).toHaveLength(0)
   })
 
-  test('blocks casualty marker save until Name, Condition, and Evacuation Priority are filled', async ({ page }) => {
+  test('blocks casualty marker save until Name, Casualty Status, and Evacuation Priority are filled', async ({ page }) => {
     await clickMapCentre(page)
 
     const dialog = page.getByTestId('marker-dialog')
@@ -156,14 +156,33 @@ test.describe('M6 marker workflows', () => {
 
     const conditionSelect = page.getByTestId('marker-condition-input')
     await expect(conditionSelect).toHaveAttribute('aria-invalid', 'true')
+    await expect(dialog.getByText('Casualty Status *', { exact: true })).toBeVisible()
+    await expect(conditionSelect.locator('option')).toHaveText([
+      'Select...',
+      'Lost',
+      'Crag Fast',
+      'Medical Emergency',
+      'Unknown',
+      'Deceased',
+    ])
+    await expect(page.getByTestId('marker-evacuation-priority-input').locator('option')).toHaveText([
+      'Select...',
+      'Normal',
+      'Urgent',
+      'Walk-Off',
+      'None',
+      'Self-Evacuation',
+    ])
+    await expect(page.getByTestId('marker-label-size-input')).toHaveValue('16')
 
     await page.getByTestId('marker-name-input').fill('Subject Alpha')
     await expect(saveBtn).toBeDisabled()
 
-    await conditionSelect.selectOption('Injured - Conscious')
+    await conditionSelect.selectOption('Medical Emergency')
     await expect(saveBtn).toBeDisabled()
 
     await page.getByTestId('marker-evacuation-priority-input').selectOption('Urgent')
+    await page.getByTestId('marker-label-size-input').fill('18')
     await expect(saveBtn).toBeEnabled()
     await expect(page.getByTestId('marker-casualty-validation-error')).toBeHidden()
 
@@ -179,8 +198,9 @@ test.describe('M6 marker workflows', () => {
     expect(persistedState?.markers[0]).toMatchObject({
       type: 'casualty',
       name: 'Subject Alpha',
-      condition: 'Injured - Conscious',
+      condition: 'Medical Emergency',
       evacuation_priority: 'Urgent',
+      label_size: 18,
     })
   })
 })

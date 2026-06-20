@@ -937,7 +937,7 @@
             <div class="card"><strong>IPP / LKP</strong><br />Initial or last known position with subject category.</div>
             <div class="card"><strong>Clue</strong><br />Clue type, confidence, found-by, and notes.</div>
             <div class="card"><strong>Hazard</strong><br />Hazard type and severity.</div>
-            <div class="card"><strong>Casualty</strong><br />Condition, evacuation priority, found-by, and a timestamped treatment log.</div>
+            <div class="card"><strong>Casualty</strong><br />Casualty Status, evacuation priority, found-by, map label size, and a timestamped treatment log.</div>
             <div class="card"><strong>Evidence attachment</strong><br />Attach a photo or file that should travel with the marker in desktop mode.</div>
             <div class="card"><strong>Coordinates</strong><br />Every marker shows WGS84, ITM, and TM65 readouts in the form.</div>
           </div>
@@ -956,10 +956,18 @@
           </p>
           <p>
             <strong>Casualty required fields:</strong> casualty markers require
-            <strong>Name</strong>, <strong>Condition</strong>, and <strong>Evacuation Priority</strong>
+            <strong>Name</strong>, <strong>Casualty Status</strong>, and <strong>Evacuation Priority</strong>
             before the marker can be saved. Missing fields are highlighted with a red border and
             &ldquo;Required&rdquo; label, and the Save button remains disabled until all three are
             filled. This prevents incomplete casualty records from being placed on the operational map.
+            Casualty Status options are ordered as Lost, Crag Fast, Medical Emergency, Unknown, and
+            Deceased. Evacuation Priority options are ordered as Normal, Urgent, Walk-Off, None, and
+            Self-Evacuation.
+          </p>
+          <p>
+            Marker forms include <strong>Map Label Size</strong>. Casualty markers default to a larger
+            label than other marker types so person-location labels stay readable; adjust the value when
+            nearby map content or several markers make the label too small or too dominant.
           </p>
           <p>
             Casualty markers keep treatment notes as a log. Enter each new treatment in

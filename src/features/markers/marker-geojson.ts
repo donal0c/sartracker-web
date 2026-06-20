@@ -2,6 +2,7 @@ import type { FeatureCollection, Point } from 'geojson'
 
 import type { Marker } from '../../infrastructure/mission-store/tauri-mission-store'
 import { getMarkerVisualSpec } from './marker-definitions'
+import { defaultMarkerLabelSize } from './marker-draft'
 
 export function createMarkerFeatureCollection(
   markers: readonly Marker[],
@@ -23,6 +24,7 @@ export function createMarkerFeatureCollection(
           markerType: marker.type,
           iconId: visualSpec.iconId,
           labelColor: visualSpec.labelColor,
+          labelSize: marker.label_size ?? defaultMarkerLabelSize(marker.type),
         },
       }
     }),

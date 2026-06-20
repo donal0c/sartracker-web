@@ -23,7 +23,7 @@ describe('MarkerDialog casualty required-field validation', () => {
     useMarkerStore.setState(useMarkerStore.getInitialState())
   })
 
-  it('disables Save when casualty condition is empty', () => {
+  it('disables Save when casualty status is empty', () => {
     renderCasualtyDialog({ name: 'Subject A', condition: '', evacuationPriority: 'Urgent' })
 
     const saveBtn = query('[data-testid="marker-save-btn"]') as HTMLButtonElement
@@ -31,21 +31,21 @@ describe('MarkerDialog casualty required-field validation', () => {
   })
 
   it('disables Save when casualty evacuation priority is empty', () => {
-    renderCasualtyDialog({ name: 'Subject A', condition: 'Injured - Conscious', evacuationPriority: '' })
+    renderCasualtyDialog({ name: 'Subject A', condition: 'Medical Emergency', evacuationPriority: '' })
 
     const saveBtn = query('[data-testid="marker-save-btn"]') as HTMLButtonElement
     expect(saveBtn.disabled).toBe(true)
   })
 
   it('disables Save when casualty name is empty', () => {
-    renderCasualtyDialog({ name: '', condition: 'Injured - Conscious', evacuationPriority: 'Urgent' })
+    renderCasualtyDialog({ name: '', condition: 'Medical Emergency', evacuationPriority: 'Urgent' })
 
     const saveBtn = query('[data-testid="marker-save-btn"]') as HTMLButtonElement
     expect(saveBtn.disabled).toBe(true)
   })
 
   it('enables Save when all required casualty fields are filled', () => {
-    renderCasualtyDialog({ name: 'Subject A', condition: 'Injured - Conscious', evacuationPriority: 'Urgent' })
+    renderCasualtyDialog({ name: 'Subject A', condition: 'Medical Emergency', evacuationPriority: 'Urgent' })
 
     const saveBtn = query('[data-testid="marker-save-btn"]') as HTMLButtonElement
     expect(saveBtn.disabled).toBe(false)
@@ -56,7 +56,7 @@ describe('MarkerDialog casualty required-field validation', () => {
 
     const errorMsg = query('[data-testid="marker-casualty-validation-error"]')
     expect(errorMsg).not.toBeNull()
-    expect(errorMsg?.textContent).toContain('Name, Condition, and Evacuation Priority')
+    expect(errorMsg?.textContent).toContain('Name, Casualty Status, and Evacuation Priority')
   })
 
   it('does not show validation error for non-casualty markers with empty fields', () => {
@@ -84,6 +84,37 @@ describe('MarkerDialog casualty required-field validation', () => {
 
     const conditionSelect = query('[data-testid="marker-condition-input"]')
     expect(conditionSelect?.getAttribute('aria-invalid')).toBe('true')
+  })
+
+  it('labels casualty condition as Casualty Status and orders casualty options for coordinators', () => {
+    renderCasualtyDialog({ name: 'Subject A', condition: '', evacuationPriority: '' })
+
+    expect(document.body.textContent).toContain('Casualty Status')
+    expect(document.body.textContent).not.toContain('Condition *')
+    expect(selectOptionLabels('[data-testid="marker-condition-input"]')).toEqual([
+      'Select...',
+      'Lost',
+      'Crag Fast',
+      'Medical Emergency',
+      'Unknown',
+      'Deceased',
+    ])
+    expect(selectOptionLabels('[data-testid="marker-evacuation-priority-input"]')).toEqual([
+      'Select...',
+      'Normal',
+      'Urgent',
+      'Walk-Off',
+      'None',
+      'Self-Evacuation',
+    ])
+  })
+
+  it('shows a marker label-size control with the casualty default', () => {
+    renderCasualtyDialog({ name: 'Subject A', condition: 'Medical Emergency', evacuationPriority: 'Urgent' })
+
+    const input = query('[data-testid="marker-label-size-input"]')
+    expect(input).toBeInstanceOf(HTMLInputElement)
+    expect((input as HTMLInputElement).value).toBe('16')
   })
 
   function renderCasualtyDialog(fields: { name: string; condition: string; evacuationPriority: string }): void {
@@ -128,4 +159,13 @@ function createController(): MarkerRuntimeController {
 
 function query(selector: string): Element | null {
   return document.querySelector(selector)
+}
+
+function selectOptionLabels(selector: string): string[] {
+  const select = query(selector)
+  if (!(select instanceof HTMLSelectElement)) {
+    throw new Error(`Expected ${selector} to be a select.`)
+  }
+
+  return Array.from(select.options).map((option) => option.textContent ?? '')
 }

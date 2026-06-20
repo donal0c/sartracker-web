@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, type HTMLAttributes } from 'react'
 
 import { useMarkerStore } from '../features/markers/marker-store'
 import { appendTreatmentUpdate, getCasualtyValidationErrors, type CasualtyRequiredField } from '../features/markers/marker-draft'
@@ -129,6 +129,17 @@ export function MarkerDialog() {
               testId="marker-description-input"
               value={draft.description}
             />
+            <Field
+              inputMode="numeric"
+              label="Map Label Size"
+              max={28}
+              min={8}
+              type="number"
+              disabled={saving}
+              onChange={(value) => controller.updateDraft({ labelSize: value })}
+              testId="marker-label-size-input"
+              value={draft.labelSize}
+            />
           </section>
 
           <section className="grid gap-4 md:grid-cols-2">
@@ -211,7 +222,7 @@ export function MarkerDialog() {
           {draft.type === 'casualty' ? (
             <div className="grid gap-4 md:grid-cols-2">
               <SelectField
-                label="Condition"
+                label="Casualty Status"
                 disabled={saving}
                 error={isMissingField('condition') ? 'Required' : undefined}
                 onChange={(value) => controller.updateDraft({ condition: value })}
@@ -288,7 +299,7 @@ export function MarkerDialog() {
 
           {hasCasualtyErrors ? (
             <p className="text-sm text-rose-300" data-testid="marker-casualty-validation-error" role="alert">
-              Casualty markers require Name, Condition, and Evacuation Priority before placement.
+              Casualty markers require Name, Casualty Status, and Evacuation Priority before placement.
             </p>
           ) : null}
 
@@ -432,8 +443,12 @@ function Field(props: {
   readonly value: string
   readonly disabled?: boolean
   readonly error?: string | undefined
+  readonly inputMode?: HTMLAttributes<HTMLInputElement>['inputMode']
+  readonly max?: number
+  readonly min?: number
   readonly onChange: (value: string) => void
   readonly testId: string
+  readonly type?: 'number' | 'text'
 }) {
   const hasError = props.error !== undefined
   return (
@@ -446,7 +461,11 @@ function Field(props: {
         className={`mt-2 w-full rounded-lg border px-3 py-2 text-sm text-stone-100 bg-stone-950 ${hasError ? 'border-rose-500' : 'border-stone-700'}`}
         data-testid={props.testId}
         disabled={props.disabled}
+        inputMode={props.inputMode}
+        max={props.max}
+        min={props.min}
         onChange={(event) => props.onChange(event.target.value)}
+        type={props.type ?? 'text'}
         value={props.value}
       />
       {hasError ? <span className="mt-1 block text-xs text-rose-300">{props.error}</span> : null}
