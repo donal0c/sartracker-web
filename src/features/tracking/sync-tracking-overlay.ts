@@ -7,7 +7,10 @@ import {
   ensureLayer,
   type MapOverlayFilter,
 } from '../map/map-overlay-primitives'
-import { createTrackingFeatureCollection } from './tracking-geojson'
+import {
+  DEFAULT_BREADCRUMB_LINE_GAP_THRESHOLD_MS,
+  createTrackingFeatureCollection,
+} from './tracking-geojson'
 import {
   DEFAULT_BREADCRUMB_SIZE,
   DEFAULT_BREADCRUMB_TRAIL_MODE,
@@ -67,7 +70,7 @@ export function syncTrackingOverlay(
   ensureGeoJsonSource(
     map,
     TRACKING_SOURCE_ID,
-    createTrackingFeatureCollection(snapshot, 5 * 60 * 1000, style),
+    createTrackingFeatureCollection(snapshot, DEFAULT_BREADCRUMB_LINE_GAP_THRESHOLD_MS, style),
   )
 
   ensureLayer(map, {

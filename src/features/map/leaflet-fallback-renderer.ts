@@ -6,7 +6,10 @@ import type { Drawing, Marker, MarkerType } from '../../infrastructure/mission-s
 import type { TrackingSnapshot } from '../tracking/tracking-types'
 import { createDrawingFeatureCollection } from '../drawings/drawing-geojson'
 import { createMarkerFeatureCollection } from '../markers/marker-geojson'
-import { createTrackingFeatureCollection } from '../tracking/tracking-geojson'
+import {
+  DEFAULT_BREADCRUMB_LINE_GAP_THRESHOLD_MS,
+  createTrackingFeatureCollection,
+} from '../tracking/tracking-geojson'
 import {
   DEFAULT_BREADCRUMB_SIZE,
   DEFAULT_BREADCRUMB_TRAIL_MODE,
@@ -89,7 +92,7 @@ function renderTrackingOverlay(layerGroup: L.LayerGroup, input: LeafletFallbackO
   const breadcrumbSize = clampBreadcrumbSize(trackingStyle.breadcrumbSize)
   const tracking = createTrackingFeatureCollection(
     input.trackingSnapshot,
-    5 * 60 * 1000,
+    DEFAULT_BREADCRUMB_LINE_GAP_THRESHOLD_MS,
     trackingStyle,
   )
 

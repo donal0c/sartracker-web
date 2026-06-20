@@ -8,6 +8,8 @@ import {
 } from './tracking-style-store'
 import type { TrackingSnapshot } from './tracking-types'
 
+export const DEFAULT_BREADCRUMB_LINE_GAP_THRESHOLD_MS = 30 * 60 * 1000
+
 type GeoJsonPointFeature = Feature<
   Point,
   {

@@ -108,6 +108,69 @@ test.describe('M19 devices workspace', () => {
       lineFilter: expect.stringContaining('breadcrumbLine'),
     })
   })
+
+  test('renders sparse breadcrumb cadence as a connected trail [DON-189]', async ({
+    page,
+  }) => {
+    await page.evaluate(async () => {
+      const harness = window.__SARTRACKER_BROWSER_HARNESS__
+      if (harness === undefined) {
+        throw new Error('Browser harness API unavailable.')
+      }
+
+      const breadcrumbs = Array.from({ length: 6 }, (_entry, index) => ({
+        id: `sparse-breadcrumb-${index + 1}`,
+        device_id: 'alpha',
+        lat: 51.997 + index * 0.004,
+        lon: -9.746 - index * 0.006,
+        altitude: null,
+        speed: 2.5,
+        battery: 84,
+        accuracy: null,
+        timestamp: new Date(Date.UTC(2026, 3, 10, 16, index * 6, 0)).toISOString(),
+        source: null,
+        data_origin: 'live' as const,
+        cache_age_seconds: null,
+        device_cache_stale: false,
+      }))
+
+      await harness.injectTrackingSnapshot({
+        devices: [
+          {
+            device_id: 'alpha',
+            name: 'Alpha Team',
+            status: 'online',
+            last_seen: '2026-04-10T17:00:00.000Z',
+            unique_id: null,
+            category: null,
+          },
+        ],
+        positions: [
+          {
+            id: 'pos-alpha',
+            device_id: 'alpha',
+            lat: 52.017,
+            lon: -9.776,
+            altitude: null,
+            speed: 3.5,
+            battery: 82,
+            accuracy: null,
+            timestamp: '2026-04-10T17:00:00.000Z',
+            source: null,
+            data_origin: 'live',
+            cache_age_seconds: null,
+            device_cache_stale: false,
+          },
+        ],
+        breadcrumbs,
+      })
+    })
+
+    await expect.poll(async () => readSparseBreadcrumbLine(page)).toMatchObject({
+      hasLine: true,
+      coversSparseTrail: true,
+    })
+  })
 })
 
 async function formatTrackingLayerState(page: import('@playwright/test').Page) {
@@ -160,6 +223,46 @@ async function readTrackingLayerState(page: import('@playwright/test').Page) {
         : map.getPaintProperty('tracking-breadcrumbs-dots', 'circle-radius'),
       alphaBreadcrumbColor: alphaBreadcrumb?.properties?.color,
       breadcrumbFeatureKind: alphaBreadcrumb?.properties?.featureKind,
+    }
+  })
+}
+
+async function readSparseBreadcrumbLine(page: import('@playwright/test').Page) {
+  return page.evaluate(() => {
+    const map = (
+      window as Window & {
+        __SARTRACKER_MAP__?: {
+          getSource: (sourceId: string) => unknown
+          querySourceFeatures: (sourceId: string) => Array<{
+            geometry?: { type?: string; coordinates?: unknown[] }
+            properties?: { featureKind?: string; deviceId?: string }
+          }>
+        }
+      }
+    ).__SARTRACKER_MAP__
+
+    const source = map?.getSource('tracking')
+    const features = source === undefined ? [] : (map?.querySourceFeatures('tracking') ?? [])
+    const lineFeatures =
+      features.filter(
+        (feature) =>
+          feature.properties?.featureKind === 'breadcrumbLine' &&
+          feature.properties.deviceId === 'alpha' &&
+          feature.geometry?.type === 'LineString',
+      ) ?? []
+
+    return {
+      lineCount: lineFeatures.length,
+      coordinateCount: lineFeatures.reduce(
+        (total, feature) => total + (feature.geometry?.coordinates?.length ?? 0),
+        0,
+      ),
+      hasLine: lineFeatures.length > 0,
+      coversSparseTrail:
+        lineFeatures.reduce(
+          (total, feature) => total + (feature.geometry?.coordinates?.length ?? 0),
+          0,
+        ) >= 6,
     }
   })
 }

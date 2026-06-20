@@ -7,6 +7,7 @@ import {
   appendBreadcrumbPositions,
 } from '../../src/features/tracking/breadcrumb-accumulator'
 import {
+  DEFAULT_BREADCRUMB_LINE_GAP_THRESHOLD_MS,
   createBreadcrumbFeatureCollection,
   createDeviceFeatureCollection,
   createTrackingFeatureCollection,
@@ -133,6 +134,34 @@ describe('tracking geojson', () => {
     expect(collection.features).toHaveLength(1)
     expect(collection.features[0]?.geometry.type).toBe('LineString')
     expect(collection.features[0]?.properties.deviceId).toBe('1')
+  })
+
+  it('connects sparse but operational breadcrumb cadence into a readable trail [DON-189]', () => {
+    const breadcrumbs = Array.from({ length: 6 }, (_, index) =>
+      normalizeTraccarPosition(
+        {
+          id: index + 1,
+          deviceId: 1,
+          latitude: 52 + index * 0.004,
+          longitude: -9.7 - index * 0.006,
+          fixTime: new Date(Date.UTC(2026, 4, 14, 10, index * 6, 0)).toISOString(),
+        },
+        'live',
+      ),
+    )
+
+    const collection = createBreadcrumbFeatureCollection(
+      {
+        devices: devicesFixture.map((device) => normalizeTraccarDevice(device)),
+        positions: [],
+        breadcrumbs,
+      },
+      DEFAULT_BREADCRUMB_LINE_GAP_THRESHOLD_MS,
+    )
+
+    expect(collection.features).toHaveLength(1)
+    expect(collection.features[0]?.geometry.type).toBe('LineString')
+    expect(collection.features[0]?.geometry.coordinates).toHaveLength(6)
   })
 
   it('uses operator-configured breadcrumb colours per device', () => {
