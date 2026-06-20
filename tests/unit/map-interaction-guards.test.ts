@@ -53,6 +53,23 @@ describe('map interaction guards', () => {
     ).toBe(false)
   })
 
+  it('ignores clicks from app chrome even when the clicked element is passive text', () => {
+    const toolbar = document.createElement('div')
+    toolbar.setAttribute('data-map-interaction-boundary', 'true')
+    const label = document.createElement('span')
+    label.textContent = 'Map Tools'
+    toolbar.append(label)
+
+    expect(
+      shouldIgnoreMapInteraction({
+        currentMissionId: 'mission-1',
+        missionPhase: 'active',
+        target: label,
+        interactiveSelector: 'button, input, select, label, a',
+      }),
+    ).toBe(true)
+  })
+
   it('allows clicks with null target during an active mission', () => {
     expect(
       shouldIgnoreMapInteraction({

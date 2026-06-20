@@ -26,6 +26,7 @@ type ShouldIgnoreMapInteractionArgs = {
 }
 
 const DEFAULT_PAN_SUPPRESSION_THRESHOLD_PX = 6
+const MAP_INTERACTION_BOUNDARY_SELECTOR = '[data-map-interaction-boundary="true"]'
 
 /**
  * Returns whether a map interaction should be ignored before feature-specific handlers run.
@@ -38,8 +39,9 @@ export function shouldIgnoreMapInteraction(
   }
 
   return (
-    args.target instanceof HTMLElement &&
-    args.target.closest(args.interactiveSelector) !== null
+    args.target instanceof Element &&
+    (args.target.closest(args.interactiveSelector) !== null ||
+      args.target.closest(MAP_INTERACTION_BOUNDARY_SELECTOR) !== null)
   )
 }
 

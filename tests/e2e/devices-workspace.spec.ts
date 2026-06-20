@@ -54,6 +54,21 @@ test.describe('M19 devices workspace', () => {
     await expect(page.getByTestId('coordinate-target-indicator')).toContainText('Alpha Team')
   })
 
+  test('keeps empty workspace clicks from opening Marker Details [DON-184]', async ({
+    page,
+  }) => {
+    await page.getByTestId('open-devices-workspace').click()
+    await expect(page.getByTestId('devices-workspace')).toBeVisible()
+
+    const inspector = page.getByTestId('devices-inspector')
+    await inspector.click({ position: { x: 24, y: 260 } })
+    await page.getByTestId('device-list-scroll').click({ position: { x: 320, y: 260 } })
+
+    await expect(page.getByTestId('devices-workspace')).toBeVisible()
+    await expect(page.getByRole('dialog', { name: 'Marker Details' })).toBeHidden()
+    await expect(page.getByTestId('marker-dialog')).toBeHidden()
+  })
+
   test('toggles per-device visibility from the workspace', async ({ page }) => {
     await page.getByTestId('open-devices-workspace').click()
     await expect(page.getByTestId('device-visibility-bravo')).toBeChecked()

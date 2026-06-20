@@ -160,6 +160,7 @@ export function WorkspaceOverlay({
           className={`sar-sidebar pointer-events-auto mr-auto flex h-full w-full ${maxWidth} flex-col border-r border-[var(--sar-line)] shadow-2xl transition-transform duration-250 ${
             visible ? 'translate-x-0 ease-out' : '-translate-x-full ease-in'
           }`}
+          data-map-interaction-boundary="true"
           onKeyDown={handleKeyDown}
           ref={panelRef}
           role="dialog"
@@ -194,6 +195,7 @@ export function WorkspaceOverlay({
         className={`sar-sidebar ml-auto flex h-full w-full ${maxWidth} flex-col transition-transform duration-250 ${
           visible ? 'translate-x-0 ease-out' : 'translate-x-full ease-in'
         }`}
+        data-map-interaction-boundary="true"
         onKeyDown={handleKeyDown}
         ref={panelRef}
         role="dialog"

@@ -88,6 +88,7 @@ export function DialogOverlay({
         aria-labelledby={labelledBy}
         aria-modal="true"
         className={`sar-panel relative w-full p-6 ${panelClassName}`}
+        data-map-interaction-boundary="true"
         onKeyDown={handleKeyDown}
         ref={panelRef}
         role="dialog"
