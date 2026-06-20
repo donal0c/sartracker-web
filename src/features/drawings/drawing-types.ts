@@ -40,6 +40,7 @@ export type SearchAreaDrawingDraft = {
   readonly poaPercent: string
   readonly labelFontSize: string
   readonly fillColor: string
+  readonly showLabel: boolean
   readonly terrain: string
   readonly notes: string
 }
@@ -125,6 +126,7 @@ export type DrawingMetadata =
       readonly areaSqM: number
       readonly labelFontSize?: number
       readonly fillColor?: string
+      readonly showLabel?: boolean
     }
   | {
       readonly kind: 'range_ring'

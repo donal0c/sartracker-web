@@ -22,6 +22,7 @@ import {
 } from './helpers/test-setup'
 import {
   captureAndRegister,
+  captureElementAndRegister,
 } from './helpers/verification-manifest'
 
 test.describe('Visual: Map Tools', () => {
@@ -97,11 +98,11 @@ Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
       testName: 'Range ring dialog in LPB statistical mode',
       area: 'drawings',
       severity: 'critical',
-      verificationPrompt: `Verify this screenshot of the SAR Tracker Range Ring dialog in LPB mode:
+      verificationPrompt: `Verify this screenshot of the SAR Tracker Range Ring dialog in LPB template mode:
 1. The dialog should show "Range Rings" or similar header
 2. NAME field should contain "IPP Range Analysis"
-3. There should be two mode options: "Manual" and "LPB" (Lost Person Behaviour)
-4. "LPB" mode should be selected/active
+3. There should be two ring-template options: "Custom radius" and "LPB template" (Lost Person Behaviour)
+4. "LPB template" should be selected/active
 5. There should be an LPB category selector (dropdown with options like Hiker, Child, Elderly, etc.)
 6. The dialog may show statistical ring distances based on the selected category
 7. This is a SAR-specific feature that uses statistical data about how far different types of lost persons travel
@@ -113,6 +114,117 @@ Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
     })
 
     await page.getByTestId('drawing-save-btn').click()
+  })
+
+  test('DON-196 drawing detail panels are simplified and required fields are obvious', async ({
+    page,
+  }) => {
+    await page.getByTestId('drawing-tool-text_label').click({ force: true })
+    await clickMap(page, { x: 700, y: 220 })
+    await expect(page.getByTestId('drawing-dialog')).toBeVisible()
+    await expect(page.getByText('Anchor', { exact: true })).toHaveCount(0)
+    await expect(page.getByText('Rotation', { exact: true })).toHaveCount(0)
+    await page.getByTestId('drawing-text-label-text-input').fill('Command Post')
+
+    await captureElementAndRegister(page, 'drawing-dialog', {
+      testId: 'drawing-text-label-simplified',
+      testName: 'Text Label detail panel without derived controls',
+      area: 'drawings',
+      severity: 'high',
+      verificationPrompt: `Verify this screenshot of the SAR Tracker Text Label drawing dialog:
+1. The dialog should be titled "Text Label Details".
+2. It should have a Text field containing "Command Post".
+3. It should have Font Size and Color controls.
+4. It should NOT show Anchor readouts or Rotation controls/readouts.
+5. Cancel and Save buttons should remain visible.
+Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
+      playwrightAssertions: [
+        'text label dialog is visible',
+        'Anchor text is absent',
+        'Rotation text is absent',
+      ],
+    })
+    await page.getByTestId('drawing-save-btn').click()
+
+    await page.getByTestId('drawing-tool-range_ring').click({ force: true })
+    await clickMap(page, { x: 650, y: 300 })
+    await expect(page.getByTestId('drawing-dialog')).toBeVisible()
+    await expect(page.getByTestId('drawing-name-required')).toBeVisible()
+    await expect(page.getByTestId('drawing-range-ring-radius-required')).toBeVisible()
+    await captureElementAndRegister(page, 'drawing-dialog', {
+      testId: 'drawing-range-ring-required-fields',
+      testName: 'Range Ring required field emphasis',
+      area: 'drawings',
+      severity: 'critical',
+      verificationPrompt: `Verify this screenshot of the SAR Tracker Range Ring dialog before required fields are filled:
+1. The dialog should be titled "Range Ring Details".
+2. The Name field should be visually marked Required in red or rose styling.
+3. The Radius (m) field should be visually marked Required in red or rose styling.
+4. Derived Centre and Mode readouts should not be present.
+5. The ring-template choices may be visible as Custom radius / LPB template controls.
+6. Save should remain disabled until required values are supplied.
+Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
+      playwrightAssertions: [
+        'range ring required name marker is visible',
+        'range ring required radius marker is visible',
+      ],
+    })
+    await page.getByTestId('drawing-name-input').fill('IPP Rings')
+    await page.getByTestId('drawing-range-ring-radius-input').fill('600')
+    await page.getByTestId('drawing-save-btn').click()
+
+    await page.getByTestId('drawing-tool-search_sector').click({ force: true })
+    await clickMap(page, { x: 650, y: 300 })
+    await expect(page.getByTestId('drawing-dialog')).toBeVisible()
+    await expect(page.getByTestId('drawing-sector-grid-readout')).toContainText('Irish Grid')
+    await expect(page.getByTestId('drawing-name-required')).toBeVisible()
+    await captureElementAndRegister(page, 'drawing-dialog', {
+      testId: 'drawing-sector-grid-required-name',
+      testName: 'Search Sector required name and grid readout',
+      area: 'drawings',
+      severity: 'critical',
+      verificationPrompt: `Verify this screenshot of the SAR Tracker Search Sector dialog:
+1. The dialog should be titled "Search Sector Details".
+2. The Name field should be visually marked Required in red or rose styling.
+3. The derived Centre and Radius readout cards should not be present.
+4. A readout labelled Irish Grid should be visible, replacing the old centre/radius summary.
+5. Start Bearing, End Bearing, and Radius input fields should remain available.
+Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
+      playwrightAssertions: [
+        'search sector required name marker is visible',
+        'search sector grid readout is visible',
+      ],
+    })
+    await page.getByTestId('drawing-name-input').fill('Sector North')
+    await page.getByTestId('drawing-save-btn').click()
+
+    await page.getByTestId('drawing-tool-search_area').click({ force: true })
+    await clickMap(page, { x: 550, y: 180 })
+    await clickMap(page, { x: 750, y: 180 })
+    await clickMap(page, { x: 650, y: 340 })
+    await rightClickMap(page, { x: 650, y: 340 })
+    await expect(page.getByTestId('drawing-dialog')).toBeVisible()
+    await page.getByTestId('drawing-name-input').fill('Hidden Area Label')
+    await expect(page.getByTestId('drawing-search-area-fill-color-input-hex')).toHaveValue('#F43F5E')
+    await page.getByTestId('drawing-search-area-show-label-input').uncheck()
+    await captureElementAndRegister(page, 'drawing-dialog', {
+      testId: 'drawing-search-area-hidden-label',
+      testName: 'Search Area red default and hidden map label option',
+      area: 'drawings',
+      severity: 'critical',
+      verificationPrompt: `Verify this screenshot of the SAR Tracker Search Area dialog:
+1. The dialog should be titled "Search Area Details".
+2. The Name field should contain "Hidden Area Label".
+3. The colour control should show the red default #F43F5E or a red swatch as the outline/fill colour.
+4. A "Show name on map" checkbox should be visible and unchecked.
+5. Team, Status, POA, Terrain, and Notes controls should remain available.
+Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
+      playwrightAssertions: [
+        'search area dialog is visible',
+        'red default colour is present',
+        'show label checkbox is unchecked',
+      ],
+    })
   })
 
   test('bearing line shows true/magnetic conversion', async ({ page }) => {

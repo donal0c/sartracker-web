@@ -107,7 +107,7 @@ test.describe('M8 drawing workflows', () => {
     expect(drawings.some((drawing) => drawing.name === 'Sector North' && drawing.type === 'search_sector')).toBe(true)
   })
 
-  test('keeps search sector draft fields when the Radius readout and input are used [DON-188]', async ({
+  test('keeps search sector draft fields when the radius input is used [DON-188]', async ({
     page,
   }) => {
     await page.getByTestId('drawing-tool-search_sector').click({ force: true })
@@ -117,7 +117,8 @@ test.describe('M8 drawing workflows', () => {
     await page.getByTestId('drawing-name-input').fill('Sector Hold')
     await page.getByTestId('drawing-sector-start-input').fill('120')
     await page.getByTestId('drawing-sector-end-input').fill('210')
-    await page.getByText('Radius', { exact: true }).first().click()
+    await expect(page.getByTestId('drawing-sector-grid-readout')).toContainText('Irish Grid')
+    await expect(page.getByText('Centre', { exact: true })).toHaveCount(0)
     await page.getByTestId('drawing-sector-radius-input').fill('1800')
 
     await expect(page.getByTestId('drawing-name-input')).toHaveValue('Sector Hold')
@@ -152,6 +153,60 @@ test.describe('M8 drawing workflows', () => {
     const latSpan = Math.max(...lats) - Math.min(...lats)
     expect(lonSpan).toBeGreaterThan(0.005)
     expect(latSpan).toBeGreaterThan(0.005)
+  })
+
+  test('DON-196: simplifies drawing details and supports hidden search-area labels', async ({
+    page,
+  }) => {
+    await page.getByTestId('drawing-tool-text_label').click({ force: true })
+    await clickMap(page, { x: 540, y: 220 })
+    await expect(page.getByTestId('drawing-dialog')).toBeVisible()
+    await expect(page.getByText('Anchor', { exact: true })).toHaveCount(0)
+    await expect(page.getByText('Rotation', { exact: true })).toHaveCount(0)
+    await expect(page.getByTestId('drawing-text-label-rotation-input')).toHaveCount(0)
+    await page.getByTestId('drawing-text-label-text-input').fill('Temporary CP')
+    await page.getByTestId('drawing-save-btn').click()
+
+    await page.getByTestId('drawing-tool-range_ring').click({ force: true })
+    await clickMap(page, { x: 500, y: 240 })
+    await expect(page.getByTestId('drawing-dialog')).toBeVisible()
+    await expect(page.getByText('Centre', { exact: true })).toHaveCount(0)
+    await expect(page.getByText('Mode', { exact: true })).toHaveCount(0)
+    await expect(page.getByTestId('drawing-name-required')).toBeVisible()
+    await expect(page.getByTestId('drawing-range-ring-radius-required')).toBeVisible()
+    await page.getByTestId('drawing-name-input').fill('Urgent Rings')
+    await page.getByTestId('drawing-range-ring-radius-input').fill('600')
+    await page.getByTestId('drawing-save-btn').click()
+
+    await page.getByTestId('drawing-tool-search_sector').click({ force: true })
+    await clickMap(page, { x: 360, y: 260 })
+    await expect(page.getByTestId('drawing-dialog')).toBeVisible()
+    await expect(page.getByText('Centre', { exact: true })).toHaveCount(0)
+    await expect(page.getByTestId('drawing-sector-grid-readout')).toContainText('Irish Grid')
+    await expect(page.getByTestId('drawing-name-required')).toBeVisible()
+    await page.getByTestId('drawing-name-input').fill('Sector Required')
+    await page.getByTestId('drawing-sector-start-input').fill('45')
+    await page.getByTestId('drawing-sector-end-input').fill('120')
+    await page.getByTestId('drawing-sector-radius-input').fill('1200')
+    await page.getByTestId('drawing-save-btn').click()
+
+    await page.getByTestId('drawing-tool-search_area').click({ force: true })
+    await clickMap(page, { x: 440, y: 180 })
+    await clickMap(page, { x: 620, y: 180 })
+    await clickMap(page, { x: 540, y: 340 })
+    await rightClickMap(page, { x: 540, y: 340 })
+    await expect(page.getByTestId('drawing-dialog')).toBeVisible()
+    await page.getByTestId('drawing-name-input').fill('Hidden Area Label')
+    await expect(page.getByTestId('drawing-search-area-fill-color-input-hex')).toHaveValue('#F43F5E')
+    await page.getByTestId('drawing-search-area-show-label-input').uncheck()
+    await page.getByTestId('drawing-save-btn').click()
+
+    const drawings = await readMissionDrawings(page)
+    const searchArea = drawings.find((drawing) => drawing.name === 'Hidden Area Label')
+    expect(searchArea?.type).toBe('search_area')
+    expect(searchArea?.label).toBeNull()
+    expect(searchArea?.color).toBe('#F43F5E')
+    expect(searchArea?.metadata_json).toContain('"showLabel":false')
   })
 
   test('creates, edits, and exposes text labels through the layer tree', async ({ page }) => {
@@ -287,6 +342,8 @@ async function readMissionDrawings(page: import('@playwright/test').Page) {
       drawings?: Array<{
         name: string
         type: string
+        color: string | null
+        label: string | null
         metadata_json: string | null
       }>
     }

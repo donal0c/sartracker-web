@@ -48,8 +48,9 @@ export function buildSearchAreaDrawingInput(
       areaSqM,
       labelFontSize,
       fillColor,
+      showLabel: draft.showLabel,
     }),
-    label: draft.name.trim(),
+    label: draft.showLabel ? draft.name.trim() : null,
   }
 }
 
@@ -76,7 +77,8 @@ export function createSearchAreaDraftFromDrawing(
     status: metadata?.status ?? 'Planned',
     poaPercent: metadata?.poaPercent?.toString() ?? '',
     labelFontSize: (metadata?.labelFontSize ?? 12).toString(),
-    fillColor: metadata?.fillColor ?? parsed.color ?? '#F59E0B',
+    fillColor: metadata?.fillColor ?? parsed.color ?? '#F43F5E',
+    showLabel: metadata?.showLabel ?? parsed.label !== null,
     terrain: metadata?.terrain ?? '',
     notes: metadata?.notes ?? '',
   }

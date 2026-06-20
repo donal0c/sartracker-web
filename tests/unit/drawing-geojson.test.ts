@@ -123,6 +123,7 @@ describe('drawing geojson', () => {
             areaSqM: 100,
             labelFontSize: 16,
             fillColor: '#0EA5E9',
+            showLabel: true,
           }),
         }),
       ],
@@ -143,6 +144,36 @@ describe('drawing geojson', () => {
       labelColor: '#0EA5E9',
       fontSize: 16,
     })
+  })
+
+  it('omits the search-area map label when the operator hides it at creation time', () => {
+    const collection = createDrawingFeatureCollection(
+      [
+        createDrawing({
+          id: 'search-area-hidden-label',
+          type: 'search_area',
+          name: 'Area Hidden Label',
+          color: '#F43F5E',
+          label: null,
+          metadata_json: JSON.stringify({
+            kind: 'search_area',
+            team: null,
+            status: 'Planned',
+            poaPercent: null,
+            terrain: null,
+            notes: null,
+            areaSqM: 100,
+            labelFontSize: 16,
+            fillColor: '#F43F5E',
+            showLabel: false,
+          }),
+        }),
+      ],
+      null,
+    )
+
+    expect(collection.features.some((feature) => feature.properties?.featureKind === 'geometry')).toBe(true)
+    expect(collection.features.some((feature) => feature.properties?.featureKind === 'label')).toBe(false)
   })
 
   it('uses a high-contrast default stroke and wider line for range rings', () => {

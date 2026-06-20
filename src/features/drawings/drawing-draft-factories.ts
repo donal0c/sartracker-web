@@ -51,7 +51,8 @@ export function createSearchAreaDraft(points: readonly LonLat[]): SearchAreaDraw
     status: 'Planned',
     poaPercent: '',
     labelFontSize: '12',
-    fillColor: '#F59E0B',
+    fillColor: '#F43F5E',
+    showLabel: true,
     terrain: '',
     notes: '',
   }

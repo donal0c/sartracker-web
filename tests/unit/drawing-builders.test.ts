@@ -66,6 +66,40 @@ describe('drawing builders', () => {
       poaPercent: 45,
       labelFontSize: 16,
       fillColor: '#0EA5E9',
+      showLabel: true,
+    })
+  })
+
+  it('defaults new search areas to a red outline for upland map contrast', () => {
+    const draft = createSearchAreaDraft([
+      [-9.744, 51.999],
+      [-9.734, 51.999],
+      [-9.734, 52.009],
+    ])
+
+    expect(draft.fillColor).toBe('#F43F5E')
+  })
+
+  it('persists hidden search-area label intent separately from the drawing name', () => {
+    const input = buildDrawingInput({
+      missionId: 'mission-1',
+      displayOrder: 2,
+      draft: {
+        ...createSearchAreaDraft([
+          [-9.744, 51.999],
+          [-9.734, 51.999],
+          [-9.734, 52.009],
+        ]),
+        name: 'Area Alpha',
+        showLabel: false,
+      },
+    })
+
+    expect(input.name).toBe('Area Alpha')
+    expect(input.label).toBeNull()
+    expect(JSON.parse(input.metadata_json ?? '{}')).toMatchObject({
+      kind: 'search_area',
+      showLabel: false,
     })
   })
 

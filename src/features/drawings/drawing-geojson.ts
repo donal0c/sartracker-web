@@ -35,9 +35,9 @@ const DEFAULT_DRAWING_STYLE: Record<
     width: 3.5,
   },
   search_area: {
-    strokeColor: '#FBBF24',
-    fillColor: '#FBBF2433',
-    labelColor: '#FEF3C7',
+    strokeColor: '#F43F5E',
+    fillColor: '#F43F5E33',
+    labelColor: '#FFE4E6',
     width: 3,
   },
   range_ring: {
@@ -82,7 +82,7 @@ export function createDrawingFeatureCollection(
     const strokeColor = drawing.color ?? baseStyle.strokeColor
     const fillColor = drawing.color === null ? baseStyle.fillColor : `${drawing.color}22`
     const width = drawing.width ?? baseStyle.width
-    const label = drawing.label ?? drawing.name
+    const label = resolveDrawingLabel(drawing, parsed.metadata)
     const labelStyle =
       parsed.metadata?.kind === 'text_label'
         ? {
@@ -164,7 +164,7 @@ export function createDrawingFeatureCollection(
     }
 
     const labelCoordinate = resolveLabelCoordinate(parsed)
-    if (labelCoordinate !== null) {
+    if (labelCoordinate !== null && label !== null && label.trim() !== '') {
       features.push(
         createLabelFeature({
           drawing,
@@ -183,6 +183,17 @@ export function createDrawingFeatureCollection(
     type: 'FeatureCollection',
     features,
   }
+}
+
+function resolveDrawingLabel(
+  drawing: Drawing,
+  metadata: ReturnType<typeof parsePersistedDrawing>['metadata'],
+): string | null {
+  if (metadata?.kind === 'search_area' && metadata.showLabel === false) {
+    return null
+  }
+
+  return drawing.label ?? drawing.name
 }
 
 export function createDrawingPreviewFeatureCollection(

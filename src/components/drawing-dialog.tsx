@@ -14,6 +14,7 @@ import { LPB_CATEGORIES, LPB_PERCENTILE_ORDER, LPB_RING_COLORS } from '../featur
 import { SEARCH_AREA_STATUSES, type DrawingDraft } from '../features/drawings/drawing-types'
 import { ColorPaletteInput } from './color-palette-input'
 import { DialogOverlay } from './dialog-overlay'
+import { formatIrishGridReference, isWithinIreland, wgs84ToTM65 } from '../lib/coordinates'
 
 const DRAWING_DIALOG_TITLE_ID = 'drawing-dialog-title'
 
@@ -78,6 +79,8 @@ export function DrawingDialog() {
                   current.type === 'text_label' ? current : { ...current, name: value },
                 )
               }
+              required={draft.name.trim() === ''}
+              requiredTestId="drawing-name-required"
               testId="drawing-name-input"
               value={draft.name}
             />
@@ -275,11 +278,30 @@ function SearchAreaSection(props: {
           value={props.draft.labelFontSize}
         />
         <ColorPaletteInput
-          label="Fill Colour"
+          label="Outline and Fill Colour"
           onChange={(value) => props.onChange({ ...props.draft, fillColor: value })}
           testId="drawing-search-area-fill-color-input"
           value={props.draft.fillColor}
         />
+        <label className="flex items-center gap-3 rounded-xl border border-stone-700 bg-stone-950/60 px-3 py-3 text-sm text-stone-100">
+          <input
+            checked={props.draft.showLabel}
+            className="h-5 w-5"
+            data-testid="drawing-search-area-show-label-input"
+            onChange={(event) =>
+              props.onChange({ ...props.draft, showLabel: event.currentTarget.checked })
+            }
+            type="checkbox"
+          />
+          <span>
+            <span className="block text-xs font-black uppercase tracking-[0.16em] text-stone-200">
+              Show name on map
+            </span>
+            <span className="mt-1 block text-xs text-stone-400">
+              Hide this when many search areas would clutter the map.
+            </span>
+          </span>
+        </label>
         <Field
           label="Terrain"
           onChange={(value) => props.onChange({ ...props.draft, terrain: value })}
@@ -305,15 +327,8 @@ function RangeRingSection(props: {
 
   return (
     <>
-      <ReadOnlyGrid
-        items={[
-          { label: 'Centre', value: `${props.draft.center[1].toFixed(5)}, ${props.draft.center[0].toFixed(5)}` },
-          { label: 'Mode', value: props.draft.mode === 'manual' ? 'Manual' : 'LPB' },
-        ]}
-      />
-
       <section>
-        <p className="text-xs uppercase tracking-[0.2em] text-stone-300">Range Ring Mode</p>
+        <p className="text-xs uppercase tracking-[0.2em] text-stone-300">Ring Template</p>
         <div className="mt-3 grid gap-2 sm:grid-cols-2">
           {(['manual', 'lpb'] as const).map((mode) => (
             <label
@@ -333,7 +348,7 @@ function RangeRingSection(props: {
                 type="radio"
                 value={mode}
               />
-              {mode === 'manual' ? 'Manual' : 'LPB'}
+              {mode === 'manual' ? 'Custom radius' : 'LPB template'}
             </label>
           ))}
         </div>
@@ -344,6 +359,8 @@ function RangeRingSection(props: {
           <Field
             label="Radius (m)"
             onChange={(value) => props.onChange({ ...props.draft, manualRadiusM: value })}
+            required={props.draft.manualRadiusM.trim() === ''}
+            requiredTestId="drawing-range-ring-radius-required"
             testId="drawing-range-ring-radius-input"
             value={props.draft.manualRadiusM}
           />
@@ -353,14 +370,6 @@ function RangeRingSection(props: {
             testId="drawing-range-ring-count-input"
             value={props.draft.manualRingCount}
           />
-          {props.draft.manualRadiusM.trim() === '' ? (
-            <p
-              className="col-span-full text-xs font-semibold text-amber-300"
-              data-testid="drawing-range-ring-radius-required"
-            >
-              Enter a radius to create the range ring.
-            </p>
-          ) : null}
         </section>
       ) : (
         <>
@@ -453,12 +462,13 @@ function SearchSectorSection(props: {
     draft: DrawingDraftUpdate<Extract<DrawingDraft, { type: 'search_sector' }>>,
   ) => void
 }) {
+  const gridReference = formatGridReference(props.draft.center)
+
   return (
     <>
       <ReadOnlyGrid
         items={[
-          { label: 'Centre', value: `${props.draft.center[1].toFixed(5)}, ${props.draft.center[0].toFixed(5)}` },
-          { label: 'Radius', value: props.draft.radiusM === '' ? 'Not set' : `${props.draft.radiusM} m` },
+          { label: 'Irish Grid', value: gridReference, testId: 'drawing-sector-grid-readout' },
         ]}
       />
       <section className="grid gap-4 md:grid-cols-3">
@@ -509,18 +519,6 @@ function TextLabelSection(props: {
 }) {
   return (
     <>
-      <ReadOnlyGrid
-        items={[
-          {
-            label: 'Anchor',
-            value: `${props.draft.point[1].toFixed(5)}, ${props.draft.point[0].toFixed(5)}`,
-          },
-          {
-            label: 'Rotation',
-            value: props.draft.rotation === '' ? '0°' : `${props.draft.rotation}°`,
-          },
-        ]}
-      />
       <TextAreaField
         label="Text"
         onChange={(value) => props.onChange({ ...props.draft, text: value })}
@@ -533,12 +531,6 @@ function TextLabelSection(props: {
           onChange={(value) => props.onChange({ ...props.draft, fontSize: value })}
           testId="drawing-text-label-font-size-input"
           value={props.draft.fontSize}
-        />
-        <Field
-          label="Rotation (°)"
-          onChange={(value) => props.onChange({ ...props.draft, rotation: value })}
-          testId="drawing-text-label-rotation-input"
-          value={props.draft.rotation}
         />
       </section>
       <ColorPaletteInput
@@ -556,12 +548,28 @@ function Field(props: {
   readonly value: string
   readonly onChange: (value: string) => void
   readonly testId: string
+  readonly required?: boolean
+  readonly requiredTestId?: string
 }) {
+  const required = props.required ?? false
+
   return (
     <label className="block text-sm text-stone-200">
-      <span className="text-xs uppercase tracking-[0.2em] text-stone-300">{props.label}</span>
+      <span className={`text-xs uppercase tracking-[0.2em] ${required ? 'text-rose-300' : 'text-stone-300'}`}>
+        {props.label}
+        {required ? (
+          <span
+            className="ml-2 rounded border border-rose-400/50 bg-rose-500/15 px-1.5 py-0.5 text-[10px] font-black text-rose-100"
+            data-testid={props.requiredTestId}
+          >
+            Required
+          </span>
+        ) : null}
+      </span>
       <input
-        className="mt-2 w-full rounded-lg border border-stone-700 bg-stone-950 px-3 py-2 text-sm text-stone-100"
+        className={`mt-2 w-full rounded-lg border bg-stone-950 px-3 py-2 text-sm text-stone-100 ${
+          required ? 'border-rose-400 shadow-[0_0_0_1px_rgba(251,113,133,0.35)]' : 'border-stone-700'
+        }`}
         data-testid={props.testId}
         onChange={(event) => props.onChange(event.target.value)}
         value={props.value}
@@ -677,6 +685,17 @@ function closeRing(points: readonly (readonly [number, number])[]): readonly (re
 
   return [...points, first]
 }
+
+function formatGridReference(point: readonly [number, number]): string {
+  const [longitude, latitude] = point
+  if (!isWithinIreland(latitude, longitude)) {
+    return 'Outside Ireland'
+  }
+
+  const [easting, northing] = wgs84ToTM65(latitude, longitude)
+  return formatIrishGridReference(easting, northing)
+}
+
 const DRAWING_DIALOG_TITLES: Record<DrawingDraft['type'], string> = {
   line: 'Line Details',
   search_area: 'Search Area Details',

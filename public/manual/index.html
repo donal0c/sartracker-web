@@ -1003,11 +1003,11 @@
             </thead>
             <tbody>
               <tr><td>Line</td><td>Draw route lines and see measured distance plus true/magnetic bearing to the endpoint.</td></tr>
-              <tr><td>Search Area</td><td>Draw polygons with team, status, POA, label size, fill colour (palette swatches or typed hex), terrain, and notes.</td></tr>
-              <tr><td>Range Rings</td><td>Create manual rings or LPB percentile rings from a point.</td></tr>
+              <tr><td>Search Area</td><td>Draw red-default polygons with team, status, POA, optional map label, label size, outline/fill colour (palette swatches or typed hex), terrain, and notes.</td></tr>
+              <tr><td>Range Rings</td><td>Create custom-radius rings or LPB percentile rings from a point. Name and radius are clearly marked before saving a custom ring.</td></tr>
               <tr><td>Bearing</td><td>Create a bearing line from an origin, distance, and true or magnetic bearing.</td></tr>
-              <tr><td>Sector</td><td>Create a search sector from center, start bearing, end bearing, and radius.</td></tr>
-              <tr><td>Text Label</td><td>Place map text with an anchor point, size, colour (palette swatches or typed hex), and rotation. Click and drag a placed label to move it; the new position is saved.</td></tr>
+              <tr><td>Sector</td><td>Create a search sector from a placed centre point, start bearing, end bearing, and radius. The form shows the centre as an Irish Grid reference.</td></tr>
+              <tr><td>Text Label</td><td>Place map text with size and colour controls. Click and drag a placed label to move it; the new position is saved.</td></tr>
               <tr><td>Measure</td><td>Temporary two-point distance and map-bearing measurement from Map Tools. Labels use larger map text for field readability.</td></tr>
               <tr><td>Marker at GR</td><td>Create a marker from a TM65 grid reference directly from Map Tools.</td></tr>
             </tbody>
@@ -1020,7 +1020,9 @@
             Normal map display is kept clean: drawings show as continuous lines with a dark casing for
             contrast against busy terrain, and no editing dots appear on range rings, search sectors, or
             search-area outlines during normal reading. Text labels render as text only and can be dragged
-            to reposition. Range ring, sector, and search-area outlines use higher-contrast default colours;
+            to reposition. Search Areas default to a red outline/fill so they remain visible over upland
+            terrain, and their name can be hidden on the map when label clutter would reduce readability.
+            Range ring, sector, and search-area outlines use higher-contrast default colours;
             LPB percentile rings keep their statistical colour coding. Use the Layers workspace to hide
             drawing types or individual drawings when the map needs less visual load. To delete a misplaced
             drawing, click it to open its form (or use the Layers inspection panel), press
