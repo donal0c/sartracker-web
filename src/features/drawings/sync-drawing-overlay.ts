@@ -4,6 +4,7 @@ import type { Drawing } from '../../infrastructure/mission-store/tauri-mission-s
 import { buildDrawingLayerFilter } from '../layers/map-layer-filters'
 import {
   combineMapFilters,
+  createMapOverlayDataKey,
   ensureGeoJsonSource,
   ensureLayer,
   type MapOverlayFilter,
@@ -46,7 +47,14 @@ export function syncDrawingOverlay(
   drawingTypeVisibility: Record<Drawing['type'], boolean>,
   selectedDrawingId: string | null,
 ): void {
-  ensureGeoJsonSource(map, DRAWING_SOURCE_ID, createDrawingFeatureCollection(drawings, selectedDrawingId))
+  ensureGeoJsonSource(
+    map,
+    DRAWING_SOURCE_ID,
+    createDrawingFeatureCollection(drawings, selectedDrawingId),
+    {
+      dataKey: createMapOverlayDataKey(['drawings', drawings, selectedDrawingId]),
+    },
+  )
   ensureDrawingLayers(map)
 
   const geometryVisibilityFilter = buildDrawingLayerFilter(
@@ -103,6 +111,9 @@ export function syncDrawingPreviewOverlay(
     map,
     DRAWING_PREVIEW_SOURCE_ID,
     createDrawingPreviewFeatureCollection(runtime.sketch, runtime.activeTool),
+    {
+      dataKey: createMapOverlayDataKey(['drawing-preview', runtime.sketch, runtime.activeTool]),
+    },
   )
   ensurePreviewLayers(map)
 }

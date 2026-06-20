@@ -1,7 +1,12 @@
 import type maplibregl from 'maplibre-gl'
 
 import { buildMarkerLayerFilter } from '../layers/map-layer-filters'
-import { ensureGeoJsonSource, ensureLayer, loadSvgIcon } from '../map/map-overlay-primitives'
+import {
+  createMapOverlayDataKey,
+  ensureGeoJsonSource,
+  ensureLayer,
+  loadSvgIcon,
+} from '../map/map-overlay-primitives'
 import type { Marker, MarkerType } from '../../infrastructure/mission-store/tauri-mission-store'
 import { createMarkerFeatureCollection } from './marker-geojson'
 
@@ -20,7 +25,9 @@ export async function syncMarkerOverlay(
   hiddenMarkerIds: readonly string[],
 ): Promise<void> {
   await ensureMarkerImages(map)
-  ensureGeoJsonSource(map, MARKER_SOURCE_ID, createMarkerFeatureCollection(markers))
+  ensureGeoJsonSource(map, MARKER_SOURCE_ID, createMarkerFeatureCollection(markers), {
+    dataKey: createMapOverlayDataKey(['markers', markers]),
+  })
 
   ensureLayer(map, {
     id: MARKER_HITBOX_LAYER_ID,

@@ -36,6 +36,43 @@ describe('map overlay primitives', () => {
     expect(setData).toHaveBeenCalledWith(secondCollection)
   })
 
+  it('does not reset an existing GeoJSON source when the source data key is unchanged [DON-210]', () => {
+    const setData = vi.fn()
+    const source = { setData }
+    const sources = new Map<string, typeof source>()
+    const map = {
+      getSource: vi.fn((id: string) => sources.get(id)),
+      addSource: vi.fn((id: string) => {
+        sources.set(id, source)
+      }),
+    }
+
+    ensureGeoJsonSource(map, 'mission-overlay', firstCollection, { dataKey: 'snapshot:1' })
+    ensureGeoJsonSource(map, 'mission-overlay', secondCollection, { dataKey: 'snapshot:1' })
+
+    expect(setData).not.toHaveBeenCalled()
+  })
+
+  it('resets an existing GeoJSON source when MapLibre replaces the source object for a style rebuild [DON-210]', () => {
+    const staleSource = { setData: vi.fn() }
+    const rebuiltSource = { setData: vi.fn() }
+    const sources = new Map<string, typeof staleSource>()
+    const map = {
+      getSource: vi.fn((id: string) => sources.get(id)),
+      addSource: vi.fn((id: string) => {
+        sources.set(id, staleSource)
+      }),
+    }
+
+    ensureGeoJsonSource(map, 'mission-overlay', firstCollection, { dataKey: 'snapshot:1' })
+    sources.set('mission-overlay', rebuiltSource)
+    ensureGeoJsonSource(map, 'mission-overlay', secondCollection, { dataKey: 'snapshot:1' })
+
+    expect(staleSource.setData).not.toHaveBeenCalled()
+    expect(rebuiltSource.setData).toHaveBeenCalledTimes(1)
+    expect(rebuiltSource.setData).toHaveBeenCalledWith(secondCollection)
+  })
+
   it('adds each layer once without replacing existing style layers', () => {
     const layers = new Map<string, LayerSpec>()
     const map = {

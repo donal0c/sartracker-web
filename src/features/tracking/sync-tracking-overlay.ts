@@ -3,12 +3,14 @@ import type maplibregl from 'maplibre-gl'
 import { buildTrackingLayerFilter } from '../layers/map-layer-filters'
 import {
   combineMapFilters,
+  createMapOverlayDataKey,
   ensureGeoJsonSource,
   ensureLayer,
   type MapOverlayFilter,
 } from '../map/map-overlay-primitives'
 import {
   DEFAULT_BREADCRUMB_LINE_GAP_THRESHOLD_MS,
+  createTrackingFeatureCollectionDataKey,
   createTrackingFeatureCollection,
 } from './tracking-geojson'
 import {
@@ -72,6 +74,16 @@ export function syncTrackingOverlay(
     map,
     TRACKING_SOURCE_ID,
     createTrackingFeatureCollection(snapshot, DEFAULT_BREADCRUMB_LINE_GAP_THRESHOLD_MS, style),
+    {
+      dataKey: createMapOverlayDataKey([
+        'tracking',
+        createTrackingFeatureCollectionDataKey(
+          snapshot,
+          DEFAULT_BREADCRUMB_LINE_GAP_THRESHOLD_MS,
+          style,
+        ),
+      ]),
+    },
   )
 
   ensureLayer(map, {

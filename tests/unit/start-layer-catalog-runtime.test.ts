@@ -158,6 +158,81 @@ describe('startLayerCatalogRuntime', () => {
     ])
   })
 
+  it('does not reload metadata or publish loading for tracking refreshes with unchanged layer structure [DON-211]', async () => {
+    const applyRuntime = vi.fn()
+    const layerCatalogStore = {
+      listMetadata: vi.fn().mockResolvedValue([]),
+      upsertMetadata: vi.fn(),
+    }
+
+    const runtime = await startLayerCatalogRuntime({ layerCatalogStore, applyRuntime })
+
+    await runtime.refreshCatalog({
+      missionId: 'mission-1',
+      devices: [createDevice('alpha', 'Alpha Team')],
+      markers: [],
+      drawings: [],
+      helicopters: [],
+      gpxImports: [],
+      measurements: [],
+    })
+    const publishCountAfterInitialRefresh = applyRuntime.mock.calls.length
+
+    await runtime.refreshCatalog({
+      missionId: 'mission-1',
+      devices: [
+        {
+          ...createDevice('alpha', 'Alpha Team'),
+          last_seen: '2026-04-10T10:05:00.000Z',
+          status: 'offline',
+        },
+      ],
+      markers: [],
+      drawings: [],
+      helicopters: [],
+      gpxImports: [],
+      measurements: [],
+    })
+
+    expect(layerCatalogStore.listMetadata).toHaveBeenCalledTimes(1)
+    expect(applyRuntime).toHaveBeenCalledTimes(publishCountAfterInitialRefresh)
+  })
+
+  it('reloads metadata when the tracking layer structure changes [DON-211]', async () => {
+    const layerCatalogStore = {
+      listMetadata: vi.fn().mockResolvedValue([]),
+      upsertMetadata: vi.fn(),
+    }
+    const runtime = await startLayerCatalogRuntime({
+      layerCatalogStore,
+      applyRuntime: vi.fn(),
+    })
+
+    await runtime.refreshCatalog({
+      missionId: 'mission-1',
+      devices: [createDevice('alpha', 'Alpha Team')],
+      markers: [],
+      drawings: [],
+      helicopters: [],
+      gpxImports: [],
+      measurements: [],
+    })
+    await runtime.refreshCatalog({
+      missionId: 'mission-1',
+      devices: [
+        createDevice('alpha', 'Alpha Team'),
+        createDevice('bravo', 'Bravo Team'),
+      ],
+      markers: [],
+      drawings: [],
+      helicopters: [],
+      gpxImports: [],
+      measurements: [],
+    })
+
+    expect(layerCatalogStore.listMetadata).toHaveBeenCalledTimes(2)
+  })
+
   it('persists helicopter feature-item aliases with the canonical helicopter layer parent', async () => {
     const upsertMetadata = vi.fn().mockImplementation(async (input) => ({
       missionId: input.missionId,

@@ -11,6 +11,25 @@ export type MapOverlayFilter = FilterSpecification
 type GeoJsonSourceMap = Pick<MapLibreMap, 'getSource' | 'addSource'>
 type LayerMap = Pick<MapLibreMap, 'getLayer' | 'addLayer'>
 
+type GeoJsonSourceCacheEntry = {
+  readonly source: GeoJSONSource
+  readonly data: GeoJSON.GeoJSON
+  readonly dataKey: string | null
+}
+
+type EnsureGeoJsonSourceOptions = {
+  /**
+   * Stable identity for the overlay data represented by this GeoJSON payload.
+   * When provided, repeated style-sync calls with the same key skip `setData`
+   * unless MapLibre has replaced the underlying source object.
+   */
+  readonly dataKey?: string
+}
+
+const sourceDataCache = new WeakMap<object, Map<string, GeoJsonSourceCacheEntry>>()
+const objectIdentityTokens = new WeakMap<object, number>()
+let nextObjectIdentityToken = 1
+
 /**
  * Ensures a GeoJSON source exists for the active style, updating data when it
  * already exists so overlay sync calls remain idempotent.
@@ -19,10 +38,22 @@ export function ensureGeoJsonSource(
   map: GeoJsonSourceMap,
   sourceId: string,
   data: GeoJSON.GeoJSON,
+  options: EnsureGeoJsonSourceOptions = {},
 ): void {
   const source = map.getSource(sourceId) as GeoJSONSource | undefined
+  const dataKey = options.dataKey ?? null
   if (source !== undefined) {
+    const cached = getSourceCache(map).get(sourceId)
+    if (
+      cached !== undefined &&
+      cached.source === source &&
+      (dataKey === null ? cached.data === data : cached.dataKey === dataKey)
+    ) {
+      return
+    }
+
     source.setData(data)
+    getSourceCache(map).set(sourceId, { source, data, dataKey })
     return
   }
 
@@ -30,6 +61,10 @@ export function ensureGeoJsonSource(
     type: 'geojson',
     data,
   } satisfies SourceSpecification)
+  const nextSource = map.getSource(sourceId) as GeoJSONSource | undefined
+  if (nextSource !== undefined) {
+    getSourceCache(map).set(sourceId, { source: nextSource, data, dataKey })
+  }
 }
 
 /**
@@ -55,6 +90,56 @@ export function combineMapFilters(
   }
 
   return ['all', baseFilter, visibilityFilter] as MapOverlayFilter
+}
+
+/**
+ * Builds a stable key from immutable store object identities and primitive
+ * options so overlay sync can distinguish unchanged data from style rebuilds.
+ */
+export function createMapOverlayDataKey(parts: readonly unknown[]): string {
+  return parts.map((part) => {
+    if (part === null) {
+      return 'null'
+    }
+
+    switch (typeof part) {
+      case 'object':
+      case 'function':
+        return `ref:${getObjectIdentityToken(part)}`
+      case 'string':
+        return `str:${part}`
+      case 'number':
+      case 'boolean':
+      case 'bigint':
+      case 'symbol':
+      case 'undefined':
+        return `${typeof part}:${String(part)}`
+    }
+  }).join('|')
+}
+
+function getSourceCache(map: GeoJsonSourceMap): Map<string, GeoJsonSourceCacheEntry> {
+  const mapObject = map as object
+  const existing = sourceDataCache.get(mapObject)
+  if (existing !== undefined) {
+    return existing
+  }
+
+  const nextCache = new Map<string, GeoJsonSourceCacheEntry>()
+  sourceDataCache.set(mapObject, nextCache)
+  return nextCache
+}
+
+function getObjectIdentityToken(value: object): number {
+  const existing = objectIdentityTokens.get(value)
+  if (existing !== undefined) {
+    return existing
+  }
+
+  const nextToken = nextObjectIdentityToken
+  nextObjectIdentityToken += 1
+  objectIdentityTokens.set(value, nextToken)
+  return nextToken
 }
 
 /**

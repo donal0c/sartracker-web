@@ -1,6 +1,10 @@
 import type maplibregl from 'maplibre-gl'
 
-import { ensureGeoJsonSource, ensureLayer } from '../map/map-overlay-primitives'
+import {
+  createMapOverlayDataKey,
+  ensureGeoJsonSource,
+  ensureLayer,
+} from '../map/map-overlay-primitives'
 import { createMeasurementFeatureCollection, createMeasurementPreviewFeatureCollection } from './measurement-geojson'
 import type { Measurement, MeasurementRuntimeState } from './measurement-types'
 
@@ -25,7 +29,18 @@ export function syncMeasurementOverlay(
     hiddenMeasurementIds.length === 0
       ? measurements
       : measurements.filter((m) => !hiddenMeasurementIds.includes(m.id))
-  ensureGeoJsonSource(map, MEASUREMENT_SOURCE_ID, createMeasurementFeatureCollection(visibleMeasurements))
+  ensureGeoJsonSource(
+    map,
+    MEASUREMENT_SOURCE_ID,
+    createMeasurementFeatureCollection(visibleMeasurements),
+    {
+      dataKey: createMapOverlayDataKey([
+        'measurements',
+        measurements,
+        hiddenMeasurementIds,
+      ]),
+    },
+  )
   ensureMeasurementLayers(map)
 }
 
@@ -40,6 +55,13 @@ export function syncMeasurementPreviewOverlay(
     map,
     MEASUREMENT_PREVIEW_SOURCE_ID,
     createMeasurementPreviewFeatureCollection(runtime),
+    {
+      dataKey: createMapOverlayDataKey([
+        'measurement-preview',
+        runtime.draftStart,
+        runtime.hoverPoint,
+      ]),
+    },
   )
   ensureMeasurementPreviewLayers(map)
 }

@@ -102,6 +102,21 @@ describe('DevicesWorkspace', () => {
     useMapTargetStore.setState(useMapTargetStore.getInitialState())
   })
 
+  it('does not derive device rows from tracking updates while the workspace is closed [DON-213]', async () => {
+    const model = await import('../../src/features/tracking/device-workspace-model')
+    const buildRows = vi.spyOn(model, 'buildDeviceWorkspaceRows')
+    const { DevicesWorkspace } = await import('../../src/components/devices-workspace')
+
+    useDeviceWorkspaceStore.setState({ open: false })
+    render(React.createElement(DevicesWorkspace))
+
+    act(() => {
+      useTrackingStore.setState({ snapshot: SNAPSHOT, status: STATUS })
+    })
+
+    expect(buildRows).not.toHaveBeenCalled()
+  })
+
   it('selects a device when non-control status, time, or source cells are clicked', async () => {
     const { DevicesWorkspace } = await import('../../src/components/devices-workspace')
     useTrackingStore.setState({ snapshot: SNAPSHOT, status: STATUS })

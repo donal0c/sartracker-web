@@ -5,7 +5,12 @@ import type {
   HelicopterSlotKey,
 } from '../../infrastructure/mission-store/tauri-mission-store'
 import { buildHelicopterLayerFilter } from '../layers/map-layer-filters'
-import { ensureGeoJsonSource, ensureLayer, loadSvgIcon } from '../map/map-overlay-primitives'
+import {
+  createMapOverlayDataKey,
+  ensureGeoJsonSource,
+  ensureLayer,
+  loadSvgIcon,
+} from '../map/map-overlay-primitives'
 import { createHelicopterFeatureCollection } from './helicopter-geojson'
 
 export const HELICOPTER_SOURCE_ID = 'mission-helicopters'
@@ -19,7 +24,9 @@ export async function syncHelicopterOverlay(
   hiddenHelicopterIds: readonly string[],
 ): Promise<void> {
   await ensureHelicopterImages(map)
-  ensureGeoJsonSource(map, HELICOPTER_SOURCE_ID, createHelicopterFeatureCollection(helicopters))
+  ensureGeoJsonSource(map, HELICOPTER_SOURCE_ID, createHelicopterFeatureCollection(helicopters), {
+    dataKey: createMapOverlayDataKey(['helicopters', helicopters]),
+  })
 
   ensureLayer(map, {
     id: HELICOPTER_SYMBOL_LAYER_ID,

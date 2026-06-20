@@ -42,6 +42,13 @@ Safety-critical runtime bug fixes are complete locally for the latest sweep:
 - DON-208: corrupt persisted autosave/tracking intervals are normalized to 30s default or clamped to 5s-3600s; the polling manager also clamps runtime intervals before scheduling.
 - DON-209: Electron mission finalization can recover idempotently after interruption following `mission_archive_succeeded`; retry reuses the recorded archive and writes exactly one finalization event.
 
+Renderer/map performance hardening is complete locally for the latest sweep:
+
+- DON-210: MapLibre GeoJSON source sync now uses explicit data keys so unchanged tracking/marker/drawing/GPX/helicopter/measurement overlays do not resend identical source data; style-rebuilt source objects still receive data.
+- DON-211: layer catalog refresh skips metadata reload/loading publishes when mission layer structure is unchanged by volatile tracking status/last-seen updates.
+- DON-212: breadcrumb timestamp parsing and line/dot feature construction are cached by immutable breadcrumb array identity and relevant style inputs, preserving per-device breadcrumb fairness while avoiding repeated segmentation work.
+- DON-213: the closed Devices workspace now subscribes only to open/close state; tracking row derivation and heavy device subscriptions mount only while the overlay content is present.
+
 Operator workflow hardening is also complete:
 
 - DON-203: stacked Escape now closes only the top dialog/confirmation above docked Mission Review.
@@ -79,6 +86,24 @@ Not done in this sweep: no live/private Traccar call, no private official MBTile
 
 The final visual gates initially found two stale/ambiguous harness waits/prompts, not product regressions: mast tracking cell prompt wording and casualty marker map-label capture timing. Both were hardened and the full visual gate reran green.
 The paused-mission finish E2E timing assertion was also hardened for second-boundary scheduler drift after reproducing a 1/3 repeat flake; the focused test passed 5/5 and the full mission/full Chromium suites passed afterward.
+
+DON-210-DON-213 verification snapshot:
+
+- Red-to-green focused regressions: 4 files / 28 tests.
+- Adjacent focused unit sweep: 12 files / 77 tests.
+- `npm run test` - 152 files / 997 tests.
+- `npm run lint`
+- `npm run build`
+- `npm run test:backend` - 47 passed / 1 ignored.
+- `npx playwright test tests/e2e/performance-sweep.spec.ts tests/e2e/devices-workspace.spec.ts tests/e2e/layer-panel.spec.ts tests/e2e/map.spec.ts tests/e2e/parity-visibility.spec.ts --project=chromium` - 43/43.
+- `npm run test:e2e:chromium` - 127/127.
+- `npx playwright test --project=visual` - 34/34.
+- `npm run visual:review -- --fail-on critical` - 39/39, 0 critical blocking failures; report `test-results/visual-verification/reports/visual-review-2026-06-20T16-40-09Z.json`.
+- `node --check electron/main.cjs electron/preload.cjs electron/mission-store.cjs electron/official-map-proxy.cjs`
+- `npm run electron:pack` - local unsigned macOS arm64 directory package, `better-sqlite3` rebuild passed.
+- `npm run beta:verify -- --no-smoke` - passed lint/build/unit/backend/Chromium/package and wrote `tmp/beta-artifacts/verify-0.1.0-beta.7-sha.0c0994b495de-2026-06-20T16-32-43Z.json`; manual smoke was intentionally skipped.
+
+Not done in this sweep: no live/private Traccar call, no private official MBTiles smoke, no manual beta smoke prompt, and no release publication. One first `beta:verify --no-smoke` run exposed a transient `electron-main-startup.test.ts` cleanup/order failure after build; the single-file retry, full unit retry, and full beta-verifier rerun all passed.
 
 Performance batch verification snapshot:
 

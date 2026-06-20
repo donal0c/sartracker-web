@@ -78,6 +78,7 @@ export async function startLayerCatalogRuntime(
   let nodeIndex = buildNodeIndex(root)
   let latestRefreshRequestId = 0
   let refreshInvalidationVersion = 0
+  let lastPublishedInputSignature: string | null = null
 
   publishRuntime()
 
@@ -98,7 +99,13 @@ export async function startLayerCatalogRuntime(
         nodeIndex = buildNodeIndex(root)
         selectedNodeId = null
         loading = false
+        lastPublishedInputSignature = null
         publishRuntime()
+        return
+      }
+
+      const inputSignature = buildRefreshInputSignature(input)
+      if (inputSignature === lastPublishedInputSignature) {
         return
       }
 
@@ -115,6 +122,7 @@ export async function startLayerCatalogRuntime(
           return
         }
         metadataEntries = nextMetadataEntries
+        lastPublishedInputSignature = inputSignature
         rebuild()
       } catch (runtimeError) {
         loading = false
@@ -142,6 +150,15 @@ export async function startLayerCatalogRuntime(
           return
         }
         metadataEntries = nextMetadataEntries
+        lastPublishedInputSignature = buildRefreshInputSignature({
+          missionId,
+          devices: lastDevices,
+          markers: lastMarkers,
+          drawings: lastDrawings,
+          helicopters: lastHelicopters,
+          gpxImports: lastGpxImports,
+          measurements: lastMeasurements,
+        })
         rebuild()
       } catch (runtimeError) {
         loading = false
@@ -276,6 +293,45 @@ export async function startLayerCatalogRuntime(
 
     return node
   }
+}
+
+function buildRefreshInputSignature(input: RefreshCatalogInput): string {
+  if (input.missionId === null) {
+    return 'mission:null'
+  }
+
+  return JSON.stringify({
+    missionId: input.missionId,
+    devices: input.devices.map((device) => ({
+      id: device.device_id,
+      name: device.name,
+    })),
+    markers: input.markers.map((marker) => ({
+      id: marker.id,
+      type: marker.type,
+      name: marker.name,
+      order: marker.display_order,
+    })),
+    drawings: input.drawings.map((drawing) => ({
+      id: drawing.id,
+      type: drawing.type,
+      name: drawing.name,
+      order: drawing.display_order,
+    })),
+    helicopters: input.helicopters.map((helicopter) => ({
+      id: helicopter.id,
+      slot: helicopter.slot_key,
+      callSign: helicopter.call_sign,
+    })),
+    gpxImports: input.gpxImports.map((gpxImport) => ({
+      id: gpxImport.id,
+      name: gpxImport.display_name,
+    })),
+    measurements: (input.measurements ?? []).map((measurement) => ({
+      id: measurement.id,
+      label: measurement.label,
+    })),
+  })
 }
 
 function upsertMetadataEntry(

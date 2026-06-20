@@ -34,8 +34,24 @@ const DEVICE_ROW_GRID_COLUMNS =
  */
 export function DevicesWorkspace() {
   const open = useDeviceWorkspaceStore((state) => state.open)
-  const selectedDeviceId = useDeviceWorkspaceStore((state) => state.selectedDeviceId)
   const closeWorkspace = useDeviceWorkspaceStore((state) => state.closeWorkspace)
+
+  return (
+    <WorkspaceOverlay
+      labelledBy={DEVICES_WORKSPACE_TITLE_ID}
+      open={open}
+      onClose={closeWorkspace}
+      maxWidth="max-w-7xl"
+    >
+      <DevicesWorkspaceContent closeWorkspace={closeWorkspace} />
+    </WorkspaceOverlay>
+  )
+}
+
+function DevicesWorkspaceContent(props: {
+  readonly closeWorkspace: () => void
+}) {
+  const selectedDeviceId = useDeviceWorkspaceStore((state) => state.selectedDeviceId)
   const selectDevice = useDeviceWorkspaceStore((state) => state.selectDevice)
   const trackingSnapshot = useTrackingStore((state) => state.snapshot)
   const trackingStatus = useTrackingStore((state) => state.status)
@@ -73,15 +89,11 @@ export function DevicesWorkspace() {
   )
 
   useEffect(() => {
-    if (!open) {
-      return
-    }
-
     const resolvedSelection = resolveVisibleDeviceSelection(filteredRows, selectedDeviceId)
     if (resolvedSelection !== selectedDeviceId) {
       selectDevice(resolvedSelection)
     }
-  }, [filteredRows, open, selectDevice, selectedDeviceId])
+  }, [filteredRows, selectDevice, selectedDeviceId])
 
   const selectedRow =
     filteredRows.find((row) => row.deviceId === selectedDeviceId) ?? filteredRows[0] ?? null
@@ -96,17 +108,12 @@ export function DevicesWorkspace() {
   ]
 
   return (
-    <WorkspaceOverlay
-      labelledBy={DEVICES_WORKSPACE_TITLE_ID}
-      open={open}
-      onClose={closeWorkspace}
-      maxWidth="max-w-7xl"
-    >
+    <>
       <WorkspaceHeader
         subtitle="Devices Workspace"
         titleId={DEVICES_WORKSPACE_TITLE_ID}
         title="Tracking Devices"
-        onClose={closeWorkspace}
+        onClose={props.closeWorkspace}
         actions={
           <button
             className="rounded-lg border border-stone-600 bg-stone-800 px-3 py-2 text-xs font-semibold text-stone-200 disabled:opacity-50"
@@ -350,7 +357,7 @@ export function DevicesWorkspace() {
             )}
           </aside>
         </div>
-    </WorkspaceOverlay>
+    </>
   )
 
   async function refreshTracking(): Promise<void> {

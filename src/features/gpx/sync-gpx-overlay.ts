@@ -2,7 +2,11 @@ import type maplibregl from 'maplibre-gl'
 
 import type { GpxTrackImport } from '../../infrastructure/mission-store/tauri-mission-store'
 import { buildGpxLayerFilter } from '../layers/map-layer-filters'
-import { ensureGeoJsonSource, ensureLayer } from '../map/map-overlay-primitives'
+import {
+  createMapOverlayDataKey,
+  ensureGeoJsonSource,
+  ensureLayer,
+} from '../map/map-overlay-primitives'
 import { createGpxFeatureCollection } from './gpx-geojson'
 import { DEFAULT_GPX_TRACK_COLOR } from './gpx-style'
 
@@ -17,7 +21,9 @@ export function syncGpxOverlay(
   imports: readonly GpxTrackImport[],
   hiddenImportIds: readonly string[],
 ): void {
-  ensureGeoJsonSource(map, GPX_SOURCE_ID, createGpxFeatureCollection(imports))
+  ensureGeoJsonSource(map, GPX_SOURCE_ID, createGpxFeatureCollection(imports), {
+    dataKey: createMapOverlayDataKey(['gpx', imports]),
+  })
   ensureLayer(map, {
     id: GPX_LINE_LAYER_ID,
     type: 'line',

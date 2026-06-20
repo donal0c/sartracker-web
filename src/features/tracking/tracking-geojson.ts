@@ -6,7 +6,7 @@ import {
   DEFAULT_BREADCRUMB_TRAIL_MODE,
   type TrackingStylePreferences,
 } from './tracking-style-store'
-import type { TrackingSnapshot } from './tracking-types'
+import type { NormalizedTrackingPosition, TrackingSnapshot } from './tracking-types'
 
 export const DEFAULT_BREADCRUMB_LINE_GAP_THRESHOLD_MS = 30 * 60 * 1000
 
@@ -40,6 +40,17 @@ type GeoJsonBreadcrumbPointFeature = Feature<
   }
 >
 
+const breadcrumbLineFeaturesByInput = new WeakMap<
+  readonly NormalizedTrackingPosition[],
+  Map<string, readonly GeoJsonLineFeature[]>
+>()
+const breadcrumbPointFeaturesByInput = new WeakMap<
+  readonly NormalizedTrackingPosition[],
+  Map<string, readonly GeoJsonBreadcrumbPointFeature[]>
+>()
+const objectIdentityTokens = new WeakMap<object, number>()
+let nextObjectIdentityToken = 1
+
 export function createTrackingFeatureCollection(
   snapshot: TrackingSnapshot,
   gapThresholdMs: number,
@@ -61,6 +72,27 @@ export function createTrackingFeatureCollection(
       ...createDeviceFeatureCollection(snapshot, style).features,
     ],
   }
+}
+
+/**
+ * Returns a cheap identity key for the current tracking source payload.
+ */
+export function createTrackingFeatureCollectionDataKey(
+  snapshot: TrackingSnapshot,
+  gapThresholdMs: number,
+  style: TrackingStylePreferences = {
+    deviceColors: {},
+    breadcrumbSize: 8,
+    breadcrumbTrailMode: DEFAULT_BREADCRUMB_TRAIL_MODE,
+  },
+): string {
+  return [
+    getObjectIdentityToken(snapshot.devices),
+    getObjectIdentityToken(snapshot.positions),
+    getObjectIdentityToken(snapshot.breadcrumbs),
+    gapThresholdMs,
+    createTrackingStyleFeatureKey(style),
+  ].join(':')
 }
 
 /**
@@ -104,6 +136,18 @@ export function createBreadcrumbFeatureCollection(
   gapThresholdMs: number,
   style: Pick<TrackingStylePreferences, 'deviceColors'> = { deviceColors: {} },
 ): FeatureCollection<LineString> {
+  const cachedFeatures = getCachedBreadcrumbLineFeatures(
+    snapshot.breadcrumbs,
+    gapThresholdMs,
+    style,
+  )
+  if (cachedFeatures !== null) {
+    return {
+      type: 'FeatureCollection',
+      features: [...cachedFeatures],
+    }
+  }
+
   const breadcrumbsByDevice = new Map<string, TrackingSnapshot['breadcrumbs'][number][]>()
   for (const breadcrumb of snapshot.breadcrumbs) {
     const existing = breadcrumbsByDevice.get(breadcrumb.device_id)
@@ -139,6 +183,8 @@ export function createBreadcrumbFeatureCollection(
     }
   }
 
+  setCachedBreadcrumbLineFeatures(snapshot.breadcrumbs, gapThresholdMs, style, features)
+
   return {
     type: 'FeatureCollection',
     features,
@@ -163,6 +209,14 @@ export function createBreadcrumbPointFeatureCollection(
     breadcrumbSize: 8,
   },
 ): FeatureCollection<Point> {
+  const cachedFeatures = getCachedBreadcrumbPointFeatures(snapshot.breadcrumbs, style)
+  if (cachedFeatures !== null) {
+    return {
+      type: 'FeatureCollection',
+      features: [...cachedFeatures],
+    }
+  }
+
   const minDistanceM = (style.breadcrumbSize ?? 8) * DOT_SPACING_FACTOR_M_PER_PX
   const decimated = decimateBreadcrumbsForDots(snapshot.breadcrumbs, minDistanceM)
 
@@ -179,6 +233,8 @@ export function createBreadcrumbPointFeatureCollection(
     },
   }))
 
+  setCachedBreadcrumbPointFeatures(snapshot.breadcrumbs, style, features)
+
   return {
     type: 'FeatureCollection',
     features,
@@ -190,4 +246,100 @@ function getStyledDeviceColor(
   deviceColors: Readonly<Record<string, string>>,
 ): string {
   return deviceColors[deviceId] ?? createDeviceColor(deviceId)
+}
+
+function getCachedBreadcrumbLineFeatures(
+  breadcrumbs: readonly NormalizedTrackingPosition[],
+  gapThresholdMs: number,
+  style: Pick<TrackingStylePreferences, 'deviceColors'>,
+): readonly GeoJsonLineFeature[] | null {
+  return getBreadcrumbFeatureCache(breadcrumbLineFeaturesByInput, breadcrumbs).get(
+    createLineFeatureCacheKey(gapThresholdMs, style),
+  ) ?? null
+}
+
+function setCachedBreadcrumbLineFeatures(
+  breadcrumbs: readonly NormalizedTrackingPosition[],
+  gapThresholdMs: number,
+  style: Pick<TrackingStylePreferences, 'deviceColors'>,
+  features: readonly GeoJsonLineFeature[],
+): void {
+  getBreadcrumbFeatureCache(breadcrumbLineFeaturesByInput, breadcrumbs).set(
+    createLineFeatureCacheKey(gapThresholdMs, style),
+    features,
+  )
+}
+
+function getCachedBreadcrumbPointFeatures(
+  breadcrumbs: readonly NormalizedTrackingPosition[],
+  style: Pick<TrackingStylePreferences, 'deviceColors' | 'breadcrumbSize'>,
+): readonly GeoJsonBreadcrumbPointFeature[] | null {
+  return getBreadcrumbFeatureCache(breadcrumbPointFeaturesByInput, breadcrumbs).get(
+    createPointFeatureCacheKey(style),
+  ) ?? null
+}
+
+function setCachedBreadcrumbPointFeatures(
+  breadcrumbs: readonly NormalizedTrackingPosition[],
+  style: Pick<TrackingStylePreferences, 'deviceColors' | 'breadcrumbSize'>,
+  features: readonly GeoJsonBreadcrumbPointFeature[],
+): void {
+  getBreadcrumbFeatureCache(breadcrumbPointFeaturesByInput, breadcrumbs).set(
+    createPointFeatureCacheKey(style),
+    features,
+  )
+}
+
+function getBreadcrumbFeatureCache<TFeature>(
+  cache: WeakMap<readonly NormalizedTrackingPosition[], Map<string, readonly TFeature[]>>,
+  breadcrumbs: readonly NormalizedTrackingPosition[],
+): Map<string, readonly TFeature[]> {
+  const existing = cache.get(breadcrumbs)
+  if (existing !== undefined) {
+    return existing
+  }
+
+  const nextCache = new Map<string, readonly TFeature[]>()
+  cache.set(breadcrumbs, nextCache)
+  return nextCache
+}
+
+function createLineFeatureCacheKey(
+  gapThresholdMs: number,
+  style: Pick<TrackingStylePreferences, 'deviceColors'>,
+): string {
+  return `line:${gapThresholdMs}:${createDeviceColorsKey(style.deviceColors)}`
+}
+
+function createPointFeatureCacheKey(
+  style: Pick<TrackingStylePreferences, 'deviceColors' | 'breadcrumbSize'>,
+): string {
+  return `dots:${style.breadcrumbSize ?? 8}:${createDeviceColorsKey(style.deviceColors)}`
+}
+
+function createTrackingStyleFeatureKey(style: TrackingStylePreferences): string {
+  return [
+    style.breadcrumbTrailMode,
+    style.breadcrumbSize,
+    createDeviceColorsKey(style.deviceColors),
+  ].join(':')
+}
+
+function createDeviceColorsKey(deviceColors: Readonly<Record<string, string>>): string {
+  return Object.entries(deviceColors)
+    .sort(([leftId], [rightId]) => leftId.localeCompare(rightId))
+    .map(([deviceId, color]) => `${deviceId}=${color}`)
+    .join(',')
+}
+
+function getObjectIdentityToken(value: object): number {
+  const existing = objectIdentityTokens.get(value)
+  if (existing !== undefined) {
+    return existing
+  }
+
+  const nextToken = nextObjectIdentityToken
+  nextObjectIdentityToken += 1
+  objectIdentityTokens.set(value, nextToken)
+  return nextToken
 }

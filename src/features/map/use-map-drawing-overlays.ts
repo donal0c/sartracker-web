@@ -52,7 +52,6 @@ export function useMapDrawingOverlays(options: UseMapDrawingOverlaysOptions): vo
 
     return registerMapStyleSync(map, synchronizeOverlay)
   }, [
-    activeTool,
     drawings,
     groupVisibility,
     drawingTypeVisibility,

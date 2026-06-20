@@ -8,6 +8,7 @@ import type {
 // rescuer's route, and its own older route must not disappear just because the
 // device keeps reporting later fixes.
 const MAX_BREADCRUMB_POSITIONS_PER_DEVICE = 5_000
+const parsedTimestampByPosition = new WeakMap<NormalizedTrackingPosition, number>()
 
 export type BreadcrumbAccumulationResult = {
   readonly positions: readonly NormalizedTrackingPosition[]
@@ -154,7 +155,7 @@ type DeviceTrailState = {
 }
 
 function decorateWithTimestamp(position: NormalizedTrackingPosition): TimestampedPosition {
-  return { position, timestampMs: Date.parse(position.timestamp) }
+  return { position, timestampMs: getParsedTimestamp(position) }
 }
 
 /**
@@ -183,7 +184,7 @@ export function createBreadcrumbSegments(
       continue
     }
 
-    const gapMs = Date.parse(next.timestamp) - Date.parse(previous.timestamp)
+    const gapMs = getParsedTimestamp(next) - getParsedTimestamp(previous)
 
     if (gapMs > gapThresholdMs) {
       segments.push(currentSegment)
@@ -197,6 +198,17 @@ export function createBreadcrumbSegments(
 
   segments.push(currentSegment)
   return segments
+}
+
+function getParsedTimestamp(position: NormalizedTrackingPosition): number {
+  const cached = parsedTimestampByPosition.get(position)
+  if (cached !== undefined) {
+    return cached
+  }
+
+  const timestampMs = Date.parse(position.timestamp)
+  parsedTimestampByPosition.set(position, timestampMs)
+  return timestampMs
 }
 
 /**

@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 import devicesFixture from '../fixtures/traccar-devices.json'
 import positionsFixture from '../fixtures/traccar-positions.json'
@@ -299,5 +299,70 @@ describe('tracking geojson', () => {
     expect(accumulated.positions).toHaveLength(33 * 5_000)
     expect(accumulated.metadata.deviceBudgets.every((budget) => budget.retained === 5_000)).toBe(true)
     expect(collection.features).toHaveLength(33)
+  })
+
+  it('reuses breadcrumb line features when only current positions change [DON-212]', () => {
+    const breadcrumbs = Array.from({ length: 180 }, (_, index) =>
+      normalizeTraccarPosition(
+        {
+          id: index + 1,
+          deviceId: (index % 3) + 1,
+          latitude: 52 + index / 1_000_000,
+          longitude: -9.7 - index / 1_000_000,
+          fixTime: new Date(Date.UTC(2026, 5, 13, 10, 0, index)).toISOString(),
+        },
+        'live',
+      ),
+    )
+    const devices = devicesFixture.map((device) => normalizeTraccarDevice(device))
+    const firstSnapshot = {
+      devices,
+      positions: [
+        normalizeTraccarPosition(
+          {
+            id: 10_001,
+            deviceId: 1,
+            latitude: 52.001,
+            longitude: -9.701,
+            fixTime: '2026-06-13T10:03:00.000Z',
+          },
+          'live',
+        ),
+      ],
+      breadcrumbs,
+    }
+    const secondSnapshot = {
+      ...firstSnapshot,
+      positions: [
+        normalizeTraccarPosition(
+          {
+            id: 10_002,
+            deviceId: 1,
+            latitude: 52.002,
+            longitude: -9.702,
+            fixTime: '2026-06-13T10:04:00.000Z',
+          },
+          'live',
+        ),
+      ],
+    }
+    const parseSpy = vi.spyOn(Date, 'parse')
+
+    try {
+      createTrackingFeatureCollection(
+        firstSnapshot,
+        DEFAULT_BREADCRUMB_LINE_GAP_THRESHOLD_MS,
+      )
+      const parseCallsAfterFirstBuild = parseSpy.mock.calls.length
+
+      createTrackingFeatureCollection(
+        secondSnapshot,
+        DEFAULT_BREADCRUMB_LINE_GAP_THRESHOLD_MS,
+      )
+
+      expect(parseSpy).toHaveBeenCalledTimes(parseCallsAfterFirstBuild)
+    } finally {
+      parseSpy.mockRestore()
+    }
   })
 })
