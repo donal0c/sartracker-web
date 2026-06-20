@@ -31,6 +31,7 @@ test.describe('Visual: App Shell', () => {
     await expect(page.getByTestId('app-title')).toContainText('SAR Tracker')
     await expect(page.locator('canvas').first()).toBeVisible()
     await expect(page.getByTestId('basemap-switcher')).toBeVisible()
+    await expect(page.getByTestId('map-scale-readout')).toBeVisible()
     await expect(page.getByTestId('mission-control')).toBeVisible()
     await expect(page.getByTestId('tracking-status')).toBeVisible()
     await expect(page.getByTestId('drawing-toolbar')).toBeVisible()
@@ -53,13 +54,15 @@ Check:
 4. A "TRACKING" section is visible (the Tracking tab is active by default), showing an idle / no-active-mission state. Empty / placeholder content is correct here.
 5. A compact Maps control is visible near the top-left of the map area — a single dropdown-style chip labelled "MAPS" with the currently selected basemap name (e.g. "OpenTopoMap"). It does NOT need to be expanded.
 6. A collapsed Map Tools toolbar is visible on the left side of the map, showing a "MAP TOOLS" header with the current active mode label (for example "SELECT" or "Mission required").
-7. A coordinate bar is visible along the bottom edge of the map area.
-8. The overall theme is dark (dark stone/black backgrounds with light text and amber accents).
+7. A compact "MAP SCALE" readout is visible over the map above the bottom coordinate strip.
+8. A coordinate bar is visible along the bottom edge of the map area.
+9. The overall theme is dark (dark stone/black backgrounds with light text and amber accents).
 Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
       playwrightAssertions: [
         'app-title contains "SAR Tracker"',
         'canvas is visible',
         'basemap-switcher is visible',
+        'map-scale-readout is visible',
         'mission-control is visible',
         'tracking-status is visible',
         'drawing-toolbar is visible',
@@ -170,6 +173,45 @@ Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
       playwrightAssertions: [
         'coords-combined does not show placeholder dash',
         'coords-combined contains degree symbol',
+      ],
+    })
+  })
+
+  test('map scale and centred coordinates remain readable at smaller desktop size', async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 1280, height: 720 })
+
+    const mapContainer = page.getByTestId('map-container')
+    const bounds = await mapContainer.boundingBox()
+    expect(bounds).toBeTruthy()
+    if (bounds) {
+      await page.mouse.move(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2)
+    }
+
+    await expect(page.getByTestId('map-scale-readout')).toBeVisible()
+    await expect(page.getByTestId('map-scale-label')).toContainText(/m|km/)
+    await expect(page.getByTestId('coordinate-readout-group')).toBeVisible()
+    await expect(page.getByTestId('coords-combined')).not.toHaveText('—')
+
+    await captureAndRegister(page, {
+      testId: 'shell-map-scale-small-display',
+      testName: 'Map scale and centred coordinate group at smaller desktop size',
+      area: 'app-shell',
+      severity: 'critical',
+      verificationPrompt: `Verify this screenshot of the SAR Tracker map shell at a smaller 1280x720 desktop size:
+1. A map scale readout should be visible over the lower-left map area, above the coordinate strip, with a metric label such as metres or kilometres.
+2. The coordinate readouts should be grouped together near the lower centre of the map area, not spread across the whole bottom edge.
+3. The coordinate group should show DD, Irish Grid, and DMS fields with readable values.
+4. The Convert button may remain on the lower-right side of the coordinate strip, but it must not push the coordinate group off centre.
+5. The top command mast, Maps control, Map Tools control, right sidebar tabs, and Mission Control panel should remain visible without horizontal overflow or critical clipping.
+6. The map scale and coordinate strip should not cover each other.
+Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
+      playwrightAssertions: [
+        'map-scale-readout is visible',
+        'map-scale-label contains a metric unit',
+        'coordinate-readout-group is visible',
+        'coords-combined contains live coordinate values',
       ],
     })
   })

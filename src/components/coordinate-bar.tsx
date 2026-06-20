@@ -45,10 +45,15 @@ export function CoordinateBar({ latitude, longitude }: CoordinateBarProps) {
       className="sar-instrument-strip absolute inset-x-0 bottom-0 z-10 font-mono text-base font-semibold text-stone-100"
       data-testid="coordinate-display"
     >
-      <div className="grid min-h-[72px] grid-cols-[1fr_auto]">
+      <div className="grid min-h-[72px] grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-stretch">
         <span data-testid="coords-combined" className="sr-only">{content}</span>
 
-        <div className="flex min-w-0 items-center gap-4 overflow-hidden px-4">
+        <div aria-hidden="true" />
+
+        <div
+          className="flex min-w-0 items-center justify-center gap-4 overflow-hidden px-4"
+          data-testid="coordinate-readout-group"
+        >
           <InstrumentCell label="DD" valueClassName="text-stone-100" testId="coords-wgs84">
             {wgs84Display}
           </InstrumentCell>
@@ -76,10 +81,10 @@ export function CoordinateBar({ latitude, longitude }: CoordinateBarProps) {
           </InstrumentCell>
         </div>
 
-        <div className="flex shrink-0 items-center justify-center gap-2 border-l border-[var(--sar-line)] px-4">
+        <div className="flex min-w-0 items-center justify-end gap-2 border-l border-[var(--sar-line)] px-4">
           {activeTarget !== null ? (
             <span
-              className="border border-amber-500/40 bg-amber-500/12 px-2 py-1 text-[11px] font-sans font-bold uppercase tracking-[0.2em] text-amber-100"
+              className="min-w-0 truncate border border-amber-500/40 bg-amber-500/12 px-2 py-1 text-[11px] font-sans font-bold uppercase tracking-[0.2em] text-amber-100"
               data-testid="coordinate-target-indicator"
               >
               {activeTarget.label ?? 'Target Active'}

@@ -584,9 +584,10 @@
             <strong>Weather</strong> menu for configured external weather websites; it does not fetch,
             parse, or forecast weather inside SAR Tracker. The right rail is split into
             <strong>Tracking</strong>, <strong>Tools</strong>, and <strong>Layers</strong>. The map itself
-            carries compact Maps and Map Tools controls, map health, offline tile status, and a grouped
-            bottom-strip coordinate readout with <strong>DD</strong>, <strong>Irish Grid</strong>, and
-            <strong>DMS</strong> values in one line plus the <strong>Convert</strong> control.
+            carries compact Maps and Map Tools controls, map health, offline tile status, a visible
+            metric map scale, and a lower-centre grouped coordinate readout with <strong>DD</strong>,
+            <strong>Irish Grid</strong>, and <strong>DMS</strong> values in one line plus the
+            <strong>Convert</strong> control.
             In standard mode this is a bottom strip; in Focus Mode Plus, only the mirrored focus coordinate
             display is shown so awareness stays while the map surface stays less cluttered.
           </p>
@@ -596,7 +597,7 @@
           </figure>
           <div class="card-grid">
             <div class="card"><strong>Command mast</strong><br />Mission name, phase, timers, minimized Mission Control summary, device count, tracking cell (mode plus separate FIX and STALE counts), system state, autosave warning state, current app version, Diagnostics, Focus Mode, Settings, Weather, and Help.</div>
-            <div class="card"><strong>Map workspace</strong><br />Maps menu, Map Tools menu, live map canvas, health badge, offline-readiness badge, and coordinate readouts.</div>
+            <div class="card"><strong>Map workspace</strong><br />Maps menu, Map Tools menu, live map canvas, map scale, health badge, offline-readiness badge, and coordinate readouts.</div>
             <div class="card"><strong>Right rail</strong><br />Mission Control while expanded, plus tabs for tracking, tools, and layer inspection.</div>
           </div>
         </section>
@@ -658,7 +659,10 @@
             for operational records. TM65 Irish Grid is available for operator display and input. The
             coordinate readout updates as the cursor moves and shows the current point in
             <strong>DD</strong>, <strong>Irish Grid</strong>, and <strong>DMS</strong>. The
-            <strong>Convert</strong> button sits beside those live values in standard mode. In Focus Mode Plus,
+            live coordinate values are grouped in the lower centre of the map area so they stay predictable
+            on smaller desktop displays. The <strong>Convert</strong> button sits to the right of those
+            live values in standard mode. The map scale appears above the lower-left edge of the coordinate
+            strip and updates with the current zoom level. In Focus Mode Plus,
             the mirrored focus display remains with the same coordinate values so operators keep live
             location awareness while the bottom strip is intentionally reduced. Fixed CRS details are kept
             out of the live coordinate area so the operational surface stays focused on coordinates
@@ -681,6 +685,13 @@
             <div class="card"><strong>Maps menu</strong><br />Groups official maps and public fallback maps. Discovery Topo is the default official operational map once licensed maps are configured; hosted/browser testing keeps official maps marked not configured until a controlled private source is added.</div>
             <div class="card"><strong>Coordinate converter</strong><br />Accepts IG, DD, and DMS, including pasted DD/DMS latitude-longitude pairs in the first field. W3W stays unavailable until integration decisions are settled. Results can be copied, used to jump the map, or used to open the normal marker form at that point.</div>
             <div class="card"><strong>Offline badge</strong><br />Shows whether the active map is a public fallback, an online official source, or a ready/missing/unreadable official offline package. Warnings also appear on the map when the active map cannot be trusted offline.</div>
+          </div>
+          <div class="note">
+            <strong>Discovery grid lines:</strong> SAR Tracker does not draw a separate synthetic grid over
+            Discovery packages in this beta. Grid visibility depends on the prepared Discovery package or
+            online source style itself. The <strong>Maps</strong> menu records this as
+            <em>Grid lines: Discovery package/source dependent</em>. The live Irish Grid coordinate readout
+            remains available independently of map artwork.
           </div>
           <p>
             Public fallback maps still use <strong>viewed tile caching</strong>. Official Discovery maps

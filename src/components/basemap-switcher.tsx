@@ -145,6 +145,9 @@ export function BasemapSwitcher({
                 <span className="text-stone-200">{offlineReadiness.label}</span>
               </div>
             ) : null}
+            <p className="text-[10px] font-semibold text-stone-300" data-testid="basemap-grid-note">
+              Grid lines: Discovery package/source dependent
+            </p>
             {coverage !== undefined && onCheckCoverage !== undefined ? (
               <div data-testid="basemap-offline-coverage">
                 <div className="flex items-center justify-between gap-2">

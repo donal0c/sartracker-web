@@ -13,6 +13,8 @@ test.describe('M2 map shell', () => {
     await expect(page.getByTestId('system-status-detail')).toContainText('Session storage only')
     await expect(page.getByTestId('basemap-switcher')).toBeVisible()
     await expect(page.getByTestId('basemap-menu-toggle')).toBeVisible()
+    await expect(page.getByTestId('map-scale-readout')).toBeVisible()
+    await expect(page.getByTestId('map-scale-label')).toContainText(/m|km/)
     await page.getByTestId('basemap-menu-toggle').click()
     await expect(page.getByTestId('map-catalogue-group-official')).toContainText('Official maps')
     await expect(page.getByTestId('basemap-btn-official_discovery_topo')).toContainText(
@@ -28,6 +30,9 @@ test.describe('M2 map shell', () => {
     await expect(page.getByTestId('basemap-btn-esri_satellite')).toBeVisible()
     await expect(page.getByTestId('basemap-map-health')).toContainText('basemap')
     await expect(page.getByTestId('basemap-offline-readiness')).toBeVisible()
+    await expect(page.getByTestId('basemap-grid-note')).toContainText(
+      'Grid lines: Discovery package/source dependent',
+    )
     await expect(page.getByTestId('check-offline-map-coverage')).toBeVisible()
   })
 
@@ -65,6 +70,66 @@ test.describe('M2 map shell', () => {
     await page.getByTestId('drawing-toolbar-expand').click()
     await expect(page.getByTestId('drawing-tool-line')).toBeVisible()
     await expect(page.getByTestId('drawing-toolbar-active-mode')).toContainText('Mission required')
+  })
+
+  test('DON-195: shows map scale and centred coordinate group on smaller desktop displays', async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 1280, height: 720 })
+
+    const mapContainer = page.getByTestId('map-container')
+    const mapBounds = await mapContainer.boundingBox()
+    expect(mapBounds).not.toBeNull()
+
+    if (mapBounds !== null) {
+      await page.mouse.move(mapBounds.x + mapBounds.width / 2, mapBounds.y + mapBounds.height / 2)
+    }
+
+    const scaleReadout = page.getByTestId('map-scale-readout')
+    await expect(scaleReadout).toBeVisible()
+    await expect(page.getByTestId('map-scale-label')).toContainText(/m|km/)
+
+    const coordinateGroup = page.getByTestId('coordinate-readout-group')
+    await expect(coordinateGroup).toBeVisible()
+    await expect(page.getByTestId('coords-combined')).not.toHaveText('—')
+
+    const layout = await page.evaluate(() => {
+      const map = document.querySelector('[data-testid="map-container"]')
+      const coordinateGroup = document.querySelector('[data-testid="coordinate-readout-group"]')
+      const coordinateDisplay = document.querySelector('[data-testid="coordinate-display"]')
+      const scale = document.querySelector('[data-testid="map-scale-readout"]')
+      if (
+        !(map instanceof HTMLElement) ||
+        !(coordinateGroup instanceof HTMLElement) ||
+        !(coordinateDisplay instanceof HTMLElement) ||
+        !(scale instanceof HTMLElement)
+      ) {
+        return null
+      }
+
+      const mapRect = map.getBoundingClientRect()
+      const groupRect = coordinateGroup.getBoundingClientRect()
+      const displayRect = coordinateDisplay.getBoundingClientRect()
+      const scaleRect = scale.getBoundingClientRect()
+
+      return {
+        mapCenterX: mapRect.left + mapRect.width / 2,
+        groupCenterX: groupRect.left + groupRect.width / 2,
+        displayBottom: displayRect.bottom,
+        viewportHeight: window.innerHeight,
+        scaleBottom: scaleRect.bottom,
+        coordinateTop: displayRect.top,
+        horizontalOverflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+        appOverflow: document.body.scrollWidth - window.innerWidth,
+      }
+    })
+
+    expect(layout).not.toBeNull()
+    expect(Math.abs((layout?.groupCenterX ?? 0) - (layout?.mapCenterX ?? 0))).toBeLessThan(24)
+    expect(layout?.displayBottom).toBeLessThanOrEqual(layout?.viewportHeight ?? 0)
+    expect(layout?.scaleBottom).toBeLessThanOrEqual((layout?.coordinateTop ?? 0) - 8)
+    expect(layout?.horizontalOverflow).toBeLessThanOrEqual(1)
+    expect(layout?.appOverflow).toBeLessThanOrEqual(1)
   })
 
   test('persists the selected basemap', async ({ page }) => {

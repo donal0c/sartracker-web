@@ -7,6 +7,7 @@ import { BasemapSwitcher } from './basemap-switcher'
 import { DrawingToolbar } from './drawing-toolbar'
 import { FocusModeCoordinateMirror } from './focus-mode-coordinate-mirror'
 import { MapDegradedAlert } from './map-degraded-alert'
+import { MapScaleReadout } from './map-scale-readout'
 import { LeafletFallbackMapView } from './leaflet-fallback-map-view'
 import { getMapRendererMode } from '../features/map/map-renderer-mode'
 import { useFocusModeStore } from '../features/focus-mode/focus-mode-store'
@@ -65,6 +66,7 @@ function MapLibreMapView() {
       <DrawingToolbar />
       <div className="h-full w-full" data-testid="map-container" ref={containerRef} />
       <MapDegradedAlert mapHealth={mapHealth} offlineReadiness={offlineMapReadiness} />
+      <MapScaleReadout mapRef={mapRef} />
       {!focusModeActive ? (
         <CoordinateBar
           latitude={hoverCoordinate.latitude}
