@@ -269,17 +269,16 @@ Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
       testName: 'Full operational view with active tracking',
       area: 'tracking',
       severity: 'critical',
-      verificationPrompt: `Verify this screenshot of the SAR Tracker in full operational mode:
+      verificationPrompt: `Verify this full-page screenshot of SAR Tracker in operational tracking mode. This broad frame checks layout only; detailed device-marker readability, tracking counts, and layer-list content are verified by separate element/zoomed screenshots in this suite.
 1. LEFT SIDE - MAP: A topographic map should be visible showing the Kerry mountains
-2. LEFT SIDE - DEVICES: Device markers with team names should be visible on the map
-3. LEFT SIDE - TOOLBAR: The Map Tools toolbar should be on the left side of the map
-4. LEFT SIDE - COORDS: A coordinate bar should be at the bottom of the map
-5. TOP HEADER: "Mountain Rescue" and "SAR Tracker" branding
-6. RIGHT SIDE - MISSION: Mission Control panel pinned at top showing "ACTIVE" status with running timers
-7. RIGHT SIDE - TABS: A segmented tab control with Tracking / Tools / Layers below Mission Control
-8. RIGHT SIDE - TRACKING: Tracking panel showing "online" status with device count (active tab)
-9. The overall layout should be: map taking ~70% width, sidebar taking ~30% width
-10. Theme should be dark with amber/gold accents
+2. LEFT SIDE - TOOLBAR: The Map Tools toolbar should be on the left side of the map
+3. LEFT SIDE - COORDS: A coordinate bar should be at the bottom of the map
+4. TOP HEADER: "Mountain Rescue" and "SAR Tracker" branding should be visible
+5. RIGHT SIDE - MISSION: Mission Control panel should be pinned at top and show an active mission state with timers
+6. RIGHT SIDE - TABS: A segmented tab control with Tracking / Tools / Layers should appear below Mission Control
+7. RIGHT SIDE - TRACKING: A Tracking System panel should be visible below the tabs
+8. The overall layout should be: map taking most of the width, sidebar taking the right portion
+9. Theme should be dark with amber/gold accents
 Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
       playwrightAssertions: [
         'full-page screenshot with all panels visible',

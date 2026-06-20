@@ -19,7 +19,6 @@ import {
   pauseMission,
 } from './helpers/test-setup'
 import {
-  captureAndRegister,
   captureElementAndRegister,
 } from './helpers/verification-manifest'
 
@@ -75,18 +74,16 @@ Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
     await expect(page.getByTestId('mission-pause-resume-btn')).toHaveCount(0)
     await expect(page.getByTestId('mission-finish-btn')).toHaveCount(0)
 
-    await captureAndRegister(page, {
+    await captureElementAndRegister(page, 'command-mast-mission-control-minimized', {
       testId: 'mission-minimized-mast-state',
       testName: 'Mission Control minimized into the command mast',
       area: 'mission',
       severity: 'critical',
-      verificationPrompt: `Verify this full-page screenshot of SAR Tracker with an active mission after Mission Control has been minimized:
-1. The top command mast should show the active mission name "Minimized Mast Check"
-2. The top command mast should show a compact Mission Control/minimized affordance with an "Expand" button
-3. The right rail should NOT show the full Mission Control card or a separate collapsed Mission Control side card
-4. Pause and Finish controls should NOT be visible anywhere in the side rail while Mission Control is minimized
-5. The right rail tab area should have more vertical room available for Tracking, Tools, or Layers content
-6. The map workspace should remain visible and unobstructed
+      verificationPrompt: `Verify this element-scoped screenshot of the minimized Mission Control cell in the top command mast:
+1. It should show the active mission name "Minimized Mast Check".
+2. It should show a visible "MINIMIZED" label.
+3. It should show a visible "EXPAND" button.
+4. It should look like compact command-mast content rather than the full right-rail Mission Control card.
 Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
       playwrightAssertions: [
         'mission-control-dock count is 0',
@@ -176,17 +173,16 @@ Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
 
     await expect(page.getByTestId('mission-finish-dialog')).toBeVisible()
 
-    await captureAndRegister(page, {
+    await captureElementAndRegister(page, 'mission-finish-dialog', {
       testId: 'mission-finish-dialog',
       testName: 'Mission finish confirmation dialog',
       area: 'mission',
       severity: 'critical',
-      verificationPrompt: `Verify this screenshot showing the mission finish confirmation dialog:
-1. An alertdialog confirmation should be visible inside Mission Control
-2. The dialog should contain a "Confirm Finish" button or similar confirmation text
-3. The dialog should clearly communicate that finishing the mission is a significant action
-4. The dialog should trap focus and be visually distinct from the surrounding Mission Control content
-5. The mission should still show as "ACTIVE" in the background until confirmed
+      verificationPrompt: `Verify this element-scoped screenshot of the mission finish confirmation card:
+1. The card should be headed "END MISSION?".
+2. It should contain a clearly visible "Confirm Finish" button and a "Cancel" button.
+3. It should explain that finishing stops timers and returns the mission to IDLE while data remains saved.
+4. The card should use warning/destructive styling appropriate for a significant mission lifecycle action.
 Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
       playwrightAssertions: [
         'mission-finish-dialog is visible',

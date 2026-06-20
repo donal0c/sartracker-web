@@ -215,8 +215,8 @@ Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
       verificationPrompt: `Verify this screenshot of the SAR Tracker Search Area dialog:
 1. The dialog should be titled "Search Area Details".
 2. The Name field should contain "Hidden Area Label".
-3. The colour control should show the red default #F43F5E or a red swatch as the outline/fill colour.
-4. A "Show name on map" checkbox should be visible and unchecked.
+3. The hex colour input should visibly read "#F43F5E"; the adjacent selected swatch may appear pink/red, which is correct for this default.
+4. A "SHOW NAME ON MAP" checkbox should be visible and unchecked. Treat an empty white square with no tick/checkmark as unchecked.
 5. Team, Status, POA, Terrain, and Notes controls should remain available.
 Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
       playwrightAssertions: [
@@ -288,6 +288,8 @@ Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
     await page.waitForTimeout(300)
     if (await page.getByTestId('drawing-dialog').isVisible()) {
       await page.getByTestId('drawing-name-input').fill('IPP Rings')
+      await page.getByTestId('drawing-range-ring-radius-input').fill('600')
+      await page.getByTestId('drawing-range-ring-count-input').fill('3')
       await page.getByTestId('drawing-save-btn').click()
       await page.waitForTimeout(300)
     }

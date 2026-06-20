@@ -14,6 +14,11 @@
 
 ## Last Work Done
 
+Final beta.8 candidate smoke/regression gate after DON-190 through DON-199 — **PASSED.**
+- Final gate covered: `npm run lint`; `npm run build`; `npm run test` (152 files / 968 tests); `npm run test:backend` (47 passed / 1 ignored); full `npm run test:e2e:chromium` (121/121); full visual Playwright (34/34); full `npm run visual:review -- --fail-on critical` (39/39, report `test-results/visual-verification/reports/visual-review-2026-06-20T11-20-59Z.json`).
+- The final visual gate caught stale verification harness assumptions, not runtime regressions: the multi-drawing visual flow did not fill the now-required Range Ring radius/count; several broad full-page prompts caused the reviewer to miss visible UI. Updated the visual test flow and prompts so the evidence matches the current product behavior.
+- Remaining release blocker before beta.8 promotion is still packaged Electron beta smoke/release gating, especially DON-180 duplicate-launch packaged smoke and the beta-specific smoke matrix from `CLAUDE.md`.
+
 DON-199 Coordinator and settings access-control decision — **DONE as decision/split-ticket work.**
 - Recorded `docs/settings-access-control-decision.md`: current Settings/admin roster behavior is an audit/workflow guard, not authentication; future protected surfaces are coordinator/admin roster edits, mission-affecting settings, finalized-mission unlock, and advanced repair actions; beta direction is a lightweight local privileged-settings guard, not full multi-user auth; mission unlock should stop relying only on the live mutable Settings roster.
 - Follow-ups created: `DON-219` Privileged Settings Mode, `DON-220` Mission Unlock Authority, and `DON-221` Access Recovery.
