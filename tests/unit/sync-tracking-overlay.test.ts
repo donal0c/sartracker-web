@@ -130,7 +130,7 @@ describe('tracking overlay marker configuration', () => {
       connectionHealth: { status: 'connected' as const, lastSuccessfulPoll: null },
     }
 
-    syncTrackingOverlay(map as never, emptySnapshot, [], true)
+    syncTrackingOverlay(map as never, emptySnapshot, [], [], true)
   })
 
   describe('filter syntax', () => {
@@ -193,11 +193,11 @@ describe('tracking overlay marker configuration', () => {
       expect(layer.layout?.['text-allow-overlap']).toBe(true)
     })
 
-    it('has a dark halo for readability on light backgrounds', () => {
+    it('uses dark text with a white halo for readable labels on busy Discovery map backgrounds', () => {
       const layer = getLabelLayer(map)
-      expect(layer.paint?.['text-color']).toEqual(['get', 'color'])
-      expect(layer.paint?.['text-halo-width']).toBeGreaterThanOrEqual(3)
-      expect(layer.paint?.['text-halo-color']).toBe('#020617')
+      expect(layer.paint?.['text-color']).toBe('#111827')
+      expect(layer.paint?.['text-halo-width']).toBeGreaterThanOrEqual(4)
+      expect(layer.paint?.['text-halo-color']).toBe('#FFFFFF')
     })
 
     it('uses a text size readable at operational zoom levels', () => {
@@ -208,14 +208,13 @@ describe('tracking overlay marker configuration', () => {
   })
 
   describe('breadcrumb trails', () => {
-    it('draws a dark casing below coloured breadcrumb trails', () => {
+    it('draws only a narrow subdued casing below coloured breadcrumb trails', () => {
       const casing = getBreadcrumbCasingLayer(map)
       const trail = getBreadcrumbLayer(map)
 
       expect(casing.paint?.['line-color']).toBe('#020617')
-      expect(casing.paint?.['line-width']).toBeGreaterThan(
-        Number(trail.paint?.['line-width']),
-      )
+      expect(casing.paint?.['line-width']).toBe(Number(trail.paint?.['line-width']) + 1)
+      expect(casing.paint?.['line-opacity']).toBeLessThanOrEqual(0.45)
       expect(trail.paint?.['line-color']).toEqual(['get', 'color'])
       expect(trail.paint?.['line-opacity']).toBeGreaterThanOrEqual(0.9)
     })
@@ -235,6 +234,7 @@ describe('tracking overlay marker configuration', () => {
           connectionHealth: { status: 'connected' as const, lastSuccessfulPoll: null },
         },
         [],
+        [],
         true,
         { deviceColors: {}, breadcrumbSize: 7, breadcrumbTrailMode: 'line' },
       )
@@ -243,7 +243,14 @@ describe('tracking overlay marker configuration', () => {
       const trail = getBreadcrumbLayer(map)
 
       expect(trail.paint?.['line-width']).toBe(7)
-      expect(casing.paint?.['line-width']).toBe(10)
+      expect(casing.paint?.['line-width']).toBe(8)
+    })
+
+    it('uses a minimal dot stroke so breadcrumb dots keep their selected colour at zoomed-out levels', () => {
+      const dots = getBreadcrumbDotsLayer(map)
+      expect(dots.paint?.['circle-stroke-color']).toBe('#020617')
+      expect(dots.paint?.['circle-stroke-width']).toBeLessThanOrEqual(1.5)
+      expect(dots.paint?.['circle-stroke-opacity']).toBeLessThanOrEqual(0.55)
     })
 
     it('supports breadcrumb-dot mode without rendering the solid line trail', async () => {
@@ -260,6 +267,7 @@ describe('tracking overlay marker configuration', () => {
           breadcrumbs: [],
           connectionHealth: { status: 'connected' as const, lastSuccessfulPoll: null },
         },
+        [],
         [],
         true,
         { deviceColors: {}, breadcrumbSize: 8, breadcrumbTrailMode: 'dots' },
@@ -285,6 +293,38 @@ describe('tracking overlay marker configuration', () => {
 
       expect(JSON.stringify(circle.filter)).toContain('device')
       expect(JSON.stringify(label.filter)).toContain('device')
+    })
+
+    it('filters current locations and breadcrumb trails independently per device', async () => {
+      map = createMockMap()
+      const { syncTrackingOverlay } = await import(
+        '../../src/features/tracking/sync-tracking-overlay'
+      )
+
+      syncTrackingOverlay(
+        map as never,
+        {
+          devices: [],
+          positions: [],
+          breadcrumbs: [],
+          connectionHealth: { status: 'connected' as const, lastSuccessfulPoll: null },
+        },
+        ['alpha'],
+        ['bravo'],
+        true,
+      )
+
+      const currentFilter = map.setFilter.mock.calls.find(
+        ([layerId]) => layerId === 'tracking-devices-circle',
+      )?.[1]
+      const breadcrumbFilter = map.setFilter.mock.calls.find(
+        ([layerId]) => layerId === 'tracking-breadcrumbs-line',
+      )?.[1]
+
+      expect(JSON.stringify(currentFilter)).toContain('alpha')
+      expect(JSON.stringify(currentFilter)).not.toContain('bravo')
+      expect(JSON.stringify(breadcrumbFilter)).toContain('bravo')
+      expect(JSON.stringify(breadcrumbFilter)).not.toContain('alpha')
     })
   })
 })

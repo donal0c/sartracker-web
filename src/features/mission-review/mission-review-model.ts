@@ -95,12 +95,7 @@ export function buildMissionReviewSnapshot(
     metadataEntries: input.layerMetadata,
   })
   const layerCount = catalogRoot.children.reduce((count, group) => count + group.children.length, 0)
-  const featureCount = catalogRoot.children.reduce(
-    (count, group) =>
-      count +
-      group.children.reduce((layerCount, layer) => layerCount + layer.children.length, 0),
-    0,
-  )
+  const featureCount = countUniqueCatalogFeatures(catalogRoot)
 
   const eventsByMarkerId = indexEventsByMarkerId(input.events)
 
@@ -128,6 +123,37 @@ export function buildMissionReviewSnapshot(
     markerRows: input.markers.map((marker) => buildMarkerRow(marker, eventsByMarkerId)),
     layerRoot: catalogRoot,
   }
+}
+
+function countUniqueCatalogFeatures(catalogRoot: LayerCatalogRootNode): number {
+  const uniqueFeatureKeys = new Set<string>()
+  for (const group of catalogRoot.children) {
+    for (const layer of group.children) {
+      for (const child of layer.children) {
+        const entity = child.entity
+        if (entity === null) {
+          uniqueFeatureKeys.add(child.id)
+          continue
+        }
+
+        if (entity.type === 'device') {
+          uniqueFeatureKeys.add(`device:${entity.device.device_id}`)
+        } else if (entity.type === 'helicopter') {
+          uniqueFeatureKeys.add(`helicopter:${entity.helicopter.id}`)
+        } else if (entity.type === 'marker') {
+          uniqueFeatureKeys.add(`marker:${entity.marker.id}`)
+        } else if (entity.type === 'drawing') {
+          uniqueFeatureKeys.add(`drawing:${entity.drawing.id}`)
+        } else if (entity.type === 'gpx_import') {
+          uniqueFeatureKeys.add(`gpx:${entity.gpxImport.id}`)
+        } else if (entity.type === 'measurement') {
+          uniqueFeatureKeys.add(`measurement:${entity.measurement.id}`)
+        }
+      }
+    }
+  }
+
+  return uniqueFeatureKeys.size
 }
 
 export function filterMissionReviewMarkers(

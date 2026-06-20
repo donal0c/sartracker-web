@@ -6,6 +6,10 @@ import {
   toLayerTreeTestId,
 } from '../../src/features/layers/layer-panel-model'
 import { buildLayerCatalogTree } from '../../src/features/layers/layer-catalog-builder'
+import {
+  getBreadcrumbDeviceFeatureNodeId,
+  getDeviceFeatureNodeId,
+} from '../../src/features/layers/layer-catalog-ids'
 import { findCatalogNode } from '../../src/features/layers/layer-catalog-tree'
 import type { NormalizedTrackingDevice } from '../../src/features/tracking/tracking-types'
 import type { Drawing, Marker } from '../../src/infrastructure/mission-store/tauri-mission-store'
@@ -14,11 +18,21 @@ describe('layer panel model', () => {
   it('builds operator inspection rows for tracking, measurement, and feature nodes', () => {
     const root = createRoot()
 
+    expect(findCatalogNode(root, 'layer:tracking:devices')?.displayLabel).toBe('Current Location')
+    expect(findCatalogNode(root, 'layer:tracking:devices')?.children).toHaveLength(2)
+    expect(findCatalogNode(root, 'layer:tracking:breadcrumbs')?.children).toHaveLength(2)
+
     expect(buildLayerInspectionRows(findCatalogNode(root, 'layer:tracking:devices')!, {
       trackingDeviceCount: 2,
       trackingBreadcrumbCount: 8,
       measurementCount: 3,
-    })).toContainEqual({ label: 'Tracking Devices', value: '2' })
+    })).toContainEqual({ label: 'Current Locations', value: '2' })
+
+    expect(buildLayerInspectionRows(findCatalogNode(root, 'layer:tracking:breadcrumbs')!, {
+      trackingDeviceCount: 2,
+      trackingBreadcrumbCount: 8,
+      measurementCount: 3,
+    })).toContainEqual({ label: 'Breadcrumb Points', value: '8' })
 
     expect(buildLayerInspectionRows(findCatalogNode(root, 'layer:map-tools:measurements')!, {
       trackingDeviceCount: 2,
@@ -48,7 +62,11 @@ describe('layer panel model', () => {
       trackingBreadcrumbCount: 8,
       measurementCount: 3,
     })).toBe('3')
-    expect(getLayerNodeCountLabel(findCatalogNode(root, 'feature:device:alpha')!, {
+    expect(getLayerNodeCountLabel(findCatalogNode(root, getDeviceFeatureNodeId('alpha'))!, {
+      trackingBreadcrumbCount: 8,
+      measurementCount: 3,
+    })).toBe('')
+    expect(getLayerNodeCountLabel(findCatalogNode(root, getBreadcrumbDeviceFeatureNodeId('alpha'))!, {
       trackingBreadcrumbCount: 8,
       measurementCount: 3,
     })).toBe('')

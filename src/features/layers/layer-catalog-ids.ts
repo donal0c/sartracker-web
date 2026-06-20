@@ -47,6 +47,10 @@ export function getDeviceFeatureNodeId(deviceId: string): string {
   return `feature:device:${deviceId}`
 }
 
+export function getBreadcrumbDeviceFeatureNodeId(deviceId: string): string {
+  return `feature:tracking-breadcrumb:${deviceId}`
+}
+
 export function getMarkerFeatureNodeId(markerId: string): string {
   return `feature:marker:${markerId}`
 }

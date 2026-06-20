@@ -54,12 +54,14 @@ const GROUP_BY_NODE_ID: Readonly<Record<string, keyof LayerGroupVisibility>> = {
 
 export type LayerVisibilityStoreAdapter = {
   readonly hiddenDeviceIds: readonly string[]
+  readonly hiddenBreadcrumbDeviceIds: readonly string[]
   readonly hiddenMarkerIds: readonly string[]
   readonly hiddenDrawingIds: readonly string[]
   readonly hiddenHelicopterIds: readonly string[]
   readonly hiddenGpxImportIds: readonly string[]
   readonly setGroupVisibility: (group: keyof LayerGroupVisibility, visible: boolean) => void
   readonly toggleDeviceVisibility: (deviceId: string) => void
+  readonly toggleBreadcrumbDeviceVisibility: (deviceId: string) => void
   readonly toggleMarkerVisibility: (markerId: string) => void
   readonly toggleDrawingVisibility: (drawingId: string) => void
   readonly toggleHelicopterVisibility: (helicopterId: string) => void
@@ -71,6 +73,8 @@ export type LayerVisibilityStoreAdapter = {
   readonly setMeasurementsVisible: (visible: boolean) => void
   readonly showAllDevices: () => void
   readonly hideAllDevices: (deviceIds: readonly string[]) => void
+  readonly showAllBreadcrumbDevices: () => void
+  readonly hideAllBreadcrumbDevices: (deviceIds: readonly string[]) => void
 }
 
 /**
@@ -125,6 +129,13 @@ export function applyVisibilityForNodeIds(
     if (featureNode !== null) {
       if (featureNode.entityType === 'device') {
         toggleByHiddenList(featureNode.entityId, visible, store.hiddenDeviceIds, store.toggleDeviceVisibility)
+      } else if (featureNode.entityType === 'tracking-breadcrumb') {
+        toggleByHiddenList(
+          featureNode.entityId,
+          visible,
+          store.hiddenBreadcrumbDeviceIds,
+          store.toggleBreadcrumbDeviceVisibility,
+        )
       } else if (featureNode.entityType === 'marker') {
         toggleByHiddenList(featureNode.entityId, visible, store.hiddenMarkerIds, store.toggleMarkerVisibility)
       } else if (featureNode.entityType === 'drawing') {
@@ -162,7 +173,13 @@ export function applyVisibilityForNodeIds(
     }
 
     if (nodeId === TRACKING_BREADCRUMBS_LAYER_NODE_ID) {
+      const deviceIds = collectDeviceIdsFromTrackingLayer(root)
       store.setBreadcrumbsVisible(visible)
+      if (visible) {
+        store.showAllBreadcrumbDevices()
+      } else {
+        store.hideAllBreadcrumbDevices(deviceIds)
+      }
       continue
     }
 

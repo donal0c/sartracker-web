@@ -47,7 +47,7 @@ export function buildLayerInspectionRows(
     if (node.id === TRACKING_DEVICES_LAYER_NODE_ID) {
       return [
         { label: 'Layer Key', value: node.layerKey },
-        { label: 'Tracking Devices', value: String(counts.trackingDeviceCount) },
+        { label: 'Current Locations', value: String(counts.trackingDeviceCount) },
         { label: 'Visible', value: node.isVisible ? 'Yes' : 'No' },
       ]
     }

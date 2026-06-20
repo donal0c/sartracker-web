@@ -19,6 +19,7 @@ import {
 } from './layer-catalog-types'
 import {
   getDeviceFeatureNodeId,
+  getBreadcrumbDeviceFeatureNodeId,
   getDrawingFeatureNodeId,
   getDrawingLayerNodeId,
   getGpxImportFeatureNodeId,
@@ -56,7 +57,7 @@ const LAYER_DEFINITIONS: readonly {
   readonly label: string
   readonly displayOrder: number
 }[] = [
-  { key: 'tracking_devices', id: TRACKING_DEVICES_LAYER_NODE_ID, parentId: TRACKING_GROUP_NODE_ID, label: 'People', displayOrder: 10 },
+  { key: 'tracking_devices', id: TRACKING_DEVICES_LAYER_NODE_ID, parentId: TRACKING_GROUP_NODE_ID, label: 'Current Location', displayOrder: 10 },
   { key: 'tracking_breadcrumbs', id: TRACKING_BREADCRUMBS_LAYER_NODE_ID, parentId: TRACKING_GROUP_NODE_ID, label: 'Breadcrumbs', displayOrder: 20 },
   { key: 'helicopter_slot_1', id: 'layer:helicopters:slot-1', parentId: HELICOPTERS_GROUP_NODE_ID, label: 'Rescue 118', displayOrder: 10 },
   { key: 'helicopter_slot_2', id: 'layer:helicopters:slot-2', parentId: HELICOPTERS_GROUP_NODE_ID, label: 'Rescue 115', displayOrder: 20 },
@@ -81,6 +82,7 @@ export function buildLayerCatalogTree(input: LayerCatalogBuildInput): LayerCatal
   const featureItemsByLayer = new Map<string, LayerCatalogFeatureItemNode[]>()
 
   addDeviceItems(featureItemsByLayer, input.devices, metadataIndex)
+  addBreadcrumbDeviceItems(featureItemsByLayer, input.devices, metadataIndex)
   addHelicopterItems(featureItemsByLayer, input.helicopters ?? [], metadataIndex)
   addMarkerItems(featureItemsByLayer, input.markers, metadataIndex)
   addDrawingItems(featureItemsByLayer, input.drawings, metadataIndex)
@@ -206,6 +208,25 @@ function addDeviceItems(
   const items = devices.map((device, index) =>
     createFeatureItem({
       id: getDeviceFeatureNodeId(device.device_id),
+      parentId: layerId,
+      label: device.name,
+      fallbackOrder: index,
+      metadataIndex,
+      entity: { type: 'device', device },
+    }),
+  )
+  target.set(layerId, items)
+}
+
+function addBreadcrumbDeviceItems(
+  target: Map<string, LayerCatalogFeatureItemNode[]>,
+  devices: readonly NormalizedTrackingDevice[],
+  metadataIndex: Map<string, LayerCatalogMetadataEntry>,
+): void {
+  const layerId = TRACKING_BREADCRUMBS_LAYER_NODE_ID
+  const items = devices.map((device, index) =>
+    createFeatureItem({
+      id: getBreadcrumbDeviceFeatureNodeId(device.device_id),
       parentId: layerId,
       label: device.name,
       fallbackOrder: index,

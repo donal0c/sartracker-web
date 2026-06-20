@@ -30,6 +30,7 @@ export function useMapOverlays(options: UseMapOverlaysOptions): void {
   const trackingSnapshot = useTrackingStore((state) => state.snapshot)
   const groupVisibility = useLayerVisibilityStore((state) => state.groupVisibility)
   const hiddenDeviceIds = useLayerVisibilityStore((state) => state.hiddenDeviceIds)
+  const hiddenBreadcrumbDeviceIds = useLayerVisibilityStore((state) => state.hiddenBreadcrumbDeviceIds)
   const breadcrumbsVisible = useLayerVisibilityStore((state) => state.breadcrumbsVisible)
   const markerTypeVisibility = useLayerVisibilityStore((state) => state.markerTypeVisibility)
   const hiddenMarkerIds = useLayerVisibilityStore((state) => state.hiddenMarkerIds)
@@ -58,6 +59,7 @@ export function useMapOverlays(options: UseMapOverlaysOptions): void {
         map,
         getEffectiveTrackingVisible(groupVisibility) ? missionTrackingSnapshot : emptyTrackingSnapshot(),
         hiddenDeviceIds,
+        hiddenBreadcrumbDeviceIds,
         getEffectiveTrackingVisible(groupVisibility) && breadcrumbsVisible,
         trackingStyle,
       )
@@ -70,6 +72,7 @@ export function useMapOverlays(options: UseMapOverlaysOptions): void {
     options.mapRef,
     breadcrumbsVisible,
     groupVisibility,
+    hiddenBreadcrumbDeviceIds,
     hiddenDeviceIds,
     trackingStyle,
     activeDeviceIds,

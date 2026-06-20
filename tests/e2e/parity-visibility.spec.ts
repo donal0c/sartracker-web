@@ -36,6 +36,7 @@ async function readVisibilityState(page: Page) {
     const state = useLayerVisibilityStore.getState()
     return {
       hiddenDeviceIds: [...state.hiddenDeviceIds],
+      hiddenBreadcrumbDeviceIds: [...state.hiddenBreadcrumbDeviceIds],
       hiddenMarkerIds: [...state.hiddenMarkerIds],
       hiddenDrawingIds: [...state.hiddenDrawingIds],
       groupVisibility: { ...state.groupVisibility },
@@ -433,6 +434,87 @@ test.describe('Batch 1: Critical visibility parity (LPV-240 to LPV-247)', () => 
     expect(restored.hiddenDeviceIds).not.toContain('bravo')
   })
 
+  test('DON-193: current-location and breadcrumb device toggles are independent', async ({
+    page,
+  }) => {
+    const before = await readVisibilityState(page)
+    expect(before.hiddenDeviceIds).toEqual([])
+    expect(before.hiddenBreadcrumbDeviceIds).toEqual([])
+
+    const currentBravoToggle = page.getByTestId('layer-visibility-feature-device-bravo')
+    const breadcrumbsExpand = page.getByTestId('layer-expand-layer-tracking-breadcrumbs')
+    const breadcrumbBravoToggle = page.getByTestId(
+      'layer-visibility-feature-tracking-breadcrumb-bravo',
+    )
+    await expect(currentBravoToggle).toBeVisible({ timeout: 10000 })
+    await expect(breadcrumbsExpand).toBeVisible({ timeout: 10000 })
+    await breadcrumbsExpand.click()
+    await expect(breadcrumbBravoToggle).toBeVisible({ timeout: 10000 })
+
+    await currentBravoToggle.click()
+    await expect(currentBravoToggle).not.toBeChecked()
+    await expect(breadcrumbBravoToggle).toBeChecked()
+
+    await expect
+      .poll(async () => {
+        const state = await readVisibilityState(page)
+        return {
+          current: state.hiddenDeviceIds,
+          breadcrumbs: state.hiddenBreadcrumbDeviceIds,
+        }
+      }, { timeout: 5_000 })
+      .toEqual({ current: ['bravo'], breadcrumbs: [] })
+
+    await expect
+      .poll(async () => JSON.stringify((await readMapFilterState(page)).deviceCircle), {
+        timeout: 5_000,
+      })
+      .toContain('bravo')
+    await expect
+      .poll(async () => JSON.stringify((await readMapFilterState(page)).breadcrumbLine), {
+        timeout: 5_000,
+      })
+      .not.toContain('bravo')
+
+    await breadcrumbBravoToggle.click()
+    await expect(breadcrumbBravoToggle).not.toBeChecked()
+
+    await expect
+      .poll(async () => {
+        const state = await readVisibilityState(page)
+        return {
+          current: state.hiddenDeviceIds,
+          breadcrumbs: state.hiddenBreadcrumbDeviceIds,
+        }
+      }, { timeout: 5_000 })
+      .toEqual({ current: ['bravo'], breadcrumbs: ['bravo'] })
+
+    await expect
+      .poll(async () => JSON.stringify((await readMapFilterState(page)).breadcrumbLine), {
+        timeout: 5_000,
+      })
+      .toContain('bravo')
+
+    await currentBravoToggle.click()
+    await expect(currentBravoToggle).toBeChecked()
+
+    await expect
+      .poll(async () => {
+        const state = await readVisibilityState(page)
+        return {
+          current: state.hiddenDeviceIds,
+          breadcrumbs: state.hiddenBreadcrumbDeviceIds,
+        }
+      }, { timeout: 5_000 })
+      .toEqual({ current: [], breadcrumbs: ['bravo'] })
+
+    await expect
+      .poll(async () => JSON.stringify((await readMapFilterState(page)).deviceCircle), {
+        timeout: 5_000,
+      })
+      .not.toContain('bravo')
+  })
+
   test('LPV-241: marker-type visibility toggle propagates to visibility store', async ({
     page,
   }) => {
@@ -546,6 +628,11 @@ test.describe('Batch 1: Critical visibility parity (LPV-240 to LPV-247)', () => 
       })
       .toEqual(['alpha', 'bravo'])
     await expect
+      .poll(async () => (await readVisibilityState(page)).hiddenBreadcrumbDeviceIds.sort(), {
+        timeout: 5_000,
+      })
+      .toEqual(['alpha', 'bravo'])
+    await expect
       .poll(async () => (await readVisibilityState(page)).breadcrumbsVisible, {
         timeout: 5_000,
       })
@@ -556,6 +643,11 @@ test.describe('Batch 1: Critical visibility parity (LPV-240 to LPV-247)', () => 
 
     await expect
       .poll(async () => (await readVisibilityState(page)).hiddenDeviceIds, {
+        timeout: 5_000,
+      })
+      .toEqual([])
+    await expect
+      .poll(async () => (await readVisibilityState(page)).hiddenBreadcrumbDeviceIds, {
         timeout: 5_000,
       })
       .toEqual([])

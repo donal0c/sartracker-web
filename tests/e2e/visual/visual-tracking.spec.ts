@@ -54,7 +54,79 @@ Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
     })
   })
 
-  test('map shows device markers at correct positions', async ({ page }) => {
+  test('offline tracking warning is a red stale-position alert', async ({ page }) => {
+    await page.evaluate(async () => {
+      const { applyTrackingStatus } = await import('/src/features/tracking/tracking-store.ts')
+      applyTrackingStatus({
+        mode: 'offline',
+        consecutiveFailures: 2,
+        recovered: false,
+        lastSuccessAt: '2026-04-10T12:00:00.000Z',
+        warning: 'OFFLINE MODE - showing last known positions.',
+      })
+    })
+
+    await expect(page.getByTestId('tracking-mode-chip')).toHaveClass(/sar-status-chip-alert/)
+    await expect(page.getByTestId('tracking-warning')).toHaveClass(/sar-status-alert-panel/)
+
+    await captureElementAndRegister(page, 'tracking-status', {
+      testId: 'tracking-offline-alert',
+      testName: 'Tracking status panel in offline stale-position alert state',
+      area: 'tracking',
+      severity: 'critical',
+      verificationPrompt: `Verify this screenshot of the SAR Tracker tracking status panel when live telemetry has failed during a mission:
+1. The connection status chip should show "OFFLINE"
+2. The OFFLINE chip should be bright red/high-alert, not amber or neutral
+3. The warning message should include "OFFLINE MODE" and explain that last known positions are being shown
+4. The warning message panel should also be red/high-alert, not a soft amber note
+5. The counters should remain visible so the coordinator can still see device/fix/cache/stale counts
+Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
+      playwrightAssertions: [
+        'tracking-mode-chip has sar-status-chip-alert',
+        'tracking-warning has sar-status-alert-panel',
+        'tracking-warning contains OFFLINE MODE',
+      ],
+    })
+  })
+
+  test('paused mission refresh suspension is a red stale-position alert', async ({ page }) => {
+    await page.getByTestId('mission-pause-resume-btn').click()
+    await expect(page.getByTestId('mission-control')).toContainText('paused')
+    await page.evaluate(async () => {
+      const { applyTrackingStatus } = await import('/src/features/tracking/tracking-store.ts')
+      applyTrackingStatus({
+        mode: 'idle',
+        consecutiveFailures: 0,
+        recovered: false,
+        lastSuccessAt: null,
+        warning: 'Live refresh suspended while mission is paused.',
+      })
+    })
+    await expect(page.getByTestId('tracking-warning')).toContainText('Live refresh suspended')
+    await expect(page.getByTestId('tracking-mode-chip')).toHaveClass(/sar-status-chip-alert/)
+    await expect(page.getByTestId('tracking-warning')).toHaveClass(/sar-status-alert-panel/)
+
+    await captureElementAndRegister(page, 'tracking-status', {
+      testId: 'tracking-paused-refresh-alert',
+      testName: 'Tracking status panel while mission pause suspends live refresh',
+      area: 'tracking',
+      severity: 'critical',
+      verificationPrompt: `Verify this screenshot of the SAR Tracker tracking status panel while the mission is paused:
+1. The status/warning area should clearly say "Live refresh suspended while mission is paused" or equivalent
+2. The status chip and warning panel should be bright red/high-alert, because displayed positions may no longer be current
+3. This alert should not look like a normal idle/not-configured state
+4. Device, fix, cache, and stale counters should remain visible
+Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
+      playwrightAssertions: [
+        'mission-control contains paused',
+        'tracking-warning contains Live refresh suspended',
+        'tracking-mode-chip has sar-status-chip-alert',
+        'tracking-warning has sar-status-alert-panel',
+      ],
+    })
+  })
+
+  test('map shows readable device labels and less dominant breadcrumb casing', async ({ page }) => {
     // Device names appear in the layer tree (Layers tab)
     await page.getByTestId('sidebar-tab-layers').click()
     await expect(page.getByText('Alpha Team')).toBeVisible()
@@ -78,41 +150,46 @@ Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
       verificationPrompt: `Verify this screenshot of the SAR Tracker map zoomed to show tracking device markers:
 1. The map should show a zoomed-in topographic view of a mountainous area (contour lines, terrain shading visible)
 2. There should be at least 2 small colored device marker dots/icons visible on the map (typically green, cyan, or colored circles/pins)
-3. The device markers should be positioned on the mountain terrain in the central area of the map (not off-screen or in corners)
-4. There should be at least one visible breadcrumb trail line (a colored line connecting previous GPS positions, typically blue/cyan) running through the terrain
-5. The right sidebar should show the SAR Tracker with mission timers running (time > 00:00:00)
-6. The right sidebar should show tracking controls with status indicators (colored buttons for Pause/Finish)
-Note: device text labels (team names) may be very small at map scale — this is a known issue. Focus on verifying that colored marker dots and trail lines are present on the terrain.
+3. Device text labels should be readable against the topographic map, using dark text with a light/white backing or halo rather than low-contrast colored text
+4. The device markers should be positioned on the mountain terrain in the central area of the map (not off-screen or in corners)
+5. There should be at least one visible breadcrumb trail line in the selected device colour, and the dark casing should be narrow/subdued enough that the selected colour remains obvious
+6. The right sidebar should show the SAR Tracker with mission timers running (time > 00:00:00)
+7. The right sidebar should show tracking controls with status indicators (colored buttons for Pause/Finish)
 Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
       playwrightAssertions: [
-        'Alpha Team text is visible on map (Playwright DOM check)',
-        'Bravo Team text is visible on map (Playwright DOM check)',
+        'tracking snapshot injected with Alpha Team and Bravo Team',
+        'map screenshot captured after zooming to tracking positions',
       ],
     })
   })
 
   test('layer panel lists all tracked devices', async ({ page }) => {
+    await page.getByTestId('mission-control-collapse-btn').click()
     await page.getByTestId('sidebar-tab-layers').click()
     const layerPanel = page.getByTestId('layer-panel')
     await expect(layerPanel).toBeVisible()
     await layerPanel.scrollIntoViewIfNeeded()
+    await page.getByTestId('layer-expand-layer-tracking-breadcrumbs').click()
 
     // Devices should appear in the layer tree
-    await expect(page.getByText('Alpha Team')).toBeVisible()
-    await expect(page.getByText('Bravo Team')).toBeVisible()
-    await expect(page.getByText('Charlie Team')).toBeVisible()
+    await expect(page.getByTestId('layer-row-feature-device-alpha')).toBeVisible()
+    await expect(page.getByTestId('layer-row-feature-device-bravo')).toBeVisible()
+    await expect(page.getByTestId('layer-row-feature-device-charlie')).toBeVisible()
+    await expect(page.getByTestId('layer-row-feature-tracking-breadcrumb-alpha')).toBeVisible()
+    await expect(page.getByTestId('layer-row-layer-tracking-breadcrumbs')).toBeVisible()
 
-    await captureElementAndRegister(page, 'layer-tree', {
+    await captureElementAndRegister(page, 'layer-panel', {
       testId: 'tracking-layer-panel',
       testName: 'Layer panel with tracked devices',
       area: 'layers',
       severity: 'critical',
       verificationPrompt: `Verify this screenshot of the SAR Tracker Layer Tree with tracking devices:
-1. Under the "Tracking" group, there should be a "People" subgroup
-2. The People group should list exactly 3 devices: "Alpha Team", "Bravo Team", "Charlie Team"
-3. Each device should have a visibility checkbox (checked by default)
-4. There should be a "Breadcrumbs" item under Tracking
-5. The count next to "People" should show 3
+1. Under the "Tracking" group, there should be a "Current Location" subgroup
+2. Current Location should list exactly 3 devices: "Alpha Team", "Bravo Team", "Charlie Team"
+3. Each current-location device should have a visibility checkbox (checked by default)
+4. There should also be a separate "Breadcrumbs" subgroup under Tracking
+5. Breadcrumbs should be a separate control surface from Current Location so operators can show current positions with or without trails
+6. The count next to Current Location should show 3
 Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
       playwrightAssertions: [
         'layer-panel is visible',

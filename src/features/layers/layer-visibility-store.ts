@@ -31,6 +31,7 @@ type LayerVisibilityState = {
   readonly hydratedMissionId: string | null
   readonly groupVisibility: LayerGroupVisibility
   readonly hiddenDeviceIds: readonly string[]
+  readonly hiddenBreadcrumbDeviceIds: readonly string[]
   readonly hiddenMarkerIds: readonly string[]
   readonly hiddenHelicopterIds: readonly string[]
   readonly hiddenGpxImportIds: readonly string[]
@@ -43,11 +44,14 @@ type LayerVisibilityState = {
   readonly measurementsVisible: boolean
   readonly setGroupVisibility: (group: keyof LayerGroupVisibility, visible: boolean) => void
   readonly toggleDeviceVisibility: (deviceId: string) => void
+  readonly toggleBreadcrumbDeviceVisibility: (deviceId: string) => void
   readonly toggleMarkerVisibility: (markerId: string) => void
   readonly toggleHelicopterVisibility: (helicopterId: string) => void
   readonly toggleGpxImportVisibility: (importId: string) => void
   readonly showAllDevices: () => void
   readonly hideAllDevices: (deviceIds: readonly string[]) => void
+  readonly showAllBreadcrumbDevices: () => void
+  readonly hideAllBreadcrumbDevices: (deviceIds: readonly string[]) => void
   readonly setMarkerTypeVisibility: (type: MarkerType, visible: boolean) => void
   readonly showAllMarkerTypes: () => void
   readonly hideAllMarkerTypes: () => void
@@ -98,6 +102,7 @@ export const useLayerVisibilityStore = create<LayerVisibilityState>((set) => ({
   hydratedMissionId: null,
   groupVisibility: DEFAULT_GROUP_VISIBILITY,
   hiddenDeviceIds: [],
+  hiddenBreadcrumbDeviceIds: [],
   hiddenMarkerIds: [],
   hiddenHelicopterIds: [],
   hiddenGpxImportIds: [],
@@ -121,6 +126,12 @@ export const useLayerVisibilityStore = create<LayerVisibilityState>((set) => ({
         ? state.hiddenDeviceIds.filter((candidate) => candidate !== deviceId)
         : [...state.hiddenDeviceIds, deviceId],
     })),
+  toggleBreadcrumbDeviceVisibility: (deviceId) =>
+    set((state) => ({
+      hiddenBreadcrumbDeviceIds: state.hiddenBreadcrumbDeviceIds.includes(deviceId)
+        ? state.hiddenBreadcrumbDeviceIds.filter((candidate) => candidate !== deviceId)
+        : [...state.hiddenBreadcrumbDeviceIds, deviceId],
+    })),
   toggleMarkerVisibility: (markerId) =>
     set((state) => ({
       hiddenMarkerIds: state.hiddenMarkerIds.includes(markerId)
@@ -141,6 +152,8 @@ export const useLayerVisibilityStore = create<LayerVisibilityState>((set) => ({
     })),
   showAllDevices: () => set({ hiddenDeviceIds: [] }),
   hideAllDevices: (deviceIds) => set({ hiddenDeviceIds: [...deviceIds] }),
+  showAllBreadcrumbDevices: () => set({ hiddenBreadcrumbDeviceIds: [] }),
+  hideAllBreadcrumbDevices: (deviceIds) => set({ hiddenBreadcrumbDeviceIds: [...deviceIds] }),
   setMarkerTypeVisibility: (type, visible) =>
     set((state) => ({
       markerTypeVisibility: {
@@ -203,6 +216,7 @@ export const useLayerVisibilityStore = create<LayerVisibilityState>((set) => ({
   hydrateCatalogVisibility: (missionId, root) =>
     set((state) => {
       const nextHiddenDeviceIds = collectHiddenDeviceIds(root)
+      const nextHiddenBreadcrumbDeviceIds = collectHiddenBreadcrumbDeviceIds(root)
       const nextHiddenMarkerIds = collectHiddenMarkerIds(root)
       const nextHiddenHelicopterIds = collectHiddenHelicopterIds(root)
       const nextHiddenGpxImportIds = collectHiddenGpxImportIds(root)
@@ -242,6 +256,12 @@ export const useLayerVisibilityStore = create<LayerVisibilityState>((set) => ({
       const hiddenDeviceIds = shallowStringArrayEqual(state.hiddenDeviceIds, nextHiddenDeviceIds)
         ? state.hiddenDeviceIds
         : nextHiddenDeviceIds
+      const hiddenBreadcrumbDeviceIds = shallowStringArrayEqual(
+        state.hiddenBreadcrumbDeviceIds,
+        nextHiddenBreadcrumbDeviceIds,
+      )
+        ? state.hiddenBreadcrumbDeviceIds
+        : nextHiddenBreadcrumbDeviceIds
       const hiddenMarkerIds = shallowStringArrayEqual(state.hiddenMarkerIds, nextHiddenMarkerIds)
         ? state.hiddenMarkerIds
         : nextHiddenMarkerIds
@@ -279,6 +299,7 @@ export const useLayerVisibilityStore = create<LayerVisibilityState>((set) => ({
       if (
         state.hydratedMissionId === missionId &&
         hiddenDeviceIds === state.hiddenDeviceIds &&
+        hiddenBreadcrumbDeviceIds === state.hiddenBreadcrumbDeviceIds &&
         hiddenMarkerIds === state.hiddenMarkerIds &&
         hiddenHelicopterIds === state.hiddenHelicopterIds &&
         hiddenGpxImportIds === state.hiddenGpxImportIds &&
@@ -297,6 +318,7 @@ export const useLayerVisibilityStore = create<LayerVisibilityState>((set) => ({
       return {
         hydratedMissionId: missionId,
         hiddenDeviceIds,
+        hiddenBreadcrumbDeviceIds,
         hiddenMarkerIds,
         hiddenHelicopterIds,
         hiddenGpxImportIds,
@@ -314,6 +336,27 @@ export const useLayerVisibilityStore = create<LayerVisibilityState>((set) => ({
 
 export function isDeviceVisible(hiddenDeviceIds: readonly string[], deviceId: string): boolean {
   return !hiddenDeviceIds.includes(deviceId)
+}
+
+function collectHiddenBreadcrumbDeviceIds(root: LayerCatalogRootNode): readonly string[] {
+  const breadcrumbLayer = root.children
+    .flatMap((group) => group.children)
+    .find((candidate) => candidate.id === TRACKING_BREADCRUMBS_LAYER_NODE_ID)
+
+  if (breadcrumbLayer === undefined) {
+    return []
+  }
+
+  if (!breadcrumbLayer.isVisible) {
+    return breadcrumbLayer.children
+      .flatMap((child) =>
+        child.entity?.type === 'device' ? [child.entity.device.device_id] : [],
+      )
+  }
+
+  return breadcrumbLayer.children.flatMap((child) =>
+    child.entity?.type === 'device' && !child.isVisible ? [child.entity.device.device_id] : [],
+  )
 }
 
 export function isMarkerTypeVisible(

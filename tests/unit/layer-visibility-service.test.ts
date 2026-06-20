@@ -1,6 +1,10 @@
 import { describe, expect, it, vi } from 'vitest'
 
 import { applyVisibilityForNodeIds, collectSubtreeNodeIds, type LayerVisibilityStoreAdapter } from '../../src/features/layers/layer-visibility-service'
+import {
+  getBreadcrumbDeviceFeatureNodeId,
+  getDeviceFeatureNodeId,
+} from '../../src/features/layers/layer-catalog-ids'
 import type { LayerCatalogRootNode } from '../../src/features/layers/layer-catalog-types'
 
 describe('layer visibility service', () => {
@@ -8,8 +12,13 @@ describe('layer visibility service', () => {
     const root = createRoot()
     expect(collectSubtreeNodeIds(root, 'layer:tracking:devices')).toEqual([
       'layer:tracking:devices',
-      'feature:device:alpha',
-      'feature:device:bravo',
+      getDeviceFeatureNodeId('alpha'),
+      getDeviceFeatureNodeId('bravo'),
+    ])
+    expect(collectSubtreeNodeIds(root, 'layer:tracking:breadcrumbs')).toEqual([
+      'layer:tracking:breadcrumbs',
+      getBreadcrumbDeviceFeatureNodeId('alpha'),
+      getBreadcrumbDeviceFeatureNodeId('bravo'),
     ])
   })
 
@@ -44,6 +53,26 @@ describe('layer visibility service', () => {
     expect(store.setDrawingTypeVisibility).toHaveBeenCalledWith('line', true)
   })
 
+  it('updates current-location and breadcrumb device visibility independently', () => {
+    const store = createStoreAdapter({
+      hiddenDeviceIds: ['alpha'],
+      hiddenBreadcrumbDeviceIds: ['bravo'],
+    })
+
+    applyVisibilityForNodeIds(
+      createRoot(),
+      [
+        getDeviceFeatureNodeId('alpha'),
+        getBreadcrumbDeviceFeatureNodeId('bravo'),
+      ],
+      true,
+      store,
+    )
+
+    expect(store.toggleDeviceVisibility).toHaveBeenCalledWith('alpha')
+    expect(store.toggleBreadcrumbDeviceVisibility).toHaveBeenCalledWith('bravo')
+  })
+
   it('handles tracking/devices branch and measurement/breadcrumb layers', () => {
     const store = createStoreAdapter()
     const root = createRoot()
@@ -61,6 +90,7 @@ describe('layer visibility service', () => {
 
     expect(store.hideAllDevices).toHaveBeenCalledWith(['alpha', 'bravo'])
     expect(store.setBreadcrumbsVisible).toHaveBeenCalledWith(false)
+    expect(store.hideAllBreadcrumbDevices).toHaveBeenCalledWith(['alpha', 'bravo'])
     expect(store.setMeasurementsVisible).toHaveBeenCalledWith(false)
   })
 
@@ -106,6 +136,7 @@ describe('layer visibility service', () => {
     expect(store.setHelicopterSlotVisibility).not.toHaveBeenCalled()
     expect(store.setGroupVisibility).not.toHaveBeenCalled()
     expect(store.hideAllDevices).not.toHaveBeenCalled()
+    expect(store.hideAllBreadcrumbDevices).not.toHaveBeenCalled()
   })
 })
 
@@ -113,6 +144,7 @@ function createStoreAdapter(
   overrides: Partial<Pick<
     LayerVisibilityStoreAdapter,
     | 'hiddenDeviceIds'
+    | 'hiddenBreadcrumbDeviceIds'
     | 'hiddenMarkerIds'
     | 'hiddenDrawingIds'
     | 'hiddenHelicopterIds'
@@ -121,11 +153,13 @@ function createStoreAdapter(
 ): LayerVisibilityStoreAdapter {
   return {
     hiddenDeviceIds: overrides.hiddenDeviceIds ?? [],
+    hiddenBreadcrumbDeviceIds: overrides.hiddenBreadcrumbDeviceIds ?? [],
     hiddenMarkerIds: overrides.hiddenMarkerIds ?? [],
     hiddenDrawingIds: overrides.hiddenDrawingIds ?? [],
     hiddenHelicopterIds: overrides.hiddenHelicopterIds ?? [],
     hiddenGpxImportIds: overrides.hiddenGpxImportIds ?? [],
     toggleDeviceVisibility: vi.fn(),
+    toggleBreadcrumbDeviceVisibility: vi.fn(),
     toggleMarkerVisibility: vi.fn(),
     toggleDrawingVisibility: vi.fn(),
     toggleHelicopterVisibility: vi.fn(),
@@ -138,6 +172,8 @@ function createStoreAdapter(
     setMeasurementsVisible: vi.fn(),
     showAllDevices: vi.fn(),
     hideAllDevices: vi.fn(),
+    showAllBreadcrumbDevices: vi.fn(),
+    hideAllBreadcrumbDevices: vi.fn(),
   }
 }
 
@@ -169,9 +205,9 @@ function createRoot(): LayerCatalogRootNode {
             id: 'layer:tracking:devices',
             kind: 'layer',
             layerKey: 'tracking_devices',
-            label: 'People',
+            label: 'Current Location',
             alias: null,
-            displayLabel: 'People',
+            displayLabel: 'Current Location',
             isFavorite: false,
             isVisible: true,
             displayOrder: 10,
@@ -179,7 +215,7 @@ function createRoot(): LayerCatalogRootNode {
             summary: { totalCount: 2, visibleCount: 2 },
             children: [
               {
-                id: 'feature:device:alpha',
+                id: getDeviceFeatureNodeId('alpha'),
                 kind: 'feature_item',
                 label: 'Alpha',
                 alias: null,
@@ -202,7 +238,7 @@ function createRoot(): LayerCatalogRootNode {
                 },
               },
               {
-                id: 'feature:device:bravo',
+                id: getDeviceFeatureNodeId('bravo'),
                 kind: 'feature_item',
                 label: 'Bravo',
                 alias: null,
@@ -238,7 +274,54 @@ function createRoot(): LayerCatalogRootNode {
             displayOrder: 20,
             parentId: 'group:tracking',
             summary: { totalCount: 0, visibleCount: 0 },
-            children: [],
+            children: [
+              {
+                id: getBreadcrumbDeviceFeatureNodeId('alpha'),
+                kind: 'feature_item',
+                label: 'Alpha',
+                alias: null,
+                displayLabel: 'Alpha',
+                isFavorite: false,
+                isVisible: true,
+                displayOrder: 1,
+                parentId: 'layer:tracking:breadcrumbs',
+                entity: {
+                  type: 'device',
+                  device: {
+                    id: 'device-alpha',
+                    mission_id: 'mission-1',
+                    device_id: 'alpha',
+                    name: 'Alpha',
+                    color: '#0ea5e9',
+                    last_seen: null,
+                    status: 'online',
+                  },
+                },
+              },
+              {
+                id: getBreadcrumbDeviceFeatureNodeId('bravo'),
+                kind: 'feature_item',
+                label: 'Bravo',
+                alias: null,
+                displayLabel: 'Bravo',
+                isFavorite: false,
+                isVisible: true,
+                displayOrder: 2,
+                parentId: 'layer:tracking:breadcrumbs',
+                entity: {
+                  type: 'device',
+                  device: {
+                    id: 'device-bravo',
+                    mission_id: 'mission-1',
+                    device_id: 'bravo',
+                    name: 'Bravo',
+                    color: '#f97316',
+                    last_seen: null,
+                    status: 'online',
+                  },
+                },
+              },
+            ],
           },
         ],
       },

@@ -174,6 +174,8 @@ test.describe('V1 regression: cold-start-offline operator-visible warning', () =
     // than the full sentence so future copy tweaks don't break the regression.
     await expect(trackingStatus).toContainText(/last known positions/i)
     await expect(trackingStatus).toContainText(/offline/i)
+    await expect(page.getByTestId('tracking-mode-chip')).toHaveClass(/sar-status-chip-alert/)
+    await expect(page.getByTestId('tracking-warning')).toHaveClass(/sar-status-alert-panel/)
   })
 })
 

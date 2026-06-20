@@ -58,6 +58,7 @@ export function syncTrackingOverlay(
   map: maplibregl.Map,
   snapshot: TrackingSnapshot,
   hiddenDeviceIds: readonly string[],
+  hiddenBreadcrumbDeviceIds: readonly string[],
   breadcrumbsVisible: boolean,
   style: TrackingStylePreferences = {
     deviceColors: {},
@@ -80,15 +81,15 @@ export function syncTrackingOverlay(
     filter: IS_BREADCRUMB_LINE_FEATURE,
     paint: {
       'line-color': '#020617',
-      'line-width': breadcrumbSize + 3,
-      'line-opacity': 0.78,
+      'line-width': breadcrumbSize + 1,
+      'line-opacity': 0.42,
     },
     layout: {
       'line-cap': 'round',
       'line-join': 'round',
     },
   })
-  map.setPaintProperty(TRACKING_BREADCRUMB_CASING_LAYER_ID, 'line-width', breadcrumbSize + 3)
+  map.setPaintProperty(TRACKING_BREADCRUMB_CASING_LAYER_ID, 'line-width', breadcrumbSize + 1)
 
   ensureLayer(map, {
     id: TRACKING_BREADCRUMB_LAYER_ID,
@@ -116,7 +117,8 @@ export function syncTrackingOverlay(
       'circle-color': ['get', 'color'],
       'circle-radius': breadcrumbDotRadius,
       'circle-stroke-color': '#020617',
-      'circle-stroke-width': Math.max(2, breadcrumbDotRadius * 0.4),
+      'circle-stroke-width': Math.max(1, breadcrumbDotRadius * 0.2),
+      'circle-stroke-opacity': 0.48,
       'circle-opacity': 0.95,
     },
   })
@@ -124,8 +126,9 @@ export function syncTrackingOverlay(
   map.setPaintProperty(
     TRACKING_BREADCRUMB_DOTS_LAYER_ID,
     'circle-stroke-width',
-    Math.max(2, breadcrumbDotRadius * 0.4),
+    Math.max(1, breadcrumbDotRadius * 0.2),
   )
+  map.setPaintProperty(TRACKING_BREADCRUMB_DOTS_LAYER_ID, 'circle-stroke-opacity', 0.48)
 
   ensureLayer(map, {
     id: TRACKING_DEVICE_HALO_LAYER_ID,
@@ -183,43 +186,44 @@ export function syncTrackingOverlay(
       'text-ignore-placement': false,
     },
     paint: {
-      'text-color': ['get', 'color'],
-      'text-halo-color': '#020617',
-      'text-halo-width': 3,
+      'text-color': '#111827',
+      'text-halo-color': '#FFFFFF',
+      'text-halo-width': 4,
     },
   })
 
-  const visibilityFilter = buildTrackingLayerFilter(hiddenDeviceIds)
+  const currentLocationVisibilityFilter = buildTrackingLayerFilter(hiddenDeviceIds)
+  const breadcrumbVisibilityFilter = buildTrackingLayerFilter(hiddenBreadcrumbDeviceIds)
   const lineTrailsVisible = breadcrumbsVisible && style.breadcrumbTrailMode === 'line'
   const dotTrailsVisible = breadcrumbsVisible && style.breadcrumbTrailMode === 'dots'
   map.setFilter(
     TRACKING_BREADCRUMB_CASING_LAYER_ID,
     lineTrailsVisible
-      ? combineMapFilters(IS_BREADCRUMB_LINE_FEATURE, visibilityFilter)
+      ? combineMapFilters(IS_BREADCRUMB_LINE_FEATURE, breadcrumbVisibilityFilter)
       : HIDDEN_TRACKING_FEATURE_FILTER,
   )
   map.setFilter(
     TRACKING_BREADCRUMB_LAYER_ID,
     lineTrailsVisible
-      ? combineMapFilters(IS_BREADCRUMB_LINE_FEATURE, visibilityFilter)
+      ? combineMapFilters(IS_BREADCRUMB_LINE_FEATURE, breadcrumbVisibilityFilter)
       : HIDDEN_TRACKING_FEATURE_FILTER,
   )
   map.setFilter(
     TRACKING_BREADCRUMB_DOTS_LAYER_ID,
     dotTrailsVisible
-      ? combineMapFilters(IS_BREADCRUMB_POINT_FEATURE, visibilityFilter)
+      ? combineMapFilters(IS_BREADCRUMB_POINT_FEATURE, breadcrumbVisibilityFilter)
       : HIDDEN_TRACKING_FEATURE_FILTER,
   )
   map.setFilter(
     TRACKING_DEVICE_HALO_LAYER_ID,
-    combineMapFilters(IS_DEVICE_POINT_FEATURE, visibilityFilter),
+    combineMapFilters(IS_DEVICE_POINT_FEATURE, currentLocationVisibilityFilter),
   )
   map.setFilter(
     TRACKING_DEVICE_LAYER_ID,
-    combineMapFilters(IS_DEVICE_POINT_FEATURE, visibilityFilter),
+    combineMapFilters(IS_DEVICE_POINT_FEATURE, currentLocationVisibilityFilter),
   )
   map.setFilter(
     TRACKING_DEVICE_LABEL_LAYER_ID,
-    combineMapFilters(IS_DEVICE_POINT_FEATURE, visibilityFilter),
+    combineMapFilters(IS_DEVICE_POINT_FEATURE, currentLocationVisibilityFilter),
   )
 }

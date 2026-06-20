@@ -79,6 +79,7 @@ export function LeafletFallbackMapView() {
   const selectedDrawingId = useDrawingStore((state) => state.selectedDrawingId)
   const groupVisibility = useLayerVisibilityStore((state) => state.groupVisibility)
   const hiddenDeviceIds = useLayerVisibilityStore((state) => state.hiddenDeviceIds)
+  const hiddenBreadcrumbDeviceIds = useLayerVisibilityStore((state) => state.hiddenBreadcrumbDeviceIds)
   const breadcrumbsVisible = useLayerVisibilityStore((state) => state.breadcrumbsVisible)
   const markerTypeVisibility = useLayerVisibilityStore((state) => state.markerTypeVisibility)
   const hiddenMarkerIds = useLayerVisibilityStore((state) => state.hiddenMarkerIds)
@@ -178,6 +179,7 @@ export function LeafletFallbackMapView() {
       trackingVisible: getEffectiveTrackingVisible(groupVisibility),
       breadcrumbsVisible,
       hiddenDeviceIds,
+      hiddenBreadcrumbDeviceIds,
       trackingStyle,
       markers,
       markerTypeVisibility: effectiveMarkerTypeVisibility,
@@ -193,6 +195,7 @@ export function LeafletFallbackMapView() {
     effectiveDrawingTypeVisibility,
     effectiveMarkerTypeVisibility,
     groupVisibility,
+    hiddenBreadcrumbDeviceIds,
     hiddenDeviceIds,
     trackingStyle,
     hiddenDrawingIds,

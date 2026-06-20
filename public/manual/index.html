@@ -804,11 +804,24 @@
             <div class="card"><strong>Cache and stale</strong><br />Counts positions served from cache or considered stale.</div>
           </div>
           <p>
-            Each tracked device renders as a colored current-location dot with a matching label. Breadcrumb
-            trails use the same device color with a dark casing so previous movement remains visible across
-            satellite, topo, and street basemaps. Hiding a device, the <strong>People</strong> layer, or
-            <strong>Breadcrumbs</strong> from Layers removes the matching overlay from the map.
+            Each tracked device renders as a colored current-location dot with a high-contrast text label.
+            Labels use dark text with a light backing so team names stay readable against busy Discovery
+            and topo backgrounds. Breadcrumb trails use the same device color with only a narrow dark
+            casing, so the selected team color remains visible even when the map is zoomed out.
           </p>
+          <p>
+            The Layers tab separates <strong>Current Location</strong> from <strong>Breadcrumbs</strong>.
+            Each section lists the active team members, so a coordinator can show a device's current
+            position with or without its trail, show a trail without the current-location dot, or show both.
+            Turning off the whole Tracking group hides both surfaces.
+          </p>
+          <div class="warning">
+            <strong>Stale-position alerts:</strong> if live telemetry fails during a mission, the Tracking
+            status changes to a flashing red <strong>OFFLINE</strong> state and the warning line shows
+            <strong>OFFLINE MODE</strong>. When a mission is paused, <strong>Live refresh suspended</strong>
+            is also shown as a red alert. In both cases, treat displayed positions as potentially stale
+            until live refresh resumes.
+          </div>
           <h3>Devices Workspace</h3>
           <p>
             Press <strong>Open Devices</strong> from the Tracking tab to inspect the roster. The workspace
@@ -818,9 +831,10 @@
             active, the map continues showing every tracked device so a new mission does not start with an
             empty tracking picture. Once active devices are selected, the map, labels, initial tracking
             frame, and breadcrumb trails focus on that active set while the full roster remains available
-            for lookup. Each row still shows device health, last seen time, source, visibility, and a
-            <strong>Zoom</strong> action for devices with a valid fix. Click the trail colour swatch on a
-            device row to open a palette of high-contrast SAR colours for that device's breadcrumb and label.
+            for lookup. Each row still shows device health, last seen time, source, current-location
+            visibility, and a <strong>Zoom</strong> action for devices with a valid fix. Click the trail
+            colour swatch on a device row to open a palette of high-contrast SAR colours for that device's
+            current-location dot and breadcrumb trail.
             The list tabs and search field work together: choosing <strong>Active</strong>,
             <strong>Hidden</strong>, <strong>Online</strong>, <strong>Stale</strong>, or
             <strong>NoFix</strong> selects the first visible device in that list, and searching only looks

@@ -27,6 +27,7 @@ describe('Leaflet fallback renderer', () => {
       trackingVisible: true,
       breadcrumbsVisible: true,
       hiddenDeviceIds: [],
+      hiddenBreadcrumbDeviceIds: [],
       markers: [createMarker()],
       markerTypeVisibility: {
         ipp_lkp: true,
@@ -60,6 +61,7 @@ describe('Leaflet fallback renderer', () => {
       trackingVisible: true,
       breadcrumbsVisible: true,
       hiddenDeviceIds: [],
+      hiddenBreadcrumbDeviceIds: [],
       trackingStyle: {
         deviceColors: { alpha: '#F97316' },
         breadcrumbSize: 7,
@@ -101,6 +103,7 @@ describe('Leaflet fallback renderer', () => {
       trackingVisible: true,
       breadcrumbsVisible: true,
       hiddenDeviceIds: ['alpha'],
+      hiddenBreadcrumbDeviceIds: ['alpha'],
       markers: [createMarker()],
       markerTypeVisibility: {
         ipp_lkp: false,

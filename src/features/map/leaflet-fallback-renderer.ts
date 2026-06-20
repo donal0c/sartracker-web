@@ -22,6 +22,7 @@ export type LeafletFallbackOverlayInput = {
   readonly trackingVisible: boolean
   readonly breadcrumbsVisible: boolean
   readonly hiddenDeviceIds: readonly string[]
+  readonly hiddenBreadcrumbDeviceIds: readonly string[]
   readonly trackingStyle?: TrackingStylePreferences
   readonly markers: readonly Marker[]
   readonly markerTypeVisibility: Record<MarkerType, boolean>
@@ -84,6 +85,7 @@ export function renderLeafletFallbackOverlays(
 
 function renderTrackingOverlay(layerGroup: L.LayerGroup, input: LeafletFallbackOverlayInput): void {
   const hiddenDeviceIds = new Set(input.hiddenDeviceIds)
+  const hiddenBreadcrumbDeviceIds = new Set(input.hiddenBreadcrumbDeviceIds)
   const trackingStyle = input.trackingStyle ?? {
     deviceColors: {},
     breadcrumbSize: DEFAULT_BREADCRUMB_SIZE,
@@ -99,12 +101,11 @@ function renderTrackingOverlay(layerGroup: L.LayerGroup, input: LeafletFallbackO
   for (const feature of tracking.features) {
     const properties = feature.properties ?? {}
     const deviceId = readStringProperty(properties, 'deviceId')
-    if (deviceId !== null && hiddenDeviceIds.has(deviceId)) {
-      continue
-    }
-
     if (feature.geometry.type === 'LineString') {
-      if (!input.breadcrumbsVisible) {
+      if (
+        !input.breadcrumbsVisible ||
+        (deviceId !== null && hiddenBreadcrumbDeviceIds.has(deviceId))
+      ) {
         continue
       }
       L.polyline(toLatLngs(feature.geometry.coordinates), {
@@ -117,7 +118,10 @@ function renderTrackingOverlay(layerGroup: L.LayerGroup, input: LeafletFallbackO
 
     if (feature.geometry.type === 'Point') {
       if (readStringProperty(properties, 'featureKind') === 'breadcrumb') {
-        if (!input.breadcrumbsVisible) {
+        if (
+          !input.breadcrumbsVisible ||
+          (deviceId !== null && hiddenBreadcrumbDeviceIds.has(deviceId))
+        ) {
           continue
         }
 
@@ -129,6 +133,10 @@ function renderTrackingOverlay(layerGroup: L.LayerGroup, input: LeafletFallbackO
           opacity: 1,
           weight: 2,
         }).addTo(layerGroup)
+        continue
+      }
+
+      if (deviceId !== null && hiddenDeviceIds.has(deviceId)) {
         continue
       }
 
