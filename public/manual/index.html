@@ -1217,6 +1217,7 @@
           </p>
           <ul>
             <li><strong>Offline maps:</strong> public maps use viewed-tile caching. Electron can import, validate, remove, and serve local official MBTiles packages from app-owned storage, so the original USB or source disk can be unplugged after import. The map reports ready, outside-area, missing, unreadable, online-source, unavailable, and public-fallback states. The Maps menu includes a field-readiness checklist and Settings can export a readiness certificate.</li>
+            <li><strong>Settings access:</strong> coordinator and admin rosters are currently local workflow/audit controls, not a strong authentication boundary. Treat Settings access as trusted-machine access until the privileged-settings guard and unlock-authority model are implemented.</li>
             <li><strong>Replay mode:</strong> settings expose replay defaults, but full replay/training workflow parity is still active work.</li>
             <li><strong>Mission metadata:</strong> richer coordinator/metadata capture at mission start remains a parity gap.</li>
             <li><strong>Layer parity:</strong> the app has a grouped layer tree with visibility, aliases, expand/collapse all, and reorder controls, but final parity acceptance is still pending.</li>

@@ -14,6 +14,12 @@
 
 ## Last Work Done
 
+DON-199 Coordinator and settings access-control decision — **DONE as decision/split-ticket work.**
+- Recorded `docs/settings-access-control-decision.md`: current Settings/admin roster behavior is an audit/workflow guard, not authentication; future protected surfaces are coordinator/admin roster edits, mission-affecting settings, finalized-mission unlock, and advanced repair actions; beta direction is a lightweight local privileged-settings guard, not full multi-user auth; mission unlock should stop relying only on the live mutable Settings roster.
+- Follow-ups created: `DON-219` Privileged Settings Mode, `DON-220` Mission Unlock Authority, and `DON-221` Access Recovery.
+- Manual known gaps now state the current trusted-machine access boundary. No app runtime, persistence, map rendering, Electron IPC, SQLite schema, filesystem export, diagnostics, packaging, launch path, offline tile protocol, or Traccar network behavior changed.
+- Verification: `git diff --check`; `npm run lint`; `npm run build`; focused Chromium Settings + Mission regression 22/22; manual render smoke confirmed the Settings access note is visible, no horizontal overflow, and 7/7 images load.
+
 DON-198 Mission preview, map sharing, and external-resource workflow decisions — **DONE as decision/split-ticket work.**
 - Recorded `docs/mission-preview-external-resources-decision.md`: future Mission Preview should be read-only and reuse the mission overlay stack; map sharing should be a local export/print workflow rather than WhatsApp-specific sending; beta.8 external resources should stay with imported GPX/layer visibility until a live-resource ownership/lifecycle model is decided; evacuation/gear logs need a separate workflow decision; `DON-100` remains canonical for multi-day mission layer grouping.
 - Follow-ups created: `DON-215` Mission Preview, `DON-216` Map Export/Print, `DON-217` External Resources, and `DON-218` Evacuation/Gear Logs.
