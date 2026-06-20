@@ -107,6 +107,25 @@ test.describe('M8 drawing workflows', () => {
     expect(drawings.some((drawing) => drawing.name === 'Sector North' && drawing.type === 'search_sector')).toBe(true)
   })
 
+  test('keeps search sector draft fields when the Radius readout and input are used [DON-188]', async ({
+    page,
+  }) => {
+    await page.getByTestId('drawing-tool-search_sector').click({ force: true })
+    await clickMap(page, { x: 360, y: 260 })
+
+    await expect(page.getByTestId('drawing-dialog')).toBeVisible()
+    await page.getByTestId('drawing-name-input').fill('Sector Hold')
+    await page.getByTestId('drawing-sector-start-input').fill('120')
+    await page.getByTestId('drawing-sector-end-input').fill('210')
+    await page.getByText('Radius', { exact: true }).first().click()
+    await page.getByTestId('drawing-sector-radius-input').fill('1800')
+
+    await expect(page.getByTestId('drawing-name-input')).toHaveValue('Sector Hold')
+    await expect(page.getByTestId('drawing-sector-start-input')).toHaveValue('120')
+    await expect(page.getByTestId('drawing-sector-end-input')).toHaveValue('210')
+    await expect(page.getByTestId('drawing-sector-radius-input')).toHaveValue('1800')
+  })
+
   test('renders a visible full-circle search sector entered as 360 -> 0 (DON-170)', async ({ page }) => {
     await page.getByTestId('drawing-tool-search_sector').click({ force: true })
     await clickMap(page, { x: 360, y: 260 })

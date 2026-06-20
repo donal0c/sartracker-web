@@ -159,15 +159,17 @@ export function beginDrawingEdit(
  */
 export function updateDrawingDraft(
   state: DrawingRuntimeMutableState,
-  draft: DrawingDraft,
+  draft: DrawingDraft | ((current: DrawingDraft) => DrawingDraft),
 ): void {
   if (state.dialog === null) {
     return
   }
 
+  const nextDraft = typeof draft === 'function' ? draft(state.dialog.draft) : draft
+
   state.dialog = {
     ...state.dialog,
-    draft,
+    draft: nextDraft,
   }
 }
 

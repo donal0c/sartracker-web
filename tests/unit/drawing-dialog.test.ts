@@ -101,14 +101,26 @@ describe('DrawingDialog vertices readout', () => {
   })
 
   it('preserves search sector details when the radius control is used', async () => {
-    const updateDraft = vi.fn((nextDraft: SearchSectorDrawingDraft) => {
+    const updateDraft = vi.fn(
+      (
+        nextDraft:
+          | SearchSectorDrawingDraft
+          | ((current: SearchSectorDrawingDraft) => SearchSectorDrawingDraft),
+      ) => {
+      const current = useDrawingStore.getState().dialog?.draft
+      if (current === undefined || current.type !== 'search_sector') {
+        throw new Error('Expected active search-sector draft.')
+      }
+      const resolvedDraft =
+        typeof nextDraft === 'function' ? nextDraft(current) : nextDraft
       useDrawingStore.setState({
         dialog: {
           mode: 'create',
-          draft: nextDraft,
+          draft: resolvedDraft,
         },
       })
-    })
+    },
+    )
     useDrawingStore.setState({
       controller: {
         closeDialog: vi.fn(),

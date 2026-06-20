@@ -17,6 +17,10 @@ import { DialogOverlay } from './dialog-overlay'
 
 const DRAWING_DIALOG_TITLE_ID = 'drawing-dialog-title'
 
+type DrawingDraftUpdate<TDraft extends DrawingDraft = DrawingDraft> =
+  | TDraft
+  | ((current: DrawingDraft) => TDraft)
+
 /**
  * Renders the modal drawing form used for create/edit flows.
  */
@@ -69,13 +73,23 @@ export function DrawingDialog() {
           <section className="grid gap-4 md:grid-cols-2">
             <Field
               label="Name"
-              onChange={(value) => controller.updateDraft({ ...draft, name: value })}
+              onChange={(value) =>
+                controller.updateDraft((current) =>
+                  current.type === 'text_label' ? current : { ...current, name: value },
+                )
+              }
               testId="drawing-name-input"
               value={draft.name}
             />
             <Field
               label="Description"
-              onChange={(value) => controller.updateDraft({ ...draft, description: value })}
+              onChange={(value) =>
+                controller.updateDraft((current) =>
+                  current.type === 'text_label'
+                    ? current
+                    : { ...current, description: value },
+                )
+              }
               testId="drawing-description-input"
               value={draft.description}
             />
@@ -435,7 +449,9 @@ function BearingLineSection(props: {
 
 function SearchSectorSection(props: {
   readonly draft: Extract<DrawingDraft, { type: 'search_sector' }>
-  readonly onChange: (draft: Extract<DrawingDraft, { type: 'search_sector' }>) => void
+  readonly onChange: (
+    draft: DrawingDraftUpdate<Extract<DrawingDraft, { type: 'search_sector' }>>,
+  ) => void
 }) {
   return (
     <>
@@ -448,19 +464,37 @@ function SearchSectorSection(props: {
       <section className="grid gap-4 md:grid-cols-3">
         <Field
           label="Start Bearing (°)"
-          onChange={(value) => props.onChange({ ...props.draft, startBearing: value })}
+          onChange={(value) =>
+            props.onChange((current) =>
+              current.type === 'search_sector'
+                ? { ...current, startBearing: value }
+                : props.draft,
+            )
+          }
           testId="drawing-sector-start-input"
           value={props.draft.startBearing}
         />
         <Field
           label="End Bearing (°)"
-          onChange={(value) => props.onChange({ ...props.draft, endBearing: value })}
+          onChange={(value) =>
+            props.onChange((current) =>
+              current.type === 'search_sector'
+                ? { ...current, endBearing: value }
+                : props.draft,
+            )
+          }
           testId="drawing-sector-end-input"
           value={props.draft.endBearing}
         />
         <Field
           label="Radius (m)"
-          onChange={(value) => props.onChange({ ...props.draft, radiusM: value })}
+          onChange={(value) =>
+            props.onChange((current) =>
+              current.type === 'search_sector'
+                ? { ...current, radiusM: value }
+                : props.draft,
+            )
+          }
           testId="drawing-sector-radius-input"
           value={props.draft.radiusM}
         />

@@ -51,7 +51,7 @@ export type DrawingRuntimeController = {
     lat: number,
   ) => void
   readonly beginEdit: (drawingId: string) => void
-  readonly updateDraft: (draft: DrawingDraft) => void
+  readonly updateDraft: (draft: DrawingDraft | ((current: DrawingDraft) => DrawingDraft)) => void
   readonly closeDialog: () => void
   readonly saveDialog: () => Promise<Drawing | null>
   readonly moveTextLabel: (drawingId: string, lon: number, lat: number) => Promise<Drawing | null>
