@@ -1,4 +1,5 @@
 import type { GpxTrackImport } from '../../infrastructure/mission-store/tauri-mission-store'
+import { writeGpxImportColorMetadata } from './gpx-style'
 import { parseGpxFile } from './gpx-parser'
 
 type GpxStoreBoundary = {
@@ -43,6 +44,7 @@ type StartGpxRuntimeDependencies = {
 export type GpxRuntimeController = {
   readonly refreshMission: (missionId: string | null) => Promise<void>
   readonly importFiles: (files: readonly GpxImportFileInput[]) => Promise<readonly GpxTrackImport[]>
+  readonly updateImportColor: (importId: string, color: string) => Promise<GpxTrackImport | null>
   readonly addWatchedDirectory: (directoryPath: string) => Promise<readonly GpxTrackImport[]>
   readonly removeWatchedDirectory: (directoryPath: string) => void
   readonly rescanWatchedDirectories: () => Promise<readonly GpxTrackImport[]>
@@ -121,6 +123,32 @@ export async function startGpxRuntime(
     },
     importFiles: async (files: readonly GpxImportFileInput[]) => {
       return await importFilesIntoRuntime(files)
+    },
+    updateImportColor: async (importId: string, color: string) => {
+      const existingImport = state.imports.find((entry) => entry.id === importId)
+      if (existingImport === undefined) {
+        return null
+      }
+
+      const updatedImport = await dependencies.gpxStore.upsertGpxImport({
+        id: existingImport.id,
+        mission_id: existingImport.mission_id,
+        source_path: existingImport.source_path,
+        file_name: existingImport.file_name,
+        display_name: existingImport.display_name,
+        geometry_json: existingImport.geometry_json,
+        metadata_json: writeGpxImportColorMetadata(existingImport.metadata_json, color),
+      })
+
+      state = {
+        ...state,
+        imports: state.imports.map((entry) =>
+          entry.id === updatedImport.id ? updatedImport : entry,
+        ),
+        error: null,
+      }
+      publishRuntime()
+      return updatedImport
     },
     addWatchedDirectory: async (directoryPath: string) => {
       const normalizedPath = directoryPath.trim()

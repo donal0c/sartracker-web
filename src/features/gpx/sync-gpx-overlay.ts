@@ -4,6 +4,7 @@ import type { GpxTrackImport } from '../../infrastructure/mission-store/tauri-mi
 import { buildGpxLayerFilter } from '../layers/map-layer-filters'
 import { ensureGeoJsonSource, ensureLayer } from '../map/map-overlay-primitives'
 import { createGpxFeatureCollection } from './gpx-geojson'
+import { DEFAULT_GPX_TRACK_COLOR } from './gpx-style'
 
 export const GPX_SOURCE_ID = 'mission-gpx-imports'
 export const GPX_LINE_LAYER_ID = 'mission-gpx-imports-line'
@@ -22,7 +23,7 @@ export function syncGpxOverlay(
     type: 'line',
     source: GPX_SOURCE_ID,
     paint: {
-      'line-color': '#f59e0b',
+      'line-color': ['coalesce', ['get', 'color'], DEFAULT_GPX_TRACK_COLOR],
       'line-width': 3,
       'line-opacity': 0.9,
       'line-dasharray': [1.2, 1],

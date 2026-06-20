@@ -124,6 +124,78 @@ describe('startGpxRuntime', () => {
       }),
     )
   })
+
+  it('updates one imported GPX colour while preserving the track geometry and metadata', async () => {
+    const imports: readonly GpxTrackImport[] = [
+      {
+        id: 'gpx-1',
+        mission_id: 'mission-1',
+        source_path: '/tracks/alpha.gpx',
+        file_name: 'alpha.gpx',
+        display_name: 'Alpha Route',
+        geometry_json: '{"type":"MultiLineString","coordinates":[[[-9.7,52],[-9.71,52.01]]]}',
+        metadata_json: '{"trackCount":1,"pointCount":2}',
+        imported_at: '2026-04-11T10:00:00.000Z',
+        updated_at: '2026-04-11T10:00:00.000Z',
+      },
+      {
+        id: 'gpx-2',
+        mission_id: 'mission-1',
+        source_path: '/tracks/bravo.gpx',
+        file_name: 'bravo.gpx',
+        display_name: 'Bravo Route',
+        geometry_json: '{"type":"MultiLineString","coordinates":[[[-9.8,52],[-9.81,52.01]]]}',
+        metadata_json: null,
+        imported_at: '2026-04-11T10:00:00.000Z',
+        updated_at: '2026-04-11T10:00:00.000Z',
+      },
+    ]
+    const applyRuntime = vi.fn()
+    const upsertGpxImport = vi.fn().mockImplementation(async (input) => ({
+      ...imports.find((entry) => entry.id === input.id),
+      ...input,
+      metadata_json: input.metadata_json ?? null,
+      imported_at: '2026-04-11T10:00:00.000Z',
+      updated_at: '2026-04-11T10:05:00.000Z',
+    }))
+    const controller = await startGpxRuntime({
+      gpxStore: {
+        listGpxImports: vi.fn().mockResolvedValue(imports),
+        upsertGpxImport,
+        deleteGpxImport: vi.fn(),
+      },
+      applyRuntime,
+    })
+
+    await controller.refreshMission('mission-1')
+    const colourController = controller as typeof controller & {
+      updateImportColor?: (importId: string, color: string) => Promise<GpxTrackImport | null>
+    }
+    expect(colourController.updateImportColor).toBeTypeOf('function')
+    await colourController.updateImportColor?.('gpx-1', '#F032E6')
+
+    expect(upsertGpxImport).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: 'gpx-1',
+        mission_id: 'mission-1',
+        source_path: '/tracks/alpha.gpx',
+        display_name: 'Alpha Route',
+        geometry_json: imports[0]!.geometry_json,
+        metadata_json: JSON.stringify({ trackCount: 1, pointCount: 2, color: '#F032E6' }),
+      }),
+    )
+    expect(applyRuntime).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        imports: [
+          expect.objectContaining({
+            id: 'gpx-1',
+            metadata_json: JSON.stringify({ trackCount: 1, pointCount: 2, color: '#F032E6' }),
+          }),
+          expect.objectContaining({ id: 'gpx-2' }),
+        ],
+      }),
+    )
+  })
 })
 
 function createImportFile(sourcePath: string, fileName: string) {

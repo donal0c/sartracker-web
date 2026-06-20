@@ -1,9 +1,11 @@
 import { useMemo, useState } from 'react'
 
 import { createDesktopGpxImportSource } from '../infrastructure/gpx-import-source/desktop-gpx-import-source'
+import { getGpxImportColor } from '../features/gpx/gpx-style'
 import { useGpxStore } from '../features/gpx/gpx-store'
 import { isTauriRuntimeAvailable } from '../lib/tauri-runtime'
 import { isElectronRuntimeAvailable } from '../lib/desktop-runtime'
+import { ColorPaletteInput } from './color-palette-input'
 
 const gpxImportSource = createDesktopGpxImportSource()
 
@@ -33,14 +35,14 @@ export function GpxImportPanel() {
     >
       <div className="flex items-start justify-between gap-3">
         <div>
-          <h3 className="text-[13px] font-semibold uppercase tracking-wider text-stone-400">
+          <h3 className="text-[13px] font-semibold uppercase tracking-wider text-stone-300">
             GPX Tracks
           </h3>
-          <p className="mt-1 text-xs text-stone-400">
+          <p className="mt-1 text-xs text-stone-300">
             Import files, ingest folders, and watch operational refresh paths.
           </p>
         </div>
-        <span className="rounded-full border border-stone-800 bg-stone-900 px-2 py-1 text-[11px] font-semibold uppercase tracking-wider text-stone-400">
+        <span className="rounded-full border border-stone-700 bg-stone-900 px-2 py-1 text-[11px] font-semibold uppercase tracking-wider text-stone-300">
           {importSummary}
         </span>
       </div>
@@ -111,6 +113,8 @@ export function GpxImportPanel() {
             id: entry.id,
             primary: entry.display_name,
             secondary: entry.source_path,
+            color: getGpxImportColor(entry.metadata_json),
+            onColorChange: (color) => void controller?.updateImportColor(entry.id, color),
             actionLabel: 'Delete',
             onAction: () => void handleDeleteImport(entry.id, entry.display_name),
           }))}
@@ -231,6 +235,8 @@ function PanelList(props: {
     readonly id: string
     readonly primary: string
     readonly secondary: string
+    readonly color?: string
+    readonly onColorChange?: (color: string) => void
     readonly actionLabel: string
     readonly onAction: () => void
   }[]
@@ -246,21 +252,31 @@ function PanelList(props: {
         ) : (
           props.items.map((item) => (
             <div
-              className="flex items-start justify-between gap-3 rounded-lg border border-stone-700 bg-stone-950/40 px-3 py-2"
+              className="flex flex-col gap-3 rounded-lg border border-stone-700 bg-stone-950/40 px-3 py-2"
               key={item.id}
             >
-              <div className="min-w-0">
-                <p className="truncate text-sm font-medium text-stone-100">{item.primary}</p>
-                <p className="truncate text-[11px] text-stone-300">{item.secondary}</p>
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-medium text-stone-100">{item.primary}</p>
+                  <p className="truncate text-[11px] text-stone-300">{item.secondary}</p>
+                </div>
+                <button
+                  className="rounded-lg border border-stone-500 bg-stone-800 px-2 py-1 text-[11px] font-semibold text-stone-100 hover:border-amber-300"
+                  data-testid={`${props.testId}-${item.id.replace(/[^a-zA-Z0-9]+/g, '-')}`}
+                  onClick={item.onAction}
+                  type="button"
+                >
+                  {item.actionLabel}
+                </button>
               </div>
-              <button
-                className="rounded-lg border border-stone-500 bg-stone-800 px-2 py-1 text-[11px] font-semibold text-stone-100 hover:border-amber-300"
-                data-testid={`${props.testId}-${item.id.replace(/[^a-zA-Z0-9]+/g, '-')}`}
-                onClick={item.onAction}
-                type="button"
-              >
-                {item.actionLabel}
-              </button>
+              {item.color !== undefined && item.onColorChange !== undefined ? (
+                <ColorPaletteInput
+                  label="Track colour"
+                  onChange={item.onColorChange}
+                  testId={`gpx-import-color-${item.id}`}
+                  value={item.color}
+                />
+              ) : null}
             </div>
           ))
         )}

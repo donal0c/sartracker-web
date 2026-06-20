@@ -67,4 +67,90 @@ test.describe('M22 GPX import parity', () => {
     await expect(page.getByTestId('mission-review-workspace')).toContainText('GPX Import Created')
     await expect(page.getByTestId('mission-review-workspace')).toContainText('/tracks/alpha.gpx')
   })
+
+  test('DON-194: changes individual GPX colours and keeps the layer tree readable on smaller displays', async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 1280, height: 720 })
+    await page.evaluate(async () => {
+      const harness = window.__SARTRACKER_BROWSER_HARNESS__
+      if (harness === undefined) {
+        throw new Error('Browser harness API unavailable.')
+      }
+
+      await harness.importGpxFiles([
+        {
+          sourcePath: '/tracks/alpha.gpx',
+          fileName: 'alpha.gpx',
+          contents: `<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="playwright">
+  <trk><trkseg>
+    <trkpt lat="52.0000" lon="-9.7000"></trkpt>
+    <trkpt lat="52.0100" lon="-9.7100"></trkpt>
+  </trkseg></trk>
+</gpx>`,
+        },
+        {
+          sourcePath: '/tracks/bravo.gpx',
+          fileName: 'bravo.gpx',
+          contents: `<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="playwright">
+  <trk><trkseg>
+    <trkpt lat="52.0200" lon="-9.7200"></trkpt>
+    <trkpt lat="52.0300" lon="-9.7300"></trkpt>
+  </trkseg></trk>
+</gpx>`,
+        },
+      ])
+    })
+
+    const alphaImportId = await page.evaluate(() => {
+      const state = window.__SARTRACKER_BROWSER_HARNESS__?.readState()
+      return state?.gpxImports.find((entry) => entry.display_name === 'alpha')?.id ?? null
+    })
+    expect(alphaImportId).not.toBeNull()
+
+    const alphaColour = page.getByTestId(`gpx-import-color-${alphaImportId}`)
+    await expect(alphaColour).toBeVisible()
+    await alphaColour.getByTestId(`gpx-import-color-${alphaImportId}-hex`).fill('#F032E6')
+    await alphaColour.getByTestId(`gpx-import-color-${alphaImportId}-hex`).blur()
+
+    await expect
+      .poll(async () =>
+        page.evaluate(() => {
+          const map = (window as Window & {
+            __SARTRACKER_MAP__?: {
+              querySourceFeatures: (sourceId: string) => Array<{ properties?: Record<string, unknown> }>
+            }
+          }).__SARTRACKER_MAP__
+          const feature = map
+            ?.querySourceFeatures('mission-gpx-imports')
+            .find((candidate) => candidate.properties?.displayName === 'alpha')
+          return feature?.properties?.color ?? null
+        }),
+      )
+      .toBe('#F032E6')
+
+    await page.getByTestId('sidebar-tab-layers').click()
+    await page.getByTestId('layer-expand-group-gpx-tracks').click()
+
+    const alphaRow = page
+      .locator('[data-testid^="layer-row-layer-gpx-"]')
+      .filter({ hasText: 'alpha' })
+    const alphaCheckbox = alphaRow.locator('input[type="checkbox"]')
+    const checkboxBox = await alphaCheckbox.boundingBox()
+    expect(checkboxBox?.width).toBeGreaterThanOrEqual(20)
+    expect(checkboxBox?.height).toBeGreaterThanOrEqual(20)
+
+    const alphaLabel = alphaRow.locator('button').filter({ hasText: 'alpha' })
+    const labelFontSize = await alphaLabel.evaluate((element) =>
+      Number.parseFloat(window.getComputedStyle(element).fontSize),
+    )
+    expect(labelFontSize).toBeGreaterThanOrEqual(14)
+    const layerPanelOverflow = await page.getByTestId('layer-panel').evaluate((element) => ({
+      clientWidth: element.clientWidth,
+      scrollWidth: element.scrollWidth,
+    }))
+    expect(layerPanelOverflow.scrollWidth).toBeLessThanOrEqual(layerPanelOverflow.clientWidth + 1)
+  })
 })

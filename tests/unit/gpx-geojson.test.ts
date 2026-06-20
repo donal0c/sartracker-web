@@ -14,6 +14,17 @@ describe('gpx geojson', () => {
     expect(collection.features[0]?.properties.sourcePath).toBe('/tmp/track.gpx')
   })
 
+  it('exposes per-import track colour from GPX metadata for map styling', () => {
+    const collection = createGpxFeatureCollection([
+      {
+        ...createGpxImport('import-1'),
+        metadata_json: JSON.stringify({ color: '#00B8FF', trackCount: 1, pointCount: 2 }),
+      },
+    ])
+
+    expect(collection.features[0]?.properties.color).toBe('#00B8FF')
+  })
+
   it('returns an empty collection for an empty imports array', () => {
     const collection = createGpxFeatureCollection([])
     expect(collection.features).toHaveLength(0)

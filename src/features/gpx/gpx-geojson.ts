@@ -1,11 +1,13 @@
 import type { Feature, FeatureCollection, MultiLineString } from 'geojson'
 
 import type { GpxTrackImport } from '../../infrastructure/mission-store/tauri-mission-store'
+import { getGpxImportColor } from './gpx-style'
 
 type GpxFeatureProperties = {
   readonly gpxImportId: string
   readonly displayName: string
   readonly sourcePath: string
+  readonly color: string
 }
 
 /**
@@ -36,6 +38,7 @@ function createImportFeature(
         gpxImportId: entry.id,
         displayName: entry.display_name,
         sourcePath: entry.source_path,
+        color: getGpxImportColor(entry.metadata_json),
       },
     },
   ]

@@ -163,10 +163,10 @@ export function MissionReviewWorkspace() {
                       type="button"
                     >
                       <p className="truncate font-semibold text-stone-100">{mission.name}</p>
-                      <p className="mt-1 text-[10px] font-bold uppercase tracking-wider text-stone-500">
+                      <p className="mt-1 text-[10px] font-bold uppercase tracking-wider text-stone-400">
                         {mission.status}
                       </p>
-                      <p className="mt-1 font-mono text-[11px] text-stone-500">
+                      <p className="mt-1 font-mono text-[11px] text-stone-400">
                         {new Date(mission.start_time).toLocaleString('en-IE', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false })}
                       </p>
                     </button>
@@ -307,7 +307,7 @@ function MissionDetailsTab(props: {
             <DetailRow label="Event Count" value={String(props.summary.eventCount)} />
           </dl>
           <div className="mt-4 rounded-xl border border-stone-800 bg-stone-950/40 p-4">
-            <p className="text-[10px] font-bold uppercase tracking-wider text-stone-500">Notes</p>
+            <p className="text-[10px] font-bold uppercase tracking-wider text-stone-400">Notes</p>
             <p className="mt-2 text-sm leading-relaxed text-stone-300">{props.summary.noteSummary}</p>
           </div>
         </section>
@@ -330,7 +330,7 @@ function MissionDetailsTab(props: {
               Show tracking telemetry
             </label>
           </div>
-          <p className="mt-2 text-[11px] leading-relaxed text-stone-500">
+          <p className="mt-2 text-[11px] leading-relaxed text-stone-400">
             {props.includeTelemetry
               ? 'Showing all events, including high-volume device and position telemetry.'
               : 'Showing operator events only. Device and position telemetry are hidden.'}
@@ -351,7 +351,7 @@ function MissionDetailsTab(props: {
                     <p className="font-semibold text-stone-100">{event.title}</p>
                     <p className="mt-1 text-xs text-stone-400">{event.timestampDisplay}</p>
                   </div>
-                  <span className="rounded-full border border-stone-700 px-2 py-1 text-[10px] uppercase tracking-wider text-stone-500">
+                  <span className="rounded-full border border-stone-700 px-2 py-1 text-[10px] uppercase tracking-wider text-stone-400">
                     {event.eventType}
                   </span>
                 </div>
@@ -432,7 +432,7 @@ function MarkerLogTab(props: {
         </div>
 
         <div className="mt-4 overflow-hidden rounded-2xl border border-stone-800 bg-stone-950/20">
-          <div className="grid grid-cols-[6rem_minmax(0,1fr)_9rem_9rem] border-b border-stone-800 px-4 py-3 text-[11px] font-bold uppercase tracking-wider text-stone-500">
+          <div className="grid grid-cols-[6rem_minmax(0,1fr)_9rem_9rem] border-b border-stone-800 px-4 py-3 text-[11px] font-bold uppercase tracking-wider text-stone-400">
             <span>Type</span>
             <span>Name</span>
             <span>Created</span>
@@ -469,13 +469,13 @@ function MarkerLogTab(props: {
           <>
             <div className="flex items-start justify-between gap-3">
               <div>
-                <p className="text-[10px] font-bold uppercase tracking-wider text-stone-500">
+                <p className="text-[10px] font-bold uppercase tracking-wider text-stone-400">
                   Selected Marker
                 </p>
                 <h3 className="mt-1 text-xl font-semibold text-stone-100">
                   {selectedMarker.name}
                 </h3>
-                <p className="mt-1 text-xs uppercase tracking-wider text-stone-500">
+                <p className="mt-1 text-xs uppercase tracking-wider text-stone-400">
                   {selectedMarker.type}
                 </p>
               </div>
@@ -496,7 +496,7 @@ function MarkerLogTab(props: {
             <dl className="mt-4 space-y-2 text-sm text-stone-300">
               {selectedMarker.detailRows.map((row) => (
                 <div className="flex items-start justify-between gap-4" key={row.label}>
-                  <dt className="text-stone-500">{row.label}</dt>
+                  <dt className="text-stone-400">{row.label}</dt>
                   <dd className="text-right font-mono text-stone-200">{row.value}</dd>
                 </div>
               ))}
@@ -515,18 +515,18 @@ function MarkerLogTab(props: {
             </div>
 
             <div className="mt-5 rounded-2xl border border-stone-800 bg-stone-950/30 p-4">
-              <p className="text-[10px] font-bold uppercase tracking-wider text-stone-500">
+              <p className="text-[10px] font-bold uppercase tracking-wider text-stone-400">
                 Marker History
               </p>
               <div className="mt-3 space-y-3" data-testid="mission-review-marker-history">
                 {selectedMarker.historyRows.length === 0 ? (
-                  <p className="text-sm text-stone-500">No marker history recorded.</p>
+                  <p className="text-sm text-stone-400">No marker history recorded.</p>
                 ) : (
                   selectedMarker.historyRows.map((event) => (
                     <div className="rounded-xl border border-stone-800 bg-stone-950/40 p-3" key={event.id}>
                       <div className="flex items-start justify-between gap-3">
                         <p className="font-semibold text-stone-100">{event.title}</p>
-                        <span className="font-mono text-[11px] text-stone-500">
+                        <span className="font-mono text-[11px] text-stone-400">
                           {event.timestampDisplay}
                         </span>
                       </div>
@@ -565,7 +565,7 @@ function LayerConsoleTab(props: {
           <section className="rounded-2xl border border-stone-800 bg-stone-900/30 p-5" key={group.id}>
             <div className="flex items-center justify-between gap-3">
               <h3 className="font-semibold text-stone-100">{group.displayLabel}</h3>
-              <span className="rounded-full border border-stone-700 px-2 py-1 text-[10px] uppercase tracking-wider text-stone-500">
+              <span className="rounded-full border border-stone-700 px-2 py-1 text-[10px] uppercase tracking-wider text-stone-400">
                 {group.children.length} layers
               </span>
             </div>
@@ -574,7 +574,7 @@ function LayerConsoleTab(props: {
                 <div className="rounded-xl border border-stone-800 bg-stone-950/30 p-4" key={layer.id}>
                   <div className="flex items-center justify-between gap-3">
                     <p className="font-medium text-stone-200">{layer.displayLabel}</p>
-                    <span className="font-mono text-xs text-stone-500">
+                    <span className="font-mono text-xs text-stone-400">
                       {layer.summary.visibleCount}/{layer.summary.totalCount}
                     </span>
                   </div>
@@ -611,7 +611,7 @@ function TabButton(props: {
 function SummaryCard(props: { readonly label: string; readonly value: string }) {
   return (
     <div className="rounded-xl border border-stone-800 bg-stone-950/40 p-4">
-      <p className="text-[10px] font-bold uppercase tracking-wider text-stone-500">{props.label}</p>
+      <p className="text-[10px] font-bold uppercase tracking-wider text-stone-400">{props.label}</p>
       <p className="mt-2 font-mono text-xl font-bold text-stone-100">{props.value}</p>
     </div>
   )
@@ -620,7 +620,7 @@ function SummaryCard(props: { readonly label: string; readonly value: string }) 
 function DetailRow(props: { readonly label: string; readonly value: string }) {
   return (
     <div className="rounded-xl border border-stone-800 bg-stone-950/20 p-3">
-      <dt className="text-[10px] font-bold uppercase tracking-wider text-stone-500">{props.label}</dt>
+      <dt className="text-[10px] font-bold uppercase tracking-wider text-stone-400">{props.label}</dt>
       <dd className="mt-1 break-all font-mono text-sm text-stone-200">{props.value}</dd>
     </div>
   )
@@ -629,7 +629,7 @@ function DetailRow(props: { readonly label: string; readonly value: string }) {
 function EmptyState(props: { readonly message: string; readonly testId?: string }) {
   return (
     <div
-      className="rounded-xl border border-dashed border-stone-800 bg-stone-900/20 p-5 text-sm italic text-stone-500"
+      className="rounded-xl border border-dashed border-stone-800 bg-stone-900/20 p-5 text-sm italic text-stone-400"
       data-testid={props.testId}
     >
       {props.message}

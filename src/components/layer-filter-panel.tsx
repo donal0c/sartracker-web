@@ -106,12 +106,12 @@ export function LayerFilterPanel() {
 
           <div className="flex flex-wrap items-center gap-2">
             <label
-              className="sar-toggle flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-medium text-stone-300"
+              className="sar-toggle flex items-center gap-2 px-2.5 py-1.5 text-xs font-semibold text-stone-200"
               data-testid="layer-show-hidden-toggle"
             >
               <input
                 checked={showHidden}
-                className="rounded border-stone-700 bg-stone-950 text-amber-500 focus:ring-amber-500/30"
+                className="h-5 w-5 rounded border-stone-600 bg-stone-950 text-amber-500 focus:ring-amber-500/30"
                 onChange={(event) => setShowHidden(event.target.checked)}
                 type="checkbox"
               />
@@ -228,17 +228,17 @@ function TreeNodeRow(props: {
   const rowSelected = props.selectedNodeId === props.node.id
 
   return (
-    <div>
+    <div data-testid={`layer-branch-${toLayerTreeTestId(props.node.id)}`}>
       <div
-        className={`sar-tree-row mb-1 flex items-center gap-2 px-2 py-1.5 text-xs transition-colors ${
-          rowSelected ? 'sar-tree-row-active' : 'text-stone-300'
+        className={`sar-tree-row mb-1 flex items-center gap-2.5 px-2 py-2 text-sm transition-colors ${
+          rowSelected ? 'sar-tree-row-active' : 'text-stone-200'
         }`}
         data-testid={`layer-row-${toLayerTreeTestId(props.node.id)}`}
         style={{ paddingLeft: `${props.depth * 16 + 8}px` }}
       >
         {hasNodeChildren(props.node) ? (
           <button
-            className="w-5 text-stone-300 hover:text-amber-200"
+            className="h-6 w-6 flex-shrink-0 text-stone-200 hover:text-amber-200"
             data-testid={`layer-expand-${toLayerTreeTestId(props.node.id)}`}
             onClick={() => props.toggleNodeExpanded(props.node.id)}
             type="button"
@@ -246,13 +246,13 @@ function TreeNodeRow(props: {
             {isExpanded ? '▾' : '▸'}
           </button>
         ) : (
-          <span className="w-5 text-stone-500">•</span>
+          <span className="h-6 w-6 flex-shrink-0 text-center text-stone-400">•</span>
         )}
 
         {props.node.kind !== 'root' ? (
           <input
             checked={props.node.isVisible}
-            className="rounded border-stone-700 bg-stone-950 text-amber-500 focus:ring-amber-500/30"
+            className="h-5 w-5 flex-shrink-0 rounded border-stone-600 bg-stone-950 text-amber-500 focus:ring-amber-500/30"
             data-testid={`layer-visibility-${toLayerTreeTestId(props.node.id)}`}
             onChange={(event) =>
               void setSubtreeVisibility(
