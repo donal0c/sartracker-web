@@ -279,7 +279,7 @@ test.describe('M5 mission control workflows', () => {
     await expect(page.getByTestId('mission-start-btn')).toBeEnabled()
   })
 
-  test('minimizes and restores Mission Control in active missions', async ({ page }) => {
+  test('moves minimized Mission Control into the top panel without side-panel safety actions', async ({ page }) => {
     await page.getByTestId('mission-name-input').fill('Minimize Flow')
     await page.getByTestId('mission-start-btn').click()
 
@@ -289,15 +289,15 @@ test.describe('M5 mission control workflows', () => {
 
     await page.getByTestId('mission-control-collapse-btn').click()
 
-    await expect(page.getByTestId('mission-control-collapsed-summary')).toBeVisible()
-    await expect(page.getByTestId('mission-control-collapsed-summary')).toContainText('Minimize Flow')
-    await expect(page.getByTestId('mission-pause-resume-btn')).toBeVisible()
-    await expect(page.getByTestId('mission-finish-btn')).toBeVisible()
-    await expect(page.getByTestId('mission-control-expand-btn')).toBeVisible()
+    await expect(page.getByTestId('mission-control-dock')).toHaveCount(0)
+    await expect(page.getByTestId('command-mast-mission-control-minimized')).toBeVisible()
+    await expect(page.getByTestId('command-mast-mission-control-minimized')).toContainText('Minimize Flow')
+    await expect(page.getByTestId('mission-pause-resume-btn')).toHaveCount(0)
+    await expect(page.getByTestId('mission-finish-btn')).toHaveCount(0)
 
-    await page.getByTestId('mission-control-expand-btn').click()
+    await page.getByTestId('command-mast-mission-control-expand').click()
 
-    await expect(page.getByTestId('mission-control-collapsed-summary')).toBeHidden()
+    await expect(page.getByTestId('mission-control-dock')).toBeVisible()
     await expect(page.getByTestId('mission-control-collapse-btn')).toBeVisible()
     await expect(page.getByTestId('mission-pause-resume-btn')).toBeVisible()
   })
@@ -316,20 +316,16 @@ test.describe('M5 mission control workflows', () => {
     await expect(page.getByTestId('mission-paused-banner')).toContainText('Mission paused')
   })
 
-  test('defaults to collapsed Mission Control in focus mode with safety controls visible', async ({ page }) => {
+  test('keeps Mission Control expanded in focus mode because the normal top mast is hidden', async ({ page }) => {
     await page.getByTestId('mission-name-input').fill('Focus-Minimize Guard')
     await page.getByTestId('mission-start-btn').click()
 
     await page.getByTestId('focus-mode-toggle').click()
     await expect(page.getByTestId('focus-mode-sidebar')).toBeVisible()
     await expect(page.getByTestId('mission-control')).toContainText('active')
-    await expect(page.getByTestId('mission-control-collapsed-summary')).toBeVisible()
+    await expect(page.getByTestId('mission-control-collapsed-summary')).toHaveCount(0)
     await expect(page.getByTestId('mission-pause-resume-btn')).toBeVisible()
     await expect(page.getByTestId('mission-finish-btn')).toBeVisible()
-    await expect(page.getByTestId('mission-control-expand-btn')).toBeVisible()
-
-    await page.getByTestId('mission-control-expand-btn').click()
-    await expect(page.getByTestId('mission-control-collapsed-summary')).toBeHidden()
     await expect(page.getByTestId('mission-elapsed')).toBeVisible()
   })
 

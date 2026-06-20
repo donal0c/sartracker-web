@@ -1,7 +1,6 @@
 import {
   useEffect,
   useRef,
-  useState,
   type KeyboardEvent as ReactKeyboardEvent,
   type ReactNode,
 } from 'react'
@@ -20,10 +19,18 @@ const MISSION_FINISH_TITLE_ID = 'mission-finish-dialog-title'
 const MISSION_FINISH_DESCRIPTION_ID = 'mission-finish-dialog-description'
 const MAX_START_OFFSET_HOURS = 48
 
+type MissionControlPanelProps = {
+  readonly minimized?: boolean
+  readonly onMinimizedChange?: (minimized: boolean) => void
+}
+
 /**
  * Renders mission lifecycle controls and timer state for operators.
  */
-export function MissionControlPanel() {
+export function MissionControlPanel({
+  minimized = false,
+  onMinimizedChange,
+}: MissionControlPanelProps = {}) {
   const {
     phase,
     currentMission,
@@ -67,9 +74,15 @@ export function MissionControlPanel() {
   } = useMissionControlViewModel()
 
   const phasePresentation = selectMissionPhasePresentation(phase)
-  const canCollapsePanel = phase === 'active' && currentMission !== null
-  const [collapsed, setCollapsed] = useState(focusModeActive)
-  const effectiveCollapsed = canCollapsePanel && collapsed
+  const canMinimizeToMast =
+    phase === 'active' &&
+    currentMission !== null &&
+    onMinimizedChange !== undefined
+  const effectiveMinimized = canMinimizeToMast && minimized
+
+  if (effectiveMinimized) {
+    return null
+  }
 
   return (
     <section
@@ -94,19 +107,15 @@ export function MissionControlPanel() {
           >
             Review
           </button>
-          {canCollapsePanel ? (
+          {canMinimizeToMast ? (
             <button
-              aria-expanded={!effectiveCollapsed}
+              aria-expanded="true"
               className="sar-button px-3 py-1.5 text-[12px] font-semibold uppercase tracking-[0.08em]"
-              data-testid={
-                effectiveCollapsed
-                  ? 'mission-control-expand-btn'
-                  : 'mission-control-collapse-btn'
-              }
-              onClick={() => setCollapsed((isCollapsed) => !isCollapsed)}
+              data-testid="mission-control-collapse-btn"
+              onClick={() => onMinimizedChange(true)}
               type="button"
             >
-              {effectiveCollapsed ? 'Expand' : 'Minimize'}
+              Minimize
             </button>
           ) : null}
           {phase !== 'idle' && (
@@ -144,47 +153,7 @@ export function MissionControlPanel() {
         </div>
       </div>
 
-      {effectiveCollapsed ? (
-        <div
-          className="sar-readout border-l-4 border-l-emerald-400 px-3 py-3"
-          data-testid="mission-control-collapsed-summary"
-        >
-          <div className="flex items-center justify-between gap-3">
-            <div className="min-w-0">
-              <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-stone-300">
-                Active Mission
-              </p>
-              <p className="mt-1 truncate text-[13px] font-bold text-stone-100">
-                {currentMission.name}
-              </p>
-            </div>
-            <div className="flex flex-shrink-0 items-center gap-2">
-              <button
-                className="sar-button-focus px-3 py-1.5 text-[11px] font-bold uppercase tracking-[0.06em]"
-                data-testid="mission-pause-resume-btn"
-                disabled={!canPauseOrResume}
-                onClick={() => void pauseOrResume()}
-                type="button"
-              >
-                {pauseResumeLabel}
-              </button>
-              <button
-                className="sar-action-danger px-3 py-1.5 text-[11px] font-bold uppercase tracking-[0.06em] disabled:cursor-not-allowed disabled:opacity-20"
-                data-testid="mission-finish-btn"
-                disabled={!canFinish}
-                onClick={() => {
-                  setCollapsed(false)
-                  setShowFinishDialog(true)
-                }}
-                type="button"
-              >
-                Finish
-              </button>
-            </div>
-          </div>
-        </div>
-      ) : (
-        <>
+      <>
       {/*
         Paused-state recovery banner (DON-64). Rendered immediately under the
         header so the paused state and its recovery action are impossible to
@@ -567,8 +536,7 @@ export function MissionControlPanel() {
           </div>
         </InlineDecisionDialog>
       ) : null}
-        </>
-      )}
+      </>
     </section>
   )
 }

@@ -68,12 +68,18 @@ function App() {
   const focusModeActive = useFocusModeStore((state) => state.active)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [sidebarTab, setSidebarTab] = useState<SidebarTab>('tracking')
+  const [minimizedMissionControlId, setMinimizedMissionControlId] = useState<string | null>(null)
   const openDiagnosticsWorkspace = useDiagnosticsWorkspaceStore((state) => state.openWorkspace)
   const browserTestingMode = shouldEnableMissionBrowserHarness()
   const runtimeMode: RuntimeMode = browserTestingMode ? 'hosted-browser' : 'electron'
   const runtimeBootPhase = useRuntimeBootStore((state) => state.phase)
   const runtimeBootError = useRuntimeBootStore((state) => state.error)
   const missionPhase = useMissionStore((state) => state.phase)
+  const currentMission = useMissionStore((state) => state.currentMission)
+  const missionControlMinimized =
+    missionPhase === 'active' &&
+    currentMission !== null &&
+    minimizedMissionControlId === currentMission.id
 
   useEffect(() => {
     const timer = window.setInterval(() => {
@@ -109,8 +115,10 @@ function App() {
 
       {focusModeActive ? null : (
         <CommandMast
+          missionControlMinimized={missionControlMinimized}
           onOpenDiagnostics={openDiagnosticsWorkspace}
           onOpenSettings={() => setSettingsOpen(true)}
+          onRestoreMissionControl={() => setMinimizedMissionControlId(null)}
           runtimeMode={runtimeMode}
           status={status}
         />
@@ -148,14 +156,21 @@ function App() {
               we lift the cap (DON-64) so the paused alarm and Resume control can
               never be clipped or scrolled out of view.
             */}
-            <div
-              className={`min-h-0 flex-shrink overflow-y-auto border-b border-[var(--sar-line)] px-5 pb-4 pt-5 ${
-                missionPhase === 'paused' ? '' : 'max-h-[53vh]'
-              }`}
-              data-testid="mission-control-dock"
-            >
-              <MissionControlPanel />
-            </div>
+            {missionControlMinimized ? null : (
+              <div
+                className={`min-h-0 flex-shrink overflow-y-auto border-b border-[var(--sar-line)] px-5 pb-4 pt-5 ${
+                  missionPhase === 'paused' ? '' : 'max-h-[53vh]'
+                }`}
+                data-testid="mission-control-dock"
+              >
+                <MissionControlPanel
+                  minimized={missionControlMinimized}
+                  onMinimizedChange={(minimized) =>
+                    setMinimizedMissionControlId(minimized ? currentMission?.id ?? null : null)
+                  }
+                />
+              </div>
+            )}
 
             {/* Segmented Tab Control */}
             <div className="flex-shrink-0 px-5 pb-2 pt-3" data-testid="sidebar-tabs">
@@ -184,12 +199,12 @@ function App() {
               {sidebarTab === 'tracking' && (
                 <>
                   <TrackingStatusPanel />
-                  <HelicopterPanel />
                 </>
               )}
               {sidebarTab === 'tools' && (
                 <>
                   <GpxImportPanel />
+                  <HelicopterPanel />
                 </>
               )}
               {sidebarTab === 'layers' && (
@@ -449,8 +464,10 @@ export function RuntimeSafetyBanner(props: {
 export function CommandMast(props: {
   readonly status: string
   readonly runtimeMode: RuntimeMode
+  readonly missionControlMinimized?: boolean
   readonly onOpenDiagnostics: () => void
   readonly onOpenSettings: () => void
+  readonly onRestoreMissionControl?: () => void
 }) {
   const phase = useMissionStore((state) => state.phase)
   const currentMission = useMissionStore((state) => state.currentMission)
@@ -471,9 +488,9 @@ export function CommandMast(props: {
 
   return (
     <header className="sar-global-mast flex-shrink-0" data-testid="command-mast">
-      <div className="grid min-h-[112px] w-full grid-cols-[320px_164px_118px_118px_76px_64px_148px_repeat(5,minmax(0,1fr))] items-stretch overflow-hidden">
-        <div className="flex min-w-0 items-center gap-4 border-r border-[var(--sar-line)] px-4">
-          <div className="relative flex h-24 w-28 flex-shrink-0 items-center justify-center overflow-hidden border border-stone-200/40 bg-white">
+      <div className="grid min-h-[104px] w-full grid-cols-[300px_220px_118px_118px_76px_64px_136px_repeat(5,minmax(0,1fr))] items-stretch overflow-hidden">
+        <div className="flex min-w-0 items-center gap-3 border-r border-[var(--sar-line)] px-4">
+          <div className="relative flex h-20 w-24 flex-shrink-0 items-center justify-center overflow-hidden border border-stone-200/40 bg-white">
             <img
               alt="Mountain Rescue team logo"
               className="h-full w-full object-contain"
@@ -506,7 +523,14 @@ export function CommandMast(props: {
           </div>
         </div>
 
-        <div className="min-w-0 border-r border-[var(--sar-line)] px-4 py-4">
+        <div
+          className="min-w-0 border-r border-[var(--sar-line)] px-4 py-3"
+          data-testid={
+            props.missionControlMinimized && currentMission !== null
+              ? 'command-mast-mission-control-minimized'
+              : undefined
+          }
+        >
           <div className="flex items-center gap-2">
             <span className="sar-section-label text-amber-300">Mission</span>
             <span className={phasePillClassName(phase)}>{phase}</span>
@@ -520,6 +544,21 @@ export function CommandMast(props: {
           <p className="mt-1 truncate font-mono text-[11px] uppercase tracking-[0.12em] text-stone-300">
             {currentMission === null ? 'Ready to start' : `Started ${formatTime(currentMission.start_time)}`}
           </p>
+          {props.missionControlMinimized && currentMission !== null ? (
+            <div className="mt-2 flex items-center justify-between gap-2">
+              <span className="truncate text-[10px] font-black uppercase tracking-[0.08em] text-amber-300">
+                Minimized
+              </span>
+              <button
+                className="border border-stone-500 bg-[var(--sar-panel-raised)] px-3 py-1 text-[10px] font-black uppercase tracking-[0.08em] text-stone-100 transition hover:border-amber-300 hover:bg-stone-800"
+                data-testid="command-mast-mission-control-expand"
+                onClick={() => props.onRestoreMissionControl?.()}
+                type="button"
+              >
+                Expand
+              </button>
+            </div>
+          ) : null}
         </div>
 
         <TopReadout label="Elapsed" value={formatMissionDuration(timerState?.elapsedSeconds ?? 0)} />

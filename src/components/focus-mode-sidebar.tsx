@@ -95,12 +95,12 @@ export function FocusModeSidebar() {
         {activeTab === 'tracking' && (
           <>
             <TrackingStatusPanel />
-            <HelicopterPanel />
           </>
         )}
         {activeTab === 'tools' && (
           <>
             <GpxImportPanel />
+            <HelicopterPanel />
           </>
         )}
         {activeTab === 'layers' && (

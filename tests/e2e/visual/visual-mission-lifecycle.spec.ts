@@ -3,6 +3,7 @@
  *
  * These tests verify the complete mission state machine renders correctly:
  * - Mission start with timers running
+ * - Minimized mission control owned by the command mast
  * - Pause state with frozen active search time
  * - Finish confirmation dialog
  * - Governance card after finish
@@ -57,6 +58,41 @@ Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
         'current-mission-name contains "Ridge Search Alpha"',
         'pause-resume button is enabled',
         'finish button is enabled',
+      ],
+    })
+  })
+
+  test('minimized mission control moves lifecycle controls out of the side rail', async ({ page }) => {
+    await startMission(page, 'Minimized Mast Check')
+    await page.getByTestId('mission-control-collapse-btn').click()
+
+    await expect(page.getByTestId('mission-control-dock')).toHaveCount(0)
+    await expect(page.getByTestId('command-mast-mission-control-minimized')).toBeVisible()
+    await expect(page.getByTestId('command-mast-mission-control-minimized')).toContainText(
+      'Minimized Mast Check',
+    )
+    await expect(page.getByTestId('command-mast-mission-control-expand')).toBeVisible()
+    await expect(page.getByTestId('mission-pause-resume-btn')).toHaveCount(0)
+    await expect(page.getByTestId('mission-finish-btn')).toHaveCount(0)
+
+    await captureAndRegister(page, {
+      testId: 'mission-minimized-mast-state',
+      testName: 'Mission Control minimized into the command mast',
+      area: 'mission',
+      severity: 'critical',
+      verificationPrompt: `Verify this full-page screenshot of SAR Tracker with an active mission after Mission Control has been minimized:
+1. The top command mast should show the active mission name "Minimized Mast Check"
+2. The top command mast should show a compact Mission Control/minimized affordance with an "Expand" button
+3. The right rail should NOT show the full Mission Control card or a separate collapsed Mission Control side card
+4. Pause and Finish controls should NOT be visible anywhere in the side rail while Mission Control is minimized
+5. The right rail tab area should have more vertical room available for Tracking, Tools, or Layers content
+6. The map workspace should remain visible and unobstructed
+Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
+      playwrightAssertions: [
+        'mission-control-dock count is 0',
+        'command mast minimized mission cell is visible',
+        'Expand control is visible in the command mast',
+        'pause and finish controls are absent while minimized',
       ],
     })
   })

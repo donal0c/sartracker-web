@@ -34,21 +34,35 @@ describe('MissionControlPanel collapse behavior', () => {
     vi.clearAllMocks()
   })
 
-  it('collapses active mission controls while keeping safety controls and restore affordance visible', async () => {
+  it('requests top-mast minimization instead of rendering side-panel safety controls', async () => {
     const { MissionControlPanel } = await import('../../src/components/mission-control-panel')
+    const onMinimizedChange = vi.fn()
     missionControlMock.model = createModel({ phase: 'active' })
 
-    render(React.createElement(MissionControlPanel))
+    render(React.createElement(MissionControlPanel, {
+      minimized: false,
+      onMinimizedChange,
+    }))
     expect(query('[data-testid="mission-pause-resume-btn"]')).not.toBeNull()
 
     click('[data-testid="mission-control-collapse-btn"]')
 
-    expect(query('[data-testid="mission-pause-resume-btn"]')).not.toBeNull()
-    expect(query('[data-testid="mission-finish-btn"]')).not.toBeNull()
-    expect(text('[data-testid="mission-control-collapsed-summary"]')).toContain(
-      'Panel Space Mission',
-    )
-    expect(query('[data-testid="mission-control-expand-btn"]')).not.toBeNull()
+    expect(onMinimizedChange).toHaveBeenCalledWith(true)
+    expect(query('[data-testid="mission-control-collapsed-summary"]')).toBeNull()
+  })
+
+  it('renders nothing in the side panel while the top mast owns the minimized state', async () => {
+    const { MissionControlPanel } = await import('../../src/components/mission-control-panel')
+    missionControlMock.model = createModel({ phase: 'active' })
+
+    render(React.createElement(MissionControlPanel, {
+      minimized: true,
+      onMinimizedChange: vi.fn(),
+    }))
+
+    expect(query('[data-testid="mission-control"]')).toBeNull()
+    expect(query('[data-testid="mission-pause-resume-btn"]')).toBeNull()
+    expect(query('[data-testid="mission-finish-btn"]')).toBeNull()
   })
 
   it('does not offer collapse while paused', async () => {
@@ -146,12 +160,4 @@ function click(selector: string): void {
 
 function query(selector: string): Element | null {
   return document.querySelector(selector)
-}
-
-function text(selector: string): string {
-  const element = query(selector)
-  if (element === null) {
-    throw new Error(`Expected ${selector} to exist.`)
-  }
-  return element.textContent ?? ''
 }

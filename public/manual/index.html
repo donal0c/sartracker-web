@@ -595,9 +595,9 @@
             <figcaption>Main operational shell during an active browser-harness mission.</figcaption>
           </figure>
           <div class="card-grid">
-            <div class="card"><strong>Command mast</strong><br />Mission name, phase, timers, device count, tracking cell (mode plus separate FIX and STALE counts), system state, autosave warning state, current app version, Diagnostics, Focus Mode, Settings, Weather, and Help.</div>
+            <div class="card"><strong>Command mast</strong><br />Mission name, phase, timers, minimized Mission Control summary, device count, tracking cell (mode plus separate FIX and STALE counts), system state, autosave warning state, current app version, Diagnostics, Focus Mode, Settings, Weather, and Help.</div>
             <div class="card"><strong>Map workspace</strong><br />Maps menu, Map Tools menu, live map canvas, health badge, offline-readiness badge, and coordinate readouts.</div>
-            <div class="card"><strong>Right rail</strong><br />Pinned Mission Control plus tabs for tracking, tools, and layer inspection.</div>
+            <div class="card"><strong>Right rail</strong><br />Mission Control while expanded, plus tabs for tracking, tools, and layer inspection.</div>
           </div>
         </section>
 
@@ -645,9 +645,9 @@
           </div>
           <div class="note">
             <strong>Panel space:</strong> after an active mission is configured, Mission Control can be
-            minimized from its header. The top command mast still carries the mission phase and timers,
-            while the full pause, finish, review, recovery, and governance controls return when the panel
-            is expanded.
+            minimized from its header. The right-rail card disappears and a compact mission summary moves
+            into the top command mast with an <strong>Expand</strong> control. Pause and Finish are not
+            available while minimized; expand Mission Control before changing the lifecycle state.
           </div>
         </section>
 
@@ -1023,12 +1023,13 @@
             it can be saved.
           </p>
           <p>
-            Helicopters are opt-in to keep the Tracking panel uncluttered. By default the panel shows only
-            slots that already hold a helicopter; empty reserve slots stay hidden behind an
-            <strong>Add helicopter</strong> control. Use that control to reveal the free slots when you need
-            to assign an aircraft, and <strong>Hide empty slots</strong> to collapse them again. Any slot
-            that holds a helicopter always stays visible, so an in-use aircraft is never hidden. Map
-            visibility for helicopters is unchanged and is still controlled from the Layers tab.
+            Helicopters live in the Tools tab with GPX imports so the Tracking tab stays focused on live
+            device status. By default the panel shows only slots that already hold a helicopter; empty
+            reserve slots stay hidden behind an <strong>Add helicopter</strong> control. Use that control
+            to reveal the free slots when you need to assign an aircraft, and
+            <strong>Hide empty slots</strong> to collapse them again. Any slot that holds a helicopter
+            always stays visible, so an in-use aircraft is never hidden. Map visibility for helicopters is
+            unchanged and is still controlled from the Layers tab.
           </p>
         </section>
 
