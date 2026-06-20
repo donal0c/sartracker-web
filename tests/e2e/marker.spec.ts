@@ -39,8 +39,12 @@ test.describe('M6 marker workflows', () => {
     })
   })
 
-  test('creates a marker from a TM65 grid reference through the tools panel', async ({ page }) => {
+  test('creates a marker from a TM65 grid reference through Map Tools', async ({ page }) => {
     await page.getByTestId('sidebar-tab-tools').click()
+    await expect(page.getByTestId('marker-at-grid-panel')).toBeHidden()
+
+    await page.getByTestId('drawing-toolbar-expand').click()
+    await page.getByTestId('drawing-tool-marker_at_grid').click()
     await expect(page.getByTestId('marker-at-grid-panel')).toBeVisible()
     await page.getByTestId('marker-at-grid-type-input').selectOption('hazard')
     await page.getByTestId('marker-at-grid-reference-input').fill('Q 99842 04015')
@@ -69,7 +73,8 @@ test.describe('M6 marker workflows', () => {
   })
 
   test('rejects invalid marker grid references without opening the marker dialog', async ({ page }) => {
-    await page.getByTestId('sidebar-tab-tools').click()
+    await page.getByTestId('drawing-toolbar-expand').click()
+    await page.getByTestId('drawing-tool-marker_at_grid').click()
     await page.getByTestId('marker-at-grid-reference-input').fill('bad ref')
     await page.getByTestId('marker-at-grid-create-btn').click()
 

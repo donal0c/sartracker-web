@@ -4,7 +4,7 @@ import { startMeasurementRuntime } from '../../src/features/measurements/start-m
 import type { MeasurementRuntimeState } from '../../src/features/measurements/measurement-types'
 
 describe('startMeasurementRuntime', () => {
-  it('arms, captures two points, and keeps the tool active for additional measurements', () => {
+  it('arms, captures two points, and returns to idle after the one-shot measurement', () => {
     const applyRuntime = vi.fn<(runtime: MeasurementRuntimeState) => void>()
     const controller = startMeasurementRuntime({ applyRuntime })
 
@@ -21,10 +21,14 @@ describe('startMeasurementRuntime', () => {
     expect(secondResult?.missionId).toBe('mission-1')
 
     const runtime = latestRuntime(applyRuntime)
-    expect(runtime?.mode).toBe('armed')
+    expect(runtime?.mode).toBe('idle')
     expect(runtime?.draftStart).toBeNull()
     expect(runtime?.measurements).toHaveLength(1)
     expect(runtime?.measurements[0]?.label).toMatch(/^\d+(\.\d+)? (m|km) \d+°$/)
+
+    const ignoredResult = controller.registerPoint(-9.67, 51.99)
+    expect(ignoredResult).toBeNull()
+    expect(latestRuntime(applyRuntime)?.measurements).toHaveLength(1)
   })
 
   it('clears transient state when the mission changes or is removed', () => {

@@ -102,6 +102,7 @@ export function startMeasurementRuntime(
         nextPoint,
       )
       state.measurements = [...state.measurements, measurement]
+      state.mode = 'idle'
       state.draftStart = null
       state.hoverPoint = null
       publishRuntime()

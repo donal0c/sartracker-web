@@ -1,5 +1,7 @@
 import { useState } from 'react'
 
+import { MarkerAtGridPanel } from './marker-at-grid-panel'
+import { MeasurementPanel } from './measurement-panel'
 import { useDrawingStore } from '../features/drawings/drawing-store'
 import { LPB_CATEGORIES } from '../features/drawings/lpb-data'
 import { getDrawingLayerNodeId, MEASUREMENTS_LAYER_NODE_ID } from '../features/layers/layer-catalog-ids'
@@ -22,6 +24,8 @@ const DRAWING_TOOL_OPTIONS = [
   { value: 'text_label', label: 'Text Label', hint: 'Click a point, then enter label text and style' },
 ] as const
 
+type MapToolsPanel = 'measurements' | 'marker_at_grid' | null
+
 /**
  * Renders the map-local tool toolbar with one active tool at a time.
  */
@@ -42,6 +46,7 @@ export function DrawingToolbar() {
       ? { label: 'Measure' }
       : DRAWING_TOOL_OPTIONS.find((option) => option.value === activeTool)
   const [expanded, setExpanded] = useState(false)
+  const [activePanel, setActivePanel] = useState<MapToolsPanel>(null)
 
   return (
     <div
@@ -50,7 +55,7 @@ export function DrawingToolbar() {
       data-testid="drawing-toolbar"
     >
       {expanded ? (
-        <div className="max-h-[calc(100vh-20rem)] w-[8.75rem] overflow-y-auto p-3">
+        <div className="max-h-[calc(100vh-12rem)] w-72 overflow-y-auto p-3 data-[panel-open=true]:w-[34rem]" data-panel-open={activePanel === null ? 'false' : 'true'}>
           <button
             aria-expanded="true"
             className="w-full text-left"
@@ -69,79 +74,118 @@ export function DrawingToolbar() {
             </div>
           </button>
 
-          <div className="mt-3 grid gap-2">
-            {DRAWING_TOOL_OPTIONS.map((option) => {
-              const isActive = activeTool === option.value
+          <div className={`mt-3 grid gap-3 ${activePanel === null ? 'grid-cols-1' : 'grid-cols-[9rem_minmax(0,1fr)]'}`}>
+            <div className="grid gap-2">
+              {DRAWING_TOOL_OPTIONS.map((option) => {
+                const isActive = activeTool === option.value
 
-              return (
-                <button
-                  className={`min-h-14 border px-2 py-2 text-center text-[11px] uppercase tracking-[0.08em] transition ${
-                    isActive
-                      ? 'border-amber-300 bg-amber-300/22 text-amber-50 shadow-[inset_0_0_0_1px_rgba(244,183,74,0.4)]'
-                      : 'border-stone-500 bg-[var(--sar-panel-raised)] text-stone-100 hover:border-amber-300 hover:bg-stone-800'
-                  } disabled:cursor-not-allowed disabled:opacity-50`}
-                  data-testid={`drawing-tool-${option.value}`}
-                  disabled={disabled}
-                  key={option.value}
-                  onClick={() => {
-                    if (controller === null) {
-                      return
-                    }
+                return (
+                  <button
+                    className={`min-h-14 border px-2 py-2 text-center text-[11px] uppercase tracking-[0.08em] transition ${
+                      isActive
+                        ? 'border-amber-300 bg-amber-300/22 text-amber-50 shadow-[inset_0_0_0_1px_rgba(244,183,74,0.4)]'
+                        : 'border-stone-500 bg-[var(--sar-panel-raised)] text-stone-100 hover:border-amber-300 hover:bg-stone-800'
+                    } disabled:cursor-not-allowed disabled:opacity-50`}
+                    data-testid={`drawing-tool-${option.value}`}
+                    disabled={disabled}
+                    key={option.value}
+                    onClick={() => {
+                      if (controller === null) {
+                        return
+                      }
 
-                    if (measurementController !== null && measurementMode === 'armed') {
-                      measurementController.cancelMeasurement()
-                    }
+                      if (measurementController !== null && measurementMode === 'armed') {
+                        measurementController.cancelMeasurement()
+                      }
 
-                    if (activeTool === option.value && dialog === null) {
-                      controller.cancelActiveTool()
-                      return
-                    }
+                      setActivePanel(null)
+                      if (activeTool === option.value && dialog === null) {
+                        controller.cancelActiveTool()
+                        return
+                      }
 
-                    revealMapToolLayerForOperation(
-                      layerCatalogRoot,
-                      layerCatalogController,
-                      getDrawingLayerNodeId(option.value),
-                      useLayerVisibilityStore.getState(),
-                    )
-                    controller.setActiveTool(option.value)
-                  }}
-                  type="button"
-                >
-                  <span className="block font-black">{option.label}</span>
-                </button>
-              )
-            })}
-            <button
-              className={`min-h-14 border px-2 py-2 text-center text-[11px] uppercase tracking-[0.08em] transition ${
-                measurementMode === 'armed'
-                  ? 'border-cyan-300 bg-cyan-300/22 text-cyan-50 shadow-[inset_0_0_0_1px_rgba(103,232,249,0.4)]'
-                  : 'border-stone-500 bg-[var(--sar-panel-raised)] text-stone-100 hover:border-cyan-300 hover:bg-stone-800'
-              } disabled:cursor-not-allowed disabled:opacity-50`}
-              data-testid="drawing-tool-measure"
-              disabled={disabled || measurementController === null}
-              onClick={() => {
-                if (controller === null || measurementController === null) {
-                  return
-                }
-
-                if (measurementMode === 'armed') {
-                  measurementController.cancelMeasurement()
-                  return
-                }
-
-                controller.cancelActiveTool()
-                revealMapToolLayerForOperation(
-                  layerCatalogRoot,
-                  layerCatalogController,
-                  MEASUREMENTS_LAYER_NODE_ID,
-                  useLayerVisibilityStore.getState(),
+                      revealMapToolLayerForOperation(
+                        layerCatalogRoot,
+                        layerCatalogController,
+                        getDrawingLayerNodeId(option.value),
+                        useLayerVisibilityStore.getState(),
+                      )
+                      controller.setActiveTool(option.value)
+                    }}
+                    type="button"
+                  >
+                    <span className="block font-black">{option.label}</span>
+                  </button>
                 )
-                measurementController.armMeasurement()
-              }}
-              type="button"
-            >
-              <span className="block font-black">Measure</span>
-            </button>
+              })}
+              <button
+                className={`min-h-14 border px-2 py-2 text-center text-[11px] uppercase tracking-[0.08em] transition ${
+                  measurementMode === 'armed'
+                    ? 'border-cyan-300 bg-cyan-300/22 text-cyan-50 shadow-[inset_0_0_0_1px_rgba(103,232,249,0.4)]'
+                    : 'border-stone-500 bg-[var(--sar-panel-raised)] text-stone-100 hover:border-cyan-300 hover:bg-stone-800'
+                } disabled:cursor-not-allowed disabled:opacity-50`}
+                data-testid="drawing-tool-measure"
+                disabled={disabled || measurementController === null}
+                onClick={() => {
+                  if (controller === null || measurementController === null) {
+                    return
+                  }
+
+                  setActivePanel('measurements')
+                  if (measurementMode === 'armed') {
+                    measurementController.cancelMeasurement()
+                    return
+                  }
+
+                  controller.cancelActiveTool()
+                  revealMapToolLayerForOperation(
+                    layerCatalogRoot,
+                    layerCatalogController,
+                    MEASUREMENTS_LAYER_NODE_ID,
+                    useLayerVisibilityStore.getState(),
+                  )
+                  measurementController.armMeasurement()
+                }}
+                type="button"
+              >
+                <span className="block font-black">Measure</span>
+              </button>
+              <button
+                className={`min-h-14 border px-2 py-2 text-center text-[11px] uppercase tracking-[0.08em] transition ${
+                  activePanel === 'marker_at_grid'
+                    ? 'border-amber-300 bg-amber-300/22 text-amber-50 shadow-[inset_0_0_0_1px_rgba(244,183,74,0.4)]'
+                    : 'border-stone-500 bg-[var(--sar-panel-raised)] text-stone-100 hover:border-amber-300 hover:bg-stone-800'
+                } disabled:cursor-not-allowed disabled:opacity-50`}
+                data-testid="drawing-tool-marker_at_grid"
+                disabled={disabled}
+                onClick={() => {
+                  if (controller === null) {
+                    return
+                  }
+
+                  if (measurementController !== null && measurementMode === 'armed') {
+                    measurementController.cancelMeasurement()
+                  }
+
+                  if (activeTool !== 'select' || dialog !== null) {
+                    controller.cancelActiveTool()
+                  }
+
+                  setActivePanel((currentPanel) =>
+                    currentPanel === 'marker_at_grid' ? null : 'marker_at_grid',
+                  )
+                }}
+                type="button"
+              >
+                <span className="block font-black">Marker at GR</span>
+              </button>
+            </div>
+            {activePanel === 'measurements' ? (
+              <MeasurementPanel showArmControl={false} />
+            ) : null}
+            {activePanel === 'marker_at_grid' ? (
+              <MarkerAtGridPanel />
+            ) : null}
           </div>
           <p className="mt-3 border-t border-[var(--sar-line)] pt-2 text-[10px] font-bold uppercase tracking-[0.1em] text-stone-300">
             LPB {Object.values(LPB_CATEGORIES).length} categories

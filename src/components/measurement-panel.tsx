@@ -7,10 +7,18 @@ import { useLayerVisibilityStore } from '../features/layers/layer-visibility-sto
 import { revealMapToolLayerForOperation } from '../features/layers/layer-visibility-service'
 import { useMissionStore } from '../features/mission/mission-store'
 
+type MeasurementPanelProps = {
+  readonly className?: string
+  readonly showArmControl?: boolean
+}
+
 /**
  * Renders the measurement tool controls and active measurement summaries.
  */
-export function MeasurementPanel() {
+export function MeasurementPanel({
+  className = '',
+  showArmControl = true,
+}: MeasurementPanelProps = {}) {
   const controller = useMeasurementStore((state) => state.controller)
   const mode = useMeasurementStore((state) => state.mode)
   const measurements = useMeasurementStore((state) => state.measurements)
@@ -33,7 +41,7 @@ export function MeasurementPanel() {
 
   return (
     <section
-      className="sar-module p-4 text-sm"
+      className={`sar-module p-4 text-sm ${className}`}
       data-testid="measurement-panel"
     >
       <div className="mb-4 flex items-center justify-between">
@@ -57,37 +65,39 @@ export function MeasurementPanel() {
         {statusMessage}
       </p>
 
-      <div className="mt-4 grid gap-2 sm:grid-cols-2">
-        <button
-          className="rounded-lg border border-cyan-400/55 bg-cyan-700 px-3 py-2.5 text-[13px] font-bold uppercase tracking-[0.08em] text-white transition hover:bg-cyan-600 disabled:cursor-not-allowed disabled:opacity-45 disabled:saturate-50"
-          data-testid="measurement-arm-btn"
-          disabled={disabled}
-          onClick={() => {
-            if (controller === null) {
-              return
-            }
+      <div className={`mt-4 grid gap-2 ${showArmControl ? 'sm:grid-cols-2' : ''}`}>
+        {showArmControl ? (
+          <button
+            className="rounded-lg border border-cyan-400/55 bg-cyan-700 px-3 py-2.5 text-[13px] font-bold uppercase tracking-[0.08em] text-white transition hover:bg-cyan-600 disabled:cursor-not-allowed disabled:opacity-45 disabled:saturate-50"
+            data-testid="measurement-arm-btn"
+            disabled={disabled}
+            onClick={() => {
+              if (controller === null) {
+                return
+              }
 
-            if (mode === 'armed') {
-              controller.cancelMeasurement()
-              return
-            }
+              if (mode === 'armed') {
+                controller.cancelMeasurement()
+                return
+              }
 
-            if (drawingController !== null && drawingTool !== 'select') {
-              drawingController.cancelActiveTool()
-            }
+              if (drawingController !== null && drawingTool !== 'select') {
+                drawingController.cancelActiveTool()
+              }
 
-            revealMapToolLayerForOperation(
-              layerCatalogRoot,
-              layerCatalogController,
-              MEASUREMENTS_LAYER_NODE_ID,
-              useLayerVisibilityStore.getState(),
-            )
-            controller.armMeasurement()
-          }}
-          type="button"
-        >
-          {mode === 'armed' ? 'Cancel Measure' : 'Measure'}
-        </button>
+              revealMapToolLayerForOperation(
+                layerCatalogRoot,
+                layerCatalogController,
+                MEASUREMENTS_LAYER_NODE_ID,
+                useLayerVisibilityStore.getState(),
+              )
+              controller.armMeasurement()
+            }}
+            type="button"
+          >
+            {mode === 'armed' ? 'Cancel Measure' : 'Measure'}
+          </button>
+        ) : null}
         {clearConfirmationVisible ? (
           <div
             className="col-span-full rounded-xl border border-rose-400/40 bg-rose-950/40 p-3 text-sm text-rose-100"
@@ -137,7 +147,9 @@ export function MeasurementPanel() {
         <div className="space-y-2" data-testid="measurement-list">
           {measurements.length === 0 ? (
             <div className="rounded-xl border border-dashed border-stone-600 bg-stone-950/30 px-3 py-2 text-xs font-medium italic text-stone-300">
-              No active measurements. Click Measure above to start.
+              {showArmControl
+                ? 'No active measurements. Click Measure above to start.'
+                : 'No active measurements. Use Measure in Map Tools to start.'}
             </div>
           ) : (
             measurements.map((measurement) => (

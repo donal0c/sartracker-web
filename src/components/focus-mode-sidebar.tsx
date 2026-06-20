@@ -4,8 +4,6 @@ import { FocusModeToggle } from './focus-mode-toggle'
 import { GpxImportPanel } from './gpx-import-panel'
 import { HelicopterPanel } from './helicopter-panel'
 import { LayerFilterPanel } from './layer-filter-panel'
-import { MarkerAtGridPanel } from './marker-at-grid-panel'
-import { MeasurementPanel } from './measurement-panel'
 import { MissionControlPanel } from './mission-control-panel'
 import { TrackingStatusPanel } from './tracking-status-panel'
 
@@ -102,9 +100,7 @@ export function FocusModeSidebar() {
         )}
         {activeTab === 'tools' && (
           <>
-            <MarkerAtGridPanel />
             <GpxImportPanel />
-            <MeasurementPanel />
           </>
         )}
         {activeTab === 'layers' && (

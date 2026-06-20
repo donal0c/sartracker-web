@@ -13,10 +13,8 @@ import { HelicopterPanel } from './components/helicopter-panel'
 import { LayerFilterPanel } from './components/layer-filter-panel'
 import { MissionReviewWorkspace } from './components/mission-review-workspace'
 import { LayerCatalogRuntimeBridge } from './features/layers/layer-catalog-runtime-bridge'
-import { MeasurementPanel } from './components/measurement-panel'
 import { MissionControlPanel } from './components/mission-control-panel'
 import { MarkerDialog } from './components/marker-dialog'
-import { MarkerAtGridPanel } from './components/marker-at-grid-panel'
 import { MarkerRuntimeBridge } from './features/markers/marker-runtime-bridge'
 import { MeasurementRuntimeBridge } from './features/measurements/measurement-runtime-bridge'
 import { useAppStore } from './lib/app-store'
@@ -191,9 +189,7 @@ function App() {
               )}
               {sidebarTab === 'tools' && (
                 <>
-                  <MarkerAtGridPanel />
                   <GpxImportPanel />
-                  <MeasurementPanel />
                 </>
               )}
               {sidebarTab === 'layers' && (

@@ -4,6 +4,7 @@ import type maplibregl from 'maplibre-gl'
 import { useMeasurementStore } from '../measurements/measurement-store'
 import { useMissionStore } from '../mission/mission-store'
 import { isPointInsideMapContainer, shouldIgnoreMapInteraction } from './map-interaction-guards'
+import { createOperationalCrosshairCursor } from './map-cursors'
 import { useMapInteractionMode } from './use-map-interaction-mode'
 
 type UseMapMeasurementInteractionsOptions = {
@@ -22,6 +23,26 @@ export function useMapMeasurementInteractions(
   const interactionMode = useMapInteractionMode()
   const currentMissionId = useMissionStore((state) => state.currentMission?.id ?? null)
   const missionPhase = useMissionStore((state) => state.phase)
+
+  useEffect(() => {
+    const map = options.mapRef.current
+    if (map === null) {
+      return
+    }
+
+    const canvas = map.getCanvas()
+    if (mode === 'armed') {
+      canvas.style.cursor = createOperationalCrosshairCursor()
+    } else if (interactionMode !== 'drawing_tool_armed' && interactionMode !== 'drawing_sketching') {
+      canvas.style.cursor = ''
+    }
+
+    return () => {
+      if (mode === 'armed') {
+        canvas.style.cursor = ''
+      }
+    }
+  }, [interactionMode, mode, options.mapRef])
 
   useEffect(() => {
     if (controller === null) {

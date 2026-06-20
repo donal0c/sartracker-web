@@ -10,6 +10,7 @@ export const MEASUREMENT_LINE_LAYER_ID = 'mission-measurements-line'
 export const MEASUREMENT_LABEL_LAYER_ID = 'mission-measurements-label'
 export const MEASUREMENT_PREVIEW_LINE_LAYER_ID = 'mission-measurement-preview-line'
 export const MEASUREMENT_PREVIEW_POINT_LAYER_ID = 'mission-measurement-preview-point'
+export const MEASUREMENT_LABEL_TEXT_SIZE = 14
 
 /**
  * Synchronizes completed measurement lines and labels into the current map style.
@@ -67,7 +68,7 @@ function ensureMeasurementLayers(map: maplibregl.Map): void {
     filter: ['==', ['get', 'featureKind'], 'label'],
     layout: {
       'text-field': ['get', 'label'],
-      'text-size': 11,
+      'text-size': MEASUREMENT_LABEL_TEXT_SIZE,
       'text-font': ['Open Sans Semibold', 'Arial Unicode MS Bold'],
       'text-anchor': 'top',
       'text-offset': [0, 1],

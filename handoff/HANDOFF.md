@@ -8,13 +8,18 @@
 - **Hosted testing:** `https://sartracker-web.vercel.app/?missionHarness=1`
 - **Desktop:** Electron is the operational desktop lane (MapLibre + direct HTTPS Traccar, SQLite, filesystem, diagnostics, official map packages). Tauri remains historical/reference.
 - **Browser mode:** testing/training only (sessionStorage, not operational persistence).
-- **Latest test counts:** 150 unit files / 943 tests; 117 standard Playwright E2E; 47 backend tests.
+- **Latest test counts:** 150 unit files / 945 tests; 117 standard Playwright E2E; 47 backend tests.
 - **Latest published Electron beta:** `0.1.0-beta.7` / `electron-v0.1.0-beta.7` — DON-177 app-owned local credential storage + DON-176 docked Review + the DON-175 keyring guard. Built by GitHub Actions (run `27601812958`, success), deep Ubuntu 24.04.2 on-device smoke passed against the CI-built AppImage (credential matrix 3/3, real-keyring migration via live Traccar 33 devices/8 fixes, docked Review 6/6, release-blocking bad-secret gate, lifecycle, coord safety, sanitized diagnostics), and **published** at `https://github.com/donal0c/sartracker-web/releases/tag/electron-v0.1.0-beta.7` (Linux AppImage + `.deb` + `SHA256SUMS`) on 2026-06-16. AppImage SHA256 `848eb06321536c76f831a4e566450be82695f4d3b6c8336fce3fbcb4926ca4a7`. This supersedes beta.5 as the team artifact. (beta.6 was a DON-175-only hotfix, built/smoked but never published; its draft + tag were deleted.)
 - **Residual risk on beta.7:** Traccar credentials are now local app-owned plaintext with best-effort `0600` — intentional DON-177 trade for reliability on trusted team machines, not OS-keyring encryption. New beta.7 field issue: duplicate Electron instances can be opened by clicking the launcher during/after startup, causing the runtime fault; fixed locally under DON-180, awaiting packaged beta.8 smoke/release.
 
 ## Last Work Done
 
-DON-190 Devices workspace layout/list behavior — **DONE locally; ready to push.**
+DON-191 Map Tools / RHS Tools consolidation — **DONE locally; ready to commit/push.**
+- Map Tools now owns Measure details/clear controls and Marker at GR. The RHS Tools tab, including Focus Mode Tools, no longer duplicates measurement controls or Marker at GR; it is reserved for GPX import space. Measurement is one-shot: after the second point is placed the map returns to select/idle, and measurement mode uses the same high-contrast crosshair cursor as drawing tools. Measurement labels are larger on the map.
+- Operator manual updated and `public/manual/assets/tools-and-map.png` refreshed from the live app to show the new Map Tools layout and GPX-only Tools tab.
+- Verification: red→green unit coverage for one-shot measurement and Map Tools-owned controls; focused Chromium marker/measurement/full-flow/focus/drawing/devices sweep 33/33; `npm run lint`; `npm run build`; `npm run test` (150 files / 945 tests); `npm run test:backend` (47 passed / 1 ignored); full `npm run test:e2e:chromium` (117/117); visual app-shell Playwright 5/5; `npm run visual:review -- --only shell-drawing-toolbar` PASS.
+
+DON-190 Devices workspace layout/list behavior — **DONE and pushed.**
 - Devices workspace list tabs now own selection context: switching to Active/Hidden/Online/Stale/NoFix keeps the selected device inside the visible list, falling back to the first visible row or no selection when the filtered list is empty. Added a scoped search box that searches only inside the selected list, so queries cannot jump to hidden devices from another tab. The selected-device Zoom action is full-width/contained at constrained desktop widths.
 - Operator manual updated for tab-scoped search/selection behavior.
 - Verification: red→green unit coverage in `device-workspace-model` and `devices-workspace`; `npx playwright test tests/e2e/devices-workspace.spec.ts --project=chromium` (8/8, normal and constrained widths); `npm run lint`; `npm run build`; `npm run test` (150 files / 943 tests); `npm run test:backend` (47 passed / 1 ignored); first full Chromium run 116/117 with one unrelated mission timing tolerance miss that passed in isolation; second full `npm run test:e2e:chromium` passed 117/117.

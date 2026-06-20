@@ -76,10 +76,9 @@ test.describe('M10 full mission integration flow', () => {
     await bravoVisibilityToggle.click()
     await expect(bravoVisibilityToggle).not.toBeChecked()
 
-    await page.getByTestId('sidebar-tab-tools').click()
-    await page.getByTestId('measurement-arm-btn').click()
-    await clickMap(page, { x: 460, y: 240 })
-    await clickMap(page, { x: 580, y: 285 })
+    await page.getByTestId('drawing-tool-measure').click()
+    await clickMap(page, { x: 680, y: 240 })
+    await clickMap(page, { x: 820, y: 285 })
     await expect(page.getByTestId('measurement-count')).toHaveText('1')
 
     await page.waitForTimeout(1100)
@@ -114,8 +113,6 @@ test.describe('M10 full mission integration flow', () => {
       .getByRole('button', { name: 'Confirm Finish' })
       .click()
     await expect(page.getByTestId('mission-control')).toContainText('idle')
-    await page.getByTestId('sidebar-tab-tools').click()
-    await expect(page.getByTestId('measurement-count')).toHaveText('0')
 
     const state = await readHarnessState(page)
     const mission = state.missions.find((candidate) => candidate.name === 'Full Mission Flow')

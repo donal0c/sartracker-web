@@ -12,10 +12,14 @@ const MARKER_TYPE_OPTIONS: readonly { readonly value: MarkerType; readonly label
   { value: 'casualty', label: 'Casualty' },
 ]
 
+type MarkerAtGridPanelProps = {
+  readonly className?: string
+}
+
 /**
  * Opens the normal marker form from an operator-entered TM65 grid reference.
  */
-export function MarkerAtGridPanel() {
+export function MarkerAtGridPanel({ className = '' }: MarkerAtGridPanelProps = {}) {
   const markerController = useMarkerStore((state) => state.controller)
   const missionId = useMissionStore((state) => state.currentMission?.id ?? null)
   const missionPhase = useMissionStore((state) => state.phase)
@@ -25,7 +29,7 @@ export function MarkerAtGridPanel() {
   const disabled = markerController === null || missionId === null || missionPhase === 'recovery'
 
   return (
-    <section className="sar-module p-4" data-testid="marker-at-grid-panel">
+    <section className={`sar-module p-4 ${className}`} data-testid="marker-at-grid-panel">
       <div>
         <h3 className="sar-section-label text-amber-300">
           Marker At GR

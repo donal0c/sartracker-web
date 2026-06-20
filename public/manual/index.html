@@ -956,7 +956,8 @@
           <p>
             Map tools are armed from the map toolbar. They require an active mission and are disabled
             during recovery. Only one drawing or measurement mode should be active at a time; arming one
-            cancels the other. Armed placement tools show a crosshair cursor; drag to pan without placing
+            cancels the other. Measurement is one-shot: after the second point is placed, the map returns
+            to the normal select state. Armed placement tools show a crosshair cursor; drag to pan without placing
             a drawing, then click intentionally to place. The placement crosshair and temporary go-to
             target are red with a white outline so they remain visible over bright raster tiles and dark
             terrain.
@@ -967,8 +968,8 @@
             marker. After you save or cancel a tool the map returns to this select state automatically.
           </p>
           <figure class="screenshot">
-            <img src="assets/tools-and-map.png" alt="Map Tools expanded next to map and measurement panel" />
-            <figcaption>Map Tools toolbar expanded with the Tools tab open.</figcaption>
+            <img src="assets/tools-and-map.png" alt="Map Tools expanded with measurement controls and the Tools tab showing GPX import" />
+            <figcaption>Map Tools expanded with measurement controls; the Tools tab is reserved for GPX import.</figcaption>
           </figure>
           <table>
             <thead>
@@ -981,7 +982,8 @@
               <tr><td>Bearing</td><td>Create a bearing line from an origin, distance, and true or magnetic bearing.</td></tr>
               <tr><td>Sector</td><td>Create a search sector from center, start bearing, end bearing, and radius.</td></tr>
               <tr><td>Text Label</td><td>Place map text with an anchor point, size, colour (palette swatches or typed hex), and rotation. Click and drag a placed label to move it; the new position is saved.</td></tr>
-              <tr><td>Measure</td><td>Temporary two-point distance and map-bearing measurement from Map Tools or the Tools tab.</td></tr>
+              <tr><td>Measure</td><td>Temporary two-point distance and map-bearing measurement from Map Tools. Labels use larger map text for field readability.</td></tr>
+              <tr><td>Marker at GR</td><td>Create a marker from a TM65 grid reference directly from Map Tools.</td></tr>
             </tbody>
           </table>
           <div class="callout">

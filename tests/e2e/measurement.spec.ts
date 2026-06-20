@@ -10,25 +10,33 @@ test.describe('M9 measurement workflows', () => {
     await page.getByTestId('mission-name-input').fill('Measurement Mission')
     await page.getByTestId('mission-start-btn').click()
     await expect(page.getByTestId('mission-control')).toContainText('active')
-    await page.getByTestId('sidebar-tab-tools').click()
+    await page.getByTestId('drawing-toolbar-expand').click()
   })
 
   test('creates multiple measurements and clears them manually', async ({ page }) => {
-    await page.getByTestId('measurement-arm-btn').click()
+    await expect(page.getByTestId('measurement-panel')).toBeHidden()
+    await page.getByTestId('sidebar-tab-tools').click()
+    await expect(page.getByTestId('measurement-panel')).toBeHidden()
+
+    await page.getByTestId('drawing-tool-measure').click()
     await expect(page.getByTestId('measurement-status')).toContainText('Click the first point')
+    await expect(page.locator('.maplibregl-canvas')).toHaveCSS('cursor', /crosshair|url/)
 
-    await clickMap(page, { x: 420, y: 240 })
+    await clickMap(page, { x: 680, y: 240 })
     await expect(page.getByTestId('measurement-status')).toContainText('Click the second point')
-    await clickMap(page, { x: 560, y: 300 })
+    await clickMap(page, { x: 820, y: 300 })
 
+    await expect(page.getByTestId('measurement-mode')).toHaveText('idle')
+    await expect(page.getByTestId('drawing-toolbar-active-mode')).toContainText('Select')
     await expect(page.getByTestId('measurement-count')).toHaveText('1')
     await expect(page.getByTestId('measurement-list')).toContainText(/km|m/)
     await expect(page.getByTestId('measurement-list')).toContainText('°')
     await expect(page.getByTestId('measurement-list')).not.toContainText('T ')
     await expect(page.getByTestId('measurement-list')).not.toContainText('M ')
 
-    await clickMap(page, { x: 500, y: 200 })
-    await clickMap(page, { x: 650, y: 230 })
+    await page.getByTestId('drawing-tool-measure').click()
+    await clickMap(page, { x: 650, y: 200 })
+    await clickMap(page, { x: 800, y: 230 })
     await expect(page.getByTestId('measurement-count')).toHaveText('2')
 
     await page.getByTestId('measurement-clear-btn').click()
@@ -41,15 +49,15 @@ test.describe('M9 measurement workflows', () => {
   test('cancels measurement mode with escape and clears measurements on mission finish', async ({
     page,
   }) => {
-    await page.getByTestId('measurement-arm-btn').click()
-    await clickMap(page, { x: 420, y: 240 })
+    await page.getByTestId('drawing-tool-measure').click()
+    await clickMap(page, { x: 680, y: 240 })
     await page.keyboard.press('Escape')
     await expect(page.getByTestId('measurement-mode')).toHaveText('idle')
     await expect(page.getByTestId('measurement-status')).toContainText('Ready to measure')
 
-    await page.getByTestId('measurement-arm-btn').click()
-    await clickMap(page, { x: 420, y: 240 })
-    await clickMap(page, { x: 560, y: 300 })
+    await page.getByTestId('drawing-tool-measure').click()
+    await clickMap(page, { x: 680, y: 240 })
+    await clickMap(page, { x: 820, y: 300 })
     await expect(page.getByTestId('measurement-count')).toHaveText('1')
 
     await page.getByTestId('mission-finish-btn').click()
@@ -60,35 +68,34 @@ test.describe('M9 measurement workflows', () => {
 
     await expect(page.getByTestId('mission-control')).toContainText('idle')
     await expect(page.getByTestId('measurement-count')).toHaveText('0')
-    await expect(page.getByTestId('measurement-arm-btn')).toBeDisabled()
+    await expect(page.getByTestId('drawing-tool-measure')).toBeDisabled()
   })
 
   test('hands map control cleanly between measurement mode and drawing tools', async ({
     page,
   }) => {
-    await page.getByTestId('drawing-toolbar-expand').click()
     await page.getByTestId('drawing-tool-line').click()
     await expect(page.getByTestId('drawing-toolbar-active-mode')).toContainText('Line')
 
-    await page.getByTestId('measurement-arm-btn').click()
+    await page.getByTestId('drawing-tool-measure').click()
     await expect(page.getByTestId('measurement-mode')).toHaveText('armed')
     await expect(page.getByTestId('drawing-toolbar-active-mode')).toContainText('Measure')
 
     await page.getByTestId('drawing-tool-search_area').click()
-    await expect(page.getByTestId('measurement-mode')).toHaveText('idle')
+    await expect(page.getByTestId('measurement-panel')).toBeHidden()
     await expect(page.getByTestId('drawing-toolbar-active-mode')).toContainText('Search Area')
   })
 
   test('arms measurement from the Map Tools toolbar', async ({ page }) => {
-    await page.getByTestId('drawing-toolbar-expand').click()
     await expect(page.getByTestId('drawing-toolbar')).toContainText('Map Tools')
 
     await page.getByTestId('drawing-tool-measure').click()
     await expect(page.getByTestId('measurement-mode')).toHaveText('armed')
     await expect(page.getByTestId('drawing-toolbar-active-mode')).toContainText('Measure')
 
-    await clickMap(page, { x: 420, y: 240 })
-    await clickMap(page, { x: 560, y: 300 })
+    await clickMap(page, { x: 680, y: 240 })
+    await clickMap(page, { x: 820, y: 300 })
+    await expect(page.getByTestId('measurement-mode')).toHaveText('idle')
     await expect(page.getByTestId('measurement-count')).toHaveText('1')
     await expect(page.getByTestId('measurement-list')).toContainText('°')
   })
@@ -99,14 +106,12 @@ test.describe('M9 measurement workflows', () => {
     await waitForMapStyle(page)
     await hideMapToolsGroup(page)
 
-    await page.getByTestId('sidebar-tab-tools').click()
-    await page.getByTestId('drawing-toolbar-expand').click()
     await page.getByTestId('drawing-tool-measure').click({ force: true })
     await expect
       .poll(async () => (await readVisibilityState(page)).measurementsVisible)
       .toBe(true)
-    await clickMap(page, { x: 420, y: 240 })
-    await clickMap(page, { x: 560, y: 300 })
+    await clickMap(page, { x: 680, y: 240 })
+    await clickMap(page, { x: 820, y: 300 })
     await expect(page.getByTestId('measurement-count')).toHaveText('1')
     await expect
       .poll(async () => readRenderedFeatureCount(page, [

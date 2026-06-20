@@ -129,6 +129,43 @@ describe('DrawingToolbar', () => {
     expect(armMeasurement).toHaveBeenCalled()
   })
 
+  it('hosts the Marker at GR workflow inside expanded Map Tools', async () => {
+    const { DrawingToolbar } = await import('../../src/components/drawing-toolbar')
+
+    render(React.createElement(DrawingToolbar))
+
+    click('[data-testid="drawing-toolbar-expand"]')
+    expect(document.querySelector('[data-testid="marker-at-grid-panel"]')).toBeNull()
+
+    click('[data-testid="drawing-tool-marker_at_grid"]')
+    expect(document.querySelector('[data-testid="marker-at-grid-panel"]')).not.toBeNull()
+    expect(document.querySelector('[data-testid="marker-at-grid-reference-input"]')).not.toBeNull()
+  })
+
+  it('opens Map Tools measurement controls without relying on the sidebar Tools tab', async () => {
+    const { DrawingToolbar } = await import('../../src/components/drawing-toolbar')
+    useMeasurementStore.setState({
+      controller: {
+        armMeasurement: vi.fn(),
+        cancelMeasurement: vi.fn(),
+        registerPoint: vi.fn(),
+        setHoverPoint: vi.fn(),
+        clearMeasurements: vi.fn(),
+      } as never,
+      measurements: [{ id: 'm-1', label: '350m 045°' }] as never,
+      mode: 'idle' as never,
+    })
+
+    render(React.createElement(DrawingToolbar))
+
+    click('[data-testid="drawing-toolbar-expand"]')
+    click('[data-testid="drawing-tool-measure"]')
+
+    expect(document.querySelector('[data-testid="measurement-panel"]')).not.toBeNull()
+    expect(document.querySelector('[data-testid="measurement-count"]')?.textContent).toBe('1')
+    expect(document.querySelector('[data-testid="measurement-clear-btn"]')).not.toBeNull()
+  })
+
   function render(element: React.ReactElement): void {
     host = document.createElement('div')
     document.body.append(host)
