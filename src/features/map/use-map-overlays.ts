@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, type RefObject } from 'react'
+import { useEffect, useMemo, type RefObject } from 'react'
 import type maplibregl from 'maplibre-gl'
 
 import {
@@ -13,7 +13,6 @@ import { syncTrackingOverlay } from '../tracking/sync-tracking-overlay'
 import { useActiveMissionDevicesStore } from '../tracking/active-mission-devices-store'
 import { selectMissionTrackingSnapshot } from '../tracking/mission-active-tracking'
 import { useTrackingStylePreferences } from '../tracking/tracking-style-store'
-import { buildTrackingInitialExtent } from '../tracking/tracking-viewport'
 import { useTrackingStore } from '../tracking/tracking-store'
 import type { RenderableMapId } from '../../lib/map-config'
 import { registerMapStyleSync } from './map-style-sync'
@@ -23,10 +22,6 @@ type UseMapOverlaysOptions = {
   readonly mapRef: RefObject<maplibregl.Map | null>
   readonly mapReadyVersion: number
 }
-
-const TRACKING_INITIAL_FIT_PADDING_PX = 64
-const TRACKING_INITIAL_FIT_MAX_ZOOM = 16
-const TRACKING_INITIAL_FIT_DURATION_MS = 0
 
 /**
  * Keeps tracking and marker overlays synchronized with the current map style.
@@ -46,7 +41,6 @@ export function useMapOverlays(options: UseMapOverlaysOptions): void {
     () => selectMissionTrackingSnapshot(trackingSnapshot, activeDeviceIds),
     [activeDeviceIds, trackingSnapshot],
   )
-  const missionInitialFitRef = useRef<Record<string, boolean>>({})
 
   useEffect(() => {
     const map = options.mapRef.current
@@ -67,26 +61,6 @@ export function useMapOverlays(options: UseMapOverlaysOptions): void {
         getEffectiveTrackingVisible(groupVisibility) && breadcrumbsVisible,
         trackingStyle,
       )
-
-      if (missionId === null) {
-        return
-      }
-
-      if (missionInitialFitRef.current[missionId]) {
-        return
-      }
-
-      const extent = buildTrackingInitialExtent(missionTrackingSnapshot)
-      if (extent === null) {
-        return
-      }
-
-      map.fitBounds(extent, {
-        padding: TRACKING_INITIAL_FIT_PADDING_PX,
-        maxZoom: TRACKING_INITIAL_FIT_MAX_ZOOM,
-        duration: TRACKING_INITIAL_FIT_DURATION_MS,
-      })
-      missionInitialFitRef.current[missionId] = true
     }
 
     return registerMapStyleSync(map, synchronizeOverlay)

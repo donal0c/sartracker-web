@@ -181,6 +181,87 @@ test.describe('M2 map shell', () => {
     }
   })
 
+  test('preserves operator camera when the first tracking update arrives [DON-185]', async ({
+    page,
+  }) => {
+    await page.getByTestId('mission-name-input').fill('Tracking Camera Mission')
+    await page.getByTestId('mission-start-btn').click()
+    await expect(page.getByTestId('mission-control')).toContainText('active')
+
+    const operatorView = {
+      center: [-10.45, 51.55] as [number, number],
+      zoom: 12.7,
+    }
+    await page.evaluate((view) => {
+      const map = (
+        window as Window & {
+          __SARTRACKER_MAP__?: {
+            jumpTo: (options: { center: [number, number]; zoom: number }) => void
+          }
+        }
+      ).__SARTRACKER_MAP__
+      if (map === undefined) {
+        throw new Error('Map instance unavailable.')
+      }
+      map.jumpTo(view)
+    }, operatorView)
+
+    await page.evaluate(async () => {
+      const harness = window.__SARTRACKER_BROWSER_HARNESS__
+      if (harness === undefined) {
+        throw new Error('Browser harness API unavailable.')
+      }
+
+      await harness.injectTrackingSnapshot({
+        devices: [
+          {
+            device_id: 'alpha',
+            name: 'Alpha Team',
+            status: 'online',
+            last_seen: '2026-04-10T17:00:00.000Z',
+            unique_id: null,
+            category: null,
+          },
+        ],
+        positions: [
+          {
+            id: 'pos-alpha',
+            device_id: 'alpha',
+            lat: 53.35,
+            lon: -6.25,
+            altitude: null,
+            speed: 3.5,
+            battery: 82,
+            accuracy: null,
+            timestamp: '2026-04-10T17:00:00.000Z',
+            source: null,
+            data_origin: 'live',
+            cache_age_seconds: null,
+            device_cache_stale: false,
+          },
+        ],
+        breadcrumbs: [],
+      })
+    })
+    await page.evaluate(() => {
+      const map = (
+        window as Window & {
+          __SARTRACKER_MAP__?: {
+            fire: (type: string) => void
+          }
+        }
+      ).__SARTRACKER_MAP__
+      map?.fire('idle')
+    })
+
+    await expect.poll(async () => readTrackingOverlaySynchronized(page)).toBe(true)
+    await expect.poll(async () => readMapCamera(page)).toMatchObject({
+      lon: expect.closeTo(operatorView.center[0], 0.001),
+      lat: expect.closeTo(operatorView.center[1], 0.001),
+      zoom: expect.closeTo(operatorView.zoom, 0.05),
+    })
+  })
+
   test('updates the coordinate bar on mouse move', async ({ page }) => {
     const mapContainer = page.getByTestId('map-container')
     const bounds = await mapContainer.boundingBox()
@@ -302,3 +383,42 @@ test.describe('M2 map shell', () => {
     expect(page.url()).not.toContain('missionHarness=1')
   })
 })
+
+async function readMapCamera(page: import('@playwright/test').Page) {
+  return page.evaluate(() => {
+    const map = (
+      window as Window & {
+        __SARTRACKER_MAP__?: {
+          getCenter: () => { lat: number; lng: number }
+          getZoom: () => number
+        }
+      }
+    ).__SARTRACKER_MAP__
+    if (map === undefined) {
+      throw new Error('Map instance unavailable.')
+    }
+    const center = map.getCenter()
+    return {
+      lat: center.lat,
+      lon: center.lng,
+      zoom: map.getZoom(),
+    }
+  })
+}
+
+async function readTrackingOverlaySynchronized(page: import('@playwright/test').Page) {
+  return page.evaluate(() => {
+    const map = (
+      window as Window & {
+        __SARTRACKER_MAP__?: {
+          getLayer: (layerId: string) => unknown
+          getSource: (sourceId: string) => unknown
+        }
+      }
+    ).__SARTRACKER_MAP__
+    if (map === undefined) {
+      throw new Error('Map instance unavailable.')
+    }
+    return map.getSource('tracking') !== undefined && map.getLayer('tracking-devices-circle') !== undefined
+  })
+}
