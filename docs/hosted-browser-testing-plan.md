@@ -61,7 +61,7 @@ What the team should test in this phase:
 
 - app shell and layout
 - mission start/pause/resume/finish as an operator workflow
-- live Traccar connection via the Vercel proxy
+- live Traccar connection via the team HTTPS Traccar server
 - tracking display, devices workspace, stale/offline states
 - layer visibility, filtering, inspection, and map overlay behavior
 - markers, drawings, measurements, coordinate display
@@ -80,13 +80,13 @@ Implementation scope:
 
 - Use `?missionHarness=1` to enable browser testing mode on Vercel.
 - Use session storage as the temporary mission store.
-- Use the Vercel HTTPS Traccar proxy for the team-managed HTTP Traccar server.
-- Guard hosted Settings against direct `http://` Traccar provider URLs, and offer the hosted proxy base URL as the safe default.
+- Use the team-managed HTTPS Traccar server directly.
+- Guard hosted Settings against direct `http://` Traccar provider URLs, and offer the HTTPS Traccar base URL as the safe default.
 - Keep visible operator copy that says browser testing mode is temporary/local and not for live incidents.
 - Keep manual instructions with exact setup steps for hosted testing.
 - Validate the hosted flow end to end:
   - open hosted browser testing URL
-  - configure Traccar with `https://sartracker-web.vercel.app`
+  - configure Traccar with `https://kmrtsar.eu`
   - authenticate with the provided team credentials
   - start a mission
   - confirm tracking status, devices, and current positions render
@@ -262,7 +262,7 @@ Possible outcomes:
 | Mission start/pause/resume/finish | Available once browser testing mode is enabled | Available |
 | Mission persistence | Session storage only | SQLite, WAL, backup mirror |
 | Crash/restart recovery | Limited browser-session behavior | Persisted recovery prompt |
-| Traccar live connectivity | Vercel HTTPS proxy to configured upstream | Direct configured provider |
+| Traccar live connectivity | Direct HTTPS provider | Direct configured provider |
 | Tracking devices/current positions | Available after mission start | Available |
 | Tracking history persistence | Temporary browser store | Persisted mission store |
 | Settings secrets | In-memory/session-limited browser handling | Desktop settings/secret path |
@@ -281,6 +281,6 @@ Possible outcomes:
 - [x] Update README and parity docs to name the hosted runtime explicitly.
 - [x] Add or update tests for hosted browser testing mode gating.
 - [x] Deploy to Vercel.
-- [x] Validate hosted asset/proxy delivery with live Traccar credentials by command-line checks.
+- [x] Validate hosted asset delivery and direct HTTPS Traccar connectivity with live credentials.
 - [ ] Validate the full browser UI flow from the hosted page.
 - [x] Record final proof and remaining limits in `handoff/HANDOFF.md`.

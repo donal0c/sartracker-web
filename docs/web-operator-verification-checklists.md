@@ -272,7 +272,7 @@ Rows:
 - [ ] `LPV-160` Confirm settings workspace exists as required.
 - [ ] `LPV-161` Confirm mission-default settings group.
 - [x] `LPV-162` Confirm Traccar HTTP configuration behavior.
-  - **Result: Match.** Settings supports Traccar HTTP URL, basic/bearer auth, real Test Connection, and Save & Connect. Live Playwright validation against `http://kmrtsar.ddns.net:8082` with the provided `apiuser` credentials on 2026-05-14 returned 18 devices / 14 fixes and `online` tracking. Password/token fields clear after save by design; stored-secret presence is shown separately.
+  - **Result: Match.** Settings supports Traccar HTTP URL, basic/bearer auth, real Test Connection, and Save & Connect. Live hosted-browser validation against `https://kmrtsar.eu` with the provided `apiuser` credentials on 2026-06-21 returned `online` tracking and Devices workspace access. Password/token fields clear after save by design; stored-secret presence is shown separately.
 - [ ] `LPV-163` Confirm replay controls parity.
 - [ ] `LPV-164` Confirm replay validation rules.
 - [ ] `LPV-165` Confirm layer repair action parity.

@@ -6,7 +6,7 @@ import {
 } from '../../src/features/settings/settings-types'
 import {
   addSchemeIfMissing,
-  HOSTED_TRACCAR_PROXY_BASE_URL,
+  HOSTED_TRACCAR_HTTPS_BASE_URL,
   normalizeRosterInput,
   normalizeWeatherLinks,
   validateSettingsDraft,
@@ -58,12 +58,27 @@ describe('settings validation', () => {
     expect(
       validateSettingsDraft(draft, {
         hostedBrowserMode: true,
-        hostedProxyBaseUrl: HOSTED_TRACCAR_PROXY_BASE_URL,
+        hostedRecommendedBaseUrl: HOSTED_TRACCAR_HTTPS_BASE_URL,
       }),
     ).toMatchObject({
       baseUrl:
-        'Hosted browser mode cannot call direct HTTP Traccar URLs from the HTTPS app. Use https://sartracker-web.vercel.app as the provider base URL for hosted testing.',
+        'Hosted browser mode cannot call direct HTTP Traccar URLs from the HTTPS app. Use https://kmrtsar.eu as the provider base URL for hosted testing.',
     })
+  })
+
+  it('allows the direct HTTPS Traccar URL in hosted browser mode', () => {
+    const draft = createSettingsDraft(DEFAULT_APP_SETTINGS)
+    draft.dataSource.providerType = 'traccar_http'
+    draft.dataSource.baseUrl = 'https://kmrtsar.eu'
+    draft.dataSource.email = 'apiuser'
+    draft.dataSource.secretInput = 'secret'
+
+    expect(
+      validateSettingsDraft(draft, {
+        hostedBrowserMode: true,
+        hostedRecommendedBaseUrl: HOSTED_TRACCAR_HTTPS_BASE_URL,
+      }),
+    ).not.toHaveProperty('baseUrl')
   })
 
   it('allows direct HTTP Traccar URLs outside hosted browser mode', () => {

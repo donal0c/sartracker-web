@@ -14,15 +14,25 @@ export function FocusModeToggle({ className = '', compact = false }: FocusModeTo
 
   return (
     <button
+      aria-label={active ? 'Exit Focus Mode Plus' : 'Enter Focus Mode Plus'}
       aria-pressed={active}
       className={className}
       data-testid="focus-mode-toggle"
       onClick={() => toggle()}
       type="button"
     >
-      {active
-        ? compact ? 'Exit Focus' : 'Exit Focus Mode Plus'
-        : compact ? 'Focus Mode' : 'Enter Focus Mode Plus'}
+      {compact ? (
+        <>
+          <span className="sar-mast-label-full">{active ? 'Exit Focus' : 'Focus Mode'}</span>
+          <span aria-hidden="true" className="sar-mast-label-short">
+            {active ? 'Exit' : 'Focus'}
+          </span>
+        </>
+      ) : active ? (
+        'Exit Focus Mode Plus'
+      ) : (
+        'Enter Focus Mode Plus'
+      )}
     </button>
   )
 }

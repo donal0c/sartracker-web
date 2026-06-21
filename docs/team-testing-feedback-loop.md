@@ -18,7 +18,7 @@ https://sartracker-web.vercel.app/?missionHarness=1
 4. Configure Traccar with:
 
 ```text
-Provider base URL: https://sartracker-web.vercel.app
+Provider base URL: https://kmrtsar.eu
 Auth mode: Basic
 Email: apiuser
 Password: apiuser
@@ -35,15 +35,15 @@ Password: apiuser
 
 ```text
 Hosted app URL: https://sartracker-web.vercel.app/?missionHarness=1
-Hosted Traccar provider base URL: https://sartracker-web.vercel.app
-Desktop/Electron direct Traccar URL: http://kmrtsar.eu:8082
-Legacy/direct fallback URL: http://kmrtsar.ddns.net:8082
+Hosted Traccar provider base URL: https://kmrtsar.eu
+Desktop/Electron direct Traccar URL: https://kmrtsar.eu
+Legacy HTTP URLs: http://kmrtsar.eu:8082, http://kmrtsar.ddns.net:8082
 ```
 
-Do not enter the direct HTTP Traccar URL in the hosted browser app. Browsers
-block HTTPS pages from calling HTTP services directly; the Vercel URL is the
-HTTPS proxy. Settings warns on direct `http://` provider URLs in hosted browser
-mode and offers the hosted proxy as the safe default.
+Do not enter the old direct HTTP Traccar URL in the hosted browser app. Browsers
+block HTTPS pages from calling HTTP services directly. Settings warns on direct
+`http://` provider URLs in hosted browser mode and offers the current HTTPS
+Traccar URL as the safe default.
 
 The direct HTTP URL is still valid in the installed desktop app because the
 browser mixed-content rule does not apply there. Use the Traccar web/API port
@@ -119,7 +119,7 @@ browser/machine details to the same issue rather than creating separate copies.
 
 | Bucket | Meaning | Typical action |
 | --- | --- | --- |
-| Hosted-only | Only happens on Vercel/browser mode, especially session storage, HTTPS proxy, or browser restrictions | Track/Fix in hosted lane, then decide whether browser hardening is worth it |
+| Hosted-only | Only happens on Vercel/browser mode, especially session storage, CORS, or browser restrictions | Track/Fix in hosted lane, then decide whether browser hardening is worth it |
 | Critical hosted blocker | They cannot start mission, connect tracking, see map, or continue testing | Fix immediately, redeploy Vercel |
 | Shared app bug | Real bug likely affects browser and Electron | Fix with tests, deploy Vercel, later verify desktop |
 | UI/wording/layout feedback | The app works but feels confusing or awkward | Batch into focused UI iterations |

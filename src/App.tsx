@@ -488,7 +488,7 @@ export function CommandMast(props: {
 
   return (
     <header className="sar-global-mast flex-shrink-0" data-testid="command-mast">
-      <div className="grid min-h-[104px] w-full grid-cols-[300px_220px_118px_118px_76px_64px_136px_repeat(5,minmax(0,1fr))] items-stretch overflow-hidden">
+      <div className="sar-command-mast-grid grid min-h-[104px] w-full items-stretch overflow-hidden">
         <div className="flex min-w-0 items-center gap-3 border-r border-[var(--sar-line)] px-4">
           <div className="relative flex h-20 w-24 flex-shrink-0 items-center justify-center overflow-hidden border border-stone-200/40 bg-white">
             <img
@@ -606,31 +606,43 @@ export function CommandMast(props: {
           )}
         </div>
         <button
+          aria-label="Open diagnostics workspace"
           className="sar-mast-button"
           data-testid="open-diagnostics-workspace"
           onClick={() => props.onOpenDiagnostics()}
           type="button"
         >
-          Diagnostics
+          <span className="sar-mast-label-full">Diagnostics</span>
+          <span aria-hidden="true" className="sar-mast-label-short">
+            Diag
+          </span>
         </button>
         <FocusModeToggle className="sar-mast-button" compact />
         <button
+          aria-label="Open settings workspace"
           className="sar-mast-button"
           data-testid="open-settings-workspace"
           onClick={() => props.onOpenSettings()}
           type="button"
         >
-          Settings
+          <span className="sar-mast-label-full">Settings</span>
+          <span aria-hidden="true" className="sar-mast-label-short">
+            Set
+          </span>
         </button>
         <WeatherMenu />
         <a
+          aria-label="Open help manual"
           className="sar-mast-button inline-flex items-center justify-center"
           data-testid="open-help-manual"
           href="./manual/index.html"
           rel="noreferrer"
           target="_blank"
         >
-          Help
+          <span className="sar-mast-label-full">Help</span>
+          <span aria-hidden="true" className="sar-mast-label-short">
+            Help
+          </span>
         </a>
       </div>
     </header>
@@ -648,6 +660,7 @@ function WeatherMenu() {
     <div className="relative flex min-w-0 border-r border-[var(--sar-line)]">
       <button
         aria-expanded={open}
+        aria-label="Open weather links menu"
         className="sar-mast-button w-full"
         data-testid="weather-menu-trigger"
         onClick={() => {
@@ -660,7 +673,10 @@ function WeatherMenu() {
         }}
         type="button"
       >
-        Weather
+        <span className="sar-mast-label-full">Weather</span>
+        <span aria-hidden="true" className="sar-mast-label-short">
+          Wx
+        </span>
       </button>
       {open ? (
         <div

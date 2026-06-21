@@ -2,22 +2,22 @@ import type { AppSettingsDraft, WeatherLinkSettings } from './settings-types'
 
 export type SettingsValidationErrors = Partial<Record<string, string>>
 
-export const HOSTED_TRACCAR_PROXY_BASE_URL = 'https://sartracker-web.vercel.app'
+export const HOSTED_TRACCAR_HTTPS_BASE_URL = 'https://kmrtsar.eu'
 export const MAX_WEATHER_LINKS = 5
 export const PROVIDER_URL_CREDENTIALS_ERROR =
   'Provider URL must not include embedded credentials. Enter credentials in the authentication fields.'
 
 export type SettingsValidationContext = {
   readonly hostedBrowserMode: boolean
-  readonly hostedProxyBaseUrl: string
+  readonly hostedRecommendedBaseUrl: string
 }
 
 /**
  * Builds the hosted browser guidance shown when HTTPS browser testing cannot call
  * a direct HTTP Traccar server.
  */
-export function createHostedTraccarHttpUrlMessage(hostedProxyBaseUrl: string): string {
-  return `Hosted browser mode cannot call direct HTTP Traccar URLs from the HTTPS app. Use ${hostedProxyBaseUrl} as the provider base URL for hosted testing.`
+export function createHostedTraccarHttpUrlMessage(hostedRecommendedBaseUrl: string): string {
+  return `Hosted browser mode cannot call direct HTTP Traccar URLs from the HTTPS app. Use ${hostedRecommendedBaseUrl} as the provider base URL for hosted testing.`
 }
 
 /**
@@ -34,7 +34,7 @@ export function getHostedTraccarBaseUrlError(
   try {
     const parsed = new URL(baseUrl)
     return parsed.protocol === 'http:'
-      ? createHostedTraccarHttpUrlMessage(context.hostedProxyBaseUrl)
+      ? createHostedTraccarHttpUrlMessage(context.hostedRecommendedBaseUrl)
       : undefined
   } catch {
     return undefined

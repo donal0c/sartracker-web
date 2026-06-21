@@ -16,7 +16,7 @@ import {
   type OfficialMapPackageSettings,
 } from '../features/settings/settings-types'
 import {
-  HOSTED_TRACCAR_PROXY_BASE_URL,
+  HOSTED_TRACCAR_HTTPS_BASE_URL,
   MAX_WEATHER_LINKS,
   formatRosterInput,
   normalizeRosterInput,
@@ -264,24 +264,24 @@ export function SettingsWorkspace({ open, onClose }: SettingsWorkspaceProps) {
                       data-testid="hosted-traccar-url-guidance"
                     >
                       <p>
-                        Hosted browser testing must use the HTTPS proxy as the Traccar provider base URL. Direct HTTP Traccar server URLs are blocked by browsers from this HTTPS app.
+                        Hosted browser testing must use the HTTPS Traccar provider base URL. Direct HTTP Traccar server URLs are blocked by browsers from this HTTPS app.
                       </p>
                       <button
                         className="sar-button mt-3 px-3 py-2 text-[11px] font-bold uppercase tracking-wider"
-                        data-testid="use-hosted-traccar-proxy"
+                        data-testid="use-hosted-traccar-https"
                         onClick={() =>
                           updateDraft(setDraft, (current) => ({
                             ...current,
                             dataSource: {
                               ...current.dataSource,
                               providerType: 'traccar_http',
-                              baseUrl: settingsValidationContext.hostedProxyBaseUrl,
+                              baseUrl: settingsValidationContext.hostedRecommendedBaseUrl,
                             },
                           }))
                         }
                         type="button"
                       >
-                        Use Hosted Proxy
+                        Use HTTPS Traccar
                       </button>
                     </div>
                   ) : null}
@@ -1440,7 +1440,7 @@ function createSettingsValidationContext(): SettingsValidationContext | undefine
 
   return {
     hostedBrowserMode: true,
-    hostedProxyBaseUrl: HOSTED_TRACCAR_PROXY_BASE_URL,
+    hostedRecommendedBaseUrl: HOSTED_TRACCAR_HTTPS_BASE_URL,
   }
 }
 

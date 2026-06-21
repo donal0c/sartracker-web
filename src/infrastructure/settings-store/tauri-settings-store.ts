@@ -10,7 +10,7 @@ import {
   type TrackingAuthMode,
 } from '../../features/settings/settings-types'
 import {
-  HOSTED_TRACCAR_PROXY_BASE_URL,
+  HOSTED_TRACCAR_HTTPS_BASE_URL,
   getHostedTraccarBaseUrlError,
   normalizeWeatherLinks,
   type SettingsValidationContext,
@@ -194,7 +194,7 @@ function createBrowserSettingsValidationContext(): SettingsValidationContext | u
 
   return {
     hostedBrowserMode: true,
-    hostedProxyBaseUrl: HOSTED_TRACCAR_PROXY_BASE_URL,
+    hostedRecommendedBaseUrl: HOSTED_TRACCAR_HTTPS_BASE_URL,
   }
 }
 

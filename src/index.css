@@ -111,6 +111,10 @@ body {
       inset 0 -1px rgba(0, 0, 0, 0.48);
   }
 
+  .sar-command-mast-grid {
+    grid-template-columns: 300px 220px 118px 118px 76px 64px 136px repeat(5, minmax(0, 1fr));
+  }
+
   .sar-mast-button {
     min-width: 0;
     border-left: 1px solid var(--sar-line);
@@ -132,9 +136,33 @@ body {
     justify-content: center;
   }
 
+  .sar-mast-label-short {
+    display: none;
+  }
+
   .sar-mast-button:hover {
     background: rgba(244, 183, 74, 0.11);
     color: #fde9b5;
+  }
+
+  @media (max-width: 1180px) {
+    .sar-command-mast-grid {
+      grid-template-columns: 224px 180px 96px 96px 64px 56px 112px repeat(5, minmax(54px, 1fr));
+    }
+
+    .sar-mast-button {
+      padding: 0 0.35rem;
+      font-size: 9px;
+      letter-spacing: 0.04em;
+    }
+
+    .sar-mast-label-full {
+      display: none;
+    }
+
+    .sar-mast-label-short {
+      display: inline;
+    }
   }
 
   .sar-panel {

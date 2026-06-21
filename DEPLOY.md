@@ -71,15 +71,15 @@ cd ~/workspace/vibes/sartracker-web && npm run build && vercel pull --yes --envi
 
 ## Environment Variables
 
-### Runtime (Vercel proxy)
+### Runtime Traccar access
 
-The hosted app includes a narrow HTTPS proxy for the team-managed Traccar HTTP server. This avoids browser mixed-content blocking when the Vercel app is served over HTTPS but the upstream Traccar server is still HTTP-only.
+The hosted app now connects directly to the team-managed HTTPS Traccar server.
+Operators should enter `https://kmrtsar.eu` as the Traccar provider base URL in Settings.
 
-| Variable | Purpose | Default |
-|---|---|---|
-| `TRACCAR_UPSTREAM_URL` | HTTP Traccar upstream used by `/api/session`, `/api/devices`, and `/api/positions` | `http://kmrtsar.ddns.net:8082` |
-
-Operators should enter the hosted app origin, for example `https://sartracker-web.vercel.app`, as the Traccar provider base URL in Settings. The app then calls same-origin HTTPS `/api/...` endpoints and Vercel forwards the allowed requests to the HTTP upstream.
+The old Vercel HTTPS proxy was retired after the Traccar server moved from the
+HTTP `:8082` endpoint to HTTPS with browser CORS support. Do not configure
+hosted browser testing with `https://sartracker-web.vercel.app` as the Traccar
+provider URL.
 
 ### Build-time (Vite)
 These are baked into the bundle at build time via `import.meta.env`:

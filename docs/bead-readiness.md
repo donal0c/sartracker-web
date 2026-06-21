@@ -44,7 +44,7 @@ Execution docs:
   - Hosted browser testing mode is opt-in via `?missionHarness=1`.
   - Phase 0 can use session storage.
   - Phase 0 must not be described as live-incident-grade persistence.
-  - Traccar access uses the already-deployed same-origin Vercel HTTPS proxy.
+  - Traccar access uses the team-managed HTTPS server directly (`https://kmrtsar.eu`).
 - Open questions:
   - Exact long-term browser persistence design: IndexedDB only, export/import, or server-backed shared missions.
   - Final browser secret-handling model.

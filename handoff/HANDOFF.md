@@ -8,7 +8,16 @@
 - **Desktop lane:** Electron is operational. Tauri remains historical/reference.
 - **Hosted browser:** `https://sartracker-web.vercel.app/?missionHarness=1` is testing/training only; browser storage is not operational persistence.
 - **Latest published beta:** `electron-v0.1.0-beta.7`, published 2026-06-16 after GitHub Actions run `27601812958` and deep Ubuntu smoke. Team artifact: https://github.com/donal0c/sartracker-web/releases/tag/electron-v0.1.0-beta.7
-- **Next candidate:** beta.8. The web/browser side of the beta.8 candidate is validated; Electron packaged smoke/release is still required before sharing with testers.
+- **Next candidate:** beta.8. Local browser/regression gates are green after the 2026-06-21 smoke sweep; hosted Traccar now uses direct HTTPS after `DON-224`; Electron packaged smoke/release is still required before sharing with testers.
+
+## Latest Beta.8 Validation - 2026-06-21
+
+- Full local gates passed before the targeted smoke fix: `npm run lint`, `npm run build`, `npm run test` - 152 files / 997 tests, `npm run test:backend` - 47 passed / 1 ignored, `npm run test:e2e:chromium` - 127/127, `npx playwright test --project=visual` - 34/34, `npm run visual:review -- --fail-on critical` - 39/39, and `npm run beta:verify -- --no-smoke` - passed with manual smoke intentionally skipped.
+- Targeted smoke found and fixed `DON-223`: mast action labels overlapped at 1100x720. Fix compacts the command mast grid below 1180px and uses short visible labels while preserving full accessible names. `DON-223` is Done.
+- Post-fix focused verification passed: `npm run lint`, `npm run build`, `npx playwright test tests/e2e/focus-mode.spec.ts tests/e2e/mission.spec.ts --project=chromium` - 17/17, `npx playwright test tests/e2e/visual/visual-app-shell.spec.ts tests/e2e/visual/visual-mission-lifecycle.spec.ts --project=visual` - 13/13, `npm run visual:review -- --only shell-map-scale-small-display --fail-on critical` - passed.
+- Vercel preview deployed via documented prebuilt flow after direct `vercel deploy --yes` failed because `.vercelignore` excludes build inputs. Preview: `https://sartracker-iuj0w2ls4-ocallaghandonal2-1437s-projects.vercel.app`; protected share URL expires 2026-06-22 05:35 UTC: `https://sartracker-iuj0w2ls4-ocallaghandonal2-1437s-projects.vercel.app/?missionHarness=1&_vercel_share=FqNQsHcXOa7AHnXMaKCcyUiyowZCovKN`.
+- Hosted UI smoke passed on that preview with mocked Traccar responses, covering app load, map tiles after wait, mission start, harness tracking display, Devices, marker-at-grid, settings validation, diagnostics, and the 1100x720 mast fix. Evidence is under `output/playwright/beta8-local-smoke/` and `output/playwright/beta8-vercel-smoke/`.
+- `DON-224` root cause: the hosted app still recommended the old Vercel proxy from the HTTP-era Traccar setup. The team server now works directly over `https://kmrtsar.eu` with CORS. Direct deployed-browser smoke against the Vercel preview passed: Settings `Test Connection`, `Save, Connect & Close`, online tracking, and Devices workspace. Evidence: `output/playwright/beta8-direct-https-traccar/`.
 
 ## Beta.8 Candidate Status
 
@@ -125,7 +134,7 @@ Not done: no private Discovery MBTiles package smoke and no release publication 
 
 Do not promote beta.8 until the packaged Electron release gate passes.
 
-Required next step once the CI-built beta.8 artifact exists:
+Required next steps before beta.8 publication:
 
 1. Smoke the **CI-built artifact**, not a local substitute.
 2. Run DON-180 duplicate-launch smoke on packaged Linux/AppImage:
@@ -147,12 +156,11 @@ Required next step once the CI-built beta.8 artifact exists:
 
 ## Traccar Test Details
 
-- Upstream team server: `http://kmrtsar.eu:8082`
-- HTTPS server: `https://kmrtsar.eu`
-- Validation credentials: `sean` / `sean`
+- Current team server: `https://kmrtsar.eu`
+- Validation credentials: `apiuser` / `apiuser` for hosted team testing; `sean` / `sean` also validated on 2026-06-21.
 - Do not use `https://traccar.kmrtsar.eu` or port `:5055`; those are listener/non-API paths.
-- Hosted browser proxy: provider base URL `https://sartracker-web.vercel.app`, endpoints `/api/session`, `/api/devices`, `/api/positions`, auth `Basic` / `apiuser` / `apiuser`.
-- Desktop may use direct upstream HTTP/HTTPS; hosted browser must use the Vercel proxy.
+- Do not use old direct HTTP URLs such as `http://kmrtsar.eu:8082` or `http://kmrtsar.ddns.net:8082` in hosted browser mode.
+- Hosted browser and desktop should use the direct HTTPS provider base URL: `https://kmrtsar.eu`.
 
 ## Useful Commands
 

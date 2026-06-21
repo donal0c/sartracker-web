@@ -405,7 +405,7 @@
                 <li>Confirm the amber browser testing banner is visible.</li>
                 <li>Confirm <strong>System Status</strong> says <strong>Browser test</strong> and <strong>Session storage only</strong>.</li>
                 <li>Use <strong>Settings</strong> to configure Traccar before starting the mission.</li>
-                <li>Use <strong>https://sartracker-web.vercel.app</strong> as the provider base URL.</li>
+                <li>Use <strong>https://kmrtsar.eu</strong> as the provider base URL.</li>
                 <li>Start the mission from <strong>Mission Control</strong> after tracking connection succeeds.</li>
               </ol>
             </div>
@@ -436,7 +436,7 @@
             <li>Confirm the amber browser testing banner is visible.</li>
             <li>Confirm the command mast reports <strong>Browser test</strong> and <strong>Session storage only</strong>, not desktop persistence.</li>
             <li>Open <strong>Settings</strong>, then <strong>Data Sources</strong>.</li>
-            <li>Use <strong>https://sartracker-web.vercel.app</strong> as the Traccar provider base URL.</li>
+            <li>Use <strong>https://kmrtsar.eu</strong> as the Traccar provider base URL.</li>
             <li>Use <strong>Basic</strong> authentication with the team testing credentials.</li>
             <li>Run <strong>Test Connection</strong>, then <strong>Save, Connect &amp; Close</strong>.</li>
             <li>Start a mission. Use a 24 or 48 hour <strong>Start Offset</strong> if breadcrumb history looks empty.</li>
@@ -445,7 +445,7 @@
           <div class="note">
             The hosted app URL and the hosted Traccar provider base URL are different on purpose.
             Open the app with <strong>?missionHarness=1</strong>; enter only
-            <strong>https://sartracker-web.vercel.app</strong> in Settings. Do not enter the direct
+            <strong>https://kmrtsar.eu</strong> in Settings. Do not enter the old direct
             <strong>http://kmrtsar.ddns.net:8082</strong> Traccar URL in hosted browser mode.
           </div>
 
@@ -860,9 +860,9 @@
           <ol>
             <li>Open <strong>Settings</strong>.</li>
             <li>In <strong>Data Sources</strong>, choose <strong>Traccar HTTP</strong>.</li>
-            <li>Enter the provider base URL. On the hosted Vercel app, use <strong>https://sartracker-web.vercel.app</strong>; the app proxies securely to the team-managed HTTP Traccar server.</li>
+            <li>Enter the provider base URL. On the hosted Vercel app, use <strong>https://kmrtsar.eu</strong>; the browser connects directly to the team-managed HTTPS Traccar server.</li>
             <li>Do not put usernames, passwords, or tokens inside the provider URL. Enter credentials only in the authentication fields; URLs such as <code>https://user:password@example.com</code> are rejected.</li>
-            <li>Do not use the direct HTTP Traccar URL in hosted browser testing. Settings will warn and ask for the hosted HTTPS proxy instead.</li>
+            <li>Do not use the old direct HTTP Traccar URL in hosted browser testing. Settings will warn and offer the current HTTPS Traccar URL instead.</li>
             <li>Choose <strong>Basic</strong> or <strong>Bearer</strong> authentication.</li>
             <li>Enter the email/password or bearer token.</li>
             <li>Use <strong>Test Connection</strong> before saving for live use; it authenticates against the configured Traccar server and checks device access.</li>
@@ -878,7 +878,7 @@
           <div class="warning">
             <strong>Hosted browser testing:</strong> when the app is opened with <strong>?missionHarness=1</strong>,
             mission data is stored in the browser session so the team can test the current workflow from
-            Vercel. Direct HTTP Traccar URLs are blocked from this HTTPS page, so use the hosted proxy
+            Vercel. Direct HTTP Traccar URLs are blocked from this HTTPS page, so use the HTTPS Traccar
             base URL shown above. Use browser mode for testing only until the browser runtime has durable
             storage and recovery.
           </div>
@@ -1206,7 +1206,7 @@
             </thead>
             <tbody>
               <tr><td>Mission Defaults</td><td>Auto-refresh, auto-save, mission roots, coordinator roster, admin roster, and coordinate display preference.</td></tr>
-              <tr><td>Data Sources</td><td>Provider type, Traccar web/API URL, authentication mode, secret handling, auto-connect, tracking cache, replay defaults, and hosted-browser proxy guidance when the app is running from Vercel. For the team test server, desktop builds use the Traccar API port <code>8082</code>; tracker listener ports such as <code>5055</code> are not valid provider base URLs.</td></tr>
+              <tr><td>Data Sources</td><td>Provider type, Traccar web/API URL, authentication mode, secret handling, auto-connect, tracking cache, replay defaults, and hosted-browser HTTPS guidance when the app is running from Vercel. For the team test server, use <strong>https://kmrtsar.eu</strong>; old direct HTTP <code>8082</code> URLs and tracker listener ports such as <code>5055</code> are not valid hosted provider base URLs.</td></tr>
               <tr><td>Official Maps</td><td>Local/Electron configuration for the licensed MapGenie source file and registered official offline packages. In Electron builds, use <strong>Choose MapGenie File</strong> to select the source details file and <strong>Add Discovery Package</strong> to import an existing <code>.mbtiles</code> package from disk or USB into SAR Tracker storage. Raw Discovery <code>.zip</code>, <code>.tif</code>, and <code>.tiff</code> source files are not app-ready packages in the current beta; a map admin must prepare a <code>.mbtiles</code> package first. Save Settings to validate the copied package and refresh its ready, missing, or unreadable status. Each package is automatically classified as <strong>Standard</strong> (recommended, under 2 GB — the Kerry/West operating-area package), <strong>Mission Area</strong> (2–4 GB — prepared for a specific search area), or <strong>National</strong> (over 4 GB — large admin-prepared package with explicit warnings). The standard operating-area package is recommended for most operations. National packages should be prepared by an admin before a mission, not generated during one. Settings records only safe metadata such as source status, username, service count, package status, zoom range, tile count, safe file size, and verification time. It does not expose map package contents, passwords, or package paths in diagnostics, screenshots, or source control. Hosted browser testing keeps official maps unavailable unless a controlled private hosted source is added later.</td></tr>
               <tr><td>Weather Links</td><td>A small named list of external weather URLs, such as Met Éireann. Bare domains like <code>met.ie</code> or <code>www.yr.no</code> are accepted and automatically normalized to <code>https://</code>. These links open in the system default browser; SAR Tracker does not import weather data.</td></tr>
               <tr><td>Advanced Settings</td><td>Reserved repair/support actions. Some actions may remain disabled until the matching milestone is complete.</td></tr>

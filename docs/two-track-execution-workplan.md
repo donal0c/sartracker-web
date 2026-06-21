@@ -56,8 +56,8 @@ Examples that require packaged validation:
 - map renderer/runtime changes where GPU, WebGL, Electron/Chromium, WebKitGTK,
   tile cache workers, offline tiles, or black-screen detection are part of the
   risk
-- tracking/network changes where desktop and hosted paths differ, such as direct
-  Traccar access versus the hosted proxy
+- tracking/network changes where desktop and hosted browser paths differ, such as
+  CORS/browser restrictions versus Electron direct-network behavior
 - any fix whose failure mode would only appear after packaging, restart, or
   local-machine integration
 
@@ -356,7 +356,8 @@ S8c / DON-28 current state:
   default. The full app runtime uses Electron adapters when the preload bridge
   is present, while preserving the existing Tauri path.
 - Settings `Test Connection` uses the Electron bridge when the bridge exists.
-  Electron uses direct Traccar access; it does not use the Vercel proxy.
+  Electron uses direct Traccar access; hosted browser now also uses direct
+  HTTPS Traccar access.
 - Added `electron-builder.json` plus scripts:
   `electron:dev`, `electron:preview`, `electron:pack`,
   `electron:dist:linux`.
@@ -501,17 +502,17 @@ evidence so far:
 
 - `http://kmrtsar.eu:5055` returns bare `400 Bad Request` for root,
   `/api/server`, and POST `/api/session`.
-- `http://kmrtsar.eu:8082` authenticates with the team test credentials and
-  returns the device roster; `http://kmrtsar.ddns.net:8082` also works.
+- Superseded 2026-06-21: the old HTTP `:8082` endpoints now reset. The current
+  working Traccar API endpoint is `https://kmrtsar.eu`.
 - Representative OpenTopoMap/OpenStreetMap/ESRI tile URLs are reachable from
   the current machine, so the tester map failure still needs packaged-Linux
   evidence rather than assuming a universal tile outage.
 
 Two complementary tiers:
 
-- **Tier 0 (implemented locally 2026-05-18)**: release gates now authenticate
-  against the documented Traccar web/API endpoint (`http://kmrtsar.eu:8082`),
-  assert the device roster is visible, and check representative
+- **Tier 0 (implemented locally 2026-05-18; endpoint updated 2026-06-21)**:
+  release gates should authenticate against the documented Traccar web/API
+  endpoint (`https://kmrtsar.eu`), assert the device roster is visible, and check representative
   OpenTopoMap/OpenStreetMap/ESRI tile URLs before any bundle starts.
 - **Tier 1 (implemented locally 2026-05-18, partial workflow proof)**: extend
   `.github/workflows/release.yml` with `launch-smoke-linux` and
@@ -574,8 +575,8 @@ Verification:
 
 Current tester-environment investigation:
 
-- Traccar is no longer suspect: team feedback confirms tracking appears when
-  using `http://kmrtsar.eu:8082`.
+- Traccar is no longer suspect when using the current HTTPS endpoint:
+  `https://kmrtsar.eu`.
 - CI AppImage evidence is not enough to clear the map issue because the same
   artifact renders OpenTopoMap in the runner while tester machines show a black
   map.
@@ -637,7 +638,7 @@ Tasks:
 - Add a concise team testing checklist to the manual or a linked doc.
 - Make the URL/base-URL distinction impossible to miss:
   - app URL: `https://sartracker-web.vercel.app/?missionHarness=1`
-  - Traccar provider base URL in hosted mode: `https://sartracker-web.vercel.app`
+  - Traccar provider base URL in hosted mode: `https://kmrtsar.eu`
 - Add a simple bug report template:
   - what they were trying to do
   - expected result
@@ -670,19 +671,19 @@ Goal: reduce avoidable Traccar URL confusion during browser testing.
 Tasks:
 
 - Add hosted-mode copy near Settings/Data Sources explaining that direct HTTP Traccar URLs are blocked by browsers from HTTPS pages.
-- In hosted mode, detect `http://` provider URLs and show a specific message directing operators to use `https://sartracker-web.vercel.app`.
-- Consider a one-click hosted default for the known testing proxy.
-- Keep Electron desktop behavior unchanged; direct HTTP server URLs are valid there.
+- In hosted mode, detect `http://` provider URLs and show a specific message directing operators to use `https://kmrtsar.eu`.
+- Offer a one-click hosted default for the known HTTPS Traccar server.
+- Keep Electron desktop behavior flexible, but document `https://kmrtsar.eu` as the current known-good server URL.
 
 Acceptance:
 
 - A tester who enters `http://kmrtsar.ddns.net:8082` in hosted mode gets a clear in-app explanation before chasing network failures.
-- Desktop settings remain flexible for direct provider URLs.
+- Desktop settings remain flexible for direct provider URLs, with `https://kmrtsar.eu` as the current known-good team endpoint.
 
 Verification:
 
 - Done 2026-05-15: unit coverage for hosted-mode URL validation/helper.
-- Done 2026-05-15: hosted Settings UI guardrail and hosted-proxy action added.
+- Done 2026-05-15: hosted Settings UI guardrail and hosted action added.
 - Done 2026-05-15: manual hosted settings check with the inbuilt browser.
 
 ### A3: Team Feedback Triage Pass
