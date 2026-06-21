@@ -14,6 +14,10 @@ import type { LonLat } from './drawing-math'
  * Range rings require explicit radius (manual) or category selection (LPB).
  */
 export function isDrawingDraftSaveable(draft: DrawingDraft): boolean {
+  if (!hasRequiredLabel(draft)) {
+    return false
+  }
+
   if (draft.type === 'range_ring') {
     if (draft.mode === 'manual') {
       const radius = Number(draft.manualRadiusM)
@@ -22,6 +26,14 @@ export function isDrawingDraftSaveable(draft: DrawingDraft): boolean {
     return true
   }
   return true
+}
+
+function hasRequiredLabel(draft: DrawingDraft): boolean {
+  if (draft.type === 'text_label') {
+    return draft.text.trim() !== ''
+  }
+
+  return draft.name.trim() !== ''
 }
 
 /**

@@ -212,7 +212,11 @@ describe('isDrawingDraftSaveable [DON-129]', () => {
   })
 
   it('accepts a manual range ring once radius is entered', () => {
-    const draft = { ...createRangeRingDraft([-9.744, 51.999]), manualRadiusM: '500' }
+    const draft = {
+      ...createRangeRingDraft([-9.744, 51.999]),
+      name: 'Ring',
+      manualRadiusM: '500',
+    }
     expect(isDrawingDraftSaveable(draft)).toBe(true)
   })
 
@@ -222,12 +226,21 @@ describe('isDrawingDraftSaveable [DON-129]', () => {
   })
 
   it('accepts an LPB range ring with default category', () => {
-    const draft = { ...createRangeRingDraft([-9.744, 51.999]), mode: 'lpb' as const }
+    const draft = {
+      ...createRangeRingDraft([-9.744, 51.999]),
+      name: 'LPB rings',
+      mode: 'lpb' as const,
+    }
     expect(isDrawingDraftSaveable(draft)).toBe(true)
   })
 
-  it('accepts non-range-ring drafts without restriction', () => {
-    expect(isDrawingDraftSaveable(createLineDraft([[-9.7, 52]]))).toBe(true)
-    expect(isDrawingDraftSaveable(createSearchAreaDraft([[-9.7, 52]]))).toBe(true)
+  it('rejects drawing drafts with blank required names', () => {
+    expect(isDrawingDraftSaveable(createLineDraft([[-9.7, 52]]))).toBe(false)
+    expect(isDrawingDraftSaveable(createSearchAreaDraft([[-9.7, 52]]))).toBe(false)
+  })
+
+  it('accepts non-range-ring named drafts without additional restriction', () => {
+    expect(isDrawingDraftSaveable({ ...createLineDraft([[-9.7, 52]]), name: 'Track' })).toBe(true)
+    expect(isDrawingDraftSaveable({ ...createSearchAreaDraft([[-9.7, 52]]), name: 'Sector A' })).toBe(true)
   })
 })

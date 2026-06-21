@@ -209,6 +209,20 @@ describe('DrawingDialog vertices readout', () => {
     expect((checkbox as HTMLInputElement).checked).toBe(true)
   })
 
+  it('disables Save for a search area with a blank required name', async () => {
+    useDrawingStore.setState({
+      dialog: {
+        mode: 'create',
+        draft: { ...SEARCH_AREA_DRAFT, name: '   ' },
+      },
+    })
+    await renderDialog()
+
+    const saveButton = document.querySelector('[data-testid="drawing-save-btn"]')
+    expect(saveButton).toBeInstanceOf(HTMLButtonElement)
+    expect((saveButton as HTMLButtonElement).disabled).toBe(true)
+  })
+
   async function renderDialog(): Promise<void> {
     const { DrawingDialog } = await import('../../src/components/drawing-dialog')
     host = document.createElement('div')

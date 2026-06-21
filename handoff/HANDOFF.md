@@ -8,7 +8,7 @@
 - **Desktop lane:** Electron is operational. Tauri remains historical/reference.
 - **Hosted browser:** `https://sartracker-web.vercel.app/?missionHarness=1` is testing/training only; browser storage is not operational persistence.
 - **Latest published beta:** `electron-v0.1.0-beta.7`, published 2026-06-16 after GitHub Actions run `27601812958` and deep Ubuntu smoke. Team artifact: https://github.com/donal0c/sartracker-web/releases/tag/electron-v0.1.0-beta.7
-- **Next candidate:** beta.8. Local browser/regression gates are green after the 2026-06-21 smoke sweep; hosted Traccar now uses direct HTTPS after `DON-224`; Electron packaged smoke/release is still required before sharing with testers.
+- **Next candidate:** beta.8. Local browser/regression gates are green after the 2026-06-21 smoke sweep; hosted Traccar now uses direct HTTPS after `DON-224`; drawing blank-name save handling is clean after `DON-225`; Electron packaged smoke/release is still required before sharing with testers.
 
 ## Latest Beta.8 Validation - 2026-06-21
 
@@ -18,6 +18,7 @@
 - Vercel preview deployed via documented prebuilt flow after direct `vercel deploy --yes` failed because `.vercelignore` excludes build inputs. Preview: `https://sartracker-iuj0w2ls4-ocallaghandonal2-1437s-projects.vercel.app`; protected share URL expires 2026-06-22 05:35 UTC: `https://sartracker-iuj0w2ls4-ocallaghandonal2-1437s-projects.vercel.app/?missionHarness=1&_vercel_share=FqNQsHcXOa7AHnXMaKCcyUiyowZCovKN`.
 - Hosted UI smoke passed on that preview with mocked Traccar responses, covering app load, map tiles after wait, mission start, harness tracking display, Devices, marker-at-grid, settings validation, diagnostics, and the 1100x720 mast fix. Evidence is under `output/playwright/beta8-local-smoke/` and `output/playwright/beta8-vercel-smoke/`.
 - `DON-224` root cause: the hosted app still recommended the old Vercel proxy from the HTTP-era Traccar setup. The team server now works directly over `https://kmrtsar.eu` with CORS. Direct deployed-browser smoke against the Vercel preview passed: Settings `Test Connection`, `Save, Connect & Close`, online tracking, and Devices workspace. Evidence: `output/playwright/beta8-direct-https-traccar/`.
+- `DON-225` fixed the drawing blank-name save path: Save is disabled until required drawing name/text is present, and handled `Drawing name is required.` validation no longer rethrows into an uncaught promise rejection. Verified with red-to-green focused units, drawing Chromium E2E, drawing visual E2E/review, full unit, lint, build, and full Chromium 127/127.
 
 ## Beta.8 Candidate Status
 

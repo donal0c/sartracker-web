@@ -145,6 +145,9 @@ export async function startDrawingRuntime(
       } catch (runtimeError) {
         applyDrawingSaveFailure(state, toErrorMessage(runtimeError))
         publishRuntime()
+        if (isExpectedDrawingValidationError(runtimeError)) {
+          return null
+        }
         throw runtimeError
       }
     },
@@ -222,4 +225,8 @@ function toErrorMessage(error: unknown): string {
   }
 
   return 'Drawing operation failed.'
+}
+
+function isExpectedDrawingValidationError(error: unknown): boolean {
+  return error instanceof Error && error.message === 'Drawing name is required.'
 }

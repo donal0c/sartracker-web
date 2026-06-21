@@ -364,7 +364,11 @@ test.describe('M8 drawing workflows', () => {
     await expect(dialog).toBeVisible()
     await expect(dialog).toHaveAttribute('aria-modal', 'true')
 
-    await expect(dialog.getByRole('button', { name: 'Close' })).toBeFocused()
+    const closeButton = dialog.getByRole('button', { name: 'Close' })
+    await expect(closeButton).toBeFocused()
+    await page.getByTestId('drawing-name-input').fill('Focus trap line')
+    await closeButton.focus()
+    await expect(closeButton).toBeFocused()
     await page.keyboard.press('Shift+Tab')
     await expect(dialog.getByRole('button', { name: 'Save' })).toBeFocused()
 

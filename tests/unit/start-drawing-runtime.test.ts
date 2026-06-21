@@ -98,6 +98,36 @@ describe('startDrawingRuntime', () => {
     )
   })
 
+  it('surfaces blank drawing names without rejecting after the dialog handles the error', async () => {
+    const applyRuntime = vi.fn()
+    const upsertDrawing = vi.fn()
+    const runtime = await startDrawingRuntime({
+      drawingStore: {
+        listDrawings: vi.fn().mockResolvedValue([]),
+        upsertDrawing,
+        deleteDrawing: vi.fn(),
+      },
+      applyRuntime,
+    })
+
+    await runtime.refreshMission('mission-1')
+    runtime.setActiveTool('line')
+    runtime.appendSketchPoint(-9.744, 51.999)
+    runtime.appendSketchPoint(-9.734, 52.009)
+    runtime.completeSketch()
+
+    await expect(runtime.saveDialog()).resolves.toBeNull()
+
+    expect(upsertDrawing).not.toHaveBeenCalled()
+    expect(applyRuntime).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        dialog: expect.any(Object),
+        saving: false,
+        error: 'Drawing name is required.',
+      }),
+    )
+  })
+
   it('opens range ring dialogs from a clicked center point', async () => {
     const applyRuntime = vi.fn()
     const runtime = await startDrawingRuntime({
