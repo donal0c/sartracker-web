@@ -272,6 +272,87 @@ describe('startTrackingRuntime', () => {
     )
   })
 
+  it('records diagnostic breadcrumbs for tracking status and snapshot summaries [DON-226]', async () => {
+    const recordDiagnosticEvent = vi.fn().mockResolvedValue(undefined)
+    let pollerHooks:
+      | {
+          onSnapshot: (snapshot: TrackingSnapshot) => void | Promise<void>
+          onStatusChange: (status: TrackingConnectionStatus) => void
+        }
+      | undefined
+
+    await startTrackingRuntime({
+      config: { baseUrl: 'http://test:8082' },
+      createClient: vi.fn().mockReturnValue({}),
+      createPoller: vi.fn().mockImplementation((_client, hooks) => {
+        pollerHooks = hooks
+        return { start: vi.fn(), stop: vi.fn() }
+      }),
+      cache: {
+        read: vi.fn().mockResolvedValue(null),
+        write: vi.fn().mockResolvedValue('/tmp/tracking-cache.json'),
+      },
+      missionStore: createMissionStoreStub({
+        getActiveMission: vi.fn().mockResolvedValue({ id: 'mission-1' }),
+        listPositions: vi.fn().mockResolvedValue([]),
+      }),
+      applySnapshot: vi.fn(),
+      applyStatus: vi.fn(),
+      recordDiagnosticEvent,
+      now: () => new Date('2026-04-06T10:35:00.000Z'),
+    })
+
+    pollerHooks?.onStatusChange({
+      mode: 'offline',
+      consecutiveFailures: 2,
+      recovered: false,
+      lastSuccessAt: null,
+      warning: 'Tracking feed unavailable.',
+    })
+    await pollerHooks?.onSnapshot({
+      ...SNAPSHOT,
+      breadcrumbMetadata: {
+        totalObserved: 100,
+        totalRetained: 40,
+        deviceBudgets: [
+          {
+            deviceId: '2',
+            retained: 40,
+            total: 100,
+            firstTimestamp: '2026-04-06T09:00:00.000Z',
+            lastTimestamp: '2026-04-06T10:30:00.000Z',
+            truncated: true,
+          },
+        ],
+      },
+    })
+
+    expect(recordDiagnosticEvent).toHaveBeenCalledWith({
+      level: 'warn',
+      category: 'tracking',
+      event: 'tracking_status_changed',
+      fields: {
+        mode: 'offline',
+        consecutiveFailures: 2,
+        recovered: false,
+        hasWarning: true,
+      },
+    })
+    expect(recordDiagnosticEvent).toHaveBeenCalledWith({
+      level: 'info',
+      category: 'tracking',
+      event: 'tracking_snapshot_applied',
+      fields: {
+        deviceCount: SNAPSHOT.devices.length,
+        currentPositionCount: SNAPSHOT.positions.length,
+        breadcrumbCount: SNAPSHOT.breadcrumbs.length,
+        retainedBreadcrumbCount: 40,
+        observedBreadcrumbCount: 100,
+        truncatedDeviceCount: 1,
+      },
+    })
+  })
+
   it('reuses persisted position keys across snapshots for the same active mission', async () => {
     const listPositions = vi.fn().mockResolvedValue([
       {

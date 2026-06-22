@@ -29,6 +29,7 @@ const WRITE_TRACKING_CACHE_CHANNEL = 'sartracker:write-tracking-cache'
 const EXPORT_DIAGNOSTICS_REPORT_CHANNEL = 'sartracker:export-diagnostics-report'
 const EXPORT_SUPPORT_BUNDLE_CHANNEL = 'sartracker:export-support-bundle'
 const READ_CRASH_RECOVERY_STATE_CHANNEL = 'sartracker:read-crash-recovery-state'
+const RECORD_DIAGNOSTIC_EVENT_CHANNEL = 'sartracker:record-diagnostic-event'
 const CHOOSE_GPX_FILE_PATHS_CHANNEL = 'sartracker:choose-gpx-file-paths'
 const CHOOSE_GPX_DIRECTORY_PATH_CHANNEL = 'sartracker:choose-gpx-directory-path'
 const CHOOSE_OFFICIAL_MAP_SOURCE_FILE_PATH_CHANNEL = 'sartracker:choose-official-map-source-file-path'
@@ -364,6 +365,21 @@ function registerIpcHandlers(
       uncleanShutdown,
       lastCrash: recentCrashes[recentCrashes.length - 1] ?? null,
     }
+  })
+  ipcMain.handle(RECORD_DIAGNOSTIC_EVENT_CHANNEL, (event, input) => {
+    validateIpcSender(event)
+    if (typeof input !== 'object' || input === null) {
+      throw new Error('Diagnostic event payload is invalid.')
+    }
+    return runtimeLog.append({
+      level: input.level === 'error' || input.level === 'warn' ? input.level : 'info',
+      event: `renderer_${typeof input.event === 'string' ? input.event : 'diagnostic_event'}`,
+      fields: {
+        category: typeof input.category === 'string' ? input.category : 'runtime',
+        rendererTimestamp: typeof input.ts === 'string' ? input.ts : null,
+        ...(typeof input.fields === 'object' && input.fields !== null ? input.fields : {}),
+      },
+    })
   })
   ipcMain.handle(CHOOSE_GPX_FILE_PATHS_CHANNEL, (event) => {
     validateIpcSender(event)

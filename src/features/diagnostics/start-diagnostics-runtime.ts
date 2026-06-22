@@ -7,6 +7,11 @@ import type { TrackingConnectionStatus, TrackingSnapshot } from '../tracking/tra
 import type { Mission, MissionStore } from '../../infrastructure/mission-store/tauri-mission-store'
 import type { DesktopRuntimeKind } from '../../lib/desktop-runtime'
 import type { SupportBundleExportOptions } from '../../types/electron-bridge'
+import {
+  filterDiagnosticEventsByTimeFrame,
+  formatDiagnosticEvents,
+  type DiagnosticEvent,
+} from './diagnostic-event-log'
 
 type DependencySmoke = {
   readonly hasMapLibre: boolean
@@ -42,6 +47,7 @@ type StartDiagnosticsRuntimeDependencies = {
     readonly loading: boolean
     readonly error: string | null
   }
+  readonly readDiagnosticEvents?: () => readonly DiagnosticEvent[]
   readonly exportReport: (fileName: string, contents: string) => Promise<string>
   /**
    * Exports a support bundle (environment + crash history + runtime log). Optional:
@@ -217,7 +223,12 @@ export async function startDiagnosticsRuntime(
       try {
         const exportBundle = dependencies.exportTimeFramedSupportBundle ?? dependencies.exportSupportBundle ?? dependencies.exportReport
         const fileName = `support-bundle-incident-${safeTimestamp(incident)}.txt`
-        const contents = buildTimeFramedSupportReport(snapshot.supportReport, incident)
+        const diagnosticEvents = dependencies.readDiagnosticEvents?.() ?? []
+        const contents = buildTimeFramedSupportReport(
+          snapshot.supportReport,
+          incident,
+          diagnosticEvents,
+        )
         const exportPath = await exportBundle(fileName, contents, {
           timeFrame: {
             incidentAt: incident,
@@ -295,6 +306,7 @@ export async function startDiagnosticsRuntime(
         governanceRuntime,
         trackingStatus: trackingRuntime.status,
         trackingSnapshot: trackingRuntime.snapshot,
+        diagnosticEvents: dependencies.readDiagnosticEvents?.() ?? [],
         layerCatalogState: layerCatalogRuntime,
         selectedMissionId,
       })
@@ -365,6 +377,7 @@ function normalizeIncidentTime(input: string): string {
 function buildTimeFramedSupportReport(
   supportReport: string,
   incidentAt: string,
+  diagnosticEvents: readonly DiagnosticEvent[] = [],
 ): string {
   const incidentTimestamp = Date.parse(incidentAt)
   const startAt = new Date(incidentTimestamp - INCIDENT_WINDOW_MINUTES * 60_000).toISOString()
@@ -377,10 +390,20 @@ function buildTimeFramedSupportReport(
     `window before minutes: ${INCIDENT_WINDOW_MINUTES}`,
     `window after minutes: ${INCIDENT_WINDOW_MINUTES}`,
     '',
-    supportReport,
+    formatDiagnosticEvents(filterDiagnosticEventsByTimeFrame(diagnosticEvents, {
+      incidentAt,
+      beforeMinutes: INCIDENT_WINDOW_MINUTES,
+      afterMinutes: INCIDENT_WINDOW_MINUTES,
+    })),
+    '',
+    stripDiagnosticBreadcrumbSection(supportReport),
   ].join('\n')
 }
 
 function safeTimestamp(input: string): string {
   return input.replace(/[:.]/g, '-')
+}
+
+function stripDiagnosticBreadcrumbSection(input: string): string {
+  return input.replace(/\n\[diagnostic-breadcrumbs\]\n[\s\S]*?(?=\n\[warnings\])/u, '\n')
 }

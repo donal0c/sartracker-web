@@ -11,6 +11,7 @@ import type {
   TrackingConnectionStatus,
   TrackingSnapshot,
 } from './tracking-types'
+import type { DiagnosticEventInput } from '../diagnostics/diagnostic-event-log'
 
 export type TrackingRuntimeConfig = {
   readonly baseUrl: string
@@ -114,6 +115,7 @@ type StartTrackingRuntimeDependencies = {
   readonly maxPersistedPositionsPerSnapshot?: number
   readonly writeCache?: boolean
   readonly logger?: TrackingRuntimeLogger
+  readonly recordDiagnosticEvent?: (event: DiagnosticEventInput) => void | Promise<void>
   readonly now?: () => Date
 }
 
@@ -183,6 +185,12 @@ export async function startTrackingRuntime(
     getInitialBreadcrumbs: () => getInitialPersistedBreadcrumbs(dependencies.missionStore),
     onSnapshot: async (snapshot) => {
       dependencies.applySnapshot(snapshot)
+      void dependencies.recordDiagnosticEvent?.({
+        level: 'info',
+        category: 'tracking',
+        event: 'tracking_snapshot_applied',
+        fields: buildTrackingSnapshotDiagnosticFields(snapshot),
+      })
       const sideEffects: Promise<unknown>[] = [
         enqueueMissionPersistence(
           limitSnapshotForMissionPersistence(
@@ -221,6 +229,17 @@ export async function startTrackingRuntime(
     },
     onStatusChange: (status) => {
       dependencies.applyStatus(status)
+      void dependencies.recordDiagnosticEvent?.({
+        level: status.mode === 'online' ? 'info' : 'warn',
+        category: 'tracking',
+        event: 'tracking_status_changed',
+        fields: {
+          mode: status.mode,
+          consecutiveFailures: status.consecutiveFailures,
+          recovered: status.recovered,
+          hasWarning: status.warning !== null,
+        },
+      })
     },
   })
 
@@ -239,6 +258,20 @@ export async function startTrackingRuntime(
     })
     missionPersistenceQueue = operation.catch(() => undefined)
     return operation
+  }
+}
+
+function buildTrackingSnapshotDiagnosticFields(
+  snapshot: TrackingSnapshot,
+): Record<string, number> {
+  const budgets = snapshot.breadcrumbMetadata?.deviceBudgets ?? []
+  return {
+    deviceCount: snapshot.devices.length,
+    currentPositionCount: snapshot.positions.length,
+    breadcrumbCount: snapshot.breadcrumbs.length,
+    retainedBreadcrumbCount: snapshot.breadcrumbMetadata?.totalRetained ?? snapshot.breadcrumbs.length,
+    observedBreadcrumbCount: snapshot.breadcrumbMetadata?.totalObserved ?? snapshot.breadcrumbs.length,
+    truncatedDeviceCount: budgets.filter((budget) => budget.truncated).length,
   }
 }
 

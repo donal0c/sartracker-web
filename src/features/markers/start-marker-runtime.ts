@@ -12,6 +12,7 @@ import {
 } from './marker-draft'
 import type { MarkerDialogState, MarkerRuntimeState } from './marker-store'
 import type { MarkerAttachmentBoundary } from '../../infrastructure/marker-attachment-store/marker-attachment-boundary'
+import type { DiagnosticEventInput } from '../diagnostics/diagnostic-event-log'
 
 type MarkerStoreBoundary = Pick<MissionStore, 'listMarkers' | 'upsertMarker' | 'deleteMarker'>
 
@@ -19,6 +20,7 @@ type StartMarkerRuntimeDependencies = {
   readonly markerStore: MarkerStoreBoundary
   readonly attachmentStore: MarkerAttachmentBoundary
   readonly applyRuntime: (runtime: MarkerRuntimeState) => void
+  readonly recordDiagnosticEvent?: (event: DiagnosticEventInput) => void | Promise<void>
 }
 
 export type MarkerRuntimeController = {
@@ -237,6 +239,17 @@ export async function startMarkerRuntime(
         )
 
         markers = upsertMarker(markers, marker)
+        void dependencies.recordDiagnosticEvent?.({
+          level: 'info',
+          category: 'marker',
+          event: 'marker_saved',
+          fields: {
+            mode: dialog.mode,
+            markerType: marker.type,
+            markerCount: markers.length,
+            hasAttachment: marker.attachment_path !== null,
+          },
+        })
         dialog = null
         saving = false
         publishRuntime()

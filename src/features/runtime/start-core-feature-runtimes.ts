@@ -26,6 +26,7 @@ import {
 import { startMissionGovernanceRuntime } from '../mission/start-mission-governance-runtime'
 import { startMissionRuntime } from '../mission/start-mission-runtime'
 import type { AutosaveSyncReason } from '../persistence/autosave-status-store'
+import { recordDiagnosticEvent } from '../diagnostics/diagnostic-event-log'
 
 /**
  * Mission store surface required by the six core feature runtimes. Derived
@@ -144,6 +145,7 @@ export async function startCoreFeatureRuntimes(
     markerStore: options.missionStore,
     attachmentStore: options.attachmentAdapter,
     applyRuntime: applyMarkerRuntime,
+    recordDiagnosticEvent,
   })
   applyMarkerController(markerRuntimeController)
   cleanups.push(() => undefined)

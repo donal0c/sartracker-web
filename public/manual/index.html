@@ -1111,7 +1111,11 @@
             bundle around a known problem time so recent crash summaries and runtime logs are focused on
             the evidence window instead of only the current app state. When very dense breadcrumb history is
             render-budgeted, the support report lists retained and observed breadcrumb counts per device and
-            marks which device trails were simplified for display.
+            marks which device trails were simplified for display. Beta.8 incident bundles also include
+            sanitized diagnostic breadcrumbs for map and tracking context, such as basemap changes, map
+            health changes, marker saves, completed measurements, tracking status changes, and tracking
+            snapshot counts. These breadcrumbs do not include precise coordinates, credentials, private map
+            package paths, or raw mission data.
           </p>
           <h3>Crash Reporting &amp; Support Bundle (desktop)</h3>
           <p>
@@ -1131,7 +1135,10 @@
             <li>
               <strong>Export Incident Bundle</strong> (Diagnostics workspace) saves the same local bundle
               with a known incident time and a one-hour evidence window, 30 minutes before and 30 minutes
-              after that time. Desktop bundles use the window to focus crash history and runtime logs.
+              after that time. Desktop bundles use the window to focus crash history, runtime logs, and
+              diagnostic breadcrumbs. When something looks wrong on the map or tracking display, take a
+              screenshot if practical, enter the approximate time it happened, export the incident bundle,
+              and send that file with a short note.
             </li>
             <li>
               <strong>Unexpected-shutdown notice.</strong> If the app closed unexpectedly the previous time,

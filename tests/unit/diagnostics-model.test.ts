@@ -29,6 +29,18 @@ describe('diagnostics model', () => {
       governanceRuntime: createGovernanceRuntime(),
       trackingStatus: createTrackingStatus(),
       trackingSnapshot: createTrackingSnapshot(),
+      diagnosticEvents: [
+        {
+          ts: '2026-06-22T15:05:00.000Z',
+          level: 'info',
+          category: 'map',
+          event: 'basemap_changed',
+          fields: {
+            basemapId: 'official_discovery_topo',
+            lat: '[coordinate-redacted]',
+          },
+        },
+      ],
       layerCatalogState: {
         missionId: 'mission-1',
         loading: false,
@@ -52,6 +64,9 @@ describe('diagnostics model', () => {
     expect(snapshot.supportReport).toContain('official map packages ready: 1')
     expect(snapshot.supportReport).toContain('official map package 1: official_discovery_topo ready mbtiles z8-z16 tiles=31729 size=1100000000 format=png')
     expect(snapshot.supportReport).toContain('official map package 2: official_discovery_topo missing mbtiles')
+    expect(snapshot.supportReport).toContain('[diagnostic-breadcrumbs]')
+    expect(snapshot.supportReport).toContain('basemap_changed')
+    expect(snapshot.supportReport).not.toContain('52.0599')
     expect(snapshot.supportReport).not.toContain('mountainrescue_org.txt')
     expect(snapshot.supportReport).not.toContain('reeks-standard-60km-z16.mbtiles')
     expect(snapshot.supportReport).toContain('layer metadata entries: 3')

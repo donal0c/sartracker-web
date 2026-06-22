@@ -19,6 +19,7 @@ import { createRasterStyle, IRELAND_MAX_BOUNDS } from './map-style'
 import { applyMapStylePreservingCamera } from './apply-map-style-preserving-camera'
 import { isTileErrorEvent } from './is-tile-error-event'
 import { registerOfficialMapProtocol } from './official-map-protocol'
+import { recordDiagnosticEvent } from '../diagnostics/diagnostic-event-log'
 
 export type HoverCoordinate = {
   readonly latitude: number | null
@@ -52,6 +53,7 @@ export function useMapInstance(): MapInstanceController {
   const mapRef = useRef<maplibregl.Map | null>(null)
   const previousBasemapIdRef = useRef<RenderableMapId | null>(null)
   const activeBasemapIdRef = useRef<RenderableMapId>(initialBasemapId)
+  const lastLoggedMapHealthRef = useRef<string | null>(null)
   const tileHealthTrackerRef = useRef(createTileHealthTracker())
   const [activeBasemapId, setActiveBasemapId] = useState<RenderableMapId>(initialBasemapId)
   const [mapReadyVersion, setMapReadyVersion] = useState(0)
@@ -68,11 +70,42 @@ export function useMapInstance(): MapInstanceController {
   }, [activeBasemapId])
 
   function handleBasemapChange(nextBasemapId: RenderableMapId) {
+    const previousBasemapId = activeBasemapIdRef.current
     activeBasemapIdRef.current = nextBasemapId
     tileHealthTrackerRef.current.reset()
     setMapHealth(createLoadingMapHealth(getRenderableMapLabel(nextBasemapId)))
     setActiveBasemapId(nextBasemapId)
+    void recordDiagnosticEvent({
+      level: 'info',
+      category: 'map',
+      event: 'basemap_changed',
+      fields: {
+        previousBasemapId,
+        nextBasemapId,
+        screenWidth: typeof window === 'undefined' ? null : window.innerWidth,
+        screenHeight: typeof window === 'undefined' ? null : window.innerHeight,
+        devicePixelRatio: typeof window === 'undefined' ? null : window.devicePixelRatio,
+      },
+    })
   }
+
+  useEffect(() => {
+    const signature = `${activeBasemapId}:${mapHealth.status}:${mapHealth.message}`
+    if (lastLoggedMapHealthRef.current === signature) {
+      return
+    }
+    lastLoggedMapHealthRef.current = signature
+    void recordDiagnosticEvent({
+      level: mapHealth.status === 'degraded' ? 'warn' : 'info',
+      category: 'map',
+      event: 'map_health_changed',
+      fields: {
+        basemapId: activeBasemapId,
+        status: mapHealth.status,
+        message: mapHealth.message,
+      },
+    })
+  }, [activeBasemapId, mapHealth])
 
   useEffect(() => {
     if (containerRef.current === null || mapRef.current !== null) {

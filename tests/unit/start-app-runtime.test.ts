@@ -87,6 +87,7 @@ describe('app runtime startup', () => {
         ingest: expect.any(Function),
       },
       applyRuntime: expect.any(Function),
+      recordDiagnosticEvent: expect.any(Function),
     })
     expect(startDrawingRuntime).toHaveBeenCalledWith({
       drawingStore: store,

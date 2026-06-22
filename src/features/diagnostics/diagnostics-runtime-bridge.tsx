@@ -24,6 +24,7 @@ import { useMissionStore } from '../mission/mission-store'
 import { useTrackingStore } from '../tracking/tracking-store'
 import { shouldEnableMissionBrowserHarness } from '../mission/mission-browser-harness'
 import { applyDiagnosticsController, applyDiagnosticsRuntime, useDiagnosticsStore } from './diagnostics-store'
+import { readDiagnosticEvents } from './diagnostic-event-log'
 import { startDiagnosticsRuntime } from './start-diagnostics-runtime'
 
 /**
@@ -87,6 +88,7 @@ export function DiagnosticsRuntimeBridge() {
           error: state.error,
         }
       },
+      readDiagnosticEvents,
       exportReport: exportDiagnosticsReport,
       exportSupportBundle,
       refreshLayerCatalogIfActive: async (targetMissionId) => {

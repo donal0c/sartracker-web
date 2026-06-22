@@ -6,6 +6,7 @@ import {
   trueToMagnetic,
   type LonLat,
 } from '../drawings/drawing-math'
+import type { DiagnosticEventInput } from '../diagnostics/diagnostic-event-log'
 import type { Measurement, MeasurementRuntimeState } from './measurement-types'
 
 type MutableMeasurementState = {
@@ -27,6 +28,7 @@ export type MeasurementRuntimeController = {
 
 type StartMeasurementRuntimeDependencies = {
   readonly applyRuntime: (runtime: MeasurementRuntimeState) => void
+  readonly recordDiagnosticEvent?: (event: DiagnosticEventInput) => void | Promise<void>
 }
 
 /**
@@ -102,6 +104,16 @@ export function startMeasurementRuntime(
         nextPoint,
       )
       state.measurements = [...state.measurements, measurement]
+      void dependencies.recordDiagnosticEvent?.({
+        level: 'info',
+        category: 'measurement',
+        event: 'measurement_completed',
+        fields: {
+          measurementCount: state.measurements.length,
+          distanceM: Math.round(measurement.distanceM),
+          trueBearing: Math.round(measurement.trueBearing),
+        },
+      })
       state.mode = 'idle'
       state.draftStart = null
       state.hoverPoint = null

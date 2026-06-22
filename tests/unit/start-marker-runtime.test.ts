@@ -86,6 +86,42 @@ describe('startMarkerRuntime', () => {
     )
   })
 
+  it('records a sanitized diagnostic breadcrumb when a marker is saved [DON-226]', async () => {
+    const recordDiagnosticEvent = vi.fn().mockResolvedValue(undefined)
+    const upsertMarker = vi.fn().mockResolvedValue({
+      ...MARKER,
+      id: 'marker-2',
+      type: 'hazard',
+      display_order: 3,
+    })
+    const runtime = await startMarkerRuntime({
+      markerStore: createMarkerStoreStub({
+        listMarkers: vi.fn().mockResolvedValue([MARKER]),
+        upsertMarker,
+      }),
+      attachmentStore: { ingest: vi.fn() },
+      applyRuntime: vi.fn(),
+      recordDiagnosticEvent,
+    })
+
+    await runtime.refreshMission('mission-1')
+    runtime.beginCreateAt(52.0602, -9.5048, 'hazard')
+    runtime.updateDraft({ name: 'Steep ground', hazardType: 'Terrain' })
+    await runtime.saveDraft()
+
+    expect(recordDiagnosticEvent).toHaveBeenCalledWith({
+      level: 'info',
+      category: 'marker',
+      event: 'marker_saved',
+      fields: {
+        mode: 'create',
+        markerType: 'hazard',
+        markerCount: 2,
+        hasAttachment: false,
+      },
+    })
+  })
+
   it('updates an existing marker without changing its display order', async () => {
     const upsertMarker = vi.fn().mockResolvedValue({
       ...MARKER,

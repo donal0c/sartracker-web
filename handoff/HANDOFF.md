@@ -19,6 +19,7 @@
 - Hosted UI smoke passed on that preview with mocked Traccar responses, covering app load, map tiles after wait, mission start, harness tracking display, Devices, marker-at-grid, settings validation, diagnostics, and the 1100x720 mast fix. Evidence is under `output/playwright/beta8-local-smoke/` and `output/playwright/beta8-vercel-smoke/`.
 - `DON-224` root cause: the hosted app still recommended the old Vercel proxy from the HTTP-era Traccar setup. The team server now works directly over `https://kmrtsar.eu` with CORS. Direct deployed-browser smoke against the Vercel preview passed: Settings `Test Connection`, `Save, Connect & Close`, online tracking, and Devices workspace. Evidence: `output/playwright/beta8-direct-https-traccar/`.
 - `DON-225` fixed the drawing blank-name save path: Save is disabled until required drawing name/text is present, and handled `Drawing name is required.` validation no longer rethrows into an uncaught promise rejection. Verified with red-to-green focused units, drawing Chromium E2E, drawing visual E2E/review, full unit, lint, build, and full Chromium 127/127.
+- `DON-226` added beta.8 diagnostic breadcrumbs so map/tracking issue reports can use the sustainable flow: approximate incident time + Export Incident Bundle + optional screenshot/note. Incident bundles now include sanitized, bounded breadcrumbs for basemap/map-health changes, marker saves, measurement completion, tracking status changes, and tracking snapshot counts. They intentionally exclude precise coordinates, credentials, private map package paths, and raw mission data. Verified with focused unit coverage and Chromium Diagnostics E2E; full gates still need rerun after this chunk.
 
 ## Beta.8 Candidate Status
 
@@ -37,6 +38,7 @@ Main beta.8 batch coverage:
 - DON-197 Casualty terminology/order and marker map-label size.
 - DON-198 Mission preview / map sharing / external-resource decisions split to DON-215-DON-218.
 - DON-199 Settings/coordinator access-control decision split to DON-219-DON-221.
+- DON-226 Map/tracking diagnostic breadcrumbs for beta.8 incident bundles.
 
 Additional runtime performance hardening is complete locally for the tracking/Electron data path:
 

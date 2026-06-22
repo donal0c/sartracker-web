@@ -59,6 +59,36 @@ describe('startDiagnosticsRuntime', () => {
         loading: false,
         error: null,
       }),
+      readDiagnosticEvents: () => [
+        {
+          ts: '2026-04-11T01:17:00.000Z',
+          level: 'info',
+          category: 'map',
+          event: 'marker_saved',
+          fields: { markerType: 'clue' },
+        },
+        {
+          ts: '2026-04-11T02:30:00.000Z',
+          level: 'info',
+          category: 'map',
+          event: 'outside_window',
+        },
+      ],
+      readDiagnosticEvents: () => [
+        {
+          ts: '2026-04-11T01:17:00.000Z',
+          level: 'info',
+          category: 'map',
+          event: 'marker_saved',
+          fields: { markerType: 'clue' },
+        },
+        {
+          ts: '2026-04-11T02:30:00.000Z',
+          level: 'info',
+          category: 'map',
+          event: 'outside_window',
+        },
+      ],
       exportReport: vi.fn().mockResolvedValue('/tmp/diagnostics/report.txt'),
       refreshLayerCatalogIfActive: vi.fn().mockResolvedValue(undefined),
       applyRuntime,
@@ -135,6 +165,21 @@ describe('startDiagnosticsRuntime', () => {
         loading: false,
         error: null,
       }),
+      readDiagnosticEvents: () => [
+        {
+          ts: '2026-04-11T01:17:00.000Z',
+          level: 'info',
+          category: 'map',
+          event: 'marker_saved',
+          fields: { markerType: 'clue' },
+        },
+        {
+          ts: '2026-04-11T02:30:00.000Z',
+          level: 'info',
+          category: 'map',
+          event: 'outside_window',
+        },
+      ],
       exportReport: vi.fn().mockResolvedValue('/tmp/diagnostics/report.txt'),
       refreshLayerCatalogIfActive,
       applyRuntime,
@@ -199,6 +244,21 @@ describe('startDiagnosticsRuntime', () => {
         loading: false,
         error: null,
       }),
+      readDiagnosticEvents: () => [
+        {
+          ts: '2026-04-11T01:17:00.000Z',
+          level: 'info',
+          category: 'map',
+          event: 'marker_saved',
+          fields: { markerType: 'clue' },
+        },
+        {
+          ts: '2026-04-11T02:30:00.000Z',
+          level: 'info',
+          category: 'map',
+          event: 'outside_window',
+        },
+      ],
       exportReport: vi.fn().mockResolvedValue('/tmp/diagnostics/report.txt'),
       exportSupportBundle,
       refreshLayerCatalogIfActive: vi.fn().mockResolvedValue(undefined),
@@ -274,6 +334,21 @@ describe('startDiagnosticsRuntime', () => {
       refreshLayerCatalogIfActive: vi.fn().mockResolvedValue(undefined),
       applyRuntime,
       now: () => new Date('2026-04-11T01:45:00.000Z'),
+      readDiagnosticEvents: () => [
+        {
+          ts: '2026-04-11T01:17:00.000Z',
+          level: 'info',
+          category: 'map',
+          event: 'marker_saved',
+          fields: { markerType: 'clue' },
+        },
+        {
+          ts: '2026-04-11T02:30:00.000Z',
+          level: 'info',
+          category: 'map',
+          event: 'outside_window',
+        },
+      ],
     })
 
     await runtime.load()
@@ -284,6 +359,9 @@ describe('startDiagnosticsRuntime', () => {
     expect(fileName).toBe('support-bundle-incident-2026-04-11T01-18-00-000Z.txt')
     expect(contents).toContain('[incident-window]')
     expect(contents).toContain('incident time: 2026-04-11T01:18:00.000Z')
+    expect(contents).toContain('[diagnostic-breadcrumbs]')
+    expect(contents).toContain('marker_saved')
+    expect(contents).not.toContain('outside_window')
     expect(options).toEqual({
       timeFrame: {
         incidentAt: '2026-04-11T01:18:00.000Z',

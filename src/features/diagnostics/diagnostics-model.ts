@@ -4,6 +4,7 @@ import type { AppSettings, RuntimeBootstrapSettings } from '../settings/settings
 import type { TrackingConnectionStatus, TrackingSnapshot } from '../tracking/tracking-types'
 import type { Mission, MissionStoreInfo } from '../../infrastructure/mission-store/tauri-mission-store'
 import type { DesktopRuntimeKind } from '../../lib/desktop-runtime'
+import { formatDiagnosticEvents, type DiagnosticEvent } from './diagnostic-event-log'
 
 type DependencySmoke = {
   readonly hasMapLibre: boolean
@@ -57,6 +58,7 @@ type BuildDiagnosticsSnapshotInput = {
   readonly governanceRuntime: MissionGovernanceRuntimeState
   readonly trackingStatus: TrackingConnectionStatus
   readonly trackingSnapshot: TrackingSnapshot
+  readonly diagnosticEvents?: readonly DiagnosticEvent[]
   readonly layerCatalogState: {
     readonly missionId: string | null
     readonly loading: boolean
@@ -245,6 +247,8 @@ function buildSupportReport(
     `positions in snapshot: ${input.trackingSnapshot.positions.length}`,
     `breadcrumbs in snapshot: ${input.trackingSnapshot.breadcrumbs.length}`,
     ...formatBreadcrumbMetadataReport(input.trackingSnapshot.breadcrumbMetadata),
+    '',
+    formatDiagnosticEvents(input.diagnosticEvents ?? []),
     '',
     '[warnings]',
     ...(input.warnings.length === 0 ? ['none'] : input.warnings),

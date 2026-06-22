@@ -6,6 +6,7 @@ import type {
 import type { GpxImportFileInput } from '../features/gpx/start-gpx-runtime'
 import type { LayerCatalogStore } from '../infrastructure/layer-catalog-store/tauri-layer-catalog-store'
 import type { MissionStore } from '../infrastructure/mission-store/tauri-mission-store'
+import type { DiagnosticEvent } from '../features/diagnostics/diagnostic-event-log'
 
 export type ElectronTraccarHttpRequest = {
   readonly url: string
@@ -71,6 +72,7 @@ export type SarTrackerElectronBridge = {
     readonly timeFrame?: SupportBundleTimeFrame
   }) => Promise<string>
   readonly readCrashRecoveryState?: () => Promise<CrashRecoveryState>
+  readonly recordDiagnosticEvent?: (input: DiagnosticEvent) => Promise<void>
   readonly chooseGpxFilePaths: () => Promise<readonly string[]>
   readonly chooseGpxDirectoryPath: () => Promise<string | null>
   readonly chooseOfficialMapSourceFilePath?: () => Promise<string | null>

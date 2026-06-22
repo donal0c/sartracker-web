@@ -7,6 +7,7 @@ import type { AutosaveSyncReason } from '../persistence/autosave-status-store'
 import { useAutosaveStatusStore } from '../persistence/autosave-status-store'
 import type { TrackingRuntimeMissionStore } from '../tracking/start-tracking-runtime'
 import { startMissionTrackingStatusBridge } from '../tracking/mission-tracking-status-bridge'
+import { recordDiagnosticEvent } from '../diagnostics/diagnostic-event-log'
 
 const NOOP_STOP = () => undefined
 
@@ -66,6 +67,7 @@ type CreateManagedRuntimeServicesDependencies = {
     readonly idleWarning?: string
     readonly maxPersistedPositionsPerSnapshot?: number
     readonly writeCache?: boolean
+    readonly recordDiagnosticEvent?: typeof recordDiagnosticEvent
   }) => Promise<() => void>
   readonly createClient: (config: NonNullable<RuntimeBootstrapSettings['trackingConfig']>) => unknown
   readonly createPoller: (
@@ -140,6 +142,7 @@ export async function createManagedRuntimeServices(
       missionStore: dependencies.missionStore,
       applySnapshot: dependencies.applySnapshot,
       applyStatus: dependencies.applyStatus,
+      recordDiagnosticEvent,
       ...(dependencies.runtimeSettings.trackingDisabledReason === undefined
         ? {}
         : { idleWarning: dependencies.runtimeSettings.trackingDisabledReason }),

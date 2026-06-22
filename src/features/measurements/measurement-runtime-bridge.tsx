@@ -7,6 +7,7 @@ import {
   useMeasurementStore,
 } from './measurement-store'
 import { startMeasurementRuntime } from './start-measurement-runtime'
+import { recordDiagnosticEvent } from '../diagnostics/diagnostic-event-log'
 
 /**
  * Keeps measurement runtime state aligned with the current mission context.
@@ -23,6 +24,7 @@ export function MeasurementRuntimeBridge() {
     applyMeasurementController(
       startMeasurementRuntime({
         applyRuntime: applyMeasurementRuntime,
+        recordDiagnosticEvent,
       }),
     )
   }, [controller])

@@ -101,7 +101,13 @@ test.describe('M21 diagnostics workspace', () => {
     await expect(page.getByTestId('diagnostics-feedback')).toContainText('support bundle')
     await expect(page.getByTestId('diagnostics-export-path')).toContainText('support-bundle')
 
-    await page.getByTestId('diagnostics-incident-time-input').fill('2026-04-11T01:18')
+    await page.keyboard.press('Escape')
+    await page.getByTestId('basemap-menu-toggle').click()
+    await page.getByTestId('basemap-btn-openstreetmap').click()
+    await page.getByTestId('open-diagnostics-workspace').click()
+    await expect(page.getByTestId('diagnostics-workspace')).toBeVisible()
+
+    await page.getByTestId('diagnostics-incident-time-input').fill(toDatetimeLocal(new Date()))
     await page.getByTestId('diagnostics-export-time-framed-support-bundle').click()
     await expect(page.getByTestId('diagnostics-feedback')).toContainText(
       'time-framed support bundle',
@@ -121,7 +127,7 @@ test.describe('M21 diagnostics workspace', () => {
         }[]
         return reports.find((report) => report.fileName.includes('support-bundle-incident'))?.contents ?? null
       })
-    }).toContain('[incident-window]')
+    }).toContain('basemap_changed')
 
     await page.getByTestId('diagnostics-repair-layer-catalog').click()
     await expect(page.getByTestId('diagnostics-feedback')).toContainText('Layer catalog metadata reset')
@@ -270,3 +276,8 @@ test.describe('M21 diagnostics workspace', () => {
     )
   })
 })
+
+function toDatetimeLocal(date: Date): string {
+  const local = new Date(date.getTime() - date.getTimezoneOffset() * 60_000)
+  return local.toISOString().slice(0, 16)
+}

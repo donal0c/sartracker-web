@@ -10,6 +10,7 @@ const WRITE_TRACKING_CACHE_CHANNEL = 'sartracker:write-tracking-cache'
 const EXPORT_DIAGNOSTICS_REPORT_CHANNEL = 'sartracker:export-diagnostics-report'
 const EXPORT_SUPPORT_BUNDLE_CHANNEL = 'sartracker:export-support-bundle'
 const READ_CRASH_RECOVERY_STATE_CHANNEL = 'sartracker:read-crash-recovery-state'
+const RECORD_DIAGNOSTIC_EVENT_CHANNEL = 'sartracker:record-diagnostic-event'
 const CHOOSE_GPX_FILE_PATHS_CHANNEL = 'sartracker:choose-gpx-file-paths'
 const CHOOSE_GPX_DIRECTORY_PATH_CHANNEL = 'sartracker:choose-gpx-directory-path'
 const CHOOSE_OFFICIAL_MAP_SOURCE_FILE_PATH_CHANNEL = 'sartracker:choose-official-map-source-file-path'
@@ -95,6 +96,9 @@ contextBridge.exposeInMainWorld('sartrackerElectron', {
   },
   readCrashRecoveryState() {
     return ipcRenderer.invoke(READ_CRASH_RECOVERY_STATE_CHANNEL)
+  },
+  recordDiagnosticEvent(input) {
+    return ipcRenderer.invoke(RECORD_DIAGNOSTIC_EVENT_CHANNEL, input)
   },
   chooseGpxFilePaths() {
     return ipcRenderer.invoke(CHOOSE_GPX_FILE_PATHS_CHANNEL)

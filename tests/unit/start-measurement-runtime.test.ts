@@ -31,6 +31,30 @@ describe('startMeasurementRuntime', () => {
     expect(latestRuntime(applyRuntime)?.measurements).toHaveLength(1)
   })
 
+  it('records a diagnostic breadcrumb when a measurement is completed [DON-226]', () => {
+    const recordDiagnosticEvent = vi.fn()
+    const controller = startMeasurementRuntime({
+      applyRuntime: vi.fn(),
+      recordDiagnosticEvent,
+    })
+
+    controller.refreshMission('mission-1')
+    controller.armMeasurement()
+    controller.registerPoint(-9.7, 51.97)
+    controller.registerPoint(-9.68, 51.98)
+
+    expect(recordDiagnosticEvent).toHaveBeenCalledWith({
+      level: 'info',
+      category: 'measurement',
+      event: 'measurement_completed',
+      fields: {
+        measurementCount: 1,
+        distanceM: expect.any(Number),
+        trueBearing: expect.any(Number),
+      },
+    })
+  })
+
   it('clears transient state when the mission changes or is removed', () => {
     const applyRuntime = vi.fn<(runtime: MeasurementRuntimeState) => void>()
     const controller = startMeasurementRuntime({ applyRuntime })
