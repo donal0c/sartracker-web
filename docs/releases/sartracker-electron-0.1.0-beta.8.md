@@ -6,13 +6,13 @@
 
 - **Version:** 0.1.0-beta.8
 - **Build tag:** `electron-v0.1.0-beta.8`
-- **Cut date (UTC):** to be filled when the tag is pushed
+- **Cut date (UTC):** 2026-06-23
 - **Cut by:** Claude Code agent (Donal supervising)
 - **Supersedes:** `electron-v0.1.0-beta.7` (the current published team build)
 - **Linear reference:** install-test fixes DON-184–189; operator UI/UX batch DON-190–197 (DON-198/199 are scoping decisions only); workflow hardening DON-203–205; runtime safety hardening DON-206–209; performance hardening DON-165, DON-200–202, DON-210–213; diagnostics DON-158/179/226 (local bundle export) plus single-instance lock DON-180; late smoke fixes DON-222–225; manual refresh DON-150
-- **Verification report:** to be filled after the GitHub Actions release run + Ubuntu on-device smoke
-- **CI run:** to be filled after `electron-release.yml` run completes
-- **GitHub release:** to remain a **draft** until the packaged Ubuntu smoke matrix passes and Donal approves promotion
+- **Verification report:** CI green; Ubuntu on-device packaged smoke still pending (see below)
+- **CI run:** `electron-release.yml` run `28007848162` — success (gates, Linux bundle, AppImage launch smoke, draft prerelease + SHA256SUMS all green)
+- **GitHub release:** **Draft prerelease created** at tag `electron-v0.1.0-beta.8` (Linux AppImage + `.deb` + `SHA256SUMS`). Remains a **draft** until the packaged Ubuntu smoke matrix passes and Donal approves promotion.
 
 ## What this beta is
 
@@ -259,6 +259,16 @@ gates green (lint, build, unit, backend, Chromium E2E, visual, visual-review, an
 `beta:verify --no-smoke`). The GitHub release must stay a draft until CI is green
 and the deep Ubuntu packaged smoke matrix above passes and Donal approves
 promotion.
+
+### CI-built artifact checksums (run `28007848162`)
+
+```
+4407c2df0e1e5c2fb127f941a7dac1f8f660948aa8ad49f0701c3868ec5e193b  sartracker-electron-validation_0.1.0-beta.8_linux_x86_64.AppImage
+7bb83fc1ef8999acc057430737967777b659d51b8b56f3ccfbc17a397fbb1e8b  sartracker-electron-validation_0.1.0-beta.8_linux_amd64.deb
+```
+
+The Ubuntu smoke must verify the downloaded artifact against these before
+launching (`sha256sum -c SHA256SUMS --ignore-missing` → **OK**).
 
 ### Ubuntu deep smoke
 
