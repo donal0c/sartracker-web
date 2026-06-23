@@ -4,7 +4,14 @@ test.describe('performance sweep regressions', () => {
   test('large tracking mission avoids unchanged tracking source updates on idle [DON-210 DON-212]', async ({
     page,
   }) => {
-    test.setTimeout(90_000)
+    // This is a deliberately heavy perf-characterization test: it seeds a
+    // large tracking mission (33 devices x 150 breadcrumbs ~= 5k positions),
+    // renders, instruments setData, then re-seeds and re-renders. Locally it
+    // runs in ~50s, but shared CI runners under load are materially slower
+    // (the full Chromium suite can take ~6.5m there), so a 90s whole-test
+    // budget left no headroom and timed out during the first seed. The perf
+    // assertions below are unchanged; only the budget is widened for CI.
+    test.setTimeout(180_000)
 
     await page.goto('/?missionHarness=1')
     await page.getByTestId('app-title').waitFor({ state: 'visible', timeout: 10000 })
