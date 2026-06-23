@@ -135,7 +135,14 @@ test.describe('M12 settings workspace', () => {
     page,
   }) => {
     test.setTimeout(90_000)
-    await routeTraccarSuccess(page, { breadcrumbCount: 14_500 })
+    // The storage-cap clamp asserts the persisted history is bounded to 2000,
+    // so any breadcrumbCount comfortably above 2000 proves the same invariant.
+    // Locally we drive a very large 14.5k history; on a loaded GPU-less CI
+    // runner processing that volume makes the online/count status settle past
+    // even a 15s assertion budget (flaky). Use a smaller-but-still-over-cap
+    // 5000 under CI — deterministic there, identical assertions either way.
+    const breadcrumbCount = process.env.CI ? 5_000 : 14_500
+    await routeTraccarSuccess(page, { breadcrumbCount })
 
     await page.getByTestId('open-settings-workspace').click()
     await page.getByRole('button', { name: 'Traccar HTTP' }).click()
