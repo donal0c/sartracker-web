@@ -141,15 +141,21 @@ describe('Electron main startup', () => {
     ) => unknown
 
     const senderEvent = { senderFrame: { url: 'file:///app/index.html' }, sender: {} }
-    expect(() =>
-      recordHandler(senderEvent, {
+    let recordResult: unknown
+    expect(() => {
+      recordResult = recordHandler(senderEvent, {
         level: 'info',
         event: 'basemap_changed',
         category: 'map',
         ts: '2026-06-23T10:00:00.000Z',
         fields: { basemapId: 'osm' },
-      }),
-    ).not.toThrow()
+      })
+    }).not.toThrow()
+
+    // The handler appends to the runtime log asynchronously; await it so the
+    // file write settles before afterEach removes the shared test userData dir
+    // (otherwise rmSync races the in-flight write and throws ENOTEMPTY on CI).
+    await expect(Promise.resolve(recordResult)).resolves.toBeUndefined()
   })
 })
 
