@@ -14,8 +14,10 @@ name: Release (Electron Desktop)
 #
 # Jobs:
 #   1. gates          (Linux): version-match assertion, release-notes existence,
-#                      lint, vitest, backend tests, web build, and standard
-#                      Chromium Playwright E2E. Fast-fail before any bundling.
+#                      lint, vitest, web build, and standard Chromium
+#                      Playwright E2E. Fast-fail before any bundling. (The
+#                      legacy Tauri Rust backend is not gated here; the
+#                      Electron lane ships no Tauri code.)
 #   2. bundle-linux    (Linux): native AppImage + .deb via electron-builder,
 #                      verifies the packaged better_sqlite3.node is real Linux
 #                      x86-64, creates the draft prerelease, uploads assets.
@@ -148,8 +150,14 @@ jobs:
       - name: Unit tests
         run: npm run test
 
-      - name: Backend tests
-        run: npm run test:backend
+      # NOTE: the legacy Tauri Rust backend (`npm run test:backend` / `cargo
+      # test` on src-tauri) is intentionally NOT a release gate here. The
+      # Electron lane ships no Tauri code — mission persistence is
+      # `electron/mission-store.cjs` on better-sqlite3, covered by the unit
+      # tests above. The Tauri backend requires GTK system libs (`gdk-3.0`)
+      # that are not provisioned on this runner, and gating an Electron
+      # release on retired-lane Rust tests is meaningless. Backend tests still
+      # run locally via `npm run beta:verify` and in the standard CI workflow.
 
       - name: Web build (also runs bundle-size check)
         run: npm run build
@@ -490,7 +498,7 @@ jobs:
             echo "- Build commit: \`${GITHUB_SHA}\`"
             echo "- Run: [#${GITHUB_RUN_NUMBER}](${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID})"
             echo "- Workflow: \`.github/workflows/electron-release.yml\`"
-            echo "- Release gates: lint, unit tests, backend tests, web build, standard Chromium E2E"
+            echo "- Release gates: lint, unit tests, web build, standard Chromium E2E"
             echo "- Linux launch smoke: passed"
           } > "$BODY_FILE"
 
