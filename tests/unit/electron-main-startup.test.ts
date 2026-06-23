@@ -112,6 +112,45 @@ describe('Electron main startup', () => {
     expect(existingWindow.restore).toHaveBeenCalledTimes(1)
     expect(existingWindow.focus).toHaveBeenCalledTimes(1)
   })
+
+  it('records renderer diagnostic events without throwing once the app is ready [DON-226]', async () => {
+    // Regression: the record-diagnostic-event IPC handler referenced an
+    // out-of-scope `runtimeLog`, so every renderer diagnostic event threw
+    // `ReferenceError: runtimeLog is not defined` in the packaged main process,
+    // silently breaking the DON-226 incident breadcrumbs. The handler must be
+    // wired to the real runtime log and append the renderer event.
+    const electronMock = createElectronMock(vi.fn(), undefined, true)
+    Module._load = ((request: string, parent: NodeJS.Module | null, isMain: boolean) => {
+      if (request === 'electron') {
+        return electronMock
+      }
+      return originalLoad(request, parent, isMain)
+    }) as typeof Module._load
+
+    require('../../electron/main.cjs')
+    // Let the whenReady() bootstrap chain register IPC handlers.
+    await new Promise((resolve) => setTimeout(resolve, 50))
+
+    const recordHandlerCall = electronMock.ipcMain.handle.mock.calls.find(
+      ([channel]) => channel === 'sartracker:record-diagnostic-event',
+    )
+    expect(recordHandlerCall).toBeDefined()
+    const recordHandler = recordHandlerCall?.[1] as (
+      event: unknown,
+      input: unknown,
+    ) => unknown
+
+    const senderEvent = { senderFrame: { url: 'file:///app/index.html' }, sender: {} }
+    expect(() =>
+      recordHandler(senderEvent, {
+        level: 'info',
+        event: 'basemap_changed',
+        category: 'map',
+        ts: '2026-06-23T10:00:00.000Z',
+        fields: { basemapId: 'osm' },
+      }),
+    ).not.toThrow()
+  })
 })
 
 function createElectronMock(

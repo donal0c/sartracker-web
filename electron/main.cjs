@@ -312,6 +312,7 @@ function registerIpcHandlers(
   fileSystem,
   officialMapProxy,
   crashLog,
+  runtimeLog,
 ) {
   ipcMain.handle(TRACCAR_REQUEST_CHANNEL, handleTraccarHttpRequest)
   ipcMain.handle(LOAD_SETTINGS_CHANNEL, (event) => {
@@ -624,6 +625,7 @@ async function startElectronApp() {
     fileSystem,
     officialMapProxy,
     crashLog,
+    runtimeLog,
   )
   await createWindow(crashLog, runtimeLog)
 
