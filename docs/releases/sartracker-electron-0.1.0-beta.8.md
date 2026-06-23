@@ -254,11 +254,13 @@ This beta is produced by `.github/workflows/electron-release.yml` on the
 
 ## Publication State
 
-**Draft — smoke complete, awaiting promotion approval.** CI run `28012741523`
-is green and the deep Ubuntu packaged smoke matrix above passed on the CI-built
-post-fix artifact. One real defect (DON-226 `runtimeLog`) was found by the smoke
-and fixed; the smoked/shipped artifact is the post-fix build. Remaining step:
-Donal approves and the draft prerelease is published to the team.
+**Published** as a prerelease on 2026-06-23 after CI run `28012741523` and the
+deep Ubuntu packaged smoke both passed on the CI-built post-fix artifact, and
+Donal approved promotion. This is now the current team artifact, superseding
+`electron-v0.1.0-beta.7`. One real defect (DON-226 `runtimeLog`) was found by
+the smoke and fixed; the shipped artifact is the post-fix build (AppImage sha
+`43067cb2…`). Release URL:
+`https://github.com/donal0c/sartracker-web/releases/tag/electron-v0.1.0-beta.8`
 
 ### CI-built artifact checksums (post-fix build, run `28012741523`)
 
