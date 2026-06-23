@@ -8,7 +8,7 @@
 - **Desktop lane:** Electron is operational. Tauri remains historical/reference.
 - **Hosted browser:** `https://sartracker-web.vercel.app/?missionHarness=1` is testing/training only; browser storage is not operational persistence.
 - **Latest published beta:** `electron-v0.1.0-beta.7`, published 2026-06-16 after GitHub Actions run `27601812958` and deep Ubuntu smoke. Team artifact: https://github.com/donal0c/sartracker-web/releases/tag/electron-v0.1.0-beta.7
-- **Next candidate:** beta.8. Local browser/regression gates are green after the 2026-06-21 smoke sweep; hosted Traccar now uses direct HTTPS after `DON-224`; drawing blank-name save handling is clean after `DON-225`; Electron packaged smoke/release is still required before sharing with testers.
+- **Next candidate:** beta.8. Version bumped to `0.1.0-beta.8` (package.json + package-lock.json) on 2026-06-23; release note written at `docs/releases/sartracker-electron-0.1.0-beta.8.md`. Local browser/regression gates are green after the 2026-06-21 smoke sweep; full `beta:verify --no-smoke` reran green at beta.8 / sha `e827aea` on 2026-06-23 (report `tmp/beta-artifacts/verify-0.1.0-beta.8-sha.e827aeaac569-2026-06-23T06-03-43Z.json`). Hosted Traccar now uses direct HTTPS after `DON-224`; drawing blank-name save handling is clean after `DON-225`. **Electron packaged Ubuntu smoke against the CI-built artifact is still the release gate before sharing with testers; GitHub release must stay a draft until then.**
 
 ## Latest Beta.8 Validation - 2026-06-21
 
