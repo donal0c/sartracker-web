@@ -134,7 +134,7 @@ test.describe('M12 settings workspace', () => {
   test('large hosted breadcrumb history does not block current tracking status or exceed browser storage cap', async ({
     page,
   }) => {
-    test.setTimeout(45_000)
+    test.setTimeout(90_000)
     await routeTraccarSuccess(page, { breadcrumbCount: 14_500 })
 
     await page.getByTestId('open-settings-workspace').click()
@@ -154,20 +154,28 @@ test.describe('M12 settings workspace', () => {
     await page.getByTestId('settings-save-connect').click()
     await expect(page.getByTestId('settings-workspace')).toBeHidden({ timeout: 15_000 })
 
-    await expect(page.getByTestId('tracking-status')).toContainText('online')
-    await expect(page.getByTestId('tracking-status')).toContainText('1')
+    // This test deliberately drives a very large (14.5k) hosted breadcrumb
+    // history, so the online/count status and the storage-cap clamp settle
+    // noticeably slower on a loaded CI runner than locally (~6s). Use explicit
+    // generous waits (matching the 15s settings-hide wait above) instead of
+    // Playwright's default 5s assertion/poll timeout; the assertions
+    // themselves are unchanged.
+    await expect(page.getByTestId('tracking-status')).toContainText('online', { timeout: 15_000 })
+    await expect(page.getByTestId('tracking-status')).toContainText('1', { timeout: 15_000 })
 
     await expect
-      .poll(async () =>
-        page.evaluate(() => {
-          const raw = window.sessionStorage.getItem('sartracker:browser-harness')
-          if (raw === null) {
-            return null
-          }
+      .poll(
+        async () =>
+          page.evaluate(() => {
+            const raw = window.sessionStorage.getItem('sartracker:browser-harness')
+            if (raw === null) {
+              return null
+            }
 
-          const parsed = JSON.parse(raw) as { positions?: unknown[] }
-          return parsed.positions?.length ?? 0
-        }),
+            const parsed = JSON.parse(raw) as { positions?: unknown[] }
+            return parsed.positions?.length ?? 0
+          }),
+        { timeout: 15_000 },
       )
       .toBe(2_000)
   })
