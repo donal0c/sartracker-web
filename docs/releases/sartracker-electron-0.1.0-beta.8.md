@@ -10,9 +10,9 @@
 - **Cut by:** Claude Code agent (Donal supervising)
 - **Supersedes:** `electron-v0.1.0-beta.7` (the current published team build)
 - **Linear reference:** install-test fixes DON-184–189; operator UI/UX batch DON-190–197 (DON-198/199 are scoping decisions only); workflow hardening DON-203–205; runtime safety hardening DON-206–209; performance hardening DON-165, DON-200–202, DON-210–213; diagnostics DON-158/179/226 (local bundle export) plus single-instance lock DON-180; late smoke fixes DON-222–225; manual refresh DON-150
-- **Verification report:** CI green; Ubuntu on-device packaged smoke still pending (see below)
-- **CI run:** `electron-release.yml` run `28007848162` — success (gates, Linux bundle, AppImage launch smoke, draft prerelease + SHA256SUMS all green)
-- **GitHub release:** **Draft prerelease created** at tag `electron-v0.1.0-beta.8` (Linux AppImage + `.deb` + `SHA256SUMS`). Remains a **draft** until the packaged Ubuntu smoke matrix passes and Donal approves promotion.
+- **Verification report:** CI green AND deep Ubuntu packaged smoke passed on the CI-built artifact (see Ubuntu deep smoke below)
+- **CI run:** `electron-release.yml` run `28012741523` — success (gates, Linux bundle, AppImage launch smoke, draft prerelease + SHA256SUMS all green). This is the post-fix build that was smoked.
+- **GitHub release:** **Draft prerelease** at tag `electron-v0.1.0-beta.8` (Linux AppImage + `.deb` + `SHA256SUMS`). Smoke matrix complete; awaiting Donal's approval to publish.
 
 ## What this beta is
 
@@ -254,22 +254,75 @@ This beta is produced by `.github/workflows/electron-release.yml` on the
 
 ## Publication State
 
-**Draft — not yet published.** This note is cut at code-complete with all local
-gates green (lint, build, unit, backend, Chromium E2E, visual, visual-review, and
-`beta:verify --no-smoke`). The GitHub release must stay a draft until CI is green
-and the deep Ubuntu packaged smoke matrix above passes and Donal approves
-promotion.
+**Draft — smoke complete, awaiting promotion approval.** CI run `28012741523`
+is green and the deep Ubuntu packaged smoke matrix above passed on the CI-built
+post-fix artifact. One real defect (DON-226 `runtimeLog`) was found by the smoke
+and fixed; the smoked/shipped artifact is the post-fix build. Remaining step:
+Donal approves and the draft prerelease is published to the team.
 
-### CI-built artifact checksums (run `28007848162`)
+### CI-built artifact checksums (post-fix build, run `28012741523`)
 
 ```
-4407c2df0e1e5c2fb127f941a7dac1f8f660948aa8ad49f0701c3868ec5e193b  sartracker-electron-validation_0.1.0-beta.8_linux_x86_64.AppImage
-7bb83fc1ef8999acc057430737967777b659d51b8b56f3ccfbc17a397fbb1e8b  sartracker-electron-validation_0.1.0-beta.8_linux_amd64.deb
+43067cb2a99671419da576799beaedd7541b6ade7714fe267ad0c16b68e97911  sartracker-electron-validation_0.1.0-beta.8_linux_x86_64.AppImage
+fa60e126faee7a6d0f025d0e460317b6c53da1ed58cd3a3d129ac86ea2ca0a2b  sartracker-electron-validation_0.1.0-beta.8_linux_amd64.deb
 ```
 
-The Ubuntu smoke must verify the downloaded artifact against these before
-launching (`sha256sum -c SHA256SUMS --ignore-missing` → **OK**).
+Verify the downloaded artifact against these before launching
+(`sha256sum -c SHA256SUMS --ignore-missing` → **OK**).
 
-### Ubuntu deep smoke
+### Bug found and fixed by this smoke (release-relevant)
 
-To be filled after the on-device packaged smoke against the CI-built artifact.
+The first beta.8 build had a defect the packaged smoke caught: the DON-226
+`record-diagnostic-event` IPC handler referenced an out-of-scope `runtimeLog`,
+so every renderer diagnostic event threw `ReferenceError: runtimeLog is not
+defined` in the main process. Operator incident bundles still populated (the
+breadcrumbs are kept in a renderer-side store), but the **durable main-process
+diagnostic log never received the events** and the main process logged an error
+on every event. Fixed by threading `runtimeLog` into `registerIpcHandlers`,
+with a red→green regression test in `tests/unit/electron-main-startup.test.ts`.
+The smoked/shipped artifact is the post-fix build (checksums above): re-launch
+shows **zero `runtimeLog` errors** and the durable runtime log now records
+`renderer_*` diagnostic events.
+
+### Ubuntu deep smoke (2026-06-23)
+
+CI-built AppImage (SHA256 `43067cb2a99671419da576799beaedd7541b6ade7714fe267ad0c16b68e97911`,
+`sha256sum -c` OK) on `donal-Precision-5570`, Ubuntu 24.04.2 LTS, kernel
+6.17.0-35, real X11 display (the box was upgraded off Wayland since the beta.7
+smoke; driven with `--ozone-platform=x11`). Playwright over CDP against the real
+better-sqlite3 backend, throwaway userData per run (the real operator mission DB
+in `~/.config/sartracker-web` was never touched). App version
+`0.1.0-beta.8+run.13`, Electron 40.10.0, Chromium 144, schema v4.
+
+Suites (all green on the post-fix artifact):
+
+1. **Core lifecycle (10/10):** launch + map canvas; no fault shell; mission
+   start; marker; restart → recovery dialog → resume; finish; finalize →
+   governance finalized; standalone archive on disk (`userData/archives`);
+   second restart on finalized userData boots clean with no spurious recovery.
+2. **Duplicate launch / single-instance, DON-180 (8/8):** instance A active;
+   second and third launches exit (lock not granted); A still running with its
+   mission active; no fault shell; no second profile created.
+3. **Coordinate safety + diagnostics, DON-226 (6/6):** out-of-Ireland DD (Paris)
+   rejected with a clear message; support bundle written and sanitized (no
+   credential leak, home paths redacted); time-framed incident bundle sanitized;
+   durable runtime log + bundle `[diagnostic-breadcrumbs]` now populated.
+4. **Settings safety, DON-207/204/208 (6/6):** provider URL with embedded
+   credentials rejected and save blocked; discard prompt on close with unsaved
+   edits + "Keep editing" cancels; clean boot with corrupt persisted intervals.
+5. **UI polish, DON-195/223/197 (4/4):** map scale bar + grouped coordinate
+   readout; command mast does not overflow at 1100x720; casualty dialog uses
+   "Casualty Status".
+6. **Live Traccar + credential migration, DON-206/175/177 (9/9):** real
+   connection to `https://kmrtsar.eu` — "Connection successful.", online with
+   **33 devices / 8 fixes** (DON-206: live rows rendered, not blanked); the
+   May-31 stored secret was undecryptable after the box's OS-key change and the
+   app handled it gracefully (warning + usable, DON-175/177); re-entered secret
+   saved and app-owned `credentials.json` written.
+7. **Offline Discovery map (network blocked):** private package registered
+   (Discovery Topo z8–z16, 31,729 tiles, READY); real offline tile read
+   (2,372 bytes) with network blocked; "Field ready / current view inside
+   official offline area"; outside-area correctly flagged.
+
+Evidence (screenshots + per-suite `summary.json` + sanitized bundles) mirrored
+to `output/beta8-ubuntu-smoke/evidence-fixed/` in the repo working tree.
