@@ -8,7 +8,7 @@
 - **Desktop lane:** Electron is operational. Tauri remains historical/reference.
 - **Hosted browser:** `https://sartracker-web.vercel.app/?missionHarness=1` is testing/training only; browser storage is not operational persistence.
 - **Latest published beta:** `electron-v0.1.0-beta.8`, published 2026-06-23 after GitHub Actions run `28012741523` and a deep Ubuntu packaged smoke (43/43) on the CI-built post-fix artifact (AppImage sha `43067cb2…`). Team artifact: https://github.com/donal0c/sartracker-web/releases/tag/electron-v0.1.0-beta.8 — supersedes beta.7.
-- **Next candidate:** beta.8. Tag `electron-v0.1.0-beta.8` (HEAD `34e3fc1`); CI release run `28012741523` is **green** and the deep Ubuntu packaged smoke PASSED on that CI-built artifact. A **draft prerelease** exists (Linux AppImage + `.deb` + `SHA256SUMS`); **awaiting Donal's approval to publish.** Release note at `docs/releases/sartracker-electron-0.1.0-beta.8.md`.
+- **Beta.8 release evidence:** tag `electron-v0.1.0-beta.8` (HEAD `34e3fc1`); CI release run `28012741523` is **green** and the deep Ubuntu packaged smoke PASSED on that CI-built artifact. Release note: `docs/releases/sartracker-electron-0.1.0-beta.8.md`.
   - Post-fix CI-built checksums: AppImage `43067cb2a99671419da576799beaedd7541b6ade7714fe267ad0c16b68e97911`, deb `fa60e126faee7a6d0f025d0e460317b6c53da1ed58cd3a3d129ac86ea2ca0a2b`.
   - **Real bug found by the Ubuntu smoke and fixed:** DON-226 `record-diagnostic-event` IPC handler referenced an out-of-scope `runtimeLog`, throwing `ReferenceError` on every event in the packaged main process (durable diagnostic log broken + error spam; operator incident bundles still populated from the renderer store). Fixed in `97663e6` by threading `runtimeLog` into `registerIpcHandlers`, with a red→green regression test. Re-smoke of the post-fix artifact shows zero `runtimeLog` errors and durable `renderer_*` events recorded.
   - Getting CI green also took several test-harness fixes (none in shipping app code): removed the retired Tauri `cargo test` from the Electron release gates (`gdk-3.0` not on the runner); CI-scaled the DON-210/212 perf-sweep and DON-203 large-hosted-history datasets; and the root-cause fix — `playwright.config.ts` now uses 1 worker + 2 retries under CI to absorb shared-runner contention (local stays 2 workers / 0 retries). Product invariants remain covered by deterministic unit tests.
@@ -138,21 +138,16 @@ Performance batch verification snapshot:
 
 Not done: no private Discovery MBTiles package smoke and no release publication were attempted in this batch.
 
-## Remaining Beta.8 Gate
+## Beta.8 Release Gate
 
-Do not promote beta.8 until the packaged Electron release gate passes.
+Beta.8 is published. The packaged release gate passed on the CI-built artifact before publication:
 
-Required next steps before beta.8 publication:
+- GitHub Actions run `28012741523` was green.
+- Deep Ubuntu packaged smoke passed 43/43 on the CI-built post-fix artifact.
+- DON-180 duplicate-launch/single-instance smoke passed inside that matrix.
+- Linear `DON-180` is Done as of 2026-06-23.
 
-1. Smoke the **CI-built artifact**, not a local substitute.
-2. Run DON-180 duplicate-launch smoke on packaged Linux/AppImage:
-   - click launcher during startup
-   - click launcher again after ready
-   - existing window focuses/restores
-   - no second runtime/profile initializes
-   - no red startup-fault shell appears
-3. Run the beta smoke matrix from `CLAUDE.md`: checksum, packaged launch, mission lifecycle/restart/recovery/finalize/archive, coordinate rejection, sanitized diagnostics, live Traccar where relevant, bad/corrupt credential startup safety, duplicate launch, and any changed beta.8 surface.
-4. Keep the GitHub release as draft until the packaged smoke evidence is recorded.
+Do not reopen beta.8 release gating unless new tester evidence points to a regression in the published artifact.
 
 ## Current Follow-Ups
 

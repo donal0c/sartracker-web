@@ -8,11 +8,11 @@
 - **Build tag:** `electron-v0.1.0-beta.8`
 - **Cut date (UTC):** 2026-06-23
 - **Cut by:** Claude Code agent (Donal supervising)
-- **Supersedes:** `electron-v0.1.0-beta.7` (the current published team build)
+- **Supersedes:** `electron-v0.1.0-beta.7`
 - **Linear reference:** install-test fixes DON-184–189; operator UI/UX batch DON-190–197 (DON-198/199 are scoping decisions only); workflow hardening DON-203–205; runtime safety hardening DON-206–209; performance hardening DON-165, DON-200–202, DON-210–213; diagnostics DON-158/179/226 (local bundle export) plus single-instance lock DON-180; late smoke fixes DON-222–225; manual refresh DON-150
 - **Verification report:** CI green AND deep Ubuntu packaged smoke passed on the CI-built artifact (see Ubuntu deep smoke below)
-- **CI run:** `electron-release.yml` run `28012741523` — success (gates, Linux bundle, AppImage launch smoke, draft prerelease + SHA256SUMS all green). This is the post-fix build that was smoked.
-- **GitHub release:** **Draft prerelease** at tag `electron-v0.1.0-beta.8` (Linux AppImage + `.deb` + `SHA256SUMS`). Smoke matrix complete; awaiting Donal's approval to publish.
+- **CI run:** `electron-release.yml` run `28012741523` — success (gates, Linux bundle, AppImage launch smoke, prerelease assets + SHA256SUMS all green). This is the post-fix build that was smoked.
+- **GitHub release:** published prerelease at tag `electron-v0.1.0-beta.8` (Linux AppImage + `.deb` + `SHA256SUMS`). Smoke matrix complete; publication approved after the packaged gate passed.
 
 ## What this beta is
 
