@@ -96,6 +96,63 @@ test.describe('M12 settings workspace', () => {
     await expect(page.getByTestId('devices-workspace')).toContainText('S-Tab')
   })
 
+  test('DON-228: incremental breadcrumb polling keeps sub-second points after the cursor', async ({
+    page,
+  }) => {
+    const breadcrumbRequests = await routeTraccarCursorBoundarySequence(page)
+
+    await page.getByTestId('open-settings-workspace').click()
+    await expect(page.getByTestId('settings-workspace')).toBeVisible()
+
+    await page.getByRole('button', { name: 'Traccar HTTP' }).click()
+    await page.getByTestId('settings-provider-url').fill('http://traccar.test:8082')
+    await page.getByTestId('settings-provider-email').fill('apiuser')
+    await page.getByTestId('settings-provider-secret').fill('apiuser')
+    await page.getByTestId('settings-auto-refresh-interval').fill('5')
+    await page.getByTestId('settings-save').click()
+    await expect(page.getByTestId('settings-workspace')).toBeHidden()
+
+    await page.getByTestId('mission-name-input').fill('Cursor Boundary Mission')
+    await page.getByTestId('mission-start-btn').click()
+    await expect(page.getByTestId('mission-control')).toContainText('active')
+
+    await page.getByTestId('open-settings-workspace').click()
+    await page.getByTestId('settings-save-connect').click()
+    await expect(page.getByTestId('settings-workspace')).toBeHidden({ timeout: 15_000 })
+    await expect(page.getByTestId('tracking-status')).toContainText('online', { timeout: 15_000 })
+
+    await expect
+      .poll(() => breadcrumbRequests.length, { timeout: 15_000 })
+      .toBeGreaterThanOrEqual(2)
+
+    expect(breadcrumbRequests[1]?.from).toBe('2026-04-06T10:00:05.000Z')
+
+    await expect
+      .poll(
+        async () =>
+          page.evaluate(() => {
+            const raw = window.sessionStorage.getItem('sartracker:browser-harness')
+            if (raw === null) {
+              return []
+            }
+
+            const parsed = JSON.parse(raw) as {
+              positions?: readonly { id?: string; timestamp?: string }[]
+            }
+            return (parsed.positions ?? []).map((position) => ({
+              id: position.id,
+              timestamp: position.timestamp,
+            }))
+          }),
+        { timeout: 15_000 },
+      )
+      .toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          timestamp: '2026-04-06T10:00:05.500Z',
+        }),
+      ]))
+  })
+
   test('connected tracking stops advertising online telemetry after mission finish', async ({
     page,
   }) => {
@@ -325,4 +382,113 @@ async function routeTraccarSuccess(
       ]),
     })
   })
+}
+
+async function routeTraccarCursorBoundarySequence(page: import('@playwright/test').Page) {
+  const breadcrumbRequests: { from: string | null; to: string | null }[] = []
+  let breadcrumbRequestCount = 0
+
+  await page.route('http://traccar.test:8082/api/session', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      headers: {
+        'Set-Cookie': 'JSESSIONID=session-123; Path=/; HttpOnly',
+      },
+      body: JSON.stringify({ id: 4, email: 'apiuser' }),
+    })
+  })
+
+  await page.route('http://traccar.test:8082/api/devices', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify([
+        {
+          id: 1,
+          name: 'S-Tab',
+          status: 'online',
+          lastUpdate: '2026-04-06T10:00:10.000Z',
+          uniqueId: '52959800',
+          category: 'person',
+        },
+      ]),
+    })
+  })
+
+  await page.route('http://traccar.test:8082/api/positions**', async (route, request) => {
+    const url = new URL(request.url())
+    if (url.searchParams.has('deviceId')) {
+      breadcrumbRequests.push({
+        from: url.searchParams.get('from'),
+        to: url.searchParams.get('to'),
+      })
+      breadcrumbRequestCount += 1
+      const breadcrumbs = breadcrumbRequestCount === 1
+        ? [
+            {
+              id: 410_001,
+              deviceId: 1,
+              latitude: 51.99917,
+              longitude: -9.74406,
+              fixTime: '2026-04-06T10:00:04.900Z',
+              valid: true,
+              attributes: { batteryLevel: 82 },
+            },
+            {
+              id: 410_002,
+              deviceId: 1,
+              latitude: 51.99918,
+              longitude: -9.74407,
+              fixTime: '2026-04-06T10:00:05.000Z',
+              valid: true,
+              attributes: { batteryLevel: 82 },
+            },
+          ]
+        : [
+            {
+              id: 410_002,
+              deviceId: 1,
+              latitude: 51.99918,
+              longitude: -9.74407,
+              fixTime: '2026-04-06T10:00:05.000Z',
+              valid: true,
+              attributes: { batteryLevel: 82 },
+            },
+            {
+              id: 410_003,
+              deviceId: 1,
+              latitude: 51.99919,
+              longitude: -9.74408,
+              fixTime: '2026-04-06T10:00:05.500Z',
+              valid: true,
+              attributes: { batteryLevel: 82 },
+            },
+          ]
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify(breadcrumbs),
+      })
+      return
+    }
+
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify([
+        {
+          id: 396947,
+          deviceId: 1,
+          latitude: 51.9992,
+          longitude: -9.7441,
+          fixTime: '2026-04-06T10:00:10.000Z',
+          valid: true,
+          attributes: { batteryLevel: 82 },
+        },
+      ]),
+    })
+  })
+
+  return breadcrumbRequests
 }

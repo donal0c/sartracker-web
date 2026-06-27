@@ -151,6 +151,7 @@ Do not reopen beta.8 release gating unless new tester evidence points to a regre
 
 ## Current Follow-Ups
 
+- **DON-228 beta.8 breadcrumb gap fix:** Eamonn reported a regular missing breadcrumb cadence (“group of 10 then gap”) on beta.8. Root cause was the poller advancing each per-device incremental breadcrumb cursor by `+1000ms`, creating a one-second blind spot after every polling window. Fixed by fetching inclusively from the last seen timestamp and relying on accumulator/persistence dedupe. Verification: red-to-green `tests/unit/polling-manager.test.ts`, focused tracking/diagnostics unit sweep `6 files / 63 tests`, `npx playwright test tests/e2e/settings.spec.ts --project=chromium --grep "DON-228"`, `npx playwright test tests/e2e/settings.spec.ts --project=chromium` `9/9`, `npm run lint`, `npm run build`, `npm run test` `152 files / 1007 tests`, `npm run test:backend` `47 passed / 1 ignored`, `npm run test:e2e:chromium` `128/128`, and `npm run electron:pack`. Linear `DON-228` should stay closed unless team retest shows a different server-side/device cadence issue.
 - `DON-144` remains open: private Discovery package distribution owner/channel and repeatable raw-source-to-MBTiles admin workflow.
 - `DON-214`: Search Area label positioning/zoomed-out drift follow-up.
 - `DON-215`-`DON-218`: mission preview, map export/print, external-resource model, evacuation/gear workflow decisions.

@@ -317,7 +317,7 @@ export function createPollingManager(
           lastTimestamp === undefined
             ? (options.getInitialBreadcrumbFrom?.() ??
               new Date(fetchUntil.getTime() - 3 * 60 * 60 * 1000))
-            : new Date(Date.parse(lastTimestamp) + 1_000)
+            : new Date(lastTimestamp)
 
         const breadcrumbs = await client.getBreadcrumbs(device.device_id, fetchFrom, fetchUntil)
         const newestTimestamp = breadcrumbs.at(-1)?.timestamp

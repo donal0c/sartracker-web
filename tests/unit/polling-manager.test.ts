@@ -237,12 +237,12 @@ describe('polling manager', () => {
 
     expect(client.getBreadcrumbs).toHaveBeenCalledWith(
       '1',
-      new Date('2026-04-06T10:10:01.000Z'),
+      new Date('2026-04-06T10:10:00.000Z'),
       expect.any(Date),
     )
     expect(client.getBreadcrumbs).toHaveBeenCalledWith(
       '2',
-      new Date('2026-04-06T10:20:01.000Z'),
+      new Date('2026-04-06T10:20:00.000Z'),
       expect.any(Date),
     )
     expect(client.getBreadcrumbs).not.toHaveBeenCalledWith(
@@ -251,6 +251,76 @@ describe('polling manager', () => {
       expect.any(Date),
     )
     expect(onSnapshot.mock.calls[0]?.[0].breadcrumbs).toEqual(persistedBreadcrumbs)
+
+    poller.stop()
+  })
+
+  it('does not skip sub-second breadcrumbs immediately after the previous cursor', async () => {
+    const firstBatch = [
+      {
+        ...NORMALIZED_POSITIONS[0],
+        id: 'breadcrumb-before-boundary',
+        timestamp: '2026-04-06T10:00:04.900Z',
+      },
+      {
+        ...NORMALIZED_POSITIONS[0],
+        id: 'breadcrumb-at-boundary',
+        timestamp: '2026-04-06T10:00:05.000Z',
+      },
+    ] satisfies readonly NormalizedTrackingPosition[]
+    const secondBatch = [
+      {
+        ...NORMALIZED_POSITIONS[0],
+        id: 'breadcrumb-at-boundary-duplicate',
+        timestamp: '2026-04-06T10:00:05.000Z',
+      },
+      {
+        ...NORMALIZED_POSITIONS[0],
+        id: 'breadcrumb-after-boundary',
+        timestamp: '2026-04-06T10:00:05.500Z',
+      },
+    ] satisfies readonly NormalizedTrackingPosition[]
+    const client = createClient({
+      getBreadcrumbs: vi.fn()
+        .mockResolvedValueOnce(firstBatch)
+        .mockResolvedValueOnce(secondBatch),
+    })
+    const onSnapshot = vi.fn()
+    let currentTime = new Date('2026-04-06T10:00:05.000Z')
+
+    const poller = createPollingManager(client, {
+      intervalMs: 5_000,
+      staleThresholdMs: 60 * 60 * 1000,
+      onSnapshot,
+      onStatusChange: vi.fn(),
+      getBreadcrumbDeviceIds: () => ['1'],
+      now: () => currentTime,
+    })
+
+    poller.start()
+    await vi.advanceTimersByTimeAsync(0)
+    currentTime = new Date('2026-04-06T10:00:10.000Z')
+    await vi.advanceTimersByTimeAsync(5_000)
+
+    expect(client.getBreadcrumbs).toHaveBeenNthCalledWith(
+      2,
+      '1',
+      new Date('2026-04-06T10:00:05.000Z'),
+      expect.any(Date),
+    )
+    expect(
+      onSnapshot.mock.calls
+        .map((call) => call[0] as TrackingSnapshot)
+        .some((snapshot) =>
+          snapshot.breadcrumbs.some((breadcrumb) => breadcrumb.id === 'breadcrumb-after-boundary'),
+        ),
+    ).toBe(true)
+    const latestSnapshot = onSnapshot.mock.calls.at(-1)?.[0] as TrackingSnapshot | undefined
+    expect(
+      latestSnapshot?.breadcrumbs.filter(
+        (breadcrumb) => breadcrumb.timestamp === '2026-04-06T10:00:05.000Z',
+      ),
+    ).toHaveLength(1)
 
     poller.stop()
   })
