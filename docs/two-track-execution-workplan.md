@@ -120,13 +120,14 @@ ship or ask testers for whole Electron profile zips.
 
 ## Current Priority
 
-1. Keep hosted browser testing smooth enough for the team to give real feedback.
-2. Fix the 2026-05-16 team feedback items that affect map trust before returning to broader foundation work.
-3. Burn down shared foundation issues that make startup, mission control, tracking, layers, or map behavior ambiguous.
-4. Keep the repeatable Electron beta release path healthy and use it for team desktop retest builds.
-5. Avoid heavy browser hardening unless testing proves browser operational deployment is genuinely needed.
-6. Treat licensed Irish/OSI map sources as local/customer-provided assets unless the map provider gives requirements that change this.
-7. Continue the official map lane through the team-ready Electron import workflow: `DON-7` is now the active offline-map parent for `DON-109` through `DON-115`, while `DON-76` remains the broader official-provider parent and overlay lane.
+1. Work down the Fable deep-analysis remediation queue under `DON-230`; `DON-231` is complete, so continue with `DON-232`.
+2. Keep hosted browser testing smooth enough for the team to give real feedback.
+3. Fix the 2026-05-16 team feedback items that affect map trust before returning to broader foundation work.
+4. Burn down shared foundation issues that make startup, mission control, tracking, layers, or map behavior ambiguous.
+5. Keep the repeatable Electron beta release path healthy and use it for team desktop retest builds.
+6. Avoid heavy browser hardening unless testing proves browser operational deployment is genuinely needed.
+7. Treat licensed Irish/OSI map sources as local/customer-provided assets unless the map provider gives requirements that change this.
+8. Continue the official map lane through the team-ready Electron import workflow: `DON-7` is now the active offline-map parent for `DON-109` through `DON-115`, while `DON-76` remains the broader official-provider parent and overlay lane.
 
 ## Next Task Order
 
@@ -186,6 +187,7 @@ This is the default order when the user says “work on the next task.”
 | Done | OpenTopoMap "tiles failed to load" badge over-eager | Track A / UI | `sartracker-web-2xp` | Done locally 2026-05-17. Tile-only filter at `src/features/map/is-tile-error-event.ts` and widened defaults (5-in-30s) in `src/lib/tile-health-tracker.ts`. Interactive Playwright proof at `tmp/2xp-verification/`. |
 | Done | Add beta.8 map/tracking diagnostic breadcrumbs | S2 Electron / Shared Diagnostics | `DON-226` | Done 2026-06-22. Incident bundles now carry sanitized, bounded diagnostic breadcrumbs for basemap/map-health changes, marker saves, measurement completion, tracking status changes, and tracking snapshot counts so team reports can be “approximate time + Export Incident Bundle + optional screenshot/note.” This is diagnostic content, not the future upload/inbox workflow in `DON-181`. |
 | Done | Fix beta.8 regular breadcrumb gap from incremental cursor | S2 Electron / Tracking | `DON-228` | Done 2026-06-27. Eamonn reported a regular missing point cadence (“group of 10 then gap”). Root cause was `lastTimestamp + 1000ms` for incremental breadcrumb fetches, creating a one-second blind spot after every polling window. Fix fetches inclusively from the last seen timestamp and relies on existing accumulator/persistence dedupe. Verified with red-to-green polling unit regression, focused tracking/diagnostics units, DON-228 Playwright regression, settings Playwright suite, lint, build, full unit suite, backend tests, full Chromium E2E `128/128`, and `npm run electron:pack`. Team retest should use the next beta containing this commit. |
+| Active | Fable deep-analysis remediation queue | Shared / S2 Electron / Tracking / Coordinates | `DON-230` | Parent queue created 2026-07-06 from `output/fable-deep-analysis.md`; children `DON-231`-`DON-239` group the findings by shared implementation and verification path. `DON-231` mission-record integrity is complete locally; continue with `DON-232` persistence durability, then `DON-233` breadcrumb cursor resilience. |
 | Done | B4: Set up cross-platform Tauri beta distribution | Track B / Release | `sartracker-web-y6a` | Done 2026-05-17. `.github/workflows/release.yml` builds Linux (AppImage + .deb) and Windows (NSIS) on `v*` tag push, drafts a GitHub release, generates `SHA256SUMS` sidecar. First published release: `v0.1.0-beta.3` at https://github.com/donal0c/sartracker-web/releases/tag/v0.1.0-beta.3. Linux primary, Windows secondary. macOS arm64 deferred from CI per `sartracker-web-590` to stay inside the GitHub Actions free tier (macOS bills at 10x); macOS uses Path B (`npm run beta:verify`) until cadence stabilizes. Windows MSI deferred per `sartracker-web-g1u` because Tauri's MSI bundler rejects alphanumeric pre-release suffixes. NSIS `currentUser` install (no admin), WebView2 `downloadBootstrapper`. Release notes sourced from `docs/releases/sartracker-web-<version>-beta.md`. |
 | Done | B8: Team requirements from USB ODT | Track A / Shared / Track B | `DON-60` | Closed in the 2026-06-06 Linear cleanup. Concrete children are done; duplicate multi-day issue `DON-67` now points to canonical `DON-100`. |
 | Done | 3-6-26 team feedback intake | Track A / Shared | `DON-83` | Done 2026-06-04. Immediate bugs and non-blocked UI requests are complete; `DON-99`, `DON-101`, and `DON-102` are closed as superseded, and `DON-100` remains the only coordinator-blocked item. |

@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { createRequire } from 'node:module'
 
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 const require = createRequire(import.meta.url)
 const { createElectronMissionStore } = require('../../electron/mission-store.cjs') as {
@@ -25,6 +25,12 @@ type ElectronMissionStore = {
   }>
   readonly syncBackup: () => Promise<string>
   readonly createMission: (input: { readonly name: string; readonly start_time?: string }) => Promise<{ readonly id: string; readonly status: string }>
+  readonly getMission: (missionId: string) => Promise<{
+    readonly id: string
+    readonly status: string
+    readonly pause_time: string | null
+    readonly paused_seconds: number
+  }>
   readonly getActiveMission: () => Promise<{ readonly id: string; readonly status: string } | null>
   readonly listMissions: () => Promise<readonly { readonly id: string; readonly status: string }[]>
   readonly pauseMission: (missionId: string) => Promise<{ readonly status: string }>
@@ -84,9 +90,22 @@ type ElectronMissionStore = {
   }) => Promise<{ readonly id: string }>
   readonly deleteMarker: (markerId: string) => Promise<boolean>
   readonly listMarkers: (missionId: string) => Promise<readonly { readonly id: string; readonly label_size?: number | null }[]>
+  readonly getDrawing: (drawingId: string) => Promise<{
+    readonly id: string
+    readonly mission_id: string
+    readonly name: string
+    readonly created_at: string
+    readonly updated_at: string
+  }>
   readonly listDrawings: (missionId: string) => Promise<readonly { readonly id: string }[]>
   readonly listHelicopters: (missionId: string) => Promise<readonly { readonly id: string }[]>
-  readonly listGpxImports: (missionId: string) => Promise<readonly { readonly id: string }[]>
+  readonly listGpxImports: (missionId: string) => Promise<readonly {
+    readonly id: string
+    readonly mission_id: string
+    readonly display_name: string
+    readonly imported_at: string
+    readonly updated_at: string
+  }[]>
   readonly upsertDrawing: (input: {
     readonly id?: string
     readonly mission_id: string
@@ -119,7 +138,13 @@ type ElectronMissionStore = {
   readonly createMissionArchive: (
     missionId: string,
   ) => Promise<{ readonly mission_id: string; readonly archive_path: string; readonly created_at: string }>
-  readonly getMarker: (markerId: string) => Promise<{ readonly id: string }>
+  readonly getMarker: (markerId: string) => Promise<{
+    readonly id: string
+    readonly mission_id: string
+    readonly name: string
+    readonly created_at: string
+    readonly updated_at: string
+  }>
   readonly listLayerCatalogMetadata: (
     missionId: string,
   ) => Promise<readonly { readonly missionId: string; readonly nodeId: string; readonly isVisible: boolean }[]>
@@ -138,6 +163,7 @@ describe('electron mission store', () => {
   let store: ElectronMissionStore | null = null
 
   afterEach(async () => {
+    vi.useRealTimers()
     store?.close()
     store = null
     if (userDataPath !== null) {
@@ -217,6 +243,58 @@ describe('electron mission store', () => {
         'mission_finished',
       ]),
     )
+  })
+
+  it('accumulates paused seconds when a mission resumes [DON-231]', async () => {
+    vi.useFakeTimers()
+    store = await createStore()
+    const mission = await store.createMission({
+      name: 'Paused Time Mission',
+      start_time: '2026-07-06T12:00:00.000Z',
+    })
+
+    vi.setSystemTime(new Date('2026-07-06T12:10:00.000Z'))
+    await store.pauseMission(mission.id)
+    vi.setSystemTime(new Date('2026-07-06T12:40:00.000Z'))
+    await store.resumeMission(mission.id)
+
+    const resumed = await store.getMission(mission.id)
+    expect(resumed).toMatchObject({
+      status: 'active',
+      pause_time: null,
+      paused_seconds: 1_800,
+    })
+
+    vi.setSystemTime(new Date('2026-07-06T13:00:00.000Z'))
+    await store.finishMission(mission.id)
+
+    const finished = await store.getMission(mission.id)
+    expect(finished).toMatchObject({
+      status: 'finished',
+      pause_time: null,
+      paused_seconds: 1_800,
+    })
+  })
+
+  it('folds the current pause into paused seconds when finishing a paused mission [DON-231]', async () => {
+    vi.useFakeTimers()
+    store = await createStore()
+    const mission = await store.createMission({
+      name: 'Paused Finish Mission',
+      start_time: '2026-07-06T12:00:00.000Z',
+    })
+
+    vi.setSystemTime(new Date('2026-07-06T12:05:00.000Z'))
+    await store.pauseMission(mission.id)
+    vi.setSystemTime(new Date('2026-07-06T12:20:00.000Z'))
+    await store.finishMission(mission.id)
+
+    const finished = await store.getMission(mission.id)
+    expect(finished).toMatchObject({
+      status: 'finished',
+      pause_time: null,
+      paused_seconds: 900,
+    })
   })
 
   it('bulk records tracking positions in one mission-store operation while preserving mission truth [DON-200]', async () => {
@@ -503,6 +581,66 @@ describe('electron mission store', () => {
     expect(auditTypes).toContain('drawing_created')
     expect(auditTypes).toContain('helicopter_updated')
     expect(auditTypes).toContain('gpx_import_deleted')
+  })
+
+  it('keeps marker, drawing, and GPX creation timestamps immutable across edits [DON-231]', async () => {
+    vi.useFakeTimers()
+    store = await createStore()
+    const mission = await store.createMission({ name: 'Immutable Timestamp Mission' })
+
+    vi.setSystemTime(new Date('2026-07-06T12:00:00.000Z'))
+    const marker = await store.upsertMarker({ mission_id: mission.id, ...SAMPLE_MARKER })
+    const drawing = await store.upsertDrawing({ mission_id: mission.id, ...SAMPLE_DRAWING })
+    const gpx = await store.upsertGpxImport({ mission_id: mission.id, ...SAMPLE_GPX })
+
+    const createdMarker = await store.getMarker(marker.id)
+    const createdDrawing = await store.getDrawing(drawing.id)
+    const createdGpx = (await store.listGpxImports(mission.id)).find((row) => row.id === gpx.id)
+    expect(createdGpx).toBeDefined()
+
+    vi.setSystemTime(new Date('2026-07-06T13:00:00.000Z'))
+    await store.upsertMarker({
+      id: marker.id,
+      mission_id: mission.id,
+      ...SAMPLE_MARKER,
+      name: 'IPP edited',
+    })
+    await store.upsertDrawing({
+      id: drawing.id,
+      mission_id: mission.id,
+      ...SAMPLE_DRAWING,
+      name: 'Sector A edited',
+    })
+    await store.upsertGpxImport({
+      id: gpx.id,
+      mission_id: mission.id,
+      ...SAMPLE_GPX,
+      display_name: 'Ridge Track edited',
+    })
+
+    const editedMarker = await store.getMarker(marker.id)
+    const editedDrawing = await store.getDrawing(drawing.id)
+    const editedGpx = (await store.listGpxImports(mission.id)).find((row) => row.id === gpx.id)
+    expect(editedGpx).toBeDefined()
+
+    expect(editedMarker).toMatchObject({
+      mission_id: mission.id,
+      name: 'IPP edited',
+      created_at: createdMarker.created_at,
+      updated_at: '2026-07-06T13:00:00.000Z',
+    })
+    expect(editedDrawing).toMatchObject({
+      mission_id: mission.id,
+      name: 'Sector A edited',
+      created_at: createdDrawing.created_at,
+      updated_at: '2026-07-06T13:00:00.000Z',
+    })
+    expect(editedGpx).toMatchObject({
+      mission_id: mission.id,
+      display_name: 'Ridge Track edited',
+      imported_at: createdGpx!.imported_at,
+      updated_at: '2026-07-06T13:00:00.000Z',
+    })
   })
 
   it('writes the audit event atomically with the row so neither lands alone (DON-163)', async () => {

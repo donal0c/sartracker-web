@@ -302,9 +302,16 @@ function transitionMission(db, missionId, requiredStatus, nextStatus) {
   const timestamp = now()
   const pauseTime = nextStatus === 'paused' ? timestamp : null
   const eventType = nextStatus === 'paused' ? 'mission_paused' : 'mission_resumed'
+  const additionalPausedSeconds =
+    requiredStatus === 'paused' ? calculatePausedSeconds(mission.pause_time, timestamp) : 0
   const transaction = db.transaction(() => {
-    db.prepare('UPDATE missions SET status = ?, pause_time = ?, finish_time = NULL WHERE id = ?')
-      .run(nextStatus, pauseTime, missionId)
+    db.prepare(`UPDATE missions
+      SET status = ?,
+          pause_time = ?,
+          finish_time = NULL,
+          paused_seconds = paused_seconds + ?
+      WHERE id = ?`)
+      .run(nextStatus, pauseTime, additionalPausedSeconds, missionId)
     insertEvent(db, missionId, eventType, timestamp, { status: nextStatus })
   })
   transaction()
@@ -317,13 +324,29 @@ function finishMission(db, missionId) {
     throw new Error('Mission is already finished.')
   }
   const timestamp = now()
+  const additionalPausedSeconds =
+    mission.status === 'paused' ? calculatePausedSeconds(mission.pause_time, timestamp) : 0
   const transaction = db.transaction(() => {
-    db.prepare('UPDATE missions SET status = ?, pause_time = NULL, finish_time = ? WHERE id = ?')
-      .run('finished', timestamp, missionId)
+    db.prepare(`UPDATE missions
+      SET status = ?,
+          pause_time = NULL,
+          finish_time = ?,
+          paused_seconds = paused_seconds + ?
+      WHERE id = ?`)
+      .run('finished', timestamp, additionalPausedSeconds, missionId)
     insertEvent(db, missionId, 'mission_finished', timestamp, { status: 'finished' })
   })
   transaction()
   return getMission(db, missionId)
+}
+
+function calculatePausedSeconds(pauseTime, resumeOrFinishTime) {
+  const pauseStartMs = Date.parse(pauseTime ?? '')
+  const pauseEndMs = Date.parse(resumeOrFinishTime)
+  if (Number.isNaN(pauseStartMs) || Number.isNaN(pauseEndMs)) {
+    throw new Error('Mission pause time is invalid; paused duration cannot be calculated.')
+  }
+  return Math.max(0, Math.floor((pauseEndMs - pauseStartMs) / 1000))
 }
 
 /**
@@ -866,20 +889,34 @@ const AUDIT_EVENT_TABLES = {
   },
 }
 
+const IMMUTABLE_UPSERT_COLUMNS = {
+  markers: new Set(['id', 'mission_id', 'created_at']),
+  drawings: new Set(['id', 'mission_id', 'created_at']),
+  gpx_track_imports: new Set(['id', 'mission_id', 'imported_at']),
+}
+
 function upsertById(db, table, input, defaults) {
-  ensureWritableMission(db, input.mission_id)
   const row = defaults(input)
+  const existing = db.prepare(`SELECT id, mission_id FROM ${table} WHERE id = ?`).get(row.id)
+  const missionId = existing?.mission_id ?? input.mission_id
+  if (existing !== undefined && existing.mission_id !== input.mission_id) {
+    throw new Error(`Cannot move ${table} row ${row.id} to a different mission.`)
+  }
+  ensureWritableMission(db, missionId)
   const columns = Object.keys(row)
   const placeholders = columns.map(() => '?').join(', ')
-  const assignments = columns.filter((column) => column !== 'id').map((column) => `${column} = excluded.${column}`).join(', ')
+  const immutableColumns = IMMUTABLE_UPSERT_COLUMNS[table] ?? new Set(['id'])
+  const assignments = columns
+    .filter((column) => !immutableColumns.has(column))
+    .map((column) => `${column} = excluded.${column}`)
+    .join(', ')
   const audit = AUDIT_EVENT_TABLES[table]
-  const existing = db.prepare(`SELECT id FROM ${table} WHERE id = ?`).get(row.id)
   const transaction = db.transaction(() => {
     db.prepare(`INSERT INTO ${table} (${columns.join(', ')}) VALUES (${placeholders})
       ON CONFLICT(id) DO UPDATE SET ${assignments}`).run(...columns.map((column) => row[column]))
     insertEvent(
       db,
-      input.mission_id,
+      missionId,
       existing === undefined ? audit.created : audit.updated,
       row.updated_at ?? now(),
       audit.upsertDetails(row),
