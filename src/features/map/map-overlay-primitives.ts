@@ -26,6 +26,10 @@ type EnsureGeoJsonSourceOptions = {
   readonly dataKey?: string
 }
 
+export type LazyGeoJsonPayload = {
+  readonly build: () => GeoJSON.GeoJSON
+}
+
 const sourceDataCache = new WeakMap<object, Map<string, GeoJsonSourceCacheEntry>>()
 const objectIdentityTokens = new WeakMap<object, number>()
 let nextObjectIdentityToken = 1
@@ -37,7 +41,7 @@ let nextObjectIdentityToken = 1
 export function ensureGeoJsonSource(
   map: GeoJsonSourceMap,
   sourceId: string,
-  data: GeoJSON.GeoJSON,
+  data: GeoJSON.GeoJSON | LazyGeoJsonPayload,
   options: EnsureGeoJsonSourceOptions = {},
 ): void {
   const source = map.getSource(sourceId) as GeoJSONSource | undefined
@@ -52,18 +56,20 @@ export function ensureGeoJsonSource(
       return
     }
 
-    source.setData(data)
-    getSourceCache(map).set(sourceId, { source, data, dataKey })
+    const nextData = resolveGeoJsonPayload(data)
+    source.setData(nextData)
+    getSourceCache(map).set(sourceId, { source, data: nextData, dataKey })
     return
   }
 
+  const initialData = resolveGeoJsonPayload(data)
   map.addSource(sourceId, {
     type: 'geojson',
-    data,
+    data: initialData,
   } satisfies SourceSpecification)
   const nextSource = map.getSource(sourceId) as GeoJSONSource | undefined
   if (nextSource !== undefined) {
-    getSourceCache(map).set(sourceId, { source: nextSource, data, dataKey })
+    getSourceCache(map).set(sourceId, { source: nextSource, data: initialData, dataKey })
   }
 }
 
@@ -140,6 +146,14 @@ function getObjectIdentityToken(value: object): number {
   nextObjectIdentityToken += 1
   objectIdentityTokens.set(value, nextToken)
   return nextToken
+}
+
+function resolveGeoJsonPayload(data: GeoJSON.GeoJSON | LazyGeoJsonPayload): GeoJSON.GeoJSON {
+  return isLazyGeoJsonPayload(data) ? data.build() : data
+}
+
+function isLazyGeoJsonPayload(data: GeoJSON.GeoJSON | LazyGeoJsonPayload): data is LazyGeoJsonPayload {
+  return typeof (data as LazyGeoJsonPayload).build === 'function'
 }
 
 /**

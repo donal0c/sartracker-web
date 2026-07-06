@@ -52,6 +52,18 @@ test.describe('performance sweep regressions', () => {
 
     await fireTrackingIdle(page, 2)
     expect(await readTrackingSetDataCount(page)).toBe(countAfterPositionUpdate)
+
+    await page.evaluate(async () => {
+      const { useLayerVisibilityStore } = await import('/src/features/layers/layer-visibility-store.ts')
+      useLayerVisibilityStore.getState().setGroupVisibility('tracking', false)
+    })
+    await expect.poll(async () => readTrackingSetDataCount(page), {
+      timeout: 15_000,
+    }).toBeGreaterThan(countAfterPositionUpdate)
+
+    const countAfterTrackingHidden = await readTrackingSetDataCount(page)
+    await fireTrackingIdle(page, 3)
+    expect(await readTrackingSetDataCount(page)).toBe(countAfterTrackingHidden)
   })
 })
 

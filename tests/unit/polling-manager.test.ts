@@ -66,7 +66,7 @@ describe('polling manager', () => {
     expect(client.getDevices).toHaveBeenCalledTimes(2)
     expect(client.getCurrentPositions).toHaveBeenCalledTimes(2)
     expect(client.getBreadcrumbs).toHaveBeenCalled()
-    expect(onSnapshot).toHaveBeenCalledTimes(4)
+    expect(onSnapshot).toHaveBeenCalledTimes(2)
 
     poller.stop()
   })
@@ -119,7 +119,7 @@ describe('polling manager', () => {
 
     await vi.advanceTimersByTimeAsync(5_000)
 
-    expect(onSnapshot).toHaveBeenCalledTimes(3)
+    expect(onSnapshot).toHaveBeenCalledTimes(2)
     expect(onStatusChange).toHaveBeenCalledWith(
       expect.objectContaining({
         mode: 'offline',
@@ -200,6 +200,42 @@ describe('polling manager', () => {
 
     const latestSnapshot = onSnapshot.mock.calls.at(-1)?.[0]
     expect(latestSnapshot?.breadcrumbs.length).toBeGreaterThan(0)
+
+    poller.stop()
+  })
+
+  it('publishes one settled snapshot per successful poll [DON-235]', async () => {
+    const client = createClient({
+      getDevices: vi.fn().mockResolvedValue(NORMALIZED_DEVICES as readonly NormalizedTrackingDevice[]),
+      getCurrentPositions: vi.fn().mockResolvedValue(NORMALIZED_POSITIONS),
+      getBreadcrumbs: vi.fn().mockResolvedValue(NORMALIZED_POSITIONS),
+    })
+    const onSnapshot = vi.fn()
+    const poller = createPollingManager(client, {
+      intervalMs: 30_000,
+      staleThresholdMs: 60 * 60 * 1000,
+      onSnapshot,
+      onStatusChange: vi.fn(),
+      setTimeout: vi.fn(),
+      clearTimeout: vi.fn(),
+      now: () => new Date('2026-04-06T10:35:00.000Z'),
+    })
+
+    poller.start()
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect(onSnapshot).toHaveBeenCalledTimes(1)
+    expect(onSnapshot.mock.calls[0]?.[0]).toEqual(
+      expect.objectContaining({
+        devices: NORMALIZED_DEVICES,
+        positions: expect.arrayContaining([
+          expect.objectContaining({ device_id: NORMALIZED_POSITIONS[0]!.device_id }),
+        ]),
+        breadcrumbs: expect.arrayContaining([
+          expect.objectContaining({ device_id: NORMALIZED_POSITIONS[0]!.device_id }),
+        ]),
+      }),
+    )
 
     poller.stop()
   })
@@ -989,8 +1025,8 @@ describe('polling manager', () => {
       new Date('2026-04-06T09:00:00.000Z'),
       expect.any(Date),
     )
+    expect(onSnapshot.mock.calls[0]?.[0].breadcrumbs).toHaveLength(3)
     expect(onSnapshot.mock.calls[1]?.[0].breadcrumbs).toHaveLength(3)
-    expect(onSnapshot.mock.calls[3]?.[0].breadcrumbs).toHaveLength(3)
 
     poller.stop()
   })

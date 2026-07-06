@@ -70,19 +70,27 @@ export function syncTrackingOverlay(
 ): void {
   const breadcrumbSize = clampBreadcrumbSize(style.breadcrumbSize)
   const breadcrumbDotRadius = breadcrumbSize / 2
+  const sourceDataKey = createMapOverlayDataKey([
+    'tracking',
+    createTrackingFeatureCollectionDataKey(
+      snapshot,
+      DEFAULT_BREADCRUMB_LINE_GAP_THRESHOLD_MS,
+      style,
+    ),
+  ])
   ensureGeoJsonSource(
     map,
     TRACKING_SOURCE_ID,
-    createTrackingFeatureCollection(snapshot, DEFAULT_BREADCRUMB_LINE_GAP_THRESHOLD_MS, style),
     {
-      dataKey: createMapOverlayDataKey([
-        'tracking',
-        createTrackingFeatureCollectionDataKey(
+      build: () =>
+        createTrackingFeatureCollection(
           snapshot,
           DEFAULT_BREADCRUMB_LINE_GAP_THRESHOLD_MS,
           style,
         ),
-      ]),
+    },
+    {
+      dataKey: sourceDataKey,
     },
   )
 
@@ -200,7 +208,8 @@ export function syncTrackingOverlay(
     paint: {
       'text-color': '#111827',
       'text-halo-color': '#FFFFFF',
-      'text-halo-width': 4,
+      'text-halo-width': 6,
+      'text-halo-blur': 0.5,
     },
   })
 

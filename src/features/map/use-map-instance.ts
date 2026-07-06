@@ -55,6 +55,8 @@ export function useMapInstance(): MapInstanceController {
   const activeBasemapIdRef = useRef<RenderableMapId>(initialBasemapId)
   const lastLoggedMapHealthRef = useRef<string | null>(null)
   const tileHealthTrackerRef = useRef(createTileHealthTracker())
+  const hoverCoordinateFrameRef = useRef<number | null>(null)
+  const pendingHoverCoordinateRef = useRef<HoverCoordinate>(EMPTY_HOVER_COORDINATE)
   const [activeBasemapId, setActiveBasemapId] = useState<RenderableMapId>(initialBasemapId)
   const [mapReadyVersion, setMapReadyVersion] = useState(0)
   const [hoverCoordinate, setHoverCoordinate] = useState<HoverCoordinate>(EMPTY_HOVER_COORDINATE)
@@ -168,14 +170,25 @@ export function useMapInstance(): MapInstanceController {
     map.on('webglcontextrestored', () => {
       setMapHealth(createLoadingMapHealth(getRenderableMapLabel(activeBasemapIdRef.current)))
     })
+    const publishPendingHoverCoordinate = () => {
+      hoverCoordinateFrameRef.current = null
+      setHoverCoordinate(pendingHoverCoordinateRef.current)
+    }
+    const scheduleHoverCoordinate = (coordinate: HoverCoordinate) => {
+      pendingHoverCoordinateRef.current = coordinate
+      if (hoverCoordinateFrameRef.current !== null) {
+        return
+      }
+      hoverCoordinateFrameRef.current = window.requestAnimationFrame(publishPendingHoverCoordinate)
+    }
     map.on('mousemove', (event) => {
-      setHoverCoordinate({
+      scheduleHoverCoordinate({
         latitude: event.lngLat.lat,
         longitude: event.lngLat.lng,
       })
     })
     map.on('mouseleave', () => {
-      setHoverCoordinate(EMPTY_HOVER_COORDINATE)
+      scheduleHoverCoordinate(EMPTY_HOVER_COORDINATE)
     })
 
     mapRef.current = map
@@ -188,6 +201,10 @@ export function useMapInstance(): MapInstanceController {
     previousBasemapIdRef.current = initialBasemapIdRef.current
 
     return () => {
+      if (hoverCoordinateFrameRef.current !== null) {
+        window.cancelAnimationFrame(hoverCoordinateFrameRef.current)
+        hoverCoordinateFrameRef.current = null
+      }
       map.remove()
       if (typeof window !== 'undefined') {
         delete (window as Window & { __SARTRACKER_MAP__?: maplibregl.Map }).__SARTRACKER_MAP__

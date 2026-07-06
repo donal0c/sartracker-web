@@ -4,6 +4,7 @@ import {
   combineMapFilters,
   ensureGeoJsonSource,
   ensureLayer,
+  type LazyGeoJsonPayload,
   loadSvgIcon,
 } from '../../src/features/map/map-overlay-primitives'
 
@@ -50,6 +51,27 @@ describe('map overlay primitives', () => {
     ensureGeoJsonSource(map, 'mission-overlay', firstCollection, { dataKey: 'snapshot:1' })
     ensureGeoJsonSource(map, 'mission-overlay', secondCollection, { dataKey: 'snapshot:1' })
 
+    expect(setData).not.toHaveBeenCalled()
+  })
+
+  it('does not build lazy GeoJSON payloads when an existing source data key is unchanged [DON-235]', () => {
+    const setData = vi.fn()
+    const source = { setData }
+    const sources = new Map<string, typeof source>()
+    const map = {
+      getSource: vi.fn((id: string) => sources.get(id)),
+      addSource: vi.fn((id: string) => {
+        sources.set(id, source)
+      }),
+    }
+    const buildFirstPayload = vi.fn(() => firstCollection)
+    const buildSkippedPayload = vi.fn(() => secondCollection)
+
+    ensureGeoJsonSource(map, 'mission-overlay', lazyPayload(buildFirstPayload), { dataKey: 'snapshot:1' })
+    ensureGeoJsonSource(map, 'mission-overlay', lazyPayload(buildSkippedPayload), { dataKey: 'snapshot:1' })
+
+    expect(buildFirstPayload).toHaveBeenCalledTimes(1)
+    expect(buildSkippedPayload).not.toHaveBeenCalled()
     expect(setData).not.toHaveBeenCalled()
   })
 
@@ -184,4 +206,8 @@ const secondCollection: GeoJSON.FeatureCollection = {
       },
     },
   ],
+}
+
+function lazyPayload(build: () => GeoJSON.GeoJSON): LazyGeoJsonPayload {
+  return { build }
 }

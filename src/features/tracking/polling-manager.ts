@@ -176,29 +176,6 @@ export function createPollingManager(
       const recovered = consecutiveFailures > 0
       consecutiveFailures = 0
       lastSuccessAt = now().toISOString()
-      const currentSnapshot = {
-        devices,
-        positions,
-        breadcrumbs: breadcrumbPositions,
-        breadcrumbMetadata,
-      }
-      lastGoodSnapshot = currentSnapshot
-      options.onSnapshot(
-        annotateTrackingSnapshotHealth(currentSnapshot, {
-          now: now(),
-          deviceStaleThresholdMs: options.staleThresholdMs,
-        }),
-      )
-      publishStatus({
-        mode: 'online',
-        recovered,
-        warning:
-          breadcrumbPositions.length === 0
-            ? 'Current fixes loaded; loading breadcrumb history.'
-            : recovered
-              ? 'CONNECTION RESTORED'
-              : null,
-      })
 
       const breadcrumbs = await fetchIncrementalBreadcrumbs(devices, seedState)
       const breadcrumbResult = breadcrumbAccumulator.append(breadcrumbs)
@@ -230,7 +207,12 @@ export function createPollingManager(
       publishStatus({
         mode: 'online',
         recovered,
-        warning: recovered ? 'CONNECTION RESTORED' : null,
+        warning:
+          breadcrumbPositions.length === 0
+            ? 'Current fixes loaded; loading breadcrumb history.'
+            : recovered
+              ? 'CONNECTION RESTORED'
+              : null,
       })
 
       scheduleNextPoll(pollIntervalMs)

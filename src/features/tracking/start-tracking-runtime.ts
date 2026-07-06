@@ -131,6 +131,9 @@ const DEFAULT_TRACKING_RUNTIME_LOGGER: TrackingRuntimeLogger = {
   },
 }
 
+const trackingCacheIdentityTokens = new WeakMap<object, number>()
+let nextTrackingCacheIdentityToken = 1
+
 /**
  * Starts the tracking runtime behind an explicit orchestration boundary.
  */
@@ -142,6 +145,7 @@ export async function startTrackingRuntime(
   const writeCache = dependencies.writeCache ?? true
   let persistedPositionKeyCache: PersistedPositionKeyCache | null = null
   let missionPersistenceQueue: Promise<void> = Promise.resolve()
+  let lastTrackingCacheDataKey: string | null = null
 
   if (dependencies.config === null) {
     dependencies.applyStatus({
@@ -207,16 +211,22 @@ export async function startTrackingRuntime(
       ]
 
       if (writeCache) {
-        sideEffects.unshift(
-          dependencies.cache.write(
-          serializeTrackingCachePayload({
-            cached_at: now().toISOString(),
-            devices: snapshot.devices,
-            positions: snapshot.positions,
-            breadcrumbs: snapshot.breadcrumbs,
-          }),
-          ),
-        )
+        const trackingCacheDataKey = createTrackingCacheDataKey(snapshot)
+        if (trackingCacheDataKey !== lastTrackingCacheDataKey) {
+          lastTrackingCacheDataKey = trackingCacheDataKey
+          sideEffects.unshift(
+            dependencies.cache.write(
+              serializeTrackingCachePayload({
+                cached_at: now().toISOString(),
+                devices: snapshot.devices,
+                positions: snapshot.positions,
+                breadcrumbs: snapshot.breadcrumbs,
+              }),
+            ),
+          )
+        } else {
+          sideEffects.unshift(Promise.resolve(null))
+        }
       }
 
       await Promise.allSettled(sideEffects).then((results) => {
@@ -265,6 +275,26 @@ export async function startTrackingRuntime(
     missionPersistenceQueue = operation.catch(() => undefined)
     return operation
   }
+}
+
+function createTrackingCacheDataKey(snapshot: TrackingSnapshot): string {
+  return [
+    getTrackingCacheIdentityToken(snapshot.devices),
+    getTrackingCacheIdentityToken(snapshot.positions),
+    getTrackingCacheIdentityToken(snapshot.breadcrumbs),
+  ].join(':')
+}
+
+function getTrackingCacheIdentityToken(value: object): number {
+  const existing = trackingCacheIdentityTokens.get(value)
+  if (existing !== undefined) {
+    return existing
+  }
+
+  const nextToken = nextTrackingCacheIdentityToken
+  nextTrackingCacheIdentityToken += 1
+  trackingCacheIdentityTokens.set(value, nextToken)
+  return nextToken
 }
 
 function buildTrackingSnapshotDiagnosticFields(

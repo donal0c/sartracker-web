@@ -69,6 +69,39 @@ describe('tracking snapshot health', () => {
     expect(snapshot.positions[0]?.device_cache_stale).toBe(true)
   })
 
+  it('preserves breadcrumb array identity while annotating current-position health [DON-235]', () => {
+    const breadcrumb = {
+      ...LIVE_SNAPSHOT.positions[0]!,
+      id: 'breadcrumb-1',
+      timestamp: '2026-04-06T10:20:00.000Z',
+    }
+    const breadcrumbs = [breadcrumb]
+    const snapshot = annotateTrackingSnapshotHealth(
+      {
+        ...LIVE_SNAPSHOT,
+        breadcrumbs,
+      },
+      {
+        now: new Date('2026-04-06T11:31:00.000Z'),
+        deviceStaleThresholdMs: 60 * 60 * 1000,
+      },
+    )
+
+    expect(snapshot.positions).not.toBe(LIVE_SNAPSHOT.positions)
+    expect(snapshot.positions[0]?.device_cache_stale).toBe(true)
+    expect(snapshot.breadcrumbs).toBe(breadcrumbs)
+    expect(snapshot.breadcrumbs[0]).toBe(breadcrumb)
+  })
+
+  it('preserves current-position array identity when health metadata is unchanged [DON-235]', () => {
+    const snapshot = annotateTrackingSnapshotHealth(LIVE_SNAPSHOT, {
+      now: new Date('2026-04-06T10:31:00.000Z'),
+      deviceStaleThresholdMs: 60 * 60 * 1000,
+    })
+
+    expect(snapshot.positions).toBe(LIVE_SNAPSHOT.positions)
+  })
+
   it('rejects cache snapshots older than the max age', () => {
     expect(
       isTrackingCacheUsable(

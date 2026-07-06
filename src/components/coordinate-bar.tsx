@@ -51,7 +51,7 @@ export function CoordinateBar({ latitude, longitude }: CoordinateBarProps) {
         <div aria-hidden="true" />
 
         <div
-          className="flex min-w-0 items-center justify-center gap-4 overflow-hidden px-4"
+          className="flex min-w-0 items-center justify-center gap-4 overflow-hidden px-4 max-[1320px]:gap-2 max-[1320px]:px-3"
           data-testid="coordinate-readout-group"
         >
           <InstrumentCell label="DD" valueClassName="text-stone-100" testId="coords-wgs84">
@@ -91,7 +91,7 @@ export function CoordinateBar({ latitude, longitude }: CoordinateBarProps) {
             </span>
           ) : null}
           <button
-            className="sar-button px-4 py-2 text-xs font-sans font-bold uppercase tracking-[0.1em]"
+            className="sar-button px-4 py-2 text-xs font-sans font-bold uppercase tracking-[0.1em] max-[1320px]:px-3"
             data-testid="open-coordinate-converter"
             onClick={() => openDialog()}
             type="button"
@@ -117,7 +117,7 @@ function InstrumentCell(props: {
       <p className="sar-meta-label">
         {props.label}
       </p>
-      <p className={`mt-1 truncate text-[17px] font-black leading-none ${props.valueClassName ?? ''}`}>
+      <p className={`mt-1 truncate text-[17px] font-black leading-none max-[1320px]:text-[14px] ${props.valueClassName ?? ''}`}>
         <span data-testid={props.testId}>{value}</span>
       </p>
     </div>

@@ -232,6 +232,39 @@ describe('breadcrumb accumulator', () => {
     expect(result.positions.at(-1)!.timestamp).toBe(incoming.at(-1)!.timestamp)
   })
 
+  it('bounds retained source history while preserving observed breadcrumb totals [DON-235]', () => {
+    const baseMs = Date.UTC(2026, 5, 13, 0, 0, 0)
+    const highRateBreadcrumbs = Array.from({ length: 12_000 }, (_, index) =>
+      normalizeTraccarPosition(
+        {
+          id: index + 1,
+          deviceId: 7,
+          latitude: 52 + index / 1_000_000,
+          longitude: -9.7 - index / 1_000_000,
+          fixTime: new Date(baseMs + index * 1_000).toISOString(),
+        },
+        'live',
+      ),
+    )
+    const accumulator = createBreadcrumbAccumulator()
+
+    const result = accumulator.append(highRateBreadcrumbs)
+
+    expect(result.positions).toHaveLength(5_000)
+    expect(result.metadata.totalObserved).toBe(12_000)
+    expect(result.metadata.deviceBudgets).toContainEqual(
+      expect.objectContaining({
+        deviceId: '7',
+        retained: 5_000,
+        sourceRetained: 5_000,
+        total: 12_000,
+        firstTimestamp: highRateBreadcrumbs[0]!.timestamp,
+        lastTimestamp: highRateBreadcrumbs.at(-1)!.timestamp,
+        truncated: true,
+      }),
+    )
+  })
+
   it('segments trails when time gaps exceed the configured threshold', () => {
     const positions = [
       normalizeTraccarPosition(

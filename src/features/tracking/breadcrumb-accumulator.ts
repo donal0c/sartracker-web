@@ -9,6 +9,7 @@ import { createTrackingPositionIdentityKey } from './tracking-position-identity'
 // rescuer's route, and its own older route must not disappear just because the
 // device keeps reporting later fixes.
 const MAX_BREADCRUMB_POSITIONS_PER_DEVICE = 5_000
+const MAX_SOURCE_POSITIONS_PER_DEVICE = MAX_BREADCRUMB_POSITIONS_PER_DEVICE * 2
 const parsedTimestampByPosition = new WeakMap<NormalizedTrackingPosition, number>()
 
 export type BreadcrumbAccumulationResult = {
@@ -106,14 +107,16 @@ export function createBreadcrumbAccumulator(
           MAX_BREADCRUMB_POSITIONS_PER_DEVICE,
         )
         deviceState.retained = retained
+        compactDeviceTrailSource(deviceState, retained)
 
         return {
           deviceId: deviceState.deviceId,
           retained: retained.length,
-          total: deviceState.chronological.length,
+          sourceRetained: deviceState.chronological.length,
+          total: deviceState.totalObserved,
           firstTimestamp: retained[0]?.position.timestamp ?? null,
           lastTimestamp: retained.at(-1)?.position.timestamp ?? null,
-          truncated: deviceState.chronological.length > retained.length,
+          truncated: deviceState.totalObserved > retained.length,
         }
       })
 
@@ -124,7 +127,7 @@ export function createBreadcrumbAccumulator(
       metadata: {
         totalRetained: positions.length,
         totalObserved: [...deviceStates.values()].reduce(
-          (total, deviceState) => total + deviceState.chronological.length,
+          (total, deviceState) => total + deviceState.totalObserved,
           0,
         ),
         deviceBudgets,
@@ -152,6 +155,7 @@ type DeviceTrailState = {
   readonly deviceId: string
   readonly byKey: Map<string, TimestampedPosition>
   readonly chronological: TimestampedPosition[]
+  totalObserved: number
   retained: readonly TimestampedPosition[]
 }
 
@@ -286,6 +290,7 @@ function mergePosition(
       deviceId: entry.position.device_id,
       byKey: new Map(),
       chronological: [],
+      totalObserved: 0,
       retained: [],
     }
     deviceStates.set(entry.position.device_id, deviceState)
@@ -297,6 +302,7 @@ function mergePosition(
   }
 
   deviceState.byKey.set(key, entry)
+  deviceState.totalObserved += 1
   const lastEntry = deviceState.chronological.at(-1)
   if (lastEntry === undefined || entry.timestampMs >= lastEntry.timestampMs) {
     deviceState.chronological.push(entry)
@@ -323,6 +329,21 @@ function replaceExistingPosition(
   }
 
   deviceState.chronological[existingIndex] = entry
+}
+
+function compactDeviceTrailSource(
+  deviceState: DeviceTrailState,
+  retained: readonly TimestampedPosition[],
+): void {
+  if (deviceState.chronological.length <= MAX_SOURCE_POSITIONS_PER_DEVICE) {
+    return
+  }
+
+  deviceState.chronological.splice(0, deviceState.chronological.length, ...retained)
+  deviceState.byKey.clear()
+  for (const entry of retained) {
+    deviceState.byKey.set(createPositionKey(entry.position), entry)
+  }
 }
 
 function findInsertionIndex(

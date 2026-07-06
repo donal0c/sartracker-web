@@ -462,6 +462,41 @@ describe('startTrackingRuntime', () => {
     expect(addPosition).toHaveBeenCalledTimes(1)
   })
 
+  it('does not rewrite the tracking cache when the published snapshot payload is unchanged [DON-235]', async () => {
+    const cacheWrite = vi.fn().mockResolvedValue('/tmp/tracking-cache.json')
+    let pollerHooks:
+      | {
+          onSnapshot: (snapshot: TrackingSnapshot) => void | Promise<void>
+          onStatusChange: (status: TrackingConnectionStatus) => void
+        }
+      | undefined
+
+    await startTrackingRuntime({
+      config: { baseUrl: 'http://test:8082' },
+      createClient: vi.fn().mockReturnValue({}),
+      createPoller: vi.fn().mockImplementation((_client, hooks) => {
+        pollerHooks = hooks
+        return { start: vi.fn(), stop: vi.fn() }
+      }),
+      cache: {
+        read: vi.fn().mockResolvedValue(null),
+        write: cacheWrite,
+      },
+      missionStore: createMissionStoreStub({
+        getActiveMission: vi.fn().mockResolvedValue({ id: 'mission-1' }),
+        listPositions: vi.fn().mockResolvedValue([]),
+      }),
+      applySnapshot: vi.fn(),
+      applyStatus: vi.fn(),
+      now: () => new Date('2026-04-06T10:35:00.000Z'),
+    })
+
+    await pollerHooks?.onSnapshot(SNAPSHOT)
+    await pollerHooks?.onSnapshot(SNAPSHOT)
+
+    expect(cacheWrite).toHaveBeenCalledTimes(1)
+  })
+
   it('provides persisted mission positions as initial poller breadcrumbs', async () => {
     let pollerHooks:
       | {

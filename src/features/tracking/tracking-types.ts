@@ -31,6 +31,7 @@ export type NormalizedTrackingPosition = {
 export type BreadcrumbDeviceBudget = {
   readonly deviceId: string
   readonly retained: number
+  readonly sourceRetained: number
   readonly total: number
   readonly firstTimestamp: string | null
   readonly lastTimestamp: string | null

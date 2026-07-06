@@ -25,15 +25,18 @@ export function annotateTrackingSnapshotHealth(
   const deviceStaleThresholdMs =
     options.deviceStaleThresholdMs ?? DEFAULT_DEVICE_STALE_THRESHOLD_MS
   const cacheStaleTtlMs = options.cacheStaleTtlMs ?? DEFAULT_CACHE_STALE_TTL_MS
+  const positions = annotatePositionsHealth(
+    snapshot.positions,
+    options.now,
+    deviceStaleThresholdMs,
+    cacheAgeMs,
+    cacheStaleTtlMs,
+  )
 
   return {
     devices: snapshot.devices,
-    positions: snapshot.positions.map((position) =>
-      annotatePositionHealth(position, options.now, deviceStaleThresholdMs, cacheAgeMs, cacheStaleTtlMs),
-    ),
-    breadcrumbs: snapshot.breadcrumbs.map((position) =>
-      annotatePositionHealth(position, options.now, deviceStaleThresholdMs, cacheAgeMs, cacheStaleTtlMs),
-    ),
+    positions,
+    breadcrumbs: snapshot.breadcrumbs,
     rawBreadcrumbsForPersistence: snapshot.rawBreadcrumbsForPersistence,
     breadcrumbMetadata: snapshot.breadcrumbMetadata,
   }
@@ -72,9 +75,41 @@ function annotatePositionHealth(
     positionAgeMs > deviceStaleThresholdMs ||
     (position.data_origin === 'cache' && cacheAgeMs !== null && cacheAgeMs > cacheStaleTtlMs)
 
+  if (
+    position.cache_age_seconds === cacheAgeSeconds &&
+    position.device_cache_stale === deviceCacheStale
+  ) {
+    return position
+  }
+
   return {
     ...position,
     cache_age_seconds: cacheAgeSeconds,
     device_cache_stale: deviceCacheStale,
   }
+}
+
+function annotatePositionsHealth(
+  positions: readonly NormalizedTrackingPosition[],
+  now: Date,
+  deviceStaleThresholdMs: number,
+  cacheAgeMs: number | null,
+  cacheStaleTtlMs: number,
+): readonly NormalizedTrackingPosition[] {
+  let changed = false
+  const annotated = positions.map((position) => {
+    const nextPosition = annotatePositionHealth(
+      position,
+      now,
+      deviceStaleThresholdMs,
+      cacheAgeMs,
+      cacheStaleTtlMs,
+    )
+    if (nextPosition !== position) {
+      changed = true
+    }
+    return nextPosition
+  })
+
+  return changed ? annotated : positions
 }

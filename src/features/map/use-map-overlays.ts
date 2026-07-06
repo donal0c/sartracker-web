@@ -23,6 +23,12 @@ type UseMapOverlaysOptions = {
   readonly mapReadyVersion: number
 }
 
+const EMPTY_TRACKING_SNAPSHOT: ReturnType<typeof useTrackingStore.getState>['snapshot'] = {
+  devices: [],
+  positions: [],
+  breadcrumbs: [],
+}
+
 /**
  * Keeps tracking and marker overlays synchronized with the current map style.
  */
@@ -57,7 +63,7 @@ export function useMapOverlays(options: UseMapOverlaysOptions): void {
 
       syncTrackingOverlay(
         map,
-        getEffectiveTrackingVisible(groupVisibility) ? missionTrackingSnapshot : emptyTrackingSnapshot(),
+        getEffectiveTrackingVisible(groupVisibility) ? missionTrackingSnapshot : EMPTY_TRACKING_SNAPSHOT,
         hiddenDeviceIds,
         hiddenBreadcrumbDeviceIds,
         getEffectiveTrackingVisible(groupVisibility) && breadcrumbsVisible,
@@ -75,10 +81,7 @@ export function useMapOverlays(options: UseMapOverlaysOptions): void {
     hiddenBreadcrumbDeviceIds,
     hiddenDeviceIds,
     trackingStyle,
-    activeDeviceIds,
-    missionId,
     missionTrackingSnapshot,
-    trackingSnapshot,
   ])
 
   useEffect(() => {
@@ -111,15 +114,4 @@ export function useMapOverlays(options: UseMapOverlaysOptions): void {
     options.mapReadyVersion,
     options.mapRef,
   ])
-}
-
-/**
- * Returns an empty snapshot so hidden tracking groups remove devices and breadcrumbs from the map.
- */
-function emptyTrackingSnapshot(): ReturnType<typeof useTrackingStore.getState>['snapshot'] {
-  return {
-    devices: [],
-    positions: [],
-    breadcrumbs: [],
-  }
 }

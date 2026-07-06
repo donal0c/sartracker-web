@@ -97,11 +97,15 @@ test.describe('M2 map shell', () => {
       const map = document.querySelector('[data-testid="map-container"]')
       const coordinateGroup = document.querySelector('[data-testid="coordinate-readout-group"]')
       const coordinateDisplay = document.querySelector('[data-testid="coordinate-display"]')
+      const dmsValue = document.querySelector('[data-testid="coords-dms"]')
+      const convertButton = document.querySelector('[data-testid="open-coordinate-converter"]')
       const scale = document.querySelector('[data-testid="map-scale-readout"]')
       if (
         !(map instanceof HTMLElement) ||
         !(coordinateGroup instanceof HTMLElement) ||
         !(coordinateDisplay instanceof HTMLElement) ||
+        !(dmsValue instanceof HTMLElement) ||
+        !(convertButton instanceof HTMLElement) ||
         !(scale instanceof HTMLElement)
       ) {
         return null
@@ -110,11 +114,15 @@ test.describe('M2 map shell', () => {
       const mapRect = map.getBoundingClientRect()
       const groupRect = coordinateGroup.getBoundingClientRect()
       const displayRect = coordinateDisplay.getBoundingClientRect()
+      const dmsRect = dmsValue.getBoundingClientRect()
+      const convertRect = convertButton.getBoundingClientRect()
       const scaleRect = scale.getBoundingClientRect()
 
       return {
         mapCenterX: mapRect.left + mapRect.width / 2,
         groupCenterX: groupRect.left + groupRect.width / 2,
+        dmsRight: dmsRect.right,
+        convertLeft: convertRect.left,
         displayBottom: displayRect.bottom,
         viewportHeight: window.innerHeight,
         scaleBottom: scaleRect.bottom,
@@ -126,6 +134,7 @@ test.describe('M2 map shell', () => {
 
     expect(layout).not.toBeNull()
     expect(Math.abs((layout?.groupCenterX ?? 0) - (layout?.mapCenterX ?? 0))).toBeLessThan(24)
+    expect(layout?.dmsRight).toBeLessThanOrEqual((layout?.convertLeft ?? 0) - 8)
     expect(layout?.displayBottom).toBeLessThanOrEqual(layout?.viewportHeight ?? 0)
     expect(layout?.scaleBottom).toBeLessThanOrEqual((layout?.coordinateTop ?? 0) - 8)
     expect(layout?.horizontalOverflow).toBeLessThanOrEqual(1)

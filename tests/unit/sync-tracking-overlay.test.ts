@@ -196,7 +196,8 @@ describe('tracking overlay marker configuration', () => {
     it('uses dark text with a white halo for readable labels on busy Discovery map backgrounds', () => {
       const layer = getLabelLayer(map)
       expect(layer.paint?.['text-color']).toBe('#111827')
-      expect(layer.paint?.['text-halo-width']).toBeGreaterThanOrEqual(4)
+      expect(layer.paint?.['text-halo-width']).toBeGreaterThanOrEqual(6)
+      expect(layer.paint?.['text-halo-blur']).toBeGreaterThanOrEqual(0.5)
       expect(layer.paint?.['text-halo-color']).toBe('#FFFFFF')
     })
 
