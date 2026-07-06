@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from 'node:fs/promises'
+import { access, mkdtemp, readdir, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { createRequire } from 'node:module'
@@ -6,20 +6,29 @@ import { createRequire } from 'node:module'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 const require = createRequire(import.meta.url)
-const { createElectronMissionStore } = require('../../electron/mission-store.cjs') as {
+const { createElectronMissionStore, CURRENT_SCHEMA_VERSION } = require('../../electron/mission-store.cjs') as {
+  readonly CURRENT_SCHEMA_VERSION: number
   readonly createElectronMissionStore: (options: {
     readonly userDataPath: string
     readonly readAdminRoster?: () => Promise<readonly string[]>
+    readonly backupFaultInjection?: {
+      readonly afterTemporaryBackup?: boolean
+    }
+    readonly archiveFaultInjection?: {
+      readonly corruptSnapshotBeforeZip?: boolean
+    }
     readonly finalizeMissionFaultInjection?: {
       readonly afterArchiveSucceededEvent?: boolean
     }
   }) => ElectronMissionStore
 }
+const Database = require('better-sqlite3')
 
 type ElectronMissionStore = {
   readonly close: () => void
   readonly info: () => Promise<{
     readonly schema_version: number
+    readonly synchronous_mode: number
     readonly database_path: string
     readonly backup_path: string
   }>
@@ -36,7 +45,11 @@ type ElectronMissionStore = {
   readonly pauseMission: (missionId: string) => Promise<{ readonly status: string }>
   readonly resumeMission: (missionId: string) => Promise<{ readonly status: string }>
   readonly finishMission: (missionId: string) => Promise<{ readonly status: string }>
-  readonly listMissionEvents: (missionId: string) => Promise<readonly { readonly event_type: string }[]>
+  readonly listMissionEvents: (missionId: string) => Promise<readonly {
+    readonly event_type: string
+    readonly timestamp: string
+    readonly details_json: string | null
+  }[]>
   readonly listAuditEvents: (
     missionId: string,
     options?: { readonly includeTelemetry?: boolean; readonly limit?: number },
@@ -135,6 +148,11 @@ type ElectronMissionStore = {
   readonly finalizeMission: (
     missionId: string,
   ) => Promise<{ readonly mission: { readonly status: string }; readonly archive: { readonly archive_path: string; readonly created_at: string } }>
+  readonly unlockFinalizedMission: (input: {
+    readonly mission_id: string
+    readonly admin_name: string
+    readonly reason: string
+  }) => Promise<{ readonly status: string }>
   readonly createMissionArchive: (
     missionId: string,
   ) => Promise<{ readonly mission_id: string; readonly archive_path: string; readonly created_at: string }>
@@ -193,6 +211,38 @@ describe('electron mission store', () => {
     })
     expect(activeMission).toMatchObject({ id: mission.id, status: 'paused' })
     await expect(store.listMissions()).resolves.toHaveLength(1)
+  })
+
+  it('uses FULL synchronous mode for the WAL database so committed mission writes are durable [DON-232]', async () => {
+    store = await createStore()
+
+    const info = await store.info()
+    const db = new Database(info.database_path, { readonly: true })
+    try {
+      expect(db.pragma('journal_mode', { simple: true })).toBe('wal')
+      expect(info.synchronous_mode).toBe(2)
+    } finally {
+      db.close()
+    }
+  })
+
+  it('refuses to open a database from a newer schema instead of downgrading metadata [DON-232]', async () => {
+    store = await createStore()
+    const info = await store.info()
+    store.close()
+    store = null
+
+    const db = new Database(info.database_path)
+    try {
+      db.prepare("UPDATE metadata SET value = ? WHERE key = 'schema_version'")
+        .run(String(CURRENT_SCHEMA_VERSION + 1))
+    } finally {
+      db.close()
+    }
+
+    expect(() => createElectronMissionStore({ userDataPath: userDataPath! })).toThrow(
+      /newer mission store schema/i,
+    )
   })
 
   it('records tracking devices, positions, backup events, and mission lifecycle events', async () => {
@@ -428,6 +478,12 @@ describe('electron mission store', () => {
     expect(auditTypes).not.toContain('position_recorded')
     expect(auditTypes).not.toContain('device_updated')
 
+    await store.syncBackup()
+    const auditTypesAfterBackup = (await store.listAuditEvents(mission.id)).map(
+      (event) => event.event_type,
+    )
+    expect(auditTypesAfterBackup).not.toContain('mission_backup_synced')
+
     // Telemetry can be opted back in, but still respects the bound.
     const withTelemetry = await store.listAuditEvents(mission.id, {
       includeTelemetry: true,
@@ -442,6 +498,38 @@ describe('electron mission store', () => {
           Date.parse(withTelemetry[index]!.timestamp),
       ).toBe(true)
     }
+  })
+
+  it('keeps the rolling backup mirror atomic when backup is interrupted [DON-232]', async () => {
+    store = await createStore({
+      backupFaultInjection: {
+        afterTemporaryBackup: true,
+      },
+    })
+    const mission = await store.createMission({ name: 'Interrupted Backup Mission' })
+
+    await expect(store.syncBackup()).rejects.toThrow(/Injected backup interruption/)
+    await expect(access(path.join(userDataPath!, 'mission-store.backup.sqlite'))).rejects.toThrow()
+    const files = await readdir(userDataPath!)
+    expect(files.some((fileName) => fileName.includes('mission-store.backup.sqlite.tmp'))).toBe(false)
+
+    const eventTypes = (await store.listMissionEvents(mission.id)).map((event) => event.event_type)
+    expect(eventTypes).not.toContain('mission_backup_synced')
+  })
+
+  it('rejects an archive whose embedded SQLite snapshot fails integrity validation [DON-232]', async () => {
+    store = await createStore({
+      archiveFaultInjection: {
+        corruptSnapshotBeforeZip: true,
+      },
+    })
+    const mission = await store.createMission({ name: 'Corrupt Snapshot Archive Mission' })
+    await store.finishMission(mission.id)
+
+    await expect(store.createMissionArchive(mission.id)).rejects.toThrow(/SQLite snapshot/i)
+    const archiveDirectory = path.join(userDataPath!, 'archives')
+    const archiveFiles = await readdir(archiveDirectory).catch(() => [])
+    expect(archiveFiles.filter((fileName) => fileName.endsWith('.zip'))).toEqual([])
   })
 
   it('persists layer catalog metadata in the same userData SQLite database', async () => {
@@ -472,6 +560,10 @@ describe('electron mission store', () => {
 
     await store.clearLayerCatalogMetadata(mission.id)
     await expect(store.listLayerCatalogMetadata(mission.id)).resolves.toEqual([])
+
+    const eventTypes = (await store.listMissionEvents(mission.id)).map((event) => event.event_type)
+    expect(eventTypes.filter((eventType) => eventType === 'layer_catalog_metadata_updated')).toHaveLength(1)
+    expect(eventTypes).toContain('layer_catalog_repaired')
   })
 
   // --- DON-163 / DON-164: audit-event parity with Rust + harness ---
@@ -810,6 +902,55 @@ describe('electron mission store', () => {
     expect(eventTypes.filter((eventType) => eventType === 'mission_finalized')).toHaveLength(1)
   })
 
+  it('serializes concurrent finalize requests so a mission finalizes once with one archive [DON-232]', async () => {
+    store = await createStore()
+    const mission = await store.createMission({ name: 'Concurrent Finalize Mission' })
+    await store.finishMission(mission.id)
+
+    await expect(Promise.all([
+      store.finalizeMission(mission.id),
+      store.finalizeMission(mission.id),
+    ])).resolves.toHaveLength(2)
+
+    const eventTypes = (await store.listMissionEvents(mission.id)).map((event) => event.event_type)
+    expect(eventTypes.filter((eventType) => eventType === 'mission_archive_succeeded')).toHaveLength(1)
+    expect(eventTypes.filter((eventType) => eventType === 'mission_finalized')).toHaveLength(1)
+    await expect(store.getMission(mission.id)).resolves.toMatchObject({ status: 'finalized' })
+  })
+
+  it('creates a fresh archive when a mission is unlocked and finalized again [DON-232]', async () => {
+    store = await createStore({
+      readAdminRoster: async () => ['Duty Admin'],
+    })
+    const mission = await store.createMission({
+      name: 'Refinalize Mission',
+      start_time: '2026-07-06T12:00:00.000Z',
+    })
+    await store.finishMission(mission.id)
+
+    const firstFinalize = await store.finalizeMission(mission.id)
+
+    await expect(
+      store.unlockFinalizedMission({
+        mission_id: mission.id,
+        admin_name: 'Duty Admin',
+        reason: 'Correction requested during review.',
+      }),
+    ).resolves.toMatchObject({ status: 'finished' })
+
+    await new Promise((resolve) => setTimeout(resolve, 5))
+    const secondFinalize = await store.finalizeMission(mission.id)
+
+    expect(secondFinalize.archive.archive_path).not.toBe(firstFinalize.archive.archive_path)
+    const archiveSucceededEvents = (await store.listMissionEvents(mission.id)).filter(
+      (event) => event.event_type === 'mission_archive_succeeded',
+    )
+    expect(archiveSucceededEvents).toHaveLength(2)
+    expect(
+      archiveSucceededEvents.map((event) => JSON.parse(event.details_json ?? '{}').archive_path),
+    ).toEqual([firstFinalize.archive.archive_path, secondFinalize.archive.archive_path])
+  })
+
   it('createMissionArchive builds an archive for a finished mission (DON-162 / DON-34)', async () => {
     store = await createStore()
     const mission = await store.createMission({ name: 'Direct Archive Mission' })
@@ -831,6 +972,13 @@ describe('electron mission store', () => {
   })
 
   async function createStore(options: {
+    readonly readAdminRoster?: () => Promise<readonly string[]>
+    readonly backupFaultInjection?: {
+      readonly afterTemporaryBackup?: boolean
+    }
+    readonly archiveFaultInjection?: {
+      readonly corruptSnapshotBeforeZip?: boolean
+    }
     readonly finalizeMissionFaultInjection?: {
       readonly afterArchiveSucceededEvent?: boolean
     }

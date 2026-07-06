@@ -20,20 +20,40 @@ function createElectronMissionStore(options) {
   const backupPath = path.join(options.userDataPath, BACKUP_FILE_NAME)
   const archiveDirectory = path.join(options.userDataPath, ARCHIVE_DIRECTORY_NAME)
   const finalizeMissionFaultInjection = options.finalizeMissionFaultInjection ?? {}
+  const archiveFaultInjection = options.archiveFaultInjection ?? {}
   const db = new Database(databasePath)
   db.pragma('journal_mode = WAL')
+  db.pragma('synchronous = FULL')
   db.pragma('foreign_keys = ON')
   migrate(db)
+  const backupCoordinator = createBackupCoordinator(db, backupPath, options.backupFaultInjection ?? {})
+  let finalizeTail = Promise.resolve()
+  const enqueueFinalize = (missionId) => {
+    const run = finalizeTail.then(() =>
+      finalizeMission(
+        db,
+        missionId,
+        backupCoordinator,
+        archiveDirectory,
+        finalizeMissionFaultInjection,
+        archiveFaultInjection,
+      ),
+    )
+    finalizeTail = run.catch(() => {})
+    return run
+  }
 
   return {
     close: () => db.close(),
     info: async () => ({
       schema_version: schemaVersion(db),
+      synchronous_mode: db.pragma('synchronous', { simple: true }),
       database_path: databasePath,
       backup_path: backupPath,
     }),
-    syncBackup: async () => syncBackup(db, backupPath),
-    createMissionArchive: async (missionId) => createMissionArchive(db, missionId, backupPath, archiveDirectory),
+    syncBackup: async () => backupCoordinator.syncBackup(),
+    createMissionArchive: async (missionId) =>
+      createMissionArchive(db, missionId, backupCoordinator, archiveDirectory, true, archiveFaultInjection),
     createMission: async (input) => createMission(db, input),
     upsertDevice: async (input) => upsertDevice(db, input),
     getDevice: async (missionId, deviceId) => getDevice(db, missionId, deviceId),
@@ -80,8 +100,7 @@ function createElectronMissionStore(options) {
     pauseMission: async (missionId) => transitionMission(db, missionId, 'active', 'paused'),
     resumeMission: async (missionId) => transitionMission(db, missionId, 'paused', 'active'),
     finishMission: async (missionId) => finishMission(db, missionId),
-    finalizeMission: async (missionId) =>
-      finalizeMission(db, missionId, backupPath, archiveDirectory, finalizeMissionFaultInjection),
+    finalizeMission: async (missionId) => enqueueFinalize(missionId),
     unlockFinalizedMission: async (input) => unlockFinalizedMission(db, input, options.readAdminRoster),
   }
 }
@@ -89,6 +108,15 @@ function createElectronMissionStore(options) {
 function migrate(db) {
   db.exec(`
     CREATE TABLE IF NOT EXISTS metadata (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+  `)
+  const existingSchemaVersion = readStoredSchemaVersion(db)
+  if (existingSchemaVersion > CURRENT_SCHEMA_VERSION) {
+    throw new Error(
+      `Cannot open mission store created by newer mission store schema ${existingSchemaVersion}; this build supports schema ${CURRENT_SCHEMA_VERSION}.`,
+    )
+  }
+
+  db.exec(`
     CREATE TABLE IF NOT EXISTS missions (
       id TEXT PRIMARY KEY,
       name TEXT NOT NULL,
@@ -239,8 +267,13 @@ function migrate(db) {
 }
 
 function schemaVersion(db) {
+  return readStoredSchemaVersion(db) || CURRENT_SCHEMA_VERSION
+}
+
+function readStoredSchemaVersion(db) {
   const row = db.prepare("SELECT value FROM metadata WHERE key = 'schema_version'").get()
-  return Number(row?.value ?? CURRENT_SCHEMA_VERSION)
+  const value = Number(row?.value ?? 0)
+  return Number.isFinite(value) ? value : 0
 }
 
 function ensureColumnExists(db, tableName, columnName, columnSql) {
@@ -252,14 +285,66 @@ function ensureColumnExists(db, tableName, columnName, columnSql) {
   db.prepare(`ALTER TABLE ${tableName} ADD COLUMN ${columnName} ${columnSql}`).run()
 }
 
-async function syncBackup(db, backupPath) {
+function createBackupCoordinator(db, backupPath, faultInjection) {
+  let backupTail = Promise.resolve()
+
+  const enqueue = (task) => {
+    const run = backupTail.then(task, task)
+    backupTail = run.catch(() => {})
+    return run
+  }
+
+  return {
+    syncBackup: () => enqueue(() => syncBackup(db, backupPath, faultInjection)),
+  }
+}
+
+async function syncBackup(db, backupPath, faultInjection = {}) {
   await fs.mkdir(path.dirname(backupPath), { recursive: true })
-  await db.backup(backupPath)
+  const temporaryPath = `${backupPath}.tmp-${randomUUID()}`
+  try {
+    await db.backup(temporaryPath)
+    await validateSqliteDatabaseFile(temporaryPath, 'Rolling mission backup')
+    if (faultInjection.afterTemporaryBackup === true) {
+      throw new Error('Injected backup interruption after temporary backup.')
+    }
+    await fs.rename(temporaryPath, backupPath)
+  } catch (error) {
+    await removeSqliteFileSet(temporaryPath)
+    throw error
+  }
+
   const activeMission = getActiveMission(db)
   if (activeMission !== null) {
     appendEvent(db, activeMission.id, 'mission_backup_synced', { backup_path: backupPath })
   }
   return backupPath
+}
+
+async function removeSqliteFileSet(databasePath) {
+  await Promise.all([
+    fs.rm(databasePath, { force: true }),
+    fs.rm(`${databasePath}-wal`, { force: true }),
+    fs.rm(`${databasePath}-shm`, { force: true }),
+  ])
+}
+
+function validateSqliteDatabaseFile(databasePath, label) {
+  let snapshotDb
+  try {
+    snapshotDb = new Database(databasePath, { readonly: true, fileMustExist: true })
+    const integrityResult = snapshotDb.pragma('integrity_check', { simple: true })
+    if (integrityResult !== 'ok') {
+      throw new Error(`${label} SQLite snapshot failed integrity_check: ${integrityResult}`)
+    }
+  } catch (error) {
+    if (error instanceof Error && error.message.includes('SQLite snapshot failed integrity_check')) {
+      throw error
+    }
+    throw new Error(`${label} SQLite snapshot cannot be opened for integrity validation: ${error instanceof Error ? error.message : String(error)}`)
+  } finally {
+    snapshotDb?.close()
+  }
 }
 
 function createMission(db, input) {
@@ -360,17 +445,28 @@ function calculatePausedSeconds(pauseTime, resumeOrFinishTime) {
  * @param {boolean} [recordArchiveEvent] when true, append a `mission_archived` event
  *   (matching Rust); finalize passes false because it records its own event sequence.
  */
-async function createMissionArchive(db, missionId, backupPath, archiveDirectory, recordArchiveEvent = true) {
+async function createMissionArchive(
+  db,
+  missionId,
+  backupCoordinator,
+  archiveDirectory,
+  recordArchiveEvent = true,
+  archiveFaultInjection = {},
+) {
   const mission = getMission(db, missionId)
   if (mission.status !== 'finished' && mission.status !== 'finalized') {
     throw new Error('Only finished or finalized missions can be archived.')
   }
 
   const createdAt = now()
-  await syncBackup(db, backupPath)
+  const backupPath = await backupCoordinator.syncBackup()
   const snapshotBytes = await fs.readFile(backupPath)
   if (snapshotBytes.length === 0) {
     throw new Error('Mission archive cannot be created from an empty database snapshot.')
+  }
+  let archiveSnapshotBytes = snapshotBytes
+  if (archiveFaultInjection.corruptSnapshotBeforeZip === true) {
+    archiveSnapshotBytes = Buffer.from('corrupt sqlite snapshot', 'utf8')
   }
 
   const manifestBytes = Buffer.from(
@@ -392,7 +488,7 @@ async function createMissionArchive(db, missionId, backupPath, archiveDirectory,
   const entries = [
     { name: 'manifest.json', data: manifestBytes },
     { name: 'mission.json', data: missionBytes },
-    { name: 'mission-store.sqlite', data: snapshotBytes },
+    { name: 'mission-store.sqlite', data: archiveSnapshotBytes },
   ]
 
   for (const attachmentPath of listMarkerAttachmentPaths(db, missionId)) {
@@ -407,9 +503,14 @@ async function createMissionArchive(db, missionId, backupPath, archiveDirectory,
     entries.push({ name: `attachments/${path.basename(attachmentPath)}`, data: attachmentBytes })
   }
 
+  await fs.mkdir(archiveDirectory, { recursive: true })
+  await validateSqliteSnapshotBuffer(
+    archiveSnapshotBytes,
+    'Mission archive embedded SQLite snapshot',
+    archiveDirectory,
+  )
   const archiveBuffer = createZipArchive(entries)
 
-  await fs.mkdir(archiveDirectory, { recursive: true })
   const archiveName = `${missionId}-${createdAt.replace(/:/g, '-')}.zip`
   const temporaryPath = path.join(archiveDirectory, `${archiveName}.tmp`)
   const finalPath = path.join(archiveDirectory, archiveName)
@@ -428,6 +529,16 @@ async function createMissionArchive(db, missionId, backupPath, archiveDirectory,
   }
 
   return { mission_id: missionId, archive_path: finalPath, created_at: createdAt }
+}
+
+async function validateSqliteSnapshotBuffer(snapshotBytes, label, workingDirectory) {
+  const temporaryPath = path.join(workingDirectory, `.sqlite-integrity-${randomUUID()}.sqlite`)
+  try {
+    await fs.writeFile(temporaryPath, snapshotBytes)
+    validateSqliteDatabaseFile(temporaryPath, label)
+  } finally {
+    await removeSqliteFileSet(temporaryPath)
+  }
 }
 
 function listMarkerAttachmentPaths(db, missionId) {
@@ -473,11 +584,19 @@ function validateArchiveFile(archiveBuffer, missionId) {
 async function finalizeMission(
   db,
   missionId,
-  backupPath,
+  backupCoordinator,
   archiveDirectory,
   finalizeMissionFaultInjection = {},
+  archiveFaultInjection = {},
 ) {
   const mission = getMission(db, missionId)
+  if (mission.status === 'finalized') {
+    const existingArchive = await readRecoverableFinalizeArchive(db, missionId)
+    if (existingArchive !== null) {
+      return { mission, archive: existingArchive }
+    }
+    throw new Error('Finalized mission is missing a recoverable archive record.')
+  }
   if (mission.status !== 'finished') {
     throw new Error('Only finished missions can be finalized.')
   }
@@ -487,7 +606,14 @@ async function finalizeMission(
   let archive = await readRecoverableFinalizeArchive(db, missionId)
   if (archive === null) {
     try {
-      archive = await createMissionArchive(db, missionId, backupPath, archiveDirectory, false)
+      archive = await createMissionArchive(
+        db,
+        missionId,
+        backupCoordinator,
+        archiveDirectory,
+        false,
+        archiveFaultInjection,
+      )
     } catch (error) {
       appendEvent(db, missionId, 'mission_archive_failed', {
         resulting_status: 'finished',
@@ -518,33 +644,54 @@ async function finalizeMission(
 }
 
 async function readRecoverableFinalizeArchive(db, missionId) {
-  const row = db.prepare(
-    `SELECT timestamp, details_json FROM mission_events
+  const latestUnlock = db.prepare(
+    `SELECT rowid AS event_rowid, timestamp FROM mission_events
       WHERE mission_id = ? AND event_type = ?
       ORDER BY timestamp DESC, rowid DESC
       LIMIT 1`,
-  ).get(missionId, 'mission_archive_succeeded')
-  if (row === undefined) {
-    return null
-  }
+  ).get(missionId, 'mission_unlocked')
 
-  const details = readEventDetails(row.details_json)
-  const archivePath = typeof details.archive_path === 'string' ? details.archive_path : ''
-  if (archivePath === '') {
-    return null
-  }
+  const rows = db.prepare(
+    `SELECT rowid AS event_rowid, timestamp, details_json FROM mission_events
+      WHERE mission_id = ? AND event_type = ?
+      ORDER BY timestamp DESC, rowid DESC`,
+  ).all(missionId, 'mission_archive_succeeded')
 
-  try {
-    await fs.access(archivePath)
-  } catch {
-    return null
-  }
+  for (const row of rows) {
+    if (latestUnlock !== undefined && !isEventAfter(row, latestUnlock)) {
+      continue
+    }
+    const details = readEventDetails(row.details_json)
+    const archivePath = typeof details.archive_path === 'string' ? details.archive_path : ''
+    if (archivePath === '') {
+      continue
+    }
 
-  return {
-    mission_id: missionId,
-    archive_path: archivePath,
-    created_at: typeof row.timestamp === 'string' ? row.timestamp : now(),
+    try {
+      await fs.access(archivePath)
+    } catch {
+      continue
+    }
+
+    return {
+      mission_id: missionId,
+      archive_path: archivePath,
+      created_at: typeof row.timestamp === 'string' ? row.timestamp : now(),
+    }
   }
+  return null
+}
+
+function isEventAfter(candidate, reference) {
+  const candidateTimestamp = typeof candidate.timestamp === 'string' ? candidate.timestamp : ''
+  const referenceTimestamp = typeof reference.timestamp === 'string' ? reference.timestamp : ''
+  if (candidateTimestamp > referenceTimestamp) {
+    return true
+  }
+  if (candidateTimestamp < referenceTimestamp) {
+    return false
+  }
+  return Number(candidate.event_rowid) > Number(reference.event_rowid)
 }
 
 function readEventDetails(input) {
@@ -737,7 +884,7 @@ function latestPositions(db, missionId) {
 
 // High-volume tracking heartbeats excluded from the review audit log by default.
 // Mirrors src/features/mission-review/audit-events.ts (kept in sync by tests).
-const TELEMETRY_EVENT_TYPES = ['device_updated', 'position_recorded']
+const TELEMETRY_EVENT_TYPES = ['device_updated', 'position_recorded', 'mission_backup_synced']
 const DEFAULT_AUDIT_EVENT_LIMIT = 500
 const MAX_AUDIT_EVENT_LIMIT = 5000
 
@@ -1009,7 +1156,8 @@ function listLayerCatalogMetadata(db, missionId) {
 function upsertLayerCatalogMetadata(db, input) {
   ensureWritableMission(db, input.missionId)
   const timestamp = now()
-  db.prepare(`INSERT INTO layer_catalog_entries (
+  const transaction = db.transaction(() => {
+    db.prepare(`INSERT INTO layer_catalog_entries (
       mission_id, node_id, parent_node_id, node_kind, alias, is_favorite, is_visible,
       display_order, metadata_json, updated_at
     )
@@ -1035,6 +1183,14 @@ function upsertLayerCatalogMetadata(db, input) {
       input.metadataJson ?? null,
       timestamp,
     )
+    insertEvent(db, input.missionId, 'layer_catalog_metadata_updated', timestamp, {
+      node_id: input.nodeId,
+      parent_node_id: input.parentNodeId,
+      node_kind: input.nodeKind,
+      is_visible: Boolean(input.isVisible ?? true),
+    })
+  })
+  transaction()
   const row = db.prepare(`SELECT mission_id, node_id, parent_node_id, node_kind, alias, is_favorite,
       is_visible, display_order, metadata_json, updated_at
       FROM layer_catalog_entries
