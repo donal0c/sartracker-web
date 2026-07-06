@@ -17,6 +17,7 @@ export type NormalizedTrackingPosition = {
   readonly lat: number
   readonly lon: number
   readonly altitude: number | null
+  /** Speed normalized from Traccar API knots into kilometres per hour. */
   readonly speed: number | null
   readonly battery: number | null
   readonly accuracy: number | null

@@ -802,8 +802,8 @@ function addPositionsBulk(db, input) {
   }
 
   const deviceExists = db.prepare('SELECT id FROM devices WHERE mission_id = ? AND device_id = ?')
-  const existingPosition = db.prepare(
-    'SELECT id FROM positions WHERE mission_id = ? AND device_id = ? AND timestamp = ? LIMIT 1',
+  const existingPositionByCoordinate = db.prepare(
+    'SELECT id FROM positions WHERE mission_id = ? AND device_id = ? AND timestamp = ? AND lat = ? AND lon = ? LIMIT 1',
   )
   const insertPosition = db.prepare(`INSERT INTO positions (id, mission_id, device_id, name, lat, lon, altitude, speed, battery, accuracy, source, timestamp, data_origin)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
@@ -819,13 +819,21 @@ function addPositionsBulk(db, input) {
       }
 
       const timestamp = position.timestamp ?? now()
-      const positionKey = `${position.device_id}:${timestamp}`
+      const positionKey = createPositionIdentityKey(position, timestamp)
       if (seenInBatch.has(positionKey)) {
         continue
       }
       seenInBatch.add(positionKey)
 
-      if (existingPosition.get(input.mission_id, position.device_id, timestamp) !== undefined) {
+      if (
+        existingPositionByCoordinate.get(
+          input.mission_id,
+          position.device_id,
+          timestamp,
+          position.lat,
+          position.lon,
+        ) !== undefined
+      ) {
         continue
       }
 
@@ -860,6 +868,14 @@ function addPositionsBulk(db, input) {
 
   transaction()
   return insertedIds.map((id) => getById(db, 'positions', id, 'Position'))
+}
+
+function createPositionIdentityKey(position, timestamp) {
+  if (typeof position.id === 'string' && position.id.trim() !== '') {
+    return `${position.device_id}:id:${position.id}`
+  }
+
+  return `${position.device_id}:fix:${timestamp}:${Number(position.lat).toFixed(7)}:${Number(position.lon).toFixed(7)}`
 }
 
 function countPositions(db, missionId, deviceId) {

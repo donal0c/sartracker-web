@@ -237,12 +237,12 @@ describe('polling manager', () => {
 
     expect(client.getBreadcrumbs).toHaveBeenCalledWith(
       '1',
-      new Date('2026-04-06T10:10:00.000Z'),
+      new Date('2026-04-06T10:05:00.000Z'),
       expect.any(Date),
     )
     expect(client.getBreadcrumbs).toHaveBeenCalledWith(
       '2',
-      new Date('2026-04-06T10:20:00.000Z'),
+      new Date('2026-04-06T10:15:00.000Z'),
       expect.any(Date),
     )
     expect(client.getBreadcrumbs).not.toHaveBeenCalledWith(
@@ -251,6 +251,196 @@ describe('polling manager', () => {
       expect.any(Date),
     )
     expect(onSnapshot.mock.calls[0]?.[0].breadcrumbs).toEqual(persistedBreadcrumbs)
+
+    poller.stop()
+  })
+
+  it('overlaps incremental breadcrumb fetches so buffered older fixes are not skipped [DON-233]', async () => {
+    const firstBatch = [
+      {
+        ...NORMALIZED_POSITIONS[0],
+        id: 'newest-first-poll',
+        timestamp: '2026-04-06T10:20:00.000Z',
+      },
+    ] satisfies readonly NormalizedTrackingPosition[]
+    const bufferedOlderFix = {
+      ...NORMALIZED_POSITIONS[0],
+      id: 'buffered-older-fix',
+      timestamp: '2026-04-06T10:16:00.000Z',
+    } satisfies NormalizedTrackingPosition
+    const client = createClient({
+      getBreadcrumbs: vi.fn()
+        .mockResolvedValueOnce(firstBatch)
+        .mockResolvedValueOnce([bufferedOlderFix]),
+    })
+    const onSnapshot = vi.fn()
+    let currentTime = new Date('2026-04-06T10:20:00.000Z')
+
+    const poller = createPollingManager(client, {
+      intervalMs: 5_000,
+      staleThresholdMs: 60 * 60 * 1000,
+      onSnapshot,
+      onStatusChange: vi.fn(),
+      getBreadcrumbDeviceIds: () => ['1'],
+      now: () => currentTime,
+    })
+
+    poller.start()
+    await vi.advanceTimersByTimeAsync(0)
+    currentTime = new Date('2026-04-06T10:25:00.000Z')
+    await vi.advanceTimersByTimeAsync(5_000)
+
+    const secondFetchFrom = vi.mocked(client.getBreadcrumbs).mock.calls[1]?.[1]
+    expect(secondFetchFrom?.getTime()).toBeLessThan(Date.parse('2026-04-06T10:16:00.000Z'))
+    expect(
+      onSnapshot.mock.calls
+        .map((call) => call[0] as TrackingSnapshot)
+        .some((snapshot) =>
+          snapshot.breadcrumbs.some((breadcrumb) => breadcrumb.id === 'buffered-older-fix'),
+        ),
+    ).toBe(true)
+
+    poller.stop()
+  })
+
+  it('clamps future breadcrumb timestamps to the completed fetch window [DON-233]', async () => {
+    const futureBreadcrumb = {
+      ...NORMALIZED_POSITIONS[0],
+      id: 'future-clock-skew',
+      timestamp: '2026-04-06T10:45:00.000Z',
+    } satisfies NormalizedTrackingPosition
+    const client = createClient({
+      getBreadcrumbs: vi.fn()
+        .mockResolvedValueOnce([futureBreadcrumb])
+        .mockResolvedValueOnce([]),
+    })
+    let currentTime = new Date('2026-04-06T10:20:00.000Z')
+
+    const poller = createPollingManager(client, {
+      intervalMs: 5_000,
+      staleThresholdMs: 60 * 60 * 1000,
+      onSnapshot: vi.fn(),
+      onStatusChange: vi.fn(),
+      getBreadcrumbDeviceIds: () => ['1'],
+      now: () => currentTime,
+    })
+
+    poller.start()
+    await vi.advanceTimersByTimeAsync(0)
+    currentTime = new Date('2026-04-06T10:25:00.000Z')
+    await vi.advanceTimersByTimeAsync(5_000)
+
+    const secondFetchFrom = vi.mocked(client.getBreadcrumbs).mock.calls[1]?.[1]
+    const secondFetchTo = vi.mocked(client.getBreadcrumbs).mock.calls[1]?.[2]
+    expect(secondFetchFrom?.getTime()).toBeLessThanOrEqual(secondFetchTo!.getTime())
+    expect(secondFetchFrom?.getTime()).toBeLessThan(Date.parse('2026-04-06T10:25:00.000Z'))
+
+    poller.stop()
+  })
+
+  it('advances breadcrumb cursors by the maximum timestamp in an unsorted batch [DON-233]', async () => {
+    const unsortedBatch = [
+      {
+        ...NORMALIZED_POSITIONS[0],
+        id: 'later-first',
+        timestamp: '2026-04-06T10:20:00.000Z',
+      },
+      {
+        ...NORMALIZED_POSITIONS[0],
+        id: 'earlier-second',
+        timestamp: '2026-04-06T10:05:00.000Z',
+      },
+    ] satisfies readonly NormalizedTrackingPosition[]
+    const client = createClient({
+      getBreadcrumbs: vi.fn()
+        .mockResolvedValueOnce(unsortedBatch)
+        .mockResolvedValueOnce([]),
+    })
+    let currentTime = new Date('2026-04-06T10:20:00.000Z')
+
+    const poller = createPollingManager(client, {
+      intervalMs: 5_000,
+      staleThresholdMs: 60 * 60 * 1000,
+      onSnapshot: vi.fn(),
+      onStatusChange: vi.fn(),
+      getBreadcrumbDeviceIds: () => ['1'],
+      now: () => currentTime,
+    })
+
+    poller.start()
+    await vi.advanceTimersByTimeAsync(0)
+    currentTime = new Date('2026-04-06T10:25:00.000Z')
+    await vi.advanceTimersByTimeAsync(5_000)
+
+    const secondFetchFrom = vi.mocked(client.getBreadcrumbs).mock.calls[1]?.[1]
+    expect(secondFetchFrom?.getTime()).toBeGreaterThan(Date.parse('2026-04-06T10:05:00.000Z'))
+    expect(secondFetchFrom?.getTime()).toBeLessThan(Date.parse('2026-04-06T10:20:00.000Z'))
+
+    poller.stop()
+  })
+
+  it('does not continue with a truncated fallback history window after seed failure [DON-233]', async () => {
+    const client = createClient({
+      getBreadcrumbs: vi.fn().mockResolvedValue([]),
+    })
+    const logger = { warn: vi.fn() }
+
+    const poller = createPollingManager(client, {
+      intervalMs: 5_000,
+      staleThresholdMs: 60 * 60 * 1000,
+      onSnapshot: vi.fn(),
+      onStatusChange: vi.fn(),
+      getInitialBreadcrumbs: async () => {
+        throw new Error('sqlite read failed')
+      },
+      logger,
+      now: () => new Date('2026-04-06T10:35:00.000Z'),
+    })
+
+    poller.start()
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect(client.getBreadcrumbs).not.toHaveBeenCalled()
+    expect(logger.warn).toHaveBeenCalledWith(
+      'Tracking breadcrumb cursor load failed.',
+      expect.objectContaining({ error: 'sqlite read failed' }),
+    )
+
+    poller.stop()
+  })
+
+  it('classifies authentication failures without keeping the poller authenticated [DON-234]', async () => {
+    const authenticationError = new Error('Session expired')
+    authenticationError.name = 'TraccarAuthenticationError'
+    const client = createClient({
+      getDevices: vi
+        .fn()
+        .mockRejectedValueOnce(authenticationError)
+        .mockResolvedValue(NORMALIZED_DEVICES as readonly NormalizedTrackingDevice[]),
+      getBreadcrumbs: vi.fn().mockResolvedValue([]),
+    })
+    const onStatusChange = vi.fn()
+
+    const poller = createPollingManager(client, {
+      intervalMs: 5_000,
+      staleThresholdMs: 60 * 60 * 1000,
+      onSnapshot: vi.fn(),
+      onStatusChange,
+      retryBaseMs: 1_000,
+      now: () => new Date('2026-04-06T10:35:00.000Z'),
+    })
+
+    poller.start()
+    await vi.advanceTimersByTimeAsync(0)
+    await vi.advanceTimersByTimeAsync(1_000)
+
+    expect(client.authenticate).toHaveBeenCalledTimes(2)
+    expect(onStatusChange).toHaveBeenCalledWith(
+      expect.objectContaining({
+        mode: 'offline',
+        warning: 'TRACKING AUTHENTICATION FAILED — check Traccar credentials.',
+      }),
+    )
 
     poller.stop()
   })
@@ -271,7 +461,7 @@ describe('polling manager', () => {
     const secondBatch = [
       {
         ...NORMALIZED_POSITIONS[0],
-        id: 'breadcrumb-at-boundary-duplicate',
+        id: 'breadcrumb-at-boundary',
         timestamp: '2026-04-06T10:00:05.000Z',
       },
       {
@@ -305,7 +495,7 @@ describe('polling manager', () => {
     expect(client.getBreadcrumbs).toHaveBeenNthCalledWith(
       2,
       '1',
-      new Date('2026-04-06T10:00:05.000Z'),
+      new Date('2026-04-06T09:55:05.000Z'),
       expect.any(Date),
     )
     expect(

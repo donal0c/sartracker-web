@@ -62,6 +62,7 @@ type ElectronMissionStore = {
     readonly status: string
   }) => Promise<{ readonly device_id: string }>
   readonly addPosition: (input: {
+    readonly id?: string
     readonly mission_id: string
     readonly device_id: string
     readonly lat: number
@@ -71,6 +72,7 @@ type ElectronMissionStore = {
   readonly addPositionsBulk: (input: {
     readonly mission_id: string
     readonly positions: readonly {
+      readonly id?: string
       readonly device_id: string
       readonly lat: number
       readonly lon: number
@@ -401,6 +403,42 @@ describe('electron mission store', () => {
     )
     const auditEvents = await store.listAuditEvents(mission.id)
     expect(auditEvents.map((event) => event.event_type)).not.toContain('position_recorded')
+  })
+
+  it('bulk records same-second distinct Traccar positions when upstream ids differ [DON-233]', async () => {
+    store = await createStore()
+    const mission = await store.createMission({ name: 'Same Second Tracking Mission' })
+    await store.upsertDevice({
+      mission_id: mission.id,
+      device_id: 'tracker-1',
+      name: 'Tracker One',
+      color: '#00AAFF',
+      status: 'unknown',
+    })
+
+    await expect(
+      store.addPositionsBulk({
+        mission_id: mission.id,
+        positions: [
+          {
+            id: 'traccar-9001',
+            device_id: 'tracker-1',
+            lat: 52.0599,
+            lon: -9.5045,
+            timestamp: '2026-06-13T12:00:05.000Z',
+          },
+          {
+            id: 'traccar-9002',
+            device_id: 'tracker-1',
+            lat: 52.0601,
+            lon: -9.5047,
+            timestamp: '2026-06-13T12:00:05.000Z',
+          },
+        ],
+      }),
+    ).resolves.toHaveLength(2)
+
+    await expect(store.countPositions(mission.id)).resolves.toBe(2)
   })
 
   it('counts positions without loading position rows for Mission Review [DON-202]', async () => {

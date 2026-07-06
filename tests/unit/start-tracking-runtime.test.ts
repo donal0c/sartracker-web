@@ -272,6 +272,72 @@ describe('startTrackingRuntime', () => {
     )
   })
 
+  it('persists same-second distinct Traccar positions when their upstream ids differ [DON-233]', async () => {
+    const addPositionsBulk = vi.fn().mockResolvedValue(undefined)
+    const sameSecondBreadcrumbs = [
+      {
+        ...SNAPSHOT.breadcrumbs[0]!,
+        id: 'traccar-9001',
+        device_id: '2',
+        lat: 52.001,
+        lon: -9.701,
+        timestamp: '2026-04-06T10:00:05.000Z',
+      },
+      {
+        ...SNAPSHOT.breadcrumbs[0]!,
+        id: 'traccar-9002',
+        device_id: '2',
+        lat: 52.002,
+        lon: -9.702,
+        timestamp: '2026-04-06T10:00:05.000Z',
+      },
+    ] satisfies readonly TrackingSnapshot['breadcrumbs'][number][]
+    let pollerHooks:
+      | {
+          onSnapshot: (snapshot: TrackingSnapshot) => void | Promise<void>
+          onStatusChange: (status: TrackingConnectionStatus) => void
+        }
+      | undefined
+
+    await startTrackingRuntime({
+      config: { baseUrl: 'http://test:8082' },
+      createClient: vi.fn().mockReturnValue({}),
+      createPoller: vi.fn().mockImplementation((_client, hooks) => {
+        pollerHooks = hooks
+        return { start: vi.fn(), stop: vi.fn() }
+      }),
+      cache: {
+        read: vi.fn().mockResolvedValue(null),
+        write: vi.fn().mockResolvedValue('/tmp/tracking-cache.json'),
+      },
+      missionStore: createMissionStoreStub({
+        getActiveMission: vi.fn().mockResolvedValue({ id: 'mission-1' }),
+        listPositions: vi.fn().mockResolvedValue([]),
+        addPositionsBulk,
+      }),
+      applySnapshot: vi.fn(),
+      applyStatus: vi.fn(),
+      writeCache: false,
+      now: () => new Date('2026-04-06T10:35:00.000Z'),
+    })
+
+    await pollerHooks?.onSnapshot({
+      ...SNAPSHOT,
+      breadcrumbs: sameSecondBreadcrumbs,
+      rawBreadcrumbsForPersistence: sameSecondBreadcrumbs,
+      positions: [],
+    })
+
+    expect(addPositionsBulk).toHaveBeenCalledWith({
+      mission_id: 'mission-1',
+      positions: expect.arrayContaining([
+        expect.objectContaining({ id: 'traccar-9001' }),
+        expect.objectContaining({ id: 'traccar-9002' }),
+      ]),
+    })
+    expect(addPositionsBulk.mock.calls[0]![0].positions).toHaveLength(2)
+  })
+
   it('records diagnostic breadcrumbs for tracking status and snapshot summaries [DON-226]', async () => {
     const recordDiagnosticEvent = vi.fn().mockResolvedValue(undefined)
     let pollerHooks:

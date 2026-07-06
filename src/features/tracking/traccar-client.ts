@@ -38,6 +38,13 @@ type TraccarClientLogger = {
   readonly warn: (message: string, context: Record<string, unknown>) => void
 }
 
+export class TraccarAuthenticationError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'TraccarAuthenticationError'
+  }
+}
+
 type TraccarRowContext = {
   readonly endpoint: string
   readonly rowIndex: number
@@ -105,16 +112,16 @@ export function createTraccarClient(
       }
 
       try {
-        const controller = new AbortController()
-        const timeout = window.setTimeout(() => controller.abort(), timeoutMs)
-        const response = await fetchFn(url.toString(), {
+        const response = await fetchWithTimeout(url.toString(), {
           headers: buildHeaders(),
-          signal: controller.signal,
         })
-        window.clearTimeout(timeout)
+
+        if (isAuthenticationResponse(response)) {
+          return await retryAfterAuthenticationFailure(url.toString())
+        }
 
         if (!response.ok) {
-          throw new Error(`HTTP ${response.status}: ${response.statusText}`)
+          throw createHttpError(response)
         }
 
         return await response.json()
@@ -127,6 +134,79 @@ export function createTraccarClient(
     throw lastError ?? new Error('Traccar request failed unexpectedly.')
   }
 
+  const fetchWithTimeout = async (url: string, init: RequestInit): Promise<Response> => {
+    const controller = new AbortController()
+    const timeout = window.setTimeout(() => controller.abort(), timeoutMs)
+    try {
+      return await fetchFn(url, {
+        ...init,
+        signal: controller.signal,
+      })
+    } finally {
+      window.clearTimeout(timeout)
+    }
+  }
+
+  const retryAfterAuthenticationFailure = async (url: string): Promise<unknown> => {
+    sessionCookie = null
+
+    if (config.token) {
+      throw new TraccarAuthenticationError('Traccar bearer token was rejected by the server.')
+    }
+
+    if (!config.email || !config.password) {
+      throw new TraccarAuthenticationError('Traccar request was rejected and no credentials are configured.')
+    }
+
+    await authenticateWithCredentials()
+    const response = await fetchWithTimeout(url, {
+      headers: buildHeaders(),
+    })
+
+    if (isAuthenticationResponse(response)) {
+      sessionCookie = null
+      throw new TraccarAuthenticationError(
+        `Traccar authentication failed after session refresh: ${response.status} ${response.statusText}`,
+      )
+    }
+
+    if (!response.ok) {
+      throw createHttpError(response)
+    }
+
+    return response.json()
+  }
+
+  const authenticateWithCredentials = async (): Promise<void> => {
+    if (!config.email || !config.password) {
+      return
+    }
+
+    const body = new URLSearchParams({
+      email: config.email,
+      password: config.password,
+    })
+
+    const response = await fetchFn(`${baseUrl}/api/session`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body: body.toString(),
+    })
+
+    if (!response.ok) {
+      sessionCookie = null
+      throw new TraccarAuthenticationError(
+        `Authentication failed: ${response.status} ${response.statusText}`,
+      )
+    }
+
+    const setCookie = response.headers.get('set-cookie')
+    const match = setCookie?.match(/JSESSIONID=([^;]+)/)
+    sessionCookie = match?.[1] ?? null
+  }
+
   return {
     authenticate: async () => {
       if (config.token || sessionCookie !== null) {
@@ -137,26 +217,7 @@ export function createTraccarClient(
         return
       }
 
-      const body = new URLSearchParams({
-        email: config.email,
-        password: config.password,
-      })
-
-      const response = await fetchFn(`${baseUrl}/api/session`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded',
-        },
-        body: body.toString(),
-      })
-
-      if (!response.ok) {
-        throw new Error(`Authentication failed: ${response.status} ${response.statusText}`)
-      }
-
-      const setCookie = response.headers.get('set-cookie')
-      const match = setCookie?.match(/JSESSIONID=([^;]+)/)
-      sessionCookie = match?.[1] ?? null
+      await authenticateWithCredentials()
     },
     getDevices: async () => {
       const data = await fetchJson('/api/devices')
@@ -256,6 +317,14 @@ function createRowContext(
   return input.deviceId === undefined
     ? { endpoint: input.endpoint, rowIndex }
     : { endpoint: input.endpoint, rowIndex, deviceId: input.deviceId }
+}
+
+function isAuthenticationResponse(response: Response): boolean {
+  return response.status === 401 || response.status === 403
+}
+
+function createHttpError(response: Response): Error {
+  return new Error(`HTTP ${response.status}: ${response.statusText}`)
 }
 
 function sleep(delayMs: number): Promise<void> {

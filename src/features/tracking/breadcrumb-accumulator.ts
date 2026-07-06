@@ -2,6 +2,7 @@ import type {
   BreadcrumbSnapshotMetadata,
   NormalizedTrackingPosition,
 } from './tracking-types'
+import { createTrackingPositionIdentityKey } from './tracking-position-identity'
 
 // Keep each live device trail bounded independently while preserving the shape
 // of the full requested window. A high-frequency tracker must not evict another
@@ -413,5 +414,5 @@ function retainDeviceTrailAcrossWindow(
 }
 
 function createPositionKey(position: NormalizedTrackingPosition): string {
-  return `${position.device_id}:${position.timestamp}`
+  return createTrackingPositionIdentityKey(position)
 }

@@ -99,7 +99,7 @@ test.describe('M12 settings workspace', () => {
   test('DON-228: incremental breadcrumb polling keeps sub-second points after the cursor', async ({
     page,
   }) => {
-    const breadcrumbRequests = await routeTraccarCursorBoundarySequence(page)
+    const cursorScenario = await routeTraccarCursorBoundarySequence(page)
 
     await page.getByTestId('open-settings-workspace').click()
     await expect(page.getByTestId('settings-workspace')).toBeVisible()
@@ -113,6 +113,7 @@ test.describe('M12 settings workspace', () => {
     await expect(page.getByTestId('settings-workspace')).toBeHidden()
 
     await page.getByTestId('mission-name-input').fill('Cursor Boundary Mission')
+    await page.getByTestId('mission-offset-input').fill('1')
     await page.getByTestId('mission-start-btn').click()
     await expect(page.getByTestId('mission-control')).toContainText('active')
 
@@ -122,10 +123,18 @@ test.describe('M12 settings workspace', () => {
     await expect(page.getByTestId('tracking-status')).toContainText('online', { timeout: 15_000 })
 
     await expect
-      .poll(() => breadcrumbRequests.length, { timeout: 15_000 })
-      .toBeGreaterThanOrEqual(2)
+      .poll(() => cursorScenario.breadcrumbRequests.length, { timeout: 15_000 })
+      .toBeGreaterThanOrEqual(3)
 
-    expect(breadcrumbRequests[1]?.from).toBe('2026-04-06T10:00:05.000Z')
+    await expect
+      .poll(
+        () =>
+          cursorScenario.breadcrumbRequests.some(
+            (request) => request.from === cursorScenario.expectedOverlapFrom,
+          ),
+        { timeout: 15_000 },
+      )
+      .toBe(true)
 
     await expect
       .poll(
@@ -148,7 +157,7 @@ test.describe('M12 settings workspace', () => {
       )
       .toEqual(expect.arrayContaining([
         expect.objectContaining({
-          timestamp: '2026-04-06T10:00:05.500Z',
+          timestamp: cursorScenario.afterBoundaryTimestamp,
         }),
       ]))
   })
@@ -387,6 +396,12 @@ async function routeTraccarSuccess(
 async function routeTraccarCursorBoundarySequence(page: import('@playwright/test').Page) {
   const breadcrumbRequests: { from: string | null; to: string | null }[] = []
   let breadcrumbRequestCount = 0
+  const cursorBoundaryMs = Date.now() - 30_000
+  const cursorBoundaryTimestamp = new Date(cursorBoundaryMs).toISOString()
+  const beforeBoundaryTimestamp = new Date(cursorBoundaryMs - 100).toISOString()
+  const afterBoundaryTimestamp = new Date(cursorBoundaryMs + 500).toISOString()
+  const currentTimestamp = new Date(cursorBoundaryMs + 5_000).toISOString()
+  const expectedOverlapFrom = new Date(cursorBoundaryMs - 5 * 60 * 1000).toISOString()
 
   await page.route('http://traccar.test:8082/api/session', async (route) => {
     await route.fulfill({
@@ -408,7 +423,7 @@ async function routeTraccarCursorBoundarySequence(page: import('@playwright/test
           id: 1,
           name: 'S-Tab',
           status: 'online',
-          lastUpdate: '2026-04-06T10:00:10.000Z',
+          lastUpdate: currentTimestamp,
           uniqueId: '52959800',
           category: 'person',
         },
@@ -431,7 +446,7 @@ async function routeTraccarCursorBoundarySequence(page: import('@playwright/test
               deviceId: 1,
               latitude: 51.99917,
               longitude: -9.74406,
-              fixTime: '2026-04-06T10:00:04.900Z',
+              fixTime: beforeBoundaryTimestamp,
               valid: true,
               attributes: { batteryLevel: 82 },
             },
@@ -440,7 +455,7 @@ async function routeTraccarCursorBoundarySequence(page: import('@playwright/test
               deviceId: 1,
               latitude: 51.99918,
               longitude: -9.74407,
-              fixTime: '2026-04-06T10:00:05.000Z',
+              fixTime: cursorBoundaryTimestamp,
               valid: true,
               attributes: { batteryLevel: 82 },
             },
@@ -451,7 +466,7 @@ async function routeTraccarCursorBoundarySequence(page: import('@playwright/test
               deviceId: 1,
               latitude: 51.99918,
               longitude: -9.74407,
-              fixTime: '2026-04-06T10:00:05.000Z',
+              fixTime: cursorBoundaryTimestamp,
               valid: true,
               attributes: { batteryLevel: 82 },
             },
@@ -460,7 +475,7 @@ async function routeTraccarCursorBoundarySequence(page: import('@playwright/test
               deviceId: 1,
               latitude: 51.99919,
               longitude: -9.74408,
-              fixTime: '2026-04-06T10:00:05.500Z',
+              fixTime: afterBoundaryTimestamp,
               valid: true,
               attributes: { batteryLevel: 82 },
             },
@@ -482,7 +497,7 @@ async function routeTraccarCursorBoundarySequence(page: import('@playwright/test
           deviceId: 1,
           latitude: 51.9992,
           longitude: -9.7441,
-          fixTime: '2026-04-06T10:00:10.000Z',
+          fixTime: currentTimestamp,
           valid: true,
           attributes: { batteryLevel: 82 },
         },
@@ -490,5 +505,9 @@ async function routeTraccarCursorBoundarySequence(page: import('@playwright/test
     })
   })
 
-  return breadcrumbRequests
+  return {
+    afterBoundaryTimestamp,
+    breadcrumbRequests,
+    expectedOverlapFrom,
+  }
 }

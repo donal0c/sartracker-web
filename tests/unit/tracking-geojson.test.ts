@@ -266,7 +266,7 @@ describe('tracking geojson', () => {
 
     const accumulated = appendBreadcrumbPositions(existing, incoming)
 
-    expect(accumulated).toHaveLength(24_600)
+    expect(accumulated).toHaveLength(25_000)
     expect(accumulated[0]?.timestamp).toBe('2026-05-14T10:00:00.000Z')
     expect(accumulated.at(-1)?.timestamp).toBe('2026-05-14T16:49:59.000Z')
   })

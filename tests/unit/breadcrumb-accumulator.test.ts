@@ -30,6 +30,33 @@ describe('breadcrumb accumulator', () => {
     expect(deduplicated).toHaveLength(3)
   })
 
+  it('keeps same-second distinct Traccar positions when ids differ [DON-233]', () => {
+    const first = normalizeTraccarPosition(
+      {
+        id: 101,
+        deviceId: 7,
+        latitude: 52.001,
+        longitude: -9.701,
+        fixTime: '2026-04-06T10:00:05.000Z',
+      },
+      'live',
+    )
+    const second = normalizeTraccarPosition(
+      {
+        id: 102,
+        deviceId: 7,
+        latitude: 52.002,
+        longitude: -9.702,
+        fixTime: '2026-04-06T10:00:05.000Z',
+      },
+      'live',
+    )
+
+    const accumulated = appendBreadcrumbPositions([], [first, second])
+
+    expect(accumulated.map((position) => position.id)).toEqual(['101', '102'])
+  })
+
   it('does not rebuild breadcrumb history when an incremental poll has no new positions', () => {
     const positions = breadcrumbsFixture.map((position) =>
       normalizeTraccarPosition(position, 'live'),

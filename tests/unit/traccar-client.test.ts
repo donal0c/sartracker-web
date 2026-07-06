@@ -63,6 +63,69 @@ describe('traccar client', () => {
     expect(capturedHeaders[0].Cookie).toBe('JSESSIONID=session-123')
   })
 
+  it('reauthenticates with a fresh session when the stored session cookie expires [DON-234]', async () => {
+    const capturedHeaders: Record<string, string>[] = []
+    let sessionAttempt = 0
+    const fetchFn: TraccarFetch = vi.fn(async (url, init) => {
+      const parsed = new URL(url)
+
+      if (parsed.pathname === '/api/session') {
+        sessionAttempt += 1
+        return createJsonResponse({}, {
+          headers: {
+            'Set-Cookie': `JSESSIONID=session-${sessionAttempt}; Path=/`,
+          },
+        })
+      }
+
+      capturedHeaders.push(init?.headers as Record<string, string>)
+      if (capturedHeaders.length === 1) {
+        return createJsonResponse({ error: 'expired' }, { status: 401, statusText: 'Unauthorized' })
+      }
+
+      return createJsonResponse(devicesFixture)
+    })
+
+    const client = createTraccarClient(
+      {
+        baseUrl: 'http://test:8082/',
+        email: 'test@example.com',
+        password: 'secret',
+        maxRetries: 0,
+      },
+      fetchFn,
+    )
+
+    await client.authenticate()
+    await expect(client.getDevices()).resolves.toHaveLength(2)
+
+    expect(fetchFn).toHaveBeenCalledWith('http://test:8082/api/session', expect.objectContaining({
+      method: 'POST',
+    }))
+    expect(capturedHeaders.map((headers) => headers.Cookie)).toEqual([
+      'JSESSIONID=session-1',
+      'JSESSIONID=session-2',
+    ])
+  })
+
+  it('clears request timeout handles when fetch rejects [DON-234]', async () => {
+    const clearTimeoutSpy = vi.spyOn(window, 'clearTimeout')
+    const fetchFn: TraccarFetch = vi.fn(async () => {
+      throw new Error('network down')
+    })
+
+    const client = createTraccarClient(
+      {
+        baseUrl: 'http://test:8082',
+        maxRetries: 0,
+      },
+      fetchFn,
+    )
+
+    await expect(client.getDevices()).rejects.toThrow(/network down/)
+    expect(clearTimeoutSpy).toHaveBeenCalledTimes(1)
+  })
+
   it('falls back to basic auth when no session is present', async () => {
     const capturedHeaders: Record<string, string>[] = []
     const fetchFn: TraccarFetch = vi.fn(async (_url, init) => {

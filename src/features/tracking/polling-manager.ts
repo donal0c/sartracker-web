@@ -50,6 +50,7 @@ const DEFAULT_MAX_BACKOFF_MS = 60_000
 const DEFAULT_POLL_INTERVAL_MS = 30_000
 const MIN_POLL_INTERVAL_MS = 5_000
 const MAX_POLL_INTERVAL_MS = 3_600_000
+const BREADCRUMB_CURSOR_OVERLAP_MS = 5 * 60 * 1000
 
 const DEFAULT_LOGGER: PollingManagerLogger = {
   warn: (message, context) => {
@@ -170,7 +171,7 @@ export function createPollingManager(
         return
       }
 
-      await seedInitialBreadcrumbs()
+      const seedState = await seedInitialBreadcrumbs()
 
       const recovered = consecutiveFailures > 0
       consecutiveFailures = 0
@@ -199,7 +200,7 @@ export function createPollingManager(
               : null,
       })
 
-      const breadcrumbs = await fetchIncrementalBreadcrumbs(devices)
+      const breadcrumbs = await fetchIncrementalBreadcrumbs(devices, seedState)
       const breadcrumbResult = breadcrumbAccumulator.append(breadcrumbs)
       breadcrumbPositions = breadcrumbResult.positions
       breadcrumbMetadata = breadcrumbResult.metadata
@@ -233,8 +234,11 @@ export function createPollingManager(
       })
 
       scheduleNextPoll(pollIntervalMs)
-    } catch {
+    } catch (error) {
       consecutiveFailures += 1
+      if (isAuthenticationFailure(error)) {
+        authenticated = false
+      }
 
       if (lastGoodSnapshot !== null) {
         options.onSnapshot(
@@ -247,7 +251,9 @@ export function createPollingManager(
 
       publishStatus({
         mode: 'offline',
-        warning: 'OFFLINE MODE — showing last known positions.',
+        warning: isAuthenticationFailure(error)
+          ? 'TRACKING AUTHENTICATION FAILED — check Traccar credentials.'
+          : 'OFFLINE MODE — showing last known positions.',
       })
 
       const unboundedDelay = (options.retryBaseMs ?? 1_000) * 2 ** (consecutiveFailures - 1)
@@ -297,9 +303,13 @@ export function createPollingManager(
 
   async function fetchIncrementalBreadcrumbs(
     devices: readonly NormalizedTrackingDevice[],
+    seedState: InitialBreadcrumbSeedState,
   ): Promise<readonly NormalizedTrackingPosition[]> {
+    if (seedState === 'failed') {
+      return []
+    }
+
     const fetchUntil = now()
-    await seedInitialBreadcrumbs()
     const requestedDeviceIds = options.getBreadcrumbDeviceIds?.() ?? null
     const requestedDeviceIdSet =
       requestedDeviceIds === null || requestedDeviceIds.length === 0
@@ -317,11 +327,15 @@ export function createPollingManager(
           lastTimestamp === undefined
             ? (options.getInitialBreadcrumbFrom?.() ??
               new Date(fetchUntil.getTime() - 3 * 60 * 60 * 1000))
-            : new Date(lastTimestamp)
+            : createOverlappedFetchFrom(
+                lastTimestamp,
+                fetchUntil,
+                options.getInitialBreadcrumbFrom?.() ?? null,
+              )
 
         const breadcrumbs = await client.getBreadcrumbs(device.device_id, fetchFrom, fetchUntil)
-        const newestTimestamp = breadcrumbs.at(-1)?.timestamp
-        if (newestTimestamp !== undefined) {
+        const newestTimestamp = getCursorTimestampFromBatch(breadcrumbs, fetchUntil)
+        if (newestTimestamp !== null) {
           latestBreadcrumbTimestampByDevice.set(device.device_id, newestTimestamp)
         }
 
@@ -351,12 +365,12 @@ export function createPollingManager(
     return aggregated
   }
 
-  async function seedInitialBreadcrumbs(): Promise<void> {
+  async function seedInitialBreadcrumbs(): Promise<InitialBreadcrumbSeedState> {
     if (
       initialBreadcrumbsLoaded ||
       options.getInitialBreadcrumbs === undefined
     ) {
-      return
+      return 'loaded'
     }
 
     try {
@@ -366,10 +380,12 @@ export function createPollingManager(
       breadcrumbMetadata = breadcrumbResult.metadata
       seedLatestBreadcrumbTimestamps(persistedBreadcrumbs)
       initialBreadcrumbsLoaded = true
+      return 'loaded'
     } catch (error) {
       logger.warn('Tracking breadcrumb cursor load failed.', {
         error: error instanceof Error ? error.message : String(error),
       })
+      return 'failed'
     }
   }
 
@@ -388,6 +404,58 @@ export function createPollingManager(
       }
     }
   }
+}
+
+type InitialBreadcrumbSeedState = 'loaded' | 'failed'
+
+function createOverlappedFetchFrom(
+  lastTimestamp: string,
+  fetchUntil: Date,
+  lowerBound: Date | null,
+): Date {
+  const lastTimestampMs = Date.parse(lastTimestamp)
+  const fetchUntilMs = fetchUntil.getTime()
+  const boundedCursorMs = Number.isNaN(lastTimestampMs)
+    ? fetchUntilMs
+    : Math.min(lastTimestampMs, fetchUntilMs)
+  const overlappedMs = boundedCursorMs - BREADCRUMB_CURSOR_OVERLAP_MS
+  const lowerBoundMs = lowerBound?.getTime()
+  const fetchFromMs =
+    lowerBoundMs === undefined ? overlappedMs : Math.max(lowerBoundMs, overlappedMs)
+
+  return new Date(Math.min(fetchFromMs, fetchUntilMs))
+}
+
+function getCursorTimestampFromBatch(
+  breadcrumbs: readonly NormalizedTrackingPosition[],
+  fetchUntil: Date,
+): string | null {
+  let newestTimestampMs: number | null = null
+  const fetchUntilMs = fetchUntil.getTime()
+
+  for (const breadcrumb of breadcrumbs) {
+    const timestampMs = Date.parse(breadcrumb.timestamp)
+    if (Number.isNaN(timestampMs)) {
+      continue
+    }
+
+    const boundedTimestampMs = Math.min(timestampMs, fetchUntilMs)
+    if (newestTimestampMs === null || boundedTimestampMs > newestTimestampMs) {
+      newestTimestampMs = boundedTimestampMs
+    }
+  }
+
+  return newestTimestampMs === null ? null : new Date(newestTimestampMs).toISOString()
+}
+
+function isAuthenticationFailure(error: unknown): boolean {
+  return (
+    error instanceof Error &&
+    (
+      error.name === 'TraccarAuthenticationError' ||
+      /Authentication failed|HTTP 401|HTTP 403/i.test(error.message)
+    )
+  )
 }
 
 /**

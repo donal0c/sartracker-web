@@ -82,7 +82,7 @@ export function normalizeTraccarPosition(
     lat: latitude,
     lon: longitude,
     altitude: asOptionalNumber(raw.altitude),
-    speed: asOptionalNumber(raw.speed),
+    speed: normalizeApiSpeedKmh(raw.speed),
     battery,
     accuracy: asOptionalNumber(raw.accuracy),
     timestamp,
@@ -146,11 +146,12 @@ function asOptionalString(value: unknown): string | null {
 
 function asIsoTimestamp(value: unknown, label: string): string {
   const timestamp = String(value)
-  if (Number.isNaN(Date.parse(timestamp))) {
+  const parsed = Date.parse(timestamp)
+  if (Number.isNaN(parsed)) {
     throw new Error(`${label} must be a valid ISO8601 timestamp.`)
   }
 
-  return timestamp
+  return new Date(parsed).toISOString()
 }
 
 function asRecord(value: unknown): Record<string, unknown> {
@@ -167,4 +168,13 @@ function readOptionalBattery(attributes: Record<string, unknown>): number | null
   }
 
   return asFiniteNumber(attributes.batteryLevel, 'Traccar batteryLevel')
+}
+
+function normalizeApiSpeedKmh(value: unknown): number | null {
+  const speedKnots = asOptionalNumber(value)
+  if (speedKnots === null) {
+    return null
+  }
+
+  return speedKnots * 1.852
 }

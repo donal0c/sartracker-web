@@ -29,6 +29,30 @@ describe('traccar normalization', () => {
     expect(position.data_origin).toBe('live')
   })
 
+  it('canonicalizes accepted timestamp formats before cursor and dedupe use [DON-233]', () => {
+    const position = normalizeTraccarPosition(
+      {
+        ...positionsFixture[0],
+        fixTime: '2026-04-06T10:30:00Z',
+      },
+      'live',
+    )
+
+    expect(position.timestamp).toBe('2026-04-06T10:30:00.000Z')
+  })
+
+  it('normalizes Traccar API position speed from knots to km/h [DON-234]', () => {
+    const position = normalizeTraccarPosition(
+      {
+        ...positionsFixture[0],
+        speed: 10,
+      },
+      'live',
+    )
+
+    expect(position.speed).toBeCloseTo(18.52, 3)
+  })
+
   it('falls back to deviceTime or serverTime when fixTime is absent', () => {
     const position = normalizeTraccarPosition(
       {

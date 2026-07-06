@@ -11,6 +11,10 @@ import type {
   TrackingConnectionStatus,
   TrackingSnapshot,
 } from './tracking-types'
+import {
+  createTrackingPositionCoordinateKey,
+  createTrackingPositionIdentityKey,
+} from './tracking-position-identity'
 import type { DiagnosticEventInput } from '../diagnostics/diagnostic-event-log'
 
 export type TrackingRuntimeConfig = {
@@ -74,6 +78,7 @@ export type TrackingRuntimeMissionStore = {
     readonly last_seen?: string | null
   }) => Promise<unknown>
   readonly addPosition: (input: {
+    readonly id?: string
     readonly mission_id: string
     readonly device_id: string
     readonly lat: number
@@ -89,6 +94,7 @@ export type TrackingRuntimeMissionStore = {
   readonly addPositionsBulk?: (input: {
     readonly mission_id: string
     readonly positions: readonly {
+      readonly id?: string
       readonly device_id: string
       readonly lat: number
       readonly lon: number
@@ -329,7 +335,7 @@ async function persistTrackingSnapshot(
           keys: new Set(
             (
               await missionStore.listPositions(activeMission.id)
-            ).map((position) => createPositionKey(position.device_id, position.timestamp)),
+            ).flatMap((position) => createPersistedPositionKeys(position)),
           ),
         }
 
@@ -345,6 +351,7 @@ async function persistTrackingSnapshot(
   }
 
   const newPositions: {
+    readonly id?: string
     readonly device_id: string
     readonly lat: number
     readonly lon: number
@@ -360,13 +367,21 @@ async function persistTrackingSnapshot(
   const stagedPositionKeys = new Set<string>()
 
   for (const position of [...getBreadcrumbsForMissionPersistence(snapshot), ...snapshot.positions]) {
-    const positionKey = createPositionKey(position.device_id, position.timestamp)
-    if (nextPositionKeyCache.keys.has(positionKey) || stagedPositionKeys.has(positionKey)) {
+    const positionKeys = createIncomingPositionKeys(position)
+    const cacheLookupKeys = createIncomingPositionCacheLookupKeys(position)
+    if (
+      cacheLookupKeys.some((positionKey) =>
+        nextPositionKeyCache.keys.has(positionKey) || stagedPositionKeys.has(positionKey)
+      )
+    ) {
       continue
     }
 
-    stagedPositionKeys.add(positionKey)
+    for (const positionKey of positionKeys) {
+      stagedPositionKeys.add(positionKey)
+    }
     newPositions.push({
+      id: position.id,
       device_id: position.device_id,
       lat: position.lat,
       lon: position.lon,
@@ -378,7 +393,7 @@ async function persistTrackingSnapshot(
       timestamp: position.timestamp,
       data_origin: position.data_origin,
     })
-    newPositionKeys.push(positionKey)
+    newPositionKeys.push(...positionKeys)
   }
 
   if (newPositions.length === 0) {
@@ -415,8 +430,51 @@ function getBreadcrumbsForMissionPersistence(
   return snapshot.rawBreadcrumbsForPersistence ?? snapshot.breadcrumbs
 }
 
-function createPositionKey(deviceId: string, timestamp: string): string {
-  return `${deviceId}:${timestamp}`
+function createIncomingPositionKeys(position: NormalizedTrackingPosition): readonly string[] {
+  return [
+    createTrackingPositionIdentityKey(position),
+    createTrackingPositionCoordinateKey(position),
+  ]
+}
+
+function createIncomingPositionCacheLookupKeys(
+  position: NormalizedTrackingPosition,
+): readonly string[] {
+  return [
+    ...createIncomingPositionKeys(position),
+    `${position.device_id}:time:${position.timestamp}`,
+  ]
+}
+
+function createPersistedPositionKeys(position: {
+  readonly id?: string
+  readonly device_id: string
+  readonly lat?: number
+  readonly lon?: number
+  readonly timestamp: string
+}): readonly string[] {
+  const keys: string[] = []
+  const persistedId = position.id?.trim()
+  if (persistedId) {
+    keys.push(`${position.device_id}:id:${persistedId}`)
+  }
+
+  const lat = Number(position.lat)
+  const lon = Number(position.lon)
+  if (Number.isFinite(lat) && Number.isFinite(lon)) {
+    keys.push(createTrackingPositionCoordinateKey({
+      device_id: position.device_id,
+      lat,
+      lon,
+      timestamp: position.timestamp,
+    }))
+  }
+
+  if (keys.length === 0) {
+    keys.push(`${position.device_id}:time:${position.timestamp}`)
+  }
+
+  return keys
 }
 
 /**
@@ -447,7 +505,7 @@ async function getInitialPersistedBreadcrumbs(
     }
 
     return [{
-      id: position.id ?? createPositionKey(position.device_id, position.timestamp),
+      id: position.id ?? `${position.device_id}:time:${position.timestamp}`,
       device_id: position.device_id,
       lat,
       lon,
