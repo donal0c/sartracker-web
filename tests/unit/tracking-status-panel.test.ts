@@ -63,6 +63,8 @@ describe('TrackingStatusPanel', () => {
     expect(getElement('[data-testid="tracking-warning"]').className).toContain(
       'sar-status-alert-panel',
     )
+    expect(getText('[data-testid="tracking-mode-chip"]')).toContain('paused')
+    expect(getText('[data-testid="tracking-mode-chip"]')).not.toContain('idle')
     expect(getText('[data-testid="tracking-warning"]')).toContain('Live refresh suspended')
   })
 })

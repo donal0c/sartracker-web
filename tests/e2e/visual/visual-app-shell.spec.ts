@@ -127,7 +127,7 @@ Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
       severity: 'high',
       verificationPrompt: `Verify this screenshot of the SAR Tracker with the compact Maps menu open:
 1. The menu should be grouped with an "Official maps" section and a "Public fallback maps" section
-2. The Official maps section should include "Discovery Topo" and show it as not configured / unavailable
+2. The Official maps section should include "Discovery Topo", "Premium Basemap", "Aerial Imagery", and "High-Resolution Imagery"; in hosted visual mode each official option should be marked not configured / unavailable
 3. The Public fallback maps section should include "OpenTopoMap", "ESRI World Topo", "OpenStreetMap", and "ESRI Satellite"
 4. The "OpenTopoMap" public fallback button should appear selected/highlighted (different color from others)
 5. The map itself should show a topographic map style with elevation contours and terrain features

@@ -9,7 +9,7 @@ const {
   shell,
 } = require('electron')
 const path = require('node:path')
-const { pathToFileURL } = require('node:url')
+const { fileURLToPath, pathToFileURL } = require('node:url')
 
 const { createElectronSettingsStore } = require('./settings-store.cjs')
 const { createElectronRuntimeFiles } = require('./runtime-files.cjs')
@@ -41,6 +41,7 @@ const INGEST_MARKER_ATTACHMENT_CHANNEL = 'sartracker:ingest-marker-attachment'
 const OPEN_EXTERNAL_PATH_CHANNEL = 'sartracker:open-external-path'
 const OPEN_EXTERNAL_URL_CHANNEL = 'sartracker:open-external-url'
 const FETCH_OFFICIAL_MAP_TILE_CHANNEL = 'sartracker:fetch-official-map-tile'
+const MAX_TRACCAR_PROXY_RESPONSE_BYTES = 5 * 1024 * 1024
 
 const MISSION_STORE_CHANNELS = {
   info: 'sartracker:mission-store:info',
@@ -93,6 +94,12 @@ if (validationUserDataPath !== undefined && validationUserDataPath.trim() !== ''
   app.setPath('userData', path.resolve(validationUserDataPath))
 }
 
+const electronRuntimeContext = {
+  crashLog: null,
+  runtimeLog: null,
+  officialMapProxy: null,
+}
+
 configureLinuxSecretStorage()
 
 const ownsSingleInstanceLock = app.requestSingleInstanceLock()
@@ -142,6 +149,8 @@ async function createWindow(crashLog, runtimeLog) {
     },
   })
 
+  installWindowNavigationGuards(window)
+
   if (crashLog !== undefined) {
     // A renderer crash leaves the operator with a blank or frozen window; record
     // it so the next launch can surface a recovery notice with the exit reason.
@@ -172,6 +181,37 @@ async function createWindow(crashLog, runtimeLog) {
   const indexUrl = pathToFileURL(path.join(__dirname, '..', 'dist', 'index.html'))
   addValidationQueryIfRequested(indexUrl)
   await window.loadURL(indexUrl.toString())
+}
+
+/**
+ * Prevents renderer content from navigating the operational window or opening
+ * auxiliary windows outside the controlled SAR Tracker shell.
+ */
+function installWindowNavigationGuards(window) {
+  window.webContents.on('will-navigate', (event, targetUrl) => {
+    const currentUrl =
+      typeof window.webContents.getURL === 'function' ? window.webContents.getURL() : ''
+    if (!isAllowedRendererNavigation(targetUrl, currentUrl)) {
+      event.preventDefault()
+    }
+  })
+
+  window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
+}
+
+function isAllowedRendererNavigation(targetUrl, currentUrl) {
+  try {
+    const target = new URL(targetUrl)
+    if (target.protocol === 'file:') {
+      return isPackagedRendererFile(target)
+    }
+    if (typeof currentUrl === 'string' && currentUrl.trim() !== '') {
+      return target.origin === new URL(currentUrl).origin
+    }
+  } catch {
+    return false
+  }
+  return false
 }
 
 /**
@@ -227,30 +267,62 @@ function installCrashCapture(crashLog, runtimeLog) {
   }
 
   process.on('uncaughtException', (error) => {
-    void crashLog.record({
+    void handleFatalMainProcessError({
       kind: 'uncaughtException',
-      summary: error?.message ? `${error.name}: ${error.message}` : 'Uncaught exception',
-      detail: typeof error?.stack === 'string' ? error.stack : undefined,
-    })
-    void runtimeLog.append({
-      level: 'error',
-      event: 'uncaught_exception',
-      fields: { name: error?.name ?? 'Error' },
+      error,
+      crashLog,
+      runtimeLog,
     })
   })
 
   process.on('unhandledRejection', (reason) => {
-    const message =
-      reason instanceof Error
-        ? `${reason.name}: ${reason.message}`
-        : `Unhandled rejection: ${String(reason)}`
-    void crashLog.record({
+    void handleFatalMainProcessError({
       kind: 'unhandledRejection',
-      summary: message,
-      detail: reason instanceof Error && typeof reason.stack === 'string' ? reason.stack : undefined,
+      error: reason,
+      crashLog,
+      runtimeLog,
     })
-    void runtimeLog.append({ level: 'error', event: 'unhandled_rejection' })
   })
+}
+
+async function handleFatalMainProcessError(input) {
+  const summary =
+    input.error instanceof Error
+      ? `${input.error.name}: ${input.error.message}`
+      : input.kind === 'unhandledRejection'
+        ? `Unhandled rejection: ${String(input.error)}`
+        : 'Uncaught exception'
+  await input.crashLog.record({
+    kind: input.kind,
+    summary,
+    detail:
+      input.error instanceof Error && typeof input.error.stack === 'string'
+        ? input.error.stack
+        : undefined,
+  })
+  await input.runtimeLog.append({
+    level: 'error',
+    event: input.kind === 'uncaughtException' ? 'uncaught_exception' : 'unhandled_rejection',
+    fields: { name: input.error instanceof Error ? input.error.name : 'Error' },
+  })
+
+  try {
+    dialog.showErrorBox(
+      'SAR Tracker runtime fault',
+      'SAR Tracker hit a fatal runtime fault. The fault has been logged and the app will relaunch so operators get a clean runtime.',
+    )
+  } catch {
+    // showErrorBox is unavailable in some headless/test contexts.
+  }
+
+  if (typeof app.relaunch === 'function') {
+    app.relaunch()
+  }
+  if (typeof app.exit === 'function') {
+    app.exit(1)
+    return
+  }
+  app.quit()
 }
 
 /**
@@ -272,33 +344,57 @@ function installValidationNetworkBlock() {
 /**
  * Handles Traccar HTTP requests from the renderer without exposing Node.
  */
-async function handleTraccarHttpRequest(event, input) {
-  validateIpcSender(event)
-  const request = normalizeTraccarRequest(input)
-  const controller = new AbortController()
-  const timeout =
-    request.timeoutMs === null
-      ? undefined
-      : setTimeout(() => controller.abort(), request.timeoutMs)
+function createTraccarHttpRequestHandler(settingsStore) {
+  return async function handleTraccarHttpRequest(event, input) {
+    validateIpcSender(event)
+    const request = normalizeTraccarRequest(input)
+    await assertConfiguredTraccarOrigin(settingsStore, request.url)
+    const controller = new AbortController()
+    const timeout =
+      request.timeoutMs === null
+        ? undefined
+        : setTimeout(() => controller.abort(), request.timeoutMs)
 
-  try {
-    const response = await fetch(request.url, {
-      method: request.method,
-      headers: request.headers,
-      body: request.body,
-      signal: controller.signal,
-    })
+    try {
+      const response = await fetch(request.url, {
+        method: request.method,
+        headers: request.headers,
+        body: request.body,
+        signal: controller.signal,
+      })
 
-    return {
-      status: response.status,
-      statusText: response.statusText,
-      headers: Object.fromEntries(response.headers.entries()),
-      body: await response.text(),
+      const contentLength = Number(response.headers.get('content-length'))
+      if (Number.isFinite(contentLength) && contentLength > MAX_TRACCAR_PROXY_RESPONSE_BYTES) {
+        throw new Error('Traccar response is too large.')
+      }
+      const body = await response.text()
+      if (Buffer.byteLength(body, 'utf8') > MAX_TRACCAR_PROXY_RESPONSE_BYTES) {
+        throw new Error('Traccar response is too large.')
+      }
+
+      return {
+        status: response.status,
+        statusText: response.statusText,
+        headers: Object.fromEntries(response.headers.entries()),
+        body,
+      }
+    } finally {
+      if (timeout !== undefined) {
+        clearTimeout(timeout)
+      }
     }
-  } finally {
-    if (timeout !== undefined) {
-      clearTimeout(timeout)
-    }
+  }
+}
+
+async function assertConfiguredTraccarOrigin(settingsStore, requestUrl) {
+  const settings = await settingsStore.loadAppSettings()
+  if (settings.dataSource.providerType !== 'traccar_http') {
+    throw new Error('Traccar proxy request blocked because no configured Traccar provider is available.')
+  }
+  const expected = new URL(settings.dataSource.baseUrl)
+  const actual = new URL(requestUrl)
+  if (actual.origin !== expected.origin) {
+    throw new Error('Traccar proxy request blocked because it does not match the configured Traccar provider.')
   }
 }
 
@@ -314,7 +410,7 @@ function registerIpcHandlers(
   crashLog,
   runtimeLog,
 ) {
-  ipcMain.handle(TRACCAR_REQUEST_CHANNEL, handleTraccarHttpRequest)
+  ipcMain.handle(TRACCAR_REQUEST_CHANNEL, createTraccarHttpRequestHandler(settingsStore))
   ipcMain.handle(LOAD_SETTINGS_CHANNEL, (event) => {
     validateIpcSender(event)
     return settingsStore.loadAppSettings()
@@ -376,9 +472,9 @@ function registerIpcHandlers(
       level: input.level === 'error' || input.level === 'warn' ? input.level : 'info',
       event: `renderer_${typeof input.event === 'string' ? input.event : 'diagnostic_event'}`,
       fields: {
+        ...(typeof input.fields === 'object' && input.fields !== null ? input.fields : {}),
         category: typeof input.category === 'string' ? input.category : 'runtime',
         rendererTimestamp: typeof input.ts === 'string' ? input.ts : null,
-        ...(typeof input.fields === 'object' && input.fields !== null ? input.fields : {}),
       },
     })
   })
@@ -488,9 +584,17 @@ function validateIpcSender(event) {
     throw new Error('Blocked Electron IPC request from an unknown renderer.')
   }
 
-  const url = new URL(senderUrl)
+  let url
+  try {
+    url = new URL(senderUrl)
+  } catch {
+    throw new Error('Blocked Electron IPC request from an invalid renderer URL.')
+  }
   if (url.protocol === 'file:') {
-    return
+    if (isPackagedRendererFile(url)) {
+      return
+    }
+    throw new Error(`Blocked Electron IPC request from unexpected file renderer: ${url.pathname}`)
   }
 
   const rendererUrl = process.env.ELECTRON_RENDERER_URL
@@ -502,6 +606,16 @@ function validateIpcSender(event) {
   }
 
   throw new Error(`Blocked Electron IPC request from unexpected renderer: ${url.origin}`)
+}
+
+function isPackagedRendererFile(url) {
+  try {
+    const senderPath = path.resolve(fileURLToPath(url))
+    const expectedPath = path.resolve(path.join(__dirname, '..', 'dist', 'index.html'))
+    return senderPath === expectedPath
+  } catch {
+    return false
+  }
 }
 
 /**
@@ -575,6 +689,8 @@ async function startElectronApp() {
   const userDataPath = app.getPath('userData')
   const runtimeLog = createRuntimeLog({ userDataPath })
   const crashLog = createCrashLog({ userDataPath })
+  electronRuntimeContext.crashLog = crashLog
+  electronRuntimeContext.runtimeLog = runtimeLog
   installCrashCapture(crashLog, runtimeLog)
   void runtimeLog.append({
     level: 'info',
@@ -618,6 +734,7 @@ async function startElectronApp() {
     fetch,
     loadSettings: settingsStore.loadAppSettings,
   })
+  electronRuntimeContext.officialMapProxy = officialMapProxy
   registerIpcHandlers(
     settingsStore,
     runtimeFiles,
@@ -629,12 +746,26 @@ async function startElectronApp() {
   )
   await createWindow(crashLog, runtimeLog)
 
-  app.on('before-quit', () => {
+  app.on('before-quit', (event) => {
     // Record an intentional shutdown so the next launch does not show a false
-    // crash-recovery notice. Best-effort; never block quit on it.
-    void crashLog.markCleanExit()
-    officialMapProxy.close?.()
+    // crash-recovery notice.
+    event.preventDefault()
+    void markCleanExitAndQuit(crashLog, officialMapProxy)
   })
+}
+
+let cleanExitInProgress = false
+async function markCleanExitAndQuit(crashLog, officialMapProxy) {
+  if (cleanExitInProgress) {
+    return
+  }
+  cleanExitInProgress = true
+  try {
+    await crashLog.markCleanExit()
+  } finally {
+    officialMapProxy.close?.()
+    app.exit(0)
+  }
 }
 
 app.on('window-all-closed', () => {
@@ -645,6 +776,6 @@ app.on('window-all-closed', () => {
 
 app.on('activate', async () => {
   if (BrowserWindow.getAllWindows().length === 0) {
-    await createWindow()
+    await createWindow(electronRuntimeContext.crashLog, electronRuntimeContext.runtimeLog)
   }
 })

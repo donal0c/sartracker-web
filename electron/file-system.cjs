@@ -8,36 +8,79 @@ const OFFICIAL_MAP_PACKAGE_DIRECTORY = 'official-map-packages'
  * Creates Electron main-process filesystem helpers behind narrow IPC handlers.
  */
 function createElectronFileSystem(options) {
+  const allowedFiles = new Set()
+  const allowedDirectories = new Set([normalizeResolvedPath(options.userDataPath)])
+
+  function allowFile(inputPath) {
+    allowedFiles.add(normalizeResolvedPath(inputPath))
+  }
+
+  function allowDirectory(inputPath) {
+    allowedDirectories.add(normalizeResolvedPath(inputPath))
+  }
+
+  function assertAllowedPath(inputPath, label) {
+    const resolvedPath = normalizeResolvedPath(inputPath)
+    if (allowedFiles.has(resolvedPath)) {
+      return
+    }
+    for (const directoryPath of allowedDirectories) {
+      if (isPathInsideDirectory(resolvedPath, directoryPath)) {
+        return
+      }
+    }
+    throw new Error(`${label} is not under an allowed app-owned or operator-selected path.`)
+  }
+
   return {
     chooseGpxFilePaths: async () => {
       const result = await showOpenDialog(options, {
         properties: ['openFile', 'multiSelections'],
         filters: [{ name: 'GPX tracks', extensions: ['gpx'] }],
       })
-      return result.canceled ? [] : result.filePaths
+      if (result.canceled) {
+        return []
+      }
+      for (const filePath of result.filePaths) {
+        allowFile(filePath)
+      }
+      return result.filePaths
     },
     chooseGpxDirectoryPath: async () => {
       const result = await showOpenDialog(options, {
         properties: ['openDirectory'],
       })
-      return result.canceled ? null : result.filePaths[0] ?? null
+      const selectedPath = result.canceled ? null : result.filePaths[0] ?? null
+      if (selectedPath !== null) {
+        allowDirectory(selectedPath)
+      }
+      return selectedPath
     },
     chooseOfficialMapSourceFilePath: async () => {
       const result = await showOpenDialog(options, {
         properties: ['openFile'],
         filters: [{ name: 'MapGenie source details', extensions: ['txt'] }],
       })
-      return result.canceled ? null : result.filePaths[0] ?? null
+      const selectedPath = result.canceled ? null : result.filePaths[0] ?? null
+      if (selectedPath !== null) {
+        allowFile(selectedPath)
+      }
+      return selectedPath
     },
     chooseOfficialMapPackagePath: async () => {
       const result = await showOpenDialog(options, {
         properties: ['openFile'],
         filters: [{ name: 'Official map packages', extensions: ['mbtiles'] }],
       })
-      return result.canceled ? null : result.filePaths[0] ?? null
+      const selectedPath = result.canceled ? null : result.filePaths[0] ?? null
+      if (selectedPath !== null) {
+        allowFile(selectedPath)
+      }
+      return selectedPath
     },
     importOfficialMapPackage: async (input) => {
       const sourcePath = normalizeRequiredPath(input?.sourcePath, 'Official map package')
+      assertAllowedPath(sourcePath, 'Official map package')
       if (path.extname(sourcePath).toLowerCase() !== '.mbtiles') {
         throw new Error(getOfficialMapPackageExtensionError(sourcePath))
       }
@@ -75,10 +118,11 @@ function createElectronFileSystem(options) {
       }
     },
     readGpxFiles: async (paths) => {
-      return Promise.all(paths.map((filePath) => readGpxFile(filePath)))
+      return Promise.all(paths.map((filePath) => readGpxFile(filePath, assertAllowedPath)))
     },
     listGpxDirectoryFiles: async (directoryPath) => {
       const normalizedDirectoryPath = normalizeRequiredPath(directoryPath, 'GPX directory')
+      assertAllowedPath(normalizedDirectoryPath, 'GPX directory')
       const stat = await fs.stat(normalizedDirectoryPath).catch(() => null)
       if (stat === null || !stat.isDirectory()) {
         throw new Error(`GPX watch directory was not found: ${normalizedDirectoryPath}`)
@@ -91,7 +135,7 @@ function createElectronFileSystem(options) {
         .filter(isGpxPath)
         .sort((left, right) => path.basename(left).localeCompare(path.basename(right)))
 
-      return Promise.all(gpxPaths.map((filePath) => readGpxFile(filePath)))
+      return Promise.all(gpxPaths.map((filePath) => readGpxFile(filePath, assertAllowedPath)))
     },
     ingestMarkerAttachment: async (input, missionStore) => {
       const missionId = normalizeMissionId(input.missionId)
@@ -124,6 +168,7 @@ function createElectronFileSystem(options) {
     },
     openExternalPath: async (inputPath) => {
       const normalizedPath = normalizeRequiredPath(inputPath, 'Path')
+      assertAllowedPath(normalizedPath, 'Path')
       await fs.access(normalizedPath).catch(() => {
         throw new Error(`Path does not exist: ${normalizedPath}`)
       })
@@ -157,8 +202,9 @@ async function showOpenDialog(options, dialogOptions) {
   return options.dialog.showOpenDialog(browserWindow, dialogOptions)
 }
 
-async function readGpxFile(inputPath) {
+async function readGpxFile(inputPath, assertAllowedPath) {
   const filePath = normalizeRequiredPath(inputPath, 'GPX file')
+  assertAllowedPath(filePath, 'GPX file')
   const stat = await fs.stat(filePath).catch(() => null)
   if (stat === null || !stat.isFile()) {
     throw new Error(`GPX file was not found: ${filePath}`)
@@ -184,6 +230,15 @@ function normalizeRequiredPath(inputPath, label) {
     throw new Error(`${label} is required.`)
   }
   return normalizedPath
+}
+
+function normalizeResolvedPath(inputPath) {
+  return path.resolve(normalizeRequiredPath(inputPath, 'Path'))
+}
+
+function isPathInsideDirectory(filePath, directoryPath) {
+  const relativePath = path.relative(directoryPath, filePath)
+  return relativePath === '' || (relativePath !== '' && !relativePath.startsWith('..') && !path.isAbsolute(relativePath))
 }
 
 function normalizeMissionId(missionId) {

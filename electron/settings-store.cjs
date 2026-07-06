@@ -102,8 +102,8 @@ function createElectronSettingsStore(options) {
       weather: normalizeWeather(input.weather),
     }
 
-    await writeJsonAtomically(settingsPath, next)
     await updateSecrets(input.dataSource)
+    await writeJsonAtomically(settingsPath, next)
     await removeDeletedAppOwnedOfficialMapPackages(previous.officialMaps.packages, next.officialMaps.packages, userDataPath)
 
     return toView(next, await hasSecret(next.dataSource.authMode))

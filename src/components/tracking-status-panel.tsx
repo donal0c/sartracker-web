@@ -11,6 +11,7 @@ export function TrackingStatusPanel() {
   const staleDeviceCount = snapshot.positions.filter((position) => position.device_cache_stale).length
   const cachedDeviceCount = snapshot.positions.filter((position) => position.data_origin === 'cache').length
   const criticalTrustWarning = isCriticalTrackingTrustWarning(status.warning)
+  const modeLabel = getTrackingModeLabel(status.mode, status.warning)
   const modeChipClassName =
     status.mode === 'online' && !criticalTrustWarning
       ? 'sar-status-chip-success'
@@ -43,7 +44,7 @@ export function TrackingStatusPanel() {
                   : 'bg-stone-300'
             }`}
           />
-          <span className="font-bold uppercase text-[11px]">{status.mode}</span>
+          <span className="font-bold uppercase text-[11px]">{modeLabel}</span>
         </div>
       </div>
 
@@ -97,6 +98,13 @@ export function TrackingStatusPanel() {
       </div>
     </div>
   )
+}
+
+function getTrackingModeLabel(mode: 'idle' | 'offline' | 'online', warning: string | null): string {
+  if (warning !== null && /live refresh suspended/i.test(warning)) {
+    return 'paused'
+  }
+  return mode
 }
 
 function isCriticalTrackingTrustWarning(warning: string | null): boolean {

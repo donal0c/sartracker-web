@@ -2,6 +2,8 @@ const fs = require('node:fs/promises')
 const path = require('node:path')
 const os = require('node:os')
 
+const { sanitizeDiagnosticText } = require('./diagnostic-sanitizer.cjs')
+
 const TRACKING_CACHE_FILE_NAME = 'tracking-cache.json'
 const DIAGNOSTICS_DIR_NAME = 'diagnostics-reports'
 const FORBIDDEN_DIAGNOSTICS_PATH_SEGMENTS = Object.freeze([
@@ -15,10 +17,6 @@ const FORBIDDEN_DIAGNOSTICS_PATH_SEGMENTS = Object.freeze([
 ])
 const DEFAULT_INCIDENT_WINDOW_MINUTES = 30
 const SECRET_LINE_KEY_PATTERN = /(password|token|secret|credential|api[-_]?key|authorization)\s*[:=]/i
-const SECRET_JSON_KEY_PATTERN = /("(?:password|token|secret|credential|api[-_]?key|authorization)"\s*:\s*)"[^"]*"/gi
-const AUTH_HEADER_PATTERN = /\b(Authorization\s*:\s*)(?:Bearer|Basic)\s+\S+/gi
-const AUTH_TOKEN_PATTERN = /\b(?:Bearer|Basic)\s+[A-Za-z0-9._~+/=-]+/gi
-const URL_CREDENTIALS_PATTERN = /\b(https?:\/\/)[^/\s@]+@/gi
 
 /**
  * Creates Electron main-process file adapters for app-owned runtime state.
@@ -283,13 +281,7 @@ function sanitizeReportFileName(input) {
 }
 
 function sanitizeDiagnosticsText(contents) {
-  let sanitized = String(contents)
-    .replace(SECRET_JSON_KEY_PATTERN, '$1"[redacted]"')
-    .replace(AUTH_HEADER_PATTERN, '$1[redacted]')
-    .replace(AUTH_TOKEN_PATTERN, '[redacted]')
-    .replace(URL_CREDENTIALS_PATTERN, '$1[redacted]@')
-    .replace(/(\/(?:home|Users)\/)[^/\s:"]+/g, '$1[redacted]')
-    .replace(/([A-Za-z]:\\Users\\)[^\\\s:"]+/g, '$1[redacted]')
+  let sanitized = sanitizeDiagnosticText(contents)
 
   for (const segment of FORBIDDEN_DIAGNOSTICS_PATH_SEGMENTS) {
     sanitized = sanitized.replaceAll(segment, '[redacted-path-segment]')
@@ -313,7 +305,7 @@ function sanitizeDiagnosticsText(contents) {
 }
 
 function redactUrlCredentials(input) {
-  return readDiagnosticsValue(input, '').replace(URL_CREDENTIALS_PATTERN, '$1[redacted]@')
+  return sanitizeDiagnosticText(readDiagnosticsValue(input, ''))
 }
 
 module.exports = {

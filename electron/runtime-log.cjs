@@ -1,11 +1,12 @@
 const fs = require('node:fs/promises')
 const path = require('node:path')
 
+const { sanitizeDiagnosticFields } = require('./diagnostic-sanitizer.cjs')
+
 const LOGS_DIR_NAME = 'logs'
 const LOG_FILE_NAME = 'runtime.log'
 const BACKUP_LOG_FILE_NAME = 'runtime.log.1'
 const DEFAULT_MAX_BYTES = 1_000_000
-const SECRET_KEY_PATTERN = /(password|secret|token|credential|api[-_]?key)/i
 
 /**
  * Creates a bounded, sanitized runtime event log for the Electron main process.
@@ -119,40 +120,7 @@ function createRuntimeLog(options) {
  * Returns a shallow copy of `fields` with secrets redacted and home paths anonymized.
  */
 function sanitizeFields(fields) {
-  if (fields === null || typeof fields !== 'object') {
-    return {}
-  }
-
-  const sanitized = {}
-  for (const [key, value] of Object.entries(fields)) {
-    if (key === 'ts' || key === 'level' || key === 'event') {
-      // Reserved structural keys cannot be overridden by caller fields.
-      continue
-    }
-    if (SECRET_KEY_PATTERN.test(key)) {
-      sanitized[key] = '[redacted]'
-      continue
-    }
-    sanitized[key] = sanitizeValue(value)
-  }
-  return sanitized
-}
-
-function sanitizeValue(value) {
-  if (typeof value === 'string') {
-    return anonymizeHomePath(value)
-  }
-  return value
-}
-
-/**
- * Replaces the username segment of a home-directory path with `[redacted]`, on both
- * POSIX (`/home/<user>/`, `/Users/<user>/`) and Windows (`C:\\Users\\<user>\\`) layouts.
- */
-function anonymizeHomePath(value) {
-  return value
-    .replace(/(\/(?:home|Users)\/)[^/]+/g, '$1[redacted]')
-    .replace(/([A-Za-z]:\\Users\\)[^\\]+/g, '$1[redacted]')
+  return sanitizeDiagnosticFields(fields, new Set(['ts', 'level', 'event']))
 }
 
 module.exports = {

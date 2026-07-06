@@ -829,9 +829,9 @@
           <div class="warning">
             <strong>Stale-position alerts:</strong> if live telemetry fails during a mission, the Tracking
             status changes to a flashing red <strong>OFFLINE</strong> state and the warning line shows
-            <strong>OFFLINE MODE</strong>. When a mission is paused, <strong>Live refresh suspended</strong>
-            is also shown as a red alert. In both cases, treat displayed positions as potentially stale
-            until live refresh resumes.
+            <strong>OFFLINE MODE</strong>. When a mission is paused, the status chip changes to
+            <strong>PAUSED</strong> and <strong>Live refresh suspended</strong> is shown as a red alert.
+            In both cases, treat displayed positions as potentially stale until live refresh resumes.
           </div>
           <h3>Devices Workspace</h3>
           <p>
@@ -1002,7 +1002,9 @@
             normal select state: click a drawing to open its edit form, and click empty terrain to place a
             marker. After you save or cancel a tool the map returns to this select state automatically.
             Drawing forms keep <strong>Save</strong> disabled until the required name or label text is
-            entered.
+            entered. Required-field badges are intentionally high-contrast, and the
+            <strong>Cancel</strong> and <strong>Save</strong> actions remain visible at the bottom of long
+            drawing forms.
           </p>
           <figure class="screenshot">
             <img src="assets/tools-and-map.png" alt="Map Tools expanded with measurement controls and the Tools tab showing GPX import" />

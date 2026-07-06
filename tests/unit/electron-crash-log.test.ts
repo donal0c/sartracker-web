@@ -79,6 +79,22 @@ describe('electron crash log', () => {
     expect(String(entry.detail)).not.toContain('abc123')
   })
 
+  it('redacts authorization headers and URL-embedded credentials [DON-237]', async () => {
+    const log = await createLog()
+    await log.record({
+      kind: 'unhandledRejection',
+      summary: 'Fetch failed Authorization: Bearer bearer-secret',
+      detail: 'GET https://operator:field-secret@kmrtsar.eu/api/devices Authorization: Basic abc123',
+    })
+
+    const [entry] = await log.readRecent()
+    const serialized = JSON.stringify(entry)
+    expect(serialized).not.toContain('bearer-secret')
+    expect(serialized).not.toContain('field-secret')
+    expect(serialized).not.toContain('abc123')
+    expect(serialized).toContain('[redacted]')
+  })
+
   it('detects an unclean shutdown until a clean exit is marked', async () => {
     const log = await createLog()
     // A fresh install with no recorded exit is treated as clean (no false alarm).

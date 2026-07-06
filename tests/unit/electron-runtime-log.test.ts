@@ -73,6 +73,30 @@ describe('electron runtime log', () => {
     expect(String(entry.databasePath)).toContain('[redacted]')
   })
 
+  it('recursively redacts nested secrets, auth headers, and URL credentials [DON-237]', async () => {
+    const log = await createLog()
+    await log.append({
+      level: 'warn',
+      event: 'support_bundle_requested',
+      fields: {
+        request: {
+          headers: {
+            Authorization: 'Bearer bearer-secret',
+          },
+          url: 'https://operator:field-secret@kmrtsar.eu/api/devices',
+          nested: [{ password: 'nested-secret' }],
+        },
+      },
+    })
+
+    const [entry] = await log.readRecent()
+    const serialized = JSON.stringify(entry)
+    expect(serialized).not.toContain('bearer-secret')
+    expect(serialized).not.toContain('field-secret')
+    expect(serialized).not.toContain('nested-secret')
+    expect(serialized).toContain('[redacted]')
+  })
+
   it('rotates the log when it exceeds the size cap and keeps recent entries readable', async () => {
     const log = await createLog({ maxBytes: 512 })
     for (let index = 0; index < 100; index += 1) {

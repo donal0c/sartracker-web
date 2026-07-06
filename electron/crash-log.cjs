@@ -1,6 +1,8 @@
 const fs = require('node:fs/promises')
 const path = require('node:path')
 
+const { sanitizeDiagnosticText } = require('./diagnostic-sanitizer.cjs')
+
 const CRASH_DIR_NAME = 'crashes'
 const CRASH_LOG_FILE_NAME = 'crash-log.json'
 const CLEAN_EXIT_FILE_NAME = 'last-clean-exit'
@@ -24,8 +26,6 @@ const RENDERER_FAULT_REASONS = new Set([
 function isRendererFaultReason(reason) {
   return typeof reason === 'string' && RENDERER_FAULT_REASONS.has(reason)
 }
-const SECRET_TOKEN_PATTERN = /\b(password|secret|token|credential|api[-_]?key)\b\s*[:=]\s*\S+/gi
-
 /**
  * Creates a bounded structured crash log for the Electron main process.
  *
@@ -143,10 +143,10 @@ function createCrashLog(options) {
 }
 
 function sanitizeText(value) {
-  return String(value)
-    .replace(SECRET_TOKEN_PATTERN, (match) => match.replace(/[:=]\s*\S+$/u, (kv) => kv.replace(/\S+$/u, '[redacted]')))
-    .replace(/(\/(?:home|Users)\/)[^/\s]+/g, '$1[redacted]')
-    .replace(/([A-Za-z]:\\Users\\)[^\\\s]+/g, '$1[redacted]')
+  return sanitizeDiagnosticText(value).replace(
+    /\b(password|secret|token|credential|api[-_]?key)\b\s*[:=]\s*\S+/gi,
+    (match) => match.replace(/[:=]\s*\S+$/u, (kv) => kv.replace(/\S+$/u, '[redacted]')),
+  )
 }
 
 async function writeTextAtomically(filePath, contents) {

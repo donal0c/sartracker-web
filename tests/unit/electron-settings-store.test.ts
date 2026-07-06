@@ -119,6 +119,24 @@ describe('electron settings store', () => {
     }
   })
 
+  it('does not advertise Traccar auth settings if the credential write fails [DON-237]', async () => {
+    const store = await createStore({ backend: 'gnome_libsecret' })
+    await mkdir(path.join(userDataPath!, 'credentials.json'), { recursive: true })
+    const draft = createSettingsDraft(DEFAULT_APP_SETTINGS)
+    draft.dataSource.providerType = 'traccar_http'
+    draft.dataSource.baseUrl = 'https://kmrtsar.eu'
+    draft.dataSource.email = 'sean'
+    draft.dataSource.secretInput = 'field-secret'
+
+    await expect(store.saveAppSettings(draft)).rejects.toThrow()
+
+    const rawSettings = await readFile(path.join(userDataPath!, 'settings.json'), 'utf8').catch(
+      () => '',
+    )
+    expect(rawSettings).not.toContain('traccar_http')
+    expect(rawSettings).not.toContain('kmrtsar.eu')
+  })
+
   it('reads a saved local credential after a fresh store restart without any keyring', async () => {
     const first = await createStore({ backend: 'gnome_libsecret' })
     const draft = createSettingsDraft(DEFAULT_APP_SETTINGS)

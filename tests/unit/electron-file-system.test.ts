@@ -81,6 +81,44 @@ describe('Electron filesystem service', () => {
     ])
   })
 
+  it('rejects GPX reads outside app-owned or dialog-selected paths [DON-236]', async () => {
+    const service = await createService()
+    const externalDirectory = await mkdtemp(path.join(tmpdir(), 'sartracker-external-gpx-'))
+    const externalPath = path.join(externalDirectory, 'team.gpx')
+    await writeFile(externalPath, '<gpx>external</gpx>')
+
+    await expect(service.readGpxFiles([externalPath])).rejects.toThrow(/not under an allowed/)
+    await expect(service.listGpxDirectoryFiles(externalDirectory)).rejects.toThrow(
+      /not under an allowed/,
+    )
+
+    await rm(externalDirectory, { recursive: true, force: true })
+  })
+
+  it('allows GPX files and directories after an explicit dialog selection [DON-236]', async () => {
+    const externalDirectory = await mkdtemp(path.join(tmpdir(), 'sartracker-selected-gpx-'))
+    const externalPath = path.join(externalDirectory, 'team.gpx')
+    await writeFile(externalPath, '<gpx>selected</gpx>')
+    const dialog = {
+      showOpenDialog: vi
+        .fn()
+        .mockResolvedValueOnce({ canceled: false, filePaths: [externalPath] })
+        .mockResolvedValueOnce({ canceled: false, filePaths: [externalDirectory] }),
+    }
+    const service = await createService({ dialog })
+
+    await expect(service.chooseGpxFilePaths()).resolves.toEqual([externalPath])
+    await expect(service.readGpxFiles([externalPath])).resolves.toMatchObject([
+      { fileName: 'team.gpx', contents: '<gpx>selected</gpx>' },
+    ])
+    await expect(service.chooseGpxDirectoryPath()).resolves.toBe(externalDirectory)
+    await expect(service.listGpxDirectoryFiles(externalDirectory)).resolves.toMatchObject([
+      { fileName: 'team.gpx' },
+    ])
+
+    await rm(externalDirectory, { recursive: true, force: true })
+  })
+
   it('stores marker attachments under Electron userData with a sanitized file name', async () => {
     const service = await createService()
     const storedPath = await service.ingestMarkerAttachment(

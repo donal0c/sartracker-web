@@ -135,7 +135,7 @@ export function DrawingDialog() {
 
           {runtimeError !== null ? <p className="text-sm text-rose-300">{runtimeError}</p> : null}
 
-          <div className="flex justify-between gap-3">
+          <div className="sticky bottom-0 -mx-6 flex justify-between gap-3 border-t border-stone-700 bg-stone-900/95 px-6 py-4 backdrop-blur">
             <div>
               {dialog.mode === 'edit' ? (
                 deleteConfirmationVisible ? (
@@ -559,7 +559,7 @@ function Field(props: {
         {props.label}
         {required ? (
           <span
-            className="ml-2 rounded border border-rose-400/50 bg-rose-500/15 px-1.5 py-0.5 text-[10px] font-black text-rose-100"
+            className="ml-2 rounded border border-rose-200 bg-rose-600 px-1.5 py-0.5 text-[10px] font-black text-white"
             data-testid={props.requiredTestId}
           >
             Required
