@@ -70,6 +70,7 @@ function createController(): MarkerRuntimeController & {
   return {
     refreshMission: vi.fn().mockResolvedValue(undefined),
     beginCreateAt: vi.fn(),
+    beginCreateFromDraft: vi.fn(),
     beginEdit: vi.fn(),
     updateDraft: vi.fn(),
     changeDraftType: vi.fn(),

@@ -35,10 +35,22 @@ describe('map coordinate formatting', () => {
     expect(formatIrishGridReference(99840, 104018)).toBe('Q 99840 04018')
   })
 
+  it('formats lower-precision Irish grid references by truncating, not padding or rounding', () => {
+    expect(formatIrishGridReference(99_842, 104_015, 5)).toBe('Q 99842 04015')
+    expect(formatIrishGridReference(99_842, 104_015, 4)).toBe('Q 9984 0401')
+    expect(formatIrishGridReference(99_842, 104_015, 3)).toBe('Q 998 040')
+    expect(formatIrishGridReference(99_842, 104_015, 2)).toBe('Q 99 04')
+    expect(formatIrishGridReference(99_842, 104_015, 1)).toBe('Q 9 0')
+  })
+
   it('formats the combined coordinate bar string', () => {
     expect(formatMapCoordinateBar(52.274681, -9.530912)).toBe(
-      '52.274681°N, 9.530912°W  |  Q 95554 14717',
+      '52.274681°N, 9.530912°W  |  Q 95553 14716',
     )
+  })
+
+  it('formats impossible live coordinate bar values as a safe placeholder', () => {
+    expect(formatMapCoordinateBar(95, -190)).toBe('—')
   })
 
   it('rolls DMS seconds up instead of showing 60 seconds', () => {
@@ -64,8 +76,8 @@ describe('wgs84 to TM65 conversion', () => {
 
     expect(gridRefs).toEqual([
       { name: 'Carrauntoohil Summit', ref: 'V 80269 84392' },
-      { name: 'Killarney Town Centre', ref: 'V 96673 90735' },
-      { name: 'Tralee Town Centre', ref: 'Q 83848 14554' },
+      { name: 'Killarney Town Centre', ref: 'V 96673 90734' },
+      { name: 'Tralee Town Centre', ref: 'Q 83847 14553' },
     ])
   })
 
@@ -98,7 +110,15 @@ describe('wgs84 to ITM conversion', () => {
 describe('reverse Irish coordinate conversions', () => {
   it('parses Irish grid references into TM65 easting/northing coordinates', () => {
     expect(parseIrishGridReference('Q 99840 04018')).toEqual([99840, 104018])
-    expect(parseIrishGridReference('v 80011 84363')).toEqual([80011, 84363])
+    expect(parseIrishGridReference('v 80269 84392')).toEqual([80269, 84392])
+  })
+
+  it('parses coarse Irish grid references to the centre of their represented square', () => {
+    expect(parseIrishGridReference('V 8 8')).toEqual([85_000, 85_000])
+    expect(parseIrishGridReference('V 80 84')).toEqual([80_500, 84_500])
+    expect(parseIrishGridReference('V 802 843')).toEqual([80_250, 84_350])
+    expect(parseIrishGridReference('V 8026 8439')).toEqual([80_265, 84_395])
+    expect(parseIrishGridReference('V 80269 84392')).toEqual([80_269, 84_392])
   })
 
   it('converts ITM coordinates back into WGS84 within operational tolerance', () => {

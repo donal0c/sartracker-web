@@ -26,6 +26,7 @@ type StartMarkerRuntimeDependencies = {
 export type MarkerRuntimeController = {
   readonly refreshMission: (missionId: string | null) => Promise<void>
   readonly beginCreateAt: (lat: number, lon: number, type?: MarkerType) => void
+  readonly beginCreateFromDraft: (draft: MarkerDraft) => void
   readonly beginEdit: (markerId: string) => void
   readonly updateDraft: (patch: Partial<MarkerDraft>) => void
   readonly changeDraftType: (type: MarkerDraft['type']) => void
@@ -102,6 +103,15 @@ export async function startMarkerRuntime(
         dialog = null
         error = toErrorMessage(runtimeError)
         publishRuntime()
+        return
+      }
+
+      dialog = { mode: 'create', draft }
+      error = null
+      publishRuntime()
+    },
+    beginCreateFromDraft: (draft) => {
+      if (activeMissionId === null) {
         return
       }
 

@@ -11,7 +11,7 @@
  * LIFE-SAFETY CRITICAL: Incorrect tracking display could cause operators to
  * lose awareness of team positions on the mountain.
  */
-import { expect, test } from '@playwright/test'
+import { expect, test, type Page } from '@playwright/test'
 import {
   navigateToHarness,
   startMission,
@@ -21,6 +21,9 @@ import {
   captureAndRegister,
   captureElementAndRegister,
 } from './helpers/verification-manifest'
+
+const TRACKING_DEVICE_LAYER_ID = 'tracking-devices-circle'
+const TRACKING_BREADCRUMB_LAYER_ID = 'tracking-breadcrumbs-line'
 
 test.describe('Visual: Tracking', () => {
   test.beforeEach(async ({ page }) => {
@@ -140,7 +143,13 @@ Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
       } }).__SARTRACKER_MAP__
       map?.jumpTo({ center: [-9.7415, 51.9964], zoom: 13.2 })
     })
-    await page.waitForTimeout(1500) // let map tiles load at new zoom
+    await waitForRenderedTrackingFeatures(page)
+    await expect
+      .poll(() => page.getByTestId('mission-control').innerText(), {
+        message: 'mission timers are running before tracking map visual capture',
+        timeout: 3000,
+      })
+      .not.toContain('00:00:00')
 
     await captureAndRegister(page, {
       testId: 'tracking-map-devices',
@@ -286,3 +295,42 @@ Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
     })
   })
 })
+
+async function waitForRenderedTrackingFeatures(page: Page): Promise<void> {
+  await expect
+    .poll(
+      async () =>
+        page.evaluate(({ deviceLayerId, breadcrumbLayerId }) => {
+          const map = (window as Window & {
+            __SARTRACKER_MAP__?: {
+              getLayer: (id: string) => unknown
+              queryRenderedFeatures: (geometry?: unknown, options?: { layers?: string[] }) => unknown[]
+            }
+          }).__SARTRACKER_MAP__
+          if (map === undefined) {
+            return { devices: 0, breadcrumbs: 0, ready: false }
+          }
+          if (map.getLayer(deviceLayerId) === undefined || map.getLayer(breadcrumbLayerId) === undefined) {
+            return { devices: 0, breadcrumbs: 0, ready: false }
+          }
+
+          const devices = map.queryRenderedFeatures(undefined, { layers: [deviceLayerId] }).length
+          const breadcrumbs = map.queryRenderedFeatures(undefined, {
+            layers: [breadcrumbLayerId],
+          }).length
+          return {
+            devices,
+            breadcrumbs,
+            ready: devices >= 2 && breadcrumbs >= 1,
+          }
+        }, {
+          deviceLayerId: TRACKING_DEVICE_LAYER_ID,
+          breadcrumbLayerId: TRACKING_BREADCRUMB_LAYER_ID,
+        }),
+      {
+        message: 'tracking device markers and breadcrumb trail rendered before visual capture',
+        timeout: 8000,
+      },
+    )
+    .toEqual(expect.objectContaining({ ready: true }))
+}

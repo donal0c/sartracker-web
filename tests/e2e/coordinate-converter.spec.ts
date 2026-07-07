@@ -38,6 +38,10 @@ test.describe('M18 coordinate converter', () => {
     await page.getByTestId('coordinate-convert-btn').click()
     await expect(page.getByTestId('coordinate-result-dd')).toContainText('52.179336')
 
+    await page.getByTestId('coordinate-input-irish-grid-ref').fill('V 80 84')
+    await page.getByTestId('coordinate-convert-btn').click()
+    await expect(page.getByTestId('coordinate-result-ig')).toContainText('V 80500 84500')
+
     await page.getByTestId('coordinate-mode-dms').click()
     await page.getByTestId('coordinate-input-dms-latitude').fill('52°10\'45.613"N')
     await page.getByTestId('coordinate-input-dms-longitude').fill('9°27\'53.798"W')
@@ -77,6 +81,16 @@ test.describe('M18 coordinate converter', () => {
 
     await expect(page.getByText('DD input must include both latitude and longitude.')).toBeVisible()
     await expect(page.getByText('Latitude must be a finite number.')).toBeHidden()
+  })
+
+  test('shows a decimal-point instruction for decimal-comma DD input', async ({ page }) => {
+    await page.getByTestId('open-coordinate-converter').click()
+    await page.getByTestId('coordinate-mode-dd').click()
+    await page.getByTestId('coordinate-input-latitude').fill('52,179337')
+    await page.getByTestId('coordinate-input-longitude').fill('-9,464944')
+    await page.getByTestId('coordinate-convert-btn').click()
+
+    await expect(page.getByText('Use a decimal point for decimal-degree values.')).toBeVisible()
   })
 
   test('uses dialog semantics, traps focus, and returns focus on Escape', async ({ page }) => {

@@ -15,26 +15,23 @@ type CoordinateBarProps = {
   readonly longitude: number | null
 }
 
+type CoordinateDisplayParts = {
+  readonly wgs84Display: string
+  readonly gridDisplay: string
+  readonly dmsDisplay: string
+}
+
 export function CoordinateBar({ latitude, longitude }: CoordinateBarProps) {
   const openDialog = useCoordinateToolStore((state) => state.openDialog)
   const activeTarget = useMapTargetStore((state) => state.activeTarget)
 
-  let wgs84Display: string | null = null
-  let gridDisplay: string | null = null
-  let dmsDisplay: string | null = null
-  if (latitude !== null && longitude !== null) {
-    wgs84Display = formatWGS84Degrees(latitude, longitude)
-    dmsDisplay = formatWGS84Dms(latitude, longitude)
-    // The Irish Grid / TM65 reference is only meaningful inside Ireland. The cursor
-    // routinely tracks out to sea, so we show an explicit "outside Ireland" state
-    // rather than fabricating a plausible-looking grid reference for an offshore point.
-    if (isWithinIreland(latitude, longitude)) {
-      const [easting, northing] = wgs84ToTM65(latitude, longitude)
-      gridDisplay = formatIrishGridReference(easting, northing)
-    } else {
-      gridDisplay = 'Outside Ireland'
-    }
-  }
+  const displays =
+    latitude !== null && longitude !== null
+      ? formatCoordinateDisplayParts(latitude, longitude)
+      : null
+  const wgs84Display = displays?.wgs84Display ?? null
+  const gridDisplay = displays?.gridDisplay ?? null
+  const dmsDisplay = displays?.dmsDisplay ?? null
   const content =
     wgs84Display !== null && gridDisplay !== null && dmsDisplay !== null
       ? `${wgs84Display}  |  ${gridDisplay}  |  ${dmsDisplay}`
@@ -102,6 +99,28 @@ export function CoordinateBar({ latitude, longitude }: CoordinateBarProps) {
       </div>
     </div>
   )
+}
+
+function formatCoordinateDisplayParts(
+  latitude: number,
+  longitude: number,
+): CoordinateDisplayParts | null {
+  try {
+    const wgs84Display = formatWGS84Degrees(latitude, longitude)
+    const dmsDisplay = formatWGS84Dms(latitude, longitude)
+    // The Irish Grid / TM65 reference is only meaningful inside Ireland. The cursor
+    // routinely tracks out to sea, so we show an explicit "outside Ireland" state
+    // rather than fabricating a plausible-looking grid reference for an offshore point.
+    const gridDisplay = isWithinIreland(latitude, longitude)
+      ? formatIrishGridReference(...wgs84ToTM65(latitude, longitude))
+      : 'Outside Ireland'
+    return { wgs84Display, gridDisplay, dmsDisplay }
+  } catch (error) {
+    if (error instanceof RangeError || error instanceof TypeError) {
+      return null
+    }
+    throw error
+  }
 }
 
 function InstrumentCell(props: {

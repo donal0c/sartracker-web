@@ -93,7 +93,7 @@ export function MarkerAtGridPanel({ className = '' }: MarkerAtGridPanelProps = {
             try {
               const draft = createMarkerDraftFromIrishGridReference(gridReference, markerType)
               void markerController?.refreshMission(missionId).then(() => {
-                markerController.beginCreateAt(draft.coordinates.lat, draft.coordinates.lon, markerType)
+                markerController.beginCreateFromDraft(draft)
                 setError(null)
               }).catch((runtimeError: unknown) => {
                 setError(

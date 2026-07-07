@@ -278,7 +278,7 @@ A Linear issue is not done just because tests pass.
 - ITM (EPSG:2157) is the working CRS
 - TM65 is display-only (Irish Grid references)
 - WGS84 (EPSG:4326) for GPS input and map display
-- All coordinate transforms must be validated against the golden dataset in spikes/S2-irish-grid/
+- All coordinate transforms must be validated against the production golden tests/fixtures. `spikes/S2-irish-grid/` is historical reference material only; its original TM65 `+130.596` Y translation was stale and has been annotated/corrected to the EPSG:1641 `-130.596` sign.
 - Magnetic declination for Ireland: -4.5° (true → magnetic: subtract, magnetic → true: add)
 
 ### Commits
@@ -495,7 +495,7 @@ Avoid introducing `src/utils/` unless there is a very strong reason and the file
 ## Spike Reference (read-only)
 All spikes passed. Use them as reference implementations and test fixtures:
 - `spikes/S1-osi-maps/` — MapLibre basemap switcher, offline caching, coordinate display
-- `spikes/S2-irish-grid/` — proj4js coordinate conversion, golden dataset, grid reference formatting
+- `spikes/S2-irish-grid/` — historical proj4js coordinate conversion evidence; use production golden tests as the active oracle, and do not restore the stale positive-Y TM65 datum sign
 - `spikes/S3-drawing-tools/` — all 8 drawing tools with UI, geodesic math, LPB data
 - `spikes/S4-tauri-distribution/` — distribution research, updater config, signing analysis
 - `spikes/S5-persistence/` — SQLite mission store, schema, migrations, crash recovery

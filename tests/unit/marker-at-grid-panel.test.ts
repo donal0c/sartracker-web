@@ -47,20 +47,23 @@ describe('MarkerAtGridPanel', () => {
     })
 
     render(React.createElement(MarkerAtGridPanel))
-    setInputValue('[data-testid="marker-at-grid-reference-input"]', 'Q 99842 04015')
+    setInputValue('[data-testid="marker-at-grid-reference-input"]', 'V 80 84')
 
     await act(async () => {
       getButton('[data-testid="marker-at-grid-create-btn"]').click()
     })
 
     expect(controller.refreshMission).toHaveBeenCalledWith('mission-1')
-    expect(controller.beginCreateAt).toHaveBeenCalledWith(
-      expect.closeTo(52.179337, 5),
-      expect.closeTo(-9.464944, 5),
-      'ipp_lkp',
+    expect(controller.beginCreateFromDraft).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'ipp_lkp',
+        coordinates: expect.objectContaining({
+          tm65GridRef: 'V 80500 84500',
+        }),
+      }),
     )
     expect(controller.refreshMission.mock.invocationCallOrder[0]).toBeLessThan(
-      controller.beginCreateAt.mock.invocationCallOrder[0] ?? 0,
+      controller.beginCreateFromDraft.mock.invocationCallOrder[0] ?? 0,
     )
   })
 
@@ -76,11 +79,12 @@ describe('MarkerAtGridPanel', () => {
 
 function createController(): MarkerRuntimeController & {
   readonly refreshMission: ReturnType<typeof vi.fn>
-  readonly beginCreateAt: ReturnType<typeof vi.fn>
+  readonly beginCreateFromDraft: ReturnType<typeof vi.fn>
 } {
   return {
     refreshMission: vi.fn().mockResolvedValue(undefined),
     beginCreateAt: vi.fn(),
+    beginCreateFromDraft: vi.fn(),
     beginEdit: vi.fn(),
     updateDraft: vi.fn(),
     changeDraftType: vi.fn(),

@@ -679,11 +679,12 @@
             check is a bounding box around Ireland and its islands; it is a guard against gross errors,
             not a land/sea test. The coordinate converter also refuses contradictory direction input,
             such as a negative value tagged <strong>E</strong> or <strong>N</strong>, rather than
-            guessing the intended hemisphere.
+            guessing the intended hemisphere. Decimal-degree input must use a period as the decimal
+            separator; commas are accepted only between latitude and longitude.
           </p>
           <div class="card-grid">
             <div class="card"><strong>Maps menu</strong><br />Groups official maps and public fallback maps. Discovery Topo is the default official operational map once licensed maps are configured; hosted/browser testing keeps official maps marked not configured until a controlled private source is added.</div>
-            <div class="card"><strong>Coordinate converter</strong><br />Accepts IG, DD, and DMS, including pasted DD/DMS latitude-longitude pairs in the first field. W3W stays unavailable until integration decisions are settled. Results can be copied, used to jump the map, or used to open the normal marker form at that point.</div>
+            <div class="card"><strong>Coordinate converter</strong><br />Accepts IG, DD, and DMS, including pasted DD/DMS latitude-longitude pairs in the first field. Coarse Irish Grid references, such as two- or four-digit refs, resolve to the centre of the represented grid square for map jumps and marker creation. Displayed Irish Grid refs truncate to the shown precision rather than rounding into a neighbouring square. W3W stays unavailable until integration decisions are settled. Results can be copied, used to jump the map, or used to open the normal marker form at that point.</div>
             <div class="card"><strong>Offline badge</strong><br />Shows whether the active map is a public fallback, an online official source, or a ready/missing/unreadable official offline package. Warnings also appear on the map when the active map cannot be trusted offline.</div>
           </div>
           <div class="note">
@@ -946,7 +947,8 @@
             To place a marker from a TM65 Irish Grid reference instead of a map click, open the
             <strong>Tools</strong> tab, use <strong>Marker At GR</strong>, choose the marker type, enter
             the grid reference, and create the marker. Valid references open the normal marker form with
-            WGS84, ITM, and TM65 coordinates prefilled. The marker runtime refreshes to the active mission before opening the form so coordinate-created markers do not silently vanish. Invalid references fail visibly and do not create
+            WGS84, ITM, and TM65 coordinates prefilled. Coarse references resolve to the centre of the
+            represented square before the marker form opens. The marker runtime refreshes to the active mission before opening the form so coordinate-created markers do not silently vanish. Invalid references fail visibly and do not create
             a marker.
           </p>
           <p>

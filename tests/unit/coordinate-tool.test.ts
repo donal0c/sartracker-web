@@ -24,6 +24,30 @@ describe('coordinate converter', () => {
     expect(result.w3wDisplay).toBe('W3W unavailable offline')
   })
 
+  it('preserves the parsed Irish Grid easting and northing instead of re-projecting at grid-square edges', () => {
+    const result = convertCoordinates({
+      ...createCoordinateConverterDraft(),
+      mode: 'ig',
+      irishGridRef: 'R 00000 00000',
+    })
+
+    expect(result.tm65Easting).toBe(100_000)
+    expect(result.tm65Northing).toBe(100_000)
+    expect(result.irishGridRef).toBe('R 00000 00000')
+  })
+
+  it('uses the centre of coarse Irish Grid references for conversion results', () => {
+    const result = convertCoordinates({
+      ...createCoordinateConverterDraft(),
+      mode: 'ig',
+      irishGridRef: 'V 80 84',
+    })
+
+    expect(result.tm65Easting).toBe(80_500)
+    expect(result.tm65Northing).toBe(84_500)
+    expect(result.irishGridRef).toBe('V 80500 84500')
+  })
+
   it('converts DD input into Irish Grid and DMS outputs', () => {
     const result = convertCoordinates({
       ...createCoordinateConverterDraft(),
@@ -105,6 +129,17 @@ describe('coordinate converter', () => {
     ).toThrow(
       'DD input must include both latitude and longitude. Paste a pair like 52.004677, -9.748060, or split the values into Latitude and Longitude.',
     )
+  })
+
+  it('gives a clear decimal-comma error before range validation', () => {
+    expect(() =>
+      convertCoordinates({
+        ...createCoordinateConverterDraft(),
+        mode: 'dd',
+        latitude: '52,179337',
+        longitude: '-9,464944',
+      }),
+    ).toThrow(/Use a decimal point/i)
   })
 
   it('keeps W3W decision-gated until API, licensing, and offline behavior are settled', () => {

@@ -39,7 +39,7 @@ test.describe('M6 marker workflows', () => {
     })
   })
 
-  test('creates a marker from a TM65 grid reference through Map Tools', async ({ page }) => {
+  test('creates a marker from a coarse TM65 grid reference through Map Tools', async ({ page }) => {
     await page.getByTestId('sidebar-tab-tools').click()
     await expect(page.getByTestId('marker-at-grid-panel')).toBeHidden()
 
@@ -47,13 +47,13 @@ test.describe('M6 marker workflows', () => {
     await page.getByTestId('drawing-tool-marker_at_grid').click()
     await expect(page.getByTestId('marker-at-grid-panel')).toBeVisible()
     await page.getByTestId('marker-at-grid-type-input').selectOption('hazard')
-    await page.getByTestId('marker-at-grid-reference-input').fill('Q 99842 04015')
+    await page.getByTestId('marker-at-grid-reference-input').fill('V 80 84')
     await page.getByTestId('marker-at-grid-create-btn').click()
 
     const dialog = page.getByTestId('marker-dialog')
     await expect(dialog).toBeVisible()
     await expect(page.getByTestId('marker-type-hazard')).toBeChecked()
-    await expect(page.getByTestId('marker-tm65-readout')).toContainText('Q 99842 04015')
+    await expect(page.getByTestId('marker-tm65-readout')).toContainText('V 80500 84500')
 
     await page.getByTestId('marker-name-input').fill('Grid reference hazard')
     await page.getByTestId('marker-hazard-type-input').selectOption('Water Hazard')

@@ -97,7 +97,10 @@ export function createMarkerDraftFromIrishGridReference(
 ): MarkerDraft {
   const [tm65Easting, tm65Northing] = parseIrishGridReference(gridReference)
   const [lat, lon] = tm65ToWgs84(tm65Easting, tm65Northing)
-  return createMarkerDraftAtCoordinate(lat, lon, type)
+  return {
+    ...createMarkerDraftAtCoordinate(lat, lon, type),
+    coordinates: createMarkerDraftCoordinates(lat, lon, [tm65Easting, tm65Northing]),
+  }
 }
 
 /**
@@ -259,11 +262,15 @@ export function defaultMarkerLabelSize(type: MarkerType): number {
   return type === 'casualty' ? 16 : 12
 }
 
-function createMarkerDraftCoordinates(lat: number, lon: number): MarkerDraftCoordinates {
+function createMarkerDraftCoordinates(
+  lat: number,
+  lon: number,
+  tm65Coordinate?: readonly [number, number],
+): MarkerDraftCoordinates {
   // New markers must sit inside Ireland: wgs84ToITM/wgs84ToTM65 throw on offshore input,
   // and that throw is surfaced to the operator by the marker runtime's beginCreateAt.
   const [irishGridE, irishGridN] = wgs84ToITM(lat, lon)
-  const [tm65Easting, tm65Northing] = wgs84ToTM65(lat, lon)
+  const [tm65Easting, tm65Northing] = tm65Coordinate ?? wgs84ToTM65(lat, lon)
 
   return {
     lat,

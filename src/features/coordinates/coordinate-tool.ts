@@ -31,6 +31,12 @@ export type CoordinateConversionResult = {
 
 export type CoordinateClipboardKind = 'ig' | 'dd' | 'dms'
 
+type ResolvedDraftCoordinate = {
+  readonly latitude: number
+  readonly longitude: number
+  readonly tm65Coordinate?: readonly [number, number]
+}
+
 export function createCoordinateConverterDraft(): CoordinateConverterDraft {
   return {
     mode: 'ig',
@@ -49,14 +55,15 @@ export function createCoordinateConverterDraft(): CoordinateConverterDraft {
 export function convertCoordinates(
   draft: CoordinateConverterDraft,
 ): CoordinateConversionResult {
-  const [latitude, longitude] = resolveDraftCoordinate(draft)
-  const [tm65Easting, tm65Northing] = wgs84ToTM65(latitude, longitude)
+  const coordinate = resolveDraftCoordinate(draft)
+  const [tm65Easting, tm65Northing] =
+    coordinate.tm65Coordinate ?? wgs84ToTM65(coordinate.latitude, coordinate.longitude)
 
   return {
-    latitude,
-    longitude,
-    ddDisplay: formatDecimalDegrees(latitude, longitude),
-    dmsDisplay: formatWGS84Dms(latitude, longitude),
+    latitude: coordinate.latitude,
+    longitude: coordinate.longitude,
+    ddDisplay: formatDecimalDegrees(coordinate.latitude, coordinate.longitude),
+    dmsDisplay: formatWGS84Dms(coordinate.latitude, coordinate.longitude),
     tm65Easting,
     tm65Northing,
     irishGridRef: formatIrishGridReference(tm65Easting, tm65Northing),
@@ -78,7 +85,7 @@ export function formatCoordinateClipboardValue(
   }
 }
 
-function resolveDraftCoordinate(draft: CoordinateConverterDraft): [number, number] {
+function resolveDraftCoordinate(draft: CoordinateConverterDraft): ResolvedDraftCoordinate {
   switch (draft.mode) {
     case 'ig':
       return parseIrishGridDraft(draft)
@@ -93,34 +100,40 @@ function resolveDraftCoordinate(draft: CoordinateConverterDraft): [number, numbe
   }
 }
 
-function parseIrishGridDraft(draft: CoordinateConverterDraft): [number, number] {
+function parseIrishGridDraft(draft: CoordinateConverterDraft): ResolvedDraftCoordinate {
   const [tm65Easting, tm65Northing] = parseIrishGridReference(draft.irishGridRef)
-  return tm65ToWgs84(tm65Easting, tm65Northing)
+  const [latitude, longitude] = tm65ToWgs84(tm65Easting, tm65Northing)
+  return {
+    latitude,
+    longitude,
+    tm65Coordinate: [tm65Easting, tm65Northing],
+  }
 }
 
-function parseDecimalDegreesDraft(draft: CoordinateConverterDraft): [number, number] {
+function parseDecimalDegreesDraft(draft: CoordinateConverterDraft): ResolvedDraftCoordinate {
   if (draft.longitude.trim() === '') {
-    return parseDecimalDegreesPair(draft.latitude)
+    const [latitude, longitude] = parseDecimalDegreesPair(draft.latitude)
+    return { latitude, longitude }
   }
 
-  return [
-    parseDecimalCoordinate(draft.latitude, 'Latitude', ['N', 'S']),
-    parseDecimalCoordinate(draft.longitude, 'Longitude', ['E', 'W']),
-  ]
+  const latitude = parseDecimalCoordinate(draft.latitude, 'Latitude', ['N', 'S'])
+  const longitude = parseDecimalCoordinate(draft.longitude, 'Longitude', ['E', 'W'])
+  return { latitude, longitude }
 }
 
-function parseDmsDraft(draft: CoordinateConverterDraft): [number, number] {
+function parseDmsDraft(draft: CoordinateConverterDraft): ResolvedDraftCoordinate {
   if (draft.dmsLongitude.trim() === '') {
-    return parseDmsPair(draft.dmsLatitude)
+    const [latitude, longitude] = parseDmsPair(draft.dmsLatitude)
+    return { latitude, longitude }
   }
 
-  return [
-    parseDmsCoordinate(draft.dmsLatitude, 'Latitude'),
-    parseDmsCoordinate(draft.dmsLongitude, 'Longitude'),
-  ]
+  const latitude = parseDmsCoordinate(draft.dmsLatitude, 'Latitude')
+  const longitude = parseDmsCoordinate(draft.dmsLongitude, 'Longitude')
+  return { latitude, longitude }
 }
 
 function parseDecimalDegreesPair(value: string): [number, number] {
+  rejectDecimalCommaInput(value)
   const tokens = tokenizeDecimalCoordinates(value)
   if (tokens.length !== 2) {
     throw new Error(
@@ -139,6 +152,7 @@ function parseDecimalCoordinate(
   label: 'Latitude' | 'Longitude',
   allowedDirections: readonly CardinalDirection[],
 ): number {
+  rejectDecimalCommaInput(value)
   const tokens = tokenizeDecimalCoordinates(value)
   if (tokens.length !== 1) {
     throw new Error(`${label} must contain one decimal-degree value.`)
@@ -153,6 +167,14 @@ type DecimalCoordinateToken = {
 }
 
 type CardinalDirection = 'N' | 'S' | 'E' | 'W'
+
+function rejectDecimalCommaInput(value: string): void {
+  if (/[+-]?\d+,\d+/.test(value.trim())) {
+    throw new Error(
+      'Use a decimal point for decimal-degree values. Commas may only separate latitude and longitude.',
+    )
+  }
+}
 
 function tokenizeDecimalCoordinates(value: string): readonly DecimalCoordinateToken[] {
   const trimmed = value.trim().toUpperCase()

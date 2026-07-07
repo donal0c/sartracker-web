@@ -34,6 +34,15 @@ describe('CoordinateBar', () => {
     expect(query('[data-testid="open-coordinate-converter"]')).not.toBeNull()
   })
 
+  it('renders a safe placeholder instead of throwing for impossible coordinate props', () => {
+    expect(() =>
+      render(React.createElement(CoordinateBar, { latitude: 95, longitude: -190 })),
+    ).not.toThrow()
+
+    expect(text('[data-testid="coordinate-display"]')).toContain('—')
+    expect(text('[data-testid="coordinate-display"]')).not.toContain('95')
+  })
+
   function render(element: React.ReactElement): void {
     host = document.createElement('div')
     document.body.append(host)

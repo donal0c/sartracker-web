@@ -9,6 +9,8 @@ const ITM_PROJ =
 const TM65_PROJ =
   '+proj=tmerc +lat_0=53.5 +lon_0=-8 +k=1.000035 ' +
   '+x_0=200000 +y_0=250000 +a=6377340.189 +b=6356034.447 ' +
+  // EPSG:1641 uses a negative Y translation. Some historical spike/legacy
+  // references used +130.596 and are intentionally documented as stale.
   '+towgs84=482.530,-130.596,564.557,-1.042,-0.214,-0.631,8.15 ' +
   '+units=m +no_defs'
 
@@ -226,7 +228,7 @@ export function formatIrishGridReference(
   const safeEasting = validateNumeric(easting, 'easting', context)
   const safeNorthing = validateNumeric(northing, 'northing', context)
 
-  if (!Number.isInteger(digits) || digits <= 0) {
+  if (!Number.isInteger(digits) || digits < 1 || digits > 5) {
     throw new RangeError(`Invalid digit precision during ${context}: ${digits}`)
   }
 
@@ -247,10 +249,12 @@ export function formatIrishGridReference(
     throw new RangeError(`TM65 grid square outside valid range during ${context}`)
   }
 
-  let eRemainder = Math.round(safeEasting - e100k * IRISH_GRID_SIZE)
-  let nRemainder = Math.round(safeNorthing - n100k * IRISH_GRID_SIZE)
-  if (eRemainder >= IRISH_GRID_SIZE) eRemainder = IRISH_GRID_SIZE - 1
-  if (nRemainder >= IRISH_GRID_SIZE) nRemainder = IRISH_GRID_SIZE - 1
+  const precisionScale = 10 ** (5 - digits)
+  let eRemainder = Math.floor((safeEasting - e100k * IRISH_GRID_SIZE) / precisionScale)
+  let nRemainder = Math.floor((safeNorthing - n100k * IRISH_GRID_SIZE) / precisionScale)
+  const precisionMax = 10 ** digits
+  if (eRemainder >= precisionMax) eRemainder = precisionMax - 1
+  if (nRemainder >= precisionMax) nRemainder = precisionMax - 1
 
   return `${letter} ${eRemainder.toString().padStart(digits, '0')} ${nRemainder
     .toString()
@@ -282,8 +286,9 @@ export function parseIrishGridReference(value: string): [number, number] {
 
   const precision = rawEasting.length
   const scale = 10 ** (5 - precision)
-  const eastingRemainder = Number(rawEasting) * scale
-  const northingRemainder = Number(rawNorthing) * scale
+  const centreOffset = precision === 5 ? 0 : scale / 2
+  const eastingRemainder = Number(rawEasting) * scale + centreOffset
+  const northingRemainder = Number(rawNorthing) * scale + centreOffset
   const easting = gridPosition.easting + eastingRemainder
   const northing = gridPosition.northing + northingRemainder
 
@@ -361,7 +366,16 @@ export function formatMapCoordinateBar(
   lon: number,
   mode: CoordinateDisplayMode = 'wgs84_first',
 ): string {
-  const wgs84 = formatWGS84Degrees(lat, lon)
+  let wgs84: string
+  try {
+    wgs84 = formatWGS84Degrees(lat, lon)
+  } catch (error) {
+    if (error instanceof RangeError || error instanceof TypeError) {
+      return '—'
+    }
+    throw error
+  }
+
   const tm65 = isWithinIreland(lat, lon)
     ? formatIrishGridReference(...wgs84ToTM65(lat, lon))
     : 'Outside Ireland'

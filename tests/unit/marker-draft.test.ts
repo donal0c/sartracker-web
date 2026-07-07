@@ -80,14 +80,20 @@ describe('marker draft helpers', () => {
   })
 
   it('creates a typed marker draft from a TM65 Irish Grid reference', () => {
-    const draft = createMarkerDraftFromIrishGridReference('V 80011 84363', 'hazard')
+    const draft = createMarkerDraftFromIrishGridReference('V 80269 84392', 'hazard')
 
     expect(draft.type).toBe('hazard')
     expect(draft.coordinates.lat).toBeGreaterThan(51.99)
     expect(draft.coordinates.lat).toBeLessThan(52.01)
     expect(draft.coordinates.lon).toBeGreaterThan(-9.75)
     expect(draft.coordinates.lon).toBeLessThan(-9.73)
-    expect(draft.coordinates.tm65GridRef).toBe('V 80011 84363')
+    expect(draft.coordinates.tm65GridRef).toBe('V 80269 84392')
+  })
+
+  it('places coarse TM65 Irish Grid marker references at the square centre', () => {
+    const draft = createMarkerDraftFromIrishGridReference('V 80 84')
+
+    expect(draft.coordinates.tm65GridRef).toBe('V 80500 84500')
   })
 
   it('rejects malformed TM65 grid references before opening a marker draft', () => {
