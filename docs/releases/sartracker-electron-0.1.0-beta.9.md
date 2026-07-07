@@ -10,9 +10,9 @@
 - **Cut by:** Codex agent (Donal supervising)
 - **Supersedes:** `electron-v0.1.0-beta.8`
 - **Linear reference:** Fable deep-analysis parent `DON-230`; shipped fixes `DON-228`, `DON-231`-`DON-238`. `DON-239` is intentionally parked for a later low-priority tracking-staleness pass.
-- **Verification report:** local gates and local browser/packaged smoke complete; GitHub Actions and Ubuntu CI-artifact smoke must complete before publication.
-- **CI run:** pending `electron-release.yml` run from tag `electron-v0.1.0-beta.9`.
-- **GitHub release:** expected draft prerelease only until Ubuntu packaged smoke passes on the CI-built artifact.
+- **Verification report:** local gates, local browser/packaged smoke, GitHub Actions, Linux bundle, and CI AppImage launch smoke complete. Ubuntu CI-artifact smoke must complete before publication.
+- **CI run:** `electron-release.yml` run `28875685324` - success (gates, Linux bundle, Xvfb AppImage launch smoke, draft prerelease + SHA256SUMS).
+- **GitHub release:** draft prerelease created; keep draft until Ubuntu packaged smoke passes on the CI-built artifact.
 
 ## What this beta is
 
@@ -24,7 +24,7 @@ redaction, and Irish Grid coordinate semantics.
 
 ## Artifacts
 
-Expected after the GitHub Actions release run passes:
+Created by GitHub Actions run `28875685324`:
 
 | Platform | Artifact | Recommended use |
 | --- | --- | --- |
@@ -273,7 +273,22 @@ release still requires the Ubuntu smoke below against the CI-built artifact.
 
 ### GitHub Actions release run
 
-Pending. The draft release must be created from tag `electron-v0.1.0-beta.9`.
+Completed successfully on 2026-07-07:
+
+- Run: `28875685324`
+- Commit: `d6cad5b5219c859784bd349bdd15a0983a6411de`
+- Gates: lint, unit tests, web build, standard Chromium E2E.
+- Bundle: Linux x86_64 AppImage and `.deb`; native SQLite module inspected;
+  private-map-data guard passed.
+- CI launch smoke: AppImage launched under Xvfb and evidence uploaded.
+- Draft prerelease and `SHA256SUMS` were created.
+
+CI-built checksums:
+
+```text
+7d3490b4da53743b5a4a2d38ff36b951c1ad73131589afdf2d288e6bd6d34641  sartracker-electron-validation_0.1.0-beta.9_linux_amd64.deb
+99d3aeb3d543ad4b5b95f3cc24ce29c1b3f21963095a30040d60588e3789ce7c  sartracker-electron-validation_0.1.0-beta.9_linux_x86_64.AppImage
+```
 
 ### Ubuntu deep smoke
 
@@ -290,5 +305,4 @@ until the CI-built artifact has passed the Ubuntu smoke matrix.
 ## Publication State
 
 **Draft candidate only.** Beta.9 must not be shared as the current tester
-artifact until GitHub Actions is green and the Ubuntu packaged smoke passes on
-the CI-built artifact.
+artifact until the Ubuntu packaged smoke passes on the CI-built artifact.
