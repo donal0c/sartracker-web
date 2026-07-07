@@ -1,0 +1,294 @@
+# SAR Tracker Electron Desktop Beta 0.1.0-beta.9 (Fable safety hardening)
+
+> **Internal beta only.** Not a production release. Do not use for live
+> incidents until this beta has passed the desktop smoke checklist below and
+> a team member has signed off in writing.
+
+- **Version:** 0.1.0-beta.9
+- **Build tag:** `electron-v0.1.0-beta.9`
+- **Cut date (UTC):** 2026-07-07
+- **Cut by:** Codex agent (Donal supervising)
+- **Supersedes:** `electron-v0.1.0-beta.8`
+- **Linear reference:** Fable deep-analysis parent `DON-230`; shipped fixes `DON-228`, `DON-231`-`DON-238`. `DON-239` is intentionally parked for a later low-priority tracking-staleness pass.
+- **Verification report:** local gates and local browser/packaged smoke complete; GitHub Actions and Ubuntu CI-artifact smoke must complete before publication.
+- **CI run:** pending `electron-release.yml` run from tag `electron-v0.1.0-beta.9`.
+- **GitHub release:** expected draft prerelease only until Ubuntu packaged smoke passes on the CI-built artifact.
+
+## What this beta is
+
+Beta.9 is a **safety and durability hardening release** driven by the Fable
+deep-analysis review. It does not add a new operator workflow. It fixes mission
+record integrity, SQLite backup/archive durability, Traccar cursor/session
+correctness, tracking overlay churn, Electron trust-boundary gaps, diagnostic
+redaction, and Irish Grid coordinate semantics.
+
+## Artifacts
+
+Expected after the GitHub Actions release run passes:
+
+| Platform | Artifact | Recommended use |
+| --- | --- | --- |
+| Linux x86_64 | `sartracker-electron-validation_0.1.0-beta.9_linux_x86_64.AppImage` | Single-file portable run; no install required. Most Linux testers. |
+| Linux x86_64 | `sartracker-electron-validation_0.1.0-beta.9_linux_amd64.deb` | System install on Ubuntu/Debian/Mint/Pop_OS. |
+| All | `SHA256SUMS` | Checksum sidecar to verify downloaded artifacts. |
+
+macOS arm64 is not part of the CI cut. Windows remains gated off pending the
+Windows official-map smoke (`DON-141`).
+
+Private Discovery map packages are never release artifacts. Distribute those
+through the agreed private team channel and load them through Settings after
+installing the app.
+
+## Install - Linux (primary target)
+
+### AppImage (zero-install)
+
+1. Download the `.AppImage` and `SHA256SUMS`.
+2. Verify: `sha256sum -c SHA256SUMS --ignore-missing` - the AppImage line must say **OK**.
+3. `chmod +x` the AppImage and run it.
+4. If you see `dlopen(): error loading libfuse.so.2`: Ubuntu 24.04 `sudo apt install libfuse2t64`; Ubuntu 22.04 `sudo apt install libfuse2`.
+
+### .deb (system install)
+
+1. Download the `.deb` and `SHA256SUMS`, verify the checksum.
+2. `sudo apt install ./sartracker-electron-validation_0.1.0-beta.9_linux_amd64.deb`.
+3. Launch from the application menu.
+
+## What Changed
+
+Since `0.1.0-beta.8`. Grouped so you can test by risk area.
+
+### Mission record integrity
+
+- **Paused mission time is accumulated from pause intervals.** [DON-231]
+  Pausing and resuming no longer risks corrupting elapsed mission accounting.
+- **Created/imported timestamps are preserved on edit.** [DON-231]
+  Marker, drawing, and GPX edits keep their original created/imported time
+  instead of rewriting history during normal edits.
+
+### SQLite durability, backup, and archive safety
+
+- **Mission writes now use stronger SQLite durability.** [DON-232]
+  The desktop mission store uses `synchronous=FULL` for stronger crash-safety on
+  committed mission data.
+- **Backup mirrors are atomic and serialized.** [DON-232]
+  Backup writes go through a temp file plus rename, backup/archive work is
+  serialized, and archive validation avoids marking a mission finalized when the
+  archive is missing or incomplete.
+- **Opening a newer schema fails explicitly.** [DON-232]
+  A beta.9 app will not silently open a database created by a future app version.
+- **Finalize/archive retries are safer.** [DON-232]
+  Retry behavior is idempotent around stale archive state and no longer leaves
+  ambiguous finalized-vs-archived mission records.
+
+### Traccar cursor, session, and speed correctness
+
+- **Breadcrumb cursors no longer create blind spots or runaway old windows.** [DON-228, DON-233]
+  Incremental fetches overlap safely, clamp future timestamps to the completed
+  fetch window, and advance from the maximum timestamp in an unsorted response.
+- **Seed failures no longer truncate retained history.** [DON-233]
+  If resume seeding fails, the runtime avoids replacing the mission's history
+  with a short fallback.
+- **Same-second fixes are preserved when they are genuinely distinct.** [DON-233]
+  Timestamp canonicalization prevents duplicates from string-format drift while
+  still keeping distinct fixes that share the same second.
+- **Expired Traccar sessions recover cleanly.** [DON-234]
+  A `401` or `403` clears stale cookies and reauthenticates.
+- **Failed request timeouts are cleaned up.** [DON-234]
+  Timed-out requests no longer leave stale timeout handles behind.
+- **Traccar speed is displayed/stored in km/h.** [DON-234]
+  API speeds are normalized from Traccar's knot-based values before reaching the
+  operator UI or mission persistence.
+
+### Tracking map performance and visual stability
+
+- **Hidden Tracking work is quiet.** [DON-235]
+  Hidden Tracking uses a stable empty snapshot, skips unchanged FeatureCollection
+  construction, and avoids repeated `setData` calls during idle map frames.
+- **Healthy polls publish one settled snapshot.** [DON-235]
+  The runtime avoids extra intermediate overlay churn after successful polls.
+- **Breadcrumb source memory is bounded.** [DON-235]
+  Retained source arrays stay bounded while observed mission totals remain
+  cumulative for diagnostics.
+- **Hover coordinates are animation-frame throttled.** [DON-235]
+  Map hover readouts are less likely to compete with render work during panning.
+- **Tracking labels and small-display coordinate strip were tightened.** [DON-235]
+  Visual validation caught and fixed a label halo/readability issue and a
+  small-display coordinate-strip overlap.
+
+### Electron runtime trust boundaries
+
+- **Fatal main-process errors flush diagnostics before relaunch/exit.** [DON-236]
+  Crash evidence is written before the app tries to recover or quit.
+- **Packaged `file:` IPC senders are restricted to the built renderer entrypoint.** [DON-236]
+  The preload/main boundary rejects unexpected packaged-file senders.
+- **External navigation and popups are denied.** [DON-236]
+  App windows cannot be redirected into untrusted pages.
+- **The Traccar proxy is origin-constrained and size-bounded.** [DON-236]
+  Proxy requests are limited to the configured provider origin and oversized
+  responses are capped.
+- **File/path IPC is limited to app-owned or operator-selected paths.** [DON-236]
+  File-launch and related IPC surfaces no longer accept arbitrary local paths.
+
+### Diagnostics and settings safety
+
+- **Diagnostic metadata cannot be overridden by report payload fields.** [DON-237]
+  App-owned metadata remains authoritative in exported reports.
+- **Diagnostic redaction is recursive.** [DON-237]
+  Authorization headers, tokens, URL credentials, and home paths are redacted
+  through nested diagnostic payloads.
+- **Clean-exit marking is awaited.** [DON-237]
+  Clean shutdown state is less likely to race app exit.
+- **Settings does not advertise Traccar auth when credential persistence fails.** [DON-237]
+  Operators will not see a misleading "saved" state if the credential write did
+  not actually succeed.
+
+### Coordinate safety and Irish Grid semantics
+
+- **Production TM65 uses the EPSG:1641 negative-Y transform.** [DON-238]
+  Historical S2 spike data is no longer treated as the active coordinate oracle.
+- **Displayed Irish Grid refs truncate to requested precision.** [DON-238]
+  Formatting no longer rounds into a neighboring grid square.
+- **Coarse Irish Grid refs resolve to the centre of the represented square.** [DON-238]
+  Converter and Marker at Grid Reference now place refs such as `V 80 84` at the
+  centre of that 1 km square (`V 80500 84500`), matching the locked product call.
+- **Irish Grid converter results preserve parsed TM65 at 100 km edges.** [DON-238]
+  Edge-square inputs no longer drift through a round-trip display artifact.
+- **Decimal-comma DD input has a clear decimal-point error.** [DON-238]
+  Ambiguous `52,123` style decimal-degree input tells the operator to use a
+  decimal point.
+- **Impossible live coordinate values render a placeholder.** [DON-238]
+  Bad live coordinate values show `-` instead of throwing in the coordinate strip.
+
+## Parked Fable Item
+
+- **DON-239:** tracking stale-threshold policy and presentation improvement.
+  This was assessed as low priority for this release. Beta.9 does not change the
+  product call here.
+
+## What To Test
+
+Critical, packaged-build, on the Ubuntu machine after the CI artifacts exist:
+
+- Checksum verification for AppImage and `.deb` using `SHA256SUMS`.
+- Packaged launch on the real Ubuntu smoke box.
+- Mission lifecycle: start, persist after restart, recovery, finish, finalize,
+  archive creation, and clean relaunch after finalization.
+- Coordinate rejection and coarse Irish Grid behavior (`V 80 84` should resolve
+  to `V 80500 84500`; out-of-Ireland DD should be rejected).
+- Diagnostics export and incident/support bundle sanitization.
+- Bad/corrupt credential startup safety.
+- Settings credential-persistence failure behavior if it can be simulated.
+- Live Traccar connection to `https://kmrtsar.eu`, including breadcrumb continuity
+  and displayed speed units.
+- Duplicate launch / single-instance smoke from beta.8 should be rechecked as a
+  release-regression guard.
+- Private Discovery offline map package smoke if the package is available on the
+  Ubuntu box; otherwise record the package as unavailable and do not publish for
+  map-testing purposes.
+
+Local pre-Ubuntu smoke covers the same app surfaces where practical, but the
+release must remain draft until the Ubuntu smoke is complete on the CI-built
+artifact.
+
+## Loading Discovery Maps
+
+1. Install/open the Electron app.
+2. Keep the private Discovery MBTiles package on USB, external disk, or agreed
+   private team storage.
+3. Open **Settings**.
+4. In **Official Maps**, choose **Add Discovery Package**.
+5. Select the private `.mbtiles` package.
+6. Save Settings and wait for the package card to show **READY**.
+7. Open **Maps**, choose **Discovery Topo**, and run **Check View Coverage**.
+8. Confirm the field-readiness checklist says **Field ready** over the intended
+   search area.
+
+Do not upload the map package, credentials, raw diagnostics with private paths,
+or screenshots showing private paths to GitHub.
+
+## Known Limitations
+
+- Linux x86_64 only from CI for this cut. No Windows, no macOS, no ARM.
+- Artifacts are unsigned. Expect platform security warnings outside Linux.
+- Auto-updater is not enabled. Each beta is a fresh download.
+- High-definition mountain map packages are not bundled.
+- Browser hosted-mode persistence is testing-only and not part of this desktop beta.
+- Windows official-map import remains blocked on `DON-141`.
+- Diagnostics support bundles are local file exports only; there is no in-app
+  remote upload inbox yet (`DON-181` is not in this build).
+- Traccar credentials are stored as local app-owned plaintext (best-effort
+  `0600` file permissions), unchanged from beta.7 (`DON-177`). This is an
+  intentional reliability trade for trusted team machines, not OS-keyring
+  encryption.
+
+## Verification
+
+This beta is produced by `.github/workflows/electron-release.yml` on the
+`electron-v0.1.0-beta.9` tag. Before sharing with testers, the release must have:
+
+- GitHub Actions gates green: lint, unit tests, web build, native Linux bundle,
+  private-map-data guard, Xvfb launch smoke, and `SHA256SUMS`.
+- Real Ubuntu smoke against the **CI-built** artifact, not a local rebuild:
+  checksum verification, packaged launch, mission lifecycle/restart/recovery/
+  finalize/archive, coordinate rejection and coarse-grid handling, sanitized
+  diagnostics/support bundle export, live Traccar connection, bad/corrupt
+  credential startup safety, and duplicate-launch regression coverage.
+
+### Local pre-Ubuntu verification
+
+Completed on 2026-07-07 on Donal's local macOS arm64 machine before cutting the
+tag:
+
+- `npm run beta:verify` - PASS with no skipped steps; report
+  `tmp/beta-artifacts/verify-0.1.0-beta.9-sha.581d43382545-2026-07-07T14-50-20Z.json`.
+  Covered lint, build, unit tests, backend tests, Chromium E2E `129/129`,
+  local unsigned Electron packaging, and the formal manual smoke checklist.
+- `npx playwright test --project=visual` - PASS `34/34`.
+- `npm run visual:review -- --fail-on critical` - PASS `39/39`; report
+  `test-results/visual-verification/reports/visual-review-2026-07-07T14-39-54Z.json`.
+- Browser smoke against `http://127.0.0.1:1420/?missionHarness=1` - PASS.
+  Evidence under `output/playwright/beta8-local-smoke/` covers idle shell,
+  active tracking warning, Devices at 1100x720, minimized Mission Control, Map
+  Tools, Marker at Grid Reference, Settings credential-in-URL rejection, mocked
+  online tracking, Diagnostics support bundle, and small-display map/scale
+  layout. The script recorded expected reload/tile `ERR_ABORTED` noise while
+  deliberately resetting browser state.
+- Local packaged Electron core smoke against
+  `tmp/electron-dist/mac-arm64/SAR Tracker Electron Validation.app` - critical
+  gates PASS: launch, real SQLite mission start, marker save, restart recovery,
+  finish/finalize, and standalone archive creation (`5055` bytes). Evidence:
+  `tmp/beta9-local-packaged-core-smoke/`.
+- Local packaged coordinate/diagnostics smoke - coordinate rejection PASS.
+  Diagnostics export was manually inspected after the legacy script flagged the
+  safe label `secret present: no`; no password/token/Authorization value was
+  present and home paths were redacted. Evidence:
+  `tmp/beta9-local-packaged-coordinate-diagnostics-smoke/`.
+- `npm run electron:smoke:bad-secret -- --app "tmp/electron-dist/mac-arm64/SAR Tracker Electron Validation.app/Contents/MacOS/SAR Tracker Electron Validation" --evidence-dir tmp/beta9-local-bad-secret-smoke`
+  - PASS. The packaged app reached the normal shell with the expected
+  undecryptable-credential warning and Settings recovery path.
+
+Local verification is intentionally **not** the release publication gate. The
+release still requires the Ubuntu smoke below against the CI-built artifact.
+
+### GitHub Actions release run
+
+Pending. The draft release must be created from tag `electron-v0.1.0-beta.9`.
+
+### Ubuntu deep smoke
+
+Pending. Donal will set up the Ubuntu machine later. Do not publish this release
+until the CI-built artifact has passed the Ubuntu smoke matrix.
+
+## Rollback / Reinstall
+
+- AppImage: delete the file. `.deb`: `sudo apt remove sartracker-electron-validation`.
+- Mission data lives under the app's per-user data directory and is not removed
+  by uninstalling the bundle. If corruption is suspected, capture diagnostics
+  first and do not delete anything until recorded.
+
+## Publication State
+
+**Draft candidate only.** Beta.9 must not be shared as the current tester
+artifact until GitHub Actions is green and the Ubuntu packaged smoke passes on
+the CI-built artifact.

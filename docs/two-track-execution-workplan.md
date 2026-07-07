@@ -120,7 +120,7 @@ ship or ask testers for whole Electron profile zips.
 
 ## Current Priority
 
-1. Work down the Fable deep-analysis remediation queue under `DON-230`; `DON-231` through `DON-238` are complete, so continue with the remaining child `DON-239`.
+1. Prepare the next Electron beta from the Fable deep-analysis remediation queue under `DON-230`; `DON-231` through `DON-238` are complete, and `DON-239` is intentionally parked as a low-priority follow-up outside the beta.9 release gate.
 2. Keep hosted browser testing smooth enough for the team to give real feedback.
 3. Fix the 2026-05-16 team feedback items that affect map trust before returning to broader foundation work.
 4. Burn down shared foundation issues that make startup, mission control, tracking, layers, or map behavior ambiguous.
