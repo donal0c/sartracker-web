@@ -18,32 +18,50 @@
 
 ## DON-240 Hotfix Hardening (active, 2026-07-08)
 
-Beta.9 is ON HOLD (map/Devices/diagnostics hangs on Linux). Codex's hotfix `7f776de` was reviewed
-adversarially. Key finding: the primary map-pan freeze is a **pre-existing** official-map
-bottleneck (synchronous better-sqlite3 tile reads on the main process, IPC per tile) exposed by the
-real profile (1.1 GB / 31,729-tile package + heavy pan) — not a beta.9/Fable-introduced regression.
-The hotfix caches Settings + drops per-tile `synchronize()`, which helps, but the residual
-synchronous tile read is unmeasured. Verdict pending a measured Ubuntu A/B.
+Beta.9 is ON HOLD (map/Devices/diagnostics hangs on Linux). Current DON-240 commits on `master`:
+`7f776de` hotfix, `557b9af` freeze probe + hardening, `78fa836` heartbeat fix, `b0008fd` live-load
+probe option. Pushed to origin.
 
-Done this session (on `master`, **uncommitted**, awaiting Donal):
-- **Visible no-coverage tile** — `electron/official-map-proxy.cjs` returns a 256×256 hatched "no
-  offline coverage" tile for coverage misses (was a silent transparent 1×1 PNG); `package_error`
-  still throws. Test updated.
-- **`positionsEqual` exhaustiveness guard** — `breadcrumb-accumulator.ts`; adding a
-  `NormalizedTrackingPosition` field without adding it to the dedup comparison now fails `tsc`
-  (proven). Runtime discrimination test added.
-- **Freeze-probe harness** — `build/electron-map-freeze-probe-lib.js` + `scripts/electron-map-
-  freeze-probe.mjs` + `npm run electron:smoke:map-freeze`. Drives a serpentine pan across the real
-  package and measures main-process IPC RTT **and** renderer rAF drift, emitting a verdict + the
-  stalling thread.
-- **Runbook for Codex:** `docs/releases/beta9-map-freeze-repro-plan.md` (A/B: Build A = beta.9
-  AppImage in `tmp/beta9-ci-assets/`, Build B = hotfix packaged; cold-cache controls; reproduce-
-  failure-first gate; offender table; full pre-release smoke matrix).
+Implemented:
+- Official-map proxy caches Settings/package metadata, avoids per-tile `synchronize()`, returns a
+  visible 256x256 hatched no-coverage tile for package misses, and keeps `package_error` loud.
+- Tracking breadcrumb publishing sends current fixes before slow breadcrumb history and avoids
+  duplicate-only overlap fanout.
+- Diagnostics runtime log tail reads are bounded.
+- `positionsEqual` has a compile-time exhaustiveness guard over `NormalizedTrackingPosition`.
+- `npm run electron:smoke:map-freeze` measures renderer rAF drift and main-process IPC RTT during
+  a packaged serpentine pan; it now fails if the main heartbeat collects zero samples.
 
-Verified locally (macOS): targeted tests green; `tsc -b` clean; guard failure proven+reverted;
-eslint clean on changed files; **full unit suite 153 files / 1079 tests passing**. Packaged CDP A/B
-is left for Ubuntu (Codex). Next action: run the Ubuntu A/B; if Build B still stalls with
-`offender: main`, implement off-main-thread tile reads before releasing a beta.9 replacement.
+Validation so far:
+- Local macOS gates passed: `npm run lint`, `npm run build`, `npm run test` (153/153 files,
+  1079/1079 tests), `npm run test:backend` (47 passed / 1 ignored), plus targeted probe/map/tracking
+  tests.
+- GitHub Linux validation build `28959613296` for `78fa836` passed, including Linux artifact
+  inspection and AppImage launch smoke. CI artifacts copied to Ubuntu at
+  `/home/donal/sartracker-hotfix-78fa836/`; AppImage and deb hashes verified from `SHA256SUMS`
+  (path-normalized).
+- Ubuntu map-only A/B on `donal@192.168.18.31`, X11, package
+  `/home/donal/SARTracker-private-map-assets/don107/packages/reeks-standard-60km-z16.mbtiles`
+  (31,729 tiles): original beta.9 did **not** numerically freeze on this machine even with 14x14 /
+  200 ms heavy pan (`main max 28 ms`, renderer max 17 ms), but it produced **2,527** tile-miss IPC
+  exceptions. CI hotfix under the same load stayed responsive (`main max 43 ms`, renderer max 17 ms)
+  and produced **0** tile-miss exceptions. Evidence:
+  `output/beta9-map-freeze-probe/A-beta9-heavy/` and `B-hotfix-heavy/` on Ubuntu.
+- Ubuntu packaged official-offline smoke passed on the CI hotfix AppImage, including offline
+  package readiness, outside-coverage warning, diagnostics export, and 0 tile-miss exceptions.
+  Evidence: `output/beta9-map-freeze-probe/B-official-offline/` on Ubuntu.
+
+Open / not release-ready:
+- The strict reproduction gate from `docs/releases/beta9-map-freeze-repro-plan.md` was **not met**:
+  original beta.9 did not freeze numerically on this Ubuntu host, so we cannot claim categorical
+  freeze-removal proof. We can claim the hotfix removes the measured beta.9 exception storm and is
+  responsive under the same map-only load on this machine.
+- Live-tracking seeded probe and bad-secret smoke both failed to reach `app-shell` for original
+  beta.9 and the hotfix in this SSH/X11/keyring context. Treat these as validation-environment /
+  baseline blockers until investigated; they are not currently evidence of a hotfix-only regression.
+- Before replacement release: resolve or bypass the live-secret/keyring smoke blocker with a known
+  good interactive/session setup, then complete the full packaged smoke matrix on the CI-built
+  artifact. Do not publish a replacement beta until that is done.
 
 ## Latest Beta.8 Validation - 2026-06-21
 
