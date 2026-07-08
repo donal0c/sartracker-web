@@ -15,6 +15,7 @@
     "electron:dist:win": "node scripts/electron-package.mjs --win nsis --x64 --publish never",
     "electron:smoke:official-offline": "node scripts/electron-official-map-offline-smoke.mjs",
     "electron:smoke:bad-secret": "node scripts/electron-bad-secret-smoke.mjs",
+    "electron:smoke:map-freeze": "node scripts/electron-map-freeze-probe.mjs",
     "lint": "eslint .",
     "preview": "vite preview",
     "tauri": "tauri",

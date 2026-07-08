@@ -2,13 +2,16 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import breadcrumbsFixture from '../fixtures/traccar-breadcrumbs.json'
 import {
+  COMPARED_POSITION_KEYS,
   accumulateBreadcrumbPositions,
   appendBreadcrumbPositions,
   createBreadcrumbAccumulator,
   createBreadcrumbSegments,
   decimateBreadcrumbsForDots,
+  positionsEqual,
 } from '../../src/features/tracking/breadcrumb-accumulator'
 import { normalizeTraccarPosition } from '../../src/features/tracking/traccar-normalization'
+import type { NormalizedTrackingPosition } from '../../src/features/tracking/tracking-types'
 
 describe('breadcrumb accumulator', () => {
   afterEach(() => {
@@ -384,5 +387,48 @@ describe('decimateBreadcrumbsForDots [DON-126]', () => {
     // d1: first + last (close points) = 2
     // d2: first + last (far apart) = 2
     expect(result).toHaveLength(4)
+  })
+})
+
+describe('positionsEqual field discrimination [DON-240]', () => {
+  const base: NormalizedTrackingPosition = {
+    id: 'pos-1',
+    device_id: 'device-1',
+    lat: 52.001,
+    lon: -9.701,
+    altitude: 120,
+    speed: 4.2,
+    battery: 88,
+    accuracy: 5,
+    timestamp: '2026-04-06T10:00:05.000Z',
+    source: 'live',
+    data_origin: 'live',
+    cache_age_seconds: 0,
+    device_cache_stale: false,
+  }
+
+  // A value of the correct type that is guaranteed to differ from the base value.
+  function differentValue(value: unknown): unknown {
+    if (typeof value === 'number') return value + 1
+    if (typeof value === 'string') return `${value}#changed`
+    if (typeof value === 'boolean') return !value
+    return 'changed-from-null'
+  }
+
+  it('treats an identical position as equal', () => {
+    expect(positionsEqual(base, { ...base })).toBe(true)
+  })
+
+  it('detects a change in every compared field', () => {
+    for (const key of COMPARED_POSITION_KEYS) {
+      const mutated = { ...base, [key]: differentValue(base[key]) } as NormalizedTrackingPosition
+      expect(positionsEqual(base, mutated), `field ${key} was not discriminated`).toBe(false)
+    }
+  })
+
+  it('compares exactly the fields present on a normalized position (no field left uncompared)', () => {
+    const actualFields = Object.keys(base).sort()
+    const comparedFields = [...COMPARED_POSITION_KEYS].sort()
+    expect(comparedFields).toEqual(actualFields)
   })
 })

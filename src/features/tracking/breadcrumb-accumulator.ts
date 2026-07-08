@@ -322,25 +322,54 @@ function mergePosition(
   return true
 }
 
-function positionsEqual(
+/**
+ * Every field of {@link NormalizedTrackingPosition} that {@link positionsEqual} compares to
+ * decide whether an incoming fix is a true duplicate. This gates whether a re-fetched
+ * (overlap-window) fix is dropped as a no-op, so an omitted field would silently discard a
+ * genuine position update from the live trail and from persistence — a life-safety data-loss
+ * vector. The `satisfies` guard rejects any key that is not a real position field; the
+ * `AllPositionFieldsCompared` guard below rejects any position field that is missing here.
+ */
+export const COMPARED_POSITION_KEYS = [
+  'id',
+  'device_id',
+  'lat',
+  'lon',
+  'altitude',
+  'speed',
+  'battery',
+  'accuracy',
+  'timestamp',
+  'source',
+  'data_origin',
+  'cache_age_seconds',
+  'device_cache_stale',
+] as const satisfies readonly (keyof NormalizedTrackingPosition)[]
+
+// Compile-time exhaustiveness: if a field is added to NormalizedTrackingPosition without being
+// added to COMPARED_POSITION_KEYS, `UncomparedPositionField` becomes a non-`never` union and
+// this assignment fails to type-check, forcing the new field into the comparison.
+type UncomparedPositionField = Exclude<
+  keyof NormalizedTrackingPosition,
+  (typeof COMPARED_POSITION_KEYS)[number]
+>
+const AllPositionFieldsCompared: UncomparedPositionField extends never ? true : never = true
+void AllPositionFieldsCompared
+
+/**
+ * Returns true when two normalized positions are identical across every persisted/rendered
+ * field. Used to treat overlap-window re-fetches of an unchanged fix as a no-op.
+ */
+export function positionsEqual(
   left: NormalizedTrackingPosition,
   right: NormalizedTrackingPosition,
 ): boolean {
-  return (
-    left.id === right.id &&
-    left.device_id === right.device_id &&
-    left.lat === right.lat &&
-    left.lon === right.lon &&
-    left.altitude === right.altitude &&
-    left.speed === right.speed &&
-    left.battery === right.battery &&
-    left.accuracy === right.accuracy &&
-    left.timestamp === right.timestamp &&
-    left.source === right.source &&
-    left.data_origin === right.data_origin &&
-    left.cache_age_seconds === right.cache_age_seconds &&
-    left.device_cache_stale === right.device_cache_stale
-  )
+  for (const key of COMPARED_POSITION_KEYS) {
+    if (left[key] !== right[key]) {
+      return false
+    }
+  }
+  return true
 }
 
 function replaceExistingPosition(

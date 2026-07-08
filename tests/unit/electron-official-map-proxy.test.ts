@@ -18,7 +18,10 @@ type SqliteDatabase = {
 }
 const Database = require('better-sqlite3') as new (filename: string) => SqliteDatabase
 
-const { createElectronOfficialMapProxy } = (await import('../../electron/official-map-proxy.cjs')) as {
+const { createElectronOfficialMapProxy, NO_COVERAGE_TILE_BASE64 } = (await import(
+  '../../electron/official-map-proxy.cjs'
+)) as {
+  readonly NO_COVERAGE_TILE_BASE64: string
   readonly createElectronOfficialMapProxy: (options: {
     readonly loadSettings: () => Promise<unknown>
     readonly fetch: typeof fetch
@@ -365,7 +368,7 @@ describe('Electron official map proxy', () => {
     expect(fetchMock.mock.calls[0]![0]).not.toContain('field-secret')
   })
 
-  it('returns an empty tile for local package coverage misses when no online fallback is configured [DON-240]', async () => {
+  it('returns a visible no-coverage tile for local package misses when no online fallback is configured [DON-240]', async () => {
     const readTile = vi.fn().mockReturnValue({ status: 'miss' })
     const fetchMock = vi.fn()
     const proxy = createElectronOfficialMapProxy({
@@ -379,9 +382,17 @@ describe('Electron official map proxy', () => {
       'sartracker-official-map://tile/official_discovery_topo/12/1936/1344.png',
     )
 
+    // Coverage misses must render an operator-visible "no offline coverage" fill, not a
+    // silent transparent tile — a blank map area cannot be distinguished from real terrain.
     expect(response.contentType).toBe('image/png')
-    expect(Buffer.from(response.bytesBase64, 'base64').length).toBeGreaterThan(0)
+    expect(response.bytesBase64).toBe(NO_COVERAGE_TILE_BASE64)
     expect(fetchMock).not.toHaveBeenCalled()
+
+    // The tile is a full 256x256 raster (not a 1x1 placeholder), so the pattern is visible.
+    const png = Buffer.from(response.bytesBase64, 'base64')
+    expect(png.subarray(1, 4).toString('ascii')).toBe('PNG')
+    expect(png.readUInt32BE(16)).toBe(256) // IHDR width
+    expect(png.readUInt32BE(20)).toBe(256) // IHDR height
   })
 
   it('reports a registered package that is missing and has no online fallback', async () => {

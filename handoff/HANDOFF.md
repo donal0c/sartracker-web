@@ -16,6 +16,35 @@
   - Ubuntu box note: `donal@192.168.18.31` was upgraded off Wayland to **X11** (kernel 6.17); drive packaged smoke with `--ozone-platform=x11` (Wayland flag segfaults). Beta.8 smoke scripts live on the box at `~/sartracker-don147-validation/repo/tmp/beta8-smoke/`; evidence mirrored to repo `output/beta8-ubuntu-smoke/evidence-fixed/`.
   - **Smoke result: 43/43 across lifecycle, duplicate-launch (DON-180), safety+diagnostics (DON-226), settings-safety (DON-207/204/208), UI-polish (DON-195/223/197), live Traccar (online 33 devices/8 fixes), and offline Discovery map.**
 
+## DON-240 Hotfix Hardening (active, 2026-07-08)
+
+Beta.9 is ON HOLD (map/Devices/diagnostics hangs on Linux). Codex's hotfix `7f776de` was reviewed
+adversarially. Key finding: the primary map-pan freeze is a **pre-existing** official-map
+bottleneck (synchronous better-sqlite3 tile reads on the main process, IPC per tile) exposed by the
+real profile (1.1 GB / 31,729-tile package + heavy pan) — not a beta.9/Fable-introduced regression.
+The hotfix caches Settings + drops per-tile `synchronize()`, which helps, but the residual
+synchronous tile read is unmeasured. Verdict pending a measured Ubuntu A/B.
+
+Done this session (on `master`, **uncommitted**, awaiting Donal):
+- **Visible no-coverage tile** — `electron/official-map-proxy.cjs` returns a 256×256 hatched "no
+  offline coverage" tile for coverage misses (was a silent transparent 1×1 PNG); `package_error`
+  still throws. Test updated.
+- **`positionsEqual` exhaustiveness guard** — `breadcrumb-accumulator.ts`; adding a
+  `NormalizedTrackingPosition` field without adding it to the dedup comparison now fails `tsc`
+  (proven). Runtime discrimination test added.
+- **Freeze-probe harness** — `build/electron-map-freeze-probe-lib.js` + `scripts/electron-map-
+  freeze-probe.mjs` + `npm run electron:smoke:map-freeze`. Drives a serpentine pan across the real
+  package and measures main-process IPC RTT **and** renderer rAF drift, emitting a verdict + the
+  stalling thread.
+- **Runbook for Codex:** `docs/releases/beta9-map-freeze-repro-plan.md` (A/B: Build A = beta.9
+  AppImage in `tmp/beta9-ci-assets/`, Build B = hotfix packaged; cold-cache controls; reproduce-
+  failure-first gate; offender table; full pre-release smoke matrix).
+
+Verified locally (macOS): targeted tests green; `tsc -b` clean; guard failure proven+reverted;
+eslint clean on changed files; **full unit suite 153 files / 1079 tests passing**. Packaged CDP A/B
+is left for Ubuntu (Codex). Next action: run the Ubuntu A/B; if Build B still stalls with
+`offender: main`, implement off-main-thread tile reads before releasing a beta.9 replacement.
+
 ## Latest Beta.8 Validation - 2026-06-21
 
 - Full local gates passed before the targeted smoke fix: `npm run lint`, `npm run build`, `npm run test` - 152 files / 997 tests, `npm run test:backend` - 47 passed / 1 ignored, `npm run test:e2e:chromium` - 127/127, `npx playwright test --project=visual` - 34/34, `npm run visual:review -- --fail-on critical` - 39/39, and `npm run beta:verify -- --no-smoke` - passed with manual smoke intentionally skipped.

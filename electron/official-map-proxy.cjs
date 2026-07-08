@@ -5,8 +5,15 @@ const Database = require('better-sqlite3')
 const OFFICIAL_MAP_TILE_PATTERN = /^\/?tile\/([^/]+)\/(\d+)\/(\d+)\/(\d+)\.png$/
 const WEB_MERCATOR_HALF_WORLD_METRES = 20037508.342789244
 const TILE_SIZE = 256
-const EMPTY_PNG_TILE_BASE64 =
-  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNgYAAAAAMAASsJTYQAAAAASUVORK5CYII='
+// Rendered for tiles that fall outside the offline package's coverage when no online fallback
+// is configured. This must be operator-visible — a fully transparent tile would leave a blank
+// map area indistinguishable from real but empty terrain, hiding a coverage gap during an
+// incident. This is a 256x256 seamless diagonal-hatch "no offline coverage" fill on a neutral
+// paper-void background (bg #E9E7E0, hatch #BCB7AA, 32px period so it tiles seamlessly). The
+// textual "outside official offline area" coverage warning still fires alongside it.
+// Regenerate: 256x256 RGBA, HATCH where (x + y) % 32 < 2, PNG optimize=true.
+const NO_COVERAGE_TILE_BASE64 =
+  'iVBORw0KGgoAAAANSUhEUgAAAQAAAAEACAYAAABccqhmAAAFVklEQVR42u3QMW3YAAAFUfvzqZSpoEsgSxF0qhQC3iyjcGBkuHcEnnTn388/73Ecx6+P38dP9PX/38Hn83/Gn/l8ftc/n/t6zefzm/7M5/O7/szn87v+zOfzu/7M5/O7/szn87v+zOfzu/7M5/O7/szn87v+zOfzu/7M5/O7/szn87v+zOfzu/7M5/O7/szn87v+zOfzu/7M5/O7/szn87v+zOfzu/7M5/O7/szn87v+zOfzu/7M5/O7/szn87v+zOfzu/7M5/O7/szn87v+zOfzu/7M5/O7/vnc12s+n9/0Zz6f3/VnPp/f9Wc+n9/1Zz6f3/VnPp/f9Wc+n9/1Zz6f3/VnPp/f9Wc+n9/1Zz6f3/VnPp/f9Wc+n9/1Zz6f3/VnPp/f9Wc+n9/1Zz6f3/VnPp/f9Wc+n9/1Zz6f3/VnPp/f9Wc+n9/1Zz6f3/VnPp/f9Wc+n9/1Zz6f3/VnPp/f9Wc+n9/1Zz6f3/VnPp/f9Wc+n9/1Zz6f3/XP575e8/n8pj/z+fyuP/P5/K4/8/n8rj/z+fyuP/P5/K4/8/n8rj/z+fyuP/P5/K4/8/n8rj/z+fyuP/P5/K4/8/n8rj/z+fyuP/P5/K4/8/n8rj/z+fyuP/P5/K4/8/n8rj/z+fyuP/P5/K4/8/n8rj/z+fyuP/P5/K4/8/n8rj/z+fyuP/P5/K4/8/n8rj/z+fyuP/P5/K4/8/n8rj/z+fyufz739ZrP5zf9mc/nd/2Zz+d3/ZnP53f9mc/nd/2Zz+d3/ZnP53f9mc/nd/2Zz+d3/ZnP53f9mc/nd/2Zz+d3/ZnP53f9mc/nd/2Zz+d3/ZnP53f9mc/nd/2Zz+d3/ZnP53f9mc/nd/2Zz+d3/ZnP53f9mc/nd/2Zz+d3/ZnP53f9mc/nd/2Zz+d3/ZnP53f9mc/nd/3zua/XfD6/6c98Pr/rz3w+v+vPfD6/6898Pr/rz3w+v+vPfD6/6898Pr/rz3w+v+vPfD6/6898Pr/rz3w+v+vPfD6/6898Pr/rz3w+v+vPfD6/6898Pr/rz3w+v+vPfD6/6898Pr/rz3w+v+vPfD6/6898Pr/rz3w+v+vPfD6/6898Pr/rz3w+v+vPfD6/6898Pr/rn899vebz+U1/5vP5XX/m8/ldf+bz+V1/5vP5XX/m8/ldf+bz+V1/5vP5XX/m8/ldf+bz+V1/5vP5XX/m8/ldf+bz+V1/5vP5XX/m8/ldf+bz+V1/5vP5XX/m8/ldf+bz+V1/5vP5XX/m8/ldf+bz+V1/5vP5XX/m8/ldf+bz+V1/5vP5XX/m8/ldf+bz+V1/5vP5Xf987us1n89v+jOfz+/6M5/P7/ozn8/v+jOfz+/6M5/P7/ozn8/v+jOfz+/6M5/P7/ozn8/v+jOfz+/6M5/P7/ozn8/v+jOfz+/6M5/P7/ozn8/v+jOfz+/6M5/P7/ozn8/v+jOfz+/6M5/P7/ozn8/v+jOfz+/6M5/P7/ozn8/v+jOfz+/6M5/P7/ozn8/v+jOfz+/6M5/P7/ozn8/v+jOfz+/653Nfr/l8ftOf+Xx+15/5fH7Xn/l8ftef+Xx+15/5fH7Xn/l8ftef+Xx+15/5fH7Xn/l8ftef+Xx+15/5fH7Xn/l8ftef+Xx+15/5fH7Xn/l8ftef+Xx+15/5fH7Xn/l8ftef+Xx+15/5fH7Xn/l8ftef+Xx+15/5fH7Xn/l8ftef+Xx+15/5fH7Xn/l8ftef+Xx+15/5fH7X/wbzbxzvySpZ4AAAAABJRU5ErkJggg=='
 
 const SOURCE_NAMES = {
   official_discovery_topo: 'discovery',
@@ -85,16 +92,16 @@ async function fetchOfficialMapTile(options, url, mbtilesReaders, loadOfficialMa
     throw new Error(localTile.message)
   }
   if (localTile.status === 'miss' && !hasConfiguredMapGenieFallback(officialMaps, tile)) {
-    return createEmptyTileResponse()
+    return createNoCoverageTileResponse()
   }
 
   return fetchMapGenieTile(options, officialMaps, tile, localTile.status === 'miss')
 }
 
-function createEmptyTileResponse() {
+function createNoCoverageTileResponse() {
   return {
     contentType: 'image/png',
-    bytesBase64: EMPTY_PNG_TILE_BASE64,
+    bytesBase64: NO_COVERAGE_TILE_BASE64,
   }
 }
 
@@ -439,4 +446,5 @@ function escapeRegExp(value) {
 
 module.exports = {
   createElectronOfficialMapProxy,
+  NO_COVERAGE_TILE_BASE64,
 }
