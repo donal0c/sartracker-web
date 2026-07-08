@@ -12,7 +12,7 @@
 - **Linear reference:** Fable deep-analysis parent `DON-230`; shipped fixes `DON-228`, `DON-231`-`DON-238`. `DON-239` is intentionally parked for a later low-priority tracking-staleness pass.
 - **Verification report:** local gates, local browser/packaged smoke, GitHub Actions, Linux bundle, CI AppImage launch smoke, and deep Ubuntu CI-artifact smoke complete.
 - **CI run:** `electron-release.yml` run `28875685324` - success (gates, Linux bundle, Xvfb AppImage launch smoke, draft prerelease + SHA256SUMS).
-- **GitHub release:** draft prerelease created and ready to publish after Donal's approval.
+- **GitHub release:** published prerelease for internal tester distribution.
 
 ## What this beta is
 
@@ -189,8 +189,8 @@ This matrix passed on 2026-07-08 against the CI-built AppImage:
   map-testing purposes.
 
 Local pre-Ubuntu smoke covered the same app surfaces where practical. The
-release remains draft only because publication requires Donal's explicit
-approval, not because a verification gate is still open.
+release was published only after the Ubuntu packaged smoke passed on the
+CI-built artifact.
 
 ## Loading Discovery Maps
 
@@ -352,6 +352,5 @@ meaningful, and it passed.
 
 ## Publication State
 
-**Ready-to-publish draft.** Beta.9 passed the local, CI, and Ubuntu packaged
-release gates. Keep it draft until Donal explicitly approves publication and
-tester sharing.
+**Published prerelease.** Beta.9 passed the local, CI, and Ubuntu packaged
+release gates and is ready for internal tester sharing.
