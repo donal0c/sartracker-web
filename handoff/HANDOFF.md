@@ -20,7 +20,7 @@
 
 Beta.9 is ON HOLD (map/Devices/diagnostics hangs on Linux). Current DON-240 commits on `master`:
 `7f776de` hotfix, `557b9af` freeze probe + hardening, `78fa836` heartbeat fix, `b0008fd` live-load
-probe option. Pushed to origin.
+probe option, `d00eecb` app-owned credential seeding for live-load probe. Pushed to origin.
 
 Implemented:
 - Official-map proxy caches Settings/package metadata, avoids per-tile `synchronize()`, returns a
@@ -30,7 +30,9 @@ Implemented:
 - Diagnostics runtime log tail reads are bounded.
 - `positionsEqual` has a compile-time exhaustiveness guard over `NormalizedTrackingPosition`.
 - `npm run electron:smoke:map-freeze` measures renderer rAF drift and main-process IPC RTT during
-  a packaged serpentine pan; it now fails if the main heartbeat collects zero samples.
+  a packaged serpentine pan; it now fails if the main heartbeat collects zero samples. Live-load
+  mode copies the app-owned `credentials.json` from the Ubuntu user's local SAR Tracker config into
+  throwaway userData, avoiding legacy `secrets.json`/libsecret migration over SSH.
 
 Validation so far:
 - Local macOS gates passed: `npm run lint`, `npm run build`, `npm run test` (153/153 files,
@@ -50,15 +52,21 @@ Validation so far:
 - Ubuntu packaged official-offline smoke passed on the CI hotfix AppImage, including offline
   package readiness, outside-coverage warning, diagnostics export, and 0 tile-miss exceptions.
   Evidence: `output/beta9-map-freeze-probe/B-official-offline/` on Ubuntu.
+- Ubuntu full-profile A/B now runs after switching the probe to app-owned credential seeding:
+  `--allow-network --seed-real-tracking-config --password-store=basic`, live tracking online with
+  33 devices / 8 fixes on both builds. Original beta.9 still did **not** numerically freeze
+  (`main max 66 ms`, renderer max 67 ms) but produced **2,542** tile-miss IPC exceptions. CI hotfix
+  stayed responsive (`main max 63 ms`, renderer max 33 ms) and produced **0** tile-miss exceptions.
+  Evidence: `output/beta9-map-freeze-probe/A-beta9-fullprofile/` and `B-hotfix-fullprofile/` on
+  Ubuntu. Cache drop could not be applied because the Ubuntu account has no passwordless sudo.
 
 Open / not release-ready:
-- The strict reproduction gate from `docs/releases/beta9-map-freeze-repro-plan.md` was **not met**:
-  original beta.9 did not freeze numerically on this Ubuntu host, so we cannot claim categorical
-  freeze-removal proof. We can claim the hotfix removes the measured beta.9 exception storm and is
-  responsive under the same map-only load on this machine.
-- Live-tracking seeded probe and bad-secret smoke both failed to reach `app-shell` for original
-  beta.9 and the hotfix in this SSH/X11/keyring context. Treat these as validation-environment /
-  baseline blockers until investigated; they are not currently evidence of a hotfix-only regression.
+- The strict reproduction gate from `docs/releases/beta9-map-freeze-repro-plan.md` is still **not
+  met**: original beta.9 did not freeze numerically on this Ubuntu host, even with full concurrent
+  tracking load. We can claim the hotfix removes the measured beta.9 exception storm and is
+  responsive under the same load on this machine; we cannot claim categorical field-freeze proof.
+- Bad-secret smoke still needs a clean rerun with `--password-store=basic` or a proper D-Bus/keyring
+  session; earlier A and B failures were baseline validation-environment failures, not hotfix-only.
 - Before replacement release: resolve or bypass the live-secret/keyring smoke blocker with a known
   good interactive/session setup, then complete the full packaged smoke matrix on the CI-built
   artifact. Do not publish a replacement beta until that is done.
