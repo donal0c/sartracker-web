@@ -17,7 +17,8 @@
 // See docs/releases/beta9-map-freeze-repro-plan.md for the full A/B runbook.
 
 import { spawn } from 'node:child_process'
-import { mkdir, writeFile } from 'node:fs/promises'
+import { copyFile, mkdir, readFile, writeFile } from 'node:fs/promises'
+import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -53,7 +54,10 @@ async function main() {
     packagePath: options.packagePath,
     now: new Date(),
   })
-  await writeJson(path.join(userDataDir, 'settings.json'), buildSeedSettings(packageSettings))
+  const seedSettings = options.seedRealTrackingConfig
+    ? await buildSeedSettingsWithRealTrackingConfig(userDataDir, packageSettings)
+    : buildSeedSettings(packageSettings)
+  await writeJson(path.join(userDataDir, 'settings.json'), seedSettings)
 
   if (!Array.isArray(packageSettings.bounds)) {
     throw new Error('Package has no bounds metadata; cannot generate a pan path.')
@@ -101,6 +105,10 @@ async function main() {
     await page.waitForTimeout(2000)
     await page.screenshot({ path: path.join(evidenceDir, '01-package-loaded.png'), fullPage: true })
 
+    const trackingLoad = options.seedRealTrackingConfig
+      ? await startThrowawayMissionAndConnectTracking(page, evidenceDir)
+      : { enabled: false, online: false, detail: 'not requested' }
+
     await installResponsivenessProbe(page, options.probeIntervalMs)
 
     // Drive the sweep. easeTo animates, forcing a continuous stream of fresh tile requests.
@@ -142,6 +150,7 @@ async function main() {
       panDurationMs: options.panDurationMs,
       probeIntervalMs: options.probeIntervalMs,
       networkBlocked: options.blockNetwork,
+      trackingLoad,
       mainProcess: mainStats,
       mainProcessHeartbeatErrors: samples.mainErrors,
       renderer: rendererStats,
@@ -162,6 +171,47 @@ async function main() {
     appProcess.kill()
     await writeFile(appLogPath, sanitizeEvidenceText(Buffer.concat(logChunks).toString('utf8')), 'utf8')
   }
+}
+
+async function buildSeedSettingsWithRealTrackingConfig(userDataDir, packageSettings) {
+  const realConfigDir = path.join(os.homedir(), '.config', 'sartracker-web')
+  const realSettingsPath = path.join(realConfigDir, 'settings.json')
+  const realSecretsPath = path.join(realConfigDir, 'secrets.json')
+  const realSettings = JSON.parse(await readFile(realSettingsPath, 'utf8'))
+  await copyFile(realSecretsPath, path.join(userDataDir, 'secrets.json'))
+  return {
+    ...buildSeedSettings(packageSettings),
+    ...realSettings,
+    officialMaps: buildSeedSettings(packageSettings).officialMaps,
+  }
+}
+
+async function startThrowawayMissionAndConnectTracking(page, evidenceDir) {
+  const nameInput = page.getByTestId('mission-name-input')
+  if (await nameInput.isVisible({ timeout: 8000 }).catch(() => false)) {
+    await nameInput.fill('DON-240 Freeze Probe')
+    await page.getByTestId('mission-start-btn').click()
+    await page.getByTestId('mission-control').filter({ hasText: /active/i }).waitFor({ timeout: 15_000 })
+  }
+
+  await page.getByTestId('open-settings-workspace').click()
+  await page.getByTestId('settings-workspace').waitFor({ timeout: 15_000 })
+  const saveConnect = page.getByTestId('settings-save-connect')
+  let online = false
+  let detail = 'save-connect unavailable'
+  if (await saveConnect.isVisible({ timeout: 8000 }).catch(() => false)) {
+    await saveConnect.click()
+    const status = page.getByTestId('tracking-status')
+    try {
+      await status.filter({ hasText: /online/i }).waitFor({ timeout: 30_000 })
+      online = true
+      detail = ((await status.textContent()) ?? '').trim().slice(0, 120)
+    } catch {
+      detail = ((await status.textContent().catch(() => '')) ?? '').trim().slice(0, 120) || 'tracking did not reach online'
+    }
+  }
+  await page.screenshot({ path: path.join(evidenceDir, 'tracking-load.png'), fullPage: true })
+  return { enabled: true, online, detail }
 }
 
 /**

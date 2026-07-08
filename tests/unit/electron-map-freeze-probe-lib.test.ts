@@ -122,11 +122,13 @@ describe('parseFreezeProbeArgs [DON-240]', () => {
       '--package',
       '/p',
       '--allow-network',
+      '--seed-real-tracking-config',
       '--',
       '--no-sandbox',
       '--ozone-platform=x11',
     ])
     expect(args.blockNetwork).toBe(false)
+    expect(args.seedRealTrackingConfig).toBe(true)
     expect(args.extraArgs).toEqual(['--no-sandbox', '--ozone-platform=x11'])
   })
 

@@ -115,7 +115,7 @@ export function buildFreezeVerdict({ mainStats, rendererStats, freezeThresholdMs
  * Parses CLI args for the runner. Kept pure so argument handling is unit-tested.
  *
  * @param {readonly string[]} argv
- * @returns {{ appPath: string, packagePath: string, evidenceDir: string, platform: string, rows: number, cols: number, panDurationMs: number, probeIntervalMs: number, blockNetwork: boolean, extraArgs: string[] }}
+ * @returns {{ appPath: string, packagePath: string, evidenceDir: string, platform: string, rows: number, cols: number, panDurationMs: number, probeIntervalMs: number, blockNetwork: boolean, seedRealTrackingConfig: boolean, extraArgs: string[] }}
  */
 export function parseFreezeProbeArgs(argv) {
   const args = { extraArgs: [] }
@@ -150,6 +150,9 @@ export function parseFreezeProbeArgs(argv) {
       case '--allow-network':
         args.blockNetwork = false
         break
+      case '--seed-real-tracking-config':
+        args.seedRealTrackingConfig = true
+        break
       case '--':
         args.extraArgs.push(...argv.slice(i + 1))
         i = argv.length
@@ -170,6 +173,7 @@ export function parseFreezeProbeArgs(argv) {
     panDurationMs: Number.isFinite(args.panDurationMs) ? args.panDurationMs : 350,
     probeIntervalMs: Number.isFinite(args.probeIntervalMs) ? args.probeIntervalMs : 50,
     blockNetwork: args.blockNetwork !== false,
+    seedRealTrackingConfig: args.seedRealTrackingConfig === true,
     extraArgs: args.extraArgs,
   }
 }
