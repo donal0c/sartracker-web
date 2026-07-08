@@ -1,4 +1,5 @@
 import Module from 'node:module'
+import os from 'node:os'
 import path from 'node:path'
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
@@ -11,7 +12,10 @@ import { DEFAULT_APP_SETTINGS } from '../../src/features/settings/settings-types
 const require = createRequire(import.meta.url)
 const originalLoad = Module._load
 const originalPlatform = process.platform
-const testUserDataPath = path.join('/tmp', 'sartracker-electron-main-startup-test')
+const testUserDataPath = path.join(
+  os.tmpdir(),
+  `sartracker-electron-main-startup-test-${process.pid}-${process.env.VITEST_WORKER_ID ?? '0'}`,
+)
 
 describe('Electron main startup', () => {
   afterEach(() => {
