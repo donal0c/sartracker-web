@@ -97,8 +97,11 @@ describe('SettingsWorkspace', () => {
     await flushMicrotasks()
 
     expect(mocks.saveAppSettings).toHaveBeenCalledOnce()
-    expect(reloadSettings).toHaveBeenCalledWith({ forceConnect: true })
     expect(onClose).toHaveBeenCalledOnce()
+    expect(reloadSettings).toHaveBeenCalledWith({ forceConnect: true })
+    expect(onClose.mock.invocationCallOrder[0]).toBeLessThan(
+      reloadSettings.mock.invocationCallOrder[0] ?? Number.MAX_SAFE_INTEGER,
+    )
   })
 
   it('keeps the workspace open when save fails', async () => {

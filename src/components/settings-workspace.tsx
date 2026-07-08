@@ -871,12 +871,14 @@ export function SettingsWorkspace({ open, onClose }: SettingsWorkspaceProps) {
       setBaselineCloseSnapshot(createSettingsCloseSnapshot(savedDraft, coordinateDisplayMode))
       setShowDiscardConfirmation(false)
       const controller = getAppRuntimeController()
-      if (controller !== null) {
-        void controller.reloadSettings({ forceConnect }).catch((reloadError: unknown) => {
-          console.error('Runtime settings reload failed after saving settings.', reloadError)
-        })
-      }
       onClose()
+      if (controller !== null) {
+        window.setTimeout(() => {
+          void controller.reloadSettings({ forceConnect }).catch((reloadError: unknown) => {
+            console.error('Runtime settings reload failed after saving settings.', reloadError)
+          })
+        }, 0)
+      }
     } catch (saveError) {
       setError(toErrorMessage(saveError))
     } finally {
