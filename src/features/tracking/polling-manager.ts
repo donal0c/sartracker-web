@@ -177,7 +177,32 @@ export function createPollingManager(
       consecutiveFailures = 0
       lastSuccessAt = now().toISOString()
 
+      const currentSnapshot = {
+        devices,
+        positions,
+        breadcrumbs: breadcrumbPositions,
+        breadcrumbMetadata,
+      }
+      lastGoodSnapshot = currentSnapshot
+      options.onSnapshot(
+        annotateTrackingSnapshotHealth(currentSnapshot, {
+          now: now(),
+          deviceStaleThresholdMs: options.staleThresholdMs,
+        }),
+      )
+      publishStatus({
+        mode: 'online',
+        recovered,
+        warning:
+          breadcrumbPositions.length === 0
+            ? 'Current fixes loaded; loading breadcrumb history.'
+            : recovered
+              ? 'CONNECTION RESTORED'
+              : null,
+      })
+
       const breadcrumbs = await fetchIncrementalBreadcrumbs(devices, seedState)
+      const previousBreadcrumbPositions = breadcrumbPositions
       const breadcrumbResult = breadcrumbAccumulator.append(breadcrumbs)
       breadcrumbPositions = breadcrumbResult.positions
       breadcrumbMetadata = breadcrumbResult.metadata
@@ -198,22 +223,19 @@ export function createPollingManager(
 
       lastGoodSnapshot = rawSnapshot
 
-      options.onSnapshot(
-        annotateTrackingSnapshotHealth(rawSnapshot, {
-          now: now(),
-          deviceStaleThresholdMs: options.staleThresholdMs,
-        }),
-      )
-      publishStatus({
-        mode: 'online',
-        recovered,
-        warning:
-          breadcrumbPositions.length === 0
-            ? 'Current fixes loaded; loading breadcrumb history.'
-            : recovered
-              ? 'CONNECTION RESTORED'
-              : null,
-      })
+      if (breadcrumbPositions !== previousBreadcrumbPositions) {
+        options.onSnapshot(
+          annotateTrackingSnapshotHealth(rawSnapshot, {
+            now: now(),
+            deviceStaleThresholdMs: options.staleThresholdMs,
+          }),
+        )
+        publishStatus({
+          mode: 'online',
+          recovered,
+          warning: recovered ? 'CONNECTION RESTORED' : null,
+        })
+      }
 
       scheduleNextPoll(pollIntervalMs)
     } catch (error) {

@@ -65,6 +65,21 @@ describe('breadcrumb accumulator', () => {
     expect(appendBreadcrumbPositions(positions, [])).toBe(positions)
   })
 
+  it('does not invalidate the retained snapshot for duplicate-only overlap polls [DON-240]', () => {
+    const positions = breadcrumbsFixture.map((position) =>
+      normalizeTraccarPosition(position, 'live'),
+    )
+    const accumulator = createBreadcrumbAccumulator()
+
+    const initial = accumulator.append(positions)
+    const overlapOnly = accumulator.append([...positions])
+
+    expect(overlapOnly).toBe(initial)
+    expect(overlapOnly.positions).toBe(initial.positions)
+    expect(overlapOnly.metadata).toBe(initial.metadata)
+    expect(overlapOnly.metadata.totalObserved).toBe(positions.length)
+  })
+
   it('does not let a noisy device evict another device from the live breadcrumb budget [DON-159]', () => {
     const noisyDeviceBreadcrumbs = Array.from({ length: 25_000 }, (_, index) =>
       normalizeTraccarPosition(

@@ -1,4 +1,10 @@
-# SAR Tracker Electron Desktop Beta 0.1.0-beta.9 (Fable safety hardening)
+# HOLD - SAR Tracker Electron Desktop Beta 0.1.0-beta.9 (Fable safety hardening)
+
+> **Release hold, 2026-07-08:** beta.9 reached testers, but team feedback
+> reported long Linux UI hangs while panning the official map, opening Devices,
+> and exporting diagnostics. Treat this release as **not suitable for further
+> rollout**. The blocking follow-up is `DON-240`; testers should wait for the
+> replacement hotfix build.
 
 > **Internal beta only.** Not a production release. Do not use for live
 > incidents until this beta has passed the desktop smoke checklist below and
@@ -12,7 +18,8 @@
 - **Linear reference:** Fable deep-analysis parent `DON-230`; shipped fixes `DON-228`, `DON-231`-`DON-238`. `DON-239` is intentionally parked for a later low-priority tracking-staleness pass.
 - **Verification report:** local gates, local browser/packaged smoke, GitHub Actions, Linux bundle, CI AppImage launch smoke, and deep Ubuntu CI-artifact smoke complete.
 - **CI run:** `electron-release.yml` run `28875685324` - success (gates, Linux bundle, Xvfb AppImage launch smoke, draft prerelease + SHA256SUMS).
-- **GitHub release:** published prerelease for internal tester distribution.
+- **GitHub release:** published prerelease, now marked HOLD on GitHub pending
+  `DON-240` replacement artifacts.
 
 ## What this beta is
 
@@ -21,6 +28,26 @@ deep-analysis review. It does not add a new operator workflow. It fixes mission
 record integrity, SQLite backup/archive durability, Traccar cursor/session
 correctness, tracking overlay churn, Electron trust-boundary gaps, diagnostic
 redaction, and Irish Grid coordinate semantics.
+
+## Release Hold Finding
+
+`DON-240` was opened after beta.9 tester feedback showed a release-blocking
+freeze on Linux AppImage. Root cause investigation found a main-process
+saturation pattern when a real official Discovery MBTiles package, live
+tracking, and diagnostics export were combined:
+
+- the Electron official-map tile proxy loaded and normalized Settings on every
+  tile IPC request, including first-pan bursts;
+- ordinary offline package coverage misses threw one Electron IPC exception per
+  missing tile, producing stack-log storms while panning outside coverage;
+- beta.9 tracking waited behind slow breadcrumb fan-out before publishing
+  current fixes, and duplicate overlap windows could still invalidate retained
+  breadcrumb snapshots;
+- diagnostics export parsed the whole rotated runtime log to return a bounded
+  recent slice.
+
+The hotfix branch for `DON-240` addresses those paths and must produce a new
+replacement beta. Do not treat the original beta.9 artifact as release-ready.
 
 ## Artifacts
 

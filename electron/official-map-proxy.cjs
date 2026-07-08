@@ -5,6 +5,8 @@ const Database = require('better-sqlite3')
 const OFFICIAL_MAP_TILE_PATTERN = /^\/?tile\/([^/]+)\/(\d+)\/(\d+)\/(\d+)\.png$/
 const WEB_MERCATOR_HALF_WORLD_METRES = 20037508.342789244
 const TILE_SIZE = 256
+const EMPTY_PNG_TILE_BASE64 =
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNgYAAAAAMAASsJTYQAAAAASUVORK5CYII='
 
 const SOURCE_NAMES = {
   official_discovery_topo: 'discovery',
@@ -18,15 +20,61 @@ const SOURCE_NAMES = {
  */
 function createElectronOfficialMapProxy(options) {
   const mbtilesReaders = createMbtilesReaderCache(options)
+  let cachedOfficialMaps = null
+  let settingsLoaded = false
+  let settingsLoadPromise = null
+  let settingsGeneration = 0
+  const loadOfficialMaps = async () => {
+    if (!settingsLoaded) {
+      if (settingsLoadPromise === null) {
+        const loadGeneration = settingsGeneration
+        settingsLoadPromise = options
+          .loadSettings()
+          .then((settings) => {
+            if (loadGeneration !== settingsGeneration) {
+              return
+            }
+            cachedOfficialMaps = settings?.officialMaps ?? null
+            const packages = Array.isArray(cachedOfficialMaps?.packages)
+              ? cachedOfficialMaps.packages
+              : []
+            mbtilesReaders.synchronize(packages)
+            settingsLoaded = true
+          })
+          .finally(() => {
+            if (loadGeneration === settingsGeneration) {
+              settingsLoadPromise = null
+            }
+          })
+      }
+      await settingsLoadPromise
+    }
+
+    return cachedOfficialMaps
+  }
+
   return {
-    fetchOfficialMapTile: (url) => fetchOfficialMapTile(options, url, mbtilesReaders),
-    close: () => mbtilesReaders.closeAll(),
+    fetchOfficialMapTile: (url) =>
+      fetchOfficialMapTile(options, url, mbtilesReaders, loadOfficialMaps),
+    invalidateSettings: () => {
+      settingsGeneration += 1
+      cachedOfficialMaps = null
+      settingsLoaded = false
+      settingsLoadPromise = null
+      mbtilesReaders.closeAll()
+    },
+    close: () => {
+      settingsGeneration += 1
+      cachedOfficialMaps = null
+      settingsLoaded = false
+      settingsLoadPromise = null
+      mbtilesReaders.closeAll()
+    },
   }
 }
 
-async function fetchOfficialMapTile(options, url, mbtilesReaders) {
-  const settings = await options.loadSettings()
-  const officialMaps = settings?.officialMaps
+async function fetchOfficialMapTile(options, url, mbtilesReaders, loadOfficialMaps) {
+  const officialMaps = await loadOfficialMaps()
   const tile = parseOfficialMapTileUrl(url)
 
   const localTile = readLocalPackageTile(officialMaps, tile, mbtilesReaders)
@@ -36,8 +84,29 @@ async function fetchOfficialMapTile(options, url, mbtilesReaders) {
   if (localTile.status === 'package_error') {
     throw new Error(localTile.message)
   }
+  if (localTile.status === 'miss' && !hasConfiguredMapGenieFallback(officialMaps, tile)) {
+    return createEmptyTileResponse()
+  }
 
   return fetchMapGenieTile(options, officialMaps, tile, localTile.status === 'miss')
+}
+
+function createEmptyTileResponse() {
+  return {
+    contentType: 'image/png',
+    bytesBase64: EMPTY_PNG_TILE_BASE64,
+  }
+}
+
+function hasConfiguredMapGenieFallback(officialMaps, tile) {
+  return (
+    officialMaps?.sourceType === 'mapgenie_file' &&
+    officialMaps.status === 'configured' &&
+    typeof officialMaps.sourcePath === 'string' &&
+    officialMaps.sourcePath.trim() !== '' &&
+    Array.isArray(officialMaps.availableSources) &&
+    officialMaps.availableSources.includes(tile.mapId)
+  )
 }
 
 async function fetchMapGenieTile(options, officialMaps, tile, hadLocalMiss) {
@@ -90,7 +159,6 @@ async function fetchMapGenieTile(options, officialMaps, tile, hadLocalMiss) {
 
 function readLocalPackageTile(officialMaps, tile, mbtilesReaders) {
   const packages = Array.isArray(officialMaps?.packages) ? officialMaps.packages : []
-  mbtilesReaders.synchronize(packages)
   const matchingPackages = packages.filter((mapPackage) => mapPackage?.mapId === tile.mapId)
   if (matchingPackages.length === 0) {
     return { status: 'not_configured' }

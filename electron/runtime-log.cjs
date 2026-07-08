@@ -80,27 +80,20 @@ function createRuntimeLog(options) {
   }
 
   async function readRecent(limit) {
+    if (typeof limit === 'number' && limit >= 0) {
+      if (limit === 0) {
+        return []
+      }
+      const liveLines = await readTailLines(logFilePath, limit)
+      const remaining = limit - liveLines.length
+      const backupLines =
+        remaining > 0 ? await readTailLines(backupLogFilePath, remaining) : []
+      return parseLogLines([...backupLines, ...liveLines])
+    }
+
     const backupLines = await readLines(backupLogFilePath)
     const liveLines = await readLines(logFilePath)
-    const combined = [...backupLines, ...liveLines]
-
-    const parsed = []
-    for (const raw of combined) {
-      const trimmed = raw.trim()
-      if (trimmed === '') {
-        continue
-      }
-      try {
-        parsed.push(JSON.parse(trimmed))
-      } catch {
-        // Skip a torn final line from a crash mid-write rather than failing the read.
-      }
-    }
-
-    if (typeof limit === 'number' && limit >= 0 && parsed.length > limit) {
-      return parsed.slice(parsed.length - limit)
-    }
-    return parsed
+    return parseLogLines([...backupLines, ...liveLines])
   }
 
   async function readLines(filePath) {
@@ -114,6 +107,67 @@ function createRuntimeLog(options) {
       throw error
     }
   }
+
+  async function readTailLines(filePath, limit) {
+    try {
+      const contents = await fs.readFile(filePath, 'utf8')
+      return tailNonEmptyLines(contents, limit)
+    } catch (error) {
+      if (error?.code === 'ENOENT') {
+        return []
+      }
+      throw error
+    }
+  }
+}
+
+function parseLogLines(lines) {
+  const parsed = []
+  for (const raw of lines) {
+    const trimmed = raw.trim()
+    if (trimmed === '') {
+      continue
+    }
+    try {
+      parsed.push(JSON.parse(trimmed))
+    } catch {
+      // Skip a torn final line from a crash mid-write rather than failing the read.
+    }
+  }
+  return parsed
+}
+
+function tailNonEmptyLines(contents, limit) {
+  const lines = []
+  let end = contents.length
+
+  while (end > 0 && (contents[end - 1] === '\n' || contents[end - 1] === '\r')) {
+    end -= 1
+  }
+
+  for (let index = end - 1; index >= 0 && lines.length < limit; index -= 1) {
+    const char = contents[index]
+    if (char !== '\n' && char !== '\r') {
+      continue
+    }
+    const line = contents.slice(index + 1, end)
+    if (line.trim() !== '') {
+      lines.push(line)
+    }
+    while (index > 0 && (contents[index - 1] === '\n' || contents[index - 1] === '\r')) {
+      index -= 1
+    }
+    end = index
+  }
+
+  if (end > 0 && lines.length < limit) {
+    const line = contents.slice(0, end)
+    if (line.trim() !== '') {
+      lines.push(line)
+    }
+  }
+
+  return lines.reverse()
 }
 
 /**

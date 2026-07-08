@@ -36,6 +36,7 @@ const { createElectronOfficialMapProxy } = (await import('../../electron/officia
       readonly contentType: string
       readonly bytesBase64: string
     }>
+    readonly invalidateSettings: () => void
   }
 }
 
@@ -194,6 +195,56 @@ describe('Electron official map proxy', () => {
     expect(close).not.toHaveBeenCalled()
   })
 
+  it('reuses resolved official map settings for consecutive local tile requests [DON-240]', async () => {
+    const readTile = vi
+      .fn()
+      .mockReturnValueOnce({ status: 'hit', bytes: Uint8Array.from([10, 20, 30, 40]) })
+      .mockReturnValueOnce({ status: 'hit', bytes: Uint8Array.from([50, 60, 70, 80]) })
+    const packagePath = '/private/app/official-map-packages/reeks.mbtiles'
+    const loadSettings = vi.fn().mockResolvedValue(createSettingsWithPackage(packagePath))
+    const proxy = createElectronOfficialMapProxy({
+      fetch: vi.fn() as never,
+      createMbtilesReader: vi.fn().mockReturnValue({ readTile, close: vi.fn() }),
+      loadSettings,
+    })
+
+    await proxy.fetchOfficialMapTile(
+      'sartracker-official-map://tile/official_discovery_topo/12/1935/1344.png',
+    )
+    await proxy.fetchOfficialMapTile(
+      'sartracker-official-map://tile/official_discovery_topo/12/1936/1344.png',
+    )
+
+    expect(loadSettings).toHaveBeenCalledOnce()
+    expect(readTile).toHaveBeenCalledTimes(2)
+  })
+
+  it('coalesces concurrent official tile settings loads during the first pan burst [DON-240]', async () => {
+    const readTile = vi
+      .fn()
+      .mockReturnValueOnce({ status: 'hit', bytes: Uint8Array.from([10, 20, 30, 40]) })
+      .mockReturnValueOnce({ status: 'hit', bytes: Uint8Array.from([50, 60, 70, 80]) })
+    const packagePath = '/private/app/official-map-packages/reeks.mbtiles'
+    const loadSettings = vi.fn().mockResolvedValue(createSettingsWithPackage(packagePath))
+    const proxy = createElectronOfficialMapProxy({
+      fetch: vi.fn() as never,
+      createMbtilesReader: vi.fn().mockReturnValue({ readTile, close: vi.fn() }),
+      loadSettings,
+    })
+
+    await Promise.all([
+      proxy.fetchOfficialMapTile(
+        'sartracker-official-map://tile/official_discovery_topo/12/1935/1344.png',
+      ),
+      proxy.fetchOfficialMapTile(
+        'sartracker-official-map://tile/official_discovery_topo/12/1936/1344.png',
+      ),
+    ])
+
+    expect(loadSettings).toHaveBeenCalledOnce()
+    expect(readTile).toHaveBeenCalledTimes(2)
+  })
+
   it('closes and recreates the MBTiles reader when package metadata changes [DON-201]', async () => {
     const firstReader = {
       readTile: vi.fn().mockReturnValue({ status: 'hit', bytes: Uint8Array.from([1, 2, 3, 4]) }),
@@ -230,6 +281,7 @@ describe('Electron official map proxy', () => {
       contentType: 'image/png',
       bytesBase64: 'AQIDBA==',
     })
+    proxy.invalidateSettings()
     await expect(
       proxy.fetchOfficialMapTile('sartracker-official-map://tile/official_discovery_topo/12/1935/1344.png'),
     ).resolves.toEqual({
@@ -311,6 +363,25 @@ describe('Electron official map proxy', () => {
     })
     expect(fetchMock).toHaveBeenCalledOnce()
     expect(fetchMock.mock.calls[0]![0]).not.toContain('field-secret')
+  })
+
+  it('returns an empty tile for local package coverage misses when no online fallback is configured [DON-240]', async () => {
+    const readTile = vi.fn().mockReturnValue({ status: 'miss' })
+    const fetchMock = vi.fn()
+    const proxy = createElectronOfficialMapProxy({
+      fetch: fetchMock as never,
+      createMbtilesReader: vi.fn().mockReturnValue({ readTile, close: vi.fn() }),
+      loadSettings: async () =>
+        createSettingsWithPackage('/private/app/official-map-packages/reeks.mbtiles'),
+    })
+
+    const response = await proxy.fetchOfficialMapTile(
+      'sartracker-official-map://tile/official_discovery_topo/12/1936/1344.png',
+    )
+
+    expect(response.contentType).toBe('image/png')
+    expect(Buffer.from(response.bytesBase64, 'base64').length).toBeGreaterThan(0)
+    expect(fetchMock).not.toHaveBeenCalled()
   })
 
   it('reports a registered package that is missing and has no online fallback', async () => {

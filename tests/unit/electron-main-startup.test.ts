@@ -6,6 +6,8 @@ import { pathToFileURL } from 'node:url'
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
+import { DEFAULT_APP_SETTINGS } from '../../src/features/settings/settings-types'
+
 const require = createRequire(import.meta.url)
 const originalLoad = Module._load
 const originalPlatform = process.platform
@@ -290,6 +292,40 @@ describe('Electron main startup', () => {
       }),
     ).rejects.toThrow(/too large/)
     expect(fetchSpy).toHaveBeenCalledTimes(2)
+  })
+
+  it('invalidates the official map tile cache after saving settings [DON-240]', async () => {
+    const officialMapProxy = {
+      close: vi.fn(),
+      fetchOfficialMapTile: vi.fn(),
+      invalidateSettings: vi.fn(),
+    }
+    const electronMock = createElectronMock(vi.fn(), undefined, true)
+    Module._load = ((request: string, parent: NodeJS.Module | null, isMain: boolean) => {
+      if (request === 'electron') {
+        return electronMock
+      }
+      if (request === './official-map-proxy.cjs') {
+        return { createElectronOfficialMapProxy: vi.fn(() => officialMapProxy) }
+      }
+      return originalLoad(request, parent, isMain)
+    }) as typeof Module._load
+
+    require('../../electron/main.cjs')
+    await new Promise((resolve) => setTimeout(resolve, 50))
+
+    const saveSettingsHandler = electronMock.ipcMain.handle.mock.calls.find(
+      ([channel]) => channel === 'sartracker:save-app-settings',
+    )?.[1]
+    await saveSettingsHandler(createPackagedSenderEvent(), {
+      ...DEFAULT_APP_SETTINGS,
+      dataSource: {
+        ...DEFAULT_APP_SETTINGS.dataSource,
+        providerType: 'none',
+      },
+    })
+
+    expect(officialMapProxy.invalidateSettings).toHaveBeenCalledOnce()
   })
 
   it('keeps renderer diagnostic fields from overriding app-owned metadata [DON-237]', async () => {

@@ -76,8 +76,12 @@ export function createBreadcrumbAccumulator(
       return snapshot()
     }
 
+    let changed = false
     for (const position of incoming) {
-      mergePosition(deviceStates, decorateWithTimestamp(position))
+      changed = mergePosition(deviceStates, decorateWithTimestamp(position)) || changed
+    }
+    if (!changed) {
+      return snapshot()
     }
     invalidate()
     return snapshot()
@@ -282,7 +286,7 @@ function haversineDistance(lat1: number, lon1: number, lat2: number, lon2: numbe
 function mergePosition(
   deviceStates: Map<string, DeviceTrailState>,
   entry: TimestampedPosition,
-): void {
+): boolean {
   const key = createPositionKey(entry.position)
   let deviceState = deviceStates.get(entry.position.device_id)
   if (deviceState === undefined) {
@@ -296,9 +300,13 @@ function mergePosition(
     deviceStates.set(entry.position.device_id, deviceState)
   }
 
-  if (deviceState.byKey.has(key)) {
+  const existingEntry = deviceState.byKey.get(key)
+  if (existingEntry !== undefined) {
+    if (positionsEqual(existingEntry.position, entry.position)) {
+      return false
+    }
     replaceExistingPosition(deviceState, key, entry)
-    return
+    return true
   }
 
   deviceState.byKey.set(key, entry)
@@ -306,11 +314,33 @@ function mergePosition(
   const lastEntry = deviceState.chronological.at(-1)
   if (lastEntry === undefined || entry.timestampMs >= lastEntry.timestampMs) {
     deviceState.chronological.push(entry)
-    return
+    return true
   }
 
   const insertionIndex = findInsertionIndex(deviceState.chronological, entry.timestampMs)
   deviceState.chronological.splice(insertionIndex, 0, entry)
+  return true
+}
+
+function positionsEqual(
+  left: NormalizedTrackingPosition,
+  right: NormalizedTrackingPosition,
+): boolean {
+  return (
+    left.id === right.id &&
+    left.device_id === right.device_id &&
+    left.lat === right.lat &&
+    left.lon === right.lon &&
+    left.altitude === right.altitude &&
+    left.speed === right.speed &&
+    left.battery === right.battery &&
+    left.accuracy === right.accuracy &&
+    left.timestamp === right.timestamp &&
+    left.source === right.source &&
+    left.data_origin === right.data_origin &&
+    left.cache_age_seconds === right.cache_age_seconds &&
+    left.device_cache_stale === right.device_cache_stale
+  )
 }
 
 function replaceExistingPosition(

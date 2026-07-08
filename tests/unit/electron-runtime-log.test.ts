@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { createRequire } from 'node:module'
 
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 const require = createRequire(import.meta.url)
 const { createRuntimeLog } = require('../../electron/runtime-log.cjs') as {
@@ -111,6 +111,19 @@ describe('electron runtime log', () => {
     const entries = await log.readRecent(5)
     expect(entries.length).toBeGreaterThan(0)
     expect(entries.at(-1)).toMatchObject({ event: 'tick', index: 99 })
+  })
+
+  it('parses only the bounded tail when reading recent runtime entries [DON-240]', async () => {
+    const log = await createLog()
+    for (let index = 0; index < 200; index += 1) {
+      await log.append({ level: 'info', event: 'tick', fields: { index } })
+    }
+
+    const parseSpy = vi.spyOn(JSON, 'parse')
+    const entries = await log.readRecent(5)
+
+    expect(entries.map((entry) => entry.index)).toEqual([195, 196, 197, 198, 199])
+    expect(parseSpy).toHaveBeenCalledTimes(5)
   })
 
   it('returns an empty list when no log file exists yet', async () => {
