@@ -125,6 +125,13 @@ async function main() {
     const rendererStats = summarizeResponsiveness(samples.rendererGaps, 250)
     const verdict = buildFreezeVerdict({ mainStats, rendererStats, freezeThresholdMs: 1000 })
 
+    if (samples.mainRtt.length === 0) {
+      throw new Error(
+        `Main-process heartbeat collected zero samples (errors=${samples.mainErrors ?? 0}); ` +
+          'the freeze probe cannot attribute stalls without a working IPC heartbeat.',
+      )
+    }
+
     const report = {
       build: path.basename(options.appPath),
       platform: options.platform,
@@ -136,6 +143,7 @@ async function main() {
       probeIntervalMs: options.probeIntervalMs,
       networkBlocked: options.blockNetwork,
       mainProcess: mainStats,
+      mainProcessHeartbeatErrors: samples.mainErrors,
       renderer: rendererStats,
       verdict,
     }
@@ -161,7 +169,7 @@ async function main() {
  */
 async function installResponsivenessProbe(page, probeIntervalMs) {
   await page.evaluate((intervalMs) => {
-    const probe = { rendererGaps: [], mainRtt: [] }
+    const probe = { rendererGaps: [], mainRtt: [], mainErrors: 0 }
     window.__FREEZE_PROBE__ = probe
 
     // Renderer thread: requestAnimationFrame drift. A blocked renderer main thread fires the
@@ -178,11 +186,28 @@ async function installResponsivenessProbe(page, probeIntervalMs) {
     // the main event loop is saturated (e.g. synchronous SQLite tile reads), the invoke is not
     // serviced until the loop frees, so the round-trip balloons.
     const bridge = window.sartrackerElectron
+    const heartbeat =
+      typeof bridge?.loadAppSettings === 'function'
+        ? () => bridge.loadAppSettings()
+        : typeof bridge?.readCrashRecoveryState === 'function'
+          ? () => bridge.readCrashRecoveryState()
+          : undefined
     setInterval(() => {
+      if (heartbeat === undefined) {
+        probe.mainErrors += 1
+        return
+      }
       const t0 = performance.now()
-      Promise.resolve(bridge.loadSettings())
-        .catch(() => {})
-        .finally(() => probe.mainRtt.push(performance.now() - t0))
+      try {
+        Promise.resolve(heartbeat())
+          .catch(() => {
+            probe.mainErrors += 1
+          })
+          .finally(() => probe.mainRtt.push(performance.now() - t0))
+      } catch {
+        probe.mainErrors += 1
+        probe.mainRtt.push(performance.now() - t0)
+      }
     }, intervalMs)
   }, probeIntervalMs)
 }
@@ -191,6 +216,7 @@ async function collectResponsivenessProbe(page) {
   return page.evaluate(() => ({
     rendererGaps: window.__FREEZE_PROBE__?.rendererGaps ?? [],
     mainRtt: window.__FREEZE_PROBE__?.mainRtt ?? [],
+    mainErrors: window.__FREEZE_PROBE__?.mainErrors ?? 0,
   }))
 }
 
