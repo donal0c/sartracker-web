@@ -10,9 +10,9 @@
 - **Cut by:** Codex agent (Donal supervising)
 - **Supersedes:** `electron-v0.1.0-beta.9` (**HOLD**)
 - **Linear reference:** `DON-240`
-- **Verification report:** local gates and GitHub Actions release run complete; Ubuntu packaged smoke and team freeze retest pending.
+- **Verification report:** local gates, GitHub Actions release run, and Ubuntu packaged smoke complete; team freeze retest pending.
 - **CI run:** `electron-release.yml` run `28965175933` succeeded for commit `3e9ce22dff518d4718851296f6c9881559485dd2`.
-- **GitHub release:** draft prerelease until the packaged smoke and team freeze retest are recorded.
+- **GitHub release:** internal prerelease after packaged smoke; beta.9 HOLD is not lifted until team freeze-machine retest is recorded.
 
 ## Why beta.10 exists
 
@@ -58,6 +58,9 @@ Before cutting beta.10 and after the beta.10 tag retry:
   including Linux artifact inspection and AppImage launch smoke.
 - Ubuntu packaged full-profile probe ran with the 31,729-tile private Discovery
   package and live Traccar load (33 devices / 8 fixes).
+- Ubuntu packaged smoke passed on the CI-built beta.10 AppImage on
+  `donal-Precision-5570` (`6.17.0-35-generic`, X11 display `:0`). Evidence is
+  mirrored under `output/beta10-ubuntu-smoke/`.
 
 Important qualification: the Ubuntu smoke machine did **not** reproduce the
 field freeze numerically on original beta.9, even under full-profile load. It
@@ -135,16 +138,16 @@ The GitHub release must remain a draft until this matrix is complete.
 | Gate | Result | Evidence |
 | --- | --- | --- |
 | Tag-driven `electron-release.yml` run green | PASS | Run `28965175933`, commit `3e9ce22dff518d4718851296f6c9881559485dd2`. |
-| Checksum verified against `SHA256SUMS` | PASS | Local verification of downloaded draft assets: AppImage `84467e7aaac9d5d0bd90512f769c005f8a05ba0dd69c1631f52a74b9ad0473f5`, `.deb` `44f57f53bfc20720f87a938798f1ef451f564e703a22d7bd6ff7f51d80b7730c`. |
-| Packaged AppImage launches to normal shell | PASS | CI Xvfb launch smoke in run `28965175933`. |
-| Full-profile freeze probe / team retest | PENDING | Needs beta.10 CI AppImage on Ubuntu/team freeze machine. |
-| Official offline map package smoke | PENDING | Ubuntu host `192.168.18.31` is currently unreachable from the Mac (`ping` host down, SSH timeout). |
-| Diagnostics export succeeds and is sanitized | PENDING | Needs beta.10 CI AppImage on Ubuntu/team freeze machine. |
-| Mission lifecycle / restart / recovery / finalize / archive | PENDING | Needs beta.10 CI AppImage on Ubuntu/team freeze machine. |
-| Coordinate rejection and Irish Grid coarse-ref behavior | PENDING | Needs beta.10 CI AppImage on Ubuntu/team freeze machine. |
-| Bad/corrupt stored credential reaches shell, not runtime fault | PENDING | Needs beta.10 CI AppImage on Ubuntu/team freeze machine. |
-| Live Traccar connection | PENDING | Needs beta.10 CI AppImage on Ubuntu/team freeze machine with live credentials. |
-| Duplicate launch / single-instance smoke | PENDING | Needs beta.10 CI AppImage on Ubuntu/team freeze machine. |
+| Checksum verified against `SHA256SUMS` | PASS | Local and Ubuntu verification of downloaded draft assets: AppImage `84467e7aaac9d5d0bd90512f769c005f8a05ba0dd69c1631f52a74b9ad0473f5`, `.deb` `44f57f53bfc20720f87a938798f1ef451f564e703a22d7bd6ff7f51d80b7730c`. |
+| Packaged AppImage launches to normal shell | PASS | CI Xvfb launch smoke in run `28965175933`; Ubuntu packaged smoke launch in `output/beta10-ubuntu-smoke/core-lifecycle/`. |
+| Full-profile freeze probe / team retest | PASS / TEAM RETEST PENDING | Ubuntu full-profile probe with live tracking and Reeks package: `frozen=false`, worst stall 50 ms, main p99 21 ms, renderer p99 17 ms, live tracking online 33 devices / 8 fixes. The original team freeze machine/profile still needs to retest before beta.9 HOLD is lifted. |
+| Official offline map package smoke | PASS | Reeks package, network blocked, local tile bytes returned, inside/outside coverage and Settings package status passed. Evidence: `output/beta10-ubuntu-smoke/official-offline/`. |
+| Diagnostics export succeeds and is sanitized | PASS | Diagnostics report, support bundle, and incident support bundle exported and scanned without credential/private-path leakage. Evidence: `output/beta10-ubuntu-smoke/diagnostics-bundles/`. |
+| Mission lifecycle / restart / recovery / finalize / archive | PASS | Real SQLite packaged smoke: mission start, marker save, reload recovery, finish, finalize, archive `5015` bytes. Evidence: `output/beta10-ubuntu-smoke/core-lifecycle/`. |
+| Coordinate rejection and Irish Grid coarse-ref behavior | PASS | Out-of-Ireland DD flagged; `V 80 84` resolved to `V 80500 84500`. Evidence: `output/beta10-ubuntu-smoke/coord-diag/` and `single-instance-coordinates/`. |
+| Bad/corrupt stored credential reaches shell, not runtime fault | PASS | Packaged app reached normal shell, showed stored-credential warning, and Settings allowed replacement secret entry. Evidence: `output/beta10-ubuntu-smoke/bad-secret/`. |
+| Live Traccar connection | PASS | Full-profile freeze probe seeded app-owned Ubuntu credentials; tracking went online with 33 devices / 8 fixes. Evidence: `output/beta10-ubuntu-smoke/full-profile-freeze/`. |
+| Duplicate launch / single-instance smoke | PASS | Second AppImage launch exited code `0`; primary app remained usable. Evidence: `output/beta10-ubuntu-smoke/single-instance-coordinates/`. |
 
 ## Known Limitations
 

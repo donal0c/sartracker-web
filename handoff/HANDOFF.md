@@ -22,20 +22,21 @@ Beta.9 is ON HOLD (map/Devices/diagnostics hangs on Linux). Current DON-240 comm
 `7f776de` hotfix, `557b9af` freeze probe + hardening, `78fa836` heartbeat fix, `b0008fd` live-load
 probe option, `d00eecb` app-owned credential seeding for live-load probe. Pushed to origin.
 
-Beta.10 replacement release draft exists but is **not published**. Prep commit `b9ddfbe` and
-test-isolation fix `8557a0c` were pushed first; release run `28963733570` then failed before
-bundling on Settings E2E because the workspace could remain visible while `Save, Connect & Close`
-waited for a slow forced reconnect/large breadcrumb load. Commit `3e9ce22` fixes this by closing
-Settings immediately after persistence succeeds and running runtime reload in the background, with a
-unit regression proving slow reconnects no longer block the modal. Tag `electron-v0.1.0-beta.10`
-now points at `3e9ce22dff518d4718851296f6c9881559485dd2`; GitHub Actions release run
-`28965175933` passed gates, Linux bundle, private-map-data guard, CI AppImage launch smoke, and
-draft prerelease/SHA256SUMS upload. Local downloaded draft assets verified against `SHA256SUMS`
-(AppImage `84467e7a…`, `.deb` `44f57f53…`). The GitHub draft release body has been updated with
-complete CI provenance and a pending smoke matrix. Next action: bring the Ubuntu smoke host back
-online or provide its new IP; `192.168.18.31` is currently host-down from the Mac (ping down, SSH
-timeout), so beta.10 has not yet had the required Ubuntu packaged smoke or team freeze retest and
-must remain a draft.
+Beta.10 replacement prerelease is ready for team retest. Prep commit `b9ddfbe` and test-isolation
+fix `8557a0c` were pushed first; release run `28963733570` then failed before bundling on Settings
+E2E because the workspace could remain visible while `Save, Connect & Close` waited for a slow
+forced reconnect/large breadcrumb load. Commit `3e9ce22` fixes this by closing Settings immediately
+after persistence succeeds and running runtime reload in the background, with a unit regression
+proving slow reconnects no longer block the modal. Tag `electron-v0.1.0-beta.10` points at
+`3e9ce22dff518d4718851296f6c9881559485dd2`; GitHub Actions release run `28965175933` passed gates,
+Linux bundle, private-map-data guard, CI AppImage launch smoke, and draft prerelease/SHA256SUMS
+upload. Ubuntu packaged smoke on `donal-Precision-5570` passed against the CI-built AppImage:
+checksums, full-profile freeze probe with live tracking and Reeks package (`frozen=false`, worst
+stall 50 ms, main p99 21 ms, renderer p99 17 ms, 33 devices / 8 fixes), official offline map smoke,
+diagnostics report/support/incident-bundle exports, mission lifecycle/restart/recovery/finalize/
+archive, coordinate rejection + `V 80 84 -> V 80500 84500`, bad-secret startup recovery, and
+duplicate launch. Evidence is mirrored under `output/beta10-ubuntu-smoke/`. The original team
+freeze machine/profile still needs to retest before beta.9 HOLD is lifted.
 
 Implemented:
 - Official-map proxy caches Settings/package metadata, avoids per-tile `synchronize()`, returns a
