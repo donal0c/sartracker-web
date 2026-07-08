@@ -17,7 +17,7 @@
 // See docs/releases/beta9-map-freeze-repro-plan.md for the full A/B runbook.
 
 import { spawn } from 'node:child_process'
-import { copyFile, mkdir, readFile, writeFile } from 'node:fs/promises'
+import { chmod, copyFile, mkdir, readFile, writeFile } from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -176,9 +176,10 @@ async function main() {
 async function buildSeedSettingsWithRealTrackingConfig(userDataDir, packageSettings) {
   const realConfigDir = path.join(os.homedir(), '.config', 'sartracker-web')
   const realSettingsPath = path.join(realConfigDir, 'settings.json')
-  const realSecretsPath = path.join(realConfigDir, 'secrets.json')
+  const realCredentialsPath = path.join(realConfigDir, 'credentials.json')
   const realSettings = JSON.parse(await readFile(realSettingsPath, 'utf8'))
-  await copyFile(realSecretsPath, path.join(userDataDir, 'secrets.json'))
+  await copyFile(realCredentialsPath, path.join(userDataDir, 'credentials.json'))
+  await chmod(path.join(userDataDir, 'credentials.json'), 0o600)
   return {
     ...buildSeedSettings(packageSettings),
     ...realSettings,
