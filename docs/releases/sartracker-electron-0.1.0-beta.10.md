@@ -10,8 +10,8 @@
 - **Cut by:** Codex agent (Donal supervising)
 - **Supersedes:** `electron-v0.1.0-beta.9` (**HOLD**)
 - **Linear reference:** `DON-240`
-- **Verification report:** local gates, GitHub Actions release run, Ubuntu packaged probe/smoke, and team retest.
-- **CI run:** TODO after tag-driven `.github/workflows/electron-release.yml` completes.
+- **Verification report:** local gates and GitHub Actions release run complete; Ubuntu packaged smoke and team freeze retest pending.
+- **CI run:** `electron-release.yml` run `28965175933` succeeded for commit `3e9ce22dff518d4718851296f6c9881559485dd2`.
 - **GitHub release:** draft prerelease until the packaged smoke and team freeze retest are recorded.
 
 ## Why beta.10 exists
@@ -44,12 +44,16 @@ profile.
 
 ## Validation To Date
 
-Before cutting beta.10:
+Before cutting beta.10 and after the beta.10 tag retry:
 
 - `npm run lint` passed locally.
 - `npm run build` passed locally.
-- `npm run test` passed locally: 153 files / 1079 tests.
+- `npm run test` passed locally: 153 files / 1080 tests.
 - `npm run test:backend` passed locally: 47 passed / 1 ignored.
+- `npm run test:e2e:chromium` passed locally: 129 / 129 tests.
+- Tag-driven GitHub Actions run `28965175933` passed release gates, Linux
+  artifact inspection/private-map guard, Linux AppImage Xvfb launch smoke, and
+  draft prerelease/SHA256SUMS upload.
 - GitHub Linux validation build `28959613296` passed for the hotfix artifact,
   including Linux artifact inspection and AppImage launch smoke.
 - Ubuntu packaged full-profile probe ran with the 31,729-tile private Discovery
@@ -130,17 +134,17 @@ The GitHub release must remain a draft until this matrix is complete.
 
 | Gate | Result | Evidence |
 | --- | --- | --- |
-| Tag-driven `electron-release.yml` run green | TODO | TODO |
-| Checksum verified against `SHA256SUMS` | TODO | TODO |
-| Packaged AppImage launches to normal shell | TODO | TODO |
-| Full-profile freeze probe / team retest | TODO | TODO |
-| Official offline map package smoke | TODO | TODO |
-| Diagnostics export succeeds and is sanitized | TODO | TODO |
-| Mission lifecycle / restart / recovery / finalize / archive | TODO | TODO |
-| Coordinate rejection and Irish Grid coarse-ref behavior | TODO | TODO |
-| Bad/corrupt stored credential reaches shell, not runtime fault | TODO | TODO |
-| Live Traccar connection | TODO | TODO |
-| Duplicate launch / single-instance smoke | TODO | TODO |
+| Tag-driven `electron-release.yml` run green | PASS | Run `28965175933`, commit `3e9ce22dff518d4718851296f6c9881559485dd2`. |
+| Checksum verified against `SHA256SUMS` | PASS | Local verification of downloaded draft assets: AppImage `84467e7aaac9d5d0bd90512f769c005f8a05ba0dd69c1631f52a74b9ad0473f5`, `.deb` `44f57f53bfc20720f87a938798f1ef451f564e703a22d7bd6ff7f51d80b7730c`. |
+| Packaged AppImage launches to normal shell | PASS | CI Xvfb launch smoke in run `28965175933`. |
+| Full-profile freeze probe / team retest | PENDING | Needs beta.10 CI AppImage on Ubuntu/team freeze machine. |
+| Official offline map package smoke | PENDING | Ubuntu host `192.168.18.31` is currently unreachable from the Mac (`ping` host down, SSH timeout). |
+| Diagnostics export succeeds and is sanitized | PENDING | Needs beta.10 CI AppImage on Ubuntu/team freeze machine. |
+| Mission lifecycle / restart / recovery / finalize / archive | PENDING | Needs beta.10 CI AppImage on Ubuntu/team freeze machine. |
+| Coordinate rejection and Irish Grid coarse-ref behavior | PENDING | Needs beta.10 CI AppImage on Ubuntu/team freeze machine. |
+| Bad/corrupt stored credential reaches shell, not runtime fault | PENDING | Needs beta.10 CI AppImage on Ubuntu/team freeze machine. |
+| Live Traccar connection | PENDING | Needs beta.10 CI AppImage on Ubuntu/team freeze machine with live credentials. |
+| Duplicate launch / single-instance smoke | PENDING | Needs beta.10 CI AppImage on Ubuntu/team freeze machine. |
 
 ## Known Limitations
 

@@ -22,16 +22,20 @@ Beta.9 is ON HOLD (map/Devices/diagnostics hangs on Linux). Current DON-240 comm
 `7f776de` hotfix, `557b9af` freeze probe + hardening, `78fa836` heartbeat fix, `b0008fd` live-load
 probe option, `d00eecb` app-owned credential seeding for live-load probe. Pushed to origin.
 
-Beta.10 replacement release is in progress. Prep commit `b9ddfbe` and test-isolation fix `8557a0c`
-were pushed and tag `electron-v0.1.0-beta.10` was moved to `8557a0c`, but release run
-`28963733570` failed before bundling on Settings E2E: the workspace could remain visible while
-`Save, Connect & Close` waited for a slow forced reconnect/large breadcrumb load. The fix now closes
-Settings immediately after persistence succeeds and runs runtime reload in the background, with a
-unit regression proving slow reconnects no longer block the modal. Local post-fix gates passed:
-`npm run lint`, `npm run build`, `npm run test` (153 files / 1080 tests), `npm run test:backend`
-(47 passed / 1 ignored), and `npm run test:e2e:chromium` (129/129). Next action: commit/push this
-fix, move `electron-v0.1.0-beta.10` again, then wait for the tag-driven Electron release workflow
-to create CI-built artifacts before any packaged Ubuntu smoke or publication claim.
+Beta.10 replacement release draft exists but is **not published**. Prep commit `b9ddfbe` and
+test-isolation fix `8557a0c` were pushed first; release run `28963733570` then failed before
+bundling on Settings E2E because the workspace could remain visible while `Save, Connect & Close`
+waited for a slow forced reconnect/large breadcrumb load. Commit `3e9ce22` fixes this by closing
+Settings immediately after persistence succeeds and running runtime reload in the background, with a
+unit regression proving slow reconnects no longer block the modal. Tag `electron-v0.1.0-beta.10`
+now points at `3e9ce22dff518d4718851296f6c9881559485dd2`; GitHub Actions release run
+`28965175933` passed gates, Linux bundle, private-map-data guard, CI AppImage launch smoke, and
+draft prerelease/SHA256SUMS upload. Local downloaded draft assets verified against `SHA256SUMS`
+(AppImage `84467e7a…`, `.deb` `44f57f53…`). The GitHub draft release body has been updated with
+complete CI provenance and a pending smoke matrix. Next action: bring the Ubuntu smoke host back
+online or provide its new IP; `192.168.18.31` is currently host-down from the Mac (ping down, SSH
+timeout), so beta.10 has not yet had the required Ubuntu packaged smoke or team freeze retest and
+must remain a draft.
 
 Implemented:
 - Official-map proxy caches Settings/package metadata, avoids per-tile `synchronize()`, returns a
