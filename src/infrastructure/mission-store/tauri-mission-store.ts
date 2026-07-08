@@ -270,6 +270,10 @@ export type MissionStore = {
   readonly createMissionArchive: (missionId: string) => Promise<MissionArchiveInfo>
   readonly createMission: (input: CreateMissionInput) => Promise<Mission>
   readonly upsertDevice: (input: UpsertDeviceInput) => Promise<Device>
+  readonly upsertDevicesBulk?: (input: {
+    readonly mission_id: string
+    readonly devices: readonly Omit<UpsertDeviceInput, 'mission_id'>[]
+  }) => Promise<readonly Device[]>
   readonly getDevice: (missionId: string, deviceId: string) => Promise<Device>
   readonly listDevices: (missionId: string) => Promise<readonly Device[]>
   readonly addPosition: (input: AddPositionInput) => Promise<Position>

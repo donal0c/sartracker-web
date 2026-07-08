@@ -61,6 +61,16 @@ type ElectronMissionStore = {
     readonly color: string
     readonly status: string
   }) => Promise<{ readonly device_id: string }>
+  readonly upsertDevicesBulk: (input: {
+    readonly mission_id: string
+    readonly devices: readonly {
+      readonly device_id: string
+      readonly name: string
+      readonly color: string
+      readonly status: string
+      readonly last_seen?: string | null
+    }[]
+  }) => Promise<readonly { readonly device_id: string }[]>
   readonly addPosition: (input: {
     readonly id?: string
     readonly mission_id: string
@@ -663,6 +673,39 @@ describe('electron mission store', () => {
     const auditTypes = (await store.listAuditEvents(mission.id)).map((event) => event.event_type)
     expect(auditTypes).toContain('device_created')
     expect(auditTypes).not.toContain('device_updated')
+  })
+
+  it('upsertDevicesBulk persists every device and emits created/updated events in one batch [DON-240]', async () => {
+    store = await createStore()
+    const mission = await store.createMission({ name: 'Bulk Device Mission' })
+
+    // Pre-existing device so the batch exercises both the created and updated event paths.
+    await store.upsertDevice({
+      mission_id: mission.id,
+      device_id: 'tracker-1',
+      name: 'Tracker One',
+      color: '#00AAFF',
+      status: 'unknown',
+    })
+
+    const result = await store.upsertDevicesBulk({
+      mission_id: mission.id,
+      devices: [
+        { device_id: 'tracker-1', name: 'Tracker One Renamed', color: '#00AAFF', status: 'online' },
+        { device_id: 'tracker-2', name: 'Tracker Two', color: '#FF8800', status: 'online' },
+        { device_id: 'tracker-3', name: 'Tracker Three', color: '#22CC66', status: 'unknown' },
+      ],
+    })
+
+    expect(result.map((device) => device.device_id)).toEqual(['tracker-1', 'tracker-2', 'tracker-3'])
+
+    const devices = await store.listDevices(mission.id)
+    expect(devices).toHaveLength(3)
+
+    const types = (await store.listMissionEvents(mission.id)).map((event) => event.event_type)
+    // tracker-1 already existed (1 created earlier) → this batch: 1 update + 2 creates.
+    expect(types.filter((type) => type === 'device_created')).toHaveLength(3)
+    expect(types.filter((type) => type === 'device_updated')).toHaveLength(1)
   })
 
   it('emits create/update/delete audit events for markers, drawings, helicopters, and GPX imports (DON-163)', async () => {

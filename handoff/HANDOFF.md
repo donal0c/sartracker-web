@@ -16,7 +16,38 @@
   - Ubuntu box note: `donal@192.168.18.31` was upgraded off Wayland to **X11** (kernel 6.17); drive packaged smoke with `--ozone-platform=x11` (Wayland flag segfaults). Beta.8 smoke scripts live on the box at `~/sartracker-don147-validation/repo/tmp/beta8-smoke/`; evidence mirrored to repo `output/beta8-ubuntu-smoke/evidence-fixed/`.
   - **Smoke result: 43/43 across lifecycle, duplicate-launch (DON-180), safety+diagnostics (DON-226), settings-safety (DON-207/204/208), UI-polish (DON-195/223/197), live Traccar (online 33 devices/8 fixes), and offline Discovery map.**
 
-## DON-240 Hotfix Hardening (active, 2026-07-08)
+## DON-240 REAL root cause found (2026-07-08, beta.10 field retest still froze)
+
+**Beta.10 (`3e9ce22`, all hotfix + hardening) STILL froze in the field** — tester report: "app
+opens then everything takes 20-30 seconds to respond." Field diagnostic (PCLinuxOS, kernel
+6.12.71, 1.2 GB official Discovery package, 32 devices, 5 s poll) shows the smoking gun: when
+tracking is **idle (0 devices)** snapshots log at a clean 5 s cadence; the moment it goes **online
+(32 devices)** the cadence jumps to **~22-27 s**. The slowdown is entirely in the online tracking
+**persistence** path, not the map.
+
+Root cause: **beta.9 added `db.pragma('synchronous = FULL')` (`mission-store.cjs:26`; NOT present in
+beta.8) — Fable finding #3.** At FULL every commit does an fsync. The tracking runtime upserted
+devices in a **per-device loop** (`start-tracking-runtime.ts`), so a 32-device poll did 32 fsync'd
+commits on the main process every 5 s. On a slow field disk that blocks the event loop for tens of
+seconds → "everything takes 20-30 s". This is why **no probe run on the fast Ubuntu SSD ever
+reproduced it** (fsync is sub-ms there) — the variable is fsync latency, not page cache. The whole
+official-map tile-read / exception-storm investigation was a **red herring** for this symptom (the
+exception-storm removal was still a real, worthwhile fix, just not the freeze).
+
+Fix (this session, on `master`, **uncommitted**): added `upsertDevicesBulk` to the mission store
+(one transaction → one fsync for all devices) and switched the runtime persistence to it, keeping
+`synchronous=FULL` so durability is preserved (one fsync/poll is fine even on a slow disk). Per-poll
+device commits: 32 → 1. Positions were already batched via `addPositionsBulk`.
+- `electron/mission-store.cjs` `upsertDevicesBulk(db, input)` + store export; IPC channel added to
+  `main.cjs`/`preload.cjs` (generic bridge picks it up); optional on `MissionStore` and
+  `TrackingRuntimeMissionStore`; runtime uses it with a per-device fallback.
+- Tests (red→green): `electron-mission-store.test.ts` (bulk correctness + created/updated events),
+  `start-tracking-runtime.test.ts` (bulk called once, per-device loop not used).
+- Verified: `tsc -b` clean, eslint clean, full unit suite **153 files / 1082 tests passing**.
+- **Still needed:** field retest on the actual slow machine (or a slow-disk repro) — this is the
+  only environment that reproduces the fsync freeze. Consider also whether to keep FULL vs NORMAL.
+
+## DON-240 Hotfix Hardening (earlier context, 2026-07-08)
 
 Beta.9 is ON HOLD (map/Devices/diagnostics hangs on Linux). Current DON-240 commits on `master`:
 `7f776de` hotfix, `557b9af` freeze probe + hardening, `78fa836` heartbeat fix, `b0008fd` live-load

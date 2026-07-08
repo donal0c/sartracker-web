@@ -77,6 +77,16 @@ export type TrackingRuntimeMissionStore = {
     readonly status: 'online' | 'offline' | 'unknown'
     readonly last_seen?: string | null
   }) => Promise<unknown>
+  readonly upsertDevicesBulk?: (input: {
+    readonly mission_id: string
+    readonly devices: readonly {
+      readonly device_id: string
+      readonly name: string
+      readonly color: string
+      readonly status: 'online' | 'offline' | 'unknown'
+      readonly last_seen?: string | null
+    }[]
+  }) => Promise<unknown>
   readonly addPosition: (input: {
     readonly id?: string
     readonly mission_id: string
@@ -369,15 +379,33 @@ async function persistTrackingSnapshot(
           ),
         }
 
-  for (const device of snapshot.devices) {
-    await missionStore.upsertDevice({
-      mission_id: activeMission.id,
-      device_id: device.device_id,
-      name: device.name,
-      color: createDeviceColor(device.device_id),
-      status: device.status,
-      last_seen: device.last_seen,
-    })
+  // Persist all devices in ONE batched write when the store supports it. A per-device loop is
+  // one commit — and at synchronous=FULL one fsync — per device, so a 32-device mission blocked
+  // the main-process event loop for tens of seconds every poll on a slow field disk (DON-240).
+  if (snapshot.devices.length > 0) {
+    if (missionStore.upsertDevicesBulk !== undefined) {
+      await missionStore.upsertDevicesBulk({
+        mission_id: activeMission.id,
+        devices: snapshot.devices.map((device) => ({
+          device_id: device.device_id,
+          name: device.name,
+          color: createDeviceColor(device.device_id),
+          status: device.status,
+          last_seen: device.last_seen,
+        })),
+      })
+    } else {
+      for (const device of snapshot.devices) {
+        await missionStore.upsertDevice({
+          mission_id: activeMission.id,
+          device_id: device.device_id,
+          name: device.name,
+          color: createDeviceColor(device.device_id),
+          status: device.status,
+          last_seen: device.last_seen,
+        })
+      }
+    }
   }
 
   const newPositions: {

@@ -49,6 +49,7 @@ const MISSION_STORE_CHANNELS = {
   createMissionArchive: 'sartracker:mission-store:create-mission-archive',
   createMission: 'sartracker:mission-store:create-mission',
   upsertDevice: 'sartracker:mission-store:upsert-device',
+  upsertDevicesBulk: 'sartracker:mission-store:upsert-devices-bulk',
   getDevice: 'sartracker:mission-store:get-device',
   listDevices: 'sartracker:mission-store:list-devices',
   addPosition: 'sartracker:mission-store:add-position',

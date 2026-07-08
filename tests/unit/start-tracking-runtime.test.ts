@@ -272,6 +272,54 @@ describe('startTrackingRuntime', () => {
     )
   })
 
+  it('batches all device upserts into a single upsertDevicesBulk call when available [DON-240]', async () => {
+    // Regression guard for the beta.9 field freeze: at synchronous=FULL, one fsync per commit,
+    // a per-device upsert loop meant N fsync'd writes on the main process every poll. With many
+    // devices on a slow disk this blocked the event loop for tens of seconds. Persistence must
+    // issue ONE batched write, not one per device.
+    const upsertDevice = vi.fn().mockResolvedValue(undefined)
+    const upsertDevicesBulk = vi.fn().mockResolvedValue(undefined)
+    let pollerHooks:
+      | {
+          onSnapshot: (snapshot: TrackingSnapshot) => void | Promise<void>
+          onStatusChange: (status: TrackingConnectionStatus) => void
+        }
+      | undefined
+
+    await startTrackingRuntime({
+      config: { baseUrl: 'http://test:8082' },
+      createClient: vi.fn().mockReturnValue({}),
+      createPoller: vi.fn().mockImplementation((_client, hooks) => {
+        pollerHooks = hooks
+        return { start: vi.fn(), stop: vi.fn() }
+      }),
+      cache: {
+        read: vi.fn().mockResolvedValue(null),
+        write: vi.fn().mockResolvedValue('/tmp/tracking-cache.json'),
+      },
+      missionStore: createMissionStoreStub({
+        getActiveMission: vi.fn().mockResolvedValue({ id: 'mission-1' }),
+        listPositions: vi.fn().mockResolvedValue([]),
+        upsertDevice,
+        upsertDevicesBulk,
+      }),
+      applySnapshot: vi.fn(),
+      applyStatus: vi.fn(),
+      writeCache: false,
+      now: () => new Date('2026-04-06T10:35:00.000Z'),
+    })
+
+    await pollerHooks?.onSnapshot(SNAPSHOT)
+
+    // SNAPSHOT has 2 devices; one batched call, zero per-device calls.
+    expect(upsertDevicesBulk).toHaveBeenCalledTimes(1)
+    expect(upsertDevice).not.toHaveBeenCalled()
+    const call = upsertDevicesBulk.mock.calls[0]![0]
+    expect(call.mission_id).toBe('mission-1')
+    expect(call.devices).toHaveLength(2)
+    expect(call.devices.map((device: { device_id: string }) => device.device_id)).toEqual(['1', '2'])
+  })
+
   it('persists same-second distinct Traccar positions when their upstream ids differ [DON-233]', async () => {
     const addPositionsBulk = vi.fn().mockResolvedValue(undefined)
     const sameSecondBreadcrumbs = [

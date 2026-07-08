@@ -56,6 +56,7 @@ function createElectronMissionStore(options) {
       createMissionArchive(db, missionId, backupCoordinator, archiveDirectory, true, archiveFaultInjection),
     createMission: async (input) => createMission(db, input),
     upsertDevice: async (input) => upsertDevice(db, input),
+    upsertDevicesBulk: async (input) => upsertDevicesBulk(db, input),
     getDevice: async (missionId, deviceId) => getDevice(db, missionId, deviceId),
     listDevices: async (missionId) => all(db, 'SELECT * FROM devices WHERE mission_id = ? ORDER BY name ASC', missionId),
     addPosition: async (input) => addPosition(db, input),
@@ -759,6 +760,53 @@ function upsertDevice(db, input) {
   })
   transaction()
   return getDevice(db, input.mission_id, input.device_id)
+}
+
+/**
+ * Upserts many devices in a SINGLE transaction (one commit → one fsync at synchronous=FULL).
+ * The tracking poller previously upserted each device in its own transaction, so a 32-device
+ * mission produced 32 fsync'd writes on the main process every poll — tens of seconds of
+ * event-loop blocking on a slow field disk (DON-240). Emits device_created on first contact and
+ * device_updated otherwise, matching upsertDevice.
+ */
+function upsertDevicesBulk(db, input) {
+  ensureWritableMission(db, input.mission_id)
+  const devices = Array.isArray(input.devices) ? input.devices : []
+  if (devices.length === 0) {
+    return []
+  }
+
+  const existsStmt = db.prepare('SELECT id FROM devices WHERE mission_id = ? AND device_id = ?')
+  const upsertStmt = db.prepare(`INSERT INTO devices (id, mission_id, device_id, name, color, last_seen, status)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(mission_id, device_id) DO UPDATE SET
+      name = excluded.name, color = excluded.color, last_seen = excluded.last_seen, status = excluded.status`)
+
+  const transaction = db.transaction(() => {
+    for (const device of devices) {
+      const existing = existsStmt.get(input.mission_id, device.device_id)
+      const id = randomUUID()
+      const timestamp = device.last_seen ?? now()
+      upsertStmt.run(
+        id,
+        input.mission_id,
+        device.device_id,
+        device.name,
+        device.color,
+        device.last_seen ?? null,
+        device.status,
+      )
+      insertEvent(db, input.mission_id, existing === undefined ? 'device_created' : 'device_updated', timestamp, {
+        device_id: device.device_id,
+        name: device.name,
+        status: device.status,
+        color: device.color,
+      })
+    }
+  })
+  transaction()
+
+  return devices.map((device) => getDevice(db, input.mission_id, device.device_id))
 }
 
 function getDevice(db, missionId, deviceId) {
