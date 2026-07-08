@@ -7,7 +7,8 @@
 - **Branch:** `master` is canonical and should be worked directly unless Donal says otherwise.
 - **Desktop lane:** Electron is operational. Tauri remains historical/reference.
 - **Hosted browser:** `https://sartracker-web.vercel.app/?missionHarness=1` is testing/training only; browser storage is not operational persistence.
-- **Latest published beta:** `electron-v0.1.0-beta.9`, published 2026-07-08 after GitHub Actions run `28875685324`, is now **ON HOLD** after team Linux AppImage feedback reported long UI hangs while panning the official map, opening Devices, and exporting diagnostics. GitHub release and release notes are marked HOLD. `DON-240` is the active urgent hotfix issue; do not roll beta.9 out further or call it release-ready.
+- **Latest replacement beta:** `electron-v0.1.0-beta.11` is the DON-240 fsync-storm fix candidate, cut from `4f13da2` after GitHub Actions release run `28972979120` passed and Ubuntu packaged smoke completed on the CI-built AppImage. Release note: `docs/releases/sartracker-electron-0.1.0-beta.11.md`. It still needs the original slow PCLinuxOS/team machine to confirm the field freeze is gone.
+- **Held betas:** `electron-v0.1.0-beta.9` and `electron-v0.1.0-beta.10` are **ON HOLD** for the Linux tracking-online freeze. Do not roll them out further.
 - **Previous beta:** `electron-v0.1.0-beta.8`, published 2026-06-23 after GitHub Actions run `28012741523` and a deep Ubuntu packaged smoke (43/43) on the CI-built post-fix artifact (AppImage sha `43067cb2…`). Team artifact: https://github.com/donal0c/sartracker-web/releases/tag/electron-v0.1.0-beta.8`.
 - **Beta.8 release evidence:** tag `electron-v0.1.0-beta.8` (HEAD `34e3fc1`); CI release run `28012741523` is **green** and the deep Ubuntu packaged smoke PASSED on that CI-built artifact. Release note: `docs/releases/sartracker-electron-0.1.0-beta.8.md`.
   - Post-fix CI-built checksums: AppImage `43067cb2a99671419da576799beaedd7541b6ade7714fe267ad0c16b68e97911`, deb `fa60e126faee7a6d0f025d0e460317b6c53da1ed58cd3a3d129ac86ea2ca0a2b`.
@@ -16,7 +17,41 @@
   - Ubuntu box note: `donal@192.168.18.31` was upgraded off Wayland to **X11** (kernel 6.17); drive packaged smoke with `--ozone-platform=x11` (Wayland flag segfaults). Beta.8 smoke scripts live on the box at `~/sartracker-don147-validation/repo/tmp/beta8-smoke/`; evidence mirrored to repo `output/beta8-ubuntu-smoke/evidence-fixed/`.
   - **Smoke result: 43/43 across lifecycle, duplicate-launch (DON-180), safety+diagnostics (DON-226), settings-safety (DON-207/204/208), UI-polish (DON-195/223/197), live Traccar (online 33 devices/8 fixes), and offline Discovery map.**
 
-## DON-240 REAL root cause found (2026-07-08, beta.10 field retest still froze)
+## DON-240 beta.11 status (2026-07-08)
+
+Root cause: beta.9 added SQLite `synchronous = FULL`, and the tracking runtime persisted devices in
+a per-device loop. With 32 devices, each 5 s tracking poll could perform 32 fsync-backed commits on
+the Electron main process. On the field tester's slow disk this stretched online tracking cadence to
+roughly 22-27 s and made map panning, Devices, and diagnostics feel frozen.
+
+Fix shipped in beta.11: `upsertDevicesBulk` batches all devices from a tracking poll into one
+transaction while keeping `synchronous = FULL` durability; per-poll device fsyncs drop from roughly
+32 to 1. Runtime uses the bulk method when available and preserves the per-device fallback.
+
+Validation:
+- Local focused and full gates passed, including `npm run beta:verify -- --no-smoke`: lint, build,
+  unit `1082/1082`, backend `47 passed / 1 ignored`, Chromium E2E `129/129`, and local package.
+- GitHub Actions release run `28972979120` passed gates, Linux bundle, private-map-data guard,
+  AppImage launch smoke, and draft prerelease/SHA256SUMS upload.
+- CI-built asset checksums verified locally and on Ubuntu:
+  AppImage `c528e192afc7c6507e6167df26b217054e1824eacd62ecbcd1fca6be1c89cba6`; `.deb`
+  `adabc02aa68c48447275ec498bc0ea00ee9672a21f0db7237eb2930622d260ca`.
+- Ubuntu packaged smoke evidence is mirrored under `output/beta11-ubuntu-smoke/`: official offline
+  map package readiness/outside warning/diagnostics passed, bad-secret recovery passed,
+  diagnostics/support/incident exports sanitized, coarse Irish Grid `V 80 84 -> V 80500 84500`
+  passed, duplicate launch passed, and core lifecycle/restart/recovery/finish/finalize/archive
+  passed via the legacy smoke except for stale coordinate/diagnostics selectors covered by focused
+  smokes.
+- Full-profile map/tracking probe reached live tracking online (`33` devices / `8` fixes) and kept
+  the main-process heartbeat healthy (`p99 10 ms`, max `959 ms`, zero heartbeat errors). The current
+  Ubuntu desktop session throttled renderer rAF to roughly 1 Hz; beta.10 showed the same renderer
+  verdict under the same session, so that renderer verdict is non-discriminating and not treated as
+  beta.11-specific regression evidence.
+
+Still needed: field retest on the original slow PCLinuxOS/team machine/profile. Ubuntu's fast SSD
+cannot reproduce the fsync latency that caused the real freeze.
+
+## DON-240 earlier root-cause context (2026-07-08, beta.10 field retest still froze)
 
 **Beta.10 (`3e9ce22`, all hotfix + hardening) STILL froze in the field** — tester report: "app
 opens then everything takes 20-30 seconds to respond." Field diagnostic (PCLinuxOS, kernel
@@ -34,7 +69,7 @@ reproduced it** (fsync is sub-ms there) — the variable is fsync latency, not p
 official-map tile-read / exception-storm investigation was a **red herring** for this symptom (the
 exception-storm removal was still a real, worthwhile fix, just not the freeze).
 
-Fix (this session, on `master`, **uncommitted**): added `upsertDevicesBulk` to the mission store
+Fix: added `upsertDevicesBulk` to the mission store
 (one transaction → one fsync for all devices) and switched the runtime persistence to it, keeping
 `synchronous=FULL` so durability is preserved (one fsync/poll is fine even on a slow disk). Per-poll
 device commits: 32 → 1. Positions were already batched via `addPositionsBulk`.
