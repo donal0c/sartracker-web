@@ -10,9 +10,9 @@
 - **Cut by:** Codex agent (Donal supervising)
 - **Supersedes:** `electron-v0.1.0-beta.8`
 - **Linear reference:** Fable deep-analysis parent `DON-230`; shipped fixes `DON-228`, `DON-231`-`DON-238`. `DON-239` is intentionally parked for a later low-priority tracking-staleness pass.
-- **Verification report:** local gates, local browser/packaged smoke, GitHub Actions, Linux bundle, and CI AppImage launch smoke complete. Ubuntu CI-artifact smoke must complete before publication.
+- **Verification report:** local gates, local browser/packaged smoke, GitHub Actions, Linux bundle, CI AppImage launch smoke, and deep Ubuntu CI-artifact smoke complete.
 - **CI run:** `electron-release.yml` run `28875685324` - success (gates, Linux bundle, Xvfb AppImage launch smoke, draft prerelease + SHA256SUMS).
-- **GitHub release:** draft prerelease created; keep draft until Ubuntu packaged smoke passes on the CI-built artifact.
+- **GitHub release:** draft prerelease created and ready to publish after Donal's approval.
 
 ## What this beta is
 
@@ -168,7 +168,8 @@ Since `0.1.0-beta.8`. Grouped so you can test by risk area.
 
 ## What To Test
 
-Critical, packaged-build, on the Ubuntu machine after the CI artifacts exist:
+Critical, packaged-build, on the Ubuntu machine after the CI artifacts exist.
+This matrix passed on 2026-07-08 against the CI-built AppImage:
 
 - Checksum verification for AppImage and `.deb` using `SHA256SUMS`.
 - Packaged launch on the real Ubuntu smoke box.
@@ -187,9 +188,9 @@ Critical, packaged-build, on the Ubuntu machine after the CI artifacts exist:
   Ubuntu box; otherwise record the package as unavailable and do not publish for
   map-testing purposes.
 
-Local pre-Ubuntu smoke covers the same app surfaces where practical, but the
-release must remain draft until the Ubuntu smoke is complete on the CI-built
-artifact.
+Local pre-Ubuntu smoke covered the same app surfaces where practical. The
+release remains draft only because publication requires Donal's explicit
+approval, not because a verification gate is still open.
 
 ## Loading Discovery Maps
 
@@ -268,8 +269,8 @@ tag:
   - PASS. The packaged app reached the normal shell with the expected
   undecryptable-credential warning and Settings recovery path.
 
-Local verification is intentionally **not** the release publication gate. The
-release still requires the Ubuntu smoke below against the CI-built artifact.
+Local verification was intentionally **not** the release publication gate. The
+Ubuntu smoke below is the packaged-artifact release gate.
 
 ### GitHub Actions release run
 
@@ -292,8 +293,55 @@ CI-built checksums:
 
 ### Ubuntu deep smoke
 
-Pending. Donal will set up the Ubuntu machine later. Do not publish this release
-until the CI-built artifact has passed the Ubuntu smoke matrix.
+Completed on 2026-07-08 on the Ubuntu smoke box
+`donal-Precision-5570` (`6.17.0-35-generic`, X11 display `:0`) against the
+**CI-built** beta.9 AppImage and `.deb` downloaded from the draft GitHub
+release. Evidence was mirrored locally under `output/beta9-ubuntu-smoke/`.
+
+- `sha256sum -c SHA256SUMS --ignore-missing` - PASS for both AppImage and
+  `.deb`.
+- `.deb` metadata inspection - PASS. Package `sartracker-web`,
+  version `0.1.0~beta.9`, architecture `amd64`, expected Electron/Linux
+  dependencies present.
+- Packaged AppImage core lifecycle smoke - PASS critical gates: app shell and
+  map canvas rendered, real SQLite mission started, marker saved, mission
+  recovered after restart, mission finished, mission finalized, and standalone
+  archive written (`5008` bytes). Evidence:
+  `output/beta9-ubuntu-smoke/evidence-core/`.
+- Coordinate/diagnostics smoke - PASS after manual inspection of the legacy
+  script's broad secret regex: out-of-Ireland DD was rejected; diagnostics
+  contained only `safeStorage backend: gnome_libsecret` and
+  `secret present: no`, with no password, token, Basic auth header, or known
+  credential value. Evidence:
+  `output/beta9-ubuntu-smoke/evidence-coord-diag/`.
+- Bad/corrupt credential startup smoke - PASS. The packaged app reached the
+  normal shell, surfaced the expected stored-credential warning, and allowed
+  Settings recovery. Evidence:
+  `output/beta9-ubuntu-smoke/evidence-bad-secret/`.
+- Live Traccar smoke - PASS using throwaway user data seeded from the Ubuntu
+  box's persisted settings/credentials: provider URL `https://kmrtsar.eu`
+  loaded, connection test succeeded, and tracking went online with live fixes.
+  Evidence: `output/beta9-ubuntu-smoke/evidence-live-tracking/`.
+- Private Discovery offline map smoke - PASS with the regional Reeks MBTiles
+  package, renderer network blocked: local MBTiles tile bytes returned,
+  Discovery Topo rendered, inside/outside coverage messaging worked, Settings
+  showed `1/1 ready`, and the diagnostics report was sanitized. Evidence:
+  `output/beta9-ubuntu-smoke/evidence-official-offline-reeks/`.
+- Beta.9-specific packaged UI checks - PASS for coarse Irish Grid ref
+  `V 80 84` resolving to `V 80500 84500`, and Settings rejecting provider URLs
+  with embedded credentials.
+- Diagnostics export matrix - PASS: diagnostics report, support bundle, and
+  incident support bundle exported without credential leaks. Evidence:
+  `output/beta9-ubuntu-smoke/evidence-support-bundles/`.
+- Duplicate launch / single-instance smoke - PASS. A second AppImage launch
+  exited with code `0` while the primary app remained usable. Evidence:
+  `output/beta9-ubuntu-smoke/evidence-single-instance/`.
+
+One non-blocking harness correction: the first official-map run used a national
+package, so the old "jump to Dublin means outside package" assertion was
+invalid because Dublin is inside that package's bounds. The release gate was
+rerun against the regional Reeks package where inside/outside coverage is
+meaningful, and it passed.
 
 ## Rollback / Reinstall
 
@@ -304,5 +352,6 @@ until the CI-built artifact has passed the Ubuntu smoke matrix.
 
 ## Publication State
 
-**Draft candidate only.** Beta.9 must not be shared as the current tester
-artifact until the Ubuntu packaged smoke passes on the CI-built artifact.
+**Ready-to-publish draft.** Beta.9 passed the local, CI, and Ubuntu packaged
+release gates. Keep it draft until Donal explicitly approves publication and
+tester sharing.
