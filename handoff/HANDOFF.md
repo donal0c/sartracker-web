@@ -22,6 +22,17 @@ Beta.9 is ON HOLD (map/Devices/diagnostics hangs on Linux). Current DON-240 comm
 `7f776de` hotfix, `557b9af` freeze probe + hardening, `78fa836` heartbeat fix, `b0008fd` live-load
 probe option, `d00eecb` app-owned credential seeding for live-load probe. Pushed to origin.
 
+Beta.10 replacement release is in progress. Prep commit `b9ddfbe` and test-isolation fix `8557a0c`
+were pushed and tag `electron-v0.1.0-beta.10` was moved to `8557a0c`, but release run
+`28963733570` failed before bundling on Settings E2E: the workspace could remain visible while
+`Save, Connect & Close` waited for a slow forced reconnect/large breadcrumb load. The fix now closes
+Settings immediately after persistence succeeds and runs runtime reload in the background, with a
+unit regression proving slow reconnects no longer block the modal. Local post-fix gates passed:
+`npm run lint`, `npm run build`, `npm run test` (153 files / 1080 tests), `npm run test:backend`
+(47 passed / 1 ignored), and `npm run test:e2e:chromium` (129/129). Next action: commit/push this
+fix, move `electron-v0.1.0-beta.10` again, then wait for the tag-driven Electron release workflow
+to create CI-built artifacts before any packaged Ubuntu smoke or publication claim.
+
 Implemented:
 - Official-map proxy caches Settings/package metadata, avoids per-tile `synchronize()`, returns a
   visible 256x256 hatched no-coverage tile for package misses, and keeps `package_error` loud.

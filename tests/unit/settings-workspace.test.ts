@@ -78,6 +78,29 @@ describe('SettingsWorkspace', () => {
     expect(onClose).toHaveBeenCalledOnce()
   })
 
+  it('closes after persisting settings without waiting for a slow reconnect', async () => {
+    const onClose = vi.fn()
+    const reloadSettings = vi.fn(() => new Promise<void>(() => undefined))
+    const { SettingsWorkspace } = await import('../../src/components/settings-workspace')
+    mocks.loadAppSettings.mockResolvedValue(DEFAULT_APP_SETTINGS)
+    mocks.saveAppSettings.mockResolvedValue(DEFAULT_APP_SETTINGS)
+    mocks.getAppRuntimeController.mockReturnValue({ reloadSettings, dispose: vi.fn() })
+    mocks.readCoordinateDisplayMode.mockReturnValue('wgs84_first')
+    mocks.isTauriRuntimeAvailable.mockReturnValue(false)
+
+    render(React.createElement(SettingsWorkspace, { open: true, onClose }))
+    await waitForElement('[data-testid="settings-save-connect"]')
+
+    await act(async () => {
+      getButton('[data-testid="settings-save-connect"]').click()
+    })
+    await flushMicrotasks()
+
+    expect(mocks.saveAppSettings).toHaveBeenCalledOnce()
+    expect(reloadSettings).toHaveBeenCalledWith({ forceConnect: true })
+    expect(onClose).toHaveBeenCalledOnce()
+  })
+
   it('keeps the workspace open when save fails', async () => {
     const onClose = vi.fn()
     const { SettingsWorkspace } = await import('../../src/components/settings-workspace')
@@ -440,5 +463,11 @@ function setTextAreaValue(input: HTMLTextAreaElement, value: string): void {
     valueSetter?.call(input, value)
     input.dispatchEvent(new Event('input', { bubbles: true }))
     input.dispatchEvent(new Event('change', { bubbles: true }))
+  })
+}
+
+async function flushMicrotasks(): Promise<void> {
+  await act(async () => {
+    await Promise.resolve()
   })
 }

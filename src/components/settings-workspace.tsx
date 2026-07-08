@@ -872,7 +872,9 @@ export function SettingsWorkspace({ open, onClose }: SettingsWorkspaceProps) {
       setShowDiscardConfirmation(false)
       const controller = getAppRuntimeController()
       if (controller !== null) {
-        await controller.reloadSettings({ forceConnect })
+        void controller.reloadSettings({ forceConnect }).catch((reloadError: unknown) => {
+          console.error('Runtime settings reload failed after saving settings.', reloadError)
+        })
       }
       onClose()
     } catch (saveError) {
