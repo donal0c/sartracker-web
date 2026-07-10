@@ -58,6 +58,7 @@ type StartAppRuntimeDependencies = {
     readonly autosaveEnabled: boolean
     readonly autosaveIntervalMs: number
     readonly trackingPollIntervalMs: number
+    readonly trackingMinimumPollIntervalMs?: number
     readonly trackingCacheEnabled: boolean
     readonly trackingConfig: {
       readonly baseUrl: string
@@ -189,6 +190,9 @@ export async function startAppRuntime(
       createPoller: (client, hooks) =>
         createPollingManager(client as TrackingPollerClient, {
           intervalMs: runtimeSettings.trackingPollIntervalMs,
+          ...(runtimeSettings.trackingMinimumPollIntervalMs === undefined
+            ? {}
+            : { minimumIntervalMs: runtimeSettings.trackingMinimumPollIntervalMs }),
           staleThresholdMs: 60 * 60 * 1000,
           maxBackoffMs: 60_000,
           getPollingMode: () => {

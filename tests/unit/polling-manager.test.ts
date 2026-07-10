@@ -866,6 +866,25 @@ describe('polling manager', () => {
     poller.stop()
   })
 
+  it('honours an explicit validation-only minimum without changing the production default [DON-246]', async () => {
+    const client = createClient()
+    const poller = createPollingManager(client, {
+      intervalMs: 25,
+      minimumIntervalMs: 25,
+      staleThresholdMs: 60 * 60 * 1000,
+      onSnapshot: vi.fn(),
+      onStatusChange: vi.fn(),
+      now: () => new Date('2026-04-06T10:35:00.000Z'),
+    })
+
+    poller.start()
+    await vi.advanceTimersByTimeAsync(0)
+    await vi.advanceTimersByTimeAsync(25)
+
+    expect(client.getDevices).toHaveBeenCalledTimes(2)
+    poller.stop()
+  })
+
   it('clamps too-long success-poll intervals to one hour [DON-208]', async () => {
     const client = createClient()
     const setTimeoutSpy = vi.fn(window.setTimeout.bind(window)) as unknown as typeof window.setTimeout

@@ -20,6 +20,7 @@ const { createElectronOfficialMapProxy } = require('./official-map-proxy.cjs')
 const { createRuntimeLog } = require('./runtime-log.cjs')
 const { createCrashLog, isRendererFaultReason } = require('./crash-log.cjs')
 const { createStorageDiagnostics } = require('./storage-diagnostics.cjs')
+const { applyTrackingSoakRuntimeOverride } = require('./tracking-soak-validation.cjs')
 
 const TRACCAR_REQUEST_CHANNEL = 'sartracker:traccar-http-request'
 const LOAD_SETTINGS_CHANNEL = 'sartracker:load-app-settings'
@@ -407,6 +408,7 @@ async function assertConfiguredTraccarOrigin(settingsStore, requestUrl) {
  */
 function registerIpcHandlers(
   settingsStore,
+  loadRuntimeBootstrapSettings,
   runtimeFiles,
   missionStore,
   fileSystem,
@@ -432,7 +434,7 @@ function registerIpcHandlers(
   })
   ipcMain.handle(LOAD_RUNTIME_BOOTSTRAP_CHANNEL, (event, forceConnect) => {
     validateIpcSender(event)
-    return settingsStore.loadRuntimeBootstrapSettings(Boolean(forceConnect))
+    return loadRuntimeBootstrapSettings(Boolean(forceConnect))
   })
   ipcMain.handle(READ_TRACKING_CACHE_CHANNEL, (event) => {
     validateIpcSender(event)
@@ -718,6 +720,14 @@ async function startElectronApp() {
     userDataPath,
     safeStorage,
   })
+  const loadRuntimeBootstrapSettings = async (forceConnect = false) =>
+    applyTrackingSoakRuntimeOverride(
+      await settingsStore.loadRuntimeBootstrapSettings(forceConnect),
+      {
+        validationUserDataPath,
+        intervalInput: process.env.SARTRACKER_ELECTRON_SOAK_POLL_INTERVAL_MS,
+      },
+    )
   void settingsStore
     .loadRuntimeBootstrapSettings()
     .then((runtimeBootstrap) =>
@@ -772,6 +782,7 @@ async function startElectronApp() {
   electronRuntimeContext.officialMapProxy = officialMapProxy
   registerIpcHandlers(
     settingsStore,
+    loadRuntimeBootstrapSettings,
     runtimeFiles,
     missionStore,
     fileSystem,

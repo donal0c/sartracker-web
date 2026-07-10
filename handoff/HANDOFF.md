@@ -65,8 +65,13 @@
   creates + one deliberate update, zero redundant telemetry events, `ok` integrity, and complete
   paused-mission restart recovery. Evidence: `~/sartracker-beta12-msr/evidence/don245-growth-2/`;
   durable summary: `docs/releases/beta12-redundant-write-removal.md`.
-- **Next:** `DON-246` accelerated packaged soak/growth budgets, then `DON-247` exact CI artifact/
-  original-machine confirmation. `DON-240` stays open in Linear until its explicit CI/team gate.
+- **Active:** `DON-246` has a tested fail-closed acceleration seam. Production/ordinary validation
+  still clamps tracking polls to five seconds; only an explicit isolated Electron profile plus
+  `SARTRACKER_ELECTRON_SOAK_POLL_INTERVAL_MS` can request 5-1000 ms. Next: durable mock Traccar
+  runner with CI/normal/extended profiles, compressed five-second position history, planned
+  restarts, main/renderer responsiveness, backup/WAL/log/support evidence, and fail-closed growth
+  budgets. Then `DON-247` exact CI artifact/original-machine confirmation. `DON-240` stays open in
+  Linear until its explicit CI/team gate.
 - **Release split:** beta.12 is the narrow field-freeze/observability release. Beta.13 owns
   migrations, retention, safe legacy recovery, mission-scoped streamed archives, and
   archive-backed review/unlock.

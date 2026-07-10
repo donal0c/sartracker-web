@@ -120,6 +120,9 @@ export async function startMissionBrowserHarness(): Promise<void> {
       createPoller: (client, hooks) =>
         createPollingManager(client as TrackingPollerClient, {
           intervalMs: runtimeSettings.trackingPollIntervalMs,
+          ...(runtimeSettings.trackingMinimumPollIntervalMs === undefined
+            ? {}
+            : { minimumIntervalMs: runtimeSettings.trackingMinimumPollIntervalMs }),
           staleThresholdMs: 60 * 60 * 1000,
           maxBackoffMs: 60_000,
           getPollingMode: () => {

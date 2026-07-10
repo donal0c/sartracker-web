@@ -30,6 +30,7 @@ type PollingManagerLogger = {
 
 type PollingManagerOptions = {
   readonly intervalMs: number
+  readonly minimumIntervalMs?: number
   readonly staleThresholdMs: number
   readonly retryBaseMs?: number
   readonly maxBackoffMs?: number
@@ -74,7 +75,10 @@ export function createPollingManager(
   const scheduleTimeout = options.setTimeout ?? window.setTimeout.bind(window)
   const clearScheduledTimeout = options.clearTimeout ?? window.clearTimeout.bind(window)
   const maxBackoffMs = options.maxBackoffMs ?? DEFAULT_MAX_BACKOFF_MS
-  const pollIntervalMs = normalizePollingIntervalMs(options.intervalMs)
+  const pollIntervalMs = normalizePollingIntervalMs(
+    options.intervalMs,
+    options.minimumIntervalMs,
+  )
   const logger = options.logger ?? DEFAULT_LOGGER
 
   let authenticated = false
@@ -465,10 +469,14 @@ function isAuthenticationFailure(error: unknown): boolean {
 /**
  * Clamps persisted/runtime polling intervals before they reach browser timers.
  */
-function normalizePollingIntervalMs(input: number): number {
+function normalizePollingIntervalMs(input: number, minimumInput?: number): number {
   if (!Number.isFinite(input)) {
     return DEFAULT_POLL_INTERVAL_MS
   }
 
-  return Math.min(MAX_POLL_INTERVAL_MS, Math.max(MIN_POLL_INTERVAL_MS, input))
+  const minimumIntervalMs =
+    Number.isFinite(minimumInput) && Number(minimumInput) >= 1
+      ? Math.min(MIN_POLL_INTERVAL_MS, Math.round(Number(minimumInput)))
+      : MIN_POLL_INTERVAL_MS
+  return Math.min(MAX_POLL_INTERVAL_MS, Math.max(minimumIntervalMs, input))
 }
