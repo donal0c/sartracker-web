@@ -73,16 +73,16 @@ function createElectronMissionStore(options) {
     upsertDevice: async (input) => upsertDevice(db, input),
     upsertDevicesBulk: async (input) => {
       const startedAtMs = performance.now()
-      const devices = upsertDevicesBulk(db, input)
+      const result = upsertDevicesBulk(db, input)
       await safeStorageDiagnostic(() =>
         storageDiagnostics?.recordTrackingBatch({
           durationMs: performance.now() - startedAtMs,
-          deviceCount: devices.length,
-          changedDeviceEventCount: devices.length,
+          deviceCount: result.devices.length,
+          changedDeviceEventCount: result.changedDeviceEventCount,
           observedAt: new Date().toISOString(),
         }),
       )
-      return devices
+      return result.devices
     },
     getDevice: async (missionId, deviceId) => getDevice(db, missionId, deviceId),
     listDevices: async (missionId) => all(db, 'SELECT * FROM devices WHERE mission_id = ? ORDER BY name ASC', missionId),
@@ -94,7 +94,7 @@ function createElectronMissionStore(options) {
         storageDiagnostics?.recordInsertedPositions({
           durationMs: performance.now() - startedAtMs,
           insertedPositionCount: positions.length,
-          positionTelemetryEventCount: positions.length,
+          positionTelemetryEventCount: 0,
         }),
       )
       return positions
@@ -873,11 +873,10 @@ function upsertDevice(db, input) {
   ensureWritableMission(db, input.mission_id)
   const id = randomUUID()
   const timestamp = input.last_seen ?? now()
-  // First contact emits `device_created` (a non-telemetry event that surfaces in the
-  // default review feed); subsequent updates emit the telemetry-filtered `device_updated`.
-  // Mirrors Rust (`persistence.rs`) and the browser harness.
+  // Electron intentionally diverges from the legacy Rust reference: last_seen remains
+  // current on every poll, while device_updated describes only an operator-visible change.
   const existing = db
-    .prepare('SELECT id FROM devices WHERE mission_id = ? AND device_id = ?')
+    .prepare('SELECT id, name, color, status FROM devices WHERE mission_id = ? AND device_id = ?')
     .get(input.mission_id, input.device_id)
   const transaction = db.transaction(() => {
     db.prepare(`INSERT INTO devices (id, mission_id, device_id, name, color, last_seen, status)
@@ -885,12 +884,20 @@ function upsertDevice(db, input) {
       ON CONFLICT(mission_id, device_id) DO UPDATE SET
         name = excluded.name, color = excluded.color, last_seen = excluded.last_seen, status = excluded.status`)
       .run(id, input.mission_id, input.device_id, input.name, input.color, input.last_seen ?? null, input.status)
-    insertEvent(db, input.mission_id, existing === undefined ? 'device_created' : 'device_updated', timestamp, {
-      device_id: input.device_id,
-      name: input.name,
-      status: input.status,
-      color: input.color,
-    })
+    if (existing === undefined || hasDeviceAuditChange(existing, input)) {
+      insertEvent(
+        db,
+        input.mission_id,
+        existing === undefined ? 'device_created' : 'device_updated',
+        timestamp,
+        {
+          device_id: input.device_id,
+          name: input.name,
+          status: input.status,
+          color: input.color,
+        },
+      )
+    }
   })
   transaction()
   return getDevice(db, input.mission_id, input.device_id)
@@ -901,21 +908,24 @@ function upsertDevice(db, input) {
  * The tracking poller previously upserted each device in its own transaction, so a 32-device
  * mission produced 32 fsync'd writes on the main process every poll — tens of seconds of
  * event-loop blocking on a slow field disk (DON-240). Emits device_created on first contact and
- * device_updated otherwise, matching upsertDevice.
+ * device_updated only for a name/status/color change, matching upsertDevice.
  */
 function upsertDevicesBulk(db, input) {
   ensureWritableMission(db, input.mission_id)
   const devices = Array.isArray(input.devices) ? input.devices : []
   if (devices.length === 0) {
-    return []
+    return { devices: [], changedDeviceEventCount: 0 }
   }
 
-  const existsStmt = db.prepare('SELECT id FROM devices WHERE mission_id = ? AND device_id = ?')
+  const existsStmt = db.prepare(
+    'SELECT id, name, color, status FROM devices WHERE mission_id = ? AND device_id = ?',
+  )
   const upsertStmt = db.prepare(`INSERT INTO devices (id, mission_id, device_id, name, color, last_seen, status)
     VALUES (?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(mission_id, device_id) DO UPDATE SET
       name = excluded.name, color = excluded.color, last_seen = excluded.last_seen, status = excluded.status`)
 
+  let changedDeviceEventCount = 0
   const transaction = db.transaction(() => {
     for (const device of devices) {
       const existing = existsStmt.get(input.mission_id, device.device_id)
@@ -930,17 +940,33 @@ function upsertDevicesBulk(db, input) {
         device.last_seen ?? null,
         device.status,
       )
-      insertEvent(db, input.mission_id, existing === undefined ? 'device_created' : 'device_updated', timestamp, {
-        device_id: device.device_id,
-        name: device.name,
-        status: device.status,
-        color: device.color,
-      })
+      if (existing === undefined || hasDeviceAuditChange(existing, device)) {
+        const eventType = existing === undefined ? 'device_created' : 'device_updated'
+        insertEvent(db, input.mission_id, eventType, timestamp, {
+          device_id: device.device_id,
+          name: device.name,
+          status: device.status,
+          color: device.color,
+        })
+        if (eventType === 'device_updated') changedDeviceEventCount += 1
+      }
     }
   })
   transaction()
 
-  return devices.map((device) => getDevice(db, input.mission_id, device.device_id))
+  return {
+    devices: devices.map((device) => getDevice(db, input.mission_id, device.device_id)),
+    changedDeviceEventCount,
+  }
+}
+
+/** Returns whether persisted device fields other than the polling heartbeat changed. */
+function hasDeviceAuditChange(existing, input) {
+  return (
+    existing.name !== input.name ||
+    existing.color !== input.color ||
+    existing.status !== input.status
+  )
 }
 
 function getDevice(db, missionId, deviceId) {
@@ -964,13 +990,6 @@ function addPosition(db, input) {
       .run(id, input.mission_id, input.device_id, input.name ?? null, input.lat, input.lon, input.altitude ?? null, input.speed ?? null, input.battery ?? null, input.accuracy ?? null, input.source ?? null, timestamp, dataOrigin)
     db.prepare("UPDATE devices SET last_seen = ?, status = 'online' WHERE mission_id = ? AND device_id = ?")
       .run(timestamp, input.mission_id, input.device_id)
-    insertEvent(db, input.mission_id, 'position_recorded', timestamp, {
-      position_id: id,
-      device_id: input.device_id,
-      timestamp,
-      data_origin: dataOrigin,
-      source: input.source ?? null,
-    })
   })
   transaction()
   return getById(db, 'positions', id, 'Position')
@@ -1037,13 +1056,6 @@ function addPositionsBulk(db, input) {
         dataOrigin,
       )
       updateDevice.run(timestamp, input.mission_id, position.device_id)
-      insertEvent(db, input.mission_id, 'position_recorded', timestamp, {
-        position_id: id,
-        device_id: position.device_id,
-        timestamp,
-        data_origin: dataOrigin,
-        source: position.source ?? null,
-      })
       insertedIds.push(id)
     }
   })

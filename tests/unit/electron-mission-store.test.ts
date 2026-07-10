@@ -89,7 +89,8 @@ type ElectronMissionStore = {
     readonly name: string
     readonly color: string
     readonly status: string
-  }) => Promise<{ readonly device_id: string }>
+    readonly last_seen?: string | null
+  }) => Promise<{ readonly device_id: string; readonly last_seen: string | null }>
   readonly upsertDevicesBulk: (input: {
     readonly mission_id: string
     readonly devices: readonly {
@@ -327,13 +328,13 @@ describe('electron mission store', () => {
         'mission_created',
         // First contact for this device emits device_created (DON-164).
         'device_created',
-        'position_recorded',
         'mission_backup_synced',
         'mission_paused',
         'mission_resumed',
         'mission_finished',
       ]),
     )
+    expect(events.map((event) => event.event_type)).not.toContain('position_recorded')
   })
 
   it('accumulates paused seconds when a mission resumes [DON-231]', async () => {
@@ -437,9 +438,7 @@ describe('electron mission store', () => {
       includeTelemetry: true,
       limit: 5_000,
     })
-    expect(telemetry.filter((event) => event.event_type === 'position_recorded')).toHaveLength(
-      positions.length,
-    )
+    expect(telemetry.filter((event) => event.event_type === 'position_recorded')).toHaveLength(0)
     const auditEvents = await store.listAuditEvents(mission.id)
     expect(auditEvents.map((event) => event.event_type)).not.toContain('position_recorded')
   })
@@ -537,7 +536,8 @@ describe('electron mission store', () => {
       status: 'unknown',
     })
 
-    // Generate a burst of telemetry that would dominate an unfiltered query.
+    // Generate a burst of positions. Current Electron stores position truth without
+    // duplicating every fix into mission_events.
     for (let index = 0; index < 50; index += 1) {
       await store.addPosition({
         mission_id: mission.id,
@@ -561,14 +561,14 @@ describe('electron mission store', () => {
     )
     expect(auditTypesAfterBackup).not.toContain('mission_backup_synced')
 
-    // Telemetry can be opted back in, but still respects the bound.
+    // Legacy/current telemetry can still be opted back in, but respects the bound.
     const withTelemetry = await store.listAuditEvents(mission.id, {
       includeTelemetry: true,
       limit: 10,
     })
-    expect(withTelemetry).toHaveLength(10)
-    // Bounded query returns the most recent events.
-    expect(withTelemetry.some((event) => event.event_type === 'position_recorded')).toBe(true)
+    expect(withTelemetry.length).toBeLessThanOrEqual(10)
+    expect(withTelemetry.map((event) => event.event_type)).toContain('mission_backup_synced')
+    expect(withTelemetry.map((event) => event.event_type)).not.toContain('position_recorded')
     for (let index = 1; index < withTelemetry.length; index += 1) {
       expect(
         Date.parse(withTelemetry[index - 1]!.timestamp) >=
@@ -689,7 +689,7 @@ describe('electron mission store', () => {
     geometry_json: '{"type":"LineString","coordinates":[]}',
   } as const
 
-  it('emits device_created on first insert and device_updated on conflict (DON-164)', async () => {
+  it('emits device events only for first contact or a real operator-visible change [DON-245]', async () => {
     store = await createStore()
     const mission = await store.createMission({ name: 'Device Mission' })
 
@@ -703,6 +703,22 @@ describe('electron mission store', () => {
     await store.upsertDevice({
       mission_id: mission.id,
       device_id: 'tracker-1',
+      name: 'Tracker One',
+      color: '#00AAFF',
+      status: 'unknown',
+      last_seen: '2026-07-10T12:00:05.000Z',
+    })
+    const lastSeenOnly = await store.upsertDevice({
+      mission_id: mission.id,
+      device_id: 'tracker-1',
+      name: 'Tracker One',
+      color: '#00AAFF',
+      status: 'unknown',
+      last_seen: '2026-07-10T12:00:10.000Z',
+    })
+    await store.upsertDevice({
+      mission_id: mission.id,
+      device_id: 'tracker-1',
       name: 'Tracker One Renamed',
       color: '#00AAFF',
       status: 'online',
@@ -711,6 +727,7 @@ describe('electron mission store', () => {
     const types = (await store.listMissionEvents(mission.id)).map((event) => event.event_type)
     expect(types.filter((type) => type === 'device_created')).toHaveLength(1)
     expect(types.filter((type) => type === 'device_updated')).toHaveLength(1)
+    expect(lastSeenOnly.last_seen).toBe('2026-07-10T12:00:10.000Z')
 
     // device_created is NOT telemetry, so it surfaces in the default review feed; the
     // subsequent device_updated is telemetry and must be filtered out.
@@ -719,7 +736,7 @@ describe('electron mission store', () => {
     expect(auditTypes).not.toContain('device_updated')
   })
 
-  it('upsertDevicesBulk persists every device and emits created/updated events in one batch [DON-240]', async () => {
+  it('bulk upserts persist last_seen but emit updates only for real changes [DON-245]', async () => {
     store = await createStore()
     const mission = await store.createMission({ name: 'Bulk Device Mission' })
 
@@ -750,6 +767,42 @@ describe('electron mission store', () => {
     // tracker-1 already existed (1 created earlier) → this batch: 1 update + 2 creates.
     expect(types.filter((type) => type === 'device_created')).toHaveLength(3)
     expect(types.filter((type) => type === 'device_updated')).toHaveLength(1)
+
+    await store.upsertDevicesBulk({
+      mission_id: mission.id,
+      devices: [
+        {
+          device_id: 'tracker-1',
+          name: 'Tracker One Renamed',
+          color: '#00AAFF',
+          status: 'online',
+          last_seen: '2026-07-10T12:05:00.000Z',
+        },
+        {
+          device_id: 'tracker-2',
+          name: 'Tracker Two',
+          color: '#FF8800',
+          status: 'online',
+          last_seen: '2026-07-10T12:05:00.000Z',
+        },
+        {
+          device_id: 'tracker-3',
+          name: 'Tracker Three',
+          color: '#22CC66',
+          status: 'unknown',
+          last_seen: '2026-07-10T12:05:00.000Z',
+        },
+      ],
+    })
+
+    const typesAfterUnchangedPoll = (await store.listMissionEvents(mission.id)).map(
+      (event) => event.event_type,
+    )
+    expect(typesAfterUnchangedPoll.filter((type) => type === 'device_updated')).toHaveLength(1)
+    const trackerTwo = (await store.listDevices(mission.id)).find(
+      (device: { readonly device_id: string }) => device.device_id === 'tracker-2',
+    )
+    expect(trackerTwo).toMatchObject({ last_seen: '2026-07-10T12:05:00.000Z' })
   })
 
   it('flushes backup diagnostic phases and aggregate tracking metrics without operational identity [DON-244]', async () => {
@@ -795,7 +848,7 @@ describe('electron mission store', () => {
     expect(storageDiagnostics.recordTrackingBatch).toHaveBeenCalledWith(
       expect.objectContaining({
         deviceCount: 1,
-        changedDeviceEventCount: 1,
+        changedDeviceEventCount: 0,
       }),
     )
     expect(storageDiagnostics.recordTrackingBatch).not.toHaveBeenCalledWith(
@@ -804,7 +857,7 @@ describe('electron mission store', () => {
     expect(storageDiagnostics.recordInsertedPositions).toHaveBeenCalledWith(
       expect.objectContaining({
         insertedPositionCount: 1,
-        positionTelemetryEventCount: 1,
+        positionTelemetryEventCount: 0,
       }),
     )
     expect(storageDiagnostics.requested).toHaveBeenCalledWith(operation, {

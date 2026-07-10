@@ -115,11 +115,11 @@ test.describe('M15 mission review workspace', () => {
     await expect(page.getByTestId('mission-review-workspace')).toBeVisible()
   })
 
-  test('hides tracking telemetry from the audit log by default and reveals it on toggle', async ({
+  test('stores tracking positions without creating new telemetry audit echoes [DON-245]', async ({
     page,
   }) => {
     await createMarker(page, { name: 'Boot Print', typeLabel: 'Clue', position: { x: 460, y: 260 } })
-    // Inject tracking positions — each one records a position_recorded telemetry event.
+    // Inject tracking positions. Position truth belongs in the position store, not duplicate events.
     await injectTrackingSnapshot(page)
 
     await page.getByTestId('open-mission-review-workspace').click()
@@ -133,9 +133,11 @@ test.describe('M15 mission review workspace', () => {
     await expect(auditLog).not.toContainText('position_recorded')
     await expect(auditLog).not.toContainText('device_updated')
 
-    // Enabling the toggle reloads the log with telemetry included.
+    // Enabling legacy telemetry does not fabricate echoes for newly stored positions.
     await page.getByTestId('mission-review-telemetry-toggle').locator('input').check()
-    await expect(auditLog).toContainText('position_recorded')
+    await expect(auditLog).not.toContainText('position_recorded')
+    await expect(auditLog).not.toContainText('device_updated')
+    await expect(auditLog).toContainText('Marker Created')
 
     // Disabling the toggle returns to the operator-only view.
     await page.getByTestId('mission-review-telemetry-toggle').locator('input').uncheck()

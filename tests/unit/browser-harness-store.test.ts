@@ -51,7 +51,9 @@ describe('browser harness store', () => {
     expect(persistedState.devices).toHaveLength(1)
     expect(persistedState.positions).toHaveLength(2)
     expect(persistedState.missionEvents.map((event) => event.event_type)).toContain('mission_created')
-    expect(persistedState.missionEvents.map((event) => event.event_type)).toContain('position_recorded')
+    expect(persistedState.missionEvents.map((event) => event.event_type)).not.toContain(
+      'position_recorded',
+    )
   })
 
   it('caps browser-only tracking persistence so large breadcrumb imports do not exceed session storage', async () => {
@@ -75,10 +77,40 @@ describe('browser harness store', () => {
     )
 
     expect(persistedState.positions).toHaveLength(2_000)
-    expect(recordedPositionEvents).toHaveLength(2_000)
+    expect(recordedPositionEvents).toHaveLength(0)
     expect(persistedState.positions[0]?.timestamp).toBe('2026-05-15T06:01:40.000Z')
     expect(persistedState.positions.at(-1)?.timestamp).toBe('2026-05-15T06:34:59.000Z')
   }, 30_000)
+
+  it('change-gates browser-harness device events while preserving last_seen [DON-245]', async () => {
+    const store = getBrowserHarnessStore()
+    const mission = await store.createMission({ name: 'Device Change Gate Mission' })
+    const baseDevice = {
+      mission_id: mission.id,
+      device_id: 'alpha',
+      name: 'Alpha Team',
+      color: '#38bdf8',
+      status: 'online',
+    }
+
+    await store.upsertDevice({ ...baseDevice, last_seen: '2026-07-10T12:00:00.000Z' })
+    const lastSeenOnly = await store.upsertDevice({
+      ...baseDevice,
+      last_seen: '2026-07-10T12:00:05.000Z',
+    })
+    await store.upsertDevice({
+      ...baseDevice,
+      status: 'offline',
+      last_seen: '2026-07-10T12:00:10.000Z',
+    })
+
+    expect(lastSeenOnly.last_seen).toBe('2026-07-10T12:00:05.000Z')
+    const eventTypes = (await store.listMissionEvents(mission.id)).map(
+      (event) => event.event_type,
+    )
+    expect(eventTypes.filter((type) => type === 'device_created')).toHaveLength(1)
+    expect(eventTypes.filter((type) => type === 'device_updated')).toHaveLength(1)
+  })
 
   it('finalizes and unlocks a mission using the configured admin roster', async () => {
     window.localStorage.setItem(

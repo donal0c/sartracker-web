@@ -59,7 +59,13 @@
   retained `ok` main/backup integrity, but finalization hit Node `ERR_FS_FILE_TOO_LARGE` at the
   existing whole-DB `fs.readFile` above 2 GiB. Recorded on `DON-252`; do not fold the streamed
   archive redesign into beta.12. Fresh-store packaged finalization/archive still passes.
-- **Next:** `DON-245` redundant write removal, then `DON-246` soak and `DON-247` exact CI artifact/
+- **Completed local checkpoint:** `DON-245` preserves device/position rows and every `last_seen`,
+  change-gates `device_updated` to name/status/colour, and removes new `position_recorded` echoes.
+  Packaged Ubuntu proof ran 2,000 polls, 64,000 device upserts, and 16,000 positions: exactly 32
+  creates + one deliberate update, zero redundant telemetry events, `ok` integrity, and complete
+  paused-mission restart recovery. Evidence: `~/sartracker-beta12-msr/evidence/don245-growth-2/`;
+  durable summary: `docs/releases/beta12-redundant-write-removal.md`.
+- **Next:** `DON-246` accelerated packaged soak/growth budgets, then `DON-247` exact CI artifact/
   original-machine confirmation. `DON-240` stays open in Linear until its explicit CI/team gate.
 - **Release split:** beta.12 is the narrow field-freeze/observability release. Beta.13 owns
   migrations, retention, safe legacy recovery, mission-scoped streamed archives, and
@@ -76,6 +82,9 @@
   47 passed / 1 ignored, three packaged field-scale healthy runs, worker kill/restart proof,
   field restart/recovery/finish integrity, fresh-store packaged finalization/archive, and
   `beta:verify --no-smoke` overall PASS (manual release smoke intentionally deferred).
+  `DON-245`: lint, build/package, unit 160 files / 1,127 tests, Playwright 163/163, visual reviewer
+  39/39, backend 47 passed / 1 ignored, and packaged growth verdict with a 4,976,640-byte DB and
+  `ok` integrity.
 
 ## Historical DON-240 planning snapshot — superseded by `DON-241`
 

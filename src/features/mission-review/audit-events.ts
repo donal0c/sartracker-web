@@ -1,11 +1,10 @@
 /**
  * Shared classification of mission event types for the review audit log.
  *
- * Tracking heartbeats (`device_updated`, `position_recorded`) are written on every
- * Traccar poll and every recorded GPS fix. On a multi-day mission with many devices
- * these dominate the `mission_events` table (100k+ rows observed in the field). They
- * carry no operational audit value — the authoritative tracking data lives in the
- * `positions` table and is surfaced separately as the breadcrumb count.
+ * Older stores and the legacy Rust reference may contain high-volume `device_updated`
+ * and `position_recorded` heartbeat events. Current Electron/browser persistence emits
+ * device updates only for a name/status/color change and stores position truth solely in
+ * `positions`, but legacy telemetry remains classified so old missions stay reviewable.
  *
  * The review audit log excludes these by default so the IPC payload and rendered DOM
  * stay bounded. A reviewer can opt back into telemetry via an explicit toggle.

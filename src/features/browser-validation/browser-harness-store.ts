@@ -428,19 +428,27 @@ export function getBrowserHarnessStore(): BrowserHarnessStore {
         last_seen: input.last_seen ?? null,
       } satisfies Device
 
+      const shouldRecordDeviceEvent =
+        existingDevice === null ||
+        existingDevice.name !== device.name ||
+        existingDevice.color !== device.color ||
+        existingDevice.status !== device.status
+
       state = {
         ...state,
         devices: upsertDevice(state.devices, device),
-        missionEvents: appendEvent(
-          state.missionEvents,
-          input.mission_id,
-          existingDevice === null ? 'device_created' : 'device_updated',
-          new Date().toISOString(),
-          {
-            device_id: input.device_id,
-            name: input.name,
-          },
-        ),
+        missionEvents: shouldRecordDeviceEvent
+          ? appendEvent(
+              state.missionEvents,
+              input.mission_id,
+              existingDevice === null ? 'device_created' : 'device_updated',
+              new Date().toISOString(),
+              {
+                device_id: input.device_id,
+                name: input.name,
+              },
+            )
+          : state.missionEvents,
       }
       save()
       return device
@@ -466,19 +474,6 @@ export function getBrowserHarnessStore(): BrowserHarnessStore {
       state = {
         ...state,
         positions: [...state.positions, position],
-        missionEvents: appendEvent(
-          state.missionEvents,
-          input.mission_id,
-          'position_recorded',
-          position.timestamp,
-          {
-            position_id: position.id,
-            device_id: input.device_id,
-            timestamp: position.timestamp,
-            data_origin: position.data_origin,
-            source: position.source,
-          },
-        ),
       }
       save()
       return position
