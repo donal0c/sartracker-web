@@ -9,6 +9,11 @@
 - **Hosted browser:** `https://sartracker-web.vercel.app/?missionHarness=1` is testing/training only; browser storage is not operational persistence.
 - **Latest replacement beta:** `electron-v0.1.0-beta.11` (cut from `4f13da2`, run `28972979120`, note: `docs/releases/sartracker-electron-0.1.0-beta.11.md`). **Field retest 2026-07-09: beta.11 STILL froze.** Its fsync-storm theory is superseded — see "DON-240 ROOT CAUSE CONFIRMED" below. The team is currently unblocked by a manual workaround (renamed the 3.69 GB `mission-store.sqlite` aside; fresh DB → no freeze).
 - **Held betas:** `electron-v0.1.0-beta.9` and `electron-v0.1.0-beta.10` are **ON HOLD** for the Linux tracking-online freeze. Do not roll them out further.
+- **Beta.12 prep:** version `0.1.0-beta.12` and its draft release note are being prepared under
+  `DON-247`. Do not publish it: the exact CI artifact still needs three Ubuntu field-fixture passes,
+  both multi-day soaks, the complete smoke matrix, and original-team-machine confirmation. The
+  exact-version local `beta:verify --no-smoke` passed 7/7 automated gates; report:
+  `tmp/beta-artifacts/verify-0.1.0-beta.12-sha.46662a97137e-2026-07-10T19-58-27Z.json`.
 - **Previous beta:** `electron-v0.1.0-beta.8`, published 2026-06-23 after GitHub Actions run `28012741523` and a deep Ubuntu packaged smoke (43/43) on the CI-built post-fix artifact (AppImage sha `43067cb2…`). Team artifact: https://github.com/donal0c/sartracker-web/releases/tag/electron-v0.1.0-beta.8`.
 - **Beta.8 release evidence:** tag `electron-v0.1.0-beta.8` (HEAD `34e3fc1`); CI release run `28012741523` is **green** and the deep Ubuntu packaged smoke PASSED on that CI-built artifact. Release note: `docs/releases/sartracker-electron-0.1.0-beta.8.md`.
   - Post-fix CI-built checksums: AppImage `43067cb2a99671419da576799beaedd7541b6ade7714fe267ad0c16b68e97911`, deb `fa60e126faee7a6d0f025d0e460317b6c53da1ed58cd3a3d129ac86ea2ca0a2b`.
