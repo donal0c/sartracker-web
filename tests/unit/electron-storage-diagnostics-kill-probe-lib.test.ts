@@ -39,23 +39,23 @@ describe('packaged storage diagnostics kill probe [DON-244]', () => {
     ).toThrow('--timeout-ms')
   })
 
-  it('passes only when the flushed validation marker survives restart and bundle export', () => {
+  it('passes only when the flushed operation-start marker survives restart and bundle export', () => {
     const verdict = buildStorageKillProbeVerdict({
       beforeKill: {
-        activeOperation: { type: 'backup', stage: 'validation_started' },
+        activeOperation: { type: 'backup', stage: 'started' },
       },
       afterRestart: {
         activeOperation: null,
-        previousInterruptedOperation: { type: 'backup', stage: 'validation_started' },
+        previousInterruptedOperation: { type: 'backup', stage: 'started' },
       },
       runtimeLog: [
-        '{"event":"storage_backup_validation_started"}',
+        '{"event":"storage_backup_started"}',
         '{"event":"storage_previous_run_interrupted"}',
         '{"event":"storage_main_event_loop_summary"}',
       ].join('\n'),
       supportBundle: [
         '[storage-diagnostics]',
-        'previous interrupted operation: backup validation_started',
+        'previous interrupted operation: backup started',
         'validation fixture preset: field',
         'event loop latest maximum delay ms: 5120',
       ].join('\n'),

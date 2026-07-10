@@ -138,8 +138,8 @@ This is the default order when the user says “work on the next task.”
 | Done | Build deterministic field-scale mission-store fixtures | S2 Electron / Verification | `DON-242` | Small/CI/local/field plus 5-day and 14-day continuous-mission presets; Ubuntu field fixture is 3.704 GB with measured table accounting and restart checkpoints. |
 | Done | Reproduce and attribute beta.11 freeze on packaged Ubuntu | S2 Electron / Verification | `DON-243` | Three independent packaged runs: main stalls 5.70-5.82 s; integrity validation 6.11-6.36 s across nine autosaves. |
 | Done | Add durable mission-store performance diagnostics and incident evidence | S2 Electron / Diagnostics | `DON-244` | Packaged field-fixture SIGKILL/restart/export proof passed; interrupted phase and 6.858 s event-loop stall survive in a sanitized bounded bundle. |
-| **Next** | Remove the mission-store backup freeze from periodic autosave | S2 Electron / Persistence | `DON-240` | Narrow beta.12 hot-path fix; preserve atomic backup and visible failure semantics. |
-| Todo | Change-gate tracking audit writes and remove position event echoes | S2 Electron / Tracking | `DON-245` | Preserve real positions and `last_seen`; remove redundant telemetry slope. |
+| Done locally | Remove the mission-store backup freeze from periodic autosave | S2 Electron / Persistence | `DON-240` | Full scans removed from autosave; 100-byte O(1) sanity check and worker-thread copy preserve atomicity. Nine packaged field backups: main max 2-11 ms. CI/team release confirmation remains `DON-247`. |
+| **Next** | Change-gate tracking audit writes and remove position event echoes | S2 Electron / Tracking | `DON-245` | Preserve real positions and `last_seen`; remove redundant telemetry slope. |
 | Todo | Add accelerated packaged tracking soak and growth-budget gate | S2 Electron / Verification | `DON-246` | Report real-data growth separately from redundant telemetry. |
 | Todo | Qualify beta.12 CI artifact on Ubuntu and original field machine | S2 Electron / Release | `DON-247` | Three consecutive Ubuntu passes, full packaged smoke, then original-machine confirmation. |
 | Backlog | Lock bounded live-store and archive architecture | S2 Electron / Persistence | `DON-248` | Beta.13 starts only after beta.12 field confirmation. |
@@ -299,9 +299,13 @@ Execution is deliberately sequential:
    restarted and exported a bundle that retained the exact interrupted phase and measured a
    6.858 s main-event-loop stall. Database integrity and mission continuity remained intact; the
    privacy scan passed. See `docs/releases/beta12-storage-diagnostics-evidence.md`.
-4. `DON-240` — remove full integrity checking from periodic autosave while preserving atomic
-   backup and visible failures.
-5. `DON-245` — change-gate `device_updated` and remove redundant `position_recorded` echoes while
+4. `DON-240` — **Done locally 2026-07-10.** Periodic backup now performs the online copy in a
+   dedicated worker isolate and replaces the full database scan with a fixed 100-byte SQLite
+   header/file-metadata sanity check. Three packaged Ubuntu runs completed nine field-size backups
+   with valid healthy verdicts and 2-11 ms maximum main-process response, versus beta.11's
+   5.70-5.82 s freeze. Forced kill/restart evidence also passed. See
+   `docs/releases/beta12-autosave-freeze-fix.md`.
+5. `DON-245` — **Next.** Change-gate `device_updated` and remove `position_recorded` echoes while
    preserving rows, `last_seen`, recovery, and operational audit history.
 6. `DON-246` — accelerated packaged soak with separate budgets for genuine data and redundant
    telemetry; do not claim the entire database plateaus while real positions are retained.

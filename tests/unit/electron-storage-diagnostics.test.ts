@@ -125,9 +125,9 @@ describe('Electron storage diagnostics [DON-244]', () => {
     harness.advance(2_500)
     await harness.diagnostics.phase(operation, 'copied')
     harness.advance(10)
-    await harness.diagnostics.phase(operation, 'validation_started')
-    harness.advance(6_250)
-    await harness.diagnostics.phase(operation, 'validated')
+    await harness.diagnostics.phase(operation, 'sanity_check_started')
+    harness.advance(2)
+    await harness.diagnostics.phase(operation, 'sanity_checked')
     harness.advance(5)
     await harness.diagnostics.phase(operation, 'renamed')
     harness.advance(5)
@@ -137,20 +137,20 @@ describe('Electron storage diagnostics [DON-244]', () => {
       'storage_backup_requested',
       'storage_backup_started',
       'storage_backup_copied',
-      'storage_backup_validation_started',
-      'storage_backup_validated',
+      'storage_backup_sanity_check_started',
+      'storage_backup_sanity_checked',
       'storage_backup_renamed',
       'storage_backup_completed',
     ])
     expect(harness.entries[0]?.fields).toMatchObject({ trigger: 'interval' })
     expect(harness.entries[1]?.fields).toMatchObject({ queueWaitMs: 25 })
-    expect(harness.entries[4]?.fields).toMatchObject({ phaseDurationMs: 6_250 })
+    expect(harness.entries[4]?.fields).toMatchObject({ phaseDurationMs: 2 })
 
     const snapshot = await harness.diagnostics.readSupportSnapshot()
     expect(snapshot.activeOperation).toBeNull()
     expect(snapshot.lastCompletedOperation).toMatchObject({
       type: 'backup',
-      totalDurationMs: 8_795,
+      totalDurationMs: 2_547,
     })
     expect((await stat(path.join(userDataPath!, 'storage-diagnostics.json'))).size).toBeLessThan(16_384)
   })

@@ -14,7 +14,10 @@ type StorageDiagnosticsPort = {
     input: { readonly queueDepth: number; readonly trigger?: string },
   ) => Promise<void>
   readonly started: (operation: StorageOperation) => Promise<void>
-  readonly phase: (operation: StorageOperation, stage: 'copied' | 'validation_started' | 'validated' | 'renamed') => Promise<void>
+  readonly phase: (
+    operation: StorageOperation,
+    stage: 'copied' | 'sanity_check_started' | 'sanity_checked' | 'renamed',
+  ) => Promise<void>
   readonly completed: (operation: StorageOperation) => Promise<void>
   readonly failed: (operation: StorageOperation, input: { readonly stage: string; readonly errorName: string }) => Promise<void>
   readonly startMission: (input: { readonly startedAt: string }) => Promise<void>
@@ -37,6 +40,7 @@ const { createElectronMissionStore, CURRENT_SCHEMA_VERSION } = require('../../el
     readonly readAdminRoster?: () => Promise<readonly string[]>
     readonly backupFaultInjection?: {
       readonly afterTemporaryBackup?: boolean
+      readonly corruptTemporarySnapshotBeforeSanityCheck?: boolean
     }
     readonly archiveFaultInjection?: {
       readonly corruptSnapshotBeforeZip?: boolean
@@ -590,6 +594,21 @@ describe('electron mission store', () => {
     expect(eventTypes).not.toContain('mission_backup_synced')
   })
 
+  it('rejects a rolling snapshot whose fixed SQLite header sanity check fails [DON-240]', async () => {
+    store = await createStore({
+      backupFaultInjection: {
+        corruptTemporarySnapshotBeforeSanityCheck: true,
+      },
+    })
+    const mission = await store.createMission({ name: 'Corrupt Rolling Snapshot Mission' })
+
+    await expect(store.syncBackup('interval')).rejects.toThrow(/SQLite header signature/)
+    await expect(access(path.join(userDataPath!, 'mission-store.backup.sqlite'))).rejects.toThrow()
+    expect((await store.listMissionEvents(mission.id)).map((event) => event.event_type)).not.toContain(
+      'mission_backup_synced',
+    )
+  })
+
   it('rejects an archive whose embedded SQLite snapshot fails integrity validation [DON-232]', async () => {
     store = await createStore({
       archiveFaultInjection: {
@@ -795,8 +814,8 @@ describe('electron mission store', () => {
     expect(storageDiagnostics.started).toHaveBeenCalledWith(operation)
     expect(vi.mocked(storageDiagnostics.phase).mock.calls.map((call) => call[1])).toEqual([
       'copied',
-      'validation_started',
-      'validated',
+      'sanity_check_started',
+      'sanity_checked',
       'renamed',
     ])
     expect(storageDiagnostics.completed).toHaveBeenCalledWith(operation)
@@ -1176,6 +1195,7 @@ describe('electron mission store', () => {
     readonly readAdminRoster?: () => Promise<readonly string[]>
     readonly backupFaultInjection?: {
       readonly afterTemporaryBackup?: boolean
+      readonly corruptTemporarySnapshotBeforeSanityCheck?: boolean
     }
     readonly archiveFaultInjection?: {
       readonly corruptSnapshotBeforeZip?: boolean

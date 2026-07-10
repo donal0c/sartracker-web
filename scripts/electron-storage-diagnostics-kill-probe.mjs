@@ -2,7 +2,8 @@
 
 // Packaged-Electron kill/restart storage diagnostics proof (DON-244).
 // Kills the real app only after both the atomic checkpoint and bounded runtime
-// log have flushed `validation_started`, then restarts and exports a support bundle.
+// log have flushed `started`, then restarts and exports a support bundle. With the
+// field fixture, this marker is observable while the asynchronous copy is in flight.
 
 import { spawn } from 'node:child_process'
 import { createHash } from 'node:crypto'
@@ -66,7 +67,7 @@ async function main() {
       fullPage: true,
     })
 
-    const beforeKill = await waitForFlushedValidationMarker({
+    const beforeKill = await waitForFlushedStartMarker({
       userDataDir,
       appProcess: firstLaunch.appProcess,
       timeoutMs: options.timeoutMs,
@@ -76,7 +77,7 @@ async function main() {
       path.join(userDataDir, runtimeLogRelativePath),
       path.join(evidenceDir, 'runtime-before-kill.log'),
     )
-    console.log('[storage-kill-probe] validation marker flushed; sending SIGKILL')
+    console.log('[storage-kill-probe] backup-start marker flushed; sending SIGKILL')
     firstLaunch.appProcess.kill('SIGKILL')
     await waitForExit(firstLaunch.appProcess, 10_000)
     await firstLaunch.browser.close().catch(() => undefined)
@@ -224,23 +225,23 @@ async function launchPackagedApp(input) {
   }
 }
 
-/** Waits until both durable channels show validation_started. */
-async function waitForFlushedValidationMarker(input) {
+/** Waits until both durable channels show the backup start before its copy completes. */
+async function waitForFlushedStartMarker(input) {
   const deadline = Date.now() + input.timeoutMs
   while (Date.now() < deadline) {
-    assertProcessAlive(input.appProcess, 'before validation marker')
+    assertProcessAlive(input.appProcess, 'before backup-start marker')
     const checkpoint = await readJsonIfPresent(path.join(input.userDataDir, checkpointFileName))
     const runtimeLog = await readFileIfPresent(path.join(input.userDataDir, runtimeLogRelativePath))
     if (
       checkpoint?.activeOperation?.type === 'backup' &&
-      checkpoint.activeOperation.stage === 'validation_started' &&
-      runtimeLog.includes('storage_backup_validation_started')
+      checkpoint.activeOperation.stage === 'started' &&
+      runtimeLog.includes('storage_backup_started')
     ) {
       return checkpoint
     }
     await delay(20)
   }
-  throw new Error('Timed out waiting for the flushed backup validation_started marker.')
+  throw new Error('Timed out waiting for the flushed backup started marker.')
 }
 
 /** Waits for startup recovery to convert the active marker into interrupted evidence. */
@@ -253,7 +254,7 @@ async function waitForInterruptedRestartMarker(input) {
     if (
       checkpoint?.activeOperation === null &&
       checkpoint?.previousInterruptedOperation?.type === 'backup' &&
-      checkpoint.previousInterruptedOperation.stage === 'validation_started' &&
+      checkpoint.previousInterruptedOperation.stage === 'started' &&
       runtimeLog.includes('storage_previous_run_interrupted')
     ) {
       return checkpoint

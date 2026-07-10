@@ -7,7 +7,14 @@ const DATABASE_FILE_NAME = 'mission-store.sqlite'
 const BACKUP_FILE_NAME = 'mission-store.backup.sqlite'
 const TEMPORARY_BACKUP_PATTERN =
   /^mission-store\.backup\.sqlite\.tmp-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/u
-const BACKUP_STAGES = new Set(['copied', 'validation_started', 'validated', 'renamed'])
+const BACKUP_STAGES = new Set([
+  'copied',
+  'validation_started',
+  'validated',
+  'sanity_check_started',
+  'sanity_checked',
+  'renamed',
+])
 
 /** Returns the bounded storage checkpoint's initial schema. */
 function createEmptyState() {

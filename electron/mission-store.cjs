@@ -3,6 +3,8 @@ const path = require('node:path')
 const { randomUUID } = require('node:crypto')
 
 const Database = require('better-sqlite3')
+const { runSqliteBackupInWorker } = require('./sqlite-backup-runner.cjs')
+const { validateSqliteSnapshotSanity } = require('./sqlite-snapshot-sanity.cjs')
 
 const { createZipArchive, readZipArchive } = require('./zip-archive.cjs')
 
@@ -29,6 +31,7 @@ function createElectronMissionStore(options) {
   migrate(db)
   const backupCoordinator = createBackupCoordinator(
     db,
+    databasePath,
     backupPath,
     options.backupFaultInjection ?? {},
     storageDiagnostics,
@@ -321,7 +324,13 @@ function ensureColumnExists(db, tableName, columnName, columnSql) {
   db.prepare(`ALTER TABLE ${tableName} ADD COLUMN ${columnName} ${columnSql}`).run()
 }
 
-function createBackupCoordinator(db, backupPath, faultInjection, storageDiagnostics) {
+function createBackupCoordinator(
+  db,
+  databasePath,
+  backupPath,
+  faultInjection,
+  storageDiagnostics,
+) {
   let backupTail = Promise.resolve()
   let queueDepth = 0
 
@@ -342,7 +351,14 @@ function createBackupCoordinator(db, backupPath, faultInjection, storageDiagnost
       )
       return enqueue(async () => {
         queueDepth = Math.max(0, queueDepth - 1)
-        return syncBackup(db, backupPath, faultInjection, storageDiagnostics, operation)
+        return syncBackup(
+          db,
+          databasePath,
+          backupPath,
+          faultInjection,
+          storageDiagnostics,
+          operation,
+        )
       })
     },
   }
@@ -350,6 +366,7 @@ function createBackupCoordinator(db, backupPath, faultInjection, storageDiagnost
 
 async function syncBackup(
   db,
+  databasePath,
   backupPath,
   faultInjection = {},
   storageDiagnostics = null,
@@ -362,23 +379,29 @@ async function syncBackup(
     await safeStorageDiagnostic(() =>
       operation === null ? undefined : storageDiagnostics.started(operation),
     )
-    await db.backup(temporaryPath)
+    await runSqliteBackupInWorker({
+      sourcePath: databasePath,
+      targetPath: temporaryPath,
+    })
     stage = 'copied'
-    await safeStorageDiagnostic(() =>
-      operation === null ? undefined : storageDiagnostics.phase(operation, stage),
-    )
-    stage = 'validation_started'
-    await safeStorageDiagnostic(() =>
-      operation === null ? undefined : storageDiagnostics.phase(operation, stage),
-    )
-    await validateSqliteDatabaseFile(temporaryPath, 'Rolling mission backup')
-    stage = 'validated'
     await safeStorageDiagnostic(() =>
       operation === null ? undefined : storageDiagnostics.phase(operation, stage),
     )
     if (faultInjection.afterTemporaryBackup === true) {
       throw new Error('Injected backup interruption after temporary backup.')
     }
+    if (faultInjection.corruptTemporarySnapshotBeforeSanityCheck === true) {
+      await corruptSqliteHeader(temporaryPath)
+    }
+    stage = 'sanity_check_started'
+    await safeStorageDiagnostic(() =>
+      operation === null ? undefined : storageDiagnostics.phase(operation, stage),
+    )
+    await validateSqliteSnapshotSanity(temporaryPath, 'Rolling mission backup')
+    stage = 'sanity_checked'
+    await safeStorageDiagnostic(() =>
+      operation === null ? undefined : storageDiagnostics.phase(operation, stage),
+    )
     await fs.rename(temporaryPath, backupPath)
     stage = 'renamed'
     await safeStorageDiagnostic(() =>
@@ -405,6 +428,16 @@ async function syncBackup(
     operation === null ? undefined : storageDiagnostics.completed(operation),
   )
   return backupPath
+}
+
+/** Corrupts only the temporary snapshot header for a fail-closed regression seam. */
+async function corruptSqliteHeader(databasePath) {
+  const fileHandle = await fs.open(databasePath, 'r+')
+  try {
+    await fileHandle.write(Buffer.from('Not SQLite data!'), 0, 16, 0)
+  } finally {
+    await fileHandle.close()
+  }
 }
 
 async function safeStorageDiagnostic(callback) {

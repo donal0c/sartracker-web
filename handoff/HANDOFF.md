@@ -48,9 +48,19 @@
   mission survived, and privacy scan passed. Evidence:
   `~/sartracker-beta12-msr/evidence/don244-kill-observed/`; durable summary:
   `docs/releases/beta12-storage-diagnostics-evidence.md`.
-- **Next:** `DON-240` removes synchronous full integrity checking from periodic autosave while
-  preserving atomic temp+rename backup and visible failure semantics. Then `DON-245` redundant
-  write removal, `DON-246` soak, and `DON-247` release/field confirmation.
+- **Completed local checkpoint:** `DON-240` removes all size-dependent work from the Electron main
+  isolate during periodic backup: the online SQLite copy runs in a worker, and autosave validates
+  only the fixed 100-byte header plus file metadata before atomic rename. Three packaged Ubuntu
+  field runs completed nine backups with valid healthy verdicts and main maxima of 10.9, 6.5, and
+  2.5 ms. Worker kill/restart/support export passed. Candidate AppImage SHA: `147ec92…`; evidence:
+  `~/sartracker-beta12-msr/evidence/don240-worker-run-{1,2,3}/`; durable summary:
+  `docs/releases/beta12-autosave-freeze-fix.md`.
+- **Field-scale archive gap found:** the same synthetic mission recovered, resumed, finished, and
+  retained `ok` main/backup integrity, but finalization hit Node `ERR_FS_FILE_TOO_LARGE` at the
+  existing whole-DB `fs.readFile` above 2 GiB. Recorded on `DON-252`; do not fold the streamed
+  archive redesign into beta.12. Fresh-store packaged finalization/archive still passes.
+- **Next:** `DON-245` redundant write removal, then `DON-246` soak and `DON-247` exact CI artifact/
+  original-machine confirmation. `DON-240` stays open in Linear until its explicit CI/team gate.
 - **Release split:** beta.12 is the narrow field-freeze/observability release. Beta.13 owns
   migrations, retention, safe legacy recovery, mission-scoped streamed archives, and
   archive-backed review/unlock.
@@ -61,7 +71,11 @@
   build/package, unit 158 files / 1,121 tests, Playwright
   163/163, visual reviewer 39/39, backend 47 passed / 1 ignored, packaged Ubuntu forced-kill/
   restart/support-export proof, post-kill SQLite integrity, and privacy scan. Final unit/package
-  verification passed after the release-tooling error-path regression was added.
+  verification passed after the release-tooling error-path regression was added. `DON-240`: lint,
+  build/package, unit 160 files / 1,126 tests, Playwright 163/163, visual reviewer 39/39, backend
+  47 passed / 1 ignored, three packaged field-scale healthy runs, worker kill/restart proof,
+  field restart/recovery/finish integrity, fresh-store packaged finalization/archive, and
+  `beta:verify --no-smoke` overall PASS (manual release smoke intentionally deferred).
 
 ## Historical DON-240 planning snapshot — superseded by `DON-241`
 

@@ -60,19 +60,19 @@ export function buildStorageKillProbeVerdict(input) {
   const failures = []
   if (
     input.beforeKill?.activeOperation?.type !== 'backup' ||
-    input.beforeKill?.activeOperation?.stage !== 'validation_started'
+    input.beforeKill?.activeOperation?.stage !== 'started'
   ) {
-    failures.push('The durable checkpoint was not at backup validation_started before kill.')
+    failures.push('The durable checkpoint was not at backup started before kill.')
   }
   if (
     input.afterRestart?.activeOperation !== null ||
     input.afterRestart?.previousInterruptedOperation?.type !== 'backup' ||
-    input.afterRestart?.previousInterruptedOperation?.stage !== 'validation_started'
+    input.afterRestart?.previousInterruptedOperation?.stage !== 'started'
   ) {
-    failures.push('The checkpoint did not expose the interrupted validation phase after restart.')
+    failures.push('The checkpoint did not expose the interrupted backup start after restart.')
   }
   if (
-    !String(input.runtimeLog).includes('storage_backup_validation_started') ||
+    !String(input.runtimeLog).includes('storage_backup_started') ||
     !String(input.runtimeLog).includes('storage_previous_run_interrupted')
   ) {
     failures.push('The runtime log is missing the pre-kill or restart interruption marker.')
@@ -83,7 +83,7 @@ export function buildStorageKillProbeVerdict(input) {
   if (
     !String(input.supportBundle).includes('[storage-diagnostics]') ||
     !String(input.supportBundle).includes(
-      'previous interrupted operation: backup validation_started',
+      'previous interrupted operation: backup started',
     )
   ) {
     failures.push('The support bundle is missing interrupted storage-operation evidence.')
