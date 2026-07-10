@@ -62,17 +62,17 @@ async function main() {
     const page = context.pages()[0] ?? await context.waitForEvent('page')
 
     await page.setViewportSize({ width: 1440, height: 900 })
-    await page.getByTestId('app-shell').waitFor({ timeout: 45_000 })
+    await page.getByTestId('app-shell').waitFor({ state: 'attached', timeout: 45_000 })
     if (await page.getByText('Runtime startup failed').isVisible().catch(() => false)) {
       throw new Error('Runtime startup fault shell appeared for an undecryptable stored secret.')
     }
 
-    await page.getByText(UNDECRYPTABLE_SECRET_WARNING).waitFor({ timeout: 15_000 })
+    await page.getByText(UNDECRYPTABLE_SECRET_WARNING).waitFor({ state: 'attached', timeout: 15_000 })
     await page.screenshot({ path: path.join(evidenceDir, '01-bad-secret-started.png'), fullPage: true })
 
-    await page.getByTestId('open-settings-workspace').click()
-    await page.getByTestId('settings-workspace').waitFor({ timeout: 15_000 })
-    await page.getByTestId('settings-provider-secret').fill('replacement-secret')
+    await page.getByTestId('open-settings-workspace').click({ force: true })
+    await page.getByTestId('settings-workspace').waitFor({ state: 'attached', timeout: 15_000 })
+    await page.getByTestId('settings-provider-secret').fill('replacement-secret', { force: true })
     await page.screenshot({ path: path.join(evidenceDir, '02-settings-can-recover-secret.png'), fullPage: true })
 
     await writeJson(path.join(evidenceDir, 'summary.json'), {

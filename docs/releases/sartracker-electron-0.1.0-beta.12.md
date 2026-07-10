@@ -49,6 +49,9 @@ database growth.
   window prevents renderer memory exhaustion during Resume.
 - `beta:verify` and the tag-driven Linux bundle now run a deterministic packaged
   Traccar/persistence soak with machine-readable fail-closed evidence.
+- Linux startup no longer calls synchronous keyring decryption for legacy
+  beta.5 credentials. Tracking fails safe with the existing re-entry warning,
+  preventing a locked GNOME keyring from blanking/freezing the whole app.
 
 ## Pre-release evidence already completed
 
@@ -107,6 +110,11 @@ Durable evidence:
 
 Any unexplained flake, renderer crash, heartbeat failure, missing evidence, or
 field-machine recurrence keeps this release on hold.
+
+The first exact CI artifact (`3113d01b…`) passed the three field-fixture runs
+and both multi-day soaks, then failed the required bad-secret startup smoke by
+blocking in synchronous legacy Linux keyring decryption. It is rejected; a
+replacement artifact must repeat qualification after the fail-safe startup fix.
 
 ## Known limitation deferred to beta.13
 

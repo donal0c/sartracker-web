@@ -514,7 +514,7 @@ describe('electron settings store', () => {
   it('clears the stored credential authoritatively so a legacy secrets.json cannot resurrect it', async () => {
     // DON-177: Clear must persist an authoritative "no secret" state, otherwise
     // the next boot would re-migrate from the still-present legacy secrets.json.
-    const store = await createStore({ backend: 'gnome_libsecret' })
+    const store = await createStore({ backend: 'gnome_libsecret', platform: 'darwin' })
     await seedLegacySecret(userDataPath!, 'basic', 'legacy-secret')
     // First boot migrates the legacy secret into the local credential file.
     await writeFile(
@@ -547,7 +547,7 @@ describe('electron settings store', () => {
   })
 
   it('migrates a decryptable legacy secrets.json into the local credential file and leaves it intact', async () => {
-    const store = await createStore({ backend: 'gnome_libsecret' })
+    const store = await createStore({ backend: 'gnome_libsecret', platform: 'darwin' })
     await seedLegacySecret(userDataPath!, 'basic', 'legacy-secret')
     await writeFile(
       path.join(userDataPath!, 'settings.json'),
@@ -578,9 +578,10 @@ describe('electron settings store', () => {
   })
 
   it('starts without tracking when only an undecryptable legacy secrets.json exists', async () => {
+    const decryptString = vi.fn(() => 'must-not-run')
     const store = createElectronSettingsStore({
       userDataPath: (userDataPath = await mkdtemp(path.join(tmpdir(), 'sartracker-electron-settings-'))),
-      safeStorage: createBrokenSafeStorage(),
+      safeStorage: createMockSafeStorage('gnome_libsecret', decryptString),
       platform: 'linux',
     })
     // Legacy ciphertext present but undecryptable on this session (locked/changed keyring).
@@ -609,6 +610,7 @@ describe('electron settings store', () => {
     expect(runtime.trackingDisabledReason).toBe(
       'Stored Traccar credentials could not be decrypted. Re-enter the password or token in Settings.',
     )
+    expect(decryptString).not.toHaveBeenCalled()
     // Migration must not delete or rewrite the legacy file (decision (a)).
     await expect(access(path.join(userDataPath, 'secrets.json'))).resolves.toBeUndefined()
   })

@@ -222,6 +222,14 @@ function createElectronSettingsStore(options) {
       return { value: null }
     }
 
+    // Electron's Linux safeStorage decrypt call is synchronous and can block
+    // the entire main process while GNOME Keyring is locked or unavailable.
+    // Current credentials are app-owned; legacy beta.5 ciphertext must fail
+    // safe with an operator re-entry prompt instead of risking a blank startup.
+    if (platform === 'linux') {
+      return { value: null, unsafeReason: UNDECRYPTABLE_SECRET_MESSAGE }
+    }
+
     if (!safeStorage.isEncryptionAvailable()) {
       return { value: null, unsafeReason: UNDECRYPTABLE_SECRET_MESSAGE }
     }

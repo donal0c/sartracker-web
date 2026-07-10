@@ -1209,11 +1209,11 @@
             disabled until the URL is corrected.
           </p>
           <p>
-            On first launch after upgrading from an older beta, an existing keyring-encrypted credential is
-            migrated automatically into the new local credential file when it can still be read. If an older
-            stored credential cannot be read (for example a login keyring that was locked or changed on a
-            previous version), SAR Tracker still opens normally with tracking disabled and a warning to
-            re-enter the password or token in Settings. You can re-enter or clear the Traccar credential at
+            On Linux, SAR Tracker does not attempt to decrypt credentials left by older keyring-based betas:
+            a locked or unavailable login keyring could otherwise block the entire application at startup.
+            Tracking stays disabled and SAR Tracker asks the operator to re-enter the password or token in
+            Settings; the older encrypted file is left untouched. On other supported platforms, a readable
+            older credential may still be migrated automatically. You can re-enter or clear the Traccar credential at
             any time from Settings without touching any files. This protects the mission record while
             avoiding a startup block caused only by the stored tracking secret.
           </p>
