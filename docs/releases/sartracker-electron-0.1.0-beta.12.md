@@ -11,7 +11,8 @@
 - **Supersedes:** `electron-v0.1.0-beta.11` (**field freeze still present**)
 - **Linear references:** `DON-240`, `DON-241`, `DON-242`-`DON-247`
 - **Local verification report:** `tmp/beta-artifacts/verify-0.1.0-beta.12-sha.46662a97137e-2026-07-10T19-58-27Z.json`
-- **CI run:** pending tag-driven `Release (Electron Desktop)` run
+- **CI run:** replacement run pending; initial run `29119914249` failed closed
+  in the packaged-soak UI-readiness assertion before artifact promotion
 - **GitHub release:** must remain draft pending `DON-247`
 
 ## Why beta.12 exists

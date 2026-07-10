@@ -392,8 +392,34 @@ async function launchPackagedApp(options, userDataDir, number) {
 async function startSyntheticMission(page) {
   await page.getByTestId('mission-name-input').fill('Synthetic Continuous Soak Mission')
   await page.getByTestId('mission-start-btn').click()
-  await page.getByTestId('mission-control').waitFor({ state: 'visible' })
-  await page.getByTestId('current-mission-name').waitFor({ state: 'visible' })
+  await waitForActiveMission(page, 30_000)
+  await page
+    .getByTestId('current-mission-name')
+    .first()
+    .waitFor({ state: 'attached', timeout: 30_000 })
+  await page.waitForFunction(
+    (expectedName) =>
+      [...document.querySelectorAll('[data-testid="current-mission-name"]')].some(
+        (element) => element.textContent?.trim() === expectedName,
+      ),
+    'Synthetic Continuous Soak Mission',
+    { timeout: 30_000 },
+  )
+}
+
+/**
+ * Waits for mission startup at the packaged persistence boundary.
+ *
+ * GitHub's Xvfb renderer can blocklist WebGL, so this storage soak must not
+ * conflate map/sidebar paint visibility with mission-store readiness. Browser
+ * E2E and the separate packaged launch smoke retain the visual assertions.
+ */
+async function waitForActiveMission(page, timeoutMs) {
+  await page.waitForFunction(
+    async () => (await window.sartrackerElectron?.missionStore.getActiveMission()) !== null,
+    undefined,
+    { timeout: timeoutMs },
+  )
 }
 
 async function resumeRecoveredMission(page, expectedMissionId) {

@@ -9,8 +9,12 @@
 - **Hosted browser:** `https://sartracker-web.vercel.app/?missionHarness=1` is testing/training only; browser storage is not operational persistence.
 - **Latest replacement beta:** `electron-v0.1.0-beta.11` (cut from `4f13da2`, run `28972979120`, note: `docs/releases/sartracker-electron-0.1.0-beta.11.md`). **Field retest 2026-07-09: beta.11 STILL froze.** Its fsync-storm theory is superseded — see "DON-240 ROOT CAUSE CONFIRMED" below. The team is currently unblocked by a manual workaround (renamed the 3.69 GB `mission-store.sqlite` aside; fresh DB → no freeze).
 - **Held betas:** `electron-v0.1.0-beta.9` and `electron-v0.1.0-beta.10` are **ON HOLD** for the Linux tracking-online freeze. Do not roll them out further.
-- **Beta.12 prep:** version `0.1.0-beta.12` and its draft release note are being prepared under
-  `DON-247`. Do not publish it: the exact CI artifact still needs three Ubuntu field-fixture passes,
+- **Beta.12 prep:** tag `electron-v0.1.0-beta.12` is active under `DON-247`. The first release run
+  `29119914249` failed closed in the new packaged-soak gate because GitHub's Xvfb/WebGL-blocklisted
+  session could not satisfy a sidebar visibility assertion even though retained evidence proved the
+  mission, tracking writes, autosave, and main heartbeat were healthy. The harness now waits on the
+  packaged mission-store boundary plus rendered mission name; local CI-profile proof is green. Do
+  not publish it: the replacement tag run and exact CI artifact still need three Ubuntu field-fixture passes,
   both multi-day soaks, the complete smoke matrix, and original-team-machine confirmation. The
   exact-version local `beta:verify --no-smoke` passed 7/7 automated gates; report:
   `tmp/beta-artifacts/verify-0.1.0-beta.12-sha.46662a97137e-2026-07-10T19-58-27Z.json`.
