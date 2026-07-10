@@ -31,14 +31,23 @@
   All reopen through the beta.11 adapter and pass full integrity checks. The field fixture contains
   32 devices, 2.04 million real positions, and 10.24 million redundant telemetry rows; about
   3.03 GB is `mission_events` and 672 MB is real positions.
-- **Next:** `DON-243` extends the packaged probe and must reproduce/attribute beta.11 on Ubuntu
-  before any hot-path fix. Then `DON-244` diagnostics, `DON-240` backup fix, `DON-245` redundant
-  write removal, `DON-246` soak, and `DON-247` release/field confirmation.
+- **Completed checkpoint:** `DON-243` now reproduces beta.11 deterministically on packaged Ubuntu.
+  Three independent field-fixture runs completed three autosaves each; all attributed a
+  5.70-5.82 s Electron main-process stall to the 6.11-6.36 s synchronous integrity-validation
+  phase after a 2.45-3.96 s backup copy. App/fixture checksums, screenshots, sanitized logs,
+  memory high-water, per-cycle phase timings, and fail-closed JSON verdicts are under
+  `~/sartracker-beta12-msr/evidence/beta11-field-run-{1,2,3}/`. Durable summary:
+  `docs/releases/beta12-mission-store-baseline.md`.
+- **Next:** `DON-244` durable bounded diagnostics, then `DON-240` backup fix, `DON-245` redundant
+  write removal, `DON-246` soak, and `DON-247` release/field confirmation. Production hot-path
+  code is still unchanged.
 - **Release split:** beta.12 is the narrow field-freeze/observability release. Beta.13 owns
   migrations, retention, safe legacy recovery, mission-scoped streamed archives, and
   archive-backed review/unlock.
-- **Verification for `DON-242`:** lint, build, unit 155 files / 1,096 tests, Playwright 163/163
-  (Chromium + visual), backend 47 passed / 1 ignored, and Ubuntu fixture integrity/reopen checks.
+- **Verification:** `DON-242`: lint, build, unit 155 files / 1,096 tests, Playwright 163/163,
+  backend 47 passed / 1 ignored, Ubuntu fixture integrity/reopen. `DON-243`: probe units 9/9,
+  checksum-verified beta.11 AppImage, small-fixture healthy shakedown, and three valid packaged
+  field runs with nine completed autosaves and repeatable main-process freezes.
 
 ## Historical DON-240 planning snapshot — superseded by `DON-241`
 

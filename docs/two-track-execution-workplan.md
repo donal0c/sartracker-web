@@ -136,8 +136,8 @@ This is the default order when the user says “work on the next task.”
 | Order | Chunk | Track | Linear issue | Status |
 | --- | --- | --- | --- | --- |
 | Done | Build deterministic field-scale mission-store fixtures | S2 Electron / Verification | `DON-242` | Small/CI/local/field plus 5-day and 14-day continuous-mission presets; Ubuntu field fixture is 3.704 GB with measured table accounting and restart checkpoints. |
-| **Next** | Reproduce and attribute beta.11 freeze on packaged Ubuntu | S2 Electron / Verification | `DON-243` | Hard gate: beta.11 must fail numerically before production fixes begin. |
-| Todo | Add durable mission-store performance diagnostics and incident evidence | S2 Electron / Diagnostics | `DON-244` | Must survive forced kill/restart and remain bounded/sanitized. |
+| Done | Reproduce and attribute beta.11 freeze on packaged Ubuntu | S2 Electron / Verification | `DON-243` | Three independent packaged runs: main stalls 5.70-5.82 s; integrity validation 6.11-6.36 s across nine autosaves. |
+| **Next** | Add durable mission-store performance diagnostics and incident evidence | S2 Electron / Diagnostics | `DON-244` | Must survive forced kill/restart and remain bounded/sanitized. |
 | Todo | Remove the mission-store backup freeze from periodic autosave | S2 Electron / Persistence | `DON-240` | Narrow beta.12 hot-path fix; preserve atomic backup and visible failure semantics. |
 | Todo | Change-gate tracking audit writes and remove position event echoes | S2 Electron / Tracking | `DON-245` | Preserve real positions and `last_seen`; remove redundant telemetry slope. |
 | Todo | Add accelerated packaged tracking soak and growth-budget gate | S2 Electron / Verification | `DON-246` | Report real-data growth separately from redundant telemetry. |
@@ -289,8 +289,10 @@ Execution is deliberately sequential:
    - 14 day: 3,514,122,240 bytes; 241,920 polls; 1,935,360 positions; 9,717,120 redundant telemetry rows.
    - Field: 3,704,676,352 bytes; 14.7569 simulated days; 2,040,000 positions; 10,242,500 redundant telemetry rows.
    The field fixture allocates about 3.03 GB to `mission_events` and 672 MB to real positions.
-2. `DON-243` — run the packaged beta.11 baseline on Ubuntu. It must reproduce and attribute a
-   release-blocking stall across multiple autosave cycles before production code changes.
+2. `DON-243` — **Done 2026-07-10.** Three independent packaged beta.11 Ubuntu runs completed nine
+   field-scale autosaves. Each run reproduced a 5.70-5.82 s main-process stall; external backup
+   phase timing isolated 2.45-3.96 s copy phases and 6.11-6.36 s synchronous integrity-validation
+   phases. See `docs/releases/beta12-mission-store-baseline.md`.
 3. `DON-244` — durable, bounded, sanitized storage timings and interrupted-operation evidence in
    the incident bundle.
 4. `DON-240` — remove full integrity checking from periodic autosave while preserving atomic
