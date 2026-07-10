@@ -6,6 +6,30 @@ import { createRequire } from 'node:module'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 const require = createRequire(import.meta.url)
+type StorageOperation = { readonly id: string; readonly type: 'backup'; readonly requestedAtMs: number }
+type StorageDiagnosticsPort = {
+  readonly createOperation: (type: 'backup') => StorageOperation
+  readonly requested: (
+    operation: StorageOperation,
+    input: { readonly queueDepth: number; readonly trigger?: string },
+  ) => Promise<void>
+  readonly started: (operation: StorageOperation) => Promise<void>
+  readonly phase: (operation: StorageOperation, stage: 'copied' | 'validation_started' | 'validated' | 'renamed') => Promise<void>
+  readonly completed: (operation: StorageOperation) => Promise<void>
+  readonly failed: (operation: StorageOperation, input: { readonly stage: string; readonly errorName: string }) => Promise<void>
+  readonly startMission: (input: { readonly startedAt: string }) => Promise<void>
+  readonly recordTrackingBatch: (input: {
+    readonly durationMs: number
+    readonly deviceCount: number
+    readonly changedDeviceEventCount: number
+    readonly observedAt: string
+  }) => Promise<void>
+  readonly recordInsertedPositions: (input: {
+    readonly durationMs: number
+    readonly insertedPositionCount: number
+    readonly positionTelemetryEventCount: number
+  }) => Promise<void>
+}
 const { createElectronMissionStore, CURRENT_SCHEMA_VERSION } = require('../../electron/mission-store.cjs') as {
   readonly CURRENT_SCHEMA_VERSION: number
   readonly createElectronMissionStore: (options: {
@@ -20,6 +44,7 @@ const { createElectronMissionStore, CURRENT_SCHEMA_VERSION } = require('../../el
     readonly finalizeMissionFaultInjection?: {
       readonly afterArchiveSucceededEvent?: boolean
     }
+    readonly storageDiagnostics?: StorageDiagnosticsPort
   }) => ElectronMissionStore
 }
 const Database = require('better-sqlite3')
@@ -32,7 +57,7 @@ type ElectronMissionStore = {
     readonly database_path: string
     readonly backup_path: string
   }>
-  readonly syncBackup: () => Promise<string>
+  readonly syncBackup: (trigger?: string) => Promise<string>
   readonly createMission: (input: { readonly name: string; readonly start_time?: string }) => Promise<{ readonly id: string; readonly status: string }>
   readonly getMission: (missionId: string) => Promise<{
     readonly id: string
@@ -526,7 +551,7 @@ describe('electron mission store', () => {
     expect(auditTypes).not.toContain('position_recorded')
     expect(auditTypes).not.toContain('device_updated')
 
-    await store.syncBackup()
+    await store.syncBackup('interval')
     const auditTypesAfterBackup = (await store.listAuditEvents(mission.id)).map(
       (event) => event.event_type,
     )
@@ -706,6 +731,101 @@ describe('electron mission store', () => {
     // tracker-1 already existed (1 created earlier) → this batch: 1 update + 2 creates.
     expect(types.filter((type) => type === 'device_created')).toHaveLength(3)
     expect(types.filter((type) => type === 'device_updated')).toHaveLength(1)
+  })
+
+  it('flushes backup diagnostic phases and aggregate tracking metrics without operational identity [DON-244]', async () => {
+    const operation = { id: 'backup-operation', type: 'backup' as const, requestedAtMs: 10 }
+    const storageDiagnostics: StorageDiagnosticsPort = {
+      createOperation: vi.fn(() => operation),
+      requested: vi.fn().mockResolvedValue(undefined),
+      started: vi.fn().mockResolvedValue(undefined),
+      phase: vi.fn().mockResolvedValue(undefined),
+      completed: vi.fn().mockResolvedValue(undefined),
+      failed: vi.fn().mockResolvedValue(undefined),
+      startMission: vi.fn().mockResolvedValue(undefined),
+      recordTrackingBatch: vi.fn().mockResolvedValue(undefined),
+      recordInsertedPositions: vi.fn().mockResolvedValue(undefined),
+    }
+    store = await createStore({ storageDiagnostics })
+    const mission = await store.createMission({
+      name: 'Private Mission Name',
+      start_time: '2026-07-10T12:00:00.000Z',
+    })
+    await store.upsertDevicesBulk({
+      mission_id: mission.id,
+      devices: [
+        { device_id: 'private-device', name: 'Private Device', color: '#00AAFF', status: 'online' },
+      ],
+    })
+    await store.addPositionsBulk({
+      mission_id: mission.id,
+      positions: [
+        {
+          device_id: 'private-device',
+          lat: 52.0,
+          lon: -9.5,
+          timestamp: '2026-07-10T12:00:30.000Z',
+        },
+      ],
+    })
+    await store.syncBackup('interval')
+
+    expect(storageDiagnostics.startMission).toHaveBeenCalledWith({
+      startedAt: '2026-07-10T12:00:00.000Z',
+    })
+    expect(storageDiagnostics.recordTrackingBatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        deviceCount: 1,
+        changedDeviceEventCount: 1,
+      }),
+    )
+    expect(storageDiagnostics.recordTrackingBatch).not.toHaveBeenCalledWith(
+      expect.objectContaining({ missionId: expect.anything(), deviceId: expect.anything() }),
+    )
+    expect(storageDiagnostics.recordInsertedPositions).toHaveBeenCalledWith(
+      expect.objectContaining({
+        insertedPositionCount: 1,
+        positionTelemetryEventCount: 1,
+      }),
+    )
+    expect(storageDiagnostics.requested).toHaveBeenCalledWith(operation, {
+      queueDepth: 1,
+      trigger: 'interval',
+    })
+    expect(storageDiagnostics.started).toHaveBeenCalledWith(operation)
+    expect(vi.mocked(storageDiagnostics.phase).mock.calls.map((call) => call[1])).toEqual([
+      'copied',
+      'validation_started',
+      'validated',
+      'renamed',
+    ])
+    expect(storageDiagnostics.completed).toHaveBeenCalledWith(operation)
+    expect(storageDiagnostics.failed).not.toHaveBeenCalled()
+  })
+
+  it('keeps mission backup fail-open when diagnostics cannot create an operation token [DON-244]', async () => {
+    const storageDiagnostics: StorageDiagnosticsPort = {
+      createOperation: vi.fn(() => {
+        throw new Error('diagnostics unavailable')
+      }),
+      requested: vi.fn(),
+      started: vi.fn(),
+      phase: vi.fn(),
+      completed: vi.fn(),
+      failed: vi.fn(),
+      startMission: vi.fn(),
+      recordTrackingBatch: vi.fn(),
+      recordInsertedPositions: vi.fn(),
+    }
+    store = await createStore({ storageDiagnostics })
+    const mission = await store.createMission({ name: 'Diagnostics Failure Mission' })
+
+    await expect(store.syncBackup('interval')).resolves.toBe(
+      path.join(userDataPath!, 'mission-store.backup.sqlite'),
+    )
+    expect((await store.listMissionEvents(mission.id)).map((event) => event.event_type)).toContain(
+      'mission_backup_synced',
+    )
   })
 
   it('emits create/update/delete audit events for markers, drawings, helicopters, and GPX imports (DON-163)', async () => {
@@ -1063,6 +1183,7 @@ describe('electron mission store', () => {
     readonly finalizeMissionFaultInjection?: {
       readonly afterArchiveSucceededEvent?: boolean
     }
+    readonly storageDiagnostics?: StorageDiagnosticsPort
   } = {}): Promise<ElectronMissionStore> {
     userDataPath = await mkdtemp(path.join(tmpdir(), 'sartracker-electron-mission-'))
     return createElectronMissionStore({ userDataPath, ...options })

@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import {
   buildMissionStoreProbeVerdict,
   createBackupTimelineState,
+  createMissionStoreProbeSettings,
   isTemporaryBackupDatabaseName,
   parseMissionStoreProbeArgs,
   updateBackupTimeline,
@@ -51,6 +52,19 @@ describe('parseMissionStoreProbeArgs [DON-243]', () => {
     expect(() =>
       parseMissionStoreProbeArgs(['--app', '/a', '--fixture', '/f', '--expect', 'maybe']),
     ).toThrow('--expect')
+  })
+})
+
+describe('mission-store packaged probe settings [DON-243 DON-244]', () => {
+  it('uses the shortest supported autosave cadence with tracking and maps disabled', () => {
+    const settings = createMissionStoreProbeSettings()
+    expect(settings.missionDefaults).toMatchObject({
+      autoSaveEnabled: true,
+      autoSaveIntervalSeconds: 5,
+      autoRefreshEnabled: false,
+    })
+    expect(settings.dataSource).toMatchObject({ providerType: 'none', autoConnect: false })
+    expect(settings.officialMaps.packages).toEqual([])
   })
 })
 

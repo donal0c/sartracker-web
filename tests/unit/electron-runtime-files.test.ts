@@ -22,6 +22,7 @@ const {
     readonly safeStorageBackend: () => string
     readonly readRecentCrashes?: () => Promise<readonly unknown[]>
     readonly readRecentLog?: () => Promise<readonly unknown[]>
+    readonly readStorageDiagnostics?: () => Promise<Record<string, unknown>>
     readonly loadSettings: () => Promise<{
       readonly dataSource: {
         readonly baseUrl: string
@@ -135,6 +136,15 @@ describe('electron runtime files', () => {
         { ts: '2026-06-09T21:50:00.000Z', level: 'info', event: 'app_start', version: '0.1.0-beta.3' },
         { ts: '2026-06-09T21:55:00.000Z', level: 'warn', event: 'tracking_disconnected' },
       ],
+      readStorageDiagnostics: async () => ({
+        version: 1,
+        activeOperation: null,
+        previousInterruptedOperation: { type: 'backup', stage: 'validation_started' },
+        lastCompletedOperation: { type: 'backup', totalDurationMs: 1200 },
+        fileSizes: { databaseBytes: 100, walBytes: 20, backupBytes: 90 },
+        mission: { insertedPositionCount: 42, restartCount: 2 },
+        eventLoop: { latest: { maximumDelayMs: 5500 }, maximumObservedDelayMs: 5500 },
+      }),
     })
 
     const exportPath = await files.exportSupportBundle({
@@ -157,6 +167,9 @@ describe('electron runtime files', () => {
     expect(bundle).toContain('[runtime-log]')
     expect(bundle).toContain('app_start')
     expect(bundle).toContain('tracking_disconnected')
+    expect(bundle).toContain('[storage-diagnostics]')
+    expect(bundle).toContain('previous interrupted operation: backup validation_started')
+    expect(bundle).toContain('event loop peak delay ms: 5500')
   })
 
   it('exports a time-framed support bundle around a known incident time', async () => {
@@ -277,6 +290,7 @@ describe('electron runtime files', () => {
     logOverrides: {
       readonly readRecentCrashes?: () => Promise<readonly unknown[]>
       readonly readRecentLog?: () => Promise<readonly unknown[]>
+      readonly readStorageDiagnostics?: () => Promise<Record<string, unknown>>
       readonly baseUrl?: string
     } = {},
   ) {
@@ -284,6 +298,7 @@ describe('electron runtime files', () => {
     return createElectronRuntimeFiles({
       readRecentCrashes: logOverrides.readRecentCrashes,
       readRecentLog: logOverrides.readRecentLog,
+      readStorageDiagnostics: logOverrides.readStorageDiagnostics,
       userDataPath,
       versions: {
         electron: '40.10.0',

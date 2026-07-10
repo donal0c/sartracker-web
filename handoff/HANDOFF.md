@@ -38,16 +38,30 @@
   memory high-water, per-cycle phase timings, and fail-closed JSON verdicts are under
   `~/sartracker-beta12-msr/evidence/beta11-field-run-{1,2,3}/`. Durable summary:
   `docs/releases/beta12-mission-store-baseline.md`.
-- **Next:** `DON-244` durable bounded diagnostics, then `DON-240` backup fix, `DON-245` redundant
-  write removal, `DON-246` soak, and `DON-247` release/field confirmation. Production hot-path
-  code is still unchanged.
+- **Completed checkpoint:** `DON-244` bounded storage diagnostics are implemented and packaged-
+  verified. The existing rotated runtime log plus a ~1 KiB atomic checkpoint record backup phase,
+  queue/timing, file sizes, aggregate tracking/multi-day counters, and 30 s event-loop summaries
+  without operational identity. Final candidate AppImage
+  `fdaae964…` was SIGKILLed only after `validation_started` flushed against the 3.704 GB field
+  fixture; restart/export retained that exact interrupted phase, measured a 6.858 s event-loop
+  stall, and reported a later successful 11.439 s backup. Main DB integrity stayed `ok`, the active
+  mission survived, and privacy scan passed. Evidence:
+  `~/sartracker-beta12-msr/evidence/don244-kill-observed/`; durable summary:
+  `docs/releases/beta12-storage-diagnostics-evidence.md`.
+- **Next:** `DON-240` removes synchronous full integrity checking from periodic autosave while
+  preserving atomic temp+rename backup and visible failure semantics. Then `DON-245` redundant
+  write removal, `DON-246` soak, and `DON-247` release/field confirmation.
 - **Release split:** beta.12 is the narrow field-freeze/observability release. Beta.13 owns
   migrations, retention, safe legacy recovery, mission-scoped streamed archives, and
   archive-backed review/unlock.
 - **Verification:** `DON-242`: lint, build, unit 155 files / 1,096 tests, Playwright 163/163,
   backend 47 passed / 1 ignored, Ubuntu fixture integrity/reopen. `DON-243`: probe units 9/9,
   checksum-verified beta.11 AppImage, small-fixture healthy shakedown, and three valid packaged
-  field runs with nine completed autosaves and repeatable main-process freezes.
+  field runs with nine completed autosaves and repeatable main-process freezes. `DON-244`: lint,
+  build/package, unit 158 files / 1,121 tests, Playwright
+  163/163, visual reviewer 39/39, backend 47 passed / 1 ignored, packaged Ubuntu forced-kill/
+  restart/support-export proof, post-kill SQLite integrity, and privacy scan. Final unit/package
+  verification passed after the release-tooling error-path regression was added.
 
 ## Historical DON-240 planning snapshot — superseded by `DON-241`
 

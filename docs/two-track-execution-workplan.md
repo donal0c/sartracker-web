@@ -137,8 +137,8 @@ This is the default order when the user says “work on the next task.”
 | --- | --- | --- | --- | --- |
 | Done | Build deterministic field-scale mission-store fixtures | S2 Electron / Verification | `DON-242` | Small/CI/local/field plus 5-day and 14-day continuous-mission presets; Ubuntu field fixture is 3.704 GB with measured table accounting and restart checkpoints. |
 | Done | Reproduce and attribute beta.11 freeze on packaged Ubuntu | S2 Electron / Verification | `DON-243` | Three independent packaged runs: main stalls 5.70-5.82 s; integrity validation 6.11-6.36 s across nine autosaves. |
-| **Next** | Add durable mission-store performance diagnostics and incident evidence | S2 Electron / Diagnostics | `DON-244` | Must survive forced kill/restart and remain bounded/sanitized. |
-| Todo | Remove the mission-store backup freeze from periodic autosave | S2 Electron / Persistence | `DON-240` | Narrow beta.12 hot-path fix; preserve atomic backup and visible failure semantics. |
+| Done | Add durable mission-store performance diagnostics and incident evidence | S2 Electron / Diagnostics | `DON-244` | Packaged field-fixture SIGKILL/restart/export proof passed; interrupted phase and 6.858 s event-loop stall survive in a sanitized bounded bundle. |
+| **Next** | Remove the mission-store backup freeze from periodic autosave | S2 Electron / Persistence | `DON-240` | Narrow beta.12 hot-path fix; preserve atomic backup and visible failure semantics. |
 | Todo | Change-gate tracking audit writes and remove position event echoes | S2 Electron / Tracking | `DON-245` | Preserve real positions and `last_seen`; remove redundant telemetry slope. |
 | Todo | Add accelerated packaged tracking soak and growth-budget gate | S2 Electron / Verification | `DON-246` | Report real-data growth separately from redundant telemetry. |
 | Todo | Qualify beta.12 CI artifact on Ubuntu and original field machine | S2 Electron / Release | `DON-247` | Three consecutive Ubuntu passes, full packaged smoke, then original-machine confirmation. |
@@ -293,8 +293,12 @@ Execution is deliberately sequential:
    field-scale autosaves. Each run reproduced a 5.70-5.82 s main-process stall; external backup
    phase timing isolated 2.45-3.96 s copy phases and 6.11-6.36 s synchronous integrity-validation
    phases. See `docs/releases/beta12-mission-store-baseline.md`.
-3. `DON-244` — durable, bounded, sanitized storage timings and interrupted-operation evidence in
-   the incident bundle.
+3. `DON-244` — **Done locally 2026-07-10.** Bounded storage checkpoints, runtime events, aggregate
+   multi-day counters, and event-loop summaries now flow into the sanitized support bundle. A
+   packaged Ubuntu field-fixture run was killed only after `validation_started` flushed, then
+   restarted and exported a bundle that retained the exact interrupted phase and measured a
+   6.858 s main-event-loop stall. Database integrity and mission continuity remained intact; the
+   privacy scan passed. See `docs/releases/beta12-storage-diagnostics-evidence.md`.
 4. `DON-240` — remove full integrity checking from periodic autosave while preserving atomic
    backup and visible failures.
 5. `DON-245` — change-gate `device_updated` and remove redundant `position_recorded` echoes while

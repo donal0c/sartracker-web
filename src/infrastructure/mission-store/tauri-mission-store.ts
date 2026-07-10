@@ -266,7 +266,7 @@ export type UpsertDrawingInput = {
 
 export type MissionStore = {
   readonly info: () => Promise<MissionStoreInfo>
-  readonly syncBackup: () => Promise<string>
+  readonly syncBackup: (trigger?: string) => Promise<string>
   readonly createMissionArchive: (missionId: string) => Promise<MissionArchiveInfo>
   readonly createMission: (input: CreateMissionInput) => Promise<Mission>
   readonly upsertDevice: (input: UpsertDeviceInput) => Promise<Device>

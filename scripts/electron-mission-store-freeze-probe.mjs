@@ -27,6 +27,7 @@ import { sanitizeEvidenceText } from '../build/electron-official-map-offline-smo
 import {
   buildMissionStoreProbeVerdict,
   createBackupTimelineState,
+  createMissionStoreProbeSettings,
   isTemporaryBackupDatabaseName,
   parseMissionStoreProbeArgs,
   updateBackupTimeline,
@@ -61,7 +62,7 @@ async function main() {
   await copyFile(options.fixturePath, databasePath)
   const fixtureCopyDurationMs = Date.now() - fixtureCopyStartedAtMs
   await copyFixtureManifestIfPresent(options.fixturePath, databasePath)
-  await writeJson(path.join(userDataDir, 'settings.json'), createProbeSettings())
+  await writeJson(path.join(userDataDir, 'settings.json'), createMissionStoreProbeSettings())
 
   const port = await findFreePort()
   const inspectorPort = await findFreePort()
@@ -374,44 +375,6 @@ async function connectMainInspector(port, appProcess) {
 /** Collects renderer frame gaps after all backup cycles drain. */
 async function collectRendererResponsivenessProbe(page) {
   return page.evaluate(() => window.__MISSION_STORE_FREEZE_PROBE__?.rendererGaps ?? [])
-}
-
-/** Creates isolated settings with the shortest supported real autosave interval. */
-function createProbeSettings() {
-  return {
-    missionDefaults: {
-      autoRefreshEnabled: false,
-      autoRefreshIntervalSeconds: 30,
-      autoSaveEnabled: true,
-      autoSaveIntervalSeconds: 5,
-      primaryMissionRoot: '',
-      backupMissionRoot: '',
-      coordinatorRoster: [],
-      adminRoster: [],
-    },
-    dataSource: {
-      providerType: 'none',
-      baseUrl: '',
-      authMode: 'basic',
-      email: '',
-      autoConnect: false,
-      trackingCacheEnabled: true,
-      replayEnabled: false,
-      replayStart: '',
-      replayDurationHours: 4,
-    },
-    officialMaps: {
-      sourceType: 'none',
-      sourcePath: '',
-      status: 'not_configured',
-      username: '',
-      availableSources: [],
-      serviceCount: 0,
-      message: 'Official maps are not configured.',
-      packages: [],
-    },
-    weather: { links: [] },
-  }
 }
 
 async function copyFixtureManifestIfPresent(sourcePath, targetPath) {

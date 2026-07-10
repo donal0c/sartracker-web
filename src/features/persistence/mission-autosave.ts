@@ -14,7 +14,7 @@ type MissionLike = {
 
 export type AutosaveStore = {
   readonly getActiveMission: () => Promise<MissionLike | null>
-  readonly syncBackup: () => Promise<string>
+  readonly syncBackup: (reason?: AutosaveSyncReason) => Promise<string>
 }
 
 type AutosaveLogger = {
@@ -147,7 +147,7 @@ export function startMissionAutosave(
         reason: input.reason,
         now: now(),
       })
-      const backupPath = await store.syncBackup()
+      const backupPath = await store.syncBackup(input.reason)
       useAutosaveStatusStore.getState().markSyncSucceeded({
         reason: input.reason,
         backupPath,

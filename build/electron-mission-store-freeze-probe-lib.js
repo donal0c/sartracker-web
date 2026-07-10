@@ -82,6 +82,44 @@ export function parseMissionStoreProbeArgs(argv) {
   }
 }
 
+/** Creates isolated settings for packaged mission-store probes. */
+export function createMissionStoreProbeSettings() {
+  return {
+    missionDefaults: {
+      autoRefreshEnabled: false,
+      autoRefreshIntervalSeconds: 30,
+      autoSaveEnabled: true,
+      autoSaveIntervalSeconds: 5,
+      primaryMissionRoot: '',
+      backupMissionRoot: '',
+      coordinatorRoster: [],
+      adminRoster: [],
+    },
+    dataSource: {
+      providerType: 'none',
+      baseUrl: '',
+      authMode: 'basic',
+      email: '',
+      autoConnect: false,
+      trackingCacheEnabled: true,
+      replayEnabled: false,
+      replayStart: '',
+      replayDurationHours: 4,
+    },
+    officialMaps: {
+      sourceType: 'none',
+      sourcePath: '',
+      status: 'not_configured',
+      username: '',
+      availableSources: [],
+      serviceCount: 0,
+      message: 'Official maps are not configured.',
+      packages: [],
+    },
+    weather: { links: [] },
+  }
+}
+
 /** Creates the immutable initial state for backup-copy/validation timing. */
 export function createBackupTimelineState({ databaseBytes }) {
   if (!Number.isFinite(databaseBytes) || databaseBytes <= 0) {

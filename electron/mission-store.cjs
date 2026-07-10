@@ -21,12 +21,18 @@ function createElectronMissionStore(options) {
   const archiveDirectory = path.join(options.userDataPath, ARCHIVE_DIRECTORY_NAME)
   const finalizeMissionFaultInjection = options.finalizeMissionFaultInjection ?? {}
   const archiveFaultInjection = options.archiveFaultInjection ?? {}
+  const storageDiagnostics = options.storageDiagnostics ?? null
   const db = new Database(databasePath)
   db.pragma('journal_mode = WAL')
   db.pragma('synchronous = FULL')
   db.pragma('foreign_keys = ON')
   migrate(db)
-  const backupCoordinator = createBackupCoordinator(db, backupPath, options.backupFaultInjection ?? {})
+  const backupCoordinator = createBackupCoordinator(
+    db,
+    backupPath,
+    options.backupFaultInjection ?? {},
+    storageDiagnostics,
+  )
   let finalizeTail = Promise.resolve()
   const enqueueFinalize = (missionId) => {
     const run = finalizeTail.then(() =>
@@ -51,16 +57,45 @@ function createElectronMissionStore(options) {
       database_path: databasePath,
       backup_path: backupPath,
     }),
-    syncBackup: async () => backupCoordinator.syncBackup(),
+    syncBackup: async (trigger) => backupCoordinator.syncBackup(trigger),
     createMissionArchive: async (missionId) =>
       createMissionArchive(db, missionId, backupCoordinator, archiveDirectory, true, archiveFaultInjection),
-    createMission: async (input) => createMission(db, input),
+    createMission: async (input) => {
+      const mission = createMission(db, input)
+      await safeStorageDiagnostic(() =>
+        storageDiagnostics?.startMission({ startedAt: mission.start_time }),
+      )
+      return mission
+    },
     upsertDevice: async (input) => upsertDevice(db, input),
-    upsertDevicesBulk: async (input) => upsertDevicesBulk(db, input),
+    upsertDevicesBulk: async (input) => {
+      const startedAtMs = performance.now()
+      const devices = upsertDevicesBulk(db, input)
+      await safeStorageDiagnostic(() =>
+        storageDiagnostics?.recordTrackingBatch({
+          durationMs: performance.now() - startedAtMs,
+          deviceCount: devices.length,
+          changedDeviceEventCount: devices.length,
+          observedAt: new Date().toISOString(),
+        }),
+      )
+      return devices
+    },
     getDevice: async (missionId, deviceId) => getDevice(db, missionId, deviceId),
     listDevices: async (missionId) => all(db, 'SELECT * FROM devices WHERE mission_id = ? ORDER BY name ASC', missionId),
     addPosition: async (input) => addPosition(db, input),
-    addPositionsBulk: async (input) => addPositionsBulk(db, input),
+    addPositionsBulk: async (input) => {
+      const startedAtMs = performance.now()
+      const positions = addPositionsBulk(db, input)
+      await safeStorageDiagnostic(() =>
+        storageDiagnostics?.recordInsertedPositions({
+          durationMs: performance.now() - startedAtMs,
+          insertedPositionCount: positions.length,
+          positionTelemetryEventCount: positions.length,
+        }),
+      )
+      return positions
+    },
     listPositions: async (missionId, deviceId) =>
       deviceId === undefined
         ? all(db, 'SELECT * FROM positions WHERE mission_id = ? ORDER BY timestamp ASC', missionId)
@@ -286,8 +321,9 @@ function ensureColumnExists(db, tableName, columnName, columnSql) {
   db.prepare(`ALTER TABLE ${tableName} ADD COLUMN ${columnName} ${columnSql}`).run()
 }
 
-function createBackupCoordinator(db, backupPath, faultInjection) {
+function createBackupCoordinator(db, backupPath, faultInjection, storageDiagnostics) {
   let backupTail = Promise.resolve()
+  let queueDepth = 0
 
   const enqueue = (task) => {
     const run = backupTail.then(task, task)
@@ -296,21 +332,67 @@ function createBackupCoordinator(db, backupPath, faultInjection) {
   }
 
   return {
-    syncBackup: () => enqueue(() => syncBackup(db, backupPath, faultInjection)),
+    syncBackup: async (trigger = 'unknown') => {
+      const operation = createStorageDiagnosticOperation(storageDiagnostics)
+      queueDepth += 1
+      await safeStorageDiagnostic(() =>
+        operation === null
+          ? undefined
+          : storageDiagnostics.requested(operation, { queueDepth, trigger }),
+      )
+      return enqueue(async () => {
+        queueDepth = Math.max(0, queueDepth - 1)
+        return syncBackup(db, backupPath, faultInjection, storageDiagnostics, operation)
+      })
+    },
   }
 }
 
-async function syncBackup(db, backupPath, faultInjection = {}) {
+async function syncBackup(
+  db,
+  backupPath,
+  faultInjection = {},
+  storageDiagnostics = null,
+  operation = null,
+) {
   await fs.mkdir(path.dirname(backupPath), { recursive: true })
   const temporaryPath = `${backupPath}.tmp-${randomUUID()}`
+  let stage = 'started'
   try {
+    await safeStorageDiagnostic(() =>
+      operation === null ? undefined : storageDiagnostics.started(operation),
+    )
     await db.backup(temporaryPath)
+    stage = 'copied'
+    await safeStorageDiagnostic(() =>
+      operation === null ? undefined : storageDiagnostics.phase(operation, stage),
+    )
+    stage = 'validation_started'
+    await safeStorageDiagnostic(() =>
+      operation === null ? undefined : storageDiagnostics.phase(operation, stage),
+    )
     await validateSqliteDatabaseFile(temporaryPath, 'Rolling mission backup')
+    stage = 'validated'
+    await safeStorageDiagnostic(() =>
+      operation === null ? undefined : storageDiagnostics.phase(operation, stage),
+    )
     if (faultInjection.afterTemporaryBackup === true) {
       throw new Error('Injected backup interruption after temporary backup.')
     }
     await fs.rename(temporaryPath, backupPath)
+    stage = 'renamed'
+    await safeStorageDiagnostic(() =>
+      operation === null ? undefined : storageDiagnostics.phase(operation, stage),
+    )
   } catch (error) {
+    await safeStorageDiagnostic(() =>
+      operation === null
+        ? undefined
+        : storageDiagnostics.failed(operation, {
+            stage,
+            errorName: error instanceof Error ? error.name : 'UnknownError',
+          }),
+    )
     await removeSqliteFileSet(temporaryPath)
     throw error
   }
@@ -319,7 +401,26 @@ async function syncBackup(db, backupPath, faultInjection = {}) {
   if (activeMission !== null) {
     appendEvent(db, activeMission.id, 'mission_backup_synced', { backup_path: backupPath })
   }
+  await safeStorageDiagnostic(() =>
+    operation === null ? undefined : storageDiagnostics.completed(operation),
+  )
   return backupPath
+}
+
+async function safeStorageDiagnostic(callback) {
+  try {
+    await callback?.()
+  } catch {
+    // Diagnostics are fail-open: a local log/checkpoint failure must never block mission storage.
+  }
+}
+
+function createStorageDiagnosticOperation(storageDiagnostics) {
+  try {
+    return storageDiagnostics?.createOperation('backup') ?? null
+  } catch {
+    return null
+  }
 }
 
 async function removeSqliteFileSet(databasePath) {

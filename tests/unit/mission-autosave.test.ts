@@ -42,6 +42,7 @@ describe('mission autosave', () => {
 
     expect(store.getActiveMission).toHaveBeenCalledTimes(1)
     expect(store.syncBackup).toHaveBeenCalledTimes(1)
+    expect(store.syncBackup).toHaveBeenCalledWith('interval')
     expect(useAutosaveStatusStore.getState().lastSuccessAt).not.toBeNull()
 
     autosave.stop()
@@ -95,6 +96,7 @@ describe('mission autosave', () => {
 
     expect(store.getActiveMission).not.toHaveBeenCalled()
     expect(store.syncBackup).toHaveBeenCalledTimes(1)
+    expect(store.syncBackup).toHaveBeenCalledWith('mission-finish')
     expect(useAutosaveStatusStore.getState().lastSuccessReason).toBe('mission-finish')
 
     autosave.stop()

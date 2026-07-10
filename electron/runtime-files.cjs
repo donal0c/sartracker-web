@@ -3,6 +3,7 @@ const path = require('node:path')
 const os = require('node:os')
 
 const { sanitizeDiagnosticText } = require('./diagnostic-sanitizer.cjs')
+const { formatStorageDiagnostics } = require('./storage-diagnostics-format.cjs')
 
 const TRACKING_CACHE_FILE_NAME = 'tracking-cache.json'
 const DIAGNOSTICS_DIR_NAME = 'diagnostics-reports'
@@ -29,6 +30,10 @@ function createElectronRuntimeFiles(options) {
     typeof options.readRecentCrashes === 'function' ? options.readRecentCrashes : async () => []
   const readRecentLog =
     typeof options.readRecentLog === 'function' ? options.readRecentLog : async () => []
+  const readStorageDiagnostics =
+    typeof options.readStorageDiagnostics === 'function'
+      ? options.readStorageDiagnostics
+      : async () => null
 
   return {
     readTrackingCache,
@@ -59,10 +64,11 @@ function createElectronRuntimeFiles(options) {
 
   async function exportSupportBundle(input) {
     const incidentWindow = normalizeIncidentWindow(input?.timeFrame)
-    const [report, crashes, logEntries] = await Promise.all([
+    const [report, crashes, logEntries, storageDiagnostics] = await Promise.all([
       buildReport(input.contents),
       readRecentCrashes().catch(() => []),
       readRecentLog().catch(() => []),
+      readStorageDiagnostics().catch(() => null),
     ])
     const bundle = [
       report,
@@ -70,6 +76,8 @@ function createElectronRuntimeFiles(options) {
       formatCrashHistory(filterEntriesByIncidentWindow(crashes, incidentWindow)),
       '',
       formatRuntimeLog(filterEntriesByIncidentWindow(logEntries, incidentWindow)),
+      '',
+      formatStorageDiagnostics(storageDiagnostics ?? {}),
       '',
     ].join('\n')
     return writeReport(input.fileName, bundle)

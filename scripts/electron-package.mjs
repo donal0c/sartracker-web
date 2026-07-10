@@ -10,23 +10,6 @@ const rebuildMarkerPaths = [
   path.join(projectRoot, 'node_modules', 'better-sqlite3', 'build', 'Release', '.forge-meta'),
 ]
 
-let exitCode = 0
-
-try {
-  runRequired('npm', ['run', 'build'])
-  removeElectronRebuildMarkers()
-  runRequired('npm', ['exec', '--', 'electron-builder', '--config', 'electron-builder.json', ...process.argv.slice(2)])
-} catch (error) {
-  exitCode = error instanceof CommandFailure ? error.exitCode : 1
-} finally {
-  const restore = runOptional('npm', ['rebuild', 'better-sqlite3'])
-  if (restore !== 0 && exitCode === 0) {
-    exitCode = restore
-  }
-}
-
-process.exit(exitCode)
-
 function removeElectronRebuildMarkers() {
   for (const markerPath of rebuildMarkerPaths) {
     rmSync(markerPath, { force: true })
@@ -54,3 +37,20 @@ class CommandFailure extends Error {
     this.exitCode = exitCode
   }
 }
+
+let exitCode = 0
+
+try {
+  runRequired('npm', ['run', 'build'])
+  removeElectronRebuildMarkers()
+  runRequired('npm', ['exec', '--', 'electron-builder', '--config', 'electron-builder.json', ...process.argv.slice(2)])
+} catch (error) {
+  exitCode = error instanceof CommandFailure ? error.exitCode : 1
+} finally {
+  const restore = runOptional('npm', ['rebuild', 'better-sqlite3'])
+  if (restore !== 0 && exitCode === 0) {
+    exitCode = restore
+  }
+}
+
+process.exit(exitCode)

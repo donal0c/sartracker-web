@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm, stat } from 'node:fs/promises'
+import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { createRequire } from 'node:module'
@@ -23,6 +23,11 @@ type RuntimeLogEntry = {
 
 type RuntimeLog = {
   readonly append: (input: {
+    readonly level: string
+    readonly event: string
+    readonly fields?: Record<string, unknown>
+  }) => Promise<void>
+  readonly appendDurable: (input: {
     readonly level: string
     readonly event: string
     readonly fields?: Record<string, unknown>
@@ -129,6 +134,16 @@ describe('electron runtime log', () => {
   it('returns an empty list when no log file exists yet', async () => {
     const log = await createLog()
     await expect(log.readRecent()).resolves.toEqual([])
+  })
+
+  it('offers a durable append that exposes write failure while normal logging stays fail-open [DON-244]', async () => {
+    userDataPath = await mkdtemp(path.join(tmpdir(), 'sartracker-runtime-log-failure-'))
+    const invalidUserDataPath = path.join(userDataPath, 'not-a-directory')
+    await writeFile(invalidUserDataPath, 'file')
+    const log = createRuntimeLog({ userDataPath: invalidUserDataPath })
+
+    await expect(log.appendDurable({ level: 'info', event: 'storage_backup_started' })).rejects.toThrow()
+    await expect(log.append({ level: 'info', event: 'ordinary_best_effort_log' })).resolves.toBeUndefined()
   })
 
   async function createLog(

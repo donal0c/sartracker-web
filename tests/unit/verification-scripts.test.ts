@@ -1,5 +1,7 @@
-import { readFileSync } from 'node:fs'
+import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { spawnSync } from 'node:child_process'
 
 import { describe, expect, it } from 'vitest'
 
@@ -38,6 +40,33 @@ describe('project verification scripts', () => {
     )
 
     expect(builderConfig.buildDependenciesFromSource).toBe(true)
+  })
+
+  it('preserves the failed packaging command exit code while restoring native dependencies', () => {
+    const fakeBinDirectory = mkdtempSync(join(tmpdir(), 'sartracker-package-failure-'))
+    const fakeNpmPath = join(fakeBinDirectory, 'npm')
+    writeFileSync(
+      fakeNpmPath,
+      '#!/bin/sh\nif [ "$1" = "rebuild" ]; then exit 0; fi\nexit 7\n',
+      'utf8',
+    )
+    chmodSync(fakeNpmPath, 0o755)
+
+    try {
+      const result = spawnSync(process.execPath, ['scripts/electron-package.mjs', '--dir'], {
+        cwd: process.cwd(),
+        env: {
+          ...process.env,
+          PATH: `${fakeBinDirectory}:${process.env.PATH ?? ''}`,
+        },
+        encoding: 'utf8',
+      })
+
+      expect(result.status).toBe(7)
+      expect(result.stderr).not.toContain('ReferenceError')
+    } finally {
+      rmSync(fakeBinDirectory, { recursive: true, force: true })
+    }
   })
 })
 

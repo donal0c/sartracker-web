@@ -36,13 +36,24 @@ function createRuntimeLog(options) {
 
   return {
     append,
+    appendDurable,
     readRecent,
     logFilePath,
   }
 
   function append(input) {
-    writeChain = writeChain.then(() => appendInternal(input)).catch(() => {})
-    return writeChain
+    return appendDurable(input).catch(() => {})
+  }
+
+  /**
+   * Flushes an entry through the serialized write chain and exposes write failure.
+   * Storage-operation start markers use this before entering blocking work; ordinary
+   * best-effort logging continues to use `append`, which never breaks app flow.
+   */
+  function appendDurable(input) {
+    const run = writeChain.then(() => appendInternal(input))
+    writeChain = run.catch(() => {})
+    return run
   }
 
   async function appendInternal(input) {

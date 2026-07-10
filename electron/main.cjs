@@ -9,6 +9,7 @@ const {
   shell,
 } = require('electron')
 const path = require('node:path')
+const { monitorEventLoopDelay } = require('node:perf_hooks')
 const { fileURLToPath, pathToFileURL } = require('node:url')
 
 const { createElectronSettingsStore } = require('./settings-store.cjs')
@@ -18,6 +19,7 @@ const { createElectronFileSystem } = require('./file-system.cjs')
 const { createElectronOfficialMapProxy } = require('./official-map-proxy.cjs')
 const { createRuntimeLog } = require('./runtime-log.cjs')
 const { createCrashLog, isRendererFaultReason } = require('./crash-log.cjs')
+const { createStorageDiagnostics } = require('./storage-diagnostics.cjs')
 
 const TRACCAR_REQUEST_CHANNEL = 'sartracker:traccar-http-request'
 const LOAD_SETTINGS_CHANNEL = 'sartracker:load-app-settings'
@@ -99,6 +101,7 @@ const electronRuntimeContext = {
   crashLog: null,
   runtimeLog: null,
   officialMapProxy: null,
+  stopEventLoopDiagnostics: null,
 }
 
 configureLinuxSecretStorage()
@@ -692,6 +695,12 @@ async function startElectronApp() {
   installValidationNetworkBlock()
   const userDataPath = app.getPath('userData')
   const runtimeLog = createRuntimeLog({ userDataPath })
+  const storageDiagnostics = createStorageDiagnostics({
+    userDataPath,
+    runtimeLog,
+    validationMode: validationUserDataPath !== undefined,
+  })
+  await storageDiagnostics.initialize()
   const crashLog = createCrashLog({ userDataPath })
   electronRuntimeContext.crashLog = crashLog
   electronRuntimeContext.runtimeLog = runtimeLog
@@ -709,6 +718,14 @@ async function startElectronApp() {
     userDataPath,
     safeStorage,
   })
+  void settingsStore
+    .loadRuntimeBootstrapSettings()
+    .then((runtimeBootstrap) =>
+      storageDiagnostics.configurePolling({
+        configuredPollIntervalMs: runtimeBootstrap.trackingPollIntervalMs,
+      }),
+    )
+    .catch(() => undefined)
   const runtimeFiles = createElectronRuntimeFiles({
     userDataPath,
     versions: process.versions,
@@ -720,14 +737,28 @@ async function startElectronApp() {
     loadSettings: settingsStore.loadAppSettings,
     readRecentCrashes: () => crashLog.readRecent(10),
     readRecentLog: () => runtimeLog.readRecent(1000),
+    readStorageDiagnostics: () => storageDiagnostics.readSupportSnapshot(),
   })
   const missionStore = createElectronMissionStore({
     userDataPath: app.getPath('userData'),
+    storageDiagnostics,
     readAdminRoster: async () => {
       const settings = await settingsStore.loadAppSettings()
       return settings.missionDefaults.adminRoster
     },
   })
+  void missionStore
+    .info()
+    .then((missionStoreInfo) =>
+      storageDiagnostics.configureStore({
+        schemaVersion: missionStoreInfo.schema_version,
+      }),
+    )
+    .catch(() => undefined)
+  const activeMission = await missionStore.getActiveMission()
+  if (activeMission !== null) {
+    await storageDiagnostics.recordRestart({ startedAt: activeMission.start_time })
+  }
   const fileSystem = createElectronFileSystem({
     userDataPath: app.getPath('userData'),
     dialog,
@@ -749,6 +780,7 @@ async function startElectronApp() {
     runtimeLog,
   )
   await createWindow(crashLog, runtimeLog)
+  electronRuntimeContext.stopEventLoopDiagnostics = startEventLoopDiagnostics(storageDiagnostics)
 
   app.on('before-quit', (event) => {
     // Record an intentional shutdown so the next launch does not show a false
@@ -756,6 +788,30 @@ async function startElectronApp() {
     event.preventDefault()
     void markCleanExitAndQuit(crashLog, officialMapProxy)
   })
+}
+
+/** Records one bounded event-loop delay summary every 30 seconds. */
+function startEventLoopDiagnostics(storageDiagnostics) {
+  const histogram = monitorEventLoopDelay({ resolution: 20 })
+  histogram.enable()
+  const intervalMs = 30_000
+  const timer = setInterval(() => {
+    const maximumDelayMs = histogram.max / 1_000_000
+    const p99DelayMs = histogram.percentile(99) / 1_000_000
+    histogram.reset()
+    void storageDiagnostics
+      .recordEventLoopSummary({
+        intervalMs,
+        maximumDelayMs,
+        p99DelayMs,
+      })
+      .catch(() => undefined)
+  }, intervalMs)
+  timer.unref?.()
+  return () => {
+    clearInterval(timer)
+    histogram.disable()
+  }
 }
 
 let cleanExitInProgress = false

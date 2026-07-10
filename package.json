@@ -17,6 +17,7 @@
     "electron:smoke:bad-secret": "node scripts/electron-bad-secret-smoke.mjs",
     "electron:smoke:map-freeze": "node scripts/electron-map-freeze-probe.mjs",
     "electron:smoke:mission-store-freeze": "node scripts/electron-mission-store-freeze-probe.mjs",
+    "electron:smoke:storage-kill": "node scripts/electron-storage-diagnostics-kill-probe.mjs",
     "mission-store:seed": "node scripts/seed-mission-store.mjs",
     "lint": "eslint .",
     "preview": "vite preview",
