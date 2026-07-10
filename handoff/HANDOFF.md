@@ -7,7 +7,7 @@
 - **Branch:** `master` is canonical and should be worked directly unless Donal says otherwise.
 - **Desktop lane:** Electron is operational. Tauri remains historical/reference.
 - **Hosted browser:** `https://sartracker-web.vercel.app/?missionHarness=1` is testing/training only; browser storage is not operational persistence.
-- **Latest replacement beta:** `electron-v0.1.0-beta.11` is the DON-240 fsync-storm fix candidate, cut from `4f13da2` after GitHub Actions release run `28972979120` passed and Ubuntu packaged smoke completed on the CI-built AppImage. Release note: `docs/releases/sartracker-electron-0.1.0-beta.11.md`. It still needs the original slow PCLinuxOS/team machine to confirm the field freeze is gone.
+- **Latest replacement beta:** `electron-v0.1.0-beta.11` (cut from `4f13da2`, run `28972979120`, note: `docs/releases/sartracker-electron-0.1.0-beta.11.md`). **Field retest 2026-07-09: beta.11 STILL froze.** Its fsync-storm theory is superseded — see "DON-240 ROOT CAUSE CONFIRMED" below. The team is currently unblocked by a manual workaround (renamed the 3.69 GB `mission-store.sqlite` aside; fresh DB → no freeze).
 - **Held betas:** `electron-v0.1.0-beta.9` and `electron-v0.1.0-beta.10` are **ON HOLD** for the Linux tracking-online freeze. Do not roll them out further.
 - **Previous beta:** `electron-v0.1.0-beta.8`, published 2026-06-23 after GitHub Actions run `28012741523` and a deep Ubuntu packaged smoke (43/43) on the CI-built post-fix artifact (AppImage sha `43067cb2…`). Team artifact: https://github.com/donal0c/sartracker-web/releases/tag/electron-v0.1.0-beta.8`.
 - **Beta.8 release evidence:** tag `electron-v0.1.0-beta.8` (HEAD `34e3fc1`); CI release run `28012741523` is **green** and the deep Ubuntu packaged smoke PASSED on that CI-built artifact. Release note: `docs/releases/sartracker-electron-0.1.0-beta.8.md`.
@@ -17,7 +17,73 @@
   - Ubuntu box note: `donal@192.168.18.31` was upgraded off Wayland to **X11** (kernel 6.17); drive packaged smoke with `--ozone-platform=x11` (Wayland flag segfaults). Beta.8 smoke scripts live on the box at `~/sartracker-don147-validation/repo/tmp/beta8-smoke/`; evidence mirrored to repo `output/beta8-ubuntu-smoke/evidence-fixed/`.
   - **Smoke result: 43/43 across lifecycle, duplicate-launch (DON-180), safety+diagnostics (DON-226), settings-safety (DON-207/204/208), UI-polish (DON-195/223/197), live Traccar (online 33 devices/8 fixes), and offline Discovery map.**
 
-## DON-240 beta.11 status (2026-07-08)
+## DON-241 Mission Store Reliability — active baton (2026-07-10)
+
+- **Programme:** `DON-241`; beta.12 children `DON-242`-`DON-247`, beta.13 children
+  `DON-248`-`DON-255`. Linear blocker relations are the execution order.
+- **Completed checkpoint:** `DON-242` deterministic fixture generator is implemented and fully
+  verified locally. It provides small (8 MiB), CI (128 MiB), local (1 GiB), field (~3.7 GB),
+  five-day, and fourteen-day presets using the real schema, synthetic-only records, atomic cache
+  replacement, streamed checksums, copy-on-test isolation, manifests, dbstat byte accounting, and
+  exact restart checkpoints.
+- **Ubuntu evidence:** `donal@192.168.18.31`, kernel 6.17, 338 GB free. Cached under
+  `~/sartracker-beta12-msr/fixtures/`: five-day 1.254 GB, fourteen-day 3.514 GB, field 3.704 GB.
+  All reopen through the beta.11 adapter and pass full integrity checks. The field fixture contains
+  32 devices, 2.04 million real positions, and 10.24 million redundant telemetry rows; about
+  3.03 GB is `mission_events` and 672 MB is real positions.
+- **Next:** `DON-243` extends the packaged probe and must reproduce/attribute beta.11 on Ubuntu
+  before any hot-path fix. Then `DON-244` diagnostics, `DON-240` backup fix, `DON-245` redundant
+  write removal, `DON-246` soak, and `DON-247` release/field confirmation.
+- **Release split:** beta.12 is the narrow field-freeze/observability release. Beta.13 owns
+  migrations, retention, safe legacy recovery, mission-scoped streamed archives, and
+  archive-backed review/unlock.
+- **Verification for `DON-242`:** lint, build, unit 155 files / 1,096 tests, Playwright 163/163
+  (Chromium + visual), backend 47 passed / 1 ignored, and Ubuntu fixture integrity/reopen checks.
+
+## Historical DON-240 planning snapshot — superseded by `DON-241`
+
+**Beta.11 froze again in the field. The disk/fsync theory is dead** — the field machine is a fast
+Ryzen 7 9700X with NVMe. The real evidence: field `mission-store.sqlite` was **3.69 GB**; the tester
+renamed it aside, the app started on a fresh DB, and the freeze was gone.
+
+Confirmed chain (all verified on `master`, evidence + line refs in the workplan MSR chunk):
+1. **Freeze:** DON-232 commit `1799b2c` (shipped in beta.9) added a synchronous, non-yielding
+   `PRAGMA integrity_check` over the full backup inside `syncBackup`
+   (`electron/mission-store.cjs:303-349`), run by autosave every 30 s on the single-threaded main
+   process that also carries all Traccar HTTP, SQLite IPC, and map tiles. O(DB-size) → at 3.69 GB
+   the whole app hard-blocks every 30 s. beta.8 was a plain `await db.backup()` (yields), which is
+   why beta.8 stayed usable on the same growing DB.
+2. **Growth (latent since beta.8):** `upsertDevice(sBulk)` emits `device_updated` for every device
+   every poll with no change gate (`mission-store.cjs:754/:799`) — ~552k no-op rows/day at
+   32 devices / 5 s. `mission_events` has no index/retention/purge; finalize never deletes live
+   rows. Testers' ~1 month of 24/7 uptime → 3.69 GB.
+3. Amplifiers: whole-DB backup copy every 30 s (~10 TB/day SSD writes at that size); backups append
+   `mission_backup_synced` so the DB is always dirty; `createMissionArchive` reads the entire DB
+   into one Buffer at finalize.
+
+**Plan of record:** the **MSR chunk** in `docs/two-track-execution-workplan.md` (WS specs, locked
+decisions, safety invariants, tests, release strategy). **One consolidated beta.12** carries the
+whole fix; the MSR-5 harness replaces the team as the validation environment, so no staged betas.
+Implementation order: **MSR-5 first** (field-scale DB seeder, event-loop-gap probe, plateau soak,
+beta:verify gate — reproduce the freeze before fixing it), then MSR-0 (remove integrity_check from
+the 30 s hot path; O(1) snapshot sanity check + worker-thread startup integrity check), MSR-1
+(change-gate `device_updated`, drop `position_recorded` echo), MSR-4a (oversized-DB startup guard,
+before the MSR-2 migration), MSR-2 (index + telemetry retention, schema v5), MSR-3 (purge telemetry
+to archive on finalize). MSR-4b/4c are deferred backlog hardening. Fallback only if implementation
+slips past the ~1–2 week workaround window (fresh field DB regrows ~140 MB/day): cut an interim
+build with MSR-5 + MSR-0.
+
+Key locked decisions Codex must not re-derive: `last_seen` must NOT participate in the
+`device_updated` event gate (it churns every poll) but the row update stays; purge is
+telemetry-scoped only (review + unlock read live rows; unlock is a status flip, not archive
+restore); never in-process `VACUUM` on a multi-GB legacy DB.
+
+**Baton:** planning done (Fable). Codex implements MSR-0 + MSR-5 first, strict TDD, packaged
+verification against a seeded multi-GB DB before/after. **Linear not yet updated** — the planning
+session had no Linear access; create MSR-1…MSR-5 issues from the workplan chunk and record the
+corrected root cause on `DON-240` before or at MSR-0 start.
+
+## DON-240 beta.11 status (2026-07-08) — SUPERSEDED by MSR lane above
 
 Root cause: beta.9 added SQLite `synchronous = FULL`, and the tracking runtime persisted devices in
 a per-device loop. With 32 devices, each 5 s tracking poll could perform 32 fsync-backed commits on
@@ -289,7 +355,7 @@ Do not reopen beta.8 release gating unless new tester evidence points to a regre
 
 ## Current Follow-Ups
 
-- **DON-240 beta.9 freeze hotfix:** urgent active blocker created 2026-07-08 from tester feedback. Investigation used three Codex subagents plus Claude; strongest root cause is Electron main-process saturation from official-map tile IPC, amplified by tracking breadcrumb fan-out and diagnostics log export. Local fixes currently cache/coalesce official-map settings in the tile proxy, invalidate on Settings save, return empty PNG tiles for ordinary offline coverage misses instead of throwing per tile, publish current tracking fixes before slow breadcrumb history, no-op duplicate breadcrumb overlap snapshots, and bound runtime-log `readRecent(limit)` parsing. Verification so far: red-to-green focused units, targeted runtime/Electron/tracking units 123/123, lint, build, full unit 152/1062, backend 47 passed / 1 ignored, full Chromium E2E 129/129, in-app Browser smoke against `http://127.0.0.1:1420/?missionHarness=1` covering mission start, map pan, Devices, Diagnostics, Export Report, and Export Support Bundle, local `npm run electron:pack`, and packaged macOS official-offline smoke with private `reeks-standard-60km-z16.mbtiles`; rerun app log has no `fetch-official-map-tile` exception storm. Ubuntu host `donal@192.168.18.31` is currently unreachable over SSH (`ConnectTimeout=8` timed out), so Ubuntu packaged smoke remains open before replacement release.
+- **DON-240 beta.9 freeze:** root cause now CONFIRMED — see "DON-240 ROOT CAUSE CONFIRMED — MSR lane planned (2026-07-10)" above; the investigation summary below is historical. Original context: urgent active blocker created 2026-07-08 from tester feedback. Investigation used three Codex subagents plus Claude; strongest root cause is Electron main-process saturation from official-map tile IPC, amplified by tracking breadcrumb fan-out and diagnostics log export. Local fixes currently cache/coalesce official-map settings in the tile proxy, invalidate on Settings save, return empty PNG tiles for ordinary offline coverage misses instead of throwing per tile, publish current tracking fixes before slow breadcrumb history, no-op duplicate breadcrumb overlap snapshots, and bound runtime-log `readRecent(limit)` parsing. Verification so far: red-to-green focused units, targeted runtime/Electron/tracking units 123/123, lint, build, full unit 152/1062, backend 47 passed / 1 ignored, full Chromium E2E 129/129, in-app Browser smoke against `http://127.0.0.1:1420/?missionHarness=1` covering mission start, map pan, Devices, Diagnostics, Export Report, and Export Support Bundle, local `npm run electron:pack`, and packaged macOS official-offline smoke with private `reeks-standard-60km-z16.mbtiles`; rerun app log has no `fetch-official-map-tile` exception storm. Ubuntu host `donal@192.168.18.31` is currently unreachable over SSH (`ConnectTimeout=8` timed out), so Ubuntu packaged smoke remains open before replacement release.
 - **Fable deep-analysis remediation queue:** `DON-230` is the parent Linear issue for `output/fable-deep-analysis.md` (2026-07-06). `DON-231` through `DON-238` are complete and were included in beta.9. `DON-239` is intentionally parked as low priority for a later tracking-staleness policy pass. The original beta.9 release gate did pass before publication (`npm run beta:verify`, visual E2E/review, local browser and packaged smoke, GitHub Actions run `28875685324`, and Ubuntu CI-artifact smoke under `output/beta9-ubuntu-smoke/`), but team feedback exposed the separate `DON-240` release-blocking freeze and beta.9 is now on hold.
 - **DON-228 beta.8 breadcrumb gap fix:** Eamonn reported a regular missing breadcrumb cadence (“group of 10 then gap”) on beta.8. Root cause was the poller advancing each per-device incremental breadcrumb cursor by `+1000ms`, creating a one-second blind spot after every polling window. Fixed by fetching inclusively from the last seen timestamp and relying on accumulator/persistence dedupe. Verification: red-to-green `tests/unit/polling-manager.test.ts`, focused tracking/diagnostics unit sweep `6 files / 63 tests`, `npx playwright test tests/e2e/settings.spec.ts --project=chromium --grep "DON-228"`, `npx playwright test tests/e2e/settings.spec.ts --project=chromium` `9/9`, `npm run lint`, `npm run build`, `npm run test` `152 files / 1007 tests`, `npm run test:backend` `47 passed / 1 ignored`, `npm run test:e2e:chromium` `128/128`, and `npm run electron:pack`. Linear `DON-228` should stay closed unless team retest shows a different server-side/device cadence issue.
 - `DON-144` remains open: private Discovery package distribution owner/channel and repeatable raw-source-to-MBTiles admin workflow.

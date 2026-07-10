@@ -16,6 +16,7 @@
     "electron:smoke:official-offline": "node scripts/electron-official-map-offline-smoke.mjs",
     "electron:smoke:bad-secret": "node scripts/electron-bad-secret-smoke.mjs",
     "electron:smoke:map-freeze": "node scripts/electron-map-freeze-probe.mjs",
+    "mission-store:seed": "node scripts/seed-mission-store.mjs",
     "lint": "eslint .",
     "preview": "vite preview",
     "tauri": "tauri",

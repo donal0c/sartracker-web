@@ -120,7 +120,7 @@ ship or ask testers for whole Electron profile zips.
 
 ## Current Priority
 
-1. Complete `DON-240`, the beta.9 Linux freeze hotfix, and publish a replacement Electron beta only after local packaged validation and Ubuntu packaged smoke pass.
+1. Execute the **Mission Store Reliability programme** under `DON-241`. Beta.12 is the narrow field-freeze/observability release (`DON-242` through `DON-247`); beta.13 owns bounded-storage architecture, migration, retention, streamed mission-scoped archives, and archive-backed review (`DON-248` through `DON-255`). Do not change the hot path until the packaged beta.11 Ubuntu baseline reproduces against the checked-in fixture generator.
 2. Keep hosted browser testing smooth enough for the team to give real feedback.
 3. Fix the 2026-05-16 team feedback items that affect map trust before returning to broader foundation work.
 4. Burn down shared foundation issues that make startup, mission control, tracking, layers, or map behavior ambiguous.
@@ -135,6 +135,21 @@ This is the default order when the user says “work on the next task.”
 
 | Order | Chunk | Track | Linear issue | Status |
 | --- | --- | --- | --- | --- |
+| Done | Build deterministic field-scale mission-store fixtures | S2 Electron / Verification | `DON-242` | Small/CI/local/field plus 5-day and 14-day continuous-mission presets; Ubuntu field fixture is 3.704 GB with measured table accounting and restart checkpoints. |
+| **Next** | Reproduce and attribute beta.11 freeze on packaged Ubuntu | S2 Electron / Verification | `DON-243` | Hard gate: beta.11 must fail numerically before production fixes begin. |
+| Todo | Add durable mission-store performance diagnostics and incident evidence | S2 Electron / Diagnostics | `DON-244` | Must survive forced kill/restart and remain bounded/sanitized. |
+| Todo | Remove the mission-store backup freeze from periodic autosave | S2 Electron / Persistence | `DON-240` | Narrow beta.12 hot-path fix; preserve atomic backup and visible failure semantics. |
+| Todo | Change-gate tracking audit writes and remove position event echoes | S2 Electron / Tracking | `DON-245` | Preserve real positions and `last_seen`; remove redundant telemetry slope. |
+| Todo | Add accelerated packaged tracking soak and growth-budget gate | S2 Electron / Verification | `DON-246` | Report real-data growth separately from redundant telemetry. |
+| Todo | Qualify beta.12 CI artifact on Ubuntu and original field machine | S2 Electron / Release | `DON-247` | Three consecutive Ubuntu passes, full packaged smoke, then original-machine confirmation. |
+| Backlog | Lock bounded live-store and archive architecture | S2 Electron / Persistence | `DON-248` | Beta.13 starts only after beta.12 field confirmation. |
+| Backlog | Safe background SQLite integrity assurance | S2 Electron / Persistence | `DON-249` | Must not recreate startup/runtime I/O saturation. |
+| Backlog | Oversized legacy database assessment and recovery | S2 Electron / Recovery | `DON-250` | Mission-state-aware; never abandon operational data or run in-process multi-GB VACUUM. |
+| Backlog | Measured indexes and bounded telemetry retention | S2 Electron / Persistence | `DON-251` | Query-plan driven and interruption-safe. |
+| Backlog | Mission-scoped streamed archives | S2 Electron / Archive | `DON-252` | No whole shared DB in memory or unrelated missions in every archive. |
+| Backlog | Archive-backed review and unlock | S2 Electron / Governance | `DON-253` | Bound live storage while preserving supported review/correction. |
+| Backlog | Field-scale beta.13 qualification matrix | S2 Electron / Verification | `DON-254` | Migration, retention, archive, review, recovery, low-disk, and interruption evidence. |
+| Backlog | Qualify and release bounded mission-store lifecycle | S2 Electron / Release | `DON-255` | Promote only the exact fully qualified CI artifact. |
 | Done | S1: Runtime Boot/Fault Guard | Shared | `sartracker-web-3rl` | Done 2026-05-16 |
 | Done | A2: Hosted Mode Guardrails | Track A | `sartracker-web-vpz.3` | Done 2026-05-15 |
 | Done | Settings Save-Close UX | Track A | `sartracker-web-fnc` | Done 2026-05-15 |
@@ -191,7 +206,7 @@ This is the default order when the user says “work on the next task.”
 | Done | Reduce tracking overlay churn and retained breadcrumb source memory | Shared Tracking / Map Runtime | `DON-235` | Done locally 2026-07-06. Hidden Tracking now reuses a stable empty snapshot, unchanged source data skips lazy FeatureCollection construction, health annotation preserves breadcrumb/current-position identity when unchanged, polling publishes one settled snapshot per healthy poll, cache writes skip identical snapshot identities, breadcrumb source retention is bounded while observed totals stay cumulative, and hover coordinates are rAF-throttled. Visual validation tightened tracking label halo and fixed a small-display coordinate-strip overlap caught by the reviewer. Verified with red-to-green tracking/map/runtime regressions, lint, build, full unit 152/1047, backend 47 passed / 1 ignored, full Playwright 161/162 with one external weather popup flake plus targeted retry pass, visual 34/34, visual review 39/39, Electron package, and in-app Browser validation of 8 devices / 168 positions where hiding Tracking caused one clear and zero additional tracking `setData` calls across eight forced idle events. |
 | Done | Harden Electron runtime trust boundaries and diagnostics/settings atomicity | S2 Electron / Runtime / Diagnostics / Settings | `DON-236` / `DON-237` | Done locally 2026-07-06. Fatal main-process errors flush crash/runtime diagnostics before relaunch/exit; packaged `file:` IPC senders must be the built renderer entrypoint; windows deny external navigation/popups; Traccar proxy requests are constrained to the configured provider origin with a response-size cap; file/path IPC is limited to app-owned or operator-selected paths; clean-exit marking is awaited; diagnostic fields cannot override app-owned metadata; diagnostic redaction is recursive for Authorization headers/tokens/URL credentials/home paths; settings no longer advertise Traccar auth if credential persistence fails. Visual validation also tightened paused refresh labeling and drawing dialog affordances. Verified with red-to-green Electron/settings/filesystem/diagnostics regressions, `node --check`, lint, build, full unit 152/1041, backend 47 passed / 1 ignored, targeted diagnostics/settings Chromium E2E, full Playwright 162/162, visual 34/34, visual review 39/39, Electron package, packaged bad-secret smoke, and in-app Browser validation against the running dev server. Official offline smoke needs a private MBTiles package. |
 | Done | Harden Irish Grid precision, datum references, and coordinate UI safety | Shared Coordinates / Map Tools | `DON-238` | Done locally 2026-07-07. Production TM65 sign remains the EPSG:1641 negative-Y transform and the stale S2 spike oracle is demoted in repo instructions; Irish Grid formatting now truncates to requested precision, coarse Irish Grid input resolves to the centre of the represented square for converter and Marker At GR actions, IG converter results preserve parsed TM65 at 100 km square edges, decimal-comma DD input shows a decimal-point instruction, and impossible live coordinate values render the safe placeholder instead of throwing. Verified with red-to-green coordinate/converter/marker regressions, lint, build, full unit 152/1055, backend 47 passed / 1 ignored, full Chromium E2E 129/129, visual 34/34, visual review 39/39 (`test-results/visual-verification/reports/visual-review-2026-07-07T09-15-46Z.json`), Electron package, and in-app Browser validation against `http://127.0.0.1:1420/?missionHarness=1` covering `V 80 84` -> `V 80500 84500`, decimal-comma DD error text, Marker At GR coarse-centre marker form, and invalid live coordinate placeholder `—`. |
-| Active | Fix beta.9 Linux freeze during official-map panning, Devices, and diagnostics export | S2 Electron / S1 Maps / Tracking / Diagnostics | `DON-240` | Active 2026-07-08. Beta.9 is on HOLD after team Linux AppImage feedback. Root cause shape: Electron main-process tile IPC saturation plus tile-miss exception storm, with tracking breadcrumb fan-out and diagnostics log export as amplifiers. Local hotfix is in progress; Ubuntu packaged smoke is still required before replacement release because SSH to `donal@192.168.18.31` currently times out. |
+| Active | Mission store reliability: field-scale validation, freeze remediation, and bounded storage | S2 Electron / Persistence / Verification | `DON-241` | Active 2026-07-10. Beta.12 issues `DON-242`-`DON-247` address the field freeze and evidence gap; beta.13 issues `DON-248`-`DON-255` address bounded storage. `DON-240` is the corrected hot-path child, not the programme parent. |
 | Done | Fable deep-analysis remediation queue | Shared / S2 Electron / Tracking / Coordinates | `DON-230` | Parent queue created 2026-07-06 from `output/fable-deep-analysis.md`; children `DON-231`-`DON-238` are complete and `DON-239` is intentionally parked as low priority. Original beta.9 publication is now superseded by the `DON-240` release-blocking hotfix. |
 | Done | B4: Set up cross-platform Tauri beta distribution | Track B / Release | `sartracker-web-y6a` | Done 2026-05-17. `.github/workflows/release.yml` builds Linux (AppImage + .deb) and Windows (NSIS) on `v*` tag push, drafts a GitHub release, generates `SHA256SUMS` sidecar. First published release: `v0.1.0-beta.3` at https://github.com/donal0c/sartracker-web/releases/tag/v0.1.0-beta.3. Linux primary, Windows secondary. macOS arm64 deferred from CI per `sartracker-web-590` to stay inside the GitHub Actions free tier (macOS bills at 10x); macOS uses Path B (`npm run beta:verify`) until cadence stabilizes. Windows MSI deferred per `sartracker-web-g1u` because Tauri's MSI bundler rejects alphanumeric pre-release suffixes. NSIS `currentUser` install (no admin), WebView2 `downloadBootstrapper`. Release notes sourced from `docs/releases/sartracker-web-<version>-beta.md`. |
 | Done | B8: Team requirements from USB ODT | Track A / Shared / Track B | `DON-60` | Closed in the 2026-06-06 Linear cleanup. Concrete children are done; duplicate multi-day issue `DON-67` now points to canonical `DON-100`. |
@@ -256,6 +271,147 @@ This is the default order when the user says “work on the next task.”
 | Backlog | Low-priority release/UI polish | Release / UI | `DON-13`, `DON-14`, `DON-21` | macOS arm64 CI, Windows MSI, and shortcut discoverability are retained as low-priority backlog. |
 
 ## Ready Work Chunks
+
+### Mission Store Reliability Programme (`DON-241`)
+
+**Current plan of record:** Linear parent `DON-241` and its blocker-linked children. This
+supersedes the earlier single-beta Fable draft retained below for historical reasoning.
+
+#### Beta.12 — field freeze, evidence, and redundant-write removal
+
+Execution is deliberately sequential:
+
+1. `DON-242` — deterministic field-scale fixtures. **Done locally 2026-07-10.** The generator
+   creates the real schema with synthetic-only data, atomic cache replacement, streamed SHA-256,
+   manifests, dbstat byte accounting, copy-on-test isolation, and exact restart checkpoints.
+   Ubuntu cached fixtures:
+   - 5 day: 1,254,473,728 bytes; 86,400 polls; 691,200 positions; 3,470,400 redundant telemetry rows.
+   - 14 day: 3,514,122,240 bytes; 241,920 polls; 1,935,360 positions; 9,717,120 redundant telemetry rows.
+   - Field: 3,704,676,352 bytes; 14.7569 simulated days; 2,040,000 positions; 10,242,500 redundant telemetry rows.
+   The field fixture allocates about 3.03 GB to `mission_events` and 672 MB to real positions.
+2. `DON-243` — run the packaged beta.11 baseline on Ubuntu. It must reproduce and attribute a
+   release-blocking stall across multiple autosave cycles before production code changes.
+3. `DON-244` — durable, bounded, sanitized storage timings and interrupted-operation evidence in
+   the incident bundle.
+4. `DON-240` — remove full integrity checking from periodic autosave while preserving atomic
+   backup and visible failures.
+5. `DON-245` — change-gate `device_updated` and remove redundant `position_recorded` echoes while
+   preserving rows, `last_seen`, recovery, and operational audit history.
+6. `DON-246` — accelerated packaged soak with separate budgets for genuine data and redundant
+   telemetry; do not claim the entire database plateaus while real positions are retained.
+7. `DON-247` — qualify the exact CI artifact on Ubuntu, then confirm on the original field machine.
+
+Beta.12 is not release-ready until `DON-247` passes. The local harness reduces dependence on the
+team but does not replace final original-machine confirmation.
+
+#### Beta.13 — bounded storage lifecycle
+
+`DON-248` through `DON-255` own the architecture decision, non-blocking integrity assurance,
+oversized legacy-store recovery, measured indexes/retention, mission-scoped streamed archives,
+archive-backed review/unlock, full field-scale qualification, and release. These changes remain
+out of beta.12 because they introduce migration and destructive-cleanup risk unrelated to the
+urgent hot-path freeze.
+
+#### Shared safety invariants
+
+1. No synchronous O(database-size) work on the Electron main process during operational use.
+2. Never abandon active, recoverable, unfinished, unarchived, corrupt, or unknown mission data.
+3. Real positions and operational history remain durable until a verified archive and supported
+   review/recovery path exist.
+4. Backup failures stay operator-visible.
+5. Every repeating write has a change gate or explicit measured growth budget.
+6. Every table has a declared retention, archive, or purge story.
+7. Evidence comes from the exact packaged CI artifact on Ubuntu and remains bounded/sanitized.
+
+### Historical MSR draft (`DON-240`) — superseded 2026-07-10
+
+> Retained as investigation history only. Its single consolidated beta.12, whole-database
+> plateau, startup integrity-worker, telemetry-only purge, and harness-replaces-team decisions
+> are not current. Follow `DON-241` and the section above.
+
+**Status:** Planned 2026-07-10 (planning session, Fable). Root cause confirmed with field evidence. This lane supersedes both prior `DON-240` theories (beta.10 tile/IPC storm, beta.11 fsync-storm/slow-disk batching) — the field machine is a fast Ryzen 7 9700X with NVMe, and beta.11 still froze there.
+
+#### Confirmed root cause (evidence, all verified on `master` 2026-07-10)
+
+- Field `mission-store.sqlite` is **3.69 GB** (tester `ls -la`, 2026-07-09). Renaming it aside and starting fresh **eliminated the freeze** — the clean natural experiment.
+- **Freeze mechanism:** `DON-232` commit `1799b2c` (first shipped in beta.9) added a **synchronous `PRAGMA integrity_check`** over the full backup snapshot inside `syncBackup` (`electron/mission-store.cjs:303-349`), plus `synchronous = FULL` (`:26`). Autosave calls `syncBackup` every 30 s while a mission is active (`src/features/persistence/mission-autosave.ts`). `integrity_check` is non-yielding and O(DB-size); it runs on the single-threaded Electron main process, through which **all** Traccar HTTP (`bridge.traccarHttpRequest`), SQLite IPC, and official-map tiles funnel. At 3.69 GB this hard-blocks the entire app every 30 s. beta.8's `syncBackup` was a plain `await db.backup()` (verified via `git show electron-v0.1.0-beta.8`), which yields between page chunks — that is why beta.8 stayed usable on the very same growing database.
+- **Growth mechanism (latent since beta.8, NOT a beta.9 regression):** `upsertDevice`/`upsertDevicesBulk` emit a `device_updated` event for **every device on every poll**, gated only on exists-vs-not, never on actual field changes (`electron/mission-store.cjs:754`, `:799`). At the field profile (32 devices, 5 s poll) that is ~552,000 no-op event rows/day ≈ 3.69 GB over ~1 month of the testers' 24/7 uptime. `mission_events` has **no index, no retention, no purge**; `finalizeMission` archives but never deletes live rows, so one shared DB accumulates every mission forever.
+- **Amplifiers (verified):** each 30 s backup copies the whole DB (~10 TB/day SSD writes at 3.69 GB); each backup appends a `mission_backup_synced` event so the DB is always dirty for the next cycle; `createMissionArchive` reads the **entire DB into one Buffer** (`fs.readFile(backupPath)`) at finalize — a memory-spike risk at multi-GB sizes.
+- **Constraints discovered:** mission review and `unlockFinalizedMission` read **live** rows (unlock is a status flip, not an archive restore) — so any purge must be telemetry-scoped, never whole-mission. Repo-wide bloat audit found `mission_events` is the **only** unbounded store (crash-log capped at 10 entries, runtime-log rotates at 1 MB, helicopters are user-driven ≤ 4 slots).
+
+#### Safety invariants (must hold across every MSR chunk)
+
+1. No synchronous O(DB-size) work on the main process while a mission is active.
+2. Never lose operational data: mission rows, operational audit events, markers, drawings, positions. Telemetry events (`device_updated`, `position_recorded`, `mission_backup_synced`) may be pruned only after durable archive or by declared retention.
+3. Backup mirror stays atomic (temp + rename) and its failure stays operator-visible (autosave status store).
+4. Mission review and finalized-mission unlock keep working after any purge.
+5. Live DB size **plateaus** under continuous polling (enforced by the MSR-5 invariant test).
+
+#### Release strategy (decided 2026-07-10)
+
+**One consolidated beta.12** carries the whole fix: MSR-5, MSR-0, MSR-1, MSR-4a, MSR-2, MSR-3. The MSR-5 harness replaces the team as the validation environment — every chunk is proven locally at field scale (freeze reproduced, then gone; DB plateaus) before anything is published, so no staged team round-trips are needed. Implementation order inside the beta: **MSR-5 first** (reproduce before fixing), then MSR-0 → MSR-1 → MSR-4a → MSR-2 → MSR-3, each as its own TDD chunk/commit. MSR-4b/4c are deferred hardening (backlog, not release-blocking). Fallback only: the fresh field DB regrows ~140 MB/day, giving a ~1–2 week workaround window; if implementation slips past it, cut an interim build with MSR-5 + MSR-0 only.
+
+#### MSR-0 — Kill the 30 s freeze (beta.12, implement after MSR-5)
+
+- Remove `validateSqliteDatabaseFile` from the `syncBackup` hot path (`electron/mission-store.cjs:308`). Keep temp+rename atomicity. Keep `synchronous = FULL` (it is not the freeze; revisit only in MSR-4).
+- Replace with: (a) a cheap O(1) per-backup sanity check — open the snapshot readonly and read `schema_version` (catches gross corruption in milliseconds); (b) a **full** `integrity_check` that never runs on the main thread — run it in a `node:worker_threads` worker once at startup against the live DB and/or last backup, surfacing failure loudly via diagnostics + the autosave/runtime status path. Archive-path validation (`validateSqliteSnapshotBuffer` at finalize) is unchanged.
+- Tests (red→green): seeded-large-DB regression proving `syncBackup` no longer blocks the event loop beyond a threshold (use the MSR-5 seeder + an event-loop-gap probe); all existing DON-232 backup-atomicity and archive-integrity tests stay green; startup worker check failure is surfaced, not swallowed.
+- Verification: packaged Electron against a seeded multi-GB DB before/after (freeze reproduced, then gone); `npm run beta:verify`; full release smoke matrix per the Beta Release Safety Protocol.
+- Readiness: Research `Low`, Implementation `5/5`. Locked decisions above; no open questions.
+
+#### MSR-1 — Change-gate telemetry writes (beta.12)
+
+- `upsertDevice`/`upsertDevicesBulk`: **always update the device row** (recovery rehydrates `last_seen` from it), but emit `device_updated` **only when `name`, `status`, or `color` changed** vs the stored row. **Locked decision:** `last_seen` churns every poll and must NOT participate in the event gate, or the firehose continues for active devices.
+- Stop emitting `position_recorded` events — the `positions` table is the durable record and the event is a pure echo. Recorded divergence from the legacy Rust reference (`persistence.rs` parity comment at `mission-store.cjs:744`); the Rust backend is legacy/reference only.
+- `mission_backup_synced` keeps emitting (small; covered by MSR-2 retention; MSR-4b addresses its self-dirtying effect).
+- Tests: repeated unchanged bulk upsert emits **zero** events; a real name/status/color change emits exactly one; `last_seen`-only change emits none but persists; restart/recovery still rehydrates devices; review feed (default + telemetry toggle) unaffected for operational events.
+- Readiness: Research `Low`, Implementation `5/5`.
+
+#### MSR-2 — Index + retention backstop (beta.12, schema v5)
+
+- Add `idx_mission_events_mission_timestamp` on `mission_events(mission_id, timestamp)` — `listAuditEvents` currently full-scans on every review open.
+- Add chunked retention for `TELEMETRY_EVENT_TYPES` only (age/count cap, small `DELETE ... LIMIT` batches off the hot path). Operational events are never touched by retention.
+- **Sequencing lock:** MSR-4a must land before this chunk. `CREATE INDEX` on a multi-GB legacy DB would block startup for minutes, so the oversized-DB guard must run before migration.
+- Tests: retention scope (telemetry pruned, operational preserved); chunked deletes don't block the event loop; migration timing on MSR-5 seeded presets.
+- Readiness: Research `Low`, Implementation `5/5`.
+
+#### MSR-3 — Purge-to-archive on finalize (beta.12)
+
+- After a mission's archive zip is verified durable, delete that mission's **telemetry events only** from the live DB. Keep the mission row, operational audit events, markers, drawings, positions, GPX imports, layer catalog. (Constraint: unlock is a live-row status flip; review reads live rows. Full raw history remains inside the archive's embedded DB snapshot.)
+- Live DB then scales with the active mission plus small per-mission operational residue — tens of MB across a season, not GB.
+- Tests: finalize → telemetry rows gone, everything else intact; unlock of a purged-telemetry mission works; archive still contains the full pre-purge snapshot; interrupted-finalize recovery (DON-209 path) still idempotent.
+- Readiness: Research `Low`, Implementation `4/5` (confirm purge ordering inside the existing finalize/fault-injection flow during design pass).
+
+#### MSR-4 — Hardening (4a in beta.12; 4b/4c deferred backlog)
+
+- **4a (beta.12, before the MSR-2 migration):** startup detection of an oversized legacy DB → operator-guided archive-aside + fresh start. **Never** run in-process `VACUUM` on a multi-GB file — it blocks longer than the bug being fixed and needs ~2× disk.
+- 4b: change-gated backup cadence (skip byte-identical backups). Must solve the `mission_backup_synced` self-dirtying loop first — track backup bookkeeping out-of-band or exclude it from the dirty check.
+- 4c: stream the archive snapshot into the zip instead of `fs.readFile` of the whole DB into one Buffer.
+- Readiness: Research `Medium` (4b dirty-tracking design), Implementation `3/5` — short design pass required before 4b/4c.
+
+#### MSR-5 — Field-scale reproduction & soak harness (beta.12, build FIRST)
+
+Purpose: reproduce this class of failure locally **before** any beta reaches the team, per Donal's directive 2026-07-10.
+
+- `scripts/seed-mission-store.mjs`: parameterized generator for field-realistic databases (devices × poll cadence × days; presets: ~100 MB CI, ~1 GB local, ~3.7 GB field-scale) writing the real schema via the real store code.
+- Main-process responsiveness probe: extend the existing `electron:smoke:map-freeze` heartbeat pattern — IPC heartbeat at 250 ms into the packaged app running against a seeded DB, recording max event-loop gap across several autosave cycles. This deterministically reproduces the beta.9–11 freeze and proves MSR-0 removes it.
+- Accelerated soak: mock Traccar server (reuse `spikes/S7` patterns as reference only) driving the real persistence path at fast-forward cadence; assert (a) DB size plateaus, (b) max event-loop gap stays under threshold. This is the standing **plateau invariant test**.
+- Release gate: add a DB-scale smoke step to `beta:verify` and the Beta Release Safety Protocol smoke matrix so no future beta ships untested at field scale.
+- Readiness: Research `Low`, Implementation `4/5` (probe transport choice is minor).
+
+#### Team instructions (manual + release note when MSR-0 ships)
+
+- Testers: Finish → Finalize a mission when a test walk is done; do not leave one mission open for weeks. The renamed 3.7 GB file is disposable walk data — leave it aside; do not restore it.
+- Real deployments: no workflow change — start mission at callout, finish/finalize at stand-down; machines may be powered on/off freely. After MSR-3 the store self-cleans.
+
+#### Standing guardrail (repo rule once MSR lands)
+
+Every repeating write must be change-gated; every table must have a declared retention or purge story; the MSR-5 plateau invariant test stays in the suite permanently.
+
+#### Linear mapping
+
+- `DON-240` remains the parent; MSR-0 closes its field-blocking scope with the corrected root cause recorded.
+- MSR-1 … MSR-5 need new Linear issues (create from the chunk text above; the planning session had no Linear access — see handoff).
 
 ### S8: Linux Runtime Reliability Path
 
