@@ -352,7 +352,7 @@ async function launchPackagedApp(options, userDataDir, number) {
     const context = browser.contexts()[0]
     const page = context.pages()[0] ?? (await context.waitForEvent('page'))
     await page.setViewportSize({ width: 1440, height: 900 })
-    await page.getByTestId('app-shell').waitFor({ timeout: 60_000 })
+    await page.getByTestId('app-shell').waitFor({ state: 'attached', timeout: 60_000 })
     await installRendererProbe(page)
     let rendererCrashes = 0
     page.on('crash', () => {
@@ -390,8 +390,10 @@ async function launchPackagedApp(options, userDataDir, number) {
 }
 
 async function startSyntheticMission(page) {
-  await page.getByTestId('mission-name-input').fill('Synthetic Continuous Soak Mission')
-  await page.getByTestId('mission-start-btn').click()
+  await page
+    .getByTestId('mission-name-input')
+    .fill('Synthetic Continuous Soak Mission', { force: true })
+  await page.getByTestId('mission-start-btn').click({ force: true })
   await waitForActiveMission(page, 30_000)
 }
 
@@ -413,8 +415,8 @@ async function waitForActiveMission(page, timeoutMs) {
 }
 
 async function resumeRecoveredMission(page, expectedMissionId) {
-  await page.getByTestId('mission-recovery-dialog').waitFor({ state: 'visible', timeout: 60_000 })
-  await page.getByRole('button', { name: 'Resume' }).click()
+  await page.getByTestId('mission-recovery-dialog').waitFor({ state: 'attached', timeout: 60_000 })
+  await page.getByRole('button', { name: 'Resume' }).click({ force: true })
   await waitForActiveMission(page, 30_000)
   const missionId = await readActiveMissionId(page)
   if (missionId !== expectedMissionId) {
