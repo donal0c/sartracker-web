@@ -394,15 +394,13 @@ async function startSyntheticMission(page) {
   await page.getByTestId('mission-start-btn').click()
   await waitForActiveMission(page, 30_000)
   await page
-    .getByTestId('current-mission-name')
-    .first()
+    .getByTestId('mission-control')
     .waitFor({ state: 'attached', timeout: 30_000 })
   await page.waitForFunction(
-    (expectedName) =>
-      [...document.querySelectorAll('[data-testid="current-mission-name"]')].some(
-        (element) => element.textContent?.trim() === expectedName,
-      ),
-    'Synthetic Continuous Soak Mission',
+    () =>
+      document.querySelector('[data-testid="mission-control"]')?.getAttribute('data-mission-phase') ===
+      'active',
+    undefined,
     { timeout: 30_000 },
   )
 }
