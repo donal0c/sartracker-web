@@ -393,24 +393,16 @@ async function startSyntheticMission(page) {
   await page.getByTestId('mission-name-input').fill('Synthetic Continuous Soak Mission')
   await page.getByTestId('mission-start-btn').click()
   await waitForActiveMission(page, 30_000)
-  await page
-    .getByTestId('mission-control')
-    .waitFor({ state: 'attached', timeout: 30_000 })
-  await page.waitForFunction(
-    () =>
-      document.querySelector('[data-testid="mission-control"]')?.getAttribute('data-mission-phase') ===
-      'active',
-    undefined,
-    { timeout: 30_000 },
-  )
 }
 
 /**
  * Waits for mission startup at the packaged persistence boundary.
  *
  * GitHub's Xvfb renderer can blocklist WebGL, so this storage soak must not
- * conflate map/sidebar paint visibility with mission-store readiness. Browser
- * E2E and the separate packaged launch smoke retain the visual assertions.
+ * conflate responsive map/sidebar composition with mission-store readiness.
+ * The soak subsequently proves renderer tracking snapshots, packaged IPC,
+ * SQLite growth, and autosave. Browser E2E and the separate packaged launch
+ * smoke retain the visual assertions.
  */
 async function waitForActiveMission(page, timeoutMs) {
   await page.waitForFunction(

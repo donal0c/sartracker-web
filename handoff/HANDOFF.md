@@ -11,9 +11,9 @@
 - **Held betas:** `electron-v0.1.0-beta.9` and `electron-v0.1.0-beta.10` are **ON HOLD** for the Linux tracking-online freeze. Do not roll them out further.
 - **Beta.12 prep:** tag `electron-v0.1.0-beta.12` is active under `DON-247`. The first release run
   `29119914249` failed closed in the new packaged-soak gate because GitHub's Xvfb/WebGL-blocklisted
-  session could not satisfy layout-specific sidebar/name assertions even though retained evidence proved the
+  session could not satisfy layout-specific sidebar/name/phase assertions even though retained evidence proved the
   mission, tracking writes, autosave, and main heartbeat were healthy. The harness now waits on the
-  packaged mission-store boundary plus the renderer's explicit active phase; local CI-profile proof is green. Do
+  packaged mission-store boundary; downstream snapshot/checkpoint gates still prove renderer activity. Local CI-profile proof is green. Do
   not publish it: the replacement tag run and exact CI artifact still need three Ubuntu field-fixture passes,
   both multi-day soaks, the complete smoke matrix, and original-team-machine confirmation. The
   exact-version local `beta:verify --no-smoke` passed 7/7 automated gates; report:
