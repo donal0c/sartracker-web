@@ -85,7 +85,9 @@ describe('Electron main startup', () => {
     }) as typeof Module._load
 
     require('../../electron/main.cjs')
-    await new Promise((resolve) => setTimeout(resolve, 50))
+    await vi.waitFor(() => {
+      expect(electronMock.BrowserWindow).toHaveBeenCalledTimes(1)
+    })
 
     const createdWindow = electronMock.BrowserWindow.mock.results[0]?.value
     expect(createdWindow.webContents.on).toHaveBeenCalledWith('will-navigate', expect.any(Function))
