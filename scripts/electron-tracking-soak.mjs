@@ -415,7 +415,7 @@ async function waitForActiveMission(page, timeoutMs) {
 async function resumeRecoveredMission(page, expectedMissionId) {
   await page.getByTestId('mission-recovery-dialog').waitFor({ state: 'visible', timeout: 60_000 })
   await page.getByRole('button', { name: 'Resume' }).click()
-  await page.getByTestId('current-mission-name').waitFor({ state: 'visible' })
+  await waitForActiveMission(page, 30_000)
   const missionId = await readActiveMissionId(page)
   if (missionId !== expectedMissionId) {
     throw new Error(`Restart recovered mission ${missionId}, expected ${expectedMissionId}.`)
