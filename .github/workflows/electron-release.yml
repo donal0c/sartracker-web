@@ -201,7 +201,8 @@ jobs:
             libxdamage1 \
             libxkbcommon0 \
             libxrandr2 \
-            libxss1
+            libxss1 \
+            xvfb
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -254,6 +255,21 @@ jobs:
             exit 1
           fi
           echo "No map/licensed data present in build output."
+
+      - name: Packaged tracking soak (CI profile)
+        run: |
+          set -euo pipefail
+          xvfb-run -a --server-args='-screen 0 1440x900x24' \
+            npm run electron:smoke:tracking-soak:ci
+
+      - name: Upload packaged tracking-soak evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tracking-soak-ci-${{ needs.gates.outputs.tag }}
+          path: tmp/beta-artifacts/tracking-soak-ci
+          if-no-files-found: error
+          retention-days: 14
 
       # Hand the built artifacts to downstream jobs via the workflow-artifact
       # store. We deliberately do NOT create the GitHub release here: the draft

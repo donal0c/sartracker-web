@@ -633,7 +633,10 @@
           <div class="note">
             <strong>Recovery behavior:</strong> if the app finds an interrupted mission after reload or
             restart, it offers <strong>Resume</strong> or <strong>Start Fresh</strong>. Resume keeps the
-            mission continuity; Start Fresh abandons that recovery path and begins cleanly.
+            mission continuity; Start Fresh abandons that recovery path and begins cleanly. Keep one
+            mission open throughout a multi-day search, even if the app or machine is closed overnight.
+            Finish and finalize only at operational stand-down; do not create a new mission each day as
+            a storage workaround.
           </div>
           <div class="note">
             <strong>Paused state:</strong> a paused mission is deliberately loud and impossible to miss.
@@ -890,6 +893,13 @@
             breadcrumb history for reload/testing, but caps very large live imports so the browser does
             not exceed session storage quota. The live map can still draw the loaded tracker snapshot
             during the current session.
+          </div>
+          <div class="note">
+            <strong>Desktop restart history:</strong> all operational positions remain stored in the
+            mission database. After Resume, the live map initially reloads a bounded recent trail for
+            each device so a long multi-day mission cannot overwhelm the interface; live polling then
+            continues from the most recent stored fix. This display window does not delete older
+            positions or change the Mission Review count.
           </div>
         </section>
 

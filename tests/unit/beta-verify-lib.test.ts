@@ -19,6 +19,7 @@ describe('parseBetaStepsFlag', () => {
       'test-backend',
       'e2e-chromium',
       'package',
+      'tracking-soak-ci',
       'smoke',
     ])
   })
@@ -32,11 +33,12 @@ describe('parseBetaStepsFlag', () => {
   })
 
   it('returns the requested subset preserving canonical order', () => {
-    expect(parseBetaStepsFlag('package,lint,e2e-chromium,test')).toEqual([
+    expect(parseBetaStepsFlag('package,lint,e2e-chromium,test,tracking-soak-ci')).toEqual([
       'lint',
       'test',
       'e2e-chromium',
       'package',
+      'tracking-soak-ci',
     ])
   })
 

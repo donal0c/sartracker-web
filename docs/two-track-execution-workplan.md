@@ -140,7 +140,7 @@ This is the default order when the user says “work on the next task.”
 | Done | Add durable mission-store performance diagnostics and incident evidence | S2 Electron / Diagnostics | `DON-244` | Packaged field-fixture SIGKILL/restart/export proof passed; interrupted phase and 6.858 s event-loop stall survive in a sanitized bounded bundle. |
 | Done locally | Remove the mission-store backup freeze from periodic autosave | S2 Electron / Persistence | `DON-240` | Full scans removed from autosave; 100-byte O(1) sanity check and worker-thread copy preserve atomicity. Nine packaged field backups: main max 2-11 ms. CI/team release confirmation remains `DON-247`. |
 | Done locally | Change-gate tracking audit writes and remove position event echoes | S2 Electron / Tracking | `DON-245` | Packaged 2,000-poll proof: 64,000 device row upserts, 16,000 positions, 32 creates, one real update, zero heartbeat/position echoes. |
-| Active | Add accelerated packaged tracking soak and growth-budget gate | S2 Electron / Verification | `DON-246` | Validation-only 5-1000 ms scheduler override is implemented fail-closed; mock Traccar profiles/report gate are next. |
+| Done locally | Add accelerated packaged tracking soak and growth-budget gate | S2 Electron / Verification | `DON-246` | Packaged CI/5-day/14-day profiles pass after the gate found and fixed unbounded restart hydration; exact position/growth, restart, responsiveness, memory, backup, WAL, log, support, and privacy evidence is machine-readable. |
 | Todo | Qualify beta.12 CI artifact on Ubuntu and original field machine | S2 Electron / Release | `DON-247` | Three consecutive Ubuntu passes, full packaged smoke, then original-machine confirmation. |
 | Backlog | Lock bounded live-store and archive architecture | S2 Electron / Persistence | `DON-248` | Beta.13 starts only after beta.12 field confirmation. |
 | Backlog | Safe background SQLite integrity assurance | S2 Electron / Persistence | `DON-249` | Must not recreate startup/runtime I/O saturation. |
@@ -311,12 +311,16 @@ Execution is deliberately sequential:
    and 16,000 positions with exactly 32 creates, one deliberate update, zero redundant events,
    `ok` integrity, and complete restart recovery. See
    `docs/releases/beta12-redundant-write-removal.md`.
-6. `DON-246` — **Active.** The fail-closed packaged acceleration seam is implemented: production
-   retains its five-second minimum, while an explicit isolated Electron validation profile may
-   request a bounded 5-1000 ms interval. Next is the deterministic mock Traccar runner, compressed
-   normal/extended position profiles, restart checkpoints, responsiveness/growth report, and CI
-   integration. Report genuine data separately from redundant telemetry; do not claim the entire
-   database plateaus while real positions are retained.
+6. `DON-246` — **Done locally 2026-07-10.** The deterministic packaged mock-Traccar soak now drives
+   the real proxy/poller/renderer/IPC/SQLite/autosave/diagnostics path and emits a fail-closed report.
+   Its first fourteen-day Ubuntu run found an unbounded full-position restart hydration path and
+   reproduced a 3 GiB renderer/exit-133 crash. Electron restart hydration is now an indexed fixed
+   5,000-position-per-device window while full history stays in SQLite. Corrected 5-day and 14-day
+   packaged profiles retained exactly 691,224 and 1,935,384 positions, passed one/two recovery
+   checkpoints, recorded zero redundant-event slope, `ok` integrity, no WAL contention, zero
+   renderer crashes, <148 ms main maxima, and <2 GiB process-tree RSS. CI-scale soak is part of
+   `beta:verify` and the tag-driven Linux bundle. See
+   `docs/releases/beta12-tracking-soak-evidence.md`.
 7. `DON-247` — qualify the exact CI artifact on Ubuntu, then confirm on the original field machine.
 
 Beta.12 is not release-ready until `DON-247` passes. The local harness reduces dependence on the

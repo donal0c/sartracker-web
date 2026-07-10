@@ -129,6 +129,10 @@ type ElectronMissionStore = {
     missionId: string,
     deviceId?: string,
   ) => Promise<readonly { readonly device_id: string; readonly timestamp: string; readonly data_origin: string }[]>
+  readonly listRecentPositions: (
+    missionId: string,
+    perDeviceLimit: number,
+  ) => Promise<readonly { readonly device_id: string; readonly timestamp: string }[]>
   readonly countPositions: (missionId: string, deviceId?: string) => Promise<number>
   readonly latestPositions: (missionId: string) => Promise<readonly { readonly device_id: string; readonly lat: number }[]>
   readonly upsertMarker: (input: {
@@ -335,6 +339,40 @@ describe('electron mission store', () => {
       ]),
     )
     expect(events.map((event) => event.event_type)).not.toContain('position_recorded')
+  })
+
+  it('loads only a bounded recent breadcrumb window per device on restart [DON-246]', async () => {
+    store = await createStore()
+    const mission = await store.createMission({ name: 'Bounded Restart Mission' })
+    for (const deviceId of ['tracker-1', 'tracker-2']) {
+      await store.upsertDevice({
+        mission_id: mission.id,
+        device_id: deviceId,
+        name: deviceId,
+        color: '#00AAFF',
+        status: 'online',
+      })
+      for (let minute = 0; minute < 4; minute += 1) {
+        await store.addPosition({
+          mission_id: mission.id,
+          device_id: deviceId,
+          lat: 52 + minute * 0.001,
+          lon: -9 - minute * 0.001,
+          timestamp: `2026-05-19T12:0${minute}:00.000Z`,
+        })
+      }
+    }
+
+    const recent = await store.listRecentPositions(mission.id, 2)
+
+    expect(recent).toHaveLength(4)
+    expect(recent.map((position) => `${position.device_id}:${position.timestamp}`)).toEqual([
+      'tracker-1:2026-05-19T12:02:00.000Z',
+      'tracker-2:2026-05-19T12:02:00.000Z',
+      'tracker-1:2026-05-19T12:03:00.000Z',
+      'tracker-2:2026-05-19T12:03:00.000Z',
+    ])
+    await expect(store.listRecentPositions(mission.id, 0)).rejects.toThrow(/positive integer/i)
   })
 
   it('accumulates paused seconds when a mission resumes [DON-231]', async () => {

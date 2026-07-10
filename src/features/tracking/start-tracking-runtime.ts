@@ -54,9 +54,27 @@ type PersistedPositionKeyCache = {
   readonly keys: Set<string>
 }
 
+const MAX_RESTART_BREADCRUMBS_PER_DEVICE = 5_000
+
 export type TrackingRuntimeMissionStore = {
   readonly getActiveMission: () => Promise<{ readonly id: string } | null>
   readonly listPositions: (missionId: string) => Promise<readonly {
+    readonly id?: string
+    readonly device_id: string
+    readonly lat?: number
+    readonly lon?: number
+    readonly altitude?: number | null
+    readonly speed?: number | null
+    readonly battery?: number | null
+    readonly accuracy?: number | null
+    readonly source?: string | null
+    readonly timestamp: string
+    readonly data_origin?: 'live' | 'cache'
+  }[]>
+  readonly listRecentPositions?: (
+    missionId: string,
+    perDeviceLimit: number,
+  ) => Promise<readonly {
     readonly id?: string
     readonly device_id: string
     readonly lat?: number
@@ -202,7 +220,16 @@ export async function startTrackingRuntime(
 
   const client = dependencies.createClient(dependencies.config)
   const poller = dependencies.createPoller(client, {
-    getInitialBreadcrumbs: () => getInitialPersistedBreadcrumbs(dependencies.missionStore),
+    getInitialBreadcrumbs: async () => {
+      const seed = await getInitialPersistedBreadcrumbs(dependencies.missionStore)
+      if (seed.missionId !== null) {
+        persistedPositionKeyCache = {
+          missionId: seed.missionId,
+          keys: new Set(seed.positions.flatMap((position) => createIncomingPositionKeys(position))),
+        }
+      }
+      return seed.positions
+    },
     onSnapshot: async (snapshot) => {
       dependencies.applySnapshot(snapshot)
       void dependencies.recordDiagnosticEvent?.({
@@ -374,7 +401,12 @@ async function persistTrackingSnapshot(
           missionId: activeMission.id,
           keys: new Set(
             (
-              await missionStore.listPositions(activeMission.id)
+              missionStore.listRecentPositions === undefined
+                ? await missionStore.listPositions(activeMission.id)
+                : await missionStore.listRecentPositions(
+                    activeMission.id,
+                    MAX_RESTART_BREADCRUMBS_PER_DEVICE,
+                  )
             ).flatMap((position) => createPersistedPositionKeys(position)),
           ),
         }
@@ -540,44 +572,55 @@ function createPersistedPositionKeys(position: {
  */
 async function getInitialPersistedBreadcrumbs(
   missionStore: TrackingRuntimeMissionStore,
-): Promise<readonly NormalizedTrackingPosition[]> {
+): Promise<{
+  readonly missionId: string | null
+  readonly positions: readonly NormalizedTrackingPosition[]
+}> {
   const activeMission = await missionStore.getActiveMission()
   if (activeMission === null) {
-    return []
+    return { missionId: null, positions: [] }
   }
 
-  const positions = await missionStore.listPositions(activeMission.id)
-  return positions.flatMap((position) => {
-    const lat = Number(position.lat)
-    const lon = Number(position.lon)
-    if (
-      !Number.isFinite(lat) ||
-      lat < -90 ||
-      lat > 90 ||
-      !Number.isFinite(lon) ||
-      lon < -180 ||
-      lon > 180 ||
-      Number.isNaN(Date.parse(position.timestamp))
-    ) {
-      return []
-    }
+  const positions = await (missionStore.listRecentPositions === undefined
+    ? missionStore.listPositions(activeMission.id)
+    : missionStore.listRecentPositions(
+        activeMission.id,
+        MAX_RESTART_BREADCRUMBS_PER_DEVICE,
+      ))
+  return {
+    missionId: activeMission.id,
+    positions: positions.flatMap((position) => {
+      const lat = Number(position.lat)
+      const lon = Number(position.lon)
+      if (
+        !Number.isFinite(lat) ||
+        lat < -90 ||
+        lat > 90 ||
+        !Number.isFinite(lon) ||
+        lon < -180 ||
+        lon > 180 ||
+        Number.isNaN(Date.parse(position.timestamp))
+      ) {
+        return []
+      }
 
-    return [{
-      id: position.id ?? `${position.device_id}:time:${position.timestamp}`,
-      device_id: position.device_id,
-      lat,
-      lon,
-      altitude: position.altitude ?? null,
-      speed: position.speed ?? null,
-      battery: position.battery ?? null,
-      accuracy: position.accuracy ?? null,
-      source: position.source ?? null,
-      timestamp: position.timestamp,
-      data_origin: position.data_origin ?? 'live',
-      cache_age_seconds: null,
-      device_cache_stale: false,
-    } satisfies NormalizedTrackingPosition]
-  })
+      return [{
+        id: position.id ?? `${position.device_id}:time:${position.timestamp}`,
+        device_id: position.device_id,
+        lat,
+        lon,
+        altitude: position.altitude ?? null,
+        speed: position.speed ?? null,
+        battery: position.battery ?? null,
+        accuracy: position.accuracy ?? null,
+        source: position.source ?? null,
+        timestamp: position.timestamp,
+        data_origin: position.data_origin ?? 'live',
+        cache_age_seconds: null,
+        device_cache_stale: false,
+      } satisfies NormalizedTrackingPosition]
+    }),
+  }
 }
 
 function safelyParseCachedSnapshot(

@@ -65,13 +65,17 @@
   creates + one deliberate update, zero redundant telemetry events, `ok` integrity, and complete
   paused-mission restart recovery. Evidence: `~/sartracker-beta12-msr/evidence/don245-growth-2/`;
   durable summary: `docs/releases/beta12-redundant-write-removal.md`.
-- **Active:** `DON-246` has a tested fail-closed acceleration seam. Production/ordinary validation
-  still clamps tracking polls to five seconds; only an explicit isolated Electron profile plus
-  `SARTRACKER_ELECTRON_SOAK_POLL_INTERVAL_MS` can request 5-1000 ms. Next: durable mock Traccar
-  runner with CI/normal/extended profiles, compressed five-second position history, planned
-  restarts, main/renderer responsiveness, backup/WAL/log/support evidence, and fail-closed growth
-  budgets. Then `DON-247` exact CI artifact/original-machine confirmation. `DON-240` stays open in
-  Linear until its explicit CI/team gate.
+- **Completed local checkpoint:** `DON-246` now has a deterministic packaged mock-Traccar soak with
+  CI, 5-day, and 14-day profiles, exact growth budgets, restart checkpoints, external main-isolate
+  heartbeats, renderer crash/process-memory gates, backup/WAL/log/support evidence, and CI/release
+  integration. The first extended run caught an unbounded full-position restart hydration path at
+  ~3 GiB renderer RSS and exit 133. The fix uses an indexed 5,000-position-per-device restart window
+  while retaining all positions in SQLite. Corrected Ubuntu normal/extended runs persisted exactly
+  691,224/1,935,384 positions, zero redundant rows, passed one/two restarts, integrity/WAL/privacy,
+  zero renderer crashes, main maxima 147.9/146.9 ms, and RSS maxima 1.49/1.64 GB. Evidence:
+  `~/sartracker-beta12-msr/evidence/don246-{normal,extended}-fixed-250ms/`; durable summary:
+  `docs/releases/beta12-tracking-soak-evidence.md`. Next: `DON-247` exact CI artifact/original-
+  machine confirmation. `DON-240` stays open in Linear until that explicit gate.
 - **Release split:** beta.12 is the narrow field-freeze/observability release. Beta.13 owns
   migrations, retention, safe legacy recovery, mission-scoped streamed archives, and
   archive-backed review/unlock.
@@ -89,7 +93,10 @@
   `beta:verify --no-smoke` overall PASS (manual release smoke intentionally deferred).
   `DON-245`: lint, build/package, unit 160 files / 1,127 tests, Playwright 163/163, visual reviewer
   39/39, backend 47 passed / 1 ignored, and packaged growth verdict with a 4,976,640-byte DB and
-  `ok` integrity.
+  `ok` integrity. `DON-246`: full `beta:verify --no-smoke` PASS (lint, build, 163 unit files /
+  1,143 tests, backend 47 passed / 1 ignored, Chromium 129/129, package, packaged CI soak), visual
+  Playwright 34/34, independent visual review 39/39, actionlint, and packaged Ubuntu CI/normal/
+  extended profiles with exact restart/count/growth/integrity/WAL/memory/privacy verdicts.
 
 ## Historical DON-240 planning snapshot — superseded by `DON-241`
 

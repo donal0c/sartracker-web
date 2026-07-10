@@ -48,6 +48,7 @@ const STEP_COMMANDS = {
   'test-backend': ['npm', ['run', 'test:backend']],
   'e2e-chromium': ['npm', ['run', 'test:e2e:chromium']],
   package: ['npm', ['run', 'electron:pack']],
+  'tracking-soak-ci': ['npm', ['run', 'electron:smoke:tracking-soak:ci']],
   // smoke is handled in-process via a manual checklist; no shell command runs.
   smoke: ['__smoke__', []],
 }

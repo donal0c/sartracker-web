@@ -103,6 +103,8 @@ function createElectronMissionStore(options) {
       deviceId === undefined
         ? all(db, 'SELECT * FROM positions WHERE mission_id = ? ORDER BY timestamp ASC', missionId)
         : all(db, 'SELECT * FROM positions WHERE mission_id = ? AND device_id = ? ORDER BY timestamp ASC', missionId, deviceId),
+    listRecentPositions: async (missionId, perDeviceLimit) =>
+      listRecentPositions(db, missionId, perDeviceLimit),
     countPositions: async (missionId, deviceId) => countPositions(db, missionId, deviceId),
     latestPositions: async (missionId) => latestPositions(db, missionId),
     listMissionEvents: async (missionId) =>
@@ -1078,6 +1080,37 @@ function countPositions(db, missionId, deviceId) {
       ? db.prepare('SELECT COUNT(*) AS count FROM positions WHERE mission_id = ?').get(missionId)
       : db.prepare('SELECT COUNT(*) AS count FROM positions WHERE mission_id = ? AND device_id = ?').get(missionId, deviceId)
   return Number(row?.count ?? 0)
+}
+
+/**
+ * Returns a fixed-size recent render/cursor window per device. Each lookup uses
+ * the mission/device/timestamp index, so restart work is bounded independently
+ * of total mission duration and never scans the complete positions table.
+ */
+function listRecentPositions(db, missionId, perDeviceLimit) {
+  if (!Number.isInteger(perDeviceLimit) || perDeviceLimit < 1 || perDeviceLimit > 5_000) {
+    throw new Error('Recent position limit must be a positive integer no greater than 5000.')
+  }
+
+  const deviceIds = db
+    .prepare('SELECT device_id FROM devices WHERE mission_id = ? ORDER BY device_id ASC')
+    .all(missionId)
+    .map((row) => row.device_id)
+  const selectRecent = db.prepare(`
+    SELECT * FROM positions
+    WHERE mission_id = ? AND device_id = ?
+    ORDER BY timestamp DESC, rowid DESC
+    LIMIT ?
+  `)
+  const positions = []
+  for (const deviceId of deviceIds) {
+    positions.push(...selectRecent.all(missionId, deviceId, perDeviceLimit).reverse())
+  }
+  return positions.sort((left, right) =>
+    left.timestamp.localeCompare(right.timestamp) ||
+    left.device_id.localeCompare(right.device_id) ||
+    left.id.localeCompare(right.id),
+  )
 }
 
 function latestPositions(db, missionId) {

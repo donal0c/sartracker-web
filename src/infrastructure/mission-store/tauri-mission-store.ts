@@ -285,6 +285,10 @@ export type MissionStore = {
     missionId: string,
     deviceId?: string,
   ) => Promise<readonly Position[]>
+  readonly listRecentPositions?: (
+    missionId: string,
+    perDeviceLimit: number,
+  ) => Promise<readonly Position[]>
   readonly countPositions: (missionId: string, deviceId?: string) => Promise<number>
   readonly latestPositions: (missionId: string) => Promise<readonly Position[]>
   readonly listMissionEvents: (missionId: string) => Promise<readonly MissionEvent[]>
