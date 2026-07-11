@@ -10,12 +10,13 @@
 - **Cut by:** Codex agent (Donal supervising)
 - **Supersedes:** `electron-v0.1.0-beta.11` (**field freeze still present**)
 - **Linear references:** `DON-240`, `DON-241`, `DON-242`-`DON-247`
-- **Local verification report:** `tmp/beta-artifacts/verify-0.1.0-beta.12-sha.46662a97137e-2026-07-10T19-58-27Z.json`
-- **CI run:** replacement run pending; packaged-soak harness runs `29119914249`,
-  `29120896885`, `29121664061`, `29122649204`, and `29123528238` failed closed;
-  run `29124402910` then exposed a pre-existing fixed-delay unit-test flake
-  failed closed on layout-specific packaged-soak readiness assertions before
-  artifact promotion; runtime/storage evidence was retained for both
+- **Tag commit:** `0c05cf97935b49c67616df68cd2fbec622846fa3`
+- **Local verification report:** `tmp/beta-artifacts/verify-0.1.0-beta.12-sha.4f2b3d71f9b8-2026-07-10T22-23-28Z.json`
+- **CI run:** `29127625505` — all gates, Linux bundle, packaged tracking soak,
+  AppImage launch smoke, draft release creation, and checksum publication green
+- **Exact CI artifact SHA-256:** AppImage
+  `fb6c49226b8108de0a75ddc022be8b8abf513f697b9baddc55d3e4ad9e772346`;
+  `.deb` `c401b9ca07588cd4aa01e5df5bd92eb7f89ecfb00eee20cbfaac4ffc58ab8d0d`
 - **GitHub release:** must remain draft pending `DON-247`
 
 ## Why beta.12 exists
@@ -91,22 +92,30 @@ Durable evidence:
 - After Resume, the live map initially reloads a bounded recent trail per
   device; older positions remain stored and included in mission counts.
 
-## Exact CI artifact qualification — pending
+## Exact CI artifact qualification — Ubuntu complete; original team machine pending
 
-`DON-247` must complete before publication:
+The exact replacement CI artifact has completed the local Ubuntu portion of
+`DON-247`:
 
-1. Tag-driven workflow green, including packaged CI soak and AppImage launch.
-2. Verify AppImage/`.deb` checksums and prove the tested bytes are the release
-   bytes.
-3. Three consecutive field-fixture candidate passes with at least three
-   autosaves each and zero main heartbeat failures.
-4. Corrected 5-day and 14-day packaged soaks on the CI-built artifact.
-5. Packaged lifecycle/restart/recovery/finish/finalize/archive, coordinate
-   rejection, official offline map, diagnostics/support bundle, bad-secret
-   startup, live tracking, and duplicate-launch smoke.
-6. Support bundle completeness, boundedness, backup timings, and redaction.
-7. Short representative confirmation on the original team machine/profile
-   with 30+ devices, followed by support bundle collection even on success.
+1. **Passed:** tag-driven workflow, packaged CI soak, and AppImage launch.
+2. **Passed:** AppImage/`.deb` checksums; the tested AppImage is the release
+   artifact byte-for-byte.
+3. **Passed:** three consecutive field-fixture runs, three autosaves each, with
+   healthy verdicts and main maxima of 9, 19, and 2 ms.
+4. **Passed:** corrected five-day and fourteen-day packaged soaks. They stored
+   exactly 691,224 and 1,935,384 positions, passed one/two restarts, retained a
+   zero redundant-event slope, and kept main maxima below 177 ms.
+5. **Passed:** lifecycle/restart/recovery/finish/finalize/archive, coarse Irish
+   Grid rejection/normalization, official offline map, sanitized diagnostics
+   and support/incident bundles, locked-keyring bad-secret startup, live
+   Traccar (33 devices / 8 current positions), and duplicate launch.
+6. **Passed:** support evidence is bounded and sanitized and includes backup
+   timings. Live-tracking main responsiveness stayed healthy (17.3 ms maximum);
+   the Ubuntu X11 renderer cadence remains a known non-discriminating throttled
+   signal and is not being treated as proof of a freeze.
+7. **Pending and release-blocking:** short representative confirmation on the
+   original team machine/profile with 30+ devices, followed by support bundle
+   collection even on success.
 
 Any unexplained flake, renderer crash, heartbeat failure, missing evidence, or
 field-machine recurrence keeps this release on hold.
@@ -114,7 +123,8 @@ field-machine recurrence keeps this release on hold.
 The first exact CI artifact (`3113d01b…`) passed the three field-fixture runs
 and both multi-day soaks, then failed the required bad-secret startup smoke by
 blocking in synchronous legacy Linux keyring decryption. It is rejected; a
-replacement artifact must repeat qualification after the fail-safe startup fix.
+replacement artifact had to repeat qualification after the fail-safe startup
+fix. The replacement artifact listed above has now passed that qualification.
 
 ## Known limitation deferred to beta.13
 

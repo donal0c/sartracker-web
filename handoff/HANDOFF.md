@@ -7,24 +7,19 @@
 - **Branch:** `master` is canonical and should be worked directly unless Donal says otherwise.
 - **Desktop lane:** Electron is operational. Tauri remains historical/reference.
 - **Hosted browser:** `https://sartracker-web.vercel.app/?missionHarness=1` is testing/training only; browser storage is not operational persistence.
-- **Latest replacement beta:** `electron-v0.1.0-beta.11` (cut from `4f13da2`, run `28972979120`, note: `docs/releases/sartracker-electron-0.1.0-beta.11.md`). **Field retest 2026-07-09: beta.11 STILL froze.** Its fsync-storm theory is superseded — see "DON-240 ROOT CAUSE CONFIRMED" below. The team is currently unblocked by a manual workaround (renamed the 3.69 GB `mission-store.sqlite` aside; fresh DB → no freeze).
+- **Latest published team beta:** `electron-v0.1.0-beta.11`. **Field retest 2026-07-09: beta.11 STILL froze.** The team is currently unblocked by preserving the 3.69 GB `mission-store.sqlite` and starting with a fresh database.
 - **Held betas:** `electron-v0.1.0-beta.9` and `electron-v0.1.0-beta.10` are **ON HOLD** for the Linux tracking-online freeze. Do not roll them out further.
-- **Beta.12 prep:** tag `electron-v0.1.0-beta.12` is active under `DON-247`. The first release run
-  `29119914249` failed closed in the new packaged-soak gate because GitHub's Xvfb/WebGL-blocklisted
-  session could not satisfy layout-specific sidebar/name/phase assertions even though retained evidence proved the
-  mission, tracking writes, autosave, and main heartbeat were healthy. The harness now waits on the
-  packaged mission-store boundary; downstream snapshot/checkpoint gates still prove renderer activity. Local CI-profile proof is green. Do
-  not publish it: the replacement tag run and exact CI artifact still need three Ubuntu field-fixture passes,
-  both multi-day soaks, the complete smoke matrix, and original-team-machine confirmation. The
-  exact-version local `beta:verify --no-smoke` passed 7/7 automated gates; report:
-  `tmp/beta-artifacts/verify-0.1.0-beta.12-sha.46662a97137e-2026-07-10T19-58-27Z.json`.
-  A later release run exposed a fixed 50 ms Electron-startup unit-test wait; it now waits on the
-  actual `BrowserWindow` constructor and passes 10/10 isolated stress runs.
-  Exact CI AppImage `3113d01b…` then passed three field-scale runs and both multi-day soaks, but
-  bad-secret smoke found synchronous legacy Linux keyring decryption can block before window
-  creation. The candidate fix never calls legacy `safeStorage.decryptString` on Linux, fails safe
-  with the re-entry warning, and passes packaged Ubuntu regression. A replacement exact artifact
-  must repeat qualification; the current draft must not be published.
+- **Beta.12 draft candidate:** tag `electron-v0.1.0-beta.12`, commit `0c05cf9`, release run
+  `29127625505` is fully green. The exact CI AppImage SHA is `fb6c4922…`; its Ubuntu qualification
+  is complete: three field-fixture runs, both multi-day soaks, lifecycle/recovery/finalize/archive,
+  official offline map, coordinate safety, duplicate launch, locked-keyring startup, sanitized
+  diagnostics/support/incident bundles, and live Traccar (33 devices / 8 fixes) all passed. The
+  replacement normal/extended soaks stored exactly 691,224/1,935,384 positions, passed one/two
+  restarts, had zero redundant-event slope, and kept the main process below 177 ms. Local
+  `beta:verify --no-smoke` passed 7/7; report:
+  `tmp/beta-artifacts/verify-0.1.0-beta.12-sha.4f2b3d71f9b8-2026-07-10T22-23-28Z.json`.
+  **Do not publish:** only the short confirmation on the original team machine/profile plus a
+  support bundle remains release-blocking under `DON-247`.
 - **Previous beta:** `electron-v0.1.0-beta.8`, published 2026-06-23 after GitHub Actions run `28012741523` and a deep Ubuntu packaged smoke (43/43) on the CI-built post-fix artifact (AppImage sha `43067cb2…`). Team artifact: https://github.com/donal0c/sartracker-web/releases/tag/electron-v0.1.0-beta.8`.
 - **Beta.8 release evidence:** tag `electron-v0.1.0-beta.8` (HEAD `34e3fc1`); CI release run `28012741523` is **green** and the deep Ubuntu packaged smoke PASSED on that CI-built artifact. Release note: `docs/releases/sartracker-electron-0.1.0-beta.8.md`.
   - Post-fix CI-built checksums: AppImage `43067cb2a99671419da576799beaedd7541b6ade7714fe267ad0c16b68e97911`, deb `fa60e126faee7a6d0f025d0e460317b6c53da1ed58cd3a3d129ac86ea2ca0a2b`.
@@ -90,8 +85,9 @@
   691,224/1,935,384 positions, zero redundant rows, passed one/two restarts, integrity/WAL/privacy,
   zero renderer crashes, main maxima 147.9/146.9 ms, and RSS maxima 1.49/1.64 GB. Evidence:
   `~/sartracker-beta12-msr/evidence/don246-{normal,extended}-fixed-250ms/`; durable summary:
-  `docs/releases/beta12-tracking-soak-evidence.md`. Next: `DON-247` exact CI artifact/original-
-  machine confirmation. `DON-240` stays open in Linear until that explicit gate.
+  `docs/releases/beta12-tracking-soak-evidence.md`. The replacement exact CI artifact has now
+  passed the complete Ubuntu qualification matrix. Next: `DON-247` original-machine confirmation.
+  `DON-240` stays open in Linear until that explicit gate.
 - **Release split:** beta.12 is the narrow field-freeze/observability release. Beta.13 owns
   migrations, retention, safe legacy recovery, mission-scoped streamed archives, and
   archive-backed review/unlock.
