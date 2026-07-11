@@ -1,8 +1,8 @@
 # SAR Tracker Electron Desktop Beta 0.1.0-beta.12 (mission-store freeze remediation)
 
-> **Internal beta only.** Not a production release. Keep this GitHub release in
-> draft until the exact CI artifact passes the Ubuntu qualification matrix and
-> the original team machine confirms the beta.9-beta.11 freeze is gone.
+> **Internal beta only.** Not a production release. This prerelease is published
+> so the team can download the exact Ubuntu-qualified artifact. Original-machine
+> confirmation remains required before `DON-247` can close.
 
 - **Version:** 0.1.0-beta.12
 - **Build tag:** `electron-v0.1.0-beta.12`
@@ -17,7 +17,8 @@
 - **Exact CI artifact SHA-256:** AppImage
   `fb6c49226b8108de0a75ddc022be8b8abf513f697b9baddc55d3e4ad9e772346`;
   `.deb` `c401b9ca07588cd4aa01e5df5bd92eb7f89ecfb00eee20cbfaac4ffc58ab8d0d`
-- **GitHub release:** must remain draft pending `DON-247`
+- **GitHub release:** published as an internal prerelease for team validation;
+  field confirmation remains pending under `DON-247`
 
 ## Why beta.12 exists
 
@@ -113,9 +114,31 @@ The exact replacement CI artifact has completed the local Ubuntu portion of
    timings. Live-tracking main responsiveness stayed healthy (17.3 ms maximum);
    the Ubuntu X11 renderer cadence remains a known non-discriminating throttled
    signal and is not being treated as proof of a freeze.
-7. **Pending and release-blocking:** short representative confirmation on the
-   original team machine/profile with 30+ devices, followed by support bundle
-   collection even on success.
+7. **Pending post-publication validation gate:** short representative
+   confirmation on the original team machine/profile with 30+ devices, followed
+   by support bundle collection even on success. Publication is required to
+   deliver the bundle to the team and does not itself close `DON-247`.
+
+## Post-publication Ubuntu download smoke — passed
+
+After publication, the AppImage was downloaded afresh from the team-facing
+GitHub release URL onto the Ubuntu validation machine. Its SHA-256 was
+`fb6c49226b8108de0a75ddc022be8b8abf513f697b9baddc55d3e4ad9e772346`,
+exactly matching the qualified release asset. The downloaded bytes passed:
+
+- packaged launch, mission start, marker save, full restart/recovery, finish,
+  finalize, and standalone archive creation
+- coarse Irish Grid normalization and duplicate-launch handling
+- diagnostics report, support bundle, and time-framed incident bundle export,
+  with all three privacy scans passing
+- locked-keyring/bad-secret startup, visible re-entry warning, and Settings
+  credential-replacement path
+- official offline Discovery package registration, local tile read, blocked-
+  network operation, inside/outside coverage guidance, and sanitized diagnostics
+
+Evidence is retained on Ubuntu under
+`~/sartracker-beta12-msr/evidence/beta12-released-download-smoke/`. This clears
+beta.12 for the team to download and begin the original-machine/profile test.
 
 Any unexplained flake, renderer crash, heartbeat failure, missing evidence, or
 field-machine recurrence keeps this release on hold.
@@ -136,7 +159,7 @@ packaged finalization/archive remains green.
 
 ## Rollback
 
-If qualification fails, keep beta.12 as a draft and continue using the current
-team workaround (fresh supported database after safely preserving the legacy
-file). Do not delete or overwrite the legacy database. Capture a support bundle
-before changing user data.
+If original-machine qualification fails, stop beta.12 rollout and continue using
+the current team workaround (fresh supported database after safely preserving
+the legacy file). Do not delete or overwrite the legacy database. Capture a
+support bundle before changing user data.
