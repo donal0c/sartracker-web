@@ -207,6 +207,7 @@ export async function startAppRuntime(
           getInitialBreadcrumbs: hooks.getInitialBreadcrumbs,
           onSnapshot: hooks.onSnapshot,
           onStatusChange: hooks.onStatusChange,
+          onPollDiagnostic: hooks.onPollDiagnostic,
         }),
       createTrackingCache:
         runtimeKind === 'electron' ? createElectronTrackingCache : createTauriTrackingCache,

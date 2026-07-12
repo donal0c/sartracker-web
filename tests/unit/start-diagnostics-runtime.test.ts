@@ -74,6 +74,18 @@ describe('startDiagnosticsRuntime', () => {
           event: 'outside_window',
         },
       ],
+      readTrackingPollLedger: () => [
+        {
+          ts: '2026-04-11T01:17:30.000Z',
+          kind: 'poll_cycle',
+          outcome: 'failure',
+          phase: 'devices',
+          durationMs: 47_000,
+          consecutiveFailures: 1,
+          retryDelayMs: 1_000,
+          failureKind: 'timeout',
+        },
+      ],
       readDiagnosticEvents: () => [
         {
           ts: '2026-04-11T01:17:00.000Z',
@@ -349,6 +361,18 @@ describe('startDiagnosticsRuntime', () => {
           event: 'outside_window',
         },
       ],
+      readTrackingPollLedger: () => [
+        {
+          ts: '2026-04-11T01:17:30.000Z',
+          kind: 'poll_cycle',
+          outcome: 'failure',
+          phase: 'devices',
+          durationMs: 47_000,
+          consecutiveFailures: 1,
+          retryDelayMs: 1_000,
+          failureKind: 'timeout',
+        },
+      ],
     })
 
     await runtime.load()
@@ -361,6 +385,8 @@ describe('startDiagnosticsRuntime', () => {
     expect(contents).toContain('incident time: 2026-04-11T01:18:00.000Z')
     expect(contents).toContain('[diagnostic-breadcrumbs]')
     expect(contents).toContain('marker_saved')
+    expect(contents).toContain('[tracking-poll-ledger]')
+    expect(contents).toContain('"failureKind":"timeout"')
     expect(contents).not.toContain('outside_window')
     expect(options).toEqual({
       timeFrame: {

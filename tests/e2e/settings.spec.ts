@@ -1,7 +1,8 @@
 import { expect, test } from '@playwright/test'
 
 test.describe('M12 settings workspace', () => {
-  test.beforeEach(async ({ page }) => {
+  test.beforeEach(async ({ context, page }) => {
+    await context.grantPermissions(['clipboard-read', 'clipboard-write'])
     await page.goto('/?missionHarness=1')
     const title = page.getByTestId('app-title')
     await title.waitFor({ state: 'visible', timeout: 10000 })
@@ -94,6 +95,49 @@ test.describe('M12 settings workspace', () => {
     await expect(page.getByTestId('tracking-status')).toContainText('1')
     await page.getByTestId('open-devices-workspace').click()
     await expect(page.getByTestId('devices-workspace')).toContainText('S-Tab')
+  })
+
+  test('DON-229: offline polling exports sanitized request and poll-cycle evidence', async ({
+    page,
+  }) => {
+    const server = await routeControllableTraccar(page)
+
+    await page.getByTestId('open-settings-workspace').click()
+    await page.getByRole('button', { name: 'Traccar HTTP' }).click()
+    await page.getByTestId('settings-provider-url').fill('http://traccar.test:8082')
+    await page.getByTestId('settings-provider-email').fill('apiuser')
+    await page.getByTestId('settings-provider-secret').fill('apiuser')
+    await page.getByTestId('settings-auto-refresh-interval').fill('5')
+    await page.getByTestId('settings-save').click()
+
+    await page.getByTestId('mission-name-input').fill('Tracking Diagnostic Mission')
+    await page.getByTestId('mission-start-btn').click()
+    await page.getByTestId('open-settings-workspace').click()
+    await page.getByTestId('settings-save-connect').click()
+    await expect(page.getByTestId('tracking-status')).toContainText('online', { timeout: 15_000 })
+
+    server.setAvailable(false)
+    await expect(page.getByTestId('tracking-status')).toContainText('OFFLINE MODE', {
+      timeout: 25_000,
+    })
+
+    await page.getByTestId('open-diagnostics-workspace').click()
+    await page.getByTestId('diagnostics-copy-report').click()
+    await expect.poll(async () => page.evaluate(() => navigator.clipboard.readText())).toContain(
+      '[tracking-poll-ledger]',
+    )
+    await expect.poll(async () => page.evaluate(() => navigator.clipboard.readText())).toContain(
+      '"kind":"request_attempt"',
+    )
+    await expect.poll(async () => page.evaluate(() => navigator.clipboard.readText())).toContain(
+      '"requestedFromEarliest"',
+    )
+    await expect.poll(async () => page.evaluate(() => navigator.clipboard.readText())).toContain(
+      '"failureKind":"http_5xx"',
+    )
+    await expect.poll(async () => page.evaluate(() => navigator.clipboard.readText())).not.toContain(
+      'apiuser',
+    )
   })
 
   test('DON-228: incremental breadcrumb polling keeps sub-second points after the cursor', async ({
@@ -391,6 +435,54 @@ async function routeTraccarSuccess(
       ]),
     })
   })
+}
+
+async function routeControllableTraccar(page: import('@playwright/test').Page) {
+  let available = true
+  const fulfill = async (
+    route: import('@playwright/test').Route,
+    body: unknown,
+  ) => {
+    await route.fulfill({
+      status: available ? 200 : 503,
+      statusText: available ? 'OK' : 'Service Unavailable',
+      contentType: 'application/json',
+      body: JSON.stringify(available ? body : { error: 'temporarily unavailable' }),
+    })
+  }
+
+  await page.route('http://traccar.test:8082/api/session', async (route) => {
+    await fulfill(route, { id: 4, email: 'apiuser' })
+  })
+  await page.route('http://traccar.test:8082/api/devices', async (route) => {
+    await fulfill(route, [
+      {
+        id: 1,
+        name: 'S-Tab',
+        status: 'online',
+        lastUpdate: '2026-07-12T09:51:09.000Z',
+      },
+    ])
+  })
+  await page.route('http://traccar.test:8082/api/positions**', async (route) => {
+    await fulfill(route, [
+      {
+        id: 396947,
+        deviceId: 1,
+        latitude: 51.99917,
+        longitude: -9.74406,
+        fixTime: '2026-07-12T09:51:09.000Z',
+        valid: true,
+        attributes: { batteryLevel: 82 },
+      },
+    ])
+  })
+
+  return {
+    setAvailable: (next: boolean) => {
+      available = next
+    },
+  }
 }
 
 async function routeTraccarCursorBoundarySequence(page: import('@playwright/test').Page) {

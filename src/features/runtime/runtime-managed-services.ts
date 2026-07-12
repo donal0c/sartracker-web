@@ -8,6 +8,10 @@ import { useAutosaveStatusStore } from '../persistence/autosave-status-store'
 import type { TrackingRuntimeMissionStore } from '../tracking/start-tracking-runtime'
 import { startMissionTrackingStatusBridge } from '../tracking/mission-tracking-status-bridge'
 import { recordDiagnosticEvent } from '../diagnostics/diagnostic-event-log'
+import {
+  recordTrackingPollLedgerEntry,
+  type TrackingPollLedgerEntry,
+} from '../diagnostics/tracking-poll-ledger'
 
 const NOOP_STOP = () => undefined
 
@@ -52,6 +56,7 @@ type CreateManagedRuntimeServicesDependencies = {
         readonly onSnapshot: (snapshot: import('../tracking/tracking-types').TrackingSnapshot) => Promise<void>
         readonly onStatusChange: (status: import('../tracking/tracking-types').TrackingConnectionStatus) => void
         readonly getInitialBreadcrumbs: () => Promise<readonly import('../tracking/tracking-types').NormalizedTrackingPosition[]>
+        readonly onPollDiagnostic: (entry: TrackingPollLedgerEntry) => void
       },
     ) => {
       readonly start: () => void
@@ -68,6 +73,7 @@ type CreateManagedRuntimeServicesDependencies = {
     readonly maxPersistedPositionsPerSnapshot?: number
     readonly writeCache?: boolean
     readonly recordDiagnosticEvent?: typeof recordDiagnosticEvent
+    readonly recordTrackingPollDiagnostic?: typeof recordTrackingPollLedgerEntry
   }) => Promise<() => void>
   readonly createClient: (config: NonNullable<RuntimeBootstrapSettings['trackingConfig']>) => unknown
   readonly createPoller: (
@@ -76,6 +82,7 @@ type CreateManagedRuntimeServicesDependencies = {
       readonly onSnapshot: (snapshot: import('../tracking/tracking-types').TrackingSnapshot) => Promise<void>
       readonly onStatusChange: (status: import('../tracking/tracking-types').TrackingConnectionStatus) => void
       readonly getInitialBreadcrumbs: () => Promise<readonly import('../tracking/tracking-types').NormalizedTrackingPosition[]>
+      readonly onPollDiagnostic: (entry: TrackingPollLedgerEntry) => void
     },
   ) => {
     readonly start: () => void
@@ -143,6 +150,7 @@ export async function createManagedRuntimeServices(
       applySnapshot: dependencies.applySnapshot,
       applyStatus: dependencies.applyStatus,
       recordDiagnosticEvent,
+      recordTrackingPollDiagnostic: recordTrackingPollLedgerEntry,
       ...(dependencies.runtimeSettings.trackingDisabledReason === undefined
         ? {}
         : { idleWarning: dependencies.runtimeSettings.trackingDisabledReason }),

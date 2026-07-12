@@ -1134,6 +1134,16 @@
             snapshot counts. These breadcrumbs do not include precise coordinates, credentials, private map
             package paths, or raw mission data.
           </p>
+          <p>
+            Diagnostics also keeps a bounded <strong>Tracking Poll Ledger</strong> for the current app
+            session. It records when each Traccar poll started and finished, which safe request phase failed,
+            retry attempts and delays, broad failure classes such as network, timeout, authentication, or
+            server error, and whether a later poll recovered. It records counts and timings only &mdash; never
+            device identities, coordinates, provider credentials, or raw server error text. Incident bundles
+            state whether the selected one-hour incident window is fully, partly, or not covered by the
+            retained ledger. If tracking briefly flashes offline, note the approximate time and export an
+            incident bundle as soon as practical, even if it has already recovered.
+          </p>
           <h3>Crash Reporting &amp; Support Bundle (desktop)</h3>
           <p>
             On the Electron desktop app, SAR Tracker keeps a small, bounded record of app-level events and
@@ -1155,14 +1165,14 @@
             <li>
               <strong>Export Support Bundle</strong> (Diagnostics workspace) saves a single text file
               containing the environment snapshot, the most recent crash summaries, and the recent runtime
-              log, plus bounded storage diagnostics on desktop. Use the file-save location it reports, then
+              log, plus the tracking poll ledger and bounded storage diagnostics on desktop. Use the file-save location it reports, then
               attach the file to email, a USB drive, or a chat message when reporting an issue.
             </li>
             <li>
               <strong>Export Incident Bundle</strong> (Diagnostics workspace) saves the same local bundle
               with a known incident time and a one-hour evidence window, 30 minutes before and 30 minutes
               after that time. Desktop bundles use the window to focus crash history, runtime logs, and
-              diagnostic breadcrumbs. When something looks wrong on the map or tracking display, take a
+              diagnostic breadcrumbs and tracking poll ledger. When something looks wrong on the map or tracking display, take a
               screenshot if practical, enter the approximate time it happened, export the incident bundle,
               and send that file with a short note.
             </li>

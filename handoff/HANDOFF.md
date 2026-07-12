@@ -7,6 +7,7 @@
 - **Branch:** `master` is canonical and should be worked directly unless Donal says otherwise.
 - **Desktop lane:** Electron is operational. Tauri remains historical/reference.
 - **Hosted browser:** `https://sartracker-web.vercel.app/?missionHarness=1` is testing/training only; browser storage is not operational persistence.
+- **DON-229 tracking diagnostics:** completed 2026-07-12. Support and incident bundles now include a bounded, sanitized session ledger for poll cycles, anonymized cursor/window ranges, and Traccar retry attempts, with phase, timing, counts, recovery, failure class, and retained-window coverage. A browser regression reproduces online-to-HTTP-503/offline and verifies the exported evidence excludes the configured username. Verification: focused diagnostics/tracking units `77/77`; full unit `164 files / 1150 tests`; lint; build; backend `47 passed / 1 ignored`; Chromium `130/130`; Electron package. Future candidates not folded into this issue: archive/finalization phase diagnostics and GPX/attachment filesystem failure diagnostics.
 - **Latest published team beta:** `electron-v0.1.0-beta.11`. **Field retest 2026-07-09: beta.11 STILL froze.** The team is currently unblocked by preserving the 3.69 GB `mission-store.sqlite` and starting with a fresh database.
 - **Held betas:** `electron-v0.1.0-beta.9` and `electron-v0.1.0-beta.10` are **ON HOLD** for the Linux tracking-online freeze. Do not roll them out further.
 - **Beta.12 internal prerelease:** tag `electron-v0.1.0-beta.12`, commit `0c05cf9`, release run

@@ -5,6 +5,10 @@ import type { TrackingConnectionStatus, TrackingSnapshot } from '../tracking/tra
 import type { Mission, MissionStoreInfo } from '../../infrastructure/mission-store/tauri-mission-store'
 import type { DesktopRuntimeKind } from '../../lib/desktop-runtime'
 import { formatDiagnosticEvents, type DiagnosticEvent } from './diagnostic-event-log'
+import {
+  formatTrackingPollLedger,
+  type TrackingPollLedgerEntry,
+} from './tracking-poll-ledger'
 
 type DependencySmoke = {
   readonly hasMapLibre: boolean
@@ -59,6 +63,7 @@ type BuildDiagnosticsSnapshotInput = {
   readonly trackingStatus: TrackingConnectionStatus
   readonly trackingSnapshot: TrackingSnapshot
   readonly diagnosticEvents?: readonly DiagnosticEvent[]
+  readonly trackingPollLedger?: readonly TrackingPollLedgerEntry[]
   readonly layerCatalogState: {
     readonly missionId: string | null
     readonly loading: boolean
@@ -247,6 +252,8 @@ function buildSupportReport(
     `positions in snapshot: ${input.trackingSnapshot.positions.length}`,
     `breadcrumbs in snapshot: ${input.trackingSnapshot.breadcrumbs.length}`,
     ...formatBreadcrumbMetadataReport(input.trackingSnapshot.breadcrumbMetadata),
+    '',
+    formatTrackingPollLedger(input.trackingPollLedger ?? []),
     '',
     formatDiagnosticEvents(input.diagnosticEvents ?? []),
     '',

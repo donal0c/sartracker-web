@@ -12,6 +12,10 @@ import {
   formatDiagnosticEvents,
   type DiagnosticEvent,
 } from './diagnostic-event-log'
+import {
+  formatTrackingPollLedger,
+  type TrackingPollLedgerEntry,
+} from './tracking-poll-ledger'
 
 type DependencySmoke = {
   readonly hasMapLibre: boolean
@@ -48,6 +52,7 @@ type StartDiagnosticsRuntimeDependencies = {
     readonly error: string | null
   }
   readonly readDiagnosticEvents?: () => readonly DiagnosticEvent[]
+  readonly readTrackingPollLedger?: () => readonly TrackingPollLedgerEntry[]
   readonly exportReport: (fileName: string, contents: string) => Promise<string>
   /**
    * Exports a support bundle (environment + crash history + runtime log). Optional:
@@ -224,10 +229,12 @@ export async function startDiagnosticsRuntime(
         const exportBundle = dependencies.exportTimeFramedSupportBundle ?? dependencies.exportSupportBundle ?? dependencies.exportReport
         const fileName = `support-bundle-incident-${safeTimestamp(incident)}.txt`
         const diagnosticEvents = dependencies.readDiagnosticEvents?.() ?? []
+        const trackingPollLedger = dependencies.readTrackingPollLedger?.() ?? []
         const contents = buildTimeFramedSupportReport(
           snapshot.supportReport,
           incident,
           diagnosticEvents,
+          trackingPollLedger,
         )
         const exportPath = await exportBundle(fileName, contents, {
           timeFrame: {
@@ -307,6 +314,7 @@ export async function startDiagnosticsRuntime(
         trackingStatus: trackingRuntime.status,
         trackingSnapshot: trackingRuntime.snapshot,
         diagnosticEvents: dependencies.readDiagnosticEvents?.() ?? [],
+        trackingPollLedger: dependencies.readTrackingPollLedger?.() ?? [],
         layerCatalogState: layerCatalogRuntime,
         selectedMissionId,
       })
@@ -378,6 +386,7 @@ function buildTimeFramedSupportReport(
   supportReport: string,
   incidentAt: string,
   diagnosticEvents: readonly DiagnosticEvent[] = [],
+  trackingPollLedger: readonly TrackingPollLedgerEntry[] = [],
 ): string {
   const incidentTimestamp = Date.parse(incidentAt)
   const startAt = new Date(incidentTimestamp - INCIDENT_WINDOW_MINUTES * 60_000).toISOString()
@@ -396,7 +405,13 @@ function buildTimeFramedSupportReport(
       afterMinutes: INCIDENT_WINDOW_MINUTES,
     })),
     '',
-    stripDiagnosticBreadcrumbSection(supportReport),
+    formatTrackingPollLedger(trackingPollLedger, {
+      incidentAt,
+      beforeMinutes: INCIDENT_WINDOW_MINUTES,
+      afterMinutes: INCIDENT_WINDOW_MINUTES,
+    }),
+    '',
+    stripRuntimeDiagnosticSections(supportReport),
   ].join('\n')
 }
 
@@ -404,6 +419,8 @@ function safeTimestamp(input: string): string {
   return input.replace(/[:.]/g, '-')
 }
 
-function stripDiagnosticBreadcrumbSection(input: string): string {
-  return input.replace(/\n\[diagnostic-breadcrumbs\]\n[\s\S]*?(?=\n\[warnings\])/u, '\n')
+function stripRuntimeDiagnosticSections(input: string): string {
+  return input
+    .replace(/\n\[tracking-poll-ledger\]\n[\s\S]*?(?=\n\[diagnostic-breadcrumbs\])/u, '\n')
+    .replace(/\n\[diagnostic-breadcrumbs\]\n[\s\S]*?(?=\n\[warnings\])/u, '\n')
 }

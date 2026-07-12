@@ -274,6 +274,9 @@ test.describe('M21 diagnostics workspace', () => {
     await expect.poll(async () => page.evaluate(() => navigator.clipboard.readText())).toContain(
       'Breadcrumb history is render-budgeted for 1 device',
     )
+    await expect.poll(async () => page.evaluate(() => navigator.clipboard.readText())).toContain(
+      '[tracking-poll-ledger]',
+    )
   })
 })
 

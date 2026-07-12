@@ -25,6 +25,7 @@ import { useTrackingStore } from '../tracking/tracking-store'
 import { shouldEnableMissionBrowserHarness } from '../mission/mission-browser-harness'
 import { applyDiagnosticsController, applyDiagnosticsRuntime, useDiagnosticsStore } from './diagnostics-store'
 import { readDiagnosticEvents } from './diagnostic-event-log'
+import { readTrackingPollLedger } from './tracking-poll-ledger'
 import { startDiagnosticsRuntime } from './start-diagnostics-runtime'
 
 /**
@@ -89,6 +90,7 @@ export function DiagnosticsRuntimeBridge() {
         }
       },
       readDiagnosticEvents,
+      readTrackingPollLedger,
       exportReport: exportDiagnosticsReport,
       exportSupportBundle,
       refreshLayerCatalogIfActive: async (targetMissionId) => {

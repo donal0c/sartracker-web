@@ -323,6 +323,7 @@ describe('traccar client', () => {
 
   it('retries with exponential backoff on transport failure', async () => {
     let attempts = 0
+    const recordRequestDiagnostic = vi.fn()
     const fetchFn: TraccarFetch = vi.fn(async () => {
       attempts += 1
       if (attempts < 3) {
@@ -337,6 +338,7 @@ describe('traccar client', () => {
         baseUrl: 'http://test:8082',
         maxRetries: 2,
         retryBaseMs: 1_000,
+        recordRequestDiagnostic,
       },
       fetchFn,
     )
@@ -348,5 +350,26 @@ describe('traccar client', () => {
 
     await expect(promise).resolves.toHaveLength(2)
     expect(attempts).toBe(3)
+    expect(recordRequestDiagnostic).toHaveBeenCalledTimes(3)
+    expect(recordRequestDiagnostic).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        kind: 'request_attempt',
+        outcome: 'failure',
+        phase: 'devices',
+        attempt: 1,
+        maxAttempts: 3,
+        failureKind: 'network',
+      }),
+    )
+    expect(recordRequestDiagnostic).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        kind: 'request_attempt',
+        outcome: 'recovered',
+        phase: 'devices',
+        attempt: 3,
+        failureKind: 'network',
+      }),
+    )
   })
 })

@@ -6,6 +6,12 @@ import type {
 } from './tracking-types'
 import { createBreadcrumbAccumulator } from './breadcrumb-accumulator'
 import { annotateTrackingSnapshotHealth } from './tracking-snapshot-health'
+import type {
+  TrackingBreadcrumbWindowSummary,
+  TrackingPollLedgerEntry,
+  TrackingPollPhase,
+} from '../diagnostics/tracking-poll-ledger'
+import { classifyTrackingFailure } from '../diagnostics/tracking-poll-ledger'
 
 const EMPTY_TRACKING_SNAPSHOT: TrackingSnapshot = {
   devices: [],
@@ -41,6 +47,7 @@ type PollingManagerOptions = {
   readonly getBreadcrumbDeviceIds?: () => readonly string[] | null
   readonly onSnapshot: (snapshot: TrackingSnapshot) => void
   readonly onStatusChange: (status: TrackingConnectionStatus) => void
+  readonly onPollDiagnostic?: (entry: TrackingPollLedgerEntry) => void
   readonly logger?: PollingManagerLogger
   readonly now?: () => Date
   readonly setTimeout?: typeof window.setTimeout
@@ -87,6 +94,7 @@ export function createPollingManager(
   let consecutiveFailures = 0
   let lastGoodSnapshot: TrackingSnapshot | null = null
   let lastSuccessAt: string | null = null
+  let firstFailureAt: string | null = null
   const breadcrumbAccumulator = createBreadcrumbAccumulator()
   let breadcrumbPositions: readonly NormalizedTrackingPosition[] = []
   let breadcrumbMetadata: TrackingSnapshot['breadcrumbMetadata'] | undefined = undefined
@@ -125,6 +133,8 @@ export function createPollingManager(
   }
 
   const poll = async () => {
+    const pollStartedAt = now().toISOString()
+    let pollPhase: TrackingPollPhase = 'authentication'
     try {
       const nextHistoryResetKey = options.getHistoryResetKey?.() ?? null
       if (nextHistoryResetKey !== activeHistoryResetKey) {
@@ -161,11 +171,12 @@ export function createPollingManager(
         return
       }
 
-      await authenticateIfNeeded()
+      await withPollPhase('authentication', authenticateIfNeeded())
 
+      pollPhase = 'devices'
       const [devices, positions] = await Promise.all([
-        client.getDevices(),
-        client.getCurrentPositions(),
+        withPollPhase('devices', client.getDevices()),
+        withPollPhase('current_positions', client.getCurrentPositions()),
       ])
 
       const currentPollingMode = options.getPollingMode?.() ?? 'active'
@@ -205,17 +216,23 @@ export function createPollingManager(
               : null,
       })
 
-      const breadcrumbs = await fetchIncrementalBreadcrumbs(devices, seedState)
+      pollPhase = 'breadcrumbs'
+      const breadcrumbFetch = await fetchIncrementalBreadcrumbs(devices, seedState)
       const previousBreadcrumbPositions = breadcrumbPositions
-      const breadcrumbResult = breadcrumbAccumulator.append(breadcrumbs)
+      const previousObservedCount = breadcrumbMetadata?.totalObserved ?? 0
+      const breadcrumbResult = breadcrumbAccumulator.append(breadcrumbFetch.positions)
       breadcrumbPositions = breadcrumbResult.positions
       breadcrumbMetadata = breadcrumbResult.metadata
+      const acceptedBreadcrumbCount = Math.max(
+        0,
+        breadcrumbResult.metadata.totalObserved - previousObservedCount,
+      )
 
       const rawSnapshot = {
         devices,
         positions,
         breadcrumbs: breadcrumbPositions,
-        rawBreadcrumbsForPersistence: breadcrumbs,
+        rawBreadcrumbsForPersistence: breadcrumbFetch.positions,
         breadcrumbMetadata,
       }
       const latestPollingMode = options.getPollingMode?.() ?? 'active'
@@ -241,10 +258,43 @@ export function createPollingManager(
         })
       }
 
+      const completedAt = now().toISOString()
+      options.onPollDiagnostic?.({
+        ts: completedAt,
+        kind: 'poll_cycle',
+        outcome: recovered ? 'recovered' : 'success',
+        phase: 'breadcrumbs',
+        durationMs: calculateDurationMs(pollStartedAt, completedAt),
+        consecutiveFailures: 0,
+        retryDelayMs: pollIntervalMs,
+        ...(recovered && firstFailureAt !== null
+          ? { outageDurationMs: calculateDurationMs(firstFailureAt, completedAt) }
+          : {}),
+        deviceCount: devices.length,
+        currentPositionCount: positions.length,
+        breadcrumbRequestedDeviceCount: breadcrumbFetch.requestedDeviceCount,
+        breadcrumbReturnedCount: breadcrumbFetch.positions.length,
+        breadcrumbAcceptedCount: acceptedBreadcrumbCount,
+        breadcrumbDuplicateCount: Math.max(
+          0,
+          breadcrumbFetch.positions.length - acceptedBreadcrumbCount,
+        ),
+        breadcrumbFailedDeviceCount: breadcrumbFetch.failedDeviceCount,
+        ...(breadcrumbFetch.window === null
+          ? {}
+          : { breadcrumbWindow: breadcrumbFetch.window }),
+      })
+      firstFailureAt = null
+
       scheduleNextPoll(pollIntervalMs)
     } catch (error) {
       consecutiveFailures += 1
-      if (isAuthenticationFailure(error)) {
+      const completedAt = now().toISOString()
+      const failure = unwrapPollPhaseError(error, pollPhase)
+      if (firstFailureAt === null) {
+        firstFailureAt = pollStartedAt
+      }
+      if (isAuthenticationFailure(failure.cause)) {
         authenticated = false
       }
 
@@ -259,13 +309,23 @@ export function createPollingManager(
 
       publishStatus({
         mode: 'offline',
-        warning: isAuthenticationFailure(error)
+        warning: isAuthenticationFailure(failure.cause)
           ? 'TRACKING AUTHENTICATION FAILED — check Traccar credentials.'
           : 'OFFLINE MODE — showing last known positions.',
       })
 
       const unboundedDelay = (options.retryBaseMs ?? 1_000) * 2 ** (consecutiveFailures - 1)
       const backoffDelay = Math.min(unboundedDelay, maxBackoffMs)
+      options.onPollDiagnostic?.({
+        ts: completedAt,
+        kind: 'poll_cycle',
+        outcome: 'failure',
+        phase: failure.phase,
+        durationMs: calculateDurationMs(pollStartedAt, completedAt),
+        consecutiveFailures,
+        retryDelayMs: backoffDelay,
+        failureKind: classifyTrackingFailure(failure.cause),
+      })
       scheduleNextPoll(backoffDelay)
     }
   }
@@ -312,9 +372,9 @@ export function createPollingManager(
   async function fetchIncrementalBreadcrumbs(
     devices: readonly NormalizedTrackingDevice[],
     seedState: InitialBreadcrumbSeedState,
-  ): Promise<readonly NormalizedTrackingPosition[]> {
+  ): Promise<BreadcrumbFetchResult> {
     if (seedState === 'failed') {
-      return []
+      return { positions: [], requestedDeviceCount: 0, failedDeviceCount: 0, window: null }
     }
 
     const fetchUntil = now()
@@ -347,22 +407,30 @@ export function createPollingManager(
           latestBreadcrumbTimestampByDevice.set(device.device_id, newestTimestamp)
         }
 
-        return breadcrumbs
+        return {
+          breadcrumbs,
+          previousCursor: lastTimestamp ?? null,
+          requestedFrom: fetchFrom.toISOString(),
+          requestedTo: fetchUntil.toISOString(),
+          newestReturned: newestTimestamp,
+        }
       }),
     )
 
     const aggregated: NormalizedTrackingPosition[] = []
+    let failedDeviceCount = 0
     for (let index = 0; index < settled.length; index += 1) {
       const result = settled[index]
       if (result === undefined) {
         continue
       }
       if (result.status === 'fulfilled') {
-        aggregated.push(...result.value)
+        aggregated.push(...result.value.breadcrumbs)
         continue
       }
 
       const failedDevice = breadcrumbDevices[index]
+      failedDeviceCount += 1
       logger.warn('Tracking breadcrumb fetch failed for device.', {
         deviceId: failedDevice?.device_id ?? null,
         deviceName: failedDevice?.name ?? null,
@@ -370,7 +438,14 @@ export function createPollingManager(
       })
     }
 
-    return aggregated
+    return {
+      positions: aggregated,
+      requestedDeviceCount: breadcrumbDevices.length,
+      failedDeviceCount,
+      window: summarizeBreadcrumbWindows(
+        settled.flatMap((result) => (result.status === 'fulfilled' ? [result.value] : [])),
+      ),
+    }
   }
 
   async function seedInitialBreadcrumbs(): Promise<InitialBreadcrumbSeedState> {
@@ -415,6 +490,96 @@ export function createPollingManager(
 }
 
 type InitialBreadcrumbSeedState = 'loaded' | 'failed'
+
+type BreadcrumbFetchResult = {
+  readonly positions: readonly NormalizedTrackingPosition[]
+  readonly requestedDeviceCount: number
+  readonly failedDeviceCount: number
+  readonly window: TrackingBreadcrumbWindowSummary | null
+}
+
+type BreadcrumbDeviceWindow = {
+  readonly breadcrumbs: readonly NormalizedTrackingPosition[]
+  readonly previousCursor: string | null
+  readonly requestedFrom: string
+  readonly requestedTo: string
+  readonly newestReturned: string | null
+}
+
+function summarizeBreadcrumbWindows(
+  windows: readonly BreadcrumbDeviceWindow[],
+): TrackingBreadcrumbWindowSummary | null {
+  if (windows.length === 0) {
+    return null
+  }
+  const previousCursors = windows.flatMap((window) =>
+    window.previousCursor === null ? [] : [window.previousCursor],
+  )
+  const newestReturned = windows.flatMap((window) =>
+    window.newestReturned === null ? [] : [window.newestReturned],
+  )
+  return {
+    requestedFromEarliest: findTimestampBoundary(windows.map((window) => window.requestedFrom), 'min'),
+    requestedFromLatest: findTimestampBoundary(windows.map((window) => window.requestedFrom), 'max'),
+    requestedTo: findTimestampBoundary(windows.map((window) => window.requestedTo), 'max'),
+    ...(previousCursors.length === 0
+      ? {}
+      : {
+          previousCursorEarliest: findTimestampBoundary(previousCursors, 'min'),
+          previousCursorLatest: findTimestampBoundary(previousCursors, 'max'),
+        }),
+    ...(newestReturned.length === 0
+      ? {}
+      : {
+          newestReturnedEarliest: findTimestampBoundary(newestReturned, 'min'),
+          newestReturnedLatest: findTimestampBoundary(newestReturned, 'max'),
+        }),
+  }
+}
+
+function findTimestampBoundary(
+  timestamps: readonly string[],
+  boundary: 'min' | 'max',
+): string {
+  return timestamps.reduce((selected, timestamp) =>
+    boundary === 'min'
+      ? (Date.parse(timestamp) < Date.parse(selected) ? timestamp : selected)
+      : (Date.parse(timestamp) > Date.parse(selected) ? timestamp : selected),
+  )
+}
+
+class PollPhaseError extends Error {
+  readonly phase: TrackingPollPhase
+  override readonly cause: unknown
+
+  constructor(phase: TrackingPollPhase, cause: unknown) {
+    super(cause instanceof Error ? cause.message : 'Tracking poll phase failed.')
+    this.name = cause instanceof Error ? cause.name : 'PollPhaseError'
+    this.phase = phase
+    this.cause = cause
+  }
+}
+
+async function withPollPhase<T>(phase: TrackingPollPhase, operation: Promise<T>): Promise<T> {
+  try {
+    return await operation
+  } catch (error) {
+    throw new PollPhaseError(phase, error)
+  }
+}
+
+function unwrapPollPhaseError(
+  error: unknown,
+  fallbackPhase: TrackingPollPhase,
+): { readonly phase: TrackingPollPhase; readonly cause: unknown } {
+  return error instanceof PollPhaseError
+    ? { phase: error.phase, cause: error.cause }
+    : { phase: fallbackPhase, cause: error }
+}
+
+function calculateDurationMs(startedAt: string, completedAt: string): number {
+  return Math.max(0, Date.parse(completedAt) - Date.parse(startedAt))
+}
 
 function createOverlappedFetchFrom(
   lastTimestamp: string,

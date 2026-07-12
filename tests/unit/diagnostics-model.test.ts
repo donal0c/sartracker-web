@@ -41,6 +41,18 @@ describe('diagnostics model', () => {
           },
         },
       ],
+      trackingPollLedger: [
+        {
+          ts: '2026-06-22T15:05:01.000Z',
+          kind: 'poll_cycle',
+          outcome: 'failure',
+          phase: 'current_positions',
+          durationMs: 47_000,
+          consecutiveFailures: 1,
+          retryDelayMs: 1_000,
+          failureKind: 'timeout',
+        },
+      ],
       layerCatalogState: {
         missionId: 'mission-1',
         loading: false,
@@ -66,6 +78,8 @@ describe('diagnostics model', () => {
     expect(snapshot.supportReport).toContain('official map package 2: official_discovery_topo missing mbtiles')
     expect(snapshot.supportReport).toContain('[diagnostic-breadcrumbs]')
     expect(snapshot.supportReport).toContain('basemap_changed')
+    expect(snapshot.supportReport).toContain('[tracking-poll-ledger]')
+    expect(snapshot.supportReport).toContain('"failureKind":"timeout"')
     expect(snapshot.supportReport).not.toContain('52.0599')
     expect(snapshot.supportReport).not.toContain('mountainrescue_org.txt')
     expect(snapshot.supportReport).not.toContain('reeks-standard-60km-z16.mbtiles')

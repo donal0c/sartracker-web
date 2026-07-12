@@ -16,12 +16,14 @@ import {
   createTrackingPositionIdentityKey,
 } from './tracking-position-identity'
 import type { DiagnosticEventInput } from '../diagnostics/diagnostic-event-log'
+import type { TrackingPollLedgerEntry } from '../diagnostics/tracking-poll-ledger'
 
 export type TrackingRuntimeConfig = {
   readonly baseUrl: string
   readonly email?: string
   readonly password?: string
   readonly token?: string
+  readonly recordRequestDiagnostic?: (entry: TrackingPollLedgerEntry) => void
 }
 
 type TrackingRuntimeClientFactory = (config: TrackingRuntimeConfig) => unknown
@@ -37,6 +39,7 @@ type TrackingRuntimePollerFactory = (
     readonly onSnapshot: (snapshot: TrackingSnapshot) => Promise<void>
     readonly onStatusChange: (status: TrackingConnectionStatus) => void
     readonly getInitialBreadcrumbs: () => Promise<readonly NormalizedTrackingPosition[]>
+    readonly onPollDiagnostic: (entry: TrackingPollLedgerEntry) => void
   },
 ) => TrackingRuntimePoller
 
@@ -150,6 +153,7 @@ type StartTrackingRuntimeDependencies = {
   readonly writeCache?: boolean
   readonly logger?: TrackingRuntimeLogger
   readonly recordDiagnosticEvent?: (event: DiagnosticEventInput) => void | Promise<void>
+  readonly recordTrackingPollDiagnostic?: (entry: TrackingPollLedgerEntry) => void
   readonly now?: () => Date
 }
 
@@ -218,7 +222,12 @@ export async function startTrackingRuntime(
     }
   }
 
-  const client = dependencies.createClient(dependencies.config)
+  const client = dependencies.createClient({
+    ...dependencies.config,
+    ...(dependencies.recordTrackingPollDiagnostic === undefined
+      ? {}
+      : { recordRequestDiagnostic: dependencies.recordTrackingPollDiagnostic }),
+  })
   const poller = dependencies.createPoller(client, {
     getInitialBreadcrumbs: async () => {
       const seed = await getInitialPersistedBreadcrumbs(dependencies.missionStore)
@@ -293,6 +302,9 @@ export async function startTrackingRuntime(
           hasWarning: status.warning !== null,
         },
       })
+    },
+    onPollDiagnostic: (entry) => {
+      dependencies.recordTrackingPollDiagnostic?.(entry)
     },
   })
 

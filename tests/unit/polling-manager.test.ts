@@ -182,6 +182,58 @@ describe('polling manager', () => {
     poller.stop()
   })
 
+  it('records a sanitized failed poll and its recovery in the tracking ledger [DON-229]', async () => {
+    const client = createClient({
+      getDevices: vi
+        .fn()
+        .mockRejectedValueOnce(new DOMException('request aborted', 'AbortError'))
+        .mockResolvedValue(NORMALIZED_DEVICES as readonly NormalizedTrackingDevice[]),
+    })
+    const onPollDiagnostic = vi.fn()
+    const times = [
+      '2026-07-12T09:51:14.000Z',
+      '2026-07-12T09:52:01.000Z',
+      '2026-07-12T09:52:02.000Z',
+      '2026-07-12T09:52:02.250Z',
+    ]
+
+    const poller = createPollingManager(client, {
+      intervalMs: 5_000,
+      staleThresholdMs: 60 * 60 * 1000,
+      onSnapshot: vi.fn(),
+      onStatusChange: vi.fn(),
+      onPollDiagnostic,
+      retryBaseMs: 1_000,
+      now: () => new Date(times.shift() ?? '2026-07-12T09:52:02.250Z'),
+    })
+
+    poller.start()
+    await vi.advanceTimersByTimeAsync(0)
+    await vi.advanceTimersByTimeAsync(1_000)
+
+    expect(onPollDiagnostic).toHaveBeenCalledWith(
+      expect.objectContaining({
+        kind: 'poll_cycle',
+        outcome: 'failure',
+        phase: 'devices',
+        failureKind: 'timeout',
+        consecutiveFailures: 1,
+        retryDelayMs: 1_000,
+      }),
+    )
+    expect(onPollDiagnostic).toHaveBeenCalledWith(
+      expect.objectContaining({
+        kind: 'poll_cycle',
+        outcome: 'recovered',
+        phase: 'breadcrumbs',
+        consecutiveFailures: 0,
+        outageDurationMs: expect.any(Number),
+      }),
+    )
+
+    poller.stop()
+  })
+
   it('fetches breadcrumbs incrementally per device after the first poll', async () => {
     const client = createClient()
     const onSnapshot = vi.fn()
@@ -612,6 +664,7 @@ describe('polling manager', () => {
         .mockResolvedValueOnce(secondBatch),
     })
     const onSnapshot = vi.fn()
+    const onPollDiagnostic = vi.fn()
     let currentTime = new Date('2026-04-06T10:00:05.000Z')
 
     const poller = createPollingManager(client, {
@@ -619,6 +672,7 @@ describe('polling manager', () => {
       staleThresholdMs: 60 * 60 * 1000,
       onSnapshot,
       onStatusChange: vi.fn(),
+      onPollDiagnostic,
       getBreadcrumbDeviceIds: () => ['1'],
       now: () => currentTime,
     })
@@ -647,6 +701,22 @@ describe('polling manager', () => {
         (breadcrumb) => breadcrumb.timestamp === '2026-04-06T10:00:05.000Z',
       ),
     ).toHaveLength(1)
+    expect(onPollDiagnostic).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        breadcrumbReturnedCount: 2,
+        breadcrumbAcceptedCount: 1,
+        breadcrumbDuplicateCount: 1,
+        breadcrumbWindow: {
+          previousCursorEarliest: '2026-04-06T10:00:05.000Z',
+          previousCursorLatest: '2026-04-06T10:00:05.000Z',
+          requestedFromEarliest: '2026-04-06T09:55:05.000Z',
+          requestedFromLatest: '2026-04-06T09:55:05.000Z',
+          requestedTo: '2026-04-06T10:00:10.000Z',
+          newestReturnedEarliest: '2026-04-06T10:00:05.500Z',
+          newestReturnedLatest: '2026-04-06T10:00:05.500Z',
+        },
+      }),
+    )
 
     poller.stop()
   })

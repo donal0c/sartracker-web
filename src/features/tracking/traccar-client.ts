@@ -6,6 +6,11 @@ import type {
   NormalizedTrackingDevice,
   NormalizedTrackingPosition,
 } from './tracking-types'
+import {
+  classifyTrackingFailure,
+  type TrackingRequestAttemptEntry,
+  type TrackingPollPhase,
+} from '../diagnostics/tracking-poll-ledger'
 
 export type TraccarFetch = (url: string, init?: RequestInit) => Promise<Response>
 
@@ -21,6 +26,7 @@ type TraccarClientConfig = {
   readonly maxRetries?: number
   readonly retryBaseMs?: number
   readonly logger?: TraccarClientLogger
+  readonly recordRequestDiagnostic?: (entry: TrackingRequestAttemptEntry) => void
 }
 
 type TraccarClient = {
@@ -69,6 +75,7 @@ export function createTraccarClient(
   const maxRetries = config.maxRetries ?? 3
   const retryBaseMs = config.retryBaseMs ?? 1_000
   const logger = config.logger ?? DEFAULT_LOGGER
+  const recordRequestDiagnostic = config.recordRequestDiagnostic
   let sessionCookie: string | null = null
 
   const buildHeaders = (): Record<string, string> => {
@@ -105,12 +112,15 @@ export function createTraccarClient(
     }
 
     let lastError: Error | null = null
+    const phase = classifyRequestPhase(path, params)
+    const maxAttempts = maxRetries + 1
 
     for (let attempt = 0; attempt <= maxRetries; attempt += 1) {
       if (attempt > 0) {
         await sleep(retryBaseMs * 2 ** (attempt - 1))
       }
 
+      const attemptStartedAt = Date.now()
       try {
         const response = await fetchWithTimeout(url.toString(), {
           headers: buildHeaders(),
@@ -124,10 +134,35 @@ export function createTraccarClient(
           throw createHttpError(response)
         }
 
-        return await response.json()
+        const payload = await response.json()
+        if (attempt > 0 && lastError !== null) {
+          recordRequestDiagnostic?.({
+            ts: new Date().toISOString(),
+            kind: 'request_attempt',
+            outcome: 'recovered',
+            phase,
+            durationMs: Math.max(0, Date.now() - attemptStartedAt),
+            attempt: attempt + 1,
+            maxAttempts,
+            failureKind: classifyTrackingFailure(lastError),
+            httpStatus: response.status,
+          })
+        }
+        return payload
       } catch (error) {
         lastError =
           error instanceof Error ? error : new Error('Traccar request failed unexpectedly.')
+        recordRequestDiagnostic?.({
+          ts: new Date().toISOString(),
+          kind: 'request_attempt',
+          outcome: 'failure',
+          phase,
+          durationMs: Math.max(0, Date.now() - attemptStartedAt),
+          attempt: attempt + 1,
+          maxAttempts,
+          failureKind: classifyTrackingFailure(error),
+          httpStatus: readHttpStatus(error),
+        })
       }
     }
 
@@ -271,6 +306,30 @@ export function createTraccarClient(
       })
     },
   }
+}
+
+function classifyRequestPhase(
+  path: string,
+  params: Record<string, string> | undefined,
+): TrackingPollPhase {
+  if (path === '/api/session') {
+    return 'authentication'
+  }
+  if (path === '/api/devices') {
+    return 'devices'
+  }
+  if (path === '/api/positions' && params !== undefined && 'deviceId' in params) {
+    return 'breadcrumbs'
+  }
+  return 'current_positions'
+}
+
+function readHttpStatus(error: unknown): number | null {
+  if (!(error instanceof Error)) {
+    return null
+  }
+  const match = error.message.match(/(?:HTTP|status)\s+(\d{3})/iu)
+  return match?.[1] === undefined ? null : Number(match[1])
 }
 
 /**

@@ -78,6 +78,49 @@ describe('startTrackingRuntime', () => {
     )
   })
 
+  it('wires request attempts and poll cycles into the bounded tracking ledger [DON-229]', async () => {
+    const recordTrackingPollDiagnostic = vi.fn()
+    const createClient = vi.fn().mockReturnValue({})
+    const createPoller = vi.fn().mockReturnValue({ start: vi.fn(), stop: vi.fn() })
+
+    await startTrackingRuntime({
+      config: { baseUrl: 'https://tracking.example.test' },
+      createClient,
+      createPoller,
+      cache: { read: vi.fn().mockResolvedValue(null), write: vi.fn() },
+      missionStore: createMissionStoreStub(),
+      applySnapshot: vi.fn(),
+      applyStatus: vi.fn(),
+      recordTrackingPollDiagnostic,
+    })
+
+    const clientConfig = createClient.mock.calls[0]?.[0]
+    clientConfig.recordRequestDiagnostic({
+      ts: '2026-07-12T09:52:01.000Z',
+      kind: 'request_attempt',
+      outcome: 'failure',
+      phase: 'current_positions',
+      durationMs: 10_000,
+      attempt: 1,
+      maxAttempts: 4,
+      failureKind: 'timeout',
+      httpStatus: null,
+    })
+    const hooks = createPoller.mock.calls[0]?.[1]
+    hooks.onPollDiagnostic({
+      ts: '2026-07-12T09:52:01.000Z',
+      kind: 'poll_cycle',
+      outcome: 'failure',
+      phase: 'current_positions',
+      durationMs: 47_000,
+      consecutiveFailures: 1,
+      retryDelayMs: 1_000,
+      failureKind: 'timeout',
+    })
+
+    expect(recordTrackingPollDiagnostic).toHaveBeenCalledTimes(2)
+  })
+
   it('hydrates the UI from cache before polling starts', async () => {
     const applySnapshot = vi.fn()
     const createPoller = vi.fn().mockReturnValue({ start: vi.fn(), stop: vi.fn() })

@@ -22,6 +22,7 @@ import { startTrackingRuntime } from '../tracking/start-tracking-runtime'
 import { applyTrackingSnapshot, applyTrackingStatus } from '../tracking/tracking-store'
 import { startMissionTrackingStatusBridge } from '../tracking/mission-tracking-status-bridge'
 import { recordDiagnosticEvent } from '../diagnostics/diagnostic-event-log'
+import { recordTrackingPollLedgerEntry } from '../diagnostics/tracking-poll-ledger'
 
 const BROWSER_HARNESS_MAX_PERSISTED_TRACKING_POSITIONS = 2_000
 const LEAFLET_FALLBACK_SEED_MISSION_NAME = 'DON-27 Leaflet fallback surface'
@@ -143,6 +144,7 @@ export async function startMissionBrowserHarness(): Promise<void> {
       applySnapshot: applyTrackingSnapshot,
       applyStatus: applyTrackingStatus,
       recordDiagnosticEvent,
+      recordTrackingPollDiagnostic: recordTrackingPollLedgerEntry,
       maxPersistedPositionsPerSnapshot: BROWSER_HARNESS_MAX_PERSISTED_TRACKING_POSITIONS,
       writeCache: electronRuntime && runtimeSettings.trackingCacheEnabled,
       ...(runtimeSettings.trackingDisabledReason === undefined
