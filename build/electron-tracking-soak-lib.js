@@ -229,6 +229,49 @@ export function buildTrackingSoakVerdict(input) {
   }
 }
 
+/**
+ * Classifies which operator-input boundary failed without relying on error text.
+ *
+ * The order follows the actual event path: DOM target -> Chromium hit test ->
+ * browser click delivery -> React state -> main-process IPC -> close path.
+ */
+export function classifyOperatorInteraction(input) {
+  const failureStages = []
+  if (input.targetFound !== true) {
+    failureStages.push('target_missing')
+  } else if (input.targetReceivesPointer !== true) {
+    failureStages.push('input_occluded')
+  }
+
+  if (input.targetFound === true && input.targetReceivesPointer === true) {
+    if (input.openClickCompleted !== true || input.openClickReceived !== true) {
+      failureStages.push('browser_input_not_delivered')
+    } else if (input.workspaceOpened !== true) {
+      failureStages.push('ui_state_not_updated')
+    }
+  }
+
+  if (input.mainIpcStatus === 'timeout' || input.mainIpcStatus === 'error') {
+    failureStages.push(
+      input.mainIpcStatus === 'timeout' ? 'main_ipc_unresponsive' : 'main_ipc_error',
+    )
+  }
+
+  if (input.workspaceOpened === true) {
+    if (input.closeClickCompleted !== true || input.closeClickReceived !== true) {
+      failureStages.push('close_input_not_delivered')
+    } else if (input.workspaceClosed !== true) {
+      failureStages.push('ui_state_not_dismissed')
+    }
+  }
+
+  return {
+    passed: failureStages.length === 0,
+    classification: failureStages[0] ?? 'healthy',
+    failureStages,
+  }
+}
+
 /** Calculates interval slopes without conflating retained positions and redundant telemetry. */
 export function buildTrackingGrowthEvidence(checkpoints) {
   const normalized = checkpoints.map((checkpoint) => ({ ...checkpoint }))

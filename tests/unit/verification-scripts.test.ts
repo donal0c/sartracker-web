@@ -9,6 +9,15 @@ type PackageManifest = {
   readonly scripts?: Record<string, string>
 }
 
+type ElectronBuilderConfig = {
+  readonly buildDependenciesFromSource?: boolean
+  readonly extraResources?: readonly {
+    readonly from?: string
+    readonly to?: string
+    readonly filter?: readonly string[]
+  }[]
+}
+
 describe('project verification scripts', () => {
   it('keeps backend Cargo tests in the normal full verification path', () => {
     const manifest = readPackageManifest()
@@ -35,11 +44,25 @@ describe('project verification scripts', () => {
   })
 
   it('forces Electron packaged native dependencies to rebuild from source', () => {
-    const builderConfig = readJsonFile<{ readonly buildDependenciesFromSource?: boolean }>(
-      'electron-builder.json',
-    )
+    const builderConfig = readJsonFile<ElectronBuilderConfig>('electron-builder.json')
 
     expect(builderConfig.buildDependenciesFromSource).toBe(true)
+  })
+
+  it('ships the report-only Linux hang collector beside packaged app resources [DON-247]', () => {
+    const builderConfig = readJsonFile<ElectronBuilderConfig>('electron-builder.json')
+
+    expect(builderConfig.extraResources).toContainEqual({
+      from: 'field-tools',
+      to: 'field-tools',
+      filter: ['**/*'],
+    })
+    expect(
+      readFileSync(
+        join(process.cwd(), 'field-tools', 'sartracker-linux-hang-collector.sh'),
+        'utf8',
+      ),
+    ).toContain('ELECTRON_RUN_AS_NODE=1')
   })
 
   it('preserves the failed packaging command exit code while restoring native dependencies', () => {

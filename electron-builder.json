@@ -10,6 +10,15 @@
     "electron/**",
     "package.json"
   ],
+  "extraResources": [
+    {
+      "from": "field-tools",
+      "to": "field-tools",
+      "filter": [
+        "**/*"
+      ]
+    }
+  ],
   "asar": true,
   "npmRebuild": true,
   "buildDependenciesFromSource": true,

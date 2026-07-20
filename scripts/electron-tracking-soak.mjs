@@ -28,6 +28,7 @@ import { sanitizeEvidenceText } from '../build/electron-official-map-offline-smo
 import {
   buildTrackingGrowthEvidence,
   buildTrackingSoakVerdict,
+  classifyOperatorInteraction,
   parseTrackingSoakArgs,
   parseTrackingSoakRuntimeLog,
 } from '../build/electron-tracking-soak-lib.js'
@@ -191,6 +192,9 @@ async function main() {
     const operatorInteractionErrors = operatorInteractions.filter(
       (interaction) => !interaction.passed,
     ).length
+    const operatorInteractionClassifications = countBy(
+      operatorInteractions.map((interaction) => interaction.classification),
+    )
     const processMemory = {
       samples: launches.reduce((sum, launch) => sum + launch.processMemory.samples, 0),
       maximumProcessTreeResidentBytes: Math.max(
@@ -271,6 +275,7 @@ async function main() {
         operatorInteractions: {
           ...operatorInteractionStats,
           errors: operatorInteractionErrors,
+          classifications: operatorInteractionClassifications,
           samples: operatorInteractions,
         },
         rendererThrottledByDesktopSession:
@@ -446,24 +451,71 @@ async function startSyntheticMission(page) {
  */
 async function recordOperatorInteraction(input) {
   const startedAt = performance.now()
-  let passed = false
-  let failureClass = null
-  try {
-    await input.page.getByTestId('open-devices-workspace').click({ timeout: 5_000 })
-    await input.page
-      .getByTestId('devices-workspace')
-      .waitFor({ state: 'visible', timeout: 5_000 })
-    await input.page.getByTestId('workspace-close-btn').click({ timeout: 5_000 })
-    await input.page
-      .getByTestId('devices-workspace')
-      .waitFor({ state: 'hidden', timeout: 5_000 })
-    passed = true
-  } catch (error) {
-    failureClass = error instanceof Error ? error.name : 'UnknownError'
+  const preflight = await inspectPointerTarget(
+    input.page,
+    'open-devices-workspace',
+  ).catch(() => ({
+    targetFound: false,
+    targetReceivesPointer: false,
+    hitElement: null,
+  }))
+  const result = {
+    ...preflight,
+    openClickCompleted: false,
+    openClickReceived: false,
+    workspaceOpened: false,
+    mainIpcStatus: 'not_run',
+    closeClickCompleted: false,
+    closeClickReceived: false,
+    workspaceClosed: false,
+  }
+  const errors = []
+
+  if (result.targetFound) {
+    await installClickRecorder(input.page, 'open-devices-workspace').catch(() => undefined)
+    try {
+      await input.page.getByTestId('open-devices-workspace').click({ timeout: 5_000 })
+      result.openClickCompleted = true
+    } catch (error) {
+      errors.push(safeErrorClass(error))
+    }
+    result.openClickReceived = await readClickRecorder(input.page).catch(() => false)
+    result.workspaceOpened = await waitForLocatorState(
+      input.page.getByTestId('devices-workspace'),
+      'visible',
+      5_000,
+    )
+  }
+
+  const mainIpc = await probeMainProcessIpc(input.page, 1_000).catch((error) => ({
+    status: 'error',
+    durationMs: 0,
+    errorClass: safeErrorClass(error),
+  }))
+  result.mainIpcStatus = mainIpc.status
+
+  if (result.workspaceOpened) {
+    await installClickRecorder(input.page, 'workspace-close-btn').catch(() => undefined)
+    try {
+      await input.page.getByTestId('workspace-close-btn').click({ timeout: 5_000 })
+      result.closeClickCompleted = true
+    } catch (error) {
+      errors.push(safeErrorClass(error))
+    }
+    result.closeClickReceived = await readClickRecorder(input.page).catch(() => false)
+    result.workspaceClosed = await waitForLocatorState(
+      input.page.getByTestId('devices-workspace'),
+      'hidden',
+      5_000,
+    )
+  }
+
+  const classification = classifyOperatorInteraction(result)
+  if (!classification.passed) {
     await input.page.screenshot({
       path: path.join(
         input.evidenceDir,
-        `operator-interaction-failure-${sanitizeFileSegment(input.phase)}.png`,
+        `operator-interaction-failure-${sanitizeFileSegment(input.phase)}-${classification.classification}.png`,
       ),
       fullPage: true,
     }).catch(() => undefined)
@@ -473,9 +525,131 @@ async function recordOperatorInteraction(input) {
   input.results.push({
     phase: input.phase,
     durationMs: performance.now() - startedAt,
-    passed,
-    failureClass,
+    ...classification,
+    preflight,
+    browserEvents: {
+      openClickCompleted: result.openClickCompleted,
+      openClickReceived: result.openClickReceived,
+      closeClickCompleted: result.closeClickCompleted,
+      closeClickReceived: result.closeClickReceived,
+    },
+    uiState: {
+      workspaceOpened: result.workspaceOpened,
+      workspaceClosed: result.workspaceClosed,
+    },
+    mainIpc,
+    errorClasses: errors,
   })
+}
+
+/** Inspects the real hit-test target at the centre of an operator control. */
+async function inspectPointerTarget(page, testId) {
+  return page.evaluate((expectedTestId) => {
+    const target = document.querySelector(`[data-testid="${expectedTestId}"]`)
+    if (!(target instanceof HTMLElement)) {
+      return {
+        targetFound: false,
+        targetReceivesPointer: false,
+        hitElement: null,
+      }
+    }
+    const rect = target.getBoundingClientRect()
+    const hit = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2)
+    return {
+      targetFound: true,
+      targetReceivesPointer: hit === target || (hit !== null && target.contains(hit)),
+      hitElement:
+        hit instanceof HTMLElement
+          ? {
+              tag: hit.tagName.toLowerCase(),
+              testId: hit.dataset.testid ?? null,
+              id: hit.id || null,
+            }
+          : null,
+    }
+  }, testId)
+}
+
+/** Installs a one-shot capture listener for the next expected trusted browser click. */
+async function installClickRecorder(page, testId) {
+  await page.evaluate((expectedTestId) => {
+    window.__SARTRACKER_OPERATOR_CLICK_PROBE__ = {
+      expectedTestId,
+      received: false,
+      trusted: false,
+    }
+    const listener = (event) => {
+      const path = event.composedPath()
+      const received = path.some(
+        (entry) =>
+          entry instanceof HTMLElement && entry.dataset.testid === expectedTestId,
+      )
+      if (received) {
+        window.__SARTRACKER_OPERATOR_CLICK_PROBE__ = {
+          expectedTestId,
+          received: true,
+          trusted: event.isTrusted,
+        }
+        document.removeEventListener('click', listener, true)
+      }
+    }
+    document.addEventListener('click', listener, true)
+  }, testId)
+}
+
+/** Reads whether Chromium delivered the expected trusted click into the document. */
+async function readClickRecorder(page) {
+  return page.evaluate(
+    () =>
+      window.__SARTRACKER_OPERATOR_CLICK_PROBE__?.received === true &&
+      window.__SARTRACKER_OPERATOR_CLICK_PROBE__?.trusted === true,
+  )
+}
+
+/** Probes the real renderer-to-main mission-store IPC with an in-renderer timeout. */
+async function probeMainProcessIpc(page, timeoutMs) {
+  return page.evaluate(async (timeout) => {
+    const info = window.sartrackerElectron?.missionStore.info
+    if (typeof info !== 'function') {
+      return { status: 'error', durationMs: 0, errorClass: 'BridgeUnavailable' }
+    }
+    const startedAt = performance.now()
+    let timeoutId
+    const timeoutResult = new Promise((resolve) => {
+      timeoutId = window.setTimeout(
+        () => resolve({ status: 'timeout', errorClass: null }),
+        timeout,
+      )
+    })
+    const ipcResult = Promise.resolve()
+      .then(() => info())
+      .then(
+        () => ({ status: 'ok', errorClass: null }),
+        (error) => ({
+          status: 'error',
+          errorClass: error instanceof Error ? error.name : 'UnknownError',
+        }),
+      )
+    const result = await Promise.race([ipcResult, timeoutResult])
+    window.clearTimeout(timeoutId)
+    return {
+      ...result,
+      durationMs: performance.now() - startedAt,
+    }
+  }, timeoutMs)
+}
+
+/** Waits for one UI state without converting a timeout into an opaque thrown error. */
+async function waitForLocatorState(locator, state, timeout) {
+  return locator
+    .waitFor({ state, timeout })
+    .then(() => true)
+    .catch(() => false)
+}
+
+/** Returns only an error class so evidence cannot leak operational text. */
+function safeErrorClass(error) {
+  return error instanceof Error ? error.name : 'UnknownError'
 }
 
 /**
@@ -664,6 +838,15 @@ function expectedPositionsAt(profile, batch) {
 
 function sanitizeFileSegment(value) {
   return String(value).replaceAll(/[^a-z0-9-]+/giu, '-')
+}
+
+/** Counts stable diagnostic enum values. */
+function countBy(values) {
+  const counts = {}
+  for (const value of values) {
+    counts[value] = (counts[value] ?? 0) + 1
+  }
+  return counts
 }
 
 async function readGrowthCheckpoint(input) {

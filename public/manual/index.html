@@ -1197,6 +1197,28 @@
             In the hosted browser app there is no persistent crash history; Export Support Bundle there
             produces the environment snapshot only.
           </p>
+          <h3>Linux unresponsive-app capture</h3>
+          <p>
+            If the Linux desktop app still shows a moving mission clock but stops accepting clicks or
+            keyboard actions, <strong>leave SAR Tracker open</strong>. Do not restart, reinstall, delete the
+            profile, or force-close it before capturing evidence. Open a terminal and run the packaged
+            report-only collector:
+          </p>
+          <pre><code>sh "/opt/SAR Tracker Electron Validation/resources/field-tools/sartracker-linux-hang-collector.sh" --screenshot</code></pre>
+          <p>
+            For a running AppImage, locate the mounted copy first:
+          </p>
+          <pre><code>COLLECTOR=$(find /tmp -maxdepth 4 -path '*/resources/field-tools/sartracker-linux-hang-collector.sh' -print -quit)
+sh "$COLLECTOR" --screenshot</code></pre>
+          <p>
+            The collector does not attach a debugger, signal the app, read credentials or process
+            environments, or copy mission databases. It records bounded process/thread wait states,
+            graphics and X11/Wayland context, journal entries restricted to SAR Tracker processes, and
+            sanitized app diagnostics. The optional screenshot can contain operational map information;
+            review it before sharing. Preserve the resulting <code>.tar.gz</code> archive and send it with
+            the approximate incident time, Mint version, package type, controls attempted, and whether the
+            clock was still moving.
+          </p>
           <h3>Startup Faults</h3>
           <p>
             During startup, SAR Tracker shows a preparing screen until runtime services are ready. If the

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import {
+  classifyOperatorInteraction,
   buildTrackingSoakVerdict,
   buildTrackingGrowthEvidence,
   createTrackingSoakProfile,
@@ -198,6 +199,89 @@ describe('Electron packaged tracking soak helpers [DON-246]', () => {
 
     expect(verdict.passed).toBe(false)
     expect(verdict.failureReasons.join('\n')).toMatch(/operator interaction/i)
+  })
+
+  it.each([
+    {
+      expected: 'target_missing',
+      input: { targetFound: false },
+    },
+    {
+      expected: 'input_occluded',
+      input: { targetFound: true, targetReceivesPointer: false },
+    },
+    {
+      expected: 'browser_input_not_delivered',
+      input: {
+        targetFound: true,
+        targetReceivesPointer: true,
+        openClickCompleted: false,
+        openClickReceived: false,
+      },
+    },
+    {
+      expected: 'ui_state_not_updated',
+      input: {
+        targetFound: true,
+        targetReceivesPointer: true,
+        openClickCompleted: true,
+        openClickReceived: true,
+        workspaceOpened: false,
+      },
+    },
+    {
+      expected: 'main_ipc_unresponsive',
+      input: {
+        targetFound: true,
+        targetReceivesPointer: true,
+        openClickCompleted: true,
+        openClickReceived: true,
+        workspaceOpened: true,
+        mainIpcStatus: 'timeout',
+        closeClickCompleted: true,
+        closeClickReceived: true,
+        workspaceClosed: true,
+      },
+    },
+    {
+      expected: 'ui_state_not_dismissed',
+      input: {
+        targetFound: true,
+        targetReceivesPointer: true,
+        openClickCompleted: true,
+        openClickReceived: true,
+        workspaceOpened: true,
+        mainIpcStatus: 'ok',
+        closeClickCompleted: true,
+        closeClickReceived: true,
+        workspaceClosed: false,
+      },
+    },
+  ])('classifies operator interaction failures as $expected [DON-247]', ({ input, expected }) => {
+    expect(classifyOperatorInteraction(input)).toMatchObject({
+      passed: false,
+      classification: expected,
+    })
+  })
+
+  it('classifies a complete browser, UI-state, and main-IPC interaction as healthy [DON-247]', () => {
+    expect(
+      classifyOperatorInteraction({
+        targetFound: true,
+        targetReceivesPointer: true,
+        openClickCompleted: true,
+        openClickReceived: true,
+        workspaceOpened: true,
+        mainIpcStatus: 'ok',
+        closeClickCompleted: true,
+        closeClickReceived: true,
+        workspaceClosed: true,
+      }),
+    ).toEqual({
+      passed: true,
+      classification: 'healthy',
+      failureStages: [],
+    })
   })
 
   it('reports separate operational and redundant slopes between durable checkpoints', () => {

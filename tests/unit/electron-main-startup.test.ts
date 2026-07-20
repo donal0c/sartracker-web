@@ -12,6 +12,10 @@ import { DEFAULT_APP_SETTINGS } from '../../src/features/settings/settings-types
 const require = createRequire(import.meta.url)
 const originalLoad = Module._load
 const originalPlatform = process.platform
+const originalProcessListeners = {
+  uncaughtException: new Set(process.listeners('uncaughtException')),
+  unhandledRejection: new Set(process.listeners('unhandledRejection')),
+}
 const testUserDataPath = path.join(
   os.tmpdir(),
   `sartracker-electron-main-startup-test-${process.pid}-${process.env.VITEST_WORKER_ID ?? '0'}`,
@@ -24,6 +28,8 @@ describe('Electron main startup', () => {
       value: originalPlatform,
     })
     vi.restoreAllMocks()
+    removeTestProcessListeners('uncaughtException')
+    removeTestProcessListeners('unhandledRejection')
     rmSync(testUserDataPath, { force: true, recursive: true })
     delete process.env.SARTRACKER_ELECTRON_BLOCK_NETWORK
     delete require.cache[require.resolve('../../electron/main.cjs')]
@@ -391,7 +397,12 @@ describe('Electron main startup', () => {
     expect(uncaughtHandler).toEqual(expect.any(Function))
 
     await uncaughtHandler?.(new Error('fatal token=secret-token'))
-    await new Promise((resolve) => setTimeout(resolve, 50))
+    await vi.waitFor(() => {
+      expect(
+        readFileSync(path.join(testUserDataPath, 'logs', 'runtime.log'), 'utf8'),
+      ).toContain('uncaught_exception')
+      expect(electronMock.app.exit).toHaveBeenCalledWith(1)
+    })
 
     const crashLog = readFileSync(
       path.join(testUserDataPath, 'crashes', 'crash-log.json'),
@@ -426,13 +437,14 @@ describe('Electron main startup', () => {
     )?.[1]
     const event = { preventDefault: vi.fn() }
     beforeQuitHandler(event)
-    await new Promise((resolve) => setTimeout(resolve, 50))
+    await vi.waitFor(() => {
+      expect(electronMock.app.exit).toHaveBeenCalledWith(0)
+    })
 
     expect(event.preventDefault).toHaveBeenCalledTimes(1)
     expect(
       readFileSync(path.join(testUserDataPath, 'crashes', 'last-clean-exit'), 'utf8'),
     ).toMatch(/^\d{4}-\d{2}-\d{2}T/)
-    expect(electronMock.app.exit).toHaveBeenCalledWith(0)
   })
 
   it('keeps crash and runtime logging wired when macOS activate recreates a window [DON-236]', async () => {
@@ -471,6 +483,16 @@ function createPackagedSenderEvent() {
 function seedSettings(settings: Record<string, unknown>) {
   mkdirSync(testUserDataPath, { recursive: true })
   writeFileSync(path.join(testUserDataPath, 'settings.json'), JSON.stringify(settings), 'utf8')
+}
+
+function removeTestProcessListeners(
+  eventName: 'uncaughtException' | 'unhandledRejection',
+): void {
+  for (const listener of process.listeners(eventName)) {
+    if (!originalProcessListeners[eventName].has(listener)) {
+      process.removeListener(eventName, listener)
+    }
+  }
 }
 
 function createElectronMock(
