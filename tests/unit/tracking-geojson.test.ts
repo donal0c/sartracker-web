@@ -90,6 +90,57 @@ describe('tracking geojson', () => {
     expect(pointFeatures[0]?.properties?.color).toBe('#F97316')
   })
 
+  it('renders one breadcrumb dot for every retained Traccar fix [DON-259]', () => {
+    const breadcrumbs = [
+      {
+        id: 101,
+        deviceId: 1,
+        latitude: 52,
+        longitude: -9.7,
+        fixTime: '2026-07-19T12:14:00.000Z',
+      },
+      {
+        id: 102,
+        deviceId: 1,
+        latitude: 52.00001,
+        longitude: -9.70001,
+        fixTime: '2026-07-19T12:14:05.000Z',
+      },
+      {
+        id: 103,
+        deviceId: 1,
+        latitude: 52.00002,
+        longitude: -9.70002,
+        fixTime: '2026-07-19T12:14:10.000Z',
+      },
+      {
+        id: 104,
+        deviceId: 1,
+        latitude: 52.00003,
+        longitude: -9.70003,
+        fixTime: '2026-07-19T12:14:15.000Z',
+      },
+    ].map((position) => normalizeTraccarPosition(position, 'live'))
+
+    const collection = createTrackingFeatureCollection(
+      {
+        devices: devicesFixture.map((device) => normalizeTraccarDevice(device)),
+        positions: [],
+        breadcrumbs,
+      },
+      5 * 60 * 1000,
+      { deviceColors: { '1': '#F97316' }, breadcrumbSize: 8, breadcrumbTrailMode: 'dots' },
+    )
+
+    expect(collection.features).toHaveLength(breadcrumbs.length)
+    expect(collection.features.map((feature) => feature.geometry)).toEqual(
+      breadcrumbs.map((position) => ({
+        type: 'Point',
+        coordinates: [position.lon, position.lat],
+      })),
+    )
+  })
+
   it('segments breadcrumb lines on time gaps and skips one-point segments', () => {
     const collection = createBreadcrumbFeatureCollection(
       {

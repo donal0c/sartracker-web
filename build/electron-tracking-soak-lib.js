@@ -161,6 +161,18 @@ export function buildTrackingSoakVerdict(input) {
   requireExact(failureReasons, input.mainHeartbeatErrors, 0, 'main-process heartbeat errors')
   requireAtLeast(failureReasons, input.rendererSamples, 1, 'renderer responsiveness samples')
   requireExact(failureReasons, input.rendererCrashes, 0, 'renderer crashes')
+  requireAtLeast(
+    failureReasons,
+    input.operatorInteractionSamples,
+    1,
+    'operator interaction samples',
+  )
+  requireExact(
+    failureReasons,
+    input.operatorInteractionErrors,
+    0,
+    'operator interaction errors',
+  )
   if (
     Number.isFinite(input.maximumProcessTreeResidentBytes) &&
     input.maximumProcessTreeResidentBytes > MAX_PROCESS_TREE_RESIDENT_BYTES
@@ -173,6 +185,11 @@ export function buildTrackingSoakVerdict(input) {
   if (input.mainMaximumMs >= input.freezeThresholdMs) {
     failureReasons.push(
       `Main-process maximum ${input.mainMaximumMs}ms reached the ${input.freezeThresholdMs}ms freeze threshold.`,
+    )
+  }
+  if (input.operatorInteractionMaximumMs >= input.freezeThresholdMs) {
+    failureReasons.push(
+      `Operator interaction maximum ${input.operatorInteractionMaximumMs}ms reached the ${input.freezeThresholdMs}ms freeze threshold.`,
     )
   }
   if (input.integrityResult !== 'ok') {

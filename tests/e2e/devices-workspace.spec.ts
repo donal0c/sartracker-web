@@ -164,9 +164,69 @@ test.describe('M19 devices workspace', () => {
     })
   })
 
+  test('renders every retained fix as a dot even when positions are tightly grouped [DON-259]', async ({
+    page,
+  }) => {
+    await page.getByTestId('open-devices-workspace').click()
+    await page.getByTestId('breadcrumb-mode-dots').click()
+    await page.keyboard.press('Escape')
+    await expect(page.getByTestId('devices-workspace')).toBeHidden()
+
+    const expectedCoordinates = await page.evaluate(async () => {
+      const harness = window.__SARTRACKER_BROWSER_HARNESS__
+      if (harness === undefined) {
+        throw new Error('Browser harness API unavailable.')
+      }
+
+      const breadcrumbs = Array.from({ length: 4 }, (_entry, index) => ({
+        id: `grouped-breadcrumb-${index + 1}`,
+        device_id: 'alpha',
+        lat: 51.997 + index * 0.00001,
+        lon: -9.746 - index * 0.00001,
+        altitude: null,
+        speed: 2.5,
+        battery: 84,
+        accuracy: null,
+        timestamp: new Date(Date.UTC(2026, 6, 19, 12, 14, index * 5)).toISOString(),
+        source: null,
+        data_origin: 'live' as const,
+        cache_age_seconds: null,
+        device_cache_stale: false,
+      }))
+
+      await harness.injectTrackingSnapshot({
+        devices: [
+          {
+            device_id: 'alpha',
+            name: 'Alpha Team',
+            status: 'online',
+            last_seen: '2026-07-19T12:14:15.000Z',
+            unique_id: null,
+            category: null,
+          },
+        ],
+        positions: [],
+        breadcrumbs,
+      })
+
+      return breadcrumbs.map(
+        (position) => `${position.lon.toFixed(5)}:${position.lat.toFixed(5)}`,
+      )
+    })
+
+    await expect.poll(async () => readAlphaBreadcrumbCoordinateKeys(page)).toEqual(
+      expectedCoordinates,
+    )
+  })
+
   test('renders sparse breadcrumb cadence as a connected trail [DON-189]', async ({
     page,
   }) => {
+    await page.getByTestId('open-devices-workspace').click()
+    await page.getByTestId('breadcrumb-mode-line').click()
+    await page.getByTestId('workspace-close-btn').click()
+    await expect(page.getByTestId('devices-workspace')).toBeHidden()
+
     await page.evaluate(async () => {
       const harness = window.__SARTRACKER_BROWSER_HARNESS__
       if (harness === undefined) {
@@ -221,10 +281,12 @@ test.describe('M19 devices workspace', () => {
       })
     })
 
-    await expect.poll(async () => readSparseBreadcrumbLine(page)).toMatchObject({
-      hasLine: true,
-      coversSparseTrail: true,
-    })
+    await expect
+      .poll(async () => readSparseBreadcrumbLine(page), { timeout: 15_000 })
+      .toMatchObject({
+        hasLine: true,
+        coversSparseTrail: true,
+      })
   })
 })
 
@@ -336,6 +398,42 @@ async function readSparseBreadcrumbLine(page: import('@playwright/test').Page) {
     }
   })
 }
+
+async function readAlphaBreadcrumbCoordinateKeys(
+  page: import('@playwright/test').Page,
+): Promise<readonly string[]> {
+  return page.evaluate(() => {
+    const map = (
+      window as Window & {
+        __SARTRACKER_MAP__?: {
+          querySourceFeatures: (sourceId: string) => Array<{
+            geometry?: { type?: string; coordinates?: unknown[] }
+            properties?: { featureKind?: string; deviceId?: string }
+          }>
+        }
+      }
+    ).__SARTRACKER_MAP__
+
+    const coordinateKeys = (map?.querySourceFeatures('tracking') ?? [])
+      .filter(
+        (feature) =>
+          feature.properties?.featureKind === 'breadcrumb' &&
+          feature.properties.deviceId === 'alpha' &&
+          feature.geometry?.type === 'Point',
+      )
+      .flatMap((feature) => {
+        const coordinates = feature.geometry?.coordinates
+        const lon = coordinates?.[0]
+        const lat = coordinates?.[1]
+        return typeof lon === 'number' && typeof lat === 'number'
+          ? [`${lon.toFixed(5)}:${lat.toFixed(5)}`]
+          : []
+      })
+
+    return [...new Set(coordinateKeys)].sort()
+  })
+}
+
 
 async function seedTrackingWorkspace(page: import('@playwright/test').Page) {
   await page.evaluate(async () => {

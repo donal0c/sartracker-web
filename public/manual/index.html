@@ -598,7 +598,7 @@
             <figcaption>Main operational shell during an active browser-harness mission.</figcaption>
           </figure>
           <div class="card-grid">
-            <div class="card"><strong>Command mast</strong><br />Mission name, phase, timers, minimized Mission Control summary, device count, tracking cell (mode plus separate FIX and STALE counts), system state, autosave warning state, current app version, Diagnostics, Focus Mode, Settings, Weather, and Help.</div>
+            <div class="card"><strong>Command mast</strong><br />Mission name, phase, timers, minimized Mission Control summary, device count, tracking cell (mode plus separate FIX and STALE counts), system state, autosave warning state, current app version, Diagnostics, Focus Mode, Settings, Weather, and Help. On compact desktop widths, action labels shorten to DIAG, FOCUS, SET, and WX so the controls remain distinct and readable.</div>
             <div class="card"><strong>Map workspace</strong><br />Maps menu, Map Tools menu, live map canvas, map scale, health badge, offline-readiness badge, and coordinate readouts.</div>
             <div class="card"><strong>Right rail</strong><br />Mission Control while expanded, plus tabs for tracking, tools, and layer inspection.</div>
           </div>
@@ -857,7 +857,10 @@
             <strong>NoFix</strong> selects the first visible device in that list, and searching only looks
             inside the currently selected list.
             <strong>Breadcrumb Display</strong> is a global control: use <strong>Solid line</strong> for
-            continuous trails or <strong>Breadcrumb dots</strong> for point-by-point history. The
+            continuous trails or <strong>Breadcrumb dots</strong> to show one dot for every tracking fix
+            retained in the live display window. Closely spaced fixes are not silently removed; if a very
+            long device trail exceeds the bounded live-display window, Diagnostics reports the retained and
+            observed counts while the complete accepted position history remains in mission storage. The
             <strong>Breadcrumb Size</strong> control changes trail width in solid-line mode and dot diameter
             in breadcrumb-dot mode, so dense missions can be made calmer or more prominent without editing
             devices one by one. <strong>Reconnect</strong> reloads settings and forces the tracking provider to reconnect.

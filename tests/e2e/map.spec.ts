@@ -141,6 +141,45 @@ test.describe('M2 map shell', () => {
     expect(layout?.appOverflow).toBeLessThanOrEqual(1)
   })
 
+  test('keeps command mast cells distinct at compact desktop widths [DON-258]', async ({
+    page,
+  }) => {
+    for (const width of [1100, 1280]) {
+      await page.setViewportSize({ width, height: 720 })
+
+      const layout = await page.evaluate(() => {
+        const mast = document.querySelector('[data-testid="command-mast"]')
+        const grid = mast?.firstElementChild
+        if (!(grid instanceof HTMLElement)) {
+          return null
+        }
+
+        const cells = [...grid.children].flatMap((child) => {
+          if (!(child instanceof HTMLElement)) {
+            return []
+          }
+          const rect = child.getBoundingClientRect()
+          return [{ left: rect.left, right: rect.right }]
+        })
+
+        return {
+          firstLeft: cells[0]?.left ?? Number.NaN,
+          lastRight: cells.at(-1)?.right ?? Number.NaN,
+          overlaps: cells.some(
+            (cell, index) => index > 0 && cell.left < (cells[index - 1]?.right ?? cell.left) - 1,
+          ),
+          viewportWidth: window.innerWidth,
+        }
+      })
+
+      expect(layout).not.toBeNull()
+      expect(layout?.firstLeft ?? -1).toBeGreaterThanOrEqual(0)
+      expect(layout?.lastRight ?? Number.POSITIVE_INFINITY).toBeLessThanOrEqual(width + 1)
+      expect(layout?.overlaps).toBe(false)
+      expect(layout?.viewportWidth).toBe(width)
+    }
+  })
+
   test('persists the selected basemap', async ({ page }) => {
     await page.getByTestId('basemap-menu-toggle').click()
     await page.getByTestId('basemap-btn-esri_topo').click()

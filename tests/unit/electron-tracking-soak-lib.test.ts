@@ -100,6 +100,9 @@ describe('Electron packaged tracking soak helpers [DON-246]', () => {
       rendererSamples: 40,
       rendererMaximumMs: 22,
       rendererCrashes: 0,
+      operatorInteractionSamples: 4,
+      operatorInteractionErrors: 0,
+      operatorInteractionMaximumMs: 120,
       maximumProcessTreeResidentBytes: 500_000_000,
       freezeThresholdMs: 1_000,
       integrityResult: 'ok',
@@ -157,6 +160,44 @@ describe('Electron packaged tracking soak helpers [DON-246]', () => {
     expect(verdict.failureReasons.join('\n')).toMatch(
       /position rows|device_updated|position_recorded|restart|backup|heartbeat|integrity|WAL|support bundle/i,
     )
+  })
+
+  it('fails when the renderer clock and IPC are alive but operator controls are unresponsive [DON-247]', () => {
+    const profile = createTrackingSoakProfile('ci')
+    const verdict = buildTrackingSoakVerdict({
+      profile,
+      observedBatches: profile.actualBatches,
+      deviceRows: profile.deviceCount,
+      positionRows: profile.expectedPositionRows,
+      deviceCreatedEvents: profile.deviceCount,
+      deviceUpdatedEvents: 0,
+      positionRecordedEvents: 0,
+      operationalMissionEvents: 9,
+      declaredOperationalEventBudget: 9,
+      unexplainedMissionEvents: 0,
+      restartCheckpointsPassed: profile.restartCheckpoints.length,
+      backupCycles: 2,
+      mainHeartbeatSamples: 40,
+      mainHeartbeatErrors: 0,
+      mainMaximumMs: 14,
+      rendererSamples: 40,
+      rendererMaximumMs: 22,
+      rendererCrashes: 0,
+      operatorInteractionSamples: 0,
+      operatorInteractionErrors: 1,
+      operatorInteractionMaximumMs: 1_500,
+      maximumProcessTreeResidentBytes: 500_000_000,
+      freezeThresholdMs: 1_000,
+      integrityResult: 'ok',
+      walCheckpointBusy: 0,
+      supportBundleInspected: true,
+      supportBundleRedacted: true,
+      runtimeLogBytes: 24_000,
+      supportBundleBytes: 18_000,
+    })
+
+    expect(verdict.passed).toBe(false)
+    expect(verdict.failureReasons.join('\n')).toMatch(/operator interaction/i)
   })
 
   it('reports separate operational and redundant slopes between durable checkpoints', () => {

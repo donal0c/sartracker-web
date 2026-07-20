@@ -1,6 +1,6 @@
 import type { Feature, FeatureCollection, Geometry, LineString, Point } from 'geojson'
 
-import { createBreadcrumbSegments, decimateBreadcrumbsForDots } from './breadcrumb-accumulator'
+import { createBreadcrumbSegments } from './breadcrumb-accumulator'
 import { createDeviceColor } from './tracking-color'
 import {
   DEFAULT_BREADCRUMB_TRAIL_MODE,
@@ -192,15 +192,11 @@ export function createBreadcrumbFeatureCollection(
 }
 
 /**
- * Minimum inter-point distance (metres) per pixel of dot diameter.
- * At 8px default, this gives ~40m spacing — close to real GPS sample intervals.
- */
-const DOT_SPACING_FACTOR_M_PER_PX = 5
-
-/**
- * Creates decimated breadcrumb point features for dot-mode rendering.
- * Points closer than a size-proportional threshold are skipped to prevent
- * visual pileup at high GPS sample rates.
+ * Creates one breadcrumb point feature for every position in the bounded live snapshot.
+ *
+ * Mission storage remains the complete source of truth, while the accumulator enforces
+ * the separate per-device live-render budget before this boundary. Dot rendering must not
+ * silently omit additional accepted fixes or choose session-dependent representatives.
  */
 export function createBreadcrumbPointFeatureCollection(
   snapshot: TrackingSnapshot,
@@ -217,10 +213,7 @@ export function createBreadcrumbPointFeatureCollection(
     }
   }
 
-  const minDistanceM = (style.breadcrumbSize ?? 8) * DOT_SPACING_FACTOR_M_PER_PX
-  const decimated = decimateBreadcrumbsForDots(snapshot.breadcrumbs, minDistanceM)
-
-  const features: GeoJsonBreadcrumbPointFeature[] = decimated.map((breadcrumb) => ({
+  const features: GeoJsonBreadcrumbPointFeature[] = snapshot.breadcrumbs.map((breadcrumb) => ({
     type: 'Feature',
     geometry: {
       type: 'Point',

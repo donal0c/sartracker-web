@@ -744,7 +744,7 @@ function TopReadout(props: {
         : 'text-stone-100'
 
   return (
-    <div className="flex min-w-0 flex-col justify-center border-r border-[var(--sar-line)] px-4">
+    <div className="sar-mast-readout flex min-w-0 flex-col justify-center border-r border-[var(--sar-line)] px-4">
       <p className="text-[10px] font-black uppercase tracking-[0.14em] text-stone-300">
         {props.label}
       </p>

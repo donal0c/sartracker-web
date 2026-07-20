@@ -66,6 +66,7 @@ async function main() {
   const launches = []
   const mainRoundTrips = []
   const rendererGaps = []
+  const operatorInteractions = []
   const growthCheckpoints = []
   let restartCheckpointsPassed = 0
   let activeLaunch
@@ -77,6 +78,12 @@ async function main() {
     launches.push(activeLaunch)
     await startSyntheticMission(activeLaunch.page)
     missionId = await readActiveMissionId(activeLaunch.page)
+    await recordOperatorInteraction({
+      page: activeLaunch.page,
+      phase: 'mission-started',
+      evidenceDir,
+      results: operatorInteractions,
+    })
 
     for (const checkpoint of options.profile.restartCheckpoints) {
       await waitForCheckpoint({
@@ -96,6 +103,12 @@ async function main() {
             checkpoint * options.profile.productionPollsPerBatch,
         }),
       )
+      await recordOperatorInteraction({
+        page: activeLaunch.page,
+        phase: `checkpoint-${checkpoint}-before-restart`,
+        evidenceDir,
+        results: operatorInteractions,
+      })
       await activeLaunch.page.screenshot({
         path: path.join(evidenceDir, `checkpoint-${checkpoint}-before-restart.png`),
         fullPage: true,
@@ -107,6 +120,12 @@ async function main() {
       activeLaunch = await launchPackagedApp(options, userDataDir, launches.length + 1)
       launches.push(activeLaunch)
       await resumeRecoveredMission(activeLaunch.page, missionId)
+      await recordOperatorInteraction({
+        page: activeLaunch.page,
+        phase: `checkpoint-${checkpoint}-after-restart`,
+        evidenceDir,
+        results: operatorInteractions,
+      })
       restartCheckpointsPassed += 1
     }
 
@@ -119,6 +138,12 @@ async function main() {
       timeoutMs: options.timeoutMs,
     })
     await waitForBackupEvent(activeLaunch.page, missionId, options.timeoutMs)
+    await recordOperatorInteraction({
+      page: activeLaunch.page,
+      phase: 'final-load',
+      evidenceDir,
+      results: operatorInteractions,
+    })
     growthCheckpoints.push(
       await readGrowthCheckpoint({
         page: activeLaunch.page,
@@ -159,6 +184,13 @@ async function main() {
     const supportBundleBytes = Buffer.byteLength(supportBundle, 'utf8')
     const mainStats = summarizeResponsiveness(mainRoundTrips, 250)
     const rendererStats = summarizeResponsiveness(rendererGaps, 250)
+    const operatorInteractionStats = summarizeResponsiveness(
+      operatorInteractions.map((interaction) => interaction.durationMs),
+      250,
+    )
+    const operatorInteractionErrors = operatorInteractions.filter(
+      (interaction) => !interaction.passed,
+    ).length
     const processMemory = {
       samples: launches.reduce((sum, launch) => sum + launch.processMemory.samples, 0),
       maximumProcessTreeResidentBytes: Math.max(
@@ -197,6 +229,9 @@ async function main() {
       rendererSamples: rendererStats.count,
       rendererMaximumMs: rendererStats.maxMs,
       rendererCrashes,
+      operatorInteractionSamples: operatorInteractionStats.count,
+      operatorInteractionErrors,
+      operatorInteractionMaximumMs: operatorInteractionStats.maxMs,
       maximumProcessTreeResidentBytes: processMemory.maximumProcessTreeResidentBytes,
       freezeThresholdMs: options.freezeThresholdMs,
       integrityResult: databaseEvidence.integrityResult,
@@ -233,6 +268,11 @@ async function main() {
       responsiveness: {
         mainProcess: mainStats,
         renderer: rendererStats,
+        operatorInteractions: {
+          ...operatorInteractionStats,
+          errors: operatorInteractionErrors,
+          samples: operatorInteractions,
+        },
         rendererThrottledByDesktopSession:
           rendererStats.maxMs >= options.freezeThresholdMs && mainStats.maxMs < options.freezeThresholdMs,
       },
@@ -395,6 +435,47 @@ async function startSyntheticMission(page) {
     .fill('Synthetic Continuous Soak Mission', { force: true })
   await page.getByTestId('mission-start-btn').click({ force: true })
   await waitForActiveMission(page, 30_000)
+}
+
+/**
+ * Exercises a real, non-forced operator interaction while the mission is under load.
+ *
+ * Renderer animation and direct IPC probes can remain healthy when a modal backdrop or
+ * input-capture defect makes the application unusable. Opening and closing Devices covers
+ * event dispatch, workspace state, rendering, and a representative tracking-heavy control.
+ */
+async function recordOperatorInteraction(input) {
+  const startedAt = performance.now()
+  let passed = false
+  let failureClass = null
+  try {
+    await input.page.getByTestId('open-devices-workspace').click({ timeout: 5_000 })
+    await input.page
+      .getByTestId('devices-workspace')
+      .waitFor({ state: 'visible', timeout: 5_000 })
+    await input.page.getByTestId('workspace-close-btn').click({ timeout: 5_000 })
+    await input.page
+      .getByTestId('devices-workspace')
+      .waitFor({ state: 'hidden', timeout: 5_000 })
+    passed = true
+  } catch (error) {
+    failureClass = error instanceof Error ? error.name : 'UnknownError'
+    await input.page.screenshot({
+      path: path.join(
+        input.evidenceDir,
+        `operator-interaction-failure-${sanitizeFileSegment(input.phase)}.png`,
+      ),
+      fullPage: true,
+    }).catch(() => undefined)
+    await input.page.keyboard.press('Escape').catch(() => undefined)
+  }
+
+  input.results.push({
+    phase: input.phase,
+    durationMs: performance.now() - startedAt,
+    passed,
+    failureClass,
+  })
 }
 
 /**
@@ -579,6 +660,10 @@ function inspectDatabase(databasePath, missionId) {
 function expectedPositionsAt(profile, batch) {
   return batch * profile.productionPollsPerBatch * profile.movingDeviceCount +
     (profile.deviceCount - profile.movingDeviceCount)
+}
+
+function sanitizeFileSegment(value) {
+  return String(value).replaceAll(/[^a-z0-9-]+/giu, '-')
 }
 
 async function readGrowthCheckpoint(input) {

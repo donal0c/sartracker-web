@@ -172,6 +172,77 @@ Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
     })
   })
 
+  test('breadcrumb dot mode shows every retained fix without distance omission [DON-259]', async ({
+    page,
+  }) => {
+    await page.getByTestId('open-devices-workspace').click()
+    await page.getByTestId('breadcrumb-mode-dots').click()
+    await page.getByTestId('device-breadcrumb-color-alpha').click()
+    await page.getByTestId('device-color-option-FF7A00').click()
+    await page.getByTestId('workspace-close-btn').click()
+    await expect(page.getByTestId('devices-workspace')).toBeHidden()
+
+    await page.evaluate(async () => {
+      const breadcrumbs = Array.from({ length: 4 }, (_entry, index) => ({
+        id: `don-259-visual-${index + 1}`,
+        device_id: 'alpha',
+        lat: 51.997 + index * 0.00025,
+        lon: -9.746 - index * 0.00025,
+        altitude: null,
+        speed: 2.5,
+        battery: 84,
+        accuracy: null,
+        timestamp: new Date(Date.UTC(2026, 6, 19, 12, 14, index * 5)).toISOString(),
+        source: null,
+        data_origin: 'live' as const,
+        cache_age_seconds: null,
+        device_cache_stale: false,
+      }))
+
+      await window.__SARTRACKER_BROWSER_HARNESS__?.injectTrackingSnapshot({
+        devices: [
+          {
+            device_id: 'alpha',
+            name: 'Alpha Team',
+            status: 'online',
+            last_seen: '2026-07-19T12:14:15.000Z',
+            unique_id: null,
+            category: 'person',
+          },
+        ],
+        positions: [],
+        breadcrumbs,
+      })
+
+      window.__SARTRACKER_MAP__?.jumpTo({
+        center: [-9.74638, 51.99738],
+        zoom: 15,
+      })
+    })
+
+    await expect.poll(() => countUniqueAlphaBreadcrumbDots(page), {
+      timeout: 15_000,
+    }).toBe(4)
+
+    await captureAndRegister(page, {
+      testId: 'tracking-breadcrumb-dots-faithful',
+      testName: 'Every retained close tracking fix is visible in breadcrumb dot mode',
+      area: 'tracking',
+      severity: 'critical',
+      verificationPrompt: `Verify this zoomed SAR Tracker map after four closely spaced GPS fixes were injected:
+1. Exactly four orange breadcrumb dots should be visible along one short diagonal route near the centre of the map
+2. The dots should be distinct rather than collapsed into one marker or reduced to only the first and last point
+3. The map should remain readable at this close zoom with normal topographic detail
+4. No dialog or workspace should cover the route
+Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
+      playwrightAssertions: [
+        'MapLibre tracking source contains four unique Alpha Team breadcrumb coordinates',
+        'breadcrumb display mode is dots',
+        'Alpha Team breadcrumb colour is orange',
+      ],
+    })
+  })
+
   test('layer panel lists all tracked devices', async ({ page }) => {
     await page.getByTestId('mission-control-collapse-btn').click()
     await page.getByTestId('sidebar-tab-layers').click()
@@ -295,6 +366,24 @@ Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
     })
   })
 })
+
+async function countUniqueAlphaBreadcrumbDots(page: Page): Promise<number> {
+  return page.evaluate(() => {
+    const features = window.__SARTRACKER_MAP__?.querySourceFeatures('tracking') ?? []
+    const coordinateKeys = features.flatMap((feature) => {
+      if (
+        feature.properties?.featureKind !== 'breadcrumb' ||
+        feature.properties.deviceId !== 'alpha' ||
+        feature.geometry.type !== 'Point'
+      ) {
+        return []
+      }
+      const [lon, lat] = feature.geometry.coordinates
+      return [`${lon.toFixed(5)}:${lat.toFixed(5)}`]
+    })
+    return new Set(coordinateKeys).size
+  })
+}
 
 async function waitForRenderedTrackingFeatures(page: Page): Promise<void> {
   await expect
