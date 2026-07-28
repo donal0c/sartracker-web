@@ -294,7 +294,7 @@ describe('app runtime startup', () => {
     expect(disposeCoreFeatureRuntimes).toHaveBeenCalledTimes(1)
   })
 
-  it('applies only the latest overlapping settings reload', async () => {
+  it('applies only the latest overlapping settings reload without starting stale services', async () => {
     const store: MissionStore & AutosaveStore = createMissionStoreStub()
     const initialAutosaveStop = vi.fn()
     const initialTrackingStop = vi.fn()
@@ -350,16 +350,52 @@ describe('app runtime startup', () => {
 
     expect(initialAutosaveStop).toHaveBeenCalledTimes(1)
     expect(initialTrackingStop).toHaveBeenCalledTimes(1)
-    expect(staleAutosaveStop).toHaveBeenCalledTimes(1)
-    expect(staleTrackingStop).toHaveBeenCalledTimes(1)
+    expect(staleAutosaveStop).not.toHaveBeenCalled()
+    expect(staleTrackingStop).not.toHaveBeenCalled()
     expect(latestAutosaveStop).not.toHaveBeenCalled()
     expect(latestTrackingStop).not.toHaveBeenCalled()
     expect(startMissionAutosave).toHaveBeenNthCalledWith(2, store, {
       intervalMs: 30_000,
     })
-    expect(startMissionAutosave).toHaveBeenNthCalledWith(3, store, {
-      intervalMs: 20_000,
+    expect(startMissionAutosave).toHaveBeenCalledTimes(2)
+    expect(startTrackingRuntime).toHaveBeenCalledTimes(2)
+  })
+
+  it('stops the active tracking runtime before starting its replacement [DON-260]', async () => {
+    const store: MissionStore & AutosaveStore = createMissionStoreStub()
+    const lifecycle: string[] = []
+    const startTrackingRuntime = vi
+      .fn()
+      .mockImplementationOnce(async () => {
+        lifecycle.push('initial-start')
+        return () => lifecycle.push('initial-stop')
+      })
+      .mockImplementationOnce(async () => {
+        lifecycle.push('replacement-start')
+        return () => lifecycle.push('replacement-stop')
+      })
+
+    const runtime = await startAppRuntime({
+      registerServiceWorker: vi.fn().mockResolvedValue(undefined),
+      isTauriRuntimeAvailable: vi.fn().mockReturnValue(true),
+      createMissionStore: vi.fn().mockReturnValue(store),
+      readRuntimeBootstrapSettings: vi.fn().mockResolvedValue(createBootstrapSettings()),
+      startMissionAutosave: vi.fn().mockReturnValue(createAutosaveController()),
+      startMissionRuntime: vi.fn().mockResolvedValue({}),
+      startMissionGovernanceRuntime: vi.fn().mockResolvedValue({}),
+      startMarkerRuntime: vi.fn().mockResolvedValue({}),
+      startDrawingRuntime: vi.fn().mockResolvedValue({}),
+      startGpxRuntime: vi.fn().mockResolvedValue({}),
+      startTrackingRuntime,
     })
+
+    await runtime?.reloadSettings()
+
+    expect(lifecycle).toEqual([
+      'initial-start',
+      'initial-stop',
+      'replacement-start',
+    ])
   })
 
   it('disposes the active runtime services explicitly', async () => {

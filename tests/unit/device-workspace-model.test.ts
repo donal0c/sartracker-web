@@ -36,7 +36,7 @@ const SNAPSHOT: TrackingSnapshot = {
       altitude: null,
       speed: 3.5,
       battery: 82,
-      accuracy: null,
+      accuracy: 7.5,
       timestamp: '2026-04-10T17:00:00.000Z',
       source: null,
       data_origin: 'live',
@@ -81,7 +81,9 @@ describe('device workspace model', () => {
       hidden: false,
       active: true,
       batteryDisplay: '82%',
+      accuracyDisplay: '7.5 m',
     })
+    expect(rows[0]?.fixTimeDisplay).not.toBe('N/A')
     expect(rows[1]).toMatchObject({
       deviceId: 'bravo',
       sourceDisplay: 'Stale',

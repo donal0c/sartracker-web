@@ -3,6 +3,8 @@
  * soak. Process control and evidence collection live in the adjacent script.
  */
 
+import { createHash } from 'node:crypto'
+
 const PROFILE_DEFINITIONS = Object.freeze({
   ci: Object.freeze({
     actualBatches: 6,
@@ -143,6 +145,18 @@ export function buildTrackingSoakVerdict(input) {
   )
   requireExact(failureReasons, input.deviceUpdatedEvents, 0, 'device_updated events')
   requireExact(failureReasons, input.positionRecordedEvents, 0, 'position_recorded events')
+  requireExact(
+    failureReasons,
+    input.missingSourcePositionIdentityRows,
+    0,
+    'positions missing source position identity',
+  )
+  if (input.positionTruthExactMatch !== true) {
+    failureReasons.push('Persisted position identity/time/coordinate truth did not match the deterministic source.')
+  }
+  if (input.normalPrefixTruthExactMatch !== true) {
+    failureReasons.push('The shared five-day position truth did not match across soak profiles.')
+  }
   requireAtLeast(failureReasons, input.operationalMissionEvents, 1, 'operational mission events')
   if (input.operationalMissionEvents > input.declaredOperationalEventBudget) {
     failureReasons.push(
@@ -173,6 +187,12 @@ export function buildTrackingSoakVerdict(input) {
     0,
     'operator interaction errors',
   )
+  requireAtLeast(
+    failureReasons,
+    input.operatorActionSamples,
+    1,
+    'operator action timing samples',
+  )
   if (
     Number.isFinite(input.maximumProcessTreeResidentBytes) &&
     input.maximumProcessTreeResidentBytes > MAX_PROCESS_TREE_RESIDENT_BYTES
@@ -187,9 +207,9 @@ export function buildTrackingSoakVerdict(input) {
       `Main-process maximum ${input.mainMaximumMs}ms reached the ${input.freezeThresholdMs}ms freeze threshold.`,
     )
   }
-  if (input.operatorInteractionMaximumMs >= input.freezeThresholdMs) {
+  if (input.operatorActionMaximumMs >= input.freezeThresholdMs) {
     failureReasons.push(
-      `Operator interaction maximum ${input.operatorInteractionMaximumMs}ms reached the ${input.freezeThresholdMs}ms freeze threshold.`,
+      `Operator action maximum ${input.operatorActionMaximumMs}ms reached the ${input.freezeThresholdMs}ms freeze threshold.`,
     )
   }
   if (input.integrityResult !== 'ok') {
@@ -226,6 +246,66 @@ export function buildTrackingSoakVerdict(input) {
       redundantRows / input.profile.equivalentProductionPolls,
     operationalPositionSlopeRowsPerEquivalentPoll:
       input.positionRows / input.profile.equivalentProductionPolls,
+  }
+}
+
+/**
+ * Creates a streaming digest over source identity, device, timestamp, and
+ * coordinates so million-row packaged soaks can prove exact truth without
+ * retaining another in-memory copy of the mission.
+ */
+export function createPositionTruthDigestAccumulator() {
+  const hash = createHash('sha256')
+  let rowCount = 0
+  let missingSourcePositionIdentityRows = 0
+  let finished = false
+
+  return {
+    add: (row) => {
+      if (finished) {
+        throw new Error('Position truth digest is already finalized.')
+      }
+      const sourcePositionId =
+        typeof row.source_position_id === 'string'
+          ? row.source_position_id.trim()
+          : ''
+      if (!/^[1-9]\d*$/u.test(sourcePositionId)) {
+        missingSourcePositionIdentityRows += 1
+      }
+      if (
+        typeof row.device_id !== 'string' ||
+        row.device_id.trim() === '' ||
+        typeof row.timestamp !== 'string' ||
+        row.timestamp.trim() === '' ||
+        !Number.isFinite(row.lat) ||
+        !Number.isFinite(row.lon)
+      ) {
+        throw new Error('Position truth digest received an invalid persisted row.')
+      }
+
+      hash.update(
+        `${JSON.stringify([
+          sourcePositionId,
+          row.device_id,
+          row.timestamp,
+          row.lat,
+          row.lon,
+        ])}\n`,
+        'utf8',
+      )
+      rowCount += 1
+    },
+    finish: () => {
+      if (finished) {
+        throw new Error('Position truth digest is already finalized.')
+      }
+      finished = true
+      return {
+        rowCount,
+        missingSourcePositionIdentityRows,
+        sha256: hash.digest('hex'),
+      }
+    },
   }
 }
 

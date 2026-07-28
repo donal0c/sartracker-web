@@ -10,6 +10,8 @@ export function TrackingStatusPanel() {
   const openWorkspace = useDeviceWorkspaceStore((state) => state.openWorkspace)
   const staleDeviceCount = snapshot.positions.filter((position) => position.device_cache_stale).length
   const cachedDeviceCount = snapshot.positions.filter((position) => position.data_origin === 'cache').length
+  const boundedBreadcrumbDeviceCount =
+    snapshot.breadcrumbMetadata?.deviceBudgets.filter((budget) => budget.truncated).length ?? 0
   const criticalTrustWarning = isCriticalTrackingTrustWarning(status.warning)
   const modeLabel = getTrackingModeLabel(status.mode, status.warning)
   const modeChipClassName =
@@ -53,6 +55,18 @@ export function TrackingStatusPanel() {
           {status.warning}
         </TrackingStatusMessage>
       )}
+
+      {boundedBreadcrumbDeviceCount > 0 && snapshot.breadcrumbMetadata !== undefined ? (
+        <p
+          className="mb-4 border-l-4 border-l-sky-400 bg-sky-400/10 px-3 py-2 text-xs font-medium leading-relaxed text-sky-100"
+          data-testid="breadcrumb-display-summary"
+        >
+          Trail display simplified: showing{' '}
+          {snapshot.breadcrumbMetadata.totalRetained.toLocaleString()} of at least{' '}
+          {snapshot.breadcrumbMetadata.totalObserved.toLocaleString()} known fixes across the
+          full route. Full mission history remains stored.
+        </p>
+      ) : null}
 
       <div className="grid grid-cols-4 border border-[var(--sar-line)] bg-[var(--sar-panel-sunken)] font-mono text-[13px] tracking-tight text-stone-100">
         <div className="border-r border-[var(--sar-line)] px-3 py-3">

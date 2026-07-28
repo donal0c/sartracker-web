@@ -12,6 +12,7 @@ import type {
   TrackingPollPhase,
 } from '../diagnostics/tracking-poll-ledger'
 import { classifyTrackingFailure } from '../diagnostics/tracking-poll-ledger'
+import { compareStringsByCodeUnit } from '../../lib/deterministic-string-order'
 
 const EMPTY_TRACKING_SNAPSHOT: TrackingSnapshot = {
   devices: [],
@@ -44,8 +45,12 @@ type PollingManagerOptions = {
   readonly getHistoryResetKey?: () => string | null
   readonly getInitialBreadcrumbFrom?: () => Date | null
   readonly getInitialBreadcrumbs?: () => Promise<readonly NormalizedTrackingPosition[]>
+  readonly getInitialBreadcrumbTotals?: () => Promise<Readonly<Record<string, number>>>
   readonly getBreadcrumbDeviceIds?: () => readonly string[] | null
-  readonly onSnapshot: (snapshot: TrackingSnapshot) => void
+  readonly onSnapshot: (
+    snapshot: TrackingSnapshot,
+    context: TrackingSnapshotContext,
+  ) => void
   readonly onStatusChange: (status: TrackingConnectionStatus) => void
   readonly onPollDiagnostic?: (entry: TrackingPollLedgerEntry) => void
   readonly logger?: PollingManagerLogger
@@ -54,11 +59,17 @@ type PollingManagerOptions = {
   readonly clearTimeout?: typeof window.clearTimeout
 }
 
+export type TrackingSnapshotContext = {
+  readonly historyResetKey: string | null
+}
+
 const DEFAULT_MAX_BACKOFF_MS = 60_000
 const DEFAULT_POLL_INTERVAL_MS = 30_000
 const MIN_POLL_INTERVAL_MS = 5_000
 const MAX_POLL_INTERVAL_MS = 3_600_000
 const BREADCRUMB_CURSOR_OVERLAP_MS = 5 * 60 * 1000
+const BREADCRUMB_HISTORY_CHUNK_MS = 2 * 60 * 60 * 1000
+const MAX_HISTORICAL_RECONCILIATION_DEVICES_PER_POLL = 8
 
 const DEFAULT_LOGGER: PollingManagerLogger = {
   warn: (message, context) => {
@@ -101,6 +112,10 @@ export function createPollingManager(
   let activeHistoryResetKey: string | null = null
   let initialBreadcrumbsLoaded = false
   const latestBreadcrumbTimestampByDevice = new Map<string, string>()
+  const historicalReconciliationCursorByDevice = new Map<string, number>()
+  const initiallyReconciledDeviceIds = new Set<string>()
+  let historicalReconciliationNextDeviceIndex = 0
+  let lifecycleGeneration = 0
 
   const publishStatus = (overrides: Partial<TrackingConnectionStatus> = {}) => {
     options.onStatusChange({
@@ -119,7 +134,7 @@ export function createPollingManager(
     }
 
     timer = scheduleTimeout(() => {
-      void poll()
+      void poll(lifecycleGeneration)
     }, delayMs)
   }
 
@@ -132,18 +147,21 @@ export function createPollingManager(
     authenticated = true
   }
 
-  const poll = async () => {
+  const poll = async (generation: number) => {
     const pollStartedAt = now().toISOString()
     let pollPhase: TrackingPollPhase = 'authentication'
+    const pollHistoryResetKey = options.getHistoryResetKey?.() ?? null
     try {
-      const nextHistoryResetKey = options.getHistoryResetKey?.() ?? null
-      if (nextHistoryResetKey !== activeHistoryResetKey) {
-        activeHistoryResetKey = nextHistoryResetKey
+      if (pollHistoryResetKey !== activeHistoryResetKey) {
+        activeHistoryResetKey = pollHistoryResetKey
         breadcrumbAccumulator.reset()
         breadcrumbPositions = []
         breadcrumbMetadata = undefined
         initialBreadcrumbsLoaded = false
         latestBreadcrumbTimestampByDevice.clear()
+        historicalReconciliationCursorByDevice.clear()
+        initiallyReconciledDeviceIds.clear()
+        historicalReconciliationNextDeviceIndex = 0
         lastGoodSnapshot = null
       }
 
@@ -155,9 +173,12 @@ export function createPollingManager(
               now: now(),
               deviceStaleThresholdMs: options.staleThresholdMs,
             }),
+            { historyResetKey: pollHistoryResetKey },
           )
         } else if (pollingMode === 'idle') {
-          options.onSnapshot(EMPTY_TRACKING_SNAPSHOT)
+          options.onSnapshot(EMPTY_TRACKING_SNAPSHOT, {
+            historyResetKey: pollHistoryResetKey,
+          })
         }
 
         publishStatus({
@@ -172,12 +193,18 @@ export function createPollingManager(
       }
 
       await withPollPhase('authentication', authenticateIfNeeded())
+      if (discardSupersededPoll(generation, pollHistoryResetKey)) {
+        return
+      }
 
       pollPhase = 'devices'
       const [devices, positions] = await Promise.all([
         withPollPhase('devices', client.getDevices()),
         withPollPhase('current_positions', client.getCurrentPositions()),
       ])
+      if (discardSupersededPoll(generation, pollHistoryResetKey)) {
+        return
+      }
 
       const currentPollingMode = options.getPollingMode?.() ?? 'active'
       if (currentPollingMode !== 'active') {
@@ -185,8 +212,6 @@ export function createPollingManager(
         scheduleNextPoll(pollIntervalMs)
         return
       }
-
-      const seedState = await seedInitialBreadcrumbs()
 
       const recovered = consecutiveFailures > 0
       consecutiveFailures = 0
@@ -204,6 +229,7 @@ export function createPollingManager(
           now: now(),
           deviceStaleThresholdMs: options.staleThresholdMs,
         }),
+        { historyResetKey: pollHistoryResetKey },
       )
       publishStatus({
         mode: 'online',
@@ -216,11 +242,45 @@ export function createPollingManager(
               : null,
       })
 
+      const breadcrumbPositionsBeforeSeed = breadcrumbPositions
+      const seedState = await seedInitialBreadcrumbs()
+      if (discardSupersededPoll(generation, pollHistoryResetKey)) {
+        return
+      }
+      if (
+        seedState === 'loaded' &&
+        breadcrumbPositions !== breadcrumbPositionsBeforeSeed &&
+        breadcrumbPositions.length > 0
+      ) {
+        const seededSnapshot = {
+          devices,
+          positions,
+          breadcrumbs: breadcrumbPositions,
+          breadcrumbMetadata,
+        }
+        lastGoodSnapshot = seededSnapshot
+        options.onSnapshot(
+          annotateTrackingSnapshotHealth(seededSnapshot, {
+            now: now(),
+            deviceStaleThresholdMs: options.staleThresholdMs,
+          }),
+          { historyResetKey: pollHistoryResetKey },
+        )
+      }
+
       pollPhase = 'breadcrumbs'
       const breadcrumbFetch = await fetchIncrementalBreadcrumbs(devices, seedState)
+      if (discardSupersededPoll(generation, pollHistoryResetKey)) {
+        return
+      }
       const previousBreadcrumbPositions = breadcrumbPositions
       const previousObservedCount = breadcrumbMetadata?.totalObserved ?? 0
-      const breadcrumbResult = breadcrumbAccumulator.append(breadcrumbFetch.positions)
+      breadcrumbAccumulator.append(breadcrumbFetch.historicalPositions, {
+        resolveObservedBaseline: true,
+      })
+      const breadcrumbResult = breadcrumbAccumulator.append(
+        breadcrumbFetch.recentPositions,
+      )
       breadcrumbPositions = breadcrumbResult.positions
       breadcrumbMetadata = breadcrumbResult.metadata
       const acceptedBreadcrumbCount = Math.max(
@@ -250,13 +310,18 @@ export function createPollingManager(
             now: now(),
             deviceStaleThresholdMs: options.staleThresholdMs,
           }),
+          { historyResetKey: pollHistoryResetKey },
         )
-        publishStatus({
-          mode: 'online',
-          recovered,
-          warning: recovered ? 'CONNECTION RESTORED' : null,
-        })
       }
+      publishStatus({
+        mode: 'online',
+        recovered,
+        warning: createBreadcrumbCompletionWarning(
+          breadcrumbFetch,
+          recovered,
+          seedState,
+        ),
+      })
 
       const completedAt = now().toISOString()
       options.onPollDiagnostic?.({
@@ -288,6 +353,9 @@ export function createPollingManager(
 
       scheduleNextPoll(pollIntervalMs)
     } catch (error) {
+      if (discardSupersededPoll(generation, pollHistoryResetKey)) {
+        return
+      }
       consecutiveFailures += 1
       const completedAt = now().toISOString()
       const failure = unwrapPollPhaseError(error, pollPhase)
@@ -304,6 +372,7 @@ export function createPollingManager(
             now: now(),
             deviceStaleThresholdMs: options.staleThresholdMs,
           }),
+          { historyResetKey: pollHistoryResetKey },
         )
       }
 
@@ -337,9 +406,12 @@ export function createPollingManager(
           now: now(),
           deviceStaleThresholdMs: options.staleThresholdMs,
         }),
+        { historyResetKey: activeHistoryResetKey },
       )
     } else if (pollingMode === 'idle') {
-      options.onSnapshot(EMPTY_TRACKING_SNAPSHOT)
+      options.onSnapshot(EMPTY_TRACKING_SNAPSHOT, {
+        historyResetKey: activeHistoryResetKey,
+      })
     }
 
     publishStatus({
@@ -358,10 +430,12 @@ export function createPollingManager(
       }
 
       running = true
-      void poll()
+      lifecycleGeneration += 1
+      void poll(lifecycleGeneration)
     },
     stop: () => {
       running = false
+      lifecycleGeneration += 1
       if (timer !== null) {
         clearScheduledTimeout(timer)
         timer = null
@@ -369,12 +443,38 @@ export function createPollingManager(
     },
   }
 
+  function discardSupersededPoll(
+    generation: number,
+    historyResetKey: string | null,
+  ): boolean {
+    if (!running || generation !== lifecycleGeneration) {
+      return true
+    }
+
+    const currentHistoryResetKey = options.getHistoryResetKey?.() ?? null
+    if (currentHistoryResetKey === historyResetKey) {
+      return false
+    }
+
+    scheduleNextPoll(pollIntervalMs)
+    return true
+  }
+
   async function fetchIncrementalBreadcrumbs(
     devices: readonly NormalizedTrackingDevice[],
     seedState: InitialBreadcrumbSeedState,
   ): Promise<BreadcrumbFetchResult> {
     if (seedState === 'failed') {
-      return { positions: [], requestedDeviceCount: 0, failedDeviceCount: 0, window: null }
+      return {
+        positions: [],
+        historicalPositions: [],
+        recentPositions: [],
+        requestedDeviceCount: 0,
+        failedDeviceCount: 0,
+        failedDeviceNames: [],
+        initiallyIncompleteDeviceNames: [],
+        window: null,
+      }
     }
 
     const fetchUntil = now()
@@ -387,38 +487,76 @@ export function createPollingManager(
       requestedDeviceIdSet === null
         ? devices
         : devices.filter((device) => requestedDeviceIdSet.has(device.device_id))
+    const initialFrom = options.getInitialBreadcrumbFrom?.() ?? null
+    if (initialFrom === null) {
+      for (const device of breadcrumbDevices) {
+        initiallyReconciledDeviceIds.add(device.device_id)
+      }
+    }
+    const historicalReconciliationDeviceIds =
+      selectHistoricalReconciliationDeviceIds(breadcrumbDevices, initialFrom)
 
     const settled = await Promise.allSettled(
       breadcrumbDevices.map(async (device) => {
         const lastTimestamp = latestBreadcrumbTimestampByDevice.get(device.device_id)
         const fetchFrom =
           lastTimestamp === undefined
-            ? (options.getInitialBreadcrumbFrom?.() ??
-              new Date(fetchUntil.getTime() - 3 * 60 * 60 * 1000))
+            ? new Date(
+                Math.max(
+                  initialFrom?.getTime() ?? Number.NEGATIVE_INFINITY,
+                  fetchUntil.getTime() - BREADCRUMB_CURSOR_OVERLAP_MS,
+                ),
+              )
             : createOverlappedFetchFrom(
                 lastTimestamp,
                 fetchUntil,
-                options.getInitialBreadcrumbFrom?.() ?? null,
+                initialFrom,
               )
 
-        const breadcrumbs = await client.getBreadcrumbs(device.device_id, fetchFrom, fetchUntil)
-        const newestTimestamp = getCursorTimestampFromBatch(breadcrumbs, fetchUntil)
+        const breadcrumbs = await client.getBreadcrumbs(
+          device.device_id,
+          fetchFrom,
+          fetchUntil,
+        )
+        let historicalBreadcrumbs: readonly NormalizedTrackingPosition[] = []
+        let historicalFailure: unknown = null
+        if (historicalReconciliationDeviceIds.has(device.device_id)) {
+          try {
+            historicalBreadcrumbs = await fetchHistoricalReconciliationChunk(
+              device.device_id,
+              initialFrom,
+              fetchUntil,
+            )
+          } catch (error) {
+            historicalFailure = error
+          }
+        }
+        const newestTimestamp = getCursorTimestampFromBatch(
+          breadcrumbs,
+          fetchUntil,
+        )
         if (newestTimestamp !== null) {
           latestBreadcrumbTimestampByDevice.set(device.device_id, newestTimestamp)
         }
 
         return {
-          breadcrumbs,
+          breadcrumbs: [...historicalBreadcrumbs, ...breadcrumbs],
+          historicalBreadcrumbs,
+          recentBreadcrumbs: breadcrumbs,
           previousCursor: lastTimestamp ?? null,
           requestedFrom: fetchFrom.toISOString(),
           requestedTo: fetchUntil.toISOString(),
           newestReturned: newestTimestamp,
+          historicalFailure,
         }
       }),
     )
 
     const aggregated: NormalizedTrackingPosition[] = []
+    const historicalPositions: NormalizedTrackingPosition[] = []
+    const recentPositions: NormalizedTrackingPosition[] = []
     let failedDeviceCount = 0
+    const failedDeviceNames: string[] = []
     for (let index = 0; index < settled.length; index += 1) {
       const result = settled[index]
       if (result === undefined) {
@@ -426,11 +564,29 @@ export function createPollingManager(
       }
       if (result.status === 'fulfilled') {
         aggregated.push(...result.value.breadcrumbs)
+        historicalPositions.push(...result.value.historicalBreadcrumbs)
+        recentPositions.push(...result.value.recentBreadcrumbs)
+        if (result.value.historicalFailure !== null) {
+          const failedDevice = breadcrumbDevices[index]
+          failedDeviceCount += 1
+          failedDeviceNames.push(
+            failedDevice?.name ?? failedDevice?.device_id ?? 'Unknown device',
+          )
+          logger.warn('Tracking breadcrumb reconciliation failed for device.', {
+            deviceId: failedDevice?.device_id ?? null,
+            deviceName: failedDevice?.name ?? null,
+            error:
+              result.value.historicalFailure instanceof Error
+                ? result.value.historicalFailure.message
+                : String(result.value.historicalFailure),
+          })
+        }
         continue
       }
 
       const failedDevice = breadcrumbDevices[index]
       failedDeviceCount += 1
+      failedDeviceNames.push(failedDevice?.name ?? failedDevice?.device_id ?? 'Unknown device')
       logger.warn('Tracking breadcrumb fetch failed for device.', {
         deviceId: failedDevice?.device_id ?? null,
         deviceName: failedDevice?.name ?? null,
@@ -440,12 +596,90 @@ export function createPollingManager(
 
     return {
       positions: aggregated,
+      historicalPositions,
+      recentPositions,
       requestedDeviceCount: breadcrumbDevices.length,
       failedDeviceCount,
+      failedDeviceNames,
+      initiallyIncompleteDeviceNames: breadcrumbDevices
+        .filter((device) => !initiallyReconciledDeviceIds.has(device.device_id))
+        .map((device) => device.name),
       window: summarizeBreadcrumbWindows(
         settled.flatMap((result) => (result.status === 'fulfilled' ? [result.value] : [])),
       ),
     }
+  }
+
+  function selectHistoricalReconciliationDeviceIds(
+    devices: readonly NormalizedTrackingDevice[],
+    initialFrom: Date | null,
+  ): ReadonlySet<string> {
+    if (initialFrom === null || devices.length === 0) {
+      return new Set()
+    }
+
+    const orderedDeviceIds = devices
+      .map((device) => device.device_id)
+      .sort(compareStringsByCodeUnit)
+    const selectedDeviceCount = Math.min(
+      MAX_HISTORICAL_RECONCILIATION_DEVICES_PER_POLL,
+      orderedDeviceIds.length,
+    )
+    const selectedDeviceIds = new Set<string>()
+    for (let offset = 0; offset < selectedDeviceCount; offset += 1) {
+      const deviceIndex =
+        (historicalReconciliationNextDeviceIndex + offset) %
+        orderedDeviceIds.length
+      const deviceId = orderedDeviceIds[deviceIndex]
+      if (deviceId !== undefined) {
+        selectedDeviceIds.add(deviceId)
+      }
+    }
+    historicalReconciliationNextDeviceIndex =
+      (historicalReconciliationNextDeviceIndex + selectedDeviceCount) %
+      orderedDeviceIds.length
+    return selectedDeviceIds
+  }
+
+  async function fetchHistoricalReconciliationChunk(
+    deviceId: string,
+    initialFrom: Date | null,
+    fetchUntil: Date,
+  ): Promise<readonly NormalizedTrackingPosition[]> {
+    if (initialFrom === null) {
+      initiallyReconciledDeviceIds.add(deviceId)
+      return []
+    }
+
+    const missionStartMs = Math.min(initialFrom.getTime(), fetchUntil.getTime())
+    const cursorMs =
+      historicalReconciliationCursorByDevice.get(deviceId) ?? missionStartMs
+    const chunkFromMs = Math.max(missionStartMs, Math.min(cursorMs, fetchUntil.getTime()))
+    const chunkToMs = Math.min(
+      chunkFromMs + BREADCRUMB_HISTORY_CHUNK_MS,
+      fetchUntil.getTime(),
+    )
+    if (chunkToMs <= chunkFromMs) {
+      initiallyReconciledDeviceIds.add(deviceId)
+      historicalReconciliationCursorByDevice.set(deviceId, missionStartMs)
+      return []
+    }
+
+    const breadcrumbs = await client.getBreadcrumbs(
+      deviceId,
+      new Date(chunkFromMs),
+      new Date(chunkToMs),
+    )
+    if (chunkToMs >= fetchUntil.getTime()) {
+      initiallyReconciledDeviceIds.add(deviceId)
+      // Start another slow mission-wide sweep on the next poll. This is how
+      // late Traccar fixes and corrections older than the live overlap window
+      // are eventually found instead of being permanently skipped.
+      historicalReconciliationCursorByDevice.set(deviceId, missionStartMs)
+    } else {
+      historicalReconciliationCursorByDevice.set(deviceId, chunkToMs)
+    }
+    return breadcrumbs
   }
 
   async function seedInitialBreadcrumbs(): Promise<InitialBreadcrumbSeedState> {
@@ -457,8 +691,14 @@ export function createPollingManager(
     }
 
     try {
-      const persistedBreadcrumbs = await options.getInitialBreadcrumbs()
-      const breadcrumbResult = breadcrumbAccumulator.append(persistedBreadcrumbs)
+      const [persistedBreadcrumbs, persistedTotals] = await Promise.all([
+        options.getInitialBreadcrumbs(),
+        options.getInitialBreadcrumbTotals?.() ?? Promise.resolve({}),
+      ])
+      const breadcrumbResult = breadcrumbAccumulator.reset(
+        persistedBreadcrumbs,
+        persistedTotals,
+      )
       breadcrumbPositions = breadcrumbResult.positions
       breadcrumbMetadata = breadcrumbResult.metadata
       seedLatestBreadcrumbTimestamps(persistedBreadcrumbs)
@@ -493,9 +733,34 @@ type InitialBreadcrumbSeedState = 'loaded' | 'failed'
 
 type BreadcrumbFetchResult = {
   readonly positions: readonly NormalizedTrackingPosition[]
+  readonly historicalPositions: readonly NormalizedTrackingPosition[]
+  readonly recentPositions: readonly NormalizedTrackingPosition[]
   readonly requestedDeviceCount: number
   readonly failedDeviceCount: number
+  readonly failedDeviceNames: readonly string[]
+  readonly initiallyIncompleteDeviceNames: readonly string[]
   readonly window: TrackingBreadcrumbWindowSummary | null
+}
+
+function createBreadcrumbCompletionWarning(
+  result: BreadcrumbFetchResult,
+  recovered: boolean,
+  seedState: InitialBreadcrumbSeedState,
+): string | null {
+  if (seedState === 'failed') {
+    return 'Breadcrumb history could not be loaded from mission storage; current fixes remain live.'
+  }
+  if (result.failedDeviceCount > 0) {
+    return `Breadcrumb history incomplete for ${result.failedDeviceNames.join(
+      ', ',
+    )}; current fixes remain live.`
+  }
+  if (result.initiallyIncompleteDeviceNames.length > 0) {
+    return `Breadcrumb history is reconciling for ${result.initiallyIncompleteDeviceNames.join(
+      ', ',
+    )}; current fixes remain live.`
+  }
+  return recovered ? 'CONNECTION RESTORED' : null
 }
 
 type BreadcrumbDeviceWindow = {
@@ -504,6 +769,7 @@ type BreadcrumbDeviceWindow = {
   readonly requestedFrom: string
   readonly requestedTo: string
   readonly newestReturned: string | null
+  readonly historicalFailure: unknown
 }
 
 function summarizeBreadcrumbWindows(
@@ -593,8 +859,12 @@ function createOverlappedFetchFrom(
     : Math.min(lastTimestampMs, fetchUntilMs)
   const overlappedMs = boundedCursorMs - BREADCRUMB_CURSOR_OVERLAP_MS
   const lowerBoundMs = lowerBound?.getTime()
-  const fetchFromMs =
+  const lowerBoundedMs =
     lowerBoundMs === undefined ? overlappedMs : Math.max(lowerBoundMs, overlappedMs)
+  const fetchFromMs = Math.max(
+    lowerBoundedMs,
+    fetchUntilMs - BREADCRUMB_HISTORY_CHUNK_MS,
+  )
 
   return new Date(Math.min(fetchFromMs, fetchUntilMs))
 }

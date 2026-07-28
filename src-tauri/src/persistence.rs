@@ -25,7 +25,7 @@ const BACKUP_FILE_NAME: &str = "mission-store.backup.sqlite";
 const ARCHIVE_DIRECTORY_NAME: &str = "archives";
 const ATTACHMENTS_DIRECTORY_NAME: &str = "attachments";
 const DEFAULT_MISSION_STORAGE_DIRECTORY_NAME: &str = "missions";
-const CURRENT_SCHEMA_VERSION: i64 = 4;
+const CURRENT_SCHEMA_VERSION: i64 = 5;
 
 #[derive(Clone)]
 pub struct MissionStore {
@@ -86,6 +86,7 @@ pub struct Position {
     pub id: String,
     pub mission_id: String,
     pub device_id: String,
+    pub source_position_id: Option<String>,
     pub name: Option<String>,
     pub lat: f64,
     pub lon: f64,
@@ -300,6 +301,7 @@ pub struct UpsertDeviceInput {
 pub struct AddPositionInput {
     pub mission_id: String,
     pub device_id: String,
+    pub source_position_id: Option<String>,
     pub name: Option<String>,
     pub lat: f64,
     pub lon: f64,
@@ -532,6 +534,7 @@ impl MissionStore {
               id TEXT PRIMARY KEY,
               mission_id TEXT NOT NULL,
               device_id TEXT NOT NULL,
+              source_position_id TEXT,
               name TEXT,
               lat REAL NOT NULL,
               lon REAL NOT NULL,
@@ -548,6 +551,22 @@ impl MissionStore {
 
             CREATE INDEX IF NOT EXISTS idx_positions_mission_device_timestamp
               ON positions(mission_id, device_id, timestamp);
+
+            CREATE TABLE IF NOT EXISTS position_revisions (
+              id TEXT PRIMARY KEY,
+              mission_id TEXT NOT NULL,
+              position_id TEXT NOT NULL,
+              source_position_id TEXT NOT NULL,
+              corrected_at TEXT NOT NULL,
+              changed_fields_json TEXT NOT NULL,
+              previous_json TEXT NOT NULL,
+              corrected_json TEXT NOT NULL,
+              FOREIGN KEY (mission_id) REFERENCES missions(id) ON DELETE CASCADE,
+              FOREIGN KEY (position_id) REFERENCES positions(id) ON DELETE CASCADE
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_position_revisions_position_corrected
+              ON position_revisions(position_id, corrected_at);
 
             CREATE TABLE IF NOT EXISTS markers (
               id TEXT PRIMARY KEY,
@@ -676,10 +695,19 @@ impl MissionStore {
         .await
         .map_err(|error| format!("Failed to apply mission store schema: {error}"))?;
 
-        Self::ensure_column_exists(&mut *tx, "markers", "updated_by", "TEXT").await?;
-        Self::ensure_column_exists(&mut *tx, "markers", "coordinator_ids", "TEXT").await?;
-        Self::ensure_column_exists(&mut *tx, "markers", "attachment_path", "TEXT").await?;
-        Self::ensure_column_exists(&mut *tx, "markers", "label_size", "INTEGER").await?;
+        Self::ensure_column_exists(&mut tx, "markers", "updated_by", "TEXT").await?;
+        Self::ensure_column_exists(&mut tx, "markers", "coordinator_ids", "TEXT").await?;
+        Self::ensure_column_exists(&mut tx, "markers", "attachment_path", "TEXT").await?;
+        Self::ensure_column_exists(&mut tx, "markers", "label_size", "INTEGER").await?;
+        Self::ensure_column_exists(&mut tx, "positions", "source_position_id", "TEXT").await?;
+        sqlx::query(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_positions_mission_source_position_id
+             ON positions(mission_id, source_position_id)
+             WHERE source_position_id IS NOT NULL",
+        )
+        .execute(&mut *tx)
+        .await
+        .map_err(|error| format!("Failed to create position source identity index: {error}"))?;
 
         sqlx::query(
             "INSERT INTO metadata (key, value) VALUES ('schema_version', ?)
@@ -963,7 +991,8 @@ impl MissionStore {
     }
 
     pub async fn upsert_device(&self, input: UpsertDeviceInput) -> Result<Device, String> {
-        self.ensure_mission_writable_for_data(&input.mission_id).await?;
+        self.ensure_mission_writable_for_data(&input.mission_id)
+            .await?;
         let existing_device = self
             .get_device(input.mission_id.clone(), input.device_id.clone())
             .await
@@ -1065,7 +1094,8 @@ impl MissionStore {
     }
 
     pub async fn add_position(&self, input: AddPositionInput) -> Result<Position, String> {
-        self.ensure_mission_writable_for_data(&input.mission_id).await?;
+        self.ensure_mission_writable_for_data(&input.mission_id)
+            .await?;
         self.get_device(input.mission_id.clone(), input.device_id.clone())
             .await?;
 
@@ -1076,14 +1106,259 @@ impl MissionStore {
             return Err("Longitude must be a finite value between -180 and 180.".to_string());
         }
 
-        let position_id = Uuid::new_v4().to_string();
-        let timestamp = input.timestamp.unwrap_or_else(|| Utc::now().to_rfc3339());
+        let timestamp =
+            validate_optional_timestamp(input.timestamp.as_deref(), "Position timestamp")?
+                .unwrap_or_else(|| Utc::now().to_rfc3339());
         let data_origin = input.data_origin.unwrap_or_else(|| "live".to_string());
+        let source_position_id = match input.source_position_id {
+            Some(value) if value.trim().is_empty() => {
+                return Err("Position source identity must be a non-empty string.".to_string())
+            }
+            Some(value) => Some(value.trim().to_string()),
+            None => None,
+        };
 
         if data_origin != "live" && data_origin != "cache" {
             return Err("Position data origin must be either 'live' or 'cache'.".to_string());
         }
 
+        if let Some(source_position_id) = source_position_id.as_deref() {
+            let existing = sqlx::query_as::<_, Position>(
+                r#"
+                SELECT id, mission_id, device_id, source_position_id, name, lat, lon,
+                       altitude, speed, battery, accuracy, source, timestamp, data_origin
+                FROM positions
+                WHERE mission_id = ? AND source_position_id = ?
+                LIMIT 1
+                "#,
+            )
+            .bind(&input.mission_id)
+            .bind(source_position_id)
+            .fetch_optional(&self.pool)
+            .await
+            .map_err(|error| {
+                format!("Failed to inspect position source identity {source_position_id}: {error}")
+            })?;
+            if let Some(existing) = existing {
+                if existing.device_id != input.device_id {
+                    return Err(format!(
+                        "Position source identity {source_position_id} belongs to device {} and cannot be reassigned to device {}.",
+                        existing.device_id, input.device_id
+                    ));
+                }
+                let matches = existing.name == input.name
+                    && existing.lat == input.lat
+                    && existing.lon == input.lon
+                    && existing.altitude == input.altitude
+                    && existing.speed == input.speed
+                    && existing.battery == input.battery
+                    && existing.accuracy == input.accuracy
+                    && existing.source == input.source
+                    && existing.timestamp == timestamp
+                    && existing.data_origin == data_origin;
+                if matches {
+                    return Ok(existing);
+                }
+
+                let mut changed_fields = Vec::new();
+                if existing.name != input.name {
+                    changed_fields.push("name");
+                }
+                if existing.lat != input.lat {
+                    changed_fields.push("lat");
+                }
+                if existing.lon != input.lon {
+                    changed_fields.push("lon");
+                }
+                if existing.altitude != input.altitude {
+                    changed_fields.push("altitude");
+                }
+                if existing.speed != input.speed {
+                    changed_fields.push("speed");
+                }
+                if existing.battery != input.battery {
+                    changed_fields.push("battery");
+                }
+                if existing.accuracy != input.accuracy {
+                    changed_fields.push("accuracy");
+                }
+                if existing.source != input.source {
+                    changed_fields.push("source");
+                }
+                if existing.timestamp != timestamp {
+                    changed_fields.push("timestamp");
+                }
+                if existing.data_origin != data_origin {
+                    changed_fields.push("data_origin");
+                }
+
+                let previous = serde_json::json!({
+                    "device_id": existing.device_id,
+                    "name": existing.name,
+                    "lat": existing.lat,
+                    "lon": existing.lon,
+                    "altitude": existing.altitude,
+                    "speed": existing.speed,
+                    "battery": existing.battery,
+                    "accuracy": existing.accuracy,
+                    "source": existing.source,
+                    "timestamp": existing.timestamp,
+                    "data_origin": existing.data_origin,
+                });
+                let corrected = serde_json::json!({
+                    "device_id": input.device_id,
+                    "name": input.name,
+                    "lat": input.lat,
+                    "lon": input.lon,
+                    "altitude": input.altitude,
+                    "speed": input.speed,
+                    "battery": input.battery,
+                    "accuracy": input.accuracy,
+                    "source": input.source,
+                    "timestamp": timestamp,
+                    "data_origin": data_origin,
+                });
+                let corrected_at = Utc::now().to_rfc3339();
+                let mut tx = self.pool.begin().await.map_err(|error| {
+                    format!("Failed to start position correction transaction: {error}")
+                })?;
+                sqlx::query(
+                    r#"
+                    INSERT INTO position_revisions (
+                      id, mission_id, position_id, source_position_id, corrected_at,
+                      changed_fields_json, previous_json, corrected_json
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    "#,
+                )
+                .bind(Uuid::new_v4().to_string())
+                .bind(&input.mission_id)
+                .bind(&existing.id)
+                .bind(source_position_id)
+                .bind(&corrected_at)
+                .bind(serde_json::to_string(&changed_fields).map_err(|error| {
+                    format!("Failed to serialize position correction fields: {error}")
+                })?)
+                .bind(previous.to_string())
+                .bind(corrected.to_string())
+                .execute(&mut *tx)
+                .await
+                .map_err(|error| format!("Failed to record position correction: {error}"))?;
+                sqlx::query(
+                    r#"
+                    UPDATE positions SET
+                      device_id = ?, name = ?, lat = ?, lon = ?, altitude = ?, speed = ?,
+                      battery = ?, accuracy = ?, source = ?, timestamp = ?, data_origin = ?
+                    WHERE id = ?
+                    "#,
+                )
+                .bind(&input.device_id)
+                .bind(&input.name)
+                .bind(input.lat)
+                .bind(input.lon)
+                .bind(input.altitude)
+                .bind(input.speed)
+                .bind(input.battery)
+                .bind(input.accuracy)
+                .bind(&input.source)
+                .bind(&timestamp)
+                .bind(&data_origin)
+                .bind(&existing.id)
+                .execute(&mut *tx)
+                .await
+                .map_err(|error| format!("Failed to apply position correction: {error}"))?;
+                sqlx::query(
+                    "UPDATE devices
+                     SET last_seen = CASE
+                       WHEN last_seen IS NULL OR julianday(?) > julianday(last_seen) THEN ?
+                       ELSE last_seen
+                     END,
+                     status = 'online'
+                     WHERE mission_id = ? AND device_id = ?",
+                )
+                .bind(&timestamp)
+                .bind(&timestamp)
+                .bind(&input.mission_id)
+                .bind(&input.device_id)
+                .execute(&mut *tx)
+                .await
+                .map_err(|error| format!("Failed to update corrected position device: {error}"))?;
+                let event_details = serde_json::json!({
+                    "position_id": existing.id,
+                    "source_position_id": source_position_id,
+                    "changed_fields": changed_fields,
+                    "previous": previous,
+                    "corrected": corrected,
+                });
+                Self::insert_event(
+                    &mut *tx,
+                    &input.mission_id,
+                    "position_corrected",
+                    &corrected_at,
+                    Some(&event_details),
+                )
+                .await?;
+                tx.commit()
+                    .await
+                    .map_err(|error| format!("Failed to commit position correction: {error}"))?;
+                return self.get_position(existing.id).await;
+            }
+
+            let candidates = sqlx::query_as::<_, Position>(
+                r#"
+                SELECT id, mission_id, device_id, source_position_id, name, lat, lon,
+                       altitude, speed, battery, accuracy, source, timestamp, data_origin
+                FROM positions
+                WHERE mission_id = ? AND device_id = ? AND source_position_id IS NULL
+                  AND timestamp = ? AND lat = ? AND lon = ?
+                  AND name IS ? AND altitude IS ? AND speed IS ? AND battery IS ?
+                  AND accuracy IS ? AND source IS ? AND data_origin = ?
+                ORDER BY rowid ASC
+                LIMIT 2
+                "#,
+            )
+            .bind(&input.mission_id)
+            .bind(&input.device_id)
+            .bind(&timestamp)
+            .bind(input.lat)
+            .bind(input.lon)
+            .bind(&input.name)
+            .bind(input.altitude)
+            .bind(input.speed)
+            .bind(input.battery)
+            .bind(input.accuracy)
+            .bind(&input.source)
+            .bind(&data_origin)
+            .fetch_all(&self.pool)
+            .await
+            .map_err(|error| {
+                format!("Failed to inspect exact legacy position candidates: {error}")
+            })?;
+            if candidates.len() > 1 {
+                return Err(format!(
+                    "Position source identity conflict for {source_position_id}: more than one exact legacy fix could be upgraded."
+                ));
+            }
+            if let Some(candidate) = candidates.first() {
+                let updated = sqlx::query(
+                    "UPDATE positions SET source_position_id = ?
+                     WHERE id = ? AND source_position_id IS NULL",
+                )
+                .bind(source_position_id)
+                .bind(&candidate.id)
+                .execute(&self.pool)
+                .await
+                .map_err(|error| format!("Failed to adopt position source identity: {error}"))?;
+                if updated.rows_affected() != 1 {
+                    return Err(
+                        "Position source identity changed concurrently; retry the tracking poll."
+                            .to_string(),
+                    );
+                }
+                return self.get_position(candidate.id.clone()).await;
+            }
+        }
+
+        let position_id = Uuid::new_v4().to_string();
         let mut tx = self
             .pool
             .begin()
@@ -1093,14 +1368,15 @@ impl MissionStore {
         sqlx::query(
             r#"
             INSERT INTO positions (
-              id, mission_id, device_id, name, lat, lon, altitude, speed, battery, accuracy,
-              source, timestamp, data_origin
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+              id, mission_id, device_id, source_position_id, name, lat, lon, altitude,
+              speed, battery, accuracy, source, timestamp, data_origin
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             "#,
         )
         .bind(&position_id)
         .bind(&input.mission_id)
         .bind(&input.device_id)
+        .bind(&source_position_id)
         .bind(&input.name)
         .bind(input.lat)
         .bind(input.lon)
@@ -1118,10 +1394,15 @@ impl MissionStore {
         sqlx::query(
             r#"
             UPDATE devices
-            SET last_seen = ?, status = 'online'
+            SET last_seen = CASE
+              WHEN last_seen IS NULL OR julianday(?) > julianday(last_seen) THEN ?
+              ELSE last_seen
+            END,
+            status = 'online'
             WHERE mission_id = ? AND device_id = ?
             "#,
         )
+        .bind(&timestamp)
         .bind(&timestamp)
         .bind(&input.mission_id)
         .bind(&input.device_id)
@@ -1131,6 +1412,7 @@ impl MissionStore {
 
         let event_details = serde_json::json!({
             "position_id": position_id,
+            "source_position_id": source_position_id,
             "device_id": input.device_id,
             "timestamp": timestamp,
             "data_origin": data_origin,
@@ -1155,8 +1437,8 @@ impl MissionStore {
     pub async fn get_position(&self, position_id: String) -> Result<Position, String> {
         sqlx::query_as::<_, Position>(
             r#"
-            SELECT id, mission_id, device_id, name, lat, lon, altitude, speed, battery, accuracy,
-                   source, timestamp, data_origin
+            SELECT id, mission_id, device_id, source_position_id, name, lat, lon, altitude,
+                   speed, battery, accuracy, source, timestamp, data_origin
             FROM positions
             WHERE id = ?
             "#,
@@ -1176,8 +1458,8 @@ impl MissionStore {
         if let Some(device_id) = device_id {
             return sqlx::query_as::<_, Position>(
                 r#"
-                SELECT id, mission_id, device_id, name, lat, lon, altitude, speed, battery, accuracy,
-                       source, timestamp, data_origin
+                SELECT id, mission_id, device_id, source_position_id, name, lat, lon, altitude,
+                       speed, battery, accuracy, source, timestamp, data_origin
                 FROM positions
                 WHERE mission_id = ? AND device_id = ?
                 ORDER BY timestamp ASC
@@ -1192,8 +1474,8 @@ impl MissionStore {
 
         sqlx::query_as::<_, Position>(
             r#"
-            SELECT id, mission_id, device_id, name, lat, lon, altitude, speed, battery, accuracy,
-                   source, timestamp, data_origin
+            SELECT id, mission_id, device_id, source_position_id, name, lat, lon, altitude,
+                   speed, battery, accuracy, source, timestamp, data_origin
             FROM positions
             WHERE mission_id = ?
             ORDER BY timestamp ASC
@@ -1208,8 +1490,9 @@ impl MissionStore {
     pub async fn latest_positions(&self, mission_id: String) -> Result<Vec<Position>, String> {
         sqlx::query_as::<_, Position>(
             r#"
-            SELECT p.id, p.mission_id, p.device_id, p.name, p.lat, p.lon, p.altitude, p.speed,
-                   p.battery, p.accuracy, p.source, p.timestamp, p.data_origin
+            SELECT p.id, p.mission_id, p.device_id, p.source_position_id, p.name, p.lat,
+                   p.lon, p.altitude, p.speed, p.battery, p.accuracy, p.source,
+                   p.timestamp, p.data_origin
             FROM positions p
             INNER JOIN (
               SELECT device_id, MAX(timestamp) AS max_timestamp
@@ -1230,7 +1513,8 @@ impl MissionStore {
     }
 
     pub async fn upsert_marker(&self, input: UpsertMarkerInput) -> Result<Marker, String> {
-        self.ensure_mission_writable_for_data(&input.mission_id).await?;
+        self.ensure_mission_writable_for_data(&input.mission_id)
+            .await?;
 
         if !input.lat.is_finite() || input.lat < -90.0 || input.lat > 90.0 {
             return Err("Marker latitude must be a finite value between -90 and 90.".to_string());
@@ -1398,7 +1682,8 @@ impl MissionStore {
         input: IngestMarkerAttachmentInput,
         settings: &SettingsStoreState,
     ) -> Result<String, String> {
-        self.ensure_mission_writable_for_data(&input.mission_id).await?;
+        self.ensure_mission_writable_for_data(&input.mission_id)
+            .await?;
         self.get_mission(input.mission_id.clone()).await?;
 
         let file_name = sanitize_attachment_file_name(&input.file_name)?;
@@ -1435,7 +1720,8 @@ impl MissionStore {
         let Some(marker) = existing_marker else {
             return Ok(false);
         };
-        self.ensure_mission_writable_for_data(&marker.mission_id).await?;
+        self.ensure_mission_writable_for_data(&marker.mission_id)
+            .await?;
 
         let mut tx = self
             .pool
@@ -1565,7 +1851,8 @@ impl MissionStore {
     }
 
     pub async fn upsert_drawing(&self, input: UpsertDrawingInput) -> Result<Drawing, String> {
-        self.ensure_mission_writable_for_data(&input.mission_id).await?;
+        self.ensure_mission_writable_for_data(&input.mission_id)
+            .await?;
 
         let drawing_id = input.id.unwrap_or_else(|| Uuid::new_v4().to_string());
         let now = Utc::now().to_rfc3339();
@@ -1686,7 +1973,8 @@ impl MissionStore {
         let Some(drawing) = existing_drawing else {
             return Ok(false);
         };
-        self.ensure_mission_writable_for_data(&drawing.mission_id).await?;
+        self.ensure_mission_writable_for_data(&drawing.mission_id)
+            .await?;
 
         let mut tx = self
             .pool
@@ -1721,8 +2009,12 @@ impl MissionStore {
         Ok(result.rows_affected() > 0)
     }
 
-    pub async fn upsert_helicopter(&self, input: UpsertHelicopterInput) -> Result<Helicopter, String> {
-        self.ensure_mission_writable_for_data(&input.mission_id).await?;
+    pub async fn upsert_helicopter(
+        &self,
+        input: UpsertHelicopterInput,
+    ) -> Result<Helicopter, String> {
+        self.ensure_mission_writable_for_data(&input.mission_id)
+            .await?;
 
         if !input.lat.is_finite() || input.lat < -90.0 || input.lat > 90.0 {
             return Err(
@@ -1747,7 +2039,12 @@ impl MissionStore {
         .bind(&input.slot_key)
         .fetch_optional(&self.pool)
         .await
-        .map_err(|error| format!("Failed to load helicopter slot {:?}: {error}", input.slot_key))?;
+        .map_err(|error| {
+            format!(
+                "Failed to load helicopter slot {:?}: {error}",
+                input.slot_key
+            )
+        })?;
 
         let helicopter_id = input
             .id
@@ -1766,11 +2063,10 @@ impl MissionStore {
         };
         let last_update = input.last_update.clone().unwrap_or_else(|| now.clone());
 
-        let mut tx = self
-            .pool
-            .begin()
-            .await
-            .map_err(|error| format!("Failed to start helicopter upsert transaction: {error}"))?;
+        let mut tx =
+            self.pool.begin().await.map_err(|error| {
+                format!("Failed to start helicopter upsert transaction: {error}")
+            })?;
 
         sqlx::query(
             r#"
@@ -1867,13 +2163,13 @@ impl MissionStore {
         let Some(helicopter) = existing else {
             return Ok(false);
         };
-        self.ensure_mission_writable_for_data(&helicopter.mission_id).await?;
+        self.ensure_mission_writable_for_data(&helicopter.mission_id)
+            .await?;
 
-        let mut tx = self
-            .pool
-            .begin()
-            .await
-            .map_err(|error| format!("Failed to start helicopter delete transaction: {error}"))?;
+        let mut tx =
+            self.pool.begin().await.map_err(|error| {
+                format!("Failed to start helicopter delete transaction: {error}")
+            })?;
 
         let result = sqlx::query("DELETE FROM helicopters WHERE id = ?")
             .bind(&helicopter_id)
@@ -1906,7 +2202,8 @@ impl MissionStore {
         &self,
         input: UpsertGpxTrackImportInput,
     ) -> Result<GpxTrackImport, String> {
-        self.ensure_mission_writable_for_data(&input.mission_id).await?;
+        self.ensure_mission_writable_for_data(&input.mission_id)
+            .await?;
 
         let existing_import = sqlx::query_as::<_, GpxTrackImport>(
             r#"
@@ -2039,7 +2336,8 @@ impl MissionStore {
         let Some(gpx_import) = existing_import else {
             return Ok(false);
         };
-        self.ensure_mission_writable_for_data(&gpx_import.mission_id).await?;
+        self.ensure_mission_writable_for_data(&gpx_import.mission_id)
+            .await?;
 
         let mut tx = self
             .pool
@@ -2098,7 +2396,8 @@ impl MissionStore {
         &self,
         input: UpsertLayerCatalogEntryInput,
     ) -> Result<LayerCatalogEntry, String> {
-        self.ensure_mission_writable_for_data(&input.mission_id).await?;
+        self.ensure_mission_writable_for_data(&input.mission_id)
+            .await?;
 
         let timestamp = Utc::now().to_rfc3339();
         sqlx::query(
@@ -3452,6 +3751,7 @@ mod tests {
             .add_position(AddPositionInput {
                 mission_id: mission.id.clone(),
                 device_id: "tracker-1".to_string(),
+                source_position_id: Some("traccar-position-1".to_string()),
                 name: Some("Rescuer One".to_string()),
                 lat: 52.0599,
                 lon: -9.5045,
@@ -3467,6 +3767,10 @@ mod tests {
             .expect("position should insert");
 
         assert_eq!(position.device_id, "tracker-1");
+        assert_eq!(
+            position.source_position_id.as_deref(),
+            Some("traccar-position-1")
+        );
 
         let devices = store
             .list_devices(mission.id.clone())
@@ -3485,6 +3789,318 @@ mod tests {
             .expect("latest positions should list");
         assert_eq!(latest_positions.len(), 1);
         assert_eq!(latest_positions[0].timestamp, "2026-04-08T06:00:00Z");
+    }
+
+    #[tokio::test]
+    async fn audits_source_position_corrections_without_duplicating_the_fix() {
+        let (database_path, backup_path) = temp_paths("position-correction");
+        let store = MissionStore::connect(database_path, backup_path)
+            .await
+            .expect("store should initialize");
+        let mission = store
+            .create_mission(CreateMissionInput {
+                name: "Position Correction Mission".to_string(),
+                start_time: None,
+                notes: None,
+            })
+            .await
+            .expect("mission should be created");
+        store
+            .upsert_device(UpsertDeviceInput {
+                mission_id: mission.id.clone(),
+                device_id: "tracker-1".to_string(),
+                name: "Tracker One".to_string(),
+                color: "#00AAFF".to_string(),
+                status: DeviceStatus::Unknown,
+                last_seen: None,
+            })
+            .await
+            .expect("device should upsert");
+        let original = AddPositionInput {
+            mission_id: mission.id.clone(),
+            device_id: "tracker-1".to_string(),
+            source_position_id: Some("source-1".to_string()),
+            name: None,
+            lat: 52.0599,
+            lon: -9.5045,
+            altitude: None,
+            speed: None,
+            battery: None,
+            accuracy: None,
+            source: Some("traccar".to_string()),
+            timestamp: Some("2026-07-28T10:00:00.000Z".to_string()),
+            data_origin: Some("live".to_string()),
+        };
+        store
+            .add_position(original.clone())
+            .await
+            .expect("original position should insert");
+        store
+            .add_position(original.clone())
+            .await
+            .expect("identical source position should be idempotent");
+        store
+            .upsert_device(UpsertDeviceInput {
+                mission_id: mission.id.clone(),
+                device_id: "tracker-1".to_string(),
+                name: "Tracker One".to_string(),
+                color: "#00AAFF".to_string(),
+                status: DeviceStatus::Online,
+                last_seen: Some("2026-07-28T12:00:00.000Z".to_string()),
+            })
+            .await
+            .expect("newer live device timestamp should persist");
+
+        let corrected = store
+            .add_position(AddPositionInput {
+                lat: 52.5,
+                ..original
+            })
+            .await
+            .expect("source correction should update in place");
+
+        assert_eq!(corrected.lat, 52.5);
+        let devices = store
+            .list_devices(mission.id.clone())
+            .await
+            .expect("devices should list");
+        assert_eq!(
+            devices[0].last_seen.as_deref(),
+            Some("2026-07-28T12:00:00.000Z")
+        );
+        let positions = store
+            .list_positions(mission.id.clone(), None)
+            .await
+            .expect("positions should list");
+        assert_eq!(positions.len(), 1);
+        let events = store
+            .list_mission_events(mission.id)
+            .await
+            .expect("events should list");
+        let correction = events
+            .iter()
+            .find(|event| event.event_type == "position_corrected")
+            .expect("correction should be audited");
+        let details: serde_json::Value = serde_json::from_str(
+            correction
+                .details_json
+                .as_deref()
+                .expect("correction details should exist"),
+        )
+        .expect("correction details should be valid JSON");
+        assert_eq!(details["previous"]["lat"], 52.0599);
+        assert_eq!(details["corrected"]["lat"], 52.5);
+    }
+
+    #[tokio::test]
+    async fn rejects_source_position_identity_device_reassignment() {
+        let (database_path, backup_path) = temp_paths("position-device-ownership");
+        let store = MissionStore::connect(database_path, backup_path)
+            .await
+            .expect("store should initialize");
+        let mission = store
+            .create_mission(CreateMissionInput {
+                name: "Position Device Ownership Mission".to_string(),
+                start_time: None,
+                notes: None,
+            })
+            .await
+            .expect("mission should be created");
+        for (device_id, name) in [("tracker-1", "Tracker One"), ("tracker-2", "Tracker Two")] {
+            store
+                .upsert_device(UpsertDeviceInput {
+                    mission_id: mission.id.clone(),
+                    device_id: device_id.to_string(),
+                    name: name.to_string(),
+                    color: "#00AAFF".to_string(),
+                    status: DeviceStatus::Online,
+                    last_seen: None,
+                })
+                .await
+                .expect("device should upsert");
+        }
+        let original = AddPositionInput {
+            mission_id: mission.id.clone(),
+            device_id: "tracker-1".to_string(),
+            source_position_id: Some("source-1".to_string()),
+            name: None,
+            lat: 52.0599,
+            lon: -9.5045,
+            altitude: None,
+            speed: None,
+            battery: None,
+            accuracy: None,
+            source: Some("traccar".to_string()),
+            timestamp: Some("2026-07-28T10:00:00.000Z".to_string()),
+            data_origin: Some("live".to_string()),
+        };
+        store
+            .add_position(original.clone())
+            .await
+            .expect("original position should insert");
+
+        let error = store
+            .add_position(AddPositionInput {
+                device_id: "tracker-2".to_string(),
+                lat: 53.3498,
+                lon: -6.2603,
+                ..original
+            })
+            .await
+            .expect_err("source identity must not move between devices");
+        assert!(error.contains("belongs to device tracker-1"));
+        assert!(error.contains("tracker-2"));
+
+        let positions = store
+            .list_positions(mission.id, None)
+            .await
+            .expect("positions should list");
+        assert_eq!(positions.len(), 1);
+        assert_eq!(positions[0].device_id, "tracker-1");
+        assert_eq!(positions[0].lat, 52.0599);
+        assert_eq!(positions[0].lon, -9.5045);
+    }
+
+    #[tokio::test]
+    async fn adopts_a_source_identity_for_one_exact_legacy_fix() {
+        let (database_path, backup_path) = temp_paths("position-legacy-adoption");
+        let store = MissionStore::connect(database_path, backup_path)
+            .await
+            .expect("store should initialize");
+        let mission = store
+            .create_mission(CreateMissionInput {
+                name: "Legacy Position Mission".to_string(),
+                start_time: None,
+                notes: None,
+            })
+            .await
+            .expect("mission should be created");
+        store
+            .upsert_device(UpsertDeviceInput {
+                mission_id: mission.id.clone(),
+                device_id: "tracker-1".to_string(),
+                name: "Tracker One".to_string(),
+                color: "#00AAFF".to_string(),
+                status: DeviceStatus::Unknown,
+                last_seen: None,
+            })
+            .await
+            .expect("device should upsert");
+        let legacy = AddPositionInput {
+            mission_id: mission.id.clone(),
+            device_id: "tracker-1".to_string(),
+            source_position_id: None,
+            name: None,
+            lat: 52.0599,
+            lon: -9.5045,
+            altitude: None,
+            speed: None,
+            battery: None,
+            accuracy: None,
+            source: Some("traccar".to_string()),
+            timestamp: Some("2026-07-28T10:00:00.000Z".to_string()),
+            data_origin: Some("live".to_string()),
+        };
+        let local_row = store
+            .add_position(legacy.clone())
+            .await
+            .expect("legacy position should insert");
+
+        let adopted = store
+            .add_position(AddPositionInput {
+                source_position_id: Some("source-1".to_string()),
+                ..legacy
+            })
+            .await
+            .expect("source identity should be adopted");
+
+        assert_eq!(adopted.id, local_row.id);
+        assert_eq!(adopted.source_position_id.as_deref(), Some("source-1"));
+        let positions = store
+            .list_positions(mission.id, None)
+            .await
+            .expect("positions should list");
+        assert_eq!(positions.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn checks_all_exact_legacy_fields_before_limiting_identity_candidates() {
+        let (database_path, backup_path) = temp_paths("position-legacy-candidate-ordering");
+        let store = MissionStore::connect(database_path, backup_path)
+            .await
+            .expect("store should initialize");
+        let mission = store
+            .create_mission(CreateMissionInput {
+                name: "Legacy Candidate Ordering".to_string(),
+                start_time: None,
+                notes: None,
+            })
+            .await
+            .expect("mission should be created");
+        store
+            .upsert_device(UpsertDeviceInput {
+                mission_id: mission.id.clone(),
+                device_id: "tracker-1".to_string(),
+                name: "Tracker One".to_string(),
+                color: "#00AAFF".to_string(),
+                status: DeviceStatus::Unknown,
+                last_seen: None,
+            })
+            .await
+            .expect("device should upsert");
+        let legacy = AddPositionInput {
+            mission_id: mission.id.clone(),
+            device_id: "tracker-1".to_string(),
+            source_position_id: None,
+            name: None,
+            lat: 52.0599,
+            lon: -9.5045,
+            altitude: None,
+            speed: None,
+            battery: None,
+            accuracy: None,
+            source: Some("traccar".to_string()),
+            timestamp: Some("2026-07-28T10:00:00.000Z".to_string()),
+            data_origin: Some("live".to_string()),
+        };
+        for name in [
+            "Earlier non-matching fix one",
+            "Earlier non-matching fix two",
+        ] {
+            store
+                .add_position(AddPositionInput {
+                    name: Some(name.to_string()),
+                    ..legacy.clone()
+                })
+                .await
+                .expect("non-matching legacy position should insert");
+        }
+        store
+            .add_position(legacy.clone())
+            .await
+            .expect("first exact legacy position should insert");
+        store
+            .add_position(legacy.clone())
+            .await
+            .expect("second exact legacy position should insert");
+
+        let error = store
+            .add_position(AddPositionInput {
+                source_position_id: Some("ambiguous-later-source".to_string()),
+                ..legacy
+            })
+            .await
+            .expect_err("all exact legacy candidates must participate in ambiguity detection");
+        assert!(error.contains("more than one exact legacy fix"));
+
+        let positions = store
+            .list_positions(mission.id, None)
+            .await
+            .expect("positions should list");
+        assert_eq!(positions.len(), 4);
+        assert!(positions
+            .iter()
+            .all(|position| position.source_position_id.is_none()));
     }
 
     #[tokio::test]
@@ -3517,8 +4133,9 @@ mod tests {
 
         let invalid_position = store
             .add_position(AddPositionInput {
-                mission_id: mission.id,
+                mission_id: mission.id.clone(),
                 device_id: "tracker-2".to_string(),
+                source_position_id: None,
                 name: None,
                 lat: 120.0,
                 lon: -9.0,
@@ -3533,6 +4150,27 @@ mod tests {
             .await;
 
         assert!(invalid_position.is_err());
+
+        let invalid_timestamp = store
+            .add_position(AddPositionInput {
+                mission_id: mission.id,
+                device_id: "tracker-2".to_string(),
+                source_position_id: Some("invalid-time".to_string()),
+                name: None,
+                lat: 52.0,
+                lon: -9.0,
+                altitude: None,
+                speed: None,
+                battery: None,
+                accuracy: None,
+                source: None,
+                timestamp: Some("not-a-timestamp".to_string()),
+                data_origin: None,
+            })
+            .await;
+        assert!(invalid_timestamp
+            .expect_err("invalid position timestamp must fail")
+            .contains("timestamp"));
     }
 
     #[tokio::test]
@@ -3998,6 +4636,7 @@ mod tests {
             .add_position(AddPositionInput {
                 mission_id: mission.id.clone(),
                 device_id: "tracker-1".to_string(),
+                source_position_id: None,
                 name: Some("Rescuer One".to_string()),
                 lat: 52.0599,
                 lon: -9.5045,
@@ -4129,6 +4768,7 @@ mod tests {
                 .add_position(AddPositionInput {
                     mission_id: mission.id.clone(),
                     device_id: "tracker-1".to_string(),
+                    source_position_id: None,
                     name: None,
                     lat: 52.1,
                     lon: -9.5,
@@ -4575,6 +5215,7 @@ mod tests {
             .add_position(AddPositionInput {
                 mission_id: mission.id.clone(),
                 device_id: "tracker-finished".to_string(),
+                source_position_id: None,
                 name: None,
                 lat: 52.0,
                 lon: -9.5,
@@ -4651,6 +5292,7 @@ mod tests {
             .add_position(AddPositionInput {
                 mission_id: mission.id.clone(),
                 device_id: "tracker-read".to_string(),
+                source_position_id: None,
                 name: Some("Rescuer Read".to_string()),
                 lat: 52.0,
                 lon: -9.5,

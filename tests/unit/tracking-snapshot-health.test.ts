@@ -39,6 +39,14 @@ const LIVE_SNAPSHOT: TrackingSnapshot = {
 }
 
 describe('tracking snapshot health', () => {
+  it('uses the operational five-minute stale threshold by default [DON-260]', () => {
+    const snapshot = annotateTrackingSnapshotHealth(LIVE_SNAPSHOT, {
+      now: new Date('2026-04-06T10:35:01.000Z'),
+    })
+
+    expect(snapshot.positions[0]?.device_cache_stale).toBe(true)
+  })
+
   it('marks live positions stale when their age exceeds the device threshold', () => {
     const snapshot = annotateTrackingSnapshotHealth(LIVE_SNAPSHOT, {
       now: new Date('2026-04-06T11:31:00.000Z'),

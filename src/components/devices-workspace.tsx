@@ -321,7 +321,9 @@ function DevicesWorkspaceContent(props: {
                 <dl className="space-y-3 text-sm text-stone-300">
                   <Detail label="Status" value={selectedRow.status} />
                   <Detail label="Last Seen" value={selectedRow.lastSeenDisplay} />
+                  <Detail label="Fix Time" value={selectedRow.fixTimeDisplay} />
                   <Detail label="Source" value={selectedRow.sourceDisplay} />
+                  <Detail label="GPS Accuracy" value={selectedRow.accuracyDisplay} />
                   <Detail label="Battery" value={selectedRow.batteryDisplay} />
                   <Detail label="Speed" value={selectedRow.speedDisplay} />
                   <Detail

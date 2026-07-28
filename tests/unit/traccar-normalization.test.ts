@@ -85,6 +85,75 @@ describe('traccar normalization', () => {
     ).toThrow(/latitude/i)
   })
 
+  it.each([
+    ['position id', { id: null }],
+    ['position id', { id: '' }],
+    ['position deviceId', { deviceId: null }],
+    ['position deviceId', { deviceId: '' }],
+    ['position latitude', { latitude: null }],
+    ['position latitude', { latitude: '' }],
+    ['position longitude', { longitude: null }],
+    ['position longitude', { longitude: '' }],
+  ])('rejects missing or empty required %s values [DON-260]', (_label, override) => {
+    expect(() =>
+      normalizeTraccarPosition(
+        {
+          ...positionsFixture[0],
+          ...override,
+        },
+        'live',
+      ),
+    ).toThrow()
+  })
+
+  it('does not coerce a string false validity flag to true [DON-260]', () => {
+    expect(() =>
+      normalizeTraccarPosition(
+        {
+          ...positionsFixture[0],
+          valid: 'false',
+        },
+        'live',
+      ),
+    ).toThrow(/invalid/i)
+  })
+
+  it('rejects date-only timestamps that would otherwise be guessed as midnight [DON-260]', () => {
+    expect(() =>
+      normalizeTraccarPosition(
+        {
+          ...positionsFixture[0],
+          fixTime: '2026-07-28',
+        },
+        'live',
+      ),
+    ).toThrow(/fixTime/i)
+  })
+
+  it('rejects impossible calendar dates instead of rolling them into another day [DON-260]', () => {
+    expect(() =>
+      normalizeTraccarPosition(
+        {
+          ...positionsFixture[0],
+          fixTime: '2026-02-30T10:00:00Z',
+        },
+        'live',
+      ),
+    ).toThrow(/fixTime/i)
+  })
+
+  it.each([null, '', 1.5, 0, -1])(
+    'rejects an invalid Traccar device identity %j [DON-260]',
+    (id) => {
+      expect(() =>
+        normalizeTraccarDevice({
+          ...devicesFixture[0],
+          id,
+        }),
+      ).toThrow(/device id/i)
+    },
+  )
+
   it('supports canonical breadcrumb fixtures', () => {
     const breadcrumbs = breadcrumbsFixture.map((position) =>
       normalizeTraccarPosition(position, 'live'),

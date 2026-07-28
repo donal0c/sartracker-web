@@ -57,6 +57,59 @@ Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
     })
   })
 
+  test('bounded whole-route trail is explicit about display versus storage [DON-260]', async ({
+    page,
+  }) => {
+    await page.evaluate(async () => {
+      const { applyTrackingSnapshot, useTrackingStore } = await import(
+        '/src/features/tracking/tracking-store.ts'
+      )
+      applyTrackingSnapshot({
+        ...useTrackingStore.getState().snapshot,
+        breadcrumbMetadata: {
+          totalRetained: 3_000,
+          totalObserved: 12_000,
+          deviceBudgets: [
+            {
+              deviceId: 'alpha',
+              retained: 3_000,
+              sourceRetained: 3_000,
+              total: 12_000,
+              firstTimestamp: '2026-07-28T00:00:00.000Z',
+              lastTimestamp: '2026-07-28T03:19:59.000Z',
+              truncated: true,
+            },
+          ],
+        },
+      })
+    })
+
+    await expect(page.getByTestId('breadcrumb-display-summary')).toContainText(
+      '3,000 of at least 12,000 known fixes',
+    )
+    await expect(page.getByTestId('breadcrumb-display-summary')).toContainText(
+      'Full mission history remains stored',
+    )
+
+    await captureElementAndRegister(page, 'tracking-status', {
+      testId: 'tracking-breadcrumb-bounded-summary',
+      testName: 'Tracking status distinguishes bounded display from stored history',
+      area: 'tracking',
+      severity: 'critical',
+      verificationPrompt: `Verify this screenshot of SAR Tracker's bounded breadcrumb display disclosure:
+1. The tracking panel should remain calm and readable, without looking like a connection failure
+2. A distinct informational message should say the trail display is simplified
+3. The message should clearly show "3,000 of at least 12,000 known fixes"
+4. The message should explicitly say the full mission history remains stored
+5. The ONLINE status and normal tracking counters should remain visible
+Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
+      playwrightAssertions: [
+        'breadcrumb-display-summary contains 3,000 of at least 12,000 known fixes',
+        'breadcrumb-display-summary says full mission history remains stored',
+      ],
+    })
+  })
+
   test('offline tracking warning is a red stale-position alert', async ({ page }) => {
     await page.evaluate(async () => {
       const { applyTrackingStatus } = await import('/src/features/tracking/tracking-store.ts')
@@ -220,9 +273,16 @@ Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
       })
     })
 
-    await expect.poll(() => countUniqueAlphaBreadcrumbDots(page), {
-      timeout: 15_000,
-    }).toBe(4)
+    await expect
+      .poll(() => readDotModeRenderState(page), {
+        message:
+          'all four close-spaced breadcrumb dots replace the prior tracking scene before capture',
+        timeout: 15_000,
+      })
+      .toEqual({
+        alphaBreadcrumbDots: 4,
+        currentDeviceMarkers: 0,
+      })
 
     await captureAndRegister(page, {
       testId: 'tracking-breadcrumb-dots-faithful',
@@ -367,9 +427,16 @@ Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
   })
 })
 
-async function countUniqueAlphaBreadcrumbDots(page: Page): Promise<number> {
+async function readDotModeRenderState(page: Page): Promise<{
+  readonly alphaBreadcrumbDots: number
+  readonly currentDeviceMarkers: number
+}> {
   return page.evaluate(() => {
-    const features = window.__SARTRACKER_MAP__?.querySourceFeatures('tracking') ?? []
+    const map = window.__SARTRACKER_MAP__
+    const features =
+      map?.queryRenderedFeatures(undefined, {
+        layers: ['tracking-breadcrumbs-dots'],
+      }) ?? []
     const coordinateKeys = features.flatMap((feature) => {
       if (
         feature.properties?.featureKind !== 'breadcrumb' ||
@@ -381,7 +448,13 @@ async function countUniqueAlphaBreadcrumbDots(page: Page): Promise<number> {
       const [lon, lat] = feature.geometry.coordinates
       return [`${lon.toFixed(5)}:${lat.toFixed(5)}`]
     })
-    return new Set(coordinateKeys).size
+    return {
+      alphaBreadcrumbDots: new Set(coordinateKeys).size,
+      currentDeviceMarkers:
+        map?.queryRenderedFeatures(undefined, {
+          layers: ['tracking-devices-circle'],
+        }).length ?? 0,
+    }
   })
 }
 

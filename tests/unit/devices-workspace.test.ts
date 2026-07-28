@@ -47,7 +47,7 @@ const SNAPSHOT: TrackingSnapshot = {
       altitude: null,
       speed: 3.5,
       battery: 82,
-      accuracy: null,
+      accuracy: 7.5,
       timestamp: '2026-04-10T17:00:00.000Z',
       source: 'osmand',
       data_origin: 'live',
@@ -133,6 +133,20 @@ describe('DevicesWorkspace', () => {
 
     expect(useDeviceWorkspaceStore.getState().selectedDeviceId).toBe('bravo')
     expect(getText('[data-testid="devices-inspector-title"]')).toContain('Bravo Team')
+  })
+
+  it('shows the authoritative fix time and supplied GPS accuracy in the inspector [DON-260]', async () => {
+    const { DevicesWorkspace } = await import('../../src/components/devices-workspace')
+    useTrackingStore.setState({ snapshot: SNAPSHOT, status: STATUS })
+    useDeviceWorkspaceStore.setState({ open: true, selectedDeviceId: 'alpha' })
+
+    render(React.createElement(DevicesWorkspace))
+    await waitForElement('[data-testid="devices-workspace"]')
+
+    const inspectorText = getText('[data-testid="devices-inspector"]')
+    expect(inspectorText).toContain('Fix Time')
+    expect(inspectorText).toContain('GPS Accuracy')
+    expect(inspectorText).toContain('7.5 m')
   })
 
   it('adds and removes mission-active devices via filter tabs', async () => {

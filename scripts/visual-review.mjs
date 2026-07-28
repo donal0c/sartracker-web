@@ -365,6 +365,8 @@ function spawnReviewer({ prompt, model, allowedDir }) {
         'json',
         '--add-dir',
         allowedDir,
+        '--tools',
+        'Read',
         '--allowedTools',
         'Read',
         '--no-session-persistence',

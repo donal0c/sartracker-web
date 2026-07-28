@@ -247,6 +247,7 @@ describe('startTrackingRuntime', () => {
   it('ignores malformed cache payloads and still starts the poller', async () => {
     const applySnapshot = vi.fn()
     const createPoller = vi.fn().mockReturnValue({ start: vi.fn(), stop: vi.fn() })
+    const logger = { warn: vi.fn() }
 
     await startTrackingRuntime({
       config: { baseUrl: 'http://test:8082' },
@@ -259,11 +260,16 @@ describe('startTrackingRuntime', () => {
       missionStore: createMissionStoreStub(),
       applySnapshot,
       applyStatus: vi.fn(),
+      logger,
       now: () => new Date('2026-04-06T10:35:00.000Z'),
     })
 
     expect(applySnapshot).not.toHaveBeenCalled()
     expect(createPoller).toHaveBeenCalledTimes(1)
+    expect(logger.warn).toHaveBeenCalledWith(
+      'Tracking cache payload was ignored.',
+      expect.any(Error),
+    )
   })
 
   it('persists devices and deduplicated positions into the active mission on snapshot updates', async () => {
@@ -291,6 +297,7 @@ describe('startTrackingRuntime', () => {
         getActiveMission: vi.fn().mockResolvedValue({ id: 'mission-1' }),
         listPositions: vi.fn().mockResolvedValue([
           {
+            source_position_id: SNAPSHOT.positions[0].id,
             device_id: '1',
             timestamp: SNAPSHOT.positions[0].timestamp,
           },
@@ -306,7 +313,7 @@ describe('startTrackingRuntime', () => {
     await pollerHooks?.onSnapshot(SNAPSHOT)
 
     expect(upsertDevice).toHaveBeenCalledTimes(2)
-    expect(addPosition).toHaveBeenCalledTimes(1)
+    expect(addPosition).toHaveBeenCalledTimes(4)
     expect(addPosition).toHaveBeenCalledWith(
       expect.objectContaining({
         mission_id: 'mission-1',
@@ -422,11 +429,212 @@ describe('startTrackingRuntime', () => {
     expect(addPositionsBulk).toHaveBeenCalledWith({
       mission_id: 'mission-1',
       positions: expect.arrayContaining([
-        expect.objectContaining({ id: 'traccar-9001' }),
-        expect.objectContaining({ id: 'traccar-9002' }),
+        expect.objectContaining({ source_position_id: 'traccar-9001' }),
+        expect.objectContaining({ source_position_id: 'traccar-9002' }),
       ]),
     })
     expect(addPositionsBulk.mock.calls[0]![0].positions).toHaveLength(2)
+  })
+
+  it('forwards a sourced fix to storage when only its exact legacy fallback is cached [DON-260]', async () => {
+    const addPositionsBulk = vi.fn().mockResolvedValue([])
+    let pollerHooks:
+      | {
+          onSnapshot: (snapshot: TrackingSnapshot) => void | Promise<void>
+        }
+      | undefined
+    const sourceFix = {
+      ...SNAPSHOT.breadcrumbs[0]!,
+      id: 'traccar-position-1',
+      device_id: '2',
+      lat: 52.0599,
+      lon: -9.5045,
+      timestamp: '2026-07-28T10:00:00.000Z',
+    }
+
+    await startTrackingRuntime({
+      config: { baseUrl: 'http://test:8082' },
+      createClient: vi.fn().mockReturnValue({}),
+      createPoller: vi.fn().mockImplementation((_client, hooks) => {
+        pollerHooks = hooks
+        return { start: vi.fn(), stop: vi.fn() }
+      }),
+      cache: {
+        read: vi.fn().mockResolvedValue(null),
+        write: vi.fn(),
+      },
+      missionStore: createMissionStoreStub({
+        getActiveMission: vi.fn().mockResolvedValue({ id: 'mission-1' }),
+        listRecentPositions: vi.fn().mockResolvedValue([
+          {
+            id: 'local-legacy-row',
+            source_position_id: null,
+            device_id: sourceFix.device_id,
+            lat: sourceFix.lat,
+            lon: sourceFix.lon,
+            timestamp: sourceFix.timestamp,
+            data_origin: 'live',
+          },
+        ]),
+        addPositionsBulk,
+      }),
+      applySnapshot: vi.fn(),
+      applyStatus: vi.fn(),
+      writeCache: false,
+    })
+
+    await pollerHooks?.onSnapshot({
+      ...SNAPSHOT,
+      positions: [],
+      breadcrumbs: [sourceFix],
+      rawBreadcrumbsForPersistence: [sourceFix],
+    })
+
+    expect(addPositionsBulk).toHaveBeenCalledWith({
+      mission_id: 'mission-1',
+      positions: [
+        expect.objectContaining({
+          source_position_id: 'traccar-position-1',
+        }),
+      ],
+    })
+  })
+
+  it('does not let a queued snapshot cross into a different active mission [DON-260]', async () => {
+    const addPositionsBulk = vi.fn().mockResolvedValue([])
+    const getActiveMission = vi.fn().mockResolvedValue({ id: 'mission-b' })
+    let pollerHooks:
+      | {
+          onSnapshot: (
+            snapshot: TrackingSnapshot,
+            context: { readonly historyResetKey: string | null },
+          ) => void | Promise<void>
+        }
+      | undefined
+
+    await startTrackingRuntime({
+      config: { baseUrl: 'http://test:8082' },
+      createClient: vi.fn().mockReturnValue({}),
+      createPoller: vi.fn().mockImplementation((_client, hooks) => {
+        pollerHooks = hooks
+        return { start: vi.fn(), stop: vi.fn() }
+      }),
+      cache: { read: vi.fn().mockResolvedValue(null), write: vi.fn() },
+      missionStore: createMissionStoreStub({
+        getActiveMission,
+        addPositionsBulk,
+      }),
+      applySnapshot: vi.fn(),
+      applyStatus: vi.fn(),
+      writeCache: false,
+    })
+
+    await pollerHooks?.onSnapshot(SNAPSHOT, { historyResetKey: 'mission-a' })
+
+    expect(getActiveMission).toHaveBeenCalled()
+    expect(addPositionsBulk).not.toHaveBeenCalled()
+  })
+
+  it('serializes persistence across replacement runtimes so an older fix cannot win last [DON-260]', async () => {
+    let releaseOlderWrite: (() => void) | null = null
+    let sharedAddPositionsBulk: ReturnType<typeof vi.fn> | undefined
+    const olderWriteStarted = new Promise<void>((resolve) => {
+      const addPositionsBulk = vi
+        .fn()
+        .mockImplementationOnce(
+          () =>
+            new Promise<void>((writeResolve) => {
+              releaseOlderWrite = writeResolve
+              resolve()
+            }),
+        )
+        .mockResolvedValue(undefined)
+      sharedAddPositionsBulk = addPositionsBulk
+    })
+    let olderHooks:
+      | {
+          onSnapshot: (
+            snapshot: TrackingSnapshot,
+            context: { readonly historyResetKey: string | null },
+          ) => void | Promise<void>
+        }
+      | undefined
+    let replacementHooks: typeof olderHooks
+    const missionStore = createMissionStoreStub({
+      getActiveMission: vi.fn().mockResolvedValue({ id: 'mission-1' }),
+      listRecentPositions: vi.fn().mockResolvedValue([]),
+      addPositionsBulk: (...args) => sharedAddPositionsBulk?.(...args),
+    })
+
+    const stopOlder = await startTrackingRuntime({
+      config: { baseUrl: 'http://test:8082' },
+      createClient: vi.fn().mockReturnValue({}),
+      createPoller: vi.fn().mockImplementation((_client, hooks) => {
+        olderHooks = hooks
+        return { start: vi.fn(), stop: vi.fn() }
+      }),
+      cache: { read: vi.fn().mockResolvedValue(null), write: vi.fn() },
+      missionStore,
+      applySnapshot: vi.fn(),
+      applyStatus: vi.fn(),
+      writeCache: false,
+    })
+
+    const olderFix = {
+      ...SNAPSHOT.breadcrumbs[0]!,
+      id: 'source-1',
+      lat: 52.1,
+    }
+    const olderPersistence = olderHooks?.onSnapshot(
+      {
+        ...SNAPSHOT,
+        devices: [],
+        positions: [],
+        breadcrumbs: [olderFix],
+        rawBreadcrumbsForPersistence: [olderFix],
+      },
+      { historyResetKey: 'mission-1' },
+    )
+    await olderWriteStarted
+    stopOlder()
+
+    const stopReplacement = await startTrackingRuntime({
+      config: { baseUrl: 'http://test:8082' },
+      createClient: vi.fn().mockReturnValue({}),
+      createPoller: vi.fn().mockImplementation((_client, hooks) => {
+        replacementHooks = hooks
+        return { start: vi.fn(), stop: vi.fn() }
+      }),
+      cache: { read: vi.fn().mockResolvedValue(null), write: vi.fn() },
+      missionStore,
+      applySnapshot: vi.fn(),
+      applyStatus: vi.fn(),
+      writeCache: false,
+    })
+    const correctedFix = { ...olderFix, lat: 52.2 }
+    const replacementPersistence = replacementHooks?.onSnapshot(
+      {
+        ...SNAPSHOT,
+        devices: [],
+        positions: [],
+        breadcrumbs: [correctedFix],
+        rawBreadcrumbsForPersistence: [correctedFix],
+      },
+      { historyResetKey: 'mission-1' },
+    )
+
+    for (let flush = 0; flush < 10; flush += 1) {
+      await Promise.resolve()
+    }
+    expect(sharedAddPositionsBulk).toHaveBeenCalledTimes(1)
+    releaseOlderWrite?.()
+    await Promise.all([olderPersistence, replacementPersistence])
+    expect(sharedAddPositionsBulk).toHaveBeenCalledTimes(2)
+    expect(sharedAddPositionsBulk).toHaveBeenLastCalledWith({
+      mission_id: 'mission-1',
+      positions: [expect.objectContaining({ source_position_id: 'source-1', lat: 52.2 })],
+    })
+    stopReplacement()
   })
 
   it('records diagnostic breadcrumbs for tracking status and snapshot summaries [DON-226]', async () => {
@@ -510,9 +718,10 @@ describe('startTrackingRuntime', () => {
     })
   })
 
-  it('reuses persisted position keys across snapshots for the same active mission', async () => {
+  it('reuses persisted legacy coordinate keys while revalidating sourced fixes for corrections', async () => {
     const listPositions = vi.fn().mockResolvedValue([
       {
+        source_position_id: SNAPSHOT.positions[0].id,
         device_id: SNAPSHOT.positions[0].device_id,
         timestamp: SNAPSHOT.positions[0].timestamp,
       },
@@ -550,7 +759,60 @@ describe('startTrackingRuntime', () => {
     await pollerHooks?.onSnapshot(SNAPSHOT)
 
     expect(listPositions).toHaveBeenCalledTimes(1)
-    expect(addPosition).toHaveBeenCalledTimes(1)
+    expect(addPosition).toHaveBeenCalledTimes(8)
+  })
+
+  it('forwards a changed sourced fix even when its identity was already persisted [DON-260]', async () => {
+    const addPositionsBulk = vi.fn().mockResolvedValue([])
+    let pollerHooks:
+      | {
+          onSnapshot: (snapshot: TrackingSnapshot) => void | Promise<void>
+        }
+      | undefined
+    const original = SNAPSHOT.positions[0]!
+    const corrected = { ...original, lat: original.lat + 0.01 }
+
+    await startTrackingRuntime({
+      config: { baseUrl: 'http://test:8082' },
+      createClient: vi.fn().mockReturnValue({}),
+      createPoller: vi.fn().mockImplementation((_client, hooks) => {
+        pollerHooks = hooks
+        return { start: vi.fn(), stop: vi.fn() }
+      }),
+      cache: { read: vi.fn().mockResolvedValue(null), write: vi.fn() },
+      missionStore: createMissionStoreStub({
+        getActiveMission: vi.fn().mockResolvedValue({ id: 'mission-1' }),
+        listRecentPositions: vi.fn().mockResolvedValue([
+          {
+            source_position_id: original.id,
+            device_id: original.device_id,
+            lat: original.lat,
+            lon: original.lon,
+            timestamp: original.timestamp,
+          },
+        ]),
+        addPositionsBulk,
+      }),
+      applySnapshot: vi.fn(),
+      applyStatus: vi.fn(),
+      writeCache: false,
+    })
+
+    await pollerHooks?.onSnapshot({
+      ...SNAPSHOT,
+      breadcrumbs: [],
+      positions: [corrected],
+    })
+
+    expect(addPositionsBulk).toHaveBeenCalledWith({
+      mission_id: 'mission-1',
+      positions: [
+        expect.objectContaining({
+          source_position_id: original.id,
+          lat: corrected.lat,
+        }),
+      ],
+    })
   })
 
   it('does not rewrite the tracking cache when the published snapshot payload is unchanged [DON-235]', async () => {
@@ -648,7 +910,7 @@ describe('startTrackingRuntime', () => {
       pollerHooks?.getInitialBreadcrumbs(),
     ).resolves.toEqual([
       expect.objectContaining({
-        id: 'pos-1',
+        id: '',
         device_id: '1',
         lat: 52.01,
         lon: -9.01,
@@ -656,7 +918,7 @@ describe('startTrackingRuntime', () => {
         data_origin: 'live',
       }),
       expect.objectContaining({
-        id: 'pos-2',
+        id: '',
         device_id: '2',
         lat: 52.02,
         lon: -9.02,
@@ -677,6 +939,7 @@ describe('startTrackingRuntime', () => {
     const listRecentPositions = vi.fn().mockResolvedValue([
       {
         id: 'recent-1',
+        source_position_id: SNAPSHOT.positions[0]!.id,
         device_id: SNAPSHOT.positions[0]!.device_id,
         lat: SNAPSHOT.positions[0]!.lat,
         lon: SNAPSHOT.positions[0]!.lon,
@@ -711,12 +974,304 @@ describe('startTrackingRuntime', () => {
     await pollerHooks?.onSnapshot(SNAPSHOT)
     expect(listRecentPositions).toHaveBeenCalledWith('mission-1', 5_000)
     expect(listPositions).not.toHaveBeenCalled()
-    expect(addPosition).toHaveBeenCalledTimes(1)
+    expect(addPosition).toHaveBeenCalledTimes(4)
+  })
+
+  it('hydrates restart breadcrumbs from the deterministic whole-route query [DON-260]', async () => {
+    let pollerHooks:
+      | {
+          getInitialBreadcrumbs: () => Promise<readonly TrackingSnapshot['breadcrumbs'][number][]>
+        }
+      | undefined
+    const listBreadcrumbPositions = vi.fn().mockResolvedValue({
+      positions: [
+        {
+          id: 'local-row-1',
+          source_position_id: 'source-1',
+          device_id: '1',
+          lat: 52.01,
+          lon: -9.01,
+          timestamp: '2026-04-06T10:05:00.000Z',
+          data_origin: 'live',
+        },
+      ],
+      deviceTotals: [{ device_id: '1', total: 25_000 }],
+    })
+    const listRecentPositions = vi.fn().mockRejectedValue(
+      new Error('tail query must not run'),
+    )
+
+    await startTrackingRuntime({
+      config: { baseUrl: 'http://test:8082' },
+      createClient: vi.fn().mockReturnValue({}),
+      createPoller: vi.fn().mockImplementation((_client, hooks) => {
+        pollerHooks = hooks
+        return { start: vi.fn(), stop: vi.fn() }
+      }),
+      cache: { read: vi.fn().mockResolvedValue(null), write: vi.fn() },
+      missionStore: createMissionStoreStub({
+        getActiveMission: vi.fn().mockResolvedValue({ id: 'mission-1' }),
+        listBreadcrumbPositions,
+        listRecentPositions,
+      }),
+      applySnapshot: vi.fn(),
+      applyStatus: vi.fn(),
+    })
+
+    await expect(pollerHooks?.getInitialBreadcrumbs()).resolves.toEqual([
+      expect.objectContaining({ id: 'source-1' }),
+    ])
+    expect(listBreadcrumbPositions).toHaveBeenCalledWith('mission-1', 5_000)
+    expect(listRecentPositions).not.toHaveBeenCalled()
+  })
+
+  it('keeps malformed legacy breadcrumb drops operator-visible while restoring valid history [DON-260]', async () => {
+    let pollerHooks:
+      | {
+          getInitialBreadcrumbs: () => Promise<
+            readonly TrackingSnapshot['breadcrumbs'][number][]
+          >
+          onStatusChange: (status: TrackingConnectionStatus) => void
+        }
+      | undefined
+    const applyStatus = vi.fn()
+    const recordDiagnosticEvent = vi.fn()
+
+    await startTrackingRuntime({
+      config: { baseUrl: 'http://test:8082' },
+      createClient: vi.fn().mockReturnValue({}),
+      createPoller: vi.fn().mockImplementation((_client, hooks) => {
+        pollerHooks = hooks
+        return { start: vi.fn(), stop: vi.fn() }
+      }),
+      cache: { read: vi.fn().mockResolvedValue(null), write: vi.fn() },
+      missionStore: createMissionStoreStub({
+        getActiveMission: vi.fn().mockResolvedValue({ id: 'mission-1' }),
+        listBreadcrumbPositions: vi.fn().mockResolvedValue({
+          positions: [
+            {
+              source_position_id: 'source-valid',
+              device_id: '1',
+              lat: 52.01,
+              lon: -9.01,
+              timestamp: '2026-02-28T10:05:00.000Z',
+              data_origin: 'live',
+            },
+          ],
+          deviceTotals: [{ device_id: '1', total: 2 }],
+          droppedPositionCount: 1,
+        }),
+      }),
+      applySnapshot: vi.fn(),
+      applyStatus,
+      recordDiagnosticEvent,
+    })
+
+    await expect(pollerHooks?.getInitialBreadcrumbs()).resolves.toHaveLength(1)
+    pollerHooks?.onStatusChange({
+      mode: 'online',
+      consecutiveFailures: 0,
+      recovered: false,
+      lastSuccessAt: '2026-07-28T10:05:00.000Z',
+      warning: null,
+    })
+
+    expect(applyStatus).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        mode: 'online',
+        warning: expect.stringMatching(/1 unreadable stored breadcrumb fix was ignored/i),
+      }),
+    )
+    expect(recordDiagnosticEvent).toHaveBeenCalledWith({
+      level: 'warn',
+      category: 'tracking',
+      event: 'tracking_breadcrumb_rows_dropped',
+      fields: {
+        droppedPositionCount: 1,
+      },
+    })
+  })
+
+  it('rejects ambiguous and calendar-invalid persisted breadcrumb timestamps [DON-260]', async () => {
+    let pollerHooks:
+      | {
+          getInitialBreadcrumbs: () => Promise<readonly TrackingSnapshot['breadcrumbs'][number][]>
+        }
+      | undefined
+    const listBreadcrumbPositions = vi.fn().mockResolvedValue({
+      positions: [
+        {
+          id: 'valid',
+          source_position_id: 'source-valid',
+          device_id: '1',
+          lat: 52.01,
+          lon: -9.01,
+          timestamp: '2026-02-28T10:05:00.000Z',
+          data_origin: 'live',
+        },
+        {
+          id: 'impossible-date',
+          source_position_id: 'source-impossible',
+          device_id: '1',
+          lat: 52.02,
+          lon: -9.02,
+          timestamp: '2026-02-30T10:05:00.000Z',
+          data_origin: 'live',
+        },
+        {
+          id: 'date-only',
+          source_position_id: 'source-date-only',
+          device_id: '1',
+          lat: 52.03,
+          lon: -9.03,
+          timestamp: '2026-02-28',
+          data_origin: 'live',
+        },
+      ],
+      deviceTotals: [{ device_id: '1', total: 3 }],
+    })
+
+    await startTrackingRuntime({
+      config: { baseUrl: 'http://test:8082' },
+      createClient: vi.fn().mockReturnValue({}),
+      createPoller: vi.fn().mockImplementation((_client, hooks) => {
+        pollerHooks = hooks
+        return { start: vi.fn(), stop: vi.fn() }
+      }),
+      cache: { read: vi.fn().mockResolvedValue(null), write: vi.fn() },
+      missionStore: createMissionStoreStub({
+        getActiveMission: vi.fn().mockResolvedValue({ id: 'mission-1' }),
+        listBreadcrumbPositions,
+      }),
+      applySnapshot: vi.fn(),
+      applyStatus: vi.fn(),
+    })
+
+    await expect(pollerHooks?.getInitialBreadcrumbs()).resolves.toEqual([
+      expect.objectContaining({
+        id: 'source-valid',
+        timestamp: '2026-02-28T10:05:00.000Z',
+      }),
+    ])
+  })
+
+  it('reloads persisted breadcrumb seed data when the active mission changes [DON-260]', async () => {
+    let pollerHooks:
+      | {
+          getInitialBreadcrumbs: () => Promise<
+            readonly TrackingSnapshot['breadcrumbs'][number][]
+          >
+        }
+      | undefined
+    const getActiveMission = vi
+      .fn()
+      .mockResolvedValueOnce({ id: 'mission-a' })
+      .mockResolvedValueOnce({ id: 'mission-b' })
+    const listBreadcrumbPositions = vi
+      .fn()
+      .mockImplementation(async (missionId: string) => ({
+        positions: [
+          {
+            id: `local-${missionId}`,
+            source_position_id: `source-${missionId}`,
+            device_id: '1',
+            lat: 52.01,
+            lon: -9.01,
+            timestamp: '2026-07-28T10:00:00.000Z',
+            data_origin: 'live',
+          },
+        ],
+        deviceTotals: [{ device_id: '1', total: 1 }],
+      }))
+
+    await startTrackingRuntime({
+      config: { baseUrl: 'http://test:8082' },
+      createClient: vi.fn().mockReturnValue({}),
+      createPoller: vi.fn().mockImplementation((_client, hooks) => {
+        pollerHooks = hooks
+        return { start: vi.fn(), stop: vi.fn() }
+      }),
+      cache: { read: vi.fn().mockResolvedValue(null), write: vi.fn() },
+      missionStore: createMissionStoreStub({
+        getActiveMission,
+        listBreadcrumbPositions,
+      }),
+      applySnapshot: vi.fn(),
+      applyStatus: vi.fn(),
+    })
+
+    await expect(pollerHooks?.getInitialBreadcrumbs()).resolves.toEqual([
+      expect.objectContaining({ id: 'source-mission-a' }),
+    ])
+    await expect(pollerHooks?.getInitialBreadcrumbs()).resolves.toEqual([
+      expect.objectContaining({ id: 'source-mission-b' }),
+    ])
+    expect(listBreadcrumbPositions.mock.calls.map(([missionId]) => missionId)).toEqual([
+      'mission-a',
+      'mission-b',
+    ])
+  })
+
+  it('retries a transient persisted breadcrumb hydration failure for the same mission [DON-260]', async () => {
+    let pollerHooks:
+      | {
+          getInitialBreadcrumbs: () => Promise<
+            readonly TrackingSnapshot['breadcrumbs'][number][]
+          >
+        }
+      | undefined
+    const listBreadcrumbPositions = vi
+      .fn()
+      .mockRejectedValueOnce(new Error('temporary worker timeout'))
+      .mockResolvedValueOnce({
+        positions: [
+          {
+            id: 'local-row-1',
+            source_position_id: 'source-1',
+            device_id: '1',
+            lat: 52.01,
+            lon: -9.01,
+            timestamp: '2026-07-28T10:00:00.000Z',
+            data_origin: 'live',
+          },
+        ],
+        deviceTotals: [{ device_id: '1', total: 1 }],
+      })
+
+    await startTrackingRuntime({
+      config: { baseUrl: 'http://test:8082' },
+      createClient: vi.fn().mockReturnValue({}),
+      createPoller: vi.fn().mockImplementation((_client, hooks) => {
+        pollerHooks = hooks
+        return { start: vi.fn(), stop: vi.fn() }
+      }),
+      cache: { read: vi.fn().mockResolvedValue(null), write: vi.fn() },
+      missionStore: createMissionStoreStub({
+        getActiveMission: vi.fn().mockResolvedValue({ id: 'mission-1' }),
+        listBreadcrumbPositions,
+      }),
+      applySnapshot: vi.fn(),
+      applyStatus: vi.fn(),
+    })
+
+    await expect(pollerHooks?.getInitialBreadcrumbs()).rejects.toThrow(
+      /temporary worker timeout/iu,
+    )
+    await expect(pollerHooks?.getInitialBreadcrumbs()).resolves.toEqual([
+      expect.objectContaining({ id: 'source-1' }),
+    ])
+    expect(listBreadcrumbPositions).toHaveBeenCalledTimes(2)
   })
 
   it('keeps the live snapshot applied when cache and mission persistence side effects fail', async () => {
     const applySnapshot = vi.fn()
+    const applyStatus = vi.fn()
     const logger = { warn: vi.fn() }
+    const recordDiagnosticEvent = vi.fn()
+    const cacheWrite = vi
+      .fn()
+      .mockRejectedValueOnce(new Error('cache write failed'))
+      .mockResolvedValue('/tmp/tracking-cache.json')
     let pollerHooks:
       | {
           onSnapshot: (snapshot: TrackingSnapshot) => void | Promise<void>
@@ -733,19 +1288,30 @@ describe('startTrackingRuntime', () => {
       }),
       cache: {
         read: vi.fn().mockResolvedValue(null),
-        write: vi.fn().mockRejectedValue(new Error('cache write failed')),
+        write: cacheWrite,
       },
       missionStore: createMissionStoreStub({
         getActiveMission: vi.fn().mockResolvedValue({ id: 'mission-1' }),
         listPositions: vi.fn().mockResolvedValue([]),
-        upsertDevice: vi.fn().mockRejectedValue(new Error('device persistence failed')),
+        upsertDevice: vi
+          .fn()
+          .mockRejectedValueOnce(new Error('device persistence failed'))
+          .mockResolvedValue(undefined),
       }),
       applySnapshot,
-      applyStatus: vi.fn(),
+      applyStatus,
       logger,
+      recordDiagnosticEvent,
       now: () => new Date('2026-04-06T10:35:00.000Z'),
     })
 
+    pollerHooks?.onStatusChange({
+      mode: 'online',
+      consecutiveFailures: 0,
+      recovered: false,
+      lastSuccessAt: '2026-04-06T10:35:00.000Z',
+      warning: null,
+    })
     await expect(pollerHooks?.onSnapshot(SNAPSHOT)).resolves.toBeUndefined()
 
     expect(applySnapshot).toHaveBeenCalledWith(SNAPSHOT)
@@ -756,6 +1322,29 @@ describe('startTrackingRuntime', () => {
     expect(logger.warn).toHaveBeenCalledWith(
       'Tracking mission persistence failed.',
       expect.any(Error),
+    )
+    expect(applyStatus).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        mode: 'online',
+        warning: expect.stringMatching(
+          /tracking fallback cache update failed.*mission breadcrumb storage failed/i,
+        ),
+      }),
+    )
+
+    await expect(pollerHooks?.onSnapshot(SNAPSHOT)).resolves.toBeUndefined()
+    expect(cacheWrite).toHaveBeenCalledTimes(2)
+    expect(applyStatus).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        mode: 'online',
+        warning: null,
+      }),
+    )
+    expect(recordDiagnosticEvent).toHaveBeenCalledWith(
+      expect.objectContaining({ event: 'tracking_cache_write_failed' }),
+    )
+    expect(recordDiagnosticEvent).toHaveBeenCalledWith(
+      expect.objectContaining({ event: 'tracking_cache_write_recovered' }),
     )
   })
 
@@ -813,6 +1402,49 @@ describe('startTrackingRuntime', () => {
       SNAPSHOT.positions[0]!.timestamp,
       SNAPSHOT.positions[1]!.timestamp,
     ])
+  })
+
+  it('persists no breadcrumbs when the browser-only cap is consumed by current fixes [DON-260]', async () => {
+    const addPosition = vi.fn().mockResolvedValue(undefined)
+    const breadcrumbs = Array.from({ length: 3 }, (_, index) => ({
+      ...SNAPSHOT.breadcrumbs[0]!,
+      id: `zero-budget-breadcrumb-${index}`,
+      timestamp: new Date(Date.UTC(2026, 3, 6, 9, index, 0)).toISOString(),
+    }))
+    let pollerHooks:
+      | {
+          onSnapshot: (snapshot: TrackingSnapshot) => void | Promise<void>
+        }
+      | undefined
+
+    await startTrackingRuntime({
+      config: { baseUrl: 'http://test:8082' },
+      createClient: vi.fn().mockReturnValue({}),
+      createPoller: vi.fn().mockImplementation((_client, hooks) => {
+        pollerHooks = hooks
+        return { start: vi.fn(), stop: vi.fn() }
+      }),
+      cache: { read: vi.fn().mockResolvedValue(null), write: vi.fn() },
+      missionStore: createMissionStoreStub({
+        getActiveMission: vi.fn().mockResolvedValue({ id: 'mission-1' }),
+        listPositions: vi.fn().mockResolvedValue([]),
+        addPosition,
+      }),
+      applySnapshot: vi.fn(),
+      applyStatus: vi.fn(),
+      maxPersistedPositionsPerSnapshot: SNAPSHOT.positions.length,
+      writeCache: false,
+    })
+
+    await pollerHooks?.onSnapshot({
+      ...SNAPSHOT,
+      breadcrumbs,
+    })
+
+    expect(addPosition).toHaveBeenCalledTimes(SNAPSHOT.positions.length)
+    expect(addPosition.mock.calls.map((call) => call[0].timestamp)).toEqual(
+      SNAPSHOT.positions.map((position) => position.timestamp),
+    )
   })
 
   it('leaves Electron mission persistence uncapped by default [DON-159]', async () => {

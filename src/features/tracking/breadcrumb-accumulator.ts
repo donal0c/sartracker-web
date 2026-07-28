@@ -2,14 +2,21 @@ import type {
   BreadcrumbSnapshotMetadata,
   NormalizedTrackingPosition,
 } from './tracking-types'
-import { createTrackingPositionIdentityKey } from './tracking-position-identity'
+import {
+  createTrackingPositionCoordinateKey,
+  createTrackingPositionIdentityKey,
+} from './tracking-position-identity'
+import {
+  createBreadcrumbIdentityIndex,
+  type BreadcrumbIdentityIndex,
+} from './breadcrumb-identity-index'
+import { compareStringsByCodeUnit } from '../../lib/deterministic-string-order'
 
 // Keep each live device trail bounded independently while preserving the shape
 // of the full requested window. A high-frequency tracker must not evict another
 // rescuer's route, and its own older route must not disappear just because the
 // device keeps reporting later fixes.
 const MAX_BREADCRUMB_POSITIONS_PER_DEVICE = 5_000
-const MAX_SOURCE_POSITIONS_PER_DEVICE = MAX_BREADCRUMB_POSITIONS_PER_DEVICE * 2
 const parsedTimestampByPosition = new WeakMap<NormalizedTrackingPosition, number>()
 
 export type BreadcrumbAccumulationResult = {
@@ -20,9 +27,11 @@ export type BreadcrumbAccumulationResult = {
 export type BreadcrumbAccumulator = {
   readonly append: (
     incoming: readonly NormalizedTrackingPosition[],
+    options?: { readonly resolveObservedBaseline?: boolean },
   ) => BreadcrumbAccumulationResult
   readonly reset: (
     positions?: readonly NormalizedTrackingPosition[],
+    totalObservedByDevice?: Readonly<Record<string, number>>,
   ) => BreadcrumbAccumulationResult
   readonly snapshot: () => BreadcrumbAccumulationResult
 }
@@ -71,6 +80,7 @@ export function createBreadcrumbAccumulator(
 
   const append = (
     incoming: readonly NormalizedTrackingPosition[],
+    options: { readonly resolveObservedBaseline?: boolean } = {},
   ): BreadcrumbAccumulationResult => {
     if (incoming.length === 0) {
       return snapshot()
@@ -78,7 +88,12 @@ export function createBreadcrumbAccumulator(
 
     let changed = false
     for (const position of incoming) {
-      changed = mergePosition(deviceStates, decorateWithTimestamp(position)) || changed
+      changed =
+        mergePosition(
+          deviceStates,
+          decorateWithTimestamp(position),
+          options.resolveObservedBaseline === true,
+        ) || changed
     }
     if (!changed) {
       return snapshot()
@@ -89,10 +104,23 @@ export function createBreadcrumbAccumulator(
 
   const reset = (
     positions: readonly NormalizedTrackingPosition[] = [],
+    totalObservedByDevice: Readonly<Record<string, number>> = {},
   ): BreadcrumbAccumulationResult => {
     deviceStates.clear()
     for (const position of positions) {
       mergePosition(deviceStates, decorateWithTimestamp(position))
+    }
+    for (const [deviceId, totalObserved] of Object.entries(totalObservedByDevice)) {
+      const deviceState = deviceStates.get(deviceId)
+      if (
+        deviceState !== undefined &&
+        Number.isSafeInteger(totalObserved) &&
+        totalObserved >= deviceState.totalObserved
+      ) {
+        deviceState.totalObserved = totalObserved
+        deviceState.unresolvedObservedCount =
+          totalObserved - deviceState.seenIdentities.getStorageStats().identityCount
+      }
     }
     invalidate()
     return snapshot()
@@ -104,12 +132,15 @@ export function createBreadcrumbAccumulator(
     }
 
     const deviceBudgets = [...deviceStates.values()]
-      .sort((left, right) => left.deviceId.localeCompare(right.deviceId))
+      .sort((left, right) => compareStringsByCodeUnit(left.deviceId, right.deviceId))
       .map((deviceState) => {
-        const retained = retainDeviceTrailAcrossWindow(
+        const retention = retainDeviceTrailAcrossWindow(
           deviceState.chronological,
           MAX_BREADCRUMB_POSITIONS_PER_DEVICE,
+          deviceState.bucketWidthMs,
         )
+        const retained = retention.positions
+        deviceState.bucketWidthMs = retention.bucketWidthMs
         deviceState.retained = retained
         compactDeviceTrailSource(deviceState, retained)
 
@@ -158,9 +189,12 @@ type TimestampedPosition = {
 type DeviceTrailState = {
   readonly deviceId: string
   readonly byKey: Map<string, TimestampedPosition>
+  readonly seenIdentities: BreadcrumbIdentityIndex
   readonly chronological: TimestampedPosition[]
   totalObserved: number
   retained: readonly TimestampedPosition[]
+  bucketWidthMs: number | null
+  unresolvedObservedCount: number
 }
 
 function decorateWithTimestamp(position: NormalizedTrackingPosition): TimestampedPosition {
@@ -223,6 +257,7 @@ function getParsedTimestamp(position: NormalizedTrackingPosition): number {
 function mergePosition(
   deviceStates: Map<string, DeviceTrailState>,
   entry: TimestampedPosition,
+  resolveObservedBaseline = false,
 ): boolean {
   const key = createPositionKey(entry.position)
   let deviceState = deviceStates.get(entry.position.device_id)
@@ -230,9 +265,12 @@ function mergePosition(
     deviceState = {
       deviceId: entry.position.device_id,
       byKey: new Map(),
+      seenIdentities: createBreadcrumbIdentityIndex(),
       chronological: [],
       totalObserved: 0,
       retained: [],
+      bucketWidthMs: null,
+      unresolvedObservedCount: 0,
     }
     deviceStates.set(entry.position.device_id, deviceState)
   }
@@ -246,15 +284,60 @@ function mergePosition(
     return true
   }
 
+  if (deviceState.seenIdentities.has(entry.position)) {
+    // The source identity was seen before compaction but is not currently a
+    // bucket representative. Reconsider it so a corrected timestamp/coordinate
+    // can become visible, without counting a reconciliation repeat as new.
+    deviceState.byKey.set(key, entry)
+    const insertionIndex = findInsertionIndex(deviceState.chronological, entry)
+    deviceState.chronological.splice(insertionIndex, 0, entry)
+    return true
+  }
+
+  const legacyKey =
+    entry.position.id.trim() === ''
+      ? null
+      : createTrackingPositionCoordinateKey(entry.position)
+  const legacyEntry = legacyKey === null ? undefined : deviceState.byKey.get(legacyKey)
+  if (
+    legacyKey !== null &&
+    legacyEntry !== undefined &&
+    legacyEntry.position.id.trim() === ''
+  ) {
+    replaceExistingPosition(deviceState, legacyKey, entry, key)
+    deviceState.seenIdentities.delete(legacyEntry.position)
+    deviceState.seenIdentities.add(entry.position)
+    return true
+  }
+
+  const legacyIdentityPosition =
+    legacyKey === null ? null : { ...entry.position, id: '' }
+  if (
+    legacyIdentityPosition !== null &&
+    deviceState.seenIdentities.has(legacyIdentityPosition)
+  ) {
+    deviceState.seenIdentities.delete(legacyIdentityPosition)
+    deviceState.seenIdentities.add(entry.position)
+    deviceState.byKey.set(key, entry)
+    const insertionIndex = findInsertionIndex(deviceState.chronological, entry)
+    deviceState.chronological.splice(insertionIndex, 0, entry)
+    return true
+  }
+
   deviceState.byKey.set(key, entry)
-  deviceState.totalObserved += 1
+  deviceState.seenIdentities.add(entry.position)
+  if (resolveObservedBaseline && deviceState.unresolvedObservedCount > 0) {
+    deviceState.unresolvedObservedCount -= 1
+  } else {
+    deviceState.totalObserved += 1
+  }
   const lastEntry = deviceState.chronological.at(-1)
-  if (lastEntry === undefined || entry.timestampMs >= lastEntry.timestampMs) {
+  if (lastEntry === undefined || compareTimestampedPositions(lastEntry, entry) <= 0) {
     deviceState.chronological.push(entry)
     return true
   }
 
-  const insertionIndex = findInsertionIndex(deviceState.chronological, entry.timestampMs)
+  const insertionIndex = findInsertionIndex(deviceState.chronological, entry)
   deviceState.chronological.splice(insertionIndex, 0, entry)
   return true
 }
@@ -311,27 +394,36 @@ export function positionsEqual(
 
 function replaceExistingPosition(
   deviceState: DeviceTrailState,
-  key: string,
+  existingKey: string,
   entry: TimestampedPosition,
+  replacementKey: string = existingKey,
 ): void {
-  deviceState.byKey.set(key, entry)
+  if (replacementKey !== existingKey) {
+    deviceState.byKey.delete(existingKey)
+  }
+  deviceState.byKey.set(replacementKey, entry)
   const existingIndex = deviceState.chronological.findIndex(
-    (existing) => createPositionKey(existing.position) === key,
+    (existing) => createPositionKey(existing.position) === existingKey,
   )
   if (existingIndex === -1) {
-    const insertionIndex = findInsertionIndex(deviceState.chronological, entry.timestampMs)
+    const insertionIndex = findInsertionIndex(deviceState.chronological, entry)
     deviceState.chronological.splice(insertionIndex, 0, entry)
     return
   }
 
-  deviceState.chronological[existingIndex] = entry
+  deviceState.chronological.splice(existingIndex, 1)
+  const insertionIndex = findInsertionIndex(deviceState.chronological, entry)
+  deviceState.chronological.splice(insertionIndex, 0, entry)
 }
 
 function compactDeviceTrailSource(
   deviceState: DeviceTrailState,
   retained: readonly TimestampedPosition[],
 ): void {
-  if (deviceState.chronological.length <= MAX_SOURCE_POSITIONS_PER_DEVICE) {
+  if (
+    deviceState.chronological.length <= MAX_BREADCRUMB_POSITIONS_PER_DEVICE &&
+    deviceState.bucketWidthMs === null
+  ) {
     return
   }
 
@@ -344,19 +436,32 @@ function compactDeviceTrailSource(
 
 function findInsertionIndex(
   chronological: readonly TimestampedPosition[],
-  timestampMs: number,
+  entry: TimestampedPosition,
 ): number {
   let low = 0
   let high = chronological.length
   while (low < high) {
     const mid = Math.floor((low + high) / 2)
-    if (chronological[mid]!.timestampMs <= timestampMs) {
+    if (compareTimestampedPositions(chronological[mid]!, entry) <= 0) {
       low = mid + 1
     } else {
       high = mid
     }
   }
   return low
+}
+
+function compareTimestampedPositions(
+  left: TimestampedPosition,
+  right: TimestampedPosition,
+): number {
+  return (
+    left.timestampMs - right.timestampMs ||
+    compareStringsByCodeUnit(
+      createPositionKey(left.position),
+      createPositionKey(right.position),
+    )
+  )
 }
 
 function mergeRetainedDeviceTrails(
@@ -378,7 +483,10 @@ function mergeRetainedDeviceTrails(
         candidateEntry.timestampMs < currentEntry.timestampMs ||
         (
           candidateEntry.timestampMs === currentEntry.timestampMs &&
-          candidate.deviceState.deviceId.localeCompare(current.deviceState.deviceId) < 0
+          compareStringsByCodeUnit(
+            candidate.deviceState.deviceId,
+            current.deviceState.deviceId,
+          ) < 0
         )
       ) {
         earliestCursorIndex = index
@@ -400,34 +508,53 @@ function mergeRetainedDeviceTrails(
 function retainDeviceTrailAcrossWindow(
   chronological: readonly TimestampedPosition[],
   maxPositions: number,
-): readonly TimestampedPosition[] {
-  if (chronological.length <= maxPositions) {
-    return chronological
+  minimumBucketWidthMs: number | null,
+): {
+  readonly positions: readonly TimestampedPosition[]
+  readonly bucketWidthMs: number | null
+} {
+  if (chronological.length <= maxPositions && minimumBucketWidthMs === null) {
+    return { positions: chronological, bucketWidthMs: null }
   }
   if (maxPositions <= 0) {
-    return []
+    return { positions: [], bucketWidthMs: minimumBucketWidthMs ?? 1 }
   }
   if (maxPositions === 1) {
-    return [chronological[chronological.length - 1]!]
-  }
-
-  const retained: TimestampedPosition[] = []
-  let previousIndex = -1
-  for (let retainedIndex = 0; retainedIndex < maxPositions; retainedIndex += 1) {
-    const sourceIndex = Math.round(
-      (retainedIndex * (chronological.length - 1)) / (maxPositions - 1),
-    )
-    if (sourceIndex === previousIndex) {
-      continue
-    }
-    const position = chronological[sourceIndex]
-    if (position !== undefined) {
-      retained.push(position)
-      previousIndex = sourceIndex
+    return {
+      positions: [chronological[chronological.length - 1]!],
+      bucketWidthMs: minimumBucketWidthMs ?? 1,
     }
   }
 
-  return retained
+  const latest = chronological.at(-1)!
+  let bucketWidthMs = minimumBucketWidthMs ?? 1
+
+  // Epoch-anchored, power-of-two time buckets make the retained trail a pure
+  // function of the complete set of fixes. When the window grows, every
+  // coarser bucket winner is already a winner of one of its two child buckets,
+  // so a bounded accumulator can promote without needing discarded fixes.
+  // This is what makes one large history response, many incremental responses,
+  // and a restart from persisted truth select the same identities.
+  while (true) {
+    const bucketWinners = new Map<number, TimestampedPosition>()
+    for (const entry of chronological) {
+      const bucket = Math.floor(entry.timestampMs / bucketWidthMs)
+      const existing = bucketWinners.get(bucket)
+      if (existing === undefined || compareTimestampedPositions(entry, existing) < 0) {
+        bucketWinners.set(bucket, entry)
+      }
+    }
+
+    const retained = [...bucketWinners.values()].sort(compareTimestampedPositions)
+    if (createPositionKey(retained.at(-1)!.position) !== createPositionKey(latest.position)) {
+      retained.push(latest)
+    }
+    if (retained.length <= maxPositions) {
+      return { positions: retained, bucketWidthMs }
+    }
+
+    bucketWidthMs *= 2
+  }
 }
 
 function createPositionKey(position: NormalizedTrackingPosition): string {

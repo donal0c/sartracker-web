@@ -19,6 +19,7 @@ import {
   type TrackingPollerClient,
 } from '../tracking/polling-manager'
 import { startTrackingRuntime } from '../tracking/start-tracking-runtime'
+import { DEFAULT_DEVICE_STALE_THRESHOLD_MS } from '../tracking/tracking-snapshot-health'
 import { applyTrackingSnapshot, applyTrackingStatus } from '../tracking/tracking-store'
 import { startMissionTrackingStatusBridge } from '../tracking/mission-tracking-status-bridge'
 import { recordDiagnosticEvent } from '../diagnostics/diagnostic-event-log'
@@ -124,7 +125,7 @@ export async function startMissionBrowserHarness(): Promise<void> {
           ...(runtimeSettings.trackingMinimumPollIntervalMs === undefined
             ? {}
             : { minimumIntervalMs: runtimeSettings.trackingMinimumPollIntervalMs }),
-          staleThresholdMs: 60 * 60 * 1000,
+          staleThresholdMs: DEFAULT_DEVICE_STALE_THRESHOLD_MS,
           maxBackoffMs: 60_000,
           getPollingMode: () => {
             const phase = useMissionStore.getState().phase

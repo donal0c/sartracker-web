@@ -459,6 +459,7 @@ export function getBrowserHarnessStore(): BrowserHarnessStore {
         id: createId('position'),
         mission_id: input.mission_id,
         device_id: input.device_id,
+        source_position_id: input.source_position_id ?? null,
         name: input.name ?? null,
         lat: input.lat,
         lon: input.lon,

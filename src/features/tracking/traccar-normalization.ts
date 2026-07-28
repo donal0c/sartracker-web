@@ -4,6 +4,7 @@ import type {
   TrackingDataOrigin,
   TrackingDeviceStatus,
 } from './tracking-types'
+import { normalizeTrackingIsoTimestamp } from './tracking-timestamp'
 
 type RawTraccarDevice = {
   readonly id?: unknown
@@ -34,8 +35,7 @@ type RawTraccarPosition = {
  * Normalizes a Traccar device payload into the internal tracking shape.
  */
 export function normalizeTraccarDevice(raw: RawTraccarDevice): NormalizedTrackingDevice {
-  const numericId = asFiniteNumber(raw.id, 'Traccar device id')
-  const deviceId = String(Math.trunc(numericId))
+  const deviceId = String(asPositiveInteger(raw.id, 'Traccar device id'))
   const lastSeen = raw.lastUpdate == null ? null : asIsoTimestamp(raw.lastUpdate, 'device lastUpdate')
 
   return {
@@ -65,12 +65,12 @@ export function normalizeTraccarPosition(
     throw new Error('Traccar position longitude must be between -180 and 180.')
   }
 
-  const id = String(Math.trunc(asFiniteNumber(raw.id, 'Traccar position id')))
-  const deviceId = String(Math.trunc(asFiniteNumber(raw.deviceId, 'Traccar position deviceId')))
+  const id = String(asPositiveInteger(raw.id, 'Traccar position id'))
+  const deviceId = String(asPositiveInteger(raw.deviceId, 'Traccar position deviceId'))
   const timestamp = resolveTimestamp(raw)
   const attributes = asRecord(raw.attributes)
   const battery = readOptionalBattery(attributes)
-  const valid = raw.valid == null ? true : Boolean(raw.valid)
+  const valid = normalizeValidity(raw.valid)
 
   if (!valid) {
     throw new Error('Traccar position is marked invalid.')
@@ -120,9 +120,25 @@ function normalizeDeviceStatus(value: unknown): TrackingDeviceStatus {
 }
 
 function asFiniteNumber(value: unknown, label: string): number {
+  if (
+    (typeof value !== 'number' && typeof value !== 'string') ||
+    (typeof value === 'string' && value.trim().length === 0)
+  ) {
+    throw new Error(`${label} must be a finite number.`)
+  }
+
   const parsed = Number(value)
   if (!Number.isFinite(parsed)) {
     throw new Error(`${label} must be a finite number.`)
+  }
+
+  return parsed
+}
+
+function asPositiveInteger(value: unknown, label: string): number {
+  const parsed = asFiniteNumber(value, label)
+  if (!Number.isSafeInteger(parsed) || parsed <= 0) {
+    throw new Error(`${label} must be a positive safe integer.`)
   }
 
   return parsed
@@ -141,17 +157,25 @@ function asOptionalString(value: unknown): string | null {
     return null
   }
 
-  return String(value)
+  if (typeof value !== 'string') {
+    throw new Error('Text field must be a string.')
+  }
+  return value
 }
 
 function asIsoTimestamp(value: unknown, label: string): string {
-  const timestamp = String(value)
-  const parsed = Date.parse(timestamp)
-  if (Number.isNaN(parsed)) {
-    throw new Error(`${label} must be a valid ISO8601 timestamp.`)
+  return normalizeTrackingIsoTimestamp(value, label)
+}
+
+function normalizeValidity(value: unknown): boolean {
+  if (value == null) {
+    return true
+  }
+  if (typeof value !== 'boolean') {
+    throw new Error('Traccar position validity flag is invalid; expected a boolean.')
   }
 
-  return new Date(parsed).toISOString()
+  return value
 }
 
 function asRecord(value: unknown): Record<string, unknown> {

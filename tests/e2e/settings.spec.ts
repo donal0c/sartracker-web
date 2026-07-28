@@ -279,6 +279,15 @@ test.describe('M12 settings workspace', () => {
     // themselves are unchanged.
     await expect(page.getByTestId('tracking-status')).toContainText('online', { timeout: 15_000 })
     await expect(page.getByTestId('tracking-status')).toContainText('1', { timeout: 15_000 })
+    if (breadcrumbCount > 5_000) {
+      await expect(page.getByTestId('breadcrumb-display-summary')).toContainText(
+        `of at least ${breadcrumbCount.toLocaleString()} known fixes`,
+        { timeout: 15_000 },
+      )
+      await expect(page.getByTestId('breadcrumb-display-summary')).toContainText(
+        'Full mission history remains stored',
+      )
+    }
 
     await expect
       .poll(

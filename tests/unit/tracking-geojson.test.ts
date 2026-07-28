@@ -347,8 +347,20 @@ describe('tracking geojson', () => {
       5 * 60 * 1000,
     )
 
-    expect(accumulated.positions).toHaveLength(33 * 5_000)
-    expect(accumulated.metadata.deviceBudgets.every((budget) => budget.retained === 5_000)).toBe(true)
+    expect(accumulated.positions.length).toBe(
+      accumulated.metadata.deviceBudgets.reduce(
+        (total, budget) => total + budget.retained,
+        0,
+      ),
+    )
+    expect(
+      accumulated.metadata.deviceBudgets.every(
+        (budget) =>
+          budget.retained >= 2_500 &&
+          budget.retained <= 5_000 &&
+          budget.truncated,
+      ),
+    ).toBe(true)
     expect(collection.features).toHaveLength(33)
   })
 

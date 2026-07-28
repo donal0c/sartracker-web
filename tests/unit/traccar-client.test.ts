@@ -321,6 +321,58 @@ describe('traccar client', () => {
     )
   })
 
+  it('fails a device breadcrumb window when every returned row is malformed [DON-260]', async () => {
+    const logger = { warn: vi.fn() }
+    const fetchFn: TraccarFetch = vi.fn(async () =>
+      createJsonResponse([
+        {
+          ...breadcrumbsFixture[0],
+          latitude: null,
+        },
+      ]),
+    )
+    const client = createTraccarClient(
+      { baseUrl: 'http://test:8082', logger },
+      fetchFn,
+    )
+
+    await expect(
+      client.getBreadcrumbs(
+        '1',
+        new Date('2026-04-06T10:00:00.000Z'),
+        new Date('2026-04-06T10:30:00.000Z'),
+      ),
+    ).rejects.toThrow(/No valid Traccar breadcrumb rows/i)
+  })
+
+  it('bounds malformed-row diagnostics while reporting the full drop count [DON-260]', async () => {
+    const logger = { warn: vi.fn() }
+    const malformedRows = Array.from({ length: 10 }, (_, index) => ({
+      ...positionsFixture[0],
+      id: 10_000 + index,
+      latitude: 200,
+    }))
+    const fetchFn: TraccarFetch = vi.fn(async () =>
+      createJsonResponse([positionsFixture[0], ...malformedRows]),
+    )
+    const client = createTraccarClient(
+      { baseUrl: 'http://test:8082', logger },
+      fetchFn,
+    )
+
+    await expect(client.getCurrentPositions()).resolves.toHaveLength(1)
+
+    expect(logger.warn).toHaveBeenCalledTimes(4)
+    expect(logger.warn).toHaveBeenLastCalledWith(
+      'Dropped additional malformed Traccar rows.',
+      {
+        endpoint: '/api/positions',
+        droppedCount: 10,
+        detailedWarningCount: 3,
+      },
+    )
+  })
+
   it('retries with exponential backoff on transport failure', async () => {
     let attempts = 0
     const recordRequestDiagnostic = vi.fn()

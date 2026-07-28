@@ -12,8 +12,10 @@ export type DeviceWorkspaceRow = {
   readonly dataOrigin: 'live' | 'cache' | null
   readonly lastSeen: string | null
   readonly lastSeenDisplay: string
+  readonly fixTimeDisplay: string
   readonly sourceDisplay: string
   readonly stale: boolean
+  readonly accuracyDisplay: string
   readonly batteryDisplay: string
   readonly speedDisplay: string
 }
@@ -60,6 +62,7 @@ export function buildDeviceWorkspaceRows(
         dataOrigin: position?.data_origin ?? null,
         lastSeen: device.last_seen,
         lastSeenDisplay: formatTimestamp(device.last_seen),
+        fixTimeDisplay: formatTimestamp(position?.timestamp ?? null),
         sourceDisplay:
           position === null
             ? 'No fix'
@@ -69,6 +72,10 @@ export function buildDeviceWorkspaceRows(
                 ? 'Cache'
                 : 'Live',
         stale: position?.device_cache_stale ?? false,
+        accuracyDisplay:
+          typeof position?.accuracy === 'number'
+            ? `${position.accuracy.toFixed(1)} m`
+            : '—',
         batteryDisplay:
           typeof position?.battery === 'number' ? `${Math.round(position.battery)}%` : '—',
         speedDisplay:

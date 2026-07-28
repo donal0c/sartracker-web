@@ -3,12 +3,17 @@ const path = require('node:path')
 const { randomUUID } = require('node:crypto')
 
 const Database = require('better-sqlite3')
+const { runBreadcrumbQueryInWorker } = require('./breadcrumb-query-runner.cjs')
 const { runSqliteBackupInWorker } = require('./sqlite-backup-runner.cjs')
 const { validateSqliteSnapshotSanity } = require('./sqlite-snapshot-sanity.cjs')
+const { isStrictTrackingTimestamp } = require('./tracking-timestamp.cjs')
+const {
+  compareStringsByCodeUnit,
+} = require('./deterministic-string-order.cjs')
 
 const { createZipArchive, readZipArchive } = require('./zip-archive.cjs')
 
-const CURRENT_SCHEMA_VERSION = 4
+const CURRENT_SCHEMA_VERSION = 5
 const DATABASE_FILE_NAME = 'mission-store.sqlite'
 const BACKUP_FILE_NAME = 'mission-store.backup.sqlite'
 const ARCHIVE_DIRECTORY_NAME = 'archives'
@@ -89,15 +94,17 @@ function createElectronMissionStore(options) {
     addPosition: async (input) => addPosition(db, input),
     addPositionsBulk: async (input) => {
       const startedAtMs = performance.now()
-      const positions = addPositionsBulk(db, input)
+      const result = addPositionsBulk(db, input)
       await safeStorageDiagnostic(() =>
         storageDiagnostics?.recordInsertedPositions({
           durationMs: performance.now() - startedAtMs,
-          insertedPositionCount: positions.length,
+          insertedPositionCount: result.insertedPositionCount,
           positionTelemetryEventCount: 0,
+          skippedAmbiguousLegacyAdoptionCount:
+            result.skippedAmbiguousLegacyAdoptionCount,
         }),
       )
-      return positions
+      return result.positions
     },
     listPositions: async (missionId, deviceId) =>
       deviceId === undefined
@@ -105,6 +112,18 @@ function createElectronMissionStore(options) {
         : all(db, 'SELECT * FROM positions WHERE mission_id = ? AND device_id = ? ORDER BY timestamp ASC', missionId, deviceId),
     listRecentPositions: async (missionId, perDeviceLimit) =>
       listRecentPositions(db, missionId, perDeviceLimit),
+    listBreadcrumbPositions: async (missionId, perDeviceLimit) => {
+      const result = await runBreadcrumbQueryInWorker({
+        databasePath,
+        missionId,
+        perDeviceLimit,
+      })
+      return {
+        positions: result.positions,
+        deviceTotals: result.deviceTotals,
+        droppedPositionCount: result.droppedPositionCount,
+      }
+    },
     countPositions: async (missionId, deviceId) => countPositions(db, missionId, deviceId),
     latestPositions: async (missionId) => latestPositions(db, missionId),
     listMissionEvents: async (missionId) =>
@@ -185,6 +204,7 @@ function migrate(db) {
       id TEXT PRIMARY KEY,
       mission_id TEXT NOT NULL,
       device_id TEXT NOT NULL,
+      source_position_id TEXT,
       name TEXT,
       lat REAL NOT NULL,
       lon REAL NOT NULL,
@@ -199,6 +219,20 @@ function migrate(db) {
       FOREIGN KEY (mission_id, device_id) REFERENCES devices(mission_id, device_id)
     );
     CREATE INDEX IF NOT EXISTS idx_positions_mission_device_timestamp ON positions(mission_id, device_id, timestamp);
+    CREATE TABLE IF NOT EXISTS position_revisions (
+      id TEXT PRIMARY KEY,
+      mission_id TEXT NOT NULL,
+      position_id TEXT NOT NULL,
+      source_position_id TEXT NOT NULL,
+      corrected_at TEXT NOT NULL,
+      changed_fields_json TEXT NOT NULL,
+      previous_json TEXT NOT NULL,
+      corrected_json TEXT NOT NULL,
+      FOREIGN KEY (mission_id) REFERENCES missions(id) ON DELETE CASCADE,
+      FOREIGN KEY (position_id) REFERENCES positions(id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_position_revisions_position_corrected
+      ON position_revisions(position_id, corrected_at);
     CREATE TABLE IF NOT EXISTS markers (
       id TEXT PRIMARY KEY,
       mission_id TEXT NOT NULL,
@@ -302,6 +336,12 @@ function migrate(db) {
   ensureColumnExists(db, 'markers', 'coordinator_ids', 'TEXT')
   ensureColumnExists(db, 'markers', 'attachment_path', 'TEXT')
   ensureColumnExists(db, 'markers', 'label_size', 'INTEGER')
+  ensureColumnExists(db, 'positions', 'source_position_id', 'TEXT')
+  db.exec(`
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_positions_mission_source_position_id
+    ON positions(mission_id, source_position_id)
+    WHERE source_position_id IS NOT NULL;
+  `)
 
   db.prepare("INSERT INTO metadata (key, value) VALUES ('schema_version', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value")
     .run(String(CURRENT_SCHEMA_VERSION))
@@ -983,15 +1023,57 @@ function addPosition(db, input) {
   ensureWritableMission(db, input.mission_id)
   validateLatLon(input.lat, input.lon, 'Position')
   getDevice(db, input.mission_id, input.device_id)
-  const id = randomUUID()
-  const timestamp = input.timestamp ?? now()
+  const timestamp = normalizePositionTimestamp(input.timestamp)
   const dataOrigin = input.data_origin ?? 'live'
+  const sourcePositionId = normalizeSourcePositionId(input.source_position_id)
+  if (sourcePositionId !== null) {
+    const existing = findPositionBySourceIdentity(
+      db,
+      input.mission_id,
+      sourcePositionId,
+    )
+    if (existing !== undefined) {
+      const transaction = db.transaction(() =>
+        applySourcePositionCorrection(
+          db,
+          existing,
+          input,
+          timestamp,
+          dataOrigin,
+        ),
+      )
+      return transaction().position
+    }
+    const adopted = adoptSourceIdentityForLegacyPosition(
+      db,
+      input.mission_id,
+      sourcePositionId,
+      input,
+      timestamp,
+      dataOrigin,
+    )
+    if (adopted === AMBIGUOUS_LEGACY_ADOPTION) {
+      throw createAmbiguousLegacyAdoptionError(sourcePositionId)
+    }
+    if (adopted !== undefined) {
+      return adopted
+    }
+  }
+
+  const id = randomUUID()
   const transaction = db.transaction(() => {
-    db.prepare(`INSERT INTO positions (id, mission_id, device_id, name, lat, lon, altitude, speed, battery, accuracy, source, timestamp, data_origin)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-      .run(id, input.mission_id, input.device_id, input.name ?? null, input.lat, input.lon, input.altitude ?? null, input.speed ?? null, input.battery ?? null, input.accuracy ?? null, input.source ?? null, timestamp, dataOrigin)
-    db.prepare("UPDATE devices SET last_seen = ?, status = 'online' WHERE mission_id = ? AND device_id = ?")
-      .run(timestamp, input.mission_id, input.device_id)
+    db.prepare(`INSERT INTO positions (id, mission_id, device_id, source_position_id, name, lat, lon, altitude, speed, battery, accuracy, source, timestamp, data_origin)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+      .run(id, input.mission_id, input.device_id, sourcePositionId, input.name ?? null, input.lat, input.lon, input.altitude ?? null, input.speed ?? null, input.battery ?? null, input.accuracy ?? null, input.source ?? null, timestamp, dataOrigin)
+    db.prepare(
+      `UPDATE devices
+       SET last_seen = CASE
+         WHEN last_seen IS NULL OR julianday(?) > julianday(last_seen) THEN ?
+         ELSE last_seen
+       END,
+       status = 'online'
+       WHERE mission_id = ? AND device_id = ?`,
+    ).run(timestamp, timestamp, input.mission_id, input.device_id)
   })
   transaction()
   return getById(db, 'positions', id, 'Position')
@@ -1001,18 +1083,31 @@ function addPositionsBulk(db, input) {
   ensureWritableMission(db, input.mission_id)
   const positions = Array.isArray(input.positions) ? input.positions : []
   if (positions.length === 0) {
-    return []
+    return { positions: [], insertedPositionCount: 0 }
   }
 
   const deviceExists = db.prepare('SELECT id FROM devices WHERE mission_id = ? AND device_id = ?')
   const existingPositionByCoordinate = db.prepare(
     'SELECT id FROM positions WHERE mission_id = ? AND device_id = ? AND timestamp = ? AND lat = ? AND lon = ? LIMIT 1',
   )
-  const insertPosition = db.prepare(`INSERT INTO positions (id, mission_id, device_id, name, lat, lon, altitude, speed, battery, accuracy, source, timestamp, data_origin)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-  const updateDevice = db.prepare("UPDATE devices SET last_seen = ?, status = 'online' WHERE mission_id = ? AND device_id = ?")
+  const existingPositionBySourceIdentity = db.prepare(
+    'SELECT * FROM positions WHERE mission_id = ? AND source_position_id = ? LIMIT 1',
+  )
+  const insertPosition = db.prepare(`INSERT INTO positions (id, mission_id, device_id, source_position_id, name, lat, lon, altitude, speed, battery, accuracy, source, timestamp, data_origin)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+  const updateDevice = db.prepare(
+    `UPDATE devices
+     SET last_seen = CASE
+       WHEN last_seen IS NULL OR julianday(?) > julianday(last_seen) THEN ?
+       ELSE last_seen
+     END,
+     status = 'online'
+     WHERE mission_id = ? AND device_id = ?`,
+  )
   const seenInBatch = new Set()
-  const insertedIds = []
+  const changedIds = []
+  let insertedPositionCount = 0
+  let skippedAmbiguousLegacyAdoptionCount = 0
 
   const transaction = db.transaction(() => {
     for (const position of positions) {
@@ -1021,31 +1116,71 @@ function addPositionsBulk(db, input) {
         throw new Error(`Device not found: ${position.device_id}`)
       }
 
-      const timestamp = position.timestamp ?? now()
-      const positionKey = createPositionIdentityKey(position, timestamp)
-      if (seenInBatch.has(positionKey)) {
-        continue
-      }
-      seenInBatch.add(positionKey)
-
-      if (
-        existingPositionByCoordinate.get(
+      const timestamp = normalizePositionTimestamp(position.timestamp)
+      const dataOrigin = position.data_origin ?? 'live'
+      const sourcePositionId = normalizeSourcePositionId(
+        position.source_position_id,
+      )
+      if (sourcePositionId !== null) {
+        const existing = existingPositionBySourceIdentity.get(
           input.mission_id,
-          position.device_id,
+          sourcePositionId,
+        )
+        if (existing !== undefined) {
+          const correction = applySourcePositionCorrection(
+            db,
+            existing,
+            position,
+            timestamp,
+            dataOrigin,
+          )
+          if (correction.corrected) {
+            changedIds.push(existing.id)
+          }
+          continue
+        }
+        const adopted = adoptSourceIdentityForLegacyPosition(
+          db,
+          input.mission_id,
+          sourcePositionId,
+          position,
           timestamp,
-          position.lat,
-          position.lon,
-        ) !== undefined
-      ) {
-        continue
+          dataOrigin,
+        )
+        if (adopted === AMBIGUOUS_LEGACY_ADOPTION) {
+          skippedAmbiguousLegacyAdoptionCount += 1
+          continue
+        }
+        if (adopted !== undefined) {
+          changedIds.push(adopted.id)
+          continue
+        }
+      } else {
+        const positionKey = createPositionIdentityKey(position, timestamp)
+        if (seenInBatch.has(positionKey)) {
+          continue
+        }
+        seenInBatch.add(positionKey)
+
+        if (
+          existingPositionByCoordinate.get(
+            input.mission_id,
+            position.device_id,
+            timestamp,
+            position.lat,
+            position.lon,
+          ) !== undefined
+        ) {
+          continue
+        }
       }
 
       const id = randomUUID()
-      const dataOrigin = position.data_origin ?? 'live'
       insertPosition.run(
         id,
         input.mission_id,
         position.device_id,
+        sourcePositionId,
         position.name ?? null,
         position.lat,
         position.lon,
@@ -1057,20 +1192,232 @@ function addPositionsBulk(db, input) {
         timestamp,
         dataOrigin,
       )
-      updateDevice.run(timestamp, input.mission_id, position.device_id)
-      insertedIds.push(id)
+      updateDevice.run(timestamp, timestamp, input.mission_id, position.device_id)
+      changedIds.push(id)
+      insertedPositionCount += 1
     }
   })
 
   transaction()
-  return insertedIds.map((id) => getById(db, 'positions', id, 'Position'))
+  return {
+    positions: changedIds.map((id) => getById(db, 'positions', id, 'Position')),
+    insertedPositionCount,
+    skippedAmbiguousLegacyAdoptionCount,
+  }
+}
+
+function normalizeSourcePositionId(value) {
+  if (value == null) {
+    return null
+  }
+  if (typeof value !== 'string' || value.trim() === '') {
+    throw new Error('Position source identity must be a non-empty string.')
+  }
+  return value.trim()
+}
+
+function normalizePositionTimestamp(value) {
+  if (value == null) {
+    return now()
+  }
+  if (!isStrictTrackingTimestamp(value)) {
+    throw new Error('Position timestamp must be a valid ISO8601 date-time.')
+  }
+  return value.trim()
+}
+
+const AMBIGUOUS_LEGACY_ADOPTION = Symbol('ambiguous-legacy-adoption')
+
+function findPositionBySourceIdentity(db, missionId, sourcePositionId) {
+  return db
+    .prepare(
+      'SELECT * FROM positions WHERE mission_id = ? AND source_position_id = ? LIMIT 1',
+    )
+    .get(missionId, sourcePositionId)
+}
+
+function adoptSourceIdentityForLegacyPosition(
+  db,
+  missionId,
+  sourcePositionId,
+  input,
+  timestamp,
+  dataOrigin,
+) {
+  const candidates = db
+    .prepare(
+      `SELECT * FROM positions
+       WHERE mission_id = ? AND device_id = ? AND source_position_id IS NULL
+         AND timestamp = ? AND lat = ? AND lon = ?
+         AND name IS ? AND altitude IS ? AND speed IS ? AND battery IS ?
+         AND accuracy IS ? AND source IS ? AND data_origin = ?
+       ORDER BY rowid ASC
+       LIMIT 2`,
+    )
+    .all(
+      missionId,
+      input.device_id,
+      timestamp,
+      input.lat,
+      input.lon,
+      input.name ?? null,
+      input.altitude ?? null,
+      input.speed ?? null,
+      input.battery ?? null,
+      input.accuracy ?? null,
+      input.source ?? null,
+      dataOrigin,
+    )
+  if (candidates.length === 0) {
+    return undefined
+  }
+  if (candidates.length > 1) {
+    return AMBIGUOUS_LEGACY_ADOPTION
+  }
+
+  const candidate = candidates[0]
+  db.prepare(
+    'UPDATE positions SET source_position_id = ? WHERE id = ? AND source_position_id IS NULL',
+  ).run(sourcePositionId, candidate.id)
+  return getById(db, 'positions', candidate.id, 'Position')
+}
+
+function createAmbiguousLegacyAdoptionError(sourcePositionId) {
+  return new Error(
+    `Position source identity conflict for ${sourcePositionId}: more than one exact legacy fix could be upgraded.`,
+  )
+}
+
+function applySourcePositionCorrection(
+  db,
+  existing,
+  input,
+  timestamp,
+  dataOrigin,
+) {
+  if (existing.device_id !== input.device_id) {
+    throw new Error(
+      `Position source identity ${existing.source_position_id} belongs to device ${existing.device_id} and cannot be reassigned to device ${input.device_id}.`,
+    )
+  }
+  const previous = canonicalPositionPayload(existing)
+  const corrected = canonicalPositionPayload({
+    ...input,
+    name: input.name ?? null,
+    altitude: input.altitude ?? null,
+    speed: input.speed ?? null,
+    battery: input.battery ?? null,
+    accuracy: input.accuracy ?? null,
+    source: input.source ?? null,
+    timestamp,
+    data_origin: dataOrigin,
+  })
+  const changedFields = Object.keys(previous).filter(
+    (field) => previous[field] !== corrected[field],
+  )
+  if (changedFields.length === 0) {
+    return { position: existing, corrected: false }
+  }
+
+  const correctedAt = now()
+  db.prepare(
+    `INSERT INTO position_revisions (
+      id, mission_id, position_id, source_position_id, corrected_at,
+      changed_fields_json, previous_json, corrected_json
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+  ).run(
+    randomUUID(),
+    existing.mission_id,
+    existing.id,
+    existing.source_position_id,
+    correctedAt,
+    JSON.stringify(changedFields),
+    JSON.stringify(previous),
+    JSON.stringify(corrected),
+  )
+  db.prepare(
+    `UPDATE positions SET
+      device_id = ?, name = ?, lat = ?, lon = ?, altitude = ?, speed = ?,
+      battery = ?, accuracy = ?, source = ?, timestamp = ?, data_origin = ?
+     WHERE id = ?`,
+  ).run(
+    corrected.device_id,
+    corrected.name,
+    corrected.lat,
+    corrected.lon,
+    corrected.altitude,
+    corrected.speed,
+    corrected.battery,
+    corrected.accuracy,
+    corrected.source,
+    corrected.timestamp,
+    corrected.data_origin,
+    existing.id,
+  )
+  db.prepare(
+    `UPDATE devices
+     SET last_seen = CASE
+       WHEN last_seen IS NULL OR julianday(?) > julianday(last_seen) THEN ?
+       ELSE last_seen
+     END,
+     status = 'online'
+     WHERE mission_id = ? AND device_id = ?`,
+  ).run(timestamp, timestamp, existing.mission_id, corrected.device_id)
+  insertEvent(
+    db,
+    existing.mission_id,
+    'position_corrected',
+    correctedAt,
+    {
+      position_id: existing.id,
+      source_position_id: existing.source_position_id,
+      changed_fields: changedFields,
+      previous,
+      corrected,
+    },
+  )
+
+  return {
+    position: getById(db, 'positions', existing.id, 'Position'),
+    corrected: true,
+  }
+}
+
+function canonicalPositionPayload(position) {
+  return {
+    device_id: position.device_id,
+    name: position.name ?? null,
+    lat: position.lat,
+    lon: position.lon,
+    altitude: position.altitude ?? null,
+    speed: position.speed ?? null,
+    battery: position.battery ?? null,
+    accuracy: position.accuracy ?? null,
+    source: position.source ?? null,
+    timestamp: position.timestamp,
+    data_origin: position.data_origin,
+  }
+}
+
+function findSourcePositionConflict(existing, input, timestamp, dataOrigin) {
+  const fields = [
+    ['device_id', existing.device_id, input.device_id],
+    ['name', existing.name, input.name ?? null],
+    ['lat', existing.lat, input.lat],
+    ['lon', existing.lon, input.lon],
+    ['altitude', existing.altitude, input.altitude ?? null],
+    ['speed', existing.speed, input.speed ?? null],
+    ['battery', existing.battery, input.battery ?? null],
+    ['accuracy', existing.accuracy, input.accuracy ?? null],
+    ['source', existing.source, input.source ?? null],
+    ['timestamp', existing.timestamp, timestamp],
+    ['data_origin', existing.data_origin, dataOrigin],
+  ]
+  const conflictingField = fields.find(([, stored, incoming]) => stored !== incoming)
+  return conflictingField?.[0]
 }
 
 function createPositionIdentityKey(position, timestamp) {
-  if (typeof position.id === 'string' && position.id.trim() !== '') {
-    return `${position.device_id}:id:${position.id}`
-  }
-
   return `${position.device_id}:fix:${timestamp}:${Number(position.lat).toFixed(7)}:${Number(position.lon).toFixed(7)}`
 }
 
@@ -1107,9 +1454,9 @@ function listRecentPositions(db, missionId, perDeviceLimit) {
     positions.push(...selectRecent.all(missionId, deviceId, perDeviceLimit).reverse())
   }
   return positions.sort((left, right) =>
-    left.timestamp.localeCompare(right.timestamp) ||
-    left.device_id.localeCompare(right.device_id) ||
-    left.id.localeCompare(right.id),
+    compareStringsByCodeUnit(left.timestamp, right.timestamp) ||
+    compareStringsByCodeUnit(left.device_id, right.device_id) ||
+    compareStringsByCodeUnit(left.id, right.id),
   )
 }
 

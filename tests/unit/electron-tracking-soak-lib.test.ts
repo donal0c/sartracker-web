@@ -1,13 +1,19 @@
+import { mkdtemp, rm } from 'node:fs/promises'
+import os from 'node:os'
+import path from 'node:path'
+
 import { describe, expect, it } from 'vitest'
 
 import {
   classifyOperatorInteraction,
   buildTrackingSoakVerdict,
   buildTrackingGrowthEvidence,
+  createPositionTruthDigestAccumulator,
   createTrackingSoakProfile,
   parseTrackingSoakRuntimeLog,
   parseTrackingSoakArgs,
 } from '../../build/electron-tracking-soak-lib.js'
+import { startTrackingSoakMockServer } from '../../build/electron-tracking-soak-mock-server.js'
 
 describe('Electron packaged tracking soak helpers [DON-246]', () => {
   it('defines deterministic CI, five-day, and fourteen-day profiles', () => {
@@ -41,6 +47,47 @@ describe('Electron packaged tracking soak helpers [DON-246]', () => {
 
   it('uses a garbage-collection-safe default cadence for full packaged profiles', () => {
     expect(parseTrackingSoakArgs(['--app', '/tmp/app', '--profile', 'extended']).pollIntervalMs).toBe(250)
+  })
+
+  it('serves every fix inside the requested window after a discarded poll [DON-260]', async () => {
+    const temporaryDirectory = await mkdtemp(
+      path.join(os.tmpdir(), 'sartracker-window-faithful-soak-'),
+    )
+    const server = await startTrackingSoakMockServer({
+      statePath: path.join(temporaryDirectory, 'state.json'),
+      deviceCount: 2,
+      movingDeviceCount: 1,
+      productionPollsPerBatch: 2,
+      maximumBatches: 3,
+      pauseCheckpoints: [],
+    })
+
+    try {
+      const sessionResponse = await fetch(`${server.baseUrl}/api/session`, {
+        method: 'POST',
+      })
+      const cookie = sessionResponse.headers.get('set-cookie')
+      expect(cookie).toContain('JSESSIONID=tracking-soak')
+      const headers = { Cookie: cookie ?? '' }
+
+      await fetch(`${server.baseUrl}/api/devices`, { headers })
+      await fetch(`${server.baseUrl}/api/devices`, { headers })
+      const response = await fetch(
+        `${server.baseUrl}/api/positions?deviceId=1&from=2026-01-01T00%3A00%3A00.000Z&to=2026-01-01T00%3A00%3A15.000Z`,
+        { headers },
+      )
+      const positions = await response.json() as readonly { readonly id: number }[]
+
+      expect(positions.map((position) => position.id)).toEqual([
+        1_001_000,
+        1_001_001,
+        2_001_000,
+        2_001_001,
+      ])
+    } finally {
+      await server.close()
+      await rm(temporaryDirectory, { recursive: true, force: true })
+    }
   })
 
   it('parses a fail-closed packaged-runner command line', () => {
@@ -103,7 +150,11 @@ describe('Electron packaged tracking soak helpers [DON-246]', () => {
       rendererCrashes: 0,
       operatorInteractionSamples: 4,
       operatorInteractionErrors: 0,
-      operatorInteractionMaximumMs: 120,
+      // A complete probe intentionally performs open + IPC + close. Its total
+      // may exceed one freeze threshold even when neither operator action does.
+      operatorInteractionMaximumMs: 1_200,
+      operatorActionSamples: 8,
+      operatorActionMaximumMs: 650,
       maximumProcessTreeResidentBytes: 500_000_000,
       freezeThresholdMs: 1_000,
       integrityResult: 'ok',
@@ -112,6 +163,9 @@ describe('Electron packaged tracking soak helpers [DON-246]', () => {
       supportBundleRedacted: true,
       runtimeLogBytes: 24_000,
       supportBundleBytes: 18_000,
+      positionTruthExactMatch: true,
+      normalPrefixTruthExactMatch: true,
+      missingSourcePositionIdentityRows: 0,
     })
 
     expect(verdict).toEqual({
@@ -153,17 +207,20 @@ describe('Electron packaged tracking soak helpers [DON-246]', () => {
       supportBundleRedacted: false,
       runtimeLogBytes: 0,
       supportBundleBytes: 0,
+      positionTruthExactMatch: false,
+      normalPrefixTruthExactMatch: false,
+      missingSourcePositionIdentityRows: 1,
     })
 
     expect(verdict.valid).toBe(false)
     expect(verdict.passed).toBe(false)
     expect(verdict.redundantTelemetrySlopeRowsPerEquivalentPoll).toBe(5 / 1_080)
     expect(verdict.failureReasons.join('\n')).toMatch(
-      /position rows|device_updated|position_recorded|restart|backup|heartbeat|integrity|WAL|support bundle/i,
+      /position rows|source position|identity|device_updated|position_recorded|restart|backup|heartbeat|integrity|WAL|support bundle/i,
     )
   })
 
-  it('fails when the renderer clock and IPC are alive but operator controls are unresponsive [DON-247]', () => {
+  it('fails when one operator action reaches the freeze threshold [DON-247]', () => {
     const profile = createTrackingSoakProfile('ci')
     const verdict = buildTrackingSoakVerdict({
       profile,
@@ -184,9 +241,11 @@ describe('Electron packaged tracking soak helpers [DON-246]', () => {
       rendererSamples: 40,
       rendererMaximumMs: 22,
       rendererCrashes: 0,
-      operatorInteractionSamples: 0,
-      operatorInteractionErrors: 1,
+      operatorInteractionSamples: 4,
+      operatorInteractionErrors: 0,
       operatorInteractionMaximumMs: 1_500,
+      operatorActionSamples: 8,
+      operatorActionMaximumMs: 1_500,
       maximumProcessTreeResidentBytes: 500_000_000,
       freezeThresholdMs: 1_000,
       integrityResult: 'ok',
@@ -195,10 +254,13 @@ describe('Electron packaged tracking soak helpers [DON-246]', () => {
       supportBundleRedacted: true,
       runtimeLogBytes: 24_000,
       supportBundleBytes: 18_000,
+      positionTruthExactMatch: true,
+      normalPrefixTruthExactMatch: true,
+      missingSourcePositionIdentityRows: 0,
     })
 
     expect(verdict.passed).toBe(false)
-    expect(verdict.failureReasons.join('\n')).toMatch(/operator interaction/i)
+    expect(verdict.failureReasons.join('\n')).toMatch(/operator action/i)
   })
 
   it.each([
@@ -302,6 +364,48 @@ describe('Electron packaged tracking soak helpers [DON-246]', () => {
         positionRowsPerEquivalentPoll: 8,
         redundantEventRowsPerEquivalentPoll: 0,
       }],
+    })
+  })
+
+  it('hashes exact source identity, device, time, and coordinates without retaining rows', () => {
+    const first = createPositionTruthDigestAccumulator()
+    first.add({
+      source_position_id: '1001',
+      device_id: '1',
+      timestamp: '2026-01-01T00:00:00.000Z',
+      lat: 52.0001,
+      lon: -9.0001,
+    })
+    first.add({
+      source_position_id: '1002',
+      device_id: '1',
+      timestamp: '2026-01-01T00:00:05.000Z',
+      lat: 52.0002,
+      lon: -9.0002,
+    })
+    const second = createPositionTruthDigestAccumulator()
+    second.add({
+      source_position_id: '1001',
+      device_id: '1',
+      timestamp: '2026-01-01T00:00:00.000Z',
+      lat: 52.0001,
+      lon: -9.0001,
+    })
+    second.add({
+      source_position_id: '1002',
+      device_id: '1',
+      timestamp: '2026-01-01T00:00:05.000Z',
+      lat: 52.0002,
+      lon: -9.0002,
+    })
+
+    const firstDigest = first.finish()
+    const secondDigest = second.finish()
+    expect(firstDigest).toEqual(secondDigest)
+    expect(firstDigest).toMatchObject({
+      rowCount: 2,
+      missingSourcePositionIdentityRows: 0,
+      sha256: expect.stringMatching(/^[a-f0-9]{64}$/u),
     })
   })
 

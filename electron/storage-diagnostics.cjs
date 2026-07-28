@@ -312,6 +312,9 @@ function createStorageDiagnostics(options) {
   async function recordInsertedPositions(input) {
     const insertedPositionCount = nonNegativeInteger(input.insertedPositionCount)
     const positionTelemetryEventCount = nonNegativeInteger(input.positionTelemetryEventCount)
+    const skippedAmbiguousLegacyAdoptionCount = nonNegativeInteger(
+      input.skippedAmbiguousLegacyAdoptionCount,
+    )
     state = {
       ...state,
       mission: {
@@ -329,6 +332,7 @@ function createStorageDiagnostics(options) {
         durationMs: duration(input.durationMs),
         insertedPositionCount,
         positionTelemetryEventCount,
+        skippedAmbiguousLegacyAdoptionCount,
         cumulativeInsertedPositionCount: state.mission.insertedPositionCount,
         cumulativePositionTelemetryEventCount: state.mission.positionTelemetryEventCount,
       },

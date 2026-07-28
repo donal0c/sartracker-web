@@ -120,14 +120,15 @@ ship or ask testers for whole Electron profile zips.
 
 ## Current Priority
 
-1. Execute the **Mission Store Reliability programme** under `DON-241`. Beta.12 is the narrow field-freeze/observability release (`DON-242` through `DON-247`); beta.13 owns bounded-storage architecture, migration, retention, streamed mission-scoped archives, and archive-backed review (`DON-248` through `DON-255`). Do not change the hot path until the packaged beta.11 Ubuntu baseline reproduces against the checked-in fixture generator.
-2. Keep hosted browser testing smooth enough for the team to give real feedback.
-3. Fix the 2026-05-16 team feedback items that affect map trust before returning to broader foundation work.
-4. Burn down shared foundation issues that make startup, mission control, tracking, layers, or map behavior ambiguous.
-5. Keep the repeatable Electron beta release path healthy and use it for team desktop retest builds.
-6. Avoid heavy browser hardening unless testing proves browser operational deployment is genuinely needed.
-7. Treat licensed Irish/OSI map sources as local/customer-provided assets unless the map provider gives requirements that change this.
-8. Continue the official map lane through the team-ready Electron import workflow: `DON-7` is now the active offline-map parent for `DON-109` through `DON-115`, while `DON-76` remains the broader official-provider parent and overlay lane.
+1. Complete the narrow `0.1.0-beta.12.1` breadcrumb safety hotfix under `DON-260`: deterministic source identity/order, correction audit, mission-wide late-fix reconciliation, responsive whole-route restart hydration, lifecycle isolation, strict parsing, and five-/fourteen-day packaged proof. This hotfix does not absorb the beta.13 storage/archive programme.
+2. Continue the **Mission Store Reliability programme** under `DON-241`. Beta.12 is the narrow field-freeze/observability release (`DON-242` through `DON-247`); beta.13 owns bounded-storage architecture, migration, retention, streamed mission-scoped archives, and archive-backed review (`DON-248` through `DON-255`).
+3. Keep hosted browser testing smooth enough for the team to give real feedback.
+4. Fix the 2026-05-16 team feedback items that affect map trust before returning to broader foundation work.
+5. Burn down shared foundation issues that make startup, mission control, tracking, layers, or map behavior ambiguous.
+6. Keep the repeatable Electron beta release path healthy and use it for team desktop retest builds.
+7. Avoid heavy browser hardening unless testing proves browser operational deployment is genuinely needed.
+8. Treat licensed Irish/OSI map sources as local/customer-provided assets unless the map provider gives requirements that change this.
+9. Continue the official map lane through the team-ready Electron import workflow: `DON-7` is now the active offline-map parent for `DON-109` through `DON-115`, while `DON-76` remains the broader official-provider parent and overlay lane.
 
 ## Next Task Order
 
@@ -135,6 +136,7 @@ This is the default order when the user says “work on the next task.”
 
 | Order | Chunk | Track | Linear issue | Status |
 | --- | --- | --- | --- | --- |
+| Active | Deep breadcrumb correctness and cross-installation equivalence hotfix | S2 Electron / Shared Tracking / Verification | `DON-260` | `0.1.0-beta.12.1` release blocker. Core TDD implementation and local proof are complete: stable Traccar identity, correction audit, deterministic whole-route render selection, worker-backed restart reconstruction, bounded historical chunks with repeat reconciliation, strict malformed-row handling, five-minute stale semantics, stopped/replacement-runtime guards, explicit persistence/cache failure states, no-skip beta verification, multi-day packaged soaks, and same-session Fable pass. Remaining closeout is exact tag-driven CI artifact qualification on Ubuntu and controlled prerelease publication. |
 | Done | Build deterministic field-scale mission-store fixtures | S2 Electron / Verification | `DON-242` | Small/CI/local/field plus 5-day and 14-day continuous-mission presets; Ubuntu field fixture is 3.704 GB with measured table accounting and restart checkpoints. |
 | Done | Reproduce and attribute beta.11 freeze on packaged Ubuntu | S2 Electron / Verification | `DON-243` | Three independent packaged runs: main stalls 5.70-5.82 s; integrity validation 6.11-6.36 s across nine autosaves. |
 | Done | Add durable mission-store performance diagnostics and incident evidence | S2 Electron / Diagnostics | `DON-244` | Packaged field-fixture SIGKILL/restart/export proof passed; interrupted phase and 6.858 s event-loop stall survive in a sanitized bounded bundle. |
@@ -327,6 +329,39 @@ Execution is deliberately sequential:
 
 Beta.12 is not release-ready until `DON-247` passes. The local harness reduces dependence on the
 team but does not replace final original-machine confirmation.
+
+#### Beta.12.1 — breadcrumb safety hotfix (`DON-260`)
+
+This is a deliberately narrow release between beta.12 and beta.13. It fixes the
+end-to-end breadcrumb truth path without introducing the migration, retention,
+or archive redesign owned by `DON-248` through `DON-255`.
+
+Locked invariants:
+
+1. Preserve the Traccar position ID separately from the local SQLite row ID.
+2. Identical accepted input selects the same ordered visible identities across
+   polling batches, response permutations, restart, OS, and profile.
+3. Same-time distinct fixes remain distinct; corrected source IDs update one
+   authoritative row and append an audit event.
+4. Current fixes publish before slow history work. History requests are fixed
+   two-hour chunks and repeat mission-wide so late fixes older than the live
+   overlap are eventually reconciled.
+5. Restart reconstruction may be O(history) in a read-only worker, but must
+   never perform O(history) work on Electron's main isolate or transfer an
+   unbounded render payload.
+6. Full accepted position truth remains in mission SQLite. The map is bounded
+   to 5,000 deterministic representatives per device and tells the operator
+   when display simplification is active.
+7. Stopped, superseded, or cross-mission runtimes cannot publish or persist
+   stale work. Replacement runtimes serialize persistence/cache side effects.
+8. Release proof includes two-profile identity equality, source coordinates and
+   fix times, restart/correction/late-arrival cases, five- and fourteen-day
+   packaged soaks, visual review, full `beta:verify`, and exact CI artifact
+   smoke on Ubuntu.
+
+Non-goals: full Discovery map loading, destructive storage cleanup, live-store
+retention, archive redesign, or claiming GPS hardware has zero measurement
+error. Those remain separate work.
 
 #### Beta.13 — bounded storage lifecycle
 

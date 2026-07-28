@@ -302,7 +302,6 @@ export function createTraccarClient(
         warningMessage: 'Dropped malformed Traccar breadcrumb row.',
         logger,
         normalize: (position) => normalizeTraccarPosition(position as RawPositionInput, 'live'),
-        allowEmptyAfterDrops: true,
       })
     },
   }
@@ -344,22 +343,35 @@ function normalizeTraccarRows<T>(input: {
   readonly logger: TraccarClientLogger
   readonly normalize: (row: unknown) => T
   readonly deviceId?: string
-  readonly allowEmptyAfterDrops?: boolean
 }): readonly T[] {
+  const maxDetailedWarnings = 3
   const accepted: T[] = []
+  let droppedCount = 0
   for (let rowIndex = 0; rowIndex < input.rows.length; rowIndex += 1) {
     const row = input.rows[rowIndex]
     try {
       accepted.push(input.normalize(row))
     } catch (error) {
-      input.logger.warn(input.warningMessage, {
-        ...createRowContext(input, rowIndex),
-        reason: error instanceof Error ? error.message : String(error),
-      })
+      droppedCount += 1
+      if (droppedCount <= maxDetailedWarnings) {
+        input.logger.warn(input.warningMessage, {
+          ...createRowContext(input, rowIndex),
+          reason: error instanceof Error ? error.message : String(error),
+        })
+      }
     }
   }
 
-  if (accepted.length === 0 && input.rows.length > 0 && input.allowEmptyAfterDrops !== true) {
+  if (droppedCount > maxDetailedWarnings) {
+    input.logger.warn('Dropped additional malformed Traccar rows.', {
+      endpoint: input.endpoint,
+      ...(input.deviceId === undefined ? {} : { deviceId: input.deviceId }),
+      droppedCount,
+      detailedWarningCount: maxDetailedWarnings,
+    })
+  }
+
+  if (accepted.length === 0 && input.rows.length > 0) {
     throw new Error(input.emptyMessage)
   }
 

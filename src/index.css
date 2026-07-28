@@ -112,7 +112,7 @@ body {
   }
 
   .sar-command-mast-grid {
-    grid-template-columns: 300px 220px 118px 118px 76px 64px 136px repeat(5, minmax(0, 1fr));
+    grid-template-columns: 300px 220px 118px 118px 76px 64px 160px repeat(5, minmax(0, 1fr));
   }
 
   .sar-mast-button {
@@ -147,7 +147,7 @@ body {
 
   @media (max-width: 1400px) {
     .sar-command-mast-grid {
-      grid-template-columns: 280px 170px 112px 112px 64px 56px 104px repeat(5, minmax(56px, 1fr));
+      grid-template-columns: 280px 170px 112px 112px 64px 56px 128px repeat(5, minmax(56px, 1fr));
     }
 
     .sar-mast-button {

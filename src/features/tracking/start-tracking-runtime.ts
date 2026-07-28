@@ -15,8 +15,10 @@ import {
   createTrackingPositionCoordinateKey,
   createTrackingPositionIdentityKey,
 } from './tracking-position-identity'
+import { normalizeTrackingIsoTimestamp } from './tracking-timestamp'
 import type { DiagnosticEventInput } from '../diagnostics/diagnostic-event-log'
 import type { TrackingPollLedgerEntry } from '../diagnostics/tracking-poll-ledger'
+import type { TrackingSnapshotContext } from './polling-manager'
 
 export type TrackingRuntimeConfig = {
   readonly baseUrl: string
@@ -36,9 +38,13 @@ type TrackingRuntimePoller = {
 type TrackingRuntimePollerFactory = (
   client: unknown,
   hooks: {
-    readonly onSnapshot: (snapshot: TrackingSnapshot) => Promise<void>
+    readonly onSnapshot: (
+      snapshot: TrackingSnapshot,
+      context?: TrackingSnapshotContext,
+    ) => Promise<void>
     readonly onStatusChange: (status: TrackingConnectionStatus) => void
     readonly getInitialBreadcrumbs: () => Promise<readonly NormalizedTrackingPosition[]>
+    readonly getInitialBreadcrumbTotals: () => Promise<Readonly<Record<string, number>>>
     readonly onPollDiagnostic: (entry: TrackingPollLedgerEntry) => void
   },
 ) => TrackingRuntimePoller
@@ -63,6 +69,7 @@ export type TrackingRuntimeMissionStore = {
   readonly getActiveMission: () => Promise<{ readonly id: string } | null>
   readonly listPositions: (missionId: string) => Promise<readonly {
     readonly id?: string
+    readonly source_position_id?: string | null
     readonly device_id: string
     readonly lat?: number
     readonly lon?: number
@@ -79,6 +86,7 @@ export type TrackingRuntimeMissionStore = {
     perDeviceLimit: number,
   ) => Promise<readonly {
     readonly id?: string
+    readonly source_position_id?: string | null
     readonly device_id: string
     readonly lat?: number
     readonly lon?: number
@@ -90,6 +98,30 @@ export type TrackingRuntimeMissionStore = {
     readonly timestamp: string
     readonly data_origin?: 'live' | 'cache'
   }[]>
+  readonly listBreadcrumbPositions?: (
+    missionId: string,
+    perDeviceLimit: number,
+  ) => Promise<{
+    readonly positions: readonly {
+      readonly id?: string
+      readonly source_position_id?: string | null
+      readonly device_id: string
+      readonly lat?: number
+      readonly lon?: number
+      readonly altitude?: number | null
+      readonly speed?: number | null
+      readonly battery?: number | null
+      readonly accuracy?: number | null
+      readonly source?: string | null
+      readonly timestamp: string
+      readonly data_origin?: 'live' | 'cache'
+    }[]
+    readonly deviceTotals: readonly {
+      readonly device_id: string
+      readonly total: number
+    }[]
+    readonly droppedPositionCount?: number
+  }>
   readonly upsertDevice: (input: {
     readonly mission_id: string
     readonly device_id: string
@@ -109,7 +141,7 @@ export type TrackingRuntimeMissionStore = {
     }[]
   }) => Promise<unknown>
   readonly addPosition: (input: {
-    readonly id?: string
+    readonly source_position_id?: string | null
     readonly mission_id: string
     readonly device_id: string
     readonly lat: number
@@ -125,7 +157,7 @@ export type TrackingRuntimeMissionStore = {
   readonly addPositionsBulk?: (input: {
     readonly mission_id: string
     readonly positions: readonly {
-      readonly id?: string
+      readonly source_position_id?: string | null
       readonly device_id: string
       readonly lat: number
       readonly lon: number
@@ -165,6 +197,10 @@ const DEFAULT_TRACKING_RUNTIME_LOGGER: TrackingRuntimeLogger = {
 
 const trackingCacheIdentityTokens = new WeakMap<object, number>()
 let nextTrackingCacheIdentityToken = 1
+let nextTrackingRuntimeGeneration = 0
+let activeTrackingRuntimeGeneration = 0
+let trackingPersistenceTail: Promise<void> = Promise.resolve()
+let trackingCacheWriteTail: Promise<unknown> = Promise.resolve()
 
 /**
  * Starts the tracking runtime behind an explicit orchestration boundary.
@@ -172,12 +208,28 @@ let nextTrackingCacheIdentityToken = 1
 export async function startTrackingRuntime(
   dependencies: StartTrackingRuntimeDependencies,
 ): Promise<() => void> {
+  const runtimeGeneration = ++nextTrackingRuntimeGeneration
+  activeTrackingRuntimeGeneration = runtimeGeneration
   const now = dependencies.now ?? (() => new Date())
   const logger = dependencies.logger ?? DEFAULT_TRACKING_RUNTIME_LOGGER
   const writeCache = dependencies.writeCache ?? true
   let persistedPositionKeyCache: PersistedPositionKeyCache | null = null
-  let missionPersistenceQueue: Promise<void> = Promise.resolve()
   let lastTrackingCacheDataKey: string | null = null
+  let latestQueuedTrackingCacheDataKey: string | null = null
+  let latestTrackingCacheRequestSequence = 0
+  let latestTrackingStatus: TrackingConnectionStatus | null = null
+  let trackingCacheWarningActive = false
+  let missionPersistenceWarningActive = false
+  let droppedPersistedBreadcrumbCount = 0
+  let lastDroppedBreadcrumbDiagnosticKey: string | null = null
+  let initialPersistedBreadcrumbs:
+    | {
+        readonly missionId: string | null
+        readonly promise: Promise<
+          Awaited<ReturnType<typeof getInitialPersistedBreadcrumbs>>
+        >
+      }
+    | null = null
 
   if (dependencies.config === null) {
     dependencies.applyStatus({
@@ -188,12 +240,12 @@ export async function startTrackingRuntime(
       warning: dependencies.idleWarning ?? 'Tracking is not configured.',
     })
 
-    return () => {}
+    return () => invalidateTrackingRuntimeGeneration(runtimeGeneration)
   }
 
   const cachedContents = await dependencies.cache.read()
   if (cachedContents !== null) {
-    const cachedSnapshot = safelyParseCachedSnapshot(cachedContents)
+    const cachedSnapshot = safelyParseCachedSnapshot(cachedContents, logger)
     if (cachedSnapshot !== null && isTrackingCacheUsable(cachedSnapshot.cached_at, now())) {
       dependencies.applySnapshot(
         annotateTrackingSnapshotHealth(
@@ -230,7 +282,27 @@ export async function startTrackingRuntime(
   })
   const poller = dependencies.createPoller(client, {
     getInitialBreadcrumbs: async () => {
-      const seed = await getInitialPersistedBreadcrumbs(dependencies.missionStore)
+      const seed = await loadInitialPersistedBreadcrumbs()
+      droppedPersistedBreadcrumbCount = seed.droppedPositionCount
+      const droppedBreadcrumbDiagnosticKey =
+        seed.droppedPositionCount > 0
+          ? `${seed.missionId ?? 'no-mission'}:${seed.droppedPositionCount}`
+          : null
+      if (
+        droppedBreadcrumbDiagnosticKey !== null &&
+        droppedBreadcrumbDiagnosticKey !== lastDroppedBreadcrumbDiagnosticKey
+      ) {
+        lastDroppedBreadcrumbDiagnosticKey = droppedBreadcrumbDiagnosticKey
+        void dependencies.recordDiagnosticEvent?.({
+          level: 'warn',
+          category: 'tracking',
+          event: 'tracking_breadcrumb_rows_dropped',
+          fields: {
+            droppedPositionCount: seed.droppedPositionCount,
+          },
+        })
+      }
+      refreshTrackingStatus()
       if (seed.missionId !== null) {
         persistedPositionKeyCache = {
           missionId: seed.missionId,
@@ -239,7 +311,10 @@ export async function startTrackingRuntime(
       }
       return seed.positions
     },
-    onSnapshot: async (snapshot) => {
+    getInitialBreadcrumbTotals: async () => {
+      return (await loadInitialPersistedBreadcrumbs()).totalObservedByDevice
+    },
+    onSnapshot: async (snapshot, context) => {
       dependencies.applySnapshot(snapshot)
       void dependencies.recordDiagnosticEvent?.({
         level: 'info',
@@ -253,15 +328,22 @@ export async function startTrackingRuntime(
             snapshot,
             dependencies.maxPersistedPositionsPerSnapshot,
           ),
+          context?.historyResetKey ?? null,
         ),
       ]
+      let trackingCacheDataKey: string | null = null
+      let trackingCacheRequestSequence: number | null = null
 
       if (writeCache) {
-        const trackingCacheDataKey = createTrackingCacheDataKey(snapshot)
-        if (trackingCacheDataKey !== lastTrackingCacheDataKey) {
-          lastTrackingCacheDataKey = trackingCacheDataKey
+        trackingCacheDataKey = createTrackingCacheDataKey(snapshot)
+        if (trackingCacheDataKey !== latestQueuedTrackingCacheDataKey) {
+          latestTrackingCacheRequestSequence += 1
+          trackingCacheRequestSequence = latestTrackingCacheRequestSequence
+          latestQueuedTrackingCacheDataKey = trackingCacheDataKey
           sideEffects.unshift(
-            dependencies.cache.write(
+            enqueueTrackingCacheWrite(
+              runtimeGeneration,
+              dependencies.cache,
               serializeTrackingCachePayload({
                 cached_at: now().toISOString(),
                 devices: snapshot.devices,
@@ -280,17 +362,81 @@ export async function startTrackingRuntime(
           const cacheWriteResult = results[0]
           if (cacheWriteResult !== undefined && cacheWriteResult.status === 'rejected') {
             logger.warn('Tracking cache update failed.', cacheWriteResult.reason)
+            if (
+              runtimeGeneration === activeTrackingRuntimeGeneration &&
+              trackingCacheRequestSequence === latestTrackingCacheRequestSequence
+            ) {
+              latestQueuedTrackingCacheDataKey = lastTrackingCacheDataKey
+            }
+            if (
+              runtimeGeneration === activeTrackingRuntimeGeneration &&
+              !trackingCacheWarningActive
+            ) {
+              trackingCacheWarningActive = true
+              refreshTrackingStatus()
+              void dependencies.recordDiagnosticEvent?.({
+                level: 'warn',
+                category: 'tracking',
+                event: 'tracking_cache_write_failed',
+                fields: {},
+              })
+            }
+          } else if (
+            runtimeGeneration === activeTrackingRuntimeGeneration &&
+            trackingCacheDataKey !== null &&
+            (trackingCacheRequestSequence !== null ||
+              trackingCacheDataKey === lastTrackingCacheDataKey)
+          ) {
+            if (trackingCacheRequestSequence !== null) {
+              lastTrackingCacheDataKey = trackingCacheDataKey
+            }
+            if (trackingCacheWarningActive) {
+              trackingCacheWarningActive = false
+              refreshTrackingStatus()
+              void dependencies.recordDiagnosticEvent?.({
+                level: 'info',
+                category: 'tracking',
+                event: 'tracking_cache_write_recovered',
+                fields: {},
+              })
+            }
           }
         }
 
         const missionPersistenceResult = results[writeCache ? 1 : 0]
         if (missionPersistenceResult !== undefined && missionPersistenceResult.status === 'rejected') {
           logger.warn('Tracking mission persistence failed.', missionPersistenceResult.reason)
+          if (
+            runtimeGeneration === activeTrackingRuntimeGeneration &&
+            !missionPersistenceWarningActive
+          ) {
+            missionPersistenceWarningActive = true
+            refreshTrackingStatus()
+            void dependencies.recordDiagnosticEvent?.({
+              level: 'warn',
+              category: 'tracking',
+              event: 'tracking_mission_persistence_failed',
+              fields: {},
+            })
+          }
+        } else if (
+          runtimeGeneration === activeTrackingRuntimeGeneration &&
+          missionPersistenceWarningActive
+        ) {
+          missionPersistenceWarningActive = false
+          refreshTrackingStatus()
+          void dependencies.recordDiagnosticEvent?.({
+            level: 'info',
+            category: 'tracking',
+            event: 'tracking_mission_persistence_recovered',
+            fields: {},
+          })
         }
       })
     },
     onStatusChange: (status) => {
-      dependencies.applyStatus(status)
+      latestTrackingStatus = status
+      dependencies.applyStatus(decorateTrackingStatus(status))
       void dependencies.recordDiagnosticEvent?.({
         level: status.mode === 'online' ? 'info' : 'warn',
         category: 'tracking',
@@ -311,19 +457,117 @@ export async function startTrackingRuntime(
   poller.start()
   return () => {
     poller.stop()
+    invalidateTrackingRuntimeGeneration(runtimeGeneration)
   }
 
-  function enqueueMissionPersistence(snapshot: TrackingSnapshot): Promise<void> {
-    const operation = missionPersistenceQueue.then(async () => {
+  function enqueueMissionPersistence(
+    snapshot: TrackingSnapshot,
+    expectedMissionId: string | null,
+  ): Promise<void> {
+    return enqueueTrackingPersistence(runtimeGeneration, async () => {
       persistedPositionKeyCache = await persistTrackingSnapshot(
         snapshot,
         dependencies.missionStore,
         persistedPositionKeyCache,
+        expectedMissionId,
       )
     })
-    missionPersistenceQueue = operation.catch(() => undefined)
-    return operation
   }
+
+  async function loadInitialPersistedBreadcrumbs(): Promise<
+    Awaited<ReturnType<typeof getInitialPersistedBreadcrumbs>>
+  > {
+    const activeMission = await dependencies.missionStore.getActiveMission()
+    const missionId = activeMission?.id ?? null
+    if (
+      initialPersistedBreadcrumbs === null ||
+      initialPersistedBreadcrumbs.missionId !== missionId
+    ) {
+      initialPersistedBreadcrumbs = {
+        missionId,
+        promise: getInitialPersistedBreadcrumbs(
+          dependencies.missionStore,
+          missionId,
+        ),
+      }
+    }
+    const pendingLoad = initialPersistedBreadcrumbs
+    try {
+      return await pendingLoad.promise
+    } catch (error) {
+      // A worker timeout or transient read failure must remain visible for this
+      // poll, but it must not poison the mission for the rest of the runtime.
+      // Only clear the promise we awaited so a newer mission load cannot be
+      // invalidated by an older request settling late.
+      if (initialPersistedBreadcrumbs === pendingLoad) {
+        initialPersistedBreadcrumbs = null
+      }
+      throw error
+    }
+  }
+
+  function decorateTrackingStatus(
+    status: TrackingConnectionStatus,
+  ): TrackingConnectionStatus {
+    const warnings = [
+      status.warning,
+      droppedPersistedBreadcrumbCount > 0
+        ? formatDroppedPersistedBreadcrumbWarning(
+            droppedPersistedBreadcrumbCount,
+          )
+        : null,
+      trackingCacheWarningActive
+        ? 'TRACKING FALLBACK CACHE UPDATE FAILED — live fixes remain visible, but the last-known tracking view may be unavailable after restart while Traccar is offline.'
+        : null,
+      missionPersistenceWarningActive
+        ? 'MISSION BREADCRUMB STORAGE FAILED — current fixes remain visible, but new trail history may not survive restart.'
+        : null,
+    ].filter((warning): warning is string => warning !== null)
+    return {
+      ...status,
+      warning: warnings.length === 0 ? null : warnings.join(' '),
+    }
+  }
+
+  function refreshTrackingStatus(): void {
+    if (latestTrackingStatus !== null) {
+      dependencies.applyStatus(decorateTrackingStatus(latestTrackingStatus))
+    }
+  }
+}
+
+function invalidateTrackingRuntimeGeneration(runtimeGeneration: number): void {
+  if (activeTrackingRuntimeGeneration === runtimeGeneration) {
+    activeTrackingRuntimeGeneration = ++nextTrackingRuntimeGeneration
+  }
+}
+
+function enqueueTrackingPersistence(
+  runtimeGeneration: number,
+  operation: () => Promise<void>,
+): Promise<void> {
+  const run = trackingPersistenceTail.then(async () => {
+    if (runtimeGeneration !== activeTrackingRuntimeGeneration) {
+      return
+    }
+    await operation()
+  })
+  trackingPersistenceTail = run.catch(() => undefined)
+  return run
+}
+
+function enqueueTrackingCacheWrite(
+  runtimeGeneration: number,
+  cache: TrackingRuntimeCache,
+  contents: string,
+): Promise<unknown> {
+  const run = trackingCacheWriteTail.then(() =>
+    runtimeGeneration === activeTrackingRuntimeGeneration
+      ? cache.write(contents)
+      : null,
+  )
+  trackingCacheWriteTail = run.catch(() => undefined)
+  return run
 }
 
 function createTrackingCacheDataKey(snapshot: TrackingSnapshot): string {
@@ -376,7 +620,7 @@ function limitSnapshotForMissionPersistence(
 
   const limitedPersistenceBreadcrumbs = [...persistenceBreadcrumbs]
     .sort((left, right) => Date.parse(left.timestamp) - Date.parse(right.timestamp))
-    .slice(-maxBreadcrumbs)
+    .slice(maxBreadcrumbs === 0 ? persistenceBreadcrumbs.length : -maxBreadcrumbs)
 
   if (snapshot.rawBreadcrumbsForPersistence !== undefined) {
     return {
@@ -400,9 +644,13 @@ async function persistTrackingSnapshot(
   snapshot: TrackingSnapshot,
   missionStore: TrackingRuntimeMissionStore,
   persistedPositionKeyCache: PersistedPositionKeyCache | null,
+  expectedMissionId: string | null,
 ): Promise<PersistedPositionKeyCache | null> {
   const activeMission = await missionStore.getActiveMission()
-  if (activeMission === null) {
+  if (
+    activeMission === null ||
+    (expectedMissionId !== null && activeMission.id !== expectedMissionId)
+  ) {
     return null
   }
 
@@ -453,7 +701,7 @@ async function persistTrackingSnapshot(
   }
 
   const newPositions: {
-    readonly id?: string
+    readonly source_position_id?: string | null
     readonly device_id: string
     readonly lat: number
     readonly lon: number
@@ -483,7 +731,7 @@ async function persistTrackingSnapshot(
       stagedPositionKeys.add(positionKey)
     }
     newPositions.push({
-      id: position.id,
+      source_position_id: position.id,
       device_id: position.device_id,
       lat: position.lat,
       lon: position.lon,
@@ -533,43 +781,46 @@ function getBreadcrumbsForMissionPersistence(
 }
 
 function createIncomingPositionKeys(position: NormalizedTrackingPosition): readonly string[] {
-  return [
-    createTrackingPositionIdentityKey(position),
-    createTrackingPositionCoordinateKey(position),
-  ]
+  return position.id.trim() === ''
+    ? [createTrackingPositionCoordinateKey(position)]
+    : [createTrackingPositionIdentityKey(position)]
 }
 
 function createIncomingPositionCacheLookupKeys(
   position: NormalizedTrackingPosition,
 ): readonly string[] {
-  return [
-    ...createIncomingPositionKeys(position),
-    `${position.device_id}:time:${position.timestamp}`,
-  ]
+  // Source identities are stable keys, not immutable payloads. Traccar can
+  // correct coordinates or timestamps for an existing position id, so every
+  // sourced fix must reach the mission store's idempotent correction check.
+  // Only legacy coordinate/time identities are safe to suppress in memory.
+  return position.id.trim() === ''
+    ? [createTrackingPositionCoordinateKey(position)]
+    : []
 }
 
 function createPersistedPositionKeys(position: {
   readonly id?: string
+  readonly source_position_id?: string | null
   readonly device_id: string
   readonly lat?: number
   readonly lon?: number
   readonly timestamp: string
 }): readonly string[] {
   const keys: string[] = []
-  const persistedId = position.id?.trim()
+  const persistedId = position.source_position_id?.trim()
   if (persistedId) {
     keys.push(`${position.device_id}:id:${persistedId}`)
-  }
-
-  const lat = Number(position.lat)
-  const lon = Number(position.lon)
-  if (Number.isFinite(lat) && Number.isFinite(lon)) {
-    keys.push(createTrackingPositionCoordinateKey({
-      device_id: position.device_id,
-      lat,
-      lon,
-      timestamp: position.timestamp,
-    }))
+  } else {
+    const lat = Number(position.lat)
+    const lon = Number(position.lon)
+    if (Number.isFinite(lat) && Number.isFinite(lon)) {
+      keys.push(createTrackingPositionCoordinateKey({
+        device_id: position.device_id,
+        lat,
+        lon,
+        timestamp: position.timestamp,
+      }))
+    }
   }
 
   if (keys.length === 0) {
@@ -584,26 +835,54 @@ function createPersistedPositionKeys(position: {
  */
 async function getInitialPersistedBreadcrumbs(
   missionStore: TrackingRuntimeMissionStore,
+  missionId: string | null,
 ): Promise<{
   readonly missionId: string | null
   readonly positions: readonly NormalizedTrackingPosition[]
+  readonly totalObservedByDevice: Readonly<Record<string, number>>
+  readonly droppedPositionCount: number
 }> {
-  const activeMission = await missionStore.getActiveMission()
-  if (activeMission === null) {
-    return { missionId: null, positions: [] }
+  if (missionId === null) {
+    return {
+      missionId: null,
+      positions: [],
+      totalObservedByDevice: {},
+      droppedPositionCount: 0,
+    }
   }
 
-  const positions = await (missionStore.listRecentPositions === undefined
-    ? missionStore.listPositions(activeMission.id)
-    : missionStore.listRecentPositions(
-        activeMission.id,
+  const selected = missionStore.listBreadcrumbPositions === undefined
+    ? null
+    : await missionStore.listBreadcrumbPositions(
+        missionId,
         MAX_RESTART_BREADCRUMBS_PER_DEVICE,
-      ))
-  return {
-    missionId: activeMission.id,
-    positions: positions.flatMap((position) => {
+      )
+  const positions = selected?.positions ?? await (
+    missionStore.listRecentPositions === undefined
+      ? missionStore.listPositions(missionId)
+      : missionStore.listRecentPositions(
+          missionId,
+          MAX_RESTART_BREADCRUMBS_PER_DEVICE,
+        )
+  )
+  const totalObservedByDevice =
+    selected === null
+      ? Object.fromEntries(
+          [...new Set(positions.map((position) => position.device_id))].map(
+            (deviceId) => [
+              deviceId,
+              positions.filter((position) => position.device_id === deviceId).length,
+            ],
+          ),
+        )
+      : Object.fromEntries(
+          selected.deviceTotals.map((entry) => [entry.device_id, entry.total]),
+        )
+  let droppedPositionCount = selected?.droppedPositionCount ?? 0
+  const normalizedPositions = positions.flatMap((position) => {
       const lat = Number(position.lat)
       const lon = Number(position.lon)
+      const timestamp = safelyNormalizePersistedTrackingTimestamp(position.timestamp)
       if (
         !Number.isFinite(lat) ||
         lat < -90 ||
@@ -611,13 +890,18 @@ async function getInitialPersistedBreadcrumbs(
         !Number.isFinite(lon) ||
         lon < -180 ||
         lon > 180 ||
-        Number.isNaN(Date.parse(position.timestamp))
+        timestamp === null
       ) {
+        droppedPositionCount += 1
         return []
       }
 
       return [{
-        id: position.id ?? `${position.device_id}:time:${position.timestamp}`,
+        // Legacy rows predate preservation of Traccar's source position id.
+        // Leave the normalized id empty so the accumulator uses its exact
+        // coordinate/time fallback identity instead of mistaking our local
+        // SQLite UUID for an upstream identity.
+        id: position.source_position_id ?? '',
         device_id: position.device_id,
         lat,
         lon,
@@ -626,21 +910,49 @@ async function getInitialPersistedBreadcrumbs(
         battery: position.battery ?? null,
         accuracy: position.accuracy ?? null,
         source: position.source ?? null,
-        timestamp: position.timestamp,
+        timestamp,
         data_origin: position.data_origin ?? 'live',
         cache_age_seconds: null,
         device_cache_stale: false,
       } satisfies NormalizedTrackingPosition]
-    }),
+    })
+  return {
+    missionId,
+    totalObservedByDevice,
+    positions: normalizedPositions,
+    droppedPositionCount,
+  }
+}
+
+function formatDroppedPersistedBreadcrumbWarning(count: number): string {
+  const noun = count === 1 ? 'fix was' : 'fixes were'
+  return `${count} unreadable stored breadcrumb ${noun} ignored; valid history and current fixes remain visible.`
+}
+
+/**
+ * Applies the same explicit ISO and calendar validation to persisted positions
+ * regardless of which desktop mission-store adapter supplied them.
+ */
+function safelyNormalizePersistedTrackingTimestamp(value: unknown): string | null {
+  try {
+    return normalizeTrackingIsoTimestamp(value, 'Persisted breadcrumb timestamp')
+  } catch {
+    return null
   }
 }
 
 function safelyParseCachedSnapshot(
   contents: string,
+  logger: TrackingRuntimeLogger,
 ): ReturnType<typeof parseTrackingCachePayload> | null {
   try {
-    return parseTrackingCachePayload(contents)
-  } catch {
+    return parseTrackingCachePayload(contents, {
+      onDroppedEntries: (summary) => {
+        logger.warn('Dropped malformed tracking cache entries.', summary)
+      },
+    })
+  } catch (error) {
+    logger.warn('Tracking cache payload was ignored.', error)
     return null
   }
 }

@@ -59,6 +59,7 @@ const MISSION_STORE_CHANNELS = {
   addPositionsBulk: 'sartracker:mission-store:add-positions-bulk',
   listPositions: 'sartracker:mission-store:list-positions',
   listRecentPositions: 'sartracker:mission-store:list-recent-positions',
+  listBreadcrumbPositions: 'sartracker:mission-store:list-breadcrumb-positions',
   countPositions: 'sartracker:mission-store:count-positions',
   latestPositions: 'sartracker:mission-store:latest-positions',
   listMissionEvents: 'sartracker:mission-store:list-mission-events',

@@ -837,7 +837,8 @@
             status changes to a flashing red <strong>OFFLINE</strong> state and the warning line shows
             <strong>OFFLINE MODE</strong>. When a mission is paused, the status chip changes to
             <strong>PAUSED</strong> and <strong>Live refresh suspended</strong> is shown as a red alert.
-            In both cases, treat displayed positions as potentially stale until live refresh resumes.
+            A live fix older than five minutes is also marked stale. In all three cases, treat displayed
+            positions as potentially stale until a newer live fix arrives.
           </div>
           <h3>Devices Workspace</h3>
           <p>
@@ -849,7 +850,10 @@
             empty tracking picture. Once active devices are selected, the map, labels, initial tracking
             frame, and breadcrumb trails focus on that active set while the full roster remains available
             for lookup. Each row still shows device health, last seen time, source, current-location
-            visibility, speed in <strong>km/h</strong> when Traccar reports speed, and a <strong>Zoom</strong> action for devices with a valid fix. Click the trail
+            visibility, speed in <strong>km/h</strong> when Traccar reports speed, and a <strong>Zoom</strong> action for devices with a valid fix. The selected-device inspector separately shows the
+            authoritative <strong>Fix Time</strong> and <strong>GPS Accuracy</strong> in metres when
+            Traccar supplies it; accuracy is the source measurement, not a claim that the hardware has
+            zero physical error. Click the trail
             colour swatch on a device row to open a palette of high-contrast SAR colours for that device's
             current-location dot and breadcrumb trail.
             The list tabs and search field work together: choosing <strong>Active</strong>,
@@ -858,9 +862,14 @@
             inside the currently selected list.
             <strong>Breadcrumb Display</strong> is a global control: use <strong>Solid line</strong> for
             continuous trails or <strong>Breadcrumb dots</strong> to show one dot for every tracking fix
-            retained in the live display window. Closely spaced fixes are not silently removed; if a very
-            long device trail exceeds the bounded live-display window, Diagnostics reports the retained and
-            observed counts while the complete accepted position history remains in mission storage. The
+            retained in the live display window. Closely spaced fixes are not silently removed. If a very
+            long device trail exceeds 5,000 displayed fixes, SAR Tracker chooses stable representatives
+            across the full route, always retains the latest fix, and shows an informational
+            <strong>Trail display simplified</strong> message with the displayed count and a
+            conservative lower bound for known fixes. Identical mission history therefore selects
+            the same visible fix identities after restart and
+            across installations, independent of polling batch boundaries. The complete accepted position
+            history remains in mission storage. The
             <strong>Breadcrumb Size</strong> control changes trail width in solid-line mode and dot diameter
             in breadcrumb-dot mode, so dense missions can be made calmer or more prominent without editing
             devices one by one. <strong>Reconnect</strong> reloads settings and forces the tracking provider to reconnect.
@@ -899,10 +908,29 @@
           </div>
           <div class="note">
             <strong>Desktop restart history:</strong> all operational positions remain stored in the
-            mission database. After Resume, the live map initially reloads a bounded recent trail for
-            each device so a long multi-day mission cannot overwhelm the interface; live polling then
-            continues from the most recent stored fix. This display window does not delete older
-            positions or change the Mission Review count.
+            mission database. After Resume, current live fixes appear first while a read-only background
+            worker reconstructs the same bounded whole-route representation for each device. The worker
+            keeps long-history SQLite scanning off the main app thread, and it never transfers an unbounded
+            map payload. This display budget does not delete older positions or change the Mission Review
+            count.
+          </div>
+          <div class="note">
+            <strong>History reconciliation:</strong> recent live windows are requested separately from
+            fixed two-hour history chunks. While a long mission is catching up, Tracking says
+            <strong>Breadcrumb history is reconciling</strong>; current fixes remain live. SAR Tracker
+            repeats the mission-wide sweep so late or corrected fixes older than the normal overlap are
+            not permanently missed. If a device history request fails or contains only malformed rows,
+            Tracking names the incomplete device history and continues showing current fixes.
+          </div>
+          <div class="warning">
+            <strong>Tracking storage warnings require attention:</strong>
+            <strong>MISSION BREADCRUMB STORAGE FAILED</strong> means current fixes may still be live,
+            but accepted history might not survive a restart.
+            <strong>TRACKING FALLBACK CACHE UPDATE FAILED</strong> means the current mission database
+            remains authoritative, but the last-known offline view after a restart may be out of date.
+            If restart reconstruction ignores unreadable stored fixes, SAR Tracker reports the count
+            instead of silently stopping the remaining valid trail. Record the exact warning and export
+            diagnostics before restarting when operationally safe.
           </div>
         </section>
 

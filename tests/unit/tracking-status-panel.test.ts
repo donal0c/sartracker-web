@@ -67,6 +67,38 @@ describe('TrackingStatusPanel', () => {
     expect(getText('[data-testid="tracking-mode-chip"]')).not.toContain('idle')
     expect(getText('[data-testid="tracking-warning"]')).toContain('Live refresh suspended')
   })
+
+  it('makes a bounded whole-route trail explicit without implying stored data loss [DON-260]', () => {
+    useTrackingStore.setState((state) => ({
+      snapshot: {
+        ...state.snapshot,
+        breadcrumbMetadata: {
+          totalRetained: 3_000,
+          totalObserved: 12_000,
+          deviceBudgets: [
+            {
+              deviceId: 'tracker-1',
+              retained: 3_000,
+              sourceRetained: 3_000,
+              total: 12_000,
+              firstTimestamp: '2026-07-28T00:00:00.000Z',
+              lastTimestamp: '2026-07-28T03:19:59.000Z',
+              truncated: true,
+            },
+          ],
+        },
+      },
+    }))
+
+    render(React.createElement(TrackingStatusPanel))
+
+    expect(getText('[data-testid="breadcrumb-display-summary"]')).toContain(
+      '3,000 of at least 12,000 known fixes',
+    )
+    expect(getText('[data-testid="breadcrumb-display-summary"]')).toContain(
+      'Full mission history remains stored',
+    )
+  })
 })
 
 function render(element: React.ReactElement): void {

@@ -225,7 +225,10 @@ Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
     await expect(page.getByTestId('app-shell')).toHaveAttribute('data-focus-mode', 'true')
     await expect(page.getByTestId('focus-mode-sidebar')).toBeVisible()
     await expect(page.getByTestId('mission-control')).toContainText('Visual Focus Mode')
+    await expect(page.getByTestId('focus-sidebar-tab-tracking')).toBeVisible()
+    await expect(page.getByTestId('focus-sidebar-tab-layers')).toBeVisible()
     await expect(page.getByTestId('layer-panel')).toBeVisible()
+    await expect(page.getByTestId('map-scale-readout')).toBeVisible()
 
     const mapContainer = page.getByTestId('map-container')
     const bounds = await mapContainer.boundingBox()
@@ -245,16 +248,18 @@ Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
 1. The map should remain the dominant surface and be wider than the normal shell
 2. The normal full sidebar header/tabs should be replaced by a reduced Focus Mode Plus sidebar
 3. The reduced sidebar should keep Mission Control visible with the active mission name and timers
-4. Tracking status should still be visible in the reduced sidebar
-5. Layer Workspace presence should remain visible in the reduced sidebar so operators know layer controls are still available
+4. A clearly labelled Tracking tab should remain visible in the reduced sidebar so operators can reach tracking status
+5. The Layers tab should be active and Layer Workspace should remain visible in the reduced sidebar
 6. A mirrored focus coordinate display should be visible on top of the map
-7. The Map Tools toolbar and map health/status badge should remain visible on the map
+7. The Maps control, Map Tools toolbar, and metric map scale should remain visible on the map
 Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
       playwrightAssertions: [
         'app-shell data-focus-mode is true',
         'focus-mode-sidebar is visible',
         'mission-control contains active mission',
+        'Tracking and Layers tabs are visible',
         'layer-panel is visible',
+        'map-scale-readout is visible',
         'focus-mode-coordinate-display contains coordinates',
       ],
     })

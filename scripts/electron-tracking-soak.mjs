@@ -29,10 +29,14 @@ import {
   buildTrackingGrowthEvidence,
   buildTrackingSoakVerdict,
   classifyOperatorInteraction,
+  createPositionTruthDigestAccumulator,
   parseTrackingSoakArgs,
   parseTrackingSoakRuntimeLog,
 } from '../build/electron-tracking-soak-lib.js'
-import { startTrackingSoakMockServer } from '../build/electron-tracking-soak-mock-server.js'
+import {
+  buildTrackingSoakExpectedPositionTruthEvidence,
+  startTrackingSoakMockServer,
+} from '../build/electron-tracking-soak-mock-server.js'
 
 const require = createRequire(import.meta.url)
 const Database = require('better-sqlite3')
@@ -179,6 +183,25 @@ async function main() {
     activeLaunch = undefined
 
     const databaseEvidence = inspectDatabase(databasePath, missionId)
+    const expectedPositionTruth = buildTrackingSoakExpectedPositionTruthEvidence({
+      deviceCount: options.profile.deviceCount,
+      movingDeviceCount: options.profile.movingDeviceCount,
+      productionPollsPerBatch: options.profile.productionPollsPerBatch,
+      maximumBatches: options.profile.actualBatches,
+      statePath: path.join(evidenceDir, 'unused-position-truth-state.json'),
+    })
+    const positionTruth = {
+      actual: databaseEvidence.positionTruth,
+      expected: expectedPositionTruth,
+      exactMatch: positionTruthDigestsMatch(
+        databaseEvidence.positionTruth.full,
+        expectedPositionTruth.full,
+      ),
+      normalPrefixExactMatch: positionTruthDigestsMatch(
+        databaseEvidence.positionTruth.normalPrefix,
+        expectedPositionTruth.normalPrefix,
+      ),
+    }
     const runtimeLogBytes = await combinedLogBytes(userDataDir)
     const runtimeTiming = parseTrackingSoakRuntimeLog(await readCombinedRuntimeLog(userDataDir))
     const growth = buildTrackingGrowthEvidence(growthCheckpoints)
@@ -187,6 +210,14 @@ async function main() {
     const rendererStats = summarizeResponsiveness(rendererGaps, 250)
     const operatorInteractionStats = summarizeResponsiveness(
       operatorInteractions.map((interaction) => interaction.durationMs),
+      250,
+    )
+    const operatorActionStats = summarizeResponsiveness(
+      operatorInteractions.flatMap((interaction) =>
+        [interaction.openActionDurationMs, interaction.closeActionDurationMs].filter(
+          Number.isFinite,
+        ),
+      ),
       250,
     )
     const operatorInteractionErrors = operatorInteractions.filter(
@@ -236,6 +267,8 @@ async function main() {
       operatorInteractionSamples: operatorInteractionStats.count,
       operatorInteractionErrors,
       operatorInteractionMaximumMs: operatorInteractionStats.maxMs,
+      operatorActionSamples: operatorActionStats.count,
+      operatorActionMaximumMs: operatorActionStats.maxMs,
       maximumProcessTreeResidentBytes: processMemory.maximumProcessTreeResidentBytes,
       freezeThresholdMs: options.freezeThresholdMs,
       integrityResult: databaseEvidence.integrityResult,
@@ -244,6 +277,10 @@ async function main() {
       supportBundleRedacted,
       runtimeLogBytes,
       supportBundleBytes,
+      positionTruthExactMatch: positionTruth.exactMatch,
+      normalPrefixTruthExactMatch: positionTruth.normalPrefixExactMatch,
+      missingSourcePositionIdentityRows:
+        databaseEvidence.positionTruth.full.missingSourcePositionIdentityRows,
     })
     const report = {
       schemaVersion: 1,
@@ -267,6 +304,7 @@ async function main() {
       },
       mockTraccar: mockState,
       database: databaseEvidence,
+      positionTruth,
       growth,
       runtimeTiming,
       responsiveness: {
@@ -274,6 +312,7 @@ async function main() {
         renderer: rendererStats,
         operatorInteractions: {
           ...operatorInteractionStats,
+          actionTiming: operatorActionStats,
           errors: operatorInteractionErrors,
           classifications: operatorInteractionClassifications,
           samples: operatorInteractions,
@@ -468,10 +507,13 @@ async function recordOperatorInteraction(input) {
     closeClickCompleted: false,
     closeClickReceived: false,
     workspaceClosed: false,
+    openActionDurationMs: null,
+    closeActionDurationMs: null,
   }
   const errors = []
 
   if (result.targetFound) {
+    const openStartedAt = performance.now()
     await installClickRecorder(input.page, 'open-devices-workspace').catch(() => undefined)
     try {
       await input.page.getByTestId('open-devices-workspace').click({ timeout: 5_000 })
@@ -485,6 +527,7 @@ async function recordOperatorInteraction(input) {
       'visible',
       5_000,
     )
+    result.openActionDurationMs = performance.now() - openStartedAt
   }
 
   const mainIpc = await probeMainProcessIpc(input.page, 1_000).catch((error) => ({
@@ -495,6 +538,7 @@ async function recordOperatorInteraction(input) {
   result.mainIpcStatus = mainIpc.status
 
   if (result.workspaceOpened) {
+    const closeStartedAt = performance.now()
     await installClickRecorder(input.page, 'workspace-close-btn').catch(() => undefined)
     try {
       await input.page.getByTestId('workspace-close-btn').click({ timeout: 5_000 })
@@ -508,6 +552,7 @@ async function recordOperatorInteraction(input) {
       'hidden',
       5_000,
     )
+    result.closeActionDurationMs = performance.now() - closeStartedAt
   }
 
   const classification = classifyOperatorInteraction(result)
@@ -525,6 +570,8 @@ async function recordOperatorInteraction(input) {
   input.results.push({
     phase: input.phase,
     durationMs: performance.now() - startedAt,
+    openActionDurationMs: result.openActionDurationMs,
+    closeActionDurationMs: result.closeActionDurationMs,
     ...classification,
     preflight,
     browserEvents: {
@@ -806,6 +853,21 @@ function inspectDatabase(databasePath, missionId) {
     const unexplainedMissionEvents = Object.entries(events)
       .filter(([eventType]) => !declaredEventTypes.has(eventType))
       .reduce((sum, [, count]) => sum + count, 0)
+    const fullPositionTruth = createPositionTruthDigestAccumulator()
+    const normalPrefixPositionTruth = createPositionTruthDigestAccumulator()
+    for (const row of database
+      .prepare(
+        `SELECT source_position_id, device_id, timestamp, lat, lon
+         FROM positions
+         WHERE mission_id = ?
+         ORDER BY CAST(source_position_id AS INTEGER) ASC, source_position_id ASC`,
+      )
+      .iterate(missionId)) {
+      fullPositionTruth.add(row)
+      if (isNormalProfilePositionIdentity(row.source_position_id)) {
+        normalPrefixPositionTruth.add(row)
+      }
+    }
     return {
       databaseBytes:
         Number(database.pragma('page_count', { simple: true })) *
@@ -819,6 +881,11 @@ function inspectDatabase(databasePath, missionId) {
       events,
       operationalMissionEvents,
       unexplainedMissionEvents,
+      positionTruth: {
+        full: fullPositionTruth.finish(),
+        normalPrefix: normalPrefixPositionTruth.finish(),
+        normalPrefixBatch: 480,
+      },
       integrityResult,
       walCheckpoint: {
         busy: Number(wal.busy),
@@ -829,6 +896,24 @@ function inspectDatabase(databasePath, missionId) {
   } finally {
     database.close()
   }
+}
+
+function isNormalProfilePositionIdentity(sourcePositionId) {
+  const numericIdentity = Number(sourcePositionId)
+  return (
+    Number.isSafeInteger(numericIdentity) &&
+    numericIdentity > 0 &&
+    (numericIdentity < 1_000_000 || Math.floor(numericIdentity / 1_000_000) <= 480)
+  )
+}
+
+function positionTruthDigestsMatch(actual, expected) {
+  return (
+    actual.rowCount === expected.rowCount &&
+    actual.missingSourcePositionIdentityRows === 0 &&
+    expected.missingSourcePositionIdentityRows === 0 &&
+    actual.sha256 === expected.sha256
+  )
 }
 
 function expectedPositionsAt(profile, batch) {

@@ -110,6 +110,93 @@ describe('polling manager', () => {
     poller.stop()
   })
 
+  it('does not publish a poll that completes after the poller is stopped [DON-260]', async () => {
+    const deferredDevices = createDeferred<readonly NormalizedTrackingDevice[]>()
+    const deferredPositions = createDeferred<readonly NormalizedTrackingPosition[]>()
+    const client = createClient({
+      getDevices: vi.fn().mockReturnValue(deferredDevices.promise),
+      getCurrentPositions: vi.fn().mockReturnValue(deferredPositions.promise),
+    })
+    const onSnapshot = vi.fn()
+    const onStatusChange = vi.fn()
+    const poller = createPollingManager(client, {
+      intervalMs: 5_000,
+      staleThresholdMs: 60 * 60 * 1000,
+      onSnapshot,
+      onStatusChange,
+      now: () => new Date('2026-07-28T10:35:00.000Z'),
+    })
+
+    poller.start()
+    await vi.advanceTimersByTimeAsync(0)
+    poller.stop()
+    deferredDevices.resolve(NORMALIZED_DEVICES)
+    deferredPositions.resolve(NORMALIZED_POSITIONS)
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect(onSnapshot).not.toHaveBeenCalled()
+    expect(onStatusChange).not.toHaveBeenCalled()
+    expect(client.getBreadcrumbs).not.toHaveBeenCalled()
+  })
+
+  it('does not publish breadcrumb work into a replacement mission history [DON-260]', async () => {
+    const deferredBreadcrumbs = createDeferred<readonly NormalizedTrackingPosition[]>()
+    const client = createClient({
+      getBreadcrumbs: vi.fn().mockReturnValue(deferredBreadcrumbs.promise),
+    })
+    const onSnapshot = vi.fn()
+    let missionId = 'mission-a'
+    const poller = createPollingManager(client, {
+      intervalMs: 5_000,
+      staleThresholdMs: 60 * 60 * 1000,
+      getHistoryResetKey: () => missionId,
+      onSnapshot,
+      onStatusChange: vi.fn(),
+      now: () => new Date('2026-07-28T10:35:00.000Z'),
+    })
+
+    poller.start()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(onSnapshot).toHaveBeenCalledTimes(1)
+
+    missionId = 'mission-b'
+    deferredBreadcrumbs.resolve(NORMALIZED_BREADCRUMBS)
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect(onSnapshot).toHaveBeenCalledTimes(1)
+    poller.stop()
+  })
+
+  it('publishes current fixes before a long restart-history hydration completes [DON-260]', async () => {
+    const persistedBreadcrumbs =
+      createDeferred<readonly NormalizedTrackingPosition[]>()
+    const onSnapshot = vi.fn()
+    const poller = createPollingManager(createClient(), {
+      intervalMs: 5_000,
+      staleThresholdMs: 60 * 60 * 1000,
+      getInitialBreadcrumbs: () => persistedBreadcrumbs.promise,
+      getInitialBreadcrumbTotals: async () => ({}),
+      onSnapshot,
+      onStatusChange: vi.fn(),
+      now: () => new Date('2026-07-28T10:35:00.000Z'),
+    })
+
+    poller.start()
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect(onSnapshot).toHaveBeenCalledTimes(1)
+    expect(onSnapshot.mock.calls[0]?.[0].positions.map((position) => position.id)).toEqual(
+      NORMALIZED_POSITIONS.map((position) => position.id),
+    )
+    expect(onSnapshot.mock.calls[0]?.[0].breadcrumbs).toEqual([])
+    expect(onSnapshot.mock.calls[0]?.[1]).toEqual({ historyResetKey: null })
+
+    persistedBreadcrumbs.resolve(NORMALIZED_BREADCRUMBS)
+    await vi.advanceTimersByTimeAsync(0)
+    expect(onSnapshot.mock.calls.length).toBeGreaterThan(1)
+    poller.stop()
+  })
+
   it('serves the last-good snapshot on fetch failure without clearing data', async () => {
     const client = createClient()
     const onSnapshot = vi.fn()
@@ -433,12 +520,171 @@ describe('polling manager', () => {
       new Date('2026-04-06T10:15:00.000Z'),
       expect.any(Date),
     )
-    expect(client.getBreadcrumbs).not.toHaveBeenCalledWith(
+    expect(client.getBreadcrumbs).toHaveBeenCalledWith(
       '1',
       new Date('2026-04-06T07:00:00.000Z'),
-      expect.any(Date),
+      new Date('2026-04-06T09:00:00.000Z'),
     )
-    expect(onSnapshot.mock.calls[0]?.[0].breadcrumbs).toEqual(persistedBreadcrumbs)
+    expect(onSnapshot.mock.calls[0]?.[0].breadcrumbs).toEqual([])
+    expect(onSnapshot.mock.calls[1]?.[0].breadcrumbs).toEqual(persistedBreadcrumbs)
+
+    poller.stop()
+  })
+
+  it('reconciles mission history in bounded chunks while polling recent fixes [DON-260]', async () => {
+    const client = createClient({
+      getDevices: vi.fn().mockResolvedValue([NORMALIZED_DEVICES[0]!]),
+      getBreadcrumbs: vi.fn().mockResolvedValue([]),
+    })
+    const onStatusChange = vi.fn()
+    const poller = createPollingManager(client, {
+      intervalMs: 5_000,
+      staleThresholdMs: 5 * 60 * 1000,
+      getInitialBreadcrumbFrom: () => new Date('2026-04-06T00:00:00.000Z'),
+      getBreadcrumbDeviceIds: () => ['1'],
+      onSnapshot: vi.fn(),
+      onStatusChange,
+      now: () => new Date('2026-04-06T10:35:00.000Z'),
+    })
+
+    poller.start()
+    await vi.advanceTimersByTimeAsync(0)
+    await vi.advanceTimersByTimeAsync(5_000)
+
+    const windows = vi.mocked(client.getBreadcrumbs).mock.calls.map((call) => ({
+      from: call[1],
+      to: call[2],
+    }))
+    expect(windows).toContainEqual({
+      from: new Date('2026-04-06T00:00:00.000Z'),
+      to: new Date('2026-04-06T02:00:00.000Z'),
+    })
+    expect(windows).toContainEqual({
+      from: new Date('2026-04-06T02:00:00.000Z'),
+      to: new Date('2026-04-06T04:00:00.000Z'),
+    })
+    expect(
+      windows.every(
+        (window) => window.to.getTime() - window.from.getTime() <= 2 * 60 * 60 * 1000,
+      ),
+    ).toBe(true)
+    expect(onStatusChange).toHaveBeenCalledWith(
+      expect.objectContaining({
+        mode: 'online',
+        warning: expect.stringMatching(/reconciling/i),
+      }),
+    )
+
+    poller.stop()
+  })
+
+  it('round-robins historical reconciliation without doubling a large team request burst [DON-260]', async () => {
+    const devices = Array.from({ length: 16 }, (_, index) => ({
+      ...NORMALIZED_DEVICES[0]!,
+      device_id: String(index + 1),
+      name: `Tracker ${index + 1}`,
+    }))
+    const client = createClient({
+      getDevices: vi.fn().mockResolvedValue(devices),
+      getCurrentPositions: vi.fn().mockResolvedValue([]),
+      getBreadcrumbs: vi.fn().mockResolvedValue([]),
+    })
+    const poller = createPollingManager(client, {
+      intervalMs: 5_000,
+      staleThresholdMs: 5 * 60 * 1000,
+      getInitialBreadcrumbFrom: () => new Date('2026-04-06T00:00:00.000Z'),
+      onSnapshot: vi.fn(),
+      onStatusChange: vi.fn(),
+      now: () => new Date('2026-04-06T10:35:00.000Z'),
+    })
+
+    poller.start()
+    await vi.advanceTimersByTimeAsync(0)
+
+    const firstPollCalls = [...vi.mocked(client.getBreadcrumbs).mock.calls]
+    const firstHistoricalDeviceIds = firstPollCalls
+      .filter((call) => call[2].getTime() - call[1].getTime() === 2 * 60 * 60 * 1000)
+      .map((call) => call[0])
+    expect(firstPollCalls).toHaveLength(24)
+    expect(firstHistoricalDeviceIds).toEqual([
+      '1',
+      '10',
+      '11',
+      '12',
+      '13',
+      '14',
+      '15',
+      '16',
+    ])
+
+    await vi.advanceTimersByTimeAsync(5_000)
+
+    const secondPollCalls = vi.mocked(client.getBreadcrumbs).mock.calls.slice(
+      firstPollCalls.length,
+    )
+    const secondHistoricalDeviceIds = secondPollCalls
+      .filter((call) => call[2].getTime() - call[1].getTime() === 2 * 60 * 60 * 1000)
+      .map((call) => call[0])
+    expect(secondPollCalls).toHaveLength(24)
+    expect(secondHistoricalDeviceIds).toEqual([
+      '2',
+      '3',
+      '4',
+      '5',
+      '6',
+      '7',
+      '8',
+      '9',
+    ])
+
+    poller.stop()
+  })
+
+  it('finds a fix arriving after the live overlap when the historical sweep cycles [DON-260]', async () => {
+    const lateFix = {
+      ...NORMALIZED_POSITIONS[0],
+      id: '991001',
+      timestamp: '2026-04-06T08:30:00.000Z',
+    } satisfies NormalizedTrackingPosition
+    let historicalWindowVisits = 0
+    const client = createClient({
+      getDevices: vi.fn().mockResolvedValue([NORMALIZED_DEVICES[0]!]),
+      getBreadcrumbs: vi.fn().mockImplementation(
+        async (_deviceId: string, from: Date, to: Date) => {
+          if (
+            from.toISOString() === '2026-04-06T08:00:00.000Z' &&
+            to.toISOString() === '2026-04-06T10:00:00.000Z'
+          ) {
+            historicalWindowVisits += 1
+            return historicalWindowVisits >= 2 ? [lateFix] : []
+          }
+          return []
+        },
+      ),
+    })
+    const onSnapshot = vi.fn()
+    const poller = createPollingManager(client, {
+      intervalMs: 5_000,
+      staleThresholdMs: 5 * 60 * 1000,
+      getInitialBreadcrumbFrom: () => new Date('2026-04-06T08:00:00.000Z'),
+      getBreadcrumbDeviceIds: () => ['1'],
+      onSnapshot,
+      onStatusChange: vi.fn(),
+      now: () => new Date('2026-04-06T10:00:00.000Z'),
+    })
+
+    poller.start()
+    await vi.advanceTimersByTimeAsync(0)
+    await vi.advanceTimersByTimeAsync(5_000)
+
+    expect(historicalWindowVisits).toBe(2)
+    expect(
+      onSnapshot.mock.calls
+        .map((call) => call[0] as TrackingSnapshot)
+        .some((snapshot) =>
+          snapshot.breadcrumbs.some((breadcrumb) => breadcrumb.id === lateFix.id),
+        ),
+    ).toBe(true)
 
     poller.stop()
   })
@@ -829,11 +1075,14 @@ describe('polling manager', () => {
     poller.start()
     await vi.advanceTimersByTimeAsync(0)
 
-    expect(onSnapshot).toHaveBeenCalledWith({
-      devices: [],
-      positions: [],
-      breadcrumbs: [],
-    })
+    expect(onSnapshot).toHaveBeenCalledWith(
+      {
+        devices: [],
+        positions: [],
+        breadcrumbs: [],
+      },
+      { historyResetKey: null },
+    )
     expect(onStatusChange).toHaveBeenCalledWith(
       expect.objectContaining({
         mode: 'idle',
@@ -1099,7 +1348,8 @@ describe('polling manager', () => {
 
     const latestSnapshot = onSnapshot.mock.calls.at(-1)?.[0]
     expect(latestSnapshot?.breadcrumbs.some((position) => position.device_id === '25')).toBe(true)
-    expect(latestSnapshot?.breadcrumbs).toHaveLength(8_280)
+    expect(latestSnapshot?.breadcrumbs.length).toBeGreaterThanOrEqual(5_780)
+    expect(latestSnapshot?.breadcrumbs.length).toBeLessThanOrEqual(8_280)
     expect(latestSnapshot?.rawBreadcrumbsForPersistence).toHaveLength(28_280)
     expect(
       latestSnapshot?.rawBreadcrumbsForPersistence?.filter((position) => position.device_id === '2'),

@@ -30,6 +30,7 @@ export type Position = {
   readonly id: string
   readonly mission_id: string
   readonly device_id: string
+  readonly source_position_id: string | null
   readonly name: string | null
   readonly lat: number
   readonly lon: number
@@ -210,6 +211,7 @@ export type UpsertDeviceInput = {
 export type AddPositionInput = {
   readonly mission_id: string
   readonly device_id: string
+  readonly source_position_id?: string | null
   readonly name?: string | null
   readonly lat: number
   readonly lon: number
@@ -289,6 +291,17 @@ export type MissionStore = {
     missionId: string,
     perDeviceLimit: number,
   ) => Promise<readonly Position[]>
+  readonly listBreadcrumbPositions?: (
+    missionId: string,
+    perDeviceLimit: number,
+  ) => Promise<{
+    readonly positions: readonly Position[]
+    readonly deviceTotals: readonly {
+      readonly device_id: string
+      readonly total: number
+    }[]
+    readonly droppedPositionCount?: number
+  }>
   readonly countPositions: (missionId: string, deviceId?: string) => Promise<number>
   readonly latestPositions: (missionId: string) => Promise<readonly Position[]>
   readonly listMissionEvents: (missionId: string) => Promise<readonly MissionEvent[]>

@@ -21,7 +21,7 @@ export function FocusModeCoordinateMirror({
 
   return (
     <div
-      className="pointer-events-none absolute left-4 bottom-16 z-20 rounded-xl border border-amber-500/30 bg-[rgba(9,8,7,0.94)] px-4 py-3 font-mono text-sm font-semibold text-stone-100 shadow-2xl shadow-black/40"
+      className="pointer-events-none absolute bottom-4 left-1/2 z-20 -translate-x-1/2 rounded-xl border border-amber-500/30 bg-[rgba(9,8,7,0.94)] px-4 py-3 font-mono text-sm font-semibold text-stone-100 shadow-2xl shadow-black/40"
       data-testid="focus-mode-coordinate-mirror"
     >
       <p className="font-sans text-[10px] font-bold uppercase tracking-[0.2em] text-amber-300">

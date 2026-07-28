@@ -3,7 +3,7 @@ import type {
   TrackingSnapshot,
 } from './tracking-types'
 
-export const DEFAULT_DEVICE_STALE_THRESHOLD_MS = 60 * 60 * 1000
+export const DEFAULT_DEVICE_STALE_THRESHOLD_MS = 5 * 60 * 1000
 export const DEFAULT_CACHE_STALE_TTL_MS = 5 * 60 * 1000
 export const DEFAULT_MAX_CACHE_AGE_MS = 4 * 60 * 60 * 1000
 

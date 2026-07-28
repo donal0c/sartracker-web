@@ -59,6 +59,29 @@ describe('breadcrumb accumulator', () => {
     expect(accumulated.map((position) => position.id)).toEqual(['101', '102'])
   })
 
+  it('does not delegate safety-critical tie ordering to the host locale [DON-260]', () => {
+    const positions = [102, 101].map((id) =>
+      normalizeTraccarPosition(
+        {
+          id,
+          deviceId: 7,
+          latitude: 52 + id / 1_000_000,
+          longitude: -9 - id / 1_000_000,
+          fixTime: '2026-04-06T10:00:05.000Z',
+        },
+        'live',
+      ),
+    )
+    vi.spyOn(String.prototype, 'localeCompare').mockImplementation(() => {
+      throw new Error('host locale comparator must not be used')
+    })
+
+    expect(appendBreadcrumbPositions([], positions).map((position) => position.id)).toEqual([
+      '101',
+      '102',
+    ])
+  })
+
   it('does not rebuild breadcrumb history when an incremental poll has no new positions', () => {
     const positions = breadcrumbsFixture.map((position) =>
       normalizeTraccarPosition(position, 'live'),
@@ -118,7 +141,7 @@ describe('breadcrumb accumulator', () => {
     expect(result.metadata.deviceBudgets).toContainEqual(
       expect.objectContaining({
         deviceId: '2',
-        retained: 5_000,
+        retained: expect.any(Number),
         total: 25_000,
         firstTimestamp: noisyDeviceBreadcrumbs[0]!.timestamp,
         lastTimestamp: noisyDeviceBreadcrumbs.at(-1)!.timestamp,
@@ -133,6 +156,11 @@ describe('breadcrumb accumulator', () => {
         truncated: false,
       }),
     )
+    const noisyBudget = result.metadata.deviceBudgets.find(
+      (budget) => budget.deviceId === '2',
+    )
+    expect(noisyBudget?.retained).toBeGreaterThanOrEqual(2_500)
+    expect(noisyBudget?.retained).toBeLessThanOrEqual(5_000)
   })
 
   it('does not re-sort the entire retained history on a steady-state incremental poll [DON-165]', () => {
@@ -239,13 +267,18 @@ describe('breadcrumb accumulator', () => {
     expect(result.metadata.deviceBudgets).toContainEqual(
       expect.objectContaining({
         deviceId: '7',
-        retained: 5_000,
+        retained: expect.any(Number),
         total: 25_003,
         firstTimestamp: existing[0]!.timestamp,
         lastTimestamp: incoming.at(-1)!.timestamp,
         truncated: true,
       }),
     )
+    const noisyBudget = result.metadata.deviceBudgets.find(
+      (budget) => budget.deviceId === '7',
+    )
+    expect(noisyBudget?.retained).toBeGreaterThanOrEqual(2_500)
+    expect(noisyBudget?.retained).toBeLessThanOrEqual(5_000)
     expect(result.positions.at(-1)!.timestamp).toBe(incoming.at(-1)!.timestamp)
   })
 
@@ -267,19 +300,153 @@ describe('breadcrumb accumulator', () => {
 
     const result = accumulator.append(highRateBreadcrumbs)
 
-    expect(result.positions).toHaveLength(5_000)
+    expect(result.positions.length).toBeGreaterThanOrEqual(2_500)
+    expect(result.positions.length).toBeLessThanOrEqual(5_000)
     expect(result.metadata.totalObserved).toBe(12_000)
     expect(result.metadata.deviceBudgets).toContainEqual(
       expect.objectContaining({
         deviceId: '7',
-        retained: 5_000,
-        sourceRetained: 5_000,
+        retained: result.positions.length,
+        sourceRetained: result.positions.length,
         total: 12_000,
         firstTimestamp: highRateBreadcrumbs[0]!.timestamp,
         lastTimestamp: highRateBreadcrumbs.at(-1)!.timestamp,
         truncated: true,
       }),
     )
+  })
+
+  it('retains the same breadcrumb identities regardless of poll batch boundaries [DON-260]', () => {
+    const baseMs = Date.UTC(2026, 6, 28, 0, 0, 0)
+    const completeHistory = Array.from({ length: 12_000 }, (_, index) =>
+      normalizeTraccarPosition(
+        {
+          id: index + 1,
+          deviceId: 7,
+          latitude: 52 + index / 1_000_000,
+          longitude: -9.7 - index / 1_000_000,
+          fixTime: new Date(baseMs + index * 1_000).toISOString(),
+        },
+        'live',
+      ),
+    )
+    const oneBatch = createBreadcrumbAccumulator()
+    const manyBatches = createBreadcrumbAccumulator()
+
+    const expected = oneBatch.append(completeHistory)
+    for (let offset = 0; offset < completeHistory.length; offset += 1_000) {
+      manyBatches.append(completeHistory.slice(offset, offset + 1_000))
+    }
+    const actual = manyBatches.snapshot()
+
+    expect(actual.positions.map((position) => position.id)).toEqual(
+      expected.positions.map((position) => position.id),
+    )
+    expect(actual.metadata).toEqual(expected.metadata)
+  })
+
+  it('does not inflate observed totals when a reconciled history window repeats [DON-260]', () => {
+    const baseMs = Date.UTC(2026, 6, 28, 0, 0, 0)
+    const history = Array.from({ length: 12_000 }, (_, index) =>
+      normalizeTraccarPosition(
+        {
+          id: index + 1,
+          deviceId: 7,
+          latitude: 52 + index / 1_000_000,
+          longitude: -9.7 - index / 1_000_000,
+          fixTime: new Date(baseMs + index * 1_000).toISOString(),
+        },
+        'live',
+      ),
+    )
+    const accumulator = createBreadcrumbAccumulator()
+
+    const first = accumulator.append(history)
+    const repeated = accumulator.append(history)
+
+    expect(first.metadata.totalObserved).toBe(12_000)
+    expect(repeated.metadata.totalObserved).toBe(12_000)
+    expect(repeated.positions.map((position) => position.id)).toEqual(
+      first.positions.map((position) => position.id),
+    )
+  })
+
+  it('resolves persisted restart totals without recounting the reconciliation sweep [DON-260]', () => {
+    const baseMs = Date.UTC(2026, 6, 28, 0, 0, 0)
+    const history = Array.from({ length: 12_000 }, (_, index) =>
+      normalizeTraccarPosition(
+        {
+          id: index + 1,
+          deviceId: 7,
+          latitude: 52 + index / 1_000_000,
+          longitude: -9.7 - index / 1_000_000,
+          fixTime: new Date(baseMs + index * 1_000).toISOString(),
+        },
+        'live',
+      ),
+    )
+    const beforeRestart = createBreadcrumbAccumulator().append(history)
+    const afterRestart = createBreadcrumbAccumulator()
+    afterRestart.reset(beforeRestart.positions, { '7': 12_000 })
+
+    const reconciled = afterRestart.append(history, {
+      resolveObservedBaseline: true,
+    })
+
+    expect(reconciled.metadata.totalObserved).toBe(12_000)
+    expect(reconciled.positions.map((position) => position.id)).toEqual(
+      beforeRestart.positions.map((position) => position.id),
+    )
+  })
+
+  it('restores chronological order when an existing source identity changes timestamp [DON-260]', () => {
+    const accumulator = createBreadcrumbAccumulator()
+    accumulator.append([
+      createNormalizedPosition('position-a', '2026-07-28T10:00:00.000Z'),
+      createNormalizedPosition('position-b', '2026-07-28T10:10:00.000Z'),
+    ])
+
+    const result = accumulator.append([
+      createNormalizedPosition('position-a', '2026-07-28T10:20:00.000Z'),
+    ])
+
+    expect(result.positions.map((position) => position.id)).toEqual([
+      'position-b',
+      'position-a',
+    ])
+  })
+
+  it('uses source identity as the stable tie-breaker for equal-time fixes [DON-260]', () => {
+    const laterIdentityFirst = createBreadcrumbAccumulator().append([
+      createNormalizedPosition('position-b', '2026-07-28T10:00:00.000Z'),
+      createNormalizedPosition('position-a', '2026-07-28T10:00:00.000Z'),
+    ])
+    const earlierIdentityFirst = createBreadcrumbAccumulator().append([
+      createNormalizedPosition('position-a', '2026-07-28T10:00:00.000Z'),
+      createNormalizedPosition('position-b', '2026-07-28T10:00:00.000Z'),
+    ])
+
+    expect(laterIdentityFirst.positions.map((position) => position.id)).toEqual([
+      'position-a',
+      'position-b',
+    ])
+    expect(laterIdentityFirst.positions.map((position) => position.id)).toEqual(
+      earlierIdentityFirst.positions.map((position) => position.id),
+    )
+  })
+
+  it('upgrades a legacy coordinate identity when the same fix returns with a source id [DON-260]', () => {
+    const legacy = createNormalizedPosition('', '2026-07-28T10:00:00.000Z')
+    const sourced = createNormalizedPosition(
+      'traccar-position-1',
+      '2026-07-28T10:00:00.000Z',
+    )
+    const accumulator = createBreadcrumbAccumulator([legacy])
+
+    const result = accumulator.append([sourced])
+
+    expect(result.positions).toEqual([sourced])
+    expect(result.metadata.totalObserved).toBe(1)
   })
 
   it('segments trails when time gaps exceed the configured threshold', () => {
@@ -323,6 +490,27 @@ describe('breadcrumb accumulator', () => {
     expect(segments[1]).toHaveLength(1)
   })
 })
+
+function createNormalizedPosition(
+  id: string,
+  timestamp: string,
+): NormalizedTrackingPosition {
+  return {
+    id,
+    device_id: 'device-1',
+    lat: 52,
+    lon: -9.7,
+    altitude: null,
+    speed: null,
+    battery: null,
+    accuracy: null,
+    timestamp,
+    source: 'traccar',
+    data_origin: 'live',
+    cache_age_seconds: null,
+    device_cache_stale: false,
+  }
+}
 
 describe('positionsEqual field discrimination [DON-240]', () => {
   const base: NormalizedTrackingPosition = {

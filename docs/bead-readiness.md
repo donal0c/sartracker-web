@@ -20,7 +20,17 @@ Use this document before implementation to decide how much parallel research, pl
 
 ## Current Assessments
 
-Last updated: 2026-05-14 by Codex (planning consolidated into the two-track workplan)
+Last updated: 2026-07-28 by Codex (planning consolidated into the two-track workplan)
+
+### `DON-260` — Deep breadcrumb correctness hotfix
+
+- Research required: `Low` after end-to-end code/commit/documentation review and the completed same-session Fable challenge.
+- Implementation readiness: `5/5`.
+- Recommended action: qualify the exact CI artifact on Ubuntu and release as `0.1.0-beta.12.1`; implementation and local proof are complete.
+- Locked decisions: upstream position identity is authoritative; corrections update one row with an audit revision; same-time fixes use a stable source-identity tie-break; display selection is a deterministic epoch-anchored whole-route budget; restart reconstruction runs off the main isolate; live recent requests and slow mission-wide reconciliation are separate; five minutes is the stale threshold.
+- Open questions: none that block implementation. GPS accuracy remains a source measurement, not a promise of physical zero error.
+- Non-goals: map-package expansion and the beta.13 bounded-storage/archive programme (`DON-248`-`DON-255`).
+- Ready-to-start checklist: safety invariants, failure modes, persistence/coordinate impact, TDD regressions, browser/visual proof, packaged multi-day proof, and Fable review are complete. CI artifact provenance and Ubuntu smoke remain the release gates specified in `DON-260` and `docs/two-track-execution-workplan.md`.
 
 ## Hosted Browser Runtime
 

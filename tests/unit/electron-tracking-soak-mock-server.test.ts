@@ -35,8 +35,24 @@ describe('deterministic tracking soak mock server [DON-246]', () => {
       const headers = { Cookie: 'JSESSIONID=tracking-soak' }
       const devices = await fetch(`${server.baseUrl}/api/devices`, { headers }).then((response) => response.json())
       const current = await fetch(`${server.baseUrl}/api/positions`, { headers }).then((response) => response.json())
-      const moving = await fetch(`${server.baseUrl}/api/positions?deviceId=1`, { headers }).then((response) => response.json())
-      const stationary = await fetch(`${server.baseUrl}/api/positions?deviceId=32`, { headers }).then((response) => response.json())
+      const firstBatchWindow = new URLSearchParams({
+        deviceId: '1',
+        from: '2026-01-01T00:00:00.000Z',
+        to: '2026-01-01T00:14:55.000Z',
+      })
+      const stationaryWindow = new URLSearchParams({
+        deviceId: '32',
+        from: '2026-01-01T00:00:00.000Z',
+        to: '2026-01-01T00:14:55.000Z',
+      })
+      const moving = await fetch(
+        `${server.baseUrl}/api/positions?${firstBatchWindow}`,
+        { headers },
+      ).then((response) => response.json())
+      const stationary = await fetch(
+        `${server.baseUrl}/api/positions?${stationaryWindow}`,
+        { headers },
+      ).then((response) => response.json())
 
       expect(devices).toHaveLength(32)
       expect(current).toHaveLength(24)

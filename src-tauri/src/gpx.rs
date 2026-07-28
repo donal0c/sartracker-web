@@ -1,4 +1,7 @@
-use std::{fs, path::PathBuf};
+use std::{
+    fs,
+    path::{Path, PathBuf},
+};
 
 use serde::Serialize;
 
@@ -34,7 +37,7 @@ pub async fn list_gpx_directory_files(
     let mut files = fs::read_dir(&directory)
         .map_err(|error| format!("Failed to read GPX directory {directory_path}: {error}"))?
         .filter_map(|entry| entry.ok().map(|dir_entry| dir_entry.path()))
-        .filter(|path| is_gpx_path(path))
+        .filter(|path| is_gpx_path(path.as_path()))
         .collect::<Vec<_>>();
     files.sort_by(|left, right| left.file_name().cmp(&right.file_name()));
 
@@ -73,7 +76,7 @@ fn read_gpx_file(path: PathBuf) -> Result<GpxImportFilePayload, String> {
     })
 }
 
-fn is_gpx_path(path: &PathBuf) -> bool {
+fn is_gpx_path(path: &Path) -> bool {
     path.extension()
         .and_then(|extension| extension.to_str())
         .map(|extension| extension.eq_ignore_ascii_case("gpx"))

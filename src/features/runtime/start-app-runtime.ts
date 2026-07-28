@@ -39,6 +39,7 @@ import {
   startTrackingRuntime,
   type TrackingRuntimeMissionStore,
 } from '../tracking/start-tracking-runtime'
+import { DEFAULT_DEVICE_STALE_THRESHOLD_MS } from '../tracking/tracking-snapshot-health'
 import type { AppRuntimeController } from './app-runtime-controller'
 import {
   createManagedRuntimeServices,
@@ -180,6 +181,19 @@ export async function startAppRuntime(
       options?.forceConnect ?? false,
     )
 
+    if (generation !== reloadGeneration) {
+      return
+    }
+
+    // A replacement tracker must never overlap the currently active poller.
+    // Stop the old services only after settings have loaded successfully, then
+    // start the replacement. This keeps a failed settings read non-disruptive
+    // while preventing old and new runtime generations from publishing
+    // competing mission snapshots.
+    const previousServices = activeServices
+    activeServices = createNoopRuntimeServiceHandles()
+    stopRuntimeServices(previousServices)
+
     const nextServices = await createManagedRuntimeServices({
       runtimeSettings,
       missionStore: trackingMissionStore,
@@ -193,7 +207,7 @@ export async function startAppRuntime(
           ...(runtimeSettings.trackingMinimumPollIntervalMs === undefined
             ? {}
             : { minimumIntervalMs: runtimeSettings.trackingMinimumPollIntervalMs }),
-          staleThresholdMs: 60 * 60 * 1000,
+          staleThresholdMs: DEFAULT_DEVICE_STALE_THRESHOLD_MS,
           maxBackoffMs: 60_000,
           getPollingMode: () => {
             const phase = useMissionStore.getState().phase
@@ -205,6 +219,7 @@ export async function startAppRuntime(
             return mission === null ? null : new Date(mission.start_time)
           },
           getInitialBreadcrumbs: hooks.getInitialBreadcrumbs,
+          getInitialBreadcrumbTotals: hooks.getInitialBreadcrumbTotals,
           onSnapshot: hooks.onSnapshot,
           onStatusChange: hooks.onStatusChange,
           onPollDiagnostic: hooks.onPollDiagnostic,
@@ -221,9 +236,7 @@ export async function startAppRuntime(
       return
     }
 
-    const previousServices = activeServices
     activeServices = nextServices
-    stopRuntimeServices(previousServices)
   }
 }
 

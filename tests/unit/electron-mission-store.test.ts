@@ -4,6 +4,7 @@ import path from 'node:path'
 import { createRequire } from 'node:module'
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { createBreadcrumbAccumulator } from '../../src/features/tracking/breadcrumb-accumulator'
 
 const require = createRequire(import.meta.url)
 type StorageOperation = { readonly id: string; readonly type: 'backup'; readonly requestedAtMs: number }
@@ -31,6 +32,7 @@ type StorageDiagnosticsPort = {
     readonly durationMs: number
     readonly insertedPositionCount: number
     readonly positionTelemetryEventCount: number
+    readonly skippedAmbiguousLegacyAdoptionCount: number
   }) => Promise<void>
 }
 const { createElectronMissionStore, CURRENT_SCHEMA_VERSION } = require('../../electron/mission-store.cjs') as {
@@ -102,17 +104,21 @@ type ElectronMissionStore = {
     }[]
   }) => Promise<readonly { readonly device_id: string }[]>
   readonly addPosition: (input: {
-    readonly id?: string
+    readonly source_position_id?: string
     readonly mission_id: string
     readonly device_id: string
     readonly lat: number
     readonly lon: number
     readonly timestamp?: string
-  }) => Promise<{ readonly device_id: string }>
+  }) => Promise<{
+    readonly id: string
+    readonly source_position_id: string | null
+    readonly device_id: string
+  }>
   readonly addPositionsBulk: (input: {
     readonly mission_id: string
     readonly positions: readonly {
-      readonly id?: string
+      readonly source_position_id?: string
       readonly device_id: string
       readonly lat: number
       readonly lon: number
@@ -124,15 +130,45 @@ type ElectronMissionStore = {
       readonly timestamp?: string | null
       readonly data_origin?: 'live' | 'cache'
     }[]
-  }) => Promise<readonly { readonly device_id: string; readonly timestamp: string }[]>
+  }) => Promise<readonly {
+    readonly id: string
+    readonly source_position_id: string | null
+    readonly device_id: string
+    readonly timestamp: string
+  }[]>
   readonly listPositions: (
     missionId: string,
     deviceId?: string,
-  ) => Promise<readonly { readonly device_id: string; readonly timestamp: string; readonly data_origin: string }[]>
+  ) => Promise<readonly {
+    readonly id: string
+    readonly source_position_id: string | null
+    readonly device_id: string
+    readonly timestamp: string
+    readonly data_origin: string
+  }[]>
   readonly listRecentPositions: (
     missionId: string,
     perDeviceLimit: number,
   ) => Promise<readonly { readonly device_id: string; readonly timestamp: string }[]>
+  readonly listBreadcrumbPositions: (
+    missionId: string,
+    perDeviceLimit: number,
+  ) => Promise<{
+    readonly positions: readonly {
+      readonly id: string
+      readonly source_position_id: string | null
+      readonly device_id: string
+      readonly lat: number
+      readonly lon: number
+      readonly timestamp: string
+      readonly data_origin: 'live' | 'cache'
+    }[]
+    readonly deviceTotals: readonly {
+      readonly device_id: string
+      readonly total: number
+    }[]
+    readonly droppedPositionCount: number
+  }>
   readonly countPositions: (missionId: string, deviceId?: string) => Promise<number>
   readonly latestPositions: (missionId: string) => Promise<readonly { readonly device_id: string; readonly lat: number }[]>
   readonly upsertMarker: (input: {
@@ -251,7 +287,7 @@ describe('electron mission store', () => {
     const activeMission = await store.getActiveMission()
 
     expect(info).toMatchObject({
-      schema_version: 4,
+      schema_version: CURRENT_SCHEMA_VERSION,
       database_path: path.join(userDataPath!, 'mission-store.sqlite'),
       backup_path: path.join(userDataPath!, 'mission-store.backup.sqlite'),
     })
@@ -289,6 +325,69 @@ describe('electron mission store', () => {
     expect(() => createElectronMissionStore({ userDataPath: userDataPath! })).toThrow(
       /newer mission store schema/i,
     )
+  })
+
+  it('migrates existing position rows without inventing upstream source identities [DON-260]', async () => {
+    userDataPath = await mkdtemp(path.join(tmpdir(), 'sartracker-electron-migration-'))
+    const databasePath = path.join(userDataPath, 'mission-store.sqlite')
+    const legacyDb = new Database(databasePath)
+    try {
+      legacyDb.exec(`
+        CREATE TABLE metadata (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+        INSERT INTO metadata (key, value) VALUES ('schema_version', '4');
+        CREATE TABLE positions (
+          id TEXT PRIMARY KEY,
+          mission_id TEXT NOT NULL,
+          device_id TEXT NOT NULL,
+          name TEXT,
+          lat REAL NOT NULL,
+          lon REAL NOT NULL,
+          altitude REAL,
+          speed REAL,
+          battery REAL,
+          accuracy REAL,
+          source TEXT,
+          timestamp TEXT NOT NULL,
+          data_origin TEXT NOT NULL DEFAULT 'live'
+        );
+        INSERT INTO positions (
+          id, mission_id, device_id, lat, lon, timestamp, data_origin
+        ) VALUES (
+          'local-legacy-row', 'legacy-mission', 'tracker-1',
+          52.0599, -9.5045, '2026-07-27T10:00:00.000Z', 'live'
+        );
+      `)
+    } finally {
+      legacyDb.close()
+    }
+
+    store = createElectronMissionStore({ userDataPath })
+    await expect(store.info()).resolves.toMatchObject({
+      schema_version: CURRENT_SCHEMA_VERSION,
+    })
+
+    const migratedDb = new Database(databasePath, { readonly: true })
+    try {
+      expect(
+        migratedDb
+          .prepare(
+            'SELECT id, source_position_id FROM positions WHERE id = ?',
+          )
+          .get('local-legacy-row'),
+      ).toEqual({
+        id: 'local-legacy-row',
+        source_position_id: null,
+      })
+      expect(
+        migratedDb
+          .prepare(
+            "SELECT name FROM sqlite_master WHERE type = 'index' AND name = 'idx_positions_mission_source_position_id'",
+          )
+          .get(),
+      ).toEqual({ name: 'idx_positions_mission_source_position_id' })
+    } finally {
+      migratedDb.close()
+    }
   })
 
   it('records tracking devices, positions, backup events, and mission lifecycle events', async () => {
@@ -373,6 +472,58 @@ describe('electron mission store', () => {
       'tracker-2:2026-05-19T12:03:00.000Z',
     ])
     await expect(store.listRecentPositions(mission.id, 0)).rejects.toThrow(/positive integer/i)
+  })
+
+  it('selects the same whole-route breadcrumb identities after restart [DON-260]', async () => {
+    store = await createStore()
+    const mission = await store.createMission({ name: 'Deterministic Restart Mission' })
+    await store.upsertDevice({
+      mission_id: mission.id,
+      device_id: 'tracker-1',
+      name: 'Tracker One',
+      color: '#00AAFF',
+      status: 'online',
+    })
+    const baseMs = Date.UTC(2026, 6, 28, 0, 0, 0)
+    const inputs = Array.from({ length: 12_000 }, (_, index) => ({
+      source_position_id: String(index + 1),
+      device_id: 'tracker-1',
+      lat: 52 + index / 1_000_000,
+      lon: -9.7 - index / 1_000_000,
+      timestamp: new Date(baseMs + index * 1_000).toISOString(),
+      data_origin: 'live' as const,
+    }))
+    await store.addPositionsBulk({
+      mission_id: mission.id,
+      positions: inputs,
+    })
+
+    const restarted = await store.listBreadcrumbPositions(mission.id, 5_000)
+    const live = createBreadcrumbAccumulator().append(
+      inputs.map((position) => ({
+        id: position.source_position_id,
+        device_id: position.device_id,
+        lat: position.lat,
+        lon: position.lon,
+        altitude: null,
+        speed: null,
+        battery: null,
+        accuracy: null,
+        source: null,
+        timestamp: position.timestamp,
+        data_origin: position.data_origin,
+        cache_age_seconds: null,
+        device_cache_stale: false,
+      })),
+    )
+
+    expect(restarted.positions.map((position) => position.source_position_id)).toEqual(
+      live.positions.map((position) => position.id),
+    )
+    expect(restarted.deviceTotals).toEqual([
+      { device_id: 'tracker-1', total: 12_000 },
+    ])
+    expect(restarted.droppedPositionCount).toBe(0)
   })
 
   it('accumulates paused seconds when a mission resumes [DON-231]', async () => {
@@ -497,14 +648,14 @@ describe('electron mission store', () => {
         mission_id: mission.id,
         positions: [
           {
-            id: 'traccar-9001',
+            source_position_id: 'traccar-9001',
             device_id: 'tracker-1',
             lat: 52.0599,
             lon: -9.5045,
             timestamp: '2026-06-13T12:00:05.000Z',
           },
           {
-            id: 'traccar-9002',
+            source_position_id: 'traccar-9002',
             device_id: 'tracker-1',
             lat: 52.0601,
             lon: -9.5047,
@@ -515,6 +666,442 @@ describe('electron mission store', () => {
     ).resolves.toHaveLength(2)
 
     await expect(store.countPositions(mission.id)).resolves.toBe(2)
+    await expect(store.listPositions(mission.id)).resolves.toEqual([
+      expect.objectContaining({ source_position_id: 'traccar-9001' }),
+      expect.objectContaining({ source_position_id: 'traccar-9002' }),
+    ])
+  })
+
+  it('persists Traccar source identity separately from the local row id [DON-260]', async () => {
+    store = await createStore()
+    const mission = await store.createMission({ name: 'Source Identity Mission' })
+    await store.upsertDevice({
+      mission_id: mission.id,
+      device_id: 'tracker-1',
+      name: 'Tracker One',
+      color: '#00AAFF',
+      status: 'unknown',
+    })
+
+    const inserted = await store.addPosition({
+      mission_id: mission.id,
+      device_id: 'tracker-1',
+      source_position_id: '987654321',
+      lat: 52.0599,
+      lon: -9.5045,
+      timestamp: '2026-07-28T10:00:00.000Z',
+    })
+
+    expect(inserted.id).not.toBe('987654321')
+    expect(inserted.source_position_id).toBe('987654321')
+    await expect(store.listPositions(mission.id)).resolves.toEqual([
+      expect.objectContaining({
+        id: inserted.id,
+        source_position_id: '987654321',
+      }),
+    ])
+  })
+
+  it('rejects invalid persisted fix timestamps before they can corrupt breadcrumb ordering [DON-260]', async () => {
+    store = await createStore()
+    const mission = await store.createMission({ name: 'Timestamp Validation Mission' })
+    await store.upsertDevice({
+      mission_id: mission.id,
+      device_id: 'tracker-1',
+      name: 'Tracker One',
+      color: '#00AAFF',
+      status: 'unknown',
+    })
+
+    await expect(
+      store.addPosition({
+        mission_id: mission.id,
+        device_id: 'tracker-1',
+        source_position_id: '1',
+        lat: 52.0599,
+        lon: -9.5045,
+        timestamp: 'not-a-timestamp',
+      }),
+    ).rejects.toThrow(/timestamp/i)
+    await expect(
+      store.addPositionsBulk({
+        mission_id: mission.id,
+        positions: [
+          {
+            device_id: 'tracker-1',
+            source_position_id: '2',
+            lat: 52.0599,
+            lon: -9.5045,
+            timestamp: '2026-07-28',
+          },
+        ],
+      }),
+    ).rejects.toThrow(/timestamp/i)
+    await expect(
+      store.addPosition({
+        mission_id: mission.id,
+        device_id: 'tracker-1',
+        source_position_id: '3',
+        lat: 52.0599,
+        lon: -9.5045,
+        timestamp: '2026-02-30T10:00:00Z',
+      }),
+    ).rejects.toThrow(/timestamp/i)
+    await expect(store.countPositions(mission.id)).resolves.toBe(0)
+  })
+
+  it('makes repeated source identity writes idempotent and audits source corrections [DON-260]', async () => {
+    const storageDiagnostics: StorageDiagnosticsPort = {
+      createOperation: vi.fn(),
+      requested: vi.fn(),
+      started: vi.fn(),
+      phase: vi.fn(),
+      completed: vi.fn(),
+      failed: vi.fn(),
+      startMission: vi.fn(),
+      recordTrackingBatch: vi.fn(),
+      recordInsertedPositions: vi.fn().mockResolvedValue(undefined),
+    }
+    store = await createStore({ storageDiagnostics })
+    const mission = await store.createMission({ name: 'Source Identity Conflict Mission' })
+    await store.upsertDevice({
+      mission_id: mission.id,
+      device_id: 'tracker-1',
+      name: 'Tracker One',
+      color: '#00AAFF',
+      status: 'unknown',
+    })
+    const position = {
+      source_position_id: 'source-1',
+      device_id: 'tracker-1',
+      lat: 52.0599,
+      lon: -9.5045,
+      timestamp: '2026-07-28T10:00:00.000Z',
+    }
+
+    await expect(
+      store.addPositionsBulk({
+        mission_id: mission.id,
+        positions: [position],
+      }),
+    ).resolves.toHaveLength(1)
+    await expect(
+      store.addPositionsBulk({
+        mission_id: mission.id,
+        positions: [position],
+      }),
+    ).resolves.toHaveLength(0)
+    await expect(
+      store.addPositionsBulk({
+        mission_id: mission.id,
+        positions: [{ ...position, lat: 52.5 }],
+      }),
+    ).resolves.toEqual([
+      expect.objectContaining({
+        source_position_id: 'source-1',
+        lat: 52.5,
+      }),
+    ])
+    await expect(store.countPositions(mission.id)).resolves.toBe(1)
+    await expect(store.listPositions(mission.id)).resolves.toEqual([
+      expect.objectContaining({
+        source_position_id: 'source-1',
+        lat: 52.5,
+      }),
+    ])
+    const correctionEvents = (await store.listMissionEvents(mission.id)).filter(
+      (event) => event.event_type === 'position_corrected',
+    )
+    expect(correctionEvents).toHaveLength(1)
+    expect(JSON.parse(correctionEvents[0]!.details_json ?? '{}')).toEqual(
+      expect.objectContaining({
+        source_position_id: 'source-1',
+        changed_fields: ['lat'],
+        previous: expect.objectContaining({ lat: 52.0599 }),
+        corrected: expect.objectContaining({ lat: 52.5 }),
+      }),
+    )
+    expect(
+      vi
+        .mocked(storageDiagnostics.recordInsertedPositions)
+        .mock.calls.map(([entry]) => entry.insertedPositionCount),
+    ).toEqual([1, 0, 0])
+  })
+
+  it('rejects a source position identity that changes device ownership [DON-260]', async () => {
+    store = await createStore()
+    const mission = await store.createMission({
+      name: 'Source Identity Device Ownership Mission',
+    })
+    await store.upsertDevice({
+      mission_id: mission.id,
+      device_id: 'tracker-1',
+      name: 'Tracker One',
+      color: '#00AAFF',
+      status: 'online',
+    })
+    await store.upsertDevice({
+      mission_id: mission.id,
+      device_id: 'tracker-2',
+      name: 'Tracker Two',
+      color: '#FFAA00',
+      status: 'online',
+    })
+    const original = {
+      mission_id: mission.id,
+      source_position_id: 'source-1',
+      device_id: 'tracker-1',
+      lat: 52.0599,
+      lon: -9.5045,
+      timestamp: '2026-07-28T10:00:00.000Z',
+    }
+    await store.addPosition(original)
+
+    await expect(
+      store.addPosition({
+        ...original,
+        device_id: 'tracker-2',
+        lat: 53.3498,
+        lon: -6.2603,
+      }),
+    ).rejects.toThrow(/belongs to device tracker-1.*tracker-2/iu)
+    await expect(
+      store.addPositionsBulk({
+        mission_id: mission.id,
+        positions: [
+          {
+            ...original,
+            device_id: 'tracker-2',
+            lat: 53.3498,
+            lon: -6.2603,
+          },
+        ],
+      }),
+    ).rejects.toThrow(/belongs to device tracker-1.*tracker-2/iu)
+    await expect(store.listPositions(mission.id)).resolves.toEqual([
+      expect.objectContaining({
+        source_position_id: 'source-1',
+        device_id: 'tracker-1',
+        lat: 52.0599,
+        lon: -9.5045,
+      }),
+    ])
+  })
+
+  it('never lets an older historical insert or correction move device last-seen backwards [DON-260]', async () => {
+    store = await createStore()
+    const mission = await store.createMission({ name: 'Historical Correction Mission' })
+    await store.upsertDevice({
+      mission_id: mission.id,
+      device_id: 'tracker-1',
+      name: 'Tracker One',
+      color: '#00AAFF',
+      status: 'online',
+      last_seen: '2026-07-28T12:00:00.000Z',
+    })
+
+    await store.addPositionsBulk({
+      mission_id: mission.id,
+      positions: [
+        {
+          source_position_id: 'source-old',
+          device_id: 'tracker-1',
+          lat: 52.0599,
+          lon: -9.5045,
+          timestamp: '2026-07-28T10:00:00.000Z',
+        },
+      ],
+    })
+    await store.addPositionsBulk({
+      mission_id: mission.id,
+      positions: [
+        {
+          source_position_id: 'source-old',
+          device_id: 'tracker-1',
+          lat: 52.0601,
+          lon: -9.5045,
+          timestamp: '2026-07-28T10:00:00.000Z',
+        },
+      ],
+    })
+
+    await expect(store.listDevices(mission.id)).resolves.toEqual([
+      expect.objectContaining({
+        device_id: 'tracker-1',
+        last_seen: '2026-07-28T12:00:00.000Z',
+      }),
+    ])
+  })
+
+  it('attaches a recovered source identity to one exact legacy fix instead of duplicating it [DON-260]', async () => {
+    store = await createStore()
+    const mission = await store.createMission({ name: 'Legacy Identity Upgrade' })
+    await store.upsertDevice({
+      mission_id: mission.id,
+      device_id: 'tracker-1',
+      name: 'Tracker One',
+      color: '#00AAFF',
+      status: 'unknown',
+    })
+    const legacyFix = {
+      device_id: 'tracker-1',
+      lat: 52.0599,
+      lon: -9.5045,
+      timestamp: '2026-07-28T10:00:00.000Z',
+    }
+    const legacyRow = await store.addPosition({
+      mission_id: mission.id,
+      ...legacyFix,
+    })
+
+    await expect(
+      store.addPositionsBulk({
+        mission_id: mission.id,
+        positions: [
+          {
+            ...legacyFix,
+            source_position_id: 'traccar-position-1',
+          },
+        ],
+      }),
+    ).resolves.toEqual([
+      expect.objectContaining({
+        id: legacyRow.id,
+        source_position_id: 'traccar-position-1',
+      }),
+    ])
+    await expect(store.countPositions(mission.id)).resolves.toBe(1)
+  })
+
+  it('isolates an ambiguous legacy identity adoption without aborting the tracking batch [DON-260]', async () => {
+    const storageDiagnostics: StorageDiagnosticsPort = {
+      createOperation: vi.fn(),
+      requested: vi.fn(),
+      started: vi.fn(),
+      phase: vi.fn(),
+      completed: vi.fn(),
+      failed: vi.fn(),
+      startMission: vi.fn(),
+      recordTrackingBatch: vi.fn(),
+      recordInsertedPositions: vi.fn().mockResolvedValue(undefined),
+    }
+    store = await createStore({ storageDiagnostics })
+    const mission = await store.createMission({ name: 'Ambiguous Legacy Identity' })
+    await store.upsertDevice({
+      mission_id: mission.id,
+      device_id: 'tracker-1',
+      name: 'Tracker One',
+      color: '#00AAFF',
+      status: 'unknown',
+    })
+    const ambiguousLegacyFix = {
+      device_id: 'tracker-1',
+      lat: 52.0599,
+      lon: -9.5045,
+      timestamp: '2026-07-28T10:00:00.000Z',
+    }
+    await store.addPosition({ mission_id: mission.id, ...ambiguousLegacyFix })
+    await store.addPosition({ mission_id: mission.id, ...ambiguousLegacyFix })
+
+    await expect(
+      store.addPositionsBulk({
+        mission_id: mission.id,
+        positions: [
+          {
+            ...ambiguousLegacyFix,
+            source_position_id: 'ambiguous-source',
+          },
+          {
+            device_id: 'tracker-1',
+            source_position_id: 'unambiguous-source',
+            lat: 52.06,
+            lon: -9.505,
+            timestamp: '2026-07-28T10:01:00.000Z',
+          },
+        ],
+      }),
+    ).resolves.toEqual([
+      expect.objectContaining({
+        source_position_id: 'unambiguous-source',
+      }),
+    ])
+    await expect(store.countPositions(mission.id)).resolves.toBe(3)
+    await expect(store.listPositions(mission.id)).resolves.not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ source_position_id: 'ambiguous-source' }),
+      ]),
+    )
+    expect(storageDiagnostics.recordInsertedPositions).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        insertedPositionCount: 1,
+        skippedAmbiguousLegacyAdoptionCount: 1,
+      }),
+    )
+  })
+
+  it('checks all exact legacy fields before limiting ambiguous identity candidates [DON-260]', async () => {
+    const storageDiagnostics: StorageDiagnosticsPort = {
+      createOperation: vi.fn(),
+      requested: vi.fn(),
+      started: vi.fn(),
+      phase: vi.fn(),
+      completed: vi.fn(),
+      failed: vi.fn(),
+      startMission: vi.fn(),
+      recordTrackingBatch: vi.fn(),
+      recordInsertedPositions: vi.fn().mockResolvedValue(undefined),
+    }
+    store = await createStore({ storageDiagnostics })
+    const mission = await store.createMission({ name: 'Legacy Candidate Ordering' })
+    await store.upsertDevice({
+      mission_id: mission.id,
+      device_id: 'tracker-1',
+      name: 'Tracker One',
+      color: '#00AAFF',
+      status: 'unknown',
+    })
+    const sharedCoordinates = {
+      device_id: 'tracker-1',
+      lat: 52.0599,
+      lon: -9.5045,
+      timestamp: '2026-07-28T10:00:00.000Z',
+    }
+    await store.addPosition({
+      mission_id: mission.id,
+      ...sharedCoordinates,
+      name: 'Earlier non-matching fix one',
+    })
+    await store.addPosition({
+      mission_id: mission.id,
+      ...sharedCoordinates,
+      name: 'Earlier non-matching fix two',
+    })
+    await store.addPosition({ mission_id: mission.id, ...sharedCoordinates })
+    await store.addPosition({ mission_id: mission.id, ...sharedCoordinates })
+
+    await expect(
+      store.addPositionsBulk({
+        mission_id: mission.id,
+        positions: [
+          {
+            ...sharedCoordinates,
+            source_position_id: 'ambiguous-later-source',
+          },
+        ],
+      }),
+    ).resolves.toEqual([])
+    await expect(store.countPositions(mission.id)).resolves.toBe(4)
+    await expect(store.listPositions(mission.id)).resolves.not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ source_position_id: 'ambiguous-later-source' }),
+      ]),
+    )
+    expect(storageDiagnostics.recordInsertedPositions).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        insertedPositionCount: 0,
+        skippedAmbiguousLegacyAdoptionCount: 1,
+      }),
+    )
   })
 
   it('counts positions without loading position rows for Mission Review [DON-202]', async () => {

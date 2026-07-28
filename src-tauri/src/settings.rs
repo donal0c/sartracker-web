@@ -262,7 +262,7 @@ impl SettingsStore {
             .lock()
             .map_err(|_| String::from("Settings store lock poisoned."))?
             .clone();
-        Ok(self.to_view(&persisted)?)
+        self.to_view(&persisted)
     }
 
     pub fn save(&self, draft: AppSettingsDraft) -> Result<AppSettingsView, String> {
@@ -422,14 +422,14 @@ impl SettingsStore {
                     .await
                     .map_err(|error| format!("Traccar devices request failed: {error}"))?;
 
-                return Ok(TestConnectionResult {
+                Ok(TestConnectionResult {
                     ok: devices.status().is_success(),
                     message: if devices.status().is_success() {
                         String::from("Connection successful.")
                     } else {
                         format!("Device fetch failed: {}", devices.status())
                     },
-                });
+                })
             }
             TrackingAuthMode::Bearer => {
                 let response = client
@@ -439,14 +439,14 @@ impl SettingsStore {
                     .await
                     .map_err(|error| format!("Traccar devices request failed: {error}"))?;
 
-                return Ok(TestConnectionResult {
+                Ok(TestConnectionResult {
                     ok: response.status().is_success(),
                     message: if response.status().is_success() {
                         String::from("Connection successful.")
                     } else {
                         format!("Device fetch failed: {}", response.status())
                     },
-                });
+                })
             }
         }
     }
@@ -864,7 +864,8 @@ mod tests {
     /// builds_runtime_bootstrap_without_connecting_when_auto_connect_is_disabled and
     /// pins the boot-time gate that drives bug `sartracker-web-el9`.
     #[test]
-    fn builds_runtime_bootstrap_with_traccar_config_when_auto_connect_is_enabled_and_secret_present() {
+    fn builds_runtime_bootstrap_with_traccar_config_when_auto_connect_is_enabled_and_secret_present(
+    ) {
         let path = unique_settings_path("runtime-positive");
         let secret_store = Arc::new(MemorySecretStore::default());
         let store = SettingsStore::new(path.clone(), secret_store.clone()).expect("store");

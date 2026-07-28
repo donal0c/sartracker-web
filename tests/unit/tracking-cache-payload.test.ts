@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 import devicesFixture from '../fixtures/traccar-devices.json'
 import positionsFixture from '../fixtures/traccar-positions.json'
@@ -45,6 +45,127 @@ describe('tracking cache payload', () => {
     expect(parsed.devices).toHaveLength(1)
     expect(parsed.positions).toHaveLength(1)
     expect(parsed.breadcrumbs).toHaveLength(1)
+  })
+
+  it('reports bounded malformed-entry counts without exposing rejected cache rows [DON-260]', () => {
+    const onDroppedEntries = vi.fn()
+
+    parseTrackingCachePayload(
+      JSON.stringify({
+        cached_at: '2026-04-06T10:35:00.000Z',
+        devices: [devicesFixture[0], { id: 'bad-device' }, null],
+        positions: [
+          positionsFixture[0],
+          { id: 1, deviceId: 2, latitude: 999, longitude: 0 },
+        ],
+        breadcrumbs: [positionsFixture[1]],
+      }),
+      { onDroppedEntries },
+    )
+
+    expect(onDroppedEntries).toHaveBeenCalledTimes(2)
+    expect(onDroppedEntries).toHaveBeenNthCalledWith(1, {
+      section: 'devices',
+      droppedCount: 2,
+      totalCount: 3,
+    })
+    expect(onDroppedEntries).toHaveBeenNthCalledWith(2, {
+      section: 'positions',
+      droppedCount: 1,
+      totalCount: 2,
+    })
+  })
+
+  it('drops normalized cache rows with coercible missing required fields [DON-260]', () => {
+    const validPosition = normalizeTraccarPosition(positionsFixture[0], 'live')
+    const parsed = parseTrackingCachePayload(
+      JSON.stringify({
+        cached_at: '2026-04-06T10:35:00.000Z',
+        devices: [],
+        positions: [
+          { ...validPosition, id: null },
+          { ...validPosition, device_id: '' },
+          { ...validPosition, lat: null },
+          { ...validPosition, lon: '' },
+          { ...validPosition, timestamp: undefined },
+          validPosition,
+        ],
+        breadcrumbs: [],
+      }),
+    )
+
+    expect(parsed.positions).toEqual([
+      expect.objectContaining({
+        id: validPosition.id,
+        device_id: validPosition.device_id,
+        lat: validPosition.lat,
+        lon: validPosition.lon,
+        timestamp: validPosition.timestamp,
+      }),
+    ])
+  })
+
+  it('drops normalized cache rows with non-finite optional numbers [DON-260]', () => {
+    const validPosition = normalizeTraccarPosition(positionsFixture[0], 'live')
+    const parsed = parseTrackingCachePayload(
+      JSON.stringify({
+        cached_at: '2026-04-06T10:35:00.000Z',
+        devices: [],
+        positions: [
+          { ...validPosition, accuracy: 'not-a-number' },
+          validPosition,
+        ],
+        breadcrumbs: [],
+      }),
+    )
+
+    expect(parsed.positions).toHaveLength(1)
+    expect(parsed.positions[0]?.id).toBe(validPosition.id)
+  })
+
+  it('drops normalized cache devices with invalid identity or last-seen values [DON-260]', () => {
+    const validDevice = normalizeTraccarDevice(devicesFixture[0])
+    const parsed = parseTrackingCachePayload(
+      JSON.stringify({
+        cached_at: '2026-04-06T10:35:00.000Z',
+        devices: [
+          { ...validDevice, device_id: null },
+          { ...validDevice, device_id: '' },
+          { ...validDevice, last_seen: 'not-a-time' },
+          validDevice,
+        ],
+        positions: [],
+        breadcrumbs: [],
+      }),
+    )
+
+    expect(parsed.devices).toEqual([validDevice])
+  })
+
+  it('rejects a coercible non-string cache timestamp [DON-260]', () => {
+    expect(() =>
+      parseTrackingCachePayload(
+        JSON.stringify({
+          cached_at: 1_785_236_100_000,
+          devices: [],
+          positions: [],
+          breadcrumbs: [],
+        }),
+      ),
+    ).toThrow(/cached_at/i)
+  })
+
+  it('rejects date-only cache timestamps instead of guessing a time [DON-260]', () => {
+    expect(() =>
+      parseTrackingCachePayload(
+        JSON.stringify({
+          cached_at: '2026-07-28',
+          devices: [],
+          positions: [],
+          breadcrumbs: [],
+        }),
+      ),
+    ).toThrow(/cached_at/i)
   })
 
   it('rejects fully invalid cache json', () => {

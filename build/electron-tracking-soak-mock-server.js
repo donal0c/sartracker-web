@@ -2,6 +2,8 @@ import { createServer } from 'node:http'
 import { mkdir, rename, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 
+import { createPositionTruthDigestAccumulator } from './electron-tracking-soak-lib.js'
+
 const SESSION_COOKIE = 'JSESSIONID=tracking-soak'
 const BASE_TIME_MS = Date.parse('2026-01-01T00:00:00.000Z')
 
@@ -71,7 +73,13 @@ export async function startTrackingSoakMockServer(options) {
         const positions =
           deviceId === null
             ? buildStationaryCurrentPositions(options)
-            : buildBreadcrumbPositions(options, state.completedBatches, Number(deviceId))
+            : buildBreadcrumbPositions(
+                options,
+                state.completedBatches,
+                Number(deviceId),
+                requestUrl.searchParams.get('from'),
+                requestUrl.searchParams.get('to'),
+              )
         sendJson(response, 200, positions)
         return
       }
@@ -110,6 +118,55 @@ export async function startTrackingSoakMockServer(options) {
   }
 }
 
+/**
+ * Builds the exact source-truth digests expected from one soak profile without
+ * retaining its potentially million-row synthetic history.
+ */
+export function buildTrackingSoakExpectedPositionTruthEvidence(
+  options,
+  normalPrefixBatch = 480,
+) {
+  validateOptions(options)
+  const full = createPositionTruthDigestAccumulator()
+  const normalPrefix = createPositionTruthDigestAccumulator()
+  const add = (digest, position) => {
+    digest.add({
+      source_position_id: String(position.id),
+      device_id: String(position.deviceId),
+      timestamp: position.fixTime,
+      lat: position.latitude,
+      lon: position.longitude,
+    })
+  }
+
+  for (
+    let deviceId = options.movingDeviceCount + 1;
+    deviceId <= options.deviceCount;
+    deviceId += 1
+  ) {
+    const position = createPosition(options, 0, deviceId, 0)
+    add(full, position)
+    add(normalPrefix, position)
+  }
+  for (let batch = 1; batch <= options.maximumBatches; batch += 1) {
+    for (let deviceId = 1; deviceId <= options.movingDeviceCount; deviceId += 1) {
+      for (let offset = 0; offset < options.productionPollsPerBatch; offset += 1) {
+        const position = createPosition(options, batch, deviceId, offset)
+        add(full, position)
+        if (batch <= normalPrefixBatch) {
+          add(normalPrefix, position)
+        }
+      }
+    }
+  }
+
+  return {
+    full: full.finish(),
+    normalPrefix: normalPrefix.finish(),
+    normalPrefixBatch,
+  }
+}
+
 function buildDevices(options, batch) {
   return Array.from({ length: options.deviceCount }, (_, index) => {
     const deviceId = index + 1
@@ -139,7 +196,7 @@ function buildStationaryCurrentPositions(options) {
   )
 }
 
-function buildBreadcrumbPositions(options, batch, deviceId) {
+function buildBreadcrumbPositions(options, batch, deviceId, from, to) {
   if (
     !Number.isInteger(deviceId) ||
     deviceId < 1 ||
@@ -148,8 +205,49 @@ function buildBreadcrumbPositions(options, batch, deviceId) {
   ) {
     return []
   }
-  return Array.from({ length: options.productionPollsPerBatch }, (_, index) =>
-    createPosition(options, batch, deviceId, index),
+
+  const maximumProductionPollIndex =
+    batch * options.productionPollsPerBatch - 1
+  const requestedFromMs = parseRequestTimestamp(from)
+  const requestedToMs = parseRequestTimestamp(to)
+  if (requestedFromMs === null || requestedToMs === null) {
+    throw new Error('Breadcrumb requests require valid from/to timestamps.')
+  }
+
+  const latestSyntheticTimestampMs =
+    BASE_TIME_MS + maximumProductionPollIndex * 5_000
+  if (requestedFromMs > latestSyntheticTimestampMs) {
+    // The packaged soak starts a real mission on the wall clock while its
+    // accelerated fixes use a deterministic historical clock. Bootstrap the
+    // first cursor from the current synthetic batch; every subsequent request
+    // is then governed by the exact from/to window below.
+    return Array.from({ length: options.productionPollsPerBatch }, (_, index) =>
+      createPosition(options, batch, deviceId, index),
+    )
+  }
+
+  const firstProductionPollIndex = Math.max(
+    0,
+    Math.ceil((requestedFromMs - BASE_TIME_MS) / 5_000),
+  )
+  const lastProductionPollIndex = Math.min(
+    maximumProductionPollIndex,
+    Math.floor((requestedToMs - BASE_TIME_MS) / 5_000),
+  )
+  if (lastProductionPollIndex < firstProductionPollIndex) {
+    return []
+  }
+
+  return Array.from(
+    { length: lastProductionPollIndex - firstProductionPollIndex + 1 },
+    (_, index) => {
+      const productionPollIndex = firstProductionPollIndex + index
+      const positionBatch =
+        Math.floor(productionPollIndex / options.productionPollsPerBatch) + 1
+      const positionOffset =
+        productionPollIndex % options.productionPollsPerBatch
+      return createPosition(options, positionBatch, deviceId, positionOffset)
+    },
   )
 }
 
@@ -180,6 +278,14 @@ function timestampFor(options, batch, offset) {
 
 function positionId(batch, deviceId, offset) {
   return batch * 1_000_000 + deviceId * 1_000 + offset
+}
+
+function parseRequestTimestamp(value) {
+  if (typeof value !== 'string' || value.trim() === '') {
+    return null
+  }
+  const parsed = Date.parse(value)
+  return Number.isNaN(parsed) ? null : parsed
 }
 
 function isAuthorized(headers) {
