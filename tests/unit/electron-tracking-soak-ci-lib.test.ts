@@ -22,6 +22,9 @@ describe('tracking soak CI runner arguments', () => {
       '--no-sandbox',
       '--ignore-gpu-blocklist',
       '--enable-unsafe-swiftshader',
+      '--disable-background-timer-throttling',
+      '--disable-renderer-backgrounding',
+      '--disable-backgrounding-occluded-windows',
     ])
   })
 

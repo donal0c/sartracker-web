@@ -11,8 +11,8 @@
 - **Tag commit:** pending
 - **Local verification report:** full no-skip report
   `tmp/beta-artifacts/verify-0.1.0-beta.12.1-sha.c1672438b1be-2026-07-29T05-55-28Z.json`
-- **CI run:** first run `30402564688` blocked before release creation; replacement
-  run pending
+- **CI runs:** `30402564688` and `30426564770` blocked before release
+  creation; foreground-equivalent replacement run pending
 - **Exact CI artifact SHA-256:** pending
 - **GitHub release:** remain draft until the packaged smoke matrix is complete
 
@@ -116,7 +116,22 @@ Linux software-rendering switches aligned with the separate launch smoke. The
 same package and harness then passed on the Ubuntu validation machine under an
 isolated Xvfb display: 8,664/8,664 exact positions, exact digest, 4/4 healthy
 operator interactions, 187.5 ms maximum main-process latency, and 971.6 ms
-maximum individual action latency. The release thresholds were not weakened.
+maximum individual action latency.
+
+The second tag-driven run (`30426564770`) proved the rendering fix: all product
+gates passed, the real map/UI rendered, all four interactions were `healthy`,
+and position truth remained exact. It still blocked before artifact upload
+because the headless window was background/occlusion throttled
+(`rendererThrottledByDesktopSession: true`): renderer gaps reached 1,699.9 ms
+and one otherwise healthy operator action took 2,772.2 ms. A second
+red-to-green harness regression now prevents Chromium background, renderer, and
+occluded-window throttling for this foreground-equivalent CI measurement. On
+the Ubuntu machine's isolated Xvfb display, the revised harness passed again
+with 8,664/8,664 exact positions, 4/4 healthy interactions, 176.4 ms maximum
+main-process latency, 149.9 ms maximum renderer gap, and 646.2 ms maximum
+operator action. A deliberately locked real desktop still reported throttling,
+confirming that locked-session timing is not valid release-performance
+evidence. The 1,000 ms release threshold remains unchanged.
 
 The remaining release gates are:
 
