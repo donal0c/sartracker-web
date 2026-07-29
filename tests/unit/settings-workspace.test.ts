@@ -68,7 +68,7 @@ describe('SettingsWorkspace', () => {
     mocks.isTauriRuntimeAvailable.mockReturnValue(false)
 
     render(React.createElement(SettingsWorkspace, { open: true, onClose }))
-    await waitForElement('[data-testid="settings-save"]')
+    await waitForEnabledButton('[data-testid="settings-save"]')
 
     await act(async () => {
       getButton('[data-testid="settings-save"]').click()
@@ -89,7 +89,7 @@ describe('SettingsWorkspace', () => {
     mocks.isTauriRuntimeAvailable.mockReturnValue(false)
 
     render(React.createElement(SettingsWorkspace, { open: true, onClose }))
-    await waitForElement('[data-testid="settings-save-connect"]')
+    await waitForEnabledButton('[data-testid="settings-save-connect"]')
 
     await act(async () => {
       getButton('[data-testid="settings-save-connect"]').click()
@@ -114,7 +114,7 @@ describe('SettingsWorkspace', () => {
     mocks.isTauriRuntimeAvailable.mockReturnValue(false)
 
     render(React.createElement(SettingsWorkspace, { open: true, onClose }))
-    await waitForElement('[data-testid="settings-save"]')
+    await waitForEnabledButton('[data-testid="settings-save"]')
 
     await act(async () => {
       getButton('[data-testid="settings-save"]').click()
@@ -151,7 +151,7 @@ describe('SettingsWorkspace', () => {
     mocks.isTauriRuntimeAvailable.mockReturnValue(false)
 
     render(React.createElement(SettingsWorkspace, { open: true, onClose }))
-    await waitForElement('[data-testid="settings-save"]')
+    await waitForEnabledButton('[data-testid="weather-link-add"]')
 
     await act(async () => {
       getButton('[data-testid="weather-link-add"]').click()
@@ -425,6 +425,19 @@ async function waitForElement(selector: string): Promise<Element> {
     })
   }
   throw new Error(`Timed out waiting for ${selector}.`)
+}
+
+async function waitForEnabledButton(selector: string): Promise<HTMLButtonElement> {
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    const element = document.querySelector(selector)
+    if (element instanceof HTMLButtonElement && !element.disabled) {
+      return element
+    }
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+  }
+  throw new Error(`Timed out waiting for enabled button ${selector}.`)
 }
 
 function getButton(selector: string): HTMLButtonElement {

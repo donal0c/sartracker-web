@@ -1,8 +1,7 @@
 import {
-  useCallback,
   useEffect,
+  useLayoutEffect,
   useRef,
-  useState,
   type KeyboardEvent as ReactKeyboardEvent,
   type ReactNode,
 } from 'react'
@@ -10,7 +9,7 @@ import {
 import { focusFirstElement, restoreFocus, trapTabKey } from '../lib/focus-management'
 
 type WorkspaceOverlayProps = {
-  /** Whether the workspace is open. Controls the animated mount and immediate unmount. */
+  /** Whether the workspace is open. Controls immediate mount and unmount. */
   readonly open: boolean
   /** Called when the user requests close (backdrop click, Esc key, or close button). */
   readonly onClose: () => void
@@ -19,22 +18,22 @@ type WorkspaceOverlayProps = {
   /** Element id for the visible workspace title. */
   readonly labelledBy: string
   /**
-   * Docked (non-blocking) mode. When true the workspace renders as a right-side
+   * Docked (non-blocking) mode. When true the workspace renders as a left-side
    * panel that does NOT mount a full-screen dismiss backdrop and does NOT trap
    * focus, so controls underneath (e.g. the active-mission rail and the map)
    * stay operable while it is open (DON-176). The panel is non-modal in this
    * mode. Defaults to false (full-screen modal) for Settings/Diagnostics/Devices.
    */
   readonly docked?: boolean
-  /** Content rendered inside the sliding panel. */
+  /** Content rendered inside the workspace panel. */
   readonly children: ReactNode
 }
 
 /**
- * Shared workspace overlay with slide-in animation, immediate close, and Esc support.
+ * Shared workspace overlay with immediate open/close and Esc support.
  *
  * All workspace panels (Settings, Diagnostics, Devices, Mission Review) use this
- * wrapper for consistent entry/exit transitions and close affordance. By default
+ * wrapper for consistent immediate entry/exit and close affordance. By default
  * it is a focus-trapping modal with a backdrop. In `docked` mode it becomes a
  * non-blocking side panel (see {@link WorkspaceOverlayProps.docked}).
  */
@@ -46,65 +45,38 @@ export function WorkspaceOverlay({
   docked = false,
   children,
 }: WorkspaceOverlayProps) {
-  const [mounted, setMounted] = useState(false)
-  const [visible, setVisible] = useState(false)
   const panelRef = useRef<HTMLDivElement>(null)
   const returnFocusRef = useRef<Element | null>(null)
 
-  const finishClose = useCallback(() => {
-    setMounted(false)
-    restoreFocus(returnFocusRef.current)
-    returnFocusRef.current = null
-  }, [])
-
-  useEffect(() => {
-    if (open) {
-      // A close can be followed by a reopen before the deferred close frame
-      // runs. Preserve the original opener across that race so the final close
-      // still restores the operator's focus to the correct control.
-      if (returnFocusRef.current === null) {
-        returnFocusRef.current = document.activeElement
-      }
-      let visibleFrame: number | undefined
-      const mountFrame = requestAnimationFrame(() => {
-        setMounted(true)
-        // Allow one frame for the DOM to mount before triggering the enter animation.
-        visibleFrame = requestAnimationFrame(() => setVisible(true))
-      })
-      return () => {
-        cancelAnimationFrame(mountFrame)
-        if (visibleFrame !== undefined) {
-          cancelAnimationFrame(visibleFrame)
-        }
-      }
-    }
-
-    if (mounted) {
-      const closeFrame = requestAnimationFrame(() => {
-        setVisible(false)
-        finishClose()
-      })
-      return () => cancelAnimationFrame(closeFrame)
-    }
-  }, [finishClose, open, mounted])
-
-  useEffect(() => {
-    const panel = panelRef.current
-    // Docked mode is non-modal: do not steal focus from the operator's current
-    // control (e.g. the active-mission rail) when the panel opens (DON-176).
-    if (!open || !mounted || panel === null || docked) {
+  useLayoutEffect(() => {
+    if (!open) {
       return
     }
 
-    const focusFrame = requestAnimationFrame(() => focusFirstElement(panel))
-    return () => cancelAnimationFrame(focusFrame)
-  }, [docked, mounted, open])
+    returnFocusRef.current = document.activeElement
+    return () => {
+      const returnTarget = returnFocusRef.current
+      returnFocusRef.current = null
+      restoreFocus(returnTarget)
+    }
+  }, [open])
+
+  useLayoutEffect(() => {
+    const panel = panelRef.current
+    // Docked mode is non-modal: do not steal focus from the operator's current
+    // control (e.g. the active-mission rail) when the panel opens (DON-176).
+    if (!open || panel === null || docked) {
+      return
+    }
+
+    focusFirstElement(panel)
+  }, [docked, open])
 
   // Listen at the document level so Escape remains reliable even when focus has
   // moved to the map, rail, or a recently dismissed inline confirmation. A
   // nested/topmost modal or alertdialog owns Escape first.
   useEffect(() => {
-    if (!mounted) {
+    if (!open) {
       return
     }
 
@@ -122,7 +94,7 @@ export function WorkspaceOverlay({
     }
     document.addEventListener('keydown', onDocumentKeyDown)
     return () => document.removeEventListener('keydown', onDocumentKeyDown)
-  }, [mounted, onClose])
+  }, [onClose, open])
 
   function handleKeyDown(event: ReactKeyboardEvent<HTMLDivElement>): void {
     if (event.key === 'Escape') {
@@ -140,7 +112,7 @@ export function WorkspaceOverlay({
     }
   }
 
-  if (!open || !mounted) {
+  if (!open) {
     return null
   }
 
@@ -157,13 +129,11 @@ export function WorkspaceOverlay({
           Docked panel is left-aligned over the map so it never covers the
           right-hand operational sidebar where Pause/Finish live (DON-176). A
           fixed, modest width keeps a usable map band clear to its right. It
-          slides in from the left edge.
+          opens at the left edge.
         */}
         <div
           aria-labelledby={labelledBy}
-          className={`sar-sidebar pointer-events-auto mr-auto flex h-full w-full ${maxWidth} flex-col border-r border-[var(--sar-line)] shadow-2xl transition-transform duration-250 ${
-            visible ? 'translate-x-0 ease-out' : '-translate-x-full ease-in'
-          }`}
+          className={`sar-sidebar pointer-events-auto mr-auto flex h-full w-full ${maxWidth} flex-col border-r border-[var(--sar-line)] shadow-2xl`}
           data-map-interaction-boundary="true"
           onKeyDown={handleKeyDown}
           ref={panelRef}
@@ -183,9 +153,7 @@ export function WorkspaceOverlay({
       {/* Backdrop — click to close */}
       <button
         aria-label="Close workspace"
-        className={`absolute inset-0 transition-opacity duration-250 ease-out ${
-          visible ? 'bg-stone-950/82 backdrop-blur-[2px]' : 'bg-transparent'
-        }`}
+        className="absolute inset-0 bg-stone-950/82"
         onClick={onClose}
         tabIndex={-1}
         type="button"
@@ -195,9 +163,7 @@ export function WorkspaceOverlay({
       <div
         aria-labelledby={labelledBy}
         aria-modal="true"
-        className={`sar-sidebar ml-auto flex h-full w-full ${maxWidth} flex-col transition-transform duration-250 ${
-          visible ? 'translate-x-0 ease-out' : 'translate-x-full ease-in'
-        }`}
+        className={`sar-sidebar relative z-10 ml-auto flex h-full w-full ${maxWidth} flex-col`}
         data-map-interaction-boundary="true"
         onKeyDown={handleKeyDown}
         ref={panelRef}
