@@ -54,8 +54,8 @@ Until `DON-141` proves Windows, treat this as an internal validation drop:
 - Linux testers: share the GitHub prerelease URL. Recommend the `.deb` for
   Ubuntu/Debian users who want a normal install; use AppImage for a portable
   no-install run.
-- macOS testers: share the zipped `.app` only if they are comfortable with
-  unsigned internal builds and Gatekeeper warnings.
+- macOS testers: wait for a future CI-built and separately qualified macOS
+  release lane. Do not attach locally built `.app` archives to the Linux beta.
 - Windows testers: wait for `DON-141`.
 
 The preferred long-term channel is now in place: GitHub Actions produces an
@@ -66,17 +66,8 @@ smoke gate.
 
 ## Build Commands
 
-macOS arm64 package:
-
-```bash
-npm run electron:pack -- --mac --arm64
-ditto -c -k --sequesterRsrc --keepParent \
-  "tmp/electron-dist/mac-arm64/SAR Tracker Electron Validation.app" \
-  "tmp/sartracker-electron-validation_<version>_macos_arm64.zip"
-```
-
-Linux AppImage and `.deb` must be built on Linux so `better-sqlite3` is native
-Linux x64:
+Linux AppImage and `.deb` must be built by the tag-driven GitHub Actions lane so
+`better-sqlite3` is native Linux x64 and the exact CI bytes can be qualified:
 
 ```bash
 npm ci
@@ -342,20 +333,20 @@ The release flow (now implemented under `DON-143`) is:
 
 1. Electron Linux builds are produced by GitHub Actions
    (`.github/workflows/electron-release.yml`, triggered by an `electron-v*`
-   tag). The gate runs lint, unit tests, backend tests, web build, and standard
-   Chromium E2E before packaging. The job verifies the packaged
+   tag). The gate runs lint, unit tests, web build, and standard Chromium E2E
+   before packaging; the clean local no-skip verifier separately covers the
+   legacy backend compatibility suite. The job verifies the packaged
    `better-sqlite3` is native Linux x86-64 and runs an Xvfb launch smoke on the
    built AppImage.
-2. macOS arm64 is built locally and uploaded manually as a zipped `.app`
-   (GitHub macOS runners bill at 10x).
-3. Windows NSIS is scaffolded but **disabled by default**; it only builds when
-   the workflow is dispatched with `enable_windows=true`, which waits on the
-   Windows official-map smoke (`DON-141`).
-4. GitHub Releases hold app artifacts and `SHA256SUMS` only. The build output is
+2. macOS and Windows artifacts are not built or attached in this Linux lane.
+   Each requires its own CI build and complete qualification matrix before it
+   can be added to a future release.
+3. GitHub Releases hold the two qualified Linux app artifacts and
+   `SHA256SUMS` only. The build output is
    guarded against `.mbtiles` / licensed map data.
-5. Private map packages remain outside GitHub.
-6. Each release note states exactly which OS/map smokes passed.
-7. `DON-115` closes only after Windows official-map smoke (`DON-141`) passes.
+4. Private map packages remain outside GitHub.
+5. Each release note states exactly which OS/map smokes passed.
+6. `DON-115` closes only after Windows official-map smoke (`DON-141`) passes.
 
 Do not publish a draft Electron beta until the CI-built artifact has passed the
 release note's packaged smoke matrix. Any unexplained flake, failed smoke,

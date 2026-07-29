@@ -1,7 +1,7 @@
 {
   "name": "sartracker-web",
   "private": true,
-  "version": "0.1.0-beta.12.1",
+  "version": "0.1.0-beta.12.2",
   "homepage": "https://github.com/donal0c/sartracker-web",
   "type": "module",
   "main": "electron/main.cjs",
@@ -13,6 +13,7 @@
     "electron:pack": "node scripts/electron-package.mjs --dir",
     "electron:dist:linux": "node scripts/electron-package.mjs --linux AppImage deb --x64 --publish never",
     "electron:dist:win": "node scripts/electron-package.mjs --win nsis --x64 --publish never",
+    "electron:release:publish": "node scripts/electron-release-publish.mjs",
     "electron:smoke:official-offline": "node scripts/electron-official-map-offline-smoke.mjs",
     "electron:smoke:bad-secret": "node scripts/electron-bad-secret-smoke.mjs",
     "electron:smoke:map-freeze": "node scripts/electron-map-freeze-probe.mjs",

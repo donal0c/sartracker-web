@@ -34,6 +34,7 @@ import { fileURLToPath } from 'node:url'
 import {
   ALL_BETA_STEPS,
   buildBetaReportFilename,
+  findReleaseBlockingWorktreeChanges,
   parseBetaStepsFlag,
   summarizeBetaReport,
 } from '../build/beta-verify-lib.js'
@@ -63,6 +64,13 @@ const SMOKE_CHECKLIST = [
   'Diagnostics export/open works.',
 ]
 
+const ALLOWED_UNTRACKED_EVIDENCE_PREFIXES = [
+  '.playwright-mcp/',
+  'output/',
+  'team-feedback/',
+  'tmp/',
+]
+
 main().catch((error) => {
   console.error(`beta-verify: ${error instanceof Error ? error.message : String(error)}`)
   process.exit(1)
@@ -85,6 +93,18 @@ async function main() {
   }
 
   const skippedSteps = ALL_BETA_STEPS.filter((step) => !steps.includes(step))
+  const worktreeStatusAtStart = readReleaseWorktreeStatus()
+  const blockingWorktreeChanges = findReleaseBlockingWorktreeChanges(
+    worktreeStatusAtStart,
+    ALLOWED_UNTRACKED_EVIDENCE_PREFIXES,
+  )
+  const releaseWorktreeCleanAtStart = blockingWorktreeChanges.length === 0
+  if (skippedSteps.length === 0 && !releaseWorktreeCleanAtStart) {
+    throw new Error(
+      'full beta verification requires a clean release worktree at start; commit or restore: ' +
+        blockingWorktreeChanges.join(', '),
+    )
+  }
   const reportDir = path.resolve(projectRoot, args.reportDir ?? 'tmp/beta-artifacts')
   const startedAt = new Date()
   const versionInfo = await readVersionInfo()
@@ -92,6 +112,7 @@ async function main() {
   console.log('beta-verify: starting')
   console.log(`  version: ${versionInfo.version}`)
   console.log(`  build tag: ${versionInfo.buildTag}`)
+  console.log(`  release worktree clean at start: ${releaseWorktreeCleanAtStart ? 'yes' : 'no'}`)
   console.log(`  steps: ${steps.join(', ') || '(none)'}`)
   if (skippedSteps.length > 0) {
     console.log(`  skipped via --steps/--no-smoke: ${skippedSteps.join(', ')}`)
@@ -139,6 +160,7 @@ async function main() {
     buildTag: versionInfo.buildTag,
     startedAt: startedAt.toISOString(),
     finishedAt: finishedAt.toISOString(),
+    releaseWorktreeCleanAtStart,
     results,
   }
 
@@ -312,6 +334,22 @@ function readGitSha() {
     }).trim()
   } catch {
     return ''
+  }
+}
+
+/**
+ * Reads every worktree change. Only explicitly whitelisted local evidence
+ * roots are ignored by the release gate.
+ */
+function readReleaseWorktreeStatus() {
+  try {
+    return execSync('git status --porcelain --untracked-files=all', {
+      cwd: projectRoot,
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    })
+  } catch {
+    return 'git-status-unavailable'
   }
 }
 

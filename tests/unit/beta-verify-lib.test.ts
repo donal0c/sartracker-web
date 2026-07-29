@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import {
   ALL_BETA_STEPS,
   buildBetaReportFilename,
+  findReleaseBlockingWorktreeChanges,
   formatBetaStepResult,
   parseBetaStepsFlag,
   summarizeBetaReport,
@@ -108,6 +109,7 @@ describe('summarizeBetaReport', () => {
       buildTag: 'sha.abc',
       startedAt: '2026-05-17T12:00:00Z',
       finishedAt: '2026-05-17T12:05:00Z',
+      releaseWorktreeCleanAtStart: true,
       results: [
         passed('lint', 'npm run lint', 1000),
         passed('build', 'npm run build', 12000),
@@ -126,6 +128,7 @@ describe('summarizeBetaReport', () => {
       buildTag: 'sha.abc',
       startedAt: '2026-05-17T12:00:00Z',
       finishedAt: '2026-05-17T12:05:00Z',
+      releaseWorktreeCleanAtStart: true,
       results: [
         passed('lint', 'npm run lint', 1000),
         failed('test', 'npm run test', 5000, 1, 'one test failing'),
@@ -139,12 +142,13 @@ describe('summarizeBetaReport', () => {
     expect(summary.lines.at(-1)).toBe('OVERALL: FAIL  (1 pass, 1 fail, 1 skip)')
   })
 
-  it('flags overall pass-with-skips so callers can warn before sharing a beta', () => {
+  it('fails closed when any beta gate step is skipped', () => {
     const report: BetaVerifyReport = {
       version: '0.1.0',
       buildTag: 'sha.abc',
       startedAt: '2026-05-17T12:00:00Z',
       finishedAt: '2026-05-17T12:05:00Z',
+      releaseWorktreeCleanAtStart: true,
       results: [
         passed('lint', 'npm run lint', 1000),
         skipped('package', 'npm run electron:pack'),
@@ -153,7 +157,8 @@ describe('summarizeBetaReport', () => {
 
     const summary = summarizeBetaReport(report)
 
-    expect(summary.ok).toBe(true)
+    expect(summary.ok).toBe(false)
+    expect(summary.lines.at(-1)).toBe('OVERALL: FAIL  (1 pass, 0 fail, 1 skip)')
     expect(summary.warning).toMatch(/skipped/i)
   })
 })
@@ -184,6 +189,45 @@ describe('buildBetaReportFilename', () => {
     expect(buildBetaReportFilename('0.1.0', 'run/42 sha:abc', now)).toBe(
       'verify-0.1.0-run-42-sha-abc-2026-05-17T00-00-00Z.json',
     )
+  })
+})
+
+describe('findReleaseBlockingWorktreeChanges', () => {
+  const allowedEvidence = ['.playwright-mcp/', 'output/', 'team-feedback/', 'tmp/']
+
+  it('allows only named untracked evidence roots and blocks all tracked changes', () => {
+    expect(
+      findReleaseBlockingWorktreeChanges(
+        [
+          '?? .playwright-mcp/session.json',
+          '?? output/screenshot.png',
+          '?? team-feedback/note.txt',
+          '?? tmp/beta-artifacts/report.json',
+        ].join('\n'),
+        allowedEvidence,
+      ),
+    ).toEqual([])
+    expect(
+      findReleaseBlockingWorktreeChanges(
+        ' M src/main.tsx\nM  package.json\n',
+        allowedEvidence,
+      ),
+    ).toEqual([' M src/main.tsx', 'M  package.json'])
+  })
+
+  it('blocks untracked package inputs and unknown untracked paths', () => {
+    expect(
+      findReleaseBlockingWorktreeChanges(
+        [
+          '?? electron/override.cjs',
+          '?? field-tools/collector.sh',
+          '?? public/runtime.json',
+          '?? src/untracked.ts',
+          '?? unexpected.txt',
+        ].join('\n'),
+        allowedEvidence,
+      ),
+    ).toHaveLength(5)
   })
 })
 

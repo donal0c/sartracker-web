@@ -1,10 +1,10 @@
-# SAR Tracker Electron Desktop Beta 0.1.0-beta.12.1 (breadcrumb safety hotfix)
+# SAR Tracker Electron Desktop Beta 0.1.0-beta.12.2 (breadcrumb safety hotfix)
 
 > **Internal beta only.** Do not use for live incidents until every gate below
 > is complete and the exact CI-built artifact has passed Ubuntu qualification.
 
-- **Version:** 0.1.0-beta.12.1
-- **Build tag:** `electron-v0.1.0-beta.12.1`
+- **Version:** 0.1.0-beta.12.2
+- **Build tag:** `electron-v0.1.0-beta.12.2`
 - **Cut date (UTC):** pending
 - **Linear reference:** `DON-260`
 - **Supersedes:** `electron-v0.1.0-beta.12`
@@ -17,6 +17,11 @@
   `c7ffcb43755c` passed Linux validation in `30441228109`
 - **Exact CI artifact SHA-256:** pending
 - **GitHub release:** remain draft until the packaged smoke matrix is complete
+
+`electron-v0.1.0-beta.12.1` was pushed against an earlier pre-release commit
+but never produced a release. Its tag is left immutable and is not a tester
+artifact. This corrected cut uses the next version rather than rewriting
+release provenance.
 
 ## Why this hotfix exists
 
@@ -217,8 +222,10 @@ The remaining release gates are:
 
 | Gate | Result | Evidence |
 | --- | --- | --- |
-| Checksum verified against `SHA256SUMS` | TODO | pending CI artifact |
-| CI AppImage launch smoke | TODO | pending |
+| AppImage SHA-256 | TODO | pending exact draft artifact |
+| .deb SHA-256 | TODO | pending exact draft artifact |
+| AppImage launch | TODO | pending |
+| .deb install and launch | TODO | pending |
 | Core lifecycle, restart/recovery, finish/finalize/archive | TODO | pending |
 | Coordinate rejection | TODO | pending |
 | Diagnostics/support/incident exports sanitized | TODO | pending |
@@ -245,7 +252,7 @@ The remaining release gates are:
 ## Rollback
 
 Quit the app and preserve the complete profile before doing anything else. Do
-not point beta.12 at a profile already opened by beta.12.1: beta.12 will reject
+not point beta.12 at a profile already opened by beta.12.2: beta.12 will reject
 schema 5 rather than risk corrupting it. A rollback must use a separately
 preserved pre-upgrade schema-4 profile or a fresh isolated profile, with the
 schema-5 profile retained for recovery. Do not delete, rename, copy over, or

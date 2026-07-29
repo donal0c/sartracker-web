@@ -26,7 +26,7 @@ Last updated: 2026-07-29 by Codex (planning consolidated into the two-track work
 
 - Research required: `Low` after end-to-end code/commit/documentation review and the completed same-session Fable challenge.
 - Implementation readiness: `5/5`.
-- Recommended action: qualify the exact CI artifact on Ubuntu and release as `0.1.0-beta.12.1`; implementation and local proof are complete.
+- Recommended action: qualify the exact CI artifact on Ubuntu and release as `0.1.0-beta.12.2`; beta.12.1 remains an immutable abandoned pre-release tag and produced no release.
 - Locked decisions: upstream position identity is authoritative; corrections update one row with an audit revision; same-time fixes use a stable source-identity tie-break; display selection is a deterministic epoch-anchored whole-route budget; restart reconstruction runs off the main isolate; live recent requests and slow mission-wide reconciliation are separate; five minutes is the stale threshold.
 - Open questions: none that block implementation. GPS accuracy remains a source measurement, not a promise of physical zero error.
 - Non-goals: map-package expansion and the beta.13 bounded-storage/archive programme (`DON-248`-`DON-255`).

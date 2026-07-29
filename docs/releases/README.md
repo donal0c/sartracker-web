@@ -27,45 +27,34 @@ triggered by an `electron-v*` tag push (or manual `workflow_dispatch`) and:
 
 - refuses to continue unless release notes exist and the tag matches
   `package.json#version`;
-- runs lint, unit tests, backend tests, web build, and the standard Chromium
-  Playwright E2E suite before any artifact is bundled;
+- runs lint, unit tests, web build, and the standard Chromium Playwright E2E
+  suite before any artifact is bundled; the local no-skip beta verifier also
+  gates the legacy backend compatibility suite;
 - builds the **Linux** AppImage + `.deb` on a native Linux runner (so
   `better-sqlite3` is real Linux x86-64; the workflow asserts this);
 - creates a **draft + prerelease** GitHub release and uploads the Linux assets;
 - runs an **Xvfb launch smoke** against the just-built AppImage (real window,
   non-black content, no runtime fault shell);
 - generates and uploads a `SHA256SUMS` sidecar over every release asset;
-- leaves the release in **DRAFT** for a human to review and publish.
+- leaves the release in **DRAFT** until the exact Linux assets pass the complete
+  qualification matrix and the guarded publisher re-verifies them.
 
 App artifacts only. The build output is guarded against `.mbtiles` / licensed
 map data, and no credentials, source URLs, or raw diagnostics are ever attached.
 
-### Windows (opt-in, default OFF)
+### Windows (disabled)
 
-Windows NSIS is scaffolded (`electron-builder.json` `win`/`nsis`, the
-`electron:dist:win` script, and a gated `bundle-windows` job) but **disabled by
-default**. It only runs when `workflow_dispatch` is invoked with
-`enable_windows=true`, which must not happen until the Windows official-map
-smoke (`DON-141`) passes. We do not attach an unsmoked Windows installer to a
-release.
+Windows NSIS remains configured in `electron-builder.json` and available as the
+local `electron:dist:win` development script, but the release workflow has no
+Windows job or input. `DON-141` must first add Windows CI build provenance,
+packaged smoke rows, and guarded-publisher support. We do not attach an
+unsmoked Windows installer to a release.
 
-### macOS (local, manual)
+### macOS (not attached)
 
-macOS arm64 is **not** built in CI (GitHub macOS runners bill at 10x). Produce
-it locally and attach it to the draft release:
-
-```bash
-npm run electron:pack -- --mac --arm64
-ditto -c -k --sequesterRsrc --keepParent \
-  "tmp/electron-dist/mac-arm64/SAR Tracker Electron Validation.app" \
-  "tmp/sartracker-electron-validation_<version>_macos_arm64.zip"
-gh release upload electron-v<version> --repo donal0c/sartracker-web \
-  "tmp/sartracker-electron-validation_<version>_macos_arm64.zip"
-```
-
-If you add a macOS asset after CI ran, regenerate `SHA256SUMS` so it covers the
-macOS zip too (either re-run the `checksums` job via `workflow_dispatch`, or
-hash locally and `gh release upload --clobber SHA256SUMS`).
+macOS arm64 is **not** built in CI or attached to this release lane. A future
+macOS beta must add a pinned CI build, its own packaged smoke matrix, and
+guarded-publisher support. The publisher rejects any extra distributable.
 
 ## Authoring Workflow — Electron release
 
@@ -86,14 +75,16 @@ hash locally and `gh release upload --clobber SHA256SUMS`).
 6. When the run ends green:
    - The draft prerelease exists with the Linux assets, the launch-smoke
      evidence, and `SHA256SUMS`.
-   - Build and attach the macOS arm64 zip (see above) if macOS is in scope.
-   - Run any remaining manual smoke (e.g. the official-offline map check) that
-     CI cannot cover. CI proves lint/unit/backend/build, standard Chromium E2E,
-     and that the packaged AppImage launches; it does not prove mission
-     persistence, live Traccar, duplicate-launch behavior, or offline maps.
-   - Update the release note with smoke results and the CI run link.
-   - Promote the draft:
-     `gh release edit electron-v0.1.0-beta.4 --repo donal0c/sartracker-web --draft=false`.
+   - Download the exact draft AppImage, `.deb`, and `SHA256SUMS`; qualify both
+     Linux artifacts and the installed `.deb` on Ubuntu.
+   - Run every remaining packaged smoke that CI cannot cover. CI proves
+     lint/unit/build, standard Chromium E2E, and that the packaged AppImage
+     launches; it does not prove the full mission lifecycle, live Traccar,
+     duplicate-launch behavior, or an offline map package.
+   - Replace every pending/local-only matrix row in the draft body with final
+     evidence paths and full AppImage/`.deb` SHA-256 values.
+   - Promote only through the guarded publisher:
+     `npm run electron:release:publish -- --tag electron-v<version> --repo donal0c/sartracker-web`.
    - Record the release in `handoff/HANDOFF.md` with the CI run URL and the
      final asset list.
 
@@ -102,12 +93,12 @@ hash locally and `gh release upload --clobber SHA256SUMS`).
 - Primary channel for the internal betas: GitHub Releases on
   `donal0c/sartracker-web`. The workflow creates a **draft prerelease** first;
   after CI evidence, manual smoke evidence, and release notes are checked, the
-  release is promoted to a published **prerelease** with "internal validation"
-  in the title.
-- Release notes (this directory) are the single source of truth. The GitHub
-  release description is built from the matching MD file plus a CI provenance
-  footer; the description should not duplicate what is here, only reference
-  it.
+  guarded publication succeeds, the release becomes a published **prerelease**
+  with "internal validation" in the title.
+- Release notes (this directory) are the durable source record. The draft
+  release body starts from the matching MD file plus CI provenance, then gains
+  exact-artifact evidence before guarded publication. The source note is
+  reconciled in the release closeout commit.
 - Draft releases are not shared with testers until the release note includes
   a completed smoke matrix for the CI-built artifact. Any unexplained flake,
   failed smoke, missing browser validation, or stale handoff/Linear state is a
@@ -123,11 +114,10 @@ installers themselves) must not be checked in:
 
 - Local working copies stay under `tmp/electron-dist/` (gitignored).
 - Shareable artifacts go to GitHub Releases via the draft/prerelease channel
-  above. CI uploads the Linux assets and `SHA256SUMS` automatically; the macOS
-  zip is uploaded manually via `gh release upload`.
+  above. CI uploads only the qualified Linux candidates and `SHA256SUMS`.
 - CI run pages (logs + launch-smoke evidence artifacts) are the evidence for
-  the Linux build. Any manual smoke (offline maps, macOS launch) is recorded in
-  the release note.
+  the Linux build. Exact-artifact Ubuntu evidence is recorded in the release
+  body and reconciled into the source release note.
 
 ## When To Re-Cut
 

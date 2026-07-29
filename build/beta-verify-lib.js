@@ -27,6 +27,7 @@
  * @property {string} buildTag
  * @property {string} startedAt
  * @property {string} finishedAt
+ * @property {boolean} releaseWorktreeCleanAtStart
  * @property {BetaStepResult[]} results
  */
 
@@ -82,6 +83,34 @@ export function parseBetaStepsFlag(flag) {
 }
 
 /**
+ * Returns tracked changes and untracked files outside explicitly allowed
+ * evidence roots. Untracked package inputs must block a release because Vite
+ * and electron-builder can include files that are absent from Git.
+ *
+ * @param {string} porcelainStatus
+ * @param {string[]} allowedUntrackedPrefixes
+ * @returns {string[]}
+ */
+export function findReleaseBlockingWorktreeChanges(
+  porcelainStatus,
+  allowedUntrackedPrefixes,
+) {
+  if (typeof porcelainStatus !== 'string' || porcelainStatus.trim() === '') {
+    return []
+  }
+  return porcelainStatus
+    .split(/\r?\n/u)
+    .filter((line) => line !== '')
+    .filter((line) => {
+      if (!line.startsWith('?? ')) {
+        return true
+      }
+      const untrackedPath = line.slice(3)
+      return !allowedUntrackedPrefixes.some((prefix) => untrackedPath.startsWith(prefix))
+    })
+}
+
+/**
  * Formats a single step result as a single fixed-width line for terminal output.
  *
  * @param {BetaStepResult} result
@@ -113,13 +142,13 @@ export function summarizeBetaReport(report) {
     lines.push(formatBetaStepResult(result))
   }
 
-  const ok = counts.fail === 0
+  const ok = counts.fail === 0 && counts.skip === 0
   const overall = ok ? 'PASS' : 'FAIL'
   lines.push(`OVERALL: ${overall}  (${counts.pass} pass, ${counts.fail} fail, ${counts.skip} skip)`)
 
   let warning = null
-  if (ok && counts.skip > 0) {
-    warning = `One or more steps were skipped — do not share this beta until every step passes without --steps filters.`
+  if (counts.skip > 0) {
+    warning = `One or more steps were skipped — the beta gate fails until every step passes without --steps filters.`
   }
 
   return { ok, lines, warning }

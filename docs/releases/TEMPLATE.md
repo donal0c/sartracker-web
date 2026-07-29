@@ -18,8 +18,6 @@
 | --- | --- | --- |
 | Linux x86_64 | `sartracker-electron-validation_<version>_linux_x86_64.AppImage` | Single-file portable run; no install required. Most Linux testers. |
 | Linux x86_64 | `sartracker-electron-validation_<version>_linux_amd64.deb` | System install on Ubuntu/Debian/Mint/Pop_OS. |
-| macOS arm64 | `sartracker-electron-validation_<version>_macos_arm64.zip` | Local/manual zipped `.app` while macOS CI is deferred. |
-| Windows x86_64 | `sartracker-electron-validation_<version>_windows_x64.exe` | Electron NSIS installer once `DON-141`/Windows packaging passes. |
 | All | `SHA256SUMS` | Checksum sidecar to verify downloaded artifacts. |
 
 Private Discovery map packages are never release artifacts. Distribute those
@@ -69,62 +67,13 @@ installing the app.
 
 - Mesa/GPU stderr noise on first launch can be cosmetic. A black or blank map is
   not cosmetic and should be reported with diagnostics.
-- If the system has no Secret Service (gnome-keyring-daemon / KDE Wallet not
-  running, e.g. minimal i3/sway setup), saving Traccar credentials may fail. Run
-  `gnome-keyring-daemon --start` or install `gnome-keyring`/`kwalletmanager` and
-  log out/in.
+- Credentials use the app-owned local file under the Electron profile rather
+  than a desktop keyring. Protect the operating-system account and never share
+  profile files or raw credential evidence.
 
-## Install — Windows (secondary target)
-
-### NSIS installer (recommended; no admin required)
-
-This beta is **not yet code-signed.** Windows will warn that the publisher is
-unknown. The warnings are expected for an unsigned app and the install does
-**not** require admin rights or any change to your security settings.
-
-1. Download `sartracker-web_<version>_windows_x64.exe` and the `SHA256SUMS` file.
-2. Verify the checksum from PowerShell:
-   ```powershell
-   Get-FileHash sartracker-web_<version>_windows_x64.exe -Algorithm SHA256
-   ```
-   Compare the output against the matching line in `SHA256SUMS`. If they do not
-   match, stop and report.
-3. Right-click the downloaded `.exe` → **Properties** → tick **Unblock** → **OK**.
-   This removes the Mark-of-the-Web flag.
-4. Double-click to run. Windows SmartScreen will say
-   *"Windows protected your PC — Unknown publisher."* Click **More info**, then
-   **Run anyway**.
-5. The installer runs without prompting for admin. The app installs to
-   `%LOCALAPPDATA%\Programs\sartracker-web`.
-6. On first launch, the app may briefly install Microsoft WebView2 if it is not
-   already on your machine. This requires internet for that one step.
-
-### MSI installer (deferred)
-
-Electron MSI is deferred. Use NSIS once Windows Electron packaging has passed.
-
-### Windows blockers we cannot work around in the unsigned beta
-
-If your laptop is managed by your team or workplace and Windows blocks the
-install entirely with no **Run anyway** option, you are on a locked-down policy
-(WDAC / AppLocker / SmartScreen for Business). There is no workaround for an
-unsigned binary. Use a personal machine, or wait for the signed build.
-
-## Install — macOS
-
-macOS is currently produced locally as a zipped `.app`.
-
-1. Download the macOS artifact and verify its checksum if one is provided.
-2. Unzip and copy `SAR Tracker Electron Validation.app` to `/Applications`.
-3. The app is ad-hoc signed only. macOS Gatekeeper may refuse to open it.
-   Try **Control-click / right-click → Open** first. If quarantine blocks
-   launch, run the project-supplied quarantine-removal command:
-   ```bash
-   xattr -dr com.apple.quarantine "/Applications/SAR Tracker Electron Validation.app"
-   ```
-   Run this command only for an artifact supplied through the agreed internal
-   channel. If a managed Mac blocks unsigned apps by policy, stop and report
-   the blocker — do not bypass managed security settings.
+Windows and macOS artifacts are not produced or attached by this Linux release
+lane. Each needs a separate CI build and complete packaged qualification before
+it can appear in a future release.
 
 ## What Changed
 
@@ -156,9 +105,8 @@ or screenshots showing private paths to GitHub.
 
 - &lt;explicit limitations the tester must understand before running the beta&gt;
 - For the current internal beta lane this normally includes:
-  - Linux x86_64 + Windows x86_64 only from CI. macOS is supplied separately
-    (built locally) when needed. No Linux ARM, no Windows ARM, no macOS Intel.
-  - All artifacts are unsigned. Expect SmartScreen / Gatekeeper warnings.
+  - Linux x86_64 only. Windows and macOS are not release assets in this lane.
+  - Linux artifacts are unsigned.
   - Auto-updater is not enabled. Each beta is a fresh download.
   - High-definition mountain map packages are not bundled with this build.
   - Browser hosted-mode persistence is testing-only and not part of this
@@ -175,8 +123,10 @@ Electron artifacts.)
 Minimum verification for an Electron official-map handoff:
 
 - tag-driven `.github/workflows/electron-release.yml` run green
-- release gates: `npm run lint`, `npm run test`, `npm run test:backend`,
-  `npm run build`, `npm run test:e2e:chromium`
+- local no-skip `npm run beta:verify`, including the legacy backend
+  compatibility suite
+- tag workflow gates: `npm run lint`, `npm run test`, `npm run build`,
+  `npm run test:e2e:chromium`, Linux bundle/soak, and AppImage launch
 - focused or full unit tests relevant to the slice
 - Electron package build on the target OS
 - official Discovery package import/readiness smoke where applicable
@@ -186,29 +136,33 @@ Minimum verification for an Electron official-map handoff:
 ## Packaged Smoke Matrix
 
 The draft release must not be published until the CI-built artifact has passed
-the applicable packaged smoke gates below. Mark any out-of-scope gate with a
-short reason.
+every packaged smoke gate below. Only the unchanged private-map-package gate may
+be marked `NOT APPLICABLE`, with a concrete reason; every other row must be
+`PASS`. Gate names are an executable contract with the guarded publisher and
+must not be renamed.
 
 | Gate | Result | Evidence |
 | --- | --- | --- |
-| Checksum verified against `SHA256SUMS` | TODO | TODO |
-| Packaged AppImage launches to normal shell | TODO | TODO |
-| Core lifecycle: start mission, marker, restart/recovery, finish/finalize | TODO | TODO |
-| Standalone archive written and survives restart | TODO | TODO |
-| Out-of-Ireland coordinate rejected visibly | TODO | TODO |
-| Diagnostics export succeeds and is sanitized | TODO | TODO |
-| Bad/corrupt stored credential reaches shell, not runtime fault | TODO | TODO |
-| Live Traccar connection / tracking smoke, if tracking changed | TODO | TODO |
-| Official offline map package smoke, if map/runtime changed | TODO | TODO |
-| Beta-specific regressions, e.g. duplicate launch for DON-180 | TODO | TODO |
+| AppImage SHA-256 | TODO | exact filename, full digest, and evidence path |
+| .deb SHA-256 | TODO | exact filename, full digest, and evidence path |
+| AppImage launch | TODO | TODO |
+| .deb install and launch | TODO | TODO |
+| Core lifecycle, restart/recovery, finish/finalize/archive | TODO | TODO |
+| Coordinate rejection | TODO | TODO |
+| Diagnostics/support/incident exports sanitized | TODO | TODO |
+| Bad/corrupt stored credential reaches shell | TODO | TODO |
+| Live Traccar connection and breadcrumb reconciliation | TODO | TODO |
+| Official offline Discovery package | TODO | PASS evidence or NOT APPLICABLE with reason |
+| Duplicate launch | TODO | TODO |
+| Five-day and fourteen-day packaged soak | TODO | TODO |
+| Cross-profile exact breadcrumb identity comparison | TODO | TODO |
 
 ## Rollback / Reinstall
 
 - **To roll back to a previous beta:**
   1. Quit the running app.
   2. Linux AppImage: delete the AppImage file. `.deb`:
-     `sudo apt remove sartracker-electron-validation`. Windows NSIS: uninstall
-     via *Settings → Apps*. macOS: drag the `.app` to the bin.
+     `sudo apt remove sartracker-electron-validation`.
   3. Reinstall the older beta from its release note.
 - **Mission data:** Mission databases live under the app's per-user data
   directory and are not deleted by uninstalling the bundle. If mission data
@@ -220,11 +174,11 @@ short reason.
 Before promoting this draft to a published release:
 
 - [ ] Tag-driven CI workflow run is green and linked above
-- [ ] CI release gates passed: lint, unit tests, backend tests, web build,
-      standard Chromium E2E, Linux bundle, Linux launch smoke
+- [ ] Clean no-skip local `npm run beta:verify` passed, including backend
+- [ ] CI release gates passed: lint, unit tests, web build, standard Chromium
+      E2E, Linux bundle/soak, Linux launch smoke
 - [ ] All expected CI release assets present on the draft release: Linux
-      `.AppImage`, Linux `.deb`; Windows `.exe` only if explicitly enabled
-      after DON-141; macOS zip only if built/uploaded manually for this beta.
+      `.AppImage`, Linux `.deb`, and `SHA256SUMS` only.
 - [ ] `SHA256SUMS` present and matches local computation against downloaded assets
 - [ ] CI launch-smoke artifacts reviewed: Linux AppImage screenshot/log.
 - [ ] Real-machine smoke pass on the primary platform (Linux): packaged app
@@ -232,8 +186,8 @@ Before promoting this draft to a published release:
       started, mission persists after restart, tracking settings connect to the
       Traccar web/API base URL, diagnostics export works.
 - [ ] Packaged smoke matrix above is complete, with evidence paths or run links
-- [ ] Release body matches this checked-in note (with CI Provenance footer
-      appended)
+- [ ] Release body retains this note's content, has the exact CI Provenance
+      footer, and replaces every matrix placeholder with exact-artifact evidence
 - [ ] Release marked **prerelease** and **draft** in GitHub UI
 - [ ] Release title contains "internal beta"
 - [ ] Maintainer has signed off in `handoff/HANDOFF.md`

@@ -21,19 +21,17 @@ name: Release (Electron Desktop)
 #   2. bundle-linux    (Linux): native AppImage + .deb via electron-builder,
 #                      verifies the packaged better_sqlite3.node is real Linux
 #                      x86-64, creates the draft prerelease, uploads assets.
-#   3. bundle-windows  (Windows, OPT-IN): NSIS .exe. Disabled by default and
-#                      gated behind the `enable_windows` dispatch input until
-#                      DON-141 (Windows official-map smoke) passes. We do not
-#                      ship an unsmoked Windows installer for a life-safety app.
-#   4. launch-smoke-linux: downloads the just-built AppImage, launches it under
+#   3. launch-smoke-linux: downloads the just-built AppImage, launches it under
 #                      Xvfb, asserts a real window with non-black content and no
 #                      runtime fault shell.
-#   5. checksums       (Linux): hashes every release asset into SHA256SUMS.
-#   6. summary         (always): provenance + publish instructions.
+#   4. release         (Linux): creates or refreshes a draft prerelease and
+#                      hashes the two Linux installers into SHA256SUMS.
+#   5. summary         (always): provenance + guarded publish instructions.
 #
-# macOS arm64 is NOT built in CI (GitHub macOS runners bill at 10x). It is
-# produced locally via `npm run electron:pack -- --mac --arm64` and uploaded
-# manually with `gh release upload`. See docs/releases/README.md.
+# macOS arm64 is NOT built or attached in this release lane (GitHub macOS
+# runners bill at 10x). The guarded publisher rejects extra, unqualified
+# distributables. A future macOS release must add its own CI build and smoke
+# matrix before attachment. See docs/releases/README.md.
 #
 # See docs/electron-beta-handoff.md for the team-facing handoff runbook.
 
@@ -52,12 +50,6 @@ on:
         required: false
         type: boolean
         default: false
-      enable_windows:
-        description: 'Also build and attach the Windows NSIS installer (only after DON-141 Windows smoke passes)'
-        required: false
-        type: boolean
-        default: false
-
 permissions:
   contents: read
 
@@ -75,6 +67,7 @@ jobs:
     timeout-minutes: 60
     outputs:
       tag: ${{ steps.resolve_tag.outputs.tag }}
+      commit: ${{ steps.resolve_tag.outputs.commit }}
       version: ${{ steps.resolve_tag.outputs.version }}
     steps:
       - name: Checkout
@@ -83,7 +76,7 @@ jobs:
           ref: ${{ github.event.inputs.tag || github.ref }}
           fetch-depth: 0
 
-      - name: Resolve tag and version
+      - name: Resolve tag, commit, and version
         id: resolve_tag
         run: |
           set -euo pipefail
@@ -101,9 +94,13 @@ jobs:
             exit 1
           fi
           VERSION="${TAG#electron-v}"
-          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
-          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-          echo "Resolved tag=$TAG version=$VERSION"
+          COMMIT="$(git rev-parse HEAD)"
+          {
+            echo "tag=$TAG"
+            echo "commit=$COMMIT"
+            echo "version=$VERSION"
+          } >> "$GITHUB_OUTPUT"
+          echo "Resolved tag=$TAG commit=$COMMIT version=$VERSION"
 
       - name: Verify version matches package.json
         env:
@@ -181,7 +178,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          ref: ${{ needs.gates.outputs.tag }}
+          ref: ${{ needs.gates.outputs.commit }}
 
       - name: Install Linux Electron runtime deps
         run: |
@@ -217,6 +214,8 @@ jobs:
         run: npm ci
 
       - name: Build Electron Linux artifacts
+        env:
+          GITHUB_SHA: ${{ needs.gates.outputs.commit }}
         run: npm run electron:dist:linux
 
       - name: Inspect artifacts and native SQLite module
@@ -303,53 +302,6 @@ jobs:
           path: |
             tmp/electron-dist/*.AppImage
             tmp/electron-dist/*.deb
-          if-no-files-found: error
-          retention-days: 7
-
-  bundle-windows:
-    name: Bundle (windows-x86_64)
-    needs: [gates, bundle-linux]
-    # OPT-IN ONLY. Disabled until DON-141 (Windows official-map smoke) passes.
-    # We refuse to attach an unsmoked Windows installer to a release.
-    if: ${{ github.event.inputs.enable_windows == 'true' && github.event.inputs.dry_run != 'true' }}
-    runs-on: windows-2022
-    timeout-minutes: 45
-    permissions:
-      contents: read
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ needs.gates.outputs.tag }}
-
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: 'npm'
-
-      - name: Install npm deps
-        run: npm ci
-
-      - name: Build Electron Windows NSIS artifact
-        run: npm run electron:dist:win
-
-      - name: Verify NSIS artifact exists
-        shell: bash
-        run: |
-          set -euo pipefail
-          EXE="$(find tmp/electron-dist -maxdepth 1 -type f -name '*.exe' -print -quit)"
-          if [ -z "$EXE" ]; then
-            echo "::error::Windows NSIS .exe was not produced."
-            exit 1
-          fi
-          echo "Built: $EXE"
-
-      - name: Upload Windows artifact for downstream jobs
-        uses: actions/upload-artifact@v4
-        with:
-          name: electron-windows-artifacts
-          path: tmp/electron-dist/*.exe
           if-no-files-found: error
           retention-days: 7
 
@@ -482,10 +434,9 @@ jobs:
 
   release:
     name: Draft prerelease + SHA256SUMS
-    needs: [gates, bundle-linux, bundle-windows, launch-smoke-linux]
+    needs: [gates, bundle-linux, launch-smoke-linux]
     # Only publish AFTER the launch smoke passes, and never on a dry run.
-    # bundle-windows is allowed to be skipped (default-off) but not failed.
-    if: ${{ always() && github.event.inputs.dry_run != 'true' && needs.bundle-linux.result == 'success' && needs.launch-smoke-linux.result == 'success' && needs.bundle-windows.result != 'failure' }}
+    if: ${{ always() && github.event.inputs.dry_run != 'true' && needs.bundle-linux.result == 'success' && needs.launch-smoke-linux.result == 'success' }}
     runs-on: ubuntu-22.04
     timeout-minutes: 10
     permissions:
@@ -494,7 +445,7 @@ jobs:
       - name: Checkout (for release notes)
         uses: actions/checkout@v4
         with:
-          ref: ${{ needs.gates.outputs.tag }}
+          ref: ${{ needs.gates.outputs.commit }}
 
       - name: Download all built artifacts
         uses: actions/download-artifact@v4
@@ -521,10 +472,11 @@ jobs:
           echo "Generated SHA256SUMS:"
           cat SHA256SUMS
 
-      - name: Create draft prerelease and upload all assets
+      - name: Create or refresh exact-target draft prerelease and upload all assets
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ needs.gates.outputs.tag }}
+          COMMIT: ${{ needs.gates.outputs.commit }}
           VERSION: ${{ needs.gates.outputs.version }}
         run: |
           set -euo pipefail
@@ -537,53 +489,99 @@ jobs:
             echo ""
             echo "## CI Provenance"
             echo ""
-            echo "- Build commit: \`${GITHUB_SHA}\`"
+            echo "- Build commit: \`${COMMIT}\`"
             echo "- Run: [#${GITHUB_RUN_NUMBER}](${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID})"
             echo "- Workflow: \`.github/workflows/electron-release.yml\`"
             echo "- Release gates: lint, unit tests, web build, standard Chromium E2E"
             echo "- Linux launch smoke: passed"
           } > "$BODY_FILE"
 
-          # Idempotent across re-runs: create the draft only if absent.
-          if ! gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            gh release create "$TAG" \
+          resolve_remote_tag_commit() {
+            local lines peeled direct
+            lines="$(git ls-remote origin "refs/tags/$TAG" "refs/tags/$TAG^{}")"
+            peeled="$(printf '%s\n' "$lines" | awk '$2 ~ /\^\{\}$/ { print $1; exit }')"
+            if [ -n "$peeled" ]; then
+              printf '%s\n' "$peeled"
+              return
+            fi
+            direct="$(printf '%s\n' "$lines" | awk '$2 !~ /\^\{\}$/ { print $1; exit }')"
+            printf '%s\n' "$direct"
+          }
+
+          REMOTE_COMMIT="$(resolve_remote_tag_commit)"
+          if [ "$REMOTE_COMMIT" != "$COMMIT" ]; then
+            echo "::error::Remote tag $TAG resolves to ${REMOTE_COMMIT:-missing}, not gated commit $COMMIT."
+            exit 1
+          fi
+
+          EXISTING_RELEASE="$RUNNER_TEMP/existing-release.json"
+          if gh release view "$TAG" \
+            --repo "$GITHUB_REPOSITORY" \
+            --json isDraft,isPrerelease,tagName \
+            > "$EXISTING_RELEASE" 2>/dev/null; then
+            EXISTING_DRAFT="$(jq -r '.isDraft' "$EXISTING_RELEASE")"
+            EXISTING_PRERELEASE="$(jq -r '.isPrerelease' "$EXISTING_RELEASE")"
+            EXISTING_TAG="$(jq -r '.tagName' "$EXISTING_RELEASE")"
+            if [ "$EXISTING_DRAFT" != "true" ]; then
+              echo "::error::Existing release $TAG is not a draft; refusing to clobber published assets."
+              exit 1
+            fi
+            if [ "$EXISTING_PRERELEASE" != "true" ]; then
+              echo "::error::Existing release $TAG is not a prerelease."
+              exit 1
+            fi
+            if [ "$EXISTING_TAG" != "$TAG" ]; then
+              echo "::error::Existing draft tag $EXISTING_TAG does not match $TAG."
+              exit 1
+            fi
+            gh release edit "$TAG" \
               --repo "$GITHUB_REPOSITORY" \
               --title "SAR Tracker Electron $TAG (internal validation)" \
               --notes-file "$BODY_FILE" \
               --draft \
               --prerelease
           else
-            echo "Release $TAG already exists; reusing it."
+            gh release create "$TAG" \
+              --repo "$GITHUB_REPOSITORY" \
+              --verify-tag \
+              --title "SAR Tracker Electron $TAG (internal validation)" \
+              --notes-file "$BODY_FILE" \
+              --draft \
+              --prerelease
           fi
 
           gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" --clobber assets/*
+          REMOTE_COMMIT_AFTER="$(resolve_remote_tag_commit)"
+          if [ "$REMOTE_COMMIT_AFTER" != "$COMMIT" ]; then
+            echo "::error::Remote tag $TAG moved during draft refresh to ${REMOTE_COMMIT_AFTER:-missing}."
+            exit 1
+          fi
 
   summary:
     name: Summary
-    needs: [gates, bundle-linux, bundle-windows, launch-smoke-linux, release]
+    needs: [gates, bundle-linux, launch-smoke-linux, release]
     if: always()
     runs-on: ubuntu-22.04
     steps:
       - name: Build summary
         env:
           TAG: ${{ needs.gates.outputs.tag }}
+          COMMIT: ${{ needs.gates.outputs.commit }}
           GATES_RESULT: ${{ needs.gates.result }}
           BUNDLE_LINUX_RESULT: ${{ needs.bundle-linux.result }}
-          BUNDLE_WINDOWS_RESULT: ${{ needs.bundle-windows.result }}
           SMOKE_RESULT: ${{ needs.launch-smoke-linux.result }}
           RELEASE_RESULT: ${{ needs.release.result }}
           DRY_RUN: ${{ github.event.inputs.dry_run || 'false' }}
-          ENABLE_WINDOWS: ${{ github.event.inputs.enable_windows || 'false' }}
         run: |
           {
             echo "# Electron release run summary"
             echo ""
             echo "- Tag: \`${TAG:-(unresolved)}\`"
-            echo "- Commit: \`${GITHUB_SHA}\`"
+            echo "- Commit: \`${COMMIT:-(unresolved)}\`"
             echo "- Run: [#${GITHUB_RUN_NUMBER}](${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID})"
             echo "- Trigger: \`${GITHUB_EVENT_NAME}\`"
             echo "- Dry run: \`${DRY_RUN}\`"
-            echo "- Windows enabled: \`${ENABLE_WINDOWS}\`"
+            echo "- Windows lane: not present; no Windows artifact can be attached"
             echo ""
             echo "## Job results"
             echo ""
@@ -591,25 +589,21 @@ jobs:
             echo "| --- | --- |"
             echo "| gates | ${GATES_RESULT} |"
             echo "| bundle-linux | ${BUNDLE_LINUX_RESULT} |"
-            echo "| bundle-windows | ${BUNDLE_WINDOWS_RESULT} |"
             echo "| launch-smoke-linux | ${SMOKE_RESULT} |"
             echo "| release | ${RELEASE_RESULT} |"
             echo ""
             echo "## macOS"
             echo ""
-            echo "macOS arm64 is not built in CI. Produce it locally with"
-            echo "\`npm run electron:pack -- --mac --arm64\`, zip the .app, and attach it"
-            echo "with \`gh release upload\`. Re-run the checksums job afterwards if you"
-            echo "add a macOS asset (or regenerate SHA256SUMS locally)."
+            echo "macOS arm64 is not built or attached in this lane. The guarded publisher"
+            echo "rejects any extra distributable without an explicit qualification matrix."
             echo ""
             echo "## Next step"
             echo ""
             if [ "$BUNDLE_LINUX_RESULT" = "success" ] && [ "$SMOKE_RESULT" = "success" ] && [ "$DRY_RUN" != "true" ]; then
-              echo "The release for \`${TAG}\` is in **DRAFT**. Review the assets and body, run any remaining manual smokes, then publish with:"
+              echo "The release for \`${TAG}\` is in **DRAFT**. Qualify the exact draft AppImage and installed .deb, replace every pending matrix row with final evidence, then run the guarded publisher:"
               echo ""
               echo '```bash'
-              echo "gh release view ${TAG} --repo ${GITHUB_REPOSITORY}"
-              echo "gh release edit ${TAG} --repo ${GITHUB_REPOSITORY} --draft=false"
+              echo "npm run electron:release:publish -- --tag ${TAG} --repo ${GITHUB_REPOSITORY}"
               echo '```'
             elif [ "$DRY_RUN" = "true" ]; then
               echo "Dry run: gates and Linux bundle ran but no release was created or uploaded."
