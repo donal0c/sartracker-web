@@ -9,9 +9,8 @@
 - **Linear reference:** `DON-260`
 - **Supersedes:** `electron-v0.1.0-beta.12`
 - **Tag commit:** pending
-- **Local verification reports:** full no-skip report
-  `tmp/beta-artifacts/verify-0.1.0-beta.12.1-sha.54c6abb48f20-2026-07-28T21-32-01Z.json`;
-  current harness rerun pending after commit
+- **Local verification report:** full no-skip report
+  `tmp/beta-artifacts/verify-0.1.0-beta.12.1-sha.c1672438b1be-2026-07-29T05-55-28Z.json`
 - **CI run:** first run `30402564688` blocked before release creation; replacement
   run pending
 - **Exact CI artifact SHA-256:** pending
