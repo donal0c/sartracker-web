@@ -9,8 +9,11 @@
 - **Linear reference:** `DON-260`
 - **Supersedes:** `electron-v0.1.0-beta.12`
 - **Tag commit:** pending
-- **Local verification report:** `tmp/beta-artifacts/verify-0.1.0-beta.12.1-sha.54c6abb48f20-2026-07-28T21-32-01Z.json`
-- **CI run:** pending
+- **Local verification reports:** full no-skip report
+  `tmp/beta-artifacts/verify-0.1.0-beta.12.1-sha.54c6abb48f20-2026-07-28T21-32-01Z.json`;
+  current harness rerun pending after commit
+- **CI run:** first run `30402564688` blocked before release creation; replacement
+  run pending
 - **Exact CI artifact SHA-256:** pending
 - **GitHub release:** remain draft until the packaged smoke matrix is complete
 
@@ -82,7 +85,7 @@ redesign.
 Local pre-tag proof is complete:
 
 - lint and production build/bundle budgets passed
-- full unit suite passed: 167 files / 1,230 tests
+- full unit suite passed: 168 files / 1,232 tests
 - Rust backend passed: 51 tests plus one expected keychain ignore; formatting
   and strict Clippy checks are clean
 - Chromium passed: 132/132
@@ -102,6 +105,19 @@ Local pre-tag proof is complete:
   sanitized diagnostics/support/incident export smokes passed locally
 - same-session Fable review passed the final diff and evidence with no P1/P2
   finding and disposition `PASS_TO_FULL_RELEASE_GATES`
+
+The first tag-driven run (`30402564688`) passed the product truth gates and
+persisted all 8,664 expected soak positions with the exact deterministic digest,
+restart, SQLite, main-process, renderer, and growth checks. It correctly blocked
+publication because all four real operator probes reported `target_missing`.
+The captured Linux logs showed both WebGL implementations blocklisted on the
+runner, leaving the map/root workspace unavailable. No draft release or assets
+were created. A red-to-green harness regression now keeps the packaged soak's
+Linux software-rendering switches aligned with the separate launch smoke. The
+same package and harness then passed on the Ubuntu validation machine under an
+isolated Xvfb display: 8,664/8,664 exact positions, exact digest, 4/4 healthy
+operator interactions, 187.5 ms maximum main-process latency, and 971.6 ms
+maximum individual action latency. The release thresholds were not weakened.
 
 The remaining release gates are:
 

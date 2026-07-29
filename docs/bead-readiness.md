@@ -20,7 +20,7 @@ Use this document before implementation to decide how much parallel research, pl
 
 ## Current Assessments
 
-Last updated: 2026-07-28 by Codex (planning consolidated into the two-track workplan)
+Last updated: 2026-07-29 by Codex (planning consolidated into the two-track workplan)
 
 ### `DON-260` — Deep breadcrumb correctness hotfix
 
@@ -30,7 +30,7 @@ Last updated: 2026-07-28 by Codex (planning consolidated into the two-track work
 - Locked decisions: upstream position identity is authoritative; corrections update one row with an audit revision; same-time fixes use a stable source-identity tie-break; display selection is a deterministic epoch-anchored whole-route budget; restart reconstruction runs off the main isolate; live recent requests and slow mission-wide reconciliation are separate; five minutes is the stale threshold.
 - Open questions: none that block implementation. GPS accuracy remains a source measurement, not a promise of physical zero error.
 - Non-goals: map-package expansion and the beta.13 bounded-storage/archive programme (`DON-248`-`DON-255`).
-- Ready-to-start checklist: safety invariants, failure modes, persistence/coordinate impact, TDD regressions, browser/visual proof, packaged multi-day proof, and Fable review are complete. CI artifact provenance and Ubuntu smoke remain the release gates specified in `DON-260` and `docs/two-track-execution-workplan.md`.
+- Ready-to-start checklist: safety invariants, failure modes, persistence/coordinate impact, TDD regressions, browser/visual proof, packaged multi-day proof, and Fable review are complete. The first tag run's Linux WebGL-blocklist failure was contained to the release harness and reproduced/fixed under TDD; Ubuntu/Xvfb passed the corrected 8,664-position soak with 4/4 healthy interactions and unchanged thresholds. Replacement CI artifact provenance and the full Ubuntu artifact matrix remain the release gates specified in `DON-260` and `docs/two-track-execution-workplan.md`.
 
 ## Hosted Browser Runtime
 

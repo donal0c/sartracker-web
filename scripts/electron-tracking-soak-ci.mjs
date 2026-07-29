@@ -6,6 +6,8 @@ import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
+import { buildTrackingSoakCiRunnerArgs } from '../build/electron-tracking-soak-ci-lib.js'
+
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 
 main().catch((error) => {
@@ -16,15 +18,11 @@ main().catch((error) => {
 /** Finds the just-built unpacked executable and runs the deterministic CI profile. */
 async function main() {
   const appPath = await findPackagedExecutable()
-  const runnerArgs = [
-    path.join(projectRoot, 'scripts', 'electron-tracking-soak.mjs'),
-    '--app',
+  const runnerArgs = buildTrackingSoakCiRunnerArgs({
     appPath,
-    '--profile',
-    'ci',
-    '--evidence',
-    path.join(projectRoot, 'tmp', 'beta-artifacts', 'tracking-soak-ci'),
-  ]
+    platform: process.platform,
+    projectRoot,
+  })
   const command = process.platform === 'linux' && !process.env.DISPLAY ? 'xvfb-run' : process.execPath
   const args = command === 'xvfb-run' ? ['-a', process.execPath, ...runnerArgs] : runnerArgs
   const exitCode = await new Promise((resolve, reject) => {
