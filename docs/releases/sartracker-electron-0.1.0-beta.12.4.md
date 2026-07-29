@@ -6,7 +6,7 @@
 - **Version:** 0.1.0-beta.12.4
 - **Build tag:** `electron-v0.1.0-beta.12.4`
 - **Cut date (UTC):** 2026-07-29
-- **Linear references:** `DON-261`, `DON-262`, `DON-263`
+- **Linear references:** `DON-261`, `DON-262`, `DON-263`; follow-up `DON-264`
 - **Supersedes:** `electron-v0.1.0-beta.12.3`
 - **Tag commit:** pending
 - **Local verification report:** pending clean no-skip `npm run beta:verify`
@@ -147,6 +147,9 @@ coordinates, breadcrumb identity, Traccar requests, or persistence.
 - Private Discovery map packages are not bundled.
 - Full Discovery map loading, beta.13 bounded-storage migration/retention,
   streamed archives, and archive-backed review remain separate work.
+- Persistent overlay-sync exceptions retry with capped backoff and are visible
+  in the developer console; durable sanitized diagnostics/map-health elevation
+  is tracked in `DON-264` and is non-blocking for this hotfix.
 - This hotfix does not claim GPS hardware has zero physical measurement error.
 
 ## Packaged smoke matrix
