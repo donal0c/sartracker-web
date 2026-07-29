@@ -420,6 +420,86 @@ describe('Electron main startup', () => {
     expect(electronMock.app.exit).toHaveBeenCalledWith(1)
   })
 
+  it('refuses an incompatible mission-store schema without entering a relaunch loop [DON-260]', async () => {
+    const startupError = new Error(
+      'Cannot open mission store created by newer mission store schema 6; this build supports schema 5.',
+    )
+    const electronMock = createElectronMock(vi.fn(), undefined, true)
+    Module._load = ((request: string, parent: NodeJS.Module | null, isMain: boolean) => {
+      if (request === 'electron') {
+        return electronMock
+      }
+      if (request === './mission-store.cjs') {
+        return {
+          createElectronMissionStore: vi.fn(() => {
+            throw startupError
+          }),
+        }
+      }
+      return originalLoad(request, parent, isMain)
+    }) as typeof Module._load
+
+    require('../../electron/main.cjs')
+
+    await vi.waitFor(() => {
+      expect(electronMock.dialog.showErrorBox).toHaveBeenCalledWith(
+        'SAR Tracker could not start',
+        expect.stringContaining(startupError.message),
+      )
+      expect(electronMock.app.exit).toHaveBeenCalledWith(1)
+    })
+
+    expect(electronMock.app.relaunch).not.toHaveBeenCalled()
+    const crashLog = readFileSync(
+      path.join(testUserDataPath, 'crashes', 'crash-log.json'),
+      'utf8',
+    )
+    const runtimeLog = readFileSync(path.join(testUserDataPath, 'logs', 'runtime.log'), 'utf8')
+    expect(crashLog).toContain('"kind": "startupFailure"')
+    expect(crashLog).toContain(startupError.message)
+    expect(runtimeLog).toContain('"event":"startup_failure"')
+    expect(runtimeLog).not.toContain('unhandled_rejection')
+  })
+
+  it('keeps arbitrary startup-failure detail out of the operator dialog [DON-260]', async () => {
+    const startupError = new Error(
+      'Could not open /home/fieldoperator/mission-store.sqlite token=private-startup-token',
+    )
+    const electronMock = createElectronMock(vi.fn(), undefined, true)
+    Module._load = ((request: string, parent: NodeJS.Module | null, isMain: boolean) => {
+      if (request === 'electron') {
+        return electronMock
+      }
+      if (request === './mission-store.cjs') {
+        return {
+          createElectronMissionStore: vi.fn(() => {
+            throw startupError
+          }),
+        }
+      }
+      return originalLoad(request, parent, isMain)
+    }) as typeof Module._load
+
+    require('../../electron/main.cjs')
+
+    await vi.waitFor(() => {
+      expect(electronMock.dialog.showErrorBox).toHaveBeenCalledWith(
+        'SAR Tracker could not start',
+        'SAR Tracker could not open its operational data safely. The fault was recorded and the application will now close. Preserve the profile and contact support before retrying.',
+      )
+      expect(electronMock.app.exit).toHaveBeenCalledWith(1)
+    })
+
+    expect(electronMock.app.relaunch).not.toHaveBeenCalled()
+    const crashLog = readFileSync(
+      path.join(testUserDataPath, 'crashes', 'crash-log.json'),
+      'utf8',
+    )
+    expect(crashLog).not.toContain('fieldoperator')
+    expect(crashLog).not.toContain('private-startup-token')
+    expect(crashLog).toContain('[redacted]')
+  })
+
   it('flushes the clean-exit marker before quitting [DON-236]', async () => {
     const electronMock = createElectronMock(vi.fn(), undefined, true)
     Module._load = ((request: string, parent: NodeJS.Module | null, isMain: boolean) => {

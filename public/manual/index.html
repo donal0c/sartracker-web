@@ -1258,6 +1258,15 @@ sh "$COLLECTOR" --screenshot</code></pre>
             the same fault returns, do not treat the app as ready for operational use.
           </p>
           <p>
+            A database created by a newer SAR Tracker version is handled earlier, before the mission
+            console opens. SAR Tracker shows a native <strong>SAR Tracker could not start</strong> message
+            naming the database schema and the schema supported by the installed build. Acknowledge the
+            message and leave the profile untouched; the app exits without changing the database or
+            repeatedly relaunching. Install a compatible newer build or use a separately preserved
+            compatible profile. Do not overwrite, downgrade in place, or manually edit the rejected
+            profile.
+          </p>
+          <p>
             SAR Tracker is a single-instance desktop app. If you click the launcher while it is already
             running, the existing window should come to the front instead of opening a second copy against
             the same mission data. If you ever see two SAR Tracker windows at the same time, close the

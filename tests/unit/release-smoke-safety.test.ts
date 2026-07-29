@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 
 import {
+  countDescendantElectronRenderers,
   fileSnapshotsMatch,
   hasBreadcrumbReconciliationWarning,
 } from '../../build/release-smoke-lib.js'
@@ -99,5 +100,27 @@ describe('newer-schema immutability smoke guard [DON-260]', () => {
     expect(source).toContain('snapshotMissionStoreFiles(userDataDir)')
     expect(source).toContain('fileSnapshotsMatch(filesBefore, filesAfter)')
     expect(source).not.toContain('bytesAfter === bytesBefore')
+  })
+
+  it('detects renderer processes anywhere below an AppImage wrapper process', () => {
+    const processes = [
+      { pid: 100, parentPid: 1, command: '/tmp/SAR.AppImage' },
+      { pid: 101, parentPid: 100, command: '/tmp/.mount_SAR/app' },
+      { pid: 102, parentPid: 101, command: '/tmp/.mount_SAR/app --type=gpu-process' },
+      {
+        pid: 103,
+        parentPid: 101,
+        command: '/tmp/.mount_SAR/app --type=renderer --lang=en-GB',
+      },
+      {
+        pid: 104,
+        parentPid: 999,
+        command: '/other/electron --type=renderer',
+      },
+    ]
+
+    expect(countDescendantElectronRenderers(processes, 100)).toBe(1)
+    expect(countDescendantElectronRenderers(processes, 999)).toBe(1)
+    expect(countDescendantElectronRenderers(processes, 102)).toBe(0)
   })
 })

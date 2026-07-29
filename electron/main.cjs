@@ -689,7 +689,63 @@ function normalizeTimeout(value) {
 }
 
 if (ownsSingleInstanceLock) {
-  app.whenReady().then(startElectronApp)
+  app.whenReady().then(startElectronApp).catch(handleStartupFailure)
+}
+
+/**
+ * Records a startup failure, explains the safe recovery boundary, and exits
+ * without relaunching into the same persistent fault.
+ */
+async function handleStartupFailure(error) {
+  const userDataPath = app.getPath('userData')
+  const crashLog =
+    electronRuntimeContext.crashLog ?? createCrashLog({ userDataPath })
+  const runtimeLog =
+    electronRuntimeContext.runtimeLog ?? createRuntimeLog({ userDataPath })
+  const summary =
+    error instanceof Error ? `${error.name}: ${error.message}` : 'Unknown startup failure'
+  await Promise.all([
+    crashLog.record({
+      kind: 'startupFailure',
+      summary,
+      detail:
+        error instanceof Error && typeof error.stack === 'string'
+          ? error.stack
+          : undefined,
+    }),
+    runtimeLog.append({
+      level: 'error',
+      event: 'startup_failure',
+      fields: { name: error instanceof Error ? error.name : 'Error' },
+    }),
+  ])
+
+  try {
+    dialog.showErrorBox(
+      'SAR Tracker could not start',
+      startupFailureOperatorMessage(error),
+    )
+  } catch {
+    // A native dialog may be unavailable in headless validation. The durable
+    // logs above and non-zero exit still preserve a fail-closed result.
+  }
+  app.exit(1)
+}
+
+/**
+ * Exposes only a known-safe actionable schema refusal; arbitrary startup
+ * errors remain in the sanitized crash log rather than the native dialog.
+ */
+function startupFailureOperatorMessage(error) {
+  const message = error instanceof Error ? error.message : ''
+  if (
+    /^Cannot open mission store created by newer mission store schema \d+; this build supports schema \d+\.$/u.test(
+      message,
+    )
+  ) {
+    return `${message}\n\nThe mission database was left unchanged. Install a newer SAR Tracker build or use a compatible preserved profile. Do not overwrite or edit this profile.`
+  }
+  return 'SAR Tracker could not open its operational data safely. The fault was recorded and the application will now close. Preserve the profile and contact support before retrying.'
 }
 
 /**

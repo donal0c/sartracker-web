@@ -1,34 +1,32 @@
-# ABANDONED — DO NOT PUBLISH — SAR Tracker Electron Desktop Beta 0.1.0-beta.12.2
+# SAR Tracker Electron Desktop Beta 0.1.0-beta.12.3 (breadcrumb safety hotfix)
 
-> **Abandoned internal candidate.** The tag and CI evidence are retained
-> immutably, but this build must never be promoted or given to testers. Its
-> exact Ubuntu newer-schema gate exposed a persistent startup-relaunch loop.
-> The incomplete matrix below is preserved as the historical candidate record.
+> **Internal beta only.** Do not use for live incidents until every gate below
+> is complete and the exact CI-built artifact has passed Ubuntu qualification.
 
-- **Version:** 0.1.0-beta.12.2
-- **Build tag:** `electron-v0.1.0-beta.12.2`
-- **Cut date (UTC):** 2026-07-29
+- **Version:** 0.1.0-beta.12.3
+- **Build tag:** `electron-v0.1.0-beta.12.3`
+- **Cut date (UTC):** pending
 - **Linear reference:** `DON-260`
 - **Supersedes:** `electron-v0.1.0-beta.12`
-- **Tag commit:** `af722f5c869c5d0f66b629fb89f8db8d39a06b9a`
-- **Local verification report:**
-  `verify-0.1.0-beta.12.2-sha.af722f5c869c-2026-07-29T10-54-35Z.json`
+- **Tag commit:** pending
+- **Local verification report:** beta.12.2 exact-head no-skip report
+  `verify-0.1.0-beta.12.2-sha.af722f5c869c-2026-07-29T10-54-35Z.json` passed;
+  beta.12.3 exact-head rerun is pending after the startup-refusal correction
 - **CI runs:** failed tag runs `30402564688`, `30426564770`, `30427996046`,
   `30429828590`, and `30431931012`; diagnostic branch runs `30435183304`,
   `30437248431`, `30438100453`, and `30439617823`; exact product head
-  `c7ffcb43755c` passed Linux validation in `30441228109`; tag run
-  `30445518186` passed and created the abandoned draft
-- **Exact CI artifact SHA-256:** AppImage
-  `cd138f86ad322833697f05ac97a33055c858c2842faf6446ffad8a92cc3085af`;
-  `.deb`
-  `67fe377cffe527580a64fffbcdff6208b5843d00a8ffcef6a180b7cdae5e9d48`
-- **GitHub release:** unpublished draft titled
-  `ABANDONED — DO NOT PUBLISH — SAR Tracker Electron beta.12.2`
+  `c7ffcb43755c` passed Linux validation in `30441228109`; beta.12.2 tag run
+  `30445518186` passed but its unpublished draft failed the newer-schema
+  Ubuntu release gate
+- **Exact CI artifact SHA-256:** pending
+- **GitHub release:** remain draft until the packaged smoke matrix is complete
 
 `electron-v0.1.0-beta.12.1` was pushed against an earlier pre-release commit
-but never produced a release. Its tag is left immutable and is not a tester
-artifact. This corrected cut uses the next version rather than rewriting
-release provenance.
+but never produced a release. `electron-v0.1.0-beta.12.2` then produced a fully
+green CI draft, but exact-artifact Ubuntu qualification found that a newer
+mission-store schema entered the generic fatal-relaunch path. Both tags remain
+immutable and neither draft is a tester artifact. This corrected cut uses the
+next version rather than rewriting release provenance.
 
 ## Why this hotfix exists
 
@@ -75,6 +73,9 @@ redesign.
 - Device/cache identifiers, timestamps, coordinates, and optional numeric
   fields are parsed strictly. Live fixes become stale after five minutes.
 - The Devices inspector shows source fix time and supplied GPS accuracy.
+- A mission store created by a newer SAR Tracker version now fails closed with
+  an explicit compatibility message, preserves every mission-store byte, and
+  exits after acknowledgement without an unhandled rejection or relaunch loop.
 
 ## What the team should test
 
@@ -95,10 +96,11 @@ redesign.
 
 ## Verification
 
-Local pre-tag proof is complete:
+Product pre-tag proof is complete; the corrected exact-head no-skip rerun
+remains mandatory before tagging:
 
 - lint and production build/bundle budgets passed
-- full unit suite passed: 169 files / 1,241 tests
+- full unit suite passed: 171 files / 1,274 tests
 - Rust backend passed: 51 tests plus one expected keychain ignore; formatting
   and strict Clippy checks are clean
 - Chromium passed: 135/135
@@ -119,6 +121,16 @@ Local pre-tag proof is complete:
   sanitized diagnostics/support/incident export smokes passed locally
 - same-session Fable review passed the final diff and evidence with no P1/P2
   finding and disposition `PASS_TO_FULL_RELEASE_GATES`
+- exact beta.12.2 Ubuntu qualification preserved all 2,040,000 positions while
+  migrating a 3.70 GB schema-4 field store to schema 5, but the mandatory
+  newer-schema refusal gate exposed an unhandled-rejection/relaunch-loop
+  startup defect; beta.12.2 was marked abandoned before publication
+- a locally rebuilt beta.12.3 pre-tag AppImage then passed the corrected
+  schema-6 refusal smoke on Ubuntu: native error dialog acknowledged, exit code
+  `1`, 50 live descendant-process samples with zero renderer processes, no
+  unhandled rejection, durable `startupFailure` evidence, and byte-identical
+  database/backup hashes before and after. This proves the correction before
+  commit but does not replace the exact-CI-artifact release gate
 
 The first tag-driven run (`30402564688`) passed the product truth gates and
 persisted all 8,664 expected soak positions with the exact deterministic digest,
@@ -217,8 +229,8 @@ growth. The downloaded AppImage and `.deb` match the run's `SHA256SUMS`.
 
 The remaining release gates are:
 
-- tag-driven `electron-release.yml` green
-- final exact-head no-skip `npm run beta:verify`
+- beta.12.3 tag-driven `electron-release.yml` green
+- beta.12.3 exact-head no-skip `npm run beta:verify`
 - checksum verification and deep smoke of the exact CI AppImage and `.deb` on
   Ubuntu, including schema migration/reopen/refusal, real window-faithful
   request load, live Traccar because tracking changed, and exact-artifact
@@ -240,6 +252,8 @@ The remaining release gates are:
 | Live Traccar connection and breadcrumb reconciliation | TODO | pending |
 | Official offline Discovery package | TODO | pending |
 | Duplicate launch | TODO | pending |
+| 3.70 GB schema-4 to schema-5 migration and reopen | EXACT BETA.12.2 PASS / BETA.12.3 PENDING | The abandoned beta.12.2 artifact preserved all 2,040,000 positions, integrity, backup, and required schema-5 index. The exact beta.12.3 artifact must repeat this gate. |
+| Newer-schema refusal | PRETAG PASS / CI ARTIFACT PENDING | Local beta.12.3 package: native dialog, exit 1, zero renderer processes across 50 samples, durable sanitized evidence, no unhandled rejection, and identical full SHA-256 snapshots for every `mission-store*` file. |
 | Five-day and fourteen-day packaged soak | LOCAL PASS / CI ARTIFACT PENDING | Local rebuilt package: exact 691,224 and 1,935,384 rows, one/two restarts, zero redundant-event slope, healthy SQLite/WAL, exact full/prefix digests, and bounded main/renderer/operator-action latency. Exact CI Linux artifact must repeat both. |
 | Cross-profile exact breadcrumb identity comparison | LOCAL PASS / CI ARTIFACT PENDING | Normal full digest equals the extended run's normal-prefix digest: `93c71e43…c146`; extended full digest `e4d50c8d…009e`. |
 
@@ -259,7 +273,7 @@ The remaining release gates are:
 ## Rollback
 
 Quit the app and preserve the complete profile before doing anything else. Do
-not point beta.12 at a profile already opened by beta.12.2: beta.12 will reject
+not point beta.12 at a profile already opened by beta.12.3: beta.12 will reject
 schema 5 rather than risk corrupting it. A rollback must use a separately
 preserved pre-upgrade schema-4 profile or a fresh isolated profile, with the
 schema-5 profile retained for recovery. Do not delete, rename, copy over, or

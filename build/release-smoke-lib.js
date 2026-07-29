@@ -43,3 +43,35 @@ export function fileSnapshotsMatch(before, after) {
   }
   return true
 }
+
+/**
+ * Counts Electron renderer processes in the complete descendant tree of one
+ * AppImage launcher. Other Electron applications on the host are excluded.
+ *
+ * @param {Array<{pid: number, parentPid: number, command: string}>} processes
+ * @param {number} rootPid
+ * @returns {number}
+ */
+export function countDescendantElectronRenderers(processes, rootPid) {
+  const descendantPids = new Set([rootPid])
+  let addedDescendant = true
+  while (addedDescendant) {
+    addedDescendant = false
+    for (const process of processes) {
+      if (
+        !descendantPids.has(process.pid) &&
+        descendantPids.has(process.parentPid)
+      ) {
+        descendantPids.add(process.pid)
+        addedDescendant = true
+      }
+    }
+  }
+
+  return processes.filter(
+    (process) =>
+      process.pid !== rootPid &&
+      descendantPids.has(process.pid) &&
+      /(?:^|\s)--type=renderer(?:\s|$)/u.test(process.command),
+  ).length
+}
