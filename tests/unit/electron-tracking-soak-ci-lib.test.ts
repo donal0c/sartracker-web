@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest'
 import { buildTrackingSoakCiRunnerArgs } from '../../build/electron-tracking-soak-ci-lib.js'
 
 describe('tracking soak CI runner arguments', () => {
-  it('enables the same software-rendering path as the Linux launch smoke', () => {
+  it('selects Mesa-compatible ANGLE rendering for the Linux timing gate', () => {
     expect(
       buildTrackingSoakCiRunnerArgs({
         appPath: '/tmp/sartracker-web',
@@ -22,6 +22,8 @@ describe('tracking soak CI runner arguments', () => {
       '--no-sandbox',
       '--ignore-gpu-blocklist',
       '--enable-unsafe-swiftshader',
+      '--use-gl=angle',
+      '--use-angle=gl',
       '--disable-background-timer-throttling',
       '--disable-renderer-backgrounding',
       '--disable-backgrounding-occluded-windows',
