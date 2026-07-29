@@ -9,11 +9,12 @@
 - **Linear reference:** `DON-260`
 - **Supersedes:** `electron-v0.1.0-beta.12`
 - **Tag commit:** pending
-- **Local verification report:** full no-skip report
-  `tmp/beta-artifacts/verify-0.1.0-beta.12.1-sha.a852dc198832-2026-07-29T07-27-50Z.json`
-- **CI runs:** `30402564688`, `30426564770`, `30427996046`, and
-  `30429828590` blocked before release creation; fail-closed Mesa replacement
-  run pending
+- **Local verification report:** final exact-head no-skip report pending; the
+  earlier `sha.a852dc198832` report predates the workspace-lifecycle correction
+- **CI runs:** failed tag runs `30402564688`, `30426564770`, `30427996046`,
+  `30429828590`, and `30431931012`; diagnostic branch runs `30435183304`,
+  `30437248431`, `30438100453`, and `30439617823`; exact product head
+  `c7ffcb43755c` passed Linux validation in `30441228109`
 - **Exact CI artifact SHA-256:** pending
 - **GitHub release:** remain draft until the packaged smoke matrix is complete
 
@@ -85,13 +86,14 @@ redesign.
 Local pre-tag proof is complete:
 
 - lint and production build/bundle budgets passed
-- full unit suite passed: 169 files / 1,237 tests
+- full unit suite passed: 169 files / 1,241 tests
 - Rust backend passed: 51 tests plus one expected keychain ignore; formatting
   and strict Clippy checks are clean
-- Chromium passed: 132/132
+- Chromium passed: 135/135
 - visual Playwright passed: 36/36; fresh uncached independent review passed
   41/41 at the strict high-severity gate
-- full no-skip `npm run beta:verify` passed 8/8
+- the earlier full no-skip `npm run beta:verify` passed 8/8; the final
+  exact-head rerun remains a pre-tag gate
 - packaged CI profile passed: 8,664/8,664 exact fixes
 - packaged five-day profile passed: 691,224/691,224 exact fixes, one restart,
   exact digest `93c71e43…c146`, zero redundant-event slope, SQLite integrity
@@ -171,9 +173,40 @@ skips from `sha.a852dc198832`; its packaged soak retained all 8,664 fixes and
 kept the main-process maximum to 101.6 ms. None of the four failed CI runs
 created a release or promoted distributable artifacts.
 
+Five further fail-closed runs then separated validation interference from a
+real operator-facing delay. Tag run `30431931012` and branch runs
+`30435183304`/`30437248431` exposed probe self-interference and an unfocused
+first input. Run `30438100453` then reproduced a genuine greater-than-one-second
+Devices-workspace close path. The first product correction made close immediate,
+but run `30439617823` still rejected the package because workspace entry retained
+multi-frame animation choreography: exact position truth and direct Mesa
+attestation passed, while the renderer maximum reached 1,133.2 ms and external
+action latency reached 1,732.7 ms.
+
+The final product correction (`c7ffcb43755c`) removes the workspace animation
+state machine and transitions, opens and closes directly from application
+state, and uses a layout effect for pre-paint modal focus and exact opener
+restoration. Docked workspaces remain non-modal and do not steal focus. Focused
+red-to-green tests cover immediate unmount and actionable map centre, rapid
+close/reopen, docked and nested-Escape behavior, and Settings/Diagnostics focus
+return. Full local proof is now 1,241 unit tests, 135 Chromium tests, 36 visual
+tests, and a fresh uncached 41/41 independent visual review.
+
+Exact-head Linux branch run `30441228109` is green. It persisted
+8,664/8,664 positions with exact digest
+`63276a130a720149784dd67139c2135d6fc333c847b0bb7158494bc121e5a9c6`,
+accepted two of two direct ANGLE/OpenGL Mesa llvmpipe launches with 23 and 37
+renderer samples, completed 4/4 focused and pointer-receiving trusted
+interactions, and passed AppImage launch. Main-process maximum was 32.7 ms,
+renderer maximum 416.6 ms, internal action maximum 128.1 ms, and external
+action maximum 263.3 ms. There were no interaction errors, renderer crashes,
+desktop-session throttling, integrity failures, WAL residue, or redundant-event
+growth. The downloaded AppImage and `.deb` match the run's `SHA256SUMS`.
+
 The remaining release gates are:
 
 - tag-driven `electron-release.yml` green
+- final exact-head no-skip `npm run beta:verify`
 - checksum verification and deep smoke of the exact CI AppImage and `.deb` on
   Ubuntu, including schema migration/reopen/refusal, real window-faithful
   request load, live Traccar because tracking changed, and exact-artifact
