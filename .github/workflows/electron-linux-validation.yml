@@ -53,6 +53,8 @@ jobs:
             libdrm2 \
             libfuse2 \
             libgbm1 \
+            libgl1-mesa-dri \
+            libglx-mesa0 \
             libgtk-3-0 \
             libnss3 \
             libxdamage1 \
@@ -122,6 +124,8 @@ jobs:
           xvfb-run -a --server-args='-screen 0 1440x900x24' dbus-run-session -- bash <<'EOF'
           set -euo pipefail
           export NO_AT_BRIDGE=1
+          export LIBGL_ALWAYS_SOFTWARE=1
+          export GALLIUM_DRIVER=llvmpipe
 
           printf '\n' | gnome-keyring-daemon --unlock --components=secrets \
             > tmp/electron-validation-evidence/keyring-env.txt \
@@ -136,7 +140,8 @@ jobs:
           "$APPIMAGE" \
             --no-sandbox \
             --ignore-gpu-blocklist \
-            --enable-unsafe-swiftshader \
+            --use-gl=angle \
+            --use-angle=gl \
             > tmp/electron-validation-evidence/appimage.log \
             2>&1 &
           APP_PID=$!

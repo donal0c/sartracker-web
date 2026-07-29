@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest'
 
-import { buildTrackingSoakCiRunnerArgs } from '../../build/electron-tracking-soak-ci-lib.js'
+import {
+  buildTrackingSoakCiEnvironment,
+  buildTrackingSoakCiRunnerArgs,
+} from '../../build/electron-tracking-soak-ci-lib.js'
 
 describe('tracking soak CI runner arguments', () => {
   it('selects Mesa-compatible ANGLE rendering for the Linux timing gate', () => {
@@ -21,7 +24,6 @@ describe('tracking soak CI runner arguments', () => {
       '--',
       '--no-sandbox',
       '--ignore-gpu-blocklist',
-      '--enable-unsafe-swiftshader',
       '--use-gl=angle',
       '--use-angle=gl',
       '--disable-background-timer-throttling',
@@ -46,5 +48,26 @@ describe('tracking soak CI runner arguments', () => {
       '--evidence',
       '/repo/tmp/beta-artifacts/tracking-soak-ci',
     ])
+  })
+
+  it('forces Mesa llvmpipe only for the Linux validation process tree', () => {
+    expect(
+      buildTrackingSoakCiEnvironment({
+        environment: { DISPLAY: ':99', EXISTING: 'preserved' },
+        platform: 'linux',
+      }),
+    ).toEqual({
+      DISPLAY: ':99',
+      EXISTING: 'preserved',
+      LIBGL_ALWAYS_SOFTWARE: '1',
+      GALLIUM_DRIVER: 'llvmpipe',
+    })
+
+    expect(
+      buildTrackingSoakCiEnvironment({
+        environment: { EXISTING: 'preserved' },
+        platform: 'darwin',
+      }),
+    ).toEqual({ EXISTING: 'preserved' })
   })
 })

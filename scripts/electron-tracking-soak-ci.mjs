@@ -6,7 +6,10 @@ import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-import { buildTrackingSoakCiRunnerArgs } from '../build/electron-tracking-soak-ci-lib.js'
+import {
+  buildTrackingSoakCiEnvironment,
+  buildTrackingSoakCiRunnerArgs,
+} from '../build/electron-tracking-soak-ci-lib.js'
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 
@@ -25,8 +28,12 @@ async function main() {
   })
   const command = process.platform === 'linux' && !process.env.DISPLAY ? 'xvfb-run' : process.execPath
   const args = command === 'xvfb-run' ? ['-a', process.execPath, ...runnerArgs] : runnerArgs
+  const environment = buildTrackingSoakCiEnvironment({
+    environment: process.env,
+    platform: process.platform,
+  })
   const exitCode = await new Promise((resolve, reject) => {
-    const child = spawn(command, args, { cwd: projectRoot, stdio: 'inherit', env: process.env })
+    const child = spawn(command, args, { cwd: projectRoot, stdio: 'inherit', env: environment })
     child.once('error', reject)
     child.once('exit', (code) => resolve(code ?? 1))
   })

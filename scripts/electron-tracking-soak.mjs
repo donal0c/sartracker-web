@@ -30,6 +30,7 @@ import {
   buildTrackingSoakVerdict,
   classifyOperatorInteraction,
   createPositionTruthDigestAccumulator,
+  measureOperatorAction,
   parseTrackingSoakArgs,
   parseTrackingSoakRuntimeLog,
 } from '../build/electron-tracking-soak-lib.js'
@@ -513,21 +514,23 @@ async function recordOperatorInteraction(input) {
   const errors = []
 
   if (result.targetFound) {
-    const openStartedAt = performance.now()
-    await installClickRecorder(input.page, 'open-devices-workspace').catch(() => undefined)
-    try {
-      await input.page.getByTestId('open-devices-workspace').click({ timeout: 5_000 })
-      result.openClickCompleted = true
-    } catch (error) {
-      errors.push(safeErrorClass(error))
-    }
-    result.openClickReceived = await readClickRecorder(input.page).catch(() => false)
-    result.workspaceOpened = await waitForLocatorState(
-      input.page.getByTestId('devices-workspace'),
-      'visible',
-      5_000,
-    )
-    result.openActionDurationMs = performance.now() - openStartedAt
+    const openAction = await measureOperatorAction({
+      installRecorder: () => installClickRecorder(input.page, 'open-devices-workspace'),
+      click: () => input.page.getByTestId('open-devices-workspace').click({ timeout: 5_000 }),
+      waitForState: () =>
+        waitForLocatorState(
+          input.page.getByTestId('devices-workspace'),
+          'visible',
+          5_000,
+        ),
+      readRecorder: () => readClickRecorder(input.page),
+      now: () => performance.now(),
+    })
+    result.openClickCompleted = openAction.clickCompleted
+    result.openClickReceived = openAction.clickReceived
+    result.workspaceOpened = openAction.stateReached
+    result.openActionDurationMs = openAction.durationMs
+    errors.push(...openAction.errorClasses)
   }
 
   const mainIpc = await probeMainProcessIpc(input.page, 1_000).catch((error) => ({
@@ -538,21 +541,23 @@ async function recordOperatorInteraction(input) {
   result.mainIpcStatus = mainIpc.status
 
   if (result.workspaceOpened) {
-    const closeStartedAt = performance.now()
-    await installClickRecorder(input.page, 'workspace-close-btn').catch(() => undefined)
-    try {
-      await input.page.getByTestId('workspace-close-btn').click({ timeout: 5_000 })
-      result.closeClickCompleted = true
-    } catch (error) {
-      errors.push(safeErrorClass(error))
-    }
-    result.closeClickReceived = await readClickRecorder(input.page).catch(() => false)
-    result.workspaceClosed = await waitForLocatorState(
-      input.page.getByTestId('devices-workspace'),
-      'hidden',
-      5_000,
-    )
-    result.closeActionDurationMs = performance.now() - closeStartedAt
+    const closeAction = await measureOperatorAction({
+      installRecorder: () => installClickRecorder(input.page, 'workspace-close-btn'),
+      click: () => input.page.getByTestId('workspace-close-btn').click({ timeout: 5_000 }),
+      waitForState: () =>
+        waitForLocatorState(
+          input.page.getByTestId('devices-workspace'),
+          'hidden',
+          5_000,
+        ),
+      readRecorder: () => readClickRecorder(input.page),
+      now: () => performance.now(),
+    })
+    result.closeClickCompleted = closeAction.clickCompleted
+    result.closeClickReceived = closeAction.clickReceived
+    result.workspaceClosed = closeAction.stateReached
+    result.closeActionDurationMs = closeAction.durationMs
+    errors.push(...closeAction.errorClasses)
   }
 
   const classification = classifyOperatorInteraction(result)

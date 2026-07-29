@@ -10,6 +10,7 @@ import {
   buildTrackingGrowthEvidence,
   createPositionTruthDigestAccumulator,
   createTrackingSoakProfile,
+  measureOperatorAction,
   parseTrackingSoakRuntimeLog,
   parseTrackingSoakArgs,
 } from '../../build/electron-tracking-soak-lib.js'
@@ -261,6 +262,85 @@ describe('Electron packaged tracking soak helpers [DON-246]', () => {
 
     expect(verdict.passed).toBe(false)
     expect(verdict.failureReasons.join('\n')).toMatch(/operator action/i)
+  })
+
+  it('fails when the renderer itself reaches the freeze threshold [DON-260]', () => {
+    const profile = createTrackingSoakProfile('ci')
+    const verdict = buildTrackingSoakVerdict({
+      profile,
+      observedBatches: profile.actualBatches,
+      deviceRows: profile.deviceCount,
+      positionRows: profile.expectedPositionRows,
+      deviceCreatedEvents: profile.deviceCount,
+      deviceUpdatedEvents: 0,
+      positionRecordedEvents: 0,
+      operationalMissionEvents: 9,
+      declaredOperationalEventBudget: 9,
+      unexplainedMissionEvents: 0,
+      restartCheckpointsPassed: profile.restartCheckpoints.length,
+      backupCycles: 2,
+      mainHeartbeatSamples: 40,
+      mainHeartbeatErrors: 0,
+      mainMaximumMs: 14,
+      rendererSamples: 40,
+      rendererMaximumMs: 1_500,
+      rendererCrashes: 0,
+      operatorInteractionSamples: 4,
+      operatorInteractionErrors: 0,
+      operatorInteractionMaximumMs: 900,
+      operatorActionSamples: 8,
+      operatorActionMaximumMs: 650,
+      maximumProcessTreeResidentBytes: 500_000_000,
+      freezeThresholdMs: 1_000,
+      integrityResult: 'ok',
+      walCheckpointBusy: 0,
+      supportBundleInspected: true,
+      supportBundleRedacted: true,
+      runtimeLogBytes: 24_000,
+      supportBundleBytes: 18_000,
+      positionTruthExactMatch: true,
+      normalPrefixTruthExactMatch: true,
+      missingSourcePositionIdentityRows: 0,
+    })
+
+    expect(verdict.passed).toBe(false)
+    expect(verdict.failureReasons.join('\n')).toMatch(/renderer maximum/i)
+  })
+
+  it('measures trusted action time without recorder diagnostic round trips [DON-260]', async () => {
+    let now = 0
+    const calls: string[] = []
+
+    const result = await measureOperatorAction({
+      installRecorder: async () => {
+        calls.push('install')
+        now = 100
+      },
+      click: async () => {
+        calls.push('click')
+        now = 250
+      },
+      waitForState: async () => {
+        calls.push('state')
+        now = 600
+        return true
+      },
+      readRecorder: async () => {
+        calls.push('read')
+        now = 2_000
+        return true
+      },
+      now: () => now,
+    })
+
+    expect(calls).toEqual(['install', 'click', 'state', 'read'])
+    expect(result).toEqual({
+      clickCompleted: true,
+      clickReceived: true,
+      stateReached: true,
+      durationMs: 500,
+      errorClasses: [],
+    })
   })
 
   it.each([

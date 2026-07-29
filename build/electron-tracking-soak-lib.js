@@ -207,6 +207,11 @@ export function buildTrackingSoakVerdict(input) {
       `Main-process maximum ${input.mainMaximumMs}ms reached the ${input.freezeThresholdMs}ms freeze threshold.`,
     )
   }
+  if (input.rendererMaximumMs >= input.freezeThresholdMs) {
+    failureReasons.push(
+      `Renderer maximum ${input.rendererMaximumMs}ms reached the ${input.freezeThresholdMs}ms freeze threshold.`,
+    )
+  }
   if (input.operatorActionMaximumMs >= input.freezeThresholdMs) {
     failureReasons.push(
       `Operator action maximum ${input.operatorActionMaximumMs}ms reached the ${input.freezeThresholdMs}ms freeze threshold.`,
@@ -246,6 +251,43 @@ export function buildTrackingSoakVerdict(input) {
       redundantRows / input.profile.equivalentProductionPolls,
     operationalPositionSlopeRowsPerEquivalentPoll:
       input.positionRows / input.profile.equivalentProductionPolls,
+  }
+}
+
+/**
+ * Measures click-to-state latency without including recorder setup/readback.
+ *
+ * The recorder calls prove trusted browser delivery, but their CDP round trips
+ * are harness diagnostics rather than time an operator waits for the UI.
+ */
+export async function measureOperatorAction(input) {
+  await input.installRecorder().catch(() => undefined)
+  const startedAt = input.now()
+  const errorClasses = []
+  let clickCompleted = false
+  let stateReached = false
+
+  try {
+    await input.click()
+    clickCompleted = true
+  } catch (error) {
+    errorClasses.push(error instanceof Error ? error.name : 'UnknownError')
+  }
+
+  try {
+    stateReached = await input.waitForState()
+  } catch (error) {
+    errorClasses.push(error instanceof Error ? error.name : 'UnknownError')
+  }
+  const durationMs = input.now() - startedAt
+  const clickReceived = await input.readRecorder().catch(() => false)
+
+  return {
+    clickCompleted,
+    clickReceived,
+    stateReached,
+    durationMs,
+    errorClasses,
   }
 }
 

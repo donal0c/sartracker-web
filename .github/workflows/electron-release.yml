@@ -196,6 +196,8 @@ jobs:
             libdrm2 \
             libfuse2 \
             libgbm1 \
+            libgl1-mesa-dri \
+            libglx-mesa0 \
             libgtk-3-0 \
             libnss3 \
             libxdamage1 \
@@ -257,6 +259,9 @@ jobs:
           echo "No map/licensed data present in build output."
 
       - name: Packaged tracking soak (CI profile)
+        env:
+          LIBGL_ALWAYS_SOFTWARE: '1'
+          GALLIUM_DRIVER: llvmpipe
         run: |
           set -euo pipefail
           xvfb-run -a --server-args='-screen 0 1440x900x24' \
@@ -351,6 +356,8 @@ jobs:
             gnome-keyring \
             imagemagick \
             libfuse2 \
+            libgl1-mesa-dri \
+            libglx-mesa0 \
             libgtk-3-0 \
             libnss3 \
             xdotool \
@@ -382,6 +389,8 @@ jobs:
           xvfb-run -a --server-args='-screen 0 1440x900x24' dbus-run-session -- bash <<'EOF'
           set -euo pipefail
           export NO_AT_BRIDGE=1
+          export LIBGL_ALWAYS_SOFTWARE=1
+          export GALLIUM_DRIVER=llvmpipe
 
           printf '\n' | gnome-keyring-daemon --unlock --components=secrets \
             > smoke-evidence/keyring-env.txt \
@@ -396,7 +405,8 @@ jobs:
           "$APPIMAGE" \
             --no-sandbox \
             --ignore-gpu-blocklist \
-            --enable-unsafe-swiftshader \
+            --use-gl=angle \
+            --use-angle=gl \
             > smoke-evidence/appimage.log \
             2>&1 &
           APP_PID=$!
