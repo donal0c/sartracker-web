@@ -10,7 +10,7 @@
 - **Supersedes:** `electron-v0.1.0-beta.12`
 - **Tag commit:** pending
 - **Local verification report:** full no-skip report
-  `tmp/beta-artifacts/verify-0.1.0-beta.12.1-sha.c1672438b1be-2026-07-29T05-55-28Z.json`
+  `tmp/beta-artifacts/verify-0.1.0-beta.12.1-sha.d71715deb4a7-2026-07-29T06-22-18Z.json`
 - **CI runs:** `30402564688` and `30426564770` blocked before release
   creation; foreground-equivalent replacement run pending
 - **Exact CI artifact SHA-256:** pending
