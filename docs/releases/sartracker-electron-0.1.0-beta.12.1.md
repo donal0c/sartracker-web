@@ -10,9 +10,10 @@
 - **Supersedes:** `electron-v0.1.0-beta.12`
 - **Tag commit:** pending
 - **Local verification report:** full no-skip report
-  `tmp/beta-artifacts/verify-0.1.0-beta.12.1-sha.2ecc81058d58-2026-07-29T06-53-43Z.json`
-- **CI runs:** `30402564688`, `30426564770`, and `30427996046` blocked
-  before release creation; ANGLE/OpenGL replacement run pending
+  `tmp/beta-artifacts/verify-0.1.0-beta.12.1-sha.a852dc198832-2026-07-29T07-27-50Z.json`
+- **CI runs:** `30402564688`, `30426564770`, `30427996046`, and
+  `30429828590` blocked before release creation; fail-closed Mesa replacement
+  run pending
 - **Exact CI artifact SHA-256:** pending
 - **GitHub release:** remain draft until the packaged smoke matrix is complete
 
@@ -84,7 +85,7 @@ redesign.
 Local pre-tag proof is complete:
 
 - lint and production build/bundle budgets passed
-- full unit suite passed: 168 files / 1,232 tests
+- full unit suite passed: 169 files / 1,237 tests
 - Rust backend passed: 51 tests plus one expected keychain ignore; formatting
   and strict Clippy checks are clean
 - Chromium passed: 132/132
@@ -139,15 +140,36 @@ still ran at a 66.6 ms median frame cadence. Its logs identified the missing
 boundary: Chromium selected a SwiftShader/Vulkan fallback and
 `vkCreateInstance()` failed on the Azure runner. The slowest otherwise healthy
 action was 2,403.9 ms, so publication remained blocked. A third red-to-green
-harness correction now requests ANGLE's OpenGL backend on Linux CI while
-retaining the background-throttling guards and the unchanged 1,000 ms gate.
-The exact wrapper passed on the Ubuntu Xvfb host with 8,664/8,664 exact
-positions, 4/4 healthy interactions, 186.0 ms maximum main-process latency,
-166.6 ms maximum renderer gap, 16.7 ms median renderer cadence, and 689.1 ms
-maximum operator action. An independent adversarial review found no P1/P2
-issue; its runtime-backend-attestation suggestion is non-blocking future
-hardening. None of the three failed CI runs created a release or promoted
-distributable artifacts.
+harness correction requested ANGLE's OpenGL backend while retaining the
+background-throttling guards and unchanged 1,000 ms gate.
+
+The fourth tag-driven run (`30429828590`) proved that request alone was not
+fail-closed. Position truth remained exact, all four interactions remained
+healthy, and no product error occurred, but the retained
+`--enable-unsafe-swiftshader` permission still allowed Chromium to select the
+failing Vulkan fallback. Renderer median cadence remained 66.6 ms, the maximum
+renderer gap was 1,499.4 ms, and the slowest action was 2,664.7 ms. Publication
+again stopped before release or distributable upload.
+
+The final red-to-green correction removes SwiftShader permission, explicitly
+provisions Mesa, scopes `LIBGL_ALWAYS_SOFTWARE=1` and
+`GALLIUM_DRIVER=llvmpipe` to Linux validation processes, and requires
+ANGLE/OpenGL. The action timer now measures the real click-to-visible-state
+interval rather than including recorder setup/readback CDP diagnostics, while
+trusted-click delivery remains mandatory. A separate fail-closed renderer
+maximum gate now rejects any frame gap at or above the unchanged 1,000 ms
+threshold, so the timing boundary cannot conceal a renderer freeze.
+
+The exact wrapper passed three consecutive times on the Ubuntu Xvfb host with
+8,664/8,664 exact positions, 4/4 healthy interactions, zero error/growth
+findings, 179.6-188.8 ms main-process maxima, 133.4-166.7 ms renderer maxima,
+16.7 ms median renderer cadence, and 600.9-776.6 ms maximum operator action.
+No Vulkan or SwiftShader error appeared. A second independent adversarial review
+found no P1/P2 issue and confirmed the timer and renderer gate remain
+fail-closed. The full committed-state beta verifier then passed 8/8 with no
+skips from `sha.a852dc198832`; its packaged soak retained all 8,664 fixes and
+kept the main-process maximum to 101.6 ms. None of the four failed CI runs
+created a release or promoted distributable artifacts.
 
 The remaining release gates are:
 
