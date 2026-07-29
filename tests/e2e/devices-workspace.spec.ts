@@ -30,6 +30,72 @@ test.describe('M19 devices workspace', () => {
     await expect(page.getByTestId('coordinate-target-indicator')).toContainText('Alpha Team')
   })
 
+  test('unmounts the workspace immediately when the operator closes it [DON-260]', async ({
+    page,
+  }) => {
+    await page.getByTestId('open-devices-workspace').click()
+    const dialog = page.getByRole('dialog', { name: 'Tracking Devices' })
+    await expect(dialog).toBeVisible()
+
+    await page.getByTestId('workspace-close-btn').click()
+
+    await expect(page.getByTestId('devices-workspace')).toHaveCount(0, {
+      timeout: 200,
+    })
+    await expect(dialog).toHaveCount(0)
+    await expect(page.getByRole('button', { name: 'Close workspace' })).toHaveCount(0)
+  })
+
+  test('preserves modal focus across a close and reopen before the next frame [DON-260]', async ({
+    page,
+  }) => {
+    const opener = page.getByTestId('open-devices-workspace')
+    const closeButton = page.getByTestId('workspace-close-btn')
+    const dialog = page.getByRole('dialog', { name: 'Tracking Devices' })
+
+    await opener.click()
+    await expect(dialog).toBeVisible()
+    await expect
+      .poll(() => dialog.evaluate((element) => element.contains(document.activeElement)))
+      .toBe(true)
+
+    await page.evaluate(() => {
+      const originalRequestAnimationFrame = window.requestAnimationFrame.bind(window)
+      const originalCancelAnimationFrame = window.cancelAnimationFrame.bind(window)
+      const heldFrameId = 2_000_000_000
+      let holdNextFrame = true
+
+      window.requestAnimationFrame = (callback: FrameRequestCallback): number => {
+        if (holdNextFrame) {
+          holdNextFrame = false
+          return heldFrameId
+        }
+        return originalRequestAnimationFrame(callback)
+      }
+      window.cancelAnimationFrame = (frameId: number): void => {
+        if (frameId === heldFrameId) {
+          window.requestAnimationFrame = originalRequestAnimationFrame
+          window.cancelAnimationFrame = originalCancelAnimationFrame
+          return
+        }
+        originalCancelAnimationFrame(frameId)
+      }
+    })
+
+    await closeButton.click()
+    await expect(dialog).toHaveCount(0)
+
+    await opener.click()
+    await expect(dialog).toBeVisible()
+    await expect
+      .poll(() => dialog.evaluate((element) => element.contains(document.activeElement)))
+      .toBe(true)
+
+    await page.keyboard.press('Escape')
+    await expect(dialog).toHaveCount(0)
+    await expect(opener).toBeFocused()
+  })
+
   test('keeps passive row clicks inside Devices instead of opening marker tools', async ({
     page,
   }) => {

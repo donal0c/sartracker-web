@@ -10,7 +10,7 @@ import {
 import { focusFirstElement, restoreFocus, trapTabKey } from '../lib/focus-management'
 
 type WorkspaceOverlayProps = {
-  /** Whether the workspace is open. Controls mount/unmount with exit animation. */
+  /** Whether the workspace is open. Controls the animated mount and immediate unmount. */
   readonly open: boolean
   /** Called when the user requests close (backdrop click, Esc key, or close button). */
   readonly onClose: () => void
@@ -31,7 +31,7 @@ type WorkspaceOverlayProps = {
 }
 
 /**
- * Shared workspace overlay with slide-in/out animation and Esc key support.
+ * Shared workspace overlay with slide-in animation, immediate close, and Esc support.
  *
  * All workspace panels (Settings, Diagnostics, Devices, Mission Review) use this
  * wrapper for consistent entry/exit transitions and close affordance. By default
@@ -59,48 +59,46 @@ export function WorkspaceOverlay({
 
   useEffect(() => {
     if (open) {
-      returnFocusRef.current = document.activeElement
+      // A close can be followed by a reopen before the deferred close frame
+      // runs. Preserve the original opener across that race so the final close
+      // still restores the operator's focus to the correct control.
+      if (returnFocusRef.current === null) {
+        returnFocusRef.current = document.activeElement
+      }
+      let visibleFrame: number | undefined
       const mountFrame = requestAnimationFrame(() => {
         setMounted(true)
         // Allow one frame for the DOM to mount before triggering the enter animation.
-        requestAnimationFrame(() => setVisible(true))
+        visibleFrame = requestAnimationFrame(() => setVisible(true))
       })
-      return () => cancelAnimationFrame(mountFrame)
+      return () => {
+        cancelAnimationFrame(mountFrame)
+        if (visibleFrame !== undefined) {
+          cancelAnimationFrame(visibleFrame)
+        }
+      }
     }
 
     if (mounted) {
-      const hideFrame = requestAnimationFrame(() => setVisible(false))
-      return () => cancelAnimationFrame(hideFrame)
+      const closeFrame = requestAnimationFrame(() => {
+        setVisible(false)
+        finishClose()
+      })
+      return () => cancelAnimationFrame(closeFrame)
     }
-  }, [open, mounted])
-
-  /** After exit animation completes, unmount the DOM. */
-  const handleTransitionEnd = useCallback(() => {
-    if (!visible) {
-      finishClose()
-    }
-  }, [finishClose, visible])
-
-  useEffect(() => {
-    if (!mounted || visible) {
-      return
-    }
-
-    const closeTimer = window.setTimeout(finishClose, 350)
-    return () => window.clearTimeout(closeTimer)
-  }, [finishClose, mounted, visible])
+  }, [finishClose, open, mounted])
 
   useEffect(() => {
     const panel = panelRef.current
     // Docked mode is non-modal: do not steal focus from the operator's current
     // control (e.g. the active-mission rail) when the panel opens (DON-176).
-    if (!mounted || panel === null || docked) {
+    if (!open || !mounted || panel === null || docked) {
       return
     }
 
     const focusFrame = requestAnimationFrame(() => focusFirstElement(panel))
     return () => cancelAnimationFrame(focusFrame)
-  }, [mounted, docked])
+  }, [docked, mounted, open])
 
   // Listen at the document level so Escape remains reliable even when focus has
   // moved to the map, rail, or a recently dismissed inline confirmation. A
@@ -142,7 +140,7 @@ export function WorkspaceOverlay({
     }
   }
 
-  if (!mounted) {
+  if (!open || !mounted) {
     return null
   }
 
@@ -154,7 +152,6 @@ export function WorkspaceOverlay({
     return (
       <div
         className="pointer-events-none fixed inset-0 z-30 flex"
-        onTransitionEnd={handleTransitionEnd}
       >
         {/*
           Docked panel is left-aligned over the map so it never covers the
@@ -182,7 +179,6 @@ export function WorkspaceOverlay({
   return (
     <div
       className="fixed inset-0 z-50 flex"
-      onTransitionEnd={handleTransitionEnd}
     >
       {/* Backdrop — click to close */}
       <button
