@@ -111,6 +111,8 @@ export function createPollingManager(
   let breadcrumbMetadata: TrackingSnapshot['breadcrumbMetadata'] | undefined = undefined
   let activeHistoryResetKey: string | null = null
   let initialBreadcrumbsLoaded = false
+  let breadcrumbFetchCompleted = false
+  let breadcrumbStatusWarning: string | null = null
   const latestBreadcrumbTimestampByDevice = new Map<string, string>()
   const historicalReconciliationCursorByDevice = new Map<string, number>()
   const initiallyReconciledDeviceIds = new Set<string>()
@@ -158,6 +160,8 @@ export function createPollingManager(
         breadcrumbPositions = []
         breadcrumbMetadata = undefined
         initialBreadcrumbsLoaded = false
+        breadcrumbFetchCompleted = false
+        breadcrumbStatusWarning = null
         latestBreadcrumbTimestampByDevice.clear()
         historicalReconciliationCursorByDevice.clear()
         initiallyReconciledDeviceIds.clear()
@@ -235,11 +239,10 @@ export function createPollingManager(
         mode: 'online',
         recovered,
         warning:
-          breadcrumbPositions.length === 0
+          !breadcrumbFetchCompleted && breadcrumbPositions.length === 0
             ? 'Current fixes loaded; loading breadcrumb history.'
-            : recovered
-              ? 'CONNECTION RESTORED'
-              : null,
+            : breadcrumbStatusWarning ??
+              (recovered ? 'CONNECTION RESTORED' : null),
       })
 
       const breadcrumbPositionsBeforeSeed = breadcrumbPositions
@@ -313,6 +316,13 @@ export function createPollingManager(
           { historyResetKey: pollHistoryResetKey },
         )
       }
+      breadcrumbFetchCompleted = true
+      // Retain only durable history health; CONNECTION RESTORED is transient.
+      breadcrumbStatusWarning = createBreadcrumbCompletionWarning(
+        breadcrumbFetch,
+        false,
+        seedState,
+      )
       publishStatus({
         mode: 'online',
         recovered,

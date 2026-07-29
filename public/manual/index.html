@@ -923,6 +923,9 @@
             repeats the mission-wide sweep so late or corrected fixes older than the normal overlap are
             not permanently missed. If a device history request fails or contains only malformed rows,
             Tracking names the incomplete device history and continues showing current fixes.
+            The separate <strong>Current fixes loaded; loading breadcrumb history</strong> message is
+            expected only while the first history request for a mission is unresolved. It must not flash
+            again on every normal tracking update; if it does, note the time and export an incident bundle.
           </div>
           <div class="warning">
             <strong>Tracking storage warnings require attention:</strong>

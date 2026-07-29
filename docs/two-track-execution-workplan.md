@@ -120,7 +120,7 @@ ship or ask testers for whole Electron profile zips.
 
 ## Current Priority
 
-1. Field-confirm the published `0.1.0-beta.12.3` breadcrumb hotfix on the original Linux machines under `DON-247`, comparing source position IDs, coordinates, and fix times after reconciliation. `DON-260` is complete; beta.12.1 and beta.12.2 remain immutable unpublished candidates, with beta.12.2 marked abandoned after its exact-artifact Ubuntu newer-schema failure.
+1. Qualify and release `0.1.0-beta.12.4` under `DON-261` to stop the beta.12.3 Tracking panel from flashing its amber history-loading message on every successful empty-history poll. The field bundle proves a warning-state renderer defect rather than a crash or AppImage/`.deb` split. Do not share until clean no-skip verification, green tag CI, exact-artifact Ubuntu qualification, and a packaged >=10-poll stability observation pass.
 2. Continue the **Mission Store Reliability programme** under `DON-241`. Beta.12 is the narrow field-freeze/observability release (`DON-242` through `DON-247`); beta.13 owns bounded-storage architecture, migration, retention, streamed mission-scoped archives, and archive-backed review (`DON-248` through `DON-255`).
 3. Keep hosted browser testing smooth enough for the team to give real feedback.
 4. Fix the 2026-05-16 team feedback items that affect map trust before returning to broader foundation work.
@@ -136,6 +136,7 @@ This is the default order when the user says “work on the next task.”
 
 | Order | Chunk | Track | Linear issue | Status |
 | --- | --- | --- | --- | --- |
+| Active | Stop the Tracking history-loading warning flashing on every empty-history poll | S2 Electron / Shared Tracking / Verification | `DON-261` | Field evidence reproduced 109 warning-on/off pairs at 77-99 ms while tracking remained online and crash history stayed empty. Strict TDD fix is locally green: loading is first-fetch-only per mission history key; durable history warnings stay stable. Unit `1,277/1,277`, Chromium `136/136`, visual `36/36`, independent review `41/41`, lint/build, and same-session Fable review pass with no P1/P2. Beta.12.4 exact-artifact qualification remains before release. |
 | Done | Deep breadcrumb correctness and cross-installation equivalence hotfix | S2 Electron / Shared Tracking / Verification | `DON-260` | Released as internal prerelease `electron-v0.1.0-beta.12.3` on 2026-07-29. Exact-head no-skip verification passed 8/8; tag run `30449919583` passed; the exact CI AppImage/`.deb` passed the complete Ubuntu matrix, including deterministic five-/fourteen-day soaks, two 3.70 GB schema migrations, newer-schema refusal, live Traccar, install, and installed-binary smoke. Fresh published bytes matched all SHA-256 values and passed a new Ubuntu lifecycle/restart/recovery/settings/finalize/archive smoke. Fable's same-session reviews found no P1/P2. The install transaction's status 100 is retained as a non-blocking qualification-host note: SAR Tracker was fully configured and verified before apt retried three pre-existing broken NVIDIA/kernel packages. Original-machine field confirmation continues under `DON-247`. |
 | Done | Build deterministic field-scale mission-store fixtures | S2 Electron / Verification | `DON-242` | Small/CI/local/field plus 5-day and 14-day continuous-mission presets; Ubuntu field fixture is 3.704 GB with measured table accounting and restart checkpoints. |
 | Done | Reproduce and attribute beta.11 freeze on packaged Ubuntu | S2 Electron / Verification | `DON-243` | Three independent packaged runs: main stalls 5.70-5.82 s; integrity validation 6.11-6.36 s across nine autosaves. |
@@ -362,6 +363,21 @@ Locked invariants:
 Non-goals: full Discovery map loading, destructive storage cleanup, live-store
 retention, archive redesign, or claiming GPS hardware has zero measurement
 error. Those remain separate work.
+
+#### Beta.12.4 — stable Tracking status hotfix (`DON-261`)
+
+This is a narrow correction to beta.12.3. A valid mission with no breadcrumb
+history must show the amber initial-history message only while its first history
+request is unresolved. A completed empty result is healthy, not permanently
+"loading." Reconciliation, per-device history failure, and mission-storage seed
+warnings remain visible and stable between later polls. Changing the mission
+history key starts a new first-fetch cycle. Current positions, breadcrumb
+identity, persistence, polling cadence, and map rendering are unchanged.
+
+Release proof must reproduce the beta.12.3 warning oscillation from the supplied
+bundle, pass deterministic unit and rendered-browser regressions, pass the full
+visual and no-skip beta gates, and hold both CI-built Linux packages visually
+stable for at least ten live/mock poll cycles before publication.
 
 #### Beta.13 — bounded storage lifecycle
 

@@ -454,6 +454,107 @@ describe('polling manager', () => {
     poller.stop()
   })
 
+  it('does not flash the initial history warning on every successful empty-history poll [DON-261]', async () => {
+    const client = createClient({
+      getBreadcrumbs: vi.fn().mockResolvedValue([]),
+    })
+    const onStatusChange = vi.fn()
+    const poller = createPollingManager(client, {
+      intervalMs: 5_000,
+      staleThresholdMs: 60 * 60 * 1000,
+      onSnapshot: vi.fn(),
+      onStatusChange,
+      now: () => new Date('2026-04-06T10:35:00.000Z'),
+    })
+
+    poller.start()
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect(onStatusChange.mock.calls.map((call) => call[0]?.warning)).toEqual([
+      'Current fixes loaded; loading breadcrumb history.',
+      null,
+    ])
+
+    onStatusChange.mockClear()
+    await vi.advanceTimersByTimeAsync(5_000)
+
+    expect(onStatusChange.mock.calls.map((call) => call[0]?.warning)).toEqual([
+      null,
+      null,
+    ])
+
+    poller.stop()
+  })
+
+  it('keeps a breadcrumb reconciliation warning stable between successful polls [DON-261]', async () => {
+    const client = createClient({
+      getDevices: vi.fn().mockResolvedValue([NORMALIZED_DEVICES[0]!]),
+      getBreadcrumbs: vi.fn().mockResolvedValue([]),
+    })
+    const onStatusChange = vi.fn()
+    const poller = createPollingManager(client, {
+      intervalMs: 5_000,
+      staleThresholdMs: 60 * 60 * 1000,
+      getInitialBreadcrumbFrom: () => new Date('2026-04-06T00:00:00.000Z'),
+      getBreadcrumbDeviceIds: () => ['1'],
+      onSnapshot: vi.fn(),
+      onStatusChange,
+      now: () => new Date('2026-04-06T10:35:00.000Z'),
+    })
+
+    poller.start()
+    await vi.advanceTimersByTimeAsync(0)
+
+    const reconciliationWarning = onStatusChange.mock.calls.at(-1)?.[0]?.warning
+    expect(reconciliationWarning).toMatch(/reconciling/i)
+
+    onStatusChange.mockClear()
+    await vi.advanceTimersByTimeAsync(5_000)
+
+    expect(onStatusChange.mock.calls.map((call) => call[0]?.warning)).toEqual([
+      reconciliationWarning,
+      reconciliationWarning,
+    ])
+
+    poller.stop()
+  })
+
+  it('shows the initial history warning again only after the mission history key changes [DON-261]', async () => {
+    const client = createClient({
+      getBreadcrumbs: vi.fn().mockResolvedValue([]),
+    })
+    const onStatusChange = vi.fn()
+    let historyResetKey = 'mission-1'
+    const poller = createPollingManager(client, {
+      intervalMs: 5_000,
+      staleThresholdMs: 60 * 60 * 1000,
+      getHistoryResetKey: () => historyResetKey,
+      onSnapshot: vi.fn(),
+      onStatusChange,
+      now: () => new Date('2026-04-06T10:35:00.000Z'),
+    })
+
+    poller.start()
+    await vi.advanceTimersByTimeAsync(0)
+
+    onStatusChange.mockClear()
+    await vi.advanceTimersByTimeAsync(5_000)
+    expect(onStatusChange.mock.calls.map((call) => call[0]?.warning)).toEqual([
+      null,
+      null,
+    ])
+
+    historyResetKey = 'mission-2'
+    onStatusChange.mockClear()
+    await vi.advanceTimersByTimeAsync(5_000)
+    expect(onStatusChange.mock.calls.map((call) => call[0]?.warning)).toEqual([
+      'Current fixes loaded; loading breadcrumb history.',
+      null,
+    ])
+
+    poller.stop()
+  })
+
   it('skips the breadcrumb snapshot when an overlap poll contains no new breadcrumb state', async () => {
     const client = createClient({
       getBreadcrumbs: vi.fn().mockResolvedValue(NORMALIZED_BREADCRUMBS),

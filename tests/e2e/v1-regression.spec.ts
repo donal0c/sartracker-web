@@ -185,6 +185,161 @@ test.describe('V1 regression: cold-start-offline operator-visible warning', () =
   })
 })
 
+test.describe('V1 regression: steady tracking status remains visually stable [DON-261]', () => {
+  test.setTimeout(45_000)
+
+  test('an empty breadcrumb result does not re-show the amber loading warning on the next poll', async ({
+    page,
+  }) => {
+    await page.goto('/?missionHarness=1')
+    await waitForShell(page)
+    await page.getByTestId('mission-name-input').fill('Steady Tracking Status')
+    await page.getByTestId('mission-start-btn').click()
+    await expect(page.getByTestId('mission-control')).toContainText('active')
+    await page.getByTestId('sidebar-tab-tracking').click()
+
+    const result = await page.evaluate(async () => {
+      const [
+        { createPollingManager },
+        { applyTrackingSnapshot, applyTrackingStatus },
+      ] = await Promise.all([
+        import('/src/features/tracking/polling-manager.ts'),
+        import('/src/features/tracking/tracking-store.ts'),
+      ])
+
+      let scheduledPoll: (() => void) | null = null
+      let resolveSteadyBreadcrumbs:
+        | ((positions: readonly never[]) => void)
+        | null = null
+      let breadcrumbRequestCount = 0
+      const warningSequence: Array<string | null> = []
+
+      const poller = createPollingManager(
+        {
+          authenticate: async () => undefined,
+          getDevices: async () => [
+            {
+              device_id: 'empty-history-team',
+              name: 'Empty History Team',
+              status: 'online',
+              last_seen: '2026-07-29T14:00:00.000Z',
+              unique_id: null,
+              category: null,
+            },
+          ],
+          getCurrentPositions: async () => [
+            {
+              id: 'empty-history-position',
+              device_id: 'empty-history-team',
+              lat: 51.95,
+              lon: -9.85,
+              altitude: null,
+              speed: null,
+              battery: null,
+              accuracy: null,
+              timestamp: '2026-07-29T14:00:00.000Z',
+              source: null,
+              data_origin: 'live' as const,
+              cache_age_seconds: null,
+              device_cache_stale: false,
+            },
+          ],
+          getBreadcrumbs: () => {
+            breadcrumbRequestCount += 1
+            if (breadcrumbRequestCount === 1) {
+              return Promise.resolve([])
+            }
+            return new Promise<readonly never[]>((resolve) => {
+              resolveSteadyBreadcrumbs = resolve
+            })
+          },
+        },
+        {
+          intervalMs: 5_000,
+          staleThresholdMs: 60 * 60 * 1000,
+          onSnapshot: (snapshot) => {
+            applyTrackingSnapshot(snapshot)
+          },
+          onStatusChange: (status) => {
+            warningSequence.push(status.warning)
+            applyTrackingStatus(status)
+          },
+          now: () => new Date('2026-07-29T14:00:00.000Z'),
+          setTimeout: (callback) => {
+            if (typeof callback !== 'function') {
+              throw new Error('Expected a polling callback.')
+            }
+            scheduledPoll = () => callback()
+            return 1
+          },
+          clearTimeout: () => undefined,
+        },
+      )
+
+      poller.start()
+      while (warningSequence.length < 2) {
+        await new Promise<void>((resolve) => window.setTimeout(resolve, 0))
+      }
+      await new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve()))
+
+      warningSequence.length = 0
+      const isAmberLoadingMessageVisible = () =>
+        Array.from(document.querySelectorAll('[data-testid="tracking-warning"]')).some(
+          (element) =>
+            element.textContent?.includes(
+              'Current fixes loaded; loading breadcrumb history.',
+            ) === true,
+        )
+      let amberLoadingMessageBecameVisible = false
+      const observer = new MutationObserver(() => {
+        if (isAmberLoadingMessageVisible()) {
+          amberLoadingMessageBecameVisible = true
+        }
+      })
+      observer.observe(document.body, {
+        characterData: true,
+        childList: true,
+        subtree: true,
+      })
+
+      if (scheduledPoll === null) {
+        throw new Error('The next tracking poll was not scheduled.')
+      }
+      scheduledPoll()
+      while (resolveSteadyBreadcrumbs === null) {
+        await new Promise<void>((resolve) => window.setTimeout(resolve, 0))
+      }
+      await new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve()))
+      await new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve()))
+      const statusMessageWhileHistoryPending =
+        document.querySelector('[data-testid="tracking-warning"]')?.textContent ?? null
+
+      resolveSteadyBreadcrumbs([])
+      while (warningSequence.length < 2) {
+        await new Promise<void>((resolve) => window.setTimeout(resolve, 0))
+      }
+      await new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve()))
+
+      observer.disconnect()
+      poller.stop()
+      return {
+        warningSequence,
+        amberLoadingMessageBecameVisible,
+        statusMessageWhileHistoryPending,
+      }
+    })
+
+    expect(result.warningSequence).toEqual([null, null])
+    expect(result.amberLoadingMessageBecameVisible).toBe(false)
+    expect(result.statusMessageWhileHistoryPending).toBe(
+      'Telemetry stream healthy',
+    )
+    await expect(page.getByTestId('tracking-status')).toContainText(
+      'Telemetry stream healthy',
+    )
+  })
+})
+
 test.describe('Mast tracking cell never reads as a positions/stale ratio (sartracker-web-zq9)', () => {
   test.setTimeout(45_000)
 
