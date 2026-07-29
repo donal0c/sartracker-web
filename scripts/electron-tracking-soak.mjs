@@ -26,6 +26,7 @@ import { chromium } from 'playwright'
 import { summarizeResponsiveness } from '../build/electron-map-freeze-probe-lib.js'
 import { sanitizeEvidenceText } from '../build/electron-official-map-offline-smoke-lib.js'
 import {
+  buildWebGlRendererAttestation,
   buildTrackingGrowthEvidence,
   buildTrackingSoakVerdict,
   classifyOperatorInteraction,
@@ -33,6 +34,7 @@ import {
   measureOperatorAction,
   parseTrackingSoakArgs,
   parseTrackingSoakRuntimeLog,
+  readWebGlRendererInfoFromDocument,
 } from '../build/electron-tracking-soak-lib.js'
 import {
   buildTrackingSoakExpectedPositionTruthEvidence,
@@ -221,6 +223,15 @@ async function main() {
       ),
       250,
     )
+    const operatorExternalActionStats = summarizeResponsiveness(
+      operatorInteractions.flatMap((interaction) =>
+        [
+          interaction.openExternalActionDurationMs,
+          interaction.closeExternalActionDurationMs,
+        ].filter(Number.isFinite),
+      ),
+      250,
+    )
     const operatorInteractionErrors = operatorInteractions.filter(
       (interaction) => !interaction.passed,
     ).length
@@ -235,6 +246,11 @@ async function main() {
       ),
     }
     const rendererCrashes = launches.reduce((sum, launch) => sum + launch.rendererCrashes, 0)
+    const webGlRendererAttestation = buildWebGlRendererAttestation({
+      platform: process.platform,
+      profileName: options.profile.name,
+      launches,
+    })
     const mockState = mockServer.snapshot()
     const supportBundleRedacted = !containsForbiddenEvidence(supportBundle, [
       'synthetic-soak-secret',
@@ -270,6 +286,9 @@ async function main() {
       operatorInteractionMaximumMs: operatorInteractionStats.maxMs,
       operatorActionSamples: operatorActionStats.count,
       operatorActionMaximumMs: operatorActionStats.maxMs,
+      operatorExternalActionSamples: operatorExternalActionStats.count,
+      operatorExternalActionMaximumMs: operatorExternalActionStats.maxMs,
+      webGlRendererAttested: webGlRendererAttestation.passed,
       maximumProcessTreeResidentBytes: processMemory.maximumProcessTreeResidentBytes,
       freezeThresholdMs: options.freezeThresholdMs,
       integrityResult: databaseEvidence.integrityResult,
@@ -314,6 +333,7 @@ async function main() {
         operatorInteractions: {
           ...operatorInteractionStats,
           actionTiming: operatorActionStats,
+          externalActionTiming: operatorExternalActionStats,
           errors: operatorInteractionErrors,
           classifications: operatorInteractionClassifications,
           samples: operatorInteractions,
@@ -323,6 +343,7 @@ async function main() {
       },
       processMemory,
       rendererCrashes,
+      webGlRendererAttestation,
       boundedEvidence: {
         runtimeLogBytes,
         supportBundleBytes,
@@ -331,6 +352,7 @@ async function main() {
       restartCheckpointsPassed,
       launches: launches.map((launch) => ({
         number: launch.number,
+        webGlRenderer: launch.webGlRenderer,
         mainHeartbeatErrors: launch.mainHeartbeatErrors,
         rendererCrashes: launch.rendererCrashes,
         processMemory: launch.processMemory,
@@ -438,6 +460,11 @@ async function launchPackagedApp(options, userDataDir, number) {
     const page = context.pages()[0] ?? (await context.waitForEvent('page'))
     await page.setViewportSize({ width: 1440, height: 900 })
     await page.getByTestId('app-shell').waitFor({ state: 'attached', timeout: 60_000 })
+    await page.locator('.maplibregl-canvas').waitFor({ state: 'attached', timeout: 60_000 })
+    const webGlRenderer = await page.evaluate(readWebGlRendererInfoFromDocument)
+    console.log(
+      `[tracking-soak] launch=${number} webgl=${webGlRenderer.available ? webGlRenderer.unmaskedRenderer ?? webGlRenderer.renderer : webGlRenderer.reason}`,
+    )
     await installRendererProbe(page)
     let rendererCrashes = 0
     page.on('crash', () => {
@@ -453,6 +480,7 @@ async function launchPackagedApp(options, userDataDir, number) {
       mainInspector,
       mainHeartbeat,
       mainHeartbeatErrors: 0,
+      webGlRenderer,
       get rendererCrashes() {
         return rendererCrashes
       },
@@ -498,6 +526,7 @@ async function recordOperatorInteraction(input) {
     targetFound: false,
     targetReceivesPointer: false,
     hitElement: null,
+    centerPoint: null,
   }))
   const result = {
     ...preflight,
@@ -510,17 +539,30 @@ async function recordOperatorInteraction(input) {
     workspaceClosed: false,
     openActionDurationMs: null,
     closeActionDurationMs: null,
+    openExternalActionDurationMs: null,
+    closeExternalActionDurationMs: null,
+    openClickDeliveryDurationMs: null,
+    closeClickDeliveryDurationMs: null,
+    openStateWaitDurationMs: null,
+    closeStateWaitDurationMs: null,
   }
   const errors = []
 
   if (result.targetFound) {
     const openAction = await measureOperatorAction({
-      installRecorder: () => installClickRecorder(input.page, 'open-devices-workspace'),
-      click: () => input.page.getByTestId('open-devices-workspace').click({ timeout: 5_000 }),
+      installRecorder: () =>
+        installClickRecorder(
+          input.page,
+          'open-devices-workspace',
+          'workspace-close-btn',
+          'actionable',
+        ),
+      click: () =>
+        clickInspectedPointerTarget(input.page, preflight, 'open-devices-workspace'),
       waitForState: () =>
-        waitForLocatorState(
-          input.page.getByTestId('devices-workspace'),
-          'visible',
+        waitForPointerTargetActionable(
+          input.page,
+          'workspace-close-btn',
           5_000,
         ),
       readRecorder: () => readClickRecorder(input.page),
@@ -530,6 +572,9 @@ async function recordOperatorInteraction(input) {
     result.openClickReceived = openAction.clickReceived
     result.workspaceOpened = openAction.stateReached
     result.openActionDurationMs = openAction.durationMs
+    result.openExternalActionDurationMs = openAction.externalDurationMs
+    result.openClickDeliveryDurationMs = openAction.clickDeliveryDurationMs
+    result.openStateWaitDurationMs = openAction.stateWaitDurationMs
     errors.push(...openAction.errorClasses)
   }
 
@@ -540,10 +585,25 @@ async function recordOperatorInteraction(input) {
   }))
   result.mainIpcStatus = mainIpc.status
 
+  const closePreflight = result.workspaceOpened
+    ? await inspectPointerTarget(input.page, 'workspace-close-btn').catch(() => ({
+        targetFound: false,
+        targetReceivesPointer: false,
+        hitElement: null,
+        centerPoint: null,
+      }))
+    : null
   if (result.workspaceOpened) {
     const closeAction = await measureOperatorAction({
-      installRecorder: () => installClickRecorder(input.page, 'workspace-close-btn'),
-      click: () => input.page.getByTestId('workspace-close-btn').click({ timeout: 5_000 }),
+      installRecorder: () =>
+        installClickRecorder(
+          input.page,
+          'workspace-close-btn',
+          'devices-workspace',
+          'hidden',
+        ),
+      click: () =>
+        clickInspectedPointerTarget(input.page, closePreflight, 'workspace-close-btn'),
       waitForState: () =>
         waitForLocatorState(
           input.page.getByTestId('devices-workspace'),
@@ -557,6 +617,9 @@ async function recordOperatorInteraction(input) {
     result.closeClickReceived = closeAction.clickReceived
     result.workspaceClosed = closeAction.stateReached
     result.closeActionDurationMs = closeAction.durationMs
+    result.closeExternalActionDurationMs = closeAction.externalDurationMs
+    result.closeClickDeliveryDurationMs = closeAction.clickDeliveryDurationMs
+    result.closeStateWaitDurationMs = closeAction.stateWaitDurationMs
     errors.push(...closeAction.errorClasses)
   }
 
@@ -577,8 +640,15 @@ async function recordOperatorInteraction(input) {
     durationMs: performance.now() - startedAt,
     openActionDurationMs: result.openActionDurationMs,
     closeActionDurationMs: result.closeActionDurationMs,
+    openExternalActionDurationMs: result.openExternalActionDurationMs,
+    closeExternalActionDurationMs: result.closeExternalActionDurationMs,
+    openClickDeliveryDurationMs: result.openClickDeliveryDurationMs,
+    closeClickDeliveryDurationMs: result.closeClickDeliveryDurationMs,
+    openStateWaitDurationMs: result.openStateWaitDurationMs,
+    closeStateWaitDurationMs: result.closeStateWaitDurationMs,
     ...classification,
     preflight,
+    closePreflight,
     browserEvents: {
       openClickCompleted: result.openClickCompleted,
       openClickReceived: result.openClickReceived,
@@ -603,6 +673,7 @@ async function inspectPointerTarget(page, testId) {
         targetFound: false,
         targetReceivesPointer: false,
         hitElement: null,
+        centerPoint: null,
       }
     }
     const rect = target.getBoundingClientRect()
@@ -610,6 +681,10 @@ async function inspectPointerTarget(page, testId) {
     return {
       targetFound: true,
       targetReceivesPointer: hit === target || (hit !== null && target.contains(hit)),
+      centerPoint: {
+        x: rect.left + rect.width / 2,
+        y: rect.top + rect.height / 2,
+      },
       hitElement:
         hit instanceof HTMLElement
           ? {
@@ -622,15 +697,105 @@ async function inspectPointerTarget(page, testId) {
   }, testId)
 }
 
-/** Installs a one-shot capture listener for the next expected trusted browser click. */
-async function installClickRecorder(page, testId) {
-  await page.evaluate((expectedTestId) => {
+/**
+ * Sends a trusted pointer click at a previously verified on-screen target.
+ *
+ * The preceding hit-test is the actionability gate. Using the mouse path keeps
+ * command-to-state timing focused on Chromium input delivery and application
+ * response rather than Playwright locator polling.
+ */
+async function clickInspectedPointerTarget(page, preflight, testId) {
+  if (
+    preflight?.targetReceivesPointer !== true ||
+    !Number.isFinite(preflight.centerPoint?.x) ||
+    !Number.isFinite(preflight.centerPoint?.y)
+  ) {
+    throw new Error(`Pointer target ${testId} was not actionable at its inspected centre.`)
+  }
+  await page.mouse.click(preflight.centerPoint.x, preflight.centerPoint.y)
+}
+
+/**
+ * Installs a trusted-click-to-DOM-state timer inside the renderer.
+ *
+ * This measures application reaction time without Playwright/CDP transport
+ * latency while the external locator assertions still prove final state.
+ */
+async function installClickRecorder(page, testId, stateTestId, desiredState) {
+  await page.evaluate(({ expectedTestId, expectedStateTestId, expectedState }) => {
+    window.__SARTRACKER_OPERATOR_CLICK_PROBE_CLEANUP__?.()
     window.__SARTRACKER_OPERATOR_CLICK_PROBE__ = {
       expectedTestId,
       received: false,
       trusted: false,
+      clickReceivedAtMs: null,
+      stateReachedAtMs: null,
     }
-    const listener = (event) => {
+    const stateReached = () => {
+      const element = document.querySelector(
+        `[data-testid="${expectedStateTestId}"]`,
+      )
+      const visible =
+        element instanceof HTMLElement &&
+        element.getClientRects().length > 0 &&
+        window.getComputedStyle(element).display !== 'none' &&
+        window.getComputedStyle(element).visibility !== 'hidden'
+      if (expectedState === 'hidden') {
+        return !visible
+      }
+      if (expectedState === 'visible') {
+        return visible
+      }
+      if (!visible || !(element instanceof HTMLElement)) {
+        return false
+      }
+      const rect = element.getBoundingClientRect()
+      const centerX = rect.left + rect.width / 2
+      const centerY = rect.top + rect.height / 2
+      const centreIsInViewport =
+        rect.width > 0 &&
+        rect.height > 0 &&
+        centerX >= 0 &&
+        centerX < window.innerWidth &&
+        centerY >= 0 &&
+        centerY < window.innerHeight
+      if (!centreIsInViewport) {
+        return false
+      }
+      const hit = document.elementFromPoint(centerX, centerY)
+      return hit === element || (hit !== null && element.contains(hit))
+    }
+    let frameId
+    let listener
+    const cleanup = () => {
+      if (frameId !== undefined) {
+        window.cancelAnimationFrame(frameId)
+      }
+      if (listener !== undefined) {
+        document.removeEventListener('click', listener, true)
+      }
+    }
+    window.__SARTRACKER_OPERATOR_CLICK_PROBE_CLEANUP__ = cleanup
+    const recordStateIfReached = () => {
+      const probe = window.__SARTRACKER_OPERATOR_CLICK_PROBE__
+      if (
+        probe?.clickReceivedAtMs === null ||
+        probe?.clickReceivedAtMs === undefined ||
+        probe.stateReachedAtMs !== null ||
+        !stateReached()
+      ) {
+        if (
+          probe?.clickReceivedAtMs !== null &&
+          probe?.clickReceivedAtMs !== undefined
+        ) {
+          frameId = window.requestAnimationFrame(recordStateIfReached)
+        }
+        return
+      }
+      probe.stateReachedAtMs = performance.now()
+      cleanup()
+    }
+    listener = (event) => {
       const path = event.composedPath()
       const received = path.some(
         (entry) =>
@@ -641,21 +806,38 @@ async function installClickRecorder(page, testId) {
           expectedTestId,
           received: true,
           trusted: event.isTrusted,
+          clickReceivedAtMs: performance.now(),
+          stateReachedAtMs: null,
         }
         document.removeEventListener('click', listener, true)
+        frameId = window.requestAnimationFrame(recordStateIfReached)
       }
     }
     document.addEventListener('click', listener, true)
-  }, testId)
+  }, {
+    expectedTestId: testId,
+    expectedStateTestId: stateTestId,
+    expectedState: desiredState,
+  })
 }
 
-/** Reads whether Chromium delivered the expected trusted click into the document. */
+/** Reads trusted delivery and the renderer-internal click-to-state duration. */
 async function readClickRecorder(page) {
-  return page.evaluate(
-    () =>
-      window.__SARTRACKER_OPERATOR_CLICK_PROBE__?.received === true &&
-      window.__SARTRACKER_OPERATOR_CLICK_PROBE__?.trusted === true,
-  )
+  return page.evaluate(() => {
+    const probe = window.__SARTRACKER_OPERATOR_CLICK_PROBE__
+    const actionDurationMs =
+      Number.isFinite(probe?.clickReceivedAtMs) &&
+      Number.isFinite(probe?.stateReachedAtMs)
+        ? Math.max(0, probe.stateReachedAtMs - probe.clickReceivedAtMs)
+        : null
+    const result = {
+      received: probe?.received === true && probe?.trusted === true,
+      actionDurationMs,
+    }
+    window.__SARTRACKER_OPERATOR_CLICK_PROBE_CLEANUP__?.()
+    delete window.__SARTRACKER_OPERATOR_CLICK_PROBE_CLEANUP__
+    return result
+  })
 }
 
 /** Probes the real renderer-to-main mission-store IPC with an in-renderer timeout. */
@@ -695,6 +877,38 @@ async function probeMainProcessIpc(page, timeoutMs) {
 async function waitForLocatorState(locator, state, timeout) {
   return locator
     .waitFor({ state, timeout })
+    .then(() => true)
+    .catch(() => false)
+}
+
+/** Waits until a target's centre can receive a real pointer event. */
+async function waitForPointerTargetActionable(page, testId, timeout) {
+  return page
+    .waitForFunction(
+      (expectedTestId) => {
+        const target = document.querySelector(`[data-testid="${expectedTestId}"]`)
+        if (!(target instanceof HTMLElement)) {
+          return false
+        }
+        const rect = target.getBoundingClientRect()
+        const centerX = rect.left + rect.width / 2
+        const centerY = rect.top + rect.height / 2
+        if (
+          rect.width <= 0 ||
+          rect.height <= 0 ||
+          centerX < 0 ||
+          centerX >= window.innerWidth ||
+          centerY < 0 ||
+          centerY >= window.innerHeight
+        ) {
+          return false
+        }
+        const hit = document.elementFromPoint(centerX, centerY)
+        return hit === target || (hit !== null && target.contains(hit))
+      },
+      testId,
+      { polling: 'raf', timeout },
+    )
     .then(() => true)
     .catch(() => false)
 }

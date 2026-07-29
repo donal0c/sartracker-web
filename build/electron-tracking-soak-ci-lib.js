@@ -5,12 +5,13 @@ import path from 'node:path'
  *
  * GitHub's Xvfb runner has no hardware WebGL implementation. Request ANGLE's
  * OpenGL backend so the Xvfb host can use its Mesa-backed rendering path. Do
- * not permit SwiftShader fallback: GitHub's Azure runner selected its Vulkan
- * path even with explicit ANGLE arguments, then failed to initialize Vulkan
- * and produced invalid 15 fps timing evidence. The headless desktop must also
- * keep the validation window foreground-equivalent; otherwise Chromium
- * deliberately throttles renderer frames and the timing gate measures Xvfb
- * occlusion instead of the application.
+ * not permit SwiftShader fallback, explicitly disable Chromium's Vulkan
+ * features, and remove the synthetic display's frame-rate limit. GitHub's
+ * Azure runner otherwise probes a failing Vulkan path and supplies a stable
+ * 15 fps begin-frame cadence even when Mesa/OpenGL is selected. The headless
+ * desktop must also keep the validation window foreground-equivalent;
+ * otherwise Chromium deliberately throttles renderer frames and the timing
+ * gate measures Xvfb occlusion instead of the application.
  */
 export function buildTrackingSoakCiRunnerArgs(input) {
   const runnerArgs = [
@@ -30,6 +31,8 @@ export function buildTrackingSoakCiRunnerArgs(input) {
       '--ignore-gpu-blocklist',
       '--use-gl=angle',
       '--use-angle=gl',
+      '--disable-features=Vulkan,DefaultANGLEVulkan,VulkanFromANGLE',
+      '--disable-frame-rate-limit',
       '--disable-background-timer-throttling',
       '--disable-renderer-backgrounding',
       '--disable-backgrounding-occluded-windows',

@@ -198,6 +198,7 @@ jobs:
             libgbm1 \
             libgl1-mesa-dri \
             libglx-mesa0 \
+            mesa-utils \
             libgtk-3-0 \
             libnss3 \
             libxdamage1 \
@@ -258,6 +259,17 @@ jobs:
           fi
           echo "No map/licensed data present in build output."
 
+      - name: Attest Mesa llvmpipe renderer
+        env:
+          LIBGL_ALWAYS_SOFTWARE: '1'
+          GALLIUM_DRIVER: llvmpipe
+        run: |
+          set -euo pipefail
+          mkdir -p tmp/renderer-attestation
+          xvfb-run -a --server-args='-screen 0 1440x900x24' \
+            glxinfo -B | tee tmp/renderer-attestation/glxinfo.txt
+          grep -qi 'llvmpipe' tmp/renderer-attestation/glxinfo.txt
+
       - name: Packaged tracking soak (CI profile)
         env:
           LIBGL_ALWAYS_SOFTWARE: '1'
@@ -272,7 +284,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: tracking-soak-ci-${{ needs.gates.outputs.tag }}
-          path: tmp/beta-artifacts/tracking-soak-ci
+          path: |
+            tmp/beta-artifacts/tracking-soak-ci
+            tmp/renderer-attestation
           if-no-files-found: error
           retention-days: 14
 
@@ -358,6 +372,7 @@ jobs:
             libfuse2 \
             libgl1-mesa-dri \
             libglx-mesa0 \
+            mesa-utils \
             libgtk-3-0 \
             libnss3 \
             xdotool \
@@ -407,6 +422,8 @@ jobs:
             --ignore-gpu-blocklist \
             --use-gl=angle \
             --use-angle=gl \
+            --disable-features=Vulkan,DefaultANGLEVulkan,VulkanFromANGLE \
+            --disable-frame-rate-limit \
             > smoke-evidence/appimage.log \
             2>&1 &
           APP_PID=$!

@@ -5,6 +5,7 @@ import path from 'node:path'
 import { describe, expect, it } from 'vitest'
 
 import {
+  buildWebGlRendererAttestation,
   classifyOperatorInteraction,
   buildTrackingSoakVerdict,
   buildTrackingGrowthEvidence,
@@ -13,6 +14,7 @@ import {
   measureOperatorAction,
   parseTrackingSoakRuntimeLog,
   parseTrackingSoakArgs,
+  readWebGlRendererInfoFromDocument,
 } from '../../build/electron-tracking-soak-lib.js'
 import { startTrackingSoakMockServer } from '../../build/electron-tracking-soak-mock-server.js'
 
@@ -156,6 +158,9 @@ describe('Electron packaged tracking soak helpers [DON-246]', () => {
       operatorInteractionMaximumMs: 1_200,
       operatorActionSamples: 8,
       operatorActionMaximumMs: 650,
+      operatorExternalActionSamples: 8,
+      operatorExternalActionMaximumMs: 700,
+      webGlRendererAttested: true,
       maximumProcessTreeResidentBytes: 500_000_000,
       freezeThresholdMs: 1_000,
       integrityResult: 'ok',
@@ -223,7 +228,7 @@ describe('Electron packaged tracking soak helpers [DON-246]', () => {
 
   it('fails when one operator action reaches the freeze threshold [DON-247]', () => {
     const profile = createTrackingSoakProfile('ci')
-    const verdict = buildTrackingSoakVerdict({
+    const validInput = {
       profile,
       observedBatches: profile.actualBatches,
       deviceRows: profile.deviceCount,
@@ -246,7 +251,10 @@ describe('Electron packaged tracking soak helpers [DON-246]', () => {
       operatorInteractionErrors: 0,
       operatorInteractionMaximumMs: 1_500,
       operatorActionSamples: 8,
-      operatorActionMaximumMs: 1_500,
+      operatorActionMaximumMs: 650,
+      operatorExternalActionSamples: 8,
+      operatorExternalActionMaximumMs: 650,
+      webGlRendererAttested: true,
       maximumProcessTreeResidentBytes: 500_000_000,
       freezeThresholdMs: 1_000,
       integrityResult: 'ok',
@@ -258,10 +266,26 @@ describe('Electron packaged tracking soak helpers [DON-246]', () => {
       positionTruthExactMatch: true,
       normalPrefixTruthExactMatch: true,
       missingSourcePositionIdentityRows: 0,
+    }
+    const rendererReactionVerdict = buildTrackingSoakVerdict({
+      ...validInput,
+      operatorActionMaximumMs: 1_500,
+    })
+    const externalDeliveryVerdict = buildTrackingSoakVerdict({
+      ...validInput,
+      operatorExternalActionMaximumMs: 1_500,
+    })
+    const backendVerdict = buildTrackingSoakVerdict({
+      ...validInput,
+      webGlRendererAttested: false,
     })
 
-    expect(verdict.passed).toBe(false)
-    expect(verdict.failureReasons.join('\n')).toMatch(/operator action/i)
+    expect(rendererReactionVerdict.passed).toBe(false)
+    expect(rendererReactionVerdict.failureReasons.join('\n')).toMatch(/operator action/i)
+    expect(externalDeliveryVerdict.passed).toBe(false)
+    expect(externalDeliveryVerdict.failureReasons.join('\n')).toMatch(/external operator action/i)
+    expect(backendVerdict.passed).toBe(false)
+    expect(backendVerdict.failureReasons.join('\n')).toMatch(/WebGL renderer backend/i)
   })
 
   it('fails when the renderer itself reaches the freeze threshold [DON-260]', () => {
@@ -290,6 +314,9 @@ describe('Electron packaged tracking soak helpers [DON-246]', () => {
       operatorInteractionMaximumMs: 900,
       operatorActionSamples: 8,
       operatorActionMaximumMs: 650,
+      operatorExternalActionSamples: 8,
+      operatorExternalActionMaximumMs: 700,
+      webGlRendererAttested: true,
       maximumProcessTreeResidentBytes: 500_000_000,
       freezeThresholdMs: 1_000,
       integrityResult: 'ok',
@@ -328,7 +355,10 @@ describe('Electron packaged tracking soak helpers [DON-246]', () => {
       readRecorder: async () => {
         calls.push('read')
         now = 2_000
-        return true
+        return {
+          received: true,
+          actionDurationMs: 125,
+        }
       },
       now: () => now,
     })
@@ -338,9 +368,128 @@ describe('Electron packaged tracking soak helpers [DON-246]', () => {
       clickCompleted: true,
       clickReceived: true,
       stateReached: true,
-      durationMs: 500,
+      durationMs: 125,
+      externalDurationMs: 500,
+      clickDeliveryDurationMs: 150,
+      stateWaitDurationMs: 350,
       errorClasses: [],
     })
+  })
+
+  it('records the active map WebGL renderer without relying on launch flags [DON-260]', () => {
+    const debugInfo = {
+      UNMASKED_VENDOR_WEBGL: 100,
+      UNMASKED_RENDERER_WEBGL: 101,
+    }
+    const values = new Map<number, string>([
+      [1, 'WebKit'],
+      [2, 'WebKit WebGL'],
+      [100, 'Mesa'],
+      [101, 'ANGLE (Mesa, llvmpipe, OpenGL 4.5)'],
+    ])
+    const context = {
+      VENDOR: 1,
+      RENDERER: 2,
+      getExtension: (name: string) => (name === 'WEBGL_debug_renderer_info' ? debugInfo : null),
+      getParameter: (key: number) => values.get(key) ?? '',
+    }
+    const documentRoot = {
+      querySelector: (selector: string) =>
+        selector === '.maplibregl-canvas'
+          ? {
+              getContext: (type: string) => (type === 'webgl2' ? context : null),
+            }
+          : null,
+    }
+
+    expect(readWebGlRendererInfoFromDocument(documentRoot)).toEqual({
+      available: true,
+      contextType: 'webgl2',
+      vendor: 'WebKit',
+      renderer: 'WebKit WebGL',
+      unmaskedVendor: 'Mesa',
+      unmaskedRenderer: 'ANGLE (Mesa, llvmpipe, OpenGL 4.5)',
+    })
+    expect(readWebGlRendererInfoFromDocument({ querySelector: () => null })).toEqual({
+      available: false,
+      reason: 'map_canvas_unavailable',
+    })
+  })
+
+  it('fails closed when trusted delivery lacks renderer action timing [DON-260]', async () => {
+    let now = 10
+    const result = await measureOperatorAction({
+      installRecorder: async () => undefined,
+      click: async () => {
+        now = 20
+      },
+      waitForState: async () => {
+        now = 30
+        return true
+      },
+      readRecorder: async () => ({
+        received: true,
+        actionDurationMs: null,
+      }),
+      now: () => now,
+    })
+
+    expect(result).toEqual({
+      clickCompleted: true,
+      clickReceived: false,
+      stateReached: true,
+      durationMs: 20,
+      externalDurationMs: 20,
+      clickDeliveryDurationMs: 10,
+      stateWaitDurationMs: 10,
+      errorClasses: ['OperatorActionTimingUnavailable'],
+    })
+  })
+
+  it('requires every Linux CI launch to attest Mesa llvmpipe directly [DON-260]', () => {
+    const mesaLaunch = {
+      webGlRenderer: {
+        available: true,
+        unmaskedRenderer: 'ANGLE (Mesa, llvmpipe (LLVM 20.1.2), OpenGL 4.5)',
+      },
+    }
+
+    expect(
+      buildWebGlRendererAttestation({
+        platform: 'linux',
+        profileName: 'ci',
+        launches: [mesaLaunch, mesaLaunch],
+      }),
+    ).toEqual({
+      required: true,
+      passed: true,
+      expectedBackend: 'Mesa llvmpipe via ANGLE/OpenGL',
+      launchCount: 2,
+      acceptedLaunches: 2,
+      failures: [],
+    })
+
+    expect(
+      buildWebGlRendererAttestation({
+        platform: 'linux',
+        profileName: 'ci',
+        launches: [
+          {
+            webGlRenderer: {
+              available: true,
+              unmaskedRenderer: 'ANGLE (Google, SwiftShader, Vulkan 1.3)',
+            },
+          },
+        ],
+      }).passed,
+    ).toBe(false)
+    expect(
+      buildWebGlRendererAttestation({
+        platform: 'darwin',
+        profileName: 'ci',
+        launches: [],
+      }).required,
+    ).toBe(false)
   })
 
   it.each([

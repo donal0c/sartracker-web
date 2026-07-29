@@ -193,6 +193,15 @@ export function buildTrackingSoakVerdict(input) {
     1,
     'operator action timing samples',
   )
+  requireAtLeast(
+    failureReasons,
+    input.operatorExternalActionSamples,
+    1,
+    'external operator action timing samples',
+  )
+  if (input.webGlRendererAttested !== true) {
+    failureReasons.push('The required WebGL renderer backend was not directly attested.')
+  }
   if (
     Number.isFinite(input.maximumProcessTreeResidentBytes) &&
     input.maximumProcessTreeResidentBytes > MAX_PROCESS_TREE_RESIDENT_BYTES
@@ -215,6 +224,11 @@ export function buildTrackingSoakVerdict(input) {
   if (input.operatorActionMaximumMs >= input.freezeThresholdMs) {
     failureReasons.push(
       `Operator action maximum ${input.operatorActionMaximumMs}ms reached the ${input.freezeThresholdMs}ms freeze threshold.`,
+    )
+  }
+  if (input.operatorExternalActionMaximumMs >= input.freezeThresholdMs) {
+    failureReasons.push(
+      `External operator action maximum ${input.operatorExternalActionMaximumMs}ms reached the ${input.freezeThresholdMs}ms freeze threshold.`,
     )
   }
   if (input.integrityResult !== 'ok') {
@@ -273,21 +287,137 @@ export async function measureOperatorAction(input) {
   } catch (error) {
     errorClasses.push(error instanceof Error ? error.name : 'UnknownError')
   }
+  const clickCompletedAt = input.now()
 
   try {
     stateReached = await input.waitForState()
   } catch (error) {
     errorClasses.push(error instanceof Error ? error.name : 'UnknownError')
   }
-  const durationMs = input.now() - startedAt
-  const clickReceived = await input.readRecorder().catch(() => false)
+  const stateCompletedAt = input.now()
+  const externalDurationMs = stateCompletedAt - startedAt
+  const recorder = await input.readRecorder().catch(() => ({
+    received: false,
+    actionDurationMs: null,
+  }))
+  const recorderTimingAvailable =
+    recorder?.received === true &&
+    Number.isFinite(recorder.actionDurationMs) &&
+    recorder.actionDurationMs >= 0
+  if (recorder?.received === true && !recorderTimingAvailable) {
+    errorClasses.push('OperatorActionTimingUnavailable')
+  }
 
   return {
     clickCompleted,
-    clickReceived,
+    clickReceived: recorderTimingAvailable,
     stateReached,
-    durationMs,
+    durationMs: recorderTimingAvailable ? recorder.actionDurationMs : externalDurationMs,
+    externalDurationMs,
+    clickDeliveryDurationMs: clickCompletedAt - startedAt,
+    stateWaitDurationMs: stateCompletedAt - clickCompletedAt,
     errorClasses,
+  }
+}
+
+/**
+ * Requires direct Mesa/llvmpipe proof for every Linux CI app launch.
+ *
+ * Other platforms and longer local profiles record renderer evidence without
+ * enforcing this GitHub-runner-specific backend policy.
+ */
+export function buildWebGlRendererAttestation(input) {
+  const required = input.platform === 'linux' && input.profileName === 'ci'
+  const expectedBackend = required ? 'Mesa llvmpipe via ANGLE/OpenGL' : null
+  if (!required) {
+    return {
+      required: false,
+      passed: true,
+      expectedBackend,
+      launchCount: input.launches.length,
+      acceptedLaunches: 0,
+      failures: [],
+    }
+  }
+
+  const failures = []
+  let acceptedLaunches = 0
+  input.launches.forEach((launch, index) => {
+    const evidence = launch.webGlRenderer
+    const renderer =
+      typeof evidence?.unmaskedRenderer === 'string'
+        ? evidence.unmaskedRenderer
+        : evidence?.renderer
+    const normalized = typeof renderer === 'string' ? renderer.toLowerCase() : ''
+    const accepted =
+      evidence?.available === true &&
+      normalized.includes('angle') &&
+      normalized.includes('llvmpipe') &&
+      normalized.includes('opengl') &&
+      !normalized.includes('swiftshader') &&
+      !normalized.includes('vulkan')
+    if (accepted) {
+      acceptedLaunches += 1
+      return
+    }
+    failures.push(
+      `Launch ${index + 1} did not attest ${expectedBackend}: ${renderer || evidence?.reason || 'renderer unavailable'}.`,
+    )
+  })
+  if (input.launches.length === 0) {
+    failures.push(`No app launch attested ${expectedBackend}.`)
+  }
+
+  return {
+    required: true,
+    passed: failures.length === 0,
+    expectedBackend,
+    launchCount: input.launches.length,
+    acceptedLaunches,
+    failures,
+  }
+}
+
+/**
+ * Reads the renderer behind MapLibre's live WebGL canvas.
+ *
+ * Launch flags are requests rather than proof. Recording both masked and
+ * unmasked values makes packaged CI evidence identify the backend Chromium
+ * actually selected.
+ */
+export function readWebGlRendererInfoFromDocument(documentRoot = globalThis.document) {
+  const canvas = documentRoot?.querySelector?.('.maplibregl-canvas')
+  if (canvas === null || canvas === undefined || typeof canvas.getContext !== 'function') {
+    return { available: false, reason: 'map_canvas_unavailable' }
+  }
+
+  try {
+    const webGl2 = canvas.getContext('webgl2')
+    const context = webGl2 ?? canvas.getContext('webgl')
+    if (context === null || context === undefined) {
+      return { available: false, reason: 'webgl_context_unavailable' }
+    }
+    const debugInfo = context.getExtension('WEBGL_debug_renderer_info')
+    const readParameter = (key) => {
+      const value = context.getParameter(key)
+      return typeof value === 'string' ? value : String(value ?? '')
+    }
+    return {
+      available: true,
+      contextType: webGl2 === null ? 'webgl' : 'webgl2',
+      vendor: readParameter(context.VENDOR),
+      renderer: readParameter(context.RENDERER),
+      unmaskedVendor:
+        debugInfo === null ? null : readParameter(debugInfo.UNMASKED_VENDOR_WEBGL),
+      unmaskedRenderer:
+        debugInfo === null ? null : readParameter(debugInfo.UNMASKED_RENDERER_WEBGL),
+    }
+  } catch (error) {
+    return {
+      available: false,
+      reason: 'webgl_probe_failed',
+      errorClass: error instanceof Error ? error.name : 'UnknownError',
+    }
   }
 }
 

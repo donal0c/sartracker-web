@@ -41,6 +41,19 @@ function selectStep(job: WorkflowJob, name: string): WorkflowStep {
 function expectMesaPackages(step: WorkflowStep): void {
   expect(step.run).toContain('libgl1-mesa-dri')
   expect(step.run).toContain('libglx-mesa0')
+  expect(step.run).toContain('mesa-utils')
+}
+
+/**
+ * Verifies that the workflow proves llvmpipe is active before app timing.
+ */
+function expectRendererAttestation(step: WorkflowStep): void {
+  expect(step.env).toMatchObject({
+    LIBGL_ALWAYS_SOFTWARE: '1',
+    GALLIUM_DRIVER: 'llvmpipe',
+  })
+  expect(step.run).toContain('glxinfo -B')
+  expect(step.run).toContain("grep -qi 'llvmpipe'")
 }
 
 /**
@@ -51,6 +64,8 @@ function expectMesaLaunch(step: WorkflowStep): void {
   expect(step.run).toContain('export GALLIUM_DRIVER=llvmpipe')
   expect(step.run).toContain('--use-gl=angle')
   expect(step.run).toContain('--use-angle=gl')
+  expect(step.run).toContain('--disable-features=Vulkan,DefaultANGLEVulkan,VulkanFromANGLE')
+  expect(step.run).toContain('--disable-frame-rate-limit')
   expect(step.run).not.toContain('--enable-unsafe-swiftshader')
 }
 
@@ -63,6 +78,7 @@ describe('Linux Electron renderer workflows [DON-260]', () => {
     const launchJob = workflow.jobs['launch-smoke-linux']
 
     expectMesaPackages(selectStep(bundleJob, 'Install Linux Electron runtime deps'))
+    expectRendererAttestation(selectStep(bundleJob, 'Attest Mesa llvmpipe renderer'))
     expect(selectStep(bundleJob, 'Packaged tracking soak (CI profile)').env).toMatchObject({
       LIBGL_ALWAYS_SOFTWARE: '1',
       GALLIUM_DRIVER: 'llvmpipe',
@@ -79,6 +95,11 @@ describe('Linux Electron renderer workflows [DON-260]', () => {
     const job = workflow.jobs.build
 
     expectMesaPackages(selectStep(job, 'Install Linux Electron runtime deps'))
+    expectRendererAttestation(selectStep(job, 'Attest Mesa llvmpipe renderer'))
+    expect(selectStep(job, 'Packaged tracking soak (CI profile)').env).toMatchObject({
+      LIBGL_ALWAYS_SOFTWARE: '1',
+      GALLIUM_DRIVER: 'llvmpipe',
+    })
     expectMesaLaunch(selectStep(job, 'Launch AppImage smoke'))
     expect(workflowSource).not.toContain('--enable-unsafe-swiftshader')
   })
