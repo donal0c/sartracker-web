@@ -224,7 +224,7 @@ Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
     await page.getByTestId('marker-save-btn').click()
     await expect(page.getByTestId('marker-dialog')).toBeHidden()
     await expect.poll(async () => readMarkerNames(page)).toContain('Casualty Near Summit')
-    await page.waitForTimeout(500)
+    await waitForRenderedCasualtyMarker(page, 'Casualty Near Summit')
 
     await captureAndRegister(page, {
       testId: 'marker-casualty-map-label-size',
@@ -240,6 +240,7 @@ Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
       playwrightAssertions: [
         'casualty marker saved',
         'marker dialog is closed',
+        'casualty symbol and label are rendered by MapLibre',
       ],
     })
   })
@@ -260,4 +261,42 @@ async function readMarkerNames(page: import('@playwright/test').Page): Promise<r
       .map((marker) => marker.name)
       .filter((name): name is string => typeof name === 'string')
   })
+}
+
+/** Waits until MapLibre has rendered both the casualty symbol and its label. */
+async function waitForRenderedCasualtyMarker(
+  page: import('@playwright/test').Page,
+  markerName: string,
+): Promise<void> {
+  await expect
+    .poll(
+      async () =>
+        page.evaluate((expectedName) => {
+          const map = window.__SARTRACKER_MAP__
+          const symbolLayerId = 'mission-markers-symbol-casualty'
+          const labelLayerId = 'mission-markers-label-casualty'
+          if (
+            map === undefined ||
+            map.getLayer(symbolLayerId) === undefined ||
+            map.getLayer(labelLayerId) === undefined
+          ) {
+            return { labelRendered: false, symbolRendered: false }
+          }
+
+          const hasExpectedMarker = (layerId: string) =>
+            map
+              .queryRenderedFeatures(undefined, { layers: [layerId] })
+              .some((feature) => feature.properties?.name === expectedName)
+
+          return {
+            labelRendered: hasExpectedMarker(labelLayerId),
+            symbolRendered: hasExpectedMarker(symbolLayerId),
+          }
+        }, markerName),
+      {
+        message: 'casualty symbol and label rendered before visual capture',
+        timeout: 8000,
+      },
+    )
+    .toEqual({ labelRendered: true, symbolRendered: true })
 }

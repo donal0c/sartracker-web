@@ -50,6 +50,18 @@ export function TrackingStatusPanel() {
         </div>
       </div>
 
+      <div className="mb-4 flex">
+        <button
+          className="sar-button w-full px-3 py-2 text-xs font-bold uppercase tracking-[0.1em]"
+          aria-describedby={status.warning === null ? undefined : 'tracking-status-message'}
+          data-testid="open-devices-workspace"
+          onClick={() => openWorkspace()}
+          type="button"
+        >
+          Open Devices
+        </button>
+      </div>
+
       {status.warning === null ? null : (
         <TrackingStatusMessage tone={criticalTrustWarning ? 'critical' : 'warning'}>
           {status.warning}
@@ -68,7 +80,10 @@ export function TrackingStatusPanel() {
         </p>
       ) : null}
 
-      <div className="grid grid-cols-4 border border-[var(--sar-line)] bg-[var(--sar-panel-sunken)] font-mono text-[13px] tracking-tight text-stone-100">
+      <div
+        className="grid grid-cols-4 border border-[var(--sar-line)] bg-[var(--sar-panel-sunken)] font-mono text-[13px] tracking-tight text-stone-100"
+        data-testid="tracking-counters"
+      >
         <div className="border-r border-[var(--sar-line)] px-3 py-3">
           <span className="block text-[10px] font-bold uppercase tracking-[0.12em] text-stone-300">Devices</span>
           <span className="mt-1 block text-lg font-black text-stone-100">{snapshot.devices.length}</span>
@@ -88,16 +103,6 @@ export function TrackingStatusPanel() {
       </div>
 
       <div className="mt-4 space-y-3 border-t border-[var(--sar-line)] pt-4">
-        <div className="flex">
-          <button
-            className="sar-button w-full px-3 py-2 text-xs font-bold uppercase tracking-[0.1em]"
-            data-testid="open-devices-workspace"
-            onClick={() => openWorkspace()}
-            type="button"
-          >
-            Open Devices
-          </button>
-        </div>
         <div className="sar-readout flex items-center justify-between px-3 py-2 text-[11px] font-medium text-stone-300">
           <span>Last success</span>
           <span className="font-mono font-bold text-stone-300">
@@ -144,6 +149,7 @@ function TrackingStatusMessage(props: {
     <p
       className={`border-l-4 px-3 py-2 text-xs font-medium leading-relaxed ${className}`}
       data-testid="tracking-warning"
+      id="tracking-status-message"
     >
       {props.children}
     </p>

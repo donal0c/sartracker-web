@@ -37,10 +37,6 @@ export function useMapMeasurementOverlays(
     }
 
     const synchronizeOverlay = () => {
-      if (!map.isStyleLoaded()) {
-        return
-      }
-
       syncMeasurementOverlay(
         map,
         getEffectiveMeasurementsVisible(groupVisibility, measurementsVisible) ? measurements : [],
@@ -66,10 +62,6 @@ export function useMapMeasurementOverlays(
     }
 
     const synchronizePreview = () => {
-      if (!map.isStyleLoaded()) {
-        return
-      }
-
       syncMeasurementPreviewOverlay(map, {
         draftStart: getEffectiveMeasurementsVisible(groupVisibility, measurementsVisible)
           ? draftStart

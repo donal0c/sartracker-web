@@ -29,12 +29,14 @@ import {
   buildWebGlRendererAttestation,
   buildTrackingGrowthEvidence,
   buildTrackingSoakVerdict,
+  clickActionablePointerTarget,
   classifyOperatorInteraction,
   createPositionTruthDigestAccumulator,
   installCadencedRendererProbeInWindow,
   measureOperatorAction,
   parseTrackingSoakArgs,
   parseTrackingSoakRuntimeLog,
+  partitionOperatorClickAudit,
   readWebGlRendererInfoFromDocument,
 } from '../build/electron-tracking-soak-lib.js'
 import {
@@ -92,6 +94,7 @@ async function main() {
       phase: 'mission-started',
       evidenceDir,
       results: operatorInteractions,
+      auditState: activeLaunch.operatorClickAuditState,
     })
 
     for (const checkpoint of options.profile.restartCheckpoints) {
@@ -117,6 +120,7 @@ async function main() {
         phase: `checkpoint-${checkpoint}-before-restart`,
         evidenceDir,
         results: operatorInteractions,
+        auditState: activeLaunch.operatorClickAuditState,
       })
       await collectLaunchResponsiveness(activeLaunch, mainRoundTrips, rendererGaps)
       await activeLaunch.page.screenshot({
@@ -135,6 +139,7 @@ async function main() {
         phase: `checkpoint-${checkpoint}-after-restart`,
         evidenceDir,
         results: operatorInteractions,
+        auditState: activeLaunch.operatorClickAuditState,
       })
       restartCheckpointsPassed += 1
     }
@@ -153,6 +158,7 @@ async function main() {
       phase: 'final-load',
       evidenceDir,
       results: operatorInteractions,
+      auditState: activeLaunch.operatorClickAuditState,
     })
     growthCheckpoints.push(
       await readGrowthCheckpoint({
@@ -235,11 +241,29 @@ async function main() {
       ),
       250,
     )
+    const operatorTargetStabilityStats = summarizeResponsiveness(
+      operatorInteractions.flatMap((interaction) =>
+        [
+          interaction.openTargetStabilityWaitMs,
+          interaction.closeTargetStabilityWaitMs,
+        ].filter(Number.isFinite),
+      ),
+      250,
+    )
+    const operatorAuditTailErrors = launches.filter(
+      (launch) => (launch.operatorClickAuditTail?.issues.length ?? 0) > 0,
+    ).length
     const operatorInteractionErrors = operatorInteractions.filter(
       (interaction) => !interaction.passed,
-    ).length
+    ).length + operatorAuditTailErrors
     const operatorInteractionClassifications = countBy(
-      operatorInteractions.map((interaction) => interaction.classification),
+      [
+        ...operatorInteractions.map((interaction) => interaction.classification),
+        ...Array.from(
+          { length: operatorAuditTailErrors },
+          () => 'unexpected_browser_input',
+        ),
+      ],
     )
     const processMemory = {
       samples: launches.reduce((sum, launch) => sum + launch.processMemory.samples, 0),
@@ -340,6 +364,7 @@ async function main() {
           ...operatorInteractionStats,
           actionTiming: operatorActionStats,
           externalActionTiming: operatorExternalActionStats,
+          targetStabilityTiming: operatorTargetStabilityStats,
           errors: operatorInteractionErrors,
           classifications: operatorInteractionClassifications,
           samples: operatorInteractions,
@@ -363,6 +388,7 @@ async function main() {
         mainHeartbeatErrors: launch.mainHeartbeatErrors,
         rendererCrashes: launch.rendererCrashes,
         processMemory: launch.processMemory,
+        operatorClickAuditTail: launch.operatorClickAuditTail,
         exitCode: launch.appProcess.exitCode,
       })),
       verdict,
@@ -473,6 +499,7 @@ async function launchPackagedApp(options, userDataDir, number) {
       `[tracking-soak] launch=${number} webgl=${webGlRenderer.available ? webGlRenderer.unmaskedRenderer ?? webGlRenderer.renderer : webGlRenderer.reason}`,
     )
     await installRendererProbe(page)
+    await installOperatorClickAudit(page)
     let rendererCrashes = 0
     page.on('crash', () => {
       rendererCrashes += 1
@@ -492,6 +519,11 @@ async function launchPackagedApp(options, userDataDir, number) {
         return rendererCrashes
       },
       processMemory: { samples: 0, maximumProcessTreeResidentBytes: 0 },
+      operatorClickAuditState: {
+        initialized: false,
+        lastSequence: 0,
+      },
+      operatorClickAuditTail: null,
       logChunks,
       closed: false,
     }
@@ -526,6 +558,12 @@ async function startSyntheticMission(page) {
  */
 async function recordOperatorInteraction(input) {
   const startedAt = performance.now()
+  const auditAtStart = await readOperatorClickAudit(input.page)
+  if (input.auditState.initialized !== true) {
+    input.auditState.initialized = true
+    input.auditState.lastSequence = auditAtStart.lastSequence
+  }
+  const interactionStartSequence = auditAtStart.lastSequence
   await focusPackagedPage(input.page, 2_000)
   const preflight = await inspectPointerTarget(
     input.page,
@@ -554,6 +592,8 @@ async function recordOperatorInteraction(input) {
     closeClickDeliveryDurationMs: null,
     openStateWaitDurationMs: null,
     closeStateWaitDurationMs: null,
+    openTargetStabilityWaitMs: null,
+    closeTargetStabilityWaitMs: null,
   }
   const errors = []
 
@@ -567,7 +607,13 @@ async function recordOperatorInteraction(input) {
           'actionable',
         ),
       click: () =>
-        clickInspectedPointerTarget(input.page, preflight, 'open-devices-workspace'),
+        clickActionablePointerTarget({
+          page: input.page,
+          preflight,
+          testId: 'open-devices-workspace',
+          stableDurationMs: 250,
+          timeoutMs: 2_000,
+        }),
       waitForState: () => waitForRecordedActionState(input.page, 5_000),
       readRecorder: () => readClickRecorder(input.page),
       now: () => performance.now(),
@@ -586,6 +632,7 @@ async function recordOperatorInteraction(input) {
     result.openExternalActionDurationMs = openAction.externalDurationMs
     result.openClickDeliveryDurationMs = openAction.clickDeliveryDurationMs
     result.openStateWaitDurationMs = openAction.stateWaitDurationMs
+    result.openTargetStabilityWaitMs = openAction.targetStabilityWaitMs
     errors.push(...openAction.errorClasses)
   }
 
@@ -615,16 +662,24 @@ async function recordOperatorInteraction(input) {
           'hidden',
         ),
       click: () =>
-        clickInspectedPointerTarget(input.page, closePreflight, 'workspace-close-btn'),
+        clickActionablePointerTarget({
+          page: input.page,
+          preflight: closePreflight,
+          testId: 'workspace-close-btn',
+          stableDurationMs: 250,
+          timeoutMs: 2_000,
+        }),
       waitForState: () => waitForRecordedActionState(input.page, 5_000),
       readRecorder: () => readClickRecorder(input.page),
       now: () => performance.now(),
     })
     const closeStateVerified =
       closeAction.stateReached &&
-      await waitForLocatorState(
-        input.page.getByTestId('devices-workspace'),
+      await waitForPointerTargetStateStable(
+        input.page,
+        'devices-workspace',
         'hidden',
+        250,
         5_000,
       )
     result.closeClickCompleted = closeAction.clickCompleted
@@ -634,8 +689,26 @@ async function recordOperatorInteraction(input) {
     result.closeExternalActionDurationMs = closeAction.externalDurationMs
     result.closeClickDeliveryDurationMs = closeAction.clickDeliveryDurationMs
     result.closeStateWaitDurationMs = closeAction.stateWaitDurationMs
+    result.closeTargetStabilityWaitMs = closeAction.targetStabilityWaitMs
     errors.push(...closeAction.errorClasses)
   }
+
+  const audit = partitionOperatorClickAudit({
+    audit: await readOperatorClickAudit(input.page),
+    afterSequence: input.auditState.lastSequence,
+    interactionStartSequence,
+  })
+  input.auditState.lastSequence = audit.lastSequence
+  const expectedInteractionTestIds = [
+    ...(result.openClickCompleted ? ['open-devices-workspace'] : []),
+    ...(result.closeClickCompleted ? ['workspace-close-btn'] : []),
+  ]
+  const auditIssues = inspectOperatorClickAudit(
+    audit,
+    expectedInteractionTestIds,
+  )
+  result.unexpectedInputEvents = auditIssues.length
+  errors.push(...auditIssues)
 
   const classification = classifyOperatorInteraction(result)
   if (!classification.passed) {
@@ -660,6 +733,8 @@ async function recordOperatorInteraction(input) {
     closeClickDeliveryDurationMs: result.closeClickDeliveryDurationMs,
     openStateWaitDurationMs: result.openStateWaitDurationMs,
     closeStateWaitDurationMs: result.closeStateWaitDurationMs,
+    openTargetStabilityWaitMs: result.openTargetStabilityWaitMs,
+    closeTargetStabilityWaitMs: result.closeTargetStabilityWaitMs,
     ...classification,
     preflight,
     closePreflight,
@@ -675,7 +750,101 @@ async function recordOperatorInteraction(input) {
     },
     mainIpc,
     errorClasses: errors,
+    clickAudit: {
+      interSampleEvents: audit.interSampleEvents,
+      interactionEvents: audit.interactionEvents,
+      missingEventCount: audit.missingEventCount,
+      lastSequence: audit.lastSequence,
+      sequenceRegressed: audit.sequenceRegressed,
+      issues: auditIssues,
+    },
   })
+}
+
+/** Installs a bounded renderer-side audit of trusted click targets for soak diagnosis. */
+async function installOperatorClickAudit(page) {
+  await page.evaluate(() => {
+    window.__SARTRACKER_OPERATOR_CLICK_AUDIT__ = {
+      events: [],
+      lastSequence: 0,
+      droppedEventCount: 0,
+    }
+    document.addEventListener(
+      'click',
+      (event) => {
+        const audit = window.__SARTRACKER_OPERATOR_CLICK_AUDIT__
+        if (audit === undefined) {
+          return
+        }
+        const pathTestIds = event.composedPath().flatMap((entry) =>
+          entry instanceof HTMLElement && entry.dataset.testid !== undefined
+            ? [entry.dataset.testid]
+            : [],
+        )
+        audit.lastSequence += 1
+        audit.events.push({
+          sequence: audit.lastSequence,
+          atMs: performance.now(),
+          trusted: event.isTrusted,
+          detail: event.detail,
+          clientX: event.clientX,
+          clientY: event.clientY,
+          pathTestIds,
+        })
+        if (audit.events.length > 256) {
+          audit.events.shift()
+          audit.droppedEventCount += 1
+        }
+      },
+      true,
+    )
+  })
+}
+
+/** Reads the bounded renderer-side trusted-click audit. */
+async function readOperatorClickAudit(page) {
+  return page.evaluate(
+    () =>
+      window.__SARTRACKER_OPERATOR_CLICK_AUDIT__ ?? {
+        events: [],
+        lastSequence: 0,
+        droppedEventCount: 0,
+      },
+  )
+}
+
+/** Returns stable error classes for missing, late, extra, or untrusted input evidence. */
+function inspectOperatorClickAudit(audit, expectedInteractionTestIds) {
+  const issues = []
+  if (audit.missingEventCount > 0) {
+    issues.push('OperatorClickAuditSequenceGap')
+  }
+  if (audit.sequenceRegressed) {
+    issues.push('OperatorClickAuditSequenceRegression')
+  }
+  if (audit.interSampleEvents.length > 0) {
+    issues.push('UnexpectedInterSampleClick')
+  }
+  if (
+    [...audit.interSampleEvents, ...audit.interactionEvents].some(
+      (event) => event.trusted !== true,
+    )
+  ) {
+    issues.push('UntrustedOperatorClick')
+  }
+
+  const observedInteractionTestIds = audit.interactionEvents.map(
+    (event) => event.pathTestIds?.[0] ?? null,
+  )
+  if (
+    observedInteractionTestIds.length !== expectedInteractionTestIds.length ||
+    observedInteractionTestIds.some(
+      (testId, index) => testId !== expectedInteractionTestIds[index],
+    )
+  ) {
+    issues.push('UnexpectedOperatorClickSequence')
+  }
+  return issues
 }
 
 /** Inspects the real hit-test target at the centre of an operator control. */
@@ -714,25 +883,6 @@ async function inspectPointerTarget(page, testId) {
           : null,
     }
   }, testId)
-}
-
-/**
- * Sends a trusted pointer click at a previously verified on-screen target.
- *
- * The preceding hit-test is the actionability gate. Using the mouse path keeps
- * command-to-state timing focused on Chromium input delivery and application
- * response rather than Playwright locator polling.
- */
-async function clickInspectedPointerTarget(page, preflight, testId) {
-  if (
-    preflight?.documentFocused !== true ||
-    preflight?.targetReceivesPointer !== true ||
-    !Number.isFinite(preflight.centerPoint?.x) ||
-    !Number.isFinite(preflight.centerPoint?.y)
-  ) {
-    throw new Error(`Pointer target ${testId} was not actionable at its inspected centre.`)
-  }
-  await page.mouse.click(preflight.centerPoint.x, preflight.centerPoint.y)
 }
 
 /** Brings the packaged document to the foreground before timing pointer input. */
@@ -905,12 +1055,72 @@ async function probeMainProcessIpc(page, timeoutMs) {
   }, timeoutMs)
 }
 
-/** Waits for one UI state without converting a timeout into an opaque thrown error. */
-async function waitForLocatorState(locator, state, timeout) {
-  return locator
-    .waitFor({ state, timeout })
-    .then(() => true)
-    .catch(() => false)
+/**
+ * Requires a target state to remain true throughout a short observation window.
+ *
+ * Immediate unmount is insufficient for the close gate: a delayed duplicate
+ * input can reopen the workspace after the first hidden assertion passes.
+ */
+async function waitForPointerTargetStateStable(
+  page,
+  testId,
+  state,
+  stabilityMs,
+  timeoutMs,
+) {
+  if (state !== 'hidden') {
+    throw new Error(`Unsupported stable pointer-target state: ${state}.`)
+  }
+  const deadline = Date.now() + timeoutMs
+  while (Date.now() < deadline) {
+    const remainedHidden = await page.evaluate(
+      async ({ expectedTestId, requiredStabilityMs }) => {
+        const isHidden = () => {
+          const target = document.querySelector(
+            `[data-testid="${expectedTestId}"]`,
+          )
+          if (!(target instanceof HTMLElement)) {
+            return true
+          }
+          const style = window.getComputedStyle(target)
+          const rect = target.getBoundingClientRect()
+          return (
+            style.display === 'none' ||
+            style.visibility === 'hidden' ||
+            rect.width <= 0 ||
+            rect.height <= 0
+          )
+        }
+        if (!isHidden()) {
+          return false
+        }
+        const startedAt = performance.now()
+        return new Promise((resolve) => {
+          const observeFrame = (frameTime) => {
+            if (!isHidden()) {
+              resolve(false)
+              return
+            }
+            if (frameTime - startedAt >= requiredStabilityMs) {
+              resolve(true)
+              return
+            }
+            window.requestAnimationFrame(observeFrame)
+          }
+          window.requestAnimationFrame(observeFrame)
+        })
+      },
+      {
+        expectedTestId: testId,
+        requiredStabilityMs: stabilityMs,
+      },
+    ).catch(() => false)
+    if (remainedHidden) {
+      return true
+    }
+    await delay(16)
+  }
+  return false
 }
 
 /**
@@ -1052,6 +1262,7 @@ async function waitForBackupEvent(page, missionId, timeoutMs) {
 async function closeLaunch(launch, mainRoundTrips, rendererGaps) {
   if (launch.closed) return
   launch.closed = true
+  await collectOperatorClickAuditTail(launch)
   await sampleProcessMemory(launch)
   await collectLaunchResponsiveness(launch, mainRoundTrips, rendererGaps)
   launch.mainInspector.close()
@@ -1061,6 +1272,35 @@ async function closeLaunch(launch, mainRoundTrips, rendererGaps) {
   if (launch.appProcess.exitCode === null) {
     launch.appProcess.kill('SIGKILL')
     await waitForExit(launch.appProcess, 5_000)
+  }
+}
+
+/** Captures any trusted input that arrives after the launch's final measured sample. */
+async function collectOperatorClickAuditTail(launch) {
+  if (launch.operatorClickAuditTail !== null) {
+    return
+  }
+  if (launch.operatorClickAuditState.initialized !== true) {
+    launch.operatorClickAuditTail = {
+      interSampleEvents: [],
+      interactionEvents: [],
+      missingEventCount: 0,
+      lastSequence: 0,
+      issues: [],
+    }
+    return
+  }
+
+  const snapshot = await readOperatorClickAudit(launch.page)
+  const audit = partitionOperatorClickAudit({
+    audit: snapshot,
+    afterSequence: launch.operatorClickAuditState.lastSequence,
+    interactionStartSequence: snapshot.lastSequence,
+  })
+  launch.operatorClickAuditState.lastSequence = audit.lastSequence
+  launch.operatorClickAuditTail = {
+    ...audit,
+    issues: inspectOperatorClickAudit(audit, []),
   }
 }
 

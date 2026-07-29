@@ -42,6 +42,9 @@ describe('TrackingStatusPanel', () => {
       'sar-status-alert-panel',
     )
     expect(getText('[data-testid="tracking-warning"]')).toContain('OFFLINE MODE')
+    expect(
+      getElement('[data-testid="open-devices-workspace"]').getAttribute('aria-describedby'),
+    ).toBe('tracking-status-message')
   })
 
   it('renders paused live-refresh suspension as a flashing red alert even while mode is idle', () => {

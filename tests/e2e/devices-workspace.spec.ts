@@ -46,6 +46,97 @@ test.describe('M19 devices workspace', () => {
     await expect(page.getByRole('button', { name: 'Close workspace' })).toHaveCount(0)
   })
 
+  test('stays closed while tracking status repeatedly changes layout [DON-262]', async ({
+    page,
+  }) => {
+    const opener = page.getByTestId('open-devices-workspace')
+    const dialog = page.getByRole('dialog', { name: 'Tracking Devices' })
+
+    await opener.click()
+    await expect(dialog).toBeVisible()
+    await page.getByTestId('workspace-close-btn').click()
+    await expect(dialog).toHaveCount(0)
+
+    for (let index = 0; index < 20; index += 1) {
+      await page.evaluate(async (warning) => {
+        const harness = window.__SARTRACKER_BROWSER_HARNESS__
+        if (harness === undefined) {
+          throw new Error('Browser harness API unavailable.')
+        }
+        const state = harness.readState()
+        await harness.hydrateTracking()
+        await harness.injectTrackingSnapshot(
+          {
+            devices: [],
+            positions: [],
+            breadcrumbs: [],
+          },
+          {
+            mode: 'online',
+            consecutiveFailures: 0,
+            recovered: false,
+            lastSuccessAt: new Date().toISOString(),
+            warning,
+          },
+        )
+        if (state.currentMissionId === null) {
+          throw new Error('Expected an active browser-harness mission.')
+        }
+      }, index % 2 === 0 ? 'Current fixes loaded; loading breadcrumb history.' : null)
+    }
+
+    await expect(dialog).toHaveCount(0)
+    await expect(opener).toBeVisible()
+    await expect(opener).toBeFocused()
+  })
+
+  test('keeps the Open Devices pointer target fixed while tracking messages change [DON-261]', async ({
+    page,
+  }) => {
+    const opener = page.getByTestId('open-devices-workspace')
+    const initialBox = await opener.boundingBox()
+    if (initialBox === null) {
+      throw new Error('Open Devices pointer target is unavailable.')
+    }
+
+    const observedTops = [initialBox.y]
+    for (const warning of [
+      null,
+      'Current fixes loaded; loading breadcrumb history.',
+      'OFFLINE MODE — showing last known positions.',
+      null,
+    ]) {
+      await page.evaluate(async (nextWarning) => {
+        const harness = window.__SARTRACKER_BROWSER_HARNESS__
+        if (harness === undefined) {
+          throw new Error('Browser harness API unavailable.')
+        }
+        await harness.injectTrackingSnapshot(
+          {
+            devices: [],
+            positions: [],
+            breadcrumbs: [],
+          },
+          {
+            mode: nextWarning?.startsWith('OFFLINE') ? 'offline' : 'online',
+            consecutiveFailures: nextWarning?.startsWith('OFFLINE') ? 1 : 0,
+            recovered: false,
+            lastSuccessAt: new Date().toISOString(),
+            warning: nextWarning,
+          },
+        )
+        await new Promise((resolve) => window.requestAnimationFrame(resolve))
+      }, warning)
+      const box = await opener.boundingBox()
+      if (box === null) {
+        throw new Error('Open Devices pointer target disappeared.')
+      }
+      observedTops.push(box.y)
+    }
+
+    expect(Math.max(...observedTops) - Math.min(...observedTops)).toBeLessThan(0.5)
+  })
+
   test('makes workspace controls actionable immediately when opened [DON-260]', async ({
     page,
   }) => {
@@ -351,6 +442,49 @@ test.describe('M19 devices workspace', () => {
   })
 })
 
+test.describe('Operational tracking overlay readiness [DON-263]', () => {
+  test('renders current positions and breadcrumbs while basemap tiles remain pending', async ({
+    context,
+    page,
+  }) => {
+    let releaseTiles = () => undefined
+    const tileGate = new Promise<void>((resolve) => {
+      releaseTiles = resolve
+    })
+    let heldTileCount = 0
+
+    await context.route('https://tile.opentopomap.org/**', async (route) => {
+      heldTileCount += 1
+      await tileGate
+      await route.abort().catch(() => undefined)
+    })
+
+    try {
+      await page.goto('/?missionHarness=1')
+      await page.getByTestId('app-title').waitFor({ state: 'visible', timeout: 10_000 })
+      await page.waitForSelector('canvas', { timeout: 15_000 })
+      await page.getByTestId('mission-name-input').fill('Pending Basemap Mission')
+      await page.getByTestId('mission-start-btn').click()
+      await expect(page.getByTestId('mission-control')).toContainText('active')
+      await seedTrackingWorkspace(page)
+
+      await expect.poll(() => heldTileCount).toBeGreaterThan(0)
+      await expect.poll(async () => readOperationalTrackingState(page)).toMatchObject({
+        styleLoaded: false,
+        currentPositionCount: 2,
+        breadcrumbFeatureCount: 1,
+        renderedOperationalFeatureCount: expect.any(Number),
+      })
+      await expect
+        .poll(async () => (await readOperationalTrackingState(page)).renderedOperationalFeatureCount)
+        .toBeGreaterThan(0)
+    } finally {
+      releaseTiles()
+      await context.unrouteAll({ behavior: 'ignoreErrors' })
+    }
+  })
+})
+
 async function clickInsideLowerListArea(page: import('@playwright/test').Page) {
   const list = page.getByTestId('device-list-scroll')
   const box = await list.boundingBox()
@@ -363,6 +497,36 @@ async function clickInsideLowerListArea(page: import('@playwright/test').Page) {
       x: Math.min(320, Math.max(8, box.width - 8)),
       y: Math.max(8, box.height - 8),
     },
+  })
+}
+
+async function readOperationalTrackingState(page: import('@playwright/test').Page) {
+  return page.evaluate(async () => {
+    const map = window.__SARTRACKER_MAP__
+    if (map === undefined) {
+      throw new Error('Map instance is unavailable.')
+    }
+
+    const source = map.getSource('tracking') as
+      | { getData: () => Promise<GeoJSON.FeatureCollection> }
+      | undefined
+    const features = source === undefined ? [] : (await source.getData()).features
+    const countKind = (featureKind: string) =>
+      features.filter((feature) => feature.properties?.featureKind === featureKind).length
+
+    return {
+      styleLoaded: map.isStyleLoaded(),
+      currentPositionCount: countKind('device'),
+      breadcrumbFeatureCount:
+        countKind('breadcrumb') + countKind('breadcrumbLine'),
+      renderedOperationalFeatureCount: map.queryRenderedFeatures(undefined, {
+        layers: [
+          'tracking-devices-circle',
+          'tracking-breadcrumbs-line',
+          'tracking-breadcrumbs-dots',
+        ],
+      }).length,
+    }
   })
 }
 
@@ -385,6 +549,7 @@ async function readTrackingLayerState(page: import('@playwright/test').Page) {
           getLayer: (layerId: string) => unknown
           getPaintProperty: (layerId: string, property: string) => unknown
           getSource: (sourceId: string) => unknown
+          isStyleLoaded: () => boolean
         }
       }
     ).__SARTRACKER_MAP__
@@ -402,6 +567,8 @@ async function readTrackingLayerState(page: import('@playwright/test').Page) {
     )
 
     return {
+      sourceFound: map.getSource('tracking') !== undefined,
+      styleLoaded: map.isStyleLoaded(),
       lineFilter: map.getLayer('tracking-breadcrumbs-line') === undefined
         ? null
         : map.getFilter('tracking-breadcrumbs-line'),
@@ -494,7 +661,6 @@ async function readAlphaBreadcrumbCoordinateKeys(
     return [...new Set(coordinateKeys)].sort()
   })
 }
-
 
 async function seedTrackingWorkspace(page: import('@playwright/test').Page) {
   await page.evaluate(async () => {

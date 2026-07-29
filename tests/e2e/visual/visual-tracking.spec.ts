@@ -44,10 +44,10 @@ test.describe('Visual: Tracking', () => {
       verificationPrompt: `Verify this screenshot of the SAR Tracker tracking status panel. NOTE: this panel is the summary card only — individual device names render in the Layers tab (separate test) and are NOT expected here. Check only what is in frame:
 1. The section header should read "Tracking System" with a "telemetry stream" subtitle (a header of "TRACKING SYSTEM / TELEMETRY STREAM" is correct)
 2. The connection status chip in the header should show "ONLINE" with a green/emerald dot (not "idle" or "offline")
-3. There should be a 4-column counters strip with labels "DEVICES", "FIXES", "CACHE", "STALE"
-4. The DEVICES counter should show "3"
-5. The FIXES counter should be a non-zero number (3 or more, reflecting received GPS fixes)
-6. There should be an "Open Devices" button below the counters
+3. There should be an "Open Devices" button directly below the fixed header, before any counters or dynamic status message
+4. There should be a 4-column counters strip with labels "DEVICES", "FIXES", "CACHE", "STALE"
+5. The DEVICES counter should show "3"
+6. The FIXES counter should be a non-zero number (3 or more, reflecting received GPS fixes)
 7. There should be a "Last success" line showing a time, and a healthy/warning status message line at the bottom
 Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
       playwrightAssertions: [
@@ -161,6 +161,10 @@ Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
     await expect(page.getByTestId('tracking-warning')).toContainText('Live refresh suspended')
     await expect(page.getByTestId('tracking-mode-chip')).toHaveClass(/sar-status-chip-alert/)
     await expect(page.getByTestId('tracking-warning')).toHaveClass(/sar-status-alert-panel/)
+    await expect(page.getByTestId('tracking-counters')).toContainText('Devices')
+    await expect(page.getByTestId('tracking-counters')).toContainText('Fixes')
+    await expect(page.getByTestId('tracking-counters')).toContainText('Cache')
+    await expect(page.getByTestId('tracking-counters')).toContainText('Stale')
 
     await captureElementAndRegister(page, 'tracking-status', {
       testId: 'tracking-paused-refresh-alert',
@@ -171,13 +175,28 @@ Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
 1. The status/warning area should clearly say "Live refresh suspended while mission is paused" or equivalent
 2. The status chip and warning panel should be bright red/high-alert, because displayed positions may no longer be current
 3. This alert should not look like a normal idle/not-configured state
-4. Device, fix, cache, and stale counters should remain visible
 Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
       playwrightAssertions: [
         'mission-control contains paused',
         'tracking-warning contains Live refresh suspended',
         'tracking-mode-chip has sar-status-chip-alert',
         'tracking-warning has sar-status-alert-panel',
+      ],
+    })
+
+    await captureElementAndRegister(page, 'tracking-counters', {
+      testId: 'tracking-paused-counter-strip',
+      testName: 'Tracking counters remain available while mission refresh is paused',
+      area: 'tracking',
+      severity: 'critical',
+      verificationPrompt: `Verify this screenshot of SAR Tracker's tracking counter strip while live refresh is paused:
+1. All four counter labels — "DEVICES", "FIXES", "CACHE", and "STALE" — should be present and readable
+2. Every counter should retain a visible numeric value; none should be blank, cropped, or replaced by the pause alert
+3. The strip should remain visually structured as four distinct columns
+Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
+      playwrightAssertions: [
+        'tracking-counters contains Devices, Fixes, Cache, and Stale',
+        'tracking-counters remains in the DOM while live refresh is paused',
       ],
     })
   })
@@ -424,6 +443,59 @@ Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
         'full-page screenshot with all panels visible',
       ],
     })
+  })
+})
+
+test.describe('Visual: Tracking without basemap completion [DON-263]', () => {
+  test('operational overlays remain visible over a pending raster background', async ({
+    context,
+    page,
+  }) => {
+    let releaseTiles = () => undefined
+    const tileGate = new Promise<void>((resolve) => {
+      releaseTiles = resolve
+    })
+    let heldTileCount = 0
+
+    await context.route('https://tile.opentopomap.org/**', async (route) => {
+      heldTileCount += 1
+      await tileGate
+      await route.abort().catch(() => undefined)
+    })
+
+    try {
+      await navigateToHarness(page)
+      await startMission(page, 'Pending Basemap Tracking Verification')
+      await injectStandardTracking(page)
+      await expect.poll(() => heldTileCount).toBeGreaterThan(0)
+      await expect
+        .poll(() => page.evaluate(() => window.__SARTRACKER_MAP__?.isStyleLoaded() ?? true))
+        .toBe(false)
+      await waitForRenderedTrackingFeatures(page)
+
+      await captureElementAndRegister(page, 'map-container', {
+        testId: 'tracking-pending-basemap-overlays',
+        testName: 'Tracking overlays remain operational while raster tiles are pending',
+        area: 'tracking',
+        severity: 'critical',
+        verificationPrompt: `Verify this SAR Tracker map capture taken while all OpenTopoMap tile requests are deliberately held open:
+1. The raster background should be blank, dark, or visibly incomplete; a normal fully rendered topographic background is not expected
+2. At least two colored current-device markers should still be visible in the map area
+3. Device labels should remain readable against the incomplete background
+4. At least one colored breadcrumb trail should connect tracking fixes
+5. Map controls may remain visible, but no loading panel or error overlay should cover the operational markers or breadcrumb trail
+6. The capture must make it visually credible that operational tracking is available independently of the missing raster background
+Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
+        playwrightAssertions: [
+          'OpenTopoMap tile requests are held open',
+          'MapLibre isStyleLoaded is false',
+          'at least two device markers and one breadcrumb trail are rendered',
+        ],
+      })
+    } finally {
+      releaseTiles()
+      await context.unrouteAll({ behavior: 'ignoreErrors' })
+    }
   })
 })
 

@@ -30,10 +30,6 @@ export function useMapHelicopterOverlays(options: UseMapHelicopterOverlaysOption
     }
 
     const synchronizeOverlay = () => {
-      if (!map.isStyleLoaded()) {
-        return
-      }
-
       void syncHelicopterOverlay(
         map,
         helicopters,

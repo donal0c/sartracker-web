@@ -30,10 +30,6 @@ export function useMapGpxOverlays(options: UseMapGpxOverlaysOptions): void {
     }
 
     const synchronizeOverlay = () => {
-      if (!map.isStyleLoaded()) {
-        return
-      }
-
       syncGpxOverlay(
         map,
         imports,

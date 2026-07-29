@@ -1,4 +1,4 @@
-# SAR Tracker Electron Desktop Beta 0.1.0-beta.12.4 (stable Tracking status hotfix)
+# SAR Tracker Electron Desktop Beta 0.1.0-beta.12.4 (Tracking stability hotfix)
 
 > **Internal beta draft.** Do not share or use for a live incident until every
 > packaged smoke row below is complete and the GitHub prerelease is published.
@@ -6,7 +6,7 @@
 - **Version:** 0.1.0-beta.12.4
 - **Build tag:** `electron-v0.1.0-beta.12.4`
 - **Cut date (UTC):** 2026-07-29
-- **Linear reference:** `DON-261`
+- **Linear references:** `DON-261`, `DON-262`, `DON-263`
 - **Supersedes:** `electron-v0.1.0-beta.12.3`
 - **Tag commit:** pending
 - **Local verification report:** pending clean no-skip `npm run beta:verify`
@@ -27,9 +27,14 @@ The runtime log instead proves a deterministic warning-state oscillation. On
 being labelled "loading breadcrumb history" before every five-second poll, then
 labelled healthy after the valid empty response.
 
-This release fixes that operator-visible state error without changing position
-coordinates, breadcrumb identity, Traccar requests, persistence, or map
-rendering.
+Qualification then exposed a separate map-readiness defect: app-owned tracking
+overlays waited for every visible basemap tile to finish or fail before they
+could synchronize. Slow or unavailable raster tiles could therefore delay
+current positions and breadcrumbs even though their authoritative data was
+already available.
+
+This release fixes both operator-visible failures without changing position
+coordinates, breadcrumb identity, Traccar requests, or persistence.
 
 ## What changed
 
@@ -41,6 +46,20 @@ rendering.
 - Real history conditions remain stable and visible between polls:
   reconciliation, per-device history failure, and mission-storage seed failure.
 - A new mission history key correctly starts a fresh first-fetch state.
+- **Open Devices** now stays directly below the Tracking header instead of
+  moving when loading, healthy, reconciliation, or offline messages change.
+  This removes a real pointer-target race found during packaged qualification.
+- The packaged soak now re-resolves a focused, hit-testable action target,
+  requires stable geometry before one trusted click, and retains a
+  launch-wide sequence audit so late, extra, missing, untrusted, or misdirected
+  input blocks the release with attributable evidence.
+- Current positions, breadcrumbs, markers, drawings, GPX tracks, measurements,
+  and helicopter overlays synchronize as soon as the MapLibre style structure
+  can accept app layers. They do not wait for public or official basemap tile
+  completion.
+- Overlay synchronization retries transient style transitions without
+  continuously re-entering on app-owned style changes; this prevents rapidly
+  updated GeoJSON sources from being left paused and non-renderable.
 - Connection failure, recovery, pause/idle/resume, stopped/superseded polls,
   long-mission reconciliation, and bounded breadcrumb rendering remain
   unchanged.
@@ -58,19 +77,37 @@ rendering.
    current fixes must continue updating.
 6. Repeat on both the AppImage and `.deb` installation. Export an incident
    bundle with the approximate time if any yellow or red state flashes.
+7. While the Tracking message changes between loading, healthy, and offline,
+   confirm **Open Devices** remains stationary and opens on the first click.
+8. With the basemap still loading or degraded, confirm current team positions
+   and breadcrumb trails remain visible and continue updating.
 
 ## Verification before tagging
 
 - Strict red-to-green regression captured the exact beta.12.3 sequence:
   `[loading, healthy]` on every successful empty-history poll.
 - Polling manager unit suite: 39/39.
-- Full unit suite: 1,277/1,277.
+- Full unit suite: 1,287/1,287.
 - ESLint and production build/bundle budgets: pass.
-- Standard Chromium Playwright: 136/136.
-- Visual Playwright: 36/36.
-- Independent visual review: 41/41, including every critical Tracking surface.
-- Same-session Fable adversarial review:
-  `PASS_FOR_FULL_QUALIFICATION`, no P1/P2 findings.
+- Standard Chromium Playwright: 142/142.
+- Visual Playwright: 37/37.
+- Independent uncached visual review: 43/43, including every critical Tracking
+  surface; report:
+  `test-results/visual-verification/reports/visual-review-2026-07-29T20-11-58Z.json`.
+- Same-session Fable adversarial reviews of the final map synchronization,
+  bounded retry, timer cleanup, and held-tile visual proof:
+  `PASS_FOR_COMMIT` twice, no P1/P2 findings.
+- Deliberately held-open OpenTopoMap tile requests: MapLibre remained
+  `isStyleLoaded() === false` while two current positions and the mission
+  breadcrumb trail were present and visibly rendered.
+- Devices, GPX, and measurement browser matrix: 66/66 across three consecutive
+  repeated runs, including the held-open-basemap proof.
+- Earlier pre-map-change Ubuntu package: ten consecutive accelerated CI-profile
+  soaks passed with exact position truth, 40/40 healthy audited interactions,
+  no missing/late/extra input, and one identical Open Devices Y coordinate
+  across mission start, restart, and final load. This is preliminary harness
+  evidence only; the final committed candidate and exact CI artifacts must be
+  rebuilt and requalified.
 - Clean no-skip beta verification, tag CI, and exact CI-built Linux artifact
   results remain pending and are release blockers.
 
@@ -111,6 +148,8 @@ Beta.12.4 also adds this release-specific blocking observation:
 | Gate | Result | Evidence |
 | --- | --- | --- |
 | Empty-history Tracking panel remains stable for at least ten polls on AppImage and installed `.deb` | TODO | no repeated amber loading warning; diagnostics status sequence retained |
+| Open Devices target remains stationary across Tracking status changes | TODO | fixed bounding-box/browser proof plus exact packaged click coordinates |
+| Current positions and breadcrumbs render while basemap tiles remain pending/degraded | TODO | held-tile browser regression plus exact packaged AppImage/`.deb` observation |
 
 ## Rollback / reinstall
 
@@ -131,6 +170,8 @@ Beta.12.4 also adds this release-specific blocking observation:
 - [ ] Exact CI AppImage and installed `.deb` pass the packaged smoke matrix
 - [ ] Empty-history status remains visually stable for at least ten polls on
       both Linux package paths
+- [ ] Current positions and breadcrumbs remain live while basemap tiles are
+      pending or degraded on both Linux package paths
 - [ ] Release note contains exact commit, run, checksums, and evidence
 - [ ] Linear and `handoff/HANDOFF.md` reflect the verified result
 - [ ] Release remains an internal prerelease until guarded publication succeeds

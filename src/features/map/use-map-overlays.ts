@@ -57,10 +57,6 @@ export function useMapOverlays(options: UseMapOverlaysOptions): void {
     }
 
     const synchronizeOverlay = () => {
-      if (!map.isStyleLoaded()) {
-        return
-      }
-
       syncTrackingOverlay(
         map,
         getEffectiveTrackingVisible(groupVisibility) ? missionTrackingSnapshot : EMPTY_TRACKING_SNAPSHOT,
@@ -92,10 +88,6 @@ export function useMapOverlays(options: UseMapOverlaysOptions): void {
     }
 
     const synchronizeOverlay = () => {
-      if (!map.isStyleLoaded()) {
-        return
-      }
-
       void syncMarkerOverlay(
         map,
         markerState,

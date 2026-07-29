@@ -364,7 +364,7 @@ Non-goals: full Discovery map loading, destructive storage cleanup, live-store
 retention, archive redesign, or claiming GPS hardware has zero measurement
 error. Those remain separate work.
 
-#### Beta.12.4 — stable Tracking status hotfix (`DON-261`)
+#### Beta.12.4 — Tracking stability hotfix (`DON-261`, `DON-262`, `DON-263`)
 
 This is a narrow correction to beta.12.3. A valid mission with no breadcrumb
 history must show the amber initial-history message only while its first history
@@ -372,12 +372,23 @@ request is unresolved. A completed empty result is healthy, not permanently
 "loading." Reconciliation, per-device history failure, and mission-storage seed
 warnings remain visible and stable between later polls. Changing the mission
 history key starts a new first-fetch cycle. Current positions, breadcrumb
-identity, persistence, polling cadence, and map rendering are unchanged.
+identity, persistence, and polling cadence are unchanged.
+The Open Devices action remains in a fixed header-adjacent position while those
+messages change; a dynamic status transition must never relocate the pointer
+target during input.
+
+Operational overlays must synchronize when the MapLibre style structure is
+ready, independently of raster tile completion. Current positions and
+breadcrumbs must remain visible and continue updating while a basemap is
+loading, degraded, or unavailable. App-owned style mutations must not
+continuously re-enter synchronization or leave GeoJSON sources paused.
 
 Release proof must reproduce the beta.12.3 warning oscillation from the supplied
-bundle, pass deterministic unit and rendered-browser regressions, pass the full
-visual and no-skip beta gates, and hold both CI-built Linux packages visually
-stable for at least ten live/mock poll cycles before publication.
+bundle, pass deterministic unit and rendered-browser regressions, retain
+launch-wide trusted-input sequence evidence, pass the full visual and no-skip
+beta gates, prove overlays with held-open basemap requests, and hold both
+CI-built Linux packages visually stable for at least ten live/mock poll cycles
+before publication.
 
 #### Beta.13 — bounded storage lifecycle
 

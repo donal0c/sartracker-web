@@ -15,6 +15,7 @@ import {
   measureOperatorAction,
   parseTrackingSoakRuntimeLog,
   parseTrackingSoakArgs,
+  partitionOperatorClickAudit,
   readWebGlRendererInfoFromDocument,
 } from '../../build/electron-tracking-soak-lib.js'
 import { startTrackingSoakMockServer } from '../../build/electron-tracking-soak-mock-server.js'
@@ -383,7 +384,173 @@ describe('Electron packaged tracking soak helpers [DON-246]', () => {
       externalDurationMs: 500,
       clickDeliveryDurationMs: 150,
       stateWaitDurationMs: 350,
+      targetStabilityWaitMs: 0,
       errorClasses: [],
+    })
+  })
+
+  it('keeps target-stability acquisition out of operator response latency [DON-262]', async () => {
+    let now = 0
+    const result = await measureOperatorAction({
+      installRecorder: async () => {
+        now = 100
+      },
+      click: async () => {
+        now = 600
+        return { targetStabilityWaitMs: 400 }
+      },
+      waitForState: async () => {
+        now = 700
+        return true
+      },
+      readRecorder: async () => ({
+        received: true,
+        actionDurationMs: 20,
+      }),
+      now: () => now,
+    })
+
+    expect(result).toEqual({
+      clickCompleted: true,
+      clickReceived: true,
+      stateReached: true,
+      durationMs: 20,
+      externalDurationMs: 200,
+      clickDeliveryDurationMs: 100,
+      stateWaitDurationMs: 100,
+      targetStabilityWaitMs: 400,
+      errorClasses: [],
+    })
+  })
+
+  it('retains click evidence that arrives between operator samples [DON-262]', () => {
+    const result = partitionOperatorClickAudit({
+      audit: {
+        lastSequence: 5,
+        droppedEventCount: 0,
+        events: [
+          {
+            sequence: 1,
+            trusted: true,
+            pathTestIds: ['open-devices-workspace'],
+          },
+          {
+            sequence: 2,
+            trusted: true,
+            pathTestIds: ['workspace-close-btn'],
+          },
+          {
+            sequence: 3,
+            trusted: true,
+            pathTestIds: ['open-devices-workspace'],
+          },
+          {
+            sequence: 4,
+            trusted: true,
+            pathTestIds: ['open-devices-workspace'],
+          },
+          {
+            sequence: 5,
+            trusted: true,
+            pathTestIds: ['workspace-close-btn'],
+          },
+        ],
+      },
+      afterSequence: 2,
+      interactionStartSequence: 3,
+    })
+
+    expect(result).toEqual({
+      interSampleEvents: [
+        {
+          sequence: 3,
+          trusted: true,
+          pathTestIds: ['open-devices-workspace'],
+        },
+      ],
+      interactionEvents: [
+        {
+          sequence: 4,
+          trusted: true,
+          pathTestIds: ['open-devices-workspace'],
+        },
+        {
+          sequence: 5,
+          trusted: true,
+          pathTestIds: ['workspace-close-btn'],
+        },
+      ],
+      lastSequence: 5,
+      missingEventCount: 0,
+      sequenceRegressed: false,
+    })
+  })
+
+  it('fails evidence closed when bounded click retention leaves a sequence gap [DON-262]', () => {
+    expect(
+      partitionOperatorClickAudit({
+        audit: {
+          lastSequence: 6,
+          droppedEventCount: 4,
+          events: [
+            {
+              sequence: 5,
+              trusted: true,
+              pathTestIds: ['open-devices-workspace'],
+            },
+            {
+              sequence: 6,
+              trusted: true,
+              pathTestIds: ['workspace-close-btn'],
+            },
+          ],
+        },
+        afterSequence: 2,
+        interactionStartSequence: 4,
+      }),
+    ).toMatchObject({
+      interSampleEvents: [],
+      interactionEvents: [
+        {
+          sequence: 5,
+          trusted: true,
+          pathTestIds: ['open-devices-workspace'],
+        },
+        {
+          sequence: 6,
+          trusted: true,
+          pathTestIds: ['workspace-close-btn'],
+        },
+      ],
+      lastSequence: 6,
+      missingEventCount: 2,
+      sequenceRegressed: false,
+    })
+  })
+
+  it('fails evidence closed when a renderer reset regresses the click sequence [DON-262]', () => {
+    expect(
+      partitionOperatorClickAudit({
+        audit: {
+          lastSequence: 1,
+          droppedEventCount: 0,
+          events: [
+            {
+              sequence: 1,
+              trusted: true,
+              pathTestIds: ['open-devices-workspace'],
+            },
+          ],
+        },
+        afterSequence: 5,
+        interactionStartSequence: 5,
+      }),
+    ).toEqual({
+      interSampleEvents: [],
+      interactionEvents: [],
+      lastSequence: 5,
+      missingEventCount: 0,
+      sequenceRegressed: true,
     })
   })
 
@@ -507,6 +674,7 @@ describe('Electron packaged tracking soak helpers [DON-246]', () => {
       externalDurationMs: 20,
       clickDeliveryDurationMs: 10,
       stateWaitDurationMs: 10,
+      targetStabilityWaitMs: 0,
       errorClasses: ['OperatorActionTimingUnavailable'],
     })
   })
@@ -558,6 +726,14 @@ describe('Electron packaged tracking soak helpers [DON-246]', () => {
   })
 
   it.each([
+    {
+      expected: 'unexpected_browser_input',
+      input: {
+        targetFound: true,
+        targetReceivesPointer: true,
+        unexpectedInputEvents: 1,
+      },
+    },
     {
       expected: 'target_missing',
       input: { targetFound: false },

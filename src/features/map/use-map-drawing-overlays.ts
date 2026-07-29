@@ -37,10 +37,6 @@ export function useMapDrawingOverlays(options: UseMapDrawingOverlaysOptions): vo
     }
 
     const synchronizeOverlay = () => {
-      if (!map.isStyleLoaded()) {
-        return
-      }
-
       syncDrawingOverlay(
         map,
         drawings,
@@ -70,10 +66,6 @@ export function useMapDrawingOverlays(options: UseMapDrawingOverlaysOptions): vo
     }
 
     const synchronizePreview = () => {
-      if (!map.isStyleLoaded()) {
-        return
-      }
-
       syncDrawingPreviewOverlay(map, {
         sketch: groupVisibility.mapTools ? sketch : null,
         activeTool: groupVisibility.mapTools ? activeTool : 'select',

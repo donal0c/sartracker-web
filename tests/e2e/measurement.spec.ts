@@ -103,7 +103,6 @@ test.describe('M9 measurement workflows', () => {
   test('reveals hidden Map Tools layers before creating measurement and drawings', async ({
     page,
   }) => {
-    await waitForMapStyle(page)
     await hideMapToolsGroup(page)
 
     await page.getByTestId('drawing-tool-measure').click({ force: true })
@@ -170,14 +169,6 @@ async function hideMapToolsGroup(page: import('@playwright/test').Page) {
   await expect
     .poll(async () => (await readVisibilityState(page)).groupVisibility.mapTools)
     .toBe(false)
-}
-
-async function waitForMapStyle(page: import('@playwright/test').Page) {
-  await page.waitForFunction(
-    () => Boolean(window.__SARTRACKER_MAP__) && window.__SARTRACKER_MAP__?.isStyleLoaded(),
-    null,
-    { timeout: 30000 },
-  )
 }
 
 async function readVisibilityState(page: import('@playwright/test').Page) {

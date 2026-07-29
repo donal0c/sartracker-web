@@ -297,9 +297,15 @@ export async function measureOperatorAction(input) {
   const errorClasses = []
   let clickCompleted = false
   let stateReached = false
+  let targetStabilityWaitMs = 0
 
   try {
-    await input.click()
+    const clickResult = await input.click()
+    targetStabilityWaitMs =
+      Number.isFinite(clickResult?.targetStabilityWaitMs) &&
+      clickResult.targetStabilityWaitMs >= 0
+        ? clickResult.targetStabilityWaitMs
+        : 0
     clickCompleted = true
   } catch (error) {
     errorClasses.push(error instanceof Error ? error.name : 'UnknownError')
@@ -312,7 +318,10 @@ export async function measureOperatorAction(input) {
     errorClasses.push(error instanceof Error ? error.name : 'UnknownError')
   }
   const stateCompletedAt = input.now()
-  const externalDurationMs = stateCompletedAt - startedAt
+  const externalDurationMs = Math.max(
+    0,
+    stateCompletedAt - startedAt - targetStabilityWaitMs,
+  )
   const recorder = await input.readRecorder().catch(() => ({
     received: false,
     actionDurationMs: null,
@@ -331,9 +340,165 @@ export async function measureOperatorAction(input) {
     stateReached,
     durationMs: recorderTimingAvailable ? recorder.actionDurationMs : externalDurationMs,
     externalDurationMs,
-    clickDeliveryDurationMs: clickCompletedAt - startedAt,
+    clickDeliveryDurationMs: Math.max(
+      0,
+      clickCompletedAt - startedAt - targetStabilityWaitMs,
+    ),
     stateWaitDurationMs: stateCompletedAt - clickCompletedAt,
+    targetStabilityWaitMs,
     errorClasses,
+  }
+}
+
+/**
+ * Delivers a trusted operator click to the current location of a preflighted target.
+ *
+ * Tracking updates can legitimately move the status panel between the preflight
+ * inspection and input delivery. Resolve a stable, currently hit-testable centre
+ * immediately before one explicit mouse dispatch. The target must keep the same
+ * actionable geometry for the requested stability duration. This avoids both stale
+ * coordinates and locator retries after a close action unmounts its target.
+ */
+export async function clickActionablePointerTarget(input) {
+  if (
+    input.preflight?.documentFocused !== true ||
+    input.preflight?.targetReceivesPointer !== true
+  ) {
+    throw new Error(
+      `Pointer target ${input.testId} was not actionable during preflight.`,
+    )
+  }
+
+  const stabilityStartedAt = performance.now()
+  const centerPoint = await input.page.evaluate(
+    async ({ expectedTestId, stableDurationMs, timeoutMs }) => {
+      const startedAt = performance.now()
+      let previousRect = null
+      let stableSince = null
+
+      while (performance.now() - startedAt < timeoutMs) {
+        await new Promise((resolve) => window.requestAnimationFrame(resolve))
+        const observedAt = performance.now()
+        const target = Array.from(
+          document.querySelectorAll('[data-testid]'),
+        ).find(
+          (element) =>
+            element instanceof HTMLElement &&
+            element.dataset.testid === expectedTestId,
+        )
+        if (!(target instanceof HTMLElement) || !document.hasFocus()) {
+          previousRect = null
+          stableSince = null
+          continue
+        }
+
+        const rect = target.getBoundingClientRect()
+        const centerX = rect.left + rect.width / 2
+        const centerY = rect.top + rect.height / 2
+        const centerInViewport =
+          rect.width > 0 &&
+          rect.height > 0 &&
+          centerX >= 0 &&
+          centerX < window.innerWidth &&
+          centerY >= 0 &&
+          centerY < window.innerHeight
+        const hit = centerInViewport
+          ? document.elementFromPoint(centerX, centerY)
+          : null
+        const receivesPointer =
+          hit === target || (hit !== null && target.contains(hit))
+        const currentRect = {
+          left: rect.left,
+          top: rect.top,
+          width: rect.width,
+          height: rect.height,
+        }
+        const stable =
+          previousRect !== null &&
+          Math.abs(previousRect.left - currentRect.left) < 0.25 &&
+          Math.abs(previousRect.top - currentRect.top) < 0.25 &&
+          Math.abs(previousRect.width - currentRect.width) < 0.25 &&
+          Math.abs(previousRect.height - currentRect.height) < 0.25
+
+        if (
+          receivesPointer &&
+          stable &&
+          stableSince !== null &&
+          observedAt - stableSince >= stableDurationMs
+        ) {
+          return { x: centerX, y: centerY }
+        }
+        if (receivesPointer) {
+          if (!stable) {
+            stableSince = observedAt
+          }
+          previousRect = currentRect
+        } else {
+          previousRect = null
+          stableSince = null
+        }
+      }
+
+      throw new Error(
+        `Pointer target ${expectedTestId} did not reach a stable actionable state.`,
+      )
+    },
+    {
+      expectedTestId: input.testId,
+      stableDurationMs: Math.max(0, input.stableDurationMs ?? 0),
+      timeoutMs: input.timeoutMs,
+    },
+  )
+
+  const targetStabilityWaitMs = performance.now() - stabilityStartedAt
+  await input.page.mouse.click(centerPoint.x, centerPoint.y)
+  return { targetStabilityWaitMs }
+}
+
+/**
+ * Partitions a launch-wide click audit without losing events at sample boundaries.
+ *
+ * `afterSequence` is the final sequence consumed by the previous sample.
+ * `interactionStartSequence` is observed at the start of the current sample but
+ * deliberately does not advance that cursor. Events between those values are
+ * therefore retained as inter-sample input rather than silently sliced away.
+ */
+export function partitionOperatorClickAudit(input) {
+  const afterSequence = Number.isSafeInteger(input.afterSequence)
+    ? Math.max(0, input.afterSequence)
+    : 0
+  const interactionStartSequence = Number.isSafeInteger(
+    input.interactionStartSequence,
+  )
+    ? Math.max(afterSequence, input.interactionStartSequence)
+    : afterSequence
+  const observedLastSequence = Number.isSafeInteger(input.audit?.lastSequence)
+    ? Math.max(0, input.audit.lastSequence)
+    : 0
+  const sequenceRegressed = observedLastSequence < afterSequence
+  const lastSequence = Math.max(afterSequence, observedLastSequence)
+  const events = Array.isArray(input.audit?.events)
+    ? input.audit.events.filter(
+        (event) =>
+          Number.isSafeInteger(event?.sequence) &&
+          event.sequence > afterSequence &&
+          event.sequence <= lastSequence,
+      )
+    : []
+
+  return {
+    interSampleEvents: events.filter(
+      (event) => event.sequence <= interactionStartSequence,
+    ),
+    interactionEvents: events.filter(
+      (event) => event.sequence > interactionStartSequence,
+    ),
+    lastSequence,
+    missingEventCount: Math.max(
+      0,
+      lastSequence - afterSequence - events.length,
+    ),
+    sequenceRegressed,
   }
 }
 
@@ -552,6 +717,9 @@ export function createPositionTruthDigestAccumulator() {
  */
 export function classifyOperatorInteraction(input) {
   const failureStages = []
+  if (input.unexpectedInputEvents > 0) {
+    failureStages.push('unexpected_browser_input')
+  }
   if (input.targetFound !== true) {
     failureStages.push('target_missing')
   } else if (input.targetReceivesPointer !== true) {
