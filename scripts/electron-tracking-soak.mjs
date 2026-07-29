@@ -526,10 +526,12 @@ async function startSyntheticMission(page) {
  */
 async function recordOperatorInteraction(input) {
   const startedAt = performance.now()
+  await focusPackagedPage(input.page, 2_000)
   const preflight = await inspectPointerTarget(
     input.page,
     'open-devices-workspace',
   ).catch(() => ({
+    documentFocused: false,
     targetFound: false,
     targetReceivesPointer: false,
     hitElement: null,
@@ -555,7 +557,7 @@ async function recordOperatorInteraction(input) {
   }
   const errors = []
 
-  if (result.targetFound) {
+  if (result.targetFound && result.targetReceivesPointer) {
     const openAction = await measureOperatorAction({
       installRecorder: () =>
         installClickRecorder(
@@ -596,13 +598,14 @@ async function recordOperatorInteraction(input) {
 
   const closePreflight = result.workspaceOpened
     ? await inspectPointerTarget(input.page, 'workspace-close-btn').catch(() => ({
+        documentFocused: false,
         targetFound: false,
         targetReceivesPointer: false,
         hitElement: null,
         centerPoint: null,
       }))
     : null
-  if (result.workspaceOpened) {
+  if (result.workspaceOpened && closePreflight?.targetReceivesPointer === true) {
     const closeAction = await measureOperatorAction({
       installRecorder: () =>
         installClickRecorder(
@@ -681,6 +684,7 @@ async function inspectPointerTarget(page, testId) {
     const target = document.querySelector(`[data-testid="${expectedTestId}"]`)
     if (!(target instanceof HTMLElement)) {
       return {
+        documentFocused: document.hasFocus(),
         targetFound: false,
         targetReceivesPointer: false,
         hitElement: null,
@@ -689,9 +693,13 @@ async function inspectPointerTarget(page, testId) {
     }
     const rect = target.getBoundingClientRect()
     const hit = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2)
+    const documentFocused = document.hasFocus()
     return {
+      documentFocused,
       targetFound: true,
-      targetReceivesPointer: hit === target || (hit !== null && target.contains(hit)),
+      targetReceivesPointer:
+        documentFocused &&
+        (hit === target || (hit !== null && target.contains(hit))),
       centerPoint: {
         x: rect.left + rect.width / 2,
         y: rect.top + rect.height / 2,
@@ -717,6 +725,7 @@ async function inspectPointerTarget(page, testId) {
  */
 async function clickInspectedPointerTarget(page, preflight, testId) {
   if (
+    preflight?.documentFocused !== true ||
     preflight?.targetReceivesPointer !== true ||
     !Number.isFinite(preflight.centerPoint?.x) ||
     !Number.isFinite(preflight.centerPoint?.y)
@@ -724,6 +733,18 @@ async function clickInspectedPointerTarget(page, preflight, testId) {
     throw new Error(`Pointer target ${testId} was not actionable at its inspected centre.`)
   }
   await page.mouse.click(preflight.centerPoint.x, preflight.centerPoint.y)
+}
+
+/** Brings the packaged document to the foreground before timing pointer input. */
+async function focusPackagedPage(page, timeout) {
+  await page.bringToFront()
+  return page
+    .waitForFunction(() => document.hasFocus(), undefined, {
+      polling: 16,
+      timeout,
+    })
+    .then(() => true)
+    .catch(() => false)
 }
 
 /**
