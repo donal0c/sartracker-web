@@ -1,17 +1,19 @@
 # SAR Tracker Electron Desktop Beta 0.1.0-beta.12.4 (Tracking stability hotfix)
 
-> **Internal beta draft.** Do not share or use for a live incident until every
-> packaged smoke row below is complete and the GitHub prerelease is published.
+> **Unpublished superseded candidate.** Do not share. The immutable tag and
+> private draft are retained as release-gate evidence. Final review found an
+> asynchronous overlay retry/cancellation gap and a changed-surface CI flake;
+> both are corrected and must be re-qualified in beta.12.5.
 
 - **Version:** 0.1.0-beta.12.4
 - **Build tag:** `electron-v0.1.0-beta.12.4`
 - **Cut date (UTC):** 2026-07-29
 - **Linear references:** `DON-261`, `DON-262`, `DON-263`; follow-up `DON-264`
 - **Supersedes:** `electron-v0.1.0-beta.12.3`
-- **Tag commit:** pending
-- **Local verification report:** pending clean no-skip `npm run beta:verify`
-- **CI run:** pending tag-driven `.github/workflows/electron-release.yml`
-- **Exact artifact SHA-256:** pending draft-release qualification
+- **Tag commit:** `a312568957b181220bd21329b6081cd9528154e5`
+- **Local verification report:** `tmp/beta-artifacts/verify-0.1.0-beta.12.4-sha.a312568957b1-2026-07-29T21-12-55Z.json` (8/8)
+- **CI run:** `30491599605` (green)
+- **Exact artifact SHA-256:** AppImage `e0fd9ae6232f2846839388de6cbf7bfdc82cf1a4ab731e08b3d1c218430171d6`; `.deb` `12acfe972db362e43d6bc74dd1c179e320d5fc99b737cae1b18a67747f413811`
 
 ## Why this hotfix exists
 

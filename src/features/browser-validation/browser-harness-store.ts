@@ -455,22 +455,7 @@ export function getBrowserHarnessStore(): BrowserHarnessStore {
     },
     addPosition: async (input) => {
       ensureMissionMutable(input.mission_id, state.missions)
-      const position = {
-        id: createId('position'),
-        mission_id: input.mission_id,
-        device_id: input.device_id,
-        source_position_id: input.source_position_id ?? null,
-        name: input.name ?? null,
-        lat: input.lat,
-        lon: input.lon,
-        altitude: input.altitude ?? null,
-        speed: input.speed ?? null,
-        battery: input.battery ?? null,
-        accuracy: input.accuracy ?? null,
-        source: input.source ?? null,
-        timestamp: input.timestamp ?? new Date().toISOString(),
-        data_origin: input.data_origin ?? 'live',
-      } satisfies Position
+      const position = createBrowserHarnessPosition(input)
 
       state = {
         ...state,
@@ -480,15 +465,21 @@ export function getBrowserHarnessStore(): BrowserHarnessStore {
       return position
     },
     addPositionsBulk: async (input) => {
-      const positions: Position[] = []
-      for (const position of input.positions) {
-        positions.push(
-          await browserHarnessStore!.addPosition({
-            mission_id: input.mission_id,
-            ...position,
-          }),
-        )
+      ensureMissionMutable(input.mission_id, state.missions)
+      // Preserve the browser harness's existing addPosition semantics. Source
+      // identity deduplication is an Electron SQLite responsibility and must
+      // not be inferred from browser-validation return values.
+      const positions = input.positions.map((position) =>
+        createBrowserHarnessPosition({
+          mission_id: input.mission_id,
+          ...position,
+        }),
+      )
+      state = {
+        ...state,
+        positions: [...state.positions, ...positions],
       }
+      save()
       return positions
     },
     listPositions: async (missionId, deviceId) =>
@@ -825,6 +816,26 @@ export function resetBrowserHarnessStore(clearStorage = true): void {
 
   if (clearStorage && typeof window !== 'undefined') {
     window.sessionStorage.removeItem(BROWSER_HARNESS_STORAGE_KEY)
+  }
+}
+
+/** Builds one validated browser-harness position without persisting intermediate state. */
+function createBrowserHarnessPosition(input: AddPositionInput): Position {
+  return {
+    id: createId('position'),
+    mission_id: input.mission_id,
+    device_id: input.device_id,
+    source_position_id: input.source_position_id ?? null,
+    name: input.name ?? null,
+    lat: input.lat,
+    lon: input.lon,
+    altitude: input.altitude ?? null,
+    speed: input.speed ?? null,
+    battery: input.battery ?? null,
+    accuracy: input.accuracy ?? null,
+    source: input.source ?? null,
+    timestamp: input.timestamp ?? new Date().toISOString(),
+    data_origin: input.data_origin ?? 'live',
   }
 }
 

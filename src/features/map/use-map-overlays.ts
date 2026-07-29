@@ -87,12 +87,13 @@ export function useMapOverlays(options: UseMapOverlaysOptions): void {
       return
     }
 
-    const synchronizeOverlay = () => {
-      void syncMarkerOverlay(
+    const synchronizeOverlay = (signal: AbortSignal) => {
+      return syncMarkerOverlay(
         map,
         markerState,
         getEffectiveMarkerTypeVisibility(groupVisibility, markerTypeVisibility),
         hiddenMarkerIds,
+        signal,
       )
     }
 

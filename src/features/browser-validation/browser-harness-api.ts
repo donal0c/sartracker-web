@@ -79,19 +79,22 @@ export function installBrowserHarnessApi(): void {
         })
       }
 
-      for (const position of [...snapshot.breadcrumbs, ...snapshot.positions]) {
-        await store.addPosition({
+      const positions = [...snapshot.breadcrumbs, ...snapshot.positions]
+      if (positions.length > 0) {
+        await store.addPositionsBulk({
           mission_id: missionId,
-          device_id: position.device_id,
-          lat: position.lat,
-          lon: position.lon,
-          altitude: position.altitude,
-          speed: position.speed,
-          battery: position.battery,
-          accuracy: position.accuracy,
-          source: position.source,
-          timestamp: position.timestamp,
-          data_origin: position.data_origin,
+          positions: positions.map((position) => ({
+            device_id: position.device_id,
+            lat: position.lat,
+            lon: position.lon,
+            altitude: position.altitude,
+            speed: position.speed,
+            battery: position.battery,
+            accuracy: position.accuracy,
+            source: position.source,
+            timestamp: position.timestamp,
+            data_origin: position.data_origin,
+          })),
         })
       }
 

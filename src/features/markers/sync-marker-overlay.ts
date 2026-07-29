@@ -23,8 +23,11 @@ export async function syncMarkerOverlay(
   markers: readonly Marker[],
   markerTypeVisibility: Record<MarkerType, boolean>,
   hiddenMarkerIds: readonly string[],
+  signal: AbortSignal,
 ): Promise<void> {
-  await ensureMarkerImages(map)
+  signal.throwIfAborted()
+  await ensureMarkerImages(map, signal)
+  signal.throwIfAborted()
   ensureGeoJsonSource(map, MARKER_SOURCE_ID, createMarkerFeatureCollection(markers), {
     dataKey: createMapOverlayDataKey(['markers', markers]),
   })
@@ -104,13 +107,15 @@ export function getMarkerLabelLayerId(markerType: MarkerType): string {
   return `mission-markers-label-${markerType}`
 }
 
-async function ensureMarkerImages(map: maplibregl.Map): Promise<void> {
+async function ensureMarkerImages(map: maplibregl.Map, signal: AbortSignal): Promise<void> {
   for (const [imageId, svg] of Object.entries(MARKER_IMAGE_SVGS)) {
+    signal.throwIfAborted()
     if (map.hasImage(imageId)) {
       continue
     }
 
     const image = await loadSvgIcon(svg, 'Marker')
+    signal.throwIfAborted()
     map.addImage(imageId, image)
   }
 }

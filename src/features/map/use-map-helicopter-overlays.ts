@@ -29,12 +29,13 @@ export function useMapHelicopterOverlays(options: UseMapHelicopterOverlaysOption
       return
     }
 
-    const synchronizeOverlay = () => {
-      void syncHelicopterOverlay(
+    const synchronizeOverlay = (signal: AbortSignal) => {
+      return syncHelicopterOverlay(
         map,
         helicopters,
         getEffectiveHelicopterSlotVisibility(groupVisibility, helicopterSlotVisibility),
         hiddenHelicopterIds,
+        signal,
       )
     }
 

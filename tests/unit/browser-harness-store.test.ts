@@ -1,10 +1,109 @@
-import { describe, expect, it, beforeEach } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { installBrowserHarnessApi } from '../../src/features/browser-validation/browser-harness-api'
 import {
   getBrowserHarnessStore,
   readBrowserHarnessState,
   resetBrowserHarnessStore,
 } from '../../src/features/browser-validation/browser-harness-store'
+
+describe('browser harness position persistence', () => {
+  beforeEach(() => {
+    resetBrowserHarnessStore()
+  })
+
+  afterEach(() => {
+    delete window.__SARTRACKER_BROWSER_HARNESS__
+    vi.restoreAllMocks()
+  })
+
+  it('persists a bulk tracking batch with one bounded storage write', async () => {
+    const store = getBrowserHarnessStore()
+    const mission = await store.createMission({
+      name: 'Bulk Browser Harness Mission',
+    })
+    const setItem = vi.spyOn(Storage.prototype, 'setItem')
+    setItem.mockClear()
+
+    const positions = await store.addPositionsBulk({
+      mission_id: mission.id,
+      positions: Array.from({ length: 3 }, (_, index) => ({
+        device_id: 'team-1',
+        source_position_id: `source-${index + 1}`,
+        lat: 52 + index / 10_000,
+        lon: -9 - index / 10_000,
+        timestamp: new Date(Date.UTC(2026, 6, 29, 20, 0, index)).toISOString(),
+        data_origin: 'live' as const,
+      })),
+    })
+
+    expect(positions).toHaveLength(3)
+    expect(readBrowserHarnessState().positions).toHaveLength(3)
+    expect(setItem).toHaveBeenCalledTimes(1)
+  })
+
+  it('applies the existing tracking retention cap to one large bulk batch', async () => {
+    const store = getBrowserHarnessStore()
+    const mission = await store.createMission({
+      name: 'Bulk Retention Mission',
+    })
+    const setItem = vi.spyOn(Storage.prototype, 'setItem')
+    setItem.mockClear()
+
+    const positions = await store.addPositionsBulk({
+      mission_id: mission.id,
+      positions: Array.from({ length: 2_100 }, (_, index) => ({
+        device_id: 'team-1',
+        lat: 52 + index / 100_000,
+        lon: -9 - index / 100_000,
+        timestamp: new Date(Date.UTC(2026, 6, 29, 20, 0, index)).toISOString(),
+        data_origin: 'live' as const,
+      })),
+    })
+
+    const persistedState = readBrowserHarnessState()
+    expect(positions).toHaveLength(2_100)
+    expect(persistedState.positions).toHaveLength(2_000)
+    expect(persistedState.positions[0]?.timestamp).toBe('2026-07-29T20:01:40.000Z')
+    expect(persistedState.positions.at(-1)?.timestamp).toBe('2026-07-29T20:34:59.000Z')
+    expect(
+      persistedState.missionEvents.filter((event) => event.event_type === 'position_recorded'),
+    ).toHaveLength(0)
+    expect(setItem).toHaveBeenCalledTimes(1)
+  })
+
+  it('injects a tracking snapshot through the bulk persistence boundary', async () => {
+    const store = getBrowserHarnessStore()
+    await store.createMission({ name: 'Injected Browser Harness Mission' })
+    installBrowserHarnessApi()
+    const setItem = vi.spyOn(Storage.prototype, 'setItem')
+    setItem.mockClear()
+    const positions = Array.from({ length: 3 }, (_, index) => ({
+      id: `tracking-${index + 1}`,
+      device_id: 'team-1',
+      lat: 52 + index / 10_000,
+      lon: -9 - index / 10_000,
+      altitude: null,
+      speed: null,
+      battery: null,
+      accuracy: null,
+      timestamp: new Date(Date.UTC(2026, 6, 29, 20, 0, index)).toISOString(),
+      source: 'traccar',
+      data_origin: 'live' as const,
+      cache_age_seconds: null,
+      device_cache_stale: false,
+    }))
+
+    await window.__SARTRACKER_BROWSER_HARNESS__?.injectTrackingSnapshot({
+      devices: [],
+      positions: positions.slice(0, 1),
+      breadcrumbs: positions.slice(1),
+    })
+
+    expect(readBrowserHarnessState().positions).toHaveLength(3)
+    expect(setItem).toHaveBeenCalledTimes(1)
+  })
+})
 
 describe('browser harness store', () => {
   beforeEach(() => {

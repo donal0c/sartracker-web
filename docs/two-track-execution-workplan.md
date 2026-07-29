@@ -120,7 +120,7 @@ ship or ask testers for whole Electron profile zips.
 
 ## Current Priority
 
-1. Qualify and release `0.1.0-beta.12.4` under `DON-261`, `DON-262`, and `DON-263` to stop the beta.12.3 Tracking panel from flashing its amber history-loading message on every successful empty-history poll, fail the packaged interaction gate closed, and keep operational overlays independent of basemap tile completion. The field bundle proves a warning-state renderer defect rather than a crash or AppImage/`.deb` split. Do not share until clean no-skip verification, green tag CI, exact-CI-artifact Ubuntu qualification, and a real installed-`.deb` smoke pass. `DON-264` separately tracks non-blocking persistent overlay-sync diagnostic elevation.
+1. Qualify and release `0.1.0-beta.12.5` under `DON-261`, `DON-262`, and `DON-263` to stop the beta.12.3 Tracking panel flash, fail packaged interaction defects closed, and keep operational overlays independent of basemap tile completion. Beta.12.4 remains unpublished: final review found an asynchronous overlay retry/stale-write gap and a changed-surface CI flake. Beta.12.5 awaits async work, aborts disposed icon continuations, and bulk-writes browser validation history. Do not share until clean no-skip verification, green tag CI, exact-CI-artifact Ubuntu qualification, and a real installed-`.deb` smoke pass. `DON-264` separately tracks non-blocking persistent overlay-sync diagnostic elevation.
 2. Continue the **Mission Store Reliability programme** under `DON-241`. Beta.12 is the narrow field-freeze/observability release (`DON-242` through `DON-247`); beta.13 owns bounded-storage architecture, migration, retention, streamed mission-scoped archives, and archive-backed review (`DON-248` through `DON-255`).
 3. Keep hosted browser testing smooth enough for the team to give real feedback.
 4. Fix the 2026-05-16 team feedback items that affect map trust before returning to broader foundation work.
@@ -136,8 +136,8 @@ This is the default order when the user says “work on the next task.”
 
 | Order | Chunk | Track | Linear issue | Status |
 | --- | --- | --- | --- | --- |
-| Active | Qualify the Tracking stability, interaction, and basemap-independent overlay hotfix | S2 Electron / Shared Tracking / Map / Verification | `DON-261` / `DON-262` / `DON-263` | Field evidence reproduced 109 warning-on/off pairs at 77-99 ms while tracking remained online and crash history stayed empty. Strict TDD makes loading first-fetch-only, fixes Open Devices in place, fails input-sequence defects closed, and synchronizes operational overlays from style structure without waiting for raster tiles. Final local proof: unit `1,287/1,287`, Chromium `142/142`, visual `37/37`, uncached review `43/43`, backend `51 / 1 ignored`, lint/type/syntax/diff/build. Exact `b1e21c2` Ubuntu proof: ten soaks stored 86,640/86,640 positions with zero crashes/identity loss/audit errors; exact AppImage and extracted installed-layout `.deb` payload passed separate 8,664-position restart soaks; a packaged held/degraded-basemap probe kept positions and growing trails visible while `isStyleLoaded() === false`. Fable's final verdict is `PASS_BLOCKED_ON_RELEASE_GATES`, no P1/P2. Beta.12.4 remains private pending a clean no-skip wrapper, green tag CI, exact CI-artifact smoke, and real installed-`.deb` qualification. |
-| Todo (non-blocking) | Surface persistent overlay synchronization failures in diagnostics and map health | S2 Electron / Shared Map / Diagnostics | `DON-264` | DON-263 retries transient and persistent sync exceptions indefinitely with a 2 s cap, but repeated failures are currently developer-console-only. Add bounded, sanitized, durable warning elevation and success-based clearing after the beta.12.4 hotfix; this P3 does not block the release. |
+| Active | Qualify the Tracking stability, interaction, and basemap-independent overlay hotfix | S2 Electron / Shared Tracking / Map / Verification | `DON-261` / `DON-262` / `DON-263` | Beta.12.4 remains unpublished after final review found async marker/helicopter failures outside retry, a stale disposed-work race, and one changed-surface CI retry. Beta.12.5 fixes all three test-first. Current local proof: focused `21/21`, unit `1,296/1,296`, backend `51 / 1 ignored`, Chromium `142/142` without retry/flake, visual `37/37`, uncached review `43/43`, lint/build/diff; the former 2,000-position failure passed first attempt in 1.9 s and 10/10 repeated runs. Independent diff review found no P1/P2/P3; Fable 5 returned `RELEASE` with no P1/P2. Pending: local candidate commit, clean no-skip wrapper, push/tag, green tag CI, exact CI AppImage and real installed-`.deb` qualification. |
+| Todo (non-blocking) | Surface persistent overlay synchronization failures in diagnostics and map health | S2 Electron / Shared Map / Diagnostics | `DON-264` | DON-263 retries transient and persistent sync exceptions indefinitely with a 2 s cap, but repeated failures are currently developer-console-only. Add bounded, sanitized, durable warning elevation and success-based clearing after the beta.12.5 hotfix; this P3 does not block the release. |
 | Done | Deep breadcrumb correctness and cross-installation equivalence hotfix | S2 Electron / Shared Tracking / Verification | `DON-260` | Released as internal prerelease `electron-v0.1.0-beta.12.3` on 2026-07-29. Exact-head no-skip verification passed 8/8; tag run `30449919583` passed; the exact CI AppImage/`.deb` passed the complete Ubuntu matrix, including deterministic five-/fourteen-day soaks, two 3.70 GB schema migrations, newer-schema refusal, live Traccar, install, and installed-binary smoke. Fresh published bytes matched all SHA-256 values and passed a new Ubuntu lifecycle/restart/recovery/settings/finalize/archive smoke. Fable's same-session reviews found no P1/P2. The install transaction's status 100 is retained as a non-blocking qualification-host note: SAR Tracker was fully configured and verified before apt retried three pre-existing broken NVIDIA/kernel packages. Original-machine field confirmation continues under `DON-247`. |
 | Done | Build deterministic field-scale mission-store fixtures | S2 Electron / Verification | `DON-242` | Small/CI/local/field plus 5-day and 14-day continuous-mission presets; Ubuntu field fixture is 3.704 GB with measured table accounting and restart checkpoints. |
 | Done | Reproduce and attribute beta.11 freeze on packaged Ubuntu | S2 Electron / Verification | `DON-243` | Three independent packaged runs: main stalls 5.70-5.82 s; integrity validation 6.11-6.36 s across nine autosaves. |
@@ -365,7 +365,7 @@ Non-goals: full Discovery map loading, destructive storage cleanup, live-store
 retention, archive redesign, or claiming GPS hardware has zero measurement
 error. Those remain separate work.
 
-#### Beta.12.4 — Tracking stability hotfix (`DON-261`, `DON-262`, `DON-263`)
+#### Beta.12.5 — Tracking stability hotfix (`DON-261`, `DON-262`, `DON-263`)
 
 This is a narrow correction to beta.12.3. A valid mission with no breadcrumb
 history must show the amber initial-history message only while its first history
@@ -383,6 +383,9 @@ ready, independently of raster tile completion. Current positions and
 breadcrumbs must remain visible and continue updating while a basemap is
 loading, degraded, or unavailable. App-owned style mutations must not
 continuously re-enter synchronization or leave GeoJSON sources paused.
+Asynchronous marker/helicopter icon work must remain inside the shared
+error/retry boundary. Cleanup must prevent an older synchronization from
+waking later and overwriting newer overlay state.
 
 Release proof must reproduce the beta.12.3 warning oscillation from the supplied
 bundle, pass deterministic unit and rendered-browser regressions, retain

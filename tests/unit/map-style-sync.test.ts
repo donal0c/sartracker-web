@@ -70,6 +70,107 @@ describe('registerMapStyleSync', () => {
     consoleError.mockRestore()
   })
 
+  it('retries an asynchronous overlay rejection after icon loading [DON-263]', async () => {
+    vi.useFakeTimers()
+    const harness = createMapHarness({
+      styleLayers: [{ id: 'opentopomap-layer' }],
+      styleLoaded: false,
+    })
+    const error = new Error('Style changed after the marker icon loaded.')
+    const synchronize = vi.fn()
+      .mockRejectedValueOnce(error)
+      .mockResolvedValueOnce(undefined)
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+
+    const dispose = registerMapStyleSync(harness.map, synchronize)
+    expect(synchronize).toHaveBeenCalledTimes(1)
+    await Promise.resolve()
+    expect(consoleError).toHaveBeenCalledWith(
+      'Map overlay synchronization failed; retrying.',
+      error,
+    )
+
+    await vi.advanceTimersByTimeAsync(50)
+    expect(synchronize).toHaveBeenCalledTimes(2)
+
+    dispose()
+    consoleError.mockRestore()
+  })
+
+  it('coalesces style events while asynchronous overlay synchronization is in flight', async () => {
+    const harness = createMapHarness({
+      styleLayers: [{ id: 'opentopomap-layer' }],
+      styleLoaded: false,
+    })
+    let resolveFirstSync = () => undefined
+    const firstSync = new Promise<void>((resolve) => {
+      resolveFirstSync = resolve
+    })
+    const synchronize = vi.fn()
+      .mockReturnValueOnce(firstSync)
+      .mockResolvedValueOnce(undefined)
+
+    const dispose = registerMapStyleSync(harness.map, synchronize)
+    harness.emit('style.load')
+    harness.emit('idle')
+
+    expect(synchronize).toHaveBeenCalledTimes(1)
+    resolveFirstSync()
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(synchronize).toHaveBeenCalledTimes(2)
+
+    dispose()
+  })
+
+  it('does not retry an asynchronous rejection after disposal', async () => {
+    vi.useFakeTimers()
+    const harness = createMapHarness({
+      styleLayers: [{ id: 'opentopomap-layer' }],
+      styleLoaded: false,
+    })
+    let rejectSync: (error: Error) => void = () => undefined
+    const pendingSync = new Promise<void>((_resolve, reject) => {
+      rejectSync = reject
+    })
+    const synchronize = vi.fn(() => pendingSync)
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+
+    const dispose = registerMapStyleSync(harness.map, synchronize)
+    dispose()
+    rejectSync(new Error('Late disposed overlay failure.'))
+    await Promise.resolve()
+    await vi.runAllTimersAsync()
+
+    expect(synchronize).toHaveBeenCalledTimes(1)
+    expect(consoleError).not.toHaveBeenCalled()
+    consoleError.mockRestore()
+  })
+
+  it('aborts in-flight synchronization when the registration is disposed', async () => {
+    const harness = createMapHarness({
+      styleLayers: [{ id: 'opentopomap-layer' }],
+      styleLoaded: false,
+    })
+    let observedSignal: AbortSignal | null = null
+    let releaseSynchronization = () => undefined
+    const pendingSynchronization = new Promise<void>((resolve) => {
+      releaseSynchronization = resolve
+    })
+    const synchronize = vi.fn(async (signal: AbortSignal) => {
+      observedSignal = signal
+      await pendingSynchronization
+    })
+
+    const dispose = registerMapStyleSync(harness.map, synchronize)
+    expect(observedSignal?.aborted).toBe(false)
+
+    dispose()
+    expect(observedSignal?.aborted).toBe(true)
+    releaseSynchronization()
+    await pendingSynchronization
+  })
+
   it('does not re-enter synchronization for source-driven styledata events', () => {
     const harness = createMapHarness({
       styleLayers: [{ id: 'opentopomap-layer' }],

@@ -11,8 +11,12 @@ const MAX_RETRY_DELAY_MS = 2_000
  */
 export function registerMapStyleSync(
   map: maplibregl.Map,
-  synchronize: () => void,
+  synchronize: (signal: AbortSignal) => void | Promise<void>,
 ): () => void {
+  const abortController = new AbortController()
+  let disposed = false
+  let synchronizationInFlight = false
+  let synchronizationRequested = false
   let retryTimer: number | null = null
   let retryDelayMs = INITIAL_RETRY_DELAY_MS
 
@@ -25,7 +29,7 @@ export function registerMapStyleSync(
   }
 
   const scheduleRetry = () => {
-    if (retryTimer !== null) {
+    if (disposed || retryTimer !== null) {
       return
     }
     const delayMs = retryDelayMs
@@ -37,18 +41,51 @@ export function registerMapStyleSync(
   }
 
   const runIfReady = () => {
+    if (disposed) {
+      return
+    }
+    if (synchronizationInFlight) {
+      synchronizationRequested = true
+      return
+    }
     if (!hasStyleStructure(map)) {
       scheduleRetry()
       return
     }
 
+    synchronizationInFlight = true
     try {
-      synchronize()
-      clearRetry()
+      const result = synchronize(abortController.signal)
+      if (result !== undefined) {
+        void Promise.resolve(result).then(completeSynchronization, failSynchronization)
+        return
+      }
+      completeSynchronization()
     } catch (error) {
-      console.error('Map overlay synchronization failed; retrying.', error)
-      scheduleRetry()
+      failSynchronization(error)
     }
+  }
+
+  const completeSynchronization = () => {
+    synchronizationInFlight = false
+    if (disposed) {
+      return
+    }
+    clearRetry()
+    if (synchronizationRequested) {
+      synchronizationRequested = false
+      runIfReady()
+    }
+  }
+
+  const failSynchronization = (error: unknown) => {
+    synchronizationInFlight = false
+    if (disposed) {
+      return
+    }
+    synchronizationRequested = false
+    console.error('Map overlay synchronization failed; retrying.', error)
+    scheduleRetry()
   }
 
   map.on('style.load', runIfReady)
@@ -56,6 +93,9 @@ export function registerMapStyleSync(
   runIfReady()
 
   return () => {
+    disposed = true
+    synchronizationRequested = false
+    abortController.abort()
     clearRetry()
     map.off('style.load', runIfReady)
     map.off('idle', runIfReady)

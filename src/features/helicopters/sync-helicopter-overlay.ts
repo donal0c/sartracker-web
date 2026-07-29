@@ -22,8 +22,11 @@ export async function syncHelicopterOverlay(
   helicopters: readonly Helicopter[],
   slotVisibility: Record<HelicopterSlotKey, boolean>,
   hiddenHelicopterIds: readonly string[],
+  signal: AbortSignal,
 ): Promise<void> {
-  await ensureHelicopterImages(map)
+  signal.throwIfAborted()
+  await ensureHelicopterImages(map, signal)
+  signal.throwIfAborted()
   ensureGeoJsonSource(map, HELICOPTER_SOURCE_ID, createHelicopterFeatureCollection(helicopters), {
     dataKey: createMapOverlayDataKey(['helicopters', helicopters]),
   })
@@ -67,7 +70,7 @@ export async function syncHelicopterOverlay(
   map.setFilter(HELICOPTER_LABEL_LAYER_ID, filter)
 }
 
-async function ensureHelicopterImages(map: maplibregl.Map): Promise<void> {
+async function ensureHelicopterImages(map: maplibregl.Map, signal: AbortSignal): Promise<void> {
   const icons: Record<HelicopterSlotKey, string> = {
     slot_1: svgForColor('#f43f5e'),
     slot_2: svgForColor('#34d399'),
@@ -76,12 +79,14 @@ async function ensureHelicopterImages(map: maplibregl.Map): Promise<void> {
   }
 
   for (const [slotKey, svg] of Object.entries(icons) as [HelicopterSlotKey, string][]) {
+    signal.throwIfAborted()
     const imageId = `helicopter-${slotKey}`
     if (map.hasImage(imageId)) {
       continue
     }
 
     const image = await loadSvgIcon(svg, 'Helicopter')
+    signal.throwIfAborted()
     map.addImage(imageId, image)
   }
 }
