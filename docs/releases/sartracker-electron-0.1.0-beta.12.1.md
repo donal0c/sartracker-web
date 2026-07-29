@@ -10,9 +10,9 @@
 - **Supersedes:** `electron-v0.1.0-beta.12`
 - **Tag commit:** pending
 - **Local verification report:** full no-skip report
-  `tmp/beta-artifacts/verify-0.1.0-beta.12.1-sha.d71715deb4a7-2026-07-29T06-22-18Z.json`
-- **CI runs:** `30402564688` and `30426564770` blocked before release
-  creation; foreground-equivalent replacement run pending
+  `tmp/beta-artifacts/verify-0.1.0-beta.12.1-sha.2ecc81058d58-2026-07-29T06-53-43Z.json`
+- **CI runs:** `30402564688`, `30426564770`, and `30427996046` blocked
+  before release creation; ANGLE/OpenGL replacement run pending
 - **Exact CI artifact SHA-256:** pending
 - **GitHub release:** remain draft until the packaged smoke matrix is complete
 
@@ -132,6 +132,22 @@ main-process latency, 149.9 ms maximum renderer gap, and 646.2 ms maximum
 operator action. A deliberately locked real desktop still reported throttling,
 confirming that locked-session timing is not valid release-performance
 evidence. The 1,000 ms release threshold remains unchanged.
+
+The third tag-driven run (`30427996046`) again preserved exact truth and
+completed all four trusted interactions without error, but GitHub's renderer
+still ran at a 66.6 ms median frame cadence. Its logs identified the missing
+boundary: Chromium selected a SwiftShader/Vulkan fallback and
+`vkCreateInstance()` failed on the Azure runner. The slowest otherwise healthy
+action was 2,403.9 ms, so publication remained blocked. A third red-to-green
+harness correction now requests ANGLE's OpenGL backend on Linux CI while
+retaining the background-throttling guards and the unchanged 1,000 ms gate.
+The exact wrapper passed on the Ubuntu Xvfb host with 8,664/8,664 exact
+positions, 4/4 healthy interactions, 186.0 ms maximum main-process latency,
+166.6 ms maximum renderer gap, 16.7 ms median renderer cadence, and 689.1 ms
+maximum operator action. An independent adversarial review found no P1/P2
+issue; its runtime-backend-attestation suggestion is non-blocking future
+hardening. None of the three failed CI runs created a release or promoted
+distributable artifacts.
 
 The remaining release gates are:
 
