@@ -102,12 +102,39 @@ coordinates, breadcrumb identity, Traccar requests, or persistence.
   breadcrumb trail were present and visibly rendered.
 - Devices, GPX, and measurement browser matrix: 66/66 across three consecutive
   repeated runs, including the held-open-basemap proof.
-- Earlier pre-map-change Ubuntu package: ten consecutive accelerated CI-profile
-  soaks passed with exact position truth, 40/40 healthy audited interactions,
-  no missing/late/extra input, and one identical Open Devices Y coordinate
-  across mission start, restart, and final load. This is preliminary harness
-  evidence only; the final committed candidate and exact CI artifacts must be
-  rebuilt and requalified.
+- Exact commit `b1e21c22c3232619b654ca5122c6050b9b56fca0` was built on Ubuntu
+  24.04. Ten consecutive unpacked-package soaks passed with 86,640/86,640 exact
+  positions, zero missing source identities, zero redundant telemetry, zero
+  crashes, 40/40 healthy audited interactions, zero sequence/tail errors, and
+  one identical Open Devices Y coordinate (`615`) across every mission start,
+  restart, and final load. Maximum main heartbeat was 20.4 ms; maximum external
+  operator response was 180.7 ms.
+- The same pre-tag AppImage and the exact `.deb` payload in its extracted
+  installed filesystem layout each passed an additional 8,664-position
+  launch/restart soak. The `.deb` was not privileged-installed because the
+  Ubuntu account has no non-interactive sudo; exact CI artifact installation
+  remains a release blocker.
+- Packaged active-tracking basemap-switch proof passed against the AppImage:
+  OpenStreetMap was selected and then switched back to OpenTopoMap while 40
+  raster requests were deliberately held. MapLibre remained
+  `isStyleLoaded() === false`; two current positions and two breadcrumb trails
+  rendered; each trail gained six fixes before the requests were released.
+  After tile failure, the explicit degraded-map alert appeared while the same
+  tracking overlays and green online state remained visible.
+- The exact AppImage passed the undecryptable-credential startup smoke: normal
+  shell, explicit recovery warning, no startup fault, and Settings accepted a
+  replacement secret.
+- Pre-tag Ubuntu artifact digests:
+  - AppImage:
+    `77142e312098cb798060f64a25ffede8c3857f3339feb05a9c84012cf6ec65ff`
+  - `.deb`:
+    `308c95e36e8b0cbb18e59e6b435a3ba0731c2f44c85be7fffada604fd62b050f`
+- A clean Ubuntu `beta:verify` wrapper attempt passed lint, build, and all
+  1,287 unit tests, then failed closed before browser/package steps because the
+  machine lacks the system development packages required to compile the
+  historical Tauri backend (`libdbus-1-dev`, GTK/WebKit/libsoup/libsecret
+  development metadata). The backend independently passes `51 / 1 ignored` on
+  macOS, but one clean no-skip wrapper run is still required.
 - Clean no-skip beta verification, tag CI, and exact CI-built Linux artifact
   results remain pending and are release blockers.
 
