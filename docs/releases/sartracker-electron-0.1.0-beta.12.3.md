@@ -1,25 +1,31 @@
 # SAR Tracker Electron Desktop Beta 0.1.0-beta.12.3 (breadcrumb safety hotfix)
 
-> **Internal beta only.** Do not use for live incidents until every gate below
-> is complete and the exact CI-built artifact has passed Ubuntu qualification.
+> **Internal beta only.** Qualified for controlled team field retest; this is
+> not final operational acceptance and must not be used for a live incident.
 
 - **Version:** 0.1.0-beta.12.3
 - **Build tag:** `electron-v0.1.0-beta.12.3`
-- **Cut date (UTC):** pending
+- **Cut date (UTC):** 2026-07-29
 - **Linear reference:** `DON-260`
 - **Supersedes:** `electron-v0.1.0-beta.12`
-- **Tag commit:** pending
-- **Local verification report:** beta.12.2 exact-head no-skip report
-  `verify-0.1.0-beta.12.2-sha.af722f5c869c-2026-07-29T10-54-35Z.json` passed;
-  beta.12.3 exact-head rerun is pending after the startup-refusal correction
+- **Tag commit:** `edb5eb2f5e99d22716489cbf49d40859fc6ad1b5`
+- **Local verification report:**
+  `verify-0.1.0-beta.12.3-sha.edb5eb2f5e99-2026-07-29T12-01-21Z.json`
+  passed all 8/8 gates with no skips
 - **CI runs:** failed tag runs `30402564688`, `30426564770`, `30427996046`,
   `30429828590`, and `30431931012`; diagnostic branch runs `30435183304`,
   `30437248431`, `30438100453`, and `30439617823`; exact product head
   `c7ffcb43755c` passed Linux validation in `30441228109`; beta.12.2 tag run
   `30445518186` passed but its unpublished draft failed the newer-schema
-  Ubuntu release gate
-- **Exact CI artifact SHA-256:** pending
-- **GitHub release:** remain draft until the packaged smoke matrix is complete
+  Ubuntu release gate; exact beta.12.3 tag run
+  [`30449919583`](https://github.com/donal0c/sartracker-web/actions/runs/30449919583)
+  passed every job
+- **Exact CI artifact SHA-256:** AppImage
+  `37a04cc0b1b9d5c58e746038f4953cdf73d6d2f14b5f1a3f60e5623657549d2e`;
+  Debian package
+  `eb1711a55bc668546c9f4decf0c73adf2450f1a448aad4d24e46c61038b59278`
+- **GitHub release:** published as an internal prerelease on 2026-07-29:
+  <https://github.com/donal0c/sartracker-web/releases/tag/electron-v0.1.0-beta.12.3>
 
 `electron-v0.1.0-beta.12.1` was pushed against an earlier pre-release commit
 but never produced a release. `electron-v0.1.0-beta.12.2` then produced a fully
@@ -96,8 +102,7 @@ redesign.
 
 ## Verification
 
-Product pre-tag proof is complete; the corrected exact-head no-skip rerun
-remains mandatory before tagging:
+Product proof and exact-artifact release qualification are complete:
 
 - lint and production build/bundle budgets passed
 - full unit suite passed: 171 files / 1,274 tests
@@ -106,8 +111,8 @@ remains mandatory before tagging:
 - Chromium passed: 135/135
 - visual Playwright passed: 36/36; fresh uncached independent review passed
   41/41 at the strict high-severity gate
-- the earlier full no-skip `npm run beta:verify` passed 8/8; the final
-  exact-head rerun remains a pre-tag gate
+- the final exact-head no-skip `npm run beta:verify` passed all 8/8 gates with
+  no skips
 - packaged CI profile passed: 8,664/8,664 exact fixes
 - packaged five-day profile passed: 691,224/691,224 exact fixes, one restart,
   exact digest `93c71e43…c146`, zero redundant-event slope, SQLite integrity
@@ -130,7 +135,62 @@ remains mandatory before tagging:
   `1`, 50 live descendant-process samples with zero renderer processes, no
   unhandled rejection, durable `startupFailure` evidence, and byte-identical
   database/backup hashes before and after. This proves the correction before
-  commit but does not replace the exact-CI-artifact release gate
+  commit but did not replace the exact-CI-artifact release gate
+- exact tag run `30449919583` passed lint, 1,274 unit tests, build/bundle
+  budgets, 135 Chromium workflows, native Linux packaging, Mesa llvmpipe
+  attestation, the packaged CI tracking soak, real AppImage launch, and draft
+  artifact upload. The CI soak retained 8,664/8,664 exact fixes with digest
+  `63276a130a720149784dd67139c2135d6fc333c847b0bb7158494bc121e5a9c6`,
+  one restart, 4/4 healthy interactions, SQLite integrity `ok`, clean WAL,
+  47.6 ms maximum main-process latency, 583.3 ms maximum renderer gap,
+  158.9 ms maximum internal action time, 381.6 ms maximum external action
+  time, no crash, no throttling, and direct two-launch Mesa attestation
+- the freshly downloaded draft contained exactly the AppImage, Debian package,
+  and `SHA256SUMS`; local and Ubuntu checksum verification matched GitHub's
+  immutable asset metadata
+- the exact AppImage passed Ubuntu lifecycle/restart/recovery/finalize/archive,
+  coordinate rejection, duplicate launch, sanitized diagnostics/support/
+  incident export, corrupt-credential recovery, and live Traccar connection.
+  The live gate saw 33 devices, persisted positions, and completed breadcrumb
+  reconciliation without a warning
+- the exact Debian package installed as `sartracker-web
+  0.1.0~beta.12.3`; `dpkg -V` was clean and the installed `/opt` executable
+  passed lifecycle/restart/recovery/finalize/archive with a non-empty archive.
+  The enclosing `apt` command returned status 100 only after configuring SAR
+  Tracker, when it retried three pre-existing unconfigured NVIDIA/kernel
+  packages for Linux 7.0.0-28. The apt and dpkg logs attribute every error to
+  those packages; SAR Tracker remains `install ok installed`, all declared
+  dependencies are installed (including Ubuntu's `t64` providers), and its
+  installed files pass `dpkg -V`. The raw apt history, apt terminal log, and
+  dpkg log are retained under
+  `evidence/deb-install-apt-status-100/` on the qualification host
+- same-session Fable review independently returned
+  `PASS_WITH_ENVIRONMENT_NOTE` with no P1/P2: the aggregate status 100 does not
+  invalidate the package-scoped install gate and the unrelated NVIDIA/kernel
+  repair is explicitly non-blocking
+- the exact artifact migrated the 3.70 GB schema-4 field fixture to schema 5
+  twice in isolated runs, preserving all 2,040,000 positions, integrity,
+  required source-identity structures, backup, and reopen. A first CDP-only
+  harness timeout never reached `app_start` or mutated the database; the
+  ignored validation harness was hardened to await process exit, retain
+  failure evidence, and reject singleton residue, then passed with zero
+  residue. Same-session Fable review classified this as validation isolation,
+  found no artifact P1/P2, and returned `PASS_WITH_BOUNDED_RETEST`
+- the exact newer-schema refusal gate showed the native compatibility dialog,
+  exited 1 after acknowledgement, sampled the descendant process tree 51
+  times with zero renderer processes, recorded no unhandled rejection, and
+  preserved byte-identical database and backup hashes
+- the exact five-day packaged profile passed 691,224/691,224 fixes, one
+  restart, digest
+  `93c71e433a7da41c0966bf9a4cad3c1e48a534732bb2ed3e043ff3f66a26c146`,
+  zero redundant-event slope, integrity `ok`, clean WAL, 66.3 ms maximum main
+  latency, 266.7 ms maximum renderer gap, and 4/4 healthy interactions
+- the exact fourteen-day packaged profile passed 1,935,384/1,935,384 fixes,
+  two restarts, digest
+  `e4d50c8d93f36dbcd19ba97b1adc6f3dd1b533d57d80cb0bef8aa0d7fa1d009e`,
+  the exact five-day prefix digest, zero redundant-event slope, integrity
+  `ok`, clean WAL, 140.4 ms maximum main latency, 250.0 ms maximum renderer
+  gap, and 6/6 healthy interactions
 
 The first tag-driven run (`30402564688`) passed the product truth gates and
 persisted all 8,664 expected soak positions with the exact deterministic digest,
@@ -227,35 +287,33 @@ action maximum 263.3 ms. There were no interaction errors, renderer crashes,
 desktop-session throttling, integrity failures, WAL residue, or redundant-event
 growth. The downloaded AppImage and `.deb` match the run's `SHA256SUMS`.
 
-The remaining release gates are:
-
-- beta.12.3 tag-driven `electron-release.yml` green
-- beta.12.3 exact-head no-skip `npm run beta:verify`
-- checksum verification and deep smoke of the exact CI AppImage and `.deb` on
-  Ubuntu, including schema migration/reopen/refusal, real window-faithful
-  request load, live Traccar because tracking changed, and exact-artifact
-  five-/fourteen-day soaks
-- post-qualification publication and fresh-download checksum/launch
+Guarded publication completed at `2026-07-29T13:22:44Z`. A brand-new
+post-publication download contained exactly the three qualified assets, matched
+all release and manifest SHA-256 values, and the freshly published AppImage
+then passed lifecycle, persisted-settings, restart/recovery, finish/finalize,
+and non-empty-archive smoke on Ubuntu. The release is now ready for internal
+field retest; original-machine confirmation remains tracked separately under
+`DON-247`.
 
 ## Packaged smoke matrix
 
 | Gate | Result | Evidence |
 | --- | --- | --- |
-| AppImage SHA-256 | TODO | pending exact draft artifact |
-| .deb SHA-256 | TODO | pending exact draft artifact |
-| AppImage launch | TODO | pending |
-| .deb install and launch | TODO | pending |
-| Core lifecycle, restart/recovery, finish/finalize/archive | TODO | pending |
-| Coordinate rejection | TODO | pending |
-| Diagnostics/support/incident exports sanitized | TODO | pending |
-| Bad/corrupt stored credential reaches shell | TODO | pending |
-| Live Traccar connection and breadcrumb reconciliation | TODO | pending |
-| Official offline Discovery package | TODO | pending |
-| Duplicate launch | TODO | pending |
-| 3.70 GB schema-4 to schema-5 migration and reopen | EXACT BETA.12.2 PASS / BETA.12.3 PENDING | The abandoned beta.12.2 artifact preserved all 2,040,000 positions, integrity, backup, and required schema-5 index. The exact beta.12.3 artifact must repeat this gate. |
-| Newer-schema refusal | PRETAG PASS / CI ARTIFACT PENDING | Local beta.12.3 package: native dialog, exit 1, zero renderer processes across 50 samples, durable sanitized evidence, no unhandled rejection, and identical full SHA-256 snapshots for every `mission-store*` file. |
-| Five-day and fourteen-day packaged soak | LOCAL PASS / CI ARTIFACT PENDING | Local rebuilt package: exact 691,224 and 1,935,384 rows, one/two restarts, zero redundant-event slope, healthy SQLite/WAL, exact full/prefix digests, and bounded main/renderer/operator-action latency. Exact CI Linux artifact must repeat both. |
-| Cross-profile exact breadcrumb identity comparison | LOCAL PASS / CI ARTIFACT PENDING | Normal full digest equals the extended run's normal-prefix digest: `93c71e43…c146`; extended full digest `e4d50c8d…009e`. |
+| AppImage SHA-256 | PASS | `sartracker-electron-validation_0.1.0-beta.12.3_linux_x86_64.AppImage` — `37a04cc0b1b9d5c58e746038f4953cdf73d6d2f14b5f1a3f60e5623657549d2e`; manifest, GitHub metadata, local download, and Ubuntu bytes agree. |
+| .deb SHA-256 | PASS | `sartracker-electron-validation_0.1.0-beta.12.3_linux_amd64.deb` — `eb1711a55bc668546c9f4decf0c73adf2450f1a448aad4d24e46c61038b59278`; manifest, GitHub metadata, local download, and Ubuntu bytes agree. |
+| AppImage launch | PASS | Exact AppImage launched under CI Xvfb and Ubuntu Xvfb with a real non-black SAR Tracker shell; CI content mean `0.502046`. |
+| .deb install and launch | PASS | `dpkg` configured `sartracker-web 0.1.0~beta.12.3` before `apt` returned status 100 while retrying three pre-existing broken NVIDIA/kernel packages. SAR Tracker is `install ok installed`, all dependencies are satisfied, `dpkg -V` is clean, and `/opt/SAR Tracker Electron Validation/sartracker-web` passed restart/recovery/finalize/archive. The unrelated host-package failure is retained explicitly rather than represented as a clean aggregate apt exit. |
+| Core lifecycle, restart/recovery, finish/finalize/archive | PASS | Exact AppImage and installed Debian executable both persisted settings, recovered the active mission after restart, finalized it, and created non-empty archives. |
+| Coordinate rejection | PASS | Coarse grid `V 80 84` resolved to `V 80500 84500`; malformed marker grid input was rejected before marker creation. |
+| Diagnostics/support/incident exports sanitized | PASS | Exact AppImage exported sanitized diagnostics, support, and incident bundles on Ubuntu; current exact-head macOS smoke also validated operating-system file opening. |
+| Bad/corrupt stored credential reaches shell | PASS | Undecryptable legacy secret reached the normal shell with the explicit re-entry warning and an operable Settings recovery field. |
+| Live Traccar connection and breadcrumb reconciliation | PASS | Exact AppImage verified the configured provider, connected online, saw 33 devices, persisted positions, and completed history reconciliation without a warning; evidence contains no private configuration. |
+| Official offline Discovery package | NOT APPLICABLE | Breadcrumb hotfix does not change official-map loading, no customer private package was supplied for this cut, and full Discovery loading remains separately scoped. |
+| Duplicate launch | PASS | Second exact-AppImage launch exited cleanly with code 0 while the primary shell remained visible and operable. |
+| 3.70 GB schema-4 to schema-5 migration and reopen | PASS | Exact AppImage passed two isolated migrations/reopens with all 2,040,000 positions, integrity `ok`, required source-identity index/revision table, and matching schema-5 backup. |
+| Newer-schema refusal | PASS | Exact AppImage showed the native compatibility dialog, exited 1, produced 51 process-tree samples with zero renderers, recorded no unhandled rejection, and left database/backup SHA-256 values unchanged. |
+| Five-day and fourteen-day packaged soak | PASS | Exact AppImage retained 691,224 and 1,935,384 positions across one/two restarts, exact source truth, zero redundant-event slope, healthy SQLite/WAL, no renderer crash/throttling, and bounded responsiveness. |
+| Cross-profile exact breadcrumb identity comparison | PASS | Normal full digest equals the extended normal-prefix digest: `93c71e433a7da41c0966bf9a4cad3c1e48a534732bb2ed3e043ff3f66a26c146`; extended full digest `e4d50c8d93f36dbcd19ba97b1adc6f3dd1b533d57d80cb0bef8aa0d7fa1d009e`. |
 
 ## Known limitations
 
@@ -278,3 +336,13 @@ schema 5 rather than risk corrupting it. A rollback must use a separately
 preserved pre-upgrade schema-4 profile or a fresh isolated profile, with the
 schema-5 profile retained for recovery. Do not delete, rename, copy over, or
 manually edit mission data without a specific recovery plan.
+
+---
+
+## CI Provenance
+
+- Build commit: `edb5eb2f5e99d22716489cbf49d40859fc6ad1b5`
+- Run: [#37](https://github.com/donal0c/sartracker-web/actions/runs/30449919583)
+- Workflow: `.github/workflows/electron-release.yml`
+- Release gates: lint, unit tests, web build, standard Chromium E2E
+- Linux launch smoke: passed

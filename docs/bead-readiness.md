@@ -22,15 +22,15 @@ Use this document before implementation to decide how much parallel research, pl
 
 Last updated: 2026-07-29 by Codex (planning consolidated into the two-track workplan)
 
-### `DON-260` — Deep breadcrumb correctness hotfix
+### `DON-260` — Deep breadcrumb correctness hotfix — completed
 
-- Research required: `Low` after end-to-end code/commit/documentation review and the completed same-session Fable challenge.
-- Implementation readiness: `5/5`.
-- Recommended action: qualify the exact CI artifact on Ubuntu and release as `0.1.0-beta.12.2`; beta.12.1 remains an immutable abandoned pre-release tag and produced no release.
+- Research required: complete.
+- Implementation readiness: implemented, qualified, and released.
+- Recommended action: run original-machine field confirmation under `DON-247`; do not reopen the completed hotfix unless the exact beta.12.3 field evidence finds a new defect.
 - Locked decisions: upstream position identity is authoritative; corrections update one row with an audit revision; same-time fixes use a stable source-identity tie-break; display selection is a deterministic epoch-anchored whole-route budget; restart reconstruction runs off the main isolate; live recent requests and slow mission-wide reconciliation are separate; five minutes is the stale threshold.
-- Open questions: none that block implementation. GPS accuracy remains a source measurement, not a promise of physical zero error.
+- Open questions: none for `DON-260`. GPS accuracy remains a source measurement, not a promise of physical zero error.
 - Non-goals: map-package expansion and the beta.13 bounded-storage/archive programme (`DON-248`-`DON-255`).
-- Ready-to-start checklist: safety invariants, failure modes, persistence/coordinate impact, TDD regressions, browser/visual proof, packaged multi-day proof, and Fable review are complete. Fail-closed Linux validation also found and corrected renderer selection, validation self-interference, focus preflight, and a genuine workspace transition delay while keeping the 1,000 ms limits unchanged. Exact-head branch run `30441228109` passed from `c7ffcb43755c` with 8,664 exact positions/digest, two direct Mesa llvmpipe launches, 4/4 focused trusted interactions, AppImage launch, bounded main/renderer/action timing, and no crash, throttle, integrity, WAL, or growth finding. Final no-skip verification, tag artifact provenance, and the full Ubuntu artifact matrix remain the release gates specified in `DON-260` and `docs/two-track-execution-workplan.md`.
+- Completion evidence: `electron-v0.1.0-beta.12.3` was published on 2026-07-29 from commit `edb5eb2f5e99`; exact-head verification passed 8/8 without skips, tag run `30449919583` was green, exact CI artifacts passed the complete Ubuntu matrix, and freshly published bytes matched their qualified SHA-256 values and passed a new packaged lifecycle smoke. Fable's same-session reviews found no P1/P2. Beta.12.1 and beta.12.2 remain immutable unpublished candidates; beta.12.2 is marked abandoned.
 
 ## Hosted Browser Runtime
 

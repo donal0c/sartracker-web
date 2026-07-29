@@ -120,7 +120,7 @@ ship or ask testers for whole Electron profile zips.
 
 ## Current Priority
 
-1. Complete the narrow `0.1.0-beta.12.3` breadcrumb safety hotfix under `DON-260`: deterministic source identity/order, correction audit, mission-wide late-fix reconciliation, responsive whole-route restart hydration, lifecycle isolation, strict parsing, one-shot newer-schema refusal, and five-/fourteen-day packaged proof. Beta.12.1 and beta.12.2 remain immutable unpublished candidates; beta.12.2 passed tag CI but failed the exact-artifact Ubuntu newer-schema gate and its draft is marked abandoned. This hotfix does not absorb the beta.13 storage/archive programme.
+1. Field-confirm the published `0.1.0-beta.12.3` breadcrumb hotfix on the original Linux machines under `DON-247`, comparing source position IDs, coordinates, and fix times after reconciliation. `DON-260` is complete; beta.12.1 and beta.12.2 remain immutable unpublished candidates, with beta.12.2 marked abandoned after its exact-artifact Ubuntu newer-schema failure.
 2. Continue the **Mission Store Reliability programme** under `DON-241`. Beta.12 is the narrow field-freeze/observability release (`DON-242` through `DON-247`); beta.13 owns bounded-storage architecture, migration, retention, streamed mission-scoped archives, and archive-backed review (`DON-248` through `DON-255`).
 3. Keep hosted browser testing smooth enough for the team to give real feedback.
 4. Fix the 2026-05-16 team feedback items that affect map trust before returning to broader foundation work.
@@ -136,7 +136,7 @@ This is the default order when the user says “work on the next task.”
 
 | Order | Chunk | Track | Linear issue | Status |
 | --- | --- | --- | --- | --- |
-| Active | Deep breadcrumb correctness and cross-installation equivalence hotfix | S2 Electron / Shared Tracking / Verification | `DON-260` | `0.1.0-beta.12.3` release blocker. Core breadcrumb work, multi-day proof, release fail-closed hardening, and the immediate Devices-workspace correction are complete. Beta.12.2 passed exact-head local and tag CI (`30445518186`) but its unpublished draft failed the Ubuntu newer-schema gate: mission-store bytes were preserved, but startup recorded an unhandled rejection and would relaunch into the same mismatch. The draft is marked abandoned. A red-to-green beta.12.3 correction now provides an explicit one-shot compatibility refusal with sanitized durable evidence and no relaunch loop; its packaged smoke requires the native dialog, exit 1, continuous process-tree proof that no renderer was created, no unhandled rejection, and byte-for-byte mission-store immutability. A local pre-tag Ubuntu package passed that corrected gate; exact-head verification and exact-CI-artifact repetition remain mandatory. Remaining closeout is tag CI, the complete exact-artifact Ubuntu matrix, controlled publication, and fresh-download smoke. |
+| Done | Deep breadcrumb correctness and cross-installation equivalence hotfix | S2 Electron / Shared Tracking / Verification | `DON-260` | Released as internal prerelease `electron-v0.1.0-beta.12.3` on 2026-07-29. Exact-head no-skip verification passed 8/8; tag run `30449919583` passed; the exact CI AppImage/`.deb` passed the complete Ubuntu matrix, including deterministic five-/fourteen-day soaks, two 3.70 GB schema migrations, newer-schema refusal, live Traccar, install, and installed-binary smoke. Fresh published bytes matched all SHA-256 values and passed a new Ubuntu lifecycle/restart/recovery/settings/finalize/archive smoke. Fable's same-session reviews found no P1/P2. The install transaction's status 100 is retained as a non-blocking qualification-host note: SAR Tracker was fully configured and verified before apt retried three pre-existing broken NVIDIA/kernel packages. Original-machine field confirmation continues under `DON-247`. |
 | Done | Build deterministic field-scale mission-store fixtures | S2 Electron / Verification | `DON-242` | Small/CI/local/field plus 5-day and 14-day continuous-mission presets; Ubuntu field fixture is 3.704 GB with measured table accounting and restart checkpoints. |
 | Done | Reproduce and attribute beta.11 freeze on packaged Ubuntu | S2 Electron / Verification | `DON-243` | Three independent packaged runs: main stalls 5.70-5.82 s; integrity validation 6.11-6.36 s across nine autosaves. |
 | Done | Add durable mission-store performance diagnostics and incident evidence | S2 Electron / Diagnostics | `DON-244` | Packaged field-fixture SIGKILL/restart/export proof passed; interrupted phase and 6.858 s event-loop stall survive in a sanitized bounded bundle. |
@@ -330,7 +330,7 @@ Execution is deliberately sequential:
 Beta.12 is not release-ready until `DON-247` passes. The local harness reduces dependence on the
 team but does not replace final original-machine confirmation.
 
-#### Beta.12.2 — breadcrumb safety hotfix (`DON-260`)
+#### Beta.12.3 — breadcrumb safety hotfix (`DON-260`)
 
 This is a deliberately narrow release between beta.12 and beta.13. It fixes the
 end-to-end breadcrumb truth path without introducing the migration, retention,

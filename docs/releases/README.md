@@ -77,6 +77,13 @@ guarded-publisher support. The publisher rejects any extra distributable.
      evidence, and `SHA256SUMS`.
    - Download the exact draft AppImage, `.deb`, and `SHA256SUMS`; qualify both
      Linux artifacts and the installed `.deb` on Ubuntu.
+   - Treat a non-zero `apt` exit as blocking until the raw apt/dpkg logs identify
+     every failing package. If the SAR package itself is `install ok installed`,
+     all declared dependencies are satisfied, `dpkg -V` is clean, and the
+     installed executable passes its smoke, an unrelated pre-existing host
+     package failure may be recorded as an environment note rather than a SAR
+     artifact failure. Retain the raw logs and never describe the aggregate apt
+     transaction as clean.
    - Run every remaining packaged smoke that CI cannot cover. CI proves
      lint/unit/build, standard Chromium E2E, and that the packaged AppImage
      launches; it does not prove the full mission lifecycle, live Traccar,
