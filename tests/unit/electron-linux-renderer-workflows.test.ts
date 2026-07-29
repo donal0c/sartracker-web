@@ -65,7 +65,7 @@ function expectMesaLaunch(step: WorkflowStep): void {
   expect(step.run).toContain('--use-gl=angle')
   expect(step.run).toContain('--use-angle=gl')
   expect(step.run).toContain('--disable-features=Vulkan,DefaultANGLEVulkan,VulkanFromANGLE')
-  expect(step.run).toContain('--disable-frame-rate-limit')
+  expect(step.run).not.toContain('--disable-frame-rate-limit')
   expect(step.run).not.toContain('--enable-unsafe-swiftshader')
 }
 

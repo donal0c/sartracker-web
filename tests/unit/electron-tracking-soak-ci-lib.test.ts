@@ -27,7 +27,6 @@ describe('tracking soak CI runner arguments', () => {
       '--use-gl=angle',
       '--use-angle=gl',
       '--disable-features=Vulkan,DefaultANGLEVulkan,VulkanFromANGLE',
-      '--disable-frame-rate-limit',
       '--disable-background-timer-throttling',
       '--disable-renderer-backgrounding',
       '--disable-backgrounding-occluded-windows',

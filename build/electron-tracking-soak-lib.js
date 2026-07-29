@@ -173,7 +173,24 @@ export function buildTrackingSoakVerdict(input) {
   requireAtLeast(failureReasons, input.backupCycles, 1, 'completed backup cycles')
   requireAtLeast(failureReasons, input.mainHeartbeatSamples, 1, 'main-process heartbeat samples')
   requireExact(failureReasons, input.mainHeartbeatErrors, 0, 'main-process heartbeat errors')
-  requireAtLeast(failureReasons, input.rendererSamples, 1, 'renderer responsiveness samples')
+  requireAtLeast(failureReasons, input.rendererSamples, 40, 'renderer responsiveness samples')
+  const rendererLaunchSampleCounts = Array.isArray(input.rendererLaunchSampleCounts)
+    ? input.rendererLaunchSampleCounts
+    : []
+  requireExact(
+    failureReasons,
+    rendererLaunchSampleCounts.length,
+    expectedRestarts + 1,
+    'renderer launch sample counts',
+  )
+  for (let index = 0; index < expectedRestarts + 1; index += 1) {
+    requireAtLeast(
+      failureReasons,
+      rendererLaunchSampleCounts[index],
+      20,
+      `renderer responsiveness samples for launch ${index + 1}`,
+    )
+  }
   requireExact(failureReasons, input.rendererCrashes, 0, 'renderer crashes')
   requireAtLeast(
     failureReasons,
@@ -419,6 +436,52 @@ export function readWebGlRendererInfoFromDocument(documentRoot = globalThis.docu
       errorClass: error instanceof Error ? error.name : 'UnknownError',
     }
   }
+}
+
+/**
+ * Installs a renderer-frame probe whose own work is deliberately rate-limited.
+ *
+ * A raw rAF loop couples the probe's work to the display backend and can add
+ * avoidable load to a CPU-only renderer. This probe retains rAF as the
+ * compositor signal while sampling it at a controlled cadence. Delayed timer
+ * or frame delivery still appears as a large gap.
+ */
+export function installCadencedRendererProbeInWindow(
+  windowRoot = globalThis.window,
+  sampleIntervalMs = 16,
+) {
+  windowRoot.__TRACKING_SOAK_RENDERER_PROBE_CLEANUP__?.()
+  const gaps = []
+  windowRoot.__TRACKING_SOAK_RENDERER_GAPS__ = gaps
+  let previous = windowRoot.performance.now()
+  let frameId
+  let timerId
+  let stopped = false
+
+  const cleanup = () => {
+    stopped = true
+    if (frameId !== undefined) {
+      windowRoot.cancelAnimationFrame(frameId)
+    }
+    if (timerId !== undefined) {
+      windowRoot.clearTimeout(timerId)
+    }
+  }
+  windowRoot.__TRACKING_SOAK_RENDERER_PROBE_CLEANUP__ = cleanup
+
+  const frame = (now) => {
+    if (stopped) {
+      return
+    }
+    gaps.push(now - previous)
+    previous = now
+    timerId = windowRoot.setTimeout(() => {
+      if (!stopped) {
+        frameId = windowRoot.requestAnimationFrame(frame)
+      }
+    }, sampleIntervalMs)
+  }
+  frameId = windowRoot.requestAnimationFrame(frame)
 }
 
 /**

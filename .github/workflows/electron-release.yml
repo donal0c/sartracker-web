@@ -423,7 +423,6 @@ jobs:
             --use-gl=angle \
             --use-angle=gl \
             --disable-features=Vulkan,DefaultANGLEVulkan,VulkanFromANGLE \
-            --disable-frame-rate-limit \
             > smoke-evidence/appimage.log \
             2>&1 &
           APP_PID=$!

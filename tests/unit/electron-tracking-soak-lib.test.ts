@@ -11,6 +11,7 @@ import {
   buildTrackingGrowthEvidence,
   createPositionTruthDigestAccumulator,
   createTrackingSoakProfile,
+  installCadencedRendererProbeInWindow,
   measureOperatorAction,
   parseTrackingSoakRuntimeLog,
   parseTrackingSoakArgs,
@@ -149,6 +150,7 @@ describe('Electron packaged tracking soak helpers [DON-246]', () => {
       mainHeartbeatErrors: 0,
       mainMaximumMs: 14,
       rendererSamples: 40,
+      rendererLaunchSampleCounts: [20, 20],
       rendererMaximumMs: 22,
       rendererCrashes: 0,
       operatorInteractionSamples: 4,
@@ -203,6 +205,7 @@ describe('Electron packaged tracking soak helpers [DON-246]', () => {
       mainHeartbeatErrors: 1,
       mainMaximumMs: 1_500,
       rendererSamples: 0,
+      rendererLaunchSampleCounts: [0, 0],
       rendererMaximumMs: 0,
       rendererCrashes: 1,
       maximumProcessTreeResidentBytes: 3_000_000_000,
@@ -223,6 +226,12 @@ describe('Electron packaged tracking soak helpers [DON-246]', () => {
     expect(verdict.redundantTelemetrySlopeRowsPerEquivalentPoll).toBe(5 / 1_080)
     expect(verdict.failureReasons.join('\n')).toMatch(
       /position rows|source position|identity|device_updated|position_recorded|restart|backup|heartbeat|integrity|WAL|support bundle/i,
+    )
+    expect(verdict.failureReasons.join('\n')).toMatch(
+      /expected at least 40 renderer responsiveness samples/i,
+    )
+    expect(verdict.failureReasons.join('\n')).toMatch(
+      /expected at least 20 renderer responsiveness samples for launch 1/i,
     )
   })
 
@@ -245,6 +254,7 @@ describe('Electron packaged tracking soak helpers [DON-246]', () => {
       mainHeartbeatErrors: 0,
       mainMaximumMs: 14,
       rendererSamples: 40,
+      rendererLaunchSampleCounts: [20, 20],
       rendererMaximumMs: 22,
       rendererCrashes: 0,
       operatorInteractionSamples: 4,
@@ -307,6 +317,7 @@ describe('Electron packaged tracking soak helpers [DON-246]', () => {
       mainHeartbeatErrors: 0,
       mainMaximumMs: 14,
       rendererSamples: 40,
+      rendererLaunchSampleCounts: [20, 20],
       rendererMaximumMs: 1_500,
       rendererCrashes: 0,
       operatorInteractionSamples: 4,
@@ -414,6 +425,60 @@ describe('Electron packaged tracking soak helpers [DON-246]', () => {
       available: false,
       reason: 'map_canvas_unavailable',
     })
+  })
+
+  it('samples renderer frames at a controlled cadence and cleans up [DON-260]', () => {
+    const frameCallbacks: Array<(timestamp: number) => void> = []
+    const timerCallbacks: Array<() => void> = []
+    const clearedFrames: number[] = []
+    const clearedTimers: number[] = []
+    let frameId = 0
+    let timerId = 0
+    const fakeWindow: {
+      performance: { now: () => number }
+      requestAnimationFrame: (callback: (timestamp: number) => void) => number
+      cancelAnimationFrame: (id: number) => void
+      setTimeout: (callback: () => void, delay: number) => number
+      clearTimeout: (id: number) => void
+      __TRACKING_SOAK_RENDERER_GAPS__?: number[]
+      __TRACKING_SOAK_RENDERER_PROBE_CLEANUP__?: () => void
+    } = {
+      performance: {
+        now: () => 100,
+      },
+      requestAnimationFrame: (callback) => {
+        frameCallbacks.push(callback)
+        frameId += 1
+        return frameId
+      },
+      cancelAnimationFrame: (id) => {
+        clearedFrames.push(id)
+      },
+      setTimeout: (callback, delay) => {
+        expect(delay).toBe(16)
+        timerCallbacks.push(callback)
+        timerId += 1
+        return timerId
+      },
+      clearTimeout: (id) => {
+        clearedTimers.push(id)
+      },
+    }
+
+    installCadencedRendererProbeInWindow(fakeWindow, 16)
+    expect(frameCallbacks).toHaveLength(1)
+    frameCallbacks.shift()?.(120)
+    expect(fakeWindow.__TRACKING_SOAK_RENDERER_GAPS__).toEqual([20])
+    expect(timerCallbacks).toHaveLength(1)
+
+    timerCallbacks.shift()?.()
+    expect(frameCallbacks).toHaveLength(1)
+    frameCallbacks.shift()?.(190)
+    expect(fakeWindow.__TRACKING_SOAK_RENDERER_GAPS__).toEqual([20, 70])
+
+    fakeWindow.__TRACKING_SOAK_RENDERER_PROBE_CLEANUP__?.()
+    expect(clearedFrames).toContain(2)
+    expect(clearedTimers).toContain(2)
   })
 
   it('fails closed when trusted delivery lacks renderer action timing [DON-260]', async () => {

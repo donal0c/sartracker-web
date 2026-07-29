@@ -31,6 +31,7 @@ import {
   buildTrackingSoakVerdict,
   classifyOperatorInteraction,
   createPositionTruthDigestAccumulator,
+  installCadencedRendererProbeInWindow,
   measureOperatorAction,
   parseTrackingSoakArgs,
   parseTrackingSoakRuntimeLog,
@@ -117,6 +118,7 @@ async function main() {
         evidenceDir,
         results: operatorInteractions,
       })
+      await collectLaunchResponsiveness(activeLaunch, mainRoundTrips, rendererGaps)
       await activeLaunch.page.screenshot({
         path: path.join(evidenceDir, `checkpoint-${checkpoint}-before-restart.png`),
         fullPage: true,
@@ -160,11 +162,6 @@ async function main() {
         equivalentProductionPolls: options.profile.equivalentProductionPolls,
       }),
     )
-    await activeLaunch.page.screenshot({
-      path: path.join(evidenceDir, 'final-packaged-state.png'),
-      fullPage: true,
-    })
-
     const supportBundlePath = await activeLaunch.page.evaluate(async () => {
       const exportBundle = window.sartrackerElectron?.exportSupportBundle
       if (typeof exportBundle !== 'function') {
@@ -175,6 +172,12 @@ async function main() {
         contents: 'SAR Tracker synthetic packaged tracking soak validation',
       })
     })
+    await collectLaunchResponsiveness(activeLaunch, mainRoundTrips, rendererGaps)
+    await activeLaunch.page.screenshot({
+      path: path.join(evidenceDir, 'final-packaged-state.png'),
+      fullPage: true,
+    })
+
     const supportBundle = await readFile(supportBundlePath, 'utf8')
     await writeFile(
       path.join(evidenceDir, 'support-bundle-inspected.txt'),
@@ -279,6 +282,9 @@ async function main() {
       mainHeartbeatErrors: launches.reduce((sum, launch) => sum + launch.mainHeartbeatErrors, 0),
       mainMaximumMs: mainStats.maxMs,
       rendererSamples: rendererStats.count,
+      rendererLaunchSampleCounts: launches.map(
+        (launch) => launch.rendererSampleCount ?? 0,
+      ),
       rendererMaximumMs: rendererStats.maxMs,
       rendererCrashes,
       operatorInteractionSamples: operatorInteractionStats.count,
@@ -353,6 +359,7 @@ async function main() {
       launches: launches.map((launch) => ({
         number: launch.number,
         webGlRenderer: launch.webGlRenderer,
+        rendererSampleCount: launch.rendererSampleCount ?? 0,
         mainHeartbeatErrors: launch.mainHeartbeatErrors,
         rendererCrashes: launch.rendererCrashes,
         processMemory: launch.processMemory,
@@ -559,18 +566,20 @@ async function recordOperatorInteraction(input) {
         ),
       click: () =>
         clickInspectedPointerTarget(input.page, preflight, 'open-devices-workspace'),
-      waitForState: () =>
-        waitForPointerTargetActionable(
-          input.page,
-          'workspace-close-btn',
-          5_000,
-        ),
+      waitForState: () => waitForRecordedActionState(input.page, 5_000),
       readRecorder: () => readClickRecorder(input.page),
       now: () => performance.now(),
     })
+    const openStateVerified =
+      openAction.stateReached &&
+      await waitForPointerTargetActionable(
+        input.page,
+        'workspace-close-btn',
+        5_000,
+      )
     result.openClickCompleted = openAction.clickCompleted
     result.openClickReceived = openAction.clickReceived
-    result.workspaceOpened = openAction.stateReached
+    result.workspaceOpened = openStateVerified
     result.openActionDurationMs = openAction.durationMs
     result.openExternalActionDurationMs = openAction.externalDurationMs
     result.openClickDeliveryDurationMs = openAction.clickDeliveryDurationMs
@@ -604,18 +613,20 @@ async function recordOperatorInteraction(input) {
         ),
       click: () =>
         clickInspectedPointerTarget(input.page, closePreflight, 'workspace-close-btn'),
-      waitForState: () =>
-        waitForLocatorState(
-          input.page.getByTestId('devices-workspace'),
-          'hidden',
-          5_000,
-        ),
+      waitForState: () => waitForRecordedActionState(input.page, 5_000),
       readRecorder: () => readClickRecorder(input.page),
       now: () => performance.now(),
     })
+    const closeStateVerified =
+      closeAction.stateReached &&
+      await waitForLocatorState(
+        input.page.getByTestId('devices-workspace'),
+        'hidden',
+        5_000,
+      )
     result.closeClickCompleted = closeAction.clickCompleted
     result.closeClickReceived = closeAction.clickReceived
-    result.workspaceClosed = closeAction.stateReached
+    result.workspaceClosed = closeStateVerified
     result.closeActionDurationMs = closeAction.durationMs
     result.closeExternalActionDurationMs = closeAction.externalDurationMs
     result.closeClickDeliveryDurationMs = closeAction.clickDeliveryDurationMs
@@ -881,6 +892,28 @@ async function waitForLocatorState(locator, state, timeout) {
     .catch(() => false)
 }
 
+/**
+ * Observes renderer-recorded state completion from the external controller.
+ *
+ * The renderer timestamp is the internal clock. Waiting for that timestamp
+ * here adds browser-command delivery and CDP acknowledgement without folding
+ * Playwright locator polling into operator latency. A separate DOM/hit-test
+ * assertion still verifies the final visible state before the interaction can
+ * pass.
+ */
+async function waitForRecordedActionState(page, timeout) {
+  return page
+    .waitForFunction(
+      () => Number.isFinite(
+        window.__SARTRACKER_OPERATOR_CLICK_PROBE__?.stateReachedAtMs,
+      ),
+      undefined,
+      { polling: 16, timeout },
+    )
+    .then(() => true)
+    .catch(() => false)
+}
+
 /** Waits until a target's centre can receive a real pointer event. */
 async function waitForPointerTargetActionable(page, testId, timeout) {
   return page
@@ -999,10 +1032,7 @@ async function closeLaunch(launch, mainRoundTrips, rendererGaps) {
   if (launch.closed) return
   launch.closed = true
   await sampleProcessMemory(launch)
-  const heartbeat = await launch.mainHeartbeat.stop()
-  launch.mainHeartbeatErrors = heartbeat.errors
-  mainRoundTrips.push(...heartbeat.roundTrips)
-  rendererGaps.push(...(await collectRendererProbe(launch.page).catch(() => [])))
+  await collectLaunchResponsiveness(launch, mainRoundTrips, rendererGaps)
   launch.mainInspector.close()
   await launch.browser.close().catch(() => undefined)
   launch.appProcess.kill('SIGTERM')
@@ -1011,6 +1041,28 @@ async function closeLaunch(launch, mainRoundTrips, rendererGaps) {
     launch.appProcess.kill('SIGKILL')
     await waitForExit(launch.appProcess, 5_000)
   }
+}
+
+/**
+ * Stops and records responsiveness probes before evidence-only capture work.
+ *
+ * Full-page screenshots are harness operations, not operator workload. On a
+ * CPU-constrained software renderer they can pause presentation for seconds,
+ * so including them would make the measurement manufacture its own release
+ * failure. Product work, including support-bundle export, remains inside the
+ * measured window.
+ */
+async function collectLaunchResponsiveness(launch, mainRoundTrips, rendererGaps) {
+  if (launch.responsivenessCollected === true) {
+    return
+  }
+  launch.responsivenessCollected = true
+  const heartbeat = await launch.mainHeartbeat.stop()
+  launch.mainHeartbeatErrors = heartbeat.errors
+  mainRoundTrips.push(...heartbeat.roundTrips)
+  const launchRendererGaps = await collectRendererProbe(launch.page).catch(() => [])
+  launch.rendererSampleCount = launchRendererGaps.length
+  rendererGaps.push(...launchRendererGaps)
 }
 
 async function sampleProcessMemory(launch) {
@@ -1214,21 +1266,16 @@ function containsForbiddenEvidence(contents, forbiddenValues) {
 }
 
 async function installRendererProbe(page) {
-  await page.evaluate(() => {
-    const gaps = []
-    window.__TRACKING_SOAK_RENDERER_GAPS__ = gaps
-    let previous = performance.now()
-    const frame = (now) => {
-      gaps.push(now - previous)
-      previous = now
-      window.requestAnimationFrame(frame)
-    }
-    window.requestAnimationFrame(frame)
-  })
+  await page.evaluate(installCadencedRendererProbeInWindow)
 }
 
 async function collectRendererProbe(page) {
-  return page.evaluate(() => window.__TRACKING_SOAK_RENDERER_GAPS__ ?? [])
+  return page.evaluate(() => {
+    const gaps = window.__TRACKING_SOAK_RENDERER_GAPS__ ?? []
+    window.__TRACKING_SOAK_RENDERER_PROBE_CLEANUP__?.()
+    delete window.__TRACKING_SOAK_RENDERER_PROBE_CLEANUP__
+    return gaps
+  })
 }
 
 function startMainHeartbeat(mainInspector, intervalMs) {
