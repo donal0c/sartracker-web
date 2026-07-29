@@ -46,8 +46,14 @@ async function readMapFilterState(page: Page) {
 
 async function seedTrackingDevices(page: Page) {
   await page.evaluate(async () => {
-    const { applyTrackingSnapshot } = await import('/src/features/tracking/tracking-store.ts')
-    applyTrackingSnapshot({
+    const harness = window.__SARTRACKER_BROWSER_HARNESS__
+    if (harness === undefined) {
+      throw new Error('Browser harness API unavailable.')
+    }
+    // Use the installed harness boundary. A runtime Vite-module import can
+    // complete its mutation and then lose the evaluation context if the dev
+    // server performs a dependency reload.
+    await harness.injectTrackingSnapshot({
       devices: [
         {
           device_id: 'alpha',
