@@ -99,7 +99,7 @@ export function findReleaseBlockingWorktreeChanges(
     return []
   }
   return porcelainStatus
-    .split(/\r?\n/u)
+    .split(/\0|\r?\n/u)
     .filter((line) => line !== '')
     .filter((line) => {
       if (!line.startsWith('?? ')) {

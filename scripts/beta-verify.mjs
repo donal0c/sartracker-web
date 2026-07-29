@@ -343,7 +343,7 @@ function readGitSha() {
  */
 function readReleaseWorktreeStatus() {
   try {
-    return execSync('git status --porcelain --untracked-files=all', {
+    return execSync('git status --porcelain=v1 -z --untracked-files=all', {
       cwd: projectRoot,
       encoding: 'utf8',
       stdio: ['ignore', 'pipe', 'ignore'],

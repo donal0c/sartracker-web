@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs'
+
 import { describe, expect, it } from 'vitest'
 
 import {
@@ -228,6 +230,20 @@ describe('findReleaseBlockingWorktreeChanges', () => {
         allowedEvidence,
       ),
     ).toHaveLength(5)
+  })
+
+  it('parses NUL-delimited porcelain so evidence paths with spaces stay unquoted', () => {
+    expect(
+      findReleaseBlockingWorktreeChanges(
+        '?? output/release evidence/report.json\u0000?? unexpected release input.txt\u0000',
+        allowedEvidence,
+      ),
+    ).toEqual(['?? unexpected release input.txt'])
+
+    const verifierSource = readFileSync('scripts/beta-verify.mjs', 'utf8')
+    expect(verifierSource).toContain(
+      'git status --porcelain=v1 -z --untracked-files=all',
+    )
   })
 })
 
