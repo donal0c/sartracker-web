@@ -130,10 +130,10 @@ The exact draft artifacts completed this matrix on Ubuntu before publication.
 
 | Gate | Result | Evidence |
 | --- | --- | --- |
-| AppImage SHA-256 | PASS | `41124632ea3e6d209ab5d638f369aaa60dc16315606bfc5b07499cf61cf0ab2b`; exact draft asset and `SHA256SUMS` agree |
-| .deb SHA-256 | PASS | `0c876bf7e80bef226e7a59159dfeb058ed24e3025b0165bb4c9bb1b70dbdce4c`; exact draft asset and `SHA256SUMS` agree |
+| AppImage SHA-256 | PASS | `sartracker-electron-validation_0.1.0-beta.12.5_linux_x86_64.AppImage` — `41124632ea3e6d209ab5d638f369aaa60dc16315606bfc5b07499cf61cf0ab2b`; exact draft asset and `SHA256SUMS` agree |
+| .deb SHA-256 | PASS | `sartracker-electron-validation_0.1.0-beta.12.5_linux_amd64.deb` — `0c876bf7e80bef226e7a59159dfeb058ed24e3025b0165bb4c9bb1b70dbdce4c`; exact draft asset and `SHA256SUMS` agree |
 | AppImage launch | PASS | CI launch job plus Ubuntu llvmpipe packaged soak: 8,664/8,664 positions, main maximum 6.9 ms |
-| Real .deb install and installed-binary launch | PASS | `install ok installed 0.1.0~beta.12.5`; `dpkg -V sartracker-web` clean; `/usr/bin/sartracker-web` soak 8,664/8,664, main maximum 6.0 ms |
+| .deb install and launch | PASS | real install: `install ok installed 0.1.0~beta.12.5`; `dpkg -V sartracker-web` clean; `/usr/bin/sartracker-web` soak 8,664/8,664, main maximum 6.0 ms |
 | Core lifecycle, restart/recovery, finish/finalize/archive | PASS | `ubuntu-evidence/{appimage-lifecycle-qualified,deb-installed-lifecycle}/summary.json` |
 | Coordinate rejection | PASS | coarse `V 80 84 -> V 80500 84500`; invalid input rejected on both package paths |
 | Diagnostics/support/incident exports sanitized | PASS | both package paths exported all three bundles; allow-list/privacy inspection passed |
@@ -171,3 +171,14 @@ display/harness attempts are retained separately and are not counted as passes.
 - [x] Release note contains exact commit, run, checksums, and evidence
 - [x] Linear and `handoff/HANDOFF.md` reflect the verified result
 - [ ] Release remains an internal prerelease until guarded publication succeeds
+
+---
+
+## CI Provenance
+
+- Build commit: `042d77ad615825eb7d9fc618f22bdc1a6f032771`
+- Run:
+  [`30497318233`](https://github.com/donal0c/sartracker-web/actions/runs/30497318233)
+- Workflow: `.github/workflows/electron-release.yml`
+- Release gates: lint, unit tests, web build, standard Chromium E2E, Linux
+  packaging, private-map guard, llvmpipe, packaged soak, and AppImage launch
