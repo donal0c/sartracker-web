@@ -1,7 +1,7 @@
 # SAR Tracker Electron Desktop Beta 0.1.0-beta.12.5 (Tracking stability hotfix)
 
-> **Internal beta draft.** Do not share or use for a live incident until every
-> packaged smoke row below is complete and the GitHub prerelease is published.
+> **Published internal beta prerelease.** Qualified for team field testing; it
+> is not approved for live incidents.
 
 - **Version:** 0.1.0-beta.12.5
 - **Build tag:** `electron-v0.1.0-beta.12.5`
@@ -17,6 +17,8 @@
 - **Exact artifact SHA-256:** AppImage
   `41124632ea3e6d209ab5d638f369aaa60dc16315606bfc5b07499cf61cf0ab2b`;
   `.deb` `0c876bf7e80bef226e7a59159dfeb058ed24e3025b0165bb4c9bb1b70dbdce4c`
+- **Published:** 2026-07-30; fresh public downloads matched both hashes and the
+  public AppImage passed Ubuntu restart/recovery/settings/finalize/archive
 
 ## Why this hotfix exists
 
@@ -170,7 +172,7 @@ display/harness attempts are retained separately and are not counted as passes.
 - [x] Exact CI AppImage and real installed `.deb` pass the packaged smoke matrix
 - [x] Release note contains exact commit, run, checksums, and evidence
 - [x] Linear and `handoff/HANDOFF.md` reflect the verified result
-- [ ] Release remains an internal prerelease until guarded publication succeeds
+- [x] Guarded publication succeeded; release remains an internal prerelease
 
 ---
 
