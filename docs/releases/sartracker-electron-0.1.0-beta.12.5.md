@@ -8,10 +8,15 @@
 - **Cut date (UTC):** 2026-07-29
 - **Linear references:** `DON-261`, `DON-262`, `DON-263`; follow-up `DON-264`
 - **Supersedes:** published beta.12.3 and unpublished beta.12.4
-- **Tag commit:** pending
-- **Local verification report:** pending clean no-skip `npm run beta:verify`
-- **CI run:** pending tag-driven `.github/workflows/electron-release.yml`
-- **Exact artifact SHA-256:** pending draft-release qualification
+- **Tag commit:** `042d77ad615825eb7d9fc618f22bdc1a6f032771`
+- **Local verification report:** clean no-skip `npm run beta:verify` passed 8/8;
+  `tmp/beta-artifacts/verify-0.1.0-beta.12.5-sha.042d77ad6158-2026-07-29T22-45-48Z.json`
+- **CI run:** tag-driven
+  [`30497318233`](https://github.com/donal0c/sartracker-web/actions/runs/30497318233)
+  passed every job
+- **Exact artifact SHA-256:** AppImage
+  `41124632ea3e6d209ab5d638f369aaa60dc16315606bfc5b07499cf61cf0ab2b`;
+  `.deb` `0c876bf7e80bef226e7a59159dfeb058ed24e3025b0165bb4c9bb1b70dbdce4c`
 
 ## Why this hotfix exists
 
@@ -99,8 +104,11 @@ breadcrumb identity, Traccar request semantics, or Electron SQLite persistence.
 - Fable 5 exact-diff review: `RELEASE`, no P1/P2 findings. It confirmed the
   retry/coalescing state machine, stale-write cancellation, hook call sites,
   and bulk-persistence semantics.
-- Clean no-skip beta verification, tag CI, and exact CI-built Linux artifact
-  results remain pending and are release blockers.
+- Clean no-skip beta verification passed 8/8. Tag CI run `30497318233`
+  passed the unit/Chromium gates, Linux bundle, native SQLite, private-map
+  guard, llvmpipe, packaged soak, AppImage launch, and draft upload jobs.
+- The exact CI AppImage and a real installation of the exact CI `.deb` passed
+  the complete Ubuntu matrix below. No locally rebuilt substitute was used.
 
 ## Known limitations and non-goals
 
@@ -118,27 +126,31 @@ breadcrumb identity, Traccar request semantics, or Electron SQLite persistence.
 
 ## Packaged smoke matrix
 
-The draft release must not be published until every row is complete.
+The exact draft artifacts completed this matrix on Ubuntu before publication.
 
 | Gate | Result | Evidence |
 | --- | --- | --- |
-| AppImage SHA-256 | TODO | exact filename, full digest, and evidence path |
-| .deb SHA-256 | TODO | exact filename, full digest, and evidence path |
-| AppImage launch | TODO | TODO |
-| Real .deb install and installed-binary launch | TODO | TODO |
-| Core lifecycle, restart/recovery, finish/finalize/archive | TODO | TODO |
-| Coordinate rejection | TODO | TODO |
-| Diagnostics/support/incident exports sanitized | TODO | TODO |
-| Bad/corrupt stored credential reaches shell | TODO | TODO |
-| Live Traccar connection and breadcrumb reconciliation | TODO | TODO |
-| Official offline Discovery package | TODO | PASS or NOT APPLICABLE with reason |
-| Duplicate launch | TODO | TODO |
-| Five-day and fourteen-day packaged soak | TODO | TODO |
-| Cross-profile exact breadcrumb identity comparison | TODO | TODO |
-| Empty-history Tracking panel stable for at least ten polls | TODO | AppImage and installed `.deb` |
-| Open Devices target stationary across status changes | TODO | exact packaged interaction evidence |
-| Overlays remain live while basemap is pending/degraded | TODO | AppImage and installed `.deb` |
-| Latest marker/helicopter state wins after async icon loading | TODO | exact packaged observation/regression |
+| AppImage SHA-256 | PASS | `41124632ea3e6d209ab5d638f369aaa60dc16315606bfc5b07499cf61cf0ab2b`; exact draft asset and `SHA256SUMS` agree |
+| .deb SHA-256 | PASS | `0c876bf7e80bef226e7a59159dfeb058ed24e3025b0165bb4c9bb1b70dbdce4c`; exact draft asset and `SHA256SUMS` agree |
+| AppImage launch | PASS | CI launch job plus Ubuntu llvmpipe packaged soak: 8,664/8,664 positions, main maximum 6.9 ms |
+| Real .deb install and installed-binary launch | PASS | `install ok installed 0.1.0~beta.12.5`; `dpkg -V sartracker-web` clean; `/usr/bin/sartracker-web` soak 8,664/8,664, main maximum 6.0 ms |
+| Core lifecycle, restart/recovery, finish/finalize/archive | PASS | `ubuntu-evidence/{appimage-lifecycle-qualified,deb-installed-lifecycle}/summary.json` |
+| Coordinate rejection | PASS | coarse `V 80 84 -> V 80500 84500`; invalid input rejected on both package paths |
+| Diagnostics/support/incident exports sanitized | PASS | both package paths exported all three bundles; allow-list/privacy inspection passed |
+| Bad/corrupt stored credential reaches shell | PASS | both package paths reached the normal shell and recoverable Settings state |
+| Live Traccar connection and breadcrumb reconciliation | PASS | both package paths connected to 33 devices, completed reconciliation, and showed no warning |
+| Official offline Discovery package | NOT APPLICABLE | no official/private map source or package is configured or bundled; full Discovery loading remains explicitly out of scope |
+| Duplicate launch | PASS | both package paths retained one primary instance and mission state |
+| Five-day and fourteen-day packaged soak | PASS | 691,224/691,224 and 1,935,384/1,935,384 positions, one/two restarts, zero redundant rows |
+| Cross-profile exact breadcrumb identity comparison | PASS | five-day digest `93c71e433a7da41c0966bf9a4cad3c1e48a534732bb2ed3e043ff3f66a26c146` exactly equals the fourteen-day prefix digest |
+| Empty-history Tracking panel stable for at least ten polls | PASS | AppImage and installed `.deb`: 13 polls, zero post-initial loading/unexpected warnings |
+| Open Devices target stationary across status changes | PASS | both exact-package empty-history probes recorded the sole Y coordinate `598`; packaged interaction soak also passed |
+| Overlays remain live while basemap is pending/degraded | PASS | AppImage held 21 tiles and installed `.deb` held 22; positions and breadcrumbs rendered and grew in both states |
+| Latest marker/helicopter state wins after async icon loading | PASS | strict cancellation/stale-continuation unit regressions plus exact-package pending/degraded overlay probes |
+
+Machine-readable qualification evidence is mirrored under
+`tmp/beta-artifacts/ci-30497318233/ubuntu-evidence/`; failed exploratory
+display/harness attempts are retained separately and are not counted as passes.
 
 ## Rollback / reinstall
 
@@ -150,12 +162,12 @@ The draft release must not be published until every row is complete.
 
 ## Pre-share checklist
 
-- [ ] Product commit is clean, pushed, and tagged immutably
-- [ ] Clean no-skip local `npm run beta:verify` passes every step
-- [ ] Tag-driven Electron release workflow is green
-- [ ] Draft assets are AppImage, `.deb`, and `SHA256SUMS` only
-- [ ] Exact draft bytes match `SHA256SUMS`
-- [ ] Exact CI AppImage and real installed `.deb` pass the packaged smoke matrix
-- [ ] Release note contains exact commit, run, checksums, and evidence
-- [ ] Linear and `handoff/HANDOFF.md` reflect the verified result
+- [x] Product commit is clean, pushed, and tagged immutably
+- [x] Clean no-skip local `npm run beta:verify` passes every step
+- [x] Tag-driven Electron release workflow is green
+- [x] Draft assets are AppImage, `.deb`, and `SHA256SUMS` only
+- [x] Exact draft bytes match `SHA256SUMS`
+- [x] Exact CI AppImage and real installed `.deb` pass the packaged smoke matrix
+- [x] Release note contains exact commit, run, checksums, and evidence
+- [x] Linear and `handoff/HANDOFF.md` reflect the verified result
 - [ ] Release remains an internal prerelease until guarded publication succeeds

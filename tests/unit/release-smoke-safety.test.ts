@@ -46,6 +46,8 @@ describe('live breadcrumb reconciliation smoke guard [DON-260]', () => {
     expect(source).toContain("requiredEnvironment('SMOKE_EXPECTED_APP_SHA256')")
     expect(source).toContain('await assertFileSha256(appPath, expectedAppSha256)')
     expect(source).toContain('await waitForReconciliation(page)')
+    expect(source).toContain('optionalPositiveIntegerEnvironment(')
+    expect(source).toContain("'SMOKE_RECONCILIATION_TIMEOUT_MS'")
     expect(source).toContain("reconciliationComplete: true")
   })
 

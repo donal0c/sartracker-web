@@ -22,6 +22,10 @@ const evidenceDir = requiredEnvironment('SMOKE_EVIDENCE')
 const configSource = requiredEnvironment('SMOKE_CONFIG_SOURCE')
 const expectedVersion = requiredEnvironment('SMOKE_EXPECTED_VERSION')
 const expectedAppSha256 = requiredEnvironment('SMOKE_EXPECTED_APP_SHA256')
+const reconciliationTimeoutMs = optionalPositiveIntegerEnvironment(
+  'SMOKE_RECONCILIATION_TIMEOUT_MS',
+  90_000,
+)
 await assertFileSha256(appPath, expectedAppSha256)
 await mkdir(evidenceDir, { recursive: true })
 const settingsSourcePath = path.join(configSource, 'settings.json')
@@ -160,6 +164,21 @@ function requiredEnvironment(name) {
 }
 
 /**
+ * Reads an optional positive-integer duration without weakening the default gate.
+ */
+function optionalPositiveIntegerEnvironment(name, fallback) {
+  const value = process.env[name]
+  if (value === undefined || value.trim() === '') {
+    return fallback
+  }
+  const parsed = Number(value)
+  if (!Number.isSafeInteger(parsed) || parsed <= 0) {
+    throw new Error(`${name} must be a positive integer number of milliseconds.`)
+  }
+  return parsed
+}
+
+/**
  * Throws a clear gate error when an invariant is false.
  */
 function assert(condition, message) {
@@ -259,7 +278,7 @@ async function assertEvidenceIsSanitized(directory, sensitiveValues) {
  * online current-position view with incomplete breadcrumb history.
  */
 async function waitForReconciliation(page) {
-  const deadline = Date.now() + 90_000
+  const deadline = Date.now() + reconciliationTimeoutMs
   while (Date.now() < deadline) {
     const text = ((await page.getByTestId('tracking-status').textContent()) ?? '').slice(0, 1_000)
     if (!hasBreadcrumbReconciliationWarning(text)) {
