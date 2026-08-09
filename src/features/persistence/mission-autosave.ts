@@ -54,6 +54,7 @@ export function startMissionAutosave(
   const now = options.now ?? (() => new Date())
   let syncQueue = Promise.resolve()
   let stopped = false
+  let intervalTimer: number | null = null
 
   if (runtime === null) {
     useAutosaveStatusStore.getState().markDisabled()
@@ -62,6 +63,7 @@ export function startMissionAutosave(
       requestSync: async () => undefined,
     }
   }
+  const activeRuntime = runtime
 
   useAutosaveStatusStore.getState().configure({
     enabled: true,
@@ -70,7 +72,7 @@ export function startMissionAutosave(
   })
 
   const handleVisibilityChange = () => {
-    if (runtime.getVisibilityState() === 'hidden') {
+    if (activeRuntime.getVisibilityState() === 'hidden') {
       void enqueueAutosave({
         reason: 'visibilitychange',
         requireActiveMission: true,
@@ -85,15 +87,10 @@ export function startMissionAutosave(
     })
   }
 
-  const timer = runtime.setInterval(() => {
-    void enqueueAutosave({
-      reason: 'interval',
-      requireActiveMission: true,
-    })
-  }, intervalMs)
+  scheduleNextInterval()
 
-  runtime.addDocumentEventListener('visibilitychange', handleVisibilityChange)
-  runtime.addWindowEventListener('pagehide', handlePageHide)
+  activeRuntime.addDocumentEventListener('visibilitychange', handleVisibilityChange)
+  activeRuntime.addWindowEventListener('pagehide', handlePageHide)
 
   return {
     stop: () => {
@@ -102,15 +99,32 @@ export function startMissionAutosave(
       }
 
       stopped = true
-      runtime.clearInterval(timer)
-      runtime.removeDocumentEventListener('visibilitychange', handleVisibilityChange)
-      runtime.removeWindowEventListener('pagehide', handlePageHide)
+      if (intervalTimer !== null) {
+        activeRuntime.clearTimeout(intervalTimer)
+        intervalTimer = null
+      }
+      activeRuntime.removeDocumentEventListener('visibilitychange', handleVisibilityChange)
+      activeRuntime.removeWindowEventListener('pagehide', handlePageHide)
     },
     requestSync: (reason) =>
       enqueueAutosave({
         reason,
         requireActiveMission: false,
       }),
+  }
+
+  /** Schedules one interval only after the preceding interval attempt settles. */
+  function scheduleNextInterval(): void {
+    if (stopped || intervalTimer !== null) {
+      return
+    }
+    intervalTimer = activeRuntime.setTimeout(() => {
+      intervalTimer = null
+      void enqueueAutosave({
+        reason: 'interval',
+        requireActiveMission: true,
+      }).finally(scheduleNextInterval)
+    }, intervalMs)
   }
 
   /** Queues backup sync attempts so lifecycle-triggered writes cannot overlap timer writes. */
@@ -136,6 +150,9 @@ export function startMissionAutosave(
     readonly requireActiveMission: boolean
   }): Promise<void> {
     try {
+      if (stopped && input.requireActiveMission) {
+        return
+      }
       if (input.requireActiveMission) {
         const activeMission = await store.getActiveMission()
         if (activeMission === null) {

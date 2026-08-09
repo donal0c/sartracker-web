@@ -15,6 +15,9 @@ const { fileURLToPath, pathToFileURL } = require('node:url')
 const { createElectronSettingsStore } = require('./settings-store.cjs')
 const { createElectronRuntimeFiles } = require('./runtime-files.cjs')
 const { createElectronMissionStore } = require('./mission-store.cjs')
+const {
+  registerBreadcrumbQueryIpcHandlers,
+} = require('./breadcrumb-query-ipc.cjs')
 const { createElectronFileSystem } = require('./file-system.cjs')
 const { createElectronOfficialMapProxy } = require('./official-map-proxy.cjs')
 const { createRuntimeLog } = require('./runtime-log.cjs')
@@ -57,9 +60,13 @@ const MISSION_STORE_CHANNELS = {
   listDevices: 'sartracker:mission-store:list-devices',
   addPosition: 'sartracker:mission-store:add-position',
   addPositionsBulk: 'sartracker:mission-store:add-positions-bulk',
+  persistTrackingPositionsBulk: 'sartracker:mission-store:persist-tracking-positions-bulk',
+  persistTrackingHistoryBatch: 'sartracker:mission-store:persist-tracking-history-batch',
   listPositions: 'sartracker:mission-store:list-positions',
   listRecentPositions: 'sartracker:mission-store:list-recent-positions',
   listBreadcrumbPositions: 'sartracker:mission-store:list-breadcrumb-positions',
+  cancelBreadcrumbQuery: 'sartracker:mission-store:cancel-breadcrumb-query',
+  listTrackingHistoryCheckpoints: 'sartracker:mission-store:list-tracking-history-checkpoints',
   countPositions: 'sartracker:mission-store:count-positions',
   latestPositions: 'sartracker:mission-store:latest-positions',
   listMissionEvents: 'sartracker:mission-store:list-mission-events',
@@ -560,7 +567,21 @@ function registerIpcHandlers(
  * Registers named mission-store methods without exposing raw IPC to the renderer.
  */
 function registerMissionStoreHandlers(missionStore) {
+  registerBreadcrumbQueryIpcHandlers({
+    ipcMain,
+    listChannel: MISSION_STORE_CHANNELS.listBreadcrumbPositions,
+    cancelChannel: MISSION_STORE_CHANNELS.cancelBreadcrumbQuery,
+    missionStore,
+    validateIpcSender,
+  })
+  const breadcrumbQueryMethods = new Set([
+    'listBreadcrumbPositions',
+    'cancelBreadcrumbQuery',
+  ])
   for (const [methodName, channel] of Object.entries(MISSION_STORE_CHANNELS)) {
+    if (breadcrumbQueryMethods.has(methodName)) {
+      continue
+    }
     ipcMain.handle(channel, (event, ...args) => {
       validateIpcSender(event)
       return missionStore[methodName](...args)

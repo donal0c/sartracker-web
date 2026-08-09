@@ -1,3 +1,5 @@
+import { createRequire } from 'node:module'
+
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import devicesFixture from '../fixtures/traccar-devices.json'
@@ -20,6 +22,37 @@ const NORMALIZED_POSITIONS = positionsFixture.map((position) =>
 const NORMALIZED_BREADCRUMBS = breadcrumbsFixture.map((position) =>
   normalizeTraccarPosition(position, 'live'),
 )
+const require = createRequire(import.meta.url)
+const { listBreadcrumbPositions } = require('../../electron/breadcrumb-query.cjs') as {
+  readonly listBreadcrumbPositions: (
+    database: unknown,
+    missionId: string,
+    perDeviceLimit: number,
+  ) => {
+    readonly positions: readonly StoredBreadcrumbRow[]
+    readonly deviceTotals: readonly {
+      readonly device_id: string
+      readonly total: number
+    }[]
+    readonly deviceSelections: readonly {
+      readonly device_id: string
+      readonly geometryErrorBoundMetres: number | null
+      readonly targetGeometryErrorSatisfied: boolean
+      readonly timeBucketWidthMs: number | null
+      readonly spatialBucketWidthDegrees: number | null
+    }[]
+  }
+}
+
+type StoredBreadcrumbRow = {
+  readonly mission_id: string
+  readonly source_position_id: string
+  readonly device_id: string
+  readonly lat: number
+  readonly lon: number
+  readonly timestamp: string
+  readonly source: string
+}
 
 function createClient(
   overrides: Partial<TrackingPollerClient> = {},
@@ -79,6 +112,33 @@ describe('polling manager', () => {
     expect(client.getBreadcrumbs).toHaveBeenCalled()
     expect(onSnapshot).toHaveBeenCalledTimes(3)
 
+    poller.stop()
+  })
+
+  it('wakes an idle poller immediately when mission activation occurs', async () => {
+    const client = createClient()
+    let pollingMode: 'active' | 'idle' = 'idle'
+    const poller = createPollingManager(client, {
+      intervalMs: 30_000,
+      staleThresholdMs: 60 * 60 * 1000,
+      getPollingMode: () => pollingMode,
+      onSnapshot: vi.fn(),
+      onStatusChange: vi.fn(),
+      now: () => new Date('2026-08-09T12:00:00.000Z'),
+    })
+
+    poller.start()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(client.getDevices).not.toHaveBeenCalled()
+
+    pollingMode = 'active'
+    poller.requestPollNow()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(client.getDevices).toHaveBeenCalledTimes(1)
+    expect(client.getCurrentPositions).toHaveBeenCalledTimes(1)
+
+    await vi.advanceTimersByTimeAsync(29_999)
+    expect(client.getDevices).toHaveBeenCalledTimes(1)
     poller.stop()
   })
 
@@ -197,6 +257,57 @@ describe('polling manager', () => {
     poller.stop()
   })
 
+  it('aborts a stale restart seed before polling the replacement mission', async () => {
+    let missionId = 'mission-a'
+    const seedSignals = new Map<string, AbortSignal | undefined>()
+    const logger = { warn: vi.fn() }
+    const onSnapshot = vi.fn()
+    const getInitialBreadcrumbs = vi.fn((signal?: AbortSignal) => {
+      const requestedMissionId = missionId
+      seedSignals.set(requestedMissionId, signal)
+      return new Promise<readonly NormalizedTrackingPosition[]>((_resolve, reject) => {
+        signal?.addEventListener('abort', () => {
+          const error = new Error('Restart seed cancelled.')
+          error.name = 'AbortError'
+          reject(error)
+        }, { once: true })
+      })
+    })
+    const poller = createPollingManager(createClient(), {
+      intervalMs: 5_000,
+      staleThresholdMs: 60 * 60 * 1000,
+      getHistoryResetKey: () => missionId,
+      getInitialBreadcrumbs,
+      onSnapshot,
+      onStatusChange: vi.fn(),
+      now: () => new Date('2026-07-28T10:35:00.000Z'),
+      logger,
+    })
+
+    poller.start()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(getInitialBreadcrumbs).toHaveBeenCalledTimes(1)
+
+    missionId = 'mission-b'
+    poller.requestPollNow()
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect(seedSignals.get('mission-a')?.aborted).toBe(true)
+    expect(getInitialBreadcrumbs).toHaveBeenCalledTimes(2)
+    expect(
+      onSnapshot.mock.calls.slice(1).every(
+        (call) => call[1]?.historyResetKey === 'mission-b',
+      ),
+    ).toBe(true)
+    expect(logger.warn).not.toHaveBeenCalledWith(
+      'Tracking breadcrumb cursor load failed.',
+      expect.anything(),
+    )
+
+    poller.stop()
+    expect(seedSignals.get('mission-b')?.aborted).toBe(true)
+  })
+
   it('serves the last-good snapshot on fetch failure without clearing data', async () => {
     const client = createClient()
     const onSnapshot = vi.fn()
@@ -223,6 +334,9 @@ describe('polling manager', () => {
         mode: 'offline',
         warning: 'OFFLINE MODE — showing last known positions.',
       }),
+    )
+    expect(onSnapshot.mock.calls.at(-1)?.[0]).toEqual(
+      expect.objectContaining({ rawBreadcrumbsForPersistence: [] }),
     )
 
     poller.stop()
@@ -486,7 +600,7 @@ describe('polling manager', () => {
     poller.stop()
   })
 
-  it('keeps a breadcrumb reconciliation warning stable between successful polls [DON-261]', async () => {
+  it('clears the breadcrumb reconciliation warning after catch-up and keeps it clear [DON-261]', async () => {
     const client = createClient({
       getDevices: vi.fn().mockResolvedValue([NORMALIZED_DEVICES[0]!]),
       getBreadcrumbs: vi.fn().mockResolvedValue([]),
@@ -505,16 +619,19 @@ describe('polling manager', () => {
     poller.start()
     await vi.advanceTimersByTimeAsync(0)
 
-    const reconciliationWarning = onStatusChange.mock.calls.at(-1)?.[0]?.warning
-    expect(reconciliationWarning).toMatch(/reconciling/i)
+    expect(
+      onStatusChange.mock.calls.some((call) =>
+        /reconciling/i.test(call[0]?.warning ?? ''),
+      ),
+    ).toBe(true)
+    expect(onStatusChange.mock.calls.at(-1)?.[0]?.warning).toBeNull()
 
     onStatusChange.mockClear()
     await vi.advanceTimersByTimeAsync(5_000)
 
-    expect(onStatusChange.mock.calls.map((call) => call[0]?.warning)).toEqual([
-      reconciliationWarning,
-      reconciliationWarning,
-    ])
+    expect(
+      onStatusChange.mock.calls.every((call) => call[0]?.warning === null),
+    ).toBe(true)
 
     poller.stop()
   })
@@ -628,6 +745,8 @@ describe('polling manager', () => {
     )
     expect(onSnapshot.mock.calls[0]?.[0].breadcrumbs).toEqual([])
     expect(onSnapshot.mock.calls[1]?.[0].breadcrumbs).toEqual(persistedBreadcrumbs)
+    expect(onSnapshot.mock.calls[0]?.[0].rawBreadcrumbsForPersistence).toEqual([])
+    expect(onSnapshot.mock.calls[1]?.[0].rawBreadcrumbsForPersistence).toEqual([])
 
     poller.stop()
   })
@@ -679,16 +798,760 @@ describe('polling manager', () => {
     poller.stop()
   })
 
-  it('round-robins historical reconciliation without doubling a large team request burst [DON-260]', async () => {
+  it('completes a 36-hour initial history sweep without waiting for the normal poll interval', async () => {
+    const missionStartedAt = new Date('2026-04-06T00:00:00.000Z')
+    const currentTime = new Date('2026-04-07T12:00:00.000Z')
+    const historicalWindows: Array<{ readonly from: Date; readonly to: Date }> = []
+    const onSnapshot = vi.fn()
+    const onStatusChange = vi.fn()
+    const onPollDiagnostic = vi.fn()
+    let activeHistoricalRequests = 0
+    let maximumHistoricalConcurrency = 0
+    let currentFixPublishedBeforeHistory = false
+    const client = createClient({
+      getDevices: vi.fn().mockResolvedValue([NORMALIZED_DEVICES[0]!]),
+      getCurrentPositions: vi.fn().mockResolvedValue([NORMALIZED_POSITIONS[0]!]),
+      getBreadcrumbs: vi.fn().mockImplementation(
+        async (_deviceId: string, from: Date, to: Date) => {
+          const durationMs = to.getTime() - from.getTime()
+          if (durationMs > 5 * 60 * 1000) {
+            currentFixPublishedBeforeHistory = onSnapshot.mock.calls.some(
+              (call) => call[0]?.positions.length === 1,
+            )
+            historicalWindows.push({ from, to })
+            activeHistoricalRequests += 1
+            maximumHistoricalConcurrency = Math.max(
+              maximumHistoricalConcurrency,
+              activeHistoricalRequests,
+            )
+            await Promise.resolve()
+            activeHistoricalRequests -= 1
+          }
+          return []
+        },
+      ),
+    })
+    const poller = createPollingManager(client, {
+      intervalMs: 30_000,
+      staleThresholdMs: 5 * 60 * 1000,
+      getInitialBreadcrumbFrom: () => missionStartedAt,
+      getBreadcrumbDeviceIds: () => ['1'],
+      onSnapshot,
+      onStatusChange,
+      onPollDiagnostic,
+      now: () => currentTime,
+    })
+
+    poller.start()
+    // Drain only immediately available work. Advancing the 30-second steady-poll
+    // timer would hide the field regression by making a 36-hour initial load take
+    // seventeen extra poll intervals (8.5 minutes for one device).
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect(currentFixPublishedBeforeHistory).toBe(true)
+    expect(historicalWindows).toHaveLength(18)
+    expect(historicalWindows[0]).toEqual({
+      from: missionStartedAt,
+      to: new Date('2026-04-06T02:00:00.000Z'),
+    })
+    expect(historicalWindows.at(-1)).toEqual({
+      from: new Date('2026-04-07T10:00:00.000Z'),
+      to: currentTime,
+    })
+    expect(
+      historicalWindows.every(
+        (window, index) =>
+          window.to.getTime() - window.from.getTime() <= 2 * 60 * 60 * 1000 &&
+          (index === 0 ||
+            historicalWindows[index - 1]?.to.getTime() === window.from.getTime()),
+      ),
+    ).toBe(true)
+    expect(maximumHistoricalConcurrency).toBeLessThanOrEqual(8)
+    expect(client.getDevices).toHaveBeenCalledTimes(1)
+    expect(client.getCurrentPositions).toHaveBeenCalledTimes(1)
+    expect(onStatusChange.mock.calls.at(-1)?.[0]?.warning).toBeNull()
+    const reconciliationDiagnostics = onPollDiagnostic.mock.calls
+      .map((call) => call[0])
+      .filter((entry) => entry.kind === 'breadcrumb_reconciliation')
+    expect(reconciliationDiagnostics.at(-1)).toEqual(
+      expect.objectContaining({
+        outcome: 'complete',
+        reconciliationPhase: 'initial',
+        targetFrom: missionStartedAt.toISOString(),
+        targetTo: currentTime.toISOString(),
+        totalDeviceCount: 1,
+        completedDeviceCount: 1,
+        totalChunkCount: 18,
+        completedChunkCount: 18,
+        pendingDeviceCount: 0,
+        failedDeviceCount: 0,
+      }),
+    )
+    expect(JSON.stringify(reconciliationDiagnostics)).not.toMatch(
+      /deviceId|deviceName|Donal Phone/u,
+    )
+
+    poller.stop()
+  })
+
+  it('resumes from a durable checkpoint and acknowledges empty initial chunks', async () => {
+    const missionStartedAt = new Date('2026-04-06T00:00:00.000Z')
+    const currentTime = new Date('2026-04-06T06:00:00.000Z')
+    const persistHistoryChunk = vi.fn().mockResolvedValue(undefined)
+    const client = createClient({
+      getDevices: vi.fn().mockResolvedValue([NORMALIZED_DEVICES[0]!]),
+      getCurrentPositions: vi.fn().mockResolvedValue([NORMALIZED_POSITIONS[0]!]),
+      getBreadcrumbs: vi.fn().mockResolvedValue([]),
+    })
+    const poller = createPollingManager(client, {
+      intervalMs: 30_000,
+      staleThresholdMs: 5 * 60 * 1000,
+      getHistoryResetKey: () => 'mission-1',
+      getInitialBreadcrumbFrom: () => missionStartedAt,
+      getInitialBreadcrumbs: async () => [],
+      getInitialHistoryCheckpoints: async () => ({
+        '1': {
+          historyFrom: missionStartedAt.toISOString(),
+          reconciledUntil: '2026-04-06T02:00:00.000Z',
+        },
+      }),
+      getBreadcrumbDeviceIds: () => ['1'],
+      persistHistoryChunk,
+      onSnapshot: vi.fn(),
+      onStatusChange: vi.fn(),
+      now: () => currentTime,
+    })
+
+    poller.start()
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect(persistHistoryChunk.mock.calls.map((call) => call[0])).toEqual([
+      {
+        phase: 'initial',
+        expectedMissionId: 'mission-1',
+        deviceId: '1',
+        historyFrom: missionStartedAt.toISOString(),
+        reconciledUntil: '2026-04-06T04:00:00.000Z',
+        positions: [],
+      },
+      {
+        phase: 'initial',
+        expectedMissionId: 'mission-1',
+        deviceId: '1',
+        historyFrom: missionStartedAt.toISOString(),
+        reconciledUntil: currentTime.toISOString(),
+        positions: [],
+      },
+    ])
+    const historicalWindows = vi.mocked(client.getBreadcrumbs).mock.calls
+      .filter((call) => call[2].getTime() - call[1].getTime() > 5 * 60 * 1000)
+      .map((call) => [call[1], call[2]])
+    expect(historicalWindows).toEqual([
+      [
+        new Date('2026-04-06T02:00:00.000Z'),
+        new Date('2026-04-06T04:00:00.000Z'),
+      ],
+      [
+        new Date('2026-04-06T04:00:00.000Z'),
+        currentTime,
+      ],
+    ])
+
+    poller.stop()
+  })
+
+  it('batches initial history publication and suppresses intermediate cache writes', async () => {
+    const missionStartedAt = new Date('2026-04-06T00:00:00.000Z')
+    const currentTime = new Date('2026-04-07T12:00:00.000Z')
+    let nextPositionId = 1
+    const onSnapshot = vi.fn()
+    const persistHistoryChunk = vi.fn().mockResolvedValue(undefined)
+    const client = createClient({
+      getDevices: vi.fn().mockResolvedValue([NORMALIZED_DEVICES[0]!]),
+      getCurrentPositions: vi.fn().mockResolvedValue([NORMALIZED_POSITIONS[0]!]),
+      getBreadcrumbs: vi.fn().mockImplementation(
+        async (_deviceId: string, from: Date, to: Date) => {
+          if (to.getTime() - from.getTime() <= 5 * 60 * 1000) {
+            return []
+          }
+          return Array.from({ length: 500 }, (_, index) => ({
+            ...NORMALIZED_POSITIONS[0]!,
+            id: String(nextPositionId++),
+            timestamp: new Date(from.getTime() + index * 1_000).toISOString(),
+          }))
+        },
+      ),
+    })
+    const poller = createPollingManager(client, {
+      intervalMs: 30_000,
+      staleThresholdMs: 5 * 60 * 1000,
+      getInitialBreadcrumbFrom: () => missionStartedAt,
+      getBreadcrumbDeviceIds: () => ['1'],
+      persistHistoryChunk,
+      onSnapshot,
+      onStatusChange: vi.fn(),
+      now: () => currentTime,
+    })
+
+    poller.start()
+    await vi.advanceTimersByTimeAsync(0)
+
+    const historySnapshots = onSnapshot.mock.calls.filter(
+      (call) => call[1]?.suppressTrackingCache !== undefined,
+    )
+    expect(historySnapshots).toHaveLength(2)
+    for (const [snapshot] of historySnapshots) {
+      expect(snapshot).toHaveProperty('rawBreadcrumbsForPersistence')
+      expect(snapshot.rawBreadcrumbsForPersistence).toEqual([])
+    }
+    expect(historySnapshots[0]?.[1]?.suppressTrackingCache).toBe(true)
+    expect(historySnapshots[1]?.[1]?.suppressTrackingCache).toBe(false)
+    expect(
+      persistHistoryChunk.mock.calls.flatMap((call) => call[0].positions),
+    ).toHaveLength(9_000)
+
+    poller.stop()
+  })
+
+  it('bounds provisional 36-hour source while preserving every durable fix and final canonical identity', async () => {
+    const missionStartedAt = new Date('2026-04-06T00:00:00.000Z')
+    const currentTime = new Date('2026-04-07T12:00:00.000Z')
+    const nextPositionIdByDevice = new Map<string, number>()
+    const progressivePositionsByDevice = new Map<
+      string,
+      NormalizedTrackingPosition[]
+    >()
+    const canonicalLoad = createDeferred<{
+      readonly positions: readonly NormalizedTrackingPosition[]
+      readonly totalObservedByDevice: Readonly<Record<string, number>>
+      readonly selectionMetadataByDevice: Readonly<Record<string, {
+        readonly geometryErrorBoundMetres: number | null
+        readonly targetGeometryErrorSatisfied: boolean
+      }>>
+    }>()
+    const getCanonicalBreadcrumbs = vi.fn().mockReturnValue(canonicalLoad.promise)
+    const onSnapshot = vi.fn()
+    const persistHistoryChunk = vi.fn().mockResolvedValue({ changed: true })
+    const client = createClient({
+      getDevices: vi.fn().mockResolvedValue(NORMALIZED_DEVICES),
+      getCurrentPositions: vi.fn().mockResolvedValue([NORMALIZED_POSITIONS[0]!]),
+      getBreadcrumbs: vi.fn().mockImplementation(
+        async (deviceId: string, from: Date, to: Date) => {
+          if (to.getTime() - from.getTime() <= 5 * 60 * 1000) {
+            return []
+          }
+          const nextPositionId = nextPositionIdByDevice.get(deviceId) ?? 1
+          const chunk = Array.from({ length: 500 }, (_, index) => ({
+            ...NORMALIZED_POSITIONS[0]!,
+            id: `${deviceId}-${nextPositionId + index}`,
+            device_id: deviceId,
+            timestamp: new Date(from.getTime() + index * 1_000).toISOString(),
+          }))
+          nextPositionIdByDevice.set(deviceId, nextPositionId + chunk.length)
+          const progressive = progressivePositionsByDevice.get(deviceId) ?? []
+          progressive.push(...chunk)
+          progressivePositionsByDevice.set(deviceId, progressive)
+          return chunk
+        },
+      ),
+    })
+    const poller = createPollingManager(client, {
+      intervalMs: 30_000,
+      staleThresholdMs: 5 * 60 * 1000,
+      getHistoryResetKey: () => 'mission-1',
+      getInitialBreadcrumbFrom: () => missionStartedAt,
+      getInitialBreadcrumbs: async () => [],
+      getCanonicalBreadcrumbs,
+      persistHistoryChunk,
+      onSnapshot,
+      onStatusChange: vi.fn(),
+      now: () => currentTime,
+    })
+
+    poller.start()
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect(onSnapshot.mock.calls[0]?.[0].positions.map(
+      (position: NormalizedTrackingPosition) => position.id,
+    )).toEqual([NORMALIZED_POSITIONS[0]!.id])
+    expect(onSnapshot.mock.calls[0]?.[0].breadcrumbs).toEqual([])
+    expect([...progressivePositionsByDevice.keys()].sort()).toEqual(['1', '2'])
+    expect(progressivePositionsByDevice.get('1')).toHaveLength(9_000)
+    expect(progressivePositionsByDevice.get('2')).toHaveLength(9_000)
+    expect(getCanonicalBreadcrumbs).toHaveBeenCalledWith(
+      'mission-1',
+      expect.any(AbortSignal),
+    )
+    const provisionalHistorySnapshots = onSnapshot.mock.calls
+      .filter((call) => call[1]?.suppressTrackingCache !== undefined)
+      .map((call) => call[0])
+    expect(provisionalHistorySnapshots.length).toBeGreaterThan(1)
+    for (const snapshot of provisionalHistorySnapshots) {
+      for (const budget of snapshot.breadcrumbMetadata.deviceBudgets) {
+        expect(budget.sourceRetained).toBeLessThanOrEqual(5_000)
+        expect(budget.geometryErrorBoundMetres).not.toBeNull()
+        expect(budget.geometryErrorBoundMetres).toBeLessThanOrEqual(25)
+        expect(budget.targetGeometryErrorSatisfied).toBe(true)
+      }
+    }
+    expect(
+      persistHistoryChunk.mock.calls.flatMap((call) => call[0].positions),
+    ).toHaveLength(18_000)
+
+    const canonicalPositions = [...progressivePositionsByDevice.values()]
+      .flatMap((positions) => positions.filter((_position, index) => index % 3 === 0))
+      .sort(
+        (left, right) =>
+          Date.parse(left.timestamp) - Date.parse(right.timestamp) ||
+          left.device_id.localeCompare(right.device_id),
+      )
+    canonicalLoad.resolve({
+      positions: canonicalPositions,
+      totalObservedByDevice: { '1': 9_000, '2': 9_000 },
+      selectionMetadataByDevice: {
+        '1': {
+          geometryErrorBoundMetres: 20,
+          targetGeometryErrorSatisfied: true,
+        },
+        '2': {
+          geometryErrorBoundMetres: 20,
+          targetGeometryErrorSatisfied: true,
+        },
+      },
+    })
+    await vi.advanceTimersByTimeAsync(0)
+
+    const settled = onSnapshot.mock.calls.at(-1)?.[0]
+    expect(settled.rawBreadcrumbsForPersistence).toEqual([])
+    expect(settled.breadcrumbs.map((position: NormalizedTrackingPosition) => position.id)).toEqual(
+      canonicalPositions.map((position) => position.id),
+    )
+    expect(settled.breadcrumbMetadata.totalObserved).toBe(18_000)
+    expect(settled.breadcrumbMetadata.deviceBudgets).toEqual([
+      expect.objectContaining({ sourceRetained: 3_000, total: 9_000 }),
+      expect.objectContaining({ sourceRetained: 3_000, total: 9_000 }),
+    ])
+
+    poller.stop()
+  })
+
+  it.each([
+    { changed: true, expectedCanonicalLoads: 2, label: 'changed' },
+    { changed: false, expectedCanonicalLoads: 1, label: 'duplicate-only' },
+  ])('refreshes canonical history after $label anti-entropy persistence only when truth changed', async ({
+    changed,
+    expectedCanonicalLoads,
+  }) => {
+    const missionStartedAt = new Date('2026-04-06T00:00:00.000Z')
+    const currentTime = new Date('2026-04-06T02:00:00.000Z')
+    const historicalPosition = {
+      ...NORMALIZED_BREADCRUMBS[0]!,
+      id: '500',
+      timestamp: '2026-04-06T01:00:00.000Z',
+    }
+    const canonicalSeed = {
+      positions: [historicalPosition],
+      totalObservedByDevice: { '1': 1 },
+      selectionMetadataByDevice: {},
+    }
+    const firstCanonicalLoad = createDeferred<typeof canonicalSeed>()
+    const getCanonicalBreadcrumbs = vi.fn()
+      .mockReturnValueOnce(firstCanonicalLoad.promise)
+      .mockResolvedValue(canonicalSeed)
+    const persistHistoryChunk = vi.fn().mockImplementation(async (input) => ({
+      changed: input.phase === 'initial' ? true : changed,
+    }))
+    const poller = createPollingManager(createClient({
+      getDevices: vi.fn().mockResolvedValue([NORMALIZED_DEVICES[0]!]),
+      getCurrentPositions: vi.fn().mockResolvedValue([]),
+      getBreadcrumbs: vi.fn().mockImplementation(
+        async (_deviceId: string, from: Date, to: Date) =>
+          to.getTime() - from.getTime() > 5 * 60 * 1000
+            ? [historicalPosition]
+            : [],
+      ),
+    }), {
+      intervalMs: 60 * 60 * 1_000,
+      staleThresholdMs: 5 * 60 * 1000,
+      getHistoryResetKey: () => 'mission-1',
+      getInitialBreadcrumbFrom: () => missionStartedAt,
+      getInitialBreadcrumbs: async () => [],
+      getCanonicalBreadcrumbs,
+      persistHistoryChunk,
+      onSnapshot: vi.fn(),
+      onStatusChange: vi.fn(),
+      now: () => currentTime,
+    })
+
+    poller.start()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(getCanonicalBreadcrumbs).toHaveBeenCalledTimes(1)
+
+    await vi.advanceTimersByTimeAsync(5 * 60 * 1_000)
+    expect(getCanonicalBreadcrumbs).toHaveBeenCalledTimes(1)
+
+    firstCanonicalLoad.resolve(canonicalSeed)
+    await vi.advanceTimersByTimeAsync(0)
+    expect(getCanonicalBreadcrumbs).toHaveBeenCalledTimes(expectedCanonicalLoads)
+
+    poller.stop()
+  })
+
+  it('canonicalizes once for repeated completed initial-reconciliation progress', async () => {
+    const currentTime = new Date('2026-04-06T02:00:00.000Z')
+    const canonicalSeed = {
+      positions: [] as readonly NormalizedTrackingPosition[],
+      totalObservedByDevice: {},
+      selectionMetadataByDevice: {},
+    }
+    const canonicalLoad = createDeferred<typeof canonicalSeed>()
+    const getCanonicalBreadcrumbs = vi.fn().mockReturnValue(canonicalLoad.promise)
+    const poller = createPollingManager(createClient({
+      getDevices: vi.fn().mockResolvedValue([NORMALIZED_DEVICES[0]!]),
+      getCurrentPositions: vi.fn().mockResolvedValue([]),
+      getBreadcrumbs: vi.fn().mockResolvedValue([]),
+    }), {
+      intervalMs: 5_000,
+      staleThresholdMs: 5 * 60 * 1_000,
+      getHistoryResetKey: () => 'mission-1',
+      getInitialBreadcrumbFrom: () => currentTime,
+      getInitialBreadcrumbs: async () => [],
+      getCanonicalBreadcrumbs,
+      persistHistoryChunk: vi.fn().mockResolvedValue({ changed: false }),
+      onSnapshot: vi.fn(),
+      onStatusChange: vi.fn(),
+      now: () => currentTime,
+    })
+
+    poller.start()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(getCanonicalBreadcrumbs).toHaveBeenCalledTimes(1)
+
+    await vi.advanceTimersByTimeAsync(30_000)
+    expect(getCanonicalBreadcrumbs).toHaveBeenCalledTimes(1)
+
+    canonicalLoad.resolve(canonicalSeed)
+    await vi.advanceTimersByTimeAsync(0)
+    expect(getCanonicalBreadcrumbs).toHaveBeenCalledTimes(1)
+
+    poller.stop()
+  })
+
+  it('starts a new canonicalization epoch when breadcrumb device selection expands', async () => {
+    const currentTime = new Date('2026-04-06T02:00:00.000Z')
+    let selectedDeviceIds = ['1']
+    const getCanonicalBreadcrumbs = vi.fn().mockResolvedValue({
+      positions: [],
+      totalObservedByDevice: {},
+      selectionMetadataByDevice: {},
+    })
+    const poller = createPollingManager(createClient({
+      getDevices: vi.fn().mockResolvedValue(NORMALIZED_DEVICES),
+      getCurrentPositions: vi.fn().mockResolvedValue([]),
+      getBreadcrumbs: vi.fn().mockResolvedValue([]),
+    }), {
+      intervalMs: 30_000,
+      staleThresholdMs: 5 * 60 * 1_000,
+      getHistoryResetKey: () => 'mission-1',
+      getInitialBreadcrumbFrom: () => currentTime,
+      getInitialBreadcrumbs: async () => [],
+      getBreadcrumbDeviceIds: () => selectedDeviceIds,
+      getCanonicalBreadcrumbs,
+      persistHistoryChunk: vi.fn().mockResolvedValue({ changed: false }),
+      onSnapshot: vi.fn(),
+      onStatusChange: vi.fn(),
+      now: () => currentTime,
+    })
+
+    poller.start()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(getCanonicalBreadcrumbs).toHaveBeenCalledTimes(1)
+
+    selectedDeviceIds = ['1', '2']
+    poller.requestPollNow()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(getCanonicalBreadcrumbs).toHaveBeenCalledTimes(2)
+
+    poller.stop()
+  })
+
+  it('aborts stale canonical work on mission replacement and stop', async () => {
+    const currentTime = new Date('2026-04-06T02:00:00.000Z')
+    let missionId = 'mission-a'
+    const observedSignals = new Map<string, AbortSignal | undefined>()
+    const getCanonicalBreadcrumbs = vi.fn(
+      (expectedMissionId: string, signal?: AbortSignal) => {
+        observedSignals.set(expectedMissionId, signal)
+        return new Promise<{
+          readonly positions: readonly NormalizedTrackingPosition[]
+          readonly totalObservedByDevice: Readonly<Record<string, number>>
+          readonly selectionMetadataByDevice: Readonly<Record<string, never>>
+        }>((_resolve, reject) => {
+          signal?.addEventListener('abort', () => {
+            const error = new Error('Canonical query aborted.')
+            error.name = 'AbortError'
+            reject(error)
+          }, { once: true })
+        })
+      },
+    )
+    const logger = { warn: vi.fn() }
+    const onSnapshot = vi.fn()
+    const poller = createPollingManager(createClient({
+      getDevices: vi.fn().mockResolvedValue([NORMALIZED_DEVICES[0]!]),
+      getCurrentPositions: vi.fn().mockResolvedValue([]),
+      getBreadcrumbs: vi.fn().mockResolvedValue([]),
+    }), {
+      intervalMs: 30_000,
+      staleThresholdMs: 5 * 60 * 1_000,
+      getHistoryResetKey: () => missionId,
+      getInitialBreadcrumbFrom: () => currentTime,
+      getInitialBreadcrumbs: async () => [],
+      getCanonicalBreadcrumbs,
+      persistHistoryChunk: vi.fn().mockResolvedValue({ changed: false }),
+      onSnapshot,
+      onStatusChange: vi.fn(),
+      now: () => currentTime,
+      logger,
+    })
+
+    poller.start()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(getCanonicalBreadcrumbs).toHaveBeenCalledTimes(1)
+
+    const callsBeforeMissionSwitch = onSnapshot.mock.calls.length
+    missionId = 'mission-b'
+    poller.requestPollNow()
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect(observedSignals.get('mission-a')?.aborted).toBe(true)
+    expect(getCanonicalBreadcrumbs.mock.calls.map(([id]) => id)).toEqual([
+      'mission-a',
+      'mission-b',
+    ])
+    expect(
+      onSnapshot.mock.calls.slice(callsBeforeMissionSwitch).every(
+        (call) => call[1]?.historyResetKey === 'mission-b',
+      ),
+    ).toBe(true)
+    expect(logger.warn).not.toHaveBeenCalledWith(
+      'Tracking breadcrumb canonicalization failed.',
+      expect.anything(),
+    )
+
+    poller.stop()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(observedSignals.get('mission-b')?.aborted).toBe(true)
+  })
+
+  it('reruns an in-flight worker so a durable late correction ends at exact CJS truth', async () => {
+    const anchorMs = Date.UTC(2026, 0, 1)
+    const baseMs = Math.floor(anchorMs / 4_096) * 4_096
+    const createStoredRow = (
+      sourcePositionId: string,
+      offsetMs: number,
+      lat: number,
+      lon: number,
+    ): StoredBreadcrumbRow => ({
+      mission_id: 'mission-1',
+      source_position_id: sourcePositionId,
+      device_id: '1',
+      lat,
+      lon,
+      timestamp: new Date(baseMs + offsetMs).toISOString(),
+      source: 'synthetic',
+    })
+    const durableBeforeCorrection = [
+      ...Array.from({ length: 10 }, (_, index) =>
+        createStoredRow(`A${index + 1}`, index, 52, -9.7),
+      ),
+      ...Array.from({ length: 4_992 }, (_, index) =>
+        index % 2 === 0
+          ? createStoredRow(`C${index + 1}`, index + 10, 53, -9)
+          : createStoredRow(`D${index + 1}`, index + 10, 54, -8),
+      ),
+    ]
+    const lateCorrection = createStoredRow('B', 5.5, 52, -9.69)
+    const selectCanonical = (rows: readonly StoredBreadcrumbRow[]) =>
+      listBreadcrumbPositions({
+        prepare: (query: string) =>
+          query.includes('COUNT(*)')
+            ? {
+                all: () => [{ device_id: '1', total: rows.length }],
+              }
+            : {
+                iterate: () => rows,
+              },
+      }, 'mission-1', 5_000)
+    const normalizeStoredRows = (
+      rows: readonly StoredBreadcrumbRow[],
+    ): readonly NormalizedTrackingPosition[] =>
+      rows.map((row) => ({
+        ...NORMALIZED_POSITIONS[0]!,
+        id: row.source_position_id,
+        device_id: row.device_id,
+        lat: row.lat,
+        lon: row.lon,
+        timestamp: row.timestamp,
+        source: row.source,
+      }))
+    const createCanonicalSeed = (
+      selection: ReturnType<typeof selectCanonical>,
+    ) => ({
+      positions: normalizeStoredRows(selection.positions),
+      totalObservedByDevice: Object.fromEntries(
+        selection.deviceTotals.map((entry) => [entry.device_id, entry.total]),
+      ),
+      selectionMetadataByDevice: Object.fromEntries(
+        selection.deviceSelections.map((entry) => [entry.device_id, {
+          geometryErrorBoundMetres: entry.geometryErrorBoundMetres,
+          targetGeometryErrorSatisfied: entry.targetGeometryErrorSatisfied,
+          timeBucketWidthMs: entry.timeBucketWidthMs,
+          spatialBucketWidthDegrees: entry.spatialBucketWidthDegrees,
+        }]),
+      ),
+    })
+    const firstCanonical = createCanonicalSeed(
+      selectCanonical(durableBeforeCorrection),
+    )
+    const exactCanonical = createCanonicalSeed(
+      selectCanonical([...durableBeforeCorrection, lateCorrection]),
+    )
+    const firstCanonicalLoad = createDeferred<typeof firstCanonical>()
+    const exactCanonicalLoad = createDeferred<typeof exactCanonical>()
+    const getCanonicalBreadcrumbs = vi.fn()
+      .mockReturnValueOnce(firstCanonicalLoad.promise)
+      .mockReturnValueOnce(exactCanonicalLoad.promise)
+    let historicalVisit = 0
+    const onSnapshot = vi.fn()
+    const poller = createPollingManager(createClient({
+      getDevices: vi.fn().mockResolvedValue([NORMALIZED_DEVICES[0]!]),
+      getCurrentPositions: vi.fn().mockResolvedValue([]),
+      getBreadcrumbs: vi.fn().mockImplementation(
+        async (_deviceId: string, from: Date, to: Date) => {
+          if (to.getTime() - from.getTime() <= 5 * 60 * 1_000) {
+            return []
+          }
+          historicalVisit += 1
+          return historicalVisit === 1
+            ? []
+            : normalizeStoredRows([lateCorrection])
+        },
+      ),
+    }), {
+      intervalMs: 60 * 60 * 1_000,
+      staleThresholdMs: 5 * 60 * 1_000,
+      getHistoryResetKey: () => 'mission-1',
+      getInitialBreadcrumbFrom: () => new Date(baseMs),
+      getInitialBreadcrumbs: async () => [],
+      getCanonicalBreadcrumbs,
+      persistHistoryChunk: vi.fn().mockImplementation(async (input) => ({
+        changed: input.phase === 'anti_entropy',
+      })),
+      onSnapshot,
+      onStatusChange: vi.fn(),
+      now: () => new Date(baseMs + 2 * 60 * 60 * 1_000),
+    })
+
+    poller.start()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(getCanonicalBreadcrumbs).toHaveBeenCalledTimes(1)
+
+    await vi.advanceTimersByTimeAsync(5 * 60 * 1_000)
+    expect(getCanonicalBreadcrumbs).toHaveBeenCalledTimes(1)
+
+    firstCanonicalLoad.resolve(firstCanonical)
+    await vi.advanceTimersByTimeAsync(0)
+    expect(getCanonicalBreadcrumbs).toHaveBeenCalledTimes(2)
+    const interim = onSnapshot.mock.calls.at(-1)?.[0]
+    expect(
+      interim.breadcrumbMetadata.deviceBudgets[0].sourceRetained,
+    ).toBeLessThanOrEqual(5_000)
+    expect(
+      interim.breadcrumbs.map((position: NormalizedTrackingPosition) => position.id),
+    ).not.toEqual(
+      exactCanonical.positions.map((position) => position.id),
+    )
+
+    exactCanonicalLoad.resolve(exactCanonical)
+    await vi.advanceTimersByTimeAsync(0)
+    const settled = onSnapshot.mock.calls.at(-1)?.[0]
+    expect(
+      settled.breadcrumbs.map((position: NormalizedTrackingPosition) => position.id),
+    ).toEqual(exactCanonical.positions.map((position) => position.id))
+    expect(settled.breadcrumbMetadata.deviceBudgets[0]).toEqual(
+      expect.objectContaining({
+        sourceRetained: exactCanonical.positions.length,
+        total: durableBeforeCorrection.length + 1,
+      }),
+    )
+
+    poller.stop()
+  })
+
+  it('does not canonicalize history that failed durable persistence', async () => {
+    const getCanonicalBreadcrumbs = vi.fn()
+    const onSnapshot = vi.fn()
+    const poller = createPollingManager(createClient({
+      getDevices: vi.fn().mockResolvedValue([NORMALIZED_DEVICES[0]!]),
+      getCurrentPositions: vi.fn().mockResolvedValue([]),
+      getBreadcrumbs: vi.fn().mockImplementation(
+        async (_deviceId: string, from: Date, to: Date) =>
+          to.getTime() - from.getTime() > 5 * 60 * 1000
+            ? [NORMALIZED_BREADCRUMBS[0]!]
+            : [],
+      ),
+    }), {
+      intervalMs: 30_000,
+      staleThresholdMs: 5 * 60 * 1000,
+      getHistoryResetKey: () => 'mission-1',
+      getInitialBreadcrumbFrom: () => new Date('2026-04-06T00:00:00.000Z'),
+      getInitialBreadcrumbs: async () => [],
+      getCanonicalBreadcrumbs,
+      persistHistoryChunk: vi.fn().mockRejectedValue(
+        new Error('atomic persistence failed'),
+      ),
+      onSnapshot,
+      onStatusChange: vi.fn(),
+      now: () => new Date('2026-04-06T02:00:00.000Z'),
+    })
+
+    poller.start()
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect(getCanonicalBreadcrumbs).not.toHaveBeenCalled()
+    expect(
+      onSnapshot.mock.calls.flatMap((call) => call[0].breadcrumbs),
+    ).not.toContainEqual(NORMALIZED_BREADCRUMBS[0])
+
+    poller.stop()
+  })
+
+  it('round-robins continuous catch-up for a large team without an immediate rescan [DON-260]', async () => {
     const devices = Array.from({ length: 16 }, (_, index) => ({
       ...NORMALIZED_DEVICES[0]!,
       device_id: String(index + 1),
       name: `Tracker ${index + 1}`,
     }))
+    let activeHistoricalRequests = 0
+    let maximumHistoricalConcurrency = 0
     const client = createClient({
       getDevices: vi.fn().mockResolvedValue(devices),
       getCurrentPositions: vi.fn().mockResolvedValue([]),
-      getBreadcrumbs: vi.fn().mockResolvedValue([]),
+      getBreadcrumbs: vi.fn().mockImplementation(
+        async (_deviceId: string, from: Date, to: Date) => {
+          if (to.getTime() - from.getTime() > 5 * 60 * 1000) {
+            activeHistoricalRequests += 1
+            maximumHistoricalConcurrency = Math.max(
+              maximumHistoricalConcurrency,
+              activeHistoricalRequests,
+            )
+            await Promise.resolve()
+            activeHistoricalRequests -= 1
+          }
+          return []
+        },
+      ),
     })
     const poller = createPollingManager(client, {
       intervalMs: 5_000,
@@ -704,10 +1567,10 @@ describe('polling manager', () => {
 
     const firstPollCalls = [...vi.mocked(client.getBreadcrumbs).mock.calls]
     const firstHistoricalDeviceIds = firstPollCalls
-      .filter((call) => call[2].getTime() - call[1].getTime() === 2 * 60 * 60 * 1000)
+      .filter((call) => call[2].getTime() - call[1].getTime() > 5 * 60 * 1000)
       .map((call) => call[0])
-    expect(firstPollCalls).toHaveLength(24)
-    expect(firstHistoricalDeviceIds).toEqual([
+    expect(firstPollCalls).toHaveLength(112)
+    expect(firstHistoricalDeviceIds.slice(0, 16)).toEqual([
       '1',
       '10',
       '11',
@@ -716,18 +1579,6 @@ describe('polling manager', () => {
       '14',
       '15',
       '16',
-    ])
-
-    await vi.advanceTimersByTimeAsync(5_000)
-
-    const secondPollCalls = vi.mocked(client.getBreadcrumbs).mock.calls.slice(
-      firstPollCalls.length,
-    )
-    const secondHistoricalDeviceIds = secondPollCalls
-      .filter((call) => call[2].getTime() - call[1].getTime() === 2 * 60 * 60 * 1000)
-      .map((call) => call[0])
-    expect(secondPollCalls).toHaveLength(24)
-    expect(secondHistoricalDeviceIds).toEqual([
       '2',
       '3',
       '4',
@@ -737,11 +1588,29 @@ describe('polling manager', () => {
       '8',
       '9',
     ])
+    expect(firstHistoricalDeviceIds).toHaveLength(96)
+    expect(maximumHistoricalConcurrency).toBeLessThanOrEqual(8)
+    for (const device of devices) {
+      expect(
+        firstHistoricalDeviceIds.filter((deviceId) => deviceId === device.device_id),
+      ).toHaveLength(6)
+    }
+
+    await vi.advanceTimersByTimeAsync(5_000)
+
+    const secondPollCalls = vi.mocked(client.getBreadcrumbs).mock.calls.slice(
+      firstPollCalls.length,
+    )
+    const secondHistoricalDeviceIds = secondPollCalls
+      .filter((call) => call[2].getTime() - call[1].getTime() > 5 * 60 * 1000)
+      .map((call) => call[0])
+    expect(secondPollCalls).toHaveLength(16)
+    expect(secondHistoricalDeviceIds).toEqual([])
 
     poller.stop()
   })
 
-  it('finds a fix arriving after the live overlap when the historical sweep cycles [DON-260]', async () => {
+  it('finds a late fix through low-rate anti-entropy without an immediate rescan [DON-260]', async () => {
     const lateFix = {
       ...NORMALIZED_POSITIONS[0],
       id: '991001',
@@ -777,6 +1646,9 @@ describe('polling manager', () => {
     poller.start()
     await vi.advanceTimersByTimeAsync(0)
     await vi.advanceTimersByTimeAsync(5_000)
+
+    expect(historicalWindowVisits).toBe(1)
+    await vi.advanceTimersByTimeAsync(5 * 60 * 1000 - 5_000)
 
     expect(historicalWindowVisits).toBe(2)
     expect(
@@ -1124,6 +1996,30 @@ describe('polling manager', () => {
     poller.stop()
   })
 
+  it('replays a paused mission snapshot without re-persisting its rendered history', async () => {
+    let pollingMode: 'active' | 'paused' = 'active'
+    const onSnapshot = vi.fn()
+    const poller = createPollingManager(createClient(), {
+      intervalMs: 5_000,
+      staleThresholdMs: 60 * 60 * 1000,
+      onSnapshot,
+      onStatusChange: vi.fn(),
+      getPollingMode: () => pollingMode,
+      now: () => new Date('2026-04-06T10:35:00.000Z'),
+    })
+
+    poller.start()
+    await vi.advanceTimersByTimeAsync(0)
+    pollingMode = 'paused'
+    await vi.advanceTimersByTimeAsync(5_000)
+
+    expect(onSnapshot.mock.calls.at(-1)?.[0]).toEqual(
+      expect.objectContaining({ rawBreadcrumbsForPersistence: [] }),
+    )
+
+    poller.stop()
+  })
+
   it('stays idle without authenticating before a mission starts', async () => {
     const client = createClient()
     const onStatusChange = vi.fn()
@@ -1181,6 +2077,7 @@ describe('polling manager', () => {
         devices: [],
         positions: [],
         breadcrumbs: [],
+        rawBreadcrumbsForPersistence: [],
       },
       { historyResetKey: null },
     )
@@ -1565,10 +2462,175 @@ describe('polling manager', () => {
       new Date('2026-04-06T09:00:00.000Z'),
       expect.any(Date),
     )
-    expect(onSnapshot.mock.calls[0]?.[0].breadcrumbs).toHaveLength(0)
-    expect(onSnapshot.mock.calls[1]?.[0].breadcrumbs).toHaveLength(3)
-    expect(onSnapshot.mock.calls[2]?.[0].breadcrumbs).toHaveLength(0)
-    expect(onSnapshot.mock.calls[3]?.[0].breadcrumbs).toHaveLength(3)
+    const missionOneSnapshots = onSnapshot.mock.calls.filter(
+      (call) => call[1]?.historyResetKey === 'mission-1',
+    )
+    const missionTwoSnapshots = onSnapshot.mock.calls.filter(
+      (call) => call[1]?.historyResetKey === 'mission-2',
+    )
+    expect(missionOneSnapshots[0]?.[0].breadcrumbs).toHaveLength(0)
+    expect(
+      missionOneSnapshots.some((call) => call[0].breadcrumbs.length === 3),
+    ).toBe(true)
+    expect(missionTwoSnapshots[0]?.[0].breadcrumbs).toHaveLength(0)
+    expect(
+      missionTwoSnapshots.some((call) => call[0].breadcrumbs.length === 3),
+    ).toBe(true)
+
+    poller.stop()
+  })
+
+  it('does not publish a durably accepted old-mission render batch after switching missions', async () => {
+    const oldMissionSecondChunk = createDeferred<readonly NormalizedTrackingPosition[]>()
+    const oldMissionBreadcrumb = {
+      ...NORMALIZED_BREADCRUMBS[0]!,
+      id: 'mission-a-history',
+      timestamp: '2026-04-06T07:00:00.000Z',
+    }
+    const getBreadcrumbs = vi.fn().mockImplementation(
+      (_deviceId: string, from: Date, to: Date) => {
+        if (
+          from.toISOString() === '2026-04-06T06:00:00.000Z' &&
+          to.toISOString() === '2026-04-06T08:00:00.000Z'
+        ) {
+          return Promise.resolve([oldMissionBreadcrumb])
+        }
+        if (
+          from.toISOString() === '2026-04-06T08:00:00.000Z' &&
+          to.toISOString() === '2026-04-06T10:00:00.000Z'
+        ) {
+          return oldMissionSecondChunk.promise
+        }
+        return Promise.resolve([])
+      },
+    )
+    const onSnapshot = vi.fn()
+    const lifecycleEvents: string[] = []
+    const persistHistoryChunk = vi.fn().mockImplementation(async (input) => {
+      lifecycleEvents.push(`persist:${input.expectedMissionId}`)
+    })
+    let historyResetKey: string | null = 'mission-a'
+    let initialBreadcrumbFrom = new Date('2026-04-06T06:00:00.000Z')
+    const poller = createPollingManager(createClient({ getBreadcrumbs }), {
+      intervalMs: 30_000,
+      staleThresholdMs: 60 * 60 * 1000,
+      onSnapshot: (...args) => {
+        lifecycleEvents.push(`snapshot:${args[1].historyResetKey}`)
+        onSnapshot(...args)
+      },
+      onStatusChange: vi.fn(),
+      getHistoryResetKey: () => historyResetKey,
+      getInitialBreadcrumbFrom: () => initialBreadcrumbFrom,
+      getInitialBreadcrumbs: async () => [],
+      persistHistoryChunk,
+      now: () => new Date('2026-04-06T10:35:00.000Z'),
+    })
+
+    poller.start()
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect(persistHistoryChunk).toHaveBeenCalledWith(expect.objectContaining({
+      expectedMissionId: 'mission-a',
+      deviceId: '1',
+      historyFrom: '2026-04-06T06:00:00.000Z',
+      reconciledUntil: '2026-04-06T08:00:00.000Z',
+      positions: [oldMissionBreadcrumb],
+    }))
+    const callsBeforeMissionSwitch = onSnapshot.mock.calls.length
+    lifecycleEvents.push('switch:mission-b')
+    historyResetKey = 'mission-b'
+    initialBreadcrumbFrom = new Date('2026-04-06T09:00:00.000Z')
+    poller.requestPollNow()
+    await vi.advanceTimersByTimeAsync(0)
+
+    const snapshotsAfterMissionSwitch = onSnapshot.mock.calls.slice(
+      callsBeforeMissionSwitch,
+    )
+    expect(snapshotsAfterMissionSwitch.length).toBeGreaterThan(0)
+    expect(
+      snapshotsAfterMissionSwitch.every((call) => call[1]?.historyResetKey === 'mission-b'),
+    ).toBe(true)
+    expect(
+      snapshotsAfterMissionSwitch.flatMap((call) => call[0].breadcrumbs).map(
+        (position) => position.id,
+      ),
+    ).not.toContain(oldMissionBreadcrumb.id)
+    expect(lifecycleEvents.indexOf('persist:mission-a')).toBeLessThan(
+      lifecycleEvents.indexOf('switch:mission-b'),
+    )
+
+    oldMissionSecondChunk.resolve([])
+    await vi.advanceTimersByTimeAsync(100)
+    expect(
+      onSnapshot.mock.calls
+        .slice(callsBeforeMissionSwitch)
+        .some((call) =>
+          call[0].breadcrumbs.some(
+            (position: NormalizedTrackingPosition) =>
+              position.id === oldMissionBreadcrumb.id,
+          ),
+        ),
+    ).toBe(false)
+
+    poller.stop()
+  })
+
+  it('publishes fallback history immediately so mission replacement cannot drop a queued batch', async () => {
+    const oldMissionBreadcrumb = {
+      ...NORMALIZED_BREADCRUMBS[0]!,
+      id: 'mission-a-fallback-history',
+      timestamp: '2026-04-06T07:00:00.000Z',
+    }
+    const onSnapshot = vi.fn()
+    let historyResetKey: string | null = 'mission-a'
+    let initialBreadcrumbFrom = new Date('2026-04-06T06:00:00.000Z')
+    const poller = createPollingManager(createClient({
+      getBreadcrumbs: vi.fn().mockImplementation(
+        (_deviceId: string, from: Date, to: Date) =>
+          from.toISOString() === '2026-04-06T06:00:00.000Z' &&
+          to.toISOString() === '2026-04-06T08:00:00.000Z'
+            ? Promise.resolve([oldMissionBreadcrumb])
+            : Promise.resolve([]),
+      ),
+    }), {
+      intervalMs: 30_000,
+      staleThresholdMs: 60 * 60 * 1000,
+      onSnapshot,
+      onStatusChange: vi.fn(),
+      getHistoryResetKey: () => historyResetKey,
+      getInitialBreadcrumbFrom: () => initialBreadcrumbFrom,
+      getInitialBreadcrumbs: async () => [],
+      now: () => new Date('2026-04-06T10:35:00.000Z'),
+    })
+
+    poller.start()
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect(onSnapshot.mock.calls.some((call) =>
+      call[1]?.historyResetKey === 'mission-a' &&
+      call[0].rawBreadcrumbsForPersistence?.some(
+        (position: NormalizedTrackingPosition) =>
+          position.id === oldMissionBreadcrumb.id,
+      ),
+    )).toBe(true)
+    const callsBeforeMissionSwitch = onSnapshot.mock.calls.length
+
+    historyResetKey = 'mission-b'
+    initialBreadcrumbFrom = new Date('2026-04-06T09:00:00.000Z')
+    poller.requestPollNow()
+    await vi.advanceTimersByTimeAsync(100)
+
+    expect(
+      onSnapshot.mock.calls
+        .slice(callsBeforeMissionSwitch)
+        .every((call) => call[1]?.historyResetKey === 'mission-b'),
+    ).toBe(true)
+    expect(
+      onSnapshot.mock.calls
+        .slice(callsBeforeMissionSwitch)
+        .flatMap((call) => call[0].breadcrumbs)
+        .map((position) => position.id),
+    ).not.toContain(oldMissionBreadcrumb.id)
 
     poller.stop()
   })

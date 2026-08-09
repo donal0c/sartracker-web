@@ -61,7 +61,26 @@ export type TrackingRequestAttemptEntry = {
   readonly httpStatus: number | null
 }
 
-export type TrackingPollLedgerEntry = TrackingPollCycleEntry | TrackingRequestAttemptEntry
+export type TrackingBreadcrumbReconciliationEntry = {
+  readonly ts: string
+  readonly kind: 'breadcrumb_reconciliation'
+  readonly outcome: 'progress' | 'complete'
+  readonly reconciliationPhase: 'initial' | 'anti_entropy'
+  readonly targetFrom: string
+  readonly targetTo: string
+  readonly totalDeviceCount: number
+  readonly completedDeviceCount: number
+  readonly totalChunkCount: number
+  readonly completedChunkCount: number
+  readonly pendingDeviceCount: number
+  readonly failedDeviceCount: number
+  readonly elapsedMs: number
+}
+
+export type TrackingPollLedgerEntry =
+  | TrackingPollCycleEntry
+  | TrackingRequestAttemptEntry
+  | TrackingBreadcrumbReconciliationEntry
 
 /** Classifies a request failure without retaining its message or request URL. */
 export function classifyTrackingFailure(error: unknown): TrackingPollFailureKind {
@@ -227,6 +246,49 @@ function normalizeTrackingPollLedgerEntry(input: unknown): TrackingPollLedgerEnt
   }
   const candidate = input as Record<string, unknown>
   const timestampMs = typeof candidate.ts === 'string' ? Date.parse(candidate.ts) : Number.NaN
+  if (candidate.kind === 'breadcrumb_reconciliation') {
+    const targetFrom = normalizeTimestamp(candidate.targetFrom)
+    const targetTo = normalizeTimestamp(candidate.targetTo)
+    const reconciliationPhase =
+      candidate.reconciliationPhase === 'initial' ||
+      candidate.reconciliationPhase === 'anti_entropy'
+        ? candidate.reconciliationPhase
+        : null
+    const counts = [
+      normalizeCount(candidate.totalDeviceCount),
+      normalizeCount(candidate.completedDeviceCount),
+      normalizeCount(candidate.totalChunkCount),
+      normalizeCount(candidate.completedChunkCount),
+      normalizeCount(candidate.pendingDeviceCount),
+      normalizeCount(candidate.failedDeviceCount),
+      normalizeCount(candidate.elapsedMs),
+    ]
+    if (
+      !Number.isFinite(timestampMs) ||
+      (candidate.outcome !== 'progress' && candidate.outcome !== 'complete') ||
+      reconciliationPhase === null ||
+      targetFrom === null ||
+      targetTo === null ||
+      counts.some((count) => count === null)
+    ) {
+      return null
+    }
+    return {
+      ts: new Date(timestampMs).toISOString(),
+      kind: 'breadcrumb_reconciliation',
+      outcome: candidate.outcome,
+      reconciliationPhase,
+      targetFrom,
+      targetTo,
+      totalDeviceCount: counts[0]!,
+      completedDeviceCount: counts[1]!,
+      totalChunkCount: counts[2]!,
+      completedChunkCount: counts[3]!,
+      pendingDeviceCount: counts[4]!,
+      failedDeviceCount: counts[5]!,
+      elapsedMs: counts[6]!,
+    }
+  }
   const phase = normalizePhase(candidate.phase)
   const durationMs = normalizeCount(candidate.durationMs)
   if (!Number.isFinite(timestampMs) || phase === null || durationMs === null) {

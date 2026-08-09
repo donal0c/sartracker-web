@@ -224,6 +224,27 @@ export type AddPositionInput = {
   readonly data_origin?: 'live' | 'cache' | null
 }
 
+export type TrackingHistoryCheckpoint = {
+  readonly mission_id: string
+  readonly device_id: string
+  readonly history_from: string
+  readonly reconciled_until: string
+}
+
+export type PersistTrackingHistoryBatchInput = {
+  readonly mission_id: string
+  readonly positions: readonly Omit<AddPositionInput, 'mission_id'>[]
+  readonly checkpoints: readonly Omit<TrackingHistoryCheckpoint, 'mission_id'>[]
+}
+
+export type PersistTrackingPositionsBulkInput = PersistTrackingHistoryBatchInput
+
+export type TrackingPositionsPersistenceAck = {
+  readonly changedPositionCount: number
+  readonly insertedPositionCount: number
+  readonly skippedAmbiguousLegacyAdoptionCount: number
+}
+
 export type UpsertMarkerInput = {
   readonly id?: string | null
   readonly mission_id: string
@@ -283,6 +304,12 @@ export type MissionStore = {
     readonly mission_id: string
     readonly positions: readonly Omit<AddPositionInput, 'mission_id'>[]
   }) => Promise<readonly Position[]>
+  readonly persistTrackingHistoryBatch?: (
+    input: PersistTrackingHistoryBatchInput,
+  ) => Promise<readonly Position[]>
+  readonly persistTrackingPositionsBulk?: (
+    input: PersistTrackingPositionsBulkInput,
+  ) => Promise<TrackingPositionsPersistenceAck>
   readonly listPositions: (
     missionId: string,
     deviceId?: string,
@@ -294,14 +321,26 @@ export type MissionStore = {
   readonly listBreadcrumbPositions?: (
     missionId: string,
     perDeviceLimit: number,
+    requestId?: string,
   ) => Promise<{
     readonly positions: readonly Position[]
     readonly deviceTotals: readonly {
       readonly device_id: string
       readonly total: number
     }[]
+    readonly deviceSelections?: readonly {
+      readonly device_id: string
+      readonly geometryErrorBoundMetres: number | null
+      readonly targetGeometryErrorSatisfied: boolean
+      readonly timeBucketWidthMs?: number | null
+      readonly spatialBucketWidthDegrees?: number | null
+    }[]
     readonly droppedPositionCount?: number
   }>
+  readonly cancelBreadcrumbQuery?: (requestId: string) => Promise<boolean>
+  readonly listTrackingHistoryCheckpoints?: (
+    missionId: string,
+  ) => Promise<readonly TrackingHistoryCheckpoint[]>
   readonly countPositions: (missionId: string, deviceId?: string) => Promise<number>
   readonly latestPositions: (missionId: string) => Promise<readonly Position[]>
   readonly listMissionEvents: (missionId: string) => Promise<readonly MissionEvent[]>

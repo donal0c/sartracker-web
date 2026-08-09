@@ -12,6 +12,24 @@ export function TrackingStatusPanel() {
   const cachedDeviceCount = snapshot.positions.filter((position) => position.data_origin === 'cache').length
   const boundedBreadcrumbDeviceCount =
     snapshot.breadcrumbMetadata?.deviceBudgets.filter((budget) => budget.truncated).length ?? 0
+  const degradedBreadcrumbBudgets =
+    snapshot.breadcrumbMetadata?.deviceBudgets.filter(
+      (budget) =>
+        budget.truncated && budget.targetGeometryErrorSatisfied !== true,
+    ) ?? []
+  const hasUnknownBreadcrumbErrorBound = degradedBreadcrumbBudgets.some(
+    (budget) =>
+      typeof budget.geometryErrorBoundMetres !== 'number' ||
+      !Number.isFinite(budget.geometryErrorBoundMetres),
+  )
+  const maximumBreadcrumbErrorBoundMetres = degradedBreadcrumbBudgets.reduce<number | null>(
+    (maximum, budget) =>
+      typeof budget.geometryErrorBoundMetres !== 'number' ||
+      !Number.isFinite(budget.geometryErrorBoundMetres)
+        ? maximum
+        : Math.max(maximum ?? 0, budget.geometryErrorBoundMetres),
+    null,
+  )
   const criticalTrustWarning = isCriticalTrackingTrustWarning(status.warning)
   const modeLabel = getTrackingModeLabel(status.mode, status.warning)
   const modeChipClassName =
@@ -70,13 +88,23 @@ export function TrackingStatusPanel() {
 
       {boundedBreadcrumbDeviceCount > 0 && snapshot.breadcrumbMetadata !== undefined ? (
         <p
-          className="mb-4 border-l-4 border-l-sky-400 bg-sky-400/10 px-3 py-2 text-xs font-medium leading-relaxed text-sky-100"
+          className={`mb-4 border-l-4 px-3 py-2 text-xs font-medium leading-relaxed ${
+            degradedBreadcrumbBudgets.length > 0
+              ? 'border-l-amber-400 bg-amber-400/10 text-amber-100'
+              : 'border-l-sky-400 bg-sky-400/10 text-sky-100'
+          }`}
           data-testid="breadcrumb-display-summary"
         >
           Trail display simplified: showing{' '}
           {snapshot.breadcrumbMetadata.totalRetained.toLocaleString()} of at least{' '}
           {snapshot.breadcrumbMetadata.totalObserved.toLocaleString()} known fixes across the
-          full route. Full mission history remains stored.
+          full route.{' '}
+          {degradedBreadcrumbBudgets.length === 0
+            ? 'Displayed route error is bounded to 25 metres.'
+            : hasUnknownBreadcrumbErrorBound || maximumBreadcrumbErrorBoundMetres === null
+              ? 'This route is too complex for a guaranteed display-error bound.'
+              : `Displayed route error may be up to ${Math.ceil(maximumBreadcrumbErrorBoundMetres)} metres for this route.`}{' '}
+          Full mission history remains stored.
         </p>
       ) : null}
 

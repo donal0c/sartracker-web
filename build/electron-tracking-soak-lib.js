@@ -220,9 +220,11 @@ export function buildTrackingSoakVerdict(input) {
     failureReasons.push('The required WebGL renderer backend was not directly attested.')
   }
   if (
-    Number.isFinite(input.maximumProcessTreeResidentBytes) &&
-    input.maximumProcessTreeResidentBytes > MAX_PROCESS_TREE_RESIDENT_BYTES
+    !Number.isFinite(input.maximumProcessTreeResidentBytes) ||
+    input.maximumProcessTreeResidentBytes <= 0
   ) {
+    failureReasons.push('Process-tree resident memory was not sampled.')
+  } else if (input.maximumProcessTreeResidentBytes > MAX_PROCESS_TREE_RESIDENT_BYTES) {
     failureReasons.push(
       `Process-tree resident memory exceeded the ${MAX_PROCESS_TREE_RESIDENT_BYTES}-byte budget: ${input.maximumProcessTreeResidentBytes}.`,
     )
@@ -707,6 +709,86 @@ export function createPositionTruthDigestAccumulator() {
       }
     },
   }
+}
+
+/** Parses macOS `ps` rows and returns RSS for only one root and its descendants. */
+export function parseDarwinProcessTreeResidentMemory(contents, rootPid) {
+  if (!Number.isInteger(rootPid) || rootPid <= 0) {
+    return null
+  }
+  const rows = String(contents)
+    .split(/\r?\n/u)
+    .flatMap((line) => {
+      const match = line.match(/^\s*(\d+)\s+(\d+)\s+(\d+)\s+(.*?)\s*$/u)
+      if (match === null) {
+        return []
+      }
+      const pid = Number(match[1])
+      const parentPid = Number(match[2])
+      const residentKib = Number(match[3])
+      if (
+        !Number.isInteger(pid) ||
+        !Number.isInteger(parentPid) ||
+        !Number.isFinite(residentKib) ||
+        residentKib < 0
+      ) {
+        return []
+      }
+      return [{
+        pid,
+        parentPid,
+        residentBytes: residentKib * 1_024,
+        command: match[4],
+      }]
+    })
+  const rowByPid = new Map(rows.map((row) => [row.pid, row]))
+  if (!rowByPid.has(rootPid)) {
+    return null
+  }
+  const childPidsByParent = new Map()
+  for (const row of rows) {
+    const children = childPidsByParent.get(row.parentPid) ?? []
+    children.push(row.pid)
+    childPidsByParent.set(row.parentPid, children)
+  }
+  const pending = [rootPid]
+  const visited = new Set()
+  const processes = []
+  while (pending.length > 0) {
+    const pid = pending.pop()
+    if (!Number.isInteger(pid) || visited.has(pid)) {
+      continue
+    }
+    visited.add(pid)
+    const row = rowByPid.get(pid)
+    if (row === undefined) {
+      continue
+    }
+    processes.push({
+      pid: row.pid,
+      parentPid: row.parentPid,
+      residentBytes: row.residentBytes,
+      kind: classifyDarwinProcessKind(row.command, row.pid === rootPid),
+    })
+    pending.push(...(childPidsByParent.get(pid) ?? []))
+  }
+  processes.sort((left, right) => left.pid - right.pid)
+  const totalResidentBytes = processes.reduce(
+    (total, process) => total + process.residentBytes,
+    0,
+  )
+  return totalResidentBytes > 0
+    ? { totalResidentBytes, processes }
+    : null
+}
+
+function classifyDarwinProcessKind(command, root) {
+  if (root) return 'main'
+  if (/--type=renderer(?:\s|$)/u.test(command)) return 'renderer'
+  if (/--type=gpu-process(?:\s|$)/u.test(command)) return 'gpu'
+  if (/--type=utility(?:\s|$)/u.test(command)) return 'utility'
+  if (/crashpad_handler/u.test(command)) return 'crashpad'
+  return 'other'
 }
 
 /**

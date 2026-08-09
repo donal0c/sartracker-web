@@ -5,7 +5,7 @@
 // still crosses the production network proxy, poller, runtime, IPC, SQLite,
 // autosave, diagnostics, restart, and support-export boundaries.
 
-import { spawn } from 'node:child_process'
+import { execFile, spawn } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { createReadStream } from 'node:fs'
 import {
@@ -36,6 +36,7 @@ import {
   measureOperatorAction,
   parseTrackingSoakArgs,
   parseTrackingSoakRuntimeLog,
+  parseDarwinProcessTreeResidentMemory,
   partitionOperatorClickAudit,
   readWebGlRendererInfoFromDocument,
 } from '../build/electron-tracking-soak-lib.js'
@@ -48,6 +49,8 @@ const require = createRequire(import.meta.url)
 const Database = require('better-sqlite3')
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const runtimeLogRelativePath = path.join('logs', 'runtime.log')
+const PROCESS_MEMORY_SAMPLE_INTERVAL_MS = 250
+const PROCESS_MEMORY_EVIDENCE_INTERVAL_MS = 5_000
 
 main().catch((error) => {
   console.error(`electron-tracking-soak: ${error instanceof Error ? error.message : String(error)}`)
@@ -265,11 +268,26 @@ async function main() {
         ),
       ],
     )
+    const maximumMemoryLaunch = launches.reduce(
+      (maximum, launch) =>
+        launch.processMemory.maximumProcessTreeResidentBytes >
+        maximum.processMemory.maximumProcessTreeResidentBytes
+          ? launch
+          : maximum,
+      launches[0],
+    )
     const processMemory = {
       samples: launches.reduce((sum, launch) => sum + launch.processMemory.samples, 0),
       maximumProcessTreeResidentBytes: Math.max(
         0,
         ...launches.map((launch) => launch.processMemory.maximumProcessTreeResidentBytes),
+      ),
+      maximumSample: maximumMemoryLaunch?.processMemory.maximumSample ?? null,
+      phaseSamples: launches.flatMap((launch) =>
+        launch.processMemory.evidenceSamples.map((sample) => ({
+          launchNumber: launch.number,
+          ...sample,
+        })),
       ),
     }
     const rendererCrashes = launches.reduce((sum, launch) => sum + launch.rendererCrashes, 0)
@@ -387,7 +405,7 @@ async function main() {
         rendererSampleCount: launch.rendererSampleCount ?? 0,
         mainHeartbeatErrors: launch.mainHeartbeatErrors,
         rendererCrashes: launch.rendererCrashes,
-        processMemory: launch.processMemory,
+        processMemory: createProcessMemoryReport(launch.processMemory),
         operatorClickAuditTail: launch.operatorClickAuditTail,
         exitCode: launch.appProcess.exitCode,
       })),
@@ -518,7 +536,14 @@ async function launchPackagedApp(options, userDataDir, number) {
       get rendererCrashes() {
         return rendererCrashes
       },
-      processMemory: { samples: 0, maximumProcessTreeResidentBytes: 0 },
+      processMemory: {
+        samples: 0,
+        maximumProcessTreeResidentBytes: 0,
+        maximumSample: null,
+        evidenceSamples: [],
+        lastSampleAtMs: 0,
+        lastEvidenceAtMs: 0,
+      },
       operatorClickAuditState: {
         initialized: false,
         lastSequence: 0,
@@ -1226,8 +1251,12 @@ async function waitForCheckpoint(input) {
     if (input.launch.rendererCrashes > 0) {
       throw new Error(`Electron renderer crashed during tracking checkpoint ${input.targetBatch}.`)
     }
-    await sampleProcessMemory(input.launch)
     const mockState = input.mockServer.snapshot()
+    await sampleProcessMemory(input.launch, {
+      phase: 'checkpoint-drain',
+      targetBatch: input.targetBatch,
+      completedBatch: mockState.completedBatches,
+    })
     const positionRows = await input.launch.page.evaluate(
       async ({ missionId }) =>
         window.sartrackerElectron?.missionStore.countPositions(missionId) ?? 0,
@@ -1263,7 +1292,7 @@ async function closeLaunch(launch, mainRoundTrips, rendererGaps) {
   if (launch.closed) return
   launch.closed = true
   await collectOperatorClickAuditTail(launch)
-  await sampleProcessMemory(launch)
+  await sampleProcessMemory(launch, { phase: 'launch-close' })
   await collectLaunchResponsiveness(launch, mainRoundTrips, rendererGaps)
   launch.mainInspector.close()
   await launch.browser.close().catch(() => undefined)
@@ -1326,21 +1355,56 @@ async function collectLaunchResponsiveness(launch, mainRoundTrips, rendererGaps)
   rendererGaps.push(...launchRendererGaps)
 }
 
-async function sampleProcessMemory(launch) {
-  const residentBytes = await readProcessTreeResidentBytes(launch.appProcess.pid)
-  if (residentBytes === null) return
+async function sampleProcessMemory(launch, context = {}) {
+  const sampledAtMs = Date.now()
+  if (
+    sampledAtMs - launch.processMemory.lastSampleAtMs <
+    PROCESS_MEMORY_SAMPLE_INTERVAL_MS
+  ) {
+    return
+  }
+  launch.processMemory.lastSampleAtMs = sampledAtMs
+  const memory = await readProcessTreeResidentMemory(launch.appProcess.pid)
+  if (memory === null) return
   launch.processMemory.samples += 1
-  launch.processMemory.maximumProcessTreeResidentBytes = Math.max(
-    launch.processMemory.maximumProcessTreeResidentBytes,
-    residentBytes,
-  )
+  const sample = {
+    observedAt: new Date(sampledAtMs).toISOString(),
+    phase: context.phase ?? 'tracking',
+    targetBatch: context.targetBatch ?? null,
+    completedBatch: context.completedBatch ?? null,
+    totalResidentBytes: memory.totalResidentBytes,
+    processes: memory.processes,
+  }
+  if (
+    memory.totalResidentBytes >
+    launch.processMemory.maximumProcessTreeResidentBytes
+  ) {
+    launch.processMemory.maximumProcessTreeResidentBytes =
+      memory.totalResidentBytes
+    launch.processMemory.maximumSample = sample
+  }
+  if (
+    launch.processMemory.evidenceSamples.length === 0 ||
+    sampledAtMs - launch.processMemory.lastEvidenceAtMs >=
+      PROCESS_MEMORY_EVIDENCE_INTERVAL_MS
+  ) {
+    launch.processMemory.evidenceSamples.push(sample)
+    launch.processMemory.lastEvidenceAtMs = sampledAtMs
+  }
 }
 
-async function readProcessTreeResidentBytes(rootPid) {
-  if (!Number.isInteger(rootPid) || process.platform !== 'linux') return null
+async function readProcessTreeResidentMemory(rootPid) {
+  if (!Number.isInteger(rootPid)) return null
+  if (process.platform === 'darwin') {
+    const processList = await readDarwinProcessList().catch(() => null)
+    return processList === null
+      ? null
+      : parseDarwinProcessTreeResidentMemory(processList, rootPid)
+  }
+  if (process.platform !== 'linux') return null
   const pending = [rootPid]
   const visited = new Set()
-  let total = 0
+  const processes = []
   while (pending.length > 0) {
     const pid = pending.pop()
     if (!Number.isInteger(pid) || visited.has(pid)) continue
@@ -1350,12 +1414,52 @@ async function readProcessTreeResidentBytes(rootPid) {
       readFile(`/proc/${pid}/task/${pid}/children`, 'utf8').catch(() => ''),
     ])
     const residentMatch = status.match(/^VmRSS:\s+(\d+)\s+kB$/mu)
-    if (residentMatch !== null) total += Number(residentMatch[1]) * 1024
+    if (residentMatch !== null) {
+      processes.push({
+        pid,
+        parentPid: null,
+        residentBytes: Number(residentMatch[1]) * 1_024,
+        kind: pid === rootPid ? 'main' : 'other',
+      })
+    }
     for (const child of children.trim().split(/\s+/u)) {
       if (child !== '') pending.push(Number(child))
     }
   }
-  return total > 0 ? total : null
+  const totalResidentBytes = processes.reduce(
+    (total, entry) => total + entry.residentBytes,
+    0,
+  )
+  return totalResidentBytes > 0
+    ? { totalResidentBytes, processes }
+    : null
+}
+
+async function readDarwinProcessList() {
+  return new Promise((resolve, reject) => {
+    execFile(
+      '/bin/ps',
+      ['-axo', 'pid=,ppid=,rss=,command='],
+      { encoding: 'utf8', maxBuffer: 4 * 1024 * 1024 },
+      (error, stdout) => {
+        if (error !== null) {
+          reject(error)
+          return
+        }
+        resolve(stdout)
+      },
+    )
+  })
+}
+
+function createProcessMemoryReport(processMemory) {
+  return {
+    samples: processMemory.samples,
+    maximumProcessTreeResidentBytes:
+      processMemory.maximumProcessTreeResidentBytes,
+    maximumSample: processMemory.maximumSample,
+    evidenceSamples: processMemory.evidenceSamples,
+  }
 }
 
 function inspectDatabase(databasePath, missionId) {

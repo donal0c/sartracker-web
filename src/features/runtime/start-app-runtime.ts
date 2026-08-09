@@ -40,6 +40,7 @@ import {
   type TrackingRuntimeMissionStore,
 } from '../tracking/start-tracking-runtime'
 import { DEFAULT_DEVICE_STALE_THRESHOLD_MS } from '../tracking/tracking-snapshot-health'
+import { useActiveMissionDevicesStore } from '../tracking/active-mission-devices-store'
 import type { AppRuntimeController } from './app-runtime-controller'
 import {
   createManagedRuntimeServices,
@@ -79,6 +80,7 @@ type StartAppRuntimeDependencies = {
   readonly startHelicopterRuntime: typeof startHelicopterRuntime
   readonly startGpxRuntime: typeof startGpxRuntime
   readonly startTrackingRuntime: typeof startTrackingRuntime
+  readonly createPollingManager: typeof createPollingManager
   readonly startCoreFeatureRuntimes: typeof startCoreFeatureRuntimes
 }
 
@@ -97,6 +99,7 @@ const DEFAULT_DEPENDENCIES: StartAppRuntimeDependencies = {
   startHelicopterRuntime,
   startGpxRuntime,
   startTrackingRuntime,
+  createPollingManager,
   startCoreFeatureRuntimes,
 }
 
@@ -202,7 +205,7 @@ export async function startAppRuntime(
       createClient:
         runtimeKind === 'electron' ? createElectronTraccarClient : createTauriTraccarClient,
       createPoller: (client, hooks) =>
-        createPollingManager(client as TrackingPollerClient, {
+        resolvedDependencies.createPollingManager(client as TrackingPollerClient, {
           intervalMs: runtimeSettings.trackingPollIntervalMs,
           ...(runtimeSettings.trackingMinimumPollIntervalMs === undefined
             ? {}
@@ -218,8 +221,21 @@ export async function startAppRuntime(
             const mission = useMissionStore.getState().currentMission
             return mission === null ? null : new Date(mission.start_time)
           },
+          getBreadcrumbDeviceIds: () => {
+            const missionId = useMissionStore.getState().currentMission?.id ?? null
+            return useActiveMissionDevicesStore.getState().getActiveDeviceIds(missionId)
+          },
           getInitialBreadcrumbs: hooks.getInitialBreadcrumbs,
           getInitialBreadcrumbTotals: hooks.getInitialBreadcrumbTotals,
+          getInitialBreadcrumbSelectionMetadata:
+            hooks.getInitialBreadcrumbSelectionMetadata,
+          getInitialHistoryCheckpoints: hooks.getInitialHistoryCheckpoints,
+          ...(hooks.getCanonicalBreadcrumbs === undefined
+            ? {}
+            : { getCanonicalBreadcrumbs: hooks.getCanonicalBreadcrumbs }),
+          ...(hooks.persistHistoryChunk === undefined
+            ? {}
+            : { persistHistoryChunk: hooks.persistHistoryChunk }),
           onSnapshot: hooks.onSnapshot,
           onStatusChange: hooks.onStatusChange,
           onPollDiagnostic: hooks.onPollDiagnostic,

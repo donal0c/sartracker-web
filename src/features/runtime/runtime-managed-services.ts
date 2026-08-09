@@ -61,6 +61,20 @@ type CreateManagedRuntimeServicesDependencies = {
         readonly onStatusChange: (status: import('../tracking/tracking-types').TrackingConnectionStatus) => void
         readonly getInitialBreadcrumbs: () => Promise<readonly import('../tracking/tracking-types').NormalizedTrackingPosition[]>
         readonly getInitialBreadcrumbTotals: () => Promise<Readonly<Record<string, number>>>
+        readonly getInitialBreadcrumbSelectionMetadata: () => Promise<Readonly<Record<string, {
+          readonly geometryErrorBoundMetres: number | null
+          readonly targetGeometryErrorSatisfied: boolean
+        }>>>
+        readonly getInitialHistoryCheckpoints: () => Promise<Readonly<Record<string, {
+          readonly historyFrom: string
+          readonly reconciledUntil: string
+        }>>>
+        readonly getCanonicalBreadcrumbs?: (
+          expectedMissionId: string,
+        ) => Promise<import('../tracking/polling-manager').CanonicalBreadcrumbSeed>
+        readonly persistHistoryChunk?: (
+          input: import('../tracking/polling-manager').TrackingHistoryChunkPersistenceInput,
+        ) => Promise<import('../tracking/polling-manager').TrackingHistoryChunkPersistenceResult>
         readonly onPollDiagnostic: (entry: TrackingPollLedgerEntry) => void
       },
     ) => {
@@ -91,6 +105,20 @@ type CreateManagedRuntimeServicesDependencies = {
       readonly onStatusChange: (status: import('../tracking/tracking-types').TrackingConnectionStatus) => void
       readonly getInitialBreadcrumbs: () => Promise<readonly import('../tracking/tracking-types').NormalizedTrackingPosition[]>
       readonly getInitialBreadcrumbTotals: () => Promise<Readonly<Record<string, number>>>
+      readonly getInitialBreadcrumbSelectionMetadata: () => Promise<Readonly<Record<string, {
+        readonly geometryErrorBoundMetres: number | null
+        readonly targetGeometryErrorSatisfied: boolean
+      }>>>
+      readonly getInitialHistoryCheckpoints: () => Promise<Readonly<Record<string, {
+        readonly historyFrom: string
+        readonly reconciledUntil: string
+      }>>>
+      readonly getCanonicalBreadcrumbs?: (
+        expectedMissionId: string,
+      ) => Promise<import('../tracking/polling-manager').CanonicalBreadcrumbSeed>
+      readonly persistHistoryChunk?: (
+        input: import('../tracking/polling-manager').TrackingHistoryChunkPersistenceInput,
+      ) => Promise<import('../tracking/polling-manager').TrackingHistoryChunkPersistenceResult>
       readonly onPollDiagnostic: (entry: TrackingPollLedgerEntry) => void
     },
   ) => {

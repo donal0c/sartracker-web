@@ -113,6 +113,44 @@ describe('tracking poll ledger', () => {
     expect(serialized).not.toContain('latitude')
   })
 
+  it('retains bounded breadcrumb reconciliation progress without device identity', () => {
+    recordTrackingPollLedgerEntry({
+      ts: '2026-07-12T09:52:01.431Z',
+      kind: 'breadcrumb_reconciliation',
+      outcome: 'progress',
+      reconciliationPhase: 'initial',
+      targetFrom: '2026-07-10T21:52:01.431Z',
+      targetTo: '2026-07-12T09:52:01.431Z',
+      totalDeviceCount: 33,
+      completedDeviceCount: 8,
+      totalChunkCount: 594,
+      completedChunkCount: 144,
+      pendingDeviceCount: 25,
+      failedDeviceCount: 1,
+      elapsedMs: 12_345,
+      deviceId: 'sensitive-device-id',
+      deviceName: 'Sensitive tracker name',
+    } as Parameters<typeof recordTrackingPollLedgerEntry>[0])
+
+    const [entry] = readTrackingPollLedger()
+    expect(entry).toEqual({
+      ts: '2026-07-12T09:52:01.431Z',
+      kind: 'breadcrumb_reconciliation',
+      outcome: 'progress',
+      reconciliationPhase: 'initial',
+      targetFrom: '2026-07-10T21:52:01.431Z',
+      targetTo: '2026-07-12T09:52:01.431Z',
+      totalDeviceCount: 33,
+      completedDeviceCount: 8,
+      totalChunkCount: 594,
+      completedChunkCount: 144,
+      pendingDeviceCount: 25,
+      failedDeviceCount: 1,
+      elapsedMs: 12_345,
+    })
+    expect(JSON.stringify(entry)).not.toMatch(/sensitive|deviceId|deviceName/u)
+  })
+
   it('reports when an incident falls outside retained ledger coverage', () => {
     recordTrackingPollLedgerEntry({
       ts: '2026-07-12T09:52:01.431Z',

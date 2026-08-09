@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import devicesFixture from '../fixtures/traccar-devices.json'
 import positionsFixture from '../fixtures/traccar-positions.json'
@@ -7,7 +7,12 @@ import {
   normalizeTraccarPosition,
 } from '../../src/features/tracking/traccar-normalization'
 import type { TrackingConnectionStatus, TrackingSnapshot } from '../../src/features/tracking/tracking-types'
-import { startTrackingRuntime } from '../../src/features/tracking/start-tracking-runtime'
+import {
+  createIncomingPositionCacheKeys,
+  startTrackingRuntime,
+} from '../../src/features/tracking/start-tracking-runtime'
+import { useMissionStore } from '../../src/features/mission/mission-store'
+import { useActiveMissionDevicesStore } from '../../src/features/tracking/active-mission-devices-store'
 
 const SNAPSHOT: TrackingSnapshot = {
   devices: devicesFixture.map((device) => normalizeTraccarDevice(device)),
@@ -21,7 +26,41 @@ const CACHED_SNAPSHOT: TrackingSnapshot = {
   breadcrumbs: positionsFixture.map((position) => normalizeTraccarPosition(position, 'cache')),
 }
 
+function createDeferred<T>(): {
+  readonly promise: Promise<T>
+  readonly resolve: (value: T) => void
+} {
+  let resolvePromise: (value: T) => void = () => undefined
+  const promise = new Promise<T>((resolve) => {
+    resolvePromise = resolve
+  })
+  return { promise, resolve: resolvePromise }
+}
+
 describe('startTrackingRuntime', () => {
+  afterEach(() => {
+    useMissionStore.setState(useMissionStore.getInitialState())
+    useActiveMissionDevicesStore.setState(useActiveMissionDevicesStore.getInitialState())
+  })
+
+  it('keeps persistence cache cardinality independent of sourced tracking history volume', () => {
+    const retainedKeys = new Set<string>()
+    for (let index = 0; index < 250_000; index += 1) {
+      for (const key of createIncomingPositionCacheKeys({
+        ...SNAPSHOT.positions[0]!,
+        id: `source-${index}`,
+      })) {
+        retainedKeys.add(key)
+      }
+    }
+
+    expect(retainedKeys.size).toBe(0)
+    expect(createIncomingPositionCacheKeys({
+      ...SNAPSHOT.positions[0]!,
+      id: '',
+    })).toHaveLength(1)
+  })
+
   it('does not start tracking when the runtime config is missing', async () => {
     const applySnapshot = vi.fn()
     const applyStatus = vi.fn()
@@ -76,6 +115,51 @@ describe('startTrackingRuntime', () => {
         warning: expect.stringMatching(/not configured/i),
       }),
     )
+  })
+
+  it('wakes tracking immediately when a mission becomes active and unsubscribes on stop', async () => {
+    useMissionStore.setState({ phase: 'idle', currentMission: null })
+    const requestPollNow = vi.fn()
+    const stopPoller = vi.fn()
+    const stop = await startTrackingRuntime({
+      config: { baseUrl: 'http://test:8082' },
+      createClient: vi.fn().mockReturnValue({}),
+      createPoller: vi.fn().mockReturnValue({
+        start: vi.fn(),
+        stop: stopPoller,
+        requestPollNow,
+      }),
+      cache: { read: vi.fn().mockResolvedValue(null), write: vi.fn() },
+      missionStore: createMissionStoreStub(),
+      applySnapshot: vi.fn(),
+      applyStatus: vi.fn(),
+    })
+
+    useMissionStore.setState({
+      phase: 'active',
+      currentMission: {
+        id: 'mission-1',
+        name: 'Mission 1',
+        status: 'active',
+        start_time: '2026-08-09T12:00:00.000Z',
+        pause_time: null,
+        finish_time: null,
+        paused_seconds: 0,
+        notes: null,
+        schema_version: 1,
+      },
+    })
+    expect(requestPollNow).toHaveBeenCalledTimes(1)
+
+    useActiveMissionDevicesStore.getState().setDeviceActive('mission-1', '7', true)
+    expect(requestPollNow).toHaveBeenCalledTimes(2)
+
+    stop()
+    useMissionStore.setState({ phase: 'paused' })
+    useMissionStore.setState({ phase: 'active' })
+    useActiveMissionDevicesStore.getState().setDeviceActive('mission-1', '8', true)
+    expect(requestPollNow).toHaveBeenCalledTimes(2)
+    expect(stopPoller).toHaveBeenCalledTimes(1)
   })
 
   it('wires request attempts and poll cycles into the bounded tracking ledger [DON-229]', async () => {
@@ -436,6 +520,51 @@ describe('startTrackingRuntime', () => {
     expect(addPositionsBulk.mock.calls[0]![0].positions).toHaveLength(2)
   })
 
+  it('uses acknowledgement-only tracking persistence instead of returning changed rows', async () => {
+    const persistTrackingPositionsBulk = vi.fn().mockResolvedValue({
+      changedPositionCount: SNAPSHOT.positions.length,
+      insertedPositionCount: SNAPSHOT.positions.length,
+      skippedAmbiguousLegacyAdoptionCount: 0,
+    })
+    const addPositionsBulk = vi.fn()
+    let pollerHooks:
+      | { onSnapshot: (snapshot: TrackingSnapshot) => void | Promise<void> }
+      | undefined
+
+    await startTrackingRuntime({
+      config: { baseUrl: 'http://test:8082' },
+      createClient: vi.fn().mockReturnValue({}),
+      createPoller: vi.fn().mockImplementation((_client, hooks) => {
+        pollerHooks = hooks
+        return { start: vi.fn(), stop: vi.fn() }
+      }),
+      cache: { read: vi.fn().mockResolvedValue(null), write: vi.fn() },
+      missionStore: createMissionStoreStub({
+        getActiveMission: vi.fn().mockResolvedValue({ id: 'mission-1' }),
+        persistTrackingPositionsBulk,
+        addPositionsBulk,
+      }),
+      applySnapshot: vi.fn(),
+      applyStatus: vi.fn(),
+      writeCache: false,
+    })
+
+    await pollerHooks?.onSnapshot({
+      ...SNAPSHOT,
+      breadcrumbs: [],
+      rawBreadcrumbsForPersistence: [],
+    })
+
+    expect(persistTrackingPositionsBulk).toHaveBeenCalledWith({
+      mission_id: 'mission-1',
+      positions: expect.arrayContaining([
+        expect.objectContaining({ source_position_id: SNAPSHOT.positions[0]!.id }),
+      ]),
+      checkpoints: [],
+    })
+    expect(addPositionsBulk).not.toHaveBeenCalled()
+  })
+
   it('forwards a sourced fix to storage when only its exact legacy fallback is cached [DON-260]', async () => {
     const addPositionsBulk = vi.fn().mockResolvedValue([])
     let pollerHooks:
@@ -714,6 +843,8 @@ describe('startTrackingRuntime', () => {
         retainedBreadcrumbCount: 40,
         observedBreadcrumbCount: 100,
         truncatedDeviceCount: 1,
+        degradedGeometryDeviceCount: 0,
+        maximumGeometryErrorBoundMetres: 0,
       },
     })
   })
@@ -928,6 +1059,519 @@ describe('startTrackingRuntime', () => {
     ])
   })
 
+  it('provides persisted initial-history checkpoints to the poller', async () => {
+    let pollerHooks:
+      | {
+          getInitialHistoryCheckpoints: () => Promise<Readonly<Record<string, {
+            readonly historyFrom: string
+            readonly reconciledUntil: string
+          }>>>
+        }
+      | undefined
+    const listTrackingHistoryCheckpoints = vi.fn().mockResolvedValue([
+      {
+        mission_id: 'mission-1',
+        device_id: '1',
+        history_from: '2026-04-06T00:00:00.000Z',
+        reconciled_until: '2026-04-06T04:00:00.000Z',
+      },
+    ])
+
+    await startTrackingRuntime({
+      config: { baseUrl: 'http://test:8082' },
+      createClient: vi.fn().mockReturnValue({}),
+      createPoller: vi.fn().mockImplementation((_client, hooks) => {
+        pollerHooks = hooks
+        return { start: vi.fn(), stop: vi.fn() }
+      }),
+      cache: { read: vi.fn().mockResolvedValue(null), write: vi.fn() },
+      missionStore: createMissionStoreStub({
+        getActiveMission: vi.fn().mockResolvedValue({ id: 'mission-1' }),
+        listTrackingHistoryCheckpoints,
+      }),
+      applySnapshot: vi.fn(),
+      applyStatus: vi.fn(),
+    })
+
+    await expect(pollerHooks?.getInitialHistoryCheckpoints()).resolves.toEqual({
+      '1': {
+        historyFrom: '2026-04-06T00:00:00.000Z',
+        reconciledUntil: '2026-04-06T04:00:00.000Z',
+      },
+    })
+    expect(listTrackingHistoryCheckpoints).toHaveBeenCalledWith('mission-1')
+  })
+
+  it('reloads canonical breadcrumbs from mission storage after catch-up', async () => {
+    let pollerHooks:
+      | {
+          getCanonicalBreadcrumbs: (expectedMissionId: string) => Promise<{
+            readonly positions: readonly TrackingSnapshot['breadcrumbs'][number][]
+            readonly totalObservedByDevice: Readonly<Record<string, number>>
+          }>
+        }
+      | undefined
+    const listBreadcrumbPositions = vi.fn().mockResolvedValue({
+      positions: [{
+        source_position_id: 'source-1',
+        device_id: '1',
+        lat: 52.01,
+        lon: -9.01,
+        timestamp: '2026-04-06T02:00:00.000Z',
+        data_origin: 'live',
+      }],
+      deviceTotals: [{ device_id: '1', total: 7_200 }],
+      deviceSelections: [{
+        device_id: '1',
+        geometryErrorBoundMetres: 20,
+        targetGeometryErrorSatisfied: true,
+      }],
+    })
+
+    await startTrackingRuntime({
+      config: { baseUrl: 'http://test:8082' },
+      createClient: vi.fn().mockReturnValue({}),
+      createPoller: vi.fn().mockImplementation((_client, hooks) => {
+        pollerHooks = hooks
+        return { start: vi.fn(), stop: vi.fn() }
+      }),
+      cache: { read: vi.fn().mockResolvedValue(null), write: vi.fn() },
+      missionStore: createMissionStoreStub({
+        getActiveMission: vi.fn().mockResolvedValue({ id: 'mission-1' }),
+        listBreadcrumbPositions,
+      }),
+      applySnapshot: vi.fn(),
+      applyStatus: vi.fn(),
+    })
+
+    await expect(
+      pollerHooks?.getCanonicalBreadcrumbs('mission-1'),
+    ).resolves.toEqual(expect.objectContaining({
+      positions: [expect.objectContaining({ id: 'source-1' })],
+      totalObservedByDevice: { '1': 7_200 },
+      selectionMetadataByDevice: {
+        '1': {
+          geometryErrorBoundMetres: 20,
+          targetGeometryErrorSatisfied: true,
+        },
+      },
+    }))
+    expect(listBreadcrumbPositions).toHaveBeenCalledWith(
+      'mission-1',
+      5_000,
+      expect.stringMatching(/^tracking-breadcrumb-[a-f0-9]{32}-\d+-1$/u),
+    )
+  })
+
+  it('cancels and drains stale canonical storage work before starting the replacement', async () => {
+    let pollerHooks:
+      | {
+          getCanonicalBreadcrumbs: (
+            expectedMissionId: string,
+            signal?: AbortSignal,
+          ) => Promise<unknown>
+        }
+      | undefined
+    let rejectFirstQuery: (error: Error) => void = () => undefined
+    const firstQuery = new Promise((_resolve, reject) => {
+      rejectFirstQuery = reject
+    })
+    const listBreadcrumbPositions = vi.fn()
+      .mockReturnValueOnce(firstQuery)
+      .mockResolvedValue({ positions: [], deviceTotals: [], deviceSelections: [] })
+    const cancelBreadcrumbQuery = vi.fn().mockImplementation(async () => {
+      rejectFirstQuery(new Error('Error invoking remote method: worker cancelled'))
+      return true
+    })
+    const activeMissionId = { current: 'mission-a' }
+
+    await startTrackingRuntime({
+      config: { baseUrl: 'http://test:8082' },
+      createClient: vi.fn().mockReturnValue({}),
+      createPoller: vi.fn().mockImplementation((_client, hooks) => {
+        pollerHooks = hooks
+        return { start: vi.fn(), stop: vi.fn() }
+      }),
+      cache: { read: vi.fn().mockResolvedValue(null), write: vi.fn() },
+      missionStore: createMissionStoreStub({
+        getActiveMission: vi.fn().mockImplementation(
+          () => Promise.resolve({ id: activeMissionId.current }),
+        ),
+        listBreadcrumbPositions,
+        cancelBreadcrumbQuery,
+      }),
+      applySnapshot: vi.fn(),
+      applyStatus: vi.fn(),
+    })
+
+    const missionAController = new AbortController()
+    const missionAQuery = pollerHooks?.getCanonicalBreadcrumbs(
+      'mission-a',
+      missionAController.signal,
+    )
+    await vi.waitFor(() => expect(listBreadcrumbPositions).toHaveBeenCalledOnce())
+    missionAController.abort()
+    activeMissionId.current = 'mission-b'
+    const missionBQuery = pollerHooks?.getCanonicalBreadcrumbs(
+      'mission-b',
+      new AbortController().signal,
+    )
+
+    const requestId = listBreadcrumbPositions.mock.calls[0]?.[2]
+    expect(requestId).toMatch(/^tracking-breadcrumb-[a-f0-9]{32}-\d+-1$/u)
+    expect(listBreadcrumbPositions).toHaveBeenCalledWith('mission-a', 5_000, requestId)
+    expect(cancelBreadcrumbQuery).toHaveBeenCalledWith(requestId)
+    expect(listBreadcrumbPositions).toHaveBeenCalledTimes(1)
+
+    await expect(missionAQuery).rejects.toMatchObject({ name: 'AbortError' })
+    await expect(missionBQuery).resolves.toEqual(
+      expect.objectContaining({ positions: [] }),
+    )
+    expect(listBreadcrumbPositions).toHaveBeenCalledTimes(2)
+  })
+
+  it('cancels and drains a stale restart seed before loading the replacement mission', async () => {
+    let pollerHooks:
+      | {
+          getInitialBreadcrumbs: (
+            signal?: AbortSignal,
+          ) => Promise<readonly TrackingSnapshot['breadcrumbs'][number][]>
+        }
+      | undefined
+    let rejectFirstQuery: (error: Error) => void = () => undefined
+    const firstQuery = new Promise((_resolve, reject) => {
+      rejectFirstQuery = reject
+    })
+    const listBreadcrumbPositions = vi.fn()
+      .mockReturnValueOnce(firstQuery)
+      .mockResolvedValue({ positions: [], deviceTotals: [], deviceSelections: [] })
+    const cancelBreadcrumbQuery = vi.fn().mockImplementation(async () => {
+      rejectFirstQuery(new Error('Error invoking remote method: worker cancelled'))
+      return true
+    })
+    const activeMissionId = { current: 'mission-a' }
+
+    await startTrackingRuntime({
+      config: { baseUrl: 'http://test:8082' },
+      createClient: vi.fn().mockReturnValue({}),
+      createPoller: vi.fn().mockImplementation((_client, hooks) => {
+        pollerHooks = hooks
+        return { start: vi.fn(), stop: vi.fn() }
+      }),
+      cache: { read: vi.fn().mockResolvedValue(null), write: vi.fn() },
+      missionStore: createMissionStoreStub({
+        getActiveMission: vi.fn().mockImplementation(
+          () => Promise.resolve({ id: activeMissionId.current }),
+        ),
+        listBreadcrumbPositions,
+        cancelBreadcrumbQuery,
+      }),
+      applySnapshot: vi.fn(),
+      applyStatus: vi.fn(),
+    })
+
+    const missionAController = new AbortController()
+    const missionASeed = pollerHooks?.getInitialBreadcrumbs(
+      missionAController.signal,
+    )
+    await vi.waitFor(() => expect(listBreadcrumbPositions).toHaveBeenCalledOnce())
+    missionAController.abort()
+    activeMissionId.current = 'mission-b'
+    const missionBSeed = pollerHooks?.getInitialBreadcrumbs(
+      new AbortController().signal,
+    )
+
+    const requestId = listBreadcrumbPositions.mock.calls[0]?.[2]
+    expect(requestId).toMatch(/^tracking-breadcrumb-[a-f0-9]{32}-\d+-1$/u)
+    expect(cancelBreadcrumbQuery).toHaveBeenCalledWith(requestId)
+    expect(listBreadcrumbPositions).toHaveBeenCalledTimes(1)
+    await expect(missionASeed).rejects.toMatchObject({ name: 'AbortError' })
+    await expect(missionBSeed).resolves.toEqual([])
+    expect(listBreadcrumbPositions).toHaveBeenCalledTimes(2)
+  })
+
+  it('does not canonicalize from a fallback store that only retains a capped history window', async () => {
+    let pollerHooks:
+      | {
+          getCanonicalBreadcrumbs?: (expectedMissionId: string) => Promise<unknown>
+        }
+      | undefined
+
+    await startTrackingRuntime({
+      config: { baseUrl: 'http://test:8082' },
+      createClient: vi.fn().mockReturnValue({}),
+      createPoller: vi.fn().mockImplementation((_client, hooks) => {
+        pollerHooks = hooks
+        return { start: vi.fn(), stop: vi.fn() }
+      }),
+      cache: { read: vi.fn().mockResolvedValue(null), write: vi.fn() },
+      missionStore: createMissionStoreStub({
+        getActiveMission: vi.fn().mockResolvedValue({ id: 'mission-1' }),
+        listRecentPositions: vi.fn().mockResolvedValue([]),
+      }),
+      applySnapshot: vi.fn(),
+      applyStatus: vi.fn(),
+    })
+
+    expect(pollerHooks?.getCanonicalBreadcrumbs).toBeUndefined()
+  })
+
+  it('atomically persists an empty initial-history chunk before acknowledging it', async () => {
+    let pollerHooks:
+      | {
+          persistHistoryChunk: (input: {
+            readonly phase: 'initial' | 'anti_entropy'
+            readonly expectedMissionId: string | null
+            readonly deviceId: string
+            readonly historyFrom: string
+            readonly reconciledUntil: string
+            readonly positions: readonly TrackingSnapshot['breadcrumbs'][number][]
+          }) => Promise<void>
+        }
+      | undefined
+    const persistTrackingHistoryBatch = vi.fn().mockResolvedValue(undefined)
+
+    await startTrackingRuntime({
+      config: { baseUrl: 'http://test:8082' },
+      createClient: vi.fn().mockReturnValue({}),
+      createPoller: vi.fn().mockImplementation((_client, hooks) => {
+        pollerHooks = hooks
+        return { start: vi.fn(), stop: vi.fn() }
+      }),
+      cache: { read: vi.fn().mockResolvedValue(null), write: vi.fn() },
+      missionStore: createMissionStoreStub({
+        getActiveMission: vi.fn().mockResolvedValue({ id: 'mission-1' }),
+        persistTrackingHistoryBatch,
+      }),
+      applySnapshot: vi.fn(),
+      applyStatus: vi.fn(),
+    })
+
+    await expect(pollerHooks?.persistHistoryChunk({
+      phase: 'initial',
+      expectedMissionId: 'mission-1',
+      deviceId: '1',
+      historyFrom: '2026-04-06T00:00:00.000Z',
+      reconciledUntil: '2026-04-06T02:00:00.000Z',
+      positions: [],
+    })).resolves.toEqual({ changed: false })
+
+    expect(persistTrackingHistoryBatch).toHaveBeenCalledWith({
+      mission_id: 'mission-1',
+      positions: [],
+      checkpoints: [{
+        device_id: '1',
+        history_from: '2026-04-06T00:00:00.000Z',
+        reconciled_until: '2026-04-06T02:00:00.000Z',
+      }],
+    })
+  })
+
+  it('uses the acknowledgement-only tracking contract for atomic history checkpoints', async () => {
+    let pollerHooks:
+      | {
+          persistHistoryChunk: (input: {
+            readonly phase: 'initial' | 'anti_entropy'
+            readonly expectedMissionId: string | null
+            readonly deviceId: string
+            readonly historyFrom: string
+            readonly reconciledUntil: string
+            readonly positions: readonly TrackingSnapshot['breadcrumbs'][number][]
+          }) => Promise<{ readonly changed: boolean }>
+        }
+      | undefined
+    const persistTrackingPositionsBulk = vi.fn().mockResolvedValue({
+      changedPositionCount: 1,
+      insertedPositionCount: 1,
+      skippedAmbiguousLegacyAdoptionCount: 0,
+    })
+    const persistTrackingHistoryBatch = vi.fn()
+
+    await startTrackingRuntime({
+      config: { baseUrl: 'http://test:8082' },
+      createClient: vi.fn().mockReturnValue({}),
+      createPoller: vi.fn().mockImplementation((_client, hooks) => {
+        pollerHooks = hooks
+        return { start: vi.fn(), stop: vi.fn() }
+      }),
+      cache: { read: vi.fn().mockResolvedValue(null), write: vi.fn() },
+      missionStore: createMissionStoreStub({
+        getActiveMission: vi.fn().mockResolvedValue({ id: 'mission-1' }),
+        persistTrackingPositionsBulk,
+        persistTrackingHistoryBatch,
+      }),
+      applySnapshot: vi.fn(),
+      applyStatus: vi.fn(),
+    })
+
+    const position = SNAPSHOT.breadcrumbs[0]!
+    await expect(pollerHooks?.persistHistoryChunk({
+      phase: 'initial',
+      expectedMissionId: 'mission-1',
+      deviceId: position.device_id,
+      historyFrom: '2026-04-06T00:00:00.000Z',
+      reconciledUntil: '2026-04-06T02:00:00.000Z',
+      positions: [position],
+    })).resolves.toEqual({ changed: true })
+
+    expect(persistTrackingPositionsBulk).toHaveBeenCalledWith({
+      mission_id: 'mission-1',
+      positions: [expect.objectContaining({ source_position_id: position.id })],
+      checkpoints: [{
+        device_id: position.device_id,
+        history_from: '2026-04-06T00:00:00.000Z',
+        reconciled_until: '2026-04-06T02:00:00.000Z',
+      }],
+    })
+    expect(persistTrackingHistoryBatch).not.toHaveBeenCalled()
+  })
+
+  it('does not re-write anti-entropy rows after acknowledgement-only persistence', async () => {
+    let pollerHooks:
+      | {
+          persistHistoryChunk: (input: {
+            readonly phase: 'initial' | 'anti_entropy'
+            readonly expectedMissionId: string | null
+            readonly deviceId: string
+            readonly historyFrom: string
+            readonly reconciledUntil: string
+            readonly positions: readonly TrackingSnapshot['breadcrumbs'][number][]
+          }) => Promise<{ readonly changed: boolean }>
+        }
+      | undefined
+    const persistTrackingPositionsBulk = vi.fn().mockResolvedValue({
+      changedPositionCount: 1,
+      insertedPositionCount: 0,
+      skippedAmbiguousLegacyAdoptionCount: 0,
+    })
+    const addPosition = vi.fn()
+
+    await startTrackingRuntime({
+      config: { baseUrl: 'http://test:8082' },
+      createClient: vi.fn().mockReturnValue({}),
+      createPoller: vi.fn().mockImplementation((_client, hooks) => {
+        pollerHooks = hooks
+        return { start: vi.fn(), stop: vi.fn() }
+      }),
+      cache: { read: vi.fn().mockResolvedValue(null), write: vi.fn() },
+      missionStore: createMissionStoreStub({
+        getActiveMission: vi.fn().mockResolvedValue({ id: 'mission-1' }),
+        persistTrackingPositionsBulk,
+        addPosition,
+      }),
+      applySnapshot: vi.fn(),
+      applyStatus: vi.fn(),
+    })
+
+    const position = SNAPSHOT.breadcrumbs[0]!
+    await expect(pollerHooks?.persistHistoryChunk({
+      phase: 'anti_entropy',
+      expectedMissionId: 'mission-1',
+      deviceId: position.device_id,
+      historyFrom: '2026-04-06T00:00:00.000Z',
+      reconciledUntil: '2026-04-06T02:00:00.000Z',
+      positions: [position],
+    })).resolves.toEqual({ changed: true })
+
+    expect(persistTrackingPositionsBulk).toHaveBeenCalledOnce()
+    expect(addPosition).not.toHaveBeenCalled()
+  })
+
+  it('acknowledges a history chunk only after fallback position persistence completes', async () => {
+    let pollerHooks:
+      | {
+          persistHistoryChunk: (input: {
+            readonly phase: 'initial' | 'anti_entropy'
+            readonly expectedMissionId: string | null
+            readonly deviceId: string
+            readonly historyFrom: string
+            readonly reconciledUntil: string
+            readonly positions: readonly TrackingSnapshot['breadcrumbs'][number][]
+          }) => Promise<void>
+        }
+      | undefined
+    const persistence = createDeferred<void>()
+    const addPositionsBulk = vi.fn().mockReturnValue(persistence.promise)
+
+    await startTrackingRuntime({
+      config: { baseUrl: 'http://test:8082' },
+      createClient: vi.fn().mockReturnValue({}),
+      createPoller: vi.fn().mockImplementation((_client, hooks) => {
+        pollerHooks = hooks
+        return { start: vi.fn(), stop: vi.fn() }
+      }),
+      cache: { read: vi.fn().mockResolvedValue(null), write: vi.fn() },
+      missionStore: createMissionStoreStub({
+        getActiveMission: vi.fn().mockResolvedValue({ id: 'mission-1' }),
+        addPositionsBulk,
+      }),
+      applySnapshot: vi.fn(),
+      applyStatus: vi.fn(),
+    })
+
+    let acknowledged = false
+    const acknowledgement = pollerHooks?.persistHistoryChunk({
+      phase: 'initial',
+      expectedMissionId: 'mission-1',
+      deviceId: '1',
+      historyFrom: '2026-04-06T00:00:00.000Z',
+      reconciledUntil: '2026-04-06T02:00:00.000Z',
+      positions: [SNAPSHOT.breadcrumbs[0]!],
+    }).then(() => {
+      acknowledged = true
+    })
+    await vi.waitFor(() => {
+      expect(addPositionsBulk).toHaveBeenCalledOnce()
+    })
+    expect(acknowledged).toBe(false)
+
+    persistence.resolve()
+    await acknowledgement
+    expect(acknowledged).toBe(true)
+  })
+
+  it('rejects a stale initial-history write after mission replacement', async () => {
+    let pollerHooks:
+      | {
+          persistHistoryChunk: (input: {
+            readonly phase: 'initial' | 'anti_entropy'
+            readonly expectedMissionId: string | null
+            readonly deviceId: string
+            readonly historyFrom: string
+            readonly reconciledUntil: string
+            readonly positions: readonly TrackingSnapshot['breadcrumbs'][number][]
+          }) => Promise<void>
+        }
+      | undefined
+    const persistTrackingHistoryBatch = vi.fn().mockResolvedValue(undefined)
+
+    await startTrackingRuntime({
+      config: { baseUrl: 'http://test:8082' },
+      createClient: vi.fn().mockReturnValue({}),
+      createPoller: vi.fn().mockImplementation((_client, hooks) => {
+        pollerHooks = hooks
+        return { start: vi.fn(), stop: vi.fn() }
+      }),
+      cache: { read: vi.fn().mockResolvedValue(null), write: vi.fn() },
+      missionStore: createMissionStoreStub({
+        getActiveMission: vi.fn().mockResolvedValue({ id: 'mission-b' }),
+        persistTrackingHistoryBatch,
+      }),
+      applySnapshot: vi.fn(),
+      applyStatus: vi.fn(),
+    })
+
+    await expect(pollerHooks?.persistHistoryChunk({
+      phase: 'initial',
+      expectedMissionId: 'mission-a',
+      deviceId: '1',
+      historyFrom: '2026-04-06T00:00:00.000Z',
+      reconciledUntil: '2026-04-06T02:00:00.000Z',
+      positions: [],
+    })).rejects.toThrow(/mission changed/iu)
+    expect(persistTrackingHistoryBatch).not.toHaveBeenCalled()
+  })
+
   it('uses the bounded per-device restart query instead of loading full mission history [DON-246]', async () => {
     let pollerHooks:
       | {
@@ -1021,7 +1665,11 @@ describe('startTrackingRuntime', () => {
     await expect(pollerHooks?.getInitialBreadcrumbs()).resolves.toEqual([
       expect.objectContaining({ id: 'source-1' }),
     ])
-    expect(listBreadcrumbPositions).toHaveBeenCalledWith('mission-1', 5_000)
+    expect(listBreadcrumbPositions).toHaveBeenCalledWith(
+      'mission-1',
+      5_000,
+      expect.stringMatching(/^tracking-breadcrumb-[a-f0-9]{32}-\d+-1$/u),
+    )
     expect(listRecentPositions).not.toHaveBeenCalled()
   })
 
@@ -1163,10 +1811,10 @@ describe('startTrackingRuntime', () => {
           >
         }
       | undefined
-    const getActiveMission = vi
-      .fn()
-      .mockResolvedValueOnce({ id: 'mission-a' })
-      .mockResolvedValueOnce({ id: 'mission-b' })
+    const activeMissionId = { current: 'mission-a' }
+    const getActiveMission = vi.fn().mockImplementation(
+      () => Promise.resolve({ id: activeMissionId.current }),
+    )
     const listBreadcrumbPositions = vi
       .fn()
       .mockImplementation(async (missionId: string) => ({
@@ -1203,6 +1851,7 @@ describe('startTrackingRuntime', () => {
     await expect(pollerHooks?.getInitialBreadcrumbs()).resolves.toEqual([
       expect.objectContaining({ id: 'source-mission-a' }),
     ])
+    activeMissionId.current = 'mission-b'
     await expect(pollerHooks?.getInitialBreadcrumbs()).resolves.toEqual([
       expect.objectContaining({ id: 'source-mission-b' }),
     ])
@@ -1346,6 +1995,39 @@ describe('startTrackingRuntime', () => {
     expect(recordDiagnosticEvent).toHaveBeenCalledWith(
       expect.objectContaining({ event: 'tracking_cache_write_recovered' }),
     )
+  })
+
+  it('persists catch-up batches without serializing an intermediate tracking cache', async () => {
+    const cacheWrite = vi.fn().mockResolvedValue('/tmp/tracking-cache.json')
+    let pollerHooks:
+      | {
+          onSnapshot: (
+            snapshot: TrackingSnapshot,
+            context?: { readonly suppressTrackingCache?: boolean },
+          ) => void | Promise<void>
+        }
+      | undefined
+
+    await startTrackingRuntime({
+      config: { baseUrl: 'http://test:8082' },
+      createClient: vi.fn().mockReturnValue({}),
+      createPoller: vi.fn().mockImplementation((_client, hooks) => {
+        pollerHooks = hooks
+        return { start: vi.fn(), stop: vi.fn() }
+      }),
+      cache: { read: vi.fn().mockResolvedValue(null), write: cacheWrite },
+      missionStore: createMissionStoreStub({
+        getActiveMission: vi.fn().mockResolvedValue({ id: 'mission-1' }),
+      }),
+      applySnapshot: vi.fn(),
+      applyStatus: vi.fn(),
+    })
+
+    await pollerHooks?.onSnapshot(SNAPSHOT, { suppressTrackingCache: true })
+    expect(cacheWrite).not.toHaveBeenCalled()
+
+    await pollerHooks?.onSnapshot(SNAPSHOT, { suppressTrackingCache: false })
+    expect(cacheWrite).toHaveBeenCalledTimes(1)
   })
 
   it('can cap browser-only mission persistence without trimming the live map snapshot', async () => {
@@ -1567,6 +2249,55 @@ describe('startTrackingRuntime', () => {
         timestamp: rawBreadcrumbs[1]!.timestamp,
       }),
     )
+  })
+
+  it('does not re-persist rendered history when the poller marks it durably accepted', async () => {
+    const addPositionsBulk = vi.fn().mockResolvedValue(undefined)
+    const renderedBreadcrumbs = Array.from({ length: 5_000 }, (_, index) => ({
+      ...SNAPSHOT.breadcrumbs[0]!,
+      id: `already-durable-${index}`,
+      timestamp: new Date(Date.UTC(2026, 5, 13, 0, 0, index)).toISOString(),
+    }))
+    let pollerHooks:
+      | {
+          onSnapshot: (snapshot: TrackingSnapshot) => void | Promise<void>
+        }
+      | undefined
+
+    await startTrackingRuntime({
+      config: { baseUrl: 'http://test:8082' },
+      createClient: vi.fn().mockReturnValue({}),
+      createPoller: vi.fn().mockImplementation((_client, hooks) => {
+        pollerHooks = hooks
+        return { start: vi.fn(), stop: vi.fn() }
+      }),
+      cache: { read: vi.fn().mockResolvedValue(null), write: vi.fn() },
+      missionStore: createMissionStoreStub({
+        getActiveMission: vi.fn().mockResolvedValue({ id: 'mission-1' }),
+        listPositions: vi.fn().mockResolvedValue([]),
+        addPositionsBulk,
+      }),
+      applySnapshot: vi.fn(),
+      applyStatus: vi.fn(),
+      writeCache: false,
+    })
+
+    await pollerHooks?.onSnapshot({
+      ...SNAPSHOT,
+      breadcrumbs: renderedBreadcrumbs,
+      rawBreadcrumbsForPersistence: [],
+    })
+
+    expect(addPositionsBulk).toHaveBeenCalledOnce()
+    expect(addPositionsBulk.mock.calls[0]?.[0].positions).toHaveLength(
+      SNAPSHOT.positions.length,
+    )
+    expect(
+      addPositionsBulk.mock.calls[0]?.[0].positions.some(
+        (position: { readonly source_position_id?: string | null }) =>
+          position.source_position_id?.startsWith('already-durable-'),
+      ),
+    ).toBe(false)
   })
 
   it('bulk-persists raw tracking positions instead of issuing one SQLite write per position [DON-200]', async () => {

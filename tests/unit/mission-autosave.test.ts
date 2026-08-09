@@ -135,6 +135,114 @@ describe('mission autosave', () => {
     autosave.stop()
   })
 
+  it('schedules the next interval only after the previous interval backup completes', async () => {
+    let resolveFirstSync: ((value: string) => void) | null = null
+    const store = {
+      getActiveMission: vi.fn().mockResolvedValue({ id: 'm-1' }),
+      syncBackup: vi.fn()
+        .mockImplementationOnce(
+          () => new Promise<string>((resolve) => {
+            resolveFirstSync = resolve
+          }),
+        )
+        .mockResolvedValue('/tmp/mission.sqlite'),
+    }
+    const autosave = startMissionAutosave(store, { intervalMs: 5_000 })
+
+    await vi.advanceTimersByTimeAsync(25_000)
+    expect(store.syncBackup).toHaveBeenCalledTimes(1)
+
+    resolveFirstSync?.('/tmp/mission.sqlite')
+    await vi.advanceTimersByTimeAsync(0)
+    expect(store.syncBackup).toHaveBeenCalledTimes(1)
+
+    await vi.advanceTimersByTimeAsync(4_999)
+    expect(store.syncBackup).toHaveBeenCalledTimes(1)
+    await vi.advanceTimersByTimeAsync(1)
+    expect(store.syncBackup).toHaveBeenCalledTimes(2)
+
+    autosave.stop()
+  })
+
+  it('preserves every lifecycle sync in request order behind a slow interval backup', async () => {
+    let resolveFirstSync: ((value: string) => void) | null = null
+    const store = {
+      getActiveMission: vi.fn().mockResolvedValue({ id: 'm-1' }),
+      syncBackup: vi.fn().mockImplementation(
+        () =>
+          store.syncBackup.mock.calls.length === 1
+            ? new Promise<string>((resolve) => {
+                resolveFirstSync = resolve
+              })
+            : Promise.resolve('/tmp/mission.sqlite'),
+      ),
+    }
+    const autosave = startMissionAutosave(store, { intervalMs: 5_000 })
+
+    await vi.advanceTimersByTimeAsync(5_000)
+    const pauseSync = autosave.requestSync('mission-pause')
+    const finishSync = autosave.requestSync('mission-finish')
+    await vi.advanceTimersByTimeAsync(20_000)
+
+    expect(store.syncBackup).toHaveBeenCalledTimes(1)
+    resolveFirstSync?.('/tmp/mission.sqlite')
+    await Promise.all([pauseSync, finishSync])
+
+    expect(store.syncBackup.mock.calls.map(([reason]) => reason)).toEqual([
+      'interval',
+      'mission-pause',
+      'mission-finish',
+    ])
+
+    autosave.stop()
+  })
+
+  it('does not reschedule an interval after stop while a backup is completing', async () => {
+    let resolveSync: ((value: string) => void) | null = null
+    const store = {
+      getActiveMission: vi.fn().mockResolvedValue({ id: 'm-1' }),
+      syncBackup: vi.fn().mockImplementation(
+        () => new Promise<string>((resolve) => {
+          resolveSync = resolve
+        }),
+      ),
+    }
+    const autosave = startMissionAutosave(store, { intervalMs: 5_000 })
+
+    await vi.advanceTimersByTimeAsync(5_000)
+    expect(store.syncBackup).toHaveBeenCalledOnce()
+    autosave.stop()
+    resolveSync?.('/tmp/mission.sqlite')
+    await vi.advanceTimersByTimeAsync(20_000)
+
+    expect(store.syncBackup).toHaveBeenCalledOnce()
+  })
+
+  it('discards a queued interval after stop without dropping the accepted lifecycle sync', async () => {
+    let resolveLifecycleSync: ((value: string) => void) | null = null
+    const store = {
+      getActiveMission: vi.fn().mockResolvedValue({ id: 'm-1' }),
+      syncBackup: vi.fn().mockImplementation(
+        () => new Promise<string>((resolve) => {
+          resolveLifecycleSync = resolve
+        }),
+      ),
+    }
+    const autosave = startMissionAutosave(store, { intervalMs: 5_000 })
+
+    const lifecycleSync = autosave.requestSync('mission-pause')
+    await vi.advanceTimersByTimeAsync(5_000)
+    expect(store.syncBackup).toHaveBeenCalledTimes(1)
+    autosave.stop()
+    resolveLifecycleSync?.('/tmp/mission.sqlite')
+    await lifecycleSync
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect(store.syncBackup.mock.calls.map(([reason]) => reason)).toEqual([
+      'mission-pause',
+    ])
+  })
+
   it('does not report stale autosave status from wall-clock jumps alone', () => {
     vi.setSystemTime(new Date('2026-05-16T09:00:00.000Z'))
     useAutosaveStatusStore.getState().configure({
@@ -296,8 +404,8 @@ describe('mission autosave', () => {
     }
     const runtime: MissionAutosaveRuntime = {
       getVisibilityState: () => 'visible',
-      setInterval: vi.fn().mockReturnValue(42),
-      clearInterval: vi.fn(),
+      setTimeout: vi.fn().mockReturnValue(42),
+      clearTimeout: vi.fn(),
       addDocumentEventListener: vi.fn((_, listener) => {
         listeners.document.push(listener)
       }),
@@ -327,7 +435,7 @@ describe('mission autosave', () => {
 
     autosave.stop()
 
-    expect(runtime.clearInterval).toHaveBeenCalledWith(42)
+    expect(runtime.clearTimeout).toHaveBeenCalledWith(42)
     expect(runtime.removeDocumentEventListener).toHaveBeenCalledTimes(1)
     expect(runtime.removeWindowEventListener).toHaveBeenCalledTimes(1)
     expect(listeners.document).toHaveLength(0)

@@ -174,7 +174,7 @@ test.describe('M12 settings workspace', () => {
       .poll(
         () =>
           cursorScenario.breadcrumbRequests.some(
-            (request) => request.from === cursorScenario.expectedOverlapFrom,
+            (request) => cursorScenario.expectedOverlapFroms.includes(request.from ?? ''),
           ),
         { timeout: 15_000 },
       )
@@ -378,6 +378,29 @@ async function routeTraccarSuccess(
   page: import('@playwright/test').Page,
   options: { readonly breadcrumbCount?: number } = {},
 ) {
+  const breadcrumbCount = options.breadcrumbCount ?? 0
+  const currentTimestamp = new Date().toISOString()
+  const breadcrumbStartMs = Date.now() - breadcrumbCount * 1_000
+  const breadcrumbs = Array.from({ length: breadcrumbCount }, (_, index) => ({
+    id: 400_000 + index,
+    deviceId: 1,
+    latitude: 51.99917 + index / 1_000_000,
+    longitude: -9.74406 - index / 1_000_000,
+    fixTime: new Date(breadcrumbStartMs + index * 1_000).toISOString(),
+    valid: true,
+    attributes: { batteryLevel: 82 },
+  }))
+  const latestBreadcrumb = breadcrumbs.at(-1)
+  const currentPosition = latestBreadcrumb ?? {
+    id: 396947,
+    deviceId: 1,
+    latitude: 51.99917,
+    longitude: -9.74406,
+    fixTime: currentTimestamp,
+    valid: true,
+    attributes: { batteryLevel: 82 },
+  }
+
   await page.route('http://traccar.test:8082/api/session', async (route) => {
     await route.fulfill({
       status: 200,
@@ -398,7 +421,7 @@ async function routeTraccarSuccess(
           id: 1,
           name: 'S-Tab',
           status: 'online',
-          lastUpdate: '2026-05-14T17:29:40.391Z',
+          lastUpdate: currentTimestamp,
           uniqueId: '52959800',
           category: 'person',
         },
@@ -409,20 +432,19 @@ async function routeTraccarSuccess(
   await page.route('http://traccar.test:8082/api/positions**', async (route, request) => {
     const url = new URL(request.url())
     if (url.searchParams.has('deviceId')) {
-      const breadcrumbCount = options.breadcrumbCount ?? 0
+      const requestedFromMs = Date.parse(url.searchParams.get('from') ?? '')
+      const requestedToMs = Date.parse(url.searchParams.get('to') ?? '')
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
         body: JSON.stringify(
-          Array.from({ length: breadcrumbCount }, (_, index) => ({
-            id: 400_000 + index,
-            deviceId: 1,
-            latitude: 51.99917 + index / 1_000_000,
-            longitude: -9.74406 - index / 1_000_000,
-            fixTime: new Date(Date.UTC(2026, 4, 14, 10, 0, index)).toISOString(),
-            valid: true,
-            attributes: { batteryLevel: 82 },
-          })),
+          breadcrumbs.filter((position) => {
+            const fixTimeMs = Date.parse(position.fixTime)
+            return (
+              (Number.isNaN(requestedFromMs) || fixTimeMs >= requestedFromMs) &&
+              (Number.isNaN(requestedToMs) || fixTimeMs <= requestedToMs)
+            )
+          }),
         ),
       })
       return
@@ -433,13 +455,7 @@ async function routeTraccarSuccess(
       contentType: 'application/json',
       body: JSON.stringify([
         {
-          id: 396947,
-          deviceId: 1,
-          latitude: 51.99917,
-          longitude: -9.74406,
-          fixTime: '2026-05-14T17:29:40.391Z',
-          valid: true,
-          attributes: { batteryLevel: 82 },
+          ...currentPosition,
         },
       ]),
     })
@@ -496,13 +512,16 @@ async function routeControllableTraccar(page: import('@playwright/test').Page) {
 
 async function routeTraccarCursorBoundarySequence(page: import('@playwright/test').Page) {
   const breadcrumbRequests: { from: string | null; to: string | null }[] = []
-  let breadcrumbRequestCount = 0
+  let recentBreadcrumbRequestCount = 0
   const cursorBoundaryMs = Date.now() - 30_000
   const cursorBoundaryTimestamp = new Date(cursorBoundaryMs).toISOString()
   const beforeBoundaryTimestamp = new Date(cursorBoundaryMs - 100).toISOString()
   const afterBoundaryTimestamp = new Date(cursorBoundaryMs + 500).toISOString()
   const currentTimestamp = new Date(cursorBoundaryMs + 5_000).toISOString()
   const expectedOverlapFrom = new Date(cursorBoundaryMs - 5 * 60 * 1000).toISOString()
+  const expectedAfterOverlapFrom = new Date(
+    Date.parse(afterBoundaryTimestamp) - 5 * 60 * 1000,
+  ).toISOString()
 
   await page.route('http://traccar.test:8082/api/session', async (route) => {
     await route.fulfill({
@@ -535,12 +554,24 @@ async function routeTraccarCursorBoundarySequence(page: import('@playwright/test
   await page.route('http://traccar.test:8082/api/positions**', async (route, request) => {
     const url = new URL(request.url())
     if (url.searchParams.has('deviceId')) {
+      const requestedFrom = url.searchParams.get('from')
       breadcrumbRequests.push({
-        from: url.searchParams.get('from'),
+        from: requestedFrom,
         to: url.searchParams.get('to'),
       })
-      breadcrumbRequestCount += 1
-      const breadcrumbs = breadcrumbRequestCount === 1
+      const requestedFromMs = Date.parse(requestedFrom ?? '')
+      const isRecentRequest =
+        !Number.isNaN(requestedFromMs) && requestedFromMs >= Date.now() - 10 * 60 * 1_000
+      if (!isRecentRequest) {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: '[]',
+        })
+        return
+      }
+      recentBreadcrumbRequestCount += 1
+      const breadcrumbs = recentBreadcrumbRequestCount === 1
         ? [
             {
               id: 410_001,
@@ -609,6 +640,6 @@ async function routeTraccarCursorBoundarySequence(page: import('@playwright/test
   return {
     afterBoundaryTimestamp,
     breadcrumbRequests,
-    expectedOverlapFrom,
+    expectedOverlapFroms: [expectedOverlapFrom, expectedAfterOverlapFrom],
   }
 }

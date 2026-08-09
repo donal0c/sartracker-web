@@ -13,11 +13,27 @@ const {
 
 const { createZipArchive, readZipArchive } = require('./zip-archive.cjs')
 
-const CURRENT_SCHEMA_VERSION = 5
+const CURRENT_SCHEMA_VERSION = 7
 const DATABASE_FILE_NAME = 'mission-store.sqlite'
 const BACKUP_FILE_NAME = 'mission-store.backup.sqlite'
 const ARCHIVE_DIRECTORY_NAME = 'archives'
 const ARCHIVE_VERSION = 1
+
+/** Validates the opaque renderer correlation key used only for worker cancellation. */
+function normalizeBreadcrumbQueryRequestId(value, required) {
+  if (value === undefined && required === false) {
+    return null
+  }
+  if (
+    typeof value !== 'string' ||
+    value.length < 1 ||
+    value.length > 120 ||
+    !/^[A-Za-z0-9._:-]+$/u.test(value)
+  ) {
+    throw new Error('Breadcrumb query request ID is invalid.')
+  }
+  return value
+}
 
 /**
  * Creates the Electron SQLite mission store.
@@ -29,6 +45,11 @@ function createElectronMissionStore(options) {
   const finalizeMissionFaultInjection = options.finalizeMissionFaultInjection ?? {}
   const archiveFaultInjection = options.archiveFaultInjection ?? {}
   const storageDiagnostics = options.storageDiagnostics ?? null
+  const breadcrumbQueryRunner =
+    options.runBreadcrumbQueryInWorker ?? runBreadcrumbQueryInWorker
+  const activeBreadcrumbQueryControllers = new Set()
+  const breadcrumbQueryControllersByRequestId = new Map()
+  let breadcrumbQueryTail = Promise.resolve()
   const db = new Database(databasePath)
   db.pragma('journal_mode = WAL')
   db.pragma('synchronous = FULL')
@@ -58,7 +79,14 @@ function createElectronMissionStore(options) {
   }
 
   return {
-    close: () => db.close(),
+    close: () => {
+      for (const controller of activeBreadcrumbQueryControllers) {
+        controller.abort()
+      }
+      activeBreadcrumbQueryControllers.clear()
+      breadcrumbQueryControllersByRequestId.clear()
+      db.close()
+    },
     info: async () => ({
       schema_version: schemaVersion(db),
       synchronous_mode: db.pragma('synchronous', { simple: true }),
@@ -106,24 +134,104 @@ function createElectronMissionStore(options) {
       )
       return result.positions
     },
+    persistTrackingPositionsBulk: async (input) => {
+      const startedAtMs = performance.now()
+      const hasCheckpoints = Array.isArray(input.checkpoints) && input.checkpoints.length > 0
+      const result = hasCheckpoints
+        ? persistTrackingHistoryBatch(db, input, false)
+        : addPositionsBulk(db, input, false)
+      await safeStorageDiagnostic(() =>
+        storageDiagnostics?.recordInsertedPositions({
+          durationMs: performance.now() - startedAtMs,
+          insertedPositionCount: result.insertedPositionCount,
+          positionTelemetryEventCount: 0,
+          skippedAmbiguousLegacyAdoptionCount:
+            result.skippedAmbiguousLegacyAdoptionCount,
+        }),
+      )
+      return {
+        changedPositionCount: result.changedPositionCount,
+        insertedPositionCount: result.insertedPositionCount,
+        skippedAmbiguousLegacyAdoptionCount:
+          result.skippedAmbiguousLegacyAdoptionCount,
+      }
+    },
+    persistTrackingHistoryBatch: async (input) => {
+      const startedAtMs = performance.now()
+      const result = persistTrackingHistoryBatch(db, input)
+      await safeStorageDiagnostic(() =>
+        storageDiagnostics?.recordInsertedPositions({
+          durationMs: performance.now() - startedAtMs,
+          insertedPositionCount: result.insertedPositionCount,
+          positionTelemetryEventCount: 0,
+          skippedAmbiguousLegacyAdoptionCount:
+            result.skippedAmbiguousLegacyAdoptionCount,
+        }),
+      )
+      return result.positions
+    },
     listPositions: async (missionId, deviceId) =>
       deviceId === undefined
         ? all(db, 'SELECT * FROM positions WHERE mission_id = ? ORDER BY timestamp ASC', missionId)
         : all(db, 'SELECT * FROM positions WHERE mission_id = ? AND device_id = ? ORDER BY timestamp ASC', missionId, deviceId),
     listRecentPositions: async (missionId, perDeviceLimit) =>
       listRecentPositions(db, missionId, perDeviceLimit),
-    listBreadcrumbPositions: async (missionId, perDeviceLimit) => {
-      const result = await runBreadcrumbQueryInWorker({
-        databasePath,
-        missionId,
-        perDeviceLimit,
-      })
-      return {
-        positions: result.positions,
-        deviceTotals: result.deviceTotals,
-        droppedPositionCount: result.droppedPositionCount,
+    listBreadcrumbPositions: async (missionId, perDeviceLimit, requestId) => {
+      const normalizedRequestId = normalizeBreadcrumbQueryRequestId(requestId, false)
+      if (
+        normalizedRequestId !== null &&
+        breadcrumbQueryControllersByRequestId.has(normalizedRequestId)
+      ) {
+        throw new Error('Breadcrumb query request ID is already active.')
+      }
+      const controller = new AbortController()
+      const query = breadcrumbQueryTail.then(() =>
+        breadcrumbQueryRunner({
+          databasePath,
+          missionId,
+          perDeviceLimit,
+          signal: controller.signal,
+        }),
+      )
+      breadcrumbQueryTail = query.then(
+        () => undefined,
+        () => undefined,
+      )
+      const activeQuery = { controller, completion: query }
+      activeBreadcrumbQueryControllers.add(controller)
+      if (normalizedRequestId !== null) {
+        breadcrumbQueryControllersByRequestId.set(normalizedRequestId, activeQuery)
+      }
+      try {
+        const result = await query
+        return {
+          positions: result.positions,
+          deviceTotals: result.deviceTotals,
+          deviceSelections: result.deviceSelections,
+          droppedPositionCount: result.droppedPositionCount,
+        }
+      } finally {
+        activeBreadcrumbQueryControllers.delete(controller)
+        if (
+          normalizedRequestId !== null &&
+          breadcrumbQueryControllersByRequestId.get(normalizedRequestId) === activeQuery
+        ) {
+          breadcrumbQueryControllersByRequestId.delete(normalizedRequestId)
+        }
       }
     },
+    cancelBreadcrumbQuery: async (requestId) => {
+      const normalizedRequestId = normalizeBreadcrumbQueryRequestId(requestId, true)
+      const activeQuery = breadcrumbQueryControllersByRequestId.get(normalizedRequestId)
+      if (activeQuery === undefined) {
+        return false
+      }
+      activeQuery.controller.abort()
+      await activeQuery.completion.catch(() => undefined)
+      return true
+    },
+    listTrackingHistoryCheckpoints: async (missionId) =>
+      listTrackingHistoryCheckpoints(db, missionId),
     countPositions: async (missionId, deviceId) => countPositions(db, missionId, deviceId),
     latestPositions: async (missionId) => latestPositions(db, missionId),
     listMissionEvents: async (missionId) =>
@@ -166,7 +274,8 @@ function createElectronMissionStore(options) {
 }
 
 function migrate(db) {
-  db.exec(`
+  const applyMigrations = db.transaction(() => {
+    db.exec(`
     CREATE TABLE IF NOT EXISTS metadata (key TEXT PRIMARY KEY, value TEXT NOT NULL);
   `)
   const existingSchemaVersion = readStoredSchemaVersion(db)
@@ -219,6 +328,16 @@ function migrate(db) {
       FOREIGN KEY (mission_id, device_id) REFERENCES devices(mission_id, device_id)
     );
     CREATE INDEX IF NOT EXISTS idx_positions_mission_device_timestamp ON positions(mission_id, device_id, timestamp);
+    CREATE TABLE IF NOT EXISTS tracking_history_checkpoints (
+      mission_id TEXT NOT NULL,
+      device_id TEXT NOT NULL,
+      history_from TEXT NOT NULL,
+      reconciled_until TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      PRIMARY KEY (mission_id, device_id),
+      FOREIGN KEY (mission_id) REFERENCES missions(id) ON DELETE CASCADE,
+      FOREIGN KEY (mission_id, device_id) REFERENCES devices(mission_id, device_id) ON DELETE CASCADE
+    );
     CREATE TABLE IF NOT EXISTS position_revisions (
       id TEXT PRIMARY KEY,
       mission_id TEXT NOT NULL,
@@ -332,19 +451,21 @@ function migrate(db) {
       FOREIGN KEY (mission_id) REFERENCES missions(id) ON DELETE CASCADE
     );
   `)
-  ensureColumnExists(db, 'markers', 'updated_by', 'TEXT')
-  ensureColumnExists(db, 'markers', 'coordinator_ids', 'TEXT')
-  ensureColumnExists(db, 'markers', 'attachment_path', 'TEXT')
-  ensureColumnExists(db, 'markers', 'label_size', 'INTEGER')
-  ensureColumnExists(db, 'positions', 'source_position_id', 'TEXT')
-  db.exec(`
-    CREATE UNIQUE INDEX IF NOT EXISTS idx_positions_mission_source_position_id
-    ON positions(mission_id, source_position_id)
-    WHERE source_position_id IS NOT NULL;
-  `)
+    ensureColumnExists(db, 'markers', 'updated_by', 'TEXT')
+    ensureColumnExists(db, 'markers', 'coordinator_ids', 'TEXT')
+    ensureColumnExists(db, 'markers', 'attachment_path', 'TEXT')
+    ensureColumnExists(db, 'markers', 'label_size', 'INTEGER')
+    ensureColumnExists(db, 'positions', 'source_position_id', 'TEXT')
+    db.exec(`
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_positions_mission_source_position_id
+      ON positions(mission_id, source_position_id)
+      WHERE source_position_id IS NOT NULL;
+    `)
 
-  db.prepare("INSERT INTO metadata (key, value) VALUES ('schema_version', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value")
-    .run(String(CURRENT_SCHEMA_VERSION))
+    db.prepare("INSERT INTO metadata (key, value) VALUES ('schema_version', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value")
+      .run(String(CURRENT_SCHEMA_VERSION))
+  })
+  applyMigrations()
 }
 
 function schemaVersion(db) {
@@ -1079,11 +1200,16 @@ function addPosition(db, input) {
   return getById(db, 'positions', id, 'Position')
 }
 
-function addPositionsBulk(db, input) {
+function addPositionsBulk(db, input, includePositions = true) {
   ensureWritableMission(db, input.mission_id)
   const positions = Array.isArray(input.positions) ? input.positions : []
   if (positions.length === 0) {
-    return { positions: [], insertedPositionCount: 0 }
+    return {
+      positions: [],
+      changedPositionCount: 0,
+      insertedPositionCount: 0,
+      skippedAmbiguousLegacyAdoptionCount: 0,
+    }
   }
 
   const deviceExists = db.prepare('SELECT id FROM devices WHERE mission_id = ? AND device_id = ?')
@@ -1105,7 +1231,8 @@ function addPositionsBulk(db, input) {
      WHERE mission_id = ? AND device_id = ?`,
   )
   const seenInBatch = new Set()
-  const changedIds = []
+  const changedIds = includePositions ? [] : null
+  let changedPositionCount = 0
   let insertedPositionCount = 0
   let skippedAmbiguousLegacyAdoptionCount = 0
 
@@ -1135,7 +1262,8 @@ function addPositionsBulk(db, input) {
             dataOrigin,
           )
           if (correction.corrected) {
-            changedIds.push(existing.id)
+            changedPositionCount += 1
+            changedIds?.push(existing.id)
           }
           continue
         }
@@ -1152,7 +1280,8 @@ function addPositionsBulk(db, input) {
           continue
         }
         if (adopted !== undefined) {
-          changedIds.push(adopted.id)
+          changedPositionCount += 1
+          changedIds?.push(adopted.id)
           continue
         }
       } else {
@@ -1193,17 +1322,124 @@ function addPositionsBulk(db, input) {
         dataOrigin,
       )
       updateDevice.run(timestamp, timestamp, input.mission_id, position.device_id)
-      changedIds.push(id)
+      changedPositionCount += 1
+      changedIds?.push(id)
       insertedPositionCount += 1
     }
   })
 
   transaction()
   return {
-    positions: changedIds.map((id) => getById(db, 'positions', id, 'Position')),
+    positions: changedIds?.map((id) => getById(db, 'positions', id, 'Position')) ?? [],
+    changedPositionCount,
     insertedPositionCount,
     skippedAmbiguousLegacyAdoptionCount,
   }
+}
+
+function persistTrackingHistoryBatch(db, input, includePositions = true) {
+  ensureWritableMission(db, input.mission_id)
+  const checkpoints = Array.isArray(input.checkpoints) ? input.checkpoints : []
+  let positionResult = {
+    positions: [],
+    changedPositionCount: 0,
+    insertedPositionCount: 0,
+    skippedAmbiguousLegacyAdoptionCount: 0,
+  }
+  const deviceExists = db.prepare(
+    'SELECT id FROM devices WHERE mission_id = ? AND device_id = ?',
+  )
+  const readCheckpoint = db.prepare(
+    `SELECT history_from, reconciled_until
+     FROM tracking_history_checkpoints
+     WHERE mission_id = ? AND device_id = ?`,
+  )
+  const upsertCheckpoint = db.prepare(
+    `INSERT INTO tracking_history_checkpoints (
+       mission_id, device_id, history_from, reconciled_until, updated_at
+     ) VALUES (?, ?, ?, ?, ?)
+     ON CONFLICT(mission_id, device_id) DO UPDATE SET
+       reconciled_until = excluded.reconciled_until,
+       updated_at = excluded.updated_at`,
+  )
+
+  const transaction = db.transaction(() => {
+    const added = addPositionsBulk(db, {
+      mission_id: input.mission_id,
+      positions: Array.isArray(input.positions) ? input.positions : [],
+    }, includePositions)
+    positionResult = {
+      ...added,
+      skippedAmbiguousLegacyAdoptionCount:
+        added.skippedAmbiguousLegacyAdoptionCount ?? 0,
+    }
+
+    for (const checkpoint of checkpoints) {
+      if (
+        typeof checkpoint?.device_id !== 'string' ||
+        checkpoint.device_id.trim() === ''
+      ) {
+        throw new Error('Tracking history checkpoint device id is required.')
+      }
+      const deviceId = checkpoint.device_id.trim()
+      if (deviceExists.get(input.mission_id, deviceId) === undefined) {
+        throw new Error(`Device not found: ${deviceId}`)
+      }
+      const historyFrom = normalizeCheckpointTimestamp(
+        checkpoint.history_from,
+        'history start',
+      )
+      const reconciledUntil = normalizeCheckpointTimestamp(
+        checkpoint.reconciled_until,
+        'reconciled-until cursor',
+      )
+      if (Date.parse(reconciledUntil) < Date.parse(historyFrom)) {
+        throw new Error(
+          'Tracking history checkpoint reconciled-until cursor is before history start.',
+        )
+      }
+      const existing = readCheckpoint.get(input.mission_id, deviceId)
+      if (existing !== undefined && existing.history_from !== historyFrom) {
+        throw new Error(
+          'Tracking history checkpoint start does not match the stored mission-device checkpoint.',
+        )
+      }
+      if (
+        existing !== undefined &&
+        Date.parse(existing.reconciled_until) >= Date.parse(reconciledUntil)
+      ) {
+        continue
+      }
+      upsertCheckpoint.run(
+        input.mission_id,
+        deviceId,
+        historyFrom,
+        reconciledUntil,
+        now(),
+      )
+    }
+  })
+
+  transaction()
+  return positionResult
+}
+
+function listTrackingHistoryCheckpoints(db, missionId) {
+  return all(
+    db,
+    `SELECT mission_id, device_id, history_from, reconciled_until
+     FROM tracking_history_checkpoints
+     WHERE mission_id = ?
+     ORDER BY device_id ASC`,
+    missionId,
+  )
+}
+
+function normalizeCheckpointTimestamp(value, label) {
+  if (!isStrictTrackingTimestamp(value)) {
+    throw new Error(`Tracking history checkpoint ${label} must be a valid ISO8601 date-time.`)
+  }
+  return new Date(Date.parse(value)).toISOString()
 }
 
 function normalizeSourcePositionId(value) {
@@ -1279,7 +1515,10 @@ function adoptSourceIdentityForLegacyPosition(
   db.prepare(
     'UPDATE positions SET source_position_id = ? WHERE id = ? AND source_position_id IS NULL',
   ).run(sourcePositionId, candidate.id)
-  return getById(db, 'positions', candidate.id, 'Position')
+  return {
+    ...candidate,
+    source_position_id: sourcePositionId,
+  }
 }
 
 function createAmbiguousLegacyAdoptionError(sourcePositionId) {
@@ -1378,7 +1617,10 @@ function applySourcePositionCorrection(
   )
 
   return {
-    position: getById(db, 'positions', existing.id, 'Position'),
+    position: {
+      ...existing,
+      ...corrected,
+    },
     corrected: true,
   }
 }

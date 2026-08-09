@@ -51,6 +51,17 @@ const { createElectronMissionStore, CURRENT_SCHEMA_VERSION } = require('../../el
       readonly afterArchiveSucceededEvent?: boolean
     }
     readonly storageDiagnostics?: StorageDiagnosticsPort
+    readonly runBreadcrumbQueryInWorker?: (input: {
+      readonly databasePath: string
+      readonly missionId: string
+      readonly perDeviceLimit: number
+      readonly signal?: AbortSignal
+    }) => Promise<{
+      readonly positions: readonly never[]
+      readonly deviceTotals: readonly never[]
+      readonly deviceSelections: readonly never[]
+      readonly droppedPositionCount: number
+    }>
   }) => ElectronMissionStore
 }
 const Database = require('better-sqlite3')
@@ -136,6 +147,46 @@ type ElectronMissionStore = {
     readonly device_id: string
     readonly timestamp: string
   }[]>
+  readonly persistTrackingPositionsBulk: (input: {
+    readonly mission_id: string
+    readonly positions: readonly {
+      readonly source_position_id?: string
+      readonly device_id: string
+      readonly lat: number
+      readonly lon: number
+      readonly timestamp?: string | null
+    }[]
+    readonly checkpoints: readonly {
+      readonly device_id: string
+      readonly history_from: string
+      readonly reconciled_until: string
+    }[]
+  }) => Promise<{
+    readonly changedPositionCount: number
+    readonly insertedPositionCount: number
+    readonly skippedAmbiguousLegacyAdoptionCount: number
+  }>
+  readonly persistTrackingHistoryBatch: (input: {
+    readonly mission_id: string
+    readonly positions: readonly {
+      readonly source_position_id?: string
+      readonly device_id: string
+      readonly lat: number
+      readonly lon: number
+      readonly timestamp: string
+    }[]
+    readonly checkpoints: readonly {
+      readonly device_id: string
+      readonly history_from: string
+      readonly reconciled_until: string
+    }[]
+  }) => Promise<unknown>
+  readonly listTrackingHistoryCheckpoints: (missionId: string) => Promise<readonly {
+    readonly mission_id: string
+    readonly device_id: string
+    readonly history_from: string
+    readonly reconciled_until: string
+  }[]>
   readonly listPositions: (
     missionId: string,
     deviceId?: string,
@@ -153,6 +204,7 @@ type ElectronMissionStore = {
   readonly listBreadcrumbPositions: (
     missionId: string,
     perDeviceLimit: number,
+    requestId?: string,
   ) => Promise<{
     readonly positions: readonly {
       readonly id: string
@@ -169,6 +221,7 @@ type ElectronMissionStore = {
     }[]
     readonly droppedPositionCount: number
   }>
+  readonly cancelBreadcrumbQuery: (requestId: string) => Promise<boolean>
   readonly countPositions: (missionId: string, deviceId?: string) => Promise<number>
   readonly latestPositions: (missionId: string) => Promise<readonly { readonly device_id: string; readonly lat: number }[]>
   readonly upsertMarker: (input: {
@@ -325,6 +378,42 @@ describe('electron mission store', () => {
     expect(() => createElectronMissionStore({ userDataPath: userDataPath! })).toThrow(
       /newer mission store schema/i,
     )
+  })
+
+  it('migrates a schema-6 store to the durable tracking-history checkpoint schema', async () => {
+    expect(CURRENT_SCHEMA_VERSION).toBe(7)
+    userDataPath = await mkdtemp(path.join(tmpdir(), 'sartracker-electron-checkpoint-migration-'))
+    const databasePath = path.join(userDataPath, 'mission-store.sqlite')
+    const legacyDb = new Database(databasePath)
+    try {
+      legacyDb.exec(`
+        CREATE TABLE metadata (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+        INSERT INTO metadata (key, value) VALUES ('schema_version', '6');
+      `)
+    } finally {
+      legacyDb.close()
+    }
+
+    store = createElectronMissionStore({ userDataPath })
+    await expect(store.info()).resolves.toMatchObject({ schema_version: 7 })
+
+    const migratedDb = new Database(databasePath, { readonly: true })
+    try {
+      expect(
+        migratedDb
+          .prepare(
+            "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'tracking_history_checkpoints'",
+          )
+          .get(),
+      ).toEqual({ name: 'tracking_history_checkpoints' })
+      expect(
+        migratedDb
+          .prepare("SELECT value FROM metadata WHERE key = 'schema_version'")
+          .get(),
+      ).toEqual({ value: '7' })
+    } finally {
+      migratedDb.close()
+    }
   })
 
   it('migrates existing position rows without inventing upstream source identities [DON-260]', async () => {
@@ -524,6 +613,128 @@ describe('electron mission store', () => {
       { device_id: 'tracker-1', total: 12_000 },
     ])
     expect(restarted.droppedPositionCount).toBe(0)
+  })
+
+  it('cancels the main-process breadcrumb worker identified by the renderer request', async () => {
+    let workerSignal: AbortSignal | undefined
+    let rejectTerminatedWorker: (error: Error) => void = () => undefined
+    const runBreadcrumbQueryInWorker = vi.fn().mockImplementationOnce(
+      (input: { readonly signal?: AbortSignal }) => {
+        workerSignal = input.signal
+        return new Promise((_resolve, reject) => {
+          input.signal?.addEventListener('abort', () => {
+            rejectTerminatedWorker = reject
+          }, { once: true })
+        })
+      },
+    ).mockResolvedValueOnce({
+      positions: [],
+      deviceTotals: [],
+      deviceSelections: [],
+      droppedPositionCount: 0,
+    })
+    userDataPath = await mkdtemp(path.join(tmpdir(), 'sartracker-electron-store-'))
+    store = createElectronMissionStore({
+      userDataPath,
+      runBreadcrumbQueryInWorker,
+    })
+
+    const query = store.listBreadcrumbPositions(
+      'mission-a',
+      5_000,
+      'renderer-a:request-a',
+    )
+    await vi.waitFor(() => expect(runBreadcrumbQueryInWorker).toHaveBeenCalledOnce())
+
+    let cancellationSettled = false
+    const cancellation = store.cancelBreadcrumbQuery('renderer-a:request-a').then(
+      (result) => {
+        cancellationSettled = true
+        return result
+      },
+    )
+    const replacementQuery = store.listBreadcrumbPositions(
+      'mission-b',
+      5_000,
+      'renderer-b:request-a',
+    )
+    const queryRejection = expect(query).rejects.toMatchObject({ name: 'AbortError' })
+
+    expect(workerSignal?.aborted).toBe(true)
+    expect(cancellationSettled).toBe(false)
+    expect(runBreadcrumbQueryInWorker).toHaveBeenCalledTimes(1)
+
+    const error = new Error('worker terminated')
+    error.name = 'AbortError'
+    rejectTerminatedWorker(error)
+    await expect(cancellation).resolves.toBe(true)
+    await queryRejection
+    await expect(replacementQuery).resolves.toEqual(
+      expect.objectContaining({ positions: [] }),
+    )
+    expect(runBreadcrumbQueryInWorker).toHaveBeenCalledTimes(2)
+    await expect(
+      store.cancelBreadcrumbQuery('renderer-a:request-a'),
+    ).resolves.toBe(false)
+  })
+
+  it('acknowledges a large tracking batch without returning or materializing changed rows', async () => {
+    store = await createStore()
+    const mission = await store.createMission({ name: 'Tracking Ack Mission' })
+    await store.upsertDevice({
+      mission_id: mission.id,
+      device_id: 'tracker-1',
+      name: 'Tracker One',
+      color: '#00AAFF',
+      status: 'online',
+    })
+    const positions = Array.from({ length: 25_000 }, (_, index) => ({
+      source_position_id: `source-${index}`,
+      device_id: 'tracker-1',
+      lat: 52 + index / 10_000_000,
+      lon: -9.7 - index / 10_000_000,
+      timestamp: new Date(Date.UTC(2026, 7, 9, 0, 0, index)).toISOString(),
+    }))
+
+    const result = await store.persistTrackingPositionsBulk({
+      mission_id: mission.id,
+      positions,
+      checkpoints: [],
+    })
+
+    expect(result).toEqual({
+      changedPositionCount: 25_000,
+      insertedPositionCount: 25_000,
+      skippedAmbiguousLegacyAdoptionCount: 0,
+    })
+    expect(JSON.stringify(result).length).toBeLessThan(200)
+    await expect(store.countPositions(mission.id)).resolves.toBe(25_000)
+
+    const correction = {
+      ...positions[0]!,
+      lat: positions[0]!.lat + 0.01,
+    }
+    await expect(store.persistTrackingPositionsBulk({
+      mission_id: mission.id,
+      positions: [correction],
+      checkpoints: [{
+        device_id: 'tracker-1',
+        history_from: '2026-08-09T00:00:00.000Z',
+        reconciled_until: '2026-08-09T02:00:00.000Z',
+      }],
+    })).resolves.toEqual({
+      changedPositionCount: 1,
+      insertedPositionCount: 0,
+      skippedAmbiguousLegacyAdoptionCount: 0,
+    })
+    await expect(store.listTrackingHistoryCheckpoints(mission.id)).resolves.toEqual([
+      {
+        mission_id: mission.id,
+        device_id: 'tracker-1',
+        history_from: '2026-08-09T00:00:00.000Z',
+        reconciled_until: '2026-08-09T02:00:00.000Z',
+      },
+    ])
   })
 
   it('accumulates paused seconds when a mission resumes [DON-231]', async () => {
@@ -931,6 +1142,76 @@ describe('electron mission store', () => {
         last_seen: '2026-07-28T12:00:00.000Z',
       }),
     ])
+  })
+
+  it('durably checkpoints an empty reconciled history chunk across restart', async () => {
+    store = await createStore()
+    const mission = await store.createMission({
+      name: 'Empty History Checkpoint Mission',
+      start_time: '2026-08-08T00:00:00.000Z',
+    })
+    await store.upsertDevice({
+      mission_id: mission.id,
+      device_id: 'tracker-1',
+      name: 'Tracker One',
+      color: '#00AAFF',
+      status: 'online',
+    })
+
+    await store.persistTrackingHistoryBatch({
+      mission_id: mission.id,
+      positions: [],
+      checkpoints: [{
+        device_id: 'tracker-1',
+        history_from: '2026-08-08T00:00:00.000Z',
+        reconciled_until: '2026-08-08T02:00:00.000Z',
+      }],
+    })
+    store.close()
+    store = createElectronMissionStore({ userDataPath: userDataPath! })
+
+    await expect(store.listTrackingHistoryCheckpoints(mission.id)).resolves.toEqual([
+      {
+        mission_id: mission.id,
+        device_id: 'tracker-1',
+        history_from: '2026-08-08T00:00:00.000Z',
+        reconciled_until: '2026-08-08T02:00:00.000Z',
+      },
+    ])
+  })
+
+  it('atomically rolls back positions when a later checkpoint validation fails', async () => {
+    store = await createStore()
+    const mission = await store.createMission({
+      name: 'Atomic History Checkpoint Mission',
+      start_time: '2026-08-08T00:00:00.000Z',
+    })
+    await store.upsertDevice({
+      mission_id: mission.id,
+      device_id: 'tracker-1',
+      name: 'Tracker One',
+      color: '#00AAFF',
+      status: 'online',
+    })
+
+    await expect(store.persistTrackingHistoryBatch({
+      mission_id: mission.id,
+      positions: [{
+        source_position_id: 'source-1',
+        device_id: 'tracker-1',
+        lat: 52.0599,
+        lon: -9.5045,
+        timestamp: '2026-08-08T01:00:00.000Z',
+      }],
+      checkpoints: [{
+        device_id: 'tracker-1',
+        history_from: '2026-08-08T02:00:00.000Z',
+        reconciled_until: '2026-08-08T00:00:00.000Z',
+      }],
+    })).rejects.toThrow(/checkpoint.*before.*history start/iu)
+
+    await expect(store.listPositions(mission.id)).resolves.toEqual([])
+    await expect(store.listTrackingHistoryCheckpoints(mission.id)).resolves.toEqual([])
   })
 
   it('attaches a recovered source identity to one exact legacy fix instead of duplicating it [DON-260]', async () => {

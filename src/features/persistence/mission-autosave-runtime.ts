@@ -1,7 +1,7 @@
 export type MissionAutosaveRuntime = {
   readonly getVisibilityState: () => DocumentVisibilityState | null
-  readonly setInterval: (handler: TimerHandler, timeout?: number) => number
-  readonly clearInterval: (id: number) => void
+  readonly setTimeout: (handler: TimerHandler, timeout?: number) => number
+  readonly clearTimeout: (id: number) => void
   readonly addDocumentEventListener: (
     type: 'visibilitychange',
     listener: EventListener,
@@ -24,8 +24,8 @@ export function createBrowserMissionAutosaveRuntime(): MissionAutosaveRuntime | 
 
   return {
     getVisibilityState: () => document.visibilityState,
-    setInterval: (handler, timeout) => window.setInterval(handler, timeout),
-    clearInterval: (id) => window.clearInterval(id),
+    setTimeout: (handler, timeout) => window.setTimeout(handler, timeout),
+    clearTimeout: (id) => window.clearTimeout(id),
     addDocumentEventListener: (type, listener) => document.addEventListener(type, listener),
     removeDocumentEventListener: (type, listener) =>
       document.removeEventListener(type, listener),

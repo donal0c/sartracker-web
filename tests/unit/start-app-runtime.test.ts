@@ -4,10 +4,101 @@ import type { AutosaveStore } from '../../src/features/persistence/mission-autos
 import type { MissionStore } from '../../src/infrastructure/mission-store/tauri-mission-store'
 import { startAppRuntime } from '../../src/features/runtime/start-app-runtime'
 import type { CoreFeatureRuntimeHandles } from '../../src/features/runtime/start-core-feature-runtimes'
+import { useMissionStore } from '../../src/features/mission/mission-store'
+import { useActiveMissionDevicesStore } from '../../src/features/tracking/active-mission-devices-store'
 
 describe('app runtime startup', () => {
   afterEach(() => {
     vi.unstubAllGlobals()
+    useMissionStore.setState(useMissionStore.getInitialState())
+    useActiveMissionDevicesStore.setState(useActiveMissionDevicesStore.getInitialState())
+  })
+
+  it('wires the active mission device selection into breadcrumb polling', async () => {
+    useMissionStore.setState({
+      phase: 'active',
+      currentMission: {
+        id: 'mission-1',
+        name: 'Mission 1',
+        status: 'active',
+        start_time: '2026-08-08T00:00:00.000Z',
+        pause_time: null,
+        finish_time: null,
+        paused_seconds: 0,
+        notes: null,
+        schema_version: 1,
+      },
+    })
+    useActiveMissionDevicesStore.getState().setDeviceActive('mission-1', '7', true)
+    useActiveMissionDevicesStore.getState().setDeviceActive('mission-1', '2', true)
+
+    const createPollingManager = vi.fn().mockReturnValue({
+      start: vi.fn(),
+      stop: vi.fn(),
+    })
+    const startTrackingRuntime = vi.fn().mockImplementation(async (input) => {
+      input.createPoller({}, {
+        onSnapshot: vi.fn(),
+        onStatusChange: vi.fn(),
+        getInitialBreadcrumbs: vi.fn().mockResolvedValue([]),
+        getInitialBreadcrumbTotals: vi.fn().mockResolvedValue({}),
+        getInitialBreadcrumbSelectionMetadata: vi.fn().mockResolvedValue({}),
+        getInitialHistoryCheckpoints: vi.fn().mockResolvedValue({
+          '7': {
+            historyFrom: '2026-08-08T00:00:00.000Z',
+            reconciledUntil: '2026-08-08T02:00:00.000Z',
+          },
+        }),
+        getCanonicalBreadcrumbs: vi.fn().mockResolvedValue({
+          positions: [],
+          totalObservedByDevice: {},
+          selectionMetadataByDevice: {},
+        }),
+        persistHistoryChunk: vi.fn().mockResolvedValue({ changed: false }),
+        onPollDiagnostic: vi.fn(),
+      })
+      return vi.fn()
+    })
+
+    await startAppRuntime({
+      registerServiceWorker: vi.fn().mockResolvedValue(undefined),
+      isTauriRuntimeAvailable: vi.fn().mockReturnValue(true),
+      createMissionStore: vi.fn().mockReturnValue(createMissionStoreStub()),
+      readRuntimeBootstrapSettings: vi.fn().mockResolvedValue(createBootstrapSettings()),
+      startMissionAutosave: vi.fn().mockReturnValue(createAutosaveController()),
+      startMissionRuntime: vi.fn().mockResolvedValue({}),
+      startMissionGovernanceRuntime: vi.fn().mockResolvedValue({}),
+      startMarkerRuntime: vi.fn().mockResolvedValue({}),
+      startDrawingRuntime: vi.fn().mockResolvedValue({}),
+      startGpxRuntime: vi.fn().mockResolvedValue({}),
+      startTrackingRuntime,
+      createPollingManager,
+    })
+
+    const pollingOptions = createPollingManager.mock.calls[0]?.[1] as {
+      readonly getBreadcrumbDeviceIds?: () => readonly string[]
+      readonly getInitialHistoryCheckpoints?: () => Promise<unknown>
+      readonly getCanonicalBreadcrumbs?: (missionId: string) => Promise<unknown>
+      readonly persistHistoryChunk?: (input: unknown) => Promise<void>
+    }
+    expect(pollingOptions.getBreadcrumbDeviceIds?.()).toEqual(['2', '7'])
+    await expect(pollingOptions.getInitialHistoryCheckpoints?.()).resolves.toEqual({
+      '7': {
+        historyFrom: '2026-08-08T00:00:00.000Z',
+        reconciledUntil: '2026-08-08T02:00:00.000Z',
+      },
+    })
+    expect(pollingOptions.persistHistoryChunk).toEqual(expect.any(Function))
+    await expect(
+      pollingOptions.getCanonicalBreadcrumbs?.('mission-1'),
+    ).resolves.toEqual({
+      positions: [],
+      totalObservedByDevice: {},
+      selectionMetadataByDevice: {},
+    })
+
+    useMissionStore.setState({ currentMission: null, phase: 'idle' })
+    expect(pollingOptions.getBreadcrumbDeviceIds?.()).toEqual([])
   })
 
   it('registers the service worker on startup', async () => {

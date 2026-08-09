@@ -282,6 +282,42 @@ describe('breadcrumb accumulator', () => {
     expect(result.positions.at(-1)!.timestamp).toBe(incoming.at(-1)!.timestamp)
   })
 
+  it('keeps a 14-day append tail bounded after canonical compaction', () => {
+    const accumulator = createBreadcrumbAccumulator()
+    const startedAtMs = Date.UTC(2026, 6, 1, 0, 0, 0)
+    let nextId = 1
+
+    for (let day = 0; day < 14; day += 1) {
+      const dailyFixes = Array.from({ length: 1_000 }, (_, index) =>
+        normalizeTraccarPosition(
+          {
+            id: nextId++,
+            deviceId: 7,
+            latitude: 52 + (day * 1_000 + index) / 1_000_000,
+            longitude: -9.7 - (day * 1_000 + index) / 1_000_000,
+            fixTime: new Date(
+              startedAtMs + day * 24 * 60 * 60 * 1_000 + index * 30_000,
+            ).toISOString(),
+          },
+          'live',
+        ),
+      )
+      accumulator.append(dailyFixes)
+      const compacted = accumulator.compact()
+      expect(
+        compacted.metadata.deviceBudgets.find((budget) => budget.deviceId === '7')
+          ?.sourceRetained,
+      ).toBeLessThanOrEqual(5_000)
+    }
+
+    const settled = accumulator.snapshot()
+    expect(settled.metadata.totalObserved).toBe(14_000)
+    expect(settled.positions[0]?.timestamp).toBe(
+      new Date(startedAtMs).toISOString(),
+    )
+    expect(settled.positions.at(-1)?.id).toBe('14000')
+  })
+
   it('bounds retained source history while preserving observed breadcrumb totals [DON-235]', () => {
     const baseMs = Date.UTC(2026, 5, 13, 0, 0, 0)
     const highRateBreadcrumbs = Array.from({ length: 12_000 }, (_, index) =>
@@ -307,7 +343,7 @@ describe('breadcrumb accumulator', () => {
       expect.objectContaining({
         deviceId: '7',
         retained: result.positions.length,
-        sourceRetained: result.positions.length,
+        sourceRetained: 12_000,
         total: 12_000,
         firstTimestamp: highRateBreadcrumbs[0]!.timestamp,
         lastTimestamp: highRateBreadcrumbs.at(-1)!.timestamp,
@@ -316,16 +352,201 @@ describe('breadcrumb accumulator', () => {
     )
   })
 
+  it('preserves a 36-hour route within 25 metres when the render budget is exceeded', () => {
+    const fixIntervalMs = 5_000
+    const gapDurationMs = 10 * 60 * 1_000
+    const fixesIn36Hours = (36 * 60 * 60 * 1_000) / fixIntervalMs
+    const fixesOmittedDuringGap = gapDurationMs / fixIntervalMs
+    const totalFixes = fixesIn36Hours - fixesOmittedDuringGap
+    const gapStartsAtIndex = Math.floor(totalFixes / 2)
+    const baseMs = Date.UTC(2026, 6, 28, 0, 0, 0)
+    const baseline = Array.from({ length: totalFixes }, (_, index) =>
+      normalizeTraccarPosition(
+        {
+          id: index + 1,
+          deviceId: 7,
+          latitude: 52,
+          longitude: -9.7,
+          fixTime: new Date(
+            baseMs +
+              index * fixIntervalMs +
+              (index >= gapStartsAtIndex ? gapDurationMs : 0),
+          ).toISOString(),
+        },
+        'live',
+      ),
+    )
+
+    // Find an ordinary pair that the current bounded representation omits,
+    // without coupling the regression to epoch-specific bucket identities.
+    const baselineRetainedIds = new Set(
+      createBreadcrumbAccumulator()
+        .append(baseline)
+        .positions.map((position) => position.id),
+    )
+    const protectedIds = new Set([
+      baseline[0]!.id,
+      baseline.at(-1)!.id,
+      baseline[gapStartsAtIndex - 1]!.id,
+      baseline[gapStartsAtIndex]!.id,
+    ])
+    const excursionIndex = baseline.findIndex(
+      (position, index) =>
+        index > 0 &&
+        index < baseline.length - 1 &&
+        !protectedIds.has(position.id) &&
+        !protectedIds.has(baseline[index + 1]!.id) &&
+        !baselineRetainedIds.has(position.id) &&
+        !baselineRetainedIds.has(baseline[index + 1]!.id),
+    )
+    expect(excursionIndex).toBeGreaterThan(0)
+
+    const excursionHeightMetres = 200
+    const metresPerDegreeLatitude = 111_195
+    const completeRoute = baseline.map((position, index) =>
+      index === excursionIndex
+        ? {
+            ...position,
+            lat: position.lat + excursionHeightMetres / metresPerDegreeLatitude,
+          }
+        : position,
+    )
+    const result = createBreadcrumbAccumulator().append(completeRoute)
+    const routeBudget = result.metadata.deviceBudgets[0]
+    const retainedIds = new Set(result.positions.map((position) => position.id))
+    const excursionErrorMetres = distanceFromPointToRetainedTimeSegmentMetres(
+      completeRoute[excursionIndex]!,
+      result.positions,
+    )
+
+    expect.soft(
+      excursionErrorMetres,
+      'a bounded route representation must stay within 25m of every raw route vertex',
+    ).toBeLessThanOrEqual(25)
+    expect.soft(routeBudget?.geometryErrorBoundMetres).toBeLessThanOrEqual(25)
+    expect.soft(routeBudget?.targetGeometryErrorSatisfied).toBe(true)
+    expect.soft(retainedIds.has(completeRoute[0]!.id), 'first endpoint was dropped').toBe(true)
+    expect.soft(
+      retainedIds.has(completeRoute.at(-1)!.id),
+      'latest endpoint was dropped',
+    ).toBe(true)
+  })
+
+  it('reports the achieved geometry bound when route complexity exceeds 25 metres', () => {
+    const baseMs = Date.UTC(2026, 6, 28, 0, 0, 0)
+    const longitudeDelta = 26.6 / (111_195 * Math.cos((52 * Math.PI) / 180))
+    const route = Array.from({ length: 6_001 }, (_, index) =>
+      normalizeTraccarPosition(
+        {
+          id: index + 1,
+          deviceId: 7,
+          latitude: 52,
+          longitude: -9.7 + (index % 2 === 0 ? 0 : longitudeDelta),
+          fixTime: new Date(baseMs + index * 5_000).toISOString(),
+        },
+        'live',
+      ),
+    )
+
+    const result = createBreadcrumbAccumulator().append(route)
+    const budget = result.metadata.deviceBudgets[0]
+
+    expect(result.positions.length).toBeLessThanOrEqual(5_000)
+    expect(budget?.targetGeometryErrorSatisfied).toBe(false)
+    expect(budget?.geometryErrorBoundMetres).toBeGreaterThan(25)
+    expect(
+      distanceFromPointToRetainedTimeSegmentMetres(route[1]!, result.positions),
+    ).toBeLessThanOrEqual(budget?.geometryErrorBoundMetres ?? 0)
+  })
+
+  it('terminates for more sparse route gaps than the render budget', () => {
+    const baseMs = Date.UTC(2026, 6, 28, 0, 0, 0)
+    const route = Array.from({ length: 5_001 }, (_, index) =>
+      normalizeTraccarPosition(
+        {
+          id: index + 1,
+          deviceId: 7,
+          latitude: 52,
+          longitude: -9.7,
+          fixTime: new Date(baseMs + index * 31 * 60 * 1_000).toISOString(),
+        },
+        'live',
+      ),
+    )
+
+    const result = createBreadcrumbAccumulator().append(route)
+
+    expect(result.positions.length).toBeLessThanOrEqual(5_000)
+    expect(result.positions[0]?.id).toBe('1')
+    expect(result.positions.at(-1)?.id).toBe('5001')
+  })
+
+  it('preserves revisit ordering instead of drawing a false chord across a loop', () => {
+    const baseMs = Date.UTC(2026, 6, 28, 0, 0, 0)
+    const baseline = Array.from({ length: 12_000 }, (_, index) =>
+      normalizeTraccarPosition(
+        {
+          id: index + 1,
+          deviceId: 7,
+          latitude: 52,
+          longitude: -9.7,
+          fixTime: new Date(baseMs + index * 1_000).toISOString(),
+        },
+        'live',
+      ),
+    )
+    const baselineRetainedIds = new Set(
+      createBreadcrumbAccumulator()
+        .append(baseline)
+        .positions.map((position) => position.id),
+    )
+    const revisitStartIndex = baseline.findIndex(
+      (_, index) =>
+        index > 0 &&
+        index < baseline.length - 4 &&
+        baseline
+          .slice(index, index + 4)
+          .every((position) => !baselineRetainedIds.has(position.id)),
+    )
+    expect(revisitStartIndex).toBeGreaterThan(0)
+
+    const metresPerDegreeLatitude = 111_195
+    const metresPerDegreeLongitude =
+      metresPerDegreeLatitude * Math.cos((52 * Math.PI) / 180)
+    const completeRoute = baseline.map((position, index) => {
+      if (index === revisitStartIndex) {
+        return { ...position, lat: position.lat + 200 / metresPerDegreeLatitude }
+      }
+      if (index === revisitStartIndex + 2) {
+        return { ...position, lon: position.lon + 200 / metresPerDegreeLongitude }
+      }
+      return position
+    })
+
+    const retained = createBreadcrumbAccumulator().append(completeRoute).positions
+    const intermediateRevisit = completeRoute[revisitStartIndex + 1]!
+    const falseChordErrorMetres = distanceFromPointToRetainedTimeSegmentMetres(
+      intermediateRevisit,
+      retained,
+    )
+
+    expect(
+      falseChordErrorMetres,
+      'the intermediate A revisit must not be replaced by a B-to-C chord',
+    ).toBeLessThanOrEqual(25)
+  })
+
   it('retains the same breadcrumb identities regardless of poll batch boundaries [DON-260]', () => {
     const baseMs = Date.UTC(2026, 6, 28, 0, 0, 0)
+    const longitudeDelta = 26.6 / (111_195 * Math.cos((52 * Math.PI) / 180))
     const completeHistory = Array.from({ length: 12_000 }, (_, index) =>
       normalizeTraccarPosition(
         {
           id: index + 1,
           deviceId: 7,
-          latitude: 52 + index / 1_000_000,
-          longitude: -9.7 - index / 1_000_000,
-          fixTime: new Date(baseMs + index * 1_000).toISOString(),
+          latitude: 52,
+          longitude: -9.7 + (index % 2 === 0 ? 0 : longitudeDelta),
+          fixTime: new Date(baseMs + index * 5_000).toISOString(),
         },
         'live',
       ),
@@ -510,6 +731,67 @@ function createNormalizedPosition(
     cache_age_seconds: null,
     device_cache_stale: false,
   }
+}
+
+/**
+ * Measures local ground distance from a raw route vertex to the retained
+ * segment that brackets the vertex in time. Using the contemporaneous segment
+ * prevents a later revisit to the same place from masking an earlier false
+ * chord elsewhere in the rendered route.
+ */
+function distanceFromPointToRetainedTimeSegmentMetres(
+  point: NormalizedTrackingPosition,
+  polyline: readonly NormalizedTrackingPosition[],
+): number {
+  if (polyline.length === 0) {
+    return Number.POSITIVE_INFINITY
+  }
+  if (polyline.length === 1) {
+    return distanceFromPointToSegmentMetres(point, polyline[0]!, polyline[0]!)
+  }
+
+  const pointTimestampMs = Date.parse(point.timestamp)
+  let before = polyline[0]!
+  let after = polyline.at(-1)!
+  for (const retained of polyline) {
+    const retainedTimestampMs = Date.parse(retained.timestamp)
+    if (retainedTimestampMs <= pointTimestampMs) {
+      before = retained
+    }
+    if (retainedTimestampMs >= pointTimestampMs) {
+      after = retained
+      break
+    }
+  }
+  return distanceFromPointToSegmentMetres(point, before, after)
+}
+
+/** Converts a short WGS84 segment to a local tangent plane and projects onto it. */
+function distanceFromPointToSegmentMetres(
+  point: NormalizedTrackingPosition,
+  start: NormalizedTrackingPosition,
+  end: NormalizedTrackingPosition,
+): number {
+  const earthRadiusMetres = 6_371_008.8
+  const radiansPerDegree = Math.PI / 180
+  const longitudeScale =
+    earthRadiusMetres * radiansPerDegree * Math.cos(point.lat * radiansPerDegree)
+  const latitudeScale = earthRadiusMetres * radiansPerDegree
+  const startX = (start.lon - point.lon) * longitudeScale
+  const startY = (start.lat - point.lat) * latitudeScale
+  const endX = (end.lon - point.lon) * longitudeScale
+  const endY = (end.lat - point.lat) * latitudeScale
+  const segmentX = endX - startX
+  const segmentY = endY - startY
+  const squaredSegmentLength = segmentX * segmentX + segmentY * segmentY
+  const projection =
+    squaredSegmentLength === 0
+      ? 0
+      : Math.max(
+          0,
+          Math.min(1, -(startX * segmentX + startY * segmentY) / squaredSegmentLength),
+        )
+  return Math.hypot(startX + projection * segmentX, startY + projection * segmentY)
 }
 
 describe('positionsEqual field discrimination [DON-240]', () => {

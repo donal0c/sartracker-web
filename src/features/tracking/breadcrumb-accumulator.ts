@@ -17,6 +17,13 @@ import { compareStringsByCodeUnit } from '../../lib/deterministic-string-order'
 // rescuer's route, and its own older route must not disappear just because the
 // device keeps reporting later fixes.
 const MAX_BREADCRUMB_POSITIONS_PER_DEVICE = 5_000
+const TARGET_BREADCRUMB_GEOMETRY_ERROR_METRES = 25
+const METRES_PER_DEGREE_AT_EQUATOR = 111_320
+const BASE_SPATIAL_BUCKET_WIDTH_DEGREES =
+  TARGET_BREADCRUMB_GEOMETRY_ERROR_METRES /
+  Math.SQRT2 /
+  METRES_PER_DEGREE_AT_EQUATOR
+const MAX_SELECTOR_ITERATIONS = 2_048
 const parsedTimestampByPosition = new WeakMap<NormalizedTrackingPosition, number>()
 
 export type BreadcrumbAccumulationResult = {
@@ -25,6 +32,10 @@ export type BreadcrumbAccumulationResult = {
 }
 
 export type BreadcrumbAccumulator = {
+  readonly ingest: (
+    incoming: readonly NormalizedTrackingPosition[],
+    options?: { readonly resolveObservedBaseline?: boolean },
+  ) => void
   readonly append: (
     incoming: readonly NormalizedTrackingPosition[],
     options?: { readonly resolveObservedBaseline?: boolean },
@@ -32,8 +43,17 @@ export type BreadcrumbAccumulator = {
   readonly reset: (
     positions?: readonly NormalizedTrackingPosition[],
     totalObservedByDevice?: Readonly<Record<string, number>>,
+    selectionMetadataByDevice?: Readonly<Record<string, BreadcrumbSelectionMetadata>>,
   ) => BreadcrumbAccumulationResult
+  readonly compact: () => BreadcrumbAccumulationResult
   readonly snapshot: () => BreadcrumbAccumulationResult
+}
+
+export type BreadcrumbSelectionMetadata = {
+  readonly geometryErrorBoundMetres: number | null
+  readonly targetGeometryErrorSatisfied: boolean
+  readonly timeBucketWidthMs?: number | null
+  readonly spatialBucketWidthDegrees?: number | null
 }
 
 /**
@@ -86,6 +106,27 @@ export function createBreadcrumbAccumulator(
       return snapshot()
     }
 
+    const changed = ingestPositions(incoming, options)
+    if (!changed) {
+      return snapshot()
+    }
+    invalidate()
+    return snapshot()
+  }
+
+  const ingest = (
+    incoming: readonly NormalizedTrackingPosition[],
+    options: { readonly resolveObservedBaseline?: boolean } = {},
+  ): void => {
+    if (ingestPositions(incoming, options)) {
+      invalidate()
+    }
+  }
+
+  const ingestPositions = (
+    incoming: readonly NormalizedTrackingPosition[],
+    options: { readonly resolveObservedBaseline?: boolean },
+  ): boolean => {
     let changed = false
     for (const position of incoming) {
       changed =
@@ -95,16 +136,13 @@ export function createBreadcrumbAccumulator(
           options.resolveObservedBaseline === true,
         ) || changed
     }
-    if (!changed) {
-      return snapshot()
-    }
-    invalidate()
-    return snapshot()
+    return changed
   }
 
   const reset = (
     positions: readonly NormalizedTrackingPosition[] = [],
     totalObservedByDevice: Readonly<Record<string, number>> = {},
+    selectionMetadataByDevice: Readonly<Record<string, BreadcrumbSelectionMetadata>> = {},
   ): BreadcrumbAccumulationResult => {
     deviceStates.clear()
     for (const position of positions) {
@@ -122,6 +160,19 @@ export function createBreadcrumbAccumulator(
           totalObserved - deviceState.seenIdentities.getStorageStats().identityCount
       }
     }
+    for (const [deviceId, selection] of Object.entries(selectionMetadataByDevice)) {
+      const deviceState = deviceStates.get(deviceId)
+      if (deviceState !== undefined) {
+        deviceState.baselineGeometryErrorBoundMetres =
+          selection.geometryErrorBoundMetres
+        deviceState.baselineTargetGeometryErrorSatisfied =
+          selection.targetGeometryErrorSatisfied
+        deviceState.selectorTimeBucketWidthMs =
+          normalizeSelectorWidth(selection.timeBucketWidthMs)
+        deviceState.selectorSpatialBucketWidthDegrees =
+          normalizeSelectorWidth(selection.spatialBucketWidthDegrees)
+      }
+    }
     invalidate()
     return snapshot()
   }
@@ -137,12 +188,13 @@ export function createBreadcrumbAccumulator(
         const retention = retainDeviceTrailAcrossWindow(
           deviceState.chronological,
           MAX_BREADCRUMB_POSITIONS_PER_DEVICE,
-          deviceState.bucketWidthMs,
         )
         const retained = retention.positions
-        deviceState.bucketWidthMs = retention.bucketWidthMs
         deviceState.retained = retained
-        compactDeviceTrailSource(deviceState, retained)
+        const geometryErrorBoundMetres = combineGeometryErrorBounds(
+          deviceState.baselineGeometryErrorBoundMetres,
+          retention.geometryErrorBoundMetres,
+        )
 
         return {
           deviceId: deviceState.deviceId,
@@ -152,6 +204,11 @@ export function createBreadcrumbAccumulator(
           firstTimestamp: retained[0]?.position.timestamp ?? null,
           lastTimestamp: retained.at(-1)?.position.timestamp ?? null,
           truncated: deviceState.totalObserved > retained.length,
+          geometryErrorBoundMetres,
+          targetGeometryErrorSatisfied:
+            deviceState.baselineTargetGeometryErrorSatisfied &&
+            geometryErrorBoundMetres !== null &&
+            geometryErrorBoundMetres <= TARGET_BREADCRUMB_GEOMETRY_ERROR_METRES,
         }
       })
 
@@ -171,10 +228,64 @@ export function createBreadcrumbAccumulator(
     return cachedSnapshot
   }
 
+  const compact = (): BreadcrumbAccumulationResult => {
+    let changed = false
+    for (const deviceState of deviceStates.values()) {
+      const retention = retainDeviceTrailAcrossWindow(
+        deviceState.chronological,
+        MAX_BREADCRUMB_POSITIONS_PER_DEVICE,
+        deviceState.selectorTimeBucketWidthMs === null ||
+          deviceState.selectorSpatialBucketWidthDegrees === null
+          ? undefined
+          : {
+              timeBucketWidthMs: deviceState.selectorTimeBucketWidthMs,
+              spatialBucketWidthDegrees:
+                deviceState.selectorSpatialBucketWidthDegrees,
+            },
+      )
+      if (
+        retention.positions.length === deviceState.chronological.length &&
+        retention.positions.every(
+          (entry, index) => entry === deviceState.chronological[index],
+        )
+      ) {
+        continue
+      }
+      deviceState.baselineGeometryErrorBoundMetres = combineGeometryErrorBounds(
+        deviceState.baselineGeometryErrorBoundMetres,
+        retention.geometryErrorBoundMetres,
+      )
+      deviceState.baselineTargetGeometryErrorSatisfied =
+        deviceState.baselineTargetGeometryErrorSatisfied &&
+        deviceState.baselineGeometryErrorBoundMetres !== null &&
+        deviceState.baselineGeometryErrorBoundMetres <=
+          TARGET_BREADCRUMB_GEOMETRY_ERROR_METRES
+      deviceState.selectorTimeBucketWidthMs = retention.timeBucketWidthMs
+      deviceState.selectorSpatialBucketWidthDegrees =
+        retention.spatialBucketWidthDegrees
+      deviceState.chronological.splice(
+        0,
+        deviceState.chronological.length,
+        ...retention.positions,
+      )
+      deviceState.byKey.clear()
+      for (const entry of retention.positions) {
+        deviceState.byKey.set(createPositionKey(entry.position), entry)
+      }
+      changed = true
+    }
+    if (changed) {
+      invalidate()
+    }
+    return snapshot()
+  }
+
   reset(initialPositions)
 
   return {
+    ingest,
     append,
+    compact,
     reset,
     snapshot,
   }
@@ -193,8 +304,11 @@ type DeviceTrailState = {
   readonly chronological: TimestampedPosition[]
   totalObserved: number
   retained: readonly TimestampedPosition[]
-  bucketWidthMs: number | null
+  baselineGeometryErrorBoundMetres: number | null
+  baselineTargetGeometryErrorSatisfied: boolean
   unresolvedObservedCount: number
+  selectorTimeBucketWidthMs: number | null
+  selectorSpatialBucketWidthDegrees: number | null
 }
 
 function decorateWithTimestamp(position: NormalizedTrackingPosition): TimestampedPosition {
@@ -269,8 +383,11 @@ function mergePosition(
       chronological: [],
       totalObserved: 0,
       retained: [],
-      bucketWidthMs: null,
+      baselineGeometryErrorBoundMetres: 0,
+      baselineTargetGeometryErrorSatisfied: true,
       unresolvedObservedCount: 0,
+      selectorTimeBucketWidthMs: null,
+      selectorSpatialBucketWidthDegrees: null,
     }
     deviceStates.set(entry.position.device_id, deviceState)
   }
@@ -416,24 +533,6 @@ function replaceExistingPosition(
   deviceState.chronological.splice(insertionIndex, 0, entry)
 }
 
-function compactDeviceTrailSource(
-  deviceState: DeviceTrailState,
-  retained: readonly TimestampedPosition[],
-): void {
-  if (
-    deviceState.chronological.length <= MAX_BREADCRUMB_POSITIONS_PER_DEVICE &&
-    deviceState.bucketWidthMs === null
-  ) {
-    return
-  }
-
-  deviceState.chronological.splice(0, deviceState.chronological.length, ...retained)
-  deviceState.byKey.clear()
-  for (const entry of retained) {
-    deviceState.byKey.set(createPositionKey(entry.position), entry)
-  }
-}
-
 function findInsertionIndex(
   chronological: readonly TimestampedPosition[],
   entry: TimestampedPosition,
@@ -508,53 +607,185 @@ function mergeRetainedDeviceTrails(
 function retainDeviceTrailAcrossWindow(
   chronological: readonly TimestampedPosition[],
   maxPositions: number,
-  minimumBucketWidthMs: number | null,
+  selector?: {
+    readonly timeBucketWidthMs: number
+    readonly spatialBucketWidthDegrees: number
+  },
 ): {
   readonly positions: readonly TimestampedPosition[]
-  readonly bucketWidthMs: number | null
+  readonly geometryErrorBoundMetres: number | null
+  readonly timeBucketWidthMs: number | null
+  readonly spatialBucketWidthDegrees: number | null
 } {
-  if (chronological.length <= maxPositions && minimumBucketWidthMs === null) {
-    return { positions: chronological, bucketWidthMs: null }
+  if (chronological.length <= maxPositions && selector === undefined) {
+    return {
+      positions: chronological,
+      geometryErrorBoundMetres: 0,
+      timeBucketWidthMs: null,
+      spatialBucketWidthDegrees: null,
+    }
   }
   if (maxPositions <= 0) {
-    return { positions: [], bucketWidthMs: minimumBucketWidthMs ?? 1 }
+    return {
+      positions: [],
+      geometryErrorBoundMetres: null,
+      timeBucketWidthMs: null,
+      spatialBucketWidthDegrees: null,
+    }
   }
   if (maxPositions === 1) {
     return {
       positions: [chronological[chronological.length - 1]!],
-      bucketWidthMs: minimumBucketWidthMs ?? 1,
+      geometryErrorBoundMetres: null,
+      timeBucketWidthMs: null,
+      spatialBucketWidthDegrees: null,
     }
   }
 
-  const latest = chronological.at(-1)!
-  let bucketWidthMs = minimumBucketWidthMs ?? 1
+  let bucketWidthMs = selector?.timeBucketWidthMs ?? 1
+  let spatialBucketWidthDegrees =
+    selector?.spatialBucketWidthDegrees ?? BASE_SPATIAL_BUCKET_WIDTH_DEGREES
+  const fullWindowMs = Math.max(
+    1,
+    chronological.at(-1)!.timestampMs - chronological[0]!.timestampMs + 1,
+  )
 
-  // Epoch-anchored, power-of-two time buckets make the retained trail a pure
-  // function of the complete set of fixes. When the window grows, every
-  // coarser bucket winner is already a winner of one of its two child buckets,
-  // so a bounded accumulator can promote without needing discarded fixes.
-  // This is what makes one large history response, many incremental responses,
-  // and a restart from persisted truth select the same identities.
-  while (true) {
-    const bucketWinners = new Map<number, TimestampedPosition>()
-    for (const entry of chronological) {
-      const bucket = Math.floor(entry.timestampMs / bucketWidthMs)
-      const existing = bucketWinners.get(bucket)
-      if (existing === undefined || compareTimestampedPositions(entry, existing) < 0) {
-        bucketWinners.set(bucket, entry)
+  // Work from complete ordered truth. Time is coarsened first while retaining
+  // the 25m target cell. If route complexity still exceeds the render budget,
+  // spatial resolution is relaxed deterministically and the achieved cell
+  // diagonal is reported in metadata instead of silently claiming 25m.
+  for (let iteration = 0; iteration < MAX_SELECTOR_ITERATIONS; iteration += 1) {
+    const retainedByKey = new Map<string, TimestampedPosition>()
+    addSpatiotemporalRunBoundaries(
+      chronological,
+      bucketWidthMs,
+      spatialBucketWidthDegrees,
+      retainedByKey,
+    )
+    addRouteEndpoints(chronological, retainedByKey)
+    const retained = [...retainedByKey.values()].sort(compareTimestampedPositions)
+    if (retained.length <= maxPositions) {
+      return {
+        positions: retained,
+        geometryErrorBoundMetres:
+          spatialBucketWidthDegrees *
+          Math.SQRT2 *
+          METRES_PER_DEGREE_AT_EQUATOR,
+        timeBucketWidthMs: bucketWidthMs,
+        spatialBucketWidthDegrees,
       }
     }
 
-    const retained = [...bucketWinners.values()].sort(compareTimestampedPositions)
-    if (createPositionKey(retained.at(-1)!.position) !== createPositionKey(latest.position)) {
-      retained.push(latest)
+    if (bucketWidthMs < fullWindowMs) {
+      bucketWidthMs *= 2
+    } else {
+      spatialBucketWidthDegrees *= 2
     }
-    if (retained.length <= maxPositions) {
-      return { positions: retained, bucketWidthMs }
-    }
-
-    bucketWidthMs *= 2
   }
+
+  return {
+    positions: retainUniformlyAcrossWindow(chronological, maxPositions),
+    geometryErrorBoundMetres: null,
+    timeBucketWidthMs: null,
+    spatialBucketWidthDegrees: null,
+  }
+}
+
+function normalizeSelectorWidth(value: number | null | undefined): number | null {
+  return typeof value === 'number' && Number.isFinite(value) && value > 0
+    ? value
+    : null
+}
+
+/** Retains both ends of every contiguous spatiotemporal-cell visit. */
+function addSpatiotemporalRunBoundaries(
+  chronological: readonly TimestampedPosition[],
+  bucketWidthMs: number,
+  spatialBucketWidthDegrees: number,
+  retainedByKey: Map<string, TimestampedPosition>,
+): void {
+  let runBucket: string | null = null
+  let runFirst: TimestampedPosition | null = null
+  let runLast: TimestampedPosition | null = null
+
+  const retainRun = () => {
+    if (runFirst !== null && runLast !== null) {
+      retainedByKey.set(createPositionKey(runFirst.position), runFirst)
+      retainedByKey.set(createPositionKey(runLast.position), runLast)
+    }
+  }
+
+  for (const entry of chronological) {
+    const bucket = createSpatiotemporalBucketKey(
+      entry,
+      bucketWidthMs,
+      spatialBucketWidthDegrees,
+    )
+    if (bucket !== runBucket) {
+      retainRun()
+      runBucket = bucket
+      runFirst = entry
+    }
+    runLast = entry
+  }
+  retainRun()
+}
+
+/** Returns an epoch- and world-anchored hierarchical cell identity. */
+function createSpatiotemporalBucketKey(
+  entry: TimestampedPosition,
+  bucketWidthMs: number,
+  spatialBucketWidthDegrees: number,
+): string {
+  const timeBucket = Math.floor(entry.timestampMs / bucketWidthMs)
+  const latitudeBucket = Math.floor(
+    (entry.position.lat + 90) / spatialBucketWidthDegrees,
+  )
+  const longitudeBucket = Math.floor(
+    (entry.position.lon + 180) / spatialBucketWidthDegrees,
+  )
+  return `${timeBucket}:${latitudeBucket}:${longitudeBucket}`
+}
+
+/** Preserves the first and latest known fixes for the mission trail. */
+function addRouteEndpoints(
+  chronological: readonly TimestampedPosition[],
+  retainedByKey: Map<string, TimestampedPosition>,
+): void {
+  const first = chronological[0]
+  const latest = chronological.at(-1)
+  if (first === undefined || latest === undefined) {
+    return
+  }
+  retainedByKey.set(createPositionKey(first.position), first)
+  retainedByKey.set(createPositionKey(latest.position), latest)
+}
+
+/** Returns a deterministic endpoint-preserving finite fallback. */
+function retainUniformlyAcrossWindow(
+  chronological: readonly TimestampedPosition[],
+  maxPositions: number,
+): readonly TimestampedPosition[] {
+  if (chronological.length <= maxPositions) {
+    return chronological
+  }
+  return Array.from({ length: maxPositions }, (_, index) => {
+    const sourceIndex = Math.round(
+      (index * (chronological.length - 1)) / (maxPositions - 1),
+    )
+    return chronological[sourceIndex]!
+  })
+}
+
+/** Combines a persisted canonical bound with any newer live simplification. */
+function combineGeometryErrorBounds(
+  persistedBound: number | null,
+  liveBound: number | null,
+): number | null {
+  if (persistedBound === null || liveBound === null) {
+    return null
+  }
+  return Math.max(persistedBound, liveBound)
 }
 
 function createPositionKey(position: NormalizedTrackingPosition): string {

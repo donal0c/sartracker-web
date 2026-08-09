@@ -15,6 +15,7 @@ import {
   measureOperatorAction,
   parseTrackingSoakRuntimeLog,
   parseTrackingSoakArgs,
+  parseDarwinProcessTreeResidentMemory,
   partitionOperatorClickAudit,
   readWebGlRendererInfoFromDocument,
 } from '../../build/electron-tracking-soak-lib.js'
@@ -130,6 +131,74 @@ describe('Electron packaged tracking soak helpers [DON-246]', () => {
     expect(() =>
       parseTrackingSoakArgs(['--app', '/tmp/app', '--poll-interval-ms', '4']),
     ).toThrow(/poll interval/i)
+  })
+
+  it('parses only the requested Darwin process tree with per-process evidence', () => {
+    const memory = parseDarwinProcessTreeResidentMemory(`
+      10 1 100000 /Applications/SAR Tracker.app/Contents/MacOS/SAR Tracker
+      11 10 200000 /Applications/SAR Tracker Helper --type=renderer
+      12 10 30000 /Applications/SAR Tracker Helper --type=gpu-process
+      13 11 40000 /Applications/SAR Tracker Helper --type=utility
+      99 1 900000 /Applications/Unrelated.app/Contents/MacOS/Unrelated
+    `, 10)
+
+    expect(memory).toEqual({
+      totalResidentBytes: 370_000 * 1_024,
+      processes: [
+        { pid: 10, parentPid: 1, residentBytes: 100_000 * 1_024, kind: 'main' },
+        { pid: 11, parentPid: 10, residentBytes: 200_000 * 1_024, kind: 'renderer' },
+        { pid: 12, parentPid: 10, residentBytes: 30_000 * 1_024, kind: 'gpu' },
+        { pid: 13, parentPid: 11, residentBytes: 40_000 * 1_024, kind: 'utility' },
+      ],
+    })
+    expect(parseDarwinProcessTreeResidentMemory('99 1 100 other', 10)).toBeNull()
+  })
+
+  it('fails closed when the process-tree memory sampler records no evidence', () => {
+    const profile = createTrackingSoakProfile('ci')
+    const verdict = buildTrackingSoakVerdict({
+      profile,
+      observedBatches: profile.actualBatches,
+      deviceRows: profile.deviceCount,
+      positionRows: profile.expectedPositionRows,
+      deviceCreatedEvents: profile.deviceCount,
+      deviceUpdatedEvents: 0,
+      positionRecordedEvents: 0,
+      operationalMissionEvents: 9,
+      declaredOperationalEventBudget: 9,
+      unexplainedMissionEvents: 0,
+      restartCheckpointsPassed: profile.restartCheckpoints.length,
+      backupCycles: 2,
+      mainHeartbeatSamples: 40,
+      mainHeartbeatErrors: 0,
+      mainMaximumMs: 14,
+      rendererSamples: 40,
+      rendererLaunchSampleCounts: [20, 20],
+      rendererMaximumMs: 22,
+      rendererCrashes: 0,
+      operatorInteractionSamples: 4,
+      operatorInteractionErrors: 0,
+      operatorInteractionMaximumMs: 900,
+      operatorActionSamples: 8,
+      operatorActionMaximumMs: 650,
+      operatorExternalActionSamples: 8,
+      operatorExternalActionMaximumMs: 700,
+      webGlRendererAttested: true,
+      maximumProcessTreeResidentBytes: 0,
+      freezeThresholdMs: 1_000,
+      integrityResult: 'ok',
+      walCheckpointBusy: 0,
+      supportBundleInspected: true,
+      supportBundleRedacted: true,
+      runtimeLogBytes: 24_000,
+      supportBundleBytes: 18_000,
+      positionTruthExactMatch: true,
+      normalPrefixTruthExactMatch: true,
+      missingSourcePositionIdentityRows: 0,
+    })
+
+    expect(verdict.passed).toBe(false)
+    expect(verdict.failureReasons.join('\n')).toMatch(/process-tree resident memory.*not sampled/i)
   })
 
   it('passes only complete, responsive, zero-redundancy reports', () => {

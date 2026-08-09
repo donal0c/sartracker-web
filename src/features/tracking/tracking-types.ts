@@ -36,6 +36,10 @@ export type BreadcrumbDeviceBudget = {
   readonly firstTimestamp: string | null
   readonly lastTimestamp: string | null
   readonly truncated: boolean
+  /** Conservative maximum route error introduced by display simplification. */
+  readonly geometryErrorBoundMetres: number | null
+  /** True when simplification stayed within the preferred 25 metre target. */
+  readonly targetGeometryErrorSatisfied: boolean
 }
 
 export type BreadcrumbSnapshotMetadata = {

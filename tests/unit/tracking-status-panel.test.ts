@@ -87,6 +87,8 @@ describe('TrackingStatusPanel', () => {
               firstTimestamp: '2026-07-28T00:00:00.000Z',
               lastTimestamp: '2026-07-28T03:19:59.000Z',
               truncated: true,
+              geometryErrorBoundMetres: 25,
+              targetGeometryErrorSatisfied: true,
             },
           ],
         },
@@ -100,6 +102,72 @@ describe('TrackingStatusPanel', () => {
     )
     expect(getText('[data-testid="breadcrumb-display-summary"]')).toContain(
       'Full mission history remains stored',
+    )
+    expect(getText('[data-testid="breadcrumb-display-summary"]')).toContain(
+      'Displayed route error is bounded to 25 metres',
+    )
+  })
+
+  it('does not invent a 25-metre guarantee for legacy display metadata', () => {
+    useTrackingStore.setState((state) => ({
+      snapshot: {
+        ...state.snapshot,
+        breadcrumbMetadata: {
+          totalRetained: 3_000,
+          totalObserved: 12_000,
+          deviceBudgets: [
+            {
+              deviceId: 'tracker-1',
+              retained: 3_000,
+              sourceRetained: 3_000,
+              total: 12_000,
+              firstTimestamp: '2026-07-28T00:00:00.000Z',
+              lastTimestamp: '2026-07-28T03:19:59.000Z',
+              truncated: true,
+            },
+          ],
+        },
+      },
+    }))
+
+    render(React.createElement(TrackingStatusPanel))
+
+    expect(getText('[data-testid="breadcrumb-display-summary"]')).toContain(
+      'too complex for a guaranteed display-error bound',
+    )
+    expect(getText('[data-testid="breadcrumb-display-summary"]')).not.toContain(
+      'bounded to 25 metres',
+    )
+  })
+
+  it('states the achieved bound when route complexity exceeds the 25-metre target', () => {
+    useTrackingStore.setState((state) => ({
+      snapshot: {
+        ...state.snapshot,
+        breadcrumbMetadata: {
+          totalRetained: 5_000,
+          totalObserved: 12_000,
+          deviceBudgets: [
+            {
+              deviceId: 'tracker-1',
+              retained: 5_000,
+              sourceRetained: 12_000,
+              total: 12_000,
+              firstTimestamp: '2026-07-28T00:00:00.000Z',
+              lastTimestamp: '2026-07-28T16:39:55.000Z',
+              truncated: true,
+              geometryErrorBoundMetres: 42.1,
+              targetGeometryErrorSatisfied: false,
+            },
+          ],
+        },
+      },
+    }))
+
+    render(React.createElement(TrackingStatusPanel))
+
+    expect(getText('[data-testid="breadcrumb-display-summary"]')).toContain(
+      'Displayed route error may be up to 43 metres for this route',
     )
   })
 })

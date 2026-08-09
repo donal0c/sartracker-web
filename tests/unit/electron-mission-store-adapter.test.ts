@@ -10,6 +10,11 @@ describe('electron mission store adapter', () => {
   it('returns the typed mission store exposed by the preload bridge', async () => {
     const missionStore = {
       info: vi.fn().mockResolvedValue({ schema_version: 3 }),
+      listBreadcrumbPositions: vi.fn().mockResolvedValue({
+        positions: [],
+        deviceTotals: [],
+      }),
+      cancelBreadcrumbQuery: vi.fn().mockResolvedValue(true),
     }
     Object.defineProperty(window, 'sartrackerElectron', {
       configurable: true,
@@ -21,6 +26,16 @@ describe('electron mission store adapter', () => {
     const store = createElectronMissionStore()
 
     await expect(store.info()).resolves.toEqual({ schema_version: 3 })
+    await expect(
+      store.listBreadcrumbPositions?.('mission-a', 5_000, 'request-a'),
+    ).resolves.toEqual({ positions: [], deviceTotals: [] })
+    await expect(store.cancelBreadcrumbQuery?.('request-a')).resolves.toBe(true)
     expect(missionStore.info).toHaveBeenCalledWith()
+    expect(missionStore.listBreadcrumbPositions).toHaveBeenCalledWith(
+      'mission-a',
+      5_000,
+      'request-a',
+    )
+    expect(missionStore.cancelBreadcrumbQuery).toHaveBeenCalledWith('request-a')
   })
 })
