@@ -10,6 +10,7 @@ const DEFAULT_NORMAL_POLL_INTERVAL_MS = 30_000
 const DEFAULT_RECONCILIATION_TIMEOUT_MS = 60_000
 const DEFAULT_PERSISTENCE_TIMEOUT_MS = 120_000
 const DEFAULT_MOCK_LATENCY_MS = 20
+const DEFAULT_POST_COMPLETION_RESTART_COUNT = 3
 const MAX_CURRENT_FIX_MS = 5_000
 const MAX_FIRST_BREADCRUMB_MS = 10_000
 const MAX_FULL_RECONCILIATION_MS = 60_000
@@ -17,6 +18,28 @@ const MAX_HISTORY_CONCURRENCY = 8
 const RENDER_BREADCRUMB_LIMIT_PER_DEVICE = 5_000
 const RENDER_BREADCRUMB_GAP_THRESHOLD_MS = 30 * 60 * 1_000
 const EARTH_RADIUS_METRES = 6_371_008.8
+
+/** Returns true once a child has either exited normally or by signal. */
+export function processExited(process) {
+  return process.exitCode !== null || process.signalCode !== null
+}
+
+/** Terminates one proof-owned child and returns fail-closed exit evidence. */
+export async function cleanupOwnedProcess(process, options) {
+  if (!processExited(process)) {
+    process.kill('SIGTERM')
+    await options.waitForExit(process, options.gracefulTimeoutMs ?? 5_000)
+  }
+  if (!processExited(process)) {
+    process.kill('SIGKILL')
+    await options.waitForExit(process, options.forceTimeoutMs ?? 5_000)
+  }
+  return {
+    exitCode: process.exitCode,
+    signalCode: process.signalCode,
+    cleanupComplete: processExited(process),
+  }
+}
 
 /** Parses the explicit packaged 36-hour proof command line. */
 export function parseBreadcrumb36HourProofArgs(argv) {
@@ -50,6 +73,9 @@ export function parseBreadcrumb36HourProofArgs(argv) {
         break
       case '--latency-ms':
         parsed.latencyMs = Number(nextValue())
+        break
+      case '--post-completion-restarts':
+        parsed.postCompletionRestartCount = Number(nextValue())
         break
       case '--':
         parsed.extraArgs.push(...argv.slice(index + 1))
@@ -96,6 +122,13 @@ export function parseBreadcrumb36HourProofArgs(argv) {
       0,
       60_000,
       '--latency-ms',
+    ),
+    postCompletionRestartCount: boundedInteger(
+      parsed.postCompletionRestartCount,
+      DEFAULT_POST_COMPLETION_RESTART_COUNT,
+      1,
+      10,
+      '--post-completion-restarts',
     ),
     extraArgs: parsed.extraArgs,
   }

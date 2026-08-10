@@ -27,9 +27,11 @@ import {
   buildBreadcrumb36HourRenderedOracle,
   buildBreadcrumb36HourVariableSpeedEvidence,
   buildBreadcrumbRestartProofVerdict,
+  cleanupOwnedProcess,
   createPersistedBreadcrumbEvidenceAccumulator,
   createRenderedBreadcrumbEvidence,
   parseBreadcrumb36HourProofArgs,
+  processExited,
   summarizeBreadcrumbRequestLedger,
   verifyBreadcrumbRuntimeConfiguration,
 } from '../build/electron-breadcrumb-36h-proof-lib.js'
@@ -99,6 +101,7 @@ async function main() {
 
   let launch = null
   const packagedLaunchLogs = []
+  const packagedLaunchAttempts = []
   let report = null
   let runError = null
   let mission = null
@@ -111,9 +114,14 @@ async function main() {
   let recoveredMission = null
   let failureRuntimeEvidence = null
   try {
-    launch = await launchPackagedApp(options, userDataDir)
+    launch = await launchPackagedApp(options, userDataDir, {
+      phase: 'mid-backfill',
+      onAttempt: (attempt) => {
+        packagedLaunchAttempts.push(attempt.diagnostics)
+        packagedLaunchLogs.push({ phase: attempt.phase, logChunks: attempt.logChunks })
+      },
+    })
     recordPhase('initialPackagedLaunchReady')
-    packagedLaunchLogs.push({ phase: 'mid-backfill', logChunks: launch.logChunks })
     const initialRuntimeConfiguration = await verifyPackagedRuntimeConfiguration({
       page: launch.page,
       expectedBaseUrl: mockServer.baseUrl,
@@ -160,9 +168,14 @@ async function main() {
     midBackfillPersisted = inspectPersistedBreadcrumbs(databasePath, mission.id)
     recordPhase('midBackfillDatabaseInspected')
 
-    launch = await launchPackagedApp(options, userDataDir)
+    launch = await launchPackagedApp(options, userDataDir, {
+      phase: 'crash-recovery',
+      onAttempt: (attempt) => {
+        packagedLaunchAttempts.push(attempt.diagnostics)
+        packagedLaunchLogs.push({ phase: attempt.phase, logChunks: attempt.logChunks })
+      },
+    })
     recordPhase('recoveryPackagedLaunchReady')
-    packagedLaunchLogs.push({ phase: 'crash-recovery', logChunks: launch.logChunks })
     const recoveryRuntimeConfiguration = await verifyPackagedRuntimeConfiguration({
       page: launch.page,
       expectedBaseUrl: mockServer.baseUrl,
@@ -258,57 +271,110 @@ async function main() {
       variableSpeedEvidence,
     })
 
-    const postCompletionRequestStart = mockServer.snapshot().requestLedger.length
-    launch = await launchPackagedApp(options, userDataDir)
-    recordPhase('postCompletionPackagedLaunchReady')
-    packagedLaunchLogs.push({ phase: 'post-completion-restart', logChunks: launch.logChunks })
-    const postRestartRuntimeConfiguration = await verifyPackagedRuntimeConfiguration({
-      page: launch.page,
-      expectedBaseUrl: mockServer.baseUrl,
-      expectedPollIntervalMs: options.normalPollIntervalMs,
-    })
-    const postRestartObservedFromMs = Date.now()
-    const postRestartMission = await resumeRecoveredMission(
-      launch.page,
-      mission.id,
-      30_000,
-    )
-    const postCompletionRendered = await waitForStableSerializedTrackingEvidence({
-      page: launch.page,
-      expected: renderedOracle.rendered,
-      timeoutMs: 10_000,
-      observedFromMs: postRestartObservedFromMs,
-    })
-    await launch.page.screenshot({
-      path: path.join(evidenceDir, 'packaged-36-hour-post-completion-restart.png'),
-      fullPage: true,
-    })
-    await closeLaunch(launch)
-    recordPhase('postCompletionRunClosed')
-    launch = null
-    await waitForMockIdle(mockServer, 10_000)
-    const postCompletionPersisted = inspectPersistedBreadcrumbs(databasePath, mission.id)
+    const postCompletionRestarts = []
+    const postRestartRuntimeConfigurations = []
+    for (
+      let restartIndex = 1;
+      restartIndex <= options.postCompletionRestartCount;
+      restartIndex += 1
+    ) {
+      const phasePrefix = `postCompletionRestart${restartIndex}`
+      const postCompletionRequestStart = mockServer.snapshot().requestLedger.length
+      launch = await launchPackagedApp(options, userDataDir, {
+        phase: `post-completion-restart-${restartIndex}`,
+        onAttempt: (attempt) => {
+          packagedLaunchAttempts.push(attempt.diagnostics)
+          packagedLaunchLogs.push({ phase: attempt.phase, logChunks: attempt.logChunks })
+        },
+      })
+      recordPhase(`${phasePrefix}PackagedLaunchReady`)
+      const postRestartRuntimeConfiguration = await verifyPackagedRuntimeConfiguration({
+        page: launch.page,
+        expectedBaseUrl: mockServer.baseUrl,
+        expectedPollIntervalMs: options.normalPollIntervalMs,
+      })
+      postRestartRuntimeConfigurations.push(postRestartRuntimeConfiguration)
+      recordPhase(`${phasePrefix}RuntimeConfigurationVerified`)
+      await installTrackingSetDataCapture(launch.page)
+      recordPhase(`${phasePrefix}SetDataCaptureInstalled`)
+      const postRestartObservedFromMs = Date.now()
+      const restartPhaseTimestamps = {}
+      const recordRestartPhase = (phase) => {
+        const unixMs = Date.now()
+        restartPhaseTimestamps[phase] = {
+          unixMs,
+          elapsedMs: unixMs - postRestartObservedFromMs,
+        }
+        recordPhase(`${phasePrefix}${phase[0].toUpperCase()}${phase.slice(1)}`)
+      }
+      const postRestartMission = await resumeRecoveredMission(
+        launch.page,
+        mission.id,
+        30_000,
+        recordRestartPhase,
+      )
+      const postCompletionRendered = await waitForStableSerializedTrackingEvidence({
+        page: launch.page,
+        expected: renderedOracle.rendered,
+        timeoutMs: 10_000,
+        observedFromMs: postRestartObservedFromMs,
+      })
+      recordRestartPhase('stableRenderObserved')
+      await launch.page.screenshot({
+        path: path.join(
+          evidenceDir,
+          restartIndex === 1
+            ? 'packaged-36-hour-post-completion-restart.png'
+            : `packaged-36-hour-post-completion-restart-${restartIndex}.png`,
+        ),
+        fullPage: true,
+      })
+      await closeLaunch(launch)
+      recordPhase(`${phasePrefix}RunClosed`)
+      launch = null
+      await waitForMockIdle(mockServer, 10_000)
+      const postCompletionPersisted = inspectPersistedBreadcrumbs(databasePath, mission.id)
+      const requestCountAfterRestart =
+        mockServer.snapshot().requestLedger.length - postCompletionRequestStart
+      postCompletionRestarts.push({
+        attempt: restartIndex,
+        missionId: postRestartMission.id,
+        phaseTimestamps: restartPhaseTimestamps,
+        rendered: postCompletionRendered,
+        persisted: postCompletionPersisted,
+        requestCountAfterRestart,
+      })
+    }
     const finalRequestSnapshot = mockServer.snapshot()
     const retryEvidence = analyzeTransientHistoryRetries(
       finalRequestSnapshot.requestLedger,
     )
-    const restartVerdict = buildBreadcrumbRestartProofVerdict({
-      sourcePositionCount: sourceTruth.totalPositionCount,
-      midBackfill: {
-        persistedRowCount: midBackfillPersisted.rowCount,
-        databaseIntegrityResult: midBackfillPersisted.integrityResult,
-        coverageComplete: midBackfillCheckpoint.coverage.complete,
-        processTerminated: forcedTermination.processTerminated,
-      },
-      retryEvidence,
-      completedPersisted: persisted,
-      postCompletionPersisted,
-      completedRendered: rendered,
-      postCompletionRendered,
-      restoredMissionMatches:
-        recoveredMission.id === mission.id && postRestartMission.id === mission.id,
-      postCompletionRenderMs: postCompletionRendered.observedMs,
-    })
+    const restartAttemptVerdicts = postCompletionRestarts.map((restart) =>
+      buildBreadcrumbRestartProofVerdict({
+        sourcePositionCount: sourceTruth.totalPositionCount,
+        midBackfill: {
+          persistedRowCount: midBackfillPersisted.rowCount,
+          databaseIntegrityResult: midBackfillPersisted.integrityResult,
+          coverageComplete: midBackfillCheckpoint.coverage.complete,
+          processTerminated: forcedTermination.processTerminated,
+        },
+        retryEvidence,
+        completedPersisted: persisted,
+        postCompletionPersisted: restart.persisted,
+        completedRendered: rendered,
+        postCompletionRendered: restart.rendered,
+        restoredMissionMatches:
+          recoveredMission.id === mission.id && restart.missionId === mission.id,
+        postCompletionRenderMs: restart.rendered.observedMs,
+      }),
+    )
+    const restartVerdict = {
+      passed: restartAttemptVerdicts.every((attempt) => attempt.passed),
+      failureReasons: restartAttemptVerdicts.flatMap((attempt, index) =>
+        attempt.failureReasons.map((reason) => `Restart ${index + 1}: ${reason}`),
+      ),
+      attempts: restartAttemptVerdicts,
+    }
     const verdict = {
       passed: baseVerdict.passed && restartVerdict.passed,
       failureReasons: [
@@ -317,7 +383,7 @@ async function main() {
       ],
     }
     report = {
-      schemaVersion: 1,
+      schemaVersion: 2,
       proof: 'packaged-electron-36-hour-initial-breadcrumb-history',
       recordedAt: new Date().toISOString(),
       app: {
@@ -337,10 +403,13 @@ async function main() {
       },
       normalPollIntervalMs: options.normalPollIntervalMs,
       mockLatencyMs: options.latencyMs,
+      phaseTimestamps,
+      packagedLaunchAttempts,
       runtimeConfiguration: {
         initial: initialRuntimeConfiguration,
         crashRecovery: recoveryRuntimeConfiguration,
-        postCompletionRestart: postRestartRuntimeConfiguration,
+        postCompletionRestart: postRestartRuntimeConfigurations[0],
+        postCompletionRestarts: postRestartRuntimeConfigurations,
       },
       resilience: {
         midBackfill: {
@@ -354,13 +423,8 @@ async function main() {
         },
         retryEvidence,
         recoveredMissionId: recoveredMission.id,
-        postCompletionRestart: {
-          missionId: postRestartMission.id,
-          rendered: postCompletionRendered,
-          persisted: postCompletionPersisted,
-          requestCountAfterRestart:
-            finalRequestSnapshot.requestLedger.length - postCompletionRequestStart,
-        },
+        postCompletionRestart: postCompletionRestarts[0],
+        postCompletionRestarts,
         verdict: restartVerdict,
       },
       timings,
@@ -476,8 +540,10 @@ async function main() {
           reconciliationDeadlineMs: options.reconciliationTimeoutMs,
           normalPollIntervalMs: options.normalPollIntervalMs,
           mockLatencyMs: options.latencyMs,
+          postCompletionRestartCount: options.postCompletionRestartCount,
         },
         phaseTimestamps,
+        packagedLaunchAttempts,
         profile: {
           sourceFrom: profile.sourceFrom,
           sourceNow: profile.sourceNow,
@@ -588,9 +654,24 @@ async function seedRuntimeConfiguration(userDataDir, baseUrl, pollIntervalMs) {
   })
 }
 
-async function launchPackagedApp(options, userDataDir) {
+async function launchPackagedApp(options, userDataDir, instrumentation = {}) {
   const remoteDebuggingPort = await findFreePort()
   const logChunks = []
+  const diagnostics = {
+    phase: instrumentation.phase ?? 'packaged-launch',
+    remoteDebuggingPort,
+    spawnedAtUnixMs: Date.now(),
+    cdpReadyAtUnixMs: null,
+    browserConnectedAtUnixMs: null,
+    pageAvailableAtUnixMs: null,
+    appShellAttachedAtUnixMs: null,
+    mapCanvasAttachedAtUnixMs: null,
+    failedAtUnixMs: null,
+    failureMessage: null,
+    exitCode: null,
+    signalCode: null,
+    cleanupComplete: false,
+  }
   const appProcess = spawn(
     options.appPath,
     [`--remote-debugging-port=${remoteDebuggingPort}`, ...options.extraArgs],
@@ -605,16 +686,40 @@ async function launchPackagedApp(options, userDataDir) {
   )
   appProcess.stdout.on('data', (chunk) => logChunks.push(chunk))
   appProcess.stderr.on('data', (chunk) => logChunks.push(chunk))
-  await waitForCdp(remoteDebuggingPort, appProcess)
-  const browser = await chromium.connectOverCDP(
-    `http://127.0.0.1:${remoteDebuggingPort}`,
-  )
-  const context = browser.contexts()[0]
-  const page = context.pages()[0] ?? (await context.waitForEvent('page'))
-  await page.setViewportSize({ width: 1440, height: 900 })
-  await page.getByTestId('app-shell').waitFor({ state: 'attached', timeout: 60_000 })
-  await page.locator('.maplibregl-canvas').waitFor({ state: 'attached', timeout: 60_000 })
-  return { appProcess, browser, page, logChunks, closed: false }
+  instrumentation.onAttempt?.({
+    phase: diagnostics.phase,
+    appProcess,
+    logChunks,
+    diagnostics,
+  })
+  let browser = null
+  try {
+    await waitForCdp(remoteDebuggingPort, appProcess)
+    diagnostics.cdpReadyAtUnixMs = Date.now()
+    browser = await chromium.connectOverCDP(
+      `http://127.0.0.1:${remoteDebuggingPort}`,
+    )
+    diagnostics.browserConnectedAtUnixMs = Date.now()
+    const context = browser.contexts()[0]
+    const page = context.pages()[0] ?? (await context.waitForEvent('page'))
+    diagnostics.pageAvailableAtUnixMs = Date.now()
+    await page.setViewportSize({ width: 1440, height: 900 })
+    await page.getByTestId('app-shell').waitFor({ state: 'attached', timeout: 60_000 })
+    diagnostics.appShellAttachedAtUnixMs = Date.now()
+    await page.locator('.maplibregl-canvas').waitFor({ state: 'attached', timeout: 60_000 })
+    diagnostics.mapCanvasAttachedAtUnixMs = Date.now()
+    return { appProcess, browser, page, logChunks, diagnostics, closed: false }
+  } catch (error) {
+    diagnostics.failedAtUnixMs = Date.now()
+    diagnostics.failureMessage =
+      error instanceof Error ? error.message.slice(0, 1_000) : String(error).slice(0, 1_000)
+    await browser?.close().catch(() => undefined)
+    Object.assign(
+      diagnostics,
+      await cleanupOwnedProcess(appProcess, { waitForExit }),
+    )
+    throw error
+  }
 }
 
 async function verifyPackagedRuntimeConfiguration(input) {
@@ -647,12 +752,18 @@ async function installTrackingSetDataCapture(page) {
     window.__SARTRACKER_TRACKING_SET_DATA_CAPTURE__ = {
       updateCount: 0,
       latest: null,
+      installedAtUnixMs: Date.now(),
+      firstUpdateAtUnixMs: null,
+      latestUpdateAtUnixMs: null,
     }
     source.setData = (data) => {
       const capture = window.__SARTRACKER_TRACKING_SET_DATA_CAPTURE__
       if (capture !== undefined) {
+        const updatedAtUnixMs = Date.now()
         capture.updateCount += 1
         capture.latest = data
+        capture.firstUpdateAtUnixMs ??= updatedAtUnixMs
+        capture.latestUpdateAtUnixMs = updatedAtUnixMs
       }
       return originalSetData(data)
     }
@@ -674,12 +785,21 @@ async function waitForActiveMission(page, timeoutMs) {
   })
 }
 
-async function resumeRecoveredMission(page, expectedMissionId, timeoutMs) {
+async function resumeRecoveredMission(
+  page,
+  expectedMissionId,
+  timeoutMs,
+  recordMilestone = () => undefined,
+) {
   const recoveryDialog = page.getByTestId('mission-recovery-dialog')
   await recoveryDialog.waitFor({ state: 'attached', timeout: timeoutMs })
+  recordMilestone('recoveryDialogAttached')
   await recoveryDialog.getByRole('button', { name: 'Resume' }).click({ force: true })
+  recordMilestone('resumeClicked')
   await recoveryDialog.waitFor({ state: 'detached', timeout: timeoutMs })
+  recordMilestone('recoveryDialogDetached')
   const mission = await waitForActiveMission(page, timeoutMs)
+  recordMilestone('activeMissionObserved')
   if (mission.id !== expectedMissionId) {
     throw new Error(
       `Restart recovered mission ${mission.id}, expected ${expectedMissionId}.`,
@@ -871,22 +991,69 @@ async function readSerializedTrackingSourceCollection(page) {
 
 async function waitForStableSerializedTrackingEvidence(input) {
   const deadline = input.observedFromMs + input.timeoutMs
+  let firstNonEmptyMs = null
+  let firstExactMs = null
+  let readCount = 0
+  let maximumReadDurationMs = 0
   while (Date.now() < deadline) {
     assertProcessAlive(input.page)
-    const firstCollection = await readSerializedTrackingSourceCollection(input.page)
+    const firstReadStartedAtMs = Date.now()
+    const firstCapture = await readTrackingSetDataCapture(input.page).catch(() => null)
+    const firstCollection = firstCapture?.latest ??
+      await readSerializedTrackingSourceCollection(input.page)
+    readCount += 1
+    maximumReadDurationMs = Math.max(
+      maximumReadDurationMs,
+      Date.now() - firstReadStartedAtMs,
+    )
     if (firstCollection !== null) {
       const first = createRenderedBreadcrumbEvidence(firstCollection)
+      if (first.coordinateCount > 0 && firstNonEmptyMs === null) {
+        firstNonEmptyMs = Date.now() - input.observedFromMs
+      }
       if (renderedEvidenceMatches(first, input.expected)) {
+        firstExactMs ??= Date.now() - input.observedFromMs
         await input.page.waitForTimeout(250)
-        const secondCollection = await readSerializedTrackingSourceCollection(input.page)
+        const secondReadStartedAtMs = Date.now()
+        const secondCapture = await readTrackingSetDataCapture(input.page).catch(() => null)
+        const secondCollection = secondCapture?.latest ??
+          await readSerializedTrackingSourceCollection(input.page)
+        readCount += 1
+        maximumReadDurationMs = Math.max(
+          maximumReadDurationMs,
+          Date.now() - secondReadStartedAtMs,
+        )
         if (secondCollection !== null) {
           const second = createRenderedBreadcrumbEvidence(secondCollection)
           if (renderedEvidenceMatches(second, first)) {
+            const observedMs = Date.now() - input.observedFromMs
             return {
               ...second,
               stable: true,
-              observedMs: Date.now() - input.observedFromMs,
-              evidencePath: 'GeoJSONSource.serialize().data',
+              observedMs,
+              firstNonEmptyMs,
+              firstExactMs,
+              stableConfirmedMs: observedMs,
+              stabilityWaitMs: observedMs - firstExactMs,
+              readCount,
+              maximumReadDurationMs,
+              evidencePath: firstCapture?.latest === null || firstCapture === null
+                ? 'GeoJSONSource.serialize().data'
+                : 'GeoJSONSource.setData capture',
+              setDataCapture: secondCapture === null
+                ? null
+                : {
+                    updateCount: secondCapture.updateCount,
+                    installedAtUnixMs: secondCapture.installedAtUnixMs,
+                    firstUpdateAtUnixMs: secondCapture.firstUpdateAtUnixMs,
+                    latestUpdateAtUnixMs: secondCapture.latestUpdateAtUnixMs,
+                    firstUpdateMs: secondCapture.firstUpdateAtUnixMs === null
+                      ? null
+                      : secondCapture.firstUpdateAtUnixMs - input.observedFromMs,
+                    latestUpdateMs: secondCapture.latestUpdateAtUnixMs === null
+                      ? null
+                      : secondCapture.latestUpdateAtUnixMs - input.observedFromMs,
+                  },
               firstObservation: first,
             }
           }
@@ -1009,12 +1176,13 @@ async function closeLaunch(launch) {
   }
   launch.closed = true
   await launch.browser.close().catch(() => undefined)
-  launch.appProcess.kill('SIGTERM')
-  await waitForExit(launch.appProcess, 10_000)
-  if (launch.appProcess.exitCode === null) {
-    launch.appProcess.kill('SIGKILL')
-    await waitForExit(launch.appProcess, 5_000)
-  }
+  Object.assign(
+    launch.diagnostics,
+    await cleanupOwnedProcess(launch.appProcess, {
+      waitForExit,
+      gracefulTimeoutMs: 10_000,
+    }),
+  )
 }
 
 async function forceKillLaunch(launch) {
@@ -1024,8 +1192,12 @@ async function forceKillLaunch(launch) {
   launch.closed = true
   launch.appProcess.kill('SIGKILL')
   await waitForExit(launch.appProcess, 10_000)
-  const processTerminated =
-    launch.appProcess.exitCode !== null || launch.appProcess.signalCode !== null
+  const processTerminated = processExited(launch.appProcess)
+  Object.assign(launch.diagnostics, {
+    exitCode: launch.appProcess.exitCode,
+    signalCode: launch.appProcess.signalCode,
+    cleanupComplete: processTerminated,
+  })
   await launch.browser.close().catch(() => undefined)
   if (!processTerminated) {
     throw new Error('Packaged Electron did not terminate after the mid-backfill SIGKILL.')
@@ -1072,8 +1244,11 @@ async function findFreePort() {
 async function waitForCdp(port, appProcess) {
   const deadline = Date.now() + 60_000
   while (Date.now() < deadline) {
-    if (appProcess.exitCode !== null) {
-      throw new Error(`Packaged Electron exited before CDP: ${appProcess.exitCode}.`)
+    if (processExited(appProcess)) {
+      throw new Error(
+        `Packaged Electron exited before CDP: exit=${String(appProcess.exitCode)} ` +
+          `signal=${String(appProcess.signalCode)}.`,
+      )
     }
     try {
       const response = await fetch(`http://127.0.0.1:${port}/json/version`)
@@ -1088,7 +1263,7 @@ async function waitForCdp(port, appProcess) {
 }
 
 async function waitForExit(child, timeoutMs) {
-  if (child.exitCode !== null) {
+  if (processExited(child)) {
     return
   }
   await Promise.race([

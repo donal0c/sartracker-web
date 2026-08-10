@@ -1,6 +1,6 @@
 import { createRequire } from 'node:module'
 
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 import {
   analyzeBreadcrumbCheckpointProgress,
@@ -10,10 +10,12 @@ import {
   buildBreadcrumb36HourRenderedOracle,
   buildBreadcrumb36HourVariableSpeedEvidence,
   buildBreadcrumbRestartProofVerdict,
+  cleanupOwnedProcess,
   createPersistedBreadcrumbEvidence,
   createRenderedBreadcrumbEvidence,
   verifyBreadcrumbRuntimeConfiguration,
   parseBreadcrumb36HourProofArgs,
+  processExited,
   summarizeBreadcrumbRequestLedger,
 } from '../../build/electron-breadcrumb-36h-proof-lib.js'
 import {
@@ -61,6 +63,8 @@ describe('packaged Electron 36-hour breadcrumb proof helpers', () => {
         '/tmp/evidence',
         '--latency-ms',
         '25',
+        '--post-completion-restarts',
+        '3',
         '--',
         '--ozone-platform=x11',
       ]),
@@ -71,15 +75,54 @@ describe('packaged Electron 36-hour breadcrumb proof helpers', () => {
       reconciliationTimeoutMs: 60_000,
       persistenceTimeoutMs: 120_000,
       latencyMs: 25,
+      postCompletionRestartCount: 3,
       extraArgs: ['--ozone-platform=x11'],
     })
   })
 
   it('uses enough default mock latency to make the mid-backfill kill deterministic', () => {
-    expect(parseBreadcrumb36HourProofArgs([
+    const parsed = parseBreadcrumb36HourProofArgs([
       '--app',
       '/tmp/SAR.AppImage',
-    ]).latencyMs).toBe(20)
+    ])
+
+    expect(parsed.latencyMs).toBe(20)
+    expect(parsed.postCompletionRestartCount).toBe(3)
+  })
+
+  it('rejects an unbounded post-completion restart count', () => {
+    expect(() => parseBreadcrumb36HourProofArgs([
+      '--app',
+      '/tmp/SAR.AppImage',
+      '--post-completion-restarts',
+      '11',
+    ])).toThrow('--post-completion-restarts')
+  })
+
+  it('treats either an exit code or terminating signal as process completion', () => {
+    expect(processExited({ exitCode: null, signalCode: null })).toBe(false)
+    expect(processExited({ exitCode: 0, signalCode: null })).toBe(true)
+    expect(processExited({ exitCode: null, signalCode: 'SIGKILL' })).toBe(true)
+  })
+
+  it('owns failed-launch cleanup through SIGKILL and records the terminating signal', async () => {
+    const child = {
+      exitCode: null as number | null,
+      signalCode: null as NodeJS.Signals | null,
+      kill: vi.fn((signal: NodeJS.Signals) => {
+        if (signal === 'SIGKILL') child.signalCode = signal
+        return true
+      }),
+    }
+    const waitForExit = vi.fn().mockResolvedValue(undefined)
+
+    await expect(cleanupOwnedProcess(child, { waitForExit })).resolves.toEqual({
+      exitCode: null,
+      signalCode: 'SIGKILL',
+      cleanupComplete: true,
+    })
+    expect(child.kill.mock.calls).toEqual([['SIGTERM'], ['SIGKILL']])
+    expect(waitForExit).toHaveBeenCalledTimes(2)
   })
 
   it('proves per-device interval coverage and reports exact gaps', () => {
