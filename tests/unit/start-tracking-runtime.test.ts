@@ -11,6 +11,7 @@ import {
   createIncomingPositionCacheKeys,
   startTrackingRuntime,
 } from '../../src/features/tracking/start-tracking-runtime'
+import type { TrackingHistoryChunkPersistenceInput } from '../../src/features/tracking/polling-manager'
 import { useMissionStore } from '../../src/features/mission/mission-store'
 import { useActiveMissionDevicesStore } from '../../src/features/tracking/active-mission-devices-store'
 
@@ -1422,6 +1423,81 @@ describe('startTrackingRuntime', () => {
         history_from: '2026-04-06T00:00:00.000Z',
         reconciled_until: '2026-04-06T02:00:00.000Z',
       }],
+    })
+    expect(persistTrackingHistoryBatch).not.toHaveBeenCalled()
+  })
+
+  it('persists a successful initial-history wave in one atomic checkpoint transaction', async () => {
+    let pollerHooks:
+      | {
+          persistHistoryChunks?: (
+            inputs: readonly TrackingHistoryChunkPersistenceInput[],
+          ) => Promise<void>
+        }
+      | undefined
+    const persistTrackingPositionsBulk = vi.fn().mockResolvedValue({
+      changedPositionCount: 1,
+      insertedPositionCount: 1,
+      skippedAmbiguousLegacyAdoptionCount: 0,
+    })
+    const persistTrackingHistoryBatch = vi.fn()
+
+    await startTrackingRuntime({
+      config: { baseUrl: 'http://test:8082' },
+      createClient: vi.fn().mockReturnValue({}),
+      createPoller: vi.fn().mockImplementation((_client, hooks) => {
+        pollerHooks = hooks
+        return { start: vi.fn(), stop: vi.fn() }
+      }),
+      cache: { read: vi.fn().mockResolvedValue(null), write: vi.fn() },
+      missionStore: createMissionStoreStub({
+        getActiveMission: vi.fn().mockResolvedValue({ id: 'mission-1' }),
+        persistTrackingPositionsBulk,
+        persistTrackingHistoryBatch,
+      }),
+      applySnapshot: vi.fn(),
+      applyStatus: vi.fn(),
+    })
+
+    const position = SNAPSHOT.breadcrumbs[0]!
+    const inputs: readonly TrackingHistoryChunkPersistenceInput[] = [
+      {
+        phase: 'initial',
+        expectedMissionId: 'mission-1',
+        deviceId: position.device_id,
+        historyFrom: '2026-04-06T00:00:00.000Z',
+        reconciledUntil: '2026-04-06T02:00:00.000Z',
+        positions: [position],
+      },
+      {
+        phase: 'initial',
+        expectedMissionId: 'mission-1',
+        deviceId: '2',
+        historyFrom: '2026-04-06T00:00:00.000Z',
+        reconciledUntil: '2026-04-06T02:00:00.000Z',
+        positions: [],
+      },
+    ]
+
+    expect(pollerHooks?.persistHistoryChunks).toBeTypeOf('function')
+    await expect(pollerHooks?.persistHistoryChunks?.(inputs)).resolves.toBeUndefined()
+
+    expect(persistTrackingPositionsBulk).toHaveBeenCalledOnce()
+    expect(persistTrackingPositionsBulk).toHaveBeenCalledWith({
+      mission_id: 'mission-1',
+      positions: [expect.objectContaining({ source_position_id: position.id })],
+      checkpoints: [
+        {
+          device_id: position.device_id,
+          history_from: '2026-04-06T00:00:00.000Z',
+          reconciled_until: '2026-04-06T02:00:00.000Z',
+        },
+        {
+          device_id: '2',
+          history_from: '2026-04-06T00:00:00.000Z',
+          reconciled_until: '2026-04-06T02:00:00.000Z',
+        },
+      ],
     })
     expect(persistTrackingHistoryBatch).not.toHaveBeenCalled()
   })

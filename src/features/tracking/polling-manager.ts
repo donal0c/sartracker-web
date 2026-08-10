@@ -10,6 +10,7 @@ import {
 } from './breadcrumb-accumulator'
 import {
   createBreadcrumbHistoryReconciler,
+  type BreadcrumbHistoryChunk,
   type BreadcrumbHistoryProgress,
 } from './breadcrumb-history-reconciler'
 import { annotateTrackingSnapshotHealth } from './tracking-snapshot-health'
@@ -72,6 +73,9 @@ type PollingManagerOptions = {
   readonly persistHistoryChunk?: (
     input: TrackingHistoryChunkPersistenceInput,
   ) => Promise<TrackingHistoryChunkPersistenceResult>
+  readonly persistHistoryChunks?: (
+    inputs: readonly TrackingHistoryChunkPersistenceInput[],
+  ) => Promise<void>
   readonly getBreadcrumbDeviceIds?: () => readonly string[] | null
   readonly onSnapshot: (
     snapshot: TrackingSnapshot,
@@ -194,6 +198,59 @@ export function createPollingManager(
   let boundedSourceRetention = false
   let lifecycleGeneration = 0
 
+  const createHistoryPersistenceInput = (
+    chunk: BreadcrumbHistoryChunk,
+  ): TrackingHistoryChunkPersistenceInput => ({
+    phase: chunk.phase,
+    expectedMissionId: activeHistoryResetKey,
+    deviceId: chunk.deviceId,
+    historyFrom: chunk.historyFrom.toISOString(),
+    reconciledUntil: chunk.to.toISOString(),
+    positions: chunk.positions,
+  })
+
+  const acceptPersistedHistoryChunk = (
+    chunk: BreadcrumbHistoryChunk,
+    persistedDirectly: boolean,
+    persistenceResult: TrackingHistoryChunkPersistenceResult | null,
+  ): void => {
+    if (!isHistoryReconciliationCurrent()) {
+      return
+    }
+    canonicalizationInFlight?.trailingPositions.push(...chunk.positions)
+    if (
+      chunk.phase === 'anti_entropy' &&
+      persistenceResult?.changed === true
+    ) {
+      requestCanonicalization()
+    }
+    if (chunk.positions.length === 0) {
+      return
+    }
+    for (const position of chunk.positions) {
+      pendingHistoryRenderPositions.push(position)
+      if (!persistedDirectly) {
+        pendingHistoryMissionPersistencePositions.push(position)
+      }
+      if (
+        pendingHistoryRenderPositions.length ===
+        HISTORY_PERSISTENCE_BATCH_LIMIT
+      ) {
+        flushHistorySnapshot(false)
+      }
+    }
+    if (pendingHistoryRenderPositions.length > 0) {
+      if (persistedDirectly) {
+        scheduleHistorySnapshotPublish()
+      } else {
+        // The direct polling-manager fallback has no acknowledgement port.
+        // Publish immediately so an accepted chunk is not left behind a
+        // mission transition. Production runtimes provide persistence hooks.
+        flushHistorySnapshot(false)
+      }
+    }
+  }
+
   const historyReconciler = createBreadcrumbHistoryReconciler({
     fetchBreadcrumbs: (deviceId, from, to) =>
       client.getBreadcrumbs(deviceId, from, to),
@@ -201,51 +258,58 @@ export function createPollingManager(
       if (!isHistoryReconciliationCurrent()) {
         return
       }
-      const persistedDirectly = options.persistHistoryChunk !== undefined
-      const persistenceResult = persistedDirectly
-        ? await options.persistHistoryChunk?.({
-          phase: chunk.phase,
-          expectedMissionId: activeHistoryResetKey,
-          deviceId: chunk.deviceId,
-          historyFrom: chunk.historyFrom.toISOString(),
-          reconciledUntil: chunk.to.toISOString(),
-          positions: chunk.positions,
-        })
-        : null
+      const input = createHistoryPersistenceInput(chunk)
+      let persistedDirectly = false
+      let persistenceResult: TrackingHistoryChunkPersistenceResult | null = null
+      if (options.persistHistoryChunk !== undefined) {
+        persistenceResult = await options.persistHistoryChunk(input)
+        persistedDirectly = true
+      } else if (
+        chunk.phase === 'initial' &&
+        options.persistHistoryChunks !== undefined
+      ) {
+        await options.persistHistoryChunks([input])
+        persistedDirectly = true
+      }
+      acceptPersistedHistoryChunk(
+        chunk,
+        persistedDirectly,
+        persistenceResult,
+      )
+    },
+    onChunks: async (chunks) => {
       if (!isHistoryReconciliationCurrent()) {
         return
       }
-      canonicalizationInFlight?.trailingPositions.push(...chunk.positions)
-      if (
-        chunk.phase === 'anti_entropy' &&
-        persistenceResult?.changed === true
-      ) {
-        requestCanonicalization()
-      }
-      if (chunk.positions.length === 0) {
+      const inputs = chunks.map(createHistoryPersistenceInput)
+      if (options.persistHistoryChunks !== undefined) {
+        await options.persistHistoryChunks(inputs)
+        if (!isHistoryReconciliationCurrent()) {
+          return
+        }
+        for (const chunk of chunks) {
+          acceptPersistedHistoryChunk(chunk, true, null)
+        }
         return
       }
-      for (const position of chunk.positions) {
-        pendingHistoryRenderPositions.push(position)
-        if (!persistedDirectly) {
-          pendingHistoryMissionPersistencePositions.push(position)
+      if (options.persistHistoryChunk !== undefined) {
+        const results = await Promise.all(
+          inputs.map((input) => options.persistHistoryChunk?.(input)),
+        )
+        if (!isHistoryReconciliationCurrent()) {
+          return
         }
-        if (
-          pendingHistoryRenderPositions.length ===
-          HISTORY_PERSISTENCE_BATCH_LIMIT
-        ) {
-          flushHistorySnapshot(false)
-        }
+        chunks.forEach((chunk, index) => {
+          acceptPersistedHistoryChunk(
+            chunk,
+            true,
+            results[index] ?? null,
+          )
+        })
+        return
       }
-      if (pendingHistoryRenderPositions.length > 0) {
-        if (persistedDirectly) {
-          scheduleHistorySnapshotPublish()
-        } else {
-          // The direct polling-manager fallback has no acknowledgement port.
-          // Publish immediately so an accepted chunk is not left behind a
-          // mission transition. Production runtimes provide persistHistoryChunk.
-          flushHistorySnapshot(false)
-        }
+      for (const chunk of chunks) {
+        acceptPersistedHistoryChunk(chunk, false, null)
       }
     },
     onProgress: (progress) => {

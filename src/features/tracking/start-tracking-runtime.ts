@@ -73,6 +73,9 @@ type TrackingRuntimePollerFactory = (
     readonly persistHistoryChunk?: (
       input: TrackingHistoryChunkPersistenceInput,
     ) => Promise<TrackingHistoryChunkPersistenceResult>
+    readonly persistHistoryChunks?: (
+      inputs: readonly TrackingHistoryChunkPersistenceInput[],
+    ) => Promise<void>
     readonly onPollDiagnostic: (entry: TrackingPollLedgerEntry) => void
   },
 ) => TrackingRuntimePoller
@@ -423,6 +426,91 @@ export async function startTrackingRuntime(
             expectedMissionId: string,
             signal?: AbortSignal,
           ) => enqueueCanonicalBreadcrumbQuery(expectedMissionId, signal),
+        }),
+    ...(dependencies.missionStore.persistTrackingPositionsBulk === undefined &&
+      dependencies.missionStore.persistTrackingHistoryBatch === undefined
+      ? {}
+      : {
+          persistHistoryChunks: async (
+            inputs: readonly TrackingHistoryChunkPersistenceInput[],
+          ): Promise<void> => {
+            try {
+              await enqueueTrackingPersistence(runtimeGeneration, async () => {
+                const firstInput = inputs[0]
+                if (firstInput === undefined) {
+                  return
+                }
+                if (
+                  firstInput.phase !== 'initial' ||
+                  firstInput.expectedMissionId === null ||
+                  inputs.some(
+                    (input) =>
+                      input.phase !== 'initial' ||
+                      input.expectedMissionId !== firstInput.expectedMissionId,
+                  )
+                ) {
+                  throw new Error(
+                    'Tracking history wave must contain initial chunks for one mission.',
+                  )
+                }
+                const activeMission = await dependencies.missionStore.getActiveMission()
+                if (activeMission?.id !== firstInput.expectedMissionId) {
+                  throw new Error(
+                    'Tracking history mission changed before the wave could be persisted.',
+                  )
+                }
+                const positions = inputs.flatMap((input) =>
+                  input.positions.map((position) => ({
+                    source_position_id: position.id,
+                    device_id: position.device_id,
+                    lat: position.lat,
+                    lon: position.lon,
+                    altitude: position.altitude,
+                    speed: position.speed,
+                    battery: position.battery,
+                    accuracy: position.accuracy,
+                    source: position.source,
+                    timestamp: position.timestamp,
+                    data_origin: position.data_origin,
+                  })),
+                )
+                const checkpoints = inputs.map((input) => ({
+                  device_id: input.deviceId,
+                  history_from: input.historyFrom,
+                  reconciled_until: input.reconciledUntil,
+                }))
+                if (
+                  dependencies.missionStore.persistTrackingPositionsBulk !== undefined
+                ) {
+                  await dependencies.missionStore.persistTrackingPositionsBulk({
+                    mission_id: activeMission.id,
+                    positions,
+                    checkpoints,
+                  })
+                  return
+                }
+                await dependencies.missionStore.persistTrackingHistoryBatch?.({
+                  mission_id: activeMission.id,
+                  positions,
+                  checkpoints,
+                })
+              })
+              if (
+                runtimeGeneration === activeTrackingRuntimeGeneration &&
+                missionPersistenceWarningActive
+              ) {
+                missionPersistenceWarningActive = false
+                refreshTrackingStatus()
+              }
+            } catch (error) {
+              logger.warn('Tracking history wave persistence failed.', error)
+              if (runtimeGeneration === activeTrackingRuntimeGeneration) {
+                missionPersistenceWarningActive = true
+                refreshTrackingStatus()
+              }
+              throw error
+            }
+          },
         }),
     persistHistoryChunk: async (
       input: TrackingHistoryChunkPersistenceInput,

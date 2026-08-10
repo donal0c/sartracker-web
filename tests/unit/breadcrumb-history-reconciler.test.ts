@@ -86,6 +86,214 @@ describe('breadcrumb history reconciler', () => {
     expect(fetchBreadcrumbs).toHaveBeenCalledTimes(3)
   })
 
+  it('persists an Ubuntu-shaped 32-device catch-up in atomic fetch waves', async () => {
+    const devices = Array.from({ length: 32 }, (_, index) => ({
+      ...DEVICE,
+      device_id: String(index + 1),
+      name: `Tracker ${index + 1}`,
+      unique_id: `tracker-${index + 1}`,
+    }))
+    let activeFetchCount = 0
+    let maximumFetchCount = 0
+    const fetchBreadcrumbs = vi.fn().mockImplementation(async () => {
+      activeFetchCount += 1
+      maximumFetchCount = Math.max(maximumFetchCount, activeFetchCount)
+      await Promise.resolve()
+      activeFetchCount -= 1
+      return []
+    })
+    const onChunk = vi.fn()
+    const onChunks = vi.fn().mockResolvedValue(undefined)
+    const reconciler = createBreadcrumbHistoryReconciler({
+      fetchBreadcrumbs,
+      onChunk,
+      onChunks,
+      onProgress: vi.fn(),
+      shouldContinue: () => true,
+      logger: { warn: vi.fn() },
+    })
+
+    reconciler.reconcile({
+      devices,
+      from: new Date('2026-08-09T00:00:00.000Z'),
+      until: new Date('2026-08-10T12:00:00.000Z'),
+    })
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect(fetchBreadcrumbs).toHaveBeenCalledTimes(32 * 18)
+    expect(maximumFetchCount).toBe(8)
+    expect(onChunk).not.toHaveBeenCalled()
+    expect(onChunks).toHaveBeenCalledTimes((32 * 18) / 8)
+    expect(
+      onChunks.mock.calls.every(([chunks]) => chunks.length > 0 && chunks.length <= 8),
+    ).toBe(true)
+    expect(
+      fetchBreadcrumbs.mock.calls.every(
+        ([, from, to]) => to.getTime() - from.getTime() <= 2 * 60 * 60 * 1_000,
+      ),
+    ).toBe(true)
+    const ubuntuTransactionCostMs = 110
+    expect(onChunks.mock.calls.length * ubuntuTransactionCostMs).toBeLessThan(60_000)
+    expect(fetchBreadcrumbs.mock.calls.length * ubuntuTransactionCostMs).toBeGreaterThan(60_000)
+  })
+
+  it('batches healthy chunks while retrying only a failed fetch device', async () => {
+    const devices = Array.from({ length: 8 }, (_, index) => ({
+      ...DEVICE,
+      device_id: String(index + 1),
+      name: `Tracker ${index + 1}`,
+    }))
+    const attemptsByDevice = new Map<string, number>()
+    const fetchBreadcrumbs = vi.fn().mockImplementation(async (deviceId: string) => {
+      const attempt = (attemptsByDevice.get(deviceId) ?? 0) + 1
+      attemptsByDevice.set(deviceId, attempt)
+      if (deviceId === '3' && attempt === 1) {
+        throw new Error('temporary fetch failure')
+      }
+      return []
+    })
+    const onChunks = vi.fn().mockResolvedValue(undefined)
+    const reconciler = createBreadcrumbHistoryReconciler({
+      fetchBreadcrumbs,
+      onChunk: vi.fn(),
+      onChunks,
+      onProgress: vi.fn(),
+      shouldContinue: () => true,
+      logger: { warn: vi.fn() },
+    })
+
+    reconciler.reconcile({
+      devices,
+      from: new Date('2026-04-06T00:00:00.000Z'),
+      until: new Date('2026-04-06T02:00:00.000Z'),
+    })
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect(onChunks).toHaveBeenNthCalledWith(
+      1,
+      expect.arrayContaining(
+        devices.filter((device) => device.device_id !== '3').map((device) =>
+          expect.objectContaining({ deviceId: device.device_id }),
+        ),
+      ),
+    )
+    expect(onChunks.mock.calls[0]?.[0]).toHaveLength(7)
+    await vi.advanceTimersByTimeAsync(1_000)
+    expect(onChunks.mock.calls[1]?.[0]).toEqual([
+      expect.objectContaining({ deviceId: '3' }),
+    ])
+    expect(attemptsByDevice.get('3')).toBe(2)
+    for (const device of devices.filter((candidate) => candidate.device_id !== '3')) {
+      expect(attemptsByDevice.get(device.device_id)).toBe(1)
+    }
+  })
+
+  it('advances no cursor until failed-wave fallback chunks are acknowledged', async () => {
+    const devices = Array.from({ length: 8 }, (_, index) => ({
+      ...DEVICE,
+      device_id: String(index + 1),
+      name: `Tracker ${index + 1}`,
+    }))
+    const fetchBreadcrumbs = vi.fn().mockResolvedValue([])
+    const fallbackAcknowledgement = createDeferred<void>()
+    const onChunk = vi.fn().mockReturnValue(fallbackAcknowledgement.promise)
+    const onChunks = vi.fn().mockRejectedValue(
+      new Error('atomic checkpoint batch failed'),
+    )
+    const reconciler = createBreadcrumbHistoryReconciler({
+      fetchBreadcrumbs,
+      onChunk,
+      onChunks,
+      onProgress: vi.fn(),
+      shouldContinue: () => true,
+      logger: { warn: vi.fn() },
+    })
+
+    reconciler.reconcile({
+      devices,
+      from: new Date('2026-04-06T00:00:00.000Z'),
+      until: new Date('2026-04-06T02:00:00.000Z'),
+    })
+    await vi.advanceTimersByTimeAsync(0)
+    expect(reconciler.getProgress().completedChunkCount).toBe(0)
+    expect(fetchBreadcrumbs).toHaveBeenCalledTimes(8)
+    expect(onChunks).toHaveBeenCalledOnce()
+    expect(onChunk).toHaveBeenCalledTimes(8)
+
+    fallbackAcknowledgement.resolve()
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect(fetchBreadcrumbs).toHaveBeenCalledTimes(8)
+    expect(onChunks).toHaveBeenCalledOnce()
+    expect(reconciler.getProgress()).toEqual(expect.objectContaining({
+      complete: true,
+      completedChunkCount: 8,
+    }))
+  })
+
+  it('isolates a failed wave acknowledgement to the chunk that cannot persist', async () => {
+    const devices = Array.from({ length: 8 }, (_, index) => ({
+      ...DEVICE,
+      device_id: String(index + 1),
+      name: `Tracker ${index + 1}`,
+    }))
+    const fetchAttemptsByDevice = new Map<string, number>()
+    const fetchBreadcrumbs = vi.fn().mockImplementation(async (deviceId: string) => {
+      fetchAttemptsByDevice.set(
+        deviceId,
+        (fetchAttemptsByDevice.get(deviceId) ?? 0) + 1,
+      )
+      return []
+    })
+    const persistenceAttemptsByDevice = new Map<string, number>()
+    const onChunk = vi.fn().mockImplementation(async (chunk) => {
+      const attempt = (persistenceAttemptsByDevice.get(chunk.deviceId) ?? 0) + 1
+      persistenceAttemptsByDevice.set(chunk.deviceId, attempt)
+      if (chunk.deviceId === '3' && attempt === 1) {
+        throw new Error('device checkpoint rejected')
+      }
+    })
+    const onChunks = vi.fn().mockRejectedValue(new Error('wave rejected'))
+    const reconciler = createBreadcrumbHistoryReconciler({
+      fetchBreadcrumbs,
+      onChunk,
+      onChunks,
+      onProgress: vi.fn(),
+      shouldContinue: () => true,
+      logger: { warn: vi.fn() },
+    })
+
+    reconciler.reconcile({
+      devices,
+      from: new Date('2026-04-06T00:00:00.000Z'),
+      until: new Date('2026-04-06T02:00:00.000Z'),
+    })
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect(reconciler.getProgress()).toEqual(expect.objectContaining({
+      completedDeviceCount: 7,
+      completedChunkCount: 7,
+      failedDeviceCount: 1,
+    }))
+    expect(onChunks.mock.calls[0]?.[0]).toHaveLength(8)
+    expect(onChunk).toHaveBeenCalledTimes(8)
+
+    await vi.advanceTimersByTimeAsync(1_000)
+
+    expect(fetchAttemptsByDevice.get('3')).toBe(2)
+    for (const device of devices.filter((candidate) => candidate.device_id !== '3')) {
+      expect(fetchAttemptsByDevice.get(device.device_id)).toBe(1)
+    }
+    expect(onChunks.mock.calls[1]?.[0]).toEqual([
+      expect.objectContaining({ deviceId: '3' }),
+    ])
+    expect(reconciler.getProgress()).toEqual(expect.objectContaining({
+      complete: true,
+      completedChunkCount: 8,
+      failedDeviceCount: 0,
+    }))
+  })
+
   it('discards a suspended request and resumes its unadvanced window', async () => {
     const deferred = createDeferred<readonly NormalizedTrackingPosition[]>()
     const fetchBreadcrumbs = vi

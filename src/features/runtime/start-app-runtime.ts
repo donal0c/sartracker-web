@@ -236,6 +236,9 @@ export async function startAppRuntime(
           ...(hooks.persistHistoryChunk === undefined
             ? {}
             : { persistHistoryChunk: hooks.persistHistoryChunk }),
+          ...(hooks.persistHistoryChunks === undefined
+            ? {}
+            : { persistHistoryChunks: hooks.persistHistoryChunks }),
           onSnapshot: hooks.onSnapshot,
           onStatusChange: hooks.onStatusChange,
           onPollDiagnostic: hooks.onPollDiagnostic,

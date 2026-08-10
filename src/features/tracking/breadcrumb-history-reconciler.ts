@@ -21,6 +21,9 @@ type BreadcrumbHistoryReconcilerOptions = {
     to: Date,
   ) => Promise<readonly NormalizedTrackingPosition[]>
   readonly onChunk: (chunk: BreadcrumbHistoryChunk) => void | Promise<void>
+  readonly onChunks?: (
+    chunks: readonly BreadcrumbHistoryChunk[],
+  ) => void | Promise<void>
   readonly onProgress: (progress: BreadcrumbHistoryProgress) => void
   readonly shouldContinue: () => boolean
   readonly logger: BreadcrumbHistoryReconcilerLogger
@@ -345,6 +348,138 @@ export function createBreadcrumbHistoryReconciler(
     }
   }
 
+  const isCurrentJob = (
+    job: DeviceReconciliationJob,
+    drainGeneration: number,
+  ): boolean =>
+    drainGeneration === generation &&
+    options.shouldContinue() &&
+    jobsByDeviceId.get(job.deviceId) === job
+
+  const markJobFailed = (
+    job: DeviceReconciliationJob,
+    drainGeneration: number,
+    error: unknown,
+  ): void => {
+    if (!isCurrentJob(job, drainGeneration)) {
+      return
+    }
+    job.failureCount += 1
+    const retryDelayMs = Math.min(
+      retryBaseMs * 2 ** (job.failureCount - 1),
+      maxRetryMs,
+    )
+    job.retryAtMs = Date.now() + retryDelayMs
+    failedDeviceIds.add(job.deviceId)
+    deviceQueue.push(job.deviceId)
+    options.logger.warn('Tracking breadcrumb reconciliation failed for device.', {
+      deviceId: job.deviceId,
+      deviceName: job.deviceName,
+      retryDelayMs,
+      error: error instanceof Error ? error.message : String(error),
+    })
+  }
+
+  const createInitialChunk = async (
+    job: DeviceReconciliationJob,
+    drainGeneration: number,
+  ): Promise<BreadcrumbHistoryChunk | null> => {
+    const fromMs = job.cursorMs
+    const toMs = Math.min(fromMs + chunkMs, job.targetMs)
+    if (toMs <= fromMs) {
+      completeInitialJob(job)
+      return null
+    }
+    try {
+      const positions = await options.fetchBreadcrumbs(
+        job.deviceId,
+        new Date(fromMs),
+        new Date(toMs),
+      )
+      if (!isCurrentJob(job, drainGeneration)) {
+        return null
+      }
+      return {
+        phase: 'initial',
+        deviceId: job.deviceId,
+        deviceName: job.deviceName,
+        historyFrom: new Date(job.missionStartMs),
+        from: new Date(fromMs),
+        to: new Date(toMs),
+        positions,
+      }
+    } catch (error) {
+      markJobFailed(job, drainGeneration, error)
+      return null
+    }
+  }
+
+  const advanceAcknowledgedChunk = (
+    job: DeviceReconciliationJob,
+    chunk: BreadcrumbHistoryChunk,
+    drainGeneration: number,
+  ): void => {
+    if (!isCurrentJob(job, drainGeneration)) {
+      return
+    }
+    job.cursorMs = chunk.to.getTime()
+    job.failureCount = 0
+    job.retryAtMs = 0
+    failedDeviceIds.delete(job.deviceId)
+    if (job.cursorMs >= job.targetMs) {
+      completeInitialJob(job)
+    } else {
+      deviceQueue.push(job.deviceId)
+    }
+  }
+
+  const processJobBatch = async (
+    jobs: readonly DeviceReconciliationJob[],
+    drainGeneration: number,
+  ): Promise<void> => {
+    const fetched = await Promise.all(
+      jobs.map(async (job) => ({
+        job,
+        chunk: await createInitialChunk(job, drainGeneration),
+      })),
+    )
+    const accepted = fetched.filter(
+      (entry): entry is {
+        readonly job: DeviceReconciliationJob
+        readonly chunk: BreadcrumbHistoryChunk
+      } => entry.chunk !== null && isCurrentJob(entry.job, drainGeneration),
+    )
+    if (accepted.length === 0 || options.onChunks === undefined) {
+      return
+    }
+    try {
+      await options.onChunks(accepted.map((entry) => entry.chunk))
+    } catch {
+      const currentAccepted = accepted.filter((entry) =>
+        isCurrentJob(entry.job, drainGeneration),
+      )
+      const fallbackResults = await Promise.allSettled(
+        currentAccepted.map((entry) => options.onChunk(entry.chunk)),
+      )
+      for (const [index, entry] of currentAccepted.entries()) {
+        const result = fallbackResults[index]
+        if (result?.status === 'fulfilled') {
+          advanceAcknowledgedChunk(entry.job, entry.chunk, drainGeneration)
+        } else {
+          markJobFailed(
+            entry.job,
+            drainGeneration,
+            result?.reason ?? new Error('Tracking history chunk persistence failed.'),
+          )
+        }
+      }
+      return
+    }
+    for (const entry of accepted) {
+      advanceAcknowledgedChunk(entry.job, entry.chunk, drainGeneration)
+    }
+  }
+
   const drain = async (drainGeneration: number): Promise<void> => {
     while (
       drainGeneration === generation &&
@@ -390,9 +525,13 @@ export function createBreadcrumbHistoryReconciler(
         break
       }
 
-      await Promise.all(
-        eligibleJobs.map((job) => processJob(job, drainGeneration)),
-      )
+      if (options.onChunks === undefined) {
+        await Promise.all(
+          eligibleJobs.map((job) => processJob(job, drainGeneration)),
+        )
+      } else {
+        await processJobBatch(eligibleJobs, drainGeneration)
+      }
       for (const job of eligibleJobs) {
         activeInitialJobs.delete(job)
       }
