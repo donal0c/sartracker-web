@@ -24,6 +24,7 @@ import {
   parseSha256Manifest,
   peelGitHubTagToCommit,
   validateQualificationBody,
+  validateRegressionRecord,
   validateReleaseProvenance,
 } from '../build/electron-release-lib.js'
 
@@ -53,6 +54,7 @@ async function main() {
   const release = fetchDraftRelease(repo, args.tag)
   assertDraftReleaseState(release)
   validateReleaseProvenance(release.body, expectedCommit)
+  validateRegressionRecord(release.body)
   const qualification = validateQualificationBody(release.body)
   const assetNames = release.assets.map((asset) => asset.name)
 
@@ -92,6 +94,7 @@ async function main() {
   const finalRelease = fetchDraftRelease(repo, args.tag)
   assertDraftReleaseState(finalRelease)
   validateReleaseProvenance(finalRelease.body, expectedCommit)
+  validateRegressionRecord(finalRelease.body)
   assertReleaseUnchanged(release, finalRelease)
   const finalQualification = validateQualificationBody(finalRelease.body)
   if (JSON.stringify(finalQualification) !== JSON.stringify(qualification)) {

@@ -19,6 +19,10 @@ folder is exclusively for the desktop operational lane.
   by following the template here without inventing the process.
 - Keep evidence (verification reports, smoke notes, CI run links) close to
   the release note so that incidents can be traced after the fact.
+- Preserve regression provenance: the field report, affected builds, causal
+  change, escape analysis, before/after baseline, durable gate, and residual
+  uncertainty stay on the linked Linear issue and are summarized in the
+  release note.
 
 ## Current Electron Release Path (DON-143)
 
@@ -62,8 +66,14 @@ guarded-publisher support. The publisher rejects any extra distributable.
    (the tag is `electron-v<version>`, e.g. `electron-v0.1.0-beta.4`). The
    workflow fails loudly if the tag and `package.json` disagree.
 2. Copy `TEMPLATE.md` to `sartracker-electron-<version>.md` (e.g.
-   `sartracker-electron-0.1.0-beta.4.md`). Fill in every required section.
-   The workflow fails if this file is missing or empty.
+   `sartracker-electron-0.1.0-beta.4.md`). Fill in every required section,
+   including `Regression provenance`. A regression release must link its
+   Linear issue and retain the affected releases, last-known-good/first-bad
+   history, root cause, escape analysis, before/after evidence, durable gate,
+   and remaining uncertainty. A non-regression release must use the explicit
+   non-regression classification. The workflow fails if this file is missing
+   or empty; the guarded publisher fails if regression provenance is missing
+   or incomplete.
 3. Commit the version bump and the new release note in one commit, e.g.
    `chore(release): cut electron-v0.1.0-beta.4`.
 4. Tag and push:
@@ -135,4 +145,5 @@ installers themselves) must not be checked in:
   the new note's "What Changed" section.
 - If a release is published (draft = false) and a critical issue is found,
   the next beta should explicitly call out the regression in its
-  "What Changed" section and link the prior beta's known issue.
+  "What Changed" section, complete the `Regression provenance` section, link
+  the prior beta's known issue, and preserve why the previous gates missed it.

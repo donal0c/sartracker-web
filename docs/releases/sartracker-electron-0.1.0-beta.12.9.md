@@ -40,6 +40,19 @@ completed-history restarts by default and records launch, mission-resume,
 first-exact, and stable-render timing; signal exits are cleaned up and reported
 instead of being misclassified as 60-second CDP timeouts.
 
+## Regression provenance
+
+- Classification: Regression correction
+- Linear issue: [DON-260](https://linear.app/donal-oc/issue/DON-260/deep-breadcrumb-correctness-deterministic-identity-restart-late-fixes)
+- Affected release(s): Published beta.12.5 and the rejected beta.12.6, beta.12.7, and beta.12.8 candidates
+- Last known good: Unknown — cold 36-hour catch-up and exact completed-history restart were not release-gated before DON-260
+- First known bad: Published beta.12.5 was the first field-confirmed build with the roughly nine-minute 36-hour wait
+- Root cause: Initial history chunks were coupled to the steady polling cadence; later candidates exposed serialized per-chunk durability, unbounded canonical selection work, and an SQLite query plan that repeatedly rescanned the full mission
+- Escape analysis: Existing live and soak smokes started missions at the current time or injected snapshots, so they never exercised a cold 36-hour backfill, exact restart rendering, platform fsync variance, or the full canonical-query workload
+- Before/after evidence: The field wait was roughly nine minutes; the qualified Ubuntu AppImage shows current fixes in 144 ms, the first breadcrumb in 452 ms, and exact 279,936-row persistence in 46.287 s, with three exact restarts at 5.667, 5.557, and 5.649 s
+- Regression gate: Deterministic packaged 36-hour proof now covers exact identities, SQLite integrity, canonical render truth, bounded concurrency, HTTP fault retry, SIGKILL checkpoint resume, and three completed-history restarts; the unchanged fourteen-day soak proves exact long-run truth, restart, responsiveness, and memory bounds
+- Remaining uncertainty: DON-247 retains original-team-machine long-duration confirmation; beta.12.9 is qualified for controlled field testing but not approved for live incidents
+
 ## Required qualification
 
 - [x] Clean no-skip local `npm run beta:verify`

@@ -25,7 +25,19 @@ const REQUIRED_QUALIFICATION_GATES = [
 
 const NOT_APPLICABLE_GATE = 'Official offline Discovery package'
 const NON_FINAL_EVIDENCE = /\b(?:todo|pending|tbd|local pass|ci artifact pending|none)\b/iu
+const NON_FINAL_REGRESSION_EVIDENCE = /\b(?:todo|pending|tbd|local pass|ci artifact pending)\b/iu
 const SHA256_PATTERN = /\b[a-f0-9]{64}\b/iu
+const REQUIRED_REGRESSION_FIELDS = [
+  'Linear issue',
+  'Affected release(s)',
+  'Last known good',
+  'First known bad',
+  'Root cause',
+  'Escape analysis',
+  'Before/after evidence',
+  'Regression gate',
+  'Remaining uncertainty',
+]
 
 /**
  * @typedef {Object} DraftReleaseState
@@ -126,6 +138,79 @@ export function validateQualificationBody(body) {
   return {
     appImage: parseArtifactIdentity(rows.get('AppImage SHA-256').evidence, '.AppImage'),
     deb: parseArtifactIdentity(rows.get('.deb SHA-256').evidence, '.deb'),
+  }
+}
+
+/**
+ * Requires every beta to classify whether it corrects a regression. Regression
+ * releases must retain the field report's Linear issue, causal history, escape
+ * analysis, before/after evidence, durable gate, and residual uncertainty.
+ * This prevents a fully green artifact matrix from erasing why the release was
+ * necessary or how the same class of failure is now detected.
+ *
+ * @param {string} body
+ * @returns {void}
+ */
+export function validateRegressionRecord(body) {
+  if (typeof body !== 'string') {
+    throw new Error('Draft release body is unavailable.')
+  }
+  const sectionMatch =
+    /(?:^|\n)## Regression provenance\s*\n([\s\S]*?)(?=\n##\s|\s*$)/iu.exec(body)
+  if (sectionMatch === null) {
+    throw new Error('Draft release body has no Regression provenance section.')
+  }
+
+  const fields = new Map()
+  for (const line of sectionMatch[1].split(/\r?\n/u)) {
+    const match = /^-\s+([^:]+):\s*(.+)$/u.exec(line.trim())
+    if (match !== null) {
+      const field = match[1].trim().toLowerCase()
+      if (fields.has(field)) {
+        throw new Error(`Regression provenance repeats field "${match[1].trim()}".`)
+      }
+      fields.set(field, match[2].trim())
+    }
+  }
+
+  const classification = fields.get('classification')?.toLowerCase()
+  if (classification === 'no known regression correction') {
+    const linearIssue = fields.get('linear issue')
+    if (linearIssue === undefined || !/^not applicable\b/iu.test(linearIssue)) {
+      throw new Error(
+        'A non-regression release must explicitly mark Linear issue as not applicable.',
+      )
+    }
+    return
+  }
+  if (classification !== 'regression correction') {
+    throw new Error(
+      'Regression provenance Classification must be "Regression correction" or ' +
+        '"No known regression correction".',
+    )
+  }
+
+  for (const field of REQUIRED_REGRESSION_FIELDS) {
+    const evidence = fields.get(field.toLowerCase())
+    if (
+      evidence === undefined ||
+      evidence.length < 4 ||
+      NON_FINAL_REGRESSION_EVIDENCE.test(evidence)
+    ) {
+      throw new Error(`Regression provenance field "${field}" is missing or non-final.`)
+    }
+  }
+
+  const linearIssue = fields.get('linear issue')
+  const issueLink =
+    /\[(DON-[0-9]+)\]\(https:\/\/linear\.app\/[^)\s]+\/issue\/(DON-[0-9]+)[^)\s]*\)/iu.exec(
+      linearIssue,
+    )
+  if (
+    issueLink === null ||
+    issueLink[1].toLowerCase() !== issueLink[2].toLowerCase()
+  ) {
+    throw new Error('Regression provenance must include a linked Linear issue.')
   }
 }
 

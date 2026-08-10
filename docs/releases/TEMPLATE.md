@@ -80,6 +80,23 @@ it can appear in a future release.
 - &lt;short, operator-readable bullet list of changes since the previous beta&gt;
 - &lt;include Linear issue IDs in square brackets&gt;
 
+## Regression provenance
+
+Use exactly one classification. For a release that does not correct a known
+regression, keep only the first two lines and write `Not applicable — no
+regression correction in this release.` for the Linear issue.
+
+- Classification: &lt;Regression correction | No known regression correction&gt;
+- Linear issue: &lt;[DON-XXX](https://linear.app/.../issue/DON-XXX) | Not applicable — no regression correction in this release.&gt;
+- Affected release(s): &lt;published/candidate versions and exact artifacts&gt;
+- Last known good: &lt;version/artifact, or explicit unknown with reason&gt;
+- First known bad: &lt;version/artifact&gt;
+- Root cause: &lt;confirmed causal mechanism&gt;
+- Escape analysis: &lt;why existing tests, CI, packaged smoke, or qualification missed it&gt;
+- Before/after evidence: &lt;same-workload correctness and performance comparison&gt;
+- Regression gate: &lt;new automated and packaged proof that fails on recurrence&gt;
+- Remaining uncertainty: &lt;residual risk or field confirmation still required; use “None known after qualification” only when justified&gt;
+
 ## What To Test
 
 - &lt;short list of operator workflows the tester should exercise&gt;
@@ -188,6 +205,9 @@ Before promoting this draft to a published release:
 - [ ] Packaged smoke matrix above is complete, with evidence paths or run links
 - [ ] Release body retains this note's content, has the exact CI Provenance
       footer, and replaces every matrix placeholder with exact-artifact evidence
+- [ ] Regression provenance is explicit and complete; every regression release
+      links the canonical Linear issue with root cause, escape analysis,
+      before/after evidence, durable gate, and remaining uncertainty
 - [ ] Release marked **prerelease** and **draft** in GitHub UI
 - [ ] Release title contains "internal beta"
 - [ ] Maintainer has signed off in `handoff/HANDOFF.md`

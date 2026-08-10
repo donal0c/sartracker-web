@@ -11,6 +11,7 @@ import {
   parseSha256Manifest,
   peelGitHubTagToCommit,
   validateQualificationBody,
+  validateRegressionRecord,
   validateReleaseProvenance,
 } from '../../build/electron-release-lib.js'
 
@@ -64,6 +65,19 @@ function qualifiedReleaseBody(): string {
     '| Duplicate launch | PASS | `evidence/duplicate-launch.json` |',
     '| Five-day and fourteen-day packaged soak | PASS | `evidence/multi-day-soak.json` |',
     '| Cross-profile exact breadcrumb identity comparison | PASS | `evidence/cross-profile.json` |',
+    '',
+    '## Regression provenance',
+    '',
+    '- Classification: Regression correction',
+    '- Linear issue: [DON-260](https://linear.app/donal-oc/issue/DON-260)',
+    '- Affected release(s): electron-v0.1.0-beta.12.5',
+    '- Last known good: Unknown — this workload was not previously release-gated.',
+    '- First known bad: electron-v0.1.0-beta.12.5',
+    '- Root cause: Initial history work was coupled to the steady polling cadence.',
+    '- Escape analysis: Existing smoke started missions at the current time and never exercised a cold 36-hour lookback.',
+    '- Before/after evidence: Nine-minute field wait versus exact persistence within 47 seconds on the qualified profile.',
+    '- Regression gate: Deterministic 36-hour packaged proof with exact identity, restart, fault, and render oracles.',
+    '- Remaining uncertainty: Original-team-machine confirmation remains tracked separately.',
     '',
     '## Known limitations',
     '',
@@ -137,6 +151,7 @@ describe('Electron release workflow safety [DON-260]', () => {
     const publisherSource = readFileSync('scripts/electron-release-publish.mjs', 'utf8')
     expect(publisherSource.match(/resolveRemoteTagCommit\(repo, args\.tag\)/gu)).toHaveLength(2)
     expect(publisherSource.match(/validateReleaseProvenance\(/gu)).toHaveLength(2)
+    expect(publisherSource.match(/validateRegressionRecord\(/gu)).toHaveLength(2)
     expect(publisherSource.match(/fetchDraftRelease\(repo, args\.tag\)/gu)).toHaveLength(2)
     expect(publisherSource).not.toContain('git rev-list')
     expect(publisherSource).not.toContain('targetCommitish')
@@ -205,6 +220,93 @@ describe('release qualification body guard [DON-260]', () => {
     expect(() =>
       validateQualificationBody(qualifiedReleaseBody().replace('b'.repeat(64), 'bbbb…bbbb')),
     ).toThrow(/sha-256/i)
+  })
+})
+
+describe('release regression provenance guard [DON-260]', () => {
+  it('accepts a complete regression record', () => {
+    expect(() => validateRegressionRecord(qualifiedReleaseBody())).not.toThrow()
+  })
+
+  it('accepts an explicit non-regression classification', () => {
+    expect(() =>
+      validateRegressionRecord(
+        [
+          '## Regression provenance',
+          '',
+          '- Classification: No known regression correction',
+          '- Linear issue: Not applicable — no regression correction in this release.',
+          '',
+          '## Known limitations',
+        ].join('\n'),
+      ),
+    ).not.toThrow()
+  })
+
+  it('rejects a missing regression record or unsupported classification', () => {
+    expect(() =>
+      validateRegressionRecord(qualifiedReleaseBody().replace('## Regression provenance', '## Change history')),
+    ).toThrow(/regression provenance/i)
+    expect(() =>
+      validateRegressionRecord(
+        qualifiedReleaseBody().replace(
+          '- Classification: Regression correction',
+          '- Classification: Performance work',
+        ),
+      ),
+    ).toThrow(/classification/i)
+  })
+
+  it('requires every closeout field and a linked Linear issue for regressions', () => {
+    expect(() =>
+      validateRegressionRecord(
+        qualifiedReleaseBody().replace(
+          '- Escape analysis: Existing smoke started missions at the current time and never exercised a cold 36-hour lookback.\n',
+          '',
+        ),
+      ),
+    ).toThrow(/escape analysis/i)
+    expect(() =>
+      validateRegressionRecord(
+        qualifiedReleaseBody().replace(
+          '[DON-260](https://linear.app/donal-oc/issue/DON-260)',
+          'DON-260',
+        ),
+      ),
+    ).toThrow(/linked Linear issue/i)
+  })
+
+  it('rejects placeholder evidence in a regression record', () => {
+    expect(() =>
+      validateRegressionRecord(
+        qualifiedReleaseBody().replace(
+          '- Root cause: Initial history work was coupled to the steady polling cadence.',
+          '- Root cause: TODO',
+        ),
+      ),
+    ).toThrow(/root cause/i)
+  })
+
+  it('rejects duplicate fields and mismatched Linear issue links', () => {
+    expect(() =>
+      validateRegressionRecord(
+        qualifiedReleaseBody().replace(
+          '- Root cause: Initial history work was coupled to the steady polling cadence.',
+          [
+            '- Root cause: Initial history work was coupled to the steady polling cadence.',
+            '- Root cause: A conflicting explanation.',
+          ].join('\n'),
+        ),
+      ),
+    ).toThrow(/repeats field.*root cause/i)
+    expect(() =>
+      validateRegressionRecord(
+        qualifiedReleaseBody().replace(
+          'https://linear.app/donal-oc/issue/DON-260',
+          'https://linear.app/donal-oc/issue/DON-259',
+        ),
+      ),
+    ).toThrow(/linked Linear issue/i)
   })
 })
 

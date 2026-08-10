@@ -130,6 +130,38 @@ When working through team requirements or any Linear issue, match the workflow t
 - **Features and changes:** define the expected visible behavior before implementation, then validate that behavior through the UI wherever the requirement has an operator-facing surface.
 - **UI validation:** use the strongest practical browser-backed path for the risk level. The inbuilt browser is fine for quick manual checks; Playwright should be used for repeatable UI, map, workflow, hosted-mode, deployment, or regression checks when the change can be validated that way.
 
+### Regression Closeout Protocol (required)
+
+Linear is the canonical reliability history. The project document
+[Reliability & Regression Ledger](https://linear.app/donal-oc/document/reliability-and-regression-ledger-4f86841816ee)
+defines the shared closeout standard; commits and release notes support that
+record but do not replace it.
+
+For every field regression, performance degradation, safety-critical
+correctness defect, or rejected release candidate:
+
+- add the `Regression` label; also add `Performance` when response time,
+  throughput, memory, event-loop responsiveness, database growth, startup,
+  restart, or long-duration behaviour is involved
+- retain the original operator report, source, affected workflow, expected
+  behaviour, observed behaviour, and safety/user impact on the Linear issue
+- record affected artifacts/platform/profile, last known good, first known bad,
+  and the introducing commit once confirmed
+- record the confirmed root cause, important disproved hypotheses, and the
+  escape analysis explaining why existing tests or release gates missed it
+- record fix commits, before/after evidence on the same workload, the new
+  durable automated gate, remaining uncertainty, and any field-confirmation
+  requirement
+- do not move the issue to Done from unit tests alone when the defect was
+  packaged, platform-specific, scale-dependent, long-running, or performance-
+  related
+
+Every Electron beta release note must contain the structured `Regression
+provenance` section from `docs/releases/TEMPLATE.md`. The guarded publisher
+rejects publication when the section or required regression evidence is
+missing. A non-regression release must explicitly say so rather than silently
+omitting the record.
+
 ### Browser Verification Policy (required)
 
 The user should not need to remember to ask for browser validation. For any behavior-bearing change, choose the strongest appropriate verification tool and record what was checked.
