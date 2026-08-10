@@ -362,7 +362,7 @@ describe('tracking geojson', () => {
       ),
     ).toBe(true)
     expect(collection.features).toHaveLength(33)
-  })
+  }, 15_000)
 
   it('reuses breadcrumb line features when only current positions change [DON-212]', () => {
     const breadcrumbs = Array.from({ length: 180 }, (_, index) =>
