@@ -1,8 +1,12 @@
-# SAR Tracker Electron Desktop Beta 0.1.0-beta.12.8
+# SAR Tracker Electron Desktop Beta 0.1.0-beta.12.8 (abandoned candidate)
 
-> **Internal beta draft.** Do not share or use for a live incident until all
-> required packaged gates are recorded green and the guarded prerelease is
-> published.
+> **Abandoned and never published.** Tag CI was green, but exact Ubuntu
+> qualification exposed unsafe restart margin: the first completed-history
+> restart rendered in `10.177 s`, beyond the unchanged `10 s` gate, while a
+> clean repeat passed by only `108 ms` at `9.892 s`. The exact SQLite and render
+> truth were correct, but an unexplained or borderline packaged gate blocks
+> release. Beta.12.9 corrects the SQLite query plan and requires three
+> consecutive restart samples. Do not share beta.12.8 with the team.
 
 - **Version:** 0.1.0-beta.12.8
 - **Build tag:** `electron-v0.1.0-beta.12.8`
@@ -10,7 +14,10 @@
 - **Linear reference:** `DON-260`
 - **Supersedes:** published beta.12.5
 - **Replaces:** unpublished beta.12.6 and beta.12.7 candidates
-- **Tag commit, CI run, and artifact checksums:** pending
+- **Tag commit:** `3b353b3f9df3aede94c285be89e88e6eae49157f`
+- **CI run:** `31409778533` (green; draft artifacts only)
+- **AppImage SHA-256:** `0b3b1e5111be8fcd19a96a7514f17262f23c457bc5e7459e9ad35988891a4d24`
+- **Status:** rejected by exact Ubuntu qualification; never published
 
 ## Release purpose
 
