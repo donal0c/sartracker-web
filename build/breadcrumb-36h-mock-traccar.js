@@ -5,6 +5,14 @@ const DEFAULT_SOURCE_NOW = '2026-08-09T12:00:00.000Z'
 const DEFAULT_LOOKBACK_HOURS = 36
 const SESSION_COOKIE = 'JSESSIONID=breadcrumb-36h-proof'
 const MAX_POSITION_ORDINAL = 999_999
+const FIELD_VEHICLE_DEVICE_ID = 1
+const FIELD_VEHICLE_LATITUDE = 52.2407
+const FIELD_VEHICLE_START_LONGITUDE = -10
+const FIELD_VEHICLE_SLOW_START_HOURS = 31
+const FIELD_VEHICLE_SLOW_END_HOURS = 32
+const FIELD_VEHICLE_FAST_END_HOURS = 33
+const FIELD_VEHICLE_SLOW_SPEED_KMH = 12
+const FIELD_VEHICLE_FAST_SPEEDS_KMH = Object.freeze([120, 128, 137, 145])
 
 /**
  * Builds the immutable field-scale profile used by the initial-history proof.
@@ -39,6 +47,7 @@ export function createBreadcrumb36HourProfile(options = {}) {
       cadenceMs,
     })
   })
+  const variableSpeedJourney = createVariableSpeedJourney(sourceFrom)
 
   return Object.freeze({
     sourceNow,
@@ -47,6 +56,7 @@ export function createBreadcrumb36HourProfile(options = {}) {
     deviceCount: devices.length,
     onlineDeviceCount: devices.filter((device) => device.status === 'online').length,
     devices: Object.freeze(devices),
+    variableSpeedJourney,
   })
 }
 
@@ -544,13 +554,18 @@ function createPosition(profile, device, ordinal) {
   const fixTime = new Date(
     Date.parse(profile.sourceFrom) + ordinal * device.cadenceMs,
   ).toISOString()
+  const fieldVehiclePosition = device.id === FIELD_VEHICLE_DEVICE_ID
+    ? createFieldVehiclePosition(profile, device, ordinal)
+    : null
   return {
     id: device.id * 1_000_000 + ordinal,
     deviceId: device.id,
-    latitude: Number((52.24 + device.id * 0.0007 + ordinal * 0.00000001).toFixed(7)),
-    longitude: Number((-9.58 + device.id * 0.0005 - ordinal * 0.00000001).toFixed(7)),
+    latitude: fieldVehiclePosition?.latitude ??
+      Number((52.24 + device.id * 0.0007 + ordinal * 0.00000001).toFixed(7)),
+    longitude: fieldVehiclePosition?.longitude ??
+      Number((-9.58 + device.id * 0.0005 - ordinal * 0.00000001).toFixed(7)),
     altitude: 120 + device.id,
-    speed: device.id <= 8 ? 1.5 : 0.4,
+    speed: fieldVehiclePosition?.speedKnots ?? (device.id <= 8 ? 1.5 : 0.4),
     accuracy: 5 + (device.id % 4),
     fixTime,
     serverTime: new Date(Date.parse(fixTime) + 1_000).toISOString(),
@@ -561,6 +576,71 @@ function createPosition(profile, device, ordinal) {
       batteryLevel: 90 - (device.id % 20),
     },
   }
+}
+
+function createVariableSpeedJourney(sourceFrom) {
+  const sourceFromMs = Date.parse(sourceFrom)
+  const atHour = (hour) => new Date(sourceFromMs + hour * 60 * 60 * 1_000).toISOString()
+  return Object.freeze({
+    deviceId: FIELD_VEHICLE_DEVICE_ID,
+    slow: Object.freeze({
+      from: atHour(FIELD_VEHICLE_SLOW_START_HOURS),
+      to: atHour(FIELD_VEHICLE_SLOW_END_HOURS),
+      minimumSpeedKmh: FIELD_VEHICLE_SLOW_SPEED_KMH,
+      maximumSpeedKmh: FIELD_VEHICLE_SLOW_SPEED_KMH,
+    }),
+    fast: Object.freeze({
+      from: atHour(FIELD_VEHICLE_SLOW_END_HOURS),
+      to: atHour(FIELD_VEHICLE_FAST_END_HOURS),
+      minimumSpeedKmh: Math.min(...FIELD_VEHICLE_FAST_SPEEDS_KMH),
+      maximumSpeedKmh: Math.max(...FIELD_VEHICLE_FAST_SPEEDS_KMH),
+    }),
+  })
+}
+
+function createFieldVehiclePosition(profile, device, ordinal) {
+  const elapsedMs = ordinal * device.cadenceMs
+  const slowStartMs = FIELD_VEHICLE_SLOW_START_HOURS * 60 * 60 * 1_000
+  const slowEndMs = FIELD_VEHICLE_SLOW_END_HOURS * 60 * 60 * 1_000
+  const fastEndMs = FIELD_VEHICLE_FAST_END_HOURS * 60 * 60 * 1_000
+  const slowElapsedMs = Math.max(0, Math.min(elapsedMs, slowEndMs) - slowStartMs)
+  const slowDistanceKm = slowElapsedMs / (60 * 60 * 1_000) *
+    FIELD_VEHICLE_SLOW_SPEED_KMH
+  const fastIntervalCount = Math.max(
+    0,
+    Math.floor((Math.min(elapsedMs, fastEndMs) - slowEndMs) / device.cadenceMs),
+  )
+  const fastDistanceKm = sumRepeatingSpeeds(
+    FIELD_VEHICLE_FAST_SPEEDS_KMH,
+    fastIntervalCount,
+  ) * device.cadenceMs / (60 * 60 * 1_000)
+  const longitudeKilometresPerDegree = 111.32 *
+    Math.cos(FIELD_VEHICLE_LATITUDE * Math.PI / 180)
+  const speedKmh = elapsedMs >= slowStartMs && elapsedMs < slowEndMs
+    ? FIELD_VEHICLE_SLOW_SPEED_KMH
+    : elapsedMs >= slowEndMs && elapsedMs < fastEndMs
+      ? FIELD_VEHICLE_FAST_SPEEDS_KMH[fastIntervalCount % FIELD_VEHICLE_FAST_SPEEDS_KMH.length]
+      : 0
+
+  return {
+    latitude: FIELD_VEHICLE_LATITUDE,
+    longitude: Number((
+      FIELD_VEHICLE_START_LONGITUDE +
+      (slowDistanceKm + fastDistanceKm) / longitudeKilometresPerDegree
+    ).toFixed(7)),
+    // Traccar reports speed in knots. Production normalization converts this
+    // back to km/h; the proof metadata above keeps the operator-facing speeds
+    // explicit.
+    speedKnots: speedKmh / 1.852,
+  }
+}
+
+function sumRepeatingSpeeds(speeds, intervalCount) {
+  const completeCycles = Math.floor(intervalCount / speeds.length)
+  const remainder = intervalCount % speeds.length
+  const cycleTotal = speeds.reduce((total, speed) => total + speed, 0)
+  return completeCycles * cycleTotal +
+    speeds.slice(0, remainder).reduce((total, speed) => total + speed, 0)
 }
 
 function toCanonicalPositionLine(position) {

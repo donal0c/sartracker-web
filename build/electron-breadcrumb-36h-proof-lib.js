@@ -16,6 +16,7 @@ const MAX_FULL_RECONCILIATION_MS = 60_000
 const MAX_HISTORY_CONCURRENCY = 8
 const RENDER_BREADCRUMB_LIMIT_PER_DEVICE = 5_000
 const RENDER_BREADCRUMB_GAP_THRESHOLD_MS = 30 * 60 * 1_000
+const EARTH_RADIUS_METRES = 6_371_008.8
 
 /** Parses the explicit packaged 36-hour proof command line. */
 export function parseBreadcrumb36HourProofArgs(argv) {
@@ -549,6 +550,9 @@ export function buildBreadcrumb36HourRenderedOracle(
     options.gapThresholdMs ?? RENDER_BREADCRUMB_GAP_THRESHOLD_MS,
   )
   const rendered = createRenderedBreadcrumbEvidence(featureCollection)
+  const dotRendered = createRenderedBreadcrumbEvidence(
+    createOracleBreadcrumbPointFeatureCollection(positionsByDevice),
+  )
   const totalByDevice = new Map(
     selection.deviceTotals.map((entry) => [String(entry.device_id), Number(entry.total)]),
   )
@@ -595,7 +599,105 @@ export function buildBreadcrumb36HourRenderedOracle(
     droppedPositionCount: selection.droppedPositionCount,
     devices,
     rendered,
+    dotRendered,
   }
+}
+
+/**
+ * Measures whether representative selection adds gaps to Eamonn's reported
+ * slow-to-motorway-speed journey. The source cadence remains authoritative:
+ * the app must not invent fixes, but it must not remove additional fixes from
+ * the 120–145 km/h leg either.
+ */
+export function buildBreadcrumb36HourVariableSpeedEvidence(
+  profile,
+  window = {},
+  options = {},
+) {
+  const journey = profile.variableSpeedJourney
+  if (journey === null || typeof journey !== 'object') {
+    throw new Error('36-hour profile has no variable-speed field journey.')
+  }
+  const database = createBreadcrumb36HourSourceDatabase(profile, window)
+  const deviceId = String(journey.deviceId)
+  const sourcePositions = [...database
+    .prepare('WHERE mission_id = ? AND device_id = ?')
+    .iterate('source-truth', deviceId)]
+  const selection = listBreadcrumbPositions(
+    database,
+    'source-truth',
+    options.perDeviceLimit ?? RENDER_BREADCRUMB_LIMIT_PER_DEVICE,
+  )
+  const retainedPositions = selection.positions.filter(
+    (position) => String(position.device_id) === deviceId,
+  )
+
+  return {
+    deviceId,
+    slow: analyzeVariableSpeedPhase(
+      sourcePositions,
+      retainedPositions,
+      journey.slow,
+    ),
+    fast: analyzeVariableSpeedPhase(
+      sourcePositions,
+      retainedPositions,
+      journey.fast,
+    ),
+  }
+}
+
+function analyzeVariableSpeedPhase(sourcePositions, retainedPositions, phase) {
+  const fromMs = Date.parse(phase.from)
+  const toMs = Date.parse(phase.to)
+  const inPhase = (position) => {
+    const timestampMs = Date.parse(position.timestamp)
+    return timestampMs >= fromMs && timestampMs < toMs
+  }
+  const source = sourcePositions.filter(inPhase)
+  const retained = retainedPositions.filter(inPhase)
+  const maximumSourceGapMetres = maximumAdjacentDistanceMetres(source)
+  const maximumRenderedGapMetres = maximumAdjacentDistanceMetres(retained)
+
+  return {
+    from: phase.from,
+    to: phase.to,
+    minimumSpeedKmh: phase.minimumSpeedKmh,
+    maximumSpeedKmh: phase.maximumSpeedKmh,
+    sourcePositionCount: source.length,
+    retainedPositionCount: retained.length,
+    omittedSourcePositionCount: source.length - retained.length,
+    maximumSourceGapMetres,
+    maximumRenderedGapMetres,
+    maximumRenderedGapInflation:
+      maximumSourceGapMetres === 0
+        ? maximumRenderedGapMetres === 0 ? 1 : null
+        : maximumRenderedGapMetres / maximumSourceGapMetres,
+  }
+}
+
+function maximumAdjacentDistanceMetres(positions) {
+  let maximum = 0
+  for (let index = 1; index < positions.length; index += 1) {
+    maximum = Math.max(
+      maximum,
+      haversineDistanceMetres(positions[index - 1], positions[index]),
+    )
+  }
+  return maximum
+}
+
+function haversineDistanceMetres(left, right) {
+  const leftLatitude = Number(left.lat) * Math.PI / 180
+  const rightLatitude = Number(right.lat) * Math.PI / 180
+  const latitudeDelta = rightLatitude - leftLatitude
+  const longitudeDelta = (Number(right.lon) - Number(left.lon)) * Math.PI / 180
+  const sineLatitude = Math.sin(latitudeDelta / 2)
+  const sineLongitude = Math.sin(longitudeDelta / 2)
+  const haversine = sineLatitude * sineLatitude +
+    Math.cos(leftLatitude) * Math.cos(rightLatitude) *
+    sineLongitude * sineLongitude
+  return 2 * EARTH_RADIUS_METRES * Math.asin(Math.min(1, Math.sqrt(haversine)))
 }
 
 function createRetainedIdentityLine(position) {
@@ -641,6 +743,26 @@ function createOracleBreadcrumbFeatureCollection(positionsByDevice, gapThreshold
       previousTimestampMs = timestampMs
     }
     appendSegment()
+  }
+  return { type: 'FeatureCollection', features }
+}
+
+function createOracleBreadcrumbPointFeatureCollection(positionsByDevice) {
+  const features = []
+  for (const [deviceId, positions] of positionsByDevice.entries()) {
+    for (const position of positions) {
+      features.push({
+        type: 'Feature',
+        geometry: {
+          type: 'Point',
+          coordinates: [position.lon, position.lat],
+        },
+        properties: {
+          deviceId,
+          featureKind: 'breadcrumb',
+        },
+      })
+    }
   }
   return { type: 'FeatureCollection', features }
 }
@@ -751,10 +873,65 @@ export function buildBreadcrumb36HourProofVerdict(input) {
     input.renderedOracle,
     input.sourceTruth,
   )
+  validateRenderedDotOracle(
+    failureReasons,
+    input.renderedDots,
+    input.renderedOracle?.dotRendered,
+  )
+  validateVariableSpeedEvidence(failureReasons, input.variableSpeedEvidence)
 
   return {
     passed: failureReasons.length === 0,
     failureReasons,
+  }
+}
+
+function validateRenderedDotOracle(reasons, rendered, oracle) {
+  if (rendered === null || rendered === undefined) {
+    reasons.push('Packaged breadcrumb-dot evidence was not provided.')
+    return
+  }
+  if (oracle === null || oracle === undefined) {
+    reasons.push('Canonical breadcrumb-dot source-truth oracle was not provided.')
+    return
+  }
+  if (rendered.stable !== true) {
+    reasons.push('Packaged breadcrumb-dot count/digest did not remain stable.')
+  }
+  if (
+    rendered.featureCount !== oracle.featureCount ||
+    rendered.coordinateCount !== oracle.coordinateCount ||
+    rendered.deviceCount !== oracle.deviceCount ||
+    rendered.coordinateSha256 !== oracle.coordinateSha256 ||
+    !recordsEqual(rendered.deviceCoordinateCounts, oracle.deviceCoordinateCounts) ||
+    !recordsEqual(rendered.deviceCoordinateSha256, oracle.deviceCoordinateSha256)
+  ) {
+    reasons.push('Packaged breadcrumb-dot geometry did not match the source-truth dot oracle.')
+  }
+}
+
+function validateVariableSpeedEvidence(reasons, evidence) {
+  if (evidence === null || evidence === undefined) {
+    reasons.push('Variable-speed breadcrumb fidelity evidence was not provided.')
+    return
+  }
+  const phases = [evidence.slow, evidence.fast]
+  if (phases.some((phase) =>
+    phase === null ||
+    phase === undefined ||
+    phase.sourcePositionCount < 1 ||
+    phase.retainedPositionCount !== phase.sourcePositionCount ||
+    phase.omittedSourcePositionCount !== 0
+  )) {
+    reasons.push('Variable-speed proof omitted source fixes from a slow or high-speed field leg.')
+  }
+  if (
+    evidence.fast?.minimumSpeedKmh !== 120 ||
+    evidence.fast?.maximumSpeedKmh !== 145 ||
+    !Number.isFinite(evidence.fast?.maximumRenderedGapInflation) ||
+    evidence.fast.maximumRenderedGapInflation > 1.01
+  ) {
+    reasons.push('High-speed 120–145 km/h proof amplified the authoritative source gap.')
   }
 }
 

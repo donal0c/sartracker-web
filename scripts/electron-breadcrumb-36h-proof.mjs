@@ -25,6 +25,7 @@ import {
   analyzeTransientHistoryRetries,
   buildBreadcrumb36HourProofVerdict,
   buildBreadcrumb36HourRenderedOracle,
+  buildBreadcrumb36HourVariableSpeedEvidence,
   buildBreadcrumbRestartProofVerdict,
   createPersistedBreadcrumbEvidenceAccumulator,
   createRenderedBreadcrumbEvidence,
@@ -103,6 +104,7 @@ async function main() {
   let mission = null
   let sourceTruth = null
   let renderedOracle = null
+  let variableSpeedEvidence = null
   let midBackfillCheckpoint = null
   let forcedTermination = null
   let midBackfillPersisted = null
@@ -133,6 +135,10 @@ async function main() {
       to: profile.sourceNow,
     })
     renderedOracle = buildBreadcrumb36HourRenderedOracle(profile, {
+      from: mission.start_time,
+      to: profile.sourceNow,
+    })
+    variableSpeedEvidence = buildBreadcrumb36HourVariableSpeedEvidence(profile, {
       from: mission.start_time,
       to: profile.sourceNow,
     })
@@ -203,6 +209,11 @@ async function main() {
         firstRendered.coordinateSha256 === secondRendered.coordinateSha256,
       firstObservation: firstRendered,
     }
+    const renderedDots = await captureStableBreadcrumbDotEvidence({
+      page: launch.page,
+      expectedDots: renderedOracle.dotRendered,
+      expectedLine: renderedOracle.rendered,
+    })
     const reconciliationRequestSnapshot = milestones.requestSnapshot
     const requestEvidence = {
       deviceRequestCount: reconciliationRequestSnapshot.requestLedger.filter(
@@ -242,7 +253,9 @@ async function main() {
       sourceTruth,
       persisted,
       rendered,
+      renderedDots,
       renderedOracle,
+      variableSpeedEvidence,
     })
 
     const postCompletionRequestStart = mockServer.snapshot().requestLedger.length
@@ -353,10 +366,12 @@ async function main() {
       timings,
       sourceTruth,
       renderedOracle,
+      variableSpeedEvidence,
       coverage: milestones.coverage,
       requestEvidence,
       persisted,
       rendered,
+      renderedDots,
       trackingStatusAtCompletion: milestones.trackingStatusText,
       baseVerdict,
       verdict,
@@ -503,6 +518,33 @@ async function main() {
   if (runError !== null) {
     throw runError
   }
+}
+
+async function captureStableBreadcrumbDotEvidence(input) {
+  await input.page.getByTestId('open-devices-workspace').click({ force: true })
+  await input.page.getByTestId('devices-workspace').waitFor({ state: 'visible' })
+  await input.page.getByTestId('breadcrumb-mode-dots').click({ force: true })
+  await input.page.keyboard.press('Escape')
+  await input.page.getByTestId('devices-workspace').waitFor({ state: 'hidden' })
+  const dots = await waitForStableSerializedTrackingEvidence({
+    page: input.page,
+    expected: input.expectedDots,
+    observedFromMs: Date.now(),
+    timeoutMs: 10_000,
+  })
+
+  await input.page.getByTestId('open-devices-workspace').click({ force: true })
+  await input.page.getByTestId('devices-workspace').waitFor({ state: 'visible' })
+  await input.page.getByTestId('breadcrumb-mode-line').click({ force: true })
+  await input.page.keyboard.press('Escape')
+  await input.page.getByTestId('devices-workspace').waitFor({ state: 'hidden' })
+  await waitForStableSerializedTrackingEvidence({
+    page: input.page,
+    expected: input.expectedLine,
+    observedFromMs: Date.now(),
+    timeoutMs: 10_000,
+  })
+  return dots
 }
 
 async function seedRuntimeConfiguration(userDataDir, baseUrl, pollIntervalMs) {

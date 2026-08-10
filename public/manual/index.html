@@ -883,7 +883,12 @@
             as the complete raw history. Identical mission history therefore selects
             the same visible fix identities after restart and
             across installations, independent of polling batch boundaries. The complete accepted position
-            history remains in mission storage. The
+            history remains in mission storage. Breadcrumb dots are source fixes, not interpolated points:
+            at the same provider reporting interval a fast-moving vehicle naturally travels farther between
+            fixes than a slow team. SAR Tracker must not enlarge that source gap by silently dropping additional
+            moving fixes; if the displayed trail is simplified, the status panel says so and reports its bound.
+            If SAR Tracker appears materially sparser than the source tracking application, export Diagnostics
+            and treat that difference as a tracking fault rather than normal speed behaviour. The
             <strong>Breadcrumb Size</strong> control changes trail width in solid-line mode and dot diameter
             in breadcrumb-dot mode, so dense missions can be made calmer or more prominent without editing
             devices one by one. <strong>Reconnect</strong> reloads settings and forces the tracking provider to reconnect.

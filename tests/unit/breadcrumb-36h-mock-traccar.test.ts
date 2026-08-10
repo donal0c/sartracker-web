@@ -31,6 +31,21 @@ describe('deterministic 36-hour mock Traccar', () => {
     expect(profile.devices.filter((device) => device.cadenceMs === 30_000)).toHaveLength(16)
     expect(profile.devices.filter((device) => device.cadenceMs === 300_000)).toHaveLength(8)
     expect(profile.devices.filter((device) => device.status === 'offline')).toHaveLength(1)
+    expect(profile.variableSpeedJourney).toMatchObject({
+      deviceId: 1,
+      slow: {
+        from: '2026-08-09T07:00:00.000Z',
+        to: '2026-08-09T08:00:00.000Z',
+        minimumSpeedKmh: 12,
+        maximumSpeedKmh: 12,
+      },
+      fast: {
+        from: '2026-08-09T08:00:00.000Z',
+        to: '2026-08-09T09:00:00.000Z',
+        minimumSpeedKmh: 120,
+        maximumSpeedKmh: 145,
+      },
+    })
 
     const first = buildBreadcrumb36HourTruthEvidence(profile)
     const second = buildBreadcrumb36HourTruthEvidence(createBreadcrumb36HourProfile())
@@ -140,6 +155,28 @@ describe('deterministic 36-hour mock Traccar', () => {
       returnedCount: 3,
       returnedIdentityDigest: createBreadcrumbPositionDigest(first),
     })
+  })
+
+  it('serves the field vehicle transition from slow movement to 120–145 km/h', async () => {
+    const server = await startBreadcrumb36HourMockTraccarServer()
+    closeServers.push(server.close)
+    const url = new URL('/api/positions', server.baseUrl)
+    url.searchParams.set('deviceId', '1')
+    url.searchParams.set('from', '2026-08-09T08:00:00.000Z')
+    url.searchParams.set('to', '2026-08-09T08:00:15.000Z')
+    const positions = await fetch(url, {
+      headers: { Authorization: 'Basic synthetic' },
+    }).then((response) => response.json()) as readonly {
+      readonly speed: number
+      readonly latitude: number
+      readonly longitude: number
+    }[]
+
+    expect(positions.map((position) => Math.round(position.speed * 1.852)))
+      .toEqual([120, 128, 137, 145])
+    expect(new Set(positions.map((position) =>
+      `${position.latitude.toFixed(7)}:${position.longitude.toFixed(7)}`,
+    )).size).toBe(4)
   })
 
   it('applies deterministic latency and one-shot faults while recording concurrency', async () => {

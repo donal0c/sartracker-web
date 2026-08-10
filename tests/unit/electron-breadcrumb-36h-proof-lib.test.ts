@@ -8,6 +8,7 @@ import {
   analyzeTransientHistoryRetries,
   buildBreadcrumb36HourProofVerdict,
   buildBreadcrumb36HourRenderedOracle,
+  buildBreadcrumb36HourVariableSpeedEvidence,
   buildBreadcrumbRestartProofVerdict,
   createPersistedBreadcrumbEvidence,
   createRenderedBreadcrumbEvidence,
@@ -190,6 +191,11 @@ describe('packaged Electron 36-hour breadcrumb proof helpers', () => {
       },
     })
     expect(first.retainedIdentityCount).toBe(first.rendered.coordinateCount)
+    expect(first.dotRendered).toMatchObject({
+      featureCount: first.retainedIdentityCount,
+      coordinateCount: first.retainedIdentityCount,
+      deviceCount: 32,
+    })
     expect(first.retainedIdentitySha256).toMatch(/^[a-f0-9]{64}$/u)
     expect(first.devices.find((device) => device.deviceId === '1')).toMatchObject({
       sourcePositionCount: 5_761,
@@ -203,6 +209,39 @@ describe('packaged Electron 36-hour breadcrumb proof helpers', () => {
       device.geometryErrorBoundMetres <= 25
     )).toBe(true)
   })
+
+  it('does not amplify source gaps on a 120–145 km/h vehicle leg', () => {
+    const profile = createBreadcrumb36HourProfile()
+    const missionWindow = {
+      from: '2026-08-08T00:00:01.000Z',
+      to: profile.sourceNow,
+    }
+    const evidence = buildBreadcrumb36HourVariableSpeedEvidence(
+      profile,
+      missionWindow,
+    )
+
+    expect(evidence).toMatchObject({
+      deviceId: '1',
+      slow: {
+        minimumSpeedKmh: 12,
+        maximumSpeedKmh: 12,
+        sourcePositionCount: 720,
+      },
+      fast: {
+        minimumSpeedKmh: 120,
+        maximumSpeedKmh: 145,
+        sourcePositionCount: 720,
+        omittedSourcePositionCount: 0,
+      },
+    })
+    expect(evidence.fast.maximumSourceGapMetres).toBeGreaterThan(160)
+    expect(evidence.fast.maximumSourceGapMetres).toBeLessThan(205)
+    expect(evidence.fast.maximumRenderedGapInflation).toBeLessThanOrEqual(1.01)
+    expect(evidence.fast.retainedPositionCount).toBe(
+      evidence.fast.sourcePositionCount,
+    )
+  }, 15_000)
 
   it('uses the exact mission-owned window when mission creation excludes first fixes', () => {
     const profile = createBreadcrumb36HourProfile()
@@ -218,10 +257,10 @@ describe('packaged Electron 36-hour breadcrumb proof helpers', () => {
       from: missionWindow.from,
       to: missionWindow.to,
       sourcePositionCount: 279_936,
-      retainedIdentityCount: 104_268,
+      retainedIdentityCount: 103_617,
       rendered: {
-        coordinateCount: 104_268,
-        coordinateSha256: '5ff9f1586b3775525a37fb61758425a08071ac6eadc7c5a434c558f045d7d242',
+        coordinateCount: 103_617,
+        coordinateSha256: '45864c0d357fd6d076d4eca64736ecf1bc2338b841f4bbeca88cffd3373b68f7',
       },
     })
     expect(oracle.sourcePositionCount).toBe(sourceTruth.totalPositionCount)
@@ -260,7 +299,7 @@ describe('packaged Electron 36-hour breadcrumb proof helpers', () => {
 
     expect(rawPositions).toHaveLength(279_936)
     expect(independentIds).toEqual(persistedIds)
-    expect(independent.positions).toHaveLength(104_270)
+    expect(independent.positions).toHaveLength(103_617)
     expect(independent.metadata.deviceBudgets.every((budget) =>
       budget.geometryErrorBoundMetres !== null &&
       budget.geometryErrorBoundMetres <= 25 &&
@@ -315,6 +354,29 @@ describe('packaged Electron 36-hour breadcrumb proof helpers', () => {
 
     expect(wrong.passed).toBe(false)
     expect(wrong.failureReasons.join('\n')).toMatch(/rendered.*oracle|coordinate digest/u)
+  })
+
+  it('rejects missing packaged dots and any amplified high-speed source gap', () => {
+    const valid = createValidVerdictInput()
+    const wrong = buildBreadcrumb36HourProofVerdict({
+      ...valid,
+      renderedDots: {
+        ...valid.renderedDots,
+        coordinateSha256: 'd'.repeat(64),
+      },
+      variableSpeedEvidence: {
+        ...valid.variableSpeedEvidence,
+        fast: {
+          ...valid.variableSpeedEvidence.fast,
+          retainedPositionCount: 719,
+          omittedSourcePositionCount: 1,
+          maximumRenderedGapInflation: 2,
+        },
+      },
+    })
+
+    expect(wrong.passed).toBe(false)
+    expect(wrong.failureReasons.join('\n')).toMatch(/dot.*oracle|high-speed/u)
   })
 
   it('separates global traffic from the strict history-worker concurrency bound', () => {
@@ -611,6 +673,32 @@ function createValidVerdictInput() {
       deviceCoordinateSha256: { '1': 'b'.repeat(64) },
       stable: true,
     },
+    renderedDots: {
+      featureCount: 50_000,
+      coordinateCount: 50_000,
+      deviceCount: 32,
+      coordinateSha256: 'c'.repeat(64),
+      deviceCoordinateCounts: { '1': 50_000 },
+      deviceCoordinateSha256: { '1': 'c'.repeat(64) },
+      stable: true,
+    },
+    variableSpeedEvidence: {
+      deviceId: '1',
+      slow: {
+        sourcePositionCount: 720,
+        retainedPositionCount: 720,
+        omittedSourcePositionCount: 0,
+        maximumRenderedGapInflation: 1,
+      },
+      fast: {
+        minimumSpeedKmh: 120,
+        maximumSpeedKmh: 145,
+        sourcePositionCount: 720,
+        retainedPositionCount: 720,
+        omittedSourcePositionCount: 0,
+        maximumRenderedGapInflation: 1,
+      },
+    },
     renderedOracle: {
       droppedPositionCount: 0,
       sourcePositionCount: 100,
@@ -623,6 +711,14 @@ function createValidVerdictInput() {
         coordinateSha256: 'b'.repeat(64),
         deviceCoordinateCounts: { '1': 50_000 },
         deviceCoordinateSha256: { '1': 'b'.repeat(64) },
+      },
+      dotRendered: {
+        featureCount: 50_000,
+        coordinateCount: 50_000,
+        deviceCount: 32,
+        coordinateSha256: 'c'.repeat(64),
+        deviceCoordinateCounts: { '1': 50_000 },
+        deviceCoordinateSha256: { '1': 'c'.repeat(64) },
       },
       devices: Array.from({ length: 32 }, (_, index) => ({
         deviceId: String(index + 1),

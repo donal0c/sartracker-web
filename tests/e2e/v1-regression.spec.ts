@@ -125,10 +125,11 @@ test.describe('V1 regression: cold-start-offline operator-visible warning', () =
     // when start-tracking-runtime hydrates from a usable cache and no live poll
     // has succeeded yet.
     await page.evaluate(async () => {
-      const [{ applyTrackingSnapshot, applyTrackingStatus }] = await Promise.all([
-        import('/src/features/tracking/tracking-store.ts'),
-      ])
-      applyTrackingSnapshot({
+      const harness = window.__SARTRACKER_BROWSER_HARNESS__
+      if (harness === undefined) {
+        throw new Error('Browser harness API unavailable.')
+      }
+      await harness.injectTrackingSnapshot({
         devices: [
           {
             device_id: 'cached-1',
@@ -157,8 +158,7 @@ test.describe('V1 regression: cold-start-offline operator-visible warning', () =
           },
         ],
         breadcrumbs: [],
-      })
-      applyTrackingStatus({
+      }, {
         mode: 'offline',
         consecutiveFailures: 0,
         recovered: false,
