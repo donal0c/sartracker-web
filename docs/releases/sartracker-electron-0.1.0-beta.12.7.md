@@ -1,8 +1,12 @@
-# SAR Tracker Electron Desktop Beta 0.1.0-beta.12.7
+# SAR Tracker Electron Desktop Beta 0.1.0-beta.12.7 (abandoned candidate)
 
-> **Internal beta draft.** Do not share or use for a live incident until every
-> required packaged gate below is recorded green and the guarded prerelease is
-> published.
+> **Abandoned and never published.** The first tag workflow failed because the
+> 198,000-position worst-case GeoJSON unit test exceeded Vitest's generic
+> five-second timeout on the shared Linux runner (`5.627 s`). The assertions
+> did not fail and the same test passed locally, but an unexplained or
+> under-budgeted CI failure blocks release. Beta.12.8 gives this deliberately
+> large deterministic test an explicit 15-second test budget. Do not share
+> beta.12.7 with the team.
 
 - **Version:** 0.1.0-beta.12.7
 - **Build tag:** `electron-v0.1.0-beta.12.7`
