@@ -331,7 +331,7 @@ function fetchPositionRowsByRowId(db, missionId, rowIds) {
     const chunk = rowIds.slice(offset, offset + SQLITE_ROW_ID_PARAMETER_CHUNK)
     const placeholders = chunk.map(() => '?').join(', ')
     const rows = db.prepare(
-      `SELECT rowid AS __sartracker_breadcrumb_rowid, positions.* FROM positions
+      `SELECT rowid AS __sartracker_breadcrumb_rowid, positions.* FROM positions NOT INDEXED
        WHERE mission_id = ? AND rowid IN (${placeholders})`,
     ).all(missionId, ...chunk)
     for (const row of rows) {

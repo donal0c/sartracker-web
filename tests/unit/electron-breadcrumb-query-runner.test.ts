@@ -160,6 +160,77 @@ describe('breadcrumb restart-query worker boundary [DON-260]', () => {
     expect(selection.rowIds.length).toBeLessThanOrEqual(5_000)
   })
 
+  it('fetches selected rows by rowid without rescanning the full mission index', () => {
+    const database = new Database(':memory:')
+    database.exec(`
+      CREATE TABLE positions (
+        id TEXT PRIMARY KEY,
+        mission_id TEXT NOT NULL,
+        device_id TEXT NOT NULL,
+        source_position_id TEXT,
+        lat REAL NOT NULL,
+        lon REAL NOT NULL,
+        timestamp TEXT NOT NULL,
+        data_origin TEXT NOT NULL
+      );
+      CREATE INDEX idx_positions_mission_device_timestamp
+        ON positions(mission_id, device_id, timestamp);
+    `)
+    const insert = database.prepare(`
+      INSERT INTO positions (
+        id, mission_id, device_id, source_position_id, lat, lon, timestamp,
+        data_origin
+      ) VALUES (?, 'mission-1', 'device-1', ?, 52, -9, ?, 'live')
+    `)
+    database.transaction(() => {
+      for (let index = 0; index < 12; index += 1) {
+        insert.run(
+          `local-${index}`,
+          `source-${index}`,
+          new Date(Date.UTC(2026, 7, 9, 0, 0, index)).toISOString(),
+        )
+      }
+    })()
+
+    const selectedFetchPlanDetails: string[] = []
+    const instrumentedDatabase = {
+      prepare: (query: string) => {
+        const statement = database.prepare(query)
+        if (!query.includes('rowid IN')) {
+          return statement
+        }
+        return {
+          all: (...parameters: readonly unknown[]) => {
+            selectedFetchPlanDetails.push(
+              ...database.prepare(`EXPLAIN QUERY PLAN ${query}`)
+                .all(...parameters)
+                .map((entry: { readonly detail: string }) => entry.detail),
+            )
+            return statement.all(...parameters)
+          },
+        }
+      },
+    }
+
+    const result = listBreadcrumbPositions(
+      instrumentedDatabase,
+      'mission-1',
+      5,
+    )
+
+    expect(result.positions.length).toBeLessThanOrEqual(5)
+    expect(selectedFetchPlanDetails.length).toBeGreaterThan(0)
+    expect(selectedFetchPlanDetails).toEqual(
+      expect.arrayContaining([
+        expect.stringMatching(/INTEGER PRIMARY KEY \(rowid=\?\)/u),
+      ]),
+    )
+    expect(selectedFetchPlanDetails.join('\n')).not.toContain(
+      'idx_positions_mission_device_timestamp',
+    )
+    database.close()
+  })
+
   it('preserves duplicate legacy, invalid-row, endpoint, and tie-selection semantics', () => {
     const database = new Database(':memory:')
     database.exec(`
