@@ -1,8 +1,8 @@
 # SAR Tracker Electron Desktop Beta 0.1.0-beta.12.9
 
-> **Internal beta draft.** Do not share or use for a live incident until every
-> packaged gate below is recorded green and the guarded prerelease is
-> published.
+> **Qualified internal beta prerelease.** This build is ready for controlled
+> team field testing. It is not final operational acceptance and must not be
+> used for a live incident.
 
 - **Version:** 0.1.0-beta.12.9
 - **Build tag:** `electron-v0.1.0-beta.12.9`
@@ -12,6 +12,7 @@
 - **Replaces:** unpublished beta.12.6, beta.12.7, and beta.12.8 candidates
 - **Tag commit:** `32a4326442b93185da300b8456fbaed69ea30705`
 - **Tag workflow:** [`31414363788`](https://github.com/donal0c/sartracker-web/actions/runs/31414363788)
+- **Published prerelease:** [electron-v0.1.0-beta.12.9](https://github.com/donal0c/sartracker-web/releases/tag/electron-v0.1.0-beta.12.9)
 - **AppImage SHA-256:** `d7503d2eb96c2f1ff7a55a321ecb8d21dfc80f5ce8a85af358e3509122550aa7`
 - **Debian package SHA-256:** `b1baae233d09e353422c559aff0531b533213142dd295baf52bb1936f4f36fa6`
 - **`SHA256SUMS` SHA-256:** `7b5c8b7434e9428c87774c4ef588f4471699f22e38f8b83be6d403b621753919`
@@ -56,7 +57,7 @@ instead of being misclassified as 60-second CDP timeouts.
       recovery/finalize/archive, coordinate rejection, sanitized exports,
       corrupt credentials, duplicate launch, and live Traccar
 - [x] Release note, handoff, and Linear contain exact evidence
-- [ ] Guarded publish succeeds and fresh public bytes plus final Ubuntu
+- [x] Guarded publish succeeds and fresh public bytes plus final Ubuntu
       AppImage lifecycle smoke re-verify
 
 ## Recorded evidence
@@ -68,6 +69,11 @@ instead of being misclassified as 60-second CDP timeouts.
 - The exact tag workflow passed every job: gates, Linux bundle, AppImage launch
   smoke, draft prerelease/checksums, and summary. The downloaded workflow
   artifacts and draft-release assets were byte-identical to the checksums above.
+- Guarded publication succeeded. A fresh download of all three public assets
+  reproduced the recorded SHA-256 values and passed `sha256sum -c SHA256SUMS`.
+  The fresh public AppImage was then copied to Ubuntu, re-hashed there, and
+  passed the final lifecycle, recovery, finalize, and archive smoke with no
+  orphan processes.
 - On Ubuntu native Wayland, the exact CI AppImage showed the current fix in
   `144 ms`, the first breadcrumb in `452 ms`, completed reconciliation in
   `44.901 s`, and durably persisted the exact `279,936` source identities in
@@ -106,12 +112,14 @@ instead of being misclassified as 60-second CDP timeouts.
 
 ## Packaged smoke matrix
 
-The exact draft artifacts completed this matrix on Ubuntu before publication.
+The exact CI artifacts completed this matrix on Ubuntu before publication; the
+public AppImage was then re-downloaded and the core lifecycle smoke repeated
+after publication.
 
 | Gate | Result | Evidence |
 | --- | --- | --- |
-| AppImage SHA-256 | PASS | `sartracker-electron-validation_0.1.0-beta.12.9_linux_x86_64.AppImage` — `d7503d2eb96c2f1ff7a55a321ecb8d21dfc80f5ce8a85af358e3509122550aa7`; workflow artifact, draft asset, `SHA256SUMS`, local download, and Ubuntu bytes agree |
-| .deb SHA-256 | PASS | `sartracker-electron-validation_0.1.0-beta.12.9_linux_amd64.deb` — `b1baae233d09e353422c559aff0531b533213142dd295baf52bb1936f4f36fa6`; workflow artifact, draft asset, `SHA256SUMS`, local download, and Ubuntu bytes agree |
+| AppImage SHA-256 | PASS | `sartracker-electron-validation_0.1.0-beta.12.9_linux_x86_64.AppImage` — `d7503d2eb96c2f1ff7a55a321ecb8d21dfc80f5ce8a85af358e3509122550aa7`; workflow artifact, release asset, `SHA256SUMS`, fresh public download, and Ubuntu bytes agree |
+| .deb SHA-256 | PASS | `sartracker-electron-validation_0.1.0-beta.12.9_linux_amd64.deb` — `b1baae233d09e353422c559aff0531b533213142dd295baf52bb1936f4f36fa6`; workflow artifact, release asset, `SHA256SUMS`, and fresh public download agree |
 | AppImage launch | PASS | Tag workflow launch smoke plus native-Wayland Ubuntu lifecycle and 36-hour AppImage proof |
 | .deb install and launch | PASS | `sartracker-web 0.1.0~beta.12.9` is `install ok installed`; `dpkg -V` clean; installed executable completed the full 36-hour and operator matrix |
 | Core lifecycle, restart/recovery, finish/finalize/archive | PASS | Exact AppImage and installed `.deb` both persisted settings, resumed the active mission, finalized, and produced a non-empty archive |
