@@ -1,8 +1,11 @@
-# SAR Tracker Electron Desktop Beta 0.1.0-beta.12.6 (breadcrumb reliability hotfix)
+# SAR Tracker Electron Desktop Beta 0.1.0-beta.12.6 (abandoned candidate)
 
-> **Internal beta draft.** Do not share or use for a live incident until every
-> packaged smoke row below is complete and the guarded GitHub prerelease is
-> published.
+> **Abandoned and never published.** Ubuntu qualification rejected this
+> candidate at the unchanged 60-second 36-hour reconciliation gate. The app
+> remained correct and crash-safe but persisted only `268,275/279,936` rows by
+> the deadline because each history chunk performed a separate FULL SQLite
+> transaction. Beta.12.7 replaces it with atomic wave persistence. Do not share
+> beta.12.6 with the team.
 
 - **Version:** 0.1.0-beta.12.6
 - **Build tag:** `electron-v0.1.0-beta.12.6`
@@ -155,4 +158,3 @@ The draft release must not be published until every required row is complete.
 - [ ] Release note contains exact commit, run, checksums, and evidence
 - [ ] Linear and `handoff/HANDOFF.md` reflect the verified result
 - [ ] Guarded publication succeeds and fresh public bytes re-verify
-
