@@ -5,7 +5,6 @@ import path from 'node:path'
 import { createPositionTruthDigestAccumulator } from './electron-tracking-soak-lib.js'
 
 const SESSION_COOKIE = 'JSESSIONID=tracking-soak'
-const BASE_TIME_MS = Date.parse('2026-01-01T00:00:00.000Z')
 
 /** Starts the deterministic local-only Traccar server used by packaged soaks. */
 export async function startTrackingSoakMockServer(options) {
@@ -16,6 +15,8 @@ export async function startTrackingSoakMockServer(options) {
     completedBatches: 0,
     deviceRequests: 0,
     paused: false,
+    baseTime: new Date(options.baseTimeMs).toISOString(),
+    intervalMs: options.intervalMs,
   }
   let persistChain = Promise.resolve()
 
@@ -215,7 +216,7 @@ function buildBreadcrumbPositions(options, batch, deviceId, from, to) {
   }
 
   const latestSyntheticTimestampMs =
-    BASE_TIME_MS + maximumProductionPollIndex * 5_000
+    options.baseTimeMs + maximumProductionPollIndex * options.intervalMs
   if (requestedFromMs > latestSyntheticTimestampMs) {
     // The packaged soak starts a real mission on the wall clock while its
     // accelerated fixes use a deterministic historical clock. Bootstrap the
@@ -228,11 +229,11 @@ function buildBreadcrumbPositions(options, batch, deviceId, from, to) {
 
   const firstProductionPollIndex = Math.max(
     0,
-    Math.ceil((requestedFromMs - BASE_TIME_MS) / 5_000),
+    Math.ceil((requestedFromMs - options.baseTimeMs) / options.intervalMs),
   )
   const lastProductionPollIndex = Math.min(
     maximumProductionPollIndex,
-    Math.floor((requestedToMs - BASE_TIME_MS) / 5_000),
+    Math.floor((requestedToMs - options.baseTimeMs) / options.intervalMs),
   )
   if (lastProductionPollIndex < firstProductionPollIndex) {
     return []
@@ -273,7 +274,9 @@ function createPosition(options, batch, deviceId, offset) {
 function timestampFor(options, batch, offset) {
   const productionPollIndex =
     Math.max(0, batch - 1) * options.productionPollsPerBatch + offset
-  return new Date(BASE_TIME_MS + productionPollIndex * 5_000).toISOString()
+  return new Date(
+    options.baseTimeMs + productionPollIndex * options.intervalMs,
+  ).toISOString()
 }
 
 function positionId(batch, deviceId, offset) {
@@ -310,6 +313,8 @@ function validateOptions(options) {
     'movingDeviceCount',
     'productionPollsPerBatch',
     'maximumBatches',
+    'baseTimeMs',
+    'intervalMs',
   ]) {
     if (!Number.isInteger(options[key]) || options[key] <= 0) {
       throw new Error(`Tracking soak mock server requires a positive integer ${key}.`)

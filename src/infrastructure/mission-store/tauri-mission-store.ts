@@ -43,6 +43,37 @@ export type Position = {
   readonly data_origin: 'live' | 'cache'
 }
 
+export type ExactBreadcrumbDotPosition = Pick<
+  Position,
+  | 'id'
+  | 'source_position_id'
+  | 'device_id'
+  | 'lat'
+  | 'lon'
+  | 'timestamp'
+  | 'data_origin'
+>
+
+export type ExactBreadcrumbDotPageQuery = {
+  readonly missionId: string
+  readonly activeDeviceIds: readonly string[]
+  readonly limit: number
+  readonly cursor?: string | null
+  readonly direction: 'earlier' | 'later' | 'latest'
+}
+
+export type ExactBreadcrumbDotPage = {
+  readonly positions: readonly ExactBreadcrumbDotPosition[]
+  readonly totalPositionCount: number
+  readonly pagePositionCount: number
+  readonly fromTimestamp: string | null
+  readonly toTimestamp: string | null
+  readonly hasEarlier: boolean
+  readonly hasLater: boolean
+  readonly earlierCursor: string | null
+  readonly laterCursor: string | null
+}
+
 export type MarkerType = 'ipp_lkp' | 'clue' | 'hazard' | 'casualty'
 
 export type Marker = {
@@ -338,6 +369,11 @@ export type MissionStore = {
     readonly droppedPositionCount?: number
   }>
   readonly cancelBreadcrumbQuery?: (requestId: string) => Promise<boolean>
+  readonly listExactBreadcrumbDotPage?: (
+    input: ExactBreadcrumbDotPageQuery,
+    requestId?: string,
+  ) => Promise<ExactBreadcrumbDotPage>
+  readonly cancelExactBreadcrumbDotQuery?: (requestId: string) => Promise<boolean>
   readonly listTrackingHistoryCheckpoints?: (
     missionId: string,
   ) => Promise<readonly TrackingHistoryCheckpoint[]>

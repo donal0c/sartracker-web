@@ -4,6 +4,10 @@ import L from 'leaflet'
 import { getBasemapById, MAP_CENTER, MAP_DEFAULT_ZOOM, type BasemapId } from '../../lib/map-config'
 import type { Drawing, Marker, MarkerType } from '../../infrastructure/mission-store/tauri-mission-store'
 import type { TrackingSnapshot } from '../tracking/tracking-types'
+import {
+  resolveBreadcrumbDotOverlaySnapshot,
+  type ExactBreadcrumbDotState,
+} from '../tracking/exact-breadcrumb-dot-controller'
 import { createDrawingFeatureCollection } from '../drawings/drawing-geojson'
 import { createMarkerFeatureCollection } from '../markers/marker-geojson'
 import {
@@ -24,6 +28,7 @@ export type LeafletFallbackOverlayInput = {
   readonly hiddenDeviceIds: readonly string[]
   readonly hiddenBreadcrumbDeviceIds: readonly string[]
   readonly trackingStyle?: TrackingStylePreferences
+  readonly exactBreadcrumbDotState?: ExactBreadcrumbDotState
   readonly markers: readonly Marker[]
   readonly markerTypeVisibility: Record<MarkerType, boolean>
   readonly hiddenMarkerIds: readonly string[]
@@ -92,8 +97,13 @@ function renderTrackingOverlay(layerGroup: L.LayerGroup, input: LeafletFallbackO
     breadcrumbTrailMode: DEFAULT_BREADCRUMB_TRAIL_MODE,
   }
   const breadcrumbSize = clampBreadcrumbSize(trackingStyle.breadcrumbSize)
-  const tracking = createTrackingFeatureCollection(
+  const overlaySnapshot = resolveBreadcrumbDotOverlaySnapshot(
     input.trackingSnapshot,
+    trackingStyle.breadcrumbTrailMode,
+    input.exactBreadcrumbDotState ?? { status: 'inactive' },
+  )
+  const tracking = createTrackingFeatureCollection(
+    overlaySnapshot,
     DEFAULT_BREADCRUMB_LINE_GAP_THRESHOLD_MS,
     trackingStyle,
   )

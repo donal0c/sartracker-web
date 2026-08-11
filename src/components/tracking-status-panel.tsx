@@ -1,13 +1,27 @@
 import { useTrackingStore } from '../features/tracking/tracking-store'
 import { useDeviceWorkspaceStore } from '../features/tracking/device-workspace-store'
+import { useExactBreadcrumbDotStore } from '../features/tracking/exact-breadcrumb-dot-store'
+import type { ExactBreadcrumbDotState } from '../features/tracking/exact-breadcrumb-dot-controller'
+import { useTrackingStyleStore } from '../features/tracking/tracking-style-store'
+import { ExactBreadcrumbDotStatus } from './exact-breadcrumb-dot-status'
+
+type TrackingStatusPanelProps = {
+  readonly exactBreadcrumbDotState?: ExactBreadcrumbDotState
+  readonly onExactBreadcrumbDotsEarlier?: () => void
+  readonly onExactBreadcrumbDotsLater?: () => void
+}
 
 /**
  * Renders the operator-facing tracking status summary.
  */
-export function TrackingStatusPanel() {
+export function TrackingStatusPanel(props: TrackingStatusPanelProps = {}) {
   const snapshot = useTrackingStore((state) => state.snapshot)
   const status = useTrackingStore((state) => state.status)
   const openWorkspace = useDeviceWorkspaceStore((state) => state.openWorkspace)
+  const breadcrumbTrailMode = useTrackingStyleStore((state) => state.breadcrumbTrailMode)
+  const storedExactBreadcrumbDotState = useExactBreadcrumbDotStore((state) => state.state)
+  const exactBreadcrumbDotController = useExactBreadcrumbDotStore((state) => state.controller)
+  const exactBreadcrumbDotState = props.exactBreadcrumbDotState ?? storedExactBreadcrumbDotState
   const staleDeviceCount = snapshot.positions.filter((position) => position.device_cache_stale).length
   const cachedDeviceCount = snapshot.positions.filter((position) => position.data_origin === 'cache').length
   const boundedBreadcrumbDeviceCount =
@@ -86,7 +100,23 @@ export function TrackingStatusPanel() {
         </TrackingStatusMessage>
       )}
 
-      {boundedBreadcrumbDeviceCount > 0 && snapshot.breadcrumbMetadata !== undefined ? (
+      {breadcrumbTrailMode === 'dots' ? (
+        <ExactBreadcrumbDotStatus
+          state={exactBreadcrumbDotState}
+          onEarlier={
+            props.onExactBreadcrumbDotsEarlier ??
+            (() => exactBreadcrumbDotController?.showEarlier())
+          }
+          onLater={
+            props.onExactBreadcrumbDotsLater ??
+            (() => exactBreadcrumbDotController?.showLater())
+          }
+        />
+      ) : null}
+
+      {breadcrumbTrailMode === 'line' &&
+      boundedBreadcrumbDeviceCount > 0 &&
+      snapshot.breadcrumbMetadata !== undefined ? (
         <p
           className={`mb-4 border-l-4 px-3 py-2 text-xs font-medium leading-relaxed ${
             degradedBreadcrumbBudgets.length > 0

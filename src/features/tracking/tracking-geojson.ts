@@ -40,6 +40,17 @@ type GeoJsonBreadcrumbPointFeature = Feature<
   }
 >
 
+type GeoJsonExactBreadcrumbPointFeature = Feature<
+  Point,
+  {
+    readonly deviceId: string
+    readonly featureKind: 'breadcrumb'
+    readonly color: string
+    readonly sourcePositionId: string | null
+    readonly timestamp: string
+  }
+>
+
 const breadcrumbLineFeaturesByInput = new WeakMap<
   readonly NormalizedTrackingPosition[],
   Map<string, readonly GeoJsonLineFeature[]>
@@ -232,6 +243,40 @@ export function createBreadcrumbPointFeatureCollection(
     type: 'FeatureCollection',
     features,
   }
+}
+
+/**
+ * Creates one identifiable GeoJSON point for every authoritative fix in an
+ * exact SQLite-backed dot page.
+ */
+export function createExactBreadcrumbDotFeatureCollection(
+  positions: readonly (NormalizedTrackingPosition & {
+    readonly source_position_id?: string | null
+  })[],
+  style: Pick<TrackingStylePreferences, 'deviceColors'> = { deviceColors: {} },
+): FeatureCollection<Point> {
+  const features: GeoJsonExactBreadcrumbPointFeature[] = positions.map((position) => {
+    const sourcePositionId = position.source_position_id?.trim() || null
+    return {
+      type: 'Feature',
+      id: sourcePositionId === null
+        ? `${position.device_id}:stored:${position.id.trim()}`
+        : `${position.device_id}:id:${sourcePositionId}`,
+      geometry: {
+        type: 'Point',
+        coordinates: [position.lon, position.lat],
+      },
+      properties: {
+        deviceId: position.device_id,
+        featureKind: 'breadcrumb',
+        color: getStyledDeviceColor(position.device_id, style.deviceColors),
+        sourcePositionId,
+        timestamp: position.timestamp,
+      },
+    }
+  })
+
+  return { type: 'FeatureCollection', features }
 }
 
 function getStyledDeviceColor(

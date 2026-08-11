@@ -11,6 +11,7 @@ import { syncMarkerOverlay } from '../markers/sync-marker-overlay'
 import { useMissionStore } from '../mission/mission-store'
 import { syncTrackingOverlay } from '../tracking/sync-tracking-overlay'
 import { useActiveMissionDevicesStore } from '../tracking/active-mission-devices-store'
+import { useExactBreadcrumbDotStore } from '../tracking/exact-breadcrumb-dot-store'
 import { selectMissionTrackingSnapshot } from '../tracking/mission-active-tracking'
 import { useTrackingStylePreferences } from '../tracking/tracking-style-store'
 import { useTrackingStore } from '../tracking/tracking-store'
@@ -44,6 +45,7 @@ export function useMapOverlays(options: UseMapOverlaysOptions): void {
   const missionId = useMissionStore((state) => state.currentMission?.id ?? null)
   const activeDeviceIds = useActiveMissionDevicesStore((state) => state.getActiveDeviceIds(missionId))
   const trackingStyle = useTrackingStylePreferences()
+  const exactBreadcrumbDotState = useExactBreadcrumbDotStore((state) => state.state)
   const missionTrackingSnapshot = useMemo(
     () => selectMissionTrackingSnapshot(trackingSnapshot, activeDeviceIds),
     [activeDeviceIds, trackingSnapshot],
@@ -64,6 +66,7 @@ export function useMapOverlays(options: UseMapOverlaysOptions): void {
         hiddenBreadcrumbDeviceIds,
         getEffectiveTrackingVisible(groupVisibility) && breadcrumbsVisible,
         trackingStyle,
+        exactBreadcrumbDotState,
       )
     }
 
@@ -77,6 +80,7 @@ export function useMapOverlays(options: UseMapOverlaysOptions): void {
     hiddenBreadcrumbDeviceIds,
     hiddenDeviceIds,
     trackingStyle,
+    exactBreadcrumbDotState,
     missionTrackingSnapshot,
   ])
 

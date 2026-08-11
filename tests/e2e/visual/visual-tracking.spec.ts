@@ -244,7 +244,7 @@ Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
     })
   })
 
-  test('breadcrumb dot mode shows every retained fix without distance omission [DON-259]', async ({
+  test('breadcrumb dot mode shows every authoritative fix without distance omission [DON-259]', async ({
     page,
   }) => {
     await page.getByTestId('open-devices-workspace').click()
@@ -255,6 +255,7 @@ Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
     await expect(page.getByTestId('devices-workspace')).toBeHidden()
 
     await page.evaluate(async () => {
+      const fixBaseMs = Date.now() + 1_000
       const breadcrumbs = Array.from({ length: 4 }, (_entry, index) => ({
         id: `don-259-visual-${index + 1}`,
         device_id: 'alpha',
@@ -264,7 +265,7 @@ Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
         speed: 2.5,
         battery: 84,
         accuracy: null,
-        timestamp: new Date(Date.UTC(2026, 6, 19, 12, 14, index * 5)).toISOString(),
+        timestamp: new Date(fixBaseMs + index * 5_000).toISOString(),
         source: null,
         data_origin: 'live' as const,
         cache_age_seconds: null,
@@ -295,27 +296,27 @@ Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
     await expect
       .poll(() => readDotModeRenderState(page), {
         message:
-          'all four close-spaced breadcrumb dots replace the prior tracking scene before capture',
+          'all four newly injected close-spaced breadcrumb dots join the exact mission trail before capture',
         timeout: 15_000,
       })
       .toEqual({
-        alphaBreadcrumbDots: 4,
+        injectedBreadcrumbDots: 4,
         currentDeviceMarkers: 0,
       })
 
     await captureAndRegister(page, {
       testId: 'tracking-breadcrumb-dots-faithful',
-      testName: 'Every retained close tracking fix is visible in breadcrumb dot mode',
+      testName: 'Every authoritative close tracking fix is visible in breadcrumb dot mode',
       area: 'tracking',
       severity: 'critical',
-      verificationPrompt: `Verify this zoomed SAR Tracker map after four closely spaced GPS fixes were injected:
-1. Exactly four orange breadcrumb dots should be visible along one short diagonal route near the centre of the map
+      verificationPrompt: `Verify this zoomed SAR Tracker map after four closely spaced GPS fixes were added to the authoritative mission trail:
+1. The four newly added orange breadcrumb dots should be visible along one short diagonal route near the centre of the map; earlier mission dots may also remain visible
 2. The dots should be distinct rather than collapsed into one marker or reduced to only the first and last point
 3. The map should remain readable at this close zoom with normal topographic detail
 4. No dialog or workspace should cover the route
 Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
       playwrightAssertions: [
-        'MapLibre tracking source contains four unique Alpha Team breadcrumb coordinates',
+        'MapLibre exact-dot source contains all four newly injected Alpha Team source identities',
         'breadcrumb display mode is dots',
         'Alpha Team breadcrumb colour is orange',
       ],
@@ -500,7 +501,7 @@ Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
 })
 
 async function readDotModeRenderState(page: Page): Promise<{
-  readonly alphaBreadcrumbDots: number
+  readonly injectedBreadcrumbDots: number
   readonly currentDeviceMarkers: number
 }> {
   return page.evaluate(() => {
@@ -509,19 +510,19 @@ async function readDotModeRenderState(page: Page): Promise<{
       map?.queryRenderedFeatures(undefined, {
         layers: ['tracking-breadcrumbs-dots'],
       }) ?? []
-    const coordinateKeys = features.flatMap((feature) => {
+    const injectedIdentityKeys = features.flatMap((feature) => {
       if (
         feature.properties?.featureKind !== 'breadcrumb' ||
         feature.properties.deviceId !== 'alpha' ||
+        !String(feature.properties.sourcePositionId ?? '').startsWith('don-259-visual-') ||
         feature.geometry.type !== 'Point'
       ) {
         return []
       }
-      const [lon, lat] = feature.geometry.coordinates
-      return [`${lon.toFixed(5)}:${lat.toFixed(5)}`]
+      return [String(feature.properties.sourcePositionId)]
     })
     return {
-      alphaBreadcrumbDots: new Set(coordinateKeys).size,
+      injectedBreadcrumbDots: new Set(injectedIdentityKeys).size,
       currentDeviceMarkers:
         map?.queryRenderedFeatures(undefined, {
           layers: ['tracking-devices-circle'],

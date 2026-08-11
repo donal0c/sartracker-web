@@ -151,6 +151,7 @@ export function createBreadcrumb36HourSourceDatabase(
     .sort((left, right) => compareStringsByCodeUnit(left.device_id, right.device_id))
 
   return {
+    transaction: (callback) => callback,
     prepare: (query) => {
       if (/GROUP BY device_id/u.test(query)) {
         return {

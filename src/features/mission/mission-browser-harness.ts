@@ -24,6 +24,8 @@ import { applyTrackingSnapshot, applyTrackingStatus } from '../tracking/tracking
 import { startMissionTrackingStatusBridge } from '../tracking/mission-tracking-status-bridge'
 import { recordDiagnosticEvent } from '../diagnostics/diagnostic-event-log'
 import { recordTrackingPollLedgerEntry } from '../diagnostics/tracking-poll-ledger'
+import { startExactBreadcrumbDotRuntime } from '../tracking/start-exact-breadcrumb-dot-runtime'
+import { useExactBreadcrumbDotStore } from '../tracking/exact-breadcrumb-dot-store'
 
 const BROWSER_HARNESS_MAX_PERSISTED_TRACKING_POSITIONS = 2_000
 const LEAFLET_FALLBACK_SEED_MISSION_NAME = 'DON-27 Leaflet fallback surface'
@@ -98,6 +100,7 @@ export async function startMissionBrowserHarness(): Promise<void> {
     missionStore: browserStore,
     attachmentAdapter: noopMarkerAttachmentAdapter,
   })
+  const stopExactBreadcrumbDots = startExactBreadcrumbDotRuntime(browserStore)
 
   await hydrateTrackingFromBrowserHarness()
 
@@ -146,6 +149,11 @@ export async function startMissionBrowserHarness(): Promise<void> {
       applyStatus: applyTrackingStatus,
       recordDiagnosticEvent,
       recordTrackingPollDiagnostic: recordTrackingPollLedgerEntry,
+      notifyDurablePositionChange: (changedPositionCount) => {
+        useExactBreadcrumbDotStore.getState().controller?.notifyDurableChange(
+          changedPositionCount,
+        )
+      },
       maxPersistedPositionsPerSnapshot: BROWSER_HARNESS_MAX_PERSISTED_TRACKING_POSITIONS,
       writeCache: electronRuntime && runtimeSettings.trackingCacheEnabled,
       ...(runtimeSettings.trackingDisabledReason === undefined
@@ -185,6 +193,7 @@ export async function startMissionBrowserHarness(): Promise<void> {
       const previousTrackingStop = activeTrackingStop
       activeTrackingStop = () => undefined
       previousTrackingStop()
+      stopExactBreadcrumbDots()
     },
   })
 

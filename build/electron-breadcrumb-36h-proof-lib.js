@@ -18,6 +18,285 @@ const MAX_HISTORY_CONCURRENCY = 8
 const RENDER_BREADCRUMB_LIMIT_PER_DEVICE = 5_000
 const RENDER_BREADCRUMB_GAP_THRESHOLD_MS = 30 * 60 * 1_000
 const EARTH_RADIUS_METRES = 6_371_008.8
+export const MAX_RENDERED_EXACT_DOT_COORDINATE_ERROR_METRES = 8
+// MapLibre 5.22 encodes GeoJSON at extent 8192 and displays vector tiles at
+// 512 CSS pixels. geojson-vt rounds X/Y independently to at most half a grid
+// interval at the integer tile zoom. Fractional map zoom magnifies that error
+// by less than 2, so the public queryRenderedFeatures -> map.project audit can
+// approach one complete interval on each axis. The radial limit is therefore
+// the diagonal of that square, not the per-axis interval.
+const MAPLIBRE_GEOJSON_TILE_EXTENT = 8_192
+const MAPLIBRE_TILE_SIZE_SCREEN_PIXELS = 512
+export const MAX_RENDERED_EXACT_DOT_COORDINATE_ERROR_SCREEN_PIXELS_PER_AXIS =
+  MAPLIBRE_TILE_SIZE_SCREEN_PIXELS / MAPLIBRE_GEOJSON_TILE_EXTENT
+export const MAX_RENDERED_EXACT_DOT_COORDINATE_ERROR_SCREEN_PIXELS_EUCLIDEAN =
+  Math.SQRT2 * MAX_RENDERED_EXACT_DOT_COORDINATE_ERROR_SCREEN_PIXELS_PER_AXIS
+
+/**
+ * Normalizes MapLibre rendered exact-dot features around the authoritative
+ * device/source identity properties. GeoJSON-VT can omit string Feature.id
+ * values from rendered-query results, so the audit derives the same stable
+ * identity while retaining explicit ID transport diagnostics.
+ */
+export function normalizeRenderedExactBreadcrumbDotFeaturesForAudit(features) {
+  const idTypeCounts = { undefined: 0, number: 0, string: 0, other: 0 }
+  const byStableIdentity = new Map()
+  let derivedIdentityCount = 0
+  let missingStableIdentityCount = 0
+  let explicitStringIdMismatchCount = 0
+  let duplicateConflictCount = 0
+
+  for (const [index, feature] of features.entries()) {
+    const rawIdType = typeof feature?.id
+    if (rawIdType === 'undefined' || rawIdType === 'number' || rawIdType === 'string') {
+      idTypeCounts[rawIdType] += 1
+    } else {
+      idTypeCounts.other += 1
+    }
+    const stableIdentity = getExactDotAuditIdentity(feature)
+    if (stableIdentity === null) {
+      missingStableIdentityCount += 1
+      byStableIdentity.set(`invalid:${index}`, feature)
+      continue
+    }
+    derivedIdentityCount += 1
+    if (typeof feature.id === 'string' && feature.id !== stableIdentity) {
+      explicitStringIdMismatchCount += 1
+    }
+    const normalizedFeature = {
+      type: 'Feature',
+      id: stableIdentity,
+      geometry: feature.geometry,
+      properties: feature.properties,
+      auditScreenPixelErrorX: feature.auditScreenPixelErrorX,
+      auditScreenPixelErrorY: feature.auditScreenPixelErrorY,
+    }
+    const existingFeature = byStableIdentity.get(stableIdentity)
+    if (
+      existingFeature !== undefined &&
+      !exactRenderedTileCopiesMatch(existingFeature, normalizedFeature)
+    ) {
+      duplicateConflictCount += 1
+      continue
+    }
+    byStableIdentity.set(stableIdentity, normalizedFeature)
+  }
+
+  return {
+    type: 'FeatureCollection',
+    features: [...byStableIdentity.values()],
+    rawFeatureCount: features.length,
+    derivedIdentityCount,
+    missingStableIdentityCount,
+    duplicateDerivedIdentityCount:
+      derivedIdentityCount -
+      [...byStableIdentity.keys()].filter((identity) => !identity.startsWith('invalid:')).length,
+    duplicateConflictCount,
+    explicitStringIdMismatchCount,
+    identityValidationErrorCount:
+      explicitStringIdMismatchCount + duplicateConflictCount,
+    idTypeCounts,
+  }
+}
+
+function exactRenderedTileCopiesMatch(left, right) {
+  const leftCoordinates = left.geometry?.coordinates
+  const rightCoordinates = right.geometry?.coordinates
+  return (
+    left.properties?.timestamp === right.properties?.timestamp &&
+    isFinitePoint(leftCoordinates) &&
+    isFinitePoint(rightCoordinates) &&
+    leftCoordinates[0] === rightCoordinates[0] &&
+    leftCoordinates[1] === rightCoordinates[1]
+  )
+}
+
+/**
+ * Joins rendered exact dots back to source identity/time and quantifies only
+ * the coordinate displacement introduced by MapLibre's rendered tile path.
+ */
+export function measureExactBreadcrumbDotRenderedDeviation(
+  sourceFeatures,
+  renderedFeatures,
+  options = {},
+) {
+  const maximumAllowedMetres =
+    options.maximumAllowedMetres ?? MAX_RENDERED_EXACT_DOT_COORDINATE_ERROR_METRES
+  const maximumAllowedScreenPixelsPerAxis =
+    options.maximumAllowedScreenPixelsPerAxis ??
+    MAX_RENDERED_EXACT_DOT_COORDINATE_ERROR_SCREEN_PIXELS_PER_AXIS
+  const maximumAllowedScreenPixelsEuclidean =
+    options.maximumAllowedScreenPixelsEuclidean ??
+    MAX_RENDERED_EXACT_DOT_COORDINATE_ERROR_SCREEN_PIXELS_EUCLIDEAN
+  const source = indexExactDotAuditFeatures(sourceFeatures)
+  const rendered = indexExactDotAuditFeatures(renderedFeatures)
+  let missingIdentityCount = 0
+  let unexpectedIdentityCount = 0
+  let timestampConflictCount = 0
+  let coordinateConflictCount = 0
+  const deviations = []
+
+  for (const [identity, sourceFeature] of source.byIdentity) {
+    const renderedFeature = rendered.byIdentity.get(identity)
+    if (renderedFeature === undefined) {
+      missingIdentityCount += 1
+      continue
+    }
+    if (renderedFeature.properties?.timestamp !== sourceFeature.properties?.timestamp) {
+      timestampConflictCount += 1
+    }
+    const sourceCoordinates = sourceFeature.geometry?.coordinates
+    const renderedCoordinates = renderedFeature.geometry?.coordinates
+    const screenPixelsX = renderedFeature.auditScreenPixelErrorX
+    const screenPixelsY = renderedFeature.auditScreenPixelErrorY
+    if (
+      !isFinitePoint(sourceCoordinates) ||
+      !isFinitePoint(renderedCoordinates) ||
+      !Number.isFinite(screenPixelsX) ||
+      !Number.isFinite(screenPixelsY) ||
+      screenPixelsX < 0 ||
+      screenPixelsY < 0
+    ) {
+      coordinateConflictCount += 1
+      continue
+    }
+    deviations.push({
+      identity,
+      metres: haversineDistanceMetres(
+        { lat: sourceCoordinates[1], lon: sourceCoordinates[0] },
+        { lat: renderedCoordinates[1], lon: renderedCoordinates[0] },
+      ),
+      screenPixelsX,
+      screenPixelsY,
+      screenPixelsEuclidean: Math.hypot(screenPixelsX, screenPixelsY),
+    })
+  }
+  for (const identity of rendered.byIdentity.keys()) {
+    if (!source.byIdentity.has(identity)) {
+      unexpectedIdentityCount += 1
+    }
+  }
+
+  const metreValues = deviations.map((entry) => entry.metres).sort(compareNumbers)
+  const screenPixelXValues = deviations
+    .map((entry) => entry.screenPixelsX)
+    .sort(compareNumbers)
+  const screenPixelYValues = deviations
+    .map((entry) => entry.screenPixelsY)
+    .sort(compareNumbers)
+  const screenPixelEuclideanValues = deviations
+    .map((entry) => entry.screenPixelsEuclidean)
+    .sort(compareNumbers)
+  const worstMetres = deviations.reduce(
+    (selected, entry) => selected === null || entry.metres > selected.metres
+      ? entry
+      : selected,
+    null,
+  )
+  const worstScreenPixels = deviations.reduce(
+    (selected, entry) =>
+      selected === null || entry.screenPixelsEuclidean > selected.screenPixelsEuclidean
+        ? entry
+        : selected,
+    null,
+  )
+  const metres = summarizeDeviationValues(metreValues)
+  const screenPixels = {
+    x: summarizeDeviationValues(screenPixelXValues),
+    y: summarizeDeviationValues(screenPixelYValues),
+    euclidean: summarizeDeviationValues(screenPixelEuclideanValues),
+  }
+  const conflictCount =
+    source.invalidIdentityCount +
+    rendered.invalidIdentityCount +
+    source.duplicateIdentityCount +
+    rendered.duplicateIdentityCount
+  return {
+    passed:
+      missingIdentityCount === 0 &&
+      unexpectedIdentityCount === 0 &&
+      timestampConflictCount === 0 &&
+      coordinateConflictCount === 0 &&
+      conflictCount === 0 &&
+      deviations.length === source.byIdentity.size &&
+      (metres.max ?? Infinity) <= maximumAllowedMetres &&
+      (screenPixels.x.max ?? Infinity) <= maximumAllowedScreenPixelsPerAxis &&
+      (screenPixels.y.max ?? Infinity) <= maximumAllowedScreenPixelsPerAxis &&
+      (screenPixels.euclidean.max ?? Infinity) <=
+        maximumAllowedScreenPixelsEuclidean,
+    comparedIdentityCount: deviations.length,
+    missingIdentityCount,
+    unexpectedIdentityCount,
+    timestampConflictCount,
+    coordinateConflictCount,
+    invalidIdentityCount:
+      source.invalidIdentityCount + rendered.invalidIdentityCount,
+    duplicateIdentityCount:
+      source.duplicateIdentityCount + rendered.duplicateIdentityCount,
+    maximumAllowedMetres,
+    maximumAllowedScreenPixelsPerAxis,
+    maximumAllowedScreenPixelsEuclidean,
+    metres,
+    screenPixels,
+    worstMetreIdentity: worstMetres?.identity ?? null,
+    worstScreenPixelIdentity: worstScreenPixels?.identity ?? null,
+  }
+}
+
+function indexExactDotAuditFeatures(features) {
+  const byIdentity = new Map()
+  let invalidIdentityCount = 0
+  let duplicateIdentityCount = 0
+  for (const feature of features) {
+    const identity = getExactDotAuditIdentity(feature)
+    if (identity === null) {
+      invalidIdentityCount += 1
+      continue
+    }
+    if (byIdentity.has(identity)) {
+      duplicateIdentityCount += 1
+    }
+    byIdentity.set(identity, feature)
+  }
+  return { byIdentity, invalidIdentityCount, duplicateIdentityCount }
+}
+
+function getExactDotAuditIdentity(feature) {
+  const deviceId = typeof feature?.properties?.deviceId === 'string'
+    ? feature.properties.deviceId.trim()
+    : ''
+  const sourcePositionId = typeof feature?.properties?.sourcePositionId === 'string'
+    ? feature.properties.sourcePositionId.trim()
+    : ''
+  return deviceId === '' || sourcePositionId === ''
+    ? null
+    : `${deviceId}:id:${sourcePositionId}`
+}
+
+function isFinitePoint(coordinates) {
+  return (
+    Array.isArray(coordinates) &&
+    coordinates.length >= 2 &&
+    Number.isFinite(coordinates[0]) &&
+    Number.isFinite(coordinates[1])
+  )
+}
+
+function summarizeDeviationValues(values) {
+  return {
+    p50: selectDeviationPercentile(values, 0.5),
+    p95: selectDeviationPercentile(values, 0.95),
+    max: values.at(-1) ?? null,
+  }
+}
+
+function selectDeviationPercentile(values, percentile) {
+  return values[Math.floor((values.length - 1) * percentile)] ?? null
+}
+
+function compareNumbers(left, right) {
+  return left - right
+}
 
 /** Returns true once a child has either exited normally or by signal. */
 export function processExited(process) {
@@ -289,9 +568,46 @@ export function analyzeBreadcrumbCheckpointProgress(input) {
   if (requiredToMs < requiredFromMs) {
     throw new Error('Required checkpoint coverage window is reversed.')
   }
-  const checkpointByDeviceId = new Map(
-    input.checkpoints.map((checkpoint) => [String(checkpoint.device_id), checkpoint]),
-  )
+  const missionId = String(input.missionId ?? '')
+  const requiredDeviceIdStrings = input.deviceIds.map(String)
+  const requiredDeviceIds = new Set(requiredDeviceIdStrings)
+  const checkpointByDeviceId = new Map()
+  let invalidCheckpointCount = 0
+  let unexpectedCheckpointCount = 0
+  let duplicateCheckpointCount = 0
+  let historyFromMismatchCount = 0
+  for (const checkpoint of input.checkpoints) {
+    const deviceId = String(checkpoint?.device_id ?? '')
+    const missionMatches = String(checkpoint?.mission_id ?? '') === missionId
+    const deviceExpected = requiredDeviceIds.has(deviceId)
+    const historyFromMatches = checkpoint?.history_from === requiredFrom
+    const reconciledUntilValid = Number.isFinite(Date.parse(checkpoint?.reconciled_until))
+    const updatedAtValid = Number.isFinite(Date.parse(checkpoint?.updated_at))
+    if (!deviceExpected) {
+      unexpectedCheckpointCount += 1
+    }
+    if (!historyFromMatches) {
+      historyFromMismatchCount += 1
+    }
+    if (
+      !missionMatches ||
+      !deviceExpected ||
+      !historyFromMatches ||
+      !reconciledUntilValid ||
+      !updatedAtValid
+    ) {
+      invalidCheckpointCount += 1
+    }
+    if (!missionMatches || !deviceExpected) {
+      continue
+    }
+    if (checkpointByDeviceId.has(deviceId)) {
+      duplicateCheckpointCount += 1
+      invalidCheckpointCount += 1
+      continue
+    }
+    checkpointByDeviceId.set(deviceId, checkpoint)
+  }
   const devices = [...input.deviceIds]
     .sort(compareDeviceIds)
     .map((deviceId) => {
@@ -313,19 +629,50 @@ export function analyzeBreadcrumbCheckpointProgress(input) {
         historyFrom: checkpoint?.history_from ?? null,
         reconciledUntil: checkpoint?.reconciled_until ?? null,
         updatedAt: checkpoint?.updated_at ?? null,
+        historyFromMatches: checkpoint?.history_from === requiredFrom,
         coveredMs,
         remainingMs,
-        complete: remainingMs === 0,
+        complete:
+          checkpoint !== undefined &&
+          checkpoint.history_from === requiredFrom &&
+          Number.isFinite(Date.parse(checkpoint.reconciled_until)) &&
+          Date.parse(checkpoint.reconciled_until) >= requiredToMs,
       }
     })
 
+  const missingCheckpointCount = devices.filter(
+    (device) => !device.checkpointPresent,
+  ).length
+  const incompleteCheckpointCount = devices.filter(
+    (device) => !device.complete,
+  ).length
   return {
+    missionId,
     requiredFrom,
     requiredTo,
     requiredDeviceCount: devices.length,
+    checkpointCount: input.checkpoints.length,
     checkpointedDeviceCount: devices.filter((device) => device.checkpointPresent).length,
     completedDeviceCount: devices.filter((device) => device.complete).length,
-    remainingDeviceCount: devices.filter((device) => !device.complete).length,
+    remainingDeviceCount: incompleteCheckpointCount,
+    missingCheckpointCount,
+    incompleteCheckpointCount,
+    invalidCheckpointCount,
+    unexpectedCheckpointCount,
+    duplicateCheckpointCount,
+    historyFromMismatchCount,
+    exactScope:
+      input.checkpoints.length === devices.length &&
+      missingCheckpointCount === 0 &&
+      unexpectedCheckpointCount === 0 &&
+      duplicateCheckpointCount === 0,
+    complete:
+      missingCheckpointCount === 0 &&
+      incompleteCheckpointCount === 0 &&
+      invalidCheckpointCount === 0 &&
+      unexpectedCheckpointCount === 0 &&
+      duplicateCheckpointCount === 0 &&
+      historyFromMismatchCount === 0,
     totalCoveredMs: devices.reduce((total, device) => total + device.coveredMs, 0),
     totalRemainingMs: devices.reduce((total, device) => total + device.remainingMs, 0),
     devices,
@@ -637,6 +984,104 @@ export function buildBreadcrumb36HourRenderedOracle(
 }
 
 /**
+ * Builds a bounded exact-dot paging oracle directly from deterministic raw
+ * source truth. The line selector is intentionally not involved.
+ */
+export function buildBreadcrumb36HourExactDotPageOracle(
+  profile,
+  window = {},
+  options = {},
+) {
+  const pageLimit = boundedInteger(
+    options.pageLimit,
+    10_000,
+    1,
+    100_000,
+    'exact breadcrumb-dot page limit',
+  )
+  const database = options.sourceDatabase ??
+    createBreadcrumb36HourSourceDatabase(profile, window)
+  const deviceTotals = database.prepare(
+    `SELECT device_id, COUNT(*) AS total
+     FROM positions
+     WHERE mission_id = ?
+     GROUP BY device_id
+     ORDER BY device_id ASC`,
+  ).all('source-truth')
+  const selectDevicePositions = database.prepare(
+    `SELECT rowid AS sqlite_row_id, * FROM positions
+     WHERE mission_id = ? AND device_id = ?
+     ORDER BY timestamp ASC`,
+  )
+  const positions = []
+  for (const device of deviceTotals) {
+    positions.push(...selectDevicePositions.iterate('source-truth', device.device_id))
+  }
+  positions.sort(compareExactBreadcrumbDotPositions)
+
+  const pages = []
+  const pageRows = []
+  for (let end = positions.length; end > 0; end -= pageLimit) {
+    const page = positions
+      .slice(Math.max(0, end - pageLimit), end)
+      .sort(compareExactBreadcrumbDotDigestPositions)
+    pageRows.push(page)
+    const rawDigest = createHash('sha256')
+    const renderedDigest = createHash('sha256')
+    const identityTimestampDigest = createHash('sha256')
+    for (const position of page) {
+      const line = createRetainedIdentityLine(position)
+      rawDigest.update(line)
+      renderedDigest.update(line)
+      identityTimestampDigest.update(createIdentityTimestampLine(position))
+    }
+    const rawSha256 = rawDigest.digest('hex')
+    pages.push({
+      raw: {
+        positionCount: page.length,
+        sha256: rawSha256,
+        identityTimestampSha256: identityTimestampDigest.digest('hex'),
+      },
+      rendered: {
+        featureCount: page.length,
+        coordinateCount: page.length,
+        sourceTruthSha256: renderedDigest.digest('hex'),
+      },
+    })
+  }
+
+  const unionRawDigest = createHash('sha256')
+  const unionRenderedDigest = createHash('sha256')
+  for (const page of [...pageRows].reverse()) {
+    for (const position of page) {
+      const line = createRetainedIdentityLine(position)
+      unionRawDigest.update(line)
+      unionRenderedDigest.update(line)
+    }
+  }
+  const activePage = pages[0] ?? {
+    raw: { positionCount: 0 },
+    rendered: { featureCount: 0 },
+  }
+  return {
+    pageLimit,
+    totalPositionCount: positions.length,
+    pageCount: pages.length,
+    activePage: {
+      pagePositionCount: activePage.raw.positionCount,
+      renderedFeatureCount: activePage.rendered.featureCount,
+    },
+    pageUnion: {
+      rawPositionCount: positions.length,
+      renderedPositionCount: positions.length,
+      rawSourceTruthSha256: unionRawDigest.digest('hex'),
+      renderedSourceTruthSha256: unionRenderedDigest.digest('hex'),
+    },
+    pages,
+  }
+}
+
+/**
  * Measures whether representative selection adds gaps to Eamonn's reported
  * slow-to-motorway-speed journey. The source cadence remains authoritative:
  * the app must not invent fixes, but it must not remove additional fixes from
@@ -741,6 +1186,48 @@ function createRetainedIdentityLine(position) {
     Number(position.lat).toFixed(7),
     Number(position.lon).toFixed(7),
   ].join('|') + '\n'
+}
+
+function createIdentityTimestampLine(position) {
+  return [
+    position.device_id,
+    position.source_position_id ?? position.id ?? '',
+    position.timestamp,
+  ].join('|') + '\n'
+}
+
+function compareExactBreadcrumbDotPositions(left, right) {
+  return (
+    compareExactDotOracleStrings(String(left.timestamp), String(right.timestamp)) ||
+    compareExactDotOracleStrings(String(left.device_id), String(right.device_id)) ||
+    compareExactDotOracleStrings(
+      createExactDotOracleStableIdentity(left),
+      createExactDotOracleStableIdentity(right),
+    )
+  )
+}
+
+function createExactDotOracleStableIdentity(position) {
+  const sourcePositionId = String(position.source_position_id ?? '').trim()
+  return sourcePositionId === ''
+    ? `local:${String(position.id)}`
+    : `source:${sourcePositionId}`
+}
+
+function compareExactBreadcrumbDotDigestPositions(left, right) {
+  return (
+    compareExactDotOracleStrings(String(left.timestamp), String(right.timestamp)) ||
+    compareExactDotOracleStrings(String(left.device_id), String(right.device_id)) ||
+    compareExactDotOracleStrings(
+      String(left.source_position_id ?? left.id),
+      String(right.source_position_id ?? right.id),
+    )
+  )
+}
+
+/** Mirrors the exact-query key contract without importing production query code. */
+function compareExactDotOracleStrings(left, right) {
+  return left < right ? -1 : left > right ? 1 : 0
 }
 
 function createOracleBreadcrumbFeatureCollection(positionsByDevice, gapThresholdMs) {
@@ -867,6 +1354,7 @@ export function buildBreadcrumb36HourProofVerdict(input) {
       `Breadcrumb request coverage is incomplete for devices: ${input.coverage.incompleteDeviceIds.join(', ') || 'unknown'}.`,
     )
   }
+  validateFinalHistoryCheckpoints(failureReasons, input.historyCheckpoints)
   requireAtMost(
     failureReasons,
     input.requestEvidence.maximumConcurrentHistoryRequests,
@@ -900,6 +1388,12 @@ export function buildBreadcrumb36HourProofVerdict(input) {
   if (input.rendered.stable !== true) {
     failureReasons.push('Rendered breadcrumb count/digest did not remain stable across observations.')
   }
+  if (input.rendered.reportedTotalObserved !== input.sourceTruth.totalPositionCount) {
+    failureReasons.push(
+      `Reported Line known-fix total ${String(input.rendered.reportedTotalObserved)} ` +
+        `did not equal authoritative source truth ${input.sourceTruth.totalPositionCount}.`,
+    )
+  }
   validateRenderedOracle(
     failureReasons,
     input.rendered,
@@ -909,7 +1403,7 @@ export function buildBreadcrumb36HourProofVerdict(input) {
   validateRenderedDotOracle(
     failureReasons,
     input.renderedDots,
-    input.renderedOracle?.dotRendered,
+    input.exactDotOracle,
   )
   validateVariableSpeedEvidence(failureReasons, input.variableSpeedEvidence)
 
@@ -919,28 +1413,169 @@ export function buildBreadcrumb36HourProofVerdict(input) {
   }
 }
 
-function validateRenderedDotOracle(reasons, rendered, oracle) {
+function validateFinalHistoryCheckpoints(reasons, evidence) {
+  if (
+    evidence === null ||
+    evidence === undefined ||
+    !Array.isArray(evidence.checkpoints) ||
+    !Array.isArray(evidence.requiredDeviceIds)
+  ) {
+    reasons.push('Final durable history checkpoint evidence was not provided.')
+    return
+  }
+  if (evidence.integrityResult !== 'ok') {
+    reasons.push(
+      `Final history checkpoint SQLite integrity result was ${String(evidence.integrityResult)}, not ok.`,
+    )
+  }
+  const progress = analyzeBreadcrumbCheckpointProgress({
+    checkpoints: evidence.checkpoints,
+    missionId: evidence.missionId,
+    deviceIds: evidence.requiredDeviceIds,
+    requiredFrom: evidence.requiredFrom,
+    requiredTo: evidence.requiredTo,
+  })
+  if (!progress.exactScope) {
+    reasons.push(
+      `Final history checkpoint scope was not exact: ${progress.missingCheckpointCount} missing, ` +
+        `${progress.unexpectedCheckpointCount} unexpected, ${progress.duplicateCheckpointCount} duplicate.`,
+    )
+  }
+  if (progress.invalidCheckpointCount !== 0) {
+    reasons.push(
+      `Final history checkpoints contained ${progress.invalidCheckpointCount} invalid rows ` +
+        `(${progress.historyFromMismatchCount} history_from mismatches).`,
+    )
+  }
+  if (progress.incompleteCheckpointCount !== 0) {
+    reasons.push(
+      `Final history checkpoints left ${progress.incompleteCheckpointCount} devices incomplete.`,
+    )
+  }
+}
+
+function validateRenderedDotOracle(reasons, rendered, exactOracle) {
   if (rendered === null || rendered === undefined) {
     reasons.push('Packaged breadcrumb-dot evidence was not provided.')
     return
   }
-  if (oracle === null || oracle === undefined) {
-    reasons.push('Canonical breadcrumb-dot source-truth oracle was not provided.')
+  if (exactOracle === null || exactOracle === undefined) {
+    reasons.push('The independent exact breadcrumb-dot oracle is required.')
     return
   }
+  validateExactRenderedDotOracle(reasons, rendered, exactOracle)
+}
+
+function validateExactRenderedDotOracle(reasons, rendered, oracle) {
   if (rendered.stable !== true) {
-    reasons.push('Packaged breadcrumb-dot count/digest did not remain stable.')
+    reasons.push('Packaged exact breadcrumb-dot pages did not remain stable.')
   }
   if (
-    rendered.featureCount !== oracle.featureCount ||
-    rendered.coordinateCount !== oracle.coordinateCount ||
-    rendered.deviceCount !== oracle.deviceCount ||
-    rendered.coordinateSha256 !== oracle.coordinateSha256 ||
-    !recordsEqual(rendered.deviceCoordinateCounts, oracle.deviceCoordinateCounts) ||
-    !recordsEqual(rendered.deviceCoordinateSha256, oracle.deviceCoordinateSha256)
+    rendered.pageLimit !== oracle.pageLimit ||
+    rendered.totalPositionCount !== oracle.totalPositionCount ||
+    rendered.pageCount !== oracle.pageCount ||
+    rendered.pages?.length !== oracle.pages.length ||
+    rendered.maximumPagePositionCount > oracle.pageLimit
   ) {
-    reasons.push('Packaged breadcrumb-dot geometry did not match the source-truth dot oracle.')
+    reasons.push('Packaged exact breadcrumb-dot paging bounds did not match raw source truth.')
   }
+  if (
+    rendered.invalidFeatureCount !== 0 ||
+    rendered.duplicateFeatureIdCount !== 0 ||
+    rendered.uniqueFeatureIdCount !== oracle.totalPositionCount ||
+    rendered.pageUnion?.renderedPositionCount !== oracle.pageUnion.rawPositionCount ||
+    rendered.pageUnion?.renderedSourceTruthSha256 !==
+      oracle.pageUnion.rawSourceTruthSha256
+  ) {
+    reasons.push(
+      'Packaged exact breadcrumb-dot page union had invalid, missing, duplicate, or changed source fixes.',
+    )
+  }
+  if (rendered.returnedToLatest !== true) {
+    reasons.push('Packaged exact breadcrumb-dot navigation did not return to the latest page.')
+  }
+  const pagesMatch = oracle.pages.every((expected, index) => {
+    const observed = rendered.pages?.[index]
+    return (
+      observed?.featureCount === expected.raw.positionCount &&
+      observed.coordinateCount === expected.raw.positionCount &&
+      observed.sourceTruthSha256 === expected.raw.sha256 &&
+      observed.identityTimestampSha256 === expected.raw.identityTimestampSha256 &&
+      observed.invalidFeatureCount === 0 &&
+      observed.renderedLayer?.featureCount === expected.raw.positionCount &&
+      observed.renderedLayer.coordinateCount === expected.raw.positionCount &&
+      observed.renderedLayer.identityTimestampSha256 ===
+        expected.raw.identityTimestampSha256 &&
+      observed.renderedLayer.invalidFeatureCount === 0 &&
+      observed.renderedLayer.rawRenderedFeatureCount === expected.raw.positionCount &&
+      observed.renderedLayer.duplicateRenderedFeatureCount === 0 &&
+      observed.renderedLayer.duplicateConflictCount === 0 &&
+      renderedCoordinateDeviationIsBounded(
+        observed.renderedLayer.coordinateDeviation,
+        expected.raw.positionCount,
+      ) &&
+      observed.operatorPage?.pagePositionCount === observed.featureCount &&
+      observed.operatorPage.totalPositionCount === oracle.totalPositionCount &&
+      observed.operatorPage.fromTimestamp === observed.fromTimestamp &&
+      observed.operatorPage.toTimestamp === observed.toTimestamp
+    )
+  })
+  if (!pagesMatch) {
+    reasons.push(
+      'One or more packaged exact breadcrumb-dot pages differed from the independent raw-source oracle.',
+    )
+  }
+  const expectedReturnCount = Math.max(0, oracle.pages.length - 1)
+  const returnNavigationMatches =
+    Array.isArray(rendered.returnNavigation) &&
+    rendered.returnNavigation.length === expectedReturnCount &&
+    rendered.returnNavigation.every((observation, index) =>
+      observation?.pageIndex === expectedReturnCount - 1 - index &&
+      Number.isFinite(observation.observedMs) &&
+      observation.observedMs >= 0 &&
+      observation.observedMs <= MAX_FIRST_BREADCRUMB_MS)
+  if (!returnNavigationMatches) {
+    reasons.push(
+      'Packaged exact breadcrumb-dot return navigation did not prove every page within the deadline.',
+    )
+  }
+  if (typeof rendered.supportingScreenshot !== 'string' || rendered.supportingScreenshot === '') {
+    reasons.push('Packaged exact breadcrumb-dot supporting screenshot was not captured.')
+  }
+}
+
+function renderedCoordinateDeviationIsBounded(deviation, expectedPositionCount) {
+  return (
+    deviation?.passed === true &&
+    deviation.comparedIdentityCount === expectedPositionCount &&
+    deviation.missingIdentityCount === 0 &&
+    deviation.unexpectedIdentityCount === 0 &&
+    deviation.timestampConflictCount === 0 &&
+    deviation.coordinateConflictCount === 0 &&
+    deviation.invalidIdentityCount === 0 &&
+    deviation.duplicateIdentityCount === 0 &&
+    deviation.maximumAllowedMetres ===
+      MAX_RENDERED_EXACT_DOT_COORDINATE_ERROR_METRES &&
+    deviation.maximumAllowedScreenPixelsPerAxis ===
+      MAX_RENDERED_EXACT_DOT_COORDINATE_ERROR_SCREEN_PIXELS_PER_AXIS &&
+    deviation.maximumAllowedScreenPixelsEuclidean ===
+      MAX_RENDERED_EXACT_DOT_COORDINATE_ERROR_SCREEN_PIXELS_EUCLIDEAN &&
+    Number.isFinite(deviation.metres?.max) &&
+    deviation.metres.max <= MAX_RENDERED_EXACT_DOT_COORDINATE_ERROR_METRES &&
+    Number.isFinite(deviation.screenPixels?.x?.max) &&
+    deviation.screenPixels.x.max <=
+      MAX_RENDERED_EXACT_DOT_COORDINATE_ERROR_SCREEN_PIXELS_PER_AXIS &&
+    Number.isFinite(deviation.screenPixels?.y?.max) &&
+    deviation.screenPixels.y.max <=
+      MAX_RENDERED_EXACT_DOT_COORDINATE_ERROR_SCREEN_PIXELS_PER_AXIS &&
+    Number.isFinite(deviation.screenPixels?.euclidean?.max) &&
+    deviation.screenPixels.euclidean.max <=
+      MAX_RENDERED_EXACT_DOT_COORDINATE_ERROR_SCREEN_PIXELS_EUCLIDEAN &&
+    typeof deviation.worstMetreIdentity === 'string' &&
+    deviation.worstMetreIdentity !== '' &&
+    typeof deviation.worstScreenPixelIdentity === 'string' &&
+    deviation.worstScreenPixelIdentity !== ''
+  )
 }
 
 function validateVariableSpeedEvidence(reasons, evidence) {
@@ -1094,10 +1729,77 @@ export function buildBreadcrumbRestartProofVerdict(input) {
     input.completedRendered,
     input.postCompletionRendered,
   )
+  if (input.postCompletionRendered.reportedTotalObserved !== input.sourcePositionCount) {
+    failureReasons.push(
+      'Post-restart reported Line known-fix total did not equal authoritative source truth.',
+    )
+  }
+  validatePostCompletionRestartExactDots(
+    failureReasons,
+    input.postCompletionExactDots,
+    input.exactDotOracle,
+  )
 
   return {
     passed: failureReasons.length === 0,
     failureReasons,
+  }
+}
+
+function validatePostCompletionRestartExactDots(reasons, observed, oracle) {
+  const expected = oracle?.pages?.[0]?.raw
+  if (observed === null || observed === undefined || expected === undefined) {
+    reasons.push('Post-completion restart exact-dot evidence was not provided.')
+    return
+  }
+  requireAtMost(
+    reasons,
+    observed.observedMs,
+    MAX_FIRST_BREADCRUMB_MS,
+    'post-completion restart exact-dot render',
+  )
+  const explicitModeActivationMatches =
+    observed.modeActivation?.selectedMode === 'dots' &&
+    typeof observed.modeActivation?.sizeLabel === 'string' &&
+    observed.modeActivation.sizeLabel.includes('dot diameter')
+  const frozenReportModeActivationMatches =
+    typeof observed.modeActivation?.selectedModeLabel === 'string' &&
+    observed.modeActivation.selectedModeLabel.includes('dot diameter') &&
+    observed.modeActivation.sourceFeatureCount === expected.positionCount &&
+    observed.modeActivation.operatorPage?.pagePositionCount ===
+      expected.positionCount &&
+    observed.modeActivation.operatorPage.totalPositionCount ===
+      oracle.totalPositionCount
+  const sourceMatches =
+    (explicitModeActivationMatches || frozenReportModeActivationMatches) &&
+    observed.stable === true &&
+    observed.featureCount === expected.positionCount &&
+    observed.coordinateCount === expected.positionCount &&
+    observed.sourceTruthSha256 === expected.sha256 &&
+    observed.identityTimestampSha256 === expected.identityTimestampSha256 &&
+    observed.invalidFeatureCount === 0
+  const renderedMatches =
+    observed.renderedLayer?.featureCount === expected.positionCount &&
+    observed.renderedLayer.coordinateCount === expected.positionCount &&
+    observed.renderedLayer.identityTimestampSha256 ===
+      expected.identityTimestampSha256 &&
+    observed.renderedLayer.invalidFeatureCount === 0 &&
+    observed.renderedLayer.rawRenderedFeatureCount === expected.positionCount &&
+    observed.renderedLayer.duplicateRenderedFeatureCount === 0 &&
+    observed.renderedLayer.duplicateConflictCount === 0 &&
+    renderedCoordinateDeviationIsBounded(
+      observed.renderedLayer.coordinateDeviation,
+      expected.positionCount,
+    )
+  const operatorMatches =
+    observed.operatorPage?.pagePositionCount === expected.positionCount &&
+    observed.operatorPage.totalPositionCount === oracle.totalPositionCount &&
+    observed.operatorPage.fromTimestamp === observed.fromTimestamp &&
+    observed.operatorPage.toTimestamp === observed.toTimestamp
+  if (!sourceMatches || !renderedMatches || !operatorMatches) {
+    reasons.push(
+      'Post-completion restart exact-dot source, rendered layer, or operator page differed from the independent latest-page oracle.',
+    )
   }
 }
 
@@ -1130,6 +1832,9 @@ function compareRenderedEvidence(reasons, completed, restarted) {
   }
   if (restarted.coordinateSha256 !== completed.coordinateSha256) {
     reasons.push('Post-restart rendered coordinate digest changed.')
+  }
+  if (restarted.reportedTotalObserved !== completed.reportedTotalObserved) {
+    reasons.push('Post-restart reported Line known-fix total changed.')
   }
   if (restarted.stable !== true) {
     reasons.push('Post-restart rendered geometry did not remain stable across observations.')

@@ -18,6 +18,7 @@ import {
   parseDarwinProcessTreeResidentMemory,
   partitionOperatorClickAudit,
   readWebGlRendererInfoFromDocument,
+  validateFinalLineTotalAudit,
 } from '../../build/electron-tracking-soak-lib.js'
 import { startTrackingSoakMockServer } from '../../build/electron-tracking-soak-mock-server.js'
 
@@ -51,6 +52,48 @@ describe('Electron packaged tracking soak helpers [DON-246]', () => {
     })
   })
 
+  it('requires two stable restored-Line totals to match SQLite and independent source truth [DON-260]', () => {
+    const profile = createTrackingSoakProfile('extended')
+    const expected = profile.expectedPositionRows
+    const observation = (observationIndex: number, reportedTotalObserved = expected) => ({
+      observationIndex,
+      reportedTotalObserved,
+      sqlitePositionRows: expected,
+      independentSourceTotal: expected,
+    })
+    const audit = {
+      required: true,
+      passed: true,
+      lineModeRestored: true,
+      stableObservationCount: 2,
+      reportedTotalObserved: expected,
+      sqlitePositionRows: expected,
+      independentSourceTotal: expected,
+      observations: [observation(1), observation(2)],
+    }
+
+    expect(validateFinalLineTotalAudit(audit, profile, expected)).toEqual({
+      passed: true,
+      failureReasons: [],
+    })
+    expect(validateFinalLineTotalAudit({
+      ...audit,
+      passed: false,
+      stableObservationCount: 0,
+      reportedTotalObserved: expected - 3_600,
+      observations: [
+        observation(1, expected - 3_600),
+        observation(2, expected - 3_600),
+      ],
+    }, profile, expected).failureReasons.join('\n')).toMatch(
+      /two stable.*Line.*SQLite.*independent source/iu,
+    )
+    expect(
+      validateFinalLineTotalAudit(audit, profile, expected - 1)
+        .failureReasons.join('\n'),
+    ).toMatch(/two stable.*Line.*SQLite.*independent source/iu)
+  })
+
   it('uses a garbage-collection-safe default cadence for full packaged profiles', () => {
     expect(parseTrackingSoakArgs(['--app', '/tmp/app', '--profile', 'extended']).pollIntervalMs).toBe(250)
   })
@@ -61,6 +104,8 @@ describe('Electron packaged tracking soak helpers [DON-246]', () => {
     )
     const server = await startTrackingSoakMockServer({
       statePath: path.join(temporaryDirectory, 'state.json'),
+      baseTimeMs: Date.parse('2026-01-01T00:00:00.000Z'),
+      intervalMs: 5_000,
       deviceCount: 2,
       movingDeviceCount: 1,
       productionPollsPerBatch: 2,
@@ -254,6 +299,65 @@ describe('Electron packaged tracking soak helpers [DON-246]', () => {
       operationalPositionSlopeRowsPerEquivalentPoll:
         profile.expectedPositionRows / profile.equivalentProductionPolls,
     })
+  })
+
+  it('requires the source-authoritative exact-dot proof for the extended profile [DON-260]', () => {
+    const profile = createTrackingSoakProfile('extended')
+    const input = {
+      profile,
+      observedBatches: profile.actualBatches,
+      deviceRows: profile.deviceCount,
+      positionRows: profile.expectedPositionRows,
+      deviceCreatedEvents: profile.deviceCount,
+      deviceUpdatedEvents: 0,
+      positionRecordedEvents: 0,
+      operationalMissionEvents: 15,
+      declaredOperationalEventBudget: 15,
+      unexplainedMissionEvents: 0,
+      restartCheckpointsPassed: profile.restartCheckpoints.length,
+      backupCycles: 2,
+      mainHeartbeatSamples: 40,
+      mainHeartbeatErrors: 0,
+      mainMaximumMs: 14,
+      rendererSamples: 60,
+      rendererLaunchSampleCounts: [20, 20, 20],
+      rendererMaximumMs: 22,
+      rendererCrashes: 0,
+      operatorInteractionSamples: 4,
+      operatorInteractionErrors: 0,
+      operatorInteractionMaximumMs: 900,
+      operatorActionSamples: 8,
+      operatorActionMaximumMs: 650,
+      operatorExternalActionSamples: 8,
+      operatorExternalActionMaximumMs: 700,
+      webGlRendererAttested: true,
+      maximumProcessTreeResidentBytes: 500_000_000,
+      freezeThresholdMs: 1_000,
+      integrityResult: 'ok',
+      walCheckpointBusy: 0,
+      supportBundleInspected: true,
+      supportBundleRedacted: true,
+      runtimeLogBytes: 24_000,
+      supportBundleBytes: 18_000,
+      positionTruthExactMatch: true,
+      normalPrefixTruthExactMatch: true,
+      missingSourcePositionIdentityRows: 0,
+    }
+
+    expect(buildTrackingSoakVerdict(input).failureReasons.join('\n')).toMatch(
+      /exact breadcrumb dot proof/i,
+    )
+    expect(buildTrackingSoakVerdict(input).failureReasons.join('\n')).toMatch(
+      /two stable restored-Line totals/iu,
+    )
+    const booleanOnly = buildTrackingSoakVerdict({
+      ...input,
+      exactDotProofPassed: true,
+    })
+    expect(booleanOnly.passed).toBe(false)
+    expect(booleanOnly.failureReasons.join('\n')).toMatch(
+      /traversal|observations|metrics/i,
+    )
   })
 
   it('fails reliably when redundant events return or required evidence is absent', () => {

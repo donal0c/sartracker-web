@@ -94,6 +94,67 @@ describe('Leaflet fallback renderer', () => {
     expect((breadcrumbLine as L.Polyline).options.weight).toBe(7)
   })
 
+  it('renders only the authoritative exact page as dots in the Leaflet fallback', () => {
+    const group = L.layerGroup()
+    const exactPosition = {
+      ...createTrackingSnapshot().breadcrumbs[0]!,
+      id: 'exact-1',
+      lat: 53.1234567,
+      lon: -8.7654321,
+    }
+
+    renderLeafletFallbackOverlays(group, {
+      trackingSnapshot: createTrackingSnapshot(),
+      trackingVisible: true,
+      breadcrumbsVisible: true,
+      hiddenDeviceIds: [],
+      hiddenBreadcrumbDeviceIds: [],
+      trackingStyle: {
+        deviceColors: {},
+        breadcrumbSize: 8,
+        breadcrumbTrailMode: 'dots',
+      },
+      exactBreadcrumbDotState: {
+        status: 'ready',
+        missionId: 'mission-1',
+        positions: [exactPosition],
+        totalPositionCount: 1,
+        pagePositionCount: 1,
+        fromTimestamp: exactPosition.timestamp,
+        toTimestamp: exactPosition.timestamp,
+        hasEarlier: false,
+        hasLater: false,
+        earlierCursor: null,
+        laterCursor: null,
+      },
+      markers: [],
+      markerTypeVisibility: {
+        ipp_lkp: true,
+        clue: true,
+        hazard: true,
+        casualty: true,
+      },
+      hiddenMarkerIds: [],
+      drawings: [],
+      drawingTypeVisibility: {
+        line: true,
+        search_area: true,
+        range_ring: true,
+        bearing_line: true,
+        search_sector: true,
+        text_label: true,
+      },
+      hiddenDrawingIds: [],
+      selectedDrawingId: null,
+    })
+
+    const renderedCoordinates = group.getLayers()
+      .filter((layer): layer is L.CircleMarker => layer instanceof L.CircleMarker)
+      .map((layer) => [layer.getLatLng().lat, layer.getLatLng().lng])
+    expect(renderedCoordinates).toContainEqual([53.1234567, -8.7654321])
+    expect(renderedCoordinates).not.toContainEqual([52, -9.7])
+  })
+
   it('honours hidden device, marker, and drawing visibility inputs', () => {
     const group = L.layerGroup()
     const addLayer = vi.spyOn(group, 'addLayer')

@@ -18,6 +18,8 @@ describe('deterministic tracking soak mock server [DON-246]', () => {
     temporaryDirectories.push(directory)
     const server = await startTrackingSoakMockServer({
       statePath: path.join(directory, 'state.json'),
+      baseTimeMs: Date.parse('2026-02-01T00:00:00.000Z'),
+      intervalMs: 5_000,
       deviceCount: 32,
       movingDeviceCount: 8,
       productionPollsPerBatch: 180,
@@ -37,13 +39,13 @@ describe('deterministic tracking soak mock server [DON-246]', () => {
       const current = await fetch(`${server.baseUrl}/api/positions`, { headers }).then((response) => response.json())
       const firstBatchWindow = new URLSearchParams({
         deviceId: '1',
-        from: '2026-01-01T00:00:00.000Z',
-        to: '2026-01-01T00:14:55.000Z',
+        from: '2026-02-01T00:00:00.000Z',
+        to: '2026-02-01T00:14:55.000Z',
       })
       const stationaryWindow = new URLSearchParams({
         deviceId: '32',
-        from: '2026-01-01T00:00:00.000Z',
-        to: '2026-01-01T00:14:55.000Z',
+        from: '2026-02-01T00:00:00.000Z',
+        to: '2026-02-01T00:14:55.000Z',
       })
       const moving = await fetch(
         `${server.baseUrl}/api/positions?${firstBatchWindow}`,
@@ -57,12 +59,23 @@ describe('deterministic tracking soak mock server [DON-246]', () => {
       expect(devices).toHaveLength(32)
       expect(current).toHaveLength(24)
       expect(moving).toHaveLength(180)
+      expect(moving[0]?.fixTime).toBe('2026-02-01T00:00:00.000Z')
       expect(stationary).toEqual([])
       expect(new Set(moving.map((position: { id: number }) => position.id)).size).toBe(180)
-      expect(server.snapshot()).toMatchObject({ completedBatches: 1, deviceRequests: 1 })
+      expect(server.snapshot()).toMatchObject({
+        completedBatches: 1,
+        deviceRequests: 1,
+        baseTime: '2026-02-01T00:00:00.000Z',
+        intervalMs: 5_000,
+      })
 
       const durable = JSON.parse(await readFile(path.join(directory, 'state.json'), 'utf8'))
-      expect(durable).toMatchObject({ completedBatches: 1, deviceRequests: 1 })
+      expect(durable).toMatchObject({
+        completedBatches: 1,
+        deviceRequests: 1,
+        baseTime: '2026-02-01T00:00:00.000Z',
+        intervalMs: 5_000,
+      })
     } finally {
       await server.close()
     }
@@ -73,6 +86,8 @@ describe('deterministic tracking soak mock server [DON-246]', () => {
     temporaryDirectories.push(directory)
     const server = await startTrackingSoakMockServer({
       statePath: path.join(directory, 'state.json'),
+      baseTimeMs: Date.parse('2026-02-01T00:00:00.000Z'),
+      intervalMs: 5_000,
       deviceCount: 32,
       movingDeviceCount: 8,
       productionPollsPerBatch: 180,

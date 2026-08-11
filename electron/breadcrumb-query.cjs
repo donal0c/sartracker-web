@@ -20,6 +20,13 @@ const LONGITUDE_INDEX = 4
 /** Returns a deterministic, bounded, whole-route breadcrumb representation. */
 function listBreadcrumbPositions(db, missionId, perDeviceLimit) {
   validatePerDevicePositionLimit(perDeviceLimit)
+  return db.transaction(() =>
+    listBreadcrumbPositionsFromReadSnapshot(db, missionId, perDeviceLimit),
+  )()
+}
+
+/** Reads counts, selector inputs, and selected rows from one SQLite snapshot. */
+function listBreadcrumbPositionsFromReadSnapshot(db, missionId, perDeviceLimit) {
   const deviceTotals = db
     .prepare(
       `SELECT device_id, COUNT(*) AS total

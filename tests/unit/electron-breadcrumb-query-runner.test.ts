@@ -49,6 +49,10 @@ const {
     perDeviceLimit: number,
   ) => {
     readonly positions: readonly { readonly source_position_id: string | null }[]
+    readonly deviceTotals: readonly {
+      readonly device_id: string
+      readonly total: number
+    }[]
     readonly deviceSelections: readonly {
       readonly device_id: string
       readonly geometryErrorBoundMetres: number | null
@@ -210,6 +214,7 @@ describe('breadcrumb restart-query worker boundary [DON-260]', () => {
           },
         }
       },
+      transaction: (callback: () => unknown) => database.transaction(callback),
     }
 
     const result = listBreadcrumbPositions(
@@ -229,6 +234,84 @@ describe('breadcrumb restart-query worker boundary [DON-260]', () => {
       'idx_positions_mission_device_timestamp',
     )
     database.close()
+  })
+
+  it('reads canonical totals and selected rows from one WAL snapshot [DON-260]', async () => {
+    tempDirectory = await mkdtemp(
+      path.join(tmpdir(), 'sartracker-breadcrumb-query-snapshot-'),
+    )
+    const databasePath = path.join(tempDirectory, 'mission-store.sqlite')
+    const writer = new Database(databasePath)
+    writer.pragma('journal_mode = WAL')
+    writer.exec(`
+      CREATE TABLE positions (
+        id TEXT PRIMARY KEY,
+        mission_id TEXT NOT NULL,
+        device_id TEXT NOT NULL,
+        source_position_id TEXT,
+        lat REAL NOT NULL,
+        lon REAL NOT NULL,
+        timestamp TEXT NOT NULL,
+        data_origin TEXT NOT NULL
+      );
+      INSERT INTO positions (
+        id, mission_id, device_id, source_position_id, lat, lon, timestamp,
+        data_origin
+      ) VALUES (
+        'local-before', 'mission-1', 'device-1', 'before', 52, -9,
+        '2026-07-28T10:00:00.000Z', 'live'
+      );
+    `)
+    const reader = new Database(databasePath)
+    reader.pragma('journal_mode = WAL')
+    let writerCommitted = false
+    const instrumentedReader = {
+      prepare: (query: string) => {
+        const statement = reader.prepare(query)
+        if (!query.includes('GROUP BY device_id')) {
+          return statement
+        }
+        return {
+          all: (...parameters: readonly unknown[]) => {
+            const totals = statement.all(...parameters)
+            writer.prepare(`
+              INSERT INTO positions (
+                id, mission_id, device_id, source_position_id, lat, lon,
+                timestamp, data_origin
+              ) VALUES (
+                'local-after', 'mission-1', 'device-1', 'after', 52, -9,
+                '2026-07-28T10:01:00.000Z', 'live'
+              )
+            `).run()
+            writerCommitted = true
+            return totals
+          },
+        }
+      },
+      transaction: (callback: () => unknown) => reader.transaction(callback),
+    }
+
+    const first = listBreadcrumbPositions(
+      instrumentedReader,
+      'mission-1',
+      5_000,
+    )
+
+    expect(writerCommitted).toBe(true)
+    expect(first.deviceTotals).toEqual([{ device_id: 'device-1', total: 1 }])
+    expect(first.positions.map(
+      (position: { readonly source_position_id: string | null }) =>
+        position.source_position_id,
+    )).toEqual(['before'])
+
+    const second = listBreadcrumbPositions(reader, 'mission-1', 5_000)
+    expect(second.deviceTotals).toEqual([{ device_id: 'device-1', total: 2 }])
+    expect(second.positions.map(
+      (position: { readonly source_position_id: string | null }) =>
+        position.source_position_id,
+    )).toEqual(['before', 'after'])
+    reader.close()
+    writer.close()
   })
 
   it('preserves duplicate legacy, invalid-row, endpoint, and tie-selection semantics', () => {

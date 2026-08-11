@@ -1,4 +1,5 @@
 import { applyTrackingSnapshot, applyTrackingStatus } from '../tracking/tracking-store'
+import { useExactBreadcrumbDotStore } from '../tracking/exact-breadcrumb-dot-store'
 import { useDrawingStore } from '../drawings/drawing-store'
 import { useGpxStore } from '../gpx/gpx-store'
 import { useMarkerStore } from '../markers/marker-store'
@@ -84,6 +85,7 @@ export function installBrowserHarnessApi(): void {
         await store.addPositionsBulk({
           mission_id: missionId,
           positions: positions.map((position) => ({
+            source_position_id: position.id,
             device_id: position.device_id,
             lat: position.lat,
             lon: position.lon,
@@ -96,6 +98,9 @@ export function installBrowserHarnessApi(): void {
             data_origin: position.data_origin,
           })),
         })
+        useExactBreadcrumbDotStore.getState().controller?.notifyDurableChange(
+          positions.length,
+        )
       }
 
       applyTrackingSnapshot(snapshot)

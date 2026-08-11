@@ -96,6 +96,7 @@ type CreateManagedRuntimeServicesDependencies = {
     readonly writeCache?: boolean
     readonly recordDiagnosticEvent?: typeof recordDiagnosticEvent
     readonly recordTrackingPollDiagnostic?: typeof recordTrackingPollLedgerEntry
+    readonly notifyDurablePositionChange?: (changedPositionCount: number) => void
   }) => Promise<() => void>
   readonly createClient: (config: NonNullable<RuntimeBootstrapSettings['trackingConfig']>) => unknown
   readonly createPoller: (
@@ -135,6 +136,7 @@ type CreateManagedRuntimeServicesDependencies = {
   readonly applyStatus: (status: import('../tracking/tracking-types').TrackingConnectionStatus) => void
   readonly readTrackingRuntimeConfig: () => RuntimeBootstrapSettings['trackingConfig']
   readonly createTrackingCache: () => TrackingCache
+  readonly notifyDurablePositionChange?: (changedPositionCount: number) => void
 }
 
 /**
@@ -194,6 +196,9 @@ export async function createManagedRuntimeServices(
       applyStatus: dependencies.applyStatus,
       recordDiagnosticEvent,
       recordTrackingPollDiagnostic: recordTrackingPollLedgerEntry,
+      ...(dependencies.notifyDurablePositionChange === undefined
+        ? {}
+        : { notifyDurablePositionChange: dependencies.notifyDurablePositionChange }),
       ...(dependencies.runtimeSettings.trackingDisabledReason === undefined
         ? {}
         : { idleWarning: dependencies.runtimeSettings.trackingDisabledReason }),

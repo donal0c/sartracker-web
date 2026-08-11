@@ -330,6 +330,7 @@ test.describe('M19 devices workspace', () => {
         throw new Error('Browser harness API unavailable.')
       }
 
+      const fixBaseMs = Date.now() + 1_000
       const breadcrumbs = Array.from({ length: 4 }, (_entry, index) => ({
         id: `grouped-breadcrumb-${index + 1}`,
         device_id: 'alpha',
@@ -339,7 +340,7 @@ test.describe('M19 devices workspace', () => {
         speed: 2.5,
         battery: 84,
         accuracy: null,
-        timestamp: new Date(Date.UTC(2026, 6, 19, 12, 14, index * 5)).toISOString(),
+        timestamp: new Date(fixBaseMs + index * 5_000).toISOString(),
         source: null,
         data_origin: 'live' as const,
         cache_age_seconds: null,
@@ -363,10 +364,12 @@ test.describe('M19 devices workspace', () => {
 
       return breadcrumbs.map(
         (position) => `${position.lon.toFixed(5)}:${position.lat.toFixed(5)}`,
-      )
+      ).sort()
     })
 
-    await expect.poll(async () => readAlphaBreadcrumbCoordinateKeys(page)).toEqual(
+    await expect.poll(async () =>
+      readAlphaBreadcrumbCoordinateKeys(page, 'grouped-breadcrumb-'),
+    ).toEqual(
       expectedCoordinates,
     )
   })
@@ -629,24 +632,33 @@ async function readSparseBreadcrumbLine(page: import('@playwright/test').Page) {
 
 async function readAlphaBreadcrumbCoordinateKeys(
   page: import('@playwright/test').Page,
+  sourcePositionIdPrefix?: string,
 ): Promise<readonly string[]> {
-  return page.evaluate(() => {
+  return page.evaluate((expectedSourcePositionIdPrefix) => {
     const map = (
       window as Window & {
         __SARTRACKER_MAP__?: {
           querySourceFeatures: (sourceId: string) => Array<{
             geometry?: { type?: string; coordinates?: unknown[] }
-            properties?: { featureKind?: string; deviceId?: string }
+            properties?: {
+              featureKind?: string
+              deviceId?: string
+              sourcePositionId?: string
+            }
           }>
         }
       }
     ).__SARTRACKER_MAP__
 
-    const coordinateKeys = (map?.querySourceFeatures('tracking') ?? [])
+    const coordinateKeys = (map?.querySourceFeatures('tracking-breadcrumb-dots-exact') ?? [])
       .filter(
         (feature) =>
           feature.properties?.featureKind === 'breadcrumb' &&
           feature.properties.deviceId === 'alpha' &&
+          (expectedSourcePositionIdPrefix === undefined ||
+            feature.properties.sourcePositionId?.startsWith(
+              expectedSourcePositionIdPrefix,
+            ) === true) &&
           feature.geometry?.type === 'Point',
       )
       .flatMap((feature) => {
@@ -659,7 +671,7 @@ async function readAlphaBreadcrumbCoordinateKeys(
       })
 
     return [...new Set(coordinateKeys)].sort()
-  })
+  }, sourcePositionIdPrefix)
 }
 
 async function seedTrackingWorkspace(page: import('@playwright/test').Page) {
@@ -669,6 +681,7 @@ async function seedTrackingWorkspace(page: import('@playwright/test').Page) {
       throw new Error('Browser harness API unavailable.')
     }
 
+    const fixBaseMs = Date.now() + 1_000
     await harness.injectTrackingSnapshot(
       {
         devices: [
@@ -699,7 +712,7 @@ async function seedTrackingWorkspace(page: import('@playwright/test').Page) {
             speed: 3.5,
             battery: 82,
             accuracy: null,
-            timestamp: '2026-04-10T17:00:00.000Z',
+            timestamp: new Date(fixBaseMs + 20_000).toISOString(),
             source: null,
             data_origin: 'live',
             cache_age_seconds: null,
@@ -714,7 +727,7 @@ async function seedTrackingWorkspace(page: import('@playwright/test').Page) {
             speed: null,
             battery: null,
             accuracy: null,
-            timestamp: '2026-04-10T16:40:00.000Z',
+            timestamp: new Date(fixBaseMs + 15_000).toISOString(),
             source: null,
             data_origin: 'cache',
             cache_age_seconds: 1200,
@@ -731,7 +744,7 @@ async function seedTrackingWorkspace(page: import('@playwright/test').Page) {
             speed: 2.5,
             battery: 84,
             accuracy: null,
-            timestamp: '2026-04-10T16:50:00.000Z',
+            timestamp: new Date(fixBaseMs).toISOString(),
             source: null,
             data_origin: 'live',
             cache_age_seconds: null,
@@ -746,7 +759,7 @@ async function seedTrackingWorkspace(page: import('@playwright/test').Page) {
             speed: 2.9,
             battery: 83,
             accuracy: null,
-            timestamp: '2026-04-10T16:55:00.000Z',
+            timestamp: new Date(fixBaseMs + 10_000).toISOString(),
             source: null,
             data_origin: 'live',
             cache_age_seconds: null,

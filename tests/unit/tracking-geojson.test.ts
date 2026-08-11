@@ -12,6 +12,7 @@ import {
   createDeviceFeatureCollection,
   createTrackingFeatureCollection,
 } from '../../src/features/tracking/tracking-geojson'
+import * as trackingGeoJsonModule from '../../src/features/tracking/tracking-geojson'
 import {
   normalizeTraccarDevice,
   normalizeTraccarPosition,
@@ -139,6 +140,100 @@ describe('tracking geojson', () => {
         coordinates: [position.lon, position.lat],
       })),
     )
+  })
+
+  it('carries exact source identity and fix time through breadcrumb-dot GeoJSON', () => {
+    const [breadcrumb] = [
+      {
+        id: 8_941,
+        deviceId: 7,
+        latitude: 52.1234567,
+        longitude: -9.7654321,
+        fixTime: '2026-08-10T12:34:56.000Z',
+      },
+    ].map((position) => normalizeTraccarPosition(position, 'live'))
+
+    const createExactBreadcrumbDotFeatureCollection = (
+      trackingGeoJsonModule as typeof trackingGeoJsonModule & {
+        readonly createExactBreadcrumbDotFeatureCollection?: (
+          positions: readonly NonNullable<typeof breadcrumb>[],
+          style: { readonly deviceColors: Readonly<Record<string, string>> },
+        ) => ReturnType<typeof createDeviceFeatureCollection>
+      }
+    ).createExactBreadcrumbDotFeatureCollection
+    expect(createExactBreadcrumbDotFeatureCollection).toBeTypeOf('function')
+    if (createExactBreadcrumbDotFeatureCollection === undefined) {
+      throw new Error('Exact dots require a dedicated GeoJSON feature builder.')
+    }
+
+    const collection = createExactBreadcrumbDotFeatureCollection(
+      [{
+        ...breadcrumb!,
+        id: 'persisted-row-uuid',
+        source_position_id: '8941',
+      }],
+      { deviceColors: { '7': '#F97316' } },
+    )
+
+    expect(collection.features).toEqual([
+      expect.objectContaining({
+        id: '7:id:8941',
+        geometry: {
+          type: 'Point',
+          coordinates: [-9.7654321, 52.1234567],
+        },
+        properties: expect.objectContaining({
+          deviceId: '7',
+          featureKind: 'breadcrumb',
+          sourcePositionId: '8941',
+          timestamp: '2026-08-10T12:34:56.000Z',
+        }),
+      }),
+    ])
+  })
+
+  it('keeps legacy exact-dot identity stable without calling a local row id a source id', () => {
+    const createExactBreadcrumbDotFeatureCollection = (
+      trackingGeoJsonModule as typeof trackingGeoJsonModule & {
+        readonly createExactBreadcrumbDotFeatureCollection: (
+          positions: readonly (ReturnType<typeof normalizeTraccarPosition> & {
+            readonly source_position_id: string | null
+          })[],
+          style: { readonly deviceColors: Readonly<Record<string, string>> },
+        ) => ReturnType<typeof createDeviceFeatureCollection>
+      }
+    ).createExactBreadcrumbDotFeatureCollection
+    const createLegacyPosition = () => ({
+      ...normalizeTraccarPosition(
+        {
+          id: 100,
+          deviceId: 7,
+          latitude: 52.1234567,
+          longitude: -9.7654321,
+          fixTime: '2026-08-10T12:34:56.000Z',
+        },
+        'live',
+      ),
+      id: 'persisted-row-uuid',
+      source_position_id: null,
+    })
+
+    const beforeRestart = createExactBreadcrumbDotFeatureCollection(
+      [createLegacyPosition()],
+      { deviceColors: {} },
+    ).features[0]
+    const afterRestart = createExactBreadcrumbDotFeatureCollection(
+      [createLegacyPosition()],
+      { deviceColors: {} },
+    ).features[0]
+
+    expect(beforeRestart).toEqual(expect.objectContaining({
+      id: '7:stored:persisted-row-uuid',
+      properties: expect.objectContaining({
+        sourcePositionId: null,
+      }),
+    }))
+    expect(afterRestart?.id).toBe(beforeRestart?.id)
   })
 
   it('segments breadcrumb lines on time gaps and skips one-point segments', () => {

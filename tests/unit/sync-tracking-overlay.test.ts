@@ -90,10 +90,43 @@ function getBreadcrumbLayer(map: ReturnType<typeof createMockMap>): LayerSpec {
   return layer
 }
 
-function getBreadcrumbDotsLayer(map: ReturnType<typeof createMockMap>): LayerSpec {
+function getExactBreadcrumbDotsLayer(map: ReturnType<typeof createMockMap>): LayerSpec {
   const layer = map.layers.get('tracking-breadcrumbs-dots')
-  if (!layer) throw new Error('Breadcrumb dots layer not added')
+  if (!layer) throw new Error('Exact breadcrumb dots layer not added')
   return layer
+}
+
+function getSourceData(
+  map: ReturnType<typeof createMockMap>,
+  sourceId: string,
+): {
+  readonly type?: string
+  readonly features?: readonly {
+    readonly id?: string
+    readonly geometry?: { readonly type?: string }
+    readonly properties?: {
+      readonly featureKind?: string
+      readonly sourcePositionId?: string
+    }
+  }[]
+} {
+  const source = map.sources.get(sourceId) as {
+    readonly data?: {
+      readonly type?: string
+      readonly features?: readonly {
+        readonly id?: string
+        readonly geometry?: { readonly type?: string }
+        readonly properties?: {
+          readonly featureKind?: string
+          readonly sourcePositionId?: string
+        }
+      }[]
+    }
+  } | undefined
+  if (source?.data === undefined) {
+    throw new Error(`GeoJSON source ${sourceId} was not added with data.`)
+  }
+  return source.data
 }
 
 /* ------------------------------------------------------------------ */
@@ -248,7 +281,7 @@ describe('tracking overlay marker configuration', () => {
     })
 
     it('uses a minimal dot stroke so breadcrumb dots keep their selected colour at zoomed-out levels', () => {
-      const dots = getBreadcrumbDotsLayer(map)
+      const dots = getExactBreadcrumbDotsLayer(map)
       expect(dots.paint?.['circle-stroke-color']).toBe('#020617')
       expect(dots.paint?.['circle-stroke-width']).toBeLessThanOrEqual(1.5)
       expect(dots.paint?.['circle-stroke-opacity']).toBeLessThanOrEqual(0.55)
@@ -274,7 +307,7 @@ describe('tracking overlay marker configuration', () => {
         { deviceColors: {}, breadcrumbSize: 8, breadcrumbTrailMode: 'dots' },
       )
 
-      const dots = getBreadcrumbDotsLayer(map)
+      const dots = getExactBreadcrumbDotsLayer(map)
       const lineFilter = map.setFilter.mock.calls.find(
         ([layerId]) => layerId === 'tracking-breadcrumbs-line',
       )?.[1]
@@ -287,6 +320,152 @@ describe('tracking overlay marker configuration', () => {
       expect(JSON.stringify(lineFilter)).toContain('__hidden__')
       expect(JSON.stringify(dotsFilter)).toContain('breadcrumb')
     })
+
+    it('keeps tracking data unchanged and feeds the dedicated dot source only from the ready exact page', async () => {
+      const baselineMap = createMockMap()
+      const exactMap = createMockMap()
+      const { syncTrackingOverlay } = await import(
+        '../../src/features/tracking/sync-tracking-overlay'
+      )
+      const syncWithExactDots = syncTrackingOverlay as unknown as (
+        ...input: readonly unknown[]
+      ) => void
+      const representativeA = {
+        id: 'representative-a',
+        device_id: 'device-1',
+        lat: 52,
+        lon: -9.7,
+        altitude: null,
+        speed: null,
+        battery: null,
+        accuracy: null,
+        timestamp: '2026-08-08T00:00:00.000Z',
+        source: 'traccar',
+        data_origin: 'live',
+        cache_age_seconds: null,
+        device_cache_stale: false,
+      }
+      const representativeB = {
+        ...representativeA,
+        id: 'representative-b',
+        lat: 52.001,
+        lon: -9.701,
+        timestamp: '2026-08-08T00:00:05.000Z',
+      }
+      const exact = {
+        ...representativeA,
+        id: 'exact-8941',
+        lat: 52.1234567,
+        lon: -9.7654321,
+        timestamp: '2026-08-09T12:00:00.000Z',
+      }
+      const snapshot = {
+        devices: [],
+        positions: [representativeB],
+        breadcrumbs: [representativeA, representativeB],
+      }
+      const style = { deviceColors: {}, breadcrumbSize: 8, breadcrumbTrailMode: 'dots' }
+
+      syncTrackingOverlay(
+        baselineMap as never,
+        snapshot,
+        [],
+        [],
+        true,
+        style as never,
+      )
+
+      syncWithExactDots(
+        exactMap as never,
+        snapshot,
+        [],
+        [],
+        true,
+        style,
+        {
+          status: 'ready',
+          missionId: 'mission-a',
+          positions: [{ ...exact, source_position_id: 'exact-8941' }],
+          totalPositionCount: 8_941,
+          pagePositionCount: 8_941,
+          fromTimestamp: exact.timestamp,
+          toTimestamp: exact.timestamp,
+          hasEarlier: false,
+          hasLater: false,
+        },
+      )
+
+      expect(getSourceData(exactMap, 'tracking')).toEqual(
+        getSourceData(baselineMap, 'tracking'),
+      )
+      expect(
+        getSourceData(exactMap, 'tracking').features?.filter(
+          (feature) =>
+            feature.geometry?.type === 'Point' &&
+            feature.properties?.featureKind === 'breadcrumb',
+        ),
+      ).toEqual([])
+      const exactSource = getSourceData(exactMap, 'tracking-breadcrumb-dots-exact')
+      expect(exactSource.features?.map((feature) => feature.id)).toEqual([
+        'device-1:id:exact-8941',
+      ])
+      expect(JSON.stringify(exactSource)).not.toContain('representative-a')
+      expect(JSON.stringify(exactSource)).not.toContain('representative-b')
+      expect(getExactBreadcrumbDotsLayer(exactMap).source).toBe(
+        'tracking-breadcrumb-dots-exact',
+      )
+    })
+
+    it.each(['loading', 'unavailable'] as const)(
+      'empties the dedicated exact source while %s and never exposes line representatives as dots',
+      async (status) => {
+        map = createMockMap()
+        const { syncTrackingOverlay } = await import(
+          '../../src/features/tracking/sync-tracking-overlay'
+        )
+        const syncWithExactDots = syncTrackingOverlay as unknown as (
+          ...input: readonly unknown[]
+        ) => void
+        const representative = {
+          id: 'representative-1',
+          device_id: 'device-1',
+          lat: 52,
+          lon: -9.7,
+          altitude: null,
+          speed: null,
+          battery: null,
+          accuracy: null,
+          timestamp: '2026-08-08T00:00:00.000Z',
+          source: 'traccar',
+          data_origin: 'live',
+          cache_age_seconds: null,
+          device_cache_stale: false,
+        }
+
+        syncWithExactDots(
+          map as never,
+          { devices: [], positions: [], breadcrumbs: [representative] },
+          [],
+          [],
+          true,
+          { deviceColors: {}, breadcrumbSize: 8, breadcrumbTrailMode: 'dots' },
+          status === 'loading'
+            ? { status, missionId: 'mission-a' }
+            : {
+                status,
+                missionId: 'mission-a',
+                message: 'Exact breadcrumb dots are unavailable.',
+              },
+        )
+
+        const exactSource = getSourceData(map, 'tracking-breadcrumb-dots-exact')
+        expect(exactSource).toEqual({ type: 'FeatureCollection', features: [] })
+        expect(JSON.stringify(exactSource)).not.toContain('representative-1')
+        expect(getExactBreadcrumbDotsLayer(map).source).toBe(
+          'tracking-breadcrumb-dots-exact',
+        )
+      },
+    )
 
     it('filters current-device marker layers away from breadcrumb point features', () => {
       const circle = getCircleLayer(map)

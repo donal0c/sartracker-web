@@ -17,6 +17,7 @@ const { createElectronRuntimeFiles } = require('./runtime-files.cjs')
 const { createElectronMissionStore } = require('./mission-store.cjs')
 const {
   registerBreadcrumbQueryIpcHandlers,
+  registerExactBreadcrumbDotQueryIpcHandlers,
 } = require('./breadcrumb-query-ipc.cjs')
 const { createElectronFileSystem } = require('./file-system.cjs')
 const { createElectronOfficialMapProxy } = require('./official-map-proxy.cjs')
@@ -66,6 +67,8 @@ const MISSION_STORE_CHANNELS = {
   listRecentPositions: 'sartracker:mission-store:list-recent-positions',
   listBreadcrumbPositions: 'sartracker:mission-store:list-breadcrumb-positions',
   cancelBreadcrumbQuery: 'sartracker:mission-store:cancel-breadcrumb-query',
+  listExactBreadcrumbDotPage: 'sartracker:mission-store:list-exact-breadcrumb-dot-page',
+  cancelExactBreadcrumbDotQuery: 'sartracker:mission-store:cancel-exact-breadcrumb-dot-query',
   listTrackingHistoryCheckpoints: 'sartracker:mission-store:list-tracking-history-checkpoints',
   countPositions: 'sartracker:mission-store:count-positions',
   latestPositions: 'sartracker:mission-store:latest-positions',
@@ -574,9 +577,18 @@ function registerMissionStoreHandlers(missionStore) {
     missionStore,
     validateIpcSender,
   })
+  registerExactBreadcrumbDotQueryIpcHandlers({
+    ipcMain,
+    listChannel: MISSION_STORE_CHANNELS.listExactBreadcrumbDotPage,
+    cancelChannel: MISSION_STORE_CHANNELS.cancelExactBreadcrumbDotQuery,
+    missionStore,
+    validateIpcSender,
+  })
   const breadcrumbQueryMethods = new Set([
     'listBreadcrumbPositions',
     'cancelBreadcrumbQuery',
+    'listExactBreadcrumbDotPage',
+    'cancelExactBreadcrumbDotQuery',
   ])
   for (const [methodName, channel] of Object.entries(MISSION_STORE_CHANNELS)) {
     if (breadcrumbQueryMethods.has(methodName)) {

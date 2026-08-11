@@ -1525,6 +1525,7 @@ describe('polling manager', () => {
     const lateCorrection = createStoredRow('B', 5.5, 52, -9.69)
     const selectCanonical = (rows: readonly StoredBreadcrumbRow[]) =>
       listBreadcrumbPositions({
+        transaction: (callback: () => unknown) => callback,
         prepare: (query: string) =>
           query.includes('COUNT(*)')
             ? {

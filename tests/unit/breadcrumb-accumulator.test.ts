@@ -620,6 +620,52 @@ describe('breadcrumb accumulator', () => {
     )
   })
 
+  it('resolves omitted canonical overlap identities while counting genuinely later fixes once [DON-260]', () => {
+    const first = createNormalizedPosition(
+      'source-first',
+      '2026-07-28T10:00:00.000Z',
+    )
+    const omittedBaseline = createNormalizedPosition(
+      'source-omitted',
+      '2026-07-28T10:05:00.000Z',
+    )
+    const canonicalLatest = createNormalizedPosition(
+      'source-latest',
+      '2026-07-28T10:10:00.000Z',
+    )
+    const genuinelyLater = createNormalizedPosition(
+      'source-new',
+      '2026-07-28T10:11:00.000Z',
+    )
+    const accumulator = createBreadcrumbAccumulator()
+
+    accumulator.reset([first, canonicalLatest], { 'device-1': 3 })
+    const mixedOverlap = accumulator.append([
+      omittedBaseline,
+      genuinelyLater,
+    ])
+
+    expect(mixedOverlap.metadata.totalObserved).toBe(4)
+    expect(accumulator.append([
+      omittedBaseline,
+      genuinelyLater,
+    ]).metadata.totalObserved).toBe(4)
+    expect(accumulator.append([{
+      ...omittedBaseline,
+      lat: omittedBaseline.lat + 0.0001,
+    }]).metadata.totalObserved).toBe(4)
+
+    const restarted = createBreadcrumbAccumulator()
+    restarted.reset(
+      [first, canonicalLatest, genuinelyLater],
+      { 'device-1': 4 },
+    )
+    expect(restarted.append([
+      omittedBaseline,
+      genuinelyLater,
+    ]).metadata.totalObserved).toBe(4)
+  })
+
   it('restores chronological order when an existing source identity changes timestamp [DON-260]', () => {
     const accumulator = createBreadcrumbAccumulator()
     accumulator.append([

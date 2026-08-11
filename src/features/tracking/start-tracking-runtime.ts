@@ -278,6 +278,7 @@ type StartTrackingRuntimeDependencies = {
   readonly logger?: TrackingRuntimeLogger
   readonly recordDiagnosticEvent?: (event: DiagnosticEventInput) => void | Promise<void>
   readonly recordTrackingPollDiagnostic?: (entry: TrackingPollLedgerEntry) => void
+  readonly notifyDurablePositionChange?: (changedPositionCount: number) => void
   readonly now?: () => Date
 }
 
@@ -434,6 +435,7 @@ export async function startTrackingRuntime(
           persistHistoryChunks: async (
             inputs: readonly TrackingHistoryChunkPersistenceInput[],
           ): Promise<void> => {
+            let changedPositionCount = 0
             try {
               await enqueueTrackingPersistence(runtimeGeneration, async () => {
                 const firstInput = inputs[0]
@@ -482,19 +484,24 @@ export async function startTrackingRuntime(
                 if (
                   dependencies.missionStore.persistTrackingPositionsBulk !== undefined
                 ) {
-                  await dependencies.missionStore.persistTrackingPositionsBulk({
+                  const persisted = await dependencies.missionStore.persistTrackingPositionsBulk({
                     mission_id: activeMission.id,
                     positions,
                     checkpoints,
                   })
+                  changedPositionCount = persisted.changedPositionCount
                   return
                 }
-                await dependencies.missionStore.persistTrackingHistoryBatch?.({
+                const persisted = await dependencies.missionStore.persistTrackingHistoryBatch?.({
                   mission_id: activeMission.id,
                   positions,
                   checkpoints,
                 })
+                changedPositionCount = Array.isArray(persisted)
+                  ? persisted.length
+                  : positions.length
               })
+              dependencies.notifyDurablePositionChange?.(changedPositionCount)
               if (
                 runtimeGeneration === activeTrackingRuntimeGeneration &&
                 missionPersistenceWarningActive
@@ -515,7 +522,7 @@ export async function startTrackingRuntime(
     persistHistoryChunk: async (
       input: TrackingHistoryChunkPersistenceInput,
     ): Promise<TrackingHistoryChunkPersistenceResult> => {
-      let changed = false
+      let changedPositionCount = 0
       try {
         await enqueueTrackingPersistence(runtimeGeneration, async () => {
           const activeMission = await dependencies.missionStore.getActiveMission()
@@ -553,7 +560,7 @@ export async function startTrackingRuntime(
                 reconciled_until: input.reconciledUntil,
               }],
             })
-            changed = persisted.changedPositionCount > 0
+            changedPositionCount = persisted.changedPositionCount
             return
           }
           if (
@@ -569,7 +576,7 @@ export async function startTrackingRuntime(
                 reconciled_until: input.reconciledUntil,
               }],
             })
-            changed = Array.isArray(persisted) && persisted.length > 0
+            changedPositionCount = Array.isArray(persisted) ? persisted.length : 0
             return
           }
           if (positions.length === 0) {
@@ -581,16 +588,16 @@ export async function startTrackingRuntime(
               positions,
               checkpoints: [],
             })
-            changed = persisted.changedPositionCount > 0
+            changedPositionCount = persisted.changedPositionCount
             return
           } else if (dependencies.missionStore.addPositionsBulk !== undefined) {
             const persisted = await dependencies.missionStore.addPositionsBulk({
               mission_id: activeMission.id,
               positions,
             })
-            changed = Array.isArray(persisted)
-              ? persisted.length > 0
-              : positions.length > 0
+            changedPositionCount = Array.isArray(persisted)
+              ? persisted.length
+              : positions.length
             return
           }
           for (const position of positions) {
@@ -598,7 +605,7 @@ export async function startTrackingRuntime(
               mission_id: activeMission.id,
               ...position,
             })
-            changed = true
+            changedPositionCount += 1
           }
         })
         if (
@@ -608,7 +615,8 @@ export async function startTrackingRuntime(
           missionPersistenceWarningActive = false
           refreshTrackingStatus()
         }
-        return { changed }
+        dependencies.notifyDurablePositionChange?.(changedPositionCount)
+        return { changed: changedPositionCount > 0 }
       } catch (error) {
         logger.warn('Tracking history chunk persistence failed.', error)
         if (runtimeGeneration === activeTrackingRuntimeGeneration) {
@@ -797,6 +805,7 @@ export async function startTrackingRuntime(
         dependencies.missionStore,
         persistedPositionKeyCache,
         expectedMissionId,
+        dependencies.notifyDurablePositionChange,
       )
     })
   }
@@ -1081,6 +1090,7 @@ async function persistTrackingSnapshot(
   missionStore: TrackingRuntimeMissionStore,
   persistedPositionKeyCache: PersistedPositionKeyCache | null,
   expectedMissionId: string | null,
+  notifyDurablePositionChange?: (changedPositionCount: number) => void,
 ): Promise<PersistedPositionKeyCache | null> {
   const activeMission = await missionStore.getActiveMission()
   if (
@@ -1187,16 +1197,20 @@ async function persistTrackingSnapshot(
   }
 
   if (missionStore.persistTrackingPositionsBulk !== undefined) {
-    await missionStore.persistTrackingPositionsBulk({
+    const persisted = await missionStore.persistTrackingPositionsBulk({
       mission_id: activeMission.id,
       positions: newPositions,
       checkpoints: [],
     })
+    notifyDurablePositionChange?.(persisted.changedPositionCount)
   } else if (missionStore.addPositionsBulk !== undefined) {
-    await missionStore.addPositionsBulk({
+    const persisted = await missionStore.addPositionsBulk({
       mission_id: activeMission.id,
       positions: newPositions,
     })
+    notifyDurablePositionChange?.(
+      Array.isArray(persisted) ? persisted.length : newPositions.length,
+    )
   } else {
     for (const position of newPositions) {
       await missionStore.addPosition({
@@ -1204,6 +1218,7 @@ async function persistTrackingSnapshot(
         ...position,
       })
     }
+    notifyDurablePositionChange?.(newPositions.length)
   }
 
   for (const positionKey of newPositionKeys) {

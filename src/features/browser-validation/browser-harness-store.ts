@@ -79,6 +79,23 @@ type BrowserHarnessStore = {
     missionId: string,
     deviceId?: string,
   ) => Promise<readonly Position[]>
+  readonly listExactBreadcrumbDotPage: (input: {
+    readonly missionId: string
+    readonly activeDeviceIds: readonly string[]
+    readonly limit: number
+    readonly cursor?: string | null
+    readonly direction: 'earlier' | 'later' | 'latest'
+  }) => Promise<{
+    readonly positions: readonly Position[]
+    readonly totalPositionCount: number
+    readonly pagePositionCount: number
+    readonly fromTimestamp: string | null
+    readonly toTimestamp: string | null
+    readonly hasEarlier: false
+    readonly hasLater: false
+    readonly earlierCursor: null
+    readonly laterCursor: null
+  }>
   readonly countPositions: (missionId: string, deviceId?: string) => Promise<number>
   readonly listMarkers: (missionId: string) => Promise<readonly Marker[]>
   readonly upsertMarker: (input: UpsertMarkerInput) => Promise<Marker>
@@ -496,6 +513,43 @@ export function getBrowserHarnessStore(): BrowserHarnessStore {
           return position.device_id === deviceId
         })
         .sort((left, right) => Date.parse(left.timestamp) - Date.parse(right.timestamp)),
+    listExactBreadcrumbDotPage: async (input) => {
+      if (input.direction !== 'latest' || input.cursor != null) {
+        throw new Error('Browser validation exact-dot history has no earlier page.')
+      }
+      const mission = state.missions.find((candidate) => candidate.id === input.missionId)
+      if (mission === undefined) {
+        throw new Error('Browser validation exact-dot mission is unavailable.')
+      }
+      const activeDeviceIds = new Set(input.activeDeviceIds)
+      const matchingByIdentity = new Map<string, Position>()
+      for (const position of state.positions) {
+        if (
+          position.mission_id !== input.missionId ||
+          position.timestamp < mission.start_time ||
+          (activeDeviceIds.size > 0 && !activeDeviceIds.has(position.device_id))
+        ) {
+          continue
+        }
+        matchingByIdentity.set(
+          `${position.device_id}:${position.source_position_id ?? position.id}`,
+          position,
+        )
+      }
+      const matching = [...matchingByIdentity.values()].sort(compareBrowserHarnessPositions)
+      const positions = matching.slice(-input.limit)
+      return {
+        positions,
+        totalPositionCount: matching.length,
+        pagePositionCount: positions.length,
+        fromTimestamp: positions[0]?.timestamp ?? null,
+        toTimestamp: positions.at(-1)?.timestamp ?? null,
+        hasEarlier: false,
+        hasLater: false,
+        earlierCursor: null,
+        laterCursor: null,
+      }
+    },
     countPositions: async (missionId, deviceId) =>
       state.positions.filter((position) => {
         if (position.mission_id !== missionId) {
@@ -837,6 +891,17 @@ function createBrowserHarnessPosition(input: AddPositionInput): Position {
     timestamp: input.timestamp ?? new Date().toISOString(),
     data_origin: input.data_origin ?? 'live',
   }
+}
+
+function compareBrowserHarnessPositions(left: Position, right: Position): number {
+  return (
+    left.timestamp.localeCompare(right.timestamp) ||
+    left.device_id.localeCompare(right.device_id) ||
+    (left.source_position_id ?? left.id).localeCompare(
+      right.source_position_id ?? right.id,
+    ) ||
+    left.id.localeCompare(right.id)
+  )
 }
 
 function readHarnessState(): BrowserHarnessState {

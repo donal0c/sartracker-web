@@ -26,6 +26,32 @@ import { chromium } from 'playwright'
 import { summarizeResponsiveness } from '../build/electron-map-freeze-probe-lib.js'
 import { sanitizeEvidenceText } from '../build/electron-official-map-offline-smoke-lib.js'
 import {
+  clickExactDotPageControl,
+  readExactDotPageControlDisabled,
+} from '../build/electron-tracking-soak-exact-action-lib.js'
+import {
+  auditIndependentExactSoakPage,
+  createExactSoakPageEvidenceAccumulator,
+  createExactSoakPageTiming,
+  createExactSoakMismatchObservation,
+  createIndependentExactSoakOracle,
+  createTrackingSoakFixtureClock,
+} from '../build/electron-tracking-soak-exact-proof-lib.js'
+import {
+  readCompactExactSoakMapEvidenceInRenderer,
+} from '../build/electron-tracking-soak-exact-renderer-proof-lib.js'
+import {
+  createTrackingSoakFailureReport,
+} from '../build/electron-tracking-soak-failure-evidence-lib.js'
+import {
+  runCleanupStep,
+  startTrackingSoakSleepGuard,
+  stopOwnedProcess,
+} from '../build/electron-tracking-soak-lifecycle-lib.js'
+import {
+  performOwnedHarnessClick,
+} from '../build/electron-tracking-soak-operator-audit-lib.js'
+import {
   buildWebGlRendererAttestation,
   buildTrackingGrowthEvidence,
   buildTrackingSoakVerdict,
@@ -51,6 +77,8 @@ const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '
 const runtimeLogRelativePath = path.join('logs', 'runtime.log')
 const PROCESS_MEMORY_SAMPLE_INTERVAL_MS = 250
 const PROCESS_MEMORY_EVIDENCE_INTERVAL_MS = 5_000
+const EXACT_PAGE_ACTION_TIMEOUT_MS = 5_000
+let exactDotRequestSequence = 0
 
 main().catch((error) => {
   console.error(`electron-tracking-soak: ${error instanceof Error ? error.message : String(error)}`)
@@ -60,6 +88,15 @@ main().catch((error) => {
 /** Runs one complete packaged soak profile and writes a fail-closed report. */
 async function main() {
   const options = parseTrackingSoakArgs(process.argv.slice(2))
+  const startedAt = new Date()
+  const fixtureClock = createTrackingSoakFixtureClock(
+    options.profile,
+    startedAt.getTime(),
+  )
+  const exactSoakRequired = options.profile.name === 'extended'
+  const exactSoakPauseCheckpoints = exactSoakRequired
+    ? [...options.profile.restartCheckpoints, options.profile.actualBatches]
+    : options.profile.restartCheckpoints
   const evidenceDir = path.resolve(options.evidenceDir)
   const userDataDir = path.join(evidenceDir, 'user-data')
   const databasePath = path.join(userDataDir, 'mission-store.sqlite')
@@ -69,11 +106,13 @@ async function main() {
 
   const mockServer = await startTrackingSoakMockServer({
     statePath: path.join(evidenceDir, 'mock-traccar-state.json'),
+    baseTimeMs: fixtureClock.baseTimeMs,
+    intervalMs: fixtureClock.intervalMs,
     deviceCount: options.profile.deviceCount,
     movingDeviceCount: options.profile.movingDeviceCount,
     productionPollsPerBatch: options.profile.productionPollsPerBatch,
     maximumBatches: options.profile.actualBatches,
-    pauseCheckpoints: options.profile.restartCheckpoints,
+    pauseCheckpoints: exactSoakPauseCheckpoints,
   })
   await seedRuntimeConfiguration(userDataDir, mockServer.baseUrl)
 
@@ -82,15 +121,46 @@ async function main() {
   const rendererGaps = []
   const operatorInteractions = []
   const growthCheckpoints = []
+  const exactDotRestartAudits = []
+  let exactDotProof = exactSoakRequired
+    ? null
+    : { required: false, passed: true }
+  let finalLineTotalAudit = exactSoakRequired
+    ? null
+    : { required: false, passed: true }
   let restartCheckpointsPassed = 0
   let activeLaunch
   let missionId
-  const startedAt = new Date()
+  let sleepGuard
+  const failureReportPath = path.join(
+    evidenceDir,
+    'electron-tracking-soak-failure-report.json',
+  )
+  const exactFailureProgress = {
+    phase: 'initializing',
+    direction: null,
+    pageIndexFromLatest: null,
+    completedUiPageObservations: 0,
+    completedDirectIpcQueries: 0,
+    launchNumber: null,
+    targetBatch: null,
+    currentBatch: null,
+    timing: {},
+  }
 
   try {
+    sleepGuard = await startTrackingSoakSleepGuard({
+      platform: process.platform,
+      parentPid: process.pid,
+      spawnProcess: spawn,
+      startupTimeoutMs: 2_000,
+    })
+    sleepGuard.assertHealthy()
+    exactFailureProgress.phase = 'tracking'
     activeLaunch = await launchPackagedApp(options, userDataDir, launches.length + 1)
     launches.push(activeLaunch)
-    await startSyntheticMission(activeLaunch.page)
+    exactFailureProgress.launchNumber = activeLaunch.number
+    await startSyntheticMission(activeLaunch, fixtureClock.missionOffsetHours)
     missionId = await readActiveMissionId(activeLaunch.page)
     await recordOperatorInteraction({
       page: activeLaunch.page,
@@ -108,7 +178,27 @@ async function main() {
         targetBatch: checkpoint,
         expectedPositions: expectedPositionsAt(options.profile, checkpoint),
         timeoutMs: options.timeoutMs,
+        progress: exactFailureProgress,
+        sleepGuard,
       })
+      let exactDotBeforeRestart = null
+      if (exactSoakRequired) {
+        exactFailureProgress.phase = 'checkpoint_latest'
+        exactFailureProgress.direction = 'latest'
+        exactFailureProgress.pageIndexFromLatest = 0
+        assertMockPausedAtCheckpoint(mockServer, checkpoint)
+        await ensureMissionPaused(activeLaunch)
+        exactDotBeforeRestart = await auditLatestExactDotPage({
+          fixtureClock,
+          launch: activeLaunch,
+          missionId,
+          profile: options.profile,
+          maximumBatches: checkpoint,
+          timeoutMs: options.timeoutMs,
+          progress: exactFailureProgress,
+          sleepGuard,
+        })
+      }
       growthCheckpoints.push(
         await readGrowthCheckpoint({
           page: activeLaunch.page,
@@ -133,10 +223,34 @@ async function main() {
       await closeLaunch(activeLaunch, mainRoundTrips, rendererGaps)
       activeLaunch = undefined
 
-      await mockServer.resume()
       activeLaunch = await launchPackagedApp(options, userDataDir, launches.length + 1)
       launches.push(activeLaunch)
-      await resumeRecoveredMission(activeLaunch.page, missionId)
+      exactFailureProgress.launchNumber = activeLaunch.number
+      await resumeRecoveredMission(activeLaunch, missionId)
+      if (exactSoakRequired) {
+        await ensureMissionPaused(activeLaunch)
+        const exactDotAfterRestart = await auditLatestExactDotPage({
+          fixtureClock,
+          launch: activeLaunch,
+          missionId,
+          profile: options.profile,
+          maximumBatches: checkpoint,
+          timeoutMs: options.timeoutMs,
+          progress: exactFailureProgress,
+          sleepGuard,
+        })
+        assertLatestExactDotParity(
+          exactDotBeforeRestart,
+          exactDotAfterRestart,
+        )
+        assertMockPausedAtCheckpoint(mockServer, checkpoint)
+        exactDotRestartAudits.push({
+          checkpoint,
+          beforeRestart: exactDotBeforeRestart,
+          afterRestart: exactDotAfterRestart,
+          passed: true,
+        })
+      }
       await recordOperatorInteraction({
         page: activeLaunch.page,
         phase: `checkpoint-${checkpoint}-after-restart`,
@@ -144,6 +258,10 @@ async function main() {
         results: operatorInteractions,
         auditState: activeLaunch.operatorClickAuditState,
       })
+      if (exactSoakRequired) {
+        await ensureMissionActive(activeLaunch)
+      }
+      await mockServer.resume()
       restartCheckpointsPassed += 1
     }
 
@@ -154,7 +272,76 @@ async function main() {
       targetBatch: options.profile.actualBatches,
       expectedPositions: options.profile.expectedPositionRows,
       timeoutMs: options.timeoutMs,
+      progress: exactFailureProgress,
+      sleepGuard,
     })
+    if (exactSoakRequired) {
+      exactFailureProgress.phase = 'final_latest_before'
+      exactFailureProgress.direction = 'latest'
+      exactFailureProgress.pageIndexFromLatest = 0
+      assertMockPausedAtCheckpoint(mockServer, options.profile.actualBatches)
+      await ensureMissionPaused(activeLaunch)
+      const finalLatestBeforeTraversal = await auditLatestExactDotPage({
+        fixtureClock,
+        launch: activeLaunch,
+        missionId,
+        profile: options.profile,
+        maximumBatches: options.profile.actualBatches,
+        timeoutMs: options.timeoutMs,
+        progress: exactFailureProgress,
+        sleepGuard,
+      })
+      const traversalProof = await auditFinalExactDotTraversal({
+        fixtureClock,
+        launch: activeLaunch,
+        missionId,
+        profile: options.profile,
+        restartAudits: exactDotRestartAudits,
+        timeoutMs: options.timeoutMs,
+        progress: exactFailureProgress,
+        sleepGuard,
+      })
+      exactFailureProgress.phase = 'final_latest_after'
+      exactFailureProgress.direction = 'latest'
+      exactFailureProgress.pageIndexFromLatest = 0
+      const finalLatestAfterTraversal = await auditLatestExactDotPage({
+        fixtureClock,
+        launch: activeLaunch,
+        missionId,
+        profile: options.profile,
+        maximumBatches: options.profile.actualBatches,
+        timeoutMs: options.timeoutMs,
+        progress: exactFailureProgress,
+        sleepGuard,
+      })
+      assertLatestExactDotParity(
+        finalLatestBeforeTraversal,
+        finalLatestAfterTraversal,
+      )
+      assertMockPausedAtCheckpoint(mockServer, options.profile.actualBatches)
+      exactDotProof = finalizeExactDotProof({
+        fixtureClock,
+        profile: options.profile,
+        restartAudits: exactDotRestartAudits,
+        finalLatestAudits: [
+          finalLatestBeforeTraversal,
+          finalLatestAfterTraversal,
+        ],
+        traversalProof,
+      })
+      exactFailureProgress.phase = 'line_total'
+      exactFailureProgress.direction = null
+      exactFailureProgress.pageIndexFromLatest = null
+      finalLineTotalAudit = await auditFinalLineTotalParity({
+        fixtureClock,
+        launch: activeLaunch,
+        missionId,
+        profile: options.profile,
+        timeoutMs: options.timeoutMs,
+        progress: exactFailureProgress,
+        sleepGuard,
+      })
+    }
     await waitForBackupEvent(activeLaunch.page, missionId, options.timeoutMs)
     await recordOperatorInteraction({
       page: activeLaunch.page,
@@ -203,6 +390,8 @@ async function main() {
       movingDeviceCount: options.profile.movingDeviceCount,
       productionPollsPerBatch: options.profile.productionPollsPerBatch,
       maximumBatches: options.profile.actualBatches,
+      baseTimeMs: fixtureClock.baseTimeMs,
+      intervalMs: fixtureClock.intervalMs,
       statePath: path.join(evidenceDir, 'unused-position-truth-state.json'),
     })
     const positionTruth = {
@@ -316,6 +505,9 @@ async function main() {
         options.profile.deviceCount +
         1 +
         options.profile.restartCheckpoints.length * 2 +
+        (exactSoakRequired
+          ? options.profile.restartCheckpoints.length * 2 + 1
+          : 0) +
         (databaseEvidence.events.mission_backup_synced ?? 0),
       unexplainedMissionEvents: databaseEvidence.unexplainedMissionEvents,
       restartCheckpointsPassed,
@@ -349,13 +541,19 @@ async function main() {
       normalPrefixTruthExactMatch: positionTruth.normalPrefixExactMatch,
       missingSourcePositionIdentityRows:
         databaseEvidence.positionTruth.full.missingSourcePositionIdentityRows,
+      exactDotProof,
+      finalLineTotalAudit,
     })
+    exactFailureProgress.phase = 'closeout'
+    sleepGuard.assertHealthy()
+    await sleepGuard.stop()
     const report = {
       schemaVersion: 1,
       issue: 'DON-246',
       recordedAt: new Date().toISOString(),
       durationMs: Date.now() - startedAt.getTime(),
       profile: options.profile,
+      fixtureClock,
       acceleration: {
         actualPollIntervalMs: options.pollIntervalMs,
         productionPollIntervalMs: 5_000,
@@ -399,6 +597,9 @@ async function main() {
         supportBundleRedacted,
       },
       restartCheckpointsPassed,
+      exactDotProof,
+      finalLineTotalAudit,
+      hostSleepGuard: sleepGuard.snapshot(),
       launches: launches.map((launch) => ({
         number: launch.number,
         webGlRenderer: launch.webGlRenderer,
@@ -421,11 +622,27 @@ async function main() {
     if (!verdict.passed) {
       throw new Error(`Tracking soak failed: ${verdict.failureReasons.join(' ')}`)
     }
+  } catch (error) {
+    const failureReport = createTrackingSoakFailureReport({
+      recordedAt: new Date().toISOString(),
+      profileName: options.profile.name,
+      error,
+      progress: exactFailureProgress,
+      rendererLifecycle: activeLaunch?.rendererLifecycle.snapshot(),
+      hostSleepGuard: sleepGuard?.snapshot(),
+    })
+    await writeJson(failureReportPath, failureReport)
+    throw error
   } finally {
+    let cleanupFailure
     if (activeLaunch !== undefined) {
-      await closeLaunch(activeLaunch, mainRoundTrips, rendererGaps).catch(() => undefined)
+      try {
+        await closeLaunch(activeLaunch, mainRoundTrips, rendererGaps)
+      } catch (error) {
+        cleanupFailure = error
+      }
     }
-    await Promise.all(
+    await Promise.allSettled(
       launches.map((launch) =>
         writeFile(
           path.join(evidenceDir, `electron-launch-${launch.number}.log`),
@@ -434,7 +651,24 @@ async function main() {
         ),
       ),
     )
-    await mockServer.close()
+    await runCleanupStep(() => mockServer.close(), 5_000)
+    try {
+      await sleepGuard?.stop()
+    } catch (error) {
+      cleanupFailure ??= error
+    }
+    if (cleanupFailure !== undefined) {
+      const failureReport = createTrackingSoakFailureReport({
+        recordedAt: new Date().toISOString(),
+        profileName: options.profile.name,
+        error: cleanupFailure,
+        progress: exactFailureProgress,
+        rendererLifecycle: activeLaunch?.rendererLifecycle.snapshot(),
+        hostSleepGuard: sleepGuard?.snapshot(),
+      })
+      await writeJson(failureReportPath, failureReport)
+      throw cleanupFailure
+    }
   }
 }
 
@@ -509,6 +743,11 @@ async function launchPackagedApp(options, userDataDir, number) {
     browser = await chromium.connectOverCDP(`http://127.0.0.1:${remoteDebuggingPort}`)
     const context = browser.contexts()[0]
     const page = context.pages()[0] ?? (await context.waitForEvent('page'))
+    const rendererLifecycle = createRendererLifecycleEvidence(
+      browser,
+      context,
+      page,
+    )
     await page.setViewportSize({ width: 1440, height: 900 })
     await page.getByTestId('app-shell').waitFor({ state: 'attached', timeout: 60_000 })
     await page.locator('.maplibregl-canvas').waitFor({ state: 'attached', timeout: 60_000 })
@@ -518,10 +757,7 @@ async function launchPackagedApp(options, userDataDir, number) {
     )
     await installRendererProbe(page)
     await installOperatorClickAudit(page)
-    let rendererCrashes = 0
-    page.on('crash', () => {
-      rendererCrashes += 1
-    })
+    rendererLifecycle.markReady()
     const mainHeartbeat = startMainHeartbeat(mainInspector, 50)
 
     return {
@@ -534,8 +770,9 @@ async function launchPackagedApp(options, userDataDir, number) {
       mainHeartbeatErrors: 0,
       webGlRenderer,
       get rendererCrashes() {
-        return rendererCrashes
+        return rendererLifecycle.snapshot().pageCrashCount
       },
+      rendererLifecycle,
       processMemory: {
         samples: 0,
         maximumProcessTreeResidentBytes: 0,
@@ -545,33 +782,99 @@ async function launchPackagedApp(options, userDataDir, number) {
         lastEvidenceAtMs: 0,
       },
       operatorClickAuditState: {
-        initialized: false,
+        initialized: true,
         lastSequence: 0,
       },
       operatorClickAuditTail: null,
       logChunks,
       closed: false,
+      closePromise: null,
     }
   } catch (error) {
-    mainInspector?.close()
-    await browser?.close().catch(() => undefined)
-    appProcess.kill('SIGTERM')
-    await waitForExit(appProcess, 5_000)
+    await runCleanupStep(() => mainInspector?.close(), 250)
+    await runCleanupStep(() => browser?.close(), 2_000)
+    let cleanupFailure
+    try {
+      await stopOwnedProcess(appProcess, {
+        termTimeoutMs: 5_000,
+        killTimeoutMs: 5_000,
+      })
+    } catch (cleanupError) {
+      cleanupFailure = cleanupError
+    }
     await writeFile(
       path.join(path.resolve(options.evidenceDir), `electron-launch-${number}-failed.log`),
       sanitizeEvidenceText(Buffer.concat(logChunks).toString('utf8')),
       'utf8',
     )
+    if (cleanupFailure !== undefined) throw cleanupFailure
     throw error
   }
 }
 
-async function startSyntheticMission(page) {
-  await page
+/** Records bounded renderer/CDP lifecycle state without URLs or page content. */
+function createRendererLifecycleEvidence(browser, context, page) {
+  const state = {
+    pageCloseCount: 0,
+    pageCrashCount: 0,
+    browserDisconnectCount: 0,
+    replacementPageCount: 0,
+    mainFrameNavigationCount: 0,
+    lastEvent: 'none',
+  }
+  let cleanupStarted = false
+  const record = (countKey, event) => {
+    if (cleanupStarted) return
+    state[countKey] += 1
+    state.lastEvent = event
+  }
+  page.on('close', () => record('pageCloseCount', 'page_closed'))
+  page.on('crash', () => record('pageCrashCount', 'page_crashed'))
+  browser.on('disconnected', () =>
+    record('browserDisconnectCount', 'browser_disconnected'))
+  context.on('page', (candidate) => {
+    if (candidate !== page) {
+      record('replacementPageCount', 'replacement_page')
+    }
+  })
+  page.on('framenavigated', (frame) => {
+    if (frame === page.mainFrame()) {
+      record('mainFrameNavigationCount', 'main_frame_navigation')
+    }
+  })
+  return {
+    markReady: () => {
+      for (const key of [
+        'pageCloseCount',
+        'pageCrashCount',
+        'browserDisconnectCount',
+        'replacementPageCount',
+        'mainFrameNavigationCount',
+      ]) {
+        state[key] = 0
+      }
+      state.lastEvent = 'none'
+    },
+    beginCleanup: () => {
+      cleanupStarted = true
+    },
+    snapshot: () => ({ ...state }),
+  }
+}
+
+async function startSyntheticMission(launch, missionOffsetHours) {
+  await launch.page
     .getByTestId('mission-name-input')
     .fill('Synthetic Continuous Soak Mission', { force: true })
-  await page.getByTestId('mission-start-btn').click({ force: true })
-  await waitForActiveMission(page, 30_000)
+  await launch.page
+    .getByTestId('mission-offset-input')
+    .fill(String(missionOffsetHours), { force: true })
+  await performLaunchOwnedHarnessClick(
+    launch,
+    'mission-start-btn',
+    () => launch.page.getByTestId('mission-start-btn').click({ force: true }),
+  )
+  await waitForActiveMission(launch.page, 30_000)
 }
 
 /**
@@ -584,10 +887,6 @@ async function startSyntheticMission(page) {
 async function recordOperatorInteraction(input) {
   const startedAt = performance.now()
   const auditAtStart = await readOperatorClickAudit(input.page)
-  if (input.auditState.initialized !== true) {
-    input.auditState.initialized = true
-    input.auditState.lastSequence = auditAtStart.lastSequence
-  }
   const interactionStartSequence = auditAtStart.lastSequence
   await focusPackagedPage(input.page, 2_000)
   const preflight = await inspectPointerTarget(
@@ -723,7 +1022,6 @@ async function recordOperatorInteraction(input) {
     afterSequence: input.auditState.lastSequence,
     interactionStartSequence,
   })
-  input.auditState.lastSequence = audit.lastSequence
   const expectedInteractionTestIds = [
     ...(result.openClickCompleted ? ['open-devices-workspace'] : []),
     ...(result.closeClickCompleted ? ['workspace-close-btn'] : []),
@@ -732,6 +1030,13 @@ async function recordOperatorInteraction(input) {
     audit,
     expectedInteractionTestIds,
   )
+  if (auditIssues.length === 0) {
+    if (await acknowledgeOperatorClickAudit(input.page, audit.lastSequence)) {
+      input.auditState.lastSequence = audit.lastSequence
+    } else {
+      auditIssues.push('OperatorClickAuditAcknowledgementFailed')
+    }
+  }
   result.unexpectedInputEvents = auditIssues.length
   errors.push(...auditIssues)
 
@@ -792,6 +1097,7 @@ async function installOperatorClickAudit(page) {
     window.__SARTRACKER_OPERATOR_CLICK_AUDIT__ = {
       events: [],
       lastSequence: 0,
+      acknowledgedSequence: 0,
       droppedEventCount: 0,
     }
     document.addEventListener(
@@ -833,9 +1139,48 @@ async function readOperatorClickAudit(page) {
       window.__SARTRACKER_OPERATOR_CLICK_AUDIT__ ?? {
         events: [],
         lastSequence: 0,
+        acknowledgedSequence: 0,
         droppedEventCount: 0,
       },
   )
+}
+
+/** Atomically prunes only an already-validated audit prefix. */
+async function acknowledgeOperatorClickAudit(page, sequence) {
+  return page.evaluate((expectedSequence) => {
+    const audit = window.__SARTRACKER_OPERATOR_CLICK_AUDIT__
+    if (
+      audit === undefined ||
+      audit.lastSequence !== expectedSequence ||
+      audit.droppedEventCount !== 0 ||
+      audit.events.some((event) => event.sequence > expectedSequence)
+    ) {
+      return false
+    }
+    audit.events = audit.events.filter(
+      (event) => event.sequence > expectedSequence,
+    )
+    audit.acknowledgedSequence = expectedSequence
+    return true
+  }, sequence)
+}
+
+/** Applies the one ownership boundary to every non-measured harness click. */
+function performLaunchOwnedHarnessClick(
+  launch,
+  expectedTestId,
+  click,
+  observeAfterClick,
+) {
+  return performOwnedHarnessClick({
+    auditState: launch.operatorClickAuditState,
+    expectedTestId,
+    readAudit: () => readOperatorClickAudit(launch.page),
+    acknowledgeAudit: (sequence) =>
+      acknowledgeOperatorClickAudit(launch.page, sequence),
+    click,
+    observeAfterClick,
+  })
 }
 
 /** Returns stable error classes for missing, late, extra, or untrusted input evidence. */
@@ -1224,11 +1569,15 @@ async function waitForActiveMission(page, timeoutMs) {
   )
 }
 
-async function resumeRecoveredMission(page, expectedMissionId) {
-  await page.getByTestId('mission-recovery-dialog').waitFor({ state: 'attached', timeout: 60_000 })
-  await page.getByRole('button', { name: 'Resume' }).click({ force: true })
-  await waitForActiveMission(page, 30_000)
-  const missionId = await readActiveMissionId(page)
+async function resumeRecoveredMission(launch, expectedMissionId) {
+  await launch.page.getByTestId('mission-recovery-dialog').waitFor({ state: 'attached', timeout: 60_000 })
+  await performLaunchOwnedHarnessClick(
+    launch,
+    'mission-recovery-dialog',
+    () => launch.page.getByRole('button', { name: 'Resume' }).click({ force: true }),
+  )
+  await waitForActiveMission(launch.page, 30_000)
+  const missionId = await readActiveMissionId(launch.page)
   if (missionId !== expectedMissionId) {
     throw new Error(`Restart recovered mission ${missionId}, expected ${expectedMissionId}.`)
   }
@@ -1245,13 +1594,21 @@ async function readActiveMissionId(page) {
 }
 
 async function waitForCheckpoint(input) {
+  input.progress.phase = 'tracking'
+  input.progress.direction = null
+  input.progress.pageIndexFromLatest = null
+  input.progress.launchNumber = input.launch.number
+  input.progress.targetBatch = input.targetBatch
   const deadline = Date.now() + input.timeoutMs
   while (Date.now() < deadline) {
+    input.sleepGuard.assertHealthy()
+    assertRendererTargetHealthy(input.launch)
     assertProcessAlive(input.launch.appProcess, 'tracking checkpoint')
     if (input.launch.rendererCrashes > 0) {
       throw new Error(`Electron renderer crashed during tracking checkpoint ${input.targetBatch}.`)
     }
     const mockState = input.mockServer.snapshot()
+    input.progress.currentBatch = mockState.completedBatches
     await sampleProcessMemory(input.launch, {
       phase: 'checkpoint-drain',
       targetBatch: input.targetBatch,
@@ -1272,6 +1629,1125 @@ async function waitForCheckpoint(input) {
   )
 }
 
+/** Fails closed when the measured renderer/CDP target changes or reloads. */
+function assertRendererTargetHealthy(launch) {
+  const lifecycle = launch.rendererLifecycle.snapshot()
+  if (
+    lifecycle.pageCloseCount > 0 ||
+    lifecycle.pageCrashCount > 0 ||
+    lifecycle.browserDisconnectCount > 0 ||
+    lifecycle.replacementPageCount > 0 ||
+    lifecycle.mainFrameNavigationCount > 0
+  ) {
+    const error = new Error(
+      'Packaged renderer target changed during tracking soak.',
+    )
+    error.trackingSoakLifecycleFailure = {
+      failureClass: 'browser_target_closed',
+    }
+    throw error
+  }
+}
+
+/** Pauses the packaged mission and waits until the persisted state agrees. */
+async function ensureMissionPaused(launch) {
+  const mission = await readActiveMission(launch.page)
+  if (mission.status !== 'paused') {
+    await performLaunchOwnedHarnessClick(
+      launch,
+      'mission-pause-resume-btn',
+      () => launch.page.getByTestId('mission-pause-resume-btn').click({ force: true }),
+    )
+  }
+  await launch.page.getByTestId('mission-paused-banner').waitFor({
+    state: 'visible',
+    timeout: 30_000,
+  })
+  await launch.page.waitForFunction(
+    async () =>
+      (await window.sartrackerElectron?.missionStore.getActiveMission())?.status ===
+      'paused',
+    undefined,
+    { timeout: 30_000 },
+  )
+}
+
+/** Resumes the packaged mission only after the paused restart audit is complete. */
+async function ensureMissionActive(launch) {
+  const mission = await readActiveMission(launch.page)
+  if (mission.status === 'paused') {
+    await performLaunchOwnedHarnessClick(
+      launch,
+      'mission-pause-resume-btn',
+      () => launch.page.getByTestId('mission-pause-resume-btn').click({ force: true }),
+    )
+  }
+  await launch.page.getByTestId('mission-paused-banner').waitFor({
+    state: 'hidden',
+    timeout: 30_000,
+  })
+  await launch.page.waitForFunction(
+    async () =>
+      (await window.sartrackerElectron?.missionStore.getActiveMission())?.status ===
+      'active',
+    undefined,
+    { timeout: 30_000 },
+  )
+}
+
+/** Reads the active mission or fails before changing its lifecycle state. */
+async function readActiveMission(page) {
+  return page.evaluate(async () => {
+    const mission = await window.sartrackerElectron?.missionStore.getActiveMission()
+    if (mission === null || mission === undefined) {
+      throw new Error('Packaged runtime has no active mission for exact-dot audit.')
+    }
+    return mission
+  })
+}
+
+/** Proves the mock cannot advance while a paused exact checkpoint is audited. */
+function assertMockPausedAtCheckpoint(mockServer, expectedBatch) {
+  const state = mockServer.snapshot()
+  if (state.paused !== true || state.completedBatches !== expectedBatch) {
+    throw new Error('Synthetic Traccar source advanced outside exact checkpoint.')
+  }
+}
+
+/** Audits the exact latest page against formula truth at one paused checkpoint. */
+async function auditLatestExactDotPage(input) {
+  const oracle = createIndependentExactSoakOracle({
+    ...input.profile,
+    baseTimeMs: input.fixtureClock.baseTimeMs,
+    intervalMs: input.fixtureClock.intervalMs,
+    maximumBatches: input.maximumBatches,
+    pageLimit: 10_000,
+  })
+  const memorySampler = startExactAuditMemorySampler(input.launch)
+  let query
+  let source
+  let exactDotPageDurationMs
+  let timing
+  let rss
+  try {
+    const initialPage = await openExactDotWorkspace(
+      input.launch,
+      () => waitForExactSoakSourcePage({
+        page: input.launch.page,
+        launch: input.launch,
+        oracle,
+        pageIndexFromLatest: 0,
+        timeoutMs: Math.min(input.timeoutMs, EXACT_PAGE_ACTION_TIMEOUT_MS),
+        sleepGuard: input.sleepGuard,
+      }),
+    )
+    const pageStartedAtEpochMs = initialPage.clickStartedAtEpochMs
+    source = initialPage.observation
+    timing = createExactSoakPageTiming({
+      pageStartedAtEpochMs,
+      sourceReadStartedAtEpochMs: source.sourceReadStartedAtEpochMs,
+      firstFormulaExactSampledAtEpochMs:
+        source.firstFormulaExactSampledAtEpochMs,
+      stableVerificationDurationMs: source.stableVerificationDurationMs,
+    })
+    exactDotPageDurationMs = timing.pageActionDurationMs
+    input.progress.completedUiPageObservations += 1
+    input.progress.timing = { ...timing }
+    query = await queryExactDotPage(input.launch.page, {
+      missionId: input.missionId,
+      direction: 'latest',
+      cursor: null,
+    })
+    input.progress.completedDirectIpcQueries += 1
+    const queryRows = normalizeExactSoakStoredPage(query.result.positions)
+    const queryEvidence = auditIndependentExactSoakPage(oracle, 0, queryRows)
+    assertExactSoakPageEnvelope(query.result, oracle, queryEvidence, 0)
+    assertExactSoakPageEvidenceMatch(queryEvidence, source.pageEvidence)
+    assertExactPageActionTimings(
+      query.durationMs,
+      timing.publicationDurationMs,
+      exactDotPageDurationMs,
+    )
+    assertExactStableVerificationTiming(timing.stableVerificationDurationMs)
+  } finally {
+    rss = await memorySampler.stop()
+    await closeExactDotWorkspace(input.launch)
+  }
+  return {
+    passed: true,
+    launchNumber: input.launch.number,
+    maximumBatches: input.maximumBatches,
+    totalPositionCount: oracle.totalFixCount,
+    pageCount: oracle.pageCount,
+    latestPage: source.pageEvidence,
+    baselineBreadcrumbPointCount: source.baselineBreadcrumbPointCount,
+    exactDotQueryDurationMs: query.durationMs,
+    exactDotPublicationDurationMs: timing.publicationDurationMs,
+    exactDotPageDurationMs,
+    exactDotStableVerificationDurationMs:
+      timing.stableVerificationDurationMs,
+    exactDotFingerprintDurationMs: source.fingerprintDurationMs,
+    exactDotProofOverheadDurationMs: timing.proofOverheadDurationMs,
+    rss,
+  }
+}
+
+/** Requires the identical exact latest page on both sides of one restart. */
+function assertLatestExactDotParity(beforeRestart, afterRestart) {
+  if (
+    beforeRestart?.passed !== true ||
+    afterRestart?.passed !== true ||
+    beforeRestart.totalPositionCount !== afterRestart.totalPositionCount ||
+    beforeRestart.pageCount !== afterRestart.pageCount ||
+    beforeRestart.baselineBreadcrumbPointCount !== 0 ||
+    afterRestart.baselineBreadcrumbPointCount !== 0 ||
+    beforeRestart.latestPage.positionCount !==
+      afterRestart.latestPage.positionCount ||
+    beforeRestart.latestPage.sha256 !== afterRestart.latestPage.sha256 ||
+    JSON.stringify(beforeRestart.latestPage.range) !==
+      JSON.stringify(afterRestart.latestPage.range)
+  ) {
+    throw new Error('Exact breadcrumb latest-page parity changed across restart.')
+  }
+}
+
+/**
+ * Traverses all 194 exact pages in both directions against formula truth while
+ * retaining only bounded page digests/ranges and latency aggregates.
+ */
+async function auditFinalExactDotTraversal(input) {
+  const oracle = createIndependentExactSoakOracle({
+    ...input.profile,
+    baseTimeMs: input.fixtureClock.baseTimeMs,
+    intervalMs: input.fixtureClock.intervalMs,
+    maximumBatches: input.profile.actualBatches,
+    pageLimit: 10_000,
+  })
+  const accumulator = createExactSoakPageEvidenceAccumulator(oracle)
+  const exactDotPublicationDurationMs = []
+  const exactDotPageDurationMs = []
+  const exactDotStableVerificationDurationMs = []
+  const exactDotFingerprintDurationMs = []
+  const exactDotProofOverheadDurationMs = []
+  let baselineBreadcrumbPointCount = 0
+  let earlierDisabledAtOldest = false
+  let laterDisabledAtLatest = false
+  let returnedToLatest = false
+  let proof = null
+  let exactAuditMemory = null
+  let outwardTraversalDurationMs = 0
+  let laterTraversalDurationMs = 0
+  const proofWallStartedAt = performance.now()
+  const memorySampler = startExactAuditMemorySampler(input.launch)
+  try {
+    const initialPage = await openExactDotWorkspace(
+      input.launch,
+      () => waitForExactSoakSourcePage({
+        page: input.launch.page,
+        launch: input.launch,
+        oracle,
+        pageIndexFromLatest: 0,
+        timeoutMs: Math.min(input.timeoutMs, EXACT_PAGE_ACTION_TIMEOUT_MS),
+        sleepGuard: input.sleepGuard,
+      }),
+    )
+    const latestPageStartedAtEpochMs = initialPage.clickStartedAtEpochMs
+    for (
+      let pageIndexFromLatest = 0;
+      pageIndexFromLatest < oracle.pageCount;
+      pageIndexFromLatest += 1
+    ) {
+      let pageStartedAtEpochMs = pageIndexFromLatest === 0
+        ? latestPageStartedAtEpochMs
+        : null
+      input.progress.phase = 'outward'
+      input.progress.direction = pageIndexFromLatest === 0 ? 'latest' : 'earlier'
+      input.progress.pageIndexFromLatest = pageIndexFromLatest
+      let source
+      if (pageIndexFromLatest > 0) {
+        const ownedClick = await performLaunchOwnedHarnessClick(
+          input.launch,
+          'exact-breadcrumb-dots-earlier',
+          () => clickExactDotPageControl({
+            page: input.launch.page,
+            testId: 'exact-breadcrumb-dots-earlier',
+            pageIndexFromLatest,
+            timeoutMs: EXACT_PAGE_ACTION_TIMEOUT_MS,
+          }),
+          () => waitForExactSoakSourcePage({
+            page: input.launch.page,
+            launch: input.launch,
+            oracle,
+            pageIndexFromLatest,
+            timeoutMs: Math.min(input.timeoutMs, EXACT_PAGE_ACTION_TIMEOUT_MS),
+            sleepGuard: input.sleepGuard,
+          }),
+        )
+        pageStartedAtEpochMs = ownedClick.clickStartedAtEpochMs
+        source = ownedClick.observation
+      } else {
+        source = initialPage.observation
+      }
+      const timing = createExactSoakPageTiming({
+        pageStartedAtEpochMs,
+        sourceReadStartedAtEpochMs: source.sourceReadStartedAtEpochMs,
+        firstFormulaExactSampledAtEpochMs:
+          source.firstFormulaExactSampledAtEpochMs,
+        stableVerificationDurationMs: source.stableVerificationDurationMs,
+      })
+      accumulator.addPageEvidence(pageIndexFromLatest, source.pageEvidence)
+      baselineBreadcrumbPointCount += source.baselineBreadcrumbPointCount
+      exactDotPublicationDurationMs.push(timing.publicationDurationMs)
+      exactDotPageDurationMs.push(timing.pageActionDurationMs)
+      exactDotStableVerificationDurationMs.push(
+        timing.stableVerificationDurationMs,
+      )
+      exactDotFingerprintDurationMs.push(source.fingerprintDurationMs)
+      exactDotProofOverheadDurationMs.push(timing.proofOverheadDurationMs)
+      assertExactUiPageActionTimings(
+        timing.publicationDurationMs,
+        timing.pageActionDurationMs,
+      )
+      assertExactStableVerificationTiming(timing.stableVerificationDurationMs)
+      outwardTraversalDurationMs += timing.pageActionDurationMs
+      input.progress.completedUiPageObservations += 1
+      input.progress.timing = {
+        ...timing,
+        outwardTraversalDurationMs,
+      }
+    }
+    earlierDisabledAtOldest = await readExactDotPageControlDisabled({
+      page: input.launch.page,
+      testId: 'exact-breadcrumb-dots-earlier',
+      timeoutMs: EXACT_PAGE_ACTION_TIMEOUT_MS,
+    })
+    if (!earlierDisabledAtOldest) {
+      throw new Error('Exact breadcrumb Earlier remained enabled at oldest page.')
+    }
+    if (outwardTraversalDurationMs > 60_000) {
+      throw createExactSoakGateFailure(
+        'outward_traversal_limit',
+        'Exact outward traversal exceeded 60 seconds.',
+      )
+    }
+
+    for (
+      let pageIndexFromLatest = oracle.pageCount - 2;
+      pageIndexFromLatest >= 0;
+      pageIndexFromLatest -= 1
+    ) {
+      input.progress.phase = 'later'
+      input.progress.direction = 'later'
+      input.progress.pageIndexFromLatest = pageIndexFromLatest
+      const ownedClick = await performLaunchOwnedHarnessClick(
+        input.launch,
+        'exact-breadcrumb-dots-later',
+        () => clickExactDotPageControl({
+          page: input.launch.page,
+          testId: 'exact-breadcrumb-dots-later',
+          pageIndexFromLatest,
+          timeoutMs: EXACT_PAGE_ACTION_TIMEOUT_MS,
+        }),
+        () => waitForExactSoakSourcePage({
+          page: input.launch.page,
+          launch: input.launch,
+          oracle,
+          pageIndexFromLatest,
+          timeoutMs: Math.min(input.timeoutMs, EXACT_PAGE_ACTION_TIMEOUT_MS),
+          sleepGuard: input.sleepGuard,
+        }),
+      )
+      const pageStartedAtEpochMs = ownedClick.clickStartedAtEpochMs
+      const source = ownedClick.observation
+      const timing = createExactSoakPageTiming({
+        pageStartedAtEpochMs,
+        sourceReadStartedAtEpochMs: source.sourceReadStartedAtEpochMs,
+        firstFormulaExactSampledAtEpochMs:
+          source.firstFormulaExactSampledAtEpochMs,
+        stableVerificationDurationMs: source.stableVerificationDurationMs,
+      })
+      baselineBreadcrumbPointCount += source.baselineBreadcrumbPointCount
+      exactDotPublicationDurationMs.push(timing.publicationDurationMs)
+      exactDotPageDurationMs.push(timing.pageActionDurationMs)
+      exactDotStableVerificationDurationMs.push(
+        timing.stableVerificationDurationMs,
+      )
+      exactDotFingerprintDurationMs.push(source.fingerprintDurationMs)
+      exactDotProofOverheadDurationMs.push(timing.proofOverheadDurationMs)
+      assertExactUiPageActionTimings(
+        timing.publicationDurationMs,
+        timing.pageActionDurationMs,
+      )
+      assertExactStableVerificationTiming(timing.stableVerificationDurationMs)
+      laterTraversalDurationMs += timing.pageActionDurationMs
+      input.progress.completedUiPageObservations += 1
+      input.progress.timing = {
+        ...timing,
+        outwardTraversalDurationMs,
+        laterTraversalDurationMs,
+      }
+    }
+    laterDisabledAtLatest = await readExactDotPageControlDisabled({
+      page: input.launch.page,
+      testId: 'exact-breadcrumb-dots-later',
+      timeoutMs: EXACT_PAGE_ACTION_TIMEOUT_MS,
+    })
+    if (laterTraversalDurationMs > 120_000) {
+      throw createExactSoakGateFailure(
+        'later_traversal_limit',
+        'Exact Later traversal exceeded 120 seconds.',
+      )
+    }
+    returnedToLatest = laterDisabledAtLatest
+    if (
+      !laterDisabledAtLatest ||
+      baselineBreadcrumbPointCount !== 0
+    ) {
+      throw new Error(
+        'Exact breadcrumb traversal did not return to latest or baseline contained breadcrumb Points.',
+      )
+    }
+    const traversal = accumulator.finish()
+    proof = {
+      finalTraversal: traversal,
+      returnedToLatest,
+      earlierDisabledAtOldest,
+      laterDisabledAtLatest,
+      baselineBreadcrumbPointCount,
+      outwardTraversalDurationMs,
+      laterTraversalDurationMs,
+      metricSamples: {
+        exactDotPublicationDurationMs,
+        exactDotPageDurationMs,
+        exactDotStableVerificationDurationMs,
+        exactDotFingerprintDurationMs,
+        exactDotProofOverheadDurationMs,
+      },
+      proofWallDurationMs: performance.now() - proofWallStartedAt,
+    }
+  } finally {
+    exactAuditMemory = await memorySampler.stop()
+    await closeExactDotWorkspace(input.launch)
+  }
+  if (
+    proof === null ||
+    exactAuditMemory.sampleCount < 1 ||
+    exactAuditMemory.maximumProcessTreeResidentBytes < 1
+  ) {
+    throw new Error('Exact breadcrumb traversal has no 250ms RSS evidence.')
+  }
+  return {
+    issue: 'DON-260',
+    ...proof,
+    rss: exactAuditMemory,
+  }
+}
+
+/** Builds the frozen 393-observation exact proof from bounded audit evidence. */
+function finalizeExactDotProof(input) {
+  const directIpcLatestAudits = [
+    ...input.restartAudits.flatMap((audit) => [
+      {
+        boundary: `checkpoint-${audit.checkpoint}-before-restart`,
+        ...audit.beforeRestart,
+      },
+      {
+        boundary: `checkpoint-${audit.checkpoint}-after-restart`,
+        ...audit.afterRestart,
+      },
+    ]),
+    {
+      boundary: 'final-before-traversal',
+      ...input.finalLatestAudits[0],
+    },
+    {
+      boundary: 'final-after-traversal',
+      ...input.finalLatestAudits[1],
+    },
+  ]
+  const exactDotDirectIpcQueryDurationMs = directIpcLatestAudits.map(
+    (audit) => audit.exactDotQueryDurationMs,
+  )
+  const exactDotPublicationDurationMs = [
+    ...input.traversalProof.metricSamples.exactDotPublicationDurationMs,
+    ...directIpcLatestAudits.map(
+      (audit) => audit.exactDotPublicationDurationMs,
+    ),
+  ]
+  const exactDotPageDurationMs = [
+    ...input.traversalProof.metricSamples.exactDotPageDurationMs,
+    ...directIpcLatestAudits.map((audit) => audit.exactDotPageDurationMs),
+  ]
+  const exactDotStableVerificationDurationMs = [
+    ...input.traversalProof.metricSamples
+      .exactDotStableVerificationDurationMs,
+    ...directIpcLatestAudits.map(
+      (audit) => audit.exactDotStableVerificationDurationMs,
+    ),
+  ]
+  const exactDotFingerprintDurationMs = [
+    ...input.traversalProof.metricSamples.exactDotFingerprintDurationMs,
+    ...directIpcLatestAudits.map(
+      (audit) => audit.exactDotFingerprintDurationMs,
+    ),
+  ]
+  const exactDotProofOverheadDurationMs = [
+    ...input.traversalProof.metricSamples.exactDotProofOverheadDurationMs,
+    ...directIpcLatestAudits.map(
+      (audit) => audit.exactDotProofOverheadDurationMs,
+    ),
+  ]
+  const expectedUiObservationCount =
+    input.traversalProof.finalTraversal.pageCount * 2 - 1 +
+    directIpcLatestAudits.length
+  const expectedDirectIpcQueryCount = 6
+  if (
+    directIpcLatestAudits.length !== expectedDirectIpcQueryCount ||
+    exactDotDirectIpcQueryDurationMs.length !== expectedDirectIpcQueryCount ||
+    exactDotPublicationDurationMs.length !== expectedUiObservationCount ||
+    exactDotPageDurationMs.length !== expectedUiObservationCount ||
+    exactDotStableVerificationDurationMs.length !== expectedUiObservationCount ||
+    exactDotFingerprintDurationMs.length !== expectedUiObservationCount ||
+    exactDotProofOverheadDurationMs.length !== expectedUiObservationCount
+  ) {
+    throw new Error('Exact breadcrumb observation metrics are incomplete.')
+  }
+  const metrics = {
+    exactDotDirectIpcQueryDurationMs: summarizeResponsiveness(
+      exactDotDirectIpcQueryDurationMs,
+      250,
+    ),
+    exactDotPublicationDurationMs: summarizeResponsiveness(
+      exactDotPublicationDurationMs,
+      250,
+    ),
+    exactDotPageDurationMs: summarizeResponsiveness(
+      exactDotPageDurationMs,
+      250,
+    ),
+    exactDotStableVerificationDurationMs: summarizeResponsiveness(
+      exactDotStableVerificationDurationMs,
+      250,
+    ),
+    exactDotFingerprintDurationMs: summarizeResponsiveness(
+      exactDotFingerprintDurationMs,
+      250,
+    ),
+    exactDotProofOverheadDurationMs: summarizeResponsiveness(
+      exactDotProofOverheadDurationMs,
+      250,
+    ),
+    proofWallDurationMs: input.traversalProof.proofWallDurationMs,
+    rssSampleIntervalMs: PROCESS_MEMORY_SAMPLE_INTERVAL_MS,
+    rss: input.traversalProof.rss,
+  }
+  if (
+    metrics.exactDotDirectIpcQueryDurationMs.p95Ms > 2_000 ||
+    metrics.exactDotPublicationDurationMs.p95Ms > 2_000 ||
+    metrics.exactDotPageDurationMs.p95Ms > 2_000 ||
+    metrics.exactDotStableVerificationDurationMs.maxMs >
+      EXACT_PAGE_ACTION_TIMEOUT_MS
+  ) {
+    throw new Error('Exact breadcrumb page latency p95 exceeded two seconds.')
+  }
+  return {
+    issue: 'DON-260',
+    required: true,
+    passed: true,
+    fixtureClock: input.fixtureClock,
+    directIpcLatestAudits,
+    restartAudits: input.restartAudits,
+    finalTraversal: input.traversalProof.finalTraversal,
+    returnedToLatest: input.traversalProof.returnedToLatest,
+    earlierDisabledAtOldest:
+      input.traversalProof.earlierDisabledAtOldest,
+    laterDisabledAtLatest:
+      input.traversalProof.laterDisabledAtLatest,
+    baselineBreadcrumbPointCount:
+      input.traversalProof.baselineBreadcrumbPointCount,
+    explicitPageObservationCount: expectedUiObservationCount,
+    directIpcQueryCount: expectedDirectIpcQueryCount,
+    outwardTraversalDurationMs:
+      input.traversalProof.outwardTraversalDurationMs,
+    laterTraversalDurationMs:
+      input.traversalProof.laterTraversalDurationMs,
+    unavailableCount: 0,
+    failureCount: 0,
+    unexplainedPublicationCount: 0,
+    metrics,
+  }
+}
+
+/** Fails one explicit exact query/publication/action past the 5s hard limit. */
+function assertExactPageActionTimings(queryMs, publicationMs, pageMs) {
+  if (
+    ![queryMs, publicationMs, pageMs].every(
+      (durationMs) =>
+        Number.isFinite(durationMs) &&
+        durationMs >= 0 &&
+        durationMs <= EXACT_PAGE_ACTION_TIMEOUT_MS,
+    )
+  ) {
+    throw new Error('Exact breadcrumb page action exceeded five seconds.')
+  }
+}
+
+/** Fails one UI source publication/action past the 5s hard limit. */
+function assertExactUiPageActionTimings(publicationMs, pageMs) {
+  if (
+    ![publicationMs, pageMs].every(
+      (durationMs) =>
+        Number.isFinite(durationMs) &&
+        durationMs >= 0 &&
+        durationMs <= EXACT_PAGE_ACTION_TIMEOUT_MS,
+    )
+  ) {
+    throw new Error('Exact breadcrumb UI page action exceeded five seconds.')
+  }
+}
+
+/** Requires the second stable proof observation inside the shared 5s bound. */
+function assertExactStableVerificationTiming(durationMs) {
+  if (
+    !Number.isFinite(durationMs) ||
+    durationMs < 0 ||
+    durationMs > EXACT_PAGE_ACTION_TIMEOUT_MS
+  ) {
+    throw createExactSoakGateFailure(
+      'ui_page_action_limit',
+      'Exact breadcrumb stable verification exceeded five seconds.',
+    )
+  }
+}
+
+/** Starts a continuous 250ms process-tree RSS sampler during exact traversal. */
+function startExactAuditMemorySampler(launch) {
+  let stopped = false
+  let sampleCount = 0
+  let maximumProcessTreeResidentBytes = 0
+  const task = (async () => {
+    while (!stopped) {
+      const startedAt = performance.now()
+      const sampledAtMs = Date.now()
+      const memory = await readProcessTreeResidentMemory(launch.appProcess.pid)
+      const sample = memory === null
+        ? null
+        : recordProcessMemorySample(
+            launch,
+            memory,
+            { phase: 'exact-dot-page-audit' },
+            sampledAtMs,
+          )
+      if (sample !== null) {
+        sampleCount += 1
+        maximumProcessTreeResidentBytes = Math.max(
+          maximumProcessTreeResidentBytes,
+          sample.totalResidentBytes,
+        )
+      }
+      await delay(Math.max(
+        0,
+        PROCESS_MEMORY_SAMPLE_INTERVAL_MS - (performance.now() - startedAt),
+      ))
+    }
+  })()
+  return {
+    stop: async () => {
+      stopped = true
+      await task
+      return {
+        launchNumber: launch.number,
+        sampleCount,
+        sampleIntervalMs: PROCESS_MEMORY_SAMPLE_INTERVAL_MS,
+        maximumProcessTreeResidentBytes,
+      }
+    },
+  }
+}
+
+/** Opens Devices and selects the source-authoritative exact Dots mode. */
+async function openExactDotWorkspace(launch, observeAfterDotsClick) {
+  const workspace = launch.page.getByTestId('devices-workspace')
+  if (!(await workspace.isVisible())) {
+    await performLaunchOwnedHarnessClick(
+      launch,
+      'open-devices-workspace',
+      () => launch.page.getByTestId('open-devices-workspace').click({
+        timeout: EXACT_PAGE_ACTION_TIMEOUT_MS,
+      }),
+    )
+    await workspace.waitFor({
+      state: 'visible',
+      timeout: EXACT_PAGE_ACTION_TIMEOUT_MS,
+    })
+  }
+  const dotsButton = launch.page.getByTestId('breadcrumb-mode-dots')
+  const initialPage = await performLaunchOwnedHarnessClick(
+    launch,
+    'breadcrumb-mode-dots',
+    () => dotsButton.click({ timeout: EXACT_PAGE_ACTION_TIMEOUT_MS }),
+    observeAfterDotsClick,
+  )
+  if (await launch.page.getByTestId('exact-breadcrumb-dots-unavailable').isVisible()) {
+    throw new Error('Exact breadcrumb Dots mode is unavailable in packaged soak.')
+  }
+  const dotsButtonClass = await dotsButton.getAttribute('class')
+  if (!String(dotsButtonClass).includes('sar-segment-option-active')) {
+    throw new Error('Packaged soak could not activate breadcrumb Dots mode.')
+  }
+  await performLaunchOwnedHarnessClick(
+    launch,
+    'workspace-close-btn',
+    () => launch.page.getByTestId('workspace-close-btn').click({
+      timeout: EXACT_PAGE_ACTION_TIMEOUT_MS,
+    }),
+  )
+  await workspace.waitFor({
+    state: 'hidden',
+    timeout: EXACT_PAGE_ACTION_TIMEOUT_MS,
+  })
+  return initialPage
+}
+
+/** Restores bounded Line mode after a proof-only audit. */
+async function closeExactDotWorkspace(launch) {
+  await restoreFinalBreadcrumbLineMode(launch)
+}
+
+/**
+ * Requires the restored Line summary and live SQLite count to equal independent
+ * source truth for two consecutive observations after exact proof settles.
+ */
+async function auditFinalLineTotalParity(input) {
+  input.progress.phase = 'line_total'
+  input.progress.direction = null
+  input.progress.pageIndexFromLatest = null
+  input.progress.launchNumber = input.launch.number
+  input.sleepGuard.assertHealthy()
+  const oracle = createIndependentExactSoakOracle({
+    ...input.profile,
+    baseTimeMs: input.fixtureClock.baseTimeMs,
+    intervalMs: input.fixtureClock.intervalMs,
+    maximumBatches: input.profile.actualBatches,
+    pageLimit: 10_000,
+  })
+  const independentSourceTotal = oracle.totalFixCount
+  const recentObservations = []
+  let matchingObservations = []
+  let failureClass = 'stability_timeout'
+  try {
+    await restoreFinalBreadcrumbLineMode(input.launch)
+  } catch (error) {
+    if (error?.trackingSoakAuditFailure !== undefined) throw error
+    return {
+      required: true,
+      passed: false,
+      lineModeRestored: false,
+      stableObservationCount: 0,
+      reportedTotalObserved: null,
+      sqlitePositionRows: null,
+      independentSourceTotal,
+      observations: [],
+      failureClass: 'line_mode_unavailable',
+    }
+  }
+
+  const deadline = Date.now() + Math.min(input.timeoutMs, 10_000)
+  while (Date.now() < deadline) {
+    input.sleepGuard.assertHealthy()
+    assertRendererTargetHealthy(input.launch)
+    try {
+      const observation = await readFinalLineTotalObservation({
+        page: input.launch.page,
+        missionId: input.missionId,
+        independentSourceTotal,
+      })
+      recentObservations.push(observation)
+      if (recentObservations.length > 2) recentObservations.shift()
+      if (
+        observation.reportedTotalObserved === independentSourceTotal &&
+        observation.sqlitePositionRows === independentSourceTotal
+      ) {
+        matchingObservations.push(observation)
+      } else {
+        matchingObservations = []
+        failureClass = 'total_mismatch'
+      }
+      if (matchingObservations.length === 2) {
+        const observations = matchingObservations.map(
+          (entry, index) => ({ ...entry, observationIndex: index + 1 }),
+        )
+        return {
+          required: true,
+          passed: true,
+          lineModeRestored: true,
+          stableObservationCount: 2,
+          reportedTotalObserved: observations[1].reportedTotalObserved,
+          sqlitePositionRows: observations[1].sqlitePositionRows,
+          independentSourceTotal,
+          observations,
+          failureClass: null,
+        }
+      }
+    } catch {
+      matchingObservations = []
+      failureClass = 'observation_unavailable'
+    }
+    await delay(250)
+  }
+  const observations = recentObservations.map(
+    (entry, index) => ({ ...entry, observationIndex: index + 1 }),
+  )
+  const last = observations.at(-1)
+  return {
+    required: true,
+    passed: false,
+    lineModeRestored: true,
+    stableObservationCount: matchingObservations.length,
+    reportedTotalObserved: last?.reportedTotalObserved ?? null,
+    sqlitePositionRows: last?.sqlitePositionRows ?? null,
+    independentSourceTotal,
+    observations,
+    failureClass,
+  }
+}
+
+/** Selects Line explicitly, verifies its active style, and closes Devices. */
+async function restoreFinalBreadcrumbLineMode(launch) {
+  const workspace = launch.page.getByTestId('devices-workspace')
+  if (!(await workspace.isVisible())) {
+    await performLaunchOwnedHarnessClick(
+      launch,
+      'open-devices-workspace',
+      () => launch.page.getByTestId('open-devices-workspace').click({
+        timeout: EXACT_PAGE_ACTION_TIMEOUT_MS,
+      }),
+    )
+    await workspace.waitFor({
+      state: 'visible',
+      timeout: EXACT_PAGE_ACTION_TIMEOUT_MS,
+    })
+  }
+  const lineButton = launch.page.getByTestId('breadcrumb-mode-line')
+  await performLaunchOwnedHarnessClick(
+    launch,
+    'breadcrumb-mode-line',
+    () => lineButton.click({ timeout: EXACT_PAGE_ACTION_TIMEOUT_MS }),
+  )
+  const lineButtonClass = await lineButton.getAttribute('class')
+  if (!String(lineButtonClass).includes('sar-segment-option-active')) {
+    throw new Error('Packaged soak could not restore breadcrumb Line mode.')
+  }
+  await performLaunchOwnedHarnessClick(
+    launch,
+    'workspace-close-btn',
+    () => launch.page.getByTestId('workspace-close-btn').click({
+      timeout: EXACT_PAGE_ACTION_TIMEOUT_MS,
+    }),
+  )
+  await workspace.waitFor({ state: 'hidden', timeout: EXACT_PAGE_ACTION_TIMEOUT_MS })
+}
+
+/** Reads one bounded operator summary and mission-store SQLite count. */
+async function readFinalLineTotalObservation(input) {
+  const observation = await input.page.evaluate(
+    async ({ missionId }) => {
+      const missionStore = window.sartrackerElectron?.missionStore
+      if (missionStore === undefined) {
+        throw new Error('Electron mission-store bridge is unavailable.')
+      }
+      return {
+        statusText: document.querySelector(
+          '[data-testid="breadcrumb-display-summary"]',
+        )?.textContent ?? '',
+        sqlitePositionRows: await missionStore.countPositions(missionId),
+      }
+    },
+    { missionId: input.missionId },
+  )
+  const match = /of at least ([\d,]+) known fixes across/u.exec(
+    String(observation.statusText),
+  )
+  const reportedTotalObserved = match === null
+    ? Number.NaN
+    : Number(match[1].replaceAll(',', ''))
+  if (
+    !Number.isSafeInteger(reportedTotalObserved) ||
+    reportedTotalObserved < 0 ||
+    !Number.isSafeInteger(observation.sqlitePositionRows) ||
+    observation.sqlitePositionRows < 0
+  ) {
+    throw new Error('Restored Line total observation is unavailable or invalid.')
+  }
+  return {
+    reportedTotalObserved,
+    sqlitePositionRows: observation.sqlitePositionRows,
+    independentSourceTotal: input.independentSourceTotal,
+  }
+}
+
+/** Measures one production exact-page IPC query without treating it as truth. */
+async function queryExactDotPage(page, input) {
+  const startedAt = performance.now()
+  const result = await page.evaluate(
+    async ({ query, requestId, timeoutMs }) => {
+      const listExactBreadcrumbDotPage =
+        window.sartrackerElectron?.missionStore.listExactBreadcrumbDotPage
+      if (typeof listExactBreadcrumbDotPage !== 'function') {
+        throw new Error('Exact breadcrumb page IPC is unavailable.')
+      }
+      let timeoutHandle
+      const timeout = new Promise((_resolve, reject) => {
+        timeoutHandle = window.setTimeout(
+          () => reject(new Error('Exact breadcrumb page IPC exceeded five seconds.')),
+          timeoutMs,
+        )
+      })
+      try {
+        return await Promise.race([
+          listExactBreadcrumbDotPage(query, requestId),
+          timeout,
+        ])
+      } catch (error) {
+        const cancelExactBreadcrumbDotQuery =
+          window.sartrackerElectron?.missionStore.cancelExactBreadcrumbDotQuery
+        if (typeof cancelExactBreadcrumbDotQuery === 'function') {
+          void cancelExactBreadcrumbDotQuery(requestId).catch(() => undefined)
+        }
+        throw error
+      } finally {
+        window.clearTimeout(timeoutHandle)
+      }
+    },
+    {
+      query: {
+        missionId: input.missionId,
+        activeDeviceIds: [],
+        limit: 10_000,
+        cursor: input.cursor,
+        direction: input.direction,
+      },
+      requestId: `tracking-soak-exact-${Date.now()}-${++exactDotRequestSequence}`,
+      timeoutMs: EXACT_PAGE_ACTION_TIMEOUT_MS,
+    },
+  )
+  return { result, durationMs: performance.now() - startedAt }
+}
+
+/** Waits for one stable exact MapLibre source page and a clean baseline source. */
+async function waitForExactSoakSourcePage(input) {
+  const startedAt = performance.now()
+  const sourceReadStartedAtEpochMs = Date.now()
+  const deadline = Date.now() + input.timeoutMs
+  const expectedPageEvidence = auditIndependentExactSoakPage(
+    input.oracle,
+    input.pageIndexFromLatest,
+    input.oracle.createPage(input.pageIndexFromLatest),
+  )
+  let firstMismatch = null
+  let lastMismatch = null
+  let mismatchObservationCount = 0
+  let firstCoherent = null
+  const recordMismatch = (observation) => {
+    const mismatch = createExactSoakMismatchObservation({
+      sourceEvidence: observation?.source ?? null,
+      operatorEvidence: observation?.operator ?? null,
+      baselineBreadcrumbPointCount:
+        observation?.baselineBreadcrumbPointCount ?? null,
+      loading: observation?.loading === true,
+      refreshing:
+        typeof observation?.refreshing === 'boolean'
+          ? observation.refreshing
+          : null,
+      unavailable: observation?.unavailable === true,
+    })
+    firstMismatch ??= mismatch
+    lastMismatch = mismatch
+    mismatchObservationCount += 1
+  }
+  while (Date.now() < deadline) {
+    input.sleepGuard.assertHealthy()
+    assertRendererTargetHealthy(input.launch)
+    const first = await Promise.race([
+      readExactSoakMapSources(input.page),
+      delay(Math.max(0, deadline - Date.now())).then(() => null),
+    ]).catch(() => null)
+    if (first === null) {
+      recordMismatch(null)
+      firstCoherent = null
+      await delay(50)
+      continue
+    }
+    try {
+      if (first.unavailable) {
+        throw new Error('Exact breadcrumb Dots mode became unavailable.')
+      }
+      if (
+        first.source?.valid !== true ||
+        !Number.isSafeInteger(first.sampledAtEpochMs) ||
+        first.sampledAtEpochMs < sourceReadStartedAtEpochMs ||
+        !Number.isFinite(first.fingerprintDurationMs) ||
+        first.fingerprintDurationMs < 0
+      ) {
+        throw new Error('Exact breadcrumb source fingerprint is invalid.')
+      }
+      assertExactSoakPageEvidenceMatch(
+        expectedPageEvidence,
+        first.source,
+      )
+      assertExactSoakOperatorEvidence(
+        first.operator,
+        expectedPageEvidence,
+        input.oracle.totalFixCount,
+      )
+      if (first.baselineBreadcrumbPointCount !== 0) {
+        throw new Error('Baseline tracking source contained breadcrumb Points.')
+      }
+      if (firstCoherent !== null) {
+        assertExactSoakPageEvidenceMatch(
+          firstCoherent.pageEvidence,
+          first.source,
+        )
+        return {
+          pageEvidence: first.source,
+          baselineBreadcrumbPointCount: 0,
+          sourceReadStartedAtEpochMs,
+          firstFormulaExactSampledAtEpochMs:
+            firstCoherent.sampledAtEpochMs,
+          stableVerificationDurationMs: performance.now() - startedAt,
+          fingerprintDurationMs: Math.max(
+            firstCoherent.fingerprintDurationMs,
+            first.fingerprintDurationMs,
+          ),
+        }
+      }
+      firstCoherent = {
+        pageEvidence: first.source,
+        sampledAtEpochMs: first.sampledAtEpochMs,
+        fingerprintDurationMs: first.fingerprintDurationMs,
+      }
+      await delay(100)
+      continue
+    } catch {
+      recordMismatch(first)
+      firstCoherent = null
+    }
+    await delay(50)
+  }
+  throw createExactSoakPublicationFailure({
+    pageIndexFromLatest: input.pageIndexFromLatest,
+    expected: {
+      positionCount: expectedPageEvidence.positionCount,
+      sha256: expectedPageEvidence.sha256,
+      range: expectedPageEvidence.range,
+    },
+    mismatchObservationCount,
+    firstMismatch,
+    lastMismatch,
+  })
+}
+
+/** Creates one static-message error with a bounded report-safe evidence payload. */
+function createExactSoakPublicationFailure(exactDotPublicationFailure) {
+  const error = new Error(
+    'Timed out waiting for two formula-exact MapLibre breadcrumb observations.',
+  )
+  error.name = 'ExactSoakPublicationError'
+  error.exactDotPublicationFailure = exactDotPublicationFailure
+  return error
+}
+
+/** Creates one static-message exact gate failure with no raw diagnostics. */
+function createExactSoakGateFailure(failureClass, message) {
+  const error = new Error(message)
+  error.exactDotGateFailure = { failureClass }
+  return error
+}
+
+/** Reads only the bounded exact and baseline MapLibre sources plus page summary. */
+async function readExactSoakMapSources(page) {
+  return page.evaluate(readCompactExactSoakMapEvidenceInRenderer)
+}
+
+/** Normalizes production IPC rows into the independent oracle contract. */
+function normalizeExactSoakStoredPage(positions) {
+  if (!Array.isArray(positions)) {
+    throw new Error('Exact breadcrumb IPC page positions are invalid.')
+  }
+  return positions.map((position) => {
+    const sourcePositionId = position?.source_position_id?.trim()
+    const timestampMs = Date.parse(position?.timestamp)
+    if (
+      !/^[1-9]\d*$/u.test(sourcePositionId ?? '') ||
+      typeof position?.device_id !== 'string' ||
+      position.device_id.trim() === '' ||
+      !Number.isFinite(position?.lat) ||
+      position.lat < -90 ||
+      position.lat > 90 ||
+      !Number.isFinite(position?.lon) ||
+      position.lon < -180 ||
+      position.lon > 180 ||
+      !Number.isFinite(timestampMs) ||
+      new Date(timestampMs).toISOString() !== position.timestamp
+    ) {
+      throw new Error('Exact breadcrumb IPC page contains an invalid source fix.')
+    }
+    return {
+      sourcePositionId,
+      deviceId: position.device_id,
+      timestamp: position.timestamp,
+      lat: position.lat,
+      lon: position.lon,
+    }
+  })
+}
+
+/** Checks count and navigation metadata for one independently audited page. */
+function assertExactSoakPageEnvelope(result, oracle, pageEvidence, pageIndex) {
+  const expectedHasEarlier = pageIndex + 1 < oracle.pageCount
+  const expectedHasLater = pageIndex > 0
+  if (
+    result.totalPositionCount !== oracle.totalFixCount ||
+    result.pagePositionCount !== pageEvidence.positionCount ||
+    result.positions.length !== pageEvidence.positionCount ||
+    result.positions.length > oracle.pageLimit ||
+    result.fromTimestamp !== pageEvidence.range.fromTimestamp ||
+    result.toTimestamp !== pageEvidence.range.toTimestamp ||
+    result.hasEarlier !== expectedHasEarlier ||
+    result.hasLater !== expectedHasLater ||
+    (expectedHasEarlier && typeof result.earlierCursor !== 'string') ||
+    (!expectedHasEarlier && result.earlierCursor !== null) ||
+    (expectedHasLater && typeof result.laterCursor !== 'string') ||
+    (!expectedHasLater && result.laterCursor !== null)
+  ) {
+    throw new Error('Exact breadcrumb page count or navigation envelope is invalid.')
+  }
+}
+
+/** Compares bounded exact page identity/time/coordinate digest and range. */
+function assertExactSoakPageEvidenceMatch(left, right) {
+  if (
+    left.positionCount !== right.positionCount ||
+    left.sha256 !== right.sha256 ||
+    JSON.stringify(left.range) !== JSON.stringify(right.range)
+  ) {
+    throw new Error('Exact breadcrumb query and MapLibre source page disagree.')
+  }
+}
+
+/** Checks the operator-visible exact page counts and timestamp range. */
+function assertExactSoakOperatorEvidence(operator, pageEvidence, totalCount) {
+  if (
+    operator?.valid !== true ||
+    operator.pagePositionCount !== pageEvidence.positionCount ||
+    operator.totalPositionCount !== totalCount ||
+    operator.fromTimestamp !== pageEvidence.range.fromTimestamp ||
+    operator.toTimestamp !== pageEvidence.range.toTimestamp
+  ) {
+    throw new Error('Operator exact breadcrumb page summary disagrees with source.')
+  }
+}
+
 async function waitForBackupEvent(page, missionId, timeoutMs) {
   const deadline = Date.now() + timeoutMs
   while (Date.now() < deadline) {
@@ -1289,19 +2765,26 @@ async function waitForBackupEvent(page, missionId, timeoutMs) {
 }
 
 async function closeLaunch(launch, mainRoundTrips, rendererGaps) {
-  if (launch.closed) return
-  launch.closed = true
-  await collectOperatorClickAuditTail(launch)
-  await sampleProcessMemory(launch, { phase: 'launch-close' })
-  await collectLaunchResponsiveness(launch, mainRoundTrips, rendererGaps)
-  launch.mainInspector.close()
-  await launch.browser.close().catch(() => undefined)
-  launch.appProcess.kill('SIGTERM')
-  await waitForExit(launch.appProcess, 10_000)
-  if (launch.appProcess.exitCode === null) {
-    launch.appProcess.kill('SIGKILL')
-    await waitForExit(launch.appProcess, 5_000)
-  }
+  launch.closePromise ??= (async () => {
+    launch.closed = true
+    launch.rendererLifecycle.beginCleanup()
+    await runCleanupStep(() => collectOperatorClickAuditTail(launch), 500)
+    await runCleanupStep(
+      () => sampleProcessMemory(launch, { phase: 'launch-close' }),
+      500,
+    )
+    await runCleanupStep(() => launch.mainInspector.close(), 250)
+    await runCleanupStep(
+      () => collectLaunchResponsiveness(launch, mainRoundTrips, rendererGaps),
+      2_000,
+    )
+    await runCleanupStep(() => launch.browser.close(), 2_000)
+    return stopOwnedProcess(launch.appProcess, {
+      termTimeoutMs: 10_000,
+      killTimeoutMs: 5_000,
+    })
+  })()
+  return launch.closePromise
 }
 
 /** Captures any trusted input that arrives after the launch's final measured sample. */
@@ -1326,7 +2809,6 @@ async function collectOperatorClickAuditTail(launch) {
     afterSequence: launch.operatorClickAuditState.lastSequence,
     interactionStartSequence: snapshot.lastSequence,
   })
-  launch.operatorClickAuditState.lastSequence = audit.lastSequence
   launch.operatorClickAuditTail = {
     ...audit,
     issues: inspectOperatorClickAudit(audit, []),
@@ -1361,11 +2843,22 @@ async function sampleProcessMemory(launch, context = {}) {
     sampledAtMs - launch.processMemory.lastSampleAtMs <
     PROCESS_MEMORY_SAMPLE_INTERVAL_MS
   ) {
-    return
+    return null
   }
   launch.processMemory.lastSampleAtMs = sampledAtMs
   const memory = await readProcessTreeResidentMemory(launch.appProcess.pid)
-  if (memory === null) return
+  if (memory === null) return null
+  return recordProcessMemorySample(
+    launch,
+    memory,
+    context,
+    sampledAtMs,
+  )
+}
+
+/** Records one process-tree RSS observation into bounded launch evidence. */
+function recordProcessMemorySample(launch, memory, context, sampledAtMs) {
+  launch.processMemory.lastSampleAtMs = sampledAtMs
   launch.processMemory.samples += 1
   const sample = {
     observedAt: new Date(sampledAtMs).toISOString(),
@@ -1391,6 +2884,7 @@ async function sampleProcessMemory(launch, context = {}) {
     launch.processMemory.evidenceSamples.push(sample)
     launch.processMemory.lastEvidenceAtMs = sampledAtMs
   }
+  return sample
 }
 
 async function readProcessTreeResidentMemory(rootPid) {
@@ -1694,6 +3188,16 @@ async function connectMainInspector(port, appProcess) {
   })
   let requestId = 0
   const pending = new Map()
+  let closed = false
+  const rejectPending = () => {
+    closed = true
+    for (const request of pending.values()) {
+      request.reject(new Error('Electron main inspector closed.'))
+    }
+    pending.clear()
+  }
+  socket.addEventListener('close', rejectPending)
+  socket.addEventListener('error', rejectPending)
   socket.addEventListener('message', (event) => {
     const message = JSON.parse(String(event.data))
     const request = pending.get(message.id)
@@ -1707,11 +3211,23 @@ async function connectMainInspector(port, appProcess) {
   })
   return {
     evaluate: (expression) => new Promise((resolve, reject) => {
+      if (closed || socket.readyState !== 1) {
+        reject(new Error('Electron main inspector is unavailable.'))
+        return
+      }
       requestId += 1
       pending.set(requestId, { resolve, reject })
-      socket.send(JSON.stringify({ id: requestId, method: 'Runtime.evaluate', params: { expression, returnByValue: true } }))
+      try {
+        socket.send(JSON.stringify({ id: requestId, method: 'Runtime.evaluate', params: { expression, returnByValue: true } }))
+      } catch {
+        pending.delete(requestId)
+        reject(new Error('Electron main inspector is unavailable.'))
+      }
     }),
-    close: () => socket.close(),
+    close: () => {
+      rejectPending()
+      socket.close()
+    },
   }
 }
 
@@ -1746,17 +3262,12 @@ async function findFreePort() {
   })
 }
 
-async function waitForExit(child, timeoutMs) {
-  if (child.exitCode !== null) return
-  await Promise.race([new Promise((resolve) => child.once('exit', resolve)), delay(timeoutMs)])
-}
-
 function assertProcessAlive(child, phase) {
   if (child.trackingSoakLaunchError instanceof Error) {
     throw new Error(`Electron failed to launch during ${phase}: ${child.trackingSoakLaunchError.message}`)
   }
-  if (child.exitCode !== null) {
-    throw new Error(`Electron exited during ${phase} with code ${child.exitCode}.`)
+  if (child.exitCode !== null || child.signalCode !== null) {
+    throw new Error(`Electron exited during ${phase}.`)
   }
 }
 

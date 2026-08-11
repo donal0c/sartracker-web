@@ -41,6 +41,8 @@ import {
 } from '../tracking/start-tracking-runtime'
 import { DEFAULT_DEVICE_STALE_THRESHOLD_MS } from '../tracking/tracking-snapshot-health'
 import { useActiveMissionDevicesStore } from '../tracking/active-mission-devices-store'
+import { startExactBreadcrumbDotRuntime } from '../tracking/start-exact-breadcrumb-dot-runtime'
+import { useExactBreadcrumbDotStore } from '../tracking/exact-breadcrumb-dot-store'
 import type { AppRuntimeController } from './app-runtime-controller'
 import {
   createManagedRuntimeServices,
@@ -80,6 +82,7 @@ type StartAppRuntimeDependencies = {
   readonly startHelicopterRuntime: typeof startHelicopterRuntime
   readonly startGpxRuntime: typeof startGpxRuntime
   readonly startTrackingRuntime: typeof startTrackingRuntime
+  readonly startExactBreadcrumbDotRuntime: typeof startExactBreadcrumbDotRuntime
   readonly createPollingManager: typeof createPollingManager
   readonly startCoreFeatureRuntimes: typeof startCoreFeatureRuntimes
 }
@@ -99,6 +102,7 @@ const DEFAULT_DEPENDENCIES: StartAppRuntimeDependencies = {
   startHelicopterRuntime,
   startGpxRuntime,
   startTrackingRuntime,
+  startExactBreadcrumbDotRuntime,
   createPollingManager,
   startCoreFeatureRuntimes,
 }
@@ -147,9 +151,13 @@ export async function startAppRuntime(
     startHelicopterRuntime: resolvedDependencies.startHelicopterRuntime,
     startGpxRuntime: resolvedDependencies.startGpxRuntime,
   })
+  const stopExactBreadcrumbDots = resolvedDependencies.startExactBreadcrumbDotRuntime(
+    missionStore,
+  )
   try {
     await reloadSettings()
   } catch (error) {
+    stopExactBreadcrumbDots()
     coreFeatureRuntimes.dispose()
     throw error
   }
@@ -173,6 +181,7 @@ export async function startAppRuntime(
       const previousServices = activeServices
       activeServices = createNoopRuntimeServiceHandles()
       stopRuntimeServices(previousServices)
+      stopExactBreadcrumbDots()
       coreFeatureRuntimes.dispose()
     },
   }
@@ -248,6 +257,11 @@ export async function startAppRuntime(
       readTrackingRuntimeConfig,
       applySnapshot: applyTrackingSnapshot,
       applyStatus: applyTrackingStatus,
+      notifyDurablePositionChange: (changedPositionCount) => {
+        useExactBreadcrumbDotStore.getState().controller?.notifyDurableChange(
+          changedPositionCount,
+        )
+      },
     })
 
     if (generation !== reloadGeneration) {

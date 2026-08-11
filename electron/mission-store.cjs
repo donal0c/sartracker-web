@@ -4,6 +4,9 @@ const { randomUUID } = require('node:crypto')
 
 const Database = require('better-sqlite3')
 const { runBreadcrumbQueryInWorker } = require('./breadcrumb-query-runner.cjs')
+const {
+  runBreadcrumbDotQueryInWorker,
+} = require('./breadcrumb-dot-query-runner.cjs')
 const { runSqliteBackupInWorker } = require('./sqlite-backup-runner.cjs')
 const { validateSqliteSnapshotSanity } = require('./sqlite-snapshot-sanity.cjs')
 const { isStrictTrackingTimestamp } = require('./tracking-timestamp.cjs')
@@ -47,8 +50,11 @@ function createElectronMissionStore(options) {
   const storageDiagnostics = options.storageDiagnostics ?? null
   const breadcrumbQueryRunner =
     options.runBreadcrumbQueryInWorker ?? runBreadcrumbQueryInWorker
+  const breadcrumbDotQueryRunner =
+    options.runBreadcrumbDotQueryInWorker ?? runBreadcrumbDotQueryInWorker
   const activeBreadcrumbQueryControllers = new Set()
   const breadcrumbQueryControllersByRequestId = new Map()
+  const breadcrumbDotQueryControllersByRequestId = new Map()
   let breadcrumbQueryTail = Promise.resolve()
   const db = new Database(databasePath)
   db.pragma('journal_mode = WAL')
@@ -85,6 +91,7 @@ function createElectronMissionStore(options) {
       }
       activeBreadcrumbQueryControllers.clear()
       breadcrumbQueryControllersByRequestId.clear()
+      breadcrumbDotQueryControllersByRequestId.clear()
       db.close()
     },
     info: async () => ({
@@ -223,6 +230,64 @@ function createElectronMissionStore(options) {
     cancelBreadcrumbQuery: async (requestId) => {
       const normalizedRequestId = normalizeBreadcrumbQueryRequestId(requestId, true)
       const activeQuery = breadcrumbQueryControllersByRequestId.get(normalizedRequestId)
+      if (activeQuery === undefined) {
+        return false
+      }
+      activeQuery.controller.abort()
+      await activeQuery.completion.catch(() => undefined)
+      return true
+    },
+    listExactBreadcrumbDotPage: async (input, requestId) => {
+      const normalizedRequestId = normalizeBreadcrumbQueryRequestId(requestId, false)
+      if (
+        normalizedRequestId !== null &&
+        breadcrumbDotQueryControllersByRequestId.has(normalizedRequestId)
+      ) {
+        throw new Error('Exact breadcrumb-dot query request ID is already active.')
+      }
+      const controller = new AbortController()
+      const query = breadcrumbQueryTail.then(() =>
+        breadcrumbDotQueryRunner({
+          databasePath,
+          query: input,
+          signal: controller.signal,
+        }),
+      )
+      breadcrumbQueryTail = query.then(
+        () => undefined,
+        () => undefined,
+      )
+      const activeQuery = { controller, completion: query }
+      activeBreadcrumbQueryControllers.add(controller)
+      if (normalizedRequestId !== null) {
+        breadcrumbDotQueryControllersByRequestId.set(normalizedRequestId, activeQuery)
+      }
+      try {
+        const result = await query
+        return {
+          positions: result.positions,
+          totalPositionCount: result.totalPositionCount,
+          pagePositionCount: result.pagePositionCount,
+          fromTimestamp: result.fromTimestamp,
+          toTimestamp: result.toTimestamp,
+          hasEarlier: result.hasEarlier,
+          hasLater: result.hasLater,
+          earlierCursor: result.earlierCursor,
+          laterCursor: result.laterCursor,
+        }
+      } finally {
+        activeBreadcrumbQueryControllers.delete(controller)
+        if (
+          normalizedRequestId !== null &&
+          breadcrumbDotQueryControllersByRequestId.get(normalizedRequestId) === activeQuery
+        ) {
+          breadcrumbDotQueryControllersByRequestId.delete(normalizedRequestId)
+        }
+      }
+    },
+    cancelExactBreadcrumbDotQuery: async (requestId) => {
+      const normalizedRequestId = normalizeBreadcrumbQueryRequestId(requestId, true)
+      const activeQuery = breadcrumbDotQueryControllersByRequestId.get(normalizedRequestId)
       if (activeQuery === undefined) {
         return false
       }

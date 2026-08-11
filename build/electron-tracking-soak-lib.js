@@ -5,6 +5,8 @@
 
 import { createHash } from 'node:crypto'
 
+import { validateExtendedExactSoakProof } from './electron-tracking-soak-exact-proof-lib.js'
+
 const PROFILE_DEFINITIONS = Object.freeze({
   ci: Object.freeze({
     actualBatches: 6,
@@ -53,6 +55,46 @@ export function createTrackingSoakProfile(name) {
     restartCheckpoints: [...definition.restartCheckpoints],
     recommendedPollIntervalMs: definition.recommendedPollIntervalMs,
   })
+}
+
+/**
+ * Revalidates the final operator-visible Line total against both SQLite and
+ * independent deterministic source truth across two consecutive observations.
+ */
+export function validateFinalLineTotalAudit(audit, profile, positionRows) {
+  const failureReasons = []
+  if (profile?.name !== 'extended') {
+    return { passed: true, failureReasons }
+  }
+  const expectedTotal = profile.expectedPositionRows
+  const observations = Array.isArray(audit?.observations)
+    ? audit.observations
+    : []
+  const observationsMatch =
+    observations.length === 2 &&
+    observations.every(
+      (observation, index) =>
+        observation?.observationIndex === index + 1 &&
+        observation.reportedTotalObserved === expectedTotal &&
+        observation.sqlitePositionRows === expectedTotal &&
+        observation.independentSourceTotal === expectedTotal,
+    )
+  if (
+    audit?.required !== true ||
+    audit?.passed !== true ||
+    audit?.lineModeRestored !== true ||
+    audit?.stableObservationCount !== 2 ||
+    audit?.reportedTotalObserved !== expectedTotal ||
+    audit?.sqlitePositionRows !== expectedTotal ||
+    audit?.independentSourceTotal !== expectedTotal ||
+    positionRows !== expectedTotal ||
+    !observationsMatch
+  ) {
+    failureReasons.push(
+      'Two stable restored-Line totals must exactly match SQLite and independent source truth.',
+    )
+  }
+  return { passed: failureReasons.length === 0, failureReasons }
 }
 
 /** Parses the fail-closed packaged soak command line. */
@@ -156,6 +198,19 @@ export function buildTrackingSoakVerdict(input) {
   }
   if (input.normalPrefixTruthExactMatch !== true) {
     failureReasons.push('The shared five-day position truth did not match across soak profiles.')
+  }
+  if (input.profile.name === 'extended') {
+    failureReasons.push(
+      ...validateExtendedExactSoakProof(
+        input.exactDotProof,
+        input.profile,
+      ).failureReasons,
+      ...validateFinalLineTotalAudit(
+        input.finalLineTotalAudit,
+        input.profile,
+        input.positionRows,
+      ).failureReasons,
+    )
   }
   requireAtLeast(failureReasons, input.operationalMissionEvents, 1, 'operational mission events')
   if (input.operationalMissionEvents > input.declaredOperationalEventBudget) {

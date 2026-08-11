@@ -148,6 +148,10 @@ export function createBreadcrumbAccumulator(
     for (const position of positions) {
       mergePosition(deviceStates, decorateWithTimestamp(position))
     }
+    for (const deviceState of deviceStates.values()) {
+      deviceState.canonicalBaselineLatestTimestampMs =
+        deviceState.chronological.at(-1)?.timestampMs ?? null
+    }
     for (const [deviceId, totalObserved] of Object.entries(totalObservedByDevice)) {
       const deviceState = deviceStates.get(deviceId)
       if (
@@ -307,6 +311,7 @@ type DeviceTrailState = {
   baselineGeometryErrorBoundMetres: number | null
   baselineTargetGeometryErrorSatisfied: boolean
   unresolvedObservedCount: number
+  canonicalBaselineLatestTimestampMs: number | null
   selectorTimeBucketWidthMs: number | null
   selectorSpatialBucketWidthDegrees: number | null
 }
@@ -386,6 +391,7 @@ function mergePosition(
       baselineGeometryErrorBoundMetres: 0,
       baselineTargetGeometryErrorSatisfied: true,
       unresolvedObservedCount: 0,
+      canonicalBaselineLatestTimestampMs: null,
       selectorTimeBucketWidthMs: null,
       selectorSpatialBucketWidthDegrees: null,
     }
@@ -443,7 +449,19 @@ function mergePosition(
 
   deviceState.byKey.set(key, entry)
   deviceState.seenIdentities.add(entry.position)
-  if (resolveObservedBaseline && deviceState.unresolvedObservedCount > 0) {
+  const baselineResolutionRequested =
+    resolveObservedBaseline || deviceState.unresolvedObservedCount > 0
+  // A canonical projection may omit authoritative fixes from its <=5k
+  // representatives. Only unseen identities inside that canonical time
+  // boundary can discharge the unresolved persisted total; an identity after
+  // the boundary is genuinely new and must increase the observed total even
+  // when it shares a reconciliation batch with omitted baseline fixes.
+  if (
+    baselineResolutionRequested &&
+    deviceState.unresolvedObservedCount > 0 &&
+    deviceState.canonicalBaselineLatestTimestampMs !== null &&
+    entry.timestampMs <= deviceState.canonicalBaselineLatestTimestampMs
+  ) {
     deviceState.unresolvedObservedCount -= 1
   } else {
     deviceState.totalObserved += 1

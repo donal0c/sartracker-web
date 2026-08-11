@@ -40,6 +40,8 @@ const MISSION_STORE_CHANNELS = {
   listRecentPositions: 'sartracker:mission-store:list-recent-positions',
   listBreadcrumbPositions: 'sartracker:mission-store:list-breadcrumb-positions',
   cancelBreadcrumbQuery: 'sartracker:mission-store:cancel-breadcrumb-query',
+  listExactBreadcrumbDotPage: 'sartracker:mission-store:list-exact-breadcrumb-dot-page',
+  cancelExactBreadcrumbDotQuery: 'sartracker:mission-store:cancel-exact-breadcrumb-dot-query',
   listTrackingHistoryCheckpoints: 'sartracker:mission-store:list-tracking-history-checkpoints',
   countPositions: 'sartracker:mission-store:count-positions',
   latestPositions: 'sartracker:mission-store:latest-positions',

@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { TrackingStatusPanel } from '../../src/components/tracking-status-panel'
 import { useDeviceWorkspaceStore } from '../../src/features/tracking/device-workspace-store'
 import { useTrackingStore } from '../../src/features/tracking/tracking-store'
+import { useTrackingStyleStore } from '../../src/features/tracking/tracking-style-store'
 
 let root: Root | null = null
 let host: HTMLDivElement | null = null
@@ -20,6 +21,7 @@ describe('TrackingStatusPanel', () => {
     host = null
     useTrackingStore.setState(useTrackingStore.getInitialState())
     useDeviceWorkspaceStore.setState(useDeviceWorkspaceStore.getInitialState())
+    useTrackingStyleStore.setState(useTrackingStyleStore.getInitialState())
   })
 
   it('renders offline tracking mode and OFFLINE MODE warning as a flashing red alert', () => {
@@ -170,7 +172,84 @@ describe('TrackingStatusPanel', () => {
       'Displayed route error may be up to 43 metres for this route',
     )
   })
+
+  it('shows exact-dot paging in dots mode without presenting the line simplification warning as dot semantics', () => {
+    seedSimplifiedLineMetadata()
+    useTrackingStyleStore.setState({ breadcrumbTrailMode: 'dots' })
+    const TrackingStatusPanelWithExactDots = TrackingStatusPanel as React.ComponentType<{
+      readonly exactBreadcrumbDotState: {
+        readonly status: 'ready'
+        readonly totalPositionCount: number
+        readonly pagePositionCount: number
+        readonly fromTimestamp: string
+        readonly toTimestamp: string
+        readonly hasEarlier: boolean
+        readonly hasLater: boolean
+      }
+      readonly onExactBreadcrumbDotsEarlier: () => void
+      readonly onExactBreadcrumbDotsLater: () => void
+    }>
+
+    render(React.createElement(TrackingStatusPanelWithExactDots, {
+      exactBreadcrumbDotState: {
+        status: 'ready',
+        totalPositionCount: 10_001,
+        pagePositionCount: 10_000,
+        fromTimestamp: '2026-08-08T00:00:00.000Z',
+        toTimestamp: '2026-08-09T12:00:00.000Z',
+        hasEarlier: true,
+        hasLater: false,
+      },
+      onExactBreadcrumbDotsEarlier: () => undefined,
+      onExactBreadcrumbDotsLater: () => undefined,
+    }))
+
+    expect(document.querySelector('[data-testid="breadcrumb-display-summary"]')).toBeNull()
+    expect(getText('[data-testid="exact-breadcrumb-dot-page-summary"]')).toBe(
+      'Showing 10,000 exact fixes of 10,001 — 2026-08-08T00:00:00.000Z to 2026-08-09T12:00:00.000Z',
+    )
+  })
+
+  it('keeps line simplification and route-error disclosure unchanged in line mode', () => {
+    seedSimplifiedLineMetadata()
+    useTrackingStyleStore.setState({ breadcrumbTrailMode: 'line' })
+
+    render(React.createElement(TrackingStatusPanel))
+
+    expect(getText('[data-testid="breadcrumb-display-summary"]')).toContain(
+      'Trail display simplified: showing 5,000 of at least 12,000 known fixes',
+    )
+    expect(getText('[data-testid="breadcrumb-display-summary"]')).toContain(
+      'Displayed route error may be up to 43 metres for this route',
+    )
+    expect(document.querySelector('[data-testid="exact-breadcrumb-dot-page-summary"]')).toBeNull()
+  })
 })
+
+function seedSimplifiedLineMetadata(): void {
+  useTrackingStore.setState((state) => ({
+    snapshot: {
+      ...state.snapshot,
+      breadcrumbMetadata: {
+        totalRetained: 5_000,
+        totalObserved: 12_000,
+        deviceBudgets: [
+          {
+            deviceId: 'tracker-1',
+            retained: 5_000,
+            sourceRetained: 12_000,
+            total: 12_000,
+            firstTimestamp: '2026-07-28T00:00:00.000Z',
+            lastTimestamp: '2026-07-28T16:39:55.000Z',
+            truncated: true,
+            geometryErrorBoundMetres: 42.1,
+            targetGeometryErrorSatisfied: false,
+          },
+        ],
+      },
+    },
+  }))
+}
 
 function render(element: React.ReactElement): void {
   host = document.createElement('div')

@@ -10,9 +10,11 @@ import {
 } from '../map/map-overlay-primitives'
 import {
   DEFAULT_BREADCRUMB_LINE_GAP_THRESHOLD_MS,
+  createExactBreadcrumbDotFeatureCollection,
   createTrackingFeatureCollectionDataKey,
   createTrackingFeatureCollection,
 } from './tracking-geojson'
+import type { ExactBreadcrumbDotState } from './exact-breadcrumb-dot-controller'
 import {
   DEFAULT_BREADCRUMB_SIZE,
   DEFAULT_BREADCRUMB_TRAIL_MODE,
@@ -22,6 +24,7 @@ import {
 import type { TrackingSnapshot } from './tracking-types'
 
 export const TRACKING_SOURCE_ID = 'tracking'
+export const TRACKING_EXACT_BREADCRUMB_DOTS_SOURCE_ID = 'tracking-breadcrumb-dots-exact'
 export const TRACKING_BREADCRUMB_CASING_LAYER_ID = 'tracking-breadcrumbs-casing'
 export const TRACKING_BREADCRUMB_DOTS_LAYER_ID = 'tracking-breadcrumbs-dots'
 export const TRACKING_DEVICE_HALO_LAYER_ID = 'tracking-devices-halo'
@@ -52,6 +55,7 @@ const IS_BREADCRUMB_LINE_FEATURE: MapOverlayFilter = [
   ['==', ['get', 'featureKind'], 'breadcrumbLine'],
 ]
 const HIDDEN_TRACKING_FEATURE_FILTER: MapOverlayFilter = ['==', ['get', 'deviceId'], '__hidden__']
+const trackingSnapshotsWithoutBreadcrumbs = new WeakMap<TrackingSnapshot, TrackingSnapshot>()
 
 /**
  * Synchronizes tracking source/layers and applies the current device visibility filters.
@@ -67,13 +71,18 @@ export function syncTrackingOverlay(
     breadcrumbSize: DEFAULT_BREADCRUMB_SIZE,
     breadcrumbTrailMode: DEFAULT_BREADCRUMB_TRAIL_MODE,
   },
+  exactBreadcrumbDotState: ExactBreadcrumbDotState = { status: 'inactive' },
 ): void {
   const breadcrumbSize = clampBreadcrumbSize(style.breadcrumbSize)
   const breadcrumbDotRadius = breadcrumbSize / 2
+  const baselineSnapshot =
+    style.breadcrumbTrailMode === 'dots'
+      ? withoutBreadcrumbs(snapshot)
+      : snapshot
   const sourceDataKey = createMapOverlayDataKey([
     'tracking',
     createTrackingFeatureCollectionDataKey(
-      snapshot,
+      baselineSnapshot,
       DEFAULT_BREADCRUMB_LINE_GAP_THRESHOLD_MS,
       style,
     ),
@@ -84,13 +93,39 @@ export function syncTrackingOverlay(
     {
       build: () =>
         createTrackingFeatureCollection(
-          snapshot,
+          baselineSnapshot,
           DEFAULT_BREADCRUMB_LINE_GAP_THRESHOLD_MS,
           style,
         ),
     },
     {
       dataKey: sourceDataKey,
+    },
+  )
+  const exactDotPositions =
+    exactBreadcrumbDotState.status === 'ready'
+      ? exactBreadcrumbDotState.positions
+      : []
+  ensureGeoJsonSource(
+    map,
+    TRACKING_EXACT_BREADCRUMB_DOTS_SOURCE_ID,
+    {
+      build: () =>
+        createExactBreadcrumbDotFeatureCollection(exactDotPositions, style),
+    },
+    {
+      dataKey: createMapOverlayDataKey([
+        'tracking-exact-breadcrumb-dots',
+        exactBreadcrumbDotState.status,
+        exactBreadcrumbDotState.status === 'ready'
+          ? exactBreadcrumbDotState.positions
+          : exactBreadcrumbDotState.status === 'unavailable'
+            ? exactBreadcrumbDotState.message
+            : exactBreadcrumbDotState.status === 'loading'
+              ? exactBreadcrumbDotState.missionId
+              : '',
+        style.deviceColors,
+      ]),
     },
   )
 
@@ -131,7 +166,7 @@ export function syncTrackingOverlay(
   ensureLayer(map, {
     id: TRACKING_BREADCRUMB_DOTS_LAYER_ID,
     type: 'circle',
-    source: TRACKING_SOURCE_ID,
+    source: TRACKING_EXACT_BREADCRUMB_DOTS_SOURCE_ID,
     filter: IS_BREADCRUMB_POINT_FEATURE,
     paint: {
       'circle-color': ['get', 'color'],
@@ -247,4 +282,18 @@ export function syncTrackingOverlay(
     TRACKING_DEVICE_LABEL_LAYER_ID,
     combineMapFilters(IS_DEVICE_POINT_FEATURE, currentLocationVisibilityFilter),
   )
+}
+
+function withoutBreadcrumbs(snapshot: TrackingSnapshot): TrackingSnapshot {
+  const existing = trackingSnapshotsWithoutBreadcrumbs.get(snapshot)
+  if (existing !== undefined) {
+    return existing
+  }
+  const next: TrackingSnapshot = {
+    ...snapshot,
+    breadcrumbs: [],
+    rawBreadcrumbsForPersistence: [],
+  }
+  trackingSnapshotsWithoutBreadcrumbs.set(snapshot, next)
+  return next
 }

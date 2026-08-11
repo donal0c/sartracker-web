@@ -23,6 +23,7 @@ import {
   analyzeBreadcrumbCheckpointProgress,
   analyzeBreadcrumbRequestCoverage,
   analyzeTransientHistoryRetries,
+  buildBreadcrumb36HourExactDotPageOracle,
   buildBreadcrumb36HourProofVerdict,
   buildBreadcrumb36HourRenderedOracle,
   buildBreadcrumb36HourVariableSpeedEvidence,
@@ -30,6 +31,8 @@ import {
   cleanupOwnedProcess,
   createPersistedBreadcrumbEvidenceAccumulator,
   createRenderedBreadcrumbEvidence,
+  measureExactBreadcrumbDotRenderedDeviation,
+  normalizeRenderedExactBreadcrumbDotFeaturesForAudit,
   parseBreadcrumb36HourProofArgs,
   processExited,
   summarizeBreadcrumbRequestLedger,
@@ -107,11 +110,14 @@ async function main() {
   let mission = null
   let sourceTruth = null
   let renderedOracle = null
+  let exactDotOracle = null
   let variableSpeedEvidence = null
   let midBackfillCheckpoint = null
   let forcedTermination = null
   let midBackfillPersisted = null
   let recoveredMission = null
+  let recoveryExactDotActivation = null
+  let finalHistoryCheckpoints = null
   let failureRuntimeEvidence = null
   try {
     launch = await launchPackagedApp(options, userDataDir, {
@@ -128,6 +134,11 @@ async function main() {
       expectedPollIntervalMs: options.normalPollIntervalMs,
     })
     await installTrackingSetDataCapture(launch.page)
+    await launch.page.getByTestId('open-devices-workspace').click({ force: true })
+    await launch.page.getByTestId('devices-workspace').waitFor({ state: 'visible' })
+    await launch.page.getByTestId('breadcrumb-mode-dots').click({ force: true })
+    await launch.page.keyboard.press('Escape')
+    await launch.page.getByTestId('devices-workspace').waitFor({ state: 'hidden' })
     const missionStartedByProofAtMs = Date.now()
     await launch.page.getByTestId('mission-name-input').fill(
       'Deterministic 36-hour Breadcrumb Proof',
@@ -146,6 +157,10 @@ async function main() {
       from: mission.start_time,
       to: profile.sourceNow,
     })
+    exactDotOracle = buildBreadcrumb36HourExactDotPageOracle(profile, {
+      from: mission.start_time,
+      to: profile.sourceNow,
+    }, { pageLimit: 10_000 })
     variableSpeedEvidence = buildBreadcrumb36HourVariableSpeedEvidence(profile, {
       from: mission.start_time,
       to: profile.sourceNow,
@@ -189,6 +204,12 @@ async function main() {
       30_000,
     )
     recordPhase('recoveredMissionResumed')
+    recoveryExactDotActivation = await activateExactBreadcrumbDotProofMode({
+      page: launch.page,
+      observedFromMs: recoveryObservedFromMs,
+      timeoutMs: options.reconciliationTimeoutMs,
+    })
+    recordPhase('recoveryExactDotsReady')
     const milestones = await waitForTrackingMilestones({
       page: launch.page,
       mockServer,
@@ -205,28 +226,17 @@ async function main() {
       timeoutMs: options.persistenceTimeoutMs,
     })
     recordPhase('reconciliationPersistenceComplete')
-    const firstRendered = createRenderedBreadcrumbEvidence(
-      await readTrackingEvidenceCollection(launch.page),
-    )
-    await launch.page.waitForTimeout(250)
-    const secondRendered = createRenderedBreadcrumbEvidence(
-      await readTrackingEvidenceCollection(launch.page),
-    )
-    const completionCapture = await readTrackingSetDataCapture(launch.page)
-    const rendered = {
-      ...secondRendered,
-      capturedSetDataUpdateCount: completionCapture.updateCount,
-      stable:
-        firstRendered.featureCount === secondRendered.featureCount &&
-        firstRendered.coordinateCount === secondRendered.coordinateCount &&
-        firstRendered.coordinateSha256 === secondRendered.coordinateSha256,
-      firstObservation: firstRendered,
-    }
-    const renderedDots = await captureStableBreadcrumbDotEvidence({
+    const completionEvidence = await captureStableBreadcrumbDotEvidence({
       page: launch.page,
-      expectedDots: renderedOracle.dotRendered,
+      exactDotOracle,
       expectedLine: renderedOracle.rendered,
+      dotsScreenshotPath: path.join(
+        evidenceDir,
+        'packaged-36-hour-exact-dots-complete.png',
+      ),
     })
+    const renderedDots = completionEvidence.dots
+    const rendered = completionEvidence.line
     const reconciliationRequestSnapshot = milestones.requestSnapshot
     const requestEvidence = {
       deviceRequestCount: reconciliationRequestSnapshot.requestLedger.filter(
@@ -258,16 +268,25 @@ async function main() {
     await waitForMockIdle(mockServer, 10_000)
 
     const persisted = inspectPersistedBreadcrumbs(databasePath, mission.id)
+    finalHistoryCheckpoints = inspectHistoryCheckpointEvidenceSafely({
+      databasePath,
+      missionId: mission.id,
+      deviceIds: profile.devices.map((device) => device.id),
+      requiredFrom: mission.start_time,
+      requiredTo: profile.sourceNow,
+    })
     const baseVerdict = buildBreadcrumb36HourProofVerdict({
       normalPollIntervalMs: options.normalPollIntervalMs,
       timings,
       coverage: milestones.coverage,
+      historyCheckpoints: finalHistoryCheckpoints,
       requestEvidence,
       sourceTruth,
       persisted,
       rendered,
       renderedDots,
       renderedOracle,
+      exactDotOracle,
       variableSpeedEvidence,
     })
 
@@ -313,12 +332,34 @@ async function main() {
         30_000,
         recordRestartPhase,
       )
-      const postCompletionRendered = await waitForStableSerializedTrackingEvidence({
+      const postRestartExactDotActivation =
+        await activateExactBreadcrumbDotProofMode({
+          page: launch.page,
+          observedFromMs: postRestartObservedFromMs,
+          timeoutMs: 10_000,
+        })
+      const postCompletionExactDots =
+        await captureLatestExactBreadcrumbDotEvidence({
+          page: launch.page,
+          expected: exactDotOracle.pages[0].rendered,
+          totalPositionCount: exactDotOracle.totalPositionCount,
+          modeActivation: postRestartExactDotActivation,
+          observedFromMs: postRestartObservedFromMs,
+          timeoutMs: 10_000,
+        })
+      recordRestartPhase('exactDotsObserved')
+      await activateBreadcrumbLineProofMode(launch.page)
+      const postCompletionRenderedEvidence = await waitForStableSerializedTrackingEvidence({
         page: launch.page,
         expected: renderedOracle.rendered,
         timeoutMs: 10_000,
         observedFromMs: postRestartObservedFromMs,
       })
+      const postCompletionRendered = {
+        ...postCompletionRenderedEvidence,
+        reportedTotalObserved:
+          await readReportedLineBreadcrumbTotalObserved(launch.page),
+      }
       recordRestartPhase('stableRenderObserved')
       await launch.page.screenshot({
         path: path.join(
@@ -341,6 +382,7 @@ async function main() {
         missionId: postRestartMission.id,
         phaseTimestamps: restartPhaseTimestamps,
         rendered: postCompletionRendered,
+        exactDots: postCompletionExactDots,
         persisted: postCompletionPersisted,
         requestCountAfterRestart,
       })
@@ -363,6 +405,8 @@ async function main() {
         postCompletionPersisted: restart.persisted,
         completedRendered: rendered,
         postCompletionRendered: restart.rendered,
+        exactDotOracle,
+        postCompletionExactDots: restart.exactDots,
         restoredMissionMatches:
           recoveredMission.id === mission.id && restart.missionId === mission.id,
         postCompletionRenderMs: restart.rendered.observedMs,
@@ -423,6 +467,7 @@ async function main() {
         },
         retryEvidence,
         recoveredMissionId: recoveredMission.id,
+        recoveryExactDotActivation,
         postCompletionRestart: postCompletionRestarts[0],
         postCompletionRestarts,
         verdict: restartVerdict,
@@ -430,8 +475,10 @@ async function main() {
       timings,
       sourceTruth,
       renderedOracle,
+      exactDotOracle,
       variableSpeedEvidence,
       coverage: milestones.coverage,
+      historyCheckpoints: finalHistoryCheckpoints,
       requestEvidence,
       persisted,
       rendered,
@@ -501,23 +548,19 @@ async function main() {
         mission === null
           ? null
           : inspectPersistedBreadcrumbsSafely(databasePath, mission.id)
-      const checkpointsAtFailure =
+      const historyCheckpointsAtFailure =
         mission === null
           ? null
-          : inspectHistoryCheckpointsSafely(databasePath, mission.id)
-      const requiredDeviceIds = profile.devices.map((device) => device.id)
-      const onlineDeviceIds = profile.devices
-        .filter((device) => device.status === 'online')
-        .map((device) => device.id)
-      const checkpointProgress =
-        mission === null || !Array.isArray(checkpointsAtFailure?.checkpoints)
-          ? null
-          : analyzeBreadcrumbCheckpointProgress({
-              checkpoints: checkpointsAtFailure.checkpoints,
-              deviceIds: requiredDeviceIds,
+          : inspectHistoryCheckpointEvidenceSafely({
+              databasePath,
+              missionId: mission.id,
+              deviceIds: profile.devices.map((device) => device.id),
               requiredFrom: mission.start_time,
               requiredTo: profile.sourceNow,
             })
+      const onlineDeviceIds = profile.devices
+        .filter((device) => device.status === 'online')
+        .map((device) => device.id)
       const requestCoverage =
         mission === null
           ? null
@@ -556,17 +599,19 @@ async function main() {
           : { id: mission.id, startTime: mission.start_time },
         sourceTruth,
         renderedOracle,
+        exactDotOracle,
         resilience: {
           midBackfillCheckpoint,
           forcedTermination,
           persistedAfterMidBackfillKill: midBackfillPersisted,
           recoveredMissionId: recoveredMission?.id ?? null,
+          recoveryExactDotActivation,
         },
         partialStateAtFailure: {
           runtime: failureRuntimeEvidence,
           persisted: persistedAtFailure,
-          checkpoints: checkpointsAtFailure,
-          checkpointProgress,
+          checkpoints: historyCheckpointsAtFailure,
+          checkpointProgress: historyCheckpointsAtFailure?.progress ?? null,
           requestCoverage,
         },
         requestSummary: summarizeBreadcrumbRequestLedger(
@@ -586,31 +631,631 @@ async function main() {
   }
 }
 
+async function activateExactBreadcrumbDotProofMode(input) {
+  await input.page.getByTestId('open-devices-workspace').click({ force: true })
+  await input.page.getByTestId('devices-workspace').waitFor({ state: 'visible' })
+  const dotsMode = input.page.getByTestId('breadcrumb-mode-dots')
+  await dotsMode.click({ force: true })
+  const sizeLabel = input.page.getByTestId('breadcrumb-size-label')
+  const [sizeLabelText, dotsModeClass] = await Promise.all([
+    sizeLabel.textContent(),
+    dotsMode.getAttribute('class'),
+  ])
+  if (
+    !String(sizeLabelText ?? '').includes('dot diameter') ||
+    !String(dotsModeClass ?? '').includes('sar-segment-option-active')
+  ) {
+    throw new Error('Packaged recovery did not activate exact breadcrumb Dots mode.')
+  }
+  await input.page.keyboard.press('Escape')
+  await input.page.getByTestId('devices-workspace').waitFor({ state: 'hidden' })
+
+  const deadline = input.observedFromMs + input.timeoutMs
+  while (Date.now() < deadline) {
+    assertProcessAlive(input.page)
+    if (await input.page.getByTestId('exact-breadcrumb-dots-unavailable').isVisible()) {
+      const message = await input.page
+        .getByTestId('exact-breadcrumb-dots-unavailable')
+        .textContent()
+      throw new Error(
+        `Exact breadcrumb Dots mode was unavailable after recovery: ${String(message ?? '').trim()}`,
+      )
+    }
+    const summaryElement = input.page.getByTestId('exact-breadcrumb-dot-page-summary')
+    if (await summaryElement.isVisible()) {
+      const operatorPage = parseExactBreadcrumbDotPageSummary(
+        await summaryElement.textContent(),
+      )
+      const collection = await readExactBreadcrumbDotSourceCollection(input.page)
+      const sourceFeatureCount = (collection.features ?? []).filter(
+        (feature) =>
+          feature?.properties?.featureKind === 'breadcrumb' &&
+          feature?.geometry?.type === 'Point',
+      ).length
+      if (
+        operatorPage.pagePositionCount > 0 &&
+        sourceFeatureCount === operatorPage.pagePositionCount
+      ) {
+        return {
+          observedMs: Date.now() - input.observedFromMs,
+          selectedMode: 'dots',
+          sizeLabel: String(sizeLabelText).trim(),
+          sourceFeatureCount,
+          operatorPage,
+        }
+      }
+    }
+    await input.page.waitForTimeout(50)
+  }
+  throw new Error(
+    'Timed out waiting for exact breadcrumb Dots mode to expose its operator summary and MapLibre source after recovery.',
+  )
+}
+
 async function captureStableBreadcrumbDotEvidence(input) {
   await input.page.getByTestId('open-devices-workspace').click({ force: true })
   await input.page.getByTestId('devices-workspace').waitFor({ state: 'visible' })
   await input.page.getByTestId('breadcrumb-mode-dots').click({ force: true })
   await input.page.keyboard.press('Escape')
   await input.page.getByTestId('devices-workspace').waitFor({ state: 'hidden' })
-  const dots = await waitForStableSerializedTrackingEvidence({
-    page: input.page,
-    expected: input.expectedDots,
-    observedFromMs: Date.now(),
-    timeoutMs: 10_000,
+  const capturedPages = []
+  const seenFeatureIds = new Set()
+  let duplicateFeatureIdCount = 0
+  let invalidFeatureCount = 0
+  let maximumPageObservedMs = 0
+  const observedPageSummaries = []
+  for (let pageIndex = 0; pageIndex < input.exactDotOracle.pages.length; pageIndex += 1) {
+    const observed = await waitForStableExactBreadcrumbDotPage({
+      page: input.page,
+      expected: input.exactDotOracle.pages[pageIndex].rendered,
+      observedFromMs: Date.now(),
+      timeoutMs: 10_000,
+    })
+    maximumPageObservedMs = Math.max(maximumPageObservedMs, observed.observedMs)
+    invalidFeatureCount += observed.invalidFeatureCount
+    const pageSummaryText = await input.page
+      .getByTestId('exact-breadcrumb-dot-page-summary')
+      .textContent()
+    const pageSummary = parseExactBreadcrumbDotPageSummary(pageSummaryText)
+    if (
+      pageSummary.pagePositionCount !== observed.featureCount ||
+      pageSummary.totalPositionCount !== input.exactDotOracle.totalPositionCount ||
+      pageSummary.fromTimestamp !== observed.fromTimestamp ||
+      pageSummary.toTimestamp !== observed.toTimestamp
+    ) {
+      throw new Error(
+        `Operator exact-dot page summary disagreed with page ${pageIndex + 1} source evidence.`,
+      )
+    }
+    observedPageSummaries.push(pageSummary)
+    for (const featureId of observed.featureIds) {
+      if (seenFeatureIds.has(featureId)) {
+        duplicateFeatureIdCount += 1
+      }
+      seenFeatureIds.add(featureId)
+    }
+    capturedPages.push({ ...observed, operatorPage: pageSummary })
+    if (pageIndex + 1 < input.exactDotOracle.pages.length) {
+      await input.page.getByTestId('exact-breadcrumb-dots-earlier').click({ force: true })
+    }
+  }
+
+  const unionDigest = createHash('sha256')
+  for (const page of [...capturedPages].reverse()) {
+    for (const line of page.canonicalLines) {
+      unionDigest.update(line)
+    }
+  }
+
+  const returnNavigation = []
+  for (let pageIndex = capturedPages.length - 2; pageIndex >= 0; pageIndex -= 1) {
+    await input.page.getByTestId('exact-breadcrumb-dots-later').click({ force: true })
+    const observed = await waitForStableExactBreadcrumbDotPage({
+      page: input.page,
+      expected: input.exactDotOracle.pages[pageIndex].rendered,
+      observedFromMs: Date.now(),
+      timeoutMs: 10_000,
+    })
+    maximumPageObservedMs = Math.max(maximumPageObservedMs, observed.observedMs)
+    returnNavigation.push({ pageIndex, observedMs: observed.observedMs })
+  }
+
+  const later = input.page.getByTestId('exact-breadcrumb-dots-later')
+  const returnedToLatest = await later.isDisabled()
+  await input.page.screenshot({
+    path: input.dotsScreenshotPath,
+    fullPage: true,
   })
+  const pageEvidence = capturedPages.map(({ canonicalLines, featureIds, ...page }) => page)
+  const dots = {
+    stable: pageEvidence.every((page) => page.stable),
+    pageLimit: input.exactDotOracle.pageLimit,
+    totalPositionCount: observedPageSummaries[0]?.totalPositionCount ?? 0,
+    pageCount: pageEvidence.length,
+    maximumPagePositionCount: Math.max(0, ...pageEvidence.map((page) => page.featureCount)),
+    maximumPageObservedMs,
+    duplicateFeatureIdCount,
+    uniqueFeatureIdCount: seenFeatureIds.size,
+    invalidFeatureCount,
+    returnedToLatest,
+    pageUnion: {
+      renderedPositionCount: pageEvidence.reduce(
+        (total, page) => total + page.featureCount,
+        0,
+      ),
+      renderedSourceTruthSha256: unionDigest.digest('hex'),
+    },
+    pages: pageEvidence,
+    returnNavigation,
+    supportingScreenshot: path.basename(input.dotsScreenshotPath),
+    evidencePath: "GeoJSONSource.getData()/serialize().data for tracking-breadcrumb-dots-exact",
+  }
 
   await input.page.getByTestId('open-devices-workspace').click({ force: true })
   await input.page.getByTestId('devices-workspace').waitFor({ state: 'visible' })
   await input.page.getByTestId('breadcrumb-mode-line').click({ force: true })
   await input.page.keyboard.press('Escape')
   await input.page.getByTestId('devices-workspace').waitFor({ state: 'hidden' })
-  await waitForStableSerializedTrackingEvidence({
+  const firstRendered = await waitForStableSerializedTrackingEvidence({
     page: input.page,
     expected: input.expectedLine,
     observedFromMs: Date.now(),
     timeoutMs: 10_000,
   })
-  return dots
+  const reportedTotalObserved =
+    await readReportedLineBreadcrumbTotalObserved(input.page)
+  return {
+    dots,
+    line: {
+      ...firstRendered,
+      reportedTotalObserved,
+      capturedSetDataUpdateCount:
+        firstRendered.setDataCapture?.updateCount ?? null,
+    },
+  }
+}
+
+async function readReportedLineBreadcrumbTotalObserved(page) {
+  const statusText = String(
+    await page.getByTestId('tracking-status').textContent() ?? '',
+  )
+  const match = /([\d,]+) known fixes across/u.exec(statusText)
+  if (match === null) {
+    throw new Error('Line mode did not expose its reported known-fix total.')
+  }
+  const totalObserved = Number(match[1].replaceAll(',', ''))
+  if (!Number.isSafeInteger(totalObserved) || totalObserved < 0) {
+    throw new Error('Line mode exposed an invalid known-fix total.')
+  }
+  return totalObserved
+}
+
+async function captureLatestExactBreadcrumbDotEvidence(input) {
+  const observed = await waitForStableExactBreadcrumbDotPage({
+    page: input.page,
+    expected: input.expected,
+    observedFromMs: input.observedFromMs,
+    timeoutMs: input.timeoutMs,
+  })
+  const operatorPage = parseExactBreadcrumbDotPageSummary(
+    await input.page.getByTestId('exact-breadcrumb-dot-page-summary').textContent(),
+  )
+  if (
+    operatorPage.pagePositionCount !== observed.featureCount ||
+    operatorPage.totalPositionCount !== input.totalPositionCount ||
+    operatorPage.fromTimestamp !== observed.fromTimestamp ||
+    operatorPage.toTimestamp !== observed.toTimestamp
+  ) {
+    throw new Error(
+      'Post-completion restart exact-dot operator summary differed from the latest source page.',
+    )
+  }
+  return {
+    ...observed,
+    modeActivation: input.modeActivation,
+    operatorPage,
+  }
+}
+
+async function activateBreadcrumbLineProofMode(page) {
+  await page.getByTestId('open-devices-workspace').click({ force: true })
+  await page.getByTestId('devices-workspace').waitFor({ state: 'visible' })
+  await page.getByTestId('breadcrumb-mode-line').click({ force: true })
+  await page.keyboard.press('Escape')
+  await page.getByTestId('devices-workspace').waitFor({ state: 'hidden' })
+}
+
+function parseExactBreadcrumbDotPageSummary(value) {
+  const match = /^Showing ([\d,]+) exact fixes of ([\d,]+)(?: — (.+) to (.+))?$/u.exec(
+    String(value ?? '').trim(),
+  )
+  if (match === null) {
+    throw new Error('Operator exact breadcrumb-dot page summary is malformed or missing.')
+  }
+  const pagePositionCount = Number(match[1].replaceAll(',', ''))
+  const totalPositionCount = Number(match[2].replaceAll(',', ''))
+  const fromTimestamp = match[3] ?? null
+  const toTimestamp = match[4] ?? null
+  if (
+    !Number.isSafeInteger(pagePositionCount) ||
+    pagePositionCount < 0 ||
+    !Number.isSafeInteger(totalPositionCount) ||
+    totalPositionCount < pagePositionCount
+  ) {
+    throw new Error('Operator exact breadcrumb-dot page summary has invalid counts.')
+  }
+  return {
+    pagePositionCount,
+    totalPositionCount,
+    fromTimestamp,
+    toTimestamp,
+  }
+}
+
+async function waitForStableExactBreadcrumbDotPage(input) {
+  const deadline = input.observedFromMs + input.timeoutMs
+  let lastSource = null
+  let lastRendered = null
+  while (Date.now() < deadline) {
+    assertProcessAlive(input.page)
+    const firstSourceCollection =
+      await readExactBreadcrumbDotSourceCollection(input.page)
+    const first = createExactBreadcrumbDotPageEvidence(firstSourceCollection)
+    lastSource = summarizeExactBreadcrumbDotPageEvidence(first)
+    if (exactDotPageEvidenceMatches(first, input.expected)) {
+      await fitExactBreadcrumbDotPageForRenderedAudit(input.page)
+      const firstRenderedCollection =
+        await readRenderedExactBreadcrumbDotLayerCollection(input.page)
+      const firstRendered = createExactBreadcrumbDotPageEvidence(
+        firstRenderedCollection,
+      )
+      const firstCoordinateDeviation =
+        measureExactBreadcrumbDotRenderedDeviation(
+          firstSourceCollection.features,
+          firstRenderedCollection.features,
+        )
+      lastRendered = {
+        ...summarizeExactBreadcrumbDotPageEvidence(firstRendered),
+        coordinateDeviation: firstCoordinateDeviation,
+      }
+      if (!renderedExactDotPageMatchesSource(
+        firstRendered,
+        first,
+        firstCoordinateDeviation,
+      )) {
+        await input.page.waitForTimeout(50)
+        continue
+      }
+      await input.page.waitForTimeout(100)
+      const secondSourceCollection =
+        await readExactBreadcrumbDotSourceCollection(input.page)
+      const second = createExactBreadcrumbDotPageEvidence(secondSourceCollection)
+      const secondRenderedCollection =
+        await readRenderedExactBreadcrumbDotLayerCollection(input.page)
+      const secondRendered = createExactBreadcrumbDotPageEvidence(
+        secondRenderedCollection,
+      )
+      const secondCoordinateDeviation =
+        measureExactBreadcrumbDotRenderedDeviation(
+          secondSourceCollection.features,
+          secondRenderedCollection.features,
+        )
+      if (
+        exactDotPageEvidenceMatches(second, first) &&
+        exactDotPageEvidenceMatches(secondRendered, firstRendered) &&
+        renderedExactDotPageMatchesSource(
+          secondRendered,
+          second,
+          secondCoordinateDeviation,
+        )
+      ) {
+        return {
+          ...second,
+          stable: true,
+          observedMs: Date.now() - input.observedFromMs,
+          renderedLayer: {
+            featureCount: secondRendered.featureCount,
+            coordinateCount: secondRendered.coordinateCount,
+            sourceTruthSha256: secondRendered.sourceTruthSha256,
+            identityTimestampSha256:
+              secondRendered.identityTimestampSha256,
+            invalidFeatureCount: secondRendered.invalidFeatureCount,
+            rawRenderedFeatureCount: secondRendered.rawFeatureCount,
+            duplicateRenderedFeatureCount:
+              secondRendered.rawFeatureCount - secondRendered.featureCount,
+            duplicateConflictCount: secondRendered.duplicateConflictCount,
+            idTypeCounts: secondRendered.idTypeCounts,
+            coordinateDeviation: secondCoordinateDeviation,
+          },
+        }
+      }
+    }
+    await input.page.waitForTimeout(50)
+  }
+  throw new Error(
+    `Timed out waiting for an exact breadcrumb-dot page from MapLibre. ` +
+      `expected=${JSON.stringify(summarizeExactBreadcrumbDotPageEvidence(input.expected))} ` +
+      `source=${JSON.stringify(lastSource)} rendered=${JSON.stringify(lastRendered)}`,
+  )
+}
+
+async function fitExactBreadcrumbDotPageForRenderedAudit(page) {
+  await page.evaluate(async () => {
+    const map = window.__SARTRACKER_MAP__
+    const source = map?.getSource('tracking-breadcrumb-dots-exact')
+    if (map === undefined || source === undefined) {
+      throw new Error('Exact breadcrumb-dot map/source is unavailable for rendered audit.')
+    }
+    const data = typeof source.getData === 'function'
+      ? await source.getData()
+      : typeof source.serialize === 'function'
+        ? source.serialize()?.data
+        : null
+    const coordinates = Array.isArray(data?.features)
+      ? data.features.flatMap((feature) => {
+          const point = feature?.geometry?.coordinates
+          return feature?.geometry?.type === 'Point' &&
+            Array.isArray(point) &&
+            Number.isFinite(point[0]) &&
+            Number.isFinite(point[1])
+            ? [[point[0], point[1]]]
+            : []
+        })
+      : []
+    if (coordinates.length === 0) {
+      throw new Error('Exact breadcrumb-dot page has no finite coordinates to fit.')
+    }
+    let west = coordinates[0][0]
+    let east = coordinates[0][0]
+    let south = coordinates[0][1]
+    let north = coordinates[0][1]
+    for (const [longitude, latitude] of coordinates) {
+      west = Math.min(west, longitude)
+      east = Math.max(east, longitude)
+      south = Math.min(south, latitude)
+      north = Math.max(north, latitude)
+    }
+    if (west === east) {
+      west -= 0.000001
+      east += 0.000001
+    }
+    if (south === north) {
+      south -= 0.000001
+      north += 0.000001
+    }
+    await new Promise((resolve, reject) => {
+      const handleRender = () => {
+        window.clearTimeout(timeout)
+        resolve()
+      }
+      const timeout = window.setTimeout(() => {
+        map.off('render', handleRender)
+        reject(new Error('MapLibre did not render after fitting the exact-dot page.'))
+      }, 5_000)
+      map.once('render', handleRender)
+      map.fitBounds([[west, south], [east, north]], {
+        duration: 0,
+        padding: 48,
+      })
+      map.triggerRepaint()
+    })
+  })
+}
+
+async function readRenderedExactBreadcrumbDotLayerCollection(page) {
+  const renderedFeatures = await page.evaluate(async () => {
+    const map = window.__SARTRACKER_MAP__
+    if (map === undefined) {
+      throw new Error('MapLibre is unavailable for exact breadcrumb-dot layer evidence.')
+    }
+    const measureRenderedFeatureScreenPixelErrors = (
+      activeMap,
+      sourceFeaturesByIdentity,
+      renderedFeature,
+    ) => {
+      const deviceId = typeof renderedFeature?.properties?.deviceId === 'string'
+        ? renderedFeature.properties.deviceId.trim()
+        : ''
+      const sourcePositionId =
+        typeof renderedFeature?.properties?.sourcePositionId === 'string'
+          ? renderedFeature.properties.sourcePositionId.trim()
+          : ''
+      const sourceFeature = sourceFeaturesByIdentity.get(
+        `${deviceId}:id:${sourcePositionId}`,
+      )
+      const sourceCoordinates = sourceFeature?.geometry?.coordinates
+      const renderedCoordinates = renderedFeature?.geometry?.coordinates
+      if (
+        !Array.isArray(sourceCoordinates) ||
+        !Array.isArray(renderedCoordinates) ||
+        !Number.isFinite(sourceCoordinates[0]) ||
+        !Number.isFinite(sourceCoordinates[1]) ||
+        !Number.isFinite(renderedCoordinates[0]) ||
+        !Number.isFinite(renderedCoordinates[1])
+      ) {
+        return null
+      }
+      const sourcePoint = activeMap.project(sourceCoordinates)
+      const renderedPoint = activeMap.project(renderedCoordinates)
+      return {
+        x: Math.abs(sourcePoint.x - renderedPoint.x),
+        y: Math.abs(sourcePoint.y - renderedPoint.y),
+      }
+    }
+    const rendered = map.queryRenderedFeatures(undefined, {
+      layers: ['tracking-breadcrumbs-dots'],
+    })
+    const exactSource = map.getSource('tracking-breadcrumb-dots-exact')
+    const sourceData = typeof exactSource?.getData === 'function'
+      ? await exactSource.getData()
+      : typeof exactSource?.serialize === 'function'
+        ? exactSource.serialize()?.data
+        : null
+    const sourceByIdentity = new Map(
+      Array.isArray(sourceData?.features)
+        ? sourceData.features.flatMap((feature) => {
+            const deviceId = typeof feature?.properties?.deviceId === 'string'
+              ? feature.properties.deviceId.trim()
+              : ''
+            const sourcePositionId =
+              typeof feature?.properties?.sourcePositionId === 'string'
+                ? feature.properties.sourcePositionId.trim()
+                : ''
+            return deviceId === '' || sourcePositionId === ''
+              ? []
+              : [[`${deviceId}:id:${sourcePositionId}`, feature]]
+          })
+        : [],
+    )
+    return rendered.map((feature) => {
+      const screenPixelErrors = measureRenderedFeatureScreenPixelErrors(
+        map,
+        sourceByIdentity,
+        feature,
+      )
+      return {
+        type: 'Feature',
+        ...(feature.id === undefined ? {} : { id: feature.id }),
+        geometry: feature.geometry,
+        properties: feature.properties,
+        auditScreenPixelErrorX: screenPixelErrors?.x ?? null,
+        auditScreenPixelErrorY: screenPixelErrors?.y ?? null,
+      }
+    })
+  })
+  return normalizeRenderedExactBreadcrumbDotFeaturesForAudit(renderedFeatures)
+}
+
+async function readExactBreadcrumbDotSourceCollection(page) {
+  return page.evaluate(async () => {
+    const source = window.__SARTRACKER_MAP__?.getSource('tracking-breadcrumb-dots-exact')
+    if (source === undefined) {
+      throw new Error('Exact breadcrumb-dot MapLibre source is unavailable.')
+    }
+    const data = typeof source.getData === 'function'
+      ? await source.getData()
+      : typeof source.serialize === 'function'
+        ? source.serialize()?.data
+        : null
+    if (
+      data === null ||
+      typeof data !== 'object' ||
+      data.type !== 'FeatureCollection' ||
+      !Array.isArray(data.features)
+    ) {
+      throw new Error('Exact breadcrumb-dot source did not expose GeoJSON evidence.')
+    }
+    return data
+  })
+}
+
+function createExactBreadcrumbDotPageEvidence(collection) {
+  const rows = []
+  const featureIds = []
+  let invalidFeatureCount = Number(collection.identityValidationErrorCount ?? 0)
+  for (const feature of collection.features ?? []) {
+    const coordinates = feature?.geometry?.coordinates
+    const deviceId = feature?.properties?.deviceId
+    const sourcePositionId = feature?.properties?.sourcePositionId
+    const timestamp = feature?.properties?.timestamp
+    const featureId = feature?.id
+    if (
+      feature?.geometry?.type !== 'Point' ||
+      !Array.isArray(coordinates) ||
+      coordinates.length < 2 ||
+      !Number.isFinite(coordinates[0]) ||
+      !Number.isFinite(coordinates[1]) ||
+      typeof deviceId !== 'string' ||
+      typeof sourcePositionId !== 'string' ||
+      sourcePositionId.trim() === '' ||
+      typeof timestamp !== 'string' ||
+      !Number.isFinite(Date.parse(timestamp)) ||
+      typeof featureId !== 'string' ||
+      featureId !== `${deviceId}:id:${sourcePositionId.trim()}`
+    ) {
+      invalidFeatureCount += 1
+      continue
+    }
+    featureIds.push(featureId)
+    rows.push({
+      deviceId,
+      sourcePositionId: sourcePositionId.trim(),
+      timestamp,
+      lat: Number(coordinates[1]),
+      lon: Number(coordinates[0]),
+    })
+  }
+  rows.sort(compareExactBreadcrumbDotEvidenceRows)
+  const digest = createHash('sha256')
+  const identityTimestampDigest = createHash('sha256')
+  const canonicalLines = rows.map((row) => {
+    const line = [
+      row.deviceId,
+      row.sourcePositionId,
+      row.timestamp,
+      row.lat.toFixed(7),
+      row.lon.toFixed(7),
+    ].join('|') + '\n'
+    digest.update(line)
+    identityTimestampDigest.update(
+      [row.deviceId, row.sourcePositionId, row.timestamp].join('|') + '\n',
+    )
+    return line
+  })
+  return {
+    featureCount: rows.length,
+    coordinateCount: rows.length,
+    sourceTruthSha256: digest.digest('hex'),
+    identityTimestampSha256: identityTimestampDigest.digest('hex'),
+    invalidFeatureCount,
+    featureIds,
+    canonicalLines,
+    fromTimestamp: rows[0]?.timestamp ?? null,
+    toTimestamp: rows.at(-1)?.timestamp ?? null,
+    rawFeatureCount:
+      Number.isSafeInteger(collection.rawFeatureCount)
+        ? collection.rawFeatureCount
+        : rows.length,
+    idTypeCounts: collection.idTypeCounts ?? null,
+    derivedIdentityCount: collection.derivedIdentityCount ?? null,
+    missingStableIdentityCount: collection.missingStableIdentityCount ?? null,
+    duplicateDerivedIdentityCount: collection.duplicateDerivedIdentityCount ?? null,
+    duplicateConflictCount: collection.duplicateConflictCount ?? null,
+    explicitStringIdMismatchCount:
+      collection.explicitStringIdMismatchCount ?? null,
+  }
+}
+
+function compareExactBreadcrumbDotEvidenceRows(left, right) {
+  return (
+    compareProofCodeUnits(left.timestamp, right.timestamp) ||
+    compareProofCodeUnits(left.deviceId, right.deviceId) ||
+    compareProofCodeUnits(left.sourcePositionId, right.sourcePositionId)
+  )
+}
+
+function compareProofCodeUnits(left, right) {
+  return left < right ? -1 : left > right ? 1 : 0
+}
+
+function exactDotPageEvidenceMatches(left, right) {
+  return (
+    left.featureCount === right.featureCount &&
+    left.coordinateCount === right.coordinateCount &&
+    left.sourceTruthSha256 === right.sourceTruthSha256 &&
+    (right.invalidFeatureCount === undefined ||
+      left.invalidFeatureCount === right.invalidFeatureCount)
+  )
+}
+
+function renderedExactDotPageMatchesSource(rendered, source, coordinateDeviation) {
+  return (
+    rendered.featureCount === source.featureCount &&
+    rendered.coordinateCount === source.coordinateCount &&
+    rendered.identityTimestampSha256 === source.identityTimestampSha256 &&
+    rendered.invalidFeatureCount === source.invalidFeatureCount &&
+    coordinateDeviation.passed === true
+  )
 }
 
 async function seedRuntimeConfiguration(userDataDir, baseUrl, pollIntervalMs) {
@@ -826,19 +1471,27 @@ async function waitForTrackingMilestones(input) {
   while (Date.now() < deadline) {
     assertProcessAlive(input.page)
     const observedAtMs = Date.now()
-    const [renderCapture, trackingStatusText] = await Promise.all([
+    const [renderCapture, exactDotCollection, trackingStatusText] = await Promise.all([
       readTrackingSetDataCapture(input.page),
+      readExactBreadcrumbDotSourceCollection(input.page).catch(() => ({
+        type: 'FeatureCollection',
+        features: [],
+      })),
       input.page.getByTestId('tracking-status').textContent().then((value) => value ?? ''),
     ])
     const sourceData = renderCapture.latest ?? { type: 'FeatureCollection', features: [] }
-    const rendered = createRenderedBreadcrumbEvidence(sourceData)
     const currentPositionCount = (sourceData.features ?? []).filter(
       (feature) => feature.properties?.featureKind === 'device',
+    ).length
+    const exactBreadcrumbCount = (exactDotCollection.features ?? []).filter(
+      (feature) =>
+        feature?.properties?.featureKind === 'breadcrumb' &&
+        feature?.geometry?.type === 'Point',
     ).length
     if (currentFixMs === null && currentPositionCount > 0) {
       currentFixMs = observedAtMs - input.observedFromMs
     }
-    if (firstBreadcrumbMs === null && rendered.coordinateCount > 0) {
+    if (firstBreadcrumbMs === null && exactBreadcrumbCount > 0) {
       firstBreadcrumbMs = observedAtMs - input.observedFromMs
     }
 
@@ -1140,8 +1793,42 @@ function inspectHistoryCheckpointsSafely(databasePath, missionId) {
   }
 }
 
+function inspectHistoryCheckpointEvidenceSafely(input) {
+  const inspection = inspectHistoryCheckpointsSafely(
+    input.databasePath,
+    input.missionId,
+  )
+  const evidence = {
+    missionId: input.missionId,
+    requiredDeviceIds: input.deviceIds.map(String),
+    requiredFrom: input.requiredFrom,
+    requiredTo: input.requiredTo,
+    ...inspection,
+  }
+  return {
+    ...evidence,
+    progress: Array.isArray(evidence.checkpoints)
+      ? analyzeBreadcrumbCheckpointProgress({
+          checkpoints: evidence.checkpoints,
+          missionId: evidence.missionId,
+          deviceIds: evidence.requiredDeviceIds,
+          requiredFrom: evidence.requiredFrom,
+          requiredTo: evidence.requiredTo,
+        })
+      : null,
+  }
+}
+
 async function captureFailureRuntimeEvidence(page, missionId) {
-  const [trackingStatusText, persistedRowCount, checkpoints, renderCapture] =
+  const [
+    trackingStatusText,
+    persistedRowCount,
+    checkpoints,
+    renderCapture,
+    exactSource,
+    exactRenderedLayer,
+    exactOperatorSummary,
+  ] =
     await Promise.all([
       page.getByTestId('tracking-status').textContent().then((value) => value ?? ''),
       page.evaluate(
@@ -1157,6 +1844,20 @@ async function captureFailureRuntimeEvidence(page, missionId) {
         { expectedMissionId: missionId },
       ),
       readTrackingSetDataCapture(page),
+      readExactBreadcrumbDotSourceCollection(page)
+        .then((collection) => summarizeExactBreadcrumbDotPageEvidence(
+          createExactBreadcrumbDotPageEvidence(collection),
+        ))
+        .catch(createProofCaptureError),
+      readRenderedExactBreadcrumbDotLayerCollection(page)
+        .then((collection) => summarizeExactBreadcrumbDotPageEvidence(
+          createExactBreadcrumbDotPageEvidence(collection),
+        ))
+        .catch(createProofCaptureError),
+      page.getByTestId('exact-breadcrumb-dot-page-summary')
+        .textContent()
+        .then((value) => parseExactBreadcrumbDotPageSummary(value))
+        .catch(createProofCaptureError),
     ])
   return {
     capturedAt: new Date().toISOString(),
@@ -1166,7 +1867,42 @@ async function captureFailureRuntimeEvidence(page, missionId) {
     rendered: createRenderedBreadcrumbEvidence(
       renderCapture.latest ?? { type: 'FeatureCollection', features: [] },
     ),
+    exactBreadcrumbDots: {
+      source: exactSource,
+      renderedLayer: exactRenderedLayer,
+      operatorPage: exactOperatorSummary,
+    },
     capturedSetDataUpdateCount: renderCapture.updateCount,
+  }
+}
+
+function summarizeExactBreadcrumbDotPageEvidence(evidence) {
+  return {
+    featureCount: evidence?.featureCount ?? null,
+    coordinateCount: evidence?.coordinateCount ?? null,
+    sourceTruthSha256: evidence?.sourceTruthSha256 ?? null,
+    identityTimestampSha256: evidence?.identityTimestampSha256 ?? null,
+    invalidFeatureCount: evidence?.invalidFeatureCount ?? null,
+    rawFeatureCount: evidence?.rawFeatureCount ?? null,
+    idTypeCounts: evidence?.idTypeCounts ?? null,
+    derivedIdentityCount: evidence?.derivedIdentityCount ?? null,
+    missingStableIdentityCount: evidence?.missingStableIdentityCount ?? null,
+    duplicateDerivedIdentityCount: evidence?.duplicateDerivedIdentityCount ?? null,
+    duplicateConflictCount: evidence?.duplicateConflictCount ?? null,
+    explicitStringIdMismatchCount:
+      evidence?.explicitStringIdMismatchCount ?? null,
+    fromTimestamp: evidence?.fromTimestamp ?? null,
+    toTimestamp: evidence?.toTimestamp ?? null,
+  }
+}
+
+function createProofCaptureError(error) {
+  return {
+    errorClass: error instanceof Error ? error.name : 'UnknownError',
+    errorMessage:
+      error instanceof Error
+        ? error.message.slice(0, 1_000)
+        : String(error).slice(0, 1_000),
   }
 }
 
