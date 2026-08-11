@@ -1,17 +1,18 @@
 # SAR Tracker Electron Desktop Beta 0.1.0-beta.12.11
 
-> **Qualified internal beta; publication pending.** Every packaged smoke row
-> below is `PASS`. Do not give this build to testers until the guarded GitHub
-> publication and fresh-public-byte verification are complete.
+> **Published qualified internal beta.** Every packaged smoke row, the guarded
+> publisher, fresh-public-byte checksum proof, and public AppImage lifecycle
+> gate below are `PASS`.
 
 - **Version:** 0.1.0-beta.12.11
 - **Build tag:** `electron-v0.1.0-beta.12.11`
 - **Cut date (UTC):** 2026-08-11
 - **Linear reference:** `DON-260`
-- **Supersedes after qualification:** published beta.12.9
+- **Published (UTC):** 2026-08-11T12:11:10Z
+- **Supersedes:** beta.12.9
 - **Tag commit:** `bced8052b85c110792a7af5ccb7122a94b2fafad`
 - **Tag workflow:** [run 31482052296](https://github.com/donal0c/sartracker-web/actions/runs/31482052296) — green
-- **Draft prerelease:** [exact-target draft](https://github.com/donal0c/sartracker-web/releases/tag/untagged-4150290092e9d245decc)
+- **Published prerelease:** [electron-v0.1.0-beta.12.11](https://github.com/donal0c/sartracker-web/releases/tag/electron-v0.1.0-beta.12.11)
 - **AppImage SHA-256:** `2844b75fe9fc2fff7623f4a5db7c360804787b4a4d278153659cc8c9ce1c295b`
 - **Debian package SHA-256:** `d5e33b41417e444ea524e73c9e25e21d526b70289d68d0ef7c37cf1726fc2954`
 - **`SHA256SUMS` SHA-256:** `965110afec47a638951dc16a97f203e5a5106ab5897c2d7723da4b17fbb4cfc1`
@@ -85,6 +86,7 @@ forms while keeping the internal save destination functional.
 - Real installed `.deb`: `sartracker-web 0.1.0~beta.12.11` is `install ok installed`; `dpkg -V` is clean; installed executable SHA-256 `6344ae1d9044fedc54779e8bacaddc032fdcc0f55e146fc3623756eafa0bbaf8` exactly matches the independently extracted payload. Its 36-hour proof independently passed `279,936/279,936` with report SHA-256 `c37fe334f6b8c72681469b1af21980e5de48488829bca1d544ea0430a631a41c`.
 - Private live-provider installed-`.deb` proof: `10,184` target fixes over exact `10,000 -> 184 -> 10,000` pages with the same complete equality and rendered bounds; allowlisted report SHA-256 `bdc7cf321067def4875eaedb2e730c553d3d6530975c67663cbf686d0e691409`.
 - Newer-schema refusal: schema 8 was rejected by the schema-7 package with the exact native operator message, exit code 1, zero renderer processes, no unhandled rejection, and byte-identical database/backup files; report SHA-256 `7a22a8c23b2da4d40bb34ee89e919fb718d9826ec72b752cde3d7c2dbcdfe984`.
+- Guarded publication freshly downloaded the draft AppImage and `.deb`, revalidated their manifest and asset metadata, re-peeled the immutable tag, and published without bypass. A second independent public download matched both installer hashes and `SHA256SUMS`; the public AppImage then passed settings persistence, same-mission recovery, finish/finalize, and non-empty archive creation on Ubuntu. Public lifecycle report SHA-256: `dfc8e39b1ebfa596e7fcc3e33afe373018cb7cb5c9f5f12f32b46fe09250b48e`.
 
 ## Required qualification
 
@@ -98,7 +100,7 @@ forms while keeping the internal save destination functional.
 - [x] AppImage and installed `.deb` lifecycle, recovery/finalize/archive, coordinate rejection, duplicate launch, sanitized exports, and corrupt-credential gates
 - [x] Live Traccar provider GET truth matches mission SQLite, exact pages, GeoJSON, and rendered MapLibre evidence
 - [x] Release note, handoff, Linear, and regression ledger contain exact evidence
-- [ ] Guarded publish and fresh-public-byte verification pass
+- [x] Guarded publish and fresh-public-byte verification pass
 
 ## Packaged smoke matrix
 
@@ -106,8 +108,8 @@ The GitHub release must stay draft until every applicable row is `PASS`.
 
 | Gate | Result | Evidence |
 | --- | --- | --- |
-| AppImage SHA-256 | PASS | `sartracker-electron-validation_0.1.0-beta.12.11_linux_x86_64.AppImage` — `2844b75fe9fc2fff7623f4a5db7c360804787b4a4d278153659cc8c9ce1c295b`; CI asset, draft asset metadata, `SHA256SUMS`, macOS download, and Ubuntu bytes agree |
-| .deb SHA-256 | PASS | `sartracker-electron-validation_0.1.0-beta.12.11_linux_amd64.deb` — `d5e33b41417e444ea524e73c9e25e21d526b70289d68d0ef7c37cf1726fc2954`; CI asset, draft asset metadata, `SHA256SUMS`, macOS download, and Ubuntu bytes agree |
+| AppImage SHA-256 | PASS | `sartracker-electron-validation_0.1.0-beta.12.11_linux_x86_64.AppImage` — `2844b75fe9fc2fff7623f4a5db7c360804787b4a4d278153659cc8c9ce1c295b`; CI asset, draft/public asset metadata, `SHA256SUMS`, macOS download, and Ubuntu public bytes agree |
+| .deb SHA-256 | PASS | `sartracker-electron-validation_0.1.0-beta.12.11_linux_amd64.deb` — `d5e33b41417e444ea524e73c9e25e21d526b70289d68d0ef7c37cf1726fc2954`; CI asset, draft/public asset metadata, `SHA256SUMS`, macOS download, and Ubuntu public bytes agree |
 | AppImage launch | PASS | Tag workflow launch smoke plus native Ubuntu lifecycle, 36-hour, fourteen-day, and live-provider proofs |
 | .deb install and launch | PASS | `sartracker-web 0.1.0~beta.12.11` is `install ok installed`; `dpkg -V` is clean; installed executable hash matches the extracted `.deb` payload and completed native Ubuntu proofs |
 | Core lifecycle, restart/recovery, finish/finalize/archive | PASS | AppImage report `21c07590...ebf63`; installed `.deb` report `1110ec6e...d8405`; both persisted settings, resumed the same mission, finalized, and produced a non-empty archive |
@@ -142,8 +144,8 @@ fixes to protect responsiveness. No private Discovery package is bundled.
 
 ## Rollback
 
-Until beta.12.11 is published, beta.12.9 remains the published artifact. Quit
-SAR Tracker before reinstalling an older beta.
+Beta.12.11 supersedes beta.12.9 for internal field testing. Quit SAR Tracker
+before reinstalling an older beta if rollback is required.
 Uninstalling does not remove per-user mission databases; capture diagnostics
 first and do not delete suspected mission data.
 
