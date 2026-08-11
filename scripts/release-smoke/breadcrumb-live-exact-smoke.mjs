@@ -23,6 +23,7 @@ import {
   auditRenderedExactGeoJsonFeatures,
   assertExactFixEvidenceChain,
   assertExactFixSequence,
+  buildAllowlistedLiveExactFailureReport,
   buildAllowlistedLiveExactReport,
   createExactFixEvidence,
   createExactIdentityTimeEvidence,
@@ -32,8 +33,17 @@ import {
   parsePrivateTargetSelector,
   validateExactPageTraversal,
 } from '../../build/breadcrumb-live-exact-proof-lib.js'
+import {
+  clickExactDotPageControl,
+  readExactDotPageControlDisabled,
+} from '../../build/electron-tracking-soak-exact-action-lib.js'
+import {
+  runCleanupStep,
+  stopOwnedProcess as stopLifecycleOwnedProcess,
+} from '../../build/electron-tracking-soak-lifecycle-lib.js'
 
 const EXACT_PAGE_LIMIT = 10_000
+const EXACT_UI_ACTION_TIMEOUT_MS = 5_000
 const LOOKBACK_HOURS = 48
 const MINIMUM_FIELD_FIX_COUNT = 8_000
 const appPath = requiredEnvironment('SMOKE_APP')
@@ -63,14 +73,35 @@ const renderedMapFixes = []
 let providerPayload = null
 let appProcess = null
 let browser = null
+let launchCleanupPromise = null
 let screenshotWritten = false
 let reportWritten = false
+let passReportWritten = false
+let evidenceDirectoryReady = false
+const failureProgress = {
+  phase: 'launch',
+  direction: null,
+  pageIndex: null,
+  completedPageCount: 0,
+  targetActive: null,
+  activeDeviceCount: null,
+  dotsActive: null,
+  workspaceHidden: null,
+  controllerState: 'unknown',
+  expectedPageCount: null,
+  expectedTotalCount: null,
+  mismatchObservationCount: 0,
+  firstMismatch: null,
+  lastMismatch: null,
+  actionFailure: null,
+}
 
 try {
   await verifyOutputIsolation(evidenceDir, privateVisualDir)
   const targetDeviceId = await readPrivateTargetSelector(targetSelectorFile)
   await assertFileSha256(appPath, expectedAppSha256)
   await mkdir(evidenceDir, { recursive: true, mode: 0o700 })
+  evidenceDirectoryReady = true
   await mkdir(privateVisualDir, { recursive: true, mode: 0o700 })
   await chmod(privateVisualDir, 0o700)
   await rm(summaryPath, { force: true })
@@ -123,22 +154,30 @@ try {
 
   await page.getByTestId('open-devices-workspace').click()
   await page.getByTestId('devices-workspace').waitFor({ state: 'visible' })
+  failureProgress.phase = 'targetSelection'
   const activeToggle = page.getByTestId(`device-active-toggle-${targetDeviceId}`)
   await activeToggle.waitFor({ state: 'visible', timeout: 60_000 })
   if ((await activeToggle.textContent())?.trim() !== 'Remove') {
-    await activeToggle.click({ force: true })
+    await activeToggle.click({ timeout: EXACT_UI_ACTION_TIMEOUT_MS })
   }
+  Object.assign(
+    failureProgress,
+    await assertSoleActiveTarget(page, targetDeviceId, failureProgress),
+  )
   const targetDeviceName = await readPrivateTargetDeviceName(
     page,
     mission.id,
     targetDeviceId,
   )
-  await page.getByTestId('workspace-close-btn').click({ force: true })
+  await page.getByTestId('workspace-close-btn').click({
+    timeout: EXACT_UI_ACTION_TIMEOUT_MS,
+  })
   await page.getByTestId('devices-workspace').waitFor({ state: 'hidden' })
   await page
     .getByTestId('tracking-status')
     .filter({ hasText: /online/u })
     .waitFor({ timeout: 60_000 })
+  failureProgress.phase = 'reconciliation'
   await waitForTargetReconciliation({
     page,
     missionId: mission.id,
@@ -148,6 +187,7 @@ try {
     timeoutMs: reconciliationTimeoutMs,
   })
 
+  failureProgress.phase = 'pausedStability'
   await page.getByTestId('mission-pause-resume-btn').click({ force: true })
   await page.getByTestId('mission-paused-banner').waitFor({ state: 'visible' })
   const stableWindow = await waitForPausedTargetStability({
@@ -158,6 +198,7 @@ try {
     pollIntervalMs,
   })
 
+  failureProgress.phase = 'provider'
   const sourceStartedAt = Date.now()
   providerPayload = await fetchProviderPositionsGetOnly({
     trackingConfig,
@@ -171,6 +212,7 @@ try {
   assert(rawFixes.length >= MINIMUM_FIELD_FIX_COUNT, 'FIELD_WORKLOAD_TOO_SMALL')
   assert(rawFixes.length === stableWindow.positionCount, 'PROVIDER_COUNT_MISMATCH')
 
+  failureProgress.phase = 'directExactPages'
   const exactPageStartedAt = Date.now()
   const directPages = await readAllExactPages({
     page,
@@ -189,6 +231,7 @@ try {
     targetDeviceId,
     expectedPages: directPages.pages,
     hmacKey,
+    failureProgress,
   })
   for (const uiPage of uiPages.geoJsonPages) {
     exactGeoJsonFixes.push(...uiPage)
@@ -199,7 +242,6 @@ try {
   }
   const renderedMapMs = uiPages.renderedMapMs
 
-  await page.getByTestId('workspace-close-btn').click({ force: true }).catch(() => undefined)
   await page.getByTestId('devices-workspace').waitFor({ state: 'hidden' })
   await hidePrivateScreenshotTextAndDeviceLayers(page, targetDeviceName)
   await fitExactSourceToViewport(page)
@@ -208,11 +250,10 @@ try {
   screenshotWritten = true
   const screenshotSha256 = await sha256File(privateDotsScreenshotPath)
 
-  await browser.close()
-  browser = null
-  await stopOwnedProcess(appProcess)
-  appProcess = null
+  failureProgress.phase = 'cleanup'
+  await closeOwnedLiveLaunch()
 
+  failureProgress.phase = 'sqlite'
   const sqliteStartedAt = Date.now()
   const sqliteRead = readExactSQLiteRows({
     databasePath: path.join(userDataDir, 'mission-store.sqlite'),
@@ -223,6 +264,7 @@ try {
   sqliteFixes.push(...normalizeExactStoredRows(sqliteRead.rows, targetDeviceId))
   const sqliteReadMs = Date.now() - sqliteStartedAt
 
+  failureProgress.phase = 'report'
   const fixEvidence = assertExactFixEvidenceChain({
     provider: createExactFixEvidence(rawFixes, hmacKey),
     sqlite: createExactFixEvidence(sqliteFixes, hmacKey),
@@ -284,24 +326,71 @@ try {
   })
   await chmod(summaryPath, 0o600)
   reportWritten = true
+  passReportWritten = true
   process.stdout.write('real Traccar exact breadcrumb gate: PASS\n')
 } catch (error) {
+  const actionFailure = error?.exactDotActionFailure
+  if (actionFailure !== undefined) {
+    failureProgress.actionFailure = actionFailure
+  }
+  if (evidenceDirectoryReady) {
+    const failureReport = buildAllowlistedLiveExactFailureReport({
+      artifactSha256: expectedAppSha256,
+      expectedVersion,
+      failureClass: classifyFailure(error),
+      progress: failureProgress,
+    })
+    await writeFile(summaryPath, `${JSON.stringify(failureReport, null, 2)}\n`, {
+      encoding: 'utf8',
+      mode: 0o600,
+    })
+    await chmod(summaryPath, 0o600)
+    reportWritten = true
+  }
   process.stderr.write(
     `real Traccar exact breadcrumb gate: FAIL ${classifyFailure(error)}\n`,
   )
   process.exitCode = 1
 } finally {
-  await browser?.close().catch(() => undefined)
-  if (appProcess !== null) {
-    await stopOwnedProcess(appProcess).catch(() => undefined)
+  let cleanupCompleted = false
+  try {
+    await closeOwnedLiveLaunch()
+    cleanupCompleted = true
+  } catch {
+    failureProgress.phase = 'cleanup'
+    process.exitCode = 1
+    if (evidenceDirectoryReady) {
+      try {
+        const cleanupFailureReport = buildAllowlistedLiveExactFailureReport({
+          artifactSha256: expectedAppSha256,
+          expectedVersion,
+          failureClass: 'OWNED_PROCESS_CLEANUP_FAILED',
+          progress: failureProgress,
+        })
+        await writeFile(
+          summaryPath,
+          `${JSON.stringify(cleanupFailureReport, null, 2)}\n`,
+          { encoding: 'utf8', mode: 0o600 },
+        )
+        await chmod(summaryPath, 0o600)
+        reportWritten = true
+      } catch {
+        reportWritten = false
+      }
+    }
+    process.stderr.write(
+      'real Traccar exact breadcrumb gate: FAIL OWNED_PROCESS_CLEANUP_FAILED\n',
+    )
   }
-  if (screenshotWritten && !reportWritten) {
+  if (screenshotWritten && !passReportWritten) {
     await rm(privateDotsScreenshotPath, { force: true })
   }
   if (!reportWritten) {
     await rm(summaryPath, { force: true })
   }
-  await rm(userDataRoot, { recursive: true, force: true })
+  if (cleanupCompleted) {
+    await rm(userDataRoot, { recursive: true, force: true })
+  }
   providerPayload = null
   rawFixes.splice(0, rawFixes.length)
   sqliteFixes.splice(0, sqliteFixes.length)
@@ -309,6 +398,30 @@ try {
   exactGeoJsonFixes.splice(0, exactGeoJsonFixes.length)
   renderedMapFixes.splice(0, renderedMapFixes.length)
   hmacKey.fill(0)
+}
+
+/** Closes the CDP client inside a deadline and strictly stops the owned app once. */
+async function closeOwnedLiveLaunch() {
+  launchCleanupPromise ??= (async () => {
+    const activeBrowser = browser
+    const activeProcess = appProcess
+    if (activeBrowser !== null) {
+      await runCleanupStep(() => activeBrowser.close(), 5_000)
+    }
+    if (activeProcess !== null) {
+      try {
+        await stopLifecycleOwnedProcess(activeProcess, {
+          termTimeoutMs: 2_000,
+          killTimeoutMs: 10_000,
+        })
+      } catch {
+        throw new Error('OWNED_PROCESS_CLEANUP_FAILED')
+      }
+    }
+    browser = null
+    appProcess = null
+  })()
+  return launchCleanupPromise
 }
 
 /** Reads one mandatory non-secret path or artifact expectation. */
@@ -612,11 +725,79 @@ async function readAllExactPages(input) {
   return { pages, totalPositionCount, returnedToLatest: true, audit }
 }
 
+/** Requires the private target to be the mission's sole active device. */
+async function assertSoleActiveTarget(page, targetDeviceId, progress) {
+  const deadline = Date.now() + EXACT_UI_ACTION_TIMEOUT_MS
+  while (Date.now() < deadline) {
+    const selection = await page.evaluate((selectedDeviceId) => {
+      const targetToggle = document.querySelector(
+        `[data-testid="device-active-toggle-${selectedDeviceId}"]`,
+      )
+      const activeFilter = document.querySelector('[data-testid="device-filter-active"]')
+      const countMatch = activeFilter?.textContent?.trim().match(/^(\d[\d,]*)/u)
+      const activeDeviceCount = countMatch === null || countMatch === undefined
+        ? null
+        : Number(countMatch[1].replaceAll(',', ''))
+      return {
+        targetActive: targetToggle?.textContent?.trim() === 'Remove',
+        activeDeviceCount:
+          Number.isSafeInteger(activeDeviceCount) && activeDeviceCount >= 0
+            ? activeDeviceCount
+            : null,
+      }
+    }, targetDeviceId)
+    progress.targetActive = selection.targetActive
+    progress.activeDeviceCount = selection.activeDeviceCount
+    if (selection.targetActive && selection.activeDeviceCount === 1) {
+      return selection
+    }
+    await page.waitForTimeout(50)
+  }
+  throw new Error('TARGET_SELECTION_NOT_EXCLUSIVE')
+}
+
+/** Requires Dots to be visibly selected before closing its workspace. */
+async function assertBreadcrumbDotsActive(page) {
+  await page.waitForFunction(
+    () => document
+      .querySelector('[data-testid="breadcrumb-mode-dots"]')
+      ?.classList.contains('sar-segment-option-active') === true,
+    undefined,
+    { timeout: EXACT_UI_ACTION_TIMEOUT_MS },
+  ).catch(() => {
+    throw new Error('EXACT_DOTS_MODE_NOT_ACTIVE')
+  })
+}
+
 /** Traverses the operator UI and reconciles exact source plus rendered layer per page. */
 async function captureAllUiExactPages(input) {
-  await input.page.getByTestId('open-devices-workspace').click({ force: true })
+  input.failureProgress.phase = 'exactGeoJson'
+  await input.page.getByTestId('open-devices-workspace').click({
+    timeout: EXACT_UI_ACTION_TIMEOUT_MS,
+  })
   await input.page.getByTestId('devices-workspace').waitFor({ state: 'visible' })
-  await input.page.getByTestId('breadcrumb-mode-dots').click({ force: true })
+  Object.assign(
+    input.failureProgress,
+    await assertSoleActiveTarget(
+      input.page,
+      input.targetDeviceId,
+      input.failureProgress,
+    ),
+  )
+  const dotsButton = input.page.getByTestId('breadcrumb-mode-dots')
+  input.failureProgress.dotsActive = false
+  await dotsButton.click({ timeout: EXACT_UI_ACTION_TIMEOUT_MS })
+  await assertBreadcrumbDotsActive(input.page)
+  input.failureProgress.dotsActive = true
+  input.failureProgress.workspaceHidden = false
+  await input.page.getByTestId('workspace-close-btn').click({
+    timeout: EXACT_UI_ACTION_TIMEOUT_MS,
+  })
+  await input.page.getByTestId('devices-workspace').waitFor({
+    state: 'hidden',
+    timeout: EXACT_UI_ACTION_TIMEOUT_MS,
+  })
+  input.failureProgress.workspaceHidden = true
   const geoJsonPages = []
   const renderedPages = []
   const renderedAudit = createEmptyRenderedAuditDiagnostics()
@@ -627,12 +808,24 @@ async function captureAllUiExactPages(input) {
     0,
   )
   for (let pageIndex = 0; pageIndex < input.expectedPages.length; pageIndex += 1) {
+    input.failureProgress.phase = 'exactGeoJson'
     const expected = createExactFixEvidence(input.expectedPages[pageIndex], input.hmacKey)
+    Object.assign(input.failureProgress, {
+      direction: pageIndex === 0 ? 'latest' : 'earlier',
+      pageIndex,
+      expectedPageCount: expected.count,
+      expectedTotalCount: totalPositionCount,
+      mismatchObservationCount: 0,
+      firstMismatch: null,
+      lastMismatch: null,
+      actionFailure: null,
+    })
     const observed = await waitForExactSourcePage({
       page: input.page,
       targetDeviceId: input.targetDeviceId,
       expected,
       hmacKey: input.hmacKey,
+      failureProgress: input.failureProgress,
     })
     await assertOperatorPageSummary(
       input.page,
@@ -641,6 +834,7 @@ async function captureAllUiExactPages(input) {
     )
     geoJsonPages.push(observed.fixes)
     baselineBreadcrumbPointCount += observed.baselineBreadcrumbPointCount
+    input.failureProgress.phase = 'renderedMap'
     const renderedStartedAt = Date.now()
     await fitExactSourceToViewport(input.page)
     const renderedFeatures = await readRenderedExactFeatures(input.page)
@@ -658,27 +852,67 @@ async function captureAllUiExactPages(input) {
     )
     auditRenderedCoordinateDeviation(input.expectedPages[pageIndex], rendered)
     renderedPages.push(rendered)
+    input.failureProgress.completedPageCount += 1
     if (pageIndex + 1 < input.expectedPages.length) {
-      await input.page.getByTestId('exact-breadcrumb-dots-earlier').click({ force: true })
+      input.failureProgress.phase = 'exactGeoJson'
+      Object.assign(input.failureProgress, {
+        direction: 'earlier',
+        pageIndex: pageIndex + 1,
+        expectedPageCount: input.expectedPages[pageIndex + 1].length,
+        expectedTotalCount: totalPositionCount,
+        mismatchObservationCount: 0,
+        firstMismatch: null,
+        lastMismatch: null,
+        actionFailure: null,
+      })
+      await clickLiveExactPageControl({
+        page: input.page,
+        testId: 'exact-breadcrumb-dots-earlier',
+        pageIndexFromLatest: pageIndex + 1,
+        timeoutMs: EXACT_UI_ACTION_TIMEOUT_MS,
+        failureProgress: input.failureProgress,
+      })
     }
   }
   for (let pageIndex = input.expectedPages.length - 2; pageIndex >= 0; pageIndex -= 1) {
-    await input.page.getByTestId('exact-breadcrumb-dots-later').click({ force: true })
+    input.failureProgress.phase = 'exactGeoJson'
+    Object.assign(input.failureProgress, {
+      direction: 'later',
+      pageIndex,
+      expectedPageCount: input.expectedPages[pageIndex].length,
+      expectedTotalCount: totalPositionCount,
+      mismatchObservationCount: 0,
+      firstMismatch: null,
+      lastMismatch: null,
+      actionFailure: null,
+    })
+    await clickLiveExactPageControl({
+      page: input.page,
+      testId: 'exact-breadcrumb-dots-later',
+      pageIndexFromLatest: pageIndex,
+      timeoutMs: EXACT_UI_ACTION_TIMEOUT_MS,
+      failureProgress: input.failureProgress,
+    })
     await waitForExactSourcePage({
       page: input.page,
       targetDeviceId: input.targetDeviceId,
       expected: createExactFixEvidence(input.expectedPages[pageIndex], input.hmacKey),
       hmacKey: input.hmacKey,
+      failureProgress: input.failureProgress,
     })
     await assertOperatorPageSummary(
       input.page,
       input.expectedPages[pageIndex],
       totalPositionCount,
     )
+    input.failureProgress.completedPageCount += 1
   }
-  const returnedToLatest = await input.page
-    .getByTestId('exact-breadcrumb-dots-later')
-    .isDisabled()
+  const returnedToLatest = await readExactDotPageControlDisabled({
+    page: input.page,
+    testId: 'exact-breadcrumb-dots-later',
+    timeoutMs: EXACT_UI_ACTION_TIMEOUT_MS,
+  })
+  input.failureProgress.phase = 'renderedMap'
   const renderedCoordinateDeviation = auditRenderedCoordinateDeviation(
     input.expectedPages.flat(),
     renderedPages.flat(),
@@ -691,6 +925,19 @@ async function captureAllUiExactPages(input) {
     renderedCoordinateDeviation,
     baselineBreadcrumbPointCount,
     returnedToLatest,
+  }
+}
+
+/** Converts one bounded action envelope into a fixed live-gate failure code. */
+async function clickLiveExactPageControl(input) {
+  try {
+    await clickExactDotPageControl(input)
+  } catch (error) {
+    const actionFailure = error?.exactDotActionFailure ?? null
+    input.failureProgress.actionFailure = actionFailure
+    const failure = new Error('EXACT_PAGE_ACTION_FAILED')
+    failure.exactDotActionFailure = actionFailure
+    throw failure
   }
 }
 
@@ -719,36 +966,110 @@ function mergeRenderedAuditDiagnostics(target, pageAudit) {
 /** Waits for a stable exact source page with no representative points in baseline. */
 async function waitForExactSourcePage(input) {
   const deadline = Date.now() + 30_000
+  const recordMismatch = (observation) => {
+    input.failureProgress.mismatchObservationCount += 1
+    input.failureProgress.firstMismatch ??= observation
+    input.failureProgress.lastMismatch = observation
+  }
   while (Date.now() < deadline) {
     const snapshot = await readExactAndBaselineSources(input.page)
+    input.failureProgress.controllerState = snapshot.controllerState
+    const exactFeatures = snapshot.exact?.type === 'FeatureCollection' &&
+      Array.isArray(snapshot.exact.features)
+      ? snapshot.exact.features
+      : null
+    const targetFeatureCount = exactFeatures?.reduce(
+      (count, feature) =>
+        count + (feature?.properties?.deviceId === input.targetDeviceId ? 1 : 0),
+      0,
+    ) ?? null
+    const otherFeatureCount = exactFeatures === null || targetFeatureCount === null
+      ? null
+      : exactFeatures.length - targetFeatureCount
+    const baselineBreadcrumbPointCount = snapshot.baseline === null
+      ? null
+      : countBaselineBreadcrumbPoints(snapshot.baseline)
+    let fixes = null
+    let evidence = null
     try {
-      const fixes = assertExactFixSequence(
+      fixes = assertExactFixSequence(
         normalizeExactGeoJsonFeatures(snapshot.exact, input.targetDeviceId),
         'Exact GeoJSON page',
       )
-      const evidence = createExactFixEvidence(fixes, input.hmacKey)
-      if (
-        evidence.count === input.expected.count &&
-        evidence.hmacSha256 === input.expected.hmacSha256
-      ) {
-        await input.page.waitForTimeout(100)
-        const stable = await readExactAndBaselineSources(input.page)
-        const stableFixes = assertExactFixSequence(
+      evidence = createExactFixEvidence(fixes, input.hmacKey)
+    } catch {
+      // The bounded observation below distinguishes loading from invalid data.
+    }
+    const observation = {
+      sourceAvailable: exactFeatures !== null,
+      sourceValid: evidence !== null,
+      observedPageCount: exactFeatures?.length ?? null,
+      observedTotalCount: snapshot.operatorTotalCount,
+      targetFeatureCount,
+      otherFeatureCount,
+      baselineBreadcrumbPointCount,
+      countMatched: evidence === null
+        ? false
+        : evidence.count === input.expected.count,
+      hmacMatched: evidence === null
+        ? false
+        : evidence.hmacSha256 === input.expected.hmacSha256,
+    }
+    if (snapshot.controllerState === 'unavailable') {
+      recordMismatch(observation)
+      throw new Error('EXACT_DOTS_UNAVAILABLE')
+    }
+    if (otherFeatureCount !== null && otherFeatureCount > 0) {
+      recordMismatch(observation)
+      throw new Error('EXACT_GEOJSON_DEVICE_SCOPE_MISMATCH')
+    }
+    if (
+      evidence !== null &&
+      evidence.count === input.expected.count &&
+      evidence.hmacSha256 === input.expected.hmacSha256
+    ) {
+      await input.page.waitForTimeout(100)
+      const stable = await readExactAndBaselineSources(input.page)
+      let stableFixes
+      try {
+        stableFixes = assertExactFixSequence(
           normalizeExactGeoJsonFeatures(stable.exact, input.targetDeviceId),
           'Stable exact GeoJSON page',
         )
-        assertEvidenceMatches(
-          createExactFixEvidence(stableFixes, input.hmacKey),
-          input.expected,
-          'EXACT_GEOJSON_PAGE_UNSTABLE',
-        )
-        return {
-          fixes: stableFixes,
-          baselineBreadcrumbPointCount: countBaselineBreadcrumbPoints(stable.baseline),
-        }
+      } catch {
+        recordMismatch({
+          ...observation,
+          sourceValid: false,
+          hmacMatched: false,
+        })
+        throw new Error('EXACT_GEOJSON_PAGE_UNSTABLE')
       }
-    } catch {
-      // The page may legitimately be empty while its worker is still loading.
+      const stableEvidence = createExactFixEvidence(stableFixes, input.hmacKey)
+      if (
+        stableEvidence.count !== input.expected.count ||
+        stableEvidence.hmacSha256 !== input.expected.hmacSha256
+      ) {
+        recordMismatch({
+          ...observation,
+          observedPageCount: stableEvidence.count,
+          countMatched: stableEvidence.count === input.expected.count,
+          hmacMatched: stableEvidence.hmacSha256 === input.expected.hmacSha256,
+        })
+        throw new Error('EXACT_GEOJSON_PAGE_UNSTABLE')
+      }
+      return {
+        fixes: stableFixes,
+        baselineBreadcrumbPointCount: countBaselineBreadcrumbPoints(stable.baseline),
+      }
+    }
+    recordMismatch(observation)
+    if (
+      snapshot.controllerState === 'ready' &&
+      exactFeatures !== null &&
+      exactFeatures.length > 0 &&
+      evidence === null
+    ) {
+      throw new Error('EXACT_GEOJSON_SOURCE_INVALID')
     }
     await input.page.waitForTimeout(100)
   }
@@ -774,16 +1095,33 @@ async function readExactAndBaselineSources(page) {
   return page.evaluate(async () => {
     const exactSource = window.__SARTRACKER_MAP__?.getSource('tracking-breadcrumb-dots-exact')
     const baselineSource = window.__SARTRACKER_MAP__?.getSource('tracking')
-    if (exactSource === undefined || baselineSource === undefined) {
-      throw new Error('MAP_SOURCE_UNAVAILABLE')
-    }
+    const unavailable = document.querySelector(
+      '[data-testid="exact-breadcrumb-dots-unavailable"]',
+    ) !== null
+    const loading = document.querySelector(
+      '[data-testid="exact-breadcrumb-dots-loading"]',
+    ) !== null
+    const summary = document.querySelector(
+      '[data-testid="exact-breadcrumb-dot-page-summary"]',
+    )?.textContent?.trim() ?? ''
+    const countMatch = summary.match(/^Showing ([\d,]+) exact fixes of ([\d,]+)/u)
     return {
-      exact: typeof exactSource.getData === 'function'
+      exact: typeof exactSource?.getData === 'function'
         ? await exactSource.getData()
-        : exactSource.serialize()?.data,
-      baseline: typeof baselineSource.getData === 'function'
+        : exactSource?.serialize()?.data ?? null,
+      baseline: typeof baselineSource?.getData === 'function'
         ? await baselineSource.getData()
-        : baselineSource.serialize()?.data,
+        : baselineSource?.serialize()?.data ?? null,
+      controllerState: unavailable
+        ? 'unavailable'
+        : loading
+          ? 'loading'
+          : countMatch === null
+            ? 'inactive'
+            : 'ready',
+      operatorTotalCount: countMatch === null
+        ? null
+        : Number(countMatch[2].replaceAll(',', '')),
     }
   })
 }
@@ -999,47 +1337,4 @@ async function waitForCdp(port, ownedProcess) {
     }
   }
   throw new Error('CDP_TIMEOUT')
-}
-
-/** Stops only the packaged process this gate owns. */
-async function stopOwnedProcess(ownedProcess) {
-  const hasExited = () => ownedProcess.exitCode !== null || ownedProcess.signalCode !== null
-  if (hasExited()) return
-
-  ownedProcess.kill('SIGTERM')
-  const terminatedAfterTerm = await new Promise((resolve) => {
-    if (hasExited()) {
-      resolve(true)
-      return
-    }
-
-    const onExit = () => {
-      clearTimeout(timeout)
-      resolve(true)
-    }
-    const timeout = setTimeout(() => {
-      ownedProcess.removeListener('exit', onExit)
-      resolve(hasExited())
-    }, 2_000)
-    ownedProcess.once('exit', onExit)
-  })
-  if (terminatedAfterTerm || hasExited()) return
-
-  ownedProcess.kill('SIGKILL')
-  await new Promise((resolve, reject) => {
-    if (hasExited()) {
-      resolve()
-      return
-    }
-
-    const onExit = () => {
-      clearTimeout(timeout)
-      resolve()
-    }
-    const timeout = setTimeout(() => {
-      ownedProcess.removeListener('exit', onExit)
-      reject(new Error('OWNED_PROCESS_KILL_TIMEOUT'))
-    }, 10_000)
-    ownedProcess.once('exit', onExit)
-  })
 }

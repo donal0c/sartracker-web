@@ -503,7 +503,97 @@ export function validateExactPageTraversal(pages, expectedTotal, pageLimit) {
   }
 }
 
-/** Builds the only JSON shape permitted in archiveable real-field evidence. */
+/** Builds the only failure JSON shape permitted in archiveable real-field evidence. */
+export function buildAllowlistedLiveExactFailureReport(input) {
+  assertSha256(input?.artifactSha256, 'artifact SHA-256')
+  if (
+    typeof input?.expectedVersion !== 'string' ||
+    !/^[A-Za-z0-9][A-Za-z0-9.+-]{0,63}$/u.test(input.expectedVersion)
+  ) {
+    throw new Error('Expected app version is invalid.')
+  }
+  if (
+    typeof input.failureClass !== 'string' ||
+    !/^[A-Z][A-Z0-9_]{2,80}$/u.test(input.failureClass)
+  ) {
+    throw new Error('Live exact failure class is invalid.')
+  }
+  const progress = input.progress
+  const phase = allowlistedEnum(progress?.phase, [
+    'launch',
+    'targetSelection',
+    'reconciliation',
+    'pausedStability',
+    'provider',
+    'directExactPages',
+    'exactGeoJson',
+    'renderedMap',
+    'cleanup',
+    'sqlite',
+    'report',
+  ], 'live exact failure phase')
+
+  return {
+    schemaVersion: 1,
+    proof: 'packaged-real-traccar-exact-breadcrumb-dots',
+    result: 'fail',
+    artifact: {
+      sha256: input.artifactSha256,
+      version: input.expectedVersion,
+    },
+    failure: {
+      failureClass: input.failureClass,
+      phase,
+      direction: nullableAllowlistedEnum(
+        progress?.direction,
+        ['latest', 'earlier', 'later'],
+        'live exact failure direction',
+      ),
+      pageIndex: nullableNonNegativeInteger(
+        progress?.pageIndex,
+        'live exact failure page index',
+      ),
+      completedPageCount: nullableNonNegativeInteger(
+        progress?.completedPageCount,
+        'live exact completed page count',
+      ),
+      targetActive: nullableBoolean(progress?.targetActive),
+      activeDeviceCount: nullableNonNegativeInteger(
+        progress?.activeDeviceCount,
+        'live exact active-device count',
+      ),
+      dotsActive: nullableBoolean(progress?.dotsActive),
+      workspaceHidden: nullableBoolean(progress?.workspaceHidden),
+      controllerState: allowlistedEnum(
+        progress?.controllerState ?? 'unknown',
+        ['inactive', 'loading', 'ready', 'unavailable', 'unknown'],
+        'live exact controller state',
+      ),
+      expectedPageCount: nullableNonNegativeInteger(
+        progress?.expectedPageCount,
+        'live exact expected page count',
+      ),
+      expectedTotalCount: nullableNonNegativeInteger(
+        progress?.expectedTotalCount,
+        'live exact expected total count',
+      ),
+      mismatchObservationCount: nullableNonNegativeInteger(
+        progress?.mismatchObservationCount,
+        'live exact mismatch observation count',
+      ),
+      firstMismatch: sanitizeLiveExactMismatch(progress?.firstMismatch),
+      lastMismatch: sanitizeLiveExactMismatch(progress?.lastMismatch),
+      actionFailure: sanitizeLiveExactActionFailure(progress?.actionFailure),
+    },
+    safety: {
+      providerGetOnly: true,
+      privateTargetSelectorVerified: true,
+      rawOperationalDataArchived: false,
+    },
+  }
+}
+
+/** Builds the only pass JSON shape permitted in archiveable real-field evidence. */
 export function buildAllowlistedLiveExactReport(input) {
   assertSha256(input.artifactSha256, 'artifact SHA-256')
   assertSha256(input.screenshotSha256, 'screenshot SHA-256')
@@ -595,6 +685,146 @@ export function buildAllowlistedLiveExactReport(input) {
       archiveContainsScreenshot: false,
     },
   }
+}
+
+function sanitizeLiveExactMismatch(value) {
+  if (value === null || value === undefined) return null
+  if (typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error('Live exact mismatch evidence is invalid.')
+  }
+  return {
+    sourceAvailable: nullableBoolean(value.sourceAvailable),
+    sourceValid: nullableBoolean(value.sourceValid),
+    observedPageCount: nullableNonNegativeInteger(
+      value.observedPageCount,
+      'live exact observed page count',
+    ),
+    observedTotalCount: nullableNonNegativeInteger(
+      value.observedTotalCount,
+      'live exact observed total count',
+    ),
+    targetFeatureCount: nullableNonNegativeInteger(
+      value.targetFeatureCount,
+      'live exact target-feature count',
+    ),
+    otherFeatureCount: nullableNonNegativeInteger(
+      value.otherFeatureCount,
+      'live exact other-feature count',
+    ),
+    baselineBreadcrumbPointCount: nullableNonNegativeInteger(
+      value.baselineBreadcrumbPointCount,
+      'live exact baseline breadcrumb-point count',
+    ),
+    countMatched: nullableBoolean(value.countMatched),
+    hmacMatched: nullableBoolean(value.hmacMatched),
+  }
+}
+
+function sanitizeLiveExactActionFailure(value) {
+  if (value === null || value === undefined) return null
+  if (typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error('Live exact action failure is invalid.')
+  }
+  return {
+    action: allowlistedEnum(value.action, ['earlier', 'later'], 'live exact action'),
+    pageIndexFromLatest: nonNegativeInteger(
+      value.pageIndexFromLatest,
+      'live exact action page index',
+    ),
+    failureClass: allowlistedEnum(
+      value.failureClass,
+      ['click_timeout_or_interception'],
+      'live exact action failure class',
+    ),
+    first: sanitizeLiveExactControlObservation(value.first),
+    last: sanitizeLiveExactControlObservation(value.last),
+  }
+}
+
+function sanitizeLiveExactControlObservation(value) {
+  if (value === null || value === undefined) return null
+  if (typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error('Live exact control observation is invalid.')
+  }
+  const bbox = value.bbox
+  if (
+    typeof bbox !== 'object' ||
+    bbox === null ||
+    [bbox.x, bbox.y, bbox.width, bbox.height].some((entry) => !Number.isFinite(entry))
+  ) {
+    throw new Error('Live exact control bounding box is invalid.')
+  }
+  return {
+    bbox: {
+      x: boundedDiagnosticNumber(bbox.x),
+      y: boundedDiagnosticNumber(bbox.y),
+      width: boundedDiagnosticNumber(bbox.width),
+      height: boundedDiagnosticNumber(bbox.height),
+    },
+    intercept: sanitizeLiveExactIntercept(value.intercept),
+  }
+}
+
+const LIVE_EXACT_STATIC_INTERCEPT_TEST_IDS = new Set([
+  'breadcrumb-mode-dots',
+  'devices-inspector',
+  'devices-workspace',
+  'exact-breadcrumb-dots-earlier',
+  'exact-breadcrumb-dots-later',
+  'open-devices-workspace',
+  'workspace-close-btn',
+])
+
+function sanitizeLiveExactIntercept(value) {
+  if (value === null || value === undefined) return null
+  if (typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error('Live exact control intercept is invalid.')
+  }
+  const token = (entry, pattern) =>
+    typeof entry === 'string' && pattern.test(entry) ? entry : null
+  const className = typeof value.className === 'string'
+    ? value.className
+        .split(/\s+/u)
+        .filter((entry) => /^[a-z0-9_:[\]./%+-]{1,80}$/iu.test(entry))
+        .slice(0, 8)
+        .join(' ')
+    : ''
+  return {
+    tag: token(value.tag, /^[a-z0-9-]{1,32}$/iu)?.toLowerCase() ?? null,
+    testId: LIVE_EXACT_STATIC_INTERCEPT_TEST_IDS.has(value.testId)
+      ? value.testId
+      : null,
+    className,
+  }
+}
+
+function boundedDiagnosticNumber(value) {
+  return Math.max(-100_000, Math.min(100_000, Math.round(value * 1_000) / 1_000))
+}
+
+function nullableBoolean(value) {
+  if (value === null || value === undefined) return null
+  if (typeof value !== 'boolean') {
+    throw new Error('Live exact boolean evidence is invalid.')
+  }
+  return value
+}
+
+function nullableNonNegativeInteger(value, label) {
+  if (value === null || value === undefined) return null
+  return nonNegativeInteger(value, label)
+}
+
+function allowlistedEnum(value, allowed, label) {
+  if (!allowed.includes(value)) {
+    throw new Error(`${label} is invalid.`)
+  }
+  return value
+}
+
+function nullableAllowlistedEnum(value, allowed, label) {
+  if (value === null || value === undefined) return null
+  return allowlistedEnum(value, allowed, label)
 }
 
 function normalizeExactFix(row, label) {

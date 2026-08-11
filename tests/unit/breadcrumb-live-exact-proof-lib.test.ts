@@ -7,6 +7,7 @@ import {
   auditRenderedExactGeoJsonFeatures,
   assertExactFixEvidenceChain,
   assertExactFixSequence,
+  buildAllowlistedLiveExactFailureReport,
   buildAllowlistedLiveExactReport,
   createExactFixEvidence,
   createExactIdentityTimeEvidence,
@@ -348,6 +349,139 @@ describe('independent real-provider exact-fix oracle', () => {
 })
 
 describe('allowlisted archive evidence', () => {
+  it('rebuilds a bounded exact-source failure report and rejects private extras', () => {
+    const report = buildAllowlistedLiveExactFailureReport({
+      artifactSha256: 'a'.repeat(64),
+      expectedVersion: '0.1.0-beta.12.11',
+      failureClass: 'EXACT_GEOJSON_PAGE_TIMEOUT',
+      progress: {
+        phase: 'exactGeoJson',
+        direction: 'earlier',
+        pageIndex: 1,
+        completedPageCount: 1,
+        targetActive: true,
+        activeDeviceCount: 1,
+        dotsActive: true,
+        workspaceHidden: true,
+        controllerState: 'ready',
+        expectedPageCount: 346,
+        expectedTotalCount: 10_346,
+        mismatchObservationCount: 3,
+        firstMismatch: {
+          sourceAvailable: true,
+          sourceValid: true,
+          observedPageCount: 10_000,
+          observedTotalCount: 10_346,
+          targetFeatureCount: 10_000,
+          otherFeatureCount: 0,
+          baselineBreadcrumbPointCount: 0,
+          countMatched: false,
+          hmacMatched: false,
+          rawDeviceId: '7',
+          coordinates: [52.1, -9.1],
+        },
+        lastMismatch: {
+          sourceAvailable: true,
+          sourceValid: true,
+          observedPageCount: 10_000,
+          observedTotalCount: 10_346,
+          targetFeatureCount: 10_000,
+          otherFeatureCount: 0,
+          baselineBreadcrumbPointCount: 0,
+          countMatched: false,
+          hmacMatched: false,
+          rawName: 'Private target name',
+        },
+        actionFailure: {
+          action: 'earlier',
+          pageIndexFromLatest: 1,
+          failureClass: 'click_timeout_or_interception',
+          first: {
+            bbox: { x: 12.125, y: 20, width: 80, height: 28 },
+            intercept: {
+              tag: 'aside',
+              testId: 'device-active-toggle-1199891612',
+              className: 'fixed inset-0',
+            },
+          },
+          last: null,
+          rawError: 'target 7 at 52.1,-9.1',
+        },
+        secret: 'must not survive',
+      },
+      credentials: 'must not survive',
+    })
+
+    expect(report).toEqual({
+      schemaVersion: 1,
+      proof: 'packaged-real-traccar-exact-breadcrumb-dots',
+      result: 'fail',
+      artifact: {
+        sha256: 'a'.repeat(64),
+        version: '0.1.0-beta.12.11',
+      },
+      failure: {
+        failureClass: 'EXACT_GEOJSON_PAGE_TIMEOUT',
+        phase: 'exactGeoJson',
+        direction: 'earlier',
+        pageIndex: 1,
+        completedPageCount: 1,
+        targetActive: true,
+        activeDeviceCount: 1,
+        dotsActive: true,
+        workspaceHidden: true,
+        controllerState: 'ready',
+        expectedPageCount: 346,
+        expectedTotalCount: 10_346,
+        mismatchObservationCount: 3,
+        firstMismatch: {
+          sourceAvailable: true,
+          sourceValid: true,
+          observedPageCount: 10_000,
+          observedTotalCount: 10_346,
+          targetFeatureCount: 10_000,
+          otherFeatureCount: 0,
+          baselineBreadcrumbPointCount: 0,
+          countMatched: false,
+          hmacMatched: false,
+        },
+        lastMismatch: {
+          sourceAvailable: true,
+          sourceValid: true,
+          observedPageCount: 10_000,
+          observedTotalCount: 10_346,
+          targetFeatureCount: 10_000,
+          otherFeatureCount: 0,
+          baselineBreadcrumbPointCount: 0,
+          countMatched: false,
+          hmacMatched: false,
+        },
+        actionFailure: {
+          action: 'earlier',
+          pageIndexFromLatest: 1,
+          failureClass: 'click_timeout_or_interception',
+          first: {
+            bbox: { x: 12.125, y: 20, width: 80, height: 28 },
+            intercept: {
+              tag: 'aside',
+              testId: null,
+              className: 'fixed inset-0',
+            },
+          },
+          last: null,
+        },
+      },
+      safety: {
+        providerGetOnly: true,
+        privateTargetSelectorVerified: true,
+        rawOperationalDataArchived: false,
+      },
+    })
+    expect(JSON.stringify(report)).not.toMatch(
+      /Private target|rawDeviceId|coordinates|credentials|secret|52\.1|-9\.1|1199891612/iu,
+    )
+  })
+
   it('emits only fixed-schema counts, hashes, booleans, durations, and artifact identity', () => {
     const digest = createHash('sha256').update('proof').digest('hex')
     const report = buildAllowlistedLiveExactReport({

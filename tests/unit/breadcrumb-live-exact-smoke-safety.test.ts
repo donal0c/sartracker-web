@@ -28,8 +28,8 @@ describe('real Traccar exact breadcrumb packaged gate [DON-260]', () => {
     expect(source).toContain("queryRenderedFeatures(undefined, { layers: ['tracking-breadcrumbs-dots'] })")
     expect(source).toContain("getSource('tracking')")
     expect(source).toContain("featureKind === 'breadcrumb'")
-    expect(source).toContain("getByTestId('exact-breadcrumb-dots-earlier')")
-    expect(source).toContain("getByTestId('exact-breadcrumb-dots-later')")
+    expect(source).toContain("testId: 'exact-breadcrumb-dots-earlier'")
+    expect(source).toContain("testId: 'exact-breadcrumb-dots-later'")
     expect(source).toContain('validateExactPageTraversal(')
     expect(source).toContain('assertExactFixEvidenceChain(')
     expect(source).toContain('assertExactFixSequence(')
@@ -44,6 +44,46 @@ describe('real Traccar exact breadcrumb packaged gate [DON-260]', () => {
     expect(source).toContain('screenDisplacementY')
   })
 
+  it('proves the sole target selection and closes Devices before bounded page navigation', () => {
+    const source = readFileSync(scriptPath, 'utf8')
+    const setupStart = source.indexOf("const activeToggle = page.getByTestId(")
+    const setupEnd = source.indexOf('const targetDeviceName', setupStart)
+    const setupSource = source.slice(setupStart, setupEnd)
+    const captureStart = source.indexOf('async function captureAllUiExactPages(input)')
+    const captureEnd = source.indexOf('/** Creates one allowlisted accumulator', captureStart)
+    const captureSource = source.slice(captureStart, captureEnd)
+
+    expect(setupSource).toContain('await assertSoleActiveTarget(')
+    expect(setupSource).toContain("click({ timeout: EXACT_UI_ACTION_TIMEOUT_MS })")
+    expect(setupSource).not.toContain('force: true')
+    expect(captureSource).toContain('await assertSoleActiveTarget(')
+    expect(captureSource).toContain('await assertBreadcrumbDotsActive(')
+    expect(captureSource).toContain("getByTestId('workspace-close-btn').click({")
+    expect(captureSource).toContain("state: 'hidden'")
+    expect(captureSource.indexOf("state: 'hidden'")).toBeLessThan(
+      captureSource.indexOf('for (let pageIndex = 0;'),
+    )
+    expect(captureSource).toContain('clickLiveExactPageControl({')
+    expect(captureSource).toContain('timeoutMs: EXACT_UI_ACTION_TIMEOUT_MS')
+    expect(captureSource).not.toContain('force: true')
+  })
+
+  it('retains one mode-0600 allowlisted failure report before deleting private state', () => {
+    const source = readFileSync(scriptPath, 'utf8')
+    const catchStart = source.indexOf('} catch (error) {')
+    const catchEnd = source.indexOf('} finally {', catchStart)
+    const catchSource = source.slice(catchStart, catchEnd)
+
+    expect(source).toContain('buildAllowlistedLiveExactFailureReport(')
+    expect(catchSource).toContain('await writeFile(summaryPath')
+    expect(catchSource).toContain('mode: 0o600')
+    expect(catchSource).toContain('reportWritten = true')
+    expect(catchSource).not.toContain('error.message')
+    expect(source).toContain('firstMismatch')
+    expect(source).toContain('lastMismatch')
+    expect(source).toContain('mismatchObservationCount')
+  })
+
   it('keeps the Dots screenshot private and writes only allowlisted evidence after cleanup', () => {
     const source = readFileSync(scriptPath, 'utf8')
     expect(source).toContain("getByTestId('breadcrumb-mode-dots')")
@@ -51,6 +91,7 @@ describe('real Traccar exact breadcrumb packaged gate [DON-260]', () => {
     expect(source).toContain("'PRIVATE_SCREENSHOT_DEVICE_NAME_VISIBLE'")
     expect(source).toContain("layers: ['tracking-devices-label']")
     expect(source).toContain('await chmod(privateDotsScreenshotPath, 0o600)')
+    expect(source).toContain('if (screenshotWritten && !passReportWritten)')
     expect(source).toContain('buildAllowlistedLiveExactReport(')
     expect(source).toContain('await rm(userDataRoot, { recursive: true, force: true })')
     expect(source).toContain('providerPayload = null')
@@ -65,24 +106,40 @@ describe('real Traccar exact breadcrumb packaged gate [DON-260]', () => {
 
   it('waits for signal-terminated owned processes before opening or deleting their profile', () => {
     const source = readFileSync(scriptPath, 'utf8')
-    const stopStart = source.indexOf('async function stopOwnedProcess')
-    const stopSource = source.slice(stopStart)
+    const finallyStart = source.indexOf('} finally {')
+    const finallySource = source.slice(finallyStart)
 
-    expect(stopSource).toContain('signalCode')
-    expect(stopSource).toContain("ownedProcess.kill('SIGKILL')")
-    expect(stopSource.indexOf("ownedProcess.kill('SIGKILL')")).toBeLessThan(
-      stopSource.lastIndexOf("ownedProcess.once('exit'"),
+    expect(source).toContain('stopOwnedProcess as stopLifecycleOwnedProcess')
+    expect(source).toContain('runCleanupStep')
+    expect(source).toContain('let launchCleanupPromise = null')
+    expect(source).toContain('async function closeOwnedLiveLaunch()')
+    expect(source).toContain('runCleanupStep(() => activeBrowser.close()')
+    expect(source).toContain('await stopLifecycleOwnedProcess(activeProcess')
+    expect(source).toContain("throw new Error('OWNED_PROCESS_CLEANUP_FAILED')")
+    expect(finallySource).toContain('cleanupCompleted = true')
+    expect(finallySource).toContain('if (cleanupCompleted)')
+    expect(finallySource).not.toContain('stopOwnedProcess(appProcess).catch')
+    expect(finallySource.indexOf('if (cleanupCompleted)')).toBeLessThan(
+      finallySource.indexOf('await rm(userDataRoot'),
     )
   })
 
   it('fails the CDP launch promptly when the packaged process exits by signal', () => {
     const source = readFileSync(scriptPath, 'utf8')
     const waitStart = source.indexOf('async function waitForCdp')
-    const waitEnd = source.indexOf('async function stopOwnedProcess')
-    const waitSource = source.slice(waitStart, waitEnd)
+    const waitSource = source.slice(waitStart)
 
     expect(waitSource).toContain('signalCode')
     expect(waitSource).toMatch(/exitCode\s*===\s*null[\s\S]*signalCode\s*===\s*null/iu)
+  })
+
+  it('records the actual rendered, SQLite, cleanup, and report failure phases', () => {
+    const source = readFileSync(scriptPath, 'utf8')
+
+    expect(source).toContain("input.failureProgress.phase = 'renderedMap'")
+    expect(source).toContain("failureProgress.phase = 'sqlite'")
+    expect(source).toContain("failureProgress.phase = 'report'")
+    expect(source).toContain("failureProgress.phase = 'cleanup'")
   })
 
   it('bounds the independent SQLite lane to the same mission start as provider and exact pages', () => {

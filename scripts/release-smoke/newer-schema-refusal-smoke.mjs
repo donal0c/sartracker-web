@@ -7,6 +7,7 @@ import { promisify } from 'node:util'
 
 import {
   countDescendantElectronRenderers,
+  createNewerSchemaRefusalExpectation,
   fileSnapshotsMatch,
 } from '../../build/release-smoke-lib.js'
 
@@ -15,13 +16,16 @@ const appPath = requiredEnvironment('SMOKE_APP')
 const evidenceDir = requiredEnvironment('SMOKE_EVIDENCE')
 const userDataDir = requiredEnvironment('SMOKE_USER_DATA')
 const expectedAppSha256 = requiredEnvironment('SMOKE_EXPECTED_APP_SHA256')
+const schemaExpectation = createNewerSchemaRefusalExpectation(
+  requiredEnvironment('SMOKE_NEWER_SCHEMA_VERSION'),
+  requiredEnvironment('SMOKE_SUPPORTED_SCHEMA_VERSION'),
+)
 
 await mkdir(evidenceDir, { recursive: true })
 await assertFileSha256(appPath, expectedAppSha256)
 const filesBefore = await snapshotMissionStoreFiles(userDataDir)
 const port = await findFreePort()
-const expectedMessage =
-  'Cannot open mission store created by newer mission store schema 6; this build supports schema 5.'
+const expectedMessage = schemaExpectation.expectedMessage
 const dialogOperatorTitle = 'SAR Tracker could not start'
 // Electron's Linux GTK implementation presents showErrorBox windows with the
 // native WM title "Error"; the app-owned operator title is asserted by unit
@@ -57,11 +61,7 @@ try {
     20_000,
   )
   rendererCdpSnapshot = await inspectRendererPages(port)
-  await execFile(
-    'xdotool',
-    ['key', '--window', dialogWindowId, 'Return'],
-    { env: process.env },
-  )
+  await dismissErrorDialog(dialogWindowId)
   processExit = await waitForProcessExit(appProcess, 10_000)
 } finally {
   if (appProcess.exitCode === null) {
@@ -107,6 +107,8 @@ const result = {
       ? 'pass'
       : 'fail',
   appSha256: expectedAppSha256,
+  newerSchemaVersion: schemaExpectation.newerSchemaVersion,
+  supportedSchemaVersion: schemaExpectation.supportedSchemaVersion,
   dialogOperatorTitle,
   dialogWindowName,
   dialogWindowId,
@@ -250,6 +252,37 @@ async function isSarTrackerErrorDialog(windowId) {
   } catch {
     return false
   }
+}
+
+/**
+ * Clicks the native dialog's acceptance control using verified window-relative
+ * geometry. GTK showErrorBox does not reliably route a synthetic Return key
+ * to the button under Xwayland.
+ */
+async function dismissErrorDialog(windowId) {
+  const { stdout: geometry } = await execFile(
+    'xdotool',
+    ['getwindowgeometry', '--shell', windowId],
+    { env: process.env, timeout: 2_000 },
+  )
+  const width = Number(/^WIDTH=(\d+)$/mu.exec(geometry)?.[1])
+  const height = Number(/^HEIGHT=(\d+)$/mu.exec(geometry)?.[1])
+  if (!Number.isInteger(width) || !Number.isInteger(height)) {
+    throw new Error('Could not read the startup-refusal dialog geometry.')
+  }
+  await execFile(
+    'xdotool',
+    [
+      'mousemove',
+      '--window',
+      windowId,
+      String(width - 52),
+      String(height - 42),
+      'click',
+      '1',
+    ],
+    { env: process.env, timeout: 2_000 },
+  )
 }
 
 /**

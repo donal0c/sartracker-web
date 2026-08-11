@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest'
 
 import {
   countDescendantElectronRenderers,
+  createNewerSchemaRefusalExpectation,
   fileSnapshotsMatch,
   hasBreadcrumbReconciliationWarning,
 } from '../../build/release-smoke-lib.js'
@@ -98,10 +99,45 @@ describe('newer-schema immutability smoke guard [DON-260]', () => {
       'utf8',
     )
     expect(source).toContain("requiredEnvironment('SMOKE_EXPECTED_APP_SHA256')")
+    expect(source).toContain("requiredEnvironment('SMOKE_NEWER_SCHEMA_VERSION')")
+    expect(source).toContain("requiredEnvironment('SMOKE_SUPPORTED_SCHEMA_VERSION')")
+    expect(source).toContain('createNewerSchemaRefusalExpectation(')
     expect(source).toContain('await assertFileSha256(appPath, expectedAppSha256)')
     expect(source).toContain('snapshotMissionStoreFiles(userDataDir)')
     expect(source).toContain('fileSnapshotsMatch(filesBefore, filesAfter)')
+    expect(source).toContain('dialogWindowId !== null')
+    expect(source).toContain('await dismissErrorDialog(dialogWindowId)')
+    expect(source).toMatch(/'mousemove',\s*'--window',\s*windowId/u)
+    expect(source).not.toContain("['key', '--window', dialogWindowId, 'Return']")
+    expect(source).toContain('processExit?.code === 1')
+    expect(source).toContain('rendererProcessEvidence.maximum === 0')
+    expect(source).toContain('rendererCdpSnapshot.pageCount === 0')
+    expect(source).toContain('expectedMessagePresent')
+    expect(source).toContain('filesUnchanged')
     expect(source).not.toContain('bytesAfter === bytesBefore')
+    expect(source).not.toContain('newer mission store schema 6')
+    expect(source).not.toContain('supports schema 5')
+  })
+
+  it('builds a fail-closed artifact-scoped newer-schema expectation', () => {
+    expect(createNewerSchemaRefusalExpectation('8', '7')).toEqual({
+      newerSchemaVersion: 8,
+      supportedSchemaVersion: 7,
+      expectedMessage:
+        'Cannot open mission store created by newer mission store schema 8; this build supports schema 7.',
+    })
+    expect(() => createNewerSchemaRefusalExpectation('', '7')).toThrow(
+      /newer schema version/iu,
+    )
+    expect(() => createNewerSchemaRefusalExpectation('8', '7.5')).toThrow(
+      /supported schema version/iu,
+    )
+    expect(() => createNewerSchemaRefusalExpectation('7', '7')).toThrow(
+      /must be newer/iu,
+    )
+    expect(() => createNewerSchemaRefusalExpectation('6', '7')).toThrow(
+      /must be newer/iu,
+    )
   })
 
   it('detects renderer processes anywhere below an AppImage wrapper process', () => {

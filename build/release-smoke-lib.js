@@ -45,6 +45,53 @@ export function fileSnapshotsMatch(before, after) {
 }
 
 /**
+ * Builds the exact startup-refusal expectation for one immutable artifact and
+ * one deliberately newer disposable mission-store profile.
+ *
+ * @param {string} newerSchemaInput
+ * @param {string} supportedSchemaInput
+ * @returns {{newerSchemaVersion: number, supportedSchemaVersion: number, expectedMessage: string}}
+ */
+export function createNewerSchemaRefusalExpectation(
+  newerSchemaInput,
+  supportedSchemaInput,
+) {
+  const newerSchemaVersion = parseRequiredSchemaVersion(
+    newerSchemaInput,
+    'Newer schema version',
+  )
+  const supportedSchemaVersion = parseRequiredSchemaVersion(
+    supportedSchemaInput,
+    'Supported schema version',
+  )
+  if (newerSchemaVersion <= supportedSchemaVersion) {
+    throw new Error(
+      `Newer schema version ${newerSchemaVersion} must be newer than supported schema version ${supportedSchemaVersion}.`,
+    )
+  }
+  return {
+    newerSchemaVersion,
+    supportedSchemaVersion,
+    expectedMessage:
+      `Cannot open mission store created by newer mission store schema ${newerSchemaVersion}; ` +
+      `this build supports schema ${supportedSchemaVersion}.`,
+  }
+}
+
+/** @param {string} input @param {string} label @returns {number} */
+function parseRequiredSchemaVersion(input, label) {
+  const normalized = typeof input === 'string' ? input.trim() : ''
+  if (!/^[1-9]\d*$/u.test(normalized)) {
+    throw new Error(`${label} must be a positive integer.`)
+  }
+  const version = Number(normalized)
+  if (!Number.isSafeInteger(version)) {
+    throw new Error(`${label} must be a safe integer.`)
+  }
+  return version
+}
+
+/**
  * Counts Electron renderer processes in the complete descendant tree of one
  * AppImage launcher. Other Electron applications on the host are excluded.
  *

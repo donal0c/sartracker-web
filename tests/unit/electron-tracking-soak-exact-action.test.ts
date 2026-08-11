@@ -68,6 +68,31 @@ async function settleWithin<T>(promise: Promise<T>, timeoutMs = 250) {
 }
 
 describe('packaged exact-dot page action safety [DON-260]', () => {
+  it('requires an unobstructed ordinary click to advance beyond a covered latest page', async () => {
+    const harness = createControlHarness({ observations: [] })
+    let workspaceOverlayOpen = true
+    let pageIndexFromLatest = 0
+    harness.locator.click.mockImplementation(async (options?: { force?: boolean }) => {
+      if (options?.force === true) return
+      if (workspaceOverlayOpen) throw new Error('covered by Devices workspace')
+      pageIndexFromLatest = 1
+    })
+
+    await harness.locator.click({ force: true })
+    expect(pageIndexFromLatest).toBe(0)
+
+    workspaceOverlayOpen = false
+    await clickExactDotPageControl({
+      page: harness.page,
+      testId: 'exact-breadcrumb-dots-earlier',
+      pageIndexFromLatest: 1,
+      timeoutMs: 5_000,
+    })
+
+    expect(pageIndexFromLatest).toBe(1)
+    expect(harness.locator.click).toHaveBeenLastCalledWith({ timeout: 5_000 })
+  })
+
   it('lets an ordinary Playwright click settle a transiently obstructed preflight', async () => {
     const harness = createControlHarness({
       observations: [{
