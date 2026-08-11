@@ -33,6 +33,54 @@ export const MAX_RENDERED_EXACT_DOT_COORDINATE_ERROR_SCREEN_PIXELS_EUCLIDEAN =
   Math.SQRT2 * MAX_RENDERED_EXACT_DOT_COORDINATE_ERROR_SCREEN_PIXELS_PER_AXIS
 
 /**
+ * Reads only the two first-publication counts needed by the timed milestone
+ * loop. The function is deliberately self-contained because Playwright
+ * serializes it into the renderer; no GeoJSON rows cross CDP.
+ */
+export async function readCompactBreadcrumbMilestoneEvidenceInRenderer(input) {
+  let currentPositionCount = null
+  let exactBreadcrumbPointCount = null
+
+  if (input?.readCurrentPositions === true) {
+    const trackingData = window.__SARTRACKER_TRACKING_SET_DATA_CAPTURE__?.latest
+    currentPositionCount =
+      trackingData?.type === 'FeatureCollection' && Array.isArray(trackingData.features)
+        ? trackingData.features.filter(
+            (feature) => feature?.properties?.featureKind === 'device',
+          ).length
+        : 0
+  }
+
+  if (input?.readExactBreadcrumbs === true) {
+    const exactSource = window.__SARTRACKER_MAP__?.getSource(
+      'tracking-breadcrumb-dots-exact',
+    )
+    const exactData =
+      exactSource === undefined
+        ? null
+        : typeof exactSource.getData === 'function'
+          ? await exactSource.getData()
+          : typeof exactSource.serialize === 'function'
+            ? exactSource.serialize()?.data
+            : null
+    exactBreadcrumbPointCount =
+      exactData?.type === 'FeatureCollection' && Array.isArray(exactData.features)
+        ? exactData.features.filter(
+            (feature) =>
+              feature?.properties?.featureKind === 'breadcrumb' &&
+              feature?.geometry?.type === 'Point',
+          ).length
+        : 0
+  }
+
+  return {
+    sampledAtUnixMs: Date.now(),
+    currentPositionCount,
+    exactBreadcrumbPointCount,
+  }
+}
+
+/**
  * Normalizes MapLibre rendered exact-dot features around the authoritative
  * device/source identity properties. GeoJSON-VT can omit string Feature.id
  * values from rendered-query results, so the audit derives the same stable
@@ -557,6 +605,151 @@ export function summarizeBreadcrumbRequestLedger(requestLedger, options = {}) {
         requestCount,
       })),
   }
+}
+
+/**
+ * Freezes the completed-request truth at the acceptance deadline. Requests
+ * that settle while failure screenshots and cleanup run remain visible in the
+ * final ledger, but cannot improve this deadline-scoped verdict.
+ */
+export function createBreadcrumbReconciliationDeadlineEvidence(input) {
+  const observedFromUnixMs = normalizeFiniteEpoch(
+    input.observedFromUnixMs,
+    'reconciliation observation start',
+  )
+  const deadlineAtUnixMs = normalizeFiniteEpoch(
+    input.deadlineAtUnixMs,
+    'reconciliation deadline',
+  )
+  const observedAtUnixMs = normalizeFiniteEpoch(
+    input.observedAtUnixMs,
+    'reconciliation deadline observation',
+  )
+  if (deadlineAtUnixMs < observedFromUnixMs) {
+    throw new Error('Reconciliation deadline precedes its observation start.')
+  }
+  if (observedAtUnixMs < deadlineAtUnixMs) {
+    throw new Error('Reconciliation deadline evidence was captured before the deadline.')
+  }
+
+  const requestLedger = Array.isArray(input.requestSnapshot?.requestLedger)
+    ? input.requestSnapshot.requestLedger
+    : []
+  const completedByDeadline = requestLedger.filter(
+    (entry) =>
+      Number.isFinite(Number(entry?.completedAtMs)) &&
+      Number(entry.completedAtMs) <= deadlineAtUnixMs,
+  )
+  const startedByDeadline = requestLedger.filter(
+    (entry) =>
+      Number.isFinite(Number(entry?.startedAtMs)) &&
+      Number(entry.startedAtMs) <= deadlineAtUnixMs,
+  )
+  const requestCoverage = analyzeBreadcrumbRequestCoverage({
+    requestLedger: completedByDeadline,
+    deviceIds: input.deviceIds,
+    requiredFrom: input.requiredFrom,
+    requiredTo: input.requiredTo,
+  })
+
+  return {
+    observedFromUnixMs,
+    deadlineAtUnixMs,
+    observedAtUnixMs,
+    observedAfterDeadlineMs: observedAtUnixMs - deadlineAtUnixMs,
+    currentFixMs: Number.isFinite(input.currentFixMs) ? input.currentFixMs : null,
+    firstBreadcrumbMs:
+      Number.isFinite(input.firstBreadcrumbMs) ? input.firstBreadcrumbMs : null,
+    completedRequestCount: completedByDeadline.length,
+    completedHistoryRequestCount: completedByDeadline.filter(
+      (entry) => entry.kind === 'history',
+    ).length,
+    settledRequestStartedByDeadlineCount: startedByDeadline.length,
+    settledHistoryRequestStartedByDeadlineCount: startedByDeadline.filter(
+      (entry) => entry.kind === 'history',
+    ).length,
+    postDeadlineCompletedRequestCountAtObservation: requestLedger.filter(
+      (entry) =>
+        Number.isFinite(Number(entry?.completedAtMs)) &&
+        Number(entry.completedAtMs) > deadlineAtUnixMs &&
+        Number(entry.completedAtMs) <= observedAtUnixMs,
+    ).length,
+    activeRequestsAtObservation:
+      Number.isSafeInteger(input.requestSnapshot?.activeRequests)
+        ? input.requestSnapshot.activeRequests
+        : null,
+    activeHistoryRequestsAtObservation:
+      Number.isSafeInteger(input.requestSnapshot?.activeHistoryRequests)
+        ? input.requestSnapshot.activeHistoryRequests
+        : null,
+    trackingStatusText: String(input.trackingStatusText ?? '').slice(0, 1_000),
+    requestCoverage,
+    requestSummary: summarizeBreadcrumbRequestLedger(completedByDeadline),
+  }
+}
+
+/**
+ * Records product publication timing separately from the proof work needed to
+ * transport, hash, render, and confirm the sampled source a second time.
+ */
+export function createBreadcrumbPublicationTimingEvidence(input) {
+  const timestamps = [
+    input.observedFromUnixMs,
+    input.firstExactSampledAtUnixMs,
+    input.proofCompletedAtUnixMs,
+  ]
+  if (!timestamps.every(Number.isFinite)) {
+    throw new Error('Breadcrumb publication timing requires finite timestamps.')
+  }
+  if (input.firstExactSampledAtUnixMs < input.observedFromUnixMs) {
+    throw new Error(
+      'Breadcrumb source was sampled before the timing observation began.',
+    )
+  }
+  if (input.proofCompletedAtUnixMs < input.firstExactSampledAtUnixMs) {
+    throw new Error(
+      'Breadcrumb proof completed before the exact source sample.',
+    )
+  }
+  return {
+    firstExactPublicationMs:
+      input.firstExactSampledAtUnixMs - input.observedFromUnixMs,
+    proofCompletedMs:
+      input.proofCompletedAtUnixMs - input.observedFromUnixMs,
+    proofDurationMs:
+      input.proofCompletedAtUnixMs - input.firstExactSampledAtUnixMs,
+  }
+}
+
+/**
+ * Distinguishes the non-empty source needed to start catch-up observation from
+ * the final exact-page equality required after reconciliation completes.
+ */
+export function breadcrumbDotActivationSourceIsReady(input) {
+  if (
+    input.sourceRequirement !== 'nonempty' &&
+    input.sourceRequirement !== 'exact'
+  ) {
+    throw new Error('Breadcrumb Dots source requirement must be nonempty or exact.')
+  }
+  const countsMatch =
+    Number.isSafeInteger(input.operatorPagePositionCount) &&
+    input.operatorPagePositionCount > 0 &&
+    Number.isSafeInteger(input.sourceFeatureCount) &&
+    input.sourceFeatureCount === input.operatorPagePositionCount
+  if (!countsMatch) {
+    return false
+  }
+  return input.sourceRequirement === 'nonempty' ||
+    input.exactSourceMatchesExpected === true
+}
+
+function normalizeFiniteEpoch(value, label) {
+  const normalized = Number(value)
+  if (!Number.isFinite(normalized) || normalized < 0) {
+    throw new Error(`${label} must be a finite non-negative epoch.`)
+  }
+  return normalized
 }
 
 /** Reports durable reconciliation cursor coverage for every required device. */
@@ -1713,11 +1906,10 @@ export function buildBreadcrumbRestartProofVerdict(input) {
   if (input.restoredMissionMatches !== true) {
     failureReasons.push('The completed restart did not restore the same active mission.')
   }
-  requireAtMost(
+  validateRestartPublicationTiming(
     failureReasons,
-    input.postCompletionRenderMs,
-    MAX_FIRST_BREADCRUMB_MS,
-    'post-completion restart render',
+    input.postCompletionRendered,
+    'Line',
   )
   comparePersistenceEvidence(
     failureReasons,
@@ -1752,12 +1944,7 @@ function validatePostCompletionRestartExactDots(reasons, observed, oracle) {
     reasons.push('Post-completion restart exact-dot evidence was not provided.')
     return
   }
-  requireAtMost(
-    reasons,
-    observed.observedMs,
-    MAX_FIRST_BREADCRUMB_MS,
-    'post-completion restart exact-dot render',
-  )
+  validateRestartPublicationTiming(reasons, observed, 'Dots')
   const explicitModeActivationMatches =
     observed.modeActivation?.selectedMode === 'dots' &&
     typeof observed.modeActivation?.sizeLabel === 'string' &&
@@ -1801,6 +1988,37 @@ function validatePostCompletionRestartExactDots(reasons, observed, oracle) {
       'Post-completion restart exact-dot source, rendered layer, or operator page differed from the independent latest-page oracle.',
     )
   }
+}
+
+function validateRestartPublicationTiming(reasons, observed, label) {
+  const firstExactPublicationMs = observed?.firstExactPublicationMs
+  const proofCompletedMs = observed?.proofCompletedMs
+  const proofDurationMs = observed?.proofDurationMs
+  const stableConfirmedMs = observed?.stableConfirmedMs
+  const timingIsCoherent =
+    Number.isFinite(firstExactPublicationMs) &&
+    firstExactPublicationMs >= 0 &&
+    Number.isFinite(proofCompletedMs) &&
+    proofCompletedMs >= firstExactPublicationMs &&
+    Number.isFinite(proofDurationMs) &&
+    proofDurationMs >= 0 &&
+    proofDurationMs === proofCompletedMs - firstExactPublicationMs &&
+    Number.isFinite(stableConfirmedMs) &&
+    stableConfirmedMs === proofCompletedMs &&
+    Number.isFinite(observed?.observedMs) &&
+    observed.observedMs === proofCompletedMs
+  if (!timingIsCoherent) {
+    reasons.push(
+      `Post-completion restart ${label} timing/proof evidence was missing or contradictory.`,
+    )
+    return
+  }
+  requireAtMost(
+    reasons,
+    firstExactPublicationMs,
+    MAX_FIRST_BREADCRUMB_MS,
+    `post-completion restart ${label} first exact publication`,
+  )
 }
 
 function comparePersistenceEvidence(reasons, completed, restarted) {

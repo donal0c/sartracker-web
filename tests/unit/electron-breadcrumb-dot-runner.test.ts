@@ -29,6 +29,12 @@ describe('exact breadcrumb-dot worker runner', () => {
         id TEXT PRIMARY KEY,
         start_time TEXT NOT NULL
       );
+      CREATE TABLE devices (
+        id TEXT PRIMARY KEY,
+        mission_id TEXT NOT NULL,
+        device_id TEXT NOT NULL,
+        UNIQUE (mission_id, device_id)
+      );
       CREATE TABLE positions (
         id TEXT PRIMARY KEY,
         mission_id TEXT NOT NULL,
@@ -41,6 +47,8 @@ describe('exact breadcrumb-dot worker runner', () => {
       );
       INSERT INTO missions VALUES
         ('mission-a', '2026-08-10T09:00:00.000Z');
+      INSERT INTO devices VALUES
+        ('device-local-1', 'mission-a', 'device-1');
       INSERT INTO positions VALUES
         ('local-1', 'mission-a', 'device-1', 'source-1', 52.1, -9.1,
          '2026-08-10T10:00:00.000Z', 'live');

@@ -1730,13 +1730,15 @@ async function auditLatestExactDotPage(input) {
   let timing
   let rss
   try {
+    const expectedPage = prepareExpectedExactSoakSourcePage(oracle, 0)
     const initialPage = await openExactDotWorkspace(
       input.launch,
       () => waitForExactSoakSourcePage({
         page: input.launch.page,
         launch: input.launch,
-        oracle,
         pageIndexFromLatest: 0,
+        expectedPageEvidence: expectedPage.pageEvidence,
+        expectedTotalFixCount: expectedPage.totalFixCount,
         timeoutMs: Math.min(input.timeoutMs, EXACT_PAGE_ACTION_TIMEOUT_MS),
         sleepGuard: input.sleepGuard,
       }),
@@ -1840,13 +1842,15 @@ async function auditFinalExactDotTraversal(input) {
   const proofWallStartedAt = performance.now()
   const memorySampler = startExactAuditMemorySampler(input.launch)
   try {
+    const expectedLatestPage = prepareExpectedExactSoakSourcePage(oracle, 0)
     const initialPage = await openExactDotWorkspace(
       input.launch,
       () => waitForExactSoakSourcePage({
         page: input.launch.page,
         launch: input.launch,
-        oracle,
         pageIndexFromLatest: 0,
+        expectedPageEvidence: expectedLatestPage.pageEvidence,
+        expectedTotalFixCount: expectedLatestPage.totalFixCount,
         timeoutMs: Math.min(input.timeoutMs, EXACT_PAGE_ACTION_TIMEOUT_MS),
         sleepGuard: input.sleepGuard,
       }),
@@ -1865,6 +1869,10 @@ async function auditFinalExactDotTraversal(input) {
       input.progress.pageIndexFromLatest = pageIndexFromLatest
       let source
       if (pageIndexFromLatest > 0) {
+        const expectedPage = prepareExpectedExactSoakSourcePage(
+          oracle,
+          pageIndexFromLatest,
+        )
         const ownedClick = await performLaunchOwnedHarnessClick(
           input.launch,
           'exact-breadcrumb-dots-earlier',
@@ -1877,8 +1885,9 @@ async function auditFinalExactDotTraversal(input) {
           () => waitForExactSoakSourcePage({
             page: input.launch.page,
             launch: input.launch,
-            oracle,
             pageIndexFromLatest,
+            expectedPageEvidence: expectedPage.pageEvidence,
+            expectedTotalFixCount: expectedPage.totalFixCount,
             timeoutMs: Math.min(input.timeoutMs, EXACT_PAGE_ACTION_TIMEOUT_MS),
             sleepGuard: input.sleepGuard,
           }),
@@ -1939,6 +1948,10 @@ async function auditFinalExactDotTraversal(input) {
       input.progress.phase = 'later'
       input.progress.direction = 'later'
       input.progress.pageIndexFromLatest = pageIndexFromLatest
+      const expectedPage = prepareExpectedExactSoakSourcePage(
+        oracle,
+        pageIndexFromLatest,
+      )
       const ownedClick = await performLaunchOwnedHarnessClick(
         input.launch,
         'exact-breadcrumb-dots-later',
@@ -1951,8 +1964,9 @@ async function auditFinalExactDotTraversal(input) {
         () => waitForExactSoakSourcePage({
           page: input.launch.page,
           launch: input.launch,
-          oracle,
           pageIndexFromLatest,
+          expectedPageEvidence: expectedPage.pageEvidence,
+          expectedTotalFixCount: expectedPage.totalFixCount,
           timeoutMs: Math.min(input.timeoutMs, EXACT_PAGE_ACTION_TIMEOUT_MS),
           sleepGuard: input.sleepGuard,
         }),
@@ -2534,16 +2548,24 @@ async function queryExactDotPage(page, input) {
   return { result, durationMs: performance.now() - startedAt }
 }
 
+/** Prepares independent formula truth before the measured product action starts. */
+function prepareExpectedExactSoakSourcePage(oracle, pageIndexFromLatest) {
+  return {
+    pageEvidence: auditIndependentExactSoakPage(
+      oracle,
+      pageIndexFromLatest,
+      oracle.createPage(pageIndexFromLatest),
+    ),
+    totalFixCount: oracle.totalFixCount,
+  }
+}
+
 /** Waits for one stable exact MapLibre source page and a clean baseline source. */
 async function waitForExactSoakSourcePage(input) {
   const startedAt = performance.now()
   const sourceReadStartedAtEpochMs = Date.now()
   const deadline = Date.now() + input.timeoutMs
-  const expectedPageEvidence = auditIndependentExactSoakPage(
-    input.oracle,
-    input.pageIndexFromLatest,
-    input.oracle.createPage(input.pageIndexFromLatest),
-  )
+  const expectedPageEvidence = input.expectedPageEvidence
   let firstMismatch = null
   let lastMismatch = null
   let mismatchObservationCount = 0
@@ -2598,7 +2620,7 @@ async function waitForExactSoakSourcePage(input) {
       assertExactSoakOperatorEvidence(
         first.operator,
         expectedPageEvidence,
-        input.oracle.totalFixCount,
+        input.expectedTotalFixCount,
       )
       if (first.baselineBreadcrumbPointCount !== 0) {
         throw new Error('Baseline tracking source contained breadcrumb Points.')

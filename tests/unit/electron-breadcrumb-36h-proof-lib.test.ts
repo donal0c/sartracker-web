@@ -8,11 +8,14 @@ import {
   analyzeBreadcrumbCheckpointProgress,
   analyzeBreadcrumbRequestCoverage,
   analyzeTransientHistoryRetries,
+  breadcrumbDotActivationSourceIsReady,
   buildBreadcrumb36HourProofVerdict,
   buildBreadcrumb36HourRenderedOracle,
   buildBreadcrumb36HourVariableSpeedEvidence,
   buildBreadcrumbRestartProofVerdict,
   cleanupOwnedProcess,
+  createBreadcrumbPublicationTimingEvidence,
+  createBreadcrumbReconciliationDeadlineEvidence,
   createPersistedBreadcrumbEvidence,
   createRenderedBreadcrumbEvidence,
   MAX_RENDERED_EXACT_DOT_COORDINATE_ERROR_METRES,
@@ -23,6 +26,7 @@ import {
   verifyBreadcrumbRuntimeConfiguration,
   parseBreadcrumb36HourProofArgs,
   processExited,
+  readCompactBreadcrumbMilestoneEvidenceInRenderer,
   summarizeBreadcrumbRequestLedger,
 } from '../../build/electron-breadcrumb-36h-proof-lib.js'
 import * as breadcrumbProofModule from '../../build/electron-breadcrumb-36h-proof-lib.js'
@@ -62,6 +66,223 @@ type PersistedSelectorPosition = {
 }
 
 describe('packaged Electron 36-hour breadcrumb proof helpers', () => {
+  it('separates catch-up Dots activation from completed exact-page acceptance', () => {
+    const stillReconciling = {
+      operatorPagePositionCount: 1_440,
+      sourceFeatureCount: 1_440,
+      exactSourceMatchesExpected: false,
+    }
+    expect(breadcrumbDotActivationSourceIsReady({
+      ...stillReconciling,
+      sourceRequirement: 'nonempty',
+    })).toBe(true)
+    expect(breadcrumbDotActivationSourceIsReady({
+      ...stillReconciling,
+      sourceRequirement: 'exact',
+    })).toBe(false)
+    expect(breadcrumbDotActivationSourceIsReady({
+      ...stillReconciling,
+      sourceRequirement: 'exact',
+      exactSourceMatchesExpected: true,
+    })).toBe(true)
+    expect(breadcrumbDotActivationSourceIsReady({
+      sourceRequirement: 'nonempty',
+      operatorPagePositionCount: 0,
+      sourceFeatureCount: 0,
+      exactSourceMatchesExpected: false,
+    })).toBe(false)
+    expect(() => breadcrumbDotActivationSourceIsReady({
+      ...stillReconciling,
+      sourceRequirement: 'eventually',
+    })).toThrow(/source requirement/iu)
+  })
+
+  it('separates first exact publication from later proof transport and stability work', () => {
+    expect(createBreadcrumbPublicationTimingEvidence({
+      observedFromUnixMs: 1_000,
+      firstExactSampledAtUnixMs: 9_500,
+      proofCompletedAtUnixMs: 13_000,
+    })).toEqual({
+      firstExactPublicationMs: 8_500,
+      proofCompletedMs: 12_000,
+      proofDurationMs: 3_500,
+    })
+
+    expect(() => createBreadcrumbPublicationTimingEvidence({
+      observedFromUnixMs: 1_000,
+      firstExactSampledAtUnixMs: 999,
+      proofCompletedAtUnixMs: 13_000,
+    })).toThrow(/sampled.*before.*observation/iu)
+    expect(() => createBreadcrumbPublicationTimingEvidence({
+      observedFromUnixMs: 1_000,
+      firstExactSampledAtUnixMs: 9_500,
+      proofCompletedAtUnixMs: 9_499,
+    })).toThrow(/completed.*before.*sample/iu)
+    expect(() => createBreadcrumbPublicationTimingEvidence({
+      observedFromUnixMs: Number.NaN,
+      firstExactSampledAtUnixMs: 9_500,
+      proofCompletedAtUnixMs: 13_000,
+    })).toThrow(/finite.*timestamp/iu)
+  })
+
+  it('samples only bounded breadcrumb milestone counts inside the renderer', async () => {
+    const rendererReader = Function(
+      `return (${readCompactBreadcrumbMilestoneEvidenceInRenderer.toString()})`,
+    )() as (
+      input: { readonly readCurrentPositions: boolean; readonly readExactBreadcrumbs: boolean },
+    ) => Promise<Record<string, unknown>>
+    let exactSourceReads = 0
+    let trackingCaptureReads = 0
+    const rendererWindow = {
+      get __SARTRACKER_TRACKING_SET_DATA_CAPTURE__() {
+        trackingCaptureReads += 1
+        return {
+          latest: {
+            type: 'FeatureCollection',
+            features: [
+              {
+                geometry: { type: 'Point', coordinates: [-9.7, 52.2] },
+                properties: { featureKind: 'device', secret: 'must-not-cross-cdp' },
+              },
+              {
+                geometry: { type: 'Point', coordinates: [-9.6, 52.3] },
+                properties: { featureKind: 'breadcrumb', sourcePositionId: 'raw-id' },
+              },
+            ],
+          },
+        }
+      },
+      __SARTRACKER_MAP__: {
+        getSource: (sourceId: string) =>
+          sourceId === 'tracking-breadcrumb-dots-exact'
+            ? {
+                getData: async () => {
+                  exactSourceReads += 1
+                  return {
+                    type: 'FeatureCollection',
+                    features: [
+                      {
+                        geometry: { type: 'Point', coordinates: [-9.5, 52.4] },
+                        properties: {
+                          featureKind: 'breadcrumb',
+                          sourcePositionId: 'raw-exact-id',
+                          secret: 'must-not-cross-cdp',
+                        },
+                      },
+                    ],
+                  }
+                },
+              }
+            : undefined,
+      },
+    }
+    Reflect.set(globalThis, 'window', rendererWindow)
+    try {
+      const both = await rendererReader({
+        readCurrentPositions: true,
+        readExactBreadcrumbs: true,
+      })
+      expect(both).toEqual({
+        sampledAtUnixMs: expect.any(Number),
+        currentPositionCount: 1,
+        exactBreadcrumbPointCount: 1,
+      })
+      expect(JSON.stringify(both)).not.toMatch(/raw-id|raw-exact-id|secret|coordinates/iu)
+
+      const exactAlreadyProven = await rendererReader({
+        readCurrentPositions: true,
+        readExactBreadcrumbs: false,
+      })
+      expect(exactAlreadyProven).toMatchObject({
+        currentPositionCount: 1,
+        exactBreadcrumbPointCount: null,
+      })
+      expect(exactSourceReads).toBe(1)
+
+      const currentAlreadyProven = await rendererReader({
+        readCurrentPositions: false,
+        readExactBreadcrumbs: true,
+      })
+      expect(currentAlreadyProven).toMatchObject({
+        currentPositionCount: null,
+        exactBreadcrumbPointCount: 1,
+      })
+      expect(trackingCaptureReads).toBe(2)
+      expect(exactSourceReads).toBe(2)
+    } finally {
+      Reflect.deleteProperty(globalThis, 'window')
+    }
+  })
+
+  it('freezes request coverage at the acceptance deadline instead of trusting post-failure drain', () => {
+    const requiredFrom = '2026-08-09T20:00:00.000Z'
+    const requiredTo = '2026-08-09T22:00:00.000Z'
+    const deadlineAtUnixMs = 60_000
+    const request = (
+      sequence: number,
+      deviceId: number,
+      completedAtMs: number,
+    ) => ({
+      sequence,
+      method: 'GET',
+      path: '/api/positions',
+      kind: 'history',
+      deviceId,
+      from: requiredFrom,
+      to: requiredTo,
+      startedAtMs: completedAtMs - 20,
+      completedAtMs,
+      durationMs: 20,
+      concurrencyAtStart: sequence,
+      historyConcurrencyAtStart: sequence,
+      outcome: 'success',
+      httpStatus: 200,
+      returnedCount: 1,
+      returnedIdentityDigest: `digest-${sequence}`,
+    })
+    const evidence = createBreadcrumbReconciliationDeadlineEvidence({
+      observedFromUnixMs: 0,
+      deadlineAtUnixMs,
+      observedAtUnixMs: 60_010,
+      requestSnapshot: {
+        activeRequests: 0,
+        activeHistoryRequests: 0,
+        maximumConcurrentRequests: 2,
+        maximumConcurrentHistoryRequests: 2,
+        requestLedger: [
+          request(1, 1, 59_999),
+          request(2, 2, 60_001),
+        ],
+      },
+      deviceIds: [1, 2],
+      requiredFrom,
+      requiredTo,
+      currentFixMs: 100,
+      firstBreadcrumbMs: 200,
+      trackingStatusText: 'Breadcrumb history is reconciling.',
+    })
+
+    expect(evidence).toMatchObject({
+      observedFromUnixMs: 0,
+      deadlineAtUnixMs: 60_000,
+      observedAtUnixMs: 60_010,
+      observedAfterDeadlineMs: 10,
+      currentFixMs: 100,
+      firstBreadcrumbMs: 200,
+      completedRequestCount: 1,
+      completedHistoryRequestCount: 1,
+      settledRequestStartedByDeadlineCount: 2,
+      requestCoverage: {
+        complete: false,
+        completeDeviceCount: 1,
+        incompleteDeviceIds: [2],
+      },
+      requestSummary: { requestCount: 1 },
+    })
+    expect(evidence).not.toHaveProperty('requestLedger')
+    expect(evidence.requestSummary).not.toHaveProperty('historyStartBuckets.1')
+  })
+
   it('parses an explicit packaged-proof command line with the field-scale deadline', () => {
     expect(
       parseBreadcrumb36HourProofArgs([
@@ -536,6 +757,10 @@ describe('packaged Electron 36-hour breadcrumb proof helpers', () => {
       'await captureLatestExactBreadcrumbDotEvidence({',
       dotsActivation,
     )
+    const lineClock = packagedProofSource.indexOf(
+      'const postRestartLineObservedFromMs = Date.now()',
+      latestDots,
+    )
     const lineActivation = packagedProofSource.indexOf(
       'await activateBreadcrumbLineProofMode(launch.page)',
       latestDots,
@@ -548,12 +773,145 @@ describe('packaged Electron 36-hour breadcrumb proof helpers', () => {
     expect(restartResume).toBeGreaterThan(restartLoop)
     expect(dotsActivation).toBeGreaterThan(restartResume)
     expect(latestDots).toBeGreaterThan(dotsActivation)
+    expect(lineClock).toBeGreaterThan(latestDots)
+    expect(lineActivation).toBeGreaterThan(lineClock)
     expect(lineActivation).toBeGreaterThan(latestDots)
     expect(lineEvidence).toBeGreaterThan(lineActivation)
+    expect(packagedProofSource.slice(lineEvidence, lineEvidence + 400)).toContain(
+      'observedFromMs: postRestartLineObservedFromMs',
+    )
     expect(packagedProofSource).toContain('historyCheckpoints: finalHistoryCheckpoints')
   })
 
-  it('measures the first breadcrumb from the exact source while catch-up is in dot mode', () => {
+  it('samples exact source publication in the renderer before transporting proof rows', () => {
+    const packagedProofSource = readFileSync(
+      'scripts/electron-breadcrumb-36h-proof.mjs',
+      'utf8',
+    )
+    const sourceReadStart = packagedProofSource.indexOf(
+      'async function readExactBreadcrumbDotSourceCollection',
+    )
+    const sourceReadEnd = packagedProofSource.indexOf(
+      'function createExactBreadcrumbDotPageEvidence',
+      sourceReadStart,
+    )
+    const sourceRead = packagedProofSource.slice(sourceReadStart, sourceReadEnd)
+    const sample = sourceRead.indexOf('const sampledAtUnixMs = Date.now()')
+    const transport = sourceRead.indexOf('return { collection: data, sampledAtUnixMs }')
+    const waitStart = packagedProofSource.indexOf(
+      'async function waitForStableExactBreadcrumbDotPage',
+    )
+    const waitEnd = packagedProofSource.indexOf(
+      'async function fitExactBreadcrumbDotPageForRenderedAudit',
+      waitStart,
+    )
+    const waitSource = packagedProofSource.slice(waitStart, waitEnd)
+
+    expect(sample).toBeGreaterThan(-1)
+    expect(transport).toBeGreaterThan(sample)
+    expect(waitSource).toContain('firstExactSourceSampledAtUnixMs ??=')
+    expect(waitSource).toContain('createBreadcrumbPublicationTimingEvidence({')
+    expect(packagedProofSource).toContain(
+      'firstExactSampledAtUnixMs: sourceSampledAtUnixMs',
+    )
+    expect(packagedProofSource).toContain(
+      'input.modeActivation.firstExactSampledAtUnixMs',
+    )
+    expect(packagedProofSource).toContain(
+      'return { ...capture, sampledAtUnixMs: Date.now() }',
+    )
+    expect(packagedProofSource).toContain(
+      'sampledAtUnixMs: firstCapture.sampledAtUnixMs',
+    )
+  })
+
+  it('starts milestone polling after nonempty Dots activation, not final-oracle equality', () => {
+    const packagedProofSource = readFileSync(
+      'scripts/electron-breadcrumb-36h-proof.mjs',
+      'utf8',
+    )
+    const recoveryActivation = packagedProofSource.indexOf(
+      'recoveryExactDotActivation = await activateExactBreadcrumbDotProofMode({',
+    )
+    const milestones = packagedProofSource.indexOf(
+      'const milestones = await waitForTrackingMilestones({',
+      recoveryActivation,
+    )
+    const recoveryActivationSource = packagedProofSource.slice(
+      recoveryActivation,
+      milestones,
+    )
+    const restartLoop = packagedProofSource.indexOf(
+      'restartIndex <= options.postCompletionRestartCount',
+    )
+    const restartActivation = packagedProofSource.indexOf(
+      'await activateExactBreadcrumbDotProofMode({',
+      restartLoop,
+    )
+    const restartCapture = packagedProofSource.indexOf(
+      'await captureLatestExactBreadcrumbDotEvidence({',
+      restartActivation,
+    )
+    const restartActivationSource = packagedProofSource.slice(
+      restartActivation,
+      restartCapture,
+    )
+    const activationFunctionStart = packagedProofSource.indexOf(
+      'async function activateExactBreadcrumbDotProofMode',
+    )
+    const activationFunctionEnd = packagedProofSource.indexOf(
+      'async function captureStableBreadcrumbDotEvidence',
+      activationFunctionStart,
+    )
+    const activationFunction = packagedProofSource.slice(
+      activationFunctionStart,
+      activationFunctionEnd,
+    )
+    const nonemptyBranchStart = activationFunction.indexOf(
+      "if (input.sourceRequirement === 'nonempty')",
+    )
+    const exactBranchStart = activationFunction.indexOf(
+      '} else {',
+      nonemptyBranchStart,
+    )
+    const readinessCheck = activationFunction.indexOf(
+      'breadcrumbDotActivationSourceIsReady({',
+      exactBranchStart,
+    )
+    const nonemptyBranch = activationFunction.slice(
+      nonemptyBranchStart,
+      exactBranchStart,
+    )
+    const exactBranch = activationFunction.slice(exactBranchStart, readinessCheck)
+
+    expect(recoveryActivation).toBeGreaterThan(-1)
+    expect(milestones).toBeGreaterThan(recoveryActivation)
+    expect(recoveryActivationSource).toContain("sourceRequirement: 'nonempty'")
+    expect(recoveryActivationSource).not.toContain(
+      'expected: exactDotOracle.pages[0].rendered',
+    )
+    expect(restartActivationSource).toContain("sourceRequirement: 'exact'")
+    expect(restartActivationSource).toContain(
+      'expected: exactDotOracle.pages[0].rendered',
+    )
+    expect(packagedProofSource).toContain(
+      'breadcrumbDotActivationSourceIsReady({',
+    )
+    expect(nonemptyBranchStart).toBeGreaterThan(-1)
+    expect(exactBranchStart).toBeGreaterThan(nonemptyBranchStart)
+    expect(nonemptyBranch).toContain(
+      'readCompactBreadcrumbMilestoneEvidenceInRenderer',
+    )
+    expect(nonemptyBranch).toContain('readCurrentPositions: false')
+    expect(nonemptyBranch).toContain('readExactBreadcrumbs: true')
+    expect(nonemptyBranch).not.toContain(
+      'readExactBreadcrumbDotSourceCollection',
+    )
+    expect(exactBranch).toContain('readExactBreadcrumbDotSourceCollection')
+    expect(exactBranch).toContain('createExactBreadcrumbDotPageEvidence')
+  })
+
+  it('measures first milestones with bounded one-shot renderer probes', () => {
     const packagedProofSource = readFileSync(
       'scripts/electron-breadcrumb-36h-proof.mjs',
       'utf8',
@@ -567,7 +925,53 @@ describe('packaged Electron 36-hour breadcrumb proof helpers', () => {
     )
     const milestoneSource = packagedProofSource.slice(milestoneStart, milestoneEnd)
 
-    expect(milestoneSource).toContain('readExactBreadcrumbDotSourceCollection')
+    expect(milestoneSource).toContain(
+      'readCompactBreadcrumbMilestoneEvidenceInRenderer',
+    )
+    expect(milestoneSource).toContain('readCurrentPositions: currentFixMs === null')
+    expect(milestoneSource).toContain('readExactBreadcrumbs: firstBreadcrumbMs === null')
+    expect(milestoneSource).not.toContain('readExactBreadcrumbDotSourceCollection')
+    expect(milestoneSource).not.toContain('readTrackingSetDataCapture')
+  })
+
+  it('records deadline coverage before runtime capture and post-failure drain', () => {
+    const packagedProofSource = readFileSync(
+      'scripts/electron-breadcrumb-36h-proof.mjs',
+      'utf8',
+    )
+    const observationClock = packagedProofSource.indexOf(
+      "recordPhase('recoveryObservationStarted')",
+    )
+    const milestoneStart = packagedProofSource.indexOf(
+      'const milestones = await waitForTrackingMilestones',
+    )
+    const deadlineCallback = packagedProofSource.indexOf(
+      'onDeadline: (evidence)',
+      milestoneStart,
+    )
+    const runtimeCapture = packagedProofSource.indexOf(
+      'failureRuntimeEvidence = await captureFailureRuntimeEvidence',
+    )
+    const failureReport = packagedProofSource.indexOf(
+      'reconciliationDeadlineEvidence,',
+      runtimeCapture,
+    )
+    const milestoneFunction = packagedProofSource.slice(
+      packagedProofSource.indexOf('async function waitForTrackingMilestones'),
+      packagedProofSource.indexOf('async function waitForMidBackfillCheckpoint'),
+    )
+
+    expect(observationClock).toBeGreaterThan(-1)
+    expect(deadlineCallback).toBeGreaterThan(milestoneStart)
+    expect(runtimeCapture).toBeGreaterThan(deadlineCallback)
+    expect(failureReport).toBeGreaterThan(runtimeCapture)
+    expect(milestoneFunction).toContain(
+      'createBreadcrumbReconciliationDeadlineEvidence',
+    )
+    expect(packagedProofSource).toContain("captureScope: 'post_deadline_drain'")
+    expect(packagedProofSource).toContain(
+      "deadlineAuthority: 'reconciliationDeadlineEvidence'",
+    )
   })
 
   it('captures the bounded line oracle only after line mode is active', () => {
@@ -1529,6 +1933,106 @@ describe('packaged Electron 36-hour breadcrumb proof helpers', () => {
     })
     expect(wrongMode.passed).toBe(false)
     expect(wrongMode.failureReasons.join('\n')).toMatch(/restart.*exact.*dot/iu)
+
+    const slowProofAfterTimelyPublications = buildBreadcrumbRestartProofVerdict({
+      ...valid,
+      postCompletionRendered: {
+        ...valid.postCompletionRendered,
+        observedMs: 14_000,
+        firstExactPublicationMs: 9_000,
+        proofCompletedMs: 14_000,
+        proofDurationMs: 5_000,
+        stableConfirmedMs: 14_000,
+      },
+      postCompletionExactDots: {
+        ...valid.postCompletionExactDots,
+        observedMs: 13_000,
+        firstExactPublicationMs: 8_500,
+        proofCompletedMs: 13_000,
+        proofDurationMs: 4_500,
+        stableConfirmedMs: 13_000,
+      },
+    })
+    expect(slowProofAfterTimelyPublications).toEqual({
+      passed: true,
+      failureReasons: [],
+    })
+
+    const lateLinePublication = buildBreadcrumbRestartProofVerdict({
+      ...valid,
+      postCompletionRendered: {
+        ...valid.postCompletionRendered,
+        observedMs: 12_000,
+        firstExactPublicationMs: 10_001,
+        proofCompletedMs: 12_000,
+        proofDurationMs: 1_999,
+        stableConfirmedMs: 12_000,
+      },
+    })
+    expect(lateLinePublication.passed).toBe(false)
+    expect(lateLinePublication.failureReasons.join('\n')).toMatch(
+      /Line.*first exact.*10,?000/iu,
+    )
+
+    const lateDotsPublication = buildBreadcrumbRestartProofVerdict({
+      ...valid,
+      postCompletionExactDots: {
+        ...valid.postCompletionExactDots,
+        observedMs: 12_000,
+        firstExactPublicationMs: 10_001,
+        proofCompletedMs: 12_000,
+        proofDurationMs: 1_999,
+        stableConfirmedMs: 12_000,
+      },
+    })
+    expect(lateDotsPublication.passed).toBe(false)
+    expect(lateDotsPublication.failureReasons.join('\n')).toMatch(
+      /Dots.*first exact.*10,?000/iu,
+    )
+
+    for (const missingField of [
+      'firstExactPublicationMs',
+      'proofCompletedMs',
+      'proofDurationMs',
+      'stableConfirmedMs',
+    ] as const) {
+      const rendered = { ...valid.postCompletionRendered }
+      delete rendered[missingField]
+      const missingTiming = buildBreadcrumbRestartProofVerdict({
+        ...valid,
+        postCompletionRendered: rendered,
+      })
+      expect(missingTiming.passed, missingField).toBe(false)
+      expect(missingTiming.failureReasons.join('\n')).toMatch(/Line.*timing/iu)
+    }
+
+    for (const missingField of [
+      'firstExactPublicationMs',
+      'proofCompletedMs',
+      'proofDurationMs',
+      'stableConfirmedMs',
+    ] as const) {
+      const exactDots = { ...valid.postCompletionExactDots }
+      delete exactDots[missingField]
+      const missingTiming = buildBreadcrumbRestartProofVerdict({
+        ...valid,
+        postCompletionExactDots: exactDots,
+      })
+      expect(missingTiming.passed, missingField).toBe(false)
+      expect(missingTiming.failureReasons.join('\n')).toMatch(/Dots.*timing/iu)
+    }
+
+    const contradictoryDotsTiming = buildBreadcrumbRestartProofVerdict({
+      ...valid,
+      postCompletionExactDots: {
+        ...valid.postCompletionExactDots,
+        proofDurationMs: 1,
+      },
+    })
+    expect(contradictoryDotsTiming.passed).toBe(false)
+    expect(contradictoryDotsTiming.failureReasons.join('\n')).toMatch(
+      /Dots.*timing/iu,
+    )
   })
 })
 
@@ -1866,6 +2370,11 @@ function createValidRestartVerdictInput() {
     reportedTotalObserved: 100,
     coordinateSha256: 'b'.repeat(64),
     stable: true,
+    observedMs: 2_000,
+    firstExactPublicationMs: 1_250,
+    proofCompletedMs: 2_000,
+    proofDurationMs: 750,
+    stableConfirmedMs: 2_000,
   }
   const exactDotOracle = {
     totalPositionCount: 100,
@@ -1879,6 +2388,10 @@ function createValidRestartVerdictInput() {
   }
   const postCompletionExactDots = {
     observedMs: 1_500,
+    firstExactPublicationMs: 900,
+    proofCompletedMs: 1_500,
+    proofDurationMs: 600,
+    stableConfirmedMs: 1_500,
     modeActivation: {
       selectedMode: 'dots',
       sizeLabel: '8px dot diameter',
@@ -1929,6 +2442,5 @@ function createValidRestartVerdictInput() {
     exactDotOracle,
     postCompletionExactDots,
     restoredMissionMatches: true,
-    postCompletionRenderMs: 2_000,
   }
 }

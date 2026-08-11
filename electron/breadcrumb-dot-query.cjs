@@ -34,7 +34,6 @@ function listExactBreadcrumbDotPageSnapshot(db, query) {
   const deviceIds = resolveDeviceIds(
     db,
     query.missionId,
-    missionStart,
     query.activeDeviceIds,
   )
   const countDevicePositions = db.prepare(
@@ -189,17 +188,16 @@ function resolveMissionStart(db, missionId) {
   return row.start_time
 }
 
-function resolveDeviceIds(db, missionId, missionStart, activeDeviceIds) {
+function resolveDeviceIds(db, missionId, activeDeviceIds) {
   if (activeDeviceIds.length > 0) {
     return activeDeviceIds
   }
   return db.prepare(
     `SELECT device_id
-     FROM positions
-     WHERE mission_id = ? AND timestamp >= ?
-     GROUP BY device_id
+     FROM devices
+     WHERE mission_id = ?
      ORDER BY device_id ASC`,
-  ).all(missionId, missionStart).map((row) => row.device_id)
+  ).all(missionId).map((row) => row.device_id)
 }
 
 function createDevicePageSelection(direction, cursor, deviceId) {

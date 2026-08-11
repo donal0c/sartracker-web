@@ -79,6 +79,9 @@ describe('exact SQLite-backed breadcrumb dots', () => {
     const database = createDatabase(':memory:')
     const missionStart = '2026-08-08T19:48:56.767Z'
     ensureMission(database, 'mission-lookback', missionStart)
+    for (const deviceId of ['device-stale', 'device-in-window', 'device-target']) {
+      ensureDevice(database, 'mission-lookback', deviceId)
+    }
     const insert = database.prepare(`
       INSERT INTO positions (
         id, mission_id, device_id, source_position_id,
@@ -218,6 +221,7 @@ describe('exact SQLite-backed breadcrumb dots', () => {
   it('uses stable durable identity for same-device fixes with equal timestamps', () => {
     const database = createDatabase(':memory:')
     ensureMission(database, 'mission-ties', '2026-08-10T09:00:00.000Z')
+    ensureDevice(database, 'mission-ties', 'device-1')
     const insert = database.prepare(`
       INSERT INTO positions (
         id, mission_id, device_id, source_position_id,
@@ -469,6 +473,76 @@ describe('exact SQLite-backed breadcrumb dots', () => {
     database.close()
   })
 
+  it('resolves an empty device selection from the mission roster without grouping all positions', () => {
+    const database = createDatabase(':memory:')
+    const deviceA = insertTrack(database, {
+      missionId: 'mission-roster',
+      deviceId: 'device-a',
+      count: 4,
+      sourceIdOffset: 310_000,
+    })
+    const deviceB = insertTrack(database, {
+      missionId: 'mission-roster',
+      deviceId: 'device-b',
+      count: 4,
+      sourceIdOffset: 320_000,
+    })
+    ensureDevice(database, 'mission-roster', 'device-with-no-fixes')
+    ensureDevice(database, 'mission-roster', 'device-with-pre-start-fix')
+    database.prepare(`
+      INSERT INTO positions (
+        id, mission_id, device_id, source_position_id,
+        lat, lon, timestamp, data_origin
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, 'live')
+    `).run(
+      'pre-start-local',
+      'mission-roster',
+      'device-with-pre-start-fix',
+      'pre-start-source',
+      52.1,
+      -9.1,
+      '2026-08-07T23:59:59.000Z',
+    )
+    insertTrack(database, {
+      missionId: 'other-mission',
+      deviceId: 'other-device',
+      count: 3,
+      sourceIdOffset: 330_000,
+    })
+    const preparedSql: string[] = []
+    const observedDatabase = {
+      transaction: <T>(operation: () => T) => database.transaction(operation),
+      prepare: (sql: string) => {
+        preparedSql.push(sql)
+        if (/SELECT\s+(?:DISTINCT\s+)?device_id\s+FROM\s+positions/iu.test(sql)) {
+          throw new Error('Exact pagination resolved devices from the positions table.')
+        }
+        return database.prepare(sql)
+      },
+    }
+
+    const page = loadExactDotQuery()(observedDatabase, {
+      missionId: 'mission-roster',
+      activeDeviceIds: [],
+      limit: 10_000,
+      direction: 'latest',
+    })
+
+    expect(page.positions).toEqual([...deviceA, ...deviceB].sort(compareExactDots))
+    expect(page.totalPositionCount).toBe(8)
+    const rosterSql = preparedSql.find((sql) =>
+      /SELECT\s+device_id\s+FROM\s+devices[\s\S]*mission_id\s*=\s*\?/iu.test(sql),
+    )
+    expect(rosterSql).toBeDefined()
+    const rosterPlan = database.prepare(`EXPLAIN QUERY PLAN ${rosterSql}`).all(
+      'mission-roster',
+    ) as { readonly detail: string }[]
+    expect(rosterPlan.map((entry) => entry.detail).join('\n')).toMatch(
+      /SEARCH\s+devices\s+USING\s+COVERING\s+INDEX/iu,
+    )
+    database.close()
+  })
+
   it('reopens with the corrected durable fix once and does not revive its duplicate', async () => {
     tempDirectory = await mkdtemp(path.join(tmpdir(), 'sartracker-exact-dots-'))
     const databasePath = path.join(tempDirectory, 'mission-store.sqlite')
@@ -669,6 +743,12 @@ function createDatabase(databasePath: string, initialize = true) {
         id TEXT PRIMARY KEY,
         start_time TEXT NOT NULL
       );
+      CREATE TABLE devices (
+        id TEXT PRIMARY KEY,
+        mission_id TEXT NOT NULL,
+        device_id TEXT NOT NULL,
+        UNIQUE (mission_id, device_id)
+      );
       CREATE TABLE positions (
         id TEXT PRIMARY KEY,
         mission_id TEXT NOT NULL,
@@ -790,6 +870,7 @@ function insertTrack(
 ): ExactBreadcrumbDot[] {
   const baseMs = Date.UTC(2026, 7, 8) + (input.timestampOffsetMs ?? 0)
   ensureMission(database, input.missionId, new Date(Date.UTC(2026, 7, 8)).toISOString())
+  ensureDevice(database, input.missionId, input.deviceId)
   const intervalMs = input.intervalMs ?? 5_000
   const insert = database.prepare(`
     INSERT INTO positions (
@@ -826,6 +907,8 @@ function insertInterleavedTracks(
   count: number,
 ): ExactBreadcrumbDot[] {
   ensureMission(database, 'mission-paged', new Date(Date.UTC(2026, 7, 8)).toISOString())
+  ensureDevice(database, 'mission-paged', 'device-a')
+  ensureDevice(database, 'mission-paged', 'device-b')
   const insert = database.prepare(`
     INSERT INTO positions (
       id, mission_id, device_id, source_position_id, lat, lon, timestamp, data_origin
@@ -867,6 +950,16 @@ function ensureMission(
   database.prepare(
     'INSERT OR IGNORE INTO missions (id, start_time) VALUES (?, ?)',
   ).run(missionId, startTime)
+}
+
+function ensureDevice(
+  database: ReturnType<typeof createDatabase>,
+  missionId: string,
+  deviceId: string,
+): void {
+  database.prepare(
+    'INSERT OR IGNORE INTO devices (id, mission_id, device_id) VALUES (?, ?, ?)',
+  ).run(`${missionId}:${deviceId}`, missionId, deviceId)
 }
 
 function compareExactDots(left: ExactBreadcrumbDot, right: ExactBreadcrumbDot): number {

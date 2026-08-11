@@ -153,6 +153,65 @@ describe('fourteen-day packaged exact-dot soak script [DON-260]', () => {
     )
   })
 
+  it('prepares independent formula evidence before every measured exact-page action', () => {
+    const waitSource = source.slice(
+      source.indexOf('async function waitForExactSoakSourcePage(input)'),
+      source.indexOf('/** Creates one static-message error',
+        source.indexOf('async function waitForExactSoakSourcePage(input)')),
+    )
+    const latestAuditSource = source.slice(
+      source.indexOf('async function auditLatestExactDotPage(input)'),
+      source.indexOf('/** Requires the identical exact latest page'),
+    )
+    const traversalSource = source.slice(
+      source.indexOf('async function auditFinalExactDotTraversal(input)'),
+      source.indexOf('/** Builds the frozen 393-observation exact proof'),
+    )
+
+    expect(waitSource).toContain('input.expectedPageEvidence')
+    expect(waitSource).toContain('input.expectedTotalFixCount')
+    expect(waitSource).not.toContain('input.oracle.createPage(')
+    expect(waitSource).not.toContain('auditIndependentExactSoakPage(')
+
+    const latestPreparation = latestAuditSource.indexOf(
+      'prepareExpectedExactSoakSourcePage(oracle, 0)',
+    )
+    const latestMeasuredAction = latestAuditSource.indexOf(
+      'const initialPage = await openExactDotWorkspace(',
+    )
+    expect(latestPreparation).toBeGreaterThan(-1)
+    expect(latestPreparation).toBeLessThan(latestMeasuredAction)
+
+    const initialPreparation = traversalSource.indexOf(
+      'prepareExpectedExactSoakSourcePage(oracle, 0)',
+    )
+    const initialMeasuredAction = traversalSource.indexOf(
+      'const initialPage = await openExactDotWorkspace(',
+    )
+    expect(initialPreparation).toBeGreaterThan(-1)
+    expect(initialPreparation).toBeLessThan(initialMeasuredAction)
+
+    const earlierPreparation = traversalSource.indexOf(
+      'prepareExpectedExactSoakSourcePage(',
+      initialMeasuredAction,
+    )
+    const earlierMeasuredAction = traversalSource.indexOf(
+      "'exact-breadcrumb-dots-earlier'",
+    )
+    expect(earlierPreparation).toBeGreaterThan(initialMeasuredAction)
+    expect(earlierPreparation).toBeLessThan(earlierMeasuredAction)
+
+    const laterPreparation = traversalSource.indexOf(
+      'prepareExpectedExactSoakSourcePage(',
+      earlierMeasuredAction,
+    )
+    const laterMeasuredAction = traversalSource.indexOf(
+      "'exact-breadcrumb-dots-later'",
+    )
+    expect(laterPreparation).toBeGreaterThan(earlierMeasuredAction)
+    expect(laterPreparation).toBeLessThan(laterMeasuredAction)
+  })
+
   it('closes the Devices inspector before actionable exact-page navigation and always restores Line', () => {
     const openStart = source.indexOf(
       'async function openExactDotWorkspace(launch, observeAfterDotsClick)',
