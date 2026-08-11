@@ -9,8 +9,10 @@ const require = createRequire(import.meta.url)
 const {
   FORBIDDEN_DIAGNOSTICS_PATH_SEGMENTS,
   createElectronRuntimeFiles,
+  redactUserDataPath,
 } = require('../../electron/runtime-files.cjs') as {
   readonly FORBIDDEN_DIAGNOSTICS_PATH_SEGMENTS: readonly string[]
+  readonly redactUserDataPath: (contents: string, userDataPath: string) => string
   readonly createElectronRuntimeFiles: (options: {
     readonly userDataPath: string
     readonly versions: {
@@ -250,6 +252,80 @@ describe('electron runtime files', () => {
     expect(bundle).toContain('/home/[redacted]/.config/sartracker/[redacted-path-segment]')
     expect(bundle).toContain('"event":"request_failed"')
     expect(bundle).toContain('"authorization":"[redacted]"')
+  })
+
+  it('redacts the exact app userData path even when it is outside the operator home', async () => {
+    const files = await createRuntimeFiles({
+      readRecentCrashes: async () => [
+        {
+          ts: '2026-06-09T22:01:00.000Z',
+          kind: 'uncaughtException',
+          summary: `database unavailable at ${userDataPath!}`,
+          detail: `Failed to open ${userDataPath!}/mission-store.sqlite`,
+        },
+      ],
+      readRecentLog: async () => [
+        {
+          ts: '2026-06-09T21:50:00.000Z',
+          level: 'warn',
+          event: 'storage_failed',
+          path: `${userDataPath!}/logs/runtime.log`,
+        },
+      ],
+    })
+
+    const diagnosticsPath = await files.exportDiagnosticsReport({
+      fileName: 'diagnostics-report.txt',
+      contents: `database path: ${userDataPath!}/mission-store.sqlite`,
+    })
+    expect(diagnosticsPath).toBe(
+      path.join(userDataPath!, 'diagnostics-reports', 'diagnostics-report.txt'),
+    )
+    const diagnostics = await readFile(diagnosticsPath, 'utf8')
+    expect(diagnostics).not.toContain(userDataPath!)
+    expect(diagnostics).not.toContain(path.basename(userDataPath!))
+    expect(diagnostics).toContain('userData path: [redacted-user-data-path]')
+
+    const exportPath = await files.exportSupportBundle({
+      fileName: 'support-bundle.txt',
+      contents: `database path: ${userDataPath!}/mission-store.sqlite`,
+    })
+
+    const bundle = await readFile(exportPath, 'utf8')
+    expect(exportPath).toBe(
+      path.join(userDataPath!, 'diagnostics-reports', 'support-bundle.txt'),
+    )
+    expect(bundle).not.toContain(userDataPath!)
+    expect(bundle).not.toContain(path.basename(userDataPath!))
+    expect(bundle).toContain('userData path: [redacted-user-data-path]')
+    expect(bundle).toContain('[redacted-user-data-path]/mission-store.sqlite')
+    expect(bundle).toContain('[redacted-user-data-path]/logs/runtime.log')
+  })
+
+  it('redacts Windows userData paths from raw, normalized, and JSON-escaped diagnostics', () => {
+    const windowsUserDataPath =
+      'C:\\Operators\\unique-field-profile\\AppData\\Roaming\\SAR Tracker'
+    const slashNormalizedPath = windowsUserDataPath.replaceAll('\\', '/')
+    const jsonRuntimeEntry = JSON.stringify({
+      event: 'storage_failed',
+      path: `${windowsUserDataPath}\\logs\\runtime.log`,
+    })
+
+    const redacted = redactUserDataPath(
+      [
+        `userData path: ${windowsUserDataPath}`,
+        `normalized path: ${slashNormalizedPath}/mission-store.sqlite`,
+        jsonRuntimeEntry,
+      ].join('\n'),
+      windowsUserDataPath,
+    )
+
+    expect(redacted).not.toContain('unique-field-profile')
+    expect(redacted).not.toContain(windowsUserDataPath)
+    expect(redacted).not.toContain(slashNormalizedPath)
+    expect(redacted).toContain('userData path: [redacted-user-data-path]')
+    expect(redacted).toContain('[redacted-user-data-path]/mission-store.sqlite')
+    expect(redacted).toContain('[redacted-user-data-path]\\\\logs\\\\runtime.log')
   })
 
   it('redacts credentials embedded in provider URLs across Electron diagnostics output [DON-207]', async () => {

@@ -18,6 +18,7 @@ const FORBIDDEN_DIAGNOSTICS_PATH_SEGMENTS = Object.freeze([
 ])
 const DEFAULT_INCIDENT_WINDOW_MINUTES = 30
 const SECRET_LINE_KEY_PATTERN = /(password|token|secret|credential|api[-_]?key|authorization)\s*[:=]/i
+const REDACTED_USER_DATA_PATH = '[redacted-user-data-path]'
 
 /**
  * Creates Electron main-process file adapters for app-owned runtime state.
@@ -98,9 +99,35 @@ function createElectronRuntimeFiles(options) {
   async function writeReport(fileName, contents) {
     const safeName = sanitizeReportFileName(fileName)
     const reportPath = path.join(userDataPath, DIAGNOSTICS_DIR_NAME, safeName)
-    await writeTextAtomically(reportPath, contents)
+    await writeTextAtomically(reportPath, redactUserDataPath(contents, userDataPath))
     return reportPath
   }
+}
+
+/**
+ * Removes the exact app-owned profile directory from exported diagnostics while
+ * retaining useful relative file names beneath a stable placeholder.
+ */
+function redactUserDataPath(contents, userDataPath) {
+  const rawPath = String(userDataPath)
+  const sanitizedPath = sanitizeDiagnosticsText(rawPath)
+  const pathVariants = new Set([
+    rawPath,
+    rawPath.replaceAll('\\', '/'),
+    sanitizedPath,
+    sanitizedPath.replaceAll('\\', '/'),
+  ])
+  const variants = new Set(pathVariants)
+  for (const variant of pathVariants) {
+    variants.add(JSON.stringify(variant).slice(1, -1))
+  }
+  let redacted = String(contents)
+  for (const variant of [...variants].sort((left, right) => right.length - left.length)) {
+    if (variant !== '') {
+      redacted = redacted.replaceAll(variant, REDACTED_USER_DATA_PATH)
+    }
+  }
+  return redacted
 }
 
 function formatIncidentWindow(incidentWindow) {
@@ -319,4 +346,5 @@ function redactUrlCredentials(input) {
 module.exports = {
   FORBIDDEN_DIAGNOSTICS_PATH_SEGMENTS,
   createElectronRuntimeFiles,
+  redactUserDataPath,
 }

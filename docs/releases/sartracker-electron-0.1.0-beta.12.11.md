@@ -37,15 +37,21 @@ the complete positions table on every page solely to rediscover the mission
 device roster. It now reads the authoritative mission-scoped `devices` table;
 the count, page, navigation, and mission-start filters remain unchanged.
 
+The clean packaged verifier also exposed and closes a diagnostics privacy gap:
+an app profile placed outside a conventional home directory could appear
+verbatim in an exported diagnostics or support bundle. The export boundary now
+redacts the exact app-owned profile path in raw, normalized, and JSON-escaped
+forms while keeping the internal save destination functional.
+
 ## Regression provenance
 
 - Classification: Regression correction and performance correction
 - Linear issue: [DON-260](https://linear.app/donal-oc/issue/DON-260/deep-breadcrumb-correctness-deterministic-identity-restart-late-fixes)
-- Affected release(s): Published beta.12.9 and rejected beta.12.6-beta.12.10 candidates
+- Affected release(s): Published beta.12.9 and rejected beta.12.6-beta.12.10 candidates; exact non-home diagnostics paths affected earlier desktop bundles
 - Last known good: Unknown for source-exact Dots; the release suite had never independently proved this contract
 - First known bad: beta.12.6 candidate; the same semantic defect was present in published beta.12.9
-- Root cause: Dots rendered the bounded Line projection, whose spatiotemporal selection creates adjacent pairs/groups and long gaps. After source-exact paging was introduced, an empty active-device filter resolved the mission roster with a full positions-table `GROUP BY` on every page.
-- Escape analysis: The beta.12.9 dot oracle called the production Line selector and compared selector-derived coordinates. The small visual test injected four already-retained points, the live smoke checked only non-zero tracking, and the old fourteen-day soak never traversed exact Dots. The beta.12.10 Ubuntu soak then correctly caught the new page-query cost at field scale.
+- Root cause: Dots rendered the bounded Line projection, whose spatiotemporal selection creates adjacent pairs/groups and long gaps. After source-exact paging was introduced, an empty active-device filter resolved the mission roster with a full positions-table `GROUP BY` on every page. Separately, the generic diagnostics sanitizer redacted conventional `/Users` and `/home` usernames but not the exact configured app profile when it lived elsewhere.
+- Escape analysis: The beta.12.9 dot oracle called the production Line selector and compared selector-derived coordinates. The small visual test injected four already-retained points, the live smoke checked only non-zero tracking, and the old fourteen-day soak never traversed exact Dots. The beta.12.10 Ubuntu soak then correctly caught the new page-query cost at field scale. Home-based verifier profiles accidentally masked the path leak until the clean exact-commit verifier ran from `/private/tmp` and failed its support-bundle privacy assertion.
 - Before/after evidence: Beta.12.9 persisted 279,936 deterministic fixes but exposed 103,616 selector-derived dots. Beta.12.10 made all 279,936 source fixes exact, but its Ubuntu 1,935,384-fix outward traversal took 81.096 seconds against the unchanged 60-second limit. On that preserved database, the positions roster scan cost about 24.1 seconds; the corrected production query reduced the complete 194-page SQLite traversal from 46.406 seconds to 22.335 seconds with the identical 1,935,384-row union.
 - Regression gate: Independent source oracles now verify identities, timestamps, coordinates, page order, visible count/range, recovery, cold restart, MapLibre source/layer evidence, Line restoration, process-tree memory, and real-provider equality. The exact Ubuntu 194-page outward gate remains 60 seconds and is not relaxed.
 - Remaining uncertainty: The source boundary and preserved-database benchmark are green. A newly built exact CI AppImage, installed `.deb`, Ubuntu 36-hour/fourteen-day proofs, and live Traccar provider-to-map proof remain release-blocking.
@@ -63,7 +69,7 @@ the count, page, navigation, and mission-start filters remain unchanged.
 
 ## Local qualification recorded before tagging
 
-- Full unit suite: `195` files / `1,557` tests.
+- Full unit suite: `195` files / `1,559` tests.
 - Full Playwright suite inherited from the exact-Dots boundary: `179/179`; independent visual review `43/43`.
 - TypeScript, lint, production build/bundle budgets, Electron/CJS syntax checks, and diff checks passed.
 - Frozen macOS 36-hour packaged proof: exact 279,936-row persistence, independent 28-page Dots oracle, rendered-layer identity/time/coordinate bounds, HTTP 503 retry, SIGKILL recovery, complete checkpoints, exact Line total, and three cold Dots+Line restarts.
@@ -71,6 +77,7 @@ the count, page, navigation, and mission-start filters remain unchanged.
 - Beta.12.10 exact Ubuntu 36-hour proof passed 279,936 fixes over 28 pages, all rendered/source/checkpoint/fault/restart gates, and the unchanged timing limits.
 - Beta.12.10 Ubuntu fourteen-day proof was correctly rejected only by the 81.096-second outward limit; both retained databases have `ok` integrity and exactly 1,935,384 unique fixes. This evidence is diagnostic, not qualification for beta.12.11.
 - Preserved Ubuntu database benchmark after the beta.12.11 query fix: 194 pages / 1,935,384 exact fixes in 22.335 seconds versus 46.406 seconds before, with identical union and no query-contract change.
+- Diagnostics privacy regression proves non-home POSIX paths plus raw, slash-normalized, and JSON-escaped Windows profile paths cannot appear in diagnostics/support content; the internal export path remains real.
 
 ## Required qualification
 
