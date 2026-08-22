@@ -26,6 +26,13 @@ Aim for work that feels closer to a 9.5-10/10 engineering result than a fast acc
 
 Work directly on `master` unless the user explicitly asks for another branch. Do not create feature branches for ordinary local work, fixes, validation, deployment, or cleanup in this repo.
 
+**Breadcrumb programme exception (explicitly authorized 2026-08-22):** the
+Breadcrumb and Mission-History Programme defined in
+`docs/breadcrumb-programme-execution-policy.md` uses five substantial feature
+branches and PRs. No programme implementation is committed directly to
+`master`. This exception lasts through BCP-17 and does not change the default
+for unrelated work.
+
 ## Project Intent
 
 This project exists to replace a legacy QGIS SAR workflow with a standalone application that operators can trust during real incidents.
