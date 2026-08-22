@@ -67,7 +67,8 @@ The binding operating loop is
 `docs/breadcrumb-programme-coordination-workflow.md`. Codex coordinates and
 guards requirements; fresh bounded Fable planning is the default when a new
 plan is genuinely needed; Donal explicitly authorizes every implementation
-task; and each approved slice is delegated to a fresh GPT-5.6 Sol high task.
+task; and each approved complete PR is delegated to one fresh GPT-5.6 Sol high
+task. BCP units remain internal planning and TDD checkpoints inside that task.
 No team question is sent until it passes the ledger's duplicate-question gate.
 
 ## PR And Slice Scores

@@ -26,8 +26,10 @@ Linear, ADRs, or model output never outrank the team's recorded words there.
 - **Fable** is the bounded architecture and implementation-planning adviser. It
   does not implement, mutate Linear/GitHub, or run expensive qualification
   unless Donal explicitly changes that scope.
-- **A fresh Codex task using GPT-5.6 Sol with high reasoning** implements each
-  approved slice. The coordination task does not absorb implementation work.
+- **One fresh Codex task using GPT-5.6 Sol with high reasoning** implements each
+  approved complete PR through review-ready proof. BCP units are internal
+  planning and strict-TDD checkpoints inside that task, not separate
+  implementation tasks.
 - **Donal controls PR review.** The coordinator reconciles review findings and
   routes remediation back to the implementation task until the exact head is
   acceptable.
@@ -92,7 +94,7 @@ must perform this gate personally.
   BCP-05 receive fresh current-code planning passes after their predecessors
   change the checkout.
 
-## Slice Cycle
+## PR Implementation Cycle
 
 ### 1. Prepare
 
@@ -127,7 +129,8 @@ an explicit go-ahead. Preparing a plan is not implementation authority.
 ### 4. Create The Implementation Task
 
 After approval, Codex creates one new Codex task using **GPT-5.6 Sol, high
-reasoning**. The task receives a self-contained execution packet containing:
+reasoning** for the complete PR. The task receives a self-contained execution
+packet containing:
 
 - exact branch and starting SHA;
 - relevant requirements and accepted Fable artifact;
@@ -137,9 +140,11 @@ reasoning**. The task receives a self-contained execution packet containing:
 - proof limits and explicit exclusions;
 - instruction to stop on a core domain contradiction.
 
-The implementation task owns the slice through verified commits and push. The
-coordinator monitors it and provides only requirements clarification, scope
-control, or blocker resolution.
+The implementation task owns every BCP checkpoint in that PR through final
+integration, review-ready proof, verified commits, push, and the single PR.
+The coordinator monitors it and provides only requirements clarification,
+scope control, or blocker resolution. A BCP boundary does not create a new
+implementation task.
 
 ### 5. Candidate And Review
 
@@ -171,8 +176,7 @@ slice but again waits at Donal's implementation approval gate.
 
 ## Current Baton
 
-BCP-10 is complete locally and remains open in Linear until PR-1 merges. The
-accepted Fable PR-1 artifact already provides an implementation-ready BCP-01
-plan. The next action is therefore not another planning call: it is to wait for
-Donal's explicit authorization to create the fresh Sol-high BCP-01 implementation
-task.
+PR-1 is owned by one authorized Sol-high implementation task. Its BCP-10,
+BCP-01, BCP-02, and BCP-05 checkpoints remain open in Linear until the complete
+PR merges. Donal coordinates review after the task returns the single PR at an
+exact review-ready head; no separate BCP implementation task is created.
