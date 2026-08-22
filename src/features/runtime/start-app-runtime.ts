@@ -47,6 +47,7 @@ import {
 } from '../tracking/ingest-health-store'
 import { createRejectionEvidenceDelivery } from '../tracking/rejection-evidence-delivery'
 import { startExactBreadcrumbDotRuntime } from '../tracking/start-exact-breadcrumb-dot-runtime'
+import { applyStationaryAttentionSnapshot } from '../tracking/stationary-attention-store'
 import { useExactBreadcrumbDotStore } from '../tracking/exact-breadcrumb-dot-store'
 import type { AppRuntimeController } from './app-runtime-controller'
 import {
@@ -287,7 +288,13 @@ export async function startAppRuntime(
       createTrackingCache:
         runtimeKind === 'electron' ? createElectronTrackingCache : createTauriTrackingCache,
       readTrackingRuntimeConfig,
-      applySnapshot: applyTrackingSnapshot,
+      applySnapshot: (snapshot) => {
+        applyTrackingSnapshot(snapshot)
+        applyStationaryAttentionSnapshot(
+          snapshot,
+          useMissionStore.getState().currentMission?.id ?? null,
+        )
+      },
       applyStatus: applyTrackingStatus,
       notifyDurablePositionChange: (changedPositionCount) => {
         useExactBreadcrumbDotStore.getState().controller?.notifyDurableChange(
