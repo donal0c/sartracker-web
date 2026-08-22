@@ -14,8 +14,13 @@ const {
   compareStringsByCodeUnit,
 } = require('./deterministic-string-order.cjs')
 const {
-  classifyLegacyCorrection,
+  canonicalizeAcceptedPosition,
+  classifyPositionIngest,
 } = require('./position-ingest-policy.cjs')
+const {
+  listIngestAnomalies,
+  recordConflictAnomaly,
+} = require('./ingest-anomaly-ledger.cjs')
 
 const { createZipArchive, readZipArchive } = require('./zip-archive.cjs')
 
@@ -308,6 +313,7 @@ function createElectronMissionStore(options) {
       // rather than ordering by a random UUID.
       all(db, 'SELECT * FROM mission_events WHERE mission_id = ? ORDER BY timestamp ASC, rowid ASC', missionId),
     listAuditEvents: async (missionId, options) => listAuditEvents(db, missionId, options),
+    listIngestAnomalies: async (missionId) => listIngestAnomalies(db, missionId),
     upsertMarker: async (input) => upsertById(db, 'markers', input, markerDefaults),
     getMarker: async (markerId) => getById(db, 'markers', markerId, 'Marker'),
     listMarkers: async (missionId) =>
@@ -1237,6 +1243,13 @@ function addPosition(db, input) {
   const timestamp = normalizePositionTimestamp(input.timestamp)
   const dataOrigin = input.data_origin ?? 'live'
   const sourcePositionId = normalizeSourcePositionId(input.source_position_id)
+  const receivedAt = now()
+  const normalizedInput = {
+    ...input,
+    source_position_id: sourcePositionId,
+    timestamp,
+  }
+  const canonical = canonicalizeAcceptedPosition(normalizedInput)
   if (sourcePositionId !== null) {
     const existing = findPositionBySourceIdentity(
       db,
@@ -1244,16 +1257,19 @@ function addPosition(db, input) {
       sourcePositionId,
     )
     if (existing !== undefined) {
-      const transaction = db.transaction(() =>
-        applySourcePositionCorrection(
-          db,
-          existing,
-          input,
-          timestamp,
-          dataOrigin,
-        ),
-      )
-      return transaction().position
+      const decision = classifyPositionIngest({
+        existing,
+        incoming: normalizedInput,
+      })
+      if (decision.decision === 'conflict') {
+        db.transaction(() => recordConflictAnomaly(db, {
+          missionId: input.mission_id,
+          sourcePositionId,
+          incoming: normalizedInput,
+          receivedAt,
+        }))()
+      }
+      return existing
     }
     const adopted = adoptSourceIdentityForLegacyPosition(
       db,
@@ -1273,9 +1289,9 @@ function addPosition(db, input) {
 
   const id = randomUUID()
   const transaction = db.transaction(() => {
-    db.prepare(`INSERT INTO positions (id, mission_id, device_id, source_position_id, name, lat, lon, altitude, speed, battery, accuracy, source, timestamp, data_origin)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-      .run(id, input.mission_id, input.device_id, sourcePositionId, input.name ?? null, input.lat, input.lon, input.altitude ?? null, input.speed ?? null, input.battery ?? null, input.accuracy ?? null, input.source ?? null, timestamp, dataOrigin)
+    db.prepare(`INSERT INTO positions (id, mission_id, device_id, source_position_id, name, lat, lon, altitude, speed, battery, accuracy, source, timestamp, data_origin, received_at, content_hash, source_kind)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+      .run(id, input.mission_id, input.device_id, sourcePositionId, input.name ?? null, input.lat, input.lon, input.altitude ?? null, input.speed ?? null, input.battery ?? null, input.accuracy ?? null, input.source ?? null, timestamp, dataOrigin, receivedAt, canonical.contentHash, sourcePositionId === null ? null : 'traccar')
     db.prepare(
       `UPDATE devices
        SET last_seen = CASE
@@ -1309,8 +1325,8 @@ function addPositionsBulk(db, input, includePositions = true) {
   const existingPositionBySourceIdentity = db.prepare(
     'SELECT * FROM positions WHERE mission_id = ? AND source_position_id = ? LIMIT 1',
   )
-  const insertPosition = db.prepare(`INSERT INTO positions (id, mission_id, device_id, source_position_id, name, lat, lon, altitude, speed, battery, accuracy, source, timestamp, data_origin)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+  const insertPosition = db.prepare(`INSERT INTO positions (id, mission_id, device_id, source_position_id, name, lat, lon, altitude, speed, battery, accuracy, source, timestamp, data_origin, received_at, content_hash, source_kind)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
   const updateDevice = db.prepare(
     `UPDATE devices
      SET last_seen = CASE
@@ -1327,6 +1343,7 @@ function addPositionsBulk(db, input, includePositions = true) {
   let skippedAmbiguousLegacyAdoptionCount = 0
 
   const transaction = db.transaction(() => {
+    const receivedAt = now()
     for (const position of positions) {
       validateLatLon(position.lat, position.lon, 'Position')
       if (deviceExists.get(input.mission_id, position.device_id) === undefined) {
@@ -1338,22 +1355,29 @@ function addPositionsBulk(db, input, includePositions = true) {
       const sourcePositionId = normalizeSourcePositionId(
         position.source_position_id,
       )
+      const normalizedPosition = {
+        ...position,
+        source_position_id: sourcePositionId,
+        timestamp,
+      }
+      const canonical = canonicalizeAcceptedPosition(normalizedPosition)
       if (sourcePositionId !== null) {
         const existing = existingPositionBySourceIdentity.get(
           input.mission_id,
           sourcePositionId,
         )
         if (existing !== undefined) {
-          const correction = applySourcePositionCorrection(
-            db,
+          const decision = classifyPositionIngest({
             existing,
-            position,
-            timestamp,
-            dataOrigin,
-          )
-          if (correction.corrected) {
-            changedPositionCount += 1
-            changedIds?.push(existing.id)
+            incoming: normalizedPosition,
+          })
+          if (decision.decision === 'conflict') {
+            recordConflictAnomaly(db, {
+              missionId: input.mission_id,
+              sourcePositionId,
+              incoming: normalizedPosition,
+              receivedAt,
+            })
           }
           continue
         }
@@ -1410,6 +1434,9 @@ function addPositionsBulk(db, input, includePositions = true) {
         position.source ?? null,
         timestamp,
         dataOrigin,
+        receivedAt,
+        canonical.contentHash,
+        sourcePositionId === null ? null : 'traccar',
       )
       updateDevice.run(timestamp, timestamp, input.mission_id, position.device_id)
       changedPositionCount += 1
@@ -1615,95 +1642,6 @@ function createAmbiguousLegacyAdoptionError(sourcePositionId) {
   return new Error(
     `Position source identity conflict for ${sourcePositionId}: more than one exact legacy fix could be upgraded.`,
   )
-}
-
-function applySourcePositionCorrection(
-  db,
-  existing,
-  input,
-  timestamp,
-  dataOrigin,
-) {
-  if (existing.device_id !== input.device_id) {
-    throw new Error(
-      `Position source identity ${existing.source_position_id} belongs to device ${existing.device_id} and cannot be reassigned to device ${input.device_id}.`,
-    )
-  }
-  const { previous, corrected, changedFields } = classifyLegacyCorrection(
-    existing,
-    input,
-    timestamp,
-    dataOrigin,
-  )
-  if (changedFields.length === 0) {
-    return { position: existing, corrected: false }
-  }
-
-  const correctedAt = now()
-  db.prepare(
-    `INSERT INTO position_revisions (
-      id, mission_id, position_id, source_position_id, corrected_at,
-      changed_fields_json, previous_json, corrected_json
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-  ).run(
-    randomUUID(),
-    existing.mission_id,
-    existing.id,
-    existing.source_position_id,
-    correctedAt,
-    JSON.stringify(changedFields),
-    JSON.stringify(previous),
-    JSON.stringify(corrected),
-  )
-  db.prepare(
-    `UPDATE positions SET
-      device_id = ?, name = ?, lat = ?, lon = ?, altitude = ?, speed = ?,
-      battery = ?, accuracy = ?, source = ?, timestamp = ?, data_origin = ?
-     WHERE id = ?`,
-  ).run(
-    corrected.device_id,
-    corrected.name,
-    corrected.lat,
-    corrected.lon,
-    corrected.altitude,
-    corrected.speed,
-    corrected.battery,
-    corrected.accuracy,
-    corrected.source,
-    corrected.timestamp,
-    corrected.data_origin,
-    existing.id,
-  )
-  db.prepare(
-    `UPDATE devices
-     SET last_seen = CASE
-       WHEN last_seen IS NULL OR julianday(?) > julianday(last_seen) THEN ?
-       ELSE last_seen
-     END,
-     status = 'online'
-     WHERE mission_id = ? AND device_id = ?`,
-  ).run(timestamp, timestamp, existing.mission_id, corrected.device_id)
-  insertEvent(
-    db,
-    existing.mission_id,
-    'position_corrected',
-    correctedAt,
-    {
-      position_id: existing.id,
-      source_position_id: existing.source_position_id,
-      changed_fields: changedFields,
-      previous,
-      corrected,
-    },
-  )
-
-  return {
-    position: {
-      ...existing,
-      ...corrected,
-    },
-    corrected: true,
-  }
 }
 
 function createPositionIdentityKey(position, timestamp) {

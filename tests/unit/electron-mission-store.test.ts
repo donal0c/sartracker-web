@@ -224,6 +224,13 @@ type ElectronMissionStore = {
   readonly cancelBreadcrumbQuery: (requestId: string) => Promise<boolean>
   readonly countPositions: (missionId: string, deviceId?: string) => Promise<number>
   readonly latestPositions: (missionId: string) => Promise<readonly { readonly device_id: string; readonly lat: number }[]>
+  readonly listIngestAnomalies: (missionId: string) => Promise<readonly {
+    readonly kind: 'rejected' | 'conflict'
+    readonly device_id: string | null
+    readonly source_position_id: string | null
+    readonly reason_class: string
+    readonly canonical_payload_json: string
+  }[]>
   readonly upsertMarker: (input: {
     readonly id?: string
     readonly mission_id: string
@@ -778,10 +785,16 @@ describe('electron mission store', () => {
         reconciled_until: '2026-08-09T02:00:00.000Z',
       }],
     })).resolves.toEqual({
-      changedPositionCount: 1,
+      changedPositionCount: 0,
       insertedPositionCount: 0,
       skippedAmbiguousLegacyAdoptionCount: 0,
     })
+    await expect(store.listIngestAnomalies(mission.id)).resolves.toEqual([
+      expect.objectContaining({
+        kind: 'conflict',
+        source_position_id: 'source-0',
+      }),
+    ])
     await expect(store.listTrackingHistoryCheckpoints(mission.id)).resolves.toEqual([
       {
         mission_id: mission.id,
@@ -1016,7 +1029,7 @@ describe('electron mission store', () => {
     await expect(store.countPositions(mission.id)).resolves.toBe(0)
   })
 
-  it('makes repeated source identity writes idempotent and audits source corrections [DON-260]', async () => {
+  it('keeps the first accepted source fix immutable and records one durable conflict [DON-268]', async () => {
     const storageDiagnostics: StorageDiagnosticsPort = {
       createOperation: vi.fn(),
       requested: vi.fn(),
@@ -1062,39 +1075,53 @@ describe('electron mission store', () => {
         mission_id: mission.id,
         positions: [{ ...position, lat: 52.5 }],
       }),
-    ).resolves.toEqual([
-      expect.objectContaining({
-        source_position_id: 'source-1',
-        lat: 52.5,
+    ).resolves.toHaveLength(0)
+    await expect(
+      store.addPositionsBulk({
+        mission_id: mission.id,
+        positions: [{ ...position, lat: 52.5 }],
       }),
-    ])
+    ).resolves.toHaveLength(0)
     await expect(store.countPositions(mission.id)).resolves.toBe(1)
     await expect(store.listPositions(mission.id)).resolves.toEqual([
       expect.objectContaining({
         source_position_id: 'source-1',
-        lat: 52.5,
+        lat: 52.0599,
+        received_at: expect.any(String),
+        content_hash: expect.stringMatching(/^[a-f0-9]{64}$/u),
+        source_kind: 'traccar',
       }),
     ])
     const correctionEvents = (await store.listMissionEvents(mission.id)).filter(
       (event) => event.event_type === 'position_corrected',
     )
-    expect(correctionEvents).toHaveLength(1)
-    expect(JSON.parse(correctionEvents[0]!.details_json ?? '{}')).toEqual(
+    expect(correctionEvents).toHaveLength(0)
+    await expect(store.listIngestAnomalies(mission.id)).resolves.toEqual([
+      expect.objectContaining({
+        kind: 'conflict',
+        device_id: 'tracker-1',
+        source_position_id: 'source-1',
+        reason_class: 'source_identity_content_conflict',
+        canonical_payload_json: expect.any(String),
+      }),
+    ])
+    const [conflict] = await store.listIngestAnomalies(mission.id)
+    expect(JSON.parse(conflict!.canonical_payload_json)).toEqual(
       expect.objectContaining({
         source_position_id: 'source-1',
-        changed_fields: ['lat'],
-        previous: expect.objectContaining({ lat: 52.0599 }),
-        corrected: expect.objectContaining({ lat: 52.5 }),
+        device_id: 'tracker-1',
+        lat: 52.5,
+        timestamp: '2026-07-28T10:00:00.000Z',
       }),
     )
     expect(
       vi
         .mocked(storageDiagnostics.recordInsertedPositions)
         .mock.calls.map(([entry]) => entry.insertedPositionCount),
-    ).toEqual([1, 0, 0])
+    ).toEqual([1, 0, 0, 0])
   })
 
-  it('rejects a source position identity that changes device ownership [DON-260]', async () => {
+  it('isolates source-device reassignment as a conflict without aborting the batch [DON-268]', async () => {
     store = await createStore()
     const mission = await store.createMission({
       name: 'Source Identity Device Ownership Mission',
@@ -1124,14 +1151,6 @@ describe('electron mission store', () => {
     await store.addPosition(original)
 
     await expect(
-      store.addPosition({
-        ...original,
-        device_id: 'tracker-2',
-        lat: 53.3498,
-        lon: -6.2603,
-      }),
-    ).rejects.toThrow(/belongs to device tracker-1.*tracker-2/iu)
-    await expect(
       store.addPositionsBulk({
         mission_id: mission.id,
         positions: [
@@ -1141,15 +1160,35 @@ describe('electron mission store', () => {
             lat: 53.3498,
             lon: -6.2603,
           },
+          {
+            source_position_id: 'source-2',
+            device_id: 'tracker-2',
+            lat: 53.3,
+            lon: -6.2,
+            timestamp: '2026-07-28T09:00:00.000Z',
+          },
         ],
       }),
-    ).rejects.toThrow(/belongs to device tracker-1.*tracker-2/iu)
+    ).resolves.toEqual([
+      expect.objectContaining({ source_position_id: 'source-2' }),
+    ])
     await expect(store.listPositions(mission.id)).resolves.toEqual([
+      expect.objectContaining({
+        source_position_id: 'source-2',
+        device_id: 'tracker-2',
+      }),
       expect.objectContaining({
         source_position_id: 'source-1',
         device_id: 'tracker-1',
         lat: 52.0599,
         lon: -9.5045,
+      }),
+    ])
+    await expect(store.listIngestAnomalies(mission.id)).resolves.toEqual([
+      expect.objectContaining({
+        kind: 'conflict',
+        source_position_id: 'source-1',
+        reason_class: 'source_identity_content_conflict',
       }),
     ])
   })
