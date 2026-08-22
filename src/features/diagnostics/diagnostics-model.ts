@@ -260,6 +260,14 @@ function buildSupportReport(
     `runtime tracking configured: ${booleanWord(input.runtimeBootstrap.trackingConfig !== null)}`,
     `autosave interval ms: ${input.runtimeBootstrap.autosaveIntervalMs}`,
     `tracking poll interval ms: ${input.runtimeBootstrap.trackingPollIntervalMs}`,
+    ...(input.runtimeBootstrap.stationaryAttentionConfig === undefined
+      ? []
+      : [
+          `stationary attention window ms: ${input.runtimeBootstrap.stationaryAttentionConfig.heartbeatWindowMs}`,
+          `stationary movement floor m: ${input.runtimeBootstrap.stationaryAttentionConfig.movementFloorM}`,
+          `stationary accuracy factor: ${input.runtimeBootstrap.stationaryAttentionConfig.accuracyFactor}`,
+          `stationary outlier reject m: ${input.runtimeBootstrap.stationaryAttentionConfig.outlierRejectM}`,
+        ]),
     '',
     '[tracking]',
     `tracking mode: ${input.trackingStatus.mode}`,

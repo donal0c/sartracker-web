@@ -8,6 +8,7 @@ import { useDeviceWorkspaceStore } from '../../src/features/tracking/device-work
 import { useTrackingStore } from '../../src/features/tracking/tracking-store'
 import { useTrackingStyleStore } from '../../src/features/tracking/tracking-style-store'
 import { useIngestHealthStore } from '../../src/features/tracking/ingest-health-store'
+import { useStationaryAttentionStore } from '../../src/features/tracking/stationary-attention-store'
 
 let root: Root | null = null
 let host: HTMLDivElement | null = null
@@ -24,6 +25,7 @@ describe('TrackingStatusPanel', () => {
     useDeviceWorkspaceStore.setState(useDeviceWorkspaceStore.getInitialState())
     useTrackingStyleStore.setState(useTrackingStyleStore.getInitialState())
     useIngestHealthStore.setState(useIngestHealthStore.getInitialState())
+    useStationaryAttentionStore.setState(useStationaryAttentionStore.getInitialState())
   })
 
   it('renders offline tracking mode and OFFLINE MODE warning as a flashing red alert', () => {
@@ -139,6 +141,16 @@ describe('TrackingStatusPanel', () => {
     expect(getText('[data-testid="position-conflict-warning"]')).toContain(
       'first accepted fix remains displayed',
     )
+  })
+
+  it('summarizes stationary attention without declaring an emergency [DON-269]', () => {
+    useStationaryAttentionStore.setState({ byDevice: {
+      'device-1': { state: 'attention', acknowledged: false, sinceTimestamp: '2026-08-22T10:00:00.000Z', elapsedMs: 1_200_000, movementThresholdM: 15 },
+    } })
+    render(React.createElement(TrackingStatusPanel))
+    const text = getText('[data-testid="stationary-attention-summary"]')
+    expect(text).toContain('1 device needs stationary attention')
+    expect(text.toLowerCase()).not.toContain('emergency')
   })
 
   it('makes a bounded whole-route trail explicit without implying stored data loss [DON-260]', () => {

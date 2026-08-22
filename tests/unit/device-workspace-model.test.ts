@@ -139,6 +139,16 @@ describe('device workspace model', () => {
     })
   })
 
+  it('adds derived stationary attention without changing fix truth [DON-269]', () => {
+    const rows = buildDeviceWorkspaceRows(SNAPSHOT, [], [], undefined, {
+      alpha: { state: 'attention', acknowledged: false, elapsedMs: 1_200_000 },
+    })
+    expect(rows[0]).toMatchObject({
+      deviceId: 'alpha', stationaryAttention: true,
+      attentionAcknowledged: false, latitude: 52, longitude: -9.7,
+    })
+  })
+
   it('builds workspace summary counters aligned with tracking status', () => {
     const rows = buildDeviceWorkspaceRows(SNAPSHOT, ['bravo'], ['alpha'])
     const summary = buildDeviceWorkspaceSummary(rows, STATUS)

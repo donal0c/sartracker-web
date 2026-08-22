@@ -5,6 +5,7 @@ import type { ExactBreadcrumbDotState } from '../features/tracking/exact-breadcr
 import { useTrackingStyleStore } from '../features/tracking/tracking-style-store'
 import { ExactBreadcrumbDotStatus } from './exact-breadcrumb-dot-status'
 import { useIngestHealthStore } from '../features/tracking/ingest-health-store'
+import { useStationaryAttentionStore } from '../features/tracking/stationary-attention-store'
 
 type TrackingStatusPanelProps = {
   readonly exactBreadcrumbDotState?: ExactBreadcrumbDotState
@@ -24,6 +25,9 @@ export function TrackingStatusPanel(props: TrackingStatusPanelProps = {}) {
   const exactBreadcrumbDotController = useExactBreadcrumbDotStore((state) => state.controller)
   const ingestHealth = useIngestHealthStore((state) => state.summary)
   const evidenceHealth = useIngestHealthStore((state) => state.evidenceHealth)
+  const stationaryAttentionCount = useStationaryAttentionStore((state) =>
+    Object.values(state.byDevice).filter((attention) => attention.state === 'attention').length,
+  )
   const exactBreadcrumbDotState = props.exactBreadcrumbDotState ?? storedExactBreadcrumbDotState
   const staleDeviceCount = snapshot.positions.filter((position) => position.device_cache_stale).length
   const unverifiedFixTimeCount = snapshot.positions.filter(
@@ -150,6 +154,16 @@ export function TrackingStatusPanel(props: TrackingStatusPanelProps = {}) {
           FIX TIME UNVERIFIED — {unverifiedFixTimeCount}{' '}
           {unverifiedFixTimeCount === 1 ? 'position has' : 'positions have'} server receipt time
           only and {unverifiedFixTimeCount === 1 ? 'is' : 'are'} not treated as a fresh device fix.
+        </p>
+      )}
+
+      {stationaryAttentionCount === 0 ? null : (
+        <p
+          className="mb-4 border-l-4 border-l-amber-400 bg-amber-400/15 px-3 py-2 text-xs font-medium leading-relaxed text-amber-100"
+          data-testid="stationary-attention-summary"
+        >
+          STATIONARY ATTENTION — {stationaryAttentionCount}{' '}
+          {stationaryAttentionCount === 1 ? 'device needs' : 'devices need'} stationary attention. Open Devices to review or acknowledge the presentation; movement clears the underlying state.
         </p>
       )}
 

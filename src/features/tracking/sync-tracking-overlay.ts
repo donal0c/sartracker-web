@@ -22,12 +22,14 @@ import {
   type TrackingStylePreferences,
 } from './tracking-style-store'
 import type { TrackingSnapshot } from './tracking-types'
+import type { DeviceStationaryAttention } from './stationary-attention-store'
 
 export const TRACKING_SOURCE_ID = 'tracking'
 export const TRACKING_EXACT_BREADCRUMB_DOTS_SOURCE_ID = 'tracking-breadcrumb-dots-exact'
 export const TRACKING_BREADCRUMB_CASING_LAYER_ID = 'tracking-breadcrumbs-casing'
 export const TRACKING_BREADCRUMB_DOTS_LAYER_ID = 'tracking-breadcrumbs-dots'
 export const TRACKING_DEVICE_HALO_LAYER_ID = 'tracking-devices-halo'
+export const TRACKING_DEVICE_ATTENTION_LAYER_ID = 'tracking-devices-attention'
 export const TRACKING_DEVICE_LAYER_ID = 'tracking-devices-circle'
 export const TRACKING_DEVICE_LABEL_LAYER_ID = 'tracking-devices-label'
 export const TRACKING_BREADCRUMB_LAYER_ID = 'tracking-breadcrumbs-line'
@@ -72,6 +74,7 @@ export function syncTrackingOverlay(
     breadcrumbTrailMode: DEFAULT_BREADCRUMB_TRAIL_MODE,
   },
   exactBreadcrumbDotState: ExactBreadcrumbDotState = { status: 'inactive' },
+  attentionByDevice: Readonly<Record<string, DeviceStationaryAttention>> = {},
 ): void {
   const breadcrumbSize = clampBreadcrumbSize(style.breadcrumbSize)
   const breadcrumbDotRadius = breadcrumbSize / 2
@@ -85,6 +88,7 @@ export function syncTrackingOverlay(
       baselineSnapshot,
       DEFAULT_BREADCRUMB_LINE_GAP_THRESHOLD_MS,
       style,
+      attentionByDevice,
     ),
   ])
   ensureGeoJsonSource(
@@ -96,6 +100,7 @@ export function syncTrackingOverlay(
           baselineSnapshot,
           DEFAULT_BREADCRUMB_LINE_GAP_THRESHOLD_MS,
           style,
+          attentionByDevice,
         ),
     },
     {
@@ -186,6 +191,28 @@ export function syncTrackingOverlay(
   map.setPaintProperty(TRACKING_BREADCRUMB_DOTS_LAYER_ID, 'circle-stroke-opacity', 0.48)
 
   ensureLayer(map, {
+    id: TRACKING_DEVICE_ATTENTION_LAYER_ID,
+    type: 'circle',
+    source: TRACKING_SOURCE_ID,
+    filter: combineMapFilters(
+      IS_DEVICE_POINT_FEATURE,
+      ['==', ['get', 'attention'], true],
+    ),
+    paint: {
+      'circle-color': '#F59E0B',
+      'circle-radius': 23,
+      'circle-opacity': [
+        'case',
+        ['boolean', ['get', 'attentionAcknowledged'], false],
+        0.28,
+        0.68,
+      ],
+      'circle-stroke-color': '#FEF3C7',
+      'circle-stroke-width': 2,
+    },
+  })
+
+  ensureLayer(map, {
     id: TRACKING_DEVICE_HALO_LAYER_ID,
     type: 'circle',
     source: TRACKING_SOURCE_ID,
@@ -269,6 +296,14 @@ export function syncTrackingOverlay(
     dotTrailsVisible
       ? combineMapFilters(IS_BREADCRUMB_POINT_FEATURE, breadcrumbVisibilityFilter)
       : HIDDEN_TRACKING_FEATURE_FILTER,
+  )
+  map.setFilter(
+    TRACKING_DEVICE_ATTENTION_LAYER_ID,
+    combineMapFilters(
+      IS_DEVICE_POINT_FEATURE,
+      ['==', ['get', 'attention'], true],
+      currentLocationVisibilityFilter,
+    ),
   )
   map.setFilter(
     TRACKING_DEVICE_HALO_LAYER_ID,

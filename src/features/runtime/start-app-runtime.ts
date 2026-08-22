@@ -47,7 +47,7 @@ import {
 } from '../tracking/ingest-health-store'
 import { createRejectionEvidenceDelivery } from '../tracking/rejection-evidence-delivery'
 import { startExactBreadcrumbDotRuntime } from '../tracking/start-exact-breadcrumb-dot-runtime'
-import { applyStationaryAttentionSnapshot } from '../tracking/stationary-attention-store'
+import { useStationaryAttentionStore } from '../tracking/stationary-attention-store'
 import { useExactBreadcrumbDotStore } from '../tracking/exact-breadcrumb-dot-store'
 import type { AppRuntimeController } from './app-runtime-controller'
 import {
@@ -70,6 +70,12 @@ type StartAppRuntimeDependencies = {
     readonly trackingPollIntervalMs: number
     readonly trackingMinimumPollIntervalMs?: number
     readonly trackingCacheEnabled: boolean
+    readonly stationaryAttentionConfig?: {
+      readonly heartbeatWindowMs: number
+      readonly movementFloorM: number
+      readonly accuracyFactor: number
+      readonly outlierRejectM: number
+    }
     readonly trackingConfig: {
       readonly baseUrl: string
       readonly email?: string
@@ -228,6 +234,8 @@ export async function startAppRuntime(
       return
     }
 
+    useStationaryAttentionStore.getState().setConfig(runtimeSettings.stationaryAttentionConfig)
+
     // A replacement tracker must never overlap the currently active poller.
     // Stop the old services only after settings have loaded successfully, then
     // start the replacement. This keeps a failed settings read non-disruptive
@@ -289,11 +297,7 @@ export async function startAppRuntime(
         runtimeKind === 'electron' ? createElectronTrackingCache : createTauriTrackingCache,
       readTrackingRuntimeConfig,
       applySnapshot: (snapshot) => {
-        applyTrackingSnapshot(snapshot)
-        applyStationaryAttentionSnapshot(
-          snapshot,
-          useMissionStore.getState().currentMission?.id ?? null,
-        )
+        applyTrackingSnapshot(snapshot, useMissionStore.getState().currentMission?.id ?? null)
       },
       applyStatus: applyTrackingStatus,
       notifyDurablePositionChange: (changedPositionCount) => {

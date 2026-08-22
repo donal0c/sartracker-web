@@ -111,4 +111,21 @@ test.describe('BCP-01 current-position ingest health', () => {
     await expect(page.getByTestId('current-position-ingest-warning')).toHaveCount(0)
     await expect(page.getByTestId('fix-time-unverified-warning')).toHaveCount(0)
   })
+
+  test('keeps conflict and degraded evidence warnings visible while current positions stay live [DON-268]', async ({ page }) => {
+    await page.evaluate(async () => {
+      const [{ applyTrackingSnapshot }, { applyIngestEvidenceHealth }] = await Promise.all([
+        import('/src/features/tracking/tracking-store.ts'),
+        import('/src/features/tracking/ingest-health-store.ts'),
+      ])
+      applyTrackingSnapshot({ devices: [], positions: [], breadcrumbs: [] })
+      applyIngestEvidenceHealth({
+        state: 'degraded', reason: 'ledger_projection_failed', pendingCount: 1,
+        corruptCount: 0, conflictCount: 1, rejectedCount: 0,
+        affectedDeviceCount: 1, conflictDeviceIds: ['alpha'],
+      })
+    })
+    await expect(page.getByTestId('ingest-evidence-health-warning')).toContainText('Current positions remain live')
+    await expect(page.getByTestId('position-conflict-warning')).toContainText('first accepted fix remains displayed')
+  })
 })

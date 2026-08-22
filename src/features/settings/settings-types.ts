@@ -18,6 +18,10 @@ export type MissionDefaultsSettings = {
   readonly backupMissionRoot: string
   readonly coordinatorRoster: readonly string[]
   readonly adminRoster: readonly string[]
+  readonly stationaryAttentionHeartbeatMinutes?: number
+  readonly stationaryAttentionMovementFloorM?: number
+  readonly stationaryAttentionAccuracyFactor?: number
+  readonly stationaryAttentionOutlierRejectM?: number
 }
 
 export type DataSourceSettings = {
@@ -113,6 +117,12 @@ export type RuntimeBootstrapSettings = {
     readonly token?: string
   } | null
   readonly trackingDisabledReason?: string
+  readonly stationaryAttentionConfig?: {
+    readonly heartbeatWindowMs: number
+    readonly movementFloorM: number
+    readonly accuracyFactor: number
+    readonly outlierRejectM: number
+  }
 }
 
 export const DEFAULT_APP_SETTINGS: AppSettings = {
@@ -125,6 +135,10 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
     backupMissionRoot: '',
     coordinatorRoster: [],
     adminRoster: [],
+    stationaryAttentionHeartbeatMinutes: 20,
+    stationaryAttentionMovementFloorM: 15,
+    stationaryAttentionAccuracyFactor: 2,
+    stationaryAttentionOutlierRejectM: 500,
   },
   dataSource: {
     providerType: 'none',
@@ -166,6 +180,7 @@ export function createSettingsDraft(settings: AppSettings): AppSettingsDraft {
 
   return {
     missionDefaults: {
+      ...DEFAULT_APP_SETTINGS.missionDefaults,
       ...settings.missionDefaults,
       coordinatorRoster: [...settings.missionDefaults.coordinatorRoster],
       adminRoster: [...settings.missionDefaults.adminRoster],

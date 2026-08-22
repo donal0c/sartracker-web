@@ -4,6 +4,7 @@ import {
   formatCurrentPositionRejectionReason,
   type CurrentPositionIngestHealthSummary,
 } from './ingest-health'
+import type { DeviceStationaryAttention } from './stationary-attention-store'
 
 export type DeviceWorkspaceRow = {
   readonly deviceId: string
@@ -25,6 +26,9 @@ export type DeviceWorkspaceRow = {
   readonly accuracyDisplay: string
   readonly batteryDisplay: string
   readonly speedDisplay: string
+  readonly stationaryAttention: boolean
+  readonly attentionAcknowledged: boolean
+  readonly attentionElapsedDisplay: string
 }
 
 export type DeviceWorkspaceSummary = {
@@ -49,6 +53,7 @@ export function buildDeviceWorkspaceRows(
   hiddenDeviceIds: readonly string[],
   activeDeviceIds: readonly string[] = [],
   ingestHealth: CurrentPositionIngestHealthSummary = EMPTY_CURRENT_POSITION_INGEST_HEALTH,
+  attentionByDevice: Readonly<Record<string, Pick<DeviceStationaryAttention, 'state' | 'acknowledged' | 'elapsedMs'>>> = {},
 ): readonly DeviceWorkspaceRow[] {
   const latestPositionByDevice = new Map(
     snapshot.positions.map((position) => [position.device_id, position] as const),
@@ -59,6 +64,7 @@ export function buildDeviceWorkspaceRows(
     .map((device) => {
       const position = latestPositionByDevice.get(device.device_id) ?? null
       const rejected = ingestHealth.byDevice[device.device_id]
+      const attention = attentionByDevice[device.device_id]
       return {
         deviceId: device.device_id,
         name: device.name,
@@ -95,9 +101,19 @@ export function buildDeviceWorkspaceRows(
           typeof position?.battery === 'number' ? `${Math.round(position.battery)}%` : '—',
         speedDisplay:
           typeof position?.speed === 'number' ? `${position.speed.toFixed(1)} km/h` : '—',
+        stationaryAttention: attention?.state === 'attention',
+        attentionAcknowledged: attention?.acknowledged === true,
+        attentionElapsedDisplay: formatAttentionElapsed(attention?.elapsedMs),
       } satisfies DeviceWorkspaceRow
     })
     .sort((left, right) => left.name.localeCompare(right.name))
+}
+
+function formatAttentionElapsed(elapsedMs: number | undefined): string {
+  if (elapsedMs === undefined || !Number.isFinite(elapsedMs) || elapsedMs < 0) {
+    return 'duration unavailable'
+  }
+  return `${Math.floor(elapsedMs / 60_000)} min without meaningful movement`
 }
 
 /**

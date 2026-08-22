@@ -34,6 +34,10 @@ const DEFAULT_APP_SETTINGS = Object.freeze({
     backupMissionRoot: '',
     coordinatorRoster: Object.freeze([]),
     adminRoster: Object.freeze([]),
+    stationaryAttentionHeartbeatMinutes: 20,
+    stationaryAttentionMovementFloorM: 15,
+    stationaryAttentionAccuracyFactor: 2,
+    stationaryAttentionOutlierRejectM: 500,
   }),
   dataSource: Object.freeze({
     providerType: 'none',
@@ -129,6 +133,12 @@ function createElectronSettingsStore(options) {
       autosaveIntervalMs: persisted.missionDefaults.autoSaveIntervalSeconds * 1000,
       trackingPollIntervalMs: persisted.missionDefaults.autoRefreshIntervalSeconds * 1000,
       trackingCacheEnabled: persisted.dataSource.trackingCacheEnabled,
+      stationaryAttentionConfig: {
+        heartbeatWindowMs: persisted.missionDefaults.stationaryAttentionHeartbeatMinutes * 60_000,
+        movementFloorM: persisted.missionDefaults.stationaryAttentionMovementFloorM,
+        accuracyFactor: persisted.missionDefaults.stationaryAttentionAccuracyFactor,
+        outlierRejectM: persisted.missionDefaults.stationaryAttentionOutlierRejectM,
+      },
       trackingConfig: shouldConnect
         ? createTrackingConfig(persisted.dataSource, secretResult.value)
         : null,
@@ -437,7 +447,16 @@ function normalizeMissionDefaults(input) {
     backupMissionRoot: readOptionalString(input.backupMissionRoot).trim(),
     coordinatorRoster: normalizeRoster(input.coordinatorRoster),
     adminRoster: normalizeRoster(input.adminRoster),
+    stationaryAttentionHeartbeatMinutes: normalizeBoundedNumber(input.stationaryAttentionHeartbeatMinutes, 5, 60, 20),
+    stationaryAttentionMovementFloorM: normalizeBoundedNumber(input.stationaryAttentionMovementFloorM, 5, 100, 15),
+    stationaryAttentionAccuracyFactor: normalizeBoundedNumber(input.stationaryAttentionAccuracyFactor, 1, 5, 2),
+    stationaryAttentionOutlierRejectM: normalizeBoundedNumber(input.stationaryAttentionOutlierRejectM, 100, 5_000, 500),
   }
+}
+
+function normalizeBoundedNumber(value, minimum, maximum, fallback) {
+  const number = Number(value)
+  return Number.isFinite(number) && number >= minimum && number <= maximum ? number : fallback
 }
 
 function normalizeDataSource(input) {

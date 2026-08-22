@@ -98,7 +98,10 @@ describe('diagnostics model', () => {
     const snapshot = buildDiagnosticsSnapshot({
       generatedAt: '2026-08-22T10:00:00.000Z', appVersion: '0.1.0', runtimeKind: 'electron',
       userAgent: 'test', dependencySmoke: { hasMapLibre: true, hasProj4: true, hasTurf: true, hasZustand: true, hasTerraDraw: true },
-      settings: createSettings(), runtimeBootstrap: createRuntimeBootstrap(), missionStoreInfo,
+      settings: createSettings(), runtimeBootstrap: {
+        ...createRuntimeBootstrap(),
+        stationaryAttentionConfig: { heartbeatWindowMs: 1_200_000, movementFloorM: 15, accuracyFactor: 2, outlierRejectM: 500 },
+      }, missionStoreInfo,
       missions: [], missionRuntime: { phase: 'idle', currentMission: null, recoverableMission: null },
       governanceRuntime: createGovernanceRuntime(), trackingStatus: createTrackingStatus(), trackingSnapshot: createTrackingSnapshot(),
       layerCatalogState: { missionId: null, loading: false, error: null, metadataEntryCount: 0 }, selectedMissionId: null,
@@ -107,6 +110,7 @@ describe('diagnostics model', () => {
     expect(snapshot.supportReport).toContain('evidence health: degraded')
     expect(snapshot.supportReport).toContain('evidence conflicts: 1')
     expect(snapshot.supportReport).not.toContain('secret-device')
+    expect(snapshot.supportReport).toContain('stationary attention window ms: 1200000')
   })
 
   it('flags browser-mode and degraded tracking/operator warnings clearly', () => {

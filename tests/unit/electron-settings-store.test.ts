@@ -280,6 +280,26 @@ describe('electron settings store', () => {
     })
   })
 
+  it('normalizes corrupt stationary-attention settings to reviewed defaults [DON-269]', async () => {
+    const store = await createStore({ backend: 'gnome_libsecret' })
+    await writeFile(path.join(userDataPath!, 'settings.json'), JSON.stringify({
+      missionDefaults: {
+        stationaryAttentionHeartbeatMinutes: -1,
+        stationaryAttentionMovementFloorM: 'bad',
+        stationaryAttentionAccuracyFactor: 99,
+        stationaryAttentionOutlierRejectM: 1,
+      },
+    }), 'utf8')
+    await expect(store.loadRuntimeBootstrapSettings()).resolves.toMatchObject({
+      stationaryAttentionConfig: {
+        heartbeatWindowMs: 1_200_000,
+        movementFloorM: 15,
+        accuracyFactor: 2,
+        outlierRejectM: 500,
+      },
+    })
+  })
+
   it('normalizes bare-domain weather links before persistence', async () => {
     const store = await createStore({ backend: 'gnome_libsecret' })
     const draft = createSettingsDraft(DEFAULT_APP_SETTINGS)

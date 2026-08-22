@@ -3,6 +3,8 @@ import { create } from 'zustand'
 import {
   DEFAULT_STATIONARY_ATTENTION_CONFIG,
   evaluateStationaryAttention,
+  sanitizeStationaryAttentionConfig,
+  type StationaryAttentionConfig,
   type StationaryAttentionEvaluation,
 } from './stationary-attention'
 import type { NormalizedTrackingPosition, TrackingSnapshot } from './tracking-types'
@@ -14,13 +16,16 @@ export type DeviceStationaryAttention = StationaryAttentionEvaluation & {
 export type StationaryAttentionStore = {
   readonly missionId: string | null
   readonly byDevice: Readonly<Record<string, DeviceStationaryAttention>>
+  readonly config: StationaryAttentionConfig
   readonly applySnapshot: (snapshot: TrackingSnapshot, missionId?: string | null) => void
   readonly acknowledge: (deviceId: string) => void
+  readonly setConfig: (input: unknown) => void
 }
 
 export const useStationaryAttentionStore = create<StationaryAttentionStore>((set, get) => ({
   missionId: null,
   byDevice: {},
+  config: DEFAULT_STATIONARY_ATTENTION_CONFIG,
   applySnapshot: (snapshot, suppliedMissionId) => {
     const missionId = suppliedMissionId === undefined ? get().missionId : suppliedMissionId
     const previous = missionId === get().missionId ? get().byDevice : {}
@@ -29,7 +34,7 @@ export const useStationaryAttentionStore = create<StationaryAttentionStore>((set
     for (const device of snapshot.devices) {
       const evaluation = evaluateStationaryAttention(
         fixesByDevice.get(device.device_id) ?? [],
-        DEFAULT_STATIONARY_ATTENTION_CONFIG,
+        get().config,
       )
       byDevice[device.device_id] = {
         ...evaluation,
@@ -48,6 +53,7 @@ export const useStationaryAttentionStore = create<StationaryAttentionStore>((set
     }
     return { byDevice: { ...state.byDevice, [deviceId]: { ...current, acknowledged: true } } }
   }),
+  setConfig: (input) => set({ config: sanitizeStationaryAttentionConfig(input) }),
 }))
 
 /** Publishes a derived attention snapshot without changing evidence truth. */

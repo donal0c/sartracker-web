@@ -25,6 +25,7 @@ import { useTrackingStore } from '../features/tracking/tracking-store'
 import { useIngestHealthStore } from '../features/tracking/ingest-health-store'
 import { useLayerVisibilityStore } from '../features/layers/layer-visibility-store'
 import { useMapTargetStore } from '../features/map/map-target-store'
+import { useStationaryAttentionStore } from '../features/tracking/stationary-attention-store'
 
 const DEVICES_WORKSPACE_TITLE_ID = 'devices-workspace-title'
 const DEVICE_ROW_GRID_COLUMNS =
@@ -75,6 +76,8 @@ function DevicesWorkspaceContent(props: {
   const [activeFilter, setActiveFilter] = useState<DeviceWorkspaceFilter>('all')
   const [deviceQuery, setDeviceQuery] = useState('')
   const ingestHealth = useIngestHealthStore((state) => state.summary)
+  const attentionByDevice = useStationaryAttentionStore((state) => state.byDevice)
+  const acknowledgeAttention = useStationaryAttentionStore((state) => state.acknowledge)
 
   const rows = useMemo(
     () => buildDeviceWorkspaceRows(
@@ -82,8 +85,9 @@ function DevicesWorkspaceContent(props: {
       hiddenDeviceIds,
       activeDeviceIds,
       ingestHealth,
+      attentionByDevice,
     ),
-    [activeDeviceIds, hiddenDeviceIds, ingestHealth, trackingSnapshot],
+    [activeDeviceIds, attentionByDevice, hiddenDeviceIds, ingestHealth, trackingSnapshot],
   )
   const summary = useMemo(
     () => buildDeviceWorkspaceSummary(rows, trackingStatus),
@@ -333,6 +337,12 @@ function DevicesWorkspaceContent(props: {
                   {selectedRow.ingestWarning === null ? null : (
                     <Detail label="Position Data" value={selectedRow.ingestWarning} />
                   )}
+                  {selectedRow.stationaryAttention ? (
+                    <Detail
+                      label="Stationary Attention"
+                      value={`${selectedRow.attentionAcknowledged ? 'Acknowledged — ' : ''}${selectedRow.attentionElapsedDisplay}`}
+                    />
+                  ) : null}
                   <Detail label="GPS Accuracy" value={selectedRow.accuracyDisplay} />
                   <Detail label="Battery" value={selectedRow.batteryDisplay} />
                   <Detail label="Speed" value={selectedRow.speedDisplay} />
@@ -347,6 +357,17 @@ function DevicesWorkspaceContent(props: {
                 </dl>
 
                 <div className="grid gap-3">
+                  {selectedRow.stationaryAttention ? (
+                    <button
+                      className="min-h-10 w-full rounded-lg border border-amber-500/50 bg-amber-500/15 px-3 py-2 text-[11px] font-bold uppercase tracking-wider text-amber-100 disabled:opacity-50"
+                      data-testid="acknowledge-stationary-attention"
+                      disabled={selectedRow.attentionAcknowledged}
+                      onClick={() => acknowledgeAttention(selectedRow.deviceId)}
+                      type="button"
+                    >
+                      {selectedRow.attentionAcknowledged ? 'Attention Acknowledged' : 'Acknowledge Attention'}
+                    </button>
+                  ) : null}
                   <button
                     className="min-h-10 w-full whitespace-normal rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-[11px] font-bold uppercase tracking-wider text-amber-100 disabled:opacity-40"
                     data-testid="devices-inspector-zoom"
@@ -483,6 +504,14 @@ function DeviceRow(props: {
         type="button"
       >
         <p className="truncate font-semibold text-stone-100">{props.row.name}</p>
+        {props.row.stationaryAttention ? (
+          <p
+            className="mt-1 truncate text-[10px] font-bold uppercase tracking-wide text-amber-300"
+            data-testid={`device-attention-${props.row.deviceId}`}
+          >
+            {props.row.attentionAcknowledged ? 'Attention Acknowledged' : 'Stationary Attention'}
+          </p>
+        ) : null}
         {props.row.ingestWarning === null ? null : (
           <p
             className="mt-1 truncate text-[10px] font-bold uppercase tracking-wide text-amber-300"

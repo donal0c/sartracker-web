@@ -4,6 +4,7 @@ import type {
   TrackingConnectionStatus,
   TrackingSnapshot,
 } from './tracking-types'
+import { applyStationaryAttentionSnapshot } from './stationary-attention-store'
 
 const EMPTY_SNAPSHOT: TrackingSnapshot = {
   devices: [],
@@ -36,8 +37,9 @@ export const useTrackingStore = create<TrackingStore>((set) => ({
 /**
  * Applies a tracking snapshot outside React render code.
  */
-export function applyTrackingSnapshot(snapshot: TrackingSnapshot): void {
+export function applyTrackingSnapshot(snapshot: TrackingSnapshot, missionId?: string | null): void {
   useTrackingStore.setState({ snapshot })
+  applyStationaryAttentionSnapshot(snapshot, missionId)
 }
 
 /**

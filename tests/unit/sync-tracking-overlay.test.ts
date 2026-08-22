@@ -72,6 +72,12 @@ function getHaloLayer(map: ReturnType<typeof createMockMap>): LayerSpec {
   return layer
 }
 
+function getAttentionLayer(map: ReturnType<typeof createMockMap>): LayerSpec {
+  const layer = map.layers.get('tracking-devices-attention')
+  if (!layer) throw new Error('Attention layer not added')
+  return layer
+}
+
 function getLabelLayer(map: ReturnType<typeof createMockMap>): LayerSpec {
   const layer = map.layers.get('tracking-devices-label')
   if (!layer) throw new Error('Label layer not added')
@@ -205,6 +211,13 @@ describe('tracking overlay marker configuration', () => {
       expect(layer.paint?.['circle-color']).toBe('#020617')
       expect(layer.paint?.['circle-radius']).toBeGreaterThanOrEqual(16)
       expect(layer.paint?.['circle-opacity']).toBeGreaterThanOrEqual(0.75)
+    })
+
+    it('adds an attention-only halo while leaving the current marker layer unchanged [DON-269]', () => {
+      const attention = getAttentionLayer(map)
+      expect(attention.filter).toEqual(expect.arrayContaining([expect.anything()]))
+      expect(attention.paint?.['circle-radius']).toBeGreaterThan(17)
+      expect(getCircleLayer(map).paint?.['circle-radius']).toBe(12)
     })
   })
 
