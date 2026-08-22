@@ -150,6 +150,10 @@ Fable's accepted integrated design is
 `tmp/agent-mail/fable-breadcrumb-pr1-design-20260822.md`. BCP-10 now has the
 named `npm run test:contract:dots` tripwire: a 20,006-fix, three-page real
 SQLite/controller/GeoJSON chain plus eight deterministic injected faults.
+The coordination loop is locked in
+`docs/breadcrumb-programme-coordination-workflow.md`. BCP-01 is already planned;
+the next action is Donal's explicit authorization to create its fresh GPT-5.6
+Sol high implementation task, not another Fable run.
 
 ## Next Task Order
 

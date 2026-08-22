@@ -36,22 +36,36 @@ semantics remain governed by
 - A new current fix must remain visible within one normal successful polling
   cycle regardless of concurrent history work.
 
-## Complexity And Model Routing
+## Complexity And Review Routing
 
 Complexity combines implementation breadth, safety impact, persistence risk,
 failure-mode difficulty, and the difficulty of proving the result.
 
-| Score | Primary implementation model | Independent PR reviews |
-| --- | --- | ---: |
-| 1-4 | GPT-5.6 Luna, medium reasoning | 1 |
-| 5-6 | GPT-5.6 Terra, high reasoning | 2 |
-| 7-8 | GPT-5.6 Sol, high reasoning | 3 |
-| 9 | GPT-5.6 Sol, xhigh reasoning | 4 |
-| 10 | GPT-5.6 Sol, max reasoning | 5 |
+Donal's coordination workflow now fixes the implementation executor for every
+approved slice at **GPT-5.6 Sol with high reasoning** in a fresh Codex task.
+Complexity continues to determine planning depth and independent exact-head PR
+review allocation; it no longer automatically changes the implementation
+model. See `docs/breadcrumb-programme-coordination-workflow.md`.
+
+| Score | Independent PR reviews |
+| --- | ---: |
+| 1-4 | 1 |
+| 5-6 | 2 |
+| 7-8 | 3 |
+| 9 | 4 |
+| 10 | 5 |
 
 Scores are reassessed in the just-in-time design pass if the actual current
 code or accepted scope is materially different. A lower score may not be used
 merely to reduce review cost after implementation has started.
+
+## Coordination And Approval
+
+The binding operating loop is
+`docs/breadcrumb-programme-coordination-workflow.md`. Codex coordinates and
+guards requirements; fresh bounded Fable planning is the default when a new
+plan is genuinely needed; Donal explicitly authorizes every implementation
+task; and each approved slice is delegated to a fresh GPT-5.6 Sol high task.
 
 ## PR And Slice Scores
 
