@@ -71,13 +71,19 @@ function annotatePositionHealth(
   const cacheAgeSeconds = position.data_origin === 'cache' && cacheAgeMs !== null
     ? Math.floor(cacheAgeMs / 1000)
     : null
+  const fixTimeUnverified = position.timestamp_source === undefined &&
+    position.fix_time_unverified === undefined
+    ? undefined
+    : position.timestamp_source === 'server'
   const deviceCacheStale =
+    fixTimeUnverified === true ||
     positionAgeMs > deviceStaleThresholdMs ||
     (position.data_origin === 'cache' && cacheAgeMs !== null && cacheAgeMs > cacheStaleTtlMs)
 
   if (
     position.cache_age_seconds === cacheAgeSeconds &&
-    position.device_cache_stale === deviceCacheStale
+    position.device_cache_stale === deviceCacheStale &&
+    position.fix_time_unverified === fixTimeUnverified
   ) {
     return position
   }
@@ -86,6 +92,7 @@ function annotatePositionHealth(
     ...position,
     cache_age_seconds: cacheAgeSeconds,
     device_cache_stale: deviceCacheStale,
+    ...(fixTimeUnverified === undefined ? {} : { fix_time_unverified: fixTimeUnverified }),
   }
 }
 

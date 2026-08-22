@@ -11,6 +11,10 @@ import {
   type TrackingRequestAttemptEntry,
   type TrackingPollPhase,
 } from '../diagnostics/tracking-poll-ledger'
+import type {
+  CurrentPositionRejection,
+  CurrentPositionRejectionReason,
+} from './ingest-health'
 
 export type TraccarFetch = (url: string, init?: RequestInit) => Promise<Response>
 
@@ -29,10 +33,16 @@ type TraccarClientConfig = {
   readonly recordRequestDiagnostic?: (entry: TrackingRequestAttemptEntry) => void
 }
 
+export type CurrentPositionNormalizationResult = {
+  readonly accepted: readonly NormalizedTrackingPosition[]
+  readonly rejected: readonly CurrentPositionRejection[]
+}
+
 type TraccarClient = {
   readonly authenticate: () => Promise<void>
   readonly getDevices: () => Promise<readonly NormalizedTrackingDevice[]>
   readonly getCurrentPositions: () => Promise<readonly NormalizedTrackingPosition[]>
+  readonly getCurrentPositionsWithReport: () => Promise<CurrentPositionNormalizationResult>
   readonly getBreadcrumbs: (
     deviceId: string,
     from: Date,
@@ -242,6 +252,23 @@ export function createTraccarClient(
     sessionCookie = match?.[1] ?? null
   }
 
+  const getCurrentPositionsWithReport = async (): Promise<CurrentPositionNormalizationResult> => {
+    const data = await fetchJson('/api/positions')
+    if (!Array.isArray(data)) {
+      throw new Error('Expected an array from /api/positions.')
+    }
+
+    return normalizeTraccarRows({
+      endpoint: '/api/positions',
+      rows: data,
+      emptyMessage: 'No valid Traccar position rows were returned from /api/positions.',
+      warningMessage: 'Dropped malformed Traccar position row.',
+      logger,
+      includeStructuredRejections: true,
+      normalize: (position) => normalizeTraccarPosition(position as RawPositionInput, 'live'),
+    })
+  }
+
   return {
     authenticate: async () => {
       if (config.token || sessionCookie !== null) {
@@ -267,23 +294,10 @@ export function createTraccarClient(
         warningMessage: 'Dropped malformed Traccar device row.',
         logger,
         normalize: (device) => normalizeTraccarDevice(device as RawDeviceInput),
-      })
+      }).accepted
     },
-    getCurrentPositions: async () => {
-      const data = await fetchJson('/api/positions')
-      if (!Array.isArray(data)) {
-        throw new Error('Expected an array from /api/positions.')
-      }
-
-      return normalizeTraccarRows({
-        endpoint: '/api/positions',
-        rows: data,
-        emptyMessage: 'No valid Traccar position rows were returned from /api/positions.',
-        warningMessage: 'Dropped malformed Traccar position row.',
-        logger,
-        normalize: (position) => normalizeTraccarPosition(position as RawPositionInput, 'live'),
-      })
-    },
+    getCurrentPositions: async () => (await getCurrentPositionsWithReport()).accepted,
+    getCurrentPositionsWithReport,
     getBreadcrumbs: async (deviceId, from, to) => {
       const data = await fetchJson('/api/positions', {
         deviceId,
@@ -302,7 +316,7 @@ export function createTraccarClient(
         warningMessage: 'Dropped malformed Traccar breadcrumb row.',
         logger,
         normalize: (position) => normalizeTraccarPosition(position as RawPositionInput, 'live'),
-      })
+      }).accepted
     },
   }
 }
@@ -343,9 +357,14 @@ function normalizeTraccarRows<T>(input: {
   readonly logger: TraccarClientLogger
   readonly normalize: (row: unknown) => T
   readonly deviceId?: string
-}): readonly T[] {
+  readonly includeStructuredRejections?: boolean
+}): {
+  readonly accepted: readonly T[]
+  readonly rejected: readonly CurrentPositionRejection[]
+} {
   const maxDetailedWarnings = 3
   const accepted: T[] = []
+  const rejected: CurrentPositionRejection[] = []
   let droppedCount = 0
   for (let rowIndex = 0; rowIndex < input.rows.length; rowIndex += 1) {
     const row = input.rows[rowIndex]
@@ -353,6 +372,13 @@ function normalizeTraccarRows<T>(input: {
       accepted.push(input.normalize(row))
     } catch (error) {
       droppedCount += 1
+      if (input.includeStructuredRejections === true) {
+        rejected.push({
+          deviceId: readRejectedDeviceId(row),
+          reason: classifyRejectionReason(error),
+          rowIndex,
+        })
+      }
       if (droppedCount <= maxDetailedWarnings) {
         input.logger.warn(input.warningMessage, {
           ...createRowContext(input, rowIndex),
@@ -375,7 +401,47 @@ function normalizeTraccarRows<T>(input: {
     throw new Error(input.emptyMessage)
   }
 
-  return accepted
+  return { accepted, rejected }
+}
+
+/**
+ * Extracts a device identity from a rejected row without retaining its payload.
+ */
+function readRejectedDeviceId(row: unknown): string | null {
+  if (row == null || typeof row !== 'object' || Array.isArray(row)) {
+    return null
+  }
+  const value = (row as Record<string, unknown>).deviceId
+  const parsed = typeof value === 'number' || typeof value === 'string'
+    ? Number(value)
+    : Number.NaN
+  return Number.isSafeInteger(parsed) && parsed > 0 ? String(parsed) : null
+}
+
+/**
+ * Maps internal validation text to a bounded, non-sensitive operator reason.
+ */
+function classifyRejectionReason(error: unknown): CurrentPositionRejectionReason {
+  const message = error instanceof Error ? error.message : String(error)
+  if (/latitude|longitude/iu.test(message)) {
+    return 'invalid_coordinates'
+  }
+  if (/\bid\b|deviceId/iu.test(message)) {
+    return 'invalid_identity'
+  }
+  if (/fixTime|deviceTime|serverTime|timestamp/iu.test(message)) {
+    return 'invalid_timestamp'
+  }
+  if (/validity|marked invalid/iu.test(message)) {
+    return 'invalid_validity'
+  }
+  if (/finite number|batteryLevel|numeric field/iu.test(message)) {
+    return 'invalid_numeric_field'
+  }
+  if (/text field/iu.test(message)) {
+    return 'invalid_text_field'
+  }
+  return 'unknown'
 }
 
 /**

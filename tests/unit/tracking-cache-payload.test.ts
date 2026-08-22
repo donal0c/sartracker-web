@@ -30,6 +30,26 @@ describe('tracking cache payload', () => {
     expect(parsed.devices).toHaveLength(2)
     expect(parsed.positions).toHaveLength(2)
     expect(parsed.breadcrumbs).toHaveLength(2)
+    expect(parsed.positions[0]?.timestamp_source).toBe('fix')
+  })
+
+  it('continues to decode legacy cache positions without timestamp provenance [DON-267]', () => {
+    const legacyPosition = normalizeTraccarPosition(positionsFixture[0], 'live')
+    const withoutProvenance = Object.fromEntries(
+      Object.entries(legacyPosition).filter(([key]) => (
+        key !== 'timestamp_source' && key !== 'fix_time_unverified'
+      )),
+    )
+
+    const parsed = parseTrackingCachePayload(JSON.stringify({
+      cached_at: '2026-04-06T10:35:00.000Z',
+      devices: [],
+      positions: [withoutProvenance],
+      breadcrumbs: [],
+    }))
+
+    expect(parsed.positions).toHaveLength(1)
+    expect(parsed.positions[0]?.timestamp_source).toBeUndefined()
   })
 
   it('drops malformed entries rather than rejecting the full cache', () => {

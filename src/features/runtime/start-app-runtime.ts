@@ -41,6 +41,7 @@ import {
 } from '../tracking/start-tracking-runtime'
 import { DEFAULT_DEVICE_STALE_THRESHOLD_MS } from '../tracking/tracking-snapshot-health'
 import { useActiveMissionDevicesStore } from '../tracking/active-mission-devices-store'
+import { applyCurrentPositionRejections } from '../tracking/ingest-health-store'
 import { startExactBreadcrumbDotRuntime } from '../tracking/start-exact-breadcrumb-dot-runtime'
 import { useExactBreadcrumbDotStore } from '../tracking/exact-breadcrumb-dot-store'
 import type { AppRuntimeController } from './app-runtime-controller'
@@ -250,6 +251,7 @@ export async function startAppRuntime(
             : { persistHistoryChunks: hooks.persistHistoryChunks }),
           onSnapshot: hooks.onSnapshot,
           onStatusChange: hooks.onStatusChange,
+          onCurrentPositionRejections: applyCurrentPositionRejections,
           onPollDiagnostic: hooks.onPollDiagnostic,
         }),
       createTrackingCache:
