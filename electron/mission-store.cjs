@@ -16,7 +16,7 @@ const {
 
 const { createZipArchive, readZipArchive } = require('./zip-archive.cjs')
 
-const CURRENT_SCHEMA_VERSION = 7
+const CURRENT_SCHEMA_VERSION = 8
 const DATABASE_FILE_NAME = 'mission-store.sqlite'
 const BACKUP_FILE_NAME = 'mission-store.backup.sqlite'
 const ARCHIVE_DIRECTORY_NAME = 'archives'
@@ -389,6 +389,9 @@ function migrate(db) {
       source TEXT,
       timestamp TEXT NOT NULL,
       data_origin TEXT NOT NULL DEFAULT 'live' CHECK(data_origin IN ('live', 'cache')),
+      received_at TEXT,
+      content_hash TEXT,
+      source_kind TEXT,
       FOREIGN KEY (mission_id) REFERENCES missions(id) ON DELETE CASCADE,
       FOREIGN KEY (mission_id, device_id) REFERENCES devices(mission_id, device_id)
     );
@@ -417,6 +420,22 @@ function migrate(db) {
     );
     CREATE INDEX IF NOT EXISTS idx_position_revisions_position_corrected
       ON position_revisions(position_id, corrected_at);
+    CREATE TABLE IF NOT EXISTS ingest_anomalies (
+      id TEXT PRIMARY KEY,
+      mission_id TEXT NOT NULL,
+      kind TEXT NOT NULL CHECK(kind IN ('rejected', 'conflict')),
+      anomaly_key TEXT NOT NULL,
+      device_id TEXT,
+      source_position_id TEXT,
+      reason_class TEXT NOT NULL,
+      received_at TEXT NOT NULL,
+      canonical_payload_json TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      FOREIGN KEY (mission_id) REFERENCES missions(id) ON DELETE CASCADE,
+      UNIQUE (mission_id, kind, anomaly_key)
+    );
+    CREATE INDEX IF NOT EXISTS idx_ingest_anomalies_mission_created
+      ON ingest_anomalies(mission_id, created_at);
     CREATE TABLE IF NOT EXISTS markers (
       id TEXT PRIMARY KEY,
       mission_id TEXT NOT NULL,
@@ -521,6 +540,9 @@ function migrate(db) {
     ensureColumnExists(db, 'markers', 'attachment_path', 'TEXT')
     ensureColumnExists(db, 'markers', 'label_size', 'INTEGER')
     ensureColumnExists(db, 'positions', 'source_position_id', 'TEXT')
+    ensureColumnExists(db, 'positions', 'received_at', 'TEXT')
+    ensureColumnExists(db, 'positions', 'content_hash', 'TEXT')
+    ensureColumnExists(db, 'positions', 'source_kind', 'TEXT')
     db.exec(`
       CREATE UNIQUE INDEX IF NOT EXISTS idx_positions_mission_source_position_id
       ON positions(mission_id, source_position_id)

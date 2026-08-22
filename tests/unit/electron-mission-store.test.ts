@@ -381,7 +381,7 @@ describe('electron mission store', () => {
   })
 
   it('migrates a schema-6 store to the durable tracking-history checkpoint schema', async () => {
-    expect(CURRENT_SCHEMA_VERSION).toBe(7)
+    expect(CURRENT_SCHEMA_VERSION).toBe(8)
     userDataPath = await mkdtemp(path.join(tmpdir(), 'sartracker-electron-checkpoint-migration-'))
     const databasePath = path.join(userDataPath, 'mission-store.sqlite')
     const legacyDb = new Database(databasePath)
@@ -395,7 +395,7 @@ describe('electron mission store', () => {
     }
 
     store = createElectronMissionStore({ userDataPath })
-    await expect(store.info()).resolves.toMatchObject({ schema_version: 7 })
+    await expect(store.info()).resolves.toMatchObject({ schema_version: 8 })
 
     const migratedDb = new Database(databasePath, { readonly: true })
     try {
@@ -410,7 +410,62 @@ describe('electron mission store', () => {
         migratedDb
           .prepare("SELECT value FROM metadata WHERE key = 'schema_version'")
           .get(),
-      ).toEqual({ value: '7' })
+      ).toEqual({ value: '8' })
+    } finally {
+      migratedDb.close()
+    }
+  })
+
+  it('migrates schema 7 to v8 without inventing provenance for legacy fixes [DON-268]', async () => {
+    userDataPath = await mkdtemp(path.join(tmpdir(), 'sartracker-electron-v8-migration-'))
+    const databasePath = path.join(userDataPath, 'mission-store.sqlite')
+    const legacyDb = new Database(databasePath)
+    try {
+      legacyDb.exec(`
+        CREATE TABLE metadata (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+        INSERT INTO metadata (key, value) VALUES ('schema_version', '7');
+        CREATE TABLE positions (
+          id TEXT PRIMARY KEY,
+          mission_id TEXT NOT NULL,
+          device_id TEXT NOT NULL,
+          source_position_id TEXT,
+          name TEXT,
+          lat REAL NOT NULL,
+          lon REAL NOT NULL,
+          altitude REAL,
+          speed REAL,
+          battery REAL,
+          accuracy REAL,
+          source TEXT,
+          timestamp TEXT NOT NULL,
+          data_origin TEXT NOT NULL DEFAULT 'live'
+        );
+        INSERT INTO positions (
+          id, mission_id, device_id, source_position_id, lat, lon, timestamp, data_origin
+        ) VALUES (
+          'legacy-row', 'legacy-mission', 'tracker-1', 'source-1',
+          52.0599, -9.5045, '2026-08-22T10:00:00.000Z', 'live'
+        );
+      `)
+    } finally {
+      legacyDb.close()
+    }
+
+    store = createElectronMissionStore({ userDataPath })
+    await expect(store.info()).resolves.toMatchObject({ schema_version: 8 })
+
+    const migratedDb = new Database(databasePath, { readonly: true })
+    try {
+      expect(
+        migratedDb.prepare(
+          'SELECT received_at, content_hash, source_kind FROM positions WHERE id = ?',
+        ).get('legacy-row'),
+      ).toEqual({ received_at: null, content_hash: null, source_kind: null })
+      expect(
+        migratedDb.prepare(
+          "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'ingest_anomalies'",
+        ).get(),
+      ).toEqual({ name: 'ingest_anomalies' })
     } finally {
       migratedDb.close()
     }
