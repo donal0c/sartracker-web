@@ -33,6 +33,10 @@ const EMPTY_TRACKING_SNAPSHOT: TrackingSnapshot = {
   rawBreadcrumbsForPersistence: [],
 }
 
+// Gives a prompt roster response one short turn to prevent placeholder device
+// rows becoming durable immediately before their real source metadata arrives.
+const CURRENT_POSITION_ROSTER_GRACE_MS = 50
+
 export type TrackingPollerClient = {
   readonly authenticate: () => Promise<void>
   readonly getDevices: () => Promise<readonly NormalizedTrackingDevice[]>
@@ -741,7 +745,7 @@ export function createPollingManager(
                   createRejectedCurrentPositionWarning(result.rejected),
                 ),
               })
-            }, 0)
+            }, CURRENT_POSITION_ROSTER_GRACE_MS)
             return result
           },
         },

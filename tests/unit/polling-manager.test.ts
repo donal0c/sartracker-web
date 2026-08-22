@@ -401,7 +401,7 @@ describe('polling manager', () => {
     })
 
     poller.start()
-    await vi.advanceTimersByTimeAsync(0)
+    await vi.advanceTimersByTimeAsync(50)
 
     expect(onSnapshot.mock.calls[0]?.[0].positions.map(
       (position: NormalizedTrackingPosition) => position.id,
@@ -409,6 +409,40 @@ describe('polling manager', () => {
 
     roster.resolve(NORMALIZED_DEVICES)
     await vi.advanceTimersByTimeAsync(0)
+    poller.stop()
+  })
+
+  it('avoids a placeholder device write when roster metadata follows the fix promptly [DON-267]', async () => {
+    const roster = createDeferred<readonly NormalizedTrackingDevice[]>()
+    const client = createClient({
+      getDevices: vi.fn().mockReturnValue(roster.promise),
+      getCurrentPositionsWithReport: vi.fn().mockResolvedValue({
+        accepted: NORMALIZED_POSITIONS,
+        rejected: [],
+      }),
+    })
+    const onSnapshot = vi.fn()
+    const poller = createPollingManager(client, {
+      intervalMs: 5_000,
+      staleThresholdMs: 60 * 60 * 1000,
+      onSnapshot,
+      onStatusChange: vi.fn(),
+      now: () => new Date('2026-04-06T10:35:00.000Z'),
+    })
+
+    poller.start()
+    await vi.advanceTimersByTimeAsync(25)
+
+    expect(onSnapshot).not.toHaveBeenCalled()
+
+    roster.resolve(NORMALIZED_DEVICES)
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect(onSnapshot).toHaveBeenCalled()
+    expect(onSnapshot.mock.calls.every((call) =>
+      call[0].devices === NORMALIZED_DEVICES ||
+      JSON.stringify(call[0].devices) === JSON.stringify(NORMALIZED_DEVICES),
+    )).toBe(true)
     poller.stop()
   })
 
