@@ -13,6 +13,9 @@ const { isStrictTrackingTimestamp } = require('./tracking-timestamp.cjs')
 const {
   compareStringsByCodeUnit,
 } = require('./deterministic-string-order.cjs')
+const {
+  classifyLegacyCorrection,
+} = require('./position-ingest-policy.cjs')
 
 const { createZipArchive, readZipArchive } = require('./zip-archive.cjs')
 
@@ -1626,20 +1629,11 @@ function applySourcePositionCorrection(
       `Position source identity ${existing.source_position_id} belongs to device ${existing.device_id} and cannot be reassigned to device ${input.device_id}.`,
     )
   }
-  const previous = canonicalPositionPayload(existing)
-  const corrected = canonicalPositionPayload({
-    ...input,
-    name: input.name ?? null,
-    altitude: input.altitude ?? null,
-    speed: input.speed ?? null,
-    battery: input.battery ?? null,
-    accuracy: input.accuracy ?? null,
-    source: input.source ?? null,
+  const { previous, corrected, changedFields } = classifyLegacyCorrection(
+    existing,
+    input,
     timestamp,
-    data_origin: dataOrigin,
-  })
-  const changedFields = Object.keys(previous).filter(
-    (field) => previous[field] !== corrected[field],
+    dataOrigin,
   )
   if (changedFields.length === 0) {
     return { position: existing, corrected: false }
@@ -1710,40 +1704,6 @@ function applySourcePositionCorrection(
     },
     corrected: true,
   }
-}
-
-function canonicalPositionPayload(position) {
-  return {
-    device_id: position.device_id,
-    name: position.name ?? null,
-    lat: position.lat,
-    lon: position.lon,
-    altitude: position.altitude ?? null,
-    speed: position.speed ?? null,
-    battery: position.battery ?? null,
-    accuracy: position.accuracy ?? null,
-    source: position.source ?? null,
-    timestamp: position.timestamp,
-    data_origin: position.data_origin,
-  }
-}
-
-function findSourcePositionConflict(existing, input, timestamp, dataOrigin) {
-  const fields = [
-    ['device_id', existing.device_id, input.device_id],
-    ['name', existing.name, input.name ?? null],
-    ['lat', existing.lat, input.lat],
-    ['lon', existing.lon, input.lon],
-    ['altitude', existing.altitude, input.altitude ?? null],
-    ['speed', existing.speed, input.speed ?? null],
-    ['battery', existing.battery, input.battery ?? null],
-    ['accuracy', existing.accuracy, input.accuracy ?? null],
-    ['source', existing.source, input.source ?? null],
-    ['timestamp', existing.timestamp, timestamp],
-    ['data_origin', existing.data_origin, dataOrigin],
-  ]
-  const conflictingField = fields.find(([, stored, incoming]) => stored !== incoming)
-  return conflictingField?.[0]
 }
 
 function createPositionIdentityKey(position, timestamp) {
