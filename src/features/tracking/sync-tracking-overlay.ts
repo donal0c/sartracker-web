@@ -300,8 +300,7 @@ export function syncTrackingOverlay(
   map.setFilter(
     TRACKING_DEVICE_ATTENTION_LAYER_ID,
     combineMapFilters(
-      IS_DEVICE_POINT_FEATURE,
-      ['==', ['get', 'attention'], true],
+      combineMapFilters(IS_DEVICE_POINT_FEATURE, ['==', ['get', 'attention'], true]),
       currentLocationVisibilityFilter,
     ),
   )
