@@ -82,5 +82,6 @@ module.exports = {
   MAX_AUDIT_QUERY_LIMIT,
   TELEMETRY_EVENT_TYPES,
   listMissionReviewAuditEvents,
+  normalizeMissionReviewReadInput,
   readMissionReviewSummary,
 }

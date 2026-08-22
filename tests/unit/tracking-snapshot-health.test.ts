@@ -57,7 +57,7 @@ describe('tracking snapshot health', () => {
     expect(snapshot.positions[0]?.cache_age_seconds).toBeNull()
   })
 
-  it('marks server-time-only positions as fix-time unverified rather than fresh [DON-267]', () => {
+  it('marks server-time-only positions as unverified without conflating that with age [DON-267]', () => {
     const snapshot = annotateTrackingSnapshotHealth(
       {
         ...LIVE_SNAPSHOT,
@@ -73,7 +73,7 @@ describe('tracking snapshot health', () => {
     )
 
     expect(snapshot.positions[0]?.fix_time_unverified).toBe(true)
-    expect(snapshot.positions[0]?.device_cache_stale).toBe(true)
+    expect(snapshot.positions[0]?.device_cache_stale).toBe(false)
   })
 
   it('marks cached positions with cache age and stale state after cache ttl', () => {

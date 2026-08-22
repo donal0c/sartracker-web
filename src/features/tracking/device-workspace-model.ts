@@ -27,6 +27,8 @@ export type DeviceWorkspaceRow = {
   readonly batteryDisplay: string
   readonly speedDisplay: string
   readonly stationaryAttention: boolean
+  readonly stationaryAttentionUnavailable: boolean
+  readonly stationaryAttentionUnreliable: boolean
   readonly attentionAcknowledged: boolean
   readonly attentionElapsedDisplay: string
 }
@@ -53,7 +55,7 @@ export function buildDeviceWorkspaceRows(
   hiddenDeviceIds: readonly string[],
   activeDeviceIds: readonly string[] = [],
   ingestHealth: CurrentPositionIngestHealthSummary = EMPTY_CURRENT_POSITION_INGEST_HEALTH,
-  attentionByDevice: Readonly<Record<string, Pick<DeviceStationaryAttention, 'state' | 'acknowledged' | 'elapsedMs'>>> = {},
+  attentionByDevice: Readonly<Record<string, Pick<DeviceStationaryAttention, 'state' | 'acknowledged' | 'elapsedMs' | 'latestFixUnreliable'>>> = {},
 ): readonly DeviceWorkspaceRow[] {
   const latestPositionByDevice = new Map(
     snapshot.positions.map((position) => [position.device_id, position] as const),
@@ -102,6 +104,8 @@ export function buildDeviceWorkspaceRows(
         speedDisplay:
           typeof position?.speed === 'number' ? `${position.speed.toFixed(1)} km/h` : '—',
         stationaryAttention: attention?.state === 'attention',
+        stationaryAttentionUnavailable: attention?.state === 'insufficient-data',
+        stationaryAttentionUnreliable: attention?.latestFixUnreliable === true,
         attentionAcknowledged: attention?.acknowledged === true,
         attentionElapsedDisplay: formatAttentionElapsed(attention?.elapsedMs),
       } satisfies DeviceWorkspaceRow

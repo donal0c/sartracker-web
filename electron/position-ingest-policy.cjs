@@ -17,14 +17,23 @@ function canonicalizeAcceptedPosition(input) {
     battery: input.battery ?? null,
     accuracy: input.accuracy ?? null,
     source: input.source ?? null,
-    timestamp: input.timestamp,
+    timestamp: normalizeCanonicalTimestamp(input.timestamp),
   }
   const canonicalJson = JSON.stringify(payload)
   return {
     payload,
     canonicalJson,
-    contentHash: createHash('sha256').update(canonicalJson, 'utf8').digest('hex'),
+    contentHash: `v1:${createHash('sha256').update(canonicalJson, 'utf8').digest('hex')}`,
   }
+}
+
+/** Canonicalizes equivalent ISO representations before immutable comparison. */
+function normalizeCanonicalTimestamp(value) {
+  const parsed = Date.parse(value)
+  if (!Number.isFinite(parsed)) {
+    throw new Error('Accepted position timestamp is invalid for canonicalization.')
+  }
+  return new Date(parsed).toISOString()
 }
 
 /**
@@ -37,9 +46,16 @@ function classifyPositionIngest(input) {
   }
 
   const existing = canonicalizeAcceptedPosition(input.existing)
+  const storedHash = input.existing.content_hash
+  const storedHashMismatch =
+    typeof storedHash === 'string' &&
+    storedHash.startsWith('v1:') &&
+    storedHash !== existing.contentHash
   return {
     decision:
-      existing.contentHash === incoming.contentHash ? 'duplicate' : 'conflict',
+      !storedHashMismatch && existing.contentHash === incoming.contentHash
+        ? 'duplicate'
+        : 'conflict',
     contentHash: incoming.contentHash,
   }
 }

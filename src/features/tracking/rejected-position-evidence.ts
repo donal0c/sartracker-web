@@ -36,12 +36,10 @@ export type RejectedPositionEvidence = {
  * is never retained by this module.
  */
 export function createRejectedPositionEvidence(row: unknown): RejectedPositionEvidence {
-  const contentFingerprint = fingerprint(stableSerialize(row))
   const record = isRecord(row) ? row : {}
   const sourcePositionId = readPositiveIdentity(record.id)
   const deviceId = readPositiveIdentity(record.deviceId)
-  const canonicalEvidence: RejectedPositionCanonicalEvidence = {
-    content_fingerprint: contentFingerprint,
+  const retainedEvidence = {
     source_position_id: sourcePositionId,
     device_id: deviceId,
     ...retainIfPresent(record, 'latitude', 'latitude'),
@@ -55,6 +53,11 @@ export function createRejectedPositionEvidence(row: unknown): RejectedPositionEv
     ...retainIfPresent(record, 'valid', 'valid'),
     ...retainIfPresent(record, 'protocol', 'protocol'),
   }
+  const contentFingerprint = fingerprint(stableSerialize(retainedEvidence))
+  const canonicalEvidence: RejectedPositionCanonicalEvidence = {
+    content_fingerprint: contentFingerprint,
+    ...retainedEvidence,
+  }
 
   return {
     anomalyKey:
@@ -66,9 +69,21 @@ export function createRejectedPositionEvidence(row: unknown): RejectedPositionEv
   }
 }
 
-/** Creates the stable transport identity used to avoid per-poll receipt rows. */
-export function createRejectedPositionDeliveryId(anomalyKey: string): string {
-  return `rejection:${fingerprint(anomalyKey)}`
+/** Creates the unique rejection identity retained once in a mission ledger. */
+export function createRejectedPositionAnomalyKey(
+  evidence: RejectedPositionEvidence,
+  reasonClass: string,
+): string {
+  const contentFingerprint = evidence.canonicalEvidence.content_fingerprint
+  return `${evidence.anomalyKey}:reason:${reasonClass}:content:${contentFingerprint}`
+}
+
+/** Creates a filesystem-safe transport identity scoped to one observing mission. */
+export function createRejectedPositionDeliveryId(
+  missionId: string,
+  anomalyKey: string,
+): string {
+  return `rejection-${fingerprint(`${missionId}\u0000${anomalyKey}`)}`
 }
 
 /** Reads the same positive integer identity accepted by Traccar normalization. */

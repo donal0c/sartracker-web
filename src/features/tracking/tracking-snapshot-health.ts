@@ -76,7 +76,6 @@ function annotatePositionHealth(
     ? undefined
     : position.timestamp_source === 'server'
   const deviceCacheStale =
-    fixTimeUnverified === true ||
     positionAgeMs > deviceStaleThresholdMs ||
     (position.data_origin === 'cache' && cacheAgeMs !== null && cacheAgeMs > cacheStaleTtlMs)
 

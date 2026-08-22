@@ -18,6 +18,24 @@ describe('stationary attention policy [DON-269]', () => {
     })
   })
 
+  it('uses the named ten-percent heartbeat tolerance without accepting an earlier pair', () => {
+    expect(evaluateStationaryAttention([
+      fix('a', 0, 52, -9.7, 4),
+      fix('boundary', 18, 52.00001, -9.7, 4),
+    ], DEFAULT_STATIONARY_ATTENTION_CONFIG)).toMatchObject({
+      state: 'attention',
+      elapsedMs: 18 * 60_000,
+    })
+
+    expect(evaluateStationaryAttention([
+      fix('a', 0, 52, -9.7, 4),
+      {
+        ...fix('too-early', 18, 52.00001, -9.7, 4),
+        timestamp: '2026-08-22T10:17:59.999Z',
+      },
+    ], DEFAULT_STATIONARY_ATTENTION_CONFIG).state).toBe('none')
+  })
+
   it('accounts for reported accuracy jitter', () => {
     const result = evaluateStationaryAttention([
       fix('a', 0, 52, -9.7, 10), fix('b', 20, 52.00015, -9.7, 12),
@@ -40,12 +58,45 @@ describe('stationary attention policy [DON-269]', () => {
     ], DEFAULT_STATIONARY_ATTENTION_CONFIG).state).toBe('attention')
   })
 
-  it('uses the configured floor when accuracy is missing and clears on movement', () => {
-    expect(evaluateStationaryAttention([
-      fix('a', 0, 52, -9.7, null), fix('b', 20, 52.00001, -9.7, null),
-    ], DEFAULT_STATIONARY_ATTENTION_CONFIG).state).toBe('attention')
+  it('treats the movement floor as assumed accuracy when accuracy is unknown', () => {
+    const unknownAccuracy = evaluateStationaryAttention([
+      fix('a', 0, 52, -9.7, null), fix('b', 20, 52.00018, -9.7, null),
+    ], DEFAULT_STATIONARY_ATTENTION_CONFIG)
+    expect(unknownAccuracy).toMatchObject({
+      state: 'attention',
+      movementThresholdM: 30,
+    })
+
     expect(evaluateStationaryAttention([
       fix('a', 0, 52, -9.7, null), fix('b', 20, 52.001, -9.7, null),
+    ], DEFAULT_STATIONARY_ATTENTION_CONFIG).state).toBe('none')
+  })
+
+  it('preserves attention for one terminal outlier and clears after corroborated movement', () => {
+    const stationaryWithOutlier = [
+      fix('a', 0, 52, -9.7, 4),
+      fix('b', 20, 52.00001, -9.7, 4),
+      fix('c', 40, 52.00001, -9.7, 4),
+      fix('outlier', 41, 52.02, -9.7, 4),
+    ]
+    expect(evaluateStationaryAttention(
+      stationaryWithOutlier,
+      DEFAULT_STATIONARY_ATTENTION_CONFIG,
+    )).toMatchObject({ state: 'attention', latestFixUnreliable: true })
+
+    expect(evaluateStationaryAttention([
+      fix('a', 0, 52, -9.7, 4),
+      fix('b', 20, 52.00001, -9.7, 4),
+      fix('c', 40, 52.00001, -9.7, 4),
+      fix('uncorroborated-move', 41, 52.001, -9.7, 4),
+    ], DEFAULT_STATIONARY_ATTENTION_CONFIG)).toMatchObject({
+      state: 'attention',
+      latestFixUnreliable: true,
+    })
+
+    expect(evaluateStationaryAttention([
+      ...stationaryWithOutlier,
+      fix('movement-confirmed', 42, 52.02001, -9.7, 4),
     ], DEFAULT_STATIONARY_ATTENTION_CONFIG).state).toBe('none')
   })
 
@@ -55,7 +106,7 @@ describe('stationary attention policy [DON-269]', () => {
   })
 
   it('sanitizes corrupt settings deterministically to named defaults', () => {
-    expect(sanitizeStationaryAttentionConfig({ heartbeatWindowMs: -1, movementFloorM: Number.NaN, accuracyFactor: 99, outlierRejectM: 'bad' })).toEqual(DEFAULT_STATIONARY_ATTENTION_CONFIG)
+    expect(sanitizeStationaryAttentionConfig({ heartbeatWindowMs: -1, heartbeatToleranceMs: 99_999_999, movementFloorM: Number.NaN, accuracyFactor: 99, outlierRejectM: 'bad' })).toEqual(DEFAULT_STATIONARY_ATTENTION_CONFIG)
   })
 })
 

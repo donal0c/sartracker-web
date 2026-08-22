@@ -1,5 +1,6 @@
 const path = require('node:path')
 const { Worker } = require('node:worker_threads')
+const { normalizeMissionReviewReadInput } = require('./mission-review-read-query.cjs')
 
 const DEFAULT_WORKER_PATH = path.join(
   __dirname,
@@ -9,17 +10,25 @@ const DEFAULT_WORKER_TIMEOUT_MS = 30_000
 
 /** Runs one bounded Mission Review read without blocking Electron's main isolate. */
 function runMissionReviewReadQueryInWorker(input) {
+  normalizeMissionReviewReadInput(input.query)
   if (input.signal?.aborted === true) {
     return Promise.reject(createAbortError())
   }
-  return new Promise((resolve, reject) => {
+  let resolveWorkerExit
+  const workerExited = new Promise((resolve) => {
+    resolveWorkerExit = resolve
+  })
+  const result = new Promise((resolve, reject) => {
     const timeoutMs = normalizeWorkerTimeoutMs(input.timeoutMs)
-    const worker = new Worker(input.workerPath ?? DEFAULT_WORKER_PATH, {
-      workerData: {
-        databasePath: input.databasePath,
-        query: input.query,
+    const worker = input.createWorker?.() ?? new Worker(
+      input.workerPath ?? DEFAULT_WORKER_PATH,
+      {
+        workerData: {
+          databasePath: input.databasePath,
+          query: input.query,
+        },
       },
-    })
+    )
     let settled = false
     let completedResult = null
 
@@ -29,21 +38,19 @@ function runMissionReviewReadQueryInWorker(input) {
       input.signal?.removeEventListener('abort', handleAbort)
     }
 
-    /** Terminates the worker before exposing cancellation or malformed-result failure. */
-    const terminateThenReject = (error) => {
+    /** Exposes cancellation immediately and terminates the obsolete worker in background. */
+    const rejectAndTerminate = (error) => {
       if (settled) return
       settled = true
       cleanup()
-      void worker.terminate().then(
-        () => reject(error),
-        () => reject(error),
-      )
+      reject(error)
+      void worker.terminate().catch(() => undefined)
     }
 
-    const handleAbort = () => terminateThenReject(createAbortError())
+    const handleAbort = () => rejectAndTerminate(createAbortError())
     input.signal?.addEventListener('abort', handleAbort, { once: true })
     const timeout = setTimeout(() => {
-      terminateThenReject(
+      rejectAndTerminate(
         new Error(`Mission Review read worker timed out after ${timeoutMs} ms.`),
       )
     }, timeoutMs)
@@ -58,16 +65,17 @@ function runMissionReviewReadQueryInWorker(input) {
         }
         return
       }
-      terminateThenReject(createWorkerError(message))
+      rejectAndTerminate(createWorkerError(message))
     })
     worker.once('error', (error) => {
-      terminateThenReject(
+      rejectAndTerminate(
         new Error(
           `Mission Review read worker failed: ${safeWorkerErrorMessage(error.message)}`,
         ),
       )
     })
     worker.once('exit', (exitCode) => {
+      resolveWorkerExit()
       if (settled) return
       settled = true
       cleanup()
@@ -80,6 +88,13 @@ function runMissionReviewReadQueryInWorker(input) {
       )
     })
   })
+  Object.defineProperty(result, 'workerExited', {
+    configurable: false,
+    enumerable: false,
+    value: workerExited,
+    writable: false,
+  })
+  return result
 }
 
 /** Validates that a worker cannot return an unbounded or malformed IPC payload. */

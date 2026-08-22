@@ -2,8 +2,9 @@ import { createRequire } from 'node:module'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
+import { EventEmitter } from 'node:events'
 
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 const require = createRequire(import.meta.url)
 const Database = require('better-sqlite3')
@@ -20,6 +21,7 @@ const { runMissionReviewReadQueryInWorker } = require(
     readonly workerPath?: string
     readonly timeoutMs?: number
     readonly signal?: AbortSignal
+    readonly createWorker?: () => EventEmitter & { readonly terminate: () => Promise<number> }
   }) => Promise<{
     readonly auditEvents: readonly { readonly id: string }[]
     readonly breadcrumbCount: number
@@ -128,6 +130,35 @@ describe('Mission Review read worker boundary [DON-251]', () => {
     controller.abort()
 
     await expect(query).rejects.toMatchObject({ name: 'AbortError' })
+  })
+
+  it('rejects cancellation without waiting for a blocked worker termination', async () => {
+    const controller = new AbortController()
+    const worker = Object.assign(new EventEmitter(), {
+      terminate: () => new Promise<number>(() => undefined),
+    })
+    const createWorker = vi.fn(() => worker)
+    const query = runMissionReviewReadQueryInWorker({
+      databasePath: '/unused.sqlite',
+      query: {
+        missionId: 'mission-1',
+        includeTelemetry: false,
+        auditLimit: 501,
+      },
+      signal: controller.signal,
+      createWorker,
+    })
+
+    controller.abort()
+
+    await expect(Promise.race([
+      query,
+      new Promise((_resolve, reject) => setTimeout(
+        () => reject(new Error('cancellation stayed pending')),
+        100,
+      )),
+    ])).rejects.toMatchObject({ name: 'AbortError' })
+    expect(createWorker).toHaveBeenCalledOnce()
   })
 
   it('surfaces a bounded worker error for an unreadable database', async () => {

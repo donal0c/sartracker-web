@@ -145,6 +145,32 @@ describe('traccar normalization', () => {
     ).toThrow(/invalid/i)
   })
 
+  it('keeps a valid current fix when ancillary telemetry is malformed [DON-267]', () => {
+    const position = normalizeTraccarPosition(
+      {
+        ...positionsFixture[0],
+        altitude: 'unknown',
+        speed: { knots: 4 },
+        accuracy: Number.POSITIVE_INFINITY,
+        protocol: 42,
+        attributes: { batteryLevel: null },
+      },
+      'live',
+    )
+
+    expect(position).toMatchObject({
+      id: '100',
+      device_id: '1',
+      lat: 51.9985,
+      lon: -9.7426,
+      altitude: null,
+      speed: null,
+      accuracy: null,
+      battery: null,
+      source: null,
+    })
+  })
+
   it('rejects date-only timestamps that would otherwise be guessed as midnight [DON-260]', () => {
     expect(() =>
       normalizeTraccarPosition(

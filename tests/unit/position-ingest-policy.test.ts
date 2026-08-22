@@ -51,6 +51,13 @@ describe('position ingest policy [DON-268]', () => {
     }).decision).toBe('conflict')
   })
 
+  it('fails closed when a versioned stored hash disagrees with the stored row', () => {
+    expect(classifyPositionIngest({
+      existing: { ...accepted, content_hash: `v1:${'0'.repeat(64)}` },
+      incoming: accepted,
+    }).decision).toBe('conflict')
+  })
+
   it('does not treat receipt time or live/history transport origin as source content', () => {
     const first = canonicalizeAcceptedPosition({
       ...accepted,
@@ -64,6 +71,10 @@ describe('position ingest policy [DON-268]', () => {
     })
 
     expect(repeated).toEqual(first)
+  })
+
+  it('versions the persisted canonical hash contract', () => {
+    expect(canonicalizeAcceptedPosition(accepted).contentHash).toMatch(/^v1:[a-f0-9]{64}$/u)
   })
 
   it('keeps late and out-of-order valid fixes on the insert path', () => {

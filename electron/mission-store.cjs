@@ -94,6 +94,7 @@ function createElectronMissionStore(options) {
   const breadcrumbDotQueryControllersByRequestId = new Map()
   const missionReviewQueryControllersByRequestId = new Map()
   let breadcrumbQueryTail = Promise.resolve()
+  let missionReviewWorkerTail = Promise.resolve()
   const db = new Database(databasePath)
   db.pragma('journal_mode = WAL')
   db.pragma('synchronous = FULL')
@@ -121,7 +122,7 @@ function createElectronMissionStore(options) {
   let finalizeTail = Promise.resolve()
   const enqueueFinalize = (missionId) => {
     const run = finalizeTail.then(async () => {
-      await assertIngestEvidenceHealthy(ingestAnomalyOutbox, 'finalization')
+      await assertIngestEvidenceHealthy(ingestAnomalyOutbox, 'finalization', missionId)
       return finalizeMission(
         db,
         missionId,
@@ -154,11 +155,10 @@ function createElectronMissionStore(options) {
       synchronous_mode: db.pragma('synchronous', { simple: true }),
       database_path: databasePath,
       backup_path: backupPath,
-      ingest_evidence_health: await getIngestEvidenceHealth(db, ingestAnomalyOutbox),
     }),
     syncBackup: async (trigger) => backupCoordinator.syncBackup(trigger),
     createMissionArchive: async (missionId) => {
-      await assertIngestEvidenceHealthy(ingestAnomalyOutbox, 'archive')
+      await assertIngestEvidenceHealthy(ingestAnomalyOutbox, 'archive', missionId)
       return createMissionArchive(db, missionId, backupCoordinator, archiveDirectory, true, archiveFaultInjection)
     },
     createMission: async (input) => {
@@ -362,8 +362,7 @@ function createElectronMissionStore(options) {
         throw new Error('Mission Review request ID is already active.')
       }
       const controller = new AbortController()
-      const query = missionReviewReadQueryRunner({
-        databasePath,
+      const query = enqueueMissionReviewRead({
         query: input,
         signal: controller.signal,
       })
@@ -404,8 +403,14 @@ function createElectronMissionStore(options) {
       // rather than ordering by a random UUID.
       all(db, 'SELECT * FROM mission_events WHERE mission_id = ? ORDER BY timestamp ASC, rowid ASC', missionId),
     listAuditEvents: async (missionId, options) => listAuditEvents(db, missionId, options),
-    listIngestAnomalies: async (missionId) => listIngestAnomalies(db, missionId),
+    listIngestAnomalies: async (missionId, options) =>
+      listIngestAnomalies(db, missionId, options),
     recordIngestRejections: async (input) => recordIngestRejections(
+      db,
+      ingestAnomalyOutbox,
+      input,
+    ),
+    recordIngestEvidenceLoss: async (input) => recordIngestEvidenceLoss(
       db,
       ingestAnomalyOutbox,
       input,
@@ -446,6 +451,35 @@ function createElectronMissionStore(options) {
     finalizeMission: async (missionId) => enqueueFinalize(missionId),
     unlockFinalizedMission: async (input) => unlockFinalizedMission(db, input, options.readAdminRoster),
   }
+
+  /**
+   * Caps Mission Review at one physical worker and waits for obsolete worker
+   * exit separately from the renderer-facing cancellation promise.
+   */
+  function enqueueMissionReviewRead(input) {
+    const previousWorker = missionReviewWorkerTail
+    let releaseWorkerSlot = () => undefined
+    const workerSlot = new Promise((resolve) => {
+      releaseWorkerSlot = resolve
+    })
+    missionReviewWorkerTail = previousWorker.then(() => workerSlot)
+    return previousWorker.then(() => {
+      let operation
+      try {
+        operation = missionReviewReadQueryRunner({
+          databasePath,
+          query: input.query,
+          signal: input.signal,
+        })
+      } catch (error) {
+        releaseWorkerSlot()
+        throw error
+      }
+      const workerExited = operation.workerExited ?? operation
+      void Promise.resolve(workerExited).then(releaseWorkerSlot, releaseWorkerSlot)
+      return operation
+    })
+  }
 }
 
 function migrate(db) {
@@ -459,6 +493,10 @@ function migrate(db) {
       `Cannot open mission store created by newer mission store schema ${existingSchemaVersion}; this build supports schema ${CURRENT_SCHEMA_VERSION}.`,
     )
   }
+  const anomalySummaryRequiresBackfill = !tableExists(
+    db,
+    'ingest_anomaly_mission_health',
+  )
 
   db.exec(`
     CREATE TABLE IF NOT EXISTS missions (
@@ -541,15 +579,34 @@ function migrate(db) {
       received_at TEXT NOT NULL,
       canonical_payload_json TEXT NOT NULL,
       created_at TEXT NOT NULL,
+      first_seen_at TEXT NOT NULL,
+      last_seen_at TEXT NOT NULL,
+      occurrence_count INTEGER NOT NULL DEFAULT 1,
       FOREIGN KEY (mission_id) REFERENCES missions(id) ON DELETE CASCADE,
       UNIQUE (mission_id, kind, anomaly_key)
     );
     CREATE INDEX IF NOT EXISTS idx_ingest_anomalies_mission_created
       ON ingest_anomalies(mission_id, created_at);
     CREATE TABLE IF NOT EXISTS ingest_anomaly_deliveries (
-      delivery_id TEXT PRIMARY KEY,
+      delivery_id TEXT NOT NULL,
       mission_id TEXT NOT NULL,
       projected_at TEXT NOT NULL,
+      PRIMARY KEY (mission_id, delivery_id),
+      FOREIGN KEY (mission_id) REFERENCES missions(id) ON DELETE CASCADE
+    );
+    CREATE TABLE IF NOT EXISTS ingest_anomaly_mission_health (
+      mission_id TEXT PRIMARY KEY,
+      conflict_count INTEGER NOT NULL DEFAULT 0,
+      rejected_count INTEGER NOT NULL DEFAULT 0,
+      affected_device_count INTEGER NOT NULL DEFAULT 0,
+      FOREIGN KEY (mission_id) REFERENCES missions(id) ON DELETE CASCADE
+    );
+    CREATE TABLE IF NOT EXISTS ingest_anomaly_devices (
+      mission_id TEXT NOT NULL,
+      device_id TEXT NOT NULL,
+      conflict_count INTEGER NOT NULL DEFAULT 0,
+      rejected_count INTEGER NOT NULL DEFAULT 0,
+      PRIMARY KEY (mission_id, device_id),
       FOREIGN KEY (mission_id) REFERENCES missions(id) ON DELETE CASCADE
     );
     CREATE TABLE IF NOT EXISTS markers (
@@ -659,6 +716,19 @@ function migrate(db) {
     ensureColumnExists(db, 'positions', 'received_at', 'TEXT')
     ensureColumnExists(db, 'positions', 'content_hash', 'TEXT')
     ensureColumnExists(db, 'positions', 'source_kind', 'TEXT')
+    ensureColumnExists(db, 'ingest_anomalies', 'first_seen_at', 'TEXT')
+    ensureColumnExists(db, 'ingest_anomalies', 'last_seen_at', 'TEXT')
+    ensureColumnExists(db, 'ingest_anomalies', 'occurrence_count', 'INTEGER NOT NULL DEFAULT 1')
+    db.exec(`
+      UPDATE ingest_anomalies
+      SET first_seen_at = COALESCE(first_seen_at, received_at, created_at),
+          last_seen_at = COALESCE(last_seen_at, received_at, created_at)
+      WHERE first_seen_at IS NULL OR last_seen_at IS NULL;
+    `)
+    ensureMissionScopedAnomalyDeliveries(db)
+    if (anomalySummaryRequiresBackfill) {
+      backfillIngestAnomalyHealth(db)
+    }
     db.exec(`
       CREATE UNIQUE INDEX IF NOT EXISTS idx_positions_mission_source_position_id
       ON positions(mission_id, source_position_id)
@@ -669,6 +739,71 @@ function migrate(db) {
       .run(String(CURRENT_SCHEMA_VERSION))
   })
   applyMigrations()
+}
+
+/** Returns whether one named schema table already exists. */
+function tableExists(db, tableName) {
+  return db.prepare(
+    "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?",
+  ).get(tableName) !== undefined
+}
+
+/** Backfills candidate-v8 anomaly summaries once; field v7 stores have no rows. */
+function backfillIngestAnomalyHealth(db) {
+  db.exec(`
+    INSERT INTO ingest_anomaly_devices (
+      mission_id, device_id, conflict_count, rejected_count
+    )
+    SELECT mission_id, device_id,
+      SUM(CASE WHEN kind = 'conflict' THEN 1 ELSE 0 END),
+      SUM(CASE WHEN kind = 'rejected' THEN 1 ELSE 0 END)
+    FROM ingest_anomalies
+    WHERE device_id IS NOT NULL
+    GROUP BY mission_id, device_id;
+
+    INSERT INTO ingest_anomaly_mission_health (
+      mission_id, conflict_count, rejected_count, affected_device_count
+    )
+    SELECT anomaly.mission_id,
+      SUM(CASE WHEN anomaly.kind = 'conflict' THEN 1 ELSE 0 END),
+      SUM(CASE WHEN anomaly.kind = 'rejected' THEN 1 ELSE 0 END),
+      COUNT(DISTINCT anomaly.device_id)
+    FROM ingest_anomalies AS anomaly
+    GROUP BY anomaly.mission_id;
+  `)
+}
+
+/** Rebuilds the small delivery-dedup table with mission-scoped identity. */
+function ensureMissionScopedAnomalyDeliveries(db) {
+  const primaryKeyColumns = db.prepare(
+    'PRAGMA table_info(ingest_anomaly_deliveries)',
+  ).all()
+    .filter((column) => column.pk > 0)
+    .sort((left, right) => left.pk - right.pk)
+    .map((column) => column.name)
+  if (
+    primaryKeyColumns.length === 2 &&
+    primaryKeyColumns[0] === 'mission_id' &&
+    primaryKeyColumns[1] === 'delivery_id'
+  ) {
+    return
+  }
+  db.exec(`
+    CREATE TABLE ingest_anomaly_deliveries_v8_scoped (
+      delivery_id TEXT NOT NULL,
+      mission_id TEXT NOT NULL,
+      projected_at TEXT NOT NULL,
+      PRIMARY KEY (mission_id, delivery_id),
+      FOREIGN KEY (mission_id) REFERENCES missions(id) ON DELETE CASCADE
+    );
+    INSERT INTO ingest_anomaly_deliveries_v8_scoped (
+      delivery_id, mission_id, projected_at
+    ) SELECT delivery_id, mission_id, projected_at
+      FROM ingest_anomaly_deliveries;
+    DROP TABLE ingest_anomaly_deliveries;
+    ALTER TABLE ingest_anomaly_deliveries_v8_scoped
+      RENAME TO ingest_anomaly_deliveries;
+  `)
 }
 
 function schemaVersion(db) {
@@ -707,7 +842,6 @@ async function recordIngestRejections(db, outbox, input) {
     const envelope = {
       ...rejection,
       missionId: input.mission_id,
-      receivedAt: now(),
     }
     try {
       await outbox.deliver(envelope)
@@ -726,18 +860,35 @@ async function recordIngestRejections(db, outbox, input) {
 /** Combines durable ledger counts with outbox health, excluding evidence content. */
 async function getIngestEvidenceHealth(db, outbox, missionId) {
   return {
-    ...(await mapIngestEvidenceHealth(outbox)),
+    ...(await mapIngestEvidenceHealth(outbox, missionId)),
     ...summarizeIngestAnomalies(db, missionId),
   }
 }
 
+/** Persists a bounded marker when renderer memory can no longer retain unique evidence. */
+async function recordIngestEvidenceLoss(db, outbox, input) {
+  const missionId = typeof input?.mission_id === 'string' ? input.mission_id.trim() : ''
+  if (missionId === '') {
+    throw new Error('Ingest evidence loss requires a mission identity.')
+  }
+  if (input?.reason !== 'renderer_pending_capacity_exhausted') {
+    throw new Error('Ingest evidence-loss reason is invalid.')
+  }
+  getById(db, 'missions', missionId, 'Mission')
+  await outbox.markEvidenceLoss(input.reason)
+  return getIngestEvidenceHealth(db, outbox, missionId)
+}
+
 /** Maps outbox state into the operator/completeness health contract. */
-async function mapIngestEvidenceHealth(outbox) {
-  const outboxHealth = await outbox.health()
+async function mapIngestEvidenceHealth(outbox, missionId) {
+  const outboxHealth = await outbox.health(missionId)
   const criticalReasons = new Set([
     'outbox_storage_unavailable',
     'outbox_capacity_exhausted',
     'outbox_corrupt_record',
+    'outbox_health_marker_corrupt',
+    'outbox_invalid_envelope',
+    'renderer_pending_capacity_exhausted',
   ])
   const state = criticalReasons.has(outboxHealth.lastFailure)
     ? 'critical'
@@ -753,8 +904,8 @@ async function mapIngestEvidenceHealth(outbox) {
 }
 
 /** Prevents archive/finalization from claiming complete evidence while degraded. */
-async function assertIngestEvidenceHealthy(outbox, operation) {
-  const health = await mapIngestEvidenceHealth(outbox)
+async function assertIngestEvidenceHealthy(outbox, operation, missionId) {
+  const health = await mapIngestEvidenceHealth(outbox, missionId)
   if (health.state !== 'healthy') {
     throw new Error(
       `Degraded evidence health blocks ${operation}; resolve durable ingest evidence before continuing.`,
@@ -1440,14 +1591,17 @@ function addPosition(db, input) {
         existing,
         incoming: normalizedInput,
       })
-      if (decision.decision === 'conflict') {
-        db.transaction(() => recordConflictAnomaly(db, {
-          missionId: input.mission_id,
-          sourcePositionId,
-          incoming: normalizedInput,
-          receivedAt,
-        }))()
-      }
+      db.transaction(() => {
+        if (decision.decision === 'conflict') {
+          recordConflictAnomaly(db, {
+            missionId: input.mission_id,
+            sourcePositionId,
+            incoming: normalizedInput,
+            receivedAt,
+          })
+        }
+        refreshDeviceContact(db, input.mission_id, input.device_id, timestamp)
+      })()
       return existing
     }
     const adopted = adoptSourceIdentityForLegacyPosition(
@@ -1558,6 +1712,12 @@ function addPositionsBulk(db, input, includePositions = true) {
               receivedAt,
             })
           }
+          updateDevice.run(
+            timestamp,
+            timestamp,
+            input.mission_id,
+            position.device_id,
+          )
           continue
         }
         const adopted = adoptSourceIdentityForLegacyPosition(
@@ -1755,7 +1915,20 @@ function normalizePositionTimestamp(value) {
   if (!isStrictTrackingTimestamp(value)) {
     throw new Error('Position timestamp must be a valid ISO8601 date-time.')
   }
-  return value.trim()
+  return new Date(Date.parse(value.trim())).toISOString()
+}
+
+/** Refreshes contact liveness without changing immutable position truth. */
+function refreshDeviceContact(db, missionId, deviceId, timestamp) {
+  db.prepare(`
+    UPDATE devices
+    SET last_seen = CASE
+      WHEN last_seen IS NULL OR julianday(?) > julianday(last_seen) THEN ?
+      ELSE last_seen
+    END,
+    status = 'online'
+    WHERE mission_id = ? AND device_id = ?
+  `).run(timestamp, timestamp, missionId, deviceId)
 }
 
 const AMBIGUOUS_LEGACY_ADOPTION = Symbol('ambiguous-legacy-adoption')

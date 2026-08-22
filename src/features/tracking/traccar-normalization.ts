@@ -82,14 +82,14 @@ export function normalizeTraccarPosition(
     device_id: deviceId,
     lat: latitude,
     lon: longitude,
-    altitude: asOptionalNumber(raw.altitude),
+    altitude: asOptionalTelemetryNumber(raw.altitude),
     speed: normalizeApiSpeedKmh(raw.speed),
     battery,
-    accuracy: asOptionalNumber(raw.accuracy),
+    accuracy: asOptionalTelemetryNumber(raw.accuracy),
     timestamp: timestampResolution.timestamp,
     timestamp_source: timestampResolution.source,
     fix_time_unverified: timestampResolution.source === 'server',
-    source: asOptionalString(raw.protocol),
+    source: asOptionalTelemetryString(raw.protocol),
     data_origin: dataOrigin,
     cache_age_seconds: null,
     device_cache_stale: false,
@@ -159,14 +159,6 @@ function asPositiveInteger(value: unknown, label: string): number {
   return parsed
 }
 
-function asOptionalNumber(value: unknown): number | null {
-  if (value == null || value === '') {
-    return null
-  }
-
-  return asFiniteNumber(value, 'Numeric field')
-}
-
 function asOptionalString(value: unknown): string | null {
   if (value == null || value === '') {
     return null
@@ -206,14 +198,29 @@ function readOptionalBattery(attributes: Record<string, unknown>): number | null
     return null
   }
 
-  return asFiniteNumber(attributes.batteryLevel, 'Traccar batteryLevel')
+  return asOptionalTelemetryNumber(attributes.batteryLevel)
 }
 
 function normalizeApiSpeedKmh(value: unknown): number | null {
-  const speedKnots = asOptionalNumber(value)
+  const speedKnots = asOptionalTelemetryNumber(value)
   if (speedKnots === null) {
     return null
   }
 
   return speedKnots * 1.852
+}
+
+/** Treats malformed ancillary numeric telemetry as unavailable, not as fix failure. */
+function asOptionalTelemetryNumber(value: unknown): number | null {
+  if (value == null || value === '') return null
+  try {
+    return asFiniteNumber(value, 'Ancillary numeric field')
+  } catch {
+    return null
+  }
+}
+
+/** Treats malformed ancillary text telemetry as unavailable, not as fix failure. */
+function asOptionalTelemetryString(value: unknown): string | null {
+  return typeof value === 'string' && value !== '' ? value : null
 }

@@ -58,6 +58,14 @@ export type IngestAnomaly = {
   readonly reason_class: string
   readonly received_at: string
   readonly created_at: string
+  readonly first_seen_at: string
+  readonly last_seen_at: string
+  readonly occurrence_count: number
+}
+
+export type ListIngestAnomaliesOptions = {
+  readonly limit?: number
+  readonly offset?: number
 }
 
 export type IngestRejectionEnvelope = {
@@ -66,6 +74,7 @@ export type IngestRejectionEnvelope = {
   readonly deviceId: string | null
   readonly sourcePositionId: string | null
   readonly reasonClass: string
+  readonly receivedAt: string
   readonly canonicalEvidence: Readonly<Record<string, unknown>>
 }
 
@@ -428,7 +437,10 @@ export type MissionStore = {
     requestId?: string,
   ) => Promise<MissionReviewReadResult>
   readonly cancelMissionReviewRead?: (requestId: string) => Promise<boolean>
-  readonly listIngestAnomalies?: (missionId: string) => Promise<readonly IngestAnomaly[]>
+  readonly listIngestAnomalies?: (
+    missionId: string,
+    options?: ListIngestAnomaliesOptions,
+  ) => Promise<readonly IngestAnomaly[]>
   readonly recordIngestRejections?: (input: {
     readonly mission_id: string
     readonly rejections: readonly IngestRejectionEnvelope[]
@@ -436,6 +448,10 @@ export type MissionStore = {
     readonly acknowledgedDeliveryIds: readonly string[]
     readonly health: IngestEvidenceHealth
   }>
+  readonly recordIngestEvidenceLoss?: (input: {
+    readonly mission_id: string
+    readonly reason: 'renderer_pending_capacity_exhausted'
+  }) => Promise<IngestEvidenceHealth>
   readonly getIngestEvidenceHealth?: (missionId?: string) => Promise<IngestEvidenceHealth>
   readonly upsertMarker: (input: UpsertMarkerInput) => Promise<Marker>
   readonly getMarker: (markerId: string) => Promise<Marker>

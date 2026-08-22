@@ -149,6 +149,28 @@ describe('device workspace model', () => {
     })
   })
 
+  it('distinguishes unavailable and uncorroborated stationary evaluation', () => {
+    expect(buildDeviceWorkspaceRows(SNAPSHOT, [], [], undefined, {
+      alpha: { state: 'insufficient-data', acknowledged: false },
+    })[0]).toMatchObject({
+      stationaryAttention: false,
+      stationaryAttentionUnavailable: true,
+      stationaryAttentionUnreliable: false,
+    })
+
+    expect(buildDeviceWorkspaceRows(SNAPSHOT, [], [], undefined, {
+      alpha: {
+        state: 'attention',
+        acknowledged: false,
+        latestFixUnreliable: true,
+      },
+    })[0]).toMatchObject({
+      stationaryAttention: true,
+      stationaryAttentionUnavailable: false,
+      stationaryAttentionUnreliable: true,
+    })
+  })
+
   it('builds workspace summary counters aligned with tracking status', () => {
     const rows = buildDeviceWorkspaceRows(SNAPSHOT, ['bravo'], ['alpha'])
     const summary = buildDeviceWorkspaceSummary(rows, STATUS)

@@ -48,7 +48,10 @@ describe('app runtime startup', () => {
       readonly rowIndex: number
       readonly anomalyKey: string
       readonly canonicalEvidence: Readonly<Record<string, unknown>>
-    }[]) => void) | undefined
+    }[], context: {
+      readonly missionId: string | null
+      readonly observedAt: string
+    }) => void) | undefined
     const createPollingManager = vi.fn().mockImplementation((_client, options) => {
       rejectionHook = options.onCurrentPositionRejections
       return { start: vi.fn(), stop: vi.fn() }
@@ -80,13 +83,23 @@ describe('app runtime startup', () => {
       startTrackingRuntime,
       createPollingManager,
     })
-    rejectionHook?.([{
-      deviceId: 'device-1', reason: 'invalid_coordinates', rowIndex: 0,
-      anomalyKey: 'source:bad-1', canonicalEvidence: { id: 'bad-1' },
-    }])
+    rejectionHook?.(
+      [{
+        deviceId: 'device-1', reason: 'invalid_coordinates', rowIndex: 0,
+        anomalyKey: 'source:bad-1', canonicalEvidence: { id: 'bad-1' },
+      }],
+      { missionId: 'mission-1', observedAt: '2026-08-22T10:00:01.000Z' },
+    )
 
     expect(useIngestHealthStore.getState().summary.totalRejected).toBe(1)
     await vi.waitFor(() => expect(recordIngestRejections).toHaveBeenCalledTimes(1))
+    expect(recordIngestRejections).toHaveBeenCalledWith(expect.objectContaining({
+      mission_id: 'mission-1',
+      rejections: [expect.objectContaining({
+        receivedAt: '2026-08-22T10:00:01.000Z',
+      })],
+    }))
+    expect(missionStore.getIngestEvidenceHealth).toHaveBeenCalledWith('mission-1')
   })
 
   it('wires the active mission device selection into breadcrumb polling', async () => {

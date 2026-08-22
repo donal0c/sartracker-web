@@ -7,6 +7,11 @@ import type { Mission } from '../../src/infrastructure/mission-store/tauri-missi
 describe('startDiagnosticsRuntime', () => {
   it('loads diagnostics using cached application snapshots and store boundaries', async () => {
     const applyRuntime = vi.fn()
+    const getIngestEvidenceHealth = vi.fn().mockResolvedValue({
+      state: 'critical', reason: 'ledger_projection_failed', pendingCount: 1,
+      corruptCount: 0, conflictCount: 0, rejectedCount: 1,
+      affectedDeviceCount: 1, conflictDeviceIds: [],
+    })
     const runtime = await startDiagnosticsRuntime({
       appVersion: '0.1.0',
       getRuntimeKind: () => 'tauri',
@@ -27,6 +32,7 @@ describe('startDiagnosticsRuntime', () => {
           backup_path: '/tmp/mission-store.backup.sqlite',
         }),
         listMissions: vi.fn().mockResolvedValue([createMission()]),
+        getIngestEvidenceHealth,
       },
       layerCatalogStore: {
         clearMetadata: vi.fn(),
@@ -113,12 +119,16 @@ describe('startDiagnosticsRuntime', () => {
       expect.objectContaining({
         loading: false,
         snapshot: expect.objectContaining({
+          storageRows: expect.arrayContaining([
+            expect.objectContaining({ label: 'Evidence health', value: 'critical' }),
+          ]),
           repair: expect.objectContaining({
             targetMissionId: 'mission-1',
           }),
         }),
       }),
     )
+    expect(getIngestEvidenceHealth).toHaveBeenCalledWith('mission-1')
   })
 
   it('runs the layer repair action and refreshes the active catalog when applicable', async () => {

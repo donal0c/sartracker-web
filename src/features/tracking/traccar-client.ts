@@ -15,7 +15,10 @@ import type {
   CurrentPositionRejection,
   CurrentPositionRejectionReason,
 } from './ingest-health'
-import { createRejectedPositionEvidence } from './rejected-position-evidence'
+import {
+  createRejectedPositionAnomalyKey,
+  createRejectedPositionEvidence,
+} from './rejected-position-evidence'
 
 export type TraccarFetch = (url: string, init?: RequestInit) => Promise<Response>
 
@@ -266,6 +269,7 @@ export function createTraccarClient(
       warningMessage: 'Dropped malformed Traccar position row.',
       logger,
       includeStructuredRejections: true,
+      allowAllRejected: true,
       normalize: (position) => normalizeTraccarPosition(position as RawPositionInput, 'live'),
     })
   }
@@ -297,7 +301,13 @@ export function createTraccarClient(
         normalize: (device) => normalizeTraccarDevice(device as RawDeviceInput),
       }).accepted
     },
-    getCurrentPositions: async () => (await getCurrentPositionsWithReport()).accepted,
+    getCurrentPositions: async () => {
+      const result = await getCurrentPositionsWithReport()
+      if (result.accepted.length === 0 && result.rejected.length > 0) {
+        throw new Error('No valid Traccar position rows were returned from /api/positions.')
+      }
+      return result.accepted
+    },
     getCurrentPositionsWithReport,
     getBreadcrumbs: async (deviceId, from, to) => {
       const data = await fetchJson('/api/positions', {
@@ -359,6 +369,7 @@ function normalizeTraccarRows<T>(input: {
   readonly normalize: (row: unknown) => T
   readonly deviceId?: string
   readonly includeStructuredRejections?: boolean
+  readonly allowAllRejected?: boolean
 }): {
   readonly accepted: readonly T[]
   readonly rejected: readonly CurrentPositionRejection[]
@@ -375,11 +386,12 @@ function normalizeTraccarRows<T>(input: {
       droppedCount += 1
       if (input.includeStructuredRejections === true) {
         const evidence = createRejectedPositionEvidence(row)
+        const reason = classifyRejectionReason(error)
         rejected.push({
           deviceId: readRejectedDeviceId(row),
-          reason: classifyRejectionReason(error),
+          reason,
           rowIndex,
-          anomalyKey: evidence.anomalyKey,
+          anomalyKey: createRejectedPositionAnomalyKey(evidence, reason),
           sourcePositionId: evidence.sourcePositionId,
           canonicalEvidence: evidence.canonicalEvidence,
         })
@@ -402,7 +414,11 @@ function normalizeTraccarRows<T>(input: {
     })
   }
 
-  if (accepted.length === 0 && input.rows.length > 0) {
+  if (
+    accepted.length === 0 &&
+    input.rows.length > 0 &&
+    input.allowAllRejected !== true
+  ) {
     throw new Error(input.emptyMessage)
   }
 

@@ -281,7 +281,9 @@ describe('traccar client', () => {
           deviceId: null,
           reason: 'invalid_identity',
           rowIndex: 2,
-          anomalyKey: 'source:9999',
+          anomalyKey: expect.stringMatching(
+            /^source:9999:reason:invalid_identity:content:[a-f0-9]{16}$/u,
+          ),
           sourcePositionId: '9999',
           canonicalEvidence: expect.objectContaining({
             source_position_id: '9999',
@@ -316,6 +318,34 @@ describe('traccar client', () => {
         rowIndex: 0,
       }),
     )
+  })
+
+  it('returns every structured rejection when no valid current fix exists [DON-268]', async () => {
+    const logger = { warn: vi.fn() }
+    const fetchFn: TraccarFetch = vi.fn(async () =>
+      createJsonResponse([
+        {
+          ...positionsFixture[0],
+          latitude: 200,
+        },
+      ]),
+    )
+    const client = createTraccarClient(
+      { baseUrl: 'http://test:8082', logger },
+      fetchFn,
+    )
+
+    await expect(client.getCurrentPositionsWithReport()).resolves.toEqual({
+      accepted: [],
+      rejected: [
+        expect.objectContaining({
+          deviceId: '1',
+          reason: 'invalid_coordinates',
+          rowIndex: 0,
+          anomalyKey: expect.stringMatching(/^source:/u),
+        }),
+      ],
+    })
   })
 
   it('fetches breadcrumbs with from/to query parameters', async () => {

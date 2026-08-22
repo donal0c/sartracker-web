@@ -119,6 +119,7 @@ export type RuntimeBootstrapSettings = {
   readonly trackingDisabledReason?: string
   readonly stationaryAttentionConfig?: {
     readonly heartbeatWindowMs: number
+    readonly heartbeatToleranceMs: number
     readonly movementFloorM: number
     readonly accuracyFactor: number
     readonly outlierRejectM: number

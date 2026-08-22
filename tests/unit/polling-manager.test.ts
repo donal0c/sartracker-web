@@ -382,6 +382,156 @@ describe('polling manager', () => {
     poller.stop()
   })
 
+  it('publishes current fixes before a slow roster request settles [DON-267]', async () => {
+    const roster = createDeferred<readonly NormalizedTrackingDevice[]>()
+    const client = createClient({
+      getDevices: vi.fn().mockReturnValue(roster.promise),
+      getCurrentPositionsWithReport: vi.fn().mockResolvedValue({
+        accepted: NORMALIZED_POSITIONS,
+        rejected: [],
+      }),
+    })
+    const onSnapshot = vi.fn()
+    const poller = createPollingManager(client, {
+      intervalMs: 5_000,
+      staleThresholdMs: 60 * 60 * 1000,
+      onSnapshot,
+      onStatusChange: vi.fn(),
+      now: () => new Date('2026-04-06T10:35:00.000Z'),
+    })
+
+    poller.start()
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect(onSnapshot.mock.calls[0]?.[0].positions.map(
+      (position: NormalizedTrackingPosition) => position.id,
+    )).toEqual(NORMALIZED_POSITIONS.map((position) => position.id))
+
+    roster.resolve(NORMALIZED_DEVICES)
+    await vi.advanceTimersByTimeAsync(0)
+    poller.stop()
+  })
+
+  it('synthesizes bounded device rows when the first roster request fails [DON-267]', async () => {
+    const client = createClient({
+      getDevices: vi.fn().mockRejectedValue(new Error('roster unavailable')),
+      getCurrentPositionsWithReport: vi.fn().mockResolvedValue({
+        accepted: NORMALIZED_POSITIONS,
+        rejected: [],
+      }),
+    })
+    const onSnapshot = vi.fn()
+    const poller = createPollingManager(client, {
+      intervalMs: 5_000,
+      staleThresholdMs: 60 * 60 * 1000,
+      onSnapshot,
+      onStatusChange: vi.fn(),
+      now: () => new Date('2026-04-06T10:35:00.000Z'),
+    })
+
+    poller.start()
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect(onSnapshot.mock.calls.at(-1)?.[0].devices).toEqual([
+      expect.objectContaining({ device_id: '1', name: 'Device 1' }),
+      expect.objectContaining({ device_id: '2', name: 'Device 2' }),
+    ])
+    poller.stop()
+  })
+
+  it('publishes valid current positions before safely reporting rejected rows [DON-268]', async () => {
+    const events: string[] = []
+    const rejection = {
+      deviceId: '2',
+      reason: 'invalid_coordinates' as const,
+      rowIndex: 1,
+      anomalyKey: 'source:200',
+      sourcePositionId: '200',
+      canonicalEvidence: { source_position_id: '200', device_id: '2' },
+    }
+    const client = createClient({
+      getCurrentPositionsWithReport: vi.fn().mockResolvedValue({
+        accepted: NORMALIZED_POSITIONS,
+        rejected: [rejection],
+      }),
+    })
+    const onSnapshot = vi.fn(() => events.push('snapshot'))
+    const onStatusChange = vi.fn()
+    const onCurrentPositionRejections = vi.fn(() => {
+      events.push('rejections')
+      throw new Error('renderer evidence staging failed')
+    })
+    const poller = createPollingManager(client, {
+      intervalMs: 5_000,
+      staleThresholdMs: 60 * 60 * 1000,
+      onSnapshot,
+      onStatusChange,
+      onCurrentPositionRejections,
+      now: () => new Date('2026-04-06T10:35:00.000Z'),
+    })
+
+    poller.start()
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect(events.slice(0, 2)).toEqual(['snapshot', 'rejections'])
+    expect(onSnapshot.mock.calls[0]?.[0].positions.map(
+      (position: NormalizedTrackingPosition) => position.id,
+    )).toEqual(NORMALIZED_POSITIONS.map((position) => position.id))
+    expect(onStatusChange.mock.calls.some((call) => call[0]?.mode === 'offline')).toBe(false)
+    poller.stop()
+  })
+
+  it('retains last accepted current positions while reporting an all-invalid poll [DON-268]', async () => {
+    const rejected = {
+      deviceId: '1',
+      reason: 'invalid_coordinates' as const,
+      rowIndex: 0,
+      anomalyKey: 'source:100',
+      sourcePositionId: '100',
+      canonicalEvidence: { source_position_id: '100', device_id: '1' },
+    }
+    const client = createClient({
+      getCurrentPositionsWithReport: vi.fn()
+        .mockResolvedValueOnce({ accepted: NORMALIZED_POSITIONS, rejected: [] })
+        .mockResolvedValueOnce({ accepted: [], rejected: [rejected] }),
+    })
+    const onSnapshot = vi.fn()
+    const onStatusChange = vi.fn()
+    const onCurrentPositionRejections = vi.fn()
+    const poller = createPollingManager(client, {
+      intervalMs: 5_000,
+      staleThresholdMs: 60 * 60 * 1000,
+      onSnapshot,
+      onStatusChange,
+      onCurrentPositionRejections,
+      now: () => new Date('2026-04-06T10:35:00.000Z'),
+    })
+
+    poller.start()
+    await vi.advanceTimersByTimeAsync(0)
+    onSnapshot.mockClear()
+    onStatusChange.mockClear()
+    onCurrentPositionRejections.mockClear()
+
+    await vi.advanceTimersByTimeAsync(5_000)
+
+    expect(onSnapshot.mock.calls[0]?.[0].positions.map(
+      (position: NormalizedTrackingPosition) => position.id,
+    )).toEqual(NORMALIZED_POSITIONS.map((position) => position.id))
+    expect(onCurrentPositionRejections).toHaveBeenCalledWith(
+      [rejected],
+      {
+        missionId: null,
+        observedAt: '2026-04-06T10:35:00.000Z',
+      },
+    )
+    expect(onStatusChange).toHaveBeenCalledWith(expect.objectContaining({
+      mode: 'online',
+      warning: expect.stringMatching(/rejected.*last accepted/i),
+    }))
+    poller.stop()
+  })
+
   it('republishes retained current positions when a history reset is followed by a failed poll [DON-267]', async () => {
     const client = createClient()
     const onSnapshot = vi.fn()

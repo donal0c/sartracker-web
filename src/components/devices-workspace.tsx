@@ -509,7 +509,18 @@ function DeviceRow(props: {
             className="mt-1 truncate text-[10px] font-bold uppercase tracking-wide text-amber-300"
             data-testid={`device-attention-${props.row.deviceId}`}
           >
-            {props.row.attentionAcknowledged ? 'Attention Acknowledged' : 'Stationary Attention'}
+            {props.row.stationaryAttentionUnreliable
+              ? 'Stationary Attention — latest fix uncorroborated'
+              : props.row.attentionAcknowledged
+                ? 'Attention Acknowledged'
+                : 'Stationary Attention'}
+          </p>
+        ) : props.row.stationaryAttentionUnavailable ? (
+          <p
+            className="mt-1 truncate text-[10px] font-semibold uppercase tracking-wide text-stone-400"
+            data-testid={`device-attention-unavailable-${props.row.deviceId}`}
+          >
+            Stationary check unavailable
           </p>
         ) : null}
         {props.row.ingestWarning === null ? null : (

@@ -874,8 +874,12 @@
             ledger, current positions continue to publish first. A persistent, non-dismissible warning
             names the storage failure and states that the anomaly evidence is not fully saved.
             Finalization and archive export remain blocked until the durable outbox is replayed or the
-            storage fault is repaired. If local storage is unavailable, do not claim the evidence was
-            saved; record the warning and preserve the live operational picture.
+            storage fault is repaired. Distinct committed conflicts are never expired or capped;
+            identical repeats update first-seen, last-seen, and occurrence count. If the bounded
+            renderer intake itself is exhausted, SAR Tracker records a durable evidence-loss marker
+            wherever local storage is writable and blocks completeness claims. If no local storage is
+            writable, the critical in-process warning is the honest limit: do not claim the evidence
+            was saved, and preserve the live operational picture.
           </div>
           <figure class="screenshot">
             <img src="assets/tracking-degraded-evidence-conflict.png" alt="Tracking panel showing separate critical evidence-health and amber source-conflict warnings while current fixes remain live" />
@@ -883,10 +887,13 @@
           </figure>
           <h3>Stationary Attention</h3>
           <p>
-            SAR Tracker derives stationary attention from accepted position evidence. By default, two
-            accepted fixes at least 20 minutes apart trigger attention when their accuracy-aware
-            displacement is below the configured movement floor. Missing accuracy uses that floor;
-            one gross intermediate outlier does not erase a qualifying endpoint pair. Meaningful
+            SAR Tracker derives stationary attention from accepted position evidence. The default
+            20-minute heartbeat window has a named 10% tolerance (2 minutes), so a slightly early
+            second heartbeat can trigger attention from 18 minutes onward when its accuracy-aware
+            displacement is below the configured movement threshold. Missing or non-finite accuracy
+            conservatively assumes the movement floor before applying the accuracy factor. One
+            uncorroborated terminal movement fix preserves existing attention and is labelled
+            unreliable until a second plausible movement fix corroborates it; corroborated meaningful
             movement clears attention. Sparse evidence is treated as insufficient data rather than a
             stationary claim.
           </p>
@@ -971,7 +978,7 @@
             <li>Enter the email/password or bearer token.</li>
             <li>Use <strong>Test Connection</strong> before saving for live use; it authenticates against the configured Traccar server and checks device access.</li>
             <li>Use <strong>Save, Connect &amp; Close</strong> to reload tracking immediately and return to the map.</li>
-            <li>Review the stationary-attention window and movement floor in Mission Defaults. The 20-minute, 15-metre, accuracy-aware values are named engineering hypotheses and should be changed only deliberately.</li>
+            <li>Review the stationary-attention window, 10% heartbeat tolerance, and movement floor in Mission Defaults. The 20-minute, 2-minute, 15-metre, accuracy-aware values are named engineering hypotheses and should be changed only deliberately.</li>
           </ol>
           <div class="note">
             Secrets are intentionally kept out of mission SQLite and browser storage. If a stored secret

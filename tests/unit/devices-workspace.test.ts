@@ -167,6 +167,26 @@ describe('DevicesWorkspace', () => {
     expect(getText('[data-testid="device-attention-alpha"]')).toContain('Acknowledged')
   })
 
+  it('surfaces an uncorroborated latest fix without clearing stationary attention', async () => {
+    const { DevicesWorkspace } = await import('../../src/components/devices-workspace')
+    useTrackingStore.setState({ snapshot: SNAPSHOT, status: STATUS })
+    useStationaryAttentionStore.setState({ byDevice: {
+      alpha: {
+        state: 'attention',
+        acknowledged: false,
+        elapsedMs: 1_200_000,
+        sinceTimestamp: '2026-04-10T16:40:00.000Z',
+        movementThresholdM: 15,
+        latestFixUnreliable: true,
+      },
+    } })
+    useDeviceWorkspaceStore.setState({ open: true, selectedDeviceId: 'alpha' })
+    render(React.createElement(DevicesWorkspace))
+    await waitForElement('[data-testid="devices-workspace"]')
+
+    expect(getText('[data-testid="device-attention-alpha"]')).toContain('latest fix uncorroborated')
+  })
+
   it('adds and removes mission-active devices via filter tabs', async () => {
     const { DevicesWorkspace } = await import('../../src/components/devices-workspace')
     useTrackingStore.setState({ snapshot: SNAPSHOT, status: STATUS })

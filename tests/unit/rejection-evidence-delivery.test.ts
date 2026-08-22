@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 
 import {
+  REJECTION_EVIDENCE_DELIVERY_BATCH_HYPOTHESIS,
   REJECTION_EVIDENCE_PENDING_MEMORY_CAP_HYPOTHESIS,
   createRejectionEvidenceDelivery,
 } from '../../src/features/tracking/rejection-evidence-delivery'
@@ -18,7 +19,6 @@ describe('rejection evidence delivery [DON-268]', () => {
     })
     const delivery = createRejectionEvidenceDelivery({
       missionStore: {
-        getActiveMission: async () => ({ id: 'mission-1' }),
         recordIngestRejections,
       },
       applyRejections: () => sequence.push('visible'),
@@ -27,7 +27,7 @@ describe('rejection evidence delivery [DON-268]', () => {
     })
     const rejection = createRejection('source:123')
 
-    delivery.record([rejection, rejection])
+    delivery.record([rejection, rejection], observation('mission-1'))
     sequence.push('returned')
 
     expect(sequence.slice(0, 2)).toEqual(['visible', 'returned'])
@@ -49,7 +49,6 @@ describe('rejection evidence delivery [DON-268]', () => {
     const applyEvidenceHealth = vi.fn()
     const delivery = createRejectionEvidenceDelivery({
       missionStore: {
-        getActiveMission: async () => ({ id: 'mission-1' }),
         recordIngestRejections,
       },
       applyRejections: vi.fn(),
@@ -57,9 +56,9 @@ describe('rejection evidence delivery [DON-268]', () => {
       createDeliveryId: () => 'delivery-1',
     })
 
-    delivery.record([createRejection('source:123')])
+    delivery.record([createRejection('source:123')], observation('mission-1'))
     await vi.waitFor(() => expect(recordIngestRejections).toHaveBeenCalledTimes(1))
-    delivery.record([])
+    delivery.record([], observation('mission-1'))
     await vi.waitFor(() => expect(recordIngestRejections).toHaveBeenCalledTimes(2))
 
     expect(recordIngestRejections.mock.calls[1]?.[0].rejections).toEqual([
@@ -72,7 +71,6 @@ describe('rejection evidence delivery [DON-268]', () => {
     const calls: string[] = []
     const delivery = createRejectionEvidenceDelivery({
       missionStore: {
-        getActiveMission: async () => ({ id: 'mission-1' }),
         recordIngestRejections: async (input) => {
           calls.push(input.rejections[0]?.deliveryId ?? '')
           return { acknowledgedDeliveryIds: input.rejections.map((entry) => entry.deliveryId), health: healthy() }
@@ -82,38 +80,131 @@ describe('rejection evidence delivery [DON-268]', () => {
       applyEvidenceHealth: vi.fn(),
     })
 
-    delivery.record([createRejection('source:123')])
+    delivery.record([createRejection('source:123')], observation('mission-1'))
     await vi.waitFor(() => expect(calls).toHaveLength(1))
-    delivery.record([createRejection('source:123')])
+    delivery.record([createRejection('source:123')], observation('mission-1'))
     await vi.waitFor(() => expect(calls).toHaveLength(2))
 
     expect(calls[0]).toBe(calls[1])
   })
 
-  it('surfaces the honest memory-overflow boundary instead of silently growing', async () => {
-    const applyEvidenceHealth = vi.fn()
+  it('delivers a unique-evidence storm in bounded batches without dropping records', async () => {
+    const deliveredIds: string[] = []
+    const recordIngestRejections = vi.fn(async (input: {
+      readonly rejections: readonly { readonly deliveryId: string }[]
+    }) => {
+      deliveredIds.push(...input.rejections.map((entry) => entry.deliveryId))
+      return {
+        acknowledgedDeliveryIds: input.rejections.map((entry) => entry.deliveryId),
+        health: healthy(),
+      }
+    })
     const delivery = createRejectionEvidenceDelivery({
       missionStore: {
-        getActiveMission: async () => ({ id: 'mission-1' }),
-        recordIngestRejections: async () => new Promise(() => undefined),
+        recordIngestRejections,
       },
       applyRejections: vi.fn(),
-      applyEvidenceHealth,
-      createDeliveryId: (_anomalyKey, index) => `delivery-${index}`,
+      applyEvidenceHealth: vi.fn(),
+      createDeliveryId: (_missionId, _anomalyKey, index) => `delivery-${index}`,
     })
     const rejections = Array.from(
-      { length: REJECTION_EVIDENCE_PENDING_MEMORY_CAP_HYPOTHESIS + 1 },
+      { length: REJECTION_EVIDENCE_DELIVERY_BATCH_HYPOTHESIS + 1 },
       (_, index) => createRejection(`content:${index}`),
     )
 
-    delivery.record(rejections)
+    delivery.record(rejections, observation('mission-1'))
 
-    expect(applyEvidenceHealth).toHaveBeenCalledWith(
-      expect.objectContaining({
-        state: 'critical',
-        reason: 'renderer_pending_capacity_exhausted',
-      }),
+    await vi.waitFor(() => expect(deliveredIds).toHaveLength(rejections.length))
+    expect(recordIngestRejections.mock.calls.every(
+      ([input]) => input.rejections.length <= REJECTION_EVIDENCE_DELIVERY_BATCH_HYPOTHESIS,
+    )).toBe(true)
+  })
+
+  it('bounds renderer memory and durably marks evidence loss before refusing overflow', async () => {
+    const recordIngestEvidenceLoss = vi.fn().mockResolvedValue({
+      ...healthy(),
+      state: 'critical',
+      reason: 'renderer_pending_capacity_exhausted',
+    })
+    const applyEvidenceHealth = vi.fn()
+    const delivery = createRejectionEvidenceDelivery({
+      missionStore: {
+        recordIngestRejections: async () => new Promise(() => undefined),
+        recordIngestEvidenceLoss,
+      },
+      applyRejections: vi.fn(),
+      applyEvidenceHealth,
+    })
+    const rejections = Array.from(
+      { length: REJECTION_EVIDENCE_PENDING_MEMORY_CAP_HYPOTHESIS + 1 },
+      (_unused, index) => createRejection(`content:${index}`),
     )
+
+    delivery.record(rejections, observation('mission-1'))
+
+    await vi.waitFor(() => expect(recordIngestEvidenceLoss).toHaveBeenCalledWith({
+      mission_id: 'mission-1',
+      reason: 'renderer_pending_capacity_exhausted',
+    }))
+    expect(applyEvidenceHealth).toHaveBeenCalledWith(expect.objectContaining({
+      state: 'critical',
+      reason: 'renderer_pending_capacity_exhausted',
+      pendingCount: REJECTION_EVIDENCE_PENDING_MEMORY_CAP_HYPOTHESIS,
+    }))
+  })
+
+  it('captures mission identity at observation time and never cross-deduplicates missions', async () => {
+    const calls: Array<{ readonly mission_id: string; readonly deliveryId: string }> = []
+    const delivery = createRejectionEvidenceDelivery({
+      missionStore: {
+        recordIngestRejections: async (input) => {
+          calls.push({
+            mission_id: input.mission_id,
+            deliveryId: input.rejections[0]?.deliveryId ?? '',
+          })
+          return {
+            acknowledgedDeliveryIds: input.rejections.map((entry) => entry.deliveryId),
+            health: healthy(),
+          }
+        },
+      },
+      applyRejections: vi.fn(),
+      applyEvidenceHealth: vi.fn(),
+    })
+    const rejection = createRejection('source:123')
+
+    delivery.record([rejection], observation('mission-a'))
+    await vi.waitFor(() => expect(calls).toHaveLength(1))
+    delivery.record([rejection], observation('mission-b'))
+    await vi.waitFor(() => expect(calls).toHaveLength(2))
+
+    expect(calls.map((call) => call.mission_id)).toEqual(['mission-a', 'mission-b'])
+    expect(calls[0]?.deliveryId).not.toBe(calls[1]?.deliveryId)
+  })
+
+  it('backs off when an acknowledgement does not match pending evidence', async () => {
+    const retryCallbacks: Array<() => void> = []
+    const recordIngestRejections = vi.fn().mockResolvedValue({
+      acknowledgedDeliveryIds: ['unknown-delivery'],
+      health: healthy(),
+    })
+    const delivery = createRejectionEvidenceDelivery({
+      missionStore: { recordIngestRejections },
+      applyRejections: vi.fn(),
+      applyEvidenceHealth: vi.fn(),
+      setTimeout: ((callback: () => void) => {
+        retryCallbacks.push(callback)
+        return 1
+      }) as unknown as typeof globalThis.setTimeout,
+      clearTimeout: vi.fn(),
+    })
+
+    delivery.record([createRejection('source:123')], observation('mission-1'))
+    await vi.waitFor(() => expect(recordIngestRejections).toHaveBeenCalledTimes(1))
+
+    await vi.waitFor(() => expect(retryCallbacks).toHaveLength(1))
+    await Promise.resolve()
+    expect(recordIngestRejections).toHaveBeenCalledTimes(1)
   })
 
   function createRejection(anomalyKey: string): CurrentPositionRejection {
@@ -129,6 +220,13 @@ describe('rejection evidence delivery [DON-268]', () => {
         device_id: 'tracker-1',
         latitude: 200,
       },
+    }
+  }
+
+  function observation(missionId: string) {
+    return {
+      missionId,
+      observedAt: '2026-08-22T10:00:00.000Z',
     }
   }
 

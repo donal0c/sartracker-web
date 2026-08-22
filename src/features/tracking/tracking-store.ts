@@ -37,9 +37,13 @@ export const useTrackingStore = create<TrackingStore>((set) => ({
 /**
  * Applies a tracking snapshot outside React render code.
  */
-export function applyTrackingSnapshot(snapshot: TrackingSnapshot, missionId?: string | null): void {
+export function applyTrackingSnapshot(
+  snapshot: TrackingSnapshot,
+  missionId?: string | null,
+  activeDeviceIds?: readonly string[],
+): void {
   useTrackingStore.setState({ snapshot })
-  applyStationaryAttentionSnapshot(snapshot, missionId)
+  applyStationaryAttentionSnapshot(snapshot, missionId, activeDeviceIds)
 }
 
 /**

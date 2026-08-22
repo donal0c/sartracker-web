@@ -72,6 +72,7 @@ type StartAppRuntimeDependencies = {
     readonly trackingCacheEnabled: boolean
     readonly stationaryAttentionConfig?: {
       readonly heartbeatWindowMs: number
+      readonly heartbeatToleranceMs: number
       readonly movementFloorM: number
       readonly accuracyFactor: number
       readonly outlierRejectM: number
@@ -143,14 +144,22 @@ export async function startAppRuntime(
     ? null
     : createRejectionEvidenceDelivery({
         missionStore: {
-          getActiveMission: missionStore.getActiveMission,
           recordIngestRejections: missionStore.recordIngestRejections,
+          ...(missionStore.recordIngestEvidenceLoss === undefined
+            ? {}
+            : { recordIngestEvidenceLoss: missionStore.recordIngestEvidenceLoss }),
         },
         applyRejections: applyCurrentPositionRejections,
         applyEvidenceHealth: applyIngestEvidenceHealth,
       })
   if (missionStore.getIngestEvidenceHealth !== undefined) {
-    void missionStore.getIngestEvidenceHealth().then(applyIngestEvidenceHealth).catch(() => {
+    void missionStore.getActiveMission().then((mission) =>
+      mission === null
+        ? null
+        : missionStore.getIngestEvidenceHealth?.(mission.id) ?? null,
+    ).then((health) => {
+      if (health !== null) applyIngestEvidenceHealth(health)
+    }).catch(() => {
       applyIngestEvidenceHealth({
         state: 'critical',
         reason: 'evidence_health_unavailable',
@@ -297,7 +306,12 @@ export async function startAppRuntime(
         runtimeKind === 'electron' ? createElectronTrackingCache : createTauriTrackingCache,
       readTrackingRuntimeConfig,
       applySnapshot: (snapshot) => {
-        applyTrackingSnapshot(snapshot, useMissionStore.getState().currentMission?.id ?? null)
+        const missionId = useMissionStore.getState().currentMission?.id ?? null
+        applyTrackingSnapshot(
+          snapshot,
+          missionId,
+          useActiveMissionDevicesStore.getState().getActiveDeviceIds(missionId),
+        )
       },
       applyStatus: applyTrackingStatus,
       notifyDurablePositionChange: (changedPositionCount) => {

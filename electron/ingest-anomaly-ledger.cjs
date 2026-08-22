@@ -11,11 +11,12 @@ const {
 function recordConflictAnomaly(db, input) {
   const canonical = canonicalizeAcceptedPosition(input.incoming)
   const anomalyKey = `source:${input.sourcePositionId}:content:${canonical.contentHash}`
-  db.prepare(`
+  const inserted = db.prepare(`
     INSERT INTO ingest_anomalies (
       id, mission_id, kind, anomaly_key, device_id, source_position_id,
-      reason_class, received_at, canonical_payload_json, created_at
-    ) VALUES (?, ?, 'conflict', ?, ?, ?, ?, ?, ?, ?)
+      reason_class, received_at, canonical_payload_json, created_at,
+      first_seen_at, last_seen_at, occurrence_count
+    ) VALUES (?, ?, 'conflict', ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
     ON CONFLICT(mission_id, kind, anomaly_key) DO NOTHING
   `).run(
     randomUUID(),
@@ -27,16 +28,39 @@ function recordConflictAnomaly(db, input) {
     input.receivedAt,
     canonical.canonicalJson,
     input.receivedAt,
+    input.receivedAt,
+    input.receivedAt,
   )
+  if (inserted.changes === 0) {
+    db.prepare(`
+      UPDATE ingest_anomalies
+      SET last_seen_at = ?, occurrence_count = occurrence_count + 1
+      WHERE mission_id = ? AND kind = 'conflict' AND anomaly_key = ?
+    `).run(input.receivedAt, input.missionId, anomalyKey)
+  } else {
+    recordInsertedAnomalySummary(
+      db,
+      input.missionId,
+      'conflict',
+      input.incoming.device_id ?? null,
+    )
+  }
 }
 
-/** Lists mission anomalies without interpreting or emitting their payloads. */
-function listIngestAnomalies(db, missionId) {
+/** Lists one bounded newest-first mission anomaly page. */
+function listIngestAnomalies(db, missionId, options = {}) {
+  const boundedLimit = Number.isInteger(options.limit) && options.limit > 0 && options.limit <= 200
+    ? options.limit
+    : 200
+  const boundedOffset = Number.isSafeInteger(options.offset) && options.offset >= 0
+    ? options.offset
+    : 0
   return db.prepare(`
     SELECT * FROM ingest_anomalies
     WHERE mission_id = ?
     ORDER BY created_at ASC, id ASC
-  `).all(missionId)
+    LIMIT ? OFFSET ?
+  `).all(missionId, boundedLimit, boundedOffset)
 }
 
 /**
@@ -46,16 +70,18 @@ function listIngestAnomalies(db, missionId) {
 function recordRejectedAnomaly(db, envelope) {
   const transaction = db.transaction(() => {
     const delivered = db.prepare(
-      'SELECT delivery_id FROM ingest_anomaly_deliveries WHERE delivery_id = ?',
-    ).get(envelope.deliveryId)
+      `SELECT delivery_id FROM ingest_anomaly_deliveries
+       WHERE mission_id = ? AND delivery_id = ?`,
+    ).get(envelope.missionId, envelope.deliveryId)
     if (delivered !== undefined) {
       return false
     }
-    db.prepare(`
+    const inserted = db.prepare(`
       INSERT INTO ingest_anomalies (
         id, mission_id, kind, anomaly_key, device_id, source_position_id,
-        reason_class, received_at, canonical_payload_json, created_at
-      ) VALUES (?, ?, 'rejected', ?, ?, ?, ?, ?, ?, ?)
+        reason_class, received_at, canonical_payload_json, created_at,
+        first_seen_at, last_seen_at, occurrence_count
+      ) VALUES (?, ?, 'rejected', ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
       ON CONFLICT(mission_id, kind, anomaly_key) DO NOTHING
     `).run(
       randomUUID(),
@@ -67,7 +93,23 @@ function recordRejectedAnomaly(db, envelope) {
       envelope.receivedAt,
       JSON.stringify(envelope.canonicalEvidence),
       envelope.receivedAt,
+      envelope.receivedAt,
+      envelope.receivedAt,
     )
+    if (inserted.changes === 0) {
+      db.prepare(`
+        UPDATE ingest_anomalies
+        SET last_seen_at = ?, occurrence_count = occurrence_count + 1
+        WHERE mission_id = ? AND kind = 'rejected' AND anomaly_key = ?
+      `).run(envelope.receivedAt, envelope.missionId, envelope.anomalyKey)
+    } else {
+      recordInsertedAnomalySummary(
+        db,
+        envelope.missionId,
+        'rejected',
+        envelope.deviceId,
+      )
+    }
     db.prepare(`
       INSERT INTO ingest_anomaly_deliveries (delivery_id, mission_id, projected_at)
       VALUES (?, ?, ?)
@@ -79,18 +121,24 @@ function recordRejectedAnomaly(db, envelope) {
 
 /** Returns bounded aggregate health facts without anomaly content. */
 function summarizeIngestAnomalies(db, missionId) {
-  const where = missionId === undefined ? '' : 'WHERE mission_id = ?'
+  const counts = missionId === undefined
+    ? db.prepare(`
+        SELECT
+          SUM(conflict_count) AS conflict_count,
+          SUM(rejected_count) AS rejected_count,
+          (SELECT COUNT(DISTINCT device_id) FROM ingest_anomaly_devices)
+            AS affected_device_count
+        FROM ingest_anomaly_mission_health
+      `).get()
+    : db.prepare(`
+        SELECT conflict_count, rejected_count, affected_device_count
+        FROM ingest_anomaly_mission_health WHERE mission_id = ?
+      `).get(missionId)
+  const deviceWhere = missionId === undefined ? '' : 'mission_id = ? AND '
   const parameters = missionId === undefined ? [] : [missionId]
-  const counts = db.prepare(`
-    SELECT
-      SUM(CASE WHEN kind = 'conflict' THEN 1 ELSE 0 END) AS conflict_count,
-      SUM(CASE WHEN kind = 'rejected' THEN 1 ELSE 0 END) AS rejected_count,
-      COUNT(DISTINCT device_id) AS affected_device_count
-    FROM ingest_anomalies ${where}
-  `).get(...parameters)
   const conflictDeviceIds = db.prepare(`
-    SELECT DISTINCT device_id FROM ingest_anomalies
-    ${where}${where === '' ? 'WHERE' : ' AND'} kind = 'conflict' AND device_id IS NOT NULL
+    SELECT device_id FROM ingest_anomaly_devices
+    WHERE ${deviceWhere}conflict_count > 0
     ORDER BY device_id ASC LIMIT 100
   `).all(...parameters).map((row) => row.device_id)
   return {
@@ -99,6 +147,40 @@ function summarizeIngestAnomalies(db, missionId) {
     affectedDeviceCount: Number(counts?.affected_device_count ?? 0),
     conflictDeviceIds,
   }
+}
+
+/** Updates constant-size mission health and bounded per-device summary rows. */
+function recordInsertedAnomalySummary(db, missionId, kind, deviceId) {
+  const conflictIncrement = kind === 'conflict' ? 1 : 0
+  const rejectedIncrement = kind === 'rejected' ? 1 : 0
+  db.prepare(`
+    INSERT INTO ingest_anomaly_mission_health (
+      mission_id, conflict_count, rejected_count, affected_device_count
+    ) VALUES (?, ?, ?, 0)
+    ON CONFLICT(mission_id) DO UPDATE SET
+      conflict_count = conflict_count + excluded.conflict_count,
+      rejected_count = rejected_count + excluded.rejected_count
+  `).run(missionId, conflictIncrement, rejectedIncrement)
+  if (deviceId === null) return
+  const insertedDevice = db.prepare(`
+    INSERT INTO ingest_anomaly_devices (
+      mission_id, device_id, conflict_count, rejected_count
+    ) VALUES (?, ?, 0, 0)
+    ON CONFLICT(mission_id, device_id) DO NOTHING
+  `).run(missionId, deviceId)
+  if (insertedDevice.changes > 0) {
+    db.prepare(`
+      UPDATE ingest_anomaly_mission_health
+      SET affected_device_count = affected_device_count + 1
+      WHERE mission_id = ?
+    `).run(missionId)
+  }
+  db.prepare(`
+    UPDATE ingest_anomaly_devices
+    SET conflict_count = conflict_count + ?,
+        rejected_count = rejected_count + ?
+    WHERE mission_id = ? AND device_id = ?
+  `).run(conflictIncrement, rejectedIncrement, missionId, deviceId)
 }
 
 module.exports = {

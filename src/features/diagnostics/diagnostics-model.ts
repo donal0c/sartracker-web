@@ -264,6 +264,7 @@ function buildSupportReport(
       ? []
       : [
           `stationary attention window ms: ${input.runtimeBootstrap.stationaryAttentionConfig.heartbeatWindowMs}`,
+          `stationary heartbeat tolerance ms: ${input.runtimeBootstrap.stationaryAttentionConfig.heartbeatToleranceMs}`,
           `stationary movement floor m: ${input.runtimeBootstrap.stationaryAttentionConfig.movementFloorM}`,
           `stationary accuracy factor: ${input.runtimeBootstrap.stationaryAttentionConfig.accuracyFactor}`,
           `stationary outlier reject m: ${input.runtimeBootstrap.stationaryAttentionConfig.outlierRejectM}`,

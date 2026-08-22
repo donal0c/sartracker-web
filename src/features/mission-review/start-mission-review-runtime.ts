@@ -65,6 +65,7 @@ export async function startMissionReviewRuntime(
   let state: MissionReviewRuntimeState = EMPTY_RUNTIME
   let refreshToken = 0
   let requestSequence = 0
+  const requestNamespace = globalThis.crypto.randomUUID()
   let activeReviewRequestId: string | null = null
 
   publishRuntime()
@@ -124,7 +125,7 @@ export async function startMissionReviewRuntime(
 
       // Request one extra event so a full page signals there is more history than shown.
       const auditEventLimit = DEFAULT_AUDIT_EVENT_LIMIT
-      const reviewRequestId = `mission-review-${++requestSequence}`
+      const reviewRequestId = `mission-review-${requestNamespace}-${++requestSequence}`
       startedReviewRequestId = reviewRequestId
       activeReviewRequestId = reviewRequestId
       const [reviewRead, info, markers, devices, drawings, helicopters, gpxImports, layerMetadata] =

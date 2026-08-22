@@ -100,7 +100,7 @@ describe('diagnostics model', () => {
       userAgent: 'test', dependencySmoke: { hasMapLibre: true, hasProj4: true, hasTurf: true, hasZustand: true, hasTerraDraw: true },
       settings: createSettings(), runtimeBootstrap: {
         ...createRuntimeBootstrap(),
-        stationaryAttentionConfig: { heartbeatWindowMs: 1_200_000, movementFloorM: 15, accuracyFactor: 2, outlierRejectM: 500 },
+        stationaryAttentionConfig: { heartbeatWindowMs: 1_200_000, heartbeatToleranceMs: 120_000, movementFloorM: 15, accuracyFactor: 2, outlierRejectM: 500 },
       }, missionStoreInfo,
       missions: [], missionRuntime: { phase: 'idle', currentMission: null, recoverableMission: null },
       governanceRuntime: createGovernanceRuntime(), trackingStatus: createTrackingStatus(), trackingSnapshot: createTrackingSnapshot(),
@@ -111,6 +111,7 @@ describe('diagnostics model', () => {
     expect(snapshot.supportReport).toContain('evidence conflicts: 1')
     expect(snapshot.supportReport).not.toContain('secret-device')
     expect(snapshot.supportReport).toContain('stationary attention window ms: 1200000')
+    expect(snapshot.supportReport).toContain('stationary heartbeat tolerance ms: 120000')
   })
 
   it('flags browser-mode and degraded tracking/operator warnings clearly', () => {

@@ -135,6 +135,8 @@ function createElectronSettingsStore(options) {
       trackingCacheEnabled: persisted.dataSource.trackingCacheEnabled,
       stationaryAttentionConfig: {
         heartbeatWindowMs: persisted.missionDefaults.stationaryAttentionHeartbeatMinutes * 60_000,
+        heartbeatToleranceMs:
+          persisted.missionDefaults.stationaryAttentionHeartbeatMinutes * 60_000 * 0.1,
         movementFloorM: persisted.missionDefaults.stationaryAttentionMovementFloorM,
         accuracyFactor: persisted.missionDefaults.stationaryAttentionAccuracyFactor,
         outlierRejectM: persisted.missionDefaults.stationaryAttentionOutlierRejectM,

@@ -25,6 +25,44 @@ describe('stationary attention store [DON-269]', () => {
     expect(useStationaryAttentionStore.getState().missionId).toBe('mission-2')
     expect(useStationaryAttentionStore.getState().byDevice['device-1']?.state).toBe('insufficient-data')
   })
+
+  it('recomputes stationary attention from restored fixes with empty source identities', () => {
+    useStationaryAttentionStore.getState().applySnapshot(
+      createSnapshot([fix('', 0, 52), fix('', 15, 52.00001), fix('', 25, 52.00001)]),
+      'mission-restored',
+    )
+
+    expect(useStationaryAttentionStore.getState().byDevice['device-1']).toMatchObject({
+      state: 'attention',
+      acknowledged: false,
+    })
+  })
+
+  it('evaluates only the mission-active device set when one is selected', () => {
+    const deviceTwoFixes = [
+      { ...fix('two-a', 0, 52), device_id: 'device-2' },
+      { ...fix('two-b', 20, 52), device_id: 'device-2' },
+    ]
+    const snapshot: TrackingSnapshot = {
+      devices: [
+        ...createSnapshot([]).devices,
+        {
+          device_id: 'device-2', name: 'Two', status: 'online', last_seen: null,
+          unique_id: null, category: null,
+        },
+      ],
+      positions: [fix('one-b', 20, 52), deviceTwoFixes[1]!],
+      breadcrumbs: [fix('one-a', 0, 52), fix('one-b', 20, 52), ...deviceTwoFixes],
+    }
+
+    useStationaryAttentionStore.getState().applySnapshot(
+      snapshot,
+      'mission-1',
+      ['device-1'],
+    )
+
+    expect(Object.keys(useStationaryAttentionStore.getState().byDevice)).toEqual(['device-1'])
+  })
 })
 
 function createSnapshot(fixes: readonly NormalizedTrackingPosition[]): TrackingSnapshot {

@@ -71,6 +71,26 @@ describe('startMissionReviewRuntime', () => {
     expect(countPositions).not.toHaveBeenCalled()
   })
 
+  it('uses a unique request namespace across renderer runtime generations [DON-251]', async () => {
+    const firstRead = vi.fn().mockResolvedValue({ auditEvents: [], breadcrumbCount: 0 })
+    const secondRead = vi.fn().mockResolvedValue({ auditEvents: [], breadcrumbCount: 0 })
+    const first = await startMissionReviewRuntime({
+      missionStore: createMissionReviewStoreStub({ readMissionReview: firstRead }),
+      layerCatalogStore: { listMetadata: vi.fn().mockResolvedValue([]) },
+      applyRuntime: vi.fn(),
+    })
+    const second = await startMissionReviewRuntime({
+      missionStore: createMissionReviewStoreStub({ readMissionReview: secondRead }),
+      layerCatalogStore: { listMetadata: vi.fn().mockResolvedValue([]) },
+      applyRuntime: vi.fn(),
+    })
+
+    await first.load(FIRST_MISSION.id)
+    await second.load(FIRST_MISSION.id)
+
+    expect(firstRead.mock.calls[0]?.[1]).not.toBe(secondRead.mock.calls[0]?.[1])
+  })
+
   it('cancels an obsolete Review read and fences its late failure [DON-251]', async () => {
     let rejectFirst: ((error: Error) => void) | undefined
     const readMissionReview = vi
