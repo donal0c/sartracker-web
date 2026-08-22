@@ -7,6 +7,9 @@ const { runBreadcrumbQueryInWorker } = require('./breadcrumb-query-runner.cjs')
 const {
   runBreadcrumbDotQueryInWorker,
 } = require('./breadcrumb-dot-query-runner.cjs')
+const {
+  runMissionReviewReadQueryInWorker,
+} = require('./mission-review-read-query-runner.cjs')
 const { runSqliteBackupInWorker } = require('./sqlite-backup-runner.cjs')
 const { validateSqliteSnapshotSanity } = require('./sqlite-snapshot-sanity.cjs')
 const { isStrictTrackingTimestamp } = require('./tracking-timestamp.cjs')
@@ -52,6 +55,20 @@ function normalizeBreadcrumbQueryRequestId(value, required) {
   return value
 }
 
+/** Validates the opaque renderer correlation key used for Review worker cancellation. */
+function normalizeMissionReviewRequestId(value, required) {
+  if (value === undefined && required === false) return null
+  if (
+    typeof value !== 'string' ||
+    value.length < 1 ||
+    value.length > 140 ||
+    !/^[A-Za-z0-9._:-]+$/u.test(value)
+  ) {
+    throw new Error('Mission Review request ID is invalid.')
+  }
+  return value
+}
+
 /**
  * Creates the Electron SQLite mission store.
  */
@@ -70,9 +87,12 @@ function createElectronMissionStore(options) {
     options.runBreadcrumbQueryInWorker ?? runBreadcrumbQueryInWorker
   const breadcrumbDotQueryRunner =
     options.runBreadcrumbDotQueryInWorker ?? runBreadcrumbDotQueryInWorker
+  const missionReviewReadQueryRunner =
+    options.runMissionReviewReadQueryInWorker ?? runMissionReviewReadQueryInWorker
   const activeBreadcrumbQueryControllers = new Set()
   const breadcrumbQueryControllersByRequestId = new Map()
   const breadcrumbDotQueryControllersByRequestId = new Map()
+  const missionReviewQueryControllersByRequestId = new Map()
   let breadcrumbQueryTail = Promise.resolve()
   const db = new Database(databasePath)
   db.pragma('journal_mode = WAL')
@@ -123,6 +143,10 @@ function createElectronMissionStore(options) {
       activeBreadcrumbQueryControllers.clear()
       breadcrumbQueryControllersByRequestId.clear()
       breadcrumbDotQueryControllersByRequestId.clear()
+      for (const activeQuery of missionReviewQueryControllersByRequestId.values()) {
+        activeQuery.controller.abort()
+      }
+      missionReviewQueryControllersByRequestId.clear()
       db.close()
     },
     info: async () => ({
@@ -325,6 +349,47 @@ function createElectronMissionStore(options) {
       if (activeQuery === undefined) {
         return false
       }
+      activeQuery.controller.abort()
+      await activeQuery.completion.catch(() => undefined)
+      return true
+    },
+    readMissionReview: async (input, requestId) => {
+      const normalizedRequestId = normalizeMissionReviewRequestId(requestId, false)
+      if (
+        normalizedRequestId !== null &&
+        missionReviewQueryControllersByRequestId.has(normalizedRequestId)
+      ) {
+        throw new Error('Mission Review request ID is already active.')
+      }
+      const controller = new AbortController()
+      const query = missionReviewReadQueryRunner({
+        databasePath,
+        query: input,
+        signal: controller.signal,
+      })
+      const activeQuery = { controller, completion: query }
+      if (normalizedRequestId !== null) {
+        missionReviewQueryControllersByRequestId.set(normalizedRequestId, activeQuery)
+      }
+      try {
+        const result = await query
+        return {
+          auditEvents: result.auditEvents,
+          breadcrumbCount: result.breadcrumbCount,
+        }
+      } finally {
+        if (
+          normalizedRequestId !== null &&
+          missionReviewQueryControllersByRequestId.get(normalizedRequestId) === activeQuery
+        ) {
+          missionReviewQueryControllersByRequestId.delete(normalizedRequestId)
+        }
+      }
+    },
+    cancelMissionReviewRead: async (requestId) => {
+      const normalizedRequestId = normalizeMissionReviewRequestId(requestId, true)
+      const activeQuery = missionReviewQueryControllersByRequestId.get(normalizedRequestId)
+      if (activeQuery === undefined) return false
       activeQuery.controller.abort()
       await activeQuery.completion.catch(() => undefined)
       return true

@@ -11,6 +11,8 @@ import type {
   Mission,
   MissionEvent,
   MissionArchiveInfo,
+  MissionReviewReadQuery,
+  MissionReviewReadResult,
   MissionStoreInfo,
   Position,
   UnlockFinalizedMissionInput,
@@ -62,6 +64,10 @@ type BrowserHarnessStore = {
     missionId: string,
     options?: ListAuditEventsOptions,
   ) => Promise<readonly MissionEvent[]>
+  readonly readMissionReview: (
+    query: MissionReviewReadQuery,
+  ) => Promise<MissionReviewReadResult>
+  readonly cancelMissionReviewRead: (requestId: string) => Promise<boolean>
   readonly openExternalPath: (path: string) => Promise<void>
   readonly pauseMission: (missionId: string) => Promise<Mission>
   readonly resumeMission: (missionId: string) => Promise<Mission>
@@ -196,6 +202,19 @@ export function getBrowserHarnessStore(): BrowserHarnessStore {
         .sort((left, right) => Date.parse(right.timestamp) - Date.parse(left.timestamp))
         .slice(0, limit)
     },
+    readMissionReview: async (query) => ({
+      auditEvents: state.missionEvents
+        .filter((event) => event.mission_id === query.missionId)
+        .filter(
+          (event) => query.includeTelemetry || !isTelemetryEventType(event.event_type),
+        )
+        .sort((left, right) => Date.parse(right.timestamp) - Date.parse(left.timestamp))
+        .slice(0, query.auditLimit),
+      breadcrumbCount: state.positions.filter(
+        (position) => position.mission_id === query.missionId,
+      ).length,
+    }),
+    cancelMissionReviewRead: async () => false,
     openExternalPath: async (path) => {
       if (path.trim() === '') {
         throw new Error('Path is required.')

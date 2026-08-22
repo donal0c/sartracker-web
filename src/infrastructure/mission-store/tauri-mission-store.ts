@@ -251,6 +251,18 @@ export type ListAuditEventsOptions = {
   readonly limit?: number
 }
 
+/** One bounded, snapshot-consistent read used by the docked Mission Review workspace. */
+export type MissionReviewReadQuery = {
+  readonly missionId: string
+  readonly includeTelemetry: boolean
+  readonly auditLimit: number
+}
+
+export type MissionReviewReadResult = {
+  readonly auditEvents: readonly MissionEvent[]
+  readonly breadcrumbCount: number
+}
+
 export type CreateMissionInput = {
   readonly name: string
   readonly start_time?: string
@@ -411,6 +423,11 @@ export type MissionStore = {
     missionId: string,
     options?: ListAuditEventsOptions,
   ) => Promise<readonly MissionEvent[]>
+  readonly readMissionReview: (
+    query: MissionReviewReadQuery,
+    requestId?: string,
+  ) => Promise<MissionReviewReadResult>
+  readonly cancelMissionReviewRead?: (requestId: string) => Promise<boolean>
   readonly listIngestAnomalies?: (missionId: string) => Promise<readonly IngestAnomaly[]>
   readonly recordIngestRejections?: (input: {
     readonly mission_id: string
@@ -470,6 +487,21 @@ export function createTauriMissionStore(): MissionStore {
         includeTelemetry: options?.includeTelemetry ?? false,
         limit: options?.limit ?? null,
       }),
+    readMissionReview: async (query) => {
+      const [auditEvents, positions] = await Promise.all([
+        invoke<readonly MissionEvent[]>('list_audit_events', {
+          missionId: query.missionId,
+          includeTelemetry: query.includeTelemetry,
+          limit: query.auditLimit,
+        }),
+        invoke<readonly Position[]>('list_positions', {
+          missionId: query.missionId,
+          deviceId: undefined,
+        }),
+      ])
+      return { auditEvents, breadcrumbCount: positions.length }
+    },
+    cancelMissionReviewRead: async () => false,
     upsertMarker: (input) => invoke<Marker>('upsert_marker', { input }),
     getMarker: (markerId) => invoke<Marker>('get_marker', { markerId }),
     listMarkers: (missionId) => invoke<readonly Marker[]>('list_markers', { missionId }),

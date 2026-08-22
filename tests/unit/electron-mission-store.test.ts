@@ -67,6 +67,21 @@ const { createElectronMissionStore, CURRENT_SCHEMA_VERSION } = require('../../el
       readonly deviceSelections: readonly never[]
       readonly droppedPositionCount: number
     }>
+    readonly runMissionReviewReadQueryInWorker?: (input: {
+      readonly databasePath: string
+      readonly query: {
+        readonly missionId: string
+        readonly includeTelemetry: boolean
+        readonly auditLimit: number
+      }
+      readonly signal?: AbortSignal
+    }) => Promise<{
+      readonly auditEvents: readonly {
+        readonly event_type: string
+        readonly timestamp: string
+      }[]
+      readonly breadcrumbCount: number
+    }>
   }) => ElectronMissionStore
 }
 const Database = require('better-sqlite3')
@@ -227,6 +242,21 @@ type ElectronMissionStore = {
     readonly droppedPositionCount: number
   }>
   readonly cancelBreadcrumbQuery: (requestId: string) => Promise<boolean>
+  readonly readMissionReview: (
+    query: {
+      readonly missionId: string
+      readonly includeTelemetry: boolean
+      readonly auditLimit: number
+    },
+    requestId?: string,
+  ) => Promise<{
+    readonly auditEvents: readonly {
+      readonly event_type: string
+      readonly timestamp: string
+    }[]
+    readonly breadcrumbCount: number
+  }>
+  readonly cancelMissionReviewRead: (requestId: string) => Promise<boolean>
   readonly countPositions: (missionId: string, deviceId?: string) => Promise<number>
   readonly latestPositions: (missionId: string) => Promise<readonly { readonly device_id: string; readonly lat: number }[]>
   readonly listIngestAnomalies: (missionId: string) => Promise<readonly {
@@ -765,6 +795,135 @@ describe('electron mission store', () => {
     await expect(
       store.cancelBreadcrumbQuery('renderer-a:request-a'),
     ).resolves.toBe(false)
+  })
+
+  it('keeps current-position persistence available while Mission Review reads in a worker [DON-251]', async () => {
+    let resolveReview: ((value: {
+      readonly auditEvents: readonly never[]
+      readonly breadcrumbCount: number
+    }) => void) | undefined
+    const runMissionReviewReadQueryInWorker = vi.fn().mockImplementation(
+      () => new Promise((resolve) => {
+        resolveReview = resolve
+      }),
+    )
+    userDataPath = await mkdtemp(path.join(tmpdir(), 'sartracker-electron-store-'))
+    store = createElectronMissionStore({
+      userDataPath,
+      runMissionReviewReadQueryInWorker,
+    })
+    const mission = await store.createMission({ name: 'Live Review Mission' })
+    await store.upsertDevice({
+      mission_id: mission.id,
+      device_id: 'team-1',
+      name: 'Team One',
+      color: '#00AAFF',
+      status: 'online',
+    })
+
+    const review = store.readMissionReview(
+      { missionId: mission.id, includeTelemetry: false, auditLimit: 501 },
+      'renderer-a:mission-review:request-1',
+    )
+    await vi.waitFor(() =>
+      expect(runMissionReviewReadQueryInWorker).toHaveBeenCalledOnce(),
+    )
+
+    await expect(store.addPosition({
+      mission_id: mission.id,
+      device_id: 'team-1',
+      source_position_id: 'live-fix-1',
+      lat: 52.05,
+      lon: -9.5,
+      timestamp: '2026-08-22T19:00:00.000Z',
+    })).resolves.toMatchObject({ source_position_id: 'live-fix-1' })
+    resolveReview?.({ auditEvents: [], breadcrumbCount: 0 })
+
+    await expect(review).resolves.toEqual({ auditEvents: [], breadcrumbCount: 0 })
+    await expect(store.countPositions(mission.id)).resolves.toBe(1)
+  })
+
+  it('cancels an obsolete Mission Review worker by renderer request ID [DON-251]', async () => {
+    const runMissionReviewReadQueryInWorker = vi.fn().mockImplementation(
+      (input: { readonly signal?: AbortSignal }) =>
+        new Promise((_resolve, reject) => {
+          input.signal?.addEventListener('abort', () => {
+            const error = new Error('Mission Review query was cancelled.')
+            error.name = 'AbortError'
+            reject(error)
+          }, { once: true })
+        }),
+    )
+    userDataPath = await mkdtemp(path.join(tmpdir(), 'sartracker-electron-store-'))
+    store = createElectronMissionStore({
+      userDataPath,
+      runMissionReviewReadQueryInWorker,
+    })
+    const requestId = 'renderer-a:mission-review:request-1'
+    const review = store.readMissionReview(
+      { missionId: 'mission-1', includeTelemetry: false, auditLimit: 501 },
+      requestId,
+    )
+    await vi.waitFor(() =>
+      expect(runMissionReviewReadQueryInWorker).toHaveBeenCalledOnce(),
+    )
+
+    const rejection = expect(review).rejects.toMatchObject({ name: 'AbortError' })
+    await expect(store.cancelMissionReviewRead(requestId)).resolves.toBe(true)
+    await rejection
+    await expect(store.cancelMissionReviewRead(requestId)).resolves.toBe(false)
+  })
+
+  it('matches the established audit/count oracle through the Review worker [DON-251]', async () => {
+    store = await createStore()
+    const mission = await store.createMission({
+      name: 'Review Oracle Mission',
+      start_time: '2026-08-22T18:00:00.000Z',
+    })
+    await store.upsertDevice({
+      mission_id: mission.id,
+      device_id: 'team-1',
+      name: 'Team One',
+      color: '#00AAFF',
+      status: 'online',
+    })
+    await store.addPositionsBulk({
+      mission_id: mission.id,
+      positions: Array.from({ length: 25 }, (_unused, index) => ({
+        source_position_id: `oracle-fix-${index}`,
+        device_id: 'team-1',
+        lat: 52.05 + index / 100_000,
+        lon: -9.5,
+        timestamp: new Date(Date.UTC(2026, 7, 22, 18, 1, index)).toISOString(),
+      })),
+    })
+    const info = await store.info()
+    const writer = new Database(info.database_path)
+    const insertEvent = writer.prepare(`
+      INSERT INTO mission_events (id, mission_id, event_type, timestamp, details_json)
+      VALUES (?, ?, ?, '2026-08-22T19:00:00.000Z', NULL)
+    `)
+    insertEvent.run('oracle-tie-first', mission.id, 'marker_created')
+    insertEvent.run('oracle-telemetry', mission.id, 'position_recorded')
+    insertEvent.run('oracle-tie-last', mission.id, 'drawing_created')
+    writer.close()
+
+    for (const includeTelemetry of [false, true]) {
+      const expectedAudit = await store.listAuditEvents(mission.id, {
+        includeTelemetry,
+        limit: 2,
+      })
+      const expectedCount = await store.countPositions(mission.id)
+
+      await expect(store.readMissionReview({
+        missionId: mission.id,
+        includeTelemetry,
+        auditLimit: 2,
+      }, `oracle-${includeTelemetry}`)).resolves.toEqual({
+        auditEvents: expectedAudit,
+        breadcrumbCount: expectedCount,
+      })
+    }
   })
 
   it('acknowledges a large tracking batch without returning or materializing changed rows', async () => {

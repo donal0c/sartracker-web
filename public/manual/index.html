@@ -1232,6 +1232,12 @@
             Review opens full-screen with the mission selector for cross-mission audit.
           </p>
           <p>
+            Mission Review reads the selected mission only after the workspace is opened. While a large
+            audit history is loading, the map, current positions, and mission controls remain available;
+            Review shows its loading state and then displays the exact breadcrumb count and bounded newest
+            audit page. Closing Review does not change mission evidence or current-position truth.
+          </p>
+          <p>
             The Audit Log shows operator-meaningful events by default — mission lifecycle changes, marker
             and drawing edits, GPX imports, and governance actions. Current desktop builds store positions in
             the position history without duplicating every fix into the Audit Log, and record a device update
