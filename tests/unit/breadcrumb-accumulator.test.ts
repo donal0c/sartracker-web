@@ -851,6 +851,8 @@ describe('positionsEqual field discrimination [DON-240]', () => {
     battery: 88,
     accuracy: 5,
     timestamp: '2026-04-06T10:00:05.000Z',
+    timestamp_source: 'fix',
+    fix_time_unverified: false,
     source: 'live',
     data_origin: 'live',
     cache_age_seconds: 0,

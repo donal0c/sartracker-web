@@ -41,7 +41,13 @@ import {
 } from '../tracking/start-tracking-runtime'
 import { DEFAULT_DEVICE_STALE_THRESHOLD_MS } from '../tracking/tracking-snapshot-health'
 import { useActiveMissionDevicesStore } from '../tracking/active-mission-devices-store'
+import {
+  applyCurrentPositionRejections,
+  applyIngestEvidenceHealth,
+} from '../tracking/ingest-health-store'
+import { createRejectionEvidenceDelivery } from '../tracking/rejection-evidence-delivery'
 import { startExactBreadcrumbDotRuntime } from '../tracking/start-exact-breadcrumb-dot-runtime'
+import { useStationaryAttentionStore } from '../tracking/stationary-attention-store'
 import { useExactBreadcrumbDotStore } from '../tracking/exact-breadcrumb-dot-store'
 import type { AppRuntimeController } from './app-runtime-controller'
 import {
@@ -64,6 +70,12 @@ type StartAppRuntimeDependencies = {
     readonly trackingPollIntervalMs: number
     readonly trackingMinimumPollIntervalMs?: number
     readonly trackingCacheEnabled: boolean
+    readonly stationaryAttentionConfig?: {
+      readonly heartbeatWindowMs: number
+      readonly movementFloorM: number
+      readonly accuracyFactor: number
+      readonly outlierRejectM: number
+    }
     readonly trackingConfig: {
       readonly baseUrl: string
       readonly email?: string
@@ -127,6 +139,30 @@ export async function startAppRuntime(
 
   const missionStore = resolvedDependencies.createMissionStore(runtimeKind)
   const trackingMissionStore = missionStore as MissionStore & TrackingRuntimeMissionStore
+  const rejectionEvidenceDelivery = missionStore.recordIngestRejections === undefined
+    ? null
+    : createRejectionEvidenceDelivery({
+        missionStore: {
+          getActiveMission: missionStore.getActiveMission,
+          recordIngestRejections: missionStore.recordIngestRejections,
+        },
+        applyRejections: applyCurrentPositionRejections,
+        applyEvidenceHealth: applyIngestEvidenceHealth,
+      })
+  if (missionStore.getIngestEvidenceHealth !== undefined) {
+    void missionStore.getIngestEvidenceHealth().then(applyIngestEvidenceHealth).catch(() => {
+      applyIngestEvidenceHealth({
+        state: 'critical',
+        reason: 'evidence_health_unavailable',
+        pendingCount: 0,
+        corruptCount: 0,
+        conflictCount: 0,
+        rejectedCount: 0,
+        affectedDeviceCount: 0,
+        conflictDeviceIds: [],
+      })
+    })
+  }
   const gpxImportSource =
     runtimeKind === 'electron' ? createElectronGpxImportSource() : createTauriGpxImportSource()
   const attachmentAdapter =
@@ -182,6 +218,7 @@ export async function startAppRuntime(
       activeServices = createNoopRuntimeServiceHandles()
       stopRuntimeServices(previousServices)
       stopExactBreadcrumbDots()
+      rejectionEvidenceDelivery?.dispose()
       coreFeatureRuntimes.dispose()
     },
   }
@@ -196,6 +233,8 @@ export async function startAppRuntime(
     if (generation !== reloadGeneration) {
       return
     }
+
+    useStationaryAttentionStore.getState().setConfig(runtimeSettings.stationaryAttentionConfig)
 
     // A replacement tracker must never overlap the currently active poller.
     // Stop the old services only after settings have loaded successfully, then
@@ -250,12 +289,16 @@ export async function startAppRuntime(
             : { persistHistoryChunks: hooks.persistHistoryChunks }),
           onSnapshot: hooks.onSnapshot,
           onStatusChange: hooks.onStatusChange,
+          onCurrentPositionRejections:
+            rejectionEvidenceDelivery?.record ?? applyCurrentPositionRejections,
           onPollDiagnostic: hooks.onPollDiagnostic,
         }),
       createTrackingCache:
         runtimeKind === 'electron' ? createElectronTrackingCache : createTauriTrackingCache,
       readTrackingRuntimeConfig,
-      applySnapshot: applyTrackingSnapshot,
+      applySnapshot: (snapshot) => {
+        applyTrackingSnapshot(snapshot, useMissionStore.getState().currentMission?.id ?? null)
+      },
       applyStatus: applyTrackingStatus,
       notifyDurablePositionChange: (changedPositionCount) => {
         useExactBreadcrumbDotStore.getState().controller?.notifyDurableChange(

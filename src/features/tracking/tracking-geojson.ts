@@ -7,6 +7,7 @@ import {
   type TrackingStylePreferences,
 } from './tracking-style-store'
 import type { NormalizedTrackingPosition, TrackingSnapshot } from './tracking-types'
+import type { DeviceStationaryAttention } from './stationary-attention-store'
 
 export const DEFAULT_BREADCRUMB_LINE_GAP_THRESHOLD_MS = 30 * 60 * 1000
 
@@ -19,6 +20,8 @@ type GeoJsonPointFeature = Feature<
     readonly color: string
     readonly stale: boolean
     readonly dataOrigin: string
+    readonly attention: boolean
+    readonly attentionAcknowledged: boolean
   }
 >
 
@@ -70,6 +73,7 @@ export function createTrackingFeatureCollection(
     breadcrumbSize: 8,
     breadcrumbTrailMode: DEFAULT_BREADCRUMB_TRAIL_MODE,
   },
+  attentionByDevice: Readonly<Record<string, DeviceStationaryAttention>> = {},
 ): FeatureCollection<Geometry> {
   const breadcrumbFeatures =
     style.breadcrumbTrailMode === 'dots'
@@ -80,7 +84,7 @@ export function createTrackingFeatureCollection(
     type: 'FeatureCollection',
     features: [
       ...breadcrumbFeatures,
-      ...createDeviceFeatureCollection(snapshot, style).features,
+      ...createDeviceFeatureCollection(snapshot, style, attentionByDevice).features,
     ],
   }
 }
@@ -96,6 +100,7 @@ export function createTrackingFeatureCollectionDataKey(
     breadcrumbSize: 8,
     breadcrumbTrailMode: DEFAULT_BREADCRUMB_TRAIL_MODE,
   },
+  attentionByDevice: Readonly<Record<string, DeviceStationaryAttention>> = {},
 ): string {
   return [
     getObjectIdentityToken(snapshot.devices),
@@ -103,6 +108,7 @@ export function createTrackingFeatureCollectionDataKey(
     getObjectIdentityToken(snapshot.breadcrumbs),
     gapThresholdMs,
     createTrackingStyleFeatureKey(style),
+    getObjectIdentityToken(attentionByDevice),
   ].join(':')
 }
 
@@ -112,6 +118,7 @@ export function createTrackingFeatureCollectionDataKey(
 export function createDeviceFeatureCollection(
   snapshot: TrackingSnapshot,
   style: Pick<TrackingStylePreferences, 'deviceColors'> = { deviceColors: {} },
+  attentionByDevice: Readonly<Record<string, Pick<DeviceStationaryAttention, 'state' | 'acknowledged'>>> = {},
 ): FeatureCollection<Point> {
   const deviceNameById = new Map(
     snapshot.devices.map((device) => [device.device_id, device.name] as const),
@@ -130,6 +137,8 @@ export function createDeviceFeatureCollection(
       color: getStyledDeviceColor(position.device_id, style.deviceColors),
       stale: position.device_cache_stale,
       dataOrigin: position.data_origin,
+      attention: attentionByDevice[position.device_id]?.state === 'attention',
+      attentionAcknowledged: attentionByDevice[position.device_id]?.acknowledged === true,
     },
   }))
 

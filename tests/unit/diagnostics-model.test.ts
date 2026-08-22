@@ -86,6 +86,33 @@ describe('diagnostics model', () => {
     expect(snapshot.supportReport).toContain('layer metadata entries: 3')
   })
 
+  it('reports only bounded ingest evidence health, never anomaly content [DON-268]', () => {
+    const missionStoreInfo: MissionStoreInfo = {
+      ...createStoreInfo(),
+      ingest_evidence_health: {
+        state: 'degraded', reason: 'projection_failed', pendingCount: 2,
+        corruptCount: 0, conflictCount: 1, rejectedCount: 3,
+        affectedDeviceCount: 2, conflictDeviceIds: ['secret-device'],
+      },
+    }
+    const snapshot = buildDiagnosticsSnapshot({
+      generatedAt: '2026-08-22T10:00:00.000Z', appVersion: '0.1.0', runtimeKind: 'electron',
+      userAgent: 'test', dependencySmoke: { hasMapLibre: true, hasProj4: true, hasTurf: true, hasZustand: true, hasTerraDraw: true },
+      settings: createSettings(), runtimeBootstrap: {
+        ...createRuntimeBootstrap(),
+        stationaryAttentionConfig: { heartbeatWindowMs: 1_200_000, movementFloorM: 15, accuracyFactor: 2, outlierRejectM: 500 },
+      }, missionStoreInfo,
+      missions: [], missionRuntime: { phase: 'idle', currentMission: null, recoverableMission: null },
+      governanceRuntime: createGovernanceRuntime(), trackingStatus: createTrackingStatus(), trackingSnapshot: createTrackingSnapshot(),
+      layerCatalogState: { missionId: null, loading: false, error: null, metadataEntryCount: 0 }, selectedMissionId: null,
+    })
+
+    expect(snapshot.supportReport).toContain('evidence health: degraded')
+    expect(snapshot.supportReport).toContain('evidence conflicts: 1')
+    expect(snapshot.supportReport).not.toContain('secret-device')
+    expect(snapshot.supportReport).toContain('stationary attention window ms: 1200000')
+  })
+
   it('flags browser-mode and degraded tracking/operator warnings clearly', () => {
     const snapshot = buildDiagnosticsSnapshot({
       generatedAt: '2026-04-11T00:45:00.000Z',

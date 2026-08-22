@@ -145,6 +145,136 @@ Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
     })
   })
 
+  test('current-position ingest warnings remain calm and explicit [DON-267]', async ({ page }) => {
+    await page.evaluate(async () => {
+      const [{ applyTrackingSnapshot, applyTrackingStatus, useTrackingStore }, { applyCurrentPositionRejections }] =
+        await Promise.all([
+          import('/src/features/tracking/tracking-store.ts'),
+          import('/src/features/tracking/ingest-health-store.ts'),
+        ])
+      const snapshot = useTrackingStore.getState().snapshot
+      applyTrackingSnapshot({
+        ...snapshot,
+        positions: snapshot.positions.map((position, index) => index === 0
+          ? {
+              ...position,
+              timestamp_source: 'server' as const,
+              fix_time_unverified: true,
+              device_cache_stale: true,
+            }
+          : position),
+      })
+      applyTrackingStatus({
+        mode: 'online',
+        consecutiveFailures: 0,
+        recovered: false,
+        lastSuccessAt: new Date().toISOString(),
+        warning: 'DEVICE ROSTER UNAVAILABLE — current fixes are using last-known device details.',
+      })
+      applyCurrentPositionRejections([
+        { deviceId: 'alpha', reason: 'invalid_coordinates', rowIndex: 1 },
+      ])
+    })
+
+    await expect(page.getByTestId('tracking-mode-chip')).toContainText('online')
+    await expect(page.getByTestId('tracking-warning')).toContainText('ROSTER UNAVAILABLE')
+    await expect(page.getByTestId('current-position-ingest-warning')).toContainText(
+      'Valid current fixes remain visible',
+    )
+    await expect(page.getByTestId('fix-time-unverified-warning')).toContainText(
+      'not treated as a fresh device fix',
+    )
+
+    await captureElementAndRegister(page, 'tracking-status', {
+      testId: 'tracking-current-position-ingest-warning',
+      testName: 'Current-position rejection and timestamp provenance warnings',
+      area: 'tracking',
+      severity: 'high',
+      verificationPrompt: `Verify this screenshot of SAR Tracker's current-position health warnings:
+1. The tracking status must remain ONLINE because valid current fixes are still publishing
+2. A clear roster warning must say current fixes are using last-known device details
+3. A separate position-data warning must report a rejected row and explicitly say valid current fixes remain visible
+4. A separate FIX TIME UNVERIFIED warning must explain that server receipt time is not treated as a fresh device fix
+5. The "Open Devices" action must remain visible so the operator can inspect the accepted fix and rejection detail
+6. The warnings should be prominent amber attention states, not a red offline/emergency presentation
+Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
+      playwrightAssertions: [
+        'tracking mode remains online',
+        'roster warning is visible',
+        'rejected-row warning says valid current fixes remain visible',
+        'server-only timestamp warning says it is not treated as fresh',
+      ],
+    })
+  })
+
+  test('stationary attention is additive and keeps the current marker visible [DON-269]', async ({ page }) => {
+    await page.evaluate(async () => {
+      const { applyTrackingSnapshot } = await import('/src/features/tracking/tracking-store.ts')
+      const base = { device_id: 'alpha', lon: -9.7426, altitude: 320, speed: 0, battery: 85, accuracy: 5, source: 'osmand', data_origin: 'live' as const, cache_age_seconds: null, device_cache_stale: false }
+      const first = { ...base, id: 'stationary-first', lat: 51.9985, timestamp: '2026-08-22T10:00:00.000Z' }
+      const latest = { ...base, id: 'stationary-latest', lat: 51.99851, timestamp: '2026-08-22T10:20:00.000Z' }
+      applyTrackingSnapshot({
+        devices: [{ device_id: 'alpha', name: 'Alpha Team', status: 'online', last_seen: latest.timestamp, unique_id: null, category: 'person' }],
+        positions: [latest], breadcrumbs: [first, latest],
+      })
+    })
+    await expect(page.getByTestId('stationary-attention-summary')).toBeVisible()
+    await captureAndRegister(page, {
+      testId: 'tracking-stationary-attention-map',
+      testName: 'Stationary attention halo remains additive to the current marker',
+      area: 'tracking', severity: 'critical',
+      verificationPrompt: `Verify SAR Tracker stationary attention on the map:
+1. Alpha Team remains visibly represented by its normal current-position marker
+2. A distinct amber attention ring is visible outside that marker
+3. The normal marker remains centered, opaque, and readable rather than hidden or replaced
+4. The tracking summary clearly reports stationary attention
+5. No copy uses the word emergency
+Report PASS or FAIL for each item, then overall PASS/FAIL.`,
+      playwrightAssertions: ['stationary attention summary visible while current snapshot remains published'],
+    })
+    await page.getByTestId('open-devices-workspace').click()
+    await expect(page.getByTestId('device-attention-alpha')).toBeVisible()
+    await captureAndRegister(page, {
+      testId: 'tracking-stationary-attention-workspace',
+      testName: 'Stationary attention review and acknowledgement',
+      area: 'tracking', severity: 'critical',
+      verificationPrompt: `Verify SAR Tracker stationary attention in the Devices workspace:
+1. Alpha Team is clearly labelled with stationary attention
+2. The detail inspector explains the duration without meaningful movement
+3. An Acknowledge Attention action is visible
+4. The accepted coordinates and normal device details remain visible
+5. No copy uses the word emergency
+Report PASS or FAIL for each item, then overall PASS/FAIL.`,
+      playwrightAssertions: ['device attention label visible', 'acknowledge attention action visible'],
+    })
+  })
+
+  test('conflict and degraded evidence health stay distinct from live position truth [DON-268]', async ({ page }) => {
+    await page.evaluate(async () => {
+      const { applyIngestEvidenceHealth } = await import('/src/features/tracking/ingest-health-store.ts')
+      applyIngestEvidenceHealth({
+        state: 'critical', reason: 'outbox_storage_unavailable', pendingCount: 1,
+        corruptCount: 0, conflictCount: 1, rejectedCount: 1,
+        affectedDeviceCount: 1, conflictDeviceIds: ['alpha'],
+      })
+    })
+    await expect(page.getByTestId('ingest-evidence-health-warning')).toContainText('Current positions remain live')
+    await expect(page.getByTestId('position-conflict-warning')).toContainText('first accepted fix remains displayed')
+    await captureAndRegister(page, {
+      testId: 'tracking-degraded-evidence-conflict',
+      testName: 'Degraded evidence storage and source conflict warnings',
+      area: 'tracking', severity: 'critical',
+      verificationPrompt: `Verify SAR Tracker evidence-health warnings:
+1. A critical evidence-health warning clearly says local evidence storage is unavailable
+2. It says current positions remain live and finalization/archive export are blocked
+3. A separate source-conflict warning says the first accepted fix remains displayed
+4. Normal device and fix counters remain visible
+5. No raw source payload, coordinate, or device identifier is disclosed in the warnings
+Report PASS or FAIL for each item, then overall PASS/FAIL.`,
+      playwrightAssertions: ['evidence health warning visible', 'first accepted conflict truth visible'],
+    })
+  })
+
   test('paused mission refresh suspension is a red stale-position alert', async ({ page }) => {
     await page.getByTestId('mission-pause-resume-btn').click()
     await expect(page.getByTestId('mission-control')).toContainText('paused')

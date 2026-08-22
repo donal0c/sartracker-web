@@ -38,6 +38,23 @@ describe('tracking geojson', () => {
     expect(collection.features[0]?.properties.stale).toBe(true)
   })
 
+  it('adds derived attention presentation without changing current coordinates [DON-269]', () => {
+    const snapshot = {
+      devices: devicesFixture.map((device) => normalizeTraccarDevice(device)),
+      positions: positionsFixture.map((position) => normalizeTraccarPosition(position, 'live')),
+      breadcrumbs: [],
+    }
+    const collection = createDeviceFeatureCollection(snapshot, { deviceColors: {} }, {
+      '1': { state: 'attention', acknowledged: false },
+    })
+
+    expect(collection.features[0]?.geometry.coordinates).toEqual([
+      snapshot.positions[0]?.lon, snapshot.positions[0]?.lat,
+    ])
+    expect(collection.features[0]?.properties.attention).toBe(true)
+    expect(collection.features[0]?.properties.attentionAcknowledged).toBe(false)
+  })
+
   it('marks breadcrumb points separately from current device points for dot trails', () => {
     const collection = createTrackingFeatureCollection(
       {

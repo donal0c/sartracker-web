@@ -495,6 +495,8 @@ export const COMPARED_POSITION_KEYS = [
   'battery',
   'accuracy',
   'timestamp',
+  'timestamp_source',
+  'fix_time_unverified',
   'source',
   'data_origin',
   'cache_age_seconds',

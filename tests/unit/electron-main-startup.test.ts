@@ -110,6 +110,21 @@ describe('Electron main startup', () => {
     expect(openHandler({ url: 'https://evil.example/' })).toEqual({ action: 'deny' })
   })
 
+  it('registers sender-owned Mission Review read and cancellation channels [DON-251]', async () => {
+    const electronMock = createElectronMock(vi.fn(), undefined, true)
+    Module._load = ((request: string, parent: NodeJS.Module | null, isMain: boolean) => {
+      if (request === 'electron') return electronMock
+      return originalLoad(request, parent, isMain)
+    }) as typeof Module._load
+
+    require('../../electron/main.cjs')
+    await vi.waitFor(() => expect(electronMock.BrowserWindow).toHaveBeenCalledOnce())
+
+    const channels = electronMock.ipcMain.handle.mock.calls.map(([channel]) => channel)
+    expect(channels).toContain('sartracker:mission-store:read-mission-review')
+    expect(channels).toContain('sartracker:mission-store:cancel-mission-review-read')
+  })
+
   it('quits immediately when another Electron instance already owns the app lock', async () => {
     const electronMock = createElectronMock(vi.fn(), undefined, true)
     electronMock.app.requestSingleInstanceLock.mockReturnValue(false)

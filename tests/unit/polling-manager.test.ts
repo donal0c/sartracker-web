@@ -324,7 +324,7 @@ describe('polling manager', () => {
     poller.start()
     await vi.advanceTimersByTimeAsync(0)
 
-    vi.mocked(client.getDevices).mockRejectedValueOnce(new Error('network down'))
+    vi.mocked(client.getCurrentPositions).mockRejectedValueOnce(new Error('network down'))
 
     await vi.advanceTimersByTimeAsync(5_000)
 
@@ -342,13 +342,85 @@ describe('polling manager', () => {
     poller.stop()
   })
 
+  it('publishes current positions with last-known roster metadata when roster refresh fails [DON-267]', async () => {
+    const client = {
+      ...createClient(),
+      getDevices: vi
+        .fn()
+        .mockResolvedValueOnce(NORMALIZED_DEVICES)
+        .mockRejectedValueOnce(new Error('roster unavailable')),
+      getCurrentPositionsWithReport: vi.fn().mockResolvedValue({
+        accepted: NORMALIZED_POSITIONS,
+        rejected: [],
+      }),
+    } as TrackingPollerClient
+    const onSnapshot = vi.fn()
+    const onStatusChange = vi.fn()
+    const poller = createPollingManager(client, {
+      intervalMs: 5_000,
+      staleThresholdMs: 60 * 60 * 1000,
+      onSnapshot,
+      onStatusChange,
+      now: () => new Date('2026-04-06T10:35:00.000Z'),
+    })
+
+    poller.start()
+    await vi.advanceTimersByTimeAsync(0)
+    onSnapshot.mockClear()
+    onStatusChange.mockClear()
+
+    await vi.advanceTimersByTimeAsync(5_000)
+
+    expect(onSnapshot.mock.calls[0]?.[0].devices).toEqual(NORMALIZED_DEVICES)
+    expect(onSnapshot.mock.calls[0]?.[0].positions.map(
+      (position: NormalizedTrackingPosition) => position.id,
+    )).toEqual(NORMALIZED_POSITIONS.map((position) => position.id))
+    expect(onStatusChange.mock.calls.some((call) =>
+      /roster.*unavailable/i.test(call[0]?.warning ?? ''),
+    )).toBe(true)
+    expect(onStatusChange.mock.calls.every((call) => call[0]?.mode === 'online')).toBe(true)
+    poller.stop()
+  })
+
+  it('republishes retained current positions when a history reset is followed by a failed poll [DON-267]', async () => {
+    const client = createClient()
+    const onSnapshot = vi.fn()
+    let historyResetKey = 'mission-a'
+    const poller = createPollingManager(client, {
+      intervalMs: 30_000,
+      staleThresholdMs: 60 * 60 * 1000,
+      getHistoryResetKey: () => historyResetKey,
+      onSnapshot,
+      onStatusChange: vi.fn(),
+      now: () => new Date('2026-04-06T10:35:00.000Z'),
+    })
+
+    poller.start()
+    await vi.advanceTimersByTimeAsync(0)
+    const callsBeforeReset = onSnapshot.mock.calls.length
+
+    historyResetKey = 'mission-b'
+    vi.mocked(client.getCurrentPositions).mockRejectedValueOnce(new Error('positions unavailable'))
+    poller.requestPollNow()
+    await vi.advanceTimersByTimeAsync(0)
+
+    const resetSnapshots = onSnapshot.mock.calls.slice(callsBeforeReset)
+    expect(resetSnapshots).toHaveLength(1)
+    expect(resetSnapshots[0]?.[1]).toEqual({ historyResetKey: 'mission-b' })
+    expect(resetSnapshots[0]?.[0].positions.map(
+      (position: NormalizedTrackingPosition) => position.id,
+    )).toEqual(NORMALIZED_POSITIONS.map((position) => position.id))
+    expect(resetSnapshots[0]?.[0].breadcrumbs).toEqual([])
+    poller.stop()
+  })
+
   it('backs off after failures and reports recovery', async () => {
     const client = createClient({
-      getDevices: vi
+      getCurrentPositions: vi
         .fn()
         .mockRejectedValueOnce(new Error('offline'))
         .mockRejectedValueOnce(new Error('still offline'))
-        .mockResolvedValue(NORMALIZED_DEVICES as readonly NormalizedTrackingDevice[]),
+        .mockResolvedValue(NORMALIZED_POSITIONS as readonly NormalizedTrackingPosition[]),
     })
     const onStatusChange = vi.fn()
 
@@ -385,10 +457,10 @@ describe('polling manager', () => {
 
   it('records a sanitized failed poll and its recovery in the tracking ledger [DON-229]', async () => {
     const client = createClient({
-      getDevices: vi
+      getCurrentPositions: vi
         .fn()
         .mockRejectedValueOnce(new DOMException('request aborted', 'AbortError'))
-        .mockResolvedValue(NORMALIZED_DEVICES as readonly NormalizedTrackingDevice[]),
+        .mockResolvedValue(NORMALIZED_POSITIONS as readonly NormalizedTrackingPosition[]),
     })
     const onPollDiagnostic = vi.fn()
     const times = [
@@ -416,7 +488,7 @@ describe('polling manager', () => {
       expect.objectContaining({
         kind: 'poll_cycle',
         outcome: 'failure',
-        phase: 'devices',
+        phase: 'current_positions',
         failureKind: 'timeout',
         consecutiveFailures: 1,
         retryDelayMs: 1_000,
@@ -1972,10 +2044,10 @@ describe('polling manager', () => {
     const authenticationError = new Error('Session expired')
     authenticationError.name = 'TraccarAuthenticationError'
     const client = createClient({
-      getDevices: vi
+      getCurrentPositions: vi
         .fn()
         .mockRejectedValueOnce(authenticationError)
-        .mockResolvedValue(NORMALIZED_DEVICES as readonly NormalizedTrackingDevice[]),
+        .mockResolvedValue(NORMALIZED_POSITIONS as readonly NormalizedTrackingPosition[]),
       getBreadcrumbs: vi.fn().mockResolvedValue([]),
     })
     const onStatusChange = vi.fn()
@@ -2248,7 +2320,7 @@ describe('polling manager', () => {
 
   it('clamps the retry delay to maxBackoffMs once the unbounded value would exceed it', async () => {
     const client = createClient({
-      getDevices: vi.fn().mockRejectedValue(new Error('offline')),
+      getCurrentPositions: vi.fn().mockRejectedValue(new Error('offline')),
     })
     const setTimeoutSpy = vi.fn(window.setTimeout.bind(window)) as unknown as typeof window.setTimeout
     const onStatusChange = vi.fn()

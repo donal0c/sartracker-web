@@ -26,6 +26,7 @@ import { recordDiagnosticEvent } from '../diagnostics/diagnostic-event-log'
 import { recordTrackingPollLedgerEntry } from '../diagnostics/tracking-poll-ledger'
 import { startExactBreadcrumbDotRuntime } from '../tracking/start-exact-breadcrumb-dot-runtime'
 import { useExactBreadcrumbDotStore } from '../tracking/exact-breadcrumb-dot-store'
+import { applyCurrentPositionRejections } from '../tracking/ingest-health-store'
 
 const BROWSER_HARNESS_MAX_PERSISTED_TRACKING_POSITIONS = 2_000
 const LEAFLET_FALLBACK_SEED_MISSION_NAME = 'DON-27 Leaflet fallback surface'
@@ -140,6 +141,7 @@ export async function startMissionBrowserHarness(): Promise<void> {
             return mission === null ? null : new Date(mission.start_time)
           },
           ...hooks,
+          onCurrentPositionRejections: applyCurrentPositionRejections,
         }),
       cache: electronRuntime
         ? createElectronTrackingCache()

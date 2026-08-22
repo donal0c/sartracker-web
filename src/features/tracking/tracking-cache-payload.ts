@@ -188,6 +188,7 @@ function normalizeCachedPosition(
       battery: readOptionalFiniteNumber(entry.battery, 'Cached tracking battery'),
       accuracy: readOptionalFiniteNumber(entry.accuracy, 'Cached tracking accuracy'),
       timestamp,
+      ...readTimestampProvenance(entry),
       source: readOptionalString(entry.source, 'Cached tracking source'),
       data_origin: 'cache',
       cache_age_seconds: readOptionalFiniteNumber(
@@ -202,6 +203,31 @@ function normalizeCachedPosition(
   }
 
   return normalizeTraccarPosition(entry, 'cache')
+}
+
+function readTimestampProvenance(
+  entry: Record<string, unknown>,
+): Pick<NormalizedTrackingPosition, 'timestamp_source' | 'fix_time_unverified'> {
+  if (entry.timestamp_source == null) {
+    return {}
+  }
+  if (
+    entry.timestamp_source !== 'fix' &&
+    entry.timestamp_source !== 'device' &&
+    entry.timestamp_source !== 'server'
+  ) {
+    throw new Error('Cached tracking timestamp provenance is invalid.')
+  }
+
+  return {
+    timestamp_source: entry.timestamp_source,
+    fix_time_unverified:
+      entry.timestamp_source === 'server' ||
+      readOptionalBoolean(
+        entry.fix_time_unverified,
+        'Cached tracking unverified-fix-time flag',
+      ) === true,
+  }
 }
 
 function readRequiredString(value: unknown, label: string): string {

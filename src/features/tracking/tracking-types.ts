@@ -2,6 +2,8 @@ export type TrackingDeviceStatus = 'online' | 'offline' | 'unknown'
 
 export type TrackingDataOrigin = 'live' | 'cache'
 
+export type TrackingTimestampSource = 'fix' | 'device' | 'server'
+
 export type NormalizedTrackingDevice = {
   readonly device_id: string
   readonly name: string
@@ -22,6 +24,10 @@ export type NormalizedTrackingPosition = {
   readonly battery: number | null
   readonly accuracy: number | null
   readonly timestamp: string
+  /** The upstream clock that supplied {@link timestamp}; absent only on legacy cache rows. */
+  readonly timestamp_source?: TrackingTimestampSource
+  /** True when server receipt time is the only available timestamp for the fix. */
+  readonly fix_time_unverified?: boolean
   readonly source: string | null
   readonly data_origin: TrackingDataOrigin
   readonly cache_age_seconds: number | null

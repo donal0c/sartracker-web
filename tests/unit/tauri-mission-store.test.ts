@@ -246,4 +246,37 @@ describe('tauri mission store adapter', () => {
       },
     })
   })
+
+  it('combines bounded audit and exact count for the Review boundary', async () => {
+    const { createTauriMissionStore } = await import('../../src/infrastructure/mission-store/tauri-mission-store')
+    invokeMock.mockImplementation(async (command: string) => {
+      if (command === 'list_audit_events') {
+        return [{ id: 'event-1', event_type: 'mission_created' }]
+      }
+      if (command === 'list_positions') {
+        return [{ id: 'position-1' }, { id: 'position-2' }]
+      }
+      throw new Error(`Unexpected command: ${command}`)
+    })
+    const store = createTauriMissionStore()
+
+    await expect(store.readMissionReview({
+      missionId: 'mission-1',
+      includeTelemetry: false,
+      auditLimit: 501,
+    })).resolves.toEqual({
+      auditEvents: [{ id: 'event-1', event_type: 'mission_created' }],
+      breadcrumbCount: 2,
+    })
+
+    expect(invokeMock).toHaveBeenCalledWith('list_audit_events', {
+      missionId: 'mission-1',
+      includeTelemetry: false,
+      limit: 501,
+    })
+    expect(invokeMock).toHaveBeenCalledWith('list_positions', {
+      missionId: 'mission-1',
+      deviceId: undefined,
+    })
+  })
 })

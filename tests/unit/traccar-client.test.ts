@@ -242,6 +242,56 @@ describe('traccar client', () => {
     )
   })
 
+  it('returns structured per-device rejections without withholding valid current fixes [DON-267]', async () => {
+    const logger = { warn: vi.fn() }
+    const fetchFn: TraccarFetch = vi.fn(async () =>
+      createJsonResponse([
+        positionsFixture[0],
+        {
+          ...positionsFixture[1],
+          latitude: 200,
+        },
+        {
+          ...positionsFixture[1],
+          id: 9_999,
+          deviceId: null,
+        },
+      ]),
+    )
+    const client = createTraccarClient(
+      { baseUrl: 'http://test:8082', logger },
+      fetchFn,
+    )
+
+    await expect(client.getCurrentPositionsWithReport()).resolves.toEqual({
+      accepted: [expect.objectContaining({ device_id: '1' })],
+      rejected: [
+        expect.objectContaining({
+          deviceId: '2',
+          reason: 'invalid_coordinates',
+          rowIndex: 1,
+          anomalyKey: expect.stringMatching(/^source:/u),
+          sourcePositionId: expect.any(String),
+          canonicalEvidence: expect.objectContaining({
+            device_id: '2',
+            latitude: 200,
+          }),
+        }),
+        expect.objectContaining({
+          deviceId: null,
+          reason: 'invalid_identity',
+          rowIndex: 2,
+          anomalyKey: 'source:9999',
+          sourcePositionId: '9999',
+          canonicalEvidence: expect.objectContaining({
+            source_position_id: '9999',
+            device_id: null,
+          }),
+        }),
+      ],
+    })
+  })
+
   it('fails current positions explicitly when every returned row is malformed [DON-206]', async () => {
     const logger = { warn: vi.fn() }
     const fetchFn: TraccarFetch = vi.fn(async () =>

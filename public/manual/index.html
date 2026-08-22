@@ -846,6 +846,63 @@
             A live fix older than five minutes is also marked stale. In all three cases, treat displayed
             positions as potentially stale until a newer live fix arrives.
           </div>
+          <div class="warning">
+            <strong>Current-position data warnings:</strong> SAR Tracker keeps valid current fixes visible
+            when another row from the same provider response is rejected. An amber warning reports the
+            rejected position data, and the affected device is marked in the Devices workspace. If the
+            device roster cannot refresh, current fixes continue with the last-known device details and
+            an explicit roster warning. A position that has only a provider server timestamp is accepted
+            as <strong>FIX TIME UNVERIFIED</strong>, marked stale, and is never presented as a fresh device
+            fix. These amber warnings require investigation, but they are distinct from the red offline
+            state: valid current fixes remain available while the provider connection is otherwise online.
+          </div>
+          <figure class="screenshot">
+            <img src="assets/tracking-current-position-ingest-warning.png" alt="Online tracking panel showing separate amber roster, rejected-position, and unverified-fix-time warnings" />
+            <figcaption>Current fixes stay available while separate amber warnings identify roster, rejected-row, and timestamp-provenance concerns.</figcaption>
+          </figure>
+          <div class="warning">
+            <strong>Immutable source evidence and conflicts:</strong> an accepted Traccar fix is an
+            immutable source record and cannot be edited or deleted by an operator. Repeated delivery
+            of the same source identity and content is ignored as a duplicate. If the provider returns
+            the same source identity with different content, SAR Tracker keeps the first accepted fix
+            as the displayed truth, retains the conflicting canonical observation in the mission
+            evidence ledger, and shows a separate conflict warning. A malformed provider row is not a
+            breadcrumb; its bounded identity, rejection class, and explanation are retained once.
+          </div>
+          <div class="warning">
+            <strong>Evidence health:</strong> if unique rejection evidence cannot reach the mission
+            ledger, current positions continue to publish first. A persistent, non-dismissible warning
+            names the storage failure and states that the anomaly evidence is not fully saved.
+            Finalization and archive export remain blocked until the durable outbox is replayed or the
+            storage fault is repaired. If local storage is unavailable, do not claim the evidence was
+            saved; record the warning and preserve the live operational picture.
+          </div>
+          <figure class="screenshot">
+            <img src="assets/tracking-degraded-evidence-conflict.png" alt="Tracking panel showing separate critical evidence-health and amber source-conflict warnings while current fixes remain live" />
+            <figcaption>Evidence persistence failure and a source conflict are shown separately; the current-position path remains visible and the first accepted fix remains displayed.</figcaption>
+          </figure>
+          <h3>Stationary Attention</h3>
+          <p>
+            SAR Tracker derives stationary attention from accepted position evidence. By default, two
+            accepted fixes at least 20 minutes apart trigger attention when their accuracy-aware
+            displacement is below the configured movement floor. Missing accuracy uses that floor;
+            one gross intermediate outlier does not erase a qualifying endpoint pair. Meaningful
+            movement clears attention. Sparse evidence is treated as insufficient data rather than a
+            stationary claim.
+          </p>
+          <div class="note">
+            <strong>Attention is not an emergency declaration.</strong> The amber ring is additive: the
+            normal current-position marker stays visible and unchanged. Acknowledgement dims the
+            presentation only; it does not edit evidence or erase the underlying stationary state.
+          </div>
+          <figure class="screenshot">
+            <img src="assets/tracking-stationary-attention-map.png" alt="Map showing an amber stationary-attention ring outside an unchanged current-position marker" />
+            <figcaption>An additive amber ring draws attention while the normal Alpha Team marker remains visible at the accepted fix.</figcaption>
+          </figure>
+          <figure class="screenshot">
+            <img src="assets/tracking-stationary-attention-workspace.png" alt="Devices workspace showing stationary attention duration and an acknowledge-attention action" />
+            <figcaption>The Devices workspace shows elapsed time and acknowledgement without changing the accepted fix or coordinates.</figcaption>
+          </figure>
           <h3>Devices Workspace</h3>
           <p>
             Press <strong>Open Devices</strong> from the Tracking tab to inspect the roster. The workspace
@@ -861,9 +918,12 @@
             <strong>Close</strong> or <strong>Esc</strong> to remove it immediately and return to the
             operational map. Each row still shows device health, last seen time, source, current-location
             visibility, speed in <strong>km/h</strong> when Traccar reports speed, and a <strong>Zoom</strong> action for devices with a valid fix. The selected-device inspector separately shows the
-            authoritative <strong>Fix Time</strong> and <strong>GPS Accuracy</strong> in metres when
+            authoritative <strong>Fix Time</strong>, timestamp source, position-data rejection detail, and
+            <strong>GPS Accuracy</strong> in metres when
             Traccar supplies it; accuracy is the source measurement, not a claim that the hardware has
-            zero physical error. Click the trail
+            zero physical error. A device needing stationary attention shows the elapsed time and an
+            <strong>Acknowledge Attention</strong> action. Acknowledgement changes presentation only;
+            meaningful movement clears the condition. Click the trail
             colour swatch on a device row to open a palette of high-contrast SAR colours for that device's
             current-location dot and breadcrumb trail.
             The list tabs and search field work together: choosing <strong>Active</strong>,
@@ -887,7 +947,10 @@
             <strong>Later</strong> to move through the remaining exact pages. Dot pages never substitute
             representatives or samples, and closely spaced fixes are not silently removed. If exact dot
             history is unavailable, SAR Tracker shows no representative fallback and displays an explicit
-            unavailable warning. Breadcrumb dots are source fixes, not interpolated points:
+            unavailable warning. These pages are the source-exact inspection contract: saved exact
+            breadcrumb evidence must preserve the same fix identities, timestamps, and coordinates. This
+            version does not add a separate breadcrumb-export button. Breadcrumb dots are source fixes,
+            not interpolated points:
             at the same provider reporting interval a fast-moving vehicle naturally travels farther between
             fixes than a slow team. SAR Tracker must not enlarge that source gap by silently dropping additional
             moving fixes.
@@ -908,6 +971,7 @@
             <li>Enter the email/password or bearer token.</li>
             <li>Use <strong>Test Connection</strong> before saving for live use; it authenticates against the configured Traccar server and checks device access.</li>
             <li>Use <strong>Save, Connect &amp; Close</strong> to reload tracking immediately and return to the map.</li>
+            <li>Review the stationary-attention window and movement floor in Mission Defaults. The 20-minute, 15-metre, accuracy-aware values are named engineering hypotheses and should be changed only deliberately.</li>
           </ol>
           <div class="note">
             Secrets are intentionally kept out of mission SQLite and browser storage. If a stored secret
@@ -1166,6 +1230,12 @@
             operating the incident. A note at the top of the panel confirms it is read-only. Close Review or
             press <strong>Esc</strong> to return the map to full width. When there is no active mission,
             Review opens full-screen with the mission selector for cross-mission audit.
+          </p>
+          <p>
+            Mission Review reads the selected mission only after the workspace is opened. While a large
+            audit history is loading, the map, current positions, and mission controls remain available;
+            Review shows its loading state and then displays the exact breadcrumb count and bounded newest
+            audit page. Closing Review does not change mission evidence or current-position truth.
           </p>
           <p>
             The Audit Log shows operator-meaningful events by default — mission lifecycle changes, marker

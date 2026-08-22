@@ -12,10 +12,10 @@ type MissionReviewStoreBoundary = Pick<
   MissionStore,
   | 'info'
   | 'listMissions'
-  | 'listAuditEvents'
+  | 'readMissionReview'
+  | 'cancelMissionReviewRead'
   | 'listMarkers'
   | 'listDevices'
-  | 'countPositions'
   | 'listDrawings'
   | 'listHelicopters'
   | 'listGpxImports'
@@ -64,6 +64,8 @@ export async function startMissionReviewRuntime(
 ): Promise<MissionReviewController> {
   let state: MissionReviewRuntimeState = EMPTY_RUNTIME
   let refreshToken = 0
+  let requestSequence = 0
+  let activeReviewRequestId: string | null = null
 
   publishRuntime()
 
@@ -88,6 +90,8 @@ export async function startMissionReviewRuntime(
     preserveSnapshot: boolean,
   ): Promise<void> {
     const currentToken = ++refreshToken
+    let startedReviewRequestId: string | null = null
+    cancelActiveReviewRead()
     state = {
       ...state,
       loading: !preserveSnapshot || state.snapshot === null,
@@ -98,10 +102,12 @@ export async function startMissionReviewRuntime(
 
     try {
       const missions = await dependencies.missionStore.listMissions()
+      if (currentToken !== refreshToken) return
       const selectedMission =
         selectMissionFromList(missions, preferredMissionId ?? state.selectedMissionId) ?? null
 
       if (selectedMission === null) {
+        if (currentToken !== refreshToken) return
         state = {
           ...state,
           missions,
@@ -112,22 +118,25 @@ export async function startMissionReviewRuntime(
           error: null,
           auditLogTruncated: false,
         }
-        publishIfCurrent(currentToken)
+        publishRuntime()
         return
       }
 
       // Request one extra event so a full page signals there is more history than shown.
       const auditEventLimit = DEFAULT_AUDIT_EVENT_LIMIT
-      const [auditEvents, info, markers, devices, breadcrumbCount, drawings, helicopters, gpxImports, layerMetadata] =
+      const reviewRequestId = `mission-review-${++requestSequence}`
+      startedReviewRequestId = reviewRequestId
+      activeReviewRequestId = reviewRequestId
+      const [reviewRead, info, markers, devices, drawings, helicopters, gpxImports, layerMetadata] =
         await Promise.all([
-          dependencies.missionStore.listAuditEvents(selectedMission.id, {
+          dependencies.missionStore.readMissionReview({
+            missionId: selectedMission.id,
             includeTelemetry: state.includeTelemetry,
-            limit: auditEventLimit + 1,
-          }),
+            auditLimit: auditEventLimit + 1,
+          }, reviewRequestId),
           dependencies.missionStore.info(),
           dependencies.missionStore.listMarkers(selectedMission.id),
           dependencies.missionStore.listDevices(selectedMission.id),
-          dependencies.missionStore.countPositions(selectedMission.id),
           dependencies.missionStore.listDrawings(selectedMission.id),
           'listHelicopters' in dependencies.missionStore
             ? dependencies.missionStore.listHelicopters(selectedMission.id)
@@ -135,11 +144,15 @@ export async function startMissionReviewRuntime(
           dependencies.missionStore.listGpxImports(selectedMission.id),
           dependencies.layerCatalogStore.listMetadata(selectedMission.id),
         ])
+      if (activeReviewRequestId === reviewRequestId) {
+        activeReviewRequestId = null
+      }
+      if (currentToken !== refreshToken) return
 
-      const auditLogTruncated = auditEvents.length > auditEventLimit
+      const auditLogTruncated = reviewRead.auditEvents.length > auditEventLimit
       // Stores return audit events newest-first and capped; the snapshot model expects
       // chronological order, so trim to the page size and reverse to ascending.
-      const events = auditEvents.slice(0, auditEventLimit).slice().reverse()
+      const events = reviewRead.auditEvents.slice(0, auditEventLimit).slice().reverse()
 
       state = {
         ...state,
@@ -151,7 +164,7 @@ export async function startMissionReviewRuntime(
           events,
           markers,
           devices,
-          breadcrumbCount,
+          breadcrumbCount: reviewRead.breadcrumbCount,
           drawings,
           helicopters,
           gpxImports,
@@ -162,24 +175,30 @@ export async function startMissionReviewRuntime(
         error: null,
         auditLogTruncated,
       }
-      publishIfCurrent(currentToken)
+      publishRuntime()
     } catch (error) {
+      cancelReviewReadIfActive(startedReviewRequestId)
+      if (currentToken !== refreshToken) return
       state = {
         ...state,
         loading: false,
         refreshing: false,
         error: toErrorMessage(error),
       }
-      publishIfCurrent(currentToken)
+      publishRuntime()
     }
   }
 
-  function publishIfCurrent(token: number): void {
-    if (token !== refreshToken) {
-      return
-    }
+  function cancelActiveReviewRead(): void {
+    cancelReviewReadIfActive(activeReviewRequestId)
+  }
 
-    publishRuntime()
+  function cancelReviewReadIfActive(requestId: string | null): void {
+    if (requestId === null || activeReviewRequestId !== requestId) return
+    activeReviewRequestId = null
+    void dependencies.missionStore.cancelMissionReviewRead?.(requestId).catch(
+      () => undefined,
+    )
   }
 
   function publishRuntime(): void {

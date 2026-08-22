@@ -3,6 +3,7 @@ import type {
   NormalizedTrackingPosition,
   TrackingDataOrigin,
   TrackingDeviceStatus,
+  TrackingTimestampSource,
 } from './tracking-types'
 import { normalizeTrackingIsoTimestamp } from './tracking-timestamp'
 
@@ -67,7 +68,7 @@ export function normalizeTraccarPosition(
 
   const id = String(asPositiveInteger(raw.id, 'Traccar position id'))
   const deviceId = String(asPositiveInteger(raw.deviceId, 'Traccar position deviceId'))
-  const timestamp = resolveTimestamp(raw)
+  const timestampResolution = resolveTimestamp(raw)
   const attributes = asRecord(raw.attributes)
   const battery = readOptionalBattery(attributes)
   const valid = normalizeValidity(raw.valid)
@@ -85,7 +86,9 @@ export function normalizeTraccarPosition(
     speed: normalizeApiSpeedKmh(raw.speed),
     battery,
     accuracy: asOptionalNumber(raw.accuracy),
-    timestamp,
+    timestamp: timestampResolution.timestamp,
+    timestamp_source: timestampResolution.source,
+    fix_time_unverified: timestampResolution.source === 'server',
     source: asOptionalString(raw.protocol),
     data_origin: dataOrigin,
     cache_age_seconds: null,
@@ -93,17 +96,29 @@ export function normalizeTraccarPosition(
   }
 }
 
-function resolveTimestamp(raw: RawTraccarPosition): string {
+function resolveTimestamp(raw: RawTraccarPosition): {
+  readonly timestamp: string
+  readonly source: TrackingTimestampSource
+} {
   if (raw.fixTime != null) {
-    return asIsoTimestamp(raw.fixTime, 'position fixTime')
+    return {
+      timestamp: asIsoTimestamp(raw.fixTime, 'position fixTime'),
+      source: 'fix',
+    }
   }
 
   if (raw.deviceTime != null) {
-    return asIsoTimestamp(raw.deviceTime, 'position deviceTime')
+    return {
+      timestamp: asIsoTimestamp(raw.deviceTime, 'position deviceTime'),
+      source: 'device',
+    }
   }
 
   if (raw.serverTime != null) {
-    return asIsoTimestamp(raw.serverTime, 'position serverTime')
+    return {
+      timestamp: asIsoTimestamp(raw.serverTime, 'position serverTime'),
+      source: 'server',
+    }
   }
 
   throw new Error('Traccar position must provide fixTime, deviceTime, or serverTime.')

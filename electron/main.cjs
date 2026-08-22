@@ -19,6 +19,9 @@ const {
   registerBreadcrumbQueryIpcHandlers,
   registerExactBreadcrumbDotQueryIpcHandlers,
 } = require('./breadcrumb-query-ipc.cjs')
+const {
+  registerMissionReviewReadQueryIpcHandlers,
+} = require('./mission-review-read-query-ipc.cjs')
 const { createElectronFileSystem } = require('./file-system.cjs')
 const { createElectronOfficialMapProxy } = require('./official-map-proxy.cjs')
 const { createRuntimeLog } = require('./runtime-log.cjs')
@@ -74,6 +77,11 @@ const MISSION_STORE_CHANNELS = {
   latestPositions: 'sartracker:mission-store:latest-positions',
   listMissionEvents: 'sartracker:mission-store:list-mission-events',
   listAuditEvents: 'sartracker:mission-store:list-audit-events',
+  readMissionReview: 'sartracker:mission-store:read-mission-review',
+  cancelMissionReviewRead: 'sartracker:mission-store:cancel-mission-review-read',
+  listIngestAnomalies: 'sartracker:mission-store:list-ingest-anomalies',
+  recordIngestRejections: 'sartracker:mission-store:record-ingest-rejections',
+  getIngestEvidenceHealth: 'sartracker:mission-store:get-ingest-evidence-health',
   upsertMarker: 'sartracker:mission-store:upsert-marker',
   getMarker: 'sartracker:mission-store:get-marker',
   listMarkers: 'sartracker:mission-store:list-markers',
@@ -584,11 +592,20 @@ function registerMissionStoreHandlers(missionStore) {
     missionStore,
     validateIpcSender,
   })
+  registerMissionReviewReadQueryIpcHandlers({
+    ipcMain,
+    readChannel: MISSION_STORE_CHANNELS.readMissionReview,
+    cancelChannel: MISSION_STORE_CHANNELS.cancelMissionReviewRead,
+    missionStore,
+    validateIpcSender,
+  })
   const breadcrumbQueryMethods = new Set([
     'listBreadcrumbPositions',
     'cancelBreadcrumbQuery',
     'listExactBreadcrumbDotPage',
     'cancelExactBreadcrumbDotQuery',
+    'readMissionReview',
+    'cancelMissionReviewRead',
   ])
   for (const [methodName, channel] of Object.entries(MISSION_STORE_CHANNELS)) {
     if (breadcrumbQueryMethods.has(methodName)) {

@@ -64,8 +64,35 @@ describe('traccar normalization', () => {
     )
 
     expect(position.timestamp).toBe('2026-04-06T10:29:59.000Z')
+    expect(position.timestamp_source).toBe('device')
     expect(position.data_origin).toBe('cache')
   })
+
+  it.each([
+    ['fix', { fixTime: '2026-04-06T10:30:00.000Z' }],
+    ['device', { fixTime: undefined, deviceTime: '2026-04-06T10:29:59.000Z' }],
+    [
+      'server',
+      {
+        fixTime: undefined,
+        deviceTime: undefined,
+        serverTime: '2026-04-06T10:30:01.000Z',
+      },
+    ],
+  ] as const)(
+    'retains %s timestamp provenance [DON-267]',
+    (expectedSource, timestampFields) => {
+      const position = normalizeTraccarPosition(
+        {
+          ...positionsFixture[0],
+          ...timestampFields,
+        },
+        'live',
+      )
+
+      expect(position.timestamp_source).toBe(expectedSource)
+    },
+  )
 
   it('rejects malformed payloads instead of silently accepting them', () => {
     expect(() =>

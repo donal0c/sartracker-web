@@ -154,6 +154,32 @@ export function SettingsWorkspace({ open, onClose }: SettingsWorkspaceProps) {
                       }))
                     }
                   />
+                  <NumberField
+                    label="Stationary attention window (minutes)"
+                    testId="settings-stationary-heartbeat"
+                    value={String(draft.missionDefaults.stationaryAttentionHeartbeatMinutes ?? 20)}
+                    error={validationErrors.stationaryAttentionHeartbeatMinutes}
+                    onChange={(value) => updateDraft(setDraft, (current) => ({
+                      ...current,
+                      missionDefaults: { ...current.missionDefaults, stationaryAttentionHeartbeatMinutes: parseInteger(value, current.missionDefaults.stationaryAttentionHeartbeatMinutes ?? 20) },
+                    }))}
+                  />
+                  <NumberField
+                    label="Stationary movement floor (metres)"
+                    testId="settings-stationary-movement-floor"
+                    value={String(draft.missionDefaults.stationaryAttentionMovementFloorM ?? 15)}
+                    error={validationErrors.stationaryAttentionMovementFloorM}
+                    onChange={(value) => updateDraft(setDraft, (current) => ({
+                      ...current,
+                      missionDefaults: { ...current.missionDefaults, stationaryAttentionMovementFloorM: parseInteger(value, current.missionDefaults.stationaryAttentionMovementFloorM ?? 15) },
+                    }))}
+                  />
+                  <p
+                    className="md:col-span-2 text-xs leading-relaxed text-stone-300"
+                    data-testid="settings-stationary-attention-note"
+                  >
+                    Stationary attention is accuracy-aware derived guidance. It does not alter or hide the accepted tracker fix.
+                  </p>
                   <ToggleField
                     checked={draft.missionDefaults.autoSaveEnabled}
                     label="Auto-save enabled"

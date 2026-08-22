@@ -120,15 +120,41 @@ ship or ask testers for whole Electron profile zips.
 
 ## Current Priority
 
-1. Implement `DON-264`, the non-blocking bounded diagnostic/map-health elevation for persistent overlay synchronization failures. Beta.12.5 was fully qualified and published under `DON-261`, `DON-262`, and `DON-263`.
-2. Continue the **Mission Store Reliability programme** under `DON-241`. Beta.12 is the narrow field-freeze/observability release (`DON-242` through `DON-247`); beta.13 owns bounded-storage architecture, migration, retention, streamed mission-scoped archives, and archive-backed review (`DON-248` through `DON-255`).
-3. Keep hosted browser testing smooth enough for the team to give real feedback.
-4. Fix the 2026-05-16 team feedback items that affect map trust before returning to broader foundation work.
-5. Burn down shared foundation issues that make startup, mission control, tracking, layers, or map behavior ambiguous.
-6. Keep the repeatable Electron beta release path healthy and use it for team desktop retest builds.
-7. Avoid heavy browser hardening unless testing proves browser operational deployment is genuinely needed.
-8. Treat licensed Irish/OSI map sources as local/customer-provided assets unless the map provider gives requirements that change this.
-9. Continue the official map lane through the team-ready Electron import workflow: `DON-7` is now the active offline-map parent for `DON-109` through `DON-115`, while `DON-76` remains the broader official-provider parent and overlay lane.
+1. Execute the **Breadcrumb and Mission-History Programme** under the locked ADR and `docs/breadcrumb-programme-execution-policy.md`. The active branch is `codex/breadcrumb-pr1-ingest-safety`; PR-1 begins with the BCP-10 source-exact Dots preservation contract before current-position, anomaly-ledger, and stationary-attention changes.
+2. Preserve `DON-247` and `DON-264` as independent reliability work. Neither is silently absorbed into the breadcrumb programme; `DON-264` remains a non-blocking P3 and is re-tested if a programme PR touches overlay synchronization.
+3. Continue the remaining **Mission Store Reliability programme** work under `DON-241` where it is not superseded by the breadcrumb programme's archive and qualification stages.
+4. Keep hosted browser testing smooth enough for the team to give real feedback.
+5. Fix the 2026-05-16 team feedback items that affect map trust before returning to broader foundation work.
+6. Burn down shared foundation issues that make startup, mission control, tracking, layers, or map behavior ambiguous.
+7. Keep the repeatable Electron beta release path healthy and use it for the single final team release.
+8. Avoid heavy browser hardening unless testing proves browser operational deployment is genuinely needed.
+9. Treat licensed Irish/OSI map sources as local/customer-provided assets unless the map provider gives requirements that change this.
+10. Continue the official map lane through the team-ready Electron import workflow: `DON-7` is now the active offline-map parent for `DON-109` through `DON-115`, while `DON-76` remains the broader official-provider parent and overlay lane.
+
+### Breadcrumb And Mission-History Programme
+
+The locked domain model is in
+`docs/breadcrumb-mission-history-architecture-decision.md`. The execution,
+complexity, model, review, branch, checkpoint, and qualification policy is in
+`docs/breadcrumb-programme-execution-policy.md`.
+
+Execution order is five substantial PRs: trustworthy ingest/live safety;
+mission model; complete coverage; mission evidence/replay; archive lifecycle.
+BCP-17 then qualifies one final team-facing release. BCP work units are the
+JIT-design and TDD boundaries inside those PRs, not separate release trains.
+
+Current work: PR-1 on `codex/breadcrumb-pr1-ingest-safety`, internally ordered
+BCP-10 → BCP-01 → BCP-02 → BCP-05. Linear parent `DON-265` owns the programme;
+its children map the BCP work units through final qualification and release.
+Fable's accepted integrated design is
+`tmp/agent-mail/fable-breadcrumb-pr1-design-20260822.md`. BCP-10 now has the
+named `npm run test:contract:dots` tripwire: a 20,006-fix, three-page real
+SQLite/controller/GeoJSON chain plus eight deterministic injected faults.
+The coordination loop is locked in
+`docs/breadcrumb-programme-coordination-workflow.md`. One authorized Sol-high
+implementation task owns the complete PR; BCP units are internal design/TDD
+checkpoints, not separate implementation tasks. BCP-10/01/02/05 are now
+integrated locally. Keep `DON-266`–`DON-269` open until PR-1 merges.
 
 ## Next Task Order
 
@@ -137,6 +163,7 @@ This is the default order when the user says “work on the next task.”
 | Order | Chunk | Track | Linear issue | Status |
 | --- | --- | --- | --- | --- |
 | Done | Release the Tracking stability, interaction, and basemap-independent overlay hotfix | S2 Electron / Shared Tracking / Map / Verification | `DON-261` / `DON-262` / `DON-263` | Beta.12.5 exact commit `042d77ad6158`; clean no-skip verification 8/8; tag CI `30497318233` green; exact CI AppImage and real installed `.deb` passed lifecycle, safety, live-Traccar, 13-poll empty-history stability, pending/degraded basemap overlay, and deterministic five-/fourteen-day soak gates. Independent reviews returned `RELEASE` with no P1/P2. Guarded publication succeeded; fresh public hashes matched and the public AppImage passed Ubuntu lifecycle/recovery/finalize/archive. |
+| Review-ready | PR-1: trustworthy ingest and live safety | Shared Tracking / S2 Electron / Evidence | `DON-266` / `DON-267` / `DON-268` / `DON-269` | [PR #1](https://github.com/donal0c/sartracker-web/pull/1) contains BCP-10/01/02/05 and the narrow `DON-251` Review-worker isolation. Exact code head `0cf1c27` passed lint/build, unit `1,650`, backend, Chromium `146`, touched visual/review, packaging, the recovered 3.704 GB v7→v8 digest/integrity and `<200 ms` startup/Review gate, live current-fix publication during Review, and the `8,664`-position CI soak. The cold audit worker remains about `7.5 s`; indexing/retention stays open in `DON-251`. Donal coordinates reviews; keep programme issues open until merge and do not release from this PR. |
 | Todo (non-blocking) | Surface persistent overlay synchronization failures in diagnostics and map health | S2 Electron / Shared Map / Diagnostics | `DON-264` | DON-263 retries transient and persistent sync exceptions indefinitely with a 2 s cap, but repeated failures are currently developer-console-only. Add bounded, sanitized, durable warning elevation and success-based clearing after the beta.12.5 hotfix; this P3 does not block the release. |
 | Done | Make Breadcrumb Dots source-exact and independently release-gated | S2 Electron / Shared Tracking / Verification | `DON-260` | Published beta.12.11 at exact tag `bced8052b85c` after green CI run `31482052296`, full AppImage and genuinely installed `.deb` package matrices, synthetic 279,936/1,935,384-fix exact-page proofs, target-only live-provider equality, diagnostics privacy, and unchanged performance/RSS gates. The guarded publisher and a second public download revalidated both installer hashes and `SHA256SUMS`; the fresh public AppImage independently passed settings persistence, same-mission recovery, finalization, and archive creation. Dots is source-exact and paged; Line alone remains simplified. Beta.12.9/.12.10 are not the correction. |
 | Done | Build deterministic field-scale mission-store fixtures | S2 Electron / Verification | `DON-242` | Small/CI/local/field plus 5-day and 14-day continuous-mission presets; Ubuntu field fixture is 3.704 GB with measured table accounting and restart checkpoints. |
@@ -146,14 +173,14 @@ This is the default order when the user says “work on the next task.”
 | Done locally | Change-gate tracking audit writes and remove position event echoes | S2 Electron / Tracking | `DON-245` | Packaged 2,000-poll proof: 64,000 device row upserts, 16,000 positions, 32 creates, one real update, zero heartbeat/position echoes. |
 | Done locally | Add accelerated packaged tracking soak and growth-budget gate | S2 Electron / Verification | `DON-246` | Packaged CI/5-day/14-day profiles pass after the gate found and fixed unbounded restart hydration; exact position/growth, restart, responsiveness, memory, backup, WAL, log, support, and privacy evidence is machine-readable. |
 | Active | Qualify beta.12 CI artifact on Ubuntu and original field machine | S2 Electron / Release | `DON-247` | Exact artifact `fb6c4922…` passed the full Ubuntu matrix, was published as an internal prerelease, then was downloaded afresh from the release URL and passed the post-publication Ubuntu smoke. The 2026-07-20 field split is explicit: PCLinuxOS AppImage stayed responsive at 218 hours, while a Mint `.deb` stopped accepting application actions around 182 hours even though the in-app clock continued. The packaged soak now classifies the complete Devices interaction boundary: centre hit test/covering element, trusted browser click delivery, React workspace state, timed renderer-to-main IPC, and close path. The refreshed packaged CI profile passed 4/4 `healthy` classifications, 8,664 exact positions, restart, backup, main/renderer responsiveness, and zero redundant telemetry; full `beta:verify --no-smoke` passed lint, build, `165 files / 1159 tests`, backend `47 / 1 ignored`, Chromium `132/132`, package, and packaged soak. Packaged Linux builds include an external report-only hang collector for bounded `/proc`/thread waits, PID-scoped journal, GPU/session facts, sanitized logs/storage diagnostics, optional operator-requested screenshot, and no database/credential/process-environment content. Runbook: `docs/releases/beta12-mint-hang-capture-runbook.md`. Original Mint identical-profile AppImage-vs-`.deb` execution and collector evidence remain before closeout. |
-| Backlog | Lock bounded live-store and archive architecture | S2 Electron / Persistence | `DON-248` | Beta.13 starts only after beta.12 field confirmation. |
+| Backlog | Decide archive encryption, authenticity, custody, and emergency access | S2 Electron / Archive / Governance | `DON-248` | BCP-14 in PR-5; the earlier bounded-store architecture is now locked in the breadcrumb ADR. |
 | Backlog | Safe background SQLite integrity assurance | S2 Electron / Persistence | `DON-249` | Must not recreate startup/runtime I/O saturation. |
 | Backlog | Oversized legacy database assessment and recovery | S2 Electron / Recovery | `DON-250` | Mission-state-aware; never abandon operational data or run in-process multi-GB VACUUM. |
-| Backlog | Measured indexes and bounded telemetry retention | S2 Electron / Persistence | `DON-251` | Query-plan driven and interruption-safe. |
-| Backlog | Mission-scoped streamed archives | S2 Electron / Archive | `DON-252` | No whole shared DB in memory or unrelated missions in every archive. |
-| Backlog | Archive-backed review and unlock | S2 Electron / Governance | `DON-253` | Bound live storage while preserving supported review/correction. |
-| Backlog | Field-scale beta.13 qualification matrix | S2 Electron / Verification | `DON-254` | Migration, retention, archive, review, recovery, low-disk, and interruption evidence. |
-| Backlog | Qualify and release bounded mission-store lifecycle | S2 Electron / Release | `DON-255` | Promote only the exact fully qualified CI artifact. |
+| Backlog | Measured indexes and bounded telemetry retention | S2 Electron / Persistence | `DON-251` | The 3.7 GB PR-1 gate measured the pre-existing Review audit scan at about 7.5 s and exact count at about 1.1–1.3 s on Electron main. PR-1 pulls forward only lazy Review loading plus a cancellable read-only worker snapshot so current positions and main heartbeat stay live. Query-plan-driven indexing and interruption-safe telemetry retention remain here; no O(database-size) v8 migration index is authorized. |
+| Backlog | Create streamed encrypted mission archives with restore-and-replay proof | S2 Electron / Archive | `DON-252` | BCP-15 in PR-5; no whole shared DB in memory or unrelated missions in an archive. |
+| Backlog | Add archive-backed review, visible revisions, and indefinite retention | S2 Electron / Governance | `DON-253` | BCP-16 in PR-5; archive bytes stay immutable and evidence has no permanent deletion path. |
+| Backlog | Qualify the complete breadcrumb and mission-history programme | S2 Electron / Verification | `DON-254` | BCP-17 no-skip qualification of the exact final candidate after all five PRs. |
+| Backlog | Release the complete breadcrumb and mission-history programme | S2 Electron / Release | `DON-255` | One team-facing release only after BCP-17; no intermediate programme releases. |
 | Done | S1: Runtime Boot/Fault Guard | Shared | `sartracker-web-3rl` | Done 2026-05-16 |
 | Done | A2: Hosted Mode Guardrails | Track A | `sartracker-web-vpz.3` | Done 2026-05-15 |
 | Done | Settings Save-Close UX | Track A | `sartracker-web-fnc` | Done 2026-05-15 |

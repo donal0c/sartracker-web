@@ -7,19 +7,36 @@ const { runBreadcrumbQueryInWorker } = require('./breadcrumb-query-runner.cjs')
 const {
   runBreadcrumbDotQueryInWorker,
 } = require('./breadcrumb-dot-query-runner.cjs')
+const {
+  runMissionReviewReadQueryInWorker,
+} = require('./mission-review-read-query-runner.cjs')
 const { runSqliteBackupInWorker } = require('./sqlite-backup-runner.cjs')
 const { validateSqliteSnapshotSanity } = require('./sqlite-snapshot-sanity.cjs')
 const { isStrictTrackingTimestamp } = require('./tracking-timestamp.cjs')
 const {
   compareStringsByCodeUnit,
 } = require('./deterministic-string-order.cjs')
+const {
+  canonicalizeAcceptedPosition,
+  classifyPositionIngest,
+} = require('./position-ingest-policy.cjs')
+const {
+  listIngestAnomalies,
+  recordConflictAnomaly,
+  recordRejectedAnomaly,
+  summarizeIngestAnomalies,
+} = require('./ingest-anomaly-ledger.cjs')
+const {
+  createIngestAnomalyOutbox,
+} = require('./ingest-anomaly-outbox.cjs')
 
 const { createZipArchive, readZipArchive } = require('./zip-archive.cjs')
 
-const CURRENT_SCHEMA_VERSION = 7
+const CURRENT_SCHEMA_VERSION = 8
 const DATABASE_FILE_NAME = 'mission-store.sqlite'
 const BACKUP_FILE_NAME = 'mission-store.backup.sqlite'
 const ARCHIVE_DIRECTORY_NAME = 'archives'
+const INGEST_ANOMALY_OUTBOX_DIRECTORY_NAME = 'ingest-anomaly-outbox'
 const ARCHIVE_VERSION = 1
 
 /** Validates the opaque renderer correlation key used only for worker cancellation. */
@@ -38,6 +55,20 @@ function normalizeBreadcrumbQueryRequestId(value, required) {
   return value
 }
 
+/** Validates the opaque renderer correlation key used for Review worker cancellation. */
+function normalizeMissionReviewRequestId(value, required) {
+  if (value === undefined && required === false) return null
+  if (
+    typeof value !== 'string' ||
+    value.length < 1 ||
+    value.length > 140 ||
+    !/^[A-Za-z0-9._:-]+$/u.test(value)
+  ) {
+    throw new Error('Mission Review request ID is invalid.')
+  }
+  return value
+}
+
 /**
  * Creates the Electron SQLite mission store.
  */
@@ -45,6 +76,10 @@ function createElectronMissionStore(options) {
   const databasePath = path.join(options.userDataPath, DATABASE_FILE_NAME)
   const backupPath = path.join(options.userDataPath, BACKUP_FILE_NAME)
   const archiveDirectory = path.join(options.userDataPath, ARCHIVE_DIRECTORY_NAME)
+  const ingestAnomalyOutboxDirectory = path.join(
+    options.userDataPath,
+    INGEST_ANOMALY_OUTBOX_DIRECTORY_NAME,
+  )
   const finalizeMissionFaultInjection = options.finalizeMissionFaultInjection ?? {}
   const archiveFaultInjection = options.archiveFaultInjection ?? {}
   const storageDiagnostics = options.storageDiagnostics ?? null
@@ -52,15 +87,30 @@ function createElectronMissionStore(options) {
     options.runBreadcrumbQueryInWorker ?? runBreadcrumbQueryInWorker
   const breadcrumbDotQueryRunner =
     options.runBreadcrumbDotQueryInWorker ?? runBreadcrumbDotQueryInWorker
+  const missionReviewReadQueryRunner =
+    options.runMissionReviewReadQueryInWorker ?? runMissionReviewReadQueryInWorker
   const activeBreadcrumbQueryControllers = new Set()
   const breadcrumbQueryControllersByRequestId = new Map()
   const breadcrumbDotQueryControllersByRequestId = new Map()
+  const missionReviewQueryControllersByRequestId = new Map()
   let breadcrumbQueryTail = Promise.resolve()
   const db = new Database(databasePath)
   db.pragma('journal_mode = WAL')
   db.pragma('synchronous = FULL')
   db.pragma('foreign_keys = ON')
   migrate(db)
+  const ingestEvidenceFaultInjection = options.ingestEvidenceFaultInjection ?? {}
+  const ingestAnomalyOutbox = createIngestAnomalyOutbox({
+    directoryPath: ingestAnomalyOutboxDirectory,
+    faultInjection: ingestEvidenceFaultInjection,
+    projectEnvelope: (envelope) => {
+      if (ingestEvidenceFaultInjection.failProjection === true) {
+        throw new Error('Injected ingest anomaly projection failure.')
+      }
+      recordRejectedAnomaly(db, envelope)
+    },
+  })
+  void ingestAnomalyOutbox.initialize().catch(() => undefined)
   const backupCoordinator = createBackupCoordinator(
     db,
     databasePath,
@@ -70,16 +120,17 @@ function createElectronMissionStore(options) {
   )
   let finalizeTail = Promise.resolve()
   const enqueueFinalize = (missionId) => {
-    const run = finalizeTail.then(() =>
-      finalizeMission(
+    const run = finalizeTail.then(async () => {
+      await assertIngestEvidenceHealthy(ingestAnomalyOutbox, 'finalization')
+      return finalizeMission(
         db,
         missionId,
         backupCoordinator,
         archiveDirectory,
         finalizeMissionFaultInjection,
         archiveFaultInjection,
-      ),
-    )
+      )
+    })
     finalizeTail = run.catch(() => {})
     return run
   }
@@ -92,6 +143,10 @@ function createElectronMissionStore(options) {
       activeBreadcrumbQueryControllers.clear()
       breadcrumbQueryControllersByRequestId.clear()
       breadcrumbDotQueryControllersByRequestId.clear()
+      for (const activeQuery of missionReviewQueryControllersByRequestId.values()) {
+        activeQuery.controller.abort()
+      }
+      missionReviewQueryControllersByRequestId.clear()
       db.close()
     },
     info: async () => ({
@@ -99,10 +154,13 @@ function createElectronMissionStore(options) {
       synchronous_mode: db.pragma('synchronous', { simple: true }),
       database_path: databasePath,
       backup_path: backupPath,
+      ingest_evidence_health: await getIngestEvidenceHealth(db, ingestAnomalyOutbox),
     }),
     syncBackup: async (trigger) => backupCoordinator.syncBackup(trigger),
-    createMissionArchive: async (missionId) =>
-      createMissionArchive(db, missionId, backupCoordinator, archiveDirectory, true, archiveFaultInjection),
+    createMissionArchive: async (missionId) => {
+      await assertIngestEvidenceHealthy(ingestAnomalyOutbox, 'archive')
+      return createMissionArchive(db, missionId, backupCoordinator, archiveDirectory, true, archiveFaultInjection)
+    },
     createMission: async (input) => {
       const mission = createMission(db, input)
       await safeStorageDiagnostic(() =>
@@ -295,6 +353,47 @@ function createElectronMissionStore(options) {
       await activeQuery.completion.catch(() => undefined)
       return true
     },
+    readMissionReview: async (input, requestId) => {
+      const normalizedRequestId = normalizeMissionReviewRequestId(requestId, false)
+      if (
+        normalizedRequestId !== null &&
+        missionReviewQueryControllersByRequestId.has(normalizedRequestId)
+      ) {
+        throw new Error('Mission Review request ID is already active.')
+      }
+      const controller = new AbortController()
+      const query = missionReviewReadQueryRunner({
+        databasePath,
+        query: input,
+        signal: controller.signal,
+      })
+      const activeQuery = { controller, completion: query }
+      if (normalizedRequestId !== null) {
+        missionReviewQueryControllersByRequestId.set(normalizedRequestId, activeQuery)
+      }
+      try {
+        const result = await query
+        return {
+          auditEvents: result.auditEvents,
+          breadcrumbCount: result.breadcrumbCount,
+        }
+      } finally {
+        if (
+          normalizedRequestId !== null &&
+          missionReviewQueryControllersByRequestId.get(normalizedRequestId) === activeQuery
+        ) {
+          missionReviewQueryControllersByRequestId.delete(normalizedRequestId)
+        }
+      }
+    },
+    cancelMissionReviewRead: async (requestId) => {
+      const normalizedRequestId = normalizeMissionReviewRequestId(requestId, true)
+      const activeQuery = missionReviewQueryControllersByRequestId.get(normalizedRequestId)
+      if (activeQuery === undefined) return false
+      activeQuery.controller.abort()
+      await activeQuery.completion.catch(() => undefined)
+      return true
+    },
     listTrackingHistoryCheckpoints: async (missionId) =>
       listTrackingHistoryCheckpoints(db, missionId),
     countPositions: async (missionId, deviceId) => countPositions(db, missionId, deviceId),
@@ -305,6 +404,17 @@ function createElectronMissionStore(options) {
       // rather than ordering by a random UUID.
       all(db, 'SELECT * FROM mission_events WHERE mission_id = ? ORDER BY timestamp ASC, rowid ASC', missionId),
     listAuditEvents: async (missionId, options) => listAuditEvents(db, missionId, options),
+    listIngestAnomalies: async (missionId) => listIngestAnomalies(db, missionId),
+    recordIngestRejections: async (input) => recordIngestRejections(
+      db,
+      ingestAnomalyOutbox,
+      input,
+    ),
+    getIngestEvidenceHealth: async (missionId) => getIngestEvidenceHealth(
+      db,
+      ingestAnomalyOutbox,
+      missionId,
+    ),
     upsertMarker: async (input) => upsertById(db, 'markers', input, markerDefaults),
     getMarker: async (markerId) => getById(db, 'markers', markerId, 'Marker'),
     listMarkers: async (missionId) =>
@@ -389,6 +499,9 @@ function migrate(db) {
       source TEXT,
       timestamp TEXT NOT NULL,
       data_origin TEXT NOT NULL DEFAULT 'live' CHECK(data_origin IN ('live', 'cache')),
+      received_at TEXT,
+      content_hash TEXT,
+      source_kind TEXT,
       FOREIGN KEY (mission_id) REFERENCES missions(id) ON DELETE CASCADE,
       FOREIGN KEY (mission_id, device_id) REFERENCES devices(mission_id, device_id)
     );
@@ -417,6 +530,28 @@ function migrate(db) {
     );
     CREATE INDEX IF NOT EXISTS idx_position_revisions_position_corrected
       ON position_revisions(position_id, corrected_at);
+    CREATE TABLE IF NOT EXISTS ingest_anomalies (
+      id TEXT PRIMARY KEY,
+      mission_id TEXT NOT NULL,
+      kind TEXT NOT NULL CHECK(kind IN ('rejected', 'conflict')),
+      anomaly_key TEXT NOT NULL,
+      device_id TEXT,
+      source_position_id TEXT,
+      reason_class TEXT NOT NULL,
+      received_at TEXT NOT NULL,
+      canonical_payload_json TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      FOREIGN KEY (mission_id) REFERENCES missions(id) ON DELETE CASCADE,
+      UNIQUE (mission_id, kind, anomaly_key)
+    );
+    CREATE INDEX IF NOT EXISTS idx_ingest_anomalies_mission_created
+      ON ingest_anomalies(mission_id, created_at);
+    CREATE TABLE IF NOT EXISTS ingest_anomaly_deliveries (
+      delivery_id TEXT PRIMARY KEY,
+      mission_id TEXT NOT NULL,
+      projected_at TEXT NOT NULL,
+      FOREIGN KEY (mission_id) REFERENCES missions(id) ON DELETE CASCADE
+    );
     CREATE TABLE IF NOT EXISTS markers (
       id TEXT PRIMARY KEY,
       mission_id TEXT NOT NULL,
@@ -521,6 +656,9 @@ function migrate(db) {
     ensureColumnExists(db, 'markers', 'attachment_path', 'TEXT')
     ensureColumnExists(db, 'markers', 'label_size', 'INTEGER')
     ensureColumnExists(db, 'positions', 'source_position_id', 'TEXT')
+    ensureColumnExists(db, 'positions', 'received_at', 'TEXT')
+    ensureColumnExists(db, 'positions', 'content_hash', 'TEXT')
+    ensureColumnExists(db, 'positions', 'source_kind', 'TEXT')
     db.exec(`
       CREATE UNIQUE INDEX IF NOT EXISTS idx_positions_mission_source_position_id
       ON positions(mission_id, source_position_id)
@@ -550,6 +688,78 @@ function ensureColumnExists(db, tableName, columnName, columnSql) {
   }
 
   db.prepare(`ALTER TABLE ${tableName} ADD COLUMN ${columnName} ${columnSql}`).run()
+}
+
+/**
+ * Delivers bounded renderer-originated rejection envelopes without throwing
+ * their persistence failure through the current-position publication path.
+ */
+async function recordIngestRejections(db, outbox, input) {
+  const rejections = Array.isArray(input?.rejections) ? input.rejections : []
+  if (typeof input?.mission_id !== 'string' || input.mission_id.trim() === '') {
+    throw new Error('Rejected-position evidence requires an active mission identity.')
+  }
+  if (rejections.length > 256) {
+    throw new Error('Rejected-position evidence batch exceeds the bounded delivery hypothesis.')
+  }
+  const acknowledgedDeliveryIds = []
+  for (const rejection of rejections) {
+    const envelope = {
+      ...rejection,
+      missionId: input.mission_id,
+      receivedAt: now(),
+    }
+    try {
+      await outbox.deliver(envelope)
+      acknowledgedDeliveryIds.push(rejection.deliveryId)
+    } catch {
+      // The outbox retains a staged record when possible. Failure class is
+      // returned below; anomaly content is deliberately never logged here.
+    }
+  }
+  return {
+    acknowledgedDeliveryIds,
+    health: await getIngestEvidenceHealth(db, outbox, input.mission_id),
+  }
+}
+
+/** Combines durable ledger counts with outbox health, excluding evidence content. */
+async function getIngestEvidenceHealth(db, outbox, missionId) {
+  return {
+    ...(await mapIngestEvidenceHealth(outbox)),
+    ...summarizeIngestAnomalies(db, missionId),
+  }
+}
+
+/** Maps outbox state into the operator/completeness health contract. */
+async function mapIngestEvidenceHealth(outbox) {
+  const outboxHealth = await outbox.health()
+  const criticalReasons = new Set([
+    'outbox_storage_unavailable',
+    'outbox_capacity_exhausted',
+    'outbox_corrupt_record',
+  ])
+  const state = criticalReasons.has(outboxHealth.lastFailure)
+    ? 'critical'
+    : outboxHealth.pendingCount > 0 || outboxHealth.lastFailure !== null
+      ? 'degraded'
+      : 'healthy'
+  return {
+    state,
+    reason: outboxHealth.lastFailure,
+    pendingCount: outboxHealth.pendingCount,
+    corruptCount: outboxHealth.corruptCount,
+  }
+}
+
+/** Prevents archive/finalization from claiming complete evidence while degraded. */
+async function assertIngestEvidenceHealthy(outbox, operation) {
+  const health = await mapIngestEvidenceHealth(outbox)
+  if (health.state !== 'healthy') {
+    throw new Error(
+      `Degraded evidence health blocks ${operation}; resolve durable ingest evidence before continuing.`,
+    )
+  }
 }
 
 function createBackupCoordinator(
@@ -1212,6 +1422,13 @@ function addPosition(db, input) {
   const timestamp = normalizePositionTimestamp(input.timestamp)
   const dataOrigin = input.data_origin ?? 'live'
   const sourcePositionId = normalizeSourcePositionId(input.source_position_id)
+  const receivedAt = now()
+  const normalizedInput = {
+    ...input,
+    source_position_id: sourcePositionId,
+    timestamp,
+  }
+  const canonical = canonicalizeAcceptedPosition(normalizedInput)
   if (sourcePositionId !== null) {
     const existing = findPositionBySourceIdentity(
       db,
@@ -1219,16 +1436,19 @@ function addPosition(db, input) {
       sourcePositionId,
     )
     if (existing !== undefined) {
-      const transaction = db.transaction(() =>
-        applySourcePositionCorrection(
-          db,
-          existing,
-          input,
-          timestamp,
-          dataOrigin,
-        ),
-      )
-      return transaction().position
+      const decision = classifyPositionIngest({
+        existing,
+        incoming: normalizedInput,
+      })
+      if (decision.decision === 'conflict') {
+        db.transaction(() => recordConflictAnomaly(db, {
+          missionId: input.mission_id,
+          sourcePositionId,
+          incoming: normalizedInput,
+          receivedAt,
+        }))()
+      }
+      return existing
     }
     const adopted = adoptSourceIdentityForLegacyPosition(
       db,
@@ -1248,9 +1468,9 @@ function addPosition(db, input) {
 
   const id = randomUUID()
   const transaction = db.transaction(() => {
-    db.prepare(`INSERT INTO positions (id, mission_id, device_id, source_position_id, name, lat, lon, altitude, speed, battery, accuracy, source, timestamp, data_origin)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-      .run(id, input.mission_id, input.device_id, sourcePositionId, input.name ?? null, input.lat, input.lon, input.altitude ?? null, input.speed ?? null, input.battery ?? null, input.accuracy ?? null, input.source ?? null, timestamp, dataOrigin)
+    db.prepare(`INSERT INTO positions (id, mission_id, device_id, source_position_id, name, lat, lon, altitude, speed, battery, accuracy, source, timestamp, data_origin, received_at, content_hash, source_kind)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+      .run(id, input.mission_id, input.device_id, sourcePositionId, input.name ?? null, input.lat, input.lon, input.altitude ?? null, input.speed ?? null, input.battery ?? null, input.accuracy ?? null, input.source ?? null, timestamp, dataOrigin, receivedAt, canonical.contentHash, sourcePositionId === null ? null : 'traccar')
     db.prepare(
       `UPDATE devices
        SET last_seen = CASE
@@ -1284,8 +1504,8 @@ function addPositionsBulk(db, input, includePositions = true) {
   const existingPositionBySourceIdentity = db.prepare(
     'SELECT * FROM positions WHERE mission_id = ? AND source_position_id = ? LIMIT 1',
   )
-  const insertPosition = db.prepare(`INSERT INTO positions (id, mission_id, device_id, source_position_id, name, lat, lon, altitude, speed, battery, accuracy, source, timestamp, data_origin)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+  const insertPosition = db.prepare(`INSERT INTO positions (id, mission_id, device_id, source_position_id, name, lat, lon, altitude, speed, battery, accuracy, source, timestamp, data_origin, received_at, content_hash, source_kind)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
   const updateDevice = db.prepare(
     `UPDATE devices
      SET last_seen = CASE
@@ -1302,6 +1522,7 @@ function addPositionsBulk(db, input, includePositions = true) {
   let skippedAmbiguousLegacyAdoptionCount = 0
 
   const transaction = db.transaction(() => {
+    const receivedAt = now()
     for (const position of positions) {
       validateLatLon(position.lat, position.lon, 'Position')
       if (deviceExists.get(input.mission_id, position.device_id) === undefined) {
@@ -1313,22 +1534,29 @@ function addPositionsBulk(db, input, includePositions = true) {
       const sourcePositionId = normalizeSourcePositionId(
         position.source_position_id,
       )
+      const normalizedPosition = {
+        ...position,
+        source_position_id: sourcePositionId,
+        timestamp,
+      }
+      const canonical = canonicalizeAcceptedPosition(normalizedPosition)
       if (sourcePositionId !== null) {
         const existing = existingPositionBySourceIdentity.get(
           input.mission_id,
           sourcePositionId,
         )
         if (existing !== undefined) {
-          const correction = applySourcePositionCorrection(
-            db,
+          const decision = classifyPositionIngest({
             existing,
-            position,
-            timestamp,
-            dataOrigin,
-          )
-          if (correction.corrected) {
-            changedPositionCount += 1
-            changedIds?.push(existing.id)
+            incoming: normalizedPosition,
+          })
+          if (decision.decision === 'conflict') {
+            recordConflictAnomaly(db, {
+              missionId: input.mission_id,
+              sourcePositionId,
+              incoming: normalizedPosition,
+              receivedAt,
+            })
           }
           continue
         }
@@ -1385,6 +1613,9 @@ function addPositionsBulk(db, input, includePositions = true) {
         position.source ?? null,
         timestamp,
         dataOrigin,
+        receivedAt,
+        canonical.contentHash,
+        sourcePositionId === null ? null : 'traccar',
       )
       updateDevice.run(timestamp, timestamp, input.mission_id, position.device_id)
       changedPositionCount += 1
@@ -1590,138 +1821,6 @@ function createAmbiguousLegacyAdoptionError(sourcePositionId) {
   return new Error(
     `Position source identity conflict for ${sourcePositionId}: more than one exact legacy fix could be upgraded.`,
   )
-}
-
-function applySourcePositionCorrection(
-  db,
-  existing,
-  input,
-  timestamp,
-  dataOrigin,
-) {
-  if (existing.device_id !== input.device_id) {
-    throw new Error(
-      `Position source identity ${existing.source_position_id} belongs to device ${existing.device_id} and cannot be reassigned to device ${input.device_id}.`,
-    )
-  }
-  const previous = canonicalPositionPayload(existing)
-  const corrected = canonicalPositionPayload({
-    ...input,
-    name: input.name ?? null,
-    altitude: input.altitude ?? null,
-    speed: input.speed ?? null,
-    battery: input.battery ?? null,
-    accuracy: input.accuracy ?? null,
-    source: input.source ?? null,
-    timestamp,
-    data_origin: dataOrigin,
-  })
-  const changedFields = Object.keys(previous).filter(
-    (field) => previous[field] !== corrected[field],
-  )
-  if (changedFields.length === 0) {
-    return { position: existing, corrected: false }
-  }
-
-  const correctedAt = now()
-  db.prepare(
-    `INSERT INTO position_revisions (
-      id, mission_id, position_id, source_position_id, corrected_at,
-      changed_fields_json, previous_json, corrected_json
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-  ).run(
-    randomUUID(),
-    existing.mission_id,
-    existing.id,
-    existing.source_position_id,
-    correctedAt,
-    JSON.stringify(changedFields),
-    JSON.stringify(previous),
-    JSON.stringify(corrected),
-  )
-  db.prepare(
-    `UPDATE positions SET
-      device_id = ?, name = ?, lat = ?, lon = ?, altitude = ?, speed = ?,
-      battery = ?, accuracy = ?, source = ?, timestamp = ?, data_origin = ?
-     WHERE id = ?`,
-  ).run(
-    corrected.device_id,
-    corrected.name,
-    corrected.lat,
-    corrected.lon,
-    corrected.altitude,
-    corrected.speed,
-    corrected.battery,
-    corrected.accuracy,
-    corrected.source,
-    corrected.timestamp,
-    corrected.data_origin,
-    existing.id,
-  )
-  db.prepare(
-    `UPDATE devices
-     SET last_seen = CASE
-       WHEN last_seen IS NULL OR julianday(?) > julianday(last_seen) THEN ?
-       ELSE last_seen
-     END,
-     status = 'online'
-     WHERE mission_id = ? AND device_id = ?`,
-  ).run(timestamp, timestamp, existing.mission_id, corrected.device_id)
-  insertEvent(
-    db,
-    existing.mission_id,
-    'position_corrected',
-    correctedAt,
-    {
-      position_id: existing.id,
-      source_position_id: existing.source_position_id,
-      changed_fields: changedFields,
-      previous,
-      corrected,
-    },
-  )
-
-  return {
-    position: {
-      ...existing,
-      ...corrected,
-    },
-    corrected: true,
-  }
-}
-
-function canonicalPositionPayload(position) {
-  return {
-    device_id: position.device_id,
-    name: position.name ?? null,
-    lat: position.lat,
-    lon: position.lon,
-    altitude: position.altitude ?? null,
-    speed: position.speed ?? null,
-    battery: position.battery ?? null,
-    accuracy: position.accuracy ?? null,
-    source: position.source ?? null,
-    timestamp: position.timestamp,
-    data_origin: position.data_origin,
-  }
-}
-
-function findSourcePositionConflict(existing, input, timestamp, dataOrigin) {
-  const fields = [
-    ['device_id', existing.device_id, input.device_id],
-    ['name', existing.name, input.name ?? null],
-    ['lat', existing.lat, input.lat],
-    ['lon', existing.lon, input.lon],
-    ['altitude', existing.altitude, input.altitude ?? null],
-    ['speed', existing.speed, input.speed ?? null],
-    ['battery', existing.battery, input.battery ?? null],
-    ['accuracy', existing.accuracy, input.accuracy ?? null],
-    ['source', existing.source, input.source ?? null],
-    ['timestamp', existing.timestamp, timestamp],
-    ['data_origin', existing.data_origin, dataOrigin],
-  ]
-  const conflictingField = fields.find(([, stored, incoming]) => stored !== incoming)
-  return conflictingField?.[0]
 }
 
 function createPositionIdentityKey(position, timestamp) {

@@ -20,6 +20,11 @@ import type {
   TrackingPollPhase,
 } from '../diagnostics/tracking-poll-ledger'
 import { classifyTrackingFailure } from '../diagnostics/tracking-poll-ledger'
+import {
+  fetchRosterAndCurrentPositions,
+} from './current-position-poll'
+import type { CurrentPositionRejection } from './ingest-health'
+import type { CurrentPositionNormalizationResult } from './traccar-client'
 
 const EMPTY_TRACKING_SNAPSHOT: TrackingSnapshot = {
   devices: [],
@@ -32,6 +37,7 @@ export type TrackingPollerClient = {
   readonly authenticate: () => Promise<void>
   readonly getDevices: () => Promise<readonly NormalizedTrackingDevice[]>
   readonly getCurrentPositions: () => Promise<readonly NormalizedTrackingPosition[]>
+  readonly getCurrentPositionsWithReport?: () => Promise<CurrentPositionNormalizationResult>
   readonly getBreadcrumbs: (
     deviceId: string,
     from: Date,
@@ -82,6 +88,9 @@ type PollingManagerOptions = {
     context: TrackingSnapshotContext,
   ) => void
   readonly onStatusChange: (status: TrackingConnectionStatus) => void
+  readonly onCurrentPositionRejections?: (
+    rejections: readonly CurrentPositionRejection[],
+  ) => void
   readonly onPollDiagnostic?: (entry: TrackingPollLedgerEntry) => void
   readonly logger?: PollingManagerLogger
   readonly now?: () => Date
@@ -580,6 +589,14 @@ export function createPollingManager(
     const pollHistoryResetKey = options.getHistoryResetKey?.() ?? null
     try {
       if (pollHistoryResetKey !== activeHistoryResetKey) {
+        const retainedCurrentSnapshot = lastGoodSnapshot === null
+          ? null
+          : {
+              devices: latestDevices,
+              positions: latestCurrentPositions,
+              breadcrumbs: [],
+              rawBreadcrumbsForPersistence: [],
+            } satisfies TrackingSnapshot
         initialSeedAbortController?.abort()
         initialSeedAbortController = null
         discardPendingHistorySnapshot()
@@ -604,9 +621,7 @@ export function createPollingManager(
         breadcrumbStatusWarning = null
         latestBreadcrumbTimestampByDevice.clear()
         historyReconciler.reset()
-        latestDevices = []
-        latestCurrentPositions = []
-        lastGoodSnapshot = null
+        lastGoodSnapshot = retainedCurrentSnapshot
       }
 
       const pollingMode = options.getPollingMode?.() ?? 'active'
@@ -644,12 +659,31 @@ export function createPollingManager(
       }
 
       pollPhase = 'devices'
-      const [devices, positions] = await Promise.all([
-        withPollPhase('devices', client.getDevices()),
-        withPollPhase('current_positions', client.getCurrentPositions()),
-      ])
+      const currentPositionResult = await fetchRosterAndCurrentPositions(
+        {
+          getDevices: () => withPollPhase('devices', client.getDevices()),
+          getCurrentPositions: () => withPollPhase(
+            'current_positions',
+            client.getCurrentPositionsWithReport?.() ??
+              client.getCurrentPositions().then((accepted) => ({
+                accepted,
+                rejected: [],
+              })),
+          ),
+        },
+        latestDevices,
+      )
       if (discardSupersededPoll(generation, pollHistoryResetKey)) {
         return
+      }
+
+      const devices = currentPositionResult.devices
+      const positions = currentPositionResult.accepted
+      options.onCurrentPositionRejections?.(currentPositionResult.rejected)
+      if (currentPositionResult.rosterFailure !== null) {
+        logger.warn('Tracking device roster refresh failed; using last-known metadata.', {
+          failureKind: classifyTrackingFailure(currentPositionResult.rosterFailure),
+        })
       }
 
       const currentPollingMode = options.getPollingMode?.() ?? 'active'
@@ -685,11 +719,13 @@ export function createPollingManager(
       publishStatus({
         mode: 'online',
         recovered,
-        warning:
+        warning: combineTrackingWarnings(
+          currentPositionResult.rosterWarning,
           !breadcrumbFetchCompleted && breadcrumbPositions.length === 0
             ? 'Current fixes loaded; loading breadcrumb history.'
             : breadcrumbStatusWarning ??
               (recovered ? 'CONNECTION RESTORED' : null),
+        ),
       })
 
       const breadcrumbPositionsBeforeSeed = breadcrumbPositions
@@ -808,11 +844,14 @@ export function createPollingManager(
       publishStatus({
         mode: 'online',
         recovered,
-        warning: createBreadcrumbCompletionWarning(
-          breadcrumbFetch,
-          recovered,
-          seedState,
-          historyReconciler.getProgress(),
+        warning: combineTrackingWarnings(
+          currentPositionResult.rosterWarning,
+          createBreadcrumbCompletionWarning(
+            breadcrumbFetch,
+            recovered,
+            seedState,
+            historyReconciler.getProgress(),
+          ),
         ),
       })
 
@@ -1196,6 +1235,16 @@ export function createPollingManager(
       }
     }
   }
+}
+
+/**
+ * Combines independent current-position and history warnings without hiding either.
+ */
+function combineTrackingWarnings(
+  ...warnings: readonly (string | null)[]
+): string | null {
+  const activeWarnings = warnings.filter((warning): warning is string => warning !== null)
+  return activeWarnings.length === 0 ? null : activeWarnings.join(' ')
 }
 
 type InitialBreadcrumbSeedState = 'loaded' | 'failed'
