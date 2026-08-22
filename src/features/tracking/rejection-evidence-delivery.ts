@@ -3,6 +3,7 @@ import type {
   IngestEvidenceHealth,
   IngestRejectionEnvelope,
 } from '../../infrastructure/mission-store/tauri-mission-store'
+import { createRejectedPositionDeliveryId } from './rejected-position-evidence'
 
 export const REJECTION_EVIDENCE_PENDING_MEMORY_CAP_HYPOTHESIS = 256
 
@@ -21,7 +22,7 @@ type RejectionEvidenceDeliveryDependencies = {
   readonly missionStore: RejectionEvidenceMissionStore
   readonly applyRejections: (rejections: readonly CurrentPositionRejection[]) => void
   readonly applyEvidenceHealth: (health: IngestEvidenceHealth) => void
-  readonly createDeliveryId?: (sequence: number) => string
+  readonly createDeliveryId?: (anomalyKey: string, sequence: number) => string
 }
 
 export type RejectionEvidenceDelivery = {
@@ -37,7 +38,7 @@ export function createRejectionEvidenceDelivery(
   dependencies: RejectionEvidenceDeliveryDependencies,
 ): RejectionEvidenceDelivery {
   const pendingByAnomalyKey = new Map<string, IngestRejectionEnvelope>()
-  const createDeliveryId = dependencies.createDeliveryId ?? (() => crypto.randomUUID())
+  const createDeliveryId = dependencies.createDeliveryId ?? createRejectedPositionDeliveryId
   let nextDeliverySequence = 0
   let flushInFlight: Promise<void> | null = null
   let disposed = false
@@ -64,7 +65,7 @@ export function createRejectionEvidenceDelivery(
       }
       nextDeliverySequence += 1
       pendingByAnomalyKey.set(rejection.anomalyKey, {
-        deliveryId: createDeliveryId(nextDeliverySequence),
+        deliveryId: createDeliveryId(rejection.anomalyKey, nextDeliverySequence),
         anomalyKey: rejection.anomalyKey,
         deviceId: rejection.deviceId,
         sourcePositionId: rejection.sourcePositionId ?? null,

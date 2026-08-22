@@ -68,6 +68,28 @@ describe('rejection evidence delivery [DON-268]', () => {
     expect(applyEvidenceHealth).toHaveBeenLastCalledWith(healthy())
   })
 
+  it('uses one stable delivery identity for repeated retrieval of the same rejection', async () => {
+    const calls: string[] = []
+    const delivery = createRejectionEvidenceDelivery({
+      missionStore: {
+        getActiveMission: async () => ({ id: 'mission-1' }),
+        recordIngestRejections: async (input) => {
+          calls.push(input.rejections[0]?.deliveryId ?? '')
+          return { acknowledgedDeliveryIds: input.rejections.map((entry) => entry.deliveryId), health: healthy() }
+        },
+      },
+      applyRejections: vi.fn(),
+      applyEvidenceHealth: vi.fn(),
+    })
+
+    delivery.record([createRejection('source:123')])
+    await vi.waitFor(() => expect(calls).toHaveLength(1))
+    delivery.record([createRejection('source:123')])
+    await vi.waitFor(() => expect(calls).toHaveLength(2))
+
+    expect(calls[0]).toBe(calls[1])
+  })
+
   it('surfaces the honest memory-overflow boundary instead of silently growing', async () => {
     const applyEvidenceHealth = vi.fn()
     const delivery = createRejectionEvidenceDelivery({
@@ -77,7 +99,7 @@ describe('rejection evidence delivery [DON-268]', () => {
       },
       applyRejections: vi.fn(),
       applyEvidenceHealth,
-      createDeliveryId: (index) => `delivery-${index}`,
+      createDeliveryId: (_anomalyKey, index) => `delivery-${index}`,
     })
     const rejections = Array.from(
       { length: REJECTION_EVIDENCE_PENDING_MEMORY_CAP_HYPOTHESIS + 1 },

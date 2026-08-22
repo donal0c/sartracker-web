@@ -73,6 +73,32 @@ describe('durable ingest anomaly outbox [DON-268]', () => {
     expect((await readdir(directoryPath)).filter((name) => name.endsWith('.json'))).toHaveLength(0)
   })
 
+  it('durably stages later unique envelopes while an earlier projection remains unavailable', async () => {
+    directoryPath = await mkdtemp(path.join(tmpdir(), 'sartracker-ingest-outbox-'))
+    const outbox = createIngestAnomalyOutbox({
+      directoryPath,
+      projectEnvelope: () => {
+        throw new Error('database unavailable')
+      },
+    })
+
+    await expect(outbox.deliver(createEnvelope('delivery-a'))).rejects.toThrow()
+    const restarted = createIngestAnomalyOutbox({
+      directoryPath,
+      projectEnvelope: () => {
+        throw new Error('database unavailable')
+      },
+    })
+    await expect(restarted.deliver({
+      ...createEnvelope('delivery-b'),
+      anomalyKey: 'source:456',
+      sourcePositionId: '456',
+      canonicalEvidence: { source_position_id: '456' },
+    })).rejects.toThrow()
+
+    expect((await readdir(directoryPath)).filter((name) => name.endsWith('.json'))).toHaveLength(2)
+  })
+
   it('removes an envelope only after projection commits and safely replays a removal failure', async () => {
     directoryPath = await mkdtemp(path.join(tmpdir(), 'sartracker-ingest-outbox-'))
     const committedDeliveryIds = new Set<string>()

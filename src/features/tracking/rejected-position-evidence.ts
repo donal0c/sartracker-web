@@ -66,6 +66,11 @@ export function createRejectedPositionEvidence(row: unknown): RejectedPositionEv
   }
 }
 
+/** Creates the stable transport identity used to avoid per-poll receipt rows. */
+export function createRejectedPositionDeliveryId(anomalyKey: string): string {
+  return `rejection:${fingerprint(anomalyKey)}`
+}
+
 /** Reads the same positive integer identity accepted by Traccar normalization. */
 function readPositiveIdentity(value: unknown): string | null {
   const parsed =

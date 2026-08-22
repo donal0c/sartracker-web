@@ -26,7 +26,16 @@ function createIngestAnomalyOutbox(options) {
 
   /** Writes, projects, and only then removes one canonical envelope. */
   async function deliver(envelope) {
-    await initialize()
+    try {
+      await initialize()
+    } catch (error) {
+      if (lastFailure !== 'ledger_projection_failed') {
+        throw error
+      }
+      // Writable outbox storage remains authoritative even while SQLite
+      // projection is unavailable. Stage every later unique envelope before
+      // attempting projection so a restart cannot silently lose it.
+    }
     const serialized = serializeEnvelope(envelope)
     if (options.faultInjection?.failStage === true) {
       lastFailure = 'outbox_storage_unavailable'
