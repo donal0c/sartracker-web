@@ -15,6 +15,7 @@ import type {
   CurrentPositionRejection,
   CurrentPositionRejectionReason,
 } from './ingest-health'
+import { createRejectedPositionEvidence } from './rejected-position-evidence'
 
 export type TraccarFetch = (url: string, init?: RequestInit) => Promise<Response>
 
@@ -373,10 +374,14 @@ function normalizeTraccarRows<T>(input: {
     } catch (error) {
       droppedCount += 1
       if (input.includeStructuredRejections === true) {
+        const evidence = createRejectedPositionEvidence(row)
         rejected.push({
           deviceId: readRejectedDeviceId(row),
           reason: classifyRejectionReason(error),
           rowIndex,
+          anomalyKey: evidence.anomalyKey,
+          sourcePositionId: evidence.sourcePositionId,
+          canonicalEvidence: evidence.canonicalEvidence,
         })
       }
       if (droppedCount <= maxDetailedWarnings) {

@@ -1,4 +1,7 @@
 import { invoke } from '@tauri-apps/api/core'
+import type { IngestEvidenceHealth } from '../../domain/tracking-ingest-evidence'
+
+export type { IngestEvidenceHealth } from '../../domain/tracking-ingest-evidence'
 
 export type MissionStatus = 'active' | 'paused' | 'finished' | 'finalized'
 
@@ -41,6 +44,29 @@ export type Position = {
   readonly source: string | null
   readonly timestamp: string
   readonly data_origin: 'live' | 'cache'
+  readonly received_at?: string | null
+  readonly content_hash?: string | null
+  readonly source_kind?: 'traccar' | null
+}
+
+export type IngestAnomaly = {
+  readonly id: string
+  readonly mission_id: string
+  readonly kind: 'rejected' | 'conflict'
+  readonly device_id: string | null
+  readonly source_position_id: string | null
+  readonly reason_class: string
+  readonly received_at: string
+  readonly created_at: string
+}
+
+export type IngestRejectionEnvelope = {
+  readonly deliveryId: string
+  readonly anomalyKey: string
+  readonly deviceId: string | null
+  readonly sourcePositionId: string | null
+  readonly reasonClass: string
+  readonly canonicalEvidence: Readonly<Record<string, unknown>>
 }
 
 export type ExactBreadcrumbDotPosition = Pick<
@@ -188,6 +214,7 @@ export type MissionStoreInfo = {
   readonly schema_version: number
   readonly database_path: string
   readonly backup_path: string
+  readonly ingest_evidence_health?: IngestEvidenceHealth
 }
 
 export type MissionArchiveInfo = {
@@ -384,6 +411,15 @@ export type MissionStore = {
     missionId: string,
     options?: ListAuditEventsOptions,
   ) => Promise<readonly MissionEvent[]>
+  readonly listIngestAnomalies?: (missionId: string) => Promise<readonly IngestAnomaly[]>
+  readonly recordIngestRejections?: (input: {
+    readonly mission_id: string
+    readonly rejections: readonly IngestRejectionEnvelope[]
+  }) => Promise<{
+    readonly acknowledgedDeliveryIds: readonly string[]
+    readonly health: IngestEvidenceHealth
+  }>
+  readonly getIngestEvidenceHealth?: (missionId?: string) => Promise<IngestEvidenceHealth>
   readonly upsertMarker: (input: UpsertMarkerInput) => Promise<Marker>
   readonly getMarker: (markerId: string) => Promise<Marker>
   readonly listMarkers: (missionId: string) => Promise<readonly Marker[]>

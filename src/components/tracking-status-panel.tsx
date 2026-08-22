@@ -23,6 +23,7 @@ export function TrackingStatusPanel(props: TrackingStatusPanelProps = {}) {
   const storedExactBreadcrumbDotState = useExactBreadcrumbDotStore((state) => state.state)
   const exactBreadcrumbDotController = useExactBreadcrumbDotStore((state) => state.controller)
   const ingestHealth = useIngestHealthStore((state) => state.summary)
+  const evidenceHealth = useIngestHealthStore((state) => state.evidenceHealth)
   const exactBreadcrumbDotState = props.exactBreadcrumbDotState ?? storedExactBreadcrumbDotState
   const staleDeviceCount = snapshot.positions.filter((position) => position.device_cache_stale).length
   const unverifiedFixTimeCount = snapshot.positions.filter(
@@ -121,6 +122,26 @@ export function TrackingStatusPanel(props: TrackingStatusPanelProps = {}) {
         </p>
       )}
 
+      {evidenceHealth.state === 'healthy' ? null : (
+        <p
+          className="sar-status-alert-panel mb-4 border-l-4 px-3 py-2 text-xs font-medium leading-relaxed"
+          data-testid="ingest-evidence-health-warning"
+        >
+          EVIDENCE HEALTH {evidenceHealth.state.toUpperCase()} — {formatEvidenceFailure(evidenceHealth.reason)}.
+          {' '}Current positions remain live, but anomaly evidence is not fully saved; mission finalization and archive export are blocked until storage is repaired.
+        </p>
+      )}
+
+      {evidenceHealth.conflictCount === 0 ? null : (
+        <p
+          className="mb-4 border-l-4 border-l-amber-400 bg-amber-400/15 px-3 py-2 text-xs font-medium leading-relaxed text-amber-100"
+          data-testid="position-conflict-warning"
+        >
+          POSITION SOURCE CONFLICT — {evidenceHealth.conflictCount}{' '}
+          {evidenceHealth.conflictCount === 1 ? 'conflicting observation was' : 'conflicting observations were'} retained. The first accepted fix remains displayed.
+        </p>
+      )}
+
       {unverifiedFixTimeCount === 0 ? null : (
         <p
           className="mb-4 border-l-4 border-l-amber-400 bg-amber-400/15 px-3 py-2 text-xs font-medium leading-relaxed text-amber-100"
@@ -207,6 +228,28 @@ export function TrackingStatusPanel(props: TrackingStatusPanelProps = {}) {
       </div>
     </div>
   )
+}
+
+function formatEvidenceFailure(reason: string | null): string {
+  switch (reason) {
+    case 'projection_failed':
+    case 'ledger_projection_failed':
+      return 'mission evidence projection failed'
+    case 'outbox_storage_unavailable':
+      return 'local evidence storage is unavailable'
+    case 'outbox_capacity_exceeded':
+    case 'outbox_capacity_exhausted':
+    case 'renderer_pending_capacity_exhausted':
+      return 'local evidence storage capacity was exceeded'
+    case 'outbox_corrupt':
+    case 'outbox_corrupt_record':
+      return 'stored evidence requires repair'
+    case 'evidence_delivery_unavailable':
+    case 'evidence_health_unavailable':
+      return 'the evidence persistence service is unavailable'
+    default:
+      return 'mission evidence persistence requires repair'
+  }
 }
 
 function getTrackingModeLabel(mode: 'idle' | 'offline' | 'online', warning: string | null): string {

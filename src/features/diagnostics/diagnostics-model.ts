@@ -104,6 +104,13 @@ export function buildDiagnosticsSnapshot(
     { label: 'Schema version', value: String(input.missionStoreInfo.schema_version) },
     { label: 'Database path', value: input.missionStoreInfo.database_path },
     { label: 'Backup path', value: input.missionStoreInfo.backup_path },
+    ...(input.missionStoreInfo.ingest_evidence_health === undefined
+      ? []
+      : [{
+          label: 'Evidence health',
+          value: input.missionStoreInfo.ingest_evidence_health.state,
+          tone: input.missionStoreInfo.ingest_evidence_health.state === 'healthy' ? 'success' as const : 'danger' as const,
+        }]),
     {
       label: 'Layer metadata entries',
       value: String(input.layerCatalogState.metadataEntryCount),
@@ -226,6 +233,17 @@ function buildSupportReport(
     `schema version: ${input.missionStoreInfo.schema_version}`,
     `database path: ${input.missionStoreInfo.database_path}`,
     `backup path: ${input.missionStoreInfo.backup_path}`,
+    ...(input.missionStoreInfo.ingest_evidence_health === undefined
+      ? []
+      : [
+          `evidence health: ${input.missionStoreInfo.ingest_evidence_health.state}`,
+          `evidence failure: ${input.missionStoreInfo.ingest_evidence_health.reason ?? 'none'}`,
+          `evidence pending: ${input.missionStoreInfo.ingest_evidence_health.pendingCount}`,
+          `evidence corrupt: ${input.missionStoreInfo.ingest_evidence_health.corruptCount}`,
+          `evidence conflicts: ${input.missionStoreInfo.ingest_evidence_health.conflictCount}`,
+          `evidence rejections: ${input.missionStoreInfo.ingest_evidence_health.rejectedCount}`,
+          `evidence affected device count: ${input.missionStoreInfo.ingest_evidence_health.affectedDeviceCount}`,
+        ]),
     `layer metadata entries: ${input.layerCatalogState.metadataEntryCount}`,
     `layer catalog state: ${input.layerCatalogState.error ?? 'healthy'}`,
     '',

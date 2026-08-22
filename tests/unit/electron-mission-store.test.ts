@@ -50,6 +50,11 @@ const { createElectronMissionStore, CURRENT_SCHEMA_VERSION } = require('../../el
     readonly finalizeMissionFaultInjection?: {
       readonly afterArchiveSucceededEvent?: boolean
     }
+    readonly ingestEvidenceFaultInjection?: {
+      readonly failStage?: boolean
+      readonly failProjection?: boolean
+      readonly failRemovalAfterProjection?: boolean
+    }
     readonly storageDiagnostics?: StorageDiagnosticsPort
     readonly runBreadcrumbQueryInWorker?: (input: {
       readonly databasePath: string
@@ -231,6 +236,19 @@ type ElectronMissionStore = {
     readonly reason_class: string
     readonly canonical_payload_json: string
   }[]>
+  readonly recordIngestRejections: (input: {
+    readonly mission_id: string
+    readonly rejections: readonly RejectionEnvelope[]
+  }) => Promise<{
+    readonly acknowledgedDeliveryIds: readonly string[]
+    readonly health: { readonly state: 'healthy' | 'degraded' | 'critical'; readonly pendingCount: number }
+  }>
+  readonly getIngestEvidenceHealth: (missionId?: string) => Promise<{
+    readonly state: 'healthy' | 'degraded' | 'critical'
+    readonly reason: string | null
+    readonly pendingCount: number
+    readonly corruptCount: number
+  }>
   readonly upsertMarker: (input: {
     readonly id?: string
     readonly mission_id: string
@@ -316,6 +334,15 @@ type ElectronMissionStore = {
     readonly isVisible?: boolean
   }) => Promise<{ readonly missionId: string; readonly nodeId: string; readonly isVisible: boolean }>
   readonly clearLayerCatalogMetadata: (missionId: string) => Promise<void>
+}
+
+type RejectionEnvelope = {
+  readonly deliveryId: string
+  readonly anomalyKey: string
+  readonly deviceId: string | null
+  readonly sourcePositionId: string | null
+  readonly reasonClass: string
+  readonly canonicalEvidence: Readonly<Record<string, unknown>>
 }
 
 describe('electron mission store', () => {
@@ -1191,6 +1218,94 @@ describe('electron mission store', () => {
         reason_class: 'source_identity_content_conflict',
       }),
     ])
+  })
+
+  it('projects renderer rejections through an acked idempotent durable outbox [DON-268]', async () => {
+    store = await createStore()
+    const mission = await store.createMission({ name: 'Rejected Evidence Mission' })
+    const rejection = createRejectionEnvelope('delivery-1')
+
+    await expect(store.recordIngestRejections({
+      mission_id: mission.id,
+      rejections: [rejection],
+    })).resolves.toMatchObject({
+      acknowledgedDeliveryIds: ['delivery-1'],
+      health: { state: 'healthy', pendingCount: 0 },
+    })
+    await expect(store.recordIngestRejections({
+      mission_id: mission.id,
+      rejections: [rejection, { ...rejection, deliveryId: 'delivery-2' }],
+    })).resolves.toMatchObject({
+      acknowledgedDeliveryIds: ['delivery-1', 'delivery-2'],
+      health: { state: 'healthy', pendingCount: 0 },
+    })
+    await expect(store.listIngestAnomalies(mission.id)).resolves.toEqual([
+      expect.objectContaining({
+        kind: 'rejected',
+        source_position_id: '123',
+        reason_class: 'invalid_coordinates',
+      }),
+    ])
+  })
+
+  it('keeps clean position writes live while rejection projection is degraded, then replays on restart [DON-268]', async () => {
+    store = await createStore({
+      ingestEvidenceFaultInjection: { failProjection: true },
+    })
+    const mission = await store.createMission({ name: 'Degraded Evidence Mission' })
+    await store.upsertDevice({
+      mission_id: mission.id,
+      device_id: 'tracker-1',
+      name: 'Tracker One',
+      color: '#00AAFF',
+      status: 'online',
+    })
+
+    await expect(store.recordIngestRejections({
+      mission_id: mission.id,
+      rejections: [createRejectionEnvelope('delivery-replay')],
+    })).resolves.toMatchObject({
+      acknowledgedDeliveryIds: [],
+      health: { state: 'degraded', pendingCount: 1 },
+    })
+    await expect(store.addPosition({
+      mission_id: mission.id,
+      source_position_id: 'clean-source',
+      device_id: 'tracker-1',
+      lat: 52.1,
+      lon: -9.1,
+      timestamp: '2026-08-22T10:10:00.000Z',
+    })).resolves.toMatchObject({ source_position_id: 'clean-source' })
+
+    store.close()
+    store = createElectronMissionStore({ userDataPath: userDataPath! })
+    await expect.poll(async () => (await store!.getIngestEvidenceHealth()).state).toBe('healthy')
+    await expect(store.listIngestAnomalies(mission.id)).resolves.toEqual([
+      expect.objectContaining({ kind: 'rejected', source_position_id: '123' }),
+    ])
+    await expect(store.countPositions(mission.id)).resolves.toBe(1)
+  })
+
+  it('reports the no-writable-storage boundary and blocks archive completeness claims [DON-268]', async () => {
+    store = await createStore({
+      ingestEvidenceFaultInjection: { failStage: true },
+    })
+    const mission = await store.createMission({ name: 'Unwritable Evidence Mission' })
+
+    await expect(store.recordIngestRejections({
+      mission_id: mission.id,
+      rejections: [createRejectionEnvelope('delivery-unwritable')],
+    })).resolves.toMatchObject({
+      acknowledgedDeliveryIds: [],
+      health: { state: 'critical', pendingCount: 0 },
+    })
+    await store.finishMission(mission.id)
+    await expect(store.createMissionArchive(mission.id)).rejects.toThrow(
+      /evidence health.*blocks archive/iu,
+    )
+    await expect(store.finalizeMission(mission.id)).rejects.toThrow(
+      /evidence health.*blocks finalization/iu,
+    )
   })
 
   it('never lets an older historical insert or correction move device last-seen backwards [DON-260]', async () => {
@@ -2256,9 +2371,30 @@ describe('electron mission store', () => {
     readonly finalizeMissionFaultInjection?: {
       readonly afterArchiveSucceededEvent?: boolean
     }
+    readonly ingestEvidenceFaultInjection?: {
+      readonly failStage?: boolean
+      readonly failProjection?: boolean
+      readonly failRemovalAfterProjection?: boolean
+    }
     readonly storageDiagnostics?: StorageDiagnosticsPort
   } = {}): Promise<ElectronMissionStore> {
     userDataPath = await mkdtemp(path.join(tmpdir(), 'sartracker-electron-mission-'))
     return createElectronMissionStore({ userDataPath, ...options })
+  }
+
+  function createRejectionEnvelope(deliveryId: string): RejectionEnvelope {
+    return {
+      deliveryId,
+      anomalyKey: 'source:123',
+      deviceId: 'tracker-1',
+      sourcePositionId: '123',
+      reasonClass: 'invalid_coordinates',
+      canonicalEvidence: {
+        content_fingerprint: '0123456789abcdef',
+        source_position_id: '123',
+        device_id: 'tracker-1',
+        latitude: 200,
+      },
+    }
   }
 })

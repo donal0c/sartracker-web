@@ -11,6 +11,9 @@ export type CurrentPositionRejection = {
   readonly deviceId: string | null
   readonly reason: CurrentPositionRejectionReason
   readonly rowIndex: number
+  readonly anomalyKey?: string
+  readonly sourcePositionId?: string | null
+  readonly canonicalEvidence?: Readonly<Record<string, unknown>>
 }
 
 export type DeviceIngestHealth = {

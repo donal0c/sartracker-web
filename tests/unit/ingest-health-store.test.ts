@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it } from 'vitest'
 
 import {
   applyCurrentPositionRejections,
+  applyIngestEvidenceHealth,
   useIngestHealthStore,
 } from '../../src/features/tracking/ingest-health-store'
 
@@ -38,5 +39,26 @@ describe('current-position ingest health store', () => {
 
     expect(useIngestHealthStore.getState().summary.totalRejected).toBe(0)
     expect(useIngestHealthStore.getState().summary.byDevice).toEqual({})
+  })
+
+  it('keeps durable evidence health independent from the latest clean poll [DON-268]', () => {
+    applyIngestEvidenceHealth({
+      state: 'degraded',
+      reason: 'projection_failed',
+      pendingCount: 1,
+      corruptCount: 0,
+      conflictCount: 1,
+      rejectedCount: 2,
+      affectedDeviceCount: 2,
+      conflictDeviceIds: ['device-1'],
+    })
+    applyCurrentPositionRejections([])
+
+    expect(useIngestHealthStore.getState().evidenceHealth).toMatchObject({
+      state: 'degraded',
+      reason: 'projection_failed',
+      pendingCount: 1,
+      conflictDeviceIds: ['device-1'],
+    })
   })
 })

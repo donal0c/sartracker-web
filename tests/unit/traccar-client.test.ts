@@ -266,16 +266,28 @@ describe('traccar client', () => {
     await expect(client.getCurrentPositionsWithReport()).resolves.toEqual({
       accepted: [expect.objectContaining({ device_id: '1' })],
       rejected: [
-        {
+        expect.objectContaining({
           deviceId: '2',
           reason: 'invalid_coordinates',
           rowIndex: 1,
-        },
-        {
+          anomalyKey: expect.stringMatching(/^source:/u),
+          sourcePositionId: expect.any(String),
+          canonicalEvidence: expect.objectContaining({
+            device_id: '2',
+            latitude: 200,
+          }),
+        }),
+        expect.objectContaining({
           deviceId: null,
           reason: 'invalid_identity',
           rowIndex: 2,
-        },
+          anomalyKey: 'source:9999',
+          sourcePositionId: '9999',
+          canonicalEvidence: expect.objectContaining({
+            source_position_id: '9999',
+            device_id: null,
+          }),
+        }),
       ],
     })
   })

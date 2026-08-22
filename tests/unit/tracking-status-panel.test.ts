@@ -113,6 +113,34 @@ describe('TrackingStatusPanel', () => {
     expect(getText('[data-testid="tracking-counters"]')).toContain('1')
   })
 
+  it('shows persistent degraded evidence health and first-accepted conflict truth [DON-268]', () => {
+    useIngestHealthStore.getState().applyEvidenceHealth({
+      state: 'degraded',
+      reason: 'projection_failed',
+      pendingCount: 1,
+      corruptCount: 0,
+      conflictCount: 1,
+      rejectedCount: 0,
+      affectedDeviceCount: 1,
+      conflictDeviceIds: ['device-1'],
+    })
+
+    render(React.createElement(TrackingStatusPanel))
+
+    expect(getText('[data-testid="ingest-evidence-health-warning"]')).toContain(
+      'EVIDENCE HEALTH DEGRADED',
+    )
+    expect(getText('[data-testid="ingest-evidence-health-warning"]')).toContain(
+      'Current positions remain live',
+    )
+    expect(getText('[data-testid="ingest-evidence-health-warning"]')).toContain(
+      'finalization and archive export are blocked',
+    )
+    expect(getText('[data-testid="position-conflict-warning"]')).toContain(
+      'first accepted fix remains displayed',
+    )
+  })
+
   it('makes a bounded whole-route trail explicit without implying stored data loss [DON-260]', () => {
     useTrackingStore.setState((state) => ({
       snapshot: {

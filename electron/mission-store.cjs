@@ -20,7 +20,12 @@ const {
 const {
   listIngestAnomalies,
   recordConflictAnomaly,
+  recordRejectedAnomaly,
+  summarizeIngestAnomalies,
 } = require('./ingest-anomaly-ledger.cjs')
+const {
+  createIngestAnomalyOutbox,
+} = require('./ingest-anomaly-outbox.cjs')
 
 const { createZipArchive, readZipArchive } = require('./zip-archive.cjs')
 
@@ -28,6 +33,7 @@ const CURRENT_SCHEMA_VERSION = 8
 const DATABASE_FILE_NAME = 'mission-store.sqlite'
 const BACKUP_FILE_NAME = 'mission-store.backup.sqlite'
 const ARCHIVE_DIRECTORY_NAME = 'archives'
+const INGEST_ANOMALY_OUTBOX_DIRECTORY_NAME = 'ingest-anomaly-outbox'
 const ARCHIVE_VERSION = 1
 
 /** Validates the opaque renderer correlation key used only for worker cancellation. */
@@ -53,6 +59,10 @@ function createElectronMissionStore(options) {
   const databasePath = path.join(options.userDataPath, DATABASE_FILE_NAME)
   const backupPath = path.join(options.userDataPath, BACKUP_FILE_NAME)
   const archiveDirectory = path.join(options.userDataPath, ARCHIVE_DIRECTORY_NAME)
+  const ingestAnomalyOutboxDirectory = path.join(
+    options.userDataPath,
+    INGEST_ANOMALY_OUTBOX_DIRECTORY_NAME,
+  )
   const finalizeMissionFaultInjection = options.finalizeMissionFaultInjection ?? {}
   const archiveFaultInjection = options.archiveFaultInjection ?? {}
   const storageDiagnostics = options.storageDiagnostics ?? null
@@ -69,6 +79,18 @@ function createElectronMissionStore(options) {
   db.pragma('synchronous = FULL')
   db.pragma('foreign_keys = ON')
   migrate(db)
+  const ingestEvidenceFaultInjection = options.ingestEvidenceFaultInjection ?? {}
+  const ingestAnomalyOutbox = createIngestAnomalyOutbox({
+    directoryPath: ingestAnomalyOutboxDirectory,
+    faultInjection: ingestEvidenceFaultInjection,
+    projectEnvelope: (envelope) => {
+      if (ingestEvidenceFaultInjection.failProjection === true) {
+        throw new Error('Injected ingest anomaly projection failure.')
+      }
+      recordRejectedAnomaly(db, envelope)
+    },
+  })
+  void ingestAnomalyOutbox.initialize().catch(() => undefined)
   const backupCoordinator = createBackupCoordinator(
     db,
     databasePath,
@@ -78,16 +100,17 @@ function createElectronMissionStore(options) {
   )
   let finalizeTail = Promise.resolve()
   const enqueueFinalize = (missionId) => {
-    const run = finalizeTail.then(() =>
-      finalizeMission(
+    const run = finalizeTail.then(async () => {
+      await assertIngestEvidenceHealthy(ingestAnomalyOutbox, 'finalization')
+      return finalizeMission(
         db,
         missionId,
         backupCoordinator,
         archiveDirectory,
         finalizeMissionFaultInjection,
         archiveFaultInjection,
-      ),
-    )
+      )
+    })
     finalizeTail = run.catch(() => {})
     return run
   }
@@ -107,10 +130,13 @@ function createElectronMissionStore(options) {
       synchronous_mode: db.pragma('synchronous', { simple: true }),
       database_path: databasePath,
       backup_path: backupPath,
+      ingest_evidence_health: await getIngestEvidenceHealth(db, ingestAnomalyOutbox),
     }),
     syncBackup: async (trigger) => backupCoordinator.syncBackup(trigger),
-    createMissionArchive: async (missionId) =>
-      createMissionArchive(db, missionId, backupCoordinator, archiveDirectory, true, archiveFaultInjection),
+    createMissionArchive: async (missionId) => {
+      await assertIngestEvidenceHealthy(ingestAnomalyOutbox, 'archive')
+      return createMissionArchive(db, missionId, backupCoordinator, archiveDirectory, true, archiveFaultInjection)
+    },
     createMission: async (input) => {
       const mission = createMission(db, input)
       await safeStorageDiagnostic(() =>
@@ -314,6 +340,16 @@ function createElectronMissionStore(options) {
       all(db, 'SELECT * FROM mission_events WHERE mission_id = ? ORDER BY timestamp ASC, rowid ASC', missionId),
     listAuditEvents: async (missionId, options) => listAuditEvents(db, missionId, options),
     listIngestAnomalies: async (missionId) => listIngestAnomalies(db, missionId),
+    recordIngestRejections: async (input) => recordIngestRejections(
+      db,
+      ingestAnomalyOutbox,
+      input,
+    ),
+    getIngestEvidenceHealth: async (missionId) => getIngestEvidenceHealth(
+      db,
+      ingestAnomalyOutbox,
+      missionId,
+    ),
     upsertMarker: async (input) => upsertById(db, 'markers', input, markerDefaults),
     getMarker: async (markerId) => getById(db, 'markers', markerId, 'Marker'),
     listMarkers: async (missionId) =>
@@ -445,6 +481,12 @@ function migrate(db) {
     );
     CREATE INDEX IF NOT EXISTS idx_ingest_anomalies_mission_created
       ON ingest_anomalies(mission_id, created_at);
+    CREATE TABLE IF NOT EXISTS ingest_anomaly_deliveries (
+      delivery_id TEXT PRIMARY KEY,
+      mission_id TEXT NOT NULL,
+      projected_at TEXT NOT NULL,
+      FOREIGN KEY (mission_id) REFERENCES missions(id) ON DELETE CASCADE
+    );
     CREATE TABLE IF NOT EXISTS markers (
       id TEXT PRIMARY KEY,
       mission_id TEXT NOT NULL,
@@ -581,6 +623,78 @@ function ensureColumnExists(db, tableName, columnName, columnSql) {
   }
 
   db.prepare(`ALTER TABLE ${tableName} ADD COLUMN ${columnName} ${columnSql}`).run()
+}
+
+/**
+ * Delivers bounded renderer-originated rejection envelopes without throwing
+ * their persistence failure through the current-position publication path.
+ */
+async function recordIngestRejections(db, outbox, input) {
+  const rejections = Array.isArray(input?.rejections) ? input.rejections : []
+  if (typeof input?.mission_id !== 'string' || input.mission_id.trim() === '') {
+    throw new Error('Rejected-position evidence requires an active mission identity.')
+  }
+  if (rejections.length > 256) {
+    throw new Error('Rejected-position evidence batch exceeds the bounded delivery hypothesis.')
+  }
+  const acknowledgedDeliveryIds = []
+  for (const rejection of rejections) {
+    const envelope = {
+      ...rejection,
+      missionId: input.mission_id,
+      receivedAt: now(),
+    }
+    try {
+      await outbox.deliver(envelope)
+      acknowledgedDeliveryIds.push(rejection.deliveryId)
+    } catch {
+      // The outbox retains a staged record when possible. Failure class is
+      // returned below; anomaly content is deliberately never logged here.
+    }
+  }
+  return {
+    acknowledgedDeliveryIds,
+    health: await getIngestEvidenceHealth(db, outbox, input.mission_id),
+  }
+}
+
+/** Combines durable ledger counts with outbox health, excluding evidence content. */
+async function getIngestEvidenceHealth(db, outbox, missionId) {
+  return {
+    ...(await mapIngestEvidenceHealth(outbox)),
+    ...summarizeIngestAnomalies(db, missionId),
+  }
+}
+
+/** Maps outbox state into the operator/completeness health contract. */
+async function mapIngestEvidenceHealth(outbox) {
+  const outboxHealth = await outbox.health()
+  const criticalReasons = new Set([
+    'outbox_storage_unavailable',
+    'outbox_capacity_exhausted',
+    'outbox_corrupt_record',
+  ])
+  const state = criticalReasons.has(outboxHealth.lastFailure)
+    ? 'critical'
+    : outboxHealth.pendingCount > 0 || outboxHealth.lastFailure !== null
+      ? 'degraded'
+      : 'healthy'
+  return {
+    state,
+    reason: outboxHealth.lastFailure,
+    pendingCount: outboxHealth.pendingCount,
+    corruptCount: outboxHealth.corruptCount,
+  }
+}
+
+/** Prevents archive/finalization from claiming complete evidence while degraded. */
+async function assertIngestEvidenceHealthy(outbox, operation) {
+  const health = await mapIngestEvidenceHealth(outbox)
+  if (health.state !== 'healthy') {
+    throw new Error(
+      `Degraded evidence health blocks ${operation}; resolve durable ingest evidence before continuing.`,
+    )
+  }
 }
 
 function createBackupCoordinator(
