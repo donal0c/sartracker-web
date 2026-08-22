@@ -12,8 +12,18 @@ This decision extends the existing SQLite mission-store architecture. It does no
 
 ## Sources
 
-- Team answers covering complete breadcrumb visibility, current-position priority, outings, external teams, field scale, source-fix immutability, replay, and repeated search areas.
-- Follow-up team answers received 2026-08-22 covering outing ownership, participant selection, stationary alert timing, timeline semantics, search-pass authority, undated GPX, finalization, retention, and archive protection.
+- The canonical raw team transcript in
+  `team-feedback/breadcrumb-question-answers-20260822.md` and its indexed,
+  cross-referenced ledger in
+  `docs/breadcrumb-team-question-and-answer-ledger.md`. The raw answer and its
+  ledger ID outrank summaries when wording is ambiguous.
+- Team answers `SAR-QA-001` through `SAR-QA-013` covering complete breadcrumb
+  visibility, current-position priority, outings, external teams, field scale,
+  source-fix immutability, replay, and repeated search areas.
+- Follow-up team answers `SAR-QA-014` through `SAR-QA-020`, received
+  2026-08-22, covering outing ownership, participant selection, stationary
+  alert timing, timeline semantics, search-pass authority, undated GPX,
+  finalization, retention, and archive protection.
 - `tmp/oxalpha-slices/01-current-fix-critical-path.report.md` through `07-architecture-synthesis.report.md`.
 - `tmp/agent-mail/fable-breadcrumb-rearchitecture-plan-20260821.md`.
 - `tmp/traccar-live-architecture-evidence-20260821.md`.
@@ -21,7 +31,7 @@ This decision extends the existing SQLite mission-store architecture. It does no
 
 ## Locked Operator Model
 
-### Mission outings
+### Mission outings (`SAR-QA-003`, `SAR-QA-010`, `SAR-QA-014`)
 
 - An outing is a mission-wide operational period started and ended by the coordinator.
 - An outing may cross midnight.
@@ -29,7 +39,7 @@ This decision extends the existing SQLite mission-store architecture. It does no
 - Individual people, devices, groups, or external resources may join or leave during an outing. Their participation windows do not create separate outings.
 - Calendar dates may be offered as a display convenience only. They are not the canonical persistence or coverage partition.
 
-### Mission participants
+### Mission participants (`SAR-QA-004`, `SAR-QA-011`, `SAR-QA-015`)
 
 - SAR Tracker never records every Traccar device automatically merely because it is registered on the server.
 - The coordinator explicitly selects participating Traccar groups and/or devices at mission start.
@@ -37,7 +47,7 @@ This decision extends the existing SQLite mission-store architecture. It does no
 - Participant additions, removals, and group-membership changes are retained as mission history; they do not rewrite earlier participation.
 - The supported envelope is 100 active Traccar devices in total, divided into groups/teams. External teams may also contribute imported GPX evidence.
 
-### Current positions and stationary attention
+### Current positions and stationary attention (`SAR-QA-002`, `SAR-QA-012`, `SAR-QA-016`)
 
 - Current positions are the highest-priority operational path and must never wait for history, archive, reconciliation, or coverage rendering.
 - Historical selection or omission never hides a participant's current position. Hiding live position requires a separate explicit operator action.
@@ -47,7 +57,7 @@ This decision extends the existing SQLite mission-store architecture. It does no
 - Stationary evaluation must account for reported GPS accuracy and must describe an attention condition, not automatically declare an emergency.
 - Meaningful movement clears the attention state. Acknowledgement/presentation details are a usability decision inside the stationary-attention chunk and must not erase the underlying state.
 
-### Complete breadcrumb coverage
+### Complete breadcrumb coverage (`SAR-FIELD-001`, `SAR-QA-001`, `SAR-QA-003`, `SAR-QA-008`)
 
 - Default history view shows all accepted breadcrumbs for all selected participants across the complete mission to date.
 - The coordinator may omit historical data selectively by device and outing without deleting or changing evidence.
@@ -55,23 +65,26 @@ This decision extends the existing SQLite mission-store architecture. It does no
 - Progress must be derived from a real database completeness watermark. It must never be an estimated animation.
 - Existing paged exact Breadcrumb Dots remain an inspection/export mechanism, not the complete operational coverage view.
 
-### Source-fix immutability
+### Source-fix immutability (`SAR-QA-006`, `SAR-QA-013`)
 
 - Operators have no ability to edit or delete Traccar fixes.
 - Identical source fixes are idempotent duplicates.
+- Repeated SAR Tracker retrieval of the same immutable Traccar database row is
+  not a new source observation or breadcrumb. Per-poll delivery accounting is
+  transport diagnostics, not separate mission evidence (`SAR-DUP-001`).
 - If the same source identity ever arrives with different content, SAR Tracker preserves the first accepted fix as displayed truth, records the conflicting observation as an anomaly, and warns the operator. It never silently overwrites either observation.
 - Late or out-of-order fixes remain accepted when valid and are ordered by fix time while retaining receipt time.
 - Invalid/rejected fixes never become position truth, but their rejection and reason remain durable and operator-visible.
 - The absence of conflicts in a bounded live-server sample is not proof that conflicts are impossible.
 
-### Timeline replay
+### Timeline replay (`SAR-QA-007`, `SAR-QA-017`)
 
 - Timeline replay reconstructs the mission data known at the selected time: tracks, positions, clues, markers, drawings, search areas, assignments, passes, and lifecycle state as applicable.
 - Replay does not reproduce the exact map zoom, pan, open panels, or transient screen layout used by the coordinator.
 - Fix time, receipt time, creation time, edit time, and effective/discovery time remain distinct where relevant.
 - Mutable operational objects use explicit versions so later edits never destroy prior mission state.
 
-### Search areas and repeated passes
+### Search areas and repeated passes (`SAR-QA-009`, `SAR-QA-018`)
 
 - A search area's geographic identity is separate from assignments and actual search passes.
 - The same area may be assigned or searched multiple times, including partially and by different teams.
@@ -79,7 +92,7 @@ This decision extends the existing SQLite mission-store architecture. It does no
 - Breadcrumb-derived geometric coverage is advisory. It may highlight discrepancies but never declares completion.
 - Completed historical areas and passes are retired or revised, never silently hard-deleted.
 
-### External teams and GPX evidence
+### External teams and GPX evidence (`SAR-QA-004`, `SAR-QA-019`)
 
 - Live Traccar groups and imported GPX are both supported.
 - They share a provenance-carrying track query contract but retain source-specific storage and semantics.
@@ -89,7 +102,7 @@ This decision extends the existing SQLite mission-store architecture. It does no
 - SAR Tracker never invents GPX timestamps.
 - An undated GPX track may be assigned to an outing and displayed as static evidence, but is excluded from precise timeline replay.
 
-### Finalization, retention, and archive evidence
+### Finalization, retention, and archive evidence (`SAR-QA-007`, `SAR-QA-020`)
 
 - A finalized mission is read-only.
 - Any supported post-finalization correction is a visible revision with authority, reason, before/after state, and audit history; it never erases the earlier record.

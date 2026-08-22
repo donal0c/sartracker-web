@@ -9,6 +9,11 @@ iteration, and requirements control. It supplements
 `docs/breadcrumb-programme-execution-policy.md`; it does not replace the domain
 decisions in `docs/breadcrumb-mission-history-architecture-decision.md`.
 
+The raw question-and-answer authority is
+`team-feedback/breadcrumb-question-answers-20260822.md`, indexed by
+`docs/breadcrumb-team-question-and-answer-ledger.md`. Summaries in plans,
+Linear, ADRs, or model output never outrank the team's recorded words there.
+
 ## Roles And Authority
 
 - **Donal** owns the approval gates. No implementation task starts until Donal
@@ -31,7 +36,8 @@ decisions in `docs/breadcrumb-mission-history-architecture-decision.md`.
 
 Every plan and implementation brief must be checked against, in order:
 
-1. confirmed team answers and field examples;
+1. the exact confirmed team answers and field examples in
+   `docs/breadcrumb-team-question-and-answer-ledger.md`;
 2. `docs/breadcrumb-mission-history-architecture-decision.md`;
 3. the relevant Linear BCP issue and its dependencies;
 4. `docs/breadcrumb-programme-execution-policy.md`;
@@ -45,6 +51,23 @@ and the team; it is never allowed to become the de facto requirement.
 
 Core ambiguity in life-safety behaviour blocks implementation. Minor UI polish
 may proceed only with an explicit recorded assumption.
+
+### Mandatory Duplicate-Question Gate
+
+Before proposing any question for the SAR team, the coordinator must:
+
+1. search the canonical Q&A ledger using the operational nouns in the proposed
+   question, not only its technical wording;
+2. list every related `SAR-QA-*` ID;
+3. state in ordinary operational language why those answers do not resolve the
+   proposed question;
+4. distinguish an operator/domain decision from an engineering mechanism;
+5. add the proposed question to the ledger before it is sent.
+
+If the gap cannot be stated, the question is not sent. Fable, OxAlpha, and an
+implementation agent may identify a possible ambiguity, but they cannot turn
+an already-answered domain point into a new team question. The coordinator
+must perform this gate personally.
 
 ## Cost-Conscious Fable Policy
 
@@ -83,15 +106,17 @@ have changed.
 When a fresh plan is needed, Codex sends one bounded task containing:
 
 - goal and non-goals;
-- exact requirement trace;
+- exact requirement trace using canonical `SAR-QA-*` IDs;
 - safety invariants and failure modes;
 - source-of-truth repository, branch, SHA, and dirty-worktree caveat;
 - required module boundaries and anti-sprawl constraints;
 - red-first tests, focused verification, and completion gate;
 - explicit prohibition on source edits and external mutations.
 
-Codex then challenges the result against the team requirements and current
-code. Unresolved product decisions go to Donal or the team before implementation.
+Codex then challenges the result against the raw team answers and current
+code. A model-labelled "product decision" is not forwarded automatically; it
+must pass the mandatory duplicate-question gate first. Only genuinely
+unresolved product decisions go to Donal or the team before implementation.
 
 ### 3. Approval Gate
 

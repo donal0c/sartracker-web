@@ -5,7 +5,9 @@ Date: 2026-08-22
 Status: **Locked for execution.** This document records the BCP-00 delivery,
 complexity, review, branch, qualification, and first-PR decisions. Domain
 semantics remain governed by
-`docs/breadcrumb-mission-history-architecture-decision.md`.
+`docs/breadcrumb-mission-history-architecture-decision.md`, with the team's
+exact words and question history governed by
+`docs/breadcrumb-team-question-and-answer-ledger.md`.
 
 ## Delivery Decision
 
@@ -66,6 +68,7 @@ The binding operating loop is
 guards requirements; fresh bounded Fable planning is the default when a new
 plan is genuinely needed; Donal explicitly authorizes every implementation
 task; and each approved slice is delegated to a fresh GPT-5.6 Sol high task.
+No team question is sent until it passes the ledger's duplicate-question gate.
 
 ## PR And Slice Scores
 
