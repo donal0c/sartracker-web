@@ -846,6 +846,20 @@
             A live fix older than five minutes is also marked stale. In all three cases, treat displayed
             positions as potentially stale until a newer live fix arrives.
           </div>
+          <div class="warning">
+            <strong>Current-position data warnings:</strong> SAR Tracker keeps valid current fixes visible
+            when another row from the same provider response is rejected. An amber warning reports the
+            rejected position data, and the affected device is marked in the Devices workspace. If the
+            device roster cannot refresh, current fixes continue with the last-known device details and
+            an explicit roster warning. A position that has only a provider server timestamp is accepted
+            as <strong>FIX TIME UNVERIFIED</strong>, marked stale, and is never presented as a fresh device
+            fix. These amber warnings require investigation, but they are distinct from the red offline
+            state: valid current fixes remain available while the provider connection is otherwise online.
+          </div>
+          <figure class="screenshot">
+            <img src="assets/tracking-current-position-ingest-warning.png" alt="Online tracking panel showing separate amber roster, rejected-position, and unverified-fix-time warnings" />
+            <figcaption>Current fixes stay available while separate amber warnings identify roster, rejected-row, and timestamp-provenance concerns.</figcaption>
+          </figure>
           <h3>Devices Workspace</h3>
           <p>
             Press <strong>Open Devices</strong> from the Tracking tab to inspect the roster. The workspace
@@ -861,7 +875,8 @@
             <strong>Close</strong> or <strong>Esc</strong> to remove it immediately and return to the
             operational map. Each row still shows device health, last seen time, source, current-location
             visibility, speed in <strong>km/h</strong> when Traccar reports speed, and a <strong>Zoom</strong> action for devices with a valid fix. The selected-device inspector separately shows the
-            authoritative <strong>Fix Time</strong> and <strong>GPS Accuracy</strong> in metres when
+            authoritative <strong>Fix Time</strong>, timestamp source, position-data rejection detail, and
+            <strong>GPS Accuracy</strong> in metres when
             Traccar supplies it; accuracy is the source measurement, not a claim that the hardware has
             zero physical error. Click the trail
             colour swatch on a device row to open a palette of high-contrast SAR colours for that device's

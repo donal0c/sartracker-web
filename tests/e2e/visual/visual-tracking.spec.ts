@@ -145,6 +145,68 @@ Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
     })
   })
 
+  test('current-position ingest warnings remain calm and explicit [DON-267]', async ({ page }) => {
+    await page.evaluate(async () => {
+      const [{ applyTrackingSnapshot, applyTrackingStatus, useTrackingStore }, { applyCurrentPositionRejections }] =
+        await Promise.all([
+          import('/src/features/tracking/tracking-store.ts'),
+          import('/src/features/tracking/ingest-health-store.ts'),
+        ])
+      const snapshot = useTrackingStore.getState().snapshot
+      applyTrackingSnapshot({
+        ...snapshot,
+        positions: snapshot.positions.map((position, index) => index === 0
+          ? {
+              ...position,
+              timestamp_source: 'server' as const,
+              fix_time_unverified: true,
+              device_cache_stale: true,
+            }
+          : position),
+      })
+      applyTrackingStatus({
+        mode: 'online',
+        consecutiveFailures: 0,
+        recovered: false,
+        lastSuccessAt: new Date().toISOString(),
+        warning: 'DEVICE ROSTER UNAVAILABLE — current fixes are using last-known device details.',
+      })
+      applyCurrentPositionRejections([
+        { deviceId: 'alpha', reason: 'invalid_coordinates', rowIndex: 1 },
+      ])
+    })
+
+    await expect(page.getByTestId('tracking-mode-chip')).toContainText('online')
+    await expect(page.getByTestId('tracking-warning')).toContainText('ROSTER UNAVAILABLE')
+    await expect(page.getByTestId('current-position-ingest-warning')).toContainText(
+      'Valid current fixes remain visible',
+    )
+    await expect(page.getByTestId('fix-time-unverified-warning')).toContainText(
+      'not treated as a fresh device fix',
+    )
+
+    await captureElementAndRegister(page, 'tracking-status', {
+      testId: 'tracking-current-position-ingest-warning',
+      testName: 'Current-position rejection and timestamp provenance warnings',
+      area: 'tracking',
+      severity: 'high',
+      verificationPrompt: `Verify this screenshot of SAR Tracker's current-position health warnings:
+1. The tracking status must remain ONLINE because valid current fixes are still publishing
+2. A clear roster warning must say current fixes are using last-known device details
+3. A separate position-data warning must report a rejected row and explicitly say valid current fixes remain visible
+4. A separate FIX TIME UNVERIFIED warning must explain that server receipt time is not treated as a fresh device fix
+5. The "Open Devices" action must remain visible so the operator can inspect the accepted fix and rejection detail
+6. The warnings should be prominent amber attention states, not a red offline/emergency presentation
+Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
+      playwrightAssertions: [
+        'tracking mode remains online',
+        'roster warning is visible',
+        'rejected-row warning says valid current fixes remain visible',
+        'server-only timestamp warning says it is not treated as fresh',
+      ],
+    })
+  })
+
   test('paused mission refresh suspension is a red stale-position alert', async ({ page }) => {
     await page.getByTestId('mission-pause-resume-btn').click()
     await expect(page.getByTestId('mission-control')).toContainText('paused')

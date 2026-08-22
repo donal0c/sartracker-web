@@ -7,6 +7,7 @@ import { TrackingStatusPanel } from '../../src/components/tracking-status-panel'
 import { useDeviceWorkspaceStore } from '../../src/features/tracking/device-workspace-store'
 import { useTrackingStore } from '../../src/features/tracking/tracking-store'
 import { useTrackingStyleStore } from '../../src/features/tracking/tracking-style-store'
+import { useIngestHealthStore } from '../../src/features/tracking/ingest-health-store'
 
 let root: Root | null = null
 let host: HTMLDivElement | null = null
@@ -22,6 +23,7 @@ describe('TrackingStatusPanel', () => {
     useTrackingStore.setState(useTrackingStore.getInitialState())
     useDeviceWorkspaceStore.setState(useDeviceWorkspaceStore.getInitialState())
     useTrackingStyleStore.setState(useTrackingStyleStore.getInitialState())
+    useIngestHealthStore.setState(useIngestHealthStore.getInitialState())
   })
 
   it('renders offline tracking mode and OFFLINE MODE warning as a flashing red alert', () => {
@@ -71,6 +73,44 @@ describe('TrackingStatusPanel', () => {
     expect(getText('[data-testid="tracking-mode-chip"]')).toContain('paused')
     expect(getText('[data-testid="tracking-mode-chip"]')).not.toContain('idle')
     expect(getText('[data-testid="tracking-warning"]')).toContain('Live refresh suspended')
+  })
+
+  it('shows rejected-row and unverified-fix-time warnings while retaining valid fixes [DON-267]', () => {
+    useTrackingStore.setState((state) => ({
+      snapshot: {
+        ...state.snapshot,
+        positions: [{
+          id: 'position-1',
+          device_id: 'device-1',
+          lat: 52,
+          lon: -9.7,
+          altitude: null,
+          speed: null,
+          battery: null,
+          accuracy: null,
+          timestamp: '2026-08-22T10:00:00.000Z',
+          timestamp_source: 'server',
+          fix_time_unverified: true,
+          source: 'osmand',
+          data_origin: 'live',
+          cache_age_seconds: null,
+          device_cache_stale: true,
+        }],
+      },
+    }))
+    useIngestHealthStore.getState().applyRejections([
+      { deviceId: 'device-1', reason: 'invalid_coordinates', rowIndex: 1 },
+    ])
+
+    render(React.createElement(TrackingStatusPanel))
+
+    expect(getText('[data-testid="current-position-ingest-warning"]')).toContain(
+      'Valid current fixes remain visible',
+    )
+    expect(getText('[data-testid="fix-time-unverified-warning"]')).toContain(
+      'not treated as a fresh device fix',
+    )
+    expect(getText('[data-testid="tracking-counters"]')).toContain('1')
   })
 
   it('makes a bounded whole-route trail explicit without implying stored data loss [DON-260]', () => {

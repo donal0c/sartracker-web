@@ -22,6 +22,7 @@ import {
   useTrackingStyleStore,
 } from '../features/tracking/tracking-style-store'
 import { useTrackingStore } from '../features/tracking/tracking-store'
+import { useIngestHealthStore } from '../features/tracking/ingest-health-store'
 import { useLayerVisibilityStore } from '../features/layers/layer-visibility-store'
 import { useMapTargetStore } from '../features/map/map-target-store'
 
@@ -73,10 +74,16 @@ function DevicesWorkspaceContent(props: {
   const [error, setError] = useState<string | null>(null)
   const [activeFilter, setActiveFilter] = useState<DeviceWorkspaceFilter>('all')
   const [deviceQuery, setDeviceQuery] = useState('')
+  const ingestHealth = useIngestHealthStore((state) => state.summary)
 
   const rows = useMemo(
-    () => buildDeviceWorkspaceRows(trackingSnapshot, hiddenDeviceIds, activeDeviceIds),
-    [activeDeviceIds, hiddenDeviceIds, trackingSnapshot],
+    () => buildDeviceWorkspaceRows(
+      trackingSnapshot,
+      hiddenDeviceIds,
+      activeDeviceIds,
+      ingestHealth,
+    ),
+    [activeDeviceIds, hiddenDeviceIds, ingestHealth, trackingSnapshot],
   )
   const summary = useMemo(
     () => buildDeviceWorkspaceSummary(rows, trackingStatus),
@@ -323,6 +330,9 @@ function DevicesWorkspaceContent(props: {
                   <Detail label="Last Seen" value={selectedRow.lastSeenDisplay} />
                   <Detail label="Fix Time" value={selectedRow.fixTimeDisplay} />
                   <Detail label="Source" value={selectedRow.sourceDisplay} />
+                  {selectedRow.ingestWarning === null ? null : (
+                    <Detail label="Position Data" value={selectedRow.ingestWarning} />
+                  )}
                   <Detail label="GPS Accuracy" value={selectedRow.accuracyDisplay} />
                   <Detail label="Battery" value={selectedRow.batteryDisplay} />
                   <Detail label="Speed" value={selectedRow.speedDisplay} />
@@ -473,6 +483,14 @@ function DeviceRow(props: {
         type="button"
       >
         <p className="truncate font-semibold text-stone-100">{props.row.name}</p>
+        {props.row.ingestWarning === null ? null : (
+          <p
+            className="mt-1 truncate text-[10px] font-bold uppercase tracking-wide text-amber-300"
+            data-testid={`device-ingest-warning-${props.row.deviceId}`}
+          >
+            Position row rejected
+          </p>
+        )}
       </button>
       <DeviceColorSwatch
         color={props.deviceColor}

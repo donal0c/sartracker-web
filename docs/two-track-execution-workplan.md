@@ -151,9 +151,10 @@ Fable's accepted integrated design is
 named `npm run test:contract:dots` tripwire: a 20,006-fix, three-page real
 SQLite/controller/GeoJSON chain plus eight deterministic injected faults.
 The coordination loop is locked in
-`docs/breadcrumb-programme-coordination-workflow.md`. BCP-01 is already planned;
-the next action is Donal's explicit authorization to create its fresh GPT-5.6
-Sol high implementation task, not another Fable run.
+`docs/breadcrumb-programme-coordination-workflow.md`. BCP-01 is implemented and
+locally/browser verified under `DON-267`; the coordinator's acceptance check is
+next. Keep the issue open until PR-1 merges, and do not begin BCP-02 without
+Donal's separate explicit authorization.
 
 ## Next Task Order
 
@@ -162,7 +163,7 @@ This is the default order when the user says “work on the next task.”
 | Order | Chunk | Track | Linear issue | Status |
 | --- | --- | --- | --- | --- |
 | Done | Release the Tracking stability, interaction, and basemap-independent overlay hotfix | S2 Electron / Shared Tracking / Map / Verification | `DON-261` / `DON-262` / `DON-263` | Beta.12.5 exact commit `042d77ad6158`; clean no-skip verification 8/8; tag CI `30497318233` green; exact CI AppImage and real installed `.deb` passed lifecycle, safety, live-Traccar, 13-poll empty-history stability, pending/degraded basemap overlay, and deterministic five-/fourteen-day soak gates. Independent reviews returned `RELEASE` with no P1/P2. Guarded publication succeeded; fresh public hashes matched and the public AppImage passed Ubuntu lifecycle/recovery/finalize/archive. |
-| In progress | PR-1: trustworthy ingest and live safety; BCP-10 exact-dots gate complete locally, BCP-01 next | Shared Tracking / S2 Electron / Evidence | `DON-266` / `DON-267` / `DON-268` / `DON-269` | Branch `codex/breadcrumb-pr1-ingest-safety`; complexity 9/10; Fable JIT design accepted; four exact-head reviews at the review-ready head. No team release from this PR. |
+| In progress | PR-1: trustworthy ingest and live safety; BCP-10 and BCP-01 complete locally | Shared Tracking / S2 Electron / Evidence | `DON-266` / `DON-267` / `DON-268` / `DON-269` | Branch `codex/breadcrumb-pr1-ingest-safety`; BCP-01 preserves valid current fixes across malformed siblings, roster-only failure, and history reset, while exposing per-device rejection and unverified server-time warnings. Full unit `197 files / 1,587 tests`, lint, build, targeted Chromium `2/2`, high-severity visual review, and BCP-10 `10/10` pass. Proof is local/browser only; coordinator acceptance is next, and no team release comes from this PR. |
 | Todo (non-blocking) | Surface persistent overlay synchronization failures in diagnostics and map health | S2 Electron / Shared Map / Diagnostics | `DON-264` | DON-263 retries transient and persistent sync exceptions indefinitely with a 2 s cap, but repeated failures are currently developer-console-only. Add bounded, sanitized, durable warning elevation and success-based clearing after the beta.12.5 hotfix; this P3 does not block the release. |
 | Done | Make Breadcrumb Dots source-exact and independently release-gated | S2 Electron / Shared Tracking / Verification | `DON-260` | Published beta.12.11 at exact tag `bced8052b85c` after green CI run `31482052296`, full AppImage and genuinely installed `.deb` package matrices, synthetic 279,936/1,935,384-fix exact-page proofs, target-only live-provider equality, diagnostics privacy, and unchanged performance/RSS gates. The guarded publisher and a second public download revalidated both installer hashes and `SHA256SUMS`; the fresh public AppImage independently passed settings persistence, same-mission recovery, finalization, and archive creation. Dots is source-exact and paged; Line alone remains simplified. Beta.12.9/.12.10 are not the correction. |
 | Done | Build deterministic field-scale mission-store fixtures | S2 Electron / Verification | `DON-242` | Small/CI/local/field plus 5-day and 14-day continuous-mission presets; Ubuntu field fixture is 3.704 GB with measured table accounting and restart checkpoints. |

@@ -4,6 +4,7 @@ import { useExactBreadcrumbDotStore } from '../features/tracking/exact-breadcrum
 import type { ExactBreadcrumbDotState } from '../features/tracking/exact-breadcrumb-dot-controller'
 import { useTrackingStyleStore } from '../features/tracking/tracking-style-store'
 import { ExactBreadcrumbDotStatus } from './exact-breadcrumb-dot-status'
+import { useIngestHealthStore } from '../features/tracking/ingest-health-store'
 
 type TrackingStatusPanelProps = {
   readonly exactBreadcrumbDotState?: ExactBreadcrumbDotState
@@ -21,8 +22,12 @@ export function TrackingStatusPanel(props: TrackingStatusPanelProps = {}) {
   const breadcrumbTrailMode = useTrackingStyleStore((state) => state.breadcrumbTrailMode)
   const storedExactBreadcrumbDotState = useExactBreadcrumbDotStore((state) => state.state)
   const exactBreadcrumbDotController = useExactBreadcrumbDotStore((state) => state.controller)
+  const ingestHealth = useIngestHealthStore((state) => state.summary)
   const exactBreadcrumbDotState = props.exactBreadcrumbDotState ?? storedExactBreadcrumbDotState
   const staleDeviceCount = snapshot.positions.filter((position) => position.device_cache_stale).length
+  const unverifiedFixTimeCount = snapshot.positions.filter(
+    (position) => position.fix_time_unverified === true,
+  ).length
   const cachedDeviceCount = snapshot.positions.filter((position) => position.data_origin === 'cache').length
   const boundedBreadcrumbDeviceCount =
     snapshot.breadcrumbMetadata?.deviceBudgets.filter((budget) => budget.truncated).length ?? 0
@@ -98,6 +103,33 @@ export function TrackingStatusPanel(props: TrackingStatusPanelProps = {}) {
         <TrackingStatusMessage tone={criticalTrustWarning ? 'critical' : 'warning'}>
           {status.warning}
         </TrackingStatusMessage>
+      )}
+
+      {ingestHealth.totalRejected === 0 ? null : (
+        <p
+          className="mb-4 border-l-4 border-l-amber-400 bg-amber-400/15 px-3 py-2 text-xs font-medium leading-relaxed text-amber-100"
+          data-testid="current-position-ingest-warning"
+        >
+          POSITION DATA WARNING — {ingestHealth.totalRejected}{' '}
+          {ingestHealth.totalRejected === 1 ? 'row was' : 'rows were'} rejected in the latest
+          poll across {ingestHealth.affectedDeviceCount}{' '}
+          {ingestHealth.affectedDeviceCount === 1 ? 'identified device' : 'identified devices'}
+          {ingestHealth.unidentifiedRejected === 0
+            ? ''
+            : `; ${ingestHealth.unidentifiedRejected} ${ingestHealth.unidentifiedRejected === 1 ? 'row had' : 'rows had'} no valid device identity`}
+          . Valid current fixes remain visible.
+        </p>
+      )}
+
+      {unverifiedFixTimeCount === 0 ? null : (
+        <p
+          className="mb-4 border-l-4 border-l-amber-400 bg-amber-400/15 px-3 py-2 text-xs font-medium leading-relaxed text-amber-100"
+          data-testid="fix-time-unverified-warning"
+        >
+          FIX TIME UNVERIFIED — {unverifiedFixTimeCount}{' '}
+          {unverifiedFixTimeCount === 1 ? 'position has' : 'positions have'} server receipt time
+          only and {unverifiedFixTimeCount === 1 ? 'is' : 'are'} not treated as a fresh device fix.
+        </p>
       )}
 
       {breadcrumbTrailMode === 'dots' ? (

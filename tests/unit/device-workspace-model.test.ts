@@ -106,6 +106,39 @@ describe('device workspace model', () => {
     expect(rows.map((row) => row.name)).toEqual(['Alpha Team', 'Bravo Team'])
   })
 
+  it('shows per-device rejection health and server-only timestamp provenance [DON-267]', () => {
+    const rows = buildDeviceWorkspaceRows(
+      {
+        ...SNAPSHOT,
+        positions: SNAPSHOT.positions.map((position) => position.device_id === 'alpha'
+          ? {
+              ...position,
+              timestamp_source: 'server' as const,
+              fix_time_unverified: true,
+              device_cache_stale: true,
+            }
+          : position),
+      },
+      [],
+      [],
+      {
+        totalRejected: 1,
+        affectedDeviceCount: 1,
+        unidentifiedRejected: 0,
+        byDevice: {
+          alpha: { count: 1, lastReason: 'invalid_coordinates' },
+        },
+      },
+    )
+
+    expect(rows[0]).toMatchObject({
+      deviceId: 'alpha',
+      sourceDisplay: 'Fix time unverified',
+      fixTimeUnverified: true,
+      ingestWarning: '1 position row rejected — invalid coordinates.',
+    })
+  })
+
   it('builds workspace summary counters aligned with tracking status', () => {
     const rows = buildDeviceWorkspaceRows(SNAPSHOT, ['bravo'], ['alpha'])
     const summary = buildDeviceWorkspaceSummary(rows, STATUS)

@@ -1,4 +1,9 @@
 import type { TrackingConnectionStatus, TrackingSnapshot } from './tracking-types'
+import {
+  EMPTY_CURRENT_POSITION_INGEST_HEALTH,
+  formatCurrentPositionRejectionReason,
+  type CurrentPositionIngestHealthSummary,
+} from './ingest-health'
 
 export type DeviceWorkspaceRow = {
   readonly deviceId: string
@@ -14,6 +19,8 @@ export type DeviceWorkspaceRow = {
   readonly lastSeenDisplay: string
   readonly fixTimeDisplay: string
   readonly sourceDisplay: string
+  readonly fixTimeUnverified: boolean
+  readonly ingestWarning: string | null
   readonly stale: boolean
   readonly accuracyDisplay: string
   readonly batteryDisplay: string
@@ -41,6 +48,7 @@ export function buildDeviceWorkspaceRows(
   snapshot: TrackingSnapshot,
   hiddenDeviceIds: readonly string[],
   activeDeviceIds: readonly string[] = [],
+  ingestHealth: CurrentPositionIngestHealthSummary = EMPTY_CURRENT_POSITION_INGEST_HEALTH,
 ): readonly DeviceWorkspaceRow[] {
   const latestPositionByDevice = new Map(
     snapshot.positions.map((position) => [position.device_id, position] as const),
@@ -50,6 +58,7 @@ export function buildDeviceWorkspaceRows(
   return [...snapshot.devices]
     .map((device) => {
       const position = latestPositionByDevice.get(device.device_id) ?? null
+      const rejected = ingestHealth.byDevice[device.device_id]
       return {
         deviceId: device.device_id,
         name: device.name,
@@ -66,11 +75,17 @@ export function buildDeviceWorkspaceRows(
         sourceDisplay:
           position === null
             ? 'No fix'
+            : position.fix_time_unverified === true
+              ? 'Fix time unverified'
             : position.device_cache_stale
               ? 'Stale'
               : position.data_origin === 'cache'
                 ? 'Cache'
                 : 'Live',
+        fixTimeUnverified: position?.fix_time_unverified === true,
+        ingestWarning: rejected === undefined
+          ? null
+          : `${rejected.count} position ${rejected.count === 1 ? 'row' : 'rows'} rejected — ${formatCurrentPositionRejectionReason(rejected.lastReason)}.`,
         stale: position?.device_cache_stale ?? false,
         accuracyDisplay:
           typeof position?.accuracy === 'number'
