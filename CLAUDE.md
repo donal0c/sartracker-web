@@ -306,6 +306,29 @@ Do not code through ambiguity in life-safety or architecture-bearing areas.
 - When a Linear issue is implementation-ready except for minor UI polish, proceed and record the assumption
 - When a Linear issue is missing a core domain decision, do not start implementation until that decision is locked
 
+### Team Question And Answer Authority
+
+Do not rely on chat history, a model summary, or an ADR alone as the source of
+what the SAR team said.
+
+- Preserve every operational question sent to the team and every answer
+  received in a repository-backed raw transcript.
+- Maintain an indexed Q&A ledger that gives each answer a stable ID and links
+  it to derived ADR decisions, Linear issues, implementation chunks, and tests.
+- Before proposing another team question, search the ledger, cite all related
+  answer IDs, and state why they do not already resolve it.
+- Do not send engineering mechanics—such as retries, deduplication,
+  idempotency, queueing, or transaction design—to the team as product questions
+  when their recorded domain answer already determines the meaning.
+- Model-generated "open questions" are candidates only. Codex must personally
+  pass them through the duplicate-question check before forwarding them.
+- Never silently rewrite or delete an earlier answer. Append the clarification
+  and mark the relationship explicitly.
+
+For the Breadcrumb and Mission-History Programme, the raw source is
+`team-feedback/breadcrumb-question-answers-20260822.md` and the canonical index
+is `docs/breadcrumb-team-question-and-answer-ledger.md`.
+
 ### Definition Of Done
 A Linear issue is not done just because tests pass.
 
