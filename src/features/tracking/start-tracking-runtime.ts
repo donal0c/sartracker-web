@@ -30,7 +30,10 @@ import type {
 import type { BreadcrumbSelectionMetadata } from './breadcrumb-accumulator'
 import { useMissionStore } from '../mission/mission-store'
 import { useActiveMissionDevicesStore } from './active-mission-devices-store'
-import type { ParticipantBackfillCheckpoint } from '../../infrastructure/mission-store/tauri-mission-store'
+import type {
+  ParticipantBackfillCheckpoint,
+  PersistTrackingHistoryBatchInput,
+} from '../../infrastructure/mission-store/tauri-mission-store'
 import { runParticipantBackfillPass } from '../participants/participant-backfill-runtime'
 
 export type TrackingRuntimeConfig = {
@@ -228,27 +231,9 @@ export type TrackingRuntimeMissionStore = {
       readonly data_origin?: 'live' | 'cache'
     }[]
   }) => Promise<unknown>
-  readonly persistTrackingHistoryBatch?: (input: {
-    readonly mission_id: string
-    readonly positions: readonly {
-      readonly source_position_id?: string | null
-      readonly device_id: string
-      readonly lat: number
-      readonly lon: number
-      readonly altitude?: number | null
-      readonly speed?: number | null
-      readonly battery?: number | null
-      readonly accuracy?: number | null
-      readonly source?: string | null
-      readonly timestamp?: string | null
-      readonly data_origin?: 'live' | 'cache'
-    }[]
-    readonly checkpoints: readonly {
-      readonly device_id: string
-      readonly history_from: string
-      readonly reconciled_until: string
-    }[]
-  }) => Promise<unknown>
+  readonly persistTrackingHistoryBatch?: (
+    input: PersistTrackingHistoryBatchInput,
+  ) => Promise<unknown>
   readonly persistTrackingPositionsBulk?: (input: {
     readonly mission_id: string
     readonly positions: readonly {
@@ -879,6 +864,7 @@ export async function startTrackingRuntime(
   }
 
   async function runNextParticipantBackfillPass(): Promise<void> {
+    if (!hasBreadcrumbClient(client)) return
     const activeMission = await dependencies.missionStore.getActiveMission()
     if (activeMission === null) return
     const checkpoints = await dependencies.missionStore.listParticipantBackfillCheckpoints?.(
