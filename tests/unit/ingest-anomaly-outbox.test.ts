@@ -366,6 +366,57 @@ describe('durable ingest anomaly outbox [DON-268]', () => {
     expect(attempts).toBeLessThanOrEqual(2)
   })
 
+  it('rotates replay past terminal records so later mission evidence cannot starve', async () => {
+    directoryPath = await mkdtemp(path.join(tmpdir(), 'sartracker-ingest-outbox-'))
+    const terminal = createIngestAnomalyOutbox({
+      directoryPath,
+      projectEnvelope: () => {
+        throw Object.assign(
+          new Error('mission already finalized'),
+          { code: 'LATE_EVIDENCE_AFTER_FINALIZATION' },
+        )
+      },
+      replayBatchSize: 8,
+      retryDelayMs: 60_000,
+    })
+    for (let index = 0; index < 8; index += 1) {
+      await terminal.deliver({
+        ...createEnvelope(`terminal-${index}`),
+        missionId: 'mission-a',
+        anomalyKey: `terminal:${index}`,
+      })
+    }
+    terminal.dispose()
+
+    const projected: string[] = []
+    const replay = createIngestAnomalyOutbox({
+      directoryPath,
+      projectEnvelope: (envelope) => {
+        if (envelope.missionId === 'mission-a') {
+          throw Object.assign(new Error('mission already finalized'), {
+            code: 'LATE_EVIDENCE_AFTER_FINALIZATION',
+          })
+        }
+        projected.push(envelope.deliveryId)
+      },
+      replayBatchSize: 8,
+      retryDelayMs: 60_000,
+    })
+
+    await replay.deliver({
+      ...createEnvelope('valid-later'),
+      missionId: 'mission-b',
+      anomalyKey: 'valid:later',
+    })
+    await replay.health('mission-b')
+
+    expect(projected).toEqual(['valid-later'])
+    await expect(replay.health('mission-b')).resolves.toMatchObject({
+      pendingCount: 0,
+      lastFailure: null,
+    })
+  })
+
   it('yields between failed projections so one replay turn stays responsive', async () => {
     directoryPath = await mkdtemp(path.join(tmpdir(), 'sartracker-ingest-outbox-'))
     const staging = createIngestAnomalyOutbox({

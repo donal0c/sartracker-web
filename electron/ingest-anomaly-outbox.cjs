@@ -29,6 +29,7 @@ function createIngestAnomalyOutbox(options) {
   let failureStateInitialized = false
   let operationTail = Promise.resolve()
   let replayRetryTimer = null
+  let replayCursorName = null
   let disposed = false
   const platform = options.platform ?? process.platform
   const maxPendingFiles = options.maxPendingFiles ??
@@ -181,10 +182,11 @@ function createIngestAnomalyOutbox(options) {
 
   /** Replays every currently staged envelope until projection becomes unavailable. */
   async function replayPending() {
-    const names = (await fs.readdir(options.directoryPath))
+    const pendingNames = (await fs.readdir(options.directoryPath))
       .filter((name) => name.endsWith('.json'))
       .sort()
-      .slice(0, replayBatchSize)
+    const names = selectReplayBatch(pendingNames, replayCursorName, replayBatchSize)
+    if (names.length > 0) replayCursorName = names.at(-1)
     let projectedCount = 0
     for (const name of names) {
       const filePath = path.join(options.directoryPath, name)
@@ -401,6 +403,19 @@ function createIngestAnomalyOutbox(options) {
     markEvidenceLoss,
     runWithHealthyEvidenceFence,
   }
+}
+
+/** Selects a bounded circular slice so terminal records cannot starve later evidence. */
+function selectReplayBatch(names, cursorName, batchSize) {
+  if (names.length <= batchSize) return names
+  const firstAfterCursor = cursorName === null
+    ? 0
+    : names.findIndex((name) => name > cursorName)
+  const start = firstAfterCursor < 0 ? 0 : firstAfterCursor
+  return Array.from(
+    { length: Math.min(batchSize, names.length) },
+    (_, index) => names[(start + index) % names.length],
+  )
 }
 
 /** Validates and serializes the allow-listed envelope shape. */

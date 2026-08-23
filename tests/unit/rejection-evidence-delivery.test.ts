@@ -8,6 +8,43 @@ import {
 import type { CurrentPositionRejection } from '../../src/features/tracking/ingest-health'
 
 describe('rejection evidence delivery [DON-268]', () => {
+  it('seals mission observation acceptance while finalization is in progress', async () => {
+    const persisted: string[] = []
+    let releaseFinalization: (() => void) | undefined
+    const delivery = createRejectionEvidenceDelivery({
+      missionStore: {
+        recordIngestRejections: vi.fn(async (input) => {
+          persisted.push(...input.rejections.map((entry) => entry.anomalyKey))
+          return {
+            acknowledgedDeliveryIds: input.rejections.map((entry) => entry.deliveryId),
+            health: healthy(),
+          }
+        }),
+      },
+      applyRejections: vi.fn(),
+      applyEvidenceHealth: vi.fn(),
+    })
+    delivery.record([createRejection('source:before')], observation('mission-1'))
+
+    const finalization = delivery.runWithMissionFinalizationFence(
+      'mission-1',
+      () => new Promise<string>((resolve) => {
+        releaseFinalization = () => resolve('finalized')
+      }),
+    )
+    await vi.waitFor(() => expect(releaseFinalization).toBeTypeOf('function'))
+    expect(persisted).toEqual(['source:before'])
+
+    expect(() => delivery.record(
+      [createRejection('source:during')],
+      observation('mission-1'),
+    )).toThrow(/acceptance.*sealed/iu)
+    expect(persisted).toEqual(['source:before'])
+
+    releaseFinalization?.()
+    await expect(finalization).resolves.toBe('finalized')
+  })
+
   it('publishes current rejection health synchronously and delivers unique evidence asynchronously', async () => {
     const sequence: string[] = []
     const recordIngestRejections = vi.fn(async () => {

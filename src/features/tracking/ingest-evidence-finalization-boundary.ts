@@ -4,6 +4,10 @@ type FinalizableMissionStore = {
 
 type RendererEvidenceBoundary = {
   readonly flushMission: (missionId: string) => Promise<void>
+  readonly runWithMissionFinalizationFence: <Result>(
+    missionId: string,
+    operation: () => Promise<Result>,
+  ) => Promise<Result>
 }
 
 /**
@@ -18,9 +22,10 @@ export function createIngestEvidenceFinalizationBoundary<
 ): Store {
   return {
     ...missionStore,
-    finalizeMission: async (missionId: string) => {
-      await evidence.flushMission(missionId)
-      return missionStore.finalizeMission(missionId)
-    },
+    finalizeMission: async (missionId: string) =>
+      evidence.runWithMissionFinalizationFence(
+        missionId,
+        () => missionStore.finalizeMission(missionId),
+      ),
   }
 }

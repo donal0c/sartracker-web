@@ -47,6 +47,10 @@ export type RejectionEvidenceDelivery = {
     context: RejectionEvidenceObservationContext,
   ) => void
   readonly flushMission: (missionId: string) => Promise<void>
+  readonly runWithMissionFinalizationFence: <Result>(
+    missionId: string,
+    operation: () => Promise<Result>,
+  ) => Promise<Result>
   readonly dispose: () => Promise<void>
 }
 
@@ -73,6 +77,7 @@ export function createRejectionEvidenceDelivery(
   let disposed = false
   let accepting = true
   const evidenceLossMissionIds = new Set<string>()
+  const finalizationPhaseByMission = new Map<string, 'draining' | 'sealed' | 'finalized'>()
 
   /** Publishes current warnings immediately and schedules non-blocking delivery. */
   function record(
@@ -81,6 +86,14 @@ export function createRejectionEvidenceDelivery(
   ): void {
     if (!accepting) return
     dependencies.applyRejections(rejections)
+    const finalizationPhase = context.missionId === null
+      ? undefined
+      : finalizationPhaseByMission.get(context.missionId)
+    if (finalizationPhase === 'sealed' || finalizationPhase === 'finalized') {
+      throw new Error(
+        'Rejected-position evidence acceptance is sealed for mission finalization.',
+      )
+    }
     if (rejections.length > 0 && context.missionId === null) {
       return
     }
@@ -144,6 +157,14 @@ export function createRejectionEvidenceDelivery(
 
   /** Flushes all renderer-held evidence for one mission before completeness is claimed. */
   async function flushMission(missionId: string): Promise<void> {
+    await drainMissionEvidence(missionId)
+  }
+
+  /** Drains one mission and optionally seals acceptance before the promise resolves. */
+  async function drainMissionEvidence(
+    missionId: string,
+    sealAfterDrain = false,
+  ): Promise<void> {
     if (flushInFlight !== null) {
       await flushInFlight
     }
@@ -154,6 +175,33 @@ export function createRejectionEvidenceDelivery(
           'Pending rejected-position evidence could not be persisted; finalization remains blocked.',
         )
       }
+    }
+    if (sealAfterDrain) {
+      finalizationPhaseByMission.set(missionId, 'sealed')
+    }
+  }
+
+  /**
+   * Drains accepted evidence, then seals mission observation acceptance across
+   * the main-process finalization call so no renderer delivery can land later.
+   */
+  async function runWithMissionFinalizationFence<Result>(
+    missionId: string,
+    operation: () => Promise<Result>,
+  ): Promise<Result> {
+    if (finalizationPhaseByMission.has(missionId)) {
+      throw new Error('Mission evidence finalization is already in progress or complete.')
+    }
+    finalizationPhaseByMission.set(missionId, 'draining')
+    try {
+      await drainMissionEvidence(missionId, true)
+      const result = await operation()
+      finalizationPhaseByMission.set(missionId, 'finalized')
+      return result
+    } catch (error) {
+      finalizationPhaseByMission.delete(missionId)
+      scheduleFlush()
+      throw error
     }
   }
 
@@ -290,7 +338,7 @@ export function createRejectionEvidenceDelivery(
     )
   }
 
-  return { dispose, flushMission, record }
+  return { dispose, flushMission, record, runWithMissionFinalizationFence }
 }
 
 /** Describes the explicit bounded-memory impossibility boundary. */
