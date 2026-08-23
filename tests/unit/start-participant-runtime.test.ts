@@ -444,6 +444,20 @@ describe('startParticipantRuntime [DON-271]', () => {
     expect(applyRuntime).toHaveBeenCalledTimes(2)
   })
 
+  it('publishes one scope change when a complete mission roster needs no membership writes', async () => {
+    const applyRuntime = vi.fn()
+    const runtime = await startParticipantRuntime({
+      participantStore: createStore({ participants: [], membershipEvents: [] }),
+      applyRuntime,
+    })
+    await runtime.refreshMission('mission-1')
+    applyRuntime.mockClear()
+
+    await runtime.applyRoster([device('device-1', null)])
+
+    expect(applyRuntime).toHaveBeenCalledTimes(1)
+  })
+
   it('warns beyond 100 selected devices without truncating the active scope', async () => {
     const store = createStore({
       participants: Array.from({ length: 101 }, (_, index) => ({

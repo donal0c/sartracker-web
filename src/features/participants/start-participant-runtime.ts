@@ -394,9 +394,10 @@ export async function startParticipantRuntime(
           observation.complete,
         )
         if (changes.length === 0) {
+          const recoveredFromWriteError = membershipWriteError !== null
           membershipWriteError = null
           lastReconciledMissionGeneration = observation.missionGeneration
-          publishRuntime()
+          if (recoveredFromWriteError) publishRuntime()
           resolveRosterWaiters(observation.version)
           continue
         }
