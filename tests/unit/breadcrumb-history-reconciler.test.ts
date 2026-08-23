@@ -576,6 +576,37 @@ describe('breadcrumb history reconciler', () => {
     expect(fetchBreadcrumbs).toHaveBeenCalledTimes(2)
   })
 
+  it('resumes a late participant from its scoped durable checkpoint after restart', async () => {
+    const fetchBreadcrumbs = vi.fn().mockResolvedValue([])
+    const reconciler = createBreadcrumbHistoryReconciler({
+      fetchBreadcrumbs,
+      onChunk: vi.fn(),
+      onProgress: vi.fn(),
+      shouldContinue: () => true,
+      logger: { warn: vi.fn() },
+    })
+
+    reconciler.reconcile({
+      devices: [DEVICE],
+      from: new Date('2026-04-06T08:00:00.000Z'),
+      until: new Date('2026-04-06T14:00:00.000Z'),
+      checkpointsByDevice: {
+        '1': {
+          historyFrom: '2026-04-06T10:00:00.000Z',
+          reconciledUntil: '2026-04-06T12:00:00.000Z',
+        },
+      },
+    })
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect(fetchBreadcrumbs).toHaveBeenCalledTimes(1)
+    expect(fetchBreadcrumbs).toHaveBeenCalledWith(
+      '1',
+      new Date('2026-04-06T12:00:00.000Z'),
+      new Date('2026-04-06T14:00:00.000Z'),
+    )
+  })
+
   it.each([
     {
       label: 'corrupt',

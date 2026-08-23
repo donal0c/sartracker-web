@@ -263,6 +263,7 @@ describe('app runtime startup', () => {
       missionStore: store,
       applyRuntime: expect.any(Function),
       requestAutosaveSync: expect.any(Function),
+      runMissionFinish: expect.any(Function),
     })
     expect(startMissionGovernanceRuntime).toHaveBeenCalledWith({
       missionStore: store,

@@ -836,8 +836,9 @@ function resolveInitialCursorMs(
   if (
     !Number.isFinite(checkpointStartMs) ||
     !Number.isFinite(checkpointCursorMs) ||
-    checkpointStartMs !== missionStartMs ||
-    checkpointCursorMs < missionStartMs ||
+    checkpointStartMs < missionStartMs ||
+    checkpointStartMs > targetMs ||
+    checkpointCursorMs < checkpointStartMs ||
     checkpointCursorMs > targetMs
   ) {
     return missionStartMs

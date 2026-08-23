@@ -158,10 +158,16 @@ export async function startCoreFeatureRuntimes(
   // cleanup hook; the seam exists so future runtimes can plug one in without
   // changing the boot contract.
   const cleanups: (() => void)[] = []
+  let participantRuntimeController: Awaited<
+    ReturnType<typeof startParticipantRuntime>
+  > | null = null
 
   const missionRuntimeController = await startMission({
     missionStore: options.missionStore,
     applyRuntime: applyMissionRuntime,
+    runMissionFinish: (missionId, finish) => participantRuntimeController === null
+      ? finish()
+      : participantRuntimeController.runWithMembershipFinishFence(missionId, finish),
     ...(options.requestAutosaveSync !== undefined
       ? { requestAutosaveSync: options.requestAutosaveSync }
       : {}),
@@ -194,12 +200,13 @@ export async function startCoreFeatureRuntimes(
     applyOutingController(null)
   }
 
-  const participantRuntimeController = missionModelEnabled && hasParticipantStoreBoundary(options.missionStore)
-    ? await startParticipant({
-        participantStore: options.missionStore,
-        applyRuntime: applyParticipantRuntime,
-      })
-    : null
+  participantRuntimeController =
+    missionModelEnabled && hasParticipantStoreBoundary(options.missionStore)
+      ? await startParticipant({
+          participantStore: options.missionStore,
+          applyRuntime: applyParticipantRuntime,
+        })
+      : null
   if (participantRuntimeController !== null) {
     applyParticipantController(participantRuntimeController)
     const missionState = useMissionStore.getState()

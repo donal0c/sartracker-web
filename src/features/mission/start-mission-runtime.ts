@@ -12,6 +12,10 @@ type StartMissionRuntimeDependencies = {
     'createMission' | 'listMissions' | 'getRecoverableMission' | 'pauseMission' | 'resumeMission' | 'finishMission'
   >
   readonly applyRuntime: (runtime: MissionRuntimeState) => void
+  readonly runMissionFinish?: <Result>(
+    missionId: string,
+    finish: () => Promise<Result>,
+  ) => Promise<Result>
   readonly requestAutosaveSync?: (reason: AutosaveSyncReason) => Promise<void>
   readonly now?: () => Date
 }
@@ -101,7 +105,7 @@ export async function startMissionRuntime(
         return null
       }
 
-      const mission = await dependencies.missionStore.finishMission(currentMission.id)
+      const mission = await finishPersistedMission(currentMission.id)
       currentMission = null
       currentRecoverableMission = null
       publishRuntime()
@@ -128,7 +132,7 @@ export async function startMissionRuntime(
         return null
       }
 
-      const mission = await dependencies.missionStore.finishMission(currentRecoverableMission.id)
+      const mission = await finishPersistedMission(currentRecoverableMission.id)
       currentMission = null
       currentRecoverableMission = null
       publishRuntime()
@@ -147,6 +151,14 @@ export async function startMissionRuntime(
     } catch (error) {
       console.warn('Mission lifecycle autosave request failed.', error)
     }
+  }
+
+  /** Runs the persisted finish transition under any feature-owned lifecycle fence. */
+  async function finishPersistedMission(missionId: string): Promise<Mission> {
+    const finish = () => dependencies.missionStore.finishMission(missionId)
+    return dependencies.runMissionFinish === undefined
+      ? finish()
+      : dependencies.runMissionFinish(missionId, finish)
   }
 }
 

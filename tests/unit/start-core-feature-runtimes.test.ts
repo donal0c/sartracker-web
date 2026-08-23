@@ -122,6 +122,40 @@ describe('startCoreFeatureRuntimes', () => {
     )
   })
 
+  it('routes mission finish through the participant membership fence', async () => {
+    const missionStore = createMissionStoreStub()
+    let runMissionFinish:
+      | ((missionId: string, finish: () => Promise<unknown>) => Promise<unknown>)
+      | undefined
+    const startMissionRuntime = vi.fn(async (dependencies) => {
+      runMissionFinish = dependencies.runMissionFinish
+      return {} as never
+    })
+    const finishFence = vi.fn(async (_missionId: string, finish: () => Promise<unknown>) =>
+      finish())
+    const startParticipantRuntime = vi.fn(async () => ({
+      refreshMission: vi.fn(),
+      runWithMembershipFinishFence: finishFence,
+    }) as never)
+
+    await startCoreFeatureRuntimes({
+      missionStore,
+      attachmentAdapter: createAttachmentStub(),
+      startMissionRuntime,
+      startParticipantRuntime,
+      startMissionGovernanceRuntime: vi.fn(async () => ({}) as never),
+      startOutingRuntime: vi.fn(async () => ({}) as never),
+      startMarkerRuntime: vi.fn(async () => ({}) as never),
+      startDrawingRuntime: vi.fn(async () => ({}) as never),
+      startHelicopterRuntime: vi.fn(async () => ({}) as never),
+      startGpxRuntime: vi.fn(async () => ({}) as never),
+    })
+
+    const finish = vi.fn().mockResolvedValue('finished')
+    await expect(runMissionFinish?.('mission-1', finish)).resolves.toBe('finished')
+    expect(finishFence).toHaveBeenCalledWith('mission-1', finish)
+  })
+
   it('keeps outing and participant runtimes inert when the internal flag is off', async () => {
     const startOutingRuntime = vi.fn(async () => ({}) as never)
     const startParticipantRuntime = vi.fn(async () => ({}) as never)

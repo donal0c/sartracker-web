@@ -331,6 +331,68 @@ describe('startParticipantRuntime [DON-271]', () => {
     expect(states.at(-1)?.rosterError).toMatch(/disk busy/i)
   })
 
+  it('refuses mission finish until the original membership delta is durably retried', async () => {
+    const store = createStore({ participants: [GROUP_PARTICIPANT], membershipEvents: [] })
+    store.recordGroupMembershipEvents
+      .mockRejectedValueOnce(new Error('disk busy'))
+      .mockRejectedValueOnce(new Error('disk busy'))
+      .mockImplementationOnce(async (input) => input.events.map((event, index) => ({
+        ...event,
+        id: `finish-retry-${index}`,
+        sequence: index + 1,
+        mission_id: input.mission_id,
+      })))
+    const runtime = await startParticipantRuntime({
+      participantStore: store,
+      applyRuntime: vi.fn(),
+    })
+    await runtime.refreshMission('mission-1')
+    await runtime.applyRoster(
+      [device('device-2', 'group-1')],
+      '2026-08-23T11:00:00.000Z',
+    )
+    const finish = vi.fn().mockResolvedValue('finished')
+
+    await expect(runtime.runWithMembershipFinishFence('mission-1', finish))
+      .rejects.toThrow(/cannot be finished.*membership|membership.*before finishing/i)
+    expect(finish).not.toHaveBeenCalled()
+
+    await expect(runtime.runWithMembershipFinishFence('mission-1', finish))
+      .resolves.toBe('finished')
+    expect(finish).toHaveBeenCalledTimes(1)
+    expect(store.recordGroupMembershipEvents).toHaveBeenNthCalledWith(3, {
+      mission_id: 'mission-1',
+      events: [expect.objectContaining({
+        traccar_device_id: 'device-2',
+        change: 'member',
+        observed_at: '2026-08-23T11:00:00.000Z',
+      })],
+    })
+  })
+
+  it('holds the membership fence across the persisted finish transition', async () => {
+    const store = createStore({ participants: [GROUP_PARTICIPANT], membershipEvents: [] })
+    const runtime = await startParticipantRuntime({
+      participantStore: store,
+      applyRuntime: vi.fn(),
+    })
+    await runtime.refreshMission('mission-1')
+    const finish = createDeferred<string>()
+
+    const pendingFinish = runtime.runWithMembershipFinishFence(
+      'mission-1',
+      () => finish.promise,
+    )
+    await runtime.applyRoster(
+      [device('device-2', 'group-1')],
+      '2026-08-23T11:00:00.000Z',
+    )
+
+    expect(store.recordGroupMembershipEvents).not.toHaveBeenCalled()
+    finish.resolve('finished')
+    await expect(pendingFinish).resolves.toBe('finished')
+  })
+
   it('reconciles an unchanged server roster again after the active mission changes', async () => {
     const store = createStore({ participants: [GROUP_PARTICIPANT], membershipEvents: [] })
     store.listMissionParticipants.mockImplementation(async (missionId: string) => [{

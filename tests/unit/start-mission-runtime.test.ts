@@ -251,6 +251,32 @@ describe('startMissionRuntime', () => {
     expect(requestAutosaveSync).toHaveBeenNthCalledWith(4, 'mission-finish')
   })
 
+  it('runs active mission finish through the feature lifecycle fence', async () => {
+    const finishMission = vi.fn().mockResolvedValue({
+      ...ACTIVE_MISSION,
+      status: 'finished',
+      finish_time: '2026-04-09T12:00:00.000Z',
+    })
+    const runMissionFinish = vi.fn(async (
+      _missionId: string,
+      finish: () => Promise<Mission>,
+    ) => finish())
+    const runtime = await startMissionRuntime({
+      missionStore: createMissionStoreStub({
+        createMission: vi.fn().mockResolvedValue(ACTIVE_MISSION),
+        finishMission,
+      }),
+      applyRuntime: vi.fn(),
+      runMissionFinish,
+    })
+    await runtime.startMission({ name: ACTIVE_MISSION.name })
+
+    await runtime.finishMission()
+
+    expect(runMissionFinish).toHaveBeenCalledWith('mission-active', expect.any(Function))
+    expect(finishMission).toHaveBeenCalledWith('mission-active')
+  })
+
   it('does not fail a completed lifecycle transition when the autosave request reports failure', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
     try {

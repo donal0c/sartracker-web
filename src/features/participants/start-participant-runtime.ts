@@ -69,6 +69,10 @@ export type ParticipantRuntimeController = {
     removedBy: string,
     reason?: string,
   ) => Promise<MissionParticipant | null>
+  readonly runWithMembershipFinishFence: <Result>(
+    missionId: string,
+    finish: () => Promise<Result>,
+  ) => Promise<Result>
   readonly clearMembershipNotices: () => void
 }
 
@@ -101,10 +105,15 @@ export async function startParticipantRuntime(
   let pendingRosterObservation: RosterObservation | null = null
   let pendingMembershipWrite: PendingMembershipWrite | null = null
   let rosterReconciliationRunning = false
+  let membershipFinishFence: {
+    readonly missionId: string
+    readonly missionGeneration: number
+  } | null = null
   const rosterWaiters: Array<{
     readonly version: number
     readonly resolve: () => void
   }> = []
+  const rosterReconciliationWaiters: Array<() => void> = []
 
   const controller: ParticipantRuntimeController = {
     refreshMission: async (missionId) => {
@@ -115,6 +124,7 @@ export async function startParticipantRuntime(
         selectionGeneration += 1
         lastReconciledMissionGeneration = -1
         pendingMembershipWrite = null
+        membershipFinishFence = null
         membershipWriteError = null
         saving = false
         participants = []
@@ -164,6 +174,11 @@ export async function startParticipantRuntime(
       }
     },
     applyRoster: async (devices, observedAt = now().toISOString(), options = { complete: true }) => {
+      if (
+        membershipFinishFence !== null &&
+        activeMissionId === membershipFinishFence.missionId &&
+        missionGeneration === membershipFinishFence.missionGeneration
+      ) return
       const missionIdBeforeRefresh = activeMissionId
       if (error !== null && missionIdBeforeRefresh !== null) {
         await controller.refreshMission(missionIdBeforeRefresh)
@@ -327,6 +342,38 @@ export async function startParticipantRuntime(
         removed_by: removedBy,
         ...(reason === undefined ? {} : { reason }),
       })),
+    runWithMembershipFinishFence: async <Result>(missionId: string, finish: () => Promise<Result>) => {
+      if (activeMissionId !== missionId) {
+        throw new Error('Mission cannot be finished until its participant scope is loaded.')
+      }
+      if (membershipFinishFence !== null) {
+        throw new Error('Mission finish is already checking participant membership changes.')
+      }
+      const fence = { missionId, missionGeneration }
+      membershipFinishFence = fence
+      let finishSucceeded = false
+      try {
+        await waitForRosterReconciliation()
+        const pendingWrite = pendingMembershipWrite
+        if (pendingWrite !== null) {
+          const writeSucceeded = await persistMembershipWrite(pendingWrite)
+          if (!writeSucceeded) {
+            throw unresolvedMembershipFinishError(membershipWriteError)
+          }
+        }
+        if (pendingMembershipWrite !== null || membershipWriteError !== null) {
+          throw unresolvedMembershipFinishError(membershipWriteError)
+        }
+        const result = await finish()
+        finishSucceeded = true
+        return result
+      } finally {
+        if (!finishSucceeded && membershipFinishFence === fence) {
+          membershipFinishFence = null
+          if (pendingRosterObservation !== null) void drainRosterReconciliation()
+        }
+      }
+    },
     clearMembershipNotices: () => {
       membershipNotices = []
       publishRuntime()
@@ -458,7 +505,18 @@ export async function startParticipantRuntime(
       }
     } finally {
       rosterReconciliationRunning = false
+      for (const resolve of rosterReconciliationWaiters.splice(0)) resolve()
       if (pendingRosterObservation !== null) void drainRosterReconciliation()
+    }
+  }
+
+  /** Waits until every roster observation accepted before the finish fence has settled. */
+  async function waitForRosterReconciliation(): Promise<void> {
+    while (rosterReconciliationRunning || pendingRosterObservation !== null) {
+      await new Promise<void>((resolve) => {
+        rosterReconciliationWaiters.push(resolve)
+        if (!rosterReconciliationRunning) void drainRosterReconciliation()
+      })
     }
   }
 
@@ -547,6 +605,13 @@ type PendingMembershipWrite = {
   readonly missionId: string
   readonly missionGeneration: number
   readonly events: readonly Omit<GroupMembershipEvent, 'id' | 'sequence' | 'mission_id'>[]
+}
+
+/** Creates the actionable fail-closed reason shown by the mission finish dialog. */
+function unresolvedMembershipFinishError(detail: string | null): Error {
+  const base =
+    'Mission cannot be finished while a group membership change is not durably recorded. Keep the mission active and retry Traccar roster synchronization before finishing.'
+  return new Error(detail === null ? base : `${base} ${detail}`)
 }
 
 /** Narrows the optional MissionStore participant surface after boot validation. */
