@@ -49,8 +49,10 @@ export async function startOutingRuntime(
   let outings: readonly Outing[] = []
   let fixSummary: OutingFixSummary | null = null
   let loading = false
-  let saving = false
+  let savingGeneration: number | null = null
   let error: string | null = null
+  let requestedMissionId: string | null = null
+  let missionGeneration = 0
   let refreshToken = 0
   let summarySequence = 0
   let activeSummaryRequestId: string | null = null
@@ -60,10 +62,22 @@ export async function startOutingRuntime(
   const controller: OutingRuntimeController = {
     refreshMission: async (missionId) => {
       const token = ++refreshToken
+      if (missionId !== requestedMissionId) {
+        requestedMissionId = missionId
+        missionGeneration += 1
+      }
+      const generation = missionGeneration
       const previousRequestId = activeSummaryRequestId
       activeSummaryRequestId = null
       if (previousRequestId !== null) {
         await dependencies.outingStore.cancelOutingFixSummary(previousRequestId).catch(() => false)
+      }
+      if (
+        token !== refreshToken ||
+        generation !== missionGeneration ||
+        missionId !== requestedMissionId
+      ) {
+        return
       }
 
       activeMissionId = missionId
@@ -142,25 +156,40 @@ export async function startOutingRuntime(
 
   async function mutate(operation: (missionId: string) => Promise<Outing>): Promise<Outing | null> {
     const missionId = activeMissionId
-    if (missionId === null || saving) {
+    const generation = missionGeneration
+    if (
+      missionId === null ||
+      missionId !== requestedMissionId ||
+      savingGeneration === generation
+    ) {
       return null
     }
-    saving = true
+    savingGeneration = generation
     error = null
     publishRuntime()
     try {
       const result = await operation(missionId)
-      if (activeMissionId === missionId) {
+      if (
+        activeMissionId === missionId &&
+        requestedMissionId === missionId &&
+        missionGeneration === generation
+      ) {
         await controller.refreshMission(missionId)
       }
       return result
     } catch (runtimeError) {
-      if (activeMissionId === missionId) {
+      if (
+        activeMissionId === missionId &&
+        requestedMissionId === missionId &&
+        missionGeneration === generation
+      ) {
         error = toErrorMessage(runtimeError)
       }
       return null
     } finally {
-      saving = false
+      if (savingGeneration === generation) {
+        savingGeneration = null
+      }
       publishRuntime()
     }
   }
@@ -171,7 +200,7 @@ export async function startOutingRuntime(
       outings,
       fixSummary,
       loading,
-      saving,
+      saving: savingGeneration === missionGeneration,
       error,
     })
   }

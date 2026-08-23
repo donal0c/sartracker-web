@@ -99,6 +99,36 @@ describe('startOutingRuntime [DON-270]', () => {
     expect(store.cancelOutingFixSummary).toHaveBeenCalledWith(expect.stringMatching(/^outing-summary-/u))
   })
 
+  it('does not let a stale clear resume after cancellation and replace a newer mission', async () => {
+    let releaseFirstSummary: (summary: OutingFixSummary) => void = () => undefined
+    let releaseCancellation: (cancelled: boolean) => void = () => undefined
+    const store = createStore()
+    store.readOutingFixSummary
+      .mockImplementationOnce(() => new Promise((resolve) => { releaseFirstSummary = resolve }))
+      .mockResolvedValueOnce(SUMMARY)
+    store.cancelOutingFixSummary.mockImplementationOnce(() =>
+      new Promise((resolve) => { releaseCancellation = resolve }))
+    const states: Array<{ readonly activeMissionId: string | null }> = []
+    const runtime = await startOutingRuntime({
+      outingStore: store,
+      applyRuntime: (state) => states.push(state),
+    })
+
+    const firstRefresh = runtime.refreshMission('mission-a')
+    await Promise.resolve()
+    const staleClear = runtime.refreshMission(null)
+    await Promise.resolve()
+    await runtime.refreshMission('mission-b')
+
+    expect(states.at(-1)?.activeMissionId).toBe('mission-b')
+
+    releaseCancellation(true)
+    releaseFirstSummary(SUMMARY)
+    await Promise.all([firstRefresh, staleClear])
+
+    expect(states.at(-1)?.activeMissionId).toBe('mission-b')
+  })
+
   it('does not restore a stale mission after an in-flight mutation completes', async () => {
     let releaseCreate: (outing: Outing) => void = () => undefined
     const store = createStore()
@@ -122,6 +152,45 @@ describe('startOutingRuntime [DON-270]', () => {
       'mission-1',
       'mission-2',
     ])
+  })
+
+  it('does not let an older mission mutation block or clear saving for the current mission', async () => {
+    let releaseFirstCreate: (outing: Outing) => void = () => undefined
+    let releaseSecondCreate: (outing: Outing) => void = () => undefined
+    const store = createStore()
+    store.createOuting
+      .mockImplementationOnce(() => new Promise((resolve) => { releaseFirstCreate = resolve }))
+      .mockImplementationOnce(() => new Promise((resolve) => { releaseSecondCreate = resolve }))
+    const states: Array<{
+      readonly activeMissionId: string | null
+      readonly saving: boolean
+    }> = []
+    const runtime = await startOutingRuntime({
+      outingStore: store,
+      applyRuntime: (state) => states.push(state),
+    })
+    await runtime.refreshMission('mission-a')
+
+    const firstCreate = runtime.startOuting()
+    await Promise.resolve()
+    await runtime.refreshMission('mission-b')
+    const secondCreate = runtime.startOuting()
+    await Promise.resolve()
+
+    expect(store.createOuting).toHaveBeenCalledTimes(2)
+    expect(store.createOuting).toHaveBeenNthCalledWith(2, {
+      mission_id: 'mission-b',
+      label: 'Outing 2',
+    })
+    expect(states.at(-1)).toMatchObject({ activeMissionId: 'mission-b', saving: true })
+
+    releaseFirstCreate({ ...FIRST_OUTING, mission_id: 'mission-a' })
+    await firstCreate
+    expect(states.at(-1)).toMatchObject({ activeMissionId: 'mission-b', saving: true })
+
+    releaseSecondCreate({ ...FIRST_OUTING, mission_id: 'mission-b' })
+    await secondCreate
+    expect(states.at(-1)).toMatchObject({ activeMissionId: 'mission-b', saving: false })
   })
 })
 
