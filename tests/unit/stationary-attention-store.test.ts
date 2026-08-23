@@ -63,6 +63,20 @@ describe('stationary attention store [DON-269]', () => {
 
     expect(Object.keys(useStationaryAttentionStore.getState().byDevice)).toEqual(['device-1'])
   })
+
+  it('does not rebuild stationary policy state for repeated identical evidence snapshots', () => {
+    const snapshot = createSnapshot([fix('a', 0, 52), fix('b', 20, 52.00001)])
+    let publicationCount = 0
+    const unsubscribe = useStationaryAttentionStore.subscribe(() => {
+      publicationCount += 1
+    })
+
+    useStationaryAttentionStore.getState().applySnapshot(snapshot, 'mission-1')
+    useStationaryAttentionStore.getState().applySnapshot(snapshot, 'mission-1')
+    unsubscribe()
+
+    expect(publicationCount).toBe(1)
+  })
 })
 
 function createSnapshot(fixes: readonly NormalizedTrackingPosition[]): TrackingSnapshot {

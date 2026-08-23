@@ -2,13 +2,12 @@ import { create } from 'zustand'
 
 import {
   DEFAULT_STATIONARY_ATTENTION_CONFIG,
-  evaluateStationaryAttention,
   sanitizeStationaryAttentionConfig,
   type StationaryAttentionConfig,
   type StationaryAttentionEvaluation,
 } from './stationary-attention'
-import { createTrackingPositionIdentityKey } from './tracking-position-identity'
-import type { NormalizedTrackingPosition, TrackingSnapshot } from './tracking-types'
+import { createStationaryAttentionProjector } from './stationary-attention-projection'
+import type { TrackingSnapshot } from './tracking-types'
 
 export type DeviceStationaryAttention = StationaryAttentionEvaluation & {
   readonly acknowledged: boolean
@@ -27,24 +26,38 @@ export type StationaryAttentionStore = {
   readonly setConfig: (input: unknown) => void
 }
 
+const stationaryAttentionProjector = createStationaryAttentionProjector()
+
 export const useStationaryAttentionStore = create<StationaryAttentionStore>((set, get) => ({
   missionId: null,
   byDevice: {},
   config: DEFAULT_STATIONARY_ATTENTION_CONFIG,
   applySnapshot: (snapshot, suppliedMissionId, activeDeviceIds) => {
-    const missionId = suppliedMissionId === undefined ? get().missionId : suppliedMissionId
+    const current = get()
+    const missionId = suppliedMissionId === undefined ? current.missionId : suppliedMissionId
+    const evidenceIsIdentical = hasIdenticalStationaryEvidence(
+      snapshot,
+      missionId,
+      activeDeviceIds,
+      current.config,
+    )
+    if (Object.keys(current.byDevice).length > 0 && evidenceIsIdentical) {
+      return
+    }
     const previous = missionId === get().missionId ? get().byDevice : {}
-    const fixesByDevice = groupAcceptedFixes(snapshot)
+    const evaluations = stationaryAttentionProjector.project(
+      snapshot,
+      current.config,
+      activeDeviceIds,
+    )
     const byDevice: Record<string, DeviceStationaryAttention> = {}
     const activeDeviceIdSet = activeDeviceIds === undefined || activeDeviceIds.length === 0
       ? null
       : new Set(activeDeviceIds)
     for (const device of snapshot.devices) {
       if (activeDeviceIdSet !== null && !activeDeviceIdSet.has(device.device_id)) continue
-      const evaluation = evaluateStationaryAttention(
-        fixesByDevice.get(device.device_id) ?? [],
-        get().config,
-      )
+      const evaluation = evaluations.get(device.device_id)
+      if (evaluation === undefined) continue
       byDevice[device.device_id] = {
         ...evaluation,
         acknowledged:
@@ -62,8 +75,40 @@ export const useStationaryAttentionStore = create<StationaryAttentionStore>((set
     }
     return { byDevice: { ...state.byDevice, [deviceId]: { ...current, acknowledged: true } } }
   }),
-  setConfig: (input) => set({ config: sanitizeStationaryAttentionConfig(input) }),
+  setConfig: (input) => {
+    previousSnapshot = null
+    stationaryAttentionProjector.reset()
+    set({ config: sanitizeStationaryAttentionConfig(input) })
+  },
 }))
+
+let previousSnapshot: TrackingSnapshot | null = null
+let previousMissionId: string | null = null
+let previousActiveDeviceKey = ''
+let previousConfig: StationaryAttentionConfig | null = null
+
+/** Skips duplicate runtime publications that contain the same immutable evidence arrays. */
+function hasIdenticalStationaryEvidence(
+  snapshot: TrackingSnapshot,
+  missionId: string | null,
+  activeDeviceIds: readonly string[] | undefined,
+  config: StationaryAttentionConfig,
+): boolean {
+  const activeDeviceKey = activeDeviceIds === undefined
+    ? '*'
+    : [...activeDeviceIds].sort().join('\u0000')
+  const identical = previousSnapshot?.positions === snapshot.positions &&
+    previousSnapshot.breadcrumbs === snapshot.breadcrumbs &&
+    previousSnapshot.devices === snapshot.devices &&
+    previousMissionId === missionId &&
+    previousActiveDeviceKey === activeDeviceKey &&
+    previousConfig === config
+  previousSnapshot = snapshot
+  previousMissionId = missionId
+  previousActiveDeviceKey = activeDeviceKey
+  previousConfig = config
+  return identical
+}
 
 /** Publishes a derived attention snapshot without changing evidence truth. */
 export function applyStationaryAttentionSnapshot(
@@ -72,14 +117,4 @@ export function applyStationaryAttentionSnapshot(
   activeDeviceIds?: readonly string[],
 ): void {
   useStationaryAttentionStore.getState().applySnapshot(snapshot, missionId, activeDeviceIds)
-}
-
-function groupAcceptedFixes(snapshot: TrackingSnapshot): Map<string, NormalizedTrackingPosition[]> {
-  const byDevice = new Map<string, Map<string, NormalizedTrackingPosition>>()
-  for (const fix of [...snapshot.breadcrumbs, ...snapshot.positions]) {
-    const fixes = byDevice.get(fix.device_id) ?? new Map<string, NormalizedTrackingPosition>()
-    fixes.set(createTrackingPositionIdentityKey(fix), fix)
-    byDevice.set(fix.device_id, fixes)
-  }
-  return new Map([...byDevice].map(([deviceId, fixes]) => [deviceId, [...fixes.values()]]))
 }
