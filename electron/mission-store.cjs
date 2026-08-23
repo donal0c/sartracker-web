@@ -32,6 +32,7 @@ const {
 
 const { createZipArchive, readZipArchive } = require('./zip-archive.cjs')
 const { createOutingStore } = require('./outing-store.cjs')
+const { runOutingFixSummaryInWorker } = require('./outing-fix-summary-runner.cjs')
 
 const CURRENT_SCHEMA_VERSION = 9
 const DATABASE_FILE_NAME = 'mission-store.sqlite'
@@ -70,6 +71,20 @@ function normalizeMissionReviewRequestId(value, required) {
   return value
 }
 
+/** Validates an opaque renderer correlation key used for outing-summary cancellation. */
+function normalizeOutingFixSummaryRequestId(value, required) {
+  if (value === undefined && required === false) return null
+  if (
+    typeof value !== 'string' ||
+    value.length < 1 ||
+    value.length > 140 ||
+    !/^[A-Za-z0-9._:-]+$/u.test(value)
+  ) {
+    throw new Error('Outing fix-summary request ID is invalid.')
+  }
+  return value
+}
+
 /**
  * Creates the Electron SQLite mission store.
  */
@@ -90,12 +105,16 @@ function createElectronMissionStore(options) {
     options.runBreadcrumbDotQueryInWorker ?? runBreadcrumbDotQueryInWorker
   const missionReviewReadQueryRunner =
     options.runMissionReviewReadQueryInWorker ?? runMissionReviewReadQueryInWorker
+  const outingFixSummaryRunner =
+    options.runOutingFixSummaryInWorker ?? runOutingFixSummaryInWorker
   const activeBreadcrumbQueryControllers = new Set()
   const breadcrumbQueryControllersByRequestId = new Map()
   const breadcrumbDotQueryControllersByRequestId = new Map()
   const missionReviewQueryControllersByRequestId = new Map()
+  const outingFixSummaryControllersByRequestId = new Map()
   let breadcrumbQueryTail = Promise.resolve()
   let missionReviewWorkerTail = Promise.resolve()
+  let outingFixSummaryWorkerTail = Promise.resolve()
   const db = new Database(databasePath)
   db.pragma('journal_mode = WAL')
   db.pragma('synchronous = FULL')
@@ -156,6 +175,10 @@ function createElectronMissionStore(options) {
         activeQuery.controller.abort()
       }
       missionReviewQueryControllersByRequestId.clear()
+      for (const activeQuery of outingFixSummaryControllersByRequestId.values()) {
+        activeQuery.controller.abort()
+      }
+      outingFixSummaryControllersByRequestId.clear()
       db.close()
     },
     info: async () => ({
@@ -190,6 +213,50 @@ function createElectronMissionStore(options) {
     renameOuting: async (input) => outingStore.renameOuting(input),
     editOutingBoundaries: async (input) => outingStore.editOutingBoundaries(input),
     listOutings: async (missionId) => outingStore.listOutings(missionId),
+    readOutingFixSummary: async (input, requestId) => {
+      const normalizedRequestId = normalizeOutingFixSummaryRequestId(requestId, false)
+      if (
+        normalizedRequestId !== null &&
+        outingFixSummaryControllersByRequestId.has(normalizedRequestId)
+      ) {
+        throw new Error('Outing fix-summary request ID is already active.')
+      }
+      const controller = new AbortController()
+      const previousWorker = outingFixSummaryWorkerTail
+      const query = previousWorker.then(() => outingFixSummaryRunner({
+        databasePath,
+        query: input,
+        signal: controller.signal,
+      }))
+      outingFixSummaryWorkerTail = query.then(() => undefined, () => undefined)
+      const activeQuery = { controller, completion: query }
+      if (normalizedRequestId !== null) {
+        outingFixSummaryControllersByRequestId.set(normalizedRequestId, activeQuery)
+      }
+      try {
+        const result = await query
+        return {
+          outings: result.outings,
+          unassigned_accepted_fix_count: result.unassigned_accepted_fix_count,
+          total_accepted_fix_count: result.total_accepted_fix_count,
+        }
+      } finally {
+        if (
+          normalizedRequestId !== null &&
+          outingFixSummaryControllersByRequestId.get(normalizedRequestId) === activeQuery
+        ) {
+          outingFixSummaryControllersByRequestId.delete(normalizedRequestId)
+        }
+      }
+    },
+    cancelOutingFixSummary: async (requestId) => {
+      const normalizedRequestId = normalizeOutingFixSummaryRequestId(requestId, true)
+      const activeQuery = outingFixSummaryControllersByRequestId.get(normalizedRequestId)
+      if (activeQuery === undefined) return false
+      activeQuery.controller.abort()
+      await activeQuery.completion.catch(() => undefined)
+      return true
+    },
     upsertDevice: async (input) => upsertDevice(db, input),
     upsertDevicesBulk: async (input) => {
       const startedAtMs = performance.now()

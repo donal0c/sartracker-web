@@ -52,6 +52,15 @@ export type EditOutingBoundariesInput = {
   readonly ended_at?: string | null
 }
 
+export type OutingFixSummary = {
+  readonly outings: readonly {
+    readonly outing_id: string
+    readonly accepted_fix_count: number
+  }[]
+  readonly unassigned_accepted_fix_count: number
+  readonly total_accepted_fix_count: number
+}
+
 export type DeviceStatus = 'online' | 'offline' | 'unknown'
 
 export type Device = {
@@ -411,6 +420,11 @@ export type MissionStore = {
   readonly renameOuting?: (input: RenameOutingInput) => Promise<Outing>
   readonly editOutingBoundaries?: (input: EditOutingBoundariesInput) => Promise<Outing>
   readonly listOutings?: (missionId: string) => Promise<readonly Outing[]>
+  readonly readOutingFixSummary?: (
+    input: { readonly missionId: string },
+    requestId?: string,
+  ) => Promise<OutingFixSummary>
+  readonly cancelOutingFixSummary?: (requestId: string) => Promise<boolean>
   readonly upsertDevice: (input: UpsertDeviceInput) => Promise<Device>
   readonly upsertDevicesBulk?: (input: {
     readonly mission_id: string

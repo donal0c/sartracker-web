@@ -17,6 +17,7 @@ import type {
   MissionStoreInfo,
   Position,
   Outing,
+  OutingFixSummary,
   EditOutingBoundariesInput,
   EndOutingInput,
   RenameOutingInput,
@@ -67,6 +68,10 @@ type BrowserHarnessStore = {
   readonly renameOuting: (input: RenameOutingInput) => Promise<Outing>
   readonly editOutingBoundaries: (input: EditOutingBoundariesInput) => Promise<Outing>
   readonly listOutings: (missionId: string) => Promise<readonly Outing[]>
+  readonly readOutingFixSummary: (
+    input: { readonly missionId: string },
+  ) => Promise<OutingFixSummary>
+  readonly cancelOutingFixSummary: (requestId: string) => Promise<boolean>
   readonly listMissions: () => Promise<readonly Mission[]>
   readonly getActiveMission: () => Promise<Mission | null>
   readonly getRecoverableMission: () => Promise<Mission | null>
@@ -302,6 +307,32 @@ export function getBrowserHarnessStore(): BrowserHarnessStore {
         .filter((outing) => outing.mission_id === missionId)
         .toSorted((left, right) => left.started_at.localeCompare(right.started_at))
     },
+    readOutingFixSummary: async ({ missionId }) => {
+      requireMission(missionId, state.missions)
+      const missionOutings = state.outings
+        .filter((outing) => outing.mission_id === missionId)
+        .toSorted((left, right) => left.started_at.localeCompare(right.started_at))
+      const missionPositions = state.positions.filter(
+        (position) => position.mission_id === missionId,
+      )
+      const outings = missionOutings.map((outing) => ({
+        outing_id: outing.id,
+        accepted_fix_count: missionPositions.filter((position) =>
+          Date.parse(outing.started_at) <= Date.parse(position.timestamp) &&
+          (outing.ended_at === null || Date.parse(position.timestamp) < Date.parse(outing.ended_at)),
+        ).length,
+      }))
+      const assignedCount = outings.reduce(
+        (total, outing) => total + outing.accepted_fix_count,
+        0,
+      )
+      return {
+        outings,
+        unassigned_accepted_fix_count: missionPositions.length - assignedCount,
+        total_accepted_fix_count: missionPositions.length,
+      }
+    },
+    cancelOutingFixSummary: async () => false,
     listMissions: async () => state.missions,
     listMissionEvents: async (missionId) =>
       state.missionEvents

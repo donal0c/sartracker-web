@@ -176,8 +176,30 @@ describe('browser harness store', () => {
       label: 'Outing 2',
       started_at: '2026-08-20T11:00:00.000Z',
     })
+    await store.addPosition({
+      mission_id: mission.id,
+      device_id: 'team-1',
+      lat: 52,
+      lon: -9,
+      timestamp: '2026-08-20T11:00:00.000Z',
+    })
+    await store.addPosition({
+      mission_id: mission.id,
+      device_id: 'team-1',
+      lat: 52,
+      lon: -9,
+      timestamp: '2026-08-20T08:30:00.000Z',
+    })
 
     await expect(store.listOutings(mission.id)).resolves.toHaveLength(2)
+    await expect(store.readOutingFixSummary({ missionId: mission.id })).resolves.toMatchObject({
+      outings: [
+        { outing_id: first.id, accepted_fix_count: 0 },
+        { accepted_fix_count: 1 },
+      ],
+      unassigned_accepted_fix_count: 1,
+      total_accepted_fix_count: 2,
+    })
     expect(readBrowserHarnessState().missionEvents.map((event) => event.event_type)).toEqual(
       expect.arrayContaining(['outing_started', 'outing_ended']),
     )

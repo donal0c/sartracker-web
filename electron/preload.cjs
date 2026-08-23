@@ -33,6 +33,8 @@ const MISSION_STORE_CHANNELS = {
   renameOuting: 'sartracker:mission-store:rename-outing',
   editOutingBoundaries: 'sartracker:mission-store:edit-outing-boundaries',
   listOutings: 'sartracker:mission-store:list-outings',
+  readOutingFixSummary: 'sartracker:mission-store:read-outing-fix-summary',
+  cancelOutingFixSummary: 'sartracker:mission-store:cancel-outing-fix-summary',
   upsertDevice: 'sartracker:mission-store:upsert-device',
   upsertDevicesBulk: 'sartracker:mission-store:upsert-devices-bulk',
   getDevice: 'sartracker:mission-store:get-device',
