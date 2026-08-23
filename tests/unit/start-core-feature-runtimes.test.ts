@@ -122,6 +122,30 @@ describe('startCoreFeatureRuntimes', () => {
     )
   })
 
+  it('keeps outing and participant runtimes inert when the internal flag is off', async () => {
+    const startOutingRuntime = vi.fn(async () => ({}) as never)
+    const startParticipantRuntime = vi.fn(async () => ({}) as never)
+
+    const handles = await startCoreFeatureRuntimes({
+      missionStore: createMissionStoreStub(),
+      attachmentAdapter: createAttachmentStub(),
+      missionModelEnabled: false,
+      startMissionRuntime: vi.fn(async () => ({}) as never),
+      startMissionGovernanceRuntime: vi.fn(async () => ({}) as never),
+      startOutingRuntime,
+      startParticipantRuntime,
+      startMarkerRuntime: vi.fn(async () => ({}) as never),
+      startDrawingRuntime: vi.fn(async () => ({}) as never),
+      startHelicopterRuntime: vi.fn(async () => ({}) as never),
+      startGpxRuntime: vi.fn(async () => ({}) as never),
+    })
+
+    expect(startOutingRuntime).not.toHaveBeenCalled()
+    expect(startParticipantRuntime).not.toHaveBeenCalled()
+    expect(handles.outingRuntimeController).toBeNull()
+    expect(handles.participantRuntimeController).toBeNull()
+  })
+
   it('omits watchSource entirely when no gpxWatchSource is provided', async () => {
     const startGpxRuntime = vi.fn(async () => ({}) as never)
 

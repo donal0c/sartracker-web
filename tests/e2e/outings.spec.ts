@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test'
 
 test.describe('BCP-03 explicit outings [DON-270]', () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto('/?missionHarness=1')
+    await page.goto('/?missionHarness=1&missionModel=1')
     await page.getByTestId('app-title').waitFor({ state: 'visible', timeout: 10_000 })
     await page.waitForSelector('canvas', { timeout: 15_000 })
     await page.getByTestId('mission-name-input').fill('Outing Model Test')

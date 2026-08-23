@@ -42,7 +42,9 @@ export function applyOutingRuntime(runtime: OutingRuntimeState): void {
   useOutingStore.setState(runtime)
 }
 
-/** Registers the outing runtime controller for operator controls. */
-export function applyOutingController(controller: OutingRuntimeController): void {
-  useOutingStore.setState({ controller })
+/** Registers or clears the outing runtime controller for operator controls. */
+export function applyOutingController(controller: OutingRuntimeController | null): void {
+  useOutingStore.setState(controller === null
+    ? { ...EMPTY_OUTING_RUNTIME, controller: null }
+    : { controller })
 }

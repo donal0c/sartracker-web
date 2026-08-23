@@ -95,6 +95,7 @@ Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
   })
 
   test('outing section states the no-active boundary explicitly', async ({ page }) => {
+    await navigateToHarness(page, { missionModel: true })
     await startMission(page, 'Outing Notice Test')
     const section = page.getByTestId('outing-controls-section')
     await expect(section).toBeVisible()
@@ -120,6 +121,7 @@ Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
   })
 
   test('outing summary keeps Unassigned separate from explicit periods', async ({ page }) => {
+    await navigateToHarness(page, { missionModel: true })
     await startMission(page, 'Outing Summary Test')
     await page.getByTestId('outing-label-input').fill('Night deployment')
     await page.getByTestId('outing-start-btn').click()

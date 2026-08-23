@@ -192,6 +192,7 @@ export async function startAppRuntime(
   const coreFeatureRuntimes = await resolvedDependencies.startCoreFeatureRuntimes({
     missionStore: coreMissionStore,
     attachmentAdapter,
+    missionModelEnabled: isMissionModelEnabled(),
     gpxWatchSource: gpxImportSource,
     requestAutosaveSync: (reason: AutosaveSyncReason) =>
       activeServices.requestAutosaveSync(reason),

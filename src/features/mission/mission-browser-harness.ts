@@ -102,6 +102,7 @@ export async function startMissionBrowserHarness(): Promise<void> {
   await startCoreFeatureRuntimes({
     missionStore: browserStore,
     attachmentAdapter: noopMarkerAttachmentAdapter,
+    missionModelEnabled: isMissionModelEnabled(),
   })
   const stopExactBreadcrumbDots = startExactBreadcrumbDotRuntime(browserStore)
 

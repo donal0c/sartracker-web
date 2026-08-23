@@ -73,7 +73,9 @@ export function applyParticipantRuntime(runtime: ParticipantRuntimeState): void 
   useParticipantStore.setState(runtime)
 }
 
-/** Registers the participant controller for mission and tracking surfaces. */
-export function applyParticipantController(controller: ParticipantRuntimeController): void {
-  useParticipantStore.setState({ controller })
+/** Registers or clears the participant controller and its safety scope. */
+export function applyParticipantController(controller: ParticipantRuntimeController | null): void {
+  useParticipantStore.setState(controller === null
+    ? { ...EMPTY_PARTICIPANT_RUNTIME, controller: null }
+    : { controller })
 }

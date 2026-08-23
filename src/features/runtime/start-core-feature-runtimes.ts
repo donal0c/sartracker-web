@@ -97,6 +97,7 @@ export type GpxWatchSource = {
 export type CoreFeatureRuntimeOptions = {
   readonly missionStore: CoreFeatureRuntimeMissionStore
   readonly attachmentAdapter: MarkerAttachmentBoundary
+  readonly missionModelEnabled?: boolean
   readonly gpxWatchSource?: GpxWatchSource
   readonly requestAutosaveSync?: (reason: AutosaveSyncReason) => Promise<void>
   readonly now?: () => Date
@@ -177,7 +178,8 @@ export async function startCoreFeatureRuntimes(
   applyMissionGovernanceController(missionGovernanceController)
   cleanups.push(() => undefined)
 
-  const outingRuntimeController = hasOutingStoreBoundary(options.missionStore)
+  const missionModelEnabled = options.missionModelEnabled ?? true
+  const outingRuntimeController = missionModelEnabled && hasOutingStoreBoundary(options.missionStore)
     ? await startOuting({
         outingStore: options.missionStore,
         applyRuntime: applyOutingRuntime,
@@ -186,9 +188,11 @@ export async function startCoreFeatureRuntimes(
   if (outingRuntimeController !== null) {
     applyOutingController(outingRuntimeController)
     cleanups.push(() => undefined)
+  } else {
+    applyOutingController(null)
   }
 
-  const participantRuntimeController = hasParticipantStoreBoundary(options.missionStore)
+  const participantRuntimeController = missionModelEnabled && hasParticipantStoreBoundary(options.missionStore)
     ? await startParticipant({
         participantStore: options.missionStore,
         applyRuntime: applyParticipantRuntime,
@@ -197,6 +201,8 @@ export async function startCoreFeatureRuntimes(
   if (participantRuntimeController !== null) {
     applyParticipantController(participantRuntimeController)
     cleanups.push(() => undefined)
+  } else {
+    applyParticipantController(null)
   }
 
   const markerRuntimeController = await startMarker({

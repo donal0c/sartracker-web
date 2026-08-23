@@ -18,13 +18,14 @@ export function resolveMissionModelFlag(context: MissionModelFlagContext): boole
 
 /** Returns whether the additive PR-2 mission model is enabled in this renderer. */
 export function isMissionModelEnabled(): boolean {
-  const browserHarness =
-    typeof window !== 'undefined' &&
-    typeof window.location?.search === 'string' &&
-    new URLSearchParams(window.location.search).get('missionHarness') === '1'
+  const search = typeof window !== 'undefined' && typeof window.location?.search === 'string'
+    ? new URLSearchParams(window.location.search)
+    : null
+  const browserHarnessMode = search?.get('missionHarness') === '1'
+  const browserHarness = browserHarnessMode && search?.get('missionModel') === '1'
 
   return resolveMissionModelFlag({
-    dev: import.meta.env.DEV,
+    dev: import.meta.env.DEV && !browserHarnessMode,
     browserHarness,
     buildFlag: import.meta.env.VITE_SARTRACKER_MISSION_MODEL,
   })

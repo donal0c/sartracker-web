@@ -5,7 +5,7 @@ import { captureElementAndRegister } from './helpers/verification-manifest'
 
 test.describe('Visual: Mission Participants [DON-271]', () => {
   test.beforeEach(async ({ page }) => {
-    await navigateToHarness(page)
+    await navigateToHarness(page, { missionModel: true })
   })
 
   test('mission start shows an explicit nothing-preselected participant step', async ({ page }) => {
