@@ -1,5 +1,6 @@
 import type {
   AddPositionInput,
+  CreateOutingInput,
   CreateMissionInput,
   Device,
   Drawing,
@@ -15,6 +16,10 @@ import type {
   MissionReviewReadResult,
   MissionStoreInfo,
   Position,
+  Outing,
+  EditOutingBoundariesInput,
+  EndOutingInput,
+  RenameOutingInput,
   UnlockFinalizedMissionInput,
   UpsertDeviceInput,
   UpsertDrawingInput,
@@ -22,6 +27,7 @@ import type {
   UpsertHelicopterInput,
   UpsertMarkerInput,
 } from '../../infrastructure/mission-store/tauri-mission-store'
+import { outingWindowsOverlap } from '../outings/outing-schedule'
 import {
   DEFAULT_AUDIT_EVENT_LIMIT,
   isTelemetryEventType,
@@ -39,6 +45,7 @@ type BrowserHarnessState = {
   readonly missions: readonly Mission[]
   readonly devices: readonly Device[]
   readonly positions: readonly Position[]
+  readonly outings: readonly Outing[]
   readonly markers: readonly Marker[]
   readonly drawings: readonly Drawing[]
   readonly helicopters: readonly Helicopter[]
@@ -55,6 +62,11 @@ const EMERGENCY_PERSISTED_TRACKING_POSITIONS = 500
 
 type BrowserHarnessStore = {
   readonly createMission: (input: CreateMissionInput) => Promise<Mission>
+  readonly createOuting: (input: CreateOutingInput) => Promise<Outing>
+  readonly endOuting: (input: EndOutingInput) => Promise<Outing>
+  readonly renameOuting: (input: RenameOutingInput) => Promise<Outing>
+  readonly editOutingBoundaries: (input: EditOutingBoundariesInput) => Promise<Outing>
+  readonly listOutings: (missionId: string) => Promise<readonly Outing[]>
   readonly listMissions: () => Promise<readonly Mission[]>
   readonly getActiveMission: () => Promise<Mission | null>
   readonly getRecoverableMission: () => Promise<Mission | null>
@@ -154,7 +166,7 @@ export function getBrowserHarnessStore(): BrowserHarnessStore {
 
   browserHarnessStore = {
     info: async () => ({
-      schema_version: 1,
+      schema_version: 9,
       database_path: '/tmp/browser-harness/mission-store.sqlite',
       backup_path: '/tmp/browser-harness/mission-store.backup.sqlite',
     }),
@@ -170,7 +182,7 @@ export function getBrowserHarnessStore(): BrowserHarnessStore {
         finish_time: null,
         paused_seconds: 0,
         notes: input.notes ?? null,
-        schema_version: 1,
+        schema_version: 9,
       } satisfies Mission
 
       state = {
@@ -187,6 +199,108 @@ export function getBrowserHarnessStore(): BrowserHarnessStore {
       save()
 
       return mission
+    },
+    createOuting: async (input) => {
+      const mission = requireMission(input.mission_id, state.missions)
+      if (mission.status !== 'active' && mission.status !== 'paused') {
+        throw new Error('Cannot start an outing for a finished or finalized mission.')
+      }
+      const timestamp = new Date().toISOString()
+      const outing: Outing = {
+        id: createId('outing'),
+        mission_id: mission.id,
+        label: normalizeHarnessOutingLabel(input.label),
+        started_at: normalizeHarnessOutingBoundary(input.started_at ?? timestamp),
+        ended_at: null,
+        created_at: timestamp,
+        updated_at: timestamp,
+      }
+      assertHarnessOutingWindow(mission, outing, state.outings)
+      state = {
+        ...state,
+        outings: [...state.outings, outing],
+        missionEvents: appendEvent(state.missionEvents, mission.id, 'outing_started', timestamp, {
+          outing_id: outing.id,
+          label: outing.label,
+          started_at: outing.started_at,
+        }),
+      }
+      save()
+      return outing
+    },
+    endOuting: async (input) => {
+      const mission = requireMission(input.mission_id, state.missions)
+      if (mission.status === 'finalized') throw new Error('Finalized missions are read-only.')
+      const existing = requireHarnessOuting(input.mission_id, input.outing_id, state.outings)
+      if (existing.ended_at !== null) throw new Error(`Outing "${existing.label}" has already ended.`)
+      const timestamp = new Date().toISOString()
+      const endedAt = normalizeHarnessOutingBoundary(input.ended_at ?? timestamp)
+      const outing = { ...existing, ended_at: endedAt, updated_at: timestamp }
+      assertHarnessOutingWindow(mission, outing, state.outings)
+      state = {
+        ...state,
+        outings: state.outings.map((candidate) => candidate.id === outing.id ? outing : candidate),
+        missionEvents: appendEvent(state.missionEvents, mission.id, 'outing_ended', timestamp, {
+          outing_id: outing.id,
+          ended_at: outing.ended_at,
+        }),
+      }
+      save()
+      return outing
+    },
+    renameOuting: async (input) => {
+      const mission = requireMission(input.mission_id, state.missions)
+      if (mission.status === 'finalized') throw new Error('Finalized missions are read-only.')
+      const existing = requireHarnessOuting(input.mission_id, input.outing_id, state.outings)
+      const timestamp = new Date().toISOString()
+      const outing = { ...existing, label: normalizeHarnessOutingLabel(input.label), updated_at: timestamp }
+      state = {
+        ...state,
+        outings: state.outings.map((candidate) => candidate.id === outing.id ? outing : candidate),
+        missionEvents: appendEvent(state.missionEvents, mission.id, 'outing_renamed', timestamp, {
+          outing_id: outing.id,
+          before: { label: existing.label },
+          after: { label: outing.label },
+        }),
+      }
+      save()
+      return outing
+    },
+    editOutingBoundaries: async (input) => {
+      const mission = requireMission(input.mission_id, state.missions)
+      if (mission.status === 'finalized') throw new Error('Finalized missions are read-only.')
+      const existing = requireHarnessOuting(input.mission_id, input.outing_id, state.outings)
+      const timestamp = new Date().toISOString()
+      const outing = {
+        ...existing,
+        started_at: input.started_at === undefined
+          ? existing.started_at
+          : normalizeHarnessOutingBoundary(input.started_at),
+        ended_at: input.ended_at === undefined
+          ? existing.ended_at
+          : input.ended_at === null
+            ? null
+            : normalizeHarnessOutingBoundary(input.ended_at),
+        updated_at: timestamp,
+      }
+      assertHarnessOutingWindow(mission, outing, state.outings)
+      state = {
+        ...state,
+        outings: state.outings.map((candidate) => candidate.id === outing.id ? outing : candidate),
+        missionEvents: appendEvent(state.missionEvents, mission.id, 'outing_boundaries_edited', timestamp, {
+          outing_id: outing.id,
+          before: { started_at: existing.started_at, ended_at: existing.ended_at },
+          after: { started_at: outing.started_at, ended_at: outing.ended_at },
+        }),
+      }
+      save()
+      return outing
+    },
+    listOutings: async (missionId) => {
+      requireMission(missionId, state.missions)
+      return state.outings
+        .filter((outing) => outing.mission_id === missionId)
+        .toSorted((left, right) => left.started_at.localeCompare(right.started_at))
     },
     listMissions: async () => state.missions,
     listMissionEvents: async (missionId) =>
@@ -929,6 +1043,7 @@ function readHarnessState(): BrowserHarnessState {
       missions: [],
       devices: [],
       positions: [],
+      outings: [],
       markers: [],
       drawings: [],
       helicopters: [],
@@ -946,6 +1061,7 @@ function readHarnessState(): BrowserHarnessState {
       missions: [],
       devices: [],
       positions: [],
+      outings: [],
       markers: [],
       drawings: [],
       helicopters: [],
@@ -963,6 +1079,7 @@ function readHarnessState(): BrowserHarnessState {
       missions: Array.isArray(parsed.missions) ? parsed.missions : [],
       devices: Array.isArray(parsed.devices) ? parsed.devices : [],
       positions: Array.isArray(parsed.positions) ? parsed.positions : [],
+      outings: Array.isArray(parsed.outings) ? parsed.outings : [],
       markers: Array.isArray(parsed.markers) ? parsed.markers : [],
       drawings: Array.isArray(parsed.drawings) ? parsed.drawings : [],
       helicopters: Array.isArray(parsed.helicopters) ? parsed.helicopters : [],
@@ -979,6 +1096,7 @@ function readHarnessState(): BrowserHarnessState {
       missions: [],
       devices: [],
       positions: [],
+      outings: [],
       markers: [],
       drawings: [],
       helicopters: [],
@@ -1131,6 +1249,56 @@ function ensureMissionMutable(missionId: string, missions: readonly Mission[]): 
   }
 
   return mission
+}
+
+/** Returns one outing scoped to its mission. */
+function requireHarnessOuting(
+  missionId: string,
+  outingId: string,
+  outings: readonly Outing[],
+): Outing {
+  const outing = outings.find(
+    (candidate) => candidate.mission_id === missionId && candidate.id === outingId,
+  )
+  if (outing === undefined) throw new Error(`Outing not found: ${outingId}`)
+  return outing
+}
+
+/** Validates one browser-harness outing against the production invariants. */
+function assertHarnessOutingWindow(
+  mission: Mission,
+  outing: Outing,
+  outings: readonly Outing[],
+): void {
+  const start = Date.parse(outing.started_at)
+  const end = outing.ended_at === null ? null : Date.parse(outing.ended_at)
+  if (start < Date.parse(mission.start_time)) {
+    throw new Error('Outing start cannot be before the mission start.')
+  }
+  if (end !== null && end <= start) throw new Error('Outing end must be after its start.')
+  const conflict = outings.find(
+    (candidate) => candidate.id !== outing.id && outingWindowsOverlap(outing, candidate),
+  )
+  if (conflict !== undefined) {
+    throw new Error(`Outing window overlaps "${conflict.label}".`)
+  }
+}
+
+/** Normalizes a browser-harness date-time boundary. */
+function normalizeHarnessOutingBoundary(value: string): string {
+  const milliseconds = Date.parse(value)
+  if (!Number.isFinite(milliseconds)) {
+    throw new Error('Outing boundary must be a valid ISO8601 date-time.')
+  }
+  return new Date(milliseconds).toISOString()
+}
+
+/** Normalizes one bounded operator-facing outing label. */
+function normalizeHarnessOutingLabel(value: string): string {
+  const label = value.trim()
+  if (label === '') throw new Error('Outing label is required.')
+  if (label.length > 120) throw new Error('Outing label must be 120 characters or fewer.')
+  return label
 }
 
 function calculatePausedSeconds(pauseTime: string | null): number {

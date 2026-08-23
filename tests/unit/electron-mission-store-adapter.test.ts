@@ -15,6 +15,7 @@ describe('electron mission store adapter', () => {
         deviceTotals: [],
       }),
       cancelBreadcrumbQuery: vi.fn().mockResolvedValue(true),
+      listOutings: vi.fn().mockResolvedValue([]),
     }
     Object.defineProperty(window, 'sartrackerElectron', {
       configurable: true,
@@ -30,6 +31,7 @@ describe('electron mission store adapter', () => {
       store.listBreadcrumbPositions?.('mission-a', 5_000, 'request-a'),
     ).resolves.toEqual({ positions: [], deviceTotals: [] })
     await expect(store.cancelBreadcrumbQuery?.('request-a')).resolves.toBe(true)
+    await expect(store.listOutings?.('mission-a')).resolves.toEqual([])
     expect(missionStore.info).toHaveBeenCalledWith()
     expect(missionStore.listBreadcrumbPositions).toHaveBeenCalledWith(
       'mission-a',
@@ -37,5 +39,6 @@ describe('electron mission store adapter', () => {
       'request-a',
     )
     expect(missionStore.cancelBreadcrumbQuery).toHaveBeenCalledWith('request-a')
+    expect(missionStore.listOutings).toHaveBeenCalledWith('mission-a')
   })
 })

@@ -31,8 +31,9 @@ const {
 } = require('./ingest-anomaly-outbox.cjs')
 
 const { createZipArchive, readZipArchive } = require('./zip-archive.cjs')
+const { createOutingStore } = require('./outing-store.cjs')
 
-const CURRENT_SCHEMA_VERSION = 8
+const CURRENT_SCHEMA_VERSION = 9
 const DATABASE_FILE_NAME = 'mission-store.sqlite'
 const BACKUP_FILE_NAME = 'mission-store.backup.sqlite'
 const ARCHIVE_DIRECTORY_NAME = 'archives'
@@ -100,6 +101,10 @@ function createElectronMissionStore(options) {
   db.pragma('synchronous = FULL')
   db.pragma('foreign_keys = ON')
   migrate(db)
+  const outingStore = createOutingStore({
+    db,
+    faultInjection: options.outingFaultInjection ?? {},
+  })
   const ingestEvidenceFaultInjection = options.ingestEvidenceFaultInjection ?? {}
   const ingestAnomalyOutbox = createIngestAnomalyOutbox({
     directoryPath: ingestAnomalyOutboxDirectory,
@@ -180,6 +185,11 @@ function createElectronMissionStore(options) {
       )
       return mission
     },
+    createOuting: async (input) => outingStore.createOuting(input),
+    endOuting: async (input) => outingStore.endOuting(input),
+    renameOuting: async (input) => outingStore.renameOuting(input),
+    editOutingBoundaries: async (input) => outingStore.editOutingBoundaries(input),
+    listOutings: async (missionId) => outingStore.listOutings(missionId),
     upsertDevice: async (input) => upsertDevice(db, input),
     upsertDevicesBulk: async (input) => {
       const startedAtMs = performance.now()
@@ -523,6 +533,21 @@ function migrate(db) {
       schema_version INTEGER NOT NULL
     );
     CREATE INDEX IF NOT EXISTS idx_missions_status ON missions(status);
+    CREATE TABLE IF NOT EXISTS outings (
+      id TEXT PRIMARY KEY,
+      mission_id TEXT NOT NULL,
+      label TEXT NOT NULL,
+      started_at TEXT NOT NULL,
+      ended_at TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      FOREIGN KEY (mission_id) REFERENCES missions(id) ON DELETE CASCADE,
+      CHECK (ended_at IS NULL OR ended_at > started_at)
+    );
+    CREATE INDEX IF NOT EXISTS idx_outings_mission_started
+      ON outings(mission_id, started_at);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_outings_mission_active
+      ON outings(mission_id) WHERE ended_at IS NULL;
     CREATE TABLE IF NOT EXISTS devices (
       id TEXT PRIMARY KEY,
       mission_id TEXT NOT NULL,

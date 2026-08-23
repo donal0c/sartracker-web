@@ -457,7 +457,7 @@ describe('electron mission store', () => {
   })
 
   it('migrates a schema-6 store to the durable tracking-history checkpoint schema', async () => {
-    expect(CURRENT_SCHEMA_VERSION).toBe(8)
+    expect(CURRENT_SCHEMA_VERSION).toBe(9)
     userDataPath = await mkdtemp(path.join(tmpdir(), 'sartracker-electron-checkpoint-migration-'))
     const databasePath = path.join(userDataPath, 'mission-store.sqlite')
     const legacyDb = new Database(databasePath)
@@ -471,7 +471,7 @@ describe('electron mission store', () => {
     }
 
     store = createElectronMissionStore({ userDataPath })
-    await expect(store.info()).resolves.toMatchObject({ schema_version: 8 })
+    await expect(store.info()).resolves.toMatchObject({ schema_version: 9 })
 
     const migratedDb = new Database(databasePath, { readonly: true })
     try {
@@ -486,7 +486,7 @@ describe('electron mission store', () => {
         migratedDb
           .prepare("SELECT value FROM metadata WHERE key = 'schema_version'")
           .get(),
-      ).toEqual({ value: '8' })
+      ).toEqual({ value: '9' })
     } finally {
       migratedDb.close()
     }
@@ -528,7 +528,7 @@ describe('electron mission store', () => {
     }
 
     store = createElectronMissionStore({ userDataPath })
-    await expect(store.info()).resolves.toMatchObject({ schema_version: 8 })
+    await expect(store.info()).resolves.toMatchObject({ schema_version: 9 })
 
     const migratedDb = new Database(databasePath, { readonly: true })
     try {

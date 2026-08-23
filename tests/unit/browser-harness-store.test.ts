@@ -155,6 +155,34 @@ describe('browser harness store', () => {
     )
   })
 
+  it('mirrors the audited half-open outing lifecycle for browser validation', async () => {
+    const store = getBrowserHarnessStore()
+    const mission = await store.createMission({
+      name: 'Outing Harness',
+      start_time: '2026-08-20T08:00:00.000Z',
+    })
+    const first = await store.createOuting({
+      mission_id: mission.id,
+      label: 'Outing 1',
+      started_at: '2026-08-20T09:00:00.000Z',
+    })
+    await store.endOuting({
+      mission_id: mission.id,
+      outing_id: first.id,
+      ended_at: '2026-08-20T11:00:00.000Z',
+    })
+    await store.createOuting({
+      mission_id: mission.id,
+      label: 'Outing 2',
+      started_at: '2026-08-20T11:00:00.000Z',
+    })
+
+    await expect(store.listOutings(mission.id)).resolves.toHaveLength(2)
+    expect(readBrowserHarnessState().missionEvents.map((event) => event.event_type)).toEqual(
+      expect.arrayContaining(['outing_started', 'outing_ended']),
+    )
+  })
+
   it('returns one bounded Mission Review audit page with the exact breadcrumb count', async () => {
     const store = getBrowserHarnessStore()
     const mission = await store.createMission({ name: 'Review Mission' })

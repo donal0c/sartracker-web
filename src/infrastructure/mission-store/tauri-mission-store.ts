@@ -17,6 +17,41 @@ export type Mission = {
   readonly schema_version: number
 }
 
+export type Outing = {
+  readonly id: string
+  readonly mission_id: string
+  readonly label: string
+  readonly started_at: string
+  readonly ended_at: string | null
+  readonly created_at: string
+  readonly updated_at: string
+}
+
+export type CreateOutingInput = {
+  readonly mission_id: string
+  readonly label: string
+  readonly started_at?: string
+}
+
+export type EndOutingInput = {
+  readonly mission_id: string
+  readonly outing_id: string
+  readonly ended_at?: string
+}
+
+export type RenameOutingInput = {
+  readonly mission_id: string
+  readonly outing_id: string
+  readonly label: string
+}
+
+export type EditOutingBoundariesInput = {
+  readonly mission_id: string
+  readonly outing_id: string
+  readonly started_at?: string
+  readonly ended_at?: string | null
+}
+
 export type DeviceStatus = 'online' | 'offline' | 'unknown'
 
 export type Device = {
@@ -371,6 +406,11 @@ export type MissionStore = {
   readonly syncBackup: (trigger?: string) => Promise<string>
   readonly createMissionArchive: (missionId: string) => Promise<MissionArchiveInfo>
   readonly createMission: (input: CreateMissionInput) => Promise<Mission>
+  readonly createOuting?: (input: CreateOutingInput) => Promise<Outing>
+  readonly endOuting?: (input: EndOutingInput) => Promise<Outing>
+  readonly renameOuting?: (input: RenameOutingInput) => Promise<Outing>
+  readonly editOutingBoundaries?: (input: EditOutingBoundariesInput) => Promise<Outing>
+  readonly listOutings?: (missionId: string) => Promise<readonly Outing[]>
   readonly upsertDevice: (input: UpsertDeviceInput) => Promise<Device>
   readonly upsertDevicesBulk?: (input: {
     readonly mission_id: string
