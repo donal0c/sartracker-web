@@ -79,6 +79,7 @@ export function createRejectionEvidenceDelivery(
   let accepting = true
   const evidenceLossMissionIds = new Set<string>()
   const finalizationPhaseByMission = new Map<string, 'draining' | 'sealed' | 'finalized'>()
+  const finalizationEpochByMission = new Map<string, number>()
 
   /** Publishes current warnings immediately and schedules non-blocking delivery. */
   function record(
@@ -161,10 +162,10 @@ export function createRejectionEvidenceDelivery(
     await drainMissionEvidence(missionId)
   }
 
-  /** Drains one mission and optionally seals acceptance before the promise resolves. */
+  /** Drains one mission and optionally seals the current finalization epoch. */
   async function drainMissionEvidence(
     missionId: string,
-    sealAfterDrain = false,
+    sealAfterDrainEpoch?: number,
   ): Promise<void> {
     if (flushInFlight !== null) {
       await flushInFlight
@@ -177,7 +178,10 @@ export function createRejectionEvidenceDelivery(
         )
       }
     }
-    if (sealAfterDrain) {
+    if (
+      sealAfterDrainEpoch !== undefined &&
+      finalizationEpochByMission.get(missionId) === sealAfterDrainEpoch
+    ) {
       finalizationPhaseByMission.set(missionId, 'sealed')
     }
   }
@@ -193,14 +197,24 @@ export function createRejectionEvidenceDelivery(
     if (finalizationPhaseByMission.has(missionId)) {
       throw new Error('Mission evidence finalization is already in progress or complete.')
     }
+    const finalizationEpoch = advanceMissionFinalizationEpoch(missionId)
     finalizationPhaseByMission.set(missionId, 'draining')
     try {
-      await drainMissionEvidence(missionId, true)
+      await drainMissionEvidence(missionId, finalizationEpoch)
+      if (finalizationEpochByMission.get(missionId) !== finalizationEpoch) {
+        throw new Error(
+          'Mission evidence finalization was superseded by administrative unlock.',
+        )
+      }
       const result = await operation()
-      finalizationPhaseByMission.set(missionId, 'finalized')
+      if (finalizationEpochByMission.get(missionId) === finalizationEpoch) {
+        finalizationPhaseByMission.set(missionId, 'finalized')
+      }
       return result
     } catch (error) {
-      finalizationPhaseByMission.delete(missionId)
+      if (finalizationEpochByMission.get(missionId) === finalizationEpoch) {
+        finalizationPhaseByMission.delete(missionId)
+      }
       scheduleFlush()
       throw error
     }
@@ -208,7 +222,15 @@ export function createRejectionEvidenceDelivery(
 
   /** Reopens renderer acceptance only after the durable store confirms admin unlock. */
   function reopenMissionEvidenceAfterUnlock(missionId: string): void {
+    advanceMissionFinalizationEpoch(missionId)
     finalizationPhaseByMission.delete(missionId)
+  }
+
+  /** Invalidates stale async finalization continuations for one mission. */
+  function advanceMissionFinalizationEpoch(missionId: string): number {
+    const nextEpoch = (finalizationEpochByMission.get(missionId) ?? 0) + 1
+    finalizationEpochByMission.set(missionId, nextEpoch)
+    return nextEpoch
   }
 
   /** Starts at most one delivery batch without making the poller await it. */

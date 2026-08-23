@@ -149,4 +149,70 @@ describe('ingest evidence finalization boundary [DON-268]', () => {
     })
     expect(missionStore.finalizeMission).toHaveBeenCalledTimes(2)
   })
+
+  it('does not let a stale finalization continuation reseal evidence after unlock', async () => {
+    let status: 'finished' | 'finalized' = 'finished'
+    let confirmFinalizationCommitted: (() => void) | undefined
+    let releaseFinalizationReturn: (() => void) | undefined
+    const finalizationCommitted = new Promise<void>((resolve) => {
+      confirmFinalizationCommitted = resolve
+    })
+    const missionStore = {
+      finalizeMission: vi.fn(async (missionId: string) => {
+        if (status !== 'finished') throw new Error('Mission must be finished.')
+        status = 'finalized'
+        confirmFinalizationCommitted?.()
+        await new Promise<void>((resolve) => {
+          releaseFinalizationReturn = resolve
+        })
+        return { mission: { id: missionId, status: 'finalized' as const } }
+      }),
+      unlockFinalizedMission: vi.fn(async (input: {
+        readonly mission_id: string
+        readonly admin_name: string
+        readonly reason: string
+      }) => {
+        if (status !== 'finalized') throw new Error('Mission must be finalized.')
+        status = 'finished'
+        return { id: input.mission_id, status }
+      }),
+    }
+    const evidence = createRejectionEvidenceDelivery({
+      missionStore: {
+        recordIngestRejections: vi.fn(async (input) => ({
+          acknowledgedDeliveryIds: input.rejections.map((entry) => entry.deliveryId),
+          health: {
+            state: 'healthy' as const,
+            reason: null,
+            pendingCount: 0,
+            corruptCount: 0,
+            conflictCount: 0,
+            rejectedCount: 0,
+            affectedDeviceCount: 0,
+            conflictDeviceIds: [],
+          },
+        })),
+      },
+      applyRejections: vi.fn(),
+      applyEvidenceHealth: vi.fn(),
+    })
+    const bounded = createIngestEvidenceFinalizationBoundary(missionStore, evidence)
+
+    const staleFinalization = bounded.finalizeMission('mission-1')
+    await finalizationCommitted
+    await expect(bounded.unlockFinalizedMission({
+      mission_id: 'mission-1',
+      admin_name: 'Duty Admin',
+      reason: 'Correction requested during delayed finalization response.',
+    })).resolves.toMatchObject({ status: 'finished' })
+
+    releaseFinalizationReturn?.()
+    await expect(staleFinalization).resolves.toMatchObject({
+      mission: { status: 'finalized' },
+    })
+    expect(() => evidence.record([], {
+      missionId: 'mission-1',
+      observedAt: '2026-08-23T09:32:00.000Z',
+    })).not.toThrow()
+  })
 })
