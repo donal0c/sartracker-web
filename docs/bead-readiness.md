@@ -25,7 +25,7 @@ Last updated: 2026-08-23 by Codex (Breadcrumb PR-2 review remediation)
 ### `DON-270` / `DON-271` / `DON-272` — Breadcrumb PR-2 mission model — review ready
 
 - Research required: complete; the raw team transcript and stable Q&A ledger resolve the domain behavior.
-- Implementation readiness: the first seven P1/six P2, second-pass eight P1/five P2, and third-pass five P1/two P2 findings are remediated; latest code commit `73f5f4e013b8` is review ready after this evidence-doc commit is pushed.
+- Implementation readiness: the first seven P1/six P2, second-pass eight P1/five P2, and third-pass five P1/two P2 findings are remediated; latest code commit `73f5f4ee57b` is review ready after this evidence-doc commit is pushed.
 - Recommended action: continue independent review of the new exact head until a non-author reviewer says it is approvable. Do not merge or start PR-3 meanwhile.
 - Locked decisions: one additive schema v9; explicit outing boundaries; accepted fixes outside outings remain Unassigned; no participant preselection; group membership changes apply from observation time without retrospective evidence; >100 selected devices warns and proceeds without truncation; legacy/finalized rows are grandfathered with explicit provenance; the mission model stays internal and release-off.
 - Open questions: none. Known decision boundary: schema v9 is installed even when the internal flag is off, so a field database opened by this candidate cannot be reopened by a schema-v8 build; remediation does not silently change that approved single-schema policy.
