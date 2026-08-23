@@ -107,6 +107,21 @@ describe('startParticipantRuntime [DON-271]', () => {
     })
   })
 
+  it('does not republish a semantically unchanged discovery roster [DON-271]', async () => {
+    const applyRuntime = vi.fn()
+    const runtime = await startParticipantRuntime({
+      participantStore: createStore({ participants: [], membershipEvents: [] }),
+      applyRuntime,
+    })
+    const roster = [device('device-1', 'group-1'), device('device-2', null)]
+
+    await runtime.applyRoster(roster)
+    expect(applyRuntime).toHaveBeenCalledTimes(2)
+
+    await runtime.applyRoster(roster.map((entry) => ({ ...entry })))
+    expect(applyRuntime).toHaveBeenCalledTimes(2)
+  })
+
   it('warns beyond 100 selected devices without truncating the active scope', async () => {
     const store = createStore({
       participants: Array.from({ length: 101 }, (_, index) => ({

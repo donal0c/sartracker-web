@@ -131,9 +131,13 @@ export async function startParticipantRuntime(
       }
     },
     applyRoster: async (devices, observedAt = now().toISOString()) => {
-      availableDevices = [...devices]
+      const rosterChanged = !areRostersEquivalent(availableDevices, devices)
+      const errorCleared = rosterError !== null
+      if (!rosterChanged && !errorCleared) return
+      if (rosterChanged) availableDevices = [...devices]
       rosterError = null
       publishRuntime()
+      if (!rosterChanged) return
       const missionId = activeMissionId
       if (missionId === null) return
 
@@ -364,6 +368,27 @@ function requireGroup(
 
 function toggleId(values: readonly string[], id: string): readonly string[] {
   return values.includes(id) ? values.filter((value) => value !== id) : [...values, id]
+}
+
+/** Compares roster identity and discovery metadata without depending on server row order. */
+function areRostersEquivalent(
+  current: readonly NormalizedTrackingDevice[],
+  incoming: readonly NormalizedTrackingDevice[],
+): boolean {
+  if (current === incoming) return true
+  if (current.length !== incoming.length) return false
+  const currentById = new Map(current.map((device) => [device.device_id, device]))
+  if (currentById.size !== current.length) return false
+  return incoming.every((device) => {
+    const previous = currentById.get(device.device_id)
+    return previous !== undefined &&
+      previous.name === device.name &&
+      previous.status === device.status &&
+      previous.last_seen === device.last_seen &&
+      previous.unique_id === device.unique_id &&
+      previous.category === device.category &&
+      (previous.group_id ?? null) === (device.group_id ?? null)
+  })
 }
 
 function toErrorMessage(error: unknown): string {
