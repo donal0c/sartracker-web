@@ -393,6 +393,103 @@ describe('startParticipantRuntime [DON-271]', () => {
     await expect(pendingFinish).resolves.toBe('finished')
   })
 
+  it('replays observations received after the cutoff when persisted finish is refused', async () => {
+    const store = createStore({ participants: [GROUP_PARTICIPANT], membershipEvents: [] })
+    const states: ParticipantRuntimeState[] = []
+    const runtime = await startParticipantRuntime({
+      participantStore: store,
+      applyRuntime: (state) => states.push(state),
+      now: () => new Date('2026-08-23T11:00:00.000Z'),
+    })
+    await runtime.refreshMission('mission-1')
+    const finishGate = createDeferred<void>()
+    const pendingFinish = runtime.runWithMembershipFinishFence(
+      'mission-1',
+      async () => {
+        await finishGate.promise
+        throw new Error('Participant history backfill is incomplete.')
+      },
+    )
+    await Promise.resolve()
+
+    await runtime.applyRoster(
+      [device('device-2', 'group-1')],
+      '2026-08-23T11:00:00.000Z',
+    )
+    expect(store.recordGroupMembershipEvents).not.toHaveBeenCalled()
+
+    finishGate.resolve()
+    await expect(pendingFinish).rejects.toThrow(/backfill is incomplete/i)
+
+    expect(store.recordGroupMembershipEvents).toHaveBeenCalledWith({
+      mission_id: 'mission-1',
+      events: [expect.objectContaining({
+        traccar_device_id: 'device-2',
+        change: 'member',
+        observed_at: '2026-08-23T11:00:00.000Z',
+      })],
+    })
+    expect(states.at(-1)?.scope.operationalDeviceIdsAt(
+      '2026-08-23T11:00:00.000Z',
+    )).toContain('device-2')
+  })
+
+  it('settles a pre-fence roster observation that is still recovering participant scope', async () => {
+    const recoveredParticipants = createDeferred<readonly MissionParticipant[]>()
+    const store = createStore({ participants: [GROUP_PARTICIPANT], membershipEvents: [] })
+    store.listMissionParticipants
+      .mockRejectedValueOnce(new Error('participant scope unavailable'))
+      .mockReturnValueOnce(recoveredParticipants.promise)
+    let missionFinished = false
+    store.recordGroupMembershipEvents.mockImplementation(async (input) => {
+      if (missionFinished) {
+        throw new Error('Finished and finalized missions are read-only for participant changes.')
+      }
+      return input.events.map((event, index) => ({
+        ...event,
+        id: `recovered-membership-${index}`,
+        sequence: index + 1,
+        mission_id: input.mission_id,
+      }))
+    })
+    const runtime = await startParticipantRuntime({
+      participantStore: store,
+      applyRuntime: vi.fn(),
+    })
+    await runtime.refreshMission('mission-1')
+
+    const pendingRoster = runtime.applyRoster(
+      [device('device-2', 'group-1')],
+      '2026-08-23T11:00:00.000Z',
+    )
+    await vi.waitFor(() => {
+      expect(store.listMissionParticipants).toHaveBeenCalledTimes(2)
+    })
+    const finish = vi.fn().mockImplementation(async () => {
+      missionFinished = true
+      return 'finished'
+    })
+    const pendingFinish = runtime.runWithMembershipFinishFence('mission-1', finish)
+
+    await Promise.resolve()
+    const finishCallsBeforeRecovery = finish.mock.calls.length
+    recoveredParticipants.resolve([GROUP_PARTICIPANT])
+    await expect(pendingRoster).resolves.toBeUndefined()
+    await expect(pendingFinish).resolves.toBe('finished')
+
+    expect(finishCallsBeforeRecovery).toBe(0)
+    expect(store.recordGroupMembershipEvents).toHaveBeenCalledWith({
+      mission_id: 'mission-1',
+      events: [expect.objectContaining({
+        traccar_device_id: 'device-2',
+        change: 'member',
+        observed_at: '2026-08-23T11:00:00.000Z',
+      })],
+    })
+    expect(store.recordGroupMembershipEvents.mock.invocationCallOrder[0])
+      .toBeLessThan(finish.mock.invocationCallOrder[0]!)
+  })
+
   it('reconciles an unchanged server roster again after the active mission changes', async () => {
     const store = createStore({ participants: [GROUP_PARTICIPANT], membershipEvents: [] })
     store.listMissionParticipants.mockImplementation(async (missionId: string) => [{

@@ -607,6 +607,48 @@ describe('breadcrumb history reconciler', () => {
     )
   })
 
+  it('keeps anti-entropy sweeps inside a late participant scoped checkpoint', async () => {
+    const fetchBreadcrumbs = vi.fn().mockResolvedValue([])
+    const onChunk = vi.fn()
+    const reconciler = createBreadcrumbHistoryReconciler({
+      fetchBreadcrumbs,
+      onChunk,
+      onProgress: vi.fn(),
+      shouldContinue: () => true,
+      logger: { warn: vi.fn() },
+      antiEntropyIntervalMs: 100,
+    })
+
+    reconciler.reconcile({
+      devices: [DEVICE],
+      from: new Date('2026-04-06T08:00:00.000Z'),
+      until: new Date('2026-04-06T14:00:00.000Z'),
+      checkpointsByDevice: {
+        '1': {
+          historyFrom: '2026-04-06T10:00:00.000Z',
+          reconciledUntil: '2026-04-06T12:00:00.000Z',
+        },
+      },
+    })
+    await vi.advanceTimersByTimeAsync(0)
+    await vi.advanceTimersByTimeAsync(100)
+
+    expect(fetchBreadcrumbs.mock.calls.map((call) => [call[1], call[2]])).toEqual([
+      [
+        new Date('2026-04-06T12:00:00.000Z'),
+        new Date('2026-04-06T14:00:00.000Z'),
+      ],
+      [
+        new Date('2026-04-06T10:00:00.000Z'),
+        new Date('2026-04-06T12:00:00.000Z'),
+      ],
+    ])
+    expect(onChunk).toHaveBeenLastCalledWith(expect.objectContaining({
+      phase: 'anti_entropy',
+      historyFrom: new Date('2026-04-06T10:00:00.000Z'),
+    }))
+  })
+
   it.each([
     {
       label: 'corrupt',

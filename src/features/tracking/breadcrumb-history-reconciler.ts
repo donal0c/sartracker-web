@@ -750,7 +750,7 @@ export function createBreadcrumbHistoryReconciler(
           })
           continue
         }
-        const initialCursorMs = resolveInitialCursorMs(
+        const initialRange = resolveInitialHistoryRange(
           checkpointsByDevice[device.device_id],
           missionStartMs,
           targetMs,
@@ -759,13 +759,13 @@ export function createBreadcrumbHistoryReconciler(
         const job = {
           deviceId: device.device_id,
           deviceName: device.name,
-          cursorMs: initialCursorMs,
+          cursorMs: initialRange.cursorMs,
           targetMs,
-          missionStartMs,
+          missionStartMs: initialRange.historyFromMs,
           failureCount: 0,
           retryAtMs: 0,
         }
-        if (initialCursorMs >= targetMs) {
+        if (initialRange.cursorMs >= targetMs) {
           completeInitialJob(job)
         } else {
           jobsByDeviceId.set(device.device_id, job)
@@ -820,16 +820,16 @@ function countChunks(fromMs: number, toMs: number, chunkMs: number): number {
   return Math.max(0, Math.ceil(Math.max(0, toMs - fromMs) / chunkMs))
 }
 
-function resolveInitialCursorMs(
+function resolveInitialHistoryRange(
   checkpoint: {
     readonly historyFrom: string
     readonly reconciledUntil: string
   } | undefined,
   missionStartMs: number,
   targetMs: number,
-): number {
+): { readonly historyFromMs: number; readonly cursorMs: number } {
   if (checkpoint === undefined) {
-    return missionStartMs
+    return { historyFromMs: missionStartMs, cursorMs: missionStartMs }
   }
   const checkpointStartMs = Date.parse(checkpoint.historyFrom)
   const checkpointCursorMs = Date.parse(checkpoint.reconciledUntil)
@@ -841,7 +841,7 @@ function resolveInitialCursorMs(
     checkpointCursorMs < checkpointStartMs ||
     checkpointCursorMs > targetMs
   ) {
-    return missionStartMs
+    return { historyFromMs: missionStartMs, cursorMs: missionStartMs }
   }
-  return checkpointCursorMs
+  return { historyFromMs: checkpointStartMs, cursorMs: checkpointCursorMs }
 }

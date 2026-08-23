@@ -105,10 +105,9 @@ export async function startParticipantRuntime(
   let pendingRosterObservation: RosterObservation | null = null
   let pendingMembershipWrite: PendingMembershipWrite | null = null
   let rosterReconciliationRunning = false
-  let membershipFinishFence: {
-    readonly missionId: string
-    readonly missionGeneration: number
-  } | null = null
+  let inFlightRosterApplicationCount = 0
+  let fencedRosterObservations: FencedRosterObservation[] = []
+  let membershipFinishFence: MembershipFinishFence | null = null
   const rosterWaiters: Array<{
     readonly version: number
     readonly resolve: () => void
@@ -125,6 +124,7 @@ export async function startParticipantRuntime(
         lastReconciledMissionGeneration = -1
         pendingMembershipWrite = null
         membershipFinishFence = null
+        fencedRosterObservations = []
         membershipWriteError = null
         saving = false
         participants = []
@@ -174,49 +174,30 @@ export async function startParticipantRuntime(
       }
     },
     applyRoster: async (devices, observedAt = now().toISOString(), options = { complete: true }) => {
+      const fence = membershipFinishFence
       if (
-        membershipFinishFence !== null &&
-        activeMissionId === membershipFinishFence.missionId &&
-        missionGeneration === membershipFinishFence.missionGeneration
-      ) return
-      const missionIdBeforeRefresh = activeMissionId
-      if (error !== null && missionIdBeforeRefresh !== null) {
-        await controller.refreshMission(missionIdBeforeRefresh)
-        if (activeMissionId !== missionIdBeforeRefresh || error !== null) return
+        fence !== null &&
+        activeMissionId === fence.missionId &&
+        missionGeneration === fence.missionGeneration
+      ) {
+        if (fence.status !== 'finished') {
+          fencedRosterObservations.push({
+            missionId: fence.missionId,
+            missionGeneration: fence.missionGeneration,
+            devices: [...devices],
+            observedAt,
+            complete: options.complete,
+          })
+        }
+        return
       }
-      const rosterChanged = !areRostersEquivalent(availableDevices, devices)
-      const completenessChanged = options.complete !== availableRosterComplete
-      const readErrorCleared = rosterReadError !== null
-      const retryRequired = membershipWriteError !== null
-      const missionNeedsReconciliation =
-        activeMissionId !== null && lastReconciledMissionGeneration !== missionGeneration
-      if (
-        !rosterChanged &&
-        !completenessChanged &&
-        !readErrorCleared &&
-        !retryRequired &&
-        !missionNeedsReconciliation
-      ) return
-      if (rosterChanged) availableDevices = [...devices]
-      availableRosterComplete = options.complete
-      rosterObservationReceived = true
-      rosterReadError = null
-      if (rosterChanged || completenessChanged || readErrorCleared) publishRuntime()
-      const missionId = activeMissionId
-      if (missionId === null) return
-      const version = ++nextRosterObservationVersion
-      pendingRosterObservation = {
-        version,
-        missionId,
-        missionGeneration,
-        devices: [...availableDevices],
-        observedAt,
-        complete: options.complete,
+      inFlightRosterApplicationCount += 1
+      try {
+        await applyRosterObservation(devices, observedAt, options.complete)
+      } finally {
+        inFlightRosterApplicationCount -= 1
+        notifyRosterReconciliationWaiters()
       }
-      return new Promise<void>((resolve) => {
-        rosterWaiters.push({ version, resolve })
-        void drainRosterReconciliation()
-      })
     },
     applyGroups: (groups) => {
       availableGroups = [...groups]
@@ -349,7 +330,11 @@ export async function startParticipantRuntime(
       if (membershipFinishFence !== null) {
         throw new Error('Mission finish is already checking participant membership changes.')
       }
-      const fence = { missionId, missionGeneration }
+      const fence: MembershipFinishFence = {
+        missionId,
+        missionGeneration,
+        status: 'pending',
+      }
       membershipFinishFence = fence
       let finishSucceeded = false
       try {
@@ -366,10 +351,16 @@ export async function startParticipantRuntime(
         }
         const result = await finish()
         finishSucceeded = true
+        if (membershipFinishFence === fence) {
+          fence.status = 'finished'
+          discardFencedRosterObservations(fence)
+        }
         return result
       } finally {
         if (!finishSucceeded && membershipFinishFence === fence) {
-          membershipFinishFence = null
+          fence.status = 'replaying'
+          await replayFencedRosterObservations(fence)
+          if (membershipFinishFence === fence) membershipFinishFence = null
           if (pendingRosterObservation !== null) void drainRosterReconciliation()
         }
       }
@@ -449,6 +440,80 @@ export async function startParticipantRuntime(
     })
   }
 
+  /** Applies one accepted roster observation without crossing the finish cutoff again. */
+  async function applyRosterObservation(
+    devices: readonly NormalizedTrackingDevice[],
+    observedAt: string,
+    complete: boolean,
+  ): Promise<void> {
+    const missionIdBeforeRefresh = activeMissionId
+    if (error !== null && missionIdBeforeRefresh !== null) {
+      await controller.refreshMission(missionIdBeforeRefresh)
+      if (activeMissionId !== missionIdBeforeRefresh || error !== null) return
+    }
+    const rosterChanged = !areRostersEquivalent(availableDevices, devices)
+    const completenessChanged = complete !== availableRosterComplete
+    const readErrorCleared = rosterReadError !== null
+    const retryRequired = membershipWriteError !== null
+    const missionNeedsReconciliation =
+      activeMissionId !== null && lastReconciledMissionGeneration !== missionGeneration
+    if (
+      !rosterChanged &&
+      !completenessChanged &&
+      !readErrorCleared &&
+      !retryRequired &&
+      !missionNeedsReconciliation
+    ) return
+    if (rosterChanged) availableDevices = [...devices]
+    availableRosterComplete = complete
+    rosterObservationReceived = true
+    rosterReadError = null
+    if (rosterChanged || completenessChanged || readErrorCleared) publishRuntime()
+    const missionId = activeMissionId
+    if (missionId === null) return
+    const version = ++nextRosterObservationVersion
+    pendingRosterObservation = {
+      version,
+      missionId,
+      missionGeneration,
+      devices: [...availableDevices],
+      observedAt,
+      complete,
+    }
+    await new Promise<void>((resolve) => {
+      rosterWaiters.push({ version, resolve })
+      void drainRosterReconciliation()
+    })
+  }
+
+  /** Replays post-cutoff observations only when the persisted finish was refused. */
+  async function replayFencedRosterObservations(
+    fence: MembershipFinishFence,
+  ): Promise<void> {
+    while (membershipFinishFence === fence) {
+      const observationIndex = fencedRosterObservations.findIndex((observation) =>
+        observation.missionId === fence.missionId &&
+        observation.missionGeneration === fence.missionGeneration)
+      if (observationIndex < 0) return
+      const [observation] = fencedRosterObservations.splice(observationIndex, 1)
+      if (observation === undefined) continue
+      await applyRosterObservation(
+        observation.devices,
+        observation.observedAt,
+        observation.complete,
+      )
+    }
+  }
+
+  /** Discards observations strictly after a finish cutoff that durably succeeded. */
+  function discardFencedRosterObservations(
+    fence: MembershipFinishFence,
+  ): void {
+    fencedRosterObservations = fencedRosterObservations.filter((observation) =>
+      observation.missionId !== fence.missionId ||
+      observation.missionGeneration !== fence.missionGeneration)
+  }
+
   /** Coalesces roster churn while preserving ordered durable membership truth. */
   async function drainRosterReconciliation(): Promise<void> {
     if (rosterReconciliationRunning) return
@@ -505,19 +570,28 @@ export async function startParticipantRuntime(
       }
     } finally {
       rosterReconciliationRunning = false
-      for (const resolve of rosterReconciliationWaiters.splice(0)) resolve()
+      notifyRosterReconciliationWaiters()
       if (pendingRosterObservation !== null) void drainRosterReconciliation()
     }
   }
 
   /** Waits until every roster observation accepted before the finish fence has settled. */
   async function waitForRosterReconciliation(): Promise<void> {
-    while (rosterReconciliationRunning || pendingRosterObservation !== null) {
+    while (
+      inFlightRosterApplicationCount > 0 ||
+      rosterReconciliationRunning ||
+      pendingRosterObservation !== null
+    ) {
       await new Promise<void>((resolve) => {
         rosterReconciliationWaiters.push(resolve)
         if (!rosterReconciliationRunning) void drainRosterReconciliation()
       })
     }
+  }
+
+  /** Wakes finish waiters after either application or persistence work settles. */
+  function notifyRosterReconciliationWaiters(): void {
+    for (const resolve of rosterReconciliationWaiters.splice(0)) resolve()
   }
 
   /** Persists one immutable observed membership delta until it is durably acknowledged. */
@@ -605,6 +679,20 @@ type PendingMembershipWrite = {
   readonly missionId: string
   readonly missionGeneration: number
   readonly events: readonly Omit<GroupMembershipEvent, 'id' | 'sequence' | 'mission_id'>[]
+}
+
+type FencedRosterObservation = {
+  readonly missionId: string
+  readonly missionGeneration: number
+  readonly devices: readonly NormalizedTrackingDevice[]
+  readonly observedAt: string
+  readonly complete: boolean
+}
+
+type MembershipFinishFence = {
+  readonly missionId: string
+  readonly missionGeneration: number
+  status: 'pending' | 'replaying' | 'finished'
 }
 
 /** Creates the actionable fail-closed reason shown by the mission finish dialog. */
