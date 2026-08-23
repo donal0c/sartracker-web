@@ -22,15 +22,15 @@ Use this document before implementation to decide how much parallel research, pl
 
 Last updated: 2026-08-23 by Codex (Breadcrumb PR-2 review remediation)
 
-### `DON-270` / `DON-271` / `DON-272` — Breadcrumb PR-2 mission model — candidate
+### `DON-270` / `DON-271` / `DON-272` — Breadcrumb PR-2 mission model — review ready
 
 - Research required: complete; the raw team transcript and stable Q&A ledger resolve the domain behavior.
-- Implementation readiness: CP-8 candidate findings remediated; commit-bound package/fixture invalidation gates remain before the next review round.
-- Recommended action: finish the remediation candidate gates, push one new exact head, then begin Donal's next four independent reviews. Do not merge or start PR-3 meanwhile.
+- Implementation readiness: CP-8 findings remediated and qualified at exact code commit `e1e7f46ffa06`; review ready.
+- Recommended action: begin Donal's next four independent exact-head reviews. Do not merge or start PR-3 meanwhile.
 - Locked decisions: one additive schema v9; explicit outing boundaries; accepted fixes outside outings remain Unassigned; no participant preselection; group membership changes apply from observation time without retrospective evidence; >100 selected devices warns and proceeds without truncation; legacy/finalized rows are grandfathered with explicit provenance; the mission model stays internal and release-off.
 - Open questions: none. Known decision boundary: schema v9 is installed even when the internal flag is off, so a field database opened by this candidate cannot be reopened by a schema-v8 build; remediation does not silently change that approved single-schema policy.
-- Evidence: red-first P1-A/B/C and outing-reentrancy regressions; full software gates (`227 files / 1,812` unit, lint/build, backend `51 / 1 ignored`, Chromium `153/153`); and a local three-outing query over the deterministic 1,999,988-fix mission that used `idx_positions_mission_timestamp`, returned exact 666,700 / 666,700 / 666,588 counts, and completed in `966.9 ms`. Earlier package/live/scale evidence remains relevant where the changed runtime/schema path does not invalidate it. The exact Ubuntu x64 3.704 GB v8→v9 run still proves integrity, 32/32 grandfathering, 2,040,000 Unassigned fixes and responsive worker/main/renderer behavior, but its zero-outing 1.530 s Review does **not** bound the outing-window join.
-- Ready-to-start checklist for reviews: [x] red-first remediation; [x] full software/browser gates; [ ] exact remediation package/fixture gates; [ ] exact final head pushed and reported in the pull request.
+- Evidence: red-first P1-A/B/C and outing-reentrancy regressions; full software gates (`227 files / 1,812` unit, lint/build, backend `51 / 1 ignored`, Chromium `153/153`); exact flag-off/flag-on macOS arm64 packages with 32 devices, 8,664 positions, restart, integrity `ok`, zero redundant slope, and `<250 ms` main/renderer gates; regenerated schema-v9 fixtures at 960k (`545,128,448` bytes, SHA `ad6ff8e4…129a0`) and 2M (`1,135,009,792` bytes, SHA `53d7edc5…136fb`). Ubuntu x64 independently reproduced the 2M SHA and exercised all 12 outing windows through the read-only worker and `idx_positions_mission_timestamp`: exact 1,999,988 total / 1,242,988 Unassigned counts in `1.087 s`, with `15.8 ms` maximum parent event-loop gap (report SHA `363272c4…ddc1d`). The earlier 3.704 GB v8→v9 run still proves integrity, 32/32 grandfathering, 2,040,000 Unassigned fixes and responsive worker/main/renderer behavior, but its zero-outing 1.530 s Review remains explicitly outside the join claim.
+- Ready-to-start checklist for reviews: [x] red-first remediation; [x] full software/browser gates; [x] exact remediation package/fixture gates; [x] exact final head pushed and reported in the pull request.
 
 ### `DON-260` — Deep breadcrumb correctness hotfix — completed
 

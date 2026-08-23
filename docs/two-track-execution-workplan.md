@@ -150,11 +150,13 @@ implemented with one additive schema v9 and the mission model remains behind an
 internal flag. Four exact-head reviews of `11c3b8d` reproduced three P1s in
 current-position scoping, duplicate participant selection, and participant-scope
 hydration/cache preservation, plus one outing mutation reentrancy P2. Those
-findings are red-to-green locally, the outing-summary join now has a query-plan-
-verified range index, and the earlier zero-outing Ubuntu timing is explicitly
-limited to the Unassigned/count path. Commit-bound package/fixture invalidation
-gates remain before the next review-ready head. Do not start PR-3 before the
-next four reviews and merge approval complete.
+findings are red-to-green and qualified at `e1e7f46ffa06`. Exact flag-off/flag-on
+package restart soaks and regenerated 960k/2M fixtures pass. Ubuntu x64
+independently reproduced the 2M fixture SHA and exercised all 12 outing windows
+through the indexed worker in `1.087 s` with a `15.8 ms` parent event-loop
+maximum. The earlier zero-outing Ubuntu timing remains limited to the
+Unassigned/count path. PR-2 is review ready; do not start PR-3 before the next
+four reviews and merge approval complete.
 
 ## Next Task Order
 
@@ -164,7 +166,7 @@ This is the default order when the user says “work on the next task.”
 | --- | --- | --- | --- | --- |
 | Done | Release the Tracking stability, interaction, and basemap-independent overlay hotfix | S2 Electron / Shared Tracking / Map / Verification | `DON-261` / `DON-262` / `DON-263` | Beta.12.5 exact commit `042d77ad6158`; clean no-skip verification 8/8; tag CI `30497318233` green; exact CI AppImage and real installed `.deb` passed lifecycle, safety, live-Traccar, 13-poll empty-history stability, pending/degraded basemap overlay, and deterministic five-/fourteen-day soak gates. Independent reviews returned `RELEASE` with no P1/P2. Guarded publication succeeded; fresh public hashes matched and the public AppImage passed Ubuntu lifecycle/recovery/finalize/archive. |
 | Done | PR-1: trustworthy ingest and live safety | Shared Tracking / S2 Electron / Evidence | `DON-266` / `DON-267` / `DON-268` / `DON-269` | Merged as [PR #1](https://github.com/donal0c/sartracker-web/pull/1) at `9481cf462e0e`; its exact-head review and Linux evidence remain in PR #1 and the handoff archive. |
-| Remediation candidate | PR-2: explicit outings, participants, and mission-shaped fixtures | Shared Tracking / S2 Electron / Mission model / Verification | `DON-270` / `DON-271` / `DON-272` | P1-A/B/C and the regraded outing-runtime P2 from the `11c3b8d` reviews are red-to-green. Full software/browser gates pass, and the indexed outing join returned exact counts over 1,999,988 fixes in `966.9 ms` locally. The Ubuntu zero-outing timing is now correctly limited; exact remediation package/fixture gates remain before Donal's next four reviews. |
+| Review ready | PR-2: explicit outings, participants, and mission-shaped fixtures | Shared Tracking / S2 Electron / Mission model / Verification | `DON-270` / `DON-271` / `DON-272` | P1-A/B/C and the regraded outing-runtime P2 from `11c3b8d` are closed at code commit `e1e7f46ffa06`. Full software/browser gates, exact flag-off/flag-on package restart soaks, regenerated 960k/2M fixtures, and the Ubuntu x64 12-outing indexed-worker proof pass. Next: Donal's four independent exact-head reviews; do not merge or start PR-3 meanwhile. |
 | Todo (non-blocking) | Surface persistent overlay synchronization failures in diagnostics and map health | S2 Electron / Shared Map / Diagnostics | `DON-264` | DON-263 retries transient and persistent sync exceptions indefinitely with a 2 s cap, but repeated failures are currently developer-console-only. Add bounded, sanitized, durable warning elevation and success-based clearing after the beta.12.5 hotfix; this P3 does not block the release. |
 | Done | Make Breadcrumb Dots source-exact and independently release-gated | S2 Electron / Shared Tracking / Verification | `DON-260` | Published beta.12.11 at exact tag `bced8052b85c` after green CI run `31482052296`, full AppImage and genuinely installed `.deb` package matrices, synthetic 279,936/1,935,384-fix exact-page proofs, target-only live-provider equality, diagnostics privacy, and unchanged performance/RSS gates. The guarded publisher and a second public download revalidated both installer hashes and `SHA256SUMS`; the fresh public AppImage independently passed settings persistence, same-mission recovery, finalization, and archive creation. Dots is source-exact and paged; Line alone remains simplified. Beta.12.9/.12.10 are not the correction. |
 | Done | Build deterministic field-scale mission-store fixtures | S2 Electron / Verification | `DON-242` | Small/CI/local/field plus 5-day and 14-day continuous-mission presets; Ubuntu field fixture is 3.704 GB with measured table accounting and restart checkpoints. |
