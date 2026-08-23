@@ -391,10 +391,13 @@ async function main() {
     const databaseEvidence = inspectDatabase(databasePath, missionId)
     if (
       missionModelEvidence.enabled &&
-      (databaseEvidence.participantRows !== 1 || databaseEvidence.teamRows !== 1)
+      (
+        databaseEvidence.participantRows !== missionModelEvidence.selectedParticipantRows ||
+        databaseEvidence.teamRows !== 0
+      )
     ) {
       throw new Error(
-        `Mission-model soak expected one selected team/participant; observed ${databaseEvidence.teamRows}/${databaseEvidence.participantRows}.`,
+        `Mission-model soak expected 0/${missionModelEvidence.selectedParticipantRows} teams/participants; observed ${databaseEvidence.teamRows}/${databaseEvidence.participantRows}.`,
       )
     }
     const expectedPositionTruth = buildTrackingSoakExpectedPositionTruthEvidence({
@@ -890,10 +893,19 @@ async function startSyntheticMission(launch, missionOffsetHours, expectedDeviceC
   const participantSelection = launch.page.getByTestId('participant-selection-step')
   const missionModelEnabled = await participantSelection.isVisible().catch(() => false)
   if (missionModelEnabled) {
-    await launch.page
-      .getByTestId('participant-group-picker')
-      .getByText('Synthetic Mission Team', { exact: true })
-      .click()
+    const deviceCheckboxes = launch.page
+      .getByTestId('participant-device-picker')
+      .locator('input[type="checkbox"]')
+    await deviceCheckboxes.first().waitFor({ timeout: 30_000 })
+    const availableDeviceCount = await deviceCheckboxes.count()
+    if (availableDeviceCount !== expectedDeviceCount) {
+      throw new Error(
+        `Mission-model soak expected ${expectedDeviceCount} selectable devices; observed ${availableDeviceCount}.`,
+      )
+    }
+    await deviceCheckboxes.evaluateAll((checkboxes) => {
+      for (const checkbox of checkboxes) checkbox.click()
+    })
     await launch.page
       .getByTestId('participant-selected-count')
       .filter({ hasText: `${expectedDeviceCount} selected` })
@@ -914,6 +926,7 @@ async function startSyntheticMission(launch, missionOffsetHours, expectedDeviceC
   return {
     enabled: missionModelEnabled,
     selectedDeviceCount: missionModelEnabled ? expectedDeviceCount : null,
+    selectedParticipantRows: missionModelEnabled ? expectedDeviceCount : 0,
   }
 }
 
