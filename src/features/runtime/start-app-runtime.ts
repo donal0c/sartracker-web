@@ -46,6 +46,7 @@ import {
   applyIngestEvidenceHealth,
 } from '../tracking/ingest-health-store'
 import { createRejectionEvidenceDelivery } from '../tracking/rejection-evidence-delivery'
+import { createIngestEvidenceFinalizationBoundary } from '../tracking/ingest-evidence-finalization-boundary'
 import { startExactBreadcrumbDotRuntime } from '../tracking/start-exact-breadcrumb-dot-runtime'
 import { useStationaryAttentionStore } from '../tracking/stationary-attention-store'
 import { useExactBreadcrumbDotStore } from '../tracking/exact-breadcrumb-dot-store'
@@ -182,9 +183,12 @@ export async function startAppRuntime(
         : noopMarkerAttachmentAdapter
   let activeServices = createNoopRuntimeServiceHandles()
   let reloadGeneration = 0
+  const coreMissionStore = rejectionEvidenceDelivery === null
+    ? missionStore
+    : createIngestEvidenceFinalizationBoundary(missionStore, rejectionEvidenceDelivery)
 
   const coreFeatureRuntimes = await resolvedDependencies.startCoreFeatureRuntimes({
-    missionStore,
+    missionStore: coreMissionStore,
     attachmentAdapter,
     gpxWatchSource: gpxImportSource,
     requestAutosaveSync: (reason: AutosaveSyncReason) =>
@@ -227,7 +231,7 @@ export async function startAppRuntime(
       activeServices = createNoopRuntimeServiceHandles()
       stopRuntimeServices(previousServices)
       stopExactBreadcrumbDots()
-      rejectionEvidenceDelivery?.dispose()
+      void rejectionEvidenceDelivery?.dispose()
       coreFeatureRuntimes.dispose()
     },
   }

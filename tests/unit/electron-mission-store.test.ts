@@ -1433,6 +1433,48 @@ describe('electron mission store', () => {
     ])
   })
 
+  it('does not refresh the incoming device for a source identity owned by another device [DON-268]', async () => {
+    store = await createStore()
+    const mission = await store.createMission({ name: 'Source Ownership Contact Mission' })
+    await store.upsertDevice({
+      mission_id: mission.id,
+      device_id: 'tracker-1',
+      name: 'Tracker One',
+      color: '#00AAFF',
+      status: 'online',
+    })
+    await store.upsertDevice({
+      mission_id: mission.id,
+      device_id: 'tracker-2',
+      name: 'Tracker Two',
+      color: '#FFAA00',
+      status: 'offline',
+    })
+    await store.addPosition({
+      mission_id: mission.id,
+      source_position_id: 'source-owned-by-one',
+      device_id: 'tracker-1',
+      lat: 52.0599,
+      lon: -9.5045,
+      timestamp: '2026-08-22T10:00:00.000Z',
+    })
+
+    await expect(store.addPosition({
+      mission_id: mission.id,
+      source_position_id: 'source-owned-by-one',
+      device_id: 'tracker-2',
+      lat: 53.3498,
+      lon: -6.2603,
+      timestamp: '2026-08-22T10:30:00.000Z',
+    })).rejects.toThrow(/source.*owned.*tracker-1/iu)
+
+    await expect(store.getDevice(mission.id, 'tracker-2')).resolves.toMatchObject({
+      status: 'offline',
+      last_seen: null,
+    })
+    await expect(store.listIngestAnomalies(mission.id)).resolves.toHaveLength(1)
+  })
+
   it('canonicalizes equivalent source timestamps and refreshes contact on conflict [DON-268]', async () => {
     store = await createStore()
     const mission = await store.createMission({ name: 'Canonical Timestamp Mission' })
@@ -1623,6 +1665,47 @@ describe('electron mission store', () => {
     await expect(store.listIngestAnomalies(mission.id)).resolves.toHaveLength(2)
   })
 
+  it('keeps finalized missions read-only when late rejection evidence arrives [DON-268]', async () => {
+    store = await createStore()
+    const mission = await store.createMission({ name: 'Late Rejection Mission' })
+    await store.finishMission(mission.id)
+    await store.finalizeMission(mission.id)
+
+    await expect(store.recordIngestRejections({
+      mission_id: mission.id,
+      rejections: [createRejectionEnvelope('delivery-after-finalize')],
+    })).resolves.toMatchObject({
+      acknowledgedDeliveryIds: ['delivery-after-finalize'],
+      health: {
+        state: 'critical',
+        reason: 'late_evidence_after_finalization',
+        pendingCount: 1,
+      },
+    })
+    await expect(store.listIngestAnomalies(mission.id)).resolves.toHaveLength(0)
+    await expect(store.getMission(mission.id)).resolves.toMatchObject({ status: 'finalized' })
+  })
+
+  it('acknowledges an already-projected rejection retry after finalization without mutation [DON-268]', async () => {
+    store = await createStore()
+    const mission = await store.createMission({ name: 'Finalized Idempotent Retry Mission' })
+    const rejection = createRejectionEnvelope('delivery-before-finalize')
+    await store.recordIngestRejections({ mission_id: mission.id, rejections: [rejection] })
+    await store.finishMission(mission.id)
+    await store.finalizeMission(mission.id)
+
+    await expect(store.recordIngestRejections({
+      mission_id: mission.id,
+      rejections: [rejection],
+    })).resolves.toMatchObject({
+      acknowledgedDeliveryIds: ['delivery-before-finalize'],
+      health: { state: 'healthy', pendingCount: 0 },
+    })
+    await expect(store.listIngestAnomalies(mission.id)).resolves.toEqual([
+      expect.objectContaining({ occurrence_count: 1 }),
+    ])
+  })
+
   it('persists invalid rejection-envelope degradation across restart [DON-268]', async () => {
     store = await createStore()
     const mission = await store.createMission({ name: 'Invalid Envelope Mission' })
@@ -1661,6 +1744,23 @@ describe('electron mission store', () => {
     })
     await store.finishMission(mission.id)
     await expect(store.finalizeMission(mission.id)).rejects.toThrow(/evidence health/iu)
+  })
+
+  it('does not block a clean mission with another mission evidence-loss marker [DON-268]', async () => {
+    store = await createStore()
+    const affected = await store.createMission({ name: 'Affected Evidence Mission' })
+    await store.recordIngestEvidenceLoss({
+      mission_id: affected.id,
+      reason: 'renderer_pending_capacity_exhausted',
+    })
+    await store.finishMission(affected.id)
+    const clean = await store.createMission({ name: 'Clean Evidence Mission' })
+    await store.finishMission(clean.id)
+
+    await expect(store.finalizeMission(clean.id)).resolves.toMatchObject({
+      mission: { status: 'finalized' },
+    })
+    await expect(store.finalizeMission(affected.id)).rejects.toThrow(/evidence health/iu)
   })
 
   it('reports the no-writable-storage boundary and blocks archive completeness claims [DON-268]', async () => {

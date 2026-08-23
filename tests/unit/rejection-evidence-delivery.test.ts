@@ -207,6 +207,52 @@ describe('rejection evidence delivery [DON-268]', () => {
     expect(recordIngestRejections).toHaveBeenCalledTimes(1)
   })
 
+  it('does not claim mission completeness is blocked for pre-mission polling rejections', () => {
+    const applyEvidenceHealth = vi.fn()
+    const delivery = createRejectionEvidenceDelivery({
+      missionStore: { recordIngestRejections: vi.fn() },
+      applyRejections: vi.fn(),
+      applyEvidenceHealth,
+    })
+
+    delivery.record([createRejection('source:123')], {
+      missionId: null,
+      observedAt: '2026-08-22T10:00:00.000Z',
+    })
+
+    expect(applyEvidenceHealth).not.toHaveBeenCalled()
+  })
+
+  it('drains renderer-held evidence before disposal completes', async () => {
+    let resolveDelivery: ((value: {
+      acknowledgedDeliveryIds: string[]
+      health: ReturnType<typeof healthy>
+    }) => void) | undefined
+    const recordIngestRejections = vi.fn(() => new Promise<{
+      acknowledgedDeliveryIds: string[]
+      health: ReturnType<typeof healthy>
+    }>((resolve) => {
+      resolveDelivery = resolve
+    }))
+    const delivery = createRejectionEvidenceDelivery({
+      missionStore: { recordIngestRejections },
+      applyRejections: vi.fn(),
+      applyEvidenceHealth: vi.fn(),
+      createDeliveryId: () => 'delivery-1',
+    })
+
+    delivery.record([createRejection('source:123')], observation('mission-1'))
+    await vi.waitFor(() => expect(recordIngestRejections).toHaveBeenCalledOnce())
+    const disposal = delivery.dispose()
+    let disposed = false
+    void disposal.then(() => { disposed = true })
+    await Promise.resolve()
+    expect(disposed).toBe(false)
+
+    resolveDelivery?.({ acknowledgedDeliveryIds: ['delivery-1'], health: healthy() })
+    await expect(disposal).resolves.toBeUndefined()
+  })
+
   function createRejection(anomalyKey: string): CurrentPositionRejection {
     return {
       deviceId: 'tracker-1',

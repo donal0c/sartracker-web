@@ -74,7 +74,7 @@ function annotatePositionHealth(
   const fixTimeUnverified = position.timestamp_source === undefined &&
     position.fix_time_unverified === undefined
     ? undefined
-    : position.timestamp_source === 'server'
+    : position.fix_time_unverified === true || position.timestamp_source === 'server'
   const deviceCacheStale =
     positionAgeMs > deviceStaleThresholdMs ||
     (position.data_origin === 'cache' && cacheAgeMs !== null && cacheAgeMs > cacheStaleTtlMs)

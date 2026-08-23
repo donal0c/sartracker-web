@@ -76,6 +76,17 @@ function recordRejectedAnomaly(db, envelope) {
     if (delivered !== undefined) {
       return false
     }
+    const mission = db.prepare('SELECT status FROM missions WHERE id = ?').get(envelope.missionId)
+    if (mission === undefined) {
+      throw new Error(`Mission not found: ${envelope.missionId}`)
+    }
+    if (mission.status === 'finalized') {
+      const error = new Error(
+        'Late rejected-position evidence cannot mutate a finalized mission.',
+      )
+      error.code = 'LATE_EVIDENCE_AFTER_FINALIZATION'
+      throw error
+    }
     const inserted = db.prepare(`
       INSERT INTO ingest_anomalies (
         id, mission_id, kind, anomaly_key, device_id, source_position_id,

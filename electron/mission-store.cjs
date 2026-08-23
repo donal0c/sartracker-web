@@ -121,23 +121,26 @@ function createElectronMissionStore(options) {
   )
   let finalizeTail = Promise.resolve()
   const enqueueFinalize = (missionId) => {
-    const run = finalizeTail.then(async () => {
-      await assertIngestEvidenceHealthy(ingestAnomalyOutbox, 'finalization', missionId)
-      return finalizeMission(
-        db,
+    const run = finalizeTail.then(() =>
+      ingestAnomalyOutbox.runWithHealthyEvidenceFence(
         missionId,
-        backupCoordinator,
-        archiveDirectory,
-        finalizeMissionFaultInjection,
-        archiveFaultInjection,
-      )
-    })
+        'finalization',
+        () => finalizeMission(
+          db,
+          missionId,
+          backupCoordinator,
+          archiveDirectory,
+          finalizeMissionFaultInjection,
+          archiveFaultInjection,
+        ),
+      ))
     finalizeTail = run.catch(() => {})
     return run
   }
 
   return {
     close: () => {
+      ingestAnomalyOutbox.dispose()
       for (const controller of activeBreadcrumbQueryControllers) {
         controller.abort()
       }
@@ -157,10 +160,19 @@ function createElectronMissionStore(options) {
       backup_path: backupPath,
     }),
     syncBackup: async (trigger) => backupCoordinator.syncBackup(trigger),
-    createMissionArchive: async (missionId) => {
-      await assertIngestEvidenceHealthy(ingestAnomalyOutbox, 'archive', missionId)
-      return createMissionArchive(db, missionId, backupCoordinator, archiveDirectory, true, archiveFaultInjection)
-    },
+    createMissionArchive: async (missionId) =>
+      ingestAnomalyOutbox.runWithHealthyEvidenceFence(
+        missionId,
+        'archive',
+        () => createMissionArchive(
+          db,
+          missionId,
+          backupCoordinator,
+          archiveDirectory,
+          true,
+          archiveFaultInjection,
+        ),
+      ),
     createMission: async (input) => {
       const mission = createMission(db, input)
       await safeStorageDiagnostic(() =>
@@ -875,7 +887,7 @@ async function recordIngestEvidenceLoss(db, outbox, input) {
     throw new Error('Ingest evidence-loss reason is invalid.')
   }
   getById(db, 'missions', missionId, 'Mission')
-  await outbox.markEvidenceLoss(input.reason)
+  await outbox.markEvidenceLoss(missionId, input.reason)
   return getIngestEvidenceHealth(db, outbox, missionId)
 }
 
@@ -889,6 +901,7 @@ async function mapIngestEvidenceHealth(outbox, missionId) {
     'outbox_health_marker_corrupt',
     'outbox_invalid_envelope',
     'renderer_pending_capacity_exhausted',
+    'late_evidence_after_finalization',
   ])
   const state = criticalReasons.has(outboxHealth.lastFailure)
     ? 'critical'
@@ -900,16 +913,6 @@ async function mapIngestEvidenceHealth(outbox, missionId) {
     reason: outboxHealth.lastFailure,
     pendingCount: outboxHealth.pendingCount,
     corruptCount: outboxHealth.corruptCount,
-  }
-}
-
-/** Prevents archive/finalization from claiming complete evidence while degraded. */
-async function assertIngestEvidenceHealthy(outbox, operation, missionId) {
-  const health = await mapIngestEvidenceHealth(outbox, missionId)
-  if (health.state !== 'healthy') {
-    throw new Error(
-      `Degraded evidence health blocks ${operation}; resolve durable ingest evidence before continuing.`,
-    )
   }
 }
 
@@ -1600,8 +1603,16 @@ function addPosition(db, input) {
             receivedAt,
           })
         }
-        refreshDeviceContact(db, input.mission_id, input.device_id, timestamp)
+        if (existing.device_id === input.device_id) {
+          refreshDeviceContact(db, input.mission_id, input.device_id, timestamp)
+        }
       })()
+      if (existing.device_id !== input.device_id) {
+        throw new Error(
+          `Source position ${sourcePositionId} is owned by device ${existing.device_id}; ` +
+          `the conflicting observation from ${input.device_id} was retained without changing position truth.`,
+        )
+      }
       return existing
     }
     const adopted = adoptSourceIdentityForLegacyPosition(
@@ -1712,12 +1723,14 @@ function addPositionsBulk(db, input, includePositions = true) {
               receivedAt,
             })
           }
-          updateDevice.run(
-            timestamp,
-            timestamp,
-            input.mission_id,
-            position.device_id,
-          )
+          if (existing.device_id === position.device_id) {
+            updateDevice.run(
+              timestamp,
+              timestamp,
+              input.mission_id,
+              position.device_id,
+            )
+          }
           continue
         }
         const adopted = adoptSourceIdentityForLegacyPosition(

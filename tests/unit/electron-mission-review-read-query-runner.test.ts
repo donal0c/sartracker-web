@@ -26,7 +26,7 @@ const { runMissionReviewReadQueryInWorker } = require(
     readonly auditEvents: readonly { readonly id: string }[]
     readonly breadcrumbCount: number
     readonly workerThreadId: number
-  }>
+  }> & { readonly workerExited?: Promise<void> }
 }
 
 describe('Mission Review read worker boundary [DON-251]', () => {
@@ -172,5 +172,29 @@ describe('Mission Review read worker boundary [DON-251]', () => {
         },
       }),
     ).rejects.toThrow(/Mission Review read worker failed/u)
+  })
+
+  it('settles its worker slot when worker construction throws synchronously', async () => {
+    const constructionError = new Error('worker threads unavailable')
+    const query = runMissionReviewReadQueryInWorker({
+      databasePath: '/unused.sqlite',
+      query: {
+        missionId: 'mission-1',
+        includeTelemetry: false,
+        auditLimit: 501,
+      },
+      createWorker: () => {
+        throw constructionError
+      },
+    })
+
+    await expect(query).rejects.toBe(constructionError)
+    await expect(Promise.race([
+      query.workerExited,
+      new Promise((_resolve, reject) => setTimeout(
+        () => reject(new Error('worker slot stayed pending')),
+        100,
+      )),
+    ])).resolves.toBeUndefined()
   })
 })

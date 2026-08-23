@@ -17,10 +17,19 @@ const {
       readonly failStage?: boolean
       readonly failRemovalAfterProjection?: boolean
     }
+    readonly maxPendingFiles?: number
+    readonly maxPendingBytes?: number
+    readonly replayBatchSize?: number
+    readonly retryDelayMs?: number
   }) => {
     readonly initialize: () => Promise<void>
     readonly deliver: (envelope: RejectionEnvelope) => Promise<{ readonly persisted: boolean }>
-    readonly markEvidenceLoss: (reason: string) => Promise<void>
+    readonly markEvidenceLoss: (missionId: string, reason: string) => Promise<void>
+    readonly runWithHealthyEvidenceFence: <Result>(
+      missionId: string,
+      operationName: string,
+      operation: () => Promise<Result>,
+    ) => Promise<Result>
     readonly health: (missionId?: string) => Promise<{
       readonly pendingCount: number
       readonly corruptCount: number
@@ -97,6 +106,29 @@ describe('durable ingest anomaly outbox [DON-268]', () => {
 
     expect(new Set(projected)).toEqual(new Set(['delivery-a', 'delivery-b']))
     expect((await readdir(directoryPath)).filter((name) => name.endsWith('.json'))).toHaveLength(0)
+  })
+
+  it('retries failed projection in the same process without another delivery', async () => {
+    directoryPath = await mkdtemp(path.join(tmpdir(), 'sartracker-ingest-outbox-'))
+    let projectionAvailable = false
+    const projected: string[] = []
+    const outbox = createIngestAnomalyOutbox({
+      directoryPath,
+      projectEnvelope: (entry) => {
+        if (!projectionAvailable) throw new Error('database unavailable')
+        projected.push(entry.deliveryId)
+      },
+      retryDelayMs: 5,
+    })
+    await outbox.deliver(createEnvelope('delivery-background-retry'))
+
+    projectionAvailable = true
+
+    await vi.waitFor(() => expect(projected).toEqual(['delivery-background-retry']))
+    await expect(outbox.health('mission-1')).resolves.toMatchObject({
+      pendingCount: 0,
+      lastFailure: null,
+    })
   })
 
   it('does not let one envelope-specific projection failure block later evidence', async () => {
@@ -194,7 +226,7 @@ describe('durable ingest anomaly outbox [DON-268]', () => {
     })
   })
 
-  it('clears durable storage degradation only after a later stage succeeds', async () => {
+  it('clears durable storage degradation only after the failed envelope stages', async () => {
     directoryPath = await mkdtemp(path.join(tmpdir(), 'sartracker-ingest-outbox-'))
     const faultInjection = { failStage: true }
     const outbox = createIngestAnomalyOutbox({
@@ -205,12 +237,30 @@ describe('durable ingest anomaly outbox [DON-268]', () => {
     await expect(outbox.deliver(createEnvelope('delivery-stage-fail'))).rejects.toThrow()
 
     faultInjection.failStage = false
-    await expect(outbox.deliver(createEnvelope('delivery-stage-recovered'))).resolves.toEqual({
+    await expect(outbox.deliver(createEnvelope('delivery-stage-fail'))).resolves.toEqual({
       persisted: true,
     })
     await expect(outbox.health()).resolves.toMatchObject({
       pendingCount: 0,
       lastFailure: null,
+    })
+  })
+
+  it('does not clear possible evidence loss from a writable health probe alone', async () => {
+    directoryPath = await mkdtemp(path.join(tmpdir(), 'sartracker-ingest-outbox-'))
+    const faultInjection = { failStage: true }
+    const outbox = createIngestAnomalyOutbox({
+      directoryPath,
+      projectEnvelope: vi.fn(),
+      faultInjection,
+    })
+    await expect(outbox.deliver(createEnvelope('delivery-stage-fail'))).rejects.toThrow()
+
+    faultInjection.failStage = false
+
+    await expect(outbox.health('mission-1')).resolves.toMatchObject({
+      pendingCount: 0,
+      lastFailure: 'outbox_storage_unavailable',
     })
   })
 
@@ -243,7 +293,7 @@ describe('durable ingest anomaly outbox [DON-268]', () => {
       projectEnvelope: vi.fn(),
     })
 
-    await outbox.markEvidenceLoss('renderer_pending_capacity_exhausted')
+    await outbox.markEvidenceLoss('mission-1', 'renderer_pending_capacity_exhausted')
 
     const restarted = createIngestAnomalyOutbox({
       directoryPath,
@@ -253,6 +303,182 @@ describe('durable ingest anomaly outbox [DON-268]', () => {
       pendingCount: 0,
       lastFailure: 'renderer_pending_capacity_exhausted',
     })
+  })
+
+  it('scopes durable degradation to the affected mission', async () => {
+    directoryPath = await mkdtemp(path.join(tmpdir(), 'sartracker-ingest-outbox-'))
+    const outbox = createIngestAnomalyOutbox({
+      directoryPath,
+      projectEnvelope: vi.fn(),
+    })
+
+    await outbox.markEvidenceLoss('mission-1', 'renderer_pending_capacity_exhausted')
+
+    await expect(outbox.health('mission-1')).resolves.toMatchObject({
+      lastFailure: 'renderer_pending_capacity_exhausted',
+    })
+    await expect(outbox.health('mission-2')).resolves.toMatchObject({
+      lastFailure: null,
+    })
+  })
+
+  it('applies explicit file and byte backpressure before staging another envelope', async () => {
+    directoryPath = await mkdtemp(path.join(tmpdir(), 'sartracker-ingest-outbox-'))
+    const outbox = createIngestAnomalyOutbox({
+      directoryPath,
+      projectEnvelope: () => { throw new Error('projection unavailable') },
+      maxPendingFiles: 2,
+      maxPendingBytes: 1_000_000,
+    })
+
+    await outbox.deliver(createEnvelope('delivery-1'))
+    await outbox.deliver({ ...createEnvelope('delivery-2'), anomalyKey: 'source:2' })
+    await expect(outbox.deliver({
+      ...createEnvelope('delivery-3'),
+      anomalyKey: 'source:3',
+    })).rejects.toThrow(/capacity/iu)
+
+    expect((await readdir(directoryPath)).filter((name) => name.endsWith('.json'))).toHaveLength(2)
+    await expect(outbox.health('mission-1')).resolves.toMatchObject({
+      pendingCount: 2,
+      lastFailure: 'outbox_capacity_exhausted',
+    })
+  })
+
+  it('bounds synchronous projection attempts per replay turn', async () => {
+    directoryPath = await mkdtemp(path.join(tmpdir(), 'sartracker-ingest-outbox-'))
+    let attempts = 0
+    const outbox = createIngestAnomalyOutbox({
+      directoryPath,
+      projectEnvelope: () => {
+        attempts += 1
+        throw new Error('projection unavailable')
+      },
+      replayBatchSize: 2,
+    })
+    await outbox.deliver(createEnvelope('delivery-1'))
+    await outbox.deliver({ ...createEnvelope('delivery-2'), anomalyKey: 'source:2' })
+    await outbox.deliver({ ...createEnvelope('delivery-3'), anomalyKey: 'source:3' })
+
+    attempts = 0
+    await outbox.health('mission-1')
+
+    expect(attempts).toBeLessThanOrEqual(2)
+  })
+
+  it('yields between failed projections so one replay turn stays responsive', async () => {
+    directoryPath = await mkdtemp(path.join(tmpdir(), 'sartracker-ingest-outbox-'))
+    const staging = createIngestAnomalyOutbox({
+      directoryPath,
+      projectEnvelope: () => { throw new Error('projection unavailable') },
+      replayBatchSize: 1,
+    })
+    for (let index = 0; index < 8; index += 1) {
+      await staging.deliver({
+        ...createEnvelope(`delivery-${index}`),
+        anomalyKey: `source:${index}`,
+      })
+    }
+
+    const timerGaps: number[] = []
+    let lastTimerAt = performance.now()
+    const timer = setInterval(() => {
+      const current = performance.now()
+      timerGaps.push(current - lastTimerAt)
+      lastTimerAt = current
+    }, 5)
+    const replay = createIngestAnomalyOutbox({
+      directoryPath,
+      projectEnvelope: () => {
+        const blockedUntil = performance.now() + 30
+        while (performance.now() < blockedUntil) {
+          // Deliberate synchronous projection fixture.
+        }
+        throw new Error('projection unavailable')
+      },
+      replayBatchSize: 8,
+    })
+
+    await replay.health('mission-1')
+    await new Promise((resolve) => setTimeout(resolve, 10))
+    clearInterval(timer)
+
+    expect(timerGaps.length).toBeGreaterThan(0)
+    expect(Math.max(...timerGaps)).toBeLessThan(200)
+  })
+
+  it('applies byte backpressure independently of the pending-file count', async () => {
+    directoryPath = await mkdtemp(path.join(tmpdir(), 'sartracker-ingest-outbox-'))
+    const first = createEnvelope('delivery-byte-1')
+    const firstBytes = Buffer.byteLength(JSON.stringify(first), 'utf8')
+    const outbox = createIngestAnomalyOutbox({
+      directoryPath,
+      projectEnvelope: () => { throw new Error('projection unavailable') },
+      maxPendingFiles: 10,
+      maxPendingBytes: firstBytes,
+    })
+
+    await outbox.deliver(first)
+    await expect(outbox.deliver({
+      ...createEnvelope('delivery-byte-2'),
+      anomalyKey: 'source:byte-2',
+    })).rejects.toThrow(/capacity/iu)
+  })
+
+  it('attributes a quarantined staged record to its mission without poisoning others', async () => {
+    directoryPath = await mkdtemp(path.join(tmpdir(), 'sartracker-ingest-outbox-'))
+    const staging = createIngestAnomalyOutbox({
+      directoryPath,
+      projectEnvelope: () => { throw new Error('projection unavailable') },
+    })
+    await staging.deliver(createEnvelope('delivery-corrupt'))
+    const [pendingName] = (await readdir(directoryPath)).filter((name) => name.endsWith('.json'))
+    await writeFile(path.join(directoryPath, pendingName!), '{not-json', 'utf8')
+
+    const restarted = createIngestAnomalyOutbox({
+      directoryPath,
+      projectEnvelope: vi.fn(),
+    })
+    await restarted.initialize()
+
+    await expect(restarted.health('mission-1')).resolves.toMatchObject({
+      corruptCount: 1,
+      lastFailure: 'outbox_corrupt_record',
+    })
+    await expect(restarted.health('mission-2')).resolves.toMatchObject({
+      corruptCount: 0,
+      lastFailure: null,
+    })
+  })
+
+  it('serializes finalization fences ahead of later evidence delivery', async () => {
+    directoryPath = await mkdtemp(path.join(tmpdir(), 'sartracker-ingest-outbox-'))
+    const sequence: string[] = []
+    let releaseFence: (() => void) | undefined
+    const outbox = createIngestAnomalyOutbox({
+      directoryPath,
+      projectEnvelope: () => { sequence.push('projected') },
+    })
+    const fenced = outbox.runWithHealthyEvidenceFence(
+      'mission-1',
+      'finalization',
+      async () => {
+        sequence.push('fence-started')
+        await new Promise<void>((resolve) => { releaseFence = resolve })
+        sequence.push('fence-finished')
+        return 'finalized'
+      },
+    )
+    await vi.waitFor(() => expect(sequence).toEqual(['fence-started']))
+
+    const lateDelivery = outbox.deliver(createEnvelope('delivery-after-fence'))
+    await Promise.resolve()
+    expect(sequence).toEqual(['fence-started'])
+    releaseFence?.()
+
+    await expect(fenced).resolves.toBe('finalized')
+    await expect(lateDelivery).resolves.toEqual({ persisted: true })
+    expect(sequence).toEqual(['fence-started', 'fence-finished', 'projected'])
   })
 
   it('uses Windows-safe staged filenames and skips unsupported directory fsync', async () => {

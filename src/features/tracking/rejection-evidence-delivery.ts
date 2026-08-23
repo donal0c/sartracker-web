@@ -46,7 +46,8 @@ export type RejectionEvidenceDelivery = {
     rejections: readonly CurrentPositionRejection[],
     context: RejectionEvidenceObservationContext,
   ) => void
-  readonly dispose: () => void
+  readonly flushMission: (missionId: string) => Promise<void>
+  readonly dispose: () => Promise<void>
 }
 
 type PendingRejectionEnvelope = IngestRejectionEnvelope & {
@@ -70,6 +71,7 @@ export function createRejectionEvidenceDelivery(
   let flushScheduled = false
   let retryTimer: ReturnType<typeof globalThis.setTimeout> | null = null
   let disposed = false
+  let accepting = true
   const evidenceLossMissionIds = new Set<string>()
 
   /** Publishes current warnings immediately and schedules non-blocking delivery. */
@@ -77,9 +79,9 @@ export function createRejectionEvidenceDelivery(
     rejections: readonly CurrentPositionRejection[],
     context: RejectionEvidenceObservationContext,
   ): void {
+    if (!accepting) return
     dependencies.applyRejections(rejections)
     if (rejections.length > 0 && context.missionId === null) {
-      dependencies.applyEvidenceHealth(createMissionIdentityFailureHealth())
       return
     }
     for (const rejection of rejections) {
@@ -121,11 +123,37 @@ export function createRejectionEvidenceDelivery(
   }
 
   /** Prevents a superseded runtime from publishing later health. */
-  function dispose(): void {
-    disposed = true
+  async function dispose(): Promise<void> {
+    accepting = false
     if (retryTimer !== null) {
       clearTimeoutFn(retryTimer)
       retryTimer = null
+    }
+    if (flushInFlight !== null) {
+      await flushInFlight
+    }
+    if (pendingByMissionAndAnomaly.size > 0) {
+      await runTrackedFlush()
+    }
+    if (pendingByMissionAndAnomaly.size === 0) {
+      disposed = true
+    } else {
+      scheduleRetry()
+    }
+  }
+
+  /** Flushes all renderer-held evidence for one mission before completeness is claimed. */
+  async function flushMission(missionId: string): Promise<void> {
+    if (flushInFlight !== null) {
+      await flushInFlight
+    }
+    while (hasPendingMission(missionId)) {
+      const madeProgress = await runTrackedFlush(missionId)
+      if (!madeProgress) {
+        throw new Error(
+          'Pending rejected-position evidence could not be persisted; finalization remains blocked.',
+        )
+      }
     }
   }
 
@@ -154,11 +182,13 @@ export function createRejectionEvidenceDelivery(
   }
 
   /** Delivers the current bounded pending set and removes only acknowledged IDs. */
-  async function flushPending(): Promise<boolean> {
+  async function flushPending(missionId?: string): Promise<boolean> {
     if (disposed) {
       return false
     }
-    const first = pendingByMissionAndAnomaly.values().next().value as
+    const first = [...pendingByMissionAndAnomaly.values()].find(
+      (entry) => missionId === undefined || entry.missionId === missionId,
+    ) as
       | PendingRejectionEnvelope
       | undefined
     if (first === undefined) return false
@@ -203,6 +233,18 @@ export function createRejectionEvidenceDelivery(
     }
   }
 
+  /** Runs one explicitly requested flush through the same single-flight fence. */
+  async function runTrackedFlush(missionId?: string): Promise<boolean> {
+    if (flushInFlight !== null) return flushInFlight
+    const operation = flushPending(missionId)
+    flushInFlight = operation
+    try {
+      return await operation
+    } finally {
+      if (flushInFlight === operation) flushInFlight = null
+    }
+  }
+
   /** Retries unacknowledged evidence without requiring another provider poll. */
   function scheduleRetry(): void {
     if (disposed || retryTimer !== null || pendingByMissionAndAnomaly.size === 0) return
@@ -241,21 +283,14 @@ export function createRejectionEvidenceDelivery(
     )
   }
 
-  return { dispose, record }
-}
-
-/** Describes the impossible attribution boundary when no mission generation exists. */
-function createMissionIdentityFailureHealth(): IngestEvidenceHealth {
-  return {
-    state: 'critical',
-    reason: 'rejection_mission_identity_unavailable',
-    pendingCount: 0,
-    corruptCount: 0,
-    conflictCount: 0,
-    rejectedCount: 0,
-    affectedDeviceCount: 0,
-    conflictDeviceIds: [],
+  /** Returns whether the renderer still owns evidence for one mission. */
+  function hasPendingMission(missionId: string): boolean {
+    return [...pendingByMissionAndAnomaly.values()].some(
+      (entry) => entry.missionId === missionId,
+    )
   }
+
+  return { dispose, flushMission, record }
 }
 
 /** Describes the explicit bounded-memory impossibility boundary. */

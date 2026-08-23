@@ -25,14 +25,14 @@ describe('app runtime startup', () => {
         finish_time: null, paused_seconds: 0, notes: null, schema_version: 8,
       },
     })
-    const recordIngestRejections = vi.fn().mockResolvedValue({
-      acknowledgedDeliveryIds: ['delivery-1'],
+    const recordIngestRejections = vi.fn().mockImplementation(async (input) => ({
+      acknowledgedDeliveryIds: input.rejections.map((entry) => entry.deliveryId),
       health: {
         state: 'healthy', reason: null, pendingCount: 0, corruptCount: 0,
         conflictCount: 0, rejectedCount: 1, affectedDeviceCount: 1,
         conflictDeviceIds: [],
       },
-    })
+    }))
     const missionStore = Object.assign(createMissionStoreStub(), {
       getActiveMission: vi.fn().mockResolvedValue(useMissionStore.getState().currentMission),
       recordIngestRejections,
@@ -67,6 +67,7 @@ describe('app runtime startup', () => {
       })
       return vi.fn()
     })
+    const startMissionGovernanceRuntime = vi.fn().mockResolvedValue({})
 
     await startAppRuntime({
       registerServiceWorker: vi.fn().mockResolvedValue(undefined),
@@ -76,7 +77,7 @@ describe('app runtime startup', () => {
       readRuntimeBootstrapSettings: vi.fn().mockResolvedValue(createBootstrapSettings()),
       startMissionAutosave: vi.fn().mockReturnValue(createAutosaveController()),
       startMissionRuntime: vi.fn().mockResolvedValue({}),
-      startMissionGovernanceRuntime: vi.fn().mockResolvedValue({}),
+      startMissionGovernanceRuntime,
       startMarkerRuntime: vi.fn().mockResolvedValue({}),
       startDrawingRuntime: vi.fn().mockResolvedValue({}),
       startGpxRuntime: vi.fn().mockResolvedValue({}),
@@ -100,6 +101,10 @@ describe('app runtime startup', () => {
       })],
     }))
     expect(missionStore.getIngestEvidenceHealth).toHaveBeenCalledWith('mission-1')
+    const governanceMissionStore = startMissionGovernanceRuntime.mock.calls[0]?.[0].missionStore
+    expect(governanceMissionStore.finalizeMission).not.toBe(missionStore.finalizeMission)
+    await governanceMissionStore.finalizeMission('mission-1')
+    expect(missionStore.finalizeMission).toHaveBeenCalledWith('mission-1')
   })
 
   it('wires the active mission device selection into breadcrumb polling', async () => {

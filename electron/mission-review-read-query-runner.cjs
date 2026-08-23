@@ -20,15 +20,22 @@ function runMissionReviewReadQueryInWorker(input) {
   })
   const result = new Promise((resolve, reject) => {
     const timeoutMs = normalizeWorkerTimeoutMs(input.timeoutMs)
-    const worker = input.createWorker?.() ?? new Worker(
-      input.workerPath ?? DEFAULT_WORKER_PATH,
-      {
-        workerData: {
-          databasePath: input.databasePath,
-          query: input.query,
+    let worker
+    try {
+      worker = input.createWorker?.() ?? new Worker(
+        input.workerPath ?? DEFAULT_WORKER_PATH,
+        {
+          workerData: {
+            databasePath: input.databasePath,
+            query: input.query,
+          },
         },
-      },
-    )
+      )
+    } catch (error) {
+      resolveWorkerExit()
+      reject(error)
+      return
+    }
     let settled = false
     let completedResult = null
 
