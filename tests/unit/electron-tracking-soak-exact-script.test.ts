@@ -9,7 +9,9 @@ describe('fourteen-day packaged exact-dot soak script [DON-260]', () => {
     expect(source).toContain('createTrackingSoakFixtureClock(')
     expect(source).toContain('baseTimeMs: fixtureClock.baseTimeMs')
     expect(source).toContain('intervalMs: fixtureClock.intervalMs')
-    expect(source).toContain('startSyntheticMission(activeLaunch, fixtureClock.missionOffsetHours)')
+    expect(source).toContain('const missionModelEvidence = await startSyntheticMission(')
+    expect(source).toContain('fixtureClock.missionOffsetHours,')
+    expect(source).toContain('options.profile.deviceCount,')
     expect(source).toContain('fixtureClock,')
   })
 

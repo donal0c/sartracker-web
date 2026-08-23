@@ -20,6 +20,7 @@ export function resolveMissionModelFlag(context: MissionModelFlagContext): boole
 export function isMissionModelEnabled(): boolean {
   const browserHarness =
     typeof window !== 'undefined' &&
+    typeof window.location?.search === 'string' &&
     new URLSearchParams(window.location.search).get('missionHarness') === '1'
 
   return resolveMissionModelFlag({
