@@ -773,7 +773,7 @@ export function createBreadcrumbHistoryReconciler(
               deviceId: device.device_id,
               deviceName: device.name,
               cursorMs: Math.min(initialRange.cursorMs, pendingJob.missionStartMs),
-              targetMs: pendingJob.missionStartMs,
+              targetMs: Math.max(pendingJob.targetMs, targetMs),
               missionStartMs: initialRange.historyFromMs,
               initialTargetMs: Math.max(pendingJob.initialTargetMs, targetMs),
               latestAvailableTargetMs: Math.max(

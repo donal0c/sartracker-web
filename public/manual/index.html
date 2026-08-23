@@ -658,8 +658,10 @@
             a group, each confirmed member receives the same bounded, resumable history-backfill window as an
             individual device. The group row shows completed members out of all starting members, and keeps a
             pending/retrying state visible until every member completes. Removing a participant ends future
-            collection but does not delete evidence already retained. Their last accepted current marker remains
-            visible across later polls until it becomes stale. More than 100
+            live collection but does not delete evidence already retained. The low-rate history check keeps
+            revisiting that participant's earlier authorized window so a late or corrected source fix is not
+            lost merely because the participant has since been removed. Their last accepted current marker
+            remains visible across later polls until it becomes stale. More than 100
             active selected devices produces a persistent warning and still includes every selected device —
             the app never truncates the roster or silently drops the 101st device.
           </p>
@@ -1123,7 +1125,10 @@
             history window, the running app picks up the earlier boundary without needing a restart and fills
             only the newly authorized prefix before widening the durable frontier. After catch-up, a
             separately paced anti-entropy sweep checks older windows for late or corrected fixes, beginning
-            no earlier than that participant's validated history boundary, without
+            no earlier than that participant's validated history boundary. That sweep keeps the earlier
+            authorized window eligible after a participant is removed, while live current-position scope
+            remains active-only. If the boundary expands while a later chunk is still in flight, the later
+            chunk is fetched again unless it was already durably acknowledged. This avoids
             attaching a mission-wide rescan to every live poll. If a device history request fails or contains only malformed rows,
             Tracking names the incomplete device history and continues showing current fixes.
             The separate <strong>Current fixes loaded; loading breadcrumb history</strong> message is

@@ -63,6 +63,31 @@ describe('participation scope [DON-271]', () => {
     expect(scope.includesAt('12', '2026-08-20T10:00:00.000Z')).toBe(false)
   })
 
+  it('retains devices with earlier authorized evidence after their live window closes', () => {
+    const scope = createParticipationScope({
+      participants: [
+        participant({
+          traccar_device_id: '11',
+          removed_at: '2026-08-20T11:00:00.000Z',
+        }),
+        participant({
+          id: 'participant-group', kind: 'group', traccar_device_id: null,
+          mission_team_id: 'team-101', effective_from: '2026-08-20T08:00:00.000Z',
+        }),
+      ],
+      membershipEvents: [
+        membership({ change: 'member', observed_at: '2026-08-20T09:00:00.000Z' }),
+        membership({ change: 'left', observed_at: '2026-08-20T10:00:00.000Z', sequence: 2 }),
+      ],
+    })
+
+    expect(scope.activeDeviceIdsAt('2026-08-20T14:00:00.000Z')).toEqual([])
+    expect(scope.historicalDeviceIdsThrough('2026-08-20T14:00:00.000Z')).toEqual([
+      '11',
+      '12',
+    ])
+  })
+
   it('filters mission evidence and map state without hiding selected live positions', () => {
     const scope = createParticipationScope({
       participants: [participant({ traccar_device_id: '11' })],

@@ -437,6 +437,89 @@ describe('startParticipantRuntime [DON-271]', () => {
     )).toContain('device-2')
   })
 
+  it('forces durable reconciliation when refused-finish replay matches the provisional roster', async () => {
+    const store = createStore({ participants: [GROUP_PARTICIPANT], membershipEvents: [] })
+    const runtime = await startParticipantRuntime({
+      participantStore: store,
+      applyRuntime: vi.fn(),
+    })
+    await runtime.refreshMission('mission-1')
+    await runtime.applyRoster([], '2026-08-23T10:55:00.000Z')
+    store.recordGroupMembershipEvents.mockClear()
+    const finishGate = createDeferred<void>()
+    const pendingFinish = runtime.runWithMembershipFinishFence(
+      'mission-1',
+      async () => {
+        await finishGate.promise
+        throw new Error('Participant history backfill is incomplete.')
+      },
+    )
+    await Promise.resolve()
+
+    await runtime.applyRoster(
+      [device('device-2', 'group-1')],
+      '2026-08-23T11:00:00.000Z',
+    )
+    finishGate.resolve()
+    await expect(pendingFinish).rejects.toThrow(/backfill is incomplete/i)
+
+    expect(store.recordGroupMembershipEvents).toHaveBeenCalledWith({
+      mission_id: 'mission-1',
+      events: [expect.objectContaining({
+        traccar_device_id: 'device-2',
+        change: 'member',
+        observed_at: '2026-08-23T11:00:00.000Z',
+      })],
+    })
+  })
+
+  it('retains a newer authoritative roster while an older membership retry fails again', async () => {
+    const store = createStore({ participants: [GROUP_PARTICIPANT], membershipEvents: [] })
+    store.recordGroupMembershipEvents
+      .mockRejectedValueOnce(new Error('disk busy'))
+      .mockRejectedValueOnce(new Error('disk still busy'))
+      .mockImplementation(async (input) => input.events.map((event, index) => ({
+        ...event,
+        id: `recovered-${store.recordGroupMembershipEvents.mock.calls.length}-${index}`,
+        sequence: store.recordGroupMembershipEvents.mock.calls.length + index,
+        mission_id: input.mission_id,
+      })))
+    const runtime = await startParticipantRuntime({
+      participantStore: store,
+      applyRuntime: vi.fn(),
+    })
+    await runtime.refreshMission('mission-1')
+
+    await runtime.applyRoster(
+      [device('device-a', 'group-1')],
+      '2026-08-23T11:00:00.000Z',
+    )
+    await runtime.applyRoster(
+      [device('device-b', 'group-1')],
+      '2026-08-23T11:05:00.000Z',
+    )
+    await runtime.applyRoster(
+      [device('device-b', 'group-1')],
+      '2026-08-23T11:10:00.000Z',
+    )
+
+    expect(store.recordGroupMembershipEvents).toHaveBeenCalledWith({
+      mission_id: 'mission-1',
+      events: expect.arrayContaining([
+        expect.objectContaining({
+          traccar_device_id: 'device-a',
+          change: 'left',
+          observed_at: '2026-08-23T11:05:00.000Z',
+        }),
+        expect.objectContaining({
+          traccar_device_id: 'device-b',
+          change: 'member',
+          observed_at: '2026-08-23T11:05:00.000Z',
+        }),
+      ]),
+    })
+  })
+
   it('settles a pre-fence roster observation that is still recovering participant scope', async () => {
     const recoveredParticipants = createDeferred<readonly MissionParticipant[]>()
     const store = createStore({ participants: [GROUP_PARTICIPANT], membershipEvents: [] })

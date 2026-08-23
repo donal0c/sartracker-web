@@ -102,7 +102,7 @@ export async function startParticipantRuntime(
   let selectionGeneration = 0
   let lastReconciledMissionGeneration = -1
   let nextRosterObservationVersion = 0
-  let pendingRosterObservation: RosterObservation | null = null
+  const pendingRosterObservations: RosterObservation[] = []
   let pendingMembershipWrite: PendingMembershipWrite | null = null
   let rosterReconciliationRunning = false
   let inFlightRosterApplicationCount = 0
@@ -356,7 +356,15 @@ export async function startParticipantRuntime(
             throw unresolvedMembershipFinishError(membershipWriteError)
           }
         }
-        if (pendingMembershipWrite !== null || membershipWriteError !== null) {
+        if (pendingRosterObservations.length > 0) {
+          void drainRosterReconciliation()
+          await waitForRosterReconciliation()
+        }
+        if (
+          pendingRosterObservations.length > 0 ||
+          pendingMembershipWrite !== null ||
+          membershipWriteError !== null
+        ) {
           throw unresolvedMembershipFinishError(membershipWriteError)
         }
         const result = await finish()
@@ -370,7 +378,7 @@ export async function startParticipantRuntime(
         if (!finishSucceeded && membershipFinishFence === fence) {
           fence.status = 'replaying'
           await replayFencedRosterObservations(fence)
-          if (pendingRosterObservation !== null) void drainRosterReconciliation()
+          if (pendingRosterObservations.length > 0) void drainRosterReconciliation()
         }
       }
     },
@@ -454,6 +462,7 @@ export async function startParticipantRuntime(
     devices: readonly NormalizedTrackingDevice[],
     observedAt: string,
     complete: boolean,
+    forceReconciliation = false,
   ): Promise<void> {
     const missionIdBeforeRefresh = activeMissionId
     if (error !== null && missionIdBeforeRefresh !== null) {
@@ -483,7 +492,7 @@ export async function startParticipantRuntime(
         observation.complete,
       )
     }
-    await acceptRosterObservation(devices, observedAt, complete)
+    await acceptRosterObservation(devices, observedAt, complete, forceReconciliation)
   }
 
   /** Publishes and queues one roster observation after participant scope is available. */
@@ -491,6 +500,7 @@ export async function startParticipantRuntime(
     devices: readonly NormalizedTrackingDevice[],
     observedAt: string,
     complete: boolean,
+    forceReconciliation = false,
   ): Promise<void> {
     const rosterChanged = !areRostersEquivalent(availableDevices, devices)
     const completenessChanged = complete !== availableRosterComplete
@@ -499,6 +509,7 @@ export async function startParticipantRuntime(
     const missionNeedsReconciliation =
       activeMissionId !== null && lastReconciledMissionGeneration !== missionGeneration
     if (
+      !forceReconciliation &&
       !rosterChanged &&
       !completenessChanged &&
       !readErrorCleared &&
@@ -509,14 +520,14 @@ export async function startParticipantRuntime(
     const missionId = activeMissionId
     if (missionId === null) return
     const version = ++nextRosterObservationVersion
-    pendingRosterObservation = {
+    pendingRosterObservations.push({
       version,
       missionId,
       missionGeneration,
       devices: [...availableDevices],
       observedAt,
       complete,
-    }
+    })
     await new Promise<void>((resolve) => {
       rosterWaiters.push({ version, resolve })
       void drainRosterReconciliation()
@@ -541,6 +552,7 @@ export async function startParticipantRuntime(
         observation.devices,
         observation.observedAt,
         observation.complete,
+        true,
       )
     }
   }
@@ -554,35 +566,40 @@ export async function startParticipantRuntime(
       observation.missionGeneration !== fence.missionGeneration)
   }
 
-  /** Coalesces roster churn while preserving ordered durable membership truth. */
+  /** Serializes roster churn while preserving every accepted observation time. */
   async function drainRosterReconciliation(): Promise<void> {
     if (rosterReconciliationRunning) return
     rosterReconciliationRunning = true
+    let retryBlocked = false
     try {
-      while (pendingRosterObservation !== null) {
-        const observation = pendingRosterObservation
-        pendingRosterObservation = null
+      while (pendingRosterObservations.length > 0) {
+        const observation = pendingRosterObservations[0]
+        if (observation === undefined) break
         if (
           activeMissionId !== observation.missionId ||
           missionGeneration !== observation.missionGeneration
         ) {
+          pendingRosterObservations.shift()
           resolveRosterWaiters(observation.version)
           continue
         }
         if (pendingMembershipWrite !== null) {
           const retrySucceeded = await persistMembershipWrite(pendingMembershipWrite)
           if (!retrySucceeded) {
-            resolveRosterWaiters(observation.version)
+            resolveRosterWaitersThroughQueued(observation.version)
+            retryBlocked = true
             break
           }
           if (
             activeMissionId !== observation.missionId ||
             missionGeneration !== observation.missionGeneration
           ) {
+            pendingRosterObservations.shift()
             resolveRosterWaiters(observation.version)
             continue
           }
         }
+        pendingRosterObservations.shift()
         const changes = collectMembershipChanges(
           participants,
           membershipEvents,
@@ -606,12 +623,18 @@ export async function startParticipantRuntime(
         pendingMembershipWrite = write
         const writeSucceeded = await persistMembershipWrite(write)
         resolveRosterWaiters(observation.version)
-        if (!writeSucceeded) break
+        if (!writeSucceeded) {
+          resolveRosterWaitersThroughQueued(observation.version)
+          retryBlocked = true
+          break
+        }
       }
     } finally {
       rosterReconciliationRunning = false
       notifyRosterReconciliationWaiters()
-      if (pendingRosterObservation !== null) void drainRosterReconciliation()
+      if (!retryBlocked && pendingRosterObservations.length > 0) {
+        void drainRosterReconciliation()
+      }
     }
   }
 
@@ -620,12 +643,12 @@ export async function startParticipantRuntime(
     while (
       inFlightRosterApplicationCount > 0 ||
       rosterReconciliationRunning ||
-      pendingRosterObservation !== null
+      (pendingRosterObservations.length > 0 && membershipWriteError === null)
     ) {
       await new Promise<void>((resolve) => {
         rosterReconciliationWaiters.push(resolve)
         if (
-          pendingRosterObservation !== null &&
+          pendingRosterObservations.length > 0 &&
           !rosterReconciliationRunning
         ) void drainRosterReconciliation()
       })
@@ -692,6 +715,12 @@ export async function startParticipantRuntime(
         waiter.resolve()
       }
     }
+  }
+
+  /** Releases poll callers after a visible write failure without dropping queued truth. */
+  function resolveRosterWaitersThroughQueued(version: number): void {
+    const latestQueuedVersion = pendingRosterObservations.at(-1)?.version ?? version
+    resolveRosterWaiters(Math.max(version, latestQueuedVersion))
   }
 
   /** Allows group selection only when its complete starting membership is known. */

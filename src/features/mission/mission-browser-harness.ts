@@ -145,7 +145,9 @@ export async function startMissionBrowserHarness(): Promise<void> {
           },
           getParticipantDeviceIds: () =>
             isMissionModelEnabled()
-              ? useParticipantStore.getState().scope.activeDeviceIdsAt(new Date().toISOString())
+              ? useParticipantStore.getState().scope.historicalDeviceIdsThrough(
+                  new Date().toISOString(),
+                )
               : null,
           getParticipantHistoryStarts: (deviceIds, from, until) => {
             if (!isMissionModelEnabled()) return {}

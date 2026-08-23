@@ -13,6 +13,8 @@ export type ParticipationScope = {
     through: string,
   ) => string | null
   readonly activeDeviceIdsAt: (timestamp: string) => readonly string[]
+  /** Devices with any authorized evidence window at or before the timestamp. */
+  readonly historicalDeviceIdsThrough: (timestamp: string) => readonly string[]
   /** Current-map scope, including newly observed selected-group members awaiting durable audit. */
   readonly operationalDeviceIdsAt: (timestamp: string) => readonly string[]
   readonly filterSnapshot: (
@@ -89,6 +91,12 @@ export function createParticipationScope(input: {
     return [...candidateDeviceIds].filter((deviceId) => includesAt(deviceId, timestamp)).sort()
   }
 
+  /** Keeps closed participation windows eligible for low-rate late-fix recovery. */
+  function historicalDeviceIdsThrough(timestamp: string): readonly string[] {
+    return [...candidateDeviceIds].filter((deviceId) =>
+      firstEvidenceTimestampAtOrAfter(deviceId, '', timestamp) !== null).sort()
+  }
+
   function firstEvidenceTimestampAtOrAfter(
     deviceId: string,
     from: string,
@@ -129,6 +137,7 @@ export function createParticipationScope(input: {
     includesAt,
     firstEvidenceTimestampAtOrAfter,
     activeDeviceIdsAt,
+    historicalDeviceIdsThrough,
     operationalDeviceIdsAt,
     filterSnapshot: (snapshot, observedAt = new Date().toISOString()) => {
       const activeDeviceIds = new Set(operationalDeviceIdsAt(observedAt))

@@ -7,6 +7,8 @@ import type { CoreFeatureRuntimeHandles } from '../../src/features/runtime/start
 import { useMissionStore } from '../../src/features/mission/mission-store'
 import { useActiveMissionDevicesStore } from '../../src/features/tracking/active-mission-devices-store'
 import { useIngestHealthStore } from '../../src/features/tracking/ingest-health-store'
+import { useParticipantStore } from '../../src/features/participants/participant-store'
+import { createParticipationScope } from '../../src/features/participants/participation-scope'
 
 describe('app runtime startup', () => {
   afterEach(() => {
@@ -14,6 +16,7 @@ describe('app runtime startup', () => {
     useMissionStore.setState(useMissionStore.getInitialState())
     useActiveMissionDevicesStore.setState(useActiveMissionDevicesStore.getInitialState())
     useIngestHealthStore.setState(useIngestHealthStore.getInitialState())
+    useParticipantStore.setState(useParticipantStore.getInitialState())
   })
 
   it('publishes current rejections before non-blocking durable evidence delivery [DON-268]', async () => {
@@ -124,6 +127,20 @@ describe('app runtime startup', () => {
     })
     useActiveMissionDevicesStore.getState().setDeviceActive('mission-1', '7', true)
     useActiveMissionDevicesStore.getState().setDeviceActive('mission-1', '2', true)
+    useParticipantStore.setState({
+      activeMissionId: 'mission-1',
+      scope: createParticipationScope({
+        participants: [{
+          id: 'participant-7', mission_id: 'mission-1', kind: 'device',
+          traccar_device_id: '7', mission_team_id: null, traccar_group_id: null,
+          team_name: null, provenance: 'explicit',
+          effective_from: '2026-08-08T00:00:00.000Z',
+          added_at: '2026-08-08T00:00:00.000Z', added_by: 'Coordinator',
+          removed_at: '2026-08-08T01:00:00.000Z', removed_by: 'Coordinator',
+        }],
+        membershipEvents: [],
+      }),
+    })
 
     const createPollingManager = vi.fn().mockReturnValue({
       start: vi.fn(),
@@ -169,15 +186,31 @@ describe('app runtime startup', () => {
       startTrackingRuntime,
       createPollingManager,
     })
+    useParticipantStore.setState({
+      activeMissionId: 'mission-1',
+      scope: createParticipationScope({
+        participants: [{
+          id: 'participant-7', mission_id: 'mission-1', kind: 'device',
+          traccar_device_id: '7', mission_team_id: null, traccar_group_id: null,
+          team_name: null, provenance: 'explicit',
+          effective_from: '2026-08-08T00:00:00.000Z',
+          added_at: '2026-08-08T00:00:00.000Z', added_by: 'Coordinator',
+          removed_at: '2026-08-08T01:00:00.000Z', removed_by: 'Coordinator',
+        }],
+        membershipEvents: [],
+      }),
+    })
 
     const pollingOptions = createPollingManager.mock.calls[0]?.[1] as {
       readonly getBreadcrumbDeviceIds?: () => readonly string[]
+      readonly getParticipantDeviceIds?: () => readonly string[] | null
       readonly getInitialHistoryCheckpoints?: () => Promise<unknown>
       readonly getCanonicalBreadcrumbs?: (missionId: string) => Promise<unknown>
       readonly persistHistoryChunk?: (input: unknown) => Promise<void>
       readonly persistHistoryChunks?: (inputs: readonly unknown[]) => Promise<void>
     }
     expect(pollingOptions.getBreadcrumbDeviceIds?.()).toEqual(['2', '7'])
+    expect(pollingOptions.getParticipantDeviceIds?.()).toEqual(['7'])
     await expect(pollingOptions.getInitialHistoryCheckpoints?.()).resolves.toEqual({
       '7': {
         historyFrom: '2026-08-08T00:00:00.000Z',
