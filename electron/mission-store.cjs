@@ -1365,6 +1365,15 @@ function finishMission(db, missionId) {
   if (mission.status === 'finished' || mission.status === 'finalized') {
     throw new Error('Mission is already finished.')
   }
+  const incompleteBackfillCount = db.prepare(`SELECT COUNT(*) AS count
+    FROM participant_backfill_checkpoints
+    WHERE mission_id = ? AND completed = 0`)
+    .get(missionId).count
+  if (incompleteBackfillCount > 0) {
+    throw new Error(
+      `Mission cannot be finished while ${incompleteBackfillCount} participant history backfill checkpoint(s) are incomplete. Keep the mission active and retry history backfill before finishing.`,
+    )
+  }
   const timestamp = now()
   const additionalPausedSeconds =
     mission.status === 'paused' ? calculatePausedSeconds(mission.pause_time, timestamp) : 0

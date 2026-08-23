@@ -24,6 +24,28 @@ describe('participation scope [DON-271]', () => {
     expect(scope.includesAt('11', '2026-08-20T11:00:00.000Z')).toBe(false)
   })
 
+  it('finds the first authorized evidence timestamp inside a fetched history range', () => {
+    const scope = createParticipationScope({
+      participants: [participant({
+        traccar_device_id: '11',
+        effective_from: '2026-08-20T10:00:00.000Z',
+        removed_at: '2026-08-20T11:00:00.000Z',
+      })],
+      membershipEvents: [],
+    })
+
+    expect(scope.firstEvidenceTimestampAtOrAfter(
+      '11',
+      '2026-08-20T08:00:00.000Z',
+      '2026-08-20T12:00:00.000Z',
+    )).toBe('2026-08-20T10:00:00.000Z')
+    expect(scope.firstEvidenceTimestampAtOrAfter(
+      '11',
+      '2026-08-20T11:00:00.000Z',
+      '2026-08-20T12:00:00.000Z',
+    )).toBeNull()
+  })
+
   it('auto-follows selected group membership only from observation time', () => {
     const scope = createParticipationScope({
       participants: [participant({

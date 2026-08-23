@@ -7,6 +7,11 @@ import type { TrackingSnapshot } from '../tracking/tracking-types'
 
 export type ParticipationScope = {
   readonly includesAt: (deviceId: string, timestamp: string) => boolean
+  readonly firstEvidenceTimestampAtOrAfter: (
+    deviceId: string,
+    from: string,
+    through: string,
+  ) => string | null
   readonly activeDeviceIdsAt: (timestamp: string) => readonly string[]
   /** Current-map scope, including newly observed selected-group members awaiting durable audit. */
   readonly operationalDeviceIdsAt: (timestamp: string) => readonly string[]
@@ -84,6 +89,35 @@ export function createParticipationScope(input: {
     return [...candidateDeviceIds].filter((deviceId) => includesAt(deviceId, timestamp)).sort()
   }
 
+  function firstEvidenceTimestampAtOrAfter(
+    deviceId: string,
+    from: string,
+    through: string,
+  ): string | null {
+    if (from > through) return null
+    const boundaries = new Set<string>([from])
+    for (const participant of directParticipantsByDevice.get(deviceId) ?? []) {
+      boundaries.add(participant.effective_from)
+      if (participant.removed_at !== null) boundaries.add(participant.removed_at)
+    }
+    for (const checkpoint of backfillCheckpointsByDevice.get(deviceId) ?? []) {
+      boundaries.add(checkpoint.window_from)
+      boundaries.add(checkpoint.window_to)
+    }
+    for (const event of membershipEventsByDevice.get(deviceId) ?? []) {
+      boundaries.add(event.observed_at)
+      for (const participant of groupParticipantsByTeam.get(event.mission_team_id) ?? []) {
+        boundaries.add(participant.effective_from)
+        if (participant.removed_at !== null) boundaries.add(participant.removed_at)
+      }
+    }
+    for (const boundary of [...boundaries].sort()) {
+      if (boundary < from || boundary > through) continue
+      if (includesAt(deviceId, boundary)) return boundary
+    }
+    return null
+  }
+
   function operationalDeviceIdsAt(timestamp: string): readonly string[] {
     return [...new Set([
       ...activeDeviceIdsAt(timestamp),
@@ -93,6 +127,7 @@ export function createParticipationScope(input: {
 
   return {
     includesAt,
+    firstEvidenceTimestampAtOrAfter,
     activeDeviceIdsAt,
     operationalDeviceIdsAt,
     filterSnapshot: (snapshot, observedAt = new Date().toISOString()) => {

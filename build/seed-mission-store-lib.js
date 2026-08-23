@@ -1,6 +1,7 @@
 import path from 'node:path'
 
 export const FIXTURE_GENERATOR_VERSION = 4
+export const LEGACY_FIXTURE_GENERATOR_VERSION = 2
 
 const DAY_MS = 24 * 60 * 60 * 1000
 const MIB = 1024 * 1024
@@ -280,6 +281,13 @@ export function fixtureManifestPath(databasePath) {
   return `${databasePath}.manifest.json`
 }
 
+/** Keeps established field-scale fixture caches compatible across BCP-only generator changes. */
+export function fixtureGeneratorVersionForPlan(plan) {
+  return plan.mode === 'breadcrumb-programme'
+    ? FIXTURE_GENERATOR_VERSION
+    : LEGACY_FIXTURE_GENERATOR_VERSION
+}
+
 /** Shapes the durable manifest written beside every generated fixture. */
 export function buildFixtureManifest(input) {
   const plan = input.plan
@@ -290,7 +298,7 @@ export function buildFixtureManifest(input) {
     rowCounts.backupEvents
 
   const manifest = {
-    generatorVersion: FIXTURE_GENERATOR_VERSION,
+    generatorVersion: fixtureGeneratorVersionForPlan(plan),
     syntheticDataOnly: true,
     preset: plan.preset,
     schemaVersion: input.schemaVersion,

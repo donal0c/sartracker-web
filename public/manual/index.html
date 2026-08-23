@@ -651,8 +651,9 @@
           <p>
             A selected Traccar group follows later server-side membership changes from the time SAR Tracker
             observes them. A newly observed member's current position is shown immediately while the durable
-            membership record is being written; a failed write stays visible and is retried on the next roster
-            observation. The app displays a coordinator notice and never invents earlier group membership or
+            membership record is being written; a failed write appears as a persistent amber warning in the
+            active Participants panel and is retried on the next roster observation. The app displays a
+            coordinator notice and never invents earlier group membership or
             retrospective evidence. When a coordinator explicitly backdates the initial or later selection of
             a group, each confirmed member receives the same bounded, resumable history-backfill window as an
             individual device. The group row shows completed members out of all starting members, and keeps a
@@ -667,6 +668,13 @@
             device, its individual checkbox is checked and locked with an “included by selected group” note.
             SAR Tracker rejects duplicate direct/group instructions rather than letting a later Remove action
             appear successful while the other instruction continues collection.
+          </div>
+          <div class="warning">
+            <strong>Finish waits for participant history:</strong> a mission cannot be finished while any
+            fixed participant history-backfill window is incomplete. The mission remains active and the open
+            Finish confirmation shows the reason and tells the coordinator to retry backfill before finishing.
+            This prevents an archive from sealing a known gap between selected participant history and the
+            live mission record.
           </div>
           <h3>Outings</h3>
           <p>

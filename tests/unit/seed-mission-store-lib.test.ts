@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import {
   FIXTURE_GENERATOR_VERSION,
+  LEGACY_FIXTURE_GENERATOR_VERSION,
   buildFixtureManifest,
   createBreadcrumbProgrammeScenario,
   createDeterministicId,
@@ -198,7 +199,7 @@ describe('mission-store fixture identity and manifest [DON-242]', () => {
       },
     })
 
-    expect(manifest.generatorVersion).toBe(FIXTURE_GENERATOR_VERSION)
+    expect(manifest.generatorVersion).toBe(LEGACY_FIXTURE_GENERATOR_VERSION)
     expect(manifest.syntheticDataOnly).toBe(true)
     expect(manifest.workload.simulatedMissionDays).toBe(5)
     expect(manifest.workload.realPositionRows).toBe(691_200)
@@ -237,6 +238,7 @@ describe('mission-store fixture identity and manifest [DON-242]', () => {
       legacyNoOutingMissionCount: 1,
       gpxEvidenceBoundary: 'deferred-to-pr4-not-faked',
     })
+    expect(manifest.generatorVersion).toBe(FIXTURE_GENERATOR_VERSION)
     expect(manifest.rows.byTable).toMatchObject({
       outings: 12,
       mission_teams: 11,

@@ -16,11 +16,11 @@ import path from 'node:path'
 import Database from 'better-sqlite3'
 
 import {
-  FIXTURE_GENERATOR_VERSION,
   buildFixtureManifest,
   createBreadcrumbProgrammeScenario,
   createDeterministicId,
   createFixturePlan,
+  fixtureGeneratorVersionForPlan,
   fixtureManifestPath,
 } from './seed-mission-store-lib.js'
 
@@ -46,7 +46,7 @@ export async function generateMissionStoreFixture(options) {
   await recoverInterruptedFixtureReplacement(outputPath, manifestPath)
 
   if (!options.force) {
-    const cached = await readVerifiedCachedFixture(outputPath, manifestPath, plan.preset)
+    const cached = await readVerifiedCachedFixture(outputPath, manifestPath, plan)
     if (cached !== null) {
       if (options.copyToPath !== undefined) {
         await copyFixtureAtomically(outputPath, manifestPath, options.copyToPath)
@@ -1123,7 +1123,7 @@ function syntheticDeviceColor(index) {
 }
 
 /** Reads and verifies a compatible cached fixture, or returns null when none exists. */
-async function readVerifiedCachedFixture(outputPath, manifestPath, preset) {
+async function readVerifiedCachedFixture(outputPath, manifestPath, plan) {
   let manifest
   try {
     manifest = JSON.parse(await readFile(manifestPath, 'utf8'))
@@ -1135,9 +1135,12 @@ async function readVerifiedCachedFixture(outputPath, manifestPath, preset) {
     throw error
   }
 
-  if (manifest.generatorVersion !== FIXTURE_GENERATOR_VERSION || manifest.preset !== preset) {
+  if (
+    manifest.generatorVersion !== fixtureGeneratorVersionForPlan(plan) ||
+    manifest.preset !== plan.preset
+  ) {
     throw new Error(
-      `Cached mission-store fixture is incompatible with preset ${preset}; rerun with --force.`,
+      `Cached mission-store fixture is incompatible with preset ${plan.preset}; rerun with --force.`,
     )
   }
   const actualSha256 = await sha256File(outputPath)

@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { readFile, stat } from 'node:fs/promises'
+import { readFile, stat, writeFile } from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 import { createRequire } from 'node:module'
@@ -142,6 +142,34 @@ describe('generateMissionStoreFixture [DON-242]', () => {
     expect(recovered.reused).toBe(true)
     expect(recovered.manifest.database.sha256).toBe(first.manifest.database.sha256)
     await expect(sha256File(outputPath)).resolves.toBe(first.manifest.database.sha256)
+  }, 30_000)
+
+  it('reuses a checksum-valid legacy v2 preset cache without regeneration', async () => {
+    const tempRoot = await makeTempRoot()
+    const outputPath = path.join(tempRoot, 'cache', 'mission-store.sqlite')
+    const generated = await generateMissionStoreFixture({
+      preset: 'small',
+      outputPath,
+      force: false,
+      progress: () => undefined,
+    })
+    const manifestPath = `${outputPath}.manifest.json`
+    await writeFile(manifestPath, `${JSON.stringify({
+      ...generated.manifest,
+      generatorVersion: 2,
+    }, null, 2)}\n`, 'utf8')
+    const originalStat = await stat(outputPath)
+
+    const reused = await generateMissionStoreFixture({
+      preset: 'small',
+      outputPath,
+      force: false,
+      progress: () => undefined,
+    })
+
+    expect(reused.reused).toBe(true)
+    expect(reused.manifest.generatorVersion).toBe(2)
+    expect((await stat(outputPath)).mtimeMs).toBe(originalStat.mtimeMs)
   }, 30_000)
 })
 

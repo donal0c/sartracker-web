@@ -20,6 +20,7 @@ export function ParticipantControlsSection({ phase }: ParticipantControlsSection
   const membershipNotices = useParticipantStore((state) => state.membershipNotices)
   const envelope = useParticipantStore((state) => state.envelope)
   const saving = useParticipantStore((state) => state.saving)
+  const rosterError = useParticipantStore((state) => state.rosterError)
   const error = useParticipantStore((state) => state.error)
   const [addKind, setAddKind] = useState<'device' | 'group'>('device')
   const [addRef, setAddRef] = useState('')
@@ -110,6 +111,11 @@ export function ParticipantControlsSection({ phase }: ParticipantControlsSection
       {envelope.warning !== null ? (
         <p className="border border-rose-400/50 bg-rose-950/40 p-2 text-xs font-semibold text-rose-100" data-testid="participant-envelope-warning">
           {envelope.warning}
+        </p>
+      ) : null}
+      {rosterError !== null ? (
+        <p className="sar-inline-alert p-2 text-xs text-amber-200" data-testid="participant-roster-error">
+          {rosterError}
         </p>
       ) : null}
       {membershipNotices.map((notice) => (

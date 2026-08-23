@@ -265,6 +265,72 @@ describe('startParticipantRuntime [DON-271]', () => {
     expect(states.at(-1)?.rosterError).toBeNull()
   })
 
+  it('retries the original membership delta without moving its observation time', async () => {
+    const store = createStore({ participants: [GROUP_PARTICIPANT], membershipEvents: [] })
+    store.recordGroupMembershipEvents
+      .mockRejectedValueOnce(new Error('disk busy'))
+      .mockImplementationOnce(async (input) => input.events.map((event, index) => ({
+        ...event,
+        id: `retry-${index}`,
+        sequence: index + 1,
+        mission_id: input.mission_id,
+      })))
+    const runtime = await startParticipantRuntime({
+      participantStore: store,
+      applyRuntime: vi.fn(),
+    })
+    await runtime.refreshMission('mission-1')
+    const roster = [device('device-2', 'group-1')]
+
+    await runtime.applyRoster(roster, '2026-08-23T11:00:00.000Z')
+    await runtime.applyRoster(roster, '2026-08-23T11:05:00.000Z')
+
+    expect(store.recordGroupMembershipEvents).toHaveBeenNthCalledWith(2, {
+      mission_id: 'mission-1',
+      events: [expect.objectContaining({
+        traccar_device_id: 'device-2',
+        change: 'member',
+        observed_at: '2026-08-23T11:00:00.000Z',
+      })],
+    })
+  })
+
+  it('keeps a failed positive membership delta visible through an incomplete roster', async () => {
+    const store = createStore({ participants: [GROUP_PARTICIPANT], membershipEvents: [] })
+    store.recordGroupMembershipEvents.mockRejectedValue(new Error('disk busy'))
+    const states: Array<{
+      readonly rosterError: string | null
+      readonly scope: {
+        readonly operationalDeviceIdsAt: (timestamp: string) => readonly string[]
+      }
+    }> = []
+    const runtime = await startParticipantRuntime({
+      participantStore: store,
+      applyRuntime: (state) => states.push(state),
+    })
+    await runtime.refreshMission('mission-1')
+
+    await runtime.applyRoster(
+      [device('device-2', 'group-1')],
+      '2026-08-23T11:00:00.000Z',
+    )
+    await runtime.applyRoster([], '2026-08-23T11:05:00.000Z', { complete: false })
+
+    expect(store.recordGroupMembershipEvents).toHaveBeenCalledTimes(2)
+    expect(store.recordGroupMembershipEvents).toHaveBeenLastCalledWith({
+      mission_id: 'mission-1',
+      events: [expect.objectContaining({
+        traccar_device_id: 'device-2',
+        change: 'member',
+        observed_at: '2026-08-23T11:00:00.000Z',
+      })],
+    })
+    expect(states.at(-1)?.scope.operationalDeviceIdsAt(
+      '2026-08-23T11:05:00.000Z',
+    )).toContain('device-2')
+    expect(states.at(-1)?.rosterError).toMatch(/disk busy/i)
+  })
+
   it('reconciles an unchanged server roster again after the active mission changes', async () => {
     const store = createStore({ participants: [GROUP_PARTICIPANT], membershipEvents: [] })
     store.listMissionParticipants.mockImplementation(async (missionId: string) => [{
@@ -546,6 +612,83 @@ describe('startParticipantRuntime [DON-271]', () => {
     expect(states.at(-1)?.participants).toEqual([
       expect.objectContaining({ id: 'participant-b', mission_id: 'mission-b' }),
     ])
+  })
+
+  it('publishes a fail-closed loading scope while a new mission selection is pending', async () => {
+    const selection = createDeferred<readonly MissionParticipant[]>()
+    const store = createStore()
+    store.selectMissionParticipants.mockReturnValueOnce(selection.promise)
+    const states: Array<{
+      readonly activeMissionId: string | null
+      readonly loading: boolean
+      readonly saving: boolean
+      readonly participants: readonly MissionParticipant[]
+      readonly scope: { readonly includesAt: (id: string, at: string) => boolean }
+    }> = []
+    const runtime = await startParticipantRuntime({
+      participantStore: store,
+      applyRuntime: (state) => states.push(state),
+    })
+    await runtime.refreshMission('mission-a')
+
+    const pending = runtime.selectInitialParticipants('mission-b', 'Coordinator')
+
+    expect(states.at(-1)).toMatchObject({
+      activeMissionId: 'mission-b',
+      loading: true,
+      saving: true,
+      participants: [],
+    })
+    expect(states.at(-1)?.scope.includesAt(
+      'device-1',
+      '2026-08-23T11:00:00.000Z',
+    )).toBe(false)
+    selection.resolve([])
+    await pending
+  })
+
+  it('does not let a stale mission mutation clear the active mission saving guard', async () => {
+    const missionAWrite = createDeferred<MissionParticipant>()
+    const missionBWrite = createDeferred<MissionParticipant>()
+    const store = createStore({ participants: [], membershipEvents: [] })
+    store.addMissionParticipant
+      .mockReturnValueOnce(missionAWrite.promise)
+      .mockReturnValueOnce(missionBWrite.promise)
+    const states: Array<{ readonly activeMissionId: string | null; readonly saving: boolean }> = []
+    const runtime = await startParticipantRuntime({
+      participantStore: store,
+      applyRuntime: (state) => states.push(state),
+    })
+    await runtime.refreshMission('mission-a')
+    const pendingA = runtime.addParticipant({
+      kind: 'device', ref: 'device-a', confirmed_by: 'Coordinator',
+    })
+    await runtime.refreshMission('mission-b')
+    const pendingB = runtime.addParticipant({
+      kind: 'device', ref: 'device-b', confirmed_by: 'Coordinator',
+    })
+
+    missionAWrite.resolve({
+      ...GROUP_PARTICIPANT,
+      id: 'participant-a', mission_id: 'mission-a', kind: 'device',
+      mission_team_id: null, traccar_group_id: null, team_name: null,
+      traccar_device_id: 'device-a',
+    })
+    await pendingA
+
+    expect(states.at(-1)).toMatchObject({ activeMissionId: 'mission-b', saving: true })
+    await expect(runtime.addParticipant({
+      kind: 'device', ref: 'device-c', confirmed_by: 'Coordinator',
+    })).resolves.toBeNull()
+    expect(store.addMissionParticipant).toHaveBeenCalledTimes(2)
+
+    missionBWrite.resolve({
+      ...GROUP_PARTICIPANT,
+      id: 'participant-b', mission_id: 'mission-b', kind: 'device',
+      mission_team_id: null, traccar_group_id: null, team_name: null,
+      traccar_device_id: 'device-b',
+    })
+    await pendingB
   })
 })
 

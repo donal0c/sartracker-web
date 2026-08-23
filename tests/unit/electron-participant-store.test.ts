@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { createRequire } from 'node:module'
@@ -30,6 +30,7 @@ type Participant = {
 type ElectronParticipantStore = {
   readonly close: () => void
   readonly createMission: (input: { readonly name: string; readonly start_time: string }) => Promise<{ readonly id: string }>
+  readonly getMission: (missionId: string) => Promise<{ readonly status: string }>
   readonly selectMissionParticipants: (input: unknown) => Promise<readonly Participant[]>
   readonly addMissionParticipant: (input: unknown) => Promise<Participant>
   readonly removeMissionParticipant: (input: unknown) => Promise<Participant>
@@ -53,6 +54,10 @@ type ElectronParticipantStore = {
   }[]>
   readonly upsertDevicesBulk: (input: unknown) => Promise<unknown>
   readonly finishMission: (missionId: string) => Promise<{ readonly status: string }>
+  readonly finalizeMission: (missionId: string) => Promise<{
+    readonly mission: { readonly status: string }
+    readonly archive: { readonly archive_path: string }
+  }>
 }
 
 let stores: ElectronParticipantStore[] = []
@@ -459,6 +464,58 @@ describe('Electron participant store [DON-271]', () => {
 
     expect((await store.listMissionEvents(mission.id)).filter((event) =>
       event.event_type === 'participant_backfill_completed')).toHaveLength(1)
+  })
+
+  it('blocks finish until participant backfill completes and archives the same checkpoint truth', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-08-20T10:00:00.000Z'))
+    const store = await createStore()
+    const mission = await store.createMission({
+      name: 'Backfill finish fence mission',
+      start_time: '2026-08-20T08:00:00.000Z',
+    })
+    await store.selectMissionParticipants({
+      mission_id: mission.id,
+      groups: [{ traccar_group_id: '101', name: 'Kerry MRT', member_device_ids: ['11'] }],
+      devices: [],
+      selected_by: 'Coordinator A',
+    })
+
+    await expect(store.finishMission(mission.id)).rejects.toThrow(
+      /history backfill.*incomplete|complete.*history backfill/i,
+    )
+    await expect(store.getMission(mission.id)).resolves.toMatchObject({ status: 'active' })
+    const [checkpoint] = await store.listParticipantBackfillCheckpoints(mission.id)
+    expect(checkpoint).toBeDefined()
+    await store.upsertParticipantBackfillCheckpoint({
+      mission_id: mission.id,
+      traccar_device_id: checkpoint!.traccar_device_id,
+      window_from: checkpoint!.window_from,
+      window_to: checkpoint!.window_to,
+      reconciled_until: checkpoint!.window_to,
+      completed: true,
+    })
+
+    await expect(store.finishMission(mission.id)).resolves.toMatchObject({ status: 'finished' })
+    const finalized = await store.finalizeMission(mission.id)
+    const { readZipArchive } = require('../../electron/zip-archive.cjs') as {
+      readonly readZipArchive: (buffer: Buffer) => ReadonlyMap<string, Buffer>
+    }
+    const entries = readZipArchive(await readFile(finalized.archive.archive_path))
+    const archivedDatabasePath = path.join(directories.at(-1)!, 'archived-checkpoint.sqlite')
+    await writeFile(archivedDatabasePath, entries.get('mission-store.sqlite')!)
+    const archivedDatabase = new Database(archivedDatabasePath, { readonly: true })
+    const archivedCheckpoints = archivedDatabase.prepare(
+      'SELECT completed, reconciled_until, window_to FROM participant_backfill_checkpoints WHERE mission_id = ?',
+    ).all(mission.id)
+    archivedDatabase.close()
+
+    expect(archivedCheckpoints).toEqual([
+      expect.objectContaining({ completed: 1, reconciled_until: checkpoint!.window_to }),
+    ])
+    await expect(store.listParticipantBackfillCheckpoints(mission.id)).resolves.toEqual([
+      expect.objectContaining({ completed: 1, reconciled_until: checkpoint!.window_to }),
+    ])
   })
 
   it('rolls back checkpoint completion when its required audit append fails', async () => {

@@ -980,7 +980,9 @@ describe('startTrackingRuntime', () => {
       applyParticipantRoster,
       readParticipationScope: () => ({
         includesAt: (deviceId: string) => deviceId === '1',
+        firstEvidenceTimestampAtOrAfter: (_deviceId, from) => from,
         activeDeviceIdsAt: () => ['1'],
+        operationalDeviceIdsAt: () => ['1'],
         filterSnapshot: (snapshot: TrackingSnapshot) => ({
           ...snapshot,
           devices: snapshot.devices.filter((device) => device.device_id === '1'),
@@ -1031,7 +1033,9 @@ describe('startTrackingRuntime', () => {
       applyParticipantRoster: vi.fn().mockReturnValue(rosterWrite.promise),
       readParticipationScope: () => ({
         includesAt: () => true,
+        firstEvidenceTimestampAtOrAfter: (_deviceId, from) => from,
         activeDeviceIdsAt: () => ['1', '2'],
+        operationalDeviceIdsAt: () => ['1', '2'],
         filterSnapshot: (snapshot) => snapshot,
         filterEvidenceSnapshot: (snapshot) => snapshot,
       }),
@@ -1069,7 +1073,9 @@ describe('startTrackingRuntime', () => {
       applyParticipantRoster,
       readParticipationScope: () => ({
         includesAt: () => true,
+        firstEvidenceTimestampAtOrAfter: (_deviceId, from) => from,
         activeDeviceIdsAt: () => ['1', '2'],
+        operationalDeviceIdsAt: () => ['1', '2'],
         filterSnapshot: (snapshot) => snapshot,
         filterEvidenceSnapshot: (snapshot) => snapshot,
       }),
@@ -1124,7 +1130,9 @@ describe('startTrackingRuntime', () => {
       missionModelEnabled: true,
       readParticipationScope: () => ({
         includesAt: () => true,
+        firstEvidenceTimestampAtOrAfter: (_deviceId, from) => from,
         activeDeviceIdsAt: () => ['1', '2'],
+        operationalDeviceIdsAt: () => ['1', '2'],
         filterSnapshot: (snapshot) => snapshot,
         filterEvidenceSnapshot: (snapshot) => snapshot,
       }),
@@ -2026,6 +2034,81 @@ describe('startTrackingRuntime', () => {
     })
 
     expect(pollerHooks?.getCanonicalBreadcrumbs).toBeUndefined()
+  })
+
+  it('filters initial and anti-entropy history at fix time before mission persistence', async () => {
+    let pollerHooks:
+      | {
+          persistHistoryChunk: (
+            input: TrackingHistoryChunkPersistenceInput,
+          ) => Promise<{ readonly changed: boolean }>
+        }
+      | undefined
+    const persistTrackingPositionsBulk = vi.fn().mockResolvedValue({
+      changedPositionCount: 1,
+      insertedPositionCount: 1,
+      skippedAmbiguousLegacyAdoptionCount: 0,
+    })
+    const scope = createParticipationScope({
+      participants: [{
+        id: 'participant-window', mission_id: 'mission-1', kind: 'device',
+        traccar_device_id: '1', mission_team_id: null, traccar_group_id: null,
+        team_name: null, provenance: 'explicit',
+        effective_from: '2026-04-06T10:00:00.000Z',
+        added_at: '2026-04-06T10:00:00.000Z', added_by: 'Coordinator',
+        removed_at: '2026-04-06T11:00:00.000Z', removed_by: 'Coordinator',
+      }],
+      membershipEvents: [],
+    })
+    const historyPositions = [
+      { ...SNAPSHOT.breadcrumbs[0]!, id: 'pre-effective', device_id: '1', timestamp: '2026-04-06T09:30:00.000Z' },
+      { ...SNAPSHOT.breadcrumbs[0]!, id: 'in-window', device_id: '1', timestamp: '2026-04-06T10:30:00.000Z' },
+      { ...SNAPSHOT.breadcrumbs[0]!, id: 'post-removal', device_id: '1', timestamp: '2026-04-06T11:30:00.000Z' },
+    ]
+
+    await startTrackingRuntime({
+      config: { baseUrl: 'http://test:8082' },
+      createClient: vi.fn().mockReturnValue({}),
+      createPoller: vi.fn().mockImplementation((_client, hooks) => {
+        pollerHooks = hooks
+        return { start: vi.fn(), stop: vi.fn() }
+      }),
+      cache: { read: vi.fn().mockResolvedValue(null), write: vi.fn() },
+      missionStore: createMissionStoreStub({
+        getActiveMission: vi.fn().mockResolvedValue({ id: 'mission-1' }),
+        persistTrackingPositionsBulk,
+      }),
+      applySnapshot: vi.fn(),
+      applyStatus: vi.fn(),
+      missionModelEnabled: true,
+      readParticipationScope: () => scope,
+      readParticipationScopeStatus: () => 'ready',
+    })
+
+    const baseInput = {
+      expectedMissionId: 'mission-1',
+      deviceId: '1',
+      historyFrom: '2026-04-06T08:00:00.000Z',
+      reconciledUntil: '2026-04-06T12:00:00.000Z',
+      positions: historyPositions,
+    } as const
+    await pollerHooks?.persistHistoryChunk({ ...baseInput, phase: 'initial' })
+    await pollerHooks?.persistHistoryChunk({ ...baseInput, phase: 'anti_entropy' })
+
+    expect(persistTrackingPositionsBulk).toHaveBeenNthCalledWith(1, {
+      mission_id: 'mission-1',
+      positions: [expect.objectContaining({ source_position_id: 'in-window' })],
+      checkpoints: [{
+        device_id: '1',
+        history_from: '2026-04-06T10:00:00.000Z',
+        reconciled_until: '2026-04-06T12:00:00.000Z',
+      }],
+    })
+    expect(persistTrackingPositionsBulk).toHaveBeenNthCalledWith(2, {
+      mission_id: 'mission-1',
+      positions: [expect.objectContaining({ source_position_id: 'in-window' })],
+      checkpoints: [],
+    })
   })
 
   it('atomically persists an empty initial-history chunk before acknowledging it', async () => {

@@ -100,6 +100,43 @@ Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
       ],
     })
   })
+
+  test('unfinished participant history blocks mission finish with an actionable warning', async ({ page }) => {
+    await seedDiscovery(page, 3)
+    await page.getByTestId('participant-group-picker').getByText('Hill Team', { exact: true }).click()
+    await page.getByTestId('mission-name-input').fill('Backfill Finish Visual Mission')
+    await page.getByTestId('mission-offset-input').fill('2')
+    await page.getByTestId('mission-start-btn').click()
+    await expect(page.getByTestId('participant-backfill-status')).toContainText('pending')
+
+    await page.getByTestId('mission-finish-btn').click()
+    await page.getByTestId('mission-finish-dialog')
+      .getByRole('button', { name: 'Confirm Finish' })
+      .click()
+    await expect(page.getByTestId('mission-control')).toContainText(
+      'participant history backfill checkpoint(s) are incomplete',
+    )
+    await expect(page.getByTestId('mission-control')).toContainText('active')
+
+    await captureElementAndRegister(page, 'mission-finish-dialog', {
+      testId: 'participant-backfill-finish-fence',
+      testName: 'Mission finish blocked by incomplete participant history',
+      area: 'mission',
+      severity: 'critical',
+      verificationPrompt: `Verify this screenshot of SAR Tracker's still-open finish decision after participant history backfill blocked completion:
+1. The decision remains clearly headed "END MISSION?" rather than presenting a finished or archived state.
+2. A prominent, legible error says the mission cannot be finished while participant history backfill checkpoints are incomplete.
+3. The error tells the coordinator to keep the mission active and retry history backfill before finishing.
+4. The dialog still offers distinct "Confirm Finish" and "Cancel" actions so the operator can retry or back out.
+5. The failure reads as an actionable safety refusal, not as a generic crash, blank surface, or success message.
+Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
+      playwrightAssertions: [
+        'mission remains active',
+        'pending backfill is visible',
+        'finish refusal is visible',
+      ],
+    })
+  })
 })
 
 async function seedDiscovery(page: import('@playwright/test').Page, count: number): Promise<void> {

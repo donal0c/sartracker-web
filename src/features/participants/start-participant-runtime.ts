@@ -99,6 +99,7 @@ export async function startParticipantRuntime(
   let lastReconciledMissionGeneration = -1
   let nextRosterObservationVersion = 0
   let pendingRosterObservation: RosterObservation | null = null
+  let pendingMembershipWrite: PendingMembershipWrite | null = null
   let rosterReconciliationRunning = false
   const rosterWaiters: Array<{
     readonly version: number
@@ -113,7 +114,13 @@ export async function startParticipantRuntime(
         missionGeneration += 1
         selectionGeneration += 1
         lastReconciledMissionGeneration = -1
+        pendingMembershipWrite = null
+        membershipWriteError = null
         saving = false
+        participants = []
+        membershipEvents = []
+        backfillCheckpoints = []
+        membershipNotices = []
         if (previousMissionId !== null) {
           draftDeviceIds = []
           draftGroupIds = []
@@ -240,7 +247,17 @@ export async function startParticipantRuntime(
         throw selectionError
       }
       const operationGeneration = ++selectionGeneration
-      if (activeMissionId !== missionId) missionGeneration += 1
+      if (activeMissionId !== missionId) {
+        missionGeneration += 1
+        lastReconciledMissionGeneration = -1
+        pendingMembershipWrite = null
+        membershipWriteError = null
+        participants = []
+        membershipEvents = []
+        backfillCheckpoints = []
+        membershipNotices = []
+        loading = true
+      }
       saving = true
       error = null
       activeMissionId = missionId
@@ -270,6 +287,7 @@ export async function startParticipantRuntime(
         return selected
       } catch (runtimeError) {
         if (activeMissionId === missionId && selectionGeneration === operationGeneration) {
+          loading = false
           error = toErrorMessage(runtimeError)
           publishRuntime()
         }
@@ -323,20 +341,32 @@ export async function startParticipantRuntime(
   ): Promise<MissionParticipant | null> {
     const missionId = activeMissionId
     if (missionId === null || saving) return null
+    const operationMissionGeneration = missionGeneration
     saving = true
     error = null
     publishRuntime()
     try {
       const result = await operation(missionId)
-      if (activeMissionId !== missionId) return result
+      if (
+        activeMissionId !== missionId ||
+        missionGeneration !== operationMissionGeneration
+      ) return result
       await controller.refreshMission(missionId)
       return result
     } catch (runtimeError) {
-      if (activeMissionId === missionId) error = toErrorMessage(runtimeError)
+      if (
+        activeMissionId === missionId &&
+        missionGeneration === operationMissionGeneration
+      ) error = toErrorMessage(runtimeError)
       return null
     } finally {
-      saving = false
-      publishRuntime()
+      if (
+        activeMissionId === missionId &&
+        missionGeneration === operationMissionGeneration
+      ) {
+        saving = false
+        publishRuntime()
+      }
     }
   }
 
@@ -350,6 +380,7 @@ export async function startParticipantRuntime(
         availableDevices,
         now().toISOString(),
         rosterObservationReceived,
+        pendingMembershipWrite?.events ?? [],
       ),
     })
     dependencies.applyRuntime({
@@ -386,6 +417,20 @@ export async function startParticipantRuntime(
           resolveRosterWaiters(observation.version)
           continue
         }
+        if (pendingMembershipWrite !== null) {
+          const retrySucceeded = await persistMembershipWrite(pendingMembershipWrite)
+          if (!retrySucceeded) {
+            resolveRosterWaiters(observation.version)
+            break
+          }
+          if (
+            activeMissionId !== observation.missionId ||
+            missionGeneration !== observation.missionGeneration
+          ) {
+            resolveRosterWaiters(observation.version)
+            continue
+          }
+        }
         const changes = collectMembershipChanges(
           participants,
           membershipEvents,
@@ -401,51 +446,65 @@ export async function startParticipantRuntime(
           resolveRosterWaiters(observation.version)
           continue
         }
-        try {
-          const inserted = await dependencies.participantStore.recordGroupMembershipEvents({
-            mission_id: observation.missionId,
-            events: changes,
-          })
-          if (
-            activeMissionId === observation.missionId &&
-            missionGeneration === observation.missionGeneration
-          ) {
-            membershipWriteError = null
-            lastReconciledMissionGeneration = observation.missionGeneration
-            if (inserted.length > 0) {
-              membershipEvents = [...membershipEvents, ...inserted]
-              membershipNotices = [
-                ...membershipNotices,
-                ...inserted.map((event) => membershipNotice(event, participants)),
-              ]
-            } else {
-              const reloadedEvents = await dependencies.participantStore
-                .listGroupMembershipEvents(observation.missionId)
-              if (
-                activeMissionId !== observation.missionId ||
-                missionGeneration !== observation.missionGeneration
-              ) continue
-              membershipEvents = reloadedEvents
-            }
-            publishRuntime()
-          }
-        } catch (runtimeError) {
-          if (
-            activeMissionId === observation.missionId &&
-            missionGeneration === observation.missionGeneration
-          ) {
-            membershipWriteError =
-              `Group membership could not be recorded: ${toErrorMessage(runtimeError)}`
-            lastReconciledMissionGeneration = -1
-            publishRuntime()
-          }
-        } finally {
-          resolveRosterWaiters(observation.version)
+        const write: PendingMembershipWrite = {
+          missionId: observation.missionId,
+          missionGeneration: observation.missionGeneration,
+          events: changes,
         }
+        pendingMembershipWrite = write
+        const writeSucceeded = await persistMembershipWrite(write)
+        resolveRosterWaiters(observation.version)
+        if (!writeSucceeded) break
       }
     } finally {
       rosterReconciliationRunning = false
       if (pendingRosterObservation !== null) void drainRosterReconciliation()
+    }
+  }
+
+  /** Persists one immutable observed membership delta until it is durably acknowledged. */
+  async function persistMembershipWrite(write: PendingMembershipWrite): Promise<boolean> {
+    try {
+      const inserted = await dependencies.participantStore.recordGroupMembershipEvents({
+        mission_id: write.missionId,
+        events: write.events,
+      })
+      if (
+        activeMissionId !== write.missionId ||
+        missionGeneration !== write.missionGeneration
+      ) return true
+      if (inserted.length > 0) {
+        membershipEvents = [...membershipEvents, ...inserted]
+        membershipNotices = [
+          ...membershipNotices,
+          ...inserted.map((event) => membershipNotice(event, participants)),
+        ]
+      } else {
+        const reloadedEvents = await dependencies.participantStore
+          .listGroupMembershipEvents(write.missionId)
+        if (
+          activeMissionId !== write.missionId ||
+          missionGeneration !== write.missionGeneration
+        ) return true
+        membershipEvents = reloadedEvents
+      }
+      if (pendingMembershipWrite === write) pendingMembershipWrite = null
+      membershipWriteError = null
+      lastReconciledMissionGeneration = write.missionGeneration
+      publishRuntime()
+      return true
+    } catch (runtimeError) {
+      if (
+        activeMissionId === write.missionId &&
+        missionGeneration === write.missionGeneration
+      ) {
+        pendingMembershipWrite = write
+        membershipWriteError =
+          `Group membership could not be recorded: ${toErrorMessage(runtimeError)}`
+        lastReconciledMissionGeneration = -1
+        publishRuntime()
+      }
+      return false
     }
   }
 
@@ -482,6 +541,12 @@ type RosterObservation = {
   readonly devices: readonly NormalizedTrackingDevice[]
   readonly observedAt: string
   readonly complete: boolean
+}
+
+type PendingMembershipWrite = {
+  readonly missionId: string
+  readonly missionGeneration: number
+  readonly events: readonly Omit<GroupMembershipEvent, 'id' | 'sequence' | 'mission_id'>[]
 }
 
 /** Narrows the optional MissionStore participant surface after boot validation. */
@@ -556,6 +621,7 @@ function collectObservedCurrentGroupMembers(
   devices: readonly NormalizedTrackingDevice[],
   observedAt: string,
   rosterObservationReceived: boolean,
+  pendingEvents: readonly Omit<GroupMembershipEvent, 'id' | 'sequence' | 'mission_id'>[],
 ): readonly string[] {
   if (!rosterObservationReceived) return []
   const selectedGroupIds = new Set(participants
@@ -565,13 +631,17 @@ function collectObservedCurrentGroupMembers(
       participant.effective_from <= observedAt &&
       (participant.removed_at === null || observedAt < participant.removed_at))
     .map((participant) => participant.traccar_group_id!))
-  return devices
+  return [...new Set([
+    ...devices
     .filter((device) =>
       device.group_id !== null &&
       device.group_id !== undefined &&
       selectedGroupIds.has(device.group_id))
-    .map((device) => device.device_id)
-    .sort()
+      .map((device) => device.device_id),
+    ...pendingEvents
+      .filter((event) => event.change === 'member')
+      .map((event) => event.traccar_device_id),
+  ])].sort()
 }
 
 /** Creates the stable fail-closed message used by start and later group selection. */

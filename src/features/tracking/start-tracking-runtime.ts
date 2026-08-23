@@ -515,8 +515,9 @@ export async function startTrackingRuntime(
                     'Tracking history mission changed before the wave could be persisted.',
                   )
                 }
-                const positions = inputs.flatMap((input) =>
-                  input.positions.map((position) => ({
+                const scopedInputs = inputs.map(scopeHistoryPersistenceInput)
+                const positions = scopedInputs.flatMap(({ positions: scopedPositions }) =>
+                  scopedPositions.map((position) => ({
                     source_position_id: position.id,
                     device_id: position.device_id,
                     lat: position.lat,
@@ -530,11 +531,14 @@ export async function startTrackingRuntime(
                     data_origin: position.data_origin,
                   })),
                 )
-                const checkpoints = inputs.map((input) => ({
-                  device_id: input.deviceId,
-                  history_from: input.historyFrom,
-                  reconciled_until: input.reconciledUntil,
-                }))
+                const checkpoints = scopedInputs.flatMap(({ input, historyFrom }) =>
+                  historyFrom === null
+                    ? []
+                    : [{
+                        device_id: input.deviceId,
+                        history_from: historyFrom,
+                        reconciled_until: input.reconciledUntil,
+                      }])
                 if (
                   dependencies.missionStore.persistTrackingPositionsBulk !== undefined
                 ) {
@@ -588,7 +592,8 @@ export async function startTrackingRuntime(
               'Tracking history mission changed before the chunk could be persisted.',
             )
           }
-          const positions = input.positions.map((position) => ({
+          const scopedInput = scopeHistoryPersistenceInput(input)
+          const positions = scopedInput.positions.map((position) => ({
             source_position_id: position.id,
             device_id: position.device_id,
             lat: position.lat,
@@ -608,11 +613,13 @@ export async function startTrackingRuntime(
             const persisted = await dependencies.missionStore.persistTrackingPositionsBulk({
               mission_id: activeMission.id,
               positions,
-              checkpoints: [{
-                device_id: input.deviceId,
-                history_from: input.historyFrom,
-                reconciled_until: input.reconciledUntil,
-              }],
+              checkpoints: scopedInput.historyFrom === null
+                ? []
+                : [{
+                    device_id: input.deviceId,
+                    history_from: scopedInput.historyFrom,
+                    reconciled_until: input.reconciledUntil,
+                  }],
             })
             changedPositionCount = persisted.changedPositionCount
             return
@@ -624,11 +631,13 @@ export async function startTrackingRuntime(
             const persisted = await dependencies.missionStore.persistTrackingHistoryBatch({
               mission_id: activeMission.id,
               positions,
-              checkpoints: [{
-                device_id: input.deviceId,
-                history_from: input.historyFrom,
-                reconciled_until: input.reconciledUntil,
-              }],
+              checkpoints: scopedInput.historyFrom === null
+                ? []
+                : [{
+                    device_id: input.deviceId,
+                    history_from: scopedInput.historyFrom,
+                    reconciled_until: input.reconciledUntil,
+                  }],
             })
             changedPositionCount = Array.isArray(persisted) ? persisted.length : 0
             return
@@ -1149,6 +1158,38 @@ export async function startTrackingRuntime(
       positions: [],
       breadcrumbs: [],
       rawBreadcrumbsForPersistence: [],
+    }
+  }
+
+  /** Filters every fetched history row and clamps its durable cursor to mission evidence scope. */
+  function scopeHistoryPersistenceInput(input: TrackingHistoryChunkPersistenceInput): {
+    readonly input: TrackingHistoryChunkPersistenceInput
+    readonly positions: readonly NormalizedTrackingPosition[]
+    readonly historyFrom: string | null
+  } {
+    if (dependencies.missionModelEnabled !== true) {
+      return { input, positions: input.positions, historyFrom: input.historyFrom }
+    }
+    if (readParticipationScopeStatus() !== 'ready') {
+      throw new Error(
+        'Participant selection is unavailable; tracking history cannot be persisted safely.',
+      )
+    }
+    const scope = dependencies.readParticipationScope?.()
+    if (scope === undefined) {
+      throw new Error(
+        'Participant selection is unavailable; tracking history cannot be persisted safely.',
+      )
+    }
+    return {
+      input,
+      positions: input.positions.filter((position) =>
+        scope.includesAt(position.device_id, position.timestamp)),
+      historyFrom: scope.firstEvidenceTimestampAtOrAfter(
+        input.deviceId,
+        input.historyFrom,
+        input.reconciledUntil,
+      ),
     }
   }
 

@@ -868,6 +868,14 @@ export function getBrowserHarnessStore(): BrowserHarnessStore {
     },
     finishMission: async (missionId) => {
       const mission = requireMission(missionId, state.missions)
+      const incompleteBackfillCount = state.participantBackfillCheckpoints.filter(
+        (checkpoint) => checkpoint.mission_id === missionId && checkpoint.completed === 0,
+      ).length
+      if (incompleteBackfillCount > 0) {
+        throw new Error(
+          `Mission cannot be finished while ${incompleteBackfillCount} participant history backfill checkpoint(s) are incomplete. Keep the mission active and retry history backfill before finishing.`,
+        )
+      }
       const finishedMission = {
         ...mission,
         status: 'finished' as const,
