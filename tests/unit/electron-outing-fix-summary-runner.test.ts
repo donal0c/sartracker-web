@@ -18,7 +18,7 @@ const { runOutingFixSummaryInWorker } = require('../../electron/outing-fix-summa
     readonly unassigned_accepted_fix_count: number
     readonly total_accepted_fix_count: number
     readonly workerThreadId: number
-  }>
+  }> & { readonly workerExited?: Promise<void> }
 }
 
 let directory: string | undefined
@@ -62,5 +62,16 @@ describe('outing fix-summary worker', () => {
     })
     controller.abort()
     await expect(query).rejects.toMatchObject({ name: 'AbortError' })
+  })
+
+  it('settles the physical-exit fence when worker construction fails synchronously', async () => {
+    const query = runOutingFixSummaryInWorker({
+      databasePath: '/unused.sqlite',
+      query: { missionId: 'mission-1' },
+      workerPath: 'relative-worker-path-is-invalid.cjs',
+    })
+
+    await expect(query).rejects.toThrow(/worker|path/i)
+    await expect(query.workerExited).resolves.toBeUndefined()
   })
 })

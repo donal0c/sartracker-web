@@ -143,6 +143,12 @@ export function ParticipantControlsSection({ phase }: ParticipantControlsSection
                   History backfill: {participant.backfill_completed === 1 ? 'complete' : 'pending / retrying'}
                 </p>
               ) : null}
+              {participant.kind === 'group' &&
+              (participant.backfill_member_count ?? 0) > 0 ? (
+                <p className="mt-1 text-[11px] text-stone-300" data-testid="participant-backfill-status">
+                  History backfill: {formatGroupBackfillStatus(participant)}
+                </p>
+              ) : null}
             </div>
             <button
               className="sar-action-danger px-2 py-1 text-[11px]"
@@ -206,6 +212,17 @@ export function ParticipantControlsSection({ phase }: ParticipantControlsSection
       </div>
     </section>
   )
+}
+
+function formatGroupBackfillStatus(participant: {
+  readonly backfill_member_count?: number | null
+  readonly backfill_completed_count?: number | null
+}): string {
+  const total = participant.backfill_member_count ?? 0
+  const completed = participant.backfill_completed_count ?? 0
+  return completed === total
+    ? `complete for ${total}/${total} starting group members`
+    : `pending / retrying for ${total - completed}/${total} starting group members`
 }
 
 function ParticipantPickerList(props: {

@@ -83,18 +83,42 @@ export async function startParticipantRuntime(
   let backfillCheckpoints: readonly ParticipantBackfillCheckpoint[] = []
   let availableDevices: readonly NormalizedTrackingDevice[] = []
   let availableRosterComplete = false
+  let rosterObservationReceived = false
   let availableGroups: readonly NormalizedTraccarGroup[] = []
   let draftDeviceIds: readonly string[] = []
   let draftGroupIds: readonly string[] = []
   let membershipNotices: readonly string[] = []
   let loading = false
   let saving = false
-  let rosterError: string | null = null
+  let rosterReadError: string | null = null
+  let membershipWriteError: string | null = null
   let error: string | null = null
   let refreshToken = 0
+  let missionGeneration = 0
+  let selectionGeneration = 0
+  let lastReconciledMissionGeneration = -1
+  let nextRosterObservationVersion = 0
+  let pendingRosterObservation: RosterObservation | null = null
+  let rosterReconciliationRunning = false
+  const rosterWaiters: Array<{
+    readonly version: number
+    readonly resolve: () => void
+  }> = []
 
   const controller: ParticipantRuntimeController = {
     refreshMission: async (missionId) => {
+      const previousMissionId = activeMissionId
+      const missionChanged = activeMissionId !== missionId
+      if (missionChanged) {
+        missionGeneration += 1
+        selectionGeneration += 1
+        lastReconciledMissionGeneration = -1
+        saving = false
+        if (previousMissionId !== null) {
+          draftDeviceIds = []
+          draftGroupIds = []
+        }
+      }
       const token = ++refreshToken
       activeMissionId = missionId
       error = null
@@ -139,49 +163,45 @@ export async function startParticipantRuntime(
         if (activeMissionId !== missionIdBeforeRefresh || error !== null) return
       }
       const rosterChanged = !areRostersEquivalent(availableDevices, devices)
-      const becameComplete = options.complete && !availableRosterComplete
-      const errorCleared = rosterError !== null
-      if (!rosterChanged && !errorCleared && !becameComplete) return
+      const completenessChanged = options.complete !== availableRosterComplete
+      const readErrorCleared = rosterReadError !== null
+      const retryRequired = membershipWriteError !== null
+      const missionNeedsReconciliation =
+        activeMissionId !== null && lastReconciledMissionGeneration !== missionGeneration
+      if (
+        !rosterChanged &&
+        !completenessChanged &&
+        !readErrorCleared &&
+        !retryRequired &&
+        !missionNeedsReconciliation
+      ) return
       if (rosterChanged) availableDevices = [...devices]
       availableRosterComplete = options.complete
-      rosterError = null
-      publishRuntime()
-      if (!rosterChanged && !becameComplete) return
+      rosterObservationReceived = true
+      rosterReadError = null
+      if (rosterChanged || completenessChanged || readErrorCleared) publishRuntime()
       const missionId = activeMissionId
       if (missionId === null) return
-
-      const changes = collectMembershipChanges(
-        participants,
-        membershipEvents,
-        availableDevices,
+      const version = ++nextRosterObservationVersion
+      pendingRosterObservation = {
+        version,
+        missionId,
+        missionGeneration,
+        devices: [...availableDevices],
         observedAt,
-        options.complete,
-      )
-      if (changes.length === 0) return
-      try {
-        const inserted = await dependencies.participantStore.recordGroupMembershipEvents({
-          mission_id: missionId,
-          events: changes,
-        })
-        if (activeMissionId !== missionId || inserted.length === 0) return
-        membershipEvents = [...membershipEvents, ...inserted]
-        membershipNotices = [
-          ...membershipNotices,
-          ...inserted.map((event) => membershipNotice(event, participants)),
-        ]
-        publishRuntime()
-      } catch (runtimeError) {
-        rosterError = `Group membership could not be recorded: ${toErrorMessage(runtimeError)}`
-        publishRuntime()
+        complete: options.complete,
       }
+      return new Promise<void>((resolve) => {
+        rosterWaiters.push({ version, resolve })
+        void drainRosterReconciliation()
+      })
     },
     applyGroups: (groups) => {
       availableGroups = [...groups]
-      rosterError = null
       publishRuntime()
     },
     reportRosterError: (message) => {
-      rosterError = message
+      rosterReadError = message
       publishRuntime()
     },
     toggleDraftDevice: (deviceId) => {
@@ -212,6 +232,15 @@ export async function startParticipantRuntime(
       publishRuntime()
     },
     selectInitialParticipants: async (missionId, selectedBy) => {
+      if (draftGroupIds.length > 0 && !canSelectGroups()) {
+        const selectionError = incompleteRosterSelectionError()
+        rosterReadError = selectionError.message
+        error = selectionError.message
+        publishRuntime()
+        throw selectionError
+      }
+      const operationGeneration = ++selectionGeneration
+      if (activeMissionId !== missionId) missionGeneration += 1
       saving = true
       error = null
       activeMissionId = missionId
@@ -232,21 +261,31 @@ export async function startParticipantRuntime(
           devices: draftDeviceIds.map((deviceId) => ({ traccar_device_id: deviceId })),
           selected_by: selectedBy,
         })
+        if (activeMissionId !== missionId || selectionGeneration !== operationGeneration) {
+          return selected
+        }
         draftDeviceIds = []
         draftGroupIds = []
         await controller.refreshMission(missionId)
         return selected
       } catch (runtimeError) {
-        error = toErrorMessage(runtimeError)
-        publishRuntime()
+        if (activeMissionId === missionId && selectionGeneration === operationGeneration) {
+          error = toErrorMessage(runtimeError)
+          publishRuntime()
+        }
         throw runtimeError
       } finally {
-        saving = false
-        publishRuntime()
+        if (activeMissionId === missionId && selectionGeneration === operationGeneration) {
+          saving = false
+          publishRuntime()
+        }
       }
     },
     addParticipant: async (input) => mutate(async (missionId) => {
       const participantRef = input.ref
+      if (input.kind === 'group' && !canSelectGroups()) {
+        throw incompleteRosterSelectionError()
+      }
       const observedInput = input.kind === 'group' && typeof participantRef !== 'string'
         ? {
             ...input,
@@ -306,6 +345,12 @@ export async function startParticipantRuntime(
       participants,
       membershipEvents,
       backfillCheckpoints,
+      observedCurrentDeviceIds: collectObservedCurrentGroupMembers(
+        participants,
+        availableDevices,
+        now().toISOString(),
+        rosterObservationReceived,
+      ),
     })
     dependencies.applyRuntime({
       activeMissionId,
@@ -318,13 +363,124 @@ export async function startParticipantRuntime(
       draftGroupIds,
       membershipNotices,
       scope,
-      envelope: assessParticipantEnvelope(scope.activeDeviceIdsAt(now().toISOString())),
+      envelope: assessParticipantEnvelope(scope.operationalDeviceIdsAt(now().toISOString())),
       loading,
       saving,
-      rosterError,
+      rosterError: currentRosterError(),
       error,
     })
   }
+
+  /** Coalesces roster churn while preserving ordered durable membership truth. */
+  async function drainRosterReconciliation(): Promise<void> {
+    if (rosterReconciliationRunning) return
+    rosterReconciliationRunning = true
+    try {
+      while (pendingRosterObservation !== null) {
+        const observation = pendingRosterObservation
+        pendingRosterObservation = null
+        if (
+          activeMissionId !== observation.missionId ||
+          missionGeneration !== observation.missionGeneration
+        ) {
+          resolveRosterWaiters(observation.version)
+          continue
+        }
+        const changes = collectMembershipChanges(
+          participants,
+          membershipEvents,
+          observation.devices,
+          observation.observedAt,
+          observation.complete,
+        )
+        if (changes.length === 0) {
+          membershipWriteError = null
+          lastReconciledMissionGeneration = observation.missionGeneration
+          publishRuntime()
+          resolveRosterWaiters(observation.version)
+          continue
+        }
+        try {
+          const inserted = await dependencies.participantStore.recordGroupMembershipEvents({
+            mission_id: observation.missionId,
+            events: changes,
+          })
+          if (
+            activeMissionId === observation.missionId &&
+            missionGeneration === observation.missionGeneration
+          ) {
+            membershipWriteError = null
+            lastReconciledMissionGeneration = observation.missionGeneration
+            if (inserted.length > 0) {
+              membershipEvents = [...membershipEvents, ...inserted]
+              membershipNotices = [
+                ...membershipNotices,
+                ...inserted.map((event) => membershipNotice(event, participants)),
+              ]
+            } else {
+              const reloadedEvents = await dependencies.participantStore
+                .listGroupMembershipEvents(observation.missionId)
+              if (
+                activeMissionId !== observation.missionId ||
+                missionGeneration !== observation.missionGeneration
+              ) continue
+              membershipEvents = reloadedEvents
+            }
+            publishRuntime()
+          }
+        } catch (runtimeError) {
+          if (
+            activeMissionId === observation.missionId &&
+            missionGeneration === observation.missionGeneration
+          ) {
+            membershipWriteError =
+              `Group membership could not be recorded: ${toErrorMessage(runtimeError)}`
+            lastReconciledMissionGeneration = -1
+            publishRuntime()
+          }
+        } finally {
+          resolveRosterWaiters(observation.version)
+        }
+      }
+    } finally {
+      rosterReconciliationRunning = false
+      if (pendingRosterObservation !== null) void drainRosterReconciliation()
+    }
+  }
+
+  /** Settles every roster caller whose observation has now been processed or superseded. */
+  function resolveRosterWaiters(version: number): void {
+    for (let index = rosterWaiters.length - 1; index >= 0; index -= 1) {
+      const waiter = rosterWaiters[index]
+      if (waiter !== undefined && waiter.version <= version) {
+        rosterWaiters.splice(index, 1)
+        waiter.resolve()
+      }
+    }
+  }
+
+  /** Allows group selection only when its complete starting membership is known. */
+  function canSelectGroups(): boolean {
+    return rosterObservationReceived && availableRosterComplete
+  }
+
+  /** Combines roster read/completeness and durable reconciliation failures for the operator. */
+  function currentRosterError(): string | null {
+    return rosterReadError ?? membershipWriteError ?? (
+      rosterObservationReceived && !availableRosterComplete
+        ? incompleteRosterSelectionError().message
+        : null
+    )
+  }
+}
+
+type RosterObservation = {
+  readonly version: number
+  readonly missionId: string
+  readonly missionGeneration: number
+  readonly devices: readonly NormalizedTrackingDevice[]
+  readonly observedAt: string
+  readonly complete: boolean
 }
 
 /** Narrows the optional MissionStore participant surface after boot validation. */
@@ -391,6 +547,37 @@ function collectMembershipChanges(
     }
   }
   return changes
+}
+
+/** Returns only current positive roster observations for active selected groups. */
+function collectObservedCurrentGroupMembers(
+  participants: readonly MissionParticipant[],
+  devices: readonly NormalizedTrackingDevice[],
+  observedAt: string,
+  rosterObservationReceived: boolean,
+): readonly string[] {
+  if (!rosterObservationReceived) return []
+  const selectedGroupIds = new Set(participants
+    .filter((participant) =>
+      participant.kind === 'group' &&
+      participant.traccar_group_id !== null &&
+      participant.effective_from <= observedAt &&
+      (participant.removed_at === null || observedAt < participant.removed_at))
+    .map((participant) => participant.traccar_group_id!))
+  return devices
+    .filter((device) =>
+      device.group_id !== null &&
+      device.group_id !== undefined &&
+      selectedGroupIds.has(device.group_id))
+    .map((device) => device.device_id)
+    .sort()
+}
+
+/** Creates the stable fail-closed message used by start and later group selection. */
+function incompleteRosterSelectionError(): Error {
+  return new Error(
+    'Traccar roster is incomplete. Group selection is unavailable until a complete roster is received; individual device selection remains available.',
+  )
 }
 
 function membershipNotice(

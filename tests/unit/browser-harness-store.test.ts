@@ -299,6 +299,11 @@ describe('browser harness store', () => {
     })
     const teamId = participants.find((participant) => participant.kind === 'group')?.mission_team_id
     expect(teamId).toBeTruthy()
+    expect((await store.listMissionParticipants(mission.id))
+      .find((participant) => participant.kind === 'group')).toMatchObject({
+        backfill_member_count: 1,
+        backfill_completed_count: 0,
+      })
     await store.recordGroupMembershipEvents({
       mission_id: mission.id,
       events: [{
@@ -326,6 +331,15 @@ describe('browser harness store', () => {
         expect.objectContaining({ traccar_device_id: '20', completed: 1 }),
       ]),
     )
+
+    await expect(store.upsertParticipantBackfillCheckpoint({
+      mission_id: mission.id,
+      traccar_device_id: '20',
+      window_from: '2026-08-20T08:00:00.000Z',
+      window_to: '2026-08-20T09:00:00.000Z',
+      reconciled_until: '2026-08-20T08:30:00.000Z',
+      completed: false,
+    })).rejects.toThrow(/completion.*irreversible|cursor.*decrease/i)
   })
 
   it('mirrors the active participant uniqueness backstops [DON-271]', async () => {
@@ -352,10 +366,16 @@ describe('browser harness store', () => {
       selected_by: 'Coordinator A',
     }
     await store.selectMissionParticipants(directSelection)
+    const [directParticipant] = await store.listMissionParticipants(mission.id)
     await expect(store.selectMissionParticipants(directSelection)).rejects.toThrow(/already active/i)
     await expect(store.listMissionParticipants(mission.id)).resolves.toHaveLength(1)
 
     await store.finishMission(mission.id)
+    await expect(store.removeMissionParticipant({
+      mission_id: mission.id,
+      participant_id: directParticipant!.id,
+      removed_by: 'Coordinator A',
+    })).rejects.toThrow(/finished.*read-only|finished mission/i)
     const groupMission = await store.createMission({
       name: 'Group-covered Harness Mission',
       start_time: '2026-08-20T08:00:00.000Z',

@@ -12,9 +12,16 @@ function runOutingFixSummaryInWorker(input) {
   let resolveWorkerExit
   const workerExited = new Promise((resolve) => { resolveWorkerExit = resolve })
   const result = new Promise((resolve, reject) => {
-    const worker = new Worker(input.workerPath ?? DEFAULT_WORKER_PATH, {
-      workerData: { databasePath: input.databasePath, query: input.query },
-    })
+    let worker
+    try {
+      worker = new Worker(input.workerPath ?? DEFAULT_WORKER_PATH, {
+        workerData: { databasePath: input.databasePath, query: input.query },
+      })
+    } catch (error) {
+      resolveWorkerExit()
+      reject(new Error(`Outing fix-summary worker failed to start: ${safeMessage(error?.message)}`))
+      return
+    }
     let settled = false
     let completedResult = null
     const cleanup = () => {

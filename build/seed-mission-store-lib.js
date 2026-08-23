@@ -1,6 +1,6 @@
 import path from 'node:path'
 
-export const FIXTURE_GENERATOR_VERSION = 3
+export const FIXTURE_GENERATOR_VERSION = 4
 
 const DAY_MS = 24 * 60 * 60 * 1000
 const MIB = 1024 * 1024
@@ -184,6 +184,7 @@ export function createBreadcrumbProgrammeScenario(plan) {
     qualification: plan.qualification,
     groupCount: 12,
     selectedGroupCount: 11,
+    activeParticipantCount: 100,
     groupSizes: Object.freeze([12, 11, 10, 9, 9, 8, 8, 7, 7, 7, 6, 6]),
     outingCount: outings.length,
     outings: Object.freeze(outings),

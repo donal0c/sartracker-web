@@ -240,6 +240,11 @@ function createParticipantStore(options) {
       )
       validateBackfillWindow(mission, windowFrom, windowTo, reconciledUntil)
       const completed = input?.completed === true ? 1 : 0
+      if ((reconciledUntil === windowTo) !== (completed === 1)) {
+        throw new Error(
+          'Completed participant backfill must have its cursor at the fixed window end.',
+        )
+      }
       const updatedAt = readNow()
       const transaction = db.transaction(() => {
         const existing = db.prepare(`SELECT * FROM participant_backfill_checkpoints
@@ -247,6 +252,15 @@ function createParticipantStore(options) {
           .get(mission.id, deviceId, windowFrom)
         if (existing !== undefined && existing.window_to !== windowTo) {
           throw new Error('Participant backfill window edges are immutable.')
+        }
+        if (existing?.completed === 1 && completed !== 1) {
+          throw new Error('Participant backfill completion is irreversible.')
+        }
+        if (
+          existing !== undefined &&
+          reconciledUntil < existing.reconciled_until
+        ) {
+          throw new Error('Participant backfill cursor cannot decrease or rewind.')
         }
         db.prepare(`INSERT INTO participant_backfill_checkpoints (
             mission_id, traccar_device_id, window_from, window_to,
@@ -415,7 +429,34 @@ function listMissionParticipants(db, missionId) {
   return db.prepare(`SELECT participant.*, team.traccar_group_id, team.name AS team_name,
       checkpoint.window_to AS backfill_window_to,
       checkpoint.reconciled_until AS backfill_reconciled_until,
-      checkpoint.completed AS backfill_completed
+      checkpoint.completed AS backfill_completed,
+      CASE WHEN participant.kind = 'group' THEN (
+        SELECT COUNT(DISTINCT group_checkpoint.traccar_device_id)
+        FROM mission_group_membership_events AS initial_membership
+        INNER JOIN participant_backfill_checkpoints AS group_checkpoint
+          ON group_checkpoint.mission_id = initial_membership.mission_id
+         AND group_checkpoint.traccar_device_id = initial_membership.traccar_device_id
+         AND group_checkpoint.window_from = participant.effective_from
+         AND group_checkpoint.window_to = participant.added_at
+        WHERE initial_membership.mission_id = participant.mission_id
+          AND initial_membership.mission_team_id = participant.mission_team_id
+          AND initial_membership.change = 'member'
+          AND initial_membership.observed_at = participant.added_at
+      ) ELSE NULL END AS backfill_member_count,
+      CASE WHEN participant.kind = 'group' THEN (
+        SELECT COUNT(DISTINCT CASE WHEN group_checkpoint.completed = 1
+          THEN group_checkpoint.traccar_device_id END)
+        FROM mission_group_membership_events AS initial_membership
+        INNER JOIN participant_backfill_checkpoints AS group_checkpoint
+          ON group_checkpoint.mission_id = initial_membership.mission_id
+         AND group_checkpoint.traccar_device_id = initial_membership.traccar_device_id
+         AND group_checkpoint.window_from = participant.effective_from
+         AND group_checkpoint.window_to = participant.added_at
+        WHERE initial_membership.mission_id = participant.mission_id
+          AND initial_membership.mission_team_id = participant.mission_team_id
+          AND initial_membership.change = 'member'
+          AND initial_membership.observed_at = participant.added_at
+      ) ELSE NULL END AS backfill_completed_count
     FROM mission_participants AS participant
     LEFT JOIN mission_teams AS team ON team.id = participant.mission_team_id
     LEFT JOIN participant_backfill_checkpoints AS checkpoint
@@ -542,7 +583,9 @@ function requireMission(db, missionId) {
 
 function requireMutableMission(db, missionId) {
   const mission = requireMission(db, missionId)
-  if (mission.status === 'finalized') throw new Error('Finalized missions are read-only.')
+  if (mission.status === 'finished' || mission.status === 'finalized') {
+    throw new Error('Finished and finalized missions are read-only for participant changes.')
+  }
   return mission
 }
 

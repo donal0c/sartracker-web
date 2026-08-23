@@ -58,8 +58,8 @@ test.describe('mission participants [DON-271]', () => {
     await bravoRow.getByRole('button', { name: 'Remove' }).click()
     await expect(page.getByTestId('participant-active-list')).not.toContainText('Bravo Team')
 
-    await injectTwoDeviceSnapshot(page)
-    await expect(page.getByTestId('tracking-status')).toContainText('1')
+    await injectSnapshotWithoutCurrentFixes(page)
+    await expect(page.getByTestId('tracking-status')).toContainText('2')
     const retainedEvidenceDeviceIds = await page.evaluate(() =>
       window.__SARTRACKER_BROWSER_HARNESS__?.readState().positions.map((position) => position.device_id),
     )
@@ -83,6 +83,9 @@ test.describe('mission participants [DON-271]', () => {
     await expect(groupCoveredDevice).toBeDisabled()
     await page.getByTestId('mission-name-input').fill('Group Follow Mission')
     await page.getByTestId('mission-start-btn').click()
+    await expect(page.getByTestId('participant-backfill-status')).toContainText(
+      '1/1 starting group members',
+    )
 
     await page.evaluate(async () => {
       await window.__SARTRACKER_BROWSER_HARNESS__?.setParticipantDiscovery({
@@ -254,6 +257,19 @@ async function injectTwoDeviceSnapshot(page: import('@playwright/test').Page): P
       positions,
       breadcrumbs: positions,
       rawBreadcrumbsForPersistence: positions,
+    })
+  })
+}
+
+async function injectSnapshotWithoutCurrentFixes(
+  page: import('@playwright/test').Page,
+): Promise<void> {
+  await page.evaluate(async () => {
+    await window.__SARTRACKER_BROWSER_HARNESS__?.injectTrackingSnapshot({
+      devices: [],
+      positions: [],
+      breadcrumbs: [],
+      rawBreadcrumbsForPersistence: [],
     })
   })
 }

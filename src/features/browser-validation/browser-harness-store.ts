@@ -616,6 +616,19 @@ export function getBrowserHarnessStore(): BrowserHarnessStore {
                 candidate.mission_id === participant.mission_id &&
                 candidate.traccar_device_id === participant.traccar_device_id &&
                 candidate.window_from === participant.effective_from)
+          const groupCheckpoints = participant.kind !== 'group'
+            ? []
+            : state.groupMembershipEvents
+                .filter((event) =>
+                  event.mission_id === participant.mission_id &&
+                  event.mission_team_id === participant.mission_team_id &&
+                  event.change === 'member' &&
+                  event.observed_at === participant.added_at)
+                .flatMap((event) => state.participantBackfillCheckpoints.filter((candidate) =>
+                  candidate.mission_id === participant.mission_id &&
+                  candidate.traccar_device_id === event.traccar_device_id &&
+                  candidate.window_from === participant.effective_from &&
+                  candidate.window_to === participant.added_at))
           return {
             ...participant,
             ...(checkpoint === undefined
@@ -624,6 +637,15 @@ export function getBrowserHarnessStore(): BrowserHarnessStore {
                   backfill_window_to: checkpoint.window_to,
                   backfill_reconciled_until: checkpoint.reconciled_until,
                   backfill_completed: checkpoint.completed,
+                }),
+            ...(participant.kind !== 'group'
+              ? {}
+              : {
+                  backfill_member_count: new Set(groupCheckpoints.map((entry) =>
+                    entry.traccar_device_id)).size,
+                  backfill_completed_count: new Set(groupCheckpoints
+                    .filter((entry) => entry.completed === 1)
+                    .map((entry) => entry.traccar_device_id)).size,
                 }),
           }
         })
@@ -682,6 +704,20 @@ export function getBrowserHarnessStore(): BrowserHarnessStore {
         checkpoint.window_from === input.window_from)
       if (existing !== undefined && existing.window_to !== input.window_to) {
         throw new Error('Participant backfill window edges are immutable.')
+      }
+      if ((input.reconciled_until === input.window_to) !== input.completed) {
+        throw new Error(
+          'Completed participant backfill must have its cursor at the fixed window end.',
+        )
+      }
+      if (existing?.completed === 1 && !input.completed) {
+        throw new Error('Participant backfill completion is irreversible.')
+      }
+      if (
+        existing !== undefined &&
+        input.reconciled_until < existing.reconciled_until
+      ) {
+        throw new Error('Participant backfill cursor cannot decrease or rewind.')
       }
       const checkpoint: ParticipantBackfillCheckpoint = {
         mission_id: input.mission_id,
@@ -1688,13 +1724,15 @@ function ensureMissionMutable(missionId: string, missions: readonly Mission[]): 
   return mission
 }
 
-/** Allows participant bookkeeping until mission finalization locks the record. */
+/** Locks participant truth before finished-state archival can begin. */
 function requireMutableParticipantMission(
   missionId: string,
   missions: readonly Mission[],
 ): Mission {
   const mission = requireMission(missionId, missions)
-  if (mission.status === 'finalized') throw new Error('Finalized missions are read-only.')
+  if (mission.status === 'finished' || mission.status === 'finalized') {
+    throw new Error('Finished and finalized missions are read-only for participant changes.')
+  }
   return mission
 }
 

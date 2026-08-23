@@ -261,6 +261,11 @@ function seedBreadcrumbProgrammeDatabase({ databasePath, plan, progress, faultIn
     }
     insertLegacyNoOutingPositions(db, insertPosition)
     insertBreadcrumbProgrammeAnomalies(db, scenario)
+    assertBreadcrumbProgrammePositionScopeInvariants(
+      db,
+      FIXTURE_MISSION_ID,
+      scenario.activeParticipantCount,
+    )
 
     const integrityResult = db.pragma('integrity_check', { simple: true })
     if (integrityResult !== 'ok') {
@@ -400,9 +405,12 @@ function insertBreadcrumbProgrammeFoundation(db, plan, scenario) {
 
     const participantFixtures = [
       { deviceIndex: 99, provenance: 'legacy_auto', effectiveDay: 0, addedDay: 0 },
+      { deviceIndex: 98, provenance: 'explicit', effectiveDay: 0, addedDay: 0 },
       { deviceIndex: 97, provenance: 'explicit', effectiveDay: 0, addedDay: 0, removedDay: 8 },
-      { deviceIndex: 95, provenance: 'explicit', effectiveDay: 2, addedDay: 3 },
-      { deviceIndex: 94, provenance: 'explicit', effectiveDay: 4, addedDay: 5 },
+      { deviceIndex: 97, provenance: 'explicit', effectiveDay: 8, addedDay: 8 },
+      { deviceIndex: 96, provenance: 'explicit', effectiveDay: 0, addedDay: 0 },
+      { deviceIndex: 95, provenance: 'explicit', effectiveDay: 0, addedDay: 1 },
+      { deviceIndex: 94, provenance: 'explicit', effectiveDay: 0, addedDay: 1 },
     ]
     for (let index = 0; index < participantFixtures.length; index += 1) {
       const fixture = participantFixtures[index]
@@ -426,20 +434,20 @@ function insertBreadcrumbProgrammeFoundation(db, plan, scenario) {
     insertCheckpoint.run(
       FIXTURE_MISSION_ID,
       programmeDeviceId(95),
-      isoDay(2),
-      isoDay(3),
-      isoDay(3),
+      isoDay(0),
+      isoDay(1),
+      isoDay(1),
       1,
-      isoDay(3),
+      isoDay(1),
     )
     insertCheckpoint.run(
       FIXTURE_MISSION_ID,
       programmeDeviceId(94),
-      isoDay(4),
-      isoDay(5),
-      new Date(FIXTURE_START_MS + 4 * 24 * 60 * 60 * 1000 + 2 * 60 * 60 * 1000).toISOString(),
+      isoDay(0),
+      isoDay(1),
+      new Date(FIXTURE_START_MS + 2 * 60 * 60 * 1000).toISOString(),
       0,
-      isoDay(5),
+      isoDay(1),
     )
 
     const movedDeviceId = programmeDeviceId(0)
@@ -505,7 +513,7 @@ function insertBreadcrumbProgrammeFoundation(db, plan, scenario) {
       'synthetic-legacy-imei-000001',
     )
     insertParticipant.run(
-      createDeterministicId('participant', 16),
+      createDeterministicId('participant', 19),
       legacyMissionId,
       'device',
       legacyDeviceId,
@@ -552,6 +560,72 @@ export function assertBreadcrumbProgrammeSelectionInvariants(db, missionId) {
   if (overlap !== undefined) {
     throw new Error(
       `Breadcrumb programme fixture has direct participant ${overlap.traccar_device_id} already covered by a selected group.`,
+    )
+  }
+}
+
+/** Rejects every fixture row that production flag-on participation would refuse. */
+export function assertBreadcrumbProgrammePositionScopeInvariants(
+  db,
+  missionId,
+  expectedActiveDeviceCount,
+) {
+  const participants = db.prepare(`SELECT kind, traccar_device_id, mission_team_id,
+      effective_from, removed_at
+    FROM mission_participants WHERE mission_id = ?`).all(missionId)
+  const membershipEvents = db.prepare(`SELECT mission_team_id, traccar_device_id,
+      change, observed_at, sequence
+    FROM mission_group_membership_events WHERE mission_id = ?
+    ORDER BY observed_at DESC, sequence DESC`).all(missionId)
+  const directByDevice = new Map()
+  const groupsByTeam = new Map()
+  const eventsByDevice = new Map()
+  for (const participant of participants) {
+    const index = participant.kind === 'device' ? directByDevice : groupsByTeam
+    const key = participant.kind === 'device'
+      ? participant.traccar_device_id
+      : participant.mission_team_id
+    const values = index.get(key) ?? []
+    values.push(participant)
+    index.set(key, values)
+  }
+  for (const event of membershipEvents) {
+    const values = eventsByDevice.get(event.traccar_device_id) ?? []
+    values.push(event)
+    eventsByDevice.set(event.traccar_device_id, values)
+  }
+
+  const includesAt = (deviceId, timestamp) => {
+    if ((directByDevice.get(deviceId) ?? []).some((participant) =>
+      participant.effective_from <= timestamp &&
+      (participant.removed_at === null || timestamp < participant.removed_at))) return true
+    const resolvedTeams = new Set()
+    for (const event of eventsByDevice.get(deviceId) ?? []) {
+      if (event.observed_at > timestamp || resolvedTeams.has(event.mission_team_id)) continue
+      resolvedTeams.add(event.mission_team_id)
+      if (
+        event.change === 'member' &&
+        (groupsByTeam.get(event.mission_team_id) ?? []).some((participant) =>
+          participant.effective_from <= timestamp &&
+          (participant.removed_at === null || timestamp < participant.removed_at))
+      ) return true
+    }
+    return false
+  }
+
+  const positionedDeviceIds = new Set()
+  for (const position of db.prepare(`SELECT device_id, timestamp FROM positions
+    WHERE mission_id = ? ORDER BY device_id, timestamp`).iterate(missionId)) {
+    positionedDeviceIds.add(position.device_id)
+    if (!includesAt(position.device_id, position.timestamp)) {
+      throw new Error(
+        `Breadcrumb programme fixture position for ${position.device_id} at ${position.timestamp} is outside participation-at-fix-time.`,
+      )
+    }
+  }
+  if (positionedDeviceIds.size !== expectedActiveDeviceCount) {
+    throw new Error(
+      `Breadcrumb programme fixture expected ${expectedActiveDeviceCount} active positioned participants; found ${positionedDeviceIds.size}.`,
     )
   }
 }

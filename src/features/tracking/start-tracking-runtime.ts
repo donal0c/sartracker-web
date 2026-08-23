@@ -36,6 +36,7 @@ import type {
   PersistTrackingHistoryBatchInput,
 } from '../../infrastructure/mission-store/tauri-mission-store'
 import { runParticipantBackfillPass } from '../participants/participant-backfill-runtime'
+import { createOperationalPositionRetention } from '../participants/operational-position-retention'
 
 export type TrackingRuntimeConfig = {
   readonly baseUrl: string
@@ -355,6 +356,7 @@ export async function startTrackingRuntime(
       }
     | null = null
   let participantBackfillInFlight = false
+  const operationalPositionRetention = createOperationalPositionRetention()
   let deferredOperationalSnapshot: {
     readonly snapshot: TrackingSnapshot
     readonly historyResetKey: string | null
@@ -680,7 +682,10 @@ export async function startTrackingRuntime(
     },
     onSnapshot: async (snapshot, context) => {
       applyParticipantRosterWithoutBlocking(snapshot.devices, context)
-      const operationalSnapshot = filterOperationalSnapshot(snapshot)
+      const operationalSnapshot = filterOperationalSnapshot(
+        snapshot,
+        context?.historyResetKey ?? currentOperationalContextKey(),
+      )
       const sideEffects: Promise<unknown>[] = []
       let missionPersistenceResultIndex: number | null = null
       if (operationalSnapshot === null) {
@@ -836,7 +841,10 @@ export async function startTrackingRuntime(
     if (readParticipationScopeStatus() === 'ready') {
       const pendingSnapshot = deferredOperationalSnapshot
       if (pendingSnapshot !== null) {
-        const operationalSnapshot = filterOperationalSnapshot(pendingSnapshot.snapshot)
+        const operationalSnapshot = filterOperationalSnapshot(
+          pendingSnapshot.snapshot,
+          pendingSnapshot.historyResetKey ?? currentOperationalContextKey(),
+        )
         if (operationalSnapshot !== null) {
           deferredOperationalSnapshot = null
           dependencies.applySnapshot(operationalSnapshot)
@@ -1115,11 +1123,20 @@ export async function startTrackingRuntime(
   }
 
   /** Applies current visibility only after the mission participant scope is trustworthy. */
-  function filterOperationalSnapshot(snapshot: TrackingSnapshot): TrackingSnapshot | null {
+  function filterOperationalSnapshot(
+    snapshot: TrackingSnapshot,
+    contextKey = currentOperationalContextKey(),
+  ): TrackingSnapshot | null {
     if (dependencies.missionModelEnabled !== true) return snapshot
     if (readParticipationScopeStatus() !== 'ready') return null
     const scope = dependencies.readParticipationScope?.()
-    return scope?.filterSnapshot(snapshot, now().toISOString()) ?? null
+    if (scope === undefined) return null
+    return operationalPositionRetention.apply(snapshot, scope, now(), contextKey)
+  }
+
+  /** Keeps retained current positions isolated to one mission runtime context. */
+  function currentOperationalContextKey(): string {
+    return useMissionStore.getState().currentMission?.id ?? 'no-active-mission'
   }
 
   /** Applies evidence windows independently from immediate current-position visibility. */
@@ -1158,7 +1175,12 @@ export async function startTrackingRuntime(
   ): void {
     // Polling emits an application-owned empty idle snapshot before a mission.
     // It is not a roster observation and must not erase GET-only discovery.
-    if (context?.participantRosterAuthoritative === false && devices.length === 0) return
+    if (
+      context?.participantRosterAuthoritative === false &&
+      devices.length === 0 &&
+      (dependencies.readParticipationScopeStatus === undefined ||
+        readParticipationScopeStatus() === 'ready')
+    ) return
     try {
       const update = context?.participantRosterAuthoritative === false
         ? dependencies.applyParticipantRoster?.(devices, { complete: false })

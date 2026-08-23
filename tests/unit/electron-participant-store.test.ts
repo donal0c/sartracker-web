@@ -23,6 +23,8 @@ type Participant = {
   readonly mission_team_id: string | null
   readonly effective_from: string
   readonly removed_at: string | null
+  readonly backfill_member_count?: number | null
+  readonly backfill_completed_count?: number | null
 }
 
 type ElectronParticipantStore = {
@@ -50,6 +52,7 @@ type ElectronParticipantStore = {
     readonly timestamp: string
   }[]>
   readonly upsertDevicesBulk: (input: unknown) => Promise<unknown>
+  readonly finishMission: (missionId: string) => Promise<{ readonly status: string }>
 }
 
 let stores: ElectronParticipantStore[] = []
@@ -107,6 +110,49 @@ describe('Electron participant store [DON-271]', () => {
     ])
     expect((await store.listMissionEvents(mission.id)).map((event) => event.event_type))
       .toContain('participants_selected')
+  })
+
+  it('reports aggregate group-member backfill progress on the selected group row', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-08-20T10:00:00.000Z'))
+    const store = await createStore()
+    const mission = await store.createMission({
+      name: 'Group backfill visibility mission',
+      start_time: '2026-08-20T08:00:00.000Z',
+    })
+    await store.selectMissionParticipants({
+      mission_id: mission.id,
+      groups: [{
+        traccar_group_id: '101',
+        name: 'Kerry MRT',
+        member_device_ids: ['11', '12'],
+      }],
+      devices: [],
+      selected_by: 'Coordinator A',
+    })
+
+    await expect(store.listMissionParticipants(mission.id)).resolves.toEqual([
+      expect.objectContaining({
+        kind: 'group',
+        backfill_member_count: 2,
+        backfill_completed_count: 0,
+      }),
+    ])
+
+    await store.upsertParticipantBackfillCheckpoint({
+      mission_id: mission.id,
+      traccar_device_id: '11',
+      window_from: '2026-08-20T08:00:00.000Z',
+      window_to: '2026-08-20T10:00:00.000Z',
+      reconciled_until: '2026-08-20T10:00:00.000Z',
+      completed: true,
+    })
+    await expect(store.listMissionParticipants(mission.id)).resolves.toEqual([
+      expect.objectContaining({
+        backfill_member_count: 2,
+        backfill_completed_count: 1,
+      }),
+    ])
   })
 
   it('rejects an initial selection that covers one device directly and through a group', async () => {
@@ -272,6 +318,45 @@ describe('Electron participant store [DON-271]', () => {
     await expect(store.listMissionParticipants(mission.id)).resolves.toHaveLength(2)
   })
 
+  it('rejects participant, membership, and checkpoint writes as soon as a mission is finished', async () => {
+    const store = await createStore()
+    const mission = await store.createMission({
+      name: 'Finished participant fence mission',
+      start_time: '2026-08-20T08:00:00.000Z',
+    })
+    const [participant] = await store.selectMissionParticipants({
+      mission_id: mission.id,
+      groups: [],
+      devices: [{ traccar_device_id: '20' }],
+      selected_by: 'Coordinator A',
+    })
+    await store.finishMission(mission.id)
+
+    await expect(store.addMissionParticipant({
+      mission_id: mission.id,
+      kind: 'device',
+      ref: '21',
+      confirmed_by: 'Coordinator A',
+    })).rejects.toThrow(/finished.*read-only|finished mission/i)
+    await expect(store.removeMissionParticipant({
+      mission_id: mission.id,
+      participant_id: participant!.id,
+      removed_by: 'Coordinator A',
+    })).rejects.toThrow(/finished.*read-only|finished mission/i)
+    await expect(store.recordGroupMembershipEvents({
+      mission_id: mission.id,
+      events: [],
+    })).rejects.toThrow(/finished.*read-only|finished mission/i)
+    await expect(store.upsertParticipantBackfillCheckpoint({
+      mission_id: mission.id,
+      traccar_device_id: '20',
+      window_from: '2026-08-20T08:00:00.000Z',
+      window_to: '2026-08-20T09:00:00.000Z',
+      reconciled_until: '2026-08-20T08:00:00.000Z',
+      completed: false,
+    })).rejects.toThrow(/finished.*read-only|finished mission/i)
+  })
+
   it('change-gates append-only group membership observations', async () => {
     const store = await createStore()
     const mission = await store.createMission({
@@ -332,6 +417,48 @@ describe('Electron participant store [DON-271]', () => {
     await expect(store.listParticipantBackfillCheckpoints(mission.id)).resolves.toEqual([
       expect.objectContaining({ completed: 1, reconciled_until: '2026-08-20T11:00:00.000Z' }),
     ])
+  })
+
+  it('enforces monotonic and irreversible participant backfill truth', async () => {
+    const store = await createStore()
+    const mission = await store.createMission({
+      name: 'Monotonic backfill mission',
+      start_time: '2026-08-20T08:00:00.000Z',
+    })
+    const checkpoint = {
+      mission_id: mission.id,
+      traccar_device_id: '20',
+      window_from: '2026-08-20T09:00:00.000Z',
+      window_to: '2026-08-20T11:00:00.000Z',
+      reconciled_until: '2026-08-20T09:00:00.000Z',
+      completed: false,
+    }
+    await store.upsertParticipantBackfillCheckpoint(checkpoint)
+
+    await expect(store.upsertParticipantBackfillCheckpoint({
+      ...checkpoint,
+      reconciled_until: '2026-08-20T09:30:00.000Z',
+      completed: true,
+    })).rejects.toThrow(/complete.*window end|completed.*window end/i)
+    await store.upsertParticipantBackfillCheckpoint({
+      ...checkpoint,
+      reconciled_until: '2026-08-20T10:00:00.000Z',
+    })
+    await expect(store.upsertParticipantBackfillCheckpoint(checkpoint))
+      .rejects.toThrow(/cursor.*decrease|backfill.*rewind/i)
+    await store.upsertParticipantBackfillCheckpoint({
+      ...checkpoint,
+      reconciled_until: checkpoint.window_to,
+      completed: true,
+    })
+    await expect(store.upsertParticipantBackfillCheckpoint({
+      ...checkpoint,
+      reconciled_until: '2026-08-20T10:00:00.000Z',
+      completed: false,
+    })).rejects.toThrow(/completion.*irreversible|completed.*irreversible/i)
+
+    expect((await store.listMissionEvents(mission.id)).filter((event) =>
+      event.event_type === 'participant_backfill_completed')).toHaveLength(1)
   })
 
   it('rolls back checkpoint completion when its required audit append fails', async () => {

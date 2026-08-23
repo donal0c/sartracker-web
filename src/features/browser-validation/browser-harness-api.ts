@@ -17,6 +17,7 @@ import {
   resetBrowserHarnessStore,
 } from './browser-harness-store'
 import { useParticipantStore } from '../participants/participant-store'
+import { createOperationalPositionRetention } from '../participants/operational-position-retention'
 import type {
   NormalizedTrackingDevice,
   NormalizedTraccarGroup,
@@ -69,6 +70,8 @@ export function installBrowserHarnessApi(): void {
     return
   }
 
+  const operationalPositionRetention = createOperationalPositionRetention()
+
   window.__SARTRACKER_BROWSER_HARNESS__ = {
     setParticipantDiscovery: async ({ devices, groups }) => {
       const controller = useParticipantStore.getState().controller
@@ -91,7 +94,12 @@ export function installBrowserHarnessApi(): void {
       const participantState = useParticipantStore.getState()
       const missionSnapshot =
         participantController !== null && participantState.activeMissionId === missionId
-          ? participantState.scope.filterSnapshot(snapshot)
+          ? operationalPositionRetention.apply(
+              snapshot,
+              participantState.scope,
+              new Date(),
+              missionId,
+            )
           : snapshot
       const missionEvidenceSnapshot =
         participantController !== null && participantState.activeMissionId === missionId
@@ -177,6 +185,7 @@ export function installBrowserHarnessApi(): void {
     },
     readState: () => readBrowserHarnessState(),
     reset: () => {
+      operationalPositionRetention.reset()
       resetBrowserHarnessStore()
       applyTrackingSnapshot({ devices: [], positions: [], breadcrumbs: [] })
       applyTrackingStatus({

@@ -650,12 +650,15 @@
           </figure>
           <p>
             A selected Traccar group follows later server-side membership changes from the time SAR Tracker
-            observes them. The app displays a coordinator notice and never invents earlier group membership
-            or retrospective evidence. When a coordinator explicitly backdates the initial or later selection
-            of a group, each confirmed member receives the same bounded, resumable history-backfill window as
-            an individual device; pending and completed states stay visible. Removing a participant ends future
-            collection but does not delete evidence already retained, and their last accepted current marker
-            remains visible until it becomes stale. More than 100
+            observes them. A newly observed member's current position is shown immediately while the durable
+            membership record is being written; a failed write stays visible and is retried on the next roster
+            observation. The app displays a coordinator notice and never invents earlier group membership or
+            retrospective evidence. When a coordinator explicitly backdates the initial or later selection of
+            a group, each confirmed member receives the same bounded, resumable history-backfill window as an
+            individual device. The group row shows completed members out of all starting members, and keeps a
+            pending/retrying state visible until every member completes. Removing a participant ends future
+            collection but does not delete evidence already retained. Their last accepted current marker remains
+            visible across later polls until it becomes stale. More than 100
             active selected devices produces a persistent warning and still includes every selected device —
             the app never truncates the roster or silently drops the 101st device.
           </p>
@@ -896,7 +899,9 @@
             unavailable, the tracking warning says so explicitly and preserves the unfiltered fallback cache
             until the scope can be safely applied. If malformed Traccar device rows make a roster observation
             incomplete, SAR Tracker may add confirmed members from the valid rows but will not infer that a
-            missing group member has left.
+            missing group member has left. Starting or adding a group is blocked until a complete roster is
+            available; individual devices can still be selected explicitly. Once the mission is finished,
+            participant changes are locked before archive finalization as well as afterward.
           </div>
           <div class="note">
             <strong>Tracking does not wait for basemap tiles:</strong> current positions and breadcrumbs

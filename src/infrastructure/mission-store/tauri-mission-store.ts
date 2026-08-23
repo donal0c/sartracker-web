@@ -80,6 +80,8 @@ export type MissionParticipant = {
   readonly backfill_window_to?: string | null
   readonly backfill_reconciled_until?: string | null
   readonly backfill_completed?: number | null
+  readonly backfill_member_count?: number | null
+  readonly backfill_completed_count?: number | null
 }
 
 export type GroupMembershipEvent = {

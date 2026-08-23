@@ -99,6 +99,7 @@ describe('mission-store fixture plans [DON-242]', () => {
     expect(scenario.groupSizes).toEqual([12, 11, 10, 9, 9, 8, 8, 7, 7, 7, 6, 6])
     expect(scenario.groupSizes.reduce((total, size) => total + size, 0)).toBe(100)
     expect(scenario.selectedGroupCount).toBe(11)
+    expect(scenario.activeParticipantCount).toBe(100)
     expect(scenario.outings).toHaveLength(12)
     expect(scenario.outings.filter((outing) => outing.crossesMidnight)).toHaveLength(5)
     for (let index = 1; index < scenario.outings.length; index += 1) {

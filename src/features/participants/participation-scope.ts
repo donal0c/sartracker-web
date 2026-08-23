@@ -8,6 +8,8 @@ import type { TrackingSnapshot } from '../tracking/tracking-types'
 export type ParticipationScope = {
   readonly includesAt: (deviceId: string, timestamp: string) => boolean
   readonly activeDeviceIdsAt: (timestamp: string) => readonly string[]
+  /** Current-map scope, including newly observed selected-group members awaiting durable audit. */
+  readonly operationalDeviceIdsAt: (timestamp: string) => readonly string[]
   readonly filterSnapshot: (
     snapshot: TrackingSnapshot,
     observedAt?: string,
@@ -26,12 +28,14 @@ export function createParticipationScope(input: {
   readonly participants: readonly MissionParticipant[]
   readonly membershipEvents: readonly GroupMembershipEvent[]
   readonly backfillCheckpoints?: readonly ParticipantBackfillCheckpoint[]
+  readonly observedCurrentDeviceIds?: readonly string[]
 }): ParticipationScope {
   const directParticipantsByDevice = new Map<string, MissionParticipant[]>()
   const groupParticipantsByTeam = new Map<string, MissionParticipant[]>()
   const membershipEventsByDevice = new Map<string, GroupMembershipEvent[]>()
   const backfillCheckpointsByDevice = new Map<string, ParticipantBackfillCheckpoint[]>()
   const candidateDeviceIds = new Set<string>()
+  const observedCurrentDeviceIds = new Set(input.observedCurrentDeviceIds ?? [])
 
   for (const participant of input.participants) {
     if (participant.kind === 'device' && participant.traccar_device_id !== null) {
@@ -80,11 +84,19 @@ export function createParticipationScope(input: {
     return [...candidateDeviceIds].filter((deviceId) => includesAt(deviceId, timestamp)).sort()
   }
 
+  function operationalDeviceIdsAt(timestamp: string): readonly string[] {
+    return [...new Set([
+      ...activeDeviceIdsAt(timestamp),
+      ...observedCurrentDeviceIds,
+    ])].sort()
+  }
+
   return {
     includesAt,
     activeDeviceIdsAt,
+    operationalDeviceIdsAt,
     filterSnapshot: (snapshot, observedAt = new Date().toISOString()) => {
-      const activeDeviceIds = new Set(activeDeviceIdsAt(observedAt))
+      const activeDeviceIds = new Set(operationalDeviceIdsAt(observedAt))
       const visiblePositions = snapshot.positions.filter((position) =>
         activeDeviceIds.has(position.device_id) ||
         (position.device_cache_stale !== true && includesAt(position.device_id, position.timestamp)))

@@ -154,6 +154,148 @@ describe('startParticipantRuntime [DON-271]', () => {
     expect(states.at(-1)?.error).toBeNull()
   })
 
+  it('makes a newly observed selected-group member operationally visible before its durable write settles', async () => {
+    const membershipWrite = createDeferred<readonly GroupMembershipEvent[]>()
+    const store = createStore({ participants: [GROUP_PARTICIPANT], membershipEvents: [] })
+    store.recordGroupMembershipEvents.mockReturnValueOnce(membershipWrite.promise)
+    const states: Array<{ readonly scope: {
+      readonly filterSnapshot: (snapshot: {
+        readonly devices: readonly ReturnType<typeof device>[]
+        readonly positions: readonly ReturnType<typeof position>[]
+        readonly breadcrumbs: readonly ReturnType<typeof position>[]
+      }) => { readonly positions: readonly ReturnType<typeof position>[] }
+    } }> = []
+    const runtime = await startParticipantRuntime({
+      participantStore: store,
+      applyRuntime: (state) => states.push(state as never),
+      now: () => new Date('2026-08-23T11:00:00.000Z'),
+    })
+    await runtime.refreshMission('mission-1')
+
+    const pending = runtime.applyRoster(
+      [device('device-2', 'group-1')],
+      '2026-08-23T11:00:00.000Z',
+    )
+
+    expect(states.at(-1)?.scope.filterSnapshot({
+      devices: [device('device-2', 'group-1')],
+      positions: [position('current-device-2', 'device-2', '2026-08-23T11:00:00.000Z')],
+      breadcrumbs: [],
+    }).positions).toEqual([
+      expect.objectContaining({ id: 'current-device-2', device_id: 'device-2' }),
+    ])
+    membershipWrite.resolve([{
+      ...INITIAL_MEMBERSHIP,
+      id: 'membership-device-2',
+      sequence: 1,
+      traccar_device_id: 'device-2',
+      observed_at: '2026-08-23T11:00:00.000Z',
+    }])
+    await pending
+  })
+
+  it('serializes roster reconciliation and corrects an older write from the latest roster', async () => {
+    const firstWrite = createDeferred<readonly GroupMembershipEvent[]>()
+    const store = createStore()
+    store.recordGroupMembershipEvents
+      .mockReturnValueOnce(firstWrite.promise)
+      .mockImplementation(async (input) => input.events.map((event, index) => ({
+        ...event,
+        id: `corrective-${index}`,
+        sequence: 3 + index,
+        mission_id: input.mission_id,
+      })))
+    const states: Array<{ readonly scope: { readonly includesAt: (id: string, at: string) => boolean } }> = []
+    const runtime = await startParticipantRuntime({
+      participantStore: store,
+      applyRuntime: (state) => states.push(state),
+    })
+    await runtime.refreshMission('mission-1')
+
+    const older = runtime.applyRoster([], '2026-08-23T11:00:00.000Z')
+    await vi.waitFor(() => expect(store.recordGroupMembershipEvents).toHaveBeenCalledTimes(1))
+    const newer = runtime.applyRoster(
+      [device('device-1', 'group-1')],
+      '2026-08-23T11:01:00.000Z',
+    )
+    firstWrite.resolve([{
+      ...INITIAL_MEMBERSHIP,
+      id: 'membership-left',
+      sequence: 2,
+      change: 'left',
+      observed_at: '2026-08-23T11:00:00.000Z',
+    }])
+    await Promise.all([older, newer])
+
+    expect(store.recordGroupMembershipEvents).toHaveBeenCalledTimes(2)
+    expect(store.recordGroupMembershipEvents).toHaveBeenLastCalledWith({
+      mission_id: 'mission-1',
+      events: [expect.objectContaining({
+        traccar_device_id: 'device-1',
+        change: 'member',
+        observed_at: '2026-08-23T11:01:00.000Z',
+      })],
+    })
+    expect(states.at(-1)?.scope.includesAt('device-1', '2026-08-23T11:02:00.000Z')).toBe(true)
+  })
+
+  it('retries an identical roster after its durable membership write fails', async () => {
+    const store = createStore({ participants: [GROUP_PARTICIPANT], membershipEvents: [] })
+    store.recordGroupMembershipEvents
+      .mockRejectedValueOnce(new Error('temporary membership write failure'))
+      .mockImplementationOnce(async (input) => input.events.map((event, index) => ({
+        ...event,
+        id: `retry-${index}`,
+        sequence: index + 1,
+        mission_id: input.mission_id,
+      })))
+    const states: Array<{ readonly rosterError: string | null }> = []
+    const runtime = await startParticipantRuntime({
+      participantStore: store,
+      applyRuntime: (state) => states.push(state),
+    })
+    await runtime.refreshMission('mission-1')
+    const roster = [device('device-2', 'group-1')]
+
+    await runtime.applyRoster(roster, '2026-08-23T11:00:00.000Z')
+    expect(states.at(-1)?.rosterError).toMatch(/temporary membership write failure/i)
+    await runtime.applyRoster(roster, '2026-08-23T11:01:00.000Z')
+
+    expect(store.recordGroupMembershipEvents).toHaveBeenCalledTimes(2)
+    expect(states.at(-1)?.rosterError).toBeNull()
+  })
+
+  it('reconciles an unchanged server roster again after the active mission changes', async () => {
+    const store = createStore({ participants: [GROUP_PARTICIPANT], membershipEvents: [] })
+    store.listMissionParticipants.mockImplementation(async (missionId: string) => [{
+      ...GROUP_PARTICIPANT,
+      mission_id: missionId,
+      id: `participant-${missionId}`,
+      mission_team_id: `team-${missionId}`,
+    }])
+    store.listGroupMembershipEvents.mockResolvedValue([])
+    const runtime = await startParticipantRuntime({
+      participantStore: store,
+      applyRuntime: vi.fn(),
+    })
+    const roster = [device('device-1', 'group-1')]
+
+    await runtime.refreshMission('mission-a')
+    await runtime.applyRoster(roster, '2026-08-23T11:00:00.000Z')
+    await runtime.refreshMission('mission-b')
+    await runtime.applyRoster(roster, '2026-08-23T11:01:00.000Z')
+
+    expect(store.recordGroupMembershipEvents).toHaveBeenCalledTimes(2)
+    expect(store.recordGroupMembershipEvents).toHaveBeenLastCalledWith({
+      mission_id: 'mission-b',
+      events: [expect.objectContaining({
+        mission_team_id: 'team-mission-b',
+        traccar_device_id: 'device-1',
+        change: 'member',
+      })],
+    })
+  })
+
   it('selects the start roster with group membership frozen from the observed roster', async () => {
     const store = createStore()
     const runtime = await startParticipantRuntime({
@@ -199,6 +341,31 @@ describe('startParticipantRuntime [DON-271]', () => {
     expect(states.at(-1)).toMatchObject({
       draftDeviceIds: ['device-2'],
       error: 'participant write failed',
+    })
+  })
+
+  it('refuses group selection while the normalized roster is incomplete', async () => {
+    const store = createStore()
+    const states: Array<{ readonly rosterError: string | null; readonly draftGroupIds: readonly string[] }> = []
+    const runtime = await startParticipantRuntime({
+      participantStore: store,
+      applyRuntime: (state) => states.push(state),
+    })
+    runtime.applyGroups([{ group_id: 'group-1', name: 'Hill Team', parent_group_id: null }])
+    await runtime.applyRoster(
+      [device('device-1', 'group-1')],
+      '2026-08-23T10:00:00.000Z',
+      { complete: false },
+    )
+    runtime.toggleDraftGroup('group-1')
+
+    await expect(runtime.selectInitialParticipants('mission-1', 'Coordinator'))
+      .rejects.toThrow(/complete.*roster|roster.*complete/i)
+
+    expect(store.selectMissionParticipants).not.toHaveBeenCalled()
+    expect(states.at(-1)).toMatchObject({
+      draftGroupIds: ['group-1'],
+      rosterError: expect.stringMatching(/complete.*roster|roster.*complete/i),
     })
   })
 
@@ -338,6 +505,34 @@ describe('startParticipantRuntime [DON-271]', () => {
       expect.objectContaining({ id: 'participant-b', mission_id: 'mission-b' }),
     ])
   })
+
+  it('does not let completed initial selection for mission A replace mission B scope', async () => {
+    const selection = createDeferred<readonly MissionParticipant[]>()
+    const store = createStore({ participants: [], membershipEvents: [] })
+    store.selectMissionParticipants.mockReturnValueOnce(selection.promise)
+    store.listMissionParticipants.mockImplementation(async (missionId: string) =>
+      missionId === 'mission-b'
+        ? [{ ...GROUP_PARTICIPANT, id: 'participant-b', mission_id: 'mission-b' }]
+        : [])
+    const states: Array<{
+      readonly activeMissionId: string | null
+      readonly participants: readonly MissionParticipant[]
+    }> = []
+    const runtime = await startParticipantRuntime({
+      participantStore: store,
+      applyRuntime: (state) => states.push(state),
+    })
+
+    const pending = runtime.selectInitialParticipants('mission-a', 'Coordinator')
+    await runtime.refreshMission('mission-b')
+    selection.resolve([])
+    await pending
+
+    expect(states.at(-1)?.activeMissionId).toBe('mission-b')
+    expect(states.at(-1)?.participants).toEqual([
+      expect.objectContaining({ id: 'participant-b', mission_id: 'mission-b' }),
+    ])
+  })
 })
 
 function device(deviceId: string, groupId: string | null) {
@@ -349,6 +544,24 @@ function device(deviceId: string, groupId: string | null) {
     unique_id: `unique-${deviceId}`,
     category: null,
     group_id: groupId,
+  }
+}
+
+function position(id: string, deviceId: string, timestamp: string) {
+  return {
+    id,
+    device_id: deviceId,
+    lat: 52,
+    lon: -9,
+    altitude: null,
+    speed: null,
+    battery: null,
+    accuracy: null,
+    timestamp,
+    source: 'traccar',
+    data_origin: 'live' as const,
+    cache_age_seconds: null,
+    device_cache_stale: false,
   }
 }
 

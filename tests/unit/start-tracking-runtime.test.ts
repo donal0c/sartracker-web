@@ -171,6 +171,41 @@ describe('startTrackingRuntime', () => {
     expect(applyParticipantRoster).toHaveBeenCalledTimes(1)
   })
 
+  it('uses an empty incomplete roster observation to retry failed participant hydration', async () => {
+    const applyParticipantRoster = vi.fn()
+    let pollerHooks:
+      | {
+          onSnapshot: (
+            snapshot: TrackingSnapshot,
+            context?: { readonly participantRosterAuthoritative?: boolean },
+          ) => Promise<void>
+        }
+      | undefined
+    const stop = await startTrackingRuntime({
+      config: { baseUrl: 'http://test:8082' },
+      createClient: vi.fn().mockReturnValue({}),
+      createPoller: vi.fn().mockImplementation((_client, hooks) => {
+        pollerHooks = hooks
+        return { start: vi.fn(), stop: vi.fn() }
+      }),
+      cache: { read: vi.fn().mockResolvedValue(null), write: vi.fn() },
+      missionStore: createMissionStoreStub(),
+      applySnapshot: vi.fn(),
+      applyStatus: vi.fn(),
+      missionModelEnabled: true,
+      readParticipationScopeStatus: () => 'error',
+      applyParticipantRoster,
+    })
+
+    await pollerHooks?.onSnapshot(
+      { devices: [], positions: [], breadcrumbs: [], rawBreadcrumbsForPersistence: [] },
+      { participantRosterAuthoritative: false },
+    )
+
+    expect(applyParticipantRoster).toHaveBeenCalledWith([], { complete: false })
+    stop()
+  })
+
   it('does not hold the operator shell on a slow participant discovery GET [DON-271]', async () => {
     const roster = createDeferred<readonly TrackingSnapshot['devices'][number][]>()
     const client = {
@@ -621,6 +656,71 @@ describe('startTrackingRuntime', () => {
       positions: [expect.objectContaining({ device_id: selectedDeviceId })],
     }))
     expect(addPositionsBulk).not.toHaveBeenCalled()
+    stop()
+  })
+
+  it('carries a removed participant last accepted marker across later polls until it becomes stale', async () => {
+    const applySnapshot = vi.fn()
+    let pollerHooks: { readonly onSnapshot: (snapshot: TrackingSnapshot) => Promise<void> } | undefined
+    const selectedDevice = SNAPSHOT.devices[0]!
+    const selectedDeviceId = selectedDevice.device_id
+    const preRemovalFix = {
+      ...SNAPSHOT.positions[0]!,
+      id: 'pre-removal-fix',
+      device_id: selectedDeviceId,
+      timestamp: '2026-04-06T10:59:00.000Z',
+      device_cache_stale: false,
+    }
+    const postRemovalFix = {
+      ...preRemovalFix,
+      id: 'post-removal-fix',
+      timestamp: '2026-04-06T11:01:00.000Z',
+    }
+    const scope = createParticipationScope({
+      participants: [{
+        id: 'participant-1', mission_id: 'mission-1', kind: 'device',
+        traccar_device_id: selectedDeviceId, mission_team_id: null,
+        traccar_group_id: null, team_name: null, provenance: 'explicit',
+        effective_from: '2026-04-06T09:00:00.000Z',
+        added_at: '2026-04-06T09:00:00.000Z', added_by: 'Coordinator',
+        removed_at: '2026-04-06T11:00:00.000Z', removed_by: 'Coordinator',
+      }],
+      membershipEvents: [],
+    })
+    const stop = await startTrackingRuntime({
+      config: { baseUrl: 'http://test:8082' },
+      createClient: vi.fn().mockReturnValue({}),
+      createPoller: vi.fn().mockImplementation((_client, hooks) => {
+        pollerHooks = hooks
+        return { start: vi.fn(), stop: vi.fn() }
+      }),
+      cache: { read: vi.fn().mockResolvedValue(null), write: vi.fn() },
+      missionStore: createMissionStoreStub(),
+      applySnapshot,
+      applyStatus: vi.fn(),
+      missionModelEnabled: true,
+      readParticipationScope: () => scope,
+      readParticipationScopeStatus: () => 'ready',
+      writeCache: false,
+      now: () => new Date('2026-04-06T11:02:00.000Z'),
+    })
+
+    await pollerHooks?.onSnapshot({
+      devices: [selectedDevice],
+      positions: [preRemovalFix],
+      breadcrumbs: [preRemovalFix],
+      rawBreadcrumbsForPersistence: [preRemovalFix],
+    })
+    await pollerHooks?.onSnapshot({
+      devices: [selectedDevice],
+      positions: [postRemovalFix],
+      breadcrumbs: [postRemovalFix],
+      rawBreadcrumbsForPersistence: [postRemovalFix],
+    })
+
+    expect(applySnapshot).toHaveBeenLastCalledWith(expect.objectContaining({
+      positions: [expect.objectContaining({ id: 'pre-removal-fix' })],
+    }))
     stop()
   })
 

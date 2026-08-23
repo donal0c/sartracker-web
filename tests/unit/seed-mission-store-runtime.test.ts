@@ -7,6 +7,7 @@ import { createRequire } from 'node:module'
 import { afterEach, describe, expect, it } from 'vitest'
 
 import {
+  assertBreadcrumbProgrammePositionScopeInvariants,
   assertBreadcrumbProgrammeSelectionInvariants,
   createBreadcrumbProgrammeCalibrationSample,
   generateMissionStoreFixture,
@@ -196,6 +197,46 @@ describe('breadcrumb programme fixture calibration [DON-272]', () => {
       db.prepare("DELETE FROM mission_participants WHERE kind = 'device'").run()
       expect(() =>
         assertBreadcrumbProgrammeSelectionInvariants(db, 'mission-1')).not.toThrow()
+    } finally {
+      db.close()
+    }
+  })
+
+  it('rejects accepted fixture positions outside participation-at-fix-time', () => {
+    const db = new Database(':memory:')
+    try {
+      db.exec(`
+        CREATE TABLE mission_participants (
+          mission_id TEXT NOT NULL, kind TEXT NOT NULL, traccar_device_id TEXT,
+          mission_team_id TEXT, effective_from TEXT NOT NULL, removed_at TEXT
+        );
+        CREATE TABLE mission_group_membership_events (
+          mission_id TEXT NOT NULL, mission_team_id TEXT NOT NULL,
+          traccar_device_id TEXT NOT NULL, change TEXT NOT NULL,
+          observed_at TEXT NOT NULL, sequence INTEGER NOT NULL
+        );
+        CREATE TABLE positions (
+          mission_id TEXT NOT NULL, device_id TEXT NOT NULL, timestamp TEXT NOT NULL
+        );
+        INSERT INTO mission_participants VALUES
+          ('mission-1', 'device', 'device-1', NULL, '2026-08-20T09:00:00.000Z', NULL);
+        INSERT INTO positions VALUES
+          ('mission-1', 'device-1', '2026-08-20T09:30:00.000Z'),
+          ('mission-1', 'device-1', '2026-08-20T08:59:00.000Z');
+      `)
+
+      expect(() => assertBreadcrumbProgrammePositionScopeInvariants(
+        db,
+        'mission-1',
+        1,
+      )).toThrow(/position.*outside.*participation|participation.*fix/i)
+
+      db.prepare("DELETE FROM positions WHERE timestamp < '2026-08-20T09:00:00.000Z'").run()
+      expect(() => assertBreadcrumbProgrammePositionScopeInvariants(
+        db,
+        'mission-1',
+        1,
+      )).not.toThrow()
     } finally {
       db.close()
     }
