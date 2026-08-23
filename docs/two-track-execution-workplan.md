@@ -147,11 +147,13 @@ Current work: PR-2 on `codex/breadcrumb-pr2-mission-model`, internally ordered
 BCP-03 → BCP-04 → BCP-06 (`DON-270/271/272`). The accepted design is
 `tmp/agent-mail/fable-breadcrumb-pr2-design-retry-20260823.md`. CP-0..CP-8 are
 implemented with one additive schema v9 and the mission model remains behind an
-internal flag. Local software, visual, fixture, live GET-only, macOS package,
-restart-soak, and 100×5,000 stationary gates are green. The candidate is
-`NEEDS_ATTENTION`, not review-ready, until the cached 3.704 GB Ubuntu v8→v9
-migration/Review proof can run; the known host `192.168.18.31:22` is offline.
-Do not start PR-3 or the four PR-2 reviews before that proof is recorded.
+internal flag. Local software, visual, fixture, live GET-only, exact-head
+flag-off/flag-on macOS package/restart-soak, and 100×5,000 stationary gates are
+green. The exact Ubuntu x64 package also migrated a 3.704 GB v8 derivative of
+the immutable field fixture to v9 with integrity `ok` before/after, exact
+grandfathering and Unassigned counts, a responsive Review worker, and a usable
+post-Review shell. PR-2 is review-ready for Donal's four exact-head reviews. Do
+not start PR-3 before those reviews and merge approval complete.
 
 ## Next Task Order
 
@@ -161,7 +163,7 @@ This is the default order when the user says “work on the next task.”
 | --- | --- | --- | --- | --- |
 | Done | Release the Tracking stability, interaction, and basemap-independent overlay hotfix | S2 Electron / Shared Tracking / Map / Verification | `DON-261` / `DON-262` / `DON-263` | Beta.12.5 exact commit `042d77ad6158`; clean no-skip verification 8/8; tag CI `30497318233` green; exact CI AppImage and real installed `.deb` passed lifecycle, safety, live-Traccar, 13-poll empty-history stability, pending/degraded basemap overlay, and deterministic five-/fourteen-day soak gates. Independent reviews returned `RELEASE` with no P1/P2. Guarded publication succeeded; fresh public hashes matched and the public AppImage passed Ubuntu lifecycle/recovery/finalize/archive. |
 | Done | PR-1: trustworthy ingest and live safety | Shared Tracking / S2 Electron / Evidence | `DON-266` / `DON-267` / `DON-268` / `DON-269` | Merged as [PR #1](https://github.com/donal0c/sartracker-web/pull/1) at `9481cf462e0e`; its exact-head review and Linux evidence remain in PR #1 and the handoff archive. |
-| NEEDS_ATTENTION | PR-2: explicit outings, participants, and mission-shaped fixtures | Shared Tracking / S2 Electron / Mission model / Verification | `DON-270` / `DON-271` / `DON-272` | CP-0..CP-8 implementation is complete on `codex/breadcrumb-pr2-mission-model`: additive schema v9, explicit outings/Unassigned, selected-only evidence, group observation-time changes, bounded backfill, >100 warn-and-proceed, legacy provenance, internal release-off flag, and deterministic 960k/2m fixtures. Local gates include exact 8,664-position restart soak and a 100×5,000 schema-v9 package at `90.1 ms` max renderer gap. Live Traccar GET-only selection→local scoped persistence is green. Blocker: the required cached 3.704 GB Ubuntu v8→v9 migration/Review host is offline, so the PR must remain draft and the four reviews must not start. |
+| Review ready | PR-2: explicit outings, participants, and mission-shaped fixtures | Shared Tracking / S2 Electron / Mission model / Verification | `DON-270` / `DON-271` / `DON-272` | CP-0..CP-8 are complete on `codex/breadcrumb-pr2-mission-model`. Local software/visual/live/package gates are green, including flag-off/flag-on 8,664-position restart soaks and a 100×5,000 schema-v9 package at `102.3 ms` max renderer gap. Exact Ubuntu x64 proof migrated a 3.704 GB v8 derivative to integrity-`ok` v9 with 32/32 grandfathered participants, 2,040,000 Unassigned fixes, 1.530 s Review, 1.054 ms main maximum during Review, and 108.5 ms renderer maximum. Next: Donal's four exact-head reviews; do not merge or start PR-3 meanwhile. |
 | Todo (non-blocking) | Surface persistent overlay synchronization failures in diagnostics and map health | S2 Electron / Shared Map / Diagnostics | `DON-264` | DON-263 retries transient and persistent sync exceptions indefinitely with a 2 s cap, but repeated failures are currently developer-console-only. Add bounded, sanitized, durable warning elevation and success-based clearing after the beta.12.5 hotfix; this P3 does not block the release. |
 | Done | Make Breadcrumb Dots source-exact and independently release-gated | S2 Electron / Shared Tracking / Verification | `DON-260` | Published beta.12.11 at exact tag `bced8052b85c` after green CI run `31482052296`, full AppImage and genuinely installed `.deb` package matrices, synthetic 279,936/1,935,384-fix exact-page proofs, target-only live-provider equality, diagnostics privacy, and unchanged performance/RSS gates. The guarded publisher and a second public download revalidated both installer hashes and `SHA256SUMS`; the fresh public AppImage independently passed settings persistence, same-mission recovery, finalization, and archive creation. Dots is source-exact and paged; Line alone remains simplified. Beta.12.9/.12.10 are not the correction. |
 | Done | Build deterministic field-scale mission-store fixtures | S2 Electron / Verification | `DON-242` | Small/CI/local/field plus 5-day and 14-day continuous-mission presets; Ubuntu field fixture is 3.704 GB with measured table accounting and restart checkpoints. |

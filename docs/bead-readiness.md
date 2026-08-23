@@ -25,12 +25,12 @@ Last updated: 2026-08-23 by Codex (Breadcrumb PR-2 candidate)
 ### `DON-270` / `DON-271` / `DON-272` — Breadcrumb PR-2 mission model — candidate
 
 - Research required: complete; the raw team transcript and stable Q&A ledger resolve the domain behavior.
-- Implementation readiness: implemented through CP-8; qualification is incomplete.
-- Recommended action: keep the single PR-2 pull request in draft until the cached 3.704 GB Ubuntu v8→v9 migration/Review gate passes, then begin Donal's four independent exact-head reviews. Do not start PR-3 meanwhile.
+- Implementation readiness: implemented and qualified through CP-8; review-ready.
+- Recommended action: begin Donal's four independent exact-head reviews on the single PR-2 pull request. Do not merge or start PR-3 meanwhile.
 - Locked decisions: one additive schema v9; explicit outing boundaries; accepted fixes outside outings remain Unassigned; no participant preselection; group membership changes apply from observation time without retrospective evidence; >100 selected devices warns and proceeds without truncation; legacy/finalized rows are grandfathered with explicit provenance; the mission model stays internal and release-off.
-- Open questions: none. Current blocker is evidence availability, not a domain decision: `192.168.18.31:22` timed out on 2026-08-23.
-- Evidence: local software and changed-visual gates; exact legacy preset digest; measured 960k/2m schema-v9 fixtures; GET-only live Traccar selection→local scoped persistence; flag-on macOS package; exact 8,664-position restart soak; schema-v9 100-device × 5,000-fix stationary package at `90.1 ms` maximum renderer gap (`<200 ms` hard gate).
-- Ready-to-start checklist for reviews: [x] implementation/docs/manual; [x] local software/visual/package/scale/live gates; [ ] cached 3.704 GB Ubuntu v8→v9 migration and Review responsiveness; [ ] exact final head reported after that proof.
+- Open questions: none.
+- Evidence: local software and changed-visual gates; exact legacy preset digest; measured 960k/2m schema-v9 fixtures; GET-only live Traccar selection→local scoped persistence; exact-head flag-off and flag-on macOS packages with 8,664-position restart soaks; schema-v9 100-device × 5,000-fix stationary package at `102.3 ms` maximum renderer gap (`<200 ms` hard gate); exact Ubuntu x64 3.704 GB v8→v9 integrity/migration/Review proof with 32/32 grandfathered participants, 2,040,000 Unassigned fixes, 1.530 s Review, 1.054 ms main maximum during Review, and 108.5 ms renderer maximum.
+- Ready-to-start checklist for reviews: [x] implementation/docs/manual; [x] local software/visual/package/scale/live gates; [x] 3.704 GB Ubuntu v8→v9 migration and Review responsiveness; [x] exact final head reported in the pull request.
 
 ### `DON-260` — Deep breadcrumb correctness hotfix — completed
 
