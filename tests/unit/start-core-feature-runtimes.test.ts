@@ -7,7 +7,7 @@ import {
 import type { MarkerAttachmentBoundary } from '../../src/infrastructure/marker-attachment-store/marker-attachment-boundary'
 
 describe('startCoreFeatureRuntimes', () => {
-  it('registers the six feature controllers in the documented order', async () => {
+  it('registers the seven feature controllers in the documented order', async () => {
     const callOrder: string[] = []
 
     const startMissionRuntime = vi.fn(async () => {
@@ -17,6 +17,10 @@ describe('startCoreFeatureRuntimes', () => {
     const startMissionGovernanceRuntime = vi.fn(async () => {
       callOrder.push('governance')
       return { __id: 'governance' } as never
+    })
+    const startOutingRuntime = vi.fn(async () => {
+      callOrder.push('outing')
+      return { __id: 'outing' } as never
     })
     const startMarkerRuntime = vi.fn(async () => {
       callOrder.push('marker')
@@ -40,6 +44,7 @@ describe('startCoreFeatureRuntimes', () => {
       attachmentAdapter: createAttachmentStub(),
       startMissionRuntime,
       startMissionGovernanceRuntime,
+      startOutingRuntime,
       startMarkerRuntime,
       startDrawingRuntime,
       startHelicopterRuntime,
@@ -49,6 +54,7 @@ describe('startCoreFeatureRuntimes', () => {
     expect(callOrder).toEqual([
       'mission',
       'governance',
+      'outing',
       'marker',
       'drawing',
       'helicopter',
@@ -61,6 +67,7 @@ describe('startCoreFeatureRuntimes', () => {
     const attachmentAdapter = createAttachmentStub()
     const startMissionRuntime = vi.fn(async () => ({}) as never)
     const startMissionGovernanceRuntime = vi.fn(async () => ({}) as never)
+    const startOutingRuntime = vi.fn(async () => ({}) as never)
     const startMarkerRuntime = vi.fn(async () => ({}) as never)
     const startDrawingRuntime = vi.fn(async () => ({}) as never)
     const startHelicopterRuntime = vi.fn(async () => ({}) as never)
@@ -71,6 +78,7 @@ describe('startCoreFeatureRuntimes', () => {
       attachmentAdapter,
       startMissionRuntime,
       startMissionGovernanceRuntime,
+      startOutingRuntime,
       startMarkerRuntime,
       startDrawingRuntime,
       startHelicopterRuntime,
@@ -82,6 +90,9 @@ describe('startCoreFeatureRuntimes', () => {
     )
     expect(startMissionGovernanceRuntime).toHaveBeenCalledWith(
       expect.objectContaining({ missionStore }),
+    )
+    expect(startOutingRuntime).toHaveBeenCalledWith(
+      expect.objectContaining({ outingStore: missionStore }),
     )
     expect(startMarkerRuntime).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -165,6 +176,17 @@ function createMissionStoreStub(): CoreFeatureRuntimeMissionStore {
     pauseMission: vi.fn(),
     resumeMission: vi.fn(),
     finishMission: vi.fn(),
+    createOuting: vi.fn(),
+    endOuting: vi.fn(),
+    renameOuting: vi.fn(),
+    editOutingBoundaries: vi.fn(),
+    listOutings: vi.fn(async () => []),
+    readOutingFixSummary: vi.fn(async () => ({
+      outings: [],
+      unassigned_accepted_fix_count: 0,
+      total_accepted_fix_count: 0,
+    })),
+    cancelOutingFixSummary: vi.fn(async () => false),
     finalizeMission: vi.fn(),
     unlockFinalizedMission: vi.fn(),
     listMarkers: vi.fn(),

@@ -16,6 +16,7 @@ import { LayerCatalogRuntimeBridge } from './features/layers/layer-catalog-runti
 import { MissionControlPanel } from './components/mission-control-panel'
 import { MarkerDialog } from './components/marker-dialog'
 import { MarkerRuntimeBridge } from './features/markers/marker-runtime-bridge'
+import { OutingRuntimeBridge } from './features/outings/outing-runtime-bridge'
 import { MeasurementRuntimeBridge } from './features/measurements/measurement-runtime-bridge'
 import { useAppStore } from './lib/app-store'
 import { MissionReviewRuntimeBridge } from './features/mission-review/mission-review-runtime-bridge'
@@ -110,6 +111,7 @@ function App() {
       <HelicopterRuntimeBridge />
       <LayerCatalogRuntimeBridge />
       <MarkerRuntimeBridge />
+      <OutingRuntimeBridge />
       <MeasurementRuntimeBridge />
       <MissionReviewRuntimeBridge />
 

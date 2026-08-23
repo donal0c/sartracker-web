@@ -25,6 +25,14 @@ import {
 } from '../mission/mission-store'
 import { startMissionGovernanceRuntime } from '../mission/start-mission-governance-runtime'
 import { startMissionRuntime } from '../mission/start-mission-runtime'
+import {
+  applyOutingController,
+  applyOutingRuntime,
+} from '../outings/outing-store'
+import {
+  hasOutingStoreBoundary,
+  startOutingRuntime,
+} from '../outings/start-outing-runtime'
 import type { AutosaveSyncReason } from '../persistence/autosave-status-store'
 import { recordDiagnosticEvent } from '../diagnostics/diagnostic-event-log'
 
@@ -42,6 +50,13 @@ export type CoreFeatureRuntimeMissionStore = Pick<
   | 'pauseMission'
   | 'resumeMission'
   | 'finishMission'
+  | 'createOuting'
+  | 'endOuting'
+  | 'renameOuting'
+  | 'editOutingBoundaries'
+  | 'listOutings'
+  | 'readOutingFixSummary'
+  | 'cancelOutingFixSummary'
   | 'finalizeMission'
   | 'unlockFinalizedMission'
   | 'listMarkers'
@@ -72,6 +87,7 @@ export type CoreFeatureRuntimeOptions = {
   readonly now?: () => Date
   readonly startMissionRuntime?: typeof startMissionRuntime
   readonly startMissionGovernanceRuntime?: typeof startMissionGovernanceRuntime
+  readonly startOutingRuntime?: typeof startOutingRuntime
   readonly startMarkerRuntime?: typeof startMarkerRuntime
   readonly startDrawingRuntime?: typeof startDrawingRuntime
   readonly startHelicopterRuntime?: typeof startHelicopterRuntime
@@ -83,6 +99,7 @@ export type CoreFeatureRuntimeHandles = {
   readonly missionGovernanceController: Awaited<
     ReturnType<typeof startMissionGovernanceRuntime>
   >
+  readonly outingRuntimeController: Awaited<ReturnType<typeof startOutingRuntime>> | null
   readonly markerRuntimeController: Awaited<ReturnType<typeof startMarkerRuntime>>
   readonly drawingRuntimeController: Awaited<ReturnType<typeof startDrawingRuntime>>
   readonly helicopterRuntimeController: Awaited<
@@ -93,8 +110,8 @@ export type CoreFeatureRuntimeHandles = {
 }
 
 /**
- * Wires the six core feature runtimes — mission, mission governance, marker,
- * drawing, helicopter, GPX — and registers their controllers with the global
+ * Wires the core feature runtimes — mission, mission governance, outing,
+ * marker, drawing, helicopter, GPX — and registers their controllers with the global
  * stores. The registration order encodes initialization dependencies and must
  * not change without coordinated review.
  *
@@ -108,6 +125,7 @@ export async function startCoreFeatureRuntimes(
   const startMission = options.startMissionRuntime ?? startMissionRuntime
   const startGovernance =
     options.startMissionGovernanceRuntime ?? startMissionGovernanceRuntime
+  const startOuting = options.startOutingRuntime ?? startOutingRuntime
   const startMarker = options.startMarkerRuntime ?? startMarkerRuntime
   const startDrawing = options.startDrawingRuntime ?? startDrawingRuntime
   const startHelicopter = options.startHelicopterRuntime ?? startHelicopterRuntime
@@ -140,6 +158,17 @@ export async function startCoreFeatureRuntimes(
   })
   applyMissionGovernanceController(missionGovernanceController)
   cleanups.push(() => undefined)
+
+  const outingRuntimeController = hasOutingStoreBoundary(options.missionStore)
+    ? await startOuting({
+        outingStore: options.missionStore,
+        applyRuntime: applyOutingRuntime,
+      })
+    : null
+  if (outingRuntimeController !== null) {
+    applyOutingController(outingRuntimeController)
+    cleanups.push(() => undefined)
+  }
 
   const markerRuntimeController = await startMarker({
     markerStore: options.missionStore,
@@ -177,6 +206,7 @@ export async function startCoreFeatureRuntimes(
   return {
     missionRuntimeController,
     missionGovernanceController,
+    outingRuntimeController,
     markerRuntimeController,
     drawingRuntimeController,
     helicopterRuntimeController,

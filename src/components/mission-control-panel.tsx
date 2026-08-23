@@ -9,6 +9,10 @@ import { useMissionControlViewModel } from '../features/mission/use-mission-cont
 import { formatMissionDuration } from '../features/mission/mission-timers'
 import { selectMissionPhasePresentation } from '../features/mission/mission-phase-presentation'
 import { focusFirstElement, restoreFocus, trapTabKey } from '../lib/focus-management'
+import {
+  OpenOutingFinishOffer,
+  OutingControlsSection,
+} from './outing-controls-section'
 
 const MISSION_NAME_INPUT_ID = 'mission-name-input'
 const MISSION_OFFSET_INPUT_ID = 'mission-offset-input'
@@ -303,6 +307,8 @@ export function MissionControlPanel({
           </div>
         </div>
 
+        {(currentMission !== null || governanceMission !== null) ? <OutingControlsSection /> : null}
+
         {phase === 'idle' && governanceMission !== null ? (
           <div
             className="border border-sky-500/20 bg-sky-950/20 p-4"
@@ -518,6 +524,7 @@ export function MissionControlPanel({
           >
             This will stop timers and return to IDLE. Data remains saved.
           </p>
+          <OpenOutingFinishOffer />
           <div className="mt-4 flex gap-2">
             <button
               className="flex-1 bg-rose-600 px-3 py-2 text-[12px] font-semibold text-white hover:bg-rose-500"
