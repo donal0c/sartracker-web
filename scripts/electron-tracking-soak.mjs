@@ -160,7 +160,11 @@ async function main() {
     activeLaunch = await launchPackagedApp(options, userDataDir, launches.length + 1)
     launches.push(activeLaunch)
     exactFailureProgress.launchNumber = activeLaunch.number
-    await startSyntheticMission(activeLaunch, fixtureClock.missionOffsetHours)
+    const missionModelEvidence = await startSyntheticMission(
+      activeLaunch,
+      fixtureClock.missionOffsetHours,
+      options.profile.deviceCount,
+    )
     missionId = await readActiveMissionId(activeLaunch.page)
     await recordOperatorInteraction({
       page: activeLaunch.page,
@@ -385,6 +389,14 @@ async function main() {
     activeLaunch = undefined
 
     const databaseEvidence = inspectDatabase(databasePath, missionId)
+    if (
+      missionModelEvidence.enabled &&
+      (databaseEvidence.participantRows !== 1 || databaseEvidence.teamRows !== 1)
+    ) {
+      throw new Error(
+        `Mission-model soak expected one selected team/participant; observed ${databaseEvidence.teamRows}/${databaseEvidence.participantRows}.`,
+      )
+    }
     const expectedPositionTruth = buildTrackingSoakExpectedPositionTruthEvidence({
       deviceCount: options.profile.deviceCount,
       movingDeviceCount: options.profile.movingDeviceCount,
@@ -504,6 +516,7 @@ async function main() {
       declaredOperationalEventBudget:
         options.profile.deviceCount +
         1 +
+        (missionModelEvidence.enabled ? 1 : 0) +
         options.profile.restartCheckpoints.length * 2 +
         (exactSoakRequired
           ? options.profile.restartCheckpoints.length * 2 + 1
@@ -569,6 +582,11 @@ async function main() {
         node: process.version,
       },
       mockTraccar: mockState,
+      missionModel: {
+        ...missionModelEvidence,
+        persistedParticipantRows: databaseEvidence.participantRows,
+        persistedTeamRows: databaseEvidence.teamRows,
+      },
       database: databaseEvidence,
       positionTruth,
       growth,
@@ -862,19 +880,41 @@ function createRendererLifecycleEvidence(browser, context, page) {
   }
 }
 
-async function startSyntheticMission(launch, missionOffsetHours) {
+async function startSyntheticMission(launch, missionOffsetHours, expectedDeviceCount) {
   await launch.page
     .getByTestId('mission-name-input')
     .fill('Synthetic Continuous Soak Mission', { force: true })
   await launch.page
     .getByTestId('mission-offset-input')
     .fill(String(missionOffsetHours), { force: true })
+  const participantSelection = launch.page.getByTestId('participant-selection-step')
+  const missionModelEnabled = await participantSelection.isVisible().catch(() => false)
+  if (missionModelEnabled) {
+    await launch.page
+      .getByTestId('participant-group-picker')
+      .getByText('Synthetic Mission Team', { exact: true })
+      .click()
+    await launch.page
+      .getByTestId('participant-selected-count')
+      .filter({ hasText: `${expectedDeviceCount} selected` })
+      .waitFor({ timeout: 30_000 })
+  }
   await performLaunchOwnedHarnessClick(
     launch,
     'mission-start-btn',
     () => launch.page.getByTestId('mission-start-btn').click({ force: true }),
   )
   await waitForActiveMission(launch.page, 30_000)
+  if (missionModelEnabled) {
+    await launch.page
+      .getByTestId('participant-active-list')
+      .filter({ hasText: 'Synthetic Mission Team' })
+      .waitFor({ timeout: 30_000 })
+  }
+  return {
+    enabled: missionModelEnabled,
+    selectedDeviceCount: missionModelEnabled ? expectedDeviceCount : null,
+  }
 }
 
 /**
@@ -3001,6 +3041,8 @@ function inspectDatabase(databasePath, missionId) {
       'device_created',
       'device_updated',
       'position_recorded',
+      'participants_selected',
+      'group_membership_changed',
     ])
     const unexplainedMissionEvents = Object.entries(events)
       .filter(([eventType]) => !declaredEventTypes.has(eventType))
@@ -3026,6 +3068,12 @@ function inspectDatabase(databasePath, missionId) {
         Number(database.pragma('page_size', { simple: true })),
       deviceRows: Number(
         database.prepare('SELECT COUNT(*) AS count FROM devices WHERE mission_id = ?').get(missionId).count,
+      ),
+      participantRows: Number(
+        database.prepare('SELECT COUNT(*) AS count FROM mission_participants WHERE mission_id = ?').get(missionId).count,
+      ),
+      teamRows: Number(
+        database.prepare('SELECT COUNT(*) AS count FROM mission_teams WHERE mission_id = ?').get(missionId).count,
       ),
       positionRows: Number(
         database.prepare('SELECT COUNT(*) AS count FROM positions WHERE mission_id = ?').get(missionId).count,

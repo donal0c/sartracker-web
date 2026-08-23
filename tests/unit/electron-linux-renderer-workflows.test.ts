@@ -103,4 +103,15 @@ describe('Linux Electron renderer workflows [DON-260]', () => {
     expectMesaLaunch(selectStep(job, 'Launch AppImage smoke'))
     expect(workflowSource).not.toContain('--enable-unsafe-swiftshader')
   })
+
+  it('qualifies the internal mission model only in the standalone validation package', () => {
+    const validation = readWorkflow('.github/workflows/electron-linux-validation.yml')
+    const release = readWorkflow('.github/workflows/electron-release.yml')
+
+    expect(selectStep(validation.jobs.build, 'Build Electron Linux artifacts').env).toMatchObject({
+      VITE_SARTRACKER_MISSION_MODEL: '1',
+    })
+    expect(selectStep(release.jobs['bundle-linux'], 'Build Electron Linux artifacts').env)
+      .not.toMatchObject({ VITE_SARTRACKER_MISSION_MODEL: '1' })
+  })
 })

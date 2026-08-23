@@ -53,6 +53,13 @@ export async function startTrackingSoakMockServer(options) {
         return
       }
 
+      if (request.method === 'GET' && requestUrl.pathname === '/api/groups') {
+        sendJson(response, 200, [
+          { id: 101, name: 'Synthetic Mission Team', groupId: 0 },
+        ])
+        return
+      }
+
       if (request.method === 'GET' && requestUrl.pathname === '/api/devices') {
         state.deviceRequests += 1
         if (!state.paused && state.completedBatches < options.maximumBatches) {
@@ -183,7 +190,7 @@ function buildDevices(options, batch) {
       ),
       positionId: positionId(batch, deviceId, options.productionPollsPerBatch - 1),
       disabled: false,
-      groupId: 0,
+      groupId: 101,
       category: 'person',
       attributes: {},
     }
