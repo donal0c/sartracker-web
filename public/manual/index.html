@@ -630,6 +630,51 @@
               <tr><td>Minimize / Expand</td><td>Collapses the active mission controls after setup to free right-rail space.</td><td>The control is not available while paused; expand before pausing, finishing, or changing lifecycle state.</td></tr>
             </tbody>
           </table>
+          <div class="warning">
+            <strong>Internal qualification feature:</strong> the mission participant and outing controls
+            below are disabled in normal packaged and release builds while the Breadcrumb Programme is
+            being qualified. Do not expect them in the current team beta. When the internal mission model
+            is enabled, Diagnostics states <strong>mission model: enabled (internal)</strong>.
+          </div>
+          <h3>Mission Participants</h3>
+          <p>
+            Before starting a mission, the internal mission model shows the live Traccar roster and asks
+            the coordinator to select participating groups and/or individual devices. Nothing is selected
+            automatically. Starting with none is allowed, but the screen states the consequence: reporting
+            devices remain outside mission evidence and off the operational mission map until explicitly
+            added. The full live roster remains available for later selection and diagnostics.
+          </p>
+          <figure class="screenshot">
+            <img src="assets/mission-participant-selection.png" alt="Mission participant selection showing no groups or devices pre-selected" />
+            <figcaption>The internal start step makes the empty selection and its evidence consequence explicit.</figcaption>
+          </figure>
+          <p>
+            A selected Traccar group follows later server-side membership changes from the time SAR Tracker
+            observes them. The app displays a coordinator notice and never invents earlier group membership
+            or retrospective evidence. Adding an individual device with an earlier effective time creates a
+            bounded, resumable history-backfill window; pending and completed states stay visible. Removing a
+            participant ends future collection but does not delete evidence already retained. More than 100
+            active selected devices produces a persistent warning and still includes every selected device —
+            the app never truncates the roster or silently drops the 101st device.
+          </p>
+          <h3>Outings</h3>
+          <p>
+            Outings are coordinator-defined operational periods inside one mission. SAR Tracker never starts
+            or ends an outing silently. Use <strong>Start outing</strong>, <strong>End now</strong>, and
+            <strong>Edit</strong> to record the boundaries the coordinator actually knows. Outings may cross
+            midnight, but they cannot overlap. An adjacent outing may begin at the exact instant the previous
+            one ends. Boundary edits change classification only; they never rewrite source fixes.
+          </p>
+          <figure class="screenshot">
+            <img src="assets/mission-outing-summary.png" alt="Outings panel showing an active outing and a separate Unassigned fix bucket" />
+            <figcaption>Accepted fixes outside every explicit outing remain visibly Unassigned.</figcaption>
+          </figure>
+          <div class="note">
+            <strong>No active outing is valid:</strong> mission ingest continues and fixes are retained as
+            <strong>Unassigned</strong>. Pausing a mission does not end its outing. Finishing with an open
+            outing is allowed and offers, but does not force, an end-now action. Finalized missions keep
+            outing and participant records read-only until the existing authorized unlock flow succeeds.
+          </div>
           <div class="note">
             <strong>Recovery behavior:</strong> if the app finds an interrupted mission after reload or
             restart, it offers <strong>Resume</strong> or <strong>Start Fresh</strong>. Resume keeps the
@@ -832,6 +877,13 @@
             position with or without its trail, show a trail without the current-location dot, or show both.
             Turning off the whole Tracking group hides both surfaces.
           </p>
+          <div class="note">
+            <strong>Participant visibility:</strong> with the internal mission model enabled, only selected
+            mission participants are persisted as mission evidence or shown on the operational mission map.
+            Historical time and outing filters never hide a selected participant's live position. Hiding a
+            selected participant's current-location marker remains a separate, explicit operator action from
+            hiding that participant's breadcrumb history.
+          </div>
           <div class="note">
             <strong>Tracking does not wait for basemap tiles:</strong> current positions and breadcrumbs
             remain available while the selected raster map is still loading or reports degraded tile
