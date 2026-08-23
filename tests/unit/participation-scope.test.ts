@@ -59,6 +59,26 @@ describe('participation scope [DON-271]', () => {
       rawBreadcrumbsForPersistence: [{ device_id: '11' }],
     })
   })
+
+  it('indexes participant windows by device instead of scanning the mission roster per fix', () => {
+    let participantIdentityReads = 0
+    const participants = Array.from({ length: 100 }, (_, index) => new Proxy(
+      participant({ id: `participant-${index}`, traccar_device_id: String(index) }),
+      {
+        get(target, property, receiver) {
+          if (property === 'kind' || property === 'traccar_device_id') {
+            participantIdentityReads += 1
+          }
+          return Reflect.get(target, property, receiver)
+        },
+      },
+    ))
+    const scope = createParticipationScope({ participants, membershipEvents: [] })
+    participantIdentityReads = 0
+
+    expect(scope.includesAt('99', '2026-08-20T09:30:00.000Z')).toBe(true)
+    expect(participantIdentityReads).toBeLessThanOrEqual(2)
+  })
 })
 
 function participant(overrides: Partial<MissionParticipant> = {}): MissionParticipant {

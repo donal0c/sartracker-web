@@ -18,42 +18,49 @@ export function createParticipationScope(input: {
   readonly participants: readonly MissionParticipant[]
   readonly membershipEvents: readonly GroupMembershipEvent[]
 }): ParticipationScope {
-  const participants = [...input.participants]
-  const membershipEvents = [...input.membershipEvents]
+  const directParticipantsByDevice = new Map<string, MissionParticipant[]>()
+  const groupParticipantsByTeam = new Map<string, MissionParticipant[]>()
+  const membershipEventsByDevice = new Map<string, GroupMembershipEvent[]>()
+  const candidateDeviceIds = new Set<string>()
+
+  for (const participant of input.participants) {
+    if (participant.kind === 'device' && participant.traccar_device_id !== null) {
+      appendIndexed(directParticipantsByDevice, participant.traccar_device_id, participant)
+      candidateDeviceIds.add(participant.traccar_device_id)
+    } else if (participant.kind === 'group' && participant.mission_team_id !== null) {
+      appendIndexed(groupParticipantsByTeam, participant.mission_team_id, participant)
+    }
+  }
+  for (const event of input.membershipEvents) {
+    appendIndexed(membershipEventsByDevice, event.traccar_device_id, event)
+    candidateDeviceIds.add(event.traccar_device_id)
+  }
+  for (const events of membershipEventsByDevice.values()) {
+    events.sort((left, right) =>
+      right.observed_at.localeCompare(left.observed_at) || right.id.localeCompare(left.id))
+  }
 
   function includesAt(deviceId: string, timestamp: string): boolean {
-    const direct = participants.some((participant) =>
-      participant.kind === 'device' &&
-      participant.traccar_device_id === deviceId &&
-      windowContains(participant, timestamp))
-    if (direct) return true
+    if (directParticipantsByDevice.get(deviceId)?.some(
+      (participant) => windowContains(participant, timestamp),
+    ) === true) return true
 
-    return participants.some((participant) => {
+    const resolvedTeams = new Set<string>()
+    for (const event of membershipEventsByDevice.get(deviceId) ?? []) {
+      if (event.observed_at > timestamp || resolvedTeams.has(event.mission_team_id)) continue
+      resolvedTeams.add(event.mission_team_id)
       if (
-        participant.kind !== 'group' ||
-        participant.mission_team_id === null ||
-        !windowContains(participant, timestamp)
-      ) {
-        return false
-      }
-      const latest = membershipEvents
-        .filter((event) =>
-          event.mission_team_id === participant.mission_team_id &&
-          event.traccar_device_id === deviceId &&
-          event.observed_at <= timestamp)
-        .toSorted((left, right) =>
-          right.observed_at.localeCompare(left.observed_at) || right.id.localeCompare(left.id))[0]
-      return latest?.change === 'member'
-    })
+        event.change === 'member' &&
+        groupParticipantsByTeam.get(event.mission_team_id)?.some(
+          (participant) => windowContains(participant, timestamp),
+        ) === true
+      ) return true
+    }
+    return false
   }
 
   function activeDeviceIdsAt(timestamp: string): readonly string[] {
-    const candidates = new Set<string>()
-    for (const participant of participants) {
-      if (participant.traccar_device_id !== null) candidates.add(participant.traccar_device_id)
-    }
-    for (const event of membershipEvents) candidates.add(event.traccar_device_id)
-    return [...candidates].filter((deviceId) => includesAt(deviceId, timestamp)).sort()
+    return [...candidateDeviceIds].filter((deviceId) => includesAt(deviceId, timestamp)).sort()
   }
 
   return {
@@ -95,8 +102,19 @@ function windowContains(participant: MissionParticipant, timestamp: string): boo
 }
 
 function latestSnapshotTimestamp(snapshot: TrackingSnapshot): string | null {
-  const timestamps = [...snapshot.positions, ...snapshot.breadcrumbs].map(
-    (position) => position.timestamp,
-  )
-  return timestamps.length === 0 ? null : timestamps.sort().at(-1) ?? null
+  let latest: string | null = null
+  for (const position of snapshot.positions) {
+    if (latest === null || position.timestamp > latest) latest = position.timestamp
+  }
+  for (const position of snapshot.breadcrumbs) {
+    if (latest === null || position.timestamp > latest) latest = position.timestamp
+  }
+  return latest
+}
+
+/** Appends one value to a construction-time immutable-scope index. */
+function appendIndexed<T>(index: Map<string, T[]>, key: string, value: T): void {
+  const values = index.get(key) ?? []
+  values.push(value)
+  index.set(key, values)
 }
