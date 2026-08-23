@@ -156,16 +156,81 @@ describe('startTrackingRuntime', () => {
 
     expect(client.authenticate).toHaveBeenCalledOnce()
     expect(client.getCurrentPositions).toHaveBeenCalledOnce()
-    expect(applyParticipantRoster).toHaveBeenCalledWith(SNAPSHOT.devices)
-    expect(applyParticipantGroups).toHaveBeenCalledWith([
-      { group_id: '101', name: 'Hill Team', parent_group_id: null },
-    ])
+    await vi.waitFor(() => {
+      expect(applyParticipantRoster).toHaveBeenCalledWith(SNAPSHOT.devices)
+      expect(applyParticipantGroups).toHaveBeenCalledWith([
+        { group_id: '101', name: 'Hill Team', parent_group_id: null },
+      ])
+    })
 
     await pollerHooks?.onSnapshot(
       { devices: [], positions: [], breadcrumbs: [], rawBreadcrumbsForPersistence: [] },
       { participantRosterAuthoritative: false },
     )
     expect(applyParticipantRoster).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not hold the operator shell on a slow participant discovery GET [DON-271]', async () => {
+    const roster = createDeferred<readonly TrackingSnapshot['devices'][number][]>()
+    const client = {
+      authenticate: vi.fn().mockResolvedValue(undefined),
+      getDevices: vi.fn().mockReturnValue(roster.promise),
+      getGroups: vi.fn().mockResolvedValue([]),
+      getCurrentPositions: vi.fn().mockResolvedValue([]),
+    }
+    const startPromise = startTrackingRuntime({
+      config: { baseUrl: 'http://test:8082' },
+      createClient: vi.fn().mockReturnValue(client),
+      createPoller: vi.fn().mockReturnValue({ start: vi.fn(), stop: vi.fn() }),
+      cache: { read: vi.fn().mockResolvedValue(null), write: vi.fn() },
+      missionStore: createMissionStoreStub(),
+      applySnapshot: vi.fn(),
+      applyStatus: vi.fn(),
+      missionModelEnabled: true,
+      applyParticipantRoster: vi.fn(),
+      applyParticipantGroups: vi.fn(),
+    })
+    let started = false
+    void startPromise.then(() => { started = true })
+
+    try {
+      await vi.waitFor(() => expect(client.getDevices).toHaveBeenCalledOnce())
+      await Promise.resolve()
+      expect(started).toBe(true)
+    } finally {
+      roster.resolve(SNAPSHOT.devices)
+      const stop = await startPromise
+      stop()
+    }
+  })
+
+  it('drops a participant discovery response after its runtime stops [DON-271]', async () => {
+    const roster = createDeferred<readonly TrackingSnapshot['devices'][number][]>()
+    const applyParticipantRoster = vi.fn()
+    const stop = await startTrackingRuntime({
+      config: { baseUrl: 'http://test:8082' },
+      createClient: vi.fn().mockReturnValue({
+        authenticate: vi.fn().mockResolvedValue(undefined),
+        getDevices: vi.fn().mockReturnValue(roster.promise),
+        getGroups: vi.fn().mockResolvedValue([]),
+        getCurrentPositions: vi.fn().mockResolvedValue([]),
+      }),
+      createPoller: vi.fn().mockReturnValue({ start: vi.fn(), stop: vi.fn() }),
+      cache: { read: vi.fn().mockResolvedValue(null), write: vi.fn() },
+      missionStore: createMissionStoreStub(),
+      applySnapshot: vi.fn(),
+      applyStatus: vi.fn(),
+      missionModelEnabled: true,
+      applyParticipantRoster,
+      applyParticipantGroups: vi.fn(),
+    })
+
+    stop()
+    roster.resolve(SNAPSHOT.devices)
+    await roster.promise
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(applyParticipantRoster).not.toHaveBeenCalled()
   })
 
   it('wakes tracking immediately when a mission becomes active and unsubscribes on stop', async () => {

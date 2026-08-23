@@ -410,7 +410,12 @@ export async function startTrackingRuntime(
       : { recordRequestDiagnostic: dependencies.recordTrackingPollDiagnostic }),
   })
   if (dependencies.missionModelEnabled === true) {
-    await preloadParticipantDiscovery(client, dependencies, logger)
+    void preloadParticipantDiscovery(
+      client,
+      dependencies,
+      logger,
+      () => runtimeGeneration === activeTrackingRuntimeGeneration,
+    )
   }
   const poller = dependencies.createPoller(client, {
     getInitialBreadcrumbs: async (signal?: AbortSignal) => {
@@ -1051,11 +1056,14 @@ async function preloadParticipantDiscovery(
     'applyParticipantGroups' | 'applyParticipantRoster' | 'applyParticipantRosterError'
   >,
   logger: TrackingRuntimeLogger,
+  isCurrent: () => boolean,
 ): Promise<void> {
   if (!isParticipantRosterClient(client)) {
-    dependencies.applyParticipantRosterError?.(
-      'Participant selection is unavailable because the tracking client cannot read the Traccar roster.',
-    )
+    if (isCurrent()) {
+      dependencies.applyParticipantRosterError?.(
+        'Participant selection is unavailable because the tracking client cannot read the Traccar roster.',
+      )
+    }
     return
   }
   try {
@@ -1067,16 +1075,19 @@ async function preloadParticipantDiscovery(
       // not published to the operational map until participation is known.
       client.getCurrentPositions(),
     ])
+    if (!isCurrent()) return
     await Promise.all([
       dependencies.applyParticipantRoster?.(devices),
       dependencies.applyParticipantGroups?.(groups),
     ])
-    dependencies.applyParticipantRosterError?.(null)
+    if (isCurrent()) dependencies.applyParticipantRosterError?.(null)
   } catch (error) {
     logger.warn('Participant roster preload failed.', error)
-    dependencies.applyParticipantRosterError?.(
-      `Participant roster could not be loaded. Device-level fallback remains available after tracking reconnects: ${error instanceof Error ? error.message : String(error)}`,
-    )
+    if (isCurrent()) {
+      dependencies.applyParticipantRosterError?.(
+        `Participant roster could not be loaded. Device-level fallback remains available after tracking reconnects: ${error instanceof Error ? error.message : String(error)}`,
+      )
+    }
   }
 }
 
