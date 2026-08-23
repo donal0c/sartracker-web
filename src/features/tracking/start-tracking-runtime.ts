@@ -295,6 +295,8 @@ type StartTrackingRuntimeDependencies = {
   readonly notifyDurablePositionChange?: (changedPositionCount: number) => void
   readonly missionModelEnabled?: boolean
   readonly readParticipationScope?: () => ParticipationScope
+  readonly readParticipationScopeStatus?: () => 'loading' | 'ready' | 'error'
+  readonly subscribeParticipationScope?: (listener: () => void) => () => void
   readonly applyParticipantRoster?: (
     devices: readonly TrackingSnapshot['devices'][number][],
   ) => void | Promise<void>
@@ -350,6 +352,11 @@ export async function startTrackingRuntime(
       }
     | null = null
   let participantBackfillInFlight = false
+  let deferredOperationalSnapshot: {
+    readonly snapshot: TrackingSnapshot
+    readonly historyResetKey: string | null
+    readonly persistAfterHydration: boolean
+  } | null = null
   const participantBackfillAbortController = new AbortController()
 
   if (dependencies.config === null) {
@@ -380,26 +387,27 @@ export async function startTrackingRuntime(
             deviceStaleThresholdMs: DEFAULT_DEVICE_STALE_THRESHOLD_MS,
           },
         )
-      dependencies.applySnapshot(
-        dependencies.missionModelEnabled === true
-          ? dependencies.readParticipationScope?.().filterSnapshot(healthyCachedSnapshot) ?? {
-              ...healthyCachedSnapshot,
-              devices: [],
-              positions: [],
-              breadcrumbs: [],
-            }
-          : healthyCachedSnapshot,
-      )
+      const operationalCachedSnapshot = filterOperationalSnapshot(healthyCachedSnapshot)
+      if (operationalCachedSnapshot === null) {
+        deferredOperationalSnapshot = {
+          snapshot: healthyCachedSnapshot,
+          historyResetKey: null,
+          persistAfterHydration: false,
+        }
+      } else {
+        dependencies.applySnapshot(operationalCachedSnapshot)
+      }
       // Cold-start visibility: until the first live poll succeeds, the operator
       // is looking at last-known cached positions. Surface that explicitly so
       // they cannot mistake cached data for a live feed.
-      dependencies.applyStatus({
+      latestTrackingStatus = {
         mode: 'offline',
         consecutiveFailures: 0,
         recovered: false,
         lastSuccessAt: cachedSnapshot.cached_at,
         warning: 'OFFLINE MODE — showing last known positions from cache.',
-      })
+      }
+      dependencies.applyStatus(decorateTrackingStatus(latestTrackingStatus))
     }
   }
 
@@ -671,63 +679,69 @@ export async function startTrackingRuntime(
       if (context?.participantRosterAuthoritative !== false) {
         await dependencies.applyParticipantRoster?.(snapshot.devices)
       }
-      const operationalSnapshot = dependencies.missionModelEnabled === true
-        ? dependencies.readParticipationScope?.().filterSnapshot(snapshot) ?? {
-            ...snapshot,
-            devices: [],
-            positions: [],
-            breadcrumbs: [],
-            rawBreadcrumbsForPersistence: [],
-          }
-        : snapshot
-      dependencies.applySnapshot(operationalSnapshot)
-      scheduleParticipantBackfill()
-      void dependencies.recordDiagnosticEvent?.({
-        level: 'info',
-        category: 'tracking',
-        event: 'tracking_snapshot_applied',
-        fields: buildTrackingSnapshotDiagnosticFields(operationalSnapshot),
-      })
-      const sideEffects: Promise<unknown>[] = [
-        enqueueMissionPersistence(
+      const operationalSnapshot = filterOperationalSnapshot(snapshot)
+      const sideEffects: Promise<unknown>[] = []
+      let missionPersistenceResultIndex: number | null = null
+      if (operationalSnapshot === null) {
+        deferredOperationalSnapshot = {
+          snapshot,
+          historyResetKey: context?.historyResetKey ?? null,
+          persistAfterHydration: true,
+        }
+        refreshTrackingStatus()
+      } else {
+        deferredOperationalSnapshot = null
+        dependencies.applySnapshot(operationalSnapshot)
+        scheduleParticipantBackfill()
+        void dependencies.recordDiagnosticEvent?.({
+          level: 'info',
+          category: 'tracking',
+          event: 'tracking_snapshot_applied',
+          fields: buildTrackingSnapshotDiagnosticFields(operationalSnapshot),
+        })
+        const missionEvidenceSnapshot = filterMissionEvidenceSnapshot(snapshot)
+        missionPersistenceResultIndex = sideEffects.length
+        sideEffects.push(enqueueMissionPersistence(
           limitSnapshotForMissionPersistence(
-            operationalSnapshot,
+            missionEvidenceSnapshot,
             dependencies.maxPersistedPositionsPerSnapshot,
           ),
           context?.historyResetKey ?? null,
-        ),
-      ]
+        ))
+      }
       let trackingCacheDataKey: string | null = null
       let trackingCacheRequestSequence: number | null = null
+      let trackingCacheResultIndex: number | null = null
       const shouldWriteTrackingCache =
         writeCache && context?.suppressTrackingCache !== true
 
       if (shouldWriteTrackingCache) {
-        trackingCacheDataKey = createTrackingCacheDataKey(operationalSnapshot)
+        trackingCacheDataKey = createTrackingCacheDataKey(snapshot)
+        trackingCacheResultIndex = sideEffects.length
         if (trackingCacheDataKey !== latestQueuedTrackingCacheDataKey) {
           latestTrackingCacheRequestSequence += 1
           trackingCacheRequestSequence = latestTrackingCacheRequestSequence
           latestQueuedTrackingCacheDataKey = trackingCacheDataKey
-          sideEffects.unshift(
+          sideEffects.push(
             enqueueTrackingCacheWrite(
               runtimeGeneration,
               dependencies.cache,
               serializeTrackingCachePayload({
                 cached_at: now().toISOString(),
-                devices: operationalSnapshot.devices,
-                positions: operationalSnapshot.positions,
-                breadcrumbs: operationalSnapshot.breadcrumbs,
+                devices: snapshot.devices,
+                positions: snapshot.positions,
+                breadcrumbs: snapshot.breadcrumbs,
               }),
             ),
           )
         } else {
-          sideEffects.unshift(Promise.resolve(null))
+          sideEffects.push(Promise.resolve(null))
         }
       }
 
       await Promise.allSettled(sideEffects).then((results) => {
-        if (shouldWriteTrackingCache) {
-          const cacheWriteResult = results[0]
+        if (trackingCacheResultIndex !== null) {
+          const cacheWriteResult = results[trackingCacheResultIndex]
           if (cacheWriteResult !== undefined && cacheWriteResult.status === 'rejected') {
             logger.warn('Tracking cache update failed.', cacheWriteResult.reason)
             if (
@@ -771,35 +785,10 @@ export async function startTrackingRuntime(
           }
         }
 
-        const missionPersistenceResult = results[shouldWriteTrackingCache ? 1 : 0]
-        if (missionPersistenceResult !== undefined && missionPersistenceResult.status === 'rejected') {
-          logger.warn('Tracking mission persistence failed.', missionPersistenceResult.reason)
-          if (
-            runtimeGeneration === activeTrackingRuntimeGeneration &&
-            !missionPersistenceWarningActive
-          ) {
-            missionPersistenceWarningActive = true
-            refreshTrackingStatus()
-            void dependencies.recordDiagnosticEvent?.({
-              level: 'warn',
-              category: 'tracking',
-              event: 'tracking_mission_persistence_failed',
-              fields: {},
-            })
-          }
-        } else if (
-          runtimeGeneration === activeTrackingRuntimeGeneration &&
-          missionPersistenceWarningActive
-        ) {
-          missionPersistenceWarningActive = false
-          refreshTrackingStatus()
-          void dependencies.recordDiagnosticEvent?.({
-            level: 'info',
-            category: 'tracking',
-            event: 'tracking_mission_persistence_recovered',
-            fields: {},
-          })
-        }
+        const missionPersistenceResult = missionPersistenceResultIndex === null
+          ? undefined
+          : results[missionPersistenceResultIndex]
+        applyMissionPersistenceResult(missionPersistenceResult)
       })
     },
     onStatusChange: (status) => {
@@ -841,10 +830,48 @@ export async function startTrackingRuntime(
       }
     },
   )
+  const unsubscribeParticipationScope = dependencies.subscribeParticipationScope?.(() => {
+    if (runtimeGeneration !== activeTrackingRuntimeGeneration) return
+    if (readParticipationScopeStatus() === 'ready') {
+      const pendingSnapshot = deferredOperationalSnapshot
+      if (pendingSnapshot !== null) {
+        const operationalSnapshot = filterOperationalSnapshot(pendingSnapshot.snapshot)
+        if (operationalSnapshot !== null) {
+          deferredOperationalSnapshot = null
+          dependencies.applySnapshot(operationalSnapshot)
+          scheduleParticipantBackfill()
+          void dependencies.recordDiagnosticEvent?.({
+            level: 'info',
+            category: 'tracking',
+            event: 'tracking_snapshot_applied_after_participant_hydration',
+            fields: buildTrackingSnapshotDiagnosticFields(operationalSnapshot),
+          })
+          if (pendingSnapshot.persistAfterHydration) {
+            const missionEvidenceSnapshot = filterMissionEvidenceSnapshot(
+              pendingSnapshot.snapshot,
+            )
+            void enqueueMissionPersistence(
+              limitSnapshotForMissionPersistence(
+                missionEvidenceSnapshot,
+                dependencies.maxPersistedPositionsPerSnapshot,
+              ),
+              pendingSnapshot.historyResetKey,
+            ).then(
+              () => applyMissionPersistenceResult({ status: 'fulfilled', value: undefined }),
+              (reason: unknown) => applyMissionPersistenceResult({ status: 'rejected', reason }),
+            )
+          }
+        }
+      }
+      poller.requestPollNow?.()
+    }
+    refreshTrackingStatus()
+  }) ?? (() => undefined)
   poller.start()
   return () => {
     unsubscribeMissionWake()
     unsubscribeDeviceSelectionWake()
+    unsubscribeParticipationScope()
     poller.stop()
     participantBackfillAbortController.abort()
     invalidateTrackingRuntimeGeneration(runtimeGeneration)
@@ -1035,6 +1062,7 @@ export async function startTrackingRuntime(
       missionPersistenceWarningActive
         ? 'MISSION BREADCRUMB STORAGE FAILED — current fixes remain visible, but new trail history may not survive restart.'
         : null,
+      participantScopeWarning(),
     ].filter((warning): warning is string => warning !== null)
     return {
       ...status,
@@ -1046,6 +1074,80 @@ export async function startTrackingRuntime(
     if (latestTrackingStatus !== null) {
       dependencies.applyStatus(decorateTrackingStatus(latestTrackingStatus))
     }
+  }
+
+  /** Publishes failure and recovery only when a mission persistence attempt settled. */
+  function applyMissionPersistenceResult(
+    result: PromiseSettledResult<unknown> | undefined,
+  ): void {
+    if (result === undefined) return
+    if (result.status === 'rejected') {
+      logger.warn('Tracking mission persistence failed.', result.reason)
+      if (
+        runtimeGeneration === activeTrackingRuntimeGeneration &&
+        !missionPersistenceWarningActive
+      ) {
+        missionPersistenceWarningActive = true
+        refreshTrackingStatus()
+        void dependencies.recordDiagnosticEvent?.({
+          level: 'warn',
+          category: 'tracking',
+          event: 'tracking_mission_persistence_failed',
+          fields: {},
+        })
+      }
+      return
+    }
+    if (
+      runtimeGeneration === activeTrackingRuntimeGeneration &&
+      missionPersistenceWarningActive
+    ) {
+      missionPersistenceWarningActive = false
+      refreshTrackingStatus()
+      void dependencies.recordDiagnosticEvent?.({
+        level: 'info',
+        category: 'tracking',
+        event: 'tracking_mission_persistence_recovered',
+        fields: {},
+      })
+    }
+  }
+
+  /** Applies current visibility only after the mission participant scope is trustworthy. */
+  function filterOperationalSnapshot(snapshot: TrackingSnapshot): TrackingSnapshot | null {
+    if (dependencies.missionModelEnabled !== true) return snapshot
+    if (readParticipationScopeStatus() !== 'ready') return null
+    const scope = dependencies.readParticipationScope?.()
+    return scope?.filterSnapshot(snapshot, now().toISOString()) ?? null
+  }
+
+  /** Applies evidence windows independently from immediate current-position visibility. */
+  function filterMissionEvidenceSnapshot(snapshot: TrackingSnapshot): TrackingSnapshot {
+    if (dependencies.missionModelEnabled !== true) return snapshot
+    const scope = dependencies.readParticipationScope?.()
+    return scope?.filterEvidenceSnapshot(snapshot, now().toISOString()) ?? {
+      ...snapshot,
+      devices: [],
+      positions: [],
+      breadcrumbs: [],
+      rawBreadcrumbsForPersistence: [],
+    }
+  }
+
+  /** Treats a missing scope as unavailable while retaining legacy test/runtime compatibility. */
+  function readParticipationScopeStatus(): 'loading' | 'ready' | 'error' {
+    if (dependencies.missionModelEnabled !== true) return 'ready'
+    return dependencies.readParticipationScopeStatus?.()
+      ?? (dependencies.readParticipationScope === undefined ? 'error' : 'ready')
+  }
+
+  /** Keeps a scope failure operator-visible without presenting an empty map as cached truth. */
+  function participantScopeWarning(): string | null {
+    const status = readParticipationScopeStatus()
+    if (status === 'ready') return null
+    return status === 'loading'
+      ? 'PARTICIPANT SELECTION LOADING — last-known positions will appear as soon as mission participation is ready.'
+      : 'PARTICIPANT SELECTION UNAVAILABLE — live and cached positions are being preserved but cannot be shown until mission participation reloads.'
   }
 }
 

@@ -93,6 +93,10 @@ export function installBrowserHarnessApi(): void {
         participantController !== null && participantState.activeMissionId === missionId
           ? participantState.scope.filterSnapshot(snapshot)
           : snapshot
+      const missionEvidenceSnapshot =
+        participantController !== null && participantState.activeMissionId === missionId
+          ? participantState.scope.filterEvidenceSnapshot(snapshot)
+          : snapshot
 
       for (const device of missionSnapshot.devices) {
         await store.upsertDevice({
@@ -107,7 +111,10 @@ export function installBrowserHarnessApi(): void {
         })
       }
 
-      const positions = [...missionSnapshot.breadcrumbs, ...missionSnapshot.positions]
+      const positions = [
+        ...missionEvidenceSnapshot.breadcrumbs,
+        ...missionEvidenceSnapshot.positions,
+      ]
       if (positions.length > 0) {
         await store.addPositionsBulk({
           mission_id: missionId,

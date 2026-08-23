@@ -12,11 +12,13 @@ function createParticipantStore(options) {
       const groups = normalizeArray(input?.groups, 'Participant groups')
       const devices = normalizeArray(input?.devices, 'Participant devices')
       const selectedBy = normalizeActor(input?.selected_by, 'Participant selector')
+      assertNoInitialSelectionOverlap(groups, devices)
       const timestamp = readNow()
       const transaction = db.transaction(() => {
         const selected = []
         for (const groupInput of groups) {
           const team = createOrGetTeam(db, mission.id, groupInput, timestamp)
+          assertNoActiveDuplicate(db, mission.id, 'group', null, team.id)
           selected.push(insertParticipant(db, {
             missionId: mission.id,
             kind: 'group',
@@ -37,13 +39,15 @@ function createParticipantStore(options) {
           }
         }
         for (const deviceInput of devices) {
+          const deviceId = normalizeIdentifier(
+            deviceInput?.traccar_device_id,
+            'Traccar device id',
+          )
+          assertNoActiveDuplicate(db, mission.id, 'device', deviceId, null)
           selected.push(insertParticipant(db, {
             missionId: mission.id,
             kind: 'device',
-            deviceId: normalizeIdentifier(
-              deviceInput?.traccar_device_id,
-              'Traccar device id',
-            ),
+            deviceId,
             provenance: 'explicit',
             effectiveFrom: mission.start_time,
             addedAt: timestamp,
@@ -78,6 +82,16 @@ function createParticipantStore(options) {
         let deviceId = null
         if (kind === 'group') {
           teamId = createOrGetTeam(db, mission.id, input?.ref, addedAt).id
+          if (!Array.isArray(input?.ref?.member_device_ids)) {
+            throw new Error('Current group member device ids are required.')
+          }
+          synchronizeObservedGroupMembership(
+            db,
+            mission.id,
+            teamId,
+            normalizeDeviceIdArray(input.ref.member_device_ids),
+            addedAt,
+          )
         } else {
           deviceId = normalizeIdentifier(input?.ref, 'Traccar device id')
         }
@@ -306,6 +320,50 @@ function insertMembershipEvent(db, input) {
   return event
 }
 
+/** Appends the complete observed membership delta for one later group selection. */
+function synchronizeObservedGroupMembership(
+  db,
+  missionId,
+  missionTeamId,
+  observedDeviceIds,
+  observedAt,
+) {
+  const latestByDevice = new Map()
+  const rows = db.prepare(`SELECT traccar_device_id, change
+    FROM mission_group_membership_events
+    WHERE mission_id = ? AND mission_team_id = ?
+    ORDER BY observed_at DESC, rowid DESC`).all(missionId, missionTeamId)
+  for (const row of rows) {
+    if (!latestByDevice.has(row.traccar_device_id)) {
+      latestByDevice.set(row.traccar_device_id, row.change)
+    }
+  }
+
+  const observed = new Set(observedDeviceIds)
+  for (const [deviceId, change] of latestByDevice) {
+    if (change === 'member' && !observed.has(deviceId)) {
+      insertMembershipEvent(db, {
+        missionId,
+        missionTeamId,
+        deviceId,
+        change: 'left',
+        observedAt,
+      })
+    }
+  }
+  for (const deviceId of observed) {
+    if (latestByDevice.get(deviceId) !== 'member') {
+      insertMembershipEvent(db, {
+        missionId,
+        missionTeamId,
+        deviceId,
+        change: 'member',
+        observedAt,
+      })
+    }
+  }
+}
+
 function insertBackfillCheckpoint(db, input) {
   db.prepare(`INSERT INTO participant_backfill_checkpoints (
       mission_id, traccar_device_id, window_from, window_to,
@@ -341,6 +399,101 @@ function assertNoActiveDuplicate(db, missionId, kind, deviceId, teamId) {
         AND kind = 'group' AND mission_team_id = ? AND removed_at IS NULL`)
         .get(missionId, teamId)
   if (duplicate !== undefined) throw new Error('Participant is already active for this mission.')
+  if (kind === 'device' && isDeviceCoveredByActiveGroup(db, missionId, deviceId)) {
+    throw new Error('Participant device is already active through a selected group.')
+  }
+  if (kind === 'group' && doesGroupCoverActiveDevice(db, missionId, teamId)) {
+    throw new Error('Participant group already covers an active individual device.')
+  }
+}
+
+/** Returns whether an active group currently covers a direct device candidate. */
+function isDeviceCoveredByActiveGroup(db, missionId, deviceId) {
+  return db.prepare(`SELECT 1
+      FROM mission_participants AS participant
+      INNER JOIN mission_group_membership_events AS membership
+        ON membership.mission_id = participant.mission_id
+       AND membership.mission_team_id = participant.mission_team_id
+      WHERE participant.mission_id = ?
+        AND participant.kind = 'group'
+        AND participant.removed_at IS NULL
+        AND membership.traccar_device_id = ?
+        AND membership.change = 'member'
+        AND NOT EXISTS (
+          SELECT 1 FROM mission_group_membership_events AS newer
+          WHERE newer.mission_id = membership.mission_id
+            AND newer.mission_team_id = membership.mission_team_id
+            AND newer.traccar_device_id = membership.traccar_device_id
+            AND (
+              newer.observed_at > membership.observed_at OR
+              (newer.observed_at = membership.observed_at AND newer.rowid > membership.rowid)
+            )
+        )
+      LIMIT 1`).get(missionId, deviceId) !== undefined
+}
+
+/** Returns whether a group candidate currently covers an active direct device. */
+function doesGroupCoverActiveDevice(db, missionId, teamId) {
+  return db.prepare(`SELECT 1
+      FROM mission_participants AS participant
+      INNER JOIN mission_group_membership_events AS membership
+        ON membership.mission_id = participant.mission_id
+       AND membership.traccar_device_id = participant.traccar_device_id
+      WHERE participant.mission_id = ?
+        AND participant.kind = 'device'
+        AND participant.removed_at IS NULL
+        AND membership.mission_team_id = ?
+        AND membership.change = 'member'
+        AND NOT EXISTS (
+          SELECT 1 FROM mission_group_membership_events AS newer
+          WHERE newer.mission_id = membership.mission_id
+            AND newer.mission_team_id = membership.mission_team_id
+            AND newer.traccar_device_id = membership.traccar_device_id
+            AND (
+              newer.observed_at > membership.observed_at OR
+              (newer.observed_at = membership.observed_at AND newer.rowid > membership.rowid)
+            )
+        )
+      LIMIT 1`).get(missionId, teamId) !== undefined
+}
+
+/** Rejects ambiguous initial instructions before their transaction mutates evidence. */
+function assertNoInitialSelectionOverlap(groups, devices) {
+  const directDeviceIds = devices.map((device) =>
+    normalizeIdentifier(device?.traccar_device_id, 'Traccar device id'))
+  const duplicateDirectDeviceId = firstDuplicate(directDeviceIds)
+  if (duplicateDirectDeviceId !== null) {
+    throw new Error(`Participant device ${duplicateDirectDeviceId} is selected more than once.`)
+  }
+
+  const groupIds = groups.map((group) =>
+    normalizeIdentifier(group?.traccar_group_id, 'Traccar group id'))
+  const duplicateGroupId = firstDuplicate(groupIds)
+  if (duplicateGroupId !== null) {
+    throw new Error(`Participant group ${duplicateGroupId} is selected more than once.`)
+  }
+
+  const groupMemberDeviceIds = new Set(
+    groups.flatMap((group) => normalizeDeviceIdArray(group?.member_device_ids)),
+  )
+  const overlappingDeviceIds = [...new Set(directDeviceIds)]
+    .filter((deviceId) => groupMemberDeviceIds.has(deviceId))
+    .sort()
+  if (overlappingDeviceIds.length > 0) {
+    throw new Error(
+      `Participant devices already covered by a selected group must be selected only once: ${overlappingDeviceIds.join(', ')}.`,
+    )
+  }
+}
+
+/** Returns the first repeated identifier without hiding an invalid selection. */
+function firstDuplicate(values) {
+  const seen = new Set()
+  for (const value of values) {
+    if (seen.has(value)) return value
+    seen.add(value)
+  }
+  return null
 }
 
 function requireMission(db, missionId) {

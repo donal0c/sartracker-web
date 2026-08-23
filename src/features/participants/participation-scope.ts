@@ -7,7 +7,14 @@ import type { TrackingSnapshot } from '../tracking/tracking-types'
 export type ParticipationScope = {
   readonly includesAt: (deviceId: string, timestamp: string) => boolean
   readonly activeDeviceIdsAt: (timestamp: string) => readonly string[]
-  readonly filterSnapshot: (snapshot: TrackingSnapshot) => TrackingSnapshot
+  readonly filterSnapshot: (
+    snapshot: TrackingSnapshot,
+    observedAt?: string,
+  ) => TrackingSnapshot
+  readonly filterEvidenceSnapshot: (
+    snapshot: TrackingSnapshot,
+    observedAt?: string,
+  ) => TrackingSnapshot
 }
 
 /**
@@ -66,9 +73,29 @@ export function createParticipationScope(input: {
   return {
     includesAt,
     activeDeviceIdsAt,
-    filterSnapshot: (snapshot) => {
-      const referenceTimestamp = latestSnapshotTimestamp(snapshot) ?? new Date().toISOString()
-      const activeDeviceIds = new Set(activeDeviceIdsAt(referenceTimestamp))
+    filterSnapshot: (snapshot, observedAt = new Date().toISOString()) => {
+      const activeDeviceIds = new Set(activeDeviceIdsAt(observedAt))
+      return {
+        ...snapshot,
+        devices: snapshot.devices.filter((device) => activeDeviceIds.has(device.device_id)),
+        // Current positions describe where selected participants are now. Their
+        // source fix can predate a late selection or observation-time group
+        // membership change, so historical evidence windows must not hide them.
+        positions: snapshot.positions.filter((position) =>
+          activeDeviceIds.has(position.device_id)),
+        breadcrumbs: snapshot.breadcrumbs.filter((position) =>
+          includesAt(position.device_id, position.timestamp)),
+        ...(snapshot.rawBreadcrumbsForPersistence === undefined
+          ? {}
+          : {
+              rawBreadcrumbsForPersistence: snapshot.rawBreadcrumbsForPersistence.filter(
+                (position) => includesAt(position.device_id, position.timestamp),
+              ),
+        }),
+      }
+    },
+    filterEvidenceSnapshot: (snapshot, observedAt = new Date().toISOString()) => {
+      const activeDeviceIds = new Set(activeDeviceIdsAt(observedAt))
       return {
         ...snapshot,
         devices: snapshot.devices.filter((device) => activeDeviceIds.has(device.device_id)),
@@ -99,17 +126,6 @@ function windowContains(participant: MissionParticipant, timestamp: string): boo
     participant.effective_from <= timestamp &&
     (participant.removed_at === null || timestamp < participant.removed_at)
   )
-}
-
-function latestSnapshotTimestamp(snapshot: TrackingSnapshot): string | null {
-  let latest: string | null = null
-  for (const position of snapshot.positions) {
-    if (latest === null || position.timestamp > latest) latest = position.timestamp
-  }
-  for (const position of snapshot.breadcrumbs) {
-    if (latest === null || position.timestamp > latest) latest = position.timestamp
-  }
-  return latest
 }
 
 /** Appends one value to a construction-time immutable-scope index. */

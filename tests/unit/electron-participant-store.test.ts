@@ -83,6 +83,125 @@ describe('Electron participant store [DON-271]', () => {
       .toContain('participants_selected')
   })
 
+  it('rejects an initial selection that covers one device directly and through a group', async () => {
+    const store = await createStore()
+    const mission = await store.createMission({
+      name: 'Non-duplicated participant mission',
+      start_time: '2026-08-20T08:00:00.000Z',
+    })
+
+    await expect(store.selectMissionParticipants({
+      mission_id: mission.id,
+      groups: [{
+        traccar_group_id: '101',
+        name: 'Kerry MRT',
+        member_device_ids: ['11'],
+      }],
+      devices: [{ traccar_device_id: '11' }],
+      selected_by: 'Coordinator A',
+    })).rejects.toThrow(/device.*group|covered.*group|select.*once/i)
+
+    await expect(store.listMissionParticipants(mission.id)).resolves.toEqual([])
+    await expect(store.listGroupMembershipEvents(mission.id)).resolves.toEqual([])
+  })
+
+  it('rejects a second active selection of the same participant', async () => {
+    const store = await createStore()
+    const mission = await store.createMission({
+      name: 'Unique participant mission',
+      start_time: '2026-08-20T08:00:00.000Z',
+    })
+    const selection = {
+      mission_id: mission.id,
+      groups: [],
+      devices: [{ traccar_device_id: '20' }],
+      selected_by: 'Coordinator A',
+    }
+
+    await store.selectMissionParticipants(selection)
+    await expect(store.selectMissionParticipants(selection)).rejects.toThrow(/already active/i)
+    await expect(store.listMissionParticipants(mission.id)).resolves.toHaveLength(1)
+  })
+
+  it('rejects adding a direct participant already covered by a selected group', async () => {
+    const store = await createStore()
+    const mission = await store.createMission({
+      name: 'Group-covered participant mission',
+      start_time: '2026-08-20T08:00:00.000Z',
+    })
+    await store.selectMissionParticipants({
+      mission_id: mission.id,
+      groups: [{
+        traccar_group_id: '101', name: 'Kerry MRT', member_device_ids: ['11'],
+      }],
+      devices: [],
+      selected_by: 'Coordinator A',
+    })
+
+    await expect(store.addMissionParticipant({
+      mission_id: mission.id,
+      kind: 'device',
+      ref: '11',
+      confirmed_by: 'Coordinator A',
+    })).rejects.toThrow(/active.*group|covered.*group/i)
+    await expect(store.listMissionParticipants(mission.id)).resolves.toHaveLength(1)
+  })
+
+  it('rejects adding a group that currently covers an active direct participant', async () => {
+    const store = await createStore()
+    const mission = await store.createMission({
+      name: 'Direct-before-group participant mission',
+      start_time: '2026-08-20T08:00:00.000Z',
+    })
+    await store.selectMissionParticipants({
+      mission_id: mission.id,
+      groups: [],
+      devices: [{ traccar_device_id: '11' }],
+      selected_by: 'Coordinator A',
+    })
+
+    await expect(store.addMissionParticipant({
+      mission_id: mission.id,
+      kind: 'group',
+      ref: {
+        traccar_group_id: '101',
+        name: 'Kerry MRT',
+        member_device_ids: ['11'],
+      },
+      confirmed_by: 'Coordinator A',
+    })).rejects.toThrow(/covers.*active.*individual|individual.*active.*group/i)
+    await expect(store.listMissionParticipants(mission.id)).resolves.toHaveLength(1)
+    await expect(store.listGroupMembershipEvents(mission.id)).resolves.toEqual([])
+  })
+
+  it('records the observation-time roster when a later group selection is unique', async () => {
+    const store = await createStore()
+    const mission = await store.createMission({
+      name: 'Later group roster mission',
+      start_time: '2026-08-20T08:00:00.000Z',
+    })
+
+    const added = await store.addMissionParticipant({
+      mission_id: mission.id,
+      kind: 'group',
+      ref: {
+        traccar_group_id: '101',
+        name: 'Kerry MRT',
+        member_device_ids: ['11'],
+      },
+      confirmed_by: 'Coordinator A',
+    })
+
+    await expect(store.listGroupMembershipEvents(mission.id)).resolves.toEqual([
+      expect.objectContaining({
+        mission_team_id: added.mission_team_id,
+        traccar_device_id: '11',
+        change: 'member',
+        observed_at: added.added_at,
+      }),
+    ])
+  })
+
   it('closes windows append-only and creates a new row when re-added', async () => {
     const store = await createStore()
     const mission = await store.createMission({

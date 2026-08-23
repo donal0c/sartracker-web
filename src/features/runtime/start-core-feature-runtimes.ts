@@ -22,6 +22,7 @@ import {
   applyMissionGovernanceRuntime,
   applyMissionRuntime,
   applyMissionRuntimeController,
+  useMissionStore,
 } from '../mission/mission-store'
 import { startMissionGovernanceRuntime } from '../mission/start-mission-governance-runtime'
 import { startMissionRuntime } from '../mission/start-mission-runtime'
@@ -41,6 +42,7 @@ import {
   hasParticipantStoreBoundary,
   startParticipantRuntime,
 } from '../participants/start-participant-runtime'
+import { resolveParticipantMissionId } from '../participants/participant-mission-context'
 import type { AutosaveSyncReason } from '../persistence/autosave-status-store'
 import { recordDiagnosticEvent } from '../diagnostics/diagnostic-event-log'
 
@@ -200,6 +202,11 @@ export async function startCoreFeatureRuntimes(
     : null
   if (participantRuntimeController !== null) {
     applyParticipantController(participantRuntimeController)
+    const missionState = useMissionStore.getState()
+    const participantMissionId = resolveParticipantMissionId(missionState)
+    if (participantMissionId !== null) {
+      await participantRuntimeController.refreshMission(participantMissionId)
+    }
     cleanups.push(() => undefined)
   } else {
     applyParticipantController(null)

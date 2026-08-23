@@ -99,6 +99,8 @@ type CreateManagedRuntimeServicesDependencies = {
     readonly notifyDurablePositionChange?: (changedPositionCount: number) => void
     readonly missionModelEnabled?: boolean
     readonly readParticipationScope?: () => import('../participants/participation-scope').ParticipationScope
+    readonly readParticipationScopeStatus?: () => 'loading' | 'ready' | 'error'
+    readonly subscribeParticipationScope?: (listener: () => void) => () => void
     readonly applyParticipantRoster?: (
       devices: readonly import('../tracking/tracking-types').NormalizedTrackingDevice[],
     ) => void | Promise<void>
@@ -148,6 +150,8 @@ type CreateManagedRuntimeServicesDependencies = {
   readonly notifyDurablePositionChange?: (changedPositionCount: number) => void
   readonly missionModelEnabled?: boolean
   readonly readParticipationScope?: () => import('../participants/participation-scope').ParticipationScope
+  readonly readParticipationScopeStatus?: () => 'loading' | 'ready' | 'error'
+  readonly subscribeParticipationScope?: (listener: () => void) => () => void
   readonly applyParticipantRoster?: (
     devices: readonly import('../tracking/tracking-types').NormalizedTrackingDevice[],
   ) => void | Promise<void>
@@ -221,6 +225,12 @@ export async function createManagedRuntimeServices(
       ...(dependencies.readParticipationScope === undefined
         ? {}
         : { readParticipationScope: dependencies.readParticipationScope }),
+      ...(dependencies.readParticipationScopeStatus === undefined
+        ? {}
+        : { readParticipationScopeStatus: dependencies.readParticipationScopeStatus }),
+      ...(dependencies.subscribeParticipationScope === undefined
+        ? {}
+        : { subscribeParticipationScope: dependencies.subscribeParticipationScope }),
       ...(dependencies.applyParticipantRoster === undefined
         ? {}
         : { applyParticipantRoster: dependencies.applyParticipantRoster }),

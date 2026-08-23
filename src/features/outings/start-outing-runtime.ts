@@ -150,10 +150,14 @@ export async function startOutingRuntime(
     publishRuntime()
     try {
       const result = await operation(missionId)
-      await controller.refreshMission(missionId)
+      if (activeMissionId === missionId) {
+        await controller.refreshMission(missionId)
+      }
       return result
     } catch (runtimeError) {
-      error = toErrorMessage(runtimeError)
+      if (activeMissionId === missionId) {
+        error = toErrorMessage(runtimeError)
+      }
       return null
     } finally {
       saving = false

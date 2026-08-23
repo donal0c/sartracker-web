@@ -107,6 +107,66 @@ describe('startParticipantRuntime [DON-271]', () => {
     })
   })
 
+  it('removes a direct draft selection when its group becomes selected', async () => {
+    const store = createStore()
+    const runtime = await startParticipantRuntime({
+      participantStore: store,
+      applyRuntime: vi.fn(),
+    })
+    runtime.applyGroups([{ group_id: 'group-1', name: 'Hill Team', parent_group_id: null }])
+    await runtime.applyRoster([device('device-1', 'group-1')])
+    runtime.toggleDraftDevice('device-1')
+    runtime.toggleDraftGroup('group-1')
+
+    await runtime.selectInitialParticipants('mission-1', 'Coordinator')
+
+    expect(store.selectMissionParticipants).toHaveBeenCalledWith(expect.objectContaining({
+      devices: [],
+      groups: [expect.objectContaining({ member_device_ids: ['device-1'] })],
+    }))
+  })
+
+  it('passes the observed group roster into a later group-add duplicate check', async () => {
+    const store = createStore({
+      participants: [{
+        ...GROUP_PARTICIPANT,
+        id: 'participant-device',
+        kind: 'device',
+        mission_team_id: null,
+        traccar_group_id: null,
+        team_name: null,
+        traccar_device_id: 'device-1',
+      }],
+      membershipEvents: [],
+    })
+    store.addMissionParticipant.mockRejectedValueOnce(
+      new Error('Participant group already covers an active individual device.'),
+    )
+    const runtime = await startParticipantRuntime({
+      participantStore: store,
+      applyRuntime: vi.fn(),
+    })
+    await runtime.refreshMission('mission-1')
+    await runtime.applyRoster([device('device-1', 'group-1')])
+
+    const result = await runtime.addParticipant({
+      kind: 'group',
+      ref: { traccar_group_id: 'group-1', name: 'Hill Team' },
+      confirmed_by: 'Coordinator',
+    })
+
+    expect(result).toBeNull()
+    expect(store.addMissionParticipant).toHaveBeenCalledWith(expect.objectContaining({
+      mission_id: 'mission-1',
+      kind: 'group',
+      ref: {
+        traccar_group_id: 'group-1',
+        name: 'Hill Team',
+        member_device_ids: ['device-1'],
+      },
+    }))
+  })
+
   it('does not republish a semantically unchanged discovery roster [DON-271]', async () => {
     const applyRuntime = vi.fn()
     const runtime = await startParticipantRuntime({

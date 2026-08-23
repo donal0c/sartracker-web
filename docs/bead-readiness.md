@@ -20,17 +20,17 @@ Use this document before implementation to decide how much parallel research, pl
 
 ## Current Assessments
 
-Last updated: 2026-08-23 by Codex (Breadcrumb PR-2 candidate)
+Last updated: 2026-08-23 by Codex (Breadcrumb PR-2 review remediation)
 
 ### `DON-270` / `DON-271` / `DON-272` — Breadcrumb PR-2 mission model — candidate
 
 - Research required: complete; the raw team transcript and stable Q&A ledger resolve the domain behavior.
-- Implementation readiness: implemented and qualified through CP-8; review-ready.
-- Recommended action: begin Donal's four independent exact-head reviews on the single PR-2 pull request. Do not merge or start PR-3 meanwhile.
+- Implementation readiness: CP-8 candidate findings remediated; commit-bound package/fixture invalidation gates remain before the next review round.
+- Recommended action: finish the remediation candidate gates, push one new exact head, then begin Donal's next four independent reviews. Do not merge or start PR-3 meanwhile.
 - Locked decisions: one additive schema v9; explicit outing boundaries; accepted fixes outside outings remain Unassigned; no participant preselection; group membership changes apply from observation time without retrospective evidence; >100 selected devices warns and proceeds without truncation; legacy/finalized rows are grandfathered with explicit provenance; the mission model stays internal and release-off.
-- Open questions: none.
-- Evidence: local software and changed-visual gates; exact legacy preset digest; measured 960k/2m schema-v9 fixtures; GET-only live Traccar selection→local scoped persistence; exact-head flag-off and flag-on macOS packages with 8,664-position restart soaks; schema-v9 100-device × 5,000-fix stationary package at `102.3 ms` maximum renderer gap (`<200 ms` hard gate); exact Ubuntu x64 3.704 GB v8→v9 integrity/migration/Review proof with 32/32 grandfathered participants, 2,040,000 Unassigned fixes, 1.530 s Review, 1.054 ms main maximum during Review, and 108.5 ms renderer maximum.
-- Ready-to-start checklist for reviews: [x] implementation/docs/manual; [x] local software/visual/package/scale/live gates; [x] 3.704 GB Ubuntu v8→v9 migration and Review responsiveness; [x] exact final head reported in the pull request.
+- Open questions: none. Known decision boundary: schema v9 is installed even when the internal flag is off, so a field database opened by this candidate cannot be reopened by a schema-v8 build; remediation does not silently change that approved single-schema policy.
+- Evidence: red-first P1-A/B/C and outing-reentrancy regressions; full software gates (`227 files / 1,812` unit, lint/build, backend `51 / 1 ignored`, Chromium `153/153`); and a local three-outing query over the deterministic 1,999,988-fix mission that used `idx_positions_mission_timestamp`, returned exact 666,700 / 666,700 / 666,588 counts, and completed in `966.9 ms`. Earlier package/live/scale evidence remains relevant where the changed runtime/schema path does not invalidate it. The exact Ubuntu x64 3.704 GB v8→v9 run still proves integrity, 32/32 grandfathering, 2,040,000 Unassigned fixes and responsive worker/main/renderer behavior, but its zero-outing 1.530 s Review does **not** bound the outing-window join.
+- Ready-to-start checklist for reviews: [x] red-first remediation; [x] full software/browser gates; [ ] exact remediation package/fixture gates; [ ] exact final head pushed and reported in the pull request.
 
 ### `DON-260` — Deep breadcrumb correctness hotfix — completed
 

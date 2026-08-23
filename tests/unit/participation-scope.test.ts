@@ -60,6 +60,55 @@ describe('participation scope [DON-271]', () => {
     })
   })
 
+  it('keeps a selected participant current position visible when its fix predates selection', () => {
+    const scope = createParticipationScope({
+      participants: [participant({
+        traccar_device_id: '11',
+        effective_from: '2026-08-20T14:00:00.000Z',
+        added_at: '2026-08-20T14:00:00.000Z',
+      })],
+      membershipEvents: [],
+    })
+    const staleCurrentPosition = position('11', '2026-08-20T13:47:00.000Z')
+
+    expect(scope.filterSnapshot({
+      devices: [device('11')],
+      positions: [staleCurrentPosition],
+      breadcrumbs: [staleCurrentPosition],
+      rawBreadcrumbsForPersistence: [staleCurrentPosition],
+    }, '2026-08-20T14:00:00.000Z')).toMatchObject({
+      devices: [{ device_id: '11' }],
+      positions: [{ device_id: '11', timestamp: '2026-08-20T13:47:00.000Z' }],
+      breadcrumbs: [],
+      rawBreadcrumbsForPersistence: [],
+    })
+  })
+
+  it('keeps a newly observed group member current position visible without backdating evidence', () => {
+    const scope = createParticipationScope({
+      participants: [participant({
+        id: 'participant-group', kind: 'group', traccar_device_id: null,
+        mission_team_id: 'team-101', effective_from: '2026-08-20T08:00:00.000Z',
+      })],
+      membershipEvents: [membership({
+        traccar_device_id: '12', change: 'member', observed_at: '2026-08-20T14:00:00.000Z',
+      })],
+    })
+    const staleCurrentPosition = position('12', '2026-08-20T13:47:00.000Z')
+
+    expect(scope.filterSnapshot({
+      devices: [device('12')],
+      positions: [staleCurrentPosition],
+      breadcrumbs: [staleCurrentPosition],
+      rawBreadcrumbsForPersistence: [staleCurrentPosition],
+    }, '2026-08-20T14:00:00.000Z')).toMatchObject({
+      devices: [{ device_id: '12' }],
+      positions: [{ device_id: '12', timestamp: '2026-08-20T13:47:00.000Z' }],
+      breadcrumbs: [],
+      rawBreadcrumbsForPersistence: [],
+    })
+  })
+
   it('indexes participant windows by device instead of scanning the mission roster per fix', () => {
     let participantIdentityReads = 0
     const participants = Array.from({ length: 100 }, (_, index) => new Proxy(
@@ -106,11 +155,11 @@ function device(deviceId: string) {
   }
 }
 
-function position(deviceId: string) {
+function position(deviceId: string, timestamp = '2026-08-20T09:30:00.000Z') {
   return {
     id: `position-${deviceId}`, device_id: deviceId, lat: 52, lon: -9,
     altitude: null, speed: null, battery: null, accuracy: null,
-    timestamp: '2026-08-20T09:30:00.000Z', source: null,
+    timestamp, source: null,
     data_origin: 'live' as const, cache_age_seconds: null, device_cache_stale: false,
   }
 }

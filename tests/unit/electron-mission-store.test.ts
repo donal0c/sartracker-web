@@ -598,6 +598,29 @@ describe('electron mission store', () => {
       expect(migratedDb.prepare('SELECT COUNT(*) AS count FROM devices').get()).toEqual({ count: 2 })
       expect(migratedDb.prepare("SELECT value FROM metadata WHERE key = 'schema_version'").get())
         .toEqual({ value: '9' })
+      expect(migratedDb.prepare(`SELECT name FROM sqlite_master
+          WHERE type = 'index' AND name IN (
+            'idx_mission_participants_active_device',
+            'idx_mission_participants_active_group',
+            'idx_positions_mission_timestamp'
+          ) ORDER BY name`).all()).toEqual([
+        { name: 'idx_mission_participants_active_device' },
+        { name: 'idx_mission_participants_active_group' },
+        { name: 'idx_positions_mission_timestamp' },
+      ])
+      const fixSummaryPlan = migratedDb.prepare(`EXPLAIN QUERY PLAN
+        SELECT outing.id AS outing_id, COUNT(position.id) AS accepted_fix_count
+        FROM outings AS outing
+        LEFT JOIN positions AS position
+          ON position.mission_id = outing.mission_id
+         AND position.timestamp >= outing.started_at
+         AND (outing.ended_at IS NULL OR position.timestamp < outing.ended_at)
+        WHERE outing.mission_id = ?
+        GROUP BY outing.id, outing.started_at`).all('finalized-mission') as {
+          readonly detail: string
+        }[]
+      expect(fixSummaryPlan.some((step) =>
+        step.detail.includes('idx_positions_mission_timestamp'))).toBe(true)
     } finally {
       migratedDb.close()
     }

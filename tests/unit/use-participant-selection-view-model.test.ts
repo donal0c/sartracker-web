@@ -27,7 +27,14 @@ describe('participant selection view model [DON-271]', () => {
 
     expect(model.selectedDeviceCount).toBe(2)
     expect(model.availableGroups[0]?.selected).toBe(true)
-    expect(model.availableDevices.find((entry) => entry.deviceId === '2')?.selected).toBe(true)
+    expect(model.availableDevices.find((entry) => entry.deviceId === '1')).toMatchObject({
+      selected: true,
+      coveredBySelectedGroup: true,
+    })
+    expect(model.availableDevices.find((entry) => entry.deviceId === '2')).toMatchObject({
+      selected: true,
+      coveredBySelectedGroup: false,
+    })
   })
 
   it('surfaces duplicate unique ids without merging canonical numeric device identities', () => {

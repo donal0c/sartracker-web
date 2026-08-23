@@ -393,6 +393,7 @@ export type AddMissionParticipantInput = {
   readonly ref: string | {
     readonly traccar_group_id: string
     readonly name: string
+    readonly member_device_ids?: readonly string[]
   }
   readonly effective_from?: string
   readonly confirmed_by: string

@@ -322,6 +322,75 @@ describe('browser harness store', () => {
     ])
   })
 
+  it('mirrors the active participant uniqueness backstops [DON-271]', async () => {
+    const store = getBrowserHarnessStore()
+    const mission = await store.createMission({
+      name: 'Participant Uniqueness Harness Mission',
+      start_time: '2026-08-20T08:00:00.000Z',
+    })
+
+    await expect(store.selectMissionParticipants({
+      mission_id: mission.id,
+      groups: [{
+        traccar_group_id: '101', name: 'Kerry MRT', member_device_ids: ['11'],
+      }],
+      devices: [{ traccar_device_id: '11' }],
+      selected_by: 'Coordinator A',
+    })).rejects.toThrow(/device.*group|covered.*group|select.*once/i)
+    await expect(store.listMissionParticipants(mission.id)).resolves.toEqual([])
+
+    const directSelection = {
+      mission_id: mission.id,
+      groups: [],
+      devices: [{ traccar_device_id: '20' }],
+      selected_by: 'Coordinator A',
+    }
+    await store.selectMissionParticipants(directSelection)
+    await expect(store.selectMissionParticipants(directSelection)).rejects.toThrow(/already active/i)
+    await expect(store.listMissionParticipants(mission.id)).resolves.toHaveLength(1)
+
+    await store.finishMission(mission.id)
+    const groupMission = await store.createMission({
+      name: 'Group-covered Harness Mission',
+      start_time: '2026-08-20T08:00:00.000Z',
+    })
+    await store.selectMissionParticipants({
+      mission_id: groupMission.id,
+      groups: [{
+        traccar_group_id: '101', name: 'Kerry MRT', member_device_ids: ['11'],
+      }],
+      devices: [],
+      selected_by: 'Coordinator A',
+    })
+    await expect(store.addMissionParticipant({
+      mission_id: groupMission.id,
+      kind: 'device', ref: '11', confirmed_by: 'Coordinator A',
+    })).rejects.toThrow(/active.*group|covered.*group/i)
+
+    await store.finishMission(groupMission.id)
+    const directBeforeGroupMission = await store.createMission({
+      name: 'Direct-before-group Harness Mission',
+      start_time: '2026-08-20T08:00:00.000Z',
+    })
+    await store.selectMissionParticipants({
+      mission_id: directBeforeGroupMission.id,
+      groups: [],
+      devices: [{ traccar_device_id: '11' }],
+      selected_by: 'Coordinator A',
+    })
+    await expect(store.addMissionParticipant({
+      mission_id: directBeforeGroupMission.id,
+      kind: 'group',
+      ref: {
+        traccar_group_id: '101',
+        name: 'Kerry MRT',
+        member_device_ids: ['11'],
+      },
+      confirmed_by: 'Coordinator A',
+    })).rejects.toThrow(/covers.*active.*individual|individual.*active.*group/i)
+    await expect(store.listGroupMembershipEvents(directBeforeGroupMission.id)).resolves.toEqual([])
+  })
+
   it('finalizes and unlocks a mission using the configured admin roster', async () => {
     window.localStorage.setItem(
       'sartracker:browser-settings',

@@ -84,8 +84,9 @@ export function ParticipantControlsSection({ phase }: ParticipantControlsSection
             items={selection.availableDevices.map((device) => ({
               id: device.deviceId,
               label: device.name,
-              detail: `${device.deviceId}${device.reportingNow ? ' · reporting now' : ''}`,
+              detail: `${device.deviceId}${device.reportingNow ? ' · reporting now' : ''}${device.coveredBySelectedGroup ? ' · included by selected group' : ''}`,
               selected: device.selected,
+              disabled: device.coveredBySelectedGroup,
               onToggle: () => selection.toggleDevice(device.deviceId),
             }))}
             testId="participant-device-picker"
@@ -160,7 +161,7 @@ export function ParticipantControlsSection({ phase }: ParticipantControlsSection
       </div>
 
       <div className="grid gap-2 border-t border-[var(--sar-line)] pt-3 sm:grid-cols-2">
-        <select className="sar-input px-2 py-2 text-xs" onChange={(event) => {
+        <select className="sar-input px-2 py-2 text-xs" data-testid="participant-add-kind" onChange={(event) => {
           setAddKind(event.target.value as 'device' | 'group')
           setAddRef('')
         }} value={addKind}>
@@ -216,6 +217,7 @@ function ParticipantPickerList(props: {
     readonly label: string
     readonly detail: string
     readonly selected: boolean
+    readonly disabled?: boolean
     readonly onToggle: () => void
   }[]
 }) {
@@ -223,8 +225,8 @@ function ParticipantPickerList(props: {
     <fieldset className="sar-readout max-h-44 space-y-2 overflow-y-auto p-2" data-testid={props.testId}>
       <legend className="px-1 text-[10px] font-bold uppercase tracking-[0.1em] text-stone-300">{props.heading}</legend>
       {props.items.length === 0 ? <p className="text-[11px] text-stone-300">{props.emptyText}</p> : props.items.map((item) => (
-        <label className="flex cursor-pointer items-start gap-2 text-xs" key={item.id}>
-          <input checked={item.selected} onChange={item.onToggle} type="checkbox" />
+        <label className={`flex items-start gap-2 text-xs ${item.disabled === true ? 'cursor-not-allowed opacity-75' : 'cursor-pointer'}`} key={item.id}>
+          <input checked={item.selected} disabled={item.disabled} onChange={item.onToggle} type="checkbox" />
           <span><span className="block font-semibold text-stone-100">{item.label}</span><span className="text-[11px] text-stone-300">{item.detail}</span></span>
         </label>
       ))}

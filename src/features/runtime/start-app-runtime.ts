@@ -58,6 +58,7 @@ import {
 } from './runtime-managed-services'
 import { startCoreFeatureRuntimes } from './start-core-feature-runtimes'
 import { useParticipantStore } from '../participants/participant-store'
+import { resolveParticipantMissionId } from '../participants/participant-mission-context'
 import { isMissionModelEnabled } from './mission-model-flag'
 
 type StartAppRuntimeDependencies = {
@@ -327,6 +328,25 @@ export async function startAppRuntime(
       applyStatus: applyTrackingStatus,
       missionModelEnabled: isMissionModelEnabled(),
       readParticipationScope: () => useParticipantStore.getState().scope,
+      readParticipationScopeStatus: () => {
+        const missionState = useMissionStore.getState()
+        const missionId = resolveParticipantMissionId(missionState)
+        const participantState = useParticipantStore.getState()
+        if (missionId === null) return 'ready'
+        if (participantState.activeMissionId !== missionId || participantState.loading) {
+          return 'loading'
+        }
+        return participantState.error === null ? 'ready' : 'error'
+      },
+      subscribeParticipationScope: (listener) =>
+        useParticipantStore.subscribe((state, previousState) => {
+          if (
+            state.scope !== previousState.scope ||
+            state.activeMissionId !== previousState.activeMissionId ||
+            state.loading !== previousState.loading ||
+            state.error !== previousState.error
+          ) listener()
+        }),
       applyParticipantRoster: (devices) =>
         useParticipantStore.getState().controller?.applyRoster(devices),
       applyParticipantGroups: (groups) =>

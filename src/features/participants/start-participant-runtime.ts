@@ -175,11 +175,25 @@ export async function startParticipantRuntime(
       publishRuntime()
     },
     toggleDraftDevice: (deviceId) => {
+      const device = availableDevices.find((candidate) => candidate.device_id === deviceId)
+      if (
+        device?.group_id !== null &&
+        device?.group_id !== undefined &&
+        draftGroupIds.includes(device.group_id)
+      ) return
       draftDeviceIds = toggleId(draftDeviceIds, deviceId)
       publishRuntime()
     },
     toggleDraftGroup: (groupId) => {
+      const selectingGroup = !draftGroupIds.includes(groupId)
       draftGroupIds = toggleId(draftGroupIds, groupId)
+      if (selectingGroup) {
+        const coveredDeviceIds = new Set(availableDevices
+          .filter((device) => device.group_id === groupId)
+          .map((device) => device.device_id))
+        draftDeviceIds = draftDeviceIds.filter((deviceId) =>
+          !coveredDeviceIds.has(deviceId))
+      }
       publishRuntime()
     },
     clearDraft: () => {
@@ -221,8 +235,24 @@ export async function startParticipantRuntime(
         publishRuntime()
       }
     },
-    addParticipant: async (input) => mutate(async (missionId) =>
-      dependencies.participantStore.addMissionParticipant({ mission_id: missionId, ...input })),
+    addParticipant: async (input) => mutate(async (missionId) => {
+      const participantRef = input.ref
+      const observedInput = input.kind === 'group' && typeof participantRef !== 'string'
+        ? {
+            ...input,
+            ref: {
+              ...participantRef,
+              member_device_ids: availableDevices
+                .filter((device) => device.group_id === participantRef.traccar_group_id)
+                .map((device) => device.device_id),
+            },
+          }
+        : input
+      return dependencies.participantStore.addMissionParticipant({
+        mission_id: missionId,
+        ...observedInput,
+      })
+    }),
     removeParticipant: async (participantId, removedBy, reason) => mutate(async (missionId) =>
       dependencies.participantStore.removeMissionParticipant({
         mission_id: missionId,

@@ -98,6 +98,31 @@ describe('startOutingRuntime [DON-270]', () => {
     expect(store.cancelOutingFixSummary).toHaveBeenCalledTimes(1)
     expect(store.cancelOutingFixSummary).toHaveBeenCalledWith(expect.stringMatching(/^outing-summary-/u))
   })
+
+  it('does not restore a stale mission after an in-flight mutation completes', async () => {
+    let releaseCreate: (outing: Outing) => void = () => undefined
+    const store = createStore()
+    store.createOuting.mockImplementationOnce(() =>
+      new Promise((resolve) => { releaseCreate = resolve }))
+    const states: Array<{ readonly activeMissionId: string | null }> = []
+    const runtime = await startOutingRuntime({
+      outingStore: store,
+      applyRuntime: (state) => states.push(state),
+    })
+    await runtime.refreshMission('mission-1')
+
+    const pendingCreate = runtime.startOuting()
+    await Promise.resolve()
+    await runtime.refreshMission('mission-2')
+    releaseCreate(FIRST_OUTING)
+    await pendingCreate
+
+    expect(states.at(-1)?.activeMissionId).toBe('mission-2')
+    expect(store.listOutings.mock.calls.map(([missionId]) => missionId)).toEqual([
+      'mission-1',
+      'mission-2',
+    ])
+  })
 })
 
 function createStore() {

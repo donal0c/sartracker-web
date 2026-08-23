@@ -676,6 +676,12 @@ function migrate(db) {
     );
     CREATE INDEX IF NOT EXISTS idx_mission_participants_mission
       ON mission_participants(mission_id);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_mission_participants_active_device
+      ON mission_participants(mission_id, traccar_device_id)
+      WHERE kind = 'device' AND removed_at IS NULL;
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_mission_participants_active_group
+      ON mission_participants(mission_id, mission_team_id)
+      WHERE kind = 'group' AND removed_at IS NULL;
     CREATE TABLE IF NOT EXISTS mission_group_membership_events (
       id TEXT PRIMARY KEY,
       mission_id TEXT NOT NULL,
@@ -721,6 +727,8 @@ function migrate(db) {
       FOREIGN KEY (mission_id, device_id) REFERENCES devices(mission_id, device_id)
     );
     CREATE INDEX IF NOT EXISTS idx_positions_mission_device_timestamp ON positions(mission_id, device_id, timestamp);
+    CREATE INDEX IF NOT EXISTS idx_positions_mission_timestamp
+      ON positions(mission_id, timestamp);
     CREATE TABLE IF NOT EXISTS tracking_history_checkpoints (
       mission_id TEXT NOT NULL,
       device_id TEXT NOT NULL,

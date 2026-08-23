@@ -657,6 +657,12 @@
             active selected devices produces a persistent warning and still includes every selected device —
             the app never truncates the roster or silently drops the 101st device.
           </p>
+          <div class="note">
+            <strong>One active selection path per device:</strong> when a selected group already covers a
+            device, its individual checkbox is checked and locked with an “included by selected group” note.
+            SAR Tracker rejects duplicate direct/group instructions rather than letting a later Remove action
+            appear successful while the other instruction continues collection.
+          </div>
           <h3>Outings</h3>
           <p>
             Outings are coordinator-defined operational periods inside one mission. SAR Tracker never starts
@@ -882,7 +888,11 @@
             mission participants are persisted as mission evidence or shown on the operational mission map.
             Historical time and outing filters never hide a selected participant's live position. Hiding a
             selected participant's current-location marker remains a separate, explicit operator action from
-            hiding that participant's breadcrumb history.
+            hiding that participant's breadcrumb history. A last-known current fix remains visible after late
+            selection even when its fix time predates the participation window; that visibility does not
+            backdate or persist the older fix as mission evidence. If participant evidence is still loading or
+            unavailable, the tracking warning says so explicitly and preserves the unfiltered fallback cache
+            until the scope can be safely applied.
           </div>
           <div class="note">
             <strong>Tracking does not wait for basemap tiles:</strong> current positions and breadcrumbs

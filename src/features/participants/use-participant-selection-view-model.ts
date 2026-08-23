@@ -22,6 +22,7 @@ export type ParticipantSelectionViewModel = {
     readonly uniqueId: string | null
     readonly reportingNow: boolean
     readonly selected: boolean
+    readonly coveredBySelectedGroup: boolean
   }[]
   readonly availableGroups: readonly {
     readonly groupId: string
@@ -51,13 +52,20 @@ export function createParticipantSelectionViewModel(
   const envelope = assessParticipantEnvelope([...selectedIds])
 
   return {
-    availableDevices: state.availableDevices.map((device) => ({
-      deviceId: device.device_id,
-      name: device.name,
-      uniqueId: device.unique_id,
-      reportingNow: device.status === 'online',
-      selected: state.draftDeviceIds.includes(device.device_id),
-    })),
+    availableDevices: state.availableDevices.map((device) => {
+      const coveredBySelectedGroup =
+        device.group_id !== null &&
+        device.group_id !== undefined &&
+        state.draftGroupIds.includes(device.group_id)
+      return {
+        deviceId: device.device_id,
+        name: device.name,
+        uniqueId: device.unique_id,
+        reportingNow: device.status === 'online',
+        selected: coveredBySelectedGroup || state.draftDeviceIds.includes(device.device_id),
+        coveredBySelectedGroup,
+      }
+    }),
     availableGroups: state.availableGroups.map((group) => ({
       groupId: group.group_id,
       name: group.name,

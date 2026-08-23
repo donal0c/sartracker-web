@@ -383,6 +383,7 @@ export function getBrowserHarnessStore(): BrowserHarnessStore {
     cancelOutingFixSummary: async () => false,
     selectMissionParticipants: async (input) => {
       const mission = requireMutableParticipantMission(input.mission_id, state.missions)
+      assertHarnessInitialParticipantSelection(input, state.missionParticipants)
       const timestamp = new Date().toISOString()
       const teams = input.groups.map((group) => ({
         id: createId('team'),
@@ -451,9 +452,13 @@ export function getBrowserHarnessStore(): BrowserHarnessStore {
         addedAt,
       )
       let team: BrowserMissionTeam | null = null
+      let observedMembershipEvents: readonly GroupMembershipEvent[] = []
       if (input.kind === 'group') {
         if (typeof input.ref === 'string') throw new Error('Participant group details are required.')
         const groupRef = input.ref
+        if (!Array.isArray(groupRef.member_device_ids)) {
+          throw new Error('Current group member device ids are required.')
+        }
         team = state.missionTeams.find((candidate) =>
           candidate.mission_id === mission.id &&
           candidate.traccar_group_id === groupRef.traccar_group_id) ?? {
@@ -463,6 +468,13 @@ export function getBrowserHarnessStore(): BrowserHarnessStore {
           name: groupRef.name,
           frozen_at: addedAt,
         }
+        observedMembershipEvents = createHarnessMembershipObservation({
+          missionId: mission.id,
+          teamId: team.id,
+          observedDeviceIds: groupRef.member_device_ids,
+          observedAt: addedAt,
+          previousEvents: state.groupMembershipEvents,
+        })
       }
       const deviceId = input.kind === 'device'
         ? requireHarnessText(input.ref, 'Traccar device id')
@@ -474,6 +486,28 @@ export function getBrowserHarnessStore(): BrowserHarnessStore {
           ? participant.kind === 'device' && participant.traccar_device_id === deviceId
           : participant.kind === 'group' && participant.mission_team_id === team?.id))
       if (duplicate) throw new Error('Participant is already active for this mission.')
+      if (
+        deviceId !== null &&
+        isHarnessDeviceCoveredByActiveGroup(
+          mission.id,
+          deviceId,
+          state.missionParticipants,
+          state.groupMembershipEvents,
+        )
+      ) {
+        throw new Error('Participant device is already active through a selected group.')
+      }
+      if (
+        team !== null &&
+        harnessGroupCoversActiveDevice(
+          mission.id,
+          team.id,
+          state.missionParticipants,
+          [...state.groupMembershipEvents, ...observedMembershipEvents],
+        )
+      ) {
+        throw new Error('Participant group already covers an active individual device.')
+      }
       const participant = createHarnessParticipant({
         missionId: mission.id,
         kind: input.kind,
@@ -500,6 +534,10 @@ export function getBrowserHarnessStore(): BrowserHarnessStore {
           ? state.missionTeams
           : [...state.missionTeams, team],
         missionParticipants: [...state.missionParticipants, participant],
+        groupMembershipEvents: [
+          ...state.groupMembershipEvents,
+          ...observedMembershipEvents,
+        ],
         participantBackfillCheckpoints: checkpoint === null
           ? state.participantBackfillCheckpoints
           : [...state.participantBackfillCheckpoints, checkpoint],
@@ -1649,6 +1687,176 @@ function createHarnessParticipant(input: {
     added_by: input.addedBy,
     removed_at: null,
     removed_by: null,
+  }
+}
+
+/** Mirrors the production store's active-selection uniqueness checks. */
+function assertHarnessInitialParticipantSelection(
+  input: SelectMissionParticipantsInput,
+  participants: readonly MissionParticipant[],
+): void {
+  const directDeviceIds = input.devices.map((device) =>
+    requireHarnessText(device.traccar_device_id, 'Traccar device id'))
+  const selectedGroupIds = input.groups.map((group) =>
+    requireHarnessText(group.traccar_group_id, 'Traccar group id'))
+  const duplicateDeviceId = firstRepeatedHarnessId(directDeviceIds)
+  if (duplicateDeviceId !== null) {
+    throw new Error(`Participant device ${duplicateDeviceId} is selected more than once.`)
+  }
+  const duplicateGroupId = firstRepeatedHarnessId(selectedGroupIds)
+  if (duplicateGroupId !== null) {
+    throw new Error(`Participant group ${duplicateGroupId} is selected more than once.`)
+  }
+
+  const groupMemberDeviceIds = new Set(input.groups.flatMap((group) =>
+    group.member_device_ids.map((deviceId) =>
+      requireHarnessText(deviceId, 'Traccar device id'))))
+  const overlappingDeviceIds = directDeviceIds
+    .filter((deviceId) => groupMemberDeviceIds.has(deviceId))
+    .sort()
+  if (overlappingDeviceIds.length > 0) {
+    throw new Error(
+      `Participant devices already covered by a selected group must be selected only once: ${overlappingDeviceIds.join(', ')}.`,
+    )
+  }
+
+  const activeParticipants = participants.filter((participant) =>
+    participant.mission_id === input.mission_id && participant.removed_at === null)
+  if (directDeviceIds.some((deviceId) => activeParticipants.some((participant) =>
+    participant.kind === 'device' && participant.traccar_device_id === deviceId))) {
+    throw new Error('Participant is already active for this mission.')
+  }
+  if (selectedGroupIds.some((groupId) => activeParticipants.some((participant) =>
+    participant.kind === 'group' && participant.traccar_group_id === groupId))) {
+    throw new Error('Participant is already active for this mission.')
+  }
+}
+
+/** Returns one repeated browser-harness selection identifier. */
+function firstRepeatedHarnessId(values: readonly string[]): string | null {
+  const seen = new Set<string>()
+  for (const value of values) {
+    if (seen.has(value)) return value
+    seen.add(value)
+  }
+  return null
+}
+
+/** Resolves current group coverage for one direct-device add. */
+function isHarnessDeviceCoveredByActiveGroup(
+  missionId: string,
+  deviceId: string,
+  participants: readonly MissionParticipant[],
+  membershipEvents: readonly GroupMembershipEvent[],
+): boolean {
+  const activeTeamIds = new Set(participants
+    .filter((participant) =>
+      participant.mission_id === missionId &&
+      participant.kind === 'group' &&
+      participant.removed_at === null &&
+      participant.mission_team_id !== null)
+    .flatMap((participant) =>
+      participant.mission_team_id === null ? [] : [participant.mission_team_id]))
+  return [...activeTeamIds].some((teamId) =>
+    latestHarnessMembershipChange(missionId, teamId, deviceId, membershipEvents) === 'member')
+}
+
+/** Resolves whether one group add would overlap an active direct device. */
+function harnessGroupCoversActiveDevice(
+  missionId: string,
+  teamId: string,
+  participants: readonly MissionParticipant[],
+  membershipEvents: readonly GroupMembershipEvent[],
+): boolean {
+  return participants.some((participant) =>
+    participant.mission_id === missionId &&
+    participant.kind === 'device' &&
+    participant.removed_at === null &&
+    participant.traccar_device_id !== null &&
+    latestHarnessMembershipChange(
+      missionId,
+      teamId,
+      participant.traccar_device_id,
+      membershipEvents,
+    ) === 'member')
+}
+
+/** Returns the latest append-only membership state for one team/device pair. */
+function latestHarnessMembershipChange(
+  missionId: string,
+  teamId: string,
+  deviceId: string,
+  membershipEvents: readonly GroupMembershipEvent[],
+): GroupMembershipEvent['change'] | null {
+  const latest = membershipEvents
+    .filter((event) =>
+      event.mission_id === missionId &&
+      event.mission_team_id === teamId &&
+      event.traccar_device_id === deviceId)
+    .toSorted((left, right) =>
+      right.observed_at.localeCompare(left.observed_at) || right.id.localeCompare(left.id))[0]
+  return latest?.change ?? null
+}
+
+/** Creates append-only membership changes for one complete group observation. */
+function createHarnessMembershipObservation(input: {
+  readonly missionId: string
+  readonly teamId: string
+  readonly observedDeviceIds: readonly string[]
+  readonly observedAt: string
+  readonly previousEvents: readonly GroupMembershipEvent[]
+}): readonly GroupMembershipEvent[] {
+  const knownDeviceIds = new Set(input.previousEvents
+    .filter((event) =>
+      event.mission_id === input.missionId && event.mission_team_id === input.teamId)
+    .map((event) => event.traccar_device_id))
+  const observedDeviceIds = new Set(input.observedDeviceIds.map((deviceId) =>
+    requireHarnessText(deviceId, 'Traccar device id')))
+  const changes: GroupMembershipEvent[] = []
+
+  for (const deviceId of knownDeviceIds) {
+    if (
+      !observedDeviceIds.has(deviceId) &&
+      latestHarnessMembershipChange(
+        input.missionId,
+        input.teamId,
+        deviceId,
+        input.previousEvents,
+      ) === 'member'
+    ) {
+      changes.push(createHarnessMembershipEvent(input, deviceId, 'left'))
+    }
+  }
+  for (const deviceId of observedDeviceIds) {
+    if (latestHarnessMembershipChange(
+      input.missionId,
+      input.teamId,
+      deviceId,
+      input.previousEvents,
+    ) !== 'member') {
+      changes.push(createHarnessMembershipEvent(input, deviceId, 'member'))
+    }
+  }
+  return changes
+}
+
+/** Creates one browser-harness membership observation row. */
+function createHarnessMembershipEvent(
+  input: {
+    readonly missionId: string
+    readonly teamId: string
+    readonly observedAt: string
+  },
+  deviceId: string,
+  change: GroupMembershipEvent['change'],
+): GroupMembershipEvent {
+  return {
+    id: createId('membership'),
+    mission_id: input.missionId,
+    mission_team_id: input.teamId,
+    traccar_device_id: deviceId,
+    change,
+    observed_at: input.observedAt,
   }
 }
 
