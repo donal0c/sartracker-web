@@ -7,10 +7,16 @@ import { createRequire } from 'node:module'
 import { afterEach, describe, expect, it } from 'vitest'
 
 import {
+  createBreadcrumbProgrammeCalibrationSample,
   generateMissionStoreFixture,
   restartCheckpointDayForPoll,
 } from '../../build/seed-mission-store-runtime.js'
 import { createFixturePlan } from '../../build/seed-mission-store-lib.js'
+import {
+  DEFAULT_STATIONARY_ATTENTION_CONFIG,
+  evaluateStationaryAttention,
+} from '../../src/features/tracking/stationary-attention'
+import { distance, point } from '@turf/turf'
 
 const require = createRequire(import.meta.url)
 const { createElectronMissionStore } = require('../../electron/mission-store.cjs') as {
@@ -55,6 +61,9 @@ describe('generateMissionStoreFixture [DON-242]', () => {
     expect(generated.manifest.rows.byEventType.device_updated).toBeGreaterThan(0)
     expect(generated.manifest.bytes.byTable.positions).toBeGreaterThan(0)
     expect(generated.manifest.bytes.byTable.mission_events).toBeGreaterThan(0)
+    expect(generated.manifest.database.sha256).toBe(
+      '899f00903dc325ac58fc11388095a92b0cfc09ce30c28f93afe79e266fe77891',
+    )
     await expect(sha256File(outputPath)).resolves.toBe(generated.manifest.database.sha256)
     await expect(sha256File(copyToPath)).resolves.toBe(generated.manifest.database.sha256)
 
@@ -149,6 +158,37 @@ describe('restartCheckpointDayForPoll [DON-242]', () => {
 
     expect(restartCheckpointDayForPoll(plan, 172_800)).toBe(10)
     expect(restartCheckpointDayForPoll(plan, 241_920)).toBe(14)
+  })
+})
+
+describe('breadcrumb programme fixture calibration [DON-272]', () => {
+  it('emits the shipped stationary attention cases and near misses', () => {
+    const attention = createBreadcrumbProgrammeCalibrationSample('bcp-960k', 0, 1_000, 1_014)
+    const slowWalker = createBreadcrumbProgrammeCalibrationSample('bcp-960k', 1, 1_000, 1_014)
+    const jitterNearMiss = createBreadcrumbProgrammeCalibrationSample('bcp-960k', 2, 1_000, 1_014)
+    const outlierInsideRun = createBreadcrumbProgrammeCalibrationSample('bcp-960k', 3, 1_000, 1_014)
+
+    expect(evaluateStationaryAttention(attention, DEFAULT_STATIONARY_ATTENTION_CONFIG).state).toBe('attention')
+    expect(evaluateStationaryAttention(slowWalker, DEFAULT_STATIONARY_ATTENTION_CONFIG).state).toBe('none')
+    expect(evaluateStationaryAttention(jitterNearMiss, DEFAULT_STATIONARY_ATTENTION_CONFIG).state).toBe('none')
+    expect(evaluateStationaryAttention(outlierInsideRun, DEFAULT_STATIONARY_ATTENTION_CONFIG).state).toBe('attention')
+  })
+
+  it('keeps movement and accuracy distributions calibrated to observed field evidence', () => {
+    const sample = createBreadcrumbProgrammeCalibrationSample('bcp-960k', 10, 0, 1_000)
+    const displacements = sample.slice(1).map((fix, index) => distance(
+      point([sample[index]!.lon, sample[index]!.lat]),
+      point([fix.lon, fix.lat]),
+      { units: 'meters' },
+    )).sort((left, right) => left - right)
+    const accuracies = Array.from({ length: 100 }, (_, deviceIndex) =>
+      createBreadcrumbProgrammeCalibrationSample('bcp-960k', deviceIndex, 500, 501)[0]!.accuracy ?? 0,
+    ).sort((left, right) => left - right)
+
+    expect(displacements[Math.floor(displacements.length / 2)]).toBeGreaterThanOrEqual(32)
+    expect(displacements[Math.floor(displacements.length / 2)]).toBeLessThanOrEqual(36)
+    expect(accuracies[Math.floor(accuracies.length / 2)]).toBe(3.8)
+    expect(accuracies[Math.floor(accuracies.length * 0.9)]).toBe(10)
   })
 })
 

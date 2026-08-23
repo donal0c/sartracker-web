@@ -38,6 +38,28 @@ const PRESET_DEFINITIONS = Object.freeze({
     durationDays: 14,
     restartCheckpointsDays: [1, 3, 5, 7, 10, 12],
   },
+  'bcp-960k': {
+    mode: 'breadcrumb-programme',
+    positionCount: 960_000,
+    durationDays: 12,
+    deviceCount: 100,
+    activePositionDeviceCount: 100,
+    groupCount: 12,
+    outingCount: 12,
+    qualification: 'normal-envelope',
+    restartCheckpointsDays: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11],
+  },
+  'bcp-2m': {
+    mode: 'breadcrumb-programme',
+    positionCount: 2_000_000,
+    durationDays: 12,
+    deviceCount: 100,
+    activePositionDeviceCount: 100,
+    groupCount: 12,
+    outingCount: 12,
+    qualification: 'headroom-renderer-rejection',
+    restartCheckpointsDays: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11],
+  },
 })
 
 /** Returns the supported deterministic fixture preset names in display order. */
@@ -63,8 +85,9 @@ export function createFixturePlan(preset) {
   const base = {
     preset,
     mode: definition.mode,
-    deviceCount: DEFAULT_DEVICE_COUNT,
-    activePositionDeviceCount: DEFAULT_ACTIVE_POSITION_DEVICE_COUNT,
+    deviceCount: definition.deviceCount ?? DEFAULT_DEVICE_COUNT,
+    activePositionDeviceCount:
+      definition.activePositionDeviceCount ?? DEFAULT_ACTIVE_POSITION_DEVICE_COUNT,
     pollIntervalMs: DEFAULT_POLL_INTERVAL_MS,
     autosaveIntervalMs: DEFAULT_AUTOSAVE_INTERVAL_MS,
     restartCheckpointsDays: [...(definition.restartCheckpointsDays ?? [])],
@@ -83,6 +106,29 @@ export function createFixturePlan(preset) {
     })
   }
 
+  if (definition.mode === 'breadcrumb-programme') {
+    const pollCount = Math.ceil(
+      definition.positionCount / definition.activePositionDeviceCount,
+    )
+    return Object.freeze({
+      ...base,
+      durationDays: definition.durationDays,
+      targetBytes: null,
+      pollCount,
+      positionCount: definition.positionCount,
+      deviceUpdatedEventCount: 0,
+      positionRecordedEventCount: 0,
+      backupEventCount: 0,
+      pollIntervalMs: Math.floor(
+        (definition.durationDays * DAY_MS) / pollCount,
+      ),
+      groupCount: definition.groupCount,
+      outingCount: definition.outingCount,
+      qualification: definition.qualification,
+      missionModelScenario: true,
+    })
+  }
+
   const pollCount = Math.floor((definition.durationDays * DAY_MS) / base.pollIntervalMs)
   const backupEventCount = Math.floor(
     (definition.durationDays * DAY_MS) / base.autosaveIntervalMs,
@@ -98,6 +144,66 @@ export function createFixturePlan(preset) {
     positionCount,
     positionRecordedEventCount: positionCount,
     backupEventCount,
+  })
+}
+
+/** Builds the deterministic outing/team truth shared by both BCP fixture sizes. */
+export function createBreadcrumbProgrammeScenario(plan) {
+  if (plan?.mode !== 'breadcrumb-programme') {
+    throw new Error('Breadcrumb programme scenario requires a breadcrumb-programme fixture plan.')
+  }
+  const outingDefinitions = [
+    [0, 18, 5],
+    [1, 20, 8],
+    [2, 7, 12],
+    [3, 19, 7],
+    [4, 8, 10],
+    [5, 21, 6],
+    [6, 6, 12],
+    [7, 18, 9],
+    [8, 8, 12],
+    [9, 17, 10],
+    [10, 7, 11],
+    [11, 16, 7],
+  ]
+  const originMs = Date.parse('2026-01-01T00:00:00.000Z')
+  const outings = outingDefinitions.map(([day, hour, durationHours], index) => {
+    const startedAtMs = originMs + day * DAY_MS + hour * 60 * 60 * 1000
+    const endedAtMs = startedAtMs + durationHours * 60 * 60 * 1000
+    return Object.freeze({
+      id: createDeterministicId('outing', index),
+      label: `SYNTHETIC OUTING ${String(index + 1).padStart(2, '0')}`,
+      startedAt: new Date(startedAtMs).toISOString(),
+      endedAt: new Date(endedAtMs).toISOString(),
+      crossesMidnight:
+        new Date(startedAtMs).getUTCDate() !== new Date(endedAtMs).getUTCDate(),
+    })
+  })
+  return Object.freeze({
+    acceptedPositionCount: plan.positionCount,
+    qualification: plan.qualification,
+    groupCount: 12,
+    groupSizes: Object.freeze([12, 11, 10, 9, 9, 8, 8, 7, 7, 7, 6, 6]),
+    outingCount: outings.length,
+    outings: Object.freeze(outings),
+    legacyNoOutingMissionCount: 1,
+    participantBackfillWindows: Object.freeze([
+      Object.freeze({ deviceId: 'synthetic-device-096', completed: true }),
+      Object.freeze({ deviceId: 'synthetic-device-095', completed: false }),
+    ]),
+    stationaryCases: Object.freeze([
+      Object.freeze({ deviceId: 'synthetic-device-001', kind: 'attention' }),
+      Object.freeze({ deviceId: 'synthetic-device-002', kind: 'slow-walker-near-miss' }),
+      Object.freeze({ deviceId: 'synthetic-device-003', kind: 'jitter-near-miss' }),
+      Object.freeze({ deviceId: 'synthetic-device-004', kind: 'teleport-outlier-inside-run' }),
+    ]),
+    injections: Object.freeze({
+      exactDuplicates: 4,
+      conflicts: 2,
+      rejected: 3,
+      lateOutOfOrder: 8,
+    }),
+    gpxEvidenceBoundary: 'deferred-to-pr4-not-faked',
   })
 }
 
@@ -181,7 +287,7 @@ export function buildFixtureManifest(input) {
     rowCounts.positionRecordedEvents +
     rowCounts.backupEvents
 
-  return {
+  const manifest = {
     generatorVersion: FIXTURE_GENERATOR_VERSION,
     syntheticDataOnly: true,
     preset: plan.preset,
@@ -209,6 +315,16 @@ export function buildFixtureManifest(input) {
         devices: rowCounts.devices,
         positions: rowCounts.positions,
         mission_events: rowCounts.missionEvents,
+        ...(input.scenario === undefined
+          ? {}
+          : {
+              outings: rowCounts.outings,
+              mission_teams: rowCounts.missionTeams,
+              mission_participants: rowCounts.missionParticipants,
+              mission_group_membership_events: rowCounts.groupMembershipEvents,
+              participant_backfill_checkpoints: rowCounts.participantBackfillCheckpoints,
+              ingest_anomalies: rowCounts.ingestAnomalies,
+            }),
       },
       byEventType: {
         device_created: rowCounts.deviceCreatedEvents,
@@ -222,7 +338,9 @@ export function buildFixtureManifest(input) {
     bytes: {
       byTable: { ...input.tableBytes },
     },
+    ...(input.scenario === undefined ? {} : { scenario: input.scenario }),
   }
+  return manifest
 }
 
 /** Resolves a copy destination beside a userData directory when helpful to runners. */
