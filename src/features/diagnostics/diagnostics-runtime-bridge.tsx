@@ -27,6 +27,7 @@ import { applyDiagnosticsController, applyDiagnosticsRuntime, useDiagnosticsStor
 import { readDiagnosticEvents } from './diagnostic-event-log'
 import { readTrackingPollLedger } from './tracking-poll-ledger'
 import { startDiagnosticsRuntime } from './start-diagnostics-runtime'
+import { isMissionModelEnabled } from '../runtime/mission-model-flag'
 
 /**
  * Starts the diagnostics runtime once and keeps it connected to the current app snapshots.
@@ -91,6 +92,7 @@ export function DiagnosticsRuntimeBridge() {
       },
       readDiagnosticEvents,
       readTrackingPollLedger,
+      readMissionModelEnabled: isMissionModelEnabled,
       exportReport: exportDiagnosticsReport,
       exportSupportBundle,
       refreshLayerCatalogIfActive: async (targetMissionId) => {

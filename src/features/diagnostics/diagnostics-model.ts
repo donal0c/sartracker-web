@@ -71,6 +71,7 @@ type BuildDiagnosticsSnapshotInput = {
     readonly metadataEntryCount: number
   }
   readonly selectedMissionId: string | null
+  readonly missionModelEnabled?: boolean
 }
 
 /**
@@ -135,6 +136,11 @@ export function buildDiagnosticsSnapshot(
     },
   ]
   const configurationRows: readonly DiagnosticsRow[] = [
+    {
+      label: 'Mission model',
+      value: input.missionModelEnabled === true ? 'enabled (internal)' : 'disabled',
+      tone: input.missionModelEnabled === true ? 'warning' : 'default',
+    },
     {
       label: 'Provider URL',
       value: redactProviderUrlCredentials(input.settings.dataSource.baseUrl) || 'Not configured',
@@ -248,6 +254,7 @@ function buildSupportReport(
     `layer catalog state: ${input.layerCatalogState.error ?? 'healthy'}`,
     '',
     '[configuration]',
+    `mission model: ${input.missionModelEnabled === true ? 'enabled (internal)' : 'disabled'}`,
     `provider type: ${input.settings.dataSource.providerType}`,
     `provider url: ${redactProviderUrlCredentials(input.settings.dataSource.baseUrl) || 'not configured'}`,
     `auth mode: ${input.settings.dataSource.authMode}`,
