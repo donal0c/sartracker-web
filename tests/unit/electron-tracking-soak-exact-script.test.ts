@@ -15,6 +15,18 @@ describe('fourteen-day packaged exact-dot soak script [DON-260]', () => {
     expect(source).toContain('fixtureClock,')
   })
 
+  it('requires flag-off legacy participants and declares their audit events [DON-271]', () => {
+    expect(source).toContain('expectedParticipantRows: expectedDeviceCount')
+    expect(source).toContain("'participant_added',")
+    expect(source).toContain('expectedParticipantAddedEvents')
+    expect(source).toContain(
+      '(databaseEvidence.events.participant_added ?? 0) !== missionModelEvidence.expectedParticipantAddedEvents',
+    )
+    expect(source).toContain(
+      'missionModelEvidence.expectedParticipantAddedEvents +',
+    )
+  })
+
   it('keeps mock and mission paused until latest-page parity survives each restart', () => {
     const checkpointStart = source.indexOf('for (const checkpoint of options.profile.restartCheckpoints)')
     const finalStart = source.lastIndexOf('await waitForCheckpoint({', source.indexOf('expectedPositions: options.profile.expectedPositionRows'))

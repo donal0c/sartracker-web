@@ -390,14 +390,12 @@ async function main() {
 
     const databaseEvidence = inspectDatabase(databasePath, missionId)
     if (
-      missionModelEvidence.enabled &&
-      (
-        databaseEvidence.participantRows !== missionModelEvidence.selectedParticipantRows ||
-        databaseEvidence.teamRows !== 0
-      )
+      databaseEvidence.participantRows !== missionModelEvidence.expectedParticipantRows ||
+      databaseEvidence.teamRows !== 0 ||
+      (databaseEvidence.events.participant_added ?? 0) !== missionModelEvidence.expectedParticipantAddedEvents
     ) {
       throw new Error(
-        `Mission-model soak expected 0/${missionModelEvidence.selectedParticipantRows} teams/participants; observed ${databaseEvidence.teamRows}/${databaseEvidence.participantRows}.`,
+        `Tracking soak expected 0/${missionModelEvidence.expectedParticipantRows}/${missionModelEvidence.expectedParticipantAddedEvents} teams/participants/participant-added events; observed ${databaseEvidence.teamRows}/${databaseEvidence.participantRows}/${databaseEvidence.events.participant_added ?? 0}.`,
       )
     }
     const expectedPositionTruth = buildTrackingSoakExpectedPositionTruthEvidence({
@@ -520,6 +518,7 @@ async function main() {
         options.profile.deviceCount +
         1 +
         (missionModelEvidence.enabled ? 1 : 0) +
+        missionModelEvidence.expectedParticipantAddedEvents +
         options.profile.restartCheckpoints.length * 2 +
         (exactSoakRequired
           ? options.profile.restartCheckpoints.length * 2 + 1
@@ -943,6 +942,8 @@ async function startSyntheticMission(launch, missionOffsetHours, expectedDeviceC
     enabled: missionModelEnabled,
     selectedDeviceCount: missionModelEnabled ? expectedDeviceCount : null,
     selectedParticipantRows: missionModelEnabled ? expectedDeviceCount : 0,
+    expectedParticipantRows: expectedDeviceCount,
+    expectedParticipantAddedEvents: missionModelEnabled ? 0 : expectedDeviceCount,
   }
 }
 
@@ -3071,6 +3072,7 @@ function inspectDatabase(databasePath, missionId) {
       'device_updated',
       'position_recorded',
       'participants_selected',
+      'participant_added',
       'group_membership_changed',
     ])
     const unexplainedMissionEvents = Object.entries(events)
