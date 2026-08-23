@@ -106,6 +106,71 @@ describe('device workspace model', () => {
     expect(rows.map((row) => row.name)).toEqual(['Alpha Team', 'Bravo Team'])
   })
 
+  it('shows per-device rejection health and server-only timestamp provenance [DON-267]', () => {
+    const rows = buildDeviceWorkspaceRows(
+      {
+        ...SNAPSHOT,
+        positions: SNAPSHOT.positions.map((position) => position.device_id === 'alpha'
+          ? {
+              ...position,
+              timestamp_source: 'server' as const,
+              fix_time_unverified: true,
+              device_cache_stale: true,
+            }
+          : position),
+      },
+      [],
+      [],
+      {
+        totalRejected: 1,
+        affectedDeviceCount: 1,
+        unidentifiedRejected: 0,
+        byDevice: {
+          alpha: { count: 1, lastReason: 'invalid_coordinates' },
+        },
+      },
+    )
+
+    expect(rows[0]).toMatchObject({
+      deviceId: 'alpha',
+      sourceDisplay: 'Fix time unverified',
+      fixTimeUnverified: true,
+      ingestWarning: '1 position row rejected — invalid coordinates.',
+    })
+  })
+
+  it('adds derived stationary attention without changing fix truth [DON-269]', () => {
+    const rows = buildDeviceWorkspaceRows(SNAPSHOT, [], [], undefined, {
+      alpha: { state: 'attention', acknowledged: false, elapsedMs: 1_200_000 },
+    })
+    expect(rows[0]).toMatchObject({
+      deviceId: 'alpha', stationaryAttention: true,
+      attentionAcknowledged: false, latitude: 52, longitude: -9.7,
+    })
+  })
+
+  it('distinguishes unavailable and uncorroborated stationary evaluation', () => {
+    expect(buildDeviceWorkspaceRows(SNAPSHOT, [], [], undefined, {
+      alpha: { state: 'insufficient-data', acknowledged: false },
+    })[0]).toMatchObject({
+      stationaryAttention: false,
+      stationaryAttentionUnavailable: true,
+      stationaryAttentionUnreliable: false,
+    })
+
+    expect(buildDeviceWorkspaceRows(SNAPSHOT, [], [], undefined, {
+      alpha: {
+        state: 'attention',
+        acknowledged: false,
+        latestFixUnreliable: true,
+      },
+    })[0]).toMatchObject({
+      stationaryAttention: true,
+      stationaryAttentionUnavailable: false,
+      stationaryAttentionUnreliable: true,
+    })
+  })
+
   it('builds workspace summary counters aligned with tracking status', () => {
     const rows = buildDeviceWorkspaceRows(SNAPSHOT, ['bravo'], ['alpha'])
     const summary = buildDeviceWorkspaceSummary(rows, STATUS)

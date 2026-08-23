@@ -66,6 +66,19 @@ export function validateSettingsDraft(
     errors.autoSaveIntervalSeconds = 'Auto-save interval must be between 5 and 3600 seconds.'
   }
 
+  if (!isNumberInRange(draft.missionDefaults.stationaryAttentionHeartbeatMinutes, 5, 60)) {
+    errors.stationaryAttentionHeartbeatMinutes = 'Stationary attention window must be between 5 and 60 minutes.'
+  }
+  if (!isNumberInRange(draft.missionDefaults.stationaryAttentionMovementFloorM, 5, 100)) {
+    errors.stationaryAttentionMovementFloorM = 'Stationary movement floor must be between 5 and 100 metres.'
+  }
+  if (!isNumberInRange(draft.missionDefaults.stationaryAttentionAccuracyFactor, 1, 5)) {
+    errors.stationaryAttentionAccuracyFactor = 'Stationary accuracy factor must be between 1 and 5.'
+  }
+  if (!isNumberInRange(draft.missionDefaults.stationaryAttentionOutlierRejectM, 100, 5_000)) {
+    errors.stationaryAttentionOutlierRejectM = 'Stationary outlier threshold must be between 100 and 5000 metres.'
+  }
+
   if (draft.dataSource.providerType === 'traccar_http') {
     try {
       const parsed = new URL(draft.dataSource.baseUrl)
@@ -120,6 +133,10 @@ export function validateSettingsDraft(
   validateWeatherLinks(draft.weather.links, errors)
 
   return errors
+}
+
+function isNumberInRange(value: number | undefined, minimum: number, maximum: number): boolean {
+  return typeof value === 'number' && Number.isFinite(value) && value >= minimum && value <= maximum
 }
 
 function validateWeatherLinks(

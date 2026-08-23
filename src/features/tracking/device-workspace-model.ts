@@ -1,4 +1,10 @@
 import type { TrackingConnectionStatus, TrackingSnapshot } from './tracking-types'
+import {
+  EMPTY_CURRENT_POSITION_INGEST_HEALTH,
+  formatCurrentPositionRejectionReason,
+  type CurrentPositionIngestHealthSummary,
+} from './ingest-health'
+import type { DeviceStationaryAttention } from './stationary-attention-store'
 
 export type DeviceWorkspaceRow = {
   readonly deviceId: string
@@ -14,10 +20,17 @@ export type DeviceWorkspaceRow = {
   readonly lastSeenDisplay: string
   readonly fixTimeDisplay: string
   readonly sourceDisplay: string
+  readonly fixTimeUnverified: boolean
+  readonly ingestWarning: string | null
   readonly stale: boolean
   readonly accuracyDisplay: string
   readonly batteryDisplay: string
   readonly speedDisplay: string
+  readonly stationaryAttention: boolean
+  readonly stationaryAttentionUnavailable: boolean
+  readonly stationaryAttentionUnreliable: boolean
+  readonly attentionAcknowledged: boolean
+  readonly attentionElapsedDisplay: string
 }
 
 export type DeviceWorkspaceSummary = {
@@ -41,6 +54,8 @@ export function buildDeviceWorkspaceRows(
   snapshot: TrackingSnapshot,
   hiddenDeviceIds: readonly string[],
   activeDeviceIds: readonly string[] = [],
+  ingestHealth: CurrentPositionIngestHealthSummary = EMPTY_CURRENT_POSITION_INGEST_HEALTH,
+  attentionByDevice: Readonly<Record<string, Pick<DeviceStationaryAttention, 'state' | 'acknowledged' | 'elapsedMs' | 'latestFixUnreliable'>>> = {},
 ): readonly DeviceWorkspaceRow[] {
   const latestPositionByDevice = new Map(
     snapshot.positions.map((position) => [position.device_id, position] as const),
@@ -50,6 +65,8 @@ export function buildDeviceWorkspaceRows(
   return [...snapshot.devices]
     .map((device) => {
       const position = latestPositionByDevice.get(device.device_id) ?? null
+      const rejected = ingestHealth.byDevice[device.device_id]
+      const attention = attentionByDevice[device.device_id]
       return {
         deviceId: device.device_id,
         name: device.name,
@@ -66,11 +83,17 @@ export function buildDeviceWorkspaceRows(
         sourceDisplay:
           position === null
             ? 'No fix'
+            : position.fix_time_unverified === true
+              ? 'Fix time unverified'
             : position.device_cache_stale
               ? 'Stale'
               : position.data_origin === 'cache'
                 ? 'Cache'
                 : 'Live',
+        fixTimeUnverified: position?.fix_time_unverified === true,
+        ingestWarning: rejected === undefined
+          ? null
+          : `${rejected.count} position ${rejected.count === 1 ? 'row' : 'rows'} rejected — ${formatCurrentPositionRejectionReason(rejected.lastReason)}.`,
         stale: position?.device_cache_stale ?? false,
         accuracyDisplay:
           typeof position?.accuracy === 'number'
@@ -80,9 +103,21 @@ export function buildDeviceWorkspaceRows(
           typeof position?.battery === 'number' ? `${Math.round(position.battery)}%` : '—',
         speedDisplay:
           typeof position?.speed === 'number' ? `${position.speed.toFixed(1)} km/h` : '—',
+        stationaryAttention: attention?.state === 'attention',
+        stationaryAttentionUnavailable: attention?.state === 'insufficient-data',
+        stationaryAttentionUnreliable: attention?.latestFixUnreliable === true,
+        attentionAcknowledged: attention?.acknowledged === true,
+        attentionElapsedDisplay: formatAttentionElapsed(attention?.elapsedMs),
       } satisfies DeviceWorkspaceRow
     })
     .sort((left, right) => left.name.localeCompare(right.name))
+}
+
+function formatAttentionElapsed(elapsedMs: number | undefined): string {
+  if (elapsedMs === undefined || !Number.isFinite(elapsedMs) || elapsedMs < 0) {
+    return 'duration unavailable'
+  }
+  return `${Math.floor(elapsedMs / 60_000)} min without meaningful movement`
 }
 
 /**

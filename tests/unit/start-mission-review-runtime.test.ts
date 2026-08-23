@@ -36,13 +36,116 @@ describe('startMissionReviewRuntime', () => {
     )
   })
 
+  it('loads audit and exact breadcrumb count through one bounded Review query [DON-251]', async () => {
+    const readMissionReview = vi.fn().mockResolvedValue({
+      auditEvents: [],
+      breadcrumbCount: 12_345,
+    })
+    const listAuditEvents = vi.fn().mockRejectedValue(
+      new Error('legacy main-isolate audit query must not run'),
+    )
+    const countPositions = vi.fn().mockRejectedValue(
+      new Error('legacy main-isolate count query must not run'),
+    )
+    const runtime = await startMissionReviewRuntime({
+      missionStore: createMissionReviewStoreStub({
+        readMissionReview,
+        listAuditEvents,
+        countPositions,
+      }),
+      layerCatalogStore: { listMetadata: vi.fn().mockResolvedValue([]) },
+      applyRuntime: vi.fn(),
+    })
+
+    await runtime.load(FIRST_MISSION.id)
+
+    expect(readMissionReview).toHaveBeenCalledWith(
+      {
+        missionId: FIRST_MISSION.id,
+        includeTelemetry: false,
+        auditLimit: 501,
+      },
+      expect.stringMatching(/^mission-review-/u),
+    )
+    expect(listAuditEvents).not.toHaveBeenCalled()
+    expect(countPositions).not.toHaveBeenCalled()
+  })
+
+  it('uses a unique request namespace across renderer runtime generations [DON-251]', async () => {
+    const firstRead = vi.fn().mockResolvedValue({ auditEvents: [], breadcrumbCount: 0 })
+    const secondRead = vi.fn().mockResolvedValue({ auditEvents: [], breadcrumbCount: 0 })
+    const first = await startMissionReviewRuntime({
+      missionStore: createMissionReviewStoreStub({ readMissionReview: firstRead }),
+      layerCatalogStore: { listMetadata: vi.fn().mockResolvedValue([]) },
+      applyRuntime: vi.fn(),
+    })
+    const second = await startMissionReviewRuntime({
+      missionStore: createMissionReviewStoreStub({ readMissionReview: secondRead }),
+      layerCatalogStore: { listMetadata: vi.fn().mockResolvedValue([]) },
+      applyRuntime: vi.fn(),
+    })
+
+    await first.load(FIRST_MISSION.id)
+    await second.load(FIRST_MISSION.id)
+
+    expect(firstRead.mock.calls[0]?.[1]).not.toBe(secondRead.mock.calls[0]?.[1])
+  })
+
+  it('cancels an obsolete Review read and fences its late failure [DON-251]', async () => {
+    let rejectFirst: ((error: Error) => void) | undefined
+    const readMissionReview = vi
+      .fn()
+      .mockImplementationOnce(
+        () => new Promise((_resolve, reject) => {
+          rejectFirst = reject
+        }),
+      )
+      .mockResolvedValueOnce({ auditEvents: [], breadcrumbCount: 2 })
+    const cancelMissionReviewRead = vi.fn().mockResolvedValue(true)
+    const applyRuntime = vi.fn()
+    const runtime = await startMissionReviewRuntime({
+      missionStore: createMissionReviewStoreStub({
+        listMissions: vi.fn().mockResolvedValue([SECOND_MISSION, FIRST_MISSION]),
+        readMissionReview,
+        cancelMissionReviewRead,
+      }),
+      layerCatalogStore: { listMetadata: vi.fn().mockResolvedValue([]) },
+      applyRuntime,
+    })
+
+    const firstLoad = runtime.load(FIRST_MISSION.id)
+    await vi.waitFor(() => expect(readMissionReview).toHaveBeenCalledOnce())
+    const firstRequestId = readMissionReview.mock.calls[0]?.[1] as string
+    const secondLoad = runtime.load(SECOND_MISSION.id)
+    await vi.waitFor(() => expect(readMissionReview).toHaveBeenCalledTimes(2))
+
+    expect(cancelMissionReviewRead).toHaveBeenCalledWith(firstRequestId)
+    const abort = new Error('obsolete worker terminated')
+    abort.name = 'AbortError'
+    rejectFirst?.(abort)
+    await Promise.all([firstLoad, secondLoad])
+
+    expect(applyRuntime).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        selectedMissionId: SECOND_MISSION.id,
+        error: null,
+        snapshot: expect.objectContaining({
+          summary: expect.objectContaining({ breadcrumbCount: 2 }),
+        }),
+      }),
+    )
+  })
+
   it('requests a bounded, telemetry-free audit log by default', async () => {
     const applyRuntime = vi.fn()
-    const listAuditEvents = vi.fn().mockResolvedValue([])
+    const readMissionReview = vi.fn().mockResolvedValue({
+      auditEvents: [],
+      breadcrumbCount: 1,
+    })
     const runtime = await startMissionReviewRuntime({
       missionStore: createMissionReviewStoreStub({
         listMissions: vi.fn().mockResolvedValue([FIRST_MISSION]),
-        listAuditEvents,
+        readMissionReview,
       }),
       layerCatalogStore: { listMetadata: vi.fn().mockResolvedValue([]) },
       applyRuntime,
@@ -50,12 +153,15 @@ describe('startMissionReviewRuntime', () => {
 
     await runtime.load(FIRST_MISSION.id)
 
-    expect(listAuditEvents).toHaveBeenCalledWith(
-      FIRST_MISSION.id,
-      expect.objectContaining({ includeTelemetry: false }),
+    expect(readMissionReview).toHaveBeenCalledWith(
+      expect.objectContaining({
+        missionId: FIRST_MISSION.id,
+        includeTelemetry: false,
+      }),
+      expect.any(String),
     )
-    const options = listAuditEvents.mock.calls[0]?.[1] as { readonly limit: number }
-    expect(options.limit).toBeGreaterThan(0)
+    const query = readMissionReview.mock.calls[0]?.[0] as { readonly auditLimit: number }
+    expect(query.auditLimit).toBeGreaterThan(0)
     expect(applyRuntime).toHaveBeenLastCalledWith(
       expect.objectContaining({ includeTelemetry: false, auditLogTruncated: false }),
     )
@@ -63,11 +169,14 @@ describe('startMissionReviewRuntime', () => {
 
   it('reloads with telemetry included when the toggle is enabled', async () => {
     const applyRuntime = vi.fn()
-    const listAuditEvents = vi.fn().mockResolvedValue([])
+    const readMissionReview = vi.fn().mockResolvedValue({
+      auditEvents: [],
+      breadcrumbCount: 1,
+    })
     const runtime = await startMissionReviewRuntime({
       missionStore: createMissionReviewStoreStub({
         listMissions: vi.fn().mockResolvedValue([FIRST_MISSION]),
-        listAuditEvents,
+        readMissionReview,
       }),
       layerCatalogStore: { listMetadata: vi.fn().mockResolvedValue([]) },
       applyRuntime,
@@ -76,9 +185,12 @@ describe('startMissionReviewRuntime', () => {
     await runtime.load(FIRST_MISSION.id)
     await runtime.setIncludeTelemetry(true)
 
-    expect(listAuditEvents).toHaveBeenLastCalledWith(
-      FIRST_MISSION.id,
-      expect.objectContaining({ includeTelemetry: true }),
+    expect(readMissionReview).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        missionId: FIRST_MISSION.id,
+        includeTelemetry: true,
+      }),
+      expect.any(String),
     )
     expect(applyRuntime).toHaveBeenLastCalledWith(
       expect.objectContaining({ includeTelemetry: true }),
@@ -98,7 +210,10 @@ describe('startMissionReviewRuntime', () => {
     const runtime = await startMissionReviewRuntime({
       missionStore: createMissionReviewStoreStub({
         listMissions: vi.fn().mockResolvedValue([FIRST_MISSION]),
-        listAuditEvents: vi.fn().mockResolvedValue(overflowEvents),
+        readMissionReview: vi.fn().mockResolvedValue({
+          auditEvents: overflowEvents,
+          breadcrumbCount: 1,
+        }),
       }),
       layerCatalogStore: { listMetadata: vi.fn().mockResolvedValue([]) },
       applyRuntime,
@@ -112,15 +227,18 @@ describe('startMissionReviewRuntime', () => {
     expect(lastCall?.snapshot?.eventRows.length).toBe(500)
   })
 
-  it('uses a position count query instead of loading every breadcrumb row [DON-202]', async () => {
+  it('uses an exact scalar count without loading every breadcrumb row [DON-202, DON-251]', async () => {
     const applyRuntime = vi.fn()
     const listPositions = vi.fn().mockRejectedValue(new Error('Review must not load all positions'))
-    const countPositions = vi.fn().mockResolvedValue(50_000)
+    const readMissionReview = vi.fn().mockResolvedValue({
+      auditEvents: [],
+      breadcrumbCount: 50_000,
+    })
     const runtime = await startMissionReviewRuntime({
       missionStore: createMissionReviewStoreStub({
         listMissions: vi.fn().mockResolvedValue([FIRST_MISSION]),
         listPositions,
-        countPositions,
+        readMissionReview,
       }),
       layerCatalogStore: { listMetadata: vi.fn().mockResolvedValue([]) },
       applyRuntime,
@@ -128,7 +246,10 @@ describe('startMissionReviewRuntime', () => {
 
     await runtime.load(FIRST_MISSION.id)
 
-    expect(countPositions).toHaveBeenCalledWith(FIRST_MISSION.id)
+    expect(readMissionReview).toHaveBeenCalledWith(
+      expect.objectContaining({ missionId: FIRST_MISSION.id }),
+      expect.any(String),
+    )
     expect(listPositions).not.toHaveBeenCalled()
     expect(applyRuntime).toHaveBeenLastCalledWith(
       expect.objectContaining({
@@ -143,29 +264,37 @@ describe('startMissionReviewRuntime', () => {
 
   it('keeps the latest refresh result when requests resolve out of order', async () => {
     const applyRuntime = vi.fn()
-    let resolveFirstMission: ((value: readonly MissionEvent[]) => void) | null = null
-    const listAuditEvents = vi
+    let resolveFirstMission: ((value: {
+      readonly auditEvents: readonly MissionEvent[]
+      readonly breadcrumbCount: number
+    }) => void) | null = null
+    const readMissionReview = vi
       .fn()
       .mockImplementationOnce(
         () =>
-          new Promise<readonly MissionEvent[]>((resolve) => {
+          new Promise<{
+            readonly auditEvents: readonly MissionEvent[]
+            readonly breadcrumbCount: number
+          }>((resolve) => {
             resolveFirstMission = resolve
           }),
       )
-      .mockResolvedValueOnce([
-        {
+      .mockResolvedValueOnce({
+        breadcrumbCount: 2,
+        auditEvents: [{
           id: 'event-second',
           mission_id: SECOND_MISSION.id,
           event_type: 'mission_created',
           timestamp: '2026-04-10T09:00:00.000Z',
           details_json: '{"name":"Second Mission"}',
-        },
-      ])
+        }],
+      })
 
     const runtime = await startMissionReviewRuntime({
       missionStore: createMissionReviewStoreStub({
         listMissions: vi.fn().mockResolvedValue([SECOND_MISSION, FIRST_MISSION]),
-        listAuditEvents,
+        readMissionReview,
+        cancelMissionReviewRead: vi.fn().mockResolvedValue(true),
       }),
       layerCatalogStore: {
         listMetadata: vi.fn().mockResolvedValue([]),
@@ -177,15 +306,16 @@ describe('startMissionReviewRuntime', () => {
     const secondLoad = runtime.load(SECOND_MISSION.id)
     await Promise.resolve()
 
-    resolveFirstMission?.([
-      {
+    resolveFirstMission?.({
+      breadcrumbCount: 1,
+      auditEvents: [{
         id: 'event-first',
         mission_id: FIRST_MISSION.id,
         event_type: 'mission_created',
         timestamp: '2026-04-10T08:00:00.000Z',
         details_json: '{"name":"First Mission"}',
-      },
-    ])
+      }],
+    })
 
     await Promise.all([firstLoad, secondLoad])
 
@@ -220,6 +350,26 @@ describe('startMissionReviewRuntime', () => {
         error: 'markers table corrupt',
       }),
     )
+  })
+
+  it('cancels the Review worker when a parallel snapshot read fails [DON-251]', async () => {
+    const readMissionReview = vi.fn().mockReturnValue(new Promise(() => undefined))
+    const cancelMissionReviewRead = vi.fn().mockResolvedValue(true)
+    const runtime = await startMissionReviewRuntime({
+      missionStore: createMissionReviewStoreStub({
+        listMissions: vi.fn().mockResolvedValue([FIRST_MISSION]),
+        readMissionReview,
+        cancelMissionReviewRead,
+        listMarkers: vi.fn().mockRejectedValue(new Error('markers table corrupt')),
+      }),
+      layerCatalogStore: { listMetadata: vi.fn().mockResolvedValue([]) },
+      applyRuntime: vi.fn(),
+    })
+
+    await runtime.load(FIRST_MISSION.id)
+
+    const requestId = readMissionReview.mock.calls[0]?.[1] as string
+    expect(cancelMissionReviewRead).toHaveBeenCalledWith(requestId)
   })
 
   it('refreshes the currently selected mission', async () => {
@@ -369,6 +519,11 @@ function createMissionReviewStoreStub(overrides: Record<string, unknown> = {}) {
   return {
     info: vi.fn().mockResolvedValue(info),
     listMissions: vi.fn().mockResolvedValue([FIRST_MISSION]),
+    readMissionReview: vi.fn().mockResolvedValue({
+      auditEvents: [],
+      breadcrumbCount: 1,
+    }),
+    cancelMissionReviewRead: vi.fn().mockResolvedValue(false),
     listAuditEvents: vi.fn().mockResolvedValue([]),
     listMarkers: vi.fn().mockResolvedValue([marker]),
     listDevices: vi.fn().mockResolvedValue([device]),

@@ -155,6 +155,28 @@ describe('browser harness store', () => {
     )
   })
 
+  it('returns one bounded Mission Review audit page with the exact breadcrumb count', async () => {
+    const store = getBrowserHarnessStore()
+    const mission = await store.createMission({ name: 'Review Mission' })
+    await store.addPosition({
+      mission_id: mission.id,
+      device_id: 'alpha',
+      lat: 52,
+      lon: -9.7,
+      timestamp: '2026-08-22T18:00:00.000Z',
+      data_origin: 'live',
+    })
+
+    await expect(store.readMissionReview({
+      missionId: mission.id,
+      includeTelemetry: false,
+      auditLimit: 1,
+    })).resolves.toEqual({
+      auditEvents: [expect.objectContaining({ event_type: 'mission_created' })],
+      breadcrumbCount: 1,
+    })
+  })
+
   it('caps browser-only tracking persistence so large breadcrumb imports do not exceed session storage', async () => {
     const store = getBrowserHarnessStore()
     const mission = await store.createMission({ name: 'Large Tracking Mission' })

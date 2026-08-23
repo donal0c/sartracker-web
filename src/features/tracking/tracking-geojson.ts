@@ -7,6 +7,7 @@ import {
   type TrackingStylePreferences,
 } from './tracking-style-store'
 import type { NormalizedTrackingPosition, TrackingSnapshot } from './tracking-types'
+import type { DeviceStationaryAttention } from './stationary-attention-store'
 
 export const DEFAULT_BREADCRUMB_LINE_GAP_THRESHOLD_MS = 30 * 60 * 1000
 
@@ -19,6 +20,8 @@ type GeoJsonPointFeature = Feature<
     readonly color: string
     readonly stale: boolean
     readonly dataOrigin: string
+    readonly attention: boolean
+    readonly attentionAcknowledged: boolean
   }
 >
 
@@ -70,6 +73,7 @@ export function createTrackingFeatureCollection(
     breadcrumbSize: 8,
     breadcrumbTrailMode: DEFAULT_BREADCRUMB_TRAIL_MODE,
   },
+  attentionByDevice: Readonly<Record<string, DeviceStationaryAttention>> = {},
 ): FeatureCollection<Geometry> {
   const breadcrumbFeatures =
     style.breadcrumbTrailMode === 'dots'
@@ -80,7 +84,7 @@ export function createTrackingFeatureCollection(
     type: 'FeatureCollection',
     features: [
       ...breadcrumbFeatures,
-      ...createDeviceFeatureCollection(snapshot, style).features,
+      ...createDeviceFeatureCollection(snapshot, style, attentionByDevice).features,
     ],
   }
 }
@@ -96,6 +100,7 @@ export function createTrackingFeatureCollectionDataKey(
     breadcrumbSize: 8,
     breadcrumbTrailMode: DEFAULT_BREADCRUMB_TRAIL_MODE,
   },
+  attentionByDevice: Readonly<Record<string, DeviceStationaryAttention>> = {},
 ): string {
   return [
     getObjectIdentityToken(snapshot.devices),
@@ -103,6 +108,7 @@ export function createTrackingFeatureCollectionDataKey(
     getObjectIdentityToken(snapshot.breadcrumbs),
     gapThresholdMs,
     createTrackingStyleFeatureKey(style),
+    getObjectIdentityToken(attentionByDevice),
   ].join(':')
 }
 
@@ -112,6 +118,7 @@ export function createTrackingFeatureCollectionDataKey(
 export function createDeviceFeatureCollection(
   snapshot: TrackingSnapshot,
   style: Pick<TrackingStylePreferences, 'deviceColors'> = { deviceColors: {} },
+  attentionByDevice: Readonly<Record<string, Pick<DeviceStationaryAttention, 'state' | 'acknowledged'>>> = {},
 ): FeatureCollection<Point> {
   const deviceNameById = new Map(
     snapshot.devices.map((device) => [device.device_id, device.name] as const),
@@ -119,6 +126,7 @@ export function createDeviceFeatureCollection(
 
   const features: GeoJsonPointFeature[] = snapshot.positions.map((position) => ({
     type: 'Feature',
+    id: `device:${position.device_id}`,
     geometry: {
       type: 'Point',
       coordinates: [position.lon, position.lat],
@@ -130,6 +138,8 @@ export function createDeviceFeatureCollection(
       color: getStyledDeviceColor(position.device_id, style.deviceColors),
       stale: position.device_cache_stale,
       dataOrigin: position.data_origin,
+      attention: attentionByDevice[position.device_id]?.state === 'attention',
+      attentionAcknowledged: attentionByDevice[position.device_id]?.acknowledged === true,
     },
   }))
 
@@ -174,13 +184,14 @@ export function createBreadcrumbFeatureCollection(
 
   for (const [deviceId, breadcrumbs] of breadcrumbsByDevice.entries()) {
     const segments = createBreadcrumbSegments(breadcrumbs, gapThresholdMs)
-    for (const segment of segments) {
+    for (const [segmentIndex, segment] of segments.entries()) {
       if (segment.length < 2) {
         continue
       }
 
       features.push({
         type: 'Feature',
+        id: `breadcrumb-line:${deviceId}:${segmentIndex}`,
         geometry: {
           type: 'LineString',
           coordinates: segment.map((position) => [position.lon, position.lat] as const),
@@ -355,7 +366,8 @@ function createPointFeatureCacheKey(
   return `dots:${style.breadcrumbSize ?? 8}:${createDeviceColorsKey(style.deviceColors)}`
 }
 
-function createTrackingStyleFeatureKey(style: TrackingStylePreferences): string {
+/** Returns a deterministic key for style fields embedded in tracking features. */
+export function createTrackingStyleFeatureKey(style: TrackingStylePreferences): string {
   return [
     style.breadcrumbTrailMode,
     style.breadcrumbSize,

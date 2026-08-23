@@ -6,7 +6,7 @@ test.describe('performance sweep regressions', () => {
   }) => {
     // This is a deliberately heavy perf-characterization test: it seeds a
     // large tracking mission (33 devices x 150 breadcrumbs ~= 5k positions),
-    // renders, instruments setData, then re-seeds and re-renders. Locally it
+    // renders, instruments source mutations, then re-seeds and re-renders. Locally it
     // runs in ~50s, but shared CI runners under load are materially slower
     // (the full Chromium suite can take ~6.5m there), so a 90s whole-test
     // budget left no headroom and timed out during the first seed. The perf
@@ -31,16 +31,15 @@ test.describe('performance sweep regressions', () => {
       mapHasBreadcrumbLines: true,
     })
 
-    await installTrackingSetDataCounter(page)
+    await installTrackingSourceMutationCounter(page)
     await fireTrackingIdle(page, 2)
-    expect(await readTrackingSetDataCount(page)).toBe(0)
+    expect(await readTrackingSourceMutationCount(page)).toBe(0)
 
     await seedLargeTrackingSnapshot(page, { positionOffset: 0.003 })
-    await expect.poll(async () => readTrackingSetDataCount(page), {
+    await expect.poll(async () => readTrackingSourceMutationCount(page), {
       timeout: 15_000,
     }).toBeGreaterThan(0)
 
-    const countAfterPositionUpdate = await readTrackingSetDataCount(page)
     await expect.poll(async () => readTrackingSourceSummary(page), {
       timeout: 15_000,
     }).toMatchObject({
@@ -49,28 +48,30 @@ test.describe('performance sweep regressions', () => {
       mapHasDeviceFeatures: true,
       mapHasBreadcrumbLines: true,
     })
+    await fireTrackingIdle(page, 1)
+    const countAfterPositionUpdate = await readTrackingSourceMutationCount(page)
 
     await fireTrackingIdle(page, 2)
-    expect(await readTrackingSetDataCount(page)).toBe(countAfterPositionUpdate)
+    expect(await readTrackingSourceMutationCount(page)).toBe(countAfterPositionUpdate)
 
     await page.evaluate(async () => {
       const { useLayerVisibilityStore } = await import('/src/features/layers/layer-visibility-store.ts')
       useLayerVisibilityStore.getState().setGroupVisibility('tracking', false)
     })
-    await expect.poll(async () => readTrackingSetDataCount(page), {
+    await expect.poll(async () => readTrackingSourceMutationCount(page), {
       timeout: 15_000,
     }).toBeGreaterThan(countAfterPositionUpdate)
 
-    const countAfterTrackingHidden = await readTrackingSetDataCount(page)
+    const countAfterTrackingHidden = await readTrackingSourceMutationCount(page)
     await fireTrackingIdle(page, 3)
-    expect(await readTrackingSetDataCount(page)).toBe(countAfterTrackingHidden)
+    expect(await readTrackingSourceMutationCount(page)).toBe(countAfterTrackingHidden)
   })
 })
 
 const DEVICE_COUNT = 33
 
-// The DON-210/DON-212 render-churn invariant (no setData when the tracking
-// source data is unchanged on idle; one setData when a position genuinely
+// The DON-210/DON-212 render-churn invariant (no source mutation when tracking
+// data is unchanged on idle; one bounded mutation when a position genuinely
 // changes) is size-independent — it is also asserted directly and
 // deterministically at the unit level in
 // tests/unit/map-overlay-primitives.test.ts ("does not reset an existing
@@ -188,17 +189,18 @@ async function seedLargeTrackingSnapshot(
   )
 }
 
-async function installTrackingSetDataCounter(page: Page): Promise<void> {
+async function installTrackingSourceMutationCounter(page: Page): Promise<void> {
   await page.evaluate(() => {
     type TrackingSource = {
       setData: (data: unknown) => void
+      updateData: (diff: unknown) => void
     }
     type TrackingMap = {
       getSource: (sourceId: string) => TrackingSource | undefined
     }
     type InstrumentedWindow = Window & {
       __SARTRACKER_MAP__?: TrackingMap
-      __SARTRACKER_TRACKING_SET_DATA_COUNT__?: number
+      __SARTRACKER_TRACKING_SOURCE_MUTATION_COUNT__?: number
     }
 
     const instrumentedWindow = window as InstrumentedWindow
@@ -208,11 +210,19 @@ async function installTrackingSetDataCounter(page: Page): Promise<void> {
     }
 
     const originalSetData = source.setData.bind(source)
-    instrumentedWindow.__SARTRACKER_TRACKING_SET_DATA_COUNT__ = 0
+    const originalUpdateData = source.updateData.bind(source)
+    instrumentedWindow.__SARTRACKER_TRACKING_SOURCE_MUTATION_COUNT__ = 0
+    const countMutation = () => {
+      instrumentedWindow.__SARTRACKER_TRACKING_SOURCE_MUTATION_COUNT__ =
+        (instrumentedWindow.__SARTRACKER_TRACKING_SOURCE_MUTATION_COUNT__ ?? 0) + 1
+    }
     source.setData = (data: unknown) => {
-      instrumentedWindow.__SARTRACKER_TRACKING_SET_DATA_COUNT__ =
-        (instrumentedWindow.__SARTRACKER_TRACKING_SET_DATA_COUNT__ ?? 0) + 1
+      countMutation()
       originalSetData(data)
+    }
+    source.updateData = (diff: unknown) => {
+      countMutation()
+      originalUpdateData(diff)
     }
   })
 }
@@ -234,11 +244,11 @@ async function fireTrackingIdle(page: Page, count: number): Promise<void> {
   }, count)
 }
 
-async function readTrackingSetDataCount(page: Page): Promise<number> {
+async function readTrackingSourceMutationCount(page: Page): Promise<number> {
   return page.evaluate(
     () =>
-      (window as Window & { __SARTRACKER_TRACKING_SET_DATA_COUNT__?: number })
-        .__SARTRACKER_TRACKING_SET_DATA_COUNT__ ?? 0,
+      (window as Window & { __SARTRACKER_TRACKING_SOURCE_MUTATION_COUNT__?: number })
+        .__SARTRACKER_TRACKING_SOURCE_MUTATION_COUNT__ ?? 0,
   )
 }
 

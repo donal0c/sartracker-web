@@ -13,6 +13,15 @@ import {
 } from '../../src/features/settings/settings-validation'
 
 describe('settings validation', () => {
+  it('rejects unsafe stationary-attention thresholds [DON-269]', () => {
+    const draft = createSettingsDraft(DEFAULT_APP_SETTINGS)
+    draft.missionDefaults.stationaryAttentionHeartbeatMinutes = 1
+    draft.missionDefaults.stationaryAttentionMovementFloorM = 101
+    expect(validateSettingsDraft(draft)).toMatchObject({
+      stationaryAttentionHeartbeatMinutes: expect.any(String),
+      stationaryAttentionMovementFloorM: expect.any(String),
+    })
+  })
   it('requires provider details for Traccar basic auth', () => {
     const draft = createSettingsDraft(DEFAULT_APP_SETTINGS)
     draft.dataSource.providerType = 'traccar_http'

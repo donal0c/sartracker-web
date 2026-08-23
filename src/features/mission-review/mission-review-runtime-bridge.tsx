@@ -8,7 +8,6 @@ import { getBrowserHarnessLayerCatalogStore } from '../browser-validation/browse
 import { getBrowserHarnessStore } from '../browser-validation/browser-harness-store'
 import { isElectronRuntimeAvailable } from '../../lib/desktop-runtime'
 import { shouldEnableMissionBrowserHarness } from '../mission/mission-browser-harness'
-import { useMissionStore } from '../mission/mission-store'
 import {
   applyMissionReviewController,
   applyMissionReviewRuntime,
@@ -27,13 +26,6 @@ import {
  */
 export function MissionReviewRuntimeBridge() {
   const controller = useMissionReviewStore((state) => state.controller)
-  const preferredMissionId = useMissionStore(
-    (state) =>
-      state.currentMission?.id ??
-      state.governanceMission?.id ??
-      state.recoverableMission?.id ??
-      null,
-  )
 
   useEffect(() => {
     if (controller !== null) {
@@ -74,14 +66,6 @@ export function MissionReviewRuntimeBridge() {
       cancelled = true
     }
   }, [controller])
-
-  useEffect(() => {
-    if (controller === null) {
-      return
-    }
-
-    void controller.load(preferredMissionId)
-  }, [controller, preferredMissionId])
 
   return null
 }

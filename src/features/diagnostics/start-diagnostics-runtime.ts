@@ -25,7 +25,8 @@ type DependencySmoke = {
   readonly hasTerraDraw: boolean
 }
 
-type DiagnosticsMissionStoreBoundary = Pick<MissionStore, 'info' | 'listMissions'>
+type DiagnosticsMissionStoreBoundary = Pick<MissionStore, 'info' | 'listMissions'> &
+  Partial<Pick<MissionStore, 'getIngestEvidenceHealth'>>
 type DiagnosticsLayerCatalogBoundary = {
   readonly clearMetadata: (missionId: string) => Promise<void>
 }
@@ -288,7 +289,7 @@ export async function startDiagnosticsRuntime(
     publishRuntime()
 
     try {
-      const [settings, runtimeBootstrap, missionStoreInfo, missions] = await Promise.all([
+      const [settings, runtimeBootstrap, baseMissionStoreInfo, missions] = await Promise.all([
         dependencies.loadSettings(),
         dependencies.loadRuntimeBootstrapSettings(),
         dependencies.missionStore.info(),
@@ -299,6 +300,15 @@ export async function startDiagnosticsRuntime(
       const trackingRuntime = dependencies.readTrackingRuntime()
       const layerCatalogRuntime = dependencies.readLayerCatalogRuntime()
       const selectedMissionId = resolveSelectedMissionId(missions, preferredMissionId)
+      const ingestEvidenceHealth = selectedMissionId === null
+        ? undefined
+        : await dependencies.missionStore.getIngestEvidenceHealth?.(selectedMissionId)
+      const missionStoreInfo = {
+        ...baseMissionStoreInfo,
+        ...(ingestEvidenceHealth === undefined
+          ? {}
+          : { ingest_evidence_health: ingestEvidenceHealth }),
+      }
       const snapshot = buildDiagnosticsSnapshot({
         generatedAt: now(dependencies).toISOString(),
         appVersion: dependencies.appVersion,

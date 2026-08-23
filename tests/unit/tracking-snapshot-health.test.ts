@@ -57,6 +57,44 @@ describe('tracking snapshot health', () => {
     expect(snapshot.positions[0]?.cache_age_seconds).toBeNull()
   })
 
+  it('marks server-time-only positions as unverified without conflating that with age [DON-267]', () => {
+    const snapshot = annotateTrackingSnapshotHealth(
+      {
+        ...LIVE_SNAPSHOT,
+        positions: LIVE_SNAPSHOT.positions.map((position) => ({
+          ...position,
+          timestamp_source: 'server' as const,
+        })),
+      },
+      {
+        now: new Date('2026-04-06T10:30:01.000Z'),
+        deviceStaleThresholdMs: 60 * 60 * 1000,
+      },
+    )
+
+    expect(snapshot.positions[0]?.fix_time_unverified).toBe(true)
+    expect(snapshot.positions[0]?.device_cache_stale).toBe(false)
+  })
+
+  it('preserves an explicit unverified fix-time flag from cache normalization [DON-267]', () => {
+    const snapshot = annotateTrackingSnapshotHealth(
+      {
+        ...LIVE_SNAPSHOT,
+        positions: LIVE_SNAPSHOT.positions.map((position) => ({
+          ...position,
+          timestamp_source: 'device' as const,
+          fix_time_unverified: true,
+        })),
+      },
+      {
+        now: new Date('2026-04-06T10:30:01.000Z'),
+        deviceStaleThresholdMs: 60 * 60 * 1000,
+      },
+    )
+
+    expect(snapshot.positions[0]?.fix_time_unverified).toBe(true)
+  })
+
   it('marks cached positions with cache age and stale state after cache ttl', () => {
     const snapshot = annotateTrackingSnapshotHealth(
       {

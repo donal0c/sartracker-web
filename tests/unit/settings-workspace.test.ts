@@ -78,6 +78,18 @@ describe('SettingsWorkspace', () => {
     expect(onClose).toHaveBeenCalledOnce()
   })
 
+  it('shows operator-configurable stationary-attention hypotheses [DON-269]', async () => {
+    const { SettingsWorkspace } = await import('../../src/components/settings-workspace')
+    mocks.loadAppSettings.mockResolvedValue(DEFAULT_APP_SETTINGS)
+    mocks.readCoordinateDisplayMode.mockReturnValue('wgs84_first')
+    mocks.isTauriRuntimeAvailable.mockReturnValue(false)
+    render(React.createElement(SettingsWorkspace, { open: true, onClose: vi.fn() }))
+    await waitForEnabledButton('[data-testid="settings-save"]')
+    expect(document.querySelector('[data-testid="settings-stationary-heartbeat"]')).not.toBeNull()
+    expect(document.querySelector('[data-testid="settings-stationary-movement-floor"]')).not.toBeNull()
+    expect(document.querySelector('[data-testid="settings-stationary-attention-note"]')?.textContent).toContain('attention')
+  })
+
   it('closes after persisting settings without waiting for a slow reconnect', async () => {
     const onClose = vi.fn()
     const reloadSettings = vi.fn(() => new Promise<void>(() => undefined))

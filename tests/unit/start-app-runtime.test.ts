@@ -6,12 +6,105 @@ import { startAppRuntime } from '../../src/features/runtime/start-app-runtime'
 import type { CoreFeatureRuntimeHandles } from '../../src/features/runtime/start-core-feature-runtimes'
 import { useMissionStore } from '../../src/features/mission/mission-store'
 import { useActiveMissionDevicesStore } from '../../src/features/tracking/active-mission-devices-store'
+import { useIngestHealthStore } from '../../src/features/tracking/ingest-health-store'
 
 describe('app runtime startup', () => {
   afterEach(() => {
     vi.unstubAllGlobals()
     useMissionStore.setState(useMissionStore.getInitialState())
     useActiveMissionDevicesStore.setState(useActiveMissionDevicesStore.getInitialState())
+    useIngestHealthStore.setState(useIngestHealthStore.getInitialState())
+  })
+
+  it('publishes current rejections before non-blocking durable evidence delivery [DON-268]', async () => {
+    useMissionStore.setState({
+      phase: 'active',
+      currentMission: {
+        id: 'mission-1', name: 'Mission 1', status: 'active',
+        start_time: '2026-08-22T10:00:00.000Z', pause_time: null,
+        finish_time: null, paused_seconds: 0, notes: null, schema_version: 8,
+      },
+    })
+    const recordIngestRejections = vi.fn().mockImplementation(async (input) => ({
+      acknowledgedDeliveryIds: input.rejections.map((entry) => entry.deliveryId),
+      health: {
+        state: 'healthy', reason: null, pendingCount: 0, corruptCount: 0,
+        conflictCount: 0, rejectedCount: 1, affectedDeviceCount: 1,
+        conflictDeviceIds: [],
+      },
+    }))
+    const missionStore = Object.assign(createMissionStoreStub(), {
+      getActiveMission: vi.fn().mockResolvedValue(useMissionStore.getState().currentMission),
+      recordIngestRejections,
+      getIngestEvidenceHealth: vi.fn().mockResolvedValue({
+        state: 'healthy', reason: null, pendingCount: 0, corruptCount: 0,
+        conflictCount: 0, rejectedCount: 0, affectedDeviceCount: 0,
+        conflictDeviceIds: [],
+      }),
+    })
+    let rejectionHook: ((rejections: readonly {
+      readonly deviceId: string | null
+      readonly reason: 'invalid_coordinates'
+      readonly rowIndex: number
+      readonly anomalyKey: string
+      readonly canonicalEvidence: Readonly<Record<string, unknown>>
+    }[], context: {
+      readonly missionId: string | null
+      readonly observedAt: string
+    }) => void) | undefined
+    const createPollingManager = vi.fn().mockImplementation((_client, options) => {
+      rejectionHook = options.onCurrentPositionRejections
+      return { start: vi.fn(), stop: vi.fn() }
+    })
+    const startTrackingRuntime = vi.fn().mockImplementation(async (input) => {
+      input.createPoller({}, {
+        onSnapshot: vi.fn(), onStatusChange: vi.fn(),
+        getInitialBreadcrumbs: vi.fn().mockResolvedValue([]),
+        getInitialBreadcrumbTotals: vi.fn().mockResolvedValue({}),
+        getInitialBreadcrumbSelectionMetadata: vi.fn().mockResolvedValue({}),
+        getInitialHistoryCheckpoints: vi.fn().mockResolvedValue({}),
+        onPollDiagnostic: vi.fn(),
+      })
+      return vi.fn()
+    })
+    const startMissionGovernanceRuntime = vi.fn().mockResolvedValue({})
+
+    await startAppRuntime({
+      registerServiceWorker: vi.fn().mockResolvedValue(undefined),
+      isTauriRuntimeAvailable: vi.fn().mockReturnValue(false),
+      isElectronRuntimeAvailable: vi.fn().mockReturnValue(true),
+      createMissionStore: vi.fn().mockReturnValue(missionStore),
+      readRuntimeBootstrapSettings: vi.fn().mockResolvedValue(createBootstrapSettings()),
+      startMissionAutosave: vi.fn().mockReturnValue(createAutosaveController()),
+      startMissionRuntime: vi.fn().mockResolvedValue({}),
+      startMissionGovernanceRuntime,
+      startMarkerRuntime: vi.fn().mockResolvedValue({}),
+      startDrawingRuntime: vi.fn().mockResolvedValue({}),
+      startGpxRuntime: vi.fn().mockResolvedValue({}),
+      startTrackingRuntime,
+      createPollingManager,
+    })
+    rejectionHook?.(
+      [{
+        deviceId: 'device-1', reason: 'invalid_coordinates', rowIndex: 0,
+        anomalyKey: 'source:bad-1', canonicalEvidence: { id: 'bad-1' },
+      }],
+      { missionId: 'mission-1', observedAt: '2026-08-22T10:00:01.000Z' },
+    )
+
+    expect(useIngestHealthStore.getState().summary.totalRejected).toBe(1)
+    await vi.waitFor(() => expect(recordIngestRejections).toHaveBeenCalledTimes(1))
+    expect(recordIngestRejections).toHaveBeenCalledWith(expect.objectContaining({
+      mission_id: 'mission-1',
+      rejections: [expect.objectContaining({
+        receivedAt: '2026-08-22T10:00:01.000Z',
+      })],
+    }))
+    expect(missionStore.getIngestEvidenceHealth).toHaveBeenCalledWith('mission-1')
+    const governanceMissionStore = startMissionGovernanceRuntime.mock.calls[0]?.[0].missionStore
+    expect(governanceMissionStore.finalizeMission).not.toBe(missionStore.finalizeMission)
+    await governanceMissionStore.finalizeMission('mission-1')
+    expect(missionStore.finalizeMission).toHaveBeenCalledWith('mission-1')
   })
 
   it('wires the active mission device selection into breadcrumb polling', async () => {

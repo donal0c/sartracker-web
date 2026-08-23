@@ -41,7 +41,14 @@ import {
 } from '../tracking/start-tracking-runtime'
 import { DEFAULT_DEVICE_STALE_THRESHOLD_MS } from '../tracking/tracking-snapshot-health'
 import { useActiveMissionDevicesStore } from '../tracking/active-mission-devices-store'
+import {
+  applyCurrentPositionRejections,
+  applyIngestEvidenceHealth,
+} from '../tracking/ingest-health-store'
+import { createRejectionEvidenceDelivery } from '../tracking/rejection-evidence-delivery'
+import { createIngestEvidenceFinalizationBoundary } from '../tracking/ingest-evidence-finalization-boundary'
 import { startExactBreadcrumbDotRuntime } from '../tracking/start-exact-breadcrumb-dot-runtime'
+import { useStationaryAttentionStore } from '../tracking/stationary-attention-store'
 import { useExactBreadcrumbDotStore } from '../tracking/exact-breadcrumb-dot-store'
 import type { AppRuntimeController } from './app-runtime-controller'
 import {
@@ -64,6 +71,13 @@ type StartAppRuntimeDependencies = {
     readonly trackingPollIntervalMs: number
     readonly trackingMinimumPollIntervalMs?: number
     readonly trackingCacheEnabled: boolean
+    readonly stationaryAttentionConfig?: {
+      readonly heartbeatWindowMs: number
+      readonly heartbeatToleranceMs: number
+      readonly movementFloorM: number
+      readonly accuracyFactor: number
+      readonly outlierRejectM: number
+    }
     readonly trackingConfig: {
       readonly baseUrl: string
       readonly email?: string
@@ -127,6 +141,38 @@ export async function startAppRuntime(
 
   const missionStore = resolvedDependencies.createMissionStore(runtimeKind)
   const trackingMissionStore = missionStore as MissionStore & TrackingRuntimeMissionStore
+  const rejectionEvidenceDelivery = missionStore.recordIngestRejections === undefined
+    ? null
+    : createRejectionEvidenceDelivery({
+        missionStore: {
+          recordIngestRejections: missionStore.recordIngestRejections,
+          ...(missionStore.recordIngestEvidenceLoss === undefined
+            ? {}
+            : { recordIngestEvidenceLoss: missionStore.recordIngestEvidenceLoss }),
+        },
+        applyRejections: applyCurrentPositionRejections,
+        applyEvidenceHealth: applyIngestEvidenceHealth,
+      })
+  if (missionStore.getIngestEvidenceHealth !== undefined) {
+    void missionStore.getActiveMission().then((mission) =>
+      mission === null
+        ? null
+        : missionStore.getIngestEvidenceHealth?.(mission.id) ?? null,
+    ).then((health) => {
+      if (health !== null) applyIngestEvidenceHealth(health)
+    }).catch(() => {
+      applyIngestEvidenceHealth({
+        state: 'critical',
+        reason: 'evidence_health_unavailable',
+        pendingCount: 0,
+        corruptCount: 0,
+        conflictCount: 0,
+        rejectedCount: 0,
+        affectedDeviceCount: 0,
+        conflictDeviceIds: [],
+      })
+    })
+  }
   const gpxImportSource =
     runtimeKind === 'electron' ? createElectronGpxImportSource() : createTauriGpxImportSource()
   const attachmentAdapter =
@@ -137,9 +183,12 @@ export async function startAppRuntime(
         : noopMarkerAttachmentAdapter
   let activeServices = createNoopRuntimeServiceHandles()
   let reloadGeneration = 0
+  const coreMissionStore = rejectionEvidenceDelivery === null
+    ? missionStore
+    : createIngestEvidenceFinalizationBoundary(missionStore, rejectionEvidenceDelivery)
 
   const coreFeatureRuntimes = await resolvedDependencies.startCoreFeatureRuntimes({
-    missionStore,
+    missionStore: coreMissionStore,
     attachmentAdapter,
     gpxWatchSource: gpxImportSource,
     requestAutosaveSync: (reason: AutosaveSyncReason) =>
@@ -182,6 +231,7 @@ export async function startAppRuntime(
       activeServices = createNoopRuntimeServiceHandles()
       stopRuntimeServices(previousServices)
       stopExactBreadcrumbDots()
+      void rejectionEvidenceDelivery?.dispose()
       coreFeatureRuntimes.dispose()
     },
   }
@@ -196,6 +246,8 @@ export async function startAppRuntime(
     if (generation !== reloadGeneration) {
       return
     }
+
+    useStationaryAttentionStore.getState().setConfig(runtimeSettings.stationaryAttentionConfig)
 
     // A replacement tracker must never overlap the currently active poller.
     // Stop the old services only after settings have loaded successfully, then
@@ -250,12 +302,21 @@ export async function startAppRuntime(
             : { persistHistoryChunks: hooks.persistHistoryChunks }),
           onSnapshot: hooks.onSnapshot,
           onStatusChange: hooks.onStatusChange,
+          onCurrentPositionRejections:
+            rejectionEvidenceDelivery?.record ?? applyCurrentPositionRejections,
           onPollDiagnostic: hooks.onPollDiagnostic,
         }),
       createTrackingCache:
         runtimeKind === 'electron' ? createElectronTrackingCache : createTauriTrackingCache,
       readTrackingRuntimeConfig,
-      applySnapshot: applyTrackingSnapshot,
+      applySnapshot: (snapshot) => {
+        const missionId = useMissionStore.getState().currentMission?.id ?? null
+        applyTrackingSnapshot(
+          snapshot,
+          missionId,
+          useActiveMissionDevicesStore.getState().getActiveDeviceIds(missionId),
+        )
+      },
       applyStatus: applyTrackingStatus,
       notifyDurablePositionChange: (changedPositionCount) => {
         useExactBreadcrumbDotStore.getState().controller?.notifyDurableChange(

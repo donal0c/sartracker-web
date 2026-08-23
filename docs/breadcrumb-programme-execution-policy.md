@@ -1,0 +1,169 @@
+# Breadcrumb And Mission-History Programme Execution Policy
+
+Date: 2026-08-22
+
+Status: **Locked for execution.** This document records the BCP-00 delivery,
+complexity, review, branch, qualification, and first-PR decisions. Domain
+semantics remain governed by
+`docs/breadcrumb-mission-history-architecture-decision.md`, with the team's
+exact words and question history governed by
+`docs/breadcrumb-team-question-and-answer-ledger.md`.
+
+## Delivery Decision
+
+- Deliver the programme through five substantial, coherent PRs.
+- Use feature branches for every programme PR. No programme implementation is
+  committed directly to `master`.
+- Keep `master` green and internally coherent after every merge, without
+  treating that as field qualification.
+- Publish one team-facing release only after the complete final qualification.
+- Run one unpublished internal packaged checkpoint after PR-3 to isolate
+  coverage faults before replay and archive work build on it.
+- Keep coverage and replay architecturally separate even though they ship in
+  the same final release.
+- Preserve paged exact Breadcrumb Dots as the source-exact inspection and
+  export contract throughout the programme.
+
+## Reference Hardware And Stall Budget
+
+- Coverage decision evidence and the PR-3 checkpoint use the existing Ubuntu
+  X11 qualification host identified in `handoff/HANDOFF.md` as the reference
+  machine.
+- The original field machine remains final-candidate evidence and is not part
+  of routine PR qualification.
+- Electron main-process response has a target ceiling of **150 ms** and a hard
+  release/decision gate of **200 ms** during history, coverage, replay, archive,
+  and reconciliation work. Any measured breach requires a fix or an explicit
+  architecture-decision amendment; it is never silently accepted.
+- A new current fix must remain visible within one normal successful polling
+  cycle regardless of concurrent history work.
+
+## Complexity And Review Routing
+
+Complexity combines implementation breadth, safety impact, persistence risk,
+failure-mode difficulty, and the difficulty of proving the result.
+
+Donal's coordination workflow now fixes the implementation executor for every
+approved slice at **GPT-5.6 Sol with high reasoning** in a fresh Codex task.
+Complexity continues to determine planning depth and independent exact-head PR
+review allocation; it no longer automatically changes the implementation
+model. See `docs/breadcrumb-programme-coordination-workflow.md`.
+
+| Score | Independent PR reviews |
+| --- | ---: |
+| 1-4 | 1 |
+| 5-6 | 2 |
+| 7-8 | 3 |
+| 9 | 4 |
+| 10 | 5 |
+
+Scores are reassessed in the just-in-time design pass if the actual current
+code or accepted scope is materially different. A lower score may not be used
+merely to reduce review cost after implementation has started.
+
+## Coordination And Approval
+
+The binding operating loop is
+`docs/breadcrumb-programme-coordination-workflow.md`. Codex coordinates and
+guards requirements; fresh bounded Fable planning is the default when a new
+plan is genuinely needed; Donal explicitly authorizes every implementation
+task; and each approved complete PR is delegated to one fresh GPT-5.6 Sol high
+task. BCP units remain internal planning and TDD checkpoints inside that task.
+No team question is sent until it passes the ledger's duplicate-question gate.
+
+## PR And Slice Scores
+
+| Stage | Slice | Complexity |
+| --- | --- | ---: |
+| Mobilization | BCP-00 programme setup | 4/10 |
+| PR-1: trustworthy ingest and live safety | Overall | **9/10** |
+|  | BCP-10 exact-dots preservation contract | 6/10 |
+|  | BCP-01 current-position hardening | 7/10 |
+|  | BCP-02 provenance and anomaly ledger | 9/10 |
+|  | BCP-05 stationary attention | 8/10 |
+| PR-2: mission model | Overall | **9/10** |
+|  | BCP-03 outings | 7/10 |
+|  | BCP-04 participants and Traccar groups | 9/10 |
+|  | BCP-06 mission-scale fixtures | 8/10 |
+| PR-3: complete coverage | Overall | **10/10** |
+|  | BCP-07 renderer decision | 8/10 |
+|  | BCP-08 coverage read model and watermark | 10/10 |
+|  | BCP-09 coverage UI and filters | 9/10 |
+| PR-4: mission evidence and replay | Overall | **10/10** |
+|  | BCP-11 GPX evidence | 8/10 |
+|  | BCP-12a versioned mission data | 9/10 |
+|  | BCP-12b timeline replay | 10/10 |
+|  | BCP-13 search areas and repeated passes | 9/10 |
+| PR-5: archive lifecycle | Overall | **10/10** |
+|  | BCP-14 archive security decision | 9/10 |
+|  | BCP-15 encrypted streamed archives | 10/10 |
+|  | BCP-16 archive review and retention | 10/10 |
+| Qualification | BCP-17 final qualification and release | **10/10** |
+
+## PR Grouping And Merge Order
+
+1. **PR-1 — Trustworthy ingest and live safety:** BCP-10, BCP-01, BCP-02,
+   BCP-05. Branch: `codex/breadcrumb-pr1-ingest-safety`.
+2. **PR-2 — Mission model:** BCP-03, BCP-04, BCP-06.
+3. **PR-3 — Complete coverage:** BCP-07, BCP-08, BCP-09.
+4. **PR-4 — Mission evidence and replay:** BCP-11, BCP-12a, BCP-12b,
+   BCP-13.
+5. **PR-5 — Archive lifecycle:** BCP-14, BCP-15, BCP-16.
+6. **BCP-17 — Qualification:** final-candidate evidence and the one
+   team-facing release after PR-1 through PR-5 merge.
+
+Merges serialize in this order. A later branch may be prepared from the prior
+PR head, but it cannot merge ahead of its prerequisite.
+
+## Review Allocation
+
+Reviews operate on the exact PR head and use independent contexts. They are
+evidence-backed reviews, not votes.
+
+- Review 1: safety-invariant adversary.
+- Review 2: concurrency and failure modes.
+- Review 3: schema, persistence, provenance, and data integrity.
+- Review 4: test adequacy plus architecture and code quality.
+- Review 5, for 10/10 PRs only: independent end-to-end adversarial synthesis.
+
+P1 and P2 findings block merge. Any new commit invalidates the affected
+review. Focused delta review closes findings, followed by one final exact-head
+review that checks the cumulative diff and all P1/P2 closures.
+
+## Cost-Aware Qualification
+
+- Development uses strict red-green-refactor with focused unit, integration,
+  and narrow operator-flow tests.
+- A review-ready large PR receives the deterministic software gate and only
+  the packaged or scale proof required to localize that PR's risks.
+- Heavy results are bound to code SHA, fixture hash, harness version, machine,
+  and flags. They remain valid until a later change touches the exercised
+  surface.
+- The PR-3 checkpoint is one bounded Ubuntu packaged run at 960,000 fixes. It
+  is not published and excludes the live server, field machine, archive drill,
+  installed-package matrix, and full visual sweep.
+- The broad packaged, live, multi-machine, archive/custody, long-soak, visual,
+  checksum, and fresh-download matrix runs on the final candidate.
+
+## PR-1 Internal Order
+
+1. BCP-10: freeze the existing source-exact Dots behaviour as a contract.
+2. BCP-01: harden the current-position path and rejected-row visibility.
+3. BCP-02: add receipt/content provenance and the durable anomaly ledger.
+4. BCP-05: derive and present stationary attention from the trusted stream.
+
+Each work unit receives a just-in-time Fable design subsection before its
+production implementation. PR-1 receives one integration design covering the
+boundaries between all four work units.
+
+The accepted PR-1 design is
+`tmp/agent-mail/fable-breadcrumb-pr1-design-20260822.md`. It confirms BCP-10
+requires no production-code change and defines the BCP-01, BCP-02, and BCP-05
+module boundaries, red-first tests, migration proof, operator evidence, and
+four reviewer charters.
+
+## Evidence Limit
+
+This policy records programme decisions. It does not itself prove runtime,
+packaged, benchmark, live-server, or field behaviour. Those proof tiers remain
+separate and must be executed at the gates above.

@@ -26,6 +26,15 @@ Aim for work that feels closer to a 9.5-10/10 engineering result than a fast acc
 
 Work directly on `master` unless the user explicitly asks for another branch. Do not create feature branches for ordinary local work, fixes, validation, deployment, or cleanup in this repo.
 
+**Breadcrumb programme exception (explicitly authorized 2026-08-22):** the
+Breadcrumb and Mission-History Programme defined in
+`docs/breadcrumb-programme-execution-policy.md` uses five substantial feature
+branches and PRs. No programme implementation is committed directly to
+`master`. This exception lasts through BCP-17 and does not change the default
+for unrelated work. Programme planning, Donal's approval gate, fresh Sol-high
+implementation tasks, cost-conscious Fable use, and requirements control follow
+`docs/breadcrumb-programme-coordination-workflow.md`.
+
 ## Project Intent
 
 This project exists to replace a legacy QGIS SAR workflow with a standalone application that operators can trust during real incidents.
@@ -296,6 +305,29 @@ Do not code through ambiguity in life-safety or architecture-bearing areas.
 - Prefer a short research follow-up over embedding speculative behaviour into the application
 - When a Linear issue is implementation-ready except for minor UI polish, proceed and record the assumption
 - When a Linear issue is missing a core domain decision, do not start implementation until that decision is locked
+
+### Team Question And Answer Authority
+
+Do not rely on chat history, a model summary, or an ADR alone as the source of
+what the SAR team said.
+
+- Preserve every operational question sent to the team and every answer
+  received in a repository-backed raw transcript.
+- Maintain an indexed Q&A ledger that gives each answer a stable ID and links
+  it to derived ADR decisions, Linear issues, implementation chunks, and tests.
+- Before proposing another team question, search the ledger, cite all related
+  answer IDs, and state why they do not already resolve it.
+- Do not send engineering mechanics—such as retries, deduplication,
+  idempotency, queueing, or transaction design—to the team as product questions
+  when their recorded domain answer already determines the meaning.
+- Model-generated "open questions" are candidates only. Codex must personally
+  pass them through the duplicate-question check before forwarding them.
+- Never silently rewrite or delete an earlier answer. Append the clarification
+  and mark the relationship explicitly.
+
+For the Breadcrumb and Mission-History Programme, the raw source is
+`team-feedback/breadcrumb-question-answers-20260822.md` and the canonical index
+is `docs/breadcrumb-team-question-and-answer-ledger.md`.
 
 ### Definition Of Done
 A Linear issue is not done just because tests pass.

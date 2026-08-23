@@ -20,6 +20,11 @@ import type {
   TrackingPollPhase,
 } from '../diagnostics/tracking-poll-ledger'
 import { classifyTrackingFailure } from '../diagnostics/tracking-poll-ledger'
+import {
+  fetchRosterAndCurrentPositions,
+} from './current-position-poll'
+import type { CurrentPositionRejection } from './ingest-health'
+import type { CurrentPositionNormalizationResult } from './traccar-client'
 
 const EMPTY_TRACKING_SNAPSHOT: TrackingSnapshot = {
   devices: [],
@@ -28,10 +33,15 @@ const EMPTY_TRACKING_SNAPSHOT: TrackingSnapshot = {
   rawBreadcrumbsForPersistence: [],
 }
 
+// Gives a prompt roster response one short turn to prevent placeholder device
+// rows becoming durable immediately before their real source metadata arrives.
+const CURRENT_POSITION_ROSTER_GRACE_MS = 50
+
 export type TrackingPollerClient = {
   readonly authenticate: () => Promise<void>
   readonly getDevices: () => Promise<readonly NormalizedTrackingDevice[]>
   readonly getCurrentPositions: () => Promise<readonly NormalizedTrackingPosition[]>
+  readonly getCurrentPositionsWithReport?: () => Promise<CurrentPositionNormalizationResult>
   readonly getBreadcrumbs: (
     deviceId: string,
     from: Date,
@@ -82,6 +92,13 @@ type PollingManagerOptions = {
     context: TrackingSnapshotContext,
   ) => void
   readonly onStatusChange: (status: TrackingConnectionStatus) => void
+  readonly onCurrentPositionRejections?: (
+    rejections: readonly CurrentPositionRejection[],
+    context: {
+      readonly missionId: string | null
+      readonly observedAt: string
+    },
+  ) => void
   readonly onPollDiagnostic?: (entry: TrackingPollLedgerEntry) => void
   readonly logger?: PollingManagerLogger
   readonly now?: () => Date
@@ -554,6 +571,24 @@ export function createPollingManager(
     })
   }
 
+  /** Reports rejected current rows after position publication and contains UI failures. */
+  function publishCurrentPositionRejections(
+    rejections: readonly CurrentPositionRejection[],
+    missionId: string | null,
+  ): true {
+    try {
+      options.onCurrentPositionRejections?.(rejections, {
+        missionId,
+        observedAt: now().toISOString(),
+      })
+    } catch (error) {
+      logger.warn('Current-position rejection evidence delivery failed.', {
+        failureKind: classifyTrackingFailure(error),
+      })
+    }
+    return true
+  }
+
   const scheduleNextPoll = (delayMs: number) => {
     if (!running) {
       return
@@ -580,6 +615,14 @@ export function createPollingManager(
     const pollHistoryResetKey = options.getHistoryResetKey?.() ?? null
     try {
       if (pollHistoryResetKey !== activeHistoryResetKey) {
+        const retainedCurrentSnapshot = lastGoodSnapshot === null
+          ? null
+          : {
+              devices: latestDevices,
+              positions: latestCurrentPositions,
+              breadcrumbs: [],
+              rawBreadcrumbsForPersistence: [],
+            } satisfies TrackingSnapshot
         initialSeedAbortController?.abort()
         initialSeedAbortController = null
         discardPendingHistorySnapshot()
@@ -604,9 +647,7 @@ export function createPollingManager(
         breadcrumbStatusWarning = null
         latestBreadcrumbTimestampByDevice.clear()
         historyReconciler.reset()
-        latestDevices = []
-        latestCurrentPositions = []
-        lastGoodSnapshot = null
+        lastGoodSnapshot = retainedCurrentSnapshot
       }
 
       const pollingMode = options.getPollingMode?.() ?? 'active'
@@ -644,12 +685,95 @@ export function createPollingManager(
       }
 
       pollPhase = 'devices'
-      const [devices, positions] = await Promise.all([
-        withPollPhase('devices', client.getDevices()),
-        withPollPhase('current_positions', client.getCurrentPositions()),
-      ])
+      const recoveredBeforeCurrentPositions = consecutiveFailures > 0
+      let rejectionEvidencePublishedEarly = false
+      let earlyCurrentPositionTimer: ReturnType<typeof setTimeout> | null = null
+      const currentPositionResult = await fetchRosterAndCurrentPositions(
+        {
+          getDevices: () => withPollPhase('devices', client.getDevices()),
+          getCurrentPositions: async () => {
+            const result = await withPollPhase(
+              'current_positions',
+              client.getCurrentPositionsWithReport?.() ??
+              client.getCurrentPositions().then((accepted) => ({
+                accepted,
+                rejected: [],
+              })),
+            )
+            earlyCurrentPositionTimer = scheduleTimeout(() => {
+              earlyCurrentPositionTimer = null
+              if (
+                discardSupersededPoll(generation, pollHistoryResetKey) ||
+                (options.getPollingMode?.() ?? 'active') !== 'active'
+              ) {
+                return
+              }
+              const positions = retainLastAcceptedCurrentPositions(
+                result.accepted,
+                result.rejected,
+                latestCurrentPositions,
+              )
+              const devices = resolveCurrentPositionDevices([], positions, latestDevices)
+              consecutiveFailures = 0
+              lastSuccessAt = now().toISOString()
+              latestDevices = devices
+              latestCurrentPositions = positions
+              const snapshot = {
+                devices,
+                positions,
+                breadcrumbs: breadcrumbPositions,
+                rawBreadcrumbsForPersistence: [],
+                breadcrumbMetadata,
+              }
+              lastGoodSnapshot = snapshot
+              options.onSnapshot(
+                annotateTrackingSnapshotHealth(snapshot, {
+                  now: now(),
+                  deviceStaleThresholdMs: options.staleThresholdMs,
+                }),
+                { historyResetKey: pollHistoryResetKey },
+              )
+              rejectionEvidencePublishedEarly = publishCurrentPositionRejections(
+                result.rejected,
+                pollHistoryResetKey,
+              )
+              publishStatus({
+                mode: 'online',
+                recovered: recoveredBeforeCurrentPositions,
+                warning: combineTrackingWarnings(
+                  'Current fixes loaded; refreshing device roster.',
+                  createRejectedCurrentPositionWarning(result.rejected),
+                ),
+              })
+            }, CURRENT_POSITION_ROSTER_GRACE_MS)
+            return result
+          },
+        },
+        latestDevices,
+      )
+      if (earlyCurrentPositionTimer !== null) {
+        clearScheduledTimeout(earlyCurrentPositionTimer)
+        earlyCurrentPositionTimer = null
+      }
       if (discardSupersededPoll(generation, pollHistoryResetKey)) {
         return
+      }
+
+      const devices = resolveCurrentPositionDevices(
+        currentPositionResult.devices,
+        currentPositionResult.accepted,
+        latestDevices,
+      )
+      const acceptedPositions = currentPositionResult.accepted
+      const positions = retainLastAcceptedCurrentPositions(
+        acceptedPositions,
+        currentPositionResult.rejected,
+        latestCurrentPositions,
+      )
+      if (currentPositionResult.rosterFailure !== null) {
+        logger.warn('Tracking device roster refresh failed; using last-known metadata.', {
+          failureKind: classifyTrackingFailure(currentPositionResult.rosterFailure),
+        })
       }
 
       const currentPollingMode = options.getPollingMode?.() ?? 'active'
@@ -661,7 +785,7 @@ export function createPollingManager(
         return
       }
 
-      const recovered = consecutiveFailures > 0
+      const recovered = recoveredBeforeCurrentPositions
       consecutiveFailures = 0
       lastSuccessAt = now().toISOString()
       latestDevices = devices
@@ -682,14 +806,23 @@ export function createPollingManager(
         }),
         { historyResetKey: pollHistoryResetKey },
       )
+      if (!rejectionEvidencePublishedEarly) {
+        publishCurrentPositionRejections(
+          currentPositionResult.rejected,
+          pollHistoryResetKey,
+        )
+      }
       publishStatus({
         mode: 'online',
         recovered,
-        warning:
+        warning: combineTrackingWarnings(
+          currentPositionResult.rosterWarning,
+          createRejectedCurrentPositionWarning(currentPositionResult.rejected),
           !breadcrumbFetchCompleted && breadcrumbPositions.length === 0
             ? 'Current fixes loaded; loading breadcrumb history.'
             : breadcrumbStatusWarning ??
               (recovered ? 'CONNECTION RESTORED' : null),
+        ),
       })
 
       const breadcrumbPositionsBeforeSeed = breadcrumbPositions
@@ -808,11 +941,14 @@ export function createPollingManager(
       publishStatus({
         mode: 'online',
         recovered,
-        warning: createBreadcrumbCompletionWarning(
-          breadcrumbFetch,
-          recovered,
-          seedState,
-          historyReconciler.getProgress(),
+        warning: combineTrackingWarnings(
+          currentPositionResult.rosterWarning,
+          createBreadcrumbCompletionWarning(
+            breadcrumbFetch,
+            recovered,
+            seedState,
+            historyReconciler.getProgress(),
+          ),
         ),
       })
 
@@ -829,7 +965,7 @@ export function createPollingManager(
           ? { outageDurationMs: calculateDurationMs(firstFailureAt, completedAt) }
           : {}),
         deviceCount: devices.length,
-        currentPositionCount: positions.length,
+        currentPositionCount: acceptedPositions.length,
         breadcrumbRequestedDeviceCount: breadcrumbFetch.requestedDeviceCount,
         breadcrumbReturnedCount: breadcrumbFetch.positions.length,
         breadcrumbAcceptedCount: acceptedBreadcrumbCount,
@@ -1196,6 +1332,75 @@ export function createPollingManager(
       }
     }
   }
+}
+
+/**
+ * Keeps the last accepted fix visible for a device whose replacement row was
+ * rejected, without treating that rejected row as current-position truth.
+ */
+function retainLastAcceptedCurrentPositions(
+  accepted: readonly NormalizedTrackingPosition[],
+  rejected: readonly CurrentPositionRejection[],
+  previous: readonly NormalizedTrackingPosition[],
+): readonly NormalizedTrackingPosition[] {
+  if (rejected.length === 0 || previous.length === 0) {
+    return accepted
+  }
+
+  const acceptedDeviceIds = new Set(accepted.map((position) => position.device_id))
+  const rejectedDeviceIds = new Set(
+    rejected.flatMap((entry) => entry.deviceId === null ? [] : [entry.deviceId]),
+  )
+  const rejectionScopeUnknown = rejected.some((entry) => entry.deviceId === null)
+  const retainEveryUnreplacedDevice = accepted.length === 0 || rejectionScopeUnknown
+  const retained = previous.filter((position) =>
+    !acceptedDeviceIds.has(position.device_id) &&
+    (retainEveryUnreplacedDevice || rejectedDeviceIds.has(position.device_id)),
+  )
+
+  return retained.length === 0 ? accepted : [...accepted, ...retained]
+}
+
+/**
+ * Uses source roster metadata when available, then last-known metadata, and
+ * finally bounded derived rows so a first-poll roster failure cannot hide fixes.
+ */
+function resolveCurrentPositionDevices(
+  roster: readonly NormalizedTrackingDevice[],
+  positions: readonly NormalizedTrackingPosition[],
+  previous: readonly NormalizedTrackingDevice[],
+): readonly NormalizedTrackingDevice[] {
+  if (roster.length > 0) return roster
+  if (previous.length > 0) return previous
+  return [...new Set(positions.map((position) => position.device_id))]
+    .sort()
+    .map((deviceId) => ({
+      device_id: deviceId,
+      name: `Device ${deviceId}`,
+      status: 'unknown' as const,
+      last_seen: null,
+      unique_id: null,
+      category: null,
+    }))
+}
+
+/** Creates the operator warning for a poll containing rejected current rows. */
+function createRejectedCurrentPositionWarning(
+  rejections: readonly CurrentPositionRejection[],
+): string | null {
+  return rejections.length > 0
+    ? 'POSITION DATA REJECTED — showing the last accepted fix where no valid replacement was available.'
+    : null
+}
+
+/**
+ * Combines independent current-position and history warnings without hiding either.
+ */
+function combineTrackingWarnings(
+  ...warnings: readonly (string | null)[]
+): string | null {
+  const activeWarnings = warnings.filter((warning): warning is string => warning !== null)
+  return activeWarnings.length === 0 ? null : activeWarnings.join(' ')
 }
 
 type InitialBreadcrumbSeedState = 'loaded' | 'failed'

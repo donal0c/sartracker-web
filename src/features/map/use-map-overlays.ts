@@ -16,6 +16,7 @@ import { selectMissionTrackingSnapshot } from '../tracking/mission-active-tracki
 import { useTrackingStylePreferences } from '../tracking/tracking-style-store'
 import { useTrackingStore } from '../tracking/tracking-store'
 import type { RenderableMapId } from '../../lib/map-config'
+import { useStationaryAttentionStore } from '../tracking/stationary-attention-store'
 import { registerMapStyleSync } from './map-style-sync'
 
 type UseMapOverlaysOptions = {
@@ -46,6 +47,7 @@ export function useMapOverlays(options: UseMapOverlaysOptions): void {
   const activeDeviceIds = useActiveMissionDevicesStore((state) => state.getActiveDeviceIds(missionId))
   const trackingStyle = useTrackingStylePreferences()
   const exactBreadcrumbDotState = useExactBreadcrumbDotStore((state) => state.state)
+  const attentionByDevice = useStationaryAttentionStore((state) => state.byDevice)
   const missionTrackingSnapshot = useMemo(
     () => selectMissionTrackingSnapshot(trackingSnapshot, activeDeviceIds),
     [activeDeviceIds, trackingSnapshot],
@@ -67,6 +69,7 @@ export function useMapOverlays(options: UseMapOverlaysOptions): void {
         getEffectiveTrackingVisible(groupVisibility) && breadcrumbsVisible,
         trackingStyle,
         exactBreadcrumbDotState,
+        attentionByDevice,
       )
     }
 
@@ -82,6 +85,7 @@ export function useMapOverlays(options: UseMapOverlaysOptions): void {
     trackingStyle,
     exactBreadcrumbDotState,
     missionTrackingSnapshot,
+    attentionByDevice,
   ])
 
   useEffect(() => {

@@ -191,6 +191,7 @@ export async function createManagedRuntimeServices(
       cache: dependencies.runtimeSettings.trackingCacheEnabled
         ? dependencies.createTrackingCache()
         : NOOP_TRACKING_CACHE,
+      writeCache: dependencies.runtimeSettings.trackingCacheEnabled,
       missionStore: dependencies.missionStore,
       applySnapshot: dependencies.applySnapshot,
       applyStatus: dependencies.applyStatus,

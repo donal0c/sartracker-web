@@ -64,8 +64,35 @@ describe('traccar normalization', () => {
     )
 
     expect(position.timestamp).toBe('2026-04-06T10:29:59.000Z')
+    expect(position.timestamp_source).toBe('device')
     expect(position.data_origin).toBe('cache')
   })
+
+  it.each([
+    ['fix', { fixTime: '2026-04-06T10:30:00.000Z' }],
+    ['device', { fixTime: undefined, deviceTime: '2026-04-06T10:29:59.000Z' }],
+    [
+      'server',
+      {
+        fixTime: undefined,
+        deviceTime: undefined,
+        serverTime: '2026-04-06T10:30:01.000Z',
+      },
+    ],
+  ] as const)(
+    'retains %s timestamp provenance [DON-267]',
+    (expectedSource, timestampFields) => {
+      const position = normalizeTraccarPosition(
+        {
+          ...positionsFixture[0],
+          ...timestampFields,
+        },
+        'live',
+      )
+
+      expect(position.timestamp_source).toBe(expectedSource)
+    },
+  )
 
   it('rejects malformed payloads instead of silently accepting them', () => {
     expect(() =>
@@ -116,6 +143,32 @@ describe('traccar normalization', () => {
         'live',
       ),
     ).toThrow(/invalid/i)
+  })
+
+  it('keeps a valid current fix when ancillary telemetry is malformed [DON-267]', () => {
+    const position = normalizeTraccarPosition(
+      {
+        ...positionsFixture[0],
+        altitude: 'unknown',
+        speed: { knots: 4 },
+        accuracy: Number.POSITIVE_INFINITY,
+        protocol: 42,
+        attributes: { batteryLevel: null },
+      },
+      'live',
+    )
+
+    expect(position).toMatchObject({
+      id: '100',
+      device_id: '1',
+      lat: 51.9985,
+      lon: -9.7426,
+      altitude: null,
+      speed: null,
+      accuracy: null,
+      battery: null,
+      source: null,
+    })
   })
 
   it('rejects date-only timestamps that would otherwise be guessed as midnight [DON-260]', () => {

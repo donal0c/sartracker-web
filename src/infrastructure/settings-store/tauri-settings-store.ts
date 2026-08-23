@@ -135,6 +135,14 @@ export async function loadRuntimeBootstrapSettings(
     autosaveIntervalMs: settings.missionDefaults.autoSaveIntervalSeconds * 1000,
     trackingPollIntervalMs: settings.missionDefaults.autoRefreshIntervalSeconds * 1000,
     trackingCacheEnabled: settings.dataSource.trackingCacheEnabled,
+    stationaryAttentionConfig: {
+      heartbeatWindowMs: (settings.missionDefaults.stationaryAttentionHeartbeatMinutes ?? 20) * 60_000,
+      heartbeatToleranceMs:
+        (settings.missionDefaults.stationaryAttentionHeartbeatMinutes ?? 20) * 60_000 * 0.1,
+      movementFloorM: settings.missionDefaults.stationaryAttentionMovementFloorM ?? 15,
+      accuracyFactor: settings.missionDefaults.stationaryAttentionAccuracyFactor ?? 2,
+      outlierRejectM: settings.missionDefaults.stationaryAttentionOutlierRejectM ?? 500,
+    },
     trackingConfig:
       shouldConnect
         ? {
