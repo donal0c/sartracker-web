@@ -417,6 +417,9 @@ describe('startParticipantRuntime [DON-271]', () => {
       '2026-08-23T11:00:00.000Z',
     )
     expect(store.recordGroupMembershipEvents).not.toHaveBeenCalled()
+    expect(states.at(-1)?.scope.operationalDeviceIdsAt(
+      '2026-08-23T11:00:00.000Z',
+    )).toContain('device-2')
 
     finishGate.resolve()
     await expect(pendingFinish).rejects.toThrow(/backfill is incomplete/i)
@@ -488,6 +491,69 @@ describe('startParticipantRuntime [DON-271]', () => {
     })
     expect(store.recordGroupMembershipEvents.mock.invocationCallOrder[0])
       .toBeLessThan(finish.mock.invocationCallOrder[0]!)
+  })
+
+  it('waits for held participant hydration without starving the event loop', async () => {
+    const recoveredParticipants = createDeferred<readonly MissionParticipant[]>()
+    const store = createStore({ participants: [GROUP_PARTICIPANT], membershipEvents: [] })
+    store.listMissionParticipants
+      .mockRejectedValueOnce(new Error('participant scope unavailable'))
+      .mockReturnValueOnce(recoveredParticipants.promise)
+    const runtime = await startParticipantRuntime({
+      participantStore: store,
+      applyRuntime: vi.fn(),
+    })
+    await runtime.refreshMission('mission-1')
+    const pendingRoster = runtime.applyRoster(
+      [device('device-2', 'group-1')],
+      '2026-08-23T11:00:00.000Z',
+    )
+    await vi.waitFor(() => {
+      expect(store.listMissionParticipants).toHaveBeenCalledTimes(2)
+    })
+    const finish = vi.fn().mockResolvedValue('finished')
+    const pendingFinish = runtime.runWithMembershipFinishFence('mission-1', finish)
+
+    setTimeout(() => recoveredParticipants.resolve([GROUP_PARTICIPANT]), 0)
+
+    await expect(pendingRoster).resolves.toBeUndefined()
+    await expect(pendingFinish).resolves.toBe('finished')
+    expect(finish).toHaveBeenCalledOnce()
+  }, 1_000)
+
+  it('refuses finish after repeated hydration failure and retains the exact observation for retry', async () => {
+    const store = createStore({ participants: [GROUP_PARTICIPANT], membershipEvents: [] })
+    store.listMissionParticipants
+      .mockRejectedValueOnce(new Error('participant scope unavailable'))
+      .mockRejectedValueOnce(new Error('participant scope still unavailable'))
+      .mockResolvedValue([GROUP_PARTICIPANT])
+    const runtime = await startParticipantRuntime({
+      participantStore: store,
+      applyRuntime: vi.fn(),
+    })
+    await runtime.refreshMission('mission-1')
+    await runtime.applyRoster(
+      [device('device-2', 'group-1')],
+      '2026-08-23T11:00:00.000Z',
+    )
+    const finish = vi.fn().mockResolvedValue('finished')
+
+    await expect(runtime.runWithMembershipFinishFence('mission-1', finish))
+      .rejects.toThrow(/participant scope|membership.*before finishing/i)
+    expect(finish).not.toHaveBeenCalled()
+
+    await runtime.applyRoster(
+      [device('device-2', 'group-1')],
+      '2026-08-23T11:05:00.000Z',
+    )
+    expect(store.recordGroupMembershipEvents).toHaveBeenCalledWith({
+      mission_id: 'mission-1',
+      events: [expect.objectContaining({
+        traccar_device_id: 'device-2',
+        change: 'member',
+        observed_at: '2026-08-23T11:00:00.000Z',
+      })],
+    })
   })
 
   it('reconciles an unchanged server roster again after the active mission changes', async () => {

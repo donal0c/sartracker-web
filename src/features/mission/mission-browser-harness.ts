@@ -147,6 +147,18 @@ export async function startMissionBrowserHarness(): Promise<void> {
             isMissionModelEnabled()
               ? useParticipantStore.getState().scope.activeDeviceIdsAt(new Date().toISOString())
               : null,
+          getParticipantHistoryStarts: (deviceIds, from, until) => {
+            if (!isMissionModelEnabled()) return {}
+            const scope = useParticipantStore.getState().scope
+            return Object.fromEntries(deviceIds.flatMap((deviceId) => {
+              const historyFrom = scope.firstEvidenceTimestampAtOrAfter(
+                deviceId,
+                from.toISOString(),
+                until.toISOString(),
+              )
+              return historyFrom === null ? [] : [[deviceId, historyFrom]]
+            }))
+          },
           ...hooks,
           onCurrentPositionRejections: applyCurrentPositionRejections,
         }),

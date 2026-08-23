@@ -675,10 +675,13 @@
             still cannot be recorded. Finish retries the exact pending membership observation first. If it
             still fails, the mission remains active and the open Finish confirmation tells the coordinator
             what must be retried. The app settles roster observations already accepted before the finish
-            cutoff. Observations arriving while the finish write is pending are held; if finish is refused,
-            they are replayed at their original observation time so membership truth and current visibility
-            are not lost. This prevents an archive from sealing a known gap between selected participant
-            history and the live mission record.
+            cutoff without blocking the app event loop. If participant scope cannot be reloaded, Finish is
+            refused and the exact accepted observation remains available for retry. Observations arriving
+            while the finish write is pending immediately update current-position visibility but do not become
+            mission evidence yet; if finish is refused, they are replayed at their original observation time.
+            The replay handoff is atomic, so an observation cannot fall between replay and the mission returning
+            to normal active tracking. This prevents an archive from sealing a known gap between selected
+            participant history and the live mission record.
           </div>
           <h3>Outings</h3>
           <p>
@@ -1116,7 +1119,9 @@
             saves completed history in bounded batches and records each device's completed frontier so a
             restart resumes the unfinished range instead of replaying the whole prefix. For a participant
             added after mission start, that durable frontier retains the later participation boundary and
-            resumes from the recorded cursor. After catch-up, a
+            resumes from the recorded cursor. If the coordinator later expands that participant's effective
+            history window, the running app picks up the earlier boundary without needing a restart and fills
+            only the newly authorized prefix before widening the durable frontier. After catch-up, a
             separately paced anti-entropy sweep checks older windows for late or corrected fixes, beginning
             no earlier than that participant's validated history boundary, without
             attaching a mission-wide rescan to every live poll. If a device history request fails or contains only malformed rows,

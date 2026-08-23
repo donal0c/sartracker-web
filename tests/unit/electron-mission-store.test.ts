@@ -2014,6 +2014,62 @@ describe('electron mission store', () => {
     ])
   })
 
+  it('widens a history checkpoint only after the new prefix reaches the stored origin', async () => {
+    store = await createStore()
+    const mission = await store.createMission({
+      name: 'Expanded Participation History Mission',
+      start_time: '2026-08-08T08:00:00.000Z',
+    })
+    await store.upsertDevice({
+      mission_id: mission.id,
+      device_id: 'tracker-1',
+      name: 'Tracker One',
+      color: '#00AAFF',
+      status: 'online',
+    })
+    await store.persistTrackingHistoryBatch({
+      mission_id: mission.id,
+      positions: [],
+      checkpoints: [{
+        device_id: 'tracker-1',
+        history_from: '2026-08-08T12:00:00.000Z',
+        reconciled_until: '2026-08-08T14:00:00.000Z',
+      }],
+    })
+
+    await store.persistTrackingHistoryBatch({
+      mission_id: mission.id,
+      positions: [],
+      checkpoints: [{
+        device_id: 'tracker-1',
+        history_from: '2026-08-08T08:00:00.000Z',
+        reconciled_until: '2026-08-08T10:00:00.000Z',
+      }],
+    })
+    await expect(store.listTrackingHistoryCheckpoints(mission.id)).resolves.toEqual([
+      expect.objectContaining({
+        history_from: '2026-08-08T12:00:00.000Z',
+        reconciled_until: '2026-08-08T14:00:00.000Z',
+      }),
+    ])
+
+    await store.persistTrackingHistoryBatch({
+      mission_id: mission.id,
+      positions: [],
+      checkpoints: [{
+        device_id: 'tracker-1',
+        history_from: '2026-08-08T08:00:00.000Z',
+        reconciled_until: '2026-08-08T12:00:00.000Z',
+      }],
+    })
+    await expect(store.listTrackingHistoryCheckpoints(mission.id)).resolves.toEqual([
+      expect.objectContaining({
+        history_from: '2026-08-08T08:00:00.000Z',
+        reconciled_until: '2026-08-08T14:00:00.000Z',
+      }),
+    ])
+  })
+
   it('atomically rolls back positions when a later checkpoint validation fails', async () => {
     store = await createStore()
     const mission = await store.createMission({

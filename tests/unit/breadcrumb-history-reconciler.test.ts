@@ -649,6 +649,59 @@ describe('breadcrumb history reconciler', () => {
     }))
   })
 
+  it('fills only the newly authorized gap when a same-process scope origin expands', async () => {
+    const fetchBreadcrumbs = vi.fn().mockResolvedValue([])
+    const onChunk = vi.fn()
+    const reconciler = createBreadcrumbHistoryReconciler({
+      fetchBreadcrumbs,
+      onChunk,
+      onProgress: vi.fn(),
+      shouldContinue: () => true,
+      logger: { warn: vi.fn() },
+    })
+    const request = {
+      devices: [DEVICE],
+      from: new Date('2026-04-06T08:00:00.000Z'),
+      until: new Date('2026-04-06T14:00:00.000Z'),
+    }
+
+    reconciler.reconcile({
+      ...request,
+      checkpointsByDevice: {
+        '1': {
+          historyFrom: '2026-04-06T12:00:00.000Z',
+          reconciledUntil: '2026-04-06T14:00:00.000Z',
+        },
+      },
+    })
+    await vi.advanceTimersByTimeAsync(0)
+    expect(fetchBreadcrumbs).not.toHaveBeenCalled()
+
+    reconciler.reconcile({
+      ...request,
+      checkpointsByDevice: {
+        '1': {
+          historyFrom: '2026-04-06T10:00:00.000Z',
+          reconciledUntil: '2026-04-06T10:00:00.000Z',
+        },
+      },
+    })
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect(fetchBreadcrumbs).toHaveBeenCalledOnce()
+    expect(fetchBreadcrumbs).toHaveBeenCalledWith(
+      '1',
+      new Date('2026-04-06T10:00:00.000Z'),
+      new Date('2026-04-06T12:00:00.000Z'),
+    )
+    expect(onChunk).toHaveBeenCalledWith(expect.objectContaining({
+      phase: 'initial',
+      historyFrom: new Date('2026-04-06T10:00:00.000Z'),
+      from: new Date('2026-04-06T10:00:00.000Z'),
+      to: new Date('2026-04-06T12:00:00.000Z'),
+    }))
+  })
+
   it.each([
     {
       label: 'corrupt',

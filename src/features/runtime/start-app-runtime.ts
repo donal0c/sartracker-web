@@ -294,6 +294,18 @@ export async function startAppRuntime(
             isMissionModelEnabled()
               ? useParticipantStore.getState().scope.activeDeviceIdsAt(new Date().toISOString())
               : null,
+          getParticipantHistoryStarts: (deviceIds, from, until) => {
+            if (!isMissionModelEnabled()) return {}
+            const scope = useParticipantStore.getState().scope
+            return Object.fromEntries(deviceIds.flatMap((deviceId) => {
+              const historyFrom = scope.firstEvidenceTimestampAtOrAfter(
+                deviceId,
+                from.toISOString(),
+                until.toISOString(),
+              )
+              return historyFrom === null ? [] : [[deviceId, historyFrom]]
+            }))
+          },
           getInitialBreadcrumbs: hooks.getInitialBreadcrumbs,
           getInitialBreadcrumbTotals: hooks.getInitialBreadcrumbTotals,
           getInitialBreadcrumbSelectionMetadata:

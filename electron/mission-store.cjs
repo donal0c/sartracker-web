@@ -2113,6 +2113,7 @@ function persistTrackingHistoryBatch(db, input, includePositions = true) {
        mission_id, device_id, history_from, reconciled_until, updated_at
      ) VALUES (?, ?, ?, ?, ?)
      ON CONFLICT(mission_id, device_id) DO UPDATE SET
+       history_from = excluded.history_from,
        reconciled_until = excluded.reconciled_until,
        updated_at = excluded.updated_at`,
   )
@@ -2153,22 +2154,34 @@ function persistTrackingHistoryBatch(db, input, includePositions = true) {
         )
       }
       const existing = readCheckpoint.get(input.mission_id, deviceId)
-      if (existing !== undefined && existing.history_from !== historyFrom) {
+      if (existing !== undefined && historyFrom > existing.history_from) {
         throw new Error(
           'Tracking history checkpoint start does not match the stored mission-device checkpoint.',
         )
       }
       if (
         existing !== undefined &&
+        historyFrom < existing.history_from &&
+        reconciledUntil < existing.history_from
+      ) {
+        continue
+      }
+      if (
+        existing !== undefined &&
+        existing.history_from === historyFrom &&
         Date.parse(existing.reconciled_until) >= Date.parse(reconciledUntil)
       ) {
         continue
       }
+      const storedReconciledUntil =
+        existing !== undefined && existing.reconciled_until > reconciledUntil
+          ? existing.reconciled_until
+          : reconciledUntil
       upsertCheckpoint.run(
         input.mission_id,
         deviceId,
         historyFrom,
-        reconciledUntil,
+        storedReconciledUntil,
         now(),
       )
     }

@@ -1242,6 +1242,51 @@ describe('polling manager', () => {
     poller.stop()
   })
 
+  it('refreshes a same-process participant history origin and reconciles its new prefix', async () => {
+    const missionStartedAt = new Date('2026-04-06T08:00:00.000Z')
+    const currentTime = new Date('2026-04-06T14:00:00.000Z')
+    let participantHistoryStart = '2026-04-06T12:00:00.000Z'
+    const client = createClient({
+      getDevices: vi.fn().mockResolvedValue([NORMALIZED_DEVICES[0]!]),
+      getCurrentPositions: vi.fn().mockResolvedValue([NORMALIZED_POSITIONS[0]!]),
+      getBreadcrumbs: vi.fn().mockResolvedValue([]),
+    })
+    const poller = createPollingManager(client, {
+      intervalMs: 30_000,
+      staleThresholdMs: 5 * 60 * 1000,
+      getHistoryResetKey: () => 'mission-1',
+      getInitialBreadcrumbFrom: () => missionStartedAt,
+      getInitialBreadcrumbs: async () => [],
+      getInitialHistoryCheckpoints: async () => ({
+        '1': {
+          historyFrom: '2026-04-06T12:00:00.000Z',
+          reconciledUntil: currentTime.toISOString(),
+        },
+      }),
+      getBreadcrumbDeviceIds: () => ['1'],
+      getParticipantHistoryStarts: () => ({ '1': participantHistoryStart }),
+      persistHistoryChunk: vi.fn().mockResolvedValue({ changed: false }),
+      onSnapshot: vi.fn(),
+      onStatusChange: vi.fn(),
+      now: () => currentTime,
+    })
+
+    poller.start()
+    await vi.advanceTimersByTimeAsync(0)
+    participantHistoryStart = '2026-04-06T10:00:00.000Z'
+    await vi.advanceTimersByTimeAsync(30_000)
+
+    const historicalWindows = vi.mocked(client.getBreadcrumbs).mock.calls
+      .filter((call) => call[2].getTime() - call[1].getTime() > 5 * 60 * 1000)
+      .map((call) => [call[1], call[2]])
+    expect(historicalWindows).toEqual([[
+      new Date('2026-04-06T10:00:00.000Z'),
+      new Date('2026-04-06T12:00:00.000Z'),
+    ]])
+
+    poller.stop()
+  })
+
   it('publishes an initial fetch wave only after its atomic persistence acknowledgement', async () => {
     const missionStartedAt = new Date('2026-04-06T00:00:00.000Z')
     const currentTime = new Date('2026-04-06T06:00:00.000Z')

@@ -106,6 +106,7 @@ export async function startParticipantRuntime(
   let pendingMembershipWrite: PendingMembershipWrite | null = null
   let rosterReconciliationRunning = false
   let inFlightRosterApplicationCount = 0
+  let hydrationBlockedRosterObservations: FencedRosterObservation[] = []
   let fencedRosterObservations: FencedRosterObservation[] = []
   let membershipFinishFence: MembershipFinishFence | null = null
   const rosterWaiters: Array<{
@@ -124,6 +125,7 @@ export async function startParticipantRuntime(
         lastReconciledMissionGeneration = -1
         pendingMembershipWrite = null
         membershipFinishFence = null
+        hydrationBlockedRosterObservations = []
         fencedRosterObservations = []
         membershipWriteError = null
         saving = false
@@ -181,6 +183,7 @@ export async function startParticipantRuntime(
         missionGeneration === fence.missionGeneration
       ) {
         if (fence.status !== 'finished') {
+          updateAvailableRoster(devices, options.complete)
           fencedRosterObservations.push({
             missionId: fence.missionId,
             missionGeneration: fence.missionGeneration,
@@ -247,6 +250,7 @@ export async function startParticipantRuntime(
         missionGeneration += 1
         lastReconciledMissionGeneration = -1
         pendingMembershipWrite = null
+        hydrationBlockedRosterObservations = []
         membershipWriteError = null
         participants = []
         membershipEvents = []
@@ -339,6 +343,12 @@ export async function startParticipantRuntime(
       let finishSucceeded = false
       try {
         await waitForRosterReconciliation()
+        const hydrationBlocked = hydrationBlockedRosterObservations.some((observation) =>
+          observation.missionId === fence.missionId &&
+          observation.missionGeneration === fence.missionGeneration)
+        if (hydrationBlocked) {
+          throw unresolvedMembershipFinishError(error)
+        }
         const pendingWrite = pendingMembershipWrite
         if (pendingWrite !== null) {
           const writeSucceeded = await persistMembershipWrite(pendingWrite)
@@ -360,7 +370,6 @@ export async function startParticipantRuntime(
         if (!finishSucceeded && membershipFinishFence === fence) {
           fence.status = 'replaying'
           await replayFencedRosterObservations(fence)
-          if (membershipFinishFence === fence) membershipFinishFence = null
           if (pendingRosterObservation !== null) void drainRosterReconciliation()
         }
       }
@@ -449,8 +458,40 @@ export async function startParticipantRuntime(
     const missionIdBeforeRefresh = activeMissionId
     if (error !== null && missionIdBeforeRefresh !== null) {
       await controller.refreshMission(missionIdBeforeRefresh)
-      if (activeMissionId !== missionIdBeforeRefresh || error !== null) return
+      if (activeMissionId !== missionIdBeforeRefresh) return
+      if (error !== null) {
+        hydrationBlockedRosterObservations.push({
+          missionId: missionIdBeforeRefresh,
+          missionGeneration,
+          devices: [...devices],
+          observedAt,
+          complete,
+        })
+        return
+      }
     }
+    const recoveredObservations = hydrationBlockedRosterObservations.filter((observation) =>
+      observation.missionId === activeMissionId &&
+      observation.missionGeneration === missionGeneration)
+    hydrationBlockedRosterObservations = hydrationBlockedRosterObservations.filter(
+      (observation) => !recoveredObservations.includes(observation),
+    )
+    for (const observation of recoveredObservations) {
+      await acceptRosterObservation(
+        observation.devices,
+        observation.observedAt,
+        observation.complete,
+      )
+    }
+    await acceptRosterObservation(devices, observedAt, complete)
+  }
+
+  /** Publishes and queues one roster observation after participant scope is available. */
+  async function acceptRosterObservation(
+    devices: readonly NormalizedTrackingDevice[],
+    observedAt: string,
+    complete: boolean,
+  ): Promise<void> {
     const rosterChanged = !areRostersEquivalent(availableDevices, devices)
     const completenessChanged = complete !== availableRosterComplete
     const readErrorCleared = rosterReadError !== null
@@ -464,11 +505,7 @@ export async function startParticipantRuntime(
       !retryRequired &&
       !missionNeedsReconciliation
     ) return
-    if (rosterChanged) availableDevices = [...devices]
-    availableRosterComplete = complete
-    rosterObservationReceived = true
-    rosterReadError = null
-    if (rosterChanged || completenessChanged || readErrorCleared) publishRuntime()
+    updateAvailableRoster(devices, complete)
     const missionId = activeMissionId
     if (missionId === null) return
     const version = ++nextRosterObservationVersion
@@ -494,7 +531,10 @@ export async function startParticipantRuntime(
       const observationIndex = fencedRosterObservations.findIndex((observation) =>
         observation.missionId === fence.missionId &&
         observation.missionGeneration === fence.missionGeneration)
-      if (observationIndex < 0) return
+      if (observationIndex < 0) {
+        membershipFinishFence = null
+        return
+      }
       const [observation] = fencedRosterObservations.splice(observationIndex, 1)
       if (observation === undefined) continue
       await applyRosterObservation(
@@ -584,7 +624,10 @@ export async function startParticipantRuntime(
     ) {
       await new Promise<void>((resolve) => {
         rosterReconciliationWaiters.push(resolve)
-        if (!rosterReconciliationRunning) void drainRosterReconciliation()
+        if (
+          pendingRosterObservation !== null &&
+          !rosterReconciliationRunning
+        ) void drainRosterReconciliation()
       })
     }
   }
@@ -663,6 +706,21 @@ export async function startParticipantRuntime(
         ? incompleteRosterSelectionError().message
         : null
     )
+  }
+
+  /** Updates roster discovery immediately without treating it as durable evidence. */
+  function updateAvailableRoster(
+    devices: readonly NormalizedTrackingDevice[],
+    complete: boolean,
+  ): void {
+    const rosterChanged = !areRostersEquivalent(availableDevices, devices)
+    const completenessChanged = complete !== availableRosterComplete
+    const readErrorCleared = rosterReadError !== null
+    if (rosterChanged) availableDevices = [...devices]
+    availableRosterComplete = complete
+    rosterObservationReceived = true
+    rosterReadError = null
+    if (rosterChanged || completenessChanged || readErrorCleared) publishRuntime()
   }
 }
 

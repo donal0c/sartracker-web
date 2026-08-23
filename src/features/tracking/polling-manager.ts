@@ -80,6 +80,11 @@ type PollingManagerOptions = {
   readonly getInitialHistoryCheckpoints?: (signal?: AbortSignal) => Promise<
     Readonly<Record<string, BreadcrumbHistoryCheckpointSeed>>
   >
+  readonly getParticipantHistoryStarts?: (
+    deviceIds: readonly string[],
+    from: Date,
+    until: Date,
+  ) => Readonly<Record<string, string>>
   readonly getCanonicalBreadcrumbs?: (
     expectedMissionId: string,
     signal?: AbortSignal,
@@ -243,6 +248,7 @@ export function createPollingManager(
     if (!isHistoryReconciliationCurrent()) {
       return
     }
+    rememberAcknowledgedHistoryCheckpoint(chunk)
     canonicalizationInFlight?.trailingPositions.push(...chunk.positions)
     if (
       chunk.phase === 'anti_entropy' &&
@@ -916,11 +922,16 @@ export function createPollingManager(
           initialReconciliationSelectionKey = selectionKey
           initialReconciliationComplete = false
         }
+        const reconciliationUntil = now()
         historyReconciler.reconcile({
           devices: breadcrumbDevices,
           from: initialBreadcrumbFrom,
-          until: now(),
-          checkpointsByDevice: initialHistoryCheckpointsByDevice,
+          until: reconciliationUntil,
+          checkpointsByDevice: resolveCurrentHistoryCheckpoints(
+            breadcrumbDevices,
+            initialBreadcrumbFrom,
+            reconciliationUntil,
+          ),
         })
       }
       const breadcrumbFetch = await breadcrumbFetchPromise
@@ -1333,6 +1344,68 @@ export function createPollingManager(
     return devices.filter((device) =>
       (participantDeviceIdSet === null || participantDeviceIdSet.has(device.device_id)) &&
       (requestedDeviceIdSet === null || requestedDeviceIdSet.has(device.device_id)))
+  }
+
+  /** Combines durable cursors with the latest participant-scope origin. */
+  function resolveCurrentHistoryCheckpoints(
+    devices: readonly NormalizedTrackingDevice[],
+    from: Date | null,
+    until: Date,
+  ): Readonly<Record<string, BreadcrumbHistoryCheckpointSeed>> {
+    if (from === null || options.getParticipantHistoryStarts === undefined) {
+      return initialHistoryCheckpointsByDevice
+    }
+    const scopeStarts = options.getParticipantHistoryStarts(
+      devices.map((device) => device.device_id),
+      from,
+      until,
+    )
+    const resolved = { ...initialHistoryCheckpointsByDevice }
+    for (const device of devices) {
+      const scopeStart = scopeStarts[device.device_id]
+      if (scopeStart === undefined) continue
+      const persisted = resolved[device.device_id]
+      if (persisted === undefined || scopeStart < persisted.historyFrom) {
+        resolved[device.device_id] = {
+          historyFrom: scopeStart,
+          reconciledUntil: scopeStart,
+        }
+      }
+    }
+    return resolved
+  }
+
+  /** Mirrors the durable monotonic checkpoint after a chunk acknowledgement. */
+  function rememberAcknowledgedHistoryCheckpoint(
+    chunk: BreadcrumbHistoryChunk,
+  ): void {
+    const historyFrom = chunk.historyFrom.toISOString()
+    const reconciledUntil = chunk.to.toISOString()
+    const existing = initialHistoryCheckpointsByDevice[chunk.deviceId]
+    if (
+      existing !== undefined &&
+      historyFrom < existing.historyFrom &&
+      reconciledUntil < existing.historyFrom
+    ) {
+      return
+    }
+    if (existing !== undefined && historyFrom > existing.historyFrom) {
+      return
+    }
+    initialHistoryCheckpointsByDevice = {
+      ...initialHistoryCheckpointsByDevice,
+      [chunk.deviceId]: {
+        historyFrom: existing === undefined
+          ? historyFrom
+          : historyFrom < existing.historyFrom
+            ? historyFrom
+            : existing.historyFrom,
+        reconciledUntil:
+          existing !== undefined && existing.reconciledUntil > reconciledUntil
+            ? existing.reconciledUntil
+            : reconciledUntil,
+      },
+    }
   }
 
   async function seedInitialBreadcrumbs(): Promise<InitialBreadcrumbSeedState> {
