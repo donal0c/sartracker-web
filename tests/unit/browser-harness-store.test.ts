@@ -283,6 +283,45 @@ describe('browser harness store', () => {
     expect(eventTypes.filter((type) => type === 'device_updated')).toHaveLength(1)
   })
 
+  it('mirrors participant selection, membership changes, and resumable backfill [DON-271]', async () => {
+    const store = getBrowserHarnessStore()
+    const mission = await store.createMission({
+      name: 'Participant Harness Mission',
+      start_time: '2026-08-20T08:00:00.000Z',
+    })
+    const participants = await store.selectMissionParticipants({
+      mission_id: mission.id,
+      groups: [{
+        traccar_group_id: '101', name: 'Kerry MRT', member_device_ids: ['11'],
+      }],
+      devices: [{ traccar_device_id: '20' }],
+      selected_by: 'Coordinator A',
+    })
+    const teamId = participants.find((participant) => participant.kind === 'group')?.mission_team_id
+    expect(teamId).toBeTruthy()
+    await store.recordGroupMembershipEvents({
+      mission_id: mission.id,
+      events: [{
+        mission_team_id: teamId ?? '', traccar_device_id: '12',
+        change: 'member', observed_at: '2026-08-20T09:00:00.000Z',
+      }],
+    })
+    await store.upsertParticipantBackfillCheckpoint({
+      mission_id: mission.id,
+      traccar_device_id: '20',
+      window_from: '2026-08-20T08:00:00.000Z',
+      window_to: '2026-08-20T09:00:00.000Z',
+      reconciled_until: '2026-08-20T09:00:00.000Z',
+      completed: true,
+    })
+
+    await expect(store.listMissionParticipants(mission.id)).resolves.toHaveLength(2)
+    await expect(store.listGroupMembershipEvents(mission.id, teamId)).resolves.toHaveLength(2)
+    await expect(store.listParticipantBackfillCheckpoints(mission.id)).resolves.toEqual([
+      expect.objectContaining({ completed: 1 }),
+    ])
+  })
+
   it('finalizes and unlocks a mission using the configured admin roster', async () => {
     window.localStorage.setItem(
       'sartracker:browser-settings',

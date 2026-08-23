@@ -547,6 +547,72 @@ describe('electron mission store', () => {
     }
   })
 
+  it('grandfathers every v8 mission device including finalized missions without rewriting evidence [DON-271]', async () => {
+    userDataPath = await mkdtemp(path.join(tmpdir(), 'sartracker-electron-v9-participant-migration-'))
+    const databasePath = path.join(userDataPath, 'mission-store.sqlite')
+    const legacyDb = new Database(databasePath)
+    try {
+      legacyDb.exec(`
+        CREATE TABLE metadata (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+        INSERT INTO metadata (key, value) VALUES ('schema_version', '8');
+        CREATE TABLE missions (
+          id TEXT PRIMARY KEY, name TEXT NOT NULL, status TEXT NOT NULL,
+          start_time TEXT NOT NULL, pause_time TEXT, finish_time TEXT,
+          paused_seconds INTEGER NOT NULL DEFAULT 0, notes TEXT,
+          schema_version INTEGER NOT NULL
+        );
+        INSERT INTO missions VALUES (
+          'finalized-mission', 'Legacy Finalized', 'finalized',
+          '2026-08-01T06:00:00.000Z', NULL, '2026-08-01T18:00:00.000Z',
+          0, NULL, 8
+        );
+        CREATE TABLE devices (
+          id TEXT PRIMARY KEY, mission_id TEXT NOT NULL, device_id TEXT NOT NULL,
+          name TEXT NOT NULL, color TEXT NOT NULL, last_seen TEXT, status TEXT NOT NULL,
+          UNIQUE (mission_id, device_id)
+        );
+        INSERT INTO devices VALUES
+          ('device-row-1', 'finalized-mission', '11', 'Alpha', '#fff', NULL, 'offline'),
+          ('device-row-2', 'finalized-mission', '12', 'Bravo', '#fff', NULL, 'offline');
+      `)
+    } finally {
+      legacyDb.close()
+    }
+
+    store = createElectronMissionStore({ userDataPath })
+    const migratedDb = new Database(databasePath, { readonly: true })
+    try {
+      expect(migratedDb.prepare(`SELECT traccar_device_id, provenance, effective_from,
+          added_by, removed_at FROM mission_participants ORDER BY traccar_device_id`).all())
+        .toEqual([
+          {
+            traccar_device_id: '11', provenance: 'grandfathered',
+            effective_from: '2026-08-01T06:00:00.000Z', added_by: null, removed_at: null,
+          },
+          {
+            traccar_device_id: '12', provenance: 'grandfathered',
+            effective_from: '2026-08-01T06:00:00.000Z', added_by: null, removed_at: null,
+          },
+        ])
+      expect(migratedDb.prepare('SELECT COUNT(*) AS count FROM outings').get()).toEqual({ count: 0 })
+      expect(migratedDb.prepare('SELECT COUNT(*) AS count FROM devices').get()).toEqual({ count: 2 })
+      expect(migratedDb.prepare("SELECT value FROM metadata WHERE key = 'schema_version'").get())
+        .toEqual({ value: '9' })
+    } finally {
+      migratedDb.close()
+    }
+
+    store.close()
+    store = createElectronMissionStore({ userDataPath })
+    const reopenedDb = new Database(databasePath, { readonly: true })
+    try {
+      expect(reopenedDb.prepare('SELECT COUNT(*) AS count FROM mission_participants').get())
+        .toEqual({ count: 2 })
+    } finally {
+      reopenedDb.close()
+    }
+  })
+
   it('migrates existing position rows without inventing upstream source identities [DON-260]', async () => {
     userDataPath = await mkdtemp(path.join(tmpdir(), 'sartracker-electron-migration-'))
     const databasePath = path.join(userDataPath, 'mission-store.sqlite')

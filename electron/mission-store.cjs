@@ -32,6 +32,7 @@ const {
 
 const { createZipArchive, readZipArchive } = require('./zip-archive.cjs')
 const { createOutingStore } = require('./outing-store.cjs')
+const { createParticipantStore } = require('./participant-store.cjs')
 const { runOutingFixSummaryInWorker } = require('./outing-fix-summary-runner.cjs')
 
 const CURRENT_SCHEMA_VERSION = 9
@@ -124,6 +125,10 @@ function createElectronMissionStore(options) {
     db,
     faultInjection: options.outingFaultInjection ?? {},
   })
+  const participantStore = createParticipantStore({
+    db,
+    faultInjection: options.participantFaultInjection ?? {},
+  })
   const ingestEvidenceFaultInjection = options.ingestEvidenceFaultInjection ?? {}
   const ingestAnomalyOutbox = createIngestAnomalyOutbox({
     directoryPath: ingestAnomalyOutboxDirectory,
@@ -213,6 +218,21 @@ function createElectronMissionStore(options) {
     renameOuting: async (input) => outingStore.renameOuting(input),
     editOutingBoundaries: async (input) => outingStore.editOutingBoundaries(input),
     listOutings: async (missionId) => outingStore.listOutings(missionId),
+    selectMissionParticipants: async (input) =>
+      participantStore.selectMissionParticipants(input),
+    addMissionParticipant: async (input) => participantStore.addMissionParticipant(input),
+    removeMissionParticipant: async (input) =>
+      participantStore.removeMissionParticipant(input),
+    listMissionParticipants: async (missionId) =>
+      participantStore.listMissionParticipants(missionId),
+    recordGroupMembershipEvents: async (input) =>
+      participantStore.recordGroupMembershipEvents(input),
+    listGroupMembershipEvents: async (missionId, teamId) =>
+      participantStore.listGroupMembershipEvents(missionId, teamId),
+    upsertParticipantBackfillCheckpoint: async (input) =>
+      participantStore.upsertParticipantBackfillCheckpoint(input),
+    listParticipantBackfillCheckpoints: async (missionId) =>
+      participantStore.listParticipantBackfillCheckpoints(missionId),
     readOutingFixSummary: async (input, requestId) => {
       const normalizedRequestId = normalizeOutingFixSummaryRequestId(requestId, false)
       if (
@@ -586,6 +606,7 @@ function migrate(db) {
     db,
     'ingest_anomaly_mission_health',
   )
+  const participantsRequireGrandfathering = !tableExists(db, 'mission_participants')
 
   db.exec(`
     CREATE TABLE IF NOT EXISTS missions (
@@ -625,6 +646,58 @@ function migrate(db) {
       status TEXT NOT NULL CHECK(status IN ('online', 'offline', 'unknown')),
       FOREIGN KEY (mission_id) REFERENCES missions(id) ON DELETE CASCADE,
       UNIQUE (mission_id, device_id)
+    );
+    CREATE TABLE IF NOT EXISTS mission_teams (
+      id TEXT PRIMARY KEY,
+      mission_id TEXT NOT NULL,
+      traccar_group_id TEXT NOT NULL,
+      name TEXT NOT NULL,
+      frozen_at TEXT NOT NULL,
+      FOREIGN KEY (mission_id) REFERENCES missions(id) ON DELETE CASCADE,
+      UNIQUE (mission_id, traccar_group_id)
+    );
+    CREATE TABLE IF NOT EXISTS mission_participants (
+      id TEXT PRIMARY KEY,
+      mission_id TEXT NOT NULL,
+      kind TEXT NOT NULL CHECK (kind IN ('device', 'group')),
+      traccar_device_id TEXT,
+      mission_team_id TEXT,
+      provenance TEXT NOT NULL CHECK (provenance IN ('explicit', 'grandfathered', 'legacy_auto')),
+      effective_from TEXT NOT NULL,
+      added_at TEXT NOT NULL,
+      added_by TEXT,
+      removed_at TEXT,
+      removed_by TEXT,
+      FOREIGN KEY (mission_id) REFERENCES missions(id) ON DELETE CASCADE,
+      FOREIGN KEY (mission_team_id) REFERENCES mission_teams(id),
+      CHECK ((kind = 'device') = (traccar_device_id IS NOT NULL)),
+      CHECK ((kind = 'group') = (mission_team_id IS NOT NULL)),
+      CHECK (removed_at IS NULL OR removed_at >= added_at)
+    );
+    CREATE INDEX IF NOT EXISTS idx_mission_participants_mission
+      ON mission_participants(mission_id);
+    CREATE TABLE IF NOT EXISTS mission_group_membership_events (
+      id TEXT PRIMARY KEY,
+      mission_id TEXT NOT NULL,
+      mission_team_id TEXT NOT NULL,
+      traccar_device_id TEXT NOT NULL,
+      change TEXT NOT NULL CHECK (change IN ('member', 'left')),
+      observed_at TEXT NOT NULL,
+      FOREIGN KEY (mission_id) REFERENCES missions(id) ON DELETE CASCADE,
+      FOREIGN KEY (mission_team_id) REFERENCES mission_teams(id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_group_membership_mission_team
+      ON mission_group_membership_events(mission_id, mission_team_id, observed_at);
+    CREATE TABLE IF NOT EXISTS participant_backfill_checkpoints (
+      mission_id TEXT NOT NULL,
+      traccar_device_id TEXT NOT NULL,
+      window_from TEXT NOT NULL,
+      window_to TEXT NOT NULL,
+      reconciled_until TEXT NOT NULL,
+      completed INTEGER NOT NULL DEFAULT 0,
+      updated_at TEXT NOT NULL,
+      PRIMARY KEY (mission_id, traccar_device_id, window_from),
+      FOREIGN KEY (mission_id) REFERENCES missions(id) ON DELETE CASCADE
     );
     CREATE TABLE IF NOT EXISTS positions (
       id TEXT PRIMARY KEY,
@@ -820,6 +893,8 @@ function migrate(db) {
     ensureColumnExists(db, 'positions', 'received_at', 'TEXT')
     ensureColumnExists(db, 'positions', 'content_hash', 'TEXT')
     ensureColumnExists(db, 'positions', 'source_kind', 'TEXT')
+    ensureColumnExists(db, 'devices', 'group_id', 'TEXT')
+    ensureColumnExists(db, 'devices', 'unique_id', 'TEXT')
     ensureColumnExists(db, 'ingest_anomalies', 'first_seen_at', 'TEXT')
     ensureColumnExists(db, 'ingest_anomalies', 'last_seen_at', 'TEXT')
     ensureColumnExists(db, 'ingest_anomalies', 'occurrence_count', 'INTEGER NOT NULL DEFAULT 1')
@@ -832,6 +907,9 @@ function migrate(db) {
     ensureMissionScopedAnomalyDeliveries(db)
     if (anomalySummaryRequiresBackfill) {
       backfillIngestAnomalyHealth(db)
+    }
+    if (participantsRequireGrandfathering) {
+      backfillGrandfatheredParticipants(db)
     }
     db.exec(`
       CREATE UNIQUE INDEX IF NOT EXISTS idx_positions_mission_source_position_id
@@ -875,6 +953,25 @@ function backfillIngestAnomalyHealth(db) {
     FROM ingest_anomalies AS anomaly
     GROUP BY anomaly.mission_id;
   `)
+}
+
+/**
+ * Grandfathers every pre-v9 mission device, including finalized missions,
+ * without rewriting any source evidence or inventing outing boundaries.
+ */
+function backfillGrandfatheredParticipants(db) {
+  const migratedAt = new Date().toISOString()
+  const rows = db.prepare(`SELECT device.mission_id, device.device_id, mission.start_time
+    FROM devices AS device
+    INNER JOIN missions AS mission ON mission.id = device.mission_id
+    ORDER BY device.mission_id ASC, device.device_id ASC`).all()
+  const insert = db.prepare(`INSERT INTO mission_participants (
+      id, mission_id, kind, traccar_device_id, mission_team_id, provenance,
+      effective_from, added_at, added_by, removed_at, removed_by
+    ) VALUES (?, ?, 'device', ?, NULL, 'grandfathered', ?, ?, NULL, NULL, NULL)`)
+  for (const row of rows) {
+    insert.run(randomUUID(), row.mission_id, row.device_id, row.start_time, migratedAt)
+  }
 }
 
 /** Rebuilds the small delivery-dedup table with mission-scoped identity. */
@@ -1563,11 +1660,20 @@ function upsertDevice(db, input) {
     .prepare('SELECT id, name, color, status FROM devices WHERE mission_id = ? AND device_id = ?')
     .get(input.mission_id, input.device_id)
   const transaction = db.transaction(() => {
-    db.prepare(`INSERT INTO devices (id, mission_id, device_id, name, color, last_seen, status)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
+    db.prepare(`INSERT INTO devices (
+        id, mission_id, device_id, name, color, last_seen, status, group_id, unique_id
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(mission_id, device_id) DO UPDATE SET
-        name = excluded.name, color = excluded.color, last_seen = excluded.last_seen, status = excluded.status`)
-      .run(id, input.mission_id, input.device_id, input.name, input.color, input.last_seen ?? null, input.status)
+        name = excluded.name, color = excluded.color, last_seen = excluded.last_seen,
+        status = excluded.status, group_id = excluded.group_id, unique_id = excluded.unique_id`)
+      .run(
+        id, input.mission_id, input.device_id, input.name, input.color,
+        input.last_seen ?? null, input.status, input.group_id ?? null,
+        input.unique_id ?? null,
+      )
+    if (existing === undefined && input.participant_provenance === 'legacy_auto') {
+      insertLegacyAutoParticipant(db, input.mission_id, input.device_id, timestamp)
+    }
     if (existing === undefined || hasDeviceAuditChange(existing, input)) {
       insertEvent(
         db,
@@ -1587,6 +1693,28 @@ function upsertDevice(db, input) {
   return getDevice(db, input.mission_id, input.device_id)
 }
 
+/** Records the flag-off first-contact participant window in the device transaction. */
+function insertLegacyAutoParticipant(db, missionId, deviceId, observedAt) {
+  const active = db.prepare(`SELECT 1 FROM mission_participants
+    WHERE mission_id = ? AND kind = 'device' AND traccar_device_id = ?
+      AND removed_at IS NULL`).get(missionId, deviceId)
+  if (active !== undefined) return
+  const participantId = randomUUID()
+  db.prepare(`INSERT INTO mission_participants (
+      id, mission_id, kind, traccar_device_id, mission_team_id, provenance,
+      effective_from, added_at, added_by, removed_at, removed_by
+    ) VALUES (?, ?, 'device', ?, NULL, 'legacy_auto', ?, ?, NULL, NULL, NULL)`)
+    .run(participantId, missionId, deviceId, observedAt, observedAt)
+  insertEvent(db, missionId, 'participant_added', observedAt, {
+    participant_id: participantId,
+    kind: 'device',
+    traccar_device_id: deviceId,
+    provenance: 'legacy_auto',
+    effective_from: observedAt,
+    effective_from_defaulted: true,
+  })
+}
+
 /**
  * Upserts many devices in a SINGLE transaction (one commit → one fsync at synchronous=FULL).
  * The tracking poller previously upserted each device in its own transaction, so a 32-device
@@ -1604,10 +1732,12 @@ function upsertDevicesBulk(db, input) {
   const existsStmt = db.prepare(
     'SELECT id, name, color, status FROM devices WHERE mission_id = ? AND device_id = ?',
   )
-  const upsertStmt = db.prepare(`INSERT INTO devices (id, mission_id, device_id, name, color, last_seen, status)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
+  const upsertStmt = db.prepare(`INSERT INTO devices (
+      id, mission_id, device_id, name, color, last_seen, status, group_id, unique_id
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(mission_id, device_id) DO UPDATE SET
-      name = excluded.name, color = excluded.color, last_seen = excluded.last_seen, status = excluded.status`)
+      name = excluded.name, color = excluded.color, last_seen = excluded.last_seen,
+      status = excluded.status, group_id = excluded.group_id, unique_id = excluded.unique_id`)
 
   let changedDeviceEventCount = 0
   const transaction = db.transaction(() => {
@@ -1623,7 +1753,12 @@ function upsertDevicesBulk(db, input) {
         device.color,
         device.last_seen ?? null,
         device.status,
+        device.group_id ?? null,
+        device.unique_id ?? null,
       )
+      if (existing === undefined && input.participant_provenance === 'legacy_auto') {
+        insertLegacyAutoParticipant(db, input.mission_id, device.device_id, timestamp)
+      }
       if (existing === undefined || hasDeviceAuditChange(existing, device)) {
         const eventType = existing === undefined ? 'device_created' : 'device_updated'
         insertEvent(db, input.mission_id, eventType, timestamp, {

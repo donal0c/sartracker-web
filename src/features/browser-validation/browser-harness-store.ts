@@ -15,6 +15,11 @@ import type {
   MissionReviewReadQuery,
   MissionReviewReadResult,
   MissionStoreInfo,
+  MissionParticipant,
+  GroupMembershipEvent,
+  ParticipantBackfillCheckpoint,
+  SelectMissionParticipantsInput,
+  AddMissionParticipantInput,
   Position,
   Outing,
   OutingFixSummary,
@@ -47,6 +52,10 @@ type BrowserHarnessState = {
   readonly devices: readonly Device[]
   readonly positions: readonly Position[]
   readonly outings: readonly Outing[]
+  readonly missionTeams: readonly BrowserMissionTeam[]
+  readonly missionParticipants: readonly MissionParticipant[]
+  readonly groupMembershipEvents: readonly GroupMembershipEvent[]
+  readonly participantBackfillCheckpoints: readonly ParticipantBackfillCheckpoint[]
   readonly markers: readonly Marker[]
   readonly drawings: readonly Drawing[]
   readonly helicopters: readonly Helicopter[]
@@ -55,6 +64,14 @@ type BrowserHarnessState = {
   readonly openedPaths: readonly string[]
   readonly currentMissionId: string | null
   readonly recoverableMissionId: string | null
+}
+
+type BrowserMissionTeam = {
+  readonly id: string
+  readonly mission_id: string
+  readonly traccar_group_id: string
+  readonly name: string
+  readonly frozen_at: string
 }
 
 const BROWSER_HARNESS_STORAGE_KEY = 'sartracker:browser-harness'
@@ -72,6 +89,37 @@ type BrowserHarnessStore = {
     input: { readonly missionId: string },
   ) => Promise<OutingFixSummary>
   readonly cancelOutingFixSummary: (requestId: string) => Promise<boolean>
+  readonly selectMissionParticipants: (
+    input: SelectMissionParticipantsInput,
+  ) => Promise<readonly MissionParticipant[]>
+  readonly addMissionParticipant: (
+    input: AddMissionParticipantInput,
+  ) => Promise<MissionParticipant>
+  readonly removeMissionParticipant: (input: {
+    readonly mission_id: string
+    readonly participant_id: string
+    readonly removed_by: string
+    readonly reason?: string
+  }) => Promise<MissionParticipant>
+  readonly listMissionParticipants: (
+    missionId: string,
+  ) => Promise<readonly MissionParticipant[]>
+  readonly recordGroupMembershipEvents: (input: {
+    readonly mission_id: string
+    readonly events: readonly Omit<GroupMembershipEvent, 'id' | 'mission_id'>[]
+  }) => Promise<readonly GroupMembershipEvent[]>
+  readonly listGroupMembershipEvents: (
+    missionId: string,
+    teamId?: string,
+  ) => Promise<readonly GroupMembershipEvent[]>
+  readonly upsertParticipantBackfillCheckpoint: (
+    input: Omit<ParticipantBackfillCheckpoint, 'completed' | 'updated_at'> & {
+      readonly completed: boolean
+    },
+  ) => Promise<ParticipantBackfillCheckpoint>
+  readonly listParticipantBackfillCheckpoints: (
+    missionId: string,
+  ) => Promise<readonly ParticipantBackfillCheckpoint[]>
   readonly listMissions: () => Promise<readonly Mission[]>
   readonly getActiveMission: () => Promise<Mission | null>
   readonly getRecoverableMission: () => Promise<Mission | null>
@@ -333,6 +381,246 @@ export function getBrowserHarnessStore(): BrowserHarnessStore {
       }
     },
     cancelOutingFixSummary: async () => false,
+    selectMissionParticipants: async (input) => {
+      const mission = requireMutableParticipantMission(input.mission_id, state.missions)
+      const timestamp = new Date().toISOString()
+      const teams = input.groups.map((group) => ({
+        id: createId('team'),
+        mission_id: mission.id,
+        traccar_group_id: group.traccar_group_id,
+        name: group.name,
+        frozen_at: timestamp,
+      } satisfies BrowserMissionTeam))
+      const groupParticipants = teams.map((team) =>
+        createHarnessParticipant({
+          missionId: mission.id,
+          kind: 'group',
+          missionTeamId: team.id,
+          traccarGroupId: team.traccar_group_id,
+          teamName: team.name,
+          effectiveFrom: mission.start_time,
+          addedAt: timestamp,
+          addedBy: input.selected_by,
+        }))
+      const deviceParticipants = input.devices.map((device) =>
+        createHarnessParticipant({
+          missionId: mission.id,
+          kind: 'device',
+          deviceId: device.traccar_device_id,
+          effectiveFrom: mission.start_time,
+          addedAt: timestamp,
+          addedBy: input.selected_by,
+        }))
+      const membershipEvents = input.groups.flatMap((group, groupIndex) =>
+        group.member_device_ids.map((deviceId) => ({
+          id: createId('membership'),
+          mission_id: mission.id,
+          mission_team_id: teams[groupIndex]?.id ?? '',
+          traccar_device_id: deviceId,
+          change: 'member' as const,
+          observed_at: timestamp,
+        })))
+      const participants = [...groupParticipants, ...deviceParticipants]
+      state = {
+        ...state,
+        missionTeams: [...state.missionTeams, ...teams],
+        missionParticipants: [...state.missionParticipants, ...participants],
+        groupMembershipEvents: [...state.groupMembershipEvents, ...membershipEvents],
+        missionEvents: appendEvent(
+          state.missionEvents,
+          mission.id,
+          'participants_selected',
+          timestamp,
+          {
+            selected_by: input.selected_by,
+            group_count: teams.length,
+            device_count: deviceParticipants.length,
+            effective_from: mission.start_time,
+          },
+        ),
+      }
+      save()
+      return participants
+    },
+    addMissionParticipant: async (input) => {
+      const mission = requireMutableParticipantMission(input.mission_id, state.missions)
+      const addedAt = new Date().toISOString()
+      const effectiveFrom = normalizeParticipantEffectiveFrom(
+        input.effective_from ?? addedAt,
+        mission,
+        addedAt,
+      )
+      let team: BrowserMissionTeam | null = null
+      if (input.kind === 'group') {
+        if (typeof input.ref === 'string') throw new Error('Participant group details are required.')
+        const groupRef = input.ref
+        team = state.missionTeams.find((candidate) =>
+          candidate.mission_id === mission.id &&
+          candidate.traccar_group_id === groupRef.traccar_group_id) ?? {
+          id: createId('team'),
+          mission_id: mission.id,
+          traccar_group_id: groupRef.traccar_group_id,
+          name: groupRef.name,
+          frozen_at: addedAt,
+        }
+      }
+      const deviceId = input.kind === 'device'
+        ? requireHarnessText(input.ref, 'Traccar device id')
+        : null
+      const duplicate = state.missionParticipants.some((participant) =>
+        participant.mission_id === mission.id &&
+        participant.removed_at === null &&
+        (input.kind === 'device'
+          ? participant.kind === 'device' && participant.traccar_device_id === deviceId
+          : participant.kind === 'group' && participant.mission_team_id === team?.id))
+      if (duplicate) throw new Error('Participant is already active for this mission.')
+      const participant = createHarnessParticipant({
+        missionId: mission.id,
+        kind: input.kind,
+        deviceId,
+        missionTeamId: team?.id ?? null,
+        traccarGroupId: team?.traccar_group_id ?? null,
+        teamName: team?.name ?? null,
+        effectiveFrom,
+        addedAt,
+        addedBy: input.confirmed_by,
+      })
+      const checkpoint = deviceId === null ? null : {
+        mission_id: mission.id,
+        traccar_device_id: deviceId,
+        window_from: effectiveFrom,
+        window_to: addedAt,
+        reconciled_until: effectiveFrom,
+        completed: effectiveFrom === addedAt ? 1 : 0,
+        updated_at: addedAt,
+      } satisfies ParticipantBackfillCheckpoint
+      state = {
+        ...state,
+        missionTeams: team === null || state.missionTeams.some((candidate) => candidate.id === team?.id)
+          ? state.missionTeams
+          : [...state.missionTeams, team],
+        missionParticipants: [...state.missionParticipants, participant],
+        participantBackfillCheckpoints: checkpoint === null
+          ? state.participantBackfillCheckpoints
+          : [...state.participantBackfillCheckpoints, checkpoint],
+        missionEvents: appendEvent(
+          state.missionEvents,
+          mission.id,
+          'participant_added',
+          addedAt,
+          {
+            participant_id: participant.id,
+            effective_from: effectiveFrom,
+            confirmed_by: input.confirmed_by,
+          },
+        ),
+      }
+      save()
+      return participant
+    },
+    removeMissionParticipant: async (input) => {
+      requireMutableParticipantMission(input.mission_id, state.missions)
+      const existing = state.missionParticipants.find((participant) =>
+        participant.mission_id === input.mission_id && participant.id === input.participant_id)
+      if (existing === undefined) throw new Error(`Mission participant not found: ${input.participant_id}`)
+      if (existing.removed_at !== null) throw new Error('Mission participant has already been removed.')
+      const removedAt = new Date().toISOString()
+      const participant = { ...existing, removed_at: removedAt, removed_by: input.removed_by }
+      state = {
+        ...state,
+        missionParticipants: state.missionParticipants.map((candidate) =>
+          candidate.id === participant.id ? participant : candidate),
+        missionEvents: appendEvent(
+          state.missionEvents,
+          input.mission_id,
+          'participant_removed',
+          removedAt,
+          { participant_id: participant.id, removed_by: input.removed_by, reason: input.reason ?? null },
+        ),
+      }
+      save()
+      return participant
+    },
+    listMissionParticipants: async (missionId) => {
+      requireMission(missionId, state.missions)
+      return state.missionParticipants.filter((participant) => participant.mission_id === missionId)
+    },
+    recordGroupMembershipEvents: async (input) => {
+      requireMutableParticipantMission(input.mission_id, state.missions)
+      const inserted: GroupMembershipEvent[] = []
+      for (const candidate of input.events) {
+        const latest = state.groupMembershipEvents
+          .filter((event) =>
+            event.mission_id === input.mission_id &&
+            event.mission_team_id === candidate.mission_team_id &&
+            event.traccar_device_id === candidate.traccar_device_id)
+          .toSorted((left, right) => right.observed_at.localeCompare(left.observed_at))[0]
+        if (latest?.change === candidate.change) continue
+        inserted.push({
+          id: createId('membership'),
+          mission_id: input.mission_id,
+          ...candidate,
+        })
+      }
+      if (inserted.length > 0) {
+        const timestamp = new Date().toISOString()
+        state = {
+          ...state,
+          groupMembershipEvents: [...state.groupMembershipEvents, ...inserted],
+          missionEvents: appendEvent(
+            state.missionEvents,
+            input.mission_id,
+            'group_membership_changed',
+            timestamp,
+            { event_count: inserted.length },
+          ),
+        }
+        save()
+      }
+      return inserted
+    },
+    listGroupMembershipEvents: async (missionId, teamId) => {
+      requireMission(missionId, state.missions)
+      return state.groupMembershipEvents.filter((event) =>
+        event.mission_id === missionId &&
+        (teamId === undefined || event.mission_team_id === teamId))
+    },
+    upsertParticipantBackfillCheckpoint: async (input) => {
+      requireMutableParticipantMission(input.mission_id, state.missions)
+      const existing = state.participantBackfillCheckpoints.find((checkpoint) =>
+        checkpoint.mission_id === input.mission_id &&
+        checkpoint.traccar_device_id === input.traccar_device_id &&
+        checkpoint.window_from === input.window_from)
+      if (existing !== undefined && existing.window_to !== input.window_to) {
+        throw new Error('Participant backfill window edges are immutable.')
+      }
+      const checkpoint: ParticipantBackfillCheckpoint = {
+        mission_id: input.mission_id,
+        traccar_device_id: input.traccar_device_id,
+        window_from: input.window_from,
+        window_to: input.window_to,
+        reconciled_until: input.reconciled_until,
+        completed: input.completed ? 1 : 0,
+        updated_at: new Date().toISOString(),
+      }
+      state = {
+        ...state,
+        participantBackfillCheckpoints: [
+          ...state.participantBackfillCheckpoints.filter((candidate) =>
+            !(candidate.mission_id === checkpoint.mission_id &&
+              candidate.traccar_device_id === checkpoint.traccar_device_id &&
+              candidate.window_from === checkpoint.window_from)),
+          checkpoint,
+        ],
+      }
+      save()
+      return checkpoint
+    },
+    listParticipantBackfillCheckpoints: async (missionId) => {
+      requireMission(missionId, state.missions)
+      return state.participantBackfillCheckpoints.filter((checkpoint) =>
+        checkpoint.mission_id === missionId)
+    },
     listMissions: async () => state.missions,
     listMissionEvents: async (missionId) =>
       state.missionEvents
@@ -607,6 +895,8 @@ export function getBrowserHarnessStore(): BrowserHarnessStore {
         color: input.color,
         status: input.status,
         last_seen: input.last_seen ?? null,
+        group_id: input.group_id ?? null,
+        unique_id: input.unique_id ?? null,
       } satisfies Device
 
       const shouldRecordDeviceEvent =
@@ -1075,6 +1365,10 @@ function readHarnessState(): BrowserHarnessState {
       devices: [],
       positions: [],
       outings: [],
+      missionTeams: [],
+      missionParticipants: [],
+      groupMembershipEvents: [],
+      participantBackfillCheckpoints: [],
       markers: [],
       drawings: [],
       helicopters: [],
@@ -1093,6 +1387,10 @@ function readHarnessState(): BrowserHarnessState {
       devices: [],
       positions: [],
       outings: [],
+      missionTeams: [],
+      missionParticipants: [],
+      groupMembershipEvents: [],
+      participantBackfillCheckpoints: [],
       markers: [],
       drawings: [],
       helicopters: [],
@@ -1111,6 +1409,16 @@ function readHarnessState(): BrowserHarnessState {
       devices: Array.isArray(parsed.devices) ? parsed.devices : [],
       positions: Array.isArray(parsed.positions) ? parsed.positions : [],
       outings: Array.isArray(parsed.outings) ? parsed.outings : [],
+      missionTeams: Array.isArray(parsed.missionTeams) ? parsed.missionTeams : [],
+      missionParticipants: Array.isArray(parsed.missionParticipants)
+        ? parsed.missionParticipants
+        : [],
+      groupMembershipEvents: Array.isArray(parsed.groupMembershipEvents)
+        ? parsed.groupMembershipEvents
+        : [],
+      participantBackfillCheckpoints: Array.isArray(parsed.participantBackfillCheckpoints)
+        ? parsed.participantBackfillCheckpoints
+        : [],
       markers: Array.isArray(parsed.markers) ? parsed.markers : [],
       drawings: Array.isArray(parsed.drawings) ? parsed.drawings : [],
       helicopters: Array.isArray(parsed.helicopters) ? parsed.helicopters : [],
@@ -1128,6 +1436,10 @@ function readHarnessState(): BrowserHarnessState {
       devices: [],
       positions: [],
       outings: [],
+      missionTeams: [],
+      missionParticipants: [],
+      groupMembershipEvents: [],
+      participantBackfillCheckpoints: [],
       markers: [],
       drawings: [],
       helicopters: [],
@@ -1280,6 +1592,69 @@ function ensureMissionMutable(missionId: string, missions: readonly Mission[]): 
   }
 
   return mission
+}
+
+/** Allows participant bookkeeping until mission finalization locks the record. */
+function requireMutableParticipantMission(
+  missionId: string,
+  missions: readonly Mission[],
+): Mission {
+  const mission = requireMission(missionId, missions)
+  if (mission.status === 'finalized') throw new Error('Finalized missions are read-only.')
+  return mission
+}
+
+/** Creates one append-only participant window for the browser validation mirror. */
+function createHarnessParticipant(input: {
+  readonly missionId: string
+  readonly kind: 'device' | 'group'
+  readonly deviceId?: string | null
+  readonly missionTeamId?: string | null
+  readonly traccarGroupId?: string | null
+  readonly teamName?: string | null
+  readonly effectiveFrom: string
+  readonly addedAt: string
+  readonly addedBy: string
+}): MissionParticipant {
+  return {
+    id: createId('participant'),
+    mission_id: input.missionId,
+    kind: input.kind,
+    traccar_device_id: input.deviceId ?? null,
+    mission_team_id: input.missionTeamId ?? null,
+    traccar_group_id: input.traccarGroupId ?? null,
+    team_name: input.teamName ?? null,
+    provenance: 'explicit',
+    effective_from: input.effectiveFrom,
+    added_at: input.addedAt,
+    added_by: input.addedBy,
+    removed_at: null,
+    removed_by: null,
+  }
+}
+
+/** Validates one participant effective-from boundary against mission and wall clocks. */
+function normalizeParticipantEffectiveFrom(
+  value: string,
+  mission: Mission,
+  now: string,
+): string {
+  const milliseconds = Date.parse(value)
+  if (!Number.isFinite(milliseconds)) {
+    throw new Error('Participant effective-from must be a valid date and time.')
+  }
+  const normalized = new Date(milliseconds).toISOString()
+  if (normalized < mission.start_time) {
+    throw new Error('Participant effective-from cannot be before the mission start.')
+  }
+  if (normalized > now) throw new Error('Participant effective-from cannot be in the future.')
+  return normalized
+}
+
+/** Requires trimmed text in browser-harness participant inputs. */
+function requireHarnessText(value: unknown, label: string): string {
+  if (typeof value !== 'string' || value.trim() === '') throw new Error(`${label} is required.`)
+  return value.trim()
 }
 
 /** Returns one outing scoped to its mission. */
