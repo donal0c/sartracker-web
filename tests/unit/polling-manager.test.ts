@@ -2808,6 +2808,57 @@ describe('polling manager', () => {
     poller.stop()
   })
 
+  it('intersects history visibility with mission participation and never fetches non-participant history [DON-271]', async () => {
+    const devices = [
+      { ...NORMALIZED_DEVICES[0]!, device_id: '2' },
+      { ...NORMALIZED_DEVICES[1]!, device_id: '25' },
+      { ...NORMALIZED_DEVICES[0]!, device_id: '99' },
+    ] satisfies readonly NormalizedTrackingDevice[]
+    const client = createClient({
+      getDevices: vi.fn().mockResolvedValue(devices),
+      getBreadcrumbs: vi.fn().mockResolvedValue([]),
+    })
+
+    const poller = createPollingManager(client, {
+      intervalMs: 5_000,
+      staleThresholdMs: 60 * 60 * 1000,
+      onSnapshot: vi.fn(),
+      onStatusChange: vi.fn(),
+      getParticipantDeviceIds: () => ['2', '25'],
+      getBreadcrumbDeviceIds: () => ['25', '99'],
+      now: () => new Date('2026-06-13T21:48:51.654Z'),
+    })
+
+    poller.start()
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect(client.getBreadcrumbs).toHaveBeenCalledWith('25', expect.any(Date), expect.any(Date))
+    expect(client.getBreadcrumbs).not.toHaveBeenCalledWith('2', expect.any(Date), expect.any(Date))
+    expect(client.getBreadcrumbs).not.toHaveBeenCalledWith('99', expect.any(Date), expect.any(Date))
+    poller.stop()
+  })
+
+  it('fetches no history when mission-model participation is explicitly empty [DON-271]', async () => {
+    const client = createClient({
+      getDevices: vi.fn().mockResolvedValue(NORMALIZED_DEVICES),
+      getBreadcrumbs: vi.fn().mockResolvedValue([]),
+    })
+    const poller = createPollingManager(client, {
+      intervalMs: 5_000,
+      staleThresholdMs: 60 * 60 * 1000,
+      onSnapshot: vi.fn(),
+      onStatusChange: vi.fn(),
+      getParticipantDeviceIds: () => [],
+      now: () => new Date('2026-06-13T21:48:51.654Z'),
+    })
+
+    poller.start()
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect(client.getBreadcrumbs).not.toHaveBeenCalled()
+    poller.stop()
+  })
+
   it('routes per-device breadcrumb failures through logger.warn rather than console.error', async () => {
     const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
     try {

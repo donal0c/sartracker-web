@@ -118,6 +118,39 @@ describe('startTrackingRuntime', () => {
     )
   })
 
+  it('preloads the GET-only participant roster, groups, and current positions before mission start [DON-271]', async () => {
+    const applyParticipantRoster = vi.fn()
+    const applyParticipantGroups = vi.fn()
+    const client = {
+      authenticate: vi.fn().mockResolvedValue(undefined),
+      getDevices: vi.fn().mockResolvedValue(SNAPSHOT.devices),
+      getGroups: vi.fn().mockResolvedValue([
+        { group_id: '101', name: 'Hill Team', parent_group_id: null },
+      ]),
+      getCurrentPositions: vi.fn().mockResolvedValue(SNAPSHOT.positions),
+    }
+
+    await startTrackingRuntime({
+      config: { baseUrl: 'http://test:8082' },
+      createClient: vi.fn().mockReturnValue(client),
+      createPoller: vi.fn().mockReturnValue({ start: vi.fn(), stop: vi.fn() }),
+      cache: { read: vi.fn().mockResolvedValue(null), write: vi.fn() },
+      missionStore: createMissionStoreStub(),
+      applySnapshot: vi.fn(),
+      applyStatus: vi.fn(),
+      missionModelEnabled: true,
+      applyParticipantRoster,
+      applyParticipantGroups,
+    })
+
+    expect(client.authenticate).toHaveBeenCalledOnce()
+    expect(client.getCurrentPositions).toHaveBeenCalledOnce()
+    expect(applyParticipantRoster).toHaveBeenCalledWith(SNAPSHOT.devices)
+    expect(applyParticipantGroups).toHaveBeenCalledWith([
+      { group_id: '101', name: 'Hill Team', parent_group_id: null },
+    ])
+  })
+
   it('wakes tracking immediately when a mission becomes active and unsubscribes on stop', async () => {
     useMissionStore.setState({ phase: 'idle', currentMission: null })
     const requestPollNow = vi.fn()
@@ -453,6 +486,136 @@ describe('startTrackingRuntime', () => {
     expect(call.mission_id).toBe('mission-1')
     expect(call.devices).toHaveLength(2)
     expect(call.devices.map((device: { device_id: string }) => device.device_id)).toEqual(['1', '2'])
+  })
+
+  it('keeps the full roster for participant discovery while applying and persisting only selected mission participants [DON-271]', async () => {
+    const applySnapshot = vi.fn()
+    const applyParticipantRoster = vi.fn()
+    const upsertDevicesBulk = vi.fn().mockResolvedValue(undefined)
+    const addPositionsBulk = vi.fn().mockResolvedValue(undefined)
+    let pollerHooks: { onSnapshot: (snapshot: TrackingSnapshot) => Promise<void> } | undefined
+
+    await startTrackingRuntime({
+      config: { baseUrl: 'http://test:8082' },
+      createClient: vi.fn().mockReturnValue({}),
+      createPoller: vi.fn().mockImplementation((_client, hooks) => {
+        pollerHooks = hooks
+        return { start: vi.fn(), stop: vi.fn() }
+      }),
+      cache: { read: vi.fn().mockResolvedValue(null), write: vi.fn() },
+      missionStore: createMissionStoreStub({
+        getActiveMission: vi.fn().mockResolvedValue({ id: 'mission-1' }),
+        upsertDevicesBulk,
+        addPositionsBulk,
+      }),
+      applySnapshot,
+      applyStatus: vi.fn(),
+      missionModelEnabled: true,
+      applyParticipantRoster,
+      readParticipationScope: () => ({
+        includesAt: (deviceId: string) => deviceId === '1',
+        activeDeviceIdsAt: () => ['1'],
+        filterSnapshot: (snapshot: TrackingSnapshot) => ({
+          ...snapshot,
+          devices: snapshot.devices.filter((device) => device.device_id === '1'),
+          positions: snapshot.positions.filter((position) => position.device_id === '1'),
+          breadcrumbs: snapshot.breadcrumbs.filter((position) => position.device_id === '1'),
+        }),
+      }),
+      writeCache: false,
+    })
+
+    await pollerHooks?.onSnapshot(SNAPSHOT)
+
+    expect(applyParticipantRoster).toHaveBeenCalledWith(SNAPSHOT.devices)
+    expect(applySnapshot.mock.calls[0]?.[0].devices.map(
+      (device: { readonly device_id: string }) => device.device_id,
+    )).toEqual(['1'])
+    expect(upsertDevicesBulk.mock.calls[0]?.[0].devices).toHaveLength(1)
+    expect(addPositionsBulk.mock.calls[0]?.[0].positions.every(
+      (position: { readonly device_id: string }) => position.device_id === '1',
+    )).toBe(true)
+  })
+
+  it('publishes selected current positions without waiting for participant backfill [DON-271]', async () => {
+    const backfill = createDeferred<readonly TrackingSnapshot['positions'][number][]>()
+    const applySnapshot = vi.fn()
+    let pollerHooks: { onSnapshot: (snapshot: TrackingSnapshot) => Promise<void> } | undefined
+    const client = {
+      authenticate: vi.fn().mockResolvedValue(undefined),
+      getDevices: vi.fn().mockResolvedValue(SNAPSHOT.devices),
+      getGroups: vi.fn().mockResolvedValue([]),
+      getCurrentPositions: vi.fn().mockResolvedValue(SNAPSHOT.positions),
+      getBreadcrumbs: vi.fn().mockReturnValue(backfill.promise),
+    }
+    const checkpoint = {
+      mission_id: 'mission-1',
+      traccar_device_id: '1',
+      window_from: '2026-04-06T08:00:00.000Z',
+      window_to: '2026-04-06T10:00:00.000Z',
+      reconciled_until: '2026-04-06T08:00:00.000Z',
+      completed: 0,
+      updated_at: '2026-04-06T10:00:00.000Z',
+    }
+
+    await startTrackingRuntime({
+      config: { baseUrl: 'http://test:8082' },
+      createClient: vi.fn().mockReturnValue(client),
+      createPoller: vi.fn().mockImplementation((_client, hooks) => {
+        pollerHooks = hooks
+        return { start: vi.fn(), stop: vi.fn() }
+      }),
+      cache: { read: vi.fn().mockResolvedValue(null), write: vi.fn() },
+      missionStore: createMissionStoreStub({
+        getActiveMission: vi.fn().mockResolvedValue({ id: 'mission-1' }),
+        listParticipantBackfillCheckpoints: vi.fn().mockResolvedValue([checkpoint]),
+        upsertParticipantBackfillCheckpoint: vi.fn(),
+        persistTrackingHistoryBatch: vi.fn(),
+      }),
+      applySnapshot,
+      applyStatus: vi.fn(),
+      missionModelEnabled: true,
+      readParticipationScope: () => ({
+        includesAt: () => true,
+        activeDeviceIdsAt: () => ['1', '2'],
+        filterSnapshot: (snapshot) => snapshot,
+      }),
+      writeCache: false,
+    })
+
+    await pollerHooks?.onSnapshot(SNAPSHOT)
+
+    expect(applySnapshot).toHaveBeenCalledWith(SNAPSHOT)
+    expect(client.getBreadcrumbs).toHaveBeenCalled()
+    backfill.resolve([])
+    await Promise.resolve()
+  })
+
+  it('grandfathers legacy tracking persistence when the mission model flag is off [DON-271]', async () => {
+    const upsertDevicesBulk = vi.fn().mockResolvedValue(undefined)
+    let pollerHooks: { onSnapshot: (snapshot: TrackingSnapshot) => Promise<void> } | undefined
+
+    await startTrackingRuntime({
+      config: { baseUrl: 'http://test:8082' },
+      createClient: vi.fn().mockReturnValue({}),
+      createPoller: vi.fn().mockImplementation((_client, hooks) => {
+        pollerHooks = hooks
+        return { start: vi.fn(), stop: vi.fn() }
+      }),
+      cache: { read: vi.fn().mockResolvedValue(null), write: vi.fn() },
+      missionStore: createMissionStoreStub({
+        getActiveMission: vi.fn().mockResolvedValue({ id: 'mission-1' }),
+        upsertDevicesBulk,
+      }),
+      applySnapshot: vi.fn(),
+      applyStatus: vi.fn(),
+      missionModelEnabled: false,
+      writeCache: false,
+    })
+
+    await pollerHooks?.onSnapshot(SNAPSHOT)
+
+    expect(upsertDevicesBulk.mock.calls[0]?.[0].participant_provenance).toBe('legacy_auto')
   })
 
   it('persists same-second distinct Traccar positions when their upstream ids differ [DON-233]', async () => {

@@ -543,7 +543,26 @@ export function getBrowserHarnessStore(): BrowserHarnessStore {
     },
     listMissionParticipants: async (missionId) => {
       requireMission(missionId, state.missions)
-      return state.missionParticipants.filter((participant) => participant.mission_id === missionId)
+      return state.missionParticipants
+        .filter((participant) => participant.mission_id === missionId)
+        .map((participant) => {
+          const checkpoint = participant.traccar_device_id === null
+            ? undefined
+            : state.participantBackfillCheckpoints.find((candidate) =>
+                candidate.mission_id === participant.mission_id &&
+                candidate.traccar_device_id === participant.traccar_device_id &&
+                candidate.window_from === participant.effective_from)
+          return {
+            ...participant,
+            ...(checkpoint === undefined
+              ? {}
+              : {
+                  backfill_window_to: checkpoint.window_to,
+                  backfill_reconciled_until: checkpoint.reconciled_until,
+                  backfill_completed: checkpoint.completed,
+                }),
+          }
+        })
     },
     recordGroupMembershipEvents: async (input) => {
       requireMutableParticipantMission(input.mission_id, state.missions)

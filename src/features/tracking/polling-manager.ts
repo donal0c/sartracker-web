@@ -87,6 +87,8 @@ type PollingManagerOptions = {
     inputs: readonly TrackingHistoryChunkPersistenceInput[],
   ) => Promise<void>
   readonly getBreadcrumbDeviceIds?: () => readonly string[] | null
+  /** Selected mission participants. An explicit empty list means fetch no history. */
+  readonly getParticipantDeviceIds?: () => readonly string[] | null
   readonly onSnapshot: (
     snapshot: TrackingSnapshot,
     context: TrackingSnapshotContext,
@@ -1261,12 +1263,17 @@ export function createPollingManager(
   function selectBreadcrumbDevices(
     devices: readonly NormalizedTrackingDevice[],
   ): readonly NormalizedTrackingDevice[] {
+    const participantDeviceIds = options.getParticipantDeviceIds?.() ?? null
+    const participantDeviceIdSet = participantDeviceIds === null
+      ? null
+      : new Set(participantDeviceIds)
     const requestedDeviceIds = options.getBreadcrumbDeviceIds?.() ?? null
-    if (requestedDeviceIds === null || requestedDeviceIds.length === 0) {
-      return devices
-    }
-    const requestedDeviceIdSet = new Set(requestedDeviceIds)
-    return devices.filter((device) => requestedDeviceIdSet.has(device.device_id))
+    const requestedDeviceIdSet = requestedDeviceIds === null || requestedDeviceIds.length === 0
+      ? null
+      : new Set(requestedDeviceIds)
+    return devices.filter((device) =>
+      (participantDeviceIdSet === null || participantDeviceIdSet.has(device.device_id)) &&
+      (requestedDeviceIdSet === null || requestedDeviceIdSet.has(device.device_id)))
   }
 
   async function seedInitialBreadcrumbs(): Promise<InitialBreadcrumbSeedState> {

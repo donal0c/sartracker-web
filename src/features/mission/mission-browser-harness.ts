@@ -27,6 +27,8 @@ import { recordTrackingPollLedgerEntry } from '../diagnostics/tracking-poll-ledg
 import { startExactBreadcrumbDotRuntime } from '../tracking/start-exact-breadcrumb-dot-runtime'
 import { useExactBreadcrumbDotStore } from '../tracking/exact-breadcrumb-dot-store'
 import { applyCurrentPositionRejections } from '../tracking/ingest-health-store'
+import { useParticipantStore } from '../participants/participant-store'
+import { isMissionModelEnabled } from '../runtime/mission-model-flag'
 
 const BROWSER_HARNESS_MAX_PERSISTED_TRACKING_POSITIONS = 2_000
 const LEAFLET_FALLBACK_SEED_MISSION_NAME = 'DON-27 Leaflet fallback surface'
@@ -140,6 +142,10 @@ export async function startMissionBrowserHarness(): Promise<void> {
             const mission = useMissionStore.getState().currentMission
             return mission === null ? null : new Date(mission.start_time)
           },
+          getParticipantDeviceIds: () =>
+            isMissionModelEnabled()
+              ? useParticipantStore.getState().scope.activeDeviceIdsAt(new Date().toISOString())
+              : null,
           ...hooks,
           onCurrentPositionRejections: applyCurrentPositionRejections,
         }),
@@ -149,6 +155,14 @@ export async function startMissionBrowserHarness(): Promise<void> {
       missionStore: browserStore,
       applySnapshot: applyTrackingSnapshot,
       applyStatus: applyTrackingStatus,
+      missionModelEnabled: isMissionModelEnabled(),
+      readParticipationScope: () => useParticipantStore.getState().scope,
+      applyParticipantRoster: (devices) =>
+        useParticipantStore.getState().controller?.applyRoster(devices),
+      applyParticipantGroups: (groups) =>
+        useParticipantStore.getState().controller?.applyGroups(groups),
+      applyParticipantRosterError: (message) =>
+        useParticipantStore.getState().controller?.reportRosterError(message),
       recordDiagnosticEvent,
       recordTrackingPollDiagnostic: recordTrackingPollLedgerEntry,
       notifyDurablePositionChange: (changedPositionCount) => {

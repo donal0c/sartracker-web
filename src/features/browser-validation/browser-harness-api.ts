@@ -16,8 +16,17 @@ import {
   readBrowserHarnessState,
   resetBrowserHarnessStore,
 } from './browser-harness-store'
+import { useParticipantStore } from '../participants/participant-store'
+import type {
+  NormalizedTrackingDevice,
+  NormalizedTraccarGroup,
+} from '../tracking/tracking-types'
 
 type BrowserHarnessApi = {
+  readonly setParticipantDiscovery: (input: {
+    readonly devices: readonly NormalizedTrackingDevice[]
+    readonly groups: readonly NormalizedTraccarGroup[]
+  }) => Promise<void>
   readonly injectTrackingSnapshot: (
     snapshot: TrackingSnapshot,
     status?: TrackingConnectionStatus,
@@ -61,6 +70,14 @@ export function installBrowserHarnessApi(): void {
   }
 
   window.__SARTRACKER_BROWSER_HARNESS__ = {
+    setParticipantDiscovery: async ({ devices, groups }) => {
+      const controller = useParticipantStore.getState().controller
+      if (controller === null) {
+        throw new Error('Participant runtime controller is unavailable.')
+      }
+      controller.applyGroups(groups)
+      await controller.applyRoster(devices)
+    },
     injectTrackingSnapshot: async (snapshot, status = DEFAULT_ONLINE_STATUS) => {
       const store = getBrowserHarnessStore()
       const state = readBrowserHarnessState()
@@ -69,7 +86,15 @@ export function installBrowserHarnessApi(): void {
         throw new Error('No active or recoverable mission is available for tracking injection.')
       }
 
-      for (const device of snapshot.devices) {
+      const participantController = useParticipantStore.getState().controller
+      await participantController?.applyRoster(snapshot.devices)
+      const participantState = useParticipantStore.getState()
+      const missionSnapshot =
+        participantController !== null && participantState.activeMissionId === missionId
+          ? participantState.scope.filterSnapshot(snapshot)
+          : snapshot
+
+      for (const device of missionSnapshot.devices) {
         await store.upsertDevice({
           mission_id: missionId,
           device_id: device.device_id,
@@ -77,10 +102,12 @@ export function installBrowserHarnessApi(): void {
           color: '#38bdf8',
           status: mapTrackingStatus(device.status),
           last_seen: device.last_seen,
+          group_id: device.group_id ?? null,
+          unique_id: device.unique_id,
         })
       }
 
-      const positions = [...snapshot.breadcrumbs, ...snapshot.positions]
+      const positions = [...missionSnapshot.breadcrumbs, ...missionSnapshot.positions]
       if (positions.length > 0) {
         await store.addPositionsBulk({
           mission_id: missionId,
@@ -103,7 +130,7 @@ export function installBrowserHarnessApi(): void {
         )
       }
 
-      applyTrackingSnapshot(snapshot)
+      applyTrackingSnapshot(missionSnapshot)
       applyTrackingStatus({
         ...status,
         lastSuccessAt: status.lastSuccessAt ?? new Date().toISOString(),

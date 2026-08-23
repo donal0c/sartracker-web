@@ -57,6 +57,8 @@ import {
   stopRuntimeServices,
 } from './runtime-managed-services'
 import { startCoreFeatureRuntimes } from './start-core-feature-runtimes'
+import { useParticipantStore } from '../participants/participant-store'
+import { isMissionModelEnabled } from './mission-model-flag'
 
 type StartAppRuntimeDependencies = {
   readonly registerServiceWorker: () => Promise<void>
@@ -286,6 +288,10 @@ export async function startAppRuntime(
             const missionId = useMissionStore.getState().currentMission?.id ?? null
             return useActiveMissionDevicesStore.getState().getActiveDeviceIds(missionId)
           },
+          getParticipantDeviceIds: () =>
+            isMissionModelEnabled()
+              ? useParticipantStore.getState().scope.activeDeviceIdsAt(new Date().toISOString())
+              : null,
           getInitialBreadcrumbs: hooks.getInitialBreadcrumbs,
           getInitialBreadcrumbTotals: hooks.getInitialBreadcrumbTotals,
           getInitialBreadcrumbSelectionMetadata:
@@ -318,6 +324,14 @@ export async function startAppRuntime(
         )
       },
       applyStatus: applyTrackingStatus,
+      missionModelEnabled: isMissionModelEnabled(),
+      readParticipationScope: () => useParticipantStore.getState().scope,
+      applyParticipantRoster: (devices) =>
+        useParticipantStore.getState().controller?.applyRoster(devices),
+      applyParticipantGroups: (groups) =>
+        useParticipantStore.getState().controller?.applyGroups(groups),
+      applyParticipantRosterError: (message) =>
+        useParticipantStore.getState().controller?.reportRosterError(message),
       notifyDurablePositionChange: (changedPositionCount) => {
         useExactBreadcrumbDotStore.getState().controller?.notifyDurableChange(
           changedPositionCount,

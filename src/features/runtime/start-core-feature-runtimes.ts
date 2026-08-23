@@ -33,6 +33,14 @@ import {
   hasOutingStoreBoundary,
   startOutingRuntime,
 } from '../outings/start-outing-runtime'
+import {
+  applyParticipantController,
+  applyParticipantRuntime,
+} from '../participants/participant-store'
+import {
+  hasParticipantStoreBoundary,
+  startParticipantRuntime,
+} from '../participants/start-participant-runtime'
 import type { AutosaveSyncReason } from '../persistence/autosave-status-store'
 import { recordDiagnosticEvent } from '../diagnostics/diagnostic-event-log'
 
@@ -57,6 +65,13 @@ export type CoreFeatureRuntimeMissionStore = Pick<
   | 'listOutings'
   | 'readOutingFixSummary'
   | 'cancelOutingFixSummary'
+  | 'selectMissionParticipants'
+  | 'addMissionParticipant'
+  | 'removeMissionParticipant'
+  | 'listMissionParticipants'
+  | 'recordGroupMembershipEvents'
+  | 'listGroupMembershipEvents'
+  | 'listParticipantBackfillCheckpoints'
   | 'finalizeMission'
   | 'unlockFinalizedMission'
   | 'listMarkers'
@@ -88,6 +103,7 @@ export type CoreFeatureRuntimeOptions = {
   readonly startMissionRuntime?: typeof startMissionRuntime
   readonly startMissionGovernanceRuntime?: typeof startMissionGovernanceRuntime
   readonly startOutingRuntime?: typeof startOutingRuntime
+  readonly startParticipantRuntime?: typeof startParticipantRuntime
   readonly startMarkerRuntime?: typeof startMarkerRuntime
   readonly startDrawingRuntime?: typeof startDrawingRuntime
   readonly startHelicopterRuntime?: typeof startHelicopterRuntime
@@ -100,6 +116,7 @@ export type CoreFeatureRuntimeHandles = {
     ReturnType<typeof startMissionGovernanceRuntime>
   >
   readonly outingRuntimeController: Awaited<ReturnType<typeof startOutingRuntime>> | null
+  readonly participantRuntimeController: Awaited<ReturnType<typeof startParticipantRuntime>> | null
   readonly markerRuntimeController: Awaited<ReturnType<typeof startMarkerRuntime>>
   readonly drawingRuntimeController: Awaited<ReturnType<typeof startDrawingRuntime>>
   readonly helicopterRuntimeController: Awaited<
@@ -126,6 +143,7 @@ export async function startCoreFeatureRuntimes(
   const startGovernance =
     options.startMissionGovernanceRuntime ?? startMissionGovernanceRuntime
   const startOuting = options.startOutingRuntime ?? startOutingRuntime
+  const startParticipant = options.startParticipantRuntime ?? startParticipantRuntime
   const startMarker = options.startMarkerRuntime ?? startMarkerRuntime
   const startDrawing = options.startDrawingRuntime ?? startDrawingRuntime
   const startHelicopter = options.startHelicopterRuntime ?? startHelicopterRuntime
@@ -170,6 +188,17 @@ export async function startCoreFeatureRuntimes(
     cleanups.push(() => undefined)
   }
 
+  const participantRuntimeController = hasParticipantStoreBoundary(options.missionStore)
+    ? await startParticipant({
+        participantStore: options.missionStore,
+        applyRuntime: applyParticipantRuntime,
+      })
+    : null
+  if (participantRuntimeController !== null) {
+    applyParticipantController(participantRuntimeController)
+    cleanups.push(() => undefined)
+  }
+
   const markerRuntimeController = await startMarker({
     markerStore: options.missionStore,
     attachmentStore: options.attachmentAdapter,
@@ -207,6 +236,7 @@ export async function startCoreFeatureRuntimes(
     missionRuntimeController,
     missionGovernanceController,
     outingRuntimeController,
+    participantRuntimeController,
     markerRuntimeController,
     drawingRuntimeController,
     helicopterRuntimeController,

@@ -7,10 +7,13 @@ import {
   isTrackingCacheUsable,
 } from './tracking-snapshot-health'
 import type {
+  NormalizedTrackingDevice,
   NormalizedTrackingPosition,
+  NormalizedTraccarGroup,
   TrackingConnectionStatus,
   TrackingSnapshot,
 } from './tracking-types'
+import type { ParticipationScope } from '../participants/participation-scope'
 import {
   createTrackingPositionCoordinateKey,
 } from './tracking-position-identity'
@@ -27,6 +30,8 @@ import type {
 import type { BreadcrumbSelectionMetadata } from './breadcrumb-accumulator'
 import { useMissionStore } from '../mission/mission-store'
 import { useActiveMissionDevicesStore } from './active-mission-devices-store'
+import type { ParticipantBackfillCheckpoint } from '../../infrastructure/mission-store/tauri-mission-store'
+import { runParticipantBackfillPass } from '../participants/participant-backfill-runtime'
 
 export type TrackingRuntimeConfig = {
   readonly baseUrl: string
@@ -34,6 +39,13 @@ export type TrackingRuntimeConfig = {
   readonly password?: string
   readonly token?: string
   readonly recordRequestDiagnostic?: (entry: TrackingPollLedgerEntry) => void
+}
+
+type ParticipantRosterClient = {
+  readonly authenticate: () => Promise<void>
+  readonly getDevices: () => Promise<readonly NormalizedTrackingDevice[]>
+  readonly getGroups: () => Promise<readonly NormalizedTraccarGroup[]>
+  readonly getCurrentPositions: () => Promise<readonly NormalizedTrackingPosition[]>
 }
 
 type TrackingRuntimeClientFactory = (config: TrackingRuntimeConfig) => unknown
@@ -169,6 +181,9 @@ export type TrackingRuntimeMissionStore = {
     readonly color: string
     readonly status: 'online' | 'offline' | 'unknown'
     readonly last_seen?: string | null
+    readonly group_id?: string | null
+    readonly unique_id?: string | null
+    readonly participant_provenance?: 'legacy_auto'
   }) => Promise<unknown>
   readonly upsertDevicesBulk?: (input: {
     readonly mission_id: string
@@ -178,7 +193,10 @@ export type TrackingRuntimeMissionStore = {
       readonly color: string
       readonly status: 'online' | 'offline' | 'unknown'
       readonly last_seen?: string | null
+      readonly group_id?: string | null
+      readonly unique_id?: string | null
     }[]
+    readonly participant_provenance?: 'legacy_auto'
   }) => Promise<unknown>
   readonly addPosition: (input: {
     readonly source_position_id?: string | null
@@ -262,6 +280,17 @@ export type TrackingRuntimeMissionStore = {
     readonly history_from: string
     readonly reconciled_until: string
   }[]>
+  readonly listParticipantBackfillCheckpoints?: (
+    missionId: string,
+  ) => Promise<readonly ParticipantBackfillCheckpoint[]>
+  readonly upsertParticipantBackfillCheckpoint?: (input: {
+    readonly mission_id: string
+    readonly traccar_device_id: string
+    readonly window_from: string
+    readonly window_to: string
+    readonly reconciled_until: string
+    readonly completed: boolean
+  }) => Promise<unknown>
 }
 
 type StartTrackingRuntimeDependencies = {
@@ -279,6 +308,15 @@ type StartTrackingRuntimeDependencies = {
   readonly recordDiagnosticEvent?: (event: DiagnosticEventInput) => void | Promise<void>
   readonly recordTrackingPollDiagnostic?: (entry: TrackingPollLedgerEntry) => void
   readonly notifyDurablePositionChange?: (changedPositionCount: number) => void
+  readonly missionModelEnabled?: boolean
+  readonly readParticipationScope?: () => ParticipationScope
+  readonly applyParticipantRoster?: (
+    devices: readonly TrackingSnapshot['devices'][number][],
+  ) => void | Promise<void>
+  readonly applyParticipantGroups?: (
+    groups: readonly NormalizedTraccarGroup[],
+  ) => void | Promise<void>
+  readonly applyParticipantRosterError?: (message: string | null) => void
   readonly now?: () => Date
 }
 
@@ -326,6 +364,8 @@ export async function startTrackingRuntime(
         >
       }
     | null = null
+  let participantBackfillInFlight = false
+  const participantBackfillAbortController = new AbortController()
 
   if (dependencies.config === null) {
     dependencies.applyStatus({
@@ -343,8 +383,7 @@ export async function startTrackingRuntime(
   if (cachedContents !== null) {
     const cachedSnapshot = safelyParseCachedSnapshot(cachedContents, logger)
     if (cachedSnapshot !== null && isTrackingCacheUsable(cachedSnapshot.cached_at, now())) {
-      dependencies.applySnapshot(
-        annotateTrackingSnapshotHealth(
+      const healthyCachedSnapshot = annotateTrackingSnapshotHealth(
           {
             devices: cachedSnapshot.devices,
             positions: cachedSnapshot.positions,
@@ -355,7 +394,16 @@ export async function startTrackingRuntime(
             cacheAgeMs: calculateCacheAgeMs(cachedSnapshot.cached_at, now()),
             deviceStaleThresholdMs: DEFAULT_DEVICE_STALE_THRESHOLD_MS,
           },
-        ),
+        )
+      dependencies.applySnapshot(
+        dependencies.missionModelEnabled === true
+          ? dependencies.readParticipationScope?.().filterSnapshot(healthyCachedSnapshot) ?? {
+              ...healthyCachedSnapshot,
+              devices: [],
+              positions: [],
+              breadcrumbs: [],
+            }
+          : healthyCachedSnapshot,
       )
       // Cold-start visibility: until the first live poll succeeds, the operator
       // is looking at last-known cached positions. Surface that explicitly so
@@ -376,6 +424,9 @@ export async function startTrackingRuntime(
       ? {}
       : { recordRequestDiagnostic: dependencies.recordTrackingPollDiagnostic }),
   })
+  if (dependencies.missionModelEnabled === true) {
+    await preloadParticipantDiscovery(client, dependencies, logger)
+  }
   const poller = dependencies.createPoller(client, {
     getInitialBreadcrumbs: async (signal?: AbortSignal) => {
       const seed = await loadInitialPersistedBreadcrumbs(signal)
@@ -627,17 +678,28 @@ export async function startTrackingRuntime(
       }
     },
     onSnapshot: async (snapshot, context) => {
-      dependencies.applySnapshot(snapshot)
+      await dependencies.applyParticipantRoster?.(snapshot.devices)
+      const operationalSnapshot = dependencies.missionModelEnabled === true
+        ? dependencies.readParticipationScope?.().filterSnapshot(snapshot) ?? {
+            ...snapshot,
+            devices: [],
+            positions: [],
+            breadcrumbs: [],
+            rawBreadcrumbsForPersistence: [],
+          }
+        : snapshot
+      dependencies.applySnapshot(operationalSnapshot)
+      scheduleParticipantBackfill()
       void dependencies.recordDiagnosticEvent?.({
         level: 'info',
         category: 'tracking',
         event: 'tracking_snapshot_applied',
-        fields: buildTrackingSnapshotDiagnosticFields(snapshot),
+        fields: buildTrackingSnapshotDiagnosticFields(operationalSnapshot),
       })
       const sideEffects: Promise<unknown>[] = [
         enqueueMissionPersistence(
           limitSnapshotForMissionPersistence(
-            snapshot,
+            operationalSnapshot,
             dependencies.maxPersistedPositionsPerSnapshot,
           ),
           context?.historyResetKey ?? null,
@@ -649,7 +711,7 @@ export async function startTrackingRuntime(
         writeCache && context?.suppressTrackingCache !== true
 
       if (shouldWriteTrackingCache) {
-        trackingCacheDataKey = createTrackingCacheDataKey(snapshot)
+        trackingCacheDataKey = createTrackingCacheDataKey(operationalSnapshot)
         if (trackingCacheDataKey !== latestQueuedTrackingCacheDataKey) {
           latestTrackingCacheRequestSequence += 1
           trackingCacheRequestSequence = latestTrackingCacheRequestSequence
@@ -660,9 +722,9 @@ export async function startTrackingRuntime(
               dependencies.cache,
               serializeTrackingCachePayload({
                 cached_at: now().toISOString(),
-                devices: snapshot.devices,
-                positions: snapshot.positions,
-                breadcrumbs: snapshot.breadcrumbs,
+                devices: operationalSnapshot.devices,
+                positions: operationalSnapshot.positions,
+                breadcrumbs: operationalSnapshot.breadcrumbs,
               }),
             ),
           )
@@ -792,7 +854,45 @@ export async function startTrackingRuntime(
     unsubscribeMissionWake()
     unsubscribeDeviceSelectionWake()
     poller.stop()
+    participantBackfillAbortController.abort()
     invalidateTrackingRuntimeGeneration(runtimeGeneration)
+  }
+
+  function scheduleParticipantBackfill(): void {
+    if (
+      dependencies.missionModelEnabled !== true ||
+      participantBackfillInFlight ||
+      dependencies.missionStore.listParticipantBackfillCheckpoints === undefined ||
+      dependencies.missionStore.upsertParticipantBackfillCheckpoint === undefined ||
+      dependencies.missionStore.persistTrackingHistoryBatch === undefined ||
+      !hasBreadcrumbClient(client)
+    ) return
+
+    participantBackfillInFlight = true
+    void runNextParticipantBackfillPass().catch((error) => {
+      if (!participantBackfillAbortController.signal.aborted) {
+        logger.warn('Participant history backfill pass failed; it will retry.', error)
+      }
+    }).finally(() => {
+      participantBackfillInFlight = false
+    })
+  }
+
+  async function runNextParticipantBackfillPass(): Promise<void> {
+    const activeMission = await dependencies.missionStore.getActiveMission()
+    if (activeMission === null) return
+    const checkpoints = await dependencies.missionStore.listParticipantBackfillCheckpoints?.(
+      activeMission.id,
+    ) ?? []
+    const checkpoint = checkpoints.find((candidate) => candidate.completed !== 1)
+    if (checkpoint === undefined) return
+    await runParticipantBackfillPass({
+      checkpoint,
+      getBreadcrumbs: client.getBreadcrumbs,
+      persistChunk: dependencies.missionStore.persistTrackingHistoryBatch!,
+      updateCheckpoint: dependencies.missionStore.upsertParticipantBackfillCheckpoint!,
+      signal: participantBackfillAbortController.signal,
+    })
   }
 
   function enqueueMissionPersistence(
@@ -806,6 +906,7 @@ export async function startTrackingRuntime(
         persistedPositionKeyCache,
         expectedMissionId,
         dependencies.notifyDurablePositionChange,
+        dependencies.missionModelEnabled !== true,
       )
     })
   }
@@ -955,6 +1056,64 @@ export async function startTrackingRuntime(
   }
 }
 
+async function preloadParticipantDiscovery(
+  client: unknown,
+  dependencies: Pick<
+    StartTrackingRuntimeDependencies,
+    'applyParticipantGroups' | 'applyParticipantRoster' | 'applyParticipantRosterError'
+  >,
+  logger: TrackingRuntimeLogger,
+): Promise<void> {
+  if (!isParticipantRosterClient(client)) {
+    dependencies.applyParticipantRosterError?.(
+      'Participant selection is unavailable because the tracking client cannot read the Traccar roster.',
+    )
+    return
+  }
+  try {
+    await client.authenticate()
+    const [devices, groups] = await Promise.all([
+      client.getDevices(),
+      client.getGroups(),
+      // Current fixes stay on the same bulk GET path. They are intentionally
+      // not published to the operational map until participation is known.
+      client.getCurrentPositions(),
+    ])
+    await Promise.all([
+      dependencies.applyParticipantRoster?.(devices),
+      dependencies.applyParticipantGroups?.(groups),
+    ])
+    dependencies.applyParticipantRosterError?.(null)
+  } catch (error) {
+    logger.warn('Participant roster preload failed.', error)
+    dependencies.applyParticipantRosterError?.(
+      `Participant roster could not be loaded. Device-level fallback remains available after tracking reconnects: ${error instanceof Error ? error.message : String(error)}`,
+    )
+  }
+}
+
+function isParticipantRosterClient(client: unknown): client is ParticipantRosterClient {
+  if (typeof client !== 'object' || client === null) return false
+  const candidate = client as Partial<ParticipantRosterClient>
+  return (
+    typeof candidate.authenticate === 'function' &&
+    typeof candidate.getDevices === 'function' &&
+    typeof candidate.getGroups === 'function' &&
+    typeof candidate.getCurrentPositions === 'function'
+  )
+}
+
+function hasBreadcrumbClient(client: unknown): client is Pick<ParticipantRosterClient, never> & {
+  readonly getBreadcrumbs: (
+    deviceId: string,
+    from: Date,
+    to: Date,
+  ) => Promise<readonly NormalizedTrackingPosition[]>
+} {
+  return typeof client === 'object' && client !== null &&
+    typeof (client as { readonly getBreadcrumbs?: unknown }).getBreadcrumbs === 'function'
+}
+
 function createBreadcrumbRendererSessionId(): string {
   const bytes = new Uint8Array(16)
   globalThis.crypto.getRandomValues(bytes)
@@ -1091,6 +1250,7 @@ async function persistTrackingSnapshot(
   persistedPositionKeyCache: PersistedPositionKeyCache | null,
   expectedMissionId: string | null,
   notifyDurablePositionChange?: (changedPositionCount: number) => void,
+  legacyAutoParticipants = true,
 ): Promise<PersistedPositionKeyCache | null> {
   const activeMission = await missionStore.getActiveMission()
   if (
@@ -1130,7 +1290,10 @@ async function persistTrackingSnapshot(
           color: createDeviceColor(device.device_id),
           status: device.status,
           last_seen: device.last_seen,
+          group_id: device.group_id ?? null,
+          unique_id: device.unique_id,
         })),
+        ...(legacyAutoParticipants ? { participant_provenance: 'legacy_auto' as const } : {}),
       })
     } else {
       for (const device of snapshot.devices) {
@@ -1141,6 +1304,9 @@ async function persistTrackingSnapshot(
           color: createDeviceColor(device.device_id),
           status: device.status,
           last_seen: device.last_seen,
+          group_id: device.group_id ?? null,
+          unique_id: device.unique_id,
+          ...(legacyAutoParticipants ? { participant_provenance: 'legacy_auto' as const } : {}),
         })
       }
     }
