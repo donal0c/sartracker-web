@@ -51,6 +51,7 @@ export type RejectionEvidenceDelivery = {
     missionId: string,
     operation: () => Promise<Result>,
   ) => Promise<Result>
+  readonly reopenMissionEvidenceAfterUnlock: (missionId: string) => void
   readonly dispose: () => Promise<void>
 }
 
@@ -205,6 +206,11 @@ export function createRejectionEvidenceDelivery(
     }
   }
 
+  /** Reopens renderer acceptance only after the durable store confirms admin unlock. */
+  function reopenMissionEvidenceAfterUnlock(missionId: string): void {
+    finalizationPhaseByMission.delete(missionId)
+  }
+
   /** Starts at most one delivery batch without making the poller await it. */
   function scheduleFlush(): void {
     if (
@@ -338,7 +344,13 @@ export function createRejectionEvidenceDelivery(
     )
   }
 
-  return { dispose, flushMission, record, runWithMissionFinalizationFence }
+  return {
+    dispose,
+    flushMission,
+    record,
+    reopenMissionEvidenceAfterUnlock,
+    runWithMissionFinalizationFence,
+  }
 }
 
 /** Describes the explicit bounded-memory impossibility boundary. */
