@@ -13,7 +13,8 @@ import {
 
 describe('tracking cache payload', () => {
   it('serializes and parses a normalized tracking snapshot', () => {
-    const devices = devicesFixture.map((device) => normalizeTraccarDevice(device))
+    const devices = devicesFixture.map((device, index) =>
+      normalizeTraccarDevice({ ...device, groupId: index + 101 }))
     const positions = positionsFixture.map((position) =>
       normalizeTraccarPosition(position, 'live'),
     )
@@ -28,6 +29,7 @@ describe('tracking cache payload', () => {
 
     expect(parsed.cached_at).toBe('2026-04-06T10:35:00.000Z')
     expect(parsed.devices).toHaveLength(2)
+    expect(parsed.devices[0]?.group_id).toBe('101')
     expect(parsed.positions).toHaveLength(2)
     expect(parsed.breadcrumbs).toHaveLength(2)
     expect(parsed.positions[0]?.timestamp_source).toBe('fix')

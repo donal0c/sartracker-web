@@ -1,4 +1,10 @@
-import type { DeviceDefinition, RoutePoint, SeedPoint } from './types.js'
+import type { DeviceDefinition, RoutePoint, SeedPoint, TraccarGroup } from './types.js'
+
+/** Stable group roster used by participant-selection and membership-change tests. */
+export const GROUP_DEFINITIONS: readonly TraccarGroup[] = [
+  { id: 101, name: 'Kerry MRT', groupId: 0 },
+  { id: 102, name: 'Supporting Team', groupId: 0 },
+]
 
 /**
  * Mulberry32 seeded PRNG. Returns a function that produces values in [0, 1).
@@ -22,6 +28,7 @@ export const DEVICE_DEFINITIONS: readonly DeviceDefinition[] = [
     uniqueId: 'sar_eoc_001',
     category: 'person',
     startOffsetMs: 0,
+    groupId: 101,
   },
   {
     id: 2,
@@ -29,6 +36,7 @@ export const DEVICE_DEFINITIONS: readonly DeviceDefinition[] = [
     uniqueId: 'sar_alpha_002',
     category: 'person',
     startOffsetMs: 0,
+    groupId: 101,
   },
   {
     id: 3,
@@ -36,6 +44,7 @@ export const DEVICE_DEFINITIONS: readonly DeviceDefinition[] = [
     uniqueId: 'sar_bravo_003',
     category: 'person',
     startOffsetMs: 8 * 60 * 1000,
+    groupId: 101,
   },
   {
     id: 4,
@@ -43,6 +52,9 @@ export const DEVICE_DEFINITIONS: readonly DeviceDefinition[] = [
     uniqueId: 'sar_charlie_004',
     category: 'person',
     startOffsetMs: 22 * 60 * 1000,
+    groupId: 102,
+    groupChangeAtMs: 30 * 60 * 1000,
+    groupIdAfterChange: 101,
   },
   {
     id: 5,
@@ -50,6 +62,7 @@ export const DEVICE_DEFINITIONS: readonly DeviceDefinition[] = [
     uniqueId: 'sar_delta_005',
     category: 'person',
     startOffsetMs: 0,
+    groupId: 101,
     // 40 route points at 30s intervals → last point at index 39 × 30_000 = 1_170_000ms.
     // goUnknownAfterMs must match so computeDeviceStatus triggers correctly.
     goUnknownAfterMs: 39 * 30_000,
@@ -60,6 +73,7 @@ export const DEVICE_DEFINITIONS: readonly DeviceDefinition[] = [
     uniqueId: 'sar_echo_006',
     category: 'person',
     startOffsetMs: 0,
+    groupId: 102,
     forceOffline: true,
   },
   {
@@ -68,6 +82,7 @@ export const DEVICE_DEFINITIONS: readonly DeviceDefinition[] = [
     uniqueId: 'sar_medic_007',
     category: 'person',
     startOffsetMs: 35 * 60 * 1000,
+    groupId: 102,
   },
   {
     id: 8,
@@ -75,6 +90,7 @@ export const DEVICE_DEFINITIONS: readonly DeviceDefinition[] = [
     uniqueId: 'sar_hillparty_008',
     category: 'person',
     startOffsetMs: 12 * 60 * 1000,
+    groupId: 102,
   },
 ]
 

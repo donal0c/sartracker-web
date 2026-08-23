@@ -144,6 +144,10 @@ function normalizeCachedDevice(entry: Record<string, unknown>): NormalizedTracki
         entry.category,
         'Cached tracking device category',
       ),
+      group_id: readOptionalString(
+        entry.group_id,
+        'Cached tracking device group id',
+      ),
     }
   }
 

@@ -186,6 +186,26 @@ describe('traccar client', () => {
     expect(positions[0].battery).toBe(85)
   })
 
+  it('loads and normalizes the Traccar group roster [DON-271]', async () => {
+    const fetchFn: TraccarFetch = vi.fn(async (url) => {
+      expect(new URL(url).pathname).toBe('/api/groups')
+      return createJsonResponse([
+        { id: 12, name: 'Kerry MRT', groupId: 4 },
+        { id: 'broken', name: 'Malformed' },
+      ])
+    })
+    const logger = { warn: vi.fn() }
+    const client = createTraccarClient({ baseUrl: 'http://test:8082', logger }, fetchFn)
+
+    await expect(client.getGroups()).resolves.toEqual([
+      { group_id: '12', name: 'Kerry MRT', parent_group_id: '4' },
+    ])
+    expect(logger.warn).toHaveBeenCalledWith(
+      'Dropped malformed Traccar group row.',
+      expect.objectContaining({ endpoint: '/api/groups', rowIndex: 1 }),
+    )
+  })
+
   it('preserves valid devices while warning about malformed device rows [DON-206]', async () => {
     const logger = { warn: vi.fn() }
     const fetchFn: TraccarFetch = vi.fn(async () =>

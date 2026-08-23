@@ -11,6 +11,14 @@ export type NormalizedTrackingDevice = {
   readonly last_seen: string | null
   readonly unique_id: string | null
   readonly category: string | null
+  /** Current Traccar group membership observed with this roster snapshot. */
+  readonly group_id?: string | null
+}
+
+export type NormalizedTraccarGroup = {
+  readonly group_id: string
+  readonly name: string
+  readonly parent_group_id: string | null
 }
 
 export type NormalizedTrackingPosition = {

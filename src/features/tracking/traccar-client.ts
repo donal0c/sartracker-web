@@ -1,10 +1,12 @@
 import {
   normalizeTraccarDevice,
+  normalizeTraccarGroup,
   normalizeTraccarPosition,
 } from './traccar-normalization'
 import type {
   NormalizedTrackingDevice,
   NormalizedTrackingPosition,
+  NormalizedTraccarGroup,
 } from './tracking-types'
 import {
   classifyTrackingFailure,
@@ -24,6 +26,7 @@ export type TraccarFetch = (url: string, init?: RequestInit) => Promise<Response
 
 type RawDeviceInput = Parameters<typeof normalizeTraccarDevice>[0]
 type RawPositionInput = Parameters<typeof normalizeTraccarPosition>[0]
+type RawGroupInput = Parameters<typeof normalizeTraccarGroup>[0]
 
 type TraccarClientConfig = {
   readonly baseUrl: string
@@ -45,6 +48,7 @@ export type CurrentPositionNormalizationResult = {
 type TraccarClient = {
   readonly authenticate: () => Promise<void>
   readonly getDevices: () => Promise<readonly NormalizedTrackingDevice[]>
+  readonly getGroups: () => Promise<readonly NormalizedTraccarGroup[]>
   readonly getCurrentPositions: () => Promise<readonly NormalizedTrackingPosition[]>
   readonly getCurrentPositionsWithReport: () => Promise<CurrentPositionNormalizationResult>
   readonly getBreadcrumbs: (
@@ -301,6 +305,21 @@ export function createTraccarClient(
         normalize: (device) => normalizeTraccarDevice(device as RawDeviceInput),
       }).accepted
     },
+    getGroups: async () => {
+      const data = await fetchJson('/api/groups')
+      if (!Array.isArray(data)) {
+        throw new Error('Expected an array from /api/groups.')
+      }
+
+      return normalizeTraccarRows({
+        endpoint: '/api/groups',
+        rows: data,
+        emptyMessage: 'No valid Traccar group rows were returned from /api/groups.',
+        warningMessage: 'Dropped malformed Traccar group row.',
+        logger,
+        normalize: (group) => normalizeTraccarGroup(group as RawGroupInput),
+      }).accepted
+    },
     getCurrentPositions: async () => {
       const result = await getCurrentPositionsWithReport()
       if (result.accepted.length === 0 && result.rejected.length > 0) {
@@ -340,6 +359,9 @@ function classifyRequestPhase(
     return 'authentication'
   }
   if (path === '/api/devices') {
+    return 'devices'
+  }
+  if (path === '/api/groups') {
     return 'devices'
   }
   if (path === '/api/positions' && params !== undefined && 'deviceId' in params) {

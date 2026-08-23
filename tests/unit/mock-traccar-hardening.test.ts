@@ -15,6 +15,7 @@ import { createPositionStore } from '../../tools/mock-traccar/src/position-store
 import {
   generateAllRoutes,
   DEVICE_DEFINITIONS,
+  GROUP_DEFINITIONS,
 } from '../../tools/mock-traccar/src/route-generator.js'
 import { getDeviceRoster } from '../../tools/mock-traccar/src/device-roster.js'
 import type { SeedPoint } from '../../tools/mock-traccar/src/types.js'
@@ -74,6 +75,7 @@ describe('Fix #1: /health endpoint requires no auth', () => {
     engine,
     positionStore,
     deviceDefinitions: DEVICE_DEFINITIONS,
+    groups: GROUP_DEFINITIONS,
     routes,
   })
 
@@ -115,6 +117,16 @@ describe('Fix #1: /health endpoint requires no auth', () => {
       headers: { Authorization: `Basic ${creds}` },
     })
     expect(res.status).toBe(200)
+  })
+
+  it('returns the authenticated group roster from /api/groups [DON-271]', async () => {
+    await ready
+    const creds = Buffer.from('admin@mock.local:mock').toString('base64')
+    const res = await fetch(`${baseUrl}/api/groups`, {
+      headers: { Authorization: `Basic ${creds}` },
+    })
+    expect(res.status).toBe(200)
+    await expect(res.json()).resolves.toEqual(GROUP_DEFINITIONS)
   })
 })
 
@@ -195,6 +207,19 @@ describe('Fix #2: offline devices excluded from /api/positions', () => {
     const echo = devices.find((d) => d.id === 6)
     expect(echo).toBeDefined()
     expect(echo!.status).toBe('offline')
+  })
+})
+
+describe('BCP-04 group membership scenarios [DON-271]', () => {
+  const seed = createMinimalSeed()
+  const routes = generateAllRoutes(seed)
+
+  it('changes a device group only after the configured observation boundary', () => {
+    const before = getDeviceRoster(DEVICE_DEFINITIONS, routes, createFrozenEngine(29 * 60_000))
+    const after = getDeviceRoster(DEVICE_DEFINITIONS, routes, createFrozenEngine(31 * 60_000))
+
+    expect(before.find((device) => device.id === 4)?.groupId).toBe(102)
+    expect(after.find((device) => device.id === 4)?.groupId).toBe(101)
   })
 })
 

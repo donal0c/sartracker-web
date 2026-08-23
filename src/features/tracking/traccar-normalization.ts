@@ -1,5 +1,6 @@
 import type {
   NormalizedTrackingDevice,
+  NormalizedTraccarGroup,
   NormalizedTrackingPosition,
   TrackingDataOrigin,
   TrackingDeviceStatus,
@@ -14,6 +15,13 @@ type RawTraccarDevice = {
   readonly lastUpdate?: unknown
   readonly uniqueId?: unknown
   readonly category?: unknown
+  readonly groupId?: unknown
+}
+
+type RawTraccarGroup = {
+  readonly id?: unknown
+  readonly name?: unknown
+  readonly groupId?: unknown
 }
 
 type RawTraccarPosition = {
@@ -46,7 +54,23 @@ export function normalizeTraccarDevice(raw: RawTraccarDevice): NormalizedTrackin
     last_seen: lastSeen,
     unique_id: asOptionalString(raw.uniqueId),
     category: asOptionalString(raw.category),
+    group_id: normalizeOptionalGroupId(raw.groupId),
   }
+}
+
+/** Normalizes a Traccar group without discarding its parent relationship. */
+export function normalizeTraccarGroup(raw: RawTraccarGroup): NormalizedTraccarGroup {
+  const groupId = String(asPositiveInteger(raw.id, 'Traccar group id'))
+  return {
+    group_id: groupId,
+    name: asOptionalString(raw.name)?.trim() || `Group ${groupId}`,
+    parent_group_id: normalizeOptionalGroupId(raw.groupId),
+  }
+}
+
+function normalizeOptionalGroupId(value: unknown): string | null {
+  if (value == null || value === '' || value === 0 || value === '0') return null
+  return String(asPositiveInteger(value, 'Traccar group id'))
 }
 
 /**

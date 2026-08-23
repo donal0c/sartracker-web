@@ -5,17 +5,37 @@ import devicesFixture from '../fixtures/traccar-devices.json'
 import positionsFixture from '../fixtures/traccar-positions.json'
 import {
   normalizeTraccarDevice,
+  normalizeTraccarGroup,
   normalizeTraccarPosition,
 } from '../../src/features/tracking/traccar-normalization'
 
 describe('traccar normalization', () => {
   it('normalizes a device payload into the internal shape', () => {
-    const device = normalizeTraccarDevice(devicesFixture[0])
+    const device = normalizeTraccarDevice({ ...devicesFixture[0], groupId: 12 })
 
     expect(device.device_id).toBe('1')
     expect(device.name).toBe('Donal Phone')
     expect(device.status).toBe('online')
     expect(device.last_seen).toBe('2026-04-06T10:30:00.000Z')
+    expect(device.group_id).toBe('12')
+  })
+
+  it('normalizes groups while retaining their parent hierarchy [DON-271]', () => {
+    expect(normalizeTraccarGroup({ id: 12, name: 'Kerry MRT', groupId: 4 })).toEqual({
+      group_id: '12',
+      name: 'Kerry MRT',
+      parent_group_id: '4',
+    })
+    expect(normalizeTraccarGroup({ id: 4, name: 'Mountain Rescue', groupId: 0 })).toEqual({
+      group_id: '4',
+      name: 'Mountain Rescue',
+      parent_group_id: null,
+    })
+  })
+
+  it('rejects malformed group identities and keeps missing device groups explicit', () => {
+    expect(() => normalizeTraccarGroup({ id: 0, name: 'Bad' })).toThrow(/group id/i)
+    expect(normalizeTraccarDevice(devicesFixture[0]).group_id).toBeNull()
   })
 
   it('normalizes a position payload into the internal shape', () => {
