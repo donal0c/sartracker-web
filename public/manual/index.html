@@ -888,10 +888,12 @@
           </div>
           <div class="note">
             <strong>Finalization waits for evidence already observed:</strong> SAR Tracker flushes
-            renderer-held rejection evidence before archive-and-lock begins, then fences later outbox
-            delivery behind that completeness operation. A finalized mission remains read-only. If new
-            unique evidence arrives after the fence, it is retained outside the immutable mission ledger,
-            shown as critical late-evidence health, and is not silently inserted into the finalized record.
+            renderer-held rejection evidence before archive-and-lock begins, then seals new renderer
+            observations until that completeness operation finishes. A finalized mission remains read-only.
+            Any delivery already staged outside the renderer that reaches a finalized mission is retained
+            outside the immutable mission ledger, shown as critical late-evidence health, and is not silently
+            inserted into the finalized record. A new renderer observation after the seal is shown to the
+            operator but rejected from the finalized mission instead of being accepted after completeness.
             Rejections seen before any mission starts remain visible as current provider-data warnings,
             but do not falsely claim that a non-existent mission archive is blocked.
           </div>
