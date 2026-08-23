@@ -896,7 +896,15 @@ async function startSyntheticMission(launch, missionOffsetHours, expectedDeviceC
     const deviceCheckboxes = launch.page
       .getByTestId('participant-device-picker')
       .locator('input[type="checkbox"]')
-    await deviceCheckboxes.first().waitFor({ timeout: 30_000 })
+    await deviceCheckboxes.first().waitFor({ timeout: 30_000 }).catch(async () => {
+      const participantText = ((await participantSelection.textContent()) ?? '')
+        .replace(/\s+/gu, ' ')
+        .trim()
+        .slice(0, 1_000)
+      throw new Error(
+        `Mission-model participant roster did not become selectable. Surface: ${participantText}`,
+      )
+    })
     const availableDeviceCount = await deviceCheckboxes.count()
     if (availableDeviceCount !== expectedDeviceCount) {
       throw new Error(

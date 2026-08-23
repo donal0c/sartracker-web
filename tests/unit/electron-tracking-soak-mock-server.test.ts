@@ -5,6 +5,7 @@ import path from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 
 import { startTrackingSoakMockServer } from '../../build/electron-tracking-soak-mock-server.js'
+import { createTraccarClient } from '../../src/features/tracking/traccar-client'
 
 const temporaryDirectories: string[] = []
 
@@ -71,7 +72,6 @@ describe('deterministic tracking soak mock server [DON-246]', () => {
         baseTime: '2026-02-01T00:00:00.000Z',
         intervalMs: 5_000,
       })
-
       const durable = JSON.parse(await readFile(path.join(directory, 'state.json'), 'utf8'))
       expect(durable).toMatchObject({
         completedBatches: 1,
@@ -79,6 +79,18 @@ describe('deterministic tracking soak mock server [DON-246]', () => {
         baseTime: '2026-02-01T00:00:00.000Z',
         intervalMs: 5_000,
       })
+
+      const client = createTraccarClient({
+        baseUrl: server.baseUrl,
+        email: 'synthetic',
+        password: 'synthetic',
+        maxRetries: 0,
+      })
+      await client.authenticate()
+      await expect(client.getGroups()).resolves.toEqual([
+        { group_id: '101', name: 'Synthetic Mission Team', parent_group_id: null },
+      ])
+      await expect(client.getDevices()).resolves.toHaveLength(32)
     } finally {
       await server.close()
     }

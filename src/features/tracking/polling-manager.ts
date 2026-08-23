@@ -111,6 +111,8 @@ type PollingManagerOptions = {
 export type TrackingSnapshotContext = {
   readonly historyResetKey: string | null
   readonly suppressTrackingCache?: boolean
+  /** False only for an application-generated empty idle snapshot, never a Traccar roster response. */
+  readonly participantRosterAuthoritative?: boolean
 }
 
 export type BreadcrumbHistoryCheckpointSeed = {
@@ -667,6 +669,7 @@ export function createPollingManager(
         } else if (pollingMode === 'idle') {
           options.onSnapshot(EMPTY_TRACKING_SNAPSHOT, {
             historyResetKey: pollHistoryResetKey,
+            participantRosterAuthoritative: false,
           })
         }
 
@@ -1070,6 +1073,7 @@ export function createPollingManager(
     } else if (pollingMode === 'idle') {
       options.onSnapshot(EMPTY_TRACKING_SNAPSHOT, {
         historyResetKey: activeHistoryResetKey,
+        participantRosterAuthoritative: false,
       })
     }
 

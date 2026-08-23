@@ -2487,7 +2487,7 @@ describe('polling manager', () => {
         breadcrumbs: [],
         rawBreadcrumbsForPersistence: [],
       },
-      { historyResetKey: null },
+      { historyResetKey: null, participantRosterAuthoritative: false },
     )
     expect(onStatusChange).toHaveBeenCalledWith(
       expect.objectContaining({

@@ -663,7 +663,9 @@ export async function startTrackingRuntime(
       }
     },
     onSnapshot: async (snapshot, context) => {
-      await dependencies.applyParticipantRoster?.(snapshot.devices)
+      if (context?.participantRosterAuthoritative !== false) {
+        await dependencies.applyParticipantRoster?.(snapshot.devices)
+      }
       const operationalSnapshot = dependencies.missionModelEnabled === true
         ? dependencies.readParticipationScope?.().filterSnapshot(snapshot) ?? {
             ...snapshot,

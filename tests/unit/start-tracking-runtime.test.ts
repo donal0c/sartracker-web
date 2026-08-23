@@ -121,6 +121,14 @@ describe('startTrackingRuntime', () => {
   it('preloads the GET-only participant roster, groups, and current positions before mission start [DON-271]', async () => {
     const applyParticipantRoster = vi.fn()
     const applyParticipantGroups = vi.fn()
+    let pollerHooks:
+      | {
+          onSnapshot: (
+            snapshot: TrackingSnapshot,
+            context?: { readonly participantRosterAuthoritative?: boolean },
+          ) => Promise<void>
+        }
+      | undefined
     const client = {
       authenticate: vi.fn().mockResolvedValue(undefined),
       getDevices: vi.fn().mockResolvedValue(SNAPSHOT.devices),
@@ -133,7 +141,10 @@ describe('startTrackingRuntime', () => {
     await startTrackingRuntime({
       config: { baseUrl: 'http://test:8082' },
       createClient: vi.fn().mockReturnValue(client),
-      createPoller: vi.fn().mockReturnValue({ start: vi.fn(), stop: vi.fn() }),
+      createPoller: vi.fn().mockImplementation((_client, hooks) => {
+        pollerHooks = hooks
+        return { start: vi.fn(), stop: vi.fn() }
+      }),
       cache: { read: vi.fn().mockResolvedValue(null), write: vi.fn() },
       missionStore: createMissionStoreStub(),
       applySnapshot: vi.fn(),
@@ -149,6 +160,12 @@ describe('startTrackingRuntime', () => {
     expect(applyParticipantGroups).toHaveBeenCalledWith([
       { group_id: '101', name: 'Hill Team', parent_group_id: null },
     ])
+
+    await pollerHooks?.onSnapshot(
+      { devices: [], positions: [], breadcrumbs: [], rawBreadcrumbsForPersistence: [] },
+      { participantRosterAuthoritative: false },
+    )
+    expect(applyParticipantRoster).toHaveBeenCalledTimes(1)
   })
 
   it('wakes tracking immediately when a mission becomes active and unsubscribes on stop', async () => {
