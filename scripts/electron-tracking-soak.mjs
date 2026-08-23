@@ -911,9 +911,13 @@ async function startSyntheticMission(launch, missionOffsetHours, expectedDeviceC
         `Mission-model soak expected ${expectedDeviceCount} selectable devices; observed ${availableDeviceCount}.`,
       )
     }
-    await deviceCheckboxes.evaluateAll((checkboxes) => {
-      for (const checkbox of checkboxes) checkbox.click()
-    })
+    for (let index = 0; index < availableDeviceCount; index += 1) {
+      await performLaunchOwnedHarnessClick(
+        launch,
+        'participant-device-picker',
+        () => deviceCheckboxes.nth(index).click({ force: true }),
+      )
+    }
     await launch.page
       .getByTestId('participant-selected-count')
       .filter({ hasText: `${expectedDeviceCount} selected` })
@@ -926,10 +930,14 @@ async function startSyntheticMission(launch, missionOffsetHours, expectedDeviceC
   )
   await waitForActiveMission(launch.page, 30_000)
   if (missionModelEnabled) {
-    await launch.page
-      .getByTestId('participant-active-list')
-      .filter({ hasText: 'Synthetic Mission Team' })
-      .waitFor({ timeout: 30_000 })
+    await launch.page.waitForFunction(
+      (expectedCount) => {
+        const activeList = document.querySelector('[data-testid="participant-active-list"]')
+        return activeList?.children.length === expectedCount
+      },
+      expectedDeviceCount,
+      { timeout: 30_000 },
+    )
   }
   return {
     enabled: missionModelEnabled,

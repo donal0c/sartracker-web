@@ -378,6 +378,10 @@ describe('fourteen-day packaged exact-dot soak script [DON-260]', () => {
     ]) {
       expect(ownedClickSource).toContain('performLaunchOwnedHarnessClick(')
     }
+    expect(startMission).not.toContain('evaluateAll(')
+    expect(startMission).toContain("'participant-device-picker'")
+    expect(startMission).toContain('activeList?.children.length === expectedCount')
+    expect(startMission).not.toContain("hasText: 'Synthetic Mission Team'")
     expect(traversal.match(/performLaunchOwnedHarnessClick\(/gu)).toHaveLength(2)
     expect(traversal).toContain(
       '() => waitForExactSoakSourcePage({',
