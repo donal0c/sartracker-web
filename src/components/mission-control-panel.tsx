@@ -13,6 +13,7 @@ import {
   OpenOutingFinishOffer,
   OutingControlsSection,
 } from './outing-controls-section'
+import { ParticipantControlsSection } from './participant-controls-section'
 
 const MISSION_NAME_INPUT_ID = 'mission-name-input'
 const MISSION_OFFSET_INPUT_ID = 'mission-offset-input'
@@ -251,6 +252,7 @@ export function MissionControlPanel({
                 value={startOffsetHours}
               />
             </div>
+            <ParticipantControlsSection phase={phase} />
           </div>
         ) : focusModeActive ? (
           <div className="sar-readout border-l-4 border-l-emerald-400 px-3 py-3">
@@ -260,6 +262,8 @@ export function MissionControlPanel({
             </p>
           </div>
         ) : null}
+
+        {phase !== 'idle' ? <ParticipantControlsSection phase={phase} /> : null}
 
         {/* Status Messages */}
         <div className="empty:hidden">
