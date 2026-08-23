@@ -24,22 +24,25 @@ type LayerSpec = {
 function createMockMap() {
   const layers = new Map<string, LayerSpec>()
   const sources = new Map<string, unknown>()
+  const sourceHandles = new Map<string, {
+    readonly setData: ReturnType<typeof vi.fn>
+    readonly updateData: ReturnType<typeof vi.fn>
+  }>()
 
   return {
     layers,
     sources,
+    sourceHandles,
     getLayer: vi.fn((id: string) => (layers.has(id) ? { id } : undefined)),
     getSource: vi.fn((id: string) => {
-      if (sources.has(id)) {
-        return { setData: vi.fn() }
-      }
-      return undefined
+      return sourceHandles.get(id)
     }),
     addLayer: vi.fn((spec: LayerSpec) => {
       layers.set(spec.id, spec)
     }),
     addSource: vi.fn((id: string, config: unknown) => {
       sources.set(id, config)
+      sourceHandles.set(id, { setData: vi.fn(), updateData: vi.fn() })
     }),
     setFilter: vi.fn(),
     setPaintProperty: vi.fn((layerId: string, property: string, value: unknown) => {
@@ -152,6 +155,24 @@ function assertNoLegacyTypeSelector(filter: unknown): void {
   }
 }
 
+function trackingFix(deviceId: string, id: string, minute: number) {
+  return {
+    id,
+    device_id: deviceId,
+    lat: 52,
+    lon: -9.7,
+    altitude: null,
+    speed: null,
+    battery: null,
+    accuracy: 4,
+    timestamp: new Date(Date.parse('2026-08-23T08:00:00.000Z') + minute * 60_000).toISOString(),
+    source: 'osmand',
+    data_origin: 'live' as const,
+    cache_age_seconds: null,
+    device_cache_stale: false,
+  }
+}
+
 describe('tracking overlay marker configuration', () => {
   let map: ReturnType<typeof createMockMap>
 
@@ -255,6 +276,47 @@ describe('tracking overlay marker configuration', () => {
   })
 
   describe('breadcrumb trails', () => {
+    it('updates only the changed device trail instead of replacing the whole large source', async () => {
+      map = createMockMap()
+      const { syncTrackingOverlay } = await import(
+        '../../src/features/tracking/sync-tracking-overlay'
+      )
+      const first = {
+        devices: [
+          { device_id: 'alpha', name: 'Alpha', status: 'online' as const, last_seen: null, unique_id: null, category: null },
+          { device_id: 'bravo', name: 'Bravo', status: 'online' as const, last_seen: null, unique_id: null, category: null },
+        ],
+        positions: [],
+        breadcrumbs: [
+          trackingFix('alpha', 'a-1', 0),
+          trackingFix('alpha', 'a-2', 1),
+          trackingFix('bravo', 'b-1', 0),
+          trackingFix('bravo', 'b-2', 1),
+        ],
+      }
+      syncTrackingOverlay(map as never, first, [], [], true)
+      const source = map.sourceHandles.get('tracking')!
+
+      syncTrackingOverlay(
+        map as never,
+        { ...first, breadcrumbs: [...first.breadcrumbs, trackingFix('alpha', 'a-3', 2)] },
+        [],
+        [],
+        true,
+      )
+
+      expect(source.setData).not.toHaveBeenCalled()
+      expect(source.updateData).toHaveBeenCalledTimes(1)
+      const diff = source.updateData.mock.calls[0]?.[0] as {
+        readonly remove: readonly string[]
+        readonly add: readonly { readonly id?: string }[]
+      }
+      expect(diff.remove).toContain('breadcrumb-line:alpha:0')
+      expect(diff.remove).not.toContain('breadcrumb-line:bravo:0')
+      expect(diff.add.map((feature) => feature.id)).toContain('breadcrumb-line:alpha:0')
+      expect(diff.add.map((feature) => feature.id)).not.toContain('breadcrumb-line:bravo:0')
+    })
+
     it('draws only a narrow subdued casing below coloured breadcrumb trails', () => {
       const casing = getBreadcrumbCasingLayer(map)
       const trail = getBreadcrumbLayer(map)

@@ -48,6 +48,7 @@ describe('runtime-managed-services', () => {
   })
 
   it('creates the tracking cache only when cache support is enabled', async () => {
+    const startTrackingRuntime = vi.fn().mockResolvedValue(vi.fn())
     const createTrackingCache = vi.fn().mockReturnValue({
       read: vi.fn().mockResolvedValue(null),
       write: vi.fn().mockResolvedValue('/tmp/tracking-cache.json'),
@@ -63,7 +64,7 @@ describe('runtime-managed-services', () => {
         stop: vi.fn(),
         requestSync: vi.fn().mockResolvedValue(undefined),
       }),
-      startTrackingRuntime: vi.fn().mockResolvedValue(vi.fn()),
+      startTrackingRuntime,
       createClient: vi.fn().mockReturnValue({}),
       createPoller: vi.fn(),
       createTrackingCache,
@@ -73,6 +74,9 @@ describe('runtime-managed-services', () => {
     })
 
     expect(createTrackingCache).not.toHaveBeenCalled()
+    expect(startTrackingRuntime).toHaveBeenCalledWith(
+      expect.objectContaining({ writeCache: false }),
+    )
   })
 
   it('does not fall back to environment tracking config when bootstrap disables tracking', async () => {

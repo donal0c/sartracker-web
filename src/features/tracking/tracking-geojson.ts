@@ -126,6 +126,7 @@ export function createDeviceFeatureCollection(
 
   const features: GeoJsonPointFeature[] = snapshot.positions.map((position) => ({
     type: 'Feature',
+    id: `device:${position.device_id}`,
     geometry: {
       type: 'Point',
       coordinates: [position.lon, position.lat],
@@ -183,13 +184,14 @@ export function createBreadcrumbFeatureCollection(
 
   for (const [deviceId, breadcrumbs] of breadcrumbsByDevice.entries()) {
     const segments = createBreadcrumbSegments(breadcrumbs, gapThresholdMs)
-    for (const segment of segments) {
+    for (const [segmentIndex, segment] of segments.entries()) {
       if (segment.length < 2) {
         continue
       }
 
       features.push({
         type: 'Feature',
+        id: `breadcrumb-line:${deviceId}:${segmentIndex}`,
         geometry: {
           type: 'LineString',
           coordinates: segment.map((position) => [position.lon, position.lat] as const),
@@ -364,7 +366,8 @@ function createPointFeatureCacheKey(
   return `dots:${style.breadcrumbSize ?? 8}:${createDeviceColorsKey(style.deviceColors)}`
 }
 
-function createTrackingStyleFeatureKey(style: TrackingStylePreferences): string {
+/** Returns a deterministic key for style fields embedded in tracking features. */
+export function createTrackingStyleFeatureKey(style: TrackingStylePreferences): string {
   return [
     style.breadcrumbTrailMode,
     style.breadcrumbSize,

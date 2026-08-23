@@ -105,6 +105,41 @@ describe('breadcrumb accumulator', () => {
     expect(overlapOnly.metadata.totalObserved).toBe(positions.length)
   })
 
+  it('publishes one-device appends within the 200 ms renderer gate at the live history limit [DON-269]', () => {
+    const baseTimeMs = Date.parse('2026-08-23T00:00:00.000Z')
+    const history = Array.from({ length: 100 }, (_, deviceIndex) =>
+      Array.from({ length: 5_000 }, (_, fixIndex): NormalizedTrackingPosition => ({
+        id: `${deviceIndex + 1}-${fixIndex}`,
+        device_id: String(deviceIndex + 1),
+        lat: 52 + deviceIndex * 0.0001,
+        lon: -9 - deviceIndex * 0.0001,
+        altitude: null,
+        speed: null,
+        battery: null,
+        accuracy: 5,
+        timestamp: new Date(baseTimeMs + fixIndex * 60_000).toISOString(),
+        source: 'traccar',
+        data_origin: 'live',
+        cache_age_seconds: null,
+        device_cache_stale: false,
+      })),
+    ).flat()
+    const accumulator = createBreadcrumbAccumulator(history)
+    accumulator.snapshot()
+
+    const startedAt = performance.now()
+    const result = accumulator.append([{
+      ...history[4_999]!,
+      id: '1-5000',
+      timestamp: new Date(baseTimeMs + 5_000 * 60_000).toISOString(),
+    }])
+    const durationMs = performance.now() - startedAt
+
+    expect(result.positions.length).toBeLessThanOrEqual(500_000)
+    expect(result.metadata.totalObserved).toBe(500_001)
+    expect(durationMs).toBeLessThan(100)
+  })
+
   it('does not let a noisy device evict another device from the live breadcrumb budget [DON-159]', () => {
     const noisyDeviceBreadcrumbs = Array.from({ length: 25_000 }, (_, index) =>
       normalizeTraccarPosition(

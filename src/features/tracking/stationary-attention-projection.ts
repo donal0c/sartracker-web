@@ -14,6 +14,7 @@ type StationaryAttentionEvaluator = (
 type AcceptedFixHistory = {
   readonly fixes: readonly NormalizedTrackingPosition[]
   readonly identityKeys: ReadonlySet<string>
+  readonly fixesByIdentity: ReadonlyMap<string, NormalizedTrackingPosition>
 }
 
 type CachedDeviceEvaluation = {
@@ -35,6 +36,7 @@ export type StationaryAttentionProjector = {
 const EMPTY_HISTORY: AcceptedFixHistory = {
   fixes: [],
   identityKeys: new Set(),
+  fixesByIdentity: new Map(),
 }
 
 /**
@@ -99,17 +101,71 @@ export function createStationaryAttentionProjector(
     breadcrumbs: TrackingSnapshot['breadcrumbs'],
   ): ReadonlyMap<string, AcceptedFixHistory> {
     if (cachedBreadcrumbs === breadcrumbs) return cachedHistoryByDevice
-    const grouped = new Map<string, Map<string, NormalizedTrackingPosition>>()
-    for (const fix of breadcrumbs) {
-      const fixes = grouped.get(fix.device_id) ?? new Map()
-      fixes.set(createTrackingPositionIdentityKey(fix), fix)
-      grouped.set(fix.device_id, fixes)
+    if (cachedBreadcrumbs === null) {
+      cachedBreadcrumbs = breadcrumbs
+      cachedHistoryByDevice = buildHistories(breadcrumbs)
+      return cachedHistoryByDevice
+    }
+
+    const previous = cachedBreadcrumbs
+    let sharedPrefixLength = 0
+    const shortestLength = Math.min(previous.length, breadcrumbs.length)
+    while (
+      sharedPrefixLength < shortestLength &&
+      previous[sharedPrefixLength] === breadcrumbs[sharedPrefixLength]
+    ) {
+      sharedPrefixLength += 1
+    }
+    let sharedSuffixLength = 0
+    while (
+      sharedSuffixLength < shortestLength - sharedPrefixLength &&
+      previous[previous.length - 1 - sharedSuffixLength] ===
+        breadcrumbs[breadcrumbs.length - 1 - sharedSuffixLength]
+    ) {
+      sharedSuffixLength += 1
+    }
+
+    const removed = previous.slice(
+      sharedPrefixLength,
+      previous.length - sharedSuffixLength,
+    )
+    const added = breadcrumbs.slice(
+      sharedPrefixLength,
+      breadcrumbs.length - sharedSuffixLength,
+    )
+    const changedDeviceIds = new Set([
+      ...removed.map((fix) => fix.device_id),
+      ...added.map((fix) => fix.device_id),
+    ])
+    const nextHistoryByDevice = new Map(cachedHistoryByDevice)
+    for (const deviceId of changedDeviceIds) {
+      const fixes = new Map(
+        cachedHistoryByDevice.get(deviceId)?.fixesByIdentity ?? [],
+      )
+      for (const fix of removed) {
+        if (fix.device_id === deviceId) {
+          fixes.delete(createTrackingPositionIdentityKey(fix))
+        }
+      }
+      for (const fix of added) {
+        if (fix.device_id === deviceId) {
+          fixes.set(createTrackingPositionIdentityKey(fix), fix)
+        }
+      }
+      if (fixes.size === 0) {
+        nextHistoryByDevice.delete(deviceId)
+        continue
+      }
+      const previousHistory = cachedHistoryByDevice.get(deviceId)
+      nextHistoryByDevice.set(
+        deviceId,
+        previousHistory !== undefined && hasSameIdentitySet(previousHistory, fixes)
+          ? previousHistory
+          : createAcceptedFixHistory(fixes),
+      )
     }
     cachedBreadcrumbs = breadcrumbs
-    cachedHistoryByDevice = new Map([...grouped].map(([deviceId, fixes]) => [
-      deviceId,
-      { fixes: [...fixes.values()], identityKeys: new Set(fixes.keys()) },
-    ]))
+    cachedHistoryByDevice = nextHistoryByDevice
     return cachedHistoryByDevice
   }
 
@@ -121,6 +177,57 @@ export function createStationaryAttentionProjector(
   }
 
   return { project, reset }
+}
+
+/** Builds the initial immutable per-device histories. */
+function buildHistories(
+  breadcrumbs: TrackingSnapshot['breadcrumbs'],
+): Map<string, AcceptedFixHistory> {
+  const grouped = new Map<string, Map<string, NormalizedTrackingPosition>>()
+  for (const fix of breadcrumbs) {
+    const fixes = grouped.get(fix.device_id) ?? new Map()
+    fixes.set(createTrackingPositionIdentityKey(fix), fix)
+    grouped.set(fix.device_id, fixes)
+  }
+  return new Map([...grouped].map(([deviceId, fixes]) => [
+    deviceId,
+    createAcceptedFixHistory(fixes),
+  ]))
+}
+
+/** Creates one immutable history identity for evaluator caching. */
+function createAcceptedFixHistory(
+  fixes: ReadonlyMap<string, NormalizedTrackingPosition>,
+): AcceptedFixHistory {
+  return {
+    fixes: [...fixes.values()],
+    identityKeys: new Set(fixes.keys()),
+    fixesByIdentity: new Map(fixes),
+  }
+}
+
+/** Reuses a device history when a rebuilt snapshot contains the same accepted fixes. */
+function hasSameIdentitySet(
+  previous: AcceptedFixHistory,
+  fixes: ReadonlyMap<string, NormalizedTrackingPosition>,
+): boolean {
+  return previous.identityKeys.size === fixes.size &&
+    [...fixes].every(([identityKey, fix]) => {
+      const existing = previous.fixesByIdentity.get(identityKey)
+      return existing !== undefined && hasSameStationaryInputs(existing, fix)
+    })
+}
+
+/** Compares every accepted-fix value consumed by the stationary policy. */
+function hasSameStationaryInputs(
+  first: NormalizedTrackingPosition,
+  second: NormalizedTrackingPosition,
+): boolean {
+  return first.device_id === second.device_id &&
+    first.lat === second.lat &&
+    first.lon === second.lon &&
+    first.accuracy === second.accuracy &&
+    first.timestamp === second.timestamp
 }
 
 /** Groups the small current-position set without touching retained history. */
