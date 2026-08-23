@@ -879,7 +879,21 @@
             renderer intake itself is exhausted, SAR Tracker records a durable evidence-loss marker
             wherever local storage is writable and blocks completeness claims. If no local storage is
             writable, the critical in-process warning is the honest limit: do not claim the evidence
-            was saved, and preserve the live operational picture.
+            was saved, and preserve the live operational picture. Pending outbox storage is explicitly
+            bounded at 4,096 canonical envelopes and 64 MiB; those are engineering hypotheses, not
+            measured field limits. Crossing either boundary refuses new evidence, raises a durable
+            mission-scoped block wherever storage permits, and never silently deletes a distinct record.
+            A corrupt staged record is quarantined for repair and blocks only its affected mission; it is
+            not automatically deleted.
+          </div>
+          <div class="note">
+            <strong>Finalization waits for evidence already observed:</strong> SAR Tracker flushes
+            renderer-held rejection evidence before archive-and-lock begins, then fences later outbox
+            delivery behind that completeness operation. A finalized mission remains read-only. If new
+            unique evidence arrives after the fence, it is retained outside the immutable mission ledger,
+            shown as critical late-evidence health, and is not silently inserted into the finalized record.
+            Rejections seen before any mission starts remain visible as current provider-data warnings,
+            but do not falsely claim that a non-existent mission archive is blocked.
           </div>
           <figure class="screenshot">
             <img src="assets/tracking-degraded-evidence-conflict.png" alt="Tracking panel showing separate critical evidence-health and amber source-conflict warnings while current fixes remain live" />
