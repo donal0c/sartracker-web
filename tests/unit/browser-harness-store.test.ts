@@ -316,10 +316,16 @@ describe('browser harness store', () => {
     })
 
     await expect(store.listMissionParticipants(mission.id)).resolves.toHaveLength(2)
-    await expect(store.listGroupMembershipEvents(mission.id, teamId)).resolves.toHaveLength(2)
-    await expect(store.listParticipantBackfillCheckpoints(mission.id)).resolves.toEqual([
-      expect.objectContaining({ completed: 1 }),
+    await expect(store.listGroupMembershipEvents(mission.id, teamId)).resolves.toEqual([
+      expect.objectContaining({ traccar_device_id: '11', sequence: 1 }),
+      expect.objectContaining({ traccar_device_id: '12', sequence: 2 }),
     ])
+    await expect(store.listParticipantBackfillCheckpoints(mission.id)).resolves.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ traccar_device_id: '11' }),
+        expect.objectContaining({ traccar_device_id: '20', completed: 1 }),
+      ]),
+    )
   })
 
   it('mirrors the active participant uniqueness backstops [DON-271]', async () => {

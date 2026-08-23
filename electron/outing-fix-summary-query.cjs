@@ -4,24 +4,21 @@ const MAX_MISSION_ID_LENGTH = 200
 function readOutingFixSummary(database, input) {
   const { missionId } = normalizeOutingFixSummaryInput(input)
   const readSnapshot = database.transaction(() => {
-    const outings = database.prepare(`
-      SELECT o.id AS outing_id, COUNT(p.id) AS accepted_fix_count
-      FROM outings o
-      LEFT JOIN positions p
-        ON p.mission_id = o.mission_id
-       AND p.timestamp >= o.started_at
-       AND (o.ended_at IS NULL OR p.timestamp < o.ended_at)
-      WHERE o.mission_id = ?
-      GROUP BY o.id, o.started_at
-      ORDER BY o.started_at ASC, o.id ASC
-    `).all(missionId).map((row) => ({
-      outing_id: row.outing_id,
-      accepted_fix_count: normalizeCount(row.accepted_fix_count),
+    const outingRows = database.prepare(`SELECT id, started_at, ended_at
+      FROM outings WHERE mission_id = ? ORDER BY started_at ASC, id ASC`).all(missionId)
+    const acceptedFixCounts = outingRows.map(() => 0)
+    let totalAcceptedFixCount = 0
+    for (const position of database.prepare(
+      'SELECT timestamp FROM positions WHERE mission_id = ?',
+    ).iterate(missionId)) {
+      totalAcceptedFixCount += 1
+      const outingIndex = findContainingOutingIndex(outingRows, position.timestamp)
+      if (outingIndex !== -1) acceptedFixCounts[outingIndex] += 1
+    }
+    const outings = outingRows.map((outing, index) => ({
+      outing_id: outing.id,
+      accepted_fix_count: normalizeCount(acceptedFixCounts[index]),
     }))
-    const totalAcceptedFixCount = normalizeCount(
-      database.prepare('SELECT COUNT(*) AS count FROM positions WHERE mission_id = ?')
-        .get(missionId)?.count,
-    )
     const assignedCount = outings.reduce(
       (total, outing) => total + outing.accepted_fix_count,
       0,
@@ -36,6 +33,25 @@ function readOutingFixSummary(database, input) {
     }
   })
   return readSnapshot()
+}
+
+/** Finds one half-open non-overlapping outing window in logarithmic time. */
+function findContainingOutingIndex(outings, timestamp) {
+  let low = 0
+  let high = outings.length - 1
+  let candidate = -1
+  while (low <= high) {
+    const middle = Math.floor((low + high) / 2)
+    if (outings[middle].started_at <= timestamp) {
+      candidate = middle
+      low = middle + 1
+    } else {
+      high = middle - 1
+    }
+  }
+  if (candidate === -1) return -1
+  const endedAt = outings[candidate].ended_at
+  return endedAt === null || timestamp < endedAt ? candidate : -1
 }
 
 /** Validates the bounded worker query before SQLite opens. */

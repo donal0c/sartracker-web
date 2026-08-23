@@ -234,6 +234,21 @@ describe('traccar client', () => {
     )
   })
 
+  it('marks a normalized roster incomplete when any Traccar device row is rejected [DON-271]', async () => {
+    const fetchFn: TraccarFetch = vi.fn(async () =>
+      createJsonResponse([
+        devicesFixture[0],
+        { ...devicesFixture[1], id: 'not-a-device-id' },
+      ]),
+    )
+    const client = createTraccarClient({ baseUrl: 'http://test:8082' }, fetchFn)
+
+    await expect(client.getDevicesWithReport()).resolves.toEqual({
+      accepted: [expect.objectContaining({ device_id: '1' })],
+      complete: false,
+    })
+  })
+
   it('preserves valid current positions while warning about malformed rows [DON-206]', async () => {
     const logger = { warn: vi.fn() }
     const fetchFn: TraccarFetch = vi.fn(async () =>

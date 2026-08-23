@@ -302,8 +302,8 @@ function insertBreadcrumbProgrammeFoundation(db, plan, scenario) {
      effective_from, added_at, added_by, removed_at, removed_by)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
   const insertMembership = db.prepare(`INSERT INTO mission_group_membership_events
-    (id, mission_id, mission_team_id, traccar_device_id, change, observed_at)
-    VALUES (?, ?, ?, ?, ?, ?)`)
+    (id, sequence, mission_id, mission_team_id, traccar_device_id, change, observed_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?)`)
   const insertOuting = db.prepare(`INSERT INTO outings
     (id, mission_id, label, started_at, ended_at, created_at, updated_at)
     VALUES (?, ?, ?, ?, ?, ?, ?)`)
@@ -349,26 +349,28 @@ function insertBreadcrumbProgrammeFoundation(db, plan, scenario) {
     const groupByDeviceIndex = groupAssignments(scenario.groupSizes)
     const teamIds = scenario.groupSizes.map((_size, index) => createDeterministicId('team', index))
     for (let groupIndex = 0; groupIndex < scenario.groupSizes.length; groupIndex += 1) {
-      insertTeam.run(
-        teamIds[groupIndex],
-        FIXTURE_MISSION_ID,
-        programmeGroupId(groupIndex),
-        `SYNTHETIC TEAM ${String(groupIndex + 1).padStart(2, '0')}`,
-        mainStart,
-      )
-      insertParticipant.run(
-        createDeterministicId('participant', groupIndex),
-        FIXTURE_MISSION_ID,
-        'group',
-        null,
-        teamIds[groupIndex],
-        'explicit',
-        mainStart,
-        mainStart,
-        'Synthetic coordinator',
-        null,
-        null,
-      )
+      if (groupIndex < scenario.groupSizes.length - 1) {
+        insertTeam.run(
+          teamIds[groupIndex],
+          FIXTURE_MISSION_ID,
+          programmeGroupId(groupIndex),
+          `SYNTHETIC TEAM ${String(groupIndex + 1).padStart(2, '0')}`,
+          mainStart,
+        )
+        insertParticipant.run(
+          createDeterministicId('participant', groupIndex),
+          FIXTURE_MISSION_ID,
+          'group',
+          null,
+          teamIds[groupIndex],
+          'explicit',
+          mainStart,
+          mainStart,
+          'Synthetic coordinator',
+          null,
+          null,
+        )
+      }
     }
     for (let deviceIndex = 0; deviceIndex < plan.deviceCount; deviceIndex += 1) {
       const deviceId = programmeDeviceId(deviceIndex)
@@ -383,14 +385,17 @@ function insertBreadcrumbProgrammeFoundation(db, plan, scenario) {
         programmeGroupId(groupIndex),
         `synthetic-imei-${String(deviceIndex + 1).padStart(6, '0')}`,
       )
-      insertMembership.run(
-        createDeterministicId('membership', deviceIndex),
-        FIXTURE_MISSION_ID,
-        teamIds[groupIndex],
-        deviceId,
-        'member',
-        mainStart,
-      )
+      if (groupIndex < scenario.groupSizes.length - 1) {
+        insertMembership.run(
+          createDeterministicId('membership', deviceIndex),
+          deviceIndex + 1,
+          FIXTURE_MISSION_ID,
+          teamIds[groupIndex],
+          deviceId,
+          'member',
+          mainStart,
+        )
+      }
     }
 
     const participantFixtures = [
@@ -441,6 +446,7 @@ function insertBreadcrumbProgrammeFoundation(db, plan, scenario) {
     const changeAt = isoDay(6)
     insertMembership.run(
       createDeterministicId('membership', 100),
+      95,
       FIXTURE_MISSION_ID,
       teamIds[0],
       movedDeviceId,
@@ -449,6 +455,7 @@ function insertBreadcrumbProgrammeFoundation(db, plan, scenario) {
     )
     insertMembership.run(
       createDeterministicId('membership', 101),
+      96,
       FIXTURE_MISSION_ID,
       teamIds[1],
       movedDeviceId,
@@ -510,8 +517,43 @@ function insertBreadcrumbProgrammeFoundation(db, plan, scenario) {
       null,
       null,
     )
+    assertBreadcrumbProgrammeSelectionInvariants(db, FIXTURE_MISSION_ID)
   })
   transaction()
+}
+
+/** Rejects fixture-only participant states unreachable through the real selection API. */
+export function assertBreadcrumbProgrammeSelectionInvariants(db, missionId) {
+  const overlap = db.prepare(`WITH ranked_membership AS (
+      SELECT mission_id, mission_team_id, traccar_device_id, change,
+        ROW_NUMBER() OVER (
+          PARTITION BY mission_id, mission_team_id, traccar_device_id
+          ORDER BY observed_at DESC, sequence DESC
+        ) AS rank
+      FROM mission_group_membership_events
+      WHERE mission_id = ?
+    )
+    SELECT direct.traccar_device_id
+    FROM mission_participants AS direct
+    INNER JOIN ranked_membership AS membership
+      ON membership.mission_id = direct.mission_id
+     AND membership.traccar_device_id = direct.traccar_device_id
+     AND membership.rank = 1
+     AND membership.change = 'member'
+    INNER JOIN mission_participants AS selected_group
+      ON selected_group.mission_id = membership.mission_id
+     AND selected_group.mission_team_id = membership.mission_team_id
+     AND selected_group.kind = 'group'
+     AND selected_group.removed_at IS NULL
+    WHERE direct.mission_id = ?
+      AND direct.kind = 'device'
+      AND direct.removed_at IS NULL
+    LIMIT 1`).get(missionId, missionId)
+  if (overlap !== undefined) {
+    throw new Error(
+      `Breadcrumb programme fixture has direct participant ${overlap.traccar_device_id} already covered by a selected group.`,
+    )
+  }
 }
 
 /** Returns one deterministic position row calibrated to the accepted field evidence. */

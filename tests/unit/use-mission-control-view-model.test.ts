@@ -130,6 +130,28 @@ describe('useMissionControlViewModel', () => {
     expect(selectInitialParticipants).toHaveBeenCalledWith('mission-1', 'Mission coordinator')
   })
 
+  it('keeps mission-start input visible when initial participant persistence fails', async () => {
+    const controller = createController()
+    const selectInitialParticipants = vi.fn().mockRejectedValue(
+      new Error('Participant selection could not be saved.'),
+    )
+    useMissionStore.setState({ controller, phase: 'idle' })
+    useParticipantStore.setState({
+      controller: { selectInitialParticipants } as never,
+    })
+    const { getModel } = renderHook()
+    act(() => {
+      getModel().setMissionName('Recoverable Selection Mission')
+      getModel().setStartOffsetHours('2')
+    })
+
+    await act(async () => getModel().startMission())
+
+    expect(getModel().startError).toMatch(/participant selection could not be saved/i)
+    expect(getModel().missionName).toBe('Recoverable Selection Mission')
+    expect(getModel().startOffsetHours).toBe('2')
+  })
+
   it('loads admin roster when unlock is opened and sends selected unlock details', async () => {
     const governanceController = {
       refreshGovernanceMission: vi.fn().mockResolvedValue(undefined),

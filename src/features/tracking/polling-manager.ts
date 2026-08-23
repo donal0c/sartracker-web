@@ -24,7 +24,10 @@ import {
   fetchRosterAndCurrentPositions,
 } from './current-position-poll'
 import type { CurrentPositionRejection } from './ingest-health'
-import type { CurrentPositionNormalizationResult } from './traccar-client'
+import type {
+  CurrentPositionNormalizationResult,
+  DeviceRosterNormalizationResult,
+} from './traccar-client'
 
 const EMPTY_TRACKING_SNAPSHOT: TrackingSnapshot = {
   devices: [],
@@ -40,6 +43,7 @@ const CURRENT_POSITION_ROSTER_GRACE_MS = 50
 export type TrackingPollerClient = {
   readonly authenticate: () => Promise<void>
   readonly getDevices: () => Promise<readonly NormalizedTrackingDevice[]>
+  readonly getDevicesWithReport?: () => Promise<DeviceRosterNormalizationResult>
   readonly getCurrentPositions: () => Promise<readonly NormalizedTrackingPosition[]>
   readonly getCurrentPositionsWithReport?: () => Promise<CurrentPositionNormalizationResult>
   readonly getBreadcrumbs: (
@@ -111,7 +115,7 @@ type PollingManagerOptions = {
 export type TrackingSnapshotContext = {
   readonly historyResetKey: string | null
   readonly suppressTrackingCache?: boolean
-  /** False only for an application-generated empty idle snapshot, never a Traccar roster response. */
+  /** False for idle, unavailable, or partially normalized roster observations. */
   readonly participantRosterAuthoritative?: boolean
 }
 
@@ -198,6 +202,7 @@ export function createPollingManager(
   let breadcrumbStatusWarning: string | null = null
   const latestBreadcrumbTimestampByDevice = new Map<string, string>()
   let latestDevices: readonly NormalizedTrackingDevice[] = []
+  let latestParticipantRosterAuthoritative = false
   let latestCurrentPositions: readonly NormalizedTrackingPosition[] = []
   const pendingHistoryRenderPositions: NormalizedTrackingPosition[] = []
   const pendingHistoryMissionPersistencePositions: NormalizedTrackingPosition[] = []
@@ -470,7 +475,12 @@ export function createPollingManager(
           now: now(),
           deviceStaleThresholdMs: options.staleThresholdMs,
         }),
-        { historyResetKey },
+        {
+          historyResetKey,
+          ...(latestParticipantRosterAuthoritative
+            ? {}
+            : { participantRosterAuthoritative: false }),
+        },
       )
       completedSuccessfully = true
     }).catch((error) => {
@@ -560,6 +570,9 @@ export function createPollingManager(
       {
         historyResetKey: activeHistoryResetKey,
         suppressTrackingCache: !writeTrackingCache,
+        ...(latestParticipantRosterAuthoritative
+          ? {}
+          : { participantRosterAuthoritative: false }),
       },
     )
   }
@@ -664,7 +677,12 @@ export function createPollingManager(
               now: now(),
               deviceStaleThresholdMs: options.staleThresholdMs,
             }),
-            { historyResetKey: pollHistoryResetKey },
+            {
+              historyResetKey: pollHistoryResetKey,
+              ...(latestParticipantRosterAuthoritative
+                ? {}
+                : { participantRosterAuthoritative: false }),
+            },
           )
         } else if (pollingMode === 'idle') {
           options.onSnapshot(EMPTY_TRACKING_SNAPSHOT, {
@@ -696,6 +714,14 @@ export function createPollingManager(
       const currentPositionResult = await fetchRosterAndCurrentPositions(
         {
           getDevices: () => withPollPhase('devices', client.getDevices()),
+          ...(client.getDevicesWithReport === undefined
+            ? {}
+            : {
+                getDevicesWithReport: () => withPollPhase(
+                  'devices',
+                  client.getDevicesWithReport!(),
+                ),
+              }),
           getCurrentPositions: async () => {
             const result = await withPollPhase(
               'current_positions',
@@ -736,7 +762,10 @@ export function createPollingManager(
                   now: now(),
                   deviceStaleThresholdMs: options.staleThresholdMs,
                 }),
-                { historyResetKey: pollHistoryResetKey },
+                {
+                  historyResetKey: pollHistoryResetKey,
+                  participantRosterAuthoritative: false,
+                },
               )
               rejectionEvidencePublishedEarly = publishCurrentPositionRejections(
                 result.rejected,
@@ -795,6 +824,7 @@ export function createPollingManager(
       lastSuccessAt = now().toISOString()
       latestDevices = devices
       latestCurrentPositions = positions
+      latestParticipantRosterAuthoritative = currentPositionResult.rosterComplete
 
       const currentSnapshot = {
         devices,
@@ -809,7 +839,12 @@ export function createPollingManager(
           now: now(),
           deviceStaleThresholdMs: options.staleThresholdMs,
         }),
-        { historyResetKey: pollHistoryResetKey },
+        {
+          historyResetKey: pollHistoryResetKey,
+          ...(currentPositionResult.rosterComplete
+            ? {}
+            : { participantRosterAuthoritative: false }),
+        },
       )
       if (!rejectionEvidencePublishedEarly) {
         publishCurrentPositionRejections(
@@ -859,7 +894,12 @@ export function createPollingManager(
             now: now(),
             deviceStaleThresholdMs: options.staleThresholdMs,
           }),
-          { historyResetKey: pollHistoryResetKey },
+          {
+            historyResetKey: pollHistoryResetKey,
+            ...(currentPositionResult.rosterComplete
+              ? {}
+              : { participantRosterAuthoritative: false }),
+          },
         )
       }
 
@@ -932,7 +972,12 @@ export function createPollingManager(
             now: now(),
             deviceStaleThresholdMs: options.staleThresholdMs,
           }),
-          { historyResetKey: pollHistoryResetKey },
+          {
+            historyResetKey: pollHistoryResetKey,
+            ...(currentPositionResult.rosterComplete
+              ? {}
+              : { participantRosterAuthoritative: false }),
+          },
         )
       }
       breadcrumbFetchCompleted = true
@@ -1006,7 +1051,12 @@ export function createPollingManager(
             now: now(),
             deviceStaleThresholdMs: options.staleThresholdMs,
           }),
-          { historyResetKey: pollHistoryResetKey },
+          {
+            historyResetKey: pollHistoryResetKey,
+            ...(latestParticipantRosterAuthoritative
+              ? {}
+              : { participantRosterAuthoritative: false }),
+          },
         )
       }
 
@@ -1068,7 +1118,12 @@ export function createPollingManager(
           now: now(),
           deviceStaleThresholdMs: options.staleThresholdMs,
         }),
-        { historyResetKey: activeHistoryResetKey },
+        {
+          historyResetKey: activeHistoryResetKey,
+          ...(latestParticipantRosterAuthoritative
+            ? {}
+            : { participantRosterAuthoritative: false }),
+        },
       )
     } else if (pollingMode === 'idle') {
       options.onSnapshot(EMPTY_TRACKING_SNAPSHOT, {

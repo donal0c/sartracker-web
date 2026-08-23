@@ -242,13 +242,7 @@ function createElectronMissionStore(options) {
         throw new Error('Outing fix-summary request ID is already active.')
       }
       const controller = new AbortController()
-      const previousWorker = outingFixSummaryWorkerTail
-      const query = previousWorker.then(() => outingFixSummaryRunner({
-        databasePath,
-        query: input,
-        signal: controller.signal,
-      }))
-      outingFixSummaryWorkerTail = query.then(() => undefined, () => undefined)
+      const query = enqueueOutingFixSummary({ query: input, signal: controller.signal })
       const activeQuery = { controller, completion: query }
       if (normalizedRequestId !== null) {
         outingFixSummaryControllersByRequestId.set(normalizedRequestId, activeQuery)
@@ -589,6 +583,35 @@ function createElectronMissionStore(options) {
       return operation
     })
   }
+
+  /**
+   * Caps outing summaries at one physical worker. Renderer cancellation may
+   * settle before worker termination, so the slot follows workerExited.
+   */
+  function enqueueOutingFixSummary(input) {
+    const previousWorker = outingFixSummaryWorkerTail
+    let releaseWorkerSlot = () => undefined
+    const workerSlot = new Promise((resolve) => {
+      releaseWorkerSlot = resolve
+    })
+    outingFixSummaryWorkerTail = previousWorker.then(() => workerSlot)
+    return previousWorker.then(() => {
+      let operation
+      try {
+        operation = outingFixSummaryRunner({
+          databasePath,
+          query: input.query,
+          signal: input.signal,
+        })
+      } catch (error) {
+        releaseWorkerSlot()
+        throw error
+      }
+      const workerExited = operation.workerExited ?? operation
+      void Promise.resolve(workerExited).then(releaseWorkerSlot, releaseWorkerSlot)
+      return operation
+    })
+  }
 }
 
 function migrate(db) {
@@ -684,6 +707,7 @@ function migrate(db) {
       WHERE kind = 'group' AND removed_at IS NULL;
     CREATE TABLE IF NOT EXISTS mission_group_membership_events (
       id TEXT PRIMARY KEY,
+      sequence INTEGER NOT NULL,
       mission_id TEXT NOT NULL,
       mission_team_id TEXT NOT NULL,
       traccar_device_id TEXT NOT NULL,
@@ -693,7 +717,7 @@ function migrate(db) {
       FOREIGN KEY (mission_team_id) REFERENCES mission_teams(id)
     );
     CREATE INDEX IF NOT EXISTS idx_group_membership_mission_team
-      ON mission_group_membership_events(mission_id, mission_team_id, observed_at);
+      ON mission_group_membership_events(mission_id, mission_team_id, observed_at, sequence);
     CREATE TABLE IF NOT EXISTS participant_backfill_checkpoints (
       mission_id TEXT NOT NULL,
       traccar_device_id TEXT NOT NULL,
@@ -727,8 +751,6 @@ function migrate(db) {
       FOREIGN KEY (mission_id, device_id) REFERENCES devices(mission_id, device_id)
     );
     CREATE INDEX IF NOT EXISTS idx_positions_mission_device_timestamp ON positions(mission_id, device_id, timestamp);
-    CREATE INDEX IF NOT EXISTS idx_positions_mission_timestamp
-      ON positions(mission_id, timestamp);
     CREATE TABLE IF NOT EXISTS tracking_history_checkpoints (
       mission_id TEXT NOT NULL,
       device_id TEXT NOT NULL,
@@ -903,6 +925,17 @@ function migrate(db) {
     ensureColumnExists(db, 'positions', 'source_kind', 'TEXT')
     ensureColumnExists(db, 'devices', 'group_id', 'TEXT')
     ensureColumnExists(db, 'devices', 'unique_id', 'TEXT')
+    // Candidate-v9 stores may contain the rejected global positions index.
+    // Dropping it is metadata-only and restores the bounded startup contract.
+    db.exec('DROP INDEX IF EXISTS idx_positions_mission_timestamp;')
+    ensureColumnExists(db, 'mission_group_membership_events', 'sequence', 'INTEGER')
+    db.exec(`
+      UPDATE mission_group_membership_events
+      SET sequence = rowid
+      WHERE sequence IS NULL;
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_group_membership_sequence
+      ON mission_group_membership_events(sequence);
+    `)
     ensureColumnExists(db, 'ingest_anomalies', 'first_seen_at', 'TEXT')
     ensureColumnExists(db, 'ingest_anomalies', 'last_seen_at', 'TEXT')
     ensureColumnExists(db, 'ingest_anomalies', 'occurrence_count', 'INTEGER NOT NULL DEFAULT 1')
@@ -1661,7 +1694,7 @@ async function unlockFinalizedMission(db, input, readAdminRoster) {
 function upsertDevice(db, input) {
   ensureWritableMission(db, input.mission_id)
   const id = randomUUID()
-  const timestamp = input.last_seen ?? now()
+  const timestamp = localMissionObservationTimestamp(db, input.mission_id)
   // Electron intentionally diverges from the legacy Rust reference: last_seen remains
   // current on every poll, while device_updated describes only an operator-visible change.
   const existing = db
@@ -1748,11 +1781,12 @@ function upsertDevicesBulk(db, input) {
       status = excluded.status, group_id = excluded.group_id, unique_id = excluded.unique_id`)
 
   let changedDeviceEventCount = 0
+  const observationTimestamp = localMissionObservationTimestamp(db, input.mission_id)
   const transaction = db.transaction(() => {
     for (const device of devices) {
       const existing = existsStmt.get(input.mission_id, device.device_id)
       const id = randomUUID()
-      const timestamp = device.last_seen ?? now()
+      const timestamp = observationTimestamp
       upsertStmt.run(
         id,
         input.mission_id,
@@ -1785,6 +1819,13 @@ function upsertDevicesBulk(db, input) {
     devices: devices.map((device) => getDevice(db, input.mission_id, device.device_id)),
     changedDeviceEventCount,
   }
+}
+
+/** Returns local observation time without allowing audit events before mission start. */
+function localMissionObservationTimestamp(db, missionId) {
+  const missionStart = getMission(db, missionId).start_time
+  const observedAt = now()
+  return observedAt < missionStart ? missionStart : observedAt
 }
 
 /** Returns whether persisted device fields other than the polling heartbeat changed. */

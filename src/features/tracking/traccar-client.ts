@@ -45,9 +45,16 @@ export type CurrentPositionNormalizationResult = {
   readonly rejected: readonly CurrentPositionRejection[]
 }
 
+export type DeviceRosterNormalizationResult = {
+  readonly accepted: readonly NormalizedTrackingDevice[]
+  /** False when any server row was rejected during normalization. */
+  readonly complete: boolean
+}
+
 type TraccarClient = {
   readonly authenticate: () => Promise<void>
   readonly getDevices: () => Promise<readonly NormalizedTrackingDevice[]>
+  readonly getDevicesWithReport: () => Promise<DeviceRosterNormalizationResult>
   readonly getGroups: () => Promise<readonly NormalizedTraccarGroup[]>
   readonly getCurrentPositions: () => Promise<readonly NormalizedTrackingPosition[]>
   readonly getCurrentPositionsWithReport: () => Promise<CurrentPositionNormalizationResult>
@@ -266,7 +273,7 @@ export function createTraccarClient(
       throw new Error('Expected an array from /api/positions.')
     }
 
-    return normalizeTraccarRows({
+    const result = normalizeTraccarRows({
       endpoint: '/api/positions',
       rows: data,
       emptyMessage: 'No valid Traccar position rows were returned from /api/positions.',
@@ -276,6 +283,23 @@ export function createTraccarClient(
       allowAllRejected: true,
       normalize: (position) => normalizeTraccarPosition(position as RawPositionInput, 'live'),
     })
+    return { accepted: result.accepted, rejected: result.rejected }
+  }
+
+  const getDevicesWithReport = async (): Promise<DeviceRosterNormalizationResult> => {
+    const data = await fetchJson('/api/devices')
+    if (!Array.isArray(data)) {
+      throw new Error('Expected an array from /api/devices.')
+    }
+    const result = normalizeTraccarRows({
+      endpoint: '/api/devices',
+      rows: data,
+      emptyMessage: 'No valid Traccar device rows were returned from /api/devices.',
+      warningMessage: 'Dropped malformed Traccar device row.',
+      logger,
+      normalize: (device) => normalizeTraccarDevice(device as RawDeviceInput),
+    })
+    return { accepted: result.accepted, complete: result.droppedCount === 0 }
   }
 
   return {
@@ -290,21 +314,8 @@ export function createTraccarClient(
 
       await authenticateWithCredentials()
     },
-    getDevices: async () => {
-      const data = await fetchJson('/api/devices')
-      if (!Array.isArray(data)) {
-        throw new Error('Expected an array from /api/devices.')
-      }
-
-      return normalizeTraccarRows({
-        endpoint: '/api/devices',
-        rows: data,
-        emptyMessage: 'No valid Traccar device rows were returned from /api/devices.',
-        warningMessage: 'Dropped malformed Traccar device row.',
-        logger,
-        normalize: (device) => normalizeTraccarDevice(device as RawDeviceInput),
-      }).accepted
-    },
+    getDevices: async () => (await getDevicesWithReport()).accepted,
+    getDevicesWithReport,
     getGroups: async () => {
       const data = await fetchJson('/api/groups')
       if (!Array.isArray(data)) {
@@ -395,6 +406,7 @@ function normalizeTraccarRows<T>(input: {
 }): {
   readonly accepted: readonly T[]
   readonly rejected: readonly CurrentPositionRejection[]
+  readonly droppedCount: number
 } {
   const maxDetailedWarnings = 3
   const accepted: T[] = []
@@ -444,7 +456,7 @@ function normalizeTraccarRows<T>(input: {
     throw new Error(input.emptyMessage)
   }
 
-  return { accepted, rejected }
+  return { accepted, rejected, droppedCount }
 }
 
 /**

@@ -31,7 +31,7 @@ type ParticipantStoreBoundary = {
   ) => Promise<readonly MissionParticipant[]>
   readonly recordGroupMembershipEvents: (input: {
     readonly mission_id: string
-    readonly events: readonly Omit<GroupMembershipEvent, 'id' | 'mission_id'>[]
+    readonly events: readonly Omit<GroupMembershipEvent, 'id' | 'sequence' | 'mission_id'>[]
   }) => Promise<readonly GroupMembershipEvent[]>
   readonly listGroupMembershipEvents: (
     missionId: string,
@@ -52,6 +52,7 @@ export type ParticipantRuntimeController = {
   readonly applyRoster: (
     devices: readonly NormalizedTrackingDevice[],
     observedAt?: string,
+    options?: { readonly complete: boolean },
   ) => Promise<void>
   readonly applyGroups: (groups: readonly NormalizedTraccarGroup[]) => void
   readonly reportRosterError: (message: string | null) => void
@@ -81,6 +82,7 @@ export async function startParticipantRuntime(
   let membershipEvents: readonly GroupMembershipEvent[] = []
   let backfillCheckpoints: readonly ParticipantBackfillCheckpoint[] = []
   let availableDevices: readonly NormalizedTrackingDevice[] = []
+  let availableRosterComplete = false
   let availableGroups: readonly NormalizedTraccarGroup[] = []
   let draftDeviceIds: readonly string[] = []
   let draftGroupIds: readonly string[] = []
@@ -130,14 +132,21 @@ export async function startParticipantRuntime(
         }
       }
     },
-    applyRoster: async (devices, observedAt = now().toISOString()) => {
+    applyRoster: async (devices, observedAt = now().toISOString(), options = { complete: true }) => {
+      const missionIdBeforeRefresh = activeMissionId
+      if (error !== null && missionIdBeforeRefresh !== null) {
+        await controller.refreshMission(missionIdBeforeRefresh)
+        if (activeMissionId !== missionIdBeforeRefresh || error !== null) return
+      }
       const rosterChanged = !areRostersEquivalent(availableDevices, devices)
+      const becameComplete = options.complete && !availableRosterComplete
       const errorCleared = rosterError !== null
-      if (!rosterChanged && !errorCleared) return
+      if (!rosterChanged && !errorCleared && !becameComplete) return
       if (rosterChanged) availableDevices = [...devices]
+      availableRosterComplete = options.complete
       rosterError = null
       publishRuntime()
-      if (!rosterChanged) return
+      if (!rosterChanged && !becameComplete) return
       const missionId = activeMissionId
       if (missionId === null) return
 
@@ -146,6 +155,7 @@ export async function startParticipantRuntime(
         membershipEvents,
         availableDevices,
         observedAt,
+        options.complete,
       )
       if (changes.length === 0) return
       try {
@@ -229,7 +239,7 @@ export async function startParticipantRuntime(
       } catch (runtimeError) {
         error = toErrorMessage(runtimeError)
         publishRuntime()
-        return []
+        throw runtimeError
       } finally {
         saving = false
         publishRuntime()
@@ -279,10 +289,11 @@ export async function startParticipantRuntime(
     publishRuntime()
     try {
       const result = await operation(missionId)
+      if (activeMissionId !== missionId) return result
       await controller.refreshMission(missionId)
       return result
     } catch (runtimeError) {
-      error = toErrorMessage(runtimeError)
+      if (activeMissionId === missionId) error = toErrorMessage(runtimeError)
       return null
     } finally {
       saving = false
@@ -291,7 +302,11 @@ export async function startParticipantRuntime(
   }
 
   function publishRuntime(): void {
-    const scope = createParticipationScope({ participants, membershipEvents })
+    const scope = createParticipationScope({
+      participants,
+      membershipEvents,
+      backfillCheckpoints,
+    })
     dependencies.applyRuntime({
       activeMissionId,
       participants,
@@ -332,8 +347,9 @@ function collectMembershipChanges(
   events: readonly GroupMembershipEvent[],
   devices: readonly NormalizedTrackingDevice[],
   observedAt: string,
-): readonly Omit<GroupMembershipEvent, 'id' | 'mission_id'>[] {
-  const changes: Omit<GroupMembershipEvent, 'id' | 'mission_id'>[] = []
+  rosterComplete: boolean,
+): readonly Omit<GroupMembershipEvent, 'id' | 'sequence' | 'mission_id'>[] {
+  const changes: Omit<GroupMembershipEvent, 'id' | 'sequence' | 'mission_id'>[] = []
   for (const participant of participants) {
     if (
       participant.kind !== 'group' ||
@@ -354,7 +370,7 @@ function collectMembershipChanges(
       if (
         previous === undefined ||
         event.observed_at > previous.observed_at ||
-        (event.observed_at === previous.observed_at && event.id > previous.id)
+        (event.observed_at === previous.observed_at && event.sequence > previous.sequence)
       ) latestByDevice.set(event.traccar_device_id, event)
     }
     const known = new Set(
@@ -365,6 +381,7 @@ function collectMembershipChanges(
     const candidateIds = [...new Set([...known, ...current])].sort()
     for (const deviceId of candidateIds) {
       if (known.has(deviceId) === current.has(deviceId)) continue
+      if (!rosterComplete && known.has(deviceId) && !current.has(deviceId)) continue
       changes.push({
         mission_team_id: participant.mission_team_id,
         traccar_device_id: deviceId,

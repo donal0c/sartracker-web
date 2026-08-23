@@ -28,6 +28,7 @@ import type {
   TrackingSnapshotContext,
 } from './polling-manager'
 import type { BreadcrumbSelectionMetadata } from './breadcrumb-accumulator'
+import type { DeviceRosterNormalizationResult } from './traccar-client'
 import { useMissionStore } from '../mission/mission-store'
 import { useActiveMissionDevicesStore } from './active-mission-devices-store'
 import type {
@@ -47,6 +48,7 @@ export type TrackingRuntimeConfig = {
 type ParticipantRosterClient = {
   readonly authenticate: () => Promise<void>
   readonly getDevices: () => Promise<readonly NormalizedTrackingDevice[]>
+  readonly getDevicesWithReport?: () => Promise<DeviceRosterNormalizationResult>
   readonly getGroups: () => Promise<readonly NormalizedTraccarGroup[]>
   readonly getCurrentPositions: () => Promise<readonly NormalizedTrackingPosition[]>
 }
@@ -299,6 +301,7 @@ type StartTrackingRuntimeDependencies = {
   readonly subscribeParticipationScope?: (listener: () => void) => () => void
   readonly applyParticipantRoster?: (
     devices: readonly TrackingSnapshot['devices'][number][],
+    options?: { readonly complete: boolean },
   ) => void | Promise<void>
   readonly applyParticipantGroups?: (
     groups: readonly NormalizedTraccarGroup[],
@@ -676,9 +679,7 @@ export async function startTrackingRuntime(
       }
     },
     onSnapshot: async (snapshot, context) => {
-      if (context?.participantRosterAuthoritative !== false) {
-        await dependencies.applyParticipantRoster?.(snapshot.devices)
-      }
+      applyParticipantRosterWithoutBlocking(snapshot.devices, context)
       const operationalSnapshot = filterOperationalSnapshot(snapshot)
       const sideEffects: Promise<unknown>[] = []
       let missionPersistenceResultIndex: number | null = null
@@ -1149,6 +1150,26 @@ export async function startTrackingRuntime(
       ? 'PARTICIPANT SELECTION LOADING — last-known positions will appear as soon as mission participation is ready.'
       : 'PARTICIPANT SELECTION UNAVAILABLE — live and cached positions are being preserved but cannot be shown until mission participation reloads.'
   }
+
+  /** Keeps current-position publication independent of participant SQLite writes. */
+  function applyParticipantRosterWithoutBlocking(
+    devices: readonly NormalizedTrackingDevice[],
+    context: TrackingSnapshotContext | undefined,
+  ): void {
+    // Polling emits an application-owned empty idle snapshot before a mission.
+    // It is not a roster observation and must not erase GET-only discovery.
+    if (context?.participantRosterAuthoritative === false && devices.length === 0) return
+    try {
+      const update = context?.participantRosterAuthoritative === false
+        ? dependencies.applyParticipantRoster?.(devices, { complete: false })
+        : dependencies.applyParticipantRoster?.(devices)
+      void Promise.resolve(update).catch((error) => {
+        logger.warn('Participant roster reconciliation failed.', error)
+      })
+    } catch (error) {
+      logger.warn('Participant roster reconciliation failed.', error)
+    }
+  }
 }
 
 async function preloadParticipantDiscovery(
@@ -1170,8 +1191,11 @@ async function preloadParticipantDiscovery(
   }
   try {
     await client.authenticate()
-    const [devices, groups] = await Promise.all([
-      client.getDevices(),
+    const [roster, groups] = await Promise.all([
+      client.getDevicesWithReport?.() ?? client.getDevices().then((accepted) => ({
+        accepted,
+        complete: true,
+      })),
       client.getGroups(),
       // Current fixes stay on the same bulk GET path. They are intentionally
       // not published to the operational map until participation is known.
@@ -1179,7 +1203,9 @@ async function preloadParticipantDiscovery(
     ])
     if (!isCurrent()) return
     await Promise.all([
-      dependencies.applyParticipantRoster?.(devices),
+      roster.complete
+        ? dependencies.applyParticipantRoster?.(roster.accepted)
+        : dependencies.applyParticipantRoster?.(roster.accepted, { complete: false }),
       dependencies.applyParticipantGroups?.(groups),
     ])
     if (isCurrent()) dependencies.applyParticipantRosterError?.(null)

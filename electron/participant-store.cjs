@@ -36,6 +36,15 @@ function createParticipantStore(options) {
               change: 'member',
               observedAt: timestamp,
             })
+            insertBackfillCheckpoint(db, {
+              missionId: mission.id,
+              deviceId,
+              windowFrom: mission.start_time,
+              windowTo: timestamp,
+              reconciledUntil: mission.start_time,
+              completed: mission.start_time === timestamp,
+              updatedAt: timestamp,
+            })
           }
         }
         for (const deviceInput of devices) {
@@ -116,6 +125,18 @@ function createParticipantStore(options) {
             completed: effectiveFrom === addedAt,
             updatedAt: addedAt,
           })
+        } else {
+          for (const memberDeviceId of normalizeDeviceIdArray(input.ref.member_device_ids)) {
+            insertBackfillCheckpoint(db, {
+              missionId: mission.id,
+              deviceId: memberDeviceId,
+              windowFrom: effectiveFrom,
+              windowTo: addedAt,
+              reconciledUntil: effectiveFrom,
+              completed: effectiveFrom === addedAt,
+              updatedAt: addedAt,
+            })
+          }
         }
         failAfterMutation(faultInjection)
         insertAudit(db, mission.id, 'participant_added', addedAt, {
@@ -173,7 +194,7 @@ function createParticipantStore(options) {
           const observedAt = normalizeTimestamp(event?.observed_at, 'Membership observation')
           const latest = db.prepare(`SELECT change FROM mission_group_membership_events
             WHERE mission_id = ? AND mission_team_id = ? AND traccar_device_id = ?
-            ORDER BY observed_at DESC, rowid DESC LIMIT 1`)
+            ORDER BY observed_at DESC, sequence DESC LIMIT 1`)
             .get(mission.id, teamId, deviceId)
           if (latest?.change === change) continue
           inserted.push(insertMembershipEvent(db, {
@@ -201,11 +222,11 @@ function createParticipantStore(options) {
       requireMission(db, missionId)
       if (teamId === undefined) {
         return db.prepare(`SELECT * FROM mission_group_membership_events
-          WHERE mission_id = ? ORDER BY observed_at ASC, rowid ASC`).all(missionId)
+          WHERE mission_id = ? ORDER BY observed_at ASC, sequence ASC`).all(missionId)
       }
       return db.prepare(`SELECT * FROM mission_group_membership_events
         WHERE mission_id = ? AND mission_team_id = ?
-        ORDER BY observed_at ASC, rowid ASC`).all(missionId, teamId)
+        ORDER BY observed_at ASC, sequence ASC`).all(missionId, teamId)
     },
 
     upsertParticipantBackfillCheckpoint(input) {
@@ -218,34 +239,37 @@ function createParticipantStore(options) {
         'Backfill reconciled-until',
       )
       validateBackfillWindow(mission, windowFrom, windowTo, reconciledUntil)
-      const existing = db.prepare(`SELECT * FROM participant_backfill_checkpoints
-        WHERE mission_id = ? AND traccar_device_id = ? AND window_from = ?`)
-        .get(mission.id, deviceId, windowFrom)
-      if (existing !== undefined && existing.window_to !== windowTo) {
-        throw new Error('Participant backfill window edges are immutable.')
-      }
       const completed = input?.completed === true ? 1 : 0
       const updatedAt = readNow()
-      db.prepare(`INSERT INTO participant_backfill_checkpoints (
-          mission_id, traccar_device_id, window_from, window_to,
-          reconciled_until, completed, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?)
-        ON CONFLICT(mission_id, traccar_device_id, window_from) DO UPDATE SET
-          reconciled_until = excluded.reconciled_until,
-          completed = excluded.completed,
-          updated_at = excluded.updated_at`)
-        .run(
-          mission.id, deviceId, windowFrom, windowTo,
-          reconciledUntil, completed, updatedAt,
-        )
-      if (completed === 1 && existing?.completed !== 1) {
-        insertAudit(db, mission.id, 'participant_backfill_completed', updatedAt, {
-          traccar_device_id: deviceId,
-          window_from: windowFrom,
-          window_to: windowTo,
-        })
-      }
-      return requireCheckpoint(db, mission.id, deviceId, windowFrom)
+      const transaction = db.transaction(() => {
+        const existing = db.prepare(`SELECT * FROM participant_backfill_checkpoints
+          WHERE mission_id = ? AND traccar_device_id = ? AND window_from = ?`)
+          .get(mission.id, deviceId, windowFrom)
+        if (existing !== undefined && existing.window_to !== windowTo) {
+          throw new Error('Participant backfill window edges are immutable.')
+        }
+        db.prepare(`INSERT INTO participant_backfill_checkpoints (
+            mission_id, traccar_device_id, window_from, window_to,
+            reconciled_until, completed, updated_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?)
+          ON CONFLICT(mission_id, traccar_device_id, window_from) DO UPDATE SET
+            reconciled_until = excluded.reconciled_until,
+            completed = excluded.completed,
+            updated_at = excluded.updated_at`)
+          .run(
+            mission.id, deviceId, windowFrom, windowTo,
+            reconciledUntil, completed, updatedAt,
+          )
+        if (completed === 1 && existing?.completed !== 1) {
+          insertAudit(db, mission.id, 'participant_backfill_completed', updatedAt, {
+            traccar_device_id: deviceId,
+            window_from: windowFrom,
+            window_to: windowTo,
+          })
+        }
+        return requireCheckpoint(db, mission.id, deviceId, windowFrom)
+      })
+      return transaction()
     },
 
     listParticipantBackfillCheckpoints(missionId) {
@@ -302,8 +326,11 @@ function createOrGetTeam(db, missionId, input, frozenAt) {
 }
 
 function insertMembershipEvent(db, input) {
+  const sequence = Number(db.prepare(`SELECT COALESCE(MAX(sequence), 0) + 1
+    FROM mission_group_membership_events`).pluck().get())
   const event = {
     id: randomUUID(),
+    sequence,
     mission_id: input.missionId,
     mission_team_id: input.missionTeamId,
     traccar_device_id: input.deviceId,
@@ -311,10 +338,10 @@ function insertMembershipEvent(db, input) {
     observed_at: input.observedAt,
   }
   db.prepare(`INSERT INTO mission_group_membership_events
-    (id, mission_id, mission_team_id, traccar_device_id, change, observed_at)
-    VALUES (?, ?, ?, ?, ?, ?)`)
+    (id, sequence, mission_id, mission_team_id, traccar_device_id, change, observed_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?)`)
     .run(
-      event.id, event.mission_id, event.mission_team_id,
+      event.id, event.sequence, event.mission_id, event.mission_team_id,
       event.traccar_device_id, event.change, event.observed_at,
     )
   return event
@@ -332,7 +359,7 @@ function synchronizeObservedGroupMembership(
   const rows = db.prepare(`SELECT traccar_device_id, change
     FROM mission_group_membership_events
     WHERE mission_id = ? AND mission_team_id = ?
-    ORDER BY observed_at DESC, rowid DESC`).all(missionId, missionTeamId)
+    ORDER BY observed_at DESC, sequence DESC`).all(missionId, missionTeamId)
   for (const row of rows) {
     if (!latestByDevice.has(row.traccar_device_id)) {
       latestByDevice.set(row.traccar_device_id, row.change)
@@ -365,6 +392,15 @@ function synchronizeObservedGroupMembership(
 }
 
 function insertBackfillCheckpoint(db, input) {
+  const existing = db.prepare(`SELECT window_to FROM participant_backfill_checkpoints
+    WHERE mission_id = ? AND traccar_device_id = ? AND window_from = ?`)
+    .get(input.missionId, input.deviceId, input.windowFrom)
+  if (existing !== undefined) {
+    if (existing.window_to !== input.windowTo) {
+      throw new Error('Participant backfill window edges are immutable.')
+    }
+    return
+  }
   db.prepare(`INSERT INTO participant_backfill_checkpoints (
       mission_id, traccar_device_id, window_from, window_to,
       reconciled_until, completed, updated_at
@@ -426,7 +462,7 @@ function isDeviceCoveredByActiveGroup(db, missionId, deviceId) {
             AND newer.traccar_device_id = membership.traccar_device_id
             AND (
               newer.observed_at > membership.observed_at OR
-              (newer.observed_at = membership.observed_at AND newer.rowid > membership.rowid)
+              (newer.observed_at = membership.observed_at AND newer.sequence > membership.sequence)
             )
         )
       LIMIT 1`).get(missionId, deviceId) !== undefined
@@ -451,7 +487,7 @@ function doesGroupCoverActiveDevice(db, missionId, teamId) {
             AND newer.traccar_device_id = membership.traccar_device_id
             AND (
               newer.observed_at > membership.observed_at OR
-              (newer.observed_at = membership.observed_at AND newer.rowid > membership.rowid)
+              (newer.observed_at = membership.observed_at AND newer.sequence > membership.sequence)
             )
         )
       LIMIT 1`).get(missionId, teamId) !== undefined

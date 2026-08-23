@@ -7,6 +7,7 @@ import { createRequire } from 'node:module'
 import { afterEach, describe, expect, it } from 'vitest'
 
 import {
+  assertBreadcrumbProgrammeSelectionInvariants,
   createBreadcrumbProgrammeCalibrationSample,
   generateMissionStoreFixture,
   restartCheckpointDayForPoll,
@@ -30,6 +31,7 @@ const { createElectronMissionStore } = require('../../electron/mission-store.cjs
     readonly countPositions: (missionId: string) => Promise<number>
   }
 }
+const Database = require('better-sqlite3')
 
 const tempPaths: string[] = []
 
@@ -62,7 +64,7 @@ describe('generateMissionStoreFixture [DON-242]', () => {
     expect(generated.manifest.bytes.byTable.positions).toBeGreaterThan(0)
     expect(generated.manifest.bytes.byTable.mission_events).toBeGreaterThan(0)
     expect(generated.manifest.database.sha256).toBe(
-      '8d5745f16e5f7f9d5d4b7ce3f20653c8263da3358a8a773f6244a85549b77079',
+      '47321aa4baf044690d18f386101d82d272c5f7d8660c2969e9ee2c3b950e70f4',
     )
     await expect(sha256File(outputPath)).resolves.toBe(generated.manifest.database.sha256)
     await expect(sha256File(copyToPath)).resolves.toBe(generated.manifest.database.sha256)
@@ -162,6 +164,43 @@ describe('restartCheckpointDayForPoll [DON-242]', () => {
 })
 
 describe('breadcrumb programme fixture calibration [DON-272]', () => {
+  it('rejects a direct participant already covered by an active selected group', () => {
+    const db = new Database(':memory:')
+    try {
+      db.exec(`
+        CREATE TABLE devices (
+          mission_id TEXT NOT NULL, device_id TEXT NOT NULL
+        );
+        CREATE TABLE mission_participants (
+          id TEXT PRIMARY KEY, mission_id TEXT NOT NULL, kind TEXT NOT NULL,
+          traccar_device_id TEXT, mission_team_id TEXT, removed_at TEXT
+        );
+        CREATE TABLE mission_group_membership_events (
+          id TEXT PRIMARY KEY, mission_id TEXT NOT NULL, mission_team_id TEXT NOT NULL,
+          traccar_device_id TEXT NOT NULL, change TEXT NOT NULL,
+          observed_at TEXT NOT NULL, sequence INTEGER NOT NULL
+        );
+        INSERT INTO devices VALUES ('mission-1', 'device-1');
+        INSERT INTO mission_participants VALUES
+          ('group-participant', 'mission-1', 'group', NULL, 'team-1', NULL),
+          ('direct-participant', 'mission-1', 'device', 'device-1', NULL, NULL);
+        INSERT INTO mission_group_membership_events VALUES
+          ('membership-1', 'mission-1', 'team-1', 'device-1', 'member',
+           '2026-08-20T08:00:00.000Z', 1);
+      `)
+
+      expect(() =>
+        assertBreadcrumbProgrammeSelectionInvariants(db, 'mission-1')).toThrow(
+        /direct participant.*selected group/iu,
+      )
+      db.prepare("DELETE FROM mission_participants WHERE kind = 'device'").run()
+      expect(() =>
+        assertBreadcrumbProgrammeSelectionInvariants(db, 'mission-1')).not.toThrow()
+    } finally {
+      db.close()
+    }
+  })
+
   it('emits the shipped stationary attention cases and near misses', () => {
     const attention = createBreadcrumbProgrammeCalibrationSample('bcp-960k', 0, 1_000, 1_014)
     const slowWalker = createBreadcrumbProgrammeCalibrationSample('bcp-960k', 1, 1_000, 1_014)

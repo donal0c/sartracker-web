@@ -84,6 +84,8 @@ export type MissionParticipant = {
 
 export type GroupMembershipEvent = {
   readonly id: string
+  /** Durable append order used when multiple observations share one timestamp. */
+  readonly sequence: number
   readonly mission_id: string
   readonly mission_team_id: string
   readonly traccar_device_id: string
@@ -510,7 +512,7 @@ export type MissionStore = {
   ) => Promise<readonly MissionParticipant[]>
   readonly recordGroupMembershipEvents?: (input: {
     readonly mission_id: string
-    readonly events: readonly Omit<GroupMembershipEvent, 'id' | 'mission_id'>[]
+    readonly events: readonly Omit<GroupMembershipEvent, 'id' | 'sequence' | 'mission_id'>[]
   }) => Promise<readonly GroupMembershipEvent[]>
   readonly listGroupMembershipEvents?: (
     missionId: string,

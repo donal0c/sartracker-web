@@ -119,7 +119,7 @@ describe('startTrackingRuntime', () => {
     )
   })
 
-  it('preloads the GET-only participant roster, groups, and current positions before mission start [DON-271]', async () => {
+  it('preloads GET-only participant discovery and does not let idle snapshots erase it [DON-271]', async () => {
     const applyParticipantRoster = vi.fn()
     const applyParticipantGroups = vi.fn()
     let pollerHooks:
@@ -907,6 +907,81 @@ describe('startTrackingRuntime', () => {
     expect(addPositionsBulk.mock.calls[0]?.[0].positions.every(
       (position: { readonly device_id: string }) => position.device_id === '1',
     )).toBe(true)
+  })
+
+  it('publishes authorized current positions before participant roster persistence settles', async () => {
+    const rosterWrite = createDeferred<void>()
+    const applySnapshot = vi.fn()
+    let pollerHooks: { onSnapshot: (snapshot: TrackingSnapshot) => Promise<void> } | undefined
+
+    await startTrackingRuntime({
+      config: { baseUrl: 'http://test:8082' },
+      createClient: vi.fn().mockReturnValue({}),
+      createPoller: vi.fn().mockImplementation((_client, hooks) => {
+        pollerHooks = hooks
+        return { start: vi.fn(), stop: vi.fn() }
+      }),
+      cache: { read: vi.fn().mockResolvedValue(null), write: vi.fn() },
+      missionStore: createMissionStoreStub({
+        getActiveMission: vi.fn().mockResolvedValue({ id: 'mission-1' }),
+      }),
+      applySnapshot,
+      applyStatus: vi.fn(),
+      missionModelEnabled: true,
+      applyParticipantRoster: vi.fn().mockReturnValue(rosterWrite.promise),
+      readParticipationScope: () => ({
+        includesAt: () => true,
+        activeDeviceIdsAt: () => ['1', '2'],
+        filterSnapshot: (snapshot) => snapshot,
+        filterEvidenceSnapshot: (snapshot) => snapshot,
+      }),
+      writeCache: false,
+    })
+
+    const publication = pollerHooks!.onSnapshot(SNAPSHOT)
+    await Promise.resolve()
+    expect(applySnapshot).toHaveBeenCalledWith(SNAPSHOT)
+    rosterWrite.resolve()
+    await publication
+  })
+
+  it('marks a partially normalized participant roster as non-authoritative', async () => {
+    const applyParticipantRoster = vi.fn()
+    let pollerHooks: {
+      onSnapshot: (
+        snapshot: TrackingSnapshot,
+        context?: { readonly participantRosterAuthoritative?: boolean },
+      ) => Promise<void>
+    } | undefined
+
+    await startTrackingRuntime({
+      config: { baseUrl: 'http://test:8082' },
+      createClient: vi.fn().mockReturnValue({}),
+      createPoller: vi.fn().mockImplementation((_client, hooks) => {
+        pollerHooks = hooks
+        return { start: vi.fn(), stop: vi.fn() }
+      }),
+      cache: { read: vi.fn().mockResolvedValue(null), write: vi.fn() },
+      missionStore: createMissionStoreStub(),
+      applySnapshot: vi.fn(),
+      applyStatus: vi.fn(),
+      missionModelEnabled: true,
+      applyParticipantRoster,
+      readParticipationScope: () => ({
+        includesAt: () => true,
+        activeDeviceIdsAt: () => ['1', '2'],
+        filterSnapshot: (snapshot) => snapshot,
+        filterEvidenceSnapshot: (snapshot) => snapshot,
+      }),
+      writeCache: false,
+    })
+
+    await pollerHooks?.onSnapshot(SNAPSHOT, { participantRosterAuthoritative: false })
+
+    expect(applyParticipantRoster).toHaveBeenCalledWith(
+      SNAPSHOT.devices,
+      { complete: false },
+    )
   })
 
   it('publishes selected current positions without waiting for participant backfill [DON-271]', async () => {

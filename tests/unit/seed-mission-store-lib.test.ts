@@ -98,6 +98,7 @@ describe('mission-store fixture plans [DON-242]', () => {
 
     expect(scenario.groupSizes).toEqual([12, 11, 10, 9, 9, 8, 8, 7, 7, 7, 6, 6])
     expect(scenario.groupSizes.reduce((total, size) => total + size, 0)).toBe(100)
+    expect(scenario.selectedGroupCount).toBe(11)
     expect(scenario.outings).toHaveLength(12)
     expect(scenario.outings.filter((outing) => outing.crossesMidnight)).toHaveLength(5)
     for (let index = 1; index < scenario.outings.length; index += 1) {
@@ -219,8 +220,8 @@ describe('mission-store fixture identity and manifest [DON-242]', () => {
         missions: 2, devices: 101, positions: 960_000, missionEvents: 20,
         deviceCreatedEvents: 0, deviceUpdatedEvents: 0, positionRecordedEvents: 0,
         backupEvents: 0, restartCheckpointEvents: 11, operationalEvents: 20,
-        outings: 12, missionTeams: 12, missionParticipants: 17,
-        groupMembershipEvents: 102, participantBackfillCheckpoints: 2,
+        outings: 12, missionTeams: 11, missionParticipants: 16,
+        groupMembershipEvents: 96, participantBackfillCheckpoints: 2,
         ingestAnomalies: 5,
       },
       tableBytes: { positions: 100, other: 23 },
@@ -230,14 +231,15 @@ describe('mission-store fixture identity and manifest [DON-242]', () => {
     expect(manifest.scenario).toMatchObject({
       outingCount: 12,
       groupCount: 12,
+      selectedGroupCount: 11,
       acceptedPositionCount: 960_000,
       legacyNoOutingMissionCount: 1,
       gpxEvidenceBoundary: 'deferred-to-pr4-not-faked',
     })
     expect(manifest.rows.byTable).toMatchObject({
       outings: 12,
-      mission_teams: 12,
-      mission_participants: 17,
+      mission_teams: 11,
+      mission_participants: 16,
       participant_backfill_checkpoints: 2,
       ingest_anomalies: 5,
     })

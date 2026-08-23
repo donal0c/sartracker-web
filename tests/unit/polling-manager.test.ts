@@ -473,6 +473,32 @@ describe('polling manager', () => {
     poller.stop()
   })
 
+  it('marks every snapshot from a partially normalized Traccar roster non-authoritative [DON-271]', async () => {
+    const client = createClient({
+      getDevicesWithReport: vi.fn().mockResolvedValue({
+        accepted: [NORMALIZED_DEVICES[0]!],
+        complete: false,
+      }),
+    })
+    const onSnapshot = vi.fn()
+    const poller = createPollingManager(client, {
+      intervalMs: 5_000,
+      staleThresholdMs: 60 * 60 * 1000,
+      onSnapshot,
+      onStatusChange: vi.fn(),
+      now: () => new Date('2026-04-06T10:35:00.000Z'),
+    })
+
+    poller.start()
+    await vi.advanceTimersByTimeAsync(0)
+
+    const rosterSnapshots = onSnapshot.mock.calls.filter((call) => call[0].devices.length > 0)
+    expect(rosterSnapshots.length).toBeGreaterThan(0)
+    expect(rosterSnapshots.every((call) =>
+      call[1]?.participantRosterAuthoritative === false)).toBe(true)
+    poller.stop()
+  })
+
   it('publishes valid current positions before safely reporting rejected rows [DON-268]', async () => {
     const events: string[] = []
     const rejection = {

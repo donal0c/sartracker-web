@@ -24,6 +24,7 @@ const GROUP_PARTICIPANT: MissionParticipant = {
 
 const INITIAL_MEMBERSHIP: GroupMembershipEvent = {
   id: 'membership-1',
+  sequence: 1,
   mission_id: 'mission-1',
   mission_team_id: 'team-1',
   traccar_device_id: 'device-1',
@@ -79,6 +80,80 @@ describe('startParticipantRuntime [DON-271]', () => {
     })
   })
 
+  it('suppresses negative group deltas from an incomplete normalized roster', async () => {
+    const store = createStore()
+    const runtime = await startParticipantRuntime({
+      participantStore: store,
+      applyRuntime: vi.fn(),
+      now: () => new Date('2026-08-23T11:00:00.000Z'),
+    })
+    await runtime.refreshMission('mission-1')
+
+    await runtime.applyRoster([
+      device('device-2', 'group-1'),
+    ], '2026-08-23T11:00:00.000Z', { complete: false })
+
+    expect(store.recordGroupMembershipEvents).toHaveBeenCalledWith({
+      mission_id: 'mission-1',
+      events: [{
+        mission_team_id: 'team-1',
+        traccar_device_id: 'device-2',
+        change: 'member',
+        observed_at: '2026-08-23T11:00:00.000Z',
+      }],
+    })
+  })
+
+  it('reconciles deferred group leaves when the same roster becomes complete', async () => {
+    const store = createStore()
+    const runtime = await startParticipantRuntime({
+      participantStore: store,
+      applyRuntime: vi.fn(),
+    })
+    await runtime.refreshMission('mission-1')
+    const acceptedRoster = [device('device-2', 'group-1')]
+
+    await runtime.applyRoster(
+      acceptedRoster,
+      '2026-08-23T11:00:00.000Z',
+      { complete: false },
+    )
+    await runtime.applyRoster(
+      acceptedRoster,
+      '2026-08-23T11:01:00.000Z',
+      { complete: true },
+    )
+
+    expect(store.recordGroupMembershipEvents).toHaveBeenNthCalledWith(2, {
+      mission_id: 'mission-1',
+      events: [{
+        mission_team_id: 'team-1',
+        traccar_device_id: 'device-1',
+        change: 'left',
+        observed_at: '2026-08-23T11:01:00.000Z',
+      }],
+    })
+  })
+
+  it('retries failed participant hydration on the next roster observation', async () => {
+    const store = createStore()
+    store.listMissionParticipants
+      .mockRejectedValueOnce(new Error('temporary participant read failure'))
+      .mockResolvedValue([GROUP_PARTICIPANT])
+    const states: Array<{ readonly error: string | null }> = []
+    const runtime = await startParticipantRuntime({
+      participantStore: store,
+      applyRuntime: (state) => states.push(state),
+    })
+
+    await runtime.refreshMission('mission-1')
+    expect(states.at(-1)?.error).toMatch(/temporary participant read failure/i)
+    await runtime.applyRoster([device('device-1', 'group-1')])
+
+    expect(store.listMissionParticipants).toHaveBeenCalledTimes(2)
+    expect(states.at(-1)?.error).toBeNull()
+  })
+
   it('selects the start roster with group membership frozen from the observed roster', async () => {
     const store = createStore()
     const runtime = await startParticipantRuntime({
@@ -104,6 +179,26 @@ describe('startParticipantRuntime [DON-271]', () => {
       }],
       devices: [{ traccar_device_id: 'device-2' }],
       selected_by: 'Coordinator',
+    })
+  })
+
+  it('propagates an initial participant write failure and preserves the operator draft', async () => {
+    const store = createStore()
+    store.selectMissionParticipants.mockRejectedValueOnce(new Error('participant write failed'))
+    const states: Array<{ readonly draftDeviceIds: readonly string[]; readonly error: string | null }> = []
+    const runtime = await startParticipantRuntime({
+      participantStore: store,
+      applyRuntime: (state) => states.push(state),
+    })
+    await runtime.applyRoster([device('device-2', null)])
+    runtime.toggleDraftDevice('device-2')
+
+    await expect(runtime.selectInitialParticipants('mission-1', 'Coordinator'))
+      .rejects.toThrow(/participant write failed/i)
+
+    expect(states.at(-1)).toMatchObject({
+      draftDeviceIds: ['device-2'],
+      error: 'participant write failed',
     })
   })
 
@@ -207,6 +302,42 @@ describe('startParticipantRuntime [DON-271]', () => {
     expect(states.at(-1)?.envelope.activeDeviceCount).toBe(101)
     expect(states.at(-1)?.envelope.warning).toContain('all selected devices will still be included')
   })
+
+  it('does not let a completed mutation for mission A replace mission B scope', async () => {
+    const mutation = createDeferred<MissionParticipant>()
+    const store = createStore({ participants: [], membershipEvents: [] })
+    store.addMissionParticipant.mockReturnValueOnce(mutation.promise)
+    store.listMissionParticipants.mockImplementation(async (missionId: string) =>
+      missionId === 'mission-b'
+        ? [{ ...GROUP_PARTICIPANT, id: 'participant-b', mission_id: 'mission-b' }]
+        : [])
+    const states: Array<{
+      readonly activeMissionId: string | null
+      readonly participants: readonly MissionParticipant[]
+    }> = []
+    const runtime = await startParticipantRuntime({
+      participantStore: store,
+      applyRuntime: (state) => states.push(state),
+    })
+    await runtime.refreshMission('mission-a')
+    const pending = runtime.addParticipant({
+      kind: 'device', ref: 'device-a', confirmed_by: 'Coordinator',
+    })
+    await runtime.refreshMission('mission-b')
+
+    mutation.resolve({
+      ...GROUP_PARTICIPANT,
+      id: 'participant-a', mission_id: 'mission-a', kind: 'device',
+      mission_team_id: null, traccar_group_id: null, team_name: null,
+      traccar_device_id: 'device-a',
+    })
+    await pending
+
+    expect(states.at(-1)?.activeMissionId).toBe('mission-b')
+    expect(states.at(-1)?.participants).toEqual([
+      expect.objectContaining({ id: 'participant-b', mission_id: 'mission-b' }),
+    ])
+  })
 })
 
 function device(deviceId: string, groupId: string | null) {
@@ -233,12 +364,24 @@ function createStore(overrides: {
     removeMissionParticipant: vi.fn(),
     listMissionParticipants: vi.fn().mockResolvedValue(participants),
     recordGroupMembershipEvents: vi.fn().mockImplementation(async (input) =>
-      input.events.map((event: Omit<GroupMembershipEvent, 'id' | 'mission_id'>, index: number) => ({
+      input.events.map((
+        event: Omit<GroupMembershipEvent, 'id' | 'sequence' | 'mission_id'>,
+        index: number,
+      ) => ({
         ...event,
         id: `new-${index}`,
+        sequence: membershipEvents.length + index + 1,
         mission_id: 'mission-1',
       }))),
     listGroupMembershipEvents: vi.fn().mockResolvedValue(membershipEvents),
     listParticipantBackfillCheckpoints: vi.fn().mockResolvedValue([]),
   }
+}
+
+function createDeferred<T>() {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>((nextResolve) => {
+    resolve = nextResolve
+  })
+  return { promise, resolve }
 }

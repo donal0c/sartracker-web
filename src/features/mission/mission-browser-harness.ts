@@ -158,8 +158,8 @@ export async function startMissionBrowserHarness(): Promise<void> {
       applyStatus: applyTrackingStatus,
       missionModelEnabled: isMissionModelEnabled(),
       readParticipationScope: () => useParticipantStore.getState().scope,
-      applyParticipantRoster: (devices) =>
-        useParticipantStore.getState().controller?.applyRoster(devices),
+      applyParticipantRoster: (devices, options) =>
+        useParticipantStore.getState().controller?.applyRoster(devices, undefined, options),
       applyParticipantGroups: (groups) =>
         useParticipantStore.getState().controller?.applyGroups(groups),
       applyParticipantRosterError: (message) =>

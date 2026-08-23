@@ -106,7 +106,7 @@ type BrowserHarnessStore = {
   ) => Promise<readonly MissionParticipant[]>
   readonly recordGroupMembershipEvents: (input: {
     readonly mission_id: string
-    readonly events: readonly Omit<GroupMembershipEvent, 'id' | 'mission_id'>[]
+    readonly events: readonly Omit<GroupMembershipEvent, 'id' | 'sequence' | 'mission_id'>[]
   }) => Promise<readonly GroupMembershipEvent[]>
   readonly listGroupMembershipEvents: (
     missionId: string,
@@ -412,21 +412,36 @@ export function getBrowserHarnessStore(): BrowserHarnessStore {
           addedAt: timestamp,
           addedBy: input.selected_by,
         }))
+      let membershipSequence = nextHarnessMembershipSequence(state.groupMembershipEvents)
       const membershipEvents = input.groups.flatMap((group, groupIndex) =>
         group.member_device_ids.map((deviceId) => ({
           id: createId('membership'),
+          sequence: membershipSequence++,
           mission_id: mission.id,
           mission_team_id: teams[groupIndex]?.id ?? '',
           traccar_device_id: deviceId,
           change: 'member' as const,
           observed_at: timestamp,
         })))
+      const groupBackfillCheckpoints = membershipEvents.map((event) => ({
+        mission_id: mission.id,
+        traccar_device_id: event.traccar_device_id,
+        window_from: mission.start_time,
+        window_to: timestamp,
+        reconciled_until: mission.start_time,
+        completed: mission.start_time === timestamp ? 1 : 0,
+        updated_at: timestamp,
+      } satisfies ParticipantBackfillCheckpoint))
       const participants = [...groupParticipants, ...deviceParticipants]
       state = {
         ...state,
         missionTeams: [...state.missionTeams, ...teams],
         missionParticipants: [...state.missionParticipants, ...participants],
         groupMembershipEvents: [...state.groupMembershipEvents, ...membershipEvents],
+        participantBackfillCheckpoints: [
+          ...state.participantBackfillCheckpoints,
+          ...groupBackfillCheckpoints,
+        ],
         missionEvents: appendEvent(
           state.missionEvents,
           mission.id,
@@ -519,7 +534,17 @@ export function getBrowserHarnessStore(): BrowserHarnessStore {
         addedAt,
         addedBy: input.confirmed_by,
       })
-      const checkpoint = deviceId === null ? null : {
+      const checkpoints = deviceId === null
+        ? observedMembershipEvents.map((event) => ({
+            mission_id: mission.id,
+            traccar_device_id: event.traccar_device_id,
+            window_from: effectiveFrom,
+            window_to: addedAt,
+            reconciled_until: effectiveFrom,
+            completed: effectiveFrom === addedAt ? 1 : 0,
+            updated_at: addedAt,
+          } satisfies ParticipantBackfillCheckpoint))
+        : [{
         mission_id: mission.id,
         traccar_device_id: deviceId,
         window_from: effectiveFrom,
@@ -527,7 +552,7 @@ export function getBrowserHarnessStore(): BrowserHarnessStore {
         reconciled_until: effectiveFrom,
         completed: effectiveFrom === addedAt ? 1 : 0,
         updated_at: addedAt,
-      } satisfies ParticipantBackfillCheckpoint
+      } satisfies ParticipantBackfillCheckpoint]
       state = {
         ...state,
         missionTeams: team === null || state.missionTeams.some((candidate) => candidate.id === team?.id)
@@ -538,9 +563,10 @@ export function getBrowserHarnessStore(): BrowserHarnessStore {
           ...state.groupMembershipEvents,
           ...observedMembershipEvents,
         ],
-        participantBackfillCheckpoints: checkpoint === null
-          ? state.participantBackfillCheckpoints
-          : [...state.participantBackfillCheckpoints, checkpoint],
+        participantBackfillCheckpoints: [
+          ...state.participantBackfillCheckpoints,
+          ...checkpoints,
+        ],
         missionEvents: appendEvent(
           state.missionEvents,
           mission.id,
@@ -611,10 +637,16 @@ export function getBrowserHarnessStore(): BrowserHarnessStore {
             event.mission_id === input.mission_id &&
             event.mission_team_id === candidate.mission_team_id &&
             event.traccar_device_id === candidate.traccar_device_id)
-          .toSorted((left, right) => right.observed_at.localeCompare(left.observed_at))[0]
+          .toSorted((left, right) =>
+            right.observed_at.localeCompare(left.observed_at) ||
+            right.sequence - left.sequence)[0]
         if (latest?.change === candidate.change) continue
         inserted.push({
           id: createId('membership'),
+          sequence: nextHarnessMembershipSequence([
+            ...state.groupMembershipEvents,
+            ...inserted,
+          ]),
           mission_id: input.mission_id,
           ...candidate,
         })
@@ -1471,7 +1503,12 @@ function readHarnessState(): BrowserHarnessState {
         ? parsed.missionParticipants
         : [],
       groupMembershipEvents: Array.isArray(parsed.groupMembershipEvents)
-        ? parsed.groupMembershipEvents
+        ? parsed.groupMembershipEvents.map((event, index) => ({
+            ...event,
+            sequence: Number.isSafeInteger(event.sequence) && event.sequence > 0
+              ? event.sequence
+              : index + 1,
+          }))
         : [],
       participantBackfillCheckpoints: Array.isArray(parsed.participantBackfillCheckpoints)
         ? parsed.participantBackfillCheckpoints
@@ -1794,7 +1831,7 @@ function latestHarnessMembershipChange(
       event.mission_team_id === teamId &&
       event.traccar_device_id === deviceId)
     .toSorted((left, right) =>
-      right.observed_at.localeCompare(left.observed_at) || right.id.localeCompare(left.id))[0]
+      right.observed_at.localeCompare(left.observed_at) || right.sequence - left.sequence)[0]
   return latest?.change ?? null
 }
 
@@ -1824,7 +1861,12 @@ function createHarnessMembershipObservation(input: {
         input.previousEvents,
       ) === 'member'
     ) {
-      changes.push(createHarnessMembershipEvent(input, deviceId, 'left'))
+      changes.push(createHarnessMembershipEvent(
+        input,
+        deviceId,
+        'left',
+        nextHarnessMembershipSequence([...input.previousEvents, ...changes]),
+      ))
     }
   }
   for (const deviceId of observedDeviceIds) {
@@ -1834,7 +1876,12 @@ function createHarnessMembershipObservation(input: {
       deviceId,
       input.previousEvents,
     ) !== 'member') {
-      changes.push(createHarnessMembershipEvent(input, deviceId, 'member'))
+      changes.push(createHarnessMembershipEvent(
+        input,
+        deviceId,
+        'member',
+        nextHarnessMembershipSequence([...input.previousEvents, ...changes]),
+      ))
     }
   }
   return changes
@@ -1849,15 +1896,27 @@ function createHarnessMembershipEvent(
   },
   deviceId: string,
   change: GroupMembershipEvent['change'],
+  sequence: number,
 ): GroupMembershipEvent {
   return {
     id: createId('membership'),
+    sequence,
     mission_id: input.missionId,
     mission_team_id: input.teamId,
     traccar_device_id: deviceId,
     change,
     observed_at: input.observedAt,
   }
+}
+
+/** Returns the next durable browser-mirror append order. */
+function nextHarnessMembershipSequence(
+  membershipEvents: readonly GroupMembershipEvent[],
+): number {
+  return membershipEvents.reduce(
+    (maximum, event) => Math.max(maximum, event.sequence),
+    0,
+  ) + 1
 }
 
 /** Validates one participant effective-from boundary against mission and wall clocks. */

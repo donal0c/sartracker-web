@@ -1,6 +1,7 @@
 import type {
   GroupMembershipEvent,
   MissionParticipant,
+  ParticipantBackfillCheckpoint,
 } from '../../infrastructure/mission-store/tauri-mission-store'
 import type { TrackingSnapshot } from '../tracking/tracking-types'
 
@@ -24,10 +25,12 @@ export type ParticipationScope = {
 export function createParticipationScope(input: {
   readonly participants: readonly MissionParticipant[]
   readonly membershipEvents: readonly GroupMembershipEvent[]
+  readonly backfillCheckpoints?: readonly ParticipantBackfillCheckpoint[]
 }): ParticipationScope {
   const directParticipantsByDevice = new Map<string, MissionParticipant[]>()
   const groupParticipantsByTeam = new Map<string, MissionParticipant[]>()
   const membershipEventsByDevice = new Map<string, GroupMembershipEvent[]>()
+  const backfillCheckpointsByDevice = new Map<string, ParticipantBackfillCheckpoint[]>()
   const candidateDeviceIds = new Set<string>()
 
   for (const participant of input.participants) {
@@ -42,14 +45,21 @@ export function createParticipationScope(input: {
     appendIndexed(membershipEventsByDevice, event.traccar_device_id, event)
     candidateDeviceIds.add(event.traccar_device_id)
   }
+  for (const checkpoint of input.backfillCheckpoints ?? []) {
+    appendIndexed(backfillCheckpointsByDevice, checkpoint.traccar_device_id, checkpoint)
+    candidateDeviceIds.add(checkpoint.traccar_device_id)
+  }
   for (const events of membershipEventsByDevice.values()) {
     events.sort((left, right) =>
-      right.observed_at.localeCompare(left.observed_at) || right.id.localeCompare(left.id))
+      right.observed_at.localeCompare(left.observed_at) || right.sequence - left.sequence)
   }
 
   function includesAt(deviceId: string, timestamp: string): boolean {
     if (directParticipantsByDevice.get(deviceId)?.some(
       (participant) => windowContains(participant, timestamp),
+    ) === true) return true
+    if (backfillCheckpointsByDevice.get(deviceId)?.some(
+      (checkpoint) => checkpoint.window_from <= timestamp && timestamp < checkpoint.window_to,
     ) === true) return true
 
     const resolvedTeams = new Set<string>()
@@ -75,14 +85,20 @@ export function createParticipationScope(input: {
     activeDeviceIdsAt,
     filterSnapshot: (snapshot, observedAt = new Date().toISOString()) => {
       const activeDeviceIds = new Set(activeDeviceIdsAt(observedAt))
+      const visiblePositions = snapshot.positions.filter((position) =>
+        activeDeviceIds.has(position.device_id) ||
+        (position.device_cache_stale !== true && includesAt(position.device_id, position.timestamp)))
+      const visibleDeviceIds = new Set([
+        ...activeDeviceIds,
+        ...visiblePositions.map((position) => position.device_id),
+      ])
       return {
         ...snapshot,
-        devices: snapshot.devices.filter((device) => activeDeviceIds.has(device.device_id)),
+        devices: snapshot.devices.filter((device) => visibleDeviceIds.has(device.device_id)),
         // Current positions describe where selected participants are now. Their
         // source fix can predate a late selection or observation-time group
         // membership change, so historical evidence windows must not hide them.
-        positions: snapshot.positions.filter((position) =>
-          activeDeviceIds.has(position.device_id)),
+        positions: visiblePositions,
         breadcrumbs: snapshot.breadcrumbs.filter((position) =>
           includesAt(position.device_id, position.timestamp)),
         ...(snapshot.rawBreadcrumbsForPersistence === undefined
@@ -119,6 +135,7 @@ export function createParticipationScope(input: {
 export const EMPTY_PARTICIPATION_SCOPE = createParticipationScope({
   participants: [],
   membershipEvents: [],
+  backfillCheckpoints: [],
 })
 
 function windowContains(participant: MissionParticipant, timestamp: string): boolean {

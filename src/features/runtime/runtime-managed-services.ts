@@ -103,6 +103,7 @@ type CreateManagedRuntimeServicesDependencies = {
     readonly subscribeParticipationScope?: (listener: () => void) => () => void
     readonly applyParticipantRoster?: (
       devices: readonly import('../tracking/tracking-types').NormalizedTrackingDevice[],
+      options?: { readonly complete: boolean },
     ) => void | Promise<void>
     readonly applyParticipantGroups?: (
       groups: readonly import('../tracking/tracking-types').NormalizedTraccarGroup[],
@@ -154,6 +155,7 @@ type CreateManagedRuntimeServicesDependencies = {
   readonly subscribeParticipationScope?: (listener: () => void) => () => void
   readonly applyParticipantRoster?: (
     devices: readonly import('../tracking/tracking-types').NormalizedTrackingDevice[],
+    options?: { readonly complete: boolean },
   ) => void | Promise<void>
   readonly applyParticipantGroups?: (
     groups: readonly import('../tracking/tracking-types').NormalizedTraccarGroup[],

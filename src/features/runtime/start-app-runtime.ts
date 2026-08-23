@@ -347,8 +347,8 @@ export async function startAppRuntime(
             state.error !== previousState.error
           ) listener()
         }),
-      applyParticipantRoster: (devices) =>
-        useParticipantStore.getState().controller?.applyRoster(devices),
+      applyParticipantRoster: (devices, options) =>
+        useParticipantStore.getState().controller?.applyRoster(devices, undefined, options),
       applyParticipantGroups: (groups) =>
         useParticipantStore.getState().controller?.applyGroups(groups),
       applyParticipantRosterError: (message) =>

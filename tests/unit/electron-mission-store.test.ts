@@ -82,6 +82,15 @@ const { createElectronMissionStore, CURRENT_SCHEMA_VERSION } = require('../../el
       }[]
       readonly breadcrumbCount: number
     }>
+    readonly runOutingFixSummaryInWorker?: (input: {
+      readonly databasePath: string
+      readonly query: { readonly missionId: string }
+      readonly signal?: AbortSignal
+    }) => Promise<{
+      readonly outings: readonly { readonly outing_id: string; readonly accepted_fix_count: number }[]
+      readonly unassigned_accepted_fix_count: number
+      readonly total_accepted_fix_count: number
+    }>
   }) => ElectronMissionStore
 }
 const Database = require('better-sqlite3')
@@ -257,6 +266,14 @@ type ElectronMissionStore = {
     readonly breadcrumbCount: number
   }>
   readonly cancelMissionReviewRead: (requestId: string) => Promise<boolean>
+  readonly readOutingFixSummary: (
+    query: { readonly missionId: string },
+    requestId?: string,
+  ) => Promise<{
+    readonly outings: readonly { readonly outing_id: string; readonly accepted_fix_count: number }[]
+    readonly unassigned_accepted_fix_count: number
+    readonly total_accepted_fix_count: number
+  }>
   readonly countPositions: (missionId: string, deviceId?: string) => Promise<number>
   readonly latestPositions: (missionId: string) => Promise<readonly { readonly device_id: string; readonly lat: number }[]>
   readonly listIngestAnomalies: (missionId: string, options?: {
@@ -606,7 +623,6 @@ describe('electron mission store', () => {
           ) ORDER BY name`).all()).toEqual([
         { name: 'idx_mission_participants_active_device' },
         { name: 'idx_mission_participants_active_group' },
-        { name: 'idx_positions_mission_timestamp' },
       ])
       const fixSummaryPlan = migratedDb.prepare(`EXPLAIN QUERY PLAN
         SELECT outing.id AS outing_id, COUNT(position.id) AS accepted_fix_count
@@ -620,7 +636,7 @@ describe('electron mission store', () => {
           readonly detail: string
         }[]
       expect(fixSummaryPlan.some((step) =>
-        step.detail.includes('idx_positions_mission_timestamp'))).toBe(true)
+        step.detail.includes('idx_positions_mission_timestamp'))).toBe(false)
     } finally {
       migratedDb.close()
     }
@@ -1000,6 +1016,43 @@ describe('electron mission store', () => {
     await vi.waitFor(() => expect(runMissionReviewReadQueryInWorker).toHaveBeenCalledTimes(2))
     completions[1]?.()
     await Promise.all([first, second])
+  })
+
+  it('does not start the next outing summary until the previous physical worker exits [DON-270]', async () => {
+    const resultResolvers: Array<(value: {
+      readonly outings: readonly never[]
+      readonly unassigned_accepted_fix_count: number
+      readonly total_accepted_fix_count: number
+    }) => void> = []
+    const exitResolvers: Array<() => void> = []
+    const runOutingFixSummaryInWorker = vi.fn(() => {
+      const workerExited = new Promise<void>((resolve) => exitResolvers.push(resolve))
+      const operation = new Promise<{
+        readonly outings: readonly never[]
+        readonly unassigned_accepted_fix_count: number
+        readonly total_accepted_fix_count: number
+      }>((resolve) => resultResolvers.push(resolve))
+      Object.defineProperty(operation, 'workerExited', { value: workerExited })
+      return operation
+    })
+    store = await createStore({ runOutingFixSummaryInWorker })
+
+    const first = store.readOutingFixSummary({ missionId: 'mission-1' }, 'outing-first')
+    const second = store.readOutingFixSummary({ missionId: 'mission-2' }, 'outing-second')
+    await vi.waitFor(() => expect(runOutingFixSummaryInWorker).toHaveBeenCalledTimes(1))
+    resultResolvers[0]?.({
+      outings: [], unassigned_accepted_fix_count: 0, total_accepted_fix_count: 0,
+    })
+    await first
+
+    expect(runOutingFixSummaryInWorker).toHaveBeenCalledTimes(1)
+    exitResolvers[0]?.()
+    await vi.waitFor(() => expect(runOutingFixSummaryInWorker).toHaveBeenCalledTimes(2))
+    resultResolvers[1]?.({
+      outings: [], unassigned_accepted_fix_count: 0, total_accepted_fix_count: 0,
+    })
+    exitResolvers[1]?.()
+    await second
   })
 
   it('keeps info constant-size and excludes anomaly-ledger aggregation [DON-251]', async () => {
@@ -2949,6 +3002,15 @@ describe('electron mission store', () => {
       readonly failRemovalAfterProjection?: boolean
     }
     readonly storageDiagnostics?: StorageDiagnosticsPort
+    readonly runOutingFixSummaryInWorker?: (input: {
+      readonly databasePath: string
+      readonly query: { readonly missionId: string }
+      readonly signal?: AbortSignal
+    }) => Promise<{
+      readonly outings: readonly { readonly outing_id: string; readonly accepted_fix_count: number }[]
+      readonly unassigned_accepted_fix_count: number
+      readonly total_accepted_fix_count: number
+    }>
   } = {}): Promise<ElectronMissionStore> {
     userDataPath = await mkdtemp(path.join(tmpdir(), 'sartracker-electron-mission-'))
     return createElectronMissionStore({ userDataPath, ...options })

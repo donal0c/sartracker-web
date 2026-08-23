@@ -3,9 +3,10 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { createRequire } from 'node:module'
 
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 const require = createRequire(import.meta.url)
+const Database = require('better-sqlite3')
 const { createElectronMissionStore } = require('../../electron/mission-store.cjs') as {
   readonly createElectronMissionStore: (options: {
     readonly userDataPath: string
@@ -32,10 +33,22 @@ type ElectronParticipantStore = {
   readonly removeMissionParticipant: (input: unknown) => Promise<Participant>
   readonly listMissionParticipants: (missionId: string) => Promise<readonly Participant[]>
   readonly recordGroupMembershipEvents: (input: unknown) => Promise<readonly unknown[]>
-  readonly listGroupMembershipEvents: (missionId: string, teamId?: string) => Promise<readonly { readonly change: string }[]>
+  readonly listGroupMembershipEvents: (missionId: string, teamId?: string) => Promise<readonly {
+    readonly change: string
+    readonly sequence: number
+  }[]>
   readonly upsertParticipantBackfillCheckpoint: (input: unknown) => Promise<unknown>
-  readonly listParticipantBackfillCheckpoints: (missionId: string) => Promise<readonly unknown[]>
-  readonly listMissionEvents: (missionId: string) => Promise<readonly { readonly event_type: string }[]>
+  readonly listParticipantBackfillCheckpoints: (missionId: string) => Promise<readonly {
+    readonly traccar_device_id: string
+    readonly window_from: string
+    readonly window_to: string
+    readonly reconciled_until: string
+    readonly completed: number
+  }[]>
+  readonly listMissionEvents: (missionId: string) => Promise<readonly {
+    readonly event_type: string
+    readonly timestamp: string
+  }[]>
   readonly upsertDevicesBulk: (input: unknown) => Promise<unknown>
 }
 
@@ -43,6 +56,7 @@ let stores: ElectronParticipantStore[] = []
 let directories: string[] = []
 
 afterEach(async () => {
+  vi.useRealTimers()
   for (const store of stores) store.close()
   stores = []
   await Promise.all(directories.map((directory) => rm(directory, { recursive: true, force: true })))
@@ -79,6 +93,18 @@ describe('Electron participant store [DON-271]', () => {
       }),
     ]))
     await expect(store.listGroupMembershipEvents(mission.id)).resolves.toHaveLength(2)
+    await expect(store.listParticipantBackfillCheckpoints(mission.id)).resolves.toEqual([
+      expect.objectContaining({
+        traccar_device_id: '11',
+        window_from: '2026-08-20T08:00:00.000Z',
+        completed: 0,
+      }),
+      expect.objectContaining({
+        traccar_device_id: '12',
+        window_from: '2026-08-20T08:00:00.000Z',
+        completed: 0,
+      }),
+    ])
     expect((await store.listMissionEvents(mission.id)).map((event) => event.event_type))
       .toContain('participants_selected')
   })
@@ -175,6 +201,8 @@ describe('Electron participant store [DON-271]', () => {
   })
 
   it('records the observation-time roster when a later group selection is unique', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-08-20T11:00:00.000Z'))
     const store = await createStore()
     const mission = await store.createMission({
       name: 'Later group roster mission',
@@ -189,6 +217,7 @@ describe('Electron participant store [DON-271]', () => {
         name: 'Kerry MRT',
         member_device_ids: ['11'],
       },
+      effective_from: '2026-08-20T09:00:00.000Z',
       confirmed_by: 'Coordinator A',
     })
 
@@ -198,6 +227,15 @@ describe('Electron participant store [DON-271]', () => {
         traccar_device_id: '11',
         change: 'member',
         observed_at: added.added_at,
+      }),
+    ])
+    await expect(store.listParticipantBackfillCheckpoints(mission.id)).resolves.toEqual([
+      expect.objectContaining({
+        traccar_device_id: '11',
+        window_from: '2026-08-20T09:00:00.000Z',
+        window_to: '2026-08-20T11:00:00.000Z',
+        reconciled_until: '2026-08-20T09:00:00.000Z',
+        completed: 0,
       }),
     ])
   })
@@ -296,6 +334,41 @@ describe('Electron participant store [DON-271]', () => {
     ])
   })
 
+  it('rolls back checkpoint completion when its required audit append fails', async () => {
+    const store = await createStore()
+    const mission = await store.createMission({
+      name: 'Atomic backfill completion mission',
+      start_time: '2026-08-20T08:00:00.000Z',
+    })
+    const checkpoint = {
+      mission_id: mission.id,
+      traccar_device_id: '20',
+      window_from: '2026-08-20T09:00:00.000Z',
+      window_to: '2026-08-20T11:00:00.000Z',
+      reconciled_until: '2026-08-20T09:00:00.000Z',
+      completed: false,
+    }
+    await store.upsertParticipantBackfillCheckpoint(checkpoint)
+    const database = new Database(path.join(directories.at(-1)!, 'mission-store.sqlite'))
+    database.exec(`CREATE TRIGGER reject_backfill_completion_audit
+      BEFORE INSERT ON mission_events
+      WHEN NEW.event_type = 'participant_backfill_completed'
+      BEGIN SELECT RAISE(FAIL, 'injected completion audit failure'); END;`)
+
+    await expect(store.upsertParticipantBackfillCheckpoint({
+      ...checkpoint,
+      reconciled_until: checkpoint.window_to,
+      completed: true,
+    })).rejects.toThrow(/injected completion audit failure/i)
+
+    await expect(store.listParticipantBackfillCheckpoints(mission.id)).resolves.toEqual([
+      expect.objectContaining({ completed: 0, reconciled_until: checkpoint.window_from }),
+    ])
+    expect((await store.listMissionEvents(mission.id)).map((event) => event.event_type))
+      .not.toContain('participant_backfill_completed')
+    database.close()
+  })
+
   it('rolls back selection and its audit event on an injected failure', async () => {
     const store = await createStore({ failAfterMutation: true })
     const mission = await store.createMission({
@@ -314,7 +387,60 @@ describe('Electron participant store [DON-271]', () => {
       .not.toContain('participants_selected')
   })
 
+  it('repairs candidate-v9 membership rows with deterministic append sequence', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-08-20T09:00:00.000Z'))
+    let store = await createStore()
+    const mission = await store.createMission({
+      name: 'Candidate v9 membership repair mission',
+      start_time: '2026-08-20T08:00:00.000Z',
+    })
+    const participants = await store.selectMissionParticipants({
+      mission_id: mission.id,
+      groups: [{
+        traccar_group_id: '101', name: 'Kerry MRT', member_device_ids: ['11'],
+      }],
+      devices: [],
+      selected_by: 'Coordinator A',
+    })
+    const teamId = participants[0]?.mission_team_id
+    store.close()
+    stores = stores.filter((candidate) => candidate !== store)
+
+    const databasePath = path.join(directories.at(-1)!, 'mission-store.sqlite')
+    const database = new Database(databasePath)
+    database.exec(`
+      DROP INDEX idx_group_membership_sequence;
+      DROP INDEX idx_group_membership_mission_team;
+      ALTER TABLE mission_group_membership_events DROP COLUMN sequence;
+      CREATE INDEX idx_group_membership_mission_team
+        ON mission_group_membership_events(mission_id, mission_team_id, observed_at);
+    `)
+    database.close()
+
+    store = createElectronMissionStore({ userDataPath: directories.at(-1)! })
+    stores.push(store)
+    await expect(store.listGroupMembershipEvents(mission.id)).resolves.toEqual([
+      expect.objectContaining({ traccar_device_id: '11', sequence: 1 }),
+    ])
+    await store.recordGroupMembershipEvents({
+      mission_id: mission.id,
+      events: [{
+        mission_team_id: teamId,
+        traccar_device_id: '11',
+        change: 'left',
+        observed_at: '2026-08-20T09:00:00.000Z',
+      }],
+    })
+    await expect(store.listGroupMembershipEvents(mission.id)).resolves.toEqual([
+      expect.objectContaining({ change: 'member', sequence: 1 }),
+      expect.objectContaining({ change: 'left', sequence: 2 }),
+    ])
+  })
+
   it('records flag-off first-contact devices as legacy_auto in the same bulk write', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-08-20T10:00:00.000Z'))
     const store = await createStore()
     const mission = await store.createMission({
       name: 'Legacy flag-off mission',
@@ -340,9 +466,15 @@ describe('Electron participant store [DON-271]', () => {
     await expect(store.listMissionParticipants(mission.id)).resolves.toEqual([
       expect.objectContaining({
         traccar_device_id: '31', provenance: 'legacy_auto',
-        effective_from: '2026-08-20T09:00:00.000Z',
+        effective_from: '2026-08-20T10:00:00.000Z',
       }),
     ])
+    expect((await store.listMissionEvents(mission.id)).filter((event) =>
+      event.event_type === 'device_created' || event.event_type === 'participant_added'))
+      .toEqual([
+        expect.objectContaining({ event_type: 'participant_added', timestamp: '2026-08-20T10:00:00.000Z' }),
+        expect.objectContaining({ event_type: 'device_created', timestamp: '2026-08-20T10:00:00.000Z' }),
+      ])
   })
 })
 

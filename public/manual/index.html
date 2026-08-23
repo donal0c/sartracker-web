@@ -651,9 +651,11 @@
           <p>
             A selected Traccar group follows later server-side membership changes from the time SAR Tracker
             observes them. The app displays a coordinator notice and never invents earlier group membership
-            or retrospective evidence. Adding an individual device with an earlier effective time creates a
-            bounded, resumable history-backfill window; pending and completed states stay visible. Removing a
-            participant ends future collection but does not delete evidence already retained. More than 100
+            or retrospective evidence. When a coordinator explicitly backdates the initial or later selection
+            of a group, each confirmed member receives the same bounded, resumable history-backfill window as
+            an individual device; pending and completed states stay visible. Removing a participant ends future
+            collection but does not delete evidence already retained, and their last accepted current marker
+            remains visible until it becomes stale. More than 100
             active selected devices produces a persistent warning and still includes every selected device —
             the app never truncates the roster or silently drops the 101st device.
           </p>
@@ -892,7 +894,9 @@
             selection even when its fix time predates the participation window; that visibility does not
             backdate or persist the older fix as mission evidence. If participant evidence is still loading or
             unavailable, the tracking warning says so explicitly and preserves the unfiltered fallback cache
-            until the scope can be safely applied.
+            until the scope can be safely applied. If malformed Traccar device rows make a roster observation
+            incomplete, SAR Tracker may add confirmed members from the valid rows but will not infer that a
+            missing group member has left.
           </div>
           <div class="note">
             <strong>Tracking does not wait for basemap tiles:</strong> current positions and breadcrumbs
