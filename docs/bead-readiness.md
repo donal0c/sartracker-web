@@ -22,15 +22,15 @@ Use this document before implementation to decide how much parallel research, pl
 
 Last updated: 2026-08-24 by Codex (Breadcrumb PR-3 pre-G3 implementation)
 
-### `DON-273` / `DON-276` / `DON-275` — Breadcrumb PR-3 complete coverage — T1 gates pending
+### `DON-273` / `DON-276` / `DON-275` — Breadcrumb PR-3 complete coverage — G3 ready
 
 - Research required: `Low`; the renderer decision and domain requirements are locked.
-- Implementation readiness: implementation complete behind the internal flags; exact-head T1 qualification and G3 approval remain.
-- Recommended action: run the accepted T1 deterministic, packaging, 3.704 GB v9→v10 migration, and packaged CI-soak gates. Preserve the standing G2 result because B's measured query, segmentation, tile, and source strategy are unchanged; the CommonJS/browser export interop fix changes only module exposure.
+- Implementation readiness: implementation and T1 qualification are complete behind the internal flags; G3 approval remains.
+- Recommended action: request Donal's smallest G3 decision on flipping coverage and the required mission model together in one revertable commit.
 - Locked decisions: current positions never wait; historical filters never hide selected-participant live positions; non-participants remain discovery/picker/diagnostic only; no false 100%; no global mission timestamp index; no mission-sized main-isolate work; exact paged Dots remains inspection/export; G3 separately controls the final coverage + mission-model default posture.
 - Open questions: no SAR-team question. Donal must approve the coverage + mission-model default posture at G3 after the exact-head T1 evidence.
-- Evidence: G2's prescribed 18 serial packaged runs completed on the Ubuntu reference host at measured SHA `8eff87b724ae6`; B alone passed 960k and 2M. BCP-08's deterministic stage gate passed 253 unit files / 1,972 tests plus lint, TypeScript, CJS syntax, build, and bundle budgets at pushed head `a9d3930`. BCP-09 focused units, TypeScript, lint/build, three Chromium operator flows, six critical visual captures, and the independent visual reviewer pass for the corrected Outside-outings frame are green. Full exact-head T1 and heavy migration/soak bindings are not yet recorded.
-- Ready-to-start checklist: [x] accepted plan and requirement trace; [x] exact base; [x] G2 ratification; [x] BCP-08; [x] flag-on BCP-09 implementation/manual; [ ] exact-head T1; [ ] G3; [ ] separate default flip; [ ] five exact-head reviews.
+- Evidence: G2's prescribed 18 serial packaged runs completed on the Ubuntu reference host at measured SHA `8eff87b724ae6`; B alone passed 960k and 2M. BCP-08's deterministic stage gate passed 253 unit files / 1,972 tests plus lint, TypeScript, CJS syntax, build, and bundle budgets at pushed head `a9d3930`. T1 at tested code head `d1e884b` passed 257 files / 1,983 unit tests, lint, TypeScript, CJS syntax, exact Dots 10/10, build/budgets, Chromium 157/157, six critical visual reviews, macOS/Linux packaging, a 16.557 ms integrity-`ok` 3.704 GB v9→v10 migration retaining 2.04M positions, and the packaged Ubuntu CI soak with 8,664/8,664 exact fixes, restart, zero redundant slope, 5.586 ms main / 66.9 ms renderer maxima, 1.004 GB peak RSS, and 20 KiB coverage ledger growth. Full bindings and proof limits are in `docs/breadcrumb-pr3-t1-evidence.md`.
+- Ready-to-start checklist: [x] accepted plan and requirement trace; [x] exact base; [x] G2 ratification; [x] BCP-08; [x] flag-on BCP-09 implementation/manual; [x] exact-head T1; [ ] G3; [ ] separate default flip; [ ] five exact-head reviews.
 
 ### `DON-270` / `DON-271` / `DON-272` — Breadcrumb PR-2 mission model — review ready
 
