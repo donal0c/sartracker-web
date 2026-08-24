@@ -39,6 +39,49 @@ export function createTrailSegments(
   return segments
 }
 
+export type PagedTrailSegmenter = {
+  readonly append: (
+    positions: readonly NormalizedTrackingPosition[],
+  ) => readonly (readonly NormalizedTrackingPosition[])[]
+  readonly finish: () => readonly (readonly NormalizedTrackingPosition[])[]
+}
+
+/**
+ * Segments a cursor-paged ordered trail without inventing a break at a
+ * transport boundary. Only the unfinished final segment is retained.
+ */
+export function createPagedTrailSegmenter(gapThresholdMs: number): PagedTrailSegmenter {
+  let currentSegment: NormalizedTrackingPosition[] = []
+  let finished = false
+
+  return {
+    append: (positions) => {
+      if (finished) throw new Error('Cannot append to a finished trail segmenter.')
+      const completed: NormalizedTrackingPosition[][] = []
+      for (const position of positions) {
+        const previous = currentSegment.at(-1)
+        if (
+          previous !== undefined &&
+          getParsedTimestamp(position) - getParsedTimestamp(previous) > gapThresholdMs
+        ) {
+          completed.push(currentSegment)
+          currentSegment = []
+        }
+        currentSegment.push(position)
+      }
+      return completed
+    },
+    finish: () => {
+      if (finished) return []
+      finished = true
+      if (currentSegment.length === 0) return []
+      const finalSegment = currentSegment
+      currentSegment = []
+      return [finalSegment]
+    },
+  }
+}
+
 /** Parses a normalized position timestamp once for stable repeated shaping. */
 function getParsedTimestamp(position: NormalizedTrackingPosition): number {
   const cached = parsedTimestampByPosition.get(position)
