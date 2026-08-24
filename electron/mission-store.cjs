@@ -34,8 +34,13 @@ const { createZipArchive, readZipArchive } = require('./zip-archive.cjs')
 const { createOutingStore } = require('./outing-store.cjs')
 const { createParticipantStore } = require('./participant-store.cjs')
 const { runOutingFixSummaryInWorker } = require('./outing-fix-summary-runner.cjs')
+const {
+  appendCoverageInvalidation,
+  bumpCoverageChangeSequence,
+  recordAcceptedCoveragePositions,
+} = require('./coverage-ledger.cjs')
 
-const CURRENT_SCHEMA_VERSION = 9
+const CURRENT_SCHEMA_VERSION = 10
 const DATABASE_FILE_NAME = 'mission-store.sqlite'
 const BACKUP_FILE_NAME = 'mission-store.backup.sqlite'
 const ARCHIVE_DIRECTORY_NAME = 'archives'
@@ -100,6 +105,7 @@ function createElectronMissionStore(options) {
   const finalizeMissionFaultInjection = options.finalizeMissionFaultInjection ?? {}
   const archiveFaultInjection = options.archiveFaultInjection ?? {}
   const storageDiagnostics = options.storageDiagnostics ?? null
+  const coverageLedgerFaultInjection = options.coverageLedgerFaultInjection ?? {}
   const breadcrumbQueryRunner =
     options.runBreadcrumbQueryInWorker ?? runBreadcrumbQueryInWorker
   const breadcrumbDotQueryRunner =
@@ -124,10 +130,22 @@ function createElectronMissionStore(options) {
   const outingStore = createOutingStore({
     db,
     faultInjection: options.outingFaultInjection ?? {},
+    recordCoverageInvalidation: (input) => appendCoverageInvalidation(db, {
+      id: randomUUID(),
+      ...input,
+      failAfterWrite: coverageLedgerFaultInjection.afterWrite === true,
+    }),
   })
   const participantStore = createParticipantStore({
     db,
     faultInjection: options.participantFaultInjection ?? {},
+    recordCoverageChange: (missionId, updatedAt) => {
+      const changeSeq = bumpCoverageChangeSequence(db, missionId, updatedAt)
+      if (coverageLedgerFaultInjection.afterWrite === true) {
+        throw new Error('Injected coverage ledger failure.')
+      }
+      return changeSeq
+    },
   })
   const ingestEvidenceFaultInjection = options.ingestEvidenceFaultInjection ?? {}
   const ingestAnomalyOutbox = createIngestAnomalyOutbox({
@@ -287,10 +305,10 @@ function createElectronMissionStore(options) {
     },
     getDevice: async (missionId, deviceId) => getDevice(db, missionId, deviceId),
     listDevices: async (missionId) => all(db, 'SELECT * FROM devices WHERE mission_id = ? ORDER BY name ASC', missionId),
-    addPosition: async (input) => addPosition(db, input),
+    addPosition: async (input) => addPosition(db, input, coverageLedgerFaultInjection),
     addPositionsBulk: async (input) => {
       const startedAtMs = performance.now()
-      const result = addPositionsBulk(db, input)
+      const result = addPositionsBulk(db, input, true, coverageLedgerFaultInjection)
       await safeStorageDiagnostic(() =>
         storageDiagnostics?.recordInsertedPositions({
           durationMs: performance.now() - startedAtMs,
@@ -306,8 +324,8 @@ function createElectronMissionStore(options) {
       const startedAtMs = performance.now()
       const hasCheckpoints = Array.isArray(input.checkpoints) && input.checkpoints.length > 0
       const result = hasCheckpoints
-        ? persistTrackingHistoryBatch(db, input, false)
-        : addPositionsBulk(db, input, false)
+        ? persistTrackingHistoryBatch(db, input, false, coverageLedgerFaultInjection)
+        : addPositionsBulk(db, input, false, coverageLedgerFaultInjection)
       await safeStorageDiagnostic(() =>
         storageDiagnostics?.recordInsertedPositions({
           durationMs: performance.now() - startedAtMs,
@@ -326,7 +344,7 @@ function createElectronMissionStore(options) {
     },
     persistTrackingHistoryBatch: async (input) => {
       const startedAtMs = performance.now()
-      const result = persistTrackingHistoryBatch(db, input)
+      const result = persistTrackingHistoryBatch(db, input, true, coverageLedgerFaultInjection)
       await safeStorageDiagnostic(() =>
         storageDiagnostics?.recordInsertedPositions({
           durationMs: performance.now() - startedAtMs,
@@ -751,6 +769,53 @@ function migrate(db) {
       FOREIGN KEY (mission_id, device_id) REFERENCES devices(mission_id, device_id)
     );
     CREATE INDEX IF NOT EXISTS idx_positions_mission_device_timestamp ON positions(mission_id, device_id, timestamp);
+    CREATE TABLE IF NOT EXISTS coverage_chunks (
+      mission_id TEXT NOT NULL,
+      device_id TEXT NOT NULL,
+      period_kind TEXT NOT NULL CHECK (period_kind IN ('outing', 'unassigned')),
+      period_id TEXT NOT NULL DEFAULT '',
+      content_rev INTEGER NOT NULL DEFAULT 1,
+      built_rev INTEGER,
+      fix_count INTEGER,
+      fix_digest TEXT,
+      min_ts TEXT,
+      max_ts TEXT,
+      updated_at TEXT NOT NULL,
+      PRIMARY KEY (mission_id, device_id, period_kind, period_id),
+      CHECK ((period_kind = 'outing') = (period_id <> '')),
+      FOREIGN KEY (mission_id) REFERENCES missions(id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_coverage_chunks_mission
+      ON coverage_chunks(mission_id);
+    CREATE TABLE IF NOT EXISTS coverage_missions (
+      mission_id TEXT PRIMARY KEY,
+      change_seq INTEGER NOT NULL DEFAULT 0,
+      enumerated INTEGER NOT NULL DEFAULT 0,
+      updated_at TEXT NOT NULL,
+      FOREIGN KEY (mission_id) REFERENCES missions(id) ON DELETE CASCADE
+    );
+    CREATE TABLE IF NOT EXISTS coverage_invalidations (
+      id TEXT PRIMARY KEY,
+      mission_id TEXT NOT NULL,
+      reason TEXT NOT NULL CHECK (reason IN (
+        'outing_created',
+        'outing_ended',
+        'outing_boundaries_edited',
+        'enumeration_required'
+      )),
+      subject_outing_id TEXT NOT NULL,
+      old_started_at TEXT,
+      old_ended_at TEXT,
+      new_started_at TEXT,
+      new_ended_at TEXT,
+      range_from TEXT NOT NULL,
+      range_to TEXT,
+      created_at TEXT NOT NULL,
+      drained_at TEXT,
+      FOREIGN KEY (mission_id) REFERENCES missions(id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_coverage_invalidations_pending
+      ON coverage_invalidations(mission_id, drained_at);
     CREATE TABLE IF NOT EXISTS tracking_history_checkpoints (
       mission_id TEXT NOT NULL,
       device_id TEXT NOT NULL,
@@ -1854,7 +1919,7 @@ function getDevice(db, missionId, deviceId) {
   return device
 }
 
-function addPosition(db, input) {
+function addPosition(db, input, coverageFaultInjection = {}) {
   ensureWritableMission(db, input.mission_id)
   validateLatLon(input.lat, input.lon, 'Position')
   getDevice(db, input.mission_id, input.device_id)
@@ -1900,14 +1965,26 @@ function addPosition(db, input) {
       }
       return existing
     }
-    const adopted = adoptSourceIdentityForLegacyPosition(
-      db,
-      input.mission_id,
-      sourcePositionId,
-      input,
-      timestamp,
-      dataOrigin,
-    )
+    const adopt = db.transaction(() => {
+      const result = adoptSourceIdentityForLegacyPosition(
+        db,
+        input.mission_id,
+        sourcePositionId,
+        input,
+        timestamp,
+        dataOrigin,
+      )
+      if (result !== undefined && result !== AMBIGUOUS_LEGACY_ADOPTION) {
+        recordAcceptedCoveragePositions(db, {
+          missionId: input.mission_id,
+          positions: [result],
+          updatedAt: receivedAt,
+          failAfterWrite: coverageFaultInjection.afterWrite === true,
+        })
+      }
+      return result
+    })
+    const adopted = adopt()
     if (adopted === AMBIGUOUS_LEGACY_ADOPTION) {
       throw createAmbiguousLegacyAdoptionError(sourcePositionId)
     }
@@ -1930,12 +2007,18 @@ function addPosition(db, input) {
        status = 'online'
        WHERE mission_id = ? AND device_id = ?`,
     ).run(timestamp, timestamp, input.mission_id, input.device_id)
+    recordAcceptedCoveragePositions(db, {
+      missionId: input.mission_id,
+      positions: [{ device_id: input.device_id, timestamp }],
+      updatedAt: receivedAt,
+      failAfterWrite: coverageFaultInjection.afterWrite === true,
+    })
   })
   transaction()
   return getById(db, 'positions', id, 'Position')
 }
 
-function addPositionsBulk(db, input, includePositions = true) {
+function addPositionsBulk(db, input, includePositions = true, coverageFaultInjection = {}) {
   ensureWritableMission(db, input.mission_id)
   const positions = Array.isArray(input.positions) ? input.positions : []
   if (positions.length === 0) {
@@ -1970,6 +2053,7 @@ function addPositionsBulk(db, input, includePositions = true) {
   let changedPositionCount = 0
   let insertedPositionCount = 0
   let skippedAmbiguousLegacyAdoptionCount = 0
+  const acceptedCoveragePositions = []
 
   const transaction = db.transaction(() => {
     const receivedAt = now()
@@ -2033,6 +2117,7 @@ function addPositionsBulk(db, input, includePositions = true) {
         if (adopted !== undefined) {
           changedPositionCount += 1
           changedIds?.push(adopted.id)
+          acceptedCoveragePositions.push(adopted)
           continue
         }
       } else {
@@ -2079,7 +2164,14 @@ function addPositionsBulk(db, input, includePositions = true) {
       changedPositionCount += 1
       changedIds?.push(id)
       insertedPositionCount += 1
+      acceptedCoveragePositions.push({ device_id: position.device_id, timestamp })
     }
+    recordAcceptedCoveragePositions(db, {
+      missionId: input.mission_id,
+      positions: acceptedCoveragePositions,
+      updatedAt: receivedAt,
+      failAfterWrite: coverageFaultInjection.afterWrite === true,
+    })
   })
 
   transaction()
@@ -2091,7 +2183,12 @@ function addPositionsBulk(db, input, includePositions = true) {
   }
 }
 
-function persistTrackingHistoryBatch(db, input, includePositions = true) {
+function persistTrackingHistoryBatch(
+  db,
+  input,
+  includePositions = true,
+  coverageFaultInjection = {},
+) {
   ensureWritableMission(db, input.mission_id)
   const checkpoints = Array.isArray(input.checkpoints) ? input.checkpoints : []
   let positionResult = {
@@ -2122,7 +2219,7 @@ function persistTrackingHistoryBatch(db, input, includePositions = true) {
     const added = addPositionsBulk(db, {
       mission_id: input.mission_id,
       positions: Array.isArray(input.positions) ? input.positions : [],
-    }, includePositions)
+    }, includePositions, coverageFaultInjection)
     positionResult = {
       ...added,
       skippedAmbiguousLegacyAdoptionCount:

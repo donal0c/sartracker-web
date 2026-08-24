@@ -5,6 +5,7 @@ function createParticipantStore(options) {
   const { db } = options
   const readNow = options.now ?? (() => new Date().toISOString())
   const faultInjection = options.faultInjection ?? {}
+  const recordCoverageChange = options.recordCoverageChange ?? (() => undefined)
 
   return {
     selectMissionParticipants(input) {
@@ -62,6 +63,9 @@ function createParticipantStore(options) {
             addedAt: timestamp,
             addedBy: selectedBy,
           }))
+        }
+        if (selected.length > 0) {
+          recordCoverageChange(mission.id, timestamp)
         }
         failAfterMutation(faultInjection)
         insertAudit(db, mission.id, 'participants_selected', timestamp, {
@@ -138,6 +142,7 @@ function createParticipantStore(options) {
             })
           }
         }
+        recordCoverageChange(mission.id, addedAt)
         failAfterMutation(faultInjection)
         insertAudit(db, mission.id, 'participant_added', addedAt, {
           participant_id: participant.id,
@@ -274,6 +279,7 @@ function createParticipantStore(options) {
             mission.id, deviceId, windowFrom, windowTo,
             reconciledUntil, completed, updatedAt,
           )
+        recordCoverageChange(mission.id, updatedAt)
         if (completed === 1 && existing?.completed !== 1) {
           insertAudit(db, mission.id, 'participant_backfill_completed', updatedAt, {
             traccar_device_id: deviceId,

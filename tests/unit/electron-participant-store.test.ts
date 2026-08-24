@@ -29,6 +29,7 @@ type Participant = {
 
 type ElectronParticipantStore = {
   readonly close: () => void
+  readonly info: () => Promise<{ readonly database_path: string }>
   readonly createMission: (input: { readonly name: string; readonly start_time: string }) => Promise<{ readonly id: string }>
   readonly getMission: (missionId: string) => Promise<{ readonly status: string }>
   readonly selectMissionParticipants: (input: unknown) => Promise<readonly Participant[]>
@@ -115,6 +116,13 @@ describe('Electron participant store [DON-271]', () => {
     ])
     expect((await store.listMissionEvents(mission.id)).map((event) => event.event_type))
       .toContain('participants_selected')
+    const database = new Database((await store.info()).database_path, { readonly: true })
+    try {
+      expect(database.prepare('SELECT change_seq FROM coverage_missions WHERE mission_id = ?').get(mission.id))
+        .toEqual({ change_seq: 1 })
+    } finally {
+      database.close()
+    }
   })
 
   it('reports aggregate group-member backfill progress on the selected group row', async () => {
@@ -158,6 +166,13 @@ describe('Electron participant store [DON-271]', () => {
         backfill_completed_count: 1,
       }),
     ])
+    const database = new Database((await store.info()).database_path, { readonly: true })
+    try {
+      expect(database.prepare('SELECT change_seq FROM coverage_missions WHERE mission_id = ?').get(mission.id))
+        .toEqual({ change_seq: 2 })
+    } finally {
+      database.close()
+    }
   })
 
   it('rejects an initial selection that covers one device directly and through a group', async () => {

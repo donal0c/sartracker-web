@@ -56,6 +56,7 @@ const { createElectronMissionStore, CURRENT_SCHEMA_VERSION } = require('../../el
       readonly failRemovalAfterProjection?: boolean
     }
     readonly storageDiagnostics?: StorageDiagnosticsPort
+    readonly coverageLedgerFaultInjection?: { readonly afterWrite?: boolean }
     readonly runBreadcrumbQueryInWorker?: (input: {
       readonly databasePath: string
       readonly missionId: string
@@ -474,7 +475,7 @@ describe('electron mission store', () => {
   })
 
   it('migrates a schema-6 store to the durable tracking-history checkpoint schema', async () => {
-    expect(CURRENT_SCHEMA_VERSION).toBe(9)
+    expect(CURRENT_SCHEMA_VERSION).toBe(10)
     userDataPath = await mkdtemp(path.join(tmpdir(), 'sartracker-electron-checkpoint-migration-'))
     const databasePath = path.join(userDataPath, 'mission-store.sqlite')
     const legacyDb = new Database(databasePath)
@@ -488,7 +489,7 @@ describe('electron mission store', () => {
     }
 
     store = createElectronMissionStore({ userDataPath })
-    await expect(store.info()).resolves.toMatchObject({ schema_version: 9 })
+    await expect(store.info()).resolves.toMatchObject({ schema_version: 10 })
 
     const migratedDb = new Database(databasePath, { readonly: true })
     try {
@@ -503,7 +504,7 @@ describe('electron mission store', () => {
         migratedDb
           .prepare("SELECT value FROM metadata WHERE key = 'schema_version'")
           .get(),
-      ).toEqual({ value: '9' })
+      ).toEqual({ value: '10' })
     } finally {
       migratedDb.close()
     }
@@ -545,7 +546,7 @@ describe('electron mission store', () => {
     }
 
     store = createElectronMissionStore({ userDataPath })
-    await expect(store.info()).resolves.toMatchObject({ schema_version: 9 })
+    await expect(store.info()).resolves.toMatchObject({ schema_version: 10 })
 
     const migratedDb = new Database(databasePath, { readonly: true })
     try {
@@ -561,6 +562,137 @@ describe('electron mission store', () => {
       ).toEqual({ name: 'ingest_anomalies' })
     } finally {
       migratedDb.close()
+    }
+  })
+
+  it('migrates v9 to empty additive coverage tables without rewriting positions [DON-276]', async () => {
+    userDataPath = await mkdtemp(path.join(tmpdir(), 'sartracker-electron-v10-coverage-migration-'))
+    const databasePath = path.join(userDataPath, 'mission-store.sqlite')
+    const legacyDb = new Database(databasePath)
+    try {
+      legacyDb.exec(`
+        CREATE TABLE metadata (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+        INSERT INTO metadata (key, value) VALUES ('schema_version', '9');
+        CREATE TABLE positions (
+          id TEXT PRIMARY KEY,
+          mission_id TEXT NOT NULL,
+          device_id TEXT NOT NULL,
+          source_position_id TEXT,
+          name TEXT,
+          lat REAL NOT NULL,
+          lon REAL NOT NULL,
+          altitude REAL,
+          speed REAL,
+          battery REAL,
+          accuracy REAL,
+          source TEXT,
+          timestamp TEXT NOT NULL,
+          data_origin TEXT NOT NULL DEFAULT 'live',
+          received_at TEXT,
+          content_hash TEXT,
+          source_kind TEXT
+        );
+        CREATE INDEX idx_positions_mission_device_timestamp
+          ON positions(mission_id, device_id, timestamp);
+        INSERT INTO positions (
+          id, mission_id, device_id, source_position_id, lat, lon, timestamp
+        ) VALUES (
+          'preserved-position', 'mission-1', 'device-1', 'source-1',
+          52.0599, -9.5045, '2026-08-24T10:00:00.000Z'
+        );
+      `)
+    } finally {
+      legacyDb.close()
+    }
+
+    store = createElectronMissionStore({ userDataPath })
+    await expect(store.info()).resolves.toMatchObject({ schema_version: 10 })
+
+    const migratedDb = new Database(databasePath, { readonly: true })
+    try {
+      expect(
+        migratedDb.prepare(`SELECT name FROM sqlite_master
+          WHERE type = 'table' AND name LIKE 'coverage_%' ORDER BY name`).all(),
+      ).toEqual([
+        { name: 'coverage_chunks' },
+        { name: 'coverage_invalidations' },
+        { name: 'coverage_missions' },
+      ])
+      expect(migratedDb.prepare('SELECT COUNT(*) AS count FROM coverage_chunks').get()).toEqual({ count: 0 })
+      expect(migratedDb.prepare('SELECT COUNT(*) AS count FROM coverage_invalidations').get()).toEqual({ count: 0 })
+      expect(migratedDb.prepare('SELECT COUNT(*) AS count FROM coverage_missions').get()).toEqual({ count: 0 })
+      expect(migratedDb.prepare('SELECT id, source_position_id FROM positions').all()).toEqual([
+        { id: 'preserved-position', source_position_id: 'source-1' },
+      ])
+    } finally {
+      migratedDb.close()
+    }
+  })
+
+  it('updates coverage revisions only for newly accepted position truth [DON-276]', async () => {
+    store = await createStore()
+    const mission = await store.createMission({
+      name: 'Coverage revision mission',
+      start_time: '2026-08-24T08:00:00.000Z',
+    })
+    await store.upsertDevice({
+      mission_id: mission.id,
+      device_id: 'device-1',
+      name: 'Device 1',
+      color: '#fff',
+      status: 'online',
+    })
+    const position = {
+      source_position_id: 'source-1',
+      device_id: 'device-1',
+      lat: 52.0599,
+      lon: -9.5045,
+      timestamp: '2026-08-24T10:00:00.000Z',
+    }
+
+    await store.addPositionsBulk({ mission_id: mission.id, positions: [position] })
+    await store.addPositionsBulk({ mission_id: mission.id, positions: [position] })
+
+    const database = new Database((await store.info()).database_path, { readonly: true })
+    try {
+      expect(database.prepare(`SELECT device_id, period_kind, period_id,
+        content_rev, built_rev FROM coverage_chunks`).all()).toEqual([{
+        device_id: 'device-1', period_kind: 'unassigned', period_id: '',
+        content_rev: 1, built_rev: null,
+      }])
+      expect(database.prepare('SELECT change_seq FROM coverage_missions WHERE mission_id = ?').get(mission.id))
+        .toEqual({ change_seq: 1 })
+    } finally {
+      database.close()
+    }
+  })
+
+  it('rolls an accepted position back when coverage bookkeeping fails [DON-276]', async () => {
+    store = await createStore({ coverageLedgerFaultInjection: { afterWrite: true } })
+    const mission = await store.createMission({ name: 'Coverage rollback mission' })
+    await store.upsertDevice({
+      mission_id: mission.id,
+      device_id: 'device-1',
+      name: 'Device 1',
+      color: '#fff',
+      status: 'online',
+    })
+
+    await expect(store.addPosition({
+      mission_id: mission.id,
+      device_id: 'device-1',
+      lat: 52.0599,
+      lon: -9.5045,
+      timestamp: '2026-08-24T10:00:00.000Z',
+    })).rejects.toThrow(/Injected coverage ledger failure/)
+
+    await expect(store.listPositions(mission.id)).resolves.toEqual([])
+    const database = new Database((await store.info()).database_path, { readonly: true })
+    try {
+      expect(database.prepare('SELECT * FROM coverage_chunks').all()).toEqual([])
+      expect(database.prepare('SELECT * FROM coverage_missions').all()).toEqual([])
+    } finally {
+      database.close()
     }
   })
 
@@ -614,7 +746,7 @@ describe('electron mission store', () => {
       expect(migratedDb.prepare('SELECT COUNT(*) AS count FROM outings').get()).toEqual({ count: 0 })
       expect(migratedDb.prepare('SELECT COUNT(*) AS count FROM devices').get()).toEqual({ count: 2 })
       expect(migratedDb.prepare("SELECT value FROM metadata WHERE key = 'schema_version'").get())
-        .toEqual({ value: '9' })
+        .toEqual({ value: '10' })
       expect(migratedDb.prepare(`SELECT name FROM sqlite_master
           WHERE type = 'index' AND name IN (
             'idx_mission_participants_active_device',
@@ -3058,6 +3190,7 @@ describe('electron mission store', () => {
       readonly failRemovalAfterProjection?: boolean
     }
     readonly storageDiagnostics?: StorageDiagnosticsPort
+    readonly coverageLedgerFaultInjection?: { readonly afterWrite?: boolean }
     readonly runOutingFixSummaryInWorker?: (input: {
       readonly databasePath: string
       readonly query: { readonly missionId: string }

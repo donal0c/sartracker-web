@@ -7,6 +7,7 @@ function createOutingStore(options) {
   const { db } = options
   const readNow = options.now ?? (() => new Date().toISOString())
   const faultInjection = options.faultInjection ?? {}
+  const recordCoverageInvalidation = options.recordCoverageInvalidation ?? (() => undefined)
 
   return {
     createOuting(input) {
@@ -31,6 +32,14 @@ function createOutingStore(options) {
           (id, mission_id, label, started_at, ended_at, created_at, updated_at)
           VALUES (?, ?, ?, ?, NULL, ?, ?)`)
           .run(outing.id, outing.mission_id, outing.label, outing.started_at, timestamp, timestamp)
+        recordCoverageInvalidation({
+          missionId: mission.id,
+          reason: 'outing_created',
+          subjectOutingId: outing.id,
+          oldBounds: null,
+          newBounds: { started_at: outing.started_at, ended_at: null },
+          createdAt: timestamp,
+        })
         failAfterMutation(faultInjection)
         insertAudit(db, mission.id, 'outing_started', timestamp, {
           outing_id: outing.id,
@@ -57,6 +66,14 @@ function createOutingStore(options) {
       const transaction = db.transaction(() => {
         db.prepare('UPDATE outings SET ended_at = ?, updated_at = ? WHERE id = ?')
           .run(endedAt, timestamp, existing.id)
+        recordCoverageInvalidation({
+          missionId: mission.id,
+          reason: 'outing_ended',
+          subjectOutingId: existing.id,
+          oldBounds: { started_at: existing.started_at, ended_at: existing.ended_at },
+          newBounds: { started_at: existing.started_at, ended_at: endedAt },
+          createdAt: timestamp,
+        })
         failAfterMutation(faultInjection)
         insertAudit(db, mission.id, 'outing_ended', timestamp, {
           outing_id: existing.id,
@@ -111,6 +128,14 @@ function createOutingStore(options) {
       const transaction = db.transaction(() => {
         db.prepare('UPDATE outings SET started_at = ?, ended_at = ?, updated_at = ? WHERE id = ?')
           .run(startedAt, endedAt, timestamp, existing.id)
+        recordCoverageInvalidation({
+          missionId: mission.id,
+          reason: 'outing_boundaries_edited',
+          subjectOutingId: existing.id,
+          oldBounds: { started_at: existing.started_at, ended_at: existing.ended_at },
+          newBounds: { started_at: startedAt, ended_at: endedAt },
+          createdAt: timestamp,
+        })
         failAfterMutation(faultInjection)
         insertAudit(db, mission.id, 'outing_boundaries_edited', timestamp, {
           outing_id: existing.id,
