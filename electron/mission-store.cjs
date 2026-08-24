@@ -143,6 +143,7 @@ function createElectronMissionStore(options) {
     cacheDirectory: path.join(options.userDataPath, COVERAGE_TILE_CACHE_DIRECTORY_NAME),
   })
   const onCoverageChanged = options.onCoverageChanged ?? (() => undefined)
+  const coveragePerformanceByMission = new Map()
   const activeBreadcrumbQueryControllers = new Set()
   const breadcrumbQueryControllersByRequestId = new Map()
   const breadcrumbDotQueryControllersByRequestId = new Map()
@@ -348,11 +349,15 @@ function createElectronMissionStore(options) {
         const coverageMission = db.prepare(`SELECT change_seq, enumerated
           FROM coverage_missions WHERE mission_id = ?`).get(missionId)
         if (coverageMission?.enumerated !== 1) {
+          const enumerationStartedAt = performance.now()
           const enumeration = await runCoverageWorker(
             { kind: 'enumerate', missionId },
             signal,
             false,
           )
+          recordCoveragePerformance(missionId, {
+            lastEnumerationDurationMs: performance.now() - enumerationStartedAt,
+          })
           applyCoverageEnumeration(db, {
             missionId,
             expectedChangeSeq: enumeration.changeSeq,
@@ -370,9 +375,10 @@ function createElectronMissionStore(options) {
           chunks: manifest.chunks,
           updatedAt: now(),
         })
-        return inserted === 0
+        const currentManifest = inserted === 0
           ? manifest
-          : runCoverageWorker({ kind: 'manifest', missionId }, signal, false)
+          : await runCoverageWorker({ kind: 'manifest', missionId }, signal, false)
+        return attachCoveragePerformance(missionId, currentManifest)
       },
     ),
     readCoverageChunk: async (input, requestId) => executeCoverageRequest(
@@ -466,7 +472,13 @@ function createElectronMissionStore(options) {
       requestId,
       async (signal) => {
         getMission(db, input.missionId)
+        const buildStartedAt = performance.now()
         const result = await coverageTileRunner.syncCatalog(input, { signal })
+        if (result.builds.length > 0) {
+          recordCoveragePerformance(input.missionId, {
+            lastBuildDurationMs: performance.now() - buildStartedAt,
+          })
+        }
         const rejectedChunks = new Set()
         for (const build of result.builds) {
           const applied = applyCoverageChunkBuild(db, {
@@ -906,6 +918,30 @@ function createElectronMissionStore(options) {
         affectedKeys: analysis.affectedKeys,
         drainedAt: now(),
       })
+    }
+  }
+
+  function recordCoveragePerformance(missionId, update) {
+    coveragePerformanceByMission.set(missionId, {
+      lastEnumerationDurationMs:
+        coveragePerformanceByMission.get(missionId)?.lastEnumerationDurationMs ?? null,
+      lastBuildDurationMs:
+        coveragePerformanceByMission.get(missionId)?.lastBuildDurationMs ?? null,
+      ...update,
+    })
+  }
+
+  function attachCoveragePerformance(missionId, manifest) {
+    const performanceMetrics = coveragePerformanceByMission.get(missionId) ?? {
+      lastEnumerationDurationMs: null,
+      lastBuildDurationMs: null,
+    }
+    return {
+      ...manifest,
+      diagnostics: {
+        ...manifest.diagnostics,
+        ...performanceMetrics,
+      },
     }
   }
 

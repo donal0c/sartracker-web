@@ -8,6 +8,7 @@ const DatabaseConstructor = require('better-sqlite3')
 const {
   analyzeCoverageInvalidation,
   enumerateCoverageChunks,
+  readCoverageManifestSnapshot,
   readCoverageChunkPage,
 } = require('../../electron/coverage-query.cjs') as {
   readonly analyzeCoverageInvalidation: (database: Database, input: { readonly invalidationId: string }) => {
@@ -17,6 +18,19 @@ const {
   readonly enumerateCoverageChunks: (database: Database, input: { readonly missionId: string }) => {
     readonly changeSeq: number
     readonly chunks: readonly CoverageChunk[]
+  }
+  readonly readCoverageManifestSnapshot: (
+    database: Database,
+    input: { readonly missionId: string },
+  ) => {
+    readonly diagnostics: {
+      readonly queueDepth: number
+      readonly oldestQueuedAt: string | null
+      readonly pendingChunkCount: number
+      readonly staleChunkCount: number
+      readonly freshChunkCount: number
+      readonly pendingInvalidationCount: number
+    }
   }
   readonly readCoverageChunkPage: (database: Database, input: {
     readonly missionId: string
@@ -118,10 +132,45 @@ describe('Electron coverage query', () => {
     expect(database.prepare('SELECT * FROM coverage_chunks').all()).toEqual([])
   })
 
+  it('returns bounded ledger diagnostics without device identities or position rows', () => {
+    database.exec(`
+      INSERT INTO coverage_chunks (
+        mission_id, device_id, period_kind, period_id, content_rev, built_rev,
+        fix_count, fix_digest, min_ts, max_ts, updated_at
+      ) VALUES
+        ('mission-1', 'device-1', 'outing', 'outing-1', 2, 1,
+          2, 'digest-a', NULL, NULL, '2026-08-24T11:58:00.000Z'),
+        ('mission-1', 'device-1', 'unassigned', '', 1, NULL,
+          NULL, NULL, NULL, NULL, '2026-08-24T11:59:00.000Z'),
+        ('mission-1', 'device-2', 'outing', 'outing-1', 1, 1,
+          0, 'digest-b', NULL, NULL, '2026-08-24T12:00:00.000Z');
+      INSERT INTO coverage_invalidations VALUES (
+        'pending-1', 'mission-1', 'outing_created', 'outing-1',
+        NULL, NULL, '2026-08-24T10:00:00.000Z', '2026-08-24T11:00:00.000Z',
+        '2026-08-24T10:00:00.000Z', '2026-08-24T11:00:00.000Z',
+        '2026-08-24T12:01:00.000Z', NULL
+      );
+    `)
+
+    const result = readCoverageManifestSnapshot(database, { missionId: 'mission-1' })
+
+    expect(result.diagnostics).toEqual({
+      queueDepth: 2,
+      oldestQueuedAt: '2026-08-24T11:58:00.000Z',
+      pendingChunkCount: 1,
+      staleChunkCount: 1,
+      freshChunkCount: 1,
+      pendingInvalidationCount: 1,
+    })
+    expect(JSON.stringify(result.diagnostics)).not.toContain('device-1')
+  })
+
   it('reads one logical chunk in deterministic cursor pages with source-exact rows', () => {
     seedMissionModel(database)
-    database.exec(`INSERT INTO coverage_chunks VALUES
-      ('mission-1', 'device-1', 'outing', 'outing-1', 3, NULL)`)
+    database.exec(`INSERT INTO coverage_chunks (
+      mission_id, device_id, period_kind, period_id, content_rev, built_rev, updated_at
+    ) VALUES ('mission-1', 'device-1', 'outing', 'outing-1', 3, NULL,
+      '2026-08-24T12:00:00.000Z')`)
     const key: CoverageKey = { device_id: 'device-1', period_kind: 'outing', period_id: 'outing-1' }
 
     const first = readCoverageChunkPage(database, {
@@ -143,9 +192,13 @@ describe('Electron coverage query', () => {
 
   it('rejects only a moved chunk revision and keeps logical identity stable when pages shift', () => {
     seedMissionModel(database)
-    database.exec(`INSERT INTO coverage_chunks VALUES
-      ('mission-1', 'device-1', 'outing', 'outing-1', 1, NULL),
-      ('mission-1', 'device-1', 'unassigned', '', 9, NULL)`)
+    database.exec(`INSERT INTO coverage_chunks (
+      mission_id, device_id, period_kind, period_id, content_rev, built_rev, updated_at
+    ) VALUES
+      ('mission-1', 'device-1', 'outing', 'outing-1', 1, NULL,
+        '2026-08-24T12:00:00.000Z'),
+      ('mission-1', 'device-1', 'unassigned', '', 9, NULL,
+        '2026-08-24T12:00:00.000Z')`)
     const key: CoverageKey = { device_id: 'device-1', period_kind: 'outing', period_id: 'outing-1' }
     const before = readCoverageChunkPage(database, {
       missionId: 'mission-1', key, expectedContentRev: 1, limit: 1,
@@ -172,7 +225,7 @@ describe('Electron coverage query', () => {
   it('uses captured old and new boundaries to compute a bounded invalidation drain', () => {
     seedMissionModel(database)
     database.exec(`
-      INSERT INTO outings VALUES
+      INSERT INTO outings (id, mission_id, started_at, ended_at) VALUES
         ('outing-2', 'mission-1', '2026-08-24T11:00:00.000Z', '2026-08-24T12:00:00.000Z');
       INSERT INTO coverage_invalidations VALUES (
         'invalidation-1', 'mission-1', 'outing_boundaries_edited', 'outing-1',
@@ -198,7 +251,10 @@ describe('Electron coverage query', () => {
 function createSchema(database: Database): void {
   database.exec(`
     CREATE TABLE devices (id TEXT PRIMARY KEY, mission_id TEXT NOT NULL, device_id TEXT NOT NULL);
-    CREATE TABLE outings (id TEXT PRIMARY KEY, mission_id TEXT NOT NULL, started_at TEXT NOT NULL, ended_at TEXT);
+    CREATE TABLE outings (
+      id TEXT PRIMARY KEY, mission_id TEXT NOT NULL, label TEXT NOT NULL DEFAULT 'Outing',
+      started_at TEXT NOT NULL, ended_at TEXT
+    );
     CREATE TABLE positions (
       id TEXT PRIMARY KEY, mission_id TEXT NOT NULL, device_id TEXT NOT NULL,
       source_position_id TEXT, timestamp TEXT NOT NULL, lat REAL NOT NULL, lon REAL NOT NULL
@@ -222,6 +278,8 @@ function createSchema(database: Database): void {
     CREATE TABLE coverage_chunks (
       mission_id TEXT NOT NULL, device_id TEXT NOT NULL, period_kind TEXT NOT NULL,
       period_id TEXT NOT NULL, content_rev INTEGER NOT NULL, built_rev INTEGER,
+      fix_count INTEGER, fix_digest TEXT, min_ts TEXT, max_ts TEXT,
+      updated_at TEXT NOT NULL,
       PRIMARY KEY (mission_id, device_id, period_kind, period_id)
     );
     CREATE TABLE coverage_invalidations (
@@ -230,13 +288,16 @@ function createSchema(database: Database): void {
       new_started_at TEXT, new_ended_at TEXT, range_from TEXT NOT NULL,
       range_to TEXT, created_at TEXT NOT NULL, drained_at TEXT
     );
+    CREATE TABLE participant_backfill_checkpoints (
+      mission_id TEXT NOT NULL, completed INTEGER NOT NULL
+    );
   `)
 }
 
 function seedMissionModel(database: Database): void {
   database.exec(`
     INSERT INTO devices VALUES ('row-1', 'mission-1', 'device-1');
-    INSERT INTO outings VALUES
+    INSERT INTO outings (id, mission_id, started_at, ended_at) VALUES
       ('outing-1', 'mission-1', '2026-08-24T10:00:00.000Z', '2026-08-24T11:00:00.000Z');
     INSERT INTO positions VALUES
       ('position-1', 'mission-1', 'device-1', 'source-1', '2026-08-24T10:05:00.000Z', 52.001, -9.701),

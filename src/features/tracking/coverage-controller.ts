@@ -7,6 +7,7 @@ import type {
   Position,
 } from '../../infrastructure/mission-store/tauri-mission-store'
 import { createCoverageScheduler } from './coverage-scheduler'
+import { classifyCoverageError, type CoverageErrorClass } from './coverage-diagnostics'
 
 export const COVERAGE_CHUNK_PAGE_LIMIT = 10_000
 
@@ -25,6 +26,7 @@ export type CoverageState =
       readonly delivered: CoverageDelivery
       readonly deliveredFixCount: number
       readonly totalFixCount: number
+      readonly lastErrorClass?: CoverageErrorClass | null
       readonly message?: string
     }
 
@@ -97,14 +99,23 @@ export function createCoverageController(input: {
   let requestSequence = 0
   let activeController: AbortController | null = null
   let refreshRequested = false
+  let lastErrorClass: CoverageErrorClass | null = null
   const scheduler = createCoverageScheduler({
     now: () => Date.now(),
     openOutingCooldownMs: 30_000,
   })
 
   const publish = (next: CoverageState): void => {
-    state = next
-    input.publish(next)
+    if (next.status === 'inactive') {
+      lastErrorClass = null
+      state = next
+    } else {
+      if (next.lastErrorClass !== undefined && next.lastErrorClass !== null) {
+        lastErrorClass = next.lastErrorClass
+      }
+      state = { ...next, lastErrorClass }
+    }
+    input.publish(state)
   }
 
   const runLoad = async (retainDelivery: boolean): Promise<void> => {
@@ -244,6 +255,7 @@ export function createCoverageController(input: {
       publish({
         ...asPartialState(state),
         status: 'error',
+        lastErrorClass: classifyCoverageError(error),
         message: 'Complete mission history is temporarily unavailable. Existing coverage remains shown.',
       })
     } finally {
@@ -316,6 +328,7 @@ export function createCoverageController(input: {
         selectedKeySet(nextContext.selectedKeys)
       if (!identityChanged && !selectionChanged) return
       activeController?.abort()
+      if (identityChanged) lastErrorClass = null
       operationGeneration += 1
       refreshRequested = false
       context = nextContext.selectedKeys === undefined

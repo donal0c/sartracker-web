@@ -86,6 +86,7 @@ export type CoverageManifest = {
   readonly enumerated: boolean
   readonly pendingInvalidation: boolean
   readonly backfillIncomplete: boolean
+  readonly diagnostics?: CoverageStorageDiagnostics
   readonly outings: readonly {
     readonly id: string
     readonly label: string
@@ -93,6 +94,17 @@ export type CoverageManifest = {
     readonly ended_at: string | null
   }[]
   readonly chunks: readonly CoverageManifestChunk[]
+}
+
+export type CoverageStorageDiagnostics = {
+  readonly queueDepth: number
+  readonly oldestQueuedAt: string | null
+  readonly pendingChunkCount: number
+  readonly staleChunkCount: number
+  readonly freshChunkCount: number
+  readonly pendingInvalidationCount: number
+  readonly lastEnumerationDurationMs: number | null
+  readonly lastBuildDurationMs: number | null
 }
 
 export type CoverageChunkCursor = {

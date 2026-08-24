@@ -28,6 +28,8 @@ import { readDiagnosticEvents } from './diagnostic-event-log'
 import { readTrackingPollLedger } from './tracking-poll-ledger'
 import { startDiagnosticsRuntime } from './start-diagnostics-runtime'
 import { isMissionModelEnabled } from '../runtime/mission-model-flag'
+import { useCoverageStore } from '../tracking/coverage-store'
+import { summarizeCoverageDiagnostics } from '../tracking/coverage-diagnostics'
 
 /**
  * Starts the diagnostics runtime once and keeps it connected to the current app snapshots.
@@ -93,6 +95,9 @@ export function DiagnosticsRuntimeBridge() {
       readDiagnosticEvents,
       readTrackingPollLedger,
       readMissionModelEnabled: isMissionModelEnabled,
+      readCoverageDiagnostics: () => summarizeCoverageDiagnostics({
+        state: useCoverageStore.getState().state,
+      }),
       exportReport: exportDiagnosticsReport,
       exportSupportBundle,
       refreshLayerCatalogIfActive: async (targetMissionId) => {

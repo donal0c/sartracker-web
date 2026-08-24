@@ -53,6 +53,16 @@ type CoverageMissionStore = {
     readonly changeSeq: number
     readonly enumerated: boolean
     readonly pendingInvalidation: boolean
+    readonly diagnostics: {
+      readonly queueDepth: number
+      readonly oldestQueuedAt: string | null
+      readonly pendingChunkCount: number
+      readonly staleChunkCount: number
+      readonly freshChunkCount: number
+      readonly pendingInvalidationCount: number
+      readonly lastEnumerationDurationMs: number | null
+      readonly lastBuildDurationMs: number | null
+    }
     readonly chunks: readonly {
       readonly key: CoverageKey
       readonly contentRev: number
@@ -106,6 +116,15 @@ describe('Electron coverage mission-store orchestration', () => {
     const manifest = await store.readCoverageManifest(mission.id, 'manifest-1')
 
     expect(manifest).toMatchObject({ enumerated: true, pendingInvalidation: false })
+    expect(manifest.diagnostics).toMatchObject({
+      queueDepth: 0,
+      pendingChunkCount: 0,
+      staleChunkCount: 0,
+      freshChunkCount: 1,
+      pendingInvalidationCount: 0,
+      lastBuildDurationMs: null,
+    })
+    expect(manifest.diagnostics.lastEnumerationDurationMs).toBeGreaterThanOrEqual(0)
     expect(manifest.chunks).toEqual([
       expect.objectContaining({
         key: { device_id: 'device-1', period_kind: 'unassigned', period_id: '' },
@@ -244,6 +263,8 @@ describe('Electron coverage mission-store orchestration', () => {
       delivered: [{ key: chunk.key, contentRev: chunk.contentRev }],
     })
     await expect(store.readCoverageTile({ z: 8, x: 1, y: 1 })).resolves.toEqual(tileBytes)
+    const postBuildManifest = await store.readCoverageManifest(mission.id, 'manifest-2')
+    expect(postBuildManifest.diagnostics.lastBuildDurationMs).toBeGreaterThanOrEqual(0)
   })
 })
 

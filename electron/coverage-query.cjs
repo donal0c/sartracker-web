@@ -47,17 +47,25 @@ function readCoverageManifestSnapshot(database, input) {
     FROM coverage_missions WHERE mission_id = ?`).get(input.missionId)
   const pendingInvalidation = database.prepare(`SELECT 1 FROM coverage_invalidations
     WHERE mission_id = ? AND drained_at IS NULL LIMIT 1`).get(input.missionId) !== undefined
+  const pendingInvalidationMetrics = database.prepare(`SELECT COUNT(*) AS count
+    FROM coverage_invalidations WHERE mission_id = ? AND drained_at IS NULL`)
+    .get(input.missionId)
   const backfillIncomplete = database.prepare(`SELECT 1
     FROM participant_backfill_checkpoints
     WHERE mission_id = ? AND completed = 0 LIMIT 1`).get(input.missionId) !== undefined
   const outings = database.prepare(`SELECT id, label, started_at, ended_at
     FROM outings WHERE mission_id = ? ORDER BY started_at ASC, id ASC`)
     .all(input.missionId)
+  const chunkDiagnostics = summarizeCoverageLedgerRows(ledgerRows)
   return {
     changeSeq: Number(mission?.change_seq ?? exact.changeSeq),
     enumerated: mission?.enumerated === 1,
     pendingInvalidation,
     backfillIncomplete,
+    diagnostics: {
+      ...chunkDiagnostics,
+      pendingInvalidationCount: Number(pendingInvalidationMetrics?.count ?? 0),
+    },
     outings,
     chunks: exact.chunks.map((chunk) => {
       const ledger = ledgerByKey.get(createChunkMapKey(
@@ -83,6 +91,31 @@ function readCoverageManifestSnapshot(database, input) {
         maxTs: ledger?.max_ts ?? null,
       }
     }),
+  }
+}
+
+/** Summarizes only bounded ledger metadata and never returns chunk identity. */
+function summarizeCoverageLedgerRows(rows) {
+  let pendingChunkCount = 0
+  let staleChunkCount = 0
+  let freshChunkCount = 0
+  let oldestQueuedAt = null
+  for (const row of rows) {
+    if (row.built_rev === null) pendingChunkCount += 1
+    else if (row.built_rev < row.content_rev) staleChunkCount += 1
+    else if (row.built_rev === row.content_rev) freshChunkCount += 1
+    if (row.built_rev !== row.content_rev) {
+      if (oldestQueuedAt === null || row.updated_at < oldestQueuedAt) {
+        oldestQueuedAt = row.updated_at
+      }
+    }
+  }
+  return {
+    queueDepth: pendingChunkCount + staleChunkCount,
+    oldestQueuedAt,
+    pendingChunkCount,
+    staleChunkCount,
+    freshChunkCount,
   }
 }
 

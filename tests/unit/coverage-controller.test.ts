@@ -178,6 +178,24 @@ describe('coverage controller [DON-276]', () => {
       deliveredFixCount: 2,
     })
   })
+
+  it('retains an allow-listed worker error class after a successful retry', async () => {
+    const harness = createHarness(manifest(1, [[KEY_A, 1]]))
+    harness.readManifest
+      .mockRejectedValueOnce(new Error('Coverage tile worker timed out at /private/path'))
+      .mockResolvedValueOnce(manifest(1, [[KEY_A, 1]]))
+
+    await harness.controller.updateContext({ missionId: 'mission-1', rendererGeneration: 'r1' })
+    expect(harness.controller.getState()).toMatchObject({
+      status: 'error', lastErrorClass: 'timeout',
+    })
+
+    await harness.controller.resume()
+    expect(harness.controller.getState()).toMatchObject({
+      status: 'complete', lastErrorClass: 'timeout',
+    })
+    expect(JSON.stringify(harness.controller.getState())).not.toContain('/private/path')
+  })
 })
 
 function createHarness(initialManifest: CoverageManifest) {
