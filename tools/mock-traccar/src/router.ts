@@ -1,7 +1,7 @@
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { AuthManager } from './auth.js'
 import type { PlaybackEngine } from './playback-engine.js'
-import type { DeviceDefinition, RoutePoint } from './types.js'
+import type { DeviceDefinition, RoutePoint, TraccarGroup } from './types.js'
 import { getDeviceRoster } from './device-roster.js'
 import type { PositionStore } from './position-store.js'
 
@@ -11,6 +11,7 @@ type RouterDeps = {
   readonly positionStore: PositionStore
   readonly deviceDefinitions: readonly DeviceDefinition[]
   readonly routes: ReadonlyMap<number, RoutePoint[]>
+  readonly groups?: readonly TraccarGroup[]
 }
 
 /**
@@ -60,6 +61,11 @@ export function createRouter(deps: RouterDeps) {
 
     if (req.method === 'GET' && pathname === '/api/devices') {
       handleDevices(res, deps)
+      return
+    }
+
+    if (req.method === 'GET' && pathname === '/api/groups') {
+      sendJson(res, deps.groups ?? [])
       return
     }
 

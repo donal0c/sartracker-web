@@ -22,9 +22,27 @@ import {
   applyMissionGovernanceRuntime,
   applyMissionRuntime,
   applyMissionRuntimeController,
+  useMissionStore,
 } from '../mission/mission-store'
 import { startMissionGovernanceRuntime } from '../mission/start-mission-governance-runtime'
 import { startMissionRuntime } from '../mission/start-mission-runtime'
+import {
+  applyOutingController,
+  applyOutingRuntime,
+} from '../outings/outing-store'
+import {
+  hasOutingStoreBoundary,
+  startOutingRuntime,
+} from '../outings/start-outing-runtime'
+import {
+  applyParticipantController,
+  applyParticipantRuntime,
+} from '../participants/participant-store'
+import {
+  hasParticipantStoreBoundary,
+  startParticipantRuntime,
+} from '../participants/start-participant-runtime'
+import { resolveParticipantMissionId } from '../participants/participant-mission-context'
 import type { AutosaveSyncReason } from '../persistence/autosave-status-store'
 import { recordDiagnosticEvent } from '../diagnostics/diagnostic-event-log'
 
@@ -42,6 +60,20 @@ export type CoreFeatureRuntimeMissionStore = Pick<
   | 'pauseMission'
   | 'resumeMission'
   | 'finishMission'
+  | 'createOuting'
+  | 'endOuting'
+  | 'renameOuting'
+  | 'editOutingBoundaries'
+  | 'listOutings'
+  | 'readOutingFixSummary'
+  | 'cancelOutingFixSummary'
+  | 'selectMissionParticipants'
+  | 'addMissionParticipant'
+  | 'removeMissionParticipant'
+  | 'listMissionParticipants'
+  | 'recordGroupMembershipEvents'
+  | 'listGroupMembershipEvents'
+  | 'listParticipantBackfillCheckpoints'
   | 'finalizeMission'
   | 'unlockFinalizedMission'
   | 'listMarkers'
@@ -67,11 +99,14 @@ export type GpxWatchSource = {
 export type CoreFeatureRuntimeOptions = {
   readonly missionStore: CoreFeatureRuntimeMissionStore
   readonly attachmentAdapter: MarkerAttachmentBoundary
+  readonly missionModelEnabled?: boolean
   readonly gpxWatchSource?: GpxWatchSource
   readonly requestAutosaveSync?: (reason: AutosaveSyncReason) => Promise<void>
   readonly now?: () => Date
   readonly startMissionRuntime?: typeof startMissionRuntime
   readonly startMissionGovernanceRuntime?: typeof startMissionGovernanceRuntime
+  readonly startOutingRuntime?: typeof startOutingRuntime
+  readonly startParticipantRuntime?: typeof startParticipantRuntime
   readonly startMarkerRuntime?: typeof startMarkerRuntime
   readonly startDrawingRuntime?: typeof startDrawingRuntime
   readonly startHelicopterRuntime?: typeof startHelicopterRuntime
@@ -83,6 +118,8 @@ export type CoreFeatureRuntimeHandles = {
   readonly missionGovernanceController: Awaited<
     ReturnType<typeof startMissionGovernanceRuntime>
   >
+  readonly outingRuntimeController: Awaited<ReturnType<typeof startOutingRuntime>> | null
+  readonly participantRuntimeController: Awaited<ReturnType<typeof startParticipantRuntime>> | null
   readonly markerRuntimeController: Awaited<ReturnType<typeof startMarkerRuntime>>
   readonly drawingRuntimeController: Awaited<ReturnType<typeof startDrawingRuntime>>
   readonly helicopterRuntimeController: Awaited<
@@ -93,8 +130,8 @@ export type CoreFeatureRuntimeHandles = {
 }
 
 /**
- * Wires the six core feature runtimes — mission, mission governance, marker,
- * drawing, helicopter, GPX — and registers their controllers with the global
+ * Wires the core feature runtimes — mission, mission governance, outing,
+ * marker, drawing, helicopter, GPX — and registers their controllers with the global
  * stores. The registration order encodes initialization dependencies and must
  * not change without coordinated review.
  *
@@ -108,6 +145,8 @@ export async function startCoreFeatureRuntimes(
   const startMission = options.startMissionRuntime ?? startMissionRuntime
   const startGovernance =
     options.startMissionGovernanceRuntime ?? startMissionGovernanceRuntime
+  const startOuting = options.startOutingRuntime ?? startOutingRuntime
+  const startParticipant = options.startParticipantRuntime ?? startParticipantRuntime
   const startMarker = options.startMarkerRuntime ?? startMarkerRuntime
   const startDrawing = options.startDrawingRuntime ?? startDrawingRuntime
   const startHelicopter = options.startHelicopterRuntime ?? startHelicopterRuntime
@@ -119,10 +158,16 @@ export async function startCoreFeatureRuntimes(
   // cleanup hook; the seam exists so future runtimes can plug one in without
   // changing the boot contract.
   const cleanups: (() => void)[] = []
+  let participantRuntimeController: Awaited<
+    ReturnType<typeof startParticipantRuntime>
+  > | null = null
 
   const missionRuntimeController = await startMission({
     missionStore: options.missionStore,
     applyRuntime: applyMissionRuntime,
+    runMissionFinish: (missionId, finish) => participantRuntimeController === null
+      ? finish()
+      : participantRuntimeController.runWithMembershipFinishFence(missionId, finish),
     ...(options.requestAutosaveSync !== undefined
       ? { requestAutosaveSync: options.requestAutosaveSync }
       : {}),
@@ -140,6 +185,39 @@ export async function startCoreFeatureRuntimes(
   })
   applyMissionGovernanceController(missionGovernanceController)
   cleanups.push(() => undefined)
+
+  const missionModelEnabled = options.missionModelEnabled ?? true
+  const outingRuntimeController = missionModelEnabled && hasOutingStoreBoundary(options.missionStore)
+    ? await startOuting({
+        outingStore: options.missionStore,
+        applyRuntime: applyOutingRuntime,
+      })
+    : null
+  if (outingRuntimeController !== null) {
+    applyOutingController(outingRuntimeController)
+    cleanups.push(() => undefined)
+  } else {
+    applyOutingController(null)
+  }
+
+  participantRuntimeController =
+    missionModelEnabled && hasParticipantStoreBoundary(options.missionStore)
+      ? await startParticipant({
+          participantStore: options.missionStore,
+          applyRuntime: applyParticipantRuntime,
+        })
+      : null
+  if (participantRuntimeController !== null) {
+    applyParticipantController(participantRuntimeController)
+    const missionState = useMissionStore.getState()
+    const participantMissionId = resolveParticipantMissionId(missionState)
+    if (participantMissionId !== null) {
+      await participantRuntimeController.refreshMission(participantMissionId)
+    }
+    cleanups.push(() => undefined)
+  } else {
+    applyParticipantController(null)
+  }
 
   const markerRuntimeController = await startMarker({
     markerStore: options.missionStore,
@@ -177,6 +255,8 @@ export async function startCoreFeatureRuntimes(
   return {
     missionRuntimeController,
     missionGovernanceController,
+    outingRuntimeController,
+    participantRuntimeController,
     markerRuntimeController,
     drawingRuntimeController,
     helicopterRuntimeController,

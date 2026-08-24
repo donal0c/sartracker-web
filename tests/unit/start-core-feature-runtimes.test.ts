@@ -7,7 +7,7 @@ import {
 import type { MarkerAttachmentBoundary } from '../../src/infrastructure/marker-attachment-store/marker-attachment-boundary'
 
 describe('startCoreFeatureRuntimes', () => {
-  it('registers the six feature controllers in the documented order', async () => {
+  it('registers the eight feature controllers in the documented order', async () => {
     const callOrder: string[] = []
 
     const startMissionRuntime = vi.fn(async () => {
@@ -17,6 +17,14 @@ describe('startCoreFeatureRuntimes', () => {
     const startMissionGovernanceRuntime = vi.fn(async () => {
       callOrder.push('governance')
       return { __id: 'governance' } as never
+    })
+    const startOutingRuntime = vi.fn(async () => {
+      callOrder.push('outing')
+      return { __id: 'outing' } as never
+    })
+    const startParticipantRuntime = vi.fn(async () => {
+      callOrder.push('participant')
+      return { __id: 'participant' } as never
     })
     const startMarkerRuntime = vi.fn(async () => {
       callOrder.push('marker')
@@ -40,6 +48,8 @@ describe('startCoreFeatureRuntimes', () => {
       attachmentAdapter: createAttachmentStub(),
       startMissionRuntime,
       startMissionGovernanceRuntime,
+      startOutingRuntime,
+      startParticipantRuntime,
       startMarkerRuntime,
       startDrawingRuntime,
       startHelicopterRuntime,
@@ -49,6 +59,8 @@ describe('startCoreFeatureRuntimes', () => {
     expect(callOrder).toEqual([
       'mission',
       'governance',
+      'outing',
+      'participant',
       'marker',
       'drawing',
       'helicopter',
@@ -61,6 +73,8 @@ describe('startCoreFeatureRuntimes', () => {
     const attachmentAdapter = createAttachmentStub()
     const startMissionRuntime = vi.fn(async () => ({}) as never)
     const startMissionGovernanceRuntime = vi.fn(async () => ({}) as never)
+    const startOutingRuntime = vi.fn(async () => ({}) as never)
+    const startParticipantRuntime = vi.fn(async () => ({}) as never)
     const startMarkerRuntime = vi.fn(async () => ({}) as never)
     const startDrawingRuntime = vi.fn(async () => ({}) as never)
     const startHelicopterRuntime = vi.fn(async () => ({}) as never)
@@ -71,6 +85,8 @@ describe('startCoreFeatureRuntimes', () => {
       attachmentAdapter,
       startMissionRuntime,
       startMissionGovernanceRuntime,
+      startOutingRuntime,
+      startParticipantRuntime,
       startMarkerRuntime,
       startDrawingRuntime,
       startHelicopterRuntime,
@@ -82,6 +98,12 @@ describe('startCoreFeatureRuntimes', () => {
     )
     expect(startMissionGovernanceRuntime).toHaveBeenCalledWith(
       expect.objectContaining({ missionStore }),
+    )
+    expect(startOutingRuntime).toHaveBeenCalledWith(
+      expect.objectContaining({ outingStore: missionStore }),
+    )
+    expect(startParticipantRuntime).toHaveBeenCalledWith(
+      expect.objectContaining({ participantStore: missionStore }),
     )
     expect(startMarkerRuntime).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -98,6 +120,64 @@ describe('startCoreFeatureRuntimes', () => {
     expect(startGpxRuntime).toHaveBeenCalledWith(
       expect.objectContaining({ gpxStore: missionStore }),
     )
+  })
+
+  it('routes mission finish through the participant membership fence', async () => {
+    const missionStore = createMissionStoreStub()
+    let runMissionFinish:
+      | ((missionId: string, finish: () => Promise<unknown>) => Promise<unknown>)
+      | undefined
+    const startMissionRuntime = vi.fn(async (dependencies) => {
+      runMissionFinish = dependencies.runMissionFinish
+      return {} as never
+    })
+    const finishFence = vi.fn(async (_missionId: string, finish: () => Promise<unknown>) =>
+      finish())
+    const startParticipantRuntime = vi.fn(async () => ({
+      refreshMission: vi.fn(),
+      runWithMembershipFinishFence: finishFence,
+    }) as never)
+
+    await startCoreFeatureRuntimes({
+      missionStore,
+      attachmentAdapter: createAttachmentStub(),
+      startMissionRuntime,
+      startParticipantRuntime,
+      startMissionGovernanceRuntime: vi.fn(async () => ({}) as never),
+      startOutingRuntime: vi.fn(async () => ({}) as never),
+      startMarkerRuntime: vi.fn(async () => ({}) as never),
+      startDrawingRuntime: vi.fn(async () => ({}) as never),
+      startHelicopterRuntime: vi.fn(async () => ({}) as never),
+      startGpxRuntime: vi.fn(async () => ({}) as never),
+    })
+
+    const finish = vi.fn().mockResolvedValue('finished')
+    await expect(runMissionFinish?.('mission-1', finish)).resolves.toBe('finished')
+    expect(finishFence).toHaveBeenCalledWith('mission-1', finish)
+  })
+
+  it('keeps outing and participant runtimes inert when the internal flag is off', async () => {
+    const startOutingRuntime = vi.fn(async () => ({}) as never)
+    const startParticipantRuntime = vi.fn(async () => ({}) as never)
+
+    const handles = await startCoreFeatureRuntimes({
+      missionStore: createMissionStoreStub(),
+      attachmentAdapter: createAttachmentStub(),
+      missionModelEnabled: false,
+      startMissionRuntime: vi.fn(async () => ({}) as never),
+      startMissionGovernanceRuntime: vi.fn(async () => ({}) as never),
+      startOutingRuntime,
+      startParticipantRuntime,
+      startMarkerRuntime: vi.fn(async () => ({}) as never),
+      startDrawingRuntime: vi.fn(async () => ({}) as never),
+      startHelicopterRuntime: vi.fn(async () => ({}) as never),
+      startGpxRuntime: vi.fn(async () => ({}) as never),
+    })
+
+    expect(startOutingRuntime).not.toHaveBeenCalled()
+    expect(startParticipantRuntime).not.toHaveBeenCalled()
+    expect(handles.outingRuntimeController).toBeNull()
+    expect(handles.participantRuntimeController).toBeNull()
   })
 
   it('omits watchSource entirely when no gpxWatchSource is provided', async () => {
@@ -165,6 +245,24 @@ function createMissionStoreStub(): CoreFeatureRuntimeMissionStore {
     pauseMission: vi.fn(),
     resumeMission: vi.fn(),
     finishMission: vi.fn(),
+    createOuting: vi.fn(),
+    endOuting: vi.fn(),
+    renameOuting: vi.fn(),
+    editOutingBoundaries: vi.fn(),
+    listOutings: vi.fn(async () => []),
+    readOutingFixSummary: vi.fn(async () => ({
+      outings: [],
+      unassigned_accepted_fix_count: 0,
+      total_accepted_fix_count: 0,
+    })),
+    cancelOutingFixSummary: vi.fn(async () => false),
+    selectMissionParticipants: vi.fn(async () => []),
+    addMissionParticipant: vi.fn(),
+    removeMissionParticipant: vi.fn(),
+    listMissionParticipants: vi.fn(async () => []),
+    recordGroupMembershipEvents: vi.fn(async () => []),
+    listGroupMembershipEvents: vi.fn(async () => []),
+    listParticipantBackfillCheckpoints: vi.fn(async () => []),
     finalizeMission: vi.fn(),
     unlockFinalizedMission: vi.fn(),
     listMarkers: vi.fn(),

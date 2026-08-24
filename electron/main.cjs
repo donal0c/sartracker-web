@@ -22,6 +22,9 @@ const {
 const {
   registerMissionReviewReadQueryIpcHandlers,
 } = require('./mission-review-read-query-ipc.cjs')
+const {
+  registerOutingFixSummaryIpcHandlers,
+} = require('./outing-fix-summary-ipc.cjs')
 const { createElectronFileSystem } = require('./file-system.cjs')
 const { createElectronOfficialMapProxy } = require('./official-map-proxy.cjs')
 const { createRuntimeLog } = require('./runtime-log.cjs')
@@ -58,6 +61,21 @@ const MISSION_STORE_CHANNELS = {
   syncBackup: 'sartracker:mission-store:sync-backup',
   createMissionArchive: 'sartracker:mission-store:create-mission-archive',
   createMission: 'sartracker:mission-store:create-mission',
+  createOuting: 'sartracker:mission-store:create-outing',
+  endOuting: 'sartracker:mission-store:end-outing',
+  renameOuting: 'sartracker:mission-store:rename-outing',
+  editOutingBoundaries: 'sartracker:mission-store:edit-outing-boundaries',
+  listOutings: 'sartracker:mission-store:list-outings',
+  readOutingFixSummary: 'sartracker:mission-store:read-outing-fix-summary',
+  cancelOutingFixSummary: 'sartracker:mission-store:cancel-outing-fix-summary',
+  selectMissionParticipants: 'sartracker:mission-store:select-mission-participants',
+  addMissionParticipant: 'sartracker:mission-store:add-mission-participant',
+  removeMissionParticipant: 'sartracker:mission-store:remove-mission-participant',
+  listMissionParticipants: 'sartracker:mission-store:list-mission-participants',
+  recordGroupMembershipEvents: 'sartracker:mission-store:record-group-membership-events',
+  listGroupMembershipEvents: 'sartracker:mission-store:list-group-membership-events',
+  upsertParticipantBackfillCheckpoint: 'sartracker:mission-store:upsert-participant-backfill-checkpoint',
+  listParticipantBackfillCheckpoints: 'sartracker:mission-store:list-participant-backfill-checkpoints',
   upsertDevice: 'sartracker:mission-store:upsert-device',
   upsertDevicesBulk: 'sartracker:mission-store:upsert-devices-bulk',
   getDevice: 'sartracker:mission-store:get-device',
@@ -600,6 +618,13 @@ function registerMissionStoreHandlers(missionStore) {
     missionStore,
     validateIpcSender,
   })
+  registerOutingFixSummaryIpcHandlers({
+    ipcMain,
+    readChannel: MISSION_STORE_CHANNELS.readOutingFixSummary,
+    cancelChannel: MISSION_STORE_CHANNELS.cancelOutingFixSummary,
+    missionStore,
+    validateIpcSender,
+  })
   const breadcrumbQueryMethods = new Set([
     'listBreadcrumbPositions',
     'cancelBreadcrumbQuery',
@@ -607,6 +632,8 @@ function registerMissionStoreHandlers(missionStore) {
     'cancelExactBreadcrumbDotQuery',
     'readMissionReview',
     'cancelMissionReviewRead',
+    'readOutingFixSummary',
+    'cancelOutingFixSummary',
   ])
   for (const [methodName, channel] of Object.entries(MISSION_STORE_CHANNELS)) {
     if (breadcrumbQueryMethods.has(methodName)) {

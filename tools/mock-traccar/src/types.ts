@@ -6,6 +6,14 @@ export type TraccarDevice = {
   readonly status: 'online' | 'offline' | 'unknown'
   readonly lastUpdate: string
   readonly category: string
+  readonly groupId: number
+}
+
+/** Traccar group as returned by the mock API. */
+export type TraccarGroup = {
+  readonly id: number
+  readonly name: string
+  readonly groupId: number
 }
 
 /** Traccar position as returned by the mock API. */
@@ -60,6 +68,9 @@ export type DeviceDefinition = {
   readonly startOffsetMs: number
   readonly forceOffline?: boolean
   readonly goUnknownAfterMs?: number
+  readonly groupId: number
+  readonly groupChangeAtMs?: number
+  readonly groupIdAfterChange?: number
 }
 
 /** Scenario configuration. */

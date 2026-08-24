@@ -54,6 +54,7 @@ type StartDiagnosticsRuntimeDependencies = {
   }
   readonly readDiagnosticEvents?: () => readonly DiagnosticEvent[]
   readonly readTrackingPollLedger?: () => readonly TrackingPollLedgerEntry[]
+  readonly readMissionModelEnabled?: () => boolean
   readonly exportReport: (fileName: string, contents: string) => Promise<string>
   /**
    * Exports a support bundle (environment + crash history + runtime log). Optional:
@@ -327,6 +328,7 @@ export async function startDiagnosticsRuntime(
         trackingPollLedger: dependencies.readTrackingPollLedger?.() ?? [],
         layerCatalogState: layerCatalogRuntime,
         selectedMissionId,
+        missionModelEnabled: dependencies.readMissionModelEnabled?.() ?? false,
       })
 
       if (token !== refreshToken) {

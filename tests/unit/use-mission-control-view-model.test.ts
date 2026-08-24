@@ -10,6 +10,7 @@ import { useMissionStore } from '../../src/features/mission/mission-store'
 import type { MissionControlViewModel } from '../../src/features/mission/use-mission-control-view-model'
 import { useMissionControlViewModel } from '../../src/features/mission/use-mission-control-view-model'
 import { useMissionReviewWorkspaceStore } from '../../src/features/mission-review/mission-review-workspace-store'
+import { useParticipantStore } from '../../src/features/participants/participant-store'
 
 const mocks = vi.hoisted(() => ({
   loadAppSettings: vi.fn(),
@@ -112,6 +113,45 @@ describe('useMissionControlViewModel', () => {
     expect(getModel().pauseResumeLabel).toBe('Pause')
   })
 
+  it('commits the explicit participant draft immediately after mission creation [DON-271]', async () => {
+    const controller = createController()
+    const selectInitialParticipants = vi.fn().mockResolvedValue([])
+    useMissionStore.setState({ controller, phase: 'idle' })
+    useParticipantStore.setState({
+      controller: {
+        selectInitialParticipants,
+      } as never,
+    })
+    const { getModel } = renderHook()
+    act(() => getModel().setMissionName('Explicit Selection Mission'))
+
+    await act(async () => getModel().startMission())
+
+    expect(selectInitialParticipants).toHaveBeenCalledWith('mission-1', 'Mission coordinator')
+  })
+
+  it('keeps mission-start input visible when initial participant persistence fails', async () => {
+    const controller = createController()
+    const selectInitialParticipants = vi.fn().mockRejectedValue(
+      new Error('Participant selection could not be saved.'),
+    )
+    useMissionStore.setState({ controller, phase: 'idle' })
+    useParticipantStore.setState({
+      controller: { selectInitialParticipants } as never,
+    })
+    const { getModel } = renderHook()
+    act(() => {
+      getModel().setMissionName('Recoverable Selection Mission')
+      getModel().setStartOffsetHours('2')
+    })
+
+    await act(async () => getModel().startMission())
+
+    expect(getModel().startError).toMatch(/participant selection could not be saved/i)
+    expect(getModel().missionName).toBe('Recoverable Selection Mission')
+    expect(getModel().startOffsetHours).toBe('2')
+  })
+
   it('loads admin roster when unlock is opened and sends selected unlock details', async () => {
     const governanceController = {
       refreshGovernanceMission: vi.fn().mockResolvedValue(undefined),
@@ -197,6 +237,7 @@ function resetStores(): void {
   })
   useMissionReviewWorkspaceStore.setState({ open: false })
   useFocusModeStore.setState({ active: false })
+  useParticipantStore.setState(useParticipantStore.getInitialState())
 }
 
 function createController(overrides: Partial<ReturnType<typeof createController>> = {}) {

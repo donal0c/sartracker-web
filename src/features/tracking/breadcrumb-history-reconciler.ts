@@ -84,6 +84,8 @@ type DeviceReconciliationJob = {
   readonly deviceName: string
   readonly targetMs: number
   readonly missionStartMs: number
+  readonly initialTargetMs: number
+  readonly latestAvailableTargetMs: number
   cursorMs: number
   failureCount: number
   retryAtMs: number
@@ -156,12 +158,14 @@ export function createBreadcrumbHistoryReconciler(
     ]
     const targetEnds = phase === 'initial'
       ? [
-          ...pendingJobs.map((job) => job.targetMs),
+          ...pendingJobs.map((job) => job.initialTargetMs),
           ...completedDevices.map((device) => device.initialTargetMs),
         ]
       : completedDevices.map((device) => device.antiEntropyTargetMs)
     const initialTotalChunkCount = [
-      ...pendingJobs.map((job) => countChunks(job.missionStartMs, job.targetMs, chunkMs)),
+      ...pendingJobs.map((job) =>
+        countChunks(job.missionStartMs, job.initialTargetMs, chunkMs),
+      ),
       ...completedDevices.map((device) =>
         countChunks(device.missionStartMs, device.initialTargetMs, chunkMs),
       ),
@@ -245,10 +249,10 @@ export function createBreadcrumbHistoryReconciler(
       deviceId: job.deviceId,
       deviceName: job.deviceName,
       missionStartMs: job.missionStartMs,
-      initialTargetMs: job.targetMs,
+      initialTargetMs: job.initialTargetMs,
       antiEntropyCursorMs: job.missionStartMs,
-      antiEntropyTargetMs: job.targetMs,
-      latestAvailableTargetMs: job.targetMs,
+      antiEntropyTargetMs: job.latestAvailableTargetMs,
+      latestAvailableTargetMs: job.latestAvailableTargetMs,
     })
   }
 
@@ -725,17 +729,66 @@ export function createBreadcrumbHistoryReconciler(
         compareStringsByCodeUnit(left.device_id, right.device_id),
       )
       for (const device of orderedDevices) {
+        const initialRange = resolveInitialHistoryRange(
+          checkpointsByDevice[device.device_id],
+          missionStartMs,
+          targetMs,
+        )
         const completedDevice = completedDevicesById.get(device.device_id)
         if (completedDevice !== undefined) {
+          if (initialRange.historyFromMs < completedDevice.missionStartMs) {
+            completedDevicesById.delete(device.device_id)
+            initialStartedAtMs ??= Date.now()
+            const expansionJob: DeviceReconciliationJob = {
+              deviceId: device.device_id,
+              deviceName: device.name,
+              cursorMs: Math.min(
+                initialRange.cursorMs,
+                completedDevice.missionStartMs,
+              ),
+              targetMs: completedDevice.missionStartMs,
+              missionStartMs: initialRange.historyFromMs,
+              initialTargetMs: Math.max(completedDevice.initialTargetMs, targetMs),
+              latestAvailableTargetMs: Math.max(
+                completedDevice.latestAvailableTargetMs,
+                targetMs,
+              ),
+              failureCount: 0,
+              retryAtMs: 0,
+            }
+            jobsByDeviceId.set(device.device_id, expansionJob)
+            deviceQueue.push(device.device_id)
+            continue
+          }
           completedDevice.latestAvailableTargetMs = Math.max(
             completedDevice.latestAvailableTargetMs,
             targetMs,
           )
           continue
         }
-        if (
-          jobsByDeviceId.has(device.device_id)
-        ) {
+        const pendingJob = jobsByDeviceId.get(device.device_id)
+        if (pendingJob !== undefined) {
+          if (initialRange.historyFromMs < pendingJob.missionStartMs) {
+            const expansionJob: DeviceReconciliationJob = {
+              deviceId: device.device_id,
+              deviceName: device.name,
+              cursorMs: Math.min(initialRange.cursorMs, pendingJob.missionStartMs),
+              targetMs: Math.max(pendingJob.targetMs, targetMs),
+              missionStartMs: initialRange.historyFromMs,
+              initialTargetMs: Math.max(pendingJob.initialTargetMs, targetMs),
+              latestAvailableTargetMs: Math.max(
+                pendingJob.latestAvailableTargetMs,
+                targetMs,
+              ),
+              failureCount: 0,
+              retryAtMs: 0,
+            }
+            jobsByDeviceId.set(device.device_id, expansionJob)
+            failedDeviceIds.delete(device.device_id)
+            if (!deviceQueue.includes(device.device_id)) {
+              deviceQueue.push(device.device_id)
+            }
+          }
           continue
         }
         if (targetMs <= missionStartMs) {
@@ -750,22 +803,19 @@ export function createBreadcrumbHistoryReconciler(
           })
           continue
         }
-        const initialCursorMs = resolveInitialCursorMs(
-          checkpointsByDevice[device.device_id],
-          missionStartMs,
-          targetMs,
-        )
         initialStartedAtMs ??= Date.now()
         const job = {
           deviceId: device.device_id,
           deviceName: device.name,
-          cursorMs: initialCursorMs,
+          cursorMs: initialRange.cursorMs,
           targetMs,
-          missionStartMs,
+          missionStartMs: initialRange.historyFromMs,
+          initialTargetMs: targetMs,
+          latestAvailableTargetMs: targetMs,
           failureCount: 0,
           retryAtMs: 0,
         }
-        if (initialCursorMs >= targetMs) {
+        if (initialRange.cursorMs >= targetMs) {
           completeInitialJob(job)
         } else {
           jobsByDeviceId.set(device.device_id, job)
@@ -820,27 +870,28 @@ function countChunks(fromMs: number, toMs: number, chunkMs: number): number {
   return Math.max(0, Math.ceil(Math.max(0, toMs - fromMs) / chunkMs))
 }
 
-function resolveInitialCursorMs(
+function resolveInitialHistoryRange(
   checkpoint: {
     readonly historyFrom: string
     readonly reconciledUntil: string
   } | undefined,
   missionStartMs: number,
   targetMs: number,
-): number {
+): { readonly historyFromMs: number; readonly cursorMs: number } {
   if (checkpoint === undefined) {
-    return missionStartMs
+    return { historyFromMs: missionStartMs, cursorMs: missionStartMs }
   }
   const checkpointStartMs = Date.parse(checkpoint.historyFrom)
   const checkpointCursorMs = Date.parse(checkpoint.reconciledUntil)
   if (
     !Number.isFinite(checkpointStartMs) ||
     !Number.isFinite(checkpointCursorMs) ||
-    checkpointStartMs !== missionStartMs ||
-    checkpointCursorMs < missionStartMs ||
+    checkpointStartMs < missionStartMs ||
+    checkpointStartMs > targetMs ||
+    checkpointCursorMs < checkpointStartMs ||
     checkpointCursorMs > targetMs
   ) {
-    return missionStartMs
+    return { historyFromMs: missionStartMs, cursorMs: missionStartMs }
   }
-  return checkpointCursorMs
+  return { historyFromMs: checkpointStartMs, cursorMs: checkpointCursorMs }
 }

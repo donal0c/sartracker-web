@@ -94,6 +94,60 @@ Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
     })
   })
 
+  test('outing section states the no-active boundary explicitly', async ({ page }) => {
+    await navigateToHarness(page, { missionModel: true })
+    await startMission(page, 'Outing Notice Test')
+    const section = page.getByTestId('outing-controls-section')
+    await expect(section).toBeVisible()
+    await expect(page.getByTestId('outing-no-active-notice')).toContainText('Unassigned')
+
+    await captureElementAndRegister(page, 'outing-controls-section', {
+      testId: 'outing-no-active-state',
+      testName: 'No active outing truthfulness notice',
+      area: 'mission',
+      severity: 'high',
+      verificationPrompt: `Verify this screenshot of the Outings section:
+1. It should be clearly headed "OUTINGS".
+2. It should explicitly state that there is no active outing.
+3. It should say that new fixes will be recorded as "Unassigned".
+4. A visible "Start outing" action should be available.
+5. The notice must not imply an outing was automatically created with the mission.
+Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
+      playwrightAssertions: [
+        'Outings section is visible',
+        'no-active notice contains Unassigned',
+      ],
+    })
+  })
+
+  test('outing summary keeps Unassigned separate from explicit periods', async ({ page }) => {
+    await navigateToHarness(page, { missionModel: true })
+    await startMission(page, 'Outing Summary Test')
+    await page.getByTestId('outing-label-input').fill('Night deployment')
+    await page.getByTestId('outing-start-btn').click()
+    await expect(page.getByTestId('active-outing-label')).toContainText('Night deployment')
+    await expect(page.getByTestId('outing-unassigned-row')).toBeVisible()
+
+    await captureElementAndRegister(page, 'outing-controls-section', {
+      testId: 'outing-summary-unassigned',
+      testName: 'Explicit outing and Unassigned fix summary',
+      area: 'mission',
+      severity: 'critical',
+      verificationPrompt: `Verify this screenshot of the Outings evidence summary:
+1. "Night deployment" should be shown as the active explicit outing.
+2. Its start boundary and "Open" end state should be visible.
+3. Accepted fix count should be shown for the explicit outing.
+4. A separate, visually clear "Unassigned" row should remain visible.
+5. The Unassigned row should explain that it covers accepted fixes outside every explicit outing window.
+6. Nothing should present Unassigned as a fake outing or calendar day.
+Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
+      playwrightAssertions: [
+        'active outing label contains Night deployment',
+        'Unassigned row is visible',
+      ],
+    })
+  })
+
   test('back-dated mission shows offset in elapsed timer', async ({ page }) => {
     await page.getByTestId('mission-name-input').fill('Delayed Start')
     await page.getByTestId('mission-offset-input').fill('2')

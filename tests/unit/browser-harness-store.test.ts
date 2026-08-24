@@ -112,6 +112,10 @@ describe('browser harness store', () => {
     window.localStorage.clear()
   })
 
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
   it('persists devices and positions for the active mission', async () => {
     const store = getBrowserHarnessStore()
     const mission = await store.createMission({ name: 'Harness Mission' })
@@ -152,6 +156,56 @@ describe('browser harness store', () => {
     expect(persistedState.missionEvents.map((event) => event.event_type)).toContain('mission_created')
     expect(persistedState.missionEvents.map((event) => event.event_type)).not.toContain(
       'position_recorded',
+    )
+  })
+
+  it('mirrors the audited half-open outing lifecycle for browser validation', async () => {
+    const store = getBrowserHarnessStore()
+    const mission = await store.createMission({
+      name: 'Outing Harness',
+      start_time: '2026-08-20T08:00:00.000Z',
+    })
+    const first = await store.createOuting({
+      mission_id: mission.id,
+      label: 'Outing 1',
+      started_at: '2026-08-20T09:00:00.000Z',
+    })
+    await store.endOuting({
+      mission_id: mission.id,
+      outing_id: first.id,
+      ended_at: '2026-08-20T11:00:00.000Z',
+    })
+    await store.createOuting({
+      mission_id: mission.id,
+      label: 'Outing 2',
+      started_at: '2026-08-20T11:00:00.000Z',
+    })
+    await store.addPosition({
+      mission_id: mission.id,
+      device_id: 'team-1',
+      lat: 52,
+      lon: -9,
+      timestamp: '2026-08-20T11:00:00.000Z',
+    })
+    await store.addPosition({
+      mission_id: mission.id,
+      device_id: 'team-1',
+      lat: 52,
+      lon: -9,
+      timestamp: '2026-08-20T08:30:00.000Z',
+    })
+
+    await expect(store.listOutings(mission.id)).resolves.toHaveLength(2)
+    await expect(store.readOutingFixSummary({ missionId: mission.id })).resolves.toMatchObject({
+      outings: [
+        { outing_id: first.id, accepted_fix_count: 0 },
+        { accepted_fix_count: 1 },
+      ],
+      unassigned_accepted_fix_count: 1,
+      total_accepted_fix_count: 2,
+    })
+    expect(readBrowserHarnessState().missionEvents.map((event) => event.event_type)).toEqual(
+      expect.arrayContaining(['outing_started', 'outing_ended']),
     )
   })
 
@@ -231,6 +285,186 @@ describe('browser harness store', () => {
     )
     expect(eventTypes.filter((type) => type === 'device_created')).toHaveLength(1)
     expect(eventTypes.filter((type) => type === 'device_updated')).toHaveLength(1)
+  })
+
+  it('mirrors participant selection, membership changes, and resumable backfill [DON-271]', async () => {
+    const store = getBrowserHarnessStore()
+    const mission = await store.createMission({
+      name: 'Participant Harness Mission',
+      start_time: '2026-08-20T08:00:00.000Z',
+    })
+    const participants = await store.selectMissionParticipants({
+      mission_id: mission.id,
+      groups: [{
+        traccar_group_id: '101', name: 'Kerry MRT', member_device_ids: ['11'],
+      }],
+      devices: [{ traccar_device_id: '20' }],
+      selected_by: 'Coordinator A',
+    })
+    const teamId = participants.find((participant) => participant.kind === 'group')?.mission_team_id
+    expect(teamId).toBeTruthy()
+    expect((await store.listMissionParticipants(mission.id))
+      .find((participant) => participant.kind === 'group')).toMatchObject({
+        backfill_member_count: 1,
+        backfill_completed_count: 0,
+      })
+    await store.recordGroupMembershipEvents({
+      mission_id: mission.id,
+      events: [{
+        mission_team_id: teamId ?? '', traccar_device_id: '12',
+        change: 'member', observed_at: '2026-08-20T09:00:00.000Z',
+      }],
+    })
+    await store.upsertParticipantBackfillCheckpoint({
+      mission_id: mission.id,
+      traccar_device_id: '20',
+      window_from: '2026-08-20T08:00:00.000Z',
+      window_to: '2026-08-20T09:00:00.000Z',
+      reconciled_until: '2026-08-20T09:00:00.000Z',
+      completed: true,
+    })
+
+    await expect(store.listMissionParticipants(mission.id)).resolves.toHaveLength(2)
+    await expect(store.listGroupMembershipEvents(mission.id, teamId)).resolves.toEqual([
+      expect.objectContaining({ traccar_device_id: '11', sequence: 1 }),
+      expect.objectContaining({ traccar_device_id: '12', sequence: 2 }),
+    ])
+    await expect(store.listParticipantBackfillCheckpoints(mission.id)).resolves.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ traccar_device_id: '11' }),
+        expect.objectContaining({ traccar_device_id: '20', completed: 1 }),
+      ]),
+    )
+
+    await expect(store.upsertParticipantBackfillCheckpoint({
+      mission_id: mission.id,
+      traccar_device_id: '20',
+      window_from: '2026-08-20T08:00:00.000Z',
+      window_to: '2026-08-20T09:00:00.000Z',
+      reconciled_until: '2026-08-20T08:30:00.000Z',
+      completed: false,
+    })).rejects.toThrow(/completion.*irreversible|cursor.*decrease/i)
+  })
+
+  it('mirrors the participant backfill finish fence', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-08-20T10:00:00.000Z'))
+    const store = getBrowserHarnessStore()
+    const mission = await store.createMission({
+      name: 'Browser backfill finish fence',
+      start_time: '2026-08-20T08:00:00.000Z',
+    })
+    await store.selectMissionParticipants({
+      mission_id: mission.id,
+      groups: [{
+        traccar_group_id: '101', name: 'Kerry MRT', member_device_ids: ['11'],
+      }],
+      devices: [],
+      selected_by: 'Coordinator A',
+    })
+
+    await expect(store.finishMission(mission.id)).rejects.toThrow(
+      /history backfill.*incomplete|complete.*history backfill/i,
+    )
+    await expect(store.listMissions()).resolves.toEqual(
+      expect.arrayContaining([expect.objectContaining({ id: mission.id, status: 'active' })]),
+    )
+    const [checkpoint] = await store.listParticipantBackfillCheckpoints(mission.id)
+    await store.upsertParticipantBackfillCheckpoint({
+      mission_id: mission.id,
+      traccar_device_id: checkpoint!.traccar_device_id,
+      window_from: checkpoint!.window_from,
+      window_to: checkpoint!.window_to,
+      reconciled_until: checkpoint!.window_to,
+      completed: true,
+    })
+
+    await expect(store.finishMission(mission.id)).resolves.toMatchObject({ status: 'finished' })
+  })
+
+  it('mirrors the active participant uniqueness backstops [DON-271]', async () => {
+    const store = getBrowserHarnessStore()
+    const mission = await store.createMission({
+      name: 'Participant Uniqueness Harness Mission',
+      start_time: '2026-08-20T08:00:00.000Z',
+    })
+
+    await expect(store.selectMissionParticipants({
+      mission_id: mission.id,
+      groups: [{
+        traccar_group_id: '101', name: 'Kerry MRT', member_device_ids: ['11'],
+      }],
+      devices: [{ traccar_device_id: '11' }],
+      selected_by: 'Coordinator A',
+    })).rejects.toThrow(/device.*group|covered.*group|select.*once/i)
+    await expect(store.listMissionParticipants(mission.id)).resolves.toEqual([])
+
+    const directSelection = {
+      mission_id: mission.id,
+      groups: [],
+      devices: [{ traccar_device_id: '20' }],
+      selected_by: 'Coordinator A',
+    }
+    await store.selectMissionParticipants(directSelection)
+    const [directParticipant] = await store.listMissionParticipants(mission.id)
+    await expect(store.selectMissionParticipants(directSelection)).rejects.toThrow(/already active/i)
+    await expect(store.listMissionParticipants(mission.id)).resolves.toHaveLength(1)
+
+    await store.finishMission(mission.id)
+    await expect(store.removeMissionParticipant({
+      mission_id: mission.id,
+      participant_id: directParticipant!.id,
+      removed_by: 'Coordinator A',
+    })).rejects.toThrow(/finished.*read-only|finished mission/i)
+    const groupMission = await store.createMission({
+      name: 'Group-covered Harness Mission',
+      start_time: '2026-08-20T08:00:00.000Z',
+    })
+    await store.selectMissionParticipants({
+      mission_id: groupMission.id,
+      groups: [{
+        traccar_group_id: '101', name: 'Kerry MRT', member_device_ids: ['11'],
+      }],
+      devices: [],
+      selected_by: 'Coordinator A',
+    })
+    await expect(store.addMissionParticipant({
+      mission_id: groupMission.id,
+      kind: 'device', ref: '11', confirmed_by: 'Coordinator A',
+    })).rejects.toThrow(/active.*group|covered.*group/i)
+
+    for (const checkpoint of await store.listParticipantBackfillCheckpoints(groupMission.id)) {
+      await store.upsertParticipantBackfillCheckpoint({
+        mission_id: checkpoint.mission_id,
+        traccar_device_id: checkpoint.traccar_device_id,
+        window_from: checkpoint.window_from,
+        window_to: checkpoint.window_to,
+        reconciled_until: checkpoint.window_to,
+        completed: true,
+      })
+    }
+    await store.finishMission(groupMission.id)
+    const directBeforeGroupMission = await store.createMission({
+      name: 'Direct-before-group Harness Mission',
+      start_time: '2026-08-20T08:00:00.000Z',
+    })
+    await store.selectMissionParticipants({
+      mission_id: directBeforeGroupMission.id,
+      groups: [],
+      devices: [{ traccar_device_id: '11' }],
+      selected_by: 'Coordinator A',
+    })
+    await expect(store.addMissionParticipant({
+      mission_id: directBeforeGroupMission.id,
+      kind: 'group',
+      ref: {
+        traccar_group_id: '101',
+        name: 'Kerry MRT',
+        member_device_ids: ['11'],
+      },
+      confirmed_by: 'Coordinator A',
+    })).rejects.toThrow(/covers.*active.*individual|individual.*active.*group/i)
+    await expect(store.listGroupMembershipEvents(directBeforeGroupMission.id)).resolves.toEqual([])
   })
 
   it('finalizes and unlocks a mission using the configured admin roster', async () => {

@@ -1,10 +1,12 @@
 import {
   normalizeTraccarDevice,
+  normalizeTraccarGroup,
   normalizeTraccarPosition,
 } from './traccar-normalization'
 import type {
   NormalizedTrackingDevice,
   NormalizedTrackingPosition,
+  NormalizedTraccarGroup,
 } from './tracking-types'
 import {
   classifyTrackingFailure,
@@ -24,6 +26,7 @@ export type TraccarFetch = (url: string, init?: RequestInit) => Promise<Response
 
 type RawDeviceInput = Parameters<typeof normalizeTraccarDevice>[0]
 type RawPositionInput = Parameters<typeof normalizeTraccarPosition>[0]
+type RawGroupInput = Parameters<typeof normalizeTraccarGroup>[0]
 
 type TraccarClientConfig = {
   readonly baseUrl: string
@@ -42,9 +45,17 @@ export type CurrentPositionNormalizationResult = {
   readonly rejected: readonly CurrentPositionRejection[]
 }
 
+export type DeviceRosterNormalizationResult = {
+  readonly accepted: readonly NormalizedTrackingDevice[]
+  /** False when any server row was rejected during normalization. */
+  readonly complete: boolean
+}
+
 type TraccarClient = {
   readonly authenticate: () => Promise<void>
   readonly getDevices: () => Promise<readonly NormalizedTrackingDevice[]>
+  readonly getDevicesWithReport: () => Promise<DeviceRosterNormalizationResult>
+  readonly getGroups: () => Promise<readonly NormalizedTraccarGroup[]>
   readonly getCurrentPositions: () => Promise<readonly NormalizedTrackingPosition[]>
   readonly getCurrentPositionsWithReport: () => Promise<CurrentPositionNormalizationResult>
   readonly getBreadcrumbs: (
@@ -262,7 +273,7 @@ export function createTraccarClient(
       throw new Error('Expected an array from /api/positions.')
     }
 
-    return normalizeTraccarRows({
+    const result = normalizeTraccarRows({
       endpoint: '/api/positions',
       rows: data,
       emptyMessage: 'No valid Traccar position rows were returned from /api/positions.',
@@ -272,6 +283,23 @@ export function createTraccarClient(
       allowAllRejected: true,
       normalize: (position) => normalizeTraccarPosition(position as RawPositionInput, 'live'),
     })
+    return { accepted: result.accepted, rejected: result.rejected }
+  }
+
+  const getDevicesWithReport = async (): Promise<DeviceRosterNormalizationResult> => {
+    const data = await fetchJson('/api/devices')
+    if (!Array.isArray(data)) {
+      throw new Error('Expected an array from /api/devices.')
+    }
+    const result = normalizeTraccarRows({
+      endpoint: '/api/devices',
+      rows: data,
+      emptyMessage: 'No valid Traccar device rows were returned from /api/devices.',
+      warningMessage: 'Dropped malformed Traccar device row.',
+      logger,
+      normalize: (device) => normalizeTraccarDevice(device as RawDeviceInput),
+    })
+    return { accepted: result.accepted, complete: result.droppedCount === 0 }
   }
 
   return {
@@ -286,19 +314,21 @@ export function createTraccarClient(
 
       await authenticateWithCredentials()
     },
-    getDevices: async () => {
-      const data = await fetchJson('/api/devices')
+    getDevices: async () => (await getDevicesWithReport()).accepted,
+    getDevicesWithReport,
+    getGroups: async () => {
+      const data = await fetchJson('/api/groups')
       if (!Array.isArray(data)) {
-        throw new Error('Expected an array from /api/devices.')
+        throw new Error('Expected an array from /api/groups.')
       }
 
       return normalizeTraccarRows({
-        endpoint: '/api/devices',
+        endpoint: '/api/groups',
         rows: data,
-        emptyMessage: 'No valid Traccar device rows were returned from /api/devices.',
-        warningMessage: 'Dropped malformed Traccar device row.',
+        emptyMessage: 'No valid Traccar group rows were returned from /api/groups.',
+        warningMessage: 'Dropped malformed Traccar group row.',
         logger,
-        normalize: (device) => normalizeTraccarDevice(device as RawDeviceInput),
+        normalize: (group) => normalizeTraccarGroup(group as RawGroupInput),
       }).accepted
     },
     getCurrentPositions: async () => {
@@ -342,6 +372,9 @@ function classifyRequestPhase(
   if (path === '/api/devices') {
     return 'devices'
   }
+  if (path === '/api/groups') {
+    return 'devices'
+  }
   if (path === '/api/positions' && params !== undefined && 'deviceId' in params) {
     return 'breadcrumbs'
   }
@@ -373,6 +406,7 @@ function normalizeTraccarRows<T>(input: {
 }): {
   readonly accepted: readonly T[]
   readonly rejected: readonly CurrentPositionRejection[]
+  readonly droppedCount: number
 } {
   const maxDetailedWarnings = 3
   const accepted: T[] = []
@@ -422,7 +456,7 @@ function normalizeTraccarRows<T>(input: {
     throw new Error(input.emptyMessage)
   }
 
-  return { accepted, rejected }
+  return { accepted, rejected, droppedCount }
 }
 
 /**

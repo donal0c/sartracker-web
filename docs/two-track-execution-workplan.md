@@ -120,7 +120,7 @@ ship or ask testers for whole Electron profile zips.
 
 ## Current Priority
 
-1. Execute the **Breadcrumb and Mission-History Programme** under the locked ADR and `docs/breadcrumb-programme-execution-policy.md`. The active branch is `codex/breadcrumb-pr1-ingest-safety`; PR-1 begins with the BCP-10 source-exact Dots preservation contract before current-position, anomaly-ledger, and stationary-attention changes.
+1. Execute the **Breadcrumb and Mission-History Programme** under the locked ADR and `docs/breadcrumb-programme-execution-policy.md`. PR-1 is merged; PR-2 is the active mission-model candidate on `codex/breadcrumb-pr2-mission-model`.
 2. Preserve `DON-247` and `DON-264` as independent reliability work. Neither is silently absorbed into the breadcrumb programme; `DON-264` remains a non-blocking P3 and is re-tested if a programme PR touches overlay synchronization.
 3. Continue the remaining **Mission Store Reliability programme** work under `DON-241` where it is not superseded by the breadcrumb programme's archive and qualification stages.
 4. Keep hosted browser testing smooth enough for the team to give real feedback.
@@ -143,18 +143,28 @@ mission model; complete coverage; mission evidence/replay; archive lifecycle.
 BCP-17 then qualifies one final team-facing release. BCP work units are the
 JIT-design and TDD boundaries inside those PRs, not separate release trains.
 
-Current work: PR-1 on `codex/breadcrumb-pr1-ingest-safety`, internally ordered
-BCP-10 → BCP-01 → BCP-02 → BCP-05. Linear parent `DON-265` owns the programme;
-its children map the BCP work units through final qualification and release.
-Fable's accepted integrated design is
-`tmp/agent-mail/fable-breadcrumb-pr1-design-20260822.md`. BCP-10 now has the
-named `npm run test:contract:dots` tripwire: a 20,006-fix, three-page real
-SQLite/controller/GeoJSON chain plus eight deterministic injected faults.
-The coordination loop is locked in
-`docs/breadcrumb-programme-coordination-workflow.md`. One authorized Sol-high
-implementation task owns the complete PR; BCP units are internal design/TDD
-checkpoints, not separate implementation tasks. BCP-10/01/02/05 are now
-integrated locally. Keep `DON-266`–`DON-269` open until PR-1 merges.
+Current work: PR-2 on `codex/breadcrumb-pr2-mission-model`, internally ordered
+BCP-03 → BCP-04 → BCP-06 (`DON-270/271/272`). The accepted design is
+`tmp/agent-mail/fable-breadcrumb-pr2-design-retry-20260823.md`. CP-0..CP-8 are
+implemented with one additive schema v9 and the mission model remains behind an
+internal flag. Review `5002724165` at `c5de653` returned seven P1 and six P2
+findings, followed by eight P1 and five P2 in the second pass, five P1/two P2
+in the third, one P1/one P2 in the fourth, and two P1/one P2 in the fifth. All
+are red-to-green at latest code commit `c6f417c3b7f1`.
+Mission switches fail closed while participant scope hydrates; mutation state is
+generation-fenced; failed group deltas retain their original observation; every
+history write is participation-scoped; membership failures are visible; finish
+waits for fixed participant backfills; and legacy preset-v2 caches remain usable.
+Exact-code flag-on/off Ubuntu package restart soaks pass, live GET-only Traccar confirms
+34 devices / 9 fixes with selected-only local evidence, the unchanged 3.704 GB
+v8→v9 proof preserves 2.04 million positions and 32 participants with integrity
+`ok`, and byte-identical generator-v4 960k/2M fixtures pass on macOS and Ubuntu.
+The final 2M / 12-outing worker returns exact counts in `1.072 s` with a `14.3 ms`
+parent maximum and no global timestamp index. The macOS flag-on 500k stall gate
+passes at `84.3 ms`; the equivalent Ubuntu Xwayland/llvmpipe path remains an
+explicit pre-existing qualification gap while the feature is release-off. PR-2
+is review ready; do not start PR-3 until an
+independent exact-current-head reviewer says it is approvable and Donal merges.
 
 ## Next Task Order
 
@@ -163,7 +173,8 @@ This is the default order when the user says “work on the next task.”
 | Order | Chunk | Track | Linear issue | Status |
 | --- | --- | --- | --- | --- |
 | Done | Release the Tracking stability, interaction, and basemap-independent overlay hotfix | S2 Electron / Shared Tracking / Map / Verification | `DON-261` / `DON-262` / `DON-263` | Beta.12.5 exact commit `042d77ad6158`; clean no-skip verification 8/8; tag CI `30497318233` green; exact CI AppImage and real installed `.deb` passed lifecycle, safety, live-Traccar, 13-poll empty-history stability, pending/degraded basemap overlay, and deterministic five-/fourteen-day soak gates. Independent reviews returned `RELEASE` with no P1/P2. Guarded publication succeeded; fresh public hashes matched and the public AppImage passed Ubuntu lifecycle/recovery/finalize/archive. |
-| Review-ready | PR-1: trustworthy ingest and live safety | Shared Tracking / S2 Electron / Evidence | `DON-266` / `DON-267` / `DON-268` / `DON-269` | [PR #1](https://github.com/donal0c/sartracker-web/pull/1) remains unmerged. The latest red-first pass holds a renderer acceptance fence across evidence drain and main finalization, rotates bounded outbox replay past terminal records, and keeps one-device stationary updates bounded through per-device projection/accumulation caches, disabled-cache short-circuiting, and stable MapLibre source diffs. Existing finalized-mission, mission-scoping, health, backpressure, disposal, source-ownership, fix-time, worker, and corrupt-evidence safeguards remain. Proof: focused `109`; unit `1,715`; backend `51 / 1 ignored`; Chromium `146`; tracking visual `13 / 13` with fresh critical review `15 / 15`; BCP-10 `10`; lint/build/bundle/diff; and macOS arm64 package green. A schema-v8 177,692,672-byte packaged stationary fixture with 100 devices × 5,000 fixes kept two one-device renderer updates at `46.4 ms` / `57.3 ms`, below the unchanged `200 ms` gate with exact 100 current fixes and 100 attention states. This is synthetic macOS proof only. The exact `f24906c425e0` 3.704 GB migration/Review and 8,664-position soak remain valid because their invalidation surfaces did not change. The cold audit worker remains about `7.5 s`; indexing/retention stays open in `DON-251`. |
+| Done | PR-1: trustworthy ingest and live safety | Shared Tracking / S2 Electron / Evidence | `DON-266` / `DON-267` / `DON-268` / `DON-269` | Merged as [PR #1](https://github.com/donal0c/sartracker-web/pull/1) at `9481cf462e0e`; its exact-head review and Linux evidence remain in PR #1 and the handoff archive. |
+| Review ready | PR-2: explicit outings, participants, and mission-shaped fixtures | Shared Tracking / S2 Electron / Mission model / Verification | `DON-270` / `DON-271` / `DON-272` | First through seventh review passes are closed at latest code commit `dc85613`. Refused-finish replay now durably reconciles the provisional roster, repeated write failures preserve later observations at their original times, removed participants remain eligible for late historical fixes without staying live, and a scope-expansion race refetches an unacknowledged suffix. Full serial unit `229/1,874`, Chromium `154/154`, and unsigned macOS Electron packaging pass; unchanged heavy proofs remain valid only for unaffected surfaces. Ubuntu Xwayland/llvmpipe 500k flag-on rendering remains explicitly unqualified and release-off. Next: continue exact-head review until a non-author reviewer says it is approvable; do not merge or start PR-3 meanwhile. |
 | Todo (non-blocking) | Surface persistent overlay synchronization failures in diagnostics and map health | S2 Electron / Shared Map / Diagnostics | `DON-264` | DON-263 retries transient and persistent sync exceptions indefinitely with a 2 s cap, but repeated failures are currently developer-console-only. Add bounded, sanitized, durable warning elevation and success-based clearing after the beta.12.5 hotfix; this P3 does not block the release. |
 | Done | Make Breadcrumb Dots source-exact and independently release-gated | S2 Electron / Shared Tracking / Verification | `DON-260` | Published beta.12.11 at exact tag `bced8052b85c` after green CI run `31482052296`, full AppImage and genuinely installed `.deb` package matrices, synthetic 279,936/1,935,384-fix exact-page proofs, target-only live-provider equality, diagnostics privacy, and unchanged performance/RSS gates. The guarded publisher and a second public download revalidated both installer hashes and `SHA256SUMS`; the fresh public AppImage independently passed settings persistence, same-mission recovery, finalization, and archive creation. Dots is source-exact and paged; Line alone remains simplified. Beta.12.9/.12.10 are not the correction. |
 | Done | Build deterministic field-scale mission-store fixtures | S2 Electron / Verification | `DON-242` | Small/CI/local/field plus 5-day and 14-day continuous-mission presets; Ubuntu field fixture is 3.704 GB with measured table accounting and restart checkpoints. |

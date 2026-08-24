@@ -57,6 +57,9 @@ import {
   stopRuntimeServices,
 } from './runtime-managed-services'
 import { startCoreFeatureRuntimes } from './start-core-feature-runtimes'
+import { useParticipantStore } from '../participants/participant-store'
+import { resolveParticipantMissionId } from '../participants/participant-mission-context'
+import { isMissionModelEnabled } from './mission-model-flag'
 
 type StartAppRuntimeDependencies = {
   readonly registerServiceWorker: () => Promise<void>
@@ -190,6 +193,7 @@ export async function startAppRuntime(
   const coreFeatureRuntimes = await resolvedDependencies.startCoreFeatureRuntimes({
     missionStore: coreMissionStore,
     attachmentAdapter,
+    missionModelEnabled: isMissionModelEnabled(),
     gpxWatchSource: gpxImportSource,
     requestAutosaveSync: (reason: AutosaveSyncReason) =>
       activeServices.requestAutosaveSync(reason),
@@ -286,6 +290,24 @@ export async function startAppRuntime(
             const missionId = useMissionStore.getState().currentMission?.id ?? null
             return useActiveMissionDevicesStore.getState().getActiveDeviceIds(missionId)
           },
+          getParticipantDeviceIds: () =>
+            isMissionModelEnabled()
+              ? useParticipantStore.getState().scope.historicalDeviceIdsThrough(
+                  new Date().toISOString(),
+                )
+              : null,
+          getParticipantHistoryStarts: (deviceIds, from, until) => {
+            if (!isMissionModelEnabled()) return {}
+            const scope = useParticipantStore.getState().scope
+            return Object.fromEntries(deviceIds.flatMap((deviceId) => {
+              const historyFrom = scope.firstEvidenceTimestampAtOrAfter(
+                deviceId,
+                from.toISOString(),
+                until.toISOString(),
+              )
+              return historyFrom === null ? [] : [[deviceId, historyFrom]]
+            }))
+          },
           getInitialBreadcrumbs: hooks.getInitialBreadcrumbs,
           getInitialBreadcrumbTotals: hooks.getInitialBreadcrumbTotals,
           getInitialBreadcrumbSelectionMetadata:
@@ -318,6 +340,33 @@ export async function startAppRuntime(
         )
       },
       applyStatus: applyTrackingStatus,
+      missionModelEnabled: isMissionModelEnabled(),
+      readParticipationScope: () => useParticipantStore.getState().scope,
+      readParticipationScopeStatus: () => {
+        const missionState = useMissionStore.getState()
+        const missionId = resolveParticipantMissionId(missionState)
+        const participantState = useParticipantStore.getState()
+        if (missionId === null) return 'ready'
+        if (participantState.activeMissionId !== missionId || participantState.loading) {
+          return 'loading'
+        }
+        return participantState.error === null ? 'ready' : 'error'
+      },
+      subscribeParticipationScope: (listener) =>
+        useParticipantStore.subscribe((state, previousState) => {
+          if (
+            state.scope !== previousState.scope ||
+            state.activeMissionId !== previousState.activeMissionId ||
+            state.loading !== previousState.loading ||
+            state.error !== previousState.error
+          ) listener()
+        }),
+      applyParticipantRoster: (devices, options) =>
+        useParticipantStore.getState().controller?.applyRoster(devices, undefined, options),
+      applyParticipantGroups: (groups) =>
+        useParticipantStore.getState().controller?.applyGroups(groups),
+      applyParticipantRosterError: (message) =>
+        useParticipantStore.getState().controller?.reportRosterError(message),
       notifyDurablePositionChange: (changedPositionCount) => {
         useExactBreadcrumbDotStore.getState().controller?.notifyDurableChange(
           changedPositionCount,

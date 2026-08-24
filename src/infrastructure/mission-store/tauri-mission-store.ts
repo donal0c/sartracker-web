@@ -17,6 +17,94 @@ export type Mission = {
   readonly schema_version: number
 }
 
+export type Outing = {
+  readonly id: string
+  readonly mission_id: string
+  readonly label: string
+  readonly started_at: string
+  readonly ended_at: string | null
+  readonly created_at: string
+  readonly updated_at: string
+}
+
+export type CreateOutingInput = {
+  readonly mission_id: string
+  readonly label: string
+  readonly started_at?: string
+}
+
+export type EndOutingInput = {
+  readonly mission_id: string
+  readonly outing_id: string
+  readonly ended_at?: string
+}
+
+export type RenameOutingInput = {
+  readonly mission_id: string
+  readonly outing_id: string
+  readonly label: string
+}
+
+export type EditOutingBoundariesInput = {
+  readonly mission_id: string
+  readonly outing_id: string
+  readonly started_at?: string
+  readonly ended_at?: string | null
+}
+
+export type OutingFixSummary = {
+  readonly outings: readonly {
+    readonly outing_id: string
+    readonly accepted_fix_count: number
+  }[]
+  readonly unassigned_accepted_fix_count: number
+  readonly total_accepted_fix_count: number
+}
+
+export type ParticipantProvenance = 'explicit' | 'grandfathered' | 'legacy_auto'
+
+export type MissionParticipant = {
+  readonly id: string
+  readonly mission_id: string
+  readonly kind: 'device' | 'group'
+  readonly traccar_device_id: string | null
+  readonly mission_team_id: string | null
+  readonly traccar_group_id: string | null
+  readonly team_name: string | null
+  readonly provenance: ParticipantProvenance
+  readonly effective_from: string
+  readonly added_at: string
+  readonly added_by: string | null
+  readonly removed_at: string | null
+  readonly removed_by: string | null
+  readonly backfill_window_to?: string | null
+  readonly backfill_reconciled_until?: string | null
+  readonly backfill_completed?: number | null
+  readonly backfill_member_count?: number | null
+  readonly backfill_completed_count?: number | null
+}
+
+export type GroupMembershipEvent = {
+  readonly id: string
+  /** Durable append order used when multiple observations share one timestamp. */
+  readonly sequence: number
+  readonly mission_id: string
+  readonly mission_team_id: string
+  readonly traccar_device_id: string
+  readonly change: 'member' | 'left'
+  readonly observed_at: string
+}
+
+export type ParticipantBackfillCheckpoint = {
+  readonly mission_id: string
+  readonly traccar_device_id: string
+  readonly window_from: string
+  readonly window_to: string
+  readonly reconciled_until: string
+  readonly completed: number
+  readonly updated_at: string
+}
+
 export type DeviceStatus = 'online' | 'offline' | 'unknown'
 
 export type Device = {
@@ -27,6 +115,8 @@ export type Device = {
   readonly color: string
   readonly last_seen: string | null
   readonly status: DeviceStatus
+  readonly group_id: string | null
+  readonly unique_id: string | null
 }
 
 export type Position = {
@@ -285,6 +375,32 @@ export type UpsertDeviceInput = {
   readonly color: string
   readonly status: DeviceStatus
   readonly last_seen?: string | null
+  readonly group_id?: string | null
+  readonly unique_id?: string | null
+  readonly participant_provenance?: 'legacy_auto'
+}
+
+export type SelectMissionParticipantsInput = {
+  readonly mission_id: string
+  readonly groups: readonly {
+    readonly traccar_group_id: string
+    readonly name: string
+    readonly member_device_ids: readonly string[]
+  }[]
+  readonly devices: readonly { readonly traccar_device_id: string }[]
+  readonly selected_by: string
+}
+
+export type AddMissionParticipantInput = {
+  readonly mission_id: string
+  readonly kind: 'device' | 'group'
+  readonly ref: string | {
+    readonly traccar_group_id: string
+    readonly name: string
+    readonly member_device_ids?: readonly string[]
+  }
+  readonly effective_from?: string
+  readonly confirmed_by: string
 }
 
 export type AddPositionInput = {
@@ -371,10 +487,52 @@ export type MissionStore = {
   readonly syncBackup: (trigger?: string) => Promise<string>
   readonly createMissionArchive: (missionId: string) => Promise<MissionArchiveInfo>
   readonly createMission: (input: CreateMissionInput) => Promise<Mission>
+  readonly createOuting?: (input: CreateOutingInput) => Promise<Outing>
+  readonly endOuting?: (input: EndOutingInput) => Promise<Outing>
+  readonly renameOuting?: (input: RenameOutingInput) => Promise<Outing>
+  readonly editOutingBoundaries?: (input: EditOutingBoundariesInput) => Promise<Outing>
+  readonly listOutings?: (missionId: string) => Promise<readonly Outing[]>
+  readonly readOutingFixSummary?: (
+    input: { readonly missionId: string },
+    requestId?: string,
+  ) => Promise<OutingFixSummary>
+  readonly cancelOutingFixSummary?: (requestId: string) => Promise<boolean>
+  readonly selectMissionParticipants?: (
+    input: SelectMissionParticipantsInput,
+  ) => Promise<readonly MissionParticipant[]>
+  readonly addMissionParticipant?: (
+    input: AddMissionParticipantInput,
+  ) => Promise<MissionParticipant>
+  readonly removeMissionParticipant?: (input: {
+    readonly mission_id: string
+    readonly participant_id: string
+    readonly removed_by: string
+    readonly reason?: string
+  }) => Promise<MissionParticipant>
+  readonly listMissionParticipants?: (
+    missionId: string,
+  ) => Promise<readonly MissionParticipant[]>
+  readonly recordGroupMembershipEvents?: (input: {
+    readonly mission_id: string
+    readonly events: readonly Omit<GroupMembershipEvent, 'id' | 'sequence' | 'mission_id'>[]
+  }) => Promise<readonly GroupMembershipEvent[]>
+  readonly listGroupMembershipEvents?: (
+    missionId: string,
+    teamId?: string,
+  ) => Promise<readonly GroupMembershipEvent[]>
+  readonly upsertParticipantBackfillCheckpoint?: (
+    input: Omit<ParticipantBackfillCheckpoint, 'completed' | 'updated_at'> & {
+      readonly completed: boolean
+    },
+  ) => Promise<ParticipantBackfillCheckpoint>
+  readonly listParticipantBackfillCheckpoints?: (
+    missionId: string,
+  ) => Promise<readonly ParticipantBackfillCheckpoint[]>
   readonly upsertDevice: (input: UpsertDeviceInput) => Promise<Device>
   readonly upsertDevicesBulk?: (input: {
     readonly mission_id: string
     readonly devices: readonly Omit<UpsertDeviceInput, 'mission_id'>[]
+    readonly participant_provenance?: 'legacy_auto'
   }) => Promise<readonly Device[]>
   readonly getDevice: (missionId: string, deviceId: string) => Promise<Device>
   readonly listDevices: (missionId: string) => Promise<readonly Device[]>

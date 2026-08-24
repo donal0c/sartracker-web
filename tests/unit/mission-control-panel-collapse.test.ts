@@ -76,6 +76,20 @@ describe('MissionControlPanel collapse behavior', () => {
     expect(query('[data-testid="mission-pause-resume-btn"]')).not.toBeNull()
   })
 
+  it('keeps a failed finish reason inside the open confirmation dialog', async () => {
+    const { MissionControlPanel } = await import('../../src/components/mission-control-panel')
+    missionControlMock.model = createModel({
+      actionError: 'Mission cannot be finished while participant history backfill is incomplete.',
+      showFinishDialog: true,
+    })
+
+    render(React.createElement(MissionControlPanel))
+
+    const dialog = query('[data-testid="mission-finish-dialog"]')
+    expect(dialog?.querySelector('[data-testid="mission-action-error"]')?.textContent)
+      .toContain('participant history backfill is incomplete')
+  })
+
   function render(element: React.ReactElement): void {
     host = document.createElement('div')
     document.body.append(host)

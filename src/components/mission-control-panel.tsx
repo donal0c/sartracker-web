@@ -9,6 +9,11 @@ import { useMissionControlViewModel } from '../features/mission/use-mission-cont
 import { formatMissionDuration } from '../features/mission/mission-timers'
 import { selectMissionPhasePresentation } from '../features/mission/mission-phase-presentation'
 import { focusFirstElement, restoreFocus, trapTabKey } from '../lib/focus-management'
+import {
+  OpenOutingFinishOffer,
+  OutingControlsSection,
+} from './outing-controls-section'
+import { ParticipantControlsSection } from './participant-controls-section'
 
 const MISSION_NAME_INPUT_ID = 'mission-name-input'
 const MISSION_OFFSET_INPUT_ID = 'mission-offset-input'
@@ -247,6 +252,7 @@ export function MissionControlPanel({
                 value={startOffsetHours}
               />
             </div>
+            <ParticipantControlsSection phase={phase} />
           </div>
         ) : focusModeActive ? (
           <div className="sar-readout border-l-4 border-l-emerald-400 px-3 py-3">
@@ -257,10 +263,14 @@ export function MissionControlPanel({
           </div>
         ) : null}
 
+        {phase !== 'idle' ? <ParticipantControlsSection phase={phase} /> : null}
+
         {/* Status Messages */}
         <div className="empty:hidden">
           {startError !== null ? <p className="border border-rose-400/24 bg-rose-400/10 p-2 text-xs text-rose-400">{startError}</p> : null}
-          {actionError !== null ? <p className="border border-rose-400/24 bg-rose-400/10 p-2 text-xs text-rose-400">{actionError}</p> : null}
+          {actionError !== null && !showFinishDialog && !showFinalizeDialog && !showUnlockDialog
+            ? <MissionActionError message={actionError} />
+            : null}
           {duplicateWarning !== null ? (
             <p className="sar-inline-alert p-2 text-xs text-amber-300">{duplicateWarning}</p>
           ) : null}
@@ -302,6 +312,8 @@ export function MissionControlPanel({
             </button>
           </div>
         </div>
+
+        {(currentMission !== null || governanceMission !== null) ? <OutingControlsSection /> : null}
 
         {phase === 'idle' && governanceMission !== null ? (
           <div
@@ -409,6 +421,7 @@ export function MissionControlPanel({
             This creates a validated archive and makes the mission read-only until an admin
             explicitly unlocks it.
           </p>
+          {actionError !== null ? <MissionActionError message={actionError} /> : null}
           <div className="mt-4 flex gap-2">
             <button
               className="flex-1 bg-sky-600 px-3 py-2 text-[12px] font-semibold text-white disabled:opacity-40 hover:bg-sky-500"
@@ -477,6 +490,7 @@ export function MissionControlPanel({
               />
             </label>
           </div>
+          {actionError !== null ? <MissionActionError message={actionError} /> : null}
           <div className="mt-4 flex gap-2">
             <button
               className="flex-1 bg-amber-600 px-3 py-2 text-[12px] font-semibold text-white disabled:opacity-40 hover:bg-amber-500"
@@ -518,6 +532,8 @@ export function MissionControlPanel({
           >
             This will stop timers and return to IDLE. Data remains saved.
           </p>
+          <OpenOutingFinishOffer />
+          {actionError !== null ? <MissionActionError message={actionError} /> : null}
           <div className="mt-4 flex gap-2">
             <button
               className="flex-1 bg-rose-600 px-3 py-2 text-[12px] font-semibold text-white hover:bg-rose-500"
@@ -538,6 +554,19 @@ export function MissionControlPanel({
       ) : null}
       </>
     </section>
+  )
+}
+
+/** Keeps lifecycle failures visible beside the decision the operator can retry or cancel. */
+function MissionActionError({ message }: { readonly message: string }) {
+  return (
+    <p
+      className="mt-3 border border-rose-400/30 bg-rose-400/10 p-2 text-xs font-semibold text-rose-300"
+      data-testid="mission-action-error"
+      role="alert"
+    >
+      {message}
+    </p>
   )
 }
 

@@ -82,6 +82,15 @@ const { createElectronMissionStore, CURRENT_SCHEMA_VERSION } = require('../../el
       }[]
       readonly breadcrumbCount: number
     }>
+    readonly runOutingFixSummaryInWorker?: (input: {
+      readonly databasePath: string
+      readonly query: { readonly missionId: string }
+      readonly signal?: AbortSignal
+    }) => Promise<{
+      readonly outings: readonly { readonly outing_id: string; readonly accepted_fix_count: number }[]
+      readonly unassigned_accepted_fix_count: number
+      readonly total_accepted_fix_count: number
+    }>
   }) => ElectronMissionStore
 }
 const Database = require('better-sqlite3')
@@ -257,6 +266,14 @@ type ElectronMissionStore = {
     readonly breadcrumbCount: number
   }>
   readonly cancelMissionReviewRead: (requestId: string) => Promise<boolean>
+  readonly readOutingFixSummary: (
+    query: { readonly missionId: string },
+    requestId?: string,
+  ) => Promise<{
+    readonly outings: readonly { readonly outing_id: string; readonly accepted_fix_count: number }[]
+    readonly unassigned_accepted_fix_count: number
+    readonly total_accepted_fix_count: number
+  }>
   readonly countPositions: (missionId: string, deviceId?: string) => Promise<number>
   readonly latestPositions: (missionId: string) => Promise<readonly { readonly device_id: string; readonly lat: number }[]>
   readonly listIngestAnomalies: (missionId: string, options?: {
@@ -457,7 +474,7 @@ describe('electron mission store', () => {
   })
 
   it('migrates a schema-6 store to the durable tracking-history checkpoint schema', async () => {
-    expect(CURRENT_SCHEMA_VERSION).toBe(8)
+    expect(CURRENT_SCHEMA_VERSION).toBe(9)
     userDataPath = await mkdtemp(path.join(tmpdir(), 'sartracker-electron-checkpoint-migration-'))
     const databasePath = path.join(userDataPath, 'mission-store.sqlite')
     const legacyDb = new Database(databasePath)
@@ -471,7 +488,7 @@ describe('electron mission store', () => {
     }
 
     store = createElectronMissionStore({ userDataPath })
-    await expect(store.info()).resolves.toMatchObject({ schema_version: 8 })
+    await expect(store.info()).resolves.toMatchObject({ schema_version: 9 })
 
     const migratedDb = new Database(databasePath, { readonly: true })
     try {
@@ -486,7 +503,7 @@ describe('electron mission store', () => {
         migratedDb
           .prepare("SELECT value FROM metadata WHERE key = 'schema_version'")
           .get(),
-      ).toEqual({ value: '8' })
+      ).toEqual({ value: '9' })
     } finally {
       migratedDb.close()
     }
@@ -528,7 +545,7 @@ describe('electron mission store', () => {
     }
 
     store = createElectronMissionStore({ userDataPath })
-    await expect(store.info()).resolves.toMatchObject({ schema_version: 8 })
+    await expect(store.info()).resolves.toMatchObject({ schema_version: 9 })
 
     const migratedDb = new Database(databasePath, { readonly: true })
     try {
@@ -544,6 +561,94 @@ describe('electron mission store', () => {
       ).toEqual({ name: 'ingest_anomalies' })
     } finally {
       migratedDb.close()
+    }
+  })
+
+  it('grandfathers every v8 mission device including finalized missions without rewriting evidence [DON-271]', async () => {
+    userDataPath = await mkdtemp(path.join(tmpdir(), 'sartracker-electron-v9-participant-migration-'))
+    const databasePath = path.join(userDataPath, 'mission-store.sqlite')
+    const legacyDb = new Database(databasePath)
+    try {
+      legacyDb.exec(`
+        CREATE TABLE metadata (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+        INSERT INTO metadata (key, value) VALUES ('schema_version', '8');
+        CREATE TABLE missions (
+          id TEXT PRIMARY KEY, name TEXT NOT NULL, status TEXT NOT NULL,
+          start_time TEXT NOT NULL, pause_time TEXT, finish_time TEXT,
+          paused_seconds INTEGER NOT NULL DEFAULT 0, notes TEXT,
+          schema_version INTEGER NOT NULL
+        );
+        INSERT INTO missions VALUES (
+          'finalized-mission', 'Legacy Finalized', 'finalized',
+          '2026-08-01T06:00:00.000Z', NULL, '2026-08-01T18:00:00.000Z',
+          0, NULL, 8
+        );
+        CREATE TABLE devices (
+          id TEXT PRIMARY KEY, mission_id TEXT NOT NULL, device_id TEXT NOT NULL,
+          name TEXT NOT NULL, color TEXT NOT NULL, last_seen TEXT, status TEXT NOT NULL,
+          UNIQUE (mission_id, device_id)
+        );
+        INSERT INTO devices VALUES
+          ('device-row-1', 'finalized-mission', '11', 'Alpha', '#fff', NULL, 'offline'),
+          ('device-row-2', 'finalized-mission', '12', 'Bravo', '#fff', NULL, 'offline');
+      `)
+    } finally {
+      legacyDb.close()
+    }
+
+    store = createElectronMissionStore({ userDataPath })
+    const migratedDb = new Database(databasePath, { readonly: true })
+    try {
+      expect(migratedDb.prepare(`SELECT traccar_device_id, provenance, effective_from,
+          added_by, removed_at FROM mission_participants ORDER BY traccar_device_id`).all())
+        .toEqual([
+          {
+            traccar_device_id: '11', provenance: 'grandfathered',
+            effective_from: '2026-08-01T06:00:00.000Z', added_by: null, removed_at: null,
+          },
+          {
+            traccar_device_id: '12', provenance: 'grandfathered',
+            effective_from: '2026-08-01T06:00:00.000Z', added_by: null, removed_at: null,
+          },
+        ])
+      expect(migratedDb.prepare('SELECT COUNT(*) AS count FROM outings').get()).toEqual({ count: 0 })
+      expect(migratedDb.prepare('SELECT COUNT(*) AS count FROM devices').get()).toEqual({ count: 2 })
+      expect(migratedDb.prepare("SELECT value FROM metadata WHERE key = 'schema_version'").get())
+        .toEqual({ value: '9' })
+      expect(migratedDb.prepare(`SELECT name FROM sqlite_master
+          WHERE type = 'index' AND name IN (
+            'idx_mission_participants_active_device',
+            'idx_mission_participants_active_group',
+            'idx_positions_mission_timestamp'
+          ) ORDER BY name`).all()).toEqual([
+        { name: 'idx_mission_participants_active_device' },
+        { name: 'idx_mission_participants_active_group' },
+      ])
+      const fixSummaryPlan = migratedDb.prepare(`EXPLAIN QUERY PLAN
+        SELECT outing.id AS outing_id, COUNT(position.id) AS accepted_fix_count
+        FROM outings AS outing
+        LEFT JOIN positions AS position
+          ON position.mission_id = outing.mission_id
+         AND position.timestamp >= outing.started_at
+         AND (outing.ended_at IS NULL OR position.timestamp < outing.ended_at)
+        WHERE outing.mission_id = ?
+        GROUP BY outing.id, outing.started_at`).all('finalized-mission') as {
+          readonly detail: string
+        }[]
+      expect(fixSummaryPlan.some((step) =>
+        step.detail.includes('idx_positions_mission_timestamp'))).toBe(false)
+    } finally {
+      migratedDb.close()
+    }
+
+    store.close()
+    store = createElectronMissionStore({ userDataPath })
+    const reopenedDb = new Database(databasePath, { readonly: true })
+    try {
+      expect(reopenedDb.prepare('SELECT COUNT(*) AS count FROM mission_participants').get())
+        .toEqual({ count: 2 })
+    } finally {
+      reopenedDb.close()
     }
   })
 
@@ -911,6 +1016,43 @@ describe('electron mission store', () => {
     await vi.waitFor(() => expect(runMissionReviewReadQueryInWorker).toHaveBeenCalledTimes(2))
     completions[1]?.()
     await Promise.all([first, second])
+  })
+
+  it('does not start the next outing summary until the previous physical worker exits [DON-270]', async () => {
+    const resultResolvers: Array<(value: {
+      readonly outings: readonly never[]
+      readonly unassigned_accepted_fix_count: number
+      readonly total_accepted_fix_count: number
+    }) => void> = []
+    const exitResolvers: Array<() => void> = []
+    const runOutingFixSummaryInWorker = vi.fn(() => {
+      const workerExited = new Promise<void>((resolve) => exitResolvers.push(resolve))
+      const operation = new Promise<{
+        readonly outings: readonly never[]
+        readonly unassigned_accepted_fix_count: number
+        readonly total_accepted_fix_count: number
+      }>((resolve) => resultResolvers.push(resolve))
+      Object.defineProperty(operation, 'workerExited', { value: workerExited })
+      return operation
+    })
+    store = await createStore({ runOutingFixSummaryInWorker })
+
+    const first = store.readOutingFixSummary({ missionId: 'mission-1' }, 'outing-first')
+    const second = store.readOutingFixSummary({ missionId: 'mission-2' }, 'outing-second')
+    await vi.waitFor(() => expect(runOutingFixSummaryInWorker).toHaveBeenCalledTimes(1))
+    resultResolvers[0]?.({
+      outings: [], unassigned_accepted_fix_count: 0, total_accepted_fix_count: 0,
+    })
+    await first
+
+    expect(runOutingFixSummaryInWorker).toHaveBeenCalledTimes(1)
+    exitResolvers[0]?.()
+    await vi.waitFor(() => expect(runOutingFixSummaryInWorker).toHaveBeenCalledTimes(2))
+    resultResolvers[1]?.({
+      outings: [], unassigned_accepted_fix_count: 0, total_accepted_fix_count: 0,
+    })
+    exitResolvers[1]?.()
+    await second
   })
 
   it('keeps info constant-size and excludes anomaly-ledger aggregation [DON-251]', async () => {
@@ -1869,6 +2011,62 @@ describe('electron mission store', () => {
         history_from: '2026-08-08T00:00:00.000Z',
         reconciled_until: '2026-08-08T02:00:00.000Z',
       },
+    ])
+  })
+
+  it('widens a history checkpoint only after the new prefix reaches the stored origin', async () => {
+    store = await createStore()
+    const mission = await store.createMission({
+      name: 'Expanded Participation History Mission',
+      start_time: '2026-08-08T08:00:00.000Z',
+    })
+    await store.upsertDevice({
+      mission_id: mission.id,
+      device_id: 'tracker-1',
+      name: 'Tracker One',
+      color: '#00AAFF',
+      status: 'online',
+    })
+    await store.persistTrackingHistoryBatch({
+      mission_id: mission.id,
+      positions: [],
+      checkpoints: [{
+        device_id: 'tracker-1',
+        history_from: '2026-08-08T12:00:00.000Z',
+        reconciled_until: '2026-08-08T14:00:00.000Z',
+      }],
+    })
+
+    await store.persistTrackingHistoryBatch({
+      mission_id: mission.id,
+      positions: [],
+      checkpoints: [{
+        device_id: 'tracker-1',
+        history_from: '2026-08-08T08:00:00.000Z',
+        reconciled_until: '2026-08-08T10:00:00.000Z',
+      }],
+    })
+    await expect(store.listTrackingHistoryCheckpoints(mission.id)).resolves.toEqual([
+      expect.objectContaining({
+        history_from: '2026-08-08T12:00:00.000Z',
+        reconciled_until: '2026-08-08T14:00:00.000Z',
+      }),
+    ])
+
+    await store.persistTrackingHistoryBatch({
+      mission_id: mission.id,
+      positions: [],
+      checkpoints: [{
+        device_id: 'tracker-1',
+        history_from: '2026-08-08T08:00:00.000Z',
+        reconciled_until: '2026-08-08T12:00:00.000Z',
+      }],
+    })
+    await expect(store.listTrackingHistoryCheckpoints(mission.id)).resolves.toEqual([
+      expect.objectContaining({
+        history_from: '2026-08-08T08:00:00.000Z',
+        reconciled_until: '2026-08-08T14:00:00.000Z',
+      }),
     ])
   })
 
@@ -2860,6 +3058,15 @@ describe('electron mission store', () => {
       readonly failRemovalAfterProjection?: boolean
     }
     readonly storageDiagnostics?: StorageDiagnosticsPort
+    readonly runOutingFixSummaryInWorker?: (input: {
+      readonly databasePath: string
+      readonly query: { readonly missionId: string }
+      readonly signal?: AbortSignal
+    }) => Promise<{
+      readonly outings: readonly { readonly outing_id: string; readonly accepted_fix_count: number }[]
+      readonly unassigned_accepted_fix_count: number
+      readonly total_accepted_fix_count: number
+    }>
   } = {}): Promise<ElectronMissionStore> {
     userDataPath = await mkdtemp(path.join(tmpdir(), 'sartracker-electron-mission-'))
     return createElectronMissionStore({ userDataPath, ...options })

@@ -78,6 +78,10 @@ jobs:
         run: npx vitest run tests/unit/vite-config.test.ts
 
       - name: Build Electron Linux artifacts
+        # This workflow is an internal qualification lane. Release packaging
+        # deliberately omits this flag until the programme's final gate.
+        env:
+          VITE_SARTRACKER_MISSION_MODEL: '1'
         run: |
           mkdir -p tmp/electron-validation-evidence
           npm run electron:dist:linux

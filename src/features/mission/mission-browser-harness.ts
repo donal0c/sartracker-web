@@ -27,6 +27,8 @@ import { recordTrackingPollLedgerEntry } from '../diagnostics/tracking-poll-ledg
 import { startExactBreadcrumbDotRuntime } from '../tracking/start-exact-breadcrumb-dot-runtime'
 import { useExactBreadcrumbDotStore } from '../tracking/exact-breadcrumb-dot-store'
 import { applyCurrentPositionRejections } from '../tracking/ingest-health-store'
+import { useParticipantStore } from '../participants/participant-store'
+import { isMissionModelEnabled } from '../runtime/mission-model-flag'
 
 const BROWSER_HARNESS_MAX_PERSISTED_TRACKING_POSITIONS = 2_000
 const LEAFLET_FALLBACK_SEED_MISSION_NAME = 'DON-27 Leaflet fallback surface'
@@ -100,6 +102,7 @@ export async function startMissionBrowserHarness(): Promise<void> {
   await startCoreFeatureRuntimes({
     missionStore: browserStore,
     attachmentAdapter: noopMarkerAttachmentAdapter,
+    missionModelEnabled: isMissionModelEnabled(),
   })
   const stopExactBreadcrumbDots = startExactBreadcrumbDotRuntime(browserStore)
 
@@ -140,6 +143,24 @@ export async function startMissionBrowserHarness(): Promise<void> {
             const mission = useMissionStore.getState().currentMission
             return mission === null ? null : new Date(mission.start_time)
           },
+          getParticipantDeviceIds: () =>
+            isMissionModelEnabled()
+              ? useParticipantStore.getState().scope.historicalDeviceIdsThrough(
+                  new Date().toISOString(),
+                )
+              : null,
+          getParticipantHistoryStarts: (deviceIds, from, until) => {
+            if (!isMissionModelEnabled()) return {}
+            const scope = useParticipantStore.getState().scope
+            return Object.fromEntries(deviceIds.flatMap((deviceId) => {
+              const historyFrom = scope.firstEvidenceTimestampAtOrAfter(
+                deviceId,
+                from.toISOString(),
+                until.toISOString(),
+              )
+              return historyFrom === null ? [] : [[deviceId, historyFrom]]
+            }))
+          },
           ...hooks,
           onCurrentPositionRejections: applyCurrentPositionRejections,
         }),
@@ -149,6 +170,14 @@ export async function startMissionBrowserHarness(): Promise<void> {
       missionStore: browserStore,
       applySnapshot: applyTrackingSnapshot,
       applyStatus: applyTrackingStatus,
+      missionModelEnabled: isMissionModelEnabled(),
+      readParticipationScope: () => useParticipantStore.getState().scope,
+      applyParticipantRoster: (devices, options) =>
+        useParticipantStore.getState().controller?.applyRoster(devices, undefined, options),
+      applyParticipantGroups: (groups) =>
+        useParticipantStore.getState().controller?.applyGroups(groups),
+      applyParticipantRosterError: (message) =>
+        useParticipantStore.getState().controller?.reportRosterError(message),
       recordDiagnosticEvent,
       recordTrackingPollDiagnostic: recordTrackingPollLedgerEntry,
       notifyDurablePositionChange: (changedPositionCount) => {

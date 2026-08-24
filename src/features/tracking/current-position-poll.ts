@@ -1,4 +1,7 @@
-import type { CurrentPositionNormalizationResult } from './traccar-client'
+import type {
+  CurrentPositionNormalizationResult,
+  DeviceRosterNormalizationResult,
+} from './traccar-client'
 import type {
   NormalizedTrackingDevice,
 } from './tracking-types'
@@ -8,6 +11,7 @@ export const ROSTER_UNAVAILABLE_WARNING =
 
 type CurrentPositionPollClient = {
   readonly getDevices: () => Promise<readonly NormalizedTrackingDevice[]>
+  readonly getDevicesWithReport?: () => Promise<DeviceRosterNormalizationResult>
   readonly getCurrentPositions: () => Promise<CurrentPositionNormalizationResult>
 }
 
@@ -15,6 +19,7 @@ export type CurrentPositionPollResult = CurrentPositionNormalizationResult & {
   readonly devices: readonly NormalizedTrackingDevice[]
   readonly rosterWarning: string | null
   readonly rosterFailure: unknown | null
+  readonly rosterComplete: boolean
 }
 
 /**
@@ -26,7 +31,10 @@ export async function fetchRosterAndCurrentPositions(
   lastKnownDevices: readonly NormalizedTrackingDevice[],
 ): Promise<CurrentPositionPollResult> {
   const [rosterResult, positionsResult] = await Promise.allSettled([
-    client.getDevices(),
+    client.getDevicesWithReport?.() ?? client.getDevices().then((accepted) => ({
+      accepted,
+      complete: true,
+    })),
     client.getCurrentPositions(),
   ])
 
@@ -40,13 +48,15 @@ export async function fetchRosterAndCurrentPositions(
       devices: lastKnownDevices,
       rosterWarning: ROSTER_UNAVAILABLE_WARNING,
       rosterFailure: rosterResult.reason,
+      rosterComplete: false,
     }
   }
 
   return {
     ...positionsResult.value,
-    devices: rosterResult.value,
+    devices: rosterResult.value.accepted,
     rosterWarning: null,
     rosterFailure: null,
+    rosterComplete: rosterResult.value.complete,
   }
 }

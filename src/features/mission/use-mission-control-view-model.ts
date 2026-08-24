@@ -7,6 +7,8 @@ import { useMissionReviewWorkspaceStore } from '../mission-review/mission-review
 import { useMissionStore, type MissionRuntimePhase } from './mission-store'
 import type { MissionTimerState } from './mission-timers'
 import { useMissionTimer } from './use-mission-timer'
+import { useParticipantStore } from '../participants/participant-store'
+import { isMissionModelEnabled } from '../runtime/mission-model-flag'
 
 const MAX_START_OFFSET_HOURS = 48
 
@@ -63,6 +65,7 @@ export function useMissionControlViewModel(): MissionControlViewModel {
   const controller = useMissionStore((state) => state.controller)
   const governanceMission = useMissionStore((state) => state.governanceMission)
   const governanceController = useMissionStore((state) => state.governanceController)
+  const participantController = useParticipantStore((state) => state.controller)
   const openReviewWorkspace = useMissionReviewWorkspaceStore((state) => state.openWorkspace)
   const focusModeActive = useFocusModeStore((state) => state.active)
   const timerState = useMissionTimer(currentMission)
@@ -148,12 +151,18 @@ export function useMissionControlViewModel(): MissionControlViewModel {
     }
 
     try {
-      await controller.startMission({
+      const mission = await controller.startMission({
         name: normalizedName,
         ...(parsedOffset === 0
           ? {}
           : { startTime: new Date(Date.now() - parsedOffset * 60 * 60 * 1000).toISOString() }),
       })
+      if (isMissionModelEnabled()) {
+        await participantController?.selectInitialParticipants(
+          mission.id,
+          'Mission coordinator',
+        )
+      }
 
       setMissionNameState('')
       setStartOffsetHours('0')

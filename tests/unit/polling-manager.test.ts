@@ -473,6 +473,32 @@ describe('polling manager', () => {
     poller.stop()
   })
 
+  it('marks every snapshot from a partially normalized Traccar roster non-authoritative [DON-271]', async () => {
+    const client = createClient({
+      getDevicesWithReport: vi.fn().mockResolvedValue({
+        accepted: [NORMALIZED_DEVICES[0]!],
+        complete: false,
+      }),
+    })
+    const onSnapshot = vi.fn()
+    const poller = createPollingManager(client, {
+      intervalMs: 5_000,
+      staleThresholdMs: 60 * 60 * 1000,
+      onSnapshot,
+      onStatusChange: vi.fn(),
+      now: () => new Date('2026-04-06T10:35:00.000Z'),
+    })
+
+    poller.start()
+    await vi.advanceTimersByTimeAsync(0)
+
+    const rosterSnapshots = onSnapshot.mock.calls.filter((call) => call[0].devices.length > 0)
+    expect(rosterSnapshots.length).toBeGreaterThan(0)
+    expect(rosterSnapshots.every((call) =>
+      call[1]?.participantRosterAuthoritative === false)).toBe(true)
+    poller.stop()
+  })
+
   it('publishes valid current positions before safely reporting rejected rows [DON-268]', async () => {
     const events: string[] = []
     const rejection = {
@@ -1212,6 +1238,51 @@ describe('polling manager', () => {
         currentTime,
       ],
     ])
+
+    poller.stop()
+  })
+
+  it('refreshes a same-process participant history origin and reconciles its new prefix', async () => {
+    const missionStartedAt = new Date('2026-04-06T08:00:00.000Z')
+    const currentTime = new Date('2026-04-06T14:00:00.000Z')
+    let participantHistoryStart = '2026-04-06T12:00:00.000Z'
+    const client = createClient({
+      getDevices: vi.fn().mockResolvedValue([NORMALIZED_DEVICES[0]!]),
+      getCurrentPositions: vi.fn().mockResolvedValue([NORMALIZED_POSITIONS[0]!]),
+      getBreadcrumbs: vi.fn().mockResolvedValue([]),
+    })
+    const poller = createPollingManager(client, {
+      intervalMs: 30_000,
+      staleThresholdMs: 5 * 60 * 1000,
+      getHistoryResetKey: () => 'mission-1',
+      getInitialBreadcrumbFrom: () => missionStartedAt,
+      getInitialBreadcrumbs: async () => [],
+      getInitialHistoryCheckpoints: async () => ({
+        '1': {
+          historyFrom: '2026-04-06T12:00:00.000Z',
+          reconciledUntil: currentTime.toISOString(),
+        },
+      }),
+      getBreadcrumbDeviceIds: () => ['1'],
+      getParticipantHistoryStarts: () => ({ '1': participantHistoryStart }),
+      persistHistoryChunk: vi.fn().mockResolvedValue({ changed: false }),
+      onSnapshot: vi.fn(),
+      onStatusChange: vi.fn(),
+      now: () => currentTime,
+    })
+
+    poller.start()
+    await vi.advanceTimersByTimeAsync(0)
+    participantHistoryStart = '2026-04-06T10:00:00.000Z'
+    await vi.advanceTimersByTimeAsync(30_000)
+
+    const historicalWindows = vi.mocked(client.getBreadcrumbs).mock.calls
+      .filter((call) => call[2].getTime() - call[1].getTime() > 5 * 60 * 1000)
+      .map((call) => [call[1], call[2]])
+    expect(historicalWindows).toEqual([[
+      new Date('2026-04-06T10:00:00.000Z'),
+      new Date('2026-04-06T12:00:00.000Z'),
+    ]])
 
     poller.stop()
   })
@@ -2487,7 +2558,7 @@ describe('polling manager', () => {
         breadcrumbs: [],
         rawBreadcrumbsForPersistence: [],
       },
-      { historyResetKey: null },
+      { historyResetKey: null, participantRosterAuthoritative: false },
     )
     expect(onStatusChange).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -2805,6 +2876,57 @@ describe('polling manager', () => {
     expect(client.getBreadcrumbs).toHaveBeenCalledWith('25', expect.any(Date), expect.any(Date))
     expect(client.getBreadcrumbs).not.toHaveBeenCalledWith('99', expect.any(Date), expect.any(Date))
 
+    poller.stop()
+  })
+
+  it('intersects history visibility with mission participation and never fetches non-participant history [DON-271]', async () => {
+    const devices = [
+      { ...NORMALIZED_DEVICES[0]!, device_id: '2' },
+      { ...NORMALIZED_DEVICES[1]!, device_id: '25' },
+      { ...NORMALIZED_DEVICES[0]!, device_id: '99' },
+    ] satisfies readonly NormalizedTrackingDevice[]
+    const client = createClient({
+      getDevices: vi.fn().mockResolvedValue(devices),
+      getBreadcrumbs: vi.fn().mockResolvedValue([]),
+    })
+
+    const poller = createPollingManager(client, {
+      intervalMs: 5_000,
+      staleThresholdMs: 60 * 60 * 1000,
+      onSnapshot: vi.fn(),
+      onStatusChange: vi.fn(),
+      getParticipantDeviceIds: () => ['2', '25'],
+      getBreadcrumbDeviceIds: () => ['25', '99'],
+      now: () => new Date('2026-06-13T21:48:51.654Z'),
+    })
+
+    poller.start()
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect(client.getBreadcrumbs).toHaveBeenCalledWith('25', expect.any(Date), expect.any(Date))
+    expect(client.getBreadcrumbs).not.toHaveBeenCalledWith('2', expect.any(Date), expect.any(Date))
+    expect(client.getBreadcrumbs).not.toHaveBeenCalledWith('99', expect.any(Date), expect.any(Date))
+    poller.stop()
+  })
+
+  it('fetches no history when mission-model participation is explicitly empty [DON-271]', async () => {
+    const client = createClient({
+      getDevices: vi.fn().mockResolvedValue(NORMALIZED_DEVICES),
+      getBreadcrumbs: vi.fn().mockResolvedValue([]),
+    })
+    const poller = createPollingManager(client, {
+      intervalMs: 5_000,
+      staleThresholdMs: 60 * 60 * 1000,
+      onSnapshot: vi.fn(),
+      onStatusChange: vi.fn(),
+      getParticipantDeviceIds: () => [],
+      now: () => new Date('2026-06-13T21:48:51.654Z'),
+    })
+
+    poller.start()
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect(client.getBreadcrumbs).not.toHaveBeenCalled()
     poller.stop()
   })
 

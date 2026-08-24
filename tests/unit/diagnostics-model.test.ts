@@ -60,6 +60,7 @@ describe('diagnostics model', () => {
         metadataEntryCount: 3,
       },
       selectedMissionId: 'mission-1',
+      missionModelEnabled: true,
     })
 
     expect(snapshot.summaryRows.some((row) => row.label === 'Runtime' && row.value === 'Tauri desktop')).toBe(true)
@@ -67,6 +68,11 @@ describe('diagnostics model', () => {
     expect(snapshot.storageRows.some((row) => row.label === 'Schema version' && row.value === '3')).toBe(true)
     expect(snapshot.configurationRows.some((row) => row.label === 'Official maps' && row.value === 'configured')).toBe(true)
     expect(snapshot.configurationRows.some((row) => row.label === 'Official packages' && row.value === '1 ready / 2 registered')).toBe(true)
+    expect(snapshot.configurationRows).toContainEqual({
+      label: 'Mission model',
+      value: 'enabled (internal)',
+      tone: 'warning',
+    })
     expect(snapshot.repair.targetMissionLabel).toContain('Night Ops')
     expect(snapshot.supportReport).toContain('Diagnostics Report')
     expect(snapshot.supportReport).toContain('Night Ops')
@@ -84,6 +90,7 @@ describe('diagnostics model', () => {
     expect(snapshot.supportReport).not.toContain('mountainrescue_org.txt')
     expect(snapshot.supportReport).not.toContain('reeks-standard-60km-z16.mbtiles')
     expect(snapshot.supportReport).toContain('layer metadata entries: 3')
+    expect(snapshot.supportReport).toContain('mission model: enabled (internal)')
   })
 
   it('reports only bounded ingest evidence health, never anomaly content [DON-268]', () => {

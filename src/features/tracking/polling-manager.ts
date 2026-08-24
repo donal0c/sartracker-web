@@ -24,7 +24,10 @@ import {
   fetchRosterAndCurrentPositions,
 } from './current-position-poll'
 import type { CurrentPositionRejection } from './ingest-health'
-import type { CurrentPositionNormalizationResult } from './traccar-client'
+import type {
+  CurrentPositionNormalizationResult,
+  DeviceRosterNormalizationResult,
+} from './traccar-client'
 
 const EMPTY_TRACKING_SNAPSHOT: TrackingSnapshot = {
   devices: [],
@@ -40,6 +43,7 @@ const CURRENT_POSITION_ROSTER_GRACE_MS = 50
 export type TrackingPollerClient = {
   readonly authenticate: () => Promise<void>
   readonly getDevices: () => Promise<readonly NormalizedTrackingDevice[]>
+  readonly getDevicesWithReport?: () => Promise<DeviceRosterNormalizationResult>
   readonly getCurrentPositions: () => Promise<readonly NormalizedTrackingPosition[]>
   readonly getCurrentPositionsWithReport?: () => Promise<CurrentPositionNormalizationResult>
   readonly getBreadcrumbs: (
@@ -76,6 +80,11 @@ type PollingManagerOptions = {
   readonly getInitialHistoryCheckpoints?: (signal?: AbortSignal) => Promise<
     Readonly<Record<string, BreadcrumbHistoryCheckpointSeed>>
   >
+  readonly getParticipantHistoryStarts?: (
+    deviceIds: readonly string[],
+    from: Date,
+    until: Date,
+  ) => Readonly<Record<string, string>>
   readonly getCanonicalBreadcrumbs?: (
     expectedMissionId: string,
     signal?: AbortSignal,
@@ -87,6 +96,8 @@ type PollingManagerOptions = {
     inputs: readonly TrackingHistoryChunkPersistenceInput[],
   ) => Promise<void>
   readonly getBreadcrumbDeviceIds?: () => readonly string[] | null
+  /** Selected mission participants. An explicit empty list means fetch no history. */
+  readonly getParticipantDeviceIds?: () => readonly string[] | null
   readonly onSnapshot: (
     snapshot: TrackingSnapshot,
     context: TrackingSnapshotContext,
@@ -109,6 +120,8 @@ type PollingManagerOptions = {
 export type TrackingSnapshotContext = {
   readonly historyResetKey: string | null
   readonly suppressTrackingCache?: boolean
+  /** False for idle, unavailable, or partially normalized roster observations. */
+  readonly participantRosterAuthoritative?: boolean
 }
 
 export type BreadcrumbHistoryCheckpointSeed = {
@@ -194,6 +207,7 @@ export function createPollingManager(
   let breadcrumbStatusWarning: string | null = null
   const latestBreadcrumbTimestampByDevice = new Map<string, string>()
   let latestDevices: readonly NormalizedTrackingDevice[] = []
+  let latestParticipantRosterAuthoritative = false
   let latestCurrentPositions: readonly NormalizedTrackingPosition[] = []
   const pendingHistoryRenderPositions: NormalizedTrackingPosition[] = []
   const pendingHistoryMissionPersistencePositions: NormalizedTrackingPosition[] = []
@@ -234,6 +248,7 @@ export function createPollingManager(
     if (!isHistoryReconciliationCurrent()) {
       return
     }
+    rememberAcknowledgedHistoryCheckpoint(chunk)
     canonicalizationInFlight?.trailingPositions.push(...chunk.positions)
     if (
       chunk.phase === 'anti_entropy' &&
@@ -466,7 +481,12 @@ export function createPollingManager(
           now: now(),
           deviceStaleThresholdMs: options.staleThresholdMs,
         }),
-        { historyResetKey },
+        {
+          historyResetKey,
+          ...(latestParticipantRosterAuthoritative
+            ? {}
+            : { participantRosterAuthoritative: false }),
+        },
       )
       completedSuccessfully = true
     }).catch((error) => {
@@ -556,6 +576,9 @@ export function createPollingManager(
       {
         historyResetKey: activeHistoryResetKey,
         suppressTrackingCache: !writeTrackingCache,
+        ...(latestParticipantRosterAuthoritative
+          ? {}
+          : { participantRosterAuthoritative: false }),
       },
     )
   }
@@ -660,11 +683,17 @@ export function createPollingManager(
               now: now(),
               deviceStaleThresholdMs: options.staleThresholdMs,
             }),
-            { historyResetKey: pollHistoryResetKey },
+            {
+              historyResetKey: pollHistoryResetKey,
+              ...(latestParticipantRosterAuthoritative
+                ? {}
+                : { participantRosterAuthoritative: false }),
+            },
           )
         } else if (pollingMode === 'idle') {
           options.onSnapshot(EMPTY_TRACKING_SNAPSHOT, {
             historyResetKey: pollHistoryResetKey,
+            participantRosterAuthoritative: false,
           })
         }
 
@@ -691,6 +720,14 @@ export function createPollingManager(
       const currentPositionResult = await fetchRosterAndCurrentPositions(
         {
           getDevices: () => withPollPhase('devices', client.getDevices()),
+          ...(client.getDevicesWithReport === undefined
+            ? {}
+            : {
+                getDevicesWithReport: () => withPollPhase(
+                  'devices',
+                  client.getDevicesWithReport!(),
+                ),
+              }),
           getCurrentPositions: async () => {
             const result = await withPollPhase(
               'current_positions',
@@ -731,7 +768,10 @@ export function createPollingManager(
                   now: now(),
                   deviceStaleThresholdMs: options.staleThresholdMs,
                 }),
-                { historyResetKey: pollHistoryResetKey },
+                {
+                  historyResetKey: pollHistoryResetKey,
+                  participantRosterAuthoritative: false,
+                },
               )
               rejectionEvidencePublishedEarly = publishCurrentPositionRejections(
                 result.rejected,
@@ -790,6 +830,7 @@ export function createPollingManager(
       lastSuccessAt = now().toISOString()
       latestDevices = devices
       latestCurrentPositions = positions
+      latestParticipantRosterAuthoritative = currentPositionResult.rosterComplete
 
       const currentSnapshot = {
         devices,
@@ -804,7 +845,12 @@ export function createPollingManager(
           now: now(),
           deviceStaleThresholdMs: options.staleThresholdMs,
         }),
-        { historyResetKey: pollHistoryResetKey },
+        {
+          historyResetKey: pollHistoryResetKey,
+          ...(currentPositionResult.rosterComplete
+            ? {}
+            : { participantRosterAuthoritative: false }),
+        },
       )
       if (!rejectionEvidencePublishedEarly) {
         publishCurrentPositionRejections(
@@ -854,7 +900,12 @@ export function createPollingManager(
             now: now(),
             deviceStaleThresholdMs: options.staleThresholdMs,
           }),
-          { historyResetKey: pollHistoryResetKey },
+          {
+            historyResetKey: pollHistoryResetKey,
+            ...(currentPositionResult.rosterComplete
+              ? {}
+              : { participantRosterAuthoritative: false }),
+          },
         )
       }
 
@@ -871,11 +922,16 @@ export function createPollingManager(
           initialReconciliationSelectionKey = selectionKey
           initialReconciliationComplete = false
         }
+        const reconciliationUntil = now()
         historyReconciler.reconcile({
           devices: breadcrumbDevices,
           from: initialBreadcrumbFrom,
-          until: now(),
-          checkpointsByDevice: initialHistoryCheckpointsByDevice,
+          until: reconciliationUntil,
+          checkpointsByDevice: resolveCurrentHistoryCheckpoints(
+            breadcrumbDevices,
+            initialBreadcrumbFrom,
+            reconciliationUntil,
+          ),
         })
       }
       const breadcrumbFetch = await breadcrumbFetchPromise
@@ -927,7 +983,12 @@ export function createPollingManager(
             now: now(),
             deviceStaleThresholdMs: options.staleThresholdMs,
           }),
-          { historyResetKey: pollHistoryResetKey },
+          {
+            historyResetKey: pollHistoryResetKey,
+            ...(currentPositionResult.rosterComplete
+              ? {}
+              : { participantRosterAuthoritative: false }),
+          },
         )
       }
       breadcrumbFetchCompleted = true
@@ -1001,7 +1062,12 @@ export function createPollingManager(
             now: now(),
             deviceStaleThresholdMs: options.staleThresholdMs,
           }),
-          { historyResetKey: pollHistoryResetKey },
+          {
+            historyResetKey: pollHistoryResetKey,
+            ...(latestParticipantRosterAuthoritative
+              ? {}
+              : { participantRosterAuthoritative: false }),
+          },
         )
       }
 
@@ -1063,11 +1129,17 @@ export function createPollingManager(
           now: now(),
           deviceStaleThresholdMs: options.staleThresholdMs,
         }),
-        { historyResetKey: activeHistoryResetKey },
+        {
+          historyResetKey: activeHistoryResetKey,
+          ...(latestParticipantRosterAuthoritative
+            ? {}
+            : { participantRosterAuthoritative: false }),
+        },
       )
     } else if (pollingMode === 'idle') {
       options.onSnapshot(EMPTY_TRACKING_SNAPSHOT, {
         historyResetKey: activeHistoryResetKey,
+        participantRosterAuthoritative: false,
       })
     }
 
@@ -1261,12 +1333,79 @@ export function createPollingManager(
   function selectBreadcrumbDevices(
     devices: readonly NormalizedTrackingDevice[],
   ): readonly NormalizedTrackingDevice[] {
+    const participantDeviceIds = options.getParticipantDeviceIds?.() ?? null
+    const participantDeviceIdSet = participantDeviceIds === null
+      ? null
+      : new Set(participantDeviceIds)
     const requestedDeviceIds = options.getBreadcrumbDeviceIds?.() ?? null
-    if (requestedDeviceIds === null || requestedDeviceIds.length === 0) {
-      return devices
+    const requestedDeviceIdSet = requestedDeviceIds === null || requestedDeviceIds.length === 0
+      ? null
+      : new Set(requestedDeviceIds)
+    return devices.filter((device) =>
+      (participantDeviceIdSet === null || participantDeviceIdSet.has(device.device_id)) &&
+      (requestedDeviceIdSet === null || requestedDeviceIdSet.has(device.device_id)))
+  }
+
+  /** Combines durable cursors with the latest participant-scope origin. */
+  function resolveCurrentHistoryCheckpoints(
+    devices: readonly NormalizedTrackingDevice[],
+    from: Date | null,
+    until: Date,
+  ): Readonly<Record<string, BreadcrumbHistoryCheckpointSeed>> {
+    if (from === null || options.getParticipantHistoryStarts === undefined) {
+      return initialHistoryCheckpointsByDevice
     }
-    const requestedDeviceIdSet = new Set(requestedDeviceIds)
-    return devices.filter((device) => requestedDeviceIdSet.has(device.device_id))
+    const scopeStarts = options.getParticipantHistoryStarts(
+      devices.map((device) => device.device_id),
+      from,
+      until,
+    )
+    const resolved = { ...initialHistoryCheckpointsByDevice }
+    for (const device of devices) {
+      const scopeStart = scopeStarts[device.device_id]
+      if (scopeStart === undefined) continue
+      const persisted = resolved[device.device_id]
+      if (persisted === undefined || scopeStart < persisted.historyFrom) {
+        resolved[device.device_id] = {
+          historyFrom: scopeStart,
+          reconciledUntil: scopeStart,
+        }
+      }
+    }
+    return resolved
+  }
+
+  /** Mirrors the durable monotonic checkpoint after a chunk acknowledgement. */
+  function rememberAcknowledgedHistoryCheckpoint(
+    chunk: BreadcrumbHistoryChunk,
+  ): void {
+    const historyFrom = chunk.historyFrom.toISOString()
+    const reconciledUntil = chunk.to.toISOString()
+    const existing = initialHistoryCheckpointsByDevice[chunk.deviceId]
+    if (
+      existing !== undefined &&
+      historyFrom < existing.historyFrom &&
+      reconciledUntil < existing.historyFrom
+    ) {
+      return
+    }
+    if (existing !== undefined && historyFrom > existing.historyFrom) {
+      return
+    }
+    initialHistoryCheckpointsByDevice = {
+      ...initialHistoryCheckpointsByDevice,
+      [chunk.deviceId]: {
+        historyFrom: existing === undefined
+          ? historyFrom
+          : historyFrom < existing.historyFrom
+            ? historyFrom
+            : existing.historyFrom,
+        reconciledUntil:
+          existing !== undefined && existing.reconciledUntil > reconciledUntil
+            ? existing.reconciledUntil
+            : reconciledUntil,
+      },
+    }
   }
 
   async function seedInitialBreadcrumbs(): Promise<InitialBreadcrumbSeedState> {

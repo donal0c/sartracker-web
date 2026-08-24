@@ -20,7 +20,17 @@ Use this document before implementation to decide how much parallel research, pl
 
 ## Current Assessments
 
-Last updated: 2026-07-29 by Codex (planning consolidated into the two-track workplan)
+Last updated: 2026-08-23 by Codex (Breadcrumb PR-2 review remediation)
+
+### `DON-270` / `DON-271` / `DON-272` — Breadcrumb PR-2 mission model — review ready
+
+- Research required: complete; the raw team transcript and stable Q&A ledger resolve the domain behavior.
+- Implementation readiness: the first seven P1/six P2, second-pass eight P1/five P2, third-pass five P1/two P2, fourth-pass one P1/one P2, fifth-pass two P1/one P2, sixth-pass two P1/one P2, and seventh-pass three P1 findings are remediated; latest code commit `dc85613` is review ready after this evidence-doc commit is pushed.
+- Recommended action: continue independent review of the new exact head until a non-author reviewer says it is approvable. Do not merge or start PR-3 meanwhile.
+- Locked decisions: one additive schema v9; explicit outing boundaries; accepted fixes outside outings remain Unassigned; no participant preselection; group membership changes apply from observation time without retrospective evidence; >100 selected devices warns and proceeds without truncation; legacy/finalized rows are grandfathered with explicit provenance; the mission model stays internal and release-off.
+- Open questions: none. Known decision boundary: schema v9 is installed even when the internal flag is off, so a field database opened by this candidate cannot be reopened by a schema-v8 build; remediation does not silently change that approved single-schema policy.
+- Evidence: the seventh pass adds red-first coverage for forced durable replay after a refused finish, preservation of a newer roster through repeated failure, closed-window historical eligibility, production app wiring, and refetch of an unacknowledged suffix during scope expansion. The initial red run failed all five assertions; focused green is `4 files / 74`, the broader runtime/store set is `8 / 278`, and full unit passes serially at `229 / 1,874`. Lint/build, Node syntax/diff, backend `51 / 1 ignored`, full Chromium `154/154`, and unsigned macOS Electron packaging pass. The preceding exact Dots `10/10`, participant visual `4/4`, critical finish-refusal review `1/1`, Ubuntu flag-off/on restart soaks, deterministic 960k/2M fixtures, Ubuntu outing-worker proof, and immutable 3.704 GB field-v2 cache remain standing evidence only for unchanged surfaces. Proof limits: no fresh packaged runtime smoke, 960k/2M/3.704 GB scale run, Ubuntu 500k renderer, Windows, or field-hardware run was performed. The default highly parallel unit command previously made the unrelated 500k accumulator timing assertion miss its `<100 ms` local gate at `100.139 ms` and `108.031 ms`; that exact gate passes alone and the complete suite passes with one worker. Ubuntu Xwayland/llvmpipe 500k remains unqualified (`3.685 s` final; `2.941 s` pre-remediation), while the feature remains release-off. No result treats a render budget as a persistence/evidence budget.
+- Ready-to-start checklist for reviews: [x] red-first remediation; [x] full software/browser gates; [x] standing package/fixture proofs retained only for unaffected surfaces; [x] exact evidence-doc head prepared for push and pull-request reporting.
 
 ### `DON-260` — Deep breadcrumb correctness hotfix — completed
 

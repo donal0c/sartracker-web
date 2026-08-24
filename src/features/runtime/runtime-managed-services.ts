@@ -97,6 +97,18 @@ type CreateManagedRuntimeServicesDependencies = {
     readonly recordDiagnosticEvent?: typeof recordDiagnosticEvent
     readonly recordTrackingPollDiagnostic?: typeof recordTrackingPollLedgerEntry
     readonly notifyDurablePositionChange?: (changedPositionCount: number) => void
+    readonly missionModelEnabled?: boolean
+    readonly readParticipationScope?: () => import('../participants/participation-scope').ParticipationScope
+    readonly readParticipationScopeStatus?: () => 'loading' | 'ready' | 'error'
+    readonly subscribeParticipationScope?: (listener: () => void) => () => void
+    readonly applyParticipantRoster?: (
+      devices: readonly import('../tracking/tracking-types').NormalizedTrackingDevice[],
+      options?: { readonly complete: boolean },
+    ) => void | Promise<void>
+    readonly applyParticipantGroups?: (
+      groups: readonly import('../tracking/tracking-types').NormalizedTraccarGroup[],
+    ) => void | Promise<void>
+    readonly applyParticipantRosterError?: (message: string | null) => void
   }) => Promise<() => void>
   readonly createClient: (config: NonNullable<RuntimeBootstrapSettings['trackingConfig']>) => unknown
   readonly createPoller: (
@@ -137,6 +149,18 @@ type CreateManagedRuntimeServicesDependencies = {
   readonly readTrackingRuntimeConfig: () => RuntimeBootstrapSettings['trackingConfig']
   readonly createTrackingCache: () => TrackingCache
   readonly notifyDurablePositionChange?: (changedPositionCount: number) => void
+  readonly missionModelEnabled?: boolean
+  readonly readParticipationScope?: () => import('../participants/participation-scope').ParticipationScope
+  readonly readParticipationScopeStatus?: () => 'loading' | 'ready' | 'error'
+  readonly subscribeParticipationScope?: (listener: () => void) => () => void
+  readonly applyParticipantRoster?: (
+    devices: readonly import('../tracking/tracking-types').NormalizedTrackingDevice[],
+    options?: { readonly complete: boolean },
+  ) => void | Promise<void>
+  readonly applyParticipantGroups?: (
+    groups: readonly import('../tracking/tracking-types').NormalizedTraccarGroup[],
+  ) => void | Promise<void>
+  readonly applyParticipantRosterError?: (message: string | null) => void
 }
 
 /**
@@ -197,6 +221,27 @@ export async function createManagedRuntimeServices(
       applyStatus: dependencies.applyStatus,
       recordDiagnosticEvent,
       recordTrackingPollDiagnostic: recordTrackingPollLedgerEntry,
+      ...(dependencies.missionModelEnabled === undefined
+        ? {}
+        : { missionModelEnabled: dependencies.missionModelEnabled }),
+      ...(dependencies.readParticipationScope === undefined
+        ? {}
+        : { readParticipationScope: dependencies.readParticipationScope }),
+      ...(dependencies.readParticipationScopeStatus === undefined
+        ? {}
+        : { readParticipationScopeStatus: dependencies.readParticipationScopeStatus }),
+      ...(dependencies.subscribeParticipationScope === undefined
+        ? {}
+        : { subscribeParticipationScope: dependencies.subscribeParticipationScope }),
+      ...(dependencies.applyParticipantRoster === undefined
+        ? {}
+        : { applyParticipantRoster: dependencies.applyParticipantRoster }),
+      ...(dependencies.applyParticipantGroups === undefined
+        ? {}
+        : { applyParticipantGroups: dependencies.applyParticipantGroups }),
+      ...(dependencies.applyParticipantRosterError === undefined
+        ? {}
+        : { applyParticipantRosterError: dependencies.applyParticipantRosterError }),
       ...(dependencies.notifyDurablePositionChange === undefined
         ? {}
         : { notifyDurablePositionChange: dependencies.notifyDurablePositionChange }),

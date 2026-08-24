@@ -630,6 +630,79 @@
               <tr><td>Minimize / Expand</td><td>Collapses the active mission controls after setup to free right-rail space.</td><td>The control is not available while paused; expand before pausing, finishing, or changing lifecycle state.</td></tr>
             </tbody>
           </table>
+          <div class="warning">
+            <strong>Internal qualification feature:</strong> the mission participant and outing controls
+            below are disabled in normal packaged and release builds while the Breadcrumb Programme is
+            being qualified. Do not expect them in the current team beta. When the internal mission model
+            is enabled, Diagnostics states <strong>mission model: enabled (internal)</strong>.
+          </div>
+          <h3>Mission Participants</h3>
+          <p>
+            Before starting a mission, the internal mission model shows the live Traccar roster and asks
+            the coordinator to select participating groups and/or individual devices. Nothing is selected
+            automatically. Starting with none is allowed, but the screen states the consequence: reporting
+            devices remain outside mission evidence and off the operational mission map until explicitly
+            added. The full live roster remains available for later selection and diagnostics.
+          </p>
+          <figure class="screenshot">
+            <img src="assets/mission-participant-selection.png" alt="Mission participant selection showing no groups or devices pre-selected" />
+            <figcaption>The internal start step makes the empty selection and its evidence consequence explicit.</figcaption>
+          </figure>
+          <p>
+            A selected Traccar group follows later server-side membership changes from the time SAR Tracker
+            observes them. A newly observed member's current position is shown immediately while the durable
+            membership record is being written; a failed write appears as a persistent amber warning in the
+            active Participants panel and is retried on the next roster observation. The app displays a
+            coordinator notice and never invents earlier group membership or
+            retrospective evidence. When a coordinator explicitly backdates the initial or later selection of
+            a group, each confirmed member receives the same bounded, resumable history-backfill window as an
+            individual device. The group row shows completed members out of all starting members, and keeps a
+            pending/retrying state visible until every member completes. Removing a participant ends future
+            live collection but does not delete evidence already retained. The low-rate history check keeps
+            revisiting that participant's earlier authorized window so a late or corrected source fix is not
+            lost merely because the participant has since been removed. Their last accepted current marker
+            remains visible across later polls until it becomes stale. More than 100
+            active selected devices produces a persistent warning and still includes every selected device —
+            the app never truncates the roster or silently drops the 101st device.
+          </p>
+          <div class="note">
+            <strong>One active selection path per device:</strong> when a selected group already covers a
+            device, its individual checkbox is checked and locked with an “included by selected group” note.
+            SAR Tracker rejects duplicate direct/group instructions rather than letting a later Remove action
+            appear successful while the other instruction continues collection.
+          </div>
+          <div class="warning">
+            <strong>Finish waits for participant evidence:</strong> a mission cannot be finished while any
+            fixed participant history-backfill window is incomplete or an observed group-membership change
+            still cannot be recorded. Finish retries the exact pending membership observation first. If it
+            still fails, the mission remains active and the open Finish confirmation tells the coordinator
+            what must be retried. The app settles roster observations already accepted before the finish
+            cutoff without blocking the app event loop. If participant scope cannot be reloaded, Finish is
+            refused and the exact accepted observation remains available for retry. Observations arriving
+            while the finish write is pending immediately update current-position visibility but do not become
+            mission evidence yet; if finish is refused, they are replayed at their original observation time.
+            The replay handoff is atomic, so an observation cannot fall between replay and the mission returning
+            to normal active tracking. This prevents an archive from sealing a known gap between selected
+            participant history and the live mission record.
+          </div>
+          <h3>Outings</h3>
+          <p>
+            Outings are coordinator-defined operational periods inside one mission. SAR Tracker never starts
+            or ends an outing silently. Use <strong>Start outing</strong>, <strong>End now</strong>, and
+            <strong>Edit</strong> to record the boundaries the coordinator actually knows. Outings may cross
+            midnight, but they cannot overlap. An adjacent outing may begin at the exact instant the previous
+            one ends. Boundary edits change classification only; they never rewrite source fixes.
+          </p>
+          <figure class="screenshot">
+            <img src="assets/mission-outing-summary.png" alt="Outings panel showing an active outing and a separate Unassigned fix bucket" />
+            <figcaption>Accepted fixes outside every explicit outing remain visibly Unassigned.</figcaption>
+          </figure>
+          <div class="note">
+            <strong>No active outing is valid:</strong> mission ingest continues and fixes are retained as
+            <strong>Unassigned</strong>. Pausing a mission does not end its outing. Finishing with an open
+            outing is allowed and offers, but does not force, an end-now action. Finalized missions keep
+            outing and participant records read-only until the existing authorized unlock flow succeeds.
+          </div>
           <div class="note">
             <strong>Recovery behavior:</strong> if the app finds an interrupted mission after reload or
             restart, it offers <strong>Resume</strong> or <strong>Start Fresh</strong>. Resume keeps the
@@ -833,6 +906,21 @@
             Turning off the whole Tracking group hides both surfaces.
           </p>
           <div class="note">
+            <strong>Participant visibility:</strong> with the internal mission model enabled, only selected
+            mission participants are persisted as mission evidence or shown on the operational mission map.
+            Historical time and outing filters never hide a selected participant's live position. Hiding a
+            selected participant's current-location marker remains a separate, explicit operator action from
+            hiding that participant's breadcrumb history. A last-known current fix remains visible after late
+            selection even when its fix time predates the participation window; that visibility does not
+            backdate or persist the older fix as mission evidence. If participant evidence is still loading or
+            unavailable, the tracking warning says so explicitly and preserves the unfiltered fallback cache
+            until the scope can be safely applied. If malformed Traccar device rows make a roster observation
+            incomplete, SAR Tracker may add confirmed members from the valid rows but will not infer that a
+            missing group member has left. Starting or adding a group is blocked until a complete roster is
+            available; individual devices can still be selected explicitly. Once the mission is finished,
+            participant changes are locked before archive finalization as well as afterward.
+          </div>
+          <div class="note">
             <strong>Tracking does not wait for basemap tiles:</strong> current positions and breadcrumbs
             remain available while the selected raster map is still loading or reports degraded tile
             coverage. Treat the map-health warning separately: the tracking overlay may be current even
@@ -1031,8 +1119,16 @@
             chunks. Current fixes are shown before that queue starts. While a long mission is catching up, Tracking says
             <strong>Breadcrumb history is reconciling</strong>; current fixes remain live. SAR Tracker
             saves completed history in bounded batches and records each device's completed frontier so a
-            restart resumes the unfinished range instead of replaying the whole prefix. After catch-up, a
-            separately paced anti-entropy sweep checks older windows for late or corrected fixes without
+            restart resumes the unfinished range instead of replaying the whole prefix. For a participant
+            added after mission start, that durable frontier retains the later participation boundary and
+            resumes from the recorded cursor. If the coordinator later expands that participant's effective
+            history window, the running app picks up the earlier boundary without needing a restart and fills
+            only the newly authorized prefix before widening the durable frontier. After catch-up, a
+            separately paced anti-entropy sweep checks older windows for late or corrected fixes, beginning
+            no earlier than that participant's validated history boundary. That sweep keeps the earlier
+            authorized window eligible after a participant is removed, while live current-position scope
+            remains active-only. If the boundary expands while a later chunk is still in flight, the later
+            chunk is fetched again unless it was already durably acknowledged. This avoids
             attaching a mission-wide rescan to every live poll. If a device history request fails or contains only malformed rows,
             Tracking names the incomplete device history and continues showing current fixes.
             The separate <strong>Current fixes loaded; loading breadcrumb history</strong> message is

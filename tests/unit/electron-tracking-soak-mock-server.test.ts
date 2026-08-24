@@ -5,6 +5,7 @@ import path from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 
 import { startTrackingSoakMockServer } from '../../build/electron-tracking-soak-mock-server.js'
+import { createTraccarClient } from '../../src/features/tracking/traccar-client'
 
 const temporaryDirectories: string[] = []
 
@@ -13,7 +14,7 @@ afterEach(async () => {
 })
 
 describe('deterministic tracking soak mock server [DON-246]', () => {
-  it('serves authenticated devices, stable current fixes, and compressed breadcrumbs', async () => {
+  it('serves authenticated groups, grouped devices, stable current fixes, and compressed breadcrumbs', async () => {
     const directory = await mkdtemp(path.join(os.tmpdir(), 'sartracker-soak-server-'))
     temporaryDirectories.push(directory)
     const server = await startTrackingSoakMockServer({
@@ -35,6 +36,7 @@ describe('deterministic tracking soak mock server [DON-246]', () => {
       expect(unauthorized.status).toBe(401)
 
       const headers = { Cookie: 'JSESSIONID=tracking-soak' }
+      const groups = await fetch(`${server.baseUrl}/api/groups`, { headers }).then((response) => response.json())
       const devices = await fetch(`${server.baseUrl}/api/devices`, { headers }).then((response) => response.json())
       const current = await fetch(`${server.baseUrl}/api/positions`, { headers }).then((response) => response.json())
       const firstBatchWindow = new URLSearchParams({
@@ -56,7 +58,9 @@ describe('deterministic tracking soak mock server [DON-246]', () => {
         { headers },
       ).then((response) => response.json())
 
+      expect(groups).toEqual([{ id: 101, name: 'Synthetic Mission Team', groupId: 0 }])
       expect(devices).toHaveLength(32)
+      expect(devices.every((device: { groupId: number }) => device.groupId === 101)).toBe(true)
       expect(current).toHaveLength(24)
       expect(moving).toHaveLength(180)
       expect(moving[0]?.fixTime).toBe('2026-02-01T00:00:00.000Z')
@@ -68,7 +72,6 @@ describe('deterministic tracking soak mock server [DON-246]', () => {
         baseTime: '2026-02-01T00:00:00.000Z',
         intervalMs: 5_000,
       })
-
       const durable = JSON.parse(await readFile(path.join(directory, 'state.json'), 'utf8'))
       expect(durable).toMatchObject({
         completedBatches: 1,
@@ -76,6 +79,18 @@ describe('deterministic tracking soak mock server [DON-246]', () => {
         baseTime: '2026-02-01T00:00:00.000Z',
         intervalMs: 5_000,
       })
+
+      const client = createTraccarClient({
+        baseUrl: server.baseUrl,
+        email: 'synthetic',
+        password: 'synthetic',
+        maxRetries: 0,
+      })
+      await client.authenticate()
+      await expect(client.getGroups()).resolves.toEqual([
+        { group_id: '101', name: 'Synthetic Mission Team', parent_group_id: null },
+      ])
+      await expect(client.getDevices()).resolves.toHaveLength(32)
     } finally {
       await server.close()
     }

@@ -2,10 +2,13 @@ import { describe, expect, it } from 'vitest'
 
 import {
   FIXTURE_GENERATOR_VERSION,
+  LEGACY_FIXTURE_GENERATOR_VERSION,
   buildFixtureManifest,
+  createBreadcrumbProgrammeScenario,
   createDeterministicId,
   createFixturePlan,
   fixtureManifestPath,
+  listFixturePresets,
   parseSeedMissionStoreArgs,
 } from '../../build/seed-mission-store-lib.js'
 
@@ -69,6 +72,45 @@ describe('mission-store fixture plans [DON-242]', () => {
       backupEventCount: 40_320,
       restartCheckpointsDays: [1, 3, 5, 7, 10, 12],
     })
+  })
+
+  it('defines the exact normal-envelope and headroom breadcrumb programme fixtures [DON-272]', () => {
+    expect(listFixturePresets()).toEqual(expect.arrayContaining(['bcp-960k', 'bcp-2m']))
+    expect(createFixturePlan('bcp-960k')).toMatchObject({
+      mode: 'breadcrumb-programme',
+      positionCount: 960_000,
+      deviceCount: 100,
+      groupCount: 12,
+      outingCount: 12,
+      qualification: 'normal-envelope',
+    })
+    expect(createFixturePlan('bcp-2m')).toMatchObject({
+      mode: 'breadcrumb-programme',
+      positionCount: 2_000_000,
+      deviceCount: 100,
+      groupCount: 12,
+      outingCount: 12,
+      qualification: 'headroom-renderer-rejection',
+    })
+  })
+
+  it('builds twelve non-overlapping outings with midnight crossings and an uneven 100-device roster [DON-272]', () => {
+    const scenario = createBreadcrumbProgrammeScenario(createFixturePlan('bcp-960k'))
+
+    expect(scenario.groupSizes).toEqual([12, 11, 10, 9, 9, 8, 8, 7, 7, 7, 6, 6])
+    expect(scenario.groupSizes.reduce((total, size) => total + size, 0)).toBe(100)
+    expect(scenario.selectedGroupCount).toBe(11)
+    expect(scenario.activeParticipantCount).toBe(100)
+    expect(scenario.outings).toHaveLength(12)
+    expect(scenario.outings.filter((outing) => outing.crossesMidnight)).toHaveLength(5)
+    for (let index = 1; index < scenario.outings.length; index += 1) {
+      expect(scenario.outings[index]!.startedAt >= scenario.outings[index - 1]!.endedAt).toBe(true)
+    }
+    expect(scenario.stationaryCases).toEqual(expect.arrayContaining([
+      expect.objectContaining({ kind: 'attention' }),
+      expect.objectContaining({ kind: 'slow-walker-near-miss' }),
+      expect.objectContaining({ kind: 'teleport-outlier-inside-run' }),
+    ]))
   })
 
   it('rejects unknown presets rather than silently generating the wrong workload', () => {
@@ -157,7 +199,7 @@ describe('mission-store fixture identity and manifest [DON-242]', () => {
       },
     })
 
-    expect(manifest.generatorVersion).toBe(FIXTURE_GENERATOR_VERSION)
+    expect(manifest.generatorVersion).toBe(LEGACY_FIXTURE_GENERATOR_VERSION)
     expect(manifest.syntheticDataOnly).toBe(true)
     expect(manifest.workload.simulatedMissionDays).toBe(5)
     expect(manifest.workload.realPositionRows).toBe(691_200)
@@ -166,5 +208,43 @@ describe('mission-store fixture identity and manifest [DON-242]', () => {
     expect(manifest.rows.byEventType.device_updated).toBe(2_764_800)
     expect(manifest.rows.byEventType.fixture_restart_checkpoint).toBe(4)
     expect(manifest.bytes.byTable.mission_events).toBe(60_000)
+  })
+
+  it('records participant, outing, anomaly, and external-evidence boundaries for BCP manifests [DON-272]', () => {
+    const plan = createFixturePlan('bcp-960k')
+    const scenario = createBreadcrumbProgrammeScenario(plan)
+    const manifest = buildFixtureManifest({
+      plan,
+      schemaVersion: 9,
+      databaseBytes: 123,
+      sha256: 'b'.repeat(64),
+      rowCounts: {
+        missions: 2, devices: 101, positions: 960_000, missionEvents: 20,
+        deviceCreatedEvents: 0, deviceUpdatedEvents: 0, positionRecordedEvents: 0,
+        backupEvents: 0, restartCheckpointEvents: 11, operationalEvents: 20,
+        outings: 12, missionTeams: 11, missionParticipants: 16,
+        groupMembershipEvents: 96, participantBackfillCheckpoints: 2,
+        ingestAnomalies: 5,
+      },
+      tableBytes: { positions: 100, other: 23 },
+      scenario,
+    })
+
+    expect(manifest.scenario).toMatchObject({
+      outingCount: 12,
+      groupCount: 12,
+      selectedGroupCount: 11,
+      acceptedPositionCount: 960_000,
+      legacyNoOutingMissionCount: 1,
+      gpxEvidenceBoundary: 'deferred-to-pr4-not-faked',
+    })
+    expect(manifest.generatorVersion).toBe(FIXTURE_GENERATOR_VERSION)
+    expect(manifest.rows.byTable).toMatchObject({
+      outings: 12,
+      mission_teams: 11,
+      mission_participants: 16,
+      participant_backfill_checkpoints: 2,
+      ingest_anomalies: 5,
+    })
   })
 })

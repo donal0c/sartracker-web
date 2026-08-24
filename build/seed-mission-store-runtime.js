@@ -16,10 +16,11 @@ import path from 'node:path'
 import Database from 'better-sqlite3'
 
 import {
-  FIXTURE_GENERATOR_VERSION,
   buildFixtureManifest,
+  createBreadcrumbProgrammeScenario,
   createDeterministicId,
   createFixturePlan,
+  fixtureGeneratorVersionForPlan,
   fixtureManifestPath,
 } from './seed-mission-store-lib.js'
 
@@ -45,7 +46,7 @@ export async function generateMissionStoreFixture(options) {
   await recoverInterruptedFixtureReplacement(outputPath, manifestPath)
 
   if (!options.force) {
-    const cached = await readVerifiedCachedFixture(outputPath, manifestPath, plan.preset)
+    const cached = await readVerifiedCachedFixture(outputPath, manifestPath, plan)
     if (cached !== null) {
       if (options.copyToPath !== undefined) {
         await copyFixtureAtomically(outputPath, manifestPath, options.copyToPath)
@@ -81,6 +82,7 @@ export async function generateMissionStoreFixture(options) {
       sha256,
       rowCounts: seedResult.rowCounts,
       tableBytes: seedResult.tableBytes,
+      ...(seedResult.scenario === undefined ? {} : { scenario: seedResult.scenario }),
     })
     const temporaryManifestPath = fixtureManifestPath(temporaryDatabasePath)
     await writeFile(temporaryManifestPath, `${JSON.stringify(manifest, null, 2)}\n`, 'utf8')
@@ -105,6 +107,14 @@ export async function generateMissionStoreFixture(options) {
 
 /** Seeds the real current schema using deterministic, explicitly synthetic records. */
 function seedDatabase({ databasePath, plan, progress, faultInjection }) {
+  if (plan.mode === 'breadcrumb-programme') {
+    return seedBreadcrumbProgrammeDatabase({
+      databasePath,
+      plan,
+      progress,
+      faultInjection,
+    })
+  }
   const db = new Database(databasePath)
   db.pragma('journal_mode = OFF')
   db.pragma('synchronous = OFF')
@@ -186,6 +196,669 @@ function seedDatabase({ databasePath, plan, progress, faultInjection }) {
   } finally {
     db.close()
   }
+}
+
+/** Seeds one mission-model-aware BCP fixture without changing legacy preset emission. */
+function seedBreadcrumbProgrammeDatabase({ databasePath, plan, progress, faultInjection }) {
+  if (CURRENT_SCHEMA_VERSION !== 9) {
+    throw new Error(
+      `Breadcrumb programme fixtures require schema v9; current schema is v${CURRENT_SCHEMA_VERSION}.`,
+    )
+  }
+  const db = new Database(databasePath)
+  db.pragma('journal_mode = OFF')
+  db.pragma('synchronous = OFF')
+  db.pragma('foreign_keys = ON')
+  const scenario = createBreadcrumbProgrammeScenario(plan)
+
+  try {
+    insertBreadcrumbProgrammeFoundation(db, plan, scenario)
+    const insertPosition = db.prepare(`INSERT INTO positions (
+        id, mission_id, device_id, source_position_id, name, lat, lon,
+        altitude, speed, battery, accuracy, source, timestamp, data_origin,
+        received_at, content_hash, source_kind
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'synthetic-fixture', ?, 'live', ?, ?, 'traccar_id')`)
+    const mainPositionCount = plan.positionCount - 12
+    const positionBatch = db.transaction((fromIndex, toIndex) => {
+      for (let index = fromIndex; index < toIndex; index += 1) {
+        const row = breadcrumbProgrammePosition(plan, index)
+        insertPosition.run(
+          row.id,
+          FIXTURE_MISSION_ID,
+          row.deviceId,
+          row.sourcePositionId,
+          row.name,
+          row.lat,
+          row.lon,
+          row.altitude,
+          row.speed,
+          row.battery,
+          row.accuracy,
+          row.timestamp,
+          row.receivedAt,
+          row.contentHash,
+        )
+      }
+    })
+    const batchSize = 10_000
+    let batchCount = 0
+    for (let index = 0; index < mainPositionCount; index += batchSize) {
+      const toIndex = Math.min(index + batchSize, mainPositionCount)
+      positionBatch(index, toIndex)
+      batchCount += 1
+      progress({
+        preset: plan.preset,
+        polls: Math.floor(toIndex / plan.activePositionDeviceCount),
+        databaseBytes: databaseAllocatedBytes(db),
+        targetBytes: null,
+        targetPolls: plan.pollCount,
+        positions: toIndex + 12,
+        targetPositions: plan.positionCount,
+      })
+      if (faultInjection?.afterPollBatches === batchCount) {
+        throw new Error('Injected fixture generation interruption after poll batch.')
+      }
+    }
+    insertLegacyNoOutingPositions(db, insertPosition)
+    insertBreadcrumbProgrammeAnomalies(db, scenario)
+    assertBreadcrumbProgrammePositionScopeInvariants(
+      db,
+      FIXTURE_MISSION_ID,
+      scenario.activeParticipantCount,
+    )
+
+    const integrityResult = db.pragma('integrity_check', { simple: true })
+    if (integrityResult !== 'ok') {
+      throw new Error(`Generated mission-store fixture failed integrity_check: ${integrityResult}`)
+    }
+    const rowCounts = readBreadcrumbProgrammeRowCounts(db)
+    if (rowCounts.positions !== plan.positionCount) {
+      throw new Error(
+        `Breadcrumb programme fixture position count drifted: expected ${plan.positionCount}, got ${rowCounts.positions}.`,
+      )
+    }
+    db.pragma('journal_mode = WAL')
+    return {
+      effectivePlan: plan,
+      rowCounts,
+      tableBytes: readAllDatabaseObjectBytes(db),
+      scenario,
+    }
+  } finally {
+    db.close()
+  }
+}
+
+/** Inserts mission, outing, team, participant, membership, and checkpoint truth. */
+function insertBreadcrumbProgrammeFoundation(db, plan, scenario) {
+  const mainStart = new Date(FIXTURE_START_MS).toISOString()
+  const legacyMissionId = 'fixture-mission-legacy-no-outings'
+  const legacyStart = new Date(FIXTURE_START_MS - 24 * 60 * 60 * 1000).toISOString()
+  const insertMission = db.prepare(`INSERT INTO missions
+    (id, name, status, start_time, pause_time, finish_time, paused_seconds, notes, schema_version)
+    VALUES (?, ?, ?, ?, NULL, ?, 0, ?, ?)`)
+  const insertDevice = db.prepare(`INSERT INTO devices
+    (id, mission_id, device_id, name, color, last_seen, status, group_id, unique_id)
+    VALUES (?, ?, ?, ?, ?, ?, 'online', ?, ?)`)
+  const insertTeam = db.prepare(`INSERT INTO mission_teams
+    (id, mission_id, traccar_group_id, name, frozen_at) VALUES (?, ?, ?, ?, ?)`)
+  const insertParticipant = db.prepare(`INSERT INTO mission_participants
+    (id, mission_id, kind, traccar_device_id, mission_team_id, provenance,
+     effective_from, added_at, added_by, removed_at, removed_by)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+  const insertMembership = db.prepare(`INSERT INTO mission_group_membership_events
+    (id, sequence, mission_id, mission_team_id, traccar_device_id, change, observed_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?)`)
+  const insertOuting = db.prepare(`INSERT INTO outings
+    (id, mission_id, label, started_at, ended_at, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?)`)
+  const insertCheckpoint = db.prepare(`INSERT INTO participant_backfill_checkpoints
+    (mission_id, traccar_device_id, window_from, window_to, reconciled_until, completed, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?)`)
+  const insertEvent = db.prepare(`INSERT INTO mission_events
+    (id, mission_id, event_type, timestamp, details_json) VALUES (?, ?, ?, ?, ?)`)
+
+  const transaction = db.transaction(() => {
+    insertMission.run(
+      FIXTURE_MISSION_ID,
+      FIXTURE_MISSION_NAME,
+      'active',
+      mainStart,
+      null,
+      'Synthetic BCP mission-model validation data only. Never use operationally.',
+      CURRENT_SCHEMA_VERSION,
+    )
+    insertMission.run(
+      legacyMissionId,
+      'SYNTHETIC LEGACY NO-OUTING MISSION',
+      'finished',
+      legacyStart,
+      mainStart,
+      'Synthetic legacy evidence with no invented outing rows.',
+      CURRENT_SCHEMA_VERSION,
+    )
+    let eventIndex = 0
+    const addEvent = (missionId, type, timestamp, details) => {
+      insertEvent.run(
+        createDeterministicId('event', eventIndex),
+        missionId,
+        type,
+        timestamp,
+        JSON.stringify({ synthetic_fixture: true, ...details }),
+      )
+      eventIndex += 1
+    }
+    addEvent(FIXTURE_MISSION_ID, 'mission_created', mainStart, { preset: plan.preset })
+    addEvent(legacyMissionId, 'mission_created', legacyStart, { legacy_no_outings: true })
+
+    const groupByDeviceIndex = groupAssignments(scenario.groupSizes)
+    const teamIds = scenario.groupSizes.map((_size, index) => createDeterministicId('team', index))
+    for (let groupIndex = 0; groupIndex < scenario.groupSizes.length; groupIndex += 1) {
+      if (groupIndex < scenario.groupSizes.length - 1) {
+        insertTeam.run(
+          teamIds[groupIndex],
+          FIXTURE_MISSION_ID,
+          programmeGroupId(groupIndex),
+          `SYNTHETIC TEAM ${String(groupIndex + 1).padStart(2, '0')}`,
+          mainStart,
+        )
+        insertParticipant.run(
+          createDeterministicId('participant', groupIndex),
+          FIXTURE_MISSION_ID,
+          'group',
+          null,
+          teamIds[groupIndex],
+          'explicit',
+          mainStart,
+          mainStart,
+          'Synthetic coordinator',
+          null,
+          null,
+        )
+      }
+    }
+    for (let deviceIndex = 0; deviceIndex < plan.deviceCount; deviceIndex += 1) {
+      const deviceId = programmeDeviceId(deviceIndex)
+      const groupIndex = groupByDeviceIndex[deviceIndex]
+      insertDevice.run(
+        createDeterministicId('device-row', deviceIndex),
+        FIXTURE_MISSION_ID,
+        deviceId,
+        programmeDeviceName(deviceIndex),
+        syntheticDeviceColor(deviceIndex),
+        mainStart,
+        programmeGroupId(groupIndex),
+        `synthetic-imei-${String(deviceIndex + 1).padStart(6, '0')}`,
+      )
+      if (groupIndex < scenario.groupSizes.length - 1) {
+        insertMembership.run(
+          createDeterministicId('membership', deviceIndex),
+          deviceIndex + 1,
+          FIXTURE_MISSION_ID,
+          teamIds[groupIndex],
+          deviceId,
+          'member',
+          mainStart,
+        )
+      }
+    }
+
+    const participantFixtures = [
+      { deviceIndex: 99, provenance: 'legacy_auto', effectiveDay: 0, addedDay: 0 },
+      { deviceIndex: 98, provenance: 'explicit', effectiveDay: 0, addedDay: 0 },
+      { deviceIndex: 97, provenance: 'explicit', effectiveDay: 0, addedDay: 0, removedDay: 8 },
+      { deviceIndex: 97, provenance: 'explicit', effectiveDay: 8, addedDay: 8 },
+      { deviceIndex: 96, provenance: 'explicit', effectiveDay: 0, addedDay: 0 },
+      { deviceIndex: 95, provenance: 'explicit', effectiveDay: 0, addedDay: 1 },
+      { deviceIndex: 94, provenance: 'explicit', effectiveDay: 0, addedDay: 1 },
+    ]
+    for (let index = 0; index < participantFixtures.length; index += 1) {
+      const fixture = participantFixtures[index]
+      const effectiveFrom = isoDay(fixture.effectiveDay)
+      const addedAt = isoDay(fixture.addedDay)
+      const removedAt = fixture.removedDay === undefined ? null : isoDay(fixture.removedDay)
+      insertParticipant.run(
+        createDeterministicId('participant', 12 + index),
+        FIXTURE_MISSION_ID,
+        'device',
+        programmeDeviceId(fixture.deviceIndex),
+        null,
+        fixture.provenance,
+        effectiveFrom,
+        addedAt,
+        fixture.provenance === 'legacy_auto' ? null : 'Synthetic coordinator',
+        removedAt,
+        removedAt === null ? null : 'Synthetic coordinator',
+      )
+    }
+    insertCheckpoint.run(
+      FIXTURE_MISSION_ID,
+      programmeDeviceId(95),
+      isoDay(0),
+      isoDay(1),
+      isoDay(1),
+      1,
+      isoDay(1),
+    )
+    insertCheckpoint.run(
+      FIXTURE_MISSION_ID,
+      programmeDeviceId(94),
+      isoDay(0),
+      isoDay(1),
+      new Date(FIXTURE_START_MS + 2 * 60 * 60 * 1000).toISOString(),
+      0,
+      isoDay(1),
+    )
+
+    const movedDeviceId = programmeDeviceId(0)
+    const changeAt = isoDay(6)
+    insertMembership.run(
+      createDeterministicId('membership', 100),
+      95,
+      FIXTURE_MISSION_ID,
+      teamIds[0],
+      movedDeviceId,
+      'left',
+      changeAt,
+    )
+    insertMembership.run(
+      createDeterministicId('membership', 101),
+      96,
+      FIXTURE_MISSION_ID,
+      teamIds[1],
+      movedDeviceId,
+      'member',
+      changeAt,
+    )
+    addEvent(FIXTURE_MISSION_ID, 'group_membership_changed', changeAt, {
+      device_id: movedDeviceId,
+      from_group: programmeGroupId(0),
+      to_group: programmeGroupId(1),
+    })
+
+    for (let index = 0; index < scenario.outings.length; index += 1) {
+      const outing = scenario.outings[index]
+      insertOuting.run(
+        outing.id,
+        FIXTURE_MISSION_ID,
+        outing.label,
+        outing.startedAt,
+        outing.endedAt,
+        outing.startedAt,
+        outing.endedAt,
+      )
+      addEvent(FIXTURE_MISSION_ID, 'outing_started', outing.startedAt, {
+        outing_id: outing.id,
+      })
+      addEvent(FIXTURE_MISSION_ID, 'outing_ended', outing.endedAt, {
+        outing_id: outing.id,
+      })
+    }
+    for (const day of plan.restartCheckpointsDays) {
+      addEvent(FIXTURE_MISSION_ID, 'fixture_restart_checkpoint', isoDay(day), {
+        simulated_day: day,
+        accumulated_position_count: Math.floor(plan.positionCount * day / plan.durationDays),
+      })
+    }
+
+    const legacyDeviceId = 'synthetic-legacy-device-001'
+    insertDevice.run(
+      createDeterministicId('device-row', plan.deviceCount),
+      legacyMissionId,
+      legacyDeviceId,
+      'SYNTHETIC LEGACY DEVICE',
+      '#64748B',
+      mainStart,
+      null,
+      'synthetic-legacy-imei-000001',
+    )
+    insertParticipant.run(
+      createDeterministicId('participant', 19),
+      legacyMissionId,
+      'device',
+      legacyDeviceId,
+      null,
+      'grandfathered',
+      legacyStart,
+      mainStart,
+      null,
+      null,
+      null,
+    )
+    assertBreadcrumbProgrammeSelectionInvariants(db, FIXTURE_MISSION_ID)
+  })
+  transaction()
+}
+
+/** Rejects fixture-only participant states unreachable through the real selection API. */
+export function assertBreadcrumbProgrammeSelectionInvariants(db, missionId) {
+  const overlap = db.prepare(`WITH ranked_membership AS (
+      SELECT mission_id, mission_team_id, traccar_device_id, change,
+        ROW_NUMBER() OVER (
+          PARTITION BY mission_id, mission_team_id, traccar_device_id
+          ORDER BY observed_at DESC, sequence DESC
+        ) AS rank
+      FROM mission_group_membership_events
+      WHERE mission_id = ?
+    )
+    SELECT direct.traccar_device_id
+    FROM mission_participants AS direct
+    INNER JOIN ranked_membership AS membership
+      ON membership.mission_id = direct.mission_id
+     AND membership.traccar_device_id = direct.traccar_device_id
+     AND membership.rank = 1
+     AND membership.change = 'member'
+    INNER JOIN mission_participants AS selected_group
+      ON selected_group.mission_id = membership.mission_id
+     AND selected_group.mission_team_id = membership.mission_team_id
+     AND selected_group.kind = 'group'
+     AND selected_group.removed_at IS NULL
+    WHERE direct.mission_id = ?
+      AND direct.kind = 'device'
+      AND direct.removed_at IS NULL
+    LIMIT 1`).get(missionId, missionId)
+  if (overlap !== undefined) {
+    throw new Error(
+      `Breadcrumb programme fixture has direct participant ${overlap.traccar_device_id} already covered by a selected group.`,
+    )
+  }
+}
+
+/** Rejects every fixture row that production flag-on participation would refuse. */
+export function assertBreadcrumbProgrammePositionScopeInvariants(
+  db,
+  missionId,
+  expectedActiveDeviceCount,
+) {
+  const participants = db.prepare(`SELECT kind, traccar_device_id, mission_team_id,
+      effective_from, removed_at
+    FROM mission_participants WHERE mission_id = ?`).all(missionId)
+  const membershipEvents = db.prepare(`SELECT mission_team_id, traccar_device_id,
+      change, observed_at, sequence
+    FROM mission_group_membership_events WHERE mission_id = ?
+    ORDER BY observed_at DESC, sequence DESC`).all(missionId)
+  const directByDevice = new Map()
+  const groupsByTeam = new Map()
+  const eventsByDevice = new Map()
+  for (const participant of participants) {
+    const index = participant.kind === 'device' ? directByDevice : groupsByTeam
+    const key = participant.kind === 'device'
+      ? participant.traccar_device_id
+      : participant.mission_team_id
+    const values = index.get(key) ?? []
+    values.push(participant)
+    index.set(key, values)
+  }
+  for (const event of membershipEvents) {
+    const values = eventsByDevice.get(event.traccar_device_id) ?? []
+    values.push(event)
+    eventsByDevice.set(event.traccar_device_id, values)
+  }
+
+  const includesAt = (deviceId, timestamp) => {
+    if ((directByDevice.get(deviceId) ?? []).some((participant) =>
+      participant.effective_from <= timestamp &&
+      (participant.removed_at === null || timestamp < participant.removed_at))) return true
+    const resolvedTeams = new Set()
+    for (const event of eventsByDevice.get(deviceId) ?? []) {
+      if (event.observed_at > timestamp || resolvedTeams.has(event.mission_team_id)) continue
+      resolvedTeams.add(event.mission_team_id)
+      if (
+        event.change === 'member' &&
+        (groupsByTeam.get(event.mission_team_id) ?? []).some((participant) =>
+          participant.effective_from <= timestamp &&
+          (participant.removed_at === null || timestamp < participant.removed_at))
+      ) return true
+    }
+    return false
+  }
+
+  const positionedDeviceIds = new Set()
+  for (const position of db.prepare(`SELECT device_id, timestamp FROM positions
+    WHERE mission_id = ? ORDER BY device_id, timestamp`).iterate(missionId)) {
+    positionedDeviceIds.add(position.device_id)
+    if (!includesAt(position.device_id, position.timestamp)) {
+      throw new Error(
+        `Breadcrumb programme fixture position for ${position.device_id} at ${position.timestamp} is outside participation-at-fix-time.`,
+      )
+    }
+  }
+  if (positionedDeviceIds.size !== expectedActiveDeviceCount) {
+    throw new Error(
+      `Breadcrumb programme fixture expected ${expectedActiveDeviceCount} active positioned participants; found ${positionedDeviceIds.size}.`,
+    )
+  }
+}
+
+/** Returns one deterministic position row calibrated to the accepted field evidence. */
+function breadcrumbProgrammePosition(plan, index) {
+  const deviceIndex = index % plan.activePositionDeviceCount
+  const pollIndex = Math.floor(index / plan.activePositionDeviceCount)
+  const deviceId = programmeDeviceId(deviceIndex)
+  const regularTimestampMs = FIXTURE_START_MS + pollIndex * plan.pollIntervalMs
+  const lateInjection = index < 8
+  const timestampMs = lateInjection
+    ? Math.max(FIXTURE_START_MS, regularTimestampMs - 2 * 60 * 60 * 1000)
+    : regularTimestampMs
+  const position = programmeCoordinates(deviceIndex, pollIndex, plan.pollIntervalMs)
+  const id = createDeterministicId('position', index)
+  return {
+    id,
+    deviceId,
+    sourcePositionId: `traccar-${String(index + 1).padStart(12, '0')}`,
+    name: programmeDeviceName(deviceIndex),
+    lat: position.lat,
+    lon: position.lon,
+    altitude: 100 + (deviceIndex % 30),
+    speed: position.speed,
+    battery: 95 - (pollIndex % 60),
+    accuracy: programmeAccuracy(index),
+    timestamp: new Date(timestampMs).toISOString(),
+    receivedAt: new Date(regularTimestampMs + 2_000).toISOString(),
+    contentHash: `fixture-content-${String(index).padStart(12, '0')}`,
+  }
+}
+
+/** Returns exact generator rows as normalized fixes for deterministic policy tests. */
+export function createBreadcrumbProgrammeCalibrationSample(
+  preset,
+  deviceIndex,
+  fromPoll,
+  toPoll,
+) {
+  const plan = createFixturePlan(preset)
+  if (plan.mode !== 'breadcrumb-programme') {
+    throw new Error('Calibration samples require a breadcrumb-programme preset.')
+  }
+  if (
+    !Number.isSafeInteger(deviceIndex) || deviceIndex < 0 || deviceIndex >= plan.deviceCount ||
+    !Number.isSafeInteger(fromPoll) || !Number.isSafeInteger(toPoll) ||
+    fromPoll < 0 || toPoll <= fromPoll
+  ) {
+    throw new Error('Calibration sample bounds are invalid.')
+  }
+  const positions = []
+  for (let pollIndex = fromPoll; pollIndex < toPoll; pollIndex += 1) {
+    const row = breadcrumbProgrammePosition(
+      plan,
+      pollIndex * plan.activePositionDeviceCount + deviceIndex,
+    )
+    positions.push({
+      id: row.id,
+      device_id: row.deviceId,
+      lat: row.lat,
+      lon: row.lon,
+      altitude: row.altitude,
+      speed: row.speed,
+      battery: row.battery,
+      accuracy: row.accuracy,
+      timestamp: row.timestamp,
+      source: 'synthetic-fixture',
+      data_origin: 'live',
+      cache_age_seconds: null,
+      device_cache_stale: false,
+    })
+  }
+  return positions
+}
+
+function programmeCoordinates(deviceIndex, pollIndex, pollIntervalMs) {
+  const groupOffset = Math.floor(deviceIndex / 9)
+  const baseLat = 51.98 + groupOffset * 0.002
+  const baseLon = -9.75 + (deviceIndex % 9) * 0.001
+  const stationarySpanPolls = Math.ceil((20 * 60 * 1000) / pollIntervalMs) + 1
+  const stationaryOffset = pollIndex - 1_000
+  if (deviceIndex === 0 && stationaryOffset >= 0 && stationaryOffset <= stationarySpanPolls) {
+    return { lat: baseLat, lon: baseLon, speed: 0 }
+  }
+  if (deviceIndex === 1 && stationaryOffset >= 0 && stationaryOffset <= stationarySpanPolls) {
+    return { lat: baseLat + stationaryOffset * 0.00014, lon: baseLon, speed: 1.2 }
+  }
+  if (deviceIndex === 2 && stationaryOffset >= 0 && stationaryOffset <= Math.floor(stationarySpanPolls / 2)) {
+    return { lat: baseLat + (stationaryOffset % 2) * 0.00002, lon: baseLon, speed: 0 }
+  }
+  if (deviceIndex === 3 && stationaryOffset >= 0 && stationaryOffset <= stationarySpanPolls) {
+    if (stationaryOffset === Math.floor(stationarySpanPolls / 2)) {
+      return { lat: baseLat + 0.0046, lon: baseLon, speed: 90 }
+    }
+    return { lat: baseLat, lon: baseLon, speed: 0 }
+  }
+  const cycle = pollIndex % 240
+  const routeStep = cycle <= 120 ? cycle : 240 - cycle
+  return {
+    lat: baseLat + routeStep * 0.000305,
+    lon: baseLon + ((pollIndex + deviceIndex) % 3 - 1) * 0.000005,
+    speed: 4.5,
+  }
+}
+
+function programmeAccuracy(index) {
+  if (index % 997 === 0) return 80
+  const bucket = index % 10
+  if (bucket < 6) return 3.8
+  if (bucket < 9) return 6
+  return 10
+}
+
+function insertLegacyNoOutingPositions(db, insertPosition) {
+  const missionId = 'fixture-mission-legacy-no-outings'
+  const deviceId = 'synthetic-legacy-device-001'
+  for (let index = 0; index < 12; index += 1) {
+    const timestamp = new Date(FIXTURE_START_MS - (12 - index) * 60 * 60 * 1000).toISOString()
+    const id = createDeterministicId('legacy-position', index)
+    insertPosition.run(
+      id,
+      missionId,
+      deviceId,
+      `legacy-${String(index + 1).padStart(4, '0')}`,
+      'SYNTHETIC LEGACY DEVICE',
+      52 + index * 0.0003,
+      -9.5,
+      80,
+      4,
+      80,
+      5,
+      timestamp,
+      timestamp,
+      `fixture-legacy-content-${index}`,
+    )
+  }
+}
+
+function insertBreadcrumbProgrammeAnomalies(db, scenario) {
+  const insert = db.prepare(`INSERT INTO ingest_anomalies (
+      id, mission_id, kind, anomaly_key, device_id, source_position_id,
+      reason_class, received_at, canonical_payload_json, created_at,
+      first_seen_at, last_seen_at, occurrence_count
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+  const timestamp = isoDay(7)
+  const rows = [
+    ['conflict', 'same-source-different-content-1', 'synthetic-device-001', 'traccar-conflict-1', 'identity_conflict', 2],
+    ['conflict', 'same-source-different-content-2', 'synthetic-device-002', 'traccar-conflict-2', 'identity_conflict', 3],
+    ['rejected', 'invalid-latitude', 'synthetic-device-003', 'traccar-rejected-1', 'coordinate_out_of_range', 1],
+    ['rejected', 'invalid-timestamp', 'synthetic-device-004', 'traccar-rejected-2', 'invalid_timestamp', 1],
+    ['rejected', 'non-finite-coordinate', 'synthetic-device-005', 'traccar-rejected-3', 'coordinate_not_finite', 1],
+  ]
+  for (let index = 0; index < rows.length; index += 1) {
+    const [kind, key, deviceId, sourceId, reason, occurrenceCount] = rows[index]
+    insert.run(
+      createDeterministicId('anomaly', index),
+      FIXTURE_MISSION_ID,
+      kind,
+      key,
+      deviceId,
+      sourceId,
+      reason,
+      timestamp,
+      JSON.stringify({ synthetic_fixture: true, injection: key }),
+      timestamp,
+      timestamp,
+      timestamp,
+      occurrenceCount,
+    )
+  }
+  if (scenario.injections.conflicts !== 2 || scenario.injections.rejected !== 3) {
+    throw new Error('Breadcrumb programme anomaly injection contract drifted.')
+  }
+}
+
+function readBreadcrumbProgrammeRowCounts(db) {
+  const count = (tableName) => Number(db.prepare(`SELECT COUNT(*) FROM ${tableName}`).pluck().get())
+  const eventCount = (eventType) => Number(db.prepare(
+    'SELECT COUNT(*) FROM mission_events WHERE event_type = ?',
+  ).pluck().get(eventType))
+  const missionEvents = count('mission_events')
+  const restartCheckpointEvents = eventCount('fixture_restart_checkpoint')
+  return {
+    missions: count('missions'),
+    devices: count('devices'),
+    positions: count('positions'),
+    missionEvents,
+    deviceCreatedEvents: eventCount('device_created'),
+    deviceUpdatedEvents: eventCount('device_updated'),
+    positionRecordedEvents: eventCount('position_recorded'),
+    backupEvents: eventCount('mission_backup_synced'),
+    restartCheckpointEvents,
+    operationalEvents: missionEvents,
+    outings: count('outings'),
+    missionTeams: count('mission_teams'),
+    missionParticipants: count('mission_participants'),
+    groupMembershipEvents: count('mission_group_membership_events'),
+    participantBackfillCheckpoints: count('participant_backfill_checkpoints'),
+    ingestAnomalies: count('ingest_anomalies'),
+  }
+}
+
+function readAllDatabaseObjectBytes(db) {
+  return Object.fromEntries(
+    db.prepare('SELECT name, SUM(pgsize) AS bytes FROM dbstat GROUP BY name ORDER BY name')
+      .all()
+      .map((row) => [String(row.name), Number(row.bytes ?? 0)]),
+  )
+}
+
+function groupAssignments(groupSizes) {
+  const assignments = []
+  for (let groupIndex = 0; groupIndex < groupSizes.length; groupIndex += 1) {
+    for (let count = 0; count < groupSizes[groupIndex]; count += 1) assignments.push(groupIndex)
+  }
+  return assignments
+}
+
+function programmeDeviceId(index) {
+  return `synthetic-device-${String(index + 1).padStart(3, '0')}`
+}
+
+function programmeDeviceName(index) {
+  return `SYNTHETIC DEVICE ${String(index + 1).padStart(3, '0')}`
+}
+
+function programmeGroupId(index) {
+  return `synthetic-group-${String(index + 1).padStart(3, '0')}`
+}
+
+function isoDay(day) {
+  return new Date(FIXTURE_START_MS + day * 24 * 60 * 60 * 1000).toISOString()
 }
 
 /** Inserts the active mission, synthetic device roster, and initial operational events. */
@@ -450,7 +1123,7 @@ function syntheticDeviceColor(index) {
 }
 
 /** Reads and verifies a compatible cached fixture, or returns null when none exists. */
-async function readVerifiedCachedFixture(outputPath, manifestPath, preset) {
+async function readVerifiedCachedFixture(outputPath, manifestPath, plan) {
   let manifest
   try {
     manifest = JSON.parse(await readFile(manifestPath, 'utf8'))
@@ -462,9 +1135,12 @@ async function readVerifiedCachedFixture(outputPath, manifestPath, preset) {
     throw error
   }
 
-  if (manifest.generatorVersion !== FIXTURE_GENERATOR_VERSION || manifest.preset !== preset) {
+  if (
+    manifest.generatorVersion !== fixtureGeneratorVersionForPlan(plan) ||
+    manifest.preset !== plan.preset
+  ) {
     throw new Error(
-      `Cached mission-store fixture is incompatible with preset ${preset}; rerun with --force.`,
+      `Cached mission-store fixture is incompatible with preset ${plan.preset}; rerun with --force.`,
     )
   }
   const actualSha256 = await sha256File(outputPath)

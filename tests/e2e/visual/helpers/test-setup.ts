@@ -14,9 +14,14 @@ export async function waitForAppShell(page: Page): Promise<void> {
   await page.waitForTimeout(1500)
 }
 
-/** Navigate to the browser validation harness. */
-export async function navigateToHarness(page: Page): Promise<void> {
-  await page.goto('/?missionHarness=1')
+/** Navigate to the browser validation harness, optionally enabling the internal mission model. */
+export async function navigateToHarness(
+  page: Page,
+  options: { readonly missionModel?: boolean } = {},
+): Promise<void> {
+  await page.goto(options.missionModel === true
+    ? '/?missionHarness=1&missionModel=1'
+    : '/?missionHarness=1')
   await waitForAppShell(page)
 }
 

@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs'
 import { resolve, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { parseSeedCsv } from './csv-parser.js'
-import { generateAllRoutes, DEVICE_DEFINITIONS } from './route-generator.js'
+import { generateAllRoutes, DEVICE_DEFINITIONS, GROUP_DEFINITIONS } from './route-generator.js'
 import { createPlaybackEngine } from './playback-engine.js'
 import { createPositionStore } from './position-store.js'
 import { createAuthManager } from './auth.js'
@@ -130,6 +130,7 @@ function main(): void {
     engine,
     positionStore,
     deviceDefinitions: DEVICE_DEFINITIONS,
+    groups: GROUP_DEFINITIONS,
     routes,
   })
 
@@ -151,6 +152,7 @@ function main(): void {
     console.log('  ├─────────────────────────────────────────────────┤')
     console.log('  │  Endpoints:                                     │')
     console.log('  │    GET  /api/devices                            │')
+    console.log('  │    GET  /api/groups                             │')
     console.log('  │    GET  /api/positions                          │')
     console.log('  │    GET  /api/positions?deviceId&from&to         │')
     console.log('  │    POST /api/session                            │')

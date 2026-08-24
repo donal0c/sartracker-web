@@ -31,8 +31,11 @@ const {
 } = require('./ingest-anomaly-outbox.cjs')
 
 const { createZipArchive, readZipArchive } = require('./zip-archive.cjs')
+const { createOutingStore } = require('./outing-store.cjs')
+const { createParticipantStore } = require('./participant-store.cjs')
+const { runOutingFixSummaryInWorker } = require('./outing-fix-summary-runner.cjs')
 
-const CURRENT_SCHEMA_VERSION = 8
+const CURRENT_SCHEMA_VERSION = 9
 const DATABASE_FILE_NAME = 'mission-store.sqlite'
 const BACKUP_FILE_NAME = 'mission-store.backup.sqlite'
 const ARCHIVE_DIRECTORY_NAME = 'archives'
@@ -69,6 +72,20 @@ function normalizeMissionReviewRequestId(value, required) {
   return value
 }
 
+/** Validates an opaque renderer correlation key used for outing-summary cancellation. */
+function normalizeOutingFixSummaryRequestId(value, required) {
+  if (value === undefined && required === false) return null
+  if (
+    typeof value !== 'string' ||
+    value.length < 1 ||
+    value.length > 140 ||
+    !/^[A-Za-z0-9._:-]+$/u.test(value)
+  ) {
+    throw new Error('Outing fix-summary request ID is invalid.')
+  }
+  return value
+}
+
 /**
  * Creates the Electron SQLite mission store.
  */
@@ -89,17 +106,29 @@ function createElectronMissionStore(options) {
     options.runBreadcrumbDotQueryInWorker ?? runBreadcrumbDotQueryInWorker
   const missionReviewReadQueryRunner =
     options.runMissionReviewReadQueryInWorker ?? runMissionReviewReadQueryInWorker
+  const outingFixSummaryRunner =
+    options.runOutingFixSummaryInWorker ?? runOutingFixSummaryInWorker
   const activeBreadcrumbQueryControllers = new Set()
   const breadcrumbQueryControllersByRequestId = new Map()
   const breadcrumbDotQueryControllersByRequestId = new Map()
   const missionReviewQueryControllersByRequestId = new Map()
+  const outingFixSummaryControllersByRequestId = new Map()
   let breadcrumbQueryTail = Promise.resolve()
   let missionReviewWorkerTail = Promise.resolve()
+  let outingFixSummaryWorkerTail = Promise.resolve()
   const db = new Database(databasePath)
   db.pragma('journal_mode = WAL')
   db.pragma('synchronous = FULL')
   db.pragma('foreign_keys = ON')
   migrate(db)
+  const outingStore = createOutingStore({
+    db,
+    faultInjection: options.outingFaultInjection ?? {},
+  })
+  const participantStore = createParticipantStore({
+    db,
+    faultInjection: options.participantFaultInjection ?? {},
+  })
   const ingestEvidenceFaultInjection = options.ingestEvidenceFaultInjection ?? {}
   const ingestAnomalyOutbox = createIngestAnomalyOutbox({
     directoryPath: ingestAnomalyOutboxDirectory,
@@ -151,6 +180,10 @@ function createElectronMissionStore(options) {
         activeQuery.controller.abort()
       }
       missionReviewQueryControllersByRequestId.clear()
+      for (const activeQuery of outingFixSummaryControllersByRequestId.values()) {
+        activeQuery.controller.abort()
+      }
+      outingFixSummaryControllersByRequestId.clear()
       db.close()
     },
     info: async () => ({
@@ -179,6 +212,64 @@ function createElectronMissionStore(options) {
         storageDiagnostics?.startMission({ startedAt: mission.start_time }),
       )
       return mission
+    },
+    createOuting: async (input) => outingStore.createOuting(input),
+    endOuting: async (input) => outingStore.endOuting(input),
+    renameOuting: async (input) => outingStore.renameOuting(input),
+    editOutingBoundaries: async (input) => outingStore.editOutingBoundaries(input),
+    listOutings: async (missionId) => outingStore.listOutings(missionId),
+    selectMissionParticipants: async (input) =>
+      participantStore.selectMissionParticipants(input),
+    addMissionParticipant: async (input) => participantStore.addMissionParticipant(input),
+    removeMissionParticipant: async (input) =>
+      participantStore.removeMissionParticipant(input),
+    listMissionParticipants: async (missionId) =>
+      participantStore.listMissionParticipants(missionId),
+    recordGroupMembershipEvents: async (input) =>
+      participantStore.recordGroupMembershipEvents(input),
+    listGroupMembershipEvents: async (missionId, teamId) =>
+      participantStore.listGroupMembershipEvents(missionId, teamId),
+    upsertParticipantBackfillCheckpoint: async (input) =>
+      participantStore.upsertParticipantBackfillCheckpoint(input),
+    listParticipantBackfillCheckpoints: async (missionId) =>
+      participantStore.listParticipantBackfillCheckpoints(missionId),
+    readOutingFixSummary: async (input, requestId) => {
+      const normalizedRequestId = normalizeOutingFixSummaryRequestId(requestId, false)
+      if (
+        normalizedRequestId !== null &&
+        outingFixSummaryControllersByRequestId.has(normalizedRequestId)
+      ) {
+        throw new Error('Outing fix-summary request ID is already active.')
+      }
+      const controller = new AbortController()
+      const query = enqueueOutingFixSummary({ query: input, signal: controller.signal })
+      const activeQuery = { controller, completion: query }
+      if (normalizedRequestId !== null) {
+        outingFixSummaryControllersByRequestId.set(normalizedRequestId, activeQuery)
+      }
+      try {
+        const result = await query
+        return {
+          outings: result.outings,
+          unassigned_accepted_fix_count: result.unassigned_accepted_fix_count,
+          total_accepted_fix_count: result.total_accepted_fix_count,
+        }
+      } finally {
+        if (
+          normalizedRequestId !== null &&
+          outingFixSummaryControllersByRequestId.get(normalizedRequestId) === activeQuery
+        ) {
+          outingFixSummaryControllersByRequestId.delete(normalizedRequestId)
+        }
+      }
+    },
+    cancelOutingFixSummary: async (requestId) => {
+      const normalizedRequestId = normalizeOutingFixSummaryRequestId(requestId, true)
+      const activeQuery = outingFixSummaryControllersByRequestId.get(normalizedRequestId)
+      if (activeQuery === undefined) return false
+      activeQuery.controller.abort()
+      await activeQuery.completion.catch(() => undefined)
+      return true
     },
     upsertDevice: async (input) => upsertDevice(db, input),
     upsertDevicesBulk: async (input) => {
@@ -492,6 +583,35 @@ function createElectronMissionStore(options) {
       return operation
     })
   }
+
+  /**
+   * Caps outing summaries at one physical worker. Renderer cancellation may
+   * settle before worker termination, so the slot follows workerExited.
+   */
+  function enqueueOutingFixSummary(input) {
+    const previousWorker = outingFixSummaryWorkerTail
+    let releaseWorkerSlot = () => undefined
+    const workerSlot = new Promise((resolve) => {
+      releaseWorkerSlot = resolve
+    })
+    outingFixSummaryWorkerTail = previousWorker.then(() => workerSlot)
+    return previousWorker.then(() => {
+      let operation
+      try {
+        operation = outingFixSummaryRunner({
+          databasePath,
+          query: input.query,
+          signal: input.signal,
+        })
+      } catch (error) {
+        releaseWorkerSlot()
+        throw error
+      }
+      const workerExited = operation.workerExited ?? operation
+      void Promise.resolve(workerExited).then(releaseWorkerSlot, releaseWorkerSlot)
+      return operation
+    })
+  }
 }
 
 function migrate(db) {
@@ -509,6 +629,7 @@ function migrate(db) {
     db,
     'ingest_anomaly_mission_health',
   )
+  const participantsRequireGrandfathering = !tableExists(db, 'mission_participants')
 
   db.exec(`
     CREATE TABLE IF NOT EXISTS missions (
@@ -523,6 +644,21 @@ function migrate(db) {
       schema_version INTEGER NOT NULL
     );
     CREATE INDEX IF NOT EXISTS idx_missions_status ON missions(status);
+    CREATE TABLE IF NOT EXISTS outings (
+      id TEXT PRIMARY KEY,
+      mission_id TEXT NOT NULL,
+      label TEXT NOT NULL,
+      started_at TEXT NOT NULL,
+      ended_at TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      FOREIGN KEY (mission_id) REFERENCES missions(id) ON DELETE CASCADE,
+      CHECK (ended_at IS NULL OR ended_at > started_at)
+    );
+    CREATE INDEX IF NOT EXISTS idx_outings_mission_started
+      ON outings(mission_id, started_at);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_outings_mission_active
+      ON outings(mission_id) WHERE ended_at IS NULL;
     CREATE TABLE IF NOT EXISTS devices (
       id TEXT PRIMARY KEY,
       mission_id TEXT NOT NULL,
@@ -533,6 +669,65 @@ function migrate(db) {
       status TEXT NOT NULL CHECK(status IN ('online', 'offline', 'unknown')),
       FOREIGN KEY (mission_id) REFERENCES missions(id) ON DELETE CASCADE,
       UNIQUE (mission_id, device_id)
+    );
+    CREATE TABLE IF NOT EXISTS mission_teams (
+      id TEXT PRIMARY KEY,
+      mission_id TEXT NOT NULL,
+      traccar_group_id TEXT NOT NULL,
+      name TEXT NOT NULL,
+      frozen_at TEXT NOT NULL,
+      FOREIGN KEY (mission_id) REFERENCES missions(id) ON DELETE CASCADE,
+      UNIQUE (mission_id, traccar_group_id)
+    );
+    CREATE TABLE IF NOT EXISTS mission_participants (
+      id TEXT PRIMARY KEY,
+      mission_id TEXT NOT NULL,
+      kind TEXT NOT NULL CHECK (kind IN ('device', 'group')),
+      traccar_device_id TEXT,
+      mission_team_id TEXT,
+      provenance TEXT NOT NULL CHECK (provenance IN ('explicit', 'grandfathered', 'legacy_auto')),
+      effective_from TEXT NOT NULL,
+      added_at TEXT NOT NULL,
+      added_by TEXT,
+      removed_at TEXT,
+      removed_by TEXT,
+      FOREIGN KEY (mission_id) REFERENCES missions(id) ON DELETE CASCADE,
+      FOREIGN KEY (mission_team_id) REFERENCES mission_teams(id),
+      CHECK ((kind = 'device') = (traccar_device_id IS NOT NULL)),
+      CHECK ((kind = 'group') = (mission_team_id IS NOT NULL)),
+      CHECK (removed_at IS NULL OR removed_at >= added_at)
+    );
+    CREATE INDEX IF NOT EXISTS idx_mission_participants_mission
+      ON mission_participants(mission_id);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_mission_participants_active_device
+      ON mission_participants(mission_id, traccar_device_id)
+      WHERE kind = 'device' AND removed_at IS NULL;
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_mission_participants_active_group
+      ON mission_participants(mission_id, mission_team_id)
+      WHERE kind = 'group' AND removed_at IS NULL;
+    CREATE TABLE IF NOT EXISTS mission_group_membership_events (
+      id TEXT PRIMARY KEY,
+      sequence INTEGER NOT NULL,
+      mission_id TEXT NOT NULL,
+      mission_team_id TEXT NOT NULL,
+      traccar_device_id TEXT NOT NULL,
+      change TEXT NOT NULL CHECK (change IN ('member', 'left')),
+      observed_at TEXT NOT NULL,
+      FOREIGN KEY (mission_id) REFERENCES missions(id) ON DELETE CASCADE,
+      FOREIGN KEY (mission_team_id) REFERENCES mission_teams(id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_group_membership_mission_team
+      ON mission_group_membership_events(mission_id, mission_team_id, observed_at, sequence);
+    CREATE TABLE IF NOT EXISTS participant_backfill_checkpoints (
+      mission_id TEXT NOT NULL,
+      traccar_device_id TEXT NOT NULL,
+      window_from TEXT NOT NULL,
+      window_to TEXT NOT NULL,
+      reconciled_until TEXT NOT NULL,
+      completed INTEGER NOT NULL DEFAULT 0,
+      updated_at TEXT NOT NULL,
+      PRIMARY KEY (mission_id, traccar_device_id, window_from),
+      FOREIGN KEY (mission_id) REFERENCES missions(id) ON DELETE CASCADE
     );
     CREATE TABLE IF NOT EXISTS positions (
       id TEXT PRIMARY KEY,
@@ -728,6 +923,19 @@ function migrate(db) {
     ensureColumnExists(db, 'positions', 'received_at', 'TEXT')
     ensureColumnExists(db, 'positions', 'content_hash', 'TEXT')
     ensureColumnExists(db, 'positions', 'source_kind', 'TEXT')
+    ensureColumnExists(db, 'devices', 'group_id', 'TEXT')
+    ensureColumnExists(db, 'devices', 'unique_id', 'TEXT')
+    // Candidate-v9 stores may contain the rejected global positions index.
+    // Dropping it is metadata-only and restores the bounded startup contract.
+    db.exec('DROP INDEX IF EXISTS idx_positions_mission_timestamp;')
+    ensureColumnExists(db, 'mission_group_membership_events', 'sequence', 'INTEGER')
+    db.exec(`
+      UPDATE mission_group_membership_events
+      SET sequence = rowid
+      WHERE sequence IS NULL;
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_group_membership_sequence
+      ON mission_group_membership_events(sequence);
+    `)
     ensureColumnExists(db, 'ingest_anomalies', 'first_seen_at', 'TEXT')
     ensureColumnExists(db, 'ingest_anomalies', 'last_seen_at', 'TEXT')
     ensureColumnExists(db, 'ingest_anomalies', 'occurrence_count', 'INTEGER NOT NULL DEFAULT 1')
@@ -740,6 +948,9 @@ function migrate(db) {
     ensureMissionScopedAnomalyDeliveries(db)
     if (anomalySummaryRequiresBackfill) {
       backfillIngestAnomalyHealth(db)
+    }
+    if (participantsRequireGrandfathering) {
+      backfillGrandfatheredParticipants(db)
     }
     db.exec(`
       CREATE UNIQUE INDEX IF NOT EXISTS idx_positions_mission_source_position_id
@@ -783,6 +994,25 @@ function backfillIngestAnomalyHealth(db) {
     FROM ingest_anomalies AS anomaly
     GROUP BY anomaly.mission_id;
   `)
+}
+
+/**
+ * Grandfathers every pre-v9 mission device, including finalized missions,
+ * without rewriting any source evidence or inventing outing boundaries.
+ */
+function backfillGrandfatheredParticipants(db) {
+  const migratedAt = new Date().toISOString()
+  const rows = db.prepare(`SELECT device.mission_id, device.device_id, mission.start_time
+    FROM devices AS device
+    INNER JOIN missions AS mission ON mission.id = device.mission_id
+    ORDER BY device.mission_id ASC, device.device_id ASC`).all()
+  const insert = db.prepare(`INSERT INTO mission_participants (
+      id, mission_id, kind, traccar_device_id, mission_team_id, provenance,
+      effective_from, added_at, added_by, removed_at, removed_by
+    ) VALUES (?, ?, 'device', ?, NULL, 'grandfathered', ?, ?, NULL, NULL, NULL)`)
+  for (const row of rows) {
+    insert.run(randomUUID(), row.mission_id, row.device_id, row.start_time, migratedAt)
+  }
 }
 
 /** Rebuilds the small delivery-dedup table with mission-scoped identity. */
@@ -1135,6 +1365,15 @@ function finishMission(db, missionId) {
   if (mission.status === 'finished' || mission.status === 'finalized') {
     throw new Error('Mission is already finished.')
   }
+  const incompleteBackfillCount = db.prepare(`SELECT COUNT(*) AS count
+    FROM participant_backfill_checkpoints
+    WHERE mission_id = ? AND completed = 0`)
+    .get(missionId).count
+  if (incompleteBackfillCount > 0) {
+    throw new Error(
+      `Mission cannot be finished while ${incompleteBackfillCount} participant history backfill checkpoint(s) are incomplete. Keep the mission active and retry history backfill before finishing.`,
+    )
+  }
   const timestamp = now()
   const additionalPausedSeconds =
     mission.status === 'paused' ? calculatePausedSeconds(mission.pause_time, timestamp) : 0
@@ -1464,18 +1703,27 @@ async function unlockFinalizedMission(db, input, readAdminRoster) {
 function upsertDevice(db, input) {
   ensureWritableMission(db, input.mission_id)
   const id = randomUUID()
-  const timestamp = input.last_seen ?? now()
+  const timestamp = localMissionObservationTimestamp(db, input.mission_id)
   // Electron intentionally diverges from the legacy Rust reference: last_seen remains
   // current on every poll, while device_updated describes only an operator-visible change.
   const existing = db
     .prepare('SELECT id, name, color, status FROM devices WHERE mission_id = ? AND device_id = ?')
     .get(input.mission_id, input.device_id)
   const transaction = db.transaction(() => {
-    db.prepare(`INSERT INTO devices (id, mission_id, device_id, name, color, last_seen, status)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
+    db.prepare(`INSERT INTO devices (
+        id, mission_id, device_id, name, color, last_seen, status, group_id, unique_id
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(mission_id, device_id) DO UPDATE SET
-        name = excluded.name, color = excluded.color, last_seen = excluded.last_seen, status = excluded.status`)
-      .run(id, input.mission_id, input.device_id, input.name, input.color, input.last_seen ?? null, input.status)
+        name = excluded.name, color = excluded.color, last_seen = excluded.last_seen,
+        status = excluded.status, group_id = excluded.group_id, unique_id = excluded.unique_id`)
+      .run(
+        id, input.mission_id, input.device_id, input.name, input.color,
+        input.last_seen ?? null, input.status, input.group_id ?? null,
+        input.unique_id ?? null,
+      )
+    if (existing === undefined && input.participant_provenance === 'legacy_auto') {
+      insertLegacyAutoParticipant(db, input.mission_id, input.device_id, timestamp)
+    }
     if (existing === undefined || hasDeviceAuditChange(existing, input)) {
       insertEvent(
         db,
@@ -1495,6 +1743,28 @@ function upsertDevice(db, input) {
   return getDevice(db, input.mission_id, input.device_id)
 }
 
+/** Records the flag-off first-contact participant window in the device transaction. */
+function insertLegacyAutoParticipant(db, missionId, deviceId, observedAt) {
+  const active = db.prepare(`SELECT 1 FROM mission_participants
+    WHERE mission_id = ? AND kind = 'device' AND traccar_device_id = ?
+      AND removed_at IS NULL`).get(missionId, deviceId)
+  if (active !== undefined) return
+  const participantId = randomUUID()
+  db.prepare(`INSERT INTO mission_participants (
+      id, mission_id, kind, traccar_device_id, mission_team_id, provenance,
+      effective_from, added_at, added_by, removed_at, removed_by
+    ) VALUES (?, ?, 'device', ?, NULL, 'legacy_auto', ?, ?, NULL, NULL, NULL)`)
+    .run(participantId, missionId, deviceId, observedAt, observedAt)
+  insertEvent(db, missionId, 'participant_added', observedAt, {
+    participant_id: participantId,
+    kind: 'device',
+    traccar_device_id: deviceId,
+    provenance: 'legacy_auto',
+    effective_from: observedAt,
+    effective_from_defaulted: true,
+  })
+}
+
 /**
  * Upserts many devices in a SINGLE transaction (one commit → one fsync at synchronous=FULL).
  * The tracking poller previously upserted each device in its own transaction, so a 32-device
@@ -1512,17 +1782,20 @@ function upsertDevicesBulk(db, input) {
   const existsStmt = db.prepare(
     'SELECT id, name, color, status FROM devices WHERE mission_id = ? AND device_id = ?',
   )
-  const upsertStmt = db.prepare(`INSERT INTO devices (id, mission_id, device_id, name, color, last_seen, status)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
+  const upsertStmt = db.prepare(`INSERT INTO devices (
+      id, mission_id, device_id, name, color, last_seen, status, group_id, unique_id
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(mission_id, device_id) DO UPDATE SET
-      name = excluded.name, color = excluded.color, last_seen = excluded.last_seen, status = excluded.status`)
+      name = excluded.name, color = excluded.color, last_seen = excluded.last_seen,
+      status = excluded.status, group_id = excluded.group_id, unique_id = excluded.unique_id`)
 
   let changedDeviceEventCount = 0
+  const observationTimestamp = localMissionObservationTimestamp(db, input.mission_id)
   const transaction = db.transaction(() => {
     for (const device of devices) {
       const existing = existsStmt.get(input.mission_id, device.device_id)
       const id = randomUUID()
-      const timestamp = device.last_seen ?? now()
+      const timestamp = observationTimestamp
       upsertStmt.run(
         id,
         input.mission_id,
@@ -1531,7 +1804,12 @@ function upsertDevicesBulk(db, input) {
         device.color,
         device.last_seen ?? null,
         device.status,
+        device.group_id ?? null,
+        device.unique_id ?? null,
       )
+      if (existing === undefined && input.participant_provenance === 'legacy_auto') {
+        insertLegacyAutoParticipant(db, input.mission_id, device.device_id, timestamp)
+      }
       if (existing === undefined || hasDeviceAuditChange(existing, device)) {
         const eventType = existing === undefined ? 'device_created' : 'device_updated'
         insertEvent(db, input.mission_id, eventType, timestamp, {
@@ -1550,6 +1828,13 @@ function upsertDevicesBulk(db, input) {
     devices: devices.map((device) => getDevice(db, input.mission_id, device.device_id)),
     changedDeviceEventCount,
   }
+}
+
+/** Returns local observation time without allowing audit events before mission start. */
+function localMissionObservationTimestamp(db, missionId) {
+  const missionStart = getMission(db, missionId).start_time
+  const observedAt = now()
+  return observedAt < missionStart ? missionStart : observedAt
 }
 
 /** Returns whether persisted device fields other than the polling heartbeat changed. */
@@ -1828,6 +2113,7 @@ function persistTrackingHistoryBatch(db, input, includePositions = true) {
        mission_id, device_id, history_from, reconciled_until, updated_at
      ) VALUES (?, ?, ?, ?, ?)
      ON CONFLICT(mission_id, device_id) DO UPDATE SET
+       history_from = excluded.history_from,
        reconciled_until = excluded.reconciled_until,
        updated_at = excluded.updated_at`,
   )
@@ -1868,22 +2154,34 @@ function persistTrackingHistoryBatch(db, input, includePositions = true) {
         )
       }
       const existing = readCheckpoint.get(input.mission_id, deviceId)
-      if (existing !== undefined && existing.history_from !== historyFrom) {
+      if (existing !== undefined && historyFrom > existing.history_from) {
         throw new Error(
           'Tracking history checkpoint start does not match the stored mission-device checkpoint.',
         )
       }
       if (
         existing !== undefined &&
+        historyFrom < existing.history_from &&
+        reconciledUntil < existing.history_from
+      ) {
+        continue
+      }
+      if (
+        existing !== undefined &&
+        existing.history_from === historyFrom &&
         Date.parse(existing.reconciled_until) >= Date.parse(reconciledUntil)
       ) {
         continue
       }
+      const storedReconciledUntil =
+        existing !== undefined && existing.reconciled_until > reconciledUntil
+          ? existing.reconciled_until
+          : reconciledUntil
       upsertCheckpoint.run(
         input.mission_id,
         deviceId,
         historyFrom,
-        reconciledUntil,
+        storedReconciledUntil,
         now(),
       )
     }

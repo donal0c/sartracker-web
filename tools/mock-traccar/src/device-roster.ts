@@ -26,6 +26,12 @@ export function getDeviceRoster(
       status,
       lastUpdate,
       category: def.category,
+      groupId:
+        def.groupChangeAtMs !== undefined &&
+        def.groupIdAfterChange !== undefined &&
+        scenarioMs >= def.groupChangeAtMs
+          ? def.groupIdAfterChange
+          : def.groupId,
     }
   })
 }

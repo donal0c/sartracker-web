@@ -9,8 +9,22 @@ describe('fourteen-day packaged exact-dot soak script [DON-260]', () => {
     expect(source).toContain('createTrackingSoakFixtureClock(')
     expect(source).toContain('baseTimeMs: fixtureClock.baseTimeMs')
     expect(source).toContain('intervalMs: fixtureClock.intervalMs')
-    expect(source).toContain('startSyntheticMission(activeLaunch, fixtureClock.missionOffsetHours)')
+    expect(source).toContain('const missionModelEvidence = await startSyntheticMission(')
+    expect(source).toContain('fixtureClock.missionOffsetHours,')
+    expect(source).toContain('options.profile.deviceCount,')
     expect(source).toContain('fixtureClock,')
+  })
+
+  it('requires flag-off legacy participants and declares their audit events [DON-271]', () => {
+    expect(source).toContain('expectedParticipantRows: expectedDeviceCount')
+    expect(source).toContain("'participant_added',")
+    expect(source).toContain('expectedParticipantAddedEvents')
+    expect(source).toContain(
+      '(databaseEvidence.events.participant_added ?? 0) !== missionModelEvidence.expectedParticipantAddedEvents',
+    )
+    expect(source).toContain(
+      'missionModelEvidence.expectedParticipantAddedEvents +',
+    )
   })
 
   it('keeps mock and mission paused until latest-page parity survives each restart', () => {
@@ -376,6 +390,10 @@ describe('fourteen-day packaged exact-dot soak script [DON-260]', () => {
     ]) {
       expect(ownedClickSource).toContain('performLaunchOwnedHarnessClick(')
     }
+    expect(startMission).not.toContain('evaluateAll(')
+    expect(startMission).toContain("'participant-device-picker'")
+    expect(startMission).toContain('activeList?.children.length === expectedCount')
+    expect(startMission).not.toContain("hasText: 'Synthetic Mission Team'")
     expect(traversal.match(/performLaunchOwnedHarnessClick\(/gu)).toHaveLength(2)
     expect(traversal).toContain(
       '() => waitForExactSoakSourcePage({',
