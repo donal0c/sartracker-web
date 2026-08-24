@@ -347,6 +347,7 @@
           <a href="#map">Map And Coordinates</a>
           <a href="#official-maps">Official Maps</a>
           <a href="#tracking">Tracking And Devices</a>
+          <a href="#mission-history">Mission History Coverage</a>
           <a href="#layers">Layers</a>
           <a href="#markers">Markers</a>
           <a href="#tools">Drawing And Measurement</a>
@@ -370,8 +371,8 @@
               review.
             </p>
             <div class="meta-grid">
-              <div class="card"><span class="kpi">Verified</span><span class="kpi-value">17 June 2026</span></div>
-              <div class="card"><span class="kpi">Branch</span><span class="kpi-value">master</span></div>
+              <div class="card"><span class="kpi">Verified</span><span class="kpi-value">24 August 2026</span></div>
+              <div class="card"><span class="kpi">Branch</span><span class="kpi-value">PR-3 candidate</span></div>
               <div class="card"><span class="kpi">Runtime Checked</span><span class="kpi-value">Browser harness + source audit</span></div>
               <div class="card"><span class="kpi">Desktop Shell</span><span class="kpi-value">Electron beta lane</span></div>
             </div>
@@ -1144,6 +1145,76 @@
             If restart reconstruction ignores unreadable stored fixes, SAR Tracker reports the count
             instead of silently stopping the remaining valid trail. Record the exact warning and export
             diagnostics before restarting when operationally safe.
+          </div>
+        </section>
+
+        <section id="mission-history">
+          <h2>Mission History Coverage</h2>
+          <p>
+            The default mission-history view shows every accepted breadcrumb for all selected mission
+            participants from the mission start to now. It loads progressively from the mission database
+            while current positions continue on their separate live path. A history load, retry, filter,
+            or outing correction must never delay or hide a current position.
+          </p>
+          <figure class="screenshot">
+            <img src="assets/mission-history-coverage-status.png" alt="Mission history status showing selected-scope completion and a device omission" />
+            <figcaption>Filtered history uses the honest “All selected history shown” wording and states that live positions are unchanged.</figcaption>
+          </figure>
+
+          <h3>Reading progress and completion</h3>
+          <table>
+            <thead>
+              <tr><th>Status</th><th>What It Means</th></tr>
+            </thead>
+            <tbody>
+              <tr><td><strong>N of M fixes</strong></td><td>The database currently knows about M accepted fixes in the selected scope, and N have been delivered to this app window. This is saved-evidence and delivery progress, not an elapsed-time estimate.</td></tr>
+              <tr><td><strong>All mission history shown</strong></td><td>Every selected participant and every outing period, including Outside outings, is included and complete for this app window.</td></tr>
+              <tr><td><strong>All selected history shown</strong></td><td>The visible filtered scope is complete, but one or more participants, outings, or Outside outings are deliberately omitted. The omission summary names that reduced scope.</td></tr>
+              <tr><td><strong>History incomplete — showing loaded coverage</strong></td><td>Loading was cancelled or failed. Already delivered coverage stays visible. Use <strong>Retry</strong>; do not treat the partial map as the whole mission record.</td></tr>
+              <tr><td><strong>Participant history is still being added</strong></td><td>A participant backfill is incomplete. Current positions remain live, but a complete-history claim is blocked.</td></tr>
+              <tr><td><strong>Updating outing assignment</strong></td><td>An audited outing-boundary change is reorganizing saved fixes. Loaded coverage remains visible, but 100% is blocked until the update finishes.</td></tr>
+              <tr><td><strong>Evidence health is degraded</strong></td><td>Saved evidence cannot yet support a completeness claim. Follow the accompanying evidence-health warning and repair guidance.</td></tr>
+            </tbody>
+          </table>
+          <div class="note">
+            <strong>Progress can go backwards honestly:</strong> a late accepted fix, an outing-boundary
+            correction, or a renderer restart can increase the total or clear this window's delivery
+            record. After Resume, the display may restart at <strong>0 of 0</strong> briefly and load again
+            from saved evidence. A lower percentage is safer than a false 100%.
+          </div>
+
+          <h3>History filters do not edit evidence or live tracking</h3>
+          <p>
+            Open <strong>Layers → Mission History</strong> to omit participant history, a named outing,
+            or <strong>Outside outings</strong>. These checkboxes affect only the historical coverage drawn
+            in the current app window. They do not delete, rewrite, or reclassify saved mission evidence.
+            <strong>Outside outings</strong> means accepted fixes that fall outside every explicit outing;
+            it is not an invented outing or a calendar day.
+          </p>
+          <p>
+            Hiding Alpha Team under Mission History does not hide Alpha Team's current marker. To hide a
+            live marker, use the separate <strong>Tracking → Current Location</strong> visibility control.
+            Devices that were discovered by Traccar but were never selected as mission participants stay
+            available in the participant picker and diagnostics only; they do not appear in mission
+            evidence, Mission History filters, or the operational mission map.
+          </p>
+          <figure class="screenshot">
+            <img src="assets/mission-history-live-independent.png" alt="Mission map showing Alpha Team live while Alpha Team history is unchecked in Mission History" />
+            <figcaption>Alpha Team's history is omitted in the Layer Workspace while its current live marker remains visible on the map.</figcaption>
+          </figure>
+
+          <h3>Exact-fix inspection</h3>
+          <p>
+            Use <strong>Inspect exact fixes</strong> to switch to the existing paged breadcrumb Dots
+            inspection surface. Coverage trails are the operational whole-mission overview; Dots remain
+            the source-exact per-fix evidence view with the existing Earlier and Later paging controls.
+            Mission-history coverage does not change the exact-dot query, page size, saved evidence, or
+            existing export workflows.
+          </p>
+          <div class="note">
+            <strong>Current scope:</strong> mission-history coverage includes accepted Traccar breadcrumb
+            evidence. GPX evidence, replay, search-pass analysis, archive/custody workflows, and timeline
+            reconstruction are later programme work and are not added by this view.
           </div>
         </section>
 
