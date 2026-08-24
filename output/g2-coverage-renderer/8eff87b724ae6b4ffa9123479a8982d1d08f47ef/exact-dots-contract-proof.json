@@ -1,0 +1,6 @@
+{
+  "appSha": "8eff87b724ae6b4ffa9123479a8982d1d08f47ef",
+  "passed": true,
+  "completedAt": "2026-08-24T19:53:07.281Z",
+  "command": "npm run test:contract:dots"
+}
