@@ -5,6 +5,8 @@ const {
   analyzeCoverageInvalidation,
   enumerateCoverageChunks,
   readCoverageChunkPage,
+  readCoverageManifestSnapshot,
+  summarizeCoverageChunkAtRevision,
 } = require('./coverage-query.cjs')
 
 if (parentPort === null) throw new Error('Coverage query worker requires a parent port.')
@@ -18,7 +20,9 @@ function run() {
       fileMustExist: true,
     })
     database.pragma('query_only = ON')
-    const result = executeCoverageQuery(database, workerData.query)
+    const readSnapshot = database.transaction(() =>
+      executeCoverageQuery(database, workerData.query))
+    const result = readSnapshot()
     parentPort.postMessage({ type: 'complete', workerThreadId: threadId, result })
   } catch (error) {
     parentPort.postMessage({
@@ -35,11 +39,17 @@ function run() {
 
 /** Dispatches only the named read-only coverage worker operations. */
 function executeCoverageQuery(database, query) {
-  if (query?.kind === 'manifest') {
+  if (query?.kind === 'enumerate') {
     return enumerateCoverageChunks(database, { missionId: query.missionId })
+  }
+  if (query?.kind === 'manifest') {
+    return readCoverageManifestSnapshot(database, { missionId: query.missionId })
   }
   if (query?.kind === 'chunk-page') {
     return readCoverageChunkPage(database, query)
+  }
+  if (query?.kind === 'chunk-summary') {
+    return summarizeCoverageChunkAtRevision(database, query)
   }
   if (query?.kind === 'invalidation-analysis') {
     return analyzeCoverageInvalidation(database, {

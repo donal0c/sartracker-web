@@ -34,8 +34,13 @@ const { createZipArchive, readZipArchive } = require('./zip-archive.cjs')
 const { createOutingStore } = require('./outing-store.cjs')
 const { createParticipantStore } = require('./participant-store.cjs')
 const { runOutingFixSummaryInWorker } = require('./outing-fix-summary-runner.cjs')
+const { runCoverageQueryInWorker } = require('./coverage-query-runner.cjs')
 const {
   appendCoverageInvalidation,
+  applyCoverageChunkBuild,
+  applyCoverageEnumeration,
+  applyCoverageInvalidationDrain,
+  applyCoverageManifestInventory,
   bumpCoverageChangeSequence,
   recordAcceptedCoveragePositions,
 } = require('./coverage-ledger.cjs')
@@ -91,6 +96,20 @@ function normalizeOutingFixSummaryRequestId(value, required) {
   return value
 }
 
+/** Validates the opaque renderer key used only for coverage-worker cancellation. */
+function normalizeCoverageQueryRequestId(value, required) {
+  if (value === undefined && required === false) return null
+  if (
+    typeof value !== 'string' ||
+    value.length < 1 ||
+    value.length > 140 ||
+    !/^[A-Za-z0-9._:-]+$/u.test(value)
+  ) {
+    throw new Error('Coverage query request ID is invalid.')
+  }
+  return value
+}
+
 /**
  * Creates the Electron SQLite mission store.
  */
@@ -114,14 +133,19 @@ function createElectronMissionStore(options) {
     options.runMissionReviewReadQueryInWorker ?? runMissionReviewReadQueryInWorker
   const outingFixSummaryRunner =
     options.runOutingFixSummaryInWorker ?? runOutingFixSummaryInWorker
+  const coverageQueryRunner =
+    options.runCoverageQueryInWorker ?? runCoverageQueryInWorker
+  const onCoverageChanged = options.onCoverageChanged ?? (() => undefined)
   const activeBreadcrumbQueryControllers = new Set()
   const breadcrumbQueryControllersByRequestId = new Map()
   const breadcrumbDotQueryControllersByRequestId = new Map()
   const missionReviewQueryControllersByRequestId = new Map()
   const outingFixSummaryControllersByRequestId = new Map()
+  const coverageQueryControllersByRequestId = new Map()
   let breadcrumbQueryTail = Promise.resolve()
   let missionReviewWorkerTail = Promise.resolve()
   let outingFixSummaryWorkerTail = Promise.resolve()
+  let coverageChunkWorkerTail = Promise.resolve()
   const db = new Database(databasePath)
   db.pragma('journal_mode = WAL')
   db.pragma('synchronous = FULL')
@@ -202,6 +226,10 @@ function createElectronMissionStore(options) {
         activeQuery.controller.abort()
       }
       outingFixSummaryControllersByRequestId.clear()
+      for (const activeQuery of coverageQueryControllersByRequestId.values()) {
+        activeQuery.controller.abort()
+      }
+      coverageQueryControllersByRequestId.clear()
       db.close()
     },
     info: async () => ({
@@ -231,14 +259,28 @@ function createElectronMissionStore(options) {
       )
       return mission
     },
-    createOuting: async (input) => outingStore.createOuting(input),
-    endOuting: async (input) => outingStore.endOuting(input),
+    createOuting: async (input) => runCoverageMutation(
+      input.mission_id,
+      () => outingStore.createOuting(input),
+    ),
+    endOuting: async (input) => runCoverageMutation(
+      input.mission_id,
+      () => outingStore.endOuting(input),
+    ),
     renameOuting: async (input) => outingStore.renameOuting(input),
-    editOutingBoundaries: async (input) => outingStore.editOutingBoundaries(input),
+    editOutingBoundaries: async (input) => runCoverageMutation(
+      input.mission_id,
+      () => outingStore.editOutingBoundaries(input),
+    ),
     listOutings: async (missionId) => outingStore.listOutings(missionId),
-    selectMissionParticipants: async (input) =>
-      participantStore.selectMissionParticipants(input),
-    addMissionParticipant: async (input) => participantStore.addMissionParticipant(input),
+    selectMissionParticipants: async (input) => runCoverageMutation(
+      input.mission_id,
+      () => participantStore.selectMissionParticipants(input),
+    ),
+    addMissionParticipant: async (input) => runCoverageMutation(
+      input.mission_id,
+      () => participantStore.addMissionParticipant(input),
+    ),
     removeMissionParticipant: async (input) =>
       participantStore.removeMissionParticipant(input),
     listMissionParticipants: async (missionId) =>
@@ -247,8 +289,10 @@ function createElectronMissionStore(options) {
       participantStore.recordGroupMembershipEvents(input),
     listGroupMembershipEvents: async (missionId, teamId) =>
       participantStore.listGroupMembershipEvents(missionId, teamId),
-    upsertParticipantBackfillCheckpoint: async (input) =>
-      participantStore.upsertParticipantBackfillCheckpoint(input),
+    upsertParticipantBackfillCheckpoint: async (input) => runCoverageMutation(
+      input.mission_id,
+      () => participantStore.upsertParticipantBackfillCheckpoint(input),
+    ),
     listParticipantBackfillCheckpoints: async (missionId) =>
       participantStore.listParticipantBackfillCheckpoints(missionId),
     readOutingFixSummary: async (input, requestId) => {
@@ -289,6 +333,127 @@ function createElectronMissionStore(options) {
       await activeQuery.completion.catch(() => undefined)
       return true
     },
+    readCoverageManifest: async (missionId, requestId) => executeCoverageRequest(
+      requestId,
+      async (signal) => {
+        getMission(db, missionId)
+        const coverageMission = db.prepare(`SELECT change_seq, enumerated
+          FROM coverage_missions WHERE mission_id = ?`).get(missionId)
+        if (coverageMission?.enumerated !== 1) {
+          const enumeration = await runCoverageWorker(
+            { kind: 'enumerate', missionId },
+            signal,
+            false,
+          )
+          applyCoverageEnumeration(db, {
+            missionId,
+            expectedChangeSeq: enumeration.changeSeq,
+            chunks: enumeration.chunks,
+            updatedAt: now(),
+          })
+        }
+        await drainCoverageInvalidations(missionId, signal)
+        const manifest = await runCoverageWorker(
+          { kind: 'manifest', missionId }, signal, false,
+        )
+        const inserted = applyCoverageManifestInventory(db, {
+          missionId,
+          expectedChangeSeq: manifest.changeSeq,
+          chunks: manifest.chunks,
+          updatedAt: now(),
+        })
+        return inserted === 0
+          ? manifest
+          : runCoverageWorker({ kind: 'manifest', missionId }, signal, false)
+      },
+    ),
+    readCoverageChunk: async (input, requestId) => executeCoverageRequest(
+      requestId,
+      async (signal) => {
+        const page = await runCoverageWorker(
+          { kind: 'chunk-page', ...input }, signal, true,
+        )
+        if (page.nextCursor !== null) return page
+        const summary = await runCoverageWorker({
+          kind: 'chunk-summary',
+          missionId: input.missionId,
+          key: input.key,
+          expectedContentRev: input.expectedContentRev,
+        }, signal, true)
+        const applied = applyCoverageChunkBuild(db, {
+          missionId: input.missionId,
+          deviceId: input.key.device_id,
+          periodKind: input.key.period_kind,
+          periodId: input.key.period_id,
+          expectedContentRev: input.expectedContentRev,
+          fixCount: summary.fix_count,
+          fixDigest: summary.fix_digest,
+          minTs: summary.min_ts,
+          maxTs: summary.max_ts,
+          updatedAt: now(),
+        })
+        if (!applied) {
+          const error = new Error('chunk-stale: coverage chunk revision changed')
+          error.code = 'chunk-stale'
+          throw error
+        }
+        return page
+      },
+    ),
+    readCoverageClaim: async (input, requestId) => executeCoverageRequest(
+      requestId,
+      async (signal) => {
+        const manifest = await runCoverageWorker(
+          { kind: 'manifest', missionId: input.missionId },
+          signal,
+          false,
+        )
+        const selectedByKey = new Map(manifest.chunks.map((chunk) => [
+          coverageChunkMapKey(chunk.key),
+          chunk,
+        ]))
+        const selectedChunks = []
+        const blockers = []
+        for (const key of input.selectedKeys) {
+          const chunk = selectedByKey.get(coverageChunkMapKey(key))
+          if (chunk === undefined) {
+            blockers.push('chunk_missing')
+          } else {
+            selectedChunks.push(chunk)
+          }
+        }
+        if (!manifest.enumerated) blockers.push('not_enumerated')
+        if (manifest.pendingInvalidation) blockers.push('pending_invalidation')
+        if (manifest.backfillIncomplete) blockers.push('backfill_incomplete')
+        if (selectedChunks.some((chunk) => chunk.builtRev !== chunk.contentRev)) {
+          blockers.push('chunk_not_fresh')
+        }
+        const health = await getIngestEvidenceHealth(
+          db,
+          ingestAnomalyOutbox,
+          input.missionId,
+        )
+        if (Number(health.pendingCount ?? 0) > 0) blockers.push('ingest_outbox_pending')
+        if (health.state !== 'healthy') blockers.push('ingest_health_degraded')
+        return {
+          changeSeq: manifest.changeSeq,
+          databaseReady: blockers.length === 0,
+          blockers: [...new Set(blockers)],
+          chunkRevisions: selectedChunks.map((chunk) => ({
+            key: chunk.key,
+            contentRev: chunk.contentRev,
+          })),
+        }
+      },
+    ),
+    cancelCoverageQuery: async (requestId) => {
+      const normalizedRequestId = normalizeCoverageQueryRequestId(requestId, true)
+      const activeQuery = coverageQueryControllersByRequestId.get(normalizedRequestId)
+      if (activeQuery === undefined) return false
+      activeQuery.controller.abort()
+      await activeQuery.completion.catch(() => undefined)
+      return true
+    },
     upsertDevice: async (input) => upsertDevice(db, input),
     upsertDevicesBulk: async (input) => {
       const startedAtMs = performance.now()
@@ -305,10 +470,16 @@ function createElectronMissionStore(options) {
     },
     getDevice: async (missionId, deviceId) => getDevice(db, missionId, deviceId),
     listDevices: async (missionId) => all(db, 'SELECT * FROM devices WHERE mission_id = ? ORDER BY name ASC', missionId),
-    addPosition: async (input) => addPosition(db, input, coverageLedgerFaultInjection),
+    addPosition: async (input) => runCoverageMutation(
+      input.mission_id,
+      () => addPosition(db, input, coverageLedgerFaultInjection),
+    ),
     addPositionsBulk: async (input) => {
       const startedAtMs = performance.now()
-      const result = addPositionsBulk(db, input, true, coverageLedgerFaultInjection)
+      const result = await runCoverageMutation(
+        input.mission_id,
+        () => addPositionsBulk(db, input, true, coverageLedgerFaultInjection),
+      )
       await safeStorageDiagnostic(() =>
         storageDiagnostics?.recordInsertedPositions({
           durationMs: performance.now() - startedAtMs,
@@ -323,9 +494,12 @@ function createElectronMissionStore(options) {
     persistTrackingPositionsBulk: async (input) => {
       const startedAtMs = performance.now()
       const hasCheckpoints = Array.isArray(input.checkpoints) && input.checkpoints.length > 0
-      const result = hasCheckpoints
-        ? persistTrackingHistoryBatch(db, input, false, coverageLedgerFaultInjection)
-        : addPositionsBulk(db, input, false, coverageLedgerFaultInjection)
+      const result = await runCoverageMutation(
+        input.mission_id,
+        () => hasCheckpoints
+          ? persistTrackingHistoryBatch(db, input, false, coverageLedgerFaultInjection)
+          : addPositionsBulk(db, input, false, coverageLedgerFaultInjection),
+      )
       await safeStorageDiagnostic(() =>
         storageDiagnostics?.recordInsertedPositions({
           durationMs: performance.now() - startedAtMs,
@@ -344,7 +518,10 @@ function createElectronMissionStore(options) {
     },
     persistTrackingHistoryBatch: async (input) => {
       const startedAtMs = performance.now()
-      const result = persistTrackingHistoryBatch(db, input, true, coverageLedgerFaultInjection)
+      const result = await runCoverageMutation(
+        input.mission_id,
+        () => persistTrackingHistoryBatch(db, input, true, coverageLedgerFaultInjection),
+      )
       await safeStorageDiagnostic(() =>
         storageDiagnostics?.recordInsertedPositions({
           durationMs: performance.now() - startedAtMs,
@@ -630,6 +807,95 @@ function createElectronMissionStore(options) {
       return operation
     })
   }
+
+  /** Runs one renderer-owned coverage operation with cancellation and ID reuse fencing. */
+  function executeCoverageRequest(requestId, execute) {
+    const normalizedRequestId = normalizeCoverageQueryRequestId(requestId, false)
+    if (
+      normalizedRequestId !== null &&
+      coverageQueryControllersByRequestId.has(normalizedRequestId)
+    ) {
+      throw new Error('Coverage query request ID is already active.')
+    }
+    const controller = new AbortController()
+    const activeQuery = {
+      controller,
+      completion: Promise.resolve().then(() => execute(controller.signal)),
+    }
+    if (normalizedRequestId !== null) {
+      coverageQueryControllersByRequestId.set(normalizedRequestId, activeQuery)
+    }
+    return activeQuery.completion.finally(() => {
+      if (
+        normalizedRequestId !== null &&
+        coverageQueryControllersByRequestId.get(normalizedRequestId) === activeQuery
+      ) {
+        coverageQueryControllersByRequestId.delete(normalizedRequestId)
+      }
+    })
+  }
+
+  /** Publishes only a sequence that moved in the just-committed mutation. */
+  async function runCoverageMutation(missionId, execute) {
+    const before = readCoverageChangeSequence(missionId)
+    const result = await execute()
+    const after = readCoverageChangeSequence(missionId)
+    if (after > before) onCoverageChanged(missionId, after)
+    return result
+  }
+
+  /** Reads one coordinate-free scalar without creating coverage state. */
+  function readCoverageChangeSequence(missionId) {
+    return Number(db.prepare(`SELECT change_seq FROM coverage_missions
+      WHERE mission_id = ?`).get(missionId)?.change_seq ?? 0)
+  }
+
+  /** Drains each durable outing invalidation through worker analysis and bounded applies. */
+  async function drainCoverageInvalidations(missionId, signal) {
+    const pending = db.prepare(`SELECT id FROM coverage_invalidations
+      WHERE mission_id = ? AND drained_at IS NULL ORDER BY created_at ASC, id ASC`)
+      .all(missionId)
+    for (const row of pending) {
+      const analysis = await runCoverageWorker(
+        { kind: 'invalidation-analysis', invalidationId: row.id },
+        signal,
+        false,
+      )
+      applyCoverageInvalidationDrain(db, {
+        invalidationId: row.id,
+        affectedKeys: analysis.affectedKeys,
+        drainedAt: now(),
+      })
+    }
+  }
+
+  /** Serializes chunk payload reads while allowing small manifest/claim reads alongside. */
+  function runCoverageWorker(query, signal, serializeChunk) {
+    if (!serializeChunk) {
+      return coverageQueryRunner({ databasePath, query, signal })
+    }
+    const previousWorker = coverageChunkWorkerTail
+    let releaseWorkerSlot = () => undefined
+    const workerSlot = new Promise((resolve) => { releaseWorkerSlot = resolve })
+    coverageChunkWorkerTail = previousWorker.then(() => workerSlot)
+    return previousWorker.then(() => {
+      let operation
+      try {
+        operation = coverageQueryRunner({ databasePath, query, signal })
+      } catch (error) {
+        releaseWorkerSlot()
+        throw error
+      }
+      const workerExited = operation.workerExited ?? operation
+      void Promise.resolve(workerExited).then(releaseWorkerSlot, releaseWorkerSlot)
+      return operation
+    })
+  }
+}
+
+/** Creates one already-tagged in-memory chunk identity. */
+function coverageChunkMapKey(key) {
+  return `${key.device_id}\u0000${key.period_kind}\u0000${key.period_id}`
 }
 
 function migrate(db) {

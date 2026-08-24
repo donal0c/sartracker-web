@@ -35,6 +35,14 @@ describe('coverage query worker', () => {
       databasePath,
       query: { kind: 'chunk-page', missionId: 'mission-1', key, expectedContentRev: 1 },
     })).resolves.toMatchObject({ contentRev: 1 })
+    await expect(runCoverageQueryInWorker({
+      databasePath,
+      query: { kind: 'chunk-summary', missionId: 'mission-1', key, expectedContentRev: 1 },
+    })).resolves.toMatchObject({
+      contentRev: 1,
+      fix_count: 1,
+      fix_digest: expect.stringMatching(/^[a-f0-9]{64}$/u),
+    })
 
     const database = new Database(databasePath)
     database.prepare(`UPDATE coverage_chunks SET content_rev = 3

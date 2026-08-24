@@ -100,6 +100,10 @@ export type SarTrackerElectronBridge = {
   readonly openExternalPath: (path: string) => Promise<void>
   readonly openExternalUrl?: (url: string) => Promise<void>
   readonly fetchOfficialMapTile?: (url: string) => Promise<ElectronOfficialMapTileResponse>
+  readonly onCoverageChanged?: (listener: (event: {
+    readonly missionId: string
+    readonly changeSeq: number
+  }) => void) => () => void
   readonly missionStore: MissionStore
   readonly layerCatalogStore: LayerCatalogStore
   readonly traccarHttpRequest: (

@@ -61,6 +61,56 @@ export type OutingFixSummary = {
   readonly total_accepted_fix_count: number
 }
 
+export type CoveragePeriodKind = 'outing' | 'unassigned'
+
+export type CoverageChunkKey = {
+  readonly device_id: string
+  readonly period_kind: CoveragePeriodKind
+  readonly period_id: string
+}
+
+export type CoverageManifestChunk = {
+  readonly key: CoverageChunkKey
+  readonly contentRev: number
+  readonly builtRev: number | null
+  readonly fixCount: number | null
+  readonly exactCount: number
+  readonly fixDigest: string | null
+  readonly exactDigest?: string
+  readonly exactMinTs?: string | null
+  readonly exactMaxTs?: string | null
+}
+
+export type CoverageManifest = {
+  readonly changeSeq: number
+  readonly enumerated: boolean
+  readonly pendingInvalidation: boolean
+  readonly backfillIncomplete: boolean
+  readonly outings: readonly Outing[]
+  readonly chunks: readonly CoverageManifestChunk[]
+}
+
+export type CoverageChunkCursor = {
+  readonly timestamp: string
+  readonly id: string
+}
+
+export type CoverageChunkPage = {
+  readonly contentRev: number
+  readonly positions: readonly Position[]
+  readonly nextCursor: CoverageChunkCursor | null
+}
+
+export type CoverageClaim = {
+  readonly changeSeq: number
+  readonly databaseReady: boolean
+  readonly blockers: readonly string[]
+  readonly chunkRevisions: readonly {
+    readonly key: CoverageChunkKey
+    readonly contentRev: number
+  }[]
+}
+
 export type ParticipantProvenance = 'explicit' | 'grandfathered' | 'legacy_auto'
 
 export type MissionParticipant = {
@@ -580,6 +630,28 @@ export type MissionStore = {
     requestId?: string,
   ) => Promise<ExactBreadcrumbDotPage>
   readonly cancelExactBreadcrumbDotQuery?: (requestId: string) => Promise<boolean>
+  readonly readCoverageManifest?: (
+    missionId: string,
+    requestId?: string,
+  ) => Promise<CoverageManifest>
+  readonly readCoverageChunk?: (
+    input: {
+      readonly missionId: string
+      readonly key: CoverageChunkKey
+      readonly expectedContentRev: number
+      readonly cursor?: CoverageChunkCursor
+      readonly limit?: number
+    },
+    requestId?: string,
+  ) => Promise<CoverageChunkPage>
+  readonly readCoverageClaim?: (
+    input: {
+      readonly missionId: string
+      readonly selectedKeys: readonly CoverageChunkKey[]
+    },
+    requestId?: string,
+  ) => Promise<CoverageClaim>
+  readonly cancelCoverageQuery?: (requestId: string) => Promise<boolean>
   readonly listTrackingHistoryCheckpoints?: (
     missionId: string,
   ) => Promise<readonly TrackingHistoryCheckpoint[]>

@@ -34,6 +34,58 @@ function enumerateCoverageChunks(database, input) {
   }
 }
 
+/** Reads one exact manifest snapshot, keeping durable and exact counts distinct. */
+function readCoverageManifestSnapshot(database, input) {
+  const exact = enumerateCoverageChunks(database, input)
+  const ledgerRows = database.prepare(`SELECT * FROM coverage_chunks
+    WHERE mission_id = ?`).all(input.missionId)
+  const ledgerByKey = new Map(ledgerRows.map((row) => [
+    createChunkMapKey(row.device_id, row.period_kind, row.period_id),
+    row,
+  ]))
+  const mission = database.prepare(`SELECT change_seq, enumerated
+    FROM coverage_missions WHERE mission_id = ?`).get(input.missionId)
+  const pendingInvalidation = database.prepare(`SELECT 1 FROM coverage_invalidations
+    WHERE mission_id = ? AND drained_at IS NULL LIMIT 1`).get(input.missionId) !== undefined
+  const backfillIncomplete = database.prepare(`SELECT 1
+    FROM participant_backfill_checkpoints
+    WHERE mission_id = ? AND completed = 0 LIMIT 1`).get(input.missionId) !== undefined
+  const outings = database.prepare(`SELECT id, label, started_at, ended_at
+    FROM outings WHERE mission_id = ? ORDER BY started_at ASC, id ASC`)
+    .all(input.missionId)
+  return {
+    changeSeq: Number(mission?.change_seq ?? exact.changeSeq),
+    enumerated: mission?.enumerated === 1,
+    pendingInvalidation,
+    backfillIncomplete,
+    outings,
+    chunks: exact.chunks.map((chunk) => {
+      const ledger = ledgerByKey.get(createChunkMapKey(
+        chunk.device_id,
+        chunk.period_kind,
+        chunk.period_id,
+      ))
+      return {
+        key: {
+          device_id: chunk.device_id,
+          period_kind: chunk.period_kind,
+          period_id: chunk.period_id,
+        },
+        contentRev: Number(ledger?.content_rev ?? 1),
+        builtRev: ledger?.built_rev ?? null,
+        fixCount: ledger?.fix_count ?? null,
+        exactCount: chunk.fix_count,
+        fixDigest: ledger?.fix_digest ?? null,
+        exactDigest: chunk.fix_digest,
+        exactMinTs: chunk.min_ts,
+        exactMaxTs: chunk.max_ts,
+        minTs: ledger?.min_ts ?? null,
+        maxTs: ledger?.max_ts ?? null,
+      }
+    }),
+  }
+}
+
 /** Reads one lossless cursor page after proving only this chunk revision. */
 function readCoverageChunkPage(database, input) {
   const limit = normalizePageLimit(input.limit)
@@ -66,6 +118,27 @@ function readCoverageChunkPage(database, input) {
     nextCursor: hasMore && finalRow !== undefined
       ? { timestamp: finalRow.timestamp, id: finalRow.id }
       : null,
+  }
+}
+
+/** Summarizes one exact chunk only while its requested revision is current. */
+function summarizeCoverageChunkAtRevision(database, input) {
+  const ledger = database.prepare(`SELECT content_rev FROM coverage_chunks
+    WHERE mission_id = ? AND device_id = ? AND period_kind = ? AND period_id = ?`)
+    .get(
+      input.missionId,
+      input.key.device_id,
+      input.key.period_kind,
+      input.key.period_id,
+    )
+  if (ledger === undefined || ledger.content_rev !== input.expectedContentRev) {
+    const error = new Error('chunk-stale: coverage chunk revision changed')
+    error.code = 'chunk-stale'
+    throw error
+  }
+  return {
+    contentRev: ledger.content_rev,
+    ...summarizeCoverageChunk(database, input.missionId, input.key),
   }
 }
 
@@ -287,13 +360,20 @@ function normalizePageLimit(value) {
   return value
 }
 
+/** Creates an internal map identity for one already-tagged chunk key. */
+function createChunkMapKey(deviceId, periodKind, periodId) {
+  return `${deviceId}\u0000${periodKind}\u0000${periodId}`
+}
+
 module.exports = {
   analyzeCoverageInvalidation,
   createAcceptedPositionIdentity,
   createInvalidationDeviceRangeQuery,
   createCoverageRowsQuery,
   enumerateCoverageChunks,
+  readCoverageManifestSnapshot,
   readCoverageChunkPage,
   readCoverageDeviceUniverse,
   summarizeCoverageChunk,
+  summarizeCoverageChunkAtRevision,
 }

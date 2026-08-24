@@ -70,7 +70,13 @@ function runCoverageQueryInWorker(input) {
 
 /** Validates the bounded outer query envelope before a worker starts. */
 function validateCoverageWorkerQuery(query) {
-  if (!['manifest', 'chunk-page', 'invalidation-analysis'].includes(query?.kind)) {
+  if (![
+    'enumerate',
+    'manifest',
+    'chunk-page',
+    'chunk-summary',
+    'invalidation-analysis',
+  ].includes(query?.kind)) {
     throw new Error('Coverage query kind is invalid.')
   }
   if (query.kind !== 'invalidation-analysis' && !isBoundedIdentifier(query.missionId, 200)) {

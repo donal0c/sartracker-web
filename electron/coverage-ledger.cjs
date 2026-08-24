@@ -249,6 +249,41 @@ function applyCoverageChunkBuild(database, input) {
   return result.changes === 1
 }
 
+/**
+ * Inserts missing canonical inventory from one exact manifest snapshot without
+ * overwriting a write-path revision created concurrently.
+ */
+function applyCoverageManifestInventory(database, input) {
+  const apply = database.transaction(() => {
+    const mission = database.prepare(`SELECT change_seq FROM coverage_missions
+      WHERE mission_id = ?`).get(input.missionId)
+    if (mission === undefined || mission.change_seq !== input.expectedChangeSeq) {
+      return 0
+    }
+    const insert = database.prepare(`INSERT INTO coverage_chunks (
+        mission_id, device_id, period_kind, period_id,
+        content_rev, built_rev, fix_count, fix_digest, min_ts, max_ts, updated_at
+      ) VALUES (?, ?, ?, ?, 1, 1, ?, ?, ?, ?, ?)
+      ON CONFLICT(mission_id, device_id, period_kind, period_id) DO NOTHING`)
+    let inserted = 0
+    for (const chunk of input.chunks) {
+      inserted += insert.run(
+        input.missionId,
+        chunk.key.device_id,
+        chunk.key.period_kind,
+        chunk.key.period_id,
+        chunk.exactCount,
+        chunk.exactDigest,
+        chunk.exactMinTs,
+        chunk.exactMaxTs,
+        input.updatedAt,
+      ).changes
+    }
+    return inserted
+  })
+  return apply()
+}
+
 /** Bumps the mission attestation stamp exactly once for an owning transaction. */
 function bumpCoverageChangeSequence(database, missionId, updatedAt) {
   database.prepare(`INSERT INTO coverage_missions (
@@ -290,6 +325,7 @@ module.exports = {
   applyCoverageChunkBuild,
   applyCoverageEnumeration,
   applyCoverageInvalidationDrain,
+  applyCoverageManifestInventory,
   bumpCoverageChangeSequence,
   createCoverageChunkIdentity,
   deriveInvalidationRange,

@@ -22,6 +22,7 @@ const INGEST_MARKER_ATTACHMENT_CHANNEL = 'sartracker:ingest-marker-attachment'
 const OPEN_EXTERNAL_PATH_CHANNEL = 'sartracker:open-external-path'
 const OPEN_EXTERNAL_URL_CHANNEL = 'sartracker:open-external-url'
 const FETCH_OFFICIAL_MAP_TILE_CHANNEL = 'sartracker:fetch-official-map-tile'
+const COVERAGE_CHANGED_CHANNEL = 'sartracker:coverage-changed'
 
 const MISSION_STORE_CHANNELS = {
   info: 'sartracker:mission-store:info',
@@ -57,6 +58,10 @@ const MISSION_STORE_CHANNELS = {
   cancelBreadcrumbQuery: 'sartracker:mission-store:cancel-breadcrumb-query',
   listExactBreadcrumbDotPage: 'sartracker:mission-store:list-exact-breadcrumb-dot-page',
   cancelExactBreadcrumbDotQuery: 'sartracker:mission-store:cancel-exact-breadcrumb-dot-query',
+  readCoverageManifest: 'sartracker:mission-store:read-coverage-manifest',
+  readCoverageChunk: 'sartracker:mission-store:read-coverage-chunk',
+  readCoverageClaim: 'sartracker:mission-store:read-coverage-claim',
+  cancelCoverageQuery: 'sartracker:mission-store:cancel-coverage-query',
   listTrackingHistoryCheckpoints: 'sartracker:mission-store:list-tracking-history-checkpoints',
   countPositions: 'sartracker:mission-store:count-positions',
   latestPositions: 'sartracker:mission-store:latest-positions',
@@ -162,6 +167,11 @@ contextBridge.exposeInMainWorld('sartrackerElectron', {
   },
   fetchOfficialMapTile(url) {
     return ipcRenderer.invoke(FETCH_OFFICIAL_MAP_TILE_CHANNEL, url)
+  },
+  onCoverageChanged(listener) {
+    const handler = (_event, payload) => listener(payload)
+    ipcRenderer.on(COVERAGE_CHANGED_CHANNEL, handler)
+    return () => ipcRenderer.removeListener(COVERAGE_CHANGED_CHANNEL, handler)
   },
   missionStore: Object.fromEntries(
     Object.entries(MISSION_STORE_CHANNELS).map(([methodName, channel]) => [

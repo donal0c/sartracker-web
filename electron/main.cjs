@@ -25,6 +25,7 @@ const {
 const {
   registerOutingFixSummaryIpcHandlers,
 } = require('./outing-fix-summary-ipc.cjs')
+const { registerCoverageIpcHandlers } = require('./coverage-ipc.cjs')
 const { createElectronFileSystem } = require('./file-system.cjs')
 const { createElectronOfficialMapProxy } = require('./official-map-proxy.cjs')
 const { createRuntimeLog } = require('./runtime-log.cjs')
@@ -54,6 +55,7 @@ const INGEST_MARKER_ATTACHMENT_CHANNEL = 'sartracker:ingest-marker-attachment'
 const OPEN_EXTERNAL_PATH_CHANNEL = 'sartracker:open-external-path'
 const OPEN_EXTERNAL_URL_CHANNEL = 'sartracker:open-external-url'
 const FETCH_OFFICIAL_MAP_TILE_CHANNEL = 'sartracker:fetch-official-map-tile'
+const COVERAGE_CHANGED_CHANNEL = 'sartracker:coverage-changed'
 const MAX_TRACCAR_PROXY_RESPONSE_BYTES = 5 * 1024 * 1024
 
 const MISSION_STORE_CHANNELS = {
@@ -90,6 +92,10 @@ const MISSION_STORE_CHANNELS = {
   cancelBreadcrumbQuery: 'sartracker:mission-store:cancel-breadcrumb-query',
   listExactBreadcrumbDotPage: 'sartracker:mission-store:list-exact-breadcrumb-dot-page',
   cancelExactBreadcrumbDotQuery: 'sartracker:mission-store:cancel-exact-breadcrumb-dot-query',
+  readCoverageManifest: 'sartracker:mission-store:read-coverage-manifest',
+  readCoverageChunk: 'sartracker:mission-store:read-coverage-chunk',
+  readCoverageClaim: 'sartracker:mission-store:read-coverage-claim',
+  cancelCoverageQuery: 'sartracker:mission-store:cancel-coverage-query',
   listTrackingHistoryCheckpoints: 'sartracker:mission-store:list-tracking-history-checkpoints',
   countPositions: 'sartracker:mission-store:count-positions',
   latestPositions: 'sartracker:mission-store:latest-positions',
@@ -625,7 +631,18 @@ function registerMissionStoreHandlers(missionStore) {
     missionStore,
     validateIpcSender,
   })
-  const breadcrumbQueryMethods = new Set([
+  registerCoverageIpcHandlers({
+    ipcMain,
+    readChannels: {
+      manifest: MISSION_STORE_CHANNELS.readCoverageManifest,
+      chunk: MISSION_STORE_CHANNELS.readCoverageChunk,
+      claim: MISSION_STORE_CHANNELS.readCoverageClaim,
+    },
+    cancelChannel: MISSION_STORE_CHANNELS.cancelCoverageQuery,
+    missionStore,
+    validateIpcSender,
+  })
+  const ownedQueryMethods = new Set([
     'listBreadcrumbPositions',
     'cancelBreadcrumbQuery',
     'listExactBreadcrumbDotPage',
@@ -634,9 +651,13 @@ function registerMissionStoreHandlers(missionStore) {
     'cancelMissionReviewRead',
     'readOutingFixSummary',
     'cancelOutingFixSummary',
+    'readCoverageManifest',
+    'readCoverageChunk',
+    'readCoverageClaim',
+    'cancelCoverageQuery',
   ])
   for (const [methodName, channel] of Object.entries(MISSION_STORE_CHANNELS)) {
-    if (breadcrumbQueryMethods.has(methodName)) {
+    if (ownedQueryMethods.has(methodName)) {
       continue
     }
     ipcMain.handle(channel, (event, ...args) => {
@@ -891,6 +912,13 @@ async function startElectronApp() {
     readAdminRoster: async () => {
       const settings = await settingsStore.loadAppSettings()
       return settings.missionDefaults.adminRoster
+    },
+    onCoverageChanged: (missionId, changeSeq) => {
+      for (const window of BrowserWindow.getAllWindows()) {
+        if (!window.webContents.isDestroyed()) {
+          window.webContents.send(COVERAGE_CHANGED_CHANNEL, { missionId, changeSeq })
+        }
+      }
     },
   })
   void missionStore
