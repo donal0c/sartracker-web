@@ -1,0 +1,27 @@
+{
+  "appId": "ie.sartracker.coverage-bench",
+  "productName": "SAR Tracker Coverage Renderer Bench",
+  "artifactName": "sartracker-coverage-bench_${version}_${os}_${arch}.${ext}",
+  "directories": {
+    "output": "tmp/coverage-renderer-bench-package"
+  },
+  "files": [
+    "tools/coverage-renderer-bench/main.cjs",
+    "tools/coverage-renderer-bench/preload.cjs",
+    "tools/coverage-renderer-bench/query-worker.mjs",
+    "tools/coverage-renderer-bench/dist-renderer/**",
+    "package.json"
+  ],
+  "extraMetadata": {
+    "main": "tools/coverage-renderer-bench/main.cjs"
+  },
+  "asar": true,
+  "npmRebuild": true,
+  "buildDependenciesFromSource": true,
+  "linux": {
+    "target": ["dir"],
+    "category": "Utility",
+    "maintainer": "SAR Tracker",
+    "synopsis": "Non-production complete-coverage renderer benchmark"
+  }
+}

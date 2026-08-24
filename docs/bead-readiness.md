@@ -20,7 +20,17 @@ Use this document before implementation to decide how much parallel research, pl
 
 ## Current Assessments
 
-Last updated: 2026-08-23 by Codex (Breadcrumb PR-2 review remediation)
+Last updated: 2026-08-24 by Codex (Breadcrumb PR-3 G2 harness)
+
+### `DON-273` / `DON-276` / `DON-275` — Breadcrumb PR-3 complete coverage — G2 active
+
+- Research required: `Medium` until the measured renderer decision is ratified; the domain requirements themselves are complete.
+- Implementation readiness: `4/5` overall. The accepted revised plan is implementation-ready, but BCP-08 is deliberately blocked by G2.
+- Recommended action: execute the interleaved A/B/C 960k/2M matrix on the reference Ubuntu X11 host, commit the exact-SHA decision memo, and ask Donal to ratify the smallest renderer/budget decision. Do not write schema-v10, worker, IPC, controller, or production renderer code before that approval.
+- Locked decisions: current positions never wait; historical filters never hide selected-participant live positions; non-participants remain discovery/picker/diagnostic only; no false 100%; no global mission timestamp index; no mission-sized main-isolate work; exact paged Dots remains inspection/export; G3 separately controls the final coverage + mission-model default posture.
+- Open questions: no SAR-team question. Donal must ratify the G2 renderer verdict and later the G3 default flip. The reference host is currently unreachable over the LAN.
+- Evidence: strict-red-first benchmark library (missing-module red; false-pane validation red; then `8/8` green); exact Dots `10/10`; lint, production build/bundle budgets, and Node syntax green; renderer build and unsigned macOS bench package green; small-fixture packaged A/B/C smoke green with nine exact worker/rendered pane count+digest attestations; local A/B SIGKILL/resume proofs return every correctness flag true. These prove harness mechanics only, not 960k/2M performance or the G2 decision.
+- Ready-to-start checklist: [x] accepted plan and requirement trace; [x] isolated exact base; [x] local harness and packaging; [ ] reference-host G2 manifests; [ ] decision memo; [ ] Donal G2 ratification.
 
 ### `DON-270` / `DON-271` / `DON-272` — Breadcrumb PR-2 mission model — review ready
 

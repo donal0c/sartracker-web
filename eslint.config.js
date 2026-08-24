@@ -29,4 +29,15 @@ export default defineConfig([
       globals: globals.browser,
     },
   },
+  {
+    files: ['src/**/*.{js,cjs,mjs,ts,tsx}', 'electron/**/*.{js,cjs,mjs,ts,tsx}'],
+    rules: {
+      'no-restricted-imports': ['error', {
+        patterns: [{
+          group: ['**/tools/coverage-renderer-bench/**', '**/build/coverage-bench-lib.js'],
+          message: 'The G2 coverage renderer harness is non-production evidence tooling.',
+        }],
+      }],
+    },
+  },
 ])

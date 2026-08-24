@@ -28,6 +28,7 @@ CODEX_START.md
 SMOKE-TESTING.md
 refactor_oppertunities.md
 tmp/
+tools/coverage-renderer-bench/dist-renderer/
 tools/mock-traccar/node_modules/
 
 # Local team reference assets (not committed)
