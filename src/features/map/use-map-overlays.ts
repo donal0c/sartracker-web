@@ -17,6 +17,7 @@ import { useTrackingStylePreferences } from '../tracking/tracking-style-store'
 import { useTrackingStore } from '../tracking/tracking-store'
 import { useCoverageStore } from '../tracking/coverage-store'
 import { syncCoverageOverlay } from '../tracking/sync-coverage-overlay'
+import { useCoverageFilterStore } from '../tracking/coverage-filter-store'
 import type { RenderableMapId } from '../../lib/map-config'
 import { useStationaryAttentionStore } from '../tracking/stationary-attention-store'
 import { registerMapStyleSync } from './map-style-sync'
@@ -51,6 +52,8 @@ export function useMapOverlays(options: UseMapOverlaysOptions): void {
   const exactBreadcrumbDotState = useExactBreadcrumbDotStore((state) => state.state)
   const attentionByDevice = useStationaryAttentionStore((state) => state.byDevice)
   const coverageState = useCoverageStore((state) => state.state)
+  const omittedCoverageDeviceIds = useCoverageFilterStore((state) => state.omittedDeviceIds)
+  const omittedCoveragePeriodKeys = useCoverageFilterStore((state) => state.omittedPeriodKeys)
   const missionTrackingSnapshot = useMemo(
     () => selectMissionTrackingSnapshot(trackingSnapshot, activeDeviceIds),
     [activeDeviceIds, trackingSnapshot],
@@ -98,11 +101,17 @@ export function useMapOverlays(options: UseMapOverlaysOptions): void {
       syncCoverageOverlay(
         map,
         coverageState.status === 'inactive' ? null : coverageState.tileCatalog,
+        {
+          omittedDeviceIds: omittedCoverageDeviceIds,
+          omittedPeriodKeys: omittedCoveragePeriodKeys,
+        },
       )
     }
     return registerMapStyleSync(map, synchronizeOverlay)
   }, [
     coverageState,
+    omittedCoverageDeviceIds,
+    omittedCoveragePeriodKeys,
     options.activeBasemapId,
     options.mapReadyVersion,
     options.mapRef,

@@ -73,6 +73,18 @@ export function buildLayerInspectionRows(
         { label: 'Last Seen', value: node.entity.device.last_seen ?? 'No fix' },
       ]
     }
+    if (node.entity?.type === 'coverage_device') {
+      return [
+        { label: 'History scope', value: 'Participant' },
+        { label: 'Visible', value: node.isVisible ? 'Yes' : 'No' },
+      ]
+    }
+    if (node.entity?.type === 'coverage_period') {
+      return [
+        { label: 'History scope', value: node.displayLabel },
+        { label: 'Visible', value: node.isVisible ? 'Yes' : 'No' },
+      ]
+    }
     if (node.entity?.type === 'marker') {
       return [
         { label: 'Marker Type', value: node.entity.marker.type },

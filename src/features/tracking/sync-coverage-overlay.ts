@@ -1,11 +1,13 @@
 import type { CoverageTileCatalog } from '../../infrastructure/mission-store/tauri-mission-store'
 import type {
   CanvasSourceSpecification,
+  ExpressionSpecification,
   LayerSpecification,
   SourceSpecification,
 } from 'maplibre-gl'
 import { createCoverageTileUrl } from './coverage-tile-protocol'
 import { TRACKING_BREADCRUMB_CASING_LAYER_ID } from './sync-tracking-overlay'
+import { buildCoverageLayerFilter } from '../layers/map-layer-filters'
 
 export type CoverageOverlayMap = {
   readonly addSource: (
@@ -17,6 +19,7 @@ export type CoverageOverlayMap = {
   readonly addLayer: (layer: LayerSpecification, beforeId?: string) => unknown
   readonly getLayer: (id: string) => unknown
   readonly removeLayer: (id: string) => void
+  readonly setFilter: (id: string, filter: ExpressionSpecification | null) => void
 }
 
 type PeriodOverlay = {
@@ -34,18 +37,30 @@ const overlaysByMap = new WeakMap<object, Map<string, PeriodOverlay>>()
 export function syncCoverageOverlay(
   map: CoverageOverlayMap,
   catalog: CoverageTileCatalog | null,
+  filters: {
+    readonly omittedDeviceIds: readonly string[]
+    readonly omittedPeriodKeys: readonly string[]
+  } = { omittedDeviceIds: [], omittedPeriodKeys: [] },
 ): void {
   const overlays = overlaysByMap.get(map) ?? new Map<string, PeriodOverlay>()
   overlaysByMap.set(map, overlays)
-  const desired = new Map((catalog?.periods ?? []).map((period) => [
-    period.periodKey,
-    period,
-  ]))
+  const browserHarnessGeoJson = catalog?.browserHarnessGeoJson
+  const desiredPeriods = browserHarnessGeoJson === undefined
+    ? (catalog?.periods ?? [])
+    : [{
+        periodKey: 'browser-harness',
+        revisionDigest: (catalog?.periods ?? [])
+          .map((period) => period.revisionDigest).join('-') || 'empty',
+      }]
+  const desired = new Map(desiredPeriods.map((period) => [period.periodKey, period]))
 
   for (const [periodKey, overlay] of [...overlays.entries()]) {
     const next = desired.get(periodKey)
     const sourceSurvivedStyle = map.getSource(overlay.sourceId) !== undefined
-    if (next?.revisionDigest === overlay.revisionDigest && sourceSurvivedStyle) continue
+    if (next?.revisionDigest === overlay.revisionDigest && sourceSurvivedStyle) {
+      applyCoverageFilters(map, overlay, filters)
+      continue
+    }
     removePeriodOverlay(map, overlay)
     overlays.delete(periodKey)
   }
@@ -58,16 +73,18 @@ export function syncCoverageOverlay(
     const beforeTrackingLayer = map.getLayer(TRACKING_BREADCRUMB_CASING_LAYER_ID) === undefined
       ? undefined
       : TRACKING_BREADCRUMB_CASING_LAYER_ID
-    map.addSource(sourceId, {
-      type: 'vector',
-      tiles: [createCoverageTileUrl(period.periodKey, period.revisionDigest)],
-      minzoom: 0,
-      maxzoom: 16,
-    })
+    map.addSource(sourceId, browserHarnessGeoJson === undefined
+      ? {
+          type: 'vector',
+          tiles: [createCoverageTileUrl(period.periodKey, period.revisionDigest)],
+          minzoom: 0,
+          maxzoom: 16,
+        }
+      : { type: 'geojson', data: browserHarnessGeoJson as never })
     map.addLayer({
       id: lineLayerId,
       source: sourceId,
-      'source-layer': 'coverage',
+      ...(browserHarnessGeoJson === undefined ? { 'source-layer': 'coverage' } : {}),
       type: 'line',
       filter: ['==', ['geometry-type'], 'LineString'],
       paint: {
@@ -80,7 +97,7 @@ export function syncCoverageOverlay(
     map.addLayer({
       id: pointLayerId,
       source: sourceId,
-      'source-layer': 'coverage',
+      ...(browserHarnessGeoJson === undefined ? { 'source-layer': 'coverage' } : {}),
       type: 'circle',
       filter: ['==', ['geometry-type'], 'Point'],
       paint: {
@@ -94,6 +111,31 @@ export function syncCoverageOverlay(
       sourceId,
       layerIds: [lineLayerId, pointLayerId],
     })
+    applyCoverageFilters(map, overlays.get(period.periodKey)!, filters)
+  }
+}
+
+function applyCoverageFilters(
+  map: CoverageOverlayMap,
+  overlay: PeriodOverlay,
+  filters: {
+    readonly omittedDeviceIds: readonly string[]
+    readonly omittedPeriodKeys: readonly string[]
+  },
+): void {
+  const omissionFilter = buildCoverageLayerFilter(
+    filters.omittedDeviceIds,
+    filters.omittedPeriodKeys,
+  )
+  const geometryKinds = ['LineString', 'Point'] as const
+  for (const [index, layerId] of overlay.layerIds.entries()) {
+    if (map.getLayer(layerId) === undefined) continue
+    const geometryFilter: ExpressionSpecification = [
+      '==', ['geometry-type'], geometryKinds[index]!,
+    ]
+    map.setFilter(layerId, omissionFilter === null
+      ? geometryFilter
+      : ['all', geometryFilter, omissionFilter])
   }
 }
 

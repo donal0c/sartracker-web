@@ -1,8 +1,34 @@
 import type { NormalizedTrackingPosition } from './tracking-types'
-import {
-  createPagedTrailSegmenter as createSharedPagedTrailSegmenter,
-  createTrailSegments as createSharedTrailSegments,
-} from '../../../electron/coverage-trail-segmentation.cjs'
+import '../../../electron/coverage-trail-segmentation.cjs'
+
+type Timestamped = { readonly timestamp: string }
+type SharedTrailSegmentation = {
+  readonly createTrailSegments: <T extends Timestamped>(
+    positions: readonly T[],
+    gapThresholdMs: number,
+  ) => readonly (readonly T[])[]
+  readonly createPagedTrailSegmenter: <T extends Timestamped>(
+    gapThresholdMs: number,
+  ) => {
+    readonly append: (positions: readonly T[]) => readonly (readonly T[])[]
+    readonly finish: () => readonly (readonly T[])[]
+  }
+}
+
+const sharedTrailSegmentation = (
+  globalThis as typeof globalThis & {
+    __SARTRACKER_COVERAGE_TRAIL_SEGMENTATION__?: SharedTrailSegmentation
+  }
+).__SARTRACKER_COVERAGE_TRAIL_SEGMENTATION__
+
+if (sharedTrailSegmentation === undefined) {
+  throw new Error('Shared coverage trail segmentation failed to initialize.')
+}
+
+const {
+  createPagedTrailSegmenter: createSharedPagedTrailSegmenter,
+  createTrailSegments: createSharedTrailSegments,
+} = sharedTrailSegmentation
 
 /**
  * Splits chronologically ordered fixes when the real time gap exceeds the

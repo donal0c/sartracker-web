@@ -20,6 +20,8 @@ import {
 import {
   getDeviceFeatureNodeId,
   getBreadcrumbDeviceFeatureNodeId,
+  getCoverageDeviceFeatureNodeId,
+  getCoveragePeriodFeatureNodeId,
   getDrawingFeatureNodeId,
   getDrawingLayerNodeId,
   getGpxImportFeatureNodeId,
@@ -30,6 +32,9 @@ import {
   getMarkerLayerNodeId,
   getMeasurementFeatureNodeId,
   GPX_TRACKS_GROUP_NODE_ID,
+  COVERAGE_DEVICES_LAYER_NODE_ID,
+  COVERAGE_GROUP_NODE_ID,
+  COVERAGE_PERIODS_LAYER_NODE_ID,
   HELICOPTERS_GROUP_NODE_ID,
   MAP_TOOLS_GROUP_NODE_ID,
   MEASUREMENTS_LAYER_NODE_ID,
@@ -113,7 +118,8 @@ export function buildLayerCatalogTree(input: LayerCatalogBuildInput): LayerCatal
     ...buildGpxLayers(input.gpxImports, metadataIndex),
   ]
 
-  const groups = GROUP_DEFINITIONS.map((group) => {
+  const groups = [
+    ...GROUP_DEFINITIONS.map((group) => {
     const groupMetadata = metadataIndex.get(group.id)
     const children = layers
       .filter((layer) => layer.parentId === group.id)
@@ -132,7 +138,9 @@ export function buildLayerCatalogTree(input: LayerCatalogBuildInput): LayerCatal
       parentId: LAYER_CATALOG_ROOT_ID,
       children,
     } satisfies LayerCatalogGroupNode
-  }).sort(compareNodes)
+    }),
+    ...(input.coverage === undefined ? [] : [buildCoverageGroup(input.coverage)]),
+  ].sort(compareNodes)
 
   return {
     id: LAYER_CATALOG_ROOT_ID,
@@ -145,6 +153,88 @@ export function buildLayerCatalogTree(input: LayerCatalogBuildInput): LayerCatal
     displayOrder: 0,
     parentId: null,
     children: groups,
+  }
+}
+
+function buildCoverageGroup(
+  coverage: NonNullable<LayerCatalogBuildInput['coverage']>,
+): LayerCatalogGroupNode {
+  const deviceChildren: LayerCatalogFeatureItemNode[] = coverage.devices.map((device, index) => ({
+    id: getCoverageDeviceFeatureNodeId(device.deviceId),
+    kind: 'feature_item',
+    label: device.label,
+    alias: null,
+    displayLabel: device.label,
+    isFavorite: false,
+    isVisible: device.visible,
+    displayOrder: index,
+    parentId: COVERAGE_DEVICES_LAYER_NODE_ID,
+    entity: { type: 'coverage_device', deviceId: device.deviceId },
+  }))
+  const periodChildren: LayerCatalogFeatureItemNode[] = coverage.periods.map((period, index) => ({
+    id: getCoveragePeriodFeatureNodeId(period.periodKey),
+    kind: 'feature_item',
+    label: period.label,
+    alias: null,
+    displayLabel: period.label,
+    isFavorite: false,
+    isVisible: period.visible,
+    displayOrder: index,
+    parentId: COVERAGE_PERIODS_LAYER_NODE_ID,
+    entity: { type: 'coverage_period', periodKey: period.periodKey },
+  }))
+  const layers: readonly LayerCatalogLayerNode[] = [
+    createCoverageLayer(
+      COVERAGE_DEVICES_LAYER_NODE_ID,
+      'coverage_devices',
+      'Participants',
+      10,
+      deviceChildren,
+    ),
+    createCoverageLayer(
+      COVERAGE_PERIODS_LAYER_NODE_ID,
+      'coverage_periods',
+      'Outings',
+      20,
+      periodChildren,
+    ),
+  ]
+  return {
+    id: COVERAGE_GROUP_NODE_ID,
+    kind: 'group',
+    groupKey: 'coverage',
+    label: 'Mission History',
+    alias: null,
+    displayLabel: 'Mission History',
+    isFavorite: false,
+    isVisible: layers.every((layer) => layer.isVisible),
+    displayOrder: 15,
+    parentId: LAYER_CATALOG_ROOT_ID,
+    children: layers,
+  }
+}
+
+function createCoverageLayer(
+  id: string,
+  layerKey: 'coverage_devices' | 'coverage_periods',
+  label: string,
+  displayOrder: number,
+  children: readonly LayerCatalogFeatureItemNode[],
+): LayerCatalogLayerNode {
+  const visibleCount = children.filter((child) => child.isVisible).length
+  return {
+    id,
+    kind: 'layer',
+    layerKey,
+    label,
+    alias: null,
+    displayLabel: label,
+    isFavorite: false,
+    isVisible: visibleCount === children.length,
+    displayOrder,
+    parentId: COVERAGE_GROUP_NODE_ID,
+    summary: { totalCount: children.length, visibleCount },
+    children,
   }
 }
 

@@ -31,11 +31,32 @@ describe('Candidate B coverage overlay [DON-276]', () => {
     expect(map.removeSource).not.toHaveBeenCalledWith(sourceB)
     expect(map.sources.has(sourceB!)).toBe(true)
   })
+
+  it('changes coverage filters without replacing sources or touching live layers', () => {
+    const map = createMap()
+    const catalog = {
+      periods: [{ periodKey: 'outing\u0000a', revisionDigest: 'a1' }],
+      delivered: [],
+    }
+    syncCoverageOverlay(map, catalog)
+    map.removeSource.mockClear()
+    map.setFilter.mockClear()
+
+    syncCoverageOverlay(map, catalog, {
+      omittedDeviceIds: ['device-a'], omittedPeriodKeys: [],
+    })
+
+    expect(map.removeSource).not.toHaveBeenCalled()
+    expect(map.setFilter).toHaveBeenCalledTimes(2)
+    expect(map.setFilter.mock.calls.every(([layerId]) => String(layerId).startsWith('coverage-')))
+      .toBe(true)
+  })
 })
 
 function createMap(): CoverageOverlayMap & {
   readonly sources: Map<string, { readonly tiles?: readonly string[] }>
   readonly removeSource: ReturnType<typeof vi.fn>
+  readonly setFilter: ReturnType<typeof vi.fn>
 } {
   const sources = new Map<string, { readonly tiles?: readonly string[] }>()
   const layers = new Map<string, unknown>()
@@ -48,5 +69,6 @@ function createMap(): CoverageOverlayMap & {
     addLayer: (layer) => { layers.set(layer.id, layer) },
     getLayer: (id) => layers.get(id),
     removeLayer: (id) => { layers.delete(id) },
+    setFilter: vi.fn(),
   }
 }

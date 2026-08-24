@@ -137,6 +137,19 @@ export type CoverageTileCatalog = {
     readonly key: CoverageChunkKey
     readonly contentRev: number
   }[]
+  /** Browser-validation payload only; native Electron catalogs never include it. */
+  readonly browserHarnessGeoJson?: {
+    readonly type: 'FeatureCollection'
+    readonly features: readonly {
+      readonly type: 'Feature'
+      readonly id: string
+      readonly geometry: {
+        readonly type: 'Point' | 'LineString'
+        readonly coordinates: readonly number[] | readonly (readonly number[])[]
+      }
+      readonly properties: Readonly<Record<string, string | number>>
+    }[]
+  }
 }
 
 export type ParticipantProvenance = 'explicit' | 'grandfathered' | 'legacy_auto'

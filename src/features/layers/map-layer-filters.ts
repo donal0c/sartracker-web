@@ -7,6 +7,28 @@ import type {
   MarkerType,
 } from '../../infrastructure/mission-store/tauri-mission-store'
 
+/** Builds the coverage-only device/period omission filter; live layers never consume it. */
+export function buildCoverageLayerFilter(
+  omittedDeviceIds: readonly string[],
+  omittedPeriodKeys: readonly string[],
+): ExpressionSpecification | null {
+  const filters: ExpressionSpecification[] = []
+  if (omittedDeviceIds.length > 0) {
+    filters.push([
+      '!', ['in', ['get', 'device_id'], ['literal', [...omittedDeviceIds]]],
+    ])
+  }
+  if (omittedPeriodKeys.length > 0) {
+    filters.push([
+      '!',
+      ['in', ['concat', ['get', 'period_kind'], '\u0000', ['get', 'period_id']],
+        ['literal', [...omittedPeriodKeys]]],
+    ])
+  }
+  if (filters.length === 0) return null
+  return filters.length === 1 ? filters[0]! : ['all', ...filters]
+}
+
 export function buildTrackingLayerFilter(
   hiddenDeviceIds: readonly string[],
 ): ExpressionSpecification | null {

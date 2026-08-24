@@ -11,7 +11,12 @@ import {
   applyCoverageController,
   applyCoverageState,
   resetCoverageStore,
+  useCoverageStore,
 } from './coverage-store'
+import {
+  selectCoverageChunkKeys,
+  useCoverageFilterStore,
+} from './coverage-filter-store'
 
 const COVERAGE_REFRESH_INTERVAL_MS = 30_000
 
@@ -42,6 +47,7 @@ export function startCoverageRuntime(
 ): () => void {
   if ((options.enabled ?? isCoverageEnabled()) === false) {
     resetCoverageStore()
+    useCoverageFilterStore.getState().resetMission(null)
     return () => undefined
   }
   if (!hasCoverageRuntimeBoundary(missionStore)) {
@@ -61,12 +67,12 @@ export function startCoverageRuntime(
       () => missionStore.readCoverageClaim(query, requestId),
       missionStore.cancelCoverageQuery,
     ) as Promise<CoverageClaim>,
-    deliverSelection: ({ missionId, chunks, requestId, signal }) => runCancelable(
+    deliverSelection: ({ missionId, manifest, requestId, signal }) => runCancelable(
       signal,
       requestId,
       () => missionStore.syncCoverageTileCatalog({
         missionId,
-        chunks: chunks.map((chunk) => ({
+        chunks: manifest.chunks.map((chunk) => ({
           key: chunk.key,
           contentRev: chunk.contentRev,
         })),
@@ -79,17 +85,34 @@ export function startCoverageRuntime(
     applyChunk: async () => {
       throw new Error('Candidate B delivery must be attested by the active tile catalog.')
     },
-    publish: applyCoverageState,
+    publish: (state) => {
+      applyCoverageState(state)
+      if (state.status !== 'inactive' && state.manifest !== null) {
+        useCoverageFilterStore.getState().reconcile(state.missionId, state.manifest)
+      }
+    },
   })
   applyCoverageController(controller)
 
   const updateMission = (): void => {
+    const missionId = useMissionStore.getState().currentMission?.id ?? null
+    useCoverageFilterStore.getState().resetMission(missionId)
+    const coverageState = useCoverageStore.getState().state
+    const manifest = coverageState.status === 'inactive' || coverageState.missionId !== missionId
+      ? null
+      : coverageState.manifest
+    const selectedKeys = selectCoverageChunkKeys(
+      manifest,
+      useCoverageFilterStore.getState(),
+    )
     void controller.updateContext({
-      missionId: useMissionStore.getState().currentMission?.id ?? null,
+      missionId,
       rendererGeneration,
+      ...(selectedKeys === undefined ? {} : { selectedKeys }),
     })
   }
   const unsubscribeMission = useMissionStore.subscribe(updateMission)
+  const unsubscribeFilters = useCoverageFilterStore.subscribe(updateMission)
   const subscribeCoverageChanged = options.subscribeCoverageChanged ??
     ((listener: (event: CoverageChangedEvent) => void) =>
       window.sartrackerElectron?.onCoverageChanged?.(listener) ?? (() => undefined))
@@ -108,9 +131,11 @@ export function startCoverageRuntime(
 
   return () => {
     unsubscribeMission()
+    unsubscribeFilters()
     unsubscribeChanged()
     cancelPeriodicRefresh()
     controller.stop()
+    useCoverageFilterStore.getState().resetMission(null)
     applyCoverageController(null)
   }
 }

@@ -6,6 +6,9 @@ import { useTrackingStyleStore } from '../features/tracking/tracking-style-store
 import { ExactBreadcrumbDotStatus } from './exact-breadcrumb-dot-status'
 import { useIngestHealthStore } from '../features/tracking/ingest-health-store'
 import { useStationaryAttentionStore } from '../features/tracking/stationary-attention-store'
+import { useCoverageStore } from '../features/tracking/coverage-store'
+import { useCoverageFilterStore } from '../features/tracking/coverage-filter-store'
+import { CoverageStatusPanel } from './coverage-status-panel'
 
 type TrackingStatusPanelProps = {
   readonly exactBreadcrumbDotState?: ExactBreadcrumbDotState
@@ -21,6 +24,18 @@ export function TrackingStatusPanel(props: TrackingStatusPanelProps = {}) {
   const status = useTrackingStore((state) => state.status)
   const openWorkspace = useDeviceWorkspaceStore((state) => state.openWorkspace)
   const breadcrumbTrailMode = useTrackingStyleStore((state) => state.breadcrumbTrailMode)
+  const setBreadcrumbTrailMode = useTrackingStyleStore((state) => state.setBreadcrumbTrailMode)
+  const coverageState = useCoverageStore((state) => state.state)
+  const coverageController = useCoverageStore((state) => state.controller)
+  const omittedCoverageDeviceCount = useCoverageFilterStore(
+    (state) => state.omittedDeviceIds.length,
+  )
+  const omittedCoverageOutingCount = useCoverageFilterStore(
+    (state) => state.omittedPeriodKeys.filter((key) => key.startsWith('outing\u0000')).length,
+  )
+  const unassignedCoverageOmitted = useCoverageFilterStore(
+    (state) => state.omittedPeriodKeys.includes('unassigned\u0000'),
+  )
   const storedExactBreadcrumbDotState = useExactBreadcrumbDotStore((state) => state.state)
   const exactBreadcrumbDotController = useExactBreadcrumbDotStore((state) => state.controller)
   const ingestHealth = useIngestHealthStore((state) => state.summary)
@@ -166,6 +181,15 @@ export function TrackingStatusPanel(props: TrackingStatusPanelProps = {}) {
           {stationaryAttentionCount === 1 ? 'device needs' : 'devices need'} stationary attention. Open Devices to review or acknowledge the presentation; movement clears the underlying state.
         </p>
       )}
+
+      <CoverageStatusPanel
+        state={coverageState}
+        omittedDeviceCount={omittedCoverageDeviceCount}
+        omittedOutingCount={omittedCoverageOutingCount}
+        unassignedOmitted={unassignedCoverageOmitted}
+        onInspectExactFixes={() => setBreadcrumbTrailMode('dots')}
+        onRetry={() => void coverageController?.resume()}
+      />
 
       {breadcrumbTrailMode === 'dots' ? (
         <ExactBreadcrumbDotStatus

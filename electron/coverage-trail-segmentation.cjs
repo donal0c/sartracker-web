@@ -46,4 +46,12 @@ function getParsedTimestamp(position) {
   return parsed
 }
 
-module.exports = { createPagedTrailSegmenter, createTrailSegments }
+const coverageTrailSegmentation = Object.freeze({
+  createPagedTrailSegmenter,
+  createTrailSegments,
+})
+
+if (typeof module !== 'undefined' && module.exports !== undefined) {
+  module.exports = coverageTrailSegmentation
+}
+globalThis.__SARTRACKER_COVERAGE_TRAIL_SEGMENTATION__ = coverageTrailSegmentation

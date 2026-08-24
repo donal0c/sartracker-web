@@ -1,5 +1,6 @@
 import { applyTrackingSnapshot, applyTrackingStatus } from '../tracking/tracking-store'
 import { useExactBreadcrumbDotStore } from '../tracking/exact-breadcrumb-dot-store'
+import { useCoverageStore } from '../tracking/coverage-store'
 import { useDrawingStore } from '../drawings/drawing-store'
 import { useGpxStore } from '../gpx/gpx-store'
 import { useMarkerStore } from '../markers/marker-store'
@@ -143,6 +144,7 @@ export function installBrowserHarnessApi(): void {
         useExactBreadcrumbDotStore.getState().controller?.notifyDurableChange(
           positions.length,
         )
+        await useCoverageStore.getState().controller?.refresh()
       }
 
       applyTrackingSnapshot(missionSnapshot)

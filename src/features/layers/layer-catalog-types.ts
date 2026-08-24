@@ -9,11 +9,18 @@ import type { NormalizedTrackingDevice } from '../tracking/tracking-types'
 
 export type LayerCatalogNodeKind = 'root' | 'group' | 'layer' | 'feature_item'
 
-export type LayerCatalogGroupKey = 'tracking' | 'helicopters' | 'map_tools' | 'gpx_tracks'
+export type LayerCatalogGroupKey =
+  | 'tracking'
+  | 'coverage'
+  | 'helicopters'
+  | 'map_tools'
+  | 'gpx_tracks'
 
 export type LayerCatalogLayerKey =
   | 'tracking_devices'
   | 'tracking_breadcrumbs'
+  | 'coverage_devices'
+  | 'coverage_periods'
   | 'helicopter_slot_1'
   | 'helicopter_slot_2'
   | 'helicopter_slot_3'
@@ -70,6 +77,8 @@ type LayerCatalogBaseNode = {
 
 export type LayerCatalogFeatureEntity =
   | { readonly type: 'device'; readonly device: NormalizedTrackingDevice }
+  | { readonly type: 'coverage_device'; readonly deviceId: string }
+  | { readonly type: 'coverage_period'; readonly periodKey: string }
   | { readonly type: 'helicopter'; readonly helicopter: Helicopter }
   | { readonly type: 'marker'; readonly marker: Marker }
   | { readonly type: 'drawing'; readonly drawing: Drawing }
@@ -111,6 +120,18 @@ export type LayerCatalogBuildInput = {
   readonly gpxImports: readonly GpxTrackImport[]
   readonly measurements: readonly Measurement[]
   readonly metadataEntries: readonly LayerCatalogMetadataEntry[]
+  readonly coverage?: {
+    readonly devices: readonly {
+      readonly deviceId: string
+      readonly label: string
+      readonly visible: boolean
+    }[]
+    readonly periods: readonly {
+      readonly periodKey: string
+      readonly label: string
+      readonly visible: boolean
+    }[]
+  }
 }
 
 export type LayerCatalogTree = {

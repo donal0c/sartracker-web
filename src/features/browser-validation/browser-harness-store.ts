@@ -25,6 +25,9 @@ import type {
   OutingFixSummary,
   EditOutingBoundariesInput,
   EndOutingInput,
+  CoverageClaim,
+  CoverageManifest,
+  CoverageTileCatalog,
   RenameOutingInput,
   UnlockFinalizedMissionInput,
   UpsertDeviceInput,
@@ -33,6 +36,8 @@ import type {
   UpsertHelicopterInput,
   UpsertMarkerInput,
 } from '../../infrastructure/mission-store/tauri-mission-store'
+import { createTrailSegments } from '../tracking/trail-segmentation'
+import { coveragePeriodKey } from '../tracking/coverage-filter-store'
 import { outingWindowsOverlap } from '../outings/outing-schedule'
 import {
   DEFAULT_AUDIT_EVENT_LIMIT,
@@ -168,6 +173,19 @@ type BrowserHarnessStore = {
     readonly laterCursor: null
   }>
   readonly countPositions: (missionId: string, deviceId?: string) => Promise<number>
+  readonly readCoverageManifest: (missionId: string) => Promise<CoverageManifest>
+  readonly readCoverageClaim: (input: {
+    readonly missionId: string
+    readonly selectedKeys: readonly CoverageManifest['chunks'][number]['key'][]
+  }) => Promise<CoverageClaim>
+  readonly syncCoverageTileCatalog: (input: {
+    readonly missionId: string
+    readonly chunks: readonly {
+      readonly key: CoverageManifest['chunks'][number]['key']
+      readonly contentRev: number
+    }[]
+  }) => Promise<CoverageTileCatalog>
+  readonly cancelCoverageQuery: (requestId: string) => Promise<boolean>
   readonly listMarkers: (missionId: string) => Promise<readonly Marker[]>
   readonly upsertMarker: (input: UpsertMarkerInput) => Promise<Marker>
   readonly deleteMarker: (markerId: string) => Promise<boolean>
@@ -1144,6 +1162,30 @@ export function getBrowserHarnessStore(): BrowserHarnessStore {
         }
         return deviceId === undefined || position.device_id === deviceId
       }).length,
+    readCoverageManifest: async (missionId) => {
+      await waitForBrowserCoverageValidationDelay()
+      return createBrowserCoverageManifest(state, missionId)
+    },
+    readCoverageClaim: async (input) => {
+      const manifest = createBrowserCoverageManifest(state, input.missionId)
+      const revisions = new Map(manifest.chunks.map((chunk) => [
+        `${chunk.key.device_id}\u0000${coveragePeriodKey(chunk.key)}`,
+        chunk,
+      ]))
+      const selected = input.selectedKeys.flatMap((key) => {
+        const chunk = revisions.get(`${key.device_id}\u0000${coveragePeriodKey(key)}`)
+        return chunk === undefined ? [] : [{ key: chunk.key, contentRev: chunk.contentRev }]
+      })
+      return {
+        changeSeq: manifest.changeSeq,
+        databaseReady: !manifest.backfillIncomplete,
+        blockers: manifest.backfillIncomplete ? ['backfill_incomplete'] : [],
+        chunkRevisions: selected,
+      }
+    },
+    syncCoverageTileCatalog: async (input) =>
+      createBrowserCoverageTileCatalog(state, input.missionId, input.chunks),
+    cancelCoverageQuery: async () => false,
     listMarkers: async (missionId) =>
       state.markers
         .filter((marker) => marker.mission_id === missionId)
@@ -2037,6 +2079,167 @@ function normalizeHarnessOutingLabel(value: string): string {
   if (label === '') throw new Error('Outing label is required.')
   if (label.length > 120) throw new Error('Outing label must be 120 characters or fewer.')
   return label
+}
+
+/** Builds the deterministic mocked desktop manifest used only by Chromium validation. */
+function createBrowserCoverageManifest(
+  state: BrowserHarnessState,
+  missionId: string,
+): CoverageManifest {
+  requireMission(missionId, state.missions)
+  const outings = state.outings
+    .filter((outing) => outing.mission_id === missionId)
+    .toSorted((left, right) => left.started_at.localeCompare(right.started_at))
+  const deviceIds = new Set(
+    state.devices.filter((device) => device.mission_id === missionId)
+      .map((device) => device.device_id),
+  )
+  for (const participant of state.missionParticipants) {
+    if (
+      participant.mission_id === missionId &&
+      participant.removed_at === null &&
+      participant.kind === 'device' &&
+      participant.traccar_device_id !== null
+    ) deviceIds.add(participant.traccar_device_id)
+  }
+  const periods = [
+    ...outings.map((outing) => ({
+      period_kind: 'outing' as const,
+      period_id: outing.id,
+    })),
+    { period_kind: 'unassigned' as const, period_id: '' },
+  ]
+  const chunks = [...deviceIds].sort().flatMap((deviceId) => periods.map((period) => {
+    const positions = readBrowserCoveragePositions(state, missionId, deviceId, period, outings)
+    const revision = positions.length + 1
+    return {
+      key: { device_id: deviceId, ...period },
+      contentRev: revision,
+      builtRev: revision,
+      fixCount: positions.length,
+      exactCount: positions.length,
+      fixDigest: positions.map((position) =>
+        position.source_position_id ?? position.id).join('\n'),
+      minTs: positions[0]?.timestamp ?? null,
+      maxTs: positions.at(-1)?.timestamp ?? null,
+    }
+  }))
+  const pendingBackfills = state.participantBackfillCheckpoints.filter(
+    (checkpoint) => checkpoint.mission_id === missionId && checkpoint.completed === 0,
+  ).length
+  return {
+    changeSeq: state.positions.filter((position) => position.mission_id === missionId).length +
+      outings.length + pendingBackfills,
+    enumerated: true,
+    pendingInvalidation: false,
+    backfillIncomplete: pendingBackfills > 0,
+    outings: outings.map((outing) => ({
+      id: outing.id,
+      label: outing.label,
+      started_at: outing.started_at,
+      ended_at: outing.ended_at,
+    })),
+    chunks,
+  }
+}
+
+/** Allows Chromium coverage tests to hold a real controller load in progress. */
+async function waitForBrowserCoverageValidationDelay(): Promise<void> {
+  const raw = window.sessionStorage.getItem('sartracker:browser-harness:coverage-delay-ms')
+  if (raw === null) return
+  const milliseconds = Number(raw)
+  if (!Number.isFinite(milliseconds) || milliseconds <= 0 || milliseconds > 5_000) return
+  await new Promise<void>((resolve) => window.setTimeout(resolve, milliseconds))
+}
+
+/** Materializes a small GeoJSON stand-in for mocked browser validation only. */
+function createBrowserCoverageTileCatalog(
+  state: BrowserHarnessState,
+  missionId: string,
+  requestedChunks: readonly {
+    readonly key: CoverageManifest['chunks'][number]['key']
+    readonly contentRev: number
+  }[],
+): CoverageTileCatalog {
+  const manifest = createBrowserCoverageManifest(state, missionId)
+  const outings = state.outings.filter((outing) => outing.mission_id === missionId)
+  const requested = new Map(requestedChunks.map((chunk) => [
+    `${chunk.key.device_id}\u0000${coveragePeriodKey(chunk.key)}`,
+    chunk,
+  ]))
+  const delivered = manifest.chunks.flatMap((chunk) => {
+    const request = requested.get(`${chunk.key.device_id}\u0000${coveragePeriodKey(chunk.key)}`)
+    return request?.contentRev === chunk.contentRev
+      ? [{ key: chunk.key, contentRev: chunk.contentRev }]
+      : []
+  })
+  const features = manifest.chunks.flatMap((chunk) => {
+    if (!requested.has(`${chunk.key.device_id}\u0000${coveragePeriodKey(chunk.key)}`)) return []
+    const positions = readBrowserCoveragePositions(
+      state,
+      missionId,
+      chunk.key.device_id,
+      chunk.key,
+      outings,
+    )
+    const segmentablePositions = positions.map((position) => ({
+      ...position,
+      cache_age_seconds: null,
+      device_cache_stale: false,
+    }))
+    return createTrailSegments(segmentablePositions, 30 * 60 * 1000).map((segment, index) => ({
+      type: 'Feature' as const,
+      id: `cov:${missionId}:${chunk.key.device_id}:${coveragePeriodKey(chunk.key)}:${index}`,
+      geometry: segment.length === 1
+        ? { type: 'Point' as const, coordinates: [segment[0]!.lon, segment[0]!.lat] }
+        : {
+            type: 'LineString' as const,
+            coordinates: segment.map((position) => [position.lon, position.lat]),
+          },
+      properties: {
+        device_id: chunk.key.device_id,
+        period_kind: chunk.key.period_kind,
+        period_id: chunk.key.period_id,
+        content_rev: chunk.contentRev,
+      },
+    }))
+  })
+  const periodRevisions = new Map<string, number[]>()
+  for (const chunk of manifest.chunks) {
+    if (!requested.has(`${chunk.key.device_id}\u0000${coveragePeriodKey(chunk.key)}`)) continue
+    const periodKey = coveragePeriodKey(chunk.key)
+    const revisions = periodRevisions.get(periodKey) ?? []
+    revisions.push(chunk.contentRev)
+    periodRevisions.set(periodKey, revisions)
+  }
+  return {
+    periods: [...periodRevisions.entries()].map(([periodKey, revisions]) => ({
+      periodKey,
+      revisionDigest: `browser-${revisions.join('-')}`,
+    })),
+    delivered,
+    browserHarnessGeoJson: { type: 'FeatureCollection', features },
+  }
+}
+
+function readBrowserCoveragePositions(
+  state: BrowserHarnessState,
+  missionId: string,
+  deviceId: string,
+  period: { readonly period_kind: 'outing' | 'unassigned'; readonly period_id: string },
+  outings: readonly Outing[],
+): readonly Position[] {
+  return state.positions
+    .filter((position) => position.mission_id === missionId && position.device_id === deviceId)
+    .filter((position) => {
+      const containing = outings.find((outing) =>
+        outing.started_at <= position.timestamp &&
+        (outing.ended_at === null || position.timestamp < outing.ended_at))
+      return period.period_kind === 'unassigned'
+        ? containing === undefined
+        : containing?.id === period.period_id
+    })
+    .toSorted(compareBrowserHarnessPositions)
 }
 
 function calculatePausedSeconds(pauseTime: string | null): number {

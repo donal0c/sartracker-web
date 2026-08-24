@@ -17,14 +17,11 @@ import {
   toLayerTreeTestId,
 } from '../features/layers/layer-panel-model'
 import { useLayerTreeUiStore } from '../features/layers/layer-tree-ui-store'
-import { useLayerVisibilityStore } from '../features/layers/layer-visibility-store'
-import {
-  applyVisibilityForNodeIds,
-  collectSubtreeNodeIds,
-} from '../features/layers/layer-visibility-service'
+import { setLayerSubtreeVisibility } from '../features/layers/layer-subtree-visibility'
 import { useDrawingStore } from '../features/drawings/drawing-store'
 import { useMeasurementStore } from '../features/measurements/measurement-store'
 import { useTrackingStore } from '../features/tracking/tracking-store'
+import { isCoverageNodeId } from '../features/layers/layer-catalog-ids'
 
 /**
  * Renders the operational layer tree and feature inspection workspace.
@@ -255,12 +252,12 @@ function TreeNodeRow(props: {
             className="h-5 w-5 flex-shrink-0 rounded border-stone-600 bg-stone-950 text-amber-500 focus:ring-amber-500/30"
             data-testid={`layer-visibility-${toLayerTreeTestId(props.node.id)}`}
             onChange={(event) =>
-              void setSubtreeVisibility(
-                props.root,
-                props.controller,
-                props.node.id,
-                event.target.checked,
-              )
+              void setLayerSubtreeVisibility({
+                root: props.root,
+                controller: props.controller,
+                nodeId: props.node.id,
+                visible: event.target.checked,
+              })
             }
             type="checkbox"
           />
@@ -321,6 +318,7 @@ function LayerInspector(props: {
   const selectedIndex = siblings.indexOf(selectedNode.id)
   const canMoveUp = selectedIndex > 0
   const canMoveDown = selectedIndex !== -1 && selectedIndex < siblings.length - 1
+  const runtimeOnlyCoverage = isCoverageNodeId(selectedNode.id)
   const editableDrawingId =
     selectedNode.kind === 'feature_item' && selectedNode.entity?.type === 'drawing'
       ? selectedNode.entity.drawing.id
@@ -354,7 +352,7 @@ function LayerInspector(props: {
         </p>
       </div>
 
-      {selectedNode.kind !== 'root' ? (
+      {selectedNode.kind !== 'root' && !runtimeOnlyCoverage ? (
         <div className="mt-4 grid gap-3">
           <label className="grid gap-1">
             <span className="text-[11px] font-medium text-stone-300">
@@ -440,6 +438,10 @@ function LayerInspector(props: {
             </button>
           </div>
         </div>
+      ) : runtimeOnlyCoverage ? (
+        <p className="mt-4 text-xs text-stone-300" data-testid="coverage-filter-explanation">
+          This hides saved history on the map only. It does not hide live positions or change mission evidence.
+        </p>
       ) : null}
 
       {inspectionRows.length > 0 ? (
@@ -461,32 +463,6 @@ function LayerInspector(props: {
       ) : null}
     </div>
   )
-}
-
-async function setSubtreeVisibility(
-  root: ReturnType<typeof useLayerCatalogStore.getState>['root'],
-  controller: ReturnType<typeof useLayerCatalogStore.getState>['controller'],
-  nodeId: string,
-  visible: boolean,
-): Promise<void> {
-  if (controller === null) {
-    return
-  }
-
-  const node = findCatalogNode(root, nodeId)
-  if (node === null) {
-    return
-  }
-
-  const nodeIds = collectSubtreeNodeIds(root, node.id)
-
-  // 1. Immediately push to the visibility store so MapLibre filters update
-  //    without waiting for the async persist → rebuild → bridge effect cycle.
-  applyVisibilityForNodeIds(root, nodeIds, visible, useLayerVisibilityStore.getState())
-
-  // 2. Persist the whole subtree as one catalog mutation. Rebuilding once keeps
-  //    out-of-order child writes from briefly re-showing part of a hidden layer.
-  await controller.setNodeVisibilities(nodeIds, visible)
 }
 
 async function reorderNodeRelative(

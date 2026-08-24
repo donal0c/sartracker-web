@@ -27,6 +27,8 @@ export type CoverageState =
       readonly deliveredFixCount: number
       readonly totalFixCount: number
       readonly lastErrorClass?: CoverageErrorClass | null
+      readonly blockers?: readonly string[]
+      readonly updatedAt?: string
       readonly message?: string
     }
 
@@ -244,6 +246,7 @@ export function createCoverageController(input: {
         manifest: activeManifest,
         tileCatalog: activeCatalog,
         delivered,
+        blockers: claim.blockers,
       }, context.selectedKeys))
     } catch (error) {
       if (!ownsOperation(operation, controller, missionId, rendererGeneration)) return
@@ -421,7 +424,12 @@ selectedKeys: readonly CoverageChunkKey[] | undefined,
       deliveredFixCount += count
     }
   }
-  return { ...input, deliveredFixCount, totalFixCount }
+  return {
+    ...input,
+    deliveredFixCount,
+    totalFixCount,
+    updatedAt: new Date().toISOString(),
+  }
 }
 
 function asPartialState(
