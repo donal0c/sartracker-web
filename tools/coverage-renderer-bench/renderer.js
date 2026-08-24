@@ -41,6 +41,8 @@ let appendResult = null
 let firstDeviceId = null
 let firstGroupId = null
 let settledPeakBytes = 0
+let nextVectorSourceIndex = 0
+let rendererFailureReported = false
 let completeResolve
 let completeReject
 const completePromise = new Promise((resolve, reject) => {
@@ -55,7 +57,7 @@ maplibregl.addProtocol('coverage-b', async (request) => {
 })
 
 window.coverageBench.onWorkerEvent((event) => {
-  void handleWorkerEvent(event).catch(completeReject)
+  void handleWorkerEvent(event).catch(reportRendererFailure)
 })
 
 await waitForMapLoad()
@@ -204,13 +206,13 @@ function addGeoJsonPeriod(periodKey, initialFeatures) {
 }
 
 /** Adds one revision-bound vector source for Candidate B. */
-async function ensureVectorPeriod(event) {
+async function ensureVectorPeriod(event, preferredSourceId = null) {
   if (firstDeviceId === null) {
     const chunk = [...chunks.values()][0]
     firstDeviceId = chunk?.deviceId ?? null
   }
-  const index = periodSources.size
-  const sourceId = `coverage-vector-${index}`
+  const sourceId = preferredSourceId ?? `coverage-vector-${nextVectorSourceIndex}`
+  if (preferredSourceId === null) nextVectorSourceIndex += 1
   const lineId = `${sourceId}-line`
   const pointId = `${sourceId}-point`
   map.addSource(sourceId, {
@@ -248,7 +250,16 @@ async function replaceVectorPeriod(event) {
   if (map.getSource(sourceId)) map.removeSource(sourceId)
   periodSources.delete(event.periodKey)
   periodLayerIds.delete(event.periodKey)
-  await ensureVectorPeriod(event)
+  await ensureVectorPeriod(event, sourceId)
+}
+
+/** Rejects initial loading and terminates post-load failures without waiting for a timeout. */
+function reportRendererFailure(error) {
+  if (rendererFailureReported) return
+  rendererFailureReported = true
+  completeReject(error)
+  const message = error instanceof Error ? error.message : String(error)
+  void window.coverageBench.fail(message)
 }
 
 /** Records first useful rendered coverage and triggers the deliberate kill probe. */
