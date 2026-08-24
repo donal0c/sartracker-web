@@ -31,7 +31,8 @@ function passingManifest(
       kernel: '6.17.0',
       cpu: 'fixture cpu',
       gpu: 'fixture gpu',
-      sessionType: 'x11',
+      sessionType: 'wayland',
+      windowSystem: 'x11',
     },
     run: {
       repetition: 2,
@@ -95,7 +96,10 @@ describe('coverage benchmark manifest [DON-273]', () => {
 
     expect(manifest.schemaVersion).toBe(COVERAGE_BENCH_SCHEMA_VERSION)
     expect(validateCoverageBenchManifest(manifest)).toEqual(manifest)
-    expect(manifest.machine.sessionType).toBe('x11')
+    expect(manifest.machine).toMatchObject({
+      sessionType: 'wayland',
+      windowSystem: 'x11',
+    })
     expect(manifest.phases).toEqual({
       queryMs: 4_000,
       segmentationMs: 3_000,
@@ -111,9 +115,9 @@ describe('coverage benchmark manifest [DON-273]', () => {
     missingGpu.machine.gpu = ''
     expect(() => validateCoverageBenchManifest(missingGpu)).toThrow('machine.gpu')
 
-    const wayland = structuredClone(passingManifest())
-    wayland.machine.sessionType = 'wayland'
-    expect(() => validateCoverageBenchManifest(wayland)).toThrow('x11')
+    const wrongWindowSystem = structuredClone(passingManifest())
+    wrongWindowSystem.machine.windowSystem = 'wayland'
+    expect(() => validateCoverageBenchManifest(wrongWindowSystem)).toThrow('windowSystem')
 
     const badDigest = structuredClone(passingManifest())
     badDigest.fixture.digest = 'not-a-sha256'

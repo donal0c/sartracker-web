@@ -74,14 +74,14 @@ export function validateCoverageBenchManifest(input) {
   requireEqual(fixture.positionCount, FIXTURES.get(fixture.preset), 'fixture.positionCount')
 
   const machine = requireObject(manifest.machine, 'machine')
-  for (const key of ['hostname', 'platform', 'arch', 'kernel', 'cpu', 'gpu']) {
+  for (const key of ['hostname', 'platform', 'arch', 'kernel', 'cpu', 'gpu', 'sessionType', 'windowSystem']) {
     requireNonEmptyString(machine[key], `machine.${key}`)
   }
   if (machine.platform !== 'linux' || machine.arch !== 'x64') {
     throw new Error('machine must be the reference linux x64 host.')
   }
-  if (String(machine.sessionType).toLowerCase() !== 'x11') {
-    throw new Error('machine.sessionType must identify the reference x11 session.')
+  if (String(machine.windowSystem).toLowerCase() !== 'x11') {
+    throw new Error('machine.windowSystem must identify the Electron x11 launch path.')
   }
 
   const run = requireObject(manifest.run, 'run')

@@ -130,6 +130,7 @@ async function registerIpc() {
         cpu: os.cpus()[0]?.model ?? 'unknown cpu',
         gpu,
         sessionType: String(process.env.XDG_SESSION_TYPE || 'unknown').toLowerCase(),
+        windowSystem: process.argv.includes('--ozone-platform=x11') ? 'x11' : 'unknown',
         display: String(process.env.DISPLAY || 'unset'),
       },
       run: {
