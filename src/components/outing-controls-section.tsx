@@ -1,18 +1,29 @@
 import { useState } from 'react'
 
 import type { Outing } from '../infrastructure/mission-store/tauri-mission-store'
-import { useOutingControlsViewModel } from '../features/outings/use-outing-controls-view-model'
+import {
+  type OutingControlsViewModel,
+  useOutingControlsViewModel,
+} from '../features/outings/use-outing-controls-view-model'
 
 /** Renders explicit coordinator-owned outing boundaries and truthful fix counts. */
 export function OutingControlsSection() {
   const model = useOutingControlsViewModel()
+  if (!model.enabled) return null
+  return <MissionScopedOutingControls key={model.missionId ?? 'no-mission'} model={model} />
+}
+
+/** Owns edit drafts inside one explicit UI mission identity. */
+function MissionScopedOutingControls({ model }: { readonly model: OutingControlsViewModel }) {
   const [newLabel, setNewLabel] = useState('')
   const [editing, setEditing] = useState<Outing | null>(null)
   const [editLabel, setEditLabel] = useState('')
   const [editStart, setEditStart] = useState('')
   const [editEnd, setEditEnd] = useState('')
-
-  if (!model.enabled) return null
+  const editingInScope = editing === null
+    ? null
+    : model.outings.find((outing) =>
+      outing.id === editing.id && outing.mission_id === editing.mission_id) ?? null
 
   function beginEdit(outing: Outing): void {
     setEditing(outing)
@@ -22,13 +33,13 @@ export function OutingControlsSection() {
   }
 
   async function saveEdit(): Promise<void> {
-    if (editing === null) return
-    if (editLabel.trim() !== editing.label) {
-      const renamed = await model.renameOuting(editing.id, editLabel.trim())
+    if (editingInScope === null) return
+    if (editLabel.trim() !== editingInScope.label) {
+      const renamed = await model.renameOuting(editingInScope.id, editLabel.trim())
       if (!renamed) return
     }
     const corrected = await model.editBoundaries(
-      editing.id,
+      editingInScope.id,
       toUtcIso(editStart),
       editEnd.trim() === '' ? null : toUtcIso(editEnd),
     )
@@ -55,7 +66,11 @@ export function OutingControlsSection() {
         ) : null}
       </div>
 
-      {model.noActiveOutingNotice !== null ? (
+      {model.loading ? (
+        <p className="text-xs text-stone-300" role="status">Loading outing lifecycle…</p>
+      ) : model.error !== null ? (
+        <p className="text-xs text-rose-300" role="status">Outing lifecycle unavailable.</p>
+      ) : model.noActiveOutingNotice !== null ? (
         <p className="sar-inline-alert p-2 text-xs text-amber-200" data-testid="outing-no-active-notice" role="status">
           {model.noActiveOutingNotice}
         </p>
@@ -130,9 +145,7 @@ export function OutingControlsSection() {
         </div>
       </div>
 
-      {model.loading ? <p className="text-xs text-stone-300">Loading outing evidence summary…</p> : null}
-
-      {editing !== null ? (
+      {editingInScope !== null ? (
         <div className="space-y-3 border border-sky-500/30 bg-sky-950/30 p-3" data-testid="outing-edit-panel">
           <label className="block text-[11px] text-stone-300">
             Label

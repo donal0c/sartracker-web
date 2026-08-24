@@ -87,6 +87,41 @@ describe('useOutingControlsViewModel [DON-270]', () => {
     expect(getModel().canMutate).toBe(false)
   })
 
+  it('hides and disables outing state from a different runtime mission', async () => {
+    const controller = createController()
+    useMissionStore.setState({
+      currentMission: createMission({ id: 'mission-b' }),
+      governanceMission: null,
+    })
+    useOutingStore.setState({
+      activeMissionId: 'mission-a',
+      outings: [createOuting({ mission_id: 'mission-a' })],
+      fixSummary: {
+        outings: [{ outing_id: 'outing-1', accepted_fix_count: 7 }],
+        unassigned_accepted_fix_count: 3,
+        total_accepted_fix_count: 10,
+      },
+      loading: false,
+      saving: false,
+      error: null,
+      controller,
+    })
+    const { getModel } = renderHook()
+
+    expect(getModel().outings).toEqual([])
+    expect(getModel().activeOuting).toBeNull()
+    expect(getModel().unassignedFixCount).toBeNull()
+    expect(getModel().loading).toBe(true)
+    expect(getModel().error).toBeNull()
+    expect(getModel().noActiveOutingNotice).toBeNull()
+    expect(getModel().nextDefaultLabel).toBe('Outing 1')
+    expect(getModel().canMutate).toBe(false)
+    await act(async () => {
+      expect(await getModel().endOuting('outing-1')).toBe(false)
+    })
+    expect(controller.endOuting).not.toHaveBeenCalled()
+  })
+
   it('keeps outing controls read-only while hydration is loading or failed', async () => {
     const controller = createController()
     useOutingStore.setState({ controller, loading: true, error: null })
