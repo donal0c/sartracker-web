@@ -138,7 +138,8 @@ async function registerIpc() {
         thermalState: args.thermalState,
         startedAt: rendererResult.startedAt,
         completedAt: new Date().toISOString(),
-        flags: process.argv.filter((value) => value.startsWith('--ozone-platform=')),
+        flags: process.argv.filter((value) =>
+          value.startsWith('--ozone-platform=') || value === '--no-sandbox'),
       },
       ...rendererResult.measurements,
     }

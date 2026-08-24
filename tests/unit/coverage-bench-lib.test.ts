@@ -39,7 +39,7 @@ function passingManifest(
       thermalState: 'warm',
       startedAt: '2026-08-24T12:00:00.000Z',
       completedAt: '2026-08-24T12:00:20.000Z',
-      flags: ['--ozone-platform=x11'],
+      flags: ['--ozone-platform=x11', '--no-sandbox'],
     },
     timings: {
       firstUsefulMs: 1_000,
@@ -137,6 +137,10 @@ describe('coverage benchmark manifest [DON-273]', () => {
     const missingOzoneFlag = structuredClone(passingManifest())
     missingOzoneFlag.run.flags = []
     expect(() => validateCoverageBenchManifest(missingOzoneFlag)).toThrow('--ozone-platform=x11')
+
+    const missingSandboxFlag = structuredClone(passingManifest())
+    missingSandboxFlag.run.flags = ['--ozone-platform=x11']
+    expect(() => validateCoverageBenchManifest(missingSandboxFlag)).toThrow('--no-sandbox')
 
     const warmFirstRun = structuredClone(passingManifest())
     warmFirstRun.run.repetition = 1
@@ -242,7 +246,7 @@ describe('coverage benchmark aggregation and memo table [DON-273]', () => {
         thermalState: 'cold',
         startedAt: '2026-08-24T11:00:00.000Z',
         completedAt: '2026-08-24T11:00:25.000Z',
-        flags: ['--ozone-platform=x11'],
+        flags: ['--ozone-platform=x11', '--no-sandbox'],
       },
     })
     const warmPass = passingManifest()
@@ -252,7 +256,7 @@ describe('coverage benchmark aggregation and memo table [DON-273]', () => {
         thermalState: 'warm',
         startedAt: '2026-08-24T13:00:00.000Z',
         completedAt: '2026-08-24T13:00:25.000Z',
-        flags: ['--ozone-platform=x11'],
+        flags: ['--ozone-platform=x11', '--no-sandbox'],
       },
       timings: {
         firstUsefulMs: 1_500,

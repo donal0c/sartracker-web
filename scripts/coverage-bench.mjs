@@ -120,6 +120,7 @@ async function runPackagedBench(input) {
     `--bench-spawned-at=${Date.now()}`,
     `--user-data-dir=${input.profileDirectory}`,
     '--ozone-platform=x11',
+    '--no-sandbox',
   ]
   if (input.killProbe) {
     appArgs.push('--bench-kill-probe', `--bench-kill-checkpoint=${input.killProofPath}`)

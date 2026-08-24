@@ -98,6 +98,9 @@ export function validateCoverageBenchManifest(input) {
   if (!run.flags.includes('--ozone-platform=x11')) {
     throw new Error('run.flags must include --ozone-platform=x11.')
   }
+  if (!run.flags.includes('--no-sandbox')) {
+    throw new Error('run.flags must include --no-sandbox for the user-built Linux directory package.')
+  }
   const expectedThermalState = run.repetition === 1 ? 'cold' : 'warm'
   if (run.thermalState !== expectedThermalState) {
     throw new Error(`run repetition ${run.repetition} must be ${expectedThermalState}.`)
