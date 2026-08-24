@@ -101,6 +101,9 @@ export function validateCoverageBenchManifest(input) {
   if (!run.flags.includes('--no-sandbox')) {
     throw new Error('run.flags must include --no-sandbox for the user-built Linux directory package.')
   }
+  for (const flag of ['--ignore-gpu-blocklist', '--use-gl=angle', '--use-angle=gl']) {
+    if (!run.flags.includes(flag)) throw new Error(`run.flags must include ${flag}.`)
+  }
   const expectedThermalState = run.repetition === 1 ? 'cold' : 'warm'
   if (run.thermalState !== expectedThermalState) {
     throw new Error(`run repetition ${run.repetition} must be ${expectedThermalState}.`)

@@ -121,6 +121,9 @@ async function runPackagedBench(input) {
     `--user-data-dir=${input.profileDirectory}`,
     '--ozone-platform=x11',
     '--no-sandbox',
+    '--ignore-gpu-blocklist',
+    '--use-gl=angle',
+    '--use-angle=gl',
   ]
   if (input.killProbe) {
     appArgs.push('--bench-kill-probe', `--bench-kill-checkpoint=${input.killProofPath}`)

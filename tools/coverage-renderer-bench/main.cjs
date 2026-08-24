@@ -139,7 +139,11 @@ async function registerIpc() {
         startedAt: rendererResult.startedAt,
         completedAt: new Date().toISOString(),
         flags: process.argv.filter((value) =>
-          value.startsWith('--ozone-platform=') || value === '--no-sandbox'),
+          value.startsWith('--ozone-platform=') ||
+          value === '--no-sandbox' ||
+          value === '--ignore-gpu-blocklist' ||
+          value.startsWith('--use-gl=') ||
+          value.startsWith('--use-angle=')),
       },
       ...rendererResult.measurements,
     }
