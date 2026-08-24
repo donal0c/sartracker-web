@@ -1,11 +1,14 @@
 import { describe, expect, it } from 'vitest'
 
 import {
+  DEFAULT_MISSION_MODEL_ENABLED,
   resolveMissionModelFlag,
 } from '../../src/features/runtime/mission-model-flag'
 
 describe('mission model internal feature flag', () => {
   it('fails closed in packaged/release builds unless the internal build flag is explicit', () => {
+    expect(DEFAULT_MISSION_MODEL_ENABLED).toBe(false)
+
     expect(resolveMissionModelFlag({
       dev: false,
       browserHarness: false,

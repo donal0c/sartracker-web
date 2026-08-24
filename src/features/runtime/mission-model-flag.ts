@@ -4,6 +4,8 @@ export type MissionModelFlagContext = {
   readonly buildFlag: string | undefined
 }
 
+export const DEFAULT_MISSION_MODEL_ENABLED = false
+
 /**
  * Resolves the internal mission-model gate without exposing an operator toggle.
  * An explicit build value always wins so release builds fail closed by default.
@@ -13,7 +15,7 @@ export function resolveMissionModelFlag(context: MissionModelFlagContext): boole
     return context.buildFlag === '1'
   }
 
-  return context.dev || context.browserHarness
+  return context.dev || context.browserHarness || DEFAULT_MISSION_MODEL_ENABLED
 }
 
 /** Returns whether the additive PR-2 mission model is enabled in this renderer. */
