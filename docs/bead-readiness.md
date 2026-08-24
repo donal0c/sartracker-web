@@ -22,15 +22,15 @@ Use this document before implementation to decide how much parallel research, pl
 
 Last updated: 2026-08-24 by Codex (Breadcrumb PR-3 G2 measured decision)
 
-### `DON-273` / `DON-276` / `DON-275` — Breadcrumb PR-3 complete coverage — G2 active
+### `DON-273` / `DON-276` / `DON-275` — Breadcrumb PR-3 complete coverage — BCP-08 active
 
-- Research required: `Medium` until the measured renderer decision is ratified; the domain requirements themselves are complete.
-- Implementation readiness: `4/5` overall. The accepted revised plan is implementation-ready, but BCP-08 is deliberately blocked by G2.
-- Recommended action: ratify Candidate B (SQLite-backed local vector tiles) with the unchanged G2 budgets, then begin BCP-08 in the accepted red-first sequence. Do not write schema-v10, worker, IPC, controller, or production renderer code before that approval.
+- Research required: `Low`; the renderer decision and domain requirements are locked.
+- Implementation readiness: `5/5` for BCP-08. Candidate B and the unchanged G2 budgets were ratified on 2026-08-24.
+- Recommended action: implement BCP-08 in the accepted red-first sequence. Preserve the standing G2 result unless B's measured query, segmentation, tile, or source strategy changes.
 - Locked decisions: current positions never wait; historical filters never hide selected-participant live positions; non-participants remain discovery/picker/diagnostic only; no false 100%; no global mission timestamp index; no mission-sized main-isolate work; exact paged Dots remains inspection/export; G3 separately controls the final coverage + mission-model default posture.
-- Open questions: no SAR-team question. Donal must ratify the measured G2 verdict and later the G3 default flip.
+- Open questions: no SAR-team question. Donal must later approve the G3 default flip.
 - Evidence: the prescribed 18 serial packaged runs completed on the Ubuntu reference host at measured SHA `8eff87b724ae6`. B alone passed 960k and 2M; A and C breached first-useful. All run correctness attestations, six kill proofs, B's invalidation falsifiers, and exact Dots `10/10` passed. The 29-file evidence bundle verifies through manifest SHA-256 `470449f7...c980`; `docs/breadcrumb-coverage-renderer-decision.md` records the full table, contracts, checksums, and residual uncertainty.
-- Ready-to-start checklist: [x] accepted plan and requirement trace; [x] isolated exact base; [x] local harness and packaging; [x] reference-host G2 manifests; [x] decision memo; [ ] Donal G2 ratification.
+- Ready-to-start checklist: [x] accepted plan and requirement trace; [x] isolated exact base; [x] local harness and packaging; [x] reference-host G2 manifests; [x] decision memo; [x] Donal G2 ratification.
 
 ### `DON-270` / `DON-271` / `DON-272` — Breadcrumb PR-2 mission model — review ready
 

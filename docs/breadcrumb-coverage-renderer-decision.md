@@ -1,6 +1,6 @@
 # Breadcrumb complete-coverage renderer decision (G2)
 
-Status: **measured; Candidate B recommended; pending Donal ratification**
+Status: **ratified by Donal on 2026-08-24; Candidate B binding**
 
 Linear: `DON-273` / BCP-07
 
@@ -11,9 +11,9 @@ Exact PR-2 base: `7021fc1ef33e6da5c91c96cd86e836fc3754f48f`
 Branch: `codex/breadcrumb-pr3-complete-coverage`
 
 BCP-08 production work remained blocked while this decision was measured and
-documented. Schema v10, the coverage ledger/worker, production IPC/controller,
-and production renderer integration must not begin until Donal ratifies this
-memo.
+documented. Donal ratified Candidate B and the unchanged budgets against exact
+decision head `934cf542eaad5734982cb53c06701462c7ab212c` on 2026-08-24, opening the
+BCP-08 production stage.
 
 ## Decision recommendation
 
@@ -204,13 +204,12 @@ renderer was selected or implemented by those fixes.
   query shape, segmentation, tile/source strategy, or equivalent pipeline.
   Such a change reruns the affected G2 rows before merge.
 
-## Ratification requested
+## Ratification
 
-Recommended smallest decision:
+Donal approved the requested decision without amendment on 2026-08-24:
 
 > Approve Candidate B and the unchanged G2 budgets, including 1.5 GiB settled
 > renderer RSS at 960k and 2.5 GiB peak renderer RSS at 2M.
 
-If amended, identify only the candidate/contract or budget value to change.
-`DON-273` remains open and BCP-08 remains blocked until that decision is
-recorded.
+Candidate B and these budgets are binding for BCP-08. A later change to B's
+measured pipeline follows the standing-result invalidation rule above.
