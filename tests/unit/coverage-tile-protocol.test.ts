@@ -1,0 +1,37 @@
+import { afterEach, describe, expect, it, vi } from 'vitest'
+
+import {
+  createCoverageTileUrl,
+  registerCoverageTileProtocol,
+} from '../../src/features/tracking/coverage-tile-protocol'
+
+describe('Candidate B MapLibre protocol [DON-276]', () => {
+  afterEach(() => Reflect.deleteProperty(window, 'sartrackerElectron'))
+
+  it('parses a revision-bound period URL and returns worker PBF bytes', async () => {
+    const addProtocol = vi.fn()
+    const readCoverageTile = vi.fn().mockResolvedValue(new Uint8Array([1, 2, 3]))
+    Object.defineProperty(window, 'sartrackerElectron', {
+      configurable: true,
+      value: { missionStore: { readCoverageTile } },
+    })
+    const unregister = registerCoverageTileProtocol({
+      addProtocol,
+      removeProtocol: vi.fn(),
+    })
+    const [, loader] = addProtocol.mock.calls[0]!
+    const url = createCoverageTileUrl('outing\u0000outing/1', 'revision-7')
+
+    await expect(loader({ url: url.replace('{z}', '8').replace('{x}', '121').replace('{y}', '83') }))
+      .resolves.toEqual({ data: Uint8Array.from([1, 2, 3]).buffer })
+    expect(readCoverageTile).toHaveBeenCalledWith({
+      periodKey: 'outing\u0000outing/1',
+      revisionDigest: 'revision-7',
+      z: 8,
+      x: 121,
+      y: 83,
+    })
+
+    unregister()
+  })
+})

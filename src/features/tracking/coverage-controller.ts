@@ -3,6 +3,7 @@ import type {
   CoverageClaim,
   CoverageManifest,
   CoverageManifestChunk,
+  CoverageTileCatalog,
   Position,
 } from '../../infrastructure/mission-store/tauri-mission-store'
 import { createCoverageScheduler } from './coverage-scheduler'
@@ -20,6 +21,7 @@ export type CoverageState =
       readonly changeSeq: number
       readonly latestObservedChangeSeq: number
       readonly manifest: CoverageManifest | null
+      readonly tileCatalog: CoverageTileCatalog | null
       readonly delivered: CoverageDelivery
       readonly deliveredFixCount: number
       readonly totalFixCount: number
@@ -79,6 +81,13 @@ export function createCoverageController(input: {
     signal: AbortSignal,
   ) => Promise<CoverageClaim>
   readonly applyChunk: (payload: CoverageChunkPayload) => Promise<void>
+  readonly deliverSelection?: (input: {
+    readonly missionId: string
+    readonly manifest: CoverageManifest
+    readonly chunks: readonly CoverageManifestChunk[]
+    readonly requestId: string
+    readonly signal: AbortSignal
+  }) => Promise<CoverageTileCatalog>
   readonly publish: (state: CoverageState) => void
 }): CoverageController {
   let state: CoverageState = { status: 'inactive' }
@@ -108,12 +117,16 @@ export function createCoverageController(input: {
     const rendererGeneration = context.rendererGeneration
     const priorManifest = state.status === 'inactive' ? null : state.manifest
     const priorDelivered = state.status === 'inactive' ? {} : state.delivered
+    const priorCatalog = state.status === 'inactive' || !retainDelivery
+      ? null
+      : state.tileCatalog
     const observedSequence = state.status === 'inactive' ? 0 : state.latestObservedChangeSeq
     publish(createActiveState({
       status: 'loading', missionId, rendererGeneration,
       changeSeq: state.status === 'inactive' ? 0 : state.changeSeq,
       latestObservedChangeSeq: observedSequence,
       manifest: priorManifest,
+      tileCatalog: priorCatalog,
       delivered: retainDelivery ? priorDelivered : {},
     }, context.selectedKeys))
 
@@ -136,41 +149,79 @@ export function createCoverageController(input: {
         changeSeq: manifest.changeSeq,
         latestObservedChangeSeq,
         manifest,
+        tileCatalog: priorCatalog,
         delivered,
       }, context.selectedKeys))
 
-      for (const descriptor of scheduler.order(manifest, selected)) {
-        const identity = coverageChunkIdentity(descriptor.key)
-        if (delivered[identity] === descriptor.contentRev) continue
-        scheduler.recordAttempt(descriptor)
-        const payload = await readWholeChunk(
+      let activeManifest = manifest
+      let activeSelected = selected
+      let activeCatalog = priorCatalog
+      if (input.deliverSelection !== undefined) {
+        activeCatalog = await input.deliverSelection({
           missionId,
-          descriptor,
-          controller,
-          operation,
-          rendererGeneration,
-        )
-        if (payload === null) return
-        await input.applyChunk(payload)
-        if (!ownsOperation(operation, controller, missionId, rendererGeneration)) return
-        delivered[identity] = descriptor.contentRev
-        publish(createActiveState({
-          status: 'loading', missionId, rendererGeneration,
-          changeSeq: manifest.changeSeq,
-          latestObservedChangeSeq,
           manifest,
-          delivered,
-        }, context.selectedKeys))
+          chunks: selected,
+          requestId: nextRequestId('catalog'),
+          signal: controller.signal,
+        })
+        if (!ownsOperation(operation, controller, missionId, rendererGeneration)) return
+        for (const entry of activeCatalog.delivered) {
+          delivered[coverageChunkIdentity(entry.key)] = entry.contentRev
+        }
+        activeManifest = await input.readManifest(
+          missionId,
+          nextRequestId('manifest'),
+          controller.signal,
+        )
+        if (!ownsOperation(operation, controller, missionId, rendererGeneration)) return
+        activeSelected = selectChunks(activeManifest, context.selectedKeys)
+      } else {
+        for (const descriptor of scheduler.order(manifest, selected)) {
+          const identity = coverageChunkIdentity(descriptor.key)
+          if (delivered[identity] === descriptor.contentRev) continue
+          scheduler.recordAttempt(descriptor)
+          const payload = await readWholeChunk(
+            missionId,
+            descriptor,
+            controller,
+            operation,
+            rendererGeneration,
+          )
+          if (payload === null) return
+          await input.applyChunk(payload)
+          if (!ownsOperation(operation, controller, missionId, rendererGeneration)) return
+          delivered[identity] = descriptor.contentRev
+          publish(createActiveState({
+            status: 'loading', missionId, rendererGeneration,
+            changeSeq: manifest.changeSeq,
+            latestObservedChangeSeq,
+            manifest,
+            tileCatalog: activeCatalog,
+            delivered,
+          }, context.selectedKeys))
+        }
       }
+      const claimSequence = Math.max(
+        latestObservedChangeSeq,
+        activeManifest.changeSeq,
+      )
+      publish(createActiveState({
+        status: 'loading', missionId, rendererGeneration,
+        changeSeq: activeManifest.changeSeq,
+        latestObservedChangeSeq: claimSequence,
+        manifest: activeManifest,
+        tileCatalog: activeCatalog,
+        delivered,
+      }, context.selectedKeys))
 
       const claim = await input.readClaim(
-        { missionId, selectedKeys: selected.map((chunk) => chunk.key) },
+        { missionId, selectedKeys: activeSelected.map((chunk) => chunk.key) },
         nextRequestId('claim'),
         controller.signal,
       )
       if (!ownsOperation(operation, controller, missionId, rendererGeneration)) return
       const complete = claim.databaseReady &&
-        claim.changeSeq === latestObservedChangeSeq &&
+        claim.changeSeq === claimSequence &&
         claim.chunkRevisions.every(({ key, contentRev }) =>
           delivered[coverageChunkIdentity(key)] === contentRev)
       publish(createActiveState({
@@ -178,8 +229,9 @@ export function createCoverageController(input: {
         missionId,
         rendererGeneration,
         changeSeq: claim.changeSeq,
-        latestObservedChangeSeq,
-        manifest,
+        latestObservedChangeSeq: claimSequence,
+        manifest: activeManifest,
+        tileCatalog: activeCatalog,
         delivered,
       }, context.selectedKeys))
     } catch (error) {

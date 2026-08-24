@@ -86,7 +86,12 @@ export type CoverageManifest = {
   readonly enumerated: boolean
   readonly pendingInvalidation: boolean
   readonly backfillIncomplete: boolean
-  readonly outings: readonly Outing[]
+  readonly outings: readonly {
+    readonly id: string
+    readonly label: string
+    readonly started_at: string
+    readonly ended_at: string | null
+  }[]
   readonly chunks: readonly CoverageManifestChunk[]
 }
 
@@ -106,6 +111,17 @@ export type CoverageClaim = {
   readonly databaseReady: boolean
   readonly blockers: readonly string[]
   readonly chunkRevisions: readonly {
+    readonly key: CoverageChunkKey
+    readonly contentRev: number
+  }[]
+}
+
+export type CoverageTileCatalog = {
+  readonly periods: readonly {
+    readonly periodKey: string
+    readonly revisionDigest: string
+  }[]
+  readonly delivered: readonly {
     readonly key: CoverageChunkKey
     readonly contentRev: number
   }[]
@@ -652,6 +668,23 @@ export type MissionStore = {
     requestId?: string,
   ) => Promise<CoverageClaim>
   readonly cancelCoverageQuery?: (requestId: string) => Promise<boolean>
+  readonly syncCoverageTileCatalog?: (
+    input: {
+      readonly missionId: string
+      readonly chunks: readonly {
+        readonly key: CoverageChunkKey
+        readonly contentRev: number
+      }[]
+    },
+    requestId?: string,
+  ) => Promise<CoverageTileCatalog>
+  readonly readCoverageTile?: (input: {
+    readonly periodKey: string
+    readonly revisionDigest: string
+    readonly z: number
+    readonly x: number
+    readonly y: number
+  }) => Promise<Uint8Array | null>
   readonly listTrackingHistoryCheckpoints?: (
     missionId: string,
   ) => Promise<readonly TrackingHistoryCheckpoint[]>

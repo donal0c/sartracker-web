@@ -15,6 +15,8 @@ import { useExactBreadcrumbDotStore } from '../tracking/exact-breadcrumb-dot-sto
 import { selectMissionTrackingSnapshot } from '../tracking/mission-active-tracking'
 import { useTrackingStylePreferences } from '../tracking/tracking-style-store'
 import { useTrackingStore } from '../tracking/tracking-store'
+import { useCoverageStore } from '../tracking/coverage-store'
+import { syncCoverageOverlay } from '../tracking/sync-coverage-overlay'
 import type { RenderableMapId } from '../../lib/map-config'
 import { useStationaryAttentionStore } from '../tracking/stationary-attention-store'
 import { registerMapStyleSync } from './map-style-sync'
@@ -48,6 +50,7 @@ export function useMapOverlays(options: UseMapOverlaysOptions): void {
   const trackingStyle = useTrackingStylePreferences()
   const exactBreadcrumbDotState = useExactBreadcrumbDotStore((state) => state.state)
   const attentionByDevice = useStationaryAttentionStore((state) => state.byDevice)
+  const coverageState = useCoverageStore((state) => state.state)
   const missionTrackingSnapshot = useMemo(
     () => selectMissionTrackingSnapshot(trackingSnapshot, activeDeviceIds),
     [activeDeviceIds, trackingSnapshot],
@@ -86,6 +89,23 @@ export function useMapOverlays(options: UseMapOverlaysOptions): void {
     exactBreadcrumbDotState,
     missionTrackingSnapshot,
     attentionByDevice,
+  ])
+
+  useEffect(() => {
+    const map = options.mapRef.current
+    if (map === null) return
+    const synchronizeOverlay = () => {
+      syncCoverageOverlay(
+        map,
+        coverageState.status === 'inactive' ? null : coverageState.tileCatalog,
+      )
+    }
+    return registerMapStyleSync(map, synchronizeOverlay)
+  }, [
+    coverageState,
+    options.activeBasemapId,
+    options.mapReadyVersion,
+    options.mapRef,
   ])
 
   useEffect(() => {

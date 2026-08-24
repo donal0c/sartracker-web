@@ -35,6 +35,8 @@ const { createOutingStore } = require('./outing-store.cjs')
 const { createParticipantStore } = require('./participant-store.cjs')
 const { runOutingFixSummaryInWorker } = require('./outing-fix-summary-runner.cjs')
 const { runCoverageQueryInWorker } = require('./coverage-query-runner.cjs')
+const { createCoverageTileRunner } = require('./coverage-tile-runner.cjs')
+const { createChunkKey } = require('./coverage-tile-catalog.cjs')
 const {
   appendCoverageInvalidation,
   applyCoverageChunkBuild,
@@ -50,6 +52,7 @@ const DATABASE_FILE_NAME = 'mission-store.sqlite'
 const BACKUP_FILE_NAME = 'mission-store.backup.sqlite'
 const ARCHIVE_DIRECTORY_NAME = 'archives'
 const INGEST_ANOMALY_OUTBOX_DIRECTORY_NAME = 'ingest-anomaly-outbox'
+const COVERAGE_TILE_CACHE_DIRECTORY_NAME = 'coverage-renderer-cache'
 const ARCHIVE_VERSION = 1
 
 /** Validates the opaque renderer correlation key used only for worker cancellation. */
@@ -135,6 +138,10 @@ function createElectronMissionStore(options) {
     options.runOutingFixSummaryInWorker ?? runOutingFixSummaryInWorker
   const coverageQueryRunner =
     options.runCoverageQueryInWorker ?? runCoverageQueryInWorker
+  const coverageTileRunner = options.coverageTileRunner ?? createCoverageTileRunner({
+    databasePath,
+    cacheDirectory: path.join(options.userDataPath, COVERAGE_TILE_CACHE_DIRECTORY_NAME),
+  })
   const onCoverageChanged = options.onCoverageChanged ?? (() => undefined)
   const activeBreadcrumbQueryControllers = new Set()
   const breadcrumbQueryControllersByRequestId = new Map()
@@ -230,6 +237,7 @@ function createElectronMissionStore(options) {
         activeQuery.controller.abort()
       }
       coverageQueryControllersByRequestId.clear()
+      void coverageTileRunner.close().catch(() => undefined)
       db.close()
     },
     info: async () => ({
@@ -454,6 +462,38 @@ function createElectronMissionStore(options) {
       await activeQuery.completion.catch(() => undefined)
       return true
     },
+    syncCoverageTileCatalog: async (input, requestId) => executeCoverageRequest(
+      requestId,
+      async (signal) => {
+        getMission(db, input.missionId)
+        const result = await coverageTileRunner.syncCatalog(input, { signal })
+        const rejectedChunks = new Set()
+        for (const build of result.builds) {
+          const applied = applyCoverageChunkBuild(db, {
+            missionId: input.missionId,
+            deviceId: build.key.device_id,
+            periodKind: build.key.period_kind,
+            periodId: build.key.period_id,
+            expectedContentRev: build.contentRev,
+            fixCount: build.fixCount,
+            fixDigest: build.fixDigest,
+            minTs: build.minTs,
+            maxTs: build.maxTs,
+            updatedAt: now(),
+          })
+          if (!applied) rejectedChunks.add(createChunkKey(build.key))
+        }
+        const delivered = result.delivered.filter((entry) =>
+          !rejectedChunks.has(createChunkKey(entry.key)))
+        const periods = result.periods.filter((period) =>
+          period.contributors?.every((contributor) => {
+            const separator = contributor.lastIndexOf('@')
+            return separator > 0 && !rejectedChunks.has(contributor.slice(0, separator))
+          }) ?? true)
+        return { periods, delivered }
+      },
+    ),
+    readCoverageTile: async (input) => coverageTileRunner.readTile(input),
     upsertDevice: async (input) => upsertDevice(db, input),
     upsertDevicesBulk: async (input) => {
       const startedAtMs = performance.now()

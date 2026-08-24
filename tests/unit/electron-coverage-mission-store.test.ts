@@ -3,13 +3,18 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { createRequire } from 'node:module'
 
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 const require = createRequire(import.meta.url)
 const { createElectronMissionStore } = require('../../electron/mission-store.cjs') as {
   readonly createElectronMissionStore: (options: {
     readonly userDataPath: string
     readonly onCoverageChanged?: (missionId: string, changeSeq: number) => void
+    readonly coverageTileRunner?: {
+      readonly syncCatalog: (input: unknown, options: unknown) => Promise<unknown>
+      readonly readTile: (input: unknown) => Promise<Uint8Array | null>
+      readonly close: () => Promise<void>
+    }
   }) => CoverageMissionStore
 }
 
@@ -76,6 +81,11 @@ type CoverageMissionStore = {
     readonly chunkRevisions: readonly { readonly key: CoverageKey; readonly contentRev: number }[]
   }>
   readonly cancelCoverageQuery: (requestId: string) => Promise<boolean>
+  readonly syncCoverageTileCatalog: (
+    input: { readonly missionId: string; readonly chunks: readonly unknown[] },
+    requestId?: string,
+  ) => Promise<{ readonly delivered: readonly { readonly key: CoverageKey; readonly contentRev: number }[] }>
+  readonly readCoverageTile: (input: Readonly<Record<string, unknown>>) => Promise<Uint8Array | null>
 }
 
 let directory: string | undefined
@@ -195,6 +205,45 @@ describe('Electron coverage mission-store orchestration', () => {
     }).then(() => ordering.push('resolved'))
 
     expect(ordering).toEqual([`changed:${mission.id}:2`, 'resolved'])
+  })
+
+  it('applies Candidate-B build metadata before attesting a tile catalog delivery', async () => {
+    directory = await mkdtemp(path.join(tmpdir(), 'sartracker-coverage-store-'))
+    const tileBytes = new Uint8Array([1, 2, 3])
+    const syncCatalog = vi.fn()
+    const tileRunner = {
+      syncCatalog,
+      readTile: vi.fn().mockResolvedValue(tileBytes),
+      close: vi.fn().mockResolvedValue(undefined),
+    }
+    store = createElectronMissionStore({ userDataPath: directory, coverageTileRunner: tileRunner })
+    const mission = await seedMission(store)
+    const manifest = await store.readCoverageManifest(mission.id, 'manifest-1')
+    const chunk = manifest.chunks[0]!
+    syncCatalog.mockResolvedValue({
+      periods: [{
+        periodKey: 'unassigned\u0000',
+        revisionDigest: 'revision-1',
+        contributors: [`device-1\u0000unassigned\u0000@${chunk.contentRev}`],
+      }],
+      delivered: [{ key: chunk.key, contentRev: chunk.contentRev }],
+      builds: [{
+        key: chunk.key,
+        contentRev: chunk.contentRev,
+        fixCount: 2,
+        fixDigest: chunk.exactDigest,
+        minTs: '2026-08-24T09:00:00.000Z',
+        maxTs: '2026-08-24T09:05:00.000Z',
+      }],
+    })
+
+    await expect(store.syncCoverageTileCatalog({
+      missionId: mission.id,
+      chunks: [{ key: chunk.key, contentRev: chunk.contentRev }],
+    }, 'tiles-1')).resolves.toMatchObject({
+      delivered: [{ key: chunk.key, contentRev: chunk.contentRev }],
+    })
+    await expect(store.readCoverageTile({ z: 8, x: 1, y: 1 })).resolves.toEqual(tileBytes)
   })
 })
 

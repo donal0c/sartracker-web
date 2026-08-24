@@ -15,6 +15,12 @@ function registerCoverageIpcHandlers(input) {
     input.readChannels.claim,
     (missionStore, payload, requestId) => missionStore.readCoverageClaim(payload, requestId),
   )
+  registerCoverageReadHandler(
+    input,
+    input.readChannels.catalog,
+    (missionStore, payload, requestId) =>
+      missionStore.syncCoverageTileCatalog(payload, requestId),
+  )
   input.ipcMain.handle(input.cancelChannel, (event, requestId) => {
     input.validateIpcSender(event)
     return input.missionStore.cancelCoverageQuery(

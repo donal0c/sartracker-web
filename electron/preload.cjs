@@ -61,6 +61,8 @@ const MISSION_STORE_CHANNELS = {
   readCoverageManifest: 'sartracker:mission-store:read-coverage-manifest',
   readCoverageChunk: 'sartracker:mission-store:read-coverage-chunk',
   readCoverageClaim: 'sartracker:mission-store:read-coverage-claim',
+  syncCoverageTileCatalog: 'sartracker:mission-store:sync-coverage-tile-catalog',
+  readCoverageTile: 'sartracker:mission-store:read-coverage-tile',
   cancelCoverageQuery: 'sartracker:mission-store:cancel-coverage-query',
   listTrackingHistoryCheckpoints: 'sartracker:mission-store:list-tracking-history-checkpoints',
   countPositions: 'sartracker:mission-store:count-positions',

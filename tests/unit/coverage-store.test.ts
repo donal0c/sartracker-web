@@ -14,6 +14,7 @@ describe('coverage store [DON-276]', () => {
     applyCoverageState({
       status: 'partial', missionId: 'mission-1', rendererGeneration: 'r1',
       changeSeq: 2, latestObservedChangeSeq: 2, manifest: null,
+      tileCatalog: null,
       delivered: {}, deliveredFixCount: 0, totalFixCount: 10,
     })
     const controller = { stop: () => undefined }

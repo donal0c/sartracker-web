@@ -95,6 +95,8 @@ const MISSION_STORE_CHANNELS = {
   readCoverageManifest: 'sartracker:mission-store:read-coverage-manifest',
   readCoverageChunk: 'sartracker:mission-store:read-coverage-chunk',
   readCoverageClaim: 'sartracker:mission-store:read-coverage-claim',
+  syncCoverageTileCatalog: 'sartracker:mission-store:sync-coverage-tile-catalog',
+  readCoverageTile: 'sartracker:mission-store:read-coverage-tile',
   cancelCoverageQuery: 'sartracker:mission-store:cancel-coverage-query',
   listTrackingHistoryCheckpoints: 'sartracker:mission-store:list-tracking-history-checkpoints',
   countPositions: 'sartracker:mission-store:count-positions',
@@ -637,6 +639,7 @@ function registerMissionStoreHandlers(missionStore) {
       manifest: MISSION_STORE_CHANNELS.readCoverageManifest,
       chunk: MISSION_STORE_CHANNELS.readCoverageChunk,
       claim: MISSION_STORE_CHANNELS.readCoverageClaim,
+      catalog: MISSION_STORE_CHANNELS.syncCoverageTileCatalog,
     },
     cancelChannel: MISSION_STORE_CHANNELS.cancelCoverageQuery,
     missionStore,
@@ -654,6 +657,7 @@ function registerMissionStoreHandlers(missionStore) {
     'readCoverageManifest',
     'readCoverageChunk',
     'readCoverageClaim',
+    'syncCoverageTileCatalog',
     'cancelCoverageQuery',
   ])
   for (const [methodName, channel] of Object.entries(MISSION_STORE_CHANNELS)) {

@@ -142,6 +142,42 @@ describe('coverage controller [DON-276]', () => {
     }))
     expect(harness.applyChunk).toHaveBeenCalledTimes(2)
   })
+
+  it('attests Candidate B delivery from the active tile catalog without renderer GeoJSON pages', async () => {
+    const initial = manifest(1, [[KEY_A, 1], [KEY_B, 1]])
+    const readManifest = vi.fn().mockResolvedValue(initial)
+    const readChunk = vi.fn()
+    const applyChunk = vi.fn()
+    const deliverSelection = vi.fn().mockResolvedValue({
+      periods: [{ periodKey: 'outing\u0000outing-1', revisionDigest: 'revision-1' }],
+      delivered: [
+        { key: KEY_A, contentRev: 1 }, { key: KEY_B, contentRev: 1 },
+      ],
+    })
+    const controller = createCoverageController({
+      readManifest,
+      readChunk,
+      readClaim: vi.fn().mockResolvedValue({
+        changeSeq: 1, databaseReady: true, blockers: [],
+        chunkRevisions: [
+          { key: KEY_A, contentRev: 1 }, { key: KEY_B, contentRev: 1 },
+        ],
+      }),
+      applyChunk,
+      deliverSelection,
+      publish: vi.fn(),
+    })
+
+    await controller.updateContext({ missionId: 'mission-1', rendererGeneration: 'r1' })
+
+    expect(readChunk).not.toHaveBeenCalled()
+    expect(applyChunk).not.toHaveBeenCalled()
+    expect(controller.getState()).toMatchObject({
+      status: 'complete',
+      tileCatalog: { periods: [{ revisionDigest: 'revision-1' }] },
+      deliveredFixCount: 2,
+    })
+  })
 })
 
 function createHarness(initialManifest: CoverageManifest) {

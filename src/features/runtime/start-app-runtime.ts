@@ -48,6 +48,7 @@ import {
 import { createRejectionEvidenceDelivery } from '../tracking/rejection-evidence-delivery'
 import { createIngestEvidenceFinalizationBoundary } from '../tracking/ingest-evidence-finalization-boundary'
 import { startExactBreadcrumbDotRuntime } from '../tracking/start-exact-breadcrumb-dot-runtime'
+import { startCoverageRuntime } from '../tracking/start-coverage-runtime'
 import { useStationaryAttentionStore } from '../tracking/stationary-attention-store'
 import { useExactBreadcrumbDotStore } from '../tracking/exact-breadcrumb-dot-store'
 import type { AppRuntimeController } from './app-runtime-controller'
@@ -100,6 +101,7 @@ type StartAppRuntimeDependencies = {
   readonly startGpxRuntime: typeof startGpxRuntime
   readonly startTrackingRuntime: typeof startTrackingRuntime
   readonly startExactBreadcrumbDotRuntime: typeof startExactBreadcrumbDotRuntime
+  readonly startCoverageRuntime: typeof startCoverageRuntime
   readonly createPollingManager: typeof createPollingManager
   readonly startCoreFeatureRuntimes: typeof startCoreFeatureRuntimes
 }
@@ -120,6 +122,7 @@ const DEFAULT_DEPENDENCIES: StartAppRuntimeDependencies = {
   startGpxRuntime,
   startTrackingRuntime,
   startExactBreadcrumbDotRuntime,
+  startCoverageRuntime,
   createPollingManager,
   startCoreFeatureRuntimes,
 }
@@ -207,10 +210,12 @@ export async function startAppRuntime(
   const stopExactBreadcrumbDots = resolvedDependencies.startExactBreadcrumbDotRuntime(
     missionStore,
   )
+  const stopCoverage = resolvedDependencies.startCoverageRuntime(missionStore)
   try {
     await reloadSettings()
   } catch (error) {
     stopExactBreadcrumbDots()
+    stopCoverage()
     coreFeatureRuntimes.dispose()
     throw error
   }
@@ -235,6 +240,7 @@ export async function startAppRuntime(
       activeServices = createNoopRuntimeServiceHandles()
       stopRuntimeServices(previousServices)
       stopExactBreadcrumbDots()
+      stopCoverage()
       void rejectionEvidenceDelivery?.dispose()
       coreFeatureRuntimes.dispose()
     },

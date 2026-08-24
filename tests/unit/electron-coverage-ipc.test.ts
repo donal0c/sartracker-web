@@ -11,12 +11,14 @@ const { registerCoverageIpcHandlers } = require('../../electron/coverage-ipc.cjs
       readonly manifest: string
       readonly chunk: string
       readonly claim: string
+      readonly catalog: string
     }
     readonly cancelChannel: string
     readonly missionStore: {
       readonly readCoverageManifest: (missionId: string, requestId: string) => Promise<unknown>
       readonly readCoverageChunk: (query: unknown, requestId: string) => Promise<unknown>
       readonly readCoverageClaim: (query: unknown, requestId: string) => Promise<unknown>
+      readonly syncCoverageTileCatalog: (query: unknown, requestId: string) => Promise<unknown>
       readonly cancelCoverageQuery: (requestId: string) => Promise<boolean>
     }
     readonly validateIpcSender: (event: unknown) => void
@@ -38,12 +40,13 @@ describe('coverage IPC ownership [DON-276]', () => {
     })
     registerCoverageIpcHandlers({
       ipcMain: { handle: (channel, handler) => handlers.set(channel, handler as never) },
-      readChannels: { manifest: 'manifest', chunk: 'chunk', claim: 'claim' },
+      readChannels: { manifest: 'manifest', chunk: 'chunk', claim: 'claim', catalog: 'catalog' },
       cancelChannel: 'cancel',
       missionStore: {
         readCoverageManifest,
         readCoverageChunk: vi.fn(),
         readCoverageClaim: vi.fn(),
+        syncCoverageTileCatalog: vi.fn(),
         cancelCoverageQuery,
       },
       validateIpcSender: vi.fn(),
@@ -69,11 +72,12 @@ describe('coverage IPC ownership [DON-276]', () => {
       readCoverageManifest: vi.fn().mockResolvedValue({ chunks: [] }),
       readCoverageChunk: vi.fn().mockResolvedValue({ positions: [] }),
       readCoverageClaim: vi.fn().mockResolvedValue({ databaseReady: true }),
+      syncCoverageTileCatalog: vi.fn().mockResolvedValue({ periods: [] }),
       cancelCoverageQuery: vi.fn().mockResolvedValue(false),
     }
     registerCoverageIpcHandlers({
       ipcMain: { handle: (channel, handler) => handlers.set(channel, handler as never) },
-      readChannels: { manifest: 'manifest', chunk: 'chunk', claim: 'claim' },
+      readChannels: { manifest: 'manifest', chunk: 'chunk', claim: 'claim', catalog: 'catalog' },
       cancelChannel: 'cancel', missionStore,
       validateIpcSender: vi.fn(),
     })
@@ -92,11 +96,12 @@ describe('coverage IPC ownership [DON-276]', () => {
       readCoverageManifest: vi.fn(),
       readCoverageChunk: vi.fn().mockResolvedValue({ positions: [] }),
       readCoverageClaim: vi.fn().mockResolvedValue({ databaseReady: true }),
+      syncCoverageTileCatalog: vi.fn().mockResolvedValue({ periods: [] }),
       cancelCoverageQuery: vi.fn().mockResolvedValue(false),
     }
     registerCoverageIpcHandlers({
       ipcMain: { handle: (channel, handler) => handlers.set(channel, handler as never) },
-      readChannels: { manifest: 'manifest', chunk: 'chunk', claim: 'claim' },
+      readChannels: { manifest: 'manifest', chunk: 'chunk', claim: 'claim', catalog: 'catalog' },
       cancelChannel: 'cancel', missionStore,
       validateIpcSender: vi.fn(),
     })
@@ -106,12 +111,16 @@ describe('coverage IPC ownership [DON-276]', () => {
 
     await handlers.get('chunk')?.(event, chunkInput, 'chunk-1')
     await handlers.get('claim')?.(event, claimInput, 'claim-1')
+    await handlers.get('catalog')?.(event, claimInput, 'catalog-1')
 
     expect(missionStore.readCoverageChunk).toHaveBeenCalledWith(
       chunkInput, '91:coverage:chunk-1',
     )
     expect(missionStore.readCoverageClaim).toHaveBeenCalledWith(
       claimInput, '91:coverage:claim-1',
+    )
+    expect(missionStore.syncCoverageTileCatalog).toHaveBeenCalledWith(
+      claimInput, '91:coverage:catalog-1',
     )
   })
 })
