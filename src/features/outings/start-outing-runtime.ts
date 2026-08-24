@@ -53,6 +53,7 @@ export async function startOutingRuntime(
   let error: string | null = null
   let requestedMissionId: string | null = null
   let missionGeneration = 0
+  let hydratedGeneration: number | null = null
   let refreshToken = 0
   let summarySequence = 0
   let activeSummaryRequestId: string | null = null
@@ -62,9 +63,17 @@ export async function startOutingRuntime(
   const controller: OutingRuntimeController = {
     refreshMission: async (missionId) => {
       const token = ++refreshToken
-      if (missionId !== requestedMissionId) {
+      const missionChanged = missionId !== requestedMissionId
+      if (missionChanged) {
         requestedMissionId = missionId
         missionGeneration += 1
+        activeMissionId = missionId
+        outings = []
+        fixSummary = null
+        hydratedGeneration = null
+        loading = missionId !== null
+        error = null
+        publishRuntime()
       }
       const generation = missionGeneration
       const previousRequestId = activeSummaryRequestId
@@ -92,6 +101,7 @@ export async function startOutingRuntime(
 
       loading = true
       fixSummary = null
+      hydratedGeneration = null
       publishRuntime()
       const requestId = `outing-summary-${++summarySequence}`
       activeSummaryRequestId = requestId
@@ -105,6 +115,7 @@ export async function startOutingRuntime(
         }
         outings = nextOutings
         fixSummary = nextSummary
+        hydratedGeneration = generation
       } catch (runtimeError) {
         if (token !== refreshToken || missionId !== activeMissionId) {
           return
@@ -160,6 +171,8 @@ export async function startOutingRuntime(
     if (
       missionId === null ||
       missionId !== requestedMissionId ||
+      hydratedGeneration !== generation ||
+      loading ||
       savingGeneration === generation
     ) {
       return null
@@ -170,11 +183,19 @@ export async function startOutingRuntime(
     try {
       const result = await operation(missionId)
       if (
-        activeMissionId === missionId &&
-        requestedMissionId === missionId &&
-        missionGeneration === generation
+        activeMissionId !== missionId ||
+        requestedMissionId !== missionId ||
+        missionGeneration !== generation
       ) {
-        await controller.refreshMission(missionId)
+        return null
+      }
+      await controller.refreshMission(missionId)
+      if (
+        activeMissionId !== missionId ||
+        requestedMissionId !== missionId ||
+        missionGeneration !== generation
+      ) {
+        return null
       }
       return result
     } catch (runtimeError) {

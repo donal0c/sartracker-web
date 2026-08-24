@@ -87,6 +87,26 @@ describe('useOutingControlsViewModel [DON-270]', () => {
     expect(getModel().canMutate).toBe(false)
   })
 
+  it('keeps outing controls read-only while hydration is loading or failed', async () => {
+    const controller = createController()
+    useOutingStore.setState({ controller, loading: true, error: null })
+    const { getModel } = renderHook()
+
+    expect(getModel().canMutate).toBe(false)
+    await act(async () => {
+      expect(await getModel().startOuting('Outing 1')).toBe(false)
+    })
+    expect(controller.startOuting).not.toHaveBeenCalled()
+
+    act(() => useOutingStore.setState({ loading: false, error: 'Summary unavailable' }))
+
+    expect(getModel().canMutate).toBe(false)
+    await act(async () => {
+      expect(await getModel().renameOuting('outing-1', 'Night search')).toBe(false)
+    })
+    expect(controller.renameOuting).not.toHaveBeenCalled()
+  })
+
   function renderHook(): { readonly getModel: () => OutingControlsViewModel } {
     let currentModel: OutingControlsViewModel | null = null
     host = document.createElement('div')

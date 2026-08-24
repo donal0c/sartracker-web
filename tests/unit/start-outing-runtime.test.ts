@@ -129,6 +129,49 @@ describe('startOutingRuntime [DON-270]', () => {
     expect(states.at(-1)?.activeMissionId).toBe('mission-b')
   })
 
+  it('publishes a new mission empty and loading before awaiting stale summary cancellation', async () => {
+    let releaseSecondSummary: (summary: OutingFixSummary) => void = () => undefined
+    let releaseCancellation: (cancelled: boolean) => void = () => undefined
+    const store = createStore()
+    store.listOutings.mockImplementation((missionId) => Promise.resolve(
+      missionId === 'mission-a' ? [{ ...FIRST_OUTING, mission_id: 'mission-a' }] : [],
+    ))
+    store.readOutingFixSummary
+      .mockResolvedValueOnce(SUMMARY)
+      .mockImplementationOnce(() => new Promise((resolve) => { releaseSecondSummary = resolve }))
+      .mockResolvedValueOnce(SUMMARY)
+    store.cancelOutingFixSummary.mockImplementationOnce(() =>
+      new Promise((resolve) => { releaseCancellation = resolve }))
+    const states: Array<{
+      readonly activeMissionId: string | null
+      readonly outings: readonly Outing[]
+      readonly fixSummary: OutingFixSummary | null
+      readonly loading: boolean
+    }> = []
+    const runtime = await startOutingRuntime({
+      outingStore: store,
+      applyRuntime: (state) => states.push(state),
+    })
+    await runtime.refreshMission('mission-a')
+
+    const heldARefresh = runtime.refreshMission('mission-a')
+    await Promise.resolve()
+    const missionBRefresh = runtime.refreshMission('mission-b')
+    await Promise.resolve()
+    const stateDuringCancellation = states.at(-1)
+
+    releaseCancellation(true)
+    releaseSecondSummary(SUMMARY)
+    await Promise.all([heldARefresh, missionBRefresh])
+
+    expect(stateDuringCancellation).toMatchObject({
+      activeMissionId: 'mission-b',
+      outings: [],
+      fixSummary: null,
+      loading: true,
+    })
+  })
+
   it('does not restore a stale mission after an in-flight mutation completes', async () => {
     let releaseCreate: (outing: Outing) => void = () => undefined
     const store = createStore()
@@ -145,8 +188,9 @@ describe('startOutingRuntime [DON-270]', () => {
     await Promise.resolve()
     await runtime.refreshMission('mission-2')
     releaseCreate(FIRST_OUTING)
-    await pendingCreate
+    const staleResult = await pendingCreate
 
+    expect(staleResult).toBeNull()
     expect(states.at(-1)?.activeMissionId).toBe('mission-2')
     expect(store.listOutings.mock.calls.map(([missionId]) => missionId)).toEqual([
       'mission-1',
@@ -158,6 +202,9 @@ describe('startOutingRuntime [DON-270]', () => {
     let releaseFirstCreate: (outing: Outing) => void = () => undefined
     let releaseSecondCreate: (outing: Outing) => void = () => undefined
     const store = createStore()
+    store.listOutings.mockImplementation((missionId) => Promise.resolve(
+      missionId === 'mission-b' ? [] : [{ ...FIRST_OUTING, mission_id: 'mission-a' }],
+    ))
     store.createOuting
       .mockImplementationOnce(() => new Promise((resolve) => { releaseFirstCreate = resolve }))
       .mockImplementationOnce(() => new Promise((resolve) => { releaseSecondCreate = resolve }))
@@ -180,7 +227,7 @@ describe('startOutingRuntime [DON-270]', () => {
     expect(store.createOuting).toHaveBeenCalledTimes(2)
     expect(store.createOuting).toHaveBeenNthCalledWith(2, {
       mission_id: 'mission-b',
-      label: 'Outing 2',
+      label: 'Outing 1',
     })
     expect(states.at(-1)).toMatchObject({ activeMissionId: 'mission-b', saving: true })
 
@@ -191,6 +238,74 @@ describe('startOutingRuntime [DON-270]', () => {
     releaseSecondCreate({ ...FIRST_OUTING, mission_id: 'mission-b' })
     await secondCreate
     expect(states.at(-1)).toMatchObject({ activeMissionId: 'mission-b', saving: false })
+  })
+
+  it('clears prior mission outings and blocks mutations until hydration completes', async () => {
+    let releaseMissionBSummary: (summary: OutingFixSummary) => void = () => undefined
+    const store = createStore()
+    store.listOutings.mockImplementation((missionId) => Promise.resolve(
+      missionId === 'mission-a' ? [{ ...FIRST_OUTING, mission_id: 'mission-a' }] : [],
+    ))
+    store.readOutingFixSummary
+      .mockResolvedValueOnce(SUMMARY)
+      .mockImplementationOnce(() =>
+        new Promise((resolve) => { releaseMissionBSummary = resolve }))
+      .mockResolvedValue(SUMMARY)
+    const states: Array<{
+      readonly activeMissionId: string | null
+      readonly outings: readonly Outing[]
+      readonly fixSummary: OutingFixSummary | null
+      readonly loading: boolean
+    }> = []
+    const runtime = await startOutingRuntime({
+      outingStore: store,
+      applyRuntime: (state) => states.push(state),
+    })
+    await runtime.refreshMission('mission-a')
+
+    const missionBRefresh = runtime.refreshMission('mission-b')
+    await Promise.resolve()
+    const stateDuringHydration = states.at(-1)
+    const blockedMutation = runtime.startOuting()
+    await Promise.resolve()
+    const createCallsDuringHydration = store.createOuting.mock.calls.length
+
+    releaseMissionBSummary(SUMMARY)
+    const [, blockedResult] = await Promise.all([missionBRefresh, blockedMutation])
+
+    expect(stateDuringHydration).toMatchObject({
+      activeMissionId: 'mission-b',
+      outings: [],
+      fixSummary: null,
+      loading: true,
+    })
+    expect(createCallsDuringHydration).toBe(0)
+    expect(blockedResult).toBeNull()
+  })
+
+  it('keeps mutations blocked when mission hydration fails', async () => {
+    const store = createStore()
+    store.readOutingFixSummary.mockRejectedValueOnce(new Error('Summary unavailable'))
+    const states: Array<{
+      readonly activeMissionId: string | null
+      readonly loading: boolean
+      readonly error: string | null
+    }> = []
+    const runtime = await startOutingRuntime({
+      outingStore: store,
+      applyRuntime: (state) => states.push(state),
+    })
+
+    await runtime.refreshMission('mission-b')
+    const result = await runtime.startOuting()
+
+    expect(states.at(-1)).toMatchObject({
+      activeMissionId: 'mission-b',
+      loading: false,
+      error: 'Summary unavailable',
+    })
+    expect(result).toBeNull()
+    expect(store.createOuting).not.toHaveBeenCalled()
   })
 })
 

@@ -38,7 +38,13 @@ export function useOutingControlsViewModel(): OutingControlsViewModel {
   const enabled = isMissionModelEnabled()
   const mission = currentMission ?? governanceMission
   const activeOuting = outings.find((outing) => outing.ended_at === null) ?? null
-  const canMutate = enabled && controller !== null && mission !== null && mission.status !== 'finalized'
+  const canMutate =
+    enabled &&
+    controller !== null &&
+    mission !== null &&
+    mission.status !== 'finalized' &&
+    !loading &&
+    error === null
 
   return {
     enabled,
