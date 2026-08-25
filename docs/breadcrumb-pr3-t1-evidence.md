@@ -926,3 +926,45 @@ Pull request [#3](https://github.com/donal0c/sartracker-web/pull/3) targets
 task. The subsequent handoff/readiness/PR-binding commit changes documentation
 only; it does not alter the reviewed application, benchmark, migration, G2,
 qualification, package, or soak bytes.
+
+## External F1/F2/F3 invalidation and remediation
+
+A later independent review superseded the five-review conclusion above. It
+verified three blockers that the prior gates did not exercise:
+
+- missing canonical inventory was inserted with `content_rev = built_rev = 1`
+  even when its zero count/digest came from the manifest fallback rather than
+  an evidence build, permitting a false fresh/Complete claim;
+- renderer-owned tile payload fields were spread after the runner's
+  `requestId` and `type`, so they could replace the worker control envelope;
+  and
+- `readCoverageTile` forwarded raw renderer coordinates, while `geojson-vt`
+  coerced a traversal-shaped `x` for lookup and the cache path retained the raw
+  string for file output.
+
+The red-first run failed all four new assertions: the inserted ledger row had
+`built_rev = 1`, the worker received renderer-owned `type`/`requestId`, the
+mission-store accepted the traversal-shaped coordinate, and the real worker
+returned a PBF instead of rejecting it. Commit
+`259fd7434324731b2ec356e576fad231323f17ad` changes new inventory to
+`built_rev = NULL`, makes the runner own its envelope, copies a validated tile
+request at the main boundary, revalidates bounded integral `z/x/y` in the
+worker, builds paths from those validated numbers, and asserts that final and
+temporary paths remain under the owned cache root.
+
+Green verification at that application head:
+
+- focused ledger/store/runner/address regressions: 4 files / 42 tests;
+- the mission-store integration case creates two real fixes plus canonical
+  inventory with no ledger row and proves the claim remains blocked by
+  `chunk_not_fresh`;
+- full unit: 264 files / 2,110 tests;
+- TypeScript, ESLint, production build, and bundle budgets; and
+- focused participant/coverage Chromium: 10/10.
+
+This remediation does not change schema/open code, the selected Candidate-B
+geometry/index construction, the G2 A/B/C measurements, or the migration path,
+so those bindings remain standing with their original proof limits. The prior
+five-review result is invalidated. The live exact-head Linux package/soak check
+and five fresh independent reviews are required before review readiness. No
+merge or release occurred.
