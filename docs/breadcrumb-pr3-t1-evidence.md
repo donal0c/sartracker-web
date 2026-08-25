@@ -1054,3 +1054,27 @@ and an 8,664/8,664 soak with 32.4 ms main maximum and zero redundant slope, but
 is superseded because this remediation changes the operational worker path.
 New exact-head Linux CI and five fresh independent reviews must restart. No
 merge or release occurred.
+
+## Alive-renderer explicit-Retry remediation
+
+The next review reproduced the live-renderer counterpart to abandoned-stage
+recovery. After backend activation, finalize rejected and the controller's
+cleanup discard also rejected. IPC correctly retained ownership, but did not
+mark the stage abandoned. The controller rejected and forgot that catalog; its
+explicit Retry began a new sync, which reached the worker's unsettled-stage
+guard instead of retrying cleanup.
+
+The regression failed red with `Coverage tile catalog already has an unsettled
+stage.` on that same-renderer Retry. Commit
+`55163cc8fcd4a3df0cd183526a26955691e5c970` defines a new catalog sync from the
+same renderer as explicit supersession: it marks any earlier owned stage
+abandoned and settles it through the existing coalesced cleanup path before
+calling worker sync. Stages owned by a different live renderer are not
+superseded.
+
+Green verification at this application head is 5 focused files / 55 tests,
+264 full unit files / 2,116 tests, TypeScript, ESLint, changed CommonJS syntax,
+production build and bundle budgets, plus participant/coverage Chromium 10/10.
+The exact-head Linux run at `745ab3e` was green but is superseded because this
+commit changes live catalog recovery. New exact-head Linux CI and five fresh
+independent reviews must restart. No merge or release occurred.
