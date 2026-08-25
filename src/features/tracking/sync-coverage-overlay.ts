@@ -121,7 +121,9 @@ export async function syncCoverageOverlay(
     omittedDeviceIds: [...filters.omittedDeviceIds],
     omittedPeriodKeys: [...filters.omittedPeriodKeys],
   }
-  applyFiltersToInstalledOverlays(map, registry, registry.latestFilters)
+  if (catalog !== null) {
+    applyFiltersToInstalledOverlays(map, registry, registry.latestFilters)
+  }
   const overlays = registry.active
   const browserHarnessGeoJson = catalog?.browserHarnessGeoJson
   const desiredPeriods = browserHarnessGeoJson === undefined

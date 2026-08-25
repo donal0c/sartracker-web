@@ -758,11 +758,12 @@ export function createCoverageController(input: {
         appliedKeySet !== selectedKeySet(context.selectedKeys)
       ) return
       const wasPending = state.blockers?.includes('renderer_filter_pending') === true
+      if (!wasPending) return
       publish({
         ...state,
         blockers: state.blockers?.filter((blocker) => blocker !== 'renderer_filter_pending'),
       })
-      if (wasPending) await requestRefresh()
+      await requestRefresh()
     },
     notifyRendererFailure: (failure) => {
       if (

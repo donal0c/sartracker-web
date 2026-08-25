@@ -29,6 +29,17 @@ describe('coverage controller [DON-276]', () => {
     })
   })
 
+  it('does not republish settled state for a repeated map selection acknowledgement', async () => {
+    const harness = createHarness(manifest(1, [[KEY_A, 1]]))
+    await harness.controller.updateContext({ missionId: 'mission-1', rendererGeneration: 'r1' })
+    const publishCount = harness.publish.mock.calls.length
+
+    await harness.controller.notifySelectionApplied()
+
+    expect(harness.publish).toHaveBeenCalledTimes(publishCount)
+    expect(harness.controller.getState()).toMatchObject({ status: 'complete' })
+  })
+
   it('merges by chunk key, retains unchanged delivery, and reloads only the moved revision', async () => {
     const harness = createHarness(manifest(1, [[KEY_A, 1], [KEY_B, 1]]))
     await harness.controller.updateContext({ missionId: 'mission-1', rendererGeneration: 'r1' })
@@ -1862,14 +1873,15 @@ function createHarness(initialManifest: CoverageManifest) {
     chunkRevisions: selectedKeys.map((key: CoverageChunkKey) => ({ key, contentRev: 1 })),
   }))
   const applyChunk = vi.fn().mockResolvedValue(undefined)
+  const publish = vi.fn()
   const controller = createCoverageController({
     readManifest,
     readChunk,
     readClaim,
     applyChunk,
-    publish: vi.fn(),
+    publish,
   })
-  return { controller, readManifest, readChunk, readClaim, applyChunk }
+  return { controller, readManifest, readChunk, readClaim, applyChunk, publish }
 }
 
 function manifest(

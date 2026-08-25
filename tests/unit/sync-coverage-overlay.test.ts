@@ -232,6 +232,29 @@ describe('Candidate B coverage overlay [DON-276]', () => {
     expect(map.layers.size).toBe(0)
   })
 
+  it('clears prior-mission geometry even when its obsolete filters cannot be updated', async () => {
+    const map = createMap()
+    const initial = await syncCoverageOverlay(map, {
+      missionId: 'mission-a',
+      periods: [{ periodKey: 'outing\u0000a', revisionDigest: 'a1' }],
+      delivered: [],
+    })
+    initial.commit()
+    initial.finalize()
+    map.setFilter.mockClear()
+    map.setFilter.mockImplementation(() => {
+      throw new Error('style no longer accepts obsolete coverage filters')
+    })
+
+    const clear = await syncCoverageOverlay(map, null)
+    clear.commit()
+    clear.finalize()
+
+    expect(map.sources.size).toBe(0)
+    expect(map.layers.size).toBe(0)
+    expect(map.setFilter).not.toHaveBeenCalled()
+  })
+
   it('restores the prior owner when a superseding filtered sync fails', async () => {
     const map = createMap()
     const priorCatalog = {
