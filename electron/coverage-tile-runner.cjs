@@ -55,9 +55,11 @@ function createCoverageTileRunner(input) {
     const timeoutMs = options.timeoutMs ?? input.timeoutMs ?? DEFAULT_TIMEOUT_MS
     return new Promise((resolve, reject) => {
       const timeout = setTimeout(() => {
+        const failure = new Error(`Coverage tile worker timed out after ${timeoutMs} ms.`)
         pending.delete(requestId)
-        reject(new Error(`Coverage tile worker timed out after ${timeoutMs} ms.`))
-        failPending(new Error(`Coverage tile worker timed out after ${timeoutMs} ms.`), activeWorker)
+        reject(failure)
+        failPending(failure, activeWorker)
+        input.onFailure?.(failure)
         void terminateWorker(activeWorker)
       }, timeoutMs)
       const abort = () => {
@@ -66,10 +68,11 @@ function createCoverageTileRunner(input) {
         const error = new Error('Coverage tile request was cancelled.')
         error.name = 'AbortError'
         reject(error)
-        failPending(error, activeWorker)
-        void terminateWorker(activeWorker)
+        activeWorker.postMessage({
+          type: 'cancel-request',
+          targetRequestId: requestId,
+        })
       }
-      options.signal?.addEventListener('abort', abort, { once: true })
       pending.set(requestId, {
         resolve,
         reject,
@@ -79,6 +82,11 @@ function createCoverageTileRunner(input) {
           options.signal?.removeEventListener('abort', abort)
         },
       })
+      if (options.signal?.aborted === true) {
+        abort()
+        return
+      }
+      options.signal?.addEventListener('abort', abort, { once: true })
       activeWorker.postMessage({ requestId, type, ...payload })
     })
   }

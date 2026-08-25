@@ -39,6 +39,7 @@ export type CoverageOverlayActivation = {
 }
 
 type PeriodOverlay = {
+  readonly missionId: string
   readonly revisionDigest: string
   readonly sourceId: string
   readonly layerIds: readonly string[]
@@ -46,6 +47,28 @@ type PeriodOverlay = {
 
 const overlaysByMap = new WeakMap<object, Map<string, PeriodOverlay>>()
 let nextOverlaySequence = 0
+
+/** Confirms the current mission-scoped catalog still exists in this map style. */
+export function isCoverageOverlayAttached(
+  map: CoverageOverlayMap,
+  catalog: CoverageTileCatalog,
+): boolean {
+  const overlays = overlaysByMap.get(map)
+  if (overlays === undefined) return false
+  const desiredPeriods = catalog.browserHarnessGeoJson === undefined
+    ? catalog.periods
+    : [{
+        periodKey: 'browser-harness',
+        revisionDigest: catalog.periods.map((period) => period.revisionDigest).join('-') || 'empty',
+      }]
+  return desiredPeriods.every((period) => {
+    const overlay = overlays.get(period.periodKey)
+    return overlay?.missionId === catalog.missionId &&
+      overlay.revisionDigest === period.revisionDigest &&
+      map.getSource(overlay.sourceId) !== undefined &&
+      overlay.layerIds.every((layerId) => map.getLayer(layerId) !== undefined)
+  })
+}
 
 /**
  * Synchronizes Candidate-B period sources independently. An unrelated chunk
@@ -81,7 +104,12 @@ export async function syncCoverageOverlay(
     const prior = overlays.get(period.periodKey)
     const sourceSurvivedStyle = prior !== undefined &&
       map.getSource(prior.sourceId) !== undefined
-    if (prior?.revisionDigest === period.revisionDigest && sourceSurvivedStyle) {
+    if (
+      prior !== undefined &&
+      prior.missionId === catalog?.missionId &&
+      prior.revisionDigest === period.revisionDigest &&
+      sourceSurvivedStyle
+    ) {
       applyCoverageFilters(map, prior, filters)
       continue
     }
@@ -91,6 +119,7 @@ export async function syncCoverageOverlay(
         prior,
         next: installPeriodOverlay(
           map,
+          catalog?.missionId ?? 'browser-harness',
           period,
           browserHarnessGeoJson,
           filters,
@@ -217,6 +246,7 @@ function createCoverageOverlayAbortError(): Error {
 /** Installs and verifies one digest-specific overlay without removing its predecessor. */
 function installPeriodOverlay(
   map: CoverageOverlayMap,
+  missionId: string,
   period: { readonly periodKey: string; readonly revisionDigest: string },
   browserHarnessGeoJson: CoverageTileCatalog['browserHarnessGeoJson'],
   filters: {
@@ -228,6 +258,7 @@ function installPeriodOverlay(
   const lineLayerId = `${sourceId}-line`
   const pointLayerId = `${sourceId}-point`
   const overlay: PeriodOverlay = {
+    missionId,
     revisionDigest: period.revisionDigest,
     sourceId,
     layerIds: [lineLayerId, pointLayerId],
@@ -239,7 +270,7 @@ function installPeriodOverlay(
     map.addSource(sourceId, browserHarnessGeoJson === undefined
       ? {
           type: 'vector',
-          tiles: [createCoverageTileUrl(period.periodKey, period.revisionDigest)],
+          tiles: [createCoverageTileUrl(missionId, period.periodKey, period.revisionDigest)],
           minzoom: 0,
           maxzoom: 16,
         }

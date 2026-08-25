@@ -82,6 +82,7 @@ async function main() {
       const stagedPeriod = catalog.periods[0]
       if (stagedPeriod === undefined) throw new Error('qualification catalog has no staged period')
       const tileAddress = {
+        missionId,
         periodKey: stagedPeriod.periodKey,
         revisionDigest: stagedPeriod.revisionDigest,
         z: 0,

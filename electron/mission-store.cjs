@@ -503,6 +503,7 @@ function createElectronMissionStore(options) {
         }
         return {
           activationId: result.stageId,
+          missionId: input.missionId,
           periods: result.periods,
           delivered: result.delivered,
         }

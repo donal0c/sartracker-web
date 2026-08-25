@@ -14,6 +14,7 @@ type ProtocolRegistry = {
 export function registerCoverageTileProtocol(
   registry: ProtocolRegistry,
   onFailure: (failure: {
+    readonly missionId: string
     readonly periodKey: string
     readonly revisionDigest: string
     readonly message: string
@@ -33,6 +34,7 @@ export function registerCoverageTileProtocol(
       return { data: copyArrayBuffer(bytes) }
     } catch (error) {
       onFailure({
+        missionId: query.missionId,
         periodKey: query.periodKey,
         revisionDigest: query.revisionDigest,
         message: 'Coverage tile delivery failed.',
@@ -44,12 +46,18 @@ export function registerCoverageTileProtocol(
 }
 
 /** Creates one MapLibre template without using a mission-global revision. */
-export function createCoverageTileUrl(periodKey: string, revisionDigest: string): string {
+export function createCoverageTileUrl(
+  missionId: string,
+  periodKey: string,
+  revisionDigest: string,
+): string {
   return `${COVERAGE_TILE_PROTOCOL}://tiles/${encodeURIComponent(periodKey)}` +
-    `/{z}/{x}/{y}.pbf?rev=${encodeURIComponent(revisionDigest)}`
+    `/{z}/{x}/{y}.pbf?mission=${encodeURIComponent(missionId)}` +
+    `&rev=${encodeURIComponent(revisionDigest)}`
 }
 
 function parseCoverageTileUrl(url: string): {
+  readonly missionId: string
   readonly periodKey: string
   readonly revisionDigest: string
   readonly z: number
@@ -58,11 +66,18 @@ function parseCoverageTileUrl(url: string): {
 } {
   const parsed = new URL(url)
   const match = parsed.pathname.match(/^\/(.+)\/(\d+)\/(\d+)\/(\d+)\.pbf$/u)
+  const missionId = parsed.searchParams.get('mission')
   const revisionDigest = parsed.searchParams.get('rev')
-  if (parsed.hostname !== 'tiles' || match === null || revisionDigest === null) {
+  if (
+    parsed.hostname !== 'tiles' ||
+    match === null ||
+    missionId === null ||
+    revisionDigest === null
+  ) {
     throw new Error('Coverage tile URL is invalid.')
   }
   return {
+    missionId,
     periodKey: decodeURIComponent(match[1]!),
     revisionDigest,
     z: Number(match[2]),

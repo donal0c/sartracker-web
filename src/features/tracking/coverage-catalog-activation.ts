@@ -71,7 +71,7 @@ function catalogSignature(catalog: CoverageTileCatalog): string {
     .map((period) => `${period.periodKey}\u0000${period.revisionDigest}`)
     .sort()
     .join('\n')
-  return `${catalog.activationId ?? 'renderer-only'}\n${periods}`
+  return `${catalog.missionId}\n${catalog.activationId ?? 'renderer-only'}\n${periods}`
 }
 
 function createAbortError(): Error {

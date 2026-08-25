@@ -37,14 +37,29 @@ let nextStageId = 0
 const workerGeneration = randomUUID()
 let cacheBytes = 0
 let failCatalogCommitOnce = workerData.faultInjection?.failCatalogCommitOnce === true
+const cancelledRequestIds = new Set()
 const initialization = fs.rm(workerData.cacheDirectory, { recursive: true, force: true })
   .then(() => fs.mkdir(workerData.cacheDirectory, { recursive: true }))
 let requestTail = initialization
 
 parentPort.on('message', (message) => {
+  if (message.type === 'cancel-request') {
+    if (stagedCatalog?.requestId === message.targetRequestId) {
+      stagedCatalog = null
+      return
+    }
+    cancelledRequestIds.add(message.targetRequestId)
+    return
+  }
   const respond = async () => {
     try {
       const result = await execute(message)
+      if (
+        message.type === 'sync-catalog' &&
+        workerData.faultInjection?.catalogResponseDelayMs > 0
+      ) {
+        await delay(workerData.faultInjection.catalogResponseDelayMs)
+      }
       parentPort.postMessage({ requestId: message.requestId, result })
     } catch (error) {
       parentPort.postMessage({
@@ -77,6 +92,7 @@ async function execute(message) {
 
 /** Synchronizes only moved chunks and rebuilds only their contributing periods. */
 async function syncCatalog(message) {
+  throwIfRequestCancelled(message.requestId)
   if (stagedCatalog !== null || activatedCatalog !== null) {
     throw new Error('Coverage tile catalog already has an unsettled stage.')
   }
@@ -116,6 +132,7 @@ async function syncCatalog(message) {
       await delay(workerData.faultInjection.chunkBuildDelayMs)
     }
     await yieldToMessages()
+    throwIfRequestCancelled(message.requestId)
   }
 
   const invalidatedPaths = selectInvalidatedCoverageTilePaths(
@@ -126,6 +143,7 @@ async function syncCatalog(message) {
     difference.changedChunkKeys,
   )
   for (const periodKey of difference.invalidatedPeriodKeys) {
+    throwIfRequestCancelled(message.requestId)
     const features = [...nextChunksByKey.values()]
       .filter((chunk) => createPeriodKey(chunk.key) === periodKey)
       .flatMap((chunk) => chunk.features)
@@ -142,9 +160,12 @@ async function syncCatalog(message) {
         promoteId: null,
       }))
     }
+    await yieldToMessages()
   }
+  throwIfRequestCancelled(message.requestId)
   const stageId = `coverage-stage-${workerGeneration}-${++nextStageId}`
   stagedCatalog = {
+    requestId: message.requestId,
     stageId,
     nextCatalog,
     nextChunksByKey,
@@ -163,6 +184,15 @@ async function syncCatalog(message) {
     })),
     builds,
   }
+}
+
+/** Aborts a cooperative catalog build without discarding the finalized catalog. */
+function throwIfRequestCancelled(requestId) {
+  if (!cancelledRequestIds.delete(requestId)) return
+  const error = new Error('Coverage tile request was cancelled.')
+  error.name = 'AbortError'
+  error.code = 'request-cancelled'
+  throw error
 }
 
 /** Publishes a staged catalog only after main-side build metadata commits. */
@@ -298,10 +328,13 @@ function materializeChunk(key, contentRev, rows) {
 /** Serves only the currently attested revision for one logical period. */
 async function readTile(message) {
   const stagedPeriod = stagedCatalog?.nextCatalog.periods.find((entry) =>
+    stagedCatalog.nextCatalog.missionId === message.missionId &&
     entry.periodKey === message.periodKey && entry.revisionDigest === message.revisionDigest)
   const activePeriod = activeCatalog?.periods.find((entry) =>
+    activeCatalog.missionId === message.missionId &&
     entry.periodKey === message.periodKey && entry.revisionDigest === message.revisionDigest)
   const predecessorPeriod = activatedCatalog?.predecessor.catalog?.periods.find((entry) =>
+    activatedCatalog.predecessor.catalog.missionId === message.missionId &&
     entry.periodKey === message.periodKey && entry.revisionDigest === message.revisionDigest)
   const servingCatalog = stagedPeriod === undefined
     ? (activePeriod === undefined

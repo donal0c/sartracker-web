@@ -2227,6 +2227,7 @@ function createBrowserCoverageTileCatalog(
     periodRevisions.set(periodKey, revisions)
   }
   return {
+    missionId,
     periods: [...periodRevisions.entries()].map(([periodKey, revisions]) => ({
       periodKey,
       revisionDigest: `browser-${revisions.join('-')}`,

@@ -12,11 +12,13 @@ const { createCoverageTileRunner } = require('../../electron/coverage-tile-runne
   readonly createCoverageTileRunner: (input: {
     readonly databasePath: string
     readonly cacheDirectory: string
+    readonly timeoutMs?: number
     readonly createWorker?: () => FakeWorker
     readonly onFailure?: (error: Error) => void
     readonly faultInjection?: {
       readonly failCatalogCommitOnce?: boolean
       readonly chunkBuildDelayMs?: number
+      readonly catalogResponseDelayMs?: number
     }
   }) => {
     readonly syncCatalog: (
@@ -81,11 +83,13 @@ describe('Candidate B coverage tile worker [DON-276]', () => {
     const periodB = first.periods.find((period) => period.periodKey.endsWith('outing-b'))!
     const tileAddress = lonLatToTile(-9.7, 52, 8)
     const firstA = await runner.readTile({
+      missionId: 'mission-1',
       periodKey: periodA.periodKey,
       revisionDigest: periodA.revisionDigest,
       ...tileAddress,
     })
     const firstB = await runner.readTile({
+      missionId: 'mission-1',
       periodKey: periodB.periodKey,
       revisionDigest: periodB.revisionDigest,
       ...tileAddress,
@@ -103,11 +107,13 @@ describe('Candidate B coverage tile worker [DON-276]', () => {
     })
     const nextPeriodA = second.periods.find((period) => period.periodKey === periodA.periodKey)!
     await expect(runner.readTile({
+      missionId: 'mission-1',
       periodKey: periodA.periodKey,
       revisionDigest: periodA.revisionDigest,
       ...tileAddress,
     })).resolves.toEqual(firstA)
     const stagedA = await runner.readTile({
+      missionId: 'mission-1',
       periodKey: nextPeriodA.periodKey,
       revisionDigest: nextPeriodA.revisionDigest,
       ...tileAddress,
@@ -119,17 +125,20 @@ describe('Candidate B coverage tile worker [DON-276]', () => {
 
     expect(nextPeriodB).toEqual(periodB)
     await expect(runner.readTile({
+      missionId: 'mission-1',
       periodKey: periodA.periodKey,
       revisionDigest: periodA.revisionDigest,
       ...tileAddress,
     })).resolves.toEqual(firstA)
     await runner.finalizeCatalog({ stageId: second.stageId })
     await expect(runner.readTile({
+      missionId: 'mission-1',
       periodKey: periodA.periodKey,
       revisionDigest: periodA.revisionDigest,
       ...tileAddress,
     })).resolves.toBeNull()
     await expect(runner.readTile({
+      missionId: 'mission-1',
       periodKey: periodB.periodKey,
       revisionDigest: periodB.revisionDigest,
       ...tileAddress,
@@ -153,6 +162,7 @@ describe('Candidate B coverage tile worker [DON-276]', () => {
     const priorPeriod = first.periods[0]!
     const tileAddress = lonLatToTile(-9.7, 52, 8)
     const priorTile = await runner.readTile({
+      missionId: 'mission-1',
       periodKey: priorPeriod.periodKey,
       revisionDigest: priorPeriod.revisionDigest,
       ...tileAddress,
@@ -169,11 +179,13 @@ describe('Candidate B coverage tile worker [DON-276]', () => {
     await runner.discardCatalog({ stageId: second.stageId })
 
     await expect(runner.readTile({
+      missionId: 'mission-1',
       periodKey: priorPeriod.periodKey,
       revisionDigest: priorPeriod.revisionDigest,
       ...tileAddress,
     })).resolves.toEqual(priorTile)
     await expect(runner.readTile({
+      missionId: 'mission-1',
       periodKey: second.periods[0]!.periodKey,
       revisionDigest: second.periods[0]!.revisionDigest,
       ...tileAddress,
@@ -206,6 +218,7 @@ describe('Candidate B coverage tile worker [DON-276]', () => {
       missionId: 'mission-1', chunks: [{ key: keyA, contentRev: 2 }],
     })
     const retainedRead = runner.readTile({
+      missionId: 'mission-1',
       periodKey: period.periodKey,
       revisionDigest: period.revisionDigest,
       ...tileAddress,
@@ -238,7 +251,7 @@ describe('Candidate B coverage tile worker [DON-276]', () => {
     expect(replacement.stageId).not.toBe(first.stageId)
   })
 
-  it('fences a replacement from the terminated worker generation', async () => {
+  it('cancels one request without destroying the shared worker generation', async () => {
     const workers: FakeWorker[] = []
     runner = createCoverageTileRunner({
       databasePath: '/unused/fenced-worker.sqlite',
@@ -257,11 +270,74 @@ describe('Candidate B coverage tile worker [DON-276]', () => {
     await expect(first).rejects.toMatchObject({ name: 'AbortError' })
 
     const second = runner.syncCatalog({ missionId: 'mission-1', chunks: [] })
-    expect(workers).toHaveLength(2)
-    workers[0]!.emit('exit', 1)
-    workers[1]!.reply({ periods: [], delivered: [], builds: [] })
+    expect(workers).toHaveLength(1)
+    expect(workers[0]!.messages).toContainEqual({
+      type: 'cancel-request',
+      targetRequestId: 1,
+    })
+    workers[0]!.reply({ periods: [], delivered: [], builds: [] })
 
     await expect(second).resolves.toEqual({ periods: [], delivered: [], builds: [] })
+  })
+
+  it('keeps the finalized catalog readable after cancelling a replacement build', async () => {
+    const databasePath = await createDatabase()
+    runner = createCoverageTileRunner({
+      databasePath,
+      cacheDirectory: path.join(directory!, 'coverage-cancel-retained'),
+      faultInjection: { chunkBuildDelayMs: 100 },
+    })
+    const keyA: ChunkKey = {
+      device_id: 'device-a', period_kind: 'outing', period_id: 'outing-a',
+    }
+    const keyB: ChunkKey = {
+      device_id: 'device-b', period_kind: 'outing', period_id: 'outing-b',
+    }
+    const retained = await runner.syncCatalog({
+      missionId: 'mission-1', chunks: [{ key: keyA, contentRev: 1 }],
+    })
+    await runner.commitCatalog({ stageId: retained.stageId })
+    await runner.finalizeCatalog({ stageId: retained.stageId })
+
+    const abortController = new AbortController()
+    const replacement = runner.syncCatalog({
+      missionId: 'mission-1',
+      chunks: [{ key: keyA, contentRev: 1 }, { key: keyB, contentRev: 1 }],
+    }, { signal: abortController.signal })
+    await new Promise((resolve) => setTimeout(resolve, 25))
+    abortController.abort()
+
+    await expect(replacement).rejects.toMatchObject({ name: 'AbortError' })
+    const retainedTile = await runner.readTile({
+      missionId: 'mission-1',
+      periodKey: retained.periods[0]!.periodKey,
+      revisionDigest: retained.periods[0]!.revisionDigest,
+      ...lonLatToTile(-9.7, 52, 8),
+    })
+    expect(retainedTile).not.toBeNull()
+    expect(retainedTile!.byteLength).toBeGreaterThan(0)
+    await expect(runner.syncCatalog({
+      missionId: 'mission-1', chunks: [{ key: keyA, contentRev: 1 }],
+    })).resolves.toMatchObject({ stageId: expect.any(String) })
+  })
+
+  it('discards a completed stage when cancellation wins the response race', async () => {
+    const databasePath = await createDatabase()
+    runner = createCoverageTileRunner({
+      databasePath,
+      cacheDirectory: path.join(directory!, 'coverage-cancel-response-race'),
+      faultInjection: { catalogResponseDelayMs: 100 },
+    })
+    const abortController = new AbortController()
+    const staged = runner.syncCatalog({ missionId: 'mission-1', chunks: [] }, {
+      signal: abortController.signal,
+    })
+    await new Promise((resolve) => setTimeout(resolve, 25))
+    abortController.abort()
+
+    await expect(staged).rejects.toMatchObject({ name: 'AbortError' })
+    await expect(runner.syncCatalog({ missionId: 'mission-1', chunks: [] }))
+      .resolves.toMatchObject({ stageId: expect.any(String) })
   })
 
   it('reports unexpected worker loss to the renderer claim boundary', async () => {
@@ -309,6 +385,31 @@ describe('Candidate B coverage tile worker [DON-276]', () => {
     expect(onFailure).toHaveBeenCalledOnce()
   })
 
+  it('reports shared worker loss when any tile request times out', async () => {
+    const onFailure = vi.fn()
+    runner = createCoverageTileRunner({
+      databasePath: '/unused-timeout-worker.sqlite',
+      cacheDirectory: '/unused-timeout-worker-cache',
+      timeoutMs: 1,
+      onFailure,
+      createWorker: () => new FakeWorker(),
+    })
+
+    await expect(runner.readTile({
+      missionId: 'mission-1',
+      periodKey: 'outing\u0000outing-a',
+      revisionDigest: 'revision-1',
+      z: 8,
+      x: 121,
+      y: 83,
+    })).rejects.toThrow(/timed out/i)
+
+    expect(onFailure).toHaveBeenCalledOnce()
+    expect(onFailure).toHaveBeenCalledWith(expect.objectContaining({
+      message: expect.stringMatching(/timed out/i),
+    }))
+  })
+
   it('returns a valid empty PBF for a current tile with no intersecting geometry', async () => {
     const databasePath = await createDatabase()
     runner = createCoverageTileRunner({
@@ -326,6 +427,7 @@ describe('Candidate B coverage tile worker [DON-276]', () => {
     const period = catalog.periods[0]!
 
     const empty = await runner.readTile({
+      missionId: 'mission-1',
       periodKey: period.periodKey,
       revisionDigest: period.revisionDigest,
       z: 8,
@@ -335,6 +437,29 @@ describe('Candidate B coverage tile worker [DON-276]', () => {
 
     expect(ArrayBuffer.isView(empty)).toBe(true)
     expect(empty).toHaveLength(0)
+  })
+
+  it('never serves a current revision to a request from another mission', async () => {
+    const databasePath = await createDatabase()
+    runner = createCoverageTileRunner({
+      databasePath,
+      cacheDirectory: path.join(directory!, 'coverage-mission-fence'),
+    })
+    const keyA: ChunkKey = {
+      device_id: 'device-a', period_kind: 'outing', period_id: 'outing-a',
+    }
+    const catalog = await runner.syncCatalog({
+      missionId: 'mission-1', chunks: [{ key: keyA, contentRev: 1 }],
+    })
+    await runner.commitCatalog({ stageId: catalog.stageId })
+    await runner.finalizeCatalog({ stageId: catalog.stageId })
+
+    await expect(runner.readTile({
+      missionId: 'mission-2',
+      periodKey: catalog.periods[0]!.periodKey,
+      revisionDigest: catalog.periods[0]!.revisionDigest,
+      ...lonLatToTile(-9.7, 52, 8),
+    })).resolves.toBeNull()
   })
 
   it('clears a failed commit stage so the next catalog retry can proceed', async () => {

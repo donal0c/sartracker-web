@@ -12,6 +12,7 @@ const MAX_RETRY_DELAY_MS = 2_000
 export function registerMapStyleSync(
   map: maplibregl.Map,
   synchronize: (signal: AbortSignal) => void | Promise<void>,
+  options: { readonly onStyleUnavailable?: () => void } = {},
 ): () => void {
   const abortController = new AbortController()
   let disposed = false
@@ -49,6 +50,7 @@ export function registerMapStyleSync(
       return
     }
     if (!hasStyleStructure(map)) {
+      options.onStyleUnavailable?.()
       scheduleRetry()
       return
     }
@@ -89,6 +91,7 @@ export function registerMapStyleSync(
   }
 
   map.on('style.load', runIfReady)
+  map.on('styledataloading', runIfReady)
   map.on('idle', runIfReady)
   runIfReady()
 
@@ -98,6 +101,7 @@ export function registerMapStyleSync(
     abortController.abort()
     clearRetry()
     map.off('style.load', runIfReady)
+    map.off('styledataloading', runIfReady)
     map.off('idle', runIfReady)
   }
 }

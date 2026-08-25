@@ -129,6 +129,8 @@ export type CoverageClaim = {
 }
 
 export type CoverageTileCatalog = {
+  /** Mission-scoped renderer identity; revisions can legitimately repeat across missions. */
+  readonly missionId: string
   /** Opaque native-worker stage awaiting renderer acceptance. */
   readonly activationId?: string
   /** Intermediate recovery catalogs keep prior periods visible until final replacement. */
@@ -717,6 +719,7 @@ export type MissionStore = {
     readonly activationId: string
   }) => Promise<boolean>
   readonly readCoverageTile?: (input: {
+    readonly missionId: string
     readonly periodKey: string
     readonly revisionDigest: string
     readonly z: number

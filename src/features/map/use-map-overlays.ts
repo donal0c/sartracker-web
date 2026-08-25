@@ -16,7 +16,10 @@ import { selectMissionTrackingSnapshot } from '../tracking/mission-active-tracki
 import { useTrackingStylePreferences } from '../tracking/tracking-style-store'
 import { useTrackingStore } from '../tracking/tracking-store'
 import { useCoverageStore } from '../tracking/coverage-store'
-import { syncCoverageOverlay } from '../tracking/sync-coverage-overlay'
+import {
+  isCoverageOverlayAttached,
+  syncCoverageOverlay,
+} from '../tracking/sync-coverage-overlay'
 import { useCoverageFilterStore } from '../tracking/coverage-filter-store'
 import type { RenderableMapId } from '../../lib/map-config'
 import { useStationaryAttentionStore } from '../tracking/stationary-attention-store'
@@ -102,6 +105,13 @@ export function useMapOverlays(options: UseMapOverlaysOptions): void {
       const catalog = coverageState.status === 'inactive' ? null : coverageState.tileCatalog
       let activation: Awaited<ReturnType<typeof syncCoverageOverlay>> | null = null
       try {
+        if (
+          catalog !== null &&
+          coverageController !== null &&
+          !isCoverageOverlayAttached(map, catalog)
+        ) {
+          coverageController.notifyRendererDetached()
+        }
         activation = await syncCoverageOverlay(map, catalog, {
           omittedDeviceIds: omittedCoverageDeviceIds,
           omittedPeriodKeys: omittedCoveragePeriodKeys,
@@ -116,8 +126,9 @@ export function useMapOverlays(options: UseMapOverlaysOptions): void {
         activation?.rollback()
         if (error instanceof Error && error.name === 'AbortError') return
         const period = catalog?.periods[0]
-        if (period !== undefined) {
+        if (period !== undefined && catalog !== null) {
           coverageController?.notifyRendererFailure({
+            missionId: catalog.missionId,
             periodKey: period.periodKey,
             revisionDigest: period.revisionDigest,
             message: 'Coverage map source activation failed.',
@@ -126,7 +137,9 @@ export function useMapOverlays(options: UseMapOverlaysOptions): void {
         throw error
       }
     }
-    return registerMapStyleSync(map, synchronizeOverlay)
+    return registerMapStyleSync(map, synchronizeOverlay, {
+      onStyleUnavailable: () => coverageController?.notifyRendererDetached(),
+    })
   }, [
     coverageState,
     coverageController,

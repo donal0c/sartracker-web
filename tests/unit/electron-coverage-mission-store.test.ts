@@ -339,7 +339,14 @@ describe('Electron coverage mission-store orchestration', () => {
       { stageId: 'coverage-stage-00000000-0000-4000-8000-000000000001-1' },
     )
     expect(tileRunner.discardCatalog).not.toHaveBeenCalled()
-    await expect(store.readCoverageTile({ z: 8, x: 1, y: 1 })).resolves.toEqual(tileBytes)
+    await expect(store.readCoverageTile({
+      missionId: mission.id,
+      periodKey: 'outing\u0000outing-1',
+      revisionDigest: 'revision-1',
+      z: 8,
+      x: 1,
+      y: 1,
+    })).resolves.toEqual(tileBytes)
     const postBuildManifest = await store.readCoverageManifest(mission.id, 'manifest-2')
     expect(postBuildManifest.diagnostics.lastBuildDurationMs).toBeGreaterThanOrEqual(0)
   })
@@ -441,9 +448,14 @@ describe('Electron coverage mission-store orchestration', () => {
     expect(discardCatalog).toHaveBeenCalledWith({
       stageId: 'coverage-stage-00000000-0000-4000-8000-000000000003-1',
     })
-    await expect(store.readCoverageTile({ z: 8, x: 1, y: 1 })).resolves.toEqual(
-      new Uint8Array([1]),
-    )
+    await expect(store.readCoverageTile({
+      missionId: mission.id,
+      periodKey: 'outing\u0000outing-1',
+      revisionDigest: 'revision-1',
+      z: 8,
+      x: 1,
+      y: 1,
+    })).resolves.toEqual(new Uint8Array([1]))
   })
 })
 

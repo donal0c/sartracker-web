@@ -6,9 +6,34 @@ import {
 } from '../../src/features/tracking/sync-coverage-overlay'
 
 describe('Candidate B coverage overlay [DON-276]', () => {
+  it('replaces equal period revisions when the mission identity changes', async () => {
+    const map = createMap()
+    const first = await syncCoverageOverlay(map, {
+      missionId: 'mission-a',
+      periods: [{ periodKey: 'outing\u0000shared', revisionDigest: 'revision-1' }],
+      delivered: [],
+    })
+    first.commit()
+    first.finalize()
+    const firstSource = [...map.sources.keys()][0]!
+
+    const replacement = await syncCoverageOverlay(map, {
+      missionId: 'mission-b',
+      periods: [{ periodKey: 'outing\u0000shared', revisionDigest: 'revision-1' }],
+      delivered: [],
+    })
+
+    expect(map.sources.size).toBe(2)
+    replacement.commit()
+    replacement.finalize()
+    expect(map.sources.has(firstSource)).toBe(false)
+    expect([...map.sources.keys()]).toHaveLength(1)
+  })
+
   it('replaces only the period whose own revision digest moved', async () => {
     const map = createMap()
     ;(await syncCoverageOverlay(map, {
+      missionId: 'mission-1',
       periods: [
         { periodKey: 'outing\u0000a', revisionDigest: 'a1' },
         { periodKey: 'outing\u0000b', revisionDigest: 'b1' },
@@ -21,6 +46,7 @@ describe('Candidate B coverage overlay [DON-276]', () => {
     map.removeSource.mockClear()
 
     ;(await syncCoverageOverlay(map, {
+      missionId: 'mission-1',
       periods: [
         { periodKey: 'outing\u0000a', revisionDigest: 'a2' },
         { periodKey: 'outing\u0000b', revisionDigest: 'b1' },
@@ -35,6 +61,7 @@ describe('Candidate B coverage overlay [DON-276]', () => {
   it('changes coverage filters without replacing sources or touching live layers', async () => {
     const map = createMap()
     const catalog = {
+      missionId: 'mission-1',
       periods: [{ periodKey: 'outing\u0000a', revisionDigest: 'a1' }],
       delivered: [],
     }
@@ -55,6 +82,7 @@ describe('Candidate B coverage overlay [DON-276]', () => {
   it('attests only catalogs whose sources and layers were installed', async () => {
     const map = createMap()
     const catalog = {
+      missionId: 'mission-1',
       periods: [{ periodKey: 'outing\u0000a', revisionDigest: 'a1' }],
       delivered: [],
     }
@@ -69,6 +97,7 @@ describe('Candidate B coverage overlay [DON-276]', () => {
   it('keeps the prior revision installed when replacement source creation fails', async () => {
     const map = createMap()
     ;(await syncCoverageOverlay(map, {
+      missionId: 'mission-1',
       periods: [{ periodKey: 'outing\u0000a', revisionDigest: 'a1' }],
       delivered: [],
     })).commit()
@@ -82,6 +111,7 @@ describe('Candidate B coverage overlay [DON-276]', () => {
     })
 
     await expect(syncCoverageOverlay(map, {
+      missionId: 'mission-1',
       periods: [{ periodKey: 'outing\u0000a', revisionDigest: 'a2' }],
       delivered: [],
     })).rejects.toThrow(/replacement source failed/)
@@ -92,6 +122,7 @@ describe('Candidate B coverage overlay [DON-276]', () => {
   it('retains the prior revision until replacement tiles load and activation commits', async () => {
     const map = createMap()
     const first = await syncCoverageOverlay(map, {
+      missionId: 'mission-1',
       periods: [{ periodKey: 'outing\u0000a', revisionDigest: 'a1' }],
       delivered: [],
     })
@@ -100,6 +131,7 @@ describe('Candidate B coverage overlay [DON-276]', () => {
     map.autoLoadSources = false
 
     const replacement = syncCoverageOverlay(map, {
+      missionId: 'mission-1',
       periods: [{ periodKey: 'outing\u0000a', revisionDigest: 'a2' }],
       delivered: [],
     })
@@ -124,6 +156,7 @@ describe('Candidate B coverage overlay [DON-276]', () => {
   it('can roll renderer activation back until backend finalization succeeds', async () => {
     const map = createMap()
     const initial = await syncCoverageOverlay(map, {
+      missionId: 'mission-1',
       periods: [{ periodKey: 'outing\u0000a', revisionDigest: 'a1' }],
       delivered: [],
     })
@@ -132,6 +165,7 @@ describe('Candidate B coverage overlay [DON-276]', () => {
     const priorSource = [...map.sources.keys()][0]!
 
     const replacement = await syncCoverageOverlay(map, {
+      missionId: 'mission-1',
       periods: [{ periodKey: 'outing\u0000a', revisionDigest: 'a2' }],
       delivered: [],
     })
@@ -152,6 +186,7 @@ describe('Candidate B coverage overlay [DON-276]', () => {
     controller.abort()
 
     await expect(syncCoverageOverlay(map, {
+      missionId: 'mission-1',
       periods: [{ periodKey: 'outing\u0000a', revisionDigest: 'a1' }],
       delivered: [],
     }, undefined, controller.signal)).rejects.toMatchObject({ name: 'AbortError' })

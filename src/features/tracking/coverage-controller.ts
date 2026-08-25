@@ -55,11 +55,13 @@ export type CoverageController = {
     rendererActivation?: CoverageRendererActivation,
   ) => Promise<void>
   readonly notifyRendererFailure: (failure: {
+    readonly missionId: string
     readonly periodKey: string
     readonly revisionDigest: string
     readonly message: string
   }) => void
   readonly notifyRendererUnavailable: (message: string) => void
+  readonly notifyRendererDetached: () => void
   readonly cancel: () => void
   readonly resume: () => Promise<void>
   readonly stop: () => void
@@ -124,6 +126,7 @@ export function createCoverageController(input: {
   let activeController: AbortController | null = null
   let refreshRequested = false
   let lastErrorClass: CoverageErrorClass | null = null
+  let finalizedCatalog: CoverageTileCatalog | null = null
   const catalogActivation = createCoverageCatalogActivation()
   const scheduler = createCoverageScheduler({
     now: () => Date.now(),
@@ -332,11 +335,11 @@ export function createCoverageController(input: {
       if (!ownsOperation(operation, controller, missionId, rendererGeneration)) return
       if (state.status === 'inactive') return
       if (controller.signal.aborted || isAbortError(error)) {
-        publish(asPartialState(state))
+        publish(withFinalizedCatalog(asPartialState(state), finalizedCatalog))
         return
       }
       publish({
-        ...asPartialState(state),
+        ...withFinalizedCatalog(asPartialState(state), finalizedCatalog),
         status: 'error',
         lastErrorClass: classifyCoverageError(error),
         message: 'Complete mission history is temporarily unavailable. Existing coverage remains shown.',
@@ -422,12 +425,22 @@ export function createCoverageController(input: {
       changeSeq: state.changeSeq,
       latestObservedChangeSeq: state.latestObservedChangeSeq,
       manifest: state.manifest,
-      tileCatalog: state.tileCatalog,
+      tileCatalog: finalizedCatalog,
       delivered: {},
       ...(state.blockers === undefined ? {} : { blockers: state.blockers }),
       lastErrorClass: classifyCoverageError(error),
       message: 'Complete mission history is temporarily unavailable. Existing coverage remains shown.',
     }, context.selectedKeys))
+  }
+
+  const restoreRendererAttachment = (): void => {
+    if (state.status === 'inactive' || !state.blockers?.includes('renderer_detached')) return
+    const blockers = state.blockers.filter((blocker) => blocker !== 'renderer_detached')
+    publish({
+      ...state,
+      status: blockers.length === 0 ? 'complete' : 'partial',
+      blockers,
+    })
   }
 
   return {
@@ -440,6 +453,7 @@ export function createCoverageController(input: {
       if (!identityChanged && !selectionChanged) return
       activeController?.abort()
       if (identityChanged) lastErrorClass = null
+      if (identityChanged) finalizedCatalog = null
       operationGeneration += 1
       refreshRequested = false
       context = nextContext.selectedKeys === undefined
@@ -476,9 +490,13 @@ export function createCoverageController(input: {
       rollback: () => undefined,
     }) => {
       if (!catalogActivation.isPending(catalog)) {
-        if (isCurrentCatalog(state, catalog)) {
+        if (
+          isCurrentCatalog(state, catalog) &&
+          isSameCatalog(finalizedCatalog, catalog)
+        ) {
           rendererActivation.commit()
           rendererActivation.finalize?.()
+          restoreRendererAttachment()
           return
         }
         rendererActivation.rollback()
@@ -495,6 +513,7 @@ export function createCoverageController(input: {
         rendererActivation.commit()
         await input.finalizeCatalog?.(catalog)
         rendererActivation.finalize?.()
+        finalizedCatalog = catalog
         if (!catalogActivation.isPending(catalog)) return
         catalogActivation.notifyApplied(catalog)
       } catch (error) {
@@ -514,20 +533,32 @@ export function createCoverageController(input: {
       }
     },
     notifyRendererFailure: (failure) => {
-      if (state.status === 'inactive' || !catalogActivation.containsRevision(
+      if (
+        state.status === 'inactive' ||
+        state.missionId !== failure.missionId ||
+        !catalogActivation.containsRevision(
         state.tileCatalog,
         failure.periodKey,
         failure.revisionDigest,
-      )) return
+        )
+      ) return
       publishRendererUnavailable(failure.message)
     },
     notifyRendererUnavailable: publishRendererUnavailable,
+    notifyRendererDetached: () => {
+      if (state.status !== 'complete' || finalizedCatalog === null) return
+      const blockers = new Set(state.blockers ?? [])
+      blockers.add('renderer_detached')
+      publish({ ...state, status: 'partial', blockers: [...blockers] })
+    },
     cancel: () => {
       activeController?.abort()
       activeController = null
       operationGeneration += 1
       refreshRequested = false
-      if (state.status !== 'inactive') publish(asPartialState(state))
+      if (state.status !== 'inactive') {
+        publish(withFinalizedCatalog(asPartialState(state), finalizedCatalog))
+      }
     },
     resume: () => runLoad(true),
     stop: () => {
@@ -536,21 +567,38 @@ export function createCoverageController(input: {
       activeController = null
       operationGeneration += 1
       refreshRequested = false
+      finalizedCatalog = null
       publish({ status: 'inactive' })
     },
     getState: () => state,
   }
 }
 
+function withFinalizedCatalog(
+  state: Exclude<CoverageState, { readonly status: 'inactive' }>,
+  finalizedCatalog: CoverageTileCatalog | null,
+): Exclude<CoverageState, { readonly status: 'inactive' }> {
+  return { ...state, tileCatalog: finalizedCatalog }
+}
+
 /** Matches only the catalog currently attested by the controller state. */
 function isCurrentCatalog(state: CoverageState, catalog: CoverageTileCatalog): boolean {
   if (state.status === 'inactive' || state.tileCatalog === null) return false
-  if (state.tileCatalog.activationId !== catalog.activationId) return false
+  return isSameCatalog(state.tileCatalog, catalog)
+}
+
+/** Matches a renderer catalog without relying on revisions that can repeat by mission. */
+function isSameCatalog(
+  left: CoverageTileCatalog | null,
+  right: CoverageTileCatalog,
+): boolean {
+  if (left === null || left.missionId !== right.missionId) return false
+  if (left.activationId !== right.activationId) return false
   const revisions = (value: CoverageTileCatalog): string => value.periods
     .map((period) => `${period.periodKey}\u0000${period.revisionDigest}`)
     .sort()
     .join('\n')
-  return revisions(state.tileCatalog) === revisions(catalog)
+  return revisions(left) === revisions(right)
 }
 
 /** Creates the stable tagged renderer identity for one logical chunk. */
