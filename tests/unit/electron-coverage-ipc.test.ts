@@ -491,6 +491,72 @@ describe('coverage IPC ownership [DON-276]', () => {
     ])
   })
 
+  it('sweeps past a stale preferred token to settle the live abandoned stage', async () => {
+    const handlers = new Map<string, (event: unknown, ...args: readonly unknown[]) => unknown>()
+    let stageNumber = 0
+    let liveStage: string | null = null
+    let failLiveDiscardOnce = true
+    const syncCoverageTileCatalog = vi.fn().mockImplementation(async () => {
+      if (liveStage !== null) {
+        throw new Error('Coverage tile catalog already has an unsettled stage.')
+      }
+      stageNumber += 1
+      liveStage = `coverage-stage-sweep-${stageNumber}`
+      return { activationId: liveStage, periods: [], delivered: [] }
+    })
+    const discardCoverageTileCatalog = vi.fn().mockImplementation(async (input: unknown) => {
+      const activationId = (input as { readonly activationId?: unknown }).activationId
+      if (activationId === 'coverage-stage-sweep-2' && failLiveDiscardOnce) {
+        failLiveDiscardOnce = false
+        throw new Error('transient live-stage discard failure')
+      }
+      if (liveStage === null) return true
+      if (activationId !== liveStage) {
+        throw new Error('Coverage tile catalog activation is no longer current.')
+      }
+      liveStage = null
+      return true
+    })
+    const missionStore = {
+      readCoverageManifest: vi.fn(),
+      readCoverageChunk: vi.fn(),
+      readCoverageClaim: vi.fn(),
+      syncCoverageTileCatalog,
+      activateCoverageTileCatalog: vi.fn().mockResolvedValue(true),
+      finalizeCoverageTileCatalog: vi.fn().mockResolvedValue(true),
+      discardCoverageTileCatalog,
+      cancelCoverageQuery: vi.fn().mockResolvedValue(false),
+    }
+    registerCoverageIpcHandlers({
+      ipcMain: { handle: (channel, handler) => handlers.set(channel, handler as never) },
+      readChannels: { manifest: 'manifest', chunk: 'chunk', claim: 'claim', catalog: 'catalog' },
+      activationChannels: { activate: 'activate', finalize: 'finalize', discard: 'discard' },
+      cancelChannel: 'cancel', missionStore,
+      validateIpcSender: vi.fn(),
+    })
+    const senderA = Object.assign(new EventEmitter(), { id: 87 })
+    const senderB = Object.assign(new EventEmitter(), { id: 88 })
+    await handlers.get('catalog')?.(
+      { sender: senderA }, { missionId: 'mission-1', chunks: [] }, 'catalog-sweep-a',
+    )
+    liveStage = null
+    await handlers.get('catalog')?.(
+      { sender: senderB }, { missionId: 'mission-1', chunks: [] }, 'catalog-sweep-b',
+    )
+    senderB.emit('destroyed')
+    await vi.waitFor(() => expect(discardCoverageTileCatalog).toHaveBeenCalledOnce())
+
+    await expect(handlers.get('catalog')?.(
+      { sender: senderA }, { missionId: 'mission-1', chunks: [] }, 'catalog-sweep-a-retry',
+    )).resolves.toMatchObject({ activationId: 'coverage-stage-sweep-3' })
+    expect(discardCoverageTileCatalog.mock.calls.map(([input]) => input)).toEqual([
+      { activationId: 'coverage-stage-sweep-2' },
+      { activationId: 'coverage-stage-sweep-1' },
+      { activationId: 'coverage-stage-sweep-2' },
+      { activationId: 'coverage-stage-sweep-1' },
+    ])
+  })
+
   it('routes chunk and claim reads through their named mission-store methods', async () => {
     const handlers = new Map<string, (event: unknown, ...args: readonly unknown[]) => unknown>()
     const missionStore = {

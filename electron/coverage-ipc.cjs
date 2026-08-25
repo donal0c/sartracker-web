@@ -160,19 +160,35 @@ function abandonSenderStages(ownedStages, senderId) {
 
 /** Settles every renderer-abandoned stage before allowing another catalog sync. */
 async function settleAbandonedStages(input, ownedStages, preferredSenderId) {
-  const abandoned = [...ownedStages.entries()]
+  let pending = [...ownedStages.entries()]
     .filter(([, owner]) => owner.abandoned)
     .sort(([, left], [, right]) =>
       Number(right.senderId === preferredSenderId) -
       Number(left.senderId === preferredSenderId),
     )
-  for (const [activationId, owner] of abandoned) {
-    try {
-      await settleAbandonedStage(input, ownedStages, activationId, owner)
-    } catch (error) {
+  let retriedWithoutProgress = false
+  let lastError = new Error('Coverage tile catalog cleanup did not settle.')
+  while (pending.length > 0) {
+    const failed = []
+    let madeProgress = false
+    for (const [activationId, owner] of pending) {
       if (ownedStages.get(activationId) !== owner || !owner.abandoned) continue
-      await settleAbandonedStage(input, ownedStages, activationId, owner)
+      try {
+        await settleAbandonedStage(input, ownedStages, activationId, owner)
+        if (ownedStages.get(activationId) !== owner) madeProgress = true
+      } catch (error) {
+        if (ownedStages.get(activationId) !== owner || !owner.abandoned) {
+          madeProgress = true
+          continue
+        }
+        lastError = error instanceof Error ? error : lastError
+        failed.push([activationId, owner])
+      }
     }
+    if (failed.length === 0) return
+    if (!madeProgress && retriedWithoutProgress) throw lastError
+    retriedWithoutProgress = !madeProgress
+    pending = failed
   }
 }
 
