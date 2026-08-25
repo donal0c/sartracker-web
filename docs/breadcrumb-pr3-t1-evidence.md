@@ -906,3 +906,23 @@ standing. No packaged 960k/2M coverage run, packaged forced-kill matrix,
 Windows run, field-hardware run, or coordinator-owned post-merge Ubuntu 960k
 checkpoint was performed. Five fresh independent reviews of the new
 evidence-bound exact head still gate PR creation.
+
+## Independent review and pull-request binding
+
+Five independent reviewers completed fresh read-only reviews of exact pushed
+head `0455f41cd1a8877141fc64752a2c179c12a42cf1` against exact PR-2 base
+`7021fc1ef33e6da5c91c96cd86e836fc3754f48f`. All five returned CLEAN with no
+P1/P2 findings. Their focused proof covered persistence/schema/migration,
+ledger/revisions/invalidation/backfill, worker/query/tile lifecycles,
+main-isolate boundaries, current-position independence, participant-only
+evidence, honest completion/progress, filters, G3 defaults and rollback,
+exact Dots, browser proof parity, benchmark teardown, operator manual, and
+evidence checksum bindings. One reviewer saw a browser reload-recovery timeout;
+the case passed three isolated repetitions and the immediate complete 10-test
+rerun, so no reproducible safety failure remained.
+
+Pull request [#3](https://github.com/donal0c/sartracker-web/pull/3) targets
+`master`. It is open for review only and was not merged or released by this
+task. The subsequent handoff/readiness/PR-binding commit changes documentation
+only; it does not alter the reviewed application, benchmark, migration, G2,
+qualification, package, or soak bytes.
