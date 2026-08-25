@@ -833,3 +833,63 @@ pipeline or schema/open path. There was no packaged 960k/2M coverage run,
 packaged forced-kill matrix, Windows run, field-hardware run, or
 coordinator-owned post-merge Ubuntu 960k checkpoint. Five fresh independent
 reviews of the final evidence-bound head still gate PR creation.
+
+## Final browser-proof and benchmark-teardown remediation
+
+Independent reviews #3 and #5 at `e4ccd98` found that the browser validation
+mirror still omitted the fixed mission-start-to-selection checkpoint for an
+initial direct device, even though Electron production code was already
+correct. That mismatch could let a browser coverage claim or finish-flow proof
+pass without exercising the production backfill prerequisite. The red-first
+unit regression observed a direct participant with no pending status, a ready
+coverage claim, and a successful finish. Focused Chromium then exposed three
+coverage-only scenarios that had implicitly relied on the missing checkpoint;
+their fixture now completes the worker-owned prerequisite explicitly rather
+than weakening the production fence.
+
+Reviews #4 and #5 independently matched the reported packaged macOS
+`TypeError: Object has been destroyed` to the G2 benchmark's renderer teardown.
+Its 50 ms RSS probe could outlive the BrowserWindow, and worker-event delivery
+could race the same destroyed `webContents`. The new lifecycle regression was
+red because no destruction-safe boundary existed. Commit
+`928158c923e970063adcd98b11ed01c41313b1d3` adds one tested lifecycle module,
+stops the probe and clears the window on `closed`/`destroyed`, safely drops only
+destroyed-object RSS/event races, and makes this benchmark-only app quit when
+its final window closes. The bounded benchmark package rebuilt successfully on
+macOS; its executable and `app.asar` SHA-256 values are
+`f5212ea9181df95040385dfd04f512e983ed95394a96fb7c4b8ee838ea433caf`
+and
+`0b8d149fe0db1aa40ef57956d2961a0de90ec1318e0b07ae124a760d8e55e35f`.
+
+Deterministic gates at exact remediation head `928158c` passed:
+
+- focused lifecycle, benchmark-contract, and browser-mirror units: 3 files /
+  20 tests;
+- full serial unit: 263 files / 2,104 tests;
+- ESLint with zero warnings, TypeScript, Electron/benchmark CommonJS syntax,
+  exact Dots 10/10, production build, and bundle budgets;
+- focused participant/coverage Chromium: 10/10, then full Chromium 158/158;
+- participant plus coverage visual: 11/11 workflows producing 13 captures;
+- fresh no-cache independent critical visual review: 13/13, zero failures or
+  reviewer errors; and
+- exact-head unsigned Ubuntu x64 and macOS arm64 packaging.
+
+The exact-head application package bindings are:
+
+| Platform | Executable SHA-256 | `app.asar` SHA-256 |
+| --- | --- | --- |
+| Ubuntu x64 | `6344ae1d9044fedc54779e8bacaddc032fdcc0f55e146fc3623756eafa0bbaf8` | `2d1efeb5cf97afadafaababb06ae67b491e753d1210763b0957bddfc2028c1eb` |
+| macOS arm64 | `f5212ea9181df95040385dfd04f512e983ed95394a96fb7c4b8ee838ea433caf` | `f3ad08f50a5e3e7cf713b2ec0de859446eb3c1e35e6eda8387abf657c39a64cd` |
+
+The final replacement soak at `69a1096` remains standing under the accepted
+invalidation rule. This remediation changes only the opt-in browser proof
+mirror and the separate benchmark harness lifecycle; it does not change the
+packaged operational ingest, persistence, coverage worker/query/geometry,
+Electron main-isolate hot path, or soak event classifier. A second packaged
+soak would exceed the accepted single-final-soak boundary without testing a
+changed operational path. The ratified `53e38bf` G2 rows, corrected 960k/2M
+production qualification, and 3.704 GB v9-to-v10 migration likewise remain
+standing. No packaged 960k/2M coverage run, packaged forced-kill matrix,
+Windows run, field-hardware run, or coordinator-owned post-merge Ubuntu 960k
+checkpoint was performed. Five fresh independent reviews of the new
+evidence-bound exact head still gate PR creation.
