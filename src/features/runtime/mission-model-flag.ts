@@ -9,7 +9,7 @@ export const DEFAULT_MISSION_MODEL_ENABLED = true
 
 /**
  * Resolves the internal mission-model gate without exposing an operator toggle.
- * An explicit build value always wins so release builds fail closed by default.
+ * An explicit build value always wins, allowing controlled rollback from the approved default-on posture.
  */
 export function resolveMissionModelFlag(context: MissionModelFlagContext): boolean {
   if (context.buildFlag !== undefined) {

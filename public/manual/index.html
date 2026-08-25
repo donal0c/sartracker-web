@@ -631,11 +631,12 @@
               <tr><td>Minimize / Expand</td><td>Collapses the active mission controls after setup to free right-rail space.</td><td>The control is not available while paused; expand before pausing, finishing, or changing lifecycle state.</td></tr>
             </tbody>
           </table>
-          <div class="warning">
-            <strong>Internal qualification feature:</strong> the mission participant and outing controls
-            below are disabled in normal packaged and release builds while the Breadcrumb Programme is
-            being qualified. Do not expect them in the current team beta. When the internal mission model
-            is enabled, Diagnostics states <strong>mission model: enabled (internal)</strong>.
+          <div class="note">
+            <strong>Approved mission model:</strong> the mission participant and outing controls below are
+            enabled by default in packaged and release builds that contain this PR-3 change. There is no
+            operator toggle. A maintainer can use an explicit build override to disable the mission model
+            and complete-coverage view together for controlled rollback. Diagnostics states
+            <strong>mission model: enabled (internal)</strong> while the model is active.
           </div>
           <h3>Mission Participants</h3>
           <p>

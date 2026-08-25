@@ -6,6 +6,8 @@ describe('breadcrumb PR-3 operator manual [DON-275]', () => {
     const manual = readFileSync('public/manual/index.html', 'utf8')
 
     for (const required of [
+      'enabled by default in packaged and release builds',
+      'explicit build override',
       'Mission History Coverage',
       'All mission history shown',
       'All selected history shown',
@@ -18,6 +20,8 @@ describe('breadcrumb PR-3 operator manual [DON-275]', () => {
     ]) {
       expect(manual).toContain(required)
     }
+    expect(manual).not.toContain('disabled in normal packaged and release builds')
+    expect(manual).not.toContain('Do not expect them in the current team beta')
     for (const asset of [
       'mission-history-coverage-status.png',
       'mission-history-evidence-pending.png',
