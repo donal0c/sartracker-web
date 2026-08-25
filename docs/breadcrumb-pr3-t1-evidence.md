@@ -689,3 +689,60 @@ because schema and database-open code are unchanged. No packaged 960k/2M
 coverage run, packaged forced-kill matrix, Windows run, field-hardware run, or
 coordinator-owned post-merge Ubuntu 960k checkpoint was performed. Five fresh
 independent exact-head reviews still gate PR creation.
+
+## Accepted-write outing lookup remediation
+
+Exact-head safety review #1 at `ec0f339` found one remaining breach of the
+accepted no-mission-sized-main-isolate boundary: every accepted position
+transaction synchronously read and sorted every outing for the mission. The
+red regression observed that full-list SQL instead of the required point
+lookup. Commit `add5639ce688caa671109aa5593cb2e789e900f6` prepares one
+`mission_id + started_at` query per accepted batch, resolves each fix through
+the existing `idx_outings_mission_started` index in O(log outings), and retains
+the existing transactionally current half-open period semantics. The durable
+test asserts the SQL shape, exact Outing/Outside-outings identities, and SQLite
+query plan.
+
+Exact `add5639` gates passed on the Ubuntu reference host:
+
+- focused ledger/store integration: 4 files / 98 tests;
+- full serial unit: 262 files / 2,096 tests;
+- ESLint with zero warnings, TypeScript, changed CommonJS syntax, exact Dots
+  10/10, production build, and bundle budgets;
+- full Chromium: 158/158; and
+- unsigned Ubuntu x64 and macOS arm64 packaging.
+
+Because this remediation changes the ingest hot path, the previous packaged
+soak was not carried forward. The single replacement CI-scale soak ran on the
+active Ubuntu desktop through Xwayland with Mesa llvmpipe attested via
+ANGLE/OpenGL and passed: 6/6 batches, 8,664/8,664 source-exact positions, one
+restart, both launches exit 0, zero renderer crashes, integrity `ok`, WAL
+0/0/0, zero redundant telemetry slope, four healthy operator interactions,
+7.784 ms main-process maximum, 100.3 ms renderer maximum, and
+1,105,354,752-byte peak process-tree RSS. The post-run ledger held one mission
+at change sequence 12, 32 chunks, zero pending invalidations, and 24,576 bytes
+across coverage tables/indexes.
+
+The report SHA-256 is
+`f216d3c2cf25489690b7876c65073b96ccad66297b51c997f792edf56b701526`;
+the Ubuntu executable and `app.asar` SHA-256 values are
+`6344ae1d9044fedc54779e8bacaddc032fdcc0f55e146fc3623756eafa0bbaf8`
+and
+`0e5a789d038d0eba3beccd9a2f71930d4c9ae5c225008ce894620366bd9fc581`.
+The macOS arm64 executable and `app.asar` values are
+`f5212ea9181df95040385dfd04f512e983ed95394a96fb7c4b8ee838ea433caf`
+and
+`a4bccd1a8bba7ee5ed5697fd31ce3453aa498017b779d5bd24b8e9a38ce8572d`.
+The committed Ubuntu evidence is under
+`output/pr3-packaged-soak/add5639ce688caa671109aa5593cb2e789e900f6/`;
+its evidence-manifest SHA-256 is
+`e057cc87140de9ddaa02b3af97a6c86717dc1bac14a82a080ba9ece7fb78cc03`.
+
+No new coverage visual was billed because `add5639` changes only the Electron
+ledger SQL and its unit test; the exact UI/renderer tree and its 7/7 workflows
+plus 9/9 no-cache critical review remain byte-identical to `4b740f2`. G2 and the
+decoded 960k/2M production qualification remain standing because this lookup
+does not change the Candidate-B renderer/query/segmentation/geometry pipeline.
+The 3.704 GB migration remains standing because schema and database-open code
+are unchanged. Five fresh independent reviews of the new evidence-bound exact
+head still gate PR creation.
