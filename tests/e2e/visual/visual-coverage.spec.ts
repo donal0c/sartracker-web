@@ -130,6 +130,48 @@ Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
     })
   })
 
+  test('detached renderer never claims blank coverage is still shown', async ({ page }) => {
+    await seedCoverageMission(page)
+    await page.evaluate(async () => {
+      const { applyCoverageState, useCoverageStore } = await import(
+        '/src/features/tracking/coverage-store.ts'
+      )
+      const current = useCoverageStore.getState().state
+      if (current.status === 'inactive') throw new Error('Coverage state is inactive.')
+      applyCoverageState({
+        ...current,
+        status: 'partial',
+        blockers: ['renderer_detached'],
+      })
+    })
+
+    const panel = page.getByTestId('coverage-status-panel')
+    await expect(panel).toContainText('Coverage is being reattached to the map')
+    await expect(panel).toContainText('Current positions remain live')
+    await expect(panel).not.toContainText('showing loaded coverage')
+    await expect(page.getByTestId('coverage-progress')).toHaveCount(0)
+    await expect(page.getByTestId('coverage-retry')).toHaveCount(0)
+
+    await captureElementAndRegister(page, 'coverage-status-panel', {
+      testId: 'coverage-renderer-reattaching-honesty',
+      testName: 'Style-detached mission history withholds visible-coverage claims',
+      area: 'tracking',
+      severity: 'critical',
+      verificationPrompt: `Verify this SAR Tracker mission-history renderer-reattachment state:
+1. The panel clearly says coverage is being reattached to the map.
+2. It explicitly reassures the operator that current positions remain live.
+3. It does not claim loaded history remains shown while coverage sources are detached.
+4. It does not show a misleading 100% progress bar.
+5. It does not offer Retry for the automatic style reattachment state.
+Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
+      playwrightAssertions: [
+        'renderer reattachment wording is visible',
+        'current positions remain live',
+        'no retained-coverage claim, progress bar, or Retry action is rendered',
+      ],
+    })
+  })
+
   test('selected-scope wording and Outside outings filter are explicit', async ({ page }) => {
     await seedCoverageMission(page)
     await page.getByTestId('mission-control-collapse-btn').click()

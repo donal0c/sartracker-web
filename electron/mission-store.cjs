@@ -473,7 +473,7 @@ function createElectronMissionStore(options) {
       async (signal) => {
         getMission(db, input.missionId)
         const buildStartedAt = performance.now()
-        const result = await coverageTileRunner.syncCatalog(input)
+        const result = await coverageTileRunner.syncCatalog(input, { signal })
         if (signal.aborted) {
           await coverageTileRunner.discardCatalog({ stageId: result.stageId })
           throw createCoverageRequestAbortError()

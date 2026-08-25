@@ -81,6 +81,20 @@ describe('coverage status panel [DON-275]', () => {
     expect(host.querySelector('[data-testid="coverage-retry"]')).toBeNull()
     expect(onRetry).not.toHaveBeenCalled()
   })
+
+  it('does not claim coverage is shown while the renderer style is detached', () => {
+    render(state('partial', {
+      blockers: ['renderer_detached'],
+      deliveredFixCount: 10,
+      totalFixCount: 10,
+    }))
+
+    expect(host.textContent).toContain('Coverage is being reattached to the map')
+    expect(host.textContent).toContain('Current positions remain live')
+    expect(host.textContent).not.toContain('showing loaded coverage')
+    expect(host.querySelector('[data-testid="coverage-progress"]')).toBeNull()
+    expect(host.querySelector('[data-testid="coverage-retry"]')).toBeNull()
+  })
 })
 
 function render(

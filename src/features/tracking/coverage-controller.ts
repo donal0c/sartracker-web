@@ -427,14 +427,16 @@ export function createCoverageController(input: {
       manifest: state.manifest,
       tileCatalog: finalizedCatalog,
       delivered: {},
-      ...(state.blockers === undefined ? {} : { blockers: state.blockers }),
+      ...(state.blockers === undefined
+        ? {}
+        : { blockers: state.blockers.filter((blocker) => blocker !== 'renderer_detached') }),
       lastErrorClass: classifyCoverageError(error),
       message: 'Complete mission history is temporarily unavailable. Existing coverage remains shown.',
     }, context.selectedKeys))
   }
 
   const restoreRendererAttachment = (): void => {
-    if (state.status === 'inactive' || !state.blockers?.includes('renderer_detached')) return
+    if (state.status !== 'partial' || !state.blockers?.includes('renderer_detached')) return
     const blockers = state.blockers.filter((blocker) => blocker !== 'renderer_detached')
     publish({
       ...state,
@@ -512,9 +514,13 @@ export function createCoverageController(input: {
         }
         rendererActivation.commit()
         await input.finalizeCatalog?.(catalog)
+        if (!catalogActivation.isPending(catalog) || !isCurrentCatalog(state, catalog)) {
+          rendererActivation.rollback()
+          await input.discardCatalog?.(catalog).catch(() => undefined)
+          return
+        }
         rendererActivation.finalize?.()
         finalizedCatalog = catalog
-        if (!catalogActivation.isPending(catalog)) return
         catalogActivation.notifyApplied(catalog)
       } catch (error) {
         const normalized = error instanceof Error

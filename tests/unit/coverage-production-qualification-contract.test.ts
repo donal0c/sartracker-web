@@ -22,4 +22,15 @@ describe('production coverage qualification contract [DON-276]', () => {
     expect(activate).toBeGreaterThan(stagedRead)
     expect(activeRead).toBeGreaterThan(activate)
   })
+
+  it('probes every newly introduced period with non-empty decoded geometry and binds digests', () => {
+    const driver = readFileSync(driverPath, 'utf8')
+
+    expect(driver).toContain("period.periodKey === group.identity")
+    expect(driver).toContain('tile.byteLength === 0')
+    expect(driver).toContain('new VectorTile(new Pbf(tile))')
+    expect(driver).toContain('geometryFeatureCount')
+    expect(driver).toContain('geometrySha256')
+    expect(driver).toContain('revisionSha256')
+  })
 })

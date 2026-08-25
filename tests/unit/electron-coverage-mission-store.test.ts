@@ -444,6 +444,8 @@ describe('Electron coverage mission-store orchestration', () => {
     expect(syncCatalog).toHaveBeenCalledWith({
       missionId: mission.id,
       chunks: [],
+    }, {
+      signal: expect.any(AbortSignal),
     })
     expect(discardCatalog).toHaveBeenCalledWith({
       stageId: 'coverage-stage-00000000-0000-4000-8000-000000000003-1',
@@ -456,6 +458,46 @@ describe('Electron coverage mission-store orchestration', () => {
       x: 1,
       y: 1,
     })).resolves.toEqual(new Uint8Array([1]))
+  })
+
+  it('forwards cancellation to the tile runner before a replacement catalog starts', async () => {
+    directory = await mkdtemp(path.join(tmpdir(), 'sartracker-coverage-store-'))
+    const syncCatalog = vi.fn((input: unknown, options: { readonly signal: AbortSignal }) =>
+      new Promise<{
+        stageId: string
+        periods: readonly unknown[]
+        delivered: readonly unknown[]
+        builds: readonly unknown[]
+      }>((resolve, reject) => {
+        if (syncCatalog.mock.calls.length > 1) {
+          resolve({ stageId: 'replacement-stage', periods: [], delivered: [], builds: [] })
+          return
+        }
+        options.signal.addEventListener('abort', () => {
+          const error = new Error('cancelled by mission store')
+          error.name = 'AbortError'
+          reject(error)
+        }, { once: true })
+      }))
+    const tileRunner = {
+      syncCatalog,
+      commitCatalog: vi.fn().mockResolvedValue(true),
+      discardCatalog: vi.fn().mockResolvedValue(true),
+      readTile: vi.fn().mockResolvedValue(new Uint8Array([1])),
+      close: vi.fn().mockResolvedValue(undefined),
+    }
+    store = createElectronMissionStore({ userDataPath: directory, coverageTileRunner: tileRunner })
+    const mission = await seedMission(store)
+    const first = store.syncCoverageTileCatalog({ missionId: mission.id, chunks: [] }, 'first')
+    await vi.waitFor(() => expect(syncCatalog).toHaveBeenCalledTimes(1))
+
+    await expect(store.cancelCoverageQuery('first')).resolves.toBe(true)
+    await expect(first).rejects.toMatchObject({ name: 'AbortError' })
+    await expect(store.syncCoverageTileCatalog({
+      missionId: mission.id,
+      chunks: [],
+    }, 'replacement')).resolves.toMatchObject({ activationId: 'replacement-stage' })
+    expect(syncCatalog).toHaveBeenCalledTimes(2)
   })
 })
 

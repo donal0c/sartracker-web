@@ -102,13 +102,14 @@ export async function syncCoverageOverlay(
   }[] = []
   for (const period of desired.values()) {
     const prior = overlays.get(period.periodKey)
-    const sourceSurvivedStyle = prior !== undefined &&
-      map.getSource(prior.sourceId) !== undefined
+    const structureSurvivedStyle = prior !== undefined &&
+      map.getSource(prior.sourceId) !== undefined &&
+      prior.layerIds.every((layerId) => map.getLayer(layerId) !== undefined)
     if (
       prior !== undefined &&
       prior.missionId === catalog?.missionId &&
       prior.revisionDigest === period.revisionDigest &&
-      sourceSurvivedStyle
+      structureSurvivedStyle
     ) {
       applyCoverageFilters(map, prior, filters)
       continue

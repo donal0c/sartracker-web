@@ -22,6 +22,7 @@ export function CoverageStatusPanel(props: CoverageStatusPanelProps) {
     blockers.has('ingest_outbox_pending')
   const rendererEvidencePending = blockers.has('renderer_evidence_pending')
   const rendererEvidenceDegraded = blockers.has('renderer_evidence_degraded')
+  const rendererDetached = blockers.has('renderer_detached')
   const evidenceBlocked = degraded || rendererEvidencePending || rendererEvidenceDegraded
   const omissions = props.omittedDeviceCount + props.omittedOutingCount +
     (props.unassignedOmitted ? 1 : 0)
@@ -35,7 +36,11 @@ export function CoverageStatusPanel(props: CoverageStatusPanelProps) {
       <div className="flex flex-col items-start gap-3">
         <div>
           <p className="font-bold uppercase tracking-[0.08em]">Mission history coverage</p>
-          {reorganizing ? (
+          {rendererDetached ? (
+            <p className="mt-1" data-testid="coverage-renderer-detached">
+              Coverage is being reattached to the map. Current positions remain live.
+            </p>
+          ) : reorganizing ? (
             <p className="mt-1" data-testid="coverage-reorganizing">
               Updating outing assignment — loaded coverage remains shown.
             </p>
@@ -78,7 +83,7 @@ export function CoverageStatusPanel(props: CoverageStatusPanelProps) {
           )}
         </div>
         {(props.state.status === 'partial' || props.state.status === 'error') &&
-        !evidenceBlocked ? (
+        !evidenceBlocked && !rendererDetached ? (
           <button
             className="sar-button px-3 py-1.5 text-[11px] font-bold uppercase tracking-[0.08em]"
             data-testid="coverage-retry"
@@ -92,7 +97,7 @@ export function CoverageStatusPanel(props: CoverageStatusPanelProps) {
 
       {props.state.status === 'loading' || props.state.status === 'partial' ||
       props.state.status === 'error' ? (
-        evidenceBlocked ? null :
+        evidenceBlocked || rendererDetached ? null :
         <div className="mt-3">
           <progress
             aria-label="Mission history loading progress"

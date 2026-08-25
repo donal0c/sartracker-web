@@ -2,9 +2,12 @@ const fs = require('node:fs')
 const fsp = require('node:fs/promises')
 const path = require('node:path')
 const { execFileSync } = require('node:child_process')
+const { createHash } = require('node:crypto')
 const { performance } = require('node:perf_hooks')
 
 const Database = require('better-sqlite3')
+const { VectorTile } = require('vt-pbf/node_modules/@mapbox/vector-tile')
+const Pbf = require('vt-pbf/node_modules/pbf')
 const { createElectronMissionStore } = require('../electron/mission-store.cjs')
 
 async function main() {
@@ -66,6 +69,7 @@ async function main() {
     let firstUsefulAt = null
     let deliveredFixes = 0
     const periodDurationsMs = []
+    const geometryProbes = []
     for (const [groupIndex, group] of groups.entries()) {
       working.push(...group.chunks.map((chunk) => ({
         key: chunk.key,
@@ -79,7 +83,7 @@ async function main() {
       if (typeof catalog.activationId !== 'string') {
         throw new Error('qualification catalog has no activation ID')
       }
-      const stagedPeriod = catalog.periods[0]
+      const stagedPeriod = catalog.periods.find((period) => period.periodKey === group.identity)
       if (stagedPeriod === undefined) throw new Error('qualification catalog has no staged period')
       const tileAddress = {
         missionId,
@@ -89,9 +93,25 @@ async function main() {
         x: 0,
         y: 0,
       }
-      requireTile(await store.readCoverageTile({ ...tileAddress }), 'staged')
+      const stagedProbe = requireTile(
+        await store.readCoverageTile({ ...tileAddress }),
+        'staged',
+      )
       await store.activateCoverageTileCatalog({ activationId: catalog.activationId })
-      requireTile(await store.readCoverageTile({ ...tileAddress }), 'active')
+      const activeProbe = requireTile(
+        await store.readCoverageTile({ ...tileAddress }),
+        'active',
+      )
+      if (stagedProbe.sha256 !== activeProbe.sha256) {
+        throw new Error('qualification active tile differs from its staged geometry')
+      }
+      geometryProbes.push({
+        periodKey: stagedPeriod.periodKey,
+        revisionDigest: stagedPeriod.revisionDigest,
+        byteLength: activeProbe.byteLength,
+        geometryFeatureCount: activeProbe.geometryFeatureCount,
+        sha256: activeProbe.sha256,
+      })
       await store.finalizeCoverageTileCatalog({ activationId: catalog.activationId })
       periodDurationsMs.push(performance.now() - periodStartedAt)
       const delivered = new Set(catalog.delivered.map((entry) =>
@@ -121,6 +141,15 @@ async function main() {
       firstUsefulMs: firstUsefulAt === null ? null : firstUsefulAt - startedAt,
       completeMs: completedAt - startedAt,
       periodDurationsMs,
+      geometryFeatureCount: geometryProbes.reduce(
+        (sum, entry) => sum + entry.geometryFeatureCount,
+        0,
+      ),
+      geometrySha256: digestLines(geometryProbes.map((entry) =>
+        `${entry.periodKey}\u0000${entry.revisionDigest}\u0000${entry.geometryFeatureCount}\u0000${entry.sha256}`)),
+      revisionSha256: digestLines(geometryProbes.map((entry) =>
+        `${entry.periodKey}\u0000${entry.revisionDigest}`)),
+      geometryProbes,
       mainMaxGapMs: Math.max(0, ...gaps),
       claim: {
         changeSeq: claim.changeSeq,
@@ -146,9 +175,23 @@ async function main() {
 }
 
 function requireTile(tile, phase) {
-  if (!(tile instanceof Uint8Array)) {
+  if (!(tile instanceof Uint8Array) || tile.byteLength === 0) {
     throw new Error(`qualification ${phase} tile was unavailable`)
   }
+  const decoded = new VectorTile(new Pbf(tile))
+  const geometryFeatureCount = decoded.layers.coverage?.length ?? 0
+  if (geometryFeatureCount === 0) {
+    throw new Error(`qualification ${phase} tile contained no coverage geometry`)
+  }
+  return {
+    byteLength: tile.byteLength,
+    geometryFeatureCount,
+    sha256: createHash('sha256').update(tile).digest('hex'),
+  }
+}
+
+function digestLines(lines) {
+  return createHash('sha256').update([...lines].sort().join('\n')).digest('hex')
 }
 
 main().catch((error) => {

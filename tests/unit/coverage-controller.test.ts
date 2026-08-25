@@ -516,6 +516,104 @@ describe('coverage controller [DON-276]', () => {
     expect(controller.getState()).toMatchObject({ status: 'complete', blockers: [] })
   })
 
+  it('does not let style reattachment erase a worker failure', async () => {
+    const controller = createCoverageController({
+      readManifest: vi.fn().mockResolvedValue(manifest(1, [[KEY_A, 1]])),
+      readChunk: vi.fn(),
+      readClaim: vi.fn().mockResolvedValue({
+        changeSeq: 1, databaseReady: true, blockers: [],
+        chunkRevisions: [{ key: KEY_A, contentRev: 1 }],
+      }),
+      applyChunk: vi.fn(),
+      deliverSelection: vi.fn().mockResolvedValue({
+        activationId: 'reattach-after-failure',
+        missionId: 'mission-1',
+        periods: [{ periodKey: 'outing\u0000outing-1', revisionDigest: 'revision-1' }],
+        delivered: [{ key: KEY_A, contentRev: 1 }],
+      }),
+      activateCatalog: vi.fn().mockResolvedValue(undefined),
+      finalizeCatalog: vi.fn().mockResolvedValue(undefined),
+      publish: vi.fn(),
+    })
+    const load = controller.updateContext({ missionId: 'mission-1', rendererGeneration: 'r1' })
+    await vi.waitFor(() => expect(controller.getState()).toMatchObject({
+      tileCatalog: { activationId: 'reattach-after-failure' },
+    }))
+    if (controller.getState().status === 'inactive') {
+      throw new Error('Coverage unexpectedly inactive.')
+    }
+    const catalog = controller.getState().tileCatalog!
+    await controller.notifyCatalogApplied(catalog)
+    await load
+
+    controller.notifyRendererDetached()
+    controller.notifyRendererUnavailable('Coverage tile worker exited.')
+    await controller.notifyCatalogApplied(catalog)
+
+    expect(controller.getState()).toMatchObject({
+      status: 'error', deliveredFixCount: 0, blockers: expect.not.arrayContaining(['renderer_detached']),
+    })
+  })
+
+  it('cannot retain an obsolete catalog when mission switch occurs during finalization', async () => {
+    let finishOldFinalization: (() => void) | undefined
+    const oldFinalization = new Promise<void>((resolve) => { finishOldFinalization = resolve })
+    const finalizeCatalog = vi.fn((catalog: CoverageTileCatalog) =>
+      catalog.missionId === 'mission-1' ? oldFinalization : Promise.resolve())
+    const controller = createCoverageController({
+      readManifest: vi.fn(async (missionId) => manifest(
+        1,
+        [[missionId === 'mission-1' ? KEY_A : KEY_C, 1]],
+      )),
+      readChunk: vi.fn(),
+      readClaim: vi.fn(async ({ selectedKeys }) => ({
+        changeSeq: 1,
+        databaseReady: true,
+        blockers: [],
+        chunkRevisions: selectedKeys.map((key) => ({ key, contentRev: 1 })),
+      })),
+      applyChunk: vi.fn(),
+      deliverSelection: vi.fn(async ({ missionId, chunks }) => ({
+        activationId: `stage-${missionId}`,
+        missionId,
+        periods: [{
+          periodKey: `${chunks[0]!.key.period_kind}\u0000${chunks[0]!.key.period_id}`,
+          revisionDigest: `revision-${missionId}`,
+        }],
+        delivered: chunks.map(({ key, contentRev }) => ({ key, contentRev })),
+      })),
+      activateCatalog: vi.fn().mockResolvedValue(undefined),
+      finalizeCatalog,
+      discardCatalog: vi.fn().mockResolvedValue(undefined),
+      publish: vi.fn(),
+    })
+    const oldLoad = controller.updateContext({ missionId: 'mission-1', rendererGeneration: 'r1' })
+    await vi.waitFor(() => expect(controller.getState()).toMatchObject({
+      tileCatalog: { activationId: 'stage-mission-1' },
+    }))
+    if (controller.getState().status === 'inactive') throw new Error('Coverage unexpectedly inactive.')
+    const oldCatalog = controller.getState().tileCatalog!
+    const oldNotification = controller.notifyCatalogApplied(oldCatalog)
+    await vi.waitFor(() => expect(finalizeCatalog).toHaveBeenCalledWith(oldCatalog))
+
+    const nextLoad = controller.updateContext({ missionId: 'mission-2', rendererGeneration: 'r1' })
+    await vi.waitFor(() => expect(controller.getState()).toMatchObject({
+      missionId: 'mission-2', tileCatalog: { activationId: 'stage-mission-2' },
+    }))
+    if (controller.getState().status === 'inactive') throw new Error('Coverage unexpectedly inactive.')
+    const nextCatalog = controller.getState().tileCatalog!
+    await controller.notifyCatalogApplied(nextCatalog)
+    await nextLoad
+    finishOldFinalization?.()
+    await oldNotification
+    await oldLoad
+
+    controller.cancel()
+    expect(controller.getState()).toMatchObject({
+      missionId: 'mission-2', tileCatalog: { missionId: 'mission-2' },
+    })
+  })
+
   it.each(['resolve', 'reject'] as const)(
     'fences an obsolete mission activation after backend %s',
     async (outcome) => {

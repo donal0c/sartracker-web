@@ -94,6 +94,29 @@ describe('Candidate B coverage overlay [DON-276]', () => {
     await expect(syncCoverageOverlay(map, catalog)).rejects.toThrow(/activation failed/i)
   })
 
+  it('rebuilds a retained period when its source survives but a layer is missing', async () => {
+    const map = createMap()
+    const catalog = {
+      missionId: 'mission-1',
+      periods: [{ periodKey: 'outing\u0000a', revisionDigest: 'a1' }],
+      delivered: [],
+    }
+    const first = await syncCoverageOverlay(map, catalog)
+    first.commit()
+    first.finalize()
+    const priorSource = [...map.sources.keys()][0]!
+    const missingLayer = [...map.layers.keys()][0]!
+    map.removeLayer(missingLayer)
+
+    const repair = await syncCoverageOverlay(map, catalog)
+
+    expect(map.sources.size).toBe(2)
+    repair.commit()
+    repair.finalize()
+    expect(map.sources.has(priorSource)).toBe(false)
+    expect(map.layers.size).toBe(2)
+  })
+
   it('keeps the prior revision installed when replacement source creation fails', async () => {
     const map = createMap()
     ;(await syncCoverageOverlay(map, {
@@ -196,6 +219,7 @@ describe('Candidate B coverage overlay [DON-276]', () => {
 
 function createMap(): CoverageOverlayMap & {
   readonly sources: Map<string, { readonly tiles?: readonly string[] }>
+  readonly layers: Map<string, unknown>
   readonly removeSource: ReturnType<typeof vi.fn>
   readonly setFilter: ReturnType<typeof vi.fn>
   autoLoadSources: boolean
@@ -208,6 +232,7 @@ function createMap(): CoverageOverlayMap & {
   const removeSource = vi.fn((id: string) => { sources.delete(id) })
   const map = {
     sources,
+    layers,
     autoLoadSources: true,
     addSource: (id, source) => {
       sources.set(id, source as never)
