@@ -1,0 +1,242 @@
+const fs = require('node:fs')
+const fsp = require('node:fs/promises')
+const path = require('node:path')
+const { execFileSync } = require('node:child_process')
+const { createHash } = require('node:crypto')
+const { performance } = require('node:perf_hooks')
+
+const Database = require('better-sqlite3')
+const { VectorTile } = require('vt-pbf/node_modules/@mapbox/vector-tile')
+const Pbf = require('vt-pbf/node_modules/pbf')
+const { createElectronMissionStore } = require('../electron/mission-store.cjs')
+
+async function main() {
+  const [fixturePath, runDirectory, expectedHead] = process.argv.slice(2)
+  if (!fixturePath || !runDirectory || !expectedHead) {
+    throw new Error('fixture, run directory, and head are required')
+  }
+  const exactHead = execFileSync('git', ['rev-parse', 'HEAD'], {
+    cwd: path.join(__dirname, '..'),
+    encoding: 'utf8',
+  }).trim()
+  if (exactHead !== expectedHead) {
+    throw new Error(
+      `Qualification checkout ${exactHead} does not match the expected exact head ${expectedHead}.`,
+    )
+  }
+  await fsp.rm(runDirectory, { recursive: true, force: true })
+  await fsp.mkdir(runDirectory, { recursive: true })
+  await fsp.copyFile(fixturePath, path.join(runDirectory, 'mission-store.sqlite'))
+  const source = new Database(fixturePath, { readonly: true, fileMustExist: true })
+  const missionId = source.prepare(`SELECT mission_id AS id, COUNT(*) AS position_count
+    FROM positions GROUP BY mission_id ORDER BY position_count DESC, mission_id ASC LIMIT 1`).get()?.id
+  source.close()
+  if (typeof missionId !== 'string') throw new Error('qualification mission is missing')
+
+  const gaps = []
+  let lastProbe = performance.now()
+  const probe = setInterval(() => {
+    const now = performance.now()
+    gaps.push(Math.max(0, now - lastProbe - 5))
+    lastProbe = now
+  }, 5)
+  const startedAt = performance.now()
+  const store = createElectronMissionStore({ userDataPath: runDirectory })
+  try {
+    const manifest = await store.readCoverageManifest(missionId, 'qualification-manifest')
+    const manifestReadyAt = performance.now()
+    const outingById = new Map(manifest.outings.map((outing) => [outing.id, outing]))
+    const ordered = [...manifest.chunks].sort((left, right) => {
+      const leftStart = left.key.period_kind === 'outing'
+        ? outingById.get(left.key.period_id)?.started_at ?? ''
+        : ''
+      const rightStart = right.key.period_kind === 'outing'
+        ? outingById.get(right.key.period_id)?.started_at ?? ''
+        : ''
+      return rightStart.localeCompare(leftStart) ||
+        left.key.period_kind.localeCompare(right.key.period_kind) ||
+        left.key.period_id.localeCompare(right.key.period_id) ||
+        left.key.device_id.localeCompare(right.key.device_id)
+    })
+    const groups = []
+    for (const chunk of ordered) {
+      const identity = `${chunk.key.period_kind}\u0000${chunk.key.period_id}`
+      const current = groups.at(-1)
+      if (current?.identity === identity) current.chunks.push(chunk)
+      else groups.push({ identity, chunks: [chunk] })
+    }
+    const working = []
+    let firstUsefulAt = null
+    let deliveredFixes = 0
+    const periodDurationsMs = []
+    const geometryProbes = []
+    for (const [groupIndex, group] of groups.entries()) {
+      working.push(...group.chunks.map((chunk) => ({
+        key: chunk.key,
+        contentRev: chunk.contentRev,
+      })))
+      const periodStartedAt = performance.now()
+      const catalog = await store.syncCoverageTileCatalog({
+        missionId,
+        chunks: working,
+      }, `qualification-catalog-${groupIndex}`)
+      if (typeof catalog.activationId !== 'string') {
+        throw new Error('qualification catalog has no activation ID')
+      }
+      const stagedPeriod = catalog.periods.find((period) => period.periodKey === group.identity)
+      if (stagedPeriod === undefined) throw new Error('qualification catalog has no staged period')
+      const probeChunk = [...group.chunks].sort((left, right) =>
+        right.exactCount - left.exactCount)[0]
+      if (probeChunk === undefined) throw new Error('qualification period has no probe chunk')
+      const probePage = await store.readCoverageChunk({
+        missionId,
+        key: probeChunk.key,
+        expectedContentRev: probeChunk.contentRev,
+        limit: 100,
+      }, `qualification-probe-${groupIndex}`)
+      const staged = await findGeometryTile(store, {
+        missionId,
+        periodKey: stagedPeriod.periodKey,
+        revisionDigest: stagedPeriod.revisionDigest,
+      }, probePage.positions)
+      await store.activateCoverageTileCatalog({ activationId: catalog.activationId })
+      const activeProbe = requireTile(
+        await store.readCoverageTile({ ...staged.address }),
+        'active',
+      )
+      if (staged.probe.sha256 !== activeProbe.sha256) {
+        throw new Error('qualification active tile differs from its staged geometry')
+      }
+      geometryProbes.push({
+        periodKey: stagedPeriod.periodKey,
+        revisionDigest: stagedPeriod.revisionDigest,
+        z: staged.address.z,
+        x: staged.address.x,
+        y: staged.address.y,
+        byteLength: activeProbe.byteLength,
+        geometryFeatureCount: activeProbe.geometryFeatureCount,
+        sha256: activeProbe.sha256,
+      })
+      await store.finalizeCoverageTileCatalog({ activationId: catalog.activationId })
+      periodDurationsMs.push(performance.now() - periodStartedAt)
+      const delivered = new Set(catalog.delivered.map((entry) =>
+        `${entry.key.device_id}\u0000${entry.key.period_kind}\u0000${entry.key.period_id}@${entry.contentRev}`))
+      deliveredFixes = manifest.chunks.reduce((sum, chunk) =>
+        sum + (delivered.has(`${chunk.key.device_id}\u0000${chunk.key.period_kind}\u0000${chunk.key.period_id}@${chunk.contentRev}`)
+          ? chunk.exactCount
+          : 0), 0)
+      if (firstUsefulAt === null && deliveredFixes > 0) firstUsefulAt = performance.now()
+    }
+    const completedAt = performance.now()
+    const claim = await store.readCoverageClaim({
+      missionId,
+      selectedKeys: manifest.chunks.map((chunk) => chunk.key),
+    }, 'qualification-claim')
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    const report = {
+      exactHead,
+      fixturePath,
+      fixtureBytes: fs.statSync(fixturePath).size,
+      missionId,
+      chunkCount: manifest.chunks.length,
+      periodCount: groups.length,
+      totalFixes: manifest.chunks.reduce((sum, chunk) => sum + chunk.exactCount, 0),
+      deliveredFixes,
+      manifestReadyMs: manifestReadyAt - startedAt,
+      firstUsefulMs: firstUsefulAt === null ? null : firstUsefulAt - startedAt,
+      completeMs: completedAt - startedAt,
+      periodDurationsMs,
+      geometryFeatureCount: geometryProbes.reduce(
+        (sum, entry) => sum + entry.geometryFeatureCount,
+        0,
+      ),
+      geometrySha256: digestLines(geometryProbes.map((entry) =>
+        `${entry.periodKey}\u0000${entry.revisionDigest}\u0000${entry.geometryFeatureCount}\u0000${entry.sha256}`)),
+      revisionSha256: digestLines(geometryProbes.map((entry) =>
+        `${entry.periodKey}\u0000${entry.revisionDigest}`)),
+      geometryProbes,
+      mainMaxGapMs: Math.max(0, ...gaps),
+      claim: {
+        changeSeq: claim.changeSeq,
+        databaseReady: claim.databaseReady,
+        blockers: claim.blockers,
+        revisionCount: claim.chunkRevisions.length,
+      },
+      completedAt: new Date().toISOString(),
+    }
+    await fsp.writeFile(
+      path.join(runDirectory, 'production-qualification.json'),
+      `${JSON.stringify(report, null, 2)}\n`,
+    )
+    console.log(JSON.stringify(report, null, 2))
+    if (report.firstUsefulMs === null || report.firstUsefulMs > 5_000) process.exitCode = 2
+    const unexpectedBlockers = claim.blockers.filter((blocker) =>
+      blocker !== 'backfill_incomplete')
+    if (report.mainMaxGapMs > 200 || unexpectedBlockers.length > 0) process.exitCode = 3
+  } finally {
+    clearInterval(probe)
+    store.close()
+  }
+}
+
+function requireTile(tile, phase) {
+  const inspected = inspectTile(tile)
+  if (inspected === null) {
+    throw new Error(`qualification ${phase} tile was unavailable`)
+  }
+  return inspected
+}
+
+async function findGeometryTile(store, identity, positions) {
+  const seen = new Set()
+  for (const zoom of [14, 12, 10, 8, 6, 4, 2, 0]) {
+    for (const position of positions) {
+      const tile = tileAddressFromPosition(position, zoom)
+      const key = `${tile.z}/${tile.x}/${tile.y}`
+      if (seen.has(key)) continue
+      seen.add(key)
+      const address = { ...identity, ...tile }
+      const inspected = inspectTile(await store.readCoverageTile({ ...address }))
+      if (inspected !== null) return { address, probe: inspected }
+    }
+  }
+  throw new Error(`qualification staged tile contained no coverage geometry for ${identity.periodKey}`)
+}
+
+function inspectTile(tile) {
+  if (!(tile instanceof Uint8Array) || tile.byteLength === 0) return null
+  const decoded = new VectorTile(new Pbf(tile))
+  const geometryFeatureCount = decoded.layers.coverage?.length ?? 0
+  if (geometryFeatureCount === 0) return null
+  return {
+    byteLength: tile.byteLength,
+    geometryFeatureCount,
+    sha256: createHash('sha256').update(tile).digest('hex'),
+  }
+}
+
+function tileAddressFromPosition(position, z) {
+  const latitude = Number(position.lat)
+  const longitude = Number(position.lon)
+  if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+    throw new Error('qualification probe position has invalid coordinates')
+  }
+  const scale = 2 ** z
+  const latitudeRadians = latitude * Math.PI / 180
+  return {
+    z,
+    x: Math.max(0, Math.min(scale - 1, Math.floor((longitude + 180) / 360 * scale))),
+    y: Math.max(0, Math.min(scale - 1, Math.floor(
+      (1 - Math.asinh(Math.tan(latitudeRadians)) / Math.PI) / 2 * scale,
+    ))),
+  }
+}
+
+function digestLines(lines) {
+  return createHash('sha256').update([...lines].sort().join('\n')).digest('hex')
+}
+
+main().catch((error) => {
+  console.error(error)
+  process.exitCode = 1
+})

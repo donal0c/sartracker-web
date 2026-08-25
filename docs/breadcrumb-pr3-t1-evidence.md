@@ -575,3 +575,64 @@ neither schema nor migration/database-open code. The evidence-binding commit is
 documentation-only; it receives final deterministic, full Chromium, coverage
 visual, macOS/Ubuntu package, and five exact-head review gates before the PR
 opens.
+
+## Final review-wave lifetime and geometry-attestation remediation
+
+Three fresh reviews of `8c2887126be177418f534d72fe4a1963132fd486`
+found five runtime gaps and one evidence gap. Production had not forwarded the
+outer abort signal to the cooperative tile runner; an obsolete catalog could
+become the finalized fallback after a mission switch during backend
+finalization; a surviving source with a missing layer could restore Complete;
+reattachment could erase a worker-loss error; and the detached-style panel
+claimed loaded coverage remained visible with a full progress bar. The
+production qualification driver also read only the first period and accepted a
+valid-empty tile while calling the result complete geometry.
+
+The red pass failed seven focused assertions before production changes.
+`37ea0b437e08d9fbb13be43d39a63d7a0ed7e443` forwards cancellation, fences
+post-finalization ownership, rebuilds any incomplete source/layer structure,
+prevents error restoration, and gives detached coverage its own no-progress,
+no-Retry operator state. The manual and a new critical screenshot cover that
+visible state. Focused green passed 49/49 and the new visual entry passed a
+fresh critical review. The full serial suite then passed 260 files / 2,051
+tests; lint, TypeScript, CommonJS syntax, exact Dots 10/10, and build/budgets
+passed. Ubuntu full Chromium passed 158/158, the coverage visual suite passed
+6/6, and its fresh critical review passed 8/8; report:
+`test-results/visual-verification/reports/visual-review-2026-08-25T13-07-39Z.json`.
+
+The driver's first corrected Ubuntu attempt deliberately rejected an empty
+world-zoom tile; that failure is not product evidence. Tiny routes can validly
+simplify out at zoom 0, so a second red-first contract required a bounded tile
+address derived from each period's exact positions. Script-only commit
+`df61a02b05bbfb0e90bac5add2cd2b53d33aac31` now probes every newly introduced
+period, requires non-empty decodable PBF geometry at the same address before
+and after activation, and binds per-period plus aggregate geometry/revision
+digests. A 4,800-fix local smoke passed before the serial reference-host runs:
+
+| Fixture | Delivered | First useful | Complete geometry | Main max gap | Decoded period evidence |
+| --- | ---: | ---: | ---: | ---: | --- |
+| 960k | 959,988 / 959,988 | 2,245.260 ms | 6,212.296 ms | 21.026 ms | 13/13 periods, 1,420 decoded features |
+| 2M | 1,999,988 / 1,999,988 | 4,534.087 ms | 12,338.402 ms | 21.825 ms | 13/13 periods, 1,382 decoded features |
+
+Both claims were correctly blocked only by `backfill_incomplete`. The 960k
+geometry/revision SHA-256 values are
+`d8133bc9ba7b2858020dc0f1b980893ffb71b78d51901707ac0d4e5e72377372` /
+`6736d423aa7eaae916c6da281babc9360d4344bd42fe3279ec989ee9be579f04`;
+the 2M values are
+`a789fb3e4cc3293d30019c4f21165d90d77f193e8c1069a9d35a920325db2b89` /
+the same revision digest. Report SHA-256 values are
+`f09886dbe2d378f317b975a3f9afe31d144f2099c629624a7132ece5439d1b25`
+and
+`849925cc0416434af95214490533fc9d6f46d3883c8dd5acd4a9a3a577bfaa60`.
+The byte-identical driver, reports, and verified manifest are under
+`output/pr3-production-qualification/df61a02b05bbfb0e90bac5add2cd2b53d33aac31/`;
+the manifest SHA-256 is
+`59dca7faad10d6283b74ad37b9d7c060225b2f6731a048cb494ced3f5e11702b`.
+
+The ratified G2 matrix at `53e38bf...` remains standing under the accepted
+invalidation rule: these changes do not alter Candidate B's measured query,
+segmentation, normal tile/source strategy, or geometry pipeline. The single
+packaged soak also remains standing because no ingest/write path changed. The
+3.704 GB migration remains standing because schema and database-open code are
+unchanged. The evidence-binding commit still requires exact-head deterministic,
+Chromium/visual, macOS/Ubuntu package, and five independent review gates.

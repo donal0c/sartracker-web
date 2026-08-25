@@ -293,6 +293,14 @@ first kill-probe launch. Neither preflight is mixed into this matrix. The
 accepted run used the preserved sidecar-bound fixture bytes and the active
 session's attested `:0` X11 authority; retained `glxinfo` reports Mesa llvmpipe.
 
+The later exact-head remediation at `37ea0b4...` / `df61a02...` forwards
+production cancellation, fences controller/catalog lifetimes, repairs a
+partially missing style structure, and strengthens the production evidence
+driver. It does not change Candidate B's measured query, segmentation, normal
+tile/source strategy, or geometry pipeline. Under the accepted standing-result
+rule, the `53e38bf...` G2 rows and kill probes therefore remain the exact
+comparative binding; no budget or Candidate B verdict is amended.
+
 ## Excluded preflight attempts
 
 Three preflight failures were corrected before the accepted matrix and are not
