@@ -174,6 +174,51 @@ describe('Electron coverage ledger', () => {
     expect(readMission(database)).toBeUndefined()
   })
 
+  it('resolves each accepted fix with an indexed point lookup instead of scanning every mission outing', () => {
+    database.exec('CREATE INDEX idx_outings_mission_started ON outings(mission_id, started_at)')
+    database.exec(`
+      INSERT INTO outings VALUES
+        ('outing-early', 'mission-1', '2026-08-24T08:00:00.000Z', '2026-08-24T09:00:00.000Z'),
+        ('outing-current', 'mission-1', '2026-08-24T10:00:00.000Z', '2026-08-24T11:00:00.000Z')
+    `)
+    const preparedSql: string[] = []
+    const instrumentedDatabase = new Proxy(database, {
+      get(target, property) {
+        if (property === 'prepare') {
+          return (sql: string) => {
+            preparedSql.push(sql)
+            return target.prepare(sql)
+          }
+        }
+        const value = Reflect.get(target, property, target) as unknown
+        return typeof value === 'function' ? value.bind(target) : value
+      },
+    })
+
+    expect(recordAcceptedCoveragePositions(instrumentedDatabase, {
+      missionId: 'mission-1',
+      positions: [
+        { device_id: 'device-1', timestamp: '2026-08-24T10:05:00.000Z' },
+        { device_id: 'device-2', timestamp: '2026-08-24T12:00:00.000Z' },
+      ],
+      updatedAt: '2026-08-24T12:01:00.000Z',
+    }).affectedKeys).toEqual([
+      'device-1\u0000outing\u0000outing-current',
+      'device-2\u0000unassigned\u0000',
+    ])
+
+    const outingReads = preparedSql.filter((sql) => sql.includes('FROM outings'))
+    expect(outingReads).toHaveLength(1)
+    expect(outingReads[0]).toContain('started_at <= ?')
+    expect(outingReads[0]).toContain('LIMIT 1')
+    expect(outingReads[0]).not.toContain('ORDER BY started_at ASC')
+    expect(database.prepare(`EXPLAIN QUERY PLAN ${outingReads[0]}`)
+      .all('mission-1', '2026-08-24T10:05:00.000Z', '2026-08-24T10:05:00.000Z'))
+      .toEqual([
+        expect.objectContaining({ detail: expect.stringContaining('idx_outings_mission_started') }),
+      ])
+  })
+
   it.each([
     {
       reason: 'outing_created' as const,

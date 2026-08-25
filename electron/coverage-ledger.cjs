@@ -1,4 +1,3 @@
-const { resolveCoveragePeriod } = require('./coverage-period-resolver.cjs')
 const { compareStringsByCodeUnit } = require('./deterministic-string-order.cjs')
 
 /**
@@ -9,12 +8,10 @@ function recordAcceptedCoveragePositions(database, input) {
   if (input.positions.length === 0) {
     return { changeSeq: 0, affectedKeys: [] }
   }
-  const outings = database.prepare(`SELECT id, started_at, ended_at
-    FROM outings WHERE mission_id = ? ORDER BY started_at ASC, id ASC`)
-    .all(input.missionId)
+  const resolvePeriod = createIndexedCoveragePeriodResolver(database, input.missionId)
   const affectedByIdentity = new Map()
   for (const position of input.positions) {
-    const period = resolveCoveragePeriod(outings, position.timestamp)
+    const period = resolvePeriod(position.timestamp)
     const identity = createCoverageChunkIdentity(
       position.device_id,
       period.period_kind,
@@ -51,6 +48,25 @@ function recordAcceptedCoveragePositions(database, input) {
   return {
     changeSeq: bumpCoverageChangeSequence(database, input.missionId, input.updatedAt),
     affectedKeys,
+  }
+}
+
+/**
+ * Creates one prepared O(log outings) point resolver for the accepted batch.
+ * Outing mutations are serialized by the caller's database transaction, so
+ * every lookup observes the same transactionally current half-open windows.
+ */
+function createIndexedCoveragePeriodResolver(database, missionId) {
+  const findOuting = database.prepare(`SELECT id FROM outings
+    WHERE mission_id = ? AND started_at <= ?
+      AND (ended_at IS NULL OR ? < ended_at)
+    ORDER BY started_at DESC
+    LIMIT 1`)
+  return (timestamp) => {
+    const outing = findOuting.get(missionId, timestamp, timestamp)
+    return outing === undefined
+      ? { period_kind: 'unassigned', period_id: '' }
+      : { period_kind: 'outing', period_id: outing.id }
   }
 }
 
