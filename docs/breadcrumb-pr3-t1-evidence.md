@@ -754,3 +754,82 @@ does not change the Candidate-B renderer/query/segmentation/geometry pipeline.
 The 3.704 GB migration remains standing because schema and database-open code
 are unchanged. Five fresh independent reviews of the new evidence-bound exact
 head still gate PR creation.
+
+## Direct-device backfill and open-outing cooldown remediation
+
+Independent review #4 at evidence head `9ce75c4` found two false-safety
+boundaries. Initial direct-device selections did not receive the same fixed
+mission-start-to-selection backfill checkpoint as initial group members, so a
+backdated mission could claim database completeness and finish without that
+device's history. The open-outing scheduler also appended cooling chunks after
+ready work, which reordered them but did not enforce the accepted at-most-once
+per-30-second automatic rebuild cadence. Review #5 separately found the
+canonical workplan still described PR-2 as active.
+
+Both behavior gaps were reproduced red-first. The direct-device regression
+observed no checkpoint; the coverage claim and finish fence therefore had no
+incomplete truth to see. The scheduler regression observed the just-attempted
+open chunk returned immediately. Commit `6e10acf` creates the direct checkpoint
+inside the initial-selection transaction and excludes cooling open chunks from
+automatic work. The first full Chromium run then caught a real interaction:
+operator Retry was also suppressed by the cooldown and remained at 6 of 9
+fixes. That failed gate was not treated as a flake. Commit `691775a` gives only
+explicit operator `resume()`/Retry a cooldown bypass; notifications and other
+automatic refreshes remain throttled. Focused coverage Chromium then passed
+4/4, including honest decrease, partial retention, Retry, and reload delivery
+reset.
+
+The new direct-device audit lifecycle caused the first replacement packaged
+soak at `691775a` to fail closed at 40/38 operational events: two required
+`participant_backfill_completed` audit events were still classified as
+unexplained. Commit `69a1096bd950270686c8e200da4311a1ab1fb1f5` moves mission
+event classification into a tested pure helper, explicitly declares that audit
+type, and increases the event budget only by its observed count. The durable
+regression passed red-to-green, the exact source-contract test follows the
+classifier boundary, and no telemetry event allowance was widened.
+
+Deterministic gates at final code/tool head `69a1096` passed:
+
+- focused affected surface: 6 files / 147 tests;
+- full serial unit: 262 files / 2,101 tests;
+- ESLint with zero warnings, TypeScript, changed CommonJS/ESM syntax, exact
+  Dots 10/10, production build, and bundle budgets;
+- coverage Chromium 4/4 after the Retry correction;
+- full Chromium 158/158 on the same final application bytes;
+- coverage visual 7/7 and fresh no-cache independent critical review 9/9; and
+- unsigned Ubuntu x64 and macOS arm64 packaging.
+
+The final replacement Ubuntu CI-scale soak ran through the active Xwayland
+desktop with Mesa llvmpipe attested by ANGLE/OpenGL and passed: 6/6 batches,
+8,664/8,664 source-exact positions, one restart, both launches exit 0, zero
+renderer crashes, integrity `ok`, WAL 0/0/0, zero redundant telemetry slope,
+four healthy operator interactions, 9.558 ms main-process maximum, 83.6 ms
+renderer maximum, and 1,129,574,400-byte peak process-tree RSS. Its audited
+mission events include two backfill completions, with 40 declared operational
+events and zero unexplained events. The post-run coverage ledger held one
+mission at change sequence 76, 32 chunks, zero pending invalidations, and
+28,672 bytes across coverage tables/indexes.
+
+The report SHA-256 is
+`1522109848a019ae5f6030e371d4bb480ac722d4cb36cb2ec8d6cb0fd7d31aeb`.
+The Ubuntu executable and `app.asar` SHA-256 values are
+`6344ae1d9044fedc54779e8bacaddc032fdcc0f55e146fc3623756eafa0bbaf8`
+and
+`924d8fa360945b127e2b587ece89d688cafa1fc1c328d98054cb4446dcbdc6e9`.
+The macOS arm64 executable and `app.asar` values are
+`f5212ea9181df95040385dfd04f512e983ed95394a96fb7c4b8ee838ea433caf`
+and
+`eb5bf790c15f44c424b5f131c872e9c17b417d9bf3ffc6c46ac339ecbd8ead38`.
+The committed Ubuntu evidence is under
+`output/pr3-packaged-soak/69a1096bd950270686c8e200da4311a1ab1fb1f5/`;
+its evidence-manifest SHA-256 is
+`04cd7f8d163c74d1dd1a1f66613d2c43e79d64a25a8eb8db6f2c88171bbef90a`.
+
+G2, the corrected decoded 960k/2M production qualification, and the 3.704 GB
+v9-to-v10 migration remain standing under their existing invalidation rules:
+these remediations change initial participant checkpoint creation, scheduling,
+and soak evidence classification, not the selected Candidate-B geometry/query
+pipeline or schema/open path. There was no packaged 960k/2M coverage run,
+packaged forced-kill matrix, Windows run, field-hardware run, or
+coordinator-owned post-merge Ubuntu 960k checkpoint. Five fresh independent
+reviews of the final evidence-bound head still gate PR creation.
