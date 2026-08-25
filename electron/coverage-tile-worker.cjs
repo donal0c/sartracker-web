@@ -257,6 +257,7 @@ function discardCatalog(message) {
     stagedCatalog = null
     return true
   }
+  if (stagedCatalog === null && activatedCatalog === null) return true
   const activation = requireActivatedCatalog(message.stageId)
   activeCatalog = activation.predecessor.catalog
   chunksByKey = activation.predecessor.chunksByKey

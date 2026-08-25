@@ -193,6 +193,66 @@ describe('coverage IPC ownership [DON-276]', () => {
     expect(activateCoverageTileCatalog).not.toHaveBeenCalled()
   })
 
+  it('settles an abandoned stage before a replacement renderer can synchronize', async () => {
+    const handlers = new Map<string, (event: unknown, ...args: readonly unknown[]) => unknown>()
+    let resolveInitialSync: (value: unknown) => void = () => undefined
+    const initialSync = new Promise((resolve) => { resolveInitialSync = resolve })
+    let stageUnsettled = false
+    const syncCoverageTileCatalog = vi.fn()
+      .mockImplementationOnce(() => initialSync)
+      .mockImplementationOnce(async () => {
+        if (stageUnsettled) throw new Error('Coverage tile catalog already has an unsettled stage.')
+        return { activationId: 'coverage-stage-replacement', periods: [], delivered: [] }
+      })
+    const discardCoverageTileCatalog = vi.fn()
+      .mockRejectedValueOnce(new Error('transient discard failure'))
+      .mockImplementationOnce(async () => {
+        stageUnsettled = false
+        return true
+      })
+    const missionStore = {
+      readCoverageManifest: vi.fn(),
+      readCoverageChunk: vi.fn(),
+      readCoverageClaim: vi.fn(),
+      syncCoverageTileCatalog,
+      activateCoverageTileCatalog: vi.fn().mockResolvedValue(true),
+      finalizeCoverageTileCatalog: vi.fn().mockResolvedValue(true),
+      discardCoverageTileCatalog,
+      cancelCoverageQuery: vi.fn().mockResolvedValue(false),
+    }
+    registerCoverageIpcHandlers({
+      ipcMain: { handle: (channel, handler) => handlers.set(channel, handler as never) },
+      readChannels: { manifest: 'manifest', chunk: 'chunk', claim: 'claim', catalog: 'catalog' },
+      activationChannels: { activate: 'activate', finalize: 'finalize', discard: 'discard' },
+      cancelChannel: 'cancel', missionStore,
+      validateIpcSender: vi.fn(),
+    })
+    const lostSender = Object.assign(new EventEmitter(), { id: 74 })
+    const replacementSender = Object.assign(new EventEmitter(), { id: 75 })
+    const lostRead = Promise.resolve(handlers.get('catalog')?.(
+      { sender: lostSender }, { missionId: 'mission-1', chunks: [] }, 'catalog-lost',
+    ))
+    const lostRejection = expect(lostRead).rejects.toMatchObject({ name: 'AbortError' })
+    await vi.waitFor(() => expect(syncCoverageTileCatalog).toHaveBeenCalledOnce())
+    lostSender.emit('destroyed')
+    stageUnsettled = true
+    resolveInitialSync({
+      activationId: 'coverage-stage-abandoned', periods: [], delivered: [],
+    })
+    await lostRejection
+    expect(discardCoverageTileCatalog).toHaveBeenCalledTimes(1)
+
+    await expect(handlers.get('catalog')?.(
+      { sender: replacementSender },
+      { missionId: 'mission-1', chunks: [] },
+      'catalog-replacement',
+    )).resolves.toMatchObject({ activationId: 'coverage-stage-replacement' })
+    expect(discardCoverageTileCatalog).toHaveBeenNthCalledWith(2, {
+      activationId: 'coverage-stage-abandoned',
+    })
+    expect(syncCoverageTileCatalog).toHaveBeenCalledTimes(2)
+  })
+
   it('retains ownership after activation and releases it only after finalization', async () => {
     const handlers = new Map<string, (event: unknown, ...args: readonly unknown[]) => unknown>()
     const activateCoverageTileCatalog = vi.fn().mockResolvedValue(true)

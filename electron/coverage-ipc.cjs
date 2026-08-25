@@ -71,8 +71,8 @@ function registerCoverageCatalogHandler(input, ownedStages) {
       void input.missionStore.cancelCoverageQuery(scopedRequestId).catch(() => undefined)
       for (const [activationId, owner] of ownedStages.entries()) {
         if (owner.senderId !== senderId) continue
-        ownedStages.delete(activationId)
-        void input.missionStore.discardCoverageTileCatalog({ activationId })
+        owner.abandoned = true
+        void settleAbandonedStage(input, ownedStages, activationId, owner)
           .catch(() => undefined)
       }
       releaseListeners()
@@ -80,16 +80,24 @@ function registerCoverageCatalogHandler(input, ownedStages) {
     event.sender.once('destroyed', senderGone)
     event.sender.once('render-process-gone', senderGone)
     try {
+      await settleAbandonedStages(input, ownedStages)
+      if (destroyed) throw createDestroyedRendererError()
       const result = await input.missionStore.syncCoverageTileCatalog(payload, scopedRequestId)
       const activationId = readActivationId(result)
       if (activationId === null) return result
+      const owner = {
+        senderId,
+        releaseListeners,
+        abandoned: destroyed,
+        cleanup: null,
+      }
+      ownedStages.set(activationId, owner)
+      ownedActivationId = activationId
       if (destroyed) {
-        await input.missionStore.discardCoverageTileCatalog({ activationId })
+        await settleAbandonedStage(input, ownedStages, activationId, owner)
           .catch(() => undefined)
         throw createDestroyedRendererError()
       }
-      ownedStages.set(activationId, { senderId, releaseListeners })
-      ownedActivationId = activationId
       return result
     } finally {
       if (ownedActivationId === null) releaseListeners()
@@ -105,7 +113,11 @@ function registerCoverageActivationHandlers(input, ownedStages) {
       input.validateIpcSender(event)
       const activationId = readActivationId(payload)
       const owner = activationId === null ? undefined : ownedStages.get(activationId)
-      if (activationId === null || owner?.senderId !== event.sender.id) {
+      if (
+        activationId === null ||
+        owner?.senderId !== event.sender.id ||
+        owner.abandoned
+      ) {
         throw new Error('Coverage tile catalog stage is not owned by this renderer.')
       }
       let settled = false
@@ -136,6 +148,37 @@ function registerCoverageActivationHandlers(input, ownedStages) {
     (missionStore, payload) => missionStore.discardCoverageTileCatalog(payload),
     true,
   )
+}
+
+/** Settles every renderer-abandoned stage before allowing another catalog sync. */
+async function settleAbandonedStages(input, ownedStages) {
+  for (const [activationId, owner] of [...ownedStages.entries()]) {
+    if (!owner.abandoned) continue
+    try {
+      await settleAbandonedStage(input, ownedStages, activationId, owner)
+    } catch (error) {
+      if (ownedStages.get(activationId) !== owner || !owner.abandoned) continue
+      await settleAbandonedStage(input, ownedStages, activationId, owner)
+    }
+  }
+}
+
+/** Coalesces one discard while retaining failed cleanup for the next retry. */
+function settleAbandonedStage(input, ownedStages, activationId, owner) {
+  if (ownedStages.get(activationId) !== owner) return Promise.resolve()
+  if (owner.cleanup !== null) return owner.cleanup
+  let cleanup
+  cleanup = (async () => {
+    try {
+      await input.missionStore.discardCoverageTileCatalog({ activationId })
+      if (ownedStages.get(activationId) === owner) ownedStages.delete(activationId)
+      owner.releaseListeners()
+    } finally {
+      if (owner.cleanup === cleanup) owner.cleanup = null
+    }
+  })()
+  owner.cleanup = cleanup
+  return cleanup
 }
 
 /** Reads only one bounded opaque activation token from an IPC result or request. */

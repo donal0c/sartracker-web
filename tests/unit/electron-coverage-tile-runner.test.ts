@@ -310,6 +310,19 @@ describe('Candidate B coverage tile worker [DON-276]', () => {
     expect(replacement.stageId).not.toBe(first.stageId)
   })
 
+  it('accepts cleanup for a lost generation when no replacement stage exists', async () => {
+    const databasePath = await createDatabase()
+    const cacheDirectory = path.join(directory!, 'coverage-lost-generation-cleanup')
+    runner = createCoverageTileRunner({ databasePath, cacheDirectory })
+    const lost = await runner.syncCatalog({ missionId: 'mission-1', chunks: [] })
+    await runner.close()
+
+    runner = createCoverageTileRunner({ databasePath, cacheDirectory })
+    await expect(runner.discardCatalog({ stageId: lost.stageId })).resolves.toBe(true)
+    await expect(runner.syncCatalog({ missionId: 'mission-1', chunks: [] }))
+      .resolves.toMatchObject({ stageId: expect.any(String) })
+  })
+
   it('cancels one request without destroying the shared worker generation', async () => {
     const workers: FakeWorker[] = []
     runner = createCoverageTileRunner({
