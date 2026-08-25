@@ -718,14 +718,18 @@ export type MissionStore = {
   readonly discardCoverageTileCatalog?: (input: {
     readonly activationId: string
   }) => Promise<boolean>
-  readonly readCoverageTile?: (input: {
-    readonly missionId: string
-    readonly periodKey: string
-    readonly revisionDigest: string
-    readonly z: number
-    readonly x: number
-    readonly y: number
-  }) => Promise<Uint8Array | null>
+  readonly readCoverageTile?: (
+    input: {
+      readonly missionId: string
+      readonly periodKey: string
+      readonly revisionDigest: string
+      readonly z: number
+      readonly x: number
+      readonly y: number
+    },
+    requestId?: string,
+  ) => Promise<Uint8Array | null>
+  readonly cancelCoverageTileRead?: (requestId: string) => Promise<boolean>
   readonly listTrackingHistoryCheckpoints?: (
     missionId: string,
   ) => Promise<readonly TrackingHistoryCheckpoint[]>

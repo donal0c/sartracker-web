@@ -164,6 +164,7 @@ function createElectronMissionStore(options) {
   const missionReviewQueryControllersByRequestId = new Map()
   const outingFixSummaryControllersByRequestId = new Map()
   const coverageQueryControllersByRequestId = new Map()
+  const coverageTileControllersByRequestId = new Map()
   let breadcrumbQueryTail = Promise.resolve()
   let missionReviewWorkerTail = Promise.resolve()
   let outingFixSummaryWorkerTail = Promise.resolve()
@@ -252,6 +253,10 @@ function createElectronMissionStore(options) {
         activeQuery.controller.abort()
       }
       coverageQueryControllersByRequestId.clear()
+      for (const activeQuery of coverageTileControllersByRequestId.values()) {
+        activeQuery.controller.abort()
+      }
+      coverageTileControllersByRequestId.clear()
       void coverageTileRunner.close().catch(() => undefined)
       db.close()
     },
@@ -518,7 +523,18 @@ function createElectronMissionStore(options) {
     discardCoverageTileCatalog: async (input) => coverageTileRunner.discardCatalog({
       stageId: normalizeCoverageTileActivationId(input?.activationId),
     }),
-    readCoverageTile: async (input) => coverageTileRunner.readTile(input),
+    readCoverageTile: async (input, requestId) => executeCoverageTileRead(
+      requestId,
+      (signal) => coverageTileRunner.readTile(input, { signal }),
+    ),
+    cancelCoverageTileRead: async (requestId) => {
+      const normalizedRequestId = normalizeCoverageQueryRequestId(requestId, true)
+      const activeQuery = coverageTileControllersByRequestId.get(normalizedRequestId)
+      if (activeQuery === undefined) return false
+      activeQuery.controller.abort()
+      await activeQuery.completion.catch(() => undefined)
+      return true
+    },
     upsertDevice: async (input) => upsertDevice(db, input),
     upsertDevicesBulk: async (input) => {
       const startedAtMs = performance.now()
@@ -896,6 +912,33 @@ function createElectronMissionStore(options) {
         coverageQueryControllersByRequestId.get(normalizedRequestId) === activeQuery
       ) {
         coverageQueryControllersByRequestId.delete(normalizedRequestId)
+      }
+    })
+  }
+
+  /** Runs one independently cancellable renderer tile read on the shared worker. */
+  function executeCoverageTileRead(requestId, execute) {
+    const normalizedRequestId = normalizeCoverageQueryRequestId(requestId, false)
+    if (
+      normalizedRequestId !== null &&
+      coverageTileControllersByRequestId.has(normalizedRequestId)
+    ) {
+      throw new Error('Coverage tile request ID is already active.')
+    }
+    const controller = new AbortController()
+    const activeQuery = {
+      controller,
+      completion: Promise.resolve().then(() => execute(controller.signal)),
+    }
+    if (normalizedRequestId !== null) {
+      coverageTileControllersByRequestId.set(normalizedRequestId, activeQuery)
+    }
+    return activeQuery.completion.finally(() => {
+      if (
+        normalizedRequestId !== null &&
+        coverageTileControllersByRequestId.get(normalizedRequestId) === activeQuery
+      ) {
+        coverageTileControllersByRequestId.delete(normalizedRequestId)
       }
     })
   }

@@ -139,6 +139,11 @@ export function createCoverageController(input: {
   } | null = null
   let activeLoadCompletion: Promise<void> | null = null
   let contextUpdateSequence = 0
+  let queuedSelectionBaseline: {
+    readonly selectedKeySet: string
+    readonly state: Exclude<CoverageState, { readonly status: 'inactive' }>
+  } | null = null
+  let queuedSelectionPublishedState: CoverageState | null = null
   let cancelRequested = false
   let rendererFailureDuringFinalization: Error | null = null
   let rendererFailureEpoch = 0
@@ -677,9 +682,13 @@ export function createCoverageController(input: {
     const selectionChanged = selectedKeySet(context.selectedKeys) !==
       selectedKeySet(desiredContext.selectedKeys)
     if (!identityChanged && !selectionChanged) {
+      queuedSelectionBaseline = null
+      queuedSelectionPublishedState = null
       if (forceReload) await runLoad(true)
       return
     }
+    queuedSelectionBaseline = null
+    queuedSelectionPublishedState = null
     rendererDetachedCompleteCatalog = null
     activeController?.abort()
     if (identityChanged) lastErrorClass = null
@@ -710,8 +719,38 @@ export function createCoverageController(input: {
       const desiredSelectionChanged = selectedKeySet(desiredContext.selectedKeys) !==
         selectedKeySet(normalizedContext.selectedKeys)
       if (!desiredIdentityChanged && !desiredSelectionChanged) return
-      if (desiredSelectionChanged && state.status === 'complete') {
-        publish({ ...state, status: 'partial' })
+      if (desiredIdentityChanged) {
+        queuedSelectionBaseline = null
+        queuedSelectionPublishedState = null
+      }
+      if (desiredSelectionChanged && state.status !== 'inactive') {
+        if (
+          queuedSelectionBaseline !== null &&
+          state !== queuedSelectionPublishedState
+        ) {
+          queuedSelectionBaseline = null
+          queuedSelectionPublishedState = null
+        }
+        if (
+          queuedSelectionBaseline === null &&
+          state.status === 'complete' &&
+          selectedKeySet(context.selectedKeys) === selectedKeySet(desiredContext.selectedKeys)
+        ) {
+          queuedSelectionBaseline = {
+            selectedKeySet: selectedKeySet(context.selectedKeys),
+            state,
+          }
+        }
+        if (
+          queuedSelectionBaseline !== null &&
+          state === queuedSelectionPublishedState &&
+          queuedSelectionBaseline.selectedKeySet === selectedKeySet(normalizedContext.selectedKeys)
+        ) {
+          publish(queuedSelectionBaseline.state)
+        } else {
+          publish(createActiveState({ ...state, status: 'partial' }, normalizedContext.selectedKeys))
+        }
+        queuedSelectionPublishedState = state
       }
       desiredContext = normalizedContext
       const updateSequence = ++contextUpdateSequence

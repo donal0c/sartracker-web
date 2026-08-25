@@ -15,7 +15,10 @@ const { createElectronMissionStore } = require('../../electron/mission-store.cjs
       readonly commitCatalog?: (input: unknown, options: unknown) => Promise<unknown>
       readonly finalizeCatalog?: (input: unknown, options: unknown) => Promise<unknown>
       readonly discardCatalog?: (input: unknown, options: unknown) => Promise<unknown>
-      readonly readTile: (input: unknown) => Promise<Uint8Array | null>
+      readonly readTile: (
+        input: unknown,
+        options?: { readonly signal?: AbortSignal },
+      ) => Promise<Uint8Array | null>
       readonly close: () => Promise<void>
     }
   }) => CoverageMissionStore
@@ -113,6 +116,11 @@ type CoverageMissionStore = {
     readonly chunkRevisions: readonly { readonly key: CoverageKey; readonly contentRev: number }[]
   }>
   readonly cancelCoverageQuery: (requestId: string) => Promise<boolean>
+  readonly readCoverageTile: (
+    input: Readonly<Record<string, unknown>>,
+    requestId?: string,
+  ) => Promise<Uint8Array | null>
+  readonly cancelCoverageTileRead: (requestId: string) => Promise<boolean>
   readonly syncCoverageTileCatalog: (
     input: { readonly missionId: string; readonly chunks: readonly unknown[] },
     requestId?: string,
@@ -498,6 +506,39 @@ describe('Electron coverage mission-store orchestration', () => {
       chunks: [],
     }, 'replacement')).resolves.toMatchObject({ activationId: 'replacement-stage' })
     expect(syncCatalog).toHaveBeenCalledTimes(2)
+  })
+
+  it('cancels one obsolete tile read without terminating the shared renderer worker', async () => {
+    directory = await mkdtemp(path.join(tmpdir(), 'sartracker-coverage-store-'))
+    const readTile = vi.fn((_input: unknown, options: { readonly signal?: AbortSignal }) =>
+      new Promise<Uint8Array>((_resolve, reject) => {
+        options.signal?.addEventListener('abort', () => {
+          const error = new Error('tile read cancelled')
+          error.name = 'AbortError'
+          reject(error)
+        }, { once: true })
+      }))
+    const tileRunner = {
+      syncCatalog: vi.fn(),
+      commitCatalog: vi.fn(),
+      discardCatalog: vi.fn(),
+      readTile,
+      close: vi.fn().mockResolvedValue(undefined),
+    }
+    store = createElectronMissionStore({ userDataPath: directory, coverageTileRunner: tileRunner })
+    const request = store.readCoverageTile({
+      missionId: 'mission-1', periodKey: 'outing\u0000outing-1',
+      revisionDigest: 'revision-1', z: 8, x: 1, y: 1,
+    }, 'tile-read-1')
+    await vi.waitFor(() => expect(readTile).toHaveBeenCalledOnce())
+
+    await expect(store.cancelCoverageTileRead('tile-read-1')).resolves.toBe(true)
+    await expect(request).rejects.toMatchObject({ name: 'AbortError' })
+    await expect(store.cancelCoverageTileRead('tile-read-1')).resolves.toBe(false)
+    expect(readTile).toHaveBeenCalledWith(expect.any(Object), {
+      signal: expect.any(AbortSignal),
+    })
+    expect(tileRunner.close).not.toHaveBeenCalled()
   })
 })
 

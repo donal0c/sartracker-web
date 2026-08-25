@@ -24,6 +24,7 @@ export function CoverageStatusPanel(props: CoverageStatusPanelProps) {
   const rendererEvidenceDegraded = blockers.has('renderer_evidence_degraded')
   const rendererDetached = blockers.has('renderer_detached')
   const evidenceBlocked = degraded || rendererEvidencePending || rendererEvidenceDegraded
+  const progressUntrusted = evidenceBlocked || rendererDetached || reorganizing || backfill
   const omissions = props.omittedDeviceCount + props.omittedOutingCount +
     (props.unassignedOmitted ? 1 : 0)
 
@@ -107,7 +108,7 @@ export function CoverageStatusPanel(props: CoverageStatusPanelProps) {
 
       {props.state.status === 'loading' || props.state.status === 'partial' ||
       props.state.status === 'error' ? (
-        evidenceBlocked || rendererDetached ? null :
+        progressUntrusted ? null :
         <div className="mt-3">
           <progress
             aria-label="Mission history loading progress"

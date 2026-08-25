@@ -62,9 +62,11 @@ describe('coverage status panel [DON-275]', () => {
 
     render(state('partial', { blockers: ['backfill_incomplete'] }))
     expect(host.textContent).toContain('Participant history is still being added')
+    expect(host.querySelector('[data-testid="coverage-progress"]')).toBeNull()
 
     render(state('loading', { pendingInvalidation: true }))
     expect(host.textContent).toContain('Updating outing assignment')
+    expect(host.querySelector('[data-testid="coverage-progress"]')).toBeNull()
   })
 
   it('shows renderer-held evidence as an evidence wait without fake progress or retry', () => {

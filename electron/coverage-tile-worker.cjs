@@ -19,6 +19,7 @@ const {
   selectInvalidatedCoverageTilePaths,
 } = require('./coverage-tile-catalog.cjs')
 const { createTrailSegments } = require('./coverage-trail-segmentation.cjs')
+const { replaceCoverageTileCacheEntry } = require('./coverage-tile-cache-ledger.cjs')
 
 const GAP_THRESHOLD_MS = 30 * 60 * 1000
 const MAX_CACHE_BYTES = 512 * 1024 * 1024
@@ -38,17 +39,25 @@ const workerGeneration = randomUUID()
 let cacheBytes = 0
 let failCatalogCommitOnce = workerData.faultInjection?.failCatalogCommitOnce === true
 const cancelledRequestIds = new Set()
+const activeTileRequestIds = new Set()
+const queuedCatalogRequestIds = new Set()
 const initialization = fs.rm(workerData.cacheDirectory, { recursive: true, force: true })
   .then(() => fs.mkdir(workerData.cacheDirectory, { recursive: true }))
 let requestTail = initialization
 
 parentPort.on('message', (message) => {
   if (message.type === 'cancel-request') {
+    if (activeTileRequestIds.has(message.targetRequestId)) {
+      cancelledRequestIds.add(message.targetRequestId)
+      return
+    }
     if (stagedCatalog?.requestId === message.targetRequestId) {
       stagedCatalog = null
       return
     }
-    cancelledRequestIds.add(message.targetRequestId)
+    if (queuedCatalogRequestIds.has(message.targetRequestId)) {
+      cancelledRequestIds.add(message.targetRequestId)
+    }
     return
   }
   const respond = async () => {
@@ -67,12 +76,16 @@ parentPort.on('message', (message) => {
         error: error instanceof Error ? error.message : String(error),
         code: typeof error?.code === 'string' ? error.code : null,
       })
+    } finally {
+      if (message.type !== 'read-tile') queuedCatalogRequestIds.delete(message.requestId)
     }
   }
   if (message.type === 'read-tile') {
+    activeTileRequestIds.add(message.requestId)
     void initialization.then(respond)
     return
   }
+  queuedCatalogRequestIds.add(message.requestId)
   requestTail = requestTail.then(respond)
 })
 
@@ -327,6 +340,17 @@ function materializeChunk(key, contentRev, rows) {
 
 /** Serves only the currently attested revision for one logical period. */
 async function readTile(message) {
+  try {
+    return await readTileUncancelled(message)
+  } finally {
+    activeTileRequestIds.delete(message.requestId)
+    cancelledRequestIds.delete(message.requestId)
+  }
+}
+
+/** Serves one tile while observing renderer cancellation between expensive steps. */
+async function readTileUncancelled(message) {
+  throwIfRequestCancelled(message.requestId)
   const stagedPeriod = stagedCatalog?.nextCatalog.periods.find((entry) =>
     stagedCatalog.nextCatalog.missionId === message.missionId &&
     entry.periodKey === message.periodKey && entry.revisionDigest === message.revisionDigest)
@@ -364,23 +388,34 @@ async function readTile(message) {
     `${message.y}-${contributorDigest}.pbf`,
   )
   const cached = await fs.readFile(tilePath).catch(() => null)
+  throwIfRequestCancelled(message.requestId)
   if (cached !== null) {
     const entry = cacheEntriesByPath.get(tilePath)
-    if (entry !== undefined) entry.lastAccess = Date.now()
+    if (entry !== undefined) {
+      entry.lastAccess = Date.now()
+    } else {
+      cacheBytes = replaceCoverageTileCacheEntry(cacheEntriesByPath, tilePath, {
+        contributors,
+        size: cached.byteLength,
+        lastAccess: Date.now(),
+      }, cacheBytes)
+      await enforceCacheBudget()
+    }
     return cached
   }
   const bytes = Buffer.from(vtpbf.fromGeojsonVt(
     { coverage: tile },
     { version: 2, extent: 4096 },
   ))
+  throwIfRequestCancelled(message.requestId)
   await fs.mkdir(path.dirname(tilePath), { recursive: true })
   await fs.writeFile(tilePath, bytes)
-  cacheEntriesByPath.set(tilePath, {
+  throwIfRequestCancelled(message.requestId)
+  cacheBytes = replaceCoverageTileCacheEntry(cacheEntriesByPath, tilePath, {
     contributors,
     size: bytes.byteLength,
     lastAccess: Date.now(),
-  })
-  cacheBytes += bytes.byteLength
+  }, cacheBytes)
   await enforceCacheBudget()
   return bytes
 }

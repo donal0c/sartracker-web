@@ -1,11 +1,11 @@
-import type { GetResourceResponse, RequestParameters } from 'maplibre-gl'
+import type { AddProtocolAction } from 'maplibre-gl'
 
 export const COVERAGE_TILE_PROTOCOL = 'sartracker-coverage'
 
 type ProtocolRegistry = {
   readonly addProtocol: (
     protocol: string,
-    loadFn: (request: Pick<RequestParameters, 'url'>) => Promise<GetResourceResponse<ArrayBuffer>>,
+    loadFn: AddProtocolAction,
   ) => void
   readonly removeProtocol: (protocol: string) => void
 }
@@ -20,19 +20,33 @@ export function registerCoverageTileProtocol(
     readonly message: string
   }) => void = () => undefined,
 ): () => void {
-  registry.addProtocol(COVERAGE_TILE_PROTOCOL, async (request) => {
+  registry.addProtocol(COVERAGE_TILE_PROTOCOL, async (
+    request,
+    abortController = new AbortController(),
+  ) => {
     const readTile = window.sartrackerElectron?.missionStore.readCoverageTile
     if (readTile === undefined) {
       throw new Error('Electron coverage tile bridge is not available.')
     }
     const query = parseCoverageTileUrl(request.url)
+    if (abortController.signal.aborted) throw createAbortError()
+    const requestId = `coverage-tile-${crypto.randomUUID()}`
+    const abort = (): void => {
+      void window.sartrackerElectron?.missionStore.cancelCoverageTileRead?.(requestId)
+        .catch(() => undefined)
+    }
+    abortController.signal.addEventListener('abort', abort, { once: true })
     try {
-      const bytes = await readTile(query)
+      const bytes = await raceCoverageTileRead(
+        readTile(query, requestId),
+        abortController.signal,
+      )
       if (bytes === null) {
         throw new Error('Coverage tile revision is no longer current.')
       }
       return { data: copyArrayBuffer(bytes) }
     } catch (error) {
+      if (isAbortError(error) || abortController.signal.aborted) throw createAbortError()
       onFailure({
         missionId: query.missionId,
         periodKey: query.periodKey,
@@ -40,9 +54,31 @@ export function registerCoverageTileProtocol(
         message: 'Coverage tile delivery failed.',
       })
       throw error
+    } finally {
+      abortController.signal.removeEventListener('abort', abort)
     }
   })
   return () => registry.removeProtocol(COVERAGE_TILE_PROTOCOL)
+}
+
+/** Rejects obsolete MapLibre work promptly while main/worker cancellation settles. */
+function raceCoverageTileRead<T>(read: Promise<T>, signal: AbortSignal): Promise<T> {
+  if (signal.aborted) return Promise.reject(createAbortError())
+  return new Promise<T>((resolve, reject) => {
+    const abort = (): void => reject(createAbortError())
+    signal.addEventListener('abort', abort, { once: true })
+    void read.then(resolve, reject).finally(() => signal.removeEventListener('abort', abort))
+  })
+}
+
+function createAbortError(): Error {
+  const error = new Error('Coverage tile request was cancelled.')
+  error.name = 'AbortError'
+  return error
+}
+
+function isAbortError(error: unknown): boolean {
+  return error instanceof Error && error.name === 'AbortError'
 }
 
 /** Creates one MapLibre template without using a mission-global revision. */

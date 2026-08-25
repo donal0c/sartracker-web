@@ -31,7 +31,7 @@ describe('Candidate B MapLibre protocol [DON-276]', () => {
       z: 8,
       x: 121,
       y: 83,
-    })
+    }, expect.any(String))
 
     unregister()
   })
@@ -65,7 +65,7 @@ describe('Candidate B MapLibre protocol [DON-276]', () => {
       z: 8,
       x: 121,
       y: 83,
-    })
+    }, expect.any(String))
   })
 
   it('reports an active revision failure so Complete can be revoked', async () => {
@@ -109,5 +109,56 @@ describe('Candidate B MapLibre protocol [DON-276]', () => {
       url: url.replace('{z}', '8').replace('{x}', '0').replace('{y}', '0'),
     })).resolves.toEqual({ data: new ArrayBuffer(0) })
     expect(onFailure).not.toHaveBeenCalled()
+  })
+
+  it('cancels an obsolete MapLibre tile read without reporting renderer failure', async () => {
+    const addProtocol = vi.fn()
+    const onFailure = vi.fn()
+    let resolveRead: ((value: Uint8Array) => void) | undefined
+    const readCoverageTile = vi.fn(() => new Promise<Uint8Array>((resolve) => {
+      resolveRead = resolve
+    }))
+    const cancelCoverageTileRead = vi.fn().mockResolvedValue(true)
+    Object.defineProperty(window, 'sartrackerElectron', {
+      configurable: true,
+      value: { missionStore: { readCoverageTile, cancelCoverageTileRead } },
+    })
+    registerCoverageTileProtocol({ addProtocol, removeProtocol: vi.fn() }, onFailure)
+    const [, loader] = addProtocol.mock.calls[0]!
+    const abortController = new AbortController()
+    const url = createCoverageTileUrl('mission-1', 'outing\u0000outing-1', 'revision-8')
+
+    const loading = loader({
+      url: url.replace('{z}', '8').replace('{x}', '121').replace('{y}', '83'),
+    }, abortController)
+    abortController.abort()
+
+    await expect(loading).rejects.toMatchObject({ name: 'AbortError' })
+    const requestId = readCoverageTile.mock.calls[0]?.[1]
+    expect(requestId).toEqual(expect.any(String))
+    expect(cancelCoverageTileRead).toHaveBeenCalledWith(requestId)
+    expect(onFailure).not.toHaveBeenCalled()
+    resolveRead?.(new Uint8Array([1]))
+  })
+
+  it('does not start a tile read that MapLibre already cancelled', async () => {
+    const addProtocol = vi.fn()
+    const readCoverageTile = vi.fn().mockResolvedValue(new Uint8Array([1]))
+    const cancelCoverageTileRead = vi.fn().mockResolvedValue(false)
+    Object.defineProperty(window, 'sartrackerElectron', {
+      configurable: true,
+      value: { missionStore: { readCoverageTile, cancelCoverageTileRead } },
+    })
+    registerCoverageTileProtocol({ addProtocol, removeProtocol: vi.fn() })
+    const [, loader] = addProtocol.mock.calls[0]!
+    const abortController = new AbortController()
+    abortController.abort()
+    const url = createCoverageTileUrl('mission-1', 'outing\u0000outing-1', 'revision-8')
+
+    await expect(loader({
+      url: url.replace('{z}', '8').replace('{x}', '121').replace('{y}', '83'),
+    }, abortController)).rejects.toMatchObject({ name: 'AbortError' })
+    expect(readCoverageTile).not.toHaveBeenCalled()
+    expect(cancelCoverageTileRead).not.toHaveBeenCalled()
   })
 })

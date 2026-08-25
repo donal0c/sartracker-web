@@ -75,12 +75,54 @@ describe('coverage controller [DON-276]', () => {
     })
 
     expect(harness.controller.getState()).toMatchObject({
-      status: 'partial', deliveredFixCount: 1, totalFixCount: 1,
+      status: 'partial', deliveredFixCount: 1, totalFixCount: 2,
     })
     await widenSelection
     expect(harness.controller.getState()).toMatchObject({
       status: 'complete', deliveredFixCount: 2, totalFixCount: 2,
     })
+  })
+
+  it('restores a valid Complete claim when a queued filter change is reversed', async () => {
+    const harness = createHarness(manifest(1, [[KEY_A, 1], [KEY_B, 1]]))
+    await harness.controller.updateContext({
+      missionId: 'mission-1', rendererGeneration: 'r1', selectedKeys: [KEY_A],
+    })
+
+    const widenSelection = harness.controller.updateContext({
+      missionId: 'mission-1', rendererGeneration: 'r1',
+    })
+    const restoreSelection = harness.controller.updateContext({
+      missionId: 'mission-1', rendererGeneration: 'r1', selectedKeys: [KEY_A],
+    })
+
+    expect(harness.controller.getState()).toMatchObject({
+      status: 'complete', deliveredFixCount: 1, totalFixCount: 1,
+    })
+    await Promise.all([widenSelection, restoreSelection])
+    expect(harness.controller.getState()).toMatchObject({
+      status: 'complete', deliveredFixCount: 1, totalFixCount: 1,
+    })
+  })
+
+  it('does not restore a queued Complete claim after newer evidence is observed', async () => {
+    const harness = createHarness(manifest(1, [[KEY_A, 1], [KEY_B, 1]]))
+    await harness.controller.updateContext({
+      missionId: 'mission-1', rendererGeneration: 'r1', selectedKeys: [KEY_A],
+    })
+
+    const widenSelection = harness.controller.updateContext({
+      missionId: 'mission-1', rendererGeneration: 'r1',
+    })
+    const refresh = harness.controller.notifyChanged('mission-1', 2)
+    const restoreSelection = harness.controller.updateContext({
+      missionId: 'mission-1', rendererGeneration: 'r1', selectedKeys: [KEY_A],
+    })
+
+    expect(harness.controller.getState()).toMatchObject({
+      status: 'partial', latestObservedChangeSeq: 2,
+    })
+    await Promise.all([widenSelection, refresh, restoreSelection])
   })
 
   it('keeps delivered geometry on cancel and resumes only undelivered chunks', async () => {
