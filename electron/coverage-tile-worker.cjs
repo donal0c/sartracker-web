@@ -1,6 +1,6 @@
 const fs = require('node:fs/promises')
 const path = require('node:path')
-const { createHash } = require('node:crypto')
+const { createHash, randomUUID } = require('node:crypto')
 const { parentPort, workerData } = require('node:worker_threads')
 
 const Database = require('better-sqlite3')
@@ -27,19 +27,22 @@ if (parentPort === null) throw new Error('Coverage tile worker requires a parent
 
 const database = new Database(workerData.databasePath, { readonly: true, fileMustExist: true })
 database.pragma('query_only = ON')
-const chunksByKey = new Map()
-const indexesByPeriod = new Map()
+let chunksByKey = new Map()
+let indexesByPeriod = new Map()
 const cacheEntriesByPath = new Map()
 let activeCatalog = null
 let stagedCatalog = null
+let activatedCatalog = null
 let nextStageId = 0
+const workerGeneration = randomUUID()
 let cacheBytes = 0
 let failCatalogCommitOnce = workerData.faultInjection?.failCatalogCommitOnce === true
-let requestTail = fs.rm(workerData.cacheDirectory, { recursive: true, force: true })
+const initialization = fs.rm(workerData.cacheDirectory, { recursive: true, force: true })
   .then(() => fs.mkdir(workerData.cacheDirectory, { recursive: true }))
+let requestTail = initialization
 
 parentPort.on('message', (message) => {
-  requestTail = requestTail.then(async () => {
+  const respond = async () => {
     try {
       const result = await execute(message)
       parentPort.postMessage({ requestId: message.requestId, result })
@@ -50,12 +53,18 @@ parentPort.on('message', (message) => {
         code: typeof error?.code === 'string' ? error.code : null,
       })
     }
-  })
+  }
+  if (message.type === 'read-tile') {
+    void initialization.then(respond)
+    return
+  }
+  requestTail = requestTail.then(respond)
 })
 
 async function execute(message) {
   if (message.type === 'sync-catalog') return syncCatalog(message)
   if (message.type === 'commit-catalog') return commitCatalog(message)
+  if (message.type === 'finalize-catalog') return finalizeCatalog(message)
   if (message.type === 'discard-catalog') return discardCatalog(message)
   if (message.type === 'read-tile') return readTile(message)
   if (message.type === 'close') {
@@ -68,8 +77,8 @@ async function execute(message) {
 
 /** Synchronizes only moved chunks and rebuilds only their contributing periods. */
 async function syncCatalog(message) {
-  if (stagedCatalog !== null) {
-    throw new Error('Coverage tile catalog already has an uncommitted stage.')
+  if (stagedCatalog !== null || activatedCatalog !== null) {
+    throw new Error('Coverage tile catalog already has an unsettled stage.')
   }
   const nextCatalog = createCoverageTileCatalog({
     missionId: message.missionId,
@@ -103,6 +112,9 @@ async function syncCatalog(message) {
       minTs: chunk.minTs,
       maxTs: chunk.maxTs,
     })
+    if (workerData.faultInjection?.chunkBuildDelayMs > 0) {
+      await delay(workerData.faultInjection.chunkBuildDelayMs)
+    }
     await yieldToMessages()
   }
 
@@ -131,7 +143,7 @@ async function syncCatalog(message) {
       }))
     }
   }
-  const stageId = `coverage-stage-${++nextStageId}`
+  const stageId = `coverage-stage-${workerGeneration}-${++nextStageId}`
   stagedCatalog = {
     stageId,
     nextCatalog,
@@ -161,18 +173,20 @@ async function commitCatalog(message) {
       failCatalogCommitOnce = false
       throw new Error('Injected coverage catalog commit failure.')
     }
-    if (stage.missionChanged) {
-      cacheEntriesByPath.clear()
-      cacheBytes = 0
-      await fs.rm(workerData.cacheDirectory, { recursive: true, force: true })
-      await fs.mkdir(workerData.cacheDirectory, { recursive: true })
-    } else {
-      for (const tilePath of stage.invalidatedPaths) await removeCacheEntry(tilePath)
+    const predecessor = {
+      catalog: activeCatalog,
+      chunksByKey,
+      indexesByPeriod,
     }
-    chunksByKey.clear()
-    for (const [key, chunk] of stage.nextChunksByKey) chunksByKey.set(key, chunk)
-    indexesByPeriod.clear()
-    for (const [key, index] of stage.nextIndexesByPeriod) indexesByPeriod.set(key, index)
+    activatedCatalog = {
+      stageId: stage.stageId,
+      predecessor,
+      retiredPaths: stage.missionChanged
+        ? [...cacheEntriesByPath.keys()]
+        : stage.invalidatedPaths,
+    }
+    chunksByKey = stage.nextChunksByKey
+    indexesByPeriod = stage.nextIndexesByPeriod
     activeCatalog = stage.nextCatalog
     stagedCatalog = null
     return true
@@ -182,11 +196,36 @@ async function commitCatalog(message) {
   }
 }
 
-/** Discards a stale stage while leaving the active catalog serviceable. */
-function discardCatalog(message) {
-  requireStagedCatalog(message.stageId)
-  stagedCatalog = null
+/** Retires the predecessor only after renderer activation is irrevocable. */
+async function finalizeCatalog(message) {
+  const activation = requireActivatedCatalog(message.stageId)
+  activatedCatalog = null
+  for (const tilePath of activation.retiredPaths) {
+    await removeCacheEntry(tilePath).catch(() => undefined)
+  }
   return true
+}
+
+/** Discards a stale stage or rolls a committed stage back to its predecessor. */
+function discardCatalog(message) {
+  if (stagedCatalog?.stageId === message.stageId) {
+    stagedCatalog = null
+    return true
+  }
+  const activation = requireActivatedCatalog(message.stageId)
+  activeCatalog = activation.predecessor.catalog
+  chunksByKey = activation.predecessor.chunksByKey
+  indexesByPeriod = activation.predecessor.indexesByPeriod
+  activatedCatalog = null
+  return true
+}
+
+/** Resolves only the currently committed but not finalized stage token. */
+function requireActivatedCatalog(stageId) {
+  if (activatedCatalog === null || activatedCatalog.stageId !== stageId) {
+    throw new Error('Coverage tile catalog activation is no longer current.')
+  }
+  return activatedCatalog
 }
 
 /** Resolves only the current opaque stage token. */
@@ -262,13 +301,19 @@ async function readTile(message) {
     entry.periodKey === message.periodKey && entry.revisionDigest === message.revisionDigest)
   const activePeriod = activeCatalog?.periods.find((entry) =>
     entry.periodKey === message.periodKey && entry.revisionDigest === message.revisionDigest)
+  const predecessorPeriod = activatedCatalog?.predecessor.catalog?.periods.find((entry) =>
+    entry.periodKey === message.periodKey && entry.revisionDigest === message.revisionDigest)
   const servingCatalog = stagedPeriod === undefined
-    ? (activePeriod === undefined ? null : activeCatalog)
+    ? (activePeriod === undefined
+        ? (predecessorPeriod === undefined ? null : activatedCatalog.predecessor.catalog)
+        : activeCatalog)
     : stagedCatalog.nextCatalog
   if (servingCatalog === null) return null
-  const servingIndexes = stagedPeriod === undefined
-    ? indexesByPeriod
-    : stagedCatalog.nextIndexesByPeriod
+  const servingIndexes = stagedPeriod !== undefined
+    ? stagedCatalog.nextIndexesByPeriod
+    : activePeriod !== undefined
+      ? indexesByPeriod
+      : activatedCatalog.predecessor.indexesByPeriod
   const index = servingIndexes.get(message.periodKey)
   if (index === undefined) return Buffer.alloc(0)
   const tile = index.getTile(message.z, message.x, message.y)
@@ -339,4 +384,8 @@ function hashPath(value) {
 
 function yieldToMessages() {
   return new Promise((resolve) => setImmediate(resolve))
+}
+
+function delay(durationMs) {
+  return new Promise((resolve) => setTimeout(resolve, durationMs))
 }

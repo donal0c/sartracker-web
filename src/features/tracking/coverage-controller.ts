@@ -68,6 +68,7 @@ export type CoverageController = {
 
 export type CoverageRendererActivation = {
   readonly commit: () => void
+  readonly finalize?: () => void
   readonly rollback: () => void
 }
 
@@ -111,6 +112,7 @@ export function createCoverageController(input: {
     readonly signal: AbortSignal
   }) => Promise<CoverageTileCatalog>
   readonly activateCatalog?: (catalog: CoverageTileCatalog) => Promise<void>
+  readonly finalizeCatalog?: (catalog: CoverageTileCatalog) => Promise<void>
   readonly discardCatalog?: (catalog: CoverageTileCatalog) => Promise<void>
   readonly publish: (state: CoverageState) => void
 }): CoverageController {
@@ -470,9 +472,15 @@ export function createCoverageController(input: {
     },
     notifyCatalogApplied: async (catalog, rendererActivation = {
       commit: () => undefined,
+      finalize: () => undefined,
       rollback: () => undefined,
     }) => {
       if (!catalogActivation.isPending(catalog)) {
+        if (isCurrentCatalog(state, catalog)) {
+          rendererActivation.commit()
+          rendererActivation.finalize?.()
+          return
+        }
         rendererActivation.rollback()
         await input.discardCatalog?.(catalog).catch(() => undefined)
         return
@@ -481,9 +489,13 @@ export function createCoverageController(input: {
         await input.activateCatalog?.(catalog)
         if (!catalogActivation.isPending(catalog)) {
           rendererActivation.rollback()
+          await input.discardCatalog?.(catalog).catch(() => undefined)
           return
         }
         rendererActivation.commit()
+        await input.finalizeCatalog?.(catalog)
+        rendererActivation.finalize?.()
+        if (!catalogActivation.isPending(catalog)) return
         catalogActivation.notifyApplied(catalog)
       } catch (error) {
         const normalized = error instanceof Error
@@ -528,6 +540,17 @@ export function createCoverageController(input: {
     },
     getState: () => state,
   }
+}
+
+/** Matches only the catalog currently attested by the controller state. */
+function isCurrentCatalog(state: CoverageState, catalog: CoverageTileCatalog): boolean {
+  if (state.status === 'inactive' || state.tileCatalog === null) return false
+  if (state.tileCatalog.activationId !== catalog.activationId) return false
+  const revisions = (value: CoverageTileCatalog): string => value.periods
+    .map((period) => `${period.periodKey}\u0000${period.revisionDigest}`)
+    .sort()
+    .join('\n')
+  return revisions(state.tileCatalog) === revisions(catalog)
 }
 
 /** Creates the stable tagged renderer identity for one logical chunk. */

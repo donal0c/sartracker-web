@@ -108,6 +108,23 @@ test.describe('complete mission-history coverage [DON-275]', () => {
     )
   })
 
+  test('reattaches complete mission history after a basemap style change', async ({ page }) => {
+    await seedCoverageMission(page)
+    await expect(page.getByTestId('coverage-status-panel')).toContainText(
+      'All mission history shown',
+    )
+    await expect.poll(() => countCoverageLayers(page)).toBeGreaterThan(0)
+
+    await page.getByTestId('basemap-menu-toggle').click()
+    await page.getByTestId('basemap-btn-openstreetmap').click()
+    await expect(page.getByTestId('basemap-menu-toggle')).toContainText('OpenStreetMap')
+
+    await expect.poll(() => countCoverageLayers(page), { timeout: 5_000 }).toBeGreaterThan(0)
+    await expect(page.getByTestId('coverage-status-panel')).toContainText(
+      'All mission history shown',
+    )
+  })
+
   test('leaves the existing browser surface unchanged while the coverage flag is off', async ({ page }) => {
     await page.goto('/?missionHarness=1&missionModel=1')
     await page.getByTestId('app-title').waitFor({ state: 'visible', timeout: 15_000 })
@@ -131,6 +148,11 @@ async function readCoverageLayerFilters(page: Page): Promise<readonly unknown[]>
       .filter((layer) => layer.id.startsWith('coverage-'))
       .map((layer) => map.getFilter(layer.id)) ?? []
   })
+}
+
+async function countCoverageLayers(page: Page): Promise<number> {
+  return page.evaluate(() => window.__SARTRACKER_MAP__?.getStyle().layers
+    .filter((layer) => layer.id.startsWith('coverage-')).length ?? 0)
 }
 
 async function readCoverageNumbers(page: Page): Promise<{

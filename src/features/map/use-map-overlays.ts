@@ -108,6 +108,7 @@ export function useMapOverlays(options: UseMapOverlaysOptions): void {
         }, signal)
         if (catalog === null || coverageController === null) {
           activation.commit()
+          activation.finalize()
         } else {
           await coverageController.notifyCatalogApplied(catalog, activation)
         }

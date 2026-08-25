@@ -15,6 +15,7 @@ const { registerCoverageIpcHandlers } = require('../../electron/coverage-ipc.cjs
     }
     readonly activationChannels?: {
       readonly activate: string
+      readonly finalize: string
       readonly discard: string
     }
     readonly cancelChannel: string
@@ -24,6 +25,7 @@ const { registerCoverageIpcHandlers } = require('../../electron/coverage-ipc.cjs
       readonly readCoverageClaim: (query: unknown, requestId: string) => Promise<unknown>
       readonly syncCoverageTileCatalog: (query: unknown, requestId: string) => Promise<unknown>
       readonly activateCoverageTileCatalog?: (input: unknown) => Promise<unknown>
+      readonly finalizeCoverageTileCatalog?: (input: unknown) => Promise<unknown>
       readonly discardCoverageTileCatalog?: (input: unknown) => Promise<unknown>
       readonly cancelCoverageQuery: (requestId: string) => Promise<boolean>
     }
@@ -116,7 +118,7 @@ describe('coverage IPC ownership [DON-276]', () => {
     registerCoverageIpcHandlers({
       ipcMain: { handle: (channel, handler) => handlers.set(channel, handler as never) },
       readChannels: { manifest: 'manifest', chunk: 'chunk', claim: 'claim', catalog: 'catalog' },
-      activationChannels: { activate: 'activate', discard: 'discard' },
+      activationChannels: { activate: 'activate', finalize: 'finalize', discard: 'discard' },
       cancelChannel: 'cancel', missionStore,
       validateIpcSender: vi.fn(),
     })
@@ -135,9 +137,10 @@ describe('coverage IPC ownership [DON-276]', () => {
     expect(activateCoverageTileCatalog).not.toHaveBeenCalled()
   })
 
-  it('allows only the owning renderer to settle a stage and releases its listeners', async () => {
+  it('retains ownership after activation and releases it only after finalization', async () => {
     const handlers = new Map<string, (event: unknown, ...args: readonly unknown[]) => unknown>()
     const activateCoverageTileCatalog = vi.fn().mockResolvedValue(true)
+    const finalizeCoverageTileCatalog = vi.fn().mockResolvedValue(true)
     const missionStore = {
       readCoverageManifest: vi.fn(),
       readCoverageChunk: vi.fn(),
@@ -146,13 +149,14 @@ describe('coverage IPC ownership [DON-276]', () => {
         activationId: 'coverage-stage-private', periods: [], delivered: [],
       }),
       activateCoverageTileCatalog,
+      finalizeCoverageTileCatalog,
       discardCoverageTileCatalog: vi.fn().mockResolvedValue(true),
       cancelCoverageQuery: vi.fn().mockResolvedValue(false),
     }
     registerCoverageIpcHandlers({
       ipcMain: { handle: (channel, handler) => handlers.set(channel, handler as never) },
       readChannels: { manifest: 'manifest', chunk: 'chunk', claim: 'claim', catalog: 'catalog' },
-      activationChannels: { activate: 'activate', discard: 'discard' },
+      activationChannels: { activate: 'activate', finalize: 'finalize', discard: 'discard' },
       cancelChannel: 'cancel', missionStore,
       validateIpcSender: vi.fn(),
     })
@@ -168,6 +172,13 @@ describe('coverage IPC ownership [DON-276]', () => {
     await expect(handlers.get('activate')?.({ sender: owner }, payload)).resolves.toBe(true)
 
     expect(activateCoverageTileCatalog).toHaveBeenCalledOnce()
+    expect(owner.listenerCount('destroyed')).toBe(1)
+    expect(owner.listenerCount('render-process-gone')).toBe(1)
+    await expect(handlers.get('finalize')?.({ sender: stranger }, payload))
+      .rejects.toThrow(/not owned/iu)
+    await expect(handlers.get('finalize')?.({ sender: owner }, payload)).resolves.toBe(true)
+
+    expect(finalizeCoverageTileCatalog).toHaveBeenCalledOnce()
     expect(owner.listenerCount('destroyed')).toBe(0)
     expect(owner.listenerCount('render-process-gone')).toBe(0)
   })

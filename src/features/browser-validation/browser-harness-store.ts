@@ -188,6 +188,9 @@ type BrowserHarnessStore = {
   readonly activateCoverageTileCatalog: (input: {
     readonly activationId: string
   }) => Promise<boolean>
+  readonly finalizeCoverageTileCatalog: (input: {
+    readonly activationId: string
+  }) => Promise<boolean>
   readonly discardCoverageTileCatalog: (input: {
     readonly activationId: string
   }) => Promise<boolean>
@@ -1194,6 +1197,7 @@ export function getBrowserHarnessStore(): BrowserHarnessStore {
       return createBrowserCoverageTileCatalog(state, input.missionId, input.chunks)
     },
     activateCoverageTileCatalog: async () => true,
+    finalizeCoverageTileCatalog: async () => true,
     discardCoverageTileCatalog: async () => true,
     cancelCoverageQuery: async () => false,
     listMarkers: async (missionId) =>

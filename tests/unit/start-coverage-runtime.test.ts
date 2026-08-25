@@ -21,6 +21,7 @@ describe('coverage runtime wiring [DON-276]', () => {
     let changedListener: ((event: { missionId: string; changeSeq: number }) => void) | undefined
     const readCoverageManifest = vi.fn(async () => manifest(changeSeq))
     const activateCoverageTileCatalog = vi.fn(async () => true)
+    const finalizeCoverageTileCatalog = vi.fn(async () => true)
     const syncCoverageTileCatalog = vi.fn(async () => ({
       activationId: `stage-${changeSeq}`,
       periods: [{ periodKey: 'unassigned\u0000', revisionDigest: `rev-${changeSeq}` }],
@@ -30,6 +31,7 @@ describe('coverage runtime wiring [DON-276]', () => {
       readCoverageManifest,
       syncCoverageTileCatalog,
       activateCoverageTileCatalog,
+      finalizeCoverageTileCatalog,
       discardCoverageTileCatalog: vi.fn(async () => true),
       readCoverageClaim: vi.fn(async () => ({
         changeSeq,
@@ -56,6 +58,9 @@ describe('coverage runtime wiring [DON-276]', () => {
     }))
     expect(syncCoverageTileCatalog).toHaveBeenCalledOnce()
     expect(activateCoverageTileCatalog).toHaveBeenCalledWith({
+      activationId: 'stage-1',
+    })
+    expect(finalizeCoverageTileCatalog).toHaveBeenCalledWith({
       activationId: 'stage-1',
     })
 
@@ -85,6 +90,7 @@ describe('coverage runtime wiring [DON-276]', () => {
         delivered: [{ key: manifest(1).chunks[0]!.key, contentRev: 1 }],
       })),
       activateCoverageTileCatalog: vi.fn(async () => true),
+      finalizeCoverageTileCatalog: vi.fn(async () => true),
       discardCoverageTileCatalog: vi.fn(async () => true),
       readCoverageClaim,
       cancelCoverageQuery: vi.fn(async () => true),

@@ -123,6 +123,7 @@ function createCoverageTileRunner(input) {
   return {
     syncCatalog: (payload, options) => request('sync-catalog', payload, options),
     commitCatalog: (payload, options) => request('commit-catalog', payload, options),
+    finalizeCatalog: (payload, options) => request('finalize-catalog', payload, options),
     discardCatalog: (payload, options) => request('discard-catalog', payload, options),
     readTile: (payload, options) => request('read-tile', payload, options),
     close: async () => {

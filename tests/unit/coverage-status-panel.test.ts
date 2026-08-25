@@ -66,6 +66,21 @@ describe('coverage status panel [DON-275]', () => {
     render(state('loading', { pendingInvalidation: true }))
     expect(host.textContent).toContain('Updating outing assignment')
   })
+
+  it('shows renderer-held evidence as an evidence wait without fake progress or retry', () => {
+    const onRetry = vi.fn()
+    render(state('partial', {
+      blockers: ['renderer_evidence_pending'],
+      deliveredFixCount: 10,
+      totalFixCount: 10,
+    }), { onRetry })
+
+    expect(host.textContent).toContain('Anomaly evidence is waiting to be saved')
+    expect(host.textContent).toContain('Current positions remain live')
+    expect(host.querySelector('[data-testid="coverage-progress"]')).toBeNull()
+    expect(host.querySelector('[data-testid="coverage-retry"]')).toBeNull()
+    expect(onRetry).not.toHaveBeenCalled()
+  })
 })
 
 function render(

@@ -64,6 +64,7 @@ const MISSION_STORE_CHANNELS = {
   readCoverageClaim: 'sartracker:mission-store:read-coverage-claim',
   syncCoverageTileCatalog: 'sartracker:mission-store:sync-coverage-tile-catalog',
   activateCoverageTileCatalog: 'sartracker:mission-store:activate-coverage-tile-catalog',
+  finalizeCoverageTileCatalog: 'sartracker:mission-store:finalize-coverage-tile-catalog',
   discardCoverageTileCatalog: 'sartracker:mission-store:discard-coverage-tile-catalog',
   readCoverageTile: 'sartracker:mission-store:read-coverage-tile',
   cancelCoverageQuery: 'sartracker:mission-store:cancel-coverage-query',

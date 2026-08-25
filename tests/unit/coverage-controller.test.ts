@@ -348,6 +348,54 @@ describe('coverage controller [DON-276]', () => {
     expect(controller.getState()).toMatchObject({ status: 'error', deliveredFixCount: 0 })
   })
 
+  it('reattaches an already-active catalog after style loss without reactivating the backend', async () => {
+    const activateCatalog = vi.fn().mockResolvedValue(undefined)
+    const finalizeCatalog = vi.fn().mockResolvedValue(undefined)
+    const discardCatalog = vi.fn().mockResolvedValue(undefined)
+    const controller = createCoverageController({
+      readManifest: vi.fn().mockResolvedValue(manifest(1, [[KEY_A, 1]])),
+      readChunk: vi.fn(),
+      readClaim: vi.fn().mockResolvedValue({
+        changeSeq: 1, databaseReady: true, blockers: [],
+        chunkRevisions: [{ key: KEY_A, contentRev: 1 }],
+      }),
+      applyChunk: vi.fn(),
+      deliverSelection: vi.fn().mockResolvedValue({
+        activationId: 'style-stage-1',
+        periods: [{ periodKey: 'outing\u0000outing-1', revisionDigest: 'revision-1' }],
+        delivered: [{ key: KEY_A, contentRev: 1 }],
+      }),
+      activateCatalog,
+      finalizeCatalog,
+      discardCatalog,
+      publish: vi.fn(),
+    })
+    const firstRenderer = { commit: vi.fn(), rollback: vi.fn(), finalize: vi.fn() }
+    const load = controller.updateContext({ missionId: 'mission-1', rendererGeneration: 'r1' })
+    await vi.waitFor(() => expect(controller.getState()).toMatchObject({
+      tileCatalog: { activationId: 'style-stage-1' },
+    }))
+    const catalog = controller.getState().status === 'inactive'
+      ? null
+      : controller.getState().tileCatalog
+    if (catalog === null) throw new Error('Coverage catalog was not staged.')
+
+    await controller.notifyCatalogApplied(catalog, firstRenderer)
+    await load
+    expect(controller.getState()).toMatchObject({ status: 'complete' })
+
+    const replacementRenderer = { commit: vi.fn(), rollback: vi.fn(), finalize: vi.fn() }
+    await controller.notifyCatalogApplied(catalog, replacementRenderer)
+
+    expect(activateCatalog).toHaveBeenCalledOnce()
+    expect(finalizeCatalog).toHaveBeenCalledOnce()
+    expect(discardCatalog).not.toHaveBeenCalled()
+    expect(replacementRenderer.commit).toHaveBeenCalledOnce()
+    expect(replacementRenderer.finalize).toHaveBeenCalledOnce()
+    expect(replacementRenderer.rollback).not.toHaveBeenCalled()
+    expect(controller.getState()).toMatchObject({ status: 'complete' })
+  })
+
   it.each(['resolve', 'reject'] as const)(
     'fences an obsolete mission activation after backend %s',
     async (outcome) => {
@@ -361,9 +409,10 @@ describe('coverage controller [DON-276]', () => {
         catalog.activationId === 'stage-mission-1'
           ? oldBackendActivation
           : Promise.resolve())
+      const finalizeCatalog = vi.fn().mockResolvedValue(undefined)
       const discardCatalog = vi.fn().mockResolvedValue(undefined)
-      const oldRenderer = { commit: vi.fn(), rollback: vi.fn() }
-      const nextRenderer = { commit: vi.fn(), rollback: vi.fn() }
+      const oldRenderer = { commit: vi.fn(), rollback: vi.fn(), finalize: vi.fn() }
+      const nextRenderer = { commit: vi.fn(), rollback: vi.fn(), finalize: vi.fn() }
       const controller = createCoverageController({
         readManifest: vi.fn(async (missionId) => manifest(
           1,
@@ -386,6 +435,7 @@ describe('coverage controller [DON-276]', () => {
           delivered: chunks.map(({ key, contentRev }) => ({ key, contentRev })),
         })),
         activateCatalog,
+        finalizeCatalog,
         discardCatalog,
         publish: vi.fn(),
       })
@@ -428,6 +478,9 @@ describe('coverage controller [DON-276]', () => {
       expect(oldRenderer.commit).not.toHaveBeenCalled()
       expect(oldRenderer.rollback).toHaveBeenCalledOnce()
       expect(nextRenderer.commit).toHaveBeenCalledOnce()
+      if (outcome === 'resolve') {
+        expect(discardCatalog).toHaveBeenCalledWith(oldState.tileCatalog)
+      }
       expect(controller.getState()).toMatchObject({
         missionId: 'mission-2', status: 'complete', deliveredFixCount: 1,
       })

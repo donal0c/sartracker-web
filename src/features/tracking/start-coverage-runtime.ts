@@ -27,6 +27,7 @@ export type CoverageRuntimeMissionStore = Pick<
   | 'readCoverageClaim'
   | 'syncCoverageTileCatalog'
   | 'activateCoverageTileCatalog'
+  | 'finalizeCoverageTileCatalog'
   | 'discardCoverageTileCatalog'
   | 'cancelCoverageQuery'
 >
@@ -88,6 +89,12 @@ export function startCoverageRuntime(
     activateCatalog: async (catalog) => {
       if (catalog.activationId === undefined) return
       await missionStore.activateCoverageTileCatalog({
+        activationId: catalog.activationId,
+      })
+    },
+    finalizeCatalog: async (catalog) => {
+      if (catalog.activationId === undefined) return
+      await missionStore.finalizeCoverageTileCatalog({
         activationId: catalog.activationId,
       })
     },
@@ -186,6 +193,7 @@ export function hasCoverageRuntimeBoundary(
     typeof missionStore.readCoverageClaim === 'function' &&
     typeof missionStore.syncCoverageTileCatalog === 'function' &&
     typeof missionStore.activateCoverageTileCatalog === 'function' &&
+    typeof missionStore.finalizeCoverageTileCatalog === 'function' &&
     typeof missionStore.discardCoverageTileCatalog === 'function' &&
     typeof missionStore.cancelCoverageQuery === 'function'
 }

@@ -14,13 +14,17 @@ const { createCoverageTileRunner } = require('../../electron/coverage-tile-runne
     readonly cacheDirectory: string
     readonly createWorker?: () => FakeWorker
     readonly onFailure?: (error: Error) => void
-    readonly faultInjection?: { readonly failCatalogCommitOnce?: boolean }
+    readonly faultInjection?: {
+      readonly failCatalogCommitOnce?: boolean
+      readonly chunkBuildDelayMs?: number
+    }
   }) => {
     readonly syncCatalog: (
       input: Readonly<Record<string, unknown>>,
       options?: { readonly signal?: AbortSignal },
     ) => Promise<CatalogResult>
     readonly commitCatalog: (input: { readonly stageId: string }) => Promise<boolean>
+    readonly finalizeCatalog: (input: { readonly stageId: string }) => Promise<boolean>
     readonly discardCatalog: (input: { readonly stageId: string }) => Promise<boolean>
     readonly readTile: (input: Readonly<Record<string, unknown>>) => Promise<Uint8Array | null>
     readonly close: () => Promise<void>
@@ -68,6 +72,7 @@ describe('Candidate B coverage tile worker [DON-276]', () => {
       chunks: [{ key: keyA, contentRev: 1 }, { key: keyB, contentRev: 1 }],
     })
     await runner.commitCatalog({ stageId: first.stageId })
+    await runner.finalizeCatalog({ stageId: first.stageId })
     expect(first.delivered).toEqual([
       { key: keyA, contentRev: 1 }, { key: keyB, contentRev: 1 },
     ])
@@ -117,12 +122,120 @@ describe('Candidate B coverage tile worker [DON-276]', () => {
       periodKey: periodA.periodKey,
       revisionDigest: periodA.revisionDigest,
       ...tileAddress,
+    })).resolves.toEqual(firstA)
+    await runner.finalizeCatalog({ stageId: second.stageId })
+    await expect(runner.readTile({
+      periodKey: periodA.periodKey,
+      revisionDigest: periodA.revisionDigest,
+      ...tileAddress,
     })).resolves.toBeNull()
     await expect(runner.readTile({
       periodKey: periodB.periodKey,
       revisionDigest: periodB.revisionDigest,
       ...tileAddress,
     })).resolves.toEqual(firstB)
+  })
+
+  it('rolls a committed backend catalog back when renderer activation is superseded', async () => {
+    const databasePath = await createDatabase()
+    runner = createCoverageTileRunner({
+      databasePath,
+      cacheDirectory: path.join(directory!, 'coverage-rollback'),
+    })
+    const keyA: ChunkKey = {
+      device_id: 'device-a', period_kind: 'outing', period_id: 'outing-a',
+    }
+    const first = await runner.syncCatalog({
+      missionId: 'mission-1', chunks: [{ key: keyA, contentRev: 1 }],
+    })
+    await runner.commitCatalog({ stageId: first.stageId })
+    await runner.finalizeCatalog({ stageId: first.stageId })
+    const priorPeriod = first.periods[0]!
+    const tileAddress = lonLatToTile(-9.7, 52, 8)
+    const priorTile = await runner.readTile({
+      periodKey: priorPeriod.periodKey,
+      revisionDigest: priorPeriod.revisionDigest,
+      ...tileAddress,
+    })
+    const database = new Database(databasePath)
+    database.prepare(`UPDATE coverage_chunks SET content_rev = 2
+      WHERE mission_id = 'mission-1' AND device_id = 'device-a'`).run()
+    database.close()
+
+    const second = await runner.syncCatalog({
+      missionId: 'mission-1', chunks: [{ key: keyA, contentRev: 2 }],
+    })
+    await runner.commitCatalog({ stageId: second.stageId })
+    await runner.discardCatalog({ stageId: second.stageId })
+
+    await expect(runner.readTile({
+      periodKey: priorPeriod.periodKey,
+      revisionDigest: priorPeriod.revisionDigest,
+      ...tileAddress,
+    })).resolves.toEqual(priorTile)
+    await expect(runner.readTile({
+      periodKey: second.periods[0]!.periodKey,
+      revisionDigest: second.periods[0]!.revisionDigest,
+      ...tileAddress,
+    })).resolves.toBeNull()
+  })
+
+  it('serves retained tiles while a later catalog is still building', async () => {
+    const databasePath = await createDatabase()
+    runner = createCoverageTileRunner({
+      databasePath,
+      cacheDirectory: path.join(directory!, 'coverage-concurrent-read'),
+      faultInjection: { chunkBuildDelayMs: 100 },
+    })
+    const keyA: ChunkKey = {
+      device_id: 'device-a', period_kind: 'outing', period_id: 'outing-a',
+    }
+    const first = await runner.syncCatalog({
+      missionId: 'mission-1', chunks: [{ key: keyA, contentRev: 1 }],
+    })
+    await runner.commitCatalog({ stageId: first.stageId })
+    await runner.finalizeCatalog({ stageId: first.stageId })
+    const period = first.periods[0]!
+    const tileAddress = lonLatToTile(-9.7, 52, 8)
+    const database = new Database(databasePath)
+    database.prepare(`UPDATE coverage_chunks SET content_rev = 2
+      WHERE mission_id = 'mission-1' AND device_id = 'device-a'`).run()
+    database.close()
+
+    const build = runner.syncCatalog({
+      missionId: 'mission-1', chunks: [{ key: keyA, contentRev: 2 }],
+    })
+    const retainedRead = runner.readTile({
+      periodKey: period.periodKey,
+      revisionDigest: period.revisionDigest,
+      ...tileAddress,
+    })
+
+    await expect(Promise.race([
+      retainedRead.then(() => 'tile'),
+      build.then(() => 'build'),
+    ])).resolves.toBe('tile')
+    const staged = await build
+    await runner.discardCatalog({ stageId: staged.stageId })
+  })
+
+  it('never reuses an activation token after the tile worker restarts', async () => {
+    const databasePath = await createDatabase()
+    runner = createCoverageTileRunner({
+      databasePath,
+      cacheDirectory: path.join(directory!, 'coverage-token-generation'),
+    })
+    const first = await runner.syncCatalog({ missionId: 'mission-1', chunks: [] })
+    await runner.discardCatalog({ stageId: first.stageId })
+    await runner.close()
+
+    runner = createCoverageTileRunner({
+      databasePath,
+      cacheDirectory: path.join(directory!, 'coverage-token-generation'),
+    })
+    const replacement = await runner.syncCatalog({ missionId: 'mission-1', chunks: [] })
+
+    expect(replacement.stageId).not.toBe(first.stageId)
   })
 
   it('fences a replacement from the terminated worker generation', async () => {
@@ -209,6 +322,7 @@ describe('Candidate B coverage tile worker [DON-276]', () => {
       missionId: 'mission-1', chunks: [{ key: keyA, contentRev: 1 }],
     })
     await runner.commitCatalog({ stageId: catalog.stageId })
+    await runner.finalizeCatalog({ stageId: catalog.stageId })
     const period = catalog.periods[0]!
 
     const empty = await runner.readTile({

@@ -13,6 +13,7 @@ const { createElectronMissionStore } = require('../../electron/mission-store.cjs
     readonly coverageTileRunner?: {
       readonly syncCatalog: (input: unknown, options: unknown) => Promise<unknown>
       readonly commitCatalog?: (input: unknown, options: unknown) => Promise<unknown>
+      readonly finalizeCatalog?: (input: unknown, options: unknown) => Promise<unknown>
       readonly discardCatalog?: (input: unknown, options: unknown) => Promise<unknown>
       readonly readTile: (input: unknown) => Promise<Uint8Array | null>
       readonly close: () => Promise<void>
@@ -120,6 +121,7 @@ type CoverageMissionStore = {
     readonly delivered: readonly { readonly key: CoverageKey; readonly contentRev: number }[]
   }>
   readonly activateCoverageTileCatalog: (input: { readonly activationId: string }) => Promise<boolean>
+  readonly finalizeCoverageTileCatalog: (input: { readonly activationId: string }) => Promise<boolean>
   readonly discardCoverageTileCatalog: (input: { readonly activationId: string }) => Promise<boolean>
   readonly readCoverageTile: (input: Readonly<Record<string, unknown>>) => Promise<Uint8Array | null>
 }
@@ -289,6 +291,7 @@ describe('Electron coverage mission-store orchestration', () => {
     const tileRunner = {
       syncCatalog,
       commitCatalog: vi.fn().mockResolvedValue(true),
+      finalizeCatalog: vi.fn().mockResolvedValue(true),
       discardCatalog: vi.fn().mockResolvedValue(true),
       readTile: vi.fn().mockResolvedValue(tileBytes),
       close: vi.fn().mockResolvedValue(undefined),
@@ -298,7 +301,7 @@ describe('Electron coverage mission-store orchestration', () => {
     const manifest = await store.readCoverageManifest(mission.id, 'manifest-1')
     const chunk = manifest.chunks[0]!
     syncCatalog.mockResolvedValue({
-      stageId: 'coverage-stage-1',
+      stageId: 'coverage-stage-00000000-0000-4000-8000-000000000001-1',
       periods: [{
         periodKey: 'unassigned\u0000',
         revisionDigest: 'revision-1',
@@ -319,15 +322,21 @@ describe('Electron coverage mission-store orchestration', () => {
       missionId: mission.id,
       chunks: [{ key: chunk.key, contentRev: chunk.contentRev }],
     }, 'tiles-1')).resolves.toMatchObject({
-      activationId: 'coverage-stage-1',
+      activationId: 'coverage-stage-00000000-0000-4000-8000-000000000001-1',
       delivered: [{ key: chunk.key, contentRev: chunk.contentRev }],
     })
     expect(tileRunner.commitCatalog).not.toHaveBeenCalled()
     await expect(store.activateCoverageTileCatalog({
-      activationId: 'coverage-stage-1',
+      activationId: 'coverage-stage-00000000-0000-4000-8000-000000000001-1',
     })).resolves.toBe(true)
     expect(tileRunner.commitCatalog).toHaveBeenCalledWith(
-      { stageId: 'coverage-stage-1' },
+      { stageId: 'coverage-stage-00000000-0000-4000-8000-000000000001-1' },
+    )
+    await expect(store.finalizeCoverageTileCatalog({
+      activationId: 'coverage-stage-00000000-0000-4000-8000-000000000001-1',
+    })).resolves.toBe(true)
+    expect(tileRunner.finalizeCatalog).toHaveBeenCalledWith(
+      { stageId: 'coverage-stage-00000000-0000-4000-8000-000000000001-1' },
     )
     expect(tileRunner.discardCatalog).not.toHaveBeenCalled()
     await expect(store.readCoverageTile({ z: 8, x: 1, y: 1 })).resolves.toEqual(tileBytes)
@@ -360,7 +369,7 @@ describe('Electron coverage mission-store orchestration', () => {
         }],
       })
       return {
-        stageId: 'coverage-stage-race',
+        stageId: 'coverage-stage-00000000-0000-4000-8000-000000000002-1',
         periods: [{
           periodKey: 'unassigned\u0000', revisionDigest: 'revision-stale',
           contributors: [`device-1\u0000unassigned\u0000@${chunk.contentRev}`],
@@ -378,7 +387,7 @@ describe('Electron coverage mission-store orchestration', () => {
       chunks: [{ key: chunk.key, contentRev: chunk.contentRev }],
     }, 'tiles-race')).rejects.toThrow(/chunk-stale/i)
     expect(discardCatalog).toHaveBeenCalledWith({
-      stageId: 'coverage-stage-race',
+      stageId: 'coverage-stage-00000000-0000-4000-8000-000000000002-1',
     })
     expect(commitCatalog).not.toHaveBeenCalled()
   })
@@ -417,7 +426,7 @@ describe('Electron coverage mission-store orchestration', () => {
 
     const cancelled = store.cancelCoverageQuery('tiles-cancel-retain')
     finishBuild?.({
-      stageId: 'coverage-stage-cancelled',
+      stageId: 'coverage-stage-00000000-0000-4000-8000-000000000003-1',
       periods: [],
       delivered: [],
       builds: [],
@@ -430,7 +439,7 @@ describe('Electron coverage mission-store orchestration', () => {
       chunks: [],
     })
     expect(discardCatalog).toHaveBeenCalledWith({
-      stageId: 'coverage-stage-cancelled',
+      stageId: 'coverage-stage-00000000-0000-4000-8000-000000000003-1',
     })
     await expect(store.readCoverageTile({ z: 8, x: 1, y: 1 })).resolves.toEqual(
       new Uint8Array([1]),

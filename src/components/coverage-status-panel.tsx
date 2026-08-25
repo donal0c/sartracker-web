@@ -20,6 +20,9 @@ export function CoverageStatusPanel(props: CoverageStatusPanelProps) {
     blockers.has('backfill_incomplete')
   const degraded = blockers.has('ingest_health_degraded') ||
     blockers.has('ingest_outbox_pending')
+  const rendererEvidencePending = blockers.has('renderer_evidence_pending')
+  const rendererEvidenceDegraded = blockers.has('renderer_evidence_degraded')
+  const evidenceBlocked = degraded || rendererEvidencePending || rendererEvidenceDegraded
   const omissions = props.omittedDeviceCount + props.omittedOutingCount +
     (props.unassignedOmitted ? 1 : 0)
 
@@ -39,6 +42,16 @@ export function CoverageStatusPanel(props: CoverageStatusPanelProps) {
           ) : backfill ? (
             <p className="mt-1" data-testid="coverage-backfill">
               Participant history is still being added. Current positions remain live.
+            </p>
+          ) : rendererEvidencePending ? (
+            <p className="mt-1" data-testid="coverage-evidence-pending">
+              Anomaly evidence is waiting to be saved. History cannot be called complete yet.
+              {' '}Current positions remain live.
+            </p>
+          ) : rendererEvidenceDegraded ? (
+            <p className="mt-1" data-testid="coverage-evidence-degraded">
+              Anomaly evidence could not be fully saved. History cannot be called complete.
+              {' '}Current positions remain live; resolve the evidence warning in Tracking.
             </p>
           ) : degraded ? (
             <p className="mt-1" data-testid="coverage-degraded">
@@ -64,7 +77,8 @@ export function CoverageStatusPanel(props: CoverageStatusPanelProps) {
             </p>
           )}
         </div>
-        {(props.state.status === 'partial' || props.state.status === 'error') && !degraded ? (
+        {(props.state.status === 'partial' || props.state.status === 'error') &&
+        !evidenceBlocked ? (
           <button
             className="sar-button px-3 py-1.5 text-[11px] font-bold uppercase tracking-[0.08em]"
             data-testid="coverage-retry"
@@ -78,6 +92,7 @@ export function CoverageStatusPanel(props: CoverageStatusPanelProps) {
 
       {props.state.status === 'loading' || props.state.status === 'partial' ||
       props.state.status === 'error' ? (
+        evidenceBlocked ? null :
         <div className="mt-3">
           <progress
             aria-label="Mission history loading progress"

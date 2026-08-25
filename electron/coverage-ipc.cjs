@@ -73,7 +73,7 @@ function registerCoverageCatalogHandler(input, ownedStages) {
 /** Restricts stage activation/discard to the renderer that created the stage. */
 function registerCoverageActivationHandlers(input, ownedStages) {
   if (input.activationChannels === undefined) return
-  const register = (channel, settle) => {
+  const register = (channel, settle, terminal) => {
     input.ipcMain.handle(channel, async (event, payload) => {
       input.validateIpcSender(event)
       const activationId = readActivationId(payload)
@@ -81,21 +81,33 @@ function registerCoverageActivationHandlers(input, ownedStages) {
       if (activationId === null || owner?.senderId !== event.sender.id) {
         throw new Error('Coverage tile catalog stage is not owned by this renderer.')
       }
+      let settled = false
       try {
-        return await settle(input.missionStore, { activationId })
+        const result = await settle(input.missionStore, { activationId })
+        settled = true
+        return result
       } finally {
-        ownedStages.delete(activationId)
-        owner.releaseListeners()
+        if (terminal || !settled) {
+          ownedStages.delete(activationId)
+          owner.releaseListeners()
+        }
       }
     })
   }
   register(
     input.activationChannels.activate,
     (missionStore, payload) => missionStore.activateCoverageTileCatalog(payload),
+    false,
+  )
+  register(
+    input.activationChannels.finalize,
+    (missionStore, payload) => missionStore.finalizeCoverageTileCatalog(payload),
+    true,
   )
   register(
     input.activationChannels.discard,
     (missionStore, payload) => missionStore.discardCoverageTileCatalog(payload),
+    true,
   )
 }
 

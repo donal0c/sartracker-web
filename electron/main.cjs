@@ -98,6 +98,7 @@ const MISSION_STORE_CHANNELS = {
   readCoverageClaim: 'sartracker:mission-store:read-coverage-claim',
   syncCoverageTileCatalog: 'sartracker:mission-store:sync-coverage-tile-catalog',
   activateCoverageTileCatalog: 'sartracker:mission-store:activate-coverage-tile-catalog',
+  finalizeCoverageTileCatalog: 'sartracker:mission-store:finalize-coverage-tile-catalog',
   discardCoverageTileCatalog: 'sartracker:mission-store:discard-coverage-tile-catalog',
   readCoverageTile: 'sartracker:mission-store:read-coverage-tile',
   cancelCoverageQuery: 'sartracker:mission-store:cancel-coverage-query',
@@ -646,6 +647,7 @@ function registerMissionStoreHandlers(missionStore) {
     },
     activationChannels: {
       activate: MISSION_STORE_CHANNELS.activateCoverageTileCatalog,
+      finalize: MISSION_STORE_CHANNELS.finalizeCoverageTileCatalog,
       discard: MISSION_STORE_CHANNELS.discardCoverageTileCatalog,
     },
     cancelChannel: MISSION_STORE_CHANNELS.cancelCoverageQuery,
@@ -666,6 +668,7 @@ function registerMissionStoreHandlers(missionStore) {
     'readCoverageClaim',
     'syncCoverageTileCatalog',
     'activateCoverageTileCatalog',
+    'finalizeCoverageTileCatalog',
     'discardCoverageTileCatalog',
     'cancelCoverageQuery',
   ])

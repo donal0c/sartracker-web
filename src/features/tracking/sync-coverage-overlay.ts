@@ -34,6 +34,7 @@ export type CoverageOverlayMap = {
 export type CoverageOverlayActivation = {
   readonly periods: CoverageTileCatalog['periods']
   readonly commit: () => void
+  readonly finalize: () => void
   readonly rollback: () => void
 }
 
@@ -106,14 +107,38 @@ export async function syncCoverageOverlay(
     for (const replacement of staged) removePeriodOverlay(map, replacement.next)
     throw error
   }
-  let settled = false
+  let committed = false
+  let finalized = false
   return {
     periods: catalog?.periods ?? [],
     commit: () => {
-      if (settled) return
-      settled = true
+      if (committed || finalized) return
+      committed = true
       for (const replacement of staged) {
         overlays.set(replacement.periodKey, replacement.next)
+      }
+    },
+    rollback: () => {
+      if (finalized) return
+      for (const replacement of staged) {
+        removePeriodOverlay(map, replacement.next)
+        if (replacement.prior === undefined) {
+          overlays.delete(replacement.periodKey)
+        } else {
+          overlays.set(replacement.periodKey, replacement.prior)
+        }
+      }
+      finalized = true
+    },
+    finalize: () => {
+      if (finalized) return
+      if (!committed) {
+        for (const replacement of staged) {
+          overlays.set(replacement.periodKey, replacement.next)
+        }
+        committed = true
+      }
+      for (const replacement of staged) {
         if (replacement.prior !== undefined) removePeriodOverlay(map, replacement.prior)
       }
       if (catalog?.retainPriorPeriods !== true) {
@@ -123,11 +148,7 @@ export async function syncCoverageOverlay(
           overlays.delete(periodKey)
         }
       }
-    },
-    rollback: () => {
-      if (settled) return
-      settled = true
-      for (const replacement of staged) removePeriodOverlay(map, replacement.next)
+      finalized = true
     },
   }
 }

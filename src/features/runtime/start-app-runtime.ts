@@ -166,14 +166,22 @@ export async function startAppRuntime(
         readEvidenceHealth: () => useIngestHealthStore.getState().evidenceHealth,
       })
   if (missionStore.getIngestEvidenceHealth !== undefined) {
-    void missionStore.getActiveMission().then((mission) =>
+    void missionStore.getActiveMission().then(async (mission) =>
       mission === null
         ? null
-        : missionStore.getIngestEvidenceHealth?.(mission.id) ?? null,
-    ).then((health) => {
-      if (health !== null) applyIngestEvidenceHealth(health)
+        : {
+            missionId: mission.id,
+            health: await (missionStore.getIngestEvidenceHealth?.(mission.id) ?? null),
+          },
+    ).then((result) => {
+      if (result === null || result.health === null) return
+      if (rejectionEvidenceDelivery === null) {
+        applyIngestEvidenceHealth(result.health)
+      } else {
+        rejectionEvidenceDelivery.applyMissionHealth(result.missionId, result.health)
+      }
     }).catch(() => {
-      applyIngestEvidenceHealth({
+      const health = {
         state: 'critical',
         reason: 'evidence_health_unavailable',
         pendingCount: 0,
@@ -182,7 +190,8 @@ export async function startAppRuntime(
         rejectedCount: 0,
         affectedDeviceCount: 0,
         conflictDeviceIds: [],
-      })
+      } as const
+      applyIngestEvidenceHealth(health)
     })
   }
   const gpxImportSource =

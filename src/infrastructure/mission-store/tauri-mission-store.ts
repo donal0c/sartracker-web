@@ -710,6 +710,9 @@ export type MissionStore = {
   readonly activateCoverageTileCatalog?: (input: {
     readonly activationId: string
   }) => Promise<boolean>
+  readonly finalizeCoverageTileCatalog?: (input: {
+    readonly activationId: string
+  }) => Promise<boolean>
   readonly discardCoverageTileCatalog?: (input: {
     readonly activationId: string
   }) => Promise<boolean>

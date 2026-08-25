@@ -119,7 +119,7 @@ function normalizeCoverageTileActivationId(value) {
     typeof value !== 'string' ||
     value.length < 1 ||
     value.length > 100 ||
-    !/^coverage-stage-[1-9][0-9]*$/u.test(value)
+    !/^coverage-stage-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}-[1-9][0-9]*$/u.test(value)
   ) {
     throw new Error('Coverage tile catalog activation ID is invalid.')
   }
@@ -509,6 +509,9 @@ function createElectronMissionStore(options) {
       },
     ),
     activateCoverageTileCatalog: async (input) => coverageTileRunner.commitCatalog({
+      stageId: normalizeCoverageTileActivationId(input?.activationId),
+    }),
+    finalizeCoverageTileCatalog: async (input) => coverageTileRunner.finalizeCatalog({
       stageId: normalizeCoverageTileActivationId(input?.activationId),
     }),
     discardCoverageTileCatalog: async (input) => coverageTileRunner.discardCatalog({

@@ -177,6 +177,41 @@ describe('rejection evidence delivery [DON-268]', () => {
     })
   })
 
+  it('does not let one mission healthy ACK clear another mission durable critical health', async () => {
+    const applyEvidenceHealth = vi.fn()
+    const delivery = createRejectionEvidenceDelivery({
+      missionStore: {
+        recordIngestRejections: vi.fn(async (input) => ({
+          acknowledgedDeliveryIds: input.rejections.map((entry) => entry.deliveryId),
+          health: input.mission_id === 'mission-b'
+            ? {
+                ...healthy(),
+                state: 'critical' as const,
+                reason: 'outbox_corrupt_record',
+                corruptCount: 1,
+              }
+            : healthy(),
+        })),
+      },
+      applyRejections: vi.fn(),
+      applyEvidenceHealth,
+      createDeliveryId: (missionId) => `delivery-${missionId}`,
+    })
+
+    delivery.record([createRejection('source:b')], observation('mission-b'))
+    await delivery.flushMission('mission-b')
+    expect(applyEvidenceHealth).toHaveBeenLastCalledWith(expect.objectContaining({
+      state: 'critical', reason: 'outbox_corrupt_record', corruptCount: 1,
+    }))
+
+    delivery.record([createRejection('source:a')], observation('mission-a'))
+    await delivery.flushMission('mission-a')
+
+    expect(applyEvidenceHealth).toHaveBeenLastCalledWith(expect.objectContaining({
+      state: 'critical', reason: 'outbox_corrupt_record', corruptCount: 1,
+    }))
+  })
+
   it('keeps unacknowledged unique evidence bounded and retries it on the next poll', async () => {
     const recordIngestRejections = vi
       .fn()
@@ -421,6 +456,7 @@ describe('rejection evidence delivery [DON-268]', () => {
       conflictCount: 0,
       rejectedCount: 1,
       affectedDeviceCount: 1,
+      conflictDeviceIds: [],
     }
   }
 

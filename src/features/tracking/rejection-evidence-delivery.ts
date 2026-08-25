@@ -48,6 +48,7 @@ export type RejectionEvidenceDelivery = {
     context: RejectionEvidenceObservationContext,
   ) => void
   readonly flushMission: (missionId: string) => Promise<void>
+  readonly applyMissionHealth: (missionId: string, health: IngestEvidenceHealth) => void
   readonly runWithMissionFinalizationFence: <Result>(
     missionId: string,
     operation: () => Promise<Result>,
@@ -79,6 +80,7 @@ export function createRejectionEvidenceDelivery(
   let disposed = false
   let accepting = true
   const evidenceLossMissionIds = new Set<string>()
+  const durableHealthByMission = new Map<string, IngestEvidenceHealth>()
   const finalizationPhaseByMission = new Map<string, 'draining' | 'sealed' | 'finalized'>()
   const finalizationEpochByMission = new Map<string, number>()
 
@@ -289,7 +291,7 @@ export function createRejectionEvidenceDelivery(
         }
       }
       if (!disposed) {
-        publishEvidenceHealth(result.health)
+        publishEvidenceHealth(first.missionId, result.health)
         if (removedCount === 0 && pendingByMissionAndAnomaly.size > 0) {
           scheduleRetry()
         }
@@ -297,7 +299,7 @@ export function createRejectionEvidenceDelivery(
       return removedCount > 0
     } catch {
       if (!disposed) {
-        dependencies.applyEvidenceHealth({
+        publishEvidenceHealth(first.missionId, {
           state: 'critical',
           reason: 'evidence_delivery_unavailable',
           pendingCount: pendingByMissionAndAnomaly.size,
@@ -338,62 +340,77 @@ export function createRejectionEvidenceDelivery(
   function markEvidenceLoss(missionId: string): void {
     if (evidenceLossMissionIds.has(missionId)) return
     evidenceLossMissionIds.add(missionId)
-    publishEvidenceHealth(createCapacityFailureHealth())
+    publishEvidenceHealth(missionId, createCapacityFailureHealth())
     void dependencies.missionStore.recordIngestEvidenceLoss?.({
       mission_id: missionId,
       reason: 'renderer_pending_capacity_exhausted',
     }).then((health) => {
-      if (!disposed) publishEvidenceHealth(health)
+      if (!disposed) publishEvidenceHealth(missionId, health)
     }).catch(() => {
-      if (!disposed) publishEvidenceHealth(createCapacityFailureHealth())
+      if (!disposed) publishEvidenceHealth(missionId, createCapacityFailureHealth())
     })
   }
 
-  /** Keeps a local capacity failure sticky while merging real durable counters. */
-  function publishEvidenceHealth(health: IngestEvidenceHealth): void {
+  /** Stores one mission's durable health and publishes the cross-mission aggregate. */
+  function publishEvidenceHealth(missionId: string, health: IngestEvidenceHealth): void {
+    durableHealthByMission.set(missionId, health)
+    publishAggregateHealth()
+  }
+
+  /** Keeps renderer-held evidence and durable mission failures independently visible. */
+  function publishAggregateHealth(existing?: IngestEvidenceHealth): void {
     const rendererPendingCount = pendingByMissionAndAnomaly.size
+    const durable = [...durableHealthByMission.entries()]
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([, health]) => health)
+    if (existing !== undefined && durable.length === 0) durable.push(existing)
+    const rendererPendingDeviceCount = new Set(
+      [...pendingByMissionAndAnomaly.values()].map((entry) => entry.deviceId),
+    ).size
+    const critical = durable.find((health) => health.state === 'critical')
+    const degraded = durable.find((health) => health.state === 'degraded')
+    const conflictDeviceIds = [...new Set(durable.flatMap((health) =>
+      health.conflictDeviceIds))].sort()
+    const summed = durable.reduce((total, health) => ({
+      pendingCount: total.pendingCount + health.pendingCount,
+      corruptCount: total.corruptCount + health.corruptCount,
+      conflictCount: total.conflictCount + health.conflictCount,
+      rejectedCount: total.rejectedCount + health.rejectedCount,
+      affectedDeviceCount: total.affectedDeviceCount + health.affectedDeviceCount,
+    }), {
+      pendingCount: 0,
+      corruptCount: 0,
+      conflictCount: 0,
+      rejectedCount: 0,
+      affectedDeviceCount: 0,
+    })
+    let state: IngestEvidenceHealth['state'] = critical !== undefined
+      ? 'critical'
+      : degraded !== undefined || rendererPendingCount > 0
+        ? 'degraded'
+        : 'healthy'
+    let reason = critical?.reason ?? degraded?.reason ??
+      (rendererPendingCount > 0 ? 'renderer_evidence_pending' : null)
     if (evidenceLossMissionIds.size > 0) {
-      dependencies.applyEvidenceHealth({
-        ...health,
-        state: 'critical',
-        reason: 'renderer_pending_capacity_exhausted',
-        pendingCount: Math.max(health.pendingCount, rendererPendingCount),
-      })
-      return
+      state = 'critical'
+      reason = 'renderer_pending_capacity_exhausted'
     }
-    if (rendererPendingCount > 0) {
-      dependencies.applyEvidenceHealth({
-        ...health,
-        state: health.state === 'critical' ? 'critical' : 'degraded',
-        reason: health.state === 'critical' ? health.reason : 'renderer_evidence_pending',
-        pendingCount: Math.max(health.pendingCount, rendererPendingCount),
-      })
-      return
-    }
-    dependencies.applyEvidenceHealth(health)
+    dependencies.applyEvidenceHealth({
+      state,
+      reason,
+      pendingCount: Math.max(summed.pendingCount, rendererPendingCount),
+      corruptCount: summed.corruptCount,
+      conflictCount: summed.conflictCount,
+      rejectedCount: Math.max(summed.rejectedCount, rendererPendingCount),
+      affectedDeviceCount: Math.max(summed.affectedDeviceCount, rendererPendingDeviceCount),
+      conflictDeviceIds,
+    })
   }
 
   /** Revokes completeness in the same turn that evidence enters renderer memory. */
   function publishRendererPendingHealth(): void {
-    const pending = [...pendingByMissionAndAnomaly.values()]
     const existing = dependencies.readEvidenceHealth?.()
-    dependencies.applyEvidenceHealth({
-      state: existing?.state === undefined || existing.state === 'healthy'
-        ? 'degraded'
-        : existing.state,
-      reason: existing?.state === undefined || existing.state === 'healthy'
-        ? 'renderer_evidence_pending'
-        : existing.reason,
-      pendingCount: Math.max(existing?.pendingCount ?? 0, pending.length),
-      corruptCount: existing?.corruptCount ?? 0,
-      conflictCount: existing?.conflictCount ?? 0,
-      rejectedCount: Math.max(existing?.rejectedCount ?? 0, pending.length),
-      affectedDeviceCount: Math.max(
-        existing?.affectedDeviceCount ?? 0,
-        new Set(pending.map((entry) => entry.deviceId)).size,
-      ),
-      conflictDeviceIds: existing?.conflictDeviceIds ?? [],
-    })
+    publishAggregateHealth(existing?.state === 'healthy' ? undefined : existing)
   }
 
   /** Returns whether the renderer still owns evidence for one mission. */
@@ -404,6 +421,7 @@ export function createRejectionEvidenceDelivery(
   }
 
   return {
+    applyMissionHealth: publishEvidenceHealth,
     dispose,
     flushMission,
     record,

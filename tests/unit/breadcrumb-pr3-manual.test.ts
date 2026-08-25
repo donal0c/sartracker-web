@@ -19,6 +19,7 @@ describe('breadcrumb PR-3 operator manual [DON-275]', () => {
     }
     for (const asset of [
       'mission-history-coverage-status.png',
+      'mission-history-evidence-pending.png',
       'mission-history-live-independent.png',
     ]) {
       expect(existsSync(`public/manual/assets/${asset}`)).toBe(true)

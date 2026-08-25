@@ -116,8 +116,33 @@ describe('Candidate B coverage overlay [DON-276]', () => {
     const activation = await replacement
     expect(map.sources.has(priorSource)).toBe(true)
     activation.commit()
+    activation.finalize()
     expect(map.sources.has(priorSource)).toBe(false)
     expect(map.sources.has(nextSource)).toBe(true)
+  })
+
+  it('can roll renderer activation back until backend finalization succeeds', async () => {
+    const map = createMap()
+    const initial = await syncCoverageOverlay(map, {
+      periods: [{ periodKey: 'outing\u0000a', revisionDigest: 'a1' }],
+      delivered: [],
+    })
+    initial.commit()
+    initial.finalize()
+    const priorSource = [...map.sources.keys()][0]!
+
+    const replacement = await syncCoverageOverlay(map, {
+      periods: [{ periodKey: 'outing\u0000a', revisionDigest: 'a2' }],
+      delivered: [],
+    })
+    const nextSource = [...map.sources.keys()].find((sourceId) => sourceId !== priorSource)!
+    replacement.commit()
+
+    expect(map.sources.has(priorSource)).toBe(true)
+    expect(map.sources.has(nextSource)).toBe(true)
+    replacement.rollback()
+    expect(map.sources.has(priorSource)).toBe(true)
+    expect(map.sources.has(nextSource)).toBe(false)
   })
 
   it('rolls back immediately when activation starts with an aborted renderer signal', async () => {
