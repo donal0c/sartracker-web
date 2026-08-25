@@ -202,6 +202,35 @@ describe('Candidate B coverage overlay [DON-276]', () => {
     expect(map.sources.has(nextSource)).toBe(false)
   })
 
+  it('never lets an obsolete rollback restore prior-mission geometry after a mission clear', async () => {
+    const map = createMap()
+    const initial = await syncCoverageOverlay(map, {
+      missionId: 'mission-a',
+      periods: [{ periodKey: 'outing\\u0000a', revisionDigest: 'a1' }],
+      delivered: [],
+    })
+    initial.commit()
+    initial.finalize()
+
+    const replacement = await syncCoverageOverlay(map, {
+      missionId: 'mission-a',
+      periods: [{ periodKey: 'outing\\u0000a', revisionDigest: 'a2' }],
+      delivered: [],
+    })
+    replacement.commit()
+
+    const clear = await syncCoverageOverlay(map, null)
+    clear.commit()
+    clear.finalize()
+    expect(map.sources.size).toBe(0)
+    expect(map.layers.size).toBe(0)
+
+    replacement.rollback()
+
+    expect(map.sources.size).toBe(0)
+    expect(map.layers.size).toBe(0)
+  })
+
   it('rolls back immediately when activation starts with an aborted renderer signal', async () => {
     const map = createMap()
     map.autoLoadSources = false

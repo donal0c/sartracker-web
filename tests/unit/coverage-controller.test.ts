@@ -516,6 +516,101 @@ describe('coverage controller [DON-276]', () => {
     expect(controller.getState()).toMatchObject({ status: 'complete', blockers: [] })
   })
 
+  it('keeps a detached renderer partial across an unchanged periodic refresh', async () => {
+    const catalog: CoverageTileCatalog = {
+      activationId: 'detached-refresh-stage',
+      missionId: 'mission-1',
+      periods: [{ periodKey: 'outing\\u0000outing-1', revisionDigest: 'revision-1' }],
+      delivered: [{ key: KEY_A, contentRev: 1 }],
+    }
+    const deliverSelection = vi.fn().mockResolvedValue(catalog)
+    const controller = createCoverageController({
+      readManifest: vi.fn().mockResolvedValue(manifest(1, [[KEY_A, 1]])),
+      readChunk: vi.fn(),
+      readClaim: vi.fn().mockResolvedValue({
+        changeSeq: 1, databaseReady: true, blockers: [],
+        chunkRevisions: [{ key: KEY_A, contentRev: 1 }],
+      }),
+      applyChunk: vi.fn(),
+      deliverSelection,
+      activateCatalog: vi.fn().mockResolvedValue(undefined),
+      finalizeCatalog: vi.fn().mockResolvedValue(undefined),
+      publish: vi.fn(),
+    })
+    const initialLoad = controller.updateContext({
+      missionId: 'mission-1', rendererGeneration: 'r1',
+    })
+    await vi.waitFor(() => expect(controller.getState()).toMatchObject({
+      tileCatalog: { activationId: 'detached-refresh-stage' },
+    }))
+    await controller.notifyCatalogApplied(catalog)
+    await initialLoad
+
+    controller.notifyRendererDetached()
+    await controller.refresh()
+
+    expect(deliverSelection).toHaveBeenCalledOnce()
+    expect(controller.getState()).toMatchObject({
+      status: 'partial',
+      blockers: expect.arrayContaining(['renderer_detached']),
+    })
+  })
+
+  it('never republishes a cancelled staged catalog during a filter change', async () => {
+    let releaseReplacement: (() => void) | undefined
+    const discardCatalog = vi.fn().mockResolvedValue(undefined)
+    const deliverSelection = vi.fn()
+      .mockResolvedValueOnce({
+        activationId: 'cancelled-filter-stage',
+        missionId: 'mission-1',
+        periods: [{ periodKey: 'outing\\u0000outing-1', revisionDigest: 'revision-all' }],
+        delivered: [{ key: KEY_A, contentRev: 1 }, { key: KEY_B, contentRev: 1 }],
+      })
+      .mockImplementationOnce(async () => {
+        await new Promise<void>((resolve) => { releaseReplacement = resolve })
+        return {
+          activationId: 'replacement-filter-stage',
+          missionId: 'mission-1',
+          periods: [{ periodKey: 'outing\\u0000outing-1', revisionDigest: 'revision-a' }],
+          delivered: [{ key: KEY_A, contentRev: 1 }],
+        }
+      })
+    const controller = createCoverageController({
+      readManifest: vi.fn().mockResolvedValue(manifest(1, [[KEY_A, 1], [KEY_B, 1]])),
+      readChunk: vi.fn(),
+      readClaim: vi.fn().mockResolvedValue({
+        changeSeq: 1, databaseReady: true, blockers: [],
+        chunkRevisions: [{ key: KEY_A, contentRev: 1 }],
+      }),
+      applyChunk: vi.fn(), deliverSelection, discardCatalog, publish: vi.fn(),
+    })
+    const initialLoad = controller.updateContext({
+      missionId: 'mission-1', rendererGeneration: 'r1',
+    })
+    await vi.waitFor(() => expect(controller.getState()).toMatchObject({
+      tileCatalog: { activationId: 'cancelled-filter-stage' },
+    }))
+
+    const replacementLoad = controller.updateContext({
+      missionId: 'mission-1', rendererGeneration: 'r1', selectedKeys: [KEY_A],
+    })
+    await vi.waitFor(() => expect(deliverSelection).toHaveBeenCalledTimes(2))
+
+    expect(controller.getState()).toMatchObject({ status: 'loading', tileCatalog: null })
+    expect(discardCatalog).toHaveBeenCalledWith(expect.objectContaining({
+      activationId: 'cancelled-filter-stage',
+    }))
+
+    releaseReplacement?.()
+    await vi.waitFor(() => expect(controller.getState()).toMatchObject({
+      tileCatalog: { activationId: 'replacement-filter-stage' },
+    }))
+    if (controller.getState().status === 'inactive') throw new Error('Coverage unexpectedly inactive.')
+    await controller.notifyCatalogApplied(controller.getState().tileCatalog!)
+    await replacementLoad
+    await initialLoad
+  })
+
   it('does not let style reattachment erase a worker failure', async () => {
     const controller = createCoverageController({
       readManifest: vi.fn().mockResolvedValue(manifest(1, [[KEY_A, 1]])),

@@ -127,6 +127,7 @@ export function createCoverageController(input: {
   let refreshRequested = false
   let lastErrorClass: CoverageErrorClass | null = null
   let finalizedCatalog: CoverageTileCatalog | null = null
+  let rendererDetached = false
   const catalogActivation = createCoverageCatalogActivation()
   const scheduler = createCoverageScheduler({
     now: () => Date.now(),
@@ -141,7 +142,15 @@ export function createCoverageController(input: {
       if (next.lastErrorClass !== undefined && next.lastErrorClass !== null) {
         lastErrorClass = next.lastErrorClass
       }
-      state = { ...next, lastErrorClass }
+      const blockers = new Set(next.blockers ?? [])
+      if (rendererDetached) blockers.add('renderer_detached')
+      else blockers.delete('renderer_detached')
+      state = {
+        ...next,
+        status: rendererDetached && next.status === 'complete' ? 'partial' : next.status,
+        blockers: [...blockers],
+        lastErrorClass,
+      }
     }
     input.publish(state)
   }
@@ -158,7 +167,7 @@ export function createCoverageController(input: {
     const priorDelivered = state.status === 'inactive' ? {} : state.delivered
     const priorCatalog = state.status === 'inactive' || !retainDelivery
       ? null
-      : state.tileCatalog
+      : finalizedCatalog
     const observedSequence = state.status === 'inactive' ? 0 : state.latestObservedChangeSeq
     publish(createActiveState({
       status: 'loading', missionId, rendererGeneration,
@@ -315,6 +324,7 @@ export function createCoverageController(input: {
       const finalSequence = Math.max(claimSequence, currentObservedSequence)
       const rendererBlockers = input.readCompletenessBlockers?.() ?? []
       const complete = claim.databaseReady &&
+        !rendererDetached &&
         rendererBlockers.length === 0 &&
         !refreshRequested &&
         claim.changeSeq === finalSequence &&
@@ -407,6 +417,7 @@ export function createCoverageController(input: {
 
   const publishRendererUnavailable = (message: string): void => {
     if (state.status === 'inactive') return
+    rendererDetached = false
     const error = new Error(message)
     if (
       state.tileCatalog !== null &&
@@ -437,6 +448,7 @@ export function createCoverageController(input: {
 
   const restoreRendererAttachment = (): void => {
     if (state.status !== 'partial' || !state.blockers?.includes('renderer_detached')) return
+    rendererDetached = false
     const blockers = state.blockers.filter((blocker) => blocker !== 'renderer_detached')
     publish({
       ...state,
@@ -456,6 +468,7 @@ export function createCoverageController(input: {
       activeController?.abort()
       if (identityChanged) lastErrorClass = null
       if (identityChanged) finalizedCatalog = null
+      if (identityChanged) rendererDetached = false
       operationGeneration += 1
       refreshRequested = false
       context = nextContext.selectedKeys === undefined
@@ -521,6 +534,7 @@ export function createCoverageController(input: {
         }
         rendererActivation.finalize?.()
         finalizedCatalog = catalog
+        rendererDetached = false
         catalogActivation.notifyApplied(catalog)
       } catch (error) {
         const normalized = error instanceof Error
@@ -553,6 +567,7 @@ export function createCoverageController(input: {
     notifyRendererUnavailable: publishRendererUnavailable,
     notifyRendererDetached: () => {
       if (state.status !== 'complete' || finalizedCatalog === null) return
+      rendererDetached = true
       const blockers = new Set(state.blockers ?? [])
       blockers.add('renderer_detached')
       publish({ ...state, status: 'partial', blockers: [...blockers] })
@@ -574,6 +589,7 @@ export function createCoverageController(input: {
       operationGeneration += 1
       refreshRequested = false
       finalizedCatalog = null
+      rendererDetached = false
       publish({ status: 'inactive' })
     },
     getState: () => state,

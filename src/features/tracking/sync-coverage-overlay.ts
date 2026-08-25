@@ -45,7 +45,13 @@ type PeriodOverlay = {
   readonly layerIds: readonly string[]
 }
 
-const overlaysByMap = new WeakMap<object, Map<string, PeriodOverlay>>()
+type CoverageOverlayRegistry = {
+  generation: number
+  readonly active: Map<string, PeriodOverlay>
+  readonly installed: Set<PeriodOverlay>
+}
+
+const overlaysByMap = new WeakMap<object, CoverageOverlayRegistry>()
 let nextOverlaySequence = 0
 
 /** Confirms the current mission-scoped catalog still exists in this map style. */
@@ -53,8 +59,8 @@ export function isCoverageOverlayAttached(
   map: CoverageOverlayMap,
   catalog: CoverageTileCatalog,
 ): boolean {
-  const overlays = overlaysByMap.get(map)
-  if (overlays === undefined) return false
+  const registry = overlaysByMap.get(map)
+  if (registry === undefined) return false
   const desiredPeriods = catalog.browserHarnessGeoJson === undefined
     ? catalog.periods
     : [{
@@ -62,7 +68,7 @@ export function isCoverageOverlayAttached(
         revisionDigest: catalog.periods.map((period) => period.revisionDigest).join('-') || 'empty',
       }]
   return desiredPeriods.every((period) => {
-    const overlay = overlays.get(period.periodKey)
+    const overlay = registry.active.get(period.periodKey)
     return overlay?.missionId === catalog.missionId &&
       overlay.revisionDigest === period.revisionDigest &&
       map.getSource(overlay.sourceId) !== undefined &&
@@ -83,8 +89,14 @@ export async function syncCoverageOverlay(
   } = { omittedDeviceIds: [], omittedPeriodKeys: [] },
   signal: AbortSignal = new AbortController().signal,
 ): Promise<CoverageOverlayActivation> {
-  const overlays = overlaysByMap.get(map) ?? new Map<string, PeriodOverlay>()
-  overlaysByMap.set(map, overlays)
+  const registry = overlaysByMap.get(map) ?? {
+    generation: 0,
+    active: new Map<string, PeriodOverlay>(),
+    installed: new Set<PeriodOverlay>(),
+  }
+  overlaysByMap.set(map, registry)
+  const generation = ++registry.generation
+  const overlays = registry.active
   const browserHarnessGeoJson = catalog?.browserHarnessGeoJson
   const desiredPeriods = browserHarnessGeoJson === undefined
     ? (catalog?.periods ?? [])
@@ -115,26 +127,34 @@ export async function syncCoverageOverlay(
       continue
     }
     try {
+      const next = installPeriodOverlay(
+        map,
+        catalog?.missionId ?? 'browser-harness',
+        period,
+        browserHarnessGeoJson,
+        filters,
+      )
+      registry.installed.add(next)
       staged.push({
         periodKey: period.periodKey,
         prior,
-        next: installPeriodOverlay(
-          map,
-          catalog?.missionId ?? 'browser-harness',
-          period,
-          browserHarnessGeoJson,
-          filters,
-        ),
+        next,
       })
     } catch (error) {
-      for (const replacement of staged) removePeriodOverlay(map, replacement.next)
+      for (const replacement of staged) {
+        removePeriodOverlay(map, replacement.next)
+        registry.installed.delete(replacement.next)
+      }
       throw error
     }
   }
   try {
     await waitForCoverageSourcesLoaded(map, staged.map((entry) => entry.next), signal)
   } catch (error) {
-    for (const replacement of staged) removePeriodOverlay(map, replacement.next)
+    for (const replacement of staged) {
+      removePeriodOverlay(map, replacement.next)
+      registry.installed.delete(replacement.next)
+    }
     throw error
   }
   let committed = false
@@ -142,7 +162,7 @@ export async function syncCoverageOverlay(
   return {
     periods: catalog?.periods ?? [],
     commit: () => {
-      if (committed || finalized) return
+      if (committed || finalized || registry.generation !== generation) return
       committed = true
       for (const replacement of staged) {
         overlays.set(replacement.periodKey, replacement.next)
@@ -150,8 +170,13 @@ export async function syncCoverageOverlay(
     },
     rollback: () => {
       if (finalized) return
+      if (registry.generation !== generation) {
+        finalized = true
+        return
+      }
       for (const replacement of staged) {
         removePeriodOverlay(map, replacement.next)
+        registry.installed.delete(replacement.next)
         if (replacement.prior === undefined) {
           overlays.delete(replacement.periodKey)
         } else {
@@ -162,14 +187,15 @@ export async function syncCoverageOverlay(
     },
     finalize: () => {
       if (finalized) return
+      if (registry.generation !== generation) {
+        finalized = true
+        return
+      }
       if (!committed) {
         for (const replacement of staged) {
           overlays.set(replacement.periodKey, replacement.next)
         }
         committed = true
-      }
-      for (const replacement of staged) {
-        if (replacement.prior !== undefined) removePeriodOverlay(map, replacement.prior)
       }
       if (catalog?.retainPriorPeriods !== true) {
         for (const [periodKey, overlay] of [...overlays.entries()]) {
@@ -177,6 +203,12 @@ export async function syncCoverageOverlay(
           removePeriodOverlay(map, overlay)
           overlays.delete(periodKey)
         }
+      }
+      const retained = new Set(overlays.values())
+      for (const overlay of [...registry.installed]) {
+        if (retained.has(overlay)) continue
+        removePeriodOverlay(map, overlay)
+        registry.installed.delete(overlay)
       }
       finalized = true
     },
