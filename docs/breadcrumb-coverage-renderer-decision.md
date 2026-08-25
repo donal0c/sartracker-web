@@ -251,6 +251,48 @@ Its verified 19-file manifest SHA-256 is
 the packaged benchmark `app.asar` SHA-256 remains
 `f46397ac31b79b7a9e8c90203fed1f545c1f1162427b5681402904238feed954`.
 
+## Mission-scoped renderer lifetime remeasurement
+
+The first exact-head review wave at documentation head `14d26009e8619448d3abf6f7e101b6c01fd9a080`
+found that equal period revisions could reuse a source across missions, a tile
+timeout could terminate the shared worker without revoking Complete, and a
+cancelled/stale catalog could outlive its renderer attestation. Commit
+`53e38bf3b88e44f3be677e0ac260548f63f9ff9e` binds every source, tile URL,
+worker read, and failure signal to the mission; preserves the finalized worker
+and catalog on cooperative Cancel; clears a cancelled response-race stage; and
+suspends Complete whenever the current style lacks the attested source.
+
+Those changes affect Candidate B's source/tile and worker lifetime, so the same
+bounded `--candidates B` matrix reran all six packaged rows and both kill/resume
+probes serially. Candidate B still passes the ratified budgets without
+amendment:
+
+| Candidate | Fixture | Verdict | First useful worst warm | Complete worst warm | Filter worst warm | Main max worst warm | Renderer p95 worst warm | Settled / peak GiB | Query / segment / encode / source / settle median |
+| --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | --- |
+| B | 960k | **PASS** | 2,079 | 4,359 | 73 | 63 | 67 | 0.26 / 0.26 | 2,477 / 496 / 154 / 0 / 2,152 |
+| B | 2M | **PASS** | 3,621 | 7,999 | 116 | 55 | 84 | 0.28 / 0.28 | 5,335 / 1,048 / 293 / 0 / 3,691 |
+
+All six manifests retained the exact-Dots, attestation, current-fix,
+kill/resume, stale-tile, and unrelated-revision falsifiers. Stable manifest
+checksums are:
+
+| Candidate / fixture | Run 1 cold | Run 2 warm | Run 3 warm |
+| --- | --- | --- | --- |
+| B / 960k | `6c31f0a3f672cc059b4b80f18991ebf3865f4331506d403c2a07f8767ea09e96` | `376525d61613d25d36e0a9d0ace873eb37f103af9846669e7612e71d75d1e88e` | `6abce06ab9dbd069f612a1902bbe84dc6ca5c45bcc51a5484c8e540684e4ef7b` |
+| B / 2M | `4a08f682bb6e1c1e9d9db16835025cc099e87a4941f5c18b86e5065a475c0b5d` | `52b00ad673b82e3bb987e11ed4d1b6e02033763a401c4202b7c5f71a83d369af` | `b714440d3fbe24b9160e14bcf8907d531622ade66406d73f4c155feb55db3993` |
+
+Evidence is committed under
+`output/g2-coverage-renderer/53e38bf3b88e44f3be677e0ac260548f63f9ff9e/`.
+Its locally verified 19-file manifest SHA-256 is
+`9989126b7010f032d6c14204206315729ac7b27fd5cc8491349a8c64fabc45fd`;
+the packaged benchmark `app.asar` SHA-256 remains
+`f46397ac31b79b7a9e8c90203fed1f545c1f1162427b5681402904238feed954`.
+The first command used a manifest-only committed fixture path and stopped
+before any packaged row; the next inherited no `DISPLAY` and stopped in the
+first kill-probe launch. Neither preflight is mixed into this matrix. The
+accepted run used the preserved sidecar-bound fixture bytes and the active
+session's attested `:0` X11 authority; retained `glxinfo` reports Mesa llvmpipe.
+
 ## Excluded preflight attempts
 
 Three preflight failures were corrected before the accepted matrix and are not

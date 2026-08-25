@@ -1,0 +1,38 @@
+{
+  "exactHead": "53e38bf3b88e44f3be677e0ac260548f63f9ff9e",
+  "fixturePath": "tmp/pr3-evidence-preserved-17e75f2/g2/17e75f2eb6ed0b37c382d9f0e2dae1ca24b42e53/bcp-2m-B/fixture/mission-store.sqlite",
+  "fixtureBytes": 991227904,
+  "missionId": "fixture-mission-000000000001",
+  "chunkCount": 1300,
+  "periodCount": 13,
+  "totalFixes": 1999988,
+  "deliveredFixes": 1999988,
+  "manifestReadyMs": 4343.274569,
+  "firstUsefulMs": 4540.310208,
+  "completeMs": 12138.820576,
+  "periodDurationsMs": [
+    189.92405300000064,
+    216.07014400000025,
+    190.37293600000066,
+    228.89728999999988,
+    180.35131999999976,
+    230.2949920000001,
+    126.15499,
+    195.12004700000034,
+    146.23383000000013,
+    226.91766300000018,
+    163.46989800000028,
+    110.00433299999986,
+    5576.3285989999995
+  ],
+  "mainMaxGapMs": 20.170384000000922,
+  "claim": {
+    "changeSeq": 1,
+    "databaseReady": false,
+    "blockers": [
+      "backfill_incomplete"
+    ],
+    "revisionCount": 1300
+  },
+  "completedAt": "2026-08-25T12:06:34.389Z"
+}

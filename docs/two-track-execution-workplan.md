@@ -167,17 +167,17 @@ complete, and 21.807/23.055 ms main gaps. Binding:
 mission-model default posture at pre-flip head `d05c787` on 2026-08-25, and the
 separate two-boolean flip is committed. Later exact-head review exposed
 lifecycle, evidence-health, and backend/renderer handoff gaps. All were
-reproduced red-first and remediated at `17e75f2`: style reloads reattach the
-active catalog; commit/finalize/rollback keeps the predecessor serviceable;
-retained tile reads bypass the build queue; stage tokens cannot repeat after
-restart; evidence health is mission-aggregated; and the operator sees an
-explicit evidence-wait state without false progress. At that exact code head,
-Candidate B's six affected G2 rows plus both kill probes pass unchanged
-budgets; the committed production driver delivers exact 959,988/959,988 and
-1,999,988/1,999,988 totals at 2.317/4.527 s first useful; and the replacement
-packaged Ubuntu soak passes 8,664/8,664, restart, integrity, responsiveness, and
-zero redundant slope. Commit the evidence binding, run final exact-head gates,
-and restart all five independent reviews before the PR opens.
+reproduced red-first and remediated through `17e75f2`. The first exact-head review
+wave then found four mission/source/worker lifetime blockers. Commit `53e38bf`
+binds every renderer and tile failure identity to its mission, treats only a
+finalized catalog as attachable, revokes Complete during style-source loss,
+reports timeouts as worker loss, and preserves the finalized worker/catalog on
+cooperative Cancel. Candidate B's six affected G2 rows plus both kill probes
+pass unchanged budgets at that code head. The production driver delivers exact
+959,988/959,988 and 1,999,988/1,999,988 totals at 2.282/4.540 s first useful;
+the one replacement packaged soak passes 8,664/8,664 with restart, integrity,
+responsiveness, and zero redundant slope. Bind the evidence, run final
+exact-head gates, and restart all five independent reviews before the PR opens.
 
 ## Next Task Order
 
@@ -188,7 +188,7 @@ This is the default order when the user says “work on the next task.”
 | Done | Release the Tracking stability, interaction, and basemap-independent overlay hotfix | S2 Electron / Shared Tracking / Map / Verification | `DON-261` / `DON-262` / `DON-263` | Beta.12.5 exact commit `042d77ad6158`; clean no-skip verification 8/8; tag CI `30497318233` green; exact CI AppImage and real installed `.deb` passed lifecycle, safety, live-Traccar, 13-poll empty-history stability, pending/degraded basemap overlay, and deterministic five-/fourteen-day soak gates. Independent reviews returned `RELEASE` with no P1/P2. Guarded publication succeeded; fresh public hashes matched and the public AppImage passed Ubuntu lifecycle/recovery/finalize/archive. |
 | Done | PR-1: trustworthy ingest and live safety | Shared Tracking / S2 Electron / Evidence | `DON-266` / `DON-267` / `DON-268` / `DON-269` | Merged as [PR #1](https://github.com/donal0c/sartracker-web/pull/1) at `9481cf462e0e`; its exact-head review and Linux evidence remain in PR #1 and the handoff archive. |
 | Done | PR-2: explicit outings, participants, and mission-shaped fixtures | Shared Tracking / S2 Electron / Mission model / Verification | `DON-270` / `DON-271` / `DON-272` | Merged to `master` at `7021fc1ef33e6da5c91c96cd86e836fc3754f48f`, which is the exact PR-3 base. The preserved review, migration, scale, browser, and package evidence remains attached to PR-2 and the handoff archive. |
-| Active — evidence-head gates, then five reviews | PR-3: decide and deliver complete mission coverage | Shared Tracking / S2 Electron / Coverage / Verification | `DON-273` / `DON-276` / `DON-275` | Candidate B and G3's combined default posture are ratified; the v9→v10 migration proof stands. The latest handoff/evidence review gaps are red-first remediated at `17e75f2`. Candidate B's six affected G2 rows and two kill probes remain within unchanged budgets; the committed production 960k/2M driver passes exact totals, first-useful, main-isolate, and claim gates; and the replacement packaged CI soak passes 8,664/8,664 with restart, integrity, llvmpipe, responsiveness, and zero redundant slope. Commit the evidence binding, repeat unit/static/Dots/build/Chromium/visual/macOS+Ubuntu package gates, then restart all five reviews from scratch. |
+| Active — evidence-head gates, then five reviews | PR-3: decide and deliver complete mission coverage | Shared Tracking / S2 Electron / Coverage / Verification | `DON-273` / `DON-276` / `DON-275` | Candidate B and G3's combined default posture are ratified; the v9→v10 migration proof stands. The first review wave's mission/source/worker lifetime gaps are red-first remediated at `53e38bf`. Candidate B's six affected G2 rows and two kill probes remain within unchanged budgets; the committed production 960k/2M driver passes exact totals, first-useful, main-isolate, and claim gates; and the single replacement packaged CI soak passes 8,664/8,664 with restart, integrity, llvmpipe, responsiveness, and zero redundant slope. Commit the evidence binding, repeat unit/static/Dots/build/full Chromium/coverage visual/macOS+Ubuntu package gates, then restart all five reviews from scratch. |
 | Todo (non-blocking) | Surface persistent overlay synchronization failures in diagnostics and map health | S2 Electron / Shared Map / Diagnostics | `DON-264` | DON-263 retries transient and persistent sync exceptions indefinitely with a 2 s cap, but repeated failures are currently developer-console-only. Add bounded, sanitized, durable warning elevation and success-based clearing after the beta.12.5 hotfix; this P3 does not block the release. |
 | Done | Make Breadcrumb Dots source-exact and independently release-gated | S2 Electron / Shared Tracking / Verification | `DON-260` | Published beta.12.11 at exact tag `bced8052b85c` after green CI run `31482052296`, full AppImage and genuinely installed `.deb` package matrices, synthetic 279,936/1,935,384-fix exact-page proofs, target-only live-provider equality, diagnostics privacy, and unchanged performance/RSS gates. The guarded publisher and a second public download revalidated both installer hashes and `SHA256SUMS`; the fresh public AppImage independently passed settings persistence, same-mission recovery, finalization, and archive creation. Dots is source-exact and paged; Line alone remains simplified. Beta.12.9/.12.10 are not the correction. |
 | Done | Build deterministic field-scale mission-store fixtures | S2 Electron / Verification | `DON-242` | Small/CI/local/field plus 5-day and 14-day continuous-mission presets; Ubuntu field fixture is 3.704 GB with measured table accounting and restart checkpoints. |

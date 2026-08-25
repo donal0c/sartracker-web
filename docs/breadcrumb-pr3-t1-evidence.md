@@ -502,3 +502,76 @@ neither schema nor migration/database-open code. The evidence-binding commit is
 documentation-only; it still requires complete exact-head deterministic,
 Chromium/visual, macOS/Ubuntu package gates and five independent reviews from
 scratch before the PR opens.
+
+## Mission-scoped renderer lifetime remediation and final rebound
+
+The first exact-head review wave at `14d26009e8619448d3abf6f7e101b6c01fd9a080`
+found four release-blocking lifetime gaps. A previous mission could reuse an
+equal-revision MapLibre source and tile request; a cancelled staged catalog
+could remain renderer-attachable; Complete could survive removal of its style
+sources; and a tile timeout terminated the shared worker without a global
+failure signal. Red-first remediation commit
+`53e38bf3b88e44f3be677e0ac260548f63f9ff9e` adds mission-scoped source, URL,
+worker-read, catalog-signature, and failure identities; tracks only finalized
+catalogs as attachable; suspends Complete during style loss; and reports a
+timeout as worker loss. An adjacent red-first Cancel gate also proves that
+operator cancellation preserves the finalized worker/catalog and clears the
+race where cancellation arrives after stage completion but before response.
+
+Before scale work, focused coverage/worker/store tests passed 66/66; the full
+single-worker suite passed 260 files / 2,045 tests; and lint, TypeScript,
+changed CommonJS syntax, source diff, exact Dots 10/10, and build/budgets
+passed. Focused Chromium coverage passed 4/4, including basemap-style
+reattachment. Coverage visual E2E passed 5/5 and the fresh independent critical
+review passed 7/7; report:
+`test-results/visual-verification/reports/visual-review-2026-08-25T12-01-08Z.json`.
+
+Because the renderer and worker lifetime changed, Candidate B's six affected
+960k/2M rows and both kill/resume probes reran serially on the reference Ubuntu
+host. Both fixtures remain PASS with unchanged budgets; the table and exact
+manifest checksums are in `docs/breadcrumb-coverage-renderer-decision.md`. The
+locally verified G2 evidence is under
+`output/g2-coverage-renderer/53e38bf3b88e44f3be677e0ac260548f63f9ff9e/`;
+its manifest SHA-256 is
+`9989126b7010f032d6c14204206315729ac7b27fd5cc8491349a8c64fabc45fd`.
+
+The self-attesting production driver then crossed staged read, backend
+activation, active read, and finalization for both exact fixtures:
+
+| Fixture | Delivered | First useful | Complete geometry | Main max gap | Claim posture |
+| --- | ---: | ---: | ---: | ---: | --- |
+| 960k | 959,988 / 959,988 | 2,281.899 ms | 5,944.132 ms | 21.659 ms | Correctly blocked only by `backfill_incomplete` |
+| 2M | 1,999,988 / 1,999,988 | 4,540.310 ms | 12,138.821 ms | 20.170 ms | Correctly blocked only by `backfill_incomplete` |
+
+Report SHA-256 values are
+`732b2404a11ea5dfa5b220e3db9b50ff5d5126ed039aebb745723309a767a32b`
+and
+`50d706575f93d42dca698d56af89f71b3e5c1f917a39d4f181f64cea3afe56a5`.
+The byte-identical driver, reports, and verified manifest are under
+`output/pr3-production-qualification/53e38bf3b88e44f3be677e0ac260548f63f9ff9e/`;
+the manifest SHA-256 is
+`4fb6b6eae8af4a67a0c3b6026915279fd134546cdf97125e3810b4f704dc2fe7`.
+
+The single allowed replacement packaged CI-scale soak passed at the same code
+head using X11, Mesa llvmpipe via ANGLE/OpenGL: 6/6 batches, 8,664/8,664
+source-exact positions, one restart, both launches exit 0, zero renderer
+crashes, integrity `ok`, WAL 0/0/0, four healthy operator interactions, main
+maximum 13.889 ms, renderer maximum 167.2 ms, 1,122,676,736-byte peak
+process-tree RSS, and zero redundant telemetry slope. The post-run ledger held
+one mission at change sequence 12, 32 chunks, zero invalidations, and 32,768
+bytes across coverage tables/indexes. The report SHA-256 is
+`4d109dbbcbed5a803d6829af2cdb21808ccc4a38a2492f7f86dfa951e5269c8c`;
+the packaged executable and `app.asar` SHA-256 values are
+`6344ae1d9044fedc54779e8bacaddc032fdcc0f55e146fc3623756eafa0bbaf8`
+and
+`e531751121e737428c81990cb7134227c4d06e3bfc2cc87a801a4b5d91a04658`.
+The full binding is under
+`output/pr3-packaged-soak/53e38bf3b88e44f3be677e0ac260548f63f9ff9e/`;
+the manifest SHA-256 is
+`8964b2ed537f46707b2af790097702613d94eadd6f3da10b90321bb4c2db83b5`.
+
+The 3.704 GB v9→v10 migration remains standing because this remediation changes
+neither schema nor migration/database-open code. The evidence-binding commit is
+documentation-only; it receives final deterministic, full Chromium, coverage
+visual, macOS/Ubuntu package, and five exact-head review gates before the PR
+opens.
