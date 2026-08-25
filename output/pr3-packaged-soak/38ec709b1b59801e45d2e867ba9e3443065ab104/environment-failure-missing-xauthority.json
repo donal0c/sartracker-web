@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "issue": "DON-260",
+  "recordedAt": "2026-08-25T10:15:46.094Z",
+  "profileName": "ci",
+  "passed": false,
+  "failureClass": "unclassified_harness_error",
+  "progress": {
+    "phase": "tracking",
+    "completedUiPageObservations": 0,
+    "completedDirectIpcQueries": 0
+  },
+  "hostSleepGuard": {
+    "required": false,
+    "started": false,
+    "active": false,
+    "earlyExit": false,
+    "stopped": true,
+    "forced": false
+  }
+}

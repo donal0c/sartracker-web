@@ -1,0 +1,6 @@
+Debugger listening on ws://127.0.0.1:40063/db47b047-72ae-4008-9d05-3a21b970641f
+For help, see: https://nodejs.org/en/docs/inspector
+Authorization required, but no authorization protocol specified
+
+[140820:0825/111544.938877:ERROR:ui/ozone/platform/x11/ozone_platform_x11.cc:256] Missing X server or $DISPLAY
+[140820:0825/111544.938896:ERROR:ui/aura/env.cc:257] The platform failed to initialize.  Exiting.

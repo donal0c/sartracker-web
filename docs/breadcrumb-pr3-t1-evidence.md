@@ -342,3 +342,81 @@ already has its own full-page critical screenshot. The visual prompt was fixed
 red-first by removing only the out-of-frame request, then the same element was
 recaptured and passed a fresh no-cache critical review. The resulting test and
 closeout commit must receive the complete exact-head repeat before review.
+
+## Third-review remediation and exact-head rebound
+
+Three independent reviews of `472826d0589f00eabe1f61d2db78f1b1edc56c94`
+found five additional lifecycle and evidence-completeness blockers. Each was
+reproduced by a deterministic failing test before production code changed. The
+bounded remediation at
+`38ec709b1b59801e45d2e867ba9e3443065ab104` now:
+
+- keeps staged tile catalogs sender-owned until activation or discard, and
+  cancels/discards them if their renderer is destroyed;
+- prevents obsolete mission/controller activations from committing or
+  rejecting the replacement renderer;
+- cancels an in-progress catalog build without terminating the long-lived tile
+  worker that serves the already active catalog;
+- consults renderer-held rejection evidence synchronously at the final
+  Complete decision; and
+- aggregates pending rejection evidence across missions so one mission's
+  acknowledgement cannot clear another mission's warning.
+
+The direct regression set passed 6 files / 48 tests; the wider coverage set
+passed 29 files / 156 tests; and the complete unit suite passed 259 files /
+2,026 tests. ESLint, TypeScript build mode, changed CommonJS syntax, production
+build/bundle budgets, and the focused coverage/ingest Chromium flows 6/6 also
+passed before this evidence rebound.
+
+Candidate B's renderer and worker algorithms did not change, so the ratified G2
+rows at `5653133d5ff8429a6f3530cd05058969b2cd564c` remain standing under the
+accepted standing-result rule. Schema, migration, and database-open code also
+did not change, so the single 3.704 GB v9→v10 migration proof remains standing.
+
+The real production worker/store qualification was rerun serially on the
+reference Ubuntu host against exact head `38ec709b...`:
+
+| Fixture | Delivered | First useful | Complete geometry | Main max gap | Claim posture |
+| --- | ---: | ---: | ---: | ---: | --- |
+| 960k | 959,988 / 959,988 | 2,243.512 ms | 5,794.324 ms | 20.197 ms | Correctly blocked only by `backfill_incomplete` |
+| 2M | 1,999,988 / 1,999,988 | 4,496.563 ms | 12,126.203 ms | 21.616 ms | Correctly blocked only by `backfill_incomplete` |
+
+Report SHA-256 values are
+`d30c734a777f4b6574e0c47ed0a92b2061a387208b8ebdb12f4de450eefe5e73`
+and
+`6436891efad01f8ea4af340a4bc28335d8cbfb176e202f9c4f76a0dfd5bb6291`.
+The driver, reports, and verified manifest are under
+`output/pr3-production-qualification/38ec709b1b59801e45d2e867ba9e3443065ab104/`;
+the manifest SHA-256 is
+`6ccef85e88d8db65c1d9025f0e0ef59663b643a999bb10bce980f706e8e7e2ed`.
+
+The one replacement packaged CI-scale tracking soak then passed with Xwayland
+driven explicitly through X11 and Mesa llvmpipe via ANGLE/OpenGL: 6/6 batches,
+8,664/8,664 exact positions, one restart, both launches exit 0, zero renderer
+crashes, integrity `ok`, WAL 0/0/0, main maximum 15.525 ms, renderer maximum
+83.6 ms, all four operator interactions healthy, 1,104,687,104-byte peak
+process-tree RSS, and zero redundant telemetry slope. The post-run coverage
+ledger held one mission at change sequence 12, 32 chunks, zero invalidations,
+and 20,480 bytes across coverage tables/indexes. The report SHA-256 is
+`d58e41cdd6d3b3f30348e150b4a2a061253355c3be04ddc7be7ab95af4bb7ca3`;
+the packaged executable and `app.asar` SHA-256 values are
+`6344ae1d9044fedc54779e8bacaddc032fdcc0f55e146fc3623756eafa0bbaf8`
+and
+`8d37cf1da84559a5bbcc4ba00105988bd4cb3b09c028a03e8698b3cebd8f3ca4`.
+The full binding is under
+`output/pr3-packaged-soak/38ec709b1b59801e45d2e867ba9e3443065ab104/`;
+the manifest SHA-256 is
+`844a20dcb48f950417ad3902ba47073b9c7eb049746d66f678b6bc3e95b77f24`.
+
+The first packaged launch attempt is retained as an excluded environment
+failure. The SSH process had `DISPLAY=:0` but not the active session's
+`XAUTHORITY`, so X11 rejected the connection before application startup. No
+product result is claimed from it. Reading the existing user-session environment
+identified the current Xwayland authority file; a direct `glxinfo` probe then
+attested llvmpipe, and the single justified rerun passed with that authority
+propagated while `XDG_SESSION_TYPE` remained unset. The retained failure report,
+launch log, and checksums are included in the packaged-soak manifest.
+
+The evidence files added by this section are documentation-only. Their binding
+commit must receive the complete deterministic, Chromium/visual, and packaging
+gates on its exact head before all five independent reviews restart.
