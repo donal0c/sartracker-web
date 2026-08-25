@@ -139,3 +139,33 @@ manifest, are committed under `output/pr3-production-qualification/`. A later
 history-only reorder that restores the approved two-boolean flip as the final
 commit must retain an identical production-code tree; final exact-head gates
 and five independent reviews still apply.
+
+## Final pushed-code gates
+
+The approved two-boolean flip was restored as isolated commit `b9bad64`, whose
+diff contains only the mission-model and complete-coverage release defaults.
+On exact pushed code head `b9bad6446faf055ccd603afa60272ac3de46fbb3`:
+
+- serial unit: 257 files / 1,998 tests;
+- lint, TypeScript, every changed CommonJS syntax check, exact Dots 10/10,
+  production build, and bundle budgets passed;
+- Chromium: 157/157;
+- coverage visual Playwright: 4/4; fresh independent Opus critical review: 6/6,
+  report `visual-review-2026-08-25T07-27-22Z.json`;
+- unsigned macOS arm64 and Ubuntu x64 packaging passed, including native
+  `better-sqlite3` rebuilds;
+- exact production path on Ubuntu: 959,988/959,988 delivered, 2,233.531 ms
+  first useful, 5,677.181 ms complete, 24.426 ms main gap at 960k; and
+  1,999,988/1,999,988 delivered, 4,472.030 ms first useful, 11,774.783 ms
+  complete, 30.982 ms main gap at 2M. Both claims were correctly blocked only
+  by the fixture's intentional `backfill_incomplete` marker.
+
+Final production report SHA-256 values on the Ubuntu host are
+`dd85cb1a4cc6c32c35dde8c6f4eabab11b87a5cc8dc1e0533dfe02e8262d5c83`
+(960k) and
+`9c5c3d09a773f101c9644a65d7fe3dd769ddd70919ce473612bb5b9554043cfd`
+(2M). Normalized committed copies live under the matching `b9bad64...`
+directory in `output/pr3-production-qualification/`; the checksum manifest
+binds their repository bytes. The subsequent closeout commit changes only
+this evidence record, handoff/workplan status, and those normalized reports;
+it does not change the qualified production tree.
