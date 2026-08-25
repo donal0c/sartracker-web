@@ -1024,3 +1024,33 @@ production build and bundle budgets, plus participant/coverage Chromium 10/10.
 The live exact-head Linux package/soak check and five fresh independent reviews
 must restart on the documentation-bound descendant. No merge or release
 occurred.
+
+## Destroyed-renderer abandoned-stage remediation
+
+The next fresh review reproduced a renderer destroyed while its catalog sync
+was pending. The backend returned a live staged activation after destruction;
+the single cleanup discard rejected; IPC swallowed that failure without
+retaining ownership. A replacement renderer then reached the worker's
+unsettled-stage guard and could not recover without worker/process restart.
+
+The IPC regression failed red with the replacement sync still seeing the
+abandoned stage. A second worker-generation regression failed red because a
+replacement worker rejected cleanup for the opaque token lost with its prior
+generation. Commit `b2a3a86507f961695d162f0a46f391ca3c0ce396`:
+
+- retains renderer-lost stages as explicitly abandoned until discard succeeds;
+- coalesces concurrent cleanup, retries a transient failure before replacement
+  sync, and preserves a persistent failure for the next explicit Retry;
+- prevents an abandoned owner from invoking activation transitions; and
+- accepts a lost-generation discard only when the worker has no staged or
+  activated catalog, while still rejecting a token that conflicts with a
+  different live stage.
+
+Green verification at this application head is 5 focused files / 54 tests,
+264 full unit files / 2,115 tests, TypeScript, ESLint, changed CommonJS syntax,
+production build and bundle budgets, plus participant/coverage Chromium 10/10.
+The earlier exact-head Linux run `32907962145` passed packaging, AppImage launch,
+and an 8,664/8,664 soak with 32.4 ms main maximum and zero redundant slope, but
+is superseded because this remediation changes the operational worker path.
+New exact-head Linux CI and five fresh independent reviews must restart. No
+merge or release occurred.
