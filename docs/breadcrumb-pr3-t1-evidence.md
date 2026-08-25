@@ -169,3 +169,52 @@ directory in `output/pr3-production-qualification/`; the checksum manifest
 binds their repository bytes. The subsequent closeout commit changes only
 this evidence record, handoff/workplan status, and those normalized reports;
 it does not change the qualified production tree.
+
+## Second exact-head review remediation
+
+The fresh review wave on documentation-complete head `29f26f9` found six
+renderer-attestation P1 classes that prior browser and Node qualification had
+not exercised: a moved device could evict unchanged same-period siblings;
+current empty spatial tiles were conflated with stale revisions; worker loss
+could be forgotten on refresh; worker `error` and zero-code unexpected exits
+could miss the failure boundary; an older in-flight claim could overwrite a
+newer sequence revocation; and catalog/source replacement could remove the last
+consistent geometry before the replacement was accepted.
+
+The red run contained seven focused failures plus two mission-store staging
+failures. Commit `7ec7a81` now:
+
+- rebuilds a moved period from every current descriptor in that period;
+- returns a valid empty PBF only for current empty tiles while retaining `null`
+  exclusively for stale catalog identity;
+- clears renderer delivery attestation on worker loss and requires full
+  redelivery before Complete can return;
+- reports all unexpected worker errors/exits once, fenced to their generation;
+- compares a claim with the live observed sequence and pending-refresh state;
+- stages worker catalogs until main-side build metadata commits, discarding a
+  stale stage without changing the active catalog;
+- installs digest replacements alongside the prior MapLibre source, verifies
+  them, and only then removes the predecessor; intermediate recovery catalogs
+  retain prior periods until the final cumulative catalog is active.
+
+Focused remediation verification passed 5 files / 35 tests, the broader
+coverage/persistence set passed 31 files / 222 tests, lint, TypeScript, changed
+CommonJS syntax checks, and focused Chromium coverage 3/3.
+
+The real production path at exact pushed code head
+`7ec7a811ca8ad36870106845fc2045c278688ec2` then passed:
+
+| Fixture | Delivered | First useful | Complete geometry | Main max gap | Claim posture |
+| --- | ---: | ---: | ---: | ---: | --- |
+| 960k | 959,988 / 959,988 | 2,228.222 ms | 5,726.375 ms | 21.849 ms | Correctly blocked only by `backfill_incomplete` |
+| 2M | 1,999,988 / 1,999,988 | 4,490.273 ms | 11,930.724 ms | 21.796 ms | Correctly blocked only by `backfill_incomplete` |
+
+Host-report SHA-256 values are
+`dfeeccb6776063167ce0d9dba4d48ca6260000faa0a2a4d1295e104cffbffbfb`
+(960k) and
+`c057cf9de1871cb42851d0e1f29cbbb946fd1ed9a54f3224f289a7bf9b45266c`
+(2M). Normalized repository copies and their own checksums are under
+`output/pr3-production-qualification/7ec7a811ca8ad36870106845fc2045c278688ec2/`.
+Full final-head software,
+browser, visual, and package gates plus all five newly restarted reviews remain
+required after the evidence-only closeout commit.
