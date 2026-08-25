@@ -6,6 +6,9 @@ Linear: `DON-273` / BCP-07
 
 Measured application SHA: `8eff87b724ae6b4ffa9123479a8982d1d08f47ef`
 
+Latest affected-row remeasurement SHA:
+`5653133d5ff8429a6f3530cd05058969b2cd564c`
+
 Exact PR-2 base: `7021fc1ef33e6da5c91c96cd86e836fc3754f48f`
 
 Branch: `codex/breadcrumb-pr3-complete-coverage`
@@ -172,6 +175,46 @@ the transfer-level file checksums in `evidence-files.sha256`.
 | B / 2M | `e3050d3b1a0160180c0e05aa0e55608fcb92b1f9813b4cc232e7b7f123f56ad7` | `e60206900081d3199104453c6445f79b693b877ff87f840ed400a21feb527667` | `21e3afedbaf83591264d4f5d902b3b10066d7f223eaef99f347af8e9eddef0e9` |
 | C / 960k | `652d378eebae84777289b4c54581322abc77b926b2f59ca4d2c5697c46905ee5` | `a6c6a9481211ec1130165f012bc237b6b9a1232e3f112c805b0cf0197fc69ba7` | `cde55e1db1be232ecd3c16279ecbff941c59da96b874501a78dbc889d724d698` |
 | C / 2M | `e234c220f62f9c24f8c54c525118bfd5fda11bb586bf7b90493f5d242bb16964` | `2af198419646aba94786cb552ce15ff861a8a78a2f7178827b147b0540d80f1c` | `b1bf0337104ed3cc0a22db78c6deedae68fc0ef49a1042fc3ebf92fa8c45eb1c` |
+
+## Affected Candidate-B row remeasurement
+
+The exact-head review on `1872e76` found that production correctly staged a
+unique replacement source while the original G2 Candidate-B prototype removed
+and recreated one source ID. The standing-result rule therefore invalidated
+only B's source-strategy rows. Candidates A and C were untouched and their
+comparative rejection evidence remains standing.
+
+Commit `5653133d5ff8429a6f3530cd05058969b2cd564c` aligned both measured and
+production contracts: the worker retains old and new revision generations,
+the renderer adds a unique revision-bound source without removing its
+predecessor, waits for MapLibre to report the staged source loaded, explicitly
+activates that worker generation, and only then retires the predecessor. The
+rerun used `--candidates B`, preserving the original two fixtures, one cold
+plus two warm repetitions, exact-Dots gate, per-fixture kill/resume proof,
+attestation panes, flags, budgets, and reference Ubuntu X11 host.
+
+| Candidate | Fixture | Verdict | First useful worst warm | Complete worst warm | Filter worst warm | Main max worst warm | Renderer p95 worst warm | Settled / peak GiB | Query / segment / encode / source / settle median |
+| --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | --- |
+| B | 960k | **PASS** | 1,981 | 4,248 | 71 | 42 | 67 | 0.27 / 0.27 | 2,460 / 497 / 146 / 0 / 2,147 |
+| B | 2M | **PASS** | 3,632 | 7,669 | 121 | 52 | 84 | 0.28 / 0.28 | 5,178 / 1,011 / 289 / 0 / 3,446 |
+
+Both hard-gate verdicts remain PASS with no budget amendment. All six run
+manifests retained `currentFixWithinPollCycle`, `killResumeHonest`, exact pane
+attestation, exact Dots equality, stale-tile guarding, and unrelated-revision
+stability. Manifest stable-JSON checksums are:
+
+| Candidate / fixture | Run 1 cold | Run 2 warm | Run 3 warm |
+| --- | --- | --- | --- |
+| B / 960k | `fc0b2d29b236143d3d043d50bef5667933fdbcf8c5aa78602f70e4625558d748` | `87afa247b873e2cd1eae7a8e9d9bd80c247a4f3cc49cc1c07ada2c5efea840f2` | `f1bb882d8490e8bcf9a0b4f58dab23416db64802a8860de7e8229904377a782b` |
+| B / 2M | `f6f671cdfbae9f4e0c609e144d814887d3d6384708e994ff6e52ae31e98de231` | `6fb02b67e892c3424e315f4ba97dcce7a504e561dd4add8e73e060f4035a7487` | `01e8b7989fa751383318caa9c45b2faeb552128995dffc8b48ef610c7b4b011d` |
+
+Evidence is committed under the matching
+`output/g2-coverage-renderer/5653133d5ff8429a6f3530cd05058969b2cd564c/`
+directory. Its 20-file checksum manifest has SHA-256
+`708348ee1e2c719f173599f6732778cedc03fff06b82c0ed7fef378dce086db7`;
+all entries passed local verification after transfer. The packaged benchmark
+`app.asar` SHA-256 is
+`f46397ac31b79b7a9e8c90203fed1f545c1f1162427b5681402904238feed954`.
 
 ## Excluded preflight attempts
 

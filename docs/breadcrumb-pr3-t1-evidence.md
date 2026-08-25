@@ -223,3 +223,88 @@ Opus critical review 6/6, and macOS arm64 plus Ubuntu X11 x64 Electron package
 builds all passed. The five newly restarted exact-head reviews are the only
 remaining pre-PR gate; any production-code remediation invalidates this posture
 and restarts the relevant verification and all five reviews.
+
+## Third exact-head review remediation and rebound evidence
+
+Review of documentation-complete head `1872e76` found three related gaps in
+the renderer/worker handoff plus two independent safety-posture gaps: the
+worker could retire a predecessor catalog before replacement tiles actually
+loaded; the G2 prototype still used a remove/recreate source strategy rather
+than production's staged unique source; a failed worker commit left its stage
+poisoned; renderer-held rejection evidence did not synchronously revoke
+completeness; and coverage could start while its required mission model was
+explicitly disabled. Persistence review independently reproduced the same
+catalog handoff window.
+
+Every condition was red before production changes. Exact remediation code head
+`5653133d5ff8429a6f3530cd05058969b2cd564c` now:
+
+- keeps predecessor geometry and worker indexes serviceable while the unique
+  replacement source loads, then crosses an opaque activation-token fence
+  before retiring them;
+- includes that activation token in renderer acknowledgement identity so an
+  obsolete identical catalog cannot acknowledge a newer stage;
+- clears a failed worker stage so retry is possible without losing the active
+  catalog;
+- marks renderer-held rejected-position evidence degraded in the same turn,
+  without downgrading an existing stronger evidence failure;
+- starts complete coverage only when both coverage and mission-model flags are
+  enabled; and
+- brings the G2 Candidate-B harness onto the same staged-source/generation
+  contract and permits a bounded affected-row rerun.
+
+Focused remediation passed 13 files / 89 tests before the final additions;
+the complete unit suite passed 259 files / 2,019 tests. Lint, TypeScript,
+changed JavaScript syntax, the benchmark renderer build, and focused Chromium
+coverage/evidence flows 6/6 passed. The visible pending-evidence wording and
+operator manual now say evidence is waiting to be saved rather than falsely
+calling the transient state a storage-repair failure.
+
+The invalidated Candidate-B G2 rows were rerun as six serial packaged runs plus
+two kill probes on the reference Ubuntu X11 host. Both rows passed unchanged
+budgets: 960k worst-warm first-useful/complete/filter/main values were
+1,981/4,248/71/42 ms with 0.27 GiB settled/peak; 2M values were
+3,632/7,669/121/52 ms with 0.28 GiB settled/peak. The exact decision binding
+and checksums are in `docs/breadcrumb-coverage-renderer-decision.md` and
+`output/g2-coverage-renderer/5653133d5ff8429a6f3530cd05058969b2cd564c/`.
+
+The real production worker/store path then crossed the staged tile read,
+activation, and active tile read for every progressive period:
+
+| Fixture | Delivered | First useful | Complete geometry | Main max gap | Claim posture |
+| --- | ---: | ---: | ---: | ---: | --- |
+| 960k | 959,988 / 959,988 | 2,217.457 ms | 5,774.273 ms | 18.338 ms | Correctly blocked only by `backfill_incomplete` |
+| 2M | 1,999,988 / 1,999,988 | 4,434.501 ms | 11,888.203 ms | 24.811 ms | Correctly blocked only by `backfill_incomplete` |
+
+Report SHA-256 values are
+`f26d215bfae7d77bf9a49262b1752c3bc3f16a975a43bb24eaa7460f4a586d99`
+and
+`5bba6d734f7374cac83e4298e9640e83854c81a9f200991a1433b53b78cf3edc`.
+The reports, auditable qualification driver, and checksum manifest are under
+`output/pr3-production-qualification/5653133d5ff8429a6f3530cd05058969b2cd564c/`.
+The checksum-manifest SHA-256 is
+`6001557e61e0a3f0eefc93c06c993f58046fa8461109dde8bcc3d45619deef7a`.
+
+The single rebound packaged CI-scale tracking soak passed on explicit X11 with
+Mesa llvmpipe via ANGLE/OpenGL: 6/6 batches, 8,664/8,664 exact positions, one
+restart, both launches exit 0, zero renderer crashes, integrity `ok`, WAL
+0/0/0, main maximum 7.924 ms, renderer maximum 100.4 ms, all four operator
+interactions healthy, 1,204,539,392-byte peak process-tree RSS, and zero
+redundant telemetry slope. The post-run coverage ledger held one mission at
+change sequence 12, 32 chunks, zero invalidations, and 28,672 bytes across all
+coverage tables/indexes. Report SHA-256 is
+`627a87d072bdc83d1cdb66b1c136b81df469bda590dd065fa95134a7a960c2b7`;
+the full binding is under
+`output/pr3-packaged-soak/5653133d5ff8429a6f3530cd05058969b2cd564c/`.
+The checksum-manifest SHA-256 is
+`06888eb9c3d4bbae11e99a6d78fdfa254ba6ec272143889ad62eb891b45d9a49`.
+
+One complete workload attempt is retained there as an excluded environment
+failure: forcing `XDG_SESSION_TYPE=wayland` made Electron select the Intel
+backend, so the fail-closed llvmpipe attestation rejected it despite healthy
+application metrics. An explicit X11 probe attested llvmpipe before the
+accepted rerun. No product result is claimed from the excluded attempt.
+
+The 3.704 GB v9 to v10 migration remains standing because this remediation
+changes neither schema nor migration/open code. Final documentation-head gates
+and all five independent exact-head reviews still must restart from scratch.
