@@ -23,8 +23,10 @@ export function CoverageStatusPanel(props: CoverageStatusPanelProps) {
   const rendererEvidencePending = blockers.has('renderer_evidence_pending')
   const rendererEvidenceDegraded = blockers.has('renderer_evidence_degraded')
   const rendererDetached = blockers.has('renderer_detached')
+  const rendererFilterPending = blockers.has('renderer_filter_pending')
   const evidenceBlocked = degraded || rendererEvidencePending || rendererEvidenceDegraded
-  const progressUntrusted = evidenceBlocked || rendererDetached || reorganizing || backfill
+  const progressUntrusted = evidenceBlocked || rendererDetached || rendererFilterPending ||
+    reorganizing || backfill
   const omissions = props.omittedDeviceCount + props.omittedOutingCount +
     (props.unassignedOmitted ? 1 : 0)
 
@@ -40,6 +42,11 @@ export function CoverageStatusPanel(props: CoverageStatusPanelProps) {
           {rendererDetached ? (
             <p className="mt-1" data-testid="coverage-renderer-detached">
               Coverage is being reattached to the map. Current positions remain live.
+            </p>
+          ) : rendererFilterPending ? (
+            <p className="mt-1" data-testid="coverage-filter-pending">
+              Applying the selected history filter to the map. Completion is paused.
+              {' '}Current positions remain live.
             </p>
           ) : reorganizing ? (
             <p className="mt-1" data-testid="coverage-reorganizing">
@@ -94,7 +101,7 @@ export function CoverageStatusPanel(props: CoverageStatusPanelProps) {
           ) : null}
         </div>
         {(props.state.status === 'partial' || props.state.status === 'error') &&
-        !evidenceBlocked && !rendererDetached ? (
+        !evidenceBlocked && !rendererDetached && !rendererFilterPending ? (
           <button
             className="sar-button px-3 py-1.5 text-[11px] font-bold uppercase tracking-[0.08em]"
             data-testid="coverage-retry"

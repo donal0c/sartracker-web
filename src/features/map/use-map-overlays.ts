@@ -20,7 +20,10 @@ import {
   isCoverageOverlayAttached,
   syncCoverageOverlay,
 } from '../tracking/sync-coverage-overlay'
-import { useCoverageFilterStore } from '../tracking/coverage-filter-store'
+import {
+  selectCoverageChunkKeys,
+  useCoverageFilterStore,
+} from '../tracking/coverage-filter-store'
 import { selectCoverageCatalogForMission } from '../tracking/mission-coverage-scope'
 import type { RenderableMapId } from '../../lib/map-config'
 import { useStationaryAttentionStore } from '../tracking/stationary-attention-store'
@@ -117,6 +120,14 @@ export function useMapOverlays(options: UseMapOverlaysOptions): void {
           omittedDeviceIds: omittedCoverageDeviceIds,
           omittedPeriodKeys: omittedCoveragePeriodKeys,
         }, signal)
+        const manifest = coverageState.status !== 'inactive' &&
+          coverageState.missionId === missionId
+          ? coverageState.manifest
+          : null
+        await coverageController?.notifySelectionApplied(selectCoverageChunkKeys(manifest, {
+          omittedDeviceIds: omittedCoverageDeviceIds,
+          omittedPeriodKeys: omittedCoveragePeriodKeys,
+        }))
         if (catalog === null || coverageController === null) {
           activation.commit()
           activation.finalize()

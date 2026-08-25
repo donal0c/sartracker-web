@@ -78,12 +78,13 @@ describe('coverage controller [DON-276]', () => {
       status: 'partial', deliveredFixCount: 1, totalFixCount: 2,
     })
     await widenSelection
+    await harness.controller.notifySelectionApplied()
     expect(harness.controller.getState()).toMatchObject({
       status: 'complete', deliveredFixCount: 2, totalFixCount: 2,
     })
   })
 
-  it('restores a valid Complete claim when a queued filter change is reversed', async () => {
+  it('does not restore Complete until a reversed filter is applied to the map', async () => {
     const harness = createHarness(manifest(1, [[KEY_A, 1], [KEY_B, 1]]))
     await harness.controller.updateContext({
       missionId: 'mission-1', rendererGeneration: 'r1', selectedKeys: [KEY_A],
@@ -97,9 +98,21 @@ describe('coverage controller [DON-276]', () => {
     })
 
     expect(harness.controller.getState()).toMatchObject({
-      status: 'complete', deliveredFixCount: 1, totalFixCount: 1,
+      status: 'partial', deliveredFixCount: 1, totalFixCount: 1,
+      blockers: ['renderer_filter_pending'],
     })
     await Promise.all([widenSelection, restoreSelection])
+    expect(harness.controller.getState()).toMatchObject({
+      status: 'partial', blockers: ['renderer_filter_pending'],
+    })
+
+    await harness.controller.notifySelectionApplied()
+    expect(harness.controller.getState()).toMatchObject({
+      status: 'partial', blockers: ['renderer_filter_pending'],
+    })
+
+    await harness.controller.notifySelectionApplied([KEY_A])
+
     expect(harness.controller.getState()).toMatchObject({
       status: 'complete', deliveredFixCount: 1, totalFixCount: 1,
     })
@@ -1194,6 +1207,7 @@ describe('coverage controller [DON-276]', () => {
     await firstNotification
     await initialLoad
     await selectionChange
+    await controller.notifySelectionApplied([KEY_B])
 
     expect(deliverSelection).toHaveBeenCalledOnce()
     expect(firstRenderer.commit).toHaveBeenCalledOnce()
@@ -1253,6 +1267,7 @@ describe('coverage controller [DON-276]', () => {
     expect(deliverSelection).toHaveBeenCalledOnce()
     await queuedSelection
 
+    await controller.notifySelectionApplied([KEY_B])
     await controller.resume()
     expect(readClaim.mock.calls.at(-1)?.[0]).toMatchObject({ selectedKeys: [KEY_B] })
     expect(controller.getState()).toMatchObject({ status: 'complete', totalFixCount: 1 })
@@ -1401,6 +1416,7 @@ describe('coverage controller [DON-276]', () => {
     const retry = controller.resume()
     finishFinalization?.()
     await Promise.all([notification, load, selectionChange, retry])
+    await controller.notifySelectionApplied([KEY_B])
 
     expect(readClaim.mock.calls.at(-1)?.[0]).toMatchObject({ selectedKeys: [KEY_B] })
     expect(controller.getState()).toMatchObject({ status: 'complete', totalFixCount: 1 })

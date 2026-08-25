@@ -651,6 +651,10 @@ function registerMissionStoreHandlers(missionStore) {
       finalize: MISSION_STORE_CHANNELS.finalizeCoverageTileCatalog,
       discard: MISSION_STORE_CHANNELS.discardCoverageTileCatalog,
     },
+    tileChannels: {
+      read: MISSION_STORE_CHANNELS.readCoverageTile,
+      cancel: MISSION_STORE_CHANNELS.cancelCoverageTileRead,
+    },
     cancelChannel: MISSION_STORE_CHANNELS.cancelCoverageQuery,
     missionStore,
     validateIpcSender,
@@ -672,6 +676,8 @@ function registerMissionStoreHandlers(missionStore) {
     'finalizeCoverageTileCatalog',
     'discardCoverageTileCatalog',
     'cancelCoverageQuery',
+    'readCoverageTile',
+    'cancelCoverageTileRead',
   ])
   for (const [methodName, channel] of Object.entries(MISSION_STORE_CHANNELS)) {
     if (ownedQueryMethods.has(methodName)) {

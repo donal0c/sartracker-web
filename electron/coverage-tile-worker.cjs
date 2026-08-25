@@ -409,14 +409,25 @@ async function readTileUncancelled(message) {
   ))
   throwIfRequestCancelled(message.requestId)
   await fs.mkdir(path.dirname(tilePath), { recursive: true })
-  await fs.writeFile(tilePath, bytes)
   throwIfRequestCancelled(message.requestId)
-  cacheBytes = replaceCoverageTileCacheEntry(cacheEntriesByPath, tilePath, {
-    contributors,
-    size: bytes.byteLength,
-    lastAccess: Date.now(),
-  }, cacheBytes)
-  await enforceCacheBudget()
+  const temporaryPath = `${tilePath}.${message.requestId}.tmp`
+  try {
+    await fs.writeFile(temporaryPath, bytes)
+    if (workerData.faultInjection?.tileWriteDelayMs > 0) {
+      await delay(workerData.faultInjection.tileWriteDelayMs)
+    }
+    throwIfRequestCancelled(message.requestId)
+    await fs.rename(temporaryPath, tilePath)
+    cacheBytes = replaceCoverageTileCacheEntry(cacheEntriesByPath, tilePath, {
+      contributors,
+      size: bytes.byteLength,
+      lastAccess: Date.now(),
+    }, cacheBytes)
+    await enforceCacheBudget()
+    throwIfRequestCancelled(message.requestId)
+  } finally {
+    await fs.rm(temporaryPath, { force: true })
+  }
   return bytes
 }
 

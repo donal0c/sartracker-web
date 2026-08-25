@@ -54,6 +54,9 @@ export type CoverageController = {
     catalog: CoverageTileCatalog,
     rendererActivation?: CoverageRendererActivation,
   ) => Promise<void>
+  readonly notifySelectionApplied: (
+    selectedKeys?: readonly CoverageChunkKey[],
+  ) => Promise<void>
   readonly notifyRendererFailure: (failure: {
     readonly missionId: string
     readonly periodKey: string
@@ -139,11 +142,7 @@ export function createCoverageController(input: {
   } | null = null
   let activeLoadCompletion: Promise<void> | null = null
   let contextUpdateSequence = 0
-  let queuedSelectionBaseline: {
-    readonly selectedKeySet: string
-    readonly state: Exclude<CoverageState, { readonly status: 'inactive' }>
-  } | null = null
-  let queuedSelectionPublishedState: CoverageState | null = null
+  let appliedSelectionKeySet: string | null = selectedKeySet(context.selectedKeys)
   let cancelRequested = false
   let rendererFailureDuringFinalization: Error | null = null
   let rendererFailureEpoch = 0
@@ -165,9 +164,14 @@ export function createCoverageController(input: {
       const blockers = new Set(next.blockers ?? [])
       if (rendererDetached) blockers.add('renderer_detached')
       else blockers.delete('renderer_detached')
+      const filterPending = appliedSelectionKeySet !== selectedKeySet(context.selectedKeys)
+      if (filterPending) blockers.add('renderer_filter_pending')
+      else blockers.delete('renderer_filter_pending')
       state = {
         ...next,
-        status: rendererDetached && next.status === 'complete' ? 'partial' : next.status,
+        status: (rendererDetached || filterPending) && next.status === 'complete'
+          ? 'partial'
+          : next.status,
         blockers: [...blockers],
         lastErrorClass,
       }
@@ -374,6 +378,7 @@ export function createCoverageController(input: {
         !rendererDetached &&
         !cancelRequested &&
         rendererBlockers.length === 0 &&
+        appliedSelectionKeySet === selectedKeySet(context.selectedKeys) &&
         !refreshRequested &&
         claim.changeSeq === finalSequence &&
         claim.chunkRevisions.every(({ key, contentRev }) =>
@@ -682,13 +687,9 @@ export function createCoverageController(input: {
     const selectionChanged = selectedKeySet(context.selectedKeys) !==
       selectedKeySet(desiredContext.selectedKeys)
     if (!identityChanged && !selectionChanged) {
-      queuedSelectionBaseline = null
-      queuedSelectionPublishedState = null
       if (forceReload) await runLoad(true)
       return
     }
-    queuedSelectionBaseline = null
-    queuedSelectionPublishedState = null
     rendererDetachedCompleteCatalog = null
     activeController?.abort()
     if (identityChanged) lastErrorClass = null
@@ -699,6 +700,7 @@ export function createCoverageController(input: {
     operationGeneration += 1
     refreshRequested = false
     context = desiredContext
+    if (identityChanged) appliedSelectionKeySet = selectedKeySet(context.selectedKeys)
     if (context.missionId === null) {
       publish({ status: 'inactive' })
       return
@@ -719,38 +721,9 @@ export function createCoverageController(input: {
       const desiredSelectionChanged = selectedKeySet(desiredContext.selectedKeys) !==
         selectedKeySet(normalizedContext.selectedKeys)
       if (!desiredIdentityChanged && !desiredSelectionChanged) return
-      if (desiredIdentityChanged) {
-        queuedSelectionBaseline = null
-        queuedSelectionPublishedState = null
-      }
-      if (desiredSelectionChanged && state.status !== 'inactive') {
-        if (
-          queuedSelectionBaseline !== null &&
-          state !== queuedSelectionPublishedState
-        ) {
-          queuedSelectionBaseline = null
-          queuedSelectionPublishedState = null
-        }
-        if (
-          queuedSelectionBaseline === null &&
-          state.status === 'complete' &&
-          selectedKeySet(context.selectedKeys) === selectedKeySet(desiredContext.selectedKeys)
-        ) {
-          queuedSelectionBaseline = {
-            selectedKeySet: selectedKeySet(context.selectedKeys),
-            state,
-          }
-        }
-        if (
-          queuedSelectionBaseline !== null &&
-          state === queuedSelectionPublishedState &&
-          queuedSelectionBaseline.selectedKeySet === selectedKeySet(normalizedContext.selectedKeys)
-        ) {
-          publish(queuedSelectionBaseline.state)
-        } else {
-          publish(createActiveState({ ...state, status: 'partial' }, normalizedContext.selectedKeys))
-        }
-        queuedSelectionPublishedState = state
+      if (!desiredIdentityChanged && desiredSelectionChanged && state.status !== 'inactive') {
+        appliedSelectionKeySet = null
+        publish(createActiveState({ ...state, status: 'partial' }, normalizedContext.selectedKeys))
       }
       desiredContext = normalizedContext
       const updateSequence = ++contextUpdateSequence
@@ -776,6 +749,21 @@ export function createCoverageController(input: {
       await requestRefresh()
     },
     notifyCatalogApplied,
+    notifySelectionApplied: async (selectedKeys) => {
+      const appliedKeySet = selectedKeySet(selectedKeys)
+      if (stopped || appliedKeySet !== selectedKeySet(desiredContext.selectedKeys)) return
+      appliedSelectionKeySet = appliedKeySet
+      if (
+        state.status === 'inactive' ||
+        appliedKeySet !== selectedKeySet(context.selectedKeys)
+      ) return
+      const wasPending = state.blockers?.includes('renderer_filter_pending') === true
+      publish({
+        ...state,
+        blockers: state.blockers?.filter((blocker) => blocker !== 'renderer_filter_pending'),
+      })
+      if (wasPending) await requestRefresh()
+    },
     notifyRendererFailure: (failure) => {
       if (
         state.status === 'inactive' ||

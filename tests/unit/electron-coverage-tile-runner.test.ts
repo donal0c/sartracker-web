@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdtemp, readdir, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { createRequire } from 'node:module'
@@ -19,6 +19,7 @@ const { createCoverageTileRunner } = require('../../electron/coverage-tile-runne
       readonly failCatalogCommitOnce?: boolean
       readonly chunkBuildDelayMs?: number
       readonly catalogResponseDelayMs?: number
+      readonly tileWriteDelayMs?: number
     }
   }) => {
     readonly syncCatalog: (
@@ -28,7 +29,10 @@ const { createCoverageTileRunner } = require('../../electron/coverage-tile-runne
     readonly commitCatalog: (input: { readonly stageId: string }) => Promise<boolean>
     readonly finalizeCatalog: (input: { readonly stageId: string }) => Promise<boolean>
     readonly discardCatalog: (input: { readonly stageId: string }) => Promise<boolean>
-    readonly readTile: (input: Readonly<Record<string, unknown>>) => Promise<Uint8Array | null>
+    readonly readTile: (
+      input: Readonly<Record<string, unknown>>,
+      options?: { readonly signal?: AbortSignal },
+    ) => Promise<Uint8Array | null>
     readonly close: () => Promise<void>
   }
 }
@@ -57,6 +61,46 @@ afterEach(async () => {
 })
 
 describe('Candidate B coverage tile worker [DON-276]', () => {
+  it('removes interrupted temporary tile writes and remains usable', async () => {
+    const databasePath = await createDatabase()
+    const cacheDirectory = path.join(directory!, 'coverage-tiles')
+    runner = createCoverageTileRunner({
+      databasePath,
+      cacheDirectory,
+      faultInjection: { tileWriteDelayMs: 100 },
+    })
+    const key: ChunkKey = {
+      device_id: 'device-a', period_kind: 'outing', period_id: 'outing-a',
+    }
+    const catalog = await runner.syncCatalog({
+      missionId: 'mission-1', chunks: [{ key, contentRev: 1 }],
+    })
+    await runner.commitCatalog({ stageId: catalog.stageId })
+    await runner.finalizeCatalog({ stageId: catalog.stageId })
+    const period = catalog.periods[0]!
+    const controller = new AbortController()
+    const request = runner.readTile({
+      missionId: 'mission-1', periodKey: period.periodKey,
+      revisionDigest: period.revisionDigest, ...lonLatToTile(-9.7, 52, 8),
+    }, { signal: controller.signal })
+
+    await vi.waitFor(async () => {
+      expect((await listFiles(cacheDirectory)).some((entry) => entry.endsWith('.tmp'))).toBe(true)
+    })
+    controller.abort()
+    await expect(request).rejects.toMatchObject({ name: 'AbortError' })
+    await vi.waitFor(async () => {
+      expect((await listFiles(cacheDirectory)).filter((entry) => entry.endsWith('.tmp'))).toEqual([])
+    })
+    expect((await listFiles(cacheDirectory)).filter((entry) => entry.endsWith('.pbf'))).toEqual([])
+
+    const recovered = await runner.readTile({
+      missionId: 'mission-1', periodKey: period.periodKey,
+      revisionDigest: period.revisionDigest, ...lonLatToTile(-9.7, 52, 8),
+    })
+    expect(ArrayBuffer.isView(recovered)).toBe(true)
+  })
+
   it('serves revision-bound PBF tiles and retains an unrelated period across a chunk bump', async () => {
     const databasePath = await createDatabase()
     runner = createCoverageTileRunner({
@@ -546,4 +590,9 @@ function lonLatToTile(lon: number, lat: number, z: number) {
         1 / Math.cos(lat * Math.PI / 180)) / Math.PI) / 2) * scale,
     ),
   }
+}
+
+async function listFiles(root: string): Promise<readonly string[]> {
+  const entries = await readdir(root, { recursive: true }).catch(() => [])
+  return entries.map(String)
 }

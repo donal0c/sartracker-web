@@ -18,9 +18,36 @@ function registerCoverageIpcHandlers(input) {
   )
   registerCoverageCatalogHandler(input, ownedStages)
   registerCoverageActivationHandlers(input, ownedStages)
+  registerCoverageTileHandlers(input)
   input.ipcMain.handle(input.cancelChannel, (event, requestId) => {
     input.validateIpcSender(event)
     return input.missionStore.cancelCoverageQuery(
+      scopeCoverageRequestId(event, requestId),
+    )
+  })
+}
+
+/** Owns tile reads and their cooperative cancellation by renderer process. */
+function registerCoverageTileHandlers(input) {
+  if (input.tileChannels === undefined) return
+  input.ipcMain.handle(input.tileChannels.read, async (event, payload, requestId) => {
+    input.validateIpcSender(event)
+    const scopedRequestId = scopeCoverageRequestId(event, requestId)
+    const cancelDestroyedSender = () => {
+      void input.missionStore.cancelCoverageTileRead(scopedRequestId).catch(() => undefined)
+    }
+    event.sender.once('destroyed', cancelDestroyedSender)
+    event.sender.once('render-process-gone', cancelDestroyedSender)
+    try {
+      return await input.missionStore.readCoverageTile(payload, scopedRequestId)
+    } finally {
+      event.sender.removeListener('destroyed', cancelDestroyedSender)
+      event.sender.removeListener('render-process-gone', cancelDestroyedSender)
+    }
+  })
+  input.ipcMain.handle(input.tileChannels.cancel, (event, requestId) => {
+    input.validateIpcSender(event)
+    return input.missionStore.cancelCoverageTileRead(
       scopeCoverageRequestId(event, requestId),
     )
   })

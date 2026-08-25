@@ -98,6 +98,19 @@ describe('coverage status panel [DON-275]', () => {
     expect(host.querySelector('[data-testid="coverage-retry"]')).toBeNull()
   })
 
+  it('withholds progress and retry until the map has applied the selected history filter', () => {
+    render(state('partial', {
+      blockers: ['renderer_filter_pending'],
+      deliveredFixCount: 10,
+      totalFixCount: 10,
+    }))
+
+    expect(host.textContent).toContain('Applying the selected history filter to the map')
+    expect(host.textContent).toContain('Current positions remain live')
+    expect(host.querySelector('[data-testid="coverage-progress"]')).toBeNull()
+    expect(host.querySelector('[data-testid="coverage-retry"]')).toBeNull()
+  })
+
   it('keeps failures explicit while backfill or reorganization context also applies', () => {
     render(state('error', {
       blockers: ['backfill_incomplete'],

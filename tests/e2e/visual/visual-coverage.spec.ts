@@ -172,6 +172,47 @@ Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
     })
   })
 
+  test('pending history filter never looks complete before the map applies it', async ({ page }) => {
+    await seedCoverageMission(page)
+    await page.evaluate(async () => {
+      const { applyCoverageState, useCoverageStore } = await import(
+        '/src/features/tracking/coverage-store.ts'
+      )
+      const current = useCoverageStore.getState().state
+      if (current.status === 'inactive') throw new Error('Coverage state is inactive.')
+      applyCoverageState({
+        ...current,
+        status: 'partial',
+        blockers: ['renderer_filter_pending'],
+      })
+    })
+
+    const panel = page.getByTestId('coverage-status-panel')
+    await expect(panel).toContainText('Applying the selected history filter to the map')
+    await expect(panel).toContainText('Current positions remain live')
+    await expect(page.getByTestId('coverage-progress')).toHaveCount(0)
+    await expect(page.getByTestId('coverage-retry')).toHaveCount(0)
+
+    await captureElementAndRegister(page, 'coverage-status-panel', {
+      testId: 'coverage-filter-application-pending',
+      testName: 'Selected history filter waits for map acknowledgement',
+      area: 'tracking',
+      severity: 'critical',
+      verificationPrompt: `Verify this SAR Tracker mission-history filter transition:
+1. The panel clearly says the selected history filter is being applied to the map.
+2. It explicitly says completion is paused rather than claiming selected history is complete.
+3. It reassures the operator that current positions remain live.
+4. It does not show a misleading 100% progress bar.
+5. It does not offer Retry for this automatic map synchronization state.
+Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
+      playwrightAssertions: [
+        'history-filter application wording is visible',
+        'current positions remain live',
+        'no progress bar or Retry action is rendered',
+      ],
+    })
+  })
+
   test('selected-scope wording and Outside outings filter are explicit', async ({ page }) => {
     await seedCoverageMission(page)
     await page.getByTestId('mission-control-collapse-btn').click()

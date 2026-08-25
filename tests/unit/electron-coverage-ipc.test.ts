@@ -18,6 +18,10 @@ const { registerCoverageIpcHandlers } = require('../../electron/coverage-ipc.cjs
       readonly finalize: string
       readonly discard: string
     }
+    readonly tileChannels?: {
+      readonly read: string
+      readonly cancel: string
+    }
     readonly cancelChannel: string
     readonly missionStore: {
       readonly readCoverageManifest: (missionId: string, requestId: string) => Promise<unknown>
@@ -28,6 +32,8 @@ const { registerCoverageIpcHandlers } = require('../../electron/coverage-ipc.cjs
       readonly finalizeCoverageTileCatalog?: (input: unknown) => Promise<unknown>
       readonly discardCoverageTileCatalog?: (input: unknown) => Promise<unknown>
       readonly cancelCoverageQuery: (requestId: string) => Promise<boolean>
+      readonly readCoverageTile?: (query: unknown, requestId: string) => Promise<unknown>
+      readonly cancelCoverageTileRead?: (requestId: string) => Promise<boolean>
     }
     readonly validateIpcSender: (event: unknown) => void
   }) => void
@@ -96,6 +102,56 @@ describe('coverage IPC ownership [DON-276]', () => {
     )).resolves.toEqual({ chunks: [] })
     expect(sender.listenerCount('destroyed')).toBe(0)
     expect(sender.listenerCount('render-process-gone')).toBe(0)
+  })
+
+  it('scopes tile reads to their renderer and cancels only the destroyed owner', async () => {
+    const handlers = new Map<string, (event: unknown, ...args: readonly unknown[]) => unknown>()
+    let rejectOwnedRead: (error: Error) => void = () => undefined
+    const ownedRead = new Promise((_resolve, reject) => { rejectOwnedRead = reject })
+    const readCoverageTile = vi.fn()
+      .mockReturnValueOnce(ownedRead)
+      .mockResolvedValueOnce(new Uint8Array([1, 2, 3]))
+    const cancelCoverageTileRead = vi.fn().mockImplementation(async (requestId: string) => {
+      if (requestId === '52:coverage:tile-1') {
+        rejectOwnedRead(new Error('destroyed renderer tile read cancelled'))
+        return true
+      }
+      return false
+    })
+    registerCoverageIpcHandlers({
+      ipcMain: { handle: (channel, handler) => handlers.set(channel, handler as never) },
+      readChannels: { manifest: 'manifest', chunk: 'chunk', claim: 'claim', catalog: 'catalog' },
+      tileChannels: { read: 'tile-read', cancel: 'tile-cancel' },
+      cancelChannel: 'cancel',
+      missionStore: {
+        readCoverageManifest: vi.fn(), readCoverageChunk: vi.fn(),
+        readCoverageClaim: vi.fn(), syncCoverageTileCatalog: vi.fn(),
+        cancelCoverageQuery: vi.fn(), readCoverageTile, cancelCoverageTileRead,
+      },
+      validateIpcSender: vi.fn(),
+    })
+    const senderA = Object.assign(new EventEmitter(), { id: 52 })
+    const senderB = Object.assign(new EventEmitter(), { id: 53 })
+    const ownerRead = Promise.resolve(handlers.get('tile-read')?.(
+      { sender: senderA }, { z: 8 }, 'tile-1',
+    ))
+    const rejection = expect(ownerRead).rejects.toThrow(/cancelled/u)
+    expect(readCoverageTile).toHaveBeenCalledWith({ z: 8 }, '52:coverage:tile-1')
+
+    await expect(handlers.get('tile-cancel')?.(
+      { sender: senderB }, 'tile-1',
+    )).resolves.toBe(false)
+    expect(cancelCoverageTileRead).toHaveBeenLastCalledWith('53:coverage:tile-1')
+
+    senderA.emit('render-process-gone')
+    await rejection
+    expect(cancelCoverageTileRead).toHaveBeenCalledWith('52:coverage:tile-1')
+    expect(senderA.listenerCount('destroyed')).toBe(0)
+    expect(senderA.listenerCount('render-process-gone')).toBe(0)
+
+    await expect(handlers.get('tile-read')?.(
+      { sender: senderB }, { z: 8 }, 'tile-1',
+    )).resolves.toEqual(new Uint8Array([1, 2, 3]))
   })
 
   it('owns staged catalogs until activation and discards them when the renderer dies', async () => {
