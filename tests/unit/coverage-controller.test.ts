@@ -556,6 +556,98 @@ describe('coverage controller [DON-276]', () => {
     })
   })
 
+  it('latches renderer detachment that arrives after an unchanged refresh starts', async () => {
+    let releaseRefreshManifest: (() => void) | undefined
+    let manifestReadCount = 0
+    const currentManifest = manifest(1, [[KEY_A, 1]])
+    const catalog: CoverageTileCatalog = {
+      activationId: 'detach-during-refresh-stage',
+      missionId: 'mission-1',
+      periods: [{ periodKey: 'outing\\u0000outing-1', revisionDigest: 'revision-1' }],
+      delivered: [{ key: KEY_A, contentRev: 1 }],
+    }
+    const controller = createCoverageController({
+      readManifest: vi.fn(async () => {
+        manifestReadCount += 1
+        if (manifestReadCount === 3) {
+          await new Promise<void>((resolve) => { releaseRefreshManifest = resolve })
+        }
+        return currentManifest
+      }),
+      readChunk: vi.fn(),
+      readClaim: vi.fn().mockResolvedValue({
+        changeSeq: 1, databaseReady: true, blockers: [],
+        chunkRevisions: [{ key: KEY_A, contentRev: 1 }],
+      }),
+      applyChunk: vi.fn(),
+      deliverSelection: vi.fn().mockResolvedValue(catalog),
+      activateCatalog: vi.fn().mockResolvedValue(undefined),
+      finalizeCatalog: vi.fn().mockResolvedValue(undefined),
+      publish: vi.fn(),
+    })
+    const initialLoad = controller.updateContext({
+      missionId: 'mission-1', rendererGeneration: 'r1',
+    })
+    await vi.waitFor(() => expect(controller.getState()).toMatchObject({
+      tileCatalog: { activationId: 'detach-during-refresh-stage' },
+    }))
+    await controller.notifyCatalogApplied(catalog)
+    await initialLoad
+
+    const refresh = controller.refresh()
+    await vi.waitFor(() => expect(manifestReadCount).toBe(3))
+    expect(controller.getState()).toMatchObject({ status: 'loading' })
+    controller.notifyRendererDetached(catalog)
+
+    expect(controller.getState()).toMatchObject({
+      status: 'loading', blockers: expect.arrayContaining(['renderer_detached']),
+    })
+    releaseRefreshManifest?.()
+    await refresh
+    expect(controller.getState()).toMatchObject({
+      status: 'partial', blockers: expect.arrayContaining(['renderer_detached']),
+    })
+  })
+
+  it('does not mistake a staged replacement for detachment of the finalized catalog', async () => {
+    const catalog: CoverageTileCatalog = {
+      activationId: 'finalized-stage',
+      missionId: 'mission-1',
+      periods: [{ periodKey: 'outing\\u0000outing-1', revisionDigest: 'revision-1' }],
+      delivered: [{ key: KEY_A, contentRev: 1 }],
+    }
+    const publish = vi.fn()
+    const controller = createCoverageController({
+      readManifest: vi.fn().mockResolvedValue(manifest(1, [[KEY_A, 1]])),
+      readChunk: vi.fn(),
+      readClaim: vi.fn().mockResolvedValue({
+        changeSeq: 1, databaseReady: true, blockers: [],
+        chunkRevisions: [{ key: KEY_A, contentRev: 1 }],
+      }),
+      applyChunk: vi.fn(),
+      deliverSelection: vi.fn().mockResolvedValue(catalog),
+      activateCatalog: vi.fn().mockResolvedValue(undefined),
+      finalizeCatalog: vi.fn().mockResolvedValue(undefined),
+      publish,
+    })
+    const load = controller.updateContext({ missionId: 'mission-1', rendererGeneration: 'r1' })
+    await vi.waitFor(() => expect(controller.getState()).toMatchObject({
+      tileCatalog: { activationId: 'finalized-stage' },
+    }))
+    await controller.notifyCatalogApplied(catalog)
+    await load
+    publish.mockClear()
+
+    controller.notifyRendererDetached({
+      ...catalog,
+      activationId: 'pending-replacement-stage',
+      periods: [{ periodKey: 'outing\\u0000outing-1', revisionDigest: 'revision-2' }],
+    })
+
+    expect(controller.getState()).toMatchObject({ status: 'complete', blockers: [] })
+    expect(publish).not.toHaveBeenCalled()
+  })
+
   it('never republishes a cancelled staged catalog during a filter change', async () => {
     let releaseReplacement: (() => void) | undefined
     const discardCatalog = vi.fn().mockResolvedValue(undefined)

@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 
 import {
+  isCoverageOverlayAttached,
   syncCoverageOverlay,
   type CoverageOverlayMap,
 } from '../../src/features/tracking/sync-coverage-overlay'
@@ -229,6 +230,44 @@ describe('Candidate B coverage overlay [DON-276]', () => {
 
     expect(map.sources.size).toBe(0)
     expect(map.layers.size).toBe(0)
+  })
+
+  it('restores the prior owner when a superseding filtered sync fails', async () => {
+    const map = createMap()
+    const priorCatalog = {
+      missionId: 'mission-1',
+      periods: [{ periodKey: 'outing\\u0000a', revisionDigest: 'a1' }],
+      delivered: [],
+    }
+    const initial = await syncCoverageOverlay(map, priorCatalog)
+    initial.commit()
+    initial.finalize()
+
+    const pending = await syncCoverageOverlay(map, {
+      ...priorCatalog,
+      periods: [{ periodKey: 'outing\\u0000a', revisionDigest: 'a2' }],
+    })
+    pending.commit()
+    const originalAddSource = map.addSource.bind(map)
+    vi.spyOn(map, 'addSource').mockImplementation((id, source) => {
+      if (String((source as { readonly tiles?: readonly string[] }).tiles?.[0]).includes('a3')) {
+        throw new Error('filtered replacement failed')
+      }
+      return originalAddSource(id, source)
+    })
+
+    await expect(syncCoverageOverlay(map, {
+      ...priorCatalog,
+      periods: [{ periodKey: 'outing\\u0000a', revisionDigest: 'a3' }],
+    }, {
+      omittedDeviceIds: ['device-a'], omittedPeriodKeys: [],
+    })).rejects.toThrow(/filtered replacement failed/)
+
+    pending.rollback()
+
+    expect(isCoverageOverlayAttached(map, priorCatalog)).toBe(true)
+    expect(map.sources.size).toBe(1)
+    expect(map.layers.size).toBe(2)
   })
 
   it('rolls back immediately when activation starts with an aborted renderer signal', async () => {

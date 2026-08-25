@@ -110,7 +110,7 @@ export function useMapOverlays(options: UseMapOverlaysOptions): void {
           coverageController !== null &&
           !isCoverageOverlayAttached(map, catalog)
         ) {
-          coverageController.notifyRendererDetached()
+          coverageController.notifyRendererDetached(catalog)
         }
         activation = await syncCoverageOverlay(map, catalog, {
           omittedDeviceIds: omittedCoverageDeviceIds,
@@ -138,7 +138,10 @@ export function useMapOverlays(options: UseMapOverlaysOptions): void {
       }
     }
     return registerMapStyleSync(map, synchronizeOverlay, {
-      onStyleUnavailable: () => coverageController?.notifyRendererDetached(),
+      onStyleUnavailable: () => {
+        const catalog = coverageState.status === 'inactive' ? null : coverageState.tileCatalog
+        if (catalog !== null) coverageController?.notifyRendererDetached(catalog)
+      },
     })
   }, [
     coverageState,

@@ -61,7 +61,7 @@ export type CoverageController = {
     readonly message: string
   }) => void
   readonly notifyRendererUnavailable: (message: string) => void
-  readonly notifyRendererDetached: () => void
+  readonly notifyRendererDetached: (catalog?: CoverageTileCatalog) => void
   readonly cancel: () => void
   readonly resume: () => Promise<void>
   readonly stop: () => void
@@ -565,12 +565,18 @@ export function createCoverageController(input: {
       publishRendererUnavailable(failure.message)
     },
     notifyRendererUnavailable: publishRendererUnavailable,
-    notifyRendererDetached: () => {
-      if (state.status !== 'complete' || finalizedCatalog === null) return
+    notifyRendererDetached: (catalog) => {
+      if (state.status === 'inactive' || finalizedCatalog === null) return
+      if (catalog !== undefined && !isSameCatalog(finalizedCatalog, catalog)) return
+      if (rendererDetached) return
       rendererDetached = true
       const blockers = new Set(state.blockers ?? [])
       blockers.add('renderer_detached')
-      publish({ ...state, status: 'partial', blockers: [...blockers] })
+      publish({
+        ...state,
+        status: state.status === 'complete' ? 'partial' : state.status,
+        blockers: [...blockers],
+      })
     },
     cancel: () => {
       activeController?.abort()
