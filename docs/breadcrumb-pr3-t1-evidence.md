@@ -696,21 +696,29 @@ Exact-head safety review #1 at `ec0f339` found one remaining breach of the
 accepted no-mission-sized-main-isolate boundary: every accepted position
 transaction synchronously read and sorted every outing for the mission. The
 red regression observed that full-list SQL instead of the required point
-lookup. Commit `add5639ce688caa671109aa5593cb2e789e900f6` prepares one
-`mission_id + started_at` query per accepted batch, resolves each fix through
-the existing `idx_outings_mission_started` index in O(log outings), and retains
-the existing transactionally current half-open period semantics. The durable
-test asserts the SQL shape, exact Outing/Outside-outings identities, and SQLite
-query plan.
+lookup. Commit `add5639ce688caa671109aa5593cb2e789e900f6` replaced the list
+read with an indexed query, but all three restarted reviewers rejected it: the
+residual `ended_at` predicate still made a late Outside-outings fix walk every
+closed predecessor. That attempt and its soak are retained as rejected
+evidence, not final proof. Commit
+`40a713cdee9e8f1efe0f33f81ba48d478aeabfda` now fetches only the latest
+`mission_id + started_at` predecessor through `idx_outings_mission_started`,
+then applies that single row's half-open end boundary in memory. Non-overlap
+guarantees no earlier outing can contain the fix. The durable test asserts the
+bounded SQL shape, exact Outing/Outside-outings identities, and SQLite query
+plan.
 
-Exact `add5639` gates passed on the Ubuntu reference host:
+Exact `40a713c` gates passed on the Ubuntu reference host:
 
 - focused ledger/store integration: 4 files / 98 tests;
 - full serial unit: 262 files / 2,096 tests;
 - ESLint with zero warnings, TypeScript, changed CommonJS syntax, exact Dots
   10/10, production build, and bundle budgets;
-- full Chromium: 158/158; and
 - unsigned Ubuntu x64 and macOS arm64 packaging.
+
+Full Chromium passed 158/158 at parent `add5639`; `40a713c` changes only the
+Electron ledger query and its exact unit assertion, so no browser production
+byte changed after that gate.
 
 Because this remediation changes the ingest hot path, the previous packaged
 soak was not carried forward. The single replacement CI-scale soak ran on the
@@ -718,27 +726,27 @@ active Ubuntu desktop through Xwayland with Mesa llvmpipe attested via
 ANGLE/OpenGL and passed: 6/6 batches, 8,664/8,664 source-exact positions, one
 restart, both launches exit 0, zero renderer crashes, integrity `ok`, WAL
 0/0/0, zero redundant telemetry slope, four healthy operator interactions,
-7.784 ms main-process maximum, 100.3 ms renderer maximum, and
-1,105,354,752-byte peak process-tree RSS. The post-run ledger held one mission
+20.482 ms main-process maximum, 83.6 ms renderer maximum, and
+1,091,911,680-byte peak process-tree RSS. The post-run ledger held one mission
 at change sequence 12, 32 chunks, zero pending invalidations, and 24,576 bytes
 across coverage tables/indexes.
 
 The report SHA-256 is
-`f216d3c2cf25489690b7876c65073b96ccad66297b51c997f792edf56b701526`;
+`3eb50979380867a8aaff15080e80ac90711d4963b27e0ea74db0457aa0181c01`;
 the Ubuntu executable and `app.asar` SHA-256 values are
 `6344ae1d9044fedc54779e8bacaddc032fdcc0f55e146fc3623756eafa0bbaf8`
 and
-`0e5a789d038d0eba3beccd9a2f71930d4c9ae5c225008ce894620366bd9fc581`.
+`3bc9283722d1161189bac2fea5e222eb7a040e213a55265205f5d605a0824d40`.
 The macOS arm64 executable and `app.asar` values are
 `f5212ea9181df95040385dfd04f512e983ed95394a96fb7c4b8ee838ea433caf`
 and
-`a4bccd1a8bba7ee5ed5697fd31ce3453aa498017b779d5bd24b8e9a38ce8572d`.
+`913b375057387a2453a929f2fa0f3c415273fdffde8490b8fa8d08c51651185e`.
 The committed Ubuntu evidence is under
-`output/pr3-packaged-soak/add5639ce688caa671109aa5593cb2e789e900f6/`;
+`output/pr3-packaged-soak/40a713cdee9e8f1efe0f33f81ba48d478aeabfda/`;
 its evidence-manifest SHA-256 is
-`e057cc87140de9ddaa02b3af97a6c86717dc1bac14a82a080ba9ece7fb78cc03`.
+`7eedc8a73fb1d9f9886177678980c4c1c51a9e3bcb0946d2afb1b74bfa98780c`.
 
-No new coverage visual was billed because `add5639` changes only the Electron
+No new coverage visual was billed because `40a713c` changes only the Electron
 ledger SQL and its unit test; the exact UI/renderer tree and its 7/7 workflows
 plus 9/9 no-cache critical review remain byte-identical to `4b740f2`. G2 and the
 decoded 960k/2M production qualification remain standing because this lookup
