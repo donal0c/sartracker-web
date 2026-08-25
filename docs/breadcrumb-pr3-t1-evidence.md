@@ -1078,3 +1078,28 @@ production build and bundle budgets, plus participant/coverage Chromium 10/10.
 The exact-head Linux run at `745ab3e` was green but is superseded because this
 commit changes live catalog recovery. New exact-head Linux CI and five fresh
 independent reviews must restart. No merge or release occurred.
+
+## Multi-renderer stale-token ordering remediation
+
+The next review exercised two valid renderer sender IDs across a worker
+generation change. Renderer A's stage token remained in IPC after the worker
+lost it; renderer B then created the worker's live stage. A Retry made A's old
+token abandoned, where its discard correctly conflicted with B. When B later
+retried, insertion-order cleanup attempted A first again and stopped before
+reaching B's settleable stage, leaving both Retry paths wedged.
+
+The regression failed red with repeated wrong-token rejection and no discard
+of B's live stage. Commit `6e53ba147d1f4295783621d04746ea1764490b6d`
+orders abandoned cleanup so stages owned by the renderer initiating catalog
+Retry are settled first. With B removed, A's lost-generation token is then an
+idempotent no-stage cleanup. A different non-abandoned live renderer remains
+protected from supersession and terminal calls.
+
+Green verification at this application head is 5 focused files / 56 tests,
+264 full unit files / 2,117 tests, TypeScript, ESLint, changed CommonJS syntax,
+production build and bundle budgets, plus participant/coverage Chromium 10/10.
+The exact-head Linux run at `a7cbda3` passed packaging, AppImage launch, and an
+8,664/8,664 soak with integrity ok, one restart, zero redundant slope, 54.8 ms
+main maximum, and four healthy operator interactions, but is superseded by this
+operational cleanup-order change. New exact-head Linux CI and five fresh
+independent reviews must restart. No merge or release occurred.
