@@ -648,6 +648,279 @@ describe('coverage controller [DON-276]', () => {
     expect(publish).not.toHaveBeenCalled()
   })
 
+  it('never restores Complete while a newer change sequence is queued', async () => {
+    let releaseRefreshManifest: (() => void) | undefined
+    let manifestReadCount = 0
+    const catalog: CoverageTileCatalog = {
+      activationId: 'stale-reattach-stage',
+      missionId: 'mission-1',
+      periods: [{ periodKey: 'outing\\u0000outing-1', revisionDigest: 'revision-1' }],
+      delivered: [{ key: KEY_A, contentRev: 1 }],
+    }
+    const controller = createCoverageController({
+      readManifest: vi.fn(async () => {
+        manifestReadCount += 1
+        if (manifestReadCount === 3) {
+          await new Promise<void>((resolve) => { releaseRefreshManifest = resolve })
+        }
+        return manifest(1, [[KEY_A, 1]])
+      }),
+      readChunk: vi.fn(),
+      readClaim: vi.fn().mockResolvedValue({
+        changeSeq: 1, databaseReady: true, blockers: [],
+        chunkRevisions: [{ key: KEY_A, contentRev: 1 }],
+      }),
+      applyChunk: vi.fn(),
+      deliverSelection: vi.fn().mockResolvedValue(catalog),
+      activateCatalog: vi.fn().mockResolvedValue(undefined),
+      finalizeCatalog: vi.fn().mockResolvedValue(undefined),
+      publish: vi.fn(),
+    })
+    const initialLoad = controller.updateContext({ missionId: 'mission-1', rendererGeneration: 'r1' })
+    await vi.waitFor(() => expect(controller.getState()).toMatchObject({
+      tileCatalog: { activationId: 'stale-reattach-stage' },
+    }))
+    await controller.notifyCatalogApplied(catalog)
+    await initialLoad
+    controller.notifyRendererDetached(catalog)
+    const refresh = controller.refresh()
+    await vi.waitFor(() => expect(manifestReadCount).toBe(3))
+    await controller.notifyChanged('mission-1', 2)
+
+    await controller.notifyCatalogApplied(catalog)
+
+    expect(controller.getState()).toMatchObject({
+      status: 'partial', changeSeq: 1, latestObservedChangeSeq: 2,
+    })
+    releaseRefreshManifest?.()
+    await refresh
+  })
+
+  it('keeps renderer detachment latched when style loss follows renderer commit', async () => {
+    let releaseReplacementFinalization: (() => void) | undefined
+    let manifestReadCount = 0
+    const catalog1: CoverageTileCatalog = {
+      activationId: 'style-loss-stage-1',
+      missionId: 'mission-1',
+      periods: [{ periodKey: 'outing\\u0000outing-1', revisionDigest: 'revision-1' }],
+      delivered: [{ key: KEY_A, contentRev: 1 }],
+    }
+    const catalog2: CoverageTileCatalog = {
+      ...catalog1,
+      activationId: 'style-loss-stage-2',
+      periods: [{ periodKey: 'outing\\u0000outing-1', revisionDigest: 'revision-2' }],
+      delivered: [{ key: KEY_A, contentRev: 2 }],
+    }
+    const renderer = { commit: vi.fn(), rollback: vi.fn(), finalize: vi.fn() }
+    const controller = createCoverageController({
+      readManifest: vi.fn(async () => {
+        manifestReadCount += 1
+        return manifest(manifestReadCount <= 2 ? 1 : 2, [[KEY_A, manifestReadCount <= 2 ? 1 : 2]])
+      }),
+      readChunk: vi.fn(),
+      readClaim: vi.fn(async () => ({
+        changeSeq: manifestReadCount <= 2 ? 1 : 2,
+        databaseReady: true,
+        blockers: [],
+        chunkRevisions: [{ key: KEY_A, contentRev: manifestReadCount <= 2 ? 1 : 2 }],
+      })),
+      applyChunk: vi.fn(),
+      deliverSelection: vi.fn()
+        .mockResolvedValueOnce(catalog1)
+        .mockResolvedValueOnce(catalog2),
+      activateCatalog: vi.fn().mockResolvedValue(undefined),
+      finalizeCatalog: vi.fn(async (catalog) => {
+        if (catalog.activationId === catalog2.activationId) {
+          await new Promise<void>((resolve) => { releaseReplacementFinalization = resolve })
+        }
+      }),
+      publish: vi.fn(),
+    })
+    const initialLoad = controller.updateContext({ missionId: 'mission-1', rendererGeneration: 'r1' })
+    await vi.waitFor(() => expect(controller.getState()).toMatchObject({
+      tileCatalog: { activationId: 'style-loss-stage-1' },
+    }))
+    await controller.notifyCatalogApplied(catalog1)
+    await initialLoad
+    controller.notifyRendererDetached(catalog1)
+    const replacementLoad = controller.refresh()
+    await vi.waitFor(() => expect(controller.getState()).toMatchObject({
+      tileCatalog: { activationId: 'style-loss-stage-2' },
+    }))
+    const applyReplacement = controller.notifyCatalogApplied(catalog2, renderer)
+    await vi.waitFor(() => expect(renderer.commit).toHaveBeenCalledOnce())
+
+    controller.notifyRendererDetached()
+    releaseReplacementFinalization?.()
+    await applyReplacement
+    await replacementLoad
+
+    expect(controller.getState()).toMatchObject({
+      status: 'partial', blockers: expect.arrayContaining(['renderer_detached']),
+    })
+  })
+
+  it('rejects activation when style loss occurs before renderer commit', async () => {
+    let releaseReplacementActivation: (() => void) | undefined
+    let manifestReadCount = 0
+    const catalog1: CoverageTileCatalog = {
+      activationId: 'pre-commit-style-stage-1',
+      missionId: 'mission-1',
+      periods: [{ periodKey: 'outing\\u0000outing-1', revisionDigest: 'revision-1' }],
+      delivered: [{ key: KEY_A, contentRev: 1 }],
+    }
+    const catalog2: CoverageTileCatalog = {
+      ...catalog1,
+      activationId: 'pre-commit-style-stage-2',
+      periods: [{ periodKey: 'outing\\u0000outing-1', revisionDigest: 'revision-2' }],
+      delivered: [{ key: KEY_A, contentRev: 2 }],
+    }
+    const renderer = { commit: vi.fn(), rollback: vi.fn(), finalize: vi.fn() }
+    const controller = createCoverageController({
+      readManifest: vi.fn(async () => {
+        manifestReadCount += 1
+        const revision = manifestReadCount <= 2 ? 1 : 2
+        return manifest(revision, [[KEY_A, revision]])
+      }),
+      readChunk: vi.fn(),
+      readClaim: vi.fn(async () => {
+        const revision = manifestReadCount <= 2 ? 1 : 2
+        return {
+          changeSeq: revision, databaseReady: true, blockers: [],
+          chunkRevisions: [{ key: KEY_A, contentRev: revision }],
+        }
+      }),
+      applyChunk: vi.fn(),
+      deliverSelection: vi.fn()
+        .mockResolvedValueOnce(catalog1)
+        .mockResolvedValueOnce(catalog2),
+      activateCatalog: vi.fn(async (catalog) => {
+        if (catalog.activationId === catalog2.activationId) {
+          await new Promise<void>((resolve) => { releaseReplacementActivation = resolve })
+        }
+      }),
+      finalizeCatalog: vi.fn().mockResolvedValue(undefined),
+      discardCatalog: vi.fn().mockResolvedValue(undefined),
+      publish: vi.fn(),
+    })
+    const initialLoad = controller.updateContext({ missionId: 'mission-1', rendererGeneration: 'r1' })
+    await vi.waitFor(() => expect(controller.getState()).toMatchObject({
+      tileCatalog: { activationId: 'pre-commit-style-stage-1' },
+    }))
+    await controller.notifyCatalogApplied(catalog1)
+    await initialLoad
+    controller.notifyRendererDetached(catalog1)
+    const replacementLoad = controller.refresh()
+    await vi.waitFor(() => expect(controller.getState()).toMatchObject({
+      tileCatalog: { activationId: 'pre-commit-style-stage-2' },
+    }))
+    const applyReplacement = controller.notifyCatalogApplied(catalog2, renderer)
+    await vi.waitFor(() => expect(releaseReplacementActivation).toBeTypeOf('function'))
+
+    controller.notifyRendererDetached()
+    releaseReplacementActivation?.()
+    await expect(applyReplacement).rejects.toThrow(/detached while its catalog was activating/u)
+    await replacementLoad
+
+    expect(renderer.commit).not.toHaveBeenCalled()
+    expect(renderer.rollback).toHaveBeenCalledOnce()
+    expect(controller.getState()).not.toMatchObject({ status: 'complete' })
+  })
+
+  it('rejects initial activation when total style loss occurs before its first commit', async () => {
+    let releaseActivation: (() => void) | undefined
+    const catalog: CoverageTileCatalog = {
+      activationId: 'initial-style-loss-stage',
+      missionId: 'mission-1',
+      periods: [{ periodKey: 'outing\\u0000outing-1', revisionDigest: 'revision-1' }],
+      delivered: [{ key: KEY_A, contentRev: 1 }],
+    }
+    const renderer = { commit: vi.fn(), rollback: vi.fn(), finalize: vi.fn() }
+    const controller = createCoverageController({
+      readManifest: vi.fn().mockResolvedValue(manifest(1, [[KEY_A, 1]])),
+      readChunk: vi.fn(),
+      readClaim: vi.fn().mockResolvedValue({
+        changeSeq: 1, databaseReady: true, blockers: [],
+        chunkRevisions: [{ key: KEY_A, contentRev: 1 }],
+      }),
+      applyChunk: vi.fn(),
+      deliverSelection: vi.fn().mockResolvedValue(catalog),
+      activateCatalog: vi.fn(async () => {
+        await new Promise<void>((resolve) => { releaseActivation = resolve })
+      }),
+      finalizeCatalog: vi.fn().mockResolvedValue(undefined),
+      discardCatalog: vi.fn().mockResolvedValue(undefined),
+      publish: vi.fn(),
+    })
+    const load = controller.updateContext({ missionId: 'mission-1', rendererGeneration: 'r1' })
+    await vi.waitFor(() => expect(controller.getState()).toMatchObject({
+      tileCatalog: { activationId: 'initial-style-loss-stage' },
+    }))
+    const apply = controller.notifyCatalogApplied(catalog, renderer)
+    await vi.waitFor(() => expect(releaseActivation).toBeTypeOf('function'))
+
+    controller.notifyRendererDetached()
+    releaseActivation?.()
+    await expect(apply).rejects.toThrow(/detached while its catalog was activating/u)
+    await load
+
+    expect(renderer.commit).not.toHaveBeenCalled()
+    expect(renderer.rollback).toHaveBeenCalledOnce()
+    expect(controller.getState()).not.toMatchObject({ status: 'complete' })
+  })
+
+  it('ignores total style loss when an empty mission has no coverage catalog', async () => {
+    const harness = createHarness(manifest(1, []))
+
+    await harness.controller.updateContext({ missionId: 'mission-1', rendererGeneration: 'r1' })
+    expect(harness.controller.getState()).toMatchObject({
+      status: 'complete', tileCatalog: null, deliveredFixCount: 0, totalFixCount: 0,
+    })
+
+    harness.controller.notifyRendererDetached()
+
+    expect(harness.controller.getState()).toMatchObject({
+      status: 'complete', tileCatalog: null, deliveredFixCount: 0, totalFixCount: 0,
+    })
+    expect(harness.controller.getState()).not.toMatchObject({
+      blockers: expect.arrayContaining(['renderer_detached']),
+    })
+  })
+
+  it('never promotes a previously partial cancelled state during renderer reattachment', async () => {
+    const catalog: CoverageTileCatalog = {
+      activationId: 'cancelled-reattach-stage',
+      missionId: 'mission-1',
+      periods: [{ periodKey: 'outing\\u0000outing-1', revisionDigest: 'revision-1' }],
+      delivered: [{ key: KEY_A, contentRev: 1 }],
+    }
+    const controller = createCoverageController({
+      readManifest: vi.fn().mockResolvedValue(manifest(1, [[KEY_A, 1]])),
+      readChunk: vi.fn(),
+      readClaim: vi.fn().mockResolvedValue({
+        changeSeq: 1, databaseReady: true, blockers: [],
+        chunkRevisions: [{ key: KEY_A, contentRev: 1 }],
+      }),
+      applyChunk: vi.fn(),
+      deliverSelection: vi.fn().mockResolvedValue(catalog),
+      activateCatalog: vi.fn().mockResolvedValue(undefined),
+      finalizeCatalog: vi.fn().mockResolvedValue(undefined),
+      publish: vi.fn(),
+    })
+    const load = controller.updateContext({ missionId: 'mission-1', rendererGeneration: 'r1' })
+    await vi.waitFor(() => expect(controller.getState()).toMatchObject({
+      tileCatalog: { activationId: 'cancelled-reattach-stage' },
+    }))
+    await controller.notifyCatalogApplied(catalog)
+    await load
+    controller.cancel()
+    controller.notifyRendererDetached(catalog)
+
+    await controller.notifyCatalogApplied(catalog)
+
+    expect(controller.getState()).toMatchObject({ status: 'partial', blockers: [] })
+  })
+
   it('never republishes a cancelled staged catalog during a filter change', async () => {
     let releaseReplacement: (() => void) | undefined
     const discardCatalog = vi.fn().mockResolvedValue(undefined)

@@ -48,9 +48,28 @@ type PeriodOverlay = {
 type CoverageOverlayRegistry = {
   nextRequestSequence: number
   latestSuccessfulSequence: number
-  owner: symbol | null
+  latestFilters: CoverageOverlayFilters
+  owner: CoverageOverlayOwnership | null
   readonly active: Map<string, PeriodOverlay>
   readonly installed: Set<PeriodOverlay>
+}
+
+type CoverageOverlayFilters = {
+  readonly omittedDeviceIds: readonly string[]
+  readonly omittedPeriodKeys: readonly string[]
+}
+
+type CoverageOverlayOwnership = {
+  readonly requestSequence: number
+  previous: CoverageOverlayOwnership | null
+  valid: boolean
+  committed: boolean
+  finalized: boolean
+  commitRequested: boolean
+  settlement: 'rollback' | 'finalize' | null
+  readonly commitNow: () => void
+  readonly rollbackNow: () => void
+  readonly finalizeNow: () => void
 }
 
 const overlaysByMap = new WeakMap<object, CoverageOverlayRegistry>()
@@ -85,21 +104,24 @@ export function isCoverageOverlayAttached(
 export async function syncCoverageOverlay(
   map: CoverageOverlayMap,
   catalog: CoverageTileCatalog | null,
-  filters: {
-    readonly omittedDeviceIds: readonly string[]
-    readonly omittedPeriodKeys: readonly string[]
-  } = { omittedDeviceIds: [], omittedPeriodKeys: [] },
+  filters: CoverageOverlayFilters = { omittedDeviceIds: [], omittedPeriodKeys: [] },
   signal: AbortSignal = new AbortController().signal,
 ): Promise<CoverageOverlayActivation> {
   const registry = overlaysByMap.get(map) ?? {
     nextRequestSequence: 0,
     latestSuccessfulSequence: 0,
+    latestFilters: { omittedDeviceIds: [], omittedPeriodKeys: [] },
     owner: null,
     active: new Map<string, PeriodOverlay>(),
     installed: new Set<PeriodOverlay>(),
   }
   overlaysByMap.set(map, registry)
   const requestSequence = ++registry.nextRequestSequence
+  registry.latestFilters = {
+    omittedDeviceIds: [...filters.omittedDeviceIds],
+    omittedPeriodKeys: [...filters.omittedPeriodKeys],
+  }
+  applyFiltersToInstalledOverlays(map, registry, registry.latestFilters)
   const overlays = registry.active
   const browserHarnessGeoJson = catalog?.browserHarnessGeoJson
   const desiredPeriods = browserHarnessGeoJson === undefined
@@ -127,7 +149,6 @@ export async function syncCoverageOverlay(
       prior.revisionDigest === period.revisionDigest &&
       structureSurvivedStyle
     ) {
-      applyCoverageFilters(map, prior, filters)
       continue
     }
     try {
@@ -149,7 +170,7 @@ export async function syncCoverageOverlay(
         removePeriodOverlay(map, replacement.next)
         registry.installed.delete(replacement.next)
       }
-      applyFiltersToInstalledOverlays(map, registry, filters)
+      applyFiltersToInstalledOverlays(map, registry, registry.latestFilters)
       throw error
     }
   }
@@ -160,31 +181,41 @@ export async function syncCoverageOverlay(
       removePeriodOverlay(map, replacement.next)
       registry.installed.delete(replacement.next)
     }
-    applyFiltersToInstalledOverlays(map, registry, filters)
+    applyFiltersToInstalledOverlays(map, registry, registry.latestFilters)
     throw error
   }
-  const ownership = Symbol('coverage-overlay-ownership')
-  if (requestSequence >= registry.latestSuccessfulSequence) {
-    registry.latestSuccessfulSequence = requestSequence
-    registry.owner = ownership
+  if (requestSequence < registry.latestSuccessfulSequence) {
+    removeStagedOverlays(map, registry, staged)
+    applyFiltersToInstalledOverlays(map, registry, registry.latestFilters)
+    throw createCoverageOverlayAbortError()
   }
-  let committed = false
-  let finalized = false
-  return {
-    periods: catalog?.periods ?? [],
-    commit: () => {
-      if (committed || finalized || registry.owner !== ownership) return
-      committed = true
+  registry.latestSuccessfulSequence = requestSequence
+  const priorOwnership = registry.owner
+  const ownership: CoverageOverlayOwnership = {
+    requestSequence,
+    previous: priorOwnership,
+    valid: true,
+    committed: false,
+    finalized: false,
+    commitRequested: false,
+    settlement: null,
+    commitNow: () => {
       for (const replacement of staged) {
         overlays.set(replacement.periodKey, replacement.next)
       }
-    },
-    rollback: () => {
-      if (finalized) return
-      if (registry.owner !== ownership) {
-        finalized = true
-        return
+      for (const period of desired.values()) {
+        const overlay = overlays.get(period.periodKey)
+        if (
+          overlay?.missionId !== catalog?.missionId ||
+          overlay.revisionDigest !== period.revisionDigest ||
+          map.getSource(overlay.sourceId) === undefined ||
+          overlay.layerIds.some((layerId) => map.getLayer(layerId) === undefined)
+        ) {
+          throw new Error('Coverage overlay detached before renderer commit.')
+        }
       }
+    },
+    rollbackNow: () => {
       for (const replacement of staged) {
         removePeriodOverlay(map, replacement.next)
         registry.installed.delete(replacement.next)
@@ -194,20 +225,8 @@ export async function syncCoverageOverlay(
           overlays.set(replacement.periodKey, replacement.prior)
         }
       }
-      finalized = true
     },
-    finalize: () => {
-      if (finalized) return
-      if (registry.owner !== ownership) {
-        finalized = true
-        return
-      }
-      if (!committed) {
-        for (const replacement of staged) {
-          overlays.set(replacement.periodKey, replacement.next)
-        }
-        committed = true
-      }
+    finalizeNow: () => {
       if (catalog?.retainPriorPeriods !== true) {
         for (const [periodKey, overlay] of [...overlays.entries()]) {
           if (desired.has(periodKey)) continue
@@ -221,8 +240,75 @@ export async function syncCoverageOverlay(
         removePeriodOverlay(map, overlay)
         registry.installed.delete(overlay)
       }
-      finalized = true
     },
+  }
+  registry.owner = ownership
+  return {
+    periods: catalog?.periods ?? [],
+    commit: () => {
+      if (!ownership.valid || ownership.finalized) return
+      ownership.commitRequested = true
+      settleCoverageOverlayOwnership(registry, ownership)
+    },
+    rollback: () => {
+      if (!ownership.valid || ownership.finalized) return
+      ownership.settlement = 'rollback'
+      settleCoverageOverlayOwnership(registry, ownership)
+    },
+    finalize: () => {
+      if (!ownership.valid || ownership.finalized) return
+      ownership.commitRequested = true
+      ownership.settlement = 'finalize'
+      settleCoverageOverlayOwnership(registry, ownership)
+    },
+  }
+}
+
+/** Settles only the newest activation, cascading deferred predecessor rollback/finalize intent. */
+function settleCoverageOverlayOwnership(
+  registry: CoverageOverlayRegistry,
+  ownership: CoverageOverlayOwnership,
+): void {
+  if (!ownership.valid || ownership.finalized || registry.owner !== ownership) return
+  if (ownership.settlement === 'rollback') {
+    ownership.rollbackNow()
+    ownership.valid = false
+    ownership.finalized = true
+    registry.owner = nearestValidOwnership(ownership.previous)
+    if (registry.owner !== null) settleCoverageOverlayOwnership(registry, registry.owner)
+    return
+  }
+  if (ownership.commitRequested && !ownership.committed) {
+    ownership.commitNow()
+    ownership.committed = true
+  }
+  if (ownership.settlement !== 'finalize') return
+  ownership.finalizeNow()
+  ownership.finalized = true
+  for (let predecessor = ownership.previous; predecessor !== null; predecessor = predecessor.previous) {
+    predecessor.valid = false
+  }
+  ownership.previous = null
+}
+
+/** Skips superseded activation nodes while restoring the prior live owner. */
+function nearestValidOwnership(
+  ownership: CoverageOverlayOwnership | null,
+): CoverageOverlayOwnership | null {
+  let candidate = ownership
+  while (candidate !== null && !candidate.valid) candidate = candidate.previous
+  return candidate
+}
+
+/** Removes source/layer structures that never became an attested activation. */
+function removeStagedOverlays(
+  map: CoverageOverlayMap,
+  registry: CoverageOverlayRegistry,
+  staged: readonly { readonly next: PeriodOverlay }[],
+): void {
+  for (const replacement of staged) {
+    removePeriodOverlay(map, replacement.next)
+    registry.installed.delete(replacement.next)
   }
 }
 
@@ -230,10 +316,7 @@ export async function syncCoverageOverlay(
 function applyFiltersToInstalledOverlays(
   map: CoverageOverlayMap,
   registry: CoverageOverlayRegistry,
-  filters: {
-    readonly omittedDeviceIds: readonly string[]
-    readonly omittedPeriodKeys: readonly string[]
-  },
+  filters: CoverageOverlayFilters,
 ): void {
   for (const overlay of registry.installed) {
     if (

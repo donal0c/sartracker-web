@@ -270,6 +270,124 @@ describe('Candidate B coverage overlay [DON-276]', () => {
     expect(map.layers.size).toBe(2)
   })
 
+  it('cascades rollback through a successfully staged superseding sync', async () => {
+    const map = createMap()
+    const catalog = {
+      missionId: 'mission-1',
+      periods: [{ periodKey: 'outing\\u0000a', revisionDigest: 'a1' }],
+      delivered: [],
+    }
+    const initial = await syncCoverageOverlay(map, catalog)
+    initial.commit()
+    initial.finalize()
+    const pending = await syncCoverageOverlay(map, {
+      ...catalog,
+      periods: [{ periodKey: 'outing\\u0000a', revisionDigest: 'a2' }],
+    })
+    const superseding = await syncCoverageOverlay(map, {
+      ...catalog,
+      periods: [{ periodKey: 'outing\\u0000a', revisionDigest: 'a3' }],
+    })
+
+    pending.rollback()
+    superseding.rollback()
+
+    expect(map.sources.size).toBe(1)
+    expect(map.layers.size).toBe(2)
+    expect(isCoverageOverlayAttached(map, catalog)).toBe(true)
+  })
+
+  it('removes an older request that loads after a newer successful request', async () => {
+    const map = createMap()
+    const catalog = {
+      missionId: 'mission-1',
+      periods: [{ periodKey: 'outing\\u0000a', revisionDigest: 'a1' }],
+      delivered: [],
+    }
+    const initial = await syncCoverageOverlay(map, catalog)
+    initial.commit()
+    initial.finalize()
+    map.autoLoadSources = false
+    const olderPromise = syncCoverageOverlay(map, {
+      ...catalog,
+      periods: [{ periodKey: 'outing\\u0000a', revisionDigest: 'a2' }],
+    })
+    const newerPromise = syncCoverageOverlay(map, {
+      ...catalog,
+      periods: [{ periodKey: 'outing\\u0000a', revisionDigest: 'a3' }],
+    })
+    const newerSource = findSourceId(map, 'a3')
+    map.markSourceLoaded(newerSource)
+    const newer = await newerPromise
+    newer.rollback()
+    const olderSource = findSourceId(map, 'a2')
+    map.markSourceLoaded(olderSource)
+
+    await expect(olderPromise).rejects.toMatchObject({ name: 'AbortError' })
+    expect(map.sources.size).toBe(1)
+    expect(map.layers.size).toBe(2)
+    expect(isCoverageOverlayAttached(map, catalog)).toBe(true)
+  })
+
+  it('does not let an obsolete aborted request restore stale filters', async () => {
+    const map = createMap()
+    const catalog = {
+      missionId: 'mission-1',
+      periods: [{ periodKey: 'outing\\u0000a', revisionDigest: 'a1' }],
+      delivered: [],
+    }
+    const initial = await syncCoverageOverlay(map, catalog)
+    initial.commit()
+    initial.finalize()
+    map.autoLoadSources = false
+    const obsoleteController = new AbortController()
+    const obsolete = syncCoverageOverlay(map, {
+      ...catalog,
+      periods: [{ periodKey: 'outing\\u0000a', revisionDigest: 'a2' }],
+    }, { omittedDeviceIds: ['old-filter'], omittedPeriodKeys: [] }, obsoleteController.signal)
+    obsoleteController.abort()
+    const currentPromise = syncCoverageOverlay(map, {
+      ...catalog,
+      periods: [{ periodKey: 'outing\\u0000a', revisionDigest: 'a3' }],
+    }, { omittedDeviceIds: ['new-filter'], omittedPeriodKeys: [] })
+    map.markSourceLoaded(findSourceId(map, 'a3'))
+    const current = await currentPromise
+    await expect(obsolete).rejects.toMatchObject({ name: 'AbortError' })
+    current.commit()
+    current.finalize()
+
+    const lastFilter = JSON.stringify(map.setFilter.mock.calls.at(-1))
+    expect(lastFilter).toContain('new-filter')
+    expect(lastFilter).not.toContain('old-filter')
+  })
+
+  it('applies new filters to the retained predecessor before replacement loading completes', async () => {
+    const map = createMap()
+    const catalog = {
+      missionId: 'mission-1',
+      periods: [{ periodKey: 'outing\\u0000a', revisionDigest: 'a1' }],
+      delivered: [],
+    }
+    const initial = await syncCoverageOverlay(map, catalog)
+    initial.commit()
+    initial.finalize()
+    const initialSource = findSourceId(map, 'a1')
+    map.setFilter.mockClear()
+    map.autoLoadSources = false
+    const controller = new AbortController()
+    const replacement = syncCoverageOverlay(map, {
+      ...catalog,
+      periods: [{ periodKey: 'outing\\u0000a', revisionDigest: 'a2' }],
+    }, { omittedDeviceIds: ['device-x'], omittedPeriodKeys: [] }, controller.signal)
+
+    const predecessorFilters = map.setFilter.mock.calls
+      .filter(([layerId]) => String(layerId).startsWith(initialSource))
+    expect(predecessorFilters).toHaveLength(2)
+    expect(JSON.stringify(predecessorFilters)).toContain('device-x')
+    controller.abort()
+    await expect(replacement).rejects.toMatchObject({ name: 'AbortError' })
+  })
+
   it('rolls back immediately when activation starts with an aborted renderer signal', async () => {
     const map = createMap()
     map.autoLoadSources = false
@@ -325,4 +443,14 @@ function createMap(): CoverageOverlayMap & {
     },
   }
   return map
+}
+
+function findSourceId(
+  map: ReturnType<typeof createMap>,
+  revisionDigest: string,
+): string {
+  const entry = [...map.sources.entries()].find(([, source]) =>
+    JSON.stringify(source.tiles).includes(revisionDigest))
+  if (entry === undefined) throw new Error(`Missing source for ${revisionDigest}.`)
+  return entry[0]
 }

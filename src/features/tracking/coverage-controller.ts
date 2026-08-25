@@ -128,6 +128,8 @@ export function createCoverageController(input: {
   let lastErrorClass: CoverageErrorClass | null = null
   let finalizedCatalog: CoverageTileCatalog | null = null
   let rendererDetached = false
+  let rendererDetachedCompleteCatalog: CoverageTileCatalog | null = null
+  let rendererDetachEpoch = 0
   const catalogActivation = createCoverageCatalogActivation()
   const scheduler = createCoverageScheduler({
     now: () => Date.now(),
@@ -157,6 +159,7 @@ export function createCoverageController(input: {
 
   const runLoad = async (retainDelivery: boolean): Promise<void> => {
     if (stopped || context.missionId === null) return
+    rendererDetachedCompleteCatalog = null
     activeController?.abort()
     const controller = new AbortController()
     activeController = controller
@@ -418,6 +421,7 @@ export function createCoverageController(input: {
   const publishRendererUnavailable = (message: string): void => {
     if (state.status === 'inactive') return
     rendererDetached = false
+    rendererDetachedCompleteCatalog = null
     const error = new Error(message)
     if (
       state.tileCatalog !== null &&
@@ -448,11 +452,17 @@ export function createCoverageController(input: {
 
   const restoreRendererAttachment = (): void => {
     if (state.status !== 'partial' || !state.blockers?.includes('renderer_detached')) return
+    const restoreComplete = rendererDetachedCompleteCatalog !== null &&
+      isSameCatalog(finalizedCatalog, rendererDetachedCompleteCatalog) &&
+      state.changeSeq === state.latestObservedChangeSeq &&
+      activeController === null &&
+      !refreshRequested
     rendererDetached = false
+    rendererDetachedCompleteCatalog = null
     const blockers = state.blockers.filter((blocker) => blocker !== 'renderer_detached')
     publish({
       ...state,
-      status: blockers.length === 0 ? 'complete' : 'partial',
+      status: restoreComplete && blockers.length === 0 ? 'complete' : 'partial',
       blockers,
     })
   }
@@ -465,6 +475,7 @@ export function createCoverageController(input: {
       const selectionChanged = selectedKeySet(context.selectedKeys) !==
         selectedKeySet(nextContext.selectedKeys)
       if (!identityChanged && !selectionChanged) return
+      rendererDetachedCompleteCatalog = null
       activeController?.abort()
       if (identityChanged) lastErrorClass = null
       if (identityChanged) finalizedCatalog = null
@@ -492,6 +503,7 @@ export function createCoverageController(input: {
         state.status === 'inactive' ||
         changeSeq <= state.latestObservedChangeSeq
       ) return
+      rendererDetachedCompleteCatalog = null
       publish({
         ...state,
         status: 'partial',
@@ -519,13 +531,20 @@ export function createCoverageController(input: {
         return
       }
       try {
+        const activationEpoch = rendererDetachEpoch
         await input.activateCatalog?.(catalog)
+        if (rendererDetachEpoch !== activationEpoch) {
+          throw new Error('Coverage map detached while its catalog was activating.')
+        }
         if (!catalogActivation.isPending(catalog)) {
           rendererActivation.rollback()
           await input.discardCatalog?.(catalog).catch(() => undefined)
           return
         }
         rendererActivation.commit()
+        rendererDetached = false
+        rendererDetachedCompleteCatalog = null
+        const attachmentEpoch = rendererDetachEpoch
         await input.finalizeCatalog?.(catalog)
         if (!catalogActivation.isPending(catalog) || !isCurrentCatalog(state, catalog)) {
           rendererActivation.rollback()
@@ -534,7 +553,7 @@ export function createCoverageController(input: {
         }
         rendererActivation.finalize?.()
         finalizedCatalog = catalog
-        rendererDetached = false
+        if (rendererDetachEpoch === attachmentEpoch) rendererDetached = false
         catalogActivation.notifyApplied(catalog)
       } catch (error) {
         const normalized = error instanceof Error
@@ -566,9 +585,22 @@ export function createCoverageController(input: {
     },
     notifyRendererUnavailable: publishRendererUnavailable,
     notifyRendererDetached: (catalog) => {
-      if (state.status === 'inactive' || finalizedCatalog === null) return
-      if (catalog !== undefined && !isSameCatalog(finalizedCatalog, catalog)) return
-      if (rendererDetached) return
+      if (state.status === 'inactive') return
+      if (
+        catalog !== undefined &&
+        (finalizedCatalog === null || !isSameCatalog(finalizedCatalog, catalog))
+      ) return
+      if (
+        catalog === undefined &&
+        finalizedCatalog === null &&
+        state.tileCatalog === null
+      ) return
+      if (catalog === undefined) rendererDetachEpoch += 1
+      if (rendererDetached) {
+        return
+      }
+      if (catalog !== undefined) rendererDetachEpoch += 1
+      rendererDetachedCompleteCatalog = state.status === 'complete' ? finalizedCatalog : null
       rendererDetached = true
       const blockers = new Set(state.blockers ?? [])
       blockers.add('renderer_detached')
@@ -579,6 +611,7 @@ export function createCoverageController(input: {
       })
     },
     cancel: () => {
+      rendererDetachedCompleteCatalog = null
       activeController?.abort()
       activeController = null
       operationGeneration += 1

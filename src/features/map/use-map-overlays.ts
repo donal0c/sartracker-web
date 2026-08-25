@@ -139,8 +139,7 @@ export function useMapOverlays(options: UseMapOverlaysOptions): void {
     }
     return registerMapStyleSync(map, synchronizeOverlay, {
       onStyleUnavailable: () => {
-        const catalog = coverageState.status === 'inactive' ? null : coverageState.tileCatalog
-        if (catalog !== null) coverageController?.notifyRendererDetached(catalog)
+        coverageController?.notifyRendererDetached()
       },
     })
   }, [

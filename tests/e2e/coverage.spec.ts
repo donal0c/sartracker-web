@@ -51,7 +51,7 @@ test.describe('complete mission-history coverage [DON-275]', () => {
     expect(prior.delivered).toBe(prior.total)
 
     await page.evaluate(async () => {
-      window.sessionStorage.setItem('sartracker:browser-harness:coverage-delay-ms', '1200')
+      window.sessionStorage.setItem('sartracker:browser-harness:coverage-delay-ms', '4000')
       const [{ getBrowserHarnessStore }, { useCoverageStore }] = await Promise.all([
         import('/src/features/browser-validation/browser-harness-store.ts'),
         import('/src/features/tracking/coverage-store.ts'),
@@ -93,7 +93,7 @@ test.describe('complete mission-history coverage [DON-275]', () => {
     await expect(coverageStatus).toContainText('All mission history shown')
 
     await page.evaluate(() => {
-      window.sessionStorage.setItem('sartracker:browser-harness:coverage-delay-ms', '1800')
+      window.sessionStorage.setItem('sartracker:browser-harness:coverage-delay-ms', '4000')
     })
     await page.reload()
     await page.getByTestId('app-title').waitFor({ state: 'visible', timeout: 15_000 })
