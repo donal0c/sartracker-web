@@ -409,7 +409,14 @@ describe('Electron coverage ledger', () => {
 
   it('keeps newly discovered manifest inventory pending until its evidence is built', () => {
     database.exec(`INSERT INTO coverage_missions VALUES
-      ('mission-1', 7, 1, '2026-08-24T11:00:00.000Z')`)
+      ('mission-1', 7, 1, '2026-08-24T11:00:00.000Z');
+      INSERT INTO coverage_chunks (
+        mission_id, device_id, period_kind, period_id,
+        content_rev, built_rev, fix_count, fix_digest, updated_at
+      ) VALUES (
+        'mission-1', 'device-1', 'unassigned', '',
+        1, 1, 2, 'previous-unassigned', '2026-08-24T11:00:00.000Z'
+      )`)
 
     expect(applyCoverageManifestInventory(database, {
       missionId: 'mission-1',
@@ -430,6 +437,13 @@ describe('Electron coverage ledger', () => {
         built_rev: null,
         fix_count: 0,
         fix_digest: 'empty-fallback-digest',
+      }),
+      expect.objectContaining({
+        period_kind: 'unassigned',
+        content_rev: 2,
+        built_rev: null,
+        fix_count: 2,
+        fix_digest: 'previous-unassigned',
       }),
     ])
   })

@@ -108,13 +108,10 @@ function registerCoverageActivationHandlers(input, ownedStages) {
       if (activationId === null || owner?.senderId !== event.sender.id) {
         throw new Error('Coverage tile catalog stage is not owned by this renderer.')
       }
-      let settled = false
       try {
-        const result = await settle(input.missionStore, { activationId })
-        settled = true
-        return result
+        return await settle(input.missionStore, { activationId })
       } finally {
-        if (terminal || !settled) {
+        if (terminal) {
           ownedStages.delete(activationId)
           owner.releaseListeners()
         }

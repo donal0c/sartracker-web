@@ -239,6 +239,44 @@ describe('coverage IPC ownership [DON-276]', () => {
     expect(owner.listenerCount('render-process-gone')).toBe(0)
   })
 
+  it('retains stage ownership when non-terminal activation fails and is retried', async () => {
+    const handlers = new Map<string, (event: unknown, ...args: readonly unknown[]) => unknown>()
+    const activateCoverageTileCatalog = vi.fn()
+      .mockRejectedValueOnce(new Error('activation response interrupted'))
+      .mockResolvedValueOnce(true)
+    const finalizeCoverageTileCatalog = vi.fn().mockResolvedValue(true)
+    const missionStore = {
+      readCoverageManifest: vi.fn(),
+      readCoverageChunk: vi.fn(),
+      readCoverageClaim: vi.fn(),
+      syncCoverageTileCatalog: vi.fn().mockResolvedValue({
+        activationId: 'coverage-stage-retry', periods: [], delivered: [],
+      }),
+      activateCoverageTileCatalog,
+      finalizeCoverageTileCatalog,
+      discardCoverageTileCatalog: vi.fn().mockResolvedValue(true),
+      cancelCoverageQuery: vi.fn().mockResolvedValue(false),
+    }
+    registerCoverageIpcHandlers({
+      ipcMain: { handle: (channel, handler) => handlers.set(channel, handler as never) },
+      readChannels: { manifest: 'manifest', chunk: 'chunk', claim: 'claim', catalog: 'catalog' },
+      activationChannels: { activate: 'activate', finalize: 'finalize', discard: 'discard' },
+      cancelChannel: 'cancel', missionStore,
+      validateIpcSender: vi.fn(),
+    })
+    const owner = Object.assign(new EventEmitter(), { id: 82 })
+    const payload = { activationId: 'coverage-stage-retry' }
+    await handlers.get('catalog')?.(
+      { sender: owner }, { missionId: 'mission-1', chunks: [] }, 'catalog-retry',
+    )
+
+    await expect(handlers.get('activate')?.({ sender: owner }, payload))
+      .rejects.toThrow(/interrupted/iu)
+    expect(owner.listenerCount('destroyed')).toBe(1)
+    await expect(handlers.get('activate')?.({ sender: owner }, payload)).resolves.toBe(true)
+    await expect(handlers.get('finalize')?.({ sender: owner }, payload)).resolves.toBe(true)
+  })
+
   it('routes chunk and claim reads through their named mission-store methods', async () => {
     const handlers = new Map<string, (event: unknown, ...args: readonly unknown[]) => unknown>()
     const missionStore = {

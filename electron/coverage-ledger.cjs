@@ -310,6 +310,27 @@ function applyCoverageManifestInventory(database, input) {
     if (mission === undefined || mission.change_seq !== input.expectedChangeSeq) {
       return 0
     }
+    const existing = database.prepare(`SELECT 1 FROM coverage_chunks
+      WHERE mission_id = ? AND device_id = ? AND period_kind = ? AND period_id = ?`)
+    const devicesWithMissingInventory = new Set()
+    for (const chunk of input.chunks) {
+      if (existing.get(
+        input.missionId,
+        chunk.key.device_id,
+        chunk.key.period_kind,
+        chunk.key.period_id,
+      ) === undefined) {
+        devicesWithMissingInventory.add(chunk.key.device_id)
+      }
+    }
+    const invalidateExistingDeviceChunks = database.prepare(`UPDATE coverage_chunks SET
+      content_rev = content_rev + 1,
+      built_rev = NULL,
+      updated_at = ?
+      WHERE mission_id = ? AND device_id = ?`)
+    for (const deviceId of devicesWithMissingInventory) {
+      invalidateExistingDeviceChunks.run(input.updatedAt, input.missionId, deviceId)
+    }
     const insert = database.prepare(`INSERT INTO coverage_chunks (
         mission_id, device_id, period_kind, period_id,
         content_rev, built_rev, fix_count, fix_digest, min_ts, max_ts, updated_at

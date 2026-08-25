@@ -236,6 +236,21 @@ describe('Candidate B coverage tile worker [DON-276]', () => {
     })).resolves.toBeNull()
   })
 
+  it('treats repeated activation of the current stage as idempotent', async () => {
+    const databasePath = await createDatabase()
+    runner = createCoverageTileRunner({
+      databasePath,
+      cacheDirectory: path.join(directory!, 'coverage-idempotent-activation'),
+    })
+    const staged = await runner.syncCatalog({ missionId: 'mission-1', chunks: [] })
+
+    await expect(runner.commitCatalog({ stageId: staged.stageId })).resolves.toBe(true)
+    await expect(runner.commitCatalog({ stageId: staged.stageId })).resolves.toBe(true)
+    await expect(runner.finalizeCatalog({ stageId: staged.stageId })).resolves.toBe(true)
+    await expect(runner.syncCatalog({ missionId: 'mission-1', chunks: [] }))
+      .resolves.toMatchObject({ stageId: expect.any(String) })
+  })
+
   it('serves retained tiles while a later catalog is still building', async () => {
     const databasePath = await createDatabase()
     runner = createCoverageTileRunner({

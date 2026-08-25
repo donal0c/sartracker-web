@@ -180,6 +180,20 @@ describe('Electron coverage mission-store orchestration', () => {
       'source-1', 'source-2',
     ])
 
+    const rendererControlledInput = {
+      kind: 'enumerate',
+      missionId: mission.id,
+      key: manifest.chunks[0]!.key,
+      expectedContentRev: manifest.chunks[0]!.contentRev,
+    }
+    await expect(store.readCoverageChunk(rendererControlledInput, 'chunk-owned-kind'))
+      .resolves.toMatchObject({
+        positions: [
+          expect.objectContaining({ source_position_id: 'source-1' }),
+          expect.objectContaining({ source_position_id: 'source-2' }),
+        ],
+      })
+
     const secondManifest = await store.readCoverageManifest(mission.id, 'manifest-2')
     expect(secondManifest.chunks).toEqual(manifest.chunks)
   })
@@ -242,6 +256,31 @@ describe('Electron coverage mission-store orchestration', () => {
     }, 'claim-new-inventory')).resolves.toMatchObject({
       databaseReady: false,
       blockers: expect.arrayContaining(['chunk_not_fresh']),
+    })
+
+    for (const chunk of manifest.chunks) {
+      if (chunk.builtRev === chunk.contentRev) continue
+      await store.readCoverageChunk({
+        missionId: mission.id,
+        key: chunk.key,
+        expectedContentRev: chunk.contentRev,
+      }, `build-${chunk.key.period_kind}`)
+    }
+    const rebuilt = await store.readCoverageManifest(mission.id, 'manifest-rebuilt-inventory')
+    expect(rebuilt.chunks.map((chunk) => ({
+      periodKind: chunk.key.period_kind,
+      exactCount: chunk.exactCount,
+      fresh: chunk.builtRev === chunk.contentRev,
+    }))).toEqual([
+      { periodKind: 'outing', exactCount: 2, fresh: true },
+      { periodKind: 'unassigned', exactCount: 0, fresh: true },
+    ])
+    await expect(store.readCoverageClaim({
+      missionId: mission.id,
+      selectedKeys: rebuilt.chunks.map((chunk) => chunk.key),
+    }, 'claim-rebuilt-inventory')).resolves.toMatchObject({
+      databaseReady: true,
+      blockers: [],
     })
   })
 

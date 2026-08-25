@@ -162,6 +162,72 @@ function normalizeCoverageTileReadInput(value) {
   }
 }
 
+/** Validates and copies renderer-owned fields for one exact coverage chunk page. */
+function normalizeCoverageChunkReadInput(value) {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error('Coverage chunk request is invalid.')
+  }
+  if (
+    typeof value.missionId !== 'string' ||
+    value.missionId.length < 1 ||
+    value.missionId.length > 100
+  ) {
+    throw new Error('Coverage chunk mission ID is invalid.')
+  }
+  const key = value.key
+  if (
+    key === null ||
+    typeof key !== 'object' ||
+    Array.isArray(key) ||
+    typeof key.device_id !== 'string' ||
+    key.device_id.length < 1 ||
+    key.device_id.length > 100 ||
+    !['outing', 'unassigned'].includes(key.period_kind) ||
+    typeof key.period_id !== 'string' ||
+    key.period_id.length > 100 ||
+    (key.period_kind === 'outing' && key.period_id.length < 1) ||
+    (key.period_kind === 'unassigned' && key.period_id !== '')
+  ) {
+    throw new Error('Coverage chunk key is invalid.')
+  }
+  if (!Number.isSafeInteger(value.expectedContentRev) || value.expectedContentRev < 1) {
+    throw new Error('Coverage chunk revision is invalid.')
+  }
+  const cursor = value.cursor
+  if (
+    cursor !== undefined && cursor !== null &&
+    (
+      typeof cursor !== 'object' ||
+      Array.isArray(cursor) ||
+      !isStrictTrackingTimestamp(cursor.timestamp) ||
+      typeof cursor.id !== 'string' ||
+      cursor.id.length < 1 ||
+      cursor.id.length > 100
+    )
+  ) {
+    throw new Error('Coverage chunk cursor is invalid.')
+  }
+  if (
+    value.limit !== undefined &&
+    (!Number.isSafeInteger(value.limit) || value.limit < 1 || value.limit > 10_000)
+  ) {
+    throw new Error('Coverage chunk page limit is invalid.')
+  }
+  return {
+    missionId: value.missionId,
+    key: {
+      device_id: key.device_id,
+      period_kind: key.period_kind,
+      period_id: key.period_id,
+    },
+    expectedContentRev: value.expectedContentRev,
+    ...(cursor === undefined || cursor === null
+      ? {}
+      : { cursor: { timestamp: cursor.timestamp, id: cursor.id } }),
+    ...(value.limit === undefined ? {} : { limit: value.limit }),
+  }
+}
+
 /**
  * Creates the Electron SQLite mission store.
  */
@@ -440,39 +506,42 @@ function createElectronMissionStore(options) {
         return attachCoveragePerformance(missionId, currentManifest)
       },
     ),
-    readCoverageChunk: async (input, requestId) => executeCoverageRequest(
-      requestId,
-      async (signal) => {
-        const page = await runCoverageWorker(
-          { kind: 'chunk-page', ...input }, signal, true,
-        )
-        if (page.nextCursor !== null) return page
-        const summary = await runCoverageWorker({
-          kind: 'chunk-summary',
-          missionId: input.missionId,
-          key: input.key,
-          expectedContentRev: input.expectedContentRev,
-        }, signal, true)
-        const applied = applyCoverageChunkBuild(db, {
-          missionId: input.missionId,
-          deviceId: input.key.device_id,
-          periodKind: input.key.period_kind,
-          periodId: input.key.period_id,
-          expectedContentRev: input.expectedContentRev,
-          fixCount: summary.fix_count,
-          fixDigest: summary.fix_digest,
-          minTs: summary.min_ts,
-          maxTs: summary.max_ts,
-          updatedAt: now(),
-        })
-        if (!applied) {
-          const error = new Error('chunk-stale: coverage chunk revision changed')
-          error.code = 'chunk-stale'
-          throw error
-        }
-        return page
-      },
-    ),
+    readCoverageChunk: async (input, requestId) => {
+      const normalizedInput = normalizeCoverageChunkReadInput(input)
+      return executeCoverageRequest(
+        requestId,
+        async (signal) => {
+          const page = await runCoverageWorker(
+            { ...normalizedInput, kind: 'chunk-page' }, signal, true,
+          )
+          if (page.nextCursor !== null) return page
+          const summary = await runCoverageWorker({
+            kind: 'chunk-summary',
+            missionId: normalizedInput.missionId,
+            key: normalizedInput.key,
+            expectedContentRev: normalizedInput.expectedContentRev,
+          }, signal, true)
+          const applied = applyCoverageChunkBuild(db, {
+            missionId: normalizedInput.missionId,
+            deviceId: normalizedInput.key.device_id,
+            periodKind: normalizedInput.key.period_kind,
+            periodId: normalizedInput.key.period_id,
+            expectedContentRev: normalizedInput.expectedContentRev,
+            fixCount: summary.fix_count,
+            fixDigest: summary.fix_digest,
+            minTs: summary.min_ts,
+            maxTs: summary.max_ts,
+            updatedAt: now(),
+          })
+          if (!applied) {
+            const error = new Error('chunk-stale: coverage chunk revision changed')
+            error.code = 'chunk-stale'
+            throw error
+          }
+          return page
+        },
+      )
+    },
     readCoverageClaim: async (input, requestId) => executeCoverageRequest(
       requestId,
       async (signal) => {

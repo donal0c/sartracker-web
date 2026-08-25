@@ -211,6 +211,7 @@ function throwIfRequestCancelled(requestId) {
 
 /** Publishes a staged catalog only after main-side build metadata commits. */
 async function commitCatalog(message) {
+  if (activatedCatalog?.stageId === message.stageId) return true
   const stage = requireStagedCatalog(message.stageId)
   try {
     if (failCatalogCommitOnce) {
