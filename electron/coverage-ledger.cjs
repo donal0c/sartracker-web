@@ -57,14 +57,15 @@ function recordAcceptedCoveragePositions(database, input) {
  * every lookup observes the same transactionally current half-open windows.
  */
 function createIndexedCoveragePeriodResolver(database, missionId) {
-  const findOuting = database.prepare(`SELECT id FROM outings
+  const findOuting = database.prepare(`SELECT id, ended_at FROM outings
     WHERE mission_id = ? AND started_at <= ?
-      AND (ended_at IS NULL OR ? < ended_at)
     ORDER BY started_at DESC
     LIMIT 1`)
   return (timestamp) => {
-    const outing = findOuting.get(missionId, timestamp, timestamp)
-    return outing === undefined
+    const outing = findOuting.get(missionId, timestamp)
+    return outing === undefined || (
+      outing.ended_at !== null && timestamp >= outing.ended_at
+    )
       ? { period_kind: 'unassigned', period_id: '' }
       : { period_kind: 'outing', period_id: outing.id }
   }

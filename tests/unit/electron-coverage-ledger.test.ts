@@ -209,11 +209,13 @@ describe('Electron coverage ledger', () => {
 
     const outingReads = preparedSql.filter((sql) => sql.includes('FROM outings'))
     expect(outingReads).toHaveLength(1)
+    expect(outingReads[0]).toContain('SELECT id, ended_at')
     expect(outingReads[0]).toContain('started_at <= ?')
     expect(outingReads[0]).toContain('LIMIT 1')
+    expect(outingReads[0]).not.toContain('ended_at IS NULL')
     expect(outingReads[0]).not.toContain('ORDER BY started_at ASC')
     expect(database.prepare(`EXPLAIN QUERY PLAN ${outingReads[0]}`)
-      .all('mission-1', '2026-08-24T10:05:00.000Z', '2026-08-24T10:05:00.000Z'))
+      .all('mission-1', '2026-08-24T10:05:00.000Z'))
       .toEqual([
         expect.objectContaining({ detail: expect.stringContaining('idx_outings_mission_started') }),
       ])
