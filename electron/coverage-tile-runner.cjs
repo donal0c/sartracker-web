@@ -87,7 +87,7 @@ function createCoverageTileRunner(input) {
         return
       }
       options.signal?.addEventListener('abort', abort, { once: true })
-      activeWorker.postMessage({ requestId, type, ...payload })
+      activeWorker.postMessage({ ...payload, requestId, type })
     })
   }
 

@@ -19,6 +19,7 @@ const {
   selectInvalidatedCoverageTilePaths,
 } = require('./coverage-tile-catalog.cjs')
 const { createTrailSegments } = require('./coverage-trail-segmentation.cjs')
+const { normalizeCoverageTileAddress } = require('./coverage-tile-address.cjs')
 const { replaceCoverageTileCacheEntry } = require('./coverage-tile-cache-ledger.cjs')
 
 const GAP_THRESHOLD_MS = 30 * 60 * 1000
@@ -373,20 +374,22 @@ async function readTileUncancelled(message) {
       : activatedCatalog.predecessor.indexesByPeriod
   const index = servingIndexes.get(message.periodKey)
   if (index === undefined) return Buffer.alloc(0)
-  const tile = index.getTile(message.z, message.x, message.y)
+  const coordinates = normalizeCoverageTileAddress(message)
+  const tile = index.getTile(coordinates.z, coordinates.x, coordinates.y)
   if (!tile) return Buffer.alloc(0)
   const contributors = readTileContributors(tile)
   const safeMission = hashPath(servingCatalog.missionId)
   const safePeriod = hashPath(message.periodKey)
   const contributorDigest = hashPath(contributors.join('\n'))
-  const tilePath = path.join(
-    workerData.cacheDirectory,
+  const cacheDirectory = path.resolve(workerData.cacheDirectory)
+  const tilePath = assertCoverageCachePath(path.resolve(
+    cacheDirectory,
     safeMission,
     safePeriod,
-    String(message.z),
-    String(message.x),
-    `${message.y}-${contributorDigest}.pbf`,
-  )
+    String(coordinates.z),
+    String(coordinates.x),
+    `${coordinates.y}-${contributorDigest}.pbf`,
+  ), cacheDirectory)
   const cached = await fs.readFile(tilePath).catch(() => null)
   throwIfRequestCancelled(message.requestId)
   if (cached !== null) {
@@ -410,7 +413,10 @@ async function readTileUncancelled(message) {
   throwIfRequestCancelled(message.requestId)
   await fs.mkdir(path.dirname(tilePath), { recursive: true })
   throwIfRequestCancelled(message.requestId)
-  const temporaryPath = `${tilePath}.${message.requestId}.tmp`
+  const temporaryPath = assertCoverageCachePath(
+    `${tilePath}.${message.requestId}.tmp`,
+    cacheDirectory,
+  )
   try {
     await fs.writeFile(temporaryPath, bytes)
     if (workerData.faultInjection?.tileWriteDelayMs > 0) {
@@ -429,6 +435,15 @@ async function readTileUncancelled(message) {
     await fs.rm(temporaryPath, { force: true })
   }
   return bytes
+}
+
+/** Fails closed unless a generated tile path remains under the owned cache root. */
+function assertCoverageCachePath(candidatePath, cacheDirectory) {
+  const resolved = path.resolve(candidatePath)
+  if (!resolved.startsWith(`${cacheDirectory}${path.sep}`)) {
+    throw new Error('Coverage tile cache path escaped its owned directory.')
+  }
+  return resolved
 }
 
 function readTileContributors(tile) {

@@ -35,6 +35,7 @@ const { createOutingStore } = require('./outing-store.cjs')
 const { createParticipantStore } = require('./participant-store.cjs')
 const { runOutingFixSummaryInWorker } = require('./outing-fix-summary-runner.cjs')
 const { runCoverageQueryInWorker } = require('./coverage-query-runner.cjs')
+const { normalizeCoverageTileAddress } = require('./coverage-tile-address.cjs')
 const { createCoverageTileRunner } = require('./coverage-tile-runner.cjs')
 const {
   appendCoverageInvalidation,
@@ -124,6 +125,41 @@ function normalizeCoverageTileActivationId(value) {
     throw new Error('Coverage tile catalog activation ID is invalid.')
   }
   return value
+}
+
+/** Validates and copies the complete renderer-owned tile read payload. */
+function normalizeCoverageTileReadInput(value) {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error('Coverage tile request is invalid.')
+  }
+  if (
+    typeof value.missionId !== 'string' ||
+    value.missionId.length < 1 ||
+    value.missionId.length > 100
+  ) {
+    throw new Error('Coverage tile mission ID is invalid.')
+  }
+  if (
+    typeof value.periodKey !== 'string' ||
+    value.periodKey.length < 1 ||
+    value.periodKey.length > 200
+  ) {
+    throw new Error('Coverage tile period key is invalid.')
+  }
+  if (
+    typeof value.revisionDigest !== 'string' ||
+    value.revisionDigest.length < 1 ||
+    value.revisionDigest.length > 100
+  ) {
+    throw new Error('Coverage tile revision is invalid.')
+  }
+  const address = normalizeCoverageTileAddress(value)
+  return {
+    missionId: value.missionId,
+    periodKey: value.periodKey,
+    revisionDigest: value.revisionDigest,
+    ...address,
+  }
 }
 
 /**
@@ -523,10 +559,13 @@ function createElectronMissionStore(options) {
     discardCoverageTileCatalog: async (input) => coverageTileRunner.discardCatalog({
       stageId: normalizeCoverageTileActivationId(input?.activationId),
     }),
-    readCoverageTile: async (input, requestId) => executeCoverageTileRead(
-      requestId,
-      (signal) => coverageTileRunner.readTile(input, { signal }),
-    ),
+    readCoverageTile: async (input, requestId) => {
+      const normalizedInput = normalizeCoverageTileReadInput(input)
+      return executeCoverageTileRead(
+        requestId,
+        (signal) => coverageTileRunner.readTile(normalizedInput, { signal }),
+      )
+    },
     cancelCoverageTileRead: async (requestId) => {
       const normalizedRequestId = normalizeCoverageQueryRequestId(requestId, true)
       const activeQuery = coverageTileControllersByRequestId.get(normalizedRequestId)

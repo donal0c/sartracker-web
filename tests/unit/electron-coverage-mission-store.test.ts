@@ -6,6 +6,7 @@ import { createRequire } from 'node:module'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 const require = createRequire(import.meta.url)
+const Database = require('better-sqlite3')
 const { createElectronMissionStore } = require('../../electron/mission-store.cjs') as {
   readonly createElectronMissionStore: (options: {
     readonly userDataPath: string
@@ -210,6 +211,40 @@ describe('Electron coverage mission-store orchestration', () => {
     })
   })
 
+  it('never claims complete when canonical inventory appears without a ledger row', async () => {
+    store = await createStore()
+    const mission = await seedMission(store)
+    await store.readCoverageManifest(mission.id, 'manifest-initial')
+    const database = new Database(path.join(directory!, 'mission-store.sqlite'))
+    database.prepare(`INSERT INTO outings (
+      id, mission_id, label, started_at, ended_at, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?)`).run(
+      'outing-with-unbuilt-evidence',
+      mission.id,
+      'Unbuilt evidence outing',
+      '2026-08-24T08:00:00.000Z',
+      '2026-08-24T10:00:00.000Z',
+      '2026-08-24T10:01:00.000Z',
+      '2026-08-24T10:01:00.000Z',
+    )
+    database.close()
+
+    const manifest = await store.readCoverageManifest(mission.id, 'manifest-new-inventory')
+    const outingChunk = manifest.chunks.find((chunk) =>
+      chunk.key.period_id === 'outing-with-unbuilt-evidence')
+    expect(outingChunk).toMatchObject({
+      builtRev: null,
+      exactCount: 2,
+    })
+    await expect(store.readCoverageClaim({
+      missionId: mission.id,
+      selectedKeys: [outingChunk!.key],
+    }, 'claim-new-inventory')).resolves.toMatchObject({
+      databaseReady: false,
+      blockers: expect.arrayContaining(['chunk_not_fresh']),
+    })
+  })
+
   it('drains invalidations and conditionally marks a complete chunk read fresh', async () => {
     store = await createStore()
     const mission = await seedMission(store)
@@ -357,6 +392,50 @@ describe('Electron coverage mission-store orchestration', () => {
     })).resolves.toEqual(tileBytes)
     const postBuildManifest = await store.readCoverageManifest(mission.id, 'manifest-2')
     expect(postBuildManifest.diagnostics.lastBuildDurationMs).toBeGreaterThanOrEqual(0)
+  })
+
+  it('rejects renderer tile coordinates and strips control fields before the worker boundary', async () => {
+    directory = await mkdtemp(path.join(tmpdir(), 'sartracker-coverage-store-'))
+    const readTile = vi.fn().mockResolvedValue(new Uint8Array([1]))
+    const tileRunner = {
+      syncCatalog: vi.fn(),
+      commitCatalog: vi.fn(),
+      discardCatalog: vi.fn(),
+      readTile,
+      close: vi.fn().mockResolvedValue(undefined),
+    }
+    store = createElectronMissionStore({ userDataPath: directory, coverageTileRunner: tileRunner })
+
+    await expect(store.readCoverageTile({
+      requestId: 19,
+      type: 'close',
+      missionId: 'mission-1',
+      periodKey: 'outing\u0000outing-1',
+      revisionDigest: 'revision-1',
+      z: 0,
+      x: '0/../../../../../escaped',
+      y: 0,
+    })).rejects.toThrow(/tile coordinate/i)
+    expect(readTile).not.toHaveBeenCalled()
+
+    await expect(store.readCoverageTile({
+      requestId: 19,
+      type: 'close',
+      missionId: 'mission-1',
+      periodKey: 'outing\u0000outing-1',
+      revisionDigest: 'revision-1',
+      z: 0,
+      x: 0,
+      y: 0,
+    })).resolves.toEqual(new Uint8Array([1]))
+    expect(readTile).toHaveBeenCalledWith({
+      missionId: 'mission-1',
+      periodKey: 'outing\u0000outing-1',
+      revisionDigest: 'revision-1',
+      z: 0,
+      x: 0,
+      y: 0,
+    }, { signal: expect.any(AbortSignal) })
   })
 
   it('discards a staged tile catalog when a live write rejects its build metadata', async () => {

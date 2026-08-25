@@ -313,7 +313,7 @@ function applyCoverageManifestInventory(database, input) {
     const insert = database.prepare(`INSERT INTO coverage_chunks (
         mission_id, device_id, period_kind, period_id,
         content_rev, built_rev, fix_count, fix_digest, min_ts, max_ts, updated_at
-      ) VALUES (?, ?, ?, ?, 1, 1, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, 1, NULL, ?, ?, ?, ?, ?)
       ON CONFLICT(mission_id, device_id, period_kind, period_id) DO NOTHING`)
     let inserted = 0
     for (const chunk of input.chunks) {

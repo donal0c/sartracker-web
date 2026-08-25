@@ -10,6 +10,7 @@ const {
   applyCoverageChunkBuilds,
   applyCoverageEnumeration,
   applyCoverageInvalidationDrain,
+  applyCoverageManifestInventory,
   recordAcceptedCoveragePositions,
 } = require('../../electron/coverage-ledger.cjs') as {
   readonly recordAcceptedCoveragePositions: (
@@ -99,6 +100,25 @@ const {
       readonly failAfterChunkUpdates?: boolean
     },
   ) => { readonly applied: boolean; readonly changeSeq: number | null }
+  readonly applyCoverageManifestInventory: (
+    database: Database,
+    input: {
+      readonly missionId: string
+      readonly expectedChangeSeq: number
+      readonly chunks: readonly {
+        readonly key: {
+          readonly device_id: string
+          readonly period_kind: 'outing' | 'unassigned'
+          readonly period_id: string
+        }
+        readonly exactCount: number
+        readonly exactDigest: string
+        readonly exactMinTs: string | null
+        readonly exactMaxTs: string | null
+      }[]
+      readonly updatedAt: string
+    },
+  ) => number
 }
 
 type Database = {
@@ -385,6 +405,33 @@ describe('Electron coverage ledger', () => {
     expect(readChunks(database)[0]).toEqual(expect.objectContaining({
       content_rev: 1, built_rev: 1, fix_count: 3, fix_digest: 'current-revision',
     }))
+  })
+
+  it('keeps newly discovered manifest inventory pending until its evidence is built', () => {
+    database.exec(`INSERT INTO coverage_missions VALUES
+      ('mission-1', 7, 1, '2026-08-24T11:00:00.000Z')`)
+
+    expect(applyCoverageManifestInventory(database, {
+      missionId: 'mission-1',
+      expectedChangeSeq: 7,
+      chunks: [{
+        key: { device_id: 'device-1', period_kind: 'outing', period_id: 'outing-1' },
+        exactCount: 0,
+        exactDigest: 'empty-fallback-digest',
+        exactMinTs: null,
+        exactMaxTs: null,
+      }],
+      updatedAt: '2026-08-24T12:00:00.000Z',
+    })).toBe(1)
+
+    expect(readChunks(database)).toEqual([
+      expect.objectContaining({
+        content_rev: 1,
+        built_rev: null,
+        fix_count: 0,
+        fix_digest: 'empty-fallback-digest',
+      }),
+    ])
   })
 
   it('applies a full 100-device by 13-period build set in one atomic transaction', () => {

@@ -324,6 +324,33 @@ describe('Candidate B coverage tile worker [DON-276]', () => {
     await expect(second).resolves.toEqual({ periods: [], delivered: [], builds: [] })
   })
 
+  it('keeps renderer payload fields from overriding the worker request envelope', async () => {
+    const worker = new FakeWorker()
+    runner = createCoverageTileRunner({
+      databasePath: '/unused-envelope-worker.sqlite',
+      cacheDirectory: '/unused-envelope-worker-cache',
+      createWorker: () => worker,
+    })
+
+    const request = runner.readTile({
+      requestId: 'renderer-controlled',
+      type: 'close',
+      missionId: 'mission-1',
+      periodKey: 'outing\u0000outing-a',
+      revisionDigest: 'revision-1',
+      z: 0,
+      x: 0,
+      y: 0,
+    })
+
+    expect(worker.messages).toContainEqual(expect.objectContaining({
+      requestId: 1,
+      type: 'read-tile',
+    }))
+    worker.reply({ bytes: [] })
+    await expect(request).resolves.toEqual({ bytes: [] })
+  })
+
   it('keeps the finalized catalog readable after cancelling a replacement build', async () => {
     const databasePath = await createDatabase()
     runner = createCoverageTileRunner({
@@ -481,6 +508,31 @@ describe('Candidate B coverage tile worker [DON-276]', () => {
 
     expect(ArrayBuffer.isView(empty)).toBe(true)
     expect(empty).toHaveLength(0)
+  })
+
+  it('rejects non-integer tile coordinates before resolving a cache path', async () => {
+    const databasePath = await createDatabase()
+    const cacheDirectory = path.join(directory!, 'coverage-coordinate-fence')
+    runner = createCoverageTileRunner({ databasePath, cacheDirectory })
+    const key: ChunkKey = {
+      device_id: 'device-a', period_kind: 'outing', period_id: 'outing-a',
+    }
+    const catalog = await runner.syncCatalog({
+      missionId: 'mission-1', chunks: [{ key, contentRev: 1 }],
+    })
+    await runner.commitCatalog({ stageId: catalog.stageId })
+    await runner.finalizeCatalog({ stageId: catalog.stageId })
+
+    await expect(runner.readTile({
+      missionId: 'mission-1',
+      periodKey: catalog.periods[0]!.periodKey,
+      revisionDigest: catalog.periods[0]!.revisionDigest,
+      z: 0,
+      x: '0/../../../../../escaped',
+      y: 0,
+    })).rejects.toThrow(/tile coordinate/i)
+
+    expect(await listFiles(directory!)).not.toContain('escaped')
   })
 
   it('never serves a current revision to a request from another mission', async () => {
