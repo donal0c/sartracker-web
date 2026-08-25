@@ -41,7 +41,7 @@ export function syncCoverageOverlay(
     readonly omittedDeviceIds: readonly string[]
     readonly omittedPeriodKeys: readonly string[]
   } = { omittedDeviceIds: [], omittedPeriodKeys: [] },
-): void {
+): { readonly periods: CoverageTileCatalog['periods'] } {
   const overlays = overlaysByMap.get(map) ?? new Map<string, PeriodOverlay>()
   overlaysByMap.set(map, overlays)
   const browserHarnessGeoJson = catalog?.browserHarnessGeoJson
@@ -113,6 +113,17 @@ export function syncCoverageOverlay(
     })
     applyCoverageFilters(map, overlays.get(period.periodKey)!, filters)
   }
+  for (const period of desired.values()) {
+    const overlay = overlays.get(period.periodKey)
+    if (
+      overlay === undefined ||
+      map.getSource(overlay.sourceId) === undefined ||
+      overlay.layerIds.some((layerId) => map.getLayer(layerId) === undefined)
+    ) {
+      throw new Error('Coverage overlay activation failed after source installation.')
+    }
+  }
+  return { periods: catalog?.periods ?? [] }
 }
 
 function applyCoverageFilters(

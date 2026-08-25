@@ -8,6 +8,8 @@ import type {
 } from '../../infrastructure/mission-store/tauri-mission-store'
 import { createCoverageScheduler } from './coverage-scheduler'
 import { classifyCoverageError, type CoverageErrorClass } from './coverage-diagnostics'
+import { createCoverageCatalogActivation } from './coverage-catalog-activation'
+import { createCoverageCatalogDeliveryBatches } from './coverage-catalog-delivery-plan'
 
 export const COVERAGE_CHUNK_PAGE_LIMIT = 10_000
 
@@ -48,6 +50,13 @@ export type CoverageController = {
   readonly updateContext: (context: CoverageContext) => Promise<void>
   readonly refresh: () => Promise<void>
   readonly notifyChanged: (missionId: string, changeSeq: number) => Promise<void>
+  readonly notifyCatalogApplied: (catalog: CoverageTileCatalog) => void
+  readonly notifyRendererFailure: (failure: {
+    readonly periodKey: string
+    readonly revisionDigest: string
+    readonly message: string
+  }) => void
+  readonly notifyRendererUnavailable: (message: string) => void
   readonly cancel: () => void
   readonly resume: () => Promise<void>
   readonly stop: () => void
@@ -102,6 +111,7 @@ export function createCoverageController(input: {
   let activeController: AbortController | null = null
   let refreshRequested = false
   let lastErrorClass: CoverageErrorClass | null = null
+  const catalogActivation = createCoverageCatalogActivation()
   const scheduler = createCoverageScheduler({
     now: () => Date.now(),
     openOutingCooldownMs: 30_000,
@@ -170,16 +180,55 @@ export function createCoverageController(input: {
       let activeSelected = selected
       let activeCatalog = priorCatalog
       if (input.deliverSelection !== undefined) {
-        activeCatalog = await input.deliverSelection({
-          missionId,
+        const pending = scheduler.order(
           manifest,
-          chunks: selected,
-          requestId: nextRequestId('catalog'),
-          signal: controller.signal,
+          manifest.chunks.filter((chunk) =>
+            delivered[coverageChunkIdentity(chunk.key)] !== chunk.contentRev),
+        )
+        const catalogBatches = createCoverageCatalogDeliveryBatches({
+          priorManifest,
+          priorDelivered,
+          retainDelivery,
+          orderedPending: pending,
         })
-        if (!ownsOperation(operation, controller, missionId, rendererGeneration)) return
-        for (const entry of activeCatalog.delivered) {
-          delivered[coverageChunkIdentity(entry.key)] = entry.contentRev
+        for (const descriptor of pending) scheduler.recordAttempt(descriptor)
+        for (const chunks of catalogBatches) {
+          activeCatalog = await input.deliverSelection({
+            missionId,
+            manifest,
+            chunks,
+            requestId: nextRequestId('catalog'),
+            signal: controller.signal,
+          })
+          if (!ownsOperation(operation, controller, missionId, rendererGeneration)) return
+          const activation = catalogActivation.wait(activeCatalog, controller.signal)
+          publish(createActiveState({
+            status: 'loading', missionId, rendererGeneration,
+            changeSeq: manifest.changeSeq,
+            latestObservedChangeSeq,
+            manifest,
+            tileCatalog: activeCatalog,
+            delivered,
+          }, context.selectedKeys))
+          await activation
+          if (!ownsOperation(operation, controller, missionId, rendererGeneration)) return
+          const currentRevisions = new Map(manifest.chunks.map((chunk) => [
+            coverageChunkIdentity(chunk.key), chunk.contentRev,
+          ]))
+          for (const entry of activeCatalog.delivered) {
+            const identity = coverageChunkIdentity(entry.key)
+            if (currentRevisions.get(identity) === entry.contentRev) {
+              delivered[identity] = entry.contentRev
+            }
+          }
+          publish(createActiveState({
+            status: 'loading', missionId, rendererGeneration,
+            changeSeq: manifest.changeSeq,
+            latestObservedChangeSeq,
+            manifest,
+            tileCatalog: activeCatalog,
+            delivered,
+          }, context.selectedKeys))
         }
         activeManifest = await input.readManifest(
           missionId,
@@ -322,6 +371,21 @@ export function createCoverageController(input: {
   const nextRequestId = (kind: string): string =>
     `coverage-${kind}-${++requestSequence}`
 
+  const publishRendererUnavailable = (message: string): void => {
+    if (state.status === 'inactive') return
+    const error = new Error(message)
+    if (catalogActivation.rejectPending(error)) return
+    activeController?.abort()
+    activeController = null
+    operationGeneration += 1
+    publish({
+      ...asPartialState(state),
+      status: 'error',
+      lastErrorClass: classifyCoverageError(error),
+      message: 'Complete mission history is temporarily unavailable. Existing coverage remains shown.',
+    })
+  }
+
   return {
     updateContext: async (nextContext) => {
       if (stopped) return
@@ -362,6 +426,18 @@ export function createCoverageController(input: {
       })
       await requestRefresh()
     },
+    notifyCatalogApplied: (catalog) => {
+      catalogActivation.notifyApplied(catalog)
+    },
+    notifyRendererFailure: (failure) => {
+      if (state.status === 'inactive' || !catalogActivation.containsRevision(
+        state.tileCatalog,
+        failure.periodKey,
+        failure.revisionDigest,
+      )) return
+      publishRendererUnavailable(failure.message)
+    },
+    notifyRendererUnavailable: publishRendererUnavailable,
     cancel: () => {
       activeController?.abort()
       activeController = null

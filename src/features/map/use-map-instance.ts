@@ -20,6 +20,7 @@ import { applyMapStylePreservingCamera } from './apply-map-style-preserving-came
 import { isTileErrorEvent } from './is-tile-error-event'
 import { registerOfficialMapProtocol } from './official-map-protocol'
 import { registerCoverageTileProtocol } from '../tracking/coverage-tile-protocol'
+import { useCoverageStore } from '../tracking/coverage-store'
 import { recordDiagnosticEvent } from '../diagnostics/diagnostic-event-log'
 
 export type HoverCoordinate = {
@@ -67,7 +68,9 @@ export function useMapInstance(): MapInstanceController {
   const style = useMemo(() => createRasterStyle(activeBasemapId), [activeBasemapId])
 
   useEffect(() => registerOfficialMapProtocol(maplibregl), [])
-  useEffect(() => registerCoverageTileProtocol(maplibregl), [])
+  useEffect(() => registerCoverageTileProtocol(maplibregl, (failure) => {
+    useCoverageStore.getState().controller?.notifyRendererFailure(failure)
+  }), [])
 
   useEffect(() => {
     persistBasemapPreference(activeBasemapId)

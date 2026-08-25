@@ -56,6 +56,7 @@ const OPEN_EXTERNAL_PATH_CHANNEL = 'sartracker:open-external-path'
 const OPEN_EXTERNAL_URL_CHANNEL = 'sartracker:open-external-url'
 const FETCH_OFFICIAL_MAP_TILE_CHANNEL = 'sartracker:fetch-official-map-tile'
 const COVERAGE_CHANGED_CHANNEL = 'sartracker:coverage-changed'
+const COVERAGE_RENDERER_FAILED_CHANNEL = 'sartracker:coverage-renderer-failed'
 const MAX_TRACCAR_PROXY_RESPONSE_BYTES = 5 * 1024 * 1024
 
 const MISSION_STORE_CHANNELS = {
@@ -921,6 +922,13 @@ async function startElectronApp() {
       for (const window of BrowserWindow.getAllWindows()) {
         if (!window.webContents.isDestroyed()) {
           window.webContents.send(COVERAGE_CHANGED_CHANNEL, { missionId, changeSeq })
+        }
+      }
+    },
+    onCoverageRendererFailed: () => {
+      for (const window of BrowserWindow.getAllWindows()) {
+        if (!window.webContents.isDestroyed()) {
+          window.webContents.send(COVERAGE_RENDERER_FAILED_CHANNEL)
         }
       }
     },

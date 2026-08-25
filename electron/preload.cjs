@@ -23,6 +23,7 @@ const OPEN_EXTERNAL_PATH_CHANNEL = 'sartracker:open-external-path'
 const OPEN_EXTERNAL_URL_CHANNEL = 'sartracker:open-external-url'
 const FETCH_OFFICIAL_MAP_TILE_CHANNEL = 'sartracker:fetch-official-map-tile'
 const COVERAGE_CHANGED_CHANNEL = 'sartracker:coverage-changed'
+const COVERAGE_RENDERER_FAILED_CHANNEL = 'sartracker:coverage-renderer-failed'
 
 const MISSION_STORE_CHANNELS = {
   info: 'sartracker:mission-store:info',
@@ -174,6 +175,11 @@ contextBridge.exposeInMainWorld('sartrackerElectron', {
     const handler = (_event, payload) => listener(payload)
     ipcRenderer.on(COVERAGE_CHANGED_CHANNEL, handler)
     return () => ipcRenderer.removeListener(COVERAGE_CHANGED_CHANNEL, handler)
+  },
+  onCoverageRendererFailed(listener) {
+    const handler = () => listener()
+    ipcRenderer.on(COVERAGE_RENDERER_FAILED_CHANNEL, handler)
+    return () => ipcRenderer.removeListener(COVERAGE_RENDERER_FAILED_CHANNEL, handler)
   },
   missionStore: Object.fromEntries(
     Object.entries(MISSION_STORE_CHANNELS).map(([methodName, channel]) => [

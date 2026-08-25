@@ -7,6 +7,7 @@ import type {
 import { isCoverageEnabled } from '../runtime/coverage-flag'
 import { useMissionStore } from '../mission/mission-store'
 import { createCoverageController } from './coverage-controller'
+import { useIngestHealthStore } from './ingest-health-store'
 import {
   applyCoverageController,
   applyCoverageState,
@@ -39,6 +40,8 @@ export function startCoverageRuntime(
     readonly subscribeCoverageChanged?: (
       listener: (event: CoverageChangedEvent) => void,
     ) => () => void
+    readonly subscribeIngestEvidenceHealth?: (listener: () => void) => () => void
+    readonly subscribeCoverageRendererFailure?: (listener: () => void) => () => void
     readonly schedulePeriodicRefresh?: (
       callback: () => void,
       intervalMs: number,
@@ -67,12 +70,12 @@ export function startCoverageRuntime(
       () => missionStore.readCoverageClaim(query, requestId),
       missionStore.cancelCoverageQuery,
     ) as Promise<CoverageClaim>,
-    deliverSelection: ({ missionId, manifest, requestId, signal }) => runCancelable(
+    deliverSelection: ({ missionId, chunks, requestId, signal }) => runCancelable(
       signal,
       requestId,
       () => missionStore.syncCoverageTileCatalog({
         missionId,
-        chunks: manifest.chunks.map((chunk) => ({
+        chunks: chunks.map((chunk) => ({
           key: chunk.key,
           contentRev: chunk.contentRev,
         })),
@@ -119,6 +122,24 @@ export function startCoverageRuntime(
   const unsubscribeChanged = subscribeCoverageChanged((event) => {
     void controller.notifyChanged(event.missionId, event.changeSeq)
   })
+  const subscribeCoverageRendererFailure = options.subscribeCoverageRendererFailure ??
+    ((listener: () => void) =>
+      window.sartrackerElectron?.onCoverageRendererFailed?.(listener) ?? (() => undefined))
+  const unsubscribeCoverageRendererFailure = subscribeCoverageRendererFailure(() => {
+    controller.notifyRendererUnavailable('Coverage tile worker is unavailable.')
+  })
+  const subscribeIngestEvidenceHealth = options.subscribeIngestEvidenceHealth ??
+    ((listener: () => void) => {
+      let prior = useIngestHealthStore.getState().evidenceHealth
+      return useIngestHealthStore.subscribe((next) => {
+        if (next.evidenceHealth === prior) return
+        prior = next.evidenceHealth
+        listener()
+      })
+    })
+  const unsubscribeIngestEvidenceHealth = subscribeIngestEvidenceHealth(() => {
+    void controller.refresh()
+  })
   const schedulePeriodicRefresh = options.schedulePeriodicRefresh ??
     ((callback: () => void, intervalMs: number) => {
       const handle = setInterval(callback, intervalMs)
@@ -133,6 +154,8 @@ export function startCoverageRuntime(
     unsubscribeMission()
     unsubscribeFilters()
     unsubscribeChanged()
+    unsubscribeCoverageRendererFailure()
+    unsubscribeIngestEvidenceHealth()
     cancelPeriodicRefresh()
     controller.stop()
     useCoverageFilterStore.getState().resetMission(null)

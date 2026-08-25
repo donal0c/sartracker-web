@@ -11,18 +11,34 @@ type ProtocolRegistry = {
 }
 
 /** Registers the revision-bound Candidate-B local vector-tile protocol. */
-export function registerCoverageTileProtocol(registry: ProtocolRegistry): () => void {
+export function registerCoverageTileProtocol(
+  registry: ProtocolRegistry,
+  onFailure: (failure: {
+    readonly periodKey: string
+    readonly revisionDigest: string
+    readonly message: string
+  }) => void = () => undefined,
+): () => void {
   registry.addProtocol(COVERAGE_TILE_PROTOCOL, async (request) => {
     const readTile = window.sartrackerElectron?.missionStore.readCoverageTile
     if (readTile === undefined) {
       throw new Error('Electron coverage tile bridge is not available.')
     }
     const query = parseCoverageTileUrl(request.url)
-    const bytes = await readTile(query)
-    if (bytes === null) {
-      throw new Error('Coverage tile revision is no longer current.')
+    try {
+      const bytes = await readTile(query)
+      if (bytes === null) {
+        throw new Error('Coverage tile revision is no longer current.')
+      }
+      return { data: copyArrayBuffer(bytes) }
+    } catch (error) {
+      onFailure({
+        periodKey: query.periodKey,
+        revisionDigest: query.revisionDigest,
+        message: 'Coverage tile delivery failed.',
+      })
+      throw error
     }
-    return { data: copyArrayBuffer(bytes) }
   })
   return () => registry.removeProtocol(COVERAGE_TILE_PROTOCOL)
 }

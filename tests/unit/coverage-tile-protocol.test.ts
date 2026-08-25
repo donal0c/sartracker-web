@@ -34,4 +34,29 @@ describe('Candidate B MapLibre protocol [DON-276]', () => {
 
     unregister()
   })
+
+  it('reports an active revision failure so Complete can be revoked', async () => {
+    const addProtocol = vi.fn()
+    const onFailure = vi.fn()
+    Object.defineProperty(window, 'sartrackerElectron', {
+      configurable: true,
+      value: {
+        missionStore: {
+          readCoverageTile: vi.fn().mockRejectedValue(new Error('worker unavailable')),
+        },
+      },
+    })
+    registerCoverageTileProtocol({ addProtocol, removeProtocol: vi.fn() }, onFailure)
+    const [, loader] = addProtocol.mock.calls[0]!
+    const url = createCoverageTileUrl('outing\u0000outing-1', 'revision-8')
+
+    await expect(loader({
+      url: url.replace('{z}', '8').replace('{x}', '121').replace('{y}', '83'),
+    })).rejects.toThrow(/worker unavailable/)
+    expect(onFailure).toHaveBeenCalledWith({
+      periodKey: 'outing\u0000outing-1',
+      revisionDigest: 'revision-8',
+      message: 'Coverage tile delivery failed.',
+    })
+  })
 })

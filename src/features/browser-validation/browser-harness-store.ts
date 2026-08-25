@@ -1183,8 +1183,10 @@ export function getBrowserHarnessStore(): BrowserHarnessStore {
         chunkRevisions: selected,
       }
     },
-    syncCoverageTileCatalog: async (input) =>
-      createBrowserCoverageTileCatalog(state, input.missionId, input.chunks),
+    syncCoverageTileCatalog: async (input) => {
+      await waitForBrowserCoverageValidationDelay()
+      return createBrowserCoverageTileCatalog(state, input.missionId, input.chunks)
+    },
     cancelCoverageQuery: async () => false,
     listMarkers: async (missionId) =>
       state.markers

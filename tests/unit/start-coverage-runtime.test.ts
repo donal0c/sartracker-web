@@ -44,6 +44,7 @@ describe('coverage runtime wiring [DON-276]', () => {
       },
       schedulePeriodicRefresh: () => () => undefined,
     })
+    await acknowledgePendingCatalog()
     await vi.waitFor(() => expect(useCoverageStore.getState().state).toMatchObject({
       status: 'complete', changeSeq: 1,
     }))
@@ -52,12 +53,47 @@ describe('coverage runtime wiring [DON-276]', () => {
     changeSeq = 2
     changedListener?.({ missionId: 'mission-1', changeSeq: 2 })
     expect(useCoverageStore.getState().state.status).not.toBe('complete')
+    await acknowledgePendingCatalog()
     await vi.waitFor(() => expect(useCoverageStore.getState().state).toMatchObject({
       status: 'complete', changeSeq: 2,
     }))
 
     stop()
     expect(useCoverageStore.getState().state).toEqual({ status: 'inactive' })
+  })
+
+  it('revokes Complete immediately when ingest evidence health changes', async () => {
+    let evidenceChanged: (() => void) | undefined
+    const missionStore = {
+      readCoverageManifest: vi.fn(async () => manifest(1)),
+      syncCoverageTileCatalog: vi.fn(async () => ({
+        periods: [{ periodKey: 'unassigned\u0000', revisionDigest: 'rev-1' }],
+        delivered: [{ key: manifest(1).chunks[0]!.key, contentRev: 1 }],
+      })),
+      readCoverageClaim: vi.fn(async () => ({
+        changeSeq: 1, databaseReady: true, blockers: [],
+        chunkRevisions: [{ key: manifest(1).chunks[0]!.key, contentRev: 1 }],
+      })),
+      cancelCoverageQuery: vi.fn(async () => true),
+    }
+    useMissionStore.setState({ currentMission: mission(), phase: 'active' })
+    const stop = startCoverageRuntime(missionStore, {
+      enabled: true,
+      rendererGeneration: 'renderer-1',
+      subscribeCoverageChanged: () => () => undefined,
+      subscribeIngestEvidenceHealth: (listener) => {
+        evidenceChanged = listener
+        return () => { evidenceChanged = undefined }
+      },
+      schedulePeriodicRefresh: () => () => undefined,
+    })
+    await acknowledgePendingCatalog()
+    await vi.waitFor(() => expect(useCoverageStore.getState().state.status).toBe('complete'))
+
+    evidenceChanged?.()
+
+    expect(useCoverageStore.getState().state.status).toBe('loading')
+    stop()
   })
 
   it('does nothing while the internal flag is off', () => {
@@ -67,6 +103,19 @@ describe('coverage runtime wiring [DON-276]', () => {
     stop()
   })
 })
+
+async function acknowledgePendingCatalog(): Promise<void> {
+  await vi.waitFor(() => {
+    const current = useCoverageStore.getState()
+    expect(current.controller).not.toBeNull()
+    expect(current.state).not.toEqual({ status: 'inactive' })
+    if (current.state.status !== 'inactive') expect(current.state.tileCatalog).not.toBeNull()
+  })
+  const current = useCoverageStore.getState()
+  if (current.state.status !== 'inactive' && current.state.tileCatalog !== null) {
+    current.controller?.notifyCatalogApplied(current.state.tileCatalog)
+  }
+}
 
 function mission(): Mission {
   return {

@@ -51,6 +51,20 @@ describe('Candidate B coverage overlay [DON-276]', () => {
     expect(map.setFilter.mock.calls.every(([layerId]) => String(layerId).startsWith('coverage-')))
       .toBe(true)
   })
+
+  it('attests only catalogs whose sources and layers were installed', () => {
+    const map = createMap()
+    const catalog = {
+      periods: [{ periodKey: 'outing\u0000a', revisionDigest: 'a1' }],
+      delivered: [],
+    }
+
+    expect(syncCoverageOverlay(map, catalog)).toEqual({
+      periods: [{ periodKey: 'outing\u0000a', revisionDigest: 'a1' }],
+    })
+    vi.spyOn(map, 'getSource').mockReturnValue(undefined)
+    expect(() => syncCoverageOverlay(map, catalog)).toThrow(/activation failed/i)
+  })
 })
 
 function createMap(): CoverageOverlayMap & {

@@ -104,6 +104,7 @@ export type SarTrackerElectronBridge = {
     readonly missionId: string
     readonly changeSeq: number
   }) => void) => () => void
+  readonly onCoverageRendererFailed?: (listener: () => void) => () => void
   readonly missionStore: MissionStore
   readonly layerCatalogStore: LayerCatalogStore
   readonly traccarHttpRequest: (

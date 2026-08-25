@@ -12,6 +12,9 @@ const KEY_A: CoverageChunkKey = {
 const KEY_B: CoverageChunkKey = {
   device_id: 'device-b', period_kind: 'outing', period_id: 'outing-1',
 }
+const KEY_C: CoverageChunkKey = {
+  device_id: 'device-c', period_kind: 'outing', period_id: 'outing-2',
+}
 
 describe('coverage controller [DON-276]', () => {
   it('attests delivery only after applying every selected chunk and a fresh claim', async () => {
@@ -168,7 +171,16 @@ describe('coverage controller [DON-276]', () => {
       publish: vi.fn(),
     })
 
-    await controller.updateContext({ missionId: 'mission-1', rendererGeneration: 'r1' })
+    const load = controller.updateContext({ missionId: 'mission-1', rendererGeneration: 'r1' })
+    await vi.waitFor(() => expect(controller.getState()).toMatchObject({
+      status: 'loading', tileCatalog: { periods: [{ revisionDigest: 'revision-1' }] },
+      deliveredFixCount: 0,
+    }))
+    const pendingCatalog = controller.getState().status === 'inactive'
+      ? null
+      : controller.getState().tileCatalog
+    controller.notifyCatalogApplied(pendingCatalog!)
+    await load
 
     expect(readChunk).not.toHaveBeenCalled()
     expect(applyChunk).not.toHaveBeenCalled()
@@ -176,6 +188,95 @@ describe('coverage controller [DON-276]', () => {
       status: 'complete',
       tileCatalog: { periods: [{ revisionDigest: 'revision-1' }] },
       deliveredFixCount: 2,
+    })
+  })
+
+  it('publishes Candidate B newest-period progress before the full catalog is ready', async () => {
+    const initial: CoverageManifest = {
+      ...manifest(1, [[KEY_A, 1], [KEY_C, 1]]),
+      outings: [
+        { id: 'outing-1', label: 'Older', started_at: '2026-08-20T09:00:00.000Z', ended_at: '2026-08-20T10:00:00.000Z' },
+        { id: 'outing-2', label: 'Newest', started_at: '2026-08-24T09:00:00.000Z', ended_at: '2026-08-24T10:00:00.000Z' },
+      ],
+    }
+    const deliverSelection = vi.fn(async ({ chunks }: {
+      readonly chunks: readonly { readonly key: CoverageChunkKey; readonly contentRev: number }[]
+    }) => ({
+      periods: chunks.map((chunk) => ({
+        periodKey: `${chunk.key.period_kind}\u0000${chunk.key.period_id}`,
+        revisionDigest: `rev-${chunk.key.period_id}`,
+      })),
+      delivered: chunks,
+    }))
+    const controller = createCoverageController({
+      readManifest: vi.fn().mockResolvedValue(initial),
+      readChunk: vi.fn(),
+      readClaim: vi.fn().mockResolvedValue({
+        changeSeq: 1, databaseReady: true, blockers: [],
+        chunkRevisions: [{ key: KEY_A, contentRev: 1 }, { key: KEY_C, contentRev: 1 }],
+      }),
+      applyChunk: vi.fn(), deliverSelection, publish: vi.fn(),
+    })
+
+    const load = controller.updateContext({ missionId: 'mission-1', rendererGeneration: 'r1' })
+    await vi.waitFor(() => expect(deliverSelection).toHaveBeenCalledTimes(1))
+    expect(deliverSelection.mock.calls[0]![0].chunks.map((chunk) => chunk.key)).toEqual([KEY_C])
+    let pending = controller.getState()
+    expect(pending).toMatchObject({ status: 'loading', deliveredFixCount: 0, totalFixCount: 2 })
+    if (pending.status === 'inactive') throw new Error('Coverage unexpectedly inactive.')
+    controller.notifyCatalogApplied(pending.tileCatalog!)
+
+    await vi.waitFor(() => {
+      expect(controller.getState()).toMatchObject({ status: 'loading', deliveredFixCount: 1 })
+      expect(deliverSelection).toHaveBeenCalledTimes(2)
+    })
+    pending = controller.getState()
+    if (pending.status === 'inactive') throw new Error('Coverage unexpectedly inactive.')
+    controller.notifyCatalogApplied(pending.tileCatalog!)
+    await load
+
+    expect(controller.getState()).toMatchObject({ status: 'complete', deliveredFixCount: 2 })
+  })
+
+  it('cannot claim Complete when renderer catalog activation fails', async () => {
+    const initial = manifest(1, [[KEY_A, 1]])
+    const controller = createCoverageController({
+      readManifest: vi.fn().mockResolvedValue(initial),
+      readChunk: vi.fn(),
+      readClaim: vi.fn().mockResolvedValue({
+        changeSeq: 1, databaseReady: true, blockers: [],
+        chunkRevisions: [{ key: KEY_A, contentRev: 1 }],
+      }),
+      applyChunk: vi.fn(),
+      deliverSelection: vi.fn().mockResolvedValue({
+        periods: [{ periodKey: 'outing\u0000outing-1', revisionDigest: 'rev-1' }],
+        delivered: [{ key: KEY_A, contentRev: 1 }],
+      }),
+      publish: vi.fn(),
+    })
+
+    const load = controller.updateContext({ missionId: 'mission-1', rendererGeneration: 'r1' })
+    await vi.waitFor(() => expect(controller.getState()).toMatchObject({
+      status: 'loading', deliveredFixCount: 0,
+      tileCatalog: { periods: [{ revisionDigest: 'rev-1' }] },
+    }))
+    controller.notifyRendererFailure({
+      periodKey: 'outing\u0000outing-1', revisionDigest: 'rev-1',
+      message: 'Coverage tile could not be decoded.',
+    })
+    await load
+
+    expect(controller.getState()).toMatchObject({ status: 'error', deliveredFixCount: 0 })
+  })
+
+  it('revokes Complete immediately when the active tile worker is lost', async () => {
+    const harness = createHarness(manifest(1, [[KEY_A, 1]]))
+    await harness.controller.updateContext({ missionId: 'mission-1', rendererGeneration: 'r1' })
+
+    harness.controller.notifyRendererUnavailable('Coverage tile worker exited.')
+
+    expect(harness.controller.getState()).toMatchObject({
+      status: 'error', deliveredFixCount: 1, totalFixCount: 1,
     })
   })
 

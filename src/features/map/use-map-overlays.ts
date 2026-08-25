@@ -52,6 +52,7 @@ export function useMapOverlays(options: UseMapOverlaysOptions): void {
   const exactBreadcrumbDotState = useExactBreadcrumbDotStore((state) => state.state)
   const attentionByDevice = useStationaryAttentionStore((state) => state.byDevice)
   const coverageState = useCoverageStore((state) => state.state)
+  const coverageController = useCoverageStore((state) => state.controller)
   const omittedCoverageDeviceIds = useCoverageFilterStore((state) => state.omittedDeviceIds)
   const omittedCoveragePeriodKeys = useCoverageFilterStore((state) => state.omittedPeriodKeys)
   const missionTrackingSnapshot = useMemo(
@@ -98,18 +99,29 @@ export function useMapOverlays(options: UseMapOverlaysOptions): void {
     const map = options.mapRef.current
     if (map === null) return
     const synchronizeOverlay = () => {
-      syncCoverageOverlay(
-        map,
-        coverageState.status === 'inactive' ? null : coverageState.tileCatalog,
-        {
+      const catalog = coverageState.status === 'inactive' ? null : coverageState.tileCatalog
+      try {
+        syncCoverageOverlay(map, catalog, {
           omittedDeviceIds: omittedCoverageDeviceIds,
           omittedPeriodKeys: omittedCoveragePeriodKeys,
-        },
-      )
+        })
+        if (catalog !== null) coverageController?.notifyCatalogApplied(catalog)
+      } catch (error) {
+        const period = catalog?.periods[0]
+        if (period !== undefined) {
+          coverageController?.notifyRendererFailure({
+            periodKey: period.periodKey,
+            revisionDigest: period.revisionDigest,
+            message: 'Coverage map source activation failed.',
+          })
+        }
+        throw error
+      }
     }
     return registerMapStyleSync(map, synchronizeOverlay)
   }, [
     coverageState,
+    coverageController,
     omittedCoverageDeviceIds,
     omittedCoveragePeriodKeys,
     options.activeBasemapId,
