@@ -57,6 +57,7 @@ import {
   buildTrackingSoakVerdict,
   clickActionablePointerTarget,
   classifyOperatorInteraction,
+  classifyTrackingSoakMissionEvents,
   createPositionTruthDigestAccumulator,
   installCadencedRendererProbeInWindow,
   measureOperatorAction,
@@ -523,6 +524,7 @@ async function main() {
         (exactSoakRequired
           ? options.profile.restartCheckpoints.length * 2 + 1
           : 0) +
+        databaseEvidence.participantBackfillCompletedEvents +
         (databaseEvidence.events.mission_backup_synced ?? 0),
       unexplainedMissionEvents: databaseEvidence.unexplainedMissionEvents,
       restartCheckpointsPassed,
@@ -3060,24 +3062,7 @@ function inspectDatabase(databasePath, missionId) {
         .all(missionId)
         .map((row) => [row.event_type, Number(row.count)]),
     )
-    const operationalMissionEvents = Object.entries(events)
-      .filter(([eventType]) => !['device_updated', 'position_recorded'].includes(eventType))
-      .reduce((sum, [, count]) => sum + count, 0)
-    const declaredEventTypes = new Set([
-      'mission_created',
-      'mission_paused',
-      'mission_resumed',
-      'mission_backup_synced',
-      'device_created',
-      'device_updated',
-      'position_recorded',
-      'participants_selected',
-      'participant_added',
-      'group_membership_changed',
-    ])
-    const unexplainedMissionEvents = Object.entries(events)
-      .filter(([eventType]) => !declaredEventTypes.has(eventType))
-      .reduce((sum, [, count]) => sum + count, 0)
+    const operationalEventEvidence = classifyTrackingSoakMissionEvents(events)
     const fullPositionTruth = createPositionTruthDigestAccumulator()
     const normalPrefixPositionTruth = createPositionTruthDigestAccumulator()
     for (const row of database
@@ -3110,8 +3095,7 @@ function inspectDatabase(databasePath, missionId) {
         database.prepare('SELECT COUNT(*) AS count FROM positions WHERE mission_id = ?').get(missionId).count,
       ),
       events,
-      operationalMissionEvents,
-      unexplainedMissionEvents,
+      ...operationalEventEvidence,
       positionTruth: {
         full: fullPositionTruth.finish(),
         normalPrefix: normalPrefixPositionTruth.finish(),

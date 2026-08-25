@@ -7,6 +7,7 @@ import { describe, expect, it } from 'vitest'
 import {
   buildWebGlRendererAttestation,
   classifyOperatorInteraction,
+  classifyTrackingSoakMissionEvents,
   buildTrackingSoakVerdict,
   buildTrackingGrowthEvidence,
   createPositionTruthDigestAccumulator,
@@ -23,6 +24,22 @@ import {
 import { startTrackingSoakMockServer } from '../../build/electron-tracking-soak-mock-server.js'
 
 describe('Electron packaged tracking soak helpers [DON-246]', () => {
+  it('budgets audited participant backfill completion without treating it as unexplained noise', () => {
+    expect(classifyTrackingSoakMissionEvents({
+      device_created: 32,
+      mission_created: 1,
+      participants_selected: 1,
+      participant_backfill_completed: 2,
+      mission_backup_synced: 2,
+      mission_paused: 1,
+      mission_resumed: 1,
+    })).toEqual({
+      operationalMissionEvents: 40,
+      participantBackfillCompletedEvents: 2,
+      unexplainedMissionEvents: 0,
+    })
+  })
+
   it('defines deterministic CI, five-day, and fourteen-day profiles', () => {
     expect(createTrackingSoakProfile('ci')).toMatchObject({
       name: 'ci',

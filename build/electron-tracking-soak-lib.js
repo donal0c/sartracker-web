@@ -57,6 +57,37 @@ export function createTrackingSoakProfile(name) {
   })
 }
 
+/** Classifies bounded operational mission events captured by the packaged soak. */
+export function classifyTrackingSoakMissionEvents(events) {
+  const entries = Object.entries(events ?? {}).map(([eventType, count]) => [
+    eventType,
+    Number(count),
+  ])
+  const declaredEventTypes = new Set([
+    'mission_created',
+    'mission_paused',
+    'mission_resumed',
+    'mission_backup_synced',
+    'device_created',
+    'device_updated',
+    'position_recorded',
+    'participants_selected',
+    'participant_added',
+    'participant_backfill_completed',
+    'group_membership_changed',
+  ])
+  return {
+    operationalMissionEvents: entries
+      .filter(([eventType]) => !['device_updated', 'position_recorded'].includes(eventType))
+      .reduce((sum, [, count]) => sum + count, 0),
+    participantBackfillCompletedEvents:
+      Number(events?.participant_backfill_completed ?? 0),
+    unexplainedMissionEvents: entries
+      .filter(([eventType]) => !declaredEventTypes.has(eventType))
+      .reduce((sum, [, count]) => sum + count, 0),
+  }
+}
+
 /**
  * Revalidates the final operator-visible Line total against both SQLite and
  * independent deterministic source truth across two consecutive observations.
