@@ -80,6 +80,7 @@ function registerCoverageCatalogHandler(input, ownedStages) {
     event.sender.once('destroyed', senderGone)
     event.sender.once('render-process-gone', senderGone)
     try {
+      abandonSenderStages(ownedStages, senderId)
       await settleAbandonedStages(input, ownedStages)
       if (destroyed) throw createDestroyedRendererError()
       const result = await input.missionStore.syncCoverageTileCatalog(payload, scopedRequestId)
@@ -148,6 +149,13 @@ function registerCoverageActivationHandlers(input, ownedStages) {
     (missionStore, payload) => missionStore.discardCoverageTileCatalog(payload),
     true,
   )
+}
+
+/** Marks an earlier unsettled stage as superseded by its renderer's new sync. */
+function abandonSenderStages(ownedStages, senderId) {
+  for (const owner of ownedStages.values()) {
+    if (owner.senderId === senderId) owner.abandoned = true
+  }
 }
 
 /** Settles every renderer-abandoned stage before allowing another catalog sync. */

@@ -375,6 +375,60 @@ describe('coverage IPC ownership [DON-276]', () => {
     expect(owner.listenerCount('destroyed')).toBe(0)
   })
 
+  it('settles the same renderer\'s failed stage before a new catalog retry', async () => {
+    const handlers = new Map<string, (event: unknown, ...args: readonly unknown[]) => unknown>()
+    let stageUnsettled = false
+    const syncCoverageTileCatalog = vi.fn()
+      .mockImplementationOnce(async () => {
+        stageUnsettled = true
+        return { activationId: 'coverage-stage-failed-terminal', periods: [], delivered: [] }
+      })
+      .mockImplementationOnce(async () => {
+        if (stageUnsettled) throw new Error('Coverage tile catalog already has an unsettled stage.')
+        return { activationId: 'coverage-stage-after-retry', periods: [], delivered: [] }
+      })
+    const discardCoverageTileCatalog = vi.fn()
+      .mockRejectedValueOnce(new Error('transient cleanup failure'))
+      .mockImplementationOnce(async () => {
+        stageUnsettled = false
+        return true
+      })
+    const missionStore = {
+      readCoverageManifest: vi.fn(),
+      readCoverageChunk: vi.fn(),
+      readCoverageClaim: vi.fn(),
+      syncCoverageTileCatalog,
+      activateCoverageTileCatalog: vi.fn().mockResolvedValue(true),
+      finalizeCoverageTileCatalog: vi.fn()
+        .mockRejectedValueOnce(new Error('transient finalize failure')),
+      discardCoverageTileCatalog,
+      cancelCoverageQuery: vi.fn().mockResolvedValue(false),
+    }
+    registerCoverageIpcHandlers({
+      ipcMain: { handle: (channel, handler) => handlers.set(channel, handler as never) },
+      readChannels: { manifest: 'manifest', chunk: 'chunk', claim: 'claim', catalog: 'catalog' },
+      activationChannels: { activate: 'activate', finalize: 'finalize', discard: 'discard' },
+      cancelChannel: 'cancel', missionStore,
+      validateIpcSender: vi.fn(),
+    })
+    const sender = Object.assign(new EventEmitter(), { id: 84 })
+    const failedPayload = { activationId: 'coverage-stage-failed-terminal' }
+    await handlers.get('catalog')?.(
+      { sender }, { missionId: 'mission-1', chunks: [] }, 'catalog-failed-terminal',
+    )
+    await expect(handlers.get('activate')?.({ sender }, failedPayload)).resolves.toBe(true)
+    await expect(handlers.get('finalize')?.({ sender }, failedPayload))
+      .rejects.toThrow(/finalize failure/iu)
+    await expect(handlers.get('discard')?.({ sender }, failedPayload))
+      .rejects.toThrow(/cleanup failure/iu)
+
+    await expect(handlers.get('catalog')?.(
+      { sender }, { missionId: 'mission-1', chunks: [] }, 'catalog-after-retry',
+    )).resolves.toMatchObject({ activationId: 'coverage-stage-after-retry' })
+    expect(discardCoverageTileCatalog).toHaveBeenCalledTimes(2)
+    expect(syncCoverageTileCatalog).toHaveBeenCalledTimes(2)
+  })
+
   it('routes chunk and claim reads through their named mission-store methods', async () => {
     const handlers = new Map<string, (event: unknown, ...args: readonly unknown[]) => unknown>()
     const missionStore = {
