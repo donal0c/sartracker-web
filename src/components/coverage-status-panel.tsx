@@ -69,7 +69,7 @@ export function CoverageStatusPanel(props: CoverageStatusPanelProps) {
               unassignedOmitted={props.unassignedOmitted}
               updatedAt={props.state.updatedAt}
             />
-          ) : props.state.status === 'partial' || props.state.status === 'error' ? (
+          ) : props.state.status === 'partial' ? (
             <p className="mt-1" data-testid="coverage-partial">
               History incomplete — showing loaded coverage.
               {props.state.lastErrorClass === undefined || props.state.lastErrorClass === null
@@ -81,6 +81,16 @@ export function CoverageStatusPanel(props: CoverageStatusPanelProps) {
               Loading complete mission history from saved evidence.
             </p>
           )}
+          {props.state.status === 'error' ? (
+            <p className="mt-1" data-testid="coverage-error">
+              History incomplete — {rendererDetached
+                ? 'coverage is not currently attached to the map.'
+                : 'showing loaded coverage.'}
+              {props.state.lastErrorClass === undefined || props.state.lastErrorClass === null
+                ? ''
+                : ` Reason: ${formatErrorClass(props.state.lastErrorClass)}.`}
+            </p>
+          ) : null}
         </div>
         {(props.state.status === 'partial' || props.state.status === 'error') &&
         !evidenceBlocked && !rendererDetached ? (

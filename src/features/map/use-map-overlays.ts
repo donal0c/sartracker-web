@@ -21,6 +21,7 @@ import {
   syncCoverageOverlay,
 } from '../tracking/sync-coverage-overlay'
 import { useCoverageFilterStore } from '../tracking/coverage-filter-store'
+import { selectCoverageCatalogForMission } from '../tracking/mission-coverage-scope'
 import type { RenderableMapId } from '../../lib/map-config'
 import { useStationaryAttentionStore } from '../tracking/stationary-attention-store'
 import { registerMapStyleSync } from './map-style-sync'
@@ -102,7 +103,7 @@ export function useMapOverlays(options: UseMapOverlaysOptions): void {
     const map = options.mapRef.current
     if (map === null) return
     const synchronizeOverlay = async (signal: AbortSignal) => {
-      const catalog = coverageState.status === 'inactive' ? null : coverageState.tileCatalog
+      const catalog = selectCoverageCatalogForMission(coverageState, missionId)
       let activation: Awaited<ReturnType<typeof syncCoverageOverlay>> | null = null
       try {
         if (
@@ -147,6 +148,7 @@ export function useMapOverlays(options: UseMapOverlaysOptions): void {
     coverageController,
     omittedCoverageDeviceIds,
     omittedCoveragePeriodKeys,
+    missionId,
     options.activeBasemapId,
     options.mapReadyVersion,
     options.mapRef,

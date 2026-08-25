@@ -19,6 +19,7 @@ import {
   useCoverageFilterStore,
 } from '../tracking/coverage-filter-store'
 import { buildCoverageCatalogInput } from './coverage-catalog-projection'
+import { selectCoverageStateForMission } from '../tracking/mission-coverage-scope'
 
 /**
  * Starts the layer catalog runtime and keeps mission-scoped catalog metadata
@@ -40,6 +41,7 @@ export function LayerCatalogRuntimeBridge() {
   const coverageState = useCoverageStore((state) => state.state)
   const omittedCoverageDeviceIds = useCoverageFilterStore((state) => state.omittedDeviceIds)
   const omittedCoveragePeriodKeys = useCoverageFilterStore((state) => state.omittedPeriodKeys)
+  const missionCoverageState = selectCoverageStateForMission(coverageState, missionId)
 
   useEffect(() => {
     if (controller !== null) {
@@ -80,11 +82,11 @@ export function LayerCatalogRuntimeBridge() {
       helicopters,
       gpxImports,
       measurements,
-      ...(coverageState.status === 'inactive' || coverageState.manifest === null
+      ...(missionCoverageState.status === 'inactive' || missionCoverageState.manifest === null
         ? {}
         : {
             coverage: buildCoverageCatalogInput(
-              coverageState.manifest,
+              missionCoverageState.manifest,
               devices,
               omittedCoverageDeviceIds,
               omittedCoveragePeriodKeys,
@@ -93,7 +95,7 @@ export function LayerCatalogRuntimeBridge() {
     })
   }, [
     controller,
-    coverageState,
+    missionCoverageState,
     devices,
     drawings,
     gpxImports,

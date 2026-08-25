@@ -95,6 +95,26 @@ describe('coverage status panel [DON-275]', () => {
     expect(host.querySelector('[data-testid="coverage-progress"]')).toBeNull()
     expect(host.querySelector('[data-testid="coverage-retry"]')).toBeNull()
   })
+
+  it('keeps failures explicit while backfill or reorganization context also applies', () => {
+    render(state('error', {
+      blockers: ['backfill_incomplete'],
+      lastErrorClass: 'timeout',
+    }))
+
+    expect(host.textContent).toContain('Participant history is still being added')
+    expect(host.textContent).toContain('History incomplete — showing loaded coverage')
+    expect(host.textContent).toContain('Reason: timeout')
+
+    render(state('error', {
+      pendingInvalidation: true,
+      lastErrorClass: 'worker',
+    }))
+
+    expect(host.textContent).toContain('Updating outing assignment')
+    expect(host.textContent).toContain('History incomplete — showing loaded coverage')
+    expect(host.textContent).toContain('Reason: worker')
+  })
 })
 
 function render(
@@ -125,6 +145,7 @@ function state(
     readonly totalFixCount?: number
     readonly blockers?: readonly string[]
     readonly pendingInvalidation?: boolean
+    readonly lastErrorClass?: 'timeout' | 'worker'
   } = {},
 ): CoverageState {
   return {
@@ -139,6 +160,7 @@ function state(
     tileCatalog: null, delivered: {},
     deliveredFixCount: options.deliveredFixCount ?? 10,
     totalFixCount: options.totalFixCount ?? 10,
+    lastErrorClass: options.lastErrorClass,
     blockers: options.blockers ?? [],
     updatedAt: '2026-08-24T12:00:00.000Z',
   }

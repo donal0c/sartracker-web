@@ -9,6 +9,9 @@ import { useTrackingStore } from '../../src/features/tracking/tracking-store'
 import { useTrackingStyleStore } from '../../src/features/tracking/tracking-style-store'
 import { useIngestHealthStore } from '../../src/features/tracking/ingest-health-store'
 import { useStationaryAttentionStore } from '../../src/features/tracking/stationary-attention-store'
+import { useCoverageStore } from '../../src/features/tracking/coverage-store'
+import { useMissionStore } from '../../src/features/mission/mission-store'
+import type { Mission } from '../../src/infrastructure/mission-store/tauri-mission-store'
 
 let root: Root | null = null
 let host: HTMLDivElement | null = null
@@ -26,6 +29,8 @@ describe('TrackingStatusPanel', () => {
     useTrackingStyleStore.setState(useTrackingStyleStore.getInitialState())
     useIngestHealthStore.setState(useIngestHealthStore.getInitialState())
     useStationaryAttentionStore.setState(useStationaryAttentionStore.getInitialState())
+    useCoverageStore.setState(useCoverageStore.getInitialState())
+    useMissionStore.setState(useMissionStore.getInitialState())
   })
 
   it('renders offline tracking mode and OFFLINE MODE warning as a flashing red alert', () => {
@@ -323,7 +328,43 @@ describe('TrackingStatusPanel', () => {
     )
     expect(document.querySelector('[data-testid="exact-breadcrumb-dot-page-summary"]')).toBeNull()
   })
+
+  it('never shows coverage status retained from the previous mission [DON-275]', () => {
+    useMissionStore.setState({ currentMission: mission('mission-2'), phase: 'active' })
+    useCoverageStore.setState({
+      state: {
+        status: 'complete',
+        missionId: 'mission-1',
+        rendererGeneration: 'renderer-1',
+        changeSeq: 1,
+        latestObservedChangeSeq: 1,
+        manifest: null,
+        tileCatalog: null,
+        delivered: {},
+        deliveredFixCount: 10,
+        totalFixCount: 10,
+      },
+    })
+
+    render(React.createElement(TrackingStatusPanel))
+
+    expect(document.querySelector('[data-testid="coverage-status-panel"]')).toBeNull()
+  })
 })
+
+function mission(id: string): Mission {
+  return {
+    id,
+    name: 'Mission',
+    status: 'active',
+    start_time: '2026-08-24T08:00:00.000Z',
+    pause_time: null,
+    finish_time: null,
+    paused_seconds: 0,
+    notes: null,
+    schema_version: 10,
+  }
+}
 
 function seedSimplifiedLineMetadata(): void {
   useTrackingStore.setState((state) => ({

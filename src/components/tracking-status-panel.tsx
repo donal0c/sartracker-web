@@ -9,6 +9,8 @@ import { useStationaryAttentionStore } from '../features/tracking/stationary-att
 import { useCoverageStore } from '../features/tracking/coverage-store'
 import { useCoverageFilterStore } from '../features/tracking/coverage-filter-store'
 import { CoverageStatusPanel } from './coverage-status-panel'
+import { useMissionStore } from '../features/mission/mission-store'
+import { selectCoverageStateForMission } from '../features/tracking/mission-coverage-scope'
 
 type TrackingStatusPanelProps = {
   readonly exactBreadcrumbDotState?: ExactBreadcrumbDotState
@@ -26,6 +28,8 @@ export function TrackingStatusPanel(props: TrackingStatusPanelProps = {}) {
   const breadcrumbTrailMode = useTrackingStyleStore((state) => state.breadcrumbTrailMode)
   const setBreadcrumbTrailMode = useTrackingStyleStore((state) => state.setBreadcrumbTrailMode)
   const coverageState = useCoverageStore((state) => state.state)
+  const missionId = useMissionStore((state) => state.currentMission?.id ?? null)
+  const missionCoverageState = selectCoverageStateForMission(coverageState, missionId)
   const coverageController = useCoverageStore((state) => state.controller)
   const omittedCoverageDeviceCount = useCoverageFilterStore(
     (state) => state.omittedDeviceIds.length,
@@ -183,7 +187,7 @@ export function TrackingStatusPanel(props: TrackingStatusPanelProps = {}) {
       )}
 
       <CoverageStatusPanel
-        state={coverageState}
+        state={missionCoverageState}
         omittedDeviceCount={omittedCoverageDeviceCount}
         omittedOutingCount={omittedCoverageOutingCount}
         unassignedOmitted={unassignedCoverageOmitted}
