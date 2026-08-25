@@ -968,3 +968,36 @@ so those bindings remain standing with their original proof limits. The prior
 five-review result is invalidated. The live exact-head Linux package/soak check
 and five fresh independent reviews are required before review readiness. No
 merge or release occurred.
+
+## Renewed-review follow-on remediation
+
+The first renewed review did not uphold the initial F1 correction. Its live
+Candidate-B reproduction showed that a new closed-outing row became pending
+and then fresh, while the previously fresh Unassigned sibling retained the
+same two fixes at its old revision. The final manifest and both non-empty tiles
+therefore represented four fixes from two source rows and the claim returned
+ready. The strengthened regression failed red with outing 2 / Unassigned 2.
+
+The same review wave reproduced two adjacent trust/lifecycle defects. A failed
+duplicate activation deleted IPC ownership while leaving the worker's
+committed stage unsettled, blocking every later catalog sync. Separately,
+`readCoverageChunk` spread renderer input after its main-owned `kind`, allowing
+the chunk channel to execute another coverage worker operation.
+
+Commit `31ba509c595d6cb1365a7c678cc775037fd08ced` closes all three:
+
+- when canonical inventory grows, every existing sibling for that device gets
+  a new `content_rev` and pending `built_rev` before missing rows are inserted;
+- the post-build integration proof now requires the exact partition outing 2 /
+  Unassigned 0 and a blocker-free claim only after both revisions build;
+- worker activation is idempotent for the current stage and IPC retains
+  ownership across a failed non-terminal activation so retry/finalize remains
+  possible; and
+- the main process validates and copies only permitted chunk-page fields, then
+  writes its own `kind` last.
+
+Green verification at this application head is 5 focused files / 51 tests,
+264 full unit files / 2,112 tests, TypeScript, ESLint, production build and
+bundle budgets, plus participant/coverage Chromium 10/10. The exact pushed-
+head Linux package/soak check and five fresh independent reviews must restart;
+the prior renewed-review results are superseded. No merge or release occurred.
