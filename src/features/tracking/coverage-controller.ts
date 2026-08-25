@@ -120,7 +120,9 @@ export function createCoverageController(input: {
 }): CoverageController {
   let state: CoverageState = { status: 'inactive' }
   let context: CoverageContext = { missionId: null, rendererGeneration: '' }
+  let desiredContext: CoverageContext = context
   let stopped = false
+  let stopRequestedDuringFinalization = false
   let operationGeneration = 0
   let requestSequence = 0
   let activeController: AbortController | null = null
@@ -130,6 +132,17 @@ export function createCoverageController(input: {
   let rendererDetached = false
   let rendererDetachedCompleteCatalog: CoverageTileCatalog | null = null
   let rendererDetachEpoch = 0
+  let catalogFinalization: Promise<void> | null = null
+  let catalogApplication: {
+    readonly catalog: CoverageTileCatalog
+    readonly promise: Promise<void>
+  } | null = null
+  let activeLoadCompletion: Promise<void> | null = null
+  let contextUpdateSequence = 0
+  let cancelRequested = false
+  let rendererFailureDuringFinalization: Error | null = null
+  let rendererFailureEpoch = 0
+  let rendererRecoveryEpoch: number | null = null
   const catalogActivation = createCoverageCatalogActivation()
   const scheduler = createCoverageScheduler({
     now: () => Date.now(),
@@ -157,17 +170,40 @@ export function createCoverageController(input: {
     input.publish(state)
   }
 
+  /** Completes controller teardown after any irreversible handoff has settled. */
+  const settleStoppedState = (): void => {
+    stopRequestedDuringFinalization = false
+    activeController?.abort()
+    activeController = null
+    operationGeneration += 1
+    refreshRequested = false
+    cancelRequested = false
+    finalizedCatalog = null
+    rendererDetached = false
+    rendererDetachedCompleteCatalog = null
+    rendererRecoveryEpoch = null
+    rendererFailureDuringFinalization = null
+    publish({ status: 'inactive' })
+  }
+
   const runLoad = async (retainDelivery: boolean): Promise<void> => {
     if (stopped || context.missionId === null) return
+    rendererFailureDuringFinalization = null
     rendererDetachedCompleteCatalog = null
     activeController?.abort()
     const controller = new AbortController()
     activeController = controller
+    let resolveLoadCompletion: () => void = () => undefined
+    const loadCompletion = new Promise<void>((resolve) => {
+      resolveLoadCompletion = resolve
+    })
+    activeLoadCompletion = loadCompletion
     const operation = ++operationGeneration
     const missionId = context.missionId
     const rendererGeneration = context.rendererGeneration
     const priorManifest = state.status === 'inactive' ? null : state.manifest
     const priorDelivered = state.status === 'inactive' ? {} : state.delivered
+    const retainDeliveryAttestation = retainDelivery && rendererRecoveryEpoch === null
     const priorCatalog = state.status === 'inactive' || !retainDelivery
       ? null
       : finalizedCatalog
@@ -178,7 +214,7 @@ export function createCoverageController(input: {
       latestObservedChangeSeq: observedSequence,
       manifest: priorManifest,
       tileCatalog: priorCatalog,
-      delivered: retainDelivery ? priorDelivered : {},
+      delivered: retainDeliveryAttestation ? priorDelivered : {},
     }, context.selectedKeys))
 
     try {
@@ -192,7 +228,7 @@ export function createCoverageController(input: {
       const delivered = retainUnchangedDeliveries(
         priorManifest,
         manifest,
-        retainDelivery ? priorDelivered : {},
+        retainDeliveryAttestation ? priorDelivered : {},
       )
       const latestObservedChangeSeq = Math.max(observedSequence, manifest.changeSeq)
       publish(createActiveState({
@@ -216,8 +252,8 @@ export function createCoverageController(input: {
         const catalogBatches = createCoverageCatalogDeliveryBatches({
           manifest,
           priorManifest,
-          priorDelivered,
-          retainDelivery,
+          priorDelivered: retainDeliveryAttestation ? priorDelivered : {},
+          retainDelivery: retainDeliveryAttestation,
           orderedPending: pending,
         })
         for (const descriptor of pending) scheduler.recordAttempt(descriptor)
@@ -326,15 +362,21 @@ export function createCoverageController(input: {
         : state.latestObservedChangeSeq
       const finalSequence = Math.max(claimSequence, currentObservedSequence)
       const rendererBlockers = input.readCompletenessBlockers?.() ?? []
-      const complete = claim.databaseReady &&
+      const deferredRendererFailure = rendererFailureDuringFinalization
+      const complete = deferredRendererFailure === null &&
+        rendererRecoveryEpoch === null &&
+        claim.databaseReady &&
         !rendererDetached &&
+        !cancelRequested &&
         rendererBlockers.length === 0 &&
         !refreshRequested &&
         claim.changeSeq === finalSequence &&
         claim.chunkRevisions.every(({ key, contentRev }) =>
           delivered[coverageChunkIdentity(key)] === contentRev)
       publish(createActiveState({
-        status: complete ? 'complete' : 'partial',
+        status: deferredRendererFailure !== null
+          ? 'error'
+          : complete ? 'complete' : 'partial',
         missionId,
         rendererGeneration,
         changeSeq: claim.changeSeq,
@@ -343,6 +385,12 @@ export function createCoverageController(input: {
         tileCatalog: activeCatalog,
         delivered,
         blockers: [...new Set([...claim.blockers, ...rendererBlockers])],
+        ...(deferredRendererFailure === null
+          ? {}
+          : {
+              lastErrorClass: classifyCoverageError(deferredRendererFailure),
+              message: 'Complete mission history is temporarily unavailable. Existing coverage remains shown.',
+            }),
       }, context.selectedKeys))
     } catch (error) {
       if (!ownsOperation(operation, controller, missionId, rendererGeneration)) return
@@ -358,13 +406,23 @@ export function createCoverageController(input: {
         message: 'Complete mission history is temporarily unavailable. Existing coverage remains shown.',
       })
     } finally {
-      if (activeController === controller) {
+      if (stopRequestedDuringFinalization) {
+        settleStoppedState()
+      } else if (activeController === controller) {
         activeController = null
-        if (refreshRequested && !stopped && context.missionId !== null) {
+        if (cancelRequested) {
+          cancelRequested = false
+          refreshRequested = false
+          if (state.status !== 'inactive') {
+            publish(withFinalizedCatalog(asPartialState(state), finalizedCatalog))
+          }
+        } else if (refreshRequested && !stopped && context.missionId !== null) {
           refreshRequested = false
           void runLoad(true)
         }
       }
+      resolveLoadCompletion()
+      if (activeLoadCompletion === loadCompletion) activeLoadCompletion = null
     }
   }
 
@@ -423,6 +481,22 @@ export function createCoverageController(input: {
     rendererDetached = false
     rendererDetachedCompleteCatalog = null
     const error = new Error(message)
+    rendererRecoveryEpoch = ++rendererFailureEpoch
+    if (
+      catalogFinalization !== null &&
+      state.tileCatalog !== null &&
+      catalogActivation.isPending(state.tileCatalog)
+    ) {
+      rendererFailureDuringFinalization = error
+      publish({
+        ...state,
+        status: 'error',
+        lastErrorClass: classifyCoverageError(error),
+        message: 'Complete mission history is temporarily unavailable. Existing coverage remains shown.',
+      })
+      return
+    }
+    cancelRequested = false
     if (
       state.tileCatalog !== null &&
       catalogActivation.isPending(state.tileCatalog)
@@ -467,32 +541,180 @@ export function createCoverageController(input: {
     })
   }
 
+  /** Waits until an irreversible catalog handoff and its owning load settle. */
+  const waitForCatalogHandoff = async (): Promise<void> => {
+    const pendingFinalization = catalogFinalization
+    const pendingLoad = pendingFinalization === null ? null : activeLoadCompletion
+    if (pendingFinalization === null) return
+    await pendingFinalization.catch(() => undefined)
+    await pendingLoad?.catch(() => undefined)
+  }
+
+  /** Applies one catalog through the backend and renderer ownership boundary. */
+  const applyCatalog = async (
+    catalog: CoverageTileCatalog,
+    rendererActivation: CoverageRendererActivation,
+  ): Promise<void> => {
+    const recoveryEpochAtStart = rendererRecoveryEpoch
+    if (!catalogActivation.isPending(catalog)) {
+      if (
+        isCurrentCatalog(state, catalog) &&
+        isSameCatalog(finalizedCatalog, catalog)
+      ) {
+        rendererActivation.commit()
+        rendererActivation.finalize?.()
+        restoreRendererAttachment()
+        return
+      }
+      rendererActivation.rollback()
+      await input.discardCatalog?.(catalog).catch(() => undefined)
+      return
+    }
+    let ownedFinalization: Promise<void> | null = null
+    try {
+      const activationEpoch = rendererDetachEpoch
+      await input.activateCatalog?.(catalog)
+      if (rendererDetachEpoch !== activationEpoch) {
+        throw new Error('Coverage map detached while its catalog was activating.')
+      }
+      if (!catalogActivation.isPending(catalog)) {
+        rendererActivation.rollback()
+        await input.discardCatalog?.(catalog).catch(() => undefined)
+        return
+      }
+      rendererActivation.commit()
+      rendererDetached = false
+      rendererDetachedCompleteCatalog = null
+      const attachmentEpoch = rendererDetachEpoch
+      const finalization = input.finalizeCatalog?.(catalog) ?? Promise.resolve()
+      ownedFinalization = finalization
+      catalogFinalization = finalization
+      await finalization
+      if (!catalogActivation.isPending(catalog) || !isCurrentCatalog(state, catalog)) {
+        rendererActivation.rollback()
+        await input.discardCatalog?.(catalog).catch(() => undefined)
+        return
+      }
+      finalizedCatalog = catalog
+      if (rendererDetachEpoch === attachmentEpoch) rendererDetached = false
+      catalogActivation.notifyApplied(catalog)
+      try {
+        rendererActivation.finalize?.()
+      } catch (error) {
+        const normalized = error instanceof Error
+          ? error
+          : new Error('Coverage renderer ownership finalization failed.')
+        publishRendererUnavailable(normalized.message)
+        return
+      }
+      if (
+        recoveryEpochAtStart !== null &&
+        rendererRecoveryEpoch === recoveryEpochAtStart
+      ) rendererRecoveryEpoch = null
+    } catch (error) {
+      const normalized = error instanceof Error
+        ? error
+        : new Error('Coverage catalog activation failed.')
+      if (!catalogActivation.isPending(catalog)) {
+        rendererActivation.rollback()
+        return
+      }
+      rendererActivation.rollback()
+      await input.discardCatalog?.(catalog).catch(() => undefined)
+      if (!catalogActivation.isPending(catalog)) return
+      catalogActivation.reject(catalog, normalized)
+      publishRendererUnavailable(normalized.message)
+      throw normalized
+    } finally {
+      if (
+        ownedFinalization !== null &&
+        catalogFinalization === ownedFinalization
+      ) catalogFinalization = null
+    }
+  }
+
+  /** Coalesces repeated acknowledgements for the same staged catalog. */
+  const notifyCatalogApplied = async (
+    catalog: CoverageTileCatalog,
+    rendererActivation: CoverageRendererActivation = {
+      commit: () => undefined,
+      finalize: () => undefined,
+      rollback: () => undefined,
+    },
+  ): Promise<void> => {
+    const inFlight = catalogApplication
+    if (inFlight !== null && isSameCatalog(inFlight.catalog, catalog)) {
+      try {
+        await inFlight.promise
+      } catch (error) {
+        rendererActivation.rollback()
+        throw error
+      }
+      if (isCurrentCatalog(state, catalog) && isSameCatalog(finalizedCatalog, catalog)) {
+        rendererActivation.commit()
+        rendererActivation.finalize?.()
+        restoreRendererAttachment()
+        return
+      }
+      rendererActivation.rollback()
+      await input.discardCatalog?.(catalog).catch(() => undefined)
+      return
+    }
+
+    const application = applyCatalog(catalog, rendererActivation)
+    catalogApplication = { catalog, promise: application }
+    try {
+      await application
+    } finally {
+      if (catalogApplication?.promise === application) catalogApplication = null
+    }
+  }
+
+  /** Applies the latest desired mission/filter context, optionally forcing Retry. */
+  const applyDesiredContext = async (forceReload: boolean): Promise<void> => {
+    const identityChanged = context.missionId !== desiredContext.missionId ||
+      context.rendererGeneration !== desiredContext.rendererGeneration
+    const selectionChanged = selectedKeySet(context.selectedKeys) !==
+      selectedKeySet(desiredContext.selectedKeys)
+    if (!identityChanged && !selectionChanged) {
+      if (forceReload) await runLoad(true)
+      return
+    }
+    rendererDetachedCompleteCatalog = null
+    activeController?.abort()
+    if (identityChanged) lastErrorClass = null
+    if (identityChanged) finalizedCatalog = null
+    if (identityChanged) rendererDetached = false
+    if (identityChanged) rendererRecoveryEpoch = null
+    if (identityChanged) rendererFailureDuringFinalization = null
+    operationGeneration += 1
+    refreshRequested = false
+    context = desiredContext
+    if (context.missionId === null) {
+      publish({ status: 'inactive' })
+      return
+    }
+    await runLoad(!identityChanged)
+  }
+
   return {
     updateContext: async (nextContext) => {
-      if (stopped) return
-      const identityChanged = context.missionId !== nextContext.missionId ||
-        context.rendererGeneration !== nextContext.rendererGeneration
-      const selectionChanged = selectedKeySet(context.selectedKeys) !==
-        selectedKeySet(nextContext.selectedKeys)
-      if (!identityChanged && !selectionChanged) return
-      rendererDetachedCompleteCatalog = null
-      activeController?.abort()
-      if (identityChanged) lastErrorClass = null
-      if (identityChanged) finalizedCatalog = null
-      if (identityChanged) rendererDetached = false
-      operationGeneration += 1
-      refreshRequested = false
-      context = nextContext.selectedKeys === undefined
+      const normalizedContext: CoverageContext = nextContext.selectedKeys === undefined
         ? {
             missionId: nextContext.missionId,
             rendererGeneration: nextContext.rendererGeneration,
           }
         : { ...nextContext, selectedKeys: [...nextContext.selectedKeys] }
-      if (context.missionId === null) {
-        publish({ status: 'inactive' })
-        return
-      }
-      await runLoad(!identityChanged)
+      const desiredIdentityChanged = desiredContext.missionId !== normalizedContext.missionId ||
+        desiredContext.rendererGeneration !== normalizedContext.rendererGeneration
+      const desiredSelectionChanged = selectedKeySet(desiredContext.selectedKeys) !==
+        selectedKeySet(normalizedContext.selectedKeys)
+      if (!desiredIdentityChanged && !desiredSelectionChanged) return
+      desiredContext = normalizedContext
+      const updateSequence = ++contextUpdateSequence
+      await waitForCatalogHandoff()
+      if (stopped || updateSequence !== contextUpdateSequence) return
+      await applyDesiredContext(false)
     },
     refresh: requestRefresh,
     notifyChanged: async (missionId, changeSeq) => {
@@ -511,66 +733,7 @@ export function createCoverageController(input: {
       })
       await requestRefresh()
     },
-    notifyCatalogApplied: async (catalog, rendererActivation = {
-      commit: () => undefined,
-      finalize: () => undefined,
-      rollback: () => undefined,
-    }) => {
-      if (!catalogActivation.isPending(catalog)) {
-        if (
-          isCurrentCatalog(state, catalog) &&
-          isSameCatalog(finalizedCatalog, catalog)
-        ) {
-          rendererActivation.commit()
-          rendererActivation.finalize?.()
-          restoreRendererAttachment()
-          return
-        }
-        rendererActivation.rollback()
-        await input.discardCatalog?.(catalog).catch(() => undefined)
-        return
-      }
-      try {
-        const activationEpoch = rendererDetachEpoch
-        await input.activateCatalog?.(catalog)
-        if (rendererDetachEpoch !== activationEpoch) {
-          throw new Error('Coverage map detached while its catalog was activating.')
-        }
-        if (!catalogActivation.isPending(catalog)) {
-          rendererActivation.rollback()
-          await input.discardCatalog?.(catalog).catch(() => undefined)
-          return
-        }
-        rendererActivation.commit()
-        rendererDetached = false
-        rendererDetachedCompleteCatalog = null
-        const attachmentEpoch = rendererDetachEpoch
-        await input.finalizeCatalog?.(catalog)
-        if (!catalogActivation.isPending(catalog) || !isCurrentCatalog(state, catalog)) {
-          rendererActivation.rollback()
-          await input.discardCatalog?.(catalog).catch(() => undefined)
-          return
-        }
-        rendererActivation.finalize?.()
-        finalizedCatalog = catalog
-        if (rendererDetachEpoch === attachmentEpoch) rendererDetached = false
-        catalogActivation.notifyApplied(catalog)
-      } catch (error) {
-        const normalized = error instanceof Error
-          ? error
-          : new Error('Coverage catalog activation failed.')
-        if (!catalogActivation.isPending(catalog)) {
-          rendererActivation.rollback()
-          return
-        }
-        rendererActivation.rollback()
-        await input.discardCatalog?.(catalog).catch(() => undefined)
-        if (!catalogActivation.isPending(catalog)) return
-        catalogActivation.reject(catalog, normalized)
-        publishRendererUnavailable(normalized.message)
-        throw normalized
-      }
-    },
+    notifyCatalogApplied,
     notifyRendererFailure: (failure) => {
       if (
         state.status === 'inactive' ||
@@ -611,25 +774,36 @@ export function createCoverageController(input: {
       })
     },
     cancel: () => {
+      contextUpdateSequence += 1
       rendererDetachedCompleteCatalog = null
+      refreshRequested = false
+      if (catalogFinalization !== null) {
+        cancelRequested = true
+        if (state.status !== 'inactive') publish(asPartialState(state))
+        return
+      }
       activeController?.abort()
       activeController = null
       operationGeneration += 1
-      refreshRequested = false
       if (state.status !== 'inactive') {
         publish(withFinalizedCatalog(asPartialState(state), finalizedCatalog))
       }
     },
-    resume: () => runLoad(true),
+    resume: async () => {
+      const resumeSequence = contextUpdateSequence
+      await waitForCatalogHandoff()
+      if (stopped || resumeSequence !== contextUpdateSequence) return
+      await applyDesiredContext(true)
+    },
     stop: () => {
       stopped = true
-      activeController?.abort()
-      activeController = null
-      operationGeneration += 1
+      contextUpdateSequence += 1
       refreshRequested = false
-      finalizedCatalog = null
-      rendererDetached = false
-      publish({ status: 'inactive' })
+      if (catalogFinalization !== null) {
+        stopRequestedDuringFinalization = true
+        return
+      }
+      settleStoppedState()
     },
     getState: () => state,
   }

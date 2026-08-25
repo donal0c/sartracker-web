@@ -1057,6 +1057,12 @@ describe('coverage controller [DON-276]', () => {
     await vi.waitFor(() => expect(finalizeCatalog).toHaveBeenCalledWith(oldCatalog))
 
     const nextLoad = controller.updateContext({ missionId: 'mission-2', rendererGeneration: 'r1' })
+    expect(controller.getState()).toMatchObject({
+      missionId: 'mission-1', tileCatalog: { activationId: 'stage-mission-1' },
+    })
+    finishOldFinalization?.()
+    await oldNotification
+    await oldLoad
     await vi.waitFor(() => expect(controller.getState()).toMatchObject({
       missionId: 'mission-2', tileCatalog: { activationId: 'stage-mission-2' },
     }))
@@ -1064,14 +1070,549 @@ describe('coverage controller [DON-276]', () => {
     const nextCatalog = controller.getState().tileCatalog!
     await controller.notifyCatalogApplied(nextCatalog)
     await nextLoad
-    finishOldFinalization?.()
-    await oldNotification
-    await oldLoad
 
     controller.cancel()
     expect(controller.getState()).toMatchObject({
       missionId: 'mission-2', tileCatalog: { missionId: 'mission-2' },
     })
+  })
+
+  it('serializes a selection change behind irreversible catalog finalization', async () => {
+    let finishFirstFinalization: (() => void) | undefined
+    const finalizeCatalog = vi.fn()
+      .mockImplementationOnce(async () => {
+        await new Promise<void>((resolve) => { finishFirstFinalization = resolve })
+      })
+      .mockResolvedValue(undefined)
+    const deliverSelection = vi.fn(async ({ chunks }: {
+      readonly chunks: readonly { readonly key: CoverageChunkKey; readonly contentRev: number }[]
+    }) => ({
+      activationId: `selection-stage-${deliverSelection.mock.calls.length}`,
+      missionId: 'mission-1',
+      periods: [{
+        periodKey: `${chunks[0]!.key.period_kind}\u0000${chunks[0]!.key.period_id}`,
+        revisionDigest: `selection-revision-${deliverSelection.mock.calls.length}`,
+      }],
+      delivered: chunks.map(({ key, contentRev }) => ({ key, contentRev })),
+    }))
+    const controller = createCoverageController({
+      readManifest: vi.fn().mockResolvedValue(manifest(1, [[KEY_A, 1], [KEY_B, 1]])),
+      readChunk: vi.fn(),
+      readClaim: vi.fn(async ({ selectedKeys }) => ({
+        changeSeq: 1, databaseReady: true, blockers: [],
+        chunkRevisions: selectedKeys.map((key) => ({ key, contentRev: 1 })),
+      })),
+      applyChunk: vi.fn(), deliverSelection,
+      activateCatalog: vi.fn().mockResolvedValue(undefined),
+      finalizeCatalog,
+      discardCatalog: vi.fn().mockResolvedValue(undefined),
+      publish: vi.fn(),
+    })
+    const firstRenderer = { commit: vi.fn(), rollback: vi.fn(), finalize: vi.fn() }
+    const initialLoad = controller.updateContext({
+      missionId: 'mission-1', rendererGeneration: 'r1', selectedKeys: [KEY_A],
+    })
+    await vi.waitFor(() => expect(controller.getState()).toMatchObject({
+      tileCatalog: { activationId: 'selection-stage-1' },
+    }))
+    if (controller.getState().status === 'inactive') throw new Error('Coverage unexpectedly inactive.')
+    const firstCatalog = controller.getState().tileCatalog!
+    const firstNotification = controller.notifyCatalogApplied(firstCatalog, firstRenderer)
+    await vi.waitFor(() => expect(finishFirstFinalization).toBeTypeOf('function'))
+
+    const selectionChange = controller.updateContext({
+      missionId: 'mission-1', rendererGeneration: 'r1', selectedKeys: [KEY_B],
+    })
+    await Promise.resolve()
+
+    expect(deliverSelection).toHaveBeenCalledOnce()
+    finishFirstFinalization?.()
+    await firstNotification
+    await initialLoad
+    await selectionChange
+
+    expect(deliverSelection).toHaveBeenCalledOnce()
+    expect(firstRenderer.commit).toHaveBeenCalledOnce()
+    expect(firstRenderer.finalize).toHaveBeenCalledOnce()
+    expect(firstRenderer.rollback).not.toHaveBeenCalled()
+    expect(controller.getState()).toMatchObject({ status: 'complete', deliveredFixCount: 1 })
+  })
+
+  it('keeps cancel authoritative and renderer-consistent during catalog finalization', async () => {
+    let finishFinalization: (() => void) | undefined
+    const readClaim = vi.fn(async ({ selectedKeys }) => ({
+      changeSeq: 1, databaseReady: true, blockers: [],
+      chunkRevisions: selectedKeys.map((key: CoverageChunkKey) => ({ key, contentRev: 1 })),
+    }))
+    const deliverSelection = vi.fn(async ({ chunks }: {
+      readonly chunks: readonly { readonly key: CoverageChunkKey; readonly contentRev: number }[]
+    }) => ({
+      activationId: 'cancel-during-finalization-stage',
+      missionId: 'mission-1',
+      periods: [{ periodKey: 'outing\u0000outing-1', revisionDigest: 'cancel-finalize-revision' }],
+      delivered: chunks.map(({ key, contentRev }) => ({ key, contentRev })),
+    }))
+    const controller = createCoverageController({
+      readManifest: vi.fn().mockResolvedValue(manifest(1, [[KEY_A, 1], [KEY_B, 1]])),
+      readChunk: vi.fn(),
+      readClaim,
+      applyChunk: vi.fn(), deliverSelection,
+      activateCatalog: vi.fn().mockResolvedValue(undefined),
+      finalizeCatalog: vi.fn(async () => {
+        await new Promise<void>((resolve) => { finishFinalization = resolve })
+      }),
+      discardCatalog: vi.fn().mockResolvedValue(undefined),
+      publish: vi.fn(),
+    })
+    const renderer = { commit: vi.fn(), rollback: vi.fn(), finalize: vi.fn() }
+    const load = controller.updateContext({
+      missionId: 'mission-1', rendererGeneration: 'r1', selectedKeys: [KEY_A],
+    })
+    await vi.waitFor(() => expect(controller.getState()).toMatchObject({
+      tileCatalog: { activationId: 'cancel-during-finalization-stage' },
+    }))
+    if (controller.getState().status === 'inactive') throw new Error('Coverage unexpectedly inactive.')
+    const notification = controller.notifyCatalogApplied(controller.getState().tileCatalog!, renderer)
+    await vi.waitFor(() => expect(finishFinalization).toBeTypeOf('function'))
+    const queuedSelection = controller.updateContext({
+      missionId: 'mission-1', rendererGeneration: 'r1', selectedKeys: [KEY_B],
+    })
+
+    controller.cancel()
+    finishFinalization?.()
+    await notification
+    await load
+
+    expect(renderer.finalize).toHaveBeenCalledOnce()
+    expect(renderer.rollback).not.toHaveBeenCalled()
+    expect(controller.getState()).toMatchObject({ status: 'partial', deliveredFixCount: 1 })
+    expect(deliverSelection).toHaveBeenCalledOnce()
+    await queuedSelection
+
+    await controller.resume()
+    expect(readClaim.mock.calls.at(-1)?.[0]).toMatchObject({ selectedKeys: [KEY_B] })
+    expect(controller.getState()).toMatchObject({ status: 'complete', totalFixCount: 1 })
+  })
+
+  it('coalesces repeated renderer acknowledgements while one catalog is finalizing', async () => {
+    let finishFinalization: (() => void) | undefined
+    const finalizationGate = new Promise<void>((resolve) => { finishFinalization = resolve })
+    const activateCatalog = vi.fn().mockResolvedValue(undefined)
+    const finalizeCatalog = vi.fn(async () => finalizationGate)
+    const discardCatalog = vi.fn().mockResolvedValue(undefined)
+    const controller = createCoverageController({
+      readManifest: vi.fn().mockResolvedValue(manifest(1, [[KEY_A, 1]])),
+      readChunk: vi.fn(),
+      readClaim: vi.fn().mockResolvedValue({
+        changeSeq: 1, databaseReady: true, blockers: [],
+        chunkRevisions: [{ key: KEY_A, contentRev: 1 }],
+      }),
+      applyChunk: vi.fn(),
+      deliverSelection: vi.fn().mockResolvedValue({
+        activationId: 'single-flight-stage',
+        missionId: 'mission-1',
+        periods: [{ periodKey: 'outing\u0000outing-1', revisionDigest: 'single-flight-revision' }],
+        delivered: [{ key: KEY_A, contentRev: 1 }],
+      }),
+      activateCatalog,
+      finalizeCatalog,
+      discardCatalog,
+      publish: vi.fn(),
+    })
+    const firstRenderer = { commit: vi.fn(), rollback: vi.fn(), finalize: vi.fn() }
+    const replacementRenderer = { commit: vi.fn(), rollback: vi.fn(), finalize: vi.fn() }
+    const load = controller.updateContext({ missionId: 'mission-1', rendererGeneration: 'r1' })
+    await vi.waitFor(() => expect(controller.getState()).toMatchObject({
+      tileCatalog: { activationId: 'single-flight-stage' },
+    }))
+    if (controller.getState().status === 'inactive') throw new Error('Coverage unexpectedly inactive.')
+    const catalog = controller.getState().tileCatalog!
+
+    const firstNotification = controller.notifyCatalogApplied(catalog, firstRenderer)
+    await vi.waitFor(() => expect(finalizeCatalog).toHaveBeenCalledOnce())
+    const replacementNotification = controller.notifyCatalogApplied(catalog, replacementRenderer)
+    await Promise.resolve()
+
+    expect(activateCatalog).toHaveBeenCalledOnce()
+    expect(finalizeCatalog).toHaveBeenCalledOnce()
+    finishFinalization?.()
+    await Promise.all([firstNotification, replacementNotification, load])
+
+    expect(firstRenderer.rollback).not.toHaveBeenCalled()
+    expect(replacementRenderer.commit).toHaveBeenCalledOnce()
+    expect(replacementRenderer.finalize).toHaveBeenCalledOnce()
+    expect(replacementRenderer.rollback).not.toHaveBeenCalled()
+    expect(discardCatalog).not.toHaveBeenCalled()
+    expect(controller.getState()).toMatchObject({ status: 'complete' })
+  })
+
+  it('serializes Retry behind irreversible catalog finalization', async () => {
+    let finishFinalization: (() => void) | undefined
+    const readManifest = vi.fn().mockResolvedValue(manifest(1, [[KEY_A, 1]]))
+    const controller = createCoverageController({
+      readManifest,
+      readChunk: vi.fn(),
+      readClaim: vi.fn().mockResolvedValue({
+        changeSeq: 1, databaseReady: true, blockers: [],
+        chunkRevisions: [{ key: KEY_A, contentRev: 1 }],
+      }),
+      applyChunk: vi.fn(),
+      deliverSelection: vi.fn().mockResolvedValue({
+        activationId: 'retry-after-finalization-stage',
+        missionId: 'mission-1',
+        periods: [{ periodKey: 'outing\u0000outing-1', revisionDigest: 'retry-revision' }],
+        delivered: [{ key: KEY_A, contentRev: 1 }],
+      }),
+      activateCatalog: vi.fn().mockResolvedValue(undefined),
+      finalizeCatalog: vi.fn(async () => {
+        await new Promise<void>((resolve) => { finishFinalization = resolve })
+      }),
+      discardCatalog: vi.fn().mockResolvedValue(undefined),
+      publish: vi.fn(),
+    })
+    const renderer = { commit: vi.fn(), rollback: vi.fn(), finalize: vi.fn() }
+    const load = controller.updateContext({ missionId: 'mission-1', rendererGeneration: 'r1' })
+    await vi.waitFor(() => expect(controller.getState()).toMatchObject({
+      tileCatalog: { activationId: 'retry-after-finalization-stage' },
+    }))
+    if (controller.getState().status === 'inactive') throw new Error('Coverage unexpectedly inactive.')
+    const notification = controller.notifyCatalogApplied(controller.getState().tileCatalog!, renderer)
+    await vi.waitFor(() => expect(finishFinalization).toBeTypeOf('function'))
+
+    const retry = controller.resume()
+    await Promise.resolve()
+
+    expect(readManifest).toHaveBeenCalledOnce()
+    finishFinalization?.()
+    await Promise.all([notification, load, retry])
+    expect(renderer.finalize).toHaveBeenCalledOnce()
+    expect(renderer.rollback).not.toHaveBeenCalled()
+    expect(readManifest).toHaveBeenCalledTimes(4)
+  })
+
+  it('does not let Retry discard a queued history selection update', async () => {
+    let finishFinalization: (() => void) | undefined
+    const readClaim = vi.fn(async ({ selectedKeys }) => ({
+      changeSeq: 1, databaseReady: true, blockers: [],
+      chunkRevisions: selectedKeys.map((key: CoverageChunkKey) => ({ key, contentRev: 1 })),
+    }))
+    const deliverSelection = vi.fn(async ({ chunks }: {
+      readonly chunks: readonly { readonly key: CoverageChunkKey; readonly contentRev: number }[]
+    }) => ({
+      activationId: `selection-retry-stage-${deliverSelection.mock.calls.length}`,
+      missionId: 'mission-1',
+      periods: [{
+        periodKey: `${chunks[0]!.key.period_kind}\u0000${chunks[0]!.key.period_id}`,
+        revisionDigest: `selection-retry-revision-${deliverSelection.mock.calls.length}`,
+      }],
+      delivered: chunks.map(({ key, contentRev }) => ({ key, contentRev })),
+    }))
+    const controller = createCoverageController({
+      readManifest: vi.fn().mockResolvedValue(manifest(1, [[KEY_A, 1], [KEY_B, 1]])),
+      readChunk: vi.fn(),
+      readClaim,
+      applyChunk: vi.fn(), deliverSelection,
+      activateCatalog: vi.fn().mockResolvedValue(undefined),
+      finalizeCatalog: vi.fn()
+        .mockImplementationOnce(async () => {
+          await new Promise<void>((resolve) => { finishFinalization = resolve })
+        })
+        .mockResolvedValue(undefined),
+      discardCatalog: vi.fn().mockResolvedValue(undefined),
+      publish: vi.fn(),
+    })
+    const load = controller.updateContext({
+      missionId: 'mission-1', rendererGeneration: 'r1', selectedKeys: [KEY_A],
+    })
+    await vi.waitFor(() => expect(controller.getState()).toMatchObject({
+      tileCatalog: { activationId: 'selection-retry-stage-1' },
+    }))
+    if (controller.getState().status === 'inactive') throw new Error('Coverage unexpectedly inactive.')
+    const notification = controller.notifyCatalogApplied(controller.getState().tileCatalog!)
+    await vi.waitFor(() => expect(finishFinalization).toBeTypeOf('function'))
+
+    const selectionChange = controller.updateContext({
+      missionId: 'mission-1', rendererGeneration: 'r1', selectedKeys: [KEY_B],
+    })
+    const retry = controller.resume()
+    finishFinalization?.()
+    await Promise.all([notification, load, selectionChange, retry])
+
+    expect(readClaim.mock.calls.at(-1)?.[0]).toMatchObject({ selectedKeys: [KEY_B] })
+    expect(controller.getState()).toMatchObject({ status: 'complete', totalFixCount: 1 })
+  })
+
+  it('retains an explicit renderer failure without undoing irreversible finalization', async () => {
+    let finishFinalization: (() => void) | undefined
+    let finishRecoveryManifest: (() => void) | undefined
+    const coverageManifest = manifest(1, [[KEY_A, 1]])
+    const readManifest = vi.fn().mockResolvedValue(coverageManifest)
+    const discardCatalog = vi.fn().mockResolvedValue(undefined)
+    const deliverSelection = vi.fn().mockImplementation(async () => ({
+      activationId: `renderer-failure-stage-${deliverSelection.mock.calls.length}`,
+      missionId: 'mission-1',
+      periods: [{
+        periodKey: 'outing\u0000outing-1',
+        revisionDigest: `failure-revision-${deliverSelection.mock.calls.length}`,
+      }],
+      delivered: [{ key: KEY_A, contentRev: 1 }],
+    }))
+    const controller = createCoverageController({
+      readManifest,
+      readChunk: vi.fn(),
+      readClaim: vi.fn().mockResolvedValue({
+        changeSeq: 1, databaseReady: true, blockers: [],
+        chunkRevisions: [{ key: KEY_A, contentRev: 1 }],
+      }),
+      applyChunk: vi.fn(),
+      deliverSelection,
+      activateCatalog: vi.fn().mockResolvedValue(undefined),
+      finalizeCatalog: vi.fn()
+        .mockImplementationOnce(async () => {
+          await new Promise<void>((resolve) => { finishFinalization = resolve })
+        })
+        .mockResolvedValue(undefined),
+      discardCatalog,
+      publish: vi.fn(),
+    })
+    const renderer = { commit: vi.fn(), rollback: vi.fn(), finalize: vi.fn() }
+    const load = controller.updateContext({ missionId: 'mission-1', rendererGeneration: 'r1' })
+    await vi.waitFor(() => expect(controller.getState()).toMatchObject({
+      tileCatalog: { activationId: 'renderer-failure-stage-1' },
+    }))
+    if (controller.getState().status === 'inactive') throw new Error('Coverage unexpectedly inactive.')
+    const catalog = controller.getState().tileCatalog!
+    const notification = controller.notifyCatalogApplied(catalog, renderer)
+    await vi.waitFor(() => expect(finishFinalization).toBeTypeOf('function'))
+
+    controller.notifyRendererFailure({
+      missionId: 'mission-1',
+      periodKey: 'outing\u0000outing-1',
+      revisionDigest: 'failure-revision-1',
+      message: 'Coverage tile failed while the catalog was finalizing.',
+    })
+    finishFinalization?.()
+    await Promise.all([notification, load])
+
+    expect(renderer.finalize).toHaveBeenCalledOnce()
+    expect(renderer.rollback).not.toHaveBeenCalled()
+    expect(discardCatalog).not.toHaveBeenCalled()
+    expect(controller.getState()).toMatchObject({
+      status: 'error',
+      tileCatalog: { activationId: 'renderer-failure-stage-1' },
+      message: 'Complete mission history is temporarily unavailable. Existing coverage remains shown.',
+    })
+
+    readManifest.mockImplementationOnce(async () => {
+      await new Promise<void>((resolve) => { finishRecoveryManifest = resolve })
+      return coverageManifest
+    })
+    const retry = controller.resume()
+    await vi.waitFor(() => expect(controller.getState()).toMatchObject({ status: 'loading' }))
+    expect(controller.getState()).toMatchObject({ deliveredFixCount: 0 })
+    finishRecoveryManifest?.()
+    await vi.waitFor(() => expect(controller.getState()).toMatchObject({
+      status: 'loading', tileCatalog: { activationId: 'renderer-failure-stage-2' },
+    }))
+    if (controller.getState().status === 'inactive') throw new Error('Coverage unexpectedly inactive.')
+    const recoveryRenderer = { commit: vi.fn(), rollback: vi.fn(), finalize: vi.fn() }
+    await controller.notifyCatalogApplied(controller.getState().tileCatalog!, recoveryRenderer)
+    await retry
+
+    expect(deliverSelection).toHaveBeenCalledTimes(2)
+    expect(recoveryRenderer.finalize).toHaveBeenCalledOnce()
+    expect(controller.getState()).toMatchObject({ status: 'complete' })
+  })
+
+  it('releases the owning load when backend catalog finalization rejects', async () => {
+    const controller = createCoverageController({
+      readManifest: vi.fn().mockResolvedValue(manifest(1, [[KEY_A, 1]])),
+      readChunk: vi.fn(),
+      readClaim: vi.fn().mockResolvedValue({
+        changeSeq: 1, databaseReady: true, blockers: [],
+        chunkRevisions: [{ key: KEY_A, contentRev: 1 }],
+      }),
+      applyChunk: vi.fn(),
+      deliverSelection: vi.fn().mockResolvedValue({
+        activationId: 'rejected-finalization-stage',
+        missionId: 'mission-1',
+        periods: [{ periodKey: 'outing\u0000outing-1', revisionDigest: 'rejected-revision' }],
+        delivered: [{ key: KEY_A, contentRev: 1 }],
+      }),
+      activateCatalog: vi.fn().mockResolvedValue(undefined),
+      finalizeCatalog: vi.fn().mockRejectedValue(new Error('Catalog finalization failed.')),
+      discardCatalog: vi.fn().mockResolvedValue(undefined),
+      publish: vi.fn(),
+    })
+    const renderer = { commit: vi.fn(), rollback: vi.fn(), finalize: vi.fn() }
+    let loadSettled = false
+    const load = controller.updateContext({ missionId: 'mission-1', rendererGeneration: 'r1' })
+    void load.finally(() => { loadSettled = true })
+    await vi.waitFor(() => expect(controller.getState()).toMatchObject({
+      tileCatalog: { activationId: 'rejected-finalization-stage' },
+    }))
+    if (controller.getState().status === 'inactive') throw new Error('Coverage unexpectedly inactive.')
+
+    await expect(controller.notifyCatalogApplied(
+      controller.getState().tileCatalog!,
+      renderer,
+    )).rejects.toThrow('Catalog finalization failed.')
+
+    try {
+      await vi.waitFor(() => expect(loadSettled).toBe(true))
+      expect(renderer.rollback).toHaveBeenCalledOnce()
+      expect(controller.getState()).toMatchObject({ status: 'error' })
+    } finally {
+      controller.stop()
+      await load
+    }
+  })
+
+  it('clears a deferred Cancel after rejected finalization before Retry', async () => {
+    let rejectFinalization: (() => void) | undefined
+    const deliverSelection = vi.fn().mockImplementation(async () => ({
+      activationId: `cancel-reject-stage-${deliverSelection.mock.calls.length}`,
+      missionId: 'mission-1',
+      periods: [{
+        periodKey: 'outing\u0000outing-1',
+        revisionDigest: `cancel-reject-revision-${deliverSelection.mock.calls.length}`,
+      }],
+      delivered: [{ key: KEY_A, contentRev: 1 }],
+    }))
+    const controller = createCoverageController({
+      readManifest: vi.fn().mockResolvedValue(manifest(1, [[KEY_A, 1]])),
+      readChunk: vi.fn(),
+      readClaim: vi.fn().mockResolvedValue({
+        changeSeq: 1, databaseReady: true, blockers: [],
+        chunkRevisions: [{ key: KEY_A, contentRev: 1 }],
+      }),
+      applyChunk: vi.fn(),
+      deliverSelection,
+      activateCatalog: vi.fn().mockResolvedValue(undefined),
+      finalizeCatalog: vi.fn()
+        .mockImplementationOnce(async () => {
+          await new Promise<void>((_resolve, reject) => {
+            rejectFinalization = () => { reject(new Error('Catalog finalization failed.')) }
+          })
+        })
+        .mockResolvedValue(undefined),
+      discardCatalog: vi.fn().mockResolvedValue(undefined),
+      publish: vi.fn(),
+    })
+    const firstRenderer = { commit: vi.fn(), rollback: vi.fn(), finalize: vi.fn() }
+    const load = controller.updateContext({ missionId: 'mission-1', rendererGeneration: 'r1' })
+    await vi.waitFor(() => expect(controller.getState()).toMatchObject({
+      tileCatalog: { activationId: 'cancel-reject-stage-1' },
+    }))
+    if (controller.getState().status === 'inactive') throw new Error('Coverage unexpectedly inactive.')
+    const notification = controller.notifyCatalogApplied(controller.getState().tileCatalog!, firstRenderer)
+    await vi.waitFor(() => expect(rejectFinalization).toBeTypeOf('function'))
+
+    controller.cancel()
+    rejectFinalization?.()
+    await expect(notification).rejects.toThrow('Catalog finalization failed.')
+    await load
+
+    const retry = controller.resume()
+    await vi.waitFor(() => expect(controller.getState()).toMatchObject({
+      status: 'loading', tileCatalog: { activationId: 'cancel-reject-stage-2' },
+    }))
+    if (controller.getState().status === 'inactive') throw new Error('Coverage unexpectedly inactive.')
+    const recoveryRenderer = { commit: vi.fn(), rollback: vi.fn(), finalize: vi.fn() }
+    await controller.notifyCatalogApplied(controller.getState().tileCatalog!, recoveryRenderer)
+    await retry
+
+    expect(deliverSelection).toHaveBeenCalledTimes(2)
+    expect(recoveryRenderer.finalize).toHaveBeenCalledOnce()
+    expect(controller.getState()).toMatchObject({ status: 'complete' })
+  })
+
+  it('never rolls back a renderer after backend finalization has succeeded', async () => {
+    const discardCatalog = vi.fn().mockResolvedValue(undefined)
+    const controller = createCoverageController({
+      readManifest: vi.fn().mockResolvedValue(manifest(1, [[KEY_A, 1]])),
+      readChunk: vi.fn(),
+      readClaim: vi.fn().mockResolvedValue({
+        changeSeq: 1, databaseReady: true, blockers: [],
+        chunkRevisions: [{ key: KEY_A, contentRev: 1 }],
+      }),
+      applyChunk: vi.fn(),
+      deliverSelection: vi.fn().mockResolvedValue({
+        activationId: 'renderer-finalize-failure-stage',
+        missionId: 'mission-1',
+        periods: [{ periodKey: 'outing\u0000outing-1', revisionDigest: 'finalize-failure-revision' }],
+        delivered: [{ key: KEY_A, contentRev: 1 }],
+      }),
+      activateCatalog: vi.fn().mockResolvedValue(undefined),
+      finalizeCatalog: vi.fn().mockResolvedValue(undefined),
+      discardCatalog,
+      publish: vi.fn(),
+    })
+    const renderer = {
+      commit: vi.fn(),
+      rollback: vi.fn(),
+      finalize: vi.fn(() => { throw new Error('Renderer ownership finalization failed.') }),
+    }
+    const load = controller.updateContext({ missionId: 'mission-1', rendererGeneration: 'r1' })
+    await vi.waitFor(() => expect(controller.getState()).toMatchObject({
+      tileCatalog: { activationId: 'renderer-finalize-failure-stage' },
+    }))
+    if (controller.getState().status === 'inactive') throw new Error('Coverage unexpectedly inactive.')
+
+    await controller.notifyCatalogApplied(controller.getState().tileCatalog!, renderer)
+    await load
+
+    expect(renderer.commit).toHaveBeenCalledOnce()
+    expect(renderer.rollback).not.toHaveBeenCalled()
+    expect(discardCatalog).not.toHaveBeenCalled()
+    expect(controller.getState()).toMatchObject({
+      status: 'error',
+      tileCatalog: { activationId: 'renderer-finalize-failure-stage' },
+      deliveredFixCount: 0,
+    })
+  })
+
+  it('settles irreversible catalog finalization before stopping the controller', async () => {
+    let finishFinalization: (() => void) | undefined
+    const discardCatalog = vi.fn().mockResolvedValue(undefined)
+    const controller = createCoverageController({
+      readManifest: vi.fn().mockResolvedValue(manifest(1, [[KEY_A, 1]])),
+      readChunk: vi.fn(),
+      readClaim: vi.fn().mockResolvedValue({
+        changeSeq: 1, databaseReady: true, blockers: [],
+        chunkRevisions: [{ key: KEY_A, contentRev: 1 }],
+      }),
+      applyChunk: vi.fn(),
+      deliverSelection: vi.fn().mockResolvedValue({
+        activationId: 'stop-finalization-stage',
+        missionId: 'mission-1',
+        periods: [{ periodKey: 'outing\u0000outing-1', revisionDigest: 'stop-revision' }],
+        delivered: [{ key: KEY_A, contentRev: 1 }],
+      }),
+      activateCatalog: vi.fn().mockResolvedValue(undefined),
+      finalizeCatalog: vi.fn(async () => {
+        await new Promise<void>((resolve) => { finishFinalization = resolve })
+      }),
+      discardCatalog,
+      publish: vi.fn(),
+    })
+    const renderer = { commit: vi.fn(), rollback: vi.fn(), finalize: vi.fn() }
+    const load = controller.updateContext({ missionId: 'mission-1', rendererGeneration: 'r1' })
+    await vi.waitFor(() => expect(controller.getState()).toMatchObject({
+      tileCatalog: { activationId: 'stop-finalization-stage' },
+    }))
+    if (controller.getState().status === 'inactive') throw new Error('Coverage unexpectedly inactive.')
+    const notification = controller.notifyCatalogApplied(controller.getState().tileCatalog!, renderer)
+    await vi.waitFor(() => expect(finishFinalization).toBeTypeOf('function'))
+
+    controller.stop()
+    finishFinalization?.()
+    await Promise.all([notification, load])
+
+    expect(renderer.finalize).toHaveBeenCalledOnce()
+    expect(renderer.rollback).not.toHaveBeenCalled()
+    expect(discardCatalog).not.toHaveBeenCalled()
+    expect(controller.getState()).toEqual({ status: 'inactive' })
   })
 
   it.each(['resolve', 'reject'] as const)(
