@@ -215,6 +215,11 @@ Host-report SHA-256 values are
 `c057cf9de1871cb42851d0e1f29cbbb946fd1ed9a54f3224f289a7bf9b45266c`
 (2M). Normalized repository copies and their own checksums are under
 `output/pr3-production-qualification/7ec7a811ca8ad36870106845fc2045c278688ec2/`.
-Full final-head software,
-browser, visual, and package gates plus all five newly restarted reviews remain
-required after the evidence-only closeout commit.
+Full final-head software, browser, visual, and package gates were repeated on
+the documentation-complete branch after this evidence was bound: 257 unit-test
+files / 2,007 tests, lint, TypeScript, every changed CommonJS file, exact Dots
+10/10, production build, Chromium 157/157, coverage visual 4/4, fresh uncached
+Opus critical review 6/6, and macOS arm64 plus Ubuntu X11 x64 Electron package
+builds all passed. The five newly restarted exact-head reviews are the only
+remaining pre-PR gate; any production-code remediation invalidates this posture
+and restarts the relevant verification and all five reviews.
