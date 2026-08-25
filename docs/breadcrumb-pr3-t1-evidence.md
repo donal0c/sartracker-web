@@ -308,3 +308,29 @@ accepted rerun. No product result is claimed from the excluded attempt.
 The 3.704 GB v9 to v10 migration remains standing because this remediation
 changes neither schema nor migration/open code. Final documentation-head gates
 and all five independent exact-head reviews still must restart from scratch.
+
+## Rebound documentation-head gate
+
+The rebound evidence-binding head
+`c41f1e1d8da385ca7cc12a1dad0fe1746c5473e9` passed:
+
+- 259 unit files / 2,019 tests;
+- ESLint, TypeScript build mode, and syntax checking for every changed
+  JavaScript/CommonJS/ESM file;
+- the source-exact paged Dots contract, 10/10 including all eight injected
+  corruption falsifiers;
+- the production build and bundle budgets;
+- Chromium 157/157;
+- the selected coverage visual workflow 4/4 and a fresh no-cache critical
+  visual review 6/6, report
+  `test-results/visual-verification/reports/visual-review-2026-08-25T09-26-11Z.json`;
+- macOS arm64 directory packaging, with `app.asar` SHA-256
+  `a4b20844f328695d75704890647fee7b4606b9fe0a5fb7638e8770337c18eecd`;
+  and
+- Ubuntu x64 directory packaging from the same exact commit, with `app.asar`
+  SHA-256
+  `78719be2758b4f3b3726b3ac1b491e877dbe65df43392d959ce23aba664a8afd`.
+
+The closeout files containing this record are documentation-only. Their commit
+must receive one final exact-head repeat of these gates before the five
+independent reviews start; no further evidence-heavy rerun is prescribed.
