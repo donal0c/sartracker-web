@@ -92,3 +92,10 @@ By design, T1 did not run a packaged 960k or 2M coverage workload, a packaged
 forced-kill matrix, Windows, field hardware, GPX, replay, search passes,
 archives, or custody. The coordinator-owned unpublished post-merge 960k Ubuntu
 checkpoint remains T3 and is outside this implementation task.
+
+## G3 ratification
+
+Donal approved the recommended combined posture on 2026-08-25 at exact pushed
+pre-flip head `d05c7876963a9104755615018151d1fc281f5e5b`: mission model
+and complete coverage default on together, no budget amendment, explicit build
+overrides retained, and rollback by reverting the single final flip commit.
