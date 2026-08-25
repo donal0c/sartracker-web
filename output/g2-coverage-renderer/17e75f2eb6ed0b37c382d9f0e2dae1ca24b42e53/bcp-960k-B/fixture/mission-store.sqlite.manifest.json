@@ -1,0 +1,265 @@
+{
+  "generatorVersion": 4,
+  "syntheticDataOnly": true,
+  "preset": "bcp-960k",
+  "schemaVersion": 9,
+  "workload": {
+    "mode": "breadcrumb-programme",
+    "simulatedMissionDays": 12,
+    "deviceCount": 100,
+    "activePositionDeviceCount": 100,
+    "pollIntervalMs": 108000,
+    "autosaveIntervalMs": 30000,
+    "pollCount": 9600,
+    "restartCheckpointsDays": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11
+    ],
+    "realPositionRows": 960000,
+    "redundantTelemetryRows": 0
+  },
+  "database": {
+    "bytes": 476151808,
+    "sha256": "6b92005b6f150f712fb73ac89bce6b3bcdf02ce54caac7644e02e3a76bbccdc0"
+  },
+  "rows": {
+    "totalMissionEvents": 38,
+    "byTable": {
+      "missions": 2,
+      "devices": 101,
+      "positions": 960000,
+      "mission_events": 38,
+      "outings": 12,
+      "mission_teams": 11,
+      "mission_participants": 19,
+      "mission_group_membership_events": 96,
+      "participant_backfill_checkpoints": 2,
+      "ingest_anomalies": 5
+    },
+    "byEventType": {
+      "device_created": 0,
+      "device_updated": 0,
+      "position_recorded": 0,
+      "mission_backup_synced": 0,
+      "fixture_restart_checkpoint": 11,
+      "operational": 38
+    }
+  },
+  "bytes": {
+    "byTable": {
+      "devices": 24576,
+      "drawings": 4096,
+      "gpx_track_imports": 4096,
+      "helicopters": 4096,
+      "idx_group_membership_mission_team": 16384,
+      "idx_group_membership_sequence": 4096,
+      "idx_ingest_anomalies_mission_created": 4096,
+      "idx_mission_participants_active_device": 4096,
+      "idx_mission_participants_active_group": 4096,
+      "idx_mission_participants_mission": 4096,
+      "idx_missions_status": 4096,
+      "idx_outings_mission_active": 4096,
+      "idx_outings_mission_started": 4096,
+      "idx_position_revisions_position_corrected": 4096,
+      "idx_positions_mission_device_timestamp": 88940544,
+      "idx_positions_mission_source_position_id": 63479808,
+      "ingest_anomalies": 4096,
+      "ingest_anomaly_deliveries": 4096,
+      "ingest_anomaly_devices": 4096,
+      "ingest_anomaly_mission_health": 4096,
+      "layer_catalog_entries": 4096,
+      "markers": 4096,
+      "metadata": 4096,
+      "mission_events": 12288,
+      "mission_group_membership_events": 20480,
+      "mission_participants": 4096,
+      "mission_teams": 4096,
+      "missions": 4096,
+      "outings": 4096,
+      "participant_backfill_checkpoints": 4096,
+      "position_revisions": 4096,
+      "positions": 281579520,
+      "sqlite_autoindex_devices_1": 4096,
+      "sqlite_autoindex_devices_2": 12288,
+      "sqlite_autoindex_drawings_1": 4096,
+      "sqlite_autoindex_gpx_track_imports_1": 4096,
+      "sqlite_autoindex_gpx_track_imports_2": 4096,
+      "sqlite_autoindex_helicopters_1": 4096,
+      "sqlite_autoindex_helicopters_2": 4096,
+      "sqlite_autoindex_ingest_anomalies_1": 4096,
+      "sqlite_autoindex_ingest_anomalies_2": 4096,
+      "sqlite_autoindex_ingest_anomaly_deliveries_1": 4096,
+      "sqlite_autoindex_ingest_anomaly_devices_1": 4096,
+      "sqlite_autoindex_ingest_anomaly_mission_health_1": 4096,
+      "sqlite_autoindex_layer_catalog_entries_1": 4096,
+      "sqlite_autoindex_markers_1": 4096,
+      "sqlite_autoindex_metadata_1": 4096,
+      "sqlite_autoindex_mission_events_1": 4096,
+      "sqlite_autoindex_mission_group_membership_events_1": 4096,
+      "sqlite_autoindex_mission_participants_1": 4096,
+      "sqlite_autoindex_mission_teams_1": 4096,
+      "sqlite_autoindex_mission_teams_2": 4096,
+      "sqlite_autoindex_missions_1": 4096,
+      "sqlite_autoindex_outings_1": 4096,
+      "sqlite_autoindex_participant_backfill_checkpoints_1": 4096,
+      "sqlite_autoindex_position_revisions_1": 4096,
+      "sqlite_autoindex_positions_1": 41840640,
+      "sqlite_autoindex_tracking_history_checkpoints_1": 4096,
+      "sqlite_schema": 20480,
+      "tracking_history_checkpoints": 4096
+    }
+  },
+  "scenario": {
+    "acceptedPositionCount": 960000,
+    "qualification": "normal-envelope",
+    "groupCount": 12,
+    "selectedGroupCount": 11,
+    "activeParticipantCount": 100,
+    "groupSizes": [
+      12,
+      11,
+      10,
+      9,
+      9,
+      8,
+      8,
+      7,
+      7,
+      7,
+      6,
+      6
+    ],
+    "outingCount": 12,
+    "outings": [
+      {
+        "id": "fixture-outing-000000000000",
+        "label": "SYNTHETIC OUTING 01",
+        "startedAt": "2026-01-01T18:00:00.000Z",
+        "endedAt": "2026-01-01T23:00:00.000Z",
+        "crossesMidnight": false
+      },
+      {
+        "id": "fixture-outing-000000000001",
+        "label": "SYNTHETIC OUTING 02",
+        "startedAt": "2026-01-02T20:00:00.000Z",
+        "endedAt": "2026-01-03T04:00:00.000Z",
+        "crossesMidnight": true
+      },
+      {
+        "id": "fixture-outing-000000000002",
+        "label": "SYNTHETIC OUTING 03",
+        "startedAt": "2026-01-03T07:00:00.000Z",
+        "endedAt": "2026-01-03T19:00:00.000Z",
+        "crossesMidnight": false
+      },
+      {
+        "id": "fixture-outing-000000000003",
+        "label": "SYNTHETIC OUTING 04",
+        "startedAt": "2026-01-04T19:00:00.000Z",
+        "endedAt": "2026-01-05T02:00:00.000Z",
+        "crossesMidnight": true
+      },
+      {
+        "id": "fixture-outing-000000000004",
+        "label": "SYNTHETIC OUTING 05",
+        "startedAt": "2026-01-05T08:00:00.000Z",
+        "endedAt": "2026-01-05T18:00:00.000Z",
+        "crossesMidnight": false
+      },
+      {
+        "id": "fixture-outing-000000000005",
+        "label": "SYNTHETIC OUTING 06",
+        "startedAt": "2026-01-06T21:00:00.000Z",
+        "endedAt": "2026-01-07T03:00:00.000Z",
+        "crossesMidnight": true
+      },
+      {
+        "id": "fixture-outing-000000000006",
+        "label": "SYNTHETIC OUTING 07",
+        "startedAt": "2026-01-07T06:00:00.000Z",
+        "endedAt": "2026-01-07T18:00:00.000Z",
+        "crossesMidnight": false
+      },
+      {
+        "id": "fixture-outing-000000000007",
+        "label": "SYNTHETIC OUTING 08",
+        "startedAt": "2026-01-08T18:00:00.000Z",
+        "endedAt": "2026-01-09T03:00:00.000Z",
+        "crossesMidnight": true
+      },
+      {
+        "id": "fixture-outing-000000000008",
+        "label": "SYNTHETIC OUTING 09",
+        "startedAt": "2026-01-09T08:00:00.000Z",
+        "endedAt": "2026-01-09T20:00:00.000Z",
+        "crossesMidnight": false
+      },
+      {
+        "id": "fixture-outing-000000000009",
+        "label": "SYNTHETIC OUTING 10",
+        "startedAt": "2026-01-10T17:00:00.000Z",
+        "endedAt": "2026-01-11T03:00:00.000Z",
+        "crossesMidnight": true
+      },
+      {
+        "id": "fixture-outing-000000000010",
+        "label": "SYNTHETIC OUTING 11",
+        "startedAt": "2026-01-11T07:00:00.000Z",
+        "endedAt": "2026-01-11T18:00:00.000Z",
+        "crossesMidnight": false
+      },
+      {
+        "id": "fixture-outing-000000000011",
+        "label": "SYNTHETIC OUTING 12",
+        "startedAt": "2026-01-12T16:00:00.000Z",
+        "endedAt": "2026-01-12T23:00:00.000Z",
+        "crossesMidnight": false
+      }
+    ],
+    "legacyNoOutingMissionCount": 1,
+    "participantBackfillWindows": [
+      {
+        "deviceId": "synthetic-device-096",
+        "completed": true
+      },
+      {
+        "deviceId": "synthetic-device-095",
+        "completed": false
+      }
+    ],
+    "stationaryCases": [
+      {
+        "deviceId": "synthetic-device-001",
+        "kind": "attention"
+      },
+      {
+        "deviceId": "synthetic-device-002",
+        "kind": "slow-walker-near-miss"
+      },
+      {
+        "deviceId": "synthetic-device-003",
+        "kind": "jitter-near-miss"
+      },
+      {
+        "deviceId": "synthetic-device-004",
+        "kind": "teleport-outlier-inside-run"
+      }
+    ],
+    "injections": {
+      "exactDuplicates": 4,
+      "conflicts": 2,
+      "rejected": 3,
+      "lateOutOfOrder": 8
+    },
+    "gpxEvidenceBoundary": "deferred-to-pr4-not-faked"
+  }
+}

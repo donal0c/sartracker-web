@@ -1,0 +1,11 @@
+2026-08-25T12:10:58+01:00
+17e75f2eb6ed0b37c382d9f0e2dae1ca24b42e53
+Linux donal-Precision-5570 7.0.0-28-generic #28~24.04.1-Ubuntu SMP PREEMPT_DYNAMIC Wed Jul  1 15:50:57 UTC 2 x86_64 x86_64 x86_64 GNU/Linux
+Architecture:                            x86_64
+CPU(s):                                  20
+On-line CPU(s) list:                     0-19
+Model name:                              12th Gen Intel(R) Core(TM) i7-12800H
+CPU(s) scaling MHz:                      13%
+NUMA node0 CPU(s):                       0-19
+Type=wayland
+State=active

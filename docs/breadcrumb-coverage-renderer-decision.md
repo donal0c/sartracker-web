@@ -216,6 +216,41 @@ all entries passed local verification after transfer. The packaged benchmark
 `app.asar` SHA-256 is
 `f46397ac31b79b7a9e8c90203fed1f545c1f1162427b5681402904238feed954`.
 
+## Two-phase production handoff remeasurement
+
+The final exact-head review found that production still retired its backend
+predecessor at commit rather than after renderer finalization, and that retained
+tile reads were serialized behind catalog builds. Commit
+`17e75f2eb6ed0b37c382d9f0e2dae1ca24b42e53` added the production two-phase
+commit/finalize/rollback boundary and made retained reads concurrent with the
+mutation queue. Under the standing-result rule, those equivalent Candidate-B
+pipeline changes invalidated B's two rows again. Candidates A and C remained
+untouched.
+
+The same bounded `--candidates B` matrix reran all six serial packaged rows and
+both kill/resume probes on the reference Ubuntu X11 host. No budget changed:
+
+| Candidate | Fixture | Verdict | First useful worst warm | Complete worst warm | Filter worst warm | Main max worst warm | Renderer p95 worst warm | Settled / peak GiB | Query / segment / encode / source / settle median |
+| --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | --- |
+| B | 960k | **PASS** | 2,056 | 4,374 | 76 | 57 | 67 | 0.27 / 0.27 | 2,492 / 501 / 147 / 0 / 2,189 |
+| B | 2M | **PASS** | 3,667 | 7,818 | 112 | 48 | 100 | 0.28 / 0.28 | 5,245 / 1,054 / 280 / 0 / 3,558 |
+
+All six manifests retained the exact-Dots, attestation, current-fix,
+kill/resume, stale-tile, and unrelated-revision falsifiers. Stable manifest
+checksums are:
+
+| Candidate / fixture | Run 1 cold | Run 2 warm | Run 3 warm |
+| --- | --- | --- | --- |
+| B / 960k | `31b3705472b7485b90cf1f297faf83e311b90770e684d42b58afc7024ffb7087` | `9bf0c66a5b02d5b460e32a0b5289871fc8b38db972285aec59ea5ce8d40798d3` | `d88cc8415bc1e0a414504c3cc898a6ef1ccc2d48fe812af8d20904eddc168a93` |
+| B / 2M | `04561d591ebec185d9ac2449a5836b288cc4a61be9f4a32ff63efaf774c5c1f9` | `9f00d07c97a4333f0274478b57e32a1ae34953b127ee752e014ddfcc72d96086` | `6b9198a9a8e90da23ebb0cbd8ac624d5d66ac659bfed0ed223d7134f43b47e2e` |
+
+Evidence is committed under
+`output/g2-coverage-renderer/17e75f2eb6ed0b37c382d9f0e2dae1ca24b42e53/`.
+Its verified 19-file manifest SHA-256 is
+`df5478ad8d02a9c93bd1a70d5b340031f810ab6d7dc7ba1cea6c6681f3ec296e`;
+the packaged benchmark `app.asar` SHA-256 remains
+`f46397ac31b79b7a9e8c90203fed1f545c1f1162427b5681402904238feed954`.
+
 ## Excluded preflight attempts
 
 Three preflight failures were corrected before the accepted matrix and are not

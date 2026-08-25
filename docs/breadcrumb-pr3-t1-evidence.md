@@ -420,3 +420,85 @@ launch log, and checksums are included in the packaged-soak manifest.
 The evidence files added by this section are documentation-only. Their binding
 commit must receive the complete deterministic, Chromium/visual, and packaging
 gates on its exact head before all five independent reviews restart.
+
+## Final two-phase handoff remediation and rebound
+
+The next exact-head review of `33f308b6b1c8157d3567acced1884f55425a142e`
+found eight remaining production/evidence gaps. Red-first tests reproduced each
+one before commit `17e75f2eb6ed0b37c382d9f0e2dae1ca24b42e53`:
+
+- a basemap style change removed coverage sources and the controller rolled the
+  already-active catalog back instead of reattaching it;
+- backend commit retired the predecessor before renderer finalization, so a
+  superseded activation could leave no serviceable catalog;
+- the production worker serialized retained tile reads behind long builds and
+  reused stage numbers after restart;
+- delayed startup health and a healthy acknowledgement for another mission
+  could erase newer or stronger evidence health;
+- renderer evidence blockers rendered as generic partial progress, including a
+  possible full `N of N` bar and an irrelevant coverage Retry; and
+- the prior qualification driver was a copied artifact that did not self-attest
+  its checkout or cross staged-read, activation, and active-read boundaries.
+
+The remediation adds a sender-owned commit/finalize/discard IPC lifecycle,
+keeps backend and MapLibre predecessors reversible until both sides finalize,
+serves retained reads outside the worker mutation queue, gives every worker
+generation nonrepeating UUID stage tokens, aggregates durable health by mission,
+routes startup health through that aggregate, and renders an explicit anomaly-
+evidence wait without false progress. The repository now contains the exact
+self-attesting production qualification driver under `scripts/`.
+
+Before the evidence rebound, the focused unit set passed 86/86, the complete
+single-worker suite passed 260 files / 2,035 tests, lint, TypeScript, changed
+CommonJS syntax, exact Dots 10/10, build/budgets, focused Chromium coverage 4/4,
+and the new critical visual plus fresh independent review passed. The normal
+parallel unit invocation twice tripped only the pre-existing 500k breadcrumb
+accumulator timing assertion under suite contention (149–199 ms against its
+100 ms assertion); that test passed alone and the complete serial suite passed.
+
+Because worker scheduling and predecessor lifetime changed, Candidate B's two
+G2 rows were rerun as six serial packaged runs plus both kill/resume probes.
+Both remain PASS without amendment; the exact table and manifest bindings are
+in `docs/breadcrumb-coverage-renderer-decision.md` and
+`output/g2-coverage-renderer/17e75f2eb6ed0b37c382d9f0e2dae1ca24b42e53/`.
+
+The committed production driver then passed serially on the reference Ubuntu
+host using the real mission store and production tile worker:
+
+| Fixture | Delivered | First useful | Complete geometry | Main max gap | Claim posture |
+| --- | ---: | ---: | ---: | ---: | --- |
+| 960k | 959,988 / 959,988 | 2,316.874 ms | 6,077.146 ms | 15.884 ms | Correctly blocked only by `backfill_incomplete` |
+| 2M | 1,999,988 / 1,999,988 | 4,526.614 ms | 12,083.911 ms | 23.219 ms | Correctly blocked only by `backfill_incomplete` |
+
+Report SHA-256 values are
+`382b98c8511c3cfeb00c3e589021265525135e61259fa4a9c8a15e91feae19ca`
+and
+`af8bcc6d205b098d0c289473e2416f9ca5af53a778221389381600554f910acb`.
+The driver, reports, and locally verified manifest are under
+`output/pr3-production-qualification/17e75f2eb6ed0b37c382d9f0e2dae1ca24b42e53/`;
+the manifest SHA-256 is
+`003794aff393f8f7d7b7e906b530c2cd566e97f2b7f6934aa7ba6d0548c74eed`.
+
+The single replacement packaged CI-scale soak passed on X11 with Mesa llvmpipe
+via ANGLE/OpenGL: 6/6 batches, 8,664/8,664 source-exact positions, one restart,
+both launches exit 0, zero renderer crashes, integrity `ok`, WAL 0/0/0, main
+maximum 9.099 ms, renderer maximum 100.3 ms, four healthy operator interactions,
+1,116,405,760-byte peak process-tree RSS, and zero redundant telemetry slope.
+The post-run coverage ledger held one mission at change sequence 12, 32 chunks,
+zero invalidations, and 32,768 bytes across coverage tables/indexes. The report
+SHA-256 is
+`772d64af61160e906281fc5f4b3cbfeb12123de0fcffa789f6442cc2d9f1ca02`;
+the packaged executable and `app.asar` SHA-256 values are
+`6344ae1d9044fedc54779e8bacaddc032fdcc0f55e146fc3623756eafa0bbaf8`
+and
+`9e1bab92dc65ba80af3987110c7b2653eee0d3a3b676f4eaf495dd7fbf0e9358`.
+The full binding is under
+`output/pr3-packaged-soak/17e75f2eb6ed0b37c382d9f0e2dae1ca24b42e53/`;
+the manifest SHA-256 is
+`ca80c2a993f84dd6000dc961d0965bdcfb52bc294f4b30131163052aff1bbfb7`.
+
+The 3.704 GB v9→v10 migration remains standing because this remediation changes
+neither schema nor migration/database-open code. The evidence-binding commit is
+documentation-only; it still requires complete exact-head deterministic,
+Chromium/visual, macOS/Ubuntu package gates and five independent reviews from
+scratch before the PR opens.
