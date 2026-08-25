@@ -59,4 +59,21 @@ describe('Candidate B MapLibre protocol [DON-276]', () => {
       message: 'Coverage tile delivery failed.',
     })
   })
+
+  it('accepts a current empty PBF without reporting renderer failure', async () => {
+    const addProtocol = vi.fn()
+    const onFailure = vi.fn()
+    Object.defineProperty(window, 'sartrackerElectron', {
+      configurable: true,
+      value: { missionStore: { readCoverageTile: vi.fn().mockResolvedValue(new Uint8Array()) } },
+    })
+    registerCoverageTileProtocol({ addProtocol, removeProtocol: vi.fn() }, onFailure)
+    const [, loader] = addProtocol.mock.calls[0]!
+    const url = createCoverageTileUrl('outing\u0000empty', 'revision-empty')
+
+    await expect(loader({
+      url: url.replace('{z}', '8').replace('{x}', '0').replace('{y}', '0'),
+    })).resolves.toEqual({ data: new ArrayBuffer(0) })
+    expect(onFailure).not.toHaveBeenCalled()
+  })
 })

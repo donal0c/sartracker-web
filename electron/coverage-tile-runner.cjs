@@ -28,15 +28,18 @@ function createCoverageTileRunner(input) {
     created.on('message', (message) => settleRequest(created, message))
     created.on('error', (error) => {
       const failure = new Error(`Coverage tile worker failed: ${safeMessage(error.message)}`)
+      const expected = expectedTerminations.has(created)
       failWorker(created, failure)
-      if (!expectedTerminations.has(created)) input.onFailure?.(failure)
+      if (!expected) input.onFailure?.(failure)
     })
     created.on('exit', (exitCode) => {
       if (worker === created) worker = null
       const expected = expectedTerminations.has(created)
       expectedTerminations.delete(created)
-      if (!closing && !expected && exitCode !== 0) {
-        const failure = new Error(`Coverage tile worker exited with code ${exitCode}.`)
+      if (!closing && !expected) {
+        const failure = exitCode === 0
+          ? new Error('Coverage tile worker exited unexpectedly.')
+          : new Error(`Coverage tile worker exited with code ${exitCode}.`)
         failPending(failure, created)
         input.onFailure?.(failure)
       }
@@ -118,6 +121,8 @@ function createCoverageTileRunner(input) {
 
   return {
     syncCatalog: (payload, options) => request('sync-catalog', payload, options),
+    commitCatalog: (payload, options) => request('commit-catalog', payload, options),
+    discardCatalog: (payload, options) => request('discard-catalog', payload, options),
     readTile: (payload, options) => request('read-tile', payload, options),
     close: async () => {
       closing = true

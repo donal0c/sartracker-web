@@ -65,6 +65,29 @@ describe('Candidate B coverage overlay [DON-276]', () => {
     vi.spyOn(map, 'getSource').mockReturnValue(undefined)
     expect(() => syncCoverageOverlay(map, catalog)).toThrow(/activation failed/i)
   })
+
+  it('keeps the prior revision installed when replacement source creation fails', () => {
+    const map = createMap()
+    syncCoverageOverlay(map, {
+      periods: [{ periodKey: 'outing\u0000a', revisionDigest: 'a1' }],
+      delivered: [],
+    })
+    const priorSource = [...map.sources.keys()][0]!
+    const originalAddSource = map.addSource.bind(map)
+    vi.spyOn(map, 'addSource').mockImplementation((id, source) => {
+      if (String((source as { readonly tiles?: readonly string[] }).tiles?.[0]).includes('a2')) {
+        throw new Error('replacement source failed')
+      }
+      return originalAddSource(id, source)
+    })
+
+    expect(() => syncCoverageOverlay(map, {
+      periods: [{ periodKey: 'outing\u0000a', revisionDigest: 'a2' }],
+      delivered: [],
+    })).toThrow(/replacement source failed/)
+    expect(map.sources.has(priorSource)).toBe(true)
+    expect(map.getSource(priorSource)).toBeDefined()
+  })
 })
 
 function createMap(): CoverageOverlayMap & {

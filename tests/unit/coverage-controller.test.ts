@@ -238,6 +238,84 @@ describe('coverage controller [DON-276]', () => {
     expect(controller.getState()).toMatchObject({ status: 'complete', deliveredFixCount: 2 })
   })
 
+  it('rebuilds a changed period with every unchanged sibling descriptor', async () => {
+    let current = manifest(1, [[KEY_A, 1], [KEY_B, 1]])
+    const deliverSelection = vi.fn(async ({ chunks }: {
+      readonly chunks: readonly { readonly key: CoverageChunkKey; readonly contentRev: number }[]
+    }) => ({
+      periods: [{ periodKey: 'outing\u0000outing-1', revisionDigest: `rev-${chunks[0]!.contentRev}` }],
+      delivered: chunks,
+    }))
+    const controller = createCoverageController({
+      readManifest: vi.fn(async () => current),
+      readChunk: vi.fn(),
+      readClaim: vi.fn(async () => ({
+        changeSeq: current.changeSeq, databaseReady: true, blockers: [],
+        chunkRevisions: current.chunks.map(({ key, contentRev }) => ({ key, contentRev })),
+      })),
+      applyChunk: vi.fn(), deliverSelection, publish: vi.fn(),
+    })
+    const initial = controller.updateContext({ missionId: 'mission-1', rendererGeneration: 'r1' })
+    await vi.waitFor(() => expect(deliverSelection).toHaveBeenCalledTimes(1))
+    if (controller.getState().status === 'inactive') throw new Error('Coverage unexpectedly inactive.')
+    controller.notifyCatalogApplied(controller.getState().tileCatalog!)
+    await initial
+
+    current = manifest(2, [[KEY_A, 2], [KEY_B, 1]])
+    const refresh = controller.refresh()
+    await vi.waitFor(() => expect(deliverSelection).toHaveBeenCalledTimes(2))
+
+    expect(deliverSelection.mock.calls[1]![0].chunks.map((chunk) => [
+      chunk.key.device_id, chunk.contentRev,
+    ])).toEqual([['device-a', 2], ['device-b', 1]])
+    if (controller.getState().status === 'inactive') throw new Error('Coverage unexpectedly inactive.')
+    controller.notifyCatalogApplied(controller.getState().tileCatalog!)
+    await refresh
+    expect(controller.getState()).toMatchObject({ status: 'complete', deliveredFixCount: 2 })
+  })
+
+  it('does not let an older in-flight claim overwrite a newer sequence revocation', async () => {
+    let releaseFirstClaim: (() => void) | undefined
+    const publish = vi.fn()
+    const readManifest = vi.fn()
+      .mockResolvedValueOnce(manifest(1, [[KEY_A, 1]]))
+      .mockResolvedValueOnce(manifest(2, [[KEY_A, 1]]))
+    const readClaim = vi.fn()
+      .mockImplementationOnce(async () => {
+        await new Promise<void>((resolve) => { releaseFirstClaim = resolve })
+        return {
+          changeSeq: 1, databaseReady: true, blockers: [],
+          chunkRevisions: [{ key: KEY_A, contentRev: 1 }],
+        }
+      })
+      .mockResolvedValueOnce({
+        changeSeq: 2, databaseReady: true, blockers: [],
+        chunkRevisions: [{ key: KEY_A, contentRev: 1 }],
+      })
+    const controller = createCoverageController({
+      readManifest,
+      readChunk: vi.fn(async ({ key, expectedContentRev }) => page(key, expectedContentRev)),
+      readClaim,
+      applyChunk: vi.fn(),
+      publish,
+    })
+    const load = controller.updateContext({ missionId: 'mission-1', rendererGeneration: 'r1' })
+    await vi.waitFor(() => expect(readClaim).toHaveBeenCalledTimes(1))
+
+    await controller.notifyChanged('mission-1', 2)
+    const publicationsAfterRevocation = publish.mock.calls.length
+    releaseFirstClaim?.()
+    await load
+    await vi.waitFor(() => expect(controller.getState()).toMatchObject({
+      status: 'complete', changeSeq: 2,
+    }))
+
+    expect(publish.mock.calls.slice(publicationsAfterRevocation)
+      .map(([published]) => published)
+      .some((published) => published.status === 'complete' && published.changeSeq === 1))
+      .toBe(false)
+  })
+
   it('cannot claim Complete when renderer catalog activation fails', async () => {
     const initial = manifest(1, [[KEY_A, 1]])
     const controller = createCoverageController({
@@ -276,8 +354,43 @@ describe('coverage controller [DON-276]', () => {
     harness.controller.notifyRendererUnavailable('Coverage tile worker exited.')
 
     expect(harness.controller.getState()).toMatchObject({
-      status: 'error', deliveredFixCount: 1, totalFixCount: 1,
+      status: 'error', deliveredFixCount: 0, totalFixCount: 1,
     })
+  })
+
+  it('forces full Candidate-B redelivery before Complete can return after worker loss', async () => {
+    const initial = manifest(1, [[KEY_A, 1]])
+    const deliverSelection = vi.fn(async ({ chunks }: {
+      readonly chunks: readonly { readonly key: CoverageChunkKey; readonly contentRev: number }[]
+    }) => ({
+      periods: [{ periodKey: 'outing\u0000outing-1', revisionDigest: `rev-${deliverSelection.mock.calls.length}` }],
+      delivered: chunks,
+    }))
+    const controller = createCoverageController({
+      readManifest: vi.fn().mockResolvedValue(initial),
+      readChunk: vi.fn(),
+      readClaim: vi.fn().mockResolvedValue({
+        changeSeq: 1, databaseReady: true, blockers: [],
+        chunkRevisions: [{ key: KEY_A, contentRev: 1 }],
+      }),
+      applyChunk: vi.fn(), deliverSelection, publish: vi.fn(),
+    })
+    const firstLoad = controller.updateContext({ missionId: 'mission-1', rendererGeneration: 'r1' })
+    await vi.waitFor(() => expect(deliverSelection).toHaveBeenCalledTimes(1))
+    if (controller.getState().status === 'inactive') throw new Error('Coverage unexpectedly inactive.')
+    controller.notifyCatalogApplied(controller.getState().tileCatalog!)
+    await firstLoad
+
+    controller.notifyRendererUnavailable('Coverage tile worker exited.')
+    expect(controller.getState()).toMatchObject({ status: 'error', deliveredFixCount: 0 })
+    const retry = controller.resume()
+    await vi.waitFor(() => expect(deliverSelection).toHaveBeenCalledTimes(2))
+    expect(controller.getState()).toMatchObject({ status: 'loading', deliveredFixCount: 0 })
+    if (controller.getState().status === 'inactive') throw new Error('Coverage unexpectedly inactive.')
+    controller.notifyCatalogApplied(controller.getState().tileCatalog!)
+    await retry
+
+    expect(controller.getState()).toMatchObject({ status: 'complete', deliveredFixCount: 1 })
   })
 
   it('retains an allow-listed worker error class after a successful retry', async () => {

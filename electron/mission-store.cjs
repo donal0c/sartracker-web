@@ -36,7 +36,6 @@ const { createParticipantStore } = require('./participant-store.cjs')
 const { runOutingFixSummaryInWorker } = require('./outing-fix-summary-runner.cjs')
 const { runCoverageQueryInWorker } = require('./coverage-query-runner.cjs')
 const { createCoverageTileRunner } = require('./coverage-tile-runner.cjs')
-const { createChunkKey } = require('./coverage-tile-catalog.cjs')
 const {
   appendCoverageInvalidation,
   applyCoverageChunkBuild,
@@ -467,20 +466,26 @@ function createElectronMissionStore(options) {
             lastBuildDurationMs: performance.now() - buildStartedAt,
           })
         }
-        const appliedBuilds = applyCoverageChunkBuilds(db, {
-          missionId: input.missionId,
-          builds: result.builds,
-          updatedAt: now(),
-        })
+        let appliedBuilds
+        try {
+          appliedBuilds = applyCoverageChunkBuilds(db, {
+            missionId: input.missionId,
+            builds: result.builds,
+            updatedAt: now(),
+          })
+        } catch (error) {
+          await coverageTileRunner.discardCatalog({ stageId: result.stageId }, { signal })
+          throw error
+        }
         const rejectedChunks = new Set(appliedBuilds.rejectedChunkKeys)
-        const delivered = result.delivered.filter((entry) =>
-          !rejectedChunks.has(createChunkKey(entry.key)))
-        const periods = result.periods.filter((period) =>
-          period.contributors?.every((contributor) => {
-            const separator = contributor.lastIndexOf('@')
-            return separator > 0 && !rejectedChunks.has(contributor.slice(0, separator))
-          }) ?? true)
-        return { periods, delivered }
+        if (rejectedChunks.size > 0) {
+          await coverageTileRunner.discardCatalog({ stageId: result.stageId }, { signal })
+          const error = new Error('chunk-stale: coverage tile catalog changed during apply')
+          error.code = 'chunk-stale'
+          throw error
+        }
+        await coverageTileRunner.commitCatalog({ stageId: result.stageId }, { signal })
+        return { periods: result.periods, delivered: result.delivered }
       },
     ),
     readCoverageTile: async (input) => coverageTileRunner.readTile(input),

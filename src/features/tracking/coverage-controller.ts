@@ -186,20 +186,26 @@ export function createCoverageController(input: {
             delivered[coverageChunkIdentity(chunk.key)] !== chunk.contentRev),
         )
         const catalogBatches = createCoverageCatalogDeliveryBatches({
+          manifest,
           priorManifest,
           priorDelivered,
           retainDelivery,
           orderedPending: pending,
         })
         for (const descriptor of pending) scheduler.recordAttempt(descriptor)
-        for (const chunks of catalogBatches) {
-          activeCatalog = await input.deliverSelection({
+        for (const [batchIndex, chunks] of catalogBatches.entries()) {
+          const deliveredCatalog = await input.deliverSelection({
             missionId,
             manifest,
             chunks,
             requestId: nextRequestId('catalog'),
             signal: controller.signal,
           })
+          activeCatalog = {
+            ...deliveredCatalog,
+            retainPriorPeriods: priorCatalog !== null &&
+              batchIndex < catalogBatches.length - 1,
+          }
           if (!ownsOperation(operation, controller, missionId, rendererGeneration)) return
           const activation = catalogActivation.wait(activeCatalog, controller.signal)
           publish(createActiveState({
@@ -282,8 +288,13 @@ export function createCoverageController(input: {
         controller.signal,
       )
       if (!ownsOperation(operation, controller, missionId, rendererGeneration)) return
+      const currentObservedSequence = state.status === 'inactive'
+        ? claimSequence
+        : state.latestObservedChangeSeq
+      const finalSequence = Math.max(claimSequence, currentObservedSequence)
       const complete = claim.databaseReady &&
-        claim.changeSeq === claimSequence &&
+        !refreshRequested &&
+        claim.changeSeq === finalSequence &&
         claim.chunkRevisions.every(({ key, contentRev }) =>
           delivered[coverageChunkIdentity(key)] === contentRev)
       publish(createActiveState({
@@ -291,7 +302,7 @@ export function createCoverageController(input: {
         missionId,
         rendererGeneration,
         changeSeq: claim.changeSeq,
-        latestObservedChangeSeq: claimSequence,
+        latestObservedChangeSeq: finalSequence,
         manifest: activeManifest,
         tileCatalog: activeCatalog,
         delivered,
@@ -374,16 +385,23 @@ export function createCoverageController(input: {
   const publishRendererUnavailable = (message: string): void => {
     if (state.status === 'inactive') return
     const error = new Error(message)
-    if (catalogActivation.rejectPending(error)) return
+    catalogActivation.rejectPending(error)
     activeController?.abort()
     activeController = null
     operationGeneration += 1
-    publish({
-      ...asPartialState(state),
+    publish(createActiveState({
       status: 'error',
+      missionId: state.missionId,
+      rendererGeneration: state.rendererGeneration,
+      changeSeq: state.changeSeq,
+      latestObservedChangeSeq: state.latestObservedChangeSeq,
+      manifest: state.manifest,
+      tileCatalog: state.tileCatalog,
+      delivered: {},
+      ...(state.blockers === undefined ? {} : { blockers: state.blockers }),
       lastErrorClass: classifyCoverageError(error),
       message: 'Complete mission history is temporarily unavailable. Existing coverage remains shown.',
-    })
+    }, context.selectedKeys))
   }
 
   return {

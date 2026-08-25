@@ -29,6 +29,7 @@ type PeriodOverlay = {
 }
 
 const overlaysByMap = new WeakMap<object, Map<string, PeriodOverlay>>()
+let nextOverlaySequence = 0
 
 /**
  * Synchronizes Candidate-B period sources independently. An unrelated chunk
@@ -54,25 +55,71 @@ export function syncCoverageOverlay(
       }]
   const desired = new Map(desiredPeriods.map((period) => [period.periodKey, period]))
 
-  for (const [periodKey, overlay] of [...overlays.entries()]) {
-    const next = desired.get(periodKey)
-    const sourceSurvivedStyle = map.getSource(overlay.sourceId) !== undefined
-    if (next?.revisionDigest === overlay.revisionDigest && sourceSurvivedStyle) {
-      applyCoverageFilters(map, overlay, filters)
+  const staged: {
+    readonly periodKey: string
+    readonly prior: PeriodOverlay | undefined
+    readonly next: PeriodOverlay
+  }[] = []
+  for (const period of desired.values()) {
+    const prior = overlays.get(period.periodKey)
+    const sourceSurvivedStyle = prior !== undefined &&
+      map.getSource(prior.sourceId) !== undefined
+    if (prior?.revisionDigest === period.revisionDigest && sourceSurvivedStyle) {
+      applyCoverageFilters(map, prior, filters)
       continue
     }
-    removePeriodOverlay(map, overlay)
-    overlays.delete(periodKey)
+    try {
+      staged.push({
+        periodKey: period.periodKey,
+        prior,
+        next: installPeriodOverlay(
+          map,
+          period,
+          browserHarnessGeoJson,
+          filters,
+        ),
+      })
+    } catch (error) {
+      for (const replacement of staged) removePeriodOverlay(map, replacement.next)
+      throw error
+    }
   }
+  for (const replacement of staged) {
+    overlays.set(replacement.periodKey, replacement.next)
+    if (replacement.prior !== undefined) removePeriodOverlay(map, replacement.prior)
+  }
+  if (catalog?.retainPriorPeriods !== true) {
+    for (const [periodKey, overlay] of [...overlays.entries()]) {
+      if (desired.has(periodKey)) continue
+      removePeriodOverlay(map, overlay)
+      overlays.delete(periodKey)
+    }
+  }
+  return { periods: catalog?.periods ?? [] }
+}
 
-  for (const period of desired.values()) {
-    if (overlays.has(period.periodKey)) continue
-    const sourceId = `coverage-${encodeIdentity(period.periodKey)}`
-    const lineLayerId = `${sourceId}-line`
-    const pointLayerId = `${sourceId}-point`
-    const beforeTrackingLayer = map.getLayer(TRACKING_BREADCRUMB_CASING_LAYER_ID) === undefined
-      ? undefined
-      : TRACKING_BREADCRUMB_CASING_LAYER_ID
+/** Installs and verifies one digest-specific overlay without removing its predecessor. */
+function installPeriodOverlay(
+  map: CoverageOverlayMap,
+  period: { readonly periodKey: string; readonly revisionDigest: string },
+  browserHarnessGeoJson: CoverageTileCatalog['browserHarnessGeoJson'],
+  filters: {
+    readonly omittedDeviceIds: readonly string[]
+    readonly omittedPeriodKeys: readonly string[]
+  },
+): PeriodOverlay {
+  const sourceId = `coverage-${encodeIdentity(period.periodKey)}-${++nextOverlaySequence}`
+  const lineLayerId = `${sourceId}-line`
+  const pointLayerId = `${sourceId}-point`
+  const overlay: PeriodOverlay = {
+    revisionDigest: period.revisionDigest,
+    sourceId,
+    layerIds: [lineLayerId, pointLayerId],
+  }
+  const beforeTrackingLayer = map.getLayer(TRACKING_BREADCRUMB_CASING_LAYER_ID) === undefined
+    ? undefined
+    : TRACKING_BREADCRUMB_CASING_LAYER_ID
+  try {
     map.addSource(sourceId, browserHarnessGeoJson === undefined
       ? {
           type: 'vector',
@@ -87,11 +134,7 @@ export function syncCoverageOverlay(
       ...(browserHarnessGeoJson === undefined ? { 'source-layer': 'coverage' } : {}),
       type: 'line',
       filter: ['==', ['geometry-type'], 'LineString'],
-      paint: {
-        'line-color': '#7c3aed',
-        'line-width': 2,
-        'line-opacity': 0.78,
-      },
+      paint: { 'line-color': '#7c3aed', 'line-width': 2, 'line-opacity': 0.78 },
       layout: { 'line-cap': 'round', 'line-join': 'round' },
     }, beforeTrackingLayer)
     map.addLayer({
@@ -100,30 +143,20 @@ export function syncCoverageOverlay(
       ...(browserHarnessGeoJson === undefined ? { 'source-layer': 'coverage' } : {}),
       type: 'circle',
       filter: ['==', ['geometry-type'], 'Point'],
-      paint: {
-        'circle-color': '#7c3aed',
-        'circle-radius': 3,
-        'circle-opacity': 0.78,
-      },
+      paint: { 'circle-color': '#7c3aed', 'circle-radius': 3, 'circle-opacity': 0.78 },
     }, beforeTrackingLayer)
-    overlays.set(period.periodKey, {
-      revisionDigest: period.revisionDigest,
-      sourceId,
-      layerIds: [lineLayerId, pointLayerId],
-    })
-    applyCoverageFilters(map, overlays.get(period.periodKey)!, filters)
-  }
-  for (const period of desired.values()) {
-    const overlay = overlays.get(period.periodKey)
     if (
-      overlay === undefined ||
-      map.getSource(overlay.sourceId) === undefined ||
+      map.getSource(sourceId) === undefined ||
       overlay.layerIds.some((layerId) => map.getLayer(layerId) === undefined)
     ) {
       throw new Error('Coverage overlay activation failed after source installation.')
     }
+    applyCoverageFilters(map, overlay, filters)
+    return overlay
+  } catch (error) {
+    removePeriodOverlay(map, overlay)
+    throw error
   }
-  return { periods: catalog?.periods ?? [] }
 }
 
 function applyCoverageFilters(

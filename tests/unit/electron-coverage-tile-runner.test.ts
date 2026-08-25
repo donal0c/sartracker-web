@@ -19,12 +19,15 @@ const { createCoverageTileRunner } = require('../../electron/coverage-tile-runne
       input: Readonly<Record<string, unknown>>,
       options?: { readonly signal?: AbortSignal },
     ) => Promise<CatalogResult>
+    readonly commitCatalog: (input: { readonly stageId: string }) => Promise<boolean>
+    readonly discardCatalog: (input: { readonly stageId: string }) => Promise<boolean>
     readonly readTile: (input: Readonly<Record<string, unknown>>) => Promise<Uint8Array | null>
     readonly close: () => Promise<void>
   }
 }
 
 type CatalogResult = {
+  readonly stageId: string
   readonly periods: readonly { readonly periodKey: string; readonly revisionDigest: string }[]
   readonly delivered: readonly { readonly key: ChunkKey; readonly contentRev: number }[]
   readonly builds: readonly { readonly key: ChunkKey; readonly contentRev: number; readonly fixCount: number }[]
@@ -63,6 +66,7 @@ describe('Candidate B coverage tile worker [DON-276]', () => {
       missionId: 'mission-1',
       chunks: [{ key: keyA, contentRev: 1 }, { key: keyB, contentRev: 1 }],
     })
+    await runner.commitCatalog({ stageId: first.stageId })
     expect(first.delivered).toEqual([
       { key: keyA, contentRev: 1 }, { key: keyB, contentRev: 1 },
     ])
@@ -70,6 +74,11 @@ describe('Candidate B coverage tile worker [DON-276]', () => {
     const periodA = first.periods.find((period) => period.periodKey.endsWith('outing-a'))!
     const periodB = first.periods.find((period) => period.periodKey.endsWith('outing-b'))!
     const tileAddress = lonLatToTile(-9.7, 52, 8)
+    const firstA = await runner.readTile({
+      periodKey: periodA.periodKey,
+      revisionDigest: periodA.revisionDigest,
+      ...tileAddress,
+    })
     const firstB = await runner.readTile({
       periodKey: periodB.periodKey,
       revisionDigest: periodB.revisionDigest,
@@ -86,6 +95,12 @@ describe('Candidate B coverage tile worker [DON-276]', () => {
       missionId: 'mission-1',
       chunks: [{ key: keyA, contentRev: 2 }, { key: keyB, contentRev: 1 }],
     })
+    await expect(runner.readTile({
+      periodKey: periodA.periodKey,
+      revisionDigest: periodA.revisionDigest,
+      ...tileAddress,
+    })).resolves.toEqual(firstA)
+    await runner.commitCatalog({ stageId: second.stageId })
     const nextPeriodB = second.periods.find((period) => period.periodKey === periodB.periodKey)!
 
     expect(nextPeriodB).toEqual(periodB)
@@ -146,6 +161,57 @@ describe('Candidate B coverage tile worker [DON-276]', () => {
 
     await expect(request).rejects.toThrow(/exited with code 1/)
     expect(onFailure).toHaveBeenCalledOnce()
+  })
+
+  it.each([
+    ['error', new Error('worker exploded')],
+    ['exit', 0],
+  ] as const)('reports an unexpected worker %s event even without a non-zero exit', async (event, detail) => {
+    const onFailure = vi.fn()
+    const workers: FakeWorker[] = []
+    runner = createCoverageTileRunner({
+      databasePath: '/unused-unexpected-worker.sqlite',
+      cacheDirectory: '/unused-unexpected-worker-cache',
+      onFailure,
+      createWorker: () => {
+        const worker = new FakeWorker()
+        workers.push(worker)
+        return worker
+      },
+    })
+    const request = runner.syncCatalog({ missionId: 'mission-1', chunks: [] })
+
+    workers[0]!.emit(event, detail)
+
+    await expect(request).rejects.toThrow(/coverage tile worker/i)
+    expect(onFailure).toHaveBeenCalledOnce()
+  })
+
+  it('returns a valid empty PBF for a current tile with no intersecting geometry', async () => {
+    const databasePath = await createDatabase()
+    runner = createCoverageTileRunner({
+      databasePath,
+      cacheDirectory: path.join(directory!, 'coverage-empty-tiles'),
+    })
+    const keyA: ChunkKey = {
+      device_id: 'device-a', period_kind: 'outing', period_id: 'outing-a',
+    }
+    const catalog = await runner.syncCatalog({
+      missionId: 'mission-1', chunks: [{ key: keyA, contentRev: 1 }],
+    })
+    await runner.commitCatalog({ stageId: catalog.stageId })
+    const period = catalog.periods[0]!
+
+    const empty = await runner.readTile({
+      periodKey: period.periodKey,
+      revisionDigest: period.revisionDigest,
+      z: 8,
+      x: 0,
+      y: 0,
+    })
+
+    expect(ArrayBuffer.isView(empty)).toBe(true)
+    expect(empty).toHaveLength(0)
   })
 })
 

@@ -10,6 +10,7 @@ type CoverageDelivery = Readonly<Record<string, number>>
  * delivered revisions remain present until their replacement period is ready.
  */
 export function createCoverageCatalogDeliveryBatches(input: {
+  readonly manifest: CoverageManifest
   readonly priorManifest: CoverageManifest | null
   readonly priorDelivered: CoverageDelivery
   readonly retainDelivery: boolean
@@ -26,7 +27,8 @@ export function createCoverageCatalogDeliveryBatches(input: {
     for (const [identity, descriptor] of working.entries()) {
       if (coveragePeriodIdentity(descriptor) === periodIdentity) working.delete(identity)
     }
-    for (const descriptor of periodBatch) {
+    for (const descriptor of input.manifest.chunks.filter((chunk) =>
+      coveragePeriodIdentity(chunk) === periodIdentity)) {
       working.set(coverageChunkIdentity(descriptor.key), descriptor)
     }
     batches.push([...working.values()])

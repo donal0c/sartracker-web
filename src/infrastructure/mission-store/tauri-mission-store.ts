@@ -129,6 +129,8 @@ export type CoverageClaim = {
 }
 
 export type CoverageTileCatalog = {
+  /** Intermediate recovery catalogs keep prior periods visible until final replacement. */
+  readonly retainPriorPeriods?: boolean
   readonly periods: readonly {
     readonly periodKey: string
     readonly revisionDigest: string

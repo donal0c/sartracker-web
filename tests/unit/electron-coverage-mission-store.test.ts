@@ -12,6 +12,8 @@ const { createElectronMissionStore } = require('../../electron/mission-store.cjs
     readonly onCoverageChanged?: (missionId: string, changeSeq: number) => void
     readonly coverageTileRunner?: {
       readonly syncCatalog: (input: unknown, options: unknown) => Promise<unknown>
+      readonly commitCatalog?: (input: unknown, options: unknown) => Promise<unknown>
+      readonly discardCatalog?: (input: unknown, options: unknown) => Promise<unknown>
       readonly readTile: (input: unknown) => Promise<Uint8Array | null>
       readonly close: () => Promise<void>
     }
@@ -281,6 +283,8 @@ describe('Electron coverage mission-store orchestration', () => {
     const syncCatalog = vi.fn()
     const tileRunner = {
       syncCatalog,
+      commitCatalog: vi.fn().mockResolvedValue(true),
+      discardCatalog: vi.fn().mockResolvedValue(true),
       readTile: vi.fn().mockResolvedValue(tileBytes),
       close: vi.fn().mockResolvedValue(undefined),
     }
@@ -289,6 +293,7 @@ describe('Electron coverage mission-store orchestration', () => {
     const manifest = await store.readCoverageManifest(mission.id, 'manifest-1')
     const chunk = manifest.chunks[0]!
     syncCatalog.mockResolvedValue({
+      stageId: 'stage-1',
       periods: [{
         periodKey: 'unassigned\u0000',
         revisionDigest: 'revision-1',
@@ -311,9 +316,63 @@ describe('Electron coverage mission-store orchestration', () => {
     }, 'tiles-1')).resolves.toMatchObject({
       delivered: [{ key: chunk.key, contentRev: chunk.contentRev }],
     })
+    expect(tileRunner.commitCatalog).toHaveBeenCalledWith(
+      { stageId: 'stage-1' },
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    )
+    expect(tileRunner.discardCatalog).not.toHaveBeenCalled()
     await expect(store.readCoverageTile({ z: 8, x: 1, y: 1 })).resolves.toEqual(tileBytes)
     const postBuildManifest = await store.readCoverageManifest(mission.id, 'manifest-2')
     expect(postBuildManifest.diagnostics.lastBuildDurationMs).toBeGreaterThanOrEqual(0)
+  })
+
+  it('discards a staged tile catalog when a live write rejects its build metadata', async () => {
+    directory = await mkdtemp(path.join(tmpdir(), 'sartracker-coverage-store-'))
+    const commitCatalog = vi.fn().mockResolvedValue(true)
+    const discardCatalog = vi.fn().mockResolvedValue(true)
+    const syncCatalog = vi.fn()
+    const tileRunner = {
+      syncCatalog,
+      commitCatalog,
+      discardCatalog,
+      readTile: vi.fn().mockResolvedValue(new Uint8Array()),
+      close: vi.fn().mockResolvedValue(undefined),
+    }
+    store = createElectronMissionStore({ userDataPath: directory, coverageTileRunner: tileRunner })
+    const mission = await seedMission(store)
+    const manifest = await store.readCoverageManifest(mission.id, 'manifest-stage')
+    const chunk = manifest.chunks[0]!
+    syncCatalog.mockImplementationOnce(async () => {
+      await store!.addPositionsBulk({
+        mission_id: mission.id,
+        positions: [{
+          source_position_id: 'source-live-race', device_id: 'device-1',
+          lat: 52.02, lon: -9.72, timestamp: '2026-08-24T09:06:00.000Z',
+        }],
+      })
+      return {
+        stageId: 'stage-race',
+        periods: [{
+          periodKey: 'unassigned\u0000', revisionDigest: 'revision-stale',
+          contributors: [`device-1\u0000unassigned\u0000@${chunk.contentRev}`],
+        }],
+        delivered: [{ key: chunk.key, contentRev: chunk.contentRev }],
+        builds: [{
+          key: chunk.key, contentRev: chunk.contentRev, fixCount: 2,
+          fixDigest: chunk.exactDigest, minTs: null, maxTs: null,
+        }],
+      }
+    })
+
+    await expect(store.syncCoverageTileCatalog({
+      missionId: mission.id,
+      chunks: [{ key: chunk.key, contentRev: chunk.contentRev }],
+    }, 'tiles-race')).rejects.toThrow(/chunk-stale/i)
+    expect(discardCatalog).toHaveBeenCalledWith(
+      { stageId: 'stage-race' },
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    )
+    expect(commitCatalog).not.toHaveBeenCalled()
   })
 })
 
