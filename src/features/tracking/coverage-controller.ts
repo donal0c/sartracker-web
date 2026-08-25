@@ -195,7 +195,10 @@ export function createCoverageController(input: {
     publish({ status: 'inactive' })
   }
 
-  const runLoad = async (retainDelivery: boolean): Promise<void> => {
+  const runLoad = async (
+    retainDelivery: boolean,
+    bypassOpenOutingCooldown = false,
+  ): Promise<void> => {
     if (stopped || context.missionId === null) return
     rendererFailureDuringFinalization = null
     rendererDetachedCompleteCatalog = null
@@ -257,6 +260,7 @@ export function createCoverageController(input: {
           manifest,
           manifest.chunks.filter((chunk) =>
             delivered[coverageChunkIdentity(chunk.key)] !== chunk.contentRev),
+          { bypassOpenOutingCooldown },
         )
         const catalogBatches = createCoverageCatalogDeliveryBatches({
           manifest,
@@ -322,7 +326,11 @@ export function createCoverageController(input: {
         if (!ownsOperation(operation, controller, missionId, rendererGeneration)) return
         activeSelected = selectChunks(activeManifest, context.selectedKeys)
       } else {
-        for (const descriptor of scheduler.order(manifest, selected)) {
+        for (const descriptor of scheduler.order(
+          manifest,
+          selected,
+          { bypassOpenOutingCooldown },
+        )) {
           const identity = coverageChunkIdentity(descriptor.key)
           if (delivered[identity] === descriptor.contentRev) continue
           scheduler.recordAttempt(descriptor)
@@ -681,13 +689,16 @@ export function createCoverageController(input: {
   }
 
   /** Applies the latest desired mission/filter context, optionally forcing Retry. */
-  const applyDesiredContext = async (forceReload: boolean): Promise<void> => {
+  const applyDesiredContext = async (
+    forceReload: boolean,
+    bypassOpenOutingCooldown = false,
+  ): Promise<void> => {
     const identityChanged = context.missionId !== desiredContext.missionId ||
       context.rendererGeneration !== desiredContext.rendererGeneration
     const selectionChanged = selectedKeySet(context.selectedKeys) !==
       selectedKeySet(desiredContext.selectedKeys)
     if (!identityChanged && !selectionChanged) {
-      if (forceReload) await runLoad(true)
+      if (forceReload) await runLoad(true, bypassOpenOutingCooldown)
       return
     }
     rendererDetachedCompleteCatalog = null
@@ -825,7 +836,7 @@ export function createCoverageController(input: {
       const resumeSequence = contextUpdateSequence
       await waitForCatalogHandoff()
       if (stopped || resumeSequence !== contextUpdateSequence) return
-      await applyDesiredContext(true)
+      await applyDesiredContext(true, true)
     },
     stop: () => {
       stopped = true

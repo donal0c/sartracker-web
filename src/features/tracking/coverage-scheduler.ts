@@ -7,6 +7,7 @@ export type CoverageScheduler = {
   readonly order: (
     manifest: CoverageManifest,
     chunks: readonly CoverageManifestChunk[],
+    options?: { readonly bypassOpenOutingCooldown?: boolean },
   ) => readonly CoverageManifestChunk[]
   readonly recordAttempt: (chunk: CoverageManifestChunk) => void
 }
@@ -22,7 +23,7 @@ export function createCoverageScheduler(input: {
   const lastAttemptByChunk = new Map<string, number>()
 
   return {
-    order: (manifest, chunks) => {
+    order: (manifest, chunks, options) => {
       const outingById = new Map(manifest.outings.map((outing) => [outing.id, outing]))
       const grouped = new Map<string, CoverageManifestChunk[]>()
       for (const chunk of chunks) {
@@ -47,6 +48,7 @@ export function createCoverageScheduler(input: {
           const lastAttempt = lastAttemptByChunk.get(chunkIdentity(chunk))
           if (
             outing?.ended_at === null &&
+            options?.bypassOpenOutingCooldown !== true &&
             lastAttempt !== undefined &&
             input.now() - lastAttempt < input.openOutingCooldownMs
           ) {

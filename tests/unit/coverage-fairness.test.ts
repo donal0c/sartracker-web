@@ -56,6 +56,17 @@ describe('coverage build fairness [DON-276]', () => {
     now += 1
     expect(scheduler.order(manifest, [openChunk])).toEqual([openChunk])
   })
+
+  it('allows an explicit operator retry to bypass the automatic open-outing cooldown', () => {
+    const scheduler = createCoverageScheduler({ now: () => 1_000, openOutingCooldownMs: 30_000 })
+    const manifest = createManifest()
+    const openChunk = manifest.chunks.find((chunk) => chunk.key.period_id === 'open')!
+
+    scheduler.recordAttempt(openChunk)
+
+    expect(scheduler.order(manifest, [openChunk], { bypassOpenOutingCooldown: true }))
+      .toEqual([openChunk])
+  })
 })
 
 function createManifest(deviceIds: readonly string[] = ['device-a']): CoverageManifest {

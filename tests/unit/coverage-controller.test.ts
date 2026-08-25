@@ -1860,6 +1860,61 @@ describe('coverage controller [DON-276]', () => {
     })
     expect(JSON.stringify(harness.controller.getState())).not.toContain('/private/path')
   })
+
+  it('lets operator Retry bypass the automatic open-outing rebuild cooldown', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-08-24T10:00:00.000Z'))
+    const openKey: CoverageChunkKey = {
+      device_id: 'device-a', period_kind: 'outing', period_id: 'open-outing',
+    }
+    const first = {
+      ...manifest(1, [[openKey, 1]]),
+      outings: [{
+        id: 'open-outing', label: 'Open outing',
+        started_at: '2026-08-24T09:00:00.000Z', ended_at: null,
+      }],
+    }
+    const second = {
+      ...first,
+      changeSeq: 2,
+      chunks: [{ ...first.chunks[0]!, contentRev: 2, builtRev: 2 }],
+    }
+    const readManifest = vi.fn()
+      .mockResolvedValueOnce(first)
+      .mockResolvedValue(second)
+    const readChunk = vi.fn().mockImplementation(async ({ key, expectedContentRev }) =>
+      page(key, expectedContentRev))
+    const readClaim = vi.fn().mockImplementation(async ({ selectedKeys }) => {
+      const current = readManifest.mock.calls.length === 1 ? first : second
+      return {
+        changeSeq: current.changeSeq,
+        databaseReady: true,
+        blockers: [],
+        chunkRevisions: selectedKeys.map((key: CoverageChunkKey) => ({
+          key,
+          contentRev: current.chunks[0]!.contentRev,
+        })),
+      }
+    })
+    const controller = createCoverageController({
+      readManifest,
+      readChunk,
+      readClaim,
+      applyChunk: vi.fn().mockResolvedValue(undefined),
+      publish: vi.fn(),
+    })
+
+    await controller.updateContext({ missionId: 'mission-1', rendererGeneration: 'r1' })
+    await controller.refresh()
+    expect(controller.getState()).toMatchObject({ status: 'partial' })
+    expect(readChunk).toHaveBeenCalledTimes(1)
+
+    await controller.resume()
+
+    expect(readChunk).toHaveBeenCalledTimes(2)
+    expect(readChunk.mock.calls[1]?.[0]).toMatchObject({ expectedContentRev: 2 })
+    expect(controller.getState()).toMatchObject({ status: 'complete' })
+  })
 })
 
 function createHarness(initialManifest: CoverageManifest) {
