@@ -450,15 +450,20 @@ export function getBrowserHarnessStore(): BrowserHarnessStore {
           change: 'member' as const,
           observed_at: timestamp,
         })))
-      const groupBackfillCheckpoints = membershipEvents.map((event) => ({
-        mission_id: mission.id,
-        traccar_device_id: event.traccar_device_id,
-        window_from: mission.start_time,
-        window_to: timestamp,
-        reconciled_until: mission.start_time,
-        completed: mission.start_time === timestamp ? 1 : 0,
-        updated_at: timestamp,
-      } satisfies ParticipantBackfillCheckpoint))
+      const groupBackfillCheckpoints = membershipEvents.map((event) =>
+        createHarnessBackfillCheckpoint({
+          missionId: mission.id,
+          deviceId: event.traccar_device_id,
+          windowFrom: mission.start_time,
+          windowTo: timestamp,
+        }))
+      const deviceBackfillCheckpoints = input.devices.map((device) =>
+        createHarnessBackfillCheckpoint({
+          missionId: mission.id,
+          deviceId: device.traccar_device_id,
+          windowFrom: mission.start_time,
+          windowTo: timestamp,
+        }))
       const participants = [...groupParticipants, ...deviceParticipants]
       state = {
         ...state,
@@ -468,6 +473,7 @@ export function getBrowserHarnessStore(): BrowserHarnessStore {
         participantBackfillCheckpoints: [
           ...state.participantBackfillCheckpoints,
           ...groupBackfillCheckpoints,
+          ...deviceBackfillCheckpoints,
         ],
         missionEvents: appendEvent(
           state.missionEvents,
@@ -562,24 +568,19 @@ export function getBrowserHarnessStore(): BrowserHarnessStore {
         addedBy: input.confirmed_by,
       })
       const checkpoints = deviceId === null
-        ? observedMembershipEvents.map((event) => ({
-            mission_id: mission.id,
-            traccar_device_id: event.traccar_device_id,
-            window_from: effectiveFrom,
-            window_to: addedAt,
-            reconciled_until: effectiveFrom,
-            completed: effectiveFrom === addedAt ? 1 : 0,
-            updated_at: addedAt,
-          } satisfies ParticipantBackfillCheckpoint))
-        : [{
-        mission_id: mission.id,
-        traccar_device_id: deviceId,
-        window_from: effectiveFrom,
-        window_to: addedAt,
-        reconciled_until: effectiveFrom,
-        completed: effectiveFrom === addedAt ? 1 : 0,
-        updated_at: addedAt,
-      } satisfies ParticipantBackfillCheckpoint]
+        ? observedMembershipEvents.map((event) =>
+            createHarnessBackfillCheckpoint({
+              missionId: mission.id,
+              deviceId: event.traccar_device_id,
+              windowFrom: effectiveFrom,
+              windowTo: addedAt,
+            }))
+        : [createHarnessBackfillCheckpoint({
+            missionId: mission.id,
+            deviceId,
+            windowFrom: effectiveFrom,
+            windowTo: addedAt,
+          })]
       state = {
         ...state,
         missionTeams: team === null || state.missionTeams.some((candidate) => candidate.id === team?.id)
@@ -1826,6 +1827,24 @@ function createHarnessParticipant(input: {
     added_by: input.addedBy,
     removed_at: null,
     removed_by: null,
+  }
+}
+
+/** Creates one fixed-window participant-history checkpoint for the browser mirror. */
+function createHarnessBackfillCheckpoint(input: {
+  readonly missionId: string
+  readonly deviceId: string
+  readonly windowFrom: string
+  readonly windowTo: string
+}): ParticipantBackfillCheckpoint {
+  return {
+    mission_id: input.missionId,
+    traccar_device_id: input.deviceId,
+    window_from: input.windowFrom,
+    window_to: input.windowTo,
+    reconciled_until: input.windowFrom,
+    completed: input.windowFrom === input.windowTo ? 1 : 0,
+    updated_at: input.windowTo,
   }
 }
 

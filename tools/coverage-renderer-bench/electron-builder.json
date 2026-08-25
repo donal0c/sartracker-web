@@ -7,6 +7,7 @@
   },
   "files": [
     "tools/coverage-renderer-bench/main.cjs",
+    "tools/coverage-renderer-bench/window-lifecycle.cjs",
     "tools/coverage-renderer-bench/preload.cjs",
     "tools/coverage-renderer-bench/query-worker.mjs",
     "tools/coverage-renderer-bench/dist-renderer/**",

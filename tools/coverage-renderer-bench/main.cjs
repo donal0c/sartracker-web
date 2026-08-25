@@ -5,6 +5,11 @@ const fsp = require('node:fs/promises')
 const os = require('node:os')
 const path = require('node:path')
 const { Worker } = require('node:worker_threads')
+const {
+  attachRendererTeardown,
+  readRendererRssBytes,
+  sendWorkerEvent,
+} = require('./window-lifecycle.cjs')
 
 const args = parseBenchArguments(process.argv.slice(1))
 const pendingWorkerRequests = new Map()
@@ -15,7 +20,7 @@ let queryWorker = null
 let shuttingDown = false
 let lastMainProbeAt = performance.now()
 
-const probe = setInterval(() => {
+let probe = setInterval(() => {
   const now = performance.now()
   mainGapSamples.push(Math.max(0, now - lastMainProbeAt - 50))
   rendererRssPeakBytes = Math.max(rendererRssPeakBytes, readCurrentRendererRssBytes())
@@ -25,13 +30,11 @@ probe.unref()
 
 app.whenReady().then(createWindow).catch(failLoudly)
 
-app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') app.quit()
-})
+app.on('window-all-closed', () => app.quit())
 app.on('before-quit', () => {
   shuttingDown = true
 })
-app.on('will-quit', () => clearInterval(probe))
+app.on('will-quit', stopProbe)
 
 /** Creates the packaged benchmark renderer and its isolated query worker. */
 async function createWindow() {
@@ -59,6 +62,8 @@ async function createWindow() {
   mainWindow.webContents.on('render-process-gone', (_event, details) => {
     failLoudly(new Error(`Coverage renderer process exited: ${details.reason}.`))
   })
+  const createdWindow = mainWindow
+  attachRendererTeardown(createdWindow, () => detachRendererWindow(createdWindow))
   await registerIpc()
   await mainWindow.loadFile(path.join(__dirname, 'dist-renderer', 'index.html'))
 }
@@ -170,7 +175,8 @@ function handleWorkerMessage(message) {
     else pending.resolve(message.result ?? null)
     return
   }
-  mainWindow?.webContents.send('coverage-bench:worker-event', message)
+  const window = mainWindow
+  if (!sendWorkerEvent(window, message)) detachRendererWindow(window)
 }
 
 /** Sends one correlated command to the worker. */
@@ -191,11 +197,21 @@ function readRendererMemory() {
 
 /** Reads only the benchmark renderer PID, excluding GPU, utility, and worker memory. */
 function readCurrentRendererRssBytes() {
-  if (!mainWindow || mainWindow.isDestroyed() || mainWindow.webContents.isDestroyed()) return 0
-  const rendererPid = mainWindow.webContents.getOSProcessId()
-  if (!Number.isSafeInteger(rendererPid) || rendererPid <= 0) return 0
-  const metric = app.getAppMetrics().find((candidate) => candidate.pid === rendererPid)
-  return (metric?.memory?.workingSetSize ?? 0) * 1024
+  return readRendererRssBytes(mainWindow, () => app.getAppMetrics())
+}
+
+/** Clears renderer-owned sampling state exactly once during teardown. */
+function detachRendererWindow(window) {
+  if (window === null || mainWindow !== window) return
+  mainWindow = null
+  stopProbe()
+}
+
+/** Stops the benchmark event-loop probe without leaving a stale timer callback. */
+function stopProbe() {
+  if (probe === null) return
+  clearInterval(probe)
+  probe = null
 }
 
 /** Reads a bounded GPU description without leaking unrelated environment state. */

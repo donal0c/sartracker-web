@@ -7,7 +7,7 @@ Linear: `DON-273` / BCP-07
 Measured application SHA: `8eff87b724ae6b4ffa9123479a8982d1d08f47ef`
 
 Latest affected-row remeasurement SHA:
-`5653133d5ff8429a6f3530cd05058969b2cd564c`
+`53e38bf3b88e44f3be677e0ac260548f63f9ff9e`
 
 Exact PR-2 base: `7021fc1ef33e6da5c91c96cd86e836fc3754f48f`
 

@@ -33,12 +33,37 @@ export async function seedCoverageMission(page: Page): Promise<void> {
   await page.getByTestId('mission-offset-input').fill('2')
   await page.getByTestId('mission-start-btn').click()
   await expect(page.getByTestId('mission-control')).toContainText('active')
+  await completeParticipantBackfill(page)
 
   await injectCoverageSnapshot(page, 'unassigned', -60)
   await page.getByTestId('outing-label-input').fill('Ridge sweep')
   await page.getByTestId('outing-start-btn').click()
   await expect(page.getByTestId('active-outing-label')).toContainText('Ridge sweep')
   await injectCoverageSnapshot(page, 'outing', 0)
+}
+
+/** Completes the worker-owned participant-history prerequisite for coverage-only scenarios. */
+async function completeParticipantBackfill(page: Page): Promise<void> {
+  await page.evaluate(async () => {
+    const [{ getBrowserHarnessStore }, { useCoverageStore }] = await Promise.all([
+      import('/src/features/browser-validation/browser-harness-store.ts'),
+      import('/src/features/tracking/coverage-store.ts'),
+    ])
+    const store = getBrowserHarnessStore()
+    const missionId = window.__SARTRACKER_BROWSER_HARNESS__?.readState().currentMissionId ?? null
+    if (missionId === null) throw new Error('Coverage test mission is unavailable.')
+    const checkpoints = await store.listParticipantBackfillCheckpoints(missionId)
+    await Promise.all(checkpoints.map((checkpoint) =>
+      store.upsertParticipantBackfillCheckpoint({
+        mission_id: checkpoint.mission_id,
+        traccar_device_id: checkpoint.traccar_device_id,
+        window_from: checkpoint.window_from,
+        window_to: checkpoint.window_to,
+        reconciled_until: checkpoint.window_to,
+        completed: true,
+      })))
+    await useCoverageStore.getState().controller?.refresh()
+  })
 }
 
 async function injectCoverageSnapshot(

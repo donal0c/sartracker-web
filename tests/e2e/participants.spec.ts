@@ -32,6 +32,7 @@ test.describe('mission participants [DON-271]', () => {
     await page.getByTestId('mission-offset-input').fill('2')
     await page.getByTestId('mission-start-btn').click()
     await expect(page.getByTestId('participant-active-list')).toContainText('Alpha Team')
+    await expect(page.getByTestId('participant-backfill-status')).toContainText('pending')
 
     await injectTwoDeviceSnapshot(page)
     const initiallyPersistedDeviceIds = await page.evaluate(() =>
@@ -49,7 +50,7 @@ test.describe('mission participants [DON-271]', () => {
     await page.getByTestId('participant-effective-from').fill(earlierLocalTime)
     await page.getByTestId('participant-add-btn').click()
     await expect(page.getByTestId('participant-active-list')).toContainText('Bravo Team')
-    await expect(page.getByTestId('participant-backfill-status')).toContainText('pending')
+    await expect(page.getByTestId('participant-backfill-status').last()).toContainText('pending')
 
     await injectTwoDeviceSnapshot(page)
     await expect(page.getByTestId('tracking-status')).toContainText('2')
@@ -169,17 +170,7 @@ test.describe('mission participants [DON-271]', () => {
   })
 
   test('keeps the mission active and explains why finish is blocked during history backfill', async ({ page }) => {
-    await page.evaluate(async () => {
-      await window.__SARTRACKER_BROWSER_HARNESS__?.setParticipantDiscovery({
-        groups: [{ group_id: '101', name: 'Hill Team', parent_group_id: null }],
-        devices: [{
-          device_id: '1', name: 'Alpha Team', status: 'online',
-          last_seen: new Date().toISOString(), unique_id: 'alpha-1', category: null,
-          group_id: '101',
-        }],
-      })
-    })
-    await page.getByTestId('participant-group-picker').getByText('Hill Team', { exact: true }).click()
+    await page.getByTestId('participant-device-picker').getByText('Alpha Team', { exact: true }).click()
     await page.getByTestId('mission-name-input').fill('Backfill Finish Fence Mission')
     await page.getByTestId('mission-offset-input').fill('2')
     await page.getByTestId('mission-start-btn').click()

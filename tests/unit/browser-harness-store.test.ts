@@ -315,12 +315,14 @@ describe('browser harness store', () => {
         change: 'member', observed_at: '2026-08-20T09:00:00.000Z',
       }],
     })
+    const directCheckpoint = (await store.listParticipantBackfillCheckpoints(mission.id))
+      .find((checkpoint) => checkpoint.traccar_device_id === '20')!
     await store.upsertParticipantBackfillCheckpoint({
       mission_id: mission.id,
       traccar_device_id: '20',
-      window_from: '2026-08-20T08:00:00.000Z',
-      window_to: '2026-08-20T09:00:00.000Z',
-      reconciled_until: '2026-08-20T09:00:00.000Z',
+      window_from: directCheckpoint.window_from,
+      window_to: directCheckpoint.window_to,
+      reconciled_until: directCheckpoint.window_to,
       completed: true,
     })
 
@@ -339,14 +341,14 @@ describe('browser harness store', () => {
     await expect(store.upsertParticipantBackfillCheckpoint({
       mission_id: mission.id,
       traccar_device_id: '20',
-      window_from: '2026-08-20T08:00:00.000Z',
-      window_to: '2026-08-20T09:00:00.000Z',
-      reconciled_until: '2026-08-20T08:30:00.000Z',
+      window_from: directCheckpoint.window_from,
+      window_to: directCheckpoint.window_to,
+      reconciled_until: directCheckpoint.window_from,
       completed: false,
     })).rejects.toThrow(/completion.*irreversible|cursor.*decrease/i)
   })
 
-  it('mirrors the participant backfill finish fence', async () => {
+  it('mirrors direct-device backfill status, coverage claim, and finish fences', async () => {
     vi.useFakeTimers()
     vi.setSystemTime(new Date('2026-08-20T10:00:00.000Z'))
     const store = getBrowserHarnessStore()
@@ -356,13 +358,22 @@ describe('browser harness store', () => {
     })
     await store.selectMissionParticipants({
       mission_id: mission.id,
-      groups: [{
-        traccar_group_id: '101', name: 'Kerry MRT', member_device_ids: ['11'],
-      }],
-      devices: [],
+      groups: [],
+      devices: [{ traccar_device_id: '20' }],
       selected_by: 'Coordinator A',
     })
 
+    await expect(store.listMissionParticipants(mission.id)).resolves.toEqual([
+      expect.objectContaining({
+        kind: 'device', traccar_device_id: '20', backfill_completed: 0,
+      }),
+    ])
+    await store.readCoverageManifest(mission.id)
+    await expect(store.readCoverageClaim({ missionId: mission.id, selectedKeys: [] }))
+      .resolves.toMatchObject({
+        databaseReady: false,
+        blockers: expect.arrayContaining(['backfill_incomplete']),
+      })
     await expect(store.finishMission(mission.id)).rejects.toThrow(
       /history backfill.*incomplete|complete.*history backfill/i,
     )
@@ -379,6 +390,8 @@ describe('browser harness store', () => {
       completed: true,
     })
 
+    await expect(store.readCoverageClaim({ missionId: mission.id, selectedKeys: [] }))
+      .resolves.toMatchObject({ databaseReady: true, blockers: [] })
     await expect(store.finishMission(mission.id)).resolves.toMatchObject({ status: 'finished' })
   })
 
@@ -410,6 +423,15 @@ describe('browser harness store', () => {
     await expect(store.selectMissionParticipants(directSelection)).rejects.toThrow(/already active/i)
     await expect(store.listMissionParticipants(mission.id)).resolves.toHaveLength(1)
 
+    const [checkpoint] = await store.listParticipantBackfillCheckpoints(mission.id)
+    await store.upsertParticipantBackfillCheckpoint({
+      mission_id: mission.id,
+      traccar_device_id: checkpoint!.traccar_device_id,
+      window_from: checkpoint!.window_from,
+      window_to: checkpoint!.window_to,
+      reconciled_until: checkpoint!.window_to,
+      completed: true,
+    })
     await store.finishMission(mission.id)
     await expect(store.removeMissionParticipant({
       mission_id: mission.id,
