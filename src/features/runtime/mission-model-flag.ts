@@ -1,6 +1,7 @@
 export type MissionModelFlagContext = {
   readonly dev: boolean
   readonly browserHarness: boolean
+  readonly browserHarnessMode?: boolean
   readonly buildFlag: string | undefined
 }
 
@@ -13,6 +14,10 @@ export const DEFAULT_MISSION_MODEL_ENABLED = false
 export function resolveMissionModelFlag(context: MissionModelFlagContext): boolean {
   if (context.buildFlag !== undefined) {
     return context.buildFlag === '1'
+  }
+
+  if (context.browserHarnessMode === true) {
+    return context.browserHarness
   }
 
   return context.dev || context.browserHarness || DEFAULT_MISSION_MODEL_ENABLED
@@ -29,6 +34,7 @@ export function isMissionModelEnabled(): boolean {
   return resolveMissionModelFlag({
     dev: import.meta.env.DEV && !browserHarnessMode,
     browserHarness,
+    browserHarnessMode,
     buildFlag: import.meta.env.VITE_SARTRACKER_MISSION_MODEL,
   })
 }

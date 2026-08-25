@@ -41,4 +41,25 @@ describe('mission model internal feature flag', () => {
       buildFlag: '0',
     })).toBe(false)
   })
+
+  it('keeps browser validation explicitly opt-in after the release default flips', () => {
+    expect(resolveMissionModelFlag({
+      dev: false,
+      browserHarnessMode: true,
+      browserHarness: false,
+      buildFlag: undefined,
+    })).toBe(false)
+    expect(resolveMissionModelFlag({
+      dev: false,
+      browserHarnessMode: true,
+      browserHarness: true,
+      buildFlag: undefined,
+    })).toBe(true)
+    expect(resolveMissionModelFlag({
+      dev: false,
+      browserHarnessMode: true,
+      browserHarness: false,
+      buildFlag: '1',
+    })).toBe(true)
+  })
 })

@@ -13,4 +13,22 @@ describe('coverage internal flag [DON-276]', () => {
     expect(resolveCoverageFlag({ buildFlag: '1', browserHarness: false })).toBe(true)
     expect(resolveCoverageFlag({ buildFlag: undefined, browserHarness: true })).toBe(true)
   })
+
+  it('keeps browser validation explicitly opt-in after the release default flips', () => {
+    expect(resolveCoverageFlag({
+      buildFlag: undefined,
+      browserHarnessMode: true,
+      browserHarness: false,
+    })).toBe(false)
+    expect(resolveCoverageFlag({
+      buildFlag: undefined,
+      browserHarnessMode: true,
+      browserHarness: true,
+    })).toBe(true)
+    expect(resolveCoverageFlag({
+      buildFlag: '1',
+      browserHarnessMode: true,
+      browserHarness: false,
+    })).toBe(true)
+  })
 })
