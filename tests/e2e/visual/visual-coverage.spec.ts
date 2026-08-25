@@ -52,7 +52,6 @@ Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
 2. A visible progress bar is present.
 3. Exact "N of M fixes" numbers are visible and N is lower than M.
 4. The display does not claim 100% or "All mission history shown" while delivery is incomplete.
-5. Current tracking remains presented as an independent system around this element.
 Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
       playwrightAssertions: [
         'coverage state has a larger total after a late fix',

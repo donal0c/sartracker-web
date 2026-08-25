@@ -334,3 +334,11 @@ The rebound evidence-binding head
 The closeout files containing this record are documentation-only. Their commit
 must receive one final exact-head repeat of these gates before the five
 independent reviews start; no further evidence-heavy rerun is prescribed.
+
+During that repeat, a fresh visual reviewer correctly rejected one checklist
+item because an element-scoped screenshot could not show surrounding current-
+tracking UI. The product assertions remained green and live-marker independence
+already has its own full-page critical screenshot. The visual prompt was fixed
+red-first by removing only the out-of-frame request, then the same element was
+recaptured and passed a fresh no-cache critical review. The resulting test and
+closeout commit must receive the complete exact-head repeat before review.
