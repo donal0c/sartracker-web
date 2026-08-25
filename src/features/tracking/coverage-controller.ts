@@ -710,6 +710,9 @@ export function createCoverageController(input: {
       const desiredSelectionChanged = selectedKeySet(desiredContext.selectedKeys) !==
         selectedKeySet(normalizedContext.selectedKeys)
       if (!desiredIdentityChanged && !desiredSelectionChanged) return
+      if (desiredSelectionChanged && state.status === 'complete') {
+        publish({ ...state, status: 'partial' })
+      }
       desiredContext = normalizedContext
       const updateSequence = ++contextUpdateSequence
       await waitForCatalogHandoff()

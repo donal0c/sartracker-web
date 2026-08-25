@@ -61,6 +61,28 @@ describe('coverage controller [DON-276]', () => {
     })
   })
 
+  it('revokes Complete synchronously before a wider filter scope can be relabelled', async () => {
+    const harness = createHarness(manifest(1, [[KEY_A, 1], [KEY_B, 1]]))
+    await harness.controller.updateContext({
+      missionId: 'mission-1', rendererGeneration: 'r1', selectedKeys: [KEY_A],
+    })
+    expect(harness.controller.getState()).toMatchObject({
+      status: 'complete', deliveredFixCount: 1, totalFixCount: 1,
+    })
+
+    const widenSelection = harness.controller.updateContext({
+      missionId: 'mission-1', rendererGeneration: 'r1',
+    })
+
+    expect(harness.controller.getState()).toMatchObject({
+      status: 'partial', deliveredFixCount: 1, totalFixCount: 1,
+    })
+    await widenSelection
+    expect(harness.controller.getState()).toMatchObject({
+      status: 'complete', deliveredFixCount: 2, totalFixCount: 2,
+    })
+  })
+
   it('keeps delivered geometry on cancel and resumes only undelivered chunks', async () => {
     let releaseSecond: (() => void) | undefined
     let blockedSecond = false

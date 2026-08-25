@@ -76,11 +76,11 @@ export function CoverageStatusPanel(props: CoverageStatusPanelProps) {
                 ? ''
                 : ` Reason: ${formatErrorClass(props.state.lastErrorClass)}.`}
             </p>
-          ) : (
+          ) : props.state.status === 'loading' ? (
             <p className="mt-1" data-testid="coverage-loading">
               Loading complete mission history from saved evidence.
             </p>
-          )}
+          ) : null}
           {props.state.status === 'error' ? (
             <p className="mt-1" data-testid="coverage-error">
               History incomplete — {rendererDetached

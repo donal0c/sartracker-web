@@ -115,6 +115,14 @@ describe('coverage status panel [DON-275]', () => {
     expect(host.textContent).toContain('History incomplete — showing loaded coverage')
     expect(host.textContent).toContain('Reason: worker')
   })
+
+  it('never describes a plain coverage failure as still loading', () => {
+    render(state('error', { lastErrorClass: 'timeout' }))
+
+    expect(host.querySelector('[data-testid="coverage-loading"]')).toBeNull()
+    expect(host.textContent).toContain('History incomplete — showing loaded coverage')
+    expect(host.textContent).toContain('Reason: timeout')
+  })
 })
 
 function render(
