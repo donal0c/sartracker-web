@@ -1001,3 +1001,26 @@ Green verification at this application head is 5 focused files / 51 tests,
 bundle budgets, plus participant/coverage Chromium 10/10. The exact pushed-
 head Linux package/soak check and five fresh independent reviews must restart;
 the prior renewed-review results are superseded. No merge or release occurred.
+
+## Terminal-settlement recovery remediation
+
+The restarted review independently reproduced one remaining recovery defect.
+When `finalizeCoverageTileCatalog` or `discardCoverageTileCatalog` rejected,
+the IPC `finally` block released renderer ownership even though the worker
+stage had not settled. The controller's same-renderer cleanup discard then
+failed ownership validation, leaving the stage able to block later sync until
+process restart.
+
+The new regression failed red because ownership listeners were removed after
+the rejected finalize and the cleanup discard never reached the mission store.
+Commit `397b0c165d8f79be980f382a9ee28d1ad5da2c97` records a terminal transition as
+settled only after its mission-store promise resolves. Rejected terminal and
+non-terminal transitions retain ownership; a successful finalize or discard
+releases it.
+
+Green verification at this application head is 5 focused files / 52 tests,
+264 full unit files / 2,113 tests, TypeScript, ESLint, changed CommonJS syntax,
+production build and bundle budgets, plus participant/coverage Chromium 10/10.
+The live exact-head Linux package/soak check and five fresh independent reviews
+must restart on the documentation-bound descendant. No merge or release
+occurred.
