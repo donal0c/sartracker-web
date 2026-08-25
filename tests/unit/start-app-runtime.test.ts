@@ -10,6 +10,10 @@ import { useIngestHealthStore } from '../../src/features/tracking/ingest-health-
 import { useParticipantStore } from '../../src/features/participants/participant-store'
 import { createParticipationScope } from '../../src/features/participants/participation-scope'
 
+vi.mock('../../src/features/runtime/coverage-flag', () => ({
+  isCoverageEnabled: () => false,
+}))
+
 describe('app runtime startup', () => {
   afterEach(() => {
     vi.unstubAllGlobals()
