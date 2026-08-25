@@ -4,7 +4,7 @@ export type CoverageFlagContext = {
   readonly browserHarnessMode?: boolean
 }
 
-export const DEFAULT_COVERAGE_ENABLED = false
+export const DEFAULT_COVERAGE_ENABLED = true
 
 /** Resolves the internal flag; explicit build posture always wins. */
 export function resolveCoverageFlag(context: CoverageFlagContext): boolean {

@@ -5,7 +5,7 @@ export type MissionModelFlagContext = {
   readonly buildFlag: string | undefined
 }
 
-export const DEFAULT_MISSION_MODEL_ENABLED = false
+export const DEFAULT_MISSION_MODEL_ENABLED = true
 
 /**
  * Resolves the internal mission-model gate without exposing an operator toggle.
