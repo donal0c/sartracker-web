@@ -8,6 +8,7 @@ describe('breadcrumb PR-3 operator manual [DON-275]', () => {
     for (const required of [
       'enabled by default in packaged and release builds',
       'explicit build override',
+      '25 August 2026',
       'Mission History Coverage',
       'All mission history shown',
       'All selected history shown',
@@ -22,6 +23,7 @@ describe('breadcrumb PR-3 operator manual [DON-275]', () => {
     }
     expect(manual).not.toContain('disabled in normal packaged and release builds')
     expect(manual).not.toContain('Do not expect them in the current team beta')
+    expect(manual).not.toContain('internal mission model')
     for (const asset of [
       'mission-history-coverage-status.png',
       'mission-history-evidence-pending.png',
