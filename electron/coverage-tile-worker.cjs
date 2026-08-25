@@ -34,6 +34,7 @@ let activeCatalog = null
 let stagedCatalog = null
 let nextStageId = 0
 let cacheBytes = 0
+let failCatalogCommitOnce = workerData.faultInjection?.failCatalogCommitOnce === true
 let requestTail = fs.rm(workerData.cacheDirectory, { recursive: true, force: true })
   .then(() => fs.mkdir(workerData.cacheDirectory, { recursive: true }))
 
@@ -155,21 +156,30 @@ async function syncCatalog(message) {
 /** Publishes a staged catalog only after main-side build metadata commits. */
 async function commitCatalog(message) {
   const stage = requireStagedCatalog(message.stageId)
-  if (stage.missionChanged) {
-    cacheEntriesByPath.clear()
-    cacheBytes = 0
-    await fs.rm(workerData.cacheDirectory, { recursive: true, force: true })
-    await fs.mkdir(workerData.cacheDirectory, { recursive: true })
-  } else {
-    for (const tilePath of stage.invalidatedPaths) await removeCacheEntry(tilePath)
+  try {
+    if (failCatalogCommitOnce) {
+      failCatalogCommitOnce = false
+      throw new Error('Injected coverage catalog commit failure.')
+    }
+    if (stage.missionChanged) {
+      cacheEntriesByPath.clear()
+      cacheBytes = 0
+      await fs.rm(workerData.cacheDirectory, { recursive: true, force: true })
+      await fs.mkdir(workerData.cacheDirectory, { recursive: true })
+    } else {
+      for (const tilePath of stage.invalidatedPaths) await removeCacheEntry(tilePath)
+    }
+    chunksByKey.clear()
+    for (const [key, chunk] of stage.nextChunksByKey) chunksByKey.set(key, chunk)
+    indexesByPeriod.clear()
+    for (const [key, index] of stage.nextIndexesByPeriod) indexesByPeriod.set(key, index)
+    activeCatalog = stage.nextCatalog
+    stagedCatalog = null
+    return true
+  } catch (error) {
+    stagedCatalog = null
+    throw error
   }
-  chunksByKey.clear()
-  for (const [key, chunk] of stage.nextChunksByKey) chunksByKey.set(key, chunk)
-  indexesByPeriod.clear()
-  for (const [key, index] of stage.nextIndexesByPeriod) indexesByPeriod.set(key, index)
-  activeCatalog = stage.nextCatalog
-  stagedCatalog = null
-  return true
 }
 
 /** Discards a stale stage while leaving the active catalog serviceable. */
@@ -248,15 +258,23 @@ function materializeChunk(key, contentRev, rows) {
 
 /** Serves only the currently attested revision for one logical period. */
 async function readTile(message) {
-  const period = activeCatalog?.periods.find((entry) =>
-    entry.periodKey === message.periodKey)
-  if (period?.revisionDigest !== message.revisionDigest) return null
-  const index = indexesByPeriod.get(message.periodKey)
+  const stagedPeriod = stagedCatalog?.nextCatalog.periods.find((entry) =>
+    entry.periodKey === message.periodKey && entry.revisionDigest === message.revisionDigest)
+  const activePeriod = activeCatalog?.periods.find((entry) =>
+    entry.periodKey === message.periodKey && entry.revisionDigest === message.revisionDigest)
+  const servingCatalog = stagedPeriod === undefined
+    ? (activePeriod === undefined ? null : activeCatalog)
+    : stagedCatalog.nextCatalog
+  if (servingCatalog === null) return null
+  const servingIndexes = stagedPeriod === undefined
+    ? indexesByPeriod
+    : stagedCatalog.nextIndexesByPeriod
+  const index = servingIndexes.get(message.periodKey)
   if (index === undefined) return Buffer.alloc(0)
   const tile = index.getTile(message.z, message.x, message.y)
   if (!tile) return Buffer.alloc(0)
   const contributors = readTileContributors(tile)
-  const safeMission = hashPath(activeCatalog.missionId)
+  const safeMission = hashPath(servingCatalog.missionId)
   const safePeriod = hashPath(message.periodKey)
   const contributorDigest = hashPath(contributors.join('\n'))
   const tilePath = path.join(

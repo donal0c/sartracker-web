@@ -113,6 +113,19 @@ function normalizeCoverageQueryRequestId(value, required) {
   return value
 }
 
+/** Validates the opaque worker stage token returned to one renderer activation. */
+function normalizeCoverageTileActivationId(value) {
+  if (
+    typeof value !== 'string' ||
+    value.length < 1 ||
+    value.length > 100 ||
+    !/^coverage-stage-[1-9][0-9]*$/u.test(value)
+  ) {
+    throw new Error('Coverage tile catalog activation ID is invalid.')
+  }
+  return value
+}
+
 /**
  * Creates the Electron SQLite mission store.
  */
@@ -484,10 +497,19 @@ function createElectronMissionStore(options) {
           error.code = 'chunk-stale'
           throw error
         }
-        await coverageTileRunner.commitCatalog({ stageId: result.stageId }, { signal })
-        return { periods: result.periods, delivered: result.delivered }
+        return {
+          activationId: result.stageId,
+          periods: result.periods,
+          delivered: result.delivered,
+        }
       },
     ),
+    activateCoverageTileCatalog: async (input) => coverageTileRunner.commitCatalog({
+      stageId: normalizeCoverageTileActivationId(input?.activationId),
+    }),
+    discardCoverageTileCatalog: async (input) => coverageTileRunner.discardCatalog({
+      stageId: normalizeCoverageTileActivationId(input?.activationId),
+    }),
     readCoverageTile: async (input) => coverageTileRunner.readTile(input),
     upsertDevice: async (input) => upsertDevice(db, input),
     upsertDevicesBulk: async (input) => {

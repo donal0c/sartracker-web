@@ -5,12 +5,27 @@ import {
   aggregateCoverageBenchRuns,
   buildCoverageBenchManifest,
   evaluateCoverageBenchRun,
+  parseCoverageBenchCandidates,
   renderCoverageBenchVerdictTable,
   summarizeCoverageBenchSamples,
   validateCoverageBenchManifest,
 } from '../../build/coverage-bench-lib.js'
 
 const GIB = 1024 ** 3
+
+describe('coverage benchmark matrix selection [DON-273]', () => {
+  it('defaults to the full comparative matrix and permits an explicit affected-row subset', () => {
+    expect(parseCoverageBenchCandidates(undefined)).toEqual(['A', 'B', 'C'])
+    expect(parseCoverageBenchCandidates('B')).toEqual(['B'])
+    expect(parseCoverageBenchCandidates('C,A')).toEqual(['C', 'A'])
+  })
+
+  it('rejects unknown, empty, and duplicate candidate selections', () => {
+    expect(() => parseCoverageBenchCandidates('')).toThrow(/candidate/iu)
+    expect(() => parseCoverageBenchCandidates('D')).toThrow(/candidate/iu)
+    expect(() => parseCoverageBenchCandidates('B,B')).toThrow(/duplicate/iu)
+  })
+})
 
 function passingManifest(
   overrides: Record<string, unknown> = {},

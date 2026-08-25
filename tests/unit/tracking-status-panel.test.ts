@@ -143,6 +143,25 @@ describe('TrackingStatusPanel', () => {
     )
   })
 
+  it('describes renderer-held rejection evidence as pending save, not storage repair [DON-276]', () => {
+    useIngestHealthStore.getState().applyEvidenceHealth({
+      state: 'degraded',
+      reason: 'renderer_evidence_pending',
+      pendingCount: 1,
+      corruptCount: 0,
+      conflictCount: 0,
+      rejectedCount: 1,
+      affectedDeviceCount: 1,
+      conflictDeviceIds: [],
+    })
+
+    render(React.createElement(TrackingStatusPanel))
+
+    const warning = getText('[data-testid="ingest-evidence-health-warning"]')
+    expect(warning).toContain('rejected-position evidence is waiting to be saved')
+    expect(warning).not.toContain('requires repair')
+  })
+
   it('summarizes stationary attention without declaring an emergency [DON-269]', () => {
     useStationaryAttentionStore.setState({ byDevice: {
       'device-1': { state: 'attention', acknowledged: false, sinceTimestamp: '2026-08-22T10:00:00.000Z', elapsedMs: 1_200_000, movementThresholdM: 15 },

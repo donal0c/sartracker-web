@@ -44,11 +44,16 @@ import { useActiveMissionDevicesStore } from '../tracking/active-mission-devices
 import {
   applyCurrentPositionRejections,
   applyIngestEvidenceHealth,
+  useIngestHealthStore,
 } from '../tracking/ingest-health-store'
 import { createRejectionEvidenceDelivery } from '../tracking/rejection-evidence-delivery'
 import { createIngestEvidenceFinalizationBoundary } from '../tracking/ingest-evidence-finalization-boundary'
 import { startExactBreadcrumbDotRuntime } from '../tracking/start-exact-breadcrumb-dot-runtime'
 import { startCoverageRuntime } from '../tracking/start-coverage-runtime'
+import {
+  isCoverageEnabled,
+  resolveCoverageRuntimeEnabled,
+} from './coverage-flag'
 import { useStationaryAttentionStore } from '../tracking/stationary-attention-store'
 import { useExactBreadcrumbDotStore } from '../tracking/exact-breadcrumb-dot-store'
 import type { AppRuntimeController } from './app-runtime-controller'
@@ -158,6 +163,7 @@ export async function startAppRuntime(
         },
         applyRejections: applyCurrentPositionRejections,
         applyEvidenceHealth: applyIngestEvidenceHealth,
+        readEvidenceHealth: () => useIngestHealthStore.getState().evidenceHealth,
       })
   if (missionStore.getIngestEvidenceHealth !== undefined) {
     void missionStore.getActiveMission().then((mission) =>
@@ -193,10 +199,11 @@ export async function startAppRuntime(
     ? missionStore
     : createIngestEvidenceFinalizationBoundary(missionStore, rejectionEvidenceDelivery)
 
+  const missionModelEnabled = isMissionModelEnabled()
   const coreFeatureRuntimes = await resolvedDependencies.startCoreFeatureRuntimes({
     missionStore: coreMissionStore,
     attachmentAdapter,
-    missionModelEnabled: isMissionModelEnabled(),
+    missionModelEnabled,
     gpxWatchSource: gpxImportSource,
     requestAutosaveSync: (reason: AutosaveSyncReason) =>
       activeServices.requestAutosaveSync(reason),
@@ -210,7 +217,12 @@ export async function startAppRuntime(
   const stopExactBreadcrumbDots = resolvedDependencies.startExactBreadcrumbDotRuntime(
     missionStore,
   )
-  const stopCoverage = resolvedDependencies.startCoverageRuntime(missionStore)
+  const stopCoverage = resolvedDependencies.startCoverageRuntime(missionStore, {
+    enabled: resolveCoverageRuntimeEnabled({
+      missionModelEnabled,
+      coverageEnabled: isCoverageEnabled(),
+    }),
+  })
   try {
     await reloadSettings()
   } catch (error) {

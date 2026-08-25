@@ -147,7 +147,7 @@ export function TrackingStatusPanel(props: TrackingStatusPanelProps = {}) {
           data-testid="ingest-evidence-health-warning"
         >
           EVIDENCE HEALTH {evidenceHealth.state.toUpperCase()} — {formatEvidenceFailure(evidenceHealth.reason)}.
-          {' '}Current positions remain live, but anomaly evidence is not fully saved; mission finalization and archive export are blocked until storage is repaired.
+          {' '}Current positions remain live, but anomaly evidence is not fully saved; mission finalization and archive export are blocked {formatEvidenceRecovery(evidenceHealth.reason)}.
         </p>
       )}
 
@@ -285,9 +285,17 @@ function formatEvidenceFailure(reason: string | null): string {
     case 'evidence_delivery_unavailable':
     case 'evidence_health_unavailable':
       return 'the evidence persistence service is unavailable'
+    case 'renderer_evidence_pending':
+      return 'rejected-position evidence is waiting to be saved'
     default:
       return 'mission evidence persistence requires repair'
   }
+}
+
+function formatEvidenceRecovery(reason: string | null): string {
+  return reason === 'renderer_evidence_pending'
+    ? 'until the queued evidence is saved'
+    : 'until storage is repaired'
 }
 
 function getTrackingModeLabel(mode: 'idle' | 'offline' | 'online', warning: string | null): string {

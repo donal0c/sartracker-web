@@ -10,6 +10,7 @@ import { fileURLToPath } from 'node:url'
 import {
   aggregateCoverageBenchRuns,
   checksumCoverageBenchValue,
+  parseCoverageBenchCandidates,
   renderCoverageBenchVerdictTable,
   validateCoverageBenchManifest,
 } from '../build/coverage-bench-lib.js'
@@ -21,7 +22,7 @@ main().catch((error) => {
   process.exitCode = 1
 })
 
-/** Runs one full interleaved A/B/C × 960k/2M × three-repetition G2 matrix. */
+/** Runs the requested interleaved candidate × 960k/2M × three-repetition G2 matrix. */
 async function main() {
   const args = parseArguments(process.argv.slice(2))
   await validateExactHead(args.appSha)
@@ -38,7 +39,7 @@ async function main() {
   const manifests = []
   for (let repetition = 1; repetition <= 3; repetition += 1) {
     for (const fixture of fixtures) {
-      for (const candidate of ['A', 'B', 'C']) {
+      for (const candidate of args.candidates) {
         const runRoot = path.join(args.outputDirectory, `${fixture.preset}-${candidate}`)
         const fixtureCopy = path.join(runRoot, 'fixture', 'mission-store.sqlite')
         const fixtureManifestCopy = `${fixtureCopy}.manifest.json`
@@ -249,5 +250,6 @@ function parseArguments(argv) {
     fixture2m: path.resolve(values['fixture-2m']),
     outputDirectory: path.resolve(values['output-dir']),
     appSha: values['app-sha'],
+    candidates: parseCoverageBenchCandidates(values.candidates),
   }
 }

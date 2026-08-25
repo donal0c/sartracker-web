@@ -6,6 +6,14 @@ export type CoverageFlagContext = {
 
 export const DEFAULT_COVERAGE_ENABLED = true
 
+/** Enforces the approved combined posture: coverage requires the mission model. */
+export function resolveCoverageRuntimeEnabled(input: {
+  readonly missionModelEnabled: boolean
+  readonly coverageEnabled: boolean
+}): boolean {
+  return input.missionModelEnabled && input.coverageEnabled
+}
+
 /** Resolves the internal flag; explicit build posture always wins. */
 export function resolveCoverageFlag(context: CoverageFlagContext): boolean {
   if (context.buildFlag !== undefined) return context.buildFlag === '1'

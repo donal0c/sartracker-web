@@ -19,6 +19,7 @@ contextBridge.exposeInMainWorld('coverageBench', {
   primeInvalidation: () => ipcRenderer.invoke('coverage-bench:prime-invalidation'),
   attestPane: (bounds) => ipcRenderer.invoke('coverage-bench:attest-pane', bounds),
   appendLateBatch: () => ipcRenderer.invoke('coverage-bench:append-late-batch'),
+  activatePeriod: (period) => ipcRenderer.invoke('coverage-bench:activate-period', period),
   readTile: (request) => ipcRenderer.invoke('coverage-bench:read-tile', request),
   readMainSamples: () => ipcRenderer.invoke('coverage-bench:read-main-samples'),
   readMemory: () => ipcRenderer.invoke('coverage-bench:read-memory'),

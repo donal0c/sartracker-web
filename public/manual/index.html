@@ -962,6 +962,8 @@
             <strong>Evidence health:</strong> if unique rejection evidence cannot reach the mission
             ledger, current positions continue to publish first. A persistent, non-dismissible warning
             names the storage failure and states that the anomaly evidence is not fully saved.
+            The warning appears as soon as rejected-position evidence is waiting in renderer memory and
+            clears only after that queued evidence is acknowledged by the durable mission store.
             Finalization and archive export remain blocked until the durable outbox is replayed or the
             storage fault is repaired. Distinct committed conflicts are never expired or capped;
             identical repeats update first-seen, last-seen, and occurrence count. If the bounded

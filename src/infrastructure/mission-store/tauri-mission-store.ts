@@ -129,6 +129,8 @@ export type CoverageClaim = {
 }
 
 export type CoverageTileCatalog = {
+  /** Opaque native-worker stage awaiting renderer acceptance. */
+  readonly activationId?: string
   /** Intermediate recovery catalogs keep prior periods visible until final replacement. */
   readonly retainPriorPeriods?: boolean
   readonly periods: readonly {
@@ -705,6 +707,12 @@ export type MissionStore = {
     },
     requestId?: string,
   ) => Promise<CoverageTileCatalog>
+  readonly activateCoverageTileCatalog?: (input: {
+    readonly activationId: string
+  }) => Promise<boolean>
+  readonly discardCoverageTileCatalog?: (input: {
+    readonly activationId: string
+  }) => Promise<boolean>
   readonly readCoverageTile?: (input: {
     readonly periodKey: string
     readonly revisionDigest: string

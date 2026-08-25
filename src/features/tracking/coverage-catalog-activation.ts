@@ -2,7 +2,8 @@ import type { CoverageTileCatalog } from '../../infrastructure/mission-store/tau
 
 export type CoverageCatalogActivation = {
   readonly wait: (catalog: CoverageTileCatalog, signal: AbortSignal) => Promise<void>
-  readonly notifyApplied: (catalog: CoverageTileCatalog) => void
+  readonly isPending: (catalog: CoverageTileCatalog) => boolean
+  readonly notifyApplied: (catalog: CoverageTileCatalog) => boolean
   readonly rejectPending: (error: Error) => boolean
   readonly containsRevision: (
     catalog: CoverageTileCatalog | null,
@@ -42,8 +43,11 @@ export function createCoverageCatalogActivation(): CoverageCatalogActivation {
       }
       signal.addEventListener('abort', abort, { once: true })
     }),
+    isPending: (catalog) => pending?.signature === catalogSignature(catalog),
     notifyApplied: (catalog) => {
-      if (pending?.signature === catalogSignature(catalog)) pending.resolve()
+      if (pending?.signature !== catalogSignature(catalog)) return false
+      pending.resolve()
+      return true
     },
     rejectPending: (error) => {
       if (pending === null) return false
@@ -57,10 +61,11 @@ export function createCoverageCatalogActivation(): CoverageCatalogActivation {
 }
 
 function catalogSignature(catalog: CoverageTileCatalog): string {
-  return catalog.periods
+  const periods = catalog.periods
     .map((period) => `${period.periodKey}\u0000${period.revisionDigest}`)
     .sort()
     .join('\n')
+  return `${catalog.activationId ?? 'renderer-only'}\n${periods}`
 }
 
 function createAbortError(): Error {

@@ -14,6 +14,7 @@ const { createCoverageTileRunner } = require('../../electron/coverage-tile-runne
     readonly cacheDirectory: string
     readonly createWorker?: () => FakeWorker
     readonly onFailure?: (error: Error) => void
+    readonly faultInjection?: { readonly failCatalogCommitOnce?: boolean }
   }) => {
     readonly syncCatalog: (
       input: Readonly<Record<string, unknown>>,
@@ -95,11 +96,19 @@ describe('Candidate B coverage tile worker [DON-276]', () => {
       missionId: 'mission-1',
       chunks: [{ key: keyA, contentRev: 2 }, { key: keyB, contentRev: 1 }],
     })
+    const nextPeriodA = second.periods.find((period) => period.periodKey === periodA.periodKey)!
     await expect(runner.readTile({
       periodKey: periodA.periodKey,
       revisionDigest: periodA.revisionDigest,
       ...tileAddress,
     })).resolves.toEqual(firstA)
+    const stagedA = await runner.readTile({
+      periodKey: nextPeriodA.periodKey,
+      revisionDigest: nextPeriodA.revisionDigest,
+      ...tileAddress,
+    })
+    expect(ArrayBuffer.isView(stagedA)).toBe(true)
+    expect(stagedA!.byteLength).toBeGreaterThan(0)
     await runner.commitCatalog({ stageId: second.stageId })
     const nextPeriodB = second.periods.find((period) => period.periodKey === periodB.periodKey)!
 
@@ -212,6 +221,27 @@ describe('Candidate B coverage tile worker [DON-276]', () => {
 
     expect(ArrayBuffer.isView(empty)).toBe(true)
     expect(empty).toHaveLength(0)
+  })
+
+  it('clears a failed commit stage so the next catalog retry can proceed', async () => {
+    const databasePath = await createDatabase()
+    runner = createCoverageTileRunner({
+      databasePath,
+      cacheDirectory: path.join(directory!, 'coverage-commit-failure'),
+      faultInjection: { failCatalogCommitOnce: true },
+    })
+    const keyA: ChunkKey = {
+      device_id: 'device-a', period_kind: 'outing', period_id: 'outing-a',
+    }
+    const first = await runner.syncCatalog({
+      missionId: 'mission-1', chunks: [{ key: keyA, contentRev: 1 }],
+    })
+
+    await expect(runner.commitCatalog({ stageId: first.stageId }))
+      .rejects.toThrow(/injected.*commit/i)
+    await expect(runner.syncCatalog({
+      missionId: 'mission-1', chunks: [{ key: keyA, contentRev: 1 }],
+    })).resolves.toMatchObject({ stageId: expect.any(String) })
   })
 })
 

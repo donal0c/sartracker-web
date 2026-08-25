@@ -86,6 +86,8 @@ async function registerIpc() {
     return true
   })
   ipcMain.handle('coverage-bench:append-late-batch', async () => requestWorker({ type: 'append' }))
+  ipcMain.handle('coverage-bench:activate-period', async (_event, period) =>
+    requestWorker({ type: 'activate-period', ...period }))
   ipcMain.handle('coverage-bench:prime-invalidation', async () => requestWorker({ type: 'prime-invalidation' }))
   ipcMain.handle('coverage-bench:attest-pane', async (_event, bounds) => requestWorker({ type: 'attest-pane', bounds }))
   ipcMain.handle('coverage-bench:read-tile', async (_event, request) => {

@@ -18,13 +18,17 @@ describe('coverage runtime wiring [DON-276]', () => {
     let changeSeq = 1
     let changedListener: ((event: { missionId: string; changeSeq: number }) => void) | undefined
     const readCoverageManifest = vi.fn(async () => manifest(changeSeq))
+    const activateCoverageTileCatalog = vi.fn(async () => true)
     const syncCoverageTileCatalog = vi.fn(async () => ({
+      activationId: `stage-${changeSeq}`,
       periods: [{ periodKey: 'unassigned\u0000', revisionDigest: `rev-${changeSeq}` }],
       delivered: [{ key: manifest(changeSeq).chunks[0]!.key, contentRev: 1 }],
     }))
     const missionStore = {
       readCoverageManifest,
       syncCoverageTileCatalog,
+      activateCoverageTileCatalog,
+      discardCoverageTileCatalog: vi.fn(async () => true),
       readCoverageClaim: vi.fn(async () => ({
         changeSeq,
         databaseReady: true,
@@ -49,6 +53,9 @@ describe('coverage runtime wiring [DON-276]', () => {
       status: 'complete', changeSeq: 1,
     }))
     expect(syncCoverageTileCatalog).toHaveBeenCalledOnce()
+    expect(activateCoverageTileCatalog).toHaveBeenCalledWith({
+      activationId: 'stage-1',
+    })
 
     changeSeq = 2
     changedListener?.({ missionId: 'mission-1', changeSeq: 2 })
@@ -67,9 +74,12 @@ describe('coverage runtime wiring [DON-276]', () => {
     const missionStore = {
       readCoverageManifest: vi.fn(async () => manifest(1)),
       syncCoverageTileCatalog: vi.fn(async () => ({
+        activationId: 'stage-1',
         periods: [{ periodKey: 'unassigned\u0000', revisionDigest: 'rev-1' }],
         delivered: [{ key: manifest(1).chunks[0]!.key, contentRev: 1 }],
       })),
+      activateCoverageTileCatalog: vi.fn(async () => true),
+      discardCoverageTileCatalog: vi.fn(async () => true),
       readCoverageClaim: vi.fn(async () => ({
         changeSeq: 1, databaseReady: true, blockers: [],
         chunkRevisions: [{ key: manifest(1).chunks[0]!.key, contentRev: 1 }],
@@ -113,7 +123,7 @@ async function acknowledgePendingCatalog(): Promise<void> {
   })
   const current = useCoverageStore.getState()
   if (current.state.status !== 'inactive' && current.state.tileCatalog !== null) {
-    current.controller?.notifyCatalogApplied(current.state.tileCatalog)
+    await current.controller?.notifyCatalogApplied(current.state.tileCatalog)
   }
 }
 

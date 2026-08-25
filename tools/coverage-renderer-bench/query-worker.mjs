@@ -14,6 +14,7 @@ const vtpbf = require('vt-pbf')
 const GAP_THRESHOLD_MS = 30 * 60 * 1000
 const PAGE_SIZE = 10_000
 const periodIndexes = new Map()
+const periodIndexGenerations = new Map()
 const chunksByKey = new Map()
 const periodFeatures = new Map()
 const periodRevisions = new Map()
@@ -42,6 +43,10 @@ async function handleMessage(message) {
   }
   if (message.type === 'append') {
     reply(message.requestId, await appendLateBatch())
+    return
+  }
+  if (message.type === 'activate-period') {
+    reply(message.requestId, activatePeriodGeneration(message))
     return
   }
   if (message.type === 'prime-invalidation') {
@@ -135,7 +140,7 @@ async function buildCoverage(input) {
       periodFeatures.set(key, featuresForPeriod)
       if (input.candidate === 'B') {
         const started = performance.now()
-        periodIndexes.set(key, buildVectorIndex(featuresForPeriod))
+        setPeriodIndex(key, 1, buildVectorIndex(featuresForPeriod))
         phaseMs.encodeServeMs += performance.now() - started
         parentPort.postMessage({
           type: 'period-ready',
@@ -297,9 +302,8 @@ function buildVectorIndex(features) {
 
 /** Serves one revision-bound protobuf tile and atomically caches its bytes on disk. */
 async function readVectorTile(message) {
-  const index = periodIndexes.get(message.periodKey)
-  const revision = periodRevisions.get(message.periodKey)
-  if (!index || revision !== message.contentRev) return null
+  const index = periodIndexGenerations.get(message.periodKey)?.get(message.contentRev)
+  if (!index) return null
   const safePeriod = createHash('sha256').update(message.periodKey).digest('hex').slice(0, 24)
   const tile = index.getTile(message.z, message.x, message.y)
   if (!tile) return null
@@ -316,6 +320,30 @@ async function readVectorTile(message) {
   await mkdir(path.dirname(tilePath), { recursive: true })
   await writeFile(tilePath, bytes)
   return bytes
+}
+
+/** Stages one revision while retaining every source generation still visible in the renderer. */
+function setPeriodIndex(periodKey, contentRev, index) {
+  const generations = periodIndexGenerations.get(periodKey) ?? new Map()
+  generations.set(contentRev, index)
+  periodIndexGenerations.set(periodKey, generations)
+  periodIndexes.set(periodKey, index)
+  periodRevisions.set(periodKey, contentRev)
+}
+
+/** Retires predecessor generations only after the renderer has loaded and accepted the replacement. */
+function activatePeriodGeneration(message) {
+  const generations = periodIndexGenerations.get(message.periodKey)
+  if (!generations?.has(message.contentRev)) {
+    throw new Error('Candidate-B renderer acknowledged an unknown period revision.')
+  }
+  if (periodRevisions.get(message.periodKey) !== message.contentRev) {
+    throw new Error('Candidate-B renderer acknowledged an obsolete period revision.')
+  }
+  for (const revision of generations.keys()) {
+    if (revision !== message.contentRev) generations.delete(revision)
+  }
+  return true
 }
 
 /** Reads the exact chunk/revision set contributing geometry to one vector tile. */
@@ -525,8 +553,7 @@ async function appendLateBatch() {
       if (chunk.periodKey === target.periodKey) features.push(...chunk.features)
     }
     periodFeatures.set(target.periodKey, features)
-    periodIndexes.set(target.periodKey, buildVectorIndex(features))
-    periodRevisions.set(target.periodKey, nextRev)
+    setPeriodIndex(target.periodKey, nextRev, buildVectorIndex(features))
     parentPort.postMessage({
       type: 'period-rebuilt',
       period,

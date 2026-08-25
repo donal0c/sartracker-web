@@ -50,7 +50,10 @@ export type CoverageController = {
   readonly updateContext: (context: CoverageContext) => Promise<void>
   readonly refresh: () => Promise<void>
   readonly notifyChanged: (missionId: string, changeSeq: number) => Promise<void>
-  readonly notifyCatalogApplied: (catalog: CoverageTileCatalog) => void
+  readonly notifyCatalogApplied: (
+    catalog: CoverageTileCatalog,
+    finalizeRenderer?: () => void,
+  ) => Promise<void>
   readonly notifyRendererFailure: (failure: {
     readonly periodKey: string
     readonly revisionDigest: string
@@ -101,6 +104,8 @@ export function createCoverageController(input: {
     readonly requestId: string
     readonly signal: AbortSignal
   }) => Promise<CoverageTileCatalog>
+  readonly activateCatalog?: (catalog: CoverageTileCatalog) => Promise<void>
+  readonly discardCatalog?: (catalog: CoverageTileCatalog) => Promise<void>
   readonly publish: (state: CoverageState) => void
 }): CoverageController {
   let state: CoverageState = { status: 'inactive' }
@@ -216,7 +221,12 @@ export function createCoverageController(input: {
             tileCatalog: activeCatalog,
             delivered,
           }, context.selectedKeys))
-          await activation
+          try {
+            await activation
+          } catch (error) {
+            await input.discardCatalog?.(activeCatalog).catch(() => undefined)
+            throw error
+          }
           if (!ownsOperation(operation, controller, missionId, rendererGeneration)) return
           const currentRevisions = new Map(manifest.chunks.map((chunk) => [
             coverageChunkIdentity(chunk.key), chunk.contentRev,
@@ -385,6 +395,12 @@ export function createCoverageController(input: {
   const publishRendererUnavailable = (message: string): void => {
     if (state.status === 'inactive') return
     const error = new Error(message)
+    if (
+      state.tileCatalog !== null &&
+      catalogActivation.isPending(state.tileCatalog)
+    ) {
+      void input.discardCatalog?.(state.tileCatalog).catch(() => undefined)
+    }
     catalogActivation.rejectPending(error)
     activeController?.abort()
     activeController = null
@@ -444,8 +460,21 @@ export function createCoverageController(input: {
       })
       await requestRefresh()
     },
-    notifyCatalogApplied: (catalog) => {
-      catalogActivation.notifyApplied(catalog)
+    notifyCatalogApplied: async (catalog, finalizeRenderer = () => undefined) => {
+      if (!catalogActivation.isPending(catalog)) return
+      try {
+        await input.activateCatalog?.(catalog)
+        finalizeRenderer()
+        catalogActivation.notifyApplied(catalog)
+      } catch (error) {
+        await input.discardCatalog?.(catalog).catch(() => undefined)
+        const normalized = error instanceof Error
+          ? error
+          : new Error('Coverage catalog activation failed.')
+        catalogActivation.rejectPending(normalized)
+        publishRendererUnavailable(normalized.message)
+        throw normalized
+      }
     },
     notifyRendererFailure: (failure) => {
       if (state.status === 'inactive' || !catalogActivation.containsRevision(

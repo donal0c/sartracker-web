@@ -206,13 +206,13 @@ function addGeoJsonPeriod(periodKey, initialFeatures) {
 }
 
 /** Adds one revision-bound vector source for Candidate B. */
-async function ensureVectorPeriod(event, preferredSourceId = null) {
+async function ensureVectorPeriod(event) {
   if (firstDeviceId === null) {
     const chunk = [...chunks.values()][0]
     firstDeviceId = chunk?.deviceId ?? null
   }
-  const sourceId = preferredSourceId ?? `coverage-vector-${nextVectorSourceIndex}`
-  if (preferredSourceId === null) nextVectorSourceIndex += 1
+  const sourceId = `coverage-vector-${nextVectorSourceIndex}`
+  nextVectorSourceIndex += 1
   const lineId = `${sourceId}-line`
   const pointId = `${sourceId}-point`
   map.addSource(sourceId, {
@@ -239,18 +239,24 @@ async function ensureVectorPeriod(event, preferredSourceId = null) {
   })
   periodSources.set(event.periodKey, sourceId)
   periodLayerIds.set(event.periodKey, [lineId, pointId])
+  return { sourceId, layerIds: [lineId, pointId] }
 }
 
 /** Replaces only the affected Candidate-B period source after a revision bump. */
 async function replaceVectorPeriod(event) {
-  const sourceId = periodSources.get(event.periodKey)
-  const layerIds = periodLayerIds.get(event.periodKey) ?? []
-  if (!sourceId) throw new Error('Candidate B rebuilt an unknown period.')
-  for (const layerId of layerIds) if (map.getLayer(layerId)) map.removeLayer(layerId)
-  if (map.getSource(sourceId)) map.removeSource(sourceId)
-  periodSources.delete(event.periodKey)
-  periodLayerIds.delete(event.periodKey)
-  await ensureVectorPeriod(event, sourceId)
+  const previous = {
+    sourceId: periodSources.get(event.periodKey),
+    layerIds: periodLayerIds.get(event.periodKey) ?? [],
+  }
+  if (!previous.sourceId) throw new Error('Candidate B rebuilt an unknown period.')
+  const staged = await ensureVectorPeriod(event)
+  await waitForCondition(() => map.isSourceLoaded(staged.sourceId), 15_000)
+  await window.coverageBench.activatePeriod({
+    periodKey: event.periodKey,
+    contentRev: event.contentRev,
+  })
+  for (const layerId of previous.layerIds) if (map.getLayer(layerId)) map.removeLayer(layerId)
+  if (map.getSource(previous.sourceId)) map.removeSource(previous.sourceId)
 }
 
 /** Rejects initial loading and terminates post-load failures without waiting for a timeout. */

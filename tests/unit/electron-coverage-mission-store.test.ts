@@ -115,7 +115,12 @@ type CoverageMissionStore = {
   readonly syncCoverageTileCatalog: (
     input: { readonly missionId: string; readonly chunks: readonly unknown[] },
     requestId?: string,
-  ) => Promise<{ readonly delivered: readonly { readonly key: CoverageKey; readonly contentRev: number }[] }>
+  ) => Promise<{
+    readonly activationId: string
+    readonly delivered: readonly { readonly key: CoverageKey; readonly contentRev: number }[]
+  }>
+  readonly activateCoverageTileCatalog: (input: { readonly activationId: string }) => Promise<boolean>
+  readonly discardCoverageTileCatalog: (input: { readonly activationId: string }) => Promise<boolean>
   readonly readCoverageTile: (input: Readonly<Record<string, unknown>>) => Promise<Uint8Array | null>
 }
 
@@ -277,7 +282,7 @@ describe('Electron coverage mission-store orchestration', () => {
     expect(ordering).toEqual([`changed:${mission.id}:2`, 'resolved'])
   })
 
-  it('applies Candidate-B build metadata before attesting a tile catalog delivery', async () => {
+  it('applies build metadata but keeps the prior catalog until renderer activation', async () => {
     directory = await mkdtemp(path.join(tmpdir(), 'sartracker-coverage-store-'))
     const tileBytes = new Uint8Array([1, 2, 3])
     const syncCatalog = vi.fn()
@@ -293,7 +298,7 @@ describe('Electron coverage mission-store orchestration', () => {
     const manifest = await store.readCoverageManifest(mission.id, 'manifest-1')
     const chunk = manifest.chunks[0]!
     syncCatalog.mockResolvedValue({
-      stageId: 'stage-1',
+      stageId: 'coverage-stage-1',
       periods: [{
         periodKey: 'unassigned\u0000',
         revisionDigest: 'revision-1',
@@ -314,11 +319,15 @@ describe('Electron coverage mission-store orchestration', () => {
       missionId: mission.id,
       chunks: [{ key: chunk.key, contentRev: chunk.contentRev }],
     }, 'tiles-1')).resolves.toMatchObject({
+      activationId: 'coverage-stage-1',
       delivered: [{ key: chunk.key, contentRev: chunk.contentRev }],
     })
+    expect(tileRunner.commitCatalog).not.toHaveBeenCalled()
+    await expect(store.activateCoverageTileCatalog({
+      activationId: 'coverage-stage-1',
+    })).resolves.toBe(true)
     expect(tileRunner.commitCatalog).toHaveBeenCalledWith(
-      { stageId: 'stage-1' },
-      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+      { stageId: 'coverage-stage-1' },
     )
     expect(tileRunner.discardCatalog).not.toHaveBeenCalled()
     await expect(store.readCoverageTile({ z: 8, x: 1, y: 1 })).resolves.toEqual(tileBytes)
@@ -351,7 +360,7 @@ describe('Electron coverage mission-store orchestration', () => {
         }],
       })
       return {
-        stageId: 'stage-race',
+        stageId: 'coverage-stage-race',
         periods: [{
           periodKey: 'unassigned\u0000', revisionDigest: 'revision-stale',
           contributors: [`device-1\u0000unassigned\u0000@${chunk.contentRev}`],
@@ -369,7 +378,7 @@ describe('Electron coverage mission-store orchestration', () => {
       chunks: [{ key: chunk.key, contentRev: chunk.contentRev }],
     }, 'tiles-race')).rejects.toThrow(/chunk-stale/i)
     expect(discardCatalog).toHaveBeenCalledWith(
-      { stageId: 'stage-race' },
+      { stageId: 'coverage-stage-race' },
       expect.objectContaining({ signal: expect.any(AbortSignal) }),
     )
     expect(commitCatalog).not.toHaveBeenCalled()

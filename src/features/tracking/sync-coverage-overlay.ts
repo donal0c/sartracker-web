@@ -20,6 +20,21 @@ export type CoverageOverlayMap = {
   readonly getLayer: (id: string) => unknown
   readonly removeLayer: (id: string) => void
   readonly setFilter: (id: string, filter: ExpressionSpecification | null) => void
+  readonly isSourceLoaded?: (id: string) => boolean
+  readonly on?: (
+    event: 'sourcedata' | 'error',
+    listener: (event: { readonly sourceId?: string }) => void,
+  ) => unknown
+  readonly off?: (
+    event: 'sourcedata' | 'error',
+    listener: (event: { readonly sourceId?: string }) => void,
+  ) => unknown
+}
+
+export type CoverageOverlayActivation = {
+  readonly periods: CoverageTileCatalog['periods']
+  readonly commit: () => void
+  readonly rollback: () => void
 }
 
 type PeriodOverlay = {
@@ -35,14 +50,15 @@ let nextOverlaySequence = 0
  * Synchronizes Candidate-B period sources independently. An unrelated chunk
  * revision therefore cannot remove or reload a retained period source.
  */
-export function syncCoverageOverlay(
+export async function syncCoverageOverlay(
   map: CoverageOverlayMap,
   catalog: CoverageTileCatalog | null,
   filters: {
     readonly omittedDeviceIds: readonly string[]
     readonly omittedPeriodKeys: readonly string[]
   } = { omittedDeviceIds: [], omittedPeriodKeys: [] },
-): { readonly periods: CoverageTileCatalog['periods'] } {
+  signal: AbortSignal = new AbortController().signal,
+): Promise<CoverageOverlayActivation> {
   const overlays = overlaysByMap.get(map) ?? new Map<string, PeriodOverlay>()
   overlaysByMap.set(map, overlays)
   const browserHarnessGeoJson = catalog?.browserHarnessGeoJson
@@ -84,18 +100,97 @@ export function syncCoverageOverlay(
       throw error
     }
   }
-  for (const replacement of staged) {
-    overlays.set(replacement.periodKey, replacement.next)
-    if (replacement.prior !== undefined) removePeriodOverlay(map, replacement.prior)
+  try {
+    await waitForCoverageSourcesLoaded(map, staged.map((entry) => entry.next), signal)
+  } catch (error) {
+    for (const replacement of staged) removePeriodOverlay(map, replacement.next)
+    throw error
   }
-  if (catalog?.retainPriorPeriods !== true) {
-    for (const [periodKey, overlay] of [...overlays.entries()]) {
-      if (desired.has(periodKey)) continue
-      removePeriodOverlay(map, overlay)
-      overlays.delete(periodKey)
+  let settled = false
+  return {
+    periods: catalog?.periods ?? [],
+    commit: () => {
+      if (settled) return
+      settled = true
+      for (const replacement of staged) {
+        overlays.set(replacement.periodKey, replacement.next)
+        if (replacement.prior !== undefined) removePeriodOverlay(map, replacement.prior)
+      }
+      if (catalog?.retainPriorPeriods !== true) {
+        for (const [periodKey, overlay] of [...overlays.entries()]) {
+          if (desired.has(periodKey)) continue
+          removePeriodOverlay(map, overlay)
+          overlays.delete(periodKey)
+        }
+      }
+    },
+    rollback: () => {
+      if (settled) return
+      settled = true
+      for (const replacement of staged) removePeriodOverlay(map, replacement.next)
+    },
+  }
+}
+
+/** Waits for MapLibre to accept every staged source before retiring predecessors. */
+async function waitForCoverageSourcesLoaded(
+  map: CoverageOverlayMap,
+  overlays: readonly PeriodOverlay[],
+  signal: AbortSignal,
+): Promise<void> {
+  if (overlays.length === 0) return
+  if (map.isSourceLoaded === undefined || map.on === undefined || map.off === undefined) return
+  const pending = new Set(overlays.map((overlay) => overlay.sourceId))
+  const refresh = (): void => {
+    for (const sourceId of pending) {
+      try {
+        if (map.isSourceLoaded?.(sourceId) === true) pending.delete(sourceId)
+      } catch {
+        // Source structure exists but has not reached MapLibre's loaded state yet.
+      }
     }
   }
-  return { periods: catalog?.periods ?? [] }
+  refresh()
+  if (pending.size === 0) return
+  if (signal.aborted) throw createCoverageOverlayAbortError()
+  await new Promise<void>((resolve, reject) => {
+    const timeout = globalThis.setTimeout(() => {
+      cleanup()
+      reject(new Error('Coverage overlay source loading timed out.'))
+    }, 15_000)
+    const abort = () => {
+      cleanup()
+      reject(createCoverageOverlayAbortError())
+    }
+    const onSourceData = () => {
+      refresh()
+      if (pending.size === 0) {
+        cleanup()
+        resolve()
+      }
+    }
+    const onError = (event: { readonly sourceId?: string }) => {
+      if (event.sourceId === undefined || !pending.has(event.sourceId)) return
+      cleanup()
+      reject(new Error('Coverage overlay source failed before activation.'))
+    }
+    const cleanup = () => {
+      globalThis.clearTimeout(timeout)
+      signal.removeEventListener('abort', abort)
+      map.off?.('sourcedata', onSourceData)
+      map.off?.('error', onError)
+    }
+    signal.addEventListener('abort', abort, { once: true })
+    map.on?.('sourcedata', onSourceData)
+    map.on?.('error', onError)
+    onSourceData()
+  })
+}
+
+function createCoverageOverlayAbortError(): Error {
+  const error = new Error('Coverage overlay activation was cancelled.')
+  error.name = 'AbortError'
+  return error
 }
 
 /** Installs and verifies one digest-specific overlay without removing its predecessor. */

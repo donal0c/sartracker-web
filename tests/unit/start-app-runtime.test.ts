@@ -12,6 +12,10 @@ import { createParticipationScope } from '../../src/features/participants/partic
 
 vi.mock('../../src/features/runtime/coverage-flag', () => ({
   isCoverageEnabled: () => false,
+  resolveCoverageRuntimeEnabled: (input: {
+    readonly missionModelEnabled: boolean
+    readonly coverageEnabled: boolean
+  }) => input.missionModelEnabled && input.coverageEnabled,
 }))
 
 describe('app runtime startup', () => {

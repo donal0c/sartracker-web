@@ -98,15 +98,22 @@ export function useMapOverlays(options: UseMapOverlaysOptions): void {
   useEffect(() => {
     const map = options.mapRef.current
     if (map === null) return
-    const synchronizeOverlay = () => {
+    const synchronizeOverlay = async (signal: AbortSignal) => {
       const catalog = coverageState.status === 'inactive' ? null : coverageState.tileCatalog
+      let activation: Awaited<ReturnType<typeof syncCoverageOverlay>> | null = null
       try {
-        syncCoverageOverlay(map, catalog, {
+        activation = await syncCoverageOverlay(map, catalog, {
           omittedDeviceIds: omittedCoverageDeviceIds,
           omittedPeriodKeys: omittedCoveragePeriodKeys,
-        })
-        if (catalog !== null) coverageController?.notifyCatalogApplied(catalog)
+        }, signal)
+        if (catalog === null || coverageController === null) {
+          activation.commit()
+        } else {
+          await coverageController.notifyCatalogApplied(catalog, activation.commit)
+        }
       } catch (error) {
+        activation?.rollback()
+        if (error instanceof Error && error.name === 'AbortError') return
         const period = catalog?.periods[0]
         if (period !== undefined) {
           coverageController?.notifyRendererFailure({

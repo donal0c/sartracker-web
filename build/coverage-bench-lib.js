@@ -2,6 +2,25 @@ import { createHash } from 'node:crypto'
 
 export const COVERAGE_BENCH_SCHEMA_VERSION = 1
 
+/**
+ * Resolves the bounded candidate subset for a full matrix or an invalidated-row rerun.
+ *
+ * @param {string | undefined} value
+ * @returns {Array<'A' | 'B' | 'C'>}
+ */
+export function parseCoverageBenchCandidates(value) {
+  if (value === undefined) return ['A', 'B', 'C']
+  if (value.length === 0) throw new Error('Coverage benchmark candidate selection is empty.')
+  const candidates = value.split(',')
+  if (candidates.some((candidate) => !['A', 'B', 'C'].includes(candidate))) {
+    throw new Error('Coverage benchmark candidate selection must contain only A, B, or C.')
+  }
+  if (new Set(candidates).size !== candidates.length) {
+    throw new Error('Coverage benchmark candidate selection contains a duplicate.')
+  }
+  return candidates
+}
+
 const CANDIDATES = new Set(['A', 'B', 'C'])
 const FIXTURES = new Map([
   ['bcp-960k', 960_000],

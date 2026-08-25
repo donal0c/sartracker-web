@@ -78,6 +78,62 @@ describe('rejection evidence delivery [DON-268]', () => {
     })
   })
 
+  it('blocks completeness synchronously while rejected evidence is still renderer-held', async () => {
+    let acknowledge: ((value: {
+      acknowledgedDeliveryIds: string[]
+      health: ReturnType<typeof healthy>
+    }) => void) | undefined
+    const applyEvidenceHealth = vi.fn()
+    const delivery = createRejectionEvidenceDelivery({
+      missionStore: {
+        recordIngestRejections: () => new Promise((resolve) => {
+          acknowledge = resolve
+        }),
+      },
+      applyRejections: vi.fn(),
+      applyEvidenceHealth,
+      createDeliveryId: () => 'delivery-1',
+    })
+
+    delivery.record([createRejection('source:pending')], observation('mission-1'))
+
+    expect(applyEvidenceHealth).toHaveBeenCalledWith(expect.objectContaining({
+      state: 'degraded',
+      reason: 'renderer_evidence_pending',
+      pendingCount: 1,
+    }))
+    await vi.waitFor(() => expect(acknowledge).toBeTypeOf('function'))
+    acknowledge?.({ acknowledgedDeliveryIds: ['delivery-1'], health: healthy() })
+    await vi.waitFor(() => expect(applyEvidenceHealth).toHaveBeenLastCalledWith(healthy()))
+  })
+
+  it('never downgrades an existing critical evidence failure while renderer evidence is pending', () => {
+    const criticalHealth = {
+      ...healthy(),
+      state: 'critical' as const,
+      reason: 'outbox_corrupt_record',
+      corruptCount: 1,
+    }
+    const applyEvidenceHealth = vi.fn()
+    const delivery = createRejectionEvidenceDelivery({
+      missionStore: {
+        recordIngestRejections: async () => new Promise(() => undefined),
+      },
+      applyRejections: vi.fn(),
+      applyEvidenceHealth,
+      readEvidenceHealth: () => criticalHealth,
+    })
+
+    delivery.record([createRejection('source:pending')], observation('mission-1'))
+
+    expect(applyEvidenceHealth).toHaveBeenCalledWith(expect.objectContaining({
+      state: 'critical',
+      reason: 'outbox_corrupt_record',
+      corruptCount: 1,
+      pendingCount: 1,
+    }))
+  })
+
   it('keeps unacknowledged unique evidence bounded and retries it on the next poll', async () => {
     const recordIngestRejections = vi
       .fn()

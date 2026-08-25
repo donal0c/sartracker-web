@@ -26,6 +26,8 @@ export type CoverageRuntimeMissionStore = Pick<
   | 'readCoverageManifest'
   | 'readCoverageClaim'
   | 'syncCoverageTileCatalog'
+  | 'activateCoverageTileCatalog'
+  | 'discardCoverageTileCatalog'
   | 'cancelCoverageQuery'
 >
 
@@ -82,6 +84,18 @@ export function startCoverageRuntime(
       }, requestId),
       missionStore.cancelCoverageQuery,
     ) as Promise<CoverageTileCatalog>,
+    activateCatalog: async (catalog) => {
+      if (catalog.activationId === undefined) return
+      await missionStore.activateCoverageTileCatalog({
+        activationId: catalog.activationId,
+      })
+    },
+    discardCatalog: async (catalog) => {
+      if (catalog.activationId === undefined) return
+      await missionStore.discardCoverageTileCatalog({
+        activationId: catalog.activationId,
+      })
+    },
     readChunk: async () => {
       throw new Error('Candidate B does not deliver coverage through renderer GeoJSON pages.')
     },
@@ -170,6 +184,8 @@ export function hasCoverageRuntimeBoundary(
   return typeof missionStore.readCoverageManifest === 'function' &&
     typeof missionStore.readCoverageClaim === 'function' &&
     typeof missionStore.syncCoverageTileCatalog === 'function' &&
+    typeof missionStore.activateCoverageTileCatalog === 'function' &&
+    typeof missionStore.discardCoverageTileCatalog === 'function' &&
     typeof missionStore.cancelCoverageQuery === 'function'
 }
 

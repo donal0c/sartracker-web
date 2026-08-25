@@ -19,6 +19,7 @@ function createCoverageTileRunner(input) {
       workerData: {
         databasePath: input.databasePath,
         cacheDirectory: input.cacheDirectory,
+        faultInjection: input.faultInjection ?? null,
       },
     }
     const created = input.createWorker?.(

@@ -26,6 +26,7 @@ type RejectionEvidenceDeliveryDependencies = {
   readonly missionStore: RejectionEvidenceMissionStore
   readonly applyRejections: (rejections: readonly CurrentPositionRejection[]) => void
   readonly applyEvidenceHealth: (health: IngestEvidenceHealth) => void
+  readonly readEvidenceHealth?: () => IngestEvidenceHealth
   readonly createDeliveryId?: (
     missionId: string,
     anomalyKey: string,
@@ -133,6 +134,9 @@ export function createRejectionEvidenceDelivery(
         receivedAt: context.observedAt,
         canonicalEvidence: rejection.canonicalEvidence,
       })
+    }
+    if (context.missionId !== null && hasPendingMission(context.missionId)) {
+      publishRendererPendingHealth(context.missionId)
     }
     scheduleFlush()
   }
@@ -347,16 +351,50 @@ export function createRejectionEvidenceDelivery(
 
   /** Keeps a local capacity failure sticky while merging real durable counters. */
   function publishEvidenceHealth(missionId: string, health: IngestEvidenceHealth): void {
-    dependencies.applyEvidenceHealth(
-      evidenceLossMissionIds.has(missionId)
-        ? {
-            ...health,
-            state: 'critical',
-            reason: 'renderer_pending_capacity_exhausted',
-            pendingCount: pendingByMissionAndAnomaly.size,
-          }
-        : health,
-    )
+    const rendererPendingCount = countPendingMission(missionId)
+    if (evidenceLossMissionIds.has(missionId)) {
+      dependencies.applyEvidenceHealth({
+        ...health,
+        state: 'critical',
+        reason: 'renderer_pending_capacity_exhausted',
+        pendingCount: Math.max(health.pendingCount, rendererPendingCount),
+      })
+      return
+    }
+    if (rendererPendingCount > 0) {
+      dependencies.applyEvidenceHealth({
+        ...health,
+        state: health.state === 'critical' ? 'critical' : 'degraded',
+        reason: health.state === 'critical' ? health.reason : 'renderer_evidence_pending',
+        pendingCount: Math.max(health.pendingCount, rendererPendingCount),
+      })
+      return
+    }
+    dependencies.applyEvidenceHealth(health)
+  }
+
+  /** Revokes completeness in the same turn that evidence enters renderer memory. */
+  function publishRendererPendingHealth(missionId: string): void {
+    const pending = [...pendingByMissionAndAnomaly.values()]
+      .filter((entry) => entry.missionId === missionId)
+    const existing = dependencies.readEvidenceHealth?.()
+    dependencies.applyEvidenceHealth({
+      state: existing?.state === undefined || existing.state === 'healthy'
+        ? 'degraded'
+        : existing.state,
+      reason: existing?.state === undefined || existing.state === 'healthy'
+        ? 'renderer_evidence_pending'
+        : existing.reason,
+      pendingCount: Math.max(existing?.pendingCount ?? 0, pending.length),
+      corruptCount: existing?.corruptCount ?? 0,
+      conflictCount: existing?.conflictCount ?? 0,
+      rejectedCount: Math.max(existing?.rejectedCount ?? 0, pending.length),
+      affectedDeviceCount: Math.max(
+        existing?.affectedDeviceCount ?? 0,
+        new Set(pending.map((entry) => entry.deviceId)).size,
+      ),
+      conflictDeviceIds: existing?.conflictDeviceIds ?? [],
+    })
   }
 
   /** Returns whether the renderer still owns evidence for one mission. */
@@ -364,6 +402,15 @@ export function createRejectionEvidenceDelivery(
     return [...pendingByMissionAndAnomaly.values()].some(
       (entry) => entry.missionId === missionId,
     )
+  }
+
+  /** Counts renderer-held evidence without crossing mission identity. */
+  function countPendingMission(missionId: string): number {
+    let count = 0
+    for (const entry of pendingByMissionAndAnomaly.values()) {
+      if (entry.missionId === missionId) count += 1
+    }
+    return count
   }
 
   return {
