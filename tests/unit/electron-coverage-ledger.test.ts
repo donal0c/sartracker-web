@@ -7,6 +7,7 @@ const Database = require('better-sqlite3')
 const {
   appendCoverageInvalidation,
   applyCoverageChunkBuild,
+  applyCoverageChunkBuilds,
   applyCoverageEnumeration,
   applyCoverageInvalidationDrain,
   recordAcceptedCoveragePositions,
@@ -64,6 +65,26 @@ const {
       readonly updatedAt: string
     },
   ) => boolean
+  readonly applyCoverageChunkBuilds: (
+    database: Database,
+    input: {
+      readonly missionId: string
+      readonly builds: readonly {
+        readonly key: {
+          readonly device_id: string
+          readonly period_kind: 'outing' | 'unassigned'
+          readonly period_id: string
+        }
+        readonly contentRev: number
+        readonly fixCount: number
+        readonly fixDigest: string
+        readonly minTs: string | null
+        readonly maxTs: string | null
+      }[]
+      readonly updatedAt: string
+      readonly failAfterBuildIndex?: number
+    },
+  ) => { readonly rejectedChunkKeys: readonly string[] }
   readonly applyCoverageInvalidationDrain: (
     database: Database,
     input: {
@@ -85,6 +106,7 @@ type Database = {
   readonly prepare: (sql: string) => {
     readonly all: (...params: unknown[]) => readonly Record<string, unknown>[]
     readonly get: (...params: unknown[]) => Record<string, unknown> | undefined
+    readonly run: (...params: unknown[]) => { readonly changes: number }
   }
   readonly transaction: <T>(callback: () => T) => () => T
   readonly close: () => void
@@ -316,6 +338,50 @@ describe('Electron coverage ledger', () => {
     expect(readChunks(database)[0]).toEqual(expect.objectContaining({
       content_rev: 1, built_rev: 1, fix_count: 3, fix_digest: 'current-revision',
     }))
+  })
+
+  it('applies a full 100-device by 13-period build set in one atomic transaction', () => {
+    const builds = Array.from({ length: 1_300 }, (_, index) => ({
+      key: {
+        device_id: `device-${Math.floor(index / 13)}`,
+        period_kind: 'outing' as const,
+        period_id: `period-${index % 13}`,
+      },
+      contentRev: 1,
+      fixCount: index,
+      fixDigest: `digest-${index}`,
+      minTs: null,
+      maxTs: null,
+    }))
+    const insert = database.transaction(() => {
+      for (const build of builds) {
+        database.prepare(`INSERT INTO coverage_chunks (
+          mission_id, device_id, period_kind, period_id,
+          content_rev, built_rev, updated_at
+        ) VALUES (?, ?, ?, ?, 1, NULL, ?)`)
+          .run(
+            'mission-1', build.key.device_id, build.key.period_kind,
+            build.key.period_id, '2026-08-24T12:00:00.000Z',
+          )
+      }
+    })
+    insert()
+
+    expect(() => applyCoverageChunkBuilds(database, {
+      missionId: 'mission-1', builds,
+      updatedAt: '2026-08-24T12:01:00.000Z', failAfterBuildIndex: 649,
+    })).toThrow(/Injected coverage build batch failure/)
+    expect(database.prepare(`SELECT COUNT(*) AS count FROM coverage_chunks
+      WHERE built_rev IS NOT NULL`).get()).toEqual({ count: 0 })
+
+    const startedAt = performance.now()
+    expect(applyCoverageChunkBuilds(database, {
+      missionId: 'mission-1', builds,
+      updatedAt: '2026-08-24T12:02:00.000Z',
+    })).toEqual({ rejectedChunkKeys: [] })
+    expect(performance.now() - startedAt).toBeLessThan(200)
+    expect(database.prepare(`SELECT COUNT(*) AS count FROM coverage_chunks
+      WHERE built_rev = content_rev`).get()).toEqual({ count: 1_300 })
   })
 })
 

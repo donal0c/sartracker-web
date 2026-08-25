@@ -49,6 +49,25 @@ type CoverageMissionStore = {
     readonly label: string
     readonly started_at: string
   }) => Promise<unknown>
+  readonly selectMissionParticipants: (input: {
+    readonly mission_id: string
+    readonly groups: readonly {
+      readonly traccar_group_id: string
+      readonly name: string
+      readonly member_device_ids: readonly string[]
+    }[]
+    readonly devices: readonly unknown[]
+    readonly selected_by: string
+  }) => Promise<readonly { readonly mission_team_id: string | null }[]>
+  readonly recordGroupMembershipEvents: (input: {
+    readonly mission_id: string
+    readonly events: readonly {
+      readonly mission_team_id: string
+      readonly traccar_device_id: string
+      readonly change: 'member' | 'left'
+      readonly observed_at: string
+    }[]
+  }) => Promise<readonly unknown[]>
   readonly readCoverageManifest: (missionId: string, requestId?: string) => Promise<{
     readonly changeSeq: number
     readonly enumerated: boolean
@@ -221,6 +240,36 @@ describe('Electron coverage mission-store orchestration', () => {
       mission_id: mission.id,
       label: 'Outing 1',
       started_at: '2026-08-24T10:00:00.000Z',
+    }).then(() => ordering.push('resolved'))
+
+    expect(ordering).toEqual([`changed:${mission.id}:2`, 'resolved'])
+  })
+
+  it('revokes coverage before a group membership scope change resolves', async () => {
+    directory = await mkdtemp(path.join(tmpdir(), 'sartracker-coverage-store-'))
+    const ordering: string[] = []
+    store = createElectronMissionStore({
+      userDataPath: directory,
+      onCoverageChanged: (missionId, changeSeq) => {
+        ordering.push(`changed:${missionId}:${changeSeq}`)
+      },
+    })
+    const mission = await store.createMission({
+      name: 'Coverage group mission', start_time: '2026-08-24T08:00:00.000Z',
+    })
+    const [group] = await store.selectMissionParticipants({
+      mission_id: mission.id,
+      groups: [{ traccar_group_id: 'group-1', name: 'Group 1', member_device_ids: [] }],
+      devices: [], selected_by: 'Coordinator',
+    })
+    ordering.length = 0
+
+    await store.recordGroupMembershipEvents({
+      mission_id: mission.id,
+      events: [{
+        mission_team_id: group!.mission_team_id!, traccar_device_id: 'device-2',
+        change: 'member', observed_at: '2026-08-24T09:00:00.000Z',
+      }],
     }).then(() => ordering.push('resolved'))
 
     expect(ordering).toEqual([`changed:${mission.id}:2`, 'resolved'])

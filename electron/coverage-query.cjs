@@ -36,7 +36,6 @@ function enumerateCoverageChunks(database, input) {
 
 /** Reads one exact manifest snapshot, keeping durable and exact counts distinct. */
 function readCoverageManifestSnapshot(database, input) {
-  const exact = enumerateCoverageChunks(database, input)
   const ledgerRows = database.prepare(`SELECT * FROM coverage_chunks
     WHERE mission_id = ?`).all(input.missionId)
   const ledgerByKey = new Map(ledgerRows.map((row) => [
@@ -45,6 +44,9 @@ function readCoverageManifestSnapshot(database, input) {
   ]))
   const mission = database.prepare(`SELECT change_seq, enumerated
     FROM coverage_missions WHERE mission_id = ?`).get(input.missionId)
+  const exact = mission?.enumerated === 1
+    ? null
+    : enumerateCoverageChunks(database, input)
   const pendingInvalidation = database.prepare(`SELECT 1 FROM coverage_invalidations
     WHERE mission_id = ? AND drained_at IS NULL LIMIT 1`).get(input.missionId) !== undefined
   const pendingInvalidationMetrics = database.prepare(`SELECT COUNT(*) AS count
@@ -58,7 +60,7 @@ function readCoverageManifestSnapshot(database, input) {
     .all(input.missionId)
   const chunkDiagnostics = summarizeCoverageLedgerRows(ledgerRows)
   return {
-    changeSeq: Number(mission?.change_seq ?? exact.changeSeq),
+    changeSeq: Number(mission?.change_seq ?? exact?.changeSeq ?? 0),
     enumerated: mission?.enumerated === 1,
     pendingInvalidation,
     backfillIncomplete,
@@ -67,12 +69,22 @@ function readCoverageManifestSnapshot(database, input) {
       pendingInvalidationCount: Number(pendingInvalidationMetrics?.count ?? 0),
     },
     outings,
-    chunks: exact.chunks.map((chunk) => {
+    chunks: (exact?.chunks ?? readCoverageInventory(database, input.missionId))
+      .map((chunk) => {
       const ledger = ledgerByKey.get(createChunkMapKey(
         chunk.device_id,
         chunk.period_kind,
         chunk.period_id,
       ))
+      const exactSummary = exact === null && ledger !== undefined &&
+        (ledger.built_rev !== ledger.content_rev || ledger.fix_count === null)
+        ? summarizeCoverageChunk(database, input.missionId, chunk)
+        : null
+      const exactCount = exactSummary?.fix_count ?? chunk.fix_count ?? ledger?.fix_count ?? 0
+      const exactDigest = exactSummary?.fix_digest ?? chunk.fix_digest ??
+        ledger?.fix_digest ?? createHash('sha256').digest('hex')
+      const exactMinTs = exactSummary?.min_ts ?? chunk.min_ts ?? ledger?.min_ts ?? null
+      const exactMaxTs = exactSummary?.max_ts ?? chunk.max_ts ?? ledger?.max_ts ?? null
       return {
         key: {
           device_id: chunk.device_id,
@@ -82,16 +94,67 @@ function readCoverageManifestSnapshot(database, input) {
         contentRev: Number(ledger?.content_rev ?? 1),
         builtRev: ledger?.built_rev ?? null,
         fixCount: ledger?.fix_count ?? null,
-        exactCount: chunk.fix_count,
+        exactCount,
         fixDigest: ledger?.fix_digest ?? null,
-        exactDigest: chunk.fix_digest,
-        exactMinTs: chunk.min_ts,
-        exactMaxTs: chunk.max_ts,
+        exactDigest,
+        exactMinTs,
+        exactMaxTs,
         minTs: ledger?.min_ts ?? null,
         maxTs: ledger?.max_ts ?? null,
       }
     }),
   }
+}
+
+/** Evaluates database readiness from bounded ledger and scope metadata only. */
+function readCoverageClaimSnapshot(database, input) {
+  const mission = database.prepare(`SELECT change_seq, enumerated
+    FROM coverage_missions WHERE mission_id = ?`).get(input.missionId)
+  const pendingInvalidation = database.prepare(`SELECT 1 FROM coverage_invalidations
+    WHERE mission_id = ? AND drained_at IS NULL LIMIT 1`).get(input.missionId) !== undefined
+  const backfillIncomplete = database.prepare(`SELECT 1
+    FROM participant_backfill_checkpoints
+    WHERE mission_id = ? AND completed = 0 LIMIT 1`).get(input.missionId) !== undefined
+  const allowedKeys = new Set(readCoverageInventory(database, input.missionId).map((chunk) =>
+    createChunkMapKey(chunk.device_id, chunk.period_kind, chunk.period_id)))
+  const readChunk = database.prepare(`SELECT content_rev, built_rev FROM coverage_chunks
+    WHERE mission_id = ? AND device_id = ? AND period_kind = ? AND period_id = ?`)
+  const blockers = []
+  const chunkRevisions = []
+  if (mission?.enumerated !== 1) blockers.push('not_enumerated')
+  if (pendingInvalidation) blockers.push('pending_invalidation')
+  if (backfillIncomplete) blockers.push('backfill_incomplete')
+  for (const key of input.selectedKeys) {
+    const identity = createChunkMapKey(key.device_id, key.period_kind, key.period_id)
+    const chunk = allowedKeys.has(identity)
+      ? readChunk.get(input.missionId, key.device_id, key.period_kind, key.period_id)
+      : undefined
+    if (chunk === undefined) {
+      blockers.push('chunk_missing')
+      continue
+    }
+    chunkRevisions.push({ key: { ...key }, contentRev: Number(chunk.content_rev) })
+    if (chunk.built_rev !== chunk.content_rev) blockers.push('chunk_not_fresh')
+  }
+  const uniqueBlockers = [...new Set(blockers)]
+  return {
+    changeSeq: Number(mission?.change_seq ?? 0),
+    databaseReady: uniqueBlockers.length === 0,
+    blockers: uniqueBlockers,
+    chunkRevisions,
+  }
+}
+
+/** Enumerates only bounded device and period identities, never position rows. */
+function readCoverageInventory(database, missionId) {
+  const outings = database.prepare(`SELECT id FROM outings
+    WHERE mission_id = ? ORDER BY started_at ASC, id ASC`).all(missionId)
+  const periods = [
+    ...outings.map((outing) => ({ period_kind: 'outing', period_id: outing.id })),
+    { period_kind: 'unassigned', period_id: '' },
+  ]
+  return readCoverageDeviceUniverse(database, missionId).flatMap((deviceId) =>
+    periods.map((period) => ({ device_id: deviceId, ...period })))
 }
 
 /** Summarizes only bounded ledger metadata and never returns chunk identity. */
@@ -404,6 +467,7 @@ module.exports = {
   createInvalidationDeviceRangeQuery,
   createCoverageRowsQuery,
   enumerateCoverageChunks,
+  readCoverageClaimSnapshot,
   readCoverageManifestSnapshot,
   readCoverageChunkPage,
   readCoverageDeviceUniverse,

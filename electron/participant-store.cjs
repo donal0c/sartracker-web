@@ -170,6 +170,7 @@ function createParticipantStore(options) {
         db.prepare(`UPDATE mission_participants
           SET removed_at = ?, removed_by = ? WHERE id = ?`)
           .run(removedAt, removedBy, participant.id)
+        recordCoverageChange(mission.id, removedAt)
         failAfterMutation(faultInjection)
         insertAudit(db, mission.id, 'participant_removed', removedAt, {
           participant_id: participant.id,
@@ -212,6 +213,7 @@ function createParticipantStore(options) {
         }
         if (inserted.length > 0) {
           const timestamp = readNow()
+          recordCoverageChange(mission.id, timestamp)
           failAfterMutation(faultInjection)
           insertAudit(db, mission.id, 'group_membership_changed', timestamp, {
             event_count: inserted.length,

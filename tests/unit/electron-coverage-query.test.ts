@@ -8,6 +8,7 @@ const DatabaseConstructor = require('better-sqlite3')
 const {
   analyzeCoverageInvalidation,
   enumerateCoverageChunks,
+  readCoverageClaimSnapshot,
   readCoverageManifestSnapshot,
   readCoverageChunkPage,
 } = require('../../electron/coverage-query.cjs') as {
@@ -18,6 +19,15 @@ const {
   readonly enumerateCoverageChunks: (database: Database, input: { readonly missionId: string }) => {
     readonly changeSeq: number
     readonly chunks: readonly CoverageChunk[]
+  }
+  readonly readCoverageClaimSnapshot: (
+    database: Database,
+    input: { readonly missionId: string; readonly selectedKeys: readonly CoverageKey[] },
+  ) => {
+    readonly changeSeq: number
+    readonly databaseReady: boolean
+    readonly blockers: readonly string[]
+    readonly chunkRevisions: readonly { readonly key: CoverageKey; readonly contentRev: number }[]
   }
   readonly readCoverageManifestSnapshot: (
     database: Database,
@@ -31,6 +41,13 @@ const {
       readonly freshChunkCount: number
       readonly pendingInvalidationCount: number
     }
+    readonly chunks: readonly {
+      readonly key: CoverageKey
+      readonly contentRev: number
+      readonly builtRev: number | null
+      readonly fixCount: number | null
+      readonly exactCount: number
+    }[]
   }
   readonly readCoverageChunkPage: (database: Database, input: {
     readonly missionId: string
@@ -163,6 +180,60 @@ describe('Electron coverage query', () => {
       pendingInvalidationCount: 1,
     })
     expect(JSON.stringify(result.diagnostics)).not.toContain('device-1')
+  })
+
+  it('reads an enumerated fresh manifest from bounded ledger metadata without scanning positions', () => {
+    seedMissionModel(database)
+    database.exec(`
+      UPDATE coverage_missions SET enumerated = 1;
+      INSERT INTO coverage_chunks (
+        mission_id, device_id, period_kind, period_id, content_rev, built_rev,
+        fix_count, fix_digest, min_ts, max_ts, updated_at
+      ) VALUES
+        ('mission-1', 'device-1', 'outing', 'outing-1', 1, 1,
+          2, 'digest-a', NULL, NULL, '2026-08-24T12:00:00.000Z'),
+        ('mission-1', 'device-1', 'unassigned', '', 1, 1,
+          1, 'digest-b', NULL, NULL, '2026-08-24T12:00:00.000Z'),
+        ('mission-1', 'device-2', 'outing', 'outing-1', 1, 1,
+          0, 'digest-empty', NULL, NULL, '2026-08-24T12:00:00.000Z'),
+        ('mission-1', 'device-2', 'unassigned', '', 1, 1,
+          0, 'digest-empty', NULL, NULL, '2026-08-24T12:00:00.000Z'),
+        ('mission-1', 'device-3', 'outing', 'outing-1', 1, 1,
+          0, 'digest-empty', NULL, NULL, '2026-08-24T12:00:00.000Z'),
+        ('mission-1', 'device-3', 'unassigned', '', 1, 1,
+          0, 'digest-empty', NULL, NULL, '2026-08-24T12:00:00.000Z');
+      DROP TABLE positions;
+    `)
+
+    const result = readCoverageManifestSnapshot(database, { missionId: 'mission-1' })
+
+    expect(result.chunks).toHaveLength(6)
+    expect(result.chunks.map((chunk) => chunk.exactCount)).toEqual([2, 1, 0, 0, 0, 0])
+  })
+
+  it('evaluates a claim from ledger metadata without exact mission enumeration', () => {
+    seedMissionModel(database)
+    database.exec(`
+      UPDATE coverage_missions SET enumerated = 1;
+      INSERT INTO coverage_chunks (
+        mission_id, device_id, period_kind, period_id, content_rev, built_rev,
+        fix_count, fix_digest, min_ts, max_ts, updated_at
+      ) VALUES ('mission-1', 'device-1', 'unassigned', '', 3, 3,
+        1, 'digest', NULL, NULL, '2026-08-24T12:00:00.000Z');
+      DROP TABLE positions;
+    `)
+    const key: CoverageKey = {
+      device_id: 'device-1', period_kind: 'unassigned', period_id: '',
+    }
+
+    expect(readCoverageClaimSnapshot(database, {
+      missionId: 'mission-1', selectedKeys: [key],
+    })).toEqual({
+      changeSeq: 4,
+      databaseReady: true,
+      blockers: [],
+      chunkRevisions: [{ key, contentRev: 3 }],
+    })
   })
 
   it('reads one logical chunk in deterministic cursor pages with source-exact rows', () => {

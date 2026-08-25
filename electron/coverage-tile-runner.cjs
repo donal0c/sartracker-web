@@ -9,25 +9,36 @@ function createCoverageTileRunner(input) {
   let worker = null
   let nextRequestId = 0
   const pending = new Map()
+  const expectedTerminations = new WeakSet()
   let closing = false
 
   const ensureWorker = () => {
     if (worker !== null) return worker
     if (closing) throw new Error('Coverage tile runner is closed.')
-    const created = new Worker(input.workerPath ?? DEFAULT_WORKER_PATH, {
+    const workerOptions = {
       workerData: {
         databasePath: input.databasePath,
         cacheDirectory: input.cacheDirectory,
       },
+    }
+    const created = input.createWorker?.(
+      input.workerPath ?? DEFAULT_WORKER_PATH,
+      workerOptions,
+    ) ?? new Worker(input.workerPath ?? DEFAULT_WORKER_PATH, workerOptions)
+    created.on('message', (message) => settleRequest(created, message))
+    created.on('error', (error) => {
+      const failure = new Error(`Coverage tile worker failed: ${safeMessage(error.message)}`)
+      failWorker(created, failure)
+      if (!expectedTerminations.has(created)) input.onFailure?.(failure)
     })
-    created.on('message', (message) => settleRequest(message))
-    created.on('error', (error) => failWorker(
-      new Error(`Coverage tile worker failed: ${safeMessage(error.message)}`),
-    ))
     created.on('exit', (exitCode) => {
       if (worker === created) worker = null
-      if (!closing && exitCode !== 0) {
-        failPending(new Error(`Coverage tile worker exited with code ${exitCode}.`))
+      const expected = expectedTerminations.has(created)
+      expectedTerminations.delete(created)
+      if (!closing && !expected && exitCode !== 0) {
+        const failure = new Error(`Coverage tile worker exited with code ${exitCode}.`)
+        failPending(failure, created)
+        input.onFailure?.(failure)
       }
     })
     worker = created
@@ -42,7 +53,8 @@ function createCoverageTileRunner(input) {
       const timeout = setTimeout(() => {
         pending.delete(requestId)
         reject(new Error(`Coverage tile worker timed out after ${timeoutMs} ms.`))
-        void terminateWorker()
+        failPending(new Error(`Coverage tile worker timed out after ${timeoutMs} ms.`), activeWorker)
+        void terminateWorker(activeWorker)
       }, timeoutMs)
       const abort = () => {
         pending.delete(requestId)
@@ -50,12 +62,14 @@ function createCoverageTileRunner(input) {
         const error = new Error('Coverage tile request was cancelled.')
         error.name = 'AbortError'
         reject(error)
-        void terminateWorker()
+        failPending(error, activeWorker)
+        void terminateWorker(activeWorker)
       }
       options.signal?.addEventListener('abort', abort, { once: true })
       pending.set(requestId, {
         resolve,
         reject,
+        worker: activeWorker,
         cleanup: () => {
           clearTimeout(timeout)
           options.signal?.removeEventListener('abort', abort)
@@ -65,9 +79,9 @@ function createCoverageTileRunner(input) {
     })
   }
 
-  const settleRequest = (message) => {
+  const settleRequest = (owningWorker, message) => {
     const active = pending.get(message?.requestId)
-    if (active === undefined) return
+    if (active === undefined || active.worker !== owningWorker) return
     pending.delete(message.requestId)
     active.cleanup()
     if (typeof message.error === 'string') {
@@ -79,23 +93,27 @@ function createCoverageTileRunner(input) {
     }
   }
 
-  const failPending = (error) => {
-    for (const active of pending.values()) {
+  const failPending = (error, owningWorker = null) => {
+    for (const [requestId, active] of pending.entries()) {
+      if (owningWorker !== null && active.worker !== owningWorker) continue
       active.cleanup()
       active.reject(error)
+      pending.delete(requestId)
     }
-    pending.clear()
   }
 
-  const failWorker = (error) => {
-    failPending(error)
-    void terminateWorker()
+  const failWorker = (owningWorker, error) => {
+    failPending(error, owningWorker)
+    void terminateWorker(owningWorker)
   }
 
-  const terminateWorker = async () => {
-    const active = worker
-    worker = null
-    if (active !== null) await active.terminate().catch(() => undefined)
+  const terminateWorker = async (target = worker) => {
+    const active = target
+    if (worker === active) worker = null
+    if (active !== null) {
+      expectedTerminations.add(active)
+      await active.terminate().catch(() => undefined)
+    }
   }
 
   return {

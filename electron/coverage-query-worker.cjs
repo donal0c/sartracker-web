@@ -4,6 +4,7 @@ const Database = require('better-sqlite3')
 const {
   analyzeCoverageInvalidation,
   enumerateCoverageChunks,
+  readCoverageClaimSnapshot,
   readCoverageChunkPage,
   readCoverageManifestSnapshot,
   summarizeCoverageChunkAtRevision,
@@ -44,6 +45,12 @@ function executeCoverageQuery(database, query) {
   }
   if (query?.kind === 'manifest') {
     return readCoverageManifestSnapshot(database, { missionId: query.missionId })
+  }
+  if (query?.kind === 'claim') {
+    return readCoverageClaimSnapshot(database, {
+      missionId: query.missionId,
+      selectedKeys: query.selectedKeys,
+    })
   }
   if (query?.kind === 'chunk-page') {
     return readCoverageChunkPage(database, query)

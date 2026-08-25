@@ -73,6 +73,7 @@ function validateCoverageWorkerQuery(query) {
   if (![
     'enumerate',
     'manifest',
+    'claim',
     'chunk-page',
     'chunk-summary',
     'invalidation-analysis',

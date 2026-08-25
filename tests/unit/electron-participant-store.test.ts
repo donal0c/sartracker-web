@@ -336,6 +336,13 @@ describe('Electron participant store [DON-271]', () => {
     expect(removed.removed_at).not.toBeNull()
     expect(readded.id).not.toBe(added.id)
     await expect(store.listMissionParticipants(mission.id)).resolves.toHaveLength(2)
+    const database = new Database((await store.info()).database_path, { readonly: true })
+    try {
+      expect(database.prepare(`SELECT change_seq FROM coverage_missions
+        WHERE mission_id = ?`).get(mission.id)).toEqual({ change_seq: 3 })
+    } finally {
+      database.close()
+    }
   })
 
   it('rejects participant, membership, and checkpoint writes as soon as a mission is finished', async () => {
@@ -407,6 +414,13 @@ describe('Electron participant store [DON-271]', () => {
       { change: 'member' },
       { change: 'left' },
     ])
+    const database = new Database((await store.info()).database_path, { readonly: true })
+    try {
+      expect(database.prepare(`SELECT change_seq FROM coverage_missions
+        WHERE mission_id = ?`).get(mission.id)).toEqual({ change_seq: 3 })
+    } finally {
+      database.close()
+    }
   })
 
   it('keeps late-add backfill window edges immutable while advancing its cursor', async () => {

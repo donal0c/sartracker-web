@@ -249,6 +249,39 @@ function applyCoverageChunkBuild(database, input) {
   return result.changes === 1
 }
 
+/** Applies one worker result set atomically, with no per-chunk autocommits. */
+function applyCoverageChunkBuilds(database, input) {
+  const apply = database.transaction(() => {
+    const rejectedChunkKeys = []
+    for (const [index, build] of input.builds.entries()) {
+      const applied = applyCoverageChunkBuild(database, {
+        missionId: input.missionId,
+        deviceId: build.key.device_id,
+        periodKind: build.key.period_kind,
+        periodId: build.key.period_id,
+        expectedContentRev: build.contentRev,
+        fixCount: build.fixCount,
+        fixDigest: build.fixDigest,
+        minTs: build.minTs,
+        maxTs: build.maxTs,
+        updatedAt: input.updatedAt,
+      })
+      if (!applied) {
+        rejectedChunkKeys.push(createCoverageChunkIdentity(
+          build.key.device_id,
+          build.key.period_kind,
+          build.key.period_id,
+        ))
+      }
+      if (input.failAfterBuildIndex === index) {
+        throw new Error('Injected coverage build batch failure.')
+      }
+    }
+    return { rejectedChunkKeys }
+  })
+  return apply()
+}
+
 /**
  * Inserts missing canonical inventory from one exact manifest snapshot without
  * overwriting a write-path revision created concurrently.
@@ -323,6 +356,7 @@ function deriveInvalidationRange(oldBounds, newBounds) {
 module.exports = {
   appendCoverageInvalidation,
   applyCoverageChunkBuild,
+  applyCoverageChunkBuilds,
   applyCoverageEnumeration,
   applyCoverageInvalidationDrain,
   applyCoverageManifestInventory,

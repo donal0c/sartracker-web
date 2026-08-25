@@ -40,6 +40,7 @@ const { createChunkKey } = require('./coverage-tile-catalog.cjs')
 const {
   appendCoverageInvalidation,
   applyCoverageChunkBuild,
+  applyCoverageChunkBuilds,
   applyCoverageEnumeration,
   applyCoverageInvalidationDrain,
   applyCoverageManifestInventory,
@@ -141,6 +142,7 @@ function createElectronMissionStore(options) {
   const coverageTileRunner = options.coverageTileRunner ?? createCoverageTileRunner({
     databasePath,
     cacheDirectory: path.join(options.userDataPath, COVERAGE_TILE_CACHE_DIRECTORY_NAME),
+    onFailure: () => options.onCoverageRendererFailed?.(),
   })
   const onCoverageChanged = options.onCoverageChanged ?? (() => undefined)
   const coveragePerformanceByMission = new Map()
@@ -290,12 +292,16 @@ function createElectronMissionStore(options) {
       input.mission_id,
       () => participantStore.addMissionParticipant(input),
     ),
-    removeMissionParticipant: async (input) =>
-      participantStore.removeMissionParticipant(input),
+    removeMissionParticipant: async (input) => runCoverageMutation(
+      input.mission_id,
+      () => participantStore.removeMissionParticipant(input),
+    ),
     listMissionParticipants: async (missionId) =>
       participantStore.listMissionParticipants(missionId),
-    recordGroupMembershipEvents: async (input) =>
-      participantStore.recordGroupMembershipEvents(input),
+    recordGroupMembershipEvents: async (input) => runCoverageMutation(
+      input.mission_id,
+      () => participantStore.recordGroupMembershipEvents(input),
+    ),
     listGroupMembershipEvents: async (missionId, teamId) =>
       participantStore.listGroupMembershipEvents(missionId, teamId),
     upsertParticipantBackfillCheckpoint: async (input) => runCoverageMutation(
@@ -417,31 +423,16 @@ function createElectronMissionStore(options) {
     readCoverageClaim: async (input, requestId) => executeCoverageRequest(
       requestId,
       async (signal) => {
-        const manifest = await runCoverageWorker(
-          { kind: 'manifest', missionId: input.missionId },
+        const claim = await runCoverageWorker(
+          {
+            kind: 'claim',
+            missionId: input.missionId,
+            selectedKeys: input.selectedKeys,
+          },
           signal,
           false,
         )
-        const selectedByKey = new Map(manifest.chunks.map((chunk) => [
-          coverageChunkMapKey(chunk.key),
-          chunk,
-        ]))
-        const selectedChunks = []
-        const blockers = []
-        for (const key of input.selectedKeys) {
-          const chunk = selectedByKey.get(coverageChunkMapKey(key))
-          if (chunk === undefined) {
-            blockers.push('chunk_missing')
-          } else {
-            selectedChunks.push(chunk)
-          }
-        }
-        if (!manifest.enumerated) blockers.push('not_enumerated')
-        if (manifest.pendingInvalidation) blockers.push('pending_invalidation')
-        if (manifest.backfillIncomplete) blockers.push('backfill_incomplete')
-        if (selectedChunks.some((chunk) => chunk.builtRev !== chunk.contentRev)) {
-          blockers.push('chunk_not_fresh')
-        }
+        const blockers = [...claim.blockers]
         const health = await getIngestEvidenceHealth(
           db,
           ingestAnomalyOutbox,
@@ -450,13 +441,10 @@ function createElectronMissionStore(options) {
         if (Number(health.pendingCount ?? 0) > 0) blockers.push('ingest_outbox_pending')
         if (health.state !== 'healthy') blockers.push('ingest_health_degraded')
         return {
-          changeSeq: manifest.changeSeq,
+          changeSeq: claim.changeSeq,
           databaseReady: blockers.length === 0,
           blockers: [...new Set(blockers)],
-          chunkRevisions: selectedChunks.map((chunk) => ({
-            key: chunk.key,
-            contentRev: chunk.contentRev,
-          })),
+          chunkRevisions: claim.chunkRevisions,
         }
       },
     ),
@@ -479,22 +467,12 @@ function createElectronMissionStore(options) {
             lastBuildDurationMs: performance.now() - buildStartedAt,
           })
         }
-        const rejectedChunks = new Set()
-        for (const build of result.builds) {
-          const applied = applyCoverageChunkBuild(db, {
-            missionId: input.missionId,
-            deviceId: build.key.device_id,
-            periodKind: build.key.period_kind,
-            periodId: build.key.period_id,
-            expectedContentRev: build.contentRev,
-            fixCount: build.fixCount,
-            fixDigest: build.fixDigest,
-            minTs: build.minTs,
-            maxTs: build.maxTs,
-            updatedAt: now(),
-          })
-          if (!applied) rejectedChunks.add(createChunkKey(build.key))
-        }
+        const appliedBuilds = applyCoverageChunkBuilds(db, {
+          missionId: input.missionId,
+          builds: result.builds,
+          updatedAt: now(),
+        })
+        const rejectedChunks = new Set(appliedBuilds.rejectedChunkKeys)
         const delivered = result.delivered.filter((entry) =>
           !rejectedChunks.has(createChunkKey(entry.key)))
         const periods = result.periods.filter((period) =>
@@ -967,11 +945,6 @@ function createElectronMissionStore(options) {
       return operation
     })
   }
-}
-
-/** Creates one already-tagged in-memory chunk identity. */
-function coverageChunkMapKey(key) {
-  return `${key.device_id}\u0000${key.period_kind}\u0000${key.period_id}`
 }
 
 function migrate(db) {

@@ -2,8 +2,9 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { createRequire } from 'node:module'
+import { EventEmitter } from 'node:events'
 
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 const require = createRequire(import.meta.url)
 const Database = require('better-sqlite3')
@@ -11,8 +12,13 @@ const { createCoverageTileRunner } = require('../../electron/coverage-tile-runne
   readonly createCoverageTileRunner: (input: {
     readonly databasePath: string
     readonly cacheDirectory: string
+    readonly createWorker?: () => FakeWorker
+    readonly onFailure?: (error: Error) => void
   }) => {
-    readonly syncCatalog: (input: Readonly<Record<string, unknown>>) => Promise<CatalogResult>
+    readonly syncCatalog: (
+      input: Readonly<Record<string, unknown>>,
+      options?: { readonly signal?: AbortSignal },
+    ) => Promise<CatalogResult>
     readonly readTile: (input: Readonly<Record<string, unknown>>) => Promise<Uint8Array | null>
     readonly close: () => Promise<void>
   }
@@ -94,7 +100,71 @@ describe('Candidate B coverage tile worker [DON-276]', () => {
       ...tileAddress,
     })).resolves.toEqual(firstB)
   })
+
+  it('fences a replacement from the terminated worker generation', async () => {
+    const workers: FakeWorker[] = []
+    runner = createCoverageTileRunner({
+      databasePath: '/unused/fenced-worker.sqlite',
+      cacheDirectory: '/unused/fenced-worker-cache',
+      createWorker: () => {
+        const worker = new FakeWorker()
+        workers.push(worker)
+        return worker
+      },
+    })
+    const firstAbort = new AbortController()
+    const first = runner.syncCatalog({ missionId: 'mission-1', chunks: [] }, {
+      signal: firstAbort.signal,
+    })
+    firstAbort.abort()
+    await expect(first).rejects.toMatchObject({ name: 'AbortError' })
+
+    const second = runner.syncCatalog({ missionId: 'mission-1', chunks: [] })
+    expect(workers).toHaveLength(2)
+    workers[0]!.emit('exit', 1)
+    workers[1]!.reply({ periods: [], delivered: [], builds: [] })
+
+    await expect(second).resolves.toEqual({ periods: [], delivered: [], builds: [] })
+  })
+
+  it('reports unexpected worker loss to the renderer claim boundary', async () => {
+    const onFailure = vi.fn()
+    const workers: FakeWorker[] = []
+    runner = createCoverageTileRunner({
+      databasePath: '/unused/failed-worker.sqlite',
+      cacheDirectory: '/unused/failed-worker-cache',
+      onFailure,
+      createWorker: () => {
+        const worker = new FakeWorker()
+        workers.push(worker)
+        return worker
+      },
+    })
+    const request = runner.syncCatalog({ missionId: 'mission-1', chunks: [] })
+
+    workers[0]!.emit('exit', 1)
+
+    await expect(request).rejects.toThrow(/exited with code 1/)
+    expect(onFailure).toHaveBeenCalledOnce()
+  })
 })
+
+class FakeWorker extends EventEmitter {
+  readonly messages: Readonly<Record<string, unknown>>[] = []
+
+  postMessage(message: Readonly<Record<string, unknown>>): void {
+    this.messages.push(message)
+  }
+
+  reply(result: Readonly<Record<string, unknown>>): void {
+    const requestId = this.messages.at(-1)?.requestId
+    this.emit('message', { requestId, result })
+  }
+
+  async terminate(): Promise<number> {
+    return 1
+  }
+}
 
 async function createDatabase(): Promise<string> {
   directory = await mkdtemp(path.join(tmpdir(), 'sartracker-coverage-tiles-'))
