@@ -874,12 +874,25 @@ Deterministic gates at exact remediation head `928158c` passed:
   reviewer errors; and
 - exact-head unsigned Ubuntu x64 and macOS arm64 packaging.
 
-The exact-head application package bindings are:
+Review #1 of the first `c594213` exact-head wave then found one operator-facing
+P2: the shipped manual still said mission participant and outing controls were
+disabled in normal packages even though G3 approved both defaults on. The
+manual contract failed red on the missing default-on posture and stale internal
+qualification wording. Commits `20db810` and `133cc147d2388725c240c322c2439ebca77af751`
+now explain that builds containing PR-3 enable the mission model and complete
+coverage by default, that there is no operator toggle, and that an explicit
+build override exists only for controlled rollback. The source comment now
+matches the approved default. The manual date and operator terminology were
+also refreshed. Focused manual/default tests pass 3 files / 8 tests; the
+manual-specific contract passes 1/1 after the final wording pass; ESLint,
+TypeScript, production build, and bundle budgets pass.
+
+The exact-head application package bindings after the manual correction are:
 
 | Platform | Executable SHA-256 | `app.asar` SHA-256 |
 | --- | --- | --- |
-| Ubuntu x64 | `6344ae1d9044fedc54779e8bacaddc032fdcc0f55e146fc3623756eafa0bbaf8` | `2d1efeb5cf97afadafaababb06ae67b491e753d1210763b0957bddfc2028c1eb` |
-| macOS arm64 | `f5212ea9181df95040385dfd04f512e983ed95394a96fb7c4b8ee838ea433caf` | `f3ad08f50a5e3e7cf713b2ec0de859446eb3c1e35e6eda8387abf657c39a64cd` |
+| Ubuntu x64 | `6344ae1d9044fedc54779e8bacaddc032fdcc0f55e146fc3623756eafa0bbaf8` | `bbb62eafb2436111dd508d5c7ebcd804858795ef130f6f2f880c8e2f8273ed21` |
+| macOS arm64 | `f5212ea9181df95040385dfd04f512e983ed95394a96fb7c4b8ee838ea433caf` | `73296b60e6d0244c2d3e62f70d5e8ba3cb1f2cc2c14c54d2160227e3fe19d956` |
 
 The final replacement soak at `69a1096` remains standing under the accepted
 invalidation rule. This remediation changes only the opt-in browser proof
