@@ -1079,6 +1079,29 @@ The exact-head Linux run at `745ab3e` was green but is superseded because this
 commit changes live catalog recovery. New exact-head Linux CI and five fresh
 independent reviews must restart. No merge or release occurred.
 
+## Progress-based abandoned-stage sweep remediation
+
+The next review showed that preferred cleanup order alone was insufficient.
+Renderer A's preferred token could be stale while renderer B's already-
+abandoned token was the worker's live stage. Stopping after A's second correct
+wrong-token rejection meant B was never attempted, so neither A nor a
+replacement renderer could recover without another restart.
+
+The regression failed red with B's live discard never called. Commit
+`9dd736c19b84778bec429b30a3ff7599180aa499` changes settlement to a bounded
+progress sweep. Each pass attempts every still-owned abandoned stage; successful
+settlement removes the live stage and triggers another pass for conflicts that
+can now become idempotent. A transient all-failure pass is retried once. Two
+complete passes with no progress return the last cleanup error and remain
+fail-closed instead of looping indefinitely.
+
+Green verification at this application head is 5 focused files / 57 tests,
+264 full unit files / 2,118 tests, TypeScript, ESLint, changed CommonJS syntax,
+production build and bundle budgets, plus participant/coverage Chromium 10/10.
+The `2d316da` Linux package/soak result is superseded by this operational change.
+New exact-head Linux CI and five fresh independent reviews must restart. No
+merge or release occurred.
+
 ## Multi-renderer stale-token ordering remediation
 
 The next review exercised two valid renderer sender IDs across a worker
