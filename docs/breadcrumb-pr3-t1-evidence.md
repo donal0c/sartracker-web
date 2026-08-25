@@ -636,3 +636,56 @@ packaged soak also remains standing because no ingest/write path changed. The
 3.704 GB migration remains standing because schema and database-open code are
 unchanged. The evidence-binding commit still requires exact-head deterministic,
 Chromium/visual, macOS/Ubuntu package, and five independent review gates.
+
+## Final exact-head gate after filter and renderer attestation remediation
+
+The final review wave found that destroyed renderer senders could leave tile
+reads alive, tile files were published without an atomic temporary-file
+boundary, and controller completion did not attest that the requested history
+filter was actually applied to the map. Adjacent red-first regressions also
+found repeated settled acknowledgements publishing an unbounded sync loop and
+mission clearing attempting an obsolete filter mutation before removing old
+geometry. Commits `a75db73` through `e72e188` remediate those production paths;
+commits `1a93bef` and `4b740f2` make the deliberate two-by-four-second manifest
+delay deterministic without weakening any behavior assertion.
+
+Exact production/test head
+`4b740f269a6ecfde2f3a35f760b7c42908403162` passed on the Ubuntu X11 reference
+host:
+
+- full serial unit: 262 files / 2,095 tests;
+- ESLint with zero warnings, TypeScript, and changed Electron CommonJS syntax;
+- exact paged Dots contract: 10/10;
+- production build and bundle budgets;
+- full Chromium: 158/158, including the delayed-manifest honesty regression;
+- coverage visual: 7/7 operator workflows and nine screenshots; and
+- fresh no-cache independent critical visual review: 9/9, zero failures or
+  reviewer errors. The rebound report is
+  `tmp/exact-head-visual-4b740f2/reports/visual-review-2026-08-25T19-16-33Z.json`.
+
+Operator-visible/package head
+`fea89db9399d0e5ec79e44c7655d590cca175687` adds only the tested manual wording
+and exact `coverage-filter-application-pending` screenshot. Its manual contract
+passed, then both unsigned packages completed:
+
+| Platform | Executable SHA-256 | `app.asar` SHA-256 |
+| --- | --- | --- |
+| Ubuntu x64 | `6344ae1d9044fedc54779e8bacaddc032fdcc0f55e146fc3623756eafa0bbaf8` | `a04e7eea07965e23a808a4bf6a5e2d1617b01c0f5319b077211f4552d3dcbc7d` |
+| macOS arm64 | `f5212ea9181df95040385dfd04f512e983ed95394a96fb7c4b8ee838ea433caf` | `9528d3d527b93ea3f878864a5c43146a7fa533dfe311c2790e7457e9e245e168` |
+
+Two evidence-infrastructure attempts were rejected and not counted as product
+passes: the first copied visual manifests still named Ubuntu screenshot paths,
+and the first Ubuntu package attempt used a symlinked `node_modules` tree that
+Electron's dependency collector could not parse. Rebinding the copied
+manifests produced the 9/9 no-cache review above; a fresh locked Ubuntu
+dependency install produced the successful package above.
+
+The corrected `df61a02` 960k/2M production qualification remains standing
+because the final fixes do not change its measured query, segmentation, or
+geometry pipeline. The `53e38bf` G2 rows and kill probes remain standing under
+the same explicit rule. The single packaged CI soak remains standing because
+no ingest/write path changed, and the 3.704 GB v9→v10 migration remains standing
+because schema and database-open code are unchanged. No packaged 960k/2M
+coverage run, packaged forced-kill matrix, Windows run, field-hardware run, or
+coordinator-owned post-merge Ubuntu 960k checkpoint was performed. Five fresh
+independent exact-head reviews still gate PR creation.
