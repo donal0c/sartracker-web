@@ -149,6 +149,40 @@ describe('Electron coverage query', () => {
     expect(database.prepare('SELECT * FROM coverage_chunks').all()).toEqual([])
   })
 
+  it('enumerates each participant device with one indexed positions traversal', () => {
+    seedMissionModel(database)
+    const preparedPositionQueries: string[] = []
+    const rawPositionQueries: string[] = []
+    const measuredDatabase = new Proxy(database, {
+      get(target, property, receiver) {
+        if (property !== 'prepare') return Reflect.get(target, property, receiver)
+        return (sql: string) => {
+          if (sql.includes('FROM positions AS position')) preparedPositionQueries.push(sql)
+          const statement = target.prepare(sql)
+          if (!sql.includes('FROM positions AS position')) return statement
+          return new Proxy(statement, {
+            get(statementTarget, statementProperty, statementReceiver) {
+              if (statementProperty !== 'raw') {
+                const value = Reflect.get(statementTarget, statementProperty, statementReceiver)
+                return typeof value === 'function' ? value.bind(statementTarget) : value
+              }
+              return () => {
+                rawPositionQueries.push(sql)
+                return statementTarget.raw()
+              }
+            },
+          })
+        }
+      },
+    })
+
+    const result = enumerateCoverageChunks(measuredDatabase, { missionId: 'mission-1' })
+
+    expect(result.chunks).toHaveLength(6)
+    expect(preparedPositionQueries).toHaveLength(3)
+    expect(rawPositionQueries).toHaveLength(3)
+  })
+
   it('returns bounded ledger diagnostics without device identities or position rows', () => {
     database.exec(`
       INSERT INTO coverage_chunks (

@@ -1,6 +1,7 @@
 const { createHash } = require('node:crypto')
 
 const { compareStringsByCodeUnit } = require('./deterministic-string-order.cjs')
+const { resolveCoveragePeriod } = require('./coverage-period-resolver.cjs')
 
 const DEFAULT_PAGE_LIMIT = 10_000
 const MAX_PAGE_LIMIT = 10_000
@@ -20,11 +21,13 @@ function enumerateCoverageChunks(database, input) {
   ]
   const chunks = []
   for (const deviceId of deviceIds) {
-    for (const period of periods) {
-      const key = { device_id: deviceId, ...period }
-      const summary = summarizeCoverageChunk(database, input.missionId, key)
-      chunks.push({ ...key, ...summary })
-    }
+    chunks.push(...summarizeCoverageChunksForDevice(
+      database,
+      input.missionId,
+      deviceId,
+      outings,
+      periods,
+    ))
   }
   const mission = database.prepare(`SELECT change_seq FROM coverage_missions
     WHERE mission_id = ?`).get(input.missionId)
@@ -32,6 +35,73 @@ function enumerateCoverageChunks(database, input) {
     changeSeq: Number(mission?.change_seq ?? 0),
     chunks,
   }
+}
+
+/**
+ * Summarizes every period for one device from one indexed chronological pass.
+ * The per-period row order remains identical to the exact chunk query because
+ * filtering a timestamp/id-ordered stream preserves the order of each subset.
+ */
+function summarizeCoverageChunksForDevice(
+  database,
+  missionId,
+  deviceId,
+  outings,
+  periods,
+) {
+  const summaries = new Map(periods.map((period) => [
+    createPeriodMapKey(period.period_kind, period.period_id),
+    {
+      digest: createHash('sha256'),
+      fixCount: 0,
+      minTs: null,
+      maxTs: null,
+    },
+  ]))
+  const rows = database.prepare(`SELECT position.id, position.source_position_id,
+      position.timestamp
+    FROM positions AS position
+    WHERE position.mission_id = ? AND position.device_id = ?
+    ORDER BY position.timestamp ASC, position.id ASC`)
+    .raw()
+    .iterate(missionId, deviceId)
+  for (const row of rows) {
+    const [id, sourcePositionId, timestamp] = row
+    const period = resolveCoveragePeriod(outings, timestamp)
+    const summary = summaries.get(createPeriodMapKey(
+      period.period_kind,
+      period.period_id,
+    ))
+    if (summary === undefined) {
+      throw new Error('Coverage enumeration resolved an unknown period.')
+    }
+    if (summary.fixCount > 0) summary.digest.update('\n')
+    summary.digest.update(sourcePositionId === null
+      ? `stored:${id}`
+      : `source:${sourcePositionId}`)
+    summary.fixCount += 1
+    summary.minTs ??= timestamp
+    summary.maxTs = timestamp
+  }
+  return periods.map((period) => {
+    const summary = summaries.get(createPeriodMapKey(
+      period.period_kind,
+      period.period_id,
+    ))
+    return {
+      device_id: deviceId,
+      ...period,
+      fix_count: summary.fixCount,
+      fix_digest: summary.digest.digest('hex'),
+      min_ts: summary.minTs,
+      max_ts: summary.maxTs,
+    }
+  })
+}
+
+/** Creates a collision-free identity for one tagged period. */
+function createPeriodMapKey(periodKind, periodId) {
+  return `${periodKind}\u0000${periodId}`
 }
 
 /** Reads one exact manifest snapshot, keeping durable and exact counts distinct. */
