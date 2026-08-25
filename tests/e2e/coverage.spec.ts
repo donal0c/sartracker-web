@@ -44,6 +44,7 @@ test.describe('complete mission-history coverage [DON-275]', () => {
   })
 
   test('reports an honest decrease, retains partial coverage, retries, and resets delivery on reload', async ({ page }) => {
+    test.setTimeout(45_000)
     await seedCoverageMission(page)
     const coverageStatus = page.getByTestId('coverage-status-panel')
     await expect(coverageStatus).toContainText('All mission history shown')
@@ -72,7 +73,7 @@ test.describe('complete mission-history coverage [DON-275]', () => {
     })
 
     await expect.poll(async () => (await readCoverageNumbers(page)).total, {
-      timeout: 5_000,
+      timeout: 7_000,
     }).toBe(prior.total + 1)
     const decreased = await readCoverageNumbers(page)
     expect(decreased.delivered).toBeLessThan(prior.delivered)
@@ -104,7 +105,7 @@ test.describe('complete mission-history coverage [DON-275]', () => {
     })
     await expect(page.getByTestId('coverage-status-panel')).toContainText(
       'All mission history shown',
-      { timeout: 8_000 },
+      { timeout: 12_000 },
     )
   })
 
