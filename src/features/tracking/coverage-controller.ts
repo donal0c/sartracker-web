@@ -761,7 +761,8 @@ export function createCoverageController(input: {
       if (!wasPending) return
       publish({
         ...state,
-        blockers: state.blockers?.filter((blocker) => blocker !== 'renderer_filter_pending'),
+        blockers: (state.blockers ?? [])
+          .filter((blocker) => blocker !== 'renderer_filter_pending'),
       })
       await requestRefresh()
     },
