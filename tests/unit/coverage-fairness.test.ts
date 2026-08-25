@@ -41,6 +41,21 @@ describe('coverage build fairness [DON-276]', () => {
       ['closed-12', 'device-a'], ['closed-12', 'device-b'],
     ])
   })
+
+  it('does not return an open-outing chunk again until its cooldown expires', () => {
+    let now = 1_000
+    const scheduler = createCoverageScheduler({ now: () => now, openOutingCooldownMs: 30_000 })
+    const manifest = createManifest()
+    const openChunk = manifest.chunks.find((chunk) => chunk.key.period_id === 'open')!
+
+    scheduler.recordAttempt(openChunk)
+
+    expect(scheduler.order(manifest, [openChunk])).toEqual([])
+    now += 29_999
+    expect(scheduler.order(manifest, [openChunk])).toEqual([])
+    now += 1
+    expect(scheduler.order(manifest, [openChunk])).toEqual([openChunk])
+  })
 })
 
 function createManifest(deviceIds: readonly string[] = ['device-a']): CoverageManifest {

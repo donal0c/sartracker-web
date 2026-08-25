@@ -63,6 +63,15 @@ function createParticipantStore(options) {
             addedAt: timestamp,
             addedBy: selectedBy,
           }))
+          insertBackfillCheckpoint(db, {
+            missionId: mission.id,
+            deviceId,
+            windowFrom: mission.start_time,
+            windowTo: timestamp,
+            reconciledUntil: mission.start_time,
+            completed: mission.start_time === timestamp,
+            updatedAt: timestamp,
+          })
         }
         if (selected.length > 0) {
           recordCoverageChange(mission.id, timestamp)

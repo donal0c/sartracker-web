@@ -13,7 +13,7 @@ export type CoverageScheduler = {
 
 /**
  * Orders pending work newest-period-first with stable device fairness, while
- * cooling a continuously changing open outing behind historical work.
+ * suppressing repeated open-outing builds until their cooldown expires.
  */
 export function createCoverageScheduler(input: {
   readonly now: () => number
@@ -37,7 +37,6 @@ export function createCoverageScheduler(input: {
         return rightStart.localeCompare(leftStart) || left[0].localeCompare(right[0])
       })
       const ready: CoverageManifestChunk[] = []
-      const coolingOpen: CoverageManifestChunk[] = []
       for (const [, periodChunks] of orderedPeriods) {
         periodChunks.sort((left, right) =>
           left.key.device_id.localeCompare(right.key.device_id))
@@ -51,13 +50,12 @@ export function createCoverageScheduler(input: {
             lastAttempt !== undefined &&
             input.now() - lastAttempt < input.openOutingCooldownMs
           ) {
-            coolingOpen.push(chunk)
-          } else {
-            ready.push(chunk)
+            continue
           }
+          ready.push(chunk)
         }
       }
-      return [...ready, ...coolingOpen]
+      return ready
     },
     recordAttempt: (chunk) => {
       lastAttemptByChunk.set(chunkIdentity(chunk), input.now())

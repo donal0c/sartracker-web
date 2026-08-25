@@ -49,6 +49,14 @@ type ElectronParticipantStore = {
     readonly reconciled_until: string
     readonly completed: number
   }[]>
+  readonly readCoverageClaim: (input: {
+    readonly missionId: string
+    readonly selectedKeys: readonly unknown[]
+  }) => Promise<{
+    readonly databaseReady: boolean
+    readonly blockers: readonly string[]
+  }>
+  readonly readCoverageManifest: (missionId: string) => Promise<unknown>
   readonly listMissionEvents: (missionId: string) => Promise<readonly {
     readonly event_type: string
     readonly timestamp: string
@@ -110,6 +118,11 @@ describe('Electron participant store [DON-271]', () => {
       }),
       expect.objectContaining({
         traccar_device_id: '12',
+        window_from: '2026-08-20T08:00:00.000Z',
+        completed: 0,
+      }),
+      expect.objectContaining({
+        traccar_device_id: '20',
         window_from: '2026-08-20T08:00:00.000Z',
         completed: 0,
       }),
@@ -357,6 +370,15 @@ describe('Electron participant store [DON-271]', () => {
       devices: [{ traccar_device_id: '20' }],
       selected_by: 'Coordinator A',
     })
+    const [checkpoint] = await store.listParticipantBackfillCheckpoints(mission.id)
+    await store.upsertParticipantBackfillCheckpoint({
+      mission_id: mission.id,
+      traccar_device_id: checkpoint!.traccar_device_id,
+      window_from: checkpoint!.window_from,
+      window_to: checkpoint!.window_to,
+      reconciled_until: checkpoint!.window_to,
+      completed: true,
+    })
     await store.finishMission(mission.id)
 
     await expect(store.addMissionParticipant({
@@ -545,6 +567,53 @@ describe('Electron participant store [DON-271]', () => {
     await expect(store.listParticipantBackfillCheckpoints(mission.id)).resolves.toEqual([
       expect.objectContaining({ completed: 1, reconciled_until: checkpoint!.window_to }),
     ])
+  })
+
+  it('fences coverage completeness and mission finish for an initially selected direct device', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-08-20T10:00:00.000Z'))
+    const store = await createStore()
+    const mission = await store.createMission({
+      name: 'Direct-device backfill fence mission',
+      start_time: '2026-08-20T08:00:00.000Z',
+    })
+    await store.selectMissionParticipants({
+      mission_id: mission.id,
+      groups: [],
+      devices: [{ traccar_device_id: '20' }],
+      selected_by: 'Coordinator A',
+    })
+
+    const [checkpoint] = await store.listParticipantBackfillCheckpoints(mission.id)
+    expect(checkpoint).toEqual(expect.objectContaining({
+      traccar_device_id: '20',
+      window_from: '2026-08-20T08:00:00.000Z',
+      window_to: '2026-08-20T10:00:00.000Z',
+      reconciled_until: '2026-08-20T08:00:00.000Z',
+      completed: 0,
+    }))
+    await store.readCoverageManifest(mission.id)
+    await expect(store.readCoverageClaim({ missionId: mission.id, selectedKeys: [] }))
+      .resolves.toMatchObject({
+        databaseReady: false,
+        blockers: expect.arrayContaining(['backfill_incomplete']),
+      })
+    await expect(store.finishMission(mission.id)).rejects.toThrow(
+      /history backfill.*incomplete|complete.*history backfill/i,
+    )
+
+    await store.upsertParticipantBackfillCheckpoint({
+      mission_id: mission.id,
+      traccar_device_id: checkpoint!.traccar_device_id,
+      window_from: checkpoint!.window_from,
+      window_to: checkpoint!.window_to,
+      reconciled_until: checkpoint!.window_to,
+      completed: true,
+    })
+
+    await expect(store.readCoverageClaim({ missionId: mission.id, selectedKeys: [] }))
+      .resolves.toMatchObject({ databaseReady: true, blockers: [] })
+    await expect(store.finishMission(mission.id)).resolves.toMatchObject({ status: 'finished' })
   })
 
   it('rolls back checkpoint completion when its required audit append fails', async () => {
