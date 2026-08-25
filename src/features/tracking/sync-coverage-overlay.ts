@@ -206,7 +206,8 @@ export async function syncCoverageOverlay(
       for (const period of desired.values()) {
         const overlay = overlays.get(period.periodKey)
         if (
-          overlay?.missionId !== catalog?.missionId ||
+          overlay === undefined ||
+          overlay.missionId !== catalog?.missionId ||
           overlay.revisionDigest !== period.revisionDigest ||
           map.getSource(overlay.sourceId) === undefined ||
           overlay.layerIds.some((layerId) => map.getLayer(layerId) === undefined)
