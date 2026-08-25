@@ -85,29 +85,34 @@ async function main() {
       }
       const stagedPeriod = catalog.periods.find((period) => period.periodKey === group.identity)
       if (stagedPeriod === undefined) throw new Error('qualification catalog has no staged period')
-      const tileAddress = {
+      const probeChunk = [...group.chunks].sort((left, right) =>
+        right.exactCount - left.exactCount)[0]
+      if (probeChunk === undefined) throw new Error('qualification period has no probe chunk')
+      const probePage = await store.readCoverageChunk({
+        missionId,
+        key: probeChunk.key,
+        expectedContentRev: probeChunk.contentRev,
+        limit: 100,
+      }, `qualification-probe-${groupIndex}`)
+      const staged = await findGeometryTile(store, {
         missionId,
         periodKey: stagedPeriod.periodKey,
         revisionDigest: stagedPeriod.revisionDigest,
-        z: 0,
-        x: 0,
-        y: 0,
-      }
-      const stagedProbe = requireTile(
-        await store.readCoverageTile({ ...tileAddress }),
-        'staged',
-      )
+      }, probePage.positions)
       await store.activateCoverageTileCatalog({ activationId: catalog.activationId })
       const activeProbe = requireTile(
-        await store.readCoverageTile({ ...tileAddress }),
+        await store.readCoverageTile({ ...staged.address }),
         'active',
       )
-      if (stagedProbe.sha256 !== activeProbe.sha256) {
+      if (staged.probe.sha256 !== activeProbe.sha256) {
         throw new Error('qualification active tile differs from its staged geometry')
       }
       geometryProbes.push({
         periodKey: stagedPeriod.periodKey,
         revisionDigest: stagedPeriod.revisionDigest,
+        z: staged.address.z,
+        x: staged.address.x,
+        y: staged.address.y,
         byteLength: activeProbe.byteLength,
         geometryFeatureCount: activeProbe.geometryFeatureCount,
         sha256: activeProbe.sha256,
@@ -175,18 +180,55 @@ async function main() {
 }
 
 function requireTile(tile, phase) {
-  if (!(tile instanceof Uint8Array) || tile.byteLength === 0) {
+  const inspected = inspectTile(tile)
+  if (inspected === null) {
     throw new Error(`qualification ${phase} tile was unavailable`)
   }
+  return inspected
+}
+
+async function findGeometryTile(store, identity, positions) {
+  const seen = new Set()
+  for (const zoom of [14, 12, 10, 8, 6, 4, 2, 0]) {
+    for (const position of positions) {
+      const tile = tileAddressFromPosition(position, zoom)
+      const key = `${tile.z}/${tile.x}/${tile.y}`
+      if (seen.has(key)) continue
+      seen.add(key)
+      const address = { ...identity, ...tile }
+      const inspected = inspectTile(await store.readCoverageTile({ ...address }))
+      if (inspected !== null) return { address, probe: inspected }
+    }
+  }
+  throw new Error(`qualification staged tile contained no coverage geometry for ${identity.periodKey}`)
+}
+
+function inspectTile(tile) {
+  if (!(tile instanceof Uint8Array) || tile.byteLength === 0) return null
   const decoded = new VectorTile(new Pbf(tile))
   const geometryFeatureCount = decoded.layers.coverage?.length ?? 0
-  if (geometryFeatureCount === 0) {
-    throw new Error(`qualification ${phase} tile contained no coverage geometry`)
-  }
+  if (geometryFeatureCount === 0) return null
   return {
     byteLength: tile.byteLength,
     geometryFeatureCount,
     sha256: createHash('sha256').update(tile).digest('hex'),
+  }
+}
+
+function tileAddressFromPosition(position, z) {
+  const latitude = Number(position.lat)
+  const longitude = Number(position.lon)
+  if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+    throw new Error('qualification probe position has invalid coordinates')
+  }
+  const scale = 2 ** z
+  const latitudeRadians = latitude * Math.PI / 180
+  return {
+    z,
+    x: Math.max(0, Math.min(scale - 1, Math.floor((longitude + 180) / 360 * scale))),
+    y: Math.max(0, Math.min(scale - 1, Math.floor(
+      (1 - Math.asinh(Math.tan(latitudeRadians)) / Math.PI) / 2 * scale,
+    ))),
   }
 }
 

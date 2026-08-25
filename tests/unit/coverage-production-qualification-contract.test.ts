@@ -12,9 +12,12 @@ describe('production coverage qualification contract [DON-276]', () => {
 
     const resolveHead = driver.indexOf("git', ['rev-parse', 'HEAD']")
     const rejectMismatch = driver.indexOf('does not match the expected exact head')
-    const stagedRead = driver.indexOf('await store.readCoverageTile({')
+    const stagedRead = driver.indexOf('const staged = await findGeometryTile(')
     const activate = driver.indexOf('await store.activateCoverageTileCatalog({')
-    const activeRead = driver.indexOf('await store.readCoverageTile({', stagedRead + 1)
+    const activeRead = driver.indexOf(
+      'await store.readCoverageTile({ ...staged.address })',
+      activate,
+    )
 
     expect(resolveHead).toBeGreaterThan(-1)
     expect(rejectMismatch).toBeGreaterThan(resolveHead)
@@ -27,6 +30,9 @@ describe('production coverage qualification contract [DON-276]', () => {
     const driver = readFileSync(driverPath, 'utf8')
 
     expect(driver).toContain("period.periodKey === group.identity")
+    expect(driver).toContain('await store.readCoverageChunk({')
+    expect(driver).toContain('findGeometryTile(')
+    expect(driver).toContain('tileAddressFromPosition(')
     expect(driver).toContain('tile.byteLength === 0')
     expect(driver).toContain('new VectorTile(new Pbf(tile))')
     expect(driver).toContain('geometryFeatureCount')
