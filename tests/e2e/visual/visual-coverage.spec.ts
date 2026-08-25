@@ -37,7 +37,7 @@ Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
     const prior = await readCoverageNumbers(page)
     await beginDelayedLateFixRefresh(page)
     await expect.poll(async () => (await readCoverageNumbers(page)).total, {
-      timeout: 5_000,
+      timeout: 7_000,
     }).toBe(prior.total + 1)
     const loading = await readCoverageNumbers(page)
     expect(loading.delivered).toBeLessThan(prior.delivered)
@@ -201,7 +201,7 @@ Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
 
 async function beginDelayedLateFixRefresh(page: Page): Promise<void> {
   await page.evaluate(async () => {
-    window.sessionStorage.setItem('sartracker:browser-harness:coverage-delay-ms', '1200')
+    window.sessionStorage.setItem('sartracker:browser-harness:coverage-delay-ms', '4000')
     const [{ getBrowserHarnessStore }, { useCoverageStore }] = await Promise.all([
       import('/src/features/browser-validation/browser-harness-store.ts'),
       import('/src/features/tracking/coverage-store.ts'),
