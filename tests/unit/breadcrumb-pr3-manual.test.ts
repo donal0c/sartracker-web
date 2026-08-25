@@ -12,6 +12,7 @@ describe('breadcrumb PR-3 operator manual [DON-275]', () => {
       'Outside outings',
       'Progress can go backwards honestly',
       'History incomplete — showing loaded coverage',
+      'Applying the selected history filter to the map',
       'Inspect exact fixes',
       'does not hide Alpha Team\'s current marker',
     ]) {
@@ -20,6 +21,7 @@ describe('breadcrumb PR-3 operator manual [DON-275]', () => {
     for (const asset of [
       'mission-history-coverage-status.png',
       'mission-history-evidence-pending.png',
+      'mission-history-filter-pending.png',
       'mission-history-live-independent.png',
     ]) {
       expect(existsSync(`public/manual/assets/${asset}`)).toBe(true)
