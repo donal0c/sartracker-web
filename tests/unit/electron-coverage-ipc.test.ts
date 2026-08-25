@@ -277,6 +277,44 @@ describe('coverage IPC ownership [DON-276]', () => {
     await expect(handlers.get('finalize')?.({ sender: owner }, payload)).resolves.toBe(true)
   })
 
+  it('retains stage ownership when a terminal transition fails before retry', async () => {
+    const handlers = new Map<string, (event: unknown, ...args: readonly unknown[]) => unknown>()
+    const finalizeCoverageTileCatalog = vi.fn()
+      .mockRejectedValueOnce(new Error('activation is no longer current'))
+    const discardCoverageTileCatalog = vi.fn().mockResolvedValue(true)
+    const missionStore = {
+      readCoverageManifest: vi.fn(),
+      readCoverageChunk: vi.fn(),
+      readCoverageClaim: vi.fn(),
+      syncCoverageTileCatalog: vi.fn().mockResolvedValue({
+        activationId: 'coverage-stage-terminal-retry', periods: [], delivered: [],
+      }),
+      activateCoverageTileCatalog: vi.fn().mockResolvedValue(true),
+      finalizeCoverageTileCatalog,
+      discardCoverageTileCatalog,
+      cancelCoverageQuery: vi.fn().mockResolvedValue(false),
+    }
+    registerCoverageIpcHandlers({
+      ipcMain: { handle: (channel, handler) => handlers.set(channel, handler as never) },
+      readChannels: { manifest: 'manifest', chunk: 'chunk', claim: 'claim', catalog: 'catalog' },
+      activationChannels: { activate: 'activate', finalize: 'finalize', discard: 'discard' },
+      cancelChannel: 'cancel', missionStore,
+      validateIpcSender: vi.fn(),
+    })
+    const owner = Object.assign(new EventEmitter(), { id: 83 })
+    const payload = { activationId: 'coverage-stage-terminal-retry' }
+    await handlers.get('catalog')?.(
+      { sender: owner }, { missionId: 'mission-1', chunks: [] }, 'catalog-terminal-retry',
+    )
+
+    await expect(handlers.get('finalize')?.({ sender: owner }, payload))
+      .rejects.toThrow(/no longer current/iu)
+    expect(owner.listenerCount('destroyed')).toBe(1)
+    await expect(handlers.get('discard')?.({ sender: owner }, payload)).resolves.toBe(true)
+    expect(discardCoverageTileCatalog).toHaveBeenCalledOnce()
+    expect(owner.listenerCount('destroyed')).toBe(0)
+  })
+
   it('routes chunk and claim reads through their named mission-store methods', async () => {
     const handlers = new Map<string, (event: unknown, ...args: readonly unknown[]) => unknown>()
     const missionStore = {
