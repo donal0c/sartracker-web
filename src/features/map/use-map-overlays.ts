@@ -109,7 +109,7 @@ export function useMapOverlays(options: UseMapOverlaysOptions): void {
         if (catalog === null || coverageController === null) {
           activation.commit()
         } else {
-          await coverageController.notifyCatalogApplied(catalog, activation.commit)
+          await coverageController.notifyCatalogApplied(catalog, activation)
         }
       } catch (error) {
         activation?.rollback()

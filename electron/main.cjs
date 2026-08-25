@@ -644,6 +644,10 @@ function registerMissionStoreHandlers(missionStore) {
       claim: MISSION_STORE_CHANNELS.readCoverageClaim,
       catalog: MISSION_STORE_CHANNELS.syncCoverageTileCatalog,
     },
+    activationChannels: {
+      activate: MISSION_STORE_CHANNELS.activateCoverageTileCatalog,
+      discard: MISSION_STORE_CHANNELS.discardCoverageTileCatalog,
+    },
     cancelChannel: MISSION_STORE_CHANNELS.cancelCoverageQuery,
     missionStore,
     validateIpcSender,
@@ -661,6 +665,8 @@ function registerMissionStoreHandlers(missionStore) {
     'readCoverageChunk',
     'readCoverageClaim',
     'syncCoverageTileCatalog',
+    'activateCoverageTileCatalog',
+    'discardCoverageTileCatalog',
     'cancelCoverageQuery',
   ])
   for (const [methodName, channel] of Object.entries(MISSION_STORE_CHANNELS)) {

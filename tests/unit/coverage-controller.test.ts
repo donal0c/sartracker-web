@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest'
 import type {
   CoverageChunkKey,
   CoverageManifest,
+  CoverageTileCatalog,
 } from '../../src/infrastructure/mission-store/tauri-mission-store'
 import { createCoverageController } from '../../src/features/tracking/coverage-controller'
 
@@ -346,6 +347,92 @@ describe('coverage controller [DON-276]', () => {
 
     expect(controller.getState()).toMatchObject({ status: 'error', deliveredFixCount: 0 })
   })
+
+  it.each(['resolve', 'reject'] as const)(
+    'fences an obsolete mission activation after backend %s',
+    async (outcome) => {
+      let resolveOld: (() => void) | undefined
+      let rejectOld: ((error: Error) => void) | undefined
+      const oldBackendActivation = new Promise<void>((resolve, reject) => {
+        resolveOld = resolve
+        rejectOld = reject
+      })
+      const activateCatalog = vi.fn((catalog: CoverageTileCatalog) =>
+        catalog.activationId === 'stage-mission-1'
+          ? oldBackendActivation
+          : Promise.resolve())
+      const discardCatalog = vi.fn().mockResolvedValue(undefined)
+      const oldRenderer = { commit: vi.fn(), rollback: vi.fn() }
+      const nextRenderer = { commit: vi.fn(), rollback: vi.fn() }
+      const controller = createCoverageController({
+        readManifest: vi.fn(async (missionId) => manifest(
+          1,
+          [[missionId === 'mission-1' ? KEY_A : KEY_C, 1]],
+        )),
+        readChunk: vi.fn(),
+        readClaim: vi.fn(async ({ selectedKeys }) => ({
+          changeSeq: 1,
+          databaseReady: true,
+          blockers: [],
+          chunkRevisions: selectedKeys.map((key) => ({ key, contentRev: 1 })),
+        })),
+        applyChunk: vi.fn(),
+        deliverSelection: vi.fn(async ({ missionId, chunks }) => ({
+          activationId: `stage-${missionId}`,
+          periods: [{
+            periodKey: `${chunks[0]!.key.period_kind}\u0000${chunks[0]!.key.period_id}`,
+            revisionDigest: `revision-${missionId}`,
+          }],
+          delivered: chunks.map(({ key, contentRev }) => ({ key, contentRev })),
+        })),
+        activateCatalog,
+        discardCatalog,
+        publish: vi.fn(),
+      })
+      const notify = controller.notifyCatalogApplied as unknown as (
+        catalog: CoverageTileCatalog,
+        activation: { readonly commit: () => void; readonly rollback: () => void },
+      ) => Promise<void>
+
+      const oldLoad = controller.updateContext({
+        missionId: 'mission-1', rendererGeneration: 'r1',
+      })
+      await vi.waitFor(() => expect(controller.getState()).toMatchObject({
+        missionId: 'mission-1', tileCatalog: { activationId: 'stage-mission-1' },
+      }))
+      const oldState = controller.getState()
+      if (oldState.status === 'inactive' || oldState.tileCatalog === null) {
+        throw new Error('Old coverage catalog was not staged.')
+      }
+      const oldNotification = notify(oldState.tileCatalog, oldRenderer)
+      await vi.waitFor(() => expect(activateCatalog).toHaveBeenCalledWith(oldState.tileCatalog))
+
+      const nextLoad = controller.updateContext({
+        missionId: 'mission-2', rendererGeneration: 'r1',
+      })
+      await vi.waitFor(() => expect(controller.getState()).toMatchObject({
+        missionId: 'mission-2', tileCatalog: { activationId: 'stage-mission-2' },
+      }))
+      const nextState = controller.getState()
+      if (nextState.status === 'inactive' || nextState.tileCatalog === null) {
+        throw new Error('Replacement coverage catalog was not staged.')
+      }
+      await notify(nextState.tileCatalog, nextRenderer)
+      await nextLoad
+
+      if (outcome === 'resolve') resolveOld?.()
+      else rejectOld?.(new Error('obsolete activation failed'))
+      await expect(oldNotification).resolves.toBeUndefined()
+      await oldLoad
+
+      expect(oldRenderer.commit).not.toHaveBeenCalled()
+      expect(oldRenderer.rollback).toHaveBeenCalledOnce()
+      expect(nextRenderer.commit).toHaveBeenCalledOnce()
+      expect(controller.getState()).toMatchObject({
+        missionId: 'mission-2', status: 'complete', deliveredFixCount: 1,
+      })
+    },
+  )
 
   it('revokes Complete immediately when the active tile worker is lost', async () => {
     const harness = createHarness(manifest(1, [[KEY_A, 1]]))

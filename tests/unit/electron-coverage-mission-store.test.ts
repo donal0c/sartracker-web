@@ -377,11 +377,64 @@ describe('Electron coverage mission-store orchestration', () => {
       missionId: mission.id,
       chunks: [{ key: chunk.key, contentRev: chunk.contentRev }],
     }, 'tiles-race')).rejects.toThrow(/chunk-stale/i)
-    expect(discardCatalog).toHaveBeenCalledWith(
-      { stageId: 'coverage-stage-race' },
-      expect.objectContaining({ signal: expect.any(AbortSignal) }),
-    )
+    expect(discardCatalog).toHaveBeenCalledWith({
+      stageId: 'coverage-stage-race',
+    })
     expect(commitCatalog).not.toHaveBeenCalled()
+  })
+
+  it('cancels a catalog build without terminating the worker serving retained coverage', async () => {
+    directory = await mkdtemp(path.join(tmpdir(), 'sartracker-coverage-store-'))
+    let finishBuild: ((value: {
+      stageId: string
+      periods: readonly unknown[]
+      delivered: readonly unknown[]
+      builds: readonly unknown[]
+    }) => void) | undefined
+    const syncCatalog = vi.fn(() => new Promise<{
+      stageId: string
+      periods: readonly unknown[]
+      delivered: readonly unknown[]
+      builds: readonly unknown[]
+    }>((resolve) => {
+      finishBuild = resolve
+    }))
+    const discardCatalog = vi.fn().mockResolvedValue(true)
+    const tileRunner = {
+      syncCatalog,
+      commitCatalog: vi.fn().mockResolvedValue(true),
+      discardCatalog,
+      readTile: vi.fn().mockResolvedValue(new Uint8Array([1])),
+      close: vi.fn().mockResolvedValue(undefined),
+    }
+    store = createElectronMissionStore({ userDataPath: directory, coverageTileRunner: tileRunner })
+    const mission = await seedMission(store)
+    const request = store.syncCoverageTileCatalog({
+      missionId: mission.id,
+      chunks: [],
+    }, 'tiles-cancel-retain')
+    await vi.waitFor(() => expect(syncCatalog).toHaveBeenCalledOnce())
+
+    const cancelled = store.cancelCoverageQuery('tiles-cancel-retain')
+    finishBuild?.({
+      stageId: 'coverage-stage-cancelled',
+      periods: [],
+      delivered: [],
+      builds: [],
+    })
+
+    await expect(request).rejects.toMatchObject({ name: 'AbortError' })
+    await expect(cancelled).resolves.toBe(true)
+    expect(syncCatalog).toHaveBeenCalledWith({
+      missionId: mission.id,
+      chunks: [],
+    })
+    expect(discardCatalog).toHaveBeenCalledWith({
+      stageId: 'coverage-stage-cancelled',
+    })
+    await expect(store.readCoverageTile({ z: 8, x: 1, y: 1 })).resolves.toEqual(
+      new Uint8Array([1]),
+    )
   })
 })
 

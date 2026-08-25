@@ -134,6 +134,49 @@ describe('rejection evidence delivery [DON-268]', () => {
     }))
   })
 
+  it('does not let one mission acknowledgement clear another mission pending warning', async () => {
+    const acknowledgements = new Map<string, (value: {
+      acknowledgedDeliveryIds: string[]
+      health: ReturnType<typeof healthy>
+    }) => void>()
+    const recordIngestRejections = vi.fn((input: {
+      readonly mission_id: string
+      readonly rejections: readonly { readonly deliveryId: string }[]
+    }) => new Promise<{
+      acknowledgedDeliveryIds: string[]
+      health: ReturnType<typeof healthy>
+    }>((resolve) => {
+      acknowledgements.set(input.mission_id, resolve)
+    }))
+    const applyEvidenceHealth = vi.fn()
+    const delivery = createRejectionEvidenceDelivery({
+      missionStore: { recordIngestRejections },
+      applyRejections: vi.fn(),
+      applyEvidenceHealth,
+      createDeliveryId: (missionId) => `delivery-${missionId}`,
+    })
+
+    delivery.record([createRejection('source:a')], observation('mission-a'))
+    await vi.waitFor(() => expect(acknowledgements.has('mission-a')).toBe(true))
+    delivery.record([createRejection('source:b')], observation('mission-b'))
+    acknowledgements.get('mission-a')?.({
+      acknowledgedDeliveryIds: ['delivery-mission-a'],
+      health: healthy(),
+    })
+    await vi.waitFor(() => expect(acknowledgements.has('mission-b')).toBe(true))
+
+    expect(applyEvidenceHealth).toHaveBeenLastCalledWith(expect.objectContaining({
+      state: 'degraded',
+      reason: 'renderer_evidence_pending',
+      pendingCount: 1,
+    }))
+
+    acknowledgements.get('mission-b')?.({
+      acknowledgedDeliveryIds: ['delivery-mission-b'],
+      health: healthy(),
+    })
+  })
+
   it('keeps unacknowledged unique evidence bounded and retries it on the next poll', async () => {
     const recordIngestRejections = vi
       .fn()

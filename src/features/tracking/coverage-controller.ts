@@ -52,7 +52,7 @@ export type CoverageController = {
   readonly notifyChanged: (missionId: string, changeSeq: number) => Promise<void>
   readonly notifyCatalogApplied: (
     catalog: CoverageTileCatalog,
-    finalizeRenderer?: () => void,
+    rendererActivation?: CoverageRendererActivation,
   ) => Promise<void>
   readonly notifyRendererFailure: (failure: {
     readonly periodKey: string
@@ -64,6 +64,11 @@ export type CoverageController = {
   readonly resume: () => Promise<void>
   readonly stop: () => void
   readonly getState: () => CoverageState
+}
+
+export type CoverageRendererActivation = {
+  readonly commit: () => void
+  readonly rollback: () => void
 }
 
 /**
@@ -96,6 +101,7 @@ export function createCoverageController(input: {
     requestId: string,
     signal: AbortSignal,
   ) => Promise<CoverageClaim>
+  readonly readCompletenessBlockers?: () => readonly string[]
   readonly applyChunk: (payload: CoverageChunkPayload) => Promise<void>
   readonly deliverSelection?: (input: {
     readonly missionId: string
@@ -302,7 +308,9 @@ export function createCoverageController(input: {
         ? claimSequence
         : state.latestObservedChangeSeq
       const finalSequence = Math.max(claimSequence, currentObservedSequence)
+      const rendererBlockers = input.readCompletenessBlockers?.() ?? []
       const complete = claim.databaseReady &&
+        rendererBlockers.length === 0 &&
         !refreshRequested &&
         claim.changeSeq === finalSequence &&
         claim.chunkRevisions.every(({ key, contentRev }) =>
@@ -316,7 +324,7 @@ export function createCoverageController(input: {
         manifest: activeManifest,
         tileCatalog: activeCatalog,
         delivered,
-        blockers: claim.blockers,
+        blockers: [...new Set([...claim.blockers, ...rendererBlockers])],
       }, context.selectedKeys))
     } catch (error) {
       if (!ownsOperation(operation, controller, missionId, rendererGeneration)) return
@@ -460,18 +468,35 @@ export function createCoverageController(input: {
       })
       await requestRefresh()
     },
-    notifyCatalogApplied: async (catalog, finalizeRenderer = () => undefined) => {
-      if (!catalogActivation.isPending(catalog)) return
+    notifyCatalogApplied: async (catalog, rendererActivation = {
+      commit: () => undefined,
+      rollback: () => undefined,
+    }) => {
+      if (!catalogActivation.isPending(catalog)) {
+        rendererActivation.rollback()
+        await input.discardCatalog?.(catalog).catch(() => undefined)
+        return
+      }
       try {
         await input.activateCatalog?.(catalog)
-        finalizeRenderer()
+        if (!catalogActivation.isPending(catalog)) {
+          rendererActivation.rollback()
+          return
+        }
+        rendererActivation.commit()
         catalogActivation.notifyApplied(catalog)
       } catch (error) {
-        await input.discardCatalog?.(catalog).catch(() => undefined)
         const normalized = error instanceof Error
           ? error
           : new Error('Coverage catalog activation failed.')
-        catalogActivation.rejectPending(normalized)
+        if (!catalogActivation.isPending(catalog)) {
+          rendererActivation.rollback()
+          return
+        }
+        rendererActivation.rollback()
+        await input.discardCatalog?.(catalog).catch(() => undefined)
+        if (!catalogActivation.isPending(catalog)) return
+        catalogActivation.reject(catalog, normalized)
         publishRendererUnavailable(normalized.message)
         throw normalized
       }

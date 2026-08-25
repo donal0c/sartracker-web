@@ -4,6 +4,7 @@ export type CoverageCatalogActivation = {
   readonly wait: (catalog: CoverageTileCatalog, signal: AbortSignal) => Promise<void>
   readonly isPending: (catalog: CoverageTileCatalog) => boolean
   readonly notifyApplied: (catalog: CoverageTileCatalog) => boolean
+  readonly reject: (catalog: CoverageTileCatalog, error: Error) => boolean
   readonly rejectPending: (error: Error) => boolean
   readonly containsRevision: (
     catalog: CoverageTileCatalog | null,
@@ -47,6 +48,11 @@ export function createCoverageCatalogActivation(): CoverageCatalogActivation {
     notifyApplied: (catalog) => {
       if (pending?.signature !== catalogSignature(catalog)) return false
       pending.resolve()
+      return true
+    },
+    reject: (catalog, error) => {
+      if (pending?.signature !== catalogSignature(catalog)) return false
+      pending.reject(error)
       return true
     },
     rejectPending: (error) => {

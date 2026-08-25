@@ -72,6 +72,7 @@ export function startCoverageRuntime(
       () => missionStore.readCoverageClaim(query, requestId),
       missionStore.cancelCoverageQuery,
     ) as Promise<CoverageClaim>,
+    readCompletenessBlockers: readRendererEvidenceBlockers,
     deliverSelection: ({ missionId, chunks, requestId, signal }) => runCancelable(
       signal,
       requestId,
@@ -187,6 +188,15 @@ export function hasCoverageRuntimeBoundary(
     typeof missionStore.activateCoverageTileCatalog === 'function' &&
     typeof missionStore.discardCoverageTileCatalog === 'function' &&
     typeof missionStore.cancelCoverageQuery === 'function'
+}
+
+/** Returns renderer-memory evidence blockers at the final Complete decision. */
+function readRendererEvidenceBlockers(): readonly string[] {
+  const evidenceHealth = useIngestHealthStore.getState().evidenceHealth
+  if (evidenceHealth.state === 'healthy') return []
+  return [evidenceHealth.reason === 'renderer_evidence_pending'
+    ? 'renderer_evidence_pending'
+    : 'renderer_evidence_degraded']
 }
 
 async function runCancelable<T>(

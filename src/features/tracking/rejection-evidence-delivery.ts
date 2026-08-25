@@ -136,7 +136,7 @@ export function createRejectionEvidenceDelivery(
       })
     }
     if (context.missionId !== null && hasPendingMission(context.missionId)) {
-      publishRendererPendingHealth(context.missionId)
+      publishRendererPendingHealth()
     }
     scheduleFlush()
   }
@@ -289,7 +289,7 @@ export function createRejectionEvidenceDelivery(
         }
       }
       if (!disposed) {
-        publishEvidenceHealth(first.missionId, result.health)
+        publishEvidenceHealth(result.health)
         if (removedCount === 0 && pendingByMissionAndAnomaly.size > 0) {
           scheduleRetry()
         }
@@ -338,21 +338,21 @@ export function createRejectionEvidenceDelivery(
   function markEvidenceLoss(missionId: string): void {
     if (evidenceLossMissionIds.has(missionId)) return
     evidenceLossMissionIds.add(missionId)
-    publishEvidenceHealth(missionId, createCapacityFailureHealth())
+    publishEvidenceHealth(createCapacityFailureHealth())
     void dependencies.missionStore.recordIngestEvidenceLoss?.({
       mission_id: missionId,
       reason: 'renderer_pending_capacity_exhausted',
     }).then((health) => {
-      if (!disposed) publishEvidenceHealth(missionId, health)
+      if (!disposed) publishEvidenceHealth(health)
     }).catch(() => {
-      if (!disposed) publishEvidenceHealth(missionId, createCapacityFailureHealth())
+      if (!disposed) publishEvidenceHealth(createCapacityFailureHealth())
     })
   }
 
   /** Keeps a local capacity failure sticky while merging real durable counters. */
-  function publishEvidenceHealth(missionId: string, health: IngestEvidenceHealth): void {
-    const rendererPendingCount = countPendingMission(missionId)
-    if (evidenceLossMissionIds.has(missionId)) {
+  function publishEvidenceHealth(health: IngestEvidenceHealth): void {
+    const rendererPendingCount = pendingByMissionAndAnomaly.size
+    if (evidenceLossMissionIds.size > 0) {
       dependencies.applyEvidenceHealth({
         ...health,
         state: 'critical',
@@ -374,9 +374,8 @@ export function createRejectionEvidenceDelivery(
   }
 
   /** Revokes completeness in the same turn that evidence enters renderer memory. */
-  function publishRendererPendingHealth(missionId: string): void {
+  function publishRendererPendingHealth(): void {
     const pending = [...pendingByMissionAndAnomaly.values()]
-      .filter((entry) => entry.missionId === missionId)
     const existing = dependencies.readEvidenceHealth?.()
     dependencies.applyEvidenceHealth({
       state: existing?.state === undefined || existing.state === 'healthy'
@@ -402,15 +401,6 @@ export function createRejectionEvidenceDelivery(
     return [...pendingByMissionAndAnomaly.values()].some(
       (entry) => entry.missionId === missionId,
     )
-  }
-
-  /** Counts renderer-held evidence without crossing mission identity. */
-  function countPendingMission(missionId: string): number {
-    let count = 0
-    for (const entry of pendingByMissionAndAnomaly.values()) {
-      if (entry.missionId === missionId) count += 1
-    }
-    return count
   }
 
   return {

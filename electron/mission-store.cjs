@@ -473,7 +473,11 @@ function createElectronMissionStore(options) {
       async (signal) => {
         getMission(db, input.missionId)
         const buildStartedAt = performance.now()
-        const result = await coverageTileRunner.syncCatalog(input, { signal })
+        const result = await coverageTileRunner.syncCatalog(input)
+        if (signal.aborted) {
+          await coverageTileRunner.discardCatalog({ stageId: result.stageId })
+          throw createCoverageRequestAbortError()
+        }
         if (result.builds.length > 0) {
           recordCoveragePerformance(input.missionId, {
             lastBuildDurationMs: performance.now() - buildStartedAt,
@@ -487,12 +491,12 @@ function createElectronMissionStore(options) {
             updatedAt: now(),
           })
         } catch (error) {
-          await coverageTileRunner.discardCatalog({ stageId: result.stageId }, { signal })
+          await coverageTileRunner.discardCatalog({ stageId: result.stageId })
           throw error
         }
         const rejectedChunks = new Set(appliedBuilds.rejectedChunkKeys)
         if (rejectedChunks.size > 0) {
-          await coverageTileRunner.discardCatalog({ stageId: result.stageId }, { signal })
+          await coverageTileRunner.discardCatalog({ stageId: result.stageId })
           const error = new Error('chunk-stale: coverage tile catalog changed during apply')
           error.code = 'chunk-stale'
           throw error
@@ -3207,6 +3211,13 @@ function insertEvent(db, missionId, eventType, timestamp, detailsJson) {
 
 function now() {
   return new Date().toISOString()
+}
+
+/** Creates the stable cancellation error surfaced by renderer-owned coverage reads. */
+function createCoverageRequestAbortError() {
+  const error = new Error('Coverage tile request was cancelled.')
+  error.name = 'AbortError'
+  return error
 }
 
 module.exports = {

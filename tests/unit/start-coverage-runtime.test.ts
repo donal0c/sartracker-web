@@ -6,11 +6,13 @@ import type {
 } from '../../src/infrastructure/mission-store/tauri-mission-store'
 import { useMissionStore } from '../../src/features/mission/mission-store'
 import { useCoverageStore } from '../../src/features/tracking/coverage-store'
+import { useIngestHealthStore } from '../../src/features/tracking/ingest-health-store'
 import { startCoverageRuntime } from '../../src/features/tracking/start-coverage-runtime'
 
 afterEach(() => {
   useMissionStore.setState(useMissionStore.getInitialState())
   useCoverageStore.setState(useCoverageStore.getInitialState())
+  useIngestHealthStore.setState(useIngestHealthStore.getInitialState())
 })
 
 describe('coverage runtime wiring [DON-276]', () => {
@@ -71,6 +73,10 @@ describe('coverage runtime wiring [DON-276]', () => {
 
   it('revokes Complete immediately when ingest evidence health changes', async () => {
     let evidenceChanged: (() => void) | undefined
+    const readCoverageClaim = vi.fn(async () => ({
+      changeSeq: 1, databaseReady: true, blockers: [],
+      chunkRevisions: [{ key: manifest(1).chunks[0]!.key, contentRev: 1 }],
+    }))
     const missionStore = {
       readCoverageManifest: vi.fn(async () => manifest(1)),
       syncCoverageTileCatalog: vi.fn(async () => ({
@@ -80,10 +86,7 @@ describe('coverage runtime wiring [DON-276]', () => {
       })),
       activateCoverageTileCatalog: vi.fn(async () => true),
       discardCoverageTileCatalog: vi.fn(async () => true),
-      readCoverageClaim: vi.fn(async () => ({
-        changeSeq: 1, databaseReady: true, blockers: [],
-        chunkRevisions: [{ key: manifest(1).chunks[0]!.key, contentRev: 1 }],
-      })),
+      readCoverageClaim,
       cancelCoverageQuery: vi.fn(async () => true),
     }
     useMissionStore.setState({ currentMission: mission(), phase: 'active' })
@@ -100,9 +103,24 @@ describe('coverage runtime wiring [DON-276]', () => {
     await acknowledgePendingCatalog()
     await vi.waitFor(() => expect(useCoverageStore.getState().state.status).toBe('complete'))
 
+    useIngestHealthStore.getState().applyEvidenceHealth({
+      state: 'degraded',
+      reason: 'renderer_evidence_pending',
+      pendingCount: 1,
+      corruptCount: 0,
+      conflictCount: 0,
+      rejectedCount: 1,
+      affectedDeviceCount: 1,
+      conflictDeviceIds: [],
+    })
     evidenceChanged?.()
 
     expect(useCoverageStore.getState().state.status).toBe('loading')
+    await vi.waitFor(() => expect(readCoverageClaim).toHaveBeenCalledTimes(2))
+    expect(useCoverageStore.getState().state).toMatchObject({
+      status: 'partial',
+      blockers: expect.arrayContaining(['renderer_evidence_pending']),
+    })
     stop()
   })
 
