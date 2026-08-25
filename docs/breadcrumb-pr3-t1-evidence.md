@@ -99,3 +99,43 @@ Donal approved the recommended combined posture on 2026-08-25 at exact pushed
 pre-flip head `d05c7876963a9104755615018151d1fc281f5e5b`: mission model
 and complete coverage default on together, no budget amendment, explicit build
 overrides retained, and rollback by reverting the single final flip commit.
+
+## Exact-production-path review remediation
+
+The first exact-head review wave at `20ee295b8b0e914e7939768880c93641a17e2df4`
+found blocking gaps between the G2 Candidate-B harness and the production path:
+initial catalog delivery was not progressive, renderer activation was not part
+of delivery attestation, worker generations were not fully fenced, steady
+manifest/claim reads could rescan mission evidence, coverage writes used
+per-chunk autocommits, and several evidence/scope/runtime failures did not
+immediately revoke Complete. Red tests reproduced each condition before the
+production changes in `a687746`, `29a1e14`, and `d39732e`; the focused coverage
+set then passed 150 tests and the full unit suite passed 257 files / 1,997 tests.
+
+A targeted Ubuntu production-path qualification then used the real
+`createElectronMissionStore`, the production read-only coverage worker, the
+production Candidate-B tile worker, and the immutable PR-2 fixtures. It was not
+a packaged GUI run and did not repeat the G2 A/B/C matrix. The first 2M run at
+`20ee295` failed the ratified five-second first-useful gate at 6,438.024 ms.
+Red test `enumerates each participant device with one indexed positions
+traversal` recorded that enumeration prepared one positions scan per
+device-period rather than per device. Commit `d39732e` changed lazy initial
+enumeration to one indexed chronological traversal per participant device,
+preserving the canonical half-open outing resolver and exact per-period source
+digests.
+
+Exact corrective code head `d39732ee22e8d981c5e51a7fd008fca4dafc6657`
+passed both scales on the Ubuntu reference host:
+
+| Fixture | Delivered | Manifest ready | First useful | Complete geometry | Main max gap | Claim posture |
+| --- | ---: | ---: | ---: | ---: | ---: | --- |
+| 960k | 959,988 / 959,988 | 2,164.608 ms | 2,295.381 ms | 5,819.168 ms | 21.807 ms | Correctly blocked only by fixture `backfill_incomplete` |
+| 2M | 1,999,988 / 1,999,988 | 4,203.931 ms | 4,390.900 ms | 11,679.395 ms | 23.055 ms | Correctly blocked only by fixture `backfill_incomplete` |
+
+The 1.5 GiB/2.5 GiB G2 memory budgets were not remeasured by this targeted
+Node qualification; the standing G2 renderer/package measurements remain the
+memory proof. Machine-readable failure and corrective reports, with a checksum
+manifest, are committed under `output/pr3-production-qualification/`. A later
+history-only reorder that restores the approved two-boolean flip as the final
+commit must retain an identical production-code tree; final exact-head gates
+and five independent reviews still apply.
