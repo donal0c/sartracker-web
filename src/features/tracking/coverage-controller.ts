@@ -10,6 +10,10 @@ import { createCoverageScheduler } from './coverage-scheduler'
 import { classifyCoverageError, type CoverageErrorClass } from './coverage-diagnostics'
 import { createCoverageCatalogActivation } from './coverage-catalog-activation'
 import { createCoverageCatalogDeliveryBatches } from './coverage-catalog-delivery-plan'
+import type {
+  CoverageRendererFailure,
+  CoverageRendererFailureSource,
+} from './coverage-tile-protocol'
 
 export const COVERAGE_CHUNK_PAGE_LIMIT = 10_000
 const AUTOMATIC_RENDERER_RETRY_DELAY_MS = 250
@@ -58,13 +62,7 @@ export type CoverageController = {
   readonly notifySelectionApplied: (
     selectedKeys?: readonly CoverageChunkKey[],
   ) => Promise<void>
-  readonly notifyRendererFailure: (failure: {
-    readonly missionId: string
-    readonly periodKey: string
-    readonly revisionDigest: string
-    readonly activationId?: string
-    readonly message: string
-  }) => void
+  readonly notifyRendererFailure: (failure: CoverageRendererFailure) => void
   readonly notifyRendererUnavailable: (message: string) => void
   readonly notifyRendererDetached: (catalog?: CoverageTileCatalog) => void
   readonly cancel: () => void
@@ -74,6 +72,7 @@ export type CoverageController = {
 }
 
 export type CoverageRendererActivation = {
+  readonly failureSources?: readonly CoverageRendererFailureSource[]
   readonly commit: () => void
   readonly finalize?: () => void
   readonly rollback: () => void
@@ -134,6 +133,7 @@ export function createCoverageController(input: {
   let refreshRequested = false
   let lastErrorClass: CoverageErrorClass | null = null
   let finalizedCatalog: CoverageTileCatalog | null = null
+  let finalizedRendererFailureSources: readonly CoverageRendererFailureSource[] = []
   let rendererDetached = false
   let rendererDetachedCompleteCatalog: CoverageTileCatalog | null = null
   let rendererDetachEpoch = 0
@@ -149,7 +149,7 @@ export function createCoverageController(input: {
   let rendererFailureDuringFinalization: Error | null = null
   let rendererFailureEpoch = 0
   let rendererRecoveryEpoch: number | null = null
-  let rendererRecoveryFailedCatalog: CoverageTileCatalog | null = null
+  let rendererRecoverySupersededFailureKeys: ReadonlySet<string> | null = null
   let automaticRendererRecoveryAvailable = true
   const catalogActivation = createCoverageCatalogActivation()
   const scheduler = createCoverageScheduler({
@@ -192,10 +192,11 @@ export function createCoverageController(input: {
     refreshRequested = false
     cancelRequested = false
     finalizedCatalog = null
+    finalizedRendererFailureSources = []
     rendererDetached = false
     rendererDetachedCompleteCatalog = null
     rendererRecoveryEpoch = null
-    rendererRecoveryFailedCatalog = null
+    rendererRecoverySupersededFailureKeys = null
     automaticRendererRecoveryAvailable = false
     rendererFailureDuringFinalization = null
     publish({ status: 'inactive' })
@@ -506,7 +507,7 @@ export function createCoverageController(input: {
     rendererDetached = false
     rendererDetachedCompleteCatalog = null
     const error = new Error(message)
-    rendererRecoveryFailedCatalog = null
+    rendererRecoverySupersededFailureKeys = null
     rendererRecoveryEpoch = ++rendererFailureEpoch
     if (
       catalogFinalization !== null &&
@@ -613,6 +614,8 @@ export function createCoverageController(input: {
       ) {
         rendererActivation.commit()
         rendererActivation.finalize?.()
+        finalizedRendererFailureSources = rendererActivation.failureSources ??
+          coverageCatalogFailureSources(catalog)
         restoreRendererAttachment()
         return
       }
@@ -657,12 +660,14 @@ export function createCoverageController(input: {
         publishRendererUnavailable(normalized.message)
         return
       }
+      finalizedRendererFailureSources = rendererActivation.failureSources ??
+        coverageCatalogFailureSources(catalog)
       if (
         recoveryEpochAtStart !== null &&
         rendererRecoveryEpoch === recoveryEpochAtStart
       ) {
         rendererRecoveryEpoch = null
-        rendererRecoveryFailedCatalog = null
+        rendererRecoverySupersededFailureKeys = null
         automaticRendererRecoveryAvailable = true
       }
     } catch (error) {
@@ -741,10 +746,11 @@ export function createCoverageController(input: {
     activeController?.abort()
     if (identityChanged) lastErrorClass = null
     if (identityChanged) finalizedCatalog = null
+    if (identityChanged) finalizedRendererFailureSources = []
     if (identityChanged) rendererDetached = false
     if (identityChanged) {
       rendererRecoveryEpoch = null
-      rendererRecoveryFailedCatalog = null
+      rendererRecoverySupersededFailureKeys = null
     }
     if (identityChanged) automaticRendererRecoveryAvailable = true
     if (identityChanged) rendererFailureDuringFinalization = null
@@ -825,21 +831,27 @@ export function createCoverageController(input: {
         state.tileCatalog,
         failure.periodKey,
         failure.revisionDigest,
-        ) ||
-        state.tileCatalog?.activationId !== failure.activationId
+        )
       ) return
       const failedCatalog = state.tileCatalog
+      const activeFailureSources = [
+        ...finalizedRendererFailureSources,
+        ...(failedCatalog === null ? [] : coverageCatalogFailureSources(failedCatalog)),
+      ]
+      if (!matchesRendererFailureSource(activeFailureSources, failure)) return
+      const failureKey = rendererFailureSourceKey(failure)
       if (
         rendererRecoveryEpoch !== null &&
-        rendererRecoveryFailedCatalog !== null &&
-        failedCatalog !== null &&
-        isSameCatalog(failedCatalog, rendererRecoveryFailedCatalog)
+        rendererRecoverySupersededFailureKeys?.has(failureKey) === true
       ) return
       const failedLoad = activeLoadCompletion
       const missionId = state.missionId
       const rendererGeneration = state.rendererGeneration
+      const supersededFailureKeys = new Set(
+        activeFailureSources.map(rendererFailureSourceKey),
+      )
       publishRendererUnavailable(failure.message)
-      rendererRecoveryFailedCatalog = failedCatalog
+      rendererRecoverySupersededFailureKeys = supersededFailureKeys
       if (rendererRecoveryEpoch !== null) {
         scheduleAutomaticRendererRecovery(
           failedLoad,
@@ -938,6 +950,31 @@ function isSameCatalog(
     .sort()
     .join('\n')
   return revisions(left) === revisions(right)
+}
+
+/** Describes the fallback source owner before a renderer provides per-period ownership. */
+function coverageCatalogFailureSources(
+  catalog: CoverageTileCatalog,
+): readonly CoverageRendererFailureSource[] {
+  return catalog.periods.map((period) => ({
+    periodKey: period.periodKey,
+    revisionDigest: period.revisionDigest,
+    ...(catalog.activationId === undefined ? {} : { activationId: catalog.activationId }),
+  }))
+}
+
+/** Matches one tile failure to a source that can still contribute visible coverage. */
+function matchesRendererFailureSource(
+  sources: readonly CoverageRendererFailureSource[],
+  failure: CoverageRendererFailureSource,
+): boolean {
+  const failureKey = rendererFailureSourceKey(failure)
+  return sources.some((source) => rendererFailureSourceKey(source) === failureKey)
+}
+
+/** Creates an exact period, revision, and renderer-activation failure identity. */
+function rendererFailureSourceKey(source: CoverageRendererFailureSource): string {
+  return `${source.periodKey}\u0000${source.revisionDigest}\u0000${source.activationId ?? ''}`
 }
 
 /** Creates the stable tagged renderer identity for one logical chunk. */

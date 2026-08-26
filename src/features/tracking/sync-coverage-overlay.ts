@@ -5,7 +5,10 @@ import type {
   LayerSpecification,
   SourceSpecification,
 } from 'maplibre-gl'
-import { createCoverageTileUrl } from './coverage-tile-protocol'
+import {
+  createCoverageTileUrl,
+  type CoverageRendererFailureSource,
+} from './coverage-tile-protocol'
 import { TRACKING_BREADCRUMB_CASING_LAYER_ID } from './sync-tracking-overlay'
 import { buildCoverageLayerFilter } from '../layers/map-layer-filters'
 
@@ -33,6 +36,7 @@ export type CoverageOverlayMap = {
 
 export type CoverageOverlayActivation = {
   readonly periods: CoverageTileCatalog['periods']
+  readonly failureSources: readonly CoverageRendererFailureSource[]
   readonly commit: () => void
   readonly finalize: () => void
   readonly rollback: () => void
@@ -197,6 +201,27 @@ export async function syncCoverageOverlay(
     applyFiltersToInstalledOverlays(map, registry, registry.latestFilters)
     throw createCoverageOverlayAbortError()
   }
+  const stagedByPeriod = new Map(staged.map((entry) => [entry.periodKey, entry.next]))
+  const failureSources: CoverageRendererFailureSource[] = []
+  for (const period of browserHarnessGeoJson === undefined
+    ? desiredPeriods
+    : (catalog?.periods ?? [])) {
+    const overlay = stagedByPeriod.get(
+      browserHarnessGeoJson === undefined ? period.periodKey : 'browser-harness',
+    ) ?? overlays.get(
+      browserHarnessGeoJson === undefined ? period.periodKey : 'browser-harness',
+    )
+    if (overlay === undefined) {
+      removeStagedOverlays(map, registry, staged)
+      applyFiltersToInstalledOverlays(map, registry, registry.latestFilters)
+      throw new Error('Coverage renderer source ownership was not recorded.')
+    }
+    failureSources.push({
+      periodKey: period.periodKey,
+      revisionDigest: period.revisionDigest,
+      ...(overlay.activationId === undefined ? {} : { activationId: overlay.activationId }),
+    })
+  }
   registry.latestSuccessfulSequence = requestSequence
   const priorOwnership = registry.owner
   const ownership: CoverageOverlayOwnership = {
@@ -256,6 +281,7 @@ export async function syncCoverageOverlay(
   registry.owner = ownership
   return {
     periods: catalog?.periods ?? [],
+    failureSources,
     commit: () => {
       if (!ownership.valid || ownership.finalized) return
       ownership.commitRequested = true

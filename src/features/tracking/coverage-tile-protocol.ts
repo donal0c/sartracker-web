@@ -2,6 +2,17 @@ import type { AddProtocolAction } from 'maplibre-gl'
 
 export const COVERAGE_TILE_PROTOCOL = 'sartracker-coverage'
 
+export type CoverageRendererFailureSource = {
+  readonly periodKey: string
+  readonly revisionDigest: string
+  readonly activationId?: string
+}
+
+export type CoverageRendererFailure = CoverageRendererFailureSource & {
+  readonly missionId: string
+  readonly message: string
+}
+
 type ProtocolRegistry = {
   readonly addProtocol: (
     protocol: string,
@@ -13,13 +24,7 @@ type ProtocolRegistry = {
 /** Registers the revision-bound Candidate-B local vector-tile protocol. */
 export function registerCoverageTileProtocol(
   registry: ProtocolRegistry,
-  onFailure: (failure: {
-    readonly missionId: string
-    readonly periodKey: string
-    readonly revisionDigest: string
-    readonly activationId?: string
-    readonly message: string
-  }) => void = () => undefined,
+  onFailure: (failure: CoverageRendererFailure) => void = () => undefined,
 ): () => void {
   registry.addProtocol(COVERAGE_TILE_PROTOCOL, async (
     request,

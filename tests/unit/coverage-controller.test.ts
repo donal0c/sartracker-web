@@ -724,6 +724,124 @@ describe('coverage controller [DON-276]', () => {
     expect(deliverSelection).toHaveBeenCalledTimes(2)
   })
 
+  it('revokes Complete when a retained period fails from its older source activation', async () => {
+    let current = manifest(1, [[KEY_A, 1], [KEY_B, 1]])
+    const readManifest = vi.fn(async () => current)
+    const readClaim = vi.fn(async () => ({
+      changeSeq: current.changeSeq,
+      databaseReady: true,
+      blockers: [],
+      chunkRevisions: current.chunks.map(({ key, contentRev }) => ({ key, contentRev })),
+    }))
+    const deliverSelection = vi.fn(async () => {
+      const attempt = deliverSelection.mock.calls.length
+      return {
+        missionId: 'mission-1',
+        activationId: `retained-period-stage-${attempt}`,
+        periods: attempt === 1
+          ? [
+              { periodKey: 'outing\u0000a', revisionDigest: 'a1' },
+              { periodKey: 'outing\u0000b', revisionDigest: 'b1' },
+            ]
+          : [
+              { periodKey: 'outing\u0000a', revisionDigest: 'a2' },
+              { periodKey: 'outing\u0000b', revisionDigest: 'b1' },
+            ],
+        delivered: current.chunks.map(({ key, contentRev }) => ({ key, contentRev })),
+      }
+    })
+    const controller = createCoverageController({
+      readManifest,
+      readChunk: vi.fn(),
+      readClaim,
+      applyChunk: vi.fn(),
+      deliverSelection,
+      publish: vi.fn(),
+    })
+    const firstLoad = controller.updateContext({
+      missionId: 'mission-1', rendererGeneration: 'r1',
+    })
+    await vi.waitFor(() => expect(deliverSelection).toHaveBeenCalledTimes(1))
+    let state = controller.getState()
+    if (state.status === 'inactive') throw new Error('Coverage unexpectedly inactive.')
+    await controller.notifyCatalogApplied(state.tileCatalog!, {
+      failureSources: [
+        {
+          periodKey: 'outing\u0000a', revisionDigest: 'a1',
+          activationId: 'retained-period-stage-1',
+        },
+        {
+          periodKey: 'outing\u0000b', revisionDigest: 'b1',
+          activationId: 'retained-period-stage-1',
+        },
+      ],
+      commit: vi.fn(), finalize: vi.fn(), rollback: vi.fn(),
+    })
+    await firstLoad
+
+    current = manifest(2, [[KEY_A, 2], [KEY_B, 1]])
+    const refresh = controller.refresh()
+    await vi.waitFor(() => expect(deliverSelection).toHaveBeenCalledTimes(2))
+    state = controller.getState()
+    if (state.status === 'inactive') throw new Error('Coverage unexpectedly inactive.')
+    await controller.notifyCatalogApplied(state.tileCatalog!, {
+      failureSources: [
+        {
+          periodKey: 'outing\u0000a', revisionDigest: 'a2',
+          activationId: 'retained-period-stage-2',
+        },
+        {
+          periodKey: 'outing\u0000b', revisionDigest: 'b1',
+          activationId: 'retained-period-stage-1',
+        },
+      ],
+      commit: vi.fn(), finalize: vi.fn(), rollback: vi.fn(),
+    })
+    await refresh
+    expect(controller.getState()).toMatchObject({ status: 'complete' })
+
+    controller.notifyRendererFailure({
+      missionId: 'mission-1',
+      periodKey: 'outing\u0000b',
+      revisionDigest: 'b1',
+      activationId: 'retained-period-stage-1',
+      message: 'Retained coverage tile delivery failed.',
+    })
+
+    expect(controller.getState()).toMatchObject({ status: 'error' })
+    await vi.waitFor(() => expect(deliverSelection).toHaveBeenCalledTimes(3))
+    controller.notifyRendererFailure({
+      missionId: 'mission-1',
+      periodKey: 'outing\u0000b',
+      revisionDigest: 'b1',
+      activationId: 'retained-period-stage-1',
+      message: 'Delayed retained coverage tile failure.',
+    })
+    state = controller.getState()
+    if (state.status === 'inactive') throw new Error('Coverage unexpectedly inactive.')
+    expect(state).toMatchObject({
+      status: 'loading',
+      tileCatalog: {
+        activationId: 'retained-period-stage-3',
+        requiresFreshRendererSources: true,
+      },
+    })
+    await controller.notifyCatalogApplied(state.tileCatalog!, {
+      failureSources: [
+        {
+          periodKey: 'outing\u0000a', revisionDigest: 'a2',
+          activationId: 'retained-period-stage-3',
+        },
+        {
+          periodKey: 'outing\u0000b', revisionDigest: 'b1',
+          activationId: 'retained-period-stage-3',
+        },
+      ],
+      commit: vi.fn(), finalize: vi.fn(), rollback: vi.fn(),
+    })
+    await vi.waitFor(() => expect(controller.getState()).toMatchObject({ status: 'complete' }))
+  })
+
   it('ignores a stale renderer failure from another mission with the same revision', async () => {
     const controller = createCoverageController({
       readManifest: vi.fn().mockResolvedValue(manifest(1, [[KEY_A, 1]])),

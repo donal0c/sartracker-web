@@ -49,6 +49,11 @@ describe('Candidate B coverage overlay [DON-276]', () => {
       delivered: [],
     }
     const first = await syncCoverageOverlay(map, firstCatalog)
+    expect(first.failureSources).toEqual([{
+      periodKey: 'outing\u0000shared',
+      revisionDigest: 'revision-1',
+      activationId: 'ordinary-stage-1',
+    }])
     first.commit()
     first.finalize()
     const firstSource = [...map.sources.keys()][0]!
@@ -59,6 +64,11 @@ describe('Candidate B coverage overlay [DON-276]', () => {
 
     expect(isCoverageOverlayAttached(map, unchangedCatalog)).toBe(true)
     const unchanged = await syncCoverageOverlay(map, unchangedCatalog)
+    expect(unchanged.failureSources).toEqual([{
+      periodKey: 'outing\u0000shared',
+      revisionDigest: 'revision-1',
+      activationId: 'ordinary-stage-1',
+    }])
     unchanged.commit()
     unchanged.finalize()
 
