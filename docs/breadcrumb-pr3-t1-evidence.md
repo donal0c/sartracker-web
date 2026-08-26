@@ -2395,3 +2395,88 @@ The commit containing this evidence record is documentation-only. It must pass
 the deterministic exact-head/Linux gates and five fresh independent exact-head
 reviews from zero before PR #3 can be called review ready. No merge or release
 occurred.
+
+## Packaged close-path qualification after teardown review
+
+The first renewed review of documentation head `cf32b78` found that the real
+Electron window/reload/quit lifecycle did not own the renderer evidence drain.
+Application head `bde223b898a85575f7b805492ff522009fd533bc` added the
+main-owned bounded handshake, durable fallback and fail-closed operator error.
+The follow-on packaged qualification then exposed a native-close race that the
+isolated unit handlers did not compose: a window close and the renderer's
+`beforeunload` fence could both enter the teardown coordinator, after which the
+unload path also scheduled a reload. The red integration test reproduced that
+reload before production code changed. Application commit
+`9276352e104b648612ca38523dbc678358cce600` makes the close handler the sole
+owner while a close is in flight; the permitted second unload proceeds only
+after the renderer acknowledgement. The focused close/teardown set passed
+5 files / 39 tests and the complete unit gate passed 272 files / 2,190 tests.
+
+The packaged proof harness was also made fail-closed. Both launches of the
+active-mission soak now request normal Electron `app.quit()` through the main
+inspector, detach the inspector before waiting, require code 0 with no signal,
+and record `forced: false, graceful: true`. The standalone AppImage lane starts
+a real Openbox instance, attests its EWMH window-manager ID, clicks the actual
+Openbox close control, distinguishes a live process from an exited zombie, and
+then requires `wait` to return code 0. Direct `xdotool windowclose` was rejected
+as proof after source tracing on the available Ubuntu host showed that it
+destroyed the X11 surface without emitting Electron's `close` event.
+
+Rejected evidence remains retained:
+
+- run `32960131897` reached a debugger-detach wait, and run `32960912154`
+  used an unavailable global `require`; both failed the new graceful-quit gate;
+- run `32961681579` attempt 1 failed the hard 200 ms Electron-main gate at
+  444.843 ms. Attempt 2 passed the active-mission soak but proved there was no
+  real window manager for the standalone close;
+- run `32962763214` repeated that missing-window-manager failure;
+- run `32963412113` attested Openbox and passed the active-mission soak, but
+  used the invalid surface-level `windowclose` operation;
+- runs `32964180121` and `32964737361` repeated that falsified close method
+  while separately proving that the process was genuinely live, not a zombie;
+  and
+- run `32966138807` failed closed because the first close-click harness omitted
+  `xwininfo -tree` and therefore could not resolve the Openbox frame.
+
+Exact harness/application head `906beb0b91309b38ab9f21443239db059867857a`
+then passed Linux run
+[`32966604838`](https://github.com/donal0c/sartracker-web/actions/runs/32966604838).
+The workflow checked out merge ref
+`186ff0b64f2e91a6bbb22d3fca07f7c1cc37eacc`, whose parents are exact PR-2
+base `7021fc1ef33e6da5c91c96cd86e836fc3754f48f` and that branch head, and proved:
+
+- Ubuntu x64 AppImage and `.deb` packaging, native SQLite inspection, Mesa
+  llvmpipe, EWMH window manager `0x20000e`, non-black app content and a real
+  close-control click at `1428,10` followed by code-0 process exit;
+- active-mission soak 6/6 batches, exact 8,664/8,664 positions, source digest
+  `317a7368d0165cfe4a5f92da8e1c12f39b02bce314f588eb3d269e9b68682fd8`,
+  integrity `ok`, clean WAL checkpoint, one restart, zero renderer crashes,
+  zero redundant telemetry slope and four healthy operator interactions;
+- both soak launches exited by code 0 with `forced: false` and
+  `graceful: true`;
+- Electron-main maximum 21.9952 ms and p95 9.2078 ms against the 200 ms hard
+  I5 limit, with zero samples over the limit; operator action maximum 101.2 ms
+  with zero samples over 250 ms;
+- descriptive Mesa renderer maximum 366.6 ms and p95 233.4 ms, below the
+  separate 1,000 ms freeze limit; G2 remains renderer-budget authority;
+- peak measured process-tree RSS 1,194,463,232 bytes;
+- AppImage SHA-256
+  `0bc747b33539789d402a8f36b2cc9bc1530547c3bf9fa9ff449bc390d57ce845`;
+- `.deb` SHA-256
+  `2b8083c063e37379217818528f4d06f86ca2403ea5c6ec8f72e4020a864d452b`;
+- soak-report SHA-256
+  `845e820d37a085f3b9b59ae90d1d25690cd559fd0a9599076f2494045c0f28a7`;
+- package artifact `9606058737`, uploaded-zip digest
+  `75df79eca53a4f3f08a1a6d828a2249280b5b7122618dad99e5a42c420c48b2f`;
+  and
+- validation artifact `9606059949`, uploaded-zip digest
+  `5ca284f3bf6df3a857cf2a93f597fcb7b6db184d51b1eddee6bcc46af6e5f4a0`.
+
+No operator wording or layout changed after the existing teardown warning and
+manual screenshot, so the operator manual remains current. Candidate-B
+geometry/index construction, schema v10, G2/G3 posture, exact Dots and the
+3.704 GB migration surface are unchanged. There was no pre-merge packaged
+960k/2M coverage run outside G2 and no packaged forced-kill matrix. This
+evidence-binding commit is documentation-only; it still requires exact-head
+deterministic/browser/visual/macOS/Linux gates and five fresh independent
+reviews from zero before PR #3 is review ready. No merge or release occurred.
