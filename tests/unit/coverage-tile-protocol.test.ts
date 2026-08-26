@@ -81,7 +81,12 @@ describe('Candidate B MapLibre protocol [DON-276]', () => {
     })
     registerCoverageTileProtocol({ addProtocol, removeProtocol: vi.fn() }, onFailure)
     const [, loader] = addProtocol.mock.calls[0]!
-    const url = createCoverageTileUrl('mission-1', 'outing\u0000outing-1', 'revision-8')
+    const url = createCoverageTileUrl(
+      'mission-1',
+      'outing\u0000outing-1',
+      'revision-8',
+      'activation-stage-8',
+    )
 
     await expect(loader({
       url: url.replace('{z}', '8').replace('{x}', '121').replace('{y}', '83'),
@@ -90,8 +95,17 @@ describe('Candidate B MapLibre protocol [DON-276]', () => {
       missionId: 'mission-1',
       periodKey: 'outing\u0000outing-1',
       revisionDigest: 'revision-8',
+      activationId: 'activation-stage-8',
       message: 'Coverage tile delivery failed.',
     })
+    expect(window.sartrackerElectron?.missionStore.readCoverageTile).toHaveBeenCalledWith({
+      missionId: 'mission-1',
+      periodKey: 'outing\u0000outing-1',
+      revisionDigest: 'revision-8',
+      z: 8,
+      x: 121,
+      y: 83,
+    }, expect.any(String))
   })
 
   it('accepts a current empty PBF without reporting renderer failure', async () => {

@@ -482,7 +482,10 @@ describe('coverage controller [DON-276]', () => {
     if (recovery.status === 'inactive') throw new Error('Coverage unexpectedly inactive.')
     expect(recovery).toMatchObject({
       status: 'loading', deliveredFixCount: 0,
-      tileCatalog: { periods: [{ revisionDigest: 'renderer-retry-2' }] },
+      tileCatalog: {
+        requiresFreshRendererSources: true,
+        periods: [{ revisionDigest: 'renderer-retry-2' }],
+      },
     })
     await controller.notifyCatalogApplied(recovery.tileCatalog!)
 
@@ -496,9 +499,11 @@ describe('coverage controller [DON-276]', () => {
     const deliverSelection = vi.fn(async () => {
       const attempt = deliverSelection.mock.calls.length
       return {
+        missionId: 'mission-1',
+        activationId: `bounded-renderer-stage-${attempt}`,
         periods: [{
           periodKey: 'outing\u0000outing-1',
-          revisionDigest: `bounded-renderer-retry-${attempt}`,
+          revisionDigest: 'unchanged-production-revision',
         }],
         delivered: [{ key: KEY_A, contentRev: 1 }],
       }
@@ -521,6 +526,9 @@ describe('coverage controller [DON-276]', () => {
         missionId: 'mission-1',
         periodKey: 'outing\u0000outing-1',
         revisionDigest: current.tileCatalog.periods[0]!.revisionDigest,
+        ...(current.tileCatalog.activationId === undefined
+          ? {}
+          : { activationId: current.tileCatalog.activationId }),
         message: 'Coverage map source activation failed.',
       })
     }
@@ -547,6 +555,173 @@ describe('coverage controller [DON-276]', () => {
     await controller.notifyCatalogApplied(recovery.tileCatalog!)
 
     await vi.waitFor(() => expect(controller.getState()).toMatchObject({ status: 'complete' }))
+  })
+
+  it('coalesces duplicate failures from one finalized catalog without cancelling recovery', async () => {
+    const initial = manifest(1, [[KEY_A, 1]])
+    const deliverSelection = vi.fn(async () => {
+      const attempt = deliverSelection.mock.calls.length
+      return {
+        missionId: 'mission-1',
+        activationId: `shared-activation-${attempt}`,
+        periods: [{ periodKey: 'outing\u0000outing-1', revisionDigest: 'shared-revision' }],
+        delivered: [{ key: KEY_A, contentRev: 1 }],
+      }
+    })
+    const controller = createCoverageController({
+      readManifest: vi.fn().mockResolvedValue(initial),
+      readChunk: vi.fn(),
+      readClaim: vi.fn().mockResolvedValue({
+        changeSeq: 1, databaseReady: true, blockers: [],
+        chunkRevisions: [{ key: KEY_A, contentRev: 1 }],
+      }),
+      applyChunk: vi.fn(), deliverSelection, publish: vi.fn(),
+    })
+    const initialLoad = controller.updateContext({
+      missionId: 'mission-1', rendererGeneration: 'r1',
+    })
+    await vi.waitFor(() => expect(deliverSelection).toHaveBeenCalledTimes(1))
+    let current = controller.getState()
+    if (current.status === 'inactive') throw new Error('Coverage unexpectedly inactive.')
+    await controller.notifyCatalogApplied(current.tileCatalog!)
+    await initialLoad
+    expect(controller.getState()).toMatchObject({ status: 'complete' })
+
+    const failure = {
+      missionId: 'mission-1',
+      periodKey: 'outing\u0000outing-1',
+      revisionDigest: 'shared-revision',
+      activationId: 'shared-activation-1',
+      message: 'Coverage tile delivery failed.',
+    }
+    controller.notifyRendererFailure(failure)
+    controller.notifyRendererFailure(failure)
+
+    await vi.waitFor(() => expect(deliverSelection).toHaveBeenCalledTimes(2))
+    current = controller.getState()
+    if (current.status === 'inactive') throw new Error('Coverage unexpectedly inactive.')
+    await controller.notifyCatalogApplied(current.tileCatalog!)
+    await vi.waitFor(() => expect(controller.getState()).toMatchObject({ status: 'complete' }))
+  })
+
+  it('coalesces a delayed duplicate while automatic recovery still reads its manifest', async () => {
+    const initial = manifest(1, [[KEY_A, 1]])
+    let releaseRecoveryManifest: (() => void) | undefined
+    const readManifest = vi.fn()
+      .mockResolvedValueOnce(initial)
+      .mockResolvedValueOnce(initial)
+      .mockImplementationOnce(async () => {
+        await new Promise<void>((resolve) => { releaseRecoveryManifest = resolve })
+        return initial
+      })
+      .mockResolvedValue(initial)
+    const deliverSelection = vi.fn(async () => {
+      const attempt = deliverSelection.mock.calls.length
+      return {
+        missionId: 'mission-1',
+        activationId: `manifest-recovery-stage-${attempt}`,
+        periods: [{ periodKey: 'outing\u0000outing-1', revisionDigest: 'shared-revision' }],
+        delivered: [{ key: KEY_A, contentRev: 1 }],
+      }
+    })
+    const controller = createCoverageController({
+      readManifest,
+      readChunk: vi.fn(),
+      readClaim: vi.fn().mockResolvedValue({
+        changeSeq: 1, databaseReady: true, blockers: [],
+        chunkRevisions: [{ key: KEY_A, contentRev: 1 }],
+      }),
+      applyChunk: vi.fn(), deliverSelection, publish: vi.fn(),
+    })
+    const initialLoad = controller.updateContext({
+      missionId: 'mission-1', rendererGeneration: 'r1',
+    })
+    await vi.waitFor(() => expect(deliverSelection).toHaveBeenCalledTimes(1))
+    let current = controller.getState()
+    if (current.status === 'inactive') throw new Error('Coverage unexpectedly inactive.')
+    await controller.notifyCatalogApplied(current.tileCatalog!)
+    await initialLoad
+
+    const failure = {
+      missionId: 'mission-1',
+      periodKey: 'outing\u0000outing-1',
+      revisionDigest: 'shared-revision',
+      activationId: 'manifest-recovery-stage-1',
+      message: 'Coverage tile delivery failed.',
+    }
+    controller.notifyRendererFailure(failure)
+    await vi.waitFor(() => expect(readManifest).toHaveBeenCalledTimes(3))
+    expect(controller.getState()).toMatchObject({
+      status: 'loading',
+      tileCatalog: { activationId: 'manifest-recovery-stage-1' },
+    })
+
+    controller.notifyRendererFailure(failure)
+    releaseRecoveryManifest?.()
+    await vi.waitFor(() => expect(deliverSelection).toHaveBeenCalledTimes(2))
+    current = controller.getState()
+    if (current.status === 'inactive') throw new Error('Coverage unexpectedly inactive.')
+    await controller.notifyCatalogApplied(current.tileCatalog!)
+
+    await vi.waitFor(() => expect(controller.getState()).toMatchObject({
+      status: 'complete',
+      tileCatalog: { activationId: 'manifest-recovery-stage-2' },
+    }))
+  })
+
+  it('ignores a delayed failure from the prior activation while its retry is loading', async () => {
+    const initial = manifest(1, [[KEY_A, 1]])
+    const deliverSelection = vi.fn(async () => {
+      const attempt = deliverSelection.mock.calls.length
+      return {
+        missionId: 'mission-1',
+        activationId: `delayed-failure-stage-${attempt}`,
+        periods: [{ periodKey: 'outing\u0000outing-1', revisionDigest: 'shared-revision' }],
+        delivered: [{ key: KEY_A, contentRev: 1 }],
+      }
+    })
+    const controller = createCoverageController({
+      readManifest: vi.fn().mockResolvedValue(initial),
+      readChunk: vi.fn(),
+      readClaim: vi.fn().mockResolvedValue({
+        changeSeq: 1, databaseReady: true, blockers: [],
+        chunkRevisions: [{ key: KEY_A, contentRev: 1 }],
+      }),
+      applyChunk: vi.fn(), deliverSelection, publish: vi.fn(),
+    })
+    const initialLoad = controller.updateContext({
+      missionId: 'mission-1', rendererGeneration: 'r1',
+    })
+    await vi.waitFor(() => expect(deliverSelection).toHaveBeenCalledTimes(1))
+    let current = controller.getState()
+    if (current.status === 'inactive') throw new Error('Coverage unexpectedly inactive.')
+    await controller.notifyCatalogApplied(current.tileCatalog!)
+    await initialLoad
+
+    const staleFailure = {
+      missionId: 'mission-1',
+      periodKey: 'outing\u0000outing-1',
+      revisionDigest: 'shared-revision',
+      activationId: 'delayed-failure-stage-1',
+      message: 'Coverage tile delivery failed.',
+    }
+    controller.notifyRendererFailure(staleFailure)
+    await vi.waitFor(() => expect(deliverSelection).toHaveBeenCalledTimes(2))
+    expect(controller.getState()).toMatchObject({
+      status: 'loading',
+      tileCatalog: { activationId: 'delayed-failure-stage-2' },
+    })
+
+    controller.notifyRendererFailure(staleFailure)
+    current = controller.getState()
+    if (current.status === 'inactive') throw new Error('Coverage unexpectedly inactive.')
+    await controller.notifyCatalogApplied(current.tileCatalog!)
+
+    await vi.waitFor(() => expect(controller.getState()).toMatchObject({
+      status: 'complete',
+      tileCatalog: { activationId: 'delayed-failure-stage-2' },
+    }))
+    expect(deliverSelection).toHaveBeenCalledTimes(2)
   })
 
   it('ignores a stale renderer failure from another mission with the same revision', async () => {
@@ -1591,6 +1766,7 @@ describe('coverage controller [DON-276]', () => {
       missionId: 'mission-1',
       periodKey: 'outing\u0000outing-1',
       revisionDigest: 'failure-revision-1',
+      activationId: 'renderer-failure-stage-1',
       message: 'Coverage tile failed while the catalog was finalizing.',
     })
     finishFinalization?.()

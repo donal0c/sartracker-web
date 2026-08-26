@@ -62,6 +62,7 @@ export type CoverageController = {
     readonly missionId: string
     readonly periodKey: string
     readonly revisionDigest: string
+    readonly activationId?: string
     readonly message: string
   }) => void
   readonly notifyRendererUnavailable: (message: string) => void
@@ -148,6 +149,7 @@ export function createCoverageController(input: {
   let rendererFailureDuringFinalization: Error | null = null
   let rendererFailureEpoch = 0
   let rendererRecoveryEpoch: number | null = null
+  let rendererRecoveryFailedCatalog: CoverageTileCatalog | null = null
   let automaticRendererRecoveryAvailable = true
   const catalogActivation = createCoverageCatalogActivation()
   const scheduler = createCoverageScheduler({
@@ -193,6 +195,7 @@ export function createCoverageController(input: {
     rendererDetached = false
     rendererDetachedCompleteCatalog = null
     rendererRecoveryEpoch = null
+    rendererRecoveryFailedCatalog = null
     automaticRendererRecoveryAvailable = false
     rendererFailureDuringFinalization = null
     publish({ status: 'inactive' })
@@ -283,6 +286,7 @@ export function createCoverageController(input: {
           })
           activeCatalog = {
             ...deliveredCatalog,
+            requiresFreshRendererSources: rendererRecoveryEpoch !== null,
             retainPriorPeriods: priorCatalog !== null &&
               batchIndex < catalogBatches.length - 1,
           }
@@ -502,6 +506,7 @@ export function createCoverageController(input: {
     rendererDetached = false
     rendererDetachedCompleteCatalog = null
     const error = new Error(message)
+    rendererRecoveryFailedCatalog = null
     rendererRecoveryEpoch = ++rendererFailureEpoch
     if (
       catalogFinalization !== null &&
@@ -657,6 +662,7 @@ export function createCoverageController(input: {
         rendererRecoveryEpoch === recoveryEpochAtStart
       ) {
         rendererRecoveryEpoch = null
+        rendererRecoveryFailedCatalog = null
         automaticRendererRecoveryAvailable = true
       }
     } catch (error) {
@@ -736,7 +742,10 @@ export function createCoverageController(input: {
     if (identityChanged) lastErrorClass = null
     if (identityChanged) finalizedCatalog = null
     if (identityChanged) rendererDetached = false
-    if (identityChanged) rendererRecoveryEpoch = null
+    if (identityChanged) {
+      rendererRecoveryEpoch = null
+      rendererRecoveryFailedCatalog = null
+    }
     if (identityChanged) automaticRendererRecoveryAvailable = true
     if (identityChanged) rendererFailureDuringFinalization = null
     operationGeneration += 1
@@ -816,12 +825,21 @@ export function createCoverageController(input: {
         state.tileCatalog,
         failure.periodKey,
         failure.revisionDigest,
-        )
+        ) ||
+        state.tileCatalog?.activationId !== failure.activationId
+      ) return
+      const failedCatalog = state.tileCatalog
+      if (
+        rendererRecoveryEpoch !== null &&
+        rendererRecoveryFailedCatalog !== null &&
+        failedCatalog !== null &&
+        isSameCatalog(failedCatalog, rendererRecoveryFailedCatalog)
       ) return
       const failedLoad = activeLoadCompletion
       const missionId = state.missionId
       const rendererGeneration = state.rendererGeneration
       publishRendererUnavailable(failure.message)
+      rendererRecoveryFailedCatalog = failedCatalog
       if (rendererRecoveryEpoch !== null) {
         scheduleAutomaticRendererRecovery(
           failedLoad,

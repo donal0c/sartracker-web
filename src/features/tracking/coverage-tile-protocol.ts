@@ -17,6 +17,7 @@ export function registerCoverageTileProtocol(
     readonly missionId: string
     readonly periodKey: string
     readonly revisionDigest: string
+    readonly activationId?: string
     readonly message: string
   }) => void = () => undefined,
 ): () => void {
@@ -28,7 +29,8 @@ export function registerCoverageTileProtocol(
     if (readTile === undefined) {
       throw new Error('Electron coverage tile bridge is not available.')
     }
-    const query = parseCoverageTileUrl(request.url)
+    const parsedQuery = parseCoverageTileUrl(request.url)
+    const { activationId, ...query } = parsedQuery
     if (abortController.signal.aborted) throw createAbortError()
     const requestId = `coverage-tile-${crypto.randomUUID()}`
     const abort = (): void => {
@@ -51,6 +53,7 @@ export function registerCoverageTileProtocol(
         missionId: query.missionId,
         periodKey: query.periodKey,
         revisionDigest: query.revisionDigest,
+        ...(activationId === undefined ? {} : { activationId }),
         message: 'Coverage tile delivery failed.',
       })
       throw error
@@ -86,16 +89,19 @@ export function createCoverageTileUrl(
   missionId: string,
   periodKey: string,
   revisionDigest: string,
+  activationId?: string,
 ): string {
   return `${COVERAGE_TILE_PROTOCOL}://tiles/${encodeURIComponent(periodKey)}` +
     `/{z}/{x}/{y}.pbf?mission=${encodeURIComponent(missionId)}` +
-    `&rev=${encodeURIComponent(revisionDigest)}`
+    `&rev=${encodeURIComponent(revisionDigest)}` +
+    (activationId === undefined ? '' : `&activation=${encodeURIComponent(activationId)}`)
 }
 
 function parseCoverageTileUrl(url: string): {
   readonly missionId: string
   readonly periodKey: string
   readonly revisionDigest: string
+  readonly activationId?: string
   readonly z: number
   readonly x: number
   readonly y: number
@@ -104,6 +110,7 @@ function parseCoverageTileUrl(url: string): {
   const match = parsed.pathname.match(/^\/(.+)\/(\d+)\/(\d+)\/(\d+)\.pbf$/u)
   const missionId = parsed.searchParams.get('mission')
   const revisionDigest = parsed.searchParams.get('rev')
+  const activationId = parsed.searchParams.get('activation')
   if (
     parsed.hostname !== 'tiles' ||
     match === null ||
@@ -116,6 +123,7 @@ function parseCoverageTileUrl(url: string): {
     missionId,
     periodKey: decodeURIComponent(match[1]!),
     revisionDigest,
+    ...(activationId === null ? {} : { activationId }),
     z: Number(match[2]),
     x: Number(match[3]),
     y: Number(match[4]),

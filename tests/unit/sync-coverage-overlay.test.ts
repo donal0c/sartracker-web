@@ -7,6 +7,65 @@ import {
 } from '../../src/features/tracking/sync-coverage-overlay'
 
 describe('Candidate B coverage overlay [DON-276]', () => {
+  it('replaces an equal revision for a new renderer activation before attesting recovery', async () => {
+    const map = createMap()
+    const first = await syncCoverageOverlay(map, {
+      missionId: 'mission-1',
+      activationId: 'activation-stage-1',
+      periods: [{ periodKey: 'outing\u0000shared', revisionDigest: 'revision-1' }],
+      delivered: [],
+    })
+    first.commit()
+    first.finalize()
+    const firstSource = [...map.sources.keys()][0]!
+    const replacementCatalog = {
+      missionId: 'mission-1',
+      activationId: 'activation-stage-2',
+      requiresFreshRendererSources: true,
+      periods: [{ periodKey: 'outing\u0000shared', revisionDigest: 'revision-1' }],
+      delivered: [],
+    }
+
+    expect(isCoverageOverlayAttached(map, replacementCatalog)).toBe(false)
+
+    const replacement = await syncCoverageOverlay(map, replacementCatalog)
+
+    expect(map.sources.size).toBe(2)
+    const replacementTileUrl = [...map.sources.entries()]
+      .find(([sourceId]) => sourceId !== firstSource)?.[1].tiles?.[0]
+    expect(replacementTileUrl).toContain('activation=activation-stage-2')
+    replacement.commit()
+    replacement.finalize()
+    expect(map.sources.has(firstSource)).toBe(false)
+    expect(map.sources.size).toBe(1)
+  })
+
+  it('retains unchanged period sources across ordinary catalog activations', async () => {
+    const map = createMap()
+    const firstCatalog = {
+      missionId: 'mission-1',
+      activationId: 'ordinary-stage-1',
+      periods: [{ periodKey: 'outing\u0000shared', revisionDigest: 'revision-1' }],
+      delivered: [],
+    }
+    const first = await syncCoverageOverlay(map, firstCatalog)
+    first.commit()
+    first.finalize()
+    const firstSource = [...map.sources.keys()][0]!
+    const unchangedCatalog = {
+      ...firstCatalog,
+      activationId: 'ordinary-stage-2',
+    }
+
+    expect(isCoverageOverlayAttached(map, unchangedCatalog)).toBe(true)
+    const unchanged = await syncCoverageOverlay(map, unchangedCatalog)
+    unchanged.commit()
+    unchanged.finalize()
+
+    expect(map.sources.size).toBe(1)
+    expect(map.sources.has(firstSource)).toBe(true)
+  })
+
   it('replaces equal period revisions when the mission identity changes', async () => {
     const map = createMap()
     const first = await syncCoverageOverlay(map, {
@@ -35,6 +94,7 @@ describe('Candidate B coverage overlay [DON-276]', () => {
     const map = createMap()
     ;(await syncCoverageOverlay(map, {
       missionId: 'mission-1',
+      activationId: 'partial-stage-1',
       periods: [
         { periodKey: 'outing\u0000a', revisionDigest: 'a1' },
         { periodKey: 'outing\u0000b', revisionDigest: 'b1' },
@@ -48,6 +108,7 @@ describe('Candidate B coverage overlay [DON-276]', () => {
 
     ;(await syncCoverageOverlay(map, {
       missionId: 'mission-1',
+      activationId: 'partial-stage-2',
       periods: [
         { periodKey: 'outing\u0000a', revisionDigest: 'a2' },
         { periodKey: 'outing\u0000b', revisionDigest: 'b1' },

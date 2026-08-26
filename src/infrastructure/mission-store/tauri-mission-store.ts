@@ -133,6 +133,8 @@ export type CoverageTileCatalog = {
   readonly missionId: string
   /** Opaque native-worker stage awaiting renderer acceptance. */
   readonly activationId?: string
+  /** Recovery catalogs must replace structurally present sources before attestation. */
+  readonly requiresFreshRendererSources?: boolean
   /** Intermediate recovery catalogs keep prior periods visible until final replacement. */
   readonly retainPriorPeriods?: boolean
   readonly periods: readonly {

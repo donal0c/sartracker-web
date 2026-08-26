@@ -40,6 +40,7 @@ export type CoverageOverlayActivation = {
 
 type PeriodOverlay = {
   readonly missionId: string
+  readonly activationId?: string
   readonly revisionDigest: string
   readonly sourceId: string
   readonly layerIds: readonly string[]
@@ -91,6 +92,8 @@ export function isCoverageOverlayAttached(
   return desiredPeriods.every((period) => {
     const overlay = registry.active.get(period.periodKey)
     return overlay?.missionId === catalog.missionId &&
+      (catalog.requiresFreshRendererSources !== true ||
+        overlay.activationId === catalog.activationId) &&
       overlay.revisionDigest === period.revisionDigest &&
       map.getSource(overlay.sourceId) !== undefined &&
       overlay.layerIds.every((layerId) => map.getLayer(layerId) !== undefined)
@@ -148,6 +151,8 @@ export async function syncCoverageOverlay(
     if (
       prior !== undefined &&
       prior.missionId === catalog?.missionId &&
+      (catalog?.requiresFreshRendererSources !== true ||
+        prior.activationId === catalog.activationId) &&
       prior.revisionDigest === period.revisionDigest &&
       structureSurvivedStyle
     ) {
@@ -157,6 +162,7 @@ export async function syncCoverageOverlay(
       const next = installPeriodOverlay(
         map,
         catalog?.missionId ?? 'browser-harness',
+        catalog?.activationId,
         period,
         browserHarnessGeoJson,
         filters,
@@ -210,6 +216,8 @@ export async function syncCoverageOverlay(
         if (
           overlay === undefined ||
           overlay.missionId !== catalog?.missionId ||
+          (catalog?.requiresFreshRendererSources === true &&
+            overlay.activationId !== catalog.activationId) ||
           overlay.revisionDigest !== period.revisionDigest ||
           map.getSource(overlay.sourceId) === undefined ||
           overlay.layerIds.some((layerId) => map.getLayer(layerId) === undefined)
@@ -395,6 +403,7 @@ function createCoverageOverlayAbortError(): Error {
 function installPeriodOverlay(
   map: CoverageOverlayMap,
   missionId: string,
+  activationId: string | undefined,
   period: { readonly periodKey: string; readonly revisionDigest: string },
   browserHarnessGeoJson: CoverageTileCatalog['browserHarnessGeoJson'],
   filters: {
@@ -407,6 +416,7 @@ function installPeriodOverlay(
   const pointLayerId = `${sourceId}-point`
   const overlay: PeriodOverlay = {
     missionId,
+    ...(activationId === undefined ? {} : { activationId }),
     revisionDigest: period.revisionDigest,
     sourceId,
     layerIds: [lineLayerId, pointLayerId],
@@ -418,7 +428,12 @@ function installPeriodOverlay(
     map.addSource(sourceId, browserHarnessGeoJson === undefined
       ? {
           type: 'vector',
-          tiles: [createCoverageTileUrl(missionId, period.periodKey, period.revisionDigest)],
+          tiles: [createCoverageTileUrl(
+            missionId,
+            period.periodKey,
+            period.revisionDigest,
+            activationId,
+          )],
           minzoom: 0,
           maxzoom: 16,
         }

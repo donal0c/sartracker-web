@@ -143,6 +143,9 @@ export function useMapOverlays(options: UseMapOverlaysOptions): void {
             missionId: catalog.missionId,
             periodKey: period.periodKey,
             revisionDigest: period.revisionDigest,
+            ...(catalog.activationId === undefined
+              ? {}
+              : { activationId: catalog.activationId }),
             message: 'Coverage map source activation failed.',
           })
         }
