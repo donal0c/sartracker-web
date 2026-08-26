@@ -1323,3 +1323,88 @@ packaged forced-kill matrix.
 The commit containing this evidence record is documentation-only. It must pass
 the deterministic exact-head gates and five fresh independent reviews before
 PR #3 can be called review ready. No merge or release occurred.
+
+## Renderer/backend lifetime and bounded worker-envelope remediation
+
+The next exact-head review wave invalidated `5fb8e24` with two independent
+release-blocking P2s.
+
+First, backend `finalizeCatalog` retired the predecessor before the renderer
+released its MapLibre sources. A queued old-source read could therefore return
+`null` in the finalization handoff. The wider recovery path was unbounded:
+progressive fresh-source recovery could send a partial catalog while
+`retainPriorPeriods` deliberately kept an omitted predecessor source installed,
+leaving that visible source with no backend serving catalog until a later batch.
+
+Second, renderer-controlled claim keys and catalog descriptors crossed IPC
+without a canonical cardinality, uniqueness, membership, or revision envelope.
+The tile worker could return one build per duplicate and mission-store would
+apply every build synchronously on Electron main. The reviewer reproduced the
+trust-boundary defect with 20,000 copies of one valid zero-fix descriptor.
+
+The red-first remediation at application head
+`0e3cf4b536c7aa708468be13c3fbae3916a28b25` establishes these boundaries:
+
+- automatic renderer recovery performs one full-manifest fresh-source swap, so
+  no omitted predecessor period intentionally outlives backend release;
+- renderer ownership finalization removes predecessor sources before backend
+  release, and backend release is idempotent;
+- a failed post-renderer backend release retains the predecessor and Retry
+  releases that same stage before any new catalog build;
+- claim/catalog arrays are rejected before worker dispatch when their length
+  exceeds current canonical device x period inventory, and duplicate,
+  malformed, unknown, or stale-revision descriptors fail closed;
+- normalized requests are fresh exact objects, so renderer control fields do
+  not cross the authoritative store/worker boundary; and
+- tile-worker periods, deliveries, and builds must map one-to-one to the
+  normalized request before any main-isolate coverage-ledger transaction.
+
+The regressions prove full-manifest recovery, renderer-before-backend release
+ordering, same-stage release retry, idempotent worker release, duplicate claim
+and catalog rejection, unknown inventory and stale revision rejection, the
+20,000-entry early bound, exact-object forwarding, and divergent worker-result
+discard before ledger application.
+
+Green verification at that application head:
+
+- full unit: 264 files / 2,133 tests;
+- TypeScript, full ESLint, changed CommonJS syntax, production build, and bundle
+  budgets;
+- source-exact paged Dots contract: 10/10; and
+- participant/coverage Chromium: 10/10.
+
+Exact application-head Linux run
+[`32922725575`](https://github.com/donal0c/sartracker-web/actions/runs/32922725575)
+checked out PR merge ref
+`49510b1a1813a8fe275d758b5422112a419aae8c`, explicitly merging application
+head `0e3cf4b536c7aa708468be13c3fbae3916a28b25` into exact PR-2 base
+`7021fc1ef33e6da5c91c96cd86e836fc3754f48f`, and passed:
+
+- Ubuntu x64 AppImage and `.deb` packaging, native SQLite inspection, Mesa
+  llvmpipe attestation, and AppImage window/content launch;
+- packaged CI soak: 6/6 batches, 8,664/8,664 source-exact positions, matching
+  SHA-256 `d2c0bb78160e22e4180a69bdac26243dc88c7bd98a89c3a51511a49ed7fd5d26`,
+  integrity `ok`, one restart, zero renderer crashes, 33.450 ms maximum main
+  gap, zero redundant-event slope, and four healthy operator interactions;
+- AppImage SHA-256
+  `3a8d1a1afb7a3103383bbe10fd99c2191df696330571310e4bcd4a76d25c0ebd`;
+- `.deb` SHA-256
+  `90718bc750c7ffb6c7cfe31f294faf3941a99c24444a026bc305afd0cdeaa30a`;
+- package artifact `9590459517`, uploaded-zip digest
+  `76be67fe5a0f23f5ab038afb0ae207d0277f4989e8db8100dc5a1603590cec06`;
+  and
+- validation artifact `9590460438`, uploaded-zip digest
+  `fc1f2a1a0213a65f85b843caffb172f575ebf968029eeadbd13bd45e5c3c1ee7`.
+
+This remediation does not change Candidate-B geometry/index construction,
+schema/open code, coverage controls, G2 measurements, G3 flag posture, exact
+Dots, or operator-visible wording. The accepted G2 decision/960k/2M evidence,
+3.704 GB v9-to-v10 migration, earlier selected visual review, operator manual,
+and screenshots remain standing only for those unchanged surfaces. No manual
+or screenshot update is required for this invisible ownership/trust-boundary
+remediation. There was no pre-merge packaged 960k/2M coverage run outside G2
+and no packaged forced-kill matrix.
+
+The commit containing this evidence record is documentation-only. It must pass
+the deterministic exact-head gates and five fresh independent exact-head
+reviews before PR #3 can be called review ready. No merge or release occurred.
