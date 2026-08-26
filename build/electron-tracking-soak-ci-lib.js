@@ -22,6 +22,8 @@ export function buildTrackingSoakCiRunnerArgs(input) {
     'ci',
     '--evidence',
     path.join(input.projectRoot, 'tmp', 'beta-artifacts', 'tracking-soak-ci'),
+    '--freeze-threshold-ms',
+    '200',
   ]
 
   if (input.platform === 'linux') {

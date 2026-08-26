@@ -194,7 +194,7 @@ describe('Electron coverage ledger', () => {
     expect(readMission(database)).toBeUndefined()
   })
 
-  it('resolves each accepted fix with an indexed point lookup instead of scanning every mission outing', () => {
+  it('loads bounded outing metadata once and resolves the accepted batch in memory', () => {
     database.exec('CREATE INDEX idx_outings_mission_started ON outings(mission_id, started_at)')
     database.exec(`
       INSERT INTO outings VALUES
@@ -202,12 +202,26 @@ describe('Electron coverage ledger', () => {
         ('outing-current', 'mission-1', '2026-08-24T10:00:00.000Z', '2026-08-24T11:00:00.000Z')
     `)
     const preparedSql: string[] = []
+    let outingAllCalls = 0
+    let outingGetCalls = 0
     const instrumentedDatabase = new Proxy(database, {
       get(target, property) {
         if (property === 'prepare') {
           return (sql: string) => {
             preparedSql.push(sql)
-            return target.prepare(sql)
+            const statement = target.prepare(sql)
+            if (!sql.includes('FROM outings')) return statement
+            return {
+              all: (...params: unknown[]) => {
+                outingAllCalls += 1
+                return statement.all(...params)
+              },
+              get: (...params: unknown[]) => {
+                outingGetCalls += 1
+                return statement.get(...params)
+              },
+              run: (...params: unknown[]) => statement.run(...params),
+            }
           }
         }
         const value = Reflect.get(target, property, target) as unknown
@@ -229,16 +243,10 @@ describe('Electron coverage ledger', () => {
 
     const outingReads = preparedSql.filter((sql) => sql.includes('FROM outings'))
     expect(outingReads).toHaveLength(1)
-    expect(outingReads[0]).toContain('SELECT id, ended_at')
-    expect(outingReads[0]).toContain('started_at <= ?')
-    expect(outingReads[0]).toContain('LIMIT 1')
-    expect(outingReads[0]).not.toContain('ended_at IS NULL')
-    expect(outingReads[0]).not.toContain('ORDER BY started_at ASC')
-    expect(database.prepare(`EXPLAIN QUERY PLAN ${outingReads[0]}`)
-      .all('mission-1', '2026-08-24T10:05:00.000Z'))
-      .toEqual([
-        expect.objectContaining({ detail: expect.stringContaining('idx_outings_mission_started') }),
-      ])
+    expect(outingReads[0]).toContain('SELECT id, started_at, ended_at')
+    expect(outingReads[0]).toContain('ORDER BY started_at ASC, id ASC')
+    expect(outingAllCalls).toBe(1)
+    expect(outingGetCalls).toBe(0)
   })
 
   it.each([

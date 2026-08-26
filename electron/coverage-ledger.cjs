@@ -1,5 +1,6 @@
 const { compareStringsByCodeUnit } = require('./deterministic-string-order.cjs')
 const { readCoverageInventory } = require('./coverage-query.cjs')
+const { findContainingOutingIndex } = require('./coverage-period-resolver.cjs')
 
 /**
  * Records accepted position changes against their logical device-period chunks.
@@ -53,22 +54,18 @@ function recordAcceptedCoveragePositions(database, input) {
 }
 
 /**
- * Creates one prepared O(log outings) point resolver for the accepted batch.
+ * Loads bounded outing metadata once and creates an O(log outings) resolver.
  * Outing mutations are serialized by the caller's database transaction, so
  * every lookup observes the same transactionally current half-open windows.
  */
 function createIndexedCoveragePeriodResolver(database, missionId) {
-  const findOuting = database.prepare(`SELECT id, ended_at FROM outings
-    WHERE mission_id = ? AND started_at <= ?
-    ORDER BY started_at DESC
-    LIMIT 1`)
+  const outings = database.prepare(`SELECT id, started_at, ended_at FROM outings
+    WHERE mission_id = ? ORDER BY started_at ASC, id ASC`).all(missionId)
   return (timestamp) => {
-    const outing = findOuting.get(missionId, timestamp)
-    return outing === undefined || (
-      outing.ended_at !== null && timestamp >= outing.ended_at
-    )
+    const outingIndex = findContainingOutingIndex(outings, timestamp)
+    return outingIndex === -1
       ? { period_kind: 'unassigned', period_id: '' }
-      : { period_kind: 'outing', period_id: outing.id }
+      : { period_kind: 'outing', period_id: outings[outingIndex].id }
   }
 }
 
