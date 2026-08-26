@@ -242,7 +242,7 @@ jobs:
           }
 
           WINDOW_ID="$(head -n 1 tmp/electron-validation-evidence/window-ids.txt)"
-          FRAME_ID="$(xwininfo -id "$WINDOW_ID" \
+          FRAME_ID="$(xwininfo -tree -id "$WINDOW_ID" \
             | awk '/Parent window id:/ { print $4; exit }')"
           if [ -z "$FRAME_ID" ]; then
             echo "::error::Openbox frame for the SAR Tracker window was not found."

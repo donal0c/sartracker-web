@@ -114,7 +114,7 @@ describe('Linux Electron renderer workflows [DON-260]', () => {
     const workflow = readWorkflow('.github/workflows/electron-linux-validation.yml')
     const launch = selectStep(workflow.jobs.build, 'Launch AppImage smoke').run ?? ''
 
-    expect(launch).toContain("FRAME_ID=\"$(xwininfo -id \"$WINDOW_ID\"")
+    expect(launch).toContain("FRAME_ID=\"$(xwininfo -tree -id \"$WINDOW_ID\"")
     expect(launch).toContain('xdotool getwindowgeometry --shell "$FRAME_ID"')
     expect(launch).toContain('xdotool mousemove --sync "$CLOSE_X" "$CLOSE_Y" click 1')
     expect(launch).not.toContain('xdotool windowclose "$WINDOW_ID"')
