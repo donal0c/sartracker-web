@@ -293,6 +293,11 @@ function installWindowTeardownGuards(window, rendererTeardownCoordinator, runtim
       event.preventDefault()
       return
     }
+    // A native window close also reaches `will-prevent-unload` because the
+    // renderer installs a synchronous beforeunload fence. The close handler
+    // already owns that drain; starting the reload path here races the
+    // acknowledged close and can leave Electron alive without its window.
+    if (closeInProgress) return
     if (reloadInProgress) return
     reloadInProgress = true
     void rendererTeardownCoordinator.prepare(window, 'renderer_reload').then(() => {

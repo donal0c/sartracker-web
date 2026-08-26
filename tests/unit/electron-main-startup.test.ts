@@ -176,7 +176,7 @@ describe('Electron main startup', () => {
     expect(permittedUnloadEvent.preventDefault).toHaveBeenCalledOnce()
   })
 
-  it('keeps the window open until the renderer drain is acknowledged', async () => {
+  it('keeps the window open until the renderer drain is acknowledged without racing a reload', async () => {
     const electronMock = createElectronMock(vi.fn(), undefined, true)
     Module._load = ((request: string, parent: NodeJS.Module | null, isMain: boolean) => {
       if (request === 'electron') return electronMock
@@ -195,6 +195,13 @@ describe('Electron main startup', () => {
     expect(closeEvent.preventDefault).toHaveBeenCalledOnce()
     expect(createdWindow.close).not.toHaveBeenCalled()
     await vi.waitFor(() => expect(createdWindow.webContents.send).toHaveBeenCalledOnce())
+    const unloadHandler = createdWindow.webContents.on.mock.calls.find(
+      ([eventName]) => eventName === 'will-prevent-unload',
+    )?.[1]
+    const blockedUnloadEvent = { preventDefault: vi.fn() }
+    unloadHandler(blockedUnloadEvent)
+    expect(blockedUnloadEvent.preventDefault).not.toHaveBeenCalled()
+    expect(createdWindow.webContents.reload).not.toHaveBeenCalled()
     const [, request] = createdWindow.webContents.send.mock.calls[0]
     const acknowledgementHandler = electronMock.ipcMain.on.mock.calls.find(
       ([channel]) => channel === 'sartracker:app-runtime-teardown-ready',
@@ -205,9 +212,13 @@ describe('Electron main startup', () => {
     )
 
     await vi.waitFor(() => expect(createdWindow.close).toHaveBeenCalledOnce())
+    expect(createdWindow.webContents.reload).not.toHaveBeenCalled()
     const permittedCloseEvent = { preventDefault: vi.fn() }
     closeHandler(permittedCloseEvent)
     expect(permittedCloseEvent.preventDefault).not.toHaveBeenCalled()
+    const permittedUnloadEvent = { preventDefault: vi.fn() }
+    unloadHandler(permittedUnloadEvent)
+    expect(permittedUnloadEvent.preventDefault).toHaveBeenCalledOnce()
   })
 
   it('registers sender-owned Mission Review read and cancellation channels [DON-251]', async () => {
