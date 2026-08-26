@@ -165,8 +165,9 @@ jobs:
               cat tmp/electron-validation-evidence/openbox.log || true
               exit 1
             fi
-            if xprop -root _NET_SUPPORTING_WM_CHECK \
-              > tmp/electron-validation-evidence/window-manager.txt 2>/dev/null; then
+            if xprop -root _NET_SUPPORTING_WM_CHECK 2>/dev/null \
+              | tee tmp/electron-validation-evidence/window-manager.txt \
+              | grep -Eq '_NET_SUPPORTING_WM_CHECK\(WINDOW\): window id # 0x[0-9a-f]+'; then
               WM_FOUND=1
               break
             fi

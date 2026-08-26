@@ -117,6 +117,7 @@ describe('Linux Electron renderer workflows [DON-260]', () => {
     expect(launch).toContain('xdotool windowclose "$WINDOW_ID"')
     expect(launch).toContain('openbox')
     expect(launch).toContain('xprop -root _NET_SUPPORTING_WM_CHECK')
+    expect(launch).toContain("grep -Eq '_NET_SUPPORTING_WM_CHECK\\(WINDOW\\): window id # 0x[0-9a-f]+'")
     expect(launch).toContain('timeout 15s tail --pid="$APP_PID" -f /dev/null')
     expect(launch).toContain('wait "$APP_PID"')
     expect(launch).toContain('appimage-graceful-close.txt')
