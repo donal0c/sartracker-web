@@ -138,6 +138,7 @@ export function createCoverageController(input: {
   let rendererDetachedCompleteCatalog: CoverageTileCatalog | null = null
   let rendererDetachEpoch = 0
   let catalogFinalization: Promise<void> | null = null
+  let pendingCatalogRelease: CoverageTileCatalog | null = null
   let catalogApplication: {
     readonly catalog: CoverageTileCatalog
     readonly promise: Promise<void>
@@ -199,7 +200,22 @@ export function createCoverageController(input: {
     rendererRecoverySupersededFailureKeys = null
     automaticRendererRecoveryAvailable = false
     rendererFailureDuringFinalization = null
+    pendingCatalogRelease = null
     publish({ status: 'inactive' })
+  }
+
+  /** Retries one post-renderer predecessor release before another catalog build. */
+  const releasePendingCatalogPredecessor = async (): Promise<void> => {
+    const catalog = pendingCatalogRelease
+    if (catalog === null) return
+    const finalization = input.finalizeCatalog?.(catalog) ?? Promise.resolve()
+    catalogFinalization = finalization
+    try {
+      await finalization
+      if (pendingCatalogRelease === catalog) pendingCatalogRelease = null
+    } finally {
+      if (catalogFinalization === finalization) catalogFinalization = null
+    }
   }
 
   const runLoad = async (
@@ -238,6 +254,8 @@ export function createCoverageController(input: {
     }, context.selectedKeys))
 
     try {
+      await releasePendingCatalogPredecessor()
+      if (!ownsOperation(operation, controller, missionId, rendererGeneration)) return
       const manifest = await input.readManifest(
         missionId,
         nextRequestId('manifest'),
@@ -270,13 +288,15 @@ export function createCoverageController(input: {
             delivered[coverageChunkIdentity(chunk.key)] !== chunk.contentRev),
           { bypassOpenOutingCooldown },
         )
-        const catalogBatches = createCoverageCatalogDeliveryBatches({
-          manifest,
-          priorManifest,
-          priorDelivered: retainDeliveryAttestation ? priorDelivered : {},
-          retainDelivery: retainDeliveryAttestation,
-          orderedPending: pending,
-        })
+        const catalogBatches = recoveryEpochAtLoad === null
+          ? createCoverageCatalogDeliveryBatches({
+              manifest,
+              priorManifest,
+              priorDelivered: retainDeliveryAttestation ? priorDelivered : {},
+              retainDelivery: retainDeliveryAttestation,
+              orderedPending: pending,
+            })
+          : (pending.length === 0 ? [] : [manifest.chunks])
         for (const descriptor of pending) scheduler.recordAttempt(descriptor)
         for (const [batchIndex, chunks] of catalogBatches.entries()) {
           const deliveredCatalog = await input.deliverSelection({
@@ -630,6 +650,7 @@ export function createCoverageController(input: {
       return
     }
     let ownedFinalization: Promise<void> | null = null
+    let rendererFinalizationStarted = false
     try {
       const activationEpoch = rendererDetachEpoch
       await input.activateCatalog?.(catalog)
@@ -645,27 +666,30 @@ export function createCoverageController(input: {
       rendererDetached = false
       rendererDetachedCompleteCatalog = null
       const attachmentEpoch = rendererDetachEpoch
-      const finalization = input.finalizeCatalog?.(catalog) ?? Promise.resolve()
-      ownedFinalization = finalization
-      catalogFinalization = finalization
-      await finalization
-      if (!catalogActivation.isPending(catalog) || !isCurrentCatalog(state, catalog)) {
-        rendererActivation.rollback()
-        await input.discardCatalog?.(catalog).catch(() => undefined)
-        return
-      }
-      finalizedCatalog = catalog
-      if (rendererDetachEpoch === attachmentEpoch) rendererDetached = false
-      catalogActivation.notifyApplied(catalog)
+      rendererFinalizationStarted = true
       try {
         rendererActivation.finalize?.()
       } catch (error) {
         const normalized = error instanceof Error
           ? error
           : new Error('Coverage renderer ownership finalization failed.')
+        finalizedCatalog = catalog
+        finalizedRendererFailureSources = rendererActivation.failureSources ??
+          coverageCatalogFailureSources(catalog)
+        catalogActivation.notifyApplied(catalog)
         publishRendererUnavailable(normalized.message)
         return
       }
+      finalizedCatalog = catalog
+      const finalization = input.finalizeCatalog?.(catalog) ?? Promise.resolve()
+      ownedFinalization = finalization
+      catalogFinalization = finalization
+      await finalization
+      if (!catalogActivation.isPending(catalog) || !isCurrentCatalog(state, catalog)) {
+        return
+      }
+      if (rendererDetachEpoch === attachmentEpoch) rendererDetached = false
+      catalogActivation.notifyApplied(catalog)
       finalizedRendererFailureSources = rendererActivation.failureSources ??
         coverageCatalogFailureSources(catalog)
     } catch (error) {
@@ -673,11 +697,16 @@ export function createCoverageController(input: {
         ? error
         : new Error('Coverage catalog activation failed.')
       if (!catalogActivation.isPending(catalog)) {
-        rendererActivation.rollback()
+        if (!rendererFinalizationStarted) rendererActivation.rollback()
         return
       }
-      rendererActivation.rollback()
-      await input.discardCatalog?.(catalog).catch(() => undefined)
+      if (!rendererFinalizationStarted) {
+        rendererActivation.rollback()
+        await input.discardCatalog?.(catalog).catch(() => undefined)
+      } else {
+        finalizedCatalog = catalog
+        pendingCatalogRelease = catalog
+      }
       if (!catalogActivation.isPending(catalog)) return
       catalogActivation.reject(catalog, normalized)
       publishRendererUnavailable(normalized.message)

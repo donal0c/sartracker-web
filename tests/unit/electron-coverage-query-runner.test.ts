@@ -27,6 +27,15 @@ afterEach(async () => {
 })
 
 describe('coverage query worker', () => {
+  it('rejects duplicate claim keys before creating or cloning worker data', async () => {
+    const key = { device_id: 'device-1', period_kind: 'unassigned', period_id: '' }
+
+    await expect(Promise.resolve().then(() => runCoverageQueryInWorker({
+      databasePath: '/unused.sqlite',
+      query: { kind: 'claim', missionId: 'mission-1', selectedKeys: [key, key] },
+    }))).rejects.toThrow(/duplicate.*coverage.*key/i)
+  })
+
   it('rejects chunk-stale only when the requested logical chunk revision moved', async () => {
     const databasePath = await createCoverageDatabase()
     const key = { device_id: 'device-1', period_kind: 'unassigned', period_id: '' }

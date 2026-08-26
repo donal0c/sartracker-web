@@ -247,6 +247,7 @@ describe('Candidate B coverage tile worker [DON-276]', () => {
     await expect(runner.commitCatalog({ stageId: staged.stageId })).resolves.toBe(true)
     await expect(runner.commitCatalog({ stageId: staged.stageId })).resolves.toBe(true)
     await expect(runner.finalizeCatalog({ stageId: staged.stageId })).resolves.toBe(true)
+    await expect(runner.finalizeCatalog({ stageId: staged.stageId })).resolves.toBe(true)
     await expect(runner.syncCatalog({ missionId: 'mission-1', chunks: [] }))
       .resolves.toMatchObject({ stageId: expect.any(String) })
   })
@@ -347,9 +348,15 @@ describe('Candidate B coverage tile worker [DON-276]', () => {
       type: 'cancel-request',
       targetRequestId: 1,
     })
-    workers[0]!.reply({ periods: [], delivered: [], builds: [] })
+    workers[0]!.reply({
+      stageId: 'coverage-stage-00000000-0000-4000-8000-000000000007-1',
+      periods: [], delivered: [], builds: [],
+    })
 
-    await expect(second).resolves.toEqual({ periods: [], delivered: [], builds: [] })
+    await expect(second).resolves.toEqual({
+      stageId: 'coverage-stage-00000000-0000-4000-8000-000000000007-1',
+      periods: [], delivered: [], builds: [],
+    })
   })
 
   it('keeps renderer payload fields from overriding the worker request envelope', async () => {
@@ -377,6 +384,59 @@ describe('Candidate B coverage tile worker [DON-276]', () => {
     }))
     worker.reply({ bytes: [] })
     await expect(request).resolves.toEqual({ bytes: [] })
+  })
+
+  it('rejects duplicate catalog descriptors before cloning them to the worker', async () => {
+    const worker = new FakeWorker()
+    runner = createCoverageTileRunner({
+      databasePath: '/unused-envelope-worker.sqlite',
+      cacheDirectory: '/unused-envelope-worker-cache',
+      timeoutMs: 10,
+      createWorker: () => worker,
+    })
+    const descriptor = {
+      key: { device_id: 'device-a', period_kind: 'outing', period_id: 'outing-a' },
+      contentRev: 1,
+    }
+
+    await expect(Promise.resolve().then(() => runner!.syncCatalog({
+      missionId: 'mission-1', chunks: [descriptor, descriptor],
+    }))).rejects.toThrow(/duplicate.*coverage.*key/i)
+    expect(worker.messages).toEqual([])
+  })
+
+  it('rejects catalog worker builds that are not one-to-one with the request', async () => {
+    const worker = new FakeWorker()
+    runner = createCoverageTileRunner({
+      databasePath: '/unused-result-worker.sqlite',
+      cacheDirectory: '/unused-result-worker-cache',
+      createWorker: () => worker,
+    })
+    const descriptor = {
+      key: { device_id: 'device-a', period_kind: 'outing', period_id: 'outing-a' },
+      contentRev: 1,
+    }
+    const request = runner.syncCatalog({ missionId: 'mission-1', chunks: [descriptor] })
+    const build = {
+      ...descriptor,
+      fixCount: 0,
+      fixDigest: 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
+      minTs: null,
+      maxTs: null,
+    }
+
+    worker.reply({
+      stageId: 'coverage-stage-00000000-0000-4000-8000-000000000001-1',
+      periods: [{
+        periodKey: 'outing\u0000outing-a',
+        revisionDigest: '1234567890abcdef1234',
+        contributors: ['device-a\u0000outing\u0000outing-a@1'],
+      }],
+      delivered: [descriptor],
+      builds: [build, build],
+    })
+
+    await expect(request).rejects.toThrow(/catalog worker result/i)
   })
 
   it('keeps the finalized catalog readable after cancelling a replacement build', async () => {

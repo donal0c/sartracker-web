@@ -327,7 +327,7 @@ describe('coverage controller [DON-276]', () => {
     expect(controller.getState()).toMatchObject({ status: 'complete', deliveredFixCount: 2 })
   })
 
-  it('keeps every progressive catalog in a multi-period renderer recovery fresh', async () => {
+  it('uses one full-manifest catalog when fresh renderer recovery replaces every source', async () => {
     const initial: CoverageManifest = {
       ...manifest(1, [[KEY_A, 1], [KEY_C, 1]]),
       outings: [
@@ -408,9 +408,15 @@ describe('coverage controller [DON-276]', () => {
       message: 'Older retained coverage source failed.',
     })
     await vi.waitFor(() => expect(deliverSelection).toHaveBeenCalledTimes(3))
+    expect(deliverSelection.mock.calls[2]![0].chunks.map((chunk) => chunk.key)).toEqual([
+      KEY_A, KEY_C,
+    ])
     expect(controller.getState()).toMatchObject({
       status: 'loading',
-      tileCatalog: { requiresFreshRendererSources: true },
+      tileCatalog: {
+        requiresFreshRendererSources: true,
+        retainPriorPeriods: false,
+      },
     })
     await applyCurrentCatalog([
       {
@@ -421,28 +427,11 @@ describe('coverage controller [DON-276]', () => {
       {
         periodKey: 'outing\u0000outing-1',
         revisionDigest: 'outing-1-revision-1',
-        activationId: 'multi-period-recovery-stage-2',
-      },
-    ])
-
-    await vi.waitFor(() => expect(deliverSelection).toHaveBeenCalledTimes(4))
-    expect(controller.getState()).toMatchObject({
-      status: 'loading',
-      tileCatalog: { requiresFreshRendererSources: true },
-    })
-    await applyCurrentCatalog([
-      {
-        periodKey: 'outing\u0000outing-2',
-        revisionDigest: 'outing-2-revision-1',
-        activationId: 'multi-period-recovery-stage-4',
-      },
-      {
-        periodKey: 'outing\u0000outing-1',
-        revisionDigest: 'outing-1-revision-1',
-        activationId: 'multi-period-recovery-stage-4',
+        activationId: 'multi-period-recovery-stage-3',
       },
     ])
     await vi.waitFor(() => expect(controller.getState()).toMatchObject({ status: 'complete' }))
+    expect(deliverSelection).toHaveBeenCalledTimes(3)
   })
 
   it('rebuilds a changed period with every unchanged sibling descriptor', async () => {
@@ -2088,12 +2077,57 @@ describe('coverage controller [DON-276]', () => {
 
     try {
       await vi.waitFor(() => expect(loadSettled).toBe(true))
-      expect(renderer.rollback).toHaveBeenCalledOnce()
+      expect(renderer.finalize).toHaveBeenCalledOnce()
+      expect(renderer.rollback).not.toHaveBeenCalled()
       expect(controller.getState()).toMatchObject({ status: 'error' })
     } finally {
       controller.stop()
       await load
     }
+  })
+
+  it('releases the backend predecessor only after renderer sources are finalized', async () => {
+    const ownershipOrder: string[] = []
+    const controller = createCoverageController({
+      readManifest: vi.fn().mockResolvedValue(manifest(1, [[KEY_A, 1]])),
+      readChunk: vi.fn(),
+      readClaim: vi.fn().mockResolvedValue({
+        changeSeq: 1, databaseReady: true, blockers: [],
+        chunkRevisions: [{ key: KEY_A, contentRev: 1 }],
+      }),
+      applyChunk: vi.fn(),
+      deliverSelection: vi.fn().mockResolvedValue({
+        activationId: 'renderer-release-order-stage',
+        missionId: 'mission-1',
+        periods: [{ periodKey: 'outing\u0000outing-1', revisionDigest: 'release-revision' }],
+        delivered: [{ key: KEY_A, contentRev: 1 }],
+      }),
+      activateCatalog: vi.fn(async () => { ownershipOrder.push('backend-activate') }),
+      finalizeCatalog: vi.fn(async () => { ownershipOrder.push('backend-release') }),
+      discardCatalog: vi.fn().mockResolvedValue(undefined),
+      publish: vi.fn(),
+    })
+    const renderer = {
+      commit: vi.fn(() => { ownershipOrder.push('renderer-commit') }),
+      finalize: vi.fn(() => { ownershipOrder.push('renderer-release') }),
+      rollback: vi.fn(),
+    }
+    const load = controller.updateContext({ missionId: 'mission-1', rendererGeneration: 'r1' })
+    await vi.waitFor(() => expect(controller.getState()).toMatchObject({
+      tileCatalog: { activationId: 'renderer-release-order-stage' },
+    }))
+    if (controller.getState().status === 'inactive') throw new Error('Coverage unexpectedly inactive.')
+
+    await controller.notifyCatalogApplied(controller.getState().tileCatalog!, renderer)
+    await load
+
+    expect(ownershipOrder).toEqual([
+      'backend-activate',
+      'renderer-commit',
+      'renderer-release',
+      'backend-release',
+    ])
+    expect(renderer.rollback).not.toHaveBeenCalled()
   })
 
   it('clears a deferred Cancel after rejected finalization before Retry', async () => {
@@ -2107,6 +2141,13 @@ describe('coverage controller [DON-276]', () => {
       }],
       delivered: [{ key: KEY_A, contentRev: 1 }],
     }))
+    const finalizeCatalog = vi.fn()
+      .mockImplementationOnce(async () => {
+        await new Promise<void>((_resolve, reject) => {
+          rejectFinalization = () => { reject(new Error('Catalog finalization failed.')) }
+        })
+      })
+      .mockResolvedValue(undefined)
     const controller = createCoverageController({
       readManifest: vi.fn().mockResolvedValue(manifest(1, [[KEY_A, 1]])),
       readChunk: vi.fn(),
@@ -2117,13 +2158,7 @@ describe('coverage controller [DON-276]', () => {
       applyChunk: vi.fn(),
       deliverSelection,
       activateCatalog: vi.fn().mockResolvedValue(undefined),
-      finalizeCatalog: vi.fn()
-        .mockImplementationOnce(async () => {
-          await new Promise<void>((_resolve, reject) => {
-            rejectFinalization = () => { reject(new Error('Catalog finalization failed.')) }
-          })
-        })
-        .mockResolvedValue(undefined),
+      finalizeCatalog,
       discardCatalog: vi.fn().mockResolvedValue(undefined),
       publish: vi.fn(),
     })
@@ -2151,6 +2186,11 @@ describe('coverage controller [DON-276]', () => {
     await retry
 
     expect(deliverSelection).toHaveBeenCalledTimes(2)
+    expect(finalizeCatalog.mock.calls.map(([catalog]) => catalog.activationId)).toEqual([
+      'cancel-reject-stage-1',
+      'cancel-reject-stage-1',
+      'cancel-reject-stage-2',
+    ])
     expect(recoveryRenderer.finalize).toHaveBeenCalledOnce()
     expect(controller.getState()).toMatchObject({ status: 'complete' })
   })

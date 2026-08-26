@@ -433,6 +433,123 @@ describe('Electron coverage mission-store orchestration', () => {
     expect(postBuildManifest.diagnostics.lastBuildDurationMs).toBeGreaterThanOrEqual(0)
   })
 
+  it('bounds claim and catalog inputs to unique current canonical inventory', async () => {
+    directory = await mkdtemp(path.join(tmpdir(), 'sartracker-coverage-store-'))
+    const syncCatalog = vi.fn()
+    const tileRunner = {
+      syncCatalog,
+      commitCatalog: vi.fn().mockResolvedValue(true),
+      finalizeCatalog: vi.fn().mockResolvedValue(true),
+      discardCatalog: vi.fn().mockResolvedValue(true),
+      readTile: vi.fn().mockResolvedValue(new Uint8Array()),
+      close: vi.fn().mockResolvedValue(undefined),
+    }
+    store = createElectronMissionStore({ userDataPath: directory, coverageTileRunner: tileRunner })
+    const mission = await seedMission(store)
+    const manifest = await store.readCoverageManifest(mission.id, 'inventory-manifest')
+    const chunk = manifest.chunks[0]!
+    const unknownKey = { ...chunk.key, device_id: 'unknown-device' }
+
+    await expect(store.readCoverageClaim({
+      missionId: mission.id,
+      selectedKeys: [chunk.key, chunk.key],
+    }, 'duplicate-claim')).rejects.toThrow(/coverage.*current mission inventory/i)
+    await expect(store.readCoverageClaim({
+      missionId: mission.id,
+      selectedKeys: [unknownKey],
+    }, 'unknown-claim')).rejects.toThrow(/current.*inventory/i)
+    await expect(store.syncCoverageTileCatalog({
+      missionId: mission.id,
+      chunks: [
+        { key: chunk.key, contentRev: chunk.contentRev },
+        { key: chunk.key, contentRev: chunk.contentRev },
+      ],
+    }, 'duplicate-catalog')).rejects.toThrow(/coverage.*current mission inventory/i)
+    await expect(store.syncCoverageTileCatalog({
+      missionId: mission.id,
+      chunks: Array.from({ length: 20_000 }, () => ({
+        key: chunk.key,
+        contentRev: chunk.contentRev,
+      })),
+    }, 'oversized-catalog')).rejects.toThrow(/coverage.*current mission inventory/i)
+    await expect(store.syncCoverageTileCatalog({
+      missionId: mission.id,
+      chunks: [{ key: chunk.key, contentRev: chunk.contentRev + 1 }],
+    }, 'stale-catalog')).rejects.toThrow(/current.*revision/i)
+    expect(syncCatalog).not.toHaveBeenCalled()
+
+    syncCatalog.mockResolvedValue({
+      stageId: 'coverage-stage-00000000-0000-4000-8000-000000000004-1',
+      periods: [{
+        periodKey: 'unassigned\u0000',
+        revisionDigest: '1234567890abcdef1234',
+        contributors: [`device-1\u0000unassigned\u0000@${chunk.contentRev}`],
+      }],
+      delivered: [{ key: chunk.key, contentRev: chunk.contentRev }],
+      builds: [],
+    })
+    await expect(store.syncCoverageTileCatalog({
+      missionId: mission.id,
+      chunks: [{
+        type: 'close', requestId: 'renderer-owned',
+        key: { ...chunk.key, extra: 'strip-me' },
+        contentRev: chunk.contentRev,
+      }],
+      type: 'close',
+      requestId: 'renderer-owned',
+    } as never, 'valid-catalog')).resolves.toMatchObject({
+      activationId: 'coverage-stage-00000000-0000-4000-8000-000000000004-1',
+    })
+    expect(syncCatalog).toHaveBeenCalledWith({
+      missionId: mission.id,
+      chunks: [{ key: chunk.key, contentRev: chunk.contentRev }],
+    }, { signal: expect.any(AbortSignal) })
+  })
+
+  it('discards a staged catalog before applying divergent worker builds', async () => {
+    directory = await mkdtemp(path.join(tmpdir(), 'sartracker-coverage-store-'))
+    const discardCatalog = vi.fn().mockResolvedValue(true)
+    const syncCatalog = vi.fn()
+    const tileRunner = {
+      syncCatalog,
+      commitCatalog: vi.fn().mockResolvedValue(true),
+      finalizeCatalog: vi.fn().mockResolvedValue(true),
+      discardCatalog,
+      readTile: vi.fn().mockResolvedValue(new Uint8Array()),
+      close: vi.fn().mockResolvedValue(undefined),
+    }
+    store = createElectronMissionStore({ userDataPath: directory, coverageTileRunner: tileRunner })
+    const mission = await seedMission(store)
+    const manifest = await store.readCoverageManifest(mission.id, 'result-manifest')
+    const chunk = manifest.chunks[0]!
+    const build = {
+      key: chunk.key,
+      contentRev: chunk.contentRev,
+      fixCount: 2,
+      fixDigest: chunk.exactDigest,
+      minTs: chunk.exactMinTs,
+      maxTs: chunk.exactMaxTs,
+    }
+    syncCatalog.mockResolvedValue({
+      stageId: 'coverage-stage-00000000-0000-4000-8000-000000000005-1',
+      periods: [{
+        periodKey: 'unassigned\u0000',
+        revisionDigest: '1234567890abcdef1234',
+        contributors: [`device-1\u0000unassigned\u0000@${chunk.contentRev}`],
+      }],
+      delivered: [{ key: chunk.key, contentRev: chunk.contentRev }],
+      builds: [build, build],
+    })
+
+    await expect(store.syncCoverageTileCatalog({
+      missionId: mission.id,
+      chunks: [{ key: chunk.key, contentRev: chunk.contentRev }],
+    }, 'divergent-result')).rejects.toThrow(/catalog worker result/i)
+    expect(discardCatalog).toHaveBeenCalledWith({
+      stageId: 'coverage-stage-00000000-0000-4000-8000-000000000005-1',
+    })
+  })
+
   it('rejects renderer tile coordinates and strips control fields before the worker boundary', async () => {
     directory = await mkdtemp(path.join(tmpdir(), 'sartracker-coverage-store-'))
     const readTile = vi.fn().mockResolvedValue(new Uint8Array([1]))
@@ -596,7 +713,10 @@ describe('Electron coverage mission-store orchestration', () => {
         builds: readonly unknown[]
       }>((resolve, reject) => {
         if (syncCatalog.mock.calls.length > 1) {
-          resolve({ stageId: 'replacement-stage', periods: [], delivered: [], builds: [] })
+          resolve({
+            stageId: 'coverage-stage-00000000-0000-4000-8000-000000000006-1',
+            periods: [], delivered: [], builds: [],
+          })
           return
         }
         options.signal.addEventListener('abort', () => {
@@ -622,7 +742,9 @@ describe('Electron coverage mission-store orchestration', () => {
     await expect(store.syncCoverageTileCatalog({
       missionId: mission.id,
       chunks: [],
-    }, 'replacement')).resolves.toMatchObject({ activationId: 'replacement-stage' })
+    }, 'replacement')).resolves.toMatchObject({
+      activationId: 'coverage-stage-00000000-0000-4000-8000-000000000006-1',
+    })
     expect(syncCatalog).toHaveBeenCalledTimes(2)
   })
 

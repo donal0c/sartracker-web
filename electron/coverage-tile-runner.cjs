@@ -1,5 +1,9 @@
 const path = require('node:path')
 const { Worker } = require('node:worker_threads')
+const {
+  normalizeCoverageCatalogInput,
+  normalizeCoverageCatalogWorkerResult,
+} = require('./coverage-worker-envelope.cjs')
 
 const DEFAULT_WORKER_PATH = path.join(__dirname, 'coverage-tile-worker.cjs')
 const DEFAULT_TIMEOUT_MS = 30_000
@@ -50,6 +54,9 @@ function createCoverageTileRunner(input) {
   }
 
   const request = (type, payload, options = {}) => {
+    const normalizedPayload = type === 'sync-catalog'
+      ? normalizeCoverageCatalogInput(payload)
+      : payload
     const activeWorker = ensureWorker()
     const requestId = ++nextRequestId
     const timeoutMs = options.timeoutMs ?? input.timeoutMs ?? DEFAULT_TIMEOUT_MS
@@ -81,13 +88,16 @@ function createCoverageTileRunner(input) {
           clearTimeout(timeout)
           options.signal?.removeEventListener('abort', abort)
         },
+        normalizeResult: type === 'sync-catalog'
+          ? (result) => normalizeCoverageCatalogWorkerResult(normalizedPayload, result)
+          : (result) => result,
       })
       if (options.signal?.aborted === true) {
         abort()
         return
       }
       options.signal?.addEventListener('abort', abort, { once: true })
-      activeWorker.postMessage({ ...payload, requestId, type })
+      activeWorker.postMessage({ ...normalizedPayload, requestId, type })
     })
   }
 
@@ -101,7 +111,11 @@ function createCoverageTileRunner(input) {
       if (typeof message.code === 'string') error.code = message.code
       active.reject(error)
     } else {
-      active.resolve(message.result)
+      try {
+        active.resolve(active.normalizeResult(message.result))
+      } catch (error) {
+        active.reject(error)
+      }
     }
   }
 

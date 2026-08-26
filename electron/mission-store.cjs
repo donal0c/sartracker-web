@@ -35,8 +35,16 @@ const { createOutingStore } = require('./outing-store.cjs')
 const { createParticipantStore } = require('./participant-store.cjs')
 const { runOutingFixSummaryInWorker } = require('./outing-fix-summary-runner.cjs')
 const { runCoverageQueryInWorker } = require('./coverage-query-runner.cjs')
+const { readCoverageInventory } = require('./coverage-query.cjs')
 const { normalizeCoverageTileAddress } = require('./coverage-tile-address.cjs')
 const { createCoverageTileRunner } = require('./coverage-tile-runner.cjs')
+const {
+  createCoverageChunkIdentity,
+  normalizeCoverageCatalogInput,
+  normalizeCoverageCatalogWorkerResult,
+  normalizeCoverageMissionId,
+  normalizeCoverageSelectedKeys,
+} = require('./coverage-worker-envelope.cjs')
 const {
   appendCoverageInvalidation,
   applyCoverageChunkBuild,
@@ -125,6 +133,66 @@ function normalizeCoverageTileActivationId(value) {
     throw new Error('Coverage tile catalog activation ID is invalid.')
   }
   return value
+}
+
+/** Authorizes a bounded claim request against the current canonical inventory. */
+function normalizeCoverageClaimInput(database, value) {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error('Coverage claim request is invalid.')
+  }
+  const missionId = normalizeCoverageMissionId(value.missionId)
+  getMission(database, missionId)
+  const allowed = readCurrentCoverageInventory(database, missionId)
+  const selectedKeys = normalizeCoverageSelectedKeys(value.selectedKeys, allowed.size)
+  for (const key of selectedKeys) {
+    if (!allowed.has(createCoverageChunkIdentity(key))) {
+      throw new Error('Coverage claim key is not in the current mission inventory.')
+    }
+  }
+  return { missionId, selectedKeys }
+}
+
+/** Authorizes a bounded catalog request and its exact current ledger revisions. */
+function normalizeAuthorizedCoverageCatalogInput(database, value) {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error('Coverage tile catalog request is invalid.')
+  }
+  const missionId = normalizeCoverageMissionId(value.missionId)
+  getMission(database, missionId)
+  const allowed = readCurrentCoverageInventory(database, missionId)
+  const normalized = normalizeCoverageCatalogInput(value, allowed.size)
+  const readRevision = database.prepare(`SELECT content_rev FROM coverage_chunks
+    WHERE mission_id = ? AND device_id = ? AND period_kind = ? AND period_id = ?`)
+  for (const descriptor of normalized.chunks) {
+    if (!allowed.has(createCoverageChunkIdentity(descriptor.key))) {
+      throw new Error('Coverage catalog key is not in the current mission inventory.')
+    }
+    const row = readRevision.get(
+      missionId,
+      descriptor.key.device_id,
+      descriptor.key.period_kind,
+      descriptor.key.period_id,
+    )
+    if (row === undefined || row.content_rev !== descriptor.contentRev) {
+      throw new Error('Coverage catalog chunk does not match its current revision.')
+    }
+  }
+  return normalized
+}
+
+/** Reads only device x period identities, never mission position rows. */
+function readCurrentCoverageInventory(database, missionId) {
+  return new Set(readCoverageInventory(database, missionId).map((key) =>
+    createCoverageChunkIdentity(key)))
+}
+
+/** Returns a valid stage token only when a malformed worker result can be discarded safely. */
+function readDiscardableCoverageStageId(value) {
+  try {
+    return normalizeCoverageTileActivationId(value?.stageId)
+  } catch {
+    return null
+  }
 }
 
 /** Validates and copies the complete renderer-owned tile read payload. */
@@ -545,11 +613,11 @@ function createElectronMissionStore(options) {
     readCoverageClaim: async (input, requestId) => executeCoverageRequest(
       requestId,
       async (signal) => {
+        const normalizedInput = normalizeCoverageClaimInput(db, input)
         const claim = await runCoverageWorker(
           {
             kind: 'claim',
-            missionId: input.missionId,
-            selectedKeys: input.selectedKeys,
+            ...normalizedInput,
           },
           signal,
           false,
@@ -558,7 +626,7 @@ function createElectronMissionStore(options) {
         const health = await getIngestEvidenceHealth(
           db,
           ingestAnomalyOutbox,
-          input.missionId,
+          normalizedInput.missionId,
         )
         if (Number(health.pendingCount ?? 0) > 0) blockers.push('ingest_outbox_pending')
         if (health.state !== 'healthy') blockers.push('ingest_health_degraded')
@@ -581,22 +649,32 @@ function createElectronMissionStore(options) {
     syncCoverageTileCatalog: async (input, requestId) => executeCoverageRequest(
       requestId,
       async (signal) => {
-        getMission(db, input.missionId)
+        const normalizedInput = normalizeAuthorizedCoverageCatalogInput(db, input)
         const buildStartedAt = performance.now()
-        const result = await coverageTileRunner.syncCatalog(input, { signal })
+        const rawResult = await coverageTileRunner.syncCatalog(normalizedInput, { signal })
+        let result
+        try {
+          result = normalizeCoverageCatalogWorkerResult(normalizedInput, rawResult)
+        } catch (error) {
+          const stageId = readDiscardableCoverageStageId(rawResult)
+          if (stageId !== null) {
+            await coverageTileRunner.discardCatalog({ stageId }).catch(() => undefined)
+          }
+          throw error
+        }
         if (signal.aborted) {
           await coverageTileRunner.discardCatalog({ stageId: result.stageId })
           throw createCoverageRequestAbortError()
         }
         if (result.builds.length > 0) {
-          recordCoveragePerformance(input.missionId, {
+          recordCoveragePerformance(normalizedInput.missionId, {
             lastBuildDurationMs: performance.now() - buildStartedAt,
           })
         }
         let appliedBuilds
         try {
           appliedBuilds = applyCoverageChunkBuilds(db, {
-            missionId: input.missionId,
+            missionId: normalizedInput.missionId,
             builds: result.builds,
             updatedAt: now(),
           })
@@ -613,7 +691,7 @@ function createElectronMissionStore(options) {
         }
         return {
           activationId: result.stageId,
-          missionId: input.missionId,
+          missionId: normalizedInput.missionId,
           periods: result.periods,
           delivered: result.delivered,
         }

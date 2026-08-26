@@ -541,6 +541,7 @@ module.exports = {
   readCoverageManifestSnapshot,
   readCoverageChunkPage,
   readCoverageDeviceUniverse,
+  readCoverageInventory,
   summarizeCoverageChunk,
   summarizeCoverageChunkAtRevision,
 }

@@ -1,12 +1,16 @@
 const path = require('node:path')
 const { Worker } = require('node:worker_threads')
+const {
+  normalizeCoverageMissionId,
+  normalizeCoverageSelectedKeys,
+} = require('./coverage-worker-envelope.cjs')
 
 const DEFAULT_WORKER_PATH = path.join(__dirname, 'coverage-query-worker.cjs')
 const DEFAULT_TIMEOUT_MS = 30_000
 
 /** Runs one read-only coverage query outside the Electron main isolate. */
 function runCoverageQueryInWorker(input) {
-  validateCoverageWorkerQuery(input.query)
+  const query = validateCoverageWorkerQuery(input.query)
   if (input.signal?.aborted === true) return Promise.reject(createAbortError())
   const timeoutMs = normalizeTimeout(input.timeoutMs)
   let resolveWorkerExit
@@ -15,7 +19,7 @@ function runCoverageQueryInWorker(input) {
     let worker
     try {
       worker = new Worker(input.workerPath ?? DEFAULT_WORKER_PATH, {
-        workerData: { databasePath: input.databasePath, query: input.query },
+        workerData: { databasePath: input.databasePath, query },
       })
     } catch (error) {
       resolveWorkerExit()
@@ -86,6 +90,14 @@ function validateCoverageWorkerQuery(query) {
   if (query.kind === 'invalidation-analysis' && !isBoundedIdentifier(query.invalidationId, 200)) {
     throw new Error('Coverage invalidation ID is invalid.')
   }
+  if (query.kind === 'claim') {
+    return {
+      kind: 'claim',
+      missionId: normalizeCoverageMissionId(query.missionId),
+      selectedKeys: normalizeCoverageSelectedKeys(query.selectedKeys),
+    }
+  }
+  return query
 }
 
 /** Normalizes the deterministic timeout seam used by tests and production. */

@@ -35,6 +35,7 @@ const cacheEntriesByPath = new Map()
 let activeCatalog = null
 let stagedCatalog = null
 let activatedCatalog = null
+let finalizedCatalogStageId = null
 let nextStageId = 0
 const workerGeneration = randomUUID()
 let cacheBytes = 0
@@ -243,11 +244,13 @@ async function commitCatalog(message) {
 
 /** Retires the predecessor only after renderer activation is irrevocable. */
 async function finalizeCatalog(message) {
+  if (finalizedCatalogStageId === message.stageId) return true
   const activation = requireActivatedCatalog(message.stageId)
-  activatedCatalog = null
   for (const tilePath of activation.retiredPaths) {
     await removeCacheEntry(tilePath).catch(() => undefined)
   }
+  activatedCatalog = null
+  finalizedCatalogStageId = message.stageId
   return true
 }
 
