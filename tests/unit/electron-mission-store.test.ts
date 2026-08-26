@@ -2020,6 +2020,27 @@ describe('electron mission store', () => {
     await expect(store.finalizeMission(mission.id)).rejects.toThrow(/evidence health/iu)
   })
 
+  it('durably blocks completeness after renderer teardown loses pending evidence [DON-276]', async () => {
+    store = await createStore()
+    const mission = await store.createMission({ name: 'Renderer Teardown Mission' })
+
+    await expect(store.recordIngestEvidenceLoss({
+      mission_id: mission.id,
+      reason: 'renderer_pending_evidence_lost',
+    })).resolves.toMatchObject({
+      state: 'critical',
+      reason: 'renderer_pending_evidence_lost',
+    })
+    store.close()
+    store = createElectronMissionStore({ userDataPath: userDataPath! })
+    await expect(store.getIngestEvidenceHealth(mission.id)).resolves.toMatchObject({
+      state: 'critical',
+      reason: 'renderer_pending_evidence_lost',
+    })
+    await store.finishMission(mission.id)
+    await expect(store.finalizeMission(mission.id)).rejects.toThrow(/evidence health/iu)
+  })
+
   it('does not block a clean mission with another mission evidence-loss marker [DON-268]', async () => {
     store = await createStore()
     const affected = await store.createMission({ name: 'Affected Evidence Mission' })

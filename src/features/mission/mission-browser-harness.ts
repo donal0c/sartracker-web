@@ -214,9 +214,9 @@ export async function startMissionBrowserHarness(): Promise<void> {
     previousTrackingStop()
   }
 
-  applyAppRuntimeController({
+  await applyAppRuntimeController({
     reloadSettings,
-    dispose: () => {
+    dispose: async () => {
       if (disposed) {
         return
       }

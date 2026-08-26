@@ -1,23 +1,34 @@
 export type AppRuntimeController = {
   readonly reloadSettings: (options?: { readonly forceConnect?: boolean }) => Promise<void>
-  readonly dispose: () => void
+  readonly dispose: () => Promise<void>
 }
 
 let controller: AppRuntimeController | null = null
+let controllerOperationTail: Promise<void> = Promise.resolve()
 
 /**
  * Replaces the active app runtime controller after disposing the previous one.
  */
-export function applyAppRuntimeController(nextController: AppRuntimeController): void {
+export function applyAppRuntimeController(
+  nextController: AppRuntimeController,
+): Promise<void> {
+  const operation = controllerOperationTail.then(() =>
+    replaceAppRuntimeController(nextController))
+  controllerOperationTail = operation
+  return operation
+}
+
+/** Serializes one replacement so concurrent boot requests cannot overtake disposal. */
+async function replaceAppRuntimeController(
+  nextController: AppRuntimeController,
+): Promise<void> {
   const previousController = controller
   if (previousController !== null) {
-    safelyDisposeController(
-      previousController,
-      'Failed to dispose previous app runtime controller during replacement.',
-    )
+    await previousController.dispose()
   }
 
   let disposed = false
+  let disposalPromise: Promise<void> | null = null
   const wrappedController: AppRuntimeController = {
     reloadSettings: async (options) => {
       if (disposed) {
@@ -27,18 +38,19 @@ export function applyAppRuntimeController(nextController: AppRuntimeController):
       await nextController.reloadSettings(options)
     },
     dispose: () => {
-      if (disposed) {
-        return
+      if (disposalPromise === null) {
+        disposed = true
+        disposalPromise = (async () => {
+          try {
+            await nextController.dispose()
+          } finally {
+            if (controller === wrappedController) {
+              controller = null
+            }
+          }
+        })()
       }
-
-      disposed = true
-      try {
-        nextController.dispose()
-      } finally {
-        if (controller === wrappedController) {
-          controller = null
-        }
-      }
+      return disposalPromise
     },
   }
 
@@ -55,20 +67,24 @@ export function getAppRuntimeController(): AppRuntimeController | null {
 /**
  * Clears the global controller registry for unit tests that need isolation.
  */
-export function clearAppRuntimeControllerForTest(): void {
+export async function clearAppRuntimeControllerForTest(): Promise<void> {
   if (controller !== null) {
-    safelyDisposeController(
+    await safelyDisposeController(
       controller,
       'Failed to dispose app runtime controller while clearing test state.',
     )
   }
   controller = null
+  controllerOperationTail = Promise.resolve()
 }
 
 /** Disposes a controller without letting cleanup failures corrupt controller state. */
-function safelyDisposeController(targetController: AppRuntimeController, message: string): void {
+async function safelyDisposeController(
+  targetController: AppRuntimeController,
+  message: string,
+): Promise<void> {
   try {
-    targetController.dispose()
+    await targetController.dispose()
   } catch (error) {
     console.error(message, error)
   }

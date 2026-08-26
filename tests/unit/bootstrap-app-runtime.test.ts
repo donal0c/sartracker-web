@@ -29,7 +29,7 @@ describe('bootstrap app runtime', () => {
         return controller
       }),
       startMissionBrowserHarness: vi.fn(),
-      applyAppRuntimeController: vi.fn(() => {
+      applyAppRuntimeController: vi.fn(async () => {
         events.push('apply-controller')
       }),
       markRuntimeBooting: vi.fn(() => {
@@ -60,7 +60,7 @@ describe('bootstrap app runtime', () => {
       shouldEnableMissionBrowserHarness: vi.fn(() => true),
       startAppRuntime,
       startMissionBrowserHarness,
-      applyAppRuntimeController: vi.fn(),
+      applyAppRuntimeController: vi.fn(async () => undefined),
       markRuntimeBooting: vi.fn(),
       markRuntimeBootReady,
       markRuntimeBootFailed: vi.fn(),
@@ -82,7 +82,7 @@ describe('bootstrap app runtime', () => {
         throw error
       }),
       startMissionBrowserHarness: vi.fn(),
-      applyAppRuntimeController: vi.fn(),
+      applyAppRuntimeController: vi.fn(async () => undefined),
       markRuntimeBooting: vi.fn(),
       markRuntimeBootReady: vi.fn(),
       markRuntimeBootFailed,
@@ -99,7 +99,7 @@ describe('bootstrap app runtime', () => {
       shouldEnableMissionBrowserHarness: vi.fn(() => false),
       startAppRuntime: vi.fn(async () => null),
       startMissionBrowserHarness: vi.fn(),
-      applyAppRuntimeController: vi.fn(),
+      applyAppRuntimeController: vi.fn(async () => undefined),
       markRuntimeBooting: vi.fn(),
       markRuntimeBootReady: vi.fn(),
       markRuntimeBootFailed,
@@ -125,7 +125,7 @@ describe('bootstrap app runtime', () => {
           }),
       ),
       startMissionBrowserHarness: vi.fn(),
-      applyAppRuntimeController: vi.fn(),
+      applyAppRuntimeController: vi.fn(async () => undefined),
       markRuntimeBooting,
       markRuntimeBootReady,
       markRuntimeBootFailed,
@@ -150,6 +150,6 @@ describe('bootstrap app runtime', () => {
 function createController(): AppRuntimeController {
   return {
     reloadSettings: vi.fn(async () => undefined),
-    dispose: vi.fn(),
+    dispose: vi.fn(async () => undefined),
   }
 }

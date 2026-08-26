@@ -973,13 +973,22 @@
             renderer intake itself is exhausted, SAR Tracker records a durable evidence-loss marker
             wherever local storage is writable and blocks completeness claims. If no local storage is
             writable, the critical in-process warning is the honest limit: do not claim the evidence
-            was saved, and preserve the live operational picture. Pending outbox storage is explicitly
+            was saved, and preserve the live operational picture. During a runtime restart or shutdown,
+            SAR Tracker waits for every bounded renderer batch rather than abandoning later batches. If
+            a batch cannot be acknowledged, it first records a mission-scoped durable loss marker and
+            then shows that rejected-position evidence was lost during runtime shutdown. If even that
+            marker cannot be written, runtime replacement fails closed instead of installing a new
+            controller over unresolved evidence. Pending outbox storage is explicitly
             bounded at 4,096 canonical envelopes and 64 MiB; those are engineering hypotheses, not
             measured field limits. Crossing either boundary refuses new evidence, raises a durable
             mission-scoped block wherever storage permits, and never silently deletes a distinct record.
             A corrupt staged record is quarantined for repair and blocks only its affected mission; it is
             not automatically deleted.
           </div>
+          <figure class="screenshot">
+            <img src="assets/tracking-shutdown-evidence-loss.png" alt="Tracking panel showing a critical runtime-shutdown evidence-loss warning while live tracking remains online" />
+            <figcaption>If shutdown cannot save a rejected-position batch, SAR Tracker keeps live positions explicit and blocks finalization and archive export with a mission-scoped critical warning.</figcaption>
+          </figure>
           <div class="note">
             <strong>Finalization waits for evidence already observed:</strong> SAR Tracker flushes
             renderer-held rejection evidence before archive-and-lock begins, then seals new renderer

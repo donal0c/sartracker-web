@@ -248,6 +248,7 @@ export async function startAppRuntime(
     throw error
   }
   let disposed = false
+  let disposalPromise: Promise<void> | null = null
 
   return {
     reloadSettings: async (options) => {
@@ -258,19 +259,18 @@ export async function startAppRuntime(
       await reloadSettings(options)
     },
     dispose: () => {
-      if (disposed) {
-        return
-      }
-
-      disposed = true
-      reloadGeneration += 1
-      const previousServices = activeServices
-      activeServices = createNoopRuntimeServiceHandles()
-      stopRuntimeServices(previousServices)
-      stopExactBreadcrumbDots()
-      stopCoverage()
-      void rejectionEvidenceDelivery?.dispose()
-      coreFeatureRuntimes.dispose()
+      disposalPromise ??= (async () => {
+        disposed = true
+        reloadGeneration += 1
+        const previousServices = activeServices
+        activeServices = createNoopRuntimeServiceHandles()
+        stopRuntimeServices(previousServices)
+        await rejectionEvidenceDelivery?.dispose()
+        stopExactBreadcrumbDots()
+        stopCoverage()
+        coreFeatureRuntimes.dispose()
+      })()
+      return disposalPromise
     },
   }
 

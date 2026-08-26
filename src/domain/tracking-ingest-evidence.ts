@@ -1,3 +1,7 @@
+export type IngestEvidenceLossReason =
+  | 'renderer_pending_capacity_exhausted'
+  | 'renderer_pending_evidence_lost'
+
 export type IngestEvidenceHealth = {
   readonly state: 'healthy' | 'degraded' | 'critical'
   readonly reason: string | null

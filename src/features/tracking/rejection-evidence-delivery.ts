@@ -4,6 +4,7 @@ import type {
   IngestRejectionEnvelope,
 } from '../../infrastructure/mission-store/tauri-mission-store'
 import { createRejectedPositionDeliveryId } from './rejected-position-evidence'
+import type { IngestEvidenceLossReason } from '../../domain/tracking-ingest-evidence'
 
 export const REJECTION_EVIDENCE_DELIVERY_BATCH_HYPOTHESIS = 256
 export const REJECTION_EVIDENCE_PENDING_MEMORY_CAP_HYPOTHESIS = 4_096
@@ -18,7 +19,7 @@ type RejectionEvidenceMissionStore = {
   }>
   readonly recordIngestEvidenceLoss?: (input: {
     readonly mission_id: string
-    readonly reason: 'renderer_pending_capacity_exhausted'
+    readonly reason: IngestEvidenceLossReason
   }) => Promise<IngestEvidenceHealth>
 }
 
@@ -78,7 +79,9 @@ export function createRejectionEvidenceDelivery(
   let flushScheduled = false
   let retryTimer: ReturnType<typeof globalThis.setTimeout> | null = null
   let disposed = false
+  let disposing = false
   let accepting = true
+  let disposalPromise: Promise<void> | null = null
   const evidenceLossMissionIds = new Set<string>()
   const durableHealthByMission = new Map<string, IngestEvidenceHealth>()
   const finalizedHealthByMission = new Map<string, IngestEvidenceHealth>()
@@ -146,8 +149,15 @@ export function createRejectionEvidenceDelivery(
   }
 
   /** Prevents a superseded runtime from publishing later health. */
-  async function dispose(): Promise<void> {
+  function dispose(): Promise<void> {
+    disposalPromise ??= runDisposal()
+    return disposalPromise
+  }
+
+  /** Drains all volatile evidence or replaces it with one durable loss marker per mission. */
+  async function runDisposal(): Promise<void> {
     accepting = false
+    disposing = true
     if (retryTimer !== null) {
       clearTimeoutFn(retryTimer)
       retryTimer = null
@@ -155,14 +165,20 @@ export function createRejectionEvidenceDelivery(
     if (flushInFlight !== null) {
       await flushInFlight
     }
-    if (pendingByMissionAndAnomaly.size > 0) {
-      await runTrackedFlush()
+    while (pendingByMissionAndAnomaly.size > 0) {
+      const madeProgress = await runTrackedFlush()
+      if (!madeProgress) {
+        await persistPendingEvidenceLoss()
+        pendingByMissionAndAnomaly.clear()
+        publishAggregateHealth()
+      }
     }
-    if (pendingByMissionAndAnomaly.size === 0) {
-      disposed = true
-    } else {
-      scheduleRetry()
+    if (retryTimer !== null) {
+      clearTimeoutFn(retryTimer)
+      retryTimer = null
     }
+    disposed = true
+    disposing = false
   }
 
   /** Flushes all renderer-held evidence for one mission before completeness is claimed. */
@@ -268,6 +284,7 @@ export function createRejectionEvidenceDelivery(
   function scheduleFlush(): void {
     if (
       disposed ||
+      disposing ||
       flushScheduled ||
       flushInFlight !== null ||
       pendingByMissionAndAnomaly.size === 0
@@ -354,7 +371,12 @@ export function createRejectionEvidenceDelivery(
 
   /** Retries unacknowledged evidence without requiring another provider poll. */
   function scheduleRetry(): void {
-    if (disposed || retryTimer !== null || pendingByMissionAndAnomaly.size === 0) return
+    if (
+      disposed ||
+      disposing ||
+      retryTimer !== null ||
+      pendingByMissionAndAnomaly.size === 0
+    ) return
     retryTimer = setTimeoutFn(() => {
       retryTimer = null
       scheduleFlush()
@@ -374,6 +396,26 @@ export function createRejectionEvidenceDelivery(
     }).catch(() => {
       if (!disposed) applyMissionHealth(missionId, createCapacityFailureHealth())
     })
+  }
+
+  /** Persists a sticky blocker before renderer-only payloads are released at teardown. */
+  async function persistPendingEvidenceLoss(): Promise<void> {
+    const recordEvidenceLoss = dependencies.missionStore.recordIngestEvidenceLoss
+    if (recordEvidenceLoss === undefined) {
+      throw new Error(
+        'Pending rejected-position evidence could not be persisted or durably marked as lost; runtime disposal remains blocked.',
+      )
+    }
+    const missionIds = [...new Set(
+      [...pendingByMissionAndAnomaly.values()].map((entry) => entry.missionId),
+    )].sort()
+    for (const missionId of missionIds) {
+      const health = await recordEvidenceLoss({
+        mission_id: missionId,
+        reason: 'renderer_pending_evidence_lost',
+      })
+      applyMissionHealth(missionId, health)
+    }
   }
 
   /** Stores one mission's durable health and publishes the cross-mission aggregate. */

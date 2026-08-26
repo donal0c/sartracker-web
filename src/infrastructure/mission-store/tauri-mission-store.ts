@@ -1,5 +1,8 @@
 import { invoke } from '@tauri-apps/api/core'
-import type { IngestEvidenceHealth } from '../../domain/tracking-ingest-evidence'
+import type {
+  IngestEvidenceHealth,
+  IngestEvidenceLossReason,
+} from '../../domain/tracking-ingest-evidence'
 
 export type { IngestEvidenceHealth } from '../../domain/tracking-ingest-evidence'
 
@@ -760,7 +763,7 @@ export type MissionStore = {
   }>
   readonly recordIngestEvidenceLoss?: (input: {
     readonly mission_id: string
-    readonly reason: 'renderer_pending_capacity_exhausted'
+    readonly reason: IngestEvidenceLossReason
   }) => Promise<IngestEvidenceHealth>
   readonly getIngestEvidenceHealth?: (missionId?: string) => Promise<IngestEvidenceHealth>
   readonly upsertMarker: (input: UpsertMarkerInput) => Promise<Marker>

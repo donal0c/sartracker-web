@@ -492,7 +492,7 @@ describe('app runtime startup', () => {
     })
 
     expect(startCoverageRuntime).toHaveBeenCalledWith(expect.anything(), { enabled: false })
-    runtime?.dispose()
+    await runtime?.dispose()
   })
 
   it('starts mission autosave inside the Electron desktop runtime', async () => {
@@ -883,10 +883,96 @@ describe('app runtime startup', () => {
       startTrackingRuntime: vi.fn().mockResolvedValue(activeTrackingStop),
     })
 
-    runtime?.dispose()
+    await runtime?.dispose()
 
     expect(activeAutosaveStop).toHaveBeenCalledTimes(1)
     expect(activeTrackingStop).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps core runtime ownership until pending rejection evidence is drained', async () => {
+    let acknowledgeEvidence: ((value: {
+      acknowledgedDeliveryIds: string[]
+      health: ReturnType<typeof healthyEvidence>
+    }) => void) | undefined
+    const recordIngestRejections = vi.fn((input: {
+      readonly rejections: readonly { readonly deliveryId: string }[]
+    }) => new Promise<{
+      acknowledgedDeliveryIds: string[]
+      health: ReturnType<typeof healthyEvidence>
+    }>((resolve) => {
+      acknowledgeEvidence = () => resolve({
+        acknowledgedDeliveryIds: input.rejections.map((entry) => entry.deliveryId),
+        health: healthyEvidence(),
+      })
+    }))
+    const store = Object.assign(createMissionStoreStub(), {
+      recordIngestRejections,
+      recordIngestEvidenceLoss: vi.fn(),
+    })
+    let rejectionHook: ((rejections: readonly {
+      readonly deviceId: string | null
+      readonly reason: 'invalid_coordinates'
+      readonly rowIndex: number
+      readonly anomalyKey: string
+      readonly canonicalEvidence: Readonly<Record<string, unknown>>
+    }[], context: {
+      readonly missionId: string | null
+      readonly observedAt: string
+    }) => void) | undefined
+    const createPollingManager = vi.fn().mockImplementation((_client, options) => {
+      rejectionHook = options.onCurrentPositionRejections
+      return { start: vi.fn(), stop: vi.fn() }
+    })
+    const activeTrackingStop = vi.fn()
+    const startTrackingRuntime = vi.fn().mockImplementation(async (input) => {
+      input.createPoller({}, {
+        onSnapshot: vi.fn(), onStatusChange: vi.fn(),
+        getInitialBreadcrumbs: vi.fn().mockResolvedValue([]),
+        getInitialBreadcrumbTotals: vi.fn().mockResolvedValue({}),
+        getInitialBreadcrumbSelectionMetadata: vi.fn().mockResolvedValue({}),
+        getInitialHistoryCheckpoints: vi.fn().mockResolvedValue({}),
+        onPollDiagnostic: vi.fn(),
+      })
+      return activeTrackingStop
+    })
+    const disposeCoreFeatureRuntimes = vi.fn()
+    const runtime = await startAppRuntime({
+      registerServiceWorker: vi.fn().mockResolvedValue(undefined),
+      isTauriRuntimeAvailable: vi.fn().mockReturnValue(false),
+      isElectronRuntimeAvailable: vi.fn().mockReturnValue(true),
+      createMissionStore: vi.fn().mockReturnValue(store),
+      readRuntimeBootstrapSettings: vi.fn().mockResolvedValue(createBootstrapSettings()),
+      startMissionAutosave: vi.fn().mockReturnValue(createAutosaveController()),
+      startMissionRuntime: vi.fn().mockResolvedValue({}),
+      startMissionGovernanceRuntime: vi.fn().mockResolvedValue({}),
+      startMarkerRuntime: vi.fn().mockResolvedValue({}),
+      startDrawingRuntime: vi.fn().mockResolvedValue({}),
+      startGpxRuntime: vi.fn().mockResolvedValue({}),
+      startTrackingRuntime,
+      createPollingManager,
+      startCoreFeatureRuntimes: vi
+        .fn()
+        .mockResolvedValue(createCoreFeatureRuntimeHandles(disposeCoreFeatureRuntimes)),
+    })
+    rejectionHook?.([{
+      deviceId: 'device-1',
+      reason: 'invalid_coordinates',
+      rowIndex: 0,
+      anomalyKey: 'source:pending-disposal',
+      canonicalEvidence: { id: 'pending-disposal' },
+    }], {
+      missionId: 'mission-1',
+      observedAt: '2026-08-22T10:00:01.000Z',
+    })
+    await vi.waitFor(() => expect(recordIngestRejections).toHaveBeenCalledOnce())
+
+    const disposal = runtime?.dispose()
+
+    expect(activeTrackingStop).toHaveBeenCalledOnce()
+    expect(disposeCoreFeatureRuntimes).not.toHaveBeenCalled()
+    acknowledgeEvidence?.()
+    await disposal
+    expect(disposeCoreFeatureRuntimes).toHaveBeenCalledOnce()
   })
 
   it('keeps runtime disposal idempotent when called more than once', async () => {
@@ -908,8 +994,8 @@ describe('app runtime startup', () => {
       startTrackingRuntime: vi.fn().mockResolvedValue(activeTrackingStop),
     })
 
-    runtime?.dispose()
-    runtime?.dispose()
+    await runtime?.dispose()
+    await runtime?.dispose()
 
     expect(activeAutosaveStop).toHaveBeenCalledTimes(1)
     expect(activeTrackingStop).toHaveBeenCalledTimes(1)

@@ -275,6 +275,42 @@ Report PASS or FAIL for each item, then overall PASS/FAIL.`,
     })
   })
 
+  test('runtime-shutdown evidence loss stays explicit and blocks completeness [DON-276]', async ({ page }) => {
+    await page.evaluate(async () => {
+      const { applyIngestEvidenceHealth } = await import('/src/features/tracking/ingest-health-store.ts')
+      applyIngestEvidenceHealth({
+        state: 'critical', reason: 'renderer_pending_evidence_lost', pendingCount: 0,
+        corruptCount: 0, conflictCount: 0, rejectedCount: 1,
+        affectedDeviceCount: 1, conflictDeviceIds: [],
+      })
+    })
+
+    const warning = page.getByTestId('ingest-evidence-health-warning')
+    await expect(warning).toContainText(
+      'rejected-position evidence was lost during runtime shutdown',
+    )
+    await expect(warning).toContainText('finalization and archive export are blocked')
+
+    await captureElementAndRegister(page, 'tracking-status', {
+      testId: 'tracking-shutdown-evidence-loss',
+      testName: 'Runtime-shutdown evidence loss blocks completeness',
+      area: 'tracking',
+      severity: 'critical',
+      verificationPrompt: `Verify SAR Tracker's runtime-shutdown evidence-loss warning:
+1. Tracking remains ONLINE and the normal tracking counters stay visible because current positions are still the live safety priority.
+2. A red critical evidence-health warning explicitly says rejected-position evidence was lost during runtime shutdown.
+3. The warning says current positions remain live.
+4. The warning explicitly says mission finalization and archive export are blocked.
+5. The presentation does not claim the lost anomaly evidence was saved or recoverable.
+Report PASS or FAIL for each item, then overall PASS/FAIL.`,
+      playwrightAssertions: [
+        'tracking remains online',
+        'runtime-shutdown evidence loss is explicit',
+        'finalization and archive export are blocked',
+      ],
+    })
+  })
+
   test('paused mission refresh suspension is a red stale-position alert', async ({ page }) => {
     await page.getByTestId('mission-pause-resume-btn').click()
     await expect(page.getByTestId('mission-control')).toContainText('paused')

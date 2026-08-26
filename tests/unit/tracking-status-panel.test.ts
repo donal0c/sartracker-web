@@ -167,6 +167,25 @@ describe('TrackingStatusPanel', () => {
     expect(warning).not.toContain('requires repair')
   })
 
+  it('describes renderer teardown evidence loss as a persistent safety blocker [DON-276]', () => {
+    useIngestHealthStore.getState().applyEvidenceHealth({
+      state: 'critical',
+      reason: 'renderer_pending_evidence_lost',
+      pendingCount: 0,
+      corruptCount: 0,
+      conflictCount: 0,
+      rejectedCount: 1,
+      affectedDeviceCount: 1,
+      conflictDeviceIds: [],
+    })
+
+    render(React.createElement(TrackingStatusPanel))
+
+    const warning = getText('[data-testid="ingest-evidence-health-warning"]')
+    expect(warning).toContain('rejected-position evidence was lost during runtime shutdown')
+    expect(warning).toContain('finalization and archive export are blocked')
+  })
+
   it('summarizes stationary attention without declaring an emergency [DON-269]', () => {
     useStationaryAttentionStore.setState({ byDevice: {
       'device-1': { state: 'attention', acknowledged: false, sinceTimestamp: '2026-08-22T10:00:00.000Z', elapsedMs: 1_200_000, movementThresholdM: 15 },

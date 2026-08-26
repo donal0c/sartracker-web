@@ -552,6 +552,100 @@ describe('rejection evidence delivery [DON-268]', () => {
     await expect(disposal).resolves.toBeUndefined()
   })
 
+  it('drains every bounded batch before disposal completes', async () => {
+    const deliveredIds: string[] = []
+    let resolveFirstBatch: ((value: {
+      acknowledgedDeliveryIds: string[]
+      health: ReturnType<typeof healthy>
+    }) => void) | undefined
+    const recordIngestRejections = vi.fn((input: {
+      readonly rejections: readonly { readonly deliveryId: string }[]
+    }) => {
+      deliveredIds.push(...input.rejections.map((entry) => entry.deliveryId))
+      const result = {
+        acknowledgedDeliveryIds: input.rejections.map((entry) => entry.deliveryId),
+        health: healthy(),
+      }
+      if (recordIngestRejections.mock.calls.length === 1) {
+        return new Promise<typeof result>((resolve) => {
+          resolveFirstBatch = resolve
+        })
+      }
+      return Promise.resolve(result)
+    })
+    const delivery = createRejectionEvidenceDelivery({
+      missionStore: { recordIngestRejections },
+      applyRejections: vi.fn(),
+      applyEvidenceHealth: vi.fn(),
+      createDeliveryId: (_missionId, _anomalyKey, index) => `delivery-${index}`,
+    })
+    const rejections = Array.from(
+      { length: (REJECTION_EVIDENCE_DELIVERY_BATCH_HYPOTHESIS * 2) + 1 },
+      (_unused, index) => createRejection(`dispose:${index}`),
+    )
+
+    delivery.record(rejections, observation('mission-1'))
+    await vi.waitFor(() => expect(recordIngestRejections).toHaveBeenCalledOnce())
+    const disposal = delivery.dispose()
+    resolveFirstBatch?.({
+      acknowledgedDeliveryIds: Array.from(
+        { length: REJECTION_EVIDENCE_DELIVERY_BATCH_HYPOTHESIS },
+        (_unused, index) => `delivery-${index + 1}`,
+      ),
+      health: healthy(),
+    })
+
+    await expect(disposal).resolves.toBeUndefined()
+    expect(deliveredIds).toHaveLength(rejections.length)
+    expect(new Set(deliveredIds).size).toBe(rejections.length)
+  })
+
+  it('durably marks evidence loss before disposing an unacknowledged batch', async () => {
+    const recordIngestRejections = vi.fn().mockResolvedValue({
+      acknowledgedDeliveryIds: [],
+      health: degraded(),
+    })
+    const recordIngestEvidenceLoss = vi.fn().mockResolvedValue({
+      ...healthy(),
+      state: 'critical' as const,
+      reason: 'renderer_pending_evidence_lost',
+    })
+    const delivery = createRejectionEvidenceDelivery({
+      missionStore: { recordIngestRejections, recordIngestEvidenceLoss },
+      applyRejections: vi.fn(),
+      applyEvidenceHealth: vi.fn(),
+    })
+
+    delivery.record([createRejection('dispose:unacknowledged')], observation('mission-1'))
+    await vi.waitFor(() => expect(recordIngestRejections).toHaveBeenCalledOnce())
+
+    await expect(delivery.dispose()).resolves.toBeUndefined()
+    expect(recordIngestEvidenceLoss).toHaveBeenCalledWith({
+      mission_id: 'mission-1',
+      reason: 'renderer_pending_evidence_lost',
+    })
+  })
+
+  it('fails closed when teardown evidence loss cannot be durably marked', async () => {
+    const recordIngestRejections = vi.fn().mockResolvedValue({
+      acknowledgedDeliveryIds: [],
+      health: degraded(),
+    })
+    const recordIngestEvidenceLoss = vi
+      .fn()
+      .mockRejectedValue(new Error('evidence-loss marker unavailable'))
+    const delivery = createRejectionEvidenceDelivery({
+      missionStore: { recordIngestRejections, recordIngestEvidenceLoss },
+      applyRejections: vi.fn(),
+      applyEvidenceHealth: vi.fn(),
+    })
+
+    delivery.record([createRejection('dispose:marker-failed')], observation('mission-1'))
+    await vi.waitFor(() => expect(recordIngestRejections).toHaveBeenCalledOnce())
+
+    await expect(delivery.dispose()).rejects.toThrow('evidence-loss marker unavailable')
+  })
+
   function createRejection(anomalyKey: string): CurrentPositionRejection {
     return {
       deviceId: 'tracker-1',

@@ -9,6 +9,7 @@ const INGEST_ANOMALY_OUTBOX_REPLAY_BATCH_HYPOTHESIS = 8
 const DEGRADED_HEALTH_MARKER_NAME = 'degraded-health.json.marker'
 const FAILURE_PRIORITY = [
   'outbox_health_marker_corrupt',
+  'renderer_pending_evidence_lost',
   'renderer_pending_capacity_exhausted',
   'outbox_invalid_envelope',
   'late_evidence_after_finalization',
@@ -141,7 +142,10 @@ function createIngestAnomalyOutbox(options) {
   function markEvidenceLoss(missionId, reason) {
     return enqueue(async () => {
       await initializeDirectoryAndFailureState()
-      if (reason !== 'renderer_pending_capacity_exhausted') {
+      if (![
+        'renderer_pending_capacity_exhausted',
+        'renderer_pending_evidence_lost',
+      ].includes(reason)) {
         throw new Error('Ingest evidence-loss reason is invalid.')
       }
       validateMissionScope(missionId)

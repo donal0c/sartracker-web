@@ -305,6 +305,25 @@ describe('durable ingest anomaly outbox [DON-268]', () => {
     })
   })
 
+  it('persists renderer teardown evidence loss across restart', async () => {
+    directoryPath = await mkdtemp(path.join(tmpdir(), 'sartracker-ingest-outbox-'))
+    const outbox = createIngestAnomalyOutbox({
+      directoryPath,
+      projectEnvelope: vi.fn(),
+    })
+
+    await outbox.markEvidenceLoss('mission-1', 'renderer_pending_evidence_lost')
+
+    const restarted = createIngestAnomalyOutbox({
+      directoryPath,
+      projectEnvelope: vi.fn(),
+    })
+    await expect(restarted.health('mission-1')).resolves.toMatchObject({
+      pendingCount: 0,
+      lastFailure: 'renderer_pending_evidence_lost',
+    })
+  })
+
   it('scopes durable degradation to the affected mission', async () => {
     directoryPath = await mkdtemp(path.join(tmpdir(), 'sartracker-ingest-outbox-'))
     const outbox = createIngestAnomalyOutbox({

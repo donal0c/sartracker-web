@@ -26,7 +26,7 @@ type BootstrapAppRuntimeDependencies = {
   readonly shouldEnableMissionBrowserHarness: () => boolean
   readonly startMissionBrowserHarness: () => Promise<void>
   readonly startAppRuntime: () => Promise<AppRuntimeController | null>
-  readonly applyAppRuntimeController: (controller: AppRuntimeController) => void
+  readonly applyAppRuntimeController: (controller: AppRuntimeController) => Promise<void>
   readonly markRuntimeBooting: () => RuntimeBootGeneration | undefined
   readonly markRuntimeBootReady: (generation?: RuntimeBootGeneration) => void
   readonly markRuntimeBootFailed: (
@@ -97,7 +97,7 @@ export async function bootstrapAppRuntime(
       throw new Error(MISSING_OPERATIONAL_RUNTIME_CONTROLLER)
     }
 
-    dependencies.applyAppRuntimeController(controller)
+    await dependencies.applyAppRuntimeController(controller)
     dependencies.markRuntimeBootReady(bootGeneration)
   } catch (error) {
     dependencies.markRuntimeBootFailed(error, bootGeneration)
