@@ -243,7 +243,20 @@ jobs:
 
           WINDOW_ID="$(head -n 1 tmp/electron-validation-evidence/window-ids.txt)"
           xdotool windowclose "$WINDOW_ID"
-          if ! timeout 15s tail --pid="$APP_PID" -f /dev/null; then
+          APP_EXITED=0
+          for _ in $(seq 1 150); do
+            if ! kill -0 "$APP_PID" 2>/dev/null; then
+              APP_EXITED=1
+              break
+            fi
+            APP_STATE="$(ps -o stat= -p "$APP_PID" 2>/dev/null || true)"
+            if [[ "$APP_STATE" == Z* ]]; then
+              APP_EXITED=1
+              break
+            fi
+            sleep 0.1
+          done
+          if [ "$APP_EXITED" != "1" ]; then
             echo "::error::AppImage did not exit after the packaged window close request."
             cat tmp/electron-validation-evidence/appimage.log || true
             kill "$APP_PID" 2>/dev/null || true
