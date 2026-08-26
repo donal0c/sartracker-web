@@ -1749,3 +1749,108 @@ The commit containing this evidence record is documentation-only. It must pass
 the deterministic exact-head gates and five fresh independent exact-head
 reviews from zero before PR #3 can be called review ready. No merge or release
 occurred.
+
+## Bounded result attestation and main-isolate I5 remediation
+
+Fresh review of evidence head
+`d044e71fb71608b08072ce13c73747408cf571da` found that the all-kind result
+envelope was still too permissive at two adjacent boundaries. It allowed the
+global 100,000-entry ceiling before checking request-derived cardinality, and
+manifest outing metadata was structurally validated but not proved against
+SQLite. A forged outing could therefore cross the worker boundary, while a
+maximal structurally valid result could force mission-sized normalization on
+Electron main. Production also normalized the same built-in worker result
+twice.
+
+The red reasons were recorded before production code. Three regressions failed:
+
+- a direct oversized envelope reached a throwing element getter instead of
+  rejecting from its shallow request-derived cardinality;
+- production mission-store composition accepted an altered outing label and
+  interval for a real outing; and
+- the query worker had no pre-`postMessage` cardinality preflight.
+
+Application commit `68768f74a6e3afaac9807f39c92cc3f589cb772d` closes those
+paths with a dedicated attestation boundary. It proves inventory, outing
+identity/label/window/order, and claim metadata against bounded SQLite reads;
+derives result ceilings from the current bounded device×period inventory and
+outing set; performs a shallow worker-side cardinality preflight before
+structured clone; and avoids the second production deep normalization while
+retaining validation for injected test/adapter runners. Green verification was
+30/30 focused, 316/316 coverage/participant, and 266 files / 2,149 tests, plus
+full ESLint, TypeScript, build/budgets, syntax, and diff checks.
+
+Exact Linux run
+[`32932901604`](https://github.com/donal0c/sartracker-web/actions/runs/32932901604)
+was workflow-green but was rejected as safety evidence: its packaged soak
+recorded a 224.9739 ms maximum Electron-main gap, above the accepted plan's
+hard I5 limit of 200 ms. Green CI did not override that reproduced breach.
+Tracing its 205/337/408 ms batch durations found one synchronous SQLite outing
+lookup for every accepted fix during ledger resolution.
+
+The next red test required one bounded ordered outing snapshot and zero
+per-fix SQLite reads. Application commit
+`e1b51d8a262556c097aed617b771ce255ec2bc63` now resolves every batch against
+one ordered outing metadata read and the existing canonical binary search.
+Linux run
+[`32933663936`](https://github.com/donal0c/sartracker-web/actions/runs/32933663936)
+proved the product correction with a 55.2 ms Electron-main maximum, but the
+workflow failed because its first gate wiring incorrectly applied the 200 ms
+main-isolate limit to the Mesa llvmpipe renderer as well. The accepted plan
+defines I5 as a main-isolate hard limit; the tracking soak's renderer/operator
+freeze limit remains the existing 1,000 ms. That run is retained as diagnostic
+evidence, not accepted exact-head proof.
+
+Commit `cfd733cfb614cc508272f54d4ddca583f9c4a95d` separates those
+two gates red-first. The soak now has an explicit 200 ms main-isolate threshold
+while renderer and operator responsiveness retain their existing independent
+threshold. Focused gate/hot-path verification passed 56/56; full unit passed
+266 files / 2,149 tests; full ESLint, TypeScript, production build/budgets, and
+diff checks passed.
+
+Exact application-head Linux run
+[`32934141302`](https://github.com/donal0c/sartracker-web/actions/runs/32934141302)
+checked out PR merge ref
+`c5c78755139cbbe162ca97f932fb7843edaf1bf2`, whose parents are exact PR-2
+base `7021fc1ef33e6da5c91c96cd86e836fc3754f48f` and application head
+`cfd733cfb614cc508272f54d4ddca583f9c4a95d`, and passed:
+
+- Ubuntu x64 AppImage and `.deb` packaging, native SQLite inspection, Mesa
+  llvmpipe attestation, and AppImage window/content launch;
+- packaged CI soak: 6/6 batches, 8,664/8,664 source-exact positions, matching
+  SHA-256
+  `413b61e1ae16a1f465f4401251facdbacf284c8196766789ab6095fe29985f76`,
+  integrity `ok`, one restart, zero renderer crashes, and four healthy operator
+  interactions;
+- Electron-main maximum 22.2073 ms and p95 10.7335 ms against the explicit
+  200 ms I5 limit, with zero samples over the limit;
+- Mesa llvmpipe renderer maximum 550 ms and p95 299.9 ms, below the separate
+  1,000 ms packaged tracking-soak freeze limit. This CPU renderer result is
+  descriptive tracking-soak evidence; G2 remains the coverage-renderer budget
+  authority;
+- AppImage SHA-256
+  `4247544df2a36f02f02520246b58cd0ad60968540746eb68ca2418417632469f`;
+- `.deb` SHA-256
+  `f43794cc775058d6d4ca2c0ecab610daa9c4b57389bc41d7be92eb1b32321520`;
+- soak report SHA-256
+  `5e3f67394b9fb7f4528175ceef8d98667211a1c5c570e94cfca6c7fd7598f7fd`;
+- package artifact `9594356370`, uploaded-zip digest
+  `31a51c6b2b0d9187e4488ee7de64dae614976cc864e315c772b8c4a5a98644f4`;
+  and
+- validation artifact `9594357021`, uploaded-zip digest
+  `4f82ad5329187e921725c1ef20cf215b8082151e515e79c8de1809b88636472e`.
+
+This remediation changes query-result trust, ledger lookup complexity, and the
+validation gate only. It does not change Candidate-B geometry/index
+construction, schema/open code, coverage controls or wording, G2 measurements,
+G3 flag posture, exact Dots, or an operator-visible surface. The accepted G2
+decision/960k/2M evidence, 3.704 GB v9-to-v10 migration, prior selected critical
+visual review, operator manual, and screenshots remain standing only for those
+unchanged surfaces. No manual or screenshot update is required. There was no
+pre-merge packaged 960k/2M coverage run outside G2 and no packaged forced-kill
+matrix.
+
+The commit containing this evidence record is documentation-only. It must pass
+the deterministic exact-head gates and five fresh independent exact-head
+reviews from zero before PR #3 can be called review ready. No merge or release
+occurred.
