@@ -3019,3 +3019,56 @@ states that acknowledgement does not restore evidence, never permits Complete
 or 100%, and does not apply to repairable, pending, corrupt or newly changed
 evidence. Replacement exact-head macOS/Linux package and soak evidence remains
 required before the bounded final review wave. No merge or release occurred.
+
+## Whole-seam replacement package binding — 2026-08-26
+
+Application and documentation commit
+`a4de1f07fbfc94a6fdd298a4af85eb0a38e1d342` was pushed before package
+qualification. Unsigned macOS arm64 packaging passed. The packaged executable
+and `app.asar` SHA-256 values are
+`f5212ea9181df95040385dfd04f512e983ed95394a96fb7c4b8ee838ea433caf`
+and
+`c1fa878437d7db8709510019f3d81ba2bfb65d92f3fdbfd4c07e1ae97b144d65`.
+
+The Ubuntu reference host cloned that exact pushed commit into the isolated
+path `/home/donal/sartracker-pr3-exact-a4de1f0/repo`, verified its HEAD and
+clean tree, installed the lockfile dependencies, and built the unsigned x64
+package. The packaged executable and `app.asar` SHA-256 values are
+`6344ae1d9044fedc54779e8bacaddc032fdcc0f55e146fc3623756eafa0bbaf8`
+and
+`4d71baa844dad0c761e974b4a8be3f419f2b5e41eff62348e1f92cfc02dec376`.
+
+The single replacement CI-scale packaged soak used the host's existing active
+Xwayland desktop at display `:0`; ANGLE/OpenGL and `glxinfo` both attested Mesa
+llvmpipe. It passed:
+
+- 6/6 batches and 8,664/8,664 source-exact positions with matching SHA-256;
+- one clean restart, two graceful exit-zero launches and zero renderer crashes;
+- database integrity `ok`, WAL `0/0/0`, 32 participant rows, two declared
+  backfill-completion events and zero unexplained operational events;
+- four healthy operator interaction checks with zero errors;
+- main-process maximum 8.199 ms and renderer maximum 100.200 ms, both below
+  their gates;
+- zero redundant telemetry slope; and
+- peak measured process-tree RSS 1,135,435,776 bytes.
+
+The report SHA-256 is
+`7a0f49ea3d4120a45607cae3ebf6ddd041d82086d9ce8aec6aa4962dce33e7c5`.
+The post-run coverage ledger has one mission at change sequence 74, 32 chunks,
+zero pending invalidations, 20,480 coverage bytes and integrity `ok`. Bound
+evidence is under
+`output/pr3-packaged-soak/a4de1f07fbfc94a6fdd298a4af85eb0a38e1d342/`;
+its evidence-manifest SHA-256 is
+`4a7fae1767aaeaef6f147ccce67058393bf06e343d2127b95bc24ef0db5e1ad8`.
+
+This replacement validates the changed Electron lifecycle and packaged hot
+path. The earlier 3.704 GB v9-to-v10 migration remains standing because this
+commit changes neither schema/open code nor Candidate-B geometry/query
+construction. G2's 960k/2M benchmark and corrected production qualification
+likewise remain standing under their recorded invalidation rules. As required,
+there was no new packaged 960k/2M coverage run, packaged forced-kill matrix,
+Windows run, field-hardware run, or post-merge coordinator checkpoint. The
+next commit binds only evidence and current handoff state; executable code and
+test trees remain byte-identical to `a4de1f0`. One fresh broad exact-head review
+plus the three targeted exact-head rechecks remains required. No merge or
+release occurred.
