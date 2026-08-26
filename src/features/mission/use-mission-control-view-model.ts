@@ -387,6 +387,7 @@ function isAcknowledgeableEvidenceHealthFinalizationBlock(
 ): boolean {
   return error instanceof Error &&
     /degraded evidence health blocks finalization/iu.test(error.message) &&
-    (reason === 'renderer_pending_evidence_lost' ||
+    (reason === 'mission_persistence_failed' ||
+      reason === 'renderer_pending_evidence_lost' ||
       reason === 'renderer_pending_capacity_exhausted')
 }

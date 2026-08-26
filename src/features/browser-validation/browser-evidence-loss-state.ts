@@ -120,7 +120,11 @@ export function readBrowserEvidenceLossState(input: unknown): BrowserEvidenceLos
     if (value === null || typeof value !== 'object' || Array.isArray(value)) continue
     const candidate = value as Partial<BrowserEvidenceLossState>
     if (
-      !['renderer_pending_evidence_lost', 'renderer_pending_capacity_exhausted']
+      ![
+        'mission_persistence_failed',
+        'renderer_pending_evidence_lost',
+        'renderer_pending_capacity_exhausted',
+      ]
         .includes(candidate.reason ?? '') ||
       !Number.isSafeInteger(candidate.generation) ||
       Number(candidate.generation) < 1

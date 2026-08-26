@@ -341,6 +341,25 @@ describe('durable ingest anomaly outbox [DON-268]', () => {
     })
   })
 
+  it('persists accepted mission-write evidence loss across restart', async () => {
+    directoryPath = await mkdtemp(path.join(tmpdir(), 'sartracker-ingest-outbox-'))
+    const outbox = createIngestAnomalyOutbox({
+      directoryPath,
+      projectEnvelope: vi.fn(),
+    })
+
+    await outbox.markEvidenceLoss('mission-1', 'mission_persistence_failed')
+
+    const restarted = createIngestAnomalyOutbox({
+      directoryPath,
+      projectEnvelope: vi.fn(),
+    })
+    await expect(restarted.health('mission-1')).resolves.toMatchObject({
+      pendingCount: 0,
+      lastFailure: 'mission_persistence_failed',
+    })
+  })
+
   it('retracts a late-clean renderer drain without consuming the acknowledged loss generation [DON-276]', async () => {
     directoryPath = await mkdtemp(path.join(tmpdir(), 'sartracker-ingest-outbox-'))
     const outbox = createIngestAnomalyOutbox({

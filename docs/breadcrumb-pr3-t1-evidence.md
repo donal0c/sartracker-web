@@ -3266,3 +3266,61 @@ assertion to 200 ms; the focused file passes 26/26 locally. The replacement CI
 run and the amended broad plus three targeted exact-head reviews remain before
 merge readiness. The package, soak, schema, migration, geometry, and runtime
 code are unchanged by this test-only correction.
+
+### RED — final bounded review attack on accepted persistence and drain scope
+
+The amended exact-`80cc941` review wave found three further cases at the same
+evidence-lifecycle boundary, all centrally source-retraced before production
+changes:
+
+- an accepted pre-Finish fix whose SQLite write rejected settled its observation
+  as a volatile warning only, so Finish could succeed without either the fix or
+  a durable completeness blocker;
+- the soft-deadline scope snapshot was reused after a later negative drain, so
+  a mission opened during the slow drain could lose renderer evidence without
+  a marker; and
+- sequential multi-mission provisional staging did not retract an earlier
+  successful scope when a later scope rejected, allowing restart to promote the
+  orphaned provisional marker to false permanent loss.
+
+The strict-TDD RED run was 3 files / 107 tests with exactly five failures: no
+public durable mission-persistence-loss boundary, no marker call after an
+accepted write failure, the snapshot callback resolved when marker durability
+failed, the late mission was omitted from the negative-drain result, and the
+partially staged first scope was not retracted. Current-position rendering
+remained synchronous and visible in the failure reproduction. No production
+code is credited until the five cases pass together.
+
+### GREEN — accepted-write durability and refreshed teardown scope
+
+The renderer still publishes every valid current position before mission
+persistence side effects. If an accepted mission write then rejects, the
+runtime records `mission_persistence_failed` through the same durable critical
+health boundary used by finalization. The observation cannot settle safely
+without that marker: a failed marker write rejects the callback, remains in the
+delivery object's in-process loss state, and is retried by the Finish fence.
+Once durable, finalization and Complete/100% remain blocked under the existing
+audited known-loss policy.
+
+The teardown coordinator now re-enumerates current mission scopes after an
+explicit negative drain or actual renderer loss and unions them with the soft-
+deadline snapshot. Missions opened during the wait therefore cannot be missed.
+Sequential provisional staging is compensating: if any scope write fails, all
+earlier successful provisional records are retracted before teardown rejects.
+Promotion/retraction attempts cover every scope and aggregate any failures
+instead of abandoning the suffix.
+
+Current local GREEN before replacement exact-head package proof:
+
+- focused evidence-lifecycle and manual set: 9 files / 250 tests;
+- full deterministic gate: 273 files / 2,249 tests;
+- ESLint, TypeScript, changed CJS syntax, diff check, production build, and
+  bundle budgets: PASS;
+- selected Chromium mission lifecycle: 16/16; and
+- selected critical visual workflows: 2/2, with both fresh uncached Opus
+  visual reviews PASS.
+
+The earlier `42f1694` macOS/Linux packages and Ubuntu soak are superseded for
+the changed runtime seam. Replacement exact-application-head package and soak
+bindings, expanded Linux CI, and the amended broad plus three targeted reviews
+remain mandatory before merge readiness.

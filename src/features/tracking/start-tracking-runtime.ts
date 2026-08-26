@@ -37,6 +37,7 @@ import type {
 } from '../../infrastructure/mission-store/tauri-mission-store'
 import { runParticipantBackfillPass } from '../participants/participant-backfill-runtime'
 import { createOperationalPositionRetention } from '../participants/operational-position-retention'
+import type { IngestEvidenceLossReason } from '../../domain/tracking-ingest-evidence'
 
 export type TrackingRuntimeConfig = {
   readonly baseUrl: string
@@ -294,6 +295,9 @@ type StartTrackingRuntimeDependencies = {
   readonly writeCache?: boolean
   readonly logger?: TrackingRuntimeLogger
   readonly recordDiagnosticEvent?: (event: DiagnosticEventInput) => void | Promise<void>
+  readonly recordMissionEvidenceLoss?:
+    | ((missionId: string, reason: IngestEvidenceLossReason) => Promise<void>)
+    | undefined
   readonly recordTrackingPollDiagnostic?: (entry: TrackingPollLedgerEntry) => void
   readonly notifyDurablePositionChange?: (changedPositionCount: number) => void
   readonly missionModelEnabled?: boolean
@@ -763,7 +767,7 @@ export async function startTrackingRuntime(
         }
       }
 
-      await Promise.allSettled(sideEffects).then((results) => {
+      await Promise.allSettled(sideEffects).then(async (results) => {
         if (trackingCacheResultIndex !== null) {
           const cacheWriteResult = results[trackingCacheResultIndex]
           if (cacheWriteResult !== undefined && cacheWriteResult.status === 'rejected') {
@@ -812,7 +816,7 @@ export async function startTrackingRuntime(
         const missionPersistenceResult = missionPersistenceResultIndex === null
           ? undefined
           : results[missionPersistenceResultIndex]
-        applyMissionPersistenceResult(missionPersistenceResult)
+        await applyMissionPersistenceResult(missionPersistenceResult, missionEvidenceId)
       })
     },
     onStatusChange: (status) => {
@@ -884,9 +888,17 @@ export async function startTrackingRuntime(
               ),
               pendingSnapshot.missionEvidenceId,
             ).then(
-              () => applyMissionPersistenceResult({ status: 'fulfilled', value: undefined }),
-              (reason: unknown) => applyMissionPersistenceResult({ status: 'rejected', reason }),
-            )
+              () => applyMissionPersistenceResult(
+                { status: 'fulfilled', value: undefined },
+                pendingSnapshot.missionEvidenceId,
+              ),
+              (reason: unknown) => applyMissionPersistenceResult(
+                { status: 'rejected', reason },
+                pendingSnapshot.missionEvidenceId,
+              ),
+            ).catch((error) => {
+              logger.warn('Evidence marker failed.', error)
+            })
           }
         }
       }
@@ -1104,12 +1116,13 @@ export async function startTrackingRuntime(
   }
 
   /** Publishes failure and recovery only when a mission persistence attempt settled. */
-  function applyMissionPersistenceResult(
+  async function applyMissionPersistenceResult(
     result: PromiseSettledResult<unknown> | undefined,
-  ): void {
+    missionId: string | null,
+  ): Promise<void> {
     if (result === undefined) return
     if (result.status === 'rejected') {
-      logger.warn('Tracking mission persistence failed.', result.reason)
+      logger.warn('Mission persistence failed.', result.reason)
       if (
         runtimeGeneration === activeTrackingRuntimeGeneration &&
         !missionPersistenceWarningActive
@@ -1123,6 +1136,13 @@ export async function startTrackingRuntime(
           fields: {},
         })
       }
+      if (missionId === null || dependencies.recordMissionEvidenceLoss === undefined) {
+        throw new Error('Evidence marker unavailable.')
+      }
+      await dependencies.recordMissionEvidenceLoss(
+        missionId,
+        'mission_persistence_failed',
+      )
       return
     }
     if (

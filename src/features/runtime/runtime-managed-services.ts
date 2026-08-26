@@ -96,6 +96,12 @@ type CreateManagedRuntimeServicesDependencies = {
     readonly maxPersistedPositionsPerSnapshot?: number
     readonly writeCache?: boolean
     readonly recordDiagnosticEvent?: typeof recordDiagnosticEvent
+    readonly recordMissionEvidenceLoss?:
+      | ((
+          missionId: string,
+          reason: import('../../domain/tracking-ingest-evidence').IngestEvidenceLossReason,
+        ) => Promise<void>)
+      | undefined
     readonly recordTrackingPollDiagnostic?: typeof recordTrackingPollLedgerEntry
     readonly notifyDurablePositionChange?: (changedPositionCount: number) => void
     readonly missionModelEnabled?: boolean
@@ -150,6 +156,12 @@ type CreateManagedRuntimeServicesDependencies = {
   readonly readTrackingRuntimeConfig: () => RuntimeBootstrapSettings['trackingConfig']
   readonly createTrackingCache: () => TrackingCache
   readonly notifyDurablePositionChange?: (changedPositionCount: number) => void
+  readonly recordMissionEvidenceLoss?:
+    | ((
+        missionId: string,
+        reason: import('../../domain/tracking-ingest-evidence').IngestEvidenceLossReason,
+      ) => Promise<void>)
+    | undefined
   readonly missionModelEnabled?: boolean
   readonly readParticipationScope?: () => import('../participants/participation-scope').ParticipationScope
   readonly readParticipationScopeStatus?: () => 'loading' | 'ready' | 'error'
@@ -222,6 +234,7 @@ export async function createManagedRuntimeServices(
       applyStatus: dependencies.applyStatus,
       recordDiagnosticEvent,
       recordTrackingPollDiagnostic: recordTrackingPollLedgerEntry,
+      recordMissionEvidenceLoss: dependencies.recordMissionEvidenceLoss,
       ...(dependencies.missionModelEnabled === undefined
         ? {}
         : { missionModelEnabled: dependencies.missionModelEnabled }),

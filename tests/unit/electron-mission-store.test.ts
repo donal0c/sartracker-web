@@ -301,7 +301,10 @@ type ElectronMissionStore = {
   }>
   readonly recordIngestEvidenceLoss: (input: {
     readonly mission_id: string
-    readonly reason: 'renderer_pending_capacity_exhausted' | 'renderer_pending_evidence_lost'
+    readonly reason:
+      | 'mission_persistence_failed'
+      | 'renderer_pending_capacity_exhausted'
+      | 'renderer_pending_evidence_lost'
   }) => Promise<{
     readonly state: 'healthy' | 'degraded' | 'critical'
     readonly reason: string | null
@@ -2111,6 +2114,27 @@ describe('electron mission store', () => {
     await expect(store.getIngestEvidenceHealth(mission.id)).resolves.toMatchObject({
       state: 'critical',
       reason: 'renderer_pending_evidence_lost',
+    })
+    await store.finishMission(mission.id)
+    await expect(store.finalizeMission(mission.id)).rejects.toThrow(/evidence health/iu)
+  })
+
+  it('durably blocks completeness after an accepted mission write fails [DON-276]', async () => {
+    store = await createStore()
+    const mission = await store.createMission({ name: 'Mission Persistence Failure' })
+
+    await expect(store.recordIngestEvidenceLoss({
+      mission_id: mission.id,
+      reason: 'mission_persistence_failed',
+    })).resolves.toMatchObject({
+      state: 'critical',
+      reason: 'mission_persistence_failed',
+    })
+    store.close()
+    store = createElectronMissionStore({ userDataPath: userDataPath! })
+    await expect(store.getIngestEvidenceHealth(mission.id)).resolves.toMatchObject({
+      state: 'critical',
+      reason: 'mission_persistence_failed',
     })
     await store.finishMission(mission.id)
     await expect(store.finalizeMission(mission.id)).rejects.toThrow(/evidence health/iu)

@@ -80,6 +80,32 @@ describe('rejection evidence delivery [DON-268]', () => {
     expect(finishMission).toHaveBeenCalledOnce()
   })
 
+  it('blocks Finish when accepted mission evidence loss cannot be durably marked', async () => {
+    const finishMission = vi.fn().mockResolvedValue('finished')
+    const recordIngestEvidenceLoss = vi.fn().mockRejectedValue(
+      new Error('loss marker unavailable'),
+    )
+    const delivery = createRejectionEvidenceDelivery({
+      missionStore: {
+        recordIngestRejections: vi.fn(),
+        recordIngestEvidenceLoss,
+      },
+      applyRejections: vi.fn(),
+      applyEvidenceHealth: vi.fn(),
+    })
+
+    await expect(delivery.recordMissionEvidenceLoss(
+      'mission-1',
+      'mission_persistence_failed',
+    )).rejects.toThrow('loss marker unavailable')
+    await expect(delivery.runWithMissionFinishFence(
+      'mission-1',
+      finishMission,
+    )).rejects.toThrow('loss marker unavailable')
+    expect(finishMission).not.toHaveBeenCalled()
+    expect(recordIngestEvidenceLoss).toHaveBeenCalledTimes(2)
+  })
+
   it('waits for an in-flight mission observation before finalization seals evidence intake', async () => {
     const persisted: string[] = []
     const finalizeMission = vi.fn().mockResolvedValue('finalized')

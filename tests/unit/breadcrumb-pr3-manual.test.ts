@@ -47,6 +47,8 @@ describe('breadcrumb PR-3 operator manual [DON-275]', () => {
       'keeps the renderer alive until the drain acknowledges',
       'Finish closes the mission-evidence cutoff before the durable status transition',
       'retries the durable capacity-loss marker before Finish, finalization, or shutdown may proceed',
+      'If an accepted current fix cannot reach mission storage, its live marker remains visible',
+      'Finish cannot proceed unless that loss marker is durable',
       'After five seconds it records only provisional, mission-scoped uncertainty and continues waiting',
       'a later clean acknowledgement removes that exact provisional record without creating or advancing an evidence-loss occurrence',
       'active, paused, or finished mission could own renderer evidence',

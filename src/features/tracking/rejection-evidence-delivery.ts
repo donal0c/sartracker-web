@@ -50,6 +50,10 @@ export type MissionEvidenceObservation = {
 
 export type RejectionEvidenceDelivery = {
   readonly beginMissionObservation: (missionId: string | null) => MissionEvidenceObservation
+  readonly recordMissionEvidenceLoss: (
+    missionId: string,
+    reason: IngestEvidenceLossReason,
+  ) => Promise<void>
   readonly record: (
     rejections: readonly CurrentPositionRejection[],
     context: RejectionEvidenceObservationContext,
@@ -492,6 +496,15 @@ export function createRejectionEvidenceDelivery(
     })
   }
 
+  /** Makes one accepted mission-persistence failure durable before its observation settles. */
+  async function recordMissionEvidenceLoss(
+    missionId: string,
+    reason: IngestEvidenceLossReason,
+  ): Promise<void> {
+    rememberEvidenceLoss(missionId, reason)
+    await ensureMissionEvidenceLossDurable(missionId)
+  }
+
   /** Persists a sticky blocker before renderer-only payloads are released at teardown. */
   async function persistPendingEvidenceLoss(): Promise<void> {
     const recordEvidenceLoss = dependencies.missionStore.recordIngestEvidenceLoss
@@ -658,6 +671,7 @@ export function createRejectionEvidenceDelivery(
     dispose,
     flushMission,
     record,
+    recordMissionEvidenceLoss,
     reopenMissionEvidenceAfterUnlock,
     runWithMissionFinishFence,
     runWithMissionFinalizationFence,

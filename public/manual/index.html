@@ -969,6 +969,11 @@
             names the storage failure and states that the anomaly evidence is not fully saved.
             The warning appears as soon as rejected-position evidence is waiting in renderer memory and
             clears only after that queued evidence is acknowledged by the durable mission store.
+            If an accepted current fix cannot reach mission storage, its live marker remains visible,
+            but SAR Tracker records a critical mission-scoped evidence-loss marker instead of silently
+            treating the observation as saved. Finish cannot proceed unless that loss marker is durable;
+            once durable, the existing loss review and acknowledgement rules below apply without ever
+            restoring Complete or 100%.
             Finalization and archive export remain blocked until the durable outbox is replayed or the
             storage fault is repaired. A known, unrecoverable evidence-loss marker is different: it
             remains critical forever and permanently prevents Complete or 100%. After the mission is

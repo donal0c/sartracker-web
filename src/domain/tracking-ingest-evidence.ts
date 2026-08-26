@@ -1,4 +1,5 @@
 export type IngestEvidenceLossReason =
+  | 'mission_persistence_failed'
   | 'renderer_pending_capacity_exhausted'
   | 'renderer_pending_evidence_lost'
 

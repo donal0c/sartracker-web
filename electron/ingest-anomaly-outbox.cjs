@@ -13,6 +13,7 @@ const INGEST_ANOMALY_OUTBOX_MAX_PENDING_BYTES_HYPOTHESIS = 64 * 1024 * 1024
 const INGEST_ANOMALY_OUTBOX_REPLAY_BATCH_HYPOTHESIS = 8
 const DEGRADED_HEALTH_MARKER_NAME = 'degraded-health.json.marker'
 const ACKNOWLEDGEABLE_EVIDENCE_LOSS_REASONS = new Set([
+  'mission_persistence_failed',
   'renderer_pending_evidence_lost',
   'renderer_pending_capacity_exhausted',
 ])
@@ -24,6 +25,7 @@ const RENDERER_EVIDENCE_SCOPE_REASONS = new Set([
 ])
 const FAILURE_PRIORITY = [
   'outbox_health_marker_corrupt',
+  'mission_persistence_failed',
   'renderer_pending_evidence_lost',
   'renderer_pending_capacity_exhausted',
   RENDERER_EVIDENCE_PENDING_REASON,
@@ -161,6 +163,7 @@ function createIngestAnomalyOutbox(options) {
     return enqueue(async () => {
       await initializeDirectoryAndFailureState()
       if (![
+        'mission_persistence_failed',
         'renderer_pending_capacity_exhausted',
         'renderer_pending_evidence_lost',
       ].includes(reason)) {

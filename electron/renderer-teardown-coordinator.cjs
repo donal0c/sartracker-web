@@ -85,23 +85,39 @@ function createRendererTeardownCoordinator(dependencies) {
         state = 'settling'
         if (timer !== undefined) clearTimeoutFn(timer)
         settlement = (async () => {
-          const scopes = uncertainty === null
-            ? drained ? [] : await listRendererEvidenceScopes()
-            : await uncertainty
-          if (uncertainty !== null) {
+          const provisionalScopes = uncertainty === null ? [] : await uncertainty
+          let lossScopes = []
+          if (drained && uncertainty !== null) {
             await resolveRendererEvidenceUncertainty(
-              scopes,
+              provisionalScopes,
               requestId,
-              drained ? 'drained' : 'lost',
+              'drained',
             )
           } else if (!drained) {
-            await persistEvidenceLossForScopes(scopes)
+            const currentScopes = await listRendererEvidenceScopes()
+            lossScopes = mergeRendererEvidenceScopes(
+              provisionalScopes,
+              currentScopes,
+            )
+            if (uncertainty !== null) {
+              await resolveRendererEvidenceUncertainty(
+                provisionalScopes,
+                requestId,
+                'lost',
+              )
+            }
+            const provisionalMissionIds = new Set(
+              provisionalScopes.map((scope) => scope.mission_id),
+            )
+            await persistEvidenceLossForScopes(currentScopes.filter(
+              (scope) => !provisionalMissionIds.has(scope.mission_id),
+            ))
           }
           state = 'settled'
           pendingByRequestId.delete(requestId)
           const result = {
             drained,
-            lossScopes: drained ? [] : scopes,
+            lossScopes,
           }
           resolve(result)
           return result
@@ -140,23 +156,52 @@ function createRendererTeardownCoordinator(dependencies) {
   /** Writes provisional, retractable blockers when the soft deadline expires. */
   async function stageRendererEvidenceUncertainty(incidentId) {
     const scopes = await listRendererEvidenceScopes()
-    for (const scope of scopes) {
-      await missionStore.stageRendererEvidenceUncertainty({
-        ...scope,
-        incident_id: incidentId,
-      })
+    const stagedScopes = []
+    try {
+      for (const scope of scopes) {
+        await missionStore.stageRendererEvidenceUncertainty({
+          ...scope,
+          incident_id: incidentId,
+        })
+        stagedScopes.push(scope)
+      }
+    } catch (error) {
+      try {
+        await resolveRendererEvidenceUncertainty(
+          stagedScopes,
+          incidentId,
+          'drained',
+        )
+      } catch (cleanupError) {
+        throw new AggregateError(
+          [error, cleanupError],
+          'Renderer evidence uncertainty could not be staged or fully retracted.',
+        )
+      }
+      throw error
     }
-    return scopes
+    return stagedScopes
   }
 
   /** Resolves the exact provisional occurrence without inventing a loss generation. */
   async function resolveRendererEvidenceUncertainty(scopes, incidentId, outcome) {
+    const failures = []
     for (const scope of scopes) {
-      await missionStore.resolveRendererEvidenceUncertainty({
-        mission_id: scope.mission_id,
-        incident_id: incidentId,
-        outcome,
-      })
+      try {
+        await missionStore.resolveRendererEvidenceUncertainty({
+          mission_id: scope.mission_id,
+          incident_id: incidentId,
+          outcome,
+        })
+      } catch (error) {
+        failures.push(error)
+      }
+    }
+    if (failures.length > 0) {
+      throw new AggregateError(
+        failures,
+        `Renderer evidence uncertainty could not be fully resolved as ${outcome}.`,
+      )
     }
   }
 
@@ -241,6 +286,16 @@ function createRendererTeardownCoordinator(dependencies) {
     ensureUnexpectedRendererLossFenced,
     dispose,
   }
+}
+
+/** Returns one deterministic mission scope union, preferring the latest state reason. */
+function mergeRendererEvidenceScopes(...scopeGroups) {
+  const byMissionId = new Map()
+  for (const scopes of scopeGroups) {
+    for (const scope of scopes) byMissionId.set(scope.mission_id, scope)
+  }
+  return [...byMissionId.values()].sort((left, right) =>
+    left.mission_id.localeCompare(right.mission_id))
 }
 
 /** Validates the narrow renderer acknowledgement envelope. */

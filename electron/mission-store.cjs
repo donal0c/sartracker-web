@@ -1924,6 +1924,7 @@ async function recordIngestEvidenceLoss(db, outbox, input) {
     throw new Error('Ingest evidence loss requires a mission identity.')
   }
   if (![
+    'mission_persistence_failed',
     'renderer_pending_capacity_exhausted',
     'renderer_pending_evidence_lost',
   ].includes(input?.reason)) {
@@ -2055,6 +2056,7 @@ async function mapIngestEvidenceHealth(outbox, missionId) {
     'outbox_corrupt_record',
     'outbox_health_marker_corrupt',
     'outbox_invalid_envelope',
+    'mission_persistence_failed',
     'renderer_pending_evidence_lost',
     'renderer_pending_capacity_exhausted',
     'late_evidence_after_finalization',

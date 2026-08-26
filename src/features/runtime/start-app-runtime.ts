@@ -380,6 +380,7 @@ export async function startAppRuntime(
         )
       },
       applyStatus: applyTrackingStatus,
+      recordMissionEvidenceLoss: rejectionEvidenceDelivery?.recordMissionEvidenceLoss,
       missionModelEnabled: isMissionModelEnabled(),
       readParticipationScope: () => useParticipantStore.getState().scope,
       readParticipationScopeStatus: () => {

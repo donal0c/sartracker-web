@@ -47,9 +47,15 @@ describe('app runtime startup', () => {
         conflictDeviceIds: [],
       },
     }))
+    const recordIngestEvidenceLoss = vi.fn().mockResolvedValue({
+      state: 'critical', reason: 'mission_persistence_failed', pendingCount: 0,
+      corruptCount: 0, conflictCount: 0, rejectedCount: 0,
+      affectedDeviceCount: 0, conflictDeviceIds: [],
+    })
     const missionStore = Object.assign(createMissionStoreStub(), {
       getActiveMission: vi.fn().mockResolvedValue(useMissionStore.getState().currentMission),
       recordIngestRejections,
+      recordIngestEvidenceLoss,
       getIngestEvidenceHealth: vi.fn().mockResolvedValue({
         state: 'healthy', reason: null, pendingCount: 0, corruptCount: 0,
         conflictCount: 0, rejectedCount: 0, affectedDeviceCount: 0,
@@ -115,6 +121,14 @@ describe('app runtime startup', () => {
       })],
     }))
     expect(missionStore.getIngestEvidenceHealth).toHaveBeenCalledWith('mission-1')
+    await startTrackingRuntime.mock.calls[0]?.[0].recordMissionEvidenceLoss?.(
+      'mission-1',
+      'mission_persistence_failed',
+    )
+    expect(recordIngestEvidenceLoss).toHaveBeenCalledWith({
+      mission_id: 'mission-1',
+      reason: 'mission_persistence_failed',
+    })
     const governanceMissionStore = startMissionGovernanceRuntime.mock.calls[0]?.[0].missionStore
     expect(governanceMissionStore.finalizeMission).not.toBe(missionStore.finalizeMission)
     await governanceMissionStore.finalizeMission('mission-1')
