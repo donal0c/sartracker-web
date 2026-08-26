@@ -1083,6 +1083,10 @@ function createElectronMissionStore(options) {
       ingestAnomalyOutbox,
       input,
     ),
+    stageRendererEvidenceUncertainty: async (input) =>
+      updateRendererEvidenceUncertainty(db, ingestAnomalyOutbox, input, 'stage'),
+    resolveRendererEvidenceUncertainty: async (input) =>
+      updateRendererEvidenceUncertainty(db, ingestAnomalyOutbox, input, 'resolve'),
     acknowledgeIngestEvidenceLoss: async (input) => acknowledgeIngestEvidenceLoss(
       db,
       ingestAnomalyOutbox,
@@ -1123,6 +1127,15 @@ function createElectronMissionStore(options) {
         WHERE status IN ('active', 'paused', 'finished')
         ORDER BY start_time DESC, rowid DESC`,
     ).map((mission) => mission.id),
+    listRendererEvidenceScopesAwaitingClosure: async () => all(
+      db,
+      `SELECT id, status FROM missions
+        WHERE status IN ('active', 'paused', 'finished')
+        ORDER BY start_time DESC, rowid DESC`,
+    ).map((mission) => ({
+      mission_id: mission.id,
+      scope_reason: rendererEvidenceScopeReason(mission.status),
+    })),
     getActiveMission: async () => getActiveMission(db),
     getRecoverableMission: async () => getActiveMission(db),
     pauseMission: async (missionId) => transitionMission(db, missionId, 'active', 'paused'),
@@ -1916,9 +1929,54 @@ async function recordIngestEvidenceLoss(db, outbox, input) {
   ].includes(input?.reason)) {
     throw new Error('Ingest evidence-loss reason is invalid.')
   }
-  getById(db, 'missions', missionId, 'Mission')
+  const mission = getMission(db, missionId)
+  if (
+    input?.scope_reason !== undefined &&
+    input.scope_reason !== rendererEvidenceScopeReason(mission.status)
+  ) {
+    throw new Error('Renderer evidence-loss mission scope reason does not match mission state.')
+  }
   await outbox.markEvidenceLoss(missionId, input.reason)
   return getIngestEvidenceHealth(db, outbox, missionId)
+}
+
+/** Stages or resolves one exact soft-deadline renderer evidence incident. */
+async function updateRendererEvidenceUncertainty(db, outbox, input, operation) {
+  const missionId = typeof input?.mission_id === 'string' ? input.mission_id.trim() : ''
+  const incidentId = typeof input?.incident_id === 'string' ? input.incident_id.trim() : ''
+  if (missionId === '' || incidentId === '') {
+    throw new Error('Renderer evidence uncertainty requires mission and incident identities.')
+  }
+  const mission = getMission(db, missionId)
+  const expectedScopeReason = rendererEvidenceScopeReason(mission.status)
+  if (expectedScopeReason === null) {
+    throw new Error('Finalized missions cannot receive renderer evidence uncertainty.')
+  }
+  if (operation === 'stage') {
+    if (input.scope_reason !== expectedScopeReason) {
+      throw new Error('Renderer evidence uncertainty scope reason does not match mission state.')
+    }
+    await outbox.stageRendererEvidenceUncertainty(
+      missionId,
+      incidentId,
+      input.scope_reason,
+    )
+  } else {
+    await outbox.resolveRendererEvidenceUncertainty(
+      missionId,
+      incidentId,
+      input.outcome,
+    )
+  }
+  return getIngestEvidenceHealth(db, outbox, missionId)
+}
+
+/** Names the bounded reason one non-finalized mission can own renderer evidence. */
+function rendererEvidenceScopeReason(status) {
+  if (status === 'active') return 'active_mission'
+  if (status === 'paused') return 'paused_recoverable_mission'
+  if (status === 'finished') return 'finished_unfinalized_mission'
+  return null
 }
 
 /** Records an authorized, permanent acceptance of one exact known evidence gap. */

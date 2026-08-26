@@ -25,7 +25,7 @@ function createRendererTeardownCoordinator(dependencies) {
     if (!isRendererTeardownResult(input)) return
     const pending = pendingByRequestId.get(input.requestId)
     if (pending === undefined || pending.webContents !== event.sender) return
-    pending.settle(input.ok)
+    void pending.settle(input.ok).catch(() => undefined)
   }
 
   ipcMain.on(RENDERER_TEARDOWN_READY_CHANNEL, handleRendererReady)
@@ -46,58 +46,161 @@ function createRendererTeardownCoordinator(dependencies) {
     return preparation
   }
 
-  /** Drains through the renderer or replaces uncertainty with durable mission state. */
+  /** Drains through the renderer or replaces confirmed loss with durable mission state. */
   async function runPreparation(webContents, reason) {
-    const rendererDrained = await requestRendererDrain(webContents, reason)
-    if (rendererDrained) return { mode: 'renderer_drained' }
-    return persistUnfinalizedMissionEvidenceLoss()
+    const result = await requestRendererDrain(webContents, reason)
+    if (result.drained) return { mode: 'renderer_drained' }
+    return formatDurableLossResult(result.lossScopes)
   }
 
-  /** Waits for one sender-owned acknowledgement within the fixed timeout. */
+  /**
+   * Uses the fixed timeout only as a durable soft deadline. The renderer remains
+   * alive until it confirms a clean drain or is actually lost.
+   */
   function requestRendererDrain(webContents, reason) {
-    if (webContents.isDestroyed()) return Promise.resolve(false)
     const requestId = createRequestId()
-    return new Promise((resolve) => {
-      let settled = false
+    if (webContents.isDestroyed()) {
+      return persistUnfinalizedMissionEvidenceLoss().then((lossScopes) => ({
+        drained: false,
+        lossScopes,
+      }))
+    }
+    return new Promise((resolve, reject) => {
+      let state = 'pending'
       let timer
-      const settle = (result) => {
-        if (settled) return
-        settled = true
+      let settlement = null
+      let uncertainty = null
+      const fail = (error) => {
+        if (state === 'settled') return
+        state = 'settled'
         pendingByRequestId.delete(requestId)
         if (timer !== undefined) clearTimeoutFn(timer)
-        resolve(result)
+        reject(error)
+      }
+      const settle = (drained) => {
+        if (state === 'settled' && settlement === null) {
+          return Promise.resolve({ drained: false, lossScopes: [] })
+        }
+        if (settlement !== null) return settlement
+        state = 'settling'
+        if (timer !== undefined) clearTimeoutFn(timer)
+        settlement = (async () => {
+          const scopes = uncertainty === null
+            ? drained ? [] : await listRendererEvidenceScopes()
+            : await uncertainty
+          if (uncertainty !== null) {
+            await resolveRendererEvidenceUncertainty(
+              scopes,
+              requestId,
+              drained ? 'drained' : 'lost',
+            )
+          } else if (!drained) {
+            await persistEvidenceLossForScopes(scopes)
+          }
+          state = 'settled'
+          pendingByRequestId.delete(requestId)
+          const result = {
+            drained,
+            lossScopes: drained ? [] : scopes,
+          }
+          resolve(result)
+          return result
+        })().catch((error) => {
+          fail(error)
+          throw error
+        })
+        return settlement
       }
       pendingByRequestId.set(requestId, { webContents, settle })
-      timer = setTimeoutFn(() => settle(false), timeoutMs)
+      timer = setTimeoutFn(() => {
+        if (state !== 'pending' || uncertainty !== null) return
+        uncertainty = stageRendererEvidenceUncertainty(requestId)
+        void uncertainty.catch(fail)
+      }, timeoutMs)
       try {
         webContents.send(RENDERER_TEARDOWN_REQUEST_CHANNEL, { requestId, reason })
       } catch {
-        settle(false)
+        void settle(false).catch(() => undefined)
       }
     })
   }
 
-  /** Writes sticky blockers for every mission that could still own renderer evidence. */
-  async function persistUnfinalizedMissionEvidenceLoss() {
+  /** Returns every mission plus the bounded reason it could own renderer evidence. */
+  async function listRendererEvidenceScopes() {
+    if (typeof missionStore.listRendererEvidenceScopesAwaitingClosure === 'function') {
+      return missionStore.listRendererEvidenceScopesAwaitingClosure()
+    }
     const missionIds = await missionStore.listMissionIdsAwaitingEvidenceClosure()
-    if (missionIds.length === 0) return { mode: 'no_unfinalized_mission' }
-    for (const missionId of missionIds) {
-      await missionStore.recordIngestEvidenceLoss({
-        mission_id: missionId,
-        reason: RENDERER_EVIDENCE_LOSS_REASON,
+    return missionIds.map((missionId) => ({
+      mission_id: missionId,
+      scope_reason: 'active_mission',
+    }))
+  }
+
+  /** Writes provisional, retractable blockers when the soft deadline expires. */
+  async function stageRendererEvidenceUncertainty(incidentId) {
+    const scopes = await listRendererEvidenceScopes()
+    for (const scope of scopes) {
+      await missionStore.stageRendererEvidenceUncertainty({
+        ...scope,
+        incident_id: incidentId,
       })
     }
-    if (missionIds.length === 1) {
-      return { mode: 'durable_loss_marker', missionId: missionIds[0] }
+    return scopes
+  }
+
+  /** Resolves the exact provisional occurrence without inventing a loss generation. */
+  async function resolveRendererEvidenceUncertainty(scopes, incidentId, outcome) {
+    for (const scope of scopes) {
+      await missionStore.resolveRendererEvidenceUncertainty({
+        mission_id: scope.mission_id,
+        incident_id: incidentId,
+        outcome,
+      })
     }
-    return { mode: 'durable_loss_markers', missionIds }
+  }
+
+  /** Writes sticky blockers for every named mission after confirmed renderer loss. */
+  async function persistUnfinalizedMissionEvidenceLoss() {
+    const scopes = await listRendererEvidenceScopes()
+    await persistEvidenceLossForScopes(scopes)
+    return scopes
+  }
+
+  /** Persists one confirmed loss against the exact named mission scopes. */
+  async function persistEvidenceLossForScopes(scopes) {
+    for (const scope of scopes) {
+      await missionStore.recordIngestEvidenceLoss({
+        mission_id: scope.mission_id,
+        reason: RENDERER_EVIDENCE_LOSS_REASON,
+        scope_reason: scope.scope_reason,
+      })
+    }
+  }
+
+  /** Preserves the established result envelope for lifecycle callers and logs. */
+  function formatDurableLossResult(scopes) {
+    if (scopes.length === 0) return { mode: 'no_unfinalized_mission' }
+    if (scopes.length === 1) {
+      return { mode: 'durable_loss_marker', missionId: scopes[0].mission_id }
+    }
+    return {
+      mode: 'durable_loss_markers',
+      missionIds: scopes.map((scope) => scope.mission_id),
+    }
   }
 
   /** Immediately fences every unfinalized mission after unexpected renderer loss. */
   function markRendererUnavailable() {
     unexpectedRendererLossDetected = true
     if (unexpectedRendererLossFence !== null) return unexpectedRendererLossFence
-    const attempt = persistUnfinalizedMissionEvidenceLoss().catch((error) => {
+    const pendingSettlements = [...pendingByRequestId.values()].map((pending) =>
+      pending.settle(false))
+    const attempt = (pendingSettlements.length === 0
+      ? persistUnfinalizedMissionEvidenceLoss().then(formatDurableLossResult)
+      : Promise.all(pendingSettlements).then((results) => formatDurableLossResult(
+        results.flatMap((result) => result.lossScopes),
+      ))).catch((error) => {
       if (unexpectedRendererLossFence === attempt) {
         unexpectedRendererLossFence = null
       }
@@ -125,7 +228,9 @@ function createRendererTeardownCoordinator(dependencies) {
   /** Removes the IPC listener and fails any still-waiting renderer request closed. */
   function dispose() {
     ipcMain.removeListener(RENDERER_TEARDOWN_READY_CHANNEL, handleRendererReady)
-    for (const pending of pendingByRequestId.values()) pending.settle(false)
+    for (const pending of pendingByRequestId.values()) {
+      void pending.settle(false).catch(() => undefined)
+    }
     pendingByRequestId.clear()
   }
 

@@ -997,10 +997,14 @@
             marker cannot be written, runtime replacement fails closed instead of installing a new
             controller over unresolved evidence. The desktop main process now owns this
             boundary for normal window close, reload, and app quit: it keeps the renderer
-            alive until the drain acknowledges, and writes the same mission-scoped blocker
-            itself if the renderer is gone or misses the bounded acknowledgement. Before it permits
-            that teardown, main durably blocks every unfinalized mission, including a finished mission,
-            so a completed lifecycle transition cannot hide renderer-held evidence. An unexpected
+            alive until the drain acknowledges. After five seconds it records only provisional,
+            mission-scoped uncertainty and continues waiting; a later clean acknowledgement removes
+            that exact provisional record without creating or advancing an evidence-loss occurrence.
+            Main writes the permanent mission-scoped blocker only when the renderer explicitly rejects
+            the drain, is actually lost, or the app restarts with unresolved provisional uncertainty.
+            Before it permits that teardown, main names why each affected active, paused, or finished
+            mission could own renderer evidence, so a completed lifecycle transition cannot hide
+            renderer-held evidence or falsely contaminate an unrelated mission. An unexpected
             renderer crash is fenced immediately, and normal quit or macOS window recreation cannot
             overtake that in-flight fence. Once a replacement renderer has loaded safely, it opens a
             fresh incident generation, so another crash always records another loss occurrence rather

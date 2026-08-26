@@ -17,9 +17,23 @@ const {
     }
     readonly missionStore: {
       readonly listMissionIdsAwaitingEvidenceClosure: () => Promise<readonly string[]>
+      readonly listRendererEvidenceScopesAwaitingClosure?: () => Promise<readonly {
+        readonly mission_id: string
+        readonly scope_reason: string
+      }[]>
       readonly recordIngestEvidenceLoss: (input: {
         readonly mission_id: string
         readonly reason: string
+      }) => Promise<unknown>
+      readonly stageRendererEvidenceUncertainty?: (input: {
+        readonly mission_id: string
+        readonly incident_id: string
+        readonly scope_reason: string
+      }) => Promise<unknown>
+      readonly resolveRendererEvidenceUncertainty?: (input: {
+        readonly mission_id: string
+        readonly incident_id: string
+        readonly outcome: 'drained' | 'lost'
       }) => Promise<unknown>
     }
     readonly createRequestId: () => string
@@ -65,9 +79,10 @@ describe('renderer teardown coordinator', () => {
 
     await expect(preparation).resolves.toEqual({ mode: 'renderer_drained' })
     expect(missionStore.listMissionIdsAwaitingEvidenceClosure).not.toHaveBeenCalled()
+    expect(missionStore.listRendererEvidenceScopesAwaitingClosure).not.toHaveBeenCalled()
   })
 
-  it('durably blocks the active mission when the renderer misses the bounded timeout', async () => {
+  it('seals provisional uncertainty when the renderer explicitly rejects after the soft deadline', async () => {
     let timeoutListener: (() => void) | undefined
     const listeners = new Map<string, (event: unknown, input: unknown) => void>()
     const missionStore = createMissionStore()
@@ -87,15 +102,111 @@ describe('renderer teardown coordinator', () => {
     const preparation = coordinator.prepare({ webContents }, 'renderer_reload')
     await vi.waitFor(() => expect(timeoutListener).toBeTypeOf('function'))
     timeoutListener?.()
+    await vi.waitFor(() => {
+      expect(missionStore.stageRendererEvidenceUncertainty).toHaveBeenCalledOnce()
+    })
+    listeners.get(RENDERER_TEARDOWN_READY_CHANNEL)?.(
+      { sender: webContents },
+      { requestId: 'request-2', ok: false },
+    )
 
     await expect(preparation).resolves.toEqual({
       mode: 'durable_loss_marker',
       missionId: 'mission-1',
     })
-    expect(missionStore.recordIngestEvidenceLoss).toHaveBeenCalledWith({
+    expect(missionStore.resolveRendererEvidenceUncertainty).toHaveBeenCalledWith({
       mission_id: 'mission-1',
-      reason: 'renderer_pending_evidence_lost',
+      incident_id: 'request-2',
+      outcome: 'lost',
     })
+    expect(missionStore.recordIngestEvidenceLoss).not.toHaveBeenCalled()
+  })
+
+  it('keeps the renderer alive after the soft deadline and retracts provisional uncertainty on a late clean drain [DON-276]', async () => {
+    let softDeadline: (() => void) | undefined
+    const listeners = new Map<string, (event: unknown, input: unknown) => void>()
+    const missionStore = createMissionStore()
+    const webContents = createWebContents()
+    const coordinator = createRendererTeardownCoordinator({
+      ipcMain: createIpcMain(listeners),
+      missionStore,
+      createRequestId: () => 'request-slow-clean-drain',
+      setTimeout: vi.fn((listener: () => void) => {
+        softDeadline = listener
+        return 12
+      }),
+      clearTimeout: vi.fn(),
+      timeoutMs: 5_000,
+    })
+
+    const preparation = coordinator.prepare({ webContents }, 'app_quit')
+    let settled = false
+    void preparation.finally(() => {
+      settled = true
+    })
+    await vi.waitFor(() => expect(webContents.send).toHaveBeenCalledOnce())
+
+    softDeadline?.()
+    await vi.waitFor(() => {
+      expect(missionStore.stageRendererEvidenceUncertainty).toHaveBeenCalledWith({
+        mission_id: 'mission-1',
+        incident_id: 'request-slow-clean-drain',
+        scope_reason: 'active_mission',
+      })
+    })
+    expect(settled).toBe(false)
+    expect(missionStore.recordIngestEvidenceLoss).not.toHaveBeenCalled()
+
+    listeners.get(RENDERER_TEARDOWN_READY_CHANNEL)?.(
+      { sender: webContents },
+      { requestId: 'request-slow-clean-drain', ok: true },
+    )
+
+    await expect(preparation).resolves.toEqual({ mode: 'renderer_drained' })
+    expect(missionStore.resolveRendererEvidenceUncertainty).toHaveBeenCalledWith({
+      mission_id: 'mission-1',
+      incident_id: 'request-slow-clean-drain',
+      outcome: 'drained',
+    })
+    expect(missionStore.recordIngestEvidenceLoss).not.toHaveBeenCalled()
+  })
+
+  it('promotes the exact provisional incident when the renderer is actually lost [DON-276]', async () => {
+    let softDeadline: (() => void) | undefined
+    const listeners = new Map<string, (event: unknown, input: unknown) => void>()
+    const missionStore = createMissionStore()
+    const webContents = createWebContents()
+    const coordinator = createRendererTeardownCoordinator({
+      ipcMain: createIpcMain(listeners),
+      missionStore,
+      createRequestId: () => 'request-soft-then-crash',
+      setTimeout: vi.fn((listener: () => void) => {
+        softDeadline = listener
+        return 13
+      }),
+      clearTimeout: vi.fn(),
+      timeoutMs: 5_000,
+    })
+
+    const preparation = coordinator.prepare({ webContents }, 'renderer_reload')
+    softDeadline?.()
+    await vi.waitFor(() => {
+      expect(missionStore.stageRendererEvidenceUncertainty).toHaveBeenCalledOnce()
+    })
+
+    const crashFence = coordinator.markRendererUnavailable()
+
+    await expect(Promise.all([preparation, crashFence])).resolves.toEqual([
+      { mode: 'durable_loss_marker', missionId: 'mission-1' },
+      { mode: 'durable_loss_marker', missionId: 'mission-1' },
+    ])
+    expect(missionStore.resolveRendererEvidenceUncertainty).toHaveBeenCalledOnce()
+    expect(missionStore.resolveRendererEvidenceUncertainty).toHaveBeenCalledWith({
+      mission_id: 'mission-1',
+      incident_id: 'request-soft-then-crash',
+      outcome: 'lost',
+    })
+    expect(missionStore.recordIngestEvidenceLoss).not.toHaveBeenCalled()
   })
 
   it('uses the same durable fallback when the renderer rejects cleanup or is gone', async () => {
@@ -132,8 +243,8 @@ describe('renderer teardown coordinator', () => {
   it('durably blocks a finished mission when renderer cleanup fails after Finish', async () => {
     const listeners = new Map<string, (event: unknown, input: unknown) => void>()
     const missionStore = createMissionStore()
-    missionStore.listMissionIdsAwaitingEvidenceClosure.mockResolvedValue([
-      'mission-finished',
+    missionStore.listRendererEvidenceScopesAwaitingClosure.mockResolvedValue([
+      { mission_id: 'mission-finished', scope_reason: 'finished_unfinalized_mission' },
     ])
     const webContents = createWebContents()
     const coordinator = createRendererTeardownCoordinator({
@@ -159,15 +270,16 @@ describe('renderer teardown coordinator', () => {
     expect(missionStore.recordIngestEvidenceLoss).toHaveBeenCalledWith({
       mission_id: 'mission-finished',
       reason: 'renderer_pending_evidence_lost',
+      scope_reason: 'finished_unfinalized_mission',
     })
   })
 
   it('marks every unfinalized mission when renderer-owned evidence scope is uncertain', async () => {
     const listeners = new Map<string, (event: unknown, input: unknown) => void>()
     const missionStore = createMissionStore()
-    missionStore.listMissionIdsAwaitingEvidenceClosure.mockResolvedValue([
-      'mission-active',
-      'mission-finished',
+    missionStore.listRendererEvidenceScopesAwaitingClosure.mockResolvedValue([
+      { mission_id: 'mission-active', scope_reason: 'active_mission' },
+      { mission_id: 'mission-finished', scope_reason: 'finished_unfinalized_mission' },
     ])
     const webContents = createWebContents(true)
     const coordinator = createRendererTeardownCoordinator({
@@ -186,8 +298,16 @@ describe('renderer teardown coordinator', () => {
       missionIds: ['mission-active', 'mission-finished'],
     })
     expect(missionStore.recordIngestEvidenceLoss.mock.calls).toEqual([
-      [{ mission_id: 'mission-active', reason: 'renderer_pending_evidence_lost' }],
-      [{ mission_id: 'mission-finished', reason: 'renderer_pending_evidence_lost' }],
+      [{
+        mission_id: 'mission-active',
+        reason: 'renderer_pending_evidence_lost',
+        scope_reason: 'active_mission',
+      }],
+      [{
+        mission_id: 'mission-finished',
+        reason: 'renderer_pending_evidence_lost',
+        scope_reason: 'finished_unfinalized_mission',
+      }],
     ])
   })
 
@@ -258,9 +378,10 @@ describe('renderer teardown coordinator', () => {
       cleanExitFenceSettled = true
     })
 
-    await Promise.resolve()
+    await vi.waitFor(() => {
+      expect(missionStore.recordIngestEvidenceLoss).toHaveBeenCalledOnce()
+    })
     expect(cleanExitFenceSettled).toBe(false)
-    expect(missionStore.recordIngestEvidenceLoss).toHaveBeenCalledOnce()
 
     releaseMarker?.()
     await expect(Promise.all([crashFence, cleanExitFence])).resolves.toEqual([
@@ -272,9 +393,12 @@ describe('renderer teardown coordinator', () => {
   it('starts a new durable loss occurrence after a replacement renderer becomes available [DON-276]', async () => {
     const listeners = new Map<string, (event: unknown, input: unknown) => void>()
     const missionStore = createMissionStore()
-    missionStore.listMissionIdsAwaitingEvidenceClosure
+    missionStore.listRendererEvidenceScopesAwaitingClosure
       .mockResolvedValueOnce([])
-      .mockResolvedValueOnce(['mission-after-replacement'])
+      .mockResolvedValueOnce([{
+        mission_id: 'mission-after-replacement',
+        scope_reason: 'active_mission',
+      }])
     const coordinator = createRendererTeardownCoordinator({
       ipcMain: createIpcMain(listeners),
       missionStore,
@@ -297,6 +421,7 @@ describe('renderer teardown coordinator', () => {
     expect(missionStore.recordIngestEvidenceLoss).toHaveBeenCalledWith({
       mission_id: 'mission-after-replacement',
       reason: 'renderer_pending_evidence_lost',
+      scope_reason: 'active_mission',
     })
   })
 
@@ -348,6 +473,14 @@ describe('renderer teardown coordinator', () => {
       { requestId: 'request-5', ok: true },
     )
     timeoutListener?.()
+    await vi.waitFor(() => {
+      expect(missionStore.stageRendererEvidenceUncertainty).toHaveBeenCalledOnce()
+    })
+    expect(missionStore.resolveRendererEvidenceUncertainty).not.toHaveBeenCalled()
+    listeners.get(RENDERER_TEARDOWN_READY_CHANNEL)?.(
+      { sender: webContents },
+      { requestId: 'request-5', ok: false },
+    )
 
     await expect(preparation).resolves.toEqual({
       mode: 'durable_loss_marker',
@@ -372,7 +505,13 @@ function createIpcMain(
 function createMissionStore() {
   return {
     listMissionIdsAwaitingEvidenceClosure: vi.fn(async () => ['mission-1']),
+    listRendererEvidenceScopesAwaitingClosure: vi.fn(async () => [{
+      mission_id: 'mission-1',
+      scope_reason: 'active_mission',
+    }]),
     recordIngestEvidenceLoss: vi.fn(async () => ({ state: 'critical' })),
+    stageRendererEvidenceUncertainty: vi.fn(async () => ({ state: 'degraded' })),
+    resolveRendererEvidenceUncertainty: vi.fn(async () => ({ state: 'healthy' })),
   }
 }
 

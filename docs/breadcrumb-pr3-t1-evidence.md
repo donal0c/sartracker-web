@@ -3155,3 +3155,65 @@ Those reviews diagnose the superseded code and do not approve this fix. The
 amended topology therefore requires one fresh broad review plus only the three
 affected targeted exact-head rechecks after the replacement macOS/Linux
 package evidence is bound. No five-review restart, merge, or release occurred.
+
+### RED — renderer drain deadline contract after Opus exact-head review
+
+The Opus review of application head `ae134245e833a20bd67b0bae0ab5194779e17599`
+identified one additional P1 at the same evidence-lifecycle seam. Central source
+retrace confirmed the defect before production changes: main treats the
+five-second renderer drain timeout as proof of permanent evidence loss, while
+the renderer first awaits a bootstrap promise whose own watchdog is 30 seconds.
+A clean drain acknowledgement arriving after five seconds is discarded, so a
+benign slow boot or cleanup can permanently block Complete/100% and advance the
+loss generation despite no evidence being lost.
+
+One detail in the review's reproduction was disproved without weakening the
+finding: the 3.704 GB v9-to-v10 migration runs synchronously in Electron main
+before the renderer window is created, so that migration cannot itself occupy
+this renderer acknowledgement window. Renderer bootstrap and runtime cleanup
+still have legal paths longer than five seconds, so the deadline inversion and
+false permanent-loss result remain confirmed.
+
+The replacement contract is pinned red before implementation:
+
+- five seconds is a soft deadline that durably records provisional uncertainty
+  but does not allow renderer teardown or consume a loss generation;
+- a matching late `ok: true` acknowledgement retracts that exact provisional
+  marker and permits teardown;
+- an explicit negative acknowledgement, actual renderer loss, or restart with
+  unresolved provisional uncertainty seals permanent loss exactly once;
+- every mission-scoped provisional write carries the bounded reason that the
+  mission could own renderer evidence; and
+- the production claim boundary has named tests for `not_enumerated`,
+  `chunk_missing`, and `ingest_outbox_pending` rather than relying on the
+  browser harness as the database oracle.
+
+Expected RED reasons: the current coordinator settles at the five-second timer
+and calls permanent `recordIngestEvidenceLoss`; the outbox has no provisional
+stage/retract contract; the mission store returns bare mission IDs without scope
+reasons; and the three production claim blockers are not pinned as named cases.
+
+### GREEN — provisional uncertainty, exact promotion, and direct claim proof
+
+Main now treats five seconds as a soft durability checkpoint rather than a
+teardown permission. It writes `renderer_evidence_pending` against each exact
+mission scope and leaves the renderer alive. A matching late clean drain removes
+that exact incident without changing `lossGeneration`; an explicit negative
+reply or actual renderer loss promotes it to `renderer_pending_evidence_lost`;
+and startup promotes a provisional marker left by process loss exactly once.
+Active, paused, and finished missions carry distinct bounded scope reasons, and
+the mission store rejects a reason that does not match durable mission state.
+
+The browser harness remains UI/workflow evidence, not the production database
+claim oracle. Named production-boundary tests now pin `not_enumerated`,
+`chunk_missing`, and `ingest_outbox_pending`. The pull-request Linux workflow
+now runs ESLint, the complete unit suite, and the production build/bundle budgets
+before packaging instead of running only `vite-config.test.ts`.
+
+Current local GREEN before replacement package proof:
+
+- deadline/outbox/mission-store/claim focus: 5 files / 153 tests;
+- renderer main wiring focus: 4 files / 43 tests;
+- full deterministic serial gate: 273 files / 2,242 tests;
+- ESLint: PASS; and
+- TypeScript, production build, and bundle budgets: PASS.

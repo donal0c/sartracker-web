@@ -115,6 +115,10 @@ type ElectronMissionStore = {
   readonly getActiveMission: () => Promise<{ readonly id: string; readonly status: string } | null>
   readonly listMissions: () => Promise<readonly { readonly id: string; readonly status: string }[]>
   readonly listMissionIdsAwaitingEvidenceClosure: () => Promise<readonly string[]>
+  readonly listRendererEvidenceScopesAwaitingClosure: () => Promise<readonly {
+    readonly mission_id: string
+    readonly scope_reason: string
+  }[]>
   readonly pauseMission: (missionId: string) => Promise<{ readonly status: string }>
   readonly resumeMission: (missionId: string) => Promise<{ readonly status: string }>
   readonly finishMission: (missionId: string) => Promise<{ readonly status: string }>
@@ -303,6 +307,22 @@ type ElectronMissionStore = {
     readonly reason: string | null
     readonly pendingCount: number
   }>
+  readonly stageRendererEvidenceUncertainty: (input: {
+    readonly mission_id: string
+    readonly incident_id: string
+    readonly scope_reason: string
+  }) => Promise<{
+    readonly state: 'healthy' | 'degraded' | 'critical'
+    readonly reason: string | null
+  }>
+  readonly resolveRendererEvidenceUncertainty: (input: {
+    readonly mission_id: string
+    readonly incident_id: string
+    readonly outcome: 'drained' | 'lost'
+  }) => Promise<{
+    readonly state: 'healthy' | 'degraded' | 'critical'
+    readonly reason: string | null
+  }>
   readonly getIngestEvidenceHealth: (missionId?: string) => Promise<{
     readonly state: 'healthy' | 'degraded' | 'critical'
     readonly reason: string | null
@@ -489,6 +509,24 @@ describe('electron mission store', () => {
     await store.finalizeMission(finished.id)
     await expect(store.listMissionIdsAwaitingEvidenceClosure()).resolves.toEqual([
       active.id,
+    ])
+  })
+
+  it('names why each mission can own renderer evidence during teardown [DON-276]', async () => {
+    store = await createStore()
+    const finished = await store.createMission({ name: 'Finished Renderer Scope' })
+    await store.finishMission(finished.id)
+    const active = await store.createMission({ name: 'Active Renderer Scope' })
+
+    await expect(store.listRendererEvidenceScopesAwaitingClosure()).resolves.toEqual([
+      { mission_id: active.id, scope_reason: 'active_mission' },
+      { mission_id: finished.id, scope_reason: 'finished_unfinalized_mission' },
+    ])
+
+    await store.pauseMission(active.id)
+    await expect(store.listRendererEvidenceScopesAwaitingClosure()).resolves.toEqual([
+      { mission_id: active.id, scope_reason: 'paused_recoverable_mission' },
+      { mission_id: finished.id, scope_reason: 'finished_unfinalized_mission' },
     ])
   })
 

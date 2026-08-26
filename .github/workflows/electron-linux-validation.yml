@@ -76,8 +76,14 @@ jobs:
       - name: Install npm deps
         run: npm ci
 
-      - name: Unit regression for packaged file URLs
-        run: npx vitest run tests/unit/vite-config.test.ts
+      - name: Lint
+        run: npm run lint
+
+      - name: Full deterministic unit gate
+        run: npm run test
+
+      - name: Production web build and bundle budgets
+        run: npm run build
 
       - name: Build Electron Linux artifacts
         # This workflow is an internal qualification lane. Release packaging

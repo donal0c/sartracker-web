@@ -270,6 +270,44 @@ describe('Electron coverage query', () => {
     })
   })
 
+  it('blocks a selected fresh chunk until the mission inventory is enumerated', () => {
+    seedMissionModel(database)
+    database.exec(`
+      INSERT INTO coverage_chunks (
+        mission_id, device_id, period_kind, period_id, content_rev, built_rev,
+        fix_count, fix_digest, min_ts, max_ts, updated_at
+      ) VALUES ('mission-1', 'device-1', 'unassigned', '', 1, 1,
+        1, 'digest', NULL, NULL, '2026-08-24T12:00:00.000Z');
+    `)
+    const key: CoverageKey = {
+      device_id: 'device-1', period_kind: 'unassigned', period_id: '',
+    }
+
+    expect(readCoverageClaimSnapshot(database, {
+      missionId: 'mission-1', selectedKeys: [key],
+    })).toMatchObject({
+      databaseReady: false,
+      blockers: ['not_enumerated'],
+    })
+  })
+
+  it('blocks an enumerated inventory when its selected ledger chunk is missing', () => {
+    seedMissionModel(database)
+    database.exec('UPDATE coverage_missions SET enumerated = 1')
+    const key: CoverageKey = {
+      device_id: 'device-1', period_kind: 'unassigned', period_id: '',
+    }
+
+    expect(readCoverageClaimSnapshot(database, {
+      missionId: 'mission-1', selectedKeys: [key],
+    })).toEqual({
+      changeSeq: 4,
+      databaseReady: false,
+      blockers: ['chunk_missing'],
+      chunkRevisions: [],
+    })
+  })
+
   it('reads one logical chunk in deterministic cursor pages with source-exact rows', () => {
     seedMissionModel(database)
     database.exec(`INSERT INTO coverage_chunks (

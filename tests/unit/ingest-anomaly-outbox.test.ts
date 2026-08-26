@@ -27,6 +27,16 @@ const {
     readonly initialize: () => Promise<void>
     readonly deliver: (envelope: RejectionEnvelope) => Promise<{ readonly persisted: boolean }>
     readonly markEvidenceLoss: (missionId: string, reason: string) => Promise<void>
+    readonly stageRendererEvidenceUncertainty: (
+      missionId: string,
+      incidentId: string,
+      scopeReason: string,
+    ) => Promise<void>
+    readonly resolveRendererEvidenceUncertainty: (
+      missionId: string,
+      incidentId: string,
+      outcome: 'drained' | 'lost',
+    ) => Promise<void>
     readonly readEvidenceLossAcknowledgementCandidate: (missionId: string) => Promise<{
       readonly token: string
       readonly reasons: readonly string[]
@@ -329,6 +339,82 @@ describe('durable ingest anomaly outbox [DON-268]', () => {
       pendingCount: 0,
       lastFailure: 'renderer_pending_evidence_lost',
     })
+  })
+
+  it('retracts a late-clean renderer drain without consuming the acknowledged loss generation [DON-276]', async () => {
+    directoryPath = await mkdtemp(path.join(tmpdir(), 'sartracker-ingest-outbox-'))
+    const outbox = createIngestAnomalyOutbox({
+      directoryPath,
+      projectEnvelope: vi.fn(),
+    })
+    await outbox.markEvidenceLoss('mission-1', 'renderer_pending_evidence_lost')
+    const acknowledgedOccurrence = await outbox.readEvidenceLossAcknowledgementCandidate(
+      'mission-1',
+    )
+
+    await outbox.stageRendererEvidenceUncertainty(
+      'mission-1',
+      'request-slow-clean-drain',
+      'finished_unfinalized_mission',
+    )
+    await expect(outbox.health('mission-1')).resolves.toMatchObject({
+      lastFailure: 'renderer_pending_evidence_lost',
+    })
+    await expect(
+      outbox.readEvidenceLossAcknowledgementCandidate('mission-1'),
+    ).rejects.toThrow(/isolated mission evidence loss/iu)
+
+    await outbox.resolveRendererEvidenceUncertainty(
+      'mission-1',
+      'request-slow-clean-drain',
+      'drained',
+    )
+
+    await expect(outbox.readEvidenceLossAcknowledgementCandidate('mission-1')).resolves.toEqual(
+      acknowledgedOccurrence,
+    )
+    const marker = JSON.parse(
+      await fsPromises.readFile(
+        path.join(
+          directoryPath,
+          `degraded-health-${createHash('sha256').update('mission-1').digest('hex').slice(0, 16)}.json.marker`,
+        ),
+        'utf8',
+      ),
+    ) as { readonly rendererEvidenceContexts?: Record<string, unknown> }
+    expect(marker.rendererEvidenceContexts).toEqual({})
+  })
+
+  it('promotes unresolved renderer uncertainty to permanent loss exactly once after restart [DON-276]', async () => {
+    directoryPath = await mkdtemp(path.join(tmpdir(), 'sartracker-ingest-outbox-'))
+    const staging = createIngestAnomalyOutbox({
+      directoryPath,
+      projectEnvelope: vi.fn(),
+    })
+    await staging.stageRendererEvidenceUncertainty(
+      'mission-1',
+      'request-process-lost',
+      'active_mission',
+    )
+
+    const restarted = createIngestAnomalyOutbox({
+      directoryPath,
+      projectEnvelope: vi.fn(),
+    })
+    await restarted.initialize()
+    await expect(restarted.health('mission-1')).resolves.toMatchObject({
+      lastFailure: 'renderer_pending_evidence_lost',
+    })
+    const first = await restarted.readEvidenceLossAcknowledgementCandidate('mission-1')
+
+    const restartedAgain = createIngestAnomalyOutbox({
+      directoryPath,
+      projectEnvelope: vi.fn(),
+    })
+    await restartedAgain.initialize()
+    await expect(
+      restartedAgain.readEvidenceLossAcknowledgementCandidate('mission-1'),
+    ).resolves.toEqual(first)
   })
 
   it('retains evidence loss while an exact durable acknowledgement token permits lifecycle closure [DON-276]', async () => {

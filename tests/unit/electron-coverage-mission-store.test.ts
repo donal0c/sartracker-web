@@ -49,6 +49,9 @@ const { createElectronMissionStore } = require('../../electron/mission-store.cjs
       readonly signal?: AbortSignal
       readonly resultLimits?: Readonly<Record<string, number>>
     }) => Promise<Record<string, unknown>>
+    readonly ingestEvidenceFaultInjection?: {
+      readonly failProjection?: boolean
+    }
   }) => CoverageMissionStore
 }
 
@@ -154,6 +157,18 @@ type CoverageMissionStore = {
     readonly blockers: readonly string[]
     readonly chunkRevisions: readonly { readonly key: CoverageKey; readonly contentRev: number }[]
   }>
+  readonly recordIngestRejections: (input: {
+    readonly mission_id: string
+    readonly rejections: readonly {
+      readonly deliveryId: string
+      readonly anomalyKey: string
+      readonly deviceId: string
+      readonly sourcePositionId: string
+      readonly reasonClass: string
+      readonly receivedAt: string
+      readonly canonicalEvidence: Readonly<Record<string, unknown>>
+    }[]
+  }) => Promise<unknown>
   readonly cancelCoverageQuery: (requestId: string) => Promise<boolean>
   readonly readCoverageTile: (
     input: Readonly<Record<string, unknown>>,
@@ -369,6 +384,37 @@ describe('Electron coverage mission-store orchestration', () => {
     }, 'claim-2')).resolves.toMatchObject({
       databaseReady: false,
       blockers: expect.arrayContaining(['pending_invalidation']),
+    })
+  })
+
+  it('adds ingest_outbox_pending at the production claim boundary while durable evidence awaits projection', async () => {
+    directory = await mkdtemp(path.join(tmpdir(), 'sartracker-coverage-store-'))
+    store = createElectronMissionStore({
+      userDataPath: directory,
+      ingestEvidenceFaultInjection: { failProjection: true },
+    })
+    const mission = await seedMission(store)
+    const manifest = await store.readCoverageManifest(mission.id, 'pending-outbox-manifest')
+
+    await store.recordIngestRejections({
+      mission_id: mission.id,
+      rejections: [{
+        deliveryId: 'pending-coverage-rejection',
+        anomalyKey: 'source:rejected-1',
+        deviceId: 'device-1',
+        sourcePositionId: 'rejected-1',
+        reasonClass: 'coordinate_out_of_range',
+        receivedAt: '2026-08-24T09:06:00.000Z',
+        canonicalEvidence: { source_position_id: 'rejected-1' },
+      }],
+    })
+
+    await expect(store.readCoverageClaim({
+      missionId: mission.id,
+      selectedKeys: manifest.chunks.map((chunk) => chunk.key),
+    }, 'pending-outbox-claim')).resolves.toMatchObject({
+      databaseReady: false,
+      blockers: expect.arrayContaining(['ingest_outbox_pending']),
     })
   })
 
