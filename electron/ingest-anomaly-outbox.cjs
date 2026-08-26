@@ -179,11 +179,12 @@ function createIngestAnomalyOutbox(options) {
   }
 
   /** Stages one durable incident before projecting any per-mission health markers. */
-  function stageRendererEvidenceIncident(scopes, incidentId) {
+  function stageRendererEvidenceIncident(scopes, incidentId, validateScopes) {
     return enqueue(async () => {
       validateRendererEvidenceIncidentId(incidentId)
       const normalizedScopes = normalizeRendererEvidenceIncidentScopes(scopes)
       await initializeDirectoryAndFailureState()
+      await validateScopes?.(normalizedScopes)
       const incidentKey = createDeliveryRecoveryKey(incidentId)
       const previous = rendererEvidenceIncidentsByKey.get(incidentKey)
       const combinedScopes = mergeRendererIncidentScopes(
@@ -224,10 +225,19 @@ function createIngestAnomalyOutbox(options) {
   }
 
   /** Preserves the earlier single-scope API on top of the durable incident unit. */
-  function stageRendererEvidenceUncertainty(missionId, incidentId, scopeReason) {
+  function stageRendererEvidenceUncertainty(
+    missionId,
+    incidentId,
+    scopeReason,
+    validateScopes,
+  ) {
     validateMissionScope(missionId)
     validateRendererEvidenceScopeReason(scopeReason)
-    return stageRendererEvidenceIncident([{ missionId, scopeReason }], incidentId)
+    return stageRendererEvidenceIncident(
+      [{ missionId, scopeReason }],
+      incidentId,
+      validateScopes,
+    )
   }
 
   /** Retracts a clean late drain or seals an actual renderer-loss occurrence exactly once. */

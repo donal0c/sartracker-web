@@ -618,11 +618,11 @@ export async function startTrackingRuntime(
                 refreshTrackingStatus()
               }
             } catch (error) {
-              logger.warn('Tracking history wave persistence failed.', error)
-              if (runtimeGeneration === activeTrackingRuntimeGeneration) {
-                missionPersistenceWarningActive = true
-                refreshTrackingStatus()
-              }
+              await retainMissionPersistenceFailure(
+                error,
+                inputs[0]?.expectedMissionId ?? null,
+                'Tracking history wave persistence failed.',
+              )
               throw error
             }
           },
@@ -731,11 +731,11 @@ export async function startTrackingRuntime(
         dependencies.notifyDurablePositionChange?.(changedPositionCount)
         return { changed: changedPositionCount > 0 }
       } catch (error) {
-        logger.warn('Tracking history chunk persistence failed.', error)
-        if (runtimeGeneration === activeTrackingRuntimeGeneration) {
-          missionPersistenceWarningActive = true
-          refreshTrackingStatus()
-        }
+        await retainMissionPersistenceFailure(
+          error,
+          input.expectedMissionId,
+          'Tracking history chunk persistence failed.',
+        )
         throw error
       }
     },
@@ -1175,6 +1175,35 @@ export async function startTrackingRuntime(
     }
   }
 
+  /** Retains an accepted persistence failure before its mission observation settles. */
+  async function retainMissionPersistenceFailure(
+    error: unknown,
+    missionId: string | null,
+    message: string,
+  ): Promise<void> {
+    logger.warn(message, error)
+    if (
+      runtimeGeneration === activeTrackingRuntimeGeneration &&
+      !missionPersistenceWarningActive
+    ) {
+      missionPersistenceWarningActive = true
+      refreshTrackingStatus()
+      void dependencies.recordDiagnosticEvent?.({
+        level: 'warn',
+        category: 'tracking',
+        event: 'tracking_mission_persistence_failed',
+        fields: {},
+      })
+    }
+    if (missionId === null || dependencies.recordMissionEvidenceLoss === undefined) {
+      throw new Error('Evidence marker unavailable.')
+    }
+    await dependencies.recordMissionEvidenceLoss(
+      missionId,
+      'mission_persistence_failed',
+    )
+  }
+
   /** Publishes failure and recovery only when a mission persistence attempt settled. */
   async function applyMissionPersistenceResult(
     result: PromiseSettledResult<unknown> | undefined,
@@ -1182,26 +1211,10 @@ export async function startTrackingRuntime(
   ): Promise<void> {
     if (result === undefined) return
     if (result.status === 'rejected') {
-      logger.warn('Mission persistence failed.', result.reason)
-      if (
-        runtimeGeneration === activeTrackingRuntimeGeneration &&
-        !missionPersistenceWarningActive
-      ) {
-        missionPersistenceWarningActive = true
-        refreshTrackingStatus()
-        void dependencies.recordDiagnosticEvent?.({
-          level: 'warn',
-          category: 'tracking',
-          event: 'tracking_mission_persistence_failed',
-          fields: {},
-        })
-      }
-      if (missionId === null || dependencies.recordMissionEvidenceLoss === undefined) {
-        throw new Error('Evidence marker unavailable.')
-      }
-      await dependencies.recordMissionEvidenceLoss(
+      await retainMissionPersistenceFailure(
+        result.reason,
         missionId,
-        'mission_persistence_failed',
+        'Mission persistence failed.',
       )
       return
     }

@@ -586,6 +586,54 @@ describe('electron mission store', () => {
     })
   })
 
+  it('revalidates renderer incident scopes after a queued finalization completes [DON-276]', async () => {
+    let releaseBackupStart: (() => void) | undefined
+    const backupStarted = new Promise<void>((resolve) => {
+      releaseBackupStart = resolve
+    })
+    const storageDiagnostics: StorageDiagnosticsPort = {
+      createOperation: vi.fn(() => ({
+        id: 'finalization-backup',
+        type: 'backup',
+        requestedAtMs: Date.now(),
+      })),
+      requested: vi.fn(),
+      started: vi.fn(() => backupStarted),
+      phase: vi.fn(),
+      completed: vi.fn(),
+      failed: vi.fn(),
+      startMission: vi.fn(),
+      recordTrackingBatch: vi.fn(),
+      recordInsertedPositions: vi.fn(),
+    }
+    store = await createStore({ storageDiagnostics })
+    const mission = await store.createMission({ name: 'Finalization Stage Race' })
+    await store.finishMission(mission.id)
+
+    const finalization = store.finalizeMission(mission.id)
+    await vi.waitFor(() => expect(storageDiagnostics.started).toHaveBeenCalledOnce())
+    const stage = store.stageRendererEvidenceIncident({
+      incident_id: 'incident-after-finalization',
+      scopes: [{
+        mission_id: mission.id,
+        scope_reason: 'finished_unfinalized_mission',
+      }],
+    })
+
+    releaseBackupStart?.()
+    await expect(finalization).resolves.toMatchObject({ mission: { status: 'finalized' } })
+    await expect(stage).rejects.toThrow(/scope reason does not match mission state/iu)
+    await expect(store.getIngestEvidenceHealth(mission.id)).resolves.toMatchObject({
+      state: 'healthy', reason: null,
+    })
+
+    store.close()
+    store = createElectronMissionStore({ userDataPath: userDataPath! })
+    await expect(store.getIngestEvidenceHealth(mission.id)).resolves.toMatchObject({
+      state: 'healthy', reason: null,
+    })
+  })
+
   it('rejects an explicitly blank renderer incident identity instead of sweeping all [DON-276]', async () => {
     store = await createStore()
 

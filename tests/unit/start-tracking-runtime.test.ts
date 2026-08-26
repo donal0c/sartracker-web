@@ -2548,6 +2548,125 @@ describe('startTrackingRuntime', () => {
     expect(persistTrackingHistoryBatch).not.toHaveBeenCalled()
   })
 
+  it('does not release a failed initial-history wave before its durable loss marker settles', async () => {
+    let pollerHooks:
+      | {
+          persistHistoryChunks?: (
+            inputs: readonly TrackingHistoryChunkPersistenceInput[],
+          ) => Promise<void>
+        }
+      | undefined
+    const marker = createDeferred<void>()
+    const recordMissionEvidenceLoss = vi.fn().mockReturnValue(marker.promise)
+    const persistenceFailure = new Error('history wave write failed')
+
+    await startTrackingRuntime({
+      config: { baseUrl: 'http://test:8082' },
+      createClient: vi.fn().mockReturnValue({}),
+      createPoller: vi.fn().mockImplementation((_client, hooks) => {
+        pollerHooks = hooks
+        return { start: vi.fn(), stop: vi.fn() }
+      }),
+      cache: { read: vi.fn().mockResolvedValue(null), write: vi.fn() },
+      missionStore: createMissionStoreStub({
+        getActiveMission: vi.fn().mockResolvedValue({ id: 'mission-1' }),
+        persistTrackingPositionsBulk: vi.fn().mockRejectedValue(persistenceFailure),
+      }),
+      applySnapshot: vi.fn(),
+      applyStatus: vi.fn(),
+      recordMissionEvidenceLoss,
+    })
+
+    const position = SNAPSHOT.breadcrumbs[0]!
+    let settled = false
+    const persistence = pollerHooks?.persistHistoryChunks?.([{
+      phase: 'initial',
+      expectedMissionId: 'mission-1',
+      deviceId: position.device_id,
+      historyFrom: '2026-04-06T00:00:00.000Z',
+      reconciledUntil: '2026-04-06T02:00:00.000Z',
+      positions: [position],
+    }]).then(
+      () => {
+        settled = true
+        return null
+      },
+      (error: unknown) => {
+        settled = true
+        return error
+      },
+    )
+
+    await vi.waitFor(() => expect(recordMissionEvidenceLoss).toHaveBeenCalledWith(
+      'mission-1',
+      'mission_persistence_failed',
+    ))
+    expect(settled).toBe(false)
+    marker.resolve()
+    await expect(persistence).resolves.toBe(persistenceFailure)
+  })
+
+  it.each(['initial', 'anti_entropy'] as const)(
+    'does not release a failed %s history chunk before its durable loss marker settles',
+    async (phase) => {
+      let pollerHooks:
+        | {
+            persistHistoryChunk: (
+              input: TrackingHistoryChunkPersistenceInput,
+            ) => Promise<{ readonly changed: boolean }>
+          }
+        | undefined
+      const marker = createDeferred<void>()
+      const recordMissionEvidenceLoss = vi.fn().mockReturnValue(marker.promise)
+      const persistenceFailure = new Error(`${phase} history write failed`)
+
+      await startTrackingRuntime({
+        config: { baseUrl: 'http://test:8082' },
+        createClient: vi.fn().mockReturnValue({}),
+        createPoller: vi.fn().mockImplementation((_client, hooks) => {
+          pollerHooks = hooks
+          return { start: vi.fn(), stop: vi.fn() }
+        }),
+        cache: { read: vi.fn().mockResolvedValue(null), write: vi.fn() },
+        missionStore: createMissionStoreStub({
+          getActiveMission: vi.fn().mockResolvedValue({ id: 'mission-1' }),
+          persistTrackingPositionsBulk: vi.fn().mockRejectedValue(persistenceFailure),
+        }),
+        applySnapshot: vi.fn(),
+        applyStatus: vi.fn(),
+        recordMissionEvidenceLoss,
+      })
+
+      const position = SNAPSHOT.breadcrumbs[0]!
+      let settled = false
+      const persistence = pollerHooks?.persistHistoryChunk({
+        phase,
+        expectedMissionId: 'mission-1',
+        deviceId: position.device_id,
+        historyFrom: '2026-04-06T00:00:00.000Z',
+        reconciledUntil: '2026-04-06T02:00:00.000Z',
+        positions: [position],
+      }).then(
+        () => {
+          settled = true
+          return null
+        },
+        (error: unknown) => {
+          settled = true
+          return error
+        },
+      )
+
+      await vi.waitFor(() => expect(recordMissionEvidenceLoss).toHaveBeenCalledWith(
+        'mission-1',
+        'mission_persistence_failed',
+      ))
+      expect(settled).toBe(false)
+      marker.resolve()
+      await expect(persistence).resolves.toBe(persistenceFailure)
+    },
+  )
+
   it('does not re-write anti-entropy rows after acknowledgement-only persistence', async () => {
     let pollerHooks:
       | {
@@ -2666,6 +2785,7 @@ describe('startTrackingRuntime', () => {
         }
       | undefined
     const persistTrackingHistoryBatch = vi.fn().mockResolvedValue(undefined)
+    const recordMissionEvidenceLoss = vi.fn().mockResolvedValue(undefined)
 
     await startTrackingRuntime({
       config: { baseUrl: 'http://test:8082' },
@@ -2681,6 +2801,7 @@ describe('startTrackingRuntime', () => {
       }),
       applySnapshot: vi.fn(),
       applyStatus: vi.fn(),
+      recordMissionEvidenceLoss,
     })
 
     await expect(pollerHooks?.persistHistoryChunk({
@@ -2692,6 +2813,10 @@ describe('startTrackingRuntime', () => {
       positions: [],
     })).rejects.toThrow(/mission changed/iu)
     expect(persistTrackingHistoryBatch).not.toHaveBeenCalled()
+    expect(recordMissionEvidenceLoss).toHaveBeenCalledWith(
+      'mission-a',
+      'mission_persistence_failed',
+    )
   })
 
   it('uses the bounded per-device restart query instead of loading full mission history [DON-246]', async () => {

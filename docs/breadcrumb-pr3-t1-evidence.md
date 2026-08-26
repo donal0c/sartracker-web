@@ -3522,3 +3522,62 @@ objects: `src` `279aee22fc45bf4fa59075ae25df34e5aaa62259`, `electron`
 (`ca10e37bab0a1e0d9a05a9295289cf733e32d418`) and `package-lock.json`
 (`ed6b7918e5808c565bf11fa70cdf8da4a3f371d9`) are also unchanged. The staged
 diff gate must reject any path outside those documentation/evidence files.
+
+### RED — accepted history ownership and queued incident lifecycle sealing
+
+The bounded exact-head review of documentation head
+`dc7f14ae12306d764077f2139a611df5d0016909` returned one clean broad review and
+one clean renderer/input-containment review, but the persistence and concurrency
+reviewers independently found two reachable ownership failures. Central source
+retrace and deterministic reproduction confirmed both before production code:
+
+1. initial-wave and anti-entropy history writes released their mission
+   observation after SQLite rejection without first transferring ownership to
+   durable `mission_persistence_failed`; Finish could therefore beat the
+   in-memory reconciler retry and archive without an accepted fix; and
+2. renderer incident scopes were validated before joining the outbox fence, so
+   a stage queued behind finalization could commit after the mission became
+   `finalized`, survive restart as false permanent loss, and leave no valid
+   acknowledgement path.
+
+The strict RED command was:
+
+```text
+npx vitest run tests/unit/electron-mission-store.test.ts tests/unit/start-tracking-runtime.test.ts --maxWorkers=1 --no-file-parallelism
+```
+
+It produced four expected failures among 154 tests: the finalization-held stage
+resolved instead of rejecting, and the initial wave plus both initial and
+anti-entropy chunk failures made zero durable-loss calls. This is the recorded
+red reason for the coherent seam change.
+
+### GREEN — loss ownership before observation release and in-fence revalidation
+
+Every production history persistence catch now awaits the shared durable loss
+boundary for the exact expected mission before rethrowing to the reconciler.
+That ordering keeps the poller's mission observation live until either the
+write succeeded or the fail-closed delivery layer owns a sticky loss marker;
+marker-write failure remains retained in memory and blocks Finish while retrying.
+
+Renderer incident staging now revalidates every normalized mission/scope pair
+inside the same serialized outbox mutation used by finalization. A finalization
+already ahead in the queue changes mission state first, so the later stage is
+rejected before incident truth or per-mission health is written. The regression
+proves health remains clean across store restart.
+
+Current repaired-tree verification:
+
+- focused affected seam: 6 files / 304 tests PASS;
+- exact serial deterministic gate: 274 files / 2,269 tests in 134.21 s PASS;
+- ESLint, TypeScript, CommonJS syntax, production build and bundle budgets PASS;
+- legacy backend: 51/51 PASS with one intentional real-keychain ignore;
+- selected mission/participant Chromium: 22/22 PASS;
+- participant critical visual flow: 4/4 PASS; and
+- fresh uncached critical review of `participant-backfill-finish-fence`: PASS.
+
+The `b42c57f` packages and Ubuntu soak remain valid evidence for their exact
+superseded application head, but they no longer qualify the repaired runtime and
+Electron-main bytes. Freeze and push one repaired application head, then bind
+replacement macOS/Linux packages and one serial Ubuntu CI-scale soak before the
+amended fresh broad plus persistence, concurrency, and renderer/input-
+containment rechecks. No five-review restart, merge, or release occurred.

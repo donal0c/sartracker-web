@@ -1965,6 +1965,7 @@ async function updateRendererEvidenceUncertainty(db, outbox, input, operation) {
       missionId,
       incidentId,
       input.scope_reason,
+      (queuedScopes) => assertRendererEvidenceScopesStillOpen(db, queuedScopes),
     )
   } else {
     await outbox.resolveRendererEvidenceUncertainty(
@@ -1994,8 +1995,22 @@ async function stageRendererEvidenceIncident(db, outbox, input) {
     }
     return { missionId, scopeReason: expectedScopeReason }
   })
-  await outbox.stageRendererEvidenceIncident(scopes, incidentId)
+  await outbox.stageRendererEvidenceIncident(
+    scopes,
+    incidentId,
+    (queuedScopes) => assertRendererEvidenceScopesStillOpen(db, queuedScopes),
+  )
   return { staged_scope_count: scopes.length }
+}
+
+/** Rechecks mutable mission ownership while the outbox finalization fence is held. */
+function assertRendererEvidenceScopesStillOpen(db, scopes) {
+  for (const scope of scopes) {
+    const mission = getMission(db, scope.missionId)
+    if (rendererEvidenceScopeReason(mission.status) !== scope.scopeReason) {
+      throw new Error('Renderer evidence scope reason does not match mission state.')
+    }
+  }
 }
 
 /** Resolves one or all durable renderer incidents without re-reading mutable mission state. */
