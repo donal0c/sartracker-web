@@ -601,13 +601,11 @@ export function createCoverageController(input: {
     })
   }
 
-  /** Waits until an irreversible catalog handoff and its owning load settle. */
-  const waitForCatalogHandoff = async (): Promise<void> => {
+  /** Waits until an irreversible catalog finalization settles. */
+  const waitForCatalogFinalization = async (): Promise<void> => {
     const pendingFinalization = catalogFinalization
-    const pendingLoad = pendingFinalization === null ? null : activeLoadCompletion
     if (pendingFinalization === null) return
     await pendingFinalization.catch(() => undefined)
-    await pendingLoad?.catch(() => undefined)
   }
 
   /** Applies one catalog through the backend and renderer ownership boundary. */
@@ -784,7 +782,7 @@ export function createCoverageController(input: {
       }
       desiredContext = normalizedContext
       const updateSequence = ++contextUpdateSequence
-      await waitForCatalogHandoff()
+      await waitForCatalogFinalization()
       if (stopped || updateSequence !== contextUpdateSequence) return
       await applyDesiredContext(false)
     },
@@ -907,7 +905,7 @@ export function createCoverageController(input: {
     resume: async () => {
       const resumeSequence = contextUpdateSequence
       automaticRendererRecoveryAvailable = true
-      await waitForCatalogHandoff()
+      await waitForCatalogFinalization()
       if (stopped || resumeSequence !== contextUpdateSequence) return
       await applyDesiredContext(true, true)
     },
