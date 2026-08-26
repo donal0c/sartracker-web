@@ -116,6 +116,7 @@ const MISSION_STORE_CHANNELS = {
   listIngestAnomalies: 'sartracker:mission-store:list-ingest-anomalies',
   recordIngestRejections: 'sartracker:mission-store:record-ingest-rejections',
   recordIngestEvidenceLoss: 'sartracker:mission-store:record-ingest-evidence-loss',
+  acknowledgeIngestEvidenceLoss: 'sartracker:mission-store:acknowledge-ingest-evidence-loss',
   getIngestEvidenceHealth: 'sartracker:mission-store:get-ingest-evidence-health',
   upsertMarker: 'sartracker:mission-store:upsert-marker',
   getMarker: 'sartracker:mission-store:get-marker',
@@ -328,6 +329,27 @@ function reportUnsafeRendererTeardown(error, runtimeLog) {
     dialog.showErrorBox(
       'SAR Tracker could not close safely',
       'Pending tracking evidence could not be drained or marked safely. SAR Tracker has kept the current process open. Preserve the profile and contact support before forcing it closed.',
+    )
+  } catch {
+    // The runtime log above retains the blocking failure in headless contexts.
+  }
+}
+
+/** Keeps a replacement renderer closed until prior mission evidence is fenced. */
+function reportUnsafeRendererRestore(error, runtimeLog) {
+  void runtimeLog?.append({
+    level: 'error',
+    event: 'renderer_restore_blocked',
+    fields: {
+      failureClass: error instanceof Error
+        ? 'evidence_loss_marker_unavailable'
+        : 'unknown_restore_failure',
+    },
+  })
+  try {
+    dialog.showErrorBox(
+      'SAR Tracker could not restore safely',
+      'Evidence from the failed renderer could not be durably fenced. SAR Tracker kept the replacement window closed. Preserve the profile and contact support before forcing the app closed.',
     )
   } catch {
     // The runtime log above retains the blocking failure in headless contexts.
@@ -1159,6 +1181,7 @@ async function markCleanExitAndQuit(
     for (const window of BrowserWindow.getAllWindows()) {
       await rendererTeardownCoordinator.prepare(window, 'app_quit')
     }
+    await rendererTeardownCoordinator.ensureUnexpectedRendererLossFenced()
     await crashLog.markCleanExit()
     officialMapProxy.close?.()
     app.exit(0)
@@ -1176,10 +1199,16 @@ app.on('window-all-closed', () => {
 
 app.on('activate', async () => {
   if (BrowserWindow.getAllWindows().length === 0) {
-    await createWindow(
-      electronRuntimeContext.crashLog,
-      electronRuntimeContext.runtimeLog,
-      electronRuntimeContext.rendererTeardownCoordinator,
-    )
+    try {
+      await electronRuntimeContext.rendererTeardownCoordinator
+        ?.ensureUnexpectedRendererLossFenced()
+      await createWindow(
+        electronRuntimeContext.crashLog,
+        electronRuntimeContext.runtimeLog,
+        electronRuntimeContext.rendererTeardownCoordinator,
+      )
+    } catch (error) {
+      reportUnsafeRendererRestore(error, electronRuntimeContext.runtimeLog)
+    }
   }
 })

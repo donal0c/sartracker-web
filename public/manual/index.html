@@ -616,7 +616,8 @@
             into the app's <code>archives</code> folder; each mission keeps its own archive, and the
             confirmation message reports the exact file path. Once finalized, a mission is locked: its
             markers, drawings, helicopters, and GPX imports can no longer be edited or deleted until an
-            authorized admin unlocks it.
+            authorized admin unlocks it. Finalization closes and preserves the incident record; it is not
+            a claim that every breadcrumb was recovered.
           </p>
           <table>
             <thead>
@@ -628,6 +629,7 @@
               <tr><td>Pause / Resume</td><td>Stops or restarts active-search timing without ending the mission.</td><td>Elapsed time keeps running; active-search time pauses.</td></tr>
               <tr><td>Finish</td><td>Opens a confirmation before ending the mission.</td><td>Confirm only when operations are genuinely complete.</td></tr>
               <tr><td>Review</td><td>Opens mission details, marker log, layer console, and audit records.</td><td>Use after or during operations to inspect saved mission state.</td></tr>
+              <tr><td>Archive &amp; Lock</td><td>Creates the retained archive and makes a finished mission read-only.</td><td>If known evidence loss blocks this action, use the admin acknowledgement only after reviewing and documenting the gap. Complete and 100% remain unavailable.</td></tr>
               <tr><td>Minimize / Expand</td><td>Collapses the active mission controls after setup to free right-rail space.</td><td>The control is not available while paused; expand before pausing, finishing, or changing lifecycle state.</td></tr>
             </tbody>
           </table>
@@ -968,7 +970,13 @@
             The warning appears as soon as rejected-position evidence is waiting in renderer memory and
             clears only after that queued evidence is acknowledged by the durable mission store.
             Finalization and archive export remain blocked until the durable outbox is replayed or the
-            storage fault is repaired. Distinct committed conflicts are never expired or capped;
+            storage fault is repaired. A known, unrecoverable evidence-loss marker is different: it
+            remains critical forever and permanently prevents Complete or 100%. After the mission is
+            finished, an authorized admin may record who reviewed the exact loss occurrence, when, and
+            why. That audited acknowledgement permits archive-and-lock while retaining the critical
+            warning; it does not clear the marker, recover data, or certify completeness. A later loss
+            occurrence invalidates the earlier acknowledgement and blocks archive again. Distinct
+            committed conflicts are never expired or capped;
             identical repeats update first-seen, last-seen, and occurrence count. If the bounded
             renderer intake itself is exhausted, SAR Tracker records a durable evidence-loss marker
             wherever local storage is writable and blocks completeness claims. If no local storage is
@@ -988,9 +996,12 @@
             itself if the renderer is gone or misses the bounded acknowledgement. Before it permits
             that teardown, main durably blocks every unfinalized mission, including a finished mission,
             so a completed lifecycle transition cannot hide renderer-held evidence. An unexpected
-            renderer crash is fenced immediately. A fatal main-process fault fences mission evidence
+            renderer crash is fenced immediately, and normal quit or macOS window recreation cannot
+            overtake that in-flight fence. A fatal main-process fault fences mission evidence
             before relaunch. After any unclean shutdown, SAR Tracker blocks every unfinalized mission
-            before the operator window opens, so uncertain evidence cannot later look Complete. If the
+            before the operator window opens, so uncertain evidence cannot later look Complete. The
+            active-session marker and its clean removal are file-and-directory synced so a power loss
+            cannot silently reorder this recovery boundary. If the
             fatal handler cannot write that blocker, SAR Tracker shows
             <strong>SAR Tracker could not restart safely</strong>, keeps the current process open, and
             refuses the automatic relaunch. If neither the renderer drain
@@ -1006,7 +1017,11 @@
           </div>
           <figure class="screenshot">
             <img src="assets/tracking-shutdown-evidence-loss.png" alt="Tracking panel showing a critical runtime-shutdown evidence-loss warning while live tracking remains online" />
-            <figcaption>If shutdown cannot save a rejected-position batch, SAR Tracker keeps live positions explicit and blocks finalization and archive export with a mission-scoped critical warning.</figcaption>
+            <figcaption>If shutdown cannot save a rejected-position batch, SAR Tracker keeps live positions explicit and blocks completeness with a mission-scoped critical warning.</figcaption>
+          </figure>
+          <figure class="screenshot">
+            <img src="assets/mission-evidence-loss-acknowledgement.png" alt="Mission Control acknowledgement for a known evidence gap, with an admin selector, permanent record field, and explicit warning that Complete or 100% remains unavailable" />
+            <figcaption>An admin can close and retain a finished incident with a documented evidence gap; the action never restores evidence or permits Complete or 100%.</figcaption>
           </figure>
           <div class="note">
             <strong>Finish and finalization wait for evidence already observed:</strong> Finish closes
@@ -1017,7 +1032,9 @@
             the cutoff without being added to the finished mission. If the wait, drain, or durable Finish
             cannot complete, Finish is refused and the mission stays active for repair and retry.
             Finalization waits for the closed observation scope and durable evidence markers before
-            advancing the mission through archive-and-lock. A finalized mission remains read-only.
+            advancing the mission through archive-and-lock. A known unrecoverable loss requires the
+            explicit admin acknowledgement above; all repairable, pending, corrupt, or newly changed
+            evidence states still block. A finalized mission remains read-only.
             Any delivery already staged outside the renderer that reaches a finalized mission is retained
             outside the immutable mission ledger, shown as critical late-evidence health, and is not silently
             inserted into the finalized record. A new renderer observation after the seal is shown to the

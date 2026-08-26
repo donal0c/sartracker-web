@@ -2904,3 +2904,118 @@ Candidate-B geometry/index construction, schema v10, G2/G3, exact Dots and the
 3.704 GB migration surface are unchanged. Commit, push, replacement exact-head
 macOS/Linux package evidence and five fresh independent PR-3 reviews from zero
 remain required. No merge or release occurred.
+## Evidence-lifecycle architecture pause — 2026-08-26
+
+Donal paused the repeated PR-3 review loop and applied the bounded review
+topology to PR-3. Fresh Fable session
+`a5493464-eb53-4231-a686-1aed764e3cb7` attacked the full admission → renderer
+RAM → durable outbox/ledger → coverage claim → Finish/finalize → teardown/crash
+→ restart seam at exact clean head
+`397adc8d275b63b7a71d3d96208eb0bf787cd1c6`. Its bound report is
+`tmp/agent-mail/fable-pr3-evidence-seam-20260826.md` with sentinel
+`AGENT_MAIL_DONE_1787758367`.
+
+Central source retrace confirmed two engineering defects before production
+changes resumed:
+
+1. `crash-log.cjs` atomically renames the active-session marker but does not
+   fsync the file or containing directory, and removes it without a directory
+   fsync. Power loss can therefore erase the evidence-loss startup fence or
+   resurrect it after a clean exit.
+2. `render-process-gone` starts `markRendererUnavailable()` without joining it
+   to application lifecycle state. `window-all-closed` can enter clean quit
+   while that promise is pending, see no remaining windows, remove the active
+   marker, and exit before the mission loss marker is durable. macOS activation
+   can likewise create a replacement renderer before a failed loss fence is
+   retried.
+
+Strict RED command:
+
+`npx vitest run tests/unit/electron-durable-file.test.ts tests/unit/renderer-teardown-coordinator.test.ts --pool=forks --maxWorkers=1`
+
+Expected RED result: `electron/durable-file.cjs` does not exist, and both
+unexpected-renderer-loss lifecycle tests fail because
+`ensureUnexpectedRendererLossFenced` does not exist (`2 files failed`; existing
+coordinator tests remained `8 passed`). No production code was changed before
+this recorded RED.
+
+Fable also proposed an admin acknowledgement that would permit finalization and
+archive after known evidence loss while keeping Complete blocked. The ledger
+does not contain a direct team answer authorizing that transition. Donal asked
+for the safest repository-consistent engineering interpretation because he is
+the developer, not an operational team member, and no further team answer is
+available. The locked interpretation is therefore recorded explicitly as an
+inference from `SAR-QA-020`: known evidence loss remains visible forever and
+permanently blocks Complete and 100%; a roster-authorized admin may append their
+identity, timestamp and reason against the exact current loss occurrence only
+to permit archive and read-only finalization. The acknowledgement does not
+restore evidence or certify completeness, and any later loss occurrence
+invalidates it.
+
+Additional central attack testing found that the generic finalization error
+could initially open that acknowledgement UI for unrelated pending, corrupt or
+globally degraded evidence. The recorded RED reproduced the incorrect dialog
+for `outbox_corrupt_record`. The UI now offers acknowledgement only for
+`renderer_pending_evidence_lost` or
+`renderer_pending_capacity_exhausted`; every other evidence-health failure
+remains an absolute finalization/archive blocker. A separate adapter RED proved
+that the legacy Tauri adapter would invoke a nonexistent command. It now fails
+closed with an explicit Electron-only boundary instead of advertising backend
+support that does not exist.
+
+The coherent implementation uses a shared durable-file boundary: a temporary
+0600 file is written, file-synced, closed, atomically renamed and followed by a
+containing-directory sync; clean removal is also directory-synced. The
+renderer teardown coordinator records unexpected loss synchronously, coalesces
+the in-flight durable fence, retries a failed fence, and makes clean quit and
+macOS replacement-window activation await it. A failed replacement fence keeps
+the new renderer closed and raises an operator-visible native safety message.
+
+The mission-scoped outbox retains a monotonic loss generation in its durable
+marker. An acknowledgement token binds the mission scope, exact sticky reason
+set and generation. It is accepted only when the mission has no pending or
+corrupt durable evidence and no global or non-acknowledgeable failure. The
+append-only SQLite audit records admin, time, reason, loss reasons and token;
+the outbox marker is never removed. Finalize/archive re-check the current token
+inside the serialized evidence fence. Restart preserves it, and another loss
+increments the generation and invalidates it. Health stays `critical`, so the
+coverage controller can never claim Complete or 100%.
+
+Further REDs and refactor evidence:
+
+- `outbox_corrupt_record` initially opened the acknowledgement dialog from the
+  generic finalization error; it now remains a hard block and the dialog is
+  limited to the two exact renderer-loss reasons;
+- a pending mission outbox file initially allowed a loss candidate to be read;
+  candidate creation now rejects until all pending/corrupt durable evidence is
+  resolved;
+- the legacy Tauri adapter initially invoked the nonexistent
+  `acknowledge_ingest_evidence_loss` command; it now fails closed with an
+  explicit Electron-only boundary; and
+- the first production build exceeded the default application-chunk budget by
+  1,104 bytes. The evidence dialog and shared keyboard-contained decision
+  surface were split into bounded lazy chunks; the application chunk is now
+  497,910 bytes against the unchanged 500,000-byte budget.
+
+Final local code-tree verification before the package binding commit:
+
+- full deterministic unit gate: 273 files / 2,227 tests;
+- focused seam gate: 11 files / 194 tests, followed by the added containment
+  regressions;
+- ESLint, TypeScript production build and unchanged bundle budgets: PASS;
+- changed Electron CJS syntax: PASS;
+- exact paged Dots contract: 10/10;
+- participant/coverage/tracking Chromium: 13/13;
+- known-loss archive flow Chromium: 1/1;
+- known-loss critical visual Playwright: 1/1;
+- fresh uncached visual review: PASS at
+  `test-results/visual-verification/reports/visual-review-2026-08-26T16-41-44Z.json`;
+  and
+- backend: 51 passed, with the intentional real macOS keychain test ignored.
+
+The new operator screenshot is
+`public/manual/assets/mission-evidence-loss-acknowledgement.png`. The manual
+states that acknowledgement does not restore evidence, never permits Complete
+or 100%, and does not apply to repairable, pending, corrupt or newly changed
+evidence. Replacement exact-head macOS/Linux package and soak evidence remains
+required before the bounded final review wave. No merge or release occurred.

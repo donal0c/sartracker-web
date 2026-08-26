@@ -81,6 +81,7 @@ const MISSION_STORE_CHANNELS = {
   listIngestAnomalies: 'sartracker:mission-store:list-ingest-anomalies',
   recordIngestRejections: 'sartracker:mission-store:record-ingest-rejections',
   recordIngestEvidenceLoss: 'sartracker:mission-store:record-ingest-evidence-loss',
+  acknowledgeIngestEvidenceLoss: 'sartracker:mission-store:acknowledge-ingest-evidence-loss',
   getIngestEvidenceHealth: 'sartracker:mission-store:get-ingest-evidence-health',
   upsertMarker: 'sartracker:mission-store:upsert-marker',
   getMarker: 'sartracker:mission-store:get-marker',

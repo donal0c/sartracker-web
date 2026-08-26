@@ -426,6 +426,7 @@ function createElectronMissionStore(options) {
   )
   let finalizeTail = Promise.resolve()
   const enqueueFinalize = (missionId) => {
+    const acknowledgedLossToken = readAcknowledgedEvidenceLossToken(db, missionId)
     const run = finalizeTail.then(() =>
       ingestAnomalyOutbox.runWithHealthyEvidenceFence(
         missionId,
@@ -438,6 +439,7 @@ function createElectronMissionStore(options) {
           finalizeMissionFaultInjection,
           archiveFaultInjection,
         ),
+        acknowledgedLossToken === null ? {} : { acknowledgedLossToken },
       ))
     finalizeTail = run.catch(() => {})
     return run
@@ -478,8 +480,9 @@ function createElectronMissionStore(options) {
       backup_path: backupPath,
     }),
     syncBackup: async (trigger) => backupCoordinator.syncBackup(trigger),
-    createMissionArchive: async (missionId) =>
-      ingestAnomalyOutbox.runWithHealthyEvidenceFence(
+    createMissionArchive: async (missionId) => {
+      const acknowledgedLossToken = readAcknowledgedEvidenceLossToken(db, missionId)
+      return ingestAnomalyOutbox.runWithHealthyEvidenceFence(
         missionId,
         'archive',
         () => createMissionArchive(
@@ -490,7 +493,9 @@ function createElectronMissionStore(options) {
           true,
           archiveFaultInjection,
         ),
-      ),
+        acknowledgedLossToken === null ? {} : { acknowledgedLossToken },
+      )
+    },
     createMission: async (input) => {
       const mission = createMission(db, input)
       await safeStorageDiagnostic(() =>
@@ -1077,6 +1082,12 @@ function createElectronMissionStore(options) {
       db,
       ingestAnomalyOutbox,
       input,
+    ),
+    acknowledgeIngestEvidenceLoss: async (input) => acknowledgeIngestEvidenceLoss(
+      db,
+      ingestAnomalyOutbox,
+      input,
+      options.readAdminRoster,
     ),
     getIngestEvidenceHealth: async (missionId) => getIngestEvidenceHealth(
       db,
@@ -1870,9 +1881,26 @@ async function recordIngestRejections(db, outbox, input) {
 
 /** Combines durable ledger counts with outbox health, excluding evidence content. */
 async function getIngestEvidenceHealth(db, outbox, missionId) {
-  return {
+  const health = {
     ...(await mapIngestEvidenceHealth(outbox, missionId)),
     ...summarizeIngestAnomalies(db, missionId),
+  }
+  if (missionId === undefined || missionId === null) return health
+  const acknowledgement = readEvidenceLossAcknowledgement(db, missionId)
+  if (acknowledgement === null) return health
+  try {
+    const candidate = await outbox.readEvidenceLossAcknowledgementCandidate(missionId)
+    if (candidate.token !== acknowledgement.lossToken) return health
+  } catch {
+    return health
+  }
+  return {
+    ...health,
+    acknowledgedLoss: {
+      adminName: acknowledgement.adminName,
+      reason: acknowledgement.reason,
+      acknowledgedAt: acknowledgement.acknowledgedAt,
+    },
   }
 }
 
@@ -1891,6 +1919,73 @@ async function recordIngestEvidenceLoss(db, outbox, input) {
   getById(db, 'missions', missionId, 'Mission')
   await outbox.markEvidenceLoss(missionId, input.reason)
   return getIngestEvidenceHealth(db, outbox, missionId)
+}
+
+/** Records an authorized, permanent acceptance of one exact known evidence gap. */
+async function acknowledgeIngestEvidenceLoss(db, outbox, input, readAdminRoster) {
+  const missionId = typeof input?.mission_id === 'string' ? input.mission_id.trim() : ''
+  const adminName = typeof input?.admin_name === 'string' ? input.admin_name.trim() : ''
+  const reason = typeof input?.reason === 'string' ? input.reason.trim() : ''
+  if (missionId === '' || adminName === '' || reason === '') {
+    throw new Error('Evidence-loss acknowledgement requires mission, admin, and reason.')
+  }
+  if (adminName.length > 160 || reason.length > 2_000) {
+    throw new Error('Evidence-loss acknowledgement exceeds the bounded audit limit.')
+  }
+  const mission = getMission(db, missionId)
+  if (mission.status !== 'finished') {
+    throw new Error('Evidence loss can be acknowledged only after the mission is finished.')
+  }
+  const adminRoster = typeof readAdminRoster === 'function' ? await readAdminRoster() : []
+  if (!adminRoster.map((value) => value.trim()).includes(adminName)) {
+    appendEvent(db, missionId, 'mission_evidence_loss_acknowledgement_denied', {
+      admin_name: adminName,
+      reason,
+      resulting_status: mission.status,
+    })
+    throw new Error('Selected admin is not authorized to acknowledge mission evidence loss.')
+  }
+  const candidate = await outbox.readEvidenceLossAcknowledgementCandidate(missionId)
+  const timestamp = now()
+  const transaction = db.transaction(() => {
+    insertEvent(db, missionId, 'mission_evidence_loss_acknowledged', timestamp, {
+      admin_name: adminName,
+      reason,
+      loss_token: candidate.token,
+      loss_reasons: candidate.reasons,
+      resulting_status: mission.status,
+    })
+  })
+  transaction()
+  return getIngestEvidenceHealth(db, outbox, missionId)
+}
+
+/** Returns the latest exact loss-token acknowledgement retained in mission audit. */
+function readEvidenceLossAcknowledgement(db, missionId) {
+  const event = db.prepare(
+    `SELECT timestamp, details_json FROM mission_events
+      WHERE mission_id = ? AND event_type = 'mission_evidence_loss_acknowledged'
+      ORDER BY timestamp DESC, rowid DESC LIMIT 1`,
+  ).get(missionId)
+  if (event === undefined) return null
+  const details = readEventDetails(event.details_json)
+  if (
+    typeof details.admin_name !== 'string' ||
+    typeof details.reason !== 'string' ||
+    typeof details.loss_token !== 'string' ||
+    !/^[a-f0-9]{64}$/u.test(details.loss_token)
+  ) return null
+  return {
+    adminName: details.admin_name,
+    reason: details.reason,
+    lossToken: details.loss_token,
+    acknowledgedAt: event.timestamp,
+  }
+}
+
+/** Returns only the current audit token used by the serialized outbox fence. */
+function readAcknowledgedEvidenceLossToken(db, missionId) {
+  return readEvidenceLossAcknowledgement(db, missionId)?.lossToken ?? null
 }
 
 /** Maps outbox state into the operator/completeness health contract. */

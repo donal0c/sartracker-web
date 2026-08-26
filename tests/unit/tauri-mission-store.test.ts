@@ -11,6 +11,18 @@ describe('tauri mission store adapter', () => {
     invokeMock.mockReset()
   })
 
+  it('fails closed instead of invoking an unsupported legacy evidence-loss command', async () => {
+    const { createTauriMissionStore } = await import('../../src/infrastructure/mission-store/tauri-mission-store')
+    const store = createTauriMissionStore()
+
+    await expect(store.acknowledgeIngestEvidenceLoss({
+      mission_id: 'mission-1',
+      admin_name: 'Incident Controller',
+      reason: 'Known renderer loss reviewed.',
+    })).rejects.toThrow(/electron mission store/iu)
+    expect(invokeMock).not.toHaveBeenCalled()
+  })
+
   it('forwards every mission store command through the Tauri boundary', async () => {
     const { createTauriMissionStore } = await import('../../src/infrastructure/mission-store/tauri-mission-store')
 

@@ -18,7 +18,10 @@ import {
   resetBrowserHarnessStore,
 } from './browser-harness-store'
 import { useParticipantStore } from '../participants/participant-store'
+import { applyIngestEvidenceHealth } from '../tracking/ingest-health-store'
+import { EMPTY_INGEST_EVIDENCE_HEALTH } from '../../domain/tracking-ingest-evidence'
 import { createOperationalPositionRetention } from '../participants/operational-position-retention'
+import type { IngestEvidenceLossReason } from '../../domain/tracking-ingest-evidence'
 import type {
   NormalizedTrackingDevice,
   NormalizedTraccarGroup,
@@ -34,6 +37,10 @@ type BrowserHarnessApi = {
     status?: TrackingConnectionStatus,
   ) => Promise<void>
   readonly hydrateTracking: () => Promise<void>
+  readonly injectEvidenceLoss: (
+    missionId: string,
+    reason?: IngestEvidenceLossReason,
+  ) => Promise<void>
   readonly importGpxFiles: (
     files: readonly {
       readonly sourcePath: string
@@ -158,6 +165,16 @@ export function installBrowserHarnessApi(): void {
       applyTrackingSnapshot(snapshot)
       applyTrackingStatus(resolveHydratedStatus(snapshot))
     },
+    injectEvidenceLoss: async (
+      missionId,
+      reason = 'renderer_pending_evidence_lost',
+    ) => {
+      const health = await getBrowserHarnessStore().recordIngestEvidenceLoss({
+        mission_id: missionId,
+        reason,
+      })
+      applyIngestEvidenceHealth(health)
+    },
     importGpxFiles: async (files) => {
       const controller = useGpxStore.getState().controller
       if (controller === null) {
@@ -189,6 +206,7 @@ export function installBrowserHarnessApi(): void {
     reset: () => {
       operationalPositionRetention.reset()
       resetBrowserHarnessStore()
+      applyIngestEvidenceHealth(EMPTY_INGEST_EVIDENCE_HEALTH)
       applyTrackingSnapshot({ devices: [], positions: [], breadcrumbs: [] })
       applyTrackingStatus({
         mode: 'idle',

@@ -29,6 +29,7 @@ const {
   }) => {
     readonly prepare: (window: unknown, reason: string) => Promise<unknown>
     readonly markRendererUnavailable: () => Promise<unknown>
+    readonly ensureUnexpectedRendererLossFenced: () => Promise<unknown>
     readonly dispose: () => void
   }
 }
@@ -229,6 +230,67 @@ describe('renderer teardown coordinator', () => {
       missionId: 'mission-1',
     })
     expect(missionStore.recordIngestEvidenceLoss).toHaveBeenCalledOnce()
+  })
+
+  it('makes clean exit wait for an in-flight unexpected-renderer-loss fence [DON-276]', async () => {
+    const listeners = new Map<string, (event: unknown, input: unknown) => void>()
+    const missionStore = createMissionStore()
+    let releaseMarker: (() => void) | undefined
+    missionStore.recordIngestEvidenceLoss.mockImplementation(
+      () => new Promise<void>((resolve) => {
+        releaseMarker = resolve
+      }),
+    )
+    const coordinator = createRendererTeardownCoordinator({
+      ipcMain: createIpcMain(listeners),
+      missionStore,
+      createRequestId: () => 'request-crash-quit-race',
+      setTimeout: vi.fn(() => 9),
+      clearTimeout: vi.fn(),
+      timeoutMs: 5_000,
+    })
+
+    const crashFence = coordinator.markRendererUnavailable()
+    const cleanExitFence = coordinator.ensureUnexpectedRendererLossFenced()
+    let cleanExitFenceSettled = false
+    void cleanExitFence.finally(() => {
+      cleanExitFenceSettled = true
+    })
+
+    await Promise.resolve()
+    expect(cleanExitFenceSettled).toBe(false)
+    expect(missionStore.recordIngestEvidenceLoss).toHaveBeenCalledOnce()
+
+    releaseMarker?.()
+    await expect(Promise.all([crashFence, cleanExitFence])).resolves.toEqual([
+      { mode: 'durable_loss_marker', missionId: 'mission-1' },
+      { mode: 'durable_loss_marker', missionId: 'mission-1' },
+    ])
+  })
+
+  it('retries a failed unexpected-renderer-loss fence before allowing later lifecycle work [DON-276]', async () => {
+    const listeners = new Map<string, (event: unknown, input: unknown) => void>()
+    const missionStore = createMissionStore()
+    missionStore.recordIngestEvidenceLoss
+      .mockRejectedValueOnce(new Error('marker storage unavailable'))
+      .mockResolvedValueOnce(undefined)
+    const coordinator = createRendererTeardownCoordinator({
+      ipcMain: createIpcMain(listeners),
+      missionStore,
+      createRequestId: () => 'request-crash-retry',
+      setTimeout: vi.fn(() => 10),
+      clearTimeout: vi.fn(),
+      timeoutMs: 5_000,
+    })
+
+    await expect(coordinator.markRendererUnavailable()).rejects.toThrow(
+      'marker storage unavailable',
+    )
+    await expect(coordinator.ensureUnexpectedRendererLossFenced()).resolves.toEqual({
+      mode: 'durable_loss_marker',
+      missionId: 'mission-1',
+    })
+    expect(missionStore.recordIngestEvidenceLoss).toHaveBeenCalledTimes(2)
   })
 
   it('ignores forged acknowledgements from another renderer', async () => {

@@ -797,6 +797,50 @@ describe('Electron main startup', () => {
     ).toMatch(/^\d{4}-\d{2}-\d{2}T/)
   })
 
+  it('does not mark a renderer-crash session clean until its evidence fence is durable [DON-276]', async () => {
+    const electronMock = createElectronMock(vi.fn(), undefined, true)
+    let releaseEvidenceFence: (() => void) | undefined
+    const evidenceFence = new Promise<void>((resolve) => {
+      releaseEvidenceFence = resolve
+    })
+    const markRendererUnavailable = vi.fn(() => evidenceFence)
+    const ensureUnexpectedRendererLossFenced = vi.fn(() => evidenceFence)
+    Module._load = ((request: string, parent: NodeJS.Module | null, isMain: boolean) => {
+      if (request === 'electron') return electronMock
+      if (request === './renderer-teardown-coordinator.cjs') {
+        return {
+          createRendererTeardownCoordinator: () => ({
+            prepare: vi.fn(),
+            markRendererUnavailable,
+            ensureUnexpectedRendererLossFenced,
+            dispose: vi.fn(),
+          }),
+        }
+      }
+      return originalLoad(request, parent, isMain)
+    }) as typeof Module._load
+
+    require('../../electron/main.cjs')
+    await vi.waitFor(() => expect(electronMock.BrowserWindow).toHaveBeenCalledOnce())
+    const createdWindow = electronMock.BrowserWindow.mock.results[0]?.value
+    const rendererGoneHandler = createdWindow.webContents.on.mock.calls.find(
+      ([eventName]) => eventName === 'render-process-gone',
+    )?.[1]
+    rendererGoneHandler({}, { reason: 'oom', exitCode: 137 })
+    await vi.waitFor(() => expect(markRendererUnavailable).toHaveBeenCalledOnce())
+
+    electronMock.BrowserWindow.getAllWindows.mockReturnValue([])
+    const beforeQuitHandler = electronMock.app.on.mock.calls.find(
+      ([eventName]) => eventName === 'before-quit',
+    )?.[1]
+    beforeQuitHandler({ preventDefault: vi.fn() })
+
+    await vi.waitFor(() => expect(ensureUnexpectedRendererLossFenced).toHaveBeenCalledOnce())
+    expect(electronMock.app.exit).not.toHaveBeenCalledWith(0)
+    releaseEvidenceFence?.()
+    await vi.waitFor(() => expect(electronMock.app.exit).toHaveBeenCalledWith(0))
+  })
+
   it('refuses app quit when neither renderer drain nor durable fallback succeeds', async () => {
     const electronMock = createElectronMock(vi.fn(), undefined, true)
     const prepare = vi.fn(async () => {
@@ -809,6 +853,7 @@ describe('Electron main startup', () => {
           createRendererTeardownCoordinator: () => ({
             prepare,
             markRendererUnavailable: vi.fn(),
+            ensureUnexpectedRendererLossFenced: vi.fn(),
             dispose: vi.fn(),
           }),
         }
@@ -856,6 +901,41 @@ describe('Electron main startup', () => {
     expect(recreatedWindow.webContents.on).toHaveBeenCalledWith(
       'render-process-gone',
       expect.any(Function),
+    )
+  })
+
+  it('refuses macOS renderer recreation when the prior crash fence still cannot become durable [DON-276]', async () => {
+    const electronMock = createElectronMock(vi.fn(), undefined, true)
+    electronMock.BrowserWindow.getAllWindows.mockReturnValue([])
+    const ensureUnexpectedRendererLossFenced = vi.fn().mockRejectedValue(
+      new Error('marker storage unavailable'),
+    )
+    Module._load = ((request: string, parent: NodeJS.Module | null, isMain: boolean) => {
+      if (request === 'electron') return electronMock
+      if (request === './renderer-teardown-coordinator.cjs') {
+        return {
+          createRendererTeardownCoordinator: () => ({
+            prepare: vi.fn(),
+            markRendererUnavailable: vi.fn(),
+            ensureUnexpectedRendererLossFenced,
+            dispose: vi.fn(),
+          }),
+        }
+      }
+      return originalLoad(request, parent, isMain)
+    }) as typeof Module._load
+
+    require('../../electron/main.cjs')
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    const activateHandler = electronMock.app.on.mock.calls.find(
+      ([eventName]) => eventName === 'activate',
+    )?.[1]
+
+    await expect(activateHandler()).resolves.toBeUndefined()
+    expect(electronMock.BrowserWindow).toHaveBeenCalledOnce()
+    expect(electronMock.dialog.showErrorBox).toHaveBeenCalledWith(
+      'SAR Tracker could not restore safely',
+      expect.stringContaining('kept the replacement window closed'),
     )
   })
 })

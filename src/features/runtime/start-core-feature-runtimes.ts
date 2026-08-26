@@ -75,6 +75,7 @@ export type CoreFeatureRuntimeMissionStore = Pick<
   | 'listGroupMembershipEvents'
   | 'listParticipantBackfillCheckpoints'
   | 'finalizeMission'
+  | 'acknowledgeIngestEvidenceLoss'
   | 'unlockFinalizedMission'
   | 'listMarkers'
   | 'upsertMarker'

@@ -590,6 +590,37 @@ describe('browser harness store', () => {
     )
   })
 
+  it('keeps a browser evidence gap critical while allowing audited closure [DON-276]', async () => {
+    window.localStorage.setItem(
+      'sartracker:browser-settings',
+      JSON.stringify({ missionDefaults: { adminRoster: ['Ops Lead'] } }),
+    )
+    const store = getBrowserHarnessStore()
+    const mission = await store.createMission({ name: 'Evidence Gap Mission' })
+    await store.recordIngestEvidenceLoss({
+      mission_id: mission.id,
+      reason: 'renderer_pending_evidence_lost',
+    })
+    await store.finishMission(mission.id)
+
+    await expect(store.finalizeMission(mission.id)).rejects.toThrow(/evidence health/iu)
+    await expect(store.acknowledgeIngestEvidenceLoss({
+      mission_id: mission.id,
+      admin_name: 'Ops Lead',
+      reason: 'Known runtime loss reviewed.',
+    })).resolves.toMatchObject({
+      state: 'critical',
+      acknowledgedLoss: { adminName: 'Ops Lead' },
+    })
+    await expect(store.finalizeMission(mission.id)).resolves.toMatchObject({
+      mission: { status: 'finalized' },
+    })
+    await expect(store.getIngestEvidenceHealth(mission.id)).resolves.toMatchObject({
+      state: 'critical',
+      reason: 'renderer_pending_evidence_lost',
+    })
+  })
+
   it('records opened paths for review workflows', async () => {
     const store = getBrowserHarnessStore()
 

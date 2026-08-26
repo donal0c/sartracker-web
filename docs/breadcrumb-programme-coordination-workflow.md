@@ -198,8 +198,14 @@ continuing. Return to Donal for approval when that reassessment changes the
 approved architecture, scope, proof budget, or domain behaviour; do not invent
 authority merely to keep remediation moving.
 
-This amended topology applies prospectively to PR-4 and later programme PRs. It
-does not retroactively reduce PR-3's separately agreed five-fresh-review gate.
+This amended topology applies prospectively to PR-4 and later programme PRs.
+Donal separately applied it to the current PR-3 remediation on 2026-08-26 after
+pausing the repeated review loop: one coherent evidence-lifecycle seam fix must
+first pass all deterministic, browser/visual, macOS package, and Linux
+package/soak gates, then receive one fresh broad exact-head review plus targeted
+persistence/completeness, concurrency/finalization, and renderer/input-
+containment exact-head rechecks. PR-3 does not restart five full reviews after
+each further fix.
 False Complete or false 100%, lost mission evidence, unbounded work on the
 Electron main isolate, and any unresolved safety failure are absolute merge
 blockers regardless of review count or otherwise green CI.
@@ -214,7 +220,7 @@ After PR-4, record a short process retrospective before PR-5 implementation is
 approved: defects found, false or duplicate findings removed by central
 retrace, re-review rounds avoided, any seam that required escalation, and any
 missed risk. Keep or amend this topology from that evidence; do not drift back
-to the PR-3 restart model or weaken it by assumption.
+to unbounded full-wave restarts or weaken it by assumption.
 
 ## Evidence And Release Discipline
 

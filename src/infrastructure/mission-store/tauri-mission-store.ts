@@ -1,5 +1,6 @@
 import { invoke } from '@tauri-apps/api/core'
 import type {
+  AcknowledgeIngestEvidenceLossInput,
   IngestEvidenceHealth,
   IngestEvidenceLossReason,
 } from '../../domain/tracking-ingest-evidence'
@@ -765,6 +766,9 @@ export type MissionStore = {
     readonly mission_id: string
     readonly reason: IngestEvidenceLossReason
   }) => Promise<IngestEvidenceHealth>
+  readonly acknowledgeIngestEvidenceLoss: (
+    input: AcknowledgeIngestEvidenceLossInput,
+  ) => Promise<IngestEvidenceHealth>
   readonly getIngestEvidenceHealth?: (missionId?: string) => Promise<IngestEvidenceHealth>
   readonly upsertMarker: (input: UpsertMarkerInput) => Promise<Marker>
   readonly getMarker: (markerId: string) => Promise<Marker>
@@ -831,6 +835,11 @@ export function createTauriMissionStore(): MissionStore {
       return { auditEvents, breadcrumbCount: positions.length }
     },
     cancelMissionReviewRead: async () => false,
+    acknowledgeIngestEvidenceLoss: async () => {
+      throw new Error(
+        'Evidence-loss acknowledgement is available only through the Electron mission store.',
+      )
+    },
     upsertMarker: (input) => invoke<Marker>('upsert_marker', { input }),
     getMarker: (markerId) => invoke<Marker>('get_marker', { markerId }),
     listMarkers: (missionId) => invoke<readonly Marker[]>('list_markers', { missionId }),

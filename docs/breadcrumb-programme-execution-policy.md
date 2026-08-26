@@ -130,10 +130,23 @@ P1 and P2 findings block merge. Any new commit invalidates the affected
 review. Focused delta review closes findings, followed by one final exact-head
 review that checks the cumulative diff and all P1/P2 closures.
 
-### PR-4-Onward Review Topology
+### PR-3 Remediation And PR-4-Onward Review Topology
 
 Donal approved the following prospective amendment on 2026-08-26. It applies
-to PR-4 and later programme PRs, not retroactively to PR-3:
+to PR-4 and later programme PRs. On the same date, after repeated confirmed
+PR-3 findings at the mission-evidence lifecycle seam, Donal explicitly applied
+the bounded remediation topology to PR-3 as well:
+
+- pause the PR-3 review loop and perform one deliberate end-to-end architecture
+  and attack-test pass over the complete evidence-lifecycle seam;
+- land the resulting seam correction as one coherent, red-first change;
+- complete deterministic, browser/visual, macOS package, and Linux package/soak
+  proof before re-review; and
+- run one fresh broad exact-head review plus targeted exact-head
+  persistence/completeness, concurrency/finalization, and renderer/input-
+  containment rechecks. Do not restart five full reviews after each fix.
+
+For PR-4 onward:
 
 - retain five independent reviewers for a 10/10 PR, run in parallel on one
   final code-and-documentation head;

@@ -2,6 +2,7 @@ const fs = require('node:fs/promises')
 const path = require('node:path')
 
 const { sanitizeDiagnosticText } = require('./diagnostic-sanitizer.cjs')
+const { removeFileDurably, writeFileDurably } = require('./durable-file.cjs')
 
 const CRASH_DIR_NAME = 'crashes'
 const CRASH_LOG_FILE_NAME = 'crash-log.json'
@@ -93,13 +94,13 @@ function createCrashLog(options) {
 
   async function markCleanExit() {
     await fs.mkdir(crashDir, { recursive: true })
-    await writeTextAtomically(cleanExitPath, now())
-    await fs.rm(activeSessionPath, { force: true })
+    await writeFileDurably(cleanExitPath, now())
+    await removeFileDurably(activeSessionPath)
   }
 
   async function markSessionStart() {
     await fs.mkdir(crashDir, { recursive: true })
-    await writeTextAtomically(activeSessionPath, now())
+    await writeFileDurably(activeSessionPath, now())
   }
 
   async function hadUncleanShutdown() {
@@ -158,8 +159,9 @@ async function fileExists(filePath) {
   try {
     await fs.access(filePath)
     return true
-  } catch {
-    return false
+  } catch (error) {
+    if (error?.code === 'ENOENT') return false
+    throw error
   }
 }
 
@@ -170,15 +172,8 @@ function sanitizeText(value) {
   )
 }
 
-async function writeTextAtomically(filePath, contents) {
-  await fs.mkdir(path.dirname(filePath), { recursive: true })
-  const tempPath = `${filePath}.${process.pid}.${Date.now()}.tmp`
-  await fs.writeFile(tempPath, contents, 'utf8')
-  await fs.rename(tempPath, filePath)
-}
-
 async function writeJsonAtomically(filePath, value) {
-  await writeTextAtomically(filePath, JSON.stringify(value, null, 2))
+  await writeFileDurably(filePath, JSON.stringify(value, null, 2))
 }
 
 module.exports = {

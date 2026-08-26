@@ -51,6 +51,9 @@ describe('breadcrumb PR-3 operator manual [DON-275]', () => {
       'unexpected renderer crash is fenced immediately',
       'fatal main-process fault fences mission evidence before relaunch',
       'After any unclean shutdown, SAR Tracker blocks every unfinalized mission before the operator window opens',
+      'active-session marker and its clean removal are file-and-directory synced',
+      'A known unrecoverable loss requires the explicit admin acknowledgement above',
+      'all repairable, pending, corrupt, or newly changed evidence states still block',
       'SAR Tracker could not restart safely',
       'SAR Tracker could not close safely',
       'preserve the profile',
@@ -59,5 +62,7 @@ describe('breadcrumb PR-3 operator manual [DON-275]', () => {
     }
     expect(existsSync('public/manual/assets/tracking-shutdown-evidence-loss.png')).toBe(true)
     expect(manual).toContain('assets/tracking-shutdown-evidence-loss.png')
+    expect(existsSync('public/manual/assets/mission-evidence-loss-acknowledgement.png')).toBe(true)
+    expect(manual).toContain('assets/mission-evidence-loss-acknowledgement.png')
   })
 })

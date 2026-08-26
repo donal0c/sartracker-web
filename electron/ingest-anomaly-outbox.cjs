@@ -1,12 +1,21 @@
 const fs = require('node:fs/promises')
 const path = require('node:path')
-const { createHash, randomUUID } = require('node:crypto')
+const { createHash } = require('node:crypto')
+
+const {
+  syncDirectoryDurably,
+  writeFileDurably,
+} = require('./durable-file.cjs')
 
 const INGEST_ANOMALY_OUTBOX_MAX_ENVELOPE_BYTES_HYPOTHESIS = 16 * 1024
 const INGEST_ANOMALY_OUTBOX_MAX_PENDING_FILES_HYPOTHESIS = 4_096
 const INGEST_ANOMALY_OUTBOX_MAX_PENDING_BYTES_HYPOTHESIS = 64 * 1024 * 1024
 const INGEST_ANOMALY_OUTBOX_REPLAY_BATCH_HYPOTHESIS = 8
 const DEGRADED_HEALTH_MARKER_NAME = 'degraded-health.json.marker'
+const ACKNOWLEDGEABLE_EVIDENCE_LOSS_REASONS = new Set([
+  'renderer_pending_evidence_lost',
+  'renderer_pending_capacity_exhausted',
+])
 const FAILURE_PRIORITY = [
   'outbox_health_marker_corrupt',
   'renderer_pending_evidence_lost',
@@ -27,6 +36,7 @@ const FAILURE_PRIORITY = [
 function createIngestAnomalyOutbox(options) {
   const failuresByScope = new Map()
   const recoveryKeysByScope = new Map()
+  const lossGenerationByScope = new Map()
   let failureStateInitialized = false
   let operationTail = Promise.resolve()
   let replayRetryTimer = null
@@ -99,7 +109,7 @@ function createIngestAnomalyOutbox(options) {
           throw new Error('Durable outbox capacity is exhausted; evidence was not acknowledged.')
         }
         try {
-          await writeAtomic(filePath, serialized.text, platform)
+          await writeFileDurably(filePath, serialized.text, { platform })
         } catch (error) {
           await persistFailure(
             envelope.missionId,
@@ -149,7 +159,25 @@ function createIngestAnomalyOutbox(options) {
         throw new Error('Ingest evidence-loss reason is invalid.')
       }
       validateMissionScope(missionId)
+      const scope = failureScope(missionId)
+      lossGenerationByScope.set(scope, (lossGenerationByScope.get(scope) ?? 0) + 1)
       await persistFailure(missionId, reason, undefined, true)
+    })
+  }
+
+  /** Returns the exact durable loss occurrence an admin may acknowledge. */
+  function readEvidenceLossAcknowledgementCandidate(missionId) {
+    return enqueue(async () => {
+      validateMissionScope(missionId)
+      await initializeDirectoryAndFailureState()
+      const names = await fs.readdir(options.directoryPath)
+      if (names.some((name) =>
+        (name.endsWith('.json') || name.endsWith('.corrupt')) &&
+        fileBelongsToMission(name, missionId),
+      )) {
+        throw new Error('No isolated mission evidence loss is available to acknowledge.')
+      }
+      return createEvidenceLossAcknowledgementCandidate(missionId)
     })
   }
 
@@ -157,7 +185,7 @@ function createIngestAnomalyOutbox(options) {
    * Holds the durable-delivery queue while one completeness operation runs.
    * Earlier deliveries drain first; later deliveries observe finalized state.
    */
-  function runWithHealthyEvidenceFence(missionId, operationName, operation) {
+  function runWithHealthyEvidenceFence(missionId, operationName, operation, fenceOptions = {}) {
     return enqueue(async () => {
       validateMissionScope(missionId)
       await initializeDirectoryAndFailureState()
@@ -169,7 +197,15 @@ function createIngestAnomalyOutbox(options) {
       const corruptCount = names.filter((name) =>
         name.endsWith('.corrupt') && fileBelongsToMission(name, missionId),
       ).length
-      if (pendingCount > 0 || corruptCount > 0 || selectFailure(missionId, corruptCount) !== null) {
+      const failure = selectFailure(missionId, corruptCount)
+      const acknowledgedLossMatches =
+        typeof fenceOptions.acknowledgedLossToken === 'string' &&
+        evidenceLossAcknowledgementMatches(missionId, fenceOptions.acknowledgedLossToken)
+      if (
+        pendingCount > 0 ||
+        corruptCount > 0 ||
+        (failure !== null && !acknowledgedLossMatches)
+      ) {
         throw new Error(
           `Degraded evidence health blocks ${operationName}; resolve durable ingest evidence before continuing.`,
         )
@@ -199,7 +235,7 @@ function createIngestAnomalyOutbox(options) {
         envelope = parseEnvelope(await fs.readFile(filePath, 'utf8'))
       } catch {
         await fs.rename(filePath, `${filePath}.corrupt`)
-        await syncDirectory(options.directoryPath, platform)
+        await syncDirectoryDurably(options.directoryPath, { platform })
         await persistFailureForFile(name, 'outbox_corrupt_record')
         continue
       }
@@ -219,7 +255,7 @@ function createIngestAnomalyOutbox(options) {
         throw new Error('Injected outbox removal after projection failure.')
       }
       await fs.unlink(filePath)
-      await syncDirectory(options.directoryPath, platform)
+      await syncDirectoryDurably(options.directoryPath, { platform })
       projectedCount += 1
       await clearRecoveredFailures(envelope.missionId)
       await yieldToMainEventLoop()
@@ -264,6 +300,10 @@ function createIngestAnomalyOutbox(options) {
           addFailure(scope, 'outbox_health_marker_corrupt')
         } else {
           failuresByScope.set(scope, new Set(reasons))
+          const lossGeneration = marker?.lossGeneration
+          if (Number.isSafeInteger(lossGeneration) && lossGeneration >= 0) {
+            lossGenerationByScope.set(scope, lossGeneration)
+          }
           const recoveryKeys = marker?.recoveryKeys
           if (recoveryKeys !== null && typeof recoveryKeys === 'object') {
             recoveryKeysByScope.set(scope, new Map(
@@ -349,13 +389,18 @@ function createIngestAnomalyOutbox(options) {
   async function persistFailureScope(scope) {
     const reasons = [...(failuresByScope.get(scope) ?? [])].sort()
     const recoveryKeys = Object.fromEntries(recoveryKeysByScope.get(scope) ?? [])
+    const lossGeneration = lossGenerationByScope.get(scope) ?? 0
     const markerPath = path.join(options.directoryPath, markerNameForScope(scope))
     if (reasons.length === 0) {
       await fs.rm(markerPath, { force: true })
-      await syncDirectory(options.directoryPath, platform)
+      await syncDirectoryDurably(options.directoryPath, { platform })
       return
     }
-    await writeAtomic(markerPath, JSON.stringify({ reasons, recoveryKeys }), platform)
+    await writeFileDurably(
+      markerPath,
+      JSON.stringify({ reasons, recoveryKeys, lossGeneration }),
+      { platform },
+    )
   }
 
   /** Removes selected recoverable reasons without erasing sticky evidence loss. */
@@ -407,7 +452,39 @@ function createIngestAnomalyOutbox(options) {
     health,
     initialize,
     markEvidenceLoss,
+    readEvidenceLossAcknowledgementCandidate,
     runWithHealthyEvidenceFence,
+  }
+
+  /** Builds a non-secret token for the exact sticky loss state of one mission. */
+  function createEvidenceLossAcknowledgementCandidate(missionId) {
+    const scope = failureScope(missionId)
+    const globalFailures = failuresByScope.get('global') ?? new Set()
+    const scopedFailures = failuresByScope.get(scope) ?? new Set()
+    const reasons = [...scopedFailures].sort()
+    if (
+      globalFailures.size > 0 ||
+      reasons.length === 0 ||
+      reasons.some((reason) => !ACKNOWLEDGEABLE_EVIDENCE_LOSS_REASONS.has(reason))
+    ) {
+      throw new Error('No isolated mission evidence loss is available to acknowledge.')
+    }
+    const lossGeneration = lossGenerationByScope.get(scope) ?? 0
+    return {
+      token: createHash('sha256')
+        .update(JSON.stringify({ scope, reasons, lossGeneration }), 'utf8')
+        .digest('hex'),
+      reasons,
+    }
+  }
+
+  /** Accepts only a token for the current isolated sticky loss occurrence. */
+  function evidenceLossAcknowledgementMatches(missionId, token) {
+    try {
+      return createEvidenceLossAcknowledgementCandidate(missionId).token === token
+    } catch {
+      return false
+    }
   }
 }
 
@@ -461,38 +538,6 @@ function validateEnvelope(envelope) {
     Array.isArray(envelope.canonicalEvidence)
   ) {
     throw new Error('Rejected-position canonical evidence is invalid.')
-  }
-}
-
-/** Writes through a temporary file, fsyncs it, renames, then fsyncs the directory. */
-async function writeAtomic(filePath, contents, platform) {
-  const temporaryPath = `${filePath}.${randomUUID()}.tmp`
-  let handle
-  try {
-    try {
-      handle = await fs.open(temporaryPath, 'wx', 0o600)
-      await handle.writeFile(contents, 'utf8')
-      await handle.sync()
-    } finally {
-      await handle?.close()
-    }
-    await fs.rename(temporaryPath, filePath)
-    await syncDirectory(path.dirname(filePath), platform)
-  } catch (error) {
-    await fs.rm(temporaryPath, { force: true }).catch(() => undefined)
-    throw error
-  }
-}
-
-/** Flushes directory metadata on platforms that support directory handles. */
-async function syncDirectory(directoryPath, platform) {
-  if (platform === 'win32') return
-  let handle
-  try {
-    handle = await fs.open(directoryPath, 'r')
-    await handle.sync()
-  } finally {
-    await handle?.close()
   }
 }
 

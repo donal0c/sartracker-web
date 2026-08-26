@@ -17,6 +17,8 @@ function createRendererTeardownCoordinator(dependencies) {
   const timeoutMs = dependencies.timeoutMs ?? RENDERER_TEARDOWN_TIMEOUT_MS
   const pendingByRequestId = new Map()
   const preparationByWebContents = new WeakMap()
+  let unexpectedRendererLossDetected = false
+  let unexpectedRendererLossFence = null
 
   /** Accepts only the exact pending request from the renderer that owns it. */
   function handleRendererReady(event, input) {
@@ -93,7 +95,24 @@ function createRendererTeardownCoordinator(dependencies) {
 
   /** Immediately fences every unfinalized mission after unexpected renderer loss. */
   function markRendererUnavailable() {
-    return persistUnfinalizedMissionEvidenceLoss()
+    unexpectedRendererLossDetected = true
+    if (unexpectedRendererLossFence !== null) return unexpectedRendererLossFence
+    const attempt = persistUnfinalizedMissionEvidenceLoss().catch((error) => {
+      if (unexpectedRendererLossFence === attempt) {
+        unexpectedRendererLossFence = null
+      }
+      throw error
+    })
+    unexpectedRendererLossFence = attempt
+    return attempt
+  }
+
+  /** Joins or retries the unexpected-loss fence before later lifecycle work. */
+  function ensureUnexpectedRendererLossFenced() {
+    if (!unexpectedRendererLossDetected) {
+      return Promise.resolve({ mode: 'renderer_available' })
+    }
+    return markRendererUnavailable()
   }
 
   /** Removes the IPC listener and fails any still-waiting renderer request closed. */
@@ -103,7 +122,12 @@ function createRendererTeardownCoordinator(dependencies) {
     pendingByRequestId.clear()
   }
 
-  return { prepare, markRendererUnavailable, dispose }
+  return {
+    prepare,
+    markRendererUnavailable,
+    ensureUnexpectedRendererLossFenced,
+    dispose,
+  }
 }
 
 /** Validates the narrow renderer acknowledgement envelope. */

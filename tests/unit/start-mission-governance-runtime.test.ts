@@ -115,6 +115,45 @@ describe('startMissionGovernanceRuntime', () => {
     })
   })
 
+  it('records an evidence-loss acknowledgement and requests a durable backup [DON-276]', async () => {
+    const requestAutosaveSync = vi.fn().mockResolvedValue(undefined)
+    const acknowledgeIngestEvidenceLoss = vi.fn().mockResolvedValue({
+      state: 'critical',
+      reason: 'renderer_pending_evidence_lost',
+      pendingCount: 0,
+      corruptCount: 0,
+      conflictCount: 0,
+      rejectedCount: 0,
+      affectedDeviceCount: 0,
+      conflictDeviceIds: [],
+      acknowledgedLoss: {
+        adminName: 'Ops Lead',
+        reason: 'Known runtime loss reviewed.',
+        acknowledgedAt: '2026-08-26T17:00:00.000Z',
+      },
+    })
+    const runtime = await startMissionGovernanceRuntime({
+      missionStore: createMissionGovernanceStoreStub({ acknowledgeIngestEvidenceLoss }),
+      applyRuntime: vi.fn(),
+      requestAutosaveSync,
+    })
+
+    await expect(runtime.acknowledgeGovernanceEvidenceLoss({
+      mission_id: FINISHED_MISSION.id,
+      admin_name: 'Ops Lead',
+      reason: 'Known runtime loss reviewed.',
+    })).resolves.toMatchObject({
+      state: 'critical',
+      acknowledgedLoss: { adminName: 'Ops Lead' },
+    })
+    expect(acknowledgeIngestEvidenceLoss).toHaveBeenCalledWith({
+      mission_id: FINISHED_MISSION.id,
+      admin_name: 'Ops Lead',
+      reason: 'Known runtime loss reviewed.',
+    })
+    expect(requestAutosaveSync).toHaveBeenCalledWith('mission-evidence-loss-acknowledgement')
+  })
+
   it('does not fail a completed governance transition when autosave request reports failure', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
     const archive: MissionArchiveInfo = {
@@ -153,6 +192,7 @@ function createMissionGovernanceStoreStub(overrides: Record<string, unknown> = {
   return {
     listMissions: vi.fn().mockResolvedValue([]),
     finalizeMission: vi.fn(),
+    acknowledgeIngestEvidenceLoss: vi.fn(),
     unlockFinalizedMission: vi.fn(),
     ...overrides,
   }

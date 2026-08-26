@@ -297,7 +297,7 @@ type ElectronMissionStore = {
   }>
   readonly recordIngestEvidenceLoss: (input: {
     readonly mission_id: string
-    readonly reason: 'renderer_pending_capacity_exhausted'
+    readonly reason: 'renderer_pending_capacity_exhausted' | 'renderer_pending_evidence_lost'
   }) => Promise<{
     readonly state: 'healthy' | 'degraded' | 'critical'
     readonly reason: string | null
@@ -308,6 +308,24 @@ type ElectronMissionStore = {
     readonly reason: string | null
     readonly pendingCount: number
     readonly corruptCount: number
+    readonly acknowledgedLoss?: {
+      readonly adminName: string
+      readonly reason: string
+      readonly acknowledgedAt: string
+    }
+  }>
+  readonly acknowledgeIngestEvidenceLoss: (input: {
+    readonly mission_id: string
+    readonly admin_name: string
+    readonly reason: string
+  }) => Promise<{
+    readonly state: 'healthy' | 'degraded' | 'critical'
+    readonly reason: string | null
+    readonly acknowledgedLoss?: {
+      readonly adminName: string
+      readonly reason: string
+      readonly acknowledgedAt: string
+    }
   }>
   readonly upsertMarker: (input: {
     readonly id?: string
@@ -2058,6 +2076,100 @@ describe('electron mission store', () => {
     })
     await store.finishMission(mission.id)
     await expect(store.finalizeMission(mission.id)).rejects.toThrow(/evidence health/iu)
+  })
+
+  it('allows an authorized admin to close a mission with permanently visible acknowledged evidence loss [DON-276]', async () => {
+    store = await createStore({
+      readAdminRoster: async () => ['Duty Admin'],
+    })
+    const mission = await store.createMission({ name: 'Acknowledged Evidence Gap' })
+    await store.recordIngestEvidenceLoss({
+      mission_id: mission.id,
+      reason: 'renderer_pending_evidence_lost',
+    })
+    await store.finishMission(mission.id)
+
+    await expect(store.finalizeMission(mission.id)).rejects.toThrow(/evidence health/iu)
+    await expect(store.acknowledgeIngestEvidenceLoss({
+      mission_id: mission.id,
+      admin_name: 'Duty Admin',
+      reason: 'Runtime failed during the 22:14 tracking poll; incident log retained.',
+    })).resolves.toMatchObject({
+      state: 'critical',
+      reason: 'renderer_pending_evidence_lost',
+      acknowledgedLoss: {
+        adminName: 'Duty Admin',
+        reason: 'Runtime failed during the 22:14 tracking poll; incident log retained.',
+      },
+    })
+
+    store.close()
+    store = createElectronMissionStore({ userDataPath: userDataPath! })
+    await expect(store.finalizeMission(mission.id)).resolves.toMatchObject({
+      mission: { status: 'finalized' },
+    })
+    await expect(store.getIngestEvidenceHealth(mission.id)).resolves.toMatchObject({
+      state: 'critical',
+      reason: 'renderer_pending_evidence_lost',
+      acknowledgedLoss: { adminName: 'Duty Admin' },
+    })
+    const events = await store.listMissionEvents(mission.id)
+    const acknowledged = events.find(
+      (event) => event.event_type === 'mission_evidence_loss_acknowledged',
+    )
+    expect(JSON.parse(acknowledged?.details_json ?? '{}')).toMatchObject({
+      admin_name: 'Duty Admin',
+      reason: 'Runtime failed during the 22:14 tracking poll; incident log retained.',
+    })
+  })
+
+  it('records denied evidence-loss acknowledgement and keeps finalization blocked [DON-276]', async () => {
+    store = await createStore({
+      readAdminRoster: async () => ['Duty Admin'],
+    })
+    const mission = await store.createMission({ name: 'Denied Evidence Gap' })
+    await store.recordIngestEvidenceLoss({
+      mission_id: mission.id,
+      reason: 'renderer_pending_evidence_lost',
+    })
+    await store.finishMission(mission.id)
+
+    await expect(store.acknowledgeIngestEvidenceLoss({
+      mission_id: mission.id,
+      admin_name: 'Unknown Operator',
+      reason: 'Attempted closure.',
+    })).rejects.toThrow(/not authorized/iu)
+    await expect(store.finalizeMission(mission.id)).rejects.toThrow(/evidence health/iu)
+    expect((await store.listMissionEvents(mission.id)).map((event) => event.event_type)).toContain(
+      'mission_evidence_loss_acknowledgement_denied',
+    )
+  })
+
+  it('invalidates acknowledgement when a later evidence-loss occurrence is recorded [DON-276]', async () => {
+    store = await createStore({
+      readAdminRoster: async () => ['Duty Admin'],
+    })
+    const mission = await store.createMission({ name: 'Repeated Evidence Gap' })
+    await store.recordIngestEvidenceLoss({
+      mission_id: mission.id,
+      reason: 'renderer_pending_evidence_lost',
+    })
+    await store.finishMission(mission.id)
+    await store.acknowledgeIngestEvidenceLoss({
+      mission_id: mission.id,
+      admin_name: 'Duty Admin',
+      reason: 'First runtime loss reviewed.',
+    })
+
+    await store.recordIngestEvidenceLoss({
+      mission_id: mission.id,
+      reason: 'renderer_pending_evidence_lost',
+    })
+
+    await expect(store.finalizeMission(mission.id)).rejects.toThrow(/evidence health/iu)
+    await expect(store.getIngestEvidenceHealth(mission.id)).resolves.not.toHaveProperty(
+      'acknowledgedLoss',
+    )
   })
 
   it('does not block a clean mission with another mission evidence-loss marker [DON-268]', async () => {

@@ -2,6 +2,7 @@ import { mkdtemp, readdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { createRequire } from 'node:module'
+import { createHash } from 'node:crypto'
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
@@ -26,10 +27,15 @@ const {
     readonly initialize: () => Promise<void>
     readonly deliver: (envelope: RejectionEnvelope) => Promise<{ readonly persisted: boolean }>
     readonly markEvidenceLoss: (missionId: string, reason: string) => Promise<void>
+    readonly readEvidenceLossAcknowledgementCandidate: (missionId: string) => Promise<{
+      readonly token: string
+      readonly reasons: readonly string[]
+    }>
     readonly runWithHealthyEvidenceFence: <Result>(
       missionId: string,
       operationName: string,
       operation: () => Promise<Result>,
+      options?: { readonly acknowledgedLossToken?: string },
     ) => Promise<Result>
     readonly health: (missionId?: string) => Promise<{
       readonly pendingCount: number
@@ -323,6 +329,72 @@ describe('durable ingest anomaly outbox [DON-268]', () => {
       pendingCount: 0,
       lastFailure: 'renderer_pending_evidence_lost',
     })
+  })
+
+  it('retains evidence loss while an exact durable acknowledgement token permits lifecycle closure [DON-276]', async () => {
+    directoryPath = await mkdtemp(path.join(tmpdir(), 'sartracker-ingest-outbox-'))
+    const outbox = createIngestAnomalyOutbox({
+      directoryPath,
+      projectEnvelope: vi.fn(),
+    })
+    await outbox.markEvidenceLoss('mission-1', 'renderer_pending_evidence_lost')
+
+    const candidate = await outbox.readEvidenceLossAcknowledgementCandidate('mission-1')
+    expect(candidate.reasons).toEqual(['renderer_pending_evidence_lost'])
+    await expect(outbox.runWithHealthyEvidenceFence(
+      'mission-1',
+      'finalization',
+      async () => 'finalized',
+      { acknowledgedLossToken: candidate.token },
+    )).resolves.toBe('finalized')
+    await expect(outbox.health('mission-1')).resolves.toMatchObject({
+      lastFailure: 'renderer_pending_evidence_lost',
+    })
+
+    const restarted = createIngestAnomalyOutbox({
+      directoryPath,
+      projectEnvelope: vi.fn(),
+    })
+    const restartedCandidate = await restarted.readEvidenceLossAcknowledgementCandidate(
+      'mission-1',
+    )
+    expect(restartedCandidate).toEqual(candidate)
+  })
+
+  it('refuses loss acknowledgement while the mission still has pending durable evidence', async () => {
+    directoryPath = await mkdtemp(path.join(tmpdir(), 'sartracker-ingest-outbox-'))
+    const outbox = createIngestAnomalyOutbox({
+      directoryPath,
+      projectEnvelope: vi.fn(),
+    })
+    await outbox.markEvidenceLoss('mission-1', 'renderer_pending_evidence_lost')
+    const missionPrefix = createHash('sha256').update('mission-1').digest('hex').slice(0, 16)
+    await writeFile(path.join(directoryPath, `${missionPrefix}-pending.json`), '{}', 'utf8')
+
+    await expect(
+      outbox.readEvidenceLossAcknowledgementCandidate('mission-1'),
+    ).rejects.toThrow(/isolated mission evidence loss/iu)
+  })
+
+  it('invalidates an earlier acknowledgement when another evidence-loss occurrence is recorded [DON-276]', async () => {
+    directoryPath = await mkdtemp(path.join(tmpdir(), 'sartracker-ingest-outbox-'))
+    const outbox = createIngestAnomalyOutbox({
+      directoryPath,
+      projectEnvelope: vi.fn(),
+    })
+    await outbox.markEvidenceLoss('mission-1', 'renderer_pending_evidence_lost')
+    const earlier = await outbox.readEvidenceLossAcknowledgementCandidate('mission-1')
+
+    await outbox.markEvidenceLoss('mission-1', 'renderer_pending_evidence_lost')
+    const later = await outbox.readEvidenceLossAcknowledgementCandidate('mission-1')
+
+    expect(later.token).not.toBe(earlier.token)
+    await expect(outbox.runWithHealthyEvidenceFence(
+      'mission-1',
+      'archive',
+      async () => 'archived',
+      { acknowledgedLossToken: earlier.token },
+    )).rejects.toThrow(/evidence health/iu)
   })
 
   it('rejects renderer teardown when the evidence-loss marker cannot become durable', async () => {

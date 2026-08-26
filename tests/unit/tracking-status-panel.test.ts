@@ -186,6 +186,32 @@ describe('TrackingStatusPanel', () => {
     expect(warning).toContain('finalization and archive export are blocked')
   })
 
+  it('keeps acknowledged evidence loss visible without falsely saying archive is blocked [DON-276]', () => {
+    useIngestHealthStore.getState().applyEvidenceHealth({
+      state: 'critical',
+      reason: 'renderer_pending_evidence_lost',
+      pendingCount: 0,
+      corruptCount: 0,
+      conflictCount: 0,
+      rejectedCount: 1,
+      affectedDeviceCount: 1,
+      conflictDeviceIds: [],
+      acknowledgedLoss: {
+        adminName: 'Duty Admin',
+        reason: 'Known runtime loss recorded in incident log.',
+        acknowledgedAt: '2026-08-26T17:00:00.000Z',
+      },
+    })
+
+    render(React.createElement(TrackingStatusPanel))
+
+    const warning = getText('[data-testid="ingest-evidence-health-warning"]')
+    expect(warning).toContain('acknowledged by Duty Admin')
+    expect(warning).toContain('Complete and 100% remain blocked')
+    expect(warning).toContain('archive and lock may proceed')
+    expect(warning).not.toContain('archive export are blocked')
+  })
+
   it('summarizes stationary attention without declaring an emergency [DON-269]', () => {
     useStationaryAttentionStore.setState({ byDevice: {
       'device-1': { state: 'attention', acknowledged: false, sinceTimestamp: '2026-08-22T10:00:00.000Z', elapsedMs: 1_200_000, movementThresholdM: 15 },

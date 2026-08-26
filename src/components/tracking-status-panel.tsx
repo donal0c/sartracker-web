@@ -151,7 +151,11 @@ export function TrackingStatusPanel(props: TrackingStatusPanelProps = {}) {
           data-testid="ingest-evidence-health-warning"
         >
           EVIDENCE HEALTH {evidenceHealth.state.toUpperCase()} — {formatEvidenceFailure(evidenceHealth.reason)}.
-          {' '}Current positions remain live, but anomaly evidence is not fully saved; mission finalization and archive export are blocked {formatEvidenceRecovery(evidenceHealth.reason)}.
+          {evidenceHealth.acknowledgedLoss === undefined ? (
+            <> Current positions remain live, but anomaly evidence is not fully saved; mission finalization and archive export are blocked {formatEvidenceRecovery(evidenceHealth.reason)}.</>
+          ) : (
+            <> Evidence loss was acknowledged by {evidenceHealth.acknowledgedLoss.adminName}. Complete and 100% remain blocked permanently; archive and lock may proceed with this warning retained.</>
+          )}
         </p>
       )}
 

@@ -36,6 +36,19 @@ import type {
   UpsertHelicopterInput,
   UpsertMarkerInput,
 } from '../../infrastructure/mission-store/tauri-mission-store'
+import type {
+  AcknowledgeIngestEvidenceLossInput,
+  IngestEvidenceHealth,
+  IngestEvidenceLossReason,
+} from '../../domain/tracking-ingest-evidence'
+import {
+  acknowledgeBrowserEvidenceLoss,
+  hasUnacknowledgedBrowserEvidenceLoss,
+  readBrowserEvidenceHealth,
+  readBrowserEvidenceLossState,
+  recordBrowserEvidenceLoss,
+  type BrowserEvidenceLossByMission,
+} from './browser-evidence-loss-state'
 import { createTrailSegments } from '../tracking/trail-segmentation'
 import { coveragePeriodKey } from '../tracking/coverage-filter-store'
 import { outingWindowsOverlap } from '../outings/outing-schedule'
@@ -69,6 +82,7 @@ type BrowserHarnessState = {
   readonly openedPaths: readonly string[]
   readonly currentMissionId: string | null
   readonly recoverableMissionId: string | null
+  readonly evidenceLossByMission: BrowserEvidenceLossByMission
 }
 
 type BrowserMissionTeam = {
@@ -143,6 +157,14 @@ type BrowserHarnessStore = {
   readonly resumeMission: (missionId: string) => Promise<Mission>
   readonly finishMission: (missionId: string) => Promise<Mission>
   readonly finalizeMission: (missionId: string) => Promise<FinalizeMissionResult>
+  readonly recordIngestEvidenceLoss: (input: {
+    readonly mission_id: string
+    readonly reason: IngestEvidenceLossReason
+  }) => Promise<IngestEvidenceHealth>
+  readonly getIngestEvidenceHealth: (missionId?: string) => Promise<IngestEvidenceHealth>
+  readonly acknowledgeIngestEvidenceLoss: (
+    input: AcknowledgeIngestEvidenceLossInput,
+  ) => Promise<IngestEvidenceHealth>
   readonly unlockFinalizedMission: (input: UnlockFinalizedMissionInput) => Promise<Mission>
   readonly listDevices: (missionId: string) => Promise<readonly Device[]>
   readonly upsertDevice: (input: UpsertDeviceInput) => Promise<Device>
@@ -951,10 +973,82 @@ export function getBrowserHarnessStore(): BrowserHarnessStore {
       save()
       return finishedMission
     },
+    recordIngestEvidenceLoss: async (input) => {
+      requireMission(input.mission_id, state.missions)
+      state = {
+        ...state,
+        evidenceLossByMission: recordBrowserEvidenceLoss(
+          state.evidenceLossByMission,
+          input.mission_id,
+          input.reason,
+        ),
+      }
+      save()
+      return readBrowserEvidenceHealth(state.evidenceLossByMission, input.mission_id)
+    },
+    getIngestEvidenceHealth: async (missionId) =>
+      readBrowserEvidenceHealth(state.evidenceLossByMission, missionId),
+    acknowledgeIngestEvidenceLoss: async (input) => {
+      const mission = requireMission(input.mission_id, state.missions)
+      if (mission.status !== 'finished') {
+        throw new Error('Evidence loss can be acknowledged only after the mission is finished.')
+      }
+      const evidenceLoss = state.evidenceLossByMission[input.mission_id]
+      if (evidenceLoss === undefined) {
+        throw new Error('No isolated mission evidence loss is available to acknowledge.')
+      }
+      const settings = readBrowserSettings()
+      if (!settings.missionDefaults.adminRoster.includes(input.admin_name)) {
+        state = {
+          ...state,
+          missionEvents: appendEvent(
+            state.missionEvents,
+            input.mission_id,
+            'mission_evidence_loss_acknowledgement_denied',
+            new Date().toISOString(),
+            {
+              admin_name: input.admin_name,
+              reason: input.reason,
+              resulting_status: mission.status,
+            },
+          ),
+        }
+        save()
+        throw new Error('Selected admin is not authorized to acknowledge mission evidence loss.')
+      }
+      const acknowledgedAt = new Date().toISOString()
+      state = {
+        ...state,
+        evidenceLossByMission: acknowledgeBrowserEvidenceLoss(
+          state.evidenceLossByMission,
+          input,
+          acknowledgedAt,
+        ),
+        missionEvents: appendEvent(
+          state.missionEvents,
+          input.mission_id,
+          'mission_evidence_loss_acknowledged',
+          acknowledgedAt,
+          {
+            admin_name: input.admin_name,
+            reason: input.reason,
+            loss_generation: evidenceLoss.generation,
+            resulting_status: mission.status,
+          },
+        ),
+      }
+      save()
+      return readBrowserEvidenceHealth(state.evidenceLossByMission, input.mission_id)
+    },
     finalizeMission: async (missionId) => {
       const mission = requireMission(missionId, state.missions)
       if (mission.status !== 'finished') {
         throw new Error('Only finished missions can be finalized.')
+      }
+      if (hasUnacknowledgedBrowserEvidenceLoss(state.evidenceLossByMission, missionId)) {
+        throw new Error(
+          'Degraded evidence health blocks finalization; resolve durable ingest evidence before continuing.',
+        )
       }
 
       const finalizedMission = {
@@ -1591,6 +1685,7 @@ function readHarnessState(): BrowserHarnessState {
       openedPaths: [],
       currentMissionId: null,
       recoverableMissionId: null,
+      evidenceLossByMission: {},
     }
   }
 
@@ -1613,6 +1708,7 @@ function readHarnessState(): BrowserHarnessState {
       openedPaths: [],
       currentMissionId: null,
       recoverableMissionId: null,
+      evidenceLossByMission: {},
     }
   }
 
@@ -1648,6 +1744,7 @@ function readHarnessState(): BrowserHarnessState {
         typeof parsed.currentMissionId === 'string' ? parsed.currentMissionId : null,
       recoverableMissionId:
         typeof parsed.recoverableMissionId === 'string' ? parsed.recoverableMissionId : null,
+      evidenceLossByMission: readBrowserEvidenceLossState(parsed.evidenceLossByMission),
     }
   } catch {
     return {
@@ -1667,6 +1764,7 @@ function readHarnessState(): BrowserHarnessState {
       openedPaths: [],
       currentMissionId: null,
       recoverableMissionId: null,
+      evidenceLossByMission: {},
     }
   }
 }
