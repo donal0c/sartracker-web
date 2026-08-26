@@ -26,9 +26,13 @@ describe('tracking soak owned lifecycle [DON-260]', () => {
   it('requests Electron quit and proves a normal process exit', async () => {
     const child = new FakeChild()
     const expressions: string[] = []
+    let closeCount = 0
     const mainInspector = {
       evaluate: async (expression: string) => {
         expressions.push(expression)
+      },
+      close: () => {
+        closeCount += 1
         child.exitCode = 0
         queueMicrotask(() => child.emit('exit', 0, null))
       },
@@ -43,13 +47,18 @@ describe('tracking soak owned lifecycle [DON-260]', () => {
       })
     expect(expressions).toHaveLength(1)
     expect(expressions[0]).toContain("require('electron').app.quit()")
+    expect(closeCount).toBe(1)
     expect(child.kills).toEqual([])
   })
 
   it('fails closed when Electron does not complete graceful quit', async () => {
     const child = new FakeChild()
+    let closeCount = 0
     const mainInspector = {
-      evaluate: async () => undefined,
+      evaluate: () => new Promise(() => undefined),
+      close: () => {
+        closeCount += 1
+      },
     }
 
     await expect(requestGracefulElectronQuit(mainInspector, child, 1))
@@ -58,8 +67,9 @@ describe('tracking soak owned lifecycle [DON-260]', () => {
           failureClass: 'graceful_app_quit_failed',
         },
       })
+    expect(closeCount).toBe(1)
     expect(child.kills).toEqual([])
-  })
+  }, 100)
 
   it('starts a run-scoped Darwin sleep guard with the harness pid', async () => {
     const child = new FakeChild()

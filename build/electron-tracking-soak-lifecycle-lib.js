@@ -5,6 +5,7 @@ export async function requestGracefulElectronQuit(mainInspector, child, timeoutM
   if (
     mainInspector === null ||
     typeof mainInspector?.evaluate !== 'function' ||
+    typeof mainInspector?.close !== 'function' ||
     child === null ||
     typeof child !== 'object'
   ) {
@@ -14,13 +15,39 @@ export async function requestGracefulElectronQuit(mainInspector, child, timeoutM
     )
   }
 
+  const boundedTimeout = Number.isSafeInteger(timeoutMs) && timeoutMs > 0
+    ? timeoutMs
+    : 1
+  const deadline = Date.now() + boundedTimeout
   let requestFailed = false
+  let requestTimer
   try {
-    await mainInspector.evaluate("require('electron').app.quit(); 'quit_requested'")
+    const requestTimedOut = Symbol('graceful_quit_request_timeout')
+    const requestResult = await Promise.race([
+      Promise.resolve()
+        .then(() => mainInspector.evaluate(
+          "require('electron').app.quit(); 'quit_requested'",
+        ))
+        .then(() => true, () => false),
+      new Promise((resolve) => {
+        requestTimer = setTimeout(() => resolve(requestTimedOut), boundedTimeout)
+      }),
+    ])
+    requestFailed = requestResult !== true
   } catch {
     requestFailed = true
+  } finally {
+    if (requestTimer !== undefined) clearTimeout(requestTimer)
+    try {
+      mainInspector.close()
+    } catch {
+      requestFailed = true
+    }
   }
-  const exited = await waitForProcessExit(child, timeoutMs)
+  const exited = await waitForProcessExit(
+    child,
+    Math.max(1, deadline - Date.now()),
+  )
   const evidence = processExitEvidence(child, false)
   if (
     !exited ||

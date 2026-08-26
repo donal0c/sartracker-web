@@ -1,6 +1,7 @@
 const FAILURE_CLASSES = new Set([
   'action_unavailable',
   'browser_target_closed',
+  'graceful_app_quit_failed',
   'host_sleep_guard_unavailable',
   'later_traversal_limit',
   'observation_metrics_invalid',

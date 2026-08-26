@@ -270,7 +270,9 @@ describe('Candidate B coverage tile worker [DON-276]', () => {
     runner = createCoverageTileRunner({
       databasePath,
       cacheDirectory: path.join(directory!, 'coverage-concurrent-read'),
-      faultInjection: { chunkBuildDelayMs: 100 },
+      // Keep the synthetic build open long enough that host-wide parallel test
+      // load cannot turn this ordering assertion into a scheduler race.
+      faultInjection: { chunkBuildDelayMs: 1_000 },
     })
     const keyA: ChunkKey = {
       device_id: 'device-a', period_kind: 'outing', period_id: 'outing-a',
