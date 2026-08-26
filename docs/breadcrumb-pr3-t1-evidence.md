@@ -1951,3 +1951,95 @@ The commit containing this evidence record is documentation-only. It must pass
 the deterministic exact-head/Linux gates and five fresh independent exact-head
 reviews from zero before PR #3 can be called review ready. No merge or release
 occurred.
+
+## Final attestation, mission-scope, and repeated-participant remediation
+
+The first final-head review wave on `43304c83a4a1d2e9fe21f489f92ede7e3ca7fa27`
+was invalidated by five confirmed current findings. Older reports alleging a
+missing-inventory false-complete insert, renderer-envelope field override, and
+raw tile-coordinate path escape were re-traced and not forwarded because exact
+head already closed those paths in `259fd743`/`0e3cf4b`.
+
+The five current red reasons were recorded before production changes:
+
+- a catalog worker could return the exact current contributors with a prior
+  valid period digest, allowing stale PBF bytes to be addressed as current;
+- removing and later re-adding a participant with the same coordinator-authorized
+  effective-from collided with the earlier fixed checkpoint primary key and
+  rolled back the valid add;
+- a finalized mission's durable critical health remained in the live aggregate
+  and could block honest completion for a later healthy mission in the same
+  renderer session;
+- a normal accepted write between worker claim snapshot and main attestation
+  changed `change_seq`, but the main treated that safe race as worker corruption
+  rather than returning the newer bounded direct claim; and
+- the approved default-on coverage flag started the coverage runtime against
+  the historical Tauri store even though that store has no coverage boundary.
+
+Application head `f842190d8815aa9112ba421565aa9b3c1ae6ba9e`
+closes those paths without weakening a fail-closed boundary. The catalog result
+normalizer recomputes canonical period descriptors from request-owned chunks.
+Repeated participant history uses adjacent fixed checkpoints for only the
+uncovered suffix; it never rewrites a completed edge. Successful finalization
+retires that mission from live aggregate health while preserving the exact
+durable state for administrative unlock. A sequence-changed worker claim is
+replaced with the current bounded SQLite snapshot as the final non-yielding
+step, while same-sequence content disagreement still throws. Coverage remains
+default-on for Electron and disabled for unsupported runtimes; startup cleanup
+now covers failures while the exact-dot and coverage runtimes are starting.
+
+Green local verification at that application head:
+
+- focused remediation boundary: 6 files / 110 tests;
+- full unit: 267 files / 2,147 tests;
+- full ESLint, TypeScript, production build, bundle budgets, and diff checks;
+- participant/coverage Chromium: 10/10;
+- selected critical visual Playwright: 2/2, covering participant backfill
+  honesty and failure to prove a final claim;
+- uncached independent critical visual review: 2/2 PASS; and
+- Rust backend: 51/51, with the intentional real macOS keychain test ignored.
+
+Exact application-head Linux run
+[`32940999122`](https://github.com/donal0c/sartracker-web/actions/runs/32940999122)
+checked out PR merge ref
+`fc8764edcae4f3842d8cbc1d333f5ea458865360`, whose parents are exact PR-2
+base `7021fc1ef33e6da5c91c96cd86e836fc3754f48f` and application head
+`f842190d8815aa9112ba421565aa9b3c1ae6ba9e`, and passed:
+
+- Ubuntu x64 AppImage and `.deb` packaging, native SQLite inspection, Mesa
+  llvmpipe attestation, and AppImage window/content launch;
+- packaged CI soak: 6/6 batches, 8,664/8,664 source-exact positions, matching
+  SHA-256
+  `05d0957d8699067f690942689b65412fef87b9bb95609f00be9bc16645df7261`,
+  integrity `ok`, one restart, zero renderer crashes, and four healthy operator
+  interactions;
+- Electron-main maximum 23.3174 ms and p95 8.0913 ms against the explicit
+  200 ms I5 limit, with zero samples over the limit;
+- Mesa llvmpipe renderer maximum 400 ms and p95 266.6 ms. This is descriptive
+  tracking-soak evidence below the separate 1,000 ms renderer/operator freeze
+  gate; G2 remains the coverage-renderer budget authority;
+- AppImage SHA-256
+  `3ad03362655696a8f7aa32f6697b906fc99672b39a4936755ff64465aae94b37`;
+- `.deb` SHA-256
+  `d9473108e533c09319764164a065d2621a74d4f32b950f1ad5fde4459647dde6`;
+- soak report SHA-256
+  `c329960e84fa0d1efa8248bb82f053837bca773dea601dc08221f7f9e746d5f7`;
+- package artifact `9596633429`, uploaded-zip digest
+  `1b42a8ef073c845494ae45e6ad6b47de5cf0458c1453da7cf4f6e7d3ba6bf8d9`;
+  and
+- validation artifact `9596634465`, uploaded-zip digest
+  `f54913c3a2c028537c40dc30f79397255b6dae0bb15bf71a168a5a9edfd6d829`.
+
+The operator manual now states how a repeated effective-from preserves earlier
+completed fixed windows and queues only the uncovered interval. Existing
+screenshots remain accurate because no control, wording in the rendered app,
+or layout changed. Candidate-B geometry/index construction, schema v10, G2
+measurements, G3 flag posture for Electron, exact Dots, and the 3.704 GB
+migration surface are unchanged. Their accepted evidence remains standing only
+for those unchanged surfaces. There was no pre-merge packaged 960k/2M coverage
+run outside G2 and no packaged forced-kill matrix.
+
+The commit containing this evidence record is documentation-only. It must pass
+the deterministic exact-head/Linux gates and five fresh independent exact-head
+reviews from zero before PR #3 can be called review ready. No merge or release
+occurred.
