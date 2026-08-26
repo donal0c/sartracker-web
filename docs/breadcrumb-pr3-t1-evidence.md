@@ -1661,3 +1661,91 @@ The commit containing this evidence record is documentation-only. It must pass
 the deterministic exact-head gates and five fresh independent exact-head
 reviews from zero before PR #3 can be called review ready. No merge or release
 occurred.
+
+## Complete query-result trust remediation
+
+The first fresh review of evidence head
+`862a300f9c3fefdf2bd776f6983d5708459ee4f4` invalidated it with a new P1.
+`invalidation-analysis` had acquired a strict result envelope, but enumeration,
+manifest, claim, chunk-page, and chunk-summary still accepted any plain-record
+worker result. A plausible current-sequence manifest could omit a real stale
+canonical chunk. Mission-store then accepted an empty inventory, the controller
+derived an empty selection, and an empty ready claim passed its revision check
+vacuously while the stale ground remained undelivered.
+
+The red reason was recorded before production code. Three independent
+regressions failed:
+
+- a worker-envelope test accepted omitted or request-divergent results for all
+  five previously unvalidated kinds;
+- a production-composition mission-store test added accepted evidence to make
+  a real chunk stale, injected an empty current-sequence manifest, and observed
+  that the read resolved instead of failing closed; and
+- a controller test accepted a ready claim with no revision for its one selected
+  delivered chunk and published `complete`.
+
+Application head `20ca76e876e0436827e1bfc2fd3ef6d03919b4d9`
+establishes three independent boundaries:
+
+- `coverage-query-result-envelope.cjs` validates and copies bounded,
+  kind-specific enumeration, manifest, claim, page, summary, and invalidation
+  results; keys, revisions, counts, digests, timestamps, cursors, coordinates,
+  blockers, uniqueness, cardinality, and request identity are allowlisted;
+- mission-store independently requires enumeration and manifest keys to cover
+  the exact current canonical device×period inventory and compares the final
+  claim with a bounded direct ledger snapshot before adding ingest-health
+  blockers; and
+- the controller requires an exact unique revision attestation for every
+  selected chunk, not merely `every()` over whatever revisions were returned.
+
+The main isolate reads only existing bounded mission/device/participant/outing
+and coverage-ledger metadata. It does not scan positions. Result normalization
+also exposed an adjacent exact-summary bug: a zero-count recomputation used
+nullish fallback and could inherit stale old min/max timestamps. Exact summary
+nulls now remain authoritative.
+
+Green verification at that application head:
+
+- new focused worker/store/controller red paths plus their suites: 3 files / 81
+  tests;
+- focused coverage/participant surface: 33 files / 251 tests;
+- full unit: 264 files / 2,143 tests;
+- full ESLint, TypeScript, all changed CommonJS syntax, production build, bundle
+  budgets, and diff checks.
+
+Exact application-head Linux run
+[`32930525474`](https://github.com/donal0c/sartracker-web/actions/runs/32930525474)
+checked out PR merge ref
+`08441c4c7d6d3b2a3c9bd9fa7b98f54f4297e77e`, explicitly merging application
+head `20ca76e876e0436827e1bfc2fd3ef6d03919b4d9` into exact PR-2 base
+`7021fc1ef33e6da5c91c96cd86e836fc3754f48f`, and passed:
+
+- Ubuntu x64 AppImage and `.deb` packaging, native SQLite inspection, Mesa
+  llvmpipe attestation, and AppImage window/content launch;
+- packaged CI soak: 6/6 batches, 8,664/8,664 source-exact positions, matching
+  SHA-256 `c074b33becfaaf02b0b2a6b93a75b9dec3671f93d87df6514c8b8c7f145bb0d9`,
+  integrity `ok`, one restart, zero renderer crashes, 46.882 ms maximum main
+  gap, zero redundant-event slope, and four healthy operator interactions;
+- AppImage SHA-256
+  `36626857a8c9a7409c35ff0597c637c7bfb6255c3af06b4c76c8c0aae268ca45`;
+- `.deb` SHA-256
+  `ba48c0a37817c2d608ab18c773b80d8c2220db4b7242408cd75452877ae3f136`;
+- package artifact `9593126282`, uploaded-zip digest
+  `f349d5015bff77c7b4cdb39bb20fcb9d9e422be7d7beaaa8bc2dd52bcb2a835e`;
+  and
+- validation artifact `9593127023`, uploaded-zip digest
+  `262a2ecfba459a020c98ea059ca61b03548a1ad6b6bdbea5c2e7d0cf1302482c`.
+
+This remediation changes backend/worker/controller trust only. It does not
+change Candidate-B geometry/index construction, schema/open code, coverage
+controls or wording, G2 measurements, G3 flag posture, exact Dots, or any
+operator-visible healthy workflow. The accepted G2 decision/960k/2M evidence,
+3.704 GB v9-to-v10 migration, prior selected critical visual review, operator
+manual, and screenshots remain standing only for those unchanged surfaces. No
+manual or screenshot update is required. There was no pre-merge packaged
+960k/2M coverage run outside G2 and no packaged forced-kill matrix.
+
+The commit containing this evidence record is documentation-only. It must pass
+the deterministic exact-head gates and five fresh independent exact-head
+reviews from zero before PR #3 can be called review ready. No merge or release
+occurred.
