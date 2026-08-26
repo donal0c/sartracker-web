@@ -155,7 +155,13 @@ executable-code and test trees are byte-identical. Strict TDD, deterministic,
 packaged/Linux, browser, and visual gates remain mandatory. False Complete or
 100%, lost mission evidence, unbounded Electron-main work, and unresolved
 safety failures remain absolute merge blockers. This amendment is not
-retroactive to PR-3.
+retroactive to PR-3. Re-review scope follows affected contracts: one fresh
+broad review plus every affected focused reviewer, with all five restarted only
+when a shared state machine/cross-boundary contract changes or impact cannot be
+confidently bounded. Repeated confirmed P1/P2 findings at one seam trigger an
+architecture and attack-test pause before more remediation. Record a PR-4
+process retrospective before approving PR-5 so the topology is retained or
+amended from evidence.
 
 Current work: PR-3 on `codex/breadcrumb-pr3-complete-coverage`, internally ordered
 BCP-07 → BCP-08 → BCP-09 (`DON-273/276/275`) from exact merged PR-2 base

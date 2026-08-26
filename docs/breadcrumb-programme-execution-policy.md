@@ -152,10 +152,32 @@ to PR-4 and later programme PRs, not retroactively to PR-3:
   evidence-binding commit without automatically invalidating completed code
   reviews when executable-code and test trees are byte-identical.
 
+Recheck scope is contract-based. A narrow persistence fix receives the fresh
+broad review plus persistence/completeness; a renderer input-containment fix
+receives the fresh broad review plus renderer/input containment; a Finish
+evidence fix normally receives the fresh broad review plus both
+persistence/completeness and concurrency/finalization. Restart all five only
+when a remediation changes a shared state machine or cross-boundary contract,
+touches enough critical areas that its impact cannot be confidently bounded,
+or invalidates the original charters' assumptions. Schema-plus-renderer,
+IPC-plus-worker ownership, finalization-plus-persistence, and Complete/100%
+logic are explicit escalation examples.
+
+Repeated confirmed P1/P2 findings at the same seam after remediation trigger an
+architecture pause, not another automatic local patch. Re-trace the shared
+cause, strengthen the attack-test model, and revise the accepted plan before
+continuing. Any resulting change to approved architecture, scope, proof budget,
+or domain behaviour returns to Donal for approval.
+
 The stop conditions do not change: false Complete or false 100%, lost mission
 evidence, unbounded Electron-main-isolate work, any P1/P2, or any unresolved
 safety failure blocks merge. Green CI and a majority of clean reviewers cannot
 override a reproduced safety failure.
+
+Before PR-5 implementation begins, record a short PR-4 process retrospective
+covering defect yield, centrally rejected false/duplicate findings, avoided
+re-review work, escalations, and missed risks. Continue or amend this topology
+from that evidence rather than reverting or weakening it by default.
 
 ## Cost-Aware Qualification
 

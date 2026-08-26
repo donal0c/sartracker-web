@@ -180,6 +180,24 @@ used only when Donal requests it or the original task is genuinely unsuitable.
 Fable is not recalled unless review exposes an architecture or requirements
 problem rather than an ordinary implementation defect.
 
+Re-review scope follows affected contracts and failure modes, not the number or
+location of changed files. A change confined to one risk area receives the
+fresh broad review plus that focused recheck. A change spanning risk areas
+receives the fresh broad review plus every affected focused recheck. Restart all
+five reviewers only when the remediation changes a shared state machine or
+cross-boundary contract, spans enough critical areas that its impact cannot be
+confidently bounded, or invalidates the assumptions of the original review
+charters. Examples include schema plus renderer behaviour, IPC plus worker
+ownership, finalization plus persistence, or a change to the logic behind
+Complete/100%.
+
+If review repeatedly finds a confirmed P1/P2 at the same seam after
+remediation, stop the local patch loop. Source-retrace the shared cause, revisit
+the architecture and attack-test model, and update the accepted plan before
+continuing. Return to Donal for approval when that reassessment changes the
+approved architecture, scope, proof budget, or domain behaviour; do not invent
+authority merely to keep remediation moving.
+
 This amended topology applies prospectively to PR-4 and later programme PRs. It
 does not retroactively reduce PR-3's separately agreed five-fresh-review gate.
 False Complete or false 100%, lost mission evidence, unbounded work on the
@@ -191,6 +209,12 @@ blockers regardless of review count or otherwise green CI.
 Once the exact head is accepted and merged, Codex synchronizes Linear, the
 workplan, handoff, and any operator documentation. It then prepares the next
 slice but again waits at Donal's implementation approval gate.
+
+After PR-4, record a short process retrospective before PR-5 implementation is
+approved: defects found, false or duplicate findings removed by central
+retrace, re-review rounds avoided, any seam that required escalation, and any
+missed risk. Keep or amend this topology from that evidence; do not drift back
+to the PR-3 restart model or weaken it by assumption.
 
 ## Evidence And Release Discipline
 
