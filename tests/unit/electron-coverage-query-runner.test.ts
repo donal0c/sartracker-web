@@ -99,6 +99,26 @@ describe('coverage query worker', () => {
     await expect(query).rejects.toThrow(/coverage query worker timed out/iu)
     await expect(query.workerExited).resolves.toBeUndefined()
   })
+
+  it('rejects an invalidation result whose identity does not match the request', async () => {
+    await expect(runCoverageQueryInWorker({
+      databasePath: '/unused.sqlite',
+      query: { kind: 'invalidation-analysis', invalidationId: 'invalidation-1' },
+      workerPath: path.resolve(
+        'tests/fixtures/invalid-coverage-invalidation-result-worker.cjs',
+      ),
+    })).rejects.toThrow(/coverage invalidation result.*identity/iu)
+  })
+
+  it('rejects an invalidation result that omits its bounded key list', async () => {
+    await expect(runCoverageQueryInWorker({
+      databasePath: '/unused.sqlite',
+      query: { kind: 'invalidation-analysis', invalidationId: 'missing-keys' },
+      workerPath: path.resolve(
+        'tests/fixtures/invalid-coverage-invalidation-result-worker.cjs',
+      ),
+    })).rejects.toThrow(/coverage invalidation result key list/iu)
+  })
 })
 
 async function createCoverageDatabase(): Promise<string> {

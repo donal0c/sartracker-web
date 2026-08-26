@@ -7,6 +7,7 @@ const {
 
 const DEFAULT_WORKER_PATH = path.join(__dirname, 'coverage-query-worker.cjs')
 const DEFAULT_TIMEOUT_MS = 30_000
+const MAX_INVALIDATION_RESULT_KEYS = 100_000
 
 /** Runs one read-only coverage query outside the Electron main isolate. */
 function runCoverageQueryInWorker(input) {
@@ -47,7 +48,11 @@ function runCoverageQueryInWorker(input) {
     worker.once('message', (message) => {
       if (settled) return
       if (message?.type === 'complete' && isPlainRecord(message.result)) {
-        completedResult = message.result
+        try {
+          completedResult = normalizeCoverageWorkerResult(query, message.result)
+        } catch (error) {
+          rejectAndTerminate(error)
+        }
         return
       }
       const error = new Error(
@@ -70,6 +75,53 @@ function runCoverageQueryInWorker(input) {
   })
   Object.defineProperty(result, 'workerExited', { value: workerExited })
   return result
+}
+
+/** Validates and copies the result envelope for the requested query kind. */
+function normalizeCoverageWorkerResult(query, result) {
+  if (query.kind !== 'invalidation-analysis') return result
+  if (result.invalidationId !== query.invalidationId) {
+    throw new Error('Coverage invalidation result identity does not match its request.')
+  }
+  if (
+    !Array.isArray(result.affectedKeys) ||
+    result.affectedKeys.length > MAX_INVALIDATION_RESULT_KEYS
+  ) {
+    throw new Error('Coverage invalidation result key list is invalid.')
+  }
+  const seen = new Set()
+  const affectedKeys = result.affectedKeys.map((key) => {
+    if (!isPlainRecord(key) || !isBoundedIdentifier(key.mission_id, 200)) {
+      throw new Error('Coverage invalidation result key identity is invalid.')
+    }
+    if (!isBoundedIdentifier(key.device_id, 200)) {
+      throw new Error('Coverage invalidation result device identity is invalid.')
+    }
+    const outing = key.period_kind === 'outing' &&
+      isBoundedIdentifier(key.period_id, 200)
+    const unassigned = key.period_kind === 'unassigned' && key.period_id === ''
+    if (!outing && !unassigned) {
+      throw new Error('Coverage invalidation result period identity is invalid.')
+    }
+    const normalized = {
+      mission_id: key.mission_id,
+      device_id: key.device_id,
+      period_kind: key.period_kind,
+      period_id: key.period_id,
+    }
+    const identity = [
+      normalized.mission_id,
+      normalized.device_id,
+      normalized.period_kind,
+      normalized.period_id,
+    ].join('\u0000')
+    if (seen.has(identity)) {
+      throw new Error('Coverage invalidation result contains duplicate keys.')
+    }
+    seen.add(identity)
+    return normalized
+  })
+  return { invalidationId: query.invalidationId, affectedKeys }
 }
 
 /** Validates the bounded outer query envelope before a worker starts. */

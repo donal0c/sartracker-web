@@ -53,6 +53,7 @@ const {
   applyCoverageInvalidationDrain,
   applyCoverageManifestInventory,
   bumpCoverageChangeSequence,
+  normalizeCoverageInvalidationDrain,
   recordAcceptedCoveragePositions,
 } = require('./coverage-ledger.cjs')
 
@@ -1157,7 +1158,7 @@ function createElectronMissionStore(options) {
       )
       applyCoverageInvalidationDrain(db, {
         invalidationId: row.id,
-        affectedKeys: analysis.affectedKeys,
+        affectedKeys: normalizeCoverageInvalidationDrain(db, row.id, analysis),
         drainedAt: now(),
       })
     }

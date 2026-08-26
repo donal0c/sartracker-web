@@ -1,4 +1,5 @@
 const { compareStringsByCodeUnit } = require('./deterministic-string-order.cjs')
+const { readCoverageInventory } = require('./coverage-query.cjs')
 
 /**
  * Records accepted position changes against their logical device-period chunks.
@@ -162,6 +163,79 @@ function applyCoverageInvalidationDrain(database, input) {
     }
   })
   return apply()
+}
+
+/**
+ * Establishes a bounded main-side invalidation floor before worker output may
+ * authorize a durable drain. It never reads positions: over-dirtying every
+ * canonical device in the affected periods is safe, while under-dirtying is not.
+ */
+function normalizeCoverageInvalidationDrain(database, invalidationId, analysis) {
+  const invalidation = database.prepare(`SELECT mission_id, subject_outing_id,
+      range_from, range_to
+    FROM coverage_invalidations WHERE id = ?`).get(invalidationId)
+  if (invalidation === undefined) {
+    throw new Error(`Coverage invalidation not found: ${invalidationId}`)
+  }
+  if (
+    analysis === null ||
+    typeof analysis !== 'object' ||
+    Array.isArray(analysis) ||
+    analysis.invalidationId !== invalidationId ||
+    !Array.isArray(analysis.affectedKeys)
+  ) {
+    throw new Error('Coverage invalidation analysis result is invalid.')
+  }
+
+  const affectedOutingIds = new Set([invalidation.subject_outing_id])
+  for (const outing of database.prepare(`SELECT id, started_at, ended_at
+    FROM outings WHERE mission_id = ? ORDER BY started_at ASC, id ASC`)
+    .all(invalidation.mission_id)) {
+    if (coverageOutingIntersectsInvalidation(outing, invalidation)) {
+      affectedOutingIds.add(outing.id)
+    }
+  }
+  const conservativeFloor = readCoverageInventory(database, invalidation.mission_id)
+    .filter((key) => key.period_kind === 'unassigned' ||
+      affectedOutingIds.has(key.period_id))
+    .map((key) => ({ mission_id: invalidation.mission_id, ...key }))
+  if (analysis.affectedKeys.length > conservativeFloor.length) {
+    throw new Error('Coverage invalidation analysis exceeds current inventory.')
+  }
+  const allowed = new Set(conservativeFloor.map((key) =>
+    createCoverageChunkIdentity(key.device_id, key.period_kind, key.period_id)))
+  const seen = new Set()
+  for (const key of analysis.affectedKeys) {
+    if (
+      key === null ||
+      typeof key !== 'object' ||
+      Array.isArray(key) ||
+      key.mission_id !== invalidation.mission_id
+    ) {
+      throw new Error('Coverage invalidation analysis key is invalid.')
+    }
+    const identity = createCoverageChunkIdentity(
+      key.device_id,
+      key.period_kind,
+      key.period_id,
+    )
+    if (!allowed.has(identity)) {
+      throw new Error('Coverage invalidation analysis key is outside the affected inventory.')
+    }
+    if (seen.has(identity)) {
+      throw new Error('Coverage invalidation analysis contains duplicate keys.')
+    }
+    seen.add(identity)
+  }
+  return conservativeFloor
+}
+
+/** Tests half-open current outing overlap with a captured invalidation union. */
+function coverageOutingIntersectsInvalidation(outing, invalidation) {
+  if (invalidation.range_to !== null && outing.started_at >= invalidation.range_to) {
+    return false
+  }
+  return outing.ended_at === null || outing.ended_at > invalidation.range_from
 }
 
 /**
@@ -401,5 +475,6 @@ module.exports = {
   bumpCoverageChangeSequence,
   createCoverageChunkIdentity,
   deriveInvalidationRange,
+  normalizeCoverageInvalidationDrain,
   recordAcceptedCoveragePositions,
 }

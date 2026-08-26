@@ -7,6 +7,15 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 const require = createRequire(import.meta.url)
 const Database = require('better-sqlite3')
+const { runCoverageQueryInWorker: runRealCoverageQueryInWorker } = require(
+  '../../electron/coverage-query-runner.cjs',
+) as {
+  readonly runCoverageQueryInWorker: (input: {
+    readonly databasePath: string
+    readonly query: Readonly<Record<string, unknown>>
+    readonly signal?: AbortSignal
+  }) => Promise<Record<string, unknown>>
+}
 const { createElectronMissionStore } = require('../../electron/mission-store.cjs') as {
   readonly createElectronMissionStore: (options: {
     readonly userDataPath: string
@@ -22,6 +31,11 @@ const { createElectronMissionStore } = require('../../electron/mission-store.cjs
       ) => Promise<Uint8Array | null>
       readonly close: () => Promise<void>
     }
+    readonly runCoverageQueryInWorker?: (input: {
+      readonly databasePath: string
+      readonly query: Readonly<Record<string, unknown>>
+      readonly signal?: AbortSignal
+    }) => Promise<Record<string, unknown>>
   }) => CoverageMissionStore
 }
 
@@ -55,6 +69,17 @@ type CoverageMissionStore = {
     readonly mission_id: string
     readonly label: string
     readonly started_at: string
+  }) => Promise<{ readonly id: string }>
+  readonly endOuting: (input: {
+    readonly mission_id: string
+    readonly outing_id: string
+    readonly ended_at: string
+  }) => Promise<unknown>
+  readonly editOutingBoundaries: (input: {
+    readonly mission_id: string
+    readonly outing_id: string
+    readonly started_at?: string
+    readonly ended_at?: string | null
   }) => Promise<unknown>
   readonly selectMissionParticipants: (input: {
     readonly mission_id: string
@@ -307,6 +332,98 @@ describe('Electron coverage mission-store orchestration', () => {
 
     const fresh = await store.readCoverageManifest(mission.id, 'manifest-3')
     expect(fresh.chunks.every((chunk) => chunk.builtRev === chunk.contentRev)).toBe(true)
+  })
+
+  it('cannot drain a moved outing with an empty worker analysis and retain stale fresh counts', async () => {
+    directory = await mkdtemp(path.join(tmpdir(), 'sartracker-coverage-store-'))
+    let injectEmptyInvalidationAnalysis = false
+    const coverageQueryRunner = vi.fn((input: {
+      readonly databasePath: string
+      readonly query: Readonly<Record<string, unknown>>
+      readonly signal?: AbortSignal
+    }) => {
+      if (
+        injectEmptyInvalidationAnalysis &&
+        input.query.kind === 'invalidation-analysis'
+      ) {
+        return Promise.resolve({
+          invalidationId: input.query.invalidationId,
+          affectedKeys: [],
+        })
+      }
+      return runRealCoverageQueryInWorker(input)
+    })
+    store = createElectronMissionStore({
+      userDataPath: directory,
+      runCoverageQueryInWorker: coverageQueryRunner,
+    })
+    const mission = await seedMission(store)
+    const outing = await store.createOuting({
+      mission_id: mission.id,
+      label: 'Outing 1',
+      started_at: '2026-08-24T08:30:00.000Z',
+    })
+    await store.endOuting({
+      mission_id: mission.id,
+      outing_id: outing.id,
+      ended_at: '2026-08-24T10:00:00.000Z',
+    })
+    let initial = await store.readCoverageManifest(mission.id, 'initial-outing')
+    for (const chunk of initial.chunks) {
+      if (chunk.builtRev === chunk.contentRev) continue
+      await store.readCoverageChunk({
+        missionId: mission.id,
+        key: chunk.key,
+        expectedContentRev: chunk.contentRev,
+      }, `build-initial-${chunk.key.period_kind}`)
+    }
+    initial = await store.readCoverageManifest(mission.id, 'initial-outing-built')
+    expect(initial.chunks.map((chunk) => ({
+      kind: chunk.key.period_kind,
+      exactCount: chunk.exactCount,
+      fresh: chunk.builtRev === chunk.contentRev,
+    }))).toEqual([
+      { kind: 'outing', exactCount: 2, fresh: true },
+      { kind: 'unassigned', exactCount: 0, fresh: true },
+    ])
+    const initialRevisionByKind = new Map(initial.chunks.map((chunk) => [
+      chunk.key.period_kind,
+      chunk.contentRev,
+    ]))
+
+    injectEmptyInvalidationAnalysis = true
+    await store.editOutingBoundaries({
+      mission_id: mission.id,
+      outing_id: outing.id,
+      started_at: '2026-08-24T09:03:00.000Z',
+    })
+    const moved = await store.readCoverageManifest(mission.id, 'moved-outing')
+    expect(moved.chunks.map((chunk) => ({
+      kind: chunk.key.period_kind,
+      contentRev: chunk.contentRev,
+      builtRev: chunk.builtRev,
+      exactCount: chunk.exactCount,
+    }))).toEqual([
+      {
+        kind: 'outing',
+        contentRev: initialRevisionByKind.get('outing')! + 1,
+        builtRev: initialRevisionByKind.get('outing'),
+        exactCount: 1,
+      },
+      {
+        kind: 'unassigned',
+        contentRev: initialRevisionByKind.get('unassigned')! + 1,
+        builtRev: initialRevisionByKind.get('unassigned'),
+        exactCount: 1,
+      },
+    ])
+    await expect(store.readCoverageClaim({
+      missionId: mission.id,
+      selectedKeys: moved.chunks.map((chunk) => chunk.key),
+    }, 'moved-outing-claim')).resolves.toMatchObject({
+      databaseReady: false,
+      blockers: expect.arrayContaining(['chunk_not_fresh']),
+    })
   })
 
   it('cancels only an active request ID and returns false for an unknown request', async () => {
