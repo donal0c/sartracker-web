@@ -438,6 +438,117 @@ describe('coverage controller [DON-276]', () => {
     expect(controller.getState()).toMatchObject({ status: 'error', deliveredFixCount: 0 })
   })
 
+  it('automatically retries one transient renderer activation failure after the failed load settles', async () => {
+    const initial = manifest(1, [[KEY_A, 1]])
+    const deliverSelection = vi.fn(async () => {
+      const attempt = deliverSelection.mock.calls.length
+      return {
+        periods: [{
+          periodKey: 'outing\u0000outing-1',
+          revisionDigest: `renderer-retry-${attempt}`,
+        }],
+        delivered: [{ key: KEY_A, contentRev: 1 }],
+      }
+    })
+    const controller = createCoverageController({
+      readManifest: vi.fn().mockResolvedValue(initial),
+      readChunk: vi.fn(),
+      readClaim: vi.fn().mockResolvedValue({
+        changeSeq: 1, databaseReady: true, blockers: [],
+        chunkRevisions: [{ key: KEY_A, contentRev: 1 }],
+      }),
+      applyChunk: vi.fn(),
+      deliverSelection,
+      publish: vi.fn(),
+    })
+
+    const firstLoad = controller.updateContext({
+      missionId: 'mission-1', rendererGeneration: 'r1',
+    })
+    await vi.waitFor(() => expect(controller.getState()).toMatchObject({
+      status: 'loading',
+      tileCatalog: { periods: [{ revisionDigest: 'renderer-retry-1' }] },
+    }))
+    controller.notifyRendererFailure({
+      missionId: 'mission-1',
+      periodKey: 'outing\u0000outing-1',
+      revisionDigest: 'renderer-retry-1',
+      message: 'Coverage map source activation failed.',
+    })
+    await firstLoad
+
+    await vi.waitFor(() => expect(deliverSelection).toHaveBeenCalledTimes(2))
+    const recovery = controller.getState()
+    if (recovery.status === 'inactive') throw new Error('Coverage unexpectedly inactive.')
+    expect(recovery).toMatchObject({
+      status: 'loading', deliveredFixCount: 0,
+      tileCatalog: { periods: [{ revisionDigest: 'renderer-retry-2' }] },
+    })
+    await controller.notifyCatalogApplied(recovery.tileCatalog!)
+
+    await vi.waitFor(() => expect(controller.getState()).toMatchObject({
+      status: 'complete', deliveredFixCount: 1, totalFixCount: 1,
+    }))
+  })
+
+  it('bounds automatic renderer recovery to one attempt until the operator retries', async () => {
+    const initial = manifest(1, [[KEY_A, 1]])
+    const deliverSelection = vi.fn(async () => {
+      const attempt = deliverSelection.mock.calls.length
+      return {
+        periods: [{
+          periodKey: 'outing\u0000outing-1',
+          revisionDigest: `bounded-renderer-retry-${attempt}`,
+        }],
+        delivered: [{ key: KEY_A, contentRev: 1 }],
+      }
+    })
+    const controller = createCoverageController({
+      readManifest: vi.fn().mockResolvedValue(initial),
+      readChunk: vi.fn(),
+      readClaim: vi.fn().mockResolvedValue({
+        changeSeq: 1, databaseReady: true, blockers: [],
+        chunkRevisions: [{ key: KEY_A, contentRev: 1 }],
+      }),
+      applyChunk: vi.fn(), deliverSelection, publish: vi.fn(),
+    })
+    const failCurrentCatalog = (): void => {
+      const current = controller.getState()
+      if (current.status === 'inactive' || current.tileCatalog === null) {
+        throw new Error('Coverage catalog is unavailable for the failure probe.')
+      }
+      controller.notifyRendererFailure({
+        missionId: 'mission-1',
+        periodKey: 'outing\u0000outing-1',
+        revisionDigest: current.tileCatalog.periods[0]!.revisionDigest,
+        message: 'Coverage map source activation failed.',
+      })
+    }
+
+    const firstLoad = controller.updateContext({
+      missionId: 'mission-1', rendererGeneration: 'r1',
+    })
+    await vi.waitFor(() => expect(deliverSelection).toHaveBeenCalledTimes(1))
+    failCurrentCatalog()
+    await firstLoad
+    await vi.waitFor(() => expect(deliverSelection).toHaveBeenCalledTimes(2))
+    failCurrentCatalog()
+    await new Promise((resolve) => setTimeout(resolve, 400))
+    expect(deliverSelection).toHaveBeenCalledTimes(2)
+    expect(controller.getState()).toMatchObject({ status: 'error' })
+
+    const manualRetry = controller.resume()
+    await vi.waitFor(() => expect(deliverSelection).toHaveBeenCalledTimes(3))
+    failCurrentCatalog()
+    await manualRetry
+    await vi.waitFor(() => expect(deliverSelection).toHaveBeenCalledTimes(4))
+    const recovery = controller.getState()
+    if (recovery.status === 'inactive') throw new Error('Coverage unexpectedly inactive.')
+    await controller.notifyCatalogApplied(recovery.tileCatalog!)
+
+    await vi.waitFor(() => expect(controller.getState()).toMatchObject({ status: 'complete' }))
+  })
+
   it('ignores a stale renderer failure from another mission with the same revision', async () => {
     const controller = createCoverageController({
       readManifest: vi.fn().mockResolvedValue(manifest(1, [[KEY_A, 1]])),

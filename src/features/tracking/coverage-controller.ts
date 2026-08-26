@@ -12,6 +12,7 @@ import { createCoverageCatalogActivation } from './coverage-catalog-activation'
 import { createCoverageCatalogDeliveryBatches } from './coverage-catalog-delivery-plan'
 
 export const COVERAGE_CHUNK_PAGE_LIMIT = 10_000
+const AUTOMATIC_RENDERER_RETRY_DELAY_MS = 250
 
 export type CoverageDelivery = Readonly<Record<string, number>>
 
@@ -147,6 +148,7 @@ export function createCoverageController(input: {
   let rendererFailureDuringFinalization: Error | null = null
   let rendererFailureEpoch = 0
   let rendererRecoveryEpoch: number | null = null
+  let automaticRendererRecoveryAvailable = true
   const catalogActivation = createCoverageCatalogActivation()
   const scheduler = createCoverageScheduler({
     now: () => Date.now(),
@@ -191,6 +193,7 @@ export function createCoverageController(input: {
     rendererDetached = false
     rendererDetachedCompleteCatalog = null
     rendererRecoveryEpoch = null
+    automaticRendererRecoveryAvailable = false
     rendererFailureDuringFinalization = null
     publish({ status: 'inactive' })
   }
@@ -542,6 +545,30 @@ export function createCoverageController(input: {
     }, context.selectedKeys))
   }
 
+  /** Retries one failed renderer activation after its owning load has unwound. */
+  const scheduleAutomaticRendererRecovery = (
+    failedLoad: Promise<void> | null,
+    recoveryEpoch: number,
+    missionId: string,
+    rendererGeneration: string,
+  ): void => {
+    if (!automaticRendererRecoveryAvailable) return
+    automaticRendererRecoveryAvailable = false
+    void (failedLoad ?? Promise.resolve()).then(async () => {
+      await new Promise<void>((resolve) => {
+        globalThis.setTimeout(resolve, AUTOMATIC_RENDERER_RETRY_DELAY_MS)
+      })
+      if (
+        stopped ||
+        rendererRecoveryEpoch !== recoveryEpoch ||
+        state.status !== 'error' ||
+        context.missionId !== missionId ||
+        context.rendererGeneration !== rendererGeneration
+      ) return
+      await runLoad(true, true)
+    }).catch(() => undefined)
+  }
+
   const restoreRendererAttachment = (): void => {
     if (state.status !== 'partial' || !state.blockers?.includes('renderer_detached')) return
     const restoreComplete = rendererDetachedCompleteCatalog !== null &&
@@ -628,7 +655,10 @@ export function createCoverageController(input: {
       if (
         recoveryEpochAtStart !== null &&
         rendererRecoveryEpoch === recoveryEpochAtStart
-      ) rendererRecoveryEpoch = null
+      ) {
+        rendererRecoveryEpoch = null
+        automaticRendererRecoveryAvailable = true
+      }
     } catch (error) {
       const normalized = error instanceof Error
         ? error
@@ -707,6 +737,7 @@ export function createCoverageController(input: {
     if (identityChanged) finalizedCatalog = null
     if (identityChanged) rendererDetached = false
     if (identityChanged) rendererRecoveryEpoch = null
+    if (identityChanged) automaticRendererRecoveryAvailable = true
     if (identityChanged) rendererFailureDuringFinalization = null
     operationGeneration += 1
     refreshRequested = false
@@ -787,7 +818,18 @@ export function createCoverageController(input: {
         failure.revisionDigest,
         )
       ) return
+      const failedLoad = activeLoadCompletion
+      const missionId = state.missionId
+      const rendererGeneration = state.rendererGeneration
       publishRendererUnavailable(failure.message)
+      if (rendererRecoveryEpoch !== null) {
+        scheduleAutomaticRendererRecovery(
+          failedLoad,
+          rendererRecoveryEpoch,
+          missionId,
+          rendererGeneration,
+        )
+      }
     },
     notifyRendererUnavailable: publishRendererUnavailable,
     notifyRendererDetached: (catalog) => {
@@ -834,6 +876,7 @@ export function createCoverageController(input: {
     },
     resume: async () => {
       const resumeSequence = contextUpdateSequence
+      automaticRendererRecoveryAvailable = true
       await waitForCatalogHandoff()
       if (stopped || resumeSequence !== contextUpdateSequence) return
       await applyDesiredContext(true, true)
