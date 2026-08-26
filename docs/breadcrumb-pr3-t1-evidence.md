@@ -2691,3 +2691,59 @@ schema v10, Candidate-B geometry/index construction, exact Dots and the 3.704 GB
 migration surface are unchanged. Commit/push, new exact macOS/Linux package
 evidence and five fresh independent reviews from zero remain required. No merge
 or release occurred.
+
+## Exact package binding after finished-mission fallback remediation
+
+Application code head
+`0c674e81e97f0376bff268d181d99a1583cd1556` passed the final package gates
+serially. The unsigned macOS arm64 directory package completed locally with:
+
+- executable SHA-256
+  `f5212ea9181df95040385dfd04f512e983ed95394a96fb7c4b8ee838ea433caf`;
+  and
+- `app.asar` SHA-256
+  `37f039d4ea9db3ee4feae96de15706ee209545e72e3a286d2cd25b4acd14e623`.
+
+Exact-head Ubuntu 22.04 X11 run
+[`32977328663`](https://github.com/donal0c/sartracker-web/actions/runs/32977328663)
+completed successfully on the same code SHA. Linux x64 AppImage and `.deb`
+construction, native SQLite inspection, Mesa llvmpipe attestation, packaged
+CI-scale tracking soak, non-black real AppImage launch (`0.484747` grayscale
+mean), Openbox close-control delivery and graceful shutdown all passed.
+
+The packaged soak recorded:
+
+- 6/6 accelerated batches, equivalent to 1,080 production polls;
+- 8,664/8,664 exact position rows, zero missing source identities, digest
+  `18abd0a96e8f0a8f3bc2a59a7cc278a9b314172e92a187d7cf24403d569e2940`;
+- SQLite integrity `ok`, zero unexplained mission events and zero redundant
+  telemetry slope;
+- one restart checkpoint, zero renderer crashes and two graceful process exits;
+- Electron-main maximum `39.243873 ms`, p95 `9.085615 ms`, zero samples over
+  the `200 ms` main-isolate threshold;
+- four interactions classified healthy and zero interaction errors; one
+  external-action sample measured `259.025957 ms` against the descriptive
+  `250 ms` sub-threshold, while the harness verdict remained valid/PASS; and
+- peak measured process-tree RSS `1,160,245,248` bytes.
+
+Artifact bindings:
+
+- AppImage SHA-256
+  `71ce4d954417dfa0b24cdb021b5dc97d9507db01afbb81826043dd8ab27524f4`;
+- `.deb` SHA-256
+  `f197bac906f891fba111e48a19a6353b2676480ad14e42492bda00f39d31c725`;
+- soak-report SHA-256
+  `2240c8fdcdcc5f898d3a9608a70dba1347b54fe1f47b2786f8083e5edbb9467c`;
+- package artifact `9610173574`, uploaded-zip digest
+  `98b1771b3bf2b917ed3f9fa44b49ebff6b4443ec1469ab9ae5fbf95a6f4987ab`;
+  and
+- validation artifact `9610174645`, uploaded-zip digest
+  `013684c5e7db14aaa1bb8935b31a53705ec46006bef0ac8994aeb68ed3c928b0`.
+
+This binding change modifies documentation and handoff only; executable code,
+package inputs and test trees are byte-identical to `0c674e8`. Candidate-B
+geometry/index construction, schema v10, G2/G3, exact Dots and the 3.704 GB
+migration surface remain unchanged. There was no pre-merge packaged 960k/2M
+coverage run outside G2 and no packaged forced-kill matrix. Five fresh
+independent PR-3 reviews from zero remain required on the final evidence-bound
+head. No merge or release occurred.
