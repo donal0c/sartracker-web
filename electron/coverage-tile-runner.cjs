@@ -115,6 +115,8 @@ function createCoverageTileRunner(input) {
         active.resolve(active.normalizeResult(message.result))
       } catch (error) {
         active.reject(error)
+        failWorker(owningWorker, error)
+        input.onFailure?.(error)
       }
     }
   }

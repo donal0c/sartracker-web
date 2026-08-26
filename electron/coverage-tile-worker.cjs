@@ -245,6 +245,7 @@ async function commitCatalog(message) {
 /** Retires the predecessor only after renderer activation is irrevocable. */
 async function finalizeCatalog(message) {
   if (finalizedCatalogStageId === message.stageId) return true
+  if (stagedCatalog === null && activatedCatalog === null) return true
   const activation = requireActivatedCatalog(message.stageId)
   for (const tilePath of activation.retiredPaths) {
     await removeCacheEntry(tilePath).catch(() => undefined)

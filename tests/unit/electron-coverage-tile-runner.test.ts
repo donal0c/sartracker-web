@@ -324,6 +324,22 @@ describe('Candidate B coverage tile worker [DON-276]', () => {
       .resolves.toMatchObject({ stageId: expect.any(String) })
   })
 
+  it('settles predecessor finalization after its worker generation is lost', async () => {
+    const databasePath = await createDatabase()
+    const cacheDirectory = path.join(directory!, 'coverage-lost-generation-finalization')
+    runner = createCoverageTileRunner({ databasePath, cacheDirectory })
+    const lost = await runner.syncCatalog({ missionId: 'mission-1', chunks: [] })
+    await runner.commitCatalog({ stageId: lost.stageId })
+    await runner.close()
+
+    runner = createCoverageTileRunner({ databasePath, cacheDirectory })
+    await expect(runner.finalizeCatalog({ stageId: lost.stageId })).resolves.toBe(true)
+    const replacement = await runner.syncCatalog({ missionId: 'mission-1', chunks: [] })
+    await expect(runner.finalizeCatalog({ stageId: lost.stageId }))
+      .rejects.toThrow(/activation is no longer current/i)
+    await runner.discardCatalog({ stageId: replacement.stageId })
+  })
+
   it('cancels one request without destroying the shared worker generation', async () => {
     const workers: FakeWorker[] = []
     runner = createCoverageTileRunner({
@@ -405,12 +421,18 @@ describe('Candidate B coverage tile worker [DON-276]', () => {
     expect(worker.messages).toEqual([])
   })
 
-  it('rejects catalog worker builds that are not one-to-one with the request', async () => {
-    const worker = new FakeWorker()
+  it('replaces a worker that returns a malformed staged catalog result', async () => {
+    const onFailure = vi.fn()
+    const workers: FakeWorker[] = []
     runner = createCoverageTileRunner({
       databasePath: '/unused-result-worker.sqlite',
       cacheDirectory: '/unused-result-worker-cache',
-      createWorker: () => worker,
+      onFailure,
+      createWorker: () => {
+        const worker = new FakeWorker()
+        workers.push(worker)
+        return worker
+      },
     })
     const descriptor = {
       key: { device_id: 'device-a', period_kind: 'outing', period_id: 'outing-a' },
@@ -425,7 +447,7 @@ describe('Candidate B coverage tile worker [DON-276]', () => {
       maxTs: null,
     }
 
-    worker.reply({
+    workers[0]!.reply({
       stageId: 'coverage-stage-00000000-0000-4000-8000-000000000001-1',
       periods: [{
         periodKey: 'outing\u0000outing-a',
@@ -437,6 +459,24 @@ describe('Candidate B coverage tile worker [DON-276]', () => {
     })
 
     await expect(request).rejects.toThrow(/catalog worker result/i)
+    expect(workers[0]!.terminationCount).toBe(1)
+    expect(onFailure).toHaveBeenCalledOnce()
+
+    const retry = runner.syncCatalog({ missionId: 'mission-1', chunks: [descriptor] })
+    expect(workers).toHaveLength(2)
+    workers[1]!.reply({
+      stageId: 'coverage-stage-00000000-0000-4000-8000-000000000002-1',
+      periods: [{
+        periodKey: 'outing\u0000outing-a',
+        revisionDigest: '1234567890abcdef1234',
+        contributors: ['device-a\u0000outing\u0000outing-a@1'],
+      }],
+      delivered: [descriptor],
+      builds: [build],
+    })
+    await expect(retry).resolves.toMatchObject({
+      stageId: 'coverage-stage-00000000-0000-4000-8000-000000000002-1',
+    })
   })
 
   it('keeps the finalized catalog readable after cancelling a replacement build', async () => {
@@ -569,6 +609,38 @@ describe('Candidate B coverage tile worker [DON-276]', () => {
     }))
   })
 
+  it('retries predecessor finalization on a replacement worker after timeout', async () => {
+    const workers: FakeWorker[] = []
+    runner = createCoverageTileRunner({
+      databasePath: '/unused-finalization-timeout-worker.sqlite',
+      cacheDirectory: '/unused-finalization-timeout-worker-cache',
+      timeoutMs: 5,
+      createWorker: () => {
+        const worker = new FakeWorker()
+        workers.push(worker)
+        return worker
+      },
+    })
+    const staged = runner.syncCatalog({ missionId: 'mission-1', chunks: [] })
+    workers[0]!.reply({
+      stageId: 'coverage-stage-00000000-0000-4000-8000-000000000001-1',
+      periods: [], delivered: [], builds: [],
+    })
+    const catalog = await staged
+    const commit = runner.commitCatalog({ stageId: catalog.stageId })
+    workers[0]!.reply(true)
+    await commit
+
+    await expect(runner.finalizeCatalog({ stageId: catalog.stageId }))
+      .rejects.toThrow(/timed out/i)
+    expect(workers[0]!.terminationCount).toBe(1)
+
+    const retry = runner.finalizeCatalog({ stageId: catalog.stageId })
+    expect(workers).toHaveLength(2)
+    workers[1]!.reply(true)
+    await expect(retry).resolves.toBe(true)
+  })
+
   it('returns a valid empty PBF for a current tile with no intersecting geometry', async () => {
     const databasePath = await createDatabase()
     runner = createCoverageTileRunner({
@@ -670,6 +742,7 @@ describe('Candidate B coverage tile worker [DON-276]', () => {
 
 class FakeWorker extends EventEmitter {
   readonly messages: Readonly<Record<string, unknown>>[] = []
+  terminationCount = 0
 
   postMessage(message: Readonly<Record<string, unknown>>): void {
     this.messages.push(message)
@@ -681,6 +754,7 @@ class FakeWorker extends EventEmitter {
   }
 
   async terminate(): Promise<number> {
+    this.terminationCount += 1
     return 1
   }
 }
