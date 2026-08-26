@@ -48,7 +48,7 @@ function createRendererTeardownCoordinator(dependencies) {
   async function runPreparation(webContents, reason) {
     const rendererDrained = await requestRendererDrain(webContents, reason)
     if (rendererDrained) return { mode: 'renderer_drained' }
-    return persistActiveMissionEvidenceLoss()
+    return persistUnfinalizedMissionEvidenceLoss()
   }
 
   /** Waits for one sender-owned acknowledgement within the fixed timeout. */
@@ -75,20 +75,25 @@ function createRendererTeardownCoordinator(dependencies) {
     })
   }
 
-  /** Writes the sticky blocker before main permits an unacknowledged teardown. */
-  async function persistActiveMissionEvidenceLoss() {
-    const activeMission = await missionStore.getActiveMission()
-    if (activeMission === null) return { mode: 'no_active_mission' }
-    await missionStore.recordIngestEvidenceLoss({
-      mission_id: activeMission.id,
-      reason: RENDERER_EVIDENCE_LOSS_REASON,
-    })
-    return { mode: 'durable_loss_marker', missionId: activeMission.id }
+  /** Writes sticky blockers for every mission that could still own renderer evidence. */
+  async function persistUnfinalizedMissionEvidenceLoss() {
+    const missionIds = await missionStore.listMissionIdsAwaitingEvidenceClosure()
+    if (missionIds.length === 0) return { mode: 'no_unfinalized_mission' }
+    for (const missionId of missionIds) {
+      await missionStore.recordIngestEvidenceLoss({
+        mission_id: missionId,
+        reason: RENDERER_EVIDENCE_LOSS_REASON,
+      })
+    }
+    if (missionIds.length === 1) {
+      return { mode: 'durable_loss_marker', missionId: missionIds[0] }
+    }
+    return { mode: 'durable_loss_markers', missionIds }
   }
 
-  /** Immediately fences the active mission after an unexpected renderer loss. */
+  /** Immediately fences every unfinalized mission after unexpected renderer loss. */
   function markRendererUnavailable() {
-    return persistActiveMissionEvidenceLoss()
+    return persistUnfinalizedMissionEvidenceLoss()
   }
 
   /** Removes the IPC listener and fails any still-waiting renderer request closed. */

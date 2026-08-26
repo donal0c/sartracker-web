@@ -1106,6 +1106,12 @@ function createElectronMissionStore(options) {
     clearLayerCatalogMetadata: async (missionId) => clearLayerCatalogMetadata(db, missionId),
     getMission: async (missionId) => getMission(db, missionId),
     listMissions: async () => all(db, 'SELECT * FROM missions ORDER BY start_time DESC'),
+    listMissionIdsAwaitingEvidenceClosure: async () => all(
+      db,
+      `SELECT id FROM missions
+        WHERE status IN ('active', 'paused', 'finished')
+        ORDER BY start_time DESC, rowid DESC`,
+    ).map((mission) => mission.id),
     getActiveMission: async () => getActiveMission(db),
     getRecoverableMission: async () => getActiveMission(db),
     pauseMission: async (missionId) => transitionMission(db, missionId, 'active', 'paused'),

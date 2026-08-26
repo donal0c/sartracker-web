@@ -47,6 +47,7 @@ describe('breadcrumb PR-3 operator manual [DON-275]', () => {
       'keeps the renderer alive until the drain acknowledges',
       'Finish keeps mission evidence intake open while its durable transition is in flight',
       'retries the durable capacity-loss marker before Finish, finalization, or shutdown may proceed',
+      'every unfinalized mission, including a finished mission',
       'unexpected renderer crash is fenced immediately',
       'SAR Tracker could not close safely',
       'preserve the profile',

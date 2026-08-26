@@ -2644,3 +2644,50 @@ migration surface remain unchanged. There was no pre-merge packaged 960k/2M
 coverage run outside G2 and no packaged forced-kill matrix. Five fresh
 independent PR-3 reviews from zero remain required on the final evidence-bound
 head. No merge or release occurred.
+
+## Finished-mission main-owned teardown fallback remediation
+
+Fresh broad review of evidence-bound head
+`dcc950c46cc082f49054b0cc786040188af6dd91` found one further P1. Finish could
+complete durably while its final renderer evidence drain remained unsuccessful.
+If renderer disposal then also failed, main's fallback queried only
+`active/paused`; the now-`finished` mission produced `no_active_mission`, allowing
+teardown without a rejection row or durable loss marker.
+
+Central source retrace confirmed every hop before editing. The composed RED
+failed because finished-mission cleanup resolved as `no_active_mission`, and the
+mission store had no boundary for listing evidence scopes that were not yet
+finalized. A separate manual RED required the new fail-closed behavior to be
+operator-visible.
+
+The remediation adds one bounded query over mission metadata only, never the
+positions table or a global mission timestamp index. It returns `active`,
+`paused`, and `finished` mission IDs in deterministic newest-first order and
+excludes `finalized`. Whenever the renderer cannot acknowledge cleanup, main
+writes a strict durable `renderer_pending_evidence_lost` marker for every such
+scope before close, reload, or crash handling may proceed. Multiple writes are
+retry-safe; any failed marker keeps teardown blocked.
+
+Local green evidence before commit:
+
+- composed renderer/main/store/Finish/manual lifecycle: 9 files / 163 tests;
+- full deterministic unit gate: 272 files / 2,202 tests;
+- ESLint, TypeScript, production build, bundle budgets and diff checks;
+- backend: 51 passed, with the intentional real macOS keychain test ignored;
+- participant/coverage/tracking Chromium: 13/13;
+- selected critical visual Playwright: 2/2; and
+- fresh uncached critical visual review: 2/2 PASS at
+  `test-results/visual-verification/reports/visual-review-2026-08-26T13-55-33Z.json`
+  and
+  `test-results/visual-verification/reports/visual-review-2026-08-26T13-55-51Z.json`.
+
+The operator manual now says that main fences every unfinalized scope,
+including a finished mission, before unacknowledged teardown. The warning layout
+did not change, so the existing screenshot remains accurate. Exact `5245504`
+macOS arm64 packaging and Ubuntu run
+[`32974681357`](https://github.com/donal0c/sartracker-web/actions/runs/32974681357)
+are invalidated as application-code proof by this Electron-main change. G2/G3,
+schema v10, Candidate-B geometry/index construction, exact Dots and the 3.704 GB
+migration surface are unchanged. Commit/push, new exact macOS/Linux package
+evidence and five fresh independent reviews from zero remain required. No merge
+or release occurred.

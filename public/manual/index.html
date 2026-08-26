@@ -985,8 +985,10 @@
             controller over unresolved evidence. The desktop main process now owns this
             boundary for normal window close, reload, and app quit: it keeps the renderer
             alive until the drain acknowledges, and writes the same mission-scoped blocker
-            itself if the renderer is gone or misses the bounded acknowledgement. An
-            unexpected renderer crash is fenced immediately. If neither the renderer drain
+            itself if the renderer is gone or misses the bounded acknowledgement. Before it permits
+            that teardown, main durably blocks every unfinalized mission, including a finished mission,
+            so a completed lifecycle transition cannot hide renderer-held evidence. An unexpected
+            renderer crash is fenced immediately. If neither the renderer drain
             nor the main-process blocker write succeeds, SAR Tracker refuses the close or
             reload and shows <strong>SAR Tracker could not close safely</strong>; leave the
             process open, preserve the profile, and contact support rather than forcing it

@@ -16,7 +16,7 @@ const {
       readonly removeListener: (channel: string, listener: (event: unknown, input: unknown) => void) => void
     }
     readonly missionStore: {
-      readonly getActiveMission: () => Promise<{ readonly id: string } | null>
+      readonly listMissionIdsAwaitingEvidenceClosure: () => Promise<readonly string[]>
       readonly recordIngestEvidenceLoss: (input: {
         readonly mission_id: string
         readonly reason: string
@@ -62,7 +62,7 @@ describe('renderer teardown coordinator', () => {
     )
 
     await expect(preparation).resolves.toEqual({ mode: 'renderer_drained' })
-    expect(missionStore.getActiveMission).not.toHaveBeenCalled()
+    expect(missionStore.listMissionIdsAwaitingEvidenceClosure).not.toHaveBeenCalled()
   })
 
   it('durably blocks the active mission when the renderer misses the bounded timeout', async () => {
@@ -125,6 +125,68 @@ describe('renderer teardown coordinator', () => {
     ).resolves.toEqual({ mode: 'durable_loss_marker', missionId: 'mission-1' })
     expect(goneContents.send).not.toHaveBeenCalled()
     expect(missionStore.recordIngestEvidenceLoss).toHaveBeenCalledTimes(2)
+  })
+
+  it('durably blocks a finished mission when renderer cleanup fails after Finish', async () => {
+    const listeners = new Map<string, (event: unknown, input: unknown) => void>()
+    const missionStore = createMissionStore()
+    missionStore.listMissionIdsAwaitingEvidenceClosure.mockResolvedValue([
+      'mission-finished',
+    ])
+    const webContents = createWebContents()
+    const coordinator = createRendererTeardownCoordinator({
+      ipcMain: createIpcMain(listeners),
+      missionStore,
+      createRequestId: () => 'request-finished',
+      setTimeout: vi.fn(() => 7),
+      clearTimeout: vi.fn(),
+      timeoutMs: 5_000,
+    })
+
+    const preparation = coordinator.prepare({ webContents }, 'window_close')
+    await vi.waitFor(() => expect(webContents.send).toHaveBeenCalledOnce())
+    listeners.get(RENDERER_TEARDOWN_READY_CHANNEL)?.(
+      { sender: webContents },
+      { requestId: 'request-finished', ok: false },
+    )
+
+    await expect(preparation).resolves.toEqual({
+      mode: 'durable_loss_marker',
+      missionId: 'mission-finished',
+    })
+    expect(missionStore.recordIngestEvidenceLoss).toHaveBeenCalledWith({
+      mission_id: 'mission-finished',
+      reason: 'renderer_pending_evidence_lost',
+    })
+  })
+
+  it('marks every unfinalized mission when renderer-owned evidence scope is uncertain', async () => {
+    const listeners = new Map<string, (event: unknown, input: unknown) => void>()
+    const missionStore = createMissionStore()
+    missionStore.listMissionIdsAwaitingEvidenceClosure.mockResolvedValue([
+      'mission-active',
+      'mission-finished',
+    ])
+    const webContents = createWebContents(true)
+    const coordinator = createRendererTeardownCoordinator({
+      ipcMain: createIpcMain(listeners),
+      missionStore,
+      createRequestId: () => 'request-all-open',
+      setTimeout: vi.fn(() => 8),
+      clearTimeout: vi.fn(),
+      timeoutMs: 5_000,
+    })
+
+    await expect(
+      coordinator.prepare({ webContents }, 'app_quit'),
+    ).resolves.toEqual({
+      mode: 'durable_loss_markers',
+      missionIds: ['mission-active', 'mission-finished'],
+    })
+    expect(missionStore.recordIngestEvidenceLoss.mock.calls).toEqual([
+      [{ mission_id: 'mission-active', reason: 'renderer_pending_evidence_lost' }],
+      [{ mission_id: 'mission-finished', reason: 'renderer_pending_evidence_lost' }],
+    ])
   })
 
   it('refuses teardown when the durable fallback cannot be written', async () => {
@@ -215,7 +277,7 @@ function createIpcMain(
 
 function createMissionStore() {
   return {
-    getActiveMission: vi.fn(async () => ({ id: 'mission-1' })),
+    listMissionIdsAwaitingEvidenceClosure: vi.fn(async () => ['mission-1']),
     recordIngestEvidenceLoss: vi.fn(async () => ({ state: 'critical' })),
   }
 }

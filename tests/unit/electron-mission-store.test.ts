@@ -114,6 +114,7 @@ type ElectronMissionStore = {
   }>
   readonly getActiveMission: () => Promise<{ readonly id: string; readonly status: string } | null>
   readonly listMissions: () => Promise<readonly { readonly id: string; readonly status: string }[]>
+  readonly listMissionIdsAwaitingEvidenceClosure: () => Promise<readonly string[]>
   readonly pauseMission: (missionId: string) => Promise<{ readonly status: string }>
   readonly resumeMission: (missionId: string) => Promise<{ readonly status: string }>
   readonly finishMission: (missionId: string) => Promise<{ readonly status: string }>
@@ -453,6 +454,24 @@ describe('electron mission store', () => {
     } finally {
       db.close()
     }
+  })
+
+  it('lists active, paused, and finished missions that still need renderer evidence closure', async () => {
+    store = await createStore()
+    const finished = await store.createMission({ name: 'Finished Evidence Scope' })
+    await store.finishMission(finished.id)
+    const active = await store.createMission({ name: 'Active Evidence Scope' })
+
+    await expect(store.listMissionIdsAwaitingEvidenceClosure()).resolves.toEqual([
+      active.id,
+      finished.id,
+    ])
+
+    await store.finishMission(active.id)
+    await store.finalizeMission(finished.id)
+    await expect(store.listMissionIdsAwaitingEvidenceClosure()).resolves.toEqual([
+      active.id,
+    ])
   })
 
   it('refuses to open a database from a newer schema instead of downgrading metadata [DON-232]', async () => {
