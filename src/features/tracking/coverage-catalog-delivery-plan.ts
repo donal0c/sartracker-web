@@ -2,6 +2,7 @@ import type {
   CoverageManifest,
   CoverageManifestChunk,
 } from '../../infrastructure/mission-store/tauri-mission-store'
+import { coverageChunkIdentity, coveragePeriodIdentity } from './coverage-identity'
 
 type CoverageDelivery = Readonly<Record<string, number>>
 
@@ -17,18 +18,19 @@ export function createCoverageCatalogDeliveryBatches(input: {
   readonly orderedPending: readonly CoverageManifestChunk[]
 }): readonly (readonly CoverageManifestChunk[])[] {
   const working = retainRenderableDescriptors(
+    input.manifest,
     input.priorManifest,
     input.priorDelivered,
     input.retainDelivery,
   )
   const batches: CoverageManifestChunk[][] = []
   for (const periodBatch of groupChunksByPeriod(input.orderedPending)) {
-    const periodIdentity = coveragePeriodIdentity(periodBatch[0]!)
+    const periodIdentity = coveragePeriodIdentity(periodBatch[0]!.key)
     for (const [identity, descriptor] of working.entries()) {
-      if (coveragePeriodIdentity(descriptor) === periodIdentity) working.delete(identity)
+      if (coveragePeriodIdentity(descriptor.key) === periodIdentity) working.delete(identity)
     }
     for (const descriptor of input.manifest.chunks.filter((chunk) =>
-      coveragePeriodIdentity(chunk) === periodIdentity)) {
+      coveragePeriodIdentity(chunk.key) === periodIdentity)) {
       working.set(coverageChunkIdentity(descriptor.key), descriptor)
     }
     batches.push([...working.values()])
@@ -36,19 +38,24 @@ export function createCoverageCatalogDeliveryBatches(input: {
   return batches
 }
 
-function coverageChunkIdentity(key: CoverageManifestChunk['key']): string {
-  return `${key.device_id}\u0000${key.period_kind}\u0000${key.period_id}`
-}
-
 function retainRenderableDescriptors(
+  current: CoverageManifest,
   prior: CoverageManifest | null,
   delivered: CoverageDelivery,
   retainDelivery: boolean,
 ): Map<string, CoverageManifestChunk> {
   if (!retainDelivery || prior === null) return new Map()
+  const currentByIdentity = new Map(current.chunks.map((chunk) => [
+    coverageChunkIdentity(chunk.key), chunk,
+  ]))
   return new Map(prior.chunks.flatMap((chunk) => {
     const identity = coverageChunkIdentity(chunk.key)
-    return delivered[identity] === chunk.contentRev ? [[identity, chunk]] : []
+    const currentChunk = currentByIdentity.get(identity)
+    const deliveredRevision = delivered[identity]
+    return typeof deliveredRevision === 'number' && Number.isSafeInteger(deliveredRevision) &&
+      deliveredRevision >= 1 && currentChunk !== undefined
+      ? [[identity, currentChunk]]
+      : []
   }))
 }
 
@@ -57,17 +64,13 @@ function groupChunksByPeriod(
 ): readonly (readonly CoverageManifestChunk[])[] {
   const groups: CoverageManifestChunk[][] = []
   for (const chunk of chunks) {
-    const identity = coveragePeriodIdentity(chunk)
+    const identity = coveragePeriodIdentity(chunk.key)
     const current = groups.at(-1)
-    if (current === undefined || coveragePeriodIdentity(current[0]!) !== identity) {
+    if (current === undefined || coveragePeriodIdentity(current[0]!.key) !== identity) {
       groups.push([chunk])
     } else {
       current.push(chunk)
     }
   }
   return groups
-}
-
-function coveragePeriodIdentity(chunk: CoverageManifestChunk): string {
-  return `${chunk.key.period_kind}\u0000${chunk.key.period_id}`
 }

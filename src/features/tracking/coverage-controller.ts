@@ -10,6 +10,8 @@ import { createCoverageScheduler } from './coverage-scheduler'
 import { classifyCoverageError, type CoverageErrorClass } from './coverage-diagnostics'
 import { createCoverageCatalogActivation } from './coverage-catalog-activation'
 import { createCoverageCatalogDeliveryBatches } from './coverage-catalog-delivery-plan'
+import { coverageChunkIdentity } from './coverage-identity'
+import { calculateCoverageProgress } from './coverage-progress'
 import type {
   CoverageRendererFailure,
   CoverageRendererFailureSource,
@@ -1022,11 +1024,6 @@ function rendererFailureSourceKey(source: CoverageRendererFailureSource): string
   return `${source.periodKey}\u0000${source.revisionDigest}\u0000${source.activationId ?? ''}`
 }
 
-/** Creates the stable tagged renderer identity for one logical chunk. */
-export function coverageChunkIdentity(key: CoverageChunkKey): string {
-  return `${key.device_id}\u0000${key.period_kind}\u0000${key.period_id}`
-}
-
 function selectChunks(
   manifest: CoverageManifest,
   selectedKeys: readonly CoverageChunkKey[] | undefined,
@@ -1054,16 +1051,10 @@ function createActiveState(input: Omit<Exclude<CoverageState, { status: 'inactiv
 selectedKeys: readonly CoverageChunkKey[] | undefined,
 ): Exclude<CoverageState, { status: 'inactive' }> {
   const selected = input.manifest === null ? [] : selectChunks(input.manifest, selectedKeys)
-  let deliveredFixCount = 0
-  let totalFixCount = 0
-  for (const chunk of selected) {
-    const fresh = chunk.builtRev === chunk.contentRev
-    const count = fresh && chunk.fixCount !== null ? chunk.fixCount : chunk.exactCount
-    totalFixCount += count
-    if (fresh && input.delivered[coverageChunkIdentity(chunk.key)] === chunk.contentRev) {
-      deliveredFixCount += count
-    }
-  }
+  const { deliveredFixCount, totalFixCount } = calculateCoverageProgress({
+    chunks: selected,
+    delivered: input.delivered,
+  })
   return {
     ...input,
     deliveredFixCount,
