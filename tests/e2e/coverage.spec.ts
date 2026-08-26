@@ -99,7 +99,7 @@ test.describe('complete mission-history coverage [DON-275]', () => {
     await page.reload()
     await page.getByTestId('app-title').waitFor({ state: 'visible', timeout: 15_000 })
     await page.getByTestId('mission-control').getByRole('button', { name: 'Resume' }).click()
-    await expect(page.getByTestId('coverage-progress-text')).toHaveText('0 of 0 fixes')
+    await expect(page.getByTestId('coverage-progress-text')).toHaveText(/^0 of \d+ fixes$/u)
     await page.evaluate(() => {
       window.sessionStorage.removeItem('sartracker:browser-harness:coverage-delay-ms')
     })

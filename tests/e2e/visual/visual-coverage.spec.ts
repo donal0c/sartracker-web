@@ -88,6 +88,50 @@ Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
     })
   })
 
+  test('failed final claim never presents a false full progress bar', async ({ page }) => {
+    await seedCoverageMission(page)
+    await page.evaluate(async () => {
+      const { applyCoverageState, useCoverageStore } = await import(
+        '/src/features/tracking/coverage-store.ts'
+      )
+      const current = useCoverageStore.getState().state
+      if (current.status === 'inactive') throw new Error('Coverage state is inactive.')
+      applyCoverageState({
+        ...current,
+        status: 'error',
+        deliveredFixCount: current.totalFixCount,
+        blockers: [],
+        lastErrorClass: 'timeout',
+      })
+    })
+
+    const panel = page.getByTestId('coverage-status-panel')
+    await expect(panel).toContainText('History incomplete')
+    await expect(panel).toContainText('completeness is not yet verified')
+    await expect(panel).toContainText('Reason: timeout')
+    await expect(page.getByTestId('coverage-progress')).toHaveCount(0)
+    await expect(page.getByTestId('coverage-retry')).toBeVisible()
+
+    await captureElementAndRegister(page, 'coverage-status-panel', {
+      testId: 'coverage-claim-unverified-honesty',
+      testName: 'Failed final database claim withholds false full progress',
+      area: 'tracking',
+      severity: 'critical',
+      verificationPrompt: `Verify this SAR Tracker mission-history claim-failure state:
+1. The panel clearly says history is incomplete.
+2. It explicitly says completeness is not yet verified.
+3. It gives timeout as the reason and offers a clear Retry action.
+4. It does not show a progress bar or claim all mission history is shown.
+5. The exact-fix inspection action remains available.
+Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
+      playwrightAssertions: [
+        'incomplete and completeness-unverified wording is visible',
+        'timeout reason and Retry are visible',
+        'no progress bar is rendered at equal delivered and total counts',
+      ],
+    })
+  })
+
   test('pending anomaly evidence never looks like complete coverage', async ({ page }) => {
     await seedCoverageMission(page)
     await page.evaluate(async () => {

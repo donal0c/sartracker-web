@@ -1170,10 +1170,11 @@
               <tr><th>Status</th><th>What It Means</th></tr>
             </thead>
             <tbody>
-              <tr><td><strong>N of M fixes</strong></td><td>The database currently knows about M accepted fixes in the selected scope, and N have been delivered to this app window. This is saved-evidence and delivery progress, not an elapsed-time estimate.</td></tr>
+              <tr><td><strong>N of M fixes</strong></td><td>The database currently knows about M accepted fixes in the selected scope, and N have been delivered to this app window. This is saved-evidence and delivery progress, not an elapsed-time estimate. When N reaches M, SAR Tracker withholds the full bar until the final database completeness claim also succeeds.</td></tr>
               <tr><td><strong>All mission history shown</strong></td><td>Every selected participant and every outing period, including Outside outings, is included and complete for this app window.</td></tr>
               <tr><td><strong>All selected history shown</strong></td><td>The visible filtered scope is complete, but one or more participants, outings, or Outside outings are deliberately omitted. The omission summary names that reduced scope.</td></tr>
               <tr><td><strong>History incomplete — showing loaded coverage</strong></td><td>Loading was cancelled or failed. Already delivered coverage stays visible. After a map-source failure, SAR Tracker makes one automatic recovery attempt once the failed load has safely ended. If the warning remains, use <strong>Retry</strong>; do not treat the partial map as the whole mission record.</td></tr>
+              <tr><td><strong>Loaded history is shown, but completeness is not yet verified</strong></td><td>Every currently counted fix may have reached this app window, but the final database claim failed or is still pending. SAR Tracker shows no full progress bar. Use <strong>Retry</strong> after an error, and do not treat the loaded map as a verified complete record.</td></tr>
               <tr><td><strong>Coverage is being reattached to the map</strong></td><td>A map-style change removed the attested history layers. Current positions remain live, but SAR Tracker shows neither a coverage percentage nor a Retry action until the history layers are visibly attached again.</td></tr>
               <tr><td><strong>Applying the selected history filter to the map</strong></td><td>The filter choice has changed, but the map has not yet acknowledged the matching historical layers. Completion is paused, and SAR Tracker shows neither a coverage percentage nor a Retry action. Current positions remain live and are never filtered by this history control.</td></tr>
               <tr><td><strong>Participant history is still being added</strong></td><td>A participant backfill is incomplete. Current positions remain live, but a complete-history claim is blocked.</td></tr>
@@ -1182,6 +1183,10 @@
               <tr><td><strong>Evidence health is degraded</strong></td><td>Saved evidence cannot yet support a completeness claim. Follow the accompanying evidence-health warning and repair guidance.</td></tr>
             </tbody>
           </table>
+          <figure class="screenshot">
+            <img src="assets/mission-history-claim-unverified.png" alt="Mission history status withholding a full progress bar after a final completeness claim timeout" />
+            <figcaption>Equal delivered and total counts are not enough for 100%. If the final database claim times out, Mission History stays explicitly incomplete, hides the full bar, and offers Retry.</figcaption>
+          </figure>
           <figure class="screenshot">
             <img src="assets/mission-history-reattaching.png" alt="Mission history status withholding visible-coverage claims while map layers reattach" />
             <figcaption>During automatic map-style reattachment, Mission History makes no claim that detached coverage remains shown and keeps the separate live-position guarantee explicit.</figcaption>

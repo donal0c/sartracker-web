@@ -33,6 +33,21 @@ describe('coverage status panel [DON-275]', () => {
     expect(progress()).toMatchObject({ value: 80, max: 120 })
   })
 
+  it('never renders 100% before the final completeness claim succeeds', () => {
+    render(state('loading', { deliveredFixCount: 7, totalFixCount: 7 }))
+    expect(host.querySelector('[data-testid="coverage-progress"]')).toBeNull()
+    expect(host.textContent).toContain('completeness is not yet verified')
+
+    render(state('error', {
+      deliveredFixCount: 7,
+      totalFixCount: 7,
+      lastErrorClass: 'timeout',
+    }))
+    expect(host.querySelector('[data-testid="coverage-progress"]')).toBeNull()
+    expect(host.textContent).toContain('completeness is not yet verified')
+    expect(host.textContent).toContain('Reason: timeout')
+  })
+
   it('uses whole-mission wording only when no history is omitted', () => {
     render(state('complete'), { omittedDeviceCount: 0, omittedOutingCount: 0 })
     expect(host.textContent).toContain('All mission history shown')

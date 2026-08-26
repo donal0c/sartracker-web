@@ -15,6 +15,8 @@ describe('breadcrumb PR-3 operator manual [DON-275]', () => {
       'Outside outings',
       'Progress can go backwards honestly',
       'History incomplete — showing loaded coverage',
+      'Loaded history is shown, but completeness is not yet verified',
+      'withholds the full bar until the final database completeness claim also succeeds',
       'SAR Tracker makes one automatic recovery attempt',
       'Applying the selected history filter to the map',
       'Inspect exact fixes',
@@ -27,6 +29,7 @@ describe('breadcrumb PR-3 operator manual [DON-275]', () => {
     expect(manual).not.toContain('internal mission model')
     for (const asset of [
       'mission-history-coverage-status.png',
+      'mission-history-claim-unverified.png',
       'mission-history-evidence-pending.png',
       'mission-history-filter-pending.png',
       'mission-history-live-independent.png',

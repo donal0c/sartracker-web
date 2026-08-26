@@ -545,6 +545,40 @@ describe('coverage controller [DON-276]', () => {
     expect(controller.getState()).toMatchObject({ status: 'error', deliveredFixCount: 0 })
   })
 
+  it('keeps delivered counts unclaimed when the final database claim rejects', async () => {
+    const publish = vi.fn()
+    const controller = createCoverageController({
+      readManifest: vi.fn().mockResolvedValue(manifest(1, [[KEY_A, 1]])),
+      readChunk: vi.fn(),
+      readClaim: vi.fn().mockRejectedValue(new Error('Coverage claim worker timed out.')),
+      applyChunk: vi.fn(),
+      deliverSelection: vi.fn().mockResolvedValue({
+        missionId: 'mission-1',
+        periods: [{ periodKey: 'outing\u0000outing-1', revisionDigest: 'claim-timeout-rev' }],
+        delivered: [{ key: KEY_A, contentRev: 1 }],
+      }),
+      publish,
+    })
+
+    const load = controller.updateContext({ missionId: 'mission-1', rendererGeneration: 'r1' })
+    await vi.waitFor(() => expect(controller.getState()).toMatchObject({
+      status: 'loading', tileCatalog: { periods: [{ revisionDigest: 'claim-timeout-rev' }] },
+    }))
+    const staged = controller.getState()
+    if (staged.status === 'inactive' || staged.tileCatalog === null) {
+      throw new Error('Coverage catalog was not staged.')
+    }
+    await controller.notifyCatalogApplied(staged.tileCatalog)
+    await load
+
+    expect(publish.mock.calls.map(([published]) => published)).toContainEqual(
+      expect.objectContaining({ status: 'loading', deliveredFixCount: 1, totalFixCount: 1 }),
+    )
+    expect(controller.getState()).toMatchObject({
+      status: 'error', deliveredFixCount: 1, totalFixCount: 1, lastErrorClass: 'timeout',
+    })
+  })
+
   it('automatically retries one transient renderer activation failure after the failed load settles', async () => {
     const initial = manifest(1, [[KEY_A, 1]])
     const deliverSelection = vi.fn(async () => {

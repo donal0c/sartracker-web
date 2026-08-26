@@ -27,6 +27,8 @@ export function CoverageStatusPanel(props: CoverageStatusPanelProps) {
   const evidenceBlocked = degraded || rendererEvidencePending || rendererEvidenceDegraded
   const progressUntrusted = evidenceBlocked || rendererDetached || rendererFilterPending ||
     reorganizing || backfill
+  const completenessUnverified = props.state.status !== 'complete' &&
+    props.state.deliveredFixCount >= props.state.totalFixCount
   const omissions = props.omittedDeviceCount + props.omittedOutingCount +
     (props.unassignedOmitted ? 1 : 0)
 
@@ -99,6 +101,11 @@ export function CoverageStatusPanel(props: CoverageStatusPanelProps) {
                 : ` Reason: ${formatErrorClass(props.state.lastErrorClass)}.`}
             </p>
           ) : null}
+          {completenessUnverified && !progressUntrusted ? (
+            <p className="mt-1" data-testid="coverage-completeness-unverified">
+              Loaded history is shown, but completeness is not yet verified.
+            </p>
+          ) : null}
         </div>
         {(props.state.status === 'partial' || props.state.status === 'error') &&
         !evidenceBlocked && !rendererDetached && !rendererFilterPending ? (
@@ -115,7 +122,7 @@ export function CoverageStatusPanel(props: CoverageStatusPanelProps) {
 
       {props.state.status === 'loading' || props.state.status === 'partial' ||
       props.state.status === 'error' ? (
-        progressUntrusted ? null :
+        progressUntrusted || completenessUnverified ? null :
         <div className="mt-3">
           <progress
             aria-label="Mission history loading progress"
