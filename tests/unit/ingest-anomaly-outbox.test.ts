@@ -6,6 +6,7 @@ import { createRequire } from 'node:module'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 const require = createRequire(import.meta.url)
+const fsPromises = require('node:fs/promises') as typeof import('node:fs/promises')
 const {
   createIngestAnomalyOutbox,
 } = require('../../electron/ingest-anomaly-outbox.cjs') as {
@@ -321,6 +322,43 @@ describe('durable ingest anomaly outbox [DON-268]', () => {
     await expect(restarted.health('mission-1')).resolves.toMatchObject({
       pendingCount: 0,
       lastFailure: 'renderer_pending_evidence_lost',
+    })
+  })
+
+  it('rejects renderer teardown when the evidence-loss marker cannot become durable', async () => {
+    directoryPath = await mkdtemp(path.join(tmpdir(), 'sartracker-ingest-outbox-'))
+    const outbox = createIngestAnomalyOutbox({
+      directoryPath,
+      projectEnvelope: vi.fn(),
+    })
+    await outbox.initialize()
+    const originalRename = fsPromises.rename
+    const rename = vi.spyOn(fsPromises, 'rename').mockImplementation(async (source, destination) => {
+      if (String(destination).endsWith('.json.marker')) {
+        throw new Error('injected health-marker rename failure')
+      }
+      return originalRename(source, destination)
+    })
+
+    try {
+      await expect(
+        outbox.markEvidenceLoss('mission-1', 'renderer_pending_evidence_lost'),
+      ).rejects.toThrow(/health-marker rename failure/iu)
+      await expect(outbox.health('mission-1')).resolves.toMatchObject({
+        lastFailure: 'renderer_pending_evidence_lost',
+      })
+      expect((await readdir(directoryPath)).some((name) => name.endsWith('.tmp'))).toBe(false)
+    } finally {
+      rename.mockRestore()
+    }
+
+    const restarted = createIngestAnomalyOutbox({
+      directoryPath,
+      projectEnvelope: vi.fn(),
+    })
+    await expect(restarted.health('mission-1')).resolves.toMatchObject({
+      pendingCount: 0,
+      lastFailure: null,
     })
   })
 

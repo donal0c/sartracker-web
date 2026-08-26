@@ -4,6 +4,36 @@ import { createIngestEvidenceFinalizationBoundary } from '../../src/features/tra
 import { createRejectionEvidenceDelivery } from '../../src/features/tracking/rejection-evidence-delivery'
 
 describe('ingest evidence finalization boundary [DON-268]', () => {
+  it('drains and seals renderer evidence before committing mission finish', async () => {
+    const finishMission = vi.fn().mockResolvedValue({ id: 'mission-1', status: 'finished' })
+    const runWithMissionFinishFence = vi.fn(async (
+      missionId: string,
+      operation: () => Promise<unknown>,
+    ) => {
+      expect(missionId).toBe('mission-1')
+      return operation()
+    })
+    const bounded = createIngestEvidenceFinalizationBoundary(
+      {
+        finishMission,
+        finalizeMission: vi.fn(),
+        unlockFinalizedMission: vi.fn(),
+      },
+      {
+        flushMission: vi.fn(),
+        runWithMissionFinishFence,
+        runWithMissionFinalizationFence: vi.fn(),
+        reopenMissionEvidenceAfterUnlock: vi.fn(),
+      },
+    )
+
+    await expect(bounded.finishMission('mission-1')).resolves.toMatchObject({
+      status: 'finished',
+    })
+    expect(runWithMissionFinishFence).toHaveBeenCalledWith('mission-1', expect.any(Function))
+    expect(finishMission).toHaveBeenCalledWith('mission-1')
+  })
+
   it('flushes renderer-held mission evidence before finalization starts', async () => {
     let releaseFlush: (() => void) | undefined
     const flushMission = vi.fn(() => new Promise<void>((resolve) => {
@@ -16,10 +46,12 @@ describe('ingest evidence finalization boundary [DON-268]', () => {
     }
     const bounded = createIngestEvidenceFinalizationBoundary(missionStore, {
       flushMission,
+      runWithMissionFinishFence: vi.fn(),
       runWithMissionFinalizationFence: async (_missionId, operation) => {
         await flushMission('mission-1')
         return operation()
       },
+      reopenMissionEvidenceAfterUnlock: vi.fn(),
     })
 
     const finalization = bounded.finalizeMission('mission-1')
@@ -38,9 +70,11 @@ describe('ingest evidence finalization boundary [DON-268]', () => {
       { finalizeMission },
       {
         flushMission: vi.fn(),
+        runWithMissionFinishFence: vi.fn(),
         runWithMissionFinalizationFence: vi.fn().mockRejectedValue(
           new Error('evidence unavailable'),
         ),
+        reopenMissionEvidenceAfterUnlock: vi.fn(),
       },
     )
 
@@ -64,7 +98,9 @@ describe('ingest evidence finalization boundary [DON-268]', () => {
       { finalizeMission },
       {
         flushMission: vi.fn(),
+        runWithMissionFinishFence: vi.fn(),
         runWithMissionFinalizationFence,
+        reopenMissionEvidenceAfterUnlock: vi.fn(),
       },
     )
 

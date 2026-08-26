@@ -2480,3 +2480,54 @@ geometry/index construction, schema v10, G2/G3 posture, exact Dots and the
 evidence-binding commit is documentation-only; it still requires exact-head
 deterministic/browser/visual/macOS/Linux gates and five fresh independent
 reviews from zero before PR #3 is review ready. No merge or release occurred.
+
+## Finish-fence and strict loss-marker remediation
+
+The renewed review of documentation head
+`fa863dadf4b03dd390125bd9c6636a486ba8ecb5` found two independent
+lost-evidence P1s. `markEvidenceLoss()` added a critical RAM failure but
+swallowed atomic marker-write or directory-sync failure, so main could permit
+teardown without a restart-surviving blocker. Separately, Finish changed the
+mission to `finished` without draining or sealing renderer rejection evidence;
+the teardown fallback then queried only active/paused missions and could return
+`no_active_mission` while unsent evidence still existed.
+
+Both findings were centrally source-retraced before editing. The initial
+focused RED failed three assertions for exactly those reasons: the marker call
+resolved instead of rejecting, the mission boundary called Finish directly,
+and no renderer Finish fence existed. A refactor RED then proved failed marker
+rename left a temporary file behind.
+
+The remediation makes explicit evidence-loss marking resolve only after the
+atomic marker rename and directory sync complete. It retains critical
+in-process health on failure, propagates the error to the close/reload/quit
+guard, and removes the failed temporary file. Finish now drains every bounded
+mission rejection batch, seals late renderer acceptance across the durable
+status transition, and leaves the mission active and acceptance retryable if
+the drain or Finish operation fails. Finalization advances the already sealed
+finished mission without reopening intake; a failed finalization remains sealed
+for a safe retry.
+
+Local green evidence before commit:
+
+- focused outbox/Finish/finalization lifecycle: 3 files / 51 tests;
+- composed runtime/mission/teardown boundary: 6 files / 89 tests;
+- full unit: 272 files / 2,194 tests;
+- ESLint, TypeScript, production build and bundle budgets;
+- backend: 51 passed, with the intentional real macOS keychain test ignored;
+- participant/coverage/tracking Chromium: 13/13;
+- selected critical visual Playwright: 2/2; and
+- fresh uncached critical visual review: 2/2 PASS at
+  `test-results/visual-verification/reports/visual-review-2026-08-26T12-44-31Z.json`
+  and
+  `test-results/visual-verification/reports/visual-review-2026-08-26T12-44-44Z.json`.
+
+The operator manual now states that Finish drains and seals rejection evidence
+and is refused if the evidence cannot be made durable. Existing warning layout
+and screenshot remain accurate; no new screenshot was required. The invalidated
+review wave returned two clean scoped reviews, two P1 reports that independently
+confirmed the finished-mission gap, and did not launch its fifth reviewer once
+the head was known unsafe. Unsigned macOS packaging, the exact-head Ubuntu
+package/soak, and all five fresh reviews remain required after this
+code-and-documentation head is committed and pushed. No merge or release
+occurred.

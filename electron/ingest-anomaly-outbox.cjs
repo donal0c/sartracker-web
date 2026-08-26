@@ -149,7 +149,7 @@ function createIngestAnomalyOutbox(options) {
         throw new Error('Ingest evidence-loss reason is invalid.')
       }
       validateMissionScope(missionId)
-      await persistFailure(missionId, reason)
+      await persistFailure(missionId, reason, undefined, true)
     })
   }
 
@@ -282,9 +282,10 @@ function createIngestAnomalyOutbox(options) {
   }
 
   /** Persists only a bounded failure class; anomaly content never enters the marker. */
-  async function persistFailure(missionId, reason, recoveryKey) {
+  async function persistFailure(missionId, reason, recoveryKey, requireDurable = false) {
     const scope = failureScope(missionId)
     if (
+      !requireDurable &&
       failuresByScope.get(scope)?.has(reason) === true &&
       (recoveryKey === undefined || recoveryKeysByScope.get(scope)?.get(reason) === recoveryKey)
     ) return
@@ -297,9 +298,10 @@ function createIngestAnomalyOutbox(options) {
     try {
       await fs.mkdir(options.directoryPath, { recursive: true })
       await persistFailureScope(scope)
-    } catch {
+    } catch (error) {
       // No writable local storage is the explicit impossibility boundary. The
       // in-process state remains critical and no evidence is acknowledged.
+      if (requireDurable) throw error
     }
   }
 
@@ -467,14 +469,19 @@ async function writeAtomic(filePath, contents, platform) {
   const temporaryPath = `${filePath}.${randomUUID()}.tmp`
   let handle
   try {
-    handle = await fs.open(temporaryPath, 'wx', 0o600)
-    await handle.writeFile(contents, 'utf8')
-    await handle.sync()
-  } finally {
-    await handle?.close()
+    try {
+      handle = await fs.open(temporaryPath, 'wx', 0o600)
+      await handle.writeFile(contents, 'utf8')
+      await handle.sync()
+    } finally {
+      await handle?.close()
+    }
+    await fs.rename(temporaryPath, filePath)
+    await syncDirectory(path.dirname(filePath), platform)
+  } catch (error) {
+    await fs.rm(temporaryPath, { force: true }).catch(() => undefined)
+    throw error
   }
-  await fs.rename(temporaryPath, filePath)
-  await syncDirectory(path.dirname(filePath), platform)
 }
 
 /** Flushes directory metadata on platforms that support directory handles. */

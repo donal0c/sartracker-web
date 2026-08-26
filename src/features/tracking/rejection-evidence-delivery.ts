@@ -50,6 +50,10 @@ export type RejectionEvidenceDelivery = {
   ) => void
   readonly flushMission: (missionId: string) => Promise<void>
   readonly applyMissionHealth: (missionId: string, health: IngestEvidenceHealth) => void
+  readonly runWithMissionFinishFence: <Result>(
+    missionId: string,
+    operation: () => Promise<Result>,
+  ) => Promise<Result>
   readonly runWithMissionFinalizationFence: <Result>(
     missionId: string,
     operation: () => Promise<Result>,
@@ -218,7 +222,19 @@ export function createRejectionEvidenceDelivery(
     missionId: string,
     operation: () => Promise<Result>,
   ): Promise<Result> {
-    if (finalizationPhaseByMission.has(missionId)) {
+    const existingPhase = finalizationPhaseByMission.get(missionId)
+    if (existingPhase === 'sealed') {
+      const finalizationEpoch = finalizationEpochByMission.get(missionId)
+      // If the durable call rejects, this successfully finished mission remains
+      // sealed. Retry may finalize it; evidence acceptance must not reopen.
+      const result = await operation()
+      if (finalizationEpochByMission.get(missionId) === finalizationEpoch) {
+        finalizationPhaseByMission.set(missionId, 'finalized')
+        retireFinalizedMissionHealth(missionId)
+      }
+      return result
+    }
+    if (existingPhase !== undefined) {
       throw new Error('Mission evidence finalization is already in progress or complete.')
     }
     const finalizationEpoch = advanceMissionFinalizationEpoch(missionId)
@@ -234,6 +250,35 @@ export function createRejectionEvidenceDelivery(
       if (finalizationEpochByMission.get(missionId) === finalizationEpoch) {
         finalizationPhaseByMission.set(missionId, 'finalized')
         retireFinalizedMissionHealth(missionId)
+      }
+      return result
+    } catch (error) {
+      if (finalizationEpochByMission.get(missionId) === finalizationEpoch) {
+        finalizationPhaseByMission.delete(missionId)
+      }
+      scheduleFlush()
+      throw error
+    }
+  }
+
+  /** Drains and seals evidence before the durable mission Finish transition. */
+  async function runWithMissionFinishFence<Result>(
+    missionId: string,
+    operation: () => Promise<Result>,
+  ): Promise<Result> {
+    if (finalizationPhaseByMission.has(missionId)) {
+      throw new Error('Mission evidence closure is already in progress or complete.')
+    }
+    const finalizationEpoch = advanceMissionFinalizationEpoch(missionId)
+    finalizationPhaseByMission.set(missionId, 'draining')
+    try {
+      await drainMissionEvidence(missionId, finalizationEpoch)
+      if (finalizationEpochByMission.get(missionId) !== finalizationEpoch) {
+        throw new Error('Mission evidence Finish was superseded by administrative unlock.')
+      }
+      const result = await operation()
+      if (finalizationEpochByMission.get(missionId) === finalizationEpoch) {
+        finalizationPhaseByMission.set(missionId, 'sealed')
       }
       return result
     } catch (error) {
@@ -503,6 +548,7 @@ export function createRejectionEvidenceDelivery(
     flushMission,
     record,
     reopenMissionEvidenceAfterUnlock,
+    runWithMissionFinishFence,
     runWithMissionFinalizationFence,
   }
 }

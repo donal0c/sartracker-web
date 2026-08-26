@@ -1,12 +1,17 @@
 import type { UnlockFinalizedMissionInput } from '../../infrastructure/mission-store/tauri-mission-store'
 
 type FinalizableMissionStore = {
+  readonly finishMission?: (missionId: string) => Promise<unknown>
   readonly finalizeMission: (missionId: string) => Promise<unknown>
   readonly unlockFinalizedMission: (input: UnlockFinalizedMissionInput) => Promise<unknown>
 }
 
 type RendererEvidenceBoundary = {
   readonly flushMission: (missionId: string) => Promise<void>
+  readonly runWithMissionFinishFence: <Result>(
+    missionId: string,
+    operation: () => Promise<Result>,
+  ) => Promise<Result>
   readonly runWithMissionFinalizationFence: <Result>(
     missionId: string,
     operation: () => Promise<Result>,
@@ -24,8 +29,19 @@ export function createIngestEvidenceFinalizationBoundary<
   missionStore: Store,
   evidence: RendererEvidenceBoundary,
 ): Store {
+  const finishMission = missionStore.finishMission
+  const finishBoundary = finishMission === undefined
+    ? {}
+    : {
+        finishMission: async (missionId: string) =>
+          evidence.runWithMissionFinishFence(
+            missionId,
+            () => finishMission(missionId),
+          ),
+      }
   return {
     ...missionStore,
+    ...finishBoundary,
     finalizeMission: async (missionId: string) =>
       evidence.runWithMissionFinalizationFence(
         missionId,
@@ -38,5 +54,5 @@ export function createIngestEvidenceFinalizationBoundary<
       evidence.reopenMissionEvidenceAfterUnlock(input.mission_id)
       return mission
     },
-  }
+  } as Store
 }

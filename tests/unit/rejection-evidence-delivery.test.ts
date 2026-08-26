@@ -8,6 +8,67 @@ import {
 import type { CurrentPositionRejection } from '../../src/features/tracking/ingest-health'
 
 describe('rejection evidence delivery [DON-268]', () => {
+  it('drains more than one batch at Finish, seals late acceptance, then permits finalization', async () => {
+    const persisted: string[] = []
+    const delivery = createRejectionEvidenceDelivery({
+      missionStore: {
+        recordIngestRejections: vi.fn(async (input) => {
+          persisted.push(...input.rejections.map((entry) => entry.anomalyKey))
+          return {
+            acknowledgedDeliveryIds: input.rejections.map((entry) => entry.deliveryId),
+            health: healthy(),
+          }
+        }),
+      },
+      applyRejections: vi.fn(),
+      applyEvidenceHealth: vi.fn(),
+    })
+    const rejections = Array.from(
+      { length: REJECTION_EVIDENCE_DELIVERY_BATCH_HYPOTHESIS + 1 },
+      (_, index) => createRejection(`source:finish-${index}`),
+    )
+    delivery.record(rejections, observation('mission-1'))
+
+    await expect(delivery.runWithMissionFinishFence(
+      'mission-1',
+      async () => 'finished',
+    )).resolves.toBe('finished')
+    expect(persisted).toHaveLength(REJECTION_EVIDENCE_DELIVERY_BATCH_HYPOTHESIS + 1)
+    expect(() => delivery.record(
+      [createRejection('source:after-finish')],
+      observation('mission-1'),
+    )).toThrow(/acceptance.*sealed/iu)
+    await expect(delivery.runWithMissionFinalizationFence(
+      'mission-1',
+      async () => 'finalized',
+    )).resolves.toBe('finalized')
+  })
+
+  it('keeps the mission active and reopens acceptance when Finish cannot drain evidence', async () => {
+    const finishMission = vi.fn().mockResolvedValue('finished')
+    const delivery = createRejectionEvidenceDelivery({
+      missionStore: {
+        recordIngestRejections: vi.fn(async () => ({
+          acknowledgedDeliveryIds: [],
+          health: degraded(),
+        })),
+      },
+      applyRejections: vi.fn(),
+      applyEvidenceHealth: vi.fn(),
+    })
+    delivery.record([createRejection('source:blocked-finish')], observation('mission-1'))
+
+    await expect(delivery.runWithMissionFinishFence(
+      'mission-1',
+      finishMission,
+    )).rejects.toThrow(/could not be persisted/iu)
+    expect(finishMission).not.toHaveBeenCalled()
+    expect(() => delivery.record(
+      [createRejection('source:finish-retry')],
+      observation('mission-1'),
+    )).not.toThrow()
+  })
+
   it('seals mission observation acceptance while finalization is in progress', async () => {
     const persisted: string[] = []
     let releaseFinalization: (() => void) | undefined
