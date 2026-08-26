@@ -1408,3 +1408,91 @@ and no packaged forced-kill matrix.
 The commit containing this evidence record is documentation-only. It must pass
 the deterministic exact-head gates and five fresh independent exact-head
 reviews before PR #3 can be called review ready. No merge or release occurred.
+
+## Lost worker-generation and malformed-stage recovery remediation
+
+Fresh exact-head reviews invalidated evidence head
+`48ee11869d22bfb25ef5c18c54013a9def5d270d` with two distinct P2 recovery
+defects.
+
+First, a timeout during post-renderer predecessor release terminated the tile
+worker generation that owned the activation token. The controller correctly
+retained that token and required Retry to settle it before any new build, but a
+fresh worker rejected the old generation's token. Every Retry therefore failed
+before manifest read or replacement delivery, leaving coverage unavailable
+until runtime restart.
+
+Second, the worker creates `stagedCatalog` before replying to `sync-catalog`.
+When the runner's one-to-one result validator rejected a malformed reply, the
+runner rejected only the request. Mission-store never received the raw result,
+so its defensive discard path could not run; the same live worker retained the
+unknown stage and every later sync failed with an unsettled-stage error.
+
+Both were recorded red before production changes. The real-worker lost-
+generation regression rejected predecessor finalization on a replacement
+worker. The fake-worker malformed-result regression observed zero worker
+terminations and no failure notification, then proved Retry reused the same
+poisoned generation.
+
+Application head `635a7b30883c3acd9852aae825dec1edacf4102d` establishes the
+small recovery boundary:
+
+- a worker with neither a staged nor activated catalog treats predecessor
+  finalization as already settled because the dead generation's in-memory
+  predecessor no longer exists;
+- a mismatched token still fails whenever the replacement owns a live stage;
+- a catalog-result normalization failure terminates the owning worker and
+  emits the existing bounded failure signal; and
+- the next Retry creates a clean worker, settles pending release, and can
+  perform the controller's already-tested full-manifest recovery.
+
+The regressions cover real worker generation loss, live replacement-stage
+token fencing, runner timeout followed by same-token finalization on a
+replacement worker, malformed result termination/failure notification, and a
+successful sync on the fresh generation.
+
+Green verification at that application head:
+
+- focused ledger/query/store/controller/runner: 5 files / 114 tests;
+- full unit: 264 files / 2,135 tests;
+- TypeScript, full ESLint, changed CommonJS syntax, production build, and
+  bundle budgets;
+- source-exact paged Dots contract: 10/10; and
+- participant/coverage Chromium: 10/10.
+
+Exact application-head Linux run
+[`32924343484`](https://github.com/donal0c/sartracker-web/actions/runs/32924343484)
+checked out PR merge ref
+`9927c5ce69bdca7d08f662eefebfac9cabf2aad6`, explicitly merging application
+head `635a7b30883c3acd9852aae825dec1edacf4102d` into exact PR-2 base
+`7021fc1ef33e6da5c91c96cd86e836fc3754f48f`, and passed:
+
+- Ubuntu x64 AppImage and `.deb` packaging, native SQLite inspection, Mesa
+  llvmpipe attestation, and AppImage window/content launch;
+- packaged CI soak: 6/6 batches, 8,664/8,664 source-exact positions, matching
+  SHA-256 `e26da48259e7194b19c2ae64aaab935fa342f25535dc27d34171ff2d1e9bfc3b`,
+  integrity `ok`, one restart, zero renderer crashes, 21.185 ms maximum main
+  gap, zero redundant-event slope, and four healthy operator interactions;
+- AppImage SHA-256
+  `c4e8078f7450dc21ede976db39841507f52375cbe74d18cb8446a53055bee9a8`;
+- `.deb` SHA-256
+  `fc06dfffef17b9e27d970d5afb5a091ae1d27532c0c0262ed91b6cb89f4ffba4`;
+- package artifact `9591034838`, uploaded-zip digest
+  `c5c58bbdcc9b36508b298d76a39995bb5efe1e6f4d1023243622026bc4192719`;
+  and
+- validation artifact `9591035737`, uploaded-zip digest
+  `2e044a1f7ebce9c6781658d1176b05ef30bddf989a833464f9b3a3501246deb5`.
+
+This remediation does not change Candidate-B geometry/index construction,
+schema/open code, coverage controls or wording, G2 measurements, G3 flag
+posture, exact Dots, or any operator-visible surface. The accepted G2
+decision/960k/2M evidence, 3.704 GB v9-to-v10 migration, earlier selected
+visual review, operator manual, and screenshots remain standing only for those
+unchanged surfaces. No manual or screenshot update is required for this
+invisible worker-lifecycle remediation. There was no pre-merge packaged
+960k/2M coverage run outside G2 and no packaged forced-kill matrix.
+
+The commit containing this evidence record is documentation-only. It must pass
+the deterministic exact-head gates and five fresh independent exact-head
+reviews from zero before PR #3 can be called review ready. No merge or release
+occurred.
