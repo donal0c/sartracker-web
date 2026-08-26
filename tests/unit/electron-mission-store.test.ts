@@ -326,6 +326,22 @@ type ElectronMissionStore = {
     readonly state: 'healthy' | 'degraded' | 'critical'
     readonly reason: string | null
   }>
+  readonly stageRendererEvidenceIncident: (input: {
+    readonly incident_id: string
+    readonly scopes: readonly {
+      readonly mission_id: string
+      readonly scope_reason: string
+    }[]
+  }) => Promise<{ readonly staged_scope_count: number }>
+  readonly resolveRendererEvidenceIncidents: (input: {
+    readonly incident_id?: string
+    readonly outcome: 'drained' | 'lost'
+  }) => Promise<{
+    readonly resolved_scopes: readonly {
+      readonly mission_id: string
+      readonly scope_reason: string
+    }[]
+  }>
   readonly getIngestEvidenceHealth: (missionId?: string) => Promise<{
     readonly state: 'healthy' | 'degraded' | 'critical'
     readonly reason: string | null
@@ -531,6 +547,52 @@ describe('electron mission store', () => {
       { mission_id: active.id, scope_reason: 'paused_recoverable_mission' },
       { mission_id: finished.id, scope_reason: 'finished_unfinalized_mission' },
     ])
+  })
+
+  it('stages and cleanly resolves one exact multi-mission renderer incident [DON-276]', async () => {
+    store = await createStore()
+    const finished = await store.createMission({ name: 'Finished Incident Scope' })
+    await store.finishMission(finished.id)
+    const active = await store.createMission({ name: 'Active Incident Scope' })
+
+    await expect(store.stageRendererEvidenceIncident({
+      incident_id: 'incident-multi-mission',
+      scopes: [
+        { mission_id: active.id, scope_reason: 'active_mission' },
+        { mission_id: finished.id, scope_reason: 'finished_unfinalized_mission' },
+      ],
+    })).resolves.toEqual({ staged_scope_count: 2 })
+    await expect(store.getIngestEvidenceHealth(active.id)).resolves.toMatchObject({
+      state: 'degraded', reason: 'renderer_evidence_pending',
+    })
+    await expect(store.getIngestEvidenceHealth(finished.id)).resolves.toMatchObject({
+      state: 'degraded', reason: 'renderer_evidence_pending',
+    })
+
+    await expect(store.resolveRendererEvidenceIncidents({
+      incident_id: 'incident-multi-mission',
+      outcome: 'drained',
+    })).resolves.toEqual({
+      resolved_scopes: expect.arrayContaining([
+        { mission_id: active.id, scope_reason: 'active_mission' },
+        { mission_id: finished.id, scope_reason: 'finished_unfinalized_mission' },
+      ]),
+    })
+    await expect(store.getIngestEvidenceHealth(active.id)).resolves.toMatchObject({
+      state: 'healthy', reason: null,
+    })
+    await expect(store.getIngestEvidenceHealth(finished.id)).resolves.toMatchObject({
+      state: 'healthy', reason: null,
+    })
+  })
+
+  it('rejects an explicitly blank renderer incident identity instead of sweeping all [DON-276]', async () => {
+    store = await createStore()
+
+    await expect(store.resolveRendererEvidenceIncidents({
+      incident_id: '   ',
+      outcome: 'drained',
+    })).rejects.toThrow(/incident identity/iu)
   })
 
   it('refuses to open a database from a newer schema instead of downgrading metadata [DON-232]', async () => {

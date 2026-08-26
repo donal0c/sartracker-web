@@ -102,6 +102,13 @@ type CreateManagedRuntimeServicesDependencies = {
           reason: import('../../domain/tracking-ingest-evidence').IngestEvidenceLossReason,
         ) => Promise<void>)
       | undefined
+    readonly beginMissionEvidenceObservation?: (missionId: string) => {
+      readonly missionId: string | null
+      readonly complete: () => void
+    }
+    readonly registerMissionEvidenceSettler?: (
+      settler: (missionId: string) => Promise<void>,
+    ) => () => void
     readonly recordTrackingPollDiagnostic?: typeof recordTrackingPollLedgerEntry
     readonly notifyDurablePositionChange?: (changedPositionCount: number) => void
     readonly missionModelEnabled?: boolean
@@ -162,6 +169,13 @@ type CreateManagedRuntimeServicesDependencies = {
         reason: import('../../domain/tracking-ingest-evidence').IngestEvidenceLossReason,
       ) => Promise<void>)
     | undefined
+  readonly beginMissionEvidenceObservation?: (missionId: string) => {
+    readonly missionId: string | null
+    readonly complete: () => void
+  }
+  readonly registerMissionEvidenceSettler?: (
+    settler: (missionId: string) => Promise<void>,
+  ) => () => void
   readonly missionModelEnabled?: boolean
   readonly readParticipationScope?: () => import('../participants/participation-scope').ParticipationScope
   readonly readParticipationScopeStatus?: () => 'loading' | 'ready' | 'error'
@@ -235,6 +249,18 @@ export async function createManagedRuntimeServices(
       recordDiagnosticEvent,
       recordTrackingPollDiagnostic: recordTrackingPollLedgerEntry,
       recordMissionEvidenceLoss: dependencies.recordMissionEvidenceLoss,
+      ...(dependencies.beginMissionEvidenceObservation === undefined
+        ? {}
+        : {
+            beginMissionEvidenceObservation:
+              dependencies.beginMissionEvidenceObservation,
+          }),
+      ...(dependencies.registerMissionEvidenceSettler === undefined
+        ? {}
+        : {
+            registerMissionEvidenceSettler:
+              dependencies.registerMissionEvidenceSettler,
+          }),
       ...(dependencies.missionModelEnabled === undefined
         ? {}
         : { missionModelEnabled: dependencies.missionModelEnabled }),

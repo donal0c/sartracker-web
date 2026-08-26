@@ -18,6 +18,7 @@ const {
     readonly faultInjection?: {
       readonly failStage?: boolean
       readonly failRemovalAfterProjection?: boolean
+      failRendererStageAfterScopeCount?: number
     }
     readonly maxPendingFiles?: number
     readonly maxPendingBytes?: number
@@ -35,6 +36,17 @@ const {
     readonly resolveRendererEvidenceUncertainty: (
       missionId: string,
       incidentId: string,
+      outcome: 'drained' | 'lost',
+    ) => Promise<void>
+    readonly stageRendererEvidenceIncident: (
+      scopes: readonly {
+        readonly missionId: string
+        readonly scopeReason: string
+      }[],
+      incidentId: string,
+    ) => Promise<void>
+    readonly resolveRendererEvidenceIncidents: (
+      incidentId: string | null,
       outcome: 'drained' | 'lost',
     ) => Promise<void>
     readonly readEvidenceLossAcknowledgementCandidate: (missionId: string) => Promise<{
@@ -434,6 +446,93 @@ describe('durable ingest anomaly outbox [DON-268]', () => {
     await expect(
       restartedAgain.readEvidenceLossAcknowledgementCandidate('mission-1'),
     ).resolves.toEqual(first)
+  })
+
+  it('uses one durable incident record to recover a partial multi-mission stage after a later clean drain [DON-276]', async () => {
+    directoryPath = await mkdtemp(path.join(tmpdir(), 'sartracker-ingest-outbox-'))
+    const faultInjection = { failRendererStageAfterScopeCount: 1 }
+    const staging = createIngestAnomalyOutbox({
+      directoryPath,
+      projectEnvelope: vi.fn(),
+      faultInjection,
+    })
+
+    await expect(staging.stageRendererEvidenceIncident([
+      { missionId: 'mission-a', scopeReason: 'active_mission' },
+      { missionId: 'mission-b', scopeReason: 'paused_recoverable_mission' },
+    ], 'request-partial-incident')).rejects.toThrow(/renderer.*stage/iu)
+    expect((await readdir(directoryPath)).filter((name) =>
+      name.startsWith('renderer-evidence-incident-'))).toHaveLength(1)
+
+    faultInjection.failRendererStageAfterScopeCount = Number.POSITIVE_INFINITY
+    await staging.resolveRendererEvidenceIncidents(null, 'drained')
+
+    const restarted = createIngestAnomalyOutbox({
+      directoryPath,
+      projectEnvelope: vi.fn(),
+    })
+    await restarted.initialize()
+    await expect(restarted.health('mission-a')).resolves.toMatchObject({ lastFailure: null })
+    await expect(restarted.health('mission-b')).resolves.toMatchObject({ lastFailure: null })
+    expect((await readdir(directoryPath)).filter((name) =>
+      name.startsWith('renderer-evidence-incident-'))).toHaveLength(0)
+  })
+
+  it('does not retain volatile incident ownership when the durable incident write fails [DON-276]', async () => {
+    directoryPath = await mkdtemp(path.join(tmpdir(), 'sartracker-ingest-outbox-'))
+    const outbox = createIngestAnomalyOutbox({
+      directoryPath,
+      projectEnvelope: vi.fn(),
+    })
+    await outbox.initialize()
+    const originalRename = fsPromises.rename
+    const rename = vi.spyOn(fsPromises, 'rename').mockImplementation(async (source, destination) => {
+      if (path.basename(String(destination)).startsWith('renderer-evidence-incident-')) {
+        throw new Error('injected incident rename failure')
+      }
+      return originalRename(source, destination)
+    })
+
+    try {
+      await expect(outbox.stageRendererEvidenceIncident([
+        { missionId: 'mission-a', scopeReason: 'active_mission' },
+      ], 'request-write-failed')).rejects.toThrow(/incident rename failure/iu)
+    } finally {
+      rename.mockRestore()
+    }
+
+    await expect(outbox.resolveRendererEvidenceIncidents(null, 'drained')).resolves.toEqual([])
+    await expect(outbox.health('mission-a')).resolves.toMatchObject({ lastFailure: null })
+  })
+
+  it('promotes only scopes owned by a surviving durable renderer incident and does so once [DON-276]', async () => {
+    directoryPath = await mkdtemp(path.join(tmpdir(), 'sartracker-ingest-outbox-'))
+    const staging = createIngestAnomalyOutbox({
+      directoryPath,
+      projectEnvelope: vi.fn(),
+    })
+    await staging.stageRendererEvidenceIncident([
+      { missionId: 'mission-a', scopeReason: 'active_mission' },
+      { missionId: 'mission-b', scopeReason: 'finished_unfinalized_mission' },
+    ], 'request-process-lost-bulk')
+
+    const restarted = createIngestAnomalyOutbox({
+      directoryPath,
+      projectEnvelope: vi.fn(),
+    })
+    await restarted.initialize()
+    const firstA = await restarted.readEvidenceLossAcknowledgementCandidate('mission-a')
+    const firstB = await restarted.readEvidenceLossAcknowledgementCandidate('mission-b')
+
+    const restartedAgain = createIngestAnomalyOutbox({
+      directoryPath,
+      projectEnvelope: vi.fn(),
+    })
+    await restartedAgain.initialize()
+    await expect(restartedAgain.readEvidenceLossAcknowledgementCandidate('mission-a'))
+      .resolves.toEqual(firstA)
+    await expect(restartedAgain.readEvidenceLossAcknowledgementCandidate('mission-b'))
+      .resolves.toEqual(firstB)
   })
 
   it('retains evidence loss while an exact durable acknowledgement token permits lifecycle closure [DON-276]', async () => {

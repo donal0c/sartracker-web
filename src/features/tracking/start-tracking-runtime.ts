@@ -298,6 +298,13 @@ type StartTrackingRuntimeDependencies = {
   readonly recordMissionEvidenceLoss?:
     | ((missionId: string, reason: IngestEvidenceLossReason) => Promise<void>)
     | undefined
+  readonly beginMissionEvidenceObservation?: (missionId: string) => {
+    readonly missionId: string | null
+    readonly complete: () => void
+  }
+  readonly registerMissionEvidenceSettler?: (
+    settler: (missionId: string) => Promise<void>,
+  ) => () => void
   readonly recordTrackingPollDiagnostic?: (entry: TrackingPollLedgerEntry) => void
   readonly notifyDurablePositionChange?: (changedPositionCount: number) => void
   readonly missionModelEnabled?: boolean
@@ -360,14 +367,14 @@ export async function startTrackingRuntime(
       }
     | null = null
   let participantBackfillInFlight = false
+  let acceptingRuntimeUpdates = true
   const operationalPositionRetention = createOperationalPositionRetention()
   let deferredOperationalSnapshot: {
     readonly snapshot: TrackingSnapshot
     readonly historyResetKey: string | null
-    readonly missionEvidenceId: string | null
-    readonly persistAfterHydration: boolean
   } | null = null
   const participantBackfillAbortController = new AbortController()
+  let unregisterMissionEvidenceSettler: () => void = () => undefined
 
   if (dependencies.config === null) {
     dependencies.applyStatus({
@@ -380,6 +387,44 @@ export async function startTrackingRuntime(
 
     return async () => invalidateTrackingRuntimeGeneration(runtimeGeneration)
   }
+
+  const { createDeferredMissionEvidenceQueue } = await import('./deferred-mission-evidence')
+  const deferredMissionEvidence = createDeferredMissionEvidenceQueue<TrackingSnapshot>({
+    capacity: 8,
+    beginObservation: dependencies.beginMissionEvidenceObservation ?? ((missionId) => ({
+      missionId,
+      complete: () => undefined,
+    })),
+    persist: async (missionId, snapshot) => {
+      if (
+        readParticipationScopeStatus() !== 'ready' ||
+        useMissionStore.getState().currentMission?.id !== missionId
+      ) {
+        throw new Error(
+          'Deferred mission evidence cannot be scoped to its accepting mission.',
+        )
+      }
+      await enqueueMissionPersistence(
+        limitSnapshotForMissionPersistence(
+          filterMissionEvidenceSnapshot(snapshot),
+          dependencies.maxPersistedPositionsPerSnapshot,
+        ),
+        missionId,
+      )
+      await applyMissionPersistenceResult(
+        { status: 'fulfilled', value: undefined },
+        missionId,
+      )
+    },
+    markEvidenceLoss: async (missionId) => {
+      await applyMissionPersistenceResult({
+        status: 'rejected',
+        reason: new Error(
+          'Accepted tracking evidence could not be participation-scoped before release.',
+        ),
+      }, missionId)
+    },
+  })
 
   const cachedContents = await dependencies.cache.read()
   if (cachedContents !== null) {
@@ -402,8 +447,6 @@ export async function startTrackingRuntime(
         deferredOperationalSnapshot = {
           snapshot: healthyCachedSnapshot,
           historyResetKey: null,
-          missionEvidenceId: null,
-          persistAfterHydration: false,
         }
       } else {
         dependencies.applySnapshot(operationalCachedSnapshot)
@@ -433,7 +476,8 @@ export async function startTrackingRuntime(
       client,
       dependencies,
       logger,
-      () => runtimeGeneration === activeTrackingRuntimeGeneration,
+      () => acceptingRuntimeUpdates &&
+        runtimeGeneration === activeTrackingRuntimeGeneration,
     )
   }
   const poller = dependencies.createPoller(client, {
@@ -711,8 +755,21 @@ export async function startTrackingRuntime(
         deferredOperationalSnapshot = {
           snapshot,
           historyResetKey: context?.historyResetKey ?? null,
-          missionEvidenceId,
-          persistAfterHydration: missionEvidenceAccepted,
+        }
+        if (missionEvidenceAccepted && missionEvidenceId !== null) {
+          if (readParticipationScopeStatus() === 'error') {
+            sideEffects.push(applyMissionPersistenceResult({
+              status: 'rejected',
+              reason: new Error('Participant selection is unavailable.'),
+            }, missionEvidenceId))
+          } else if (!deferredMissionEvidence.enqueue(missionEvidenceId, snapshot)) {
+            sideEffects.push(applyMissionPersistenceResult({
+              status: 'rejected',
+              reason: new Error(
+                'Mission evidence scope closed before deferred evidence was retained.',
+              ),
+            }, missionEvidenceId))
+          }
         }
         refreshTrackingStatus()
       } else {
@@ -877,41 +934,44 @@ export async function startTrackingRuntime(
             event: 'tracking_snapshot_applied_after_participant_hydration',
             fields: buildTrackingSnapshotDiagnosticFields(operationalSnapshot),
           })
-          if (pendingSnapshot.persistAfterHydration) {
-            const missionEvidenceSnapshot = filterMissionEvidenceSnapshot(
-              pendingSnapshot.snapshot,
-            )
-            void enqueueMissionPersistence(
-              limitSnapshotForMissionPersistence(
-                missionEvidenceSnapshot,
-                dependencies.maxPersistedPositionsPerSnapshot,
-              ),
-              pendingSnapshot.missionEvidenceId,
-            ).then(
-              () => applyMissionPersistenceResult(
-                { status: 'fulfilled', value: undefined },
-                pendingSnapshot.missionEvidenceId,
-              ),
-              (reason: unknown) => applyMissionPersistenceResult(
-                { status: 'rejected', reason },
-                pendingSnapshot.missionEvidenceId,
-              ),
-            ).catch((error) => {
-              logger.warn('Evidence marker failed.', error)
-            })
-          }
         }
+      }
+      const currentMissionId = useMissionStore.getState().currentMission?.id
+      if (currentMissionId !== undefined) {
+        void deferredMissionEvidence.flushMission(currentMissionId).catch((error) => {
+          logger.warn('Deferred mission evidence settlement failed.', error)
+        })
       }
       poller.requestPollNow?.()
     }
     refreshTrackingStatus()
   }) ?? (() => undefined)
-  poller.start()
+  try {
+    unregisterMissionEvidenceSettler =
+      dependencies.registerMissionEvidenceSettler?.((missionId) =>
+        deferredMissionEvidence.settleMissionForFinish(
+          missionId,
+          readParticipationScopeStatus() === 'ready' &&
+            useMissionStore.getState().currentMission?.id === missionId,
+        )) ?? (() => undefined)
+    poller.start()
+  } catch (error) {
+    unregisterMissionEvidenceSettler()
+    unsubscribeMissionWake()
+    unsubscribeDeviceSelectionWake()
+    unsubscribeParticipationScope()
+    throw error
+  }
   return async () => {
+    acceptingRuntimeUpdates = false
     unsubscribeMissionWake()
     unsubscribeDeviceSelectionWake()
     unsubscribeParticipationScope()
     await poller.stop()
+    unregisterMissionEvidenceSettler()
+    await deferredMissionEvidence.settleForStop((missionId) =>
+      readParticipationScopeStatus() === 'ready' &&
+      useMissionStore.getState().currentMission?.id === missionId)
     participantBackfillAbortController.abort()
     invalidateTrackingRuntimeGeneration(runtimeGeneration)
   }
@@ -1476,6 +1536,11 @@ async function persistTrackingSnapshot(
     activeMission === null ||
     (expectedMissionId !== null && activeMission.id !== expectedMissionId)
   ) {
+    if (expectedMissionId !== null) {
+      throw new Error(
+        'Tracking mission changed before accepted evidence could be persisted.',
+      )
+    }
     return null
   }
 

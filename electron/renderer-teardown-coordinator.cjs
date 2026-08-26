@@ -87,27 +87,19 @@ function createRendererTeardownCoordinator(dependencies) {
         settlement = (async () => {
           const provisionalScopes = uncertainty === null ? [] : await uncertainty
           let lossScopes = []
-          if (drained && uncertainty !== null) {
-            await resolveRendererEvidenceUncertainty(
-              provisionalScopes,
-              requestId,
-              'drained',
-            )
+          if (drained) {
+            await resolveRendererEvidenceIncidents('drained')
           } else if (!drained) {
             const currentScopes = await listRendererEvidenceScopes()
+            const resolvedIncidentScopes = await resolveRendererEvidenceIncidents('lost')
             lossScopes = mergeRendererEvidenceScopes(
               provisionalScopes,
+              resolvedIncidentScopes,
               currentScopes,
             )
-            if (uncertainty !== null) {
-              await resolveRendererEvidenceUncertainty(
-                provisionalScopes,
-                requestId,
-                'lost',
-              )
-            }
             const provisionalMissionIds = new Set(
-              provisionalScopes.map((scope) => scope.mission_id),
+              [...provisionalScopes, ...resolvedIncidentScopes]
+                .map((scope) => scope.mission_id),
             )
             await persistEvidenceLossForScopes(currentScopes.filter(
               (scope) => !provisionalMissionIds.has(scope.mission_id),
@@ -156,60 +148,32 @@ function createRendererTeardownCoordinator(dependencies) {
   /** Writes provisional, retractable blockers when the soft deadline expires. */
   async function stageRendererEvidenceUncertainty(incidentId) {
     const scopes = await listRendererEvidenceScopes()
-    const stagedScopes = []
-    try {
-      for (const scope of scopes) {
-        await missionStore.stageRendererEvidenceUncertainty({
-          ...scope,
-          incident_id: incidentId,
-        })
-        stagedScopes.push(scope)
-      }
-    } catch (error) {
-      try {
-        await resolveRendererEvidenceUncertainty(
-          stagedScopes,
-          incidentId,
-          'drained',
-        )
-      } catch (cleanupError) {
-        throw new AggregateError(
-          [error, cleanupError],
-          'Renderer evidence uncertainty could not be staged or fully retracted.',
-        )
-      }
-      throw error
-    }
-    return stagedScopes
+    if (scopes.length === 0) return scopes
+    await missionStore.stageRendererEvidenceIncident({
+      incident_id: incidentId,
+      scopes,
+    })
+    return scopes
   }
 
-  /** Resolves the exact provisional occurrence without inventing a loss generation. */
-  async function resolveRendererEvidenceUncertainty(scopes, incidentId, outcome) {
-    const failures = []
-    for (const scope of scopes) {
-      try {
-        await missionStore.resolveRendererEvidenceUncertainty({
-          mission_id: scope.mission_id,
-          incident_id: incidentId,
-          outcome,
-        })
-      } catch (error) {
-        failures.push(error)
-      }
-    }
-    if (failures.length > 0) {
-      throw new AggregateError(
-        failures,
-        `Renderer evidence uncertainty could not be fully resolved as ${outcome}.`,
-      )
-    }
+  /** Resolves durable incidents as one outbox-owned unit and returns their mission scopes. */
+  async function resolveRendererEvidenceIncidents(outcome, incidentId) {
+    const result = await missionStore.resolveRendererEvidenceIncidents({
+      ...(incidentId === undefined ? {} : { incident_id: incidentId }),
+      outcome,
+    })
+    return result?.resolved_scopes ?? []
   }
 
   /** Writes sticky blockers for every named mission after confirmed renderer loss. */
   async function persistUnfinalizedMissionEvidenceLoss() {
-    const scopes = await listRendererEvidenceScopes()
-    await persistEvidenceLossForScopes(scopes)
-    return scopes
+    const incidentScopes = await resolveRendererEvidenceIncidents('lost')
+    const incidentMissionIds = new Set(incidentScopes.map((scope) => scope.mission_id))
+    const currentScopes = await listRendererEvidenceScopes()
+    await persistEvidenceLossForScopes(currentScopes.filter(
+      (scope) => !incidentMissionIds.has(scope.mission_id),
+    ))
+    return mergeRendererEvidenceScopes(incidentScopes, currentScopes)
   }
 
   /** Persists one confirmed loss against the exact named mission scopes. */

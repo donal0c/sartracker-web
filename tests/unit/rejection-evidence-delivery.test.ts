@@ -80,6 +80,25 @@ describe('rejection evidence delivery [DON-268]', () => {
     expect(finishMission).toHaveBeenCalledOnce()
   })
 
+  it('asks the registered deferred-evidence owner to settle before waiting on Finish observations', async () => {
+    const settleMissionObservations = vi.fn().mockRejectedValue(
+      new Error('Participant scope is still loading; retry Finish once participants are available.'),
+    )
+    const finishMission = vi.fn().mockResolvedValue('finished')
+    const delivery = createRejectionEvidenceDelivery({
+      missionStore: { recordIngestRejections: vi.fn() },
+      applyRejections: vi.fn(),
+      applyEvidenceHealth: vi.fn(),
+    })
+    const unregister = delivery.registerMissionObservationSettler(settleMissionObservations)
+
+    await expect(delivery.runWithMissionFinishFence('mission-1', finishMission))
+      .rejects.toThrow(/participant scope.*retry Finish/iu)
+    expect(settleMissionObservations).toHaveBeenCalledWith('mission-1')
+    expect(finishMission).not.toHaveBeenCalled()
+    unregister()
+  })
+
   it('blocks Finish when accepted mission evidence loss cannot be durably marked', async () => {
     const finishMission = vi.fn().mockResolvedValue('finished')
     const recordIngestEvidenceLoss = vi.fn().mockRejectedValue(

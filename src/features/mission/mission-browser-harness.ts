@@ -18,7 +18,6 @@ import {
   createPollingManager,
   type TrackingPollerClient,
 } from '../tracking/polling-manager'
-import { startTrackingRuntime } from '../tracking/start-tracking-runtime'
 import { DEFAULT_DEVICE_STALE_THRESHOLD_MS } from '../tracking/tracking-snapshot-health'
 import { applyTrackingSnapshot, applyTrackingStatus } from '../tracking/tracking-store'
 import { startMissionTrackingStatusBridge } from '../tracking/mission-tracking-status-bridge'
@@ -125,6 +124,7 @@ export async function startMissionBrowserHarness(): Promise<void> {
       shouldEnableBrowserHarnessLiveTracking() ? readTrackingRuntimeConfig() : null
     const electronRuntime = isElectronRuntimeAvailable()
     const trackingConfig = runtimeSettings.trackingConfig ?? envTrackingConfig
+    const { startTrackingRuntime } = await import('../tracking/start-tracking-runtime')
     const stopTracking = await startTrackingRuntime({
       config: trackingConfig,
       createClient: electronRuntime ? createElectronTraccarClient : createTraccarClient,

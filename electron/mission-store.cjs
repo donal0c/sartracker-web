@@ -1087,6 +1087,10 @@ function createElectronMissionStore(options) {
       updateRendererEvidenceUncertainty(db, ingestAnomalyOutbox, input, 'stage'),
     resolveRendererEvidenceUncertainty: async (input) =>
       updateRendererEvidenceUncertainty(db, ingestAnomalyOutbox, input, 'resolve'),
+    stageRendererEvidenceIncident: async (input) =>
+      stageRendererEvidenceIncident(db, ingestAnomalyOutbox, input),
+    resolveRendererEvidenceIncidents: async (input) =>
+      resolveRendererEvidenceIncidents(ingestAnomalyOutbox, input),
     acknowledgeIngestEvidenceLoss: async (input) => acknowledgeIngestEvidenceLoss(
       db,
       ingestAnomalyOutbox,
@@ -1970,6 +1974,52 @@ async function updateRendererEvidenceUncertainty(db, outbox, input, operation) {
     )
   }
   return getIngestEvidenceHealth(db, outbox, missionId)
+}
+
+/** Validates every mission scope before the outbox commits one durable incident. */
+async function stageRendererEvidenceIncident(db, outbox, input) {
+  const incidentId = typeof input?.incident_id === 'string' ? input.incident_id.trim() : ''
+  if (incidentId === '' || !Array.isArray(input?.scopes) || input.scopes.length === 0) {
+    throw new Error('Renderer evidence incident requires an identity and mission scopes.')
+  }
+  const scopes = input.scopes.map((scope) => {
+    const missionId = typeof scope?.mission_id === 'string' ? scope.mission_id.trim() : ''
+    if (missionId === '') {
+      throw new Error('Renderer evidence incident mission scope is invalid.')
+    }
+    const mission = getMission(db, missionId)
+    const expectedScopeReason = rendererEvidenceScopeReason(mission.status)
+    if (expectedScopeReason === null || scope.scope_reason !== expectedScopeReason) {
+      throw new Error('Renderer evidence incident scope reason does not match mission state.')
+    }
+    return { missionId, scopeReason: expectedScopeReason }
+  })
+  await outbox.stageRendererEvidenceIncident(scopes, incidentId)
+  return { staged_scope_count: scopes.length }
+}
+
+/** Resolves one or all durable renderer incidents without re-reading mutable mission state. */
+async function resolveRendererEvidenceIncidents(outbox, input) {
+  if (!['drained', 'lost'].includes(input?.outcome)) {
+    throw new Error('Renderer evidence incident outcome is invalid.')
+  }
+  let incidentId = null
+  if (input?.incident_id !== undefined) {
+    if (typeof input.incident_id !== 'string' || input.incident_id.trim() === '') {
+      throw new Error('Renderer evidence incident identity is invalid.')
+    }
+    incidentId = input.incident_id.trim()
+  }
+  const resolvedScopes = await outbox.resolveRendererEvidenceIncidents(
+    incidentId,
+    input.outcome,
+  )
+  return {
+    resolved_scopes: resolvedScopes.map((scope) => ({
+      mission_id: scope.missionId,
+      scope_reason: scope.scopeReason,
+    })),
+  }
 }
 
 /** Names the bounded reason one non-finalized mission can own renderer evidence. */

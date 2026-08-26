@@ -36,10 +36,7 @@ import {
 } from '../tracking/polling-manager'
 import { applyTrackingSnapshot, applyTrackingStatus } from '../tracking/tracking-store'
 import { readTrackingRuntimeConfig } from '../tracking/tracking-runtime-config'
-import {
-  startTrackingRuntime,
-  type TrackingRuntimeMissionStore,
-} from '../tracking/start-tracking-runtime'
+import type { TrackingRuntimeMissionStore } from '../tracking/start-tracking-runtime'
 import { DEFAULT_DEVICE_STALE_THRESHOLD_MS } from '../tracking/tracking-snapshot-health'
 import { useActiveMissionDevicesStore } from '../tracking/active-mission-devices-store'
 import {
@@ -105,12 +102,21 @@ type StartAppRuntimeDependencies = {
   readonly startDrawingRuntime: typeof startDrawingRuntime
   readonly startHelicopterRuntime: typeof startHelicopterRuntime
   readonly startGpxRuntime: typeof startGpxRuntime
-  readonly startTrackingRuntime: typeof startTrackingRuntime
+  readonly startTrackingRuntime:
+    typeof import('../tracking/start-tracking-runtime').startTrackingRuntime
   readonly startExactBreadcrumbDotRuntime: typeof startExactBreadcrumbDotRuntime
   readonly startCoverageRuntime: typeof startCoverageRuntime
   readonly createPollingManager: typeof createPollingManager
   readonly startCoreFeatureRuntimes: typeof startCoreFeatureRuntimes
 }
+
+/** Loads the sizeable tracking runtime only when application services start it. */
+const startDefaultTrackingRuntime:
+  typeof import('../tracking/start-tracking-runtime').startTrackingRuntime =
+    async (dependencies) => {
+      const module = await import('../tracking/start-tracking-runtime')
+      return module.startTrackingRuntime(dependencies)
+    }
 
 const DEFAULT_DEPENDENCIES: StartAppRuntimeDependencies = {
   registerServiceWorker,
@@ -126,7 +132,7 @@ const DEFAULT_DEPENDENCIES: StartAppRuntimeDependencies = {
   startDrawingRuntime,
   startHelicopterRuntime,
   startGpxRuntime,
-  startTrackingRuntime,
+  startTrackingRuntime: startDefaultTrackingRuntime,
   startExactBreadcrumbDotRuntime,
   startCoverageRuntime,
   createPollingManager,
@@ -381,6 +387,14 @@ export async function startAppRuntime(
       },
       applyStatus: applyTrackingStatus,
       recordMissionEvidenceLoss: rejectionEvidenceDelivery?.recordMissionEvidenceLoss,
+      ...(rejectionEvidenceDelivery === null
+        ? {}
+        : {
+            beginMissionEvidenceObservation:
+              rejectionEvidenceDelivery.beginMissionObservation,
+            registerMissionEvidenceSettler:
+              rejectionEvidenceDelivery.registerMissionObservationSettler,
+          }),
       missionModelEnabled: isMissionModelEnabled(),
       readParticipationScope: () => useParticipantStore.getState().scope,
       readParticipationScopeStatus: () => {

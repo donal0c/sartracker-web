@@ -683,8 +683,9 @@
             still cannot be recorded. Finish retries the exact pending membership observation first. If it
             still fails, the mission remains active and the open Finish confirmation tells the coordinator
             what must be retried. The app settles roster observations already accepted before the finish
-            cutoff without blocking the app event loop. If participant scope cannot be reloaded, Finish is
-            refused and the exact accepted observation remains available for retry. Observations arriving
+            cutoff without blocking the app event loop. If participant scope is still loading, Finish is refused with a retry instruction;
+            the exact accepted observation remains owned by the active mission. If participant scope cannot
+            be reloaded, Finish is refused and the exact accepted observation remains available for retry. Observations arriving
             while the finish write is pending immediately update current-position visibility but do not become
             mission evidence yet; if finish is refused, they are replayed at their original observation time.
             The replay handoff is atomic, so an observation cannot fall between replay and the mission returning
@@ -1003,7 +1004,9 @@
             controller over unresolved evidence. The desktop main process now owns this
             boundary for normal window close, reload, and app quit: it keeps the renderer
             alive until the drain acknowledges. After five seconds it records only provisional,
-            mission-scoped uncertainty and continues waiting; a later clean acknowledgement removes
+            mission-scoped uncertainty and continues waiting. It commits one durable incident record before any per-mission provisional marker,
+            so an interrupted multi-mission write can be cleanly retracted or conservatively promoted after restart;
+            a later clean acknowledgement removes
             that exact provisional record without creating or advancing an evidence-loss occurrence.
             Main writes the permanent mission-scoped blocker only when the renderer explicitly rejects
             the drain, is actually lost, or the app restarts with unresolved provisional uncertainty.

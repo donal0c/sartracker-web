@@ -69,6 +69,9 @@ export type RejectionEvidenceDelivery = {
     operation: () => Promise<Result>,
   ) => Promise<Result>
   readonly reopenMissionEvidenceAfterUnlock: (missionId: string) => void
+  readonly registerMissionObservationSettler: (
+    settler: (missionId: string) => Promise<void>,
+  ) => () => void
   readonly dispose: () => Promise<void>
 }
 
@@ -111,6 +114,7 @@ export function createRejectionEvidenceDelivery(
   const observationScopeClosedMissionIds = new Set<string>()
   const activeObservationCountByMission = new Map<string, number>()
   const observationWaitersByMission = new Map<string, Set<() => void>>()
+  let missionObservationSettler: ((missionId: string) => Promise<void>) | null = null
 
   /** Tracks one current-position observation until its mission evidence is staged. */
   function beginMissionObservation(missionId: string | null): MissionEvidenceObservation {
@@ -293,6 +297,7 @@ export function createRejectionEvidenceDelivery(
     finalizationPhaseByMission.set(missionId, 'draining')
     closeMissionObservationScope(missionId)
     try {
+      await missionObservationSettler?.(missionId)
       await waitForMissionObservations(missionId)
       await drainMissionEvidence(missionId, finalizationEpoch)
       if (finalizationEpochByMission.get(missionId) !== finalizationEpoch) {
@@ -329,6 +334,7 @@ export function createRejectionEvidenceDelivery(
     finalizationPhaseByMission.set(missionId, 'finishing')
     closeMissionObservationScope(missionId)
     try {
+      await missionObservationSettler?.(missionId)
       await waitForMissionObservations(missionId)
       await drainMissionEvidence(missionId)
       if (finalizationEpochByMission.get(missionId) !== finalizationEpoch) {
@@ -363,6 +369,19 @@ export function createRejectionEvidenceDelivery(
       evidenceLossMissionIds.add(missionId)
     }
     publishAggregateHealth()
+  }
+
+  /** Registers the one tracking-runtime owner that can settle deferred observations. */
+  function registerMissionObservationSettler(
+    settler: (missionId: string) => Promise<void>,
+  ): () => void {
+    if (missionObservationSettler !== null) {
+      throw new Error('A mission evidence observation settler is already registered.')
+    }
+    missionObservationSettler = settler
+    return () => {
+      if (missionObservationSettler === settler) missionObservationSettler = null
+    }
   }
 
   /** Removes a completed mission from live health without losing unlock state. */
@@ -672,6 +691,7 @@ export function createRejectionEvidenceDelivery(
     flushMission,
     record,
     recordMissionEvidenceLoss,
+    registerMissionObservationSettler,
     reopenMissionEvidenceAfterUnlock,
     runWithMissionFinishFence,
     runWithMissionFinalizationFence,

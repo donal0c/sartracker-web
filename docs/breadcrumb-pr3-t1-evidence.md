@@ -3372,3 +3372,94 @@ suite with `--no-file-parallelism`, preserving all 2,249 tests and removing
 cross-file CPU contention from wall-clock gates. That exact command passes
 locally in 135.74 s; the focused accumulator file passes 26/26. A green GitHub
 rerun remains required.
+
+### RED — deferred accepted evidence and durable renderer incident ownership
+
+The amended exact-head concurrency review and Donal's final Opus review found
+two release-blocking cases at the same evidence-lifecycle seam. Central source
+retrace confirmed both before production changes:
+
+1. A current-position poll accepted for mission evidence could finish its
+   mission observation while participant scope was still loading. The single
+   deferred display slot was then overwritten or persisted later outside the
+   Finish/runtime-stop fence; mission change returned fulfilled `null`, so
+   accepted fixes could disappear without `mission_persistence_failed`.
+2. Sequential provisional renderer staging compensated a partial stage, but a
+   failed compensation left durable `renderer_evidence_pending` state with no
+   retained incident owner. A later clean drain did not retract it, and restart
+   promoted it to false permanent loss.
+
+The strict RED requires: every deferred accepted snapshot owns a bounded live
+mission-observation token until scoped persistence or a durable loss marker;
+Finish refuses actionably while participant scope is unavailable; runtime stop
+marks before releasing tokens; queue overflow is fail-closed; a single durable
+incident record precedes multi-scope provisional projection; later clean drain
+removes that incident and all orphan projections; restart promotes only scopes
+owned by a surviving incident, exactly once.
+
+Recorded RED command:
+
+```text
+npx vitest run tests/unit/deferred-mission-evidence.test.ts tests/unit/start-tracking-runtime.test.ts tests/unit/rejection-evidence-delivery.test.ts tests/unit/ingest-anomaly-outbox.test.ts tests/unit/renderer-teardown-coordinator.test.ts
+```
+
+The run recorded 131 passing tests plus eleven assertion failures and the
+expected import failure for the absent deferred-evidence module. Failure
+reasons before production code were the missing deferred-evidence module,
+queue/token dependencies, Finish settler registration, bulk durable incident
+APIs, and clean-drain sweep; the old coordinator still called the per-scope
+stage/resolve methods.
+
+The central attack pass added four narrower REDs before their production
+changes: Finish closing the observation scope during queue ownership transfer;
+an incident write failure leaving volatile ownership; an explicitly blank
+incident identity sweeping all incidents; and an idle/no-mission runtime
+registering stale closure state. The manual contract also failed before it
+named the new actionable Finish refusal and durable multi-mission incident
+ordering.
+
+### GREEN — bounded deferred ownership and crash-safe incident settlement
+
+Every accepted snapshot that must wait for participant scope now transfers to
+a bounded per-mission queue under its own live observation token. The queue
+settles only after participation-scoped SQLite persistence or after the shared
+mission-loss boundary owns the failure. Finish asks the queue to settle before
+waiting on observations; it refuses with a retry instruction while scope is
+unavailable. Runtime stop either persists entries for the still-current
+mission or marks them lost before releasing their tokens. A scope that closes
+during ownership transfer is marked within the original poll callback, so the
+pre-Finish observation cannot disappear between owners. Current-position
+rendering remains independent of these persistence obligations.
+
+Renderer soft-deadline state now has one durable incident truth record written
+before any per-mission health projection. Clean drain removes or rewrites the
+incident before retracting projections. Confirmed loss seals each scope before
+removing it. Restart promotes only scopes in a surviving incident, does not
+advance an already-promoted loss generation twice, and retracts orphan pending
+markers. The mission-store boundary validates every scope and the main
+coordinator sweeps earlier partial incidents on the next clean drain or actual
+renderer loss. No incident is created when no mission can own evidence.
+
+Current local verification before the frozen application-head package and
+Linux replacement evidence:
+
+- focused seam: 6 files / 231 tests PASS;
+- adjacent runtime, finalization, mission-store, wiring, and manual set:
+  12 files / 269 tests PASS;
+- exact final serial deterministic gate: 274 files / 2,265 tests in 135.55 s
+  PASS (the preceding same-tree run also passed in 133.54 s);
+- ESLint, TypeScript/project build, changed CommonJS syntax, diff check,
+  production build, and bundle budgets PASS; the default application chunk is
+  473,690 bytes against 500,000 after the tracking runtime moved behind its
+  existing async service boundary;
+- legacy backend: 51/51 PASS with one intentional real-keychain ignore;
+- selected mission/participant Chromium: 22/22 PASS; and
+- participant critical visual flow: 4/4 PASS, with the actionable Finish
+  screenshot receiving one fresh uncached Opus PASS.
+
+The `21a16fe` packages and Ubuntu soak above remain valid evidence for the
+previous application head, but are superseded for merge readiness because this
+repair changes packaged renderer/runtime and Electron-main bytes. One final
+exact-application-head macOS/Linux package proof and the single permitted
+replacement Ubuntu CI-scale tracking soak remain required, followed by green
+exact-head CI and the amended broad plus three targeted reviews.
