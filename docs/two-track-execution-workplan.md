@@ -143,6 +143,20 @@ mission model; complete coverage; mission evidence/replay; archive lifecycle.
 BCP-17 then qualifies one final team-facing release. BCP work units are the
 JIT-design and TDD boundaries inside those PRs, not separate release trains.
 
+Before PR-4 implementation begins, its accepted plan and execution packet must
+record the prospective review amendment approved on 2026-08-26: two broad
+safety reviews plus focused persistence/completeness,
+concurrency/finalization, and renderer/input-containment reviews, all five in
+parallel on one final code-and-documentation head. Confirmed findings are
+source-retraced centrally; remediation requires one fresh broad exact-head
+review plus only the affected focused rechecks. Documentation-only binding
+descendants require exact-tree/diff attestation but preserve code reviews when
+executable-code and test trees are byte-identical. Strict TDD, deterministic,
+packaged/Linux, browser, and visual gates remain mandatory. False Complete or
+100%, lost mission evidence, unbounded Electron-main work, and unresolved
+safety failures remain absolute merge blockers. This amendment is not
+retroactive to PR-3.
+
 Current work: PR-3 on `codex/breadcrumb-pr3-complete-coverage`, internally ordered
 BCP-07 → BCP-08 → BCP-09 (`DON-273/276/275`) from exact merged PR-2 base
 `7021fc1ef33e6da5c91c96cd86e836fc3754f48f`. The accepted design is
@@ -448,6 +462,21 @@ AppImage launch, and the 8,664/8,664 source-exact soak with integrity `ok`, one
 restart, 27.1239 ms main maximum, zero renderer crashes, and four healthy
 interactions. Bind the documentation-only descendant, repeat its exact-head
 deterministic/Linux gates, and restart all five independent reviews from zero.
+That documentation descendant `2d8aa8e` was invalidated by one further
+finalization race: delayed startup-health rejection lost the captured mission
+identity, and delayed capacity-loss settlement published directly into live
+health. Either could resurrect a finalized mission's critical state and block a
+later mission's honest Complete claim. Application head `b383ef1` routes both
+late outcomes through the finalized-mission health boundary and restores them
+only after successful administrative unlock. Full unit is 269/2,160; lint,
+TypeScript, build/budgets, participant/coverage Chromium 10/10, selected
+critical visual plus fresh uncached review 2/2, and backend 51/51 with one
+intentional OS-keychain ignore pass. Exact Linux run `32951751651` passes
+packaging, AppImage launch, and the 8,664/8,664 source-exact soak with
+integrity/WAL `ok`, one restart, zero renderer crashes, four healthy
+interactions, zero redundant slope, and 40.935 ms Electron-main maximum. Bind
+the documentation-only descendant, repeat exact-head deterministic/Linux gates,
+and restart all five independent reviews from zero.
 
 ## Next Task Order
 
@@ -458,7 +487,7 @@ This is the default order when the user says “work on the next task.”
 | Done | Release the Tracking stability, interaction, and basemap-independent overlay hotfix | S2 Electron / Shared Tracking / Map / Verification | `DON-261` / `DON-262` / `DON-263` | Beta.12.5 exact commit `042d77ad6158`; clean no-skip verification 8/8; tag CI `30497318233` green; exact CI AppImage and real installed `.deb` passed lifecycle, safety, live-Traccar, 13-poll empty-history stability, pending/degraded basemap overlay, and deterministic five-/fourteen-day soak gates. Independent reviews returned `RELEASE` with no P1/P2. Guarded publication succeeded; fresh public hashes matched and the public AppImage passed Ubuntu lifecycle/recovery/finalize/archive. |
 | Done | PR-1: trustworthy ingest and live safety | Shared Tracking / S2 Electron / Evidence | `DON-266` / `DON-267` / `DON-268` / `DON-269` | Merged as [PR #1](https://github.com/donal0c/sartracker-web/pull/1) at `9481cf462e0e`; its exact-head review and Linux evidence remain in PR #1 and the handoff archive. |
 | Done | PR-2: explicit outings, participants, and mission-shaped fixtures | Shared Tracking / S2 Electron / Mission model / Verification | `DON-270` / `DON-271` / `DON-272` | Merged to `master` at `7021fc1ef33e6da5c91c96cd86e836fc3754f48f`, which is the exact PR-3 base. The preserved review, migration, scale, browser, and package evidence remains attached to PR-2 and the handoff archive. |
-| Final renewed review — PR #3 open | PR-3: decide and deliver complete mission coverage | Shared Tracking / S2 Electron / Coverage / Verification | `DON-273` / `DON-276` / `DON-275` | Candidate B and G3 remain ratified; migration/scale proof stands for unchanged geometry/schema surfaces. Application head `6db23e0` retains the prior worker-content and boundary remediations, resolves history filters as omission predicates against every fresh manifest, retires delayed finalized-mission health until unlock, and adds a real-store/real-production-worker lifecycle gate. Full unit 269/2,156, lint, TypeScript, build/budgets, participant/coverage Chromium 10/10, selected critical visual/review 2/2, and backend 51/51 pass. Exact Linux run `32948959241` passes package build, AppImage launch, and the 8,664/8,664 source-exact soak with a 20.541 ms main maximum, integrity/WAL `ok`, one restart, zero renderer crashes, and four healthy interactions. Final evidence-head deterministic/Linux gates and five fresh independent reviews from zero gate review readiness. PR [#3](https://github.com/donal0c/sartracker-web/pull/3) remains open and unmerged. Do not merge or release from this task. |
+| Final renewed review — PR #3 open | PR-3: decide and deliver complete mission coverage | Shared Tracking / S2 Electron / Coverage / Verification | `DON-273` / `DON-276` / `DON-275` | Candidate B and G3 remain ratified; migration/scale proof stands for unchanged geometry/schema surfaces. Application head `b383ef1` retains the worker-content, filtered-manifest-growth, and real-production-worker gates and closes delayed startup-rejection/capacity-loss resurrection after finalization. Full unit 269/2,160, lint, TypeScript, build/budgets, participant/coverage Chromium 10/10, selected critical visual/review 2/2, and backend 51/51 pass. Exact Linux run `32951751651` passes package build, AppImage launch, and the 8,664/8,664 source-exact soak with a 40.935 ms main maximum, integrity/WAL `ok`, one restart, zero renderer crashes, and four healthy interactions. Final evidence-head deterministic/Linux gates and five fresh independent reviews from zero gate review readiness. The prospective PR-4 review amendment does not relax PR-3. PR [#3](https://github.com/donal0c/sartracker-web/pull/3) remains open and unmerged. Do not merge or release from this task. |
 | Todo (non-blocking) | Surface persistent overlay synchronization failures in diagnostics and map health | S2 Electron / Shared Map / Diagnostics | `DON-264` | DON-263 retries transient and persistent sync exceptions indefinitely with a 2 s cap, but repeated failures are currently developer-console-only. Add bounded, sanitized, durable warning elevation and success-based clearing after the beta.12.5 hotfix; this P3 does not block the release. |
 | Done | Make Breadcrumb Dots source-exact and independently release-gated | S2 Electron / Shared Tracking / Verification | `DON-260` | Published beta.12.11 at exact tag `bced8052b85c` after green CI run `31482052296`, full AppImage and genuinely installed `.deb` package matrices, synthetic 279,936/1,935,384-fix exact-page proofs, target-only live-provider equality, diagnostics privacy, and unchanged performance/RSS gates. The guarded publisher and a second public download revalidated both installer hashes and `SHA256SUMS`; the fresh public AppImage independently passed settings persistence, same-mission recovery, finalization, and archive creation. Dots is source-exact and paged; Line alone remains simplified. Beta.12.9/.12.10 are not the correction. |
 | Done | Build deterministic field-scale mission-store fixtures | S2 Electron / Verification | `DON-242` | Small/CI/local/field plus 5-day and 14-day continuous-mission presets; Ubuntu field fixture is 3.704 GB with measured table accounting and restart checkpoints. |

@@ -130,6 +130,33 @@ P1 and P2 findings block merge. Any new commit invalidates the affected
 review. Focused delta review closes findings, followed by one final exact-head
 review that checks the cumulative diff and all P1/P2 closures.
 
+### PR-4-Onward Review Topology
+
+Donal approved the following prospective amendment on 2026-08-26. It applies
+to PR-4 and later programme PRs, not retroactively to PR-3:
+
+- retain five independent reviewers for a 10/10 PR, run in parallel on one
+  final code-and-documentation head;
+- use two broad safety charters plus three complementary focused charters:
+  persistence/completeness, concurrency/finalization, and renderer/input
+  containment;
+- complete strict TDD, deterministic gates, required packaged/Linux evidence,
+  browser and visual verification, evidence documents, manual, and handoff
+  before that wave wherever practical;
+- centrally source-retrace every finding before changing code;
+- after a confirmed fix, run one fresh broad exact-head review plus targeted
+  exact-head rechecks only from focused reviewers whose risk areas changed;
+- retain unaffected focused reviews when their reviewed executable-code and
+  test trees are unchanged; and
+- require exact-tree and exact-diff attestation for a documentation-only
+  evidence-binding commit without automatically invalidating completed code
+  reviews when executable-code and test trees are byte-identical.
+
+The stop conditions do not change: false Complete or false 100%, lost mission
+evidence, unbounded Electron-main-isolate work, any P1/P2, or any unresolved
+safety failure blocks merge. Green CI and a majority of clean reviewers cannot
+override a reproduced safety failure.
+
 ## Cost-Aware Qualification
 
 - Development uses strict red-green-refactor with focused unit, integration,

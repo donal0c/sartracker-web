@@ -152,12 +152,39 @@ The implementation task returns the exact head SHA, commits, changed files,
 test evidence, remaining uncertainty, and PR-readiness status. Codex verifies
 that handoff against the accepted plan and requirements.
 
-Donal then initiates the allocated PR reviews. P1/P2 findings block progress.
-Remediation normally returns to the same implementation task to retain useful
-code context; a fresh task is used only when Donal requests it or the original
-task is genuinely unsuitable. Fable is not recalled unless review exposes an
-architecture or requirements problem rather than an ordinary implementation
-defect.
+For PR-4 onward, code, tests, required packaged/Linux evidence, evidence
+documents, operator manual, and handoff are sequenced onto one final head before
+review wherever practical. Five independent reviewers then run in parallel on
+that same exact code-and-documentation head:
+
+1. broad safety review A;
+2. broad safety review B;
+3. focused persistence and completeness review;
+4. focused concurrency and finalization review; and
+5. focused renderer and input-containment review.
+
+The five charters are complementary rather than five copies of one broad
+prompt. Strict TDD, full deterministic gates, required packaged/Linux evidence,
+browser verification, and visual verification must already be green before the
+wave starts. A documentation-only evidence-binding descendant receives an
+exact-tree and exact-diff attestation. It does not invalidate completed code
+reviews when the executable-code and test trees are byte-identical to the
+reviewed head.
+
+Codex centrally source-retraces every reported finding before remediation. A
+confirmed P1/P2 or other safety failure blocks progress and normally returns to
+the same implementation task. After a fix, require one fresh broad independent
+exact-head review plus exact-head rechecks from only the focused reviewers whose
+risk areas changed; unaffected focused reviews do not restart. A fresh task is
+used only when Donal requests it or the original task is genuinely unsuitable.
+Fable is not recalled unless review exposes an architecture or requirements
+problem rather than an ordinary implementation defect.
+
+This amended topology applies prospectively to PR-4 and later programme PRs. It
+does not retroactively reduce PR-3's separately agreed five-fresh-review gate.
+False Complete or false 100%, lost mission evidence, unbounded work on the
+Electron main isolate, and any unresolved safety failure are absolute merge
+blockers regardless of review count or otherwise green CI.
 
 ### 6. Close And Advance
 

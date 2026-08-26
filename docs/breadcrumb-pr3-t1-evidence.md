@@ -2219,3 +2219,83 @@ The commit containing this evidence record is documentation-only. It must pass
 the deterministic exact-head/Linux gates and five fresh independent exact-head
 reviews from zero before PR #3 can be called review ready. No merge or release
 occurred.
+
+## Delayed mission-health settlement remediation
+
+Documentation head `2d8aa8e4977ffd67e48f2bd7a7ea031f3a6385e2` was
+invalidated when three independent reviewers traced the same finalized-mission
+health race. A startup health read that rejected after finalization lost its
+captured mission identity in a shared catch. Separately, a delayed durable
+capacity-loss write settled through the global live-health publisher. Either
+path could restore an old mission's critical health after it had been retired
+and block an unrelated later mission from an honest Complete claim.
+
+The red reason was recorded before production changes. The focused regression
+command failed in exactly three places: delayed startup rejection after
+finalization, delayed capacity-loss resolve, and delayed capacity-loss reject.
+The companion active-mission startup rejection remained green, proving that the
+warning must still surface while the captured mission is live.
+
+Application head `b383ef1123263f6ca3c3bbb9748c08332ea1c96f` preserves the
+captured mission id for startup success and failure and routes both late
+capacity-loss outcomes through the existing finalization-aware mission-health
+boundary. Health settling while a mission is finalized is retained outside the
+live aggregate and restored only after a successful administrative unlock.
+The already single-flight-fenced rejection flush path is unchanged.
+
+Green local verification at that application head:
+
+- focused mission-health regressions: 2 files / 37 tests;
+- full deterministic unit gate, serial: 269 files / 2,160 tests;
+- full ESLint, TypeScript, production build, bundle budgets, and diff checks;
+- participant/coverage Chromium: 10/10;
+- selected critical visual Playwright: 2/2, followed by fresh uncached
+  independent critical visual review 2/2 PASS at
+  `test-results/visual-verification/reports/visual-review-2026-08-26T09-11-52Z.json`;
+  and
+- Rust backend: 51/51, with the intentional real macOS keychain test ignored.
+
+Exact application-head Linux run
+[`32951751651`](https://github.com/donal0c/sartracker-web/actions/runs/32951751651)
+checked out PR merge ref
+`8b1a90ad7fa013d0d26fefa508a4ba5a0e2832a8`, whose parents are exact PR-2
+base `7021fc1ef33e6da5c91c96cd86e836fc3754f48f` and application head
+`b383ef1123263f6ca3c3bbb9748c08332ea1c96f`, and passed:
+
+- Ubuntu x64 AppImage and `.deb` packaging, native SQLite inspection, Mesa
+  llvmpipe attestation, and AppImage window/content launch;
+- packaged CI soak: 6/6 batches, 8,664/8,664 source-exact positions, matching
+  SHA-256
+  `5018747b7c39ee55fca5e8547029d410c9c48cde0100fbf9bf8d3d459838cf05`,
+  integrity `ok`, clean WAL checkpoint, one restart, zero renderer crashes,
+  zero redundant telemetry slope, and four healthy operator interactions;
+- Electron-main maximum 40.9353 ms and p95 7.9759 ms against the explicit
+  200 ms I5 limit, with zero samples over the limit;
+- Mesa llvmpipe renderer maximum 416.7 ms and p95 250.1 ms. This is descriptive
+  tracking-soak evidence below the separate 1,000 ms renderer/operator freeze
+  gate; G2 remains the coverage-renderer budget authority;
+- peak measured process-tree RSS 1,170,530,304 bytes;
+- AppImage SHA-256
+  `119816fc1da06b7bf1db03f37ff7678a58bf2e0618a6b46140ab952da90c11af`;
+- `.deb` SHA-256
+  `903c51c3424ec285c63a175544ec7d8bed14463aa812c107590319b3e6e7515a`;
+- soak report SHA-256
+  `60e755d10c47eb95666161f960970cd1a26716c8b4a107280efb53eef133a014`;
+- package artifact `9600560220`, uploaded-zip digest
+  `f85dd9598f71864d29ff24369df2e22fca4a618b4ff4332276ba22612fb45748`;
+  and
+- validation artifact `9600561392`, uploaded-zip digest
+  `bb6cfb87a19302179b37f7ad6c0484ce91ebfa2ebc97a6ef44e8976fff00b6bc`.
+
+This remediation changes no operator control, visible wording, layout,
+Candidate-B geometry, schema v10, flag posture, or exact-Dots behaviour. The
+operator manual and screenshots therefore remain accurate without a visible
+content change. G2's prescribed 960k/2M evidence and the 3.704 GB v9-to-v10
+migration remain standing only for their unchanged surfaces. There was no
+pre-merge packaged 960k/2M coverage run outside G2 and no packaged forced-kill
+matrix.
+
+The commit containing this evidence record is documentation-only. It must pass
+the deterministic exact-head/Linux gates and five fresh independent exact-head
+reviews from zero before PR #3 can be called review ready. No merge or release
+occurred.
