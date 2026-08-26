@@ -1578,3 +1578,86 @@ The commit containing this evidence record is documentation-only. It must pass
 the deterministic exact-head gates and five fresh independent exact-head
 reviews from zero before PR #3 can be called review ready. No merge or release
 occurred.
+
+## Invalidation worker under-dirty remediation
+
+Final review invalidated evidence head
+`4b84fb0b2e1dae56d6f1a1f39d847d482370dc94` with a P1 under-dirty path. The
+query runner accepted any plain-record success, mission-store trusted the
+worker's `affectedKeys`, and ledger apply allowed an empty list to set
+`drained_at`. A boundary edit could therefore move fixes between the subject
+outing and Unassigned while both old chunks retained equal content/built
+revisions and old counts. With the durable invalidation gone, the final database
+claim returned ready and the controller could retain the stale delivered
+catalog.
+
+The red reason was recorded before production code. A production-composition
+mission-store regression started with two fresh outing fixes, moved the outing
+start between them, injected `{ affectedKeys: [] }`, and received the unchanged
+fresh `2/0` ledger instead of stale current-truth `1/1` chunks. A separate real
+worker-runner regression accepted a result carrying the wrong invalidation
+identity. An additional incomplete-envelope regression omitted the key list.
+
+Application head `08ce78a748480968063cf929f56f5d3bda130040` establishes two
+independent boundaries:
+
+- the query runner validates and copies the invalidation identity and a bounded,
+  unique, tagged key list before accepting worker completion; and
+- ledger drain independently computes a bounded position-free conservative
+  floor from current canonical device×affected-period inventory, validates every
+  worker key against that floor, and applies the floor before `drained_at`.
+
+The main isolate reads only bounded invalidation, outing, participant/device,
+and coverage-inventory metadata. It never scans positions. A valid empty worker
+answer therefore over-dirties the subject outing, Unassigned, and intersecting
+current outings for every canonical device; malformed, duplicate, oversized, or
+out-of-inventory output rejects before apply and leaves the durable invalidation
+pending. This follows the accepted plan's explicit rule that over-dirtying is
+safe and under-dirtying is P1.
+
+Green verification at that application head:
+
+- focused query runner/query/ledger/store/controller: 5 files / 99 tests;
+- full unit: 264 files / 2,140 tests;
+- TypeScript, full ESLint, changed/all CommonJS syntax, production build, and
+  bundle budgets;
+- source-exact paged Dots contract: 10/10; and
+- participant/coverage Chromium: 10/10.
+
+Exact application-head Linux run
+[`32928637039`](https://github.com/donal0c/sartracker-web/actions/runs/32928637039)
+checked out PR merge ref
+`cc7aff3b2848e93d98fa76a2eff514c548c1ccd2`, explicitly merging application
+head `08ce78a748480968063cf929f56f5d3bda130040` into exact PR-2 base
+`7021fc1ef33e6da5c91c96cd86e836fc3754f48f`, and passed:
+
+- Ubuntu x64 AppImage and `.deb` packaging, native SQLite inspection, Mesa
+  llvmpipe attestation, and AppImage window/content launch;
+- packaged CI soak: 6/6 batches, 8,664/8,664 source-exact positions, matching
+  SHA-256 `e02b19b6e7b4d62cee48a51ecc41e2b24ccd1fa2a4b04eb4b0cb06162c13f4ce`,
+  integrity `ok`, one restart, zero renderer crashes, 116.250 ms maximum main
+  gap, zero redundant-event slope, and four healthy operator interactions;
+- AppImage SHA-256
+  `28dac6283a0a86c6d5d1760e2ac12d2efcfee6c1c581da7bcd6cadbebfc7ef63`;
+- `.deb` SHA-256
+  `73e6b66b7f1dd7ebf0e32ea603106938723d8b9916388811ff30a1717cd71189`;
+- package artifact `9592483908`, uploaded-zip digest
+  `4277a7833196b3beef3cebcb4bbdaafd58156564dbde8b52b47d13920c5493e8`;
+  and
+- validation artifact `9592484645`, uploaded-zip digest
+  `94ee8b393b21ff8d32485ad2cec991a65ad5348068ac0dc4897819bd0d6b4bc8`.
+
+This remediation changes only backend invalidation trust and conservative
+revision dirtiness. It does not change Candidate-B geometry/index construction,
+schema/open code, coverage controls or wording, G2 measurements, G3 flag
+posture, exact Dots, or any operator-visible surface. The accepted G2
+decision/960k/2M evidence, 3.704 GB v9-to-v10 migration, prior critical visual
+review, operator manual, and screenshots remain standing only for those
+unchanged surfaces. No manual or screenshot update is required for this
+invisible backend remediation. There was no pre-merge packaged 960k/2M coverage
+run outside G2 and no packaged forced-kill matrix.
+
+The commit containing this evidence record is documentation-only. It must pass
+the deterministic exact-head gates and five fresh independent exact-head
+reviews from zero before PR #3 can be called review ready. No merge or release
+occurred.
