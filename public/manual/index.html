@@ -978,7 +978,15 @@
             a batch cannot be acknowledged, it first records a mission-scoped durable loss marker and
             then shows that rejected-position evidence was lost during runtime shutdown. If even that
             marker cannot be written, runtime replacement fails closed instead of installing a new
-            controller over unresolved evidence. Pending outbox storage is explicitly
+            controller over unresolved evidence. The desktop main process now owns this
+            boundary for normal window close, reload, and app quit: it keeps the renderer
+            alive until the drain acknowledges, and writes the same mission-scoped blocker
+            itself if the renderer is gone or misses the bounded acknowledgement. An
+            unexpected renderer crash is fenced immediately. If neither the renderer drain
+            nor the main-process blocker write succeeds, SAR Tracker refuses the close or
+            reload and shows <strong>SAR Tracker could not close safely</strong>; leave the
+            process open, preserve the profile, and contact support rather than forcing it
+            closed. Pending outbox storage is explicitly
             bounded at 4,096 canonical envelopes and 64 MiB; those are engineering hypotheses, not
             measured field limits. Crossing either boundary refuses new evidence, raises a durable
             mission-scoped block wherever storage permits, and never silently deletes a distinct record.

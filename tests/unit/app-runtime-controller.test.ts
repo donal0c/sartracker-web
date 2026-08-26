@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   applyAppRuntimeController,
   clearAppRuntimeControllerForTest,
+  disposeAppRuntimeController,
   getAppRuntimeController,
 } from '../../src/features/runtime/app-runtime-controller'
 
@@ -137,6 +138,19 @@ describe('app runtime controller registry', () => {
     await controller?.dispose()
 
     expect(dispose).toHaveBeenCalledTimes(1)
+    expect(getAppRuntimeController()).toBeNull()
+  })
+
+  it('exposes one serialized disposal boundary for main-process teardown', async () => {
+    const dispose = vi.fn(async () => undefined)
+    await applyAppRuntimeController({
+      reloadSettings: vi.fn(async () => undefined),
+      dispose,
+    })
+
+    await Promise.all([disposeAppRuntimeController(), disposeAppRuntimeController()])
+
+    expect(dispose).toHaveBeenCalledOnce()
     expect(getAppRuntimeController()).toBeNull()
   })
 

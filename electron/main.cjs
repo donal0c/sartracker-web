@@ -32,6 +32,9 @@ const { createRuntimeLog } = require('./runtime-log.cjs')
 const { createCrashLog, isRendererFaultReason } = require('./crash-log.cjs')
 const { createStorageDiagnostics } = require('./storage-diagnostics.cjs')
 const { applyTrackingSoakRuntimeOverride } = require('./tracking-soak-validation.cjs')
+const {
+  createRendererTeardownCoordinator,
+} = require('./renderer-teardown-coordinator.cjs')
 
 const TRACCAR_REQUEST_CHANNEL = 'sartracker:traccar-http-request'
 const LOAD_SETTINGS_CHANNEL = 'sartracker:load-app-settings'
@@ -155,6 +158,7 @@ const electronRuntimeContext = {
   runtimeLog: null,
   officialMapProxy: null,
   stopEventLoopDiagnostics: null,
+  rendererTeardownCoordinator: null,
 }
 
 configureLinuxSecretStorage()
@@ -190,7 +194,7 @@ function configureLinuxSecretStorage() {
 /**
  * Creates the main SAR Tracker Electron validation window.
  */
-async function createWindow(crashLog, runtimeLog) {
+async function createWindow(crashLog, runtimeLog, rendererTeardownCoordinator) {
   const window = new BrowserWindow({
     width: 1440,
     height: 900,
@@ -206,7 +210,7 @@ async function createWindow(crashLog, runtimeLog) {
     },
   })
 
-  installWindowNavigationGuards(window)
+  installWindowTeardownGuards(window, rendererTeardownCoordinator, runtimeLog)
 
   if (crashLog !== undefined) {
     // A renderer crash leaves the operator with a blank or frozen window; record
@@ -226,6 +230,9 @@ async function createWindow(crashLog, runtimeLog) {
         event: 'render_process_gone',
         fields: { reason: details?.reason ?? 'unknown', exitCode: details?.exitCode ?? null },
       })
+      void rendererTeardownCoordinator.markRendererUnavailable().catch((error) => {
+        reportUnsafeRendererTeardown(error, runtimeLog)
+      })
     })
   }
 
@@ -244,16 +251,82 @@ async function createWindow(crashLog, runtimeLog) {
  * Prevents renderer content from navigating the operational window or opening
  * auxiliary windows outside the controlled SAR Tracker shell.
  */
-function installWindowNavigationGuards(window) {
+function installWindowTeardownGuards(window, rendererTeardownCoordinator, runtimeLog) {
+  let closeAllowed = false
+  let closeInProgress = false
+  let allowNextUnload = false
+  let reloadInProgress = false
+  window.on('close', (event) => {
+    if (closeAllowed) return
+    event.preventDefault()
+    if (closeInProgress) return
+    closeInProgress = true
+    void rendererTeardownCoordinator.prepare(window, 'window_close').then(() => {
+      allowNextUnload = true
+      closeAllowed = true
+      window.close()
+    }).catch((error) => {
+      closeInProgress = false
+      reportUnsafeRendererTeardown(error, runtimeLog)
+    })
+  })
+
   window.webContents.on('will-navigate', (event, targetUrl) => {
     const currentUrl =
       typeof window.webContents.getURL === 'function' ? window.webContents.getURL() : ''
     if (!isAllowedRendererNavigation(targetUrl, currentUrl)) {
       event.preventDefault()
+      return
     }
+    event.preventDefault()
+    void rendererTeardownCoordinator.prepare(window, 'renderer_reload').then(() => {
+      allowNextUnload = true
+      return window.loadURL(targetUrl)
+    }).catch((error) => {
+      reportUnsafeRendererTeardown(error, runtimeLog)
+    })
+  })
+
+  window.webContents.on('will-prevent-unload', (event) => {
+    if (allowNextUnload) {
+      allowNextUnload = false
+      event.preventDefault()
+      return
+    }
+    if (reloadInProgress) return
+    reloadInProgress = true
+    void rendererTeardownCoordinator.prepare(window, 'renderer_reload').then(() => {
+      allowNextUnload = true
+      reloadInProgress = false
+      window.webContents.reload()
+    }).catch((error) => {
+      reloadInProgress = false
+      reportUnsafeRendererTeardown(error, runtimeLog)
+    })
   })
 
   window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
+}
+
+/** Keeps the current window alive and tells the operator when fail-closed teardown fails. */
+function reportUnsafeRendererTeardown(error, runtimeLog) {
+  void runtimeLog?.append({
+    level: 'error',
+    event: 'renderer_teardown_blocked',
+    fields: {
+      failureClass: error instanceof Error
+        ? 'evidence_loss_marker_unavailable'
+        : 'unknown_teardown_failure',
+    },
+  })
+  try {
+    dialog.showErrorBox(
+      'SAR Tracker could not close safely',
+      'Pending tracking evidence could not be drained or marked safely. SAR Tracker has kept the current process open. Preserve the profile and contact support before forcing it closed.',
+    )
+  } catch {
+    // The runtime log above retains the blocking failure in headless contexts.
+  }
 }
 
 function isAllowedRendererNavigation(targetUrl, currentUrl) {
@@ -951,6 +1024,11 @@ async function startElectronApp() {
       }
     },
   })
+  const rendererTeardownCoordinator = createRendererTeardownCoordinator({
+    ipcMain,
+    missionStore,
+  })
+  electronRuntimeContext.rendererTeardownCoordinator = rendererTeardownCoordinator
   void missionStore
     .info()
     .then((missionStoreInfo) =>
@@ -984,14 +1062,19 @@ async function startElectronApp() {
     crashLog,
     runtimeLog,
   )
-  await createWindow(crashLog, runtimeLog)
+  await createWindow(crashLog, runtimeLog, rendererTeardownCoordinator)
   electronRuntimeContext.stopEventLoopDiagnostics = startEventLoopDiagnostics(storageDiagnostics)
 
   app.on('before-quit', (event) => {
     // Record an intentional shutdown so the next launch does not show a false
     // crash-recovery notice.
     event.preventDefault()
-    void markCleanExitAndQuit(crashLog, officialMapProxy)
+    void markCleanExitAndQuit(
+      crashLog,
+      officialMapProxy,
+      rendererTeardownCoordinator,
+      runtimeLog,
+    )
   })
 }
 
@@ -1020,16 +1103,26 @@ function startEventLoopDiagnostics(storageDiagnostics) {
 }
 
 let cleanExitInProgress = false
-async function markCleanExitAndQuit(crashLog, officialMapProxy) {
+async function markCleanExitAndQuit(
+  crashLog,
+  officialMapProxy,
+  rendererTeardownCoordinator,
+  runtimeLog,
+) {
   if (cleanExitInProgress) {
     return
   }
   cleanExitInProgress = true
   try {
+    for (const window of BrowserWindow.getAllWindows()) {
+      await rendererTeardownCoordinator.prepare(window, 'app_quit')
+    }
     await crashLog.markCleanExit()
-  } finally {
     officialMapProxy.close?.()
     app.exit(0)
+  } catch (error) {
+    cleanExitInProgress = false
+    reportUnsafeRendererTeardown(error, runtimeLog)
   }
 }
 
@@ -1041,6 +1134,10 @@ app.on('window-all-closed', () => {
 
 app.on('activate', async () => {
   if (BrowserWindow.getAllWindows().length === 0) {
-    await createWindow(electronRuntimeContext.crashLog, electronRuntimeContext.runtimeLog)
+    await createWindow(
+      electronRuntimeContext.crashLog,
+      electronRuntimeContext.runtimeLog,
+      electronRuntimeContext.rendererTeardownCoordinator,
+    )
   }
 })

@@ -65,6 +65,20 @@ export function getAppRuntimeController(): AppRuntimeController | null {
 }
 
 /**
+ * Serializes main-process teardown with any controller replacement in flight.
+ */
+export function disposeAppRuntimeController(): Promise<void> {
+  const operation = controllerOperationTail.then(async () => {
+    const activeController = controller
+    if (activeController !== null) {
+      await activeController.dispose()
+    }
+  })
+  controllerOperationTail = operation
+  return operation
+}
+
+/**
  * Clears the global controller registry for unit tests that need isolation.
  */
 export async function clearAppRuntimeControllerForTest(): Promise<void> {

@@ -105,6 +105,14 @@ export type SarTrackerElectronBridge = {
     readonly changeSeq: number
   }) => void) => () => void
   readonly onCoverageRendererFailed?: (listener: () => void) => () => void
+  readonly onAppRuntimeTeardownRequested?: (listener: (input: {
+    readonly requestId: string
+    readonly reason: string
+  }) => void) => () => void
+  readonly acknowledgeAppRuntimeTeardown?: (input: {
+    readonly requestId: string
+    readonly ok: boolean
+  }) => void
   readonly missionStore: MissionStore
   readonly layerCatalogStore: LayerCatalogStore
   readonly traccarHttpRequest: (

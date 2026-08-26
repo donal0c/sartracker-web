@@ -38,4 +38,20 @@ describe('breadcrumb PR-3 operator manual [DON-275]', () => {
       expect(manual).toContain(`assets/${asset}`)
     }
   })
+
+  it('documents the fail-closed desktop teardown boundary', () => {
+    const manual = readFileSync('public/manual/index.html', 'utf8')
+    const normalizedManual = manual.replace(/\s+/gu, ' ')
+
+    for (const required of [
+      'keeps the renderer alive until the drain acknowledges',
+      'unexpected renderer crash is fenced immediately',
+      'SAR Tracker could not close safely',
+      'preserve the profile',
+    ]) {
+      expect(normalizedManual).toContain(required)
+    }
+    expect(existsSync('public/manual/assets/tracking-shutdown-evidence-loss.png')).toBe(true)
+    expect(manual).toContain('assets/tracking-shutdown-evidence-loss.png')
+  })
 })

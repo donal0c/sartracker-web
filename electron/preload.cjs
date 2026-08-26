@@ -24,6 +24,8 @@ const OPEN_EXTERNAL_URL_CHANNEL = 'sartracker:open-external-url'
 const FETCH_OFFICIAL_MAP_TILE_CHANNEL = 'sartracker:fetch-official-map-tile'
 const COVERAGE_CHANGED_CHANNEL = 'sartracker:coverage-changed'
 const COVERAGE_RENDERER_FAILED_CHANNEL = 'sartracker:coverage-renderer-failed'
+const RENDERER_TEARDOWN_REQUEST_CHANNEL = 'sartracker:app-runtime-teardown-requested'
+const RENDERER_TEARDOWN_READY_CHANNEL = 'sartracker:app-runtime-teardown-ready'
 
 const MISSION_STORE_CHANNELS = {
   info: 'sartracker:mission-store:info',
@@ -111,6 +113,14 @@ const LAYER_CATALOG_STORE_CHANNELS = {
   clearMetadata: 'sartracker:layer-catalog-store:clear-metadata',
 }
 
+// Electron main owns every unload. This synchronous fence converts direct
+// reload/menu/close attempts into `will-prevent-unload`, where main can wait for
+// rejected-position evidence to drain before explicitly allowing the unload.
+window.addEventListener('beforeunload', (event) => {
+  event.preventDefault()
+  event.returnValue = false
+})
+
 contextBridge.exposeInMainWorld('sartrackerElectron', {
   loadAppSettings() {
     return ipcRenderer.invoke(LOAD_SETTINGS_CHANNEL)
@@ -184,6 +194,14 @@ contextBridge.exposeInMainWorld('sartrackerElectron', {
     const handler = () => listener()
     ipcRenderer.on(COVERAGE_RENDERER_FAILED_CHANNEL, handler)
     return () => ipcRenderer.removeListener(COVERAGE_RENDERER_FAILED_CHANNEL, handler)
+  },
+  onAppRuntimeTeardownRequested(listener) {
+    const handler = (_event, input) => listener(input)
+    ipcRenderer.on(RENDERER_TEARDOWN_REQUEST_CHANNEL, handler)
+    return () => ipcRenderer.removeListener(RENDERER_TEARDOWN_REQUEST_CHANNEL, handler)
+  },
+  acknowledgeAppRuntimeTeardown(input) {
+    ipcRenderer.send(RENDERER_TEARDOWN_READY_CHANNEL, input)
   },
   missionStore: Object.fromEntries(
     Object.entries(MISSION_STORE_CHANNELS).map(([methodName, channel]) => [
