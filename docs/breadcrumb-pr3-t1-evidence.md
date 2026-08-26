@@ -1952,6 +1952,99 @@ the deterministic exact-head/Linux gates and five fresh independent exact-head
 reviews from zero before PR #3 can be called review ready. No merge or release
 occurred.
 
+## Filter-growth, finalized-health hydration, and real-worker remediation
+
+The exact-head review wave on
+`a47e10241d9d3e25adb8e685c79c6fad73667fef` was invalidated by two current
+fail-closed defects and one verification gap. Older reports alleging a
+missing-inventory fresh insert, renderer-controlled worker envelope, and raw
+tile-coordinate path escape were not forwarded as current findings: exact head
+already inserts missing inventory with `built_rev = NULL`, owns worker control
+fields after normalized payload spread, and validates/bounds tile coordinates
+before resolving a contained cache path.
+
+The new red reasons were recorded before production changes:
+
+- active filters transported a materialized selected-key list, so a later
+  visible outing could be absent from both the filtered claim and progress
+  denominator while its open-outing chunk remained stale during cooldown;
+- a startup health read resolving after successful mission finalization could
+  re-add that mission's critical health to the live cross-mission aggregate;
+  and
+- the real production tile worker was exercised in runner tests, but the full
+  mission-store plus worker lifecycle lacked one direct automated integration
+  binding.
+
+Application head `6db23e087eab824cd54e1a15641a66d8db0f541a` closes those
+paths. Coverage context now transports normalized device/period omission
+predicates and resolves them against every fresh manifest. Renderer filter
+acknowledgements are compared with that current concrete selection; mismatch
+stays visibly Partial with `renderer_filter_pending`. Delayed health for a
+finalized mission is retained only in the finalized bucket and is restored to
+the live aggregate solely through explicit unlock. The new real-store/real-
+worker integration attests non-empty staged/active tile equality, retained plus
+rebuilt chunks, a ready exact claim, stale-revision rejection, and honest
+follow-up recovery.
+
+Green local verification at that application head:
+
+- focused controller/runtime/filter/health regression set: 6 files / 96 tests;
+- real mission-store/production-worker integration file: 22/22;
+- full unit: 269 files / 2,156 tests;
+- full ESLint, TypeScript, production build, bundle budgets, and diff checks;
+- participant/coverage Chromium: 10/10;
+- selected critical visual Playwright: 2/2 for default completion and pending
+  history-filter application;
+- uncached independent critical visual review: 2/2 PASS, report
+  `visual-review-2026-08-26T08-38-44Z.json`; and
+- Rust backend: 51/51, with the intentional real macOS keychain test ignored.
+
+Exact application-head Linux run
+[`32948959241`](https://github.com/donal0c/sartracker-web/actions/runs/32948959241)
+checked out PR merge ref
+`1ea14c6766b5e1e412152559f9afdb6c89c07998`, whose parents are exact PR-2
+base `7021fc1ef33e6da5c91c96cd86e836fc3754f48f` and application head
+`6db23e087eab824cd54e1a15641a66d8db0f541a`, and passed:
+
+- Ubuntu x64 AppImage and `.deb` packaging, native SQLite inspection, Mesa
+  llvmpipe attestation, and AppImage window/content launch;
+- packaged CI soak: 6/6 batches, 8,664/8,664 source-exact positions, matching
+  SHA-256
+  `053bda2dd8298e4296b95c4b5dead8f31b5c584a4a7cde32a666fbad19f7be9e`,
+  integrity `ok`, clean WAL checkpoint, one restart, zero renderer crashes,
+  zero redundant telemetry slope, and four healthy operator interactions;
+- Electron-main maximum 20.5407 ms and p95 8.3123 ms against the explicit
+  200 ms I5 limit, with zero samples over the limit;
+- Mesa llvmpipe renderer maximum 416.7 ms and p95 233.3 ms. This is descriptive
+  tracking-soak evidence below the separate 1,000 ms renderer/operator freeze
+  gate; G2 remains the coverage-renderer budget authority;
+- peak packaged process-tree RSS 1,174,769,664 bytes;
+- AppImage SHA-256
+  `f5fe89978058663a05e2d27fa72d60238422ea67dcffb1abd5d029827d2706f7`;
+- `.deb` SHA-256
+  `3b593e44ec65b7f06e1d292f35bcd10a730560cf98f1f2a456933f4ff155dcb0`;
+- soak report SHA-256
+  `8273bf7d71c197ee3ffb1563e95963a9778c28591f78785f7a4a4264926bdb78`;
+- package artifact `9599494008`, uploaded-zip digest
+  `b700c2791808446daf9e04d8f6ac8a04b7d9ebbbaa684d06e9cb7c117028b7b5`;
+  and
+- validation artifact `9599495091`, uploaded-zip digest
+  `586992d424e8092c5654555abae900e6b6128528569ae845014b0b2bd6345a8f`.
+
+The operator manual now states that an active history filter remains in force
+as later periods are discovered and that every newly visible period enters the
+completion check. Controls, layout, and screenshots are unchanged. Candidate-B
+geometry/index construction, schema v10, G2 measurements, G3 flag posture,
+exact Dots, and the 3.704 GB migration surface are unchanged. Their accepted
+evidence remains standing only for those unchanged surfaces. There was no
+pre-merge packaged 960k/2M coverage run outside G2 and no packaged forced-kill
+matrix.
+
+The commit containing this evidence record is documentation-only. It must pass
+the deterministic exact-head/Linux gates and five fresh independent exact-head
+reviews from zero before PR #3 can be called review ready. No merge or release
+occurred.
+
 ## Tile-worker content oracle remediation
 
 The first review of documentation head
