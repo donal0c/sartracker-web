@@ -80,7 +80,9 @@ jobs:
         run: npm run lint
 
       - name: Full deterministic unit gate
-        run: npm run test
+        # Wall-clock safety budgets must not compete with unrelated Vitest files
+        # for a shared runner core; the complete suite still runs with no skips.
+        run: npm run test -- --no-file-parallelism
 
       - name: Production web build and bundle budgets
         run: npm run build

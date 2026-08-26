@@ -3324,3 +3324,51 @@ The earlier `42f1694` macOS/Linux packages and Ubuntu soak are superseded for
 the changed runtime seam. Replacement exact-application-head package and soak
 bindings, expanded Linux CI, and the amended broad plus three targeted reviews
 remain mandatory before merge readiness.
+
+### Replacement application-head package and Ubuntu soak
+
+Application head `21a16fec2baadde01be8f79b717a1b8d77592199` contains the
+complete accepted-write/scope-compensation repair. Its exact packages bind as:
+
+- macOS arm64 executable SHA-256:
+  `f5212ea9181df95040385dfd04f512e983ed95394a96fb7c4b8ee838ea433caf`;
+- macOS arm64 `app.asar` SHA-256:
+  `d867354b871679658f1c91ba7ab660611abf66446d59f9caadf185beb1e88962`;
+- Linux x64 executable SHA-256:
+  `6344ae1d9044fedc54779e8bacaddc032fdcc0f55e146fc3623756eafa0bbaf8`;
+  and
+- Linux x64 `app.asar` SHA-256:
+  `7231827edc96227de19ee9413801eac404c3e9666ca827524045f7749cc782c8`.
+
+The one replacement packaged CI-scale tracking soak ran serially on the
+reference Ubuntu X11 session with Mesa llvmpipe through ANGLE/OpenGL and
+passed:
+
+- 6/6 accelerated batches, 8,664/8,664 source-exact positions, and digest
+  `3e42e488cce2e76ae1dc728876aaf24472de48425d50f8df135ee0c4c132175b`;
+- one restart, two accepted WebGL launches, and zero renderer crashes;
+- SQLite integrity `ok`, WAL 0/0/0, zero unexplained mission events, and zero
+  redundant-telemetry slope;
+- main-process maximum 12.160 ms and renderer maximum 100.234 ms, below their
+  gates;
+- all four operator interactions classified `healthy`, with action maximum
+  37.0 ms and external-action maximum 96.707 ms; and
+- peak process-tree RSS 1,148,231,680 bytes.
+
+The coverage ledger contains one mission row at change sequence 82, 32 chunk
+rows, zero pending invalidations, 20,480 coverage-table bytes, and integrity
+`ok`. The immutable bundle is
+`output/pr3-packaged-soak/21a16fec2baadde01be8f79b717a1b8d77592199/`.
+Its manifest SHA-256 is
+`5a0f1d379f1f2e96895e46e449cb6a10623695580fe8225528d97459da232489`;
+the soak report SHA-256 is
+`9c31de2105471c9212946b89b3ad558e84f322c0c6448554862ff1e502243d61`.
+
+Expanded GitHub run `33002926988` exercised all 273 files and found one
+execution-harness failure: the unchanged 200 ms DON-269 assertion measured
+216.929 ms while its file competed with the rest of the suite on the shared
+runner. The budget remains 200 ms. The pull-request workflow now runs the full
+suite with `--no-file-parallelism`, preserving all 2,249 tests and removing
+cross-file CPU contention from wall-clock gates. That exact command passes
+locally in 135.74 s; the focused accumulator file passes 26/26. A green GitHub
+rerun remains required.
