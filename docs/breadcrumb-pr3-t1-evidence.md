@@ -1952,6 +1952,89 @@ the deterministic exact-head/Linux gates and five fresh independent exact-head
 reviews from zero before PR #3 can be called review ready. No merge or release
 occurred.
 
+## Tile-worker content oracle remediation
+
+The first review of documentation head
+`c72fd02c29190e0f8449b287488017bb0b0902f9` invalidated that head with one
+further P1. Tile-worker build descriptors were bounded and shape-checked, but
+their count, source-identity digest, and time bounds were not compared with an
+independent exact SQLite summary. A deterministic red integration probe put
+three real fixes in a stale revision-2 chunk, returned a well-shaped zero-count
+worker build with the SHA-256 of empty input, and observed `built_rev = 2`, no
+claim blockers, and a current delivered revision. That was a reachable false
+Complete path. A separate probe showed that delivery could omit build/content
+evidence for a requested chunk entirely.
+
+Application head `603aadf90250cc8125be5605e68c059a949e5468` closes both
+paths without adding position-row work to the Electron main isolate:
+
+- the independent coverage-query worker's exact manifest summaries are copied
+  into a main-owned revision-bound oracle only after inventory and outing
+  attestation;
+- every tile catalog delivery must return one unique content-evidence descriptor
+  for every requested chunk revision, including retained worker chunks;
+- main requires exact key/revision/count/digest/min/max equality between that
+  worker evidence and the independent manifest oracle before any ledger write;
+- a semantic mismatch discards the staged catalog, fences the owning tile-worker
+  generation, surfaces renderer failure, and leaves the ledger stale; and
+- the existing `content_rev` update predicate remains the final TOCTOU fence for
+  a normal accepted write after both snapshots.
+
+Green local verification at that application head:
+
+- focused tile-worker/mission-store/oracle: 5 files / 61 tests;
+- coverage/participant/rejection-evidence sweep: 45 files / 333 tests;
+- full unit: 268 files / 2,152 tests;
+- full ESLint, TypeScript, production build, bundle budgets, and diff checks;
+- participant/coverage Chromium: 10/10;
+- selected critical visual Playwright: 2/2, followed by uncached independent
+  critical visual review 2/2 PASS; and
+- Rust backend: 51/51, with the intentional real macOS keychain test ignored.
+
+Exact application-head Linux run
+[`32944166541`](https://github.com/donal0c/sartracker-web/actions/runs/32944166541)
+checked out PR merge ref
+`c820a60fcedb9d4815af0542d2a8463acd0e5a08`, whose parents are exact PR-2
+base `7021fc1ef33e6da5c91c96cd86e836fc3754f48f` and application head
+`603aadf90250cc8125be5605e68c059a949e5468`, and passed:
+
+- Ubuntu x64 AppImage and `.deb` packaging, native SQLite inspection, Mesa
+  llvmpipe attestation, and AppImage window/content launch;
+- packaged CI soak: 6/6 batches, 8,664/8,664 source-exact positions, matching
+  SHA-256
+  `89c138d859d8e650c04234441d05cfb5af2fcac266927c455d48278b460d016b`,
+  integrity `ok`, one restart, zero renderer crashes, and four healthy operator
+  interactions;
+- Electron-main maximum 27.1239 ms and p95 8.6413 ms against the explicit
+  200 ms I5 limit, with zero samples over the limit;
+- Mesa llvmpipe renderer maximum 533.3 ms and p95 300 ms. This is descriptive
+  tracking-soak evidence below the separate 1,000 ms renderer/operator freeze
+  gate; G2 remains the coverage-renderer budget authority;
+- AppImage SHA-256
+  `e3381cce6281aaa1ac8423fd42cffc3066ad129af345035784cae7e5d512b9e9`;
+- `.deb` SHA-256
+  `8a88c45c233622e506089ebb6ba8c298b876a5c54ec08e4dc7a99ce9766d905b`;
+- soak report SHA-256
+  `c9a2489621ec25633eb01eda8f3c20122c66e151261bfb2387b42cb31a20f8bb`;
+- package artifact `9597738814`, uploaded-zip digest
+  `649dc0e6bbf1df19a6a553b7a8b859cc5504abc6360df9d0df9c6dec83bc2e0d`;
+  and
+- validation artifact `9597740140`, uploaded-zip digest
+  `29d811a0a2bf2561221e67bd1822b2462f29e036af1b5db30ee25bc341989b4a`.
+
+This remediation changes worker/main semantic trust and ledger application
+only. It does not change operator controls, wording, filters, Candidate-B
+geometry or period identity, schema v10, default flags, exact Dots, or the
+operator manual/screenshots. G2's 960k/2M decision evidence and the 3.704 GB
+v9-to-v10 migration remain standing only for those unchanged surfaces. There
+was no pre-merge packaged 960k/2M coverage run outside G2 and no packaged
+forced-kill matrix.
+
+The commit containing this evidence record is documentation-only. It must pass
+the deterministic exact-head/Linux gates and five fresh independent exact-head
+reviews from zero before PR #3 can be called review ready. No merge or release
+occurred.
+
 ## Final attestation, mission-scope, and repeated-participant remediation
 
 The first final-head review wave on `43304c83a4a1d2e9fe21f489f92ede7e3ca7fa27`
