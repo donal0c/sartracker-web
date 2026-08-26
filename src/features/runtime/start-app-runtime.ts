@@ -223,16 +223,18 @@ export async function startAppRuntime(
     startHelicopterRuntime: resolvedDependencies.startHelicopterRuntime,
     startGpxRuntime: resolvedDependencies.startGpxRuntime,
   })
-  const stopExactBreadcrumbDots = resolvedDependencies.startExactBreadcrumbDotRuntime(
-    missionStore,
-  )
-  const stopCoverage = resolvedDependencies.startCoverageRuntime(missionStore, {
-    enabled: resolveCoverageRuntimeEnabled({
-      missionModelEnabled,
-      coverageEnabled: isCoverageEnabled(),
-    }),
-  })
+  let stopExactBreadcrumbDots = (): void => undefined
+  let stopCoverage = (): void => undefined
   try {
+    stopExactBreadcrumbDots = resolvedDependencies.startExactBreadcrumbDotRuntime(
+      missionStore,
+    )
+    stopCoverage = resolvedDependencies.startCoverageRuntime(missionStore, {
+      enabled: runtimeKind === 'electron' && resolveCoverageRuntimeEnabled({
+        missionModelEnabled,
+        coverageEnabled: isCoverageEnabled(),
+      }),
+    })
     await reloadSettings()
   } catch (error) {
     stopExactBreadcrumbDots()

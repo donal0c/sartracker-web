@@ -358,6 +358,63 @@ describe('Electron participant store [DON-271]', () => {
     }
   })
 
+  it('re-adds a participant from an earlier effective time without rewriting fixed backfill edges', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-08-20T10:00:00.000Z'))
+    const store = await createStore()
+    const mission = await store.createMission({
+      name: 'Repeated effective-from mission',
+      start_time: '2026-08-20T08:00:00.000Z',
+    })
+    const [initial] = await store.selectMissionParticipants({
+      mission_id: mission.id,
+      groups: [],
+      devices: [{ traccar_device_id: '20' }],
+      selected_by: 'Coordinator A',
+    })
+    await store.upsertParticipantBackfillCheckpoint({
+      mission_id: mission.id,
+      traccar_device_id: '20',
+      window_from: '2026-08-20T08:00:00.000Z',
+      window_to: '2026-08-20T10:00:00.000Z',
+      reconciled_until: '2026-08-20T10:00:00.000Z',
+      completed: true,
+    })
+    vi.setSystemTime(new Date('2026-08-20T11:00:00.000Z'))
+    await store.removeMissionParticipant({
+      mission_id: mission.id,
+      participant_id: initial!.id,
+      removed_by: 'Coordinator A',
+    })
+    vi.setSystemTime(new Date('2026-08-20T12:00:00.000Z'))
+
+    await expect(store.addMissionParticipant({
+      mission_id: mission.id,
+      kind: 'device',
+      ref: '20',
+      effective_from: '2026-08-20T08:00:00.000Z',
+      confirmed_by: 'Coordinator A',
+    })).resolves.toMatchObject({
+      traccar_device_id: '20',
+      effective_from: '2026-08-20T08:00:00.000Z',
+    })
+    await expect(store.listParticipantBackfillCheckpoints(mission.id)).resolves.toEqual([
+      expect.objectContaining({
+        window_from: '2026-08-20T08:00:00.000Z',
+        window_to: '2026-08-20T10:00:00.000Z',
+        completed: 1,
+      }),
+      expect.objectContaining({
+        window_from: '2026-08-20T10:00:00.000Z',
+        window_to: '2026-08-20T12:00:00.000Z',
+        reconciled_until: '2026-08-20T10:00:00.000Z',
+        completed: 0,
+      }),
+    ])
+    const participants = await store.listMissionParticipants(mission.id)
+    expect(participants[1]).toMatchObject({ backfill_completed: 0 })
+  })
+
   it('rejects participant, membership, and checkpoint writes as soon as a mission is finished', async () => {
     const store = await createStore()
     const mission = await store.createMission({

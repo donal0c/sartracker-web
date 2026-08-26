@@ -1,4 +1,5 @@
 const { isStrictTrackingTimestamp } = require('./tracking-timestamp.cjs')
+const { createCoverageTileCatalog } = require('./coverage-tile-catalog.cjs')
 
 /** Creates the collision-free identity shared by coverage worker envelopes. */
 function createCoverageChunkIdentity(key) {
@@ -87,7 +88,7 @@ function normalizeCoverageCatalogWorkerResult(input, value) {
   ]))
   const delivered = normalizeWorkerDescriptors(value.delivered, requested)
   const builds = normalizeWorkerBuilds(value.builds, requested)
-  const periods = normalizeWorkerPeriods(value.periods, input.chunks)
+  const periods = normalizeWorkerPeriods(value.periods, input)
   return { stageId, periods, delivered, builds }
 }
 
@@ -155,15 +156,11 @@ function normalizeWorkerBuilds(value, requested) {
 }
 
 /** Validates bounded period metadata and exact requested contributors. */
-function normalizeWorkerPeriods(value, chunks) {
-  const requestedContributors = new Map()
-  for (const descriptor of chunks) {
-    const periodKey = `${descriptor.key.period_kind}\u0000${descriptor.key.period_id}`
-    const contributors = requestedContributors.get(periodKey) ?? new Set()
-    contributors.add(`${createCoverageChunkIdentity(descriptor.key)}@${descriptor.contentRev}`)
-    requestedContributors.set(periodKey, contributors)
-  }
-  if (!Array.isArray(value) || value.length > requestedContributors.size) {
+function normalizeWorkerPeriods(value, input) {
+  const requestedPeriods = new Map(
+    createCoverageTileCatalog(input).periods.map((period) => [period.periodKey, period]),
+  )
+  if (!Array.isArray(value) || value.length > requestedPeriods.size) {
     throw invalidCatalogResult('period descriptors are unbounded')
   }
   const seen = new Set()
@@ -180,27 +177,29 @@ function normalizeWorkerPeriods(value, chunks) {
     ) {
       throw invalidCatalogResult('period descriptor is invalid')
     }
-    const expected = requestedContributors.get(candidate.periodKey)
+    const expected = requestedPeriods.get(candidate.periodKey)
     if (expected === undefined || seen.has(candidate.periodKey)) {
       throw invalidCatalogResult('period descriptor diverged from the request')
     }
     const contributors = new Set(candidate.contributors)
+    const expectedContributors = new Set(expected.contributors)
     if (
-      contributors.size !== expected.size ||
-      candidate.contributors.length !== expected.size ||
+      candidate.revisionDigest !== expected.revisionDigest ||
+      contributors.size !== expectedContributors.size ||
+      candidate.contributors.length !== expectedContributors.size ||
       candidate.contributors.some((contributor) =>
-        typeof contributor !== 'string' || !expected.has(contributor))
+        typeof contributor !== 'string' || !expectedContributors.has(contributor))
     ) {
-      throw invalidCatalogResult('period contributors diverged from the request')
+      throw invalidCatalogResult('period descriptor diverged from the request')
     }
     seen.add(candidate.periodKey)
     return {
       periodKey: candidate.periodKey,
-      revisionDigest: candidate.revisionDigest,
-      contributors: [...candidate.contributors],
+      revisionDigest: expected.revisionDigest,
+      contributors: [...expected.contributors],
     }
   })
-  if (seen.size !== requestedContributors.size) {
+  if (seen.size !== requestedPeriods.size) {
     throw invalidCatalogResult('period descriptors are incomplete')
   }
   return periods

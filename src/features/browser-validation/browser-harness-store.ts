@@ -569,18 +569,24 @@ export function getBrowserHarnessStore(): BrowserHarnessStore {
       })
       const checkpoints = deviceId === null
         ? observedMembershipEvents.map((event) =>
-            createHarnessBackfillCheckpoint({
+            createHarnessBackfillCoverageCheckpoints(
+              state.participantBackfillCheckpoints,
+              {
+                missionId: mission.id,
+                deviceId: event.traccar_device_id,
+                windowFrom: effectiveFrom,
+                windowTo: addedAt,
+              },
+            )).flat()
+        : createHarnessBackfillCoverageCheckpoints(
+            state.participantBackfillCheckpoints,
+            {
               missionId: mission.id,
-              deviceId: event.traccar_device_id,
+              deviceId,
               windowFrom: effectiveFrom,
               windowTo: addedAt,
-            }))
-        : [createHarnessBackfillCheckpoint({
-            missionId: mission.id,
-            deviceId,
-            windowFrom: effectiveFrom,
-            windowTo: addedAt,
-          })]
+            },
+          )
       state = {
         ...state,
         missionTeams: team === null || state.missionTeams.some((candidate) => candidate.id === team?.id)
@@ -638,12 +644,18 @@ export function getBrowserHarnessStore(): BrowserHarnessStore {
       return state.missionParticipants
         .filter((participant) => participant.mission_id === missionId)
         .map((participant) => {
-          const checkpoint = participant.traccar_device_id === null
-            ? undefined
-            : state.participantBackfillCheckpoints.find((candidate) =>
+          const checkpoints = participant.traccar_device_id === null
+            ? []
+            : state.participantBackfillCheckpoints.filter((candidate) =>
                 candidate.mission_id === participant.mission_id &&
                 candidate.traccar_device_id === participant.traccar_device_id &&
-                candidate.window_from === participant.effective_from)
+                candidate.window_from >= participant.effective_from &&
+                candidate.window_to <= participant.added_at)
+          const incompleteCheckpoint = checkpoints
+            .filter((candidate) => candidate.completed === 0)
+            .toSorted((left, right) => left.reconciled_until.localeCompare(right.reconciled_until))[0]
+          const latestCheckpoint = checkpoints
+            .toSorted((left, right) => right.window_to.localeCompare(left.window_to))[0]
           const groupCheckpoints = participant.kind !== 'group'
             ? []
             : state.groupMembershipEvents
@@ -655,25 +667,37 @@ export function getBrowserHarnessStore(): BrowserHarnessStore {
                 .flatMap((event) => state.participantBackfillCheckpoints.filter((candidate) =>
                   candidate.mission_id === participant.mission_id &&
                   candidate.traccar_device_id === event.traccar_device_id &&
-                  candidate.window_from === participant.effective_from &&
-                  candidate.window_to === participant.added_at))
+                  candidate.window_from >= participant.effective_from &&
+                  candidate.window_to <= participant.added_at))
+          const groupMemberDeviceIds = participant.kind !== 'group'
+            ? []
+            : state.groupMembershipEvents
+                .filter((event) =>
+                  event.mission_id === participant.mission_id &&
+                  event.mission_team_id === participant.mission_team_id &&
+                  event.change === 'member' &&
+                  event.observed_at === participant.added_at)
+                .map((event) => event.traccar_device_id)
           return {
             ...participant,
-            ...(checkpoint === undefined
+            ...(latestCheckpoint === undefined
               ? {}
               : {
-                  backfill_window_to: checkpoint.window_to,
-                  backfill_reconciled_until: checkpoint.reconciled_until,
-                  backfill_completed: checkpoint.completed,
+                  backfill_window_to: latestCheckpoint.window_to,
+                  backfill_reconciled_until:
+                    incompleteCheckpoint?.reconciled_until ?? latestCheckpoint.reconciled_until,
+                  backfill_completed: checkpoints.every((entry) => entry.completed === 1) ? 1 : 0,
                 }),
             ...(participant.kind !== 'group'
               ? {}
               : {
-                  backfill_member_count: new Set(groupCheckpoints.map((entry) =>
-                    entry.traccar_device_id)).size,
-                  backfill_completed_count: new Set(groupCheckpoints
-                    .filter((entry) => entry.completed === 1)
-                    .map((entry) => entry.traccar_device_id)).size,
+                  backfill_member_count: new Set(groupMemberDeviceIds).size,
+                  backfill_completed_count: new Set(groupMemberDeviceIds.filter((deviceId) => {
+                    const deviceCheckpoints = groupCheckpoints.filter((entry) =>
+                      entry.traccar_device_id === deviceId)
+                    return deviceCheckpoints.length > 0 &&
+                      deviceCheckpoints.every((entry) => entry.completed === 1)
+                  })).size,
                 }),
           }
         })
@@ -1846,6 +1870,38 @@ function createHarnessBackfillCheckpoint(input: {
     completed: input.windowFrom === input.windowTo ? 1 : 0,
     updated_at: input.windowTo,
   }
+}
+
+/** Adds only the uncovered suffix while preserving existing fixed checkpoint edges. */
+function createHarnessBackfillCoverageCheckpoints(
+  existing: readonly ParticipantBackfillCheckpoint[],
+  input: {
+    readonly missionId: string
+    readonly deviceId: string
+    readonly windowFrom: string
+    readonly windowTo: string
+  },
+): readonly ParticipantBackfillCheckpoint[] {
+  let windowFrom = input.windowFrom
+  while (windowFrom < input.windowTo) {
+    const checkpoint = existing.find((candidate) =>
+      candidate.mission_id === input.missionId &&
+      candidate.traccar_device_id === input.deviceId &&
+      candidate.window_from === windowFrom)
+    if (checkpoint === undefined) {
+      return [createHarnessBackfillCheckpoint({ ...input, windowFrom })]
+    }
+    if (checkpoint.window_to <= windowFrom) {
+      throw new Error('Participant backfill window must advance beyond its start.')
+    }
+    if (checkpoint.window_to >= input.windowTo) return []
+    windowFrom = checkpoint.window_to
+  }
+  const exact = existing.some((candidate) =>
+    candidate.mission_id === input.missionId &&
+    candidate.traccar_device_id === input.deviceId &&
+    candidate.window_from === input.windowFrom)
+  return exact ? [] : [createHarnessBackfillCheckpoint(input)]
 }
 
 /** Mirrors the production store's active-selection uniqueness checks. */

@@ -82,8 +82,10 @@ function readCoverageQueryResultLimits(database, query) {
 /** Proves a worker claim exactly matches a bounded direct ledger snapshot. */
 function assertCoverageClaimMatchesDatabase(database, input, claim) {
   const expected = readCoverageClaimSnapshot(database, input)
+  if (claim.changeSeq !== expected.changeSeq) {
+    return expected
+  }
   const same =
-    claim.changeSeq === expected.changeSeq &&
     claim.databaseReady === expected.databaseReady &&
     Array.isArray(claim.blockers) &&
     Array.isArray(claim.chunkRevisions) &&
@@ -92,6 +94,7 @@ function assertCoverageClaimMatchesDatabase(database, input, claim) {
   if (!same) {
     throw new Error('Coverage claim result diverged from current ledger metadata.')
   }
+  return expected
 }
 
 module.exports = {

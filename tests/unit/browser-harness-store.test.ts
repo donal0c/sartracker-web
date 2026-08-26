@@ -13,8 +13,64 @@ describe('browser harness position persistence', () => {
   })
 
   afterEach(() => {
+    vi.useRealTimers()
     delete window.__SARTRACKER_BROWSER_HARNESS__
     vi.restoreAllMocks()
+  })
+
+  it('mirrors adjacent backfill checkpoints when a participant reuses an effective time', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-08-20T10:00:00.000Z'))
+    const store = getBrowserHarnessStore()
+    const mission = await store.createMission({
+      name: 'Harness participant re-add',
+      start_time: '2026-08-20T08:00:00.000Z',
+    })
+    const [initial] = await store.selectMissionParticipants({
+      mission_id: mission.id,
+      groups: [],
+      devices: [{ traccar_device_id: '20' }],
+      selected_by: 'Coordinator A',
+    })
+    const [initialCheckpoint] = await store.listParticipantBackfillCheckpoints(mission.id)
+    await store.upsertParticipantBackfillCheckpoint({
+      mission_id: mission.id,
+      traccar_device_id: '20',
+      window_from: initialCheckpoint!.window_from,
+      window_to: initialCheckpoint!.window_to,
+      reconciled_until: initialCheckpoint!.window_to,
+      completed: true,
+    })
+    vi.setSystemTime(new Date('2026-08-20T11:00:00.000Z'))
+    await store.removeMissionParticipant({
+      mission_id: mission.id,
+      participant_id: initial!.id,
+      removed_by: 'Coordinator A',
+    })
+    vi.setSystemTime(new Date('2026-08-20T12:00:00.000Z'))
+    await store.addMissionParticipant({
+      mission_id: mission.id,
+      kind: 'device',
+      ref: '20',
+      effective_from: '2026-08-20T08:00:00.000Z',
+      confirmed_by: 'Coordinator A',
+    })
+
+    await expect(store.listParticipantBackfillCheckpoints(mission.id)).resolves.toEqual([
+      expect.objectContaining({
+        window_from: '2026-08-20T08:00:00.000Z',
+        window_to: '2026-08-20T10:00:00.000Z',
+        completed: 1,
+      }),
+      expect.objectContaining({
+        window_from: '2026-08-20T10:00:00.000Z',
+        window_to: '2026-08-20T12:00:00.000Z',
+        completed: 0,
+      }),
+    ])
+    expect((await store.listMissionParticipants(mission.id))[1]).toMatchObject({
+      backfill_completed: 0,
+    })
   })
 
   it('persists a bulk tracking batch with one bounded storage write', async () => {

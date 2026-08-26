@@ -212,6 +212,51 @@ describe('rejection evidence delivery [DON-268]', () => {
     }))
   })
 
+  it('retires finalized mission health before publishing a later mission aggregate', async () => {
+    const applyEvidenceHealth = vi.fn()
+    const delivery = createRejectionEvidenceDelivery({
+      missionStore: {
+        recordIngestRejections: vi.fn(async (input) => ({
+          acknowledgedDeliveryIds: input.rejections.map((entry) => entry.deliveryId),
+          health: input.mission_id === 'mission-finalized'
+            ? {
+                ...healthy(),
+                state: 'critical' as const,
+                reason: 'outbox_corrupt_record',
+                corruptCount: 1,
+              }
+            : healthy(),
+        })),
+      },
+      applyRejections: vi.fn(),
+      applyEvidenceHealth,
+      createDeliveryId: (missionId) => `delivery-${missionId}`,
+    })
+
+    delivery.record(
+      [createRejection('source:finalized')],
+      observation('mission-finalized'),
+    )
+    await delivery.flushMission('mission-finalized')
+    expect(applyEvidenceHealth).toHaveBeenLastCalledWith(expect.objectContaining({
+      state: 'critical', reason: 'outbox_corrupt_record',
+    }))
+    await delivery.runWithMissionFinalizationFence(
+      'mission-finalized',
+      async () => 'finalized',
+    )
+
+    delivery.record([createRejection('source:active')], observation('mission-active'))
+    await delivery.flushMission('mission-active')
+
+    expect(applyEvidenceHealth).toHaveBeenLastCalledWith(healthy())
+
+    delivery.reopenMissionEvidenceAfterUnlock('mission-finalized')
+    expect(applyEvidenceHealth).toHaveBeenLastCalledWith(expect.objectContaining({
+      state: 'critical', reason: 'outbox_corrupt_record', corruptCount: 1,
+    }))
+  })
+
   it('keeps unacknowledged unique evidence bounded and retries it on the next poll', async () => {
     const recordIngestRejections = vi
       .fn()

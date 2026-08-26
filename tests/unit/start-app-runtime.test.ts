@@ -10,8 +10,10 @@ import { useIngestHealthStore } from '../../src/features/tracking/ingest-health-
 import { useParticipantStore } from '../../src/features/participants/participant-store'
 import { createParticipationScope } from '../../src/features/participants/participation-scope'
 
+const coverageFlagState = vi.hoisted(() => ({ enabled: false }))
+
 vi.mock('../../src/features/runtime/coverage-flag', () => ({
-  isCoverageEnabled: () => false,
+  isCoverageEnabled: () => coverageFlagState.enabled,
   resolveCoverageRuntimeEnabled: (input: {
     readonly missionModelEnabled: boolean
     readonly coverageEnabled: boolean
@@ -20,6 +22,7 @@ vi.mock('../../src/features/runtime/coverage-flag', () => ({
 
 describe('app runtime startup', () => {
   afterEach(() => {
+    coverageFlagState.enabled = false
     vi.unstubAllGlobals()
     useMissionStore.setState(useMissionStore.getInitialState())
     useActiveMissionDevicesStore.setState(useActiveMissionDevicesStore.getInitialState())
@@ -327,6 +330,30 @@ describe('app runtime startup', () => {
     })
 
     expect(registerServiceWorker).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not start default-on coverage against the unsupported Tauri mission store', async () => {
+    coverageFlagState.enabled = true
+    const startCoverageRuntime = vi.fn().mockReturnValue(vi.fn())
+    const runtime = await startAppRuntime({
+      registerServiceWorker: vi.fn().mockResolvedValue(undefined),
+      isTauriRuntimeAvailable: vi.fn().mockReturnValue(true),
+      isElectronRuntimeAvailable: vi.fn().mockReturnValue(false),
+      createMissionStore: vi.fn().mockReturnValue(createMissionStoreStub()),
+      readRuntimeBootstrapSettings: vi.fn().mockResolvedValue(createBootstrapSettings()),
+      startMissionAutosave: vi.fn().mockReturnValue(createAutosaveController()),
+      startMissionRuntime: vi.fn().mockResolvedValue({}),
+      startMissionGovernanceRuntime: vi.fn().mockResolvedValue({}),
+      startMarkerRuntime: vi.fn().mockResolvedValue({}),
+      startDrawingRuntime: vi.fn().mockResolvedValue({}),
+      startGpxRuntime: vi.fn().mockResolvedValue({}),
+      startTrackingRuntime: vi.fn().mockResolvedValue(vi.fn()),
+      startExactBreadcrumbDotRuntime: vi.fn().mockReturnValue(vi.fn()),
+      startCoverageRuntime,
+    })
+
+    expect(startCoverageRuntime).toHaveBeenCalledWith(expect.anything(), { enabled: false })
+    runtime?.dispose()
   })
 
   it('starts mission autosave inside the Electron desktop runtime', async () => {

@@ -7,6 +7,18 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 const require = createRequire(import.meta.url)
 const Database = require('better-sqlite3')
+const { createCoverageTileCatalog } = require('../../electron/coverage-tile-catalog.cjs') as {
+  readonly createCoverageTileCatalog: (input: {
+    readonly missionId: string
+    readonly chunks: readonly { readonly key: CoverageKey; readonly contentRev: number }[]
+  }) => {
+    readonly periods: readonly {
+      readonly periodKey: string
+      readonly revisionDigest: string
+      readonly contributors: readonly string[]
+    }[]
+  }
+}
 const { runCoverageQueryInWorker: runRealCoverageQueryInWorker } = require(
   '../../electron/coverage-query-runner.cjs',
 ) as {
@@ -249,6 +261,64 @@ describe('Electron coverage mission-store orchestration', () => {
       databaseReady: false,
       blockers: expect.arrayContaining(['pending_invalidation']),
     })
+  })
+
+  it('returns the newer direct claim when an accepted write lands after the worker snapshot', async () => {
+    directory = await mkdtemp(path.join(tmpdir(), 'sartracker-coverage-store-'))
+    let injectAcceptedWrite = false
+    store = createElectronMissionStore({
+      userDataPath: directory,
+      runCoverageQueryInWorker: async (input) => {
+        const result = await runRealCoverageQueryInWorker(input)
+        if (injectAcceptedWrite && input.query.kind === 'claim') {
+          const database = new Database(input.databasePath)
+          database.transaction(() => {
+            database.prepare(`UPDATE coverage_chunks SET
+              content_rev = content_rev + 1, built_rev = NULL
+              WHERE mission_id = ?`).run(input.query.missionId)
+            database.prepare(`UPDATE coverage_missions SET
+              change_seq = change_seq + 1 WHERE mission_id = ?`)
+              .run(input.query.missionId)
+          })()
+          database.close()
+        }
+        return result
+      },
+    })
+    const mission = await seedMission(store)
+    const manifest = await store.readCoverageManifest(mission.id, 'manifest-before-write')
+    injectAcceptedWrite = true
+
+    await expect(store.readCoverageClaim({
+      missionId: mission.id,
+      selectedKeys: manifest.chunks.map((chunk) => chunk.key),
+    }, 'claim-with-concurrent-write')).resolves.toMatchObject({
+      changeSeq: manifest.changeSeq + 1,
+      databaseReady: false,
+      blockers: expect.arrayContaining(['chunk_not_fresh']),
+    })
+  })
+
+  it('rejects worker claim divergence at the current database sequence', async () => {
+    directory = await mkdtemp(path.join(tmpdir(), 'sartracker-coverage-store-'))
+    let forgeCurrentClaim = false
+    store = createElectronMissionStore({
+      userDataPath: directory,
+      runCoverageQueryInWorker: async (input) => {
+        const result = await runRealCoverageQueryInWorker(input)
+        return forgeCurrentClaim && input.query.kind === 'claim'
+          ? { ...result, databaseReady: false, blockers: ['pending_invalidation'] }
+          : result
+      },
+    })
+    const mission = await seedMission(store)
+    const manifest = await store.readCoverageManifest(mission.id, 'manifest-for-claim-forgery')
+    forgeCurrentClaim = true
+
+    await expect(store.readCoverageClaim({
+      missionId: mission.id,
+      selectedKeys: manifest.chunks.map((chunk) => chunk.key),
+    }, 'forged-current-claim')).rejects.toThrow(/claim result diverged/iu)
   })
 
   it('never claims complete when canonical inventory appears without a ledger row', async () => {
@@ -605,11 +675,7 @@ describe('Electron coverage mission-store orchestration', () => {
     const chunk = manifest.chunks[0]!
     syncCatalog.mockResolvedValue({
       stageId: 'coverage-stage-00000000-0000-4000-8000-000000000001-1',
-      periods: [{
-        periodKey: 'unassigned\u0000',
-        revisionDigest: 'revision-1',
-        contributors: [`device-1\u0000unassigned\u0000@${chunk.contentRev}`],
-      }],
+      periods: coveragePeriodsFor(mission.id, chunk.key, chunk.contentRev),
       delivered: [{ key: chunk.key, contentRev: chunk.contentRev }],
       builds: [{
         key: chunk.key,
@@ -701,11 +767,7 @@ describe('Electron coverage mission-store orchestration', () => {
 
     syncCatalog.mockResolvedValue({
       stageId: 'coverage-stage-00000000-0000-4000-8000-000000000004-1',
-      periods: [{
-        periodKey: 'unassigned\u0000',
-        revisionDigest: '1234567890abcdef1234',
-        contributors: [`device-1\u0000unassigned\u0000@${chunk.contentRev}`],
-      }],
+      periods: coveragePeriodsFor(mission.id, chunk.key, chunk.contentRev),
       delivered: [{ key: chunk.key, contentRev: chunk.contentRev }],
       builds: [],
     })
@@ -753,11 +815,7 @@ describe('Electron coverage mission-store orchestration', () => {
     }
     syncCatalog.mockResolvedValue({
       stageId: 'coverage-stage-00000000-0000-4000-8000-000000000005-1',
-      periods: [{
-        periodKey: 'unassigned\u0000',
-        revisionDigest: '1234567890abcdef1234',
-        contributors: [`device-1\u0000unassigned\u0000@${chunk.contentRev}`],
-      }],
+      periods: coveragePeriodsFor(mission.id, chunk.key, chunk.contentRev),
       delivered: [{ key: chunk.key, contentRev: chunk.contentRev }],
       builds: [build, build],
     })
@@ -841,10 +899,7 @@ describe('Electron coverage mission-store orchestration', () => {
       })
       return {
         stageId: 'coverage-stage-00000000-0000-4000-8000-000000000002-1',
-        periods: [{
-          periodKey: 'unassigned\u0000', revisionDigest: 'revision-stale',
-          contributors: [`device-1\u0000unassigned\u0000@${chunk.contentRev}`],
-        }],
+        periods: coveragePeriodsFor(mission.id, chunk.key, chunk.contentRev),
         delivered: [{ key: chunk.key, contentRev: chunk.contentRev }],
         builds: [{
           key: chunk.key, contentRev: chunk.contentRev, fixCount: 2,
@@ -1006,6 +1061,17 @@ describe('Electron coverage mission-store orchestration', () => {
 async function createStore(): Promise<CoverageMissionStore> {
   directory = await mkdtemp(path.join(tmpdir(), 'sartracker-coverage-store-'))
   return createElectronMissionStore({ userDataPath: directory })
+}
+
+function coveragePeriodsFor(
+  missionId: string,
+  key: CoverageKey,
+  contentRev: number,
+): ReturnType<typeof createCoverageTileCatalog>['periods'] {
+  return createCoverageTileCatalog({
+    missionId,
+    chunks: [{ key, contentRev }],
+  }).periods
 }
 
 async function seedMission(coverageStore: CoverageMissionStore): Promise<{ readonly id: string }> {

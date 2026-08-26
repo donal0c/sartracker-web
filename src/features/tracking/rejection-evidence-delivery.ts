@@ -81,6 +81,8 @@ export function createRejectionEvidenceDelivery(
   let accepting = true
   const evidenceLossMissionIds = new Set<string>()
   const durableHealthByMission = new Map<string, IngestEvidenceHealth>()
+  const finalizedHealthByMission = new Map<string, IngestEvidenceHealth>()
+  const finalizedEvidenceLossMissionIds = new Set<string>()
   const finalizationPhaseByMission = new Map<string, 'draining' | 'sealed' | 'finalized'>()
   const finalizationEpochByMission = new Map<string, number>()
 
@@ -215,6 +217,7 @@ export function createRejectionEvidenceDelivery(
       const result = await operation()
       if (finalizationEpochByMission.get(missionId) === finalizationEpoch) {
         finalizationPhaseByMission.set(missionId, 'finalized')
+        retireFinalizedMissionHealth(missionId)
       }
       return result
     } catch (error) {
@@ -230,6 +233,28 @@ export function createRejectionEvidenceDelivery(
   function reopenMissionEvidenceAfterUnlock(missionId: string): void {
     advanceMissionFinalizationEpoch(missionId)
     finalizationPhaseByMission.delete(missionId)
+    const finalizedHealth = finalizedHealthByMission.get(missionId)
+    if (finalizedHealth !== undefined) {
+      durableHealthByMission.set(missionId, finalizedHealth)
+      finalizedHealthByMission.delete(missionId)
+    }
+    if (finalizedEvidenceLossMissionIds.delete(missionId)) {
+      evidenceLossMissionIds.add(missionId)
+    }
+    publishAggregateHealth()
+  }
+
+  /** Removes a completed mission from live health without losing unlock state. */
+  function retireFinalizedMissionHealth(missionId: string): void {
+    const durableHealth = durableHealthByMission.get(missionId)
+    if (durableHealth !== undefined) {
+      finalizedHealthByMission.set(missionId, durableHealth)
+      durableHealthByMission.delete(missionId)
+    }
+    if (evidenceLossMissionIds.delete(missionId)) {
+      finalizedEvidenceLossMissionIds.add(missionId)
+    }
+    publishAggregateHealth()
   }
 
   /** Invalidates stale async finalization continuations for one mission. */

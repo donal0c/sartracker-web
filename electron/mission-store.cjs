@@ -650,20 +650,26 @@ function createElectronMissionStore(options) {
           signal,
           false,
         )
-        assertCoverageClaimMatchesDatabase(db, normalizedInput, claim)
-        const blockers = [...claim.blockers]
         const health = await getIngestEvidenceHealth(
           db,
           ingestAnomalyOutbox,
           normalizedInput.missionId,
         )
+        // Keep the direct bounded attestation as the final yielding boundary so
+        // an accepted write cannot land between proof and the returned claim.
+        const attestedClaim = assertCoverageClaimMatchesDatabase(
+          db,
+          normalizedInput,
+          claim,
+        )
+        const blockers = [...attestedClaim.blockers]
         if (Number(health.pendingCount ?? 0) > 0) blockers.push('ingest_outbox_pending')
         if (health.state !== 'healthy') blockers.push('ingest_health_degraded')
         return {
-          changeSeq: claim.changeSeq,
+          changeSeq: attestedClaim.changeSeq,
           databaseReady: blockers.length === 0,
           blockers: [...new Set(blockers)],
-          chunkRevisions: claim.chunkRevisions,
+          chunkRevisions: attestedClaim.chunkRevisions,
         }
       },
     ),

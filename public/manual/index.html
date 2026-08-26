@@ -662,7 +662,9 @@
             pending/retrying state visible until every member completes. Removing a participant ends future
             live collection but does not delete evidence already retained. The low-rate history check keeps
             revisiting that participant's earlier authorized window so a late or corrected source fix is not
-            lost merely because the participant has since been removed. Their last accepted current marker
+            lost merely because the participant has since been removed. If the coordinator later re-adds the
+            participant from the same earlier effective time, SAR Tracker preserves every completed fixed
+            backfill window and queues only the still-uncovered interval. Their last accepted current marker
             remains visible across later polls until it becomes stale. More than 100
             active selected devices produces a persistent warning and still includes every selected device —
             the app never truncates the roster or silently drops the 101st device.

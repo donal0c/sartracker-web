@@ -8,6 +8,18 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 const require = createRequire(import.meta.url)
 const Database = require('better-sqlite3')
+const { createCoverageTileCatalog } = require('../../electron/coverage-tile-catalog.cjs') as {
+  readonly createCoverageTileCatalog: (input: {
+    readonly missionId: string
+    readonly chunks: readonly { readonly key: ChunkKey; readonly contentRev: number }[]
+  }) => {
+    readonly periods: readonly {
+      readonly periodKey: string
+      readonly revisionDigest: string
+      readonly contributors: readonly string[]
+    }[]
+  }
+}
 const { createCoverageTileRunner } = require('../../electron/coverage-tile-runner.cjs') as {
   readonly createCoverageTileRunner: (input: {
     readonly databasePath: string
@@ -421,6 +433,61 @@ describe('Candidate B coverage tile worker [DON-276]', () => {
     expect(worker.messages).toEqual([])
   })
 
+  it('rejects a worker period digest that is not derived from requested contributors', async () => {
+    const onFailure = vi.fn()
+    const workers: FakeWorker[] = []
+    runner = createCoverageTileRunner({
+      databasePath: '/unused-result-digest-worker.sqlite',
+      cacheDirectory: '/unused-result-digest-worker-cache',
+      onFailure,
+      createWorker: () => {
+        const worker = new FakeWorker()
+        workers.push(worker)
+        return worker
+      },
+    })
+    const key: ChunkKey = {
+      device_id: 'device-a', period_kind: 'outing', period_id: 'outing-a',
+    }
+    const priorDescriptor = { key, contentRev: 1 }
+    const descriptor = { key, contentRev: 2 }
+    const priorPeriod = createCoverageTileCatalog({
+      missionId: 'mission-1', chunks: [priorDescriptor],
+    }).periods[0]!
+    const currentPeriod = createCoverageTileCatalog({
+      missionId: 'mission-1', chunks: [descriptor],
+    }).periods[0]!
+    const build = {
+      ...descriptor,
+      fixCount: 0,
+      fixDigest: 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
+      minTs: null,
+      maxTs: null,
+    }
+
+    const forged = runner.syncCatalog({ missionId: 'mission-1', chunks: [descriptor] })
+    workers[0]!.reply({
+      stageId: 'coverage-stage-00000000-0000-4000-8000-000000000008-1',
+      periods: [{ ...currentPeriod, revisionDigest: priorPeriod.revisionDigest }],
+      delivered: [descriptor],
+      builds: [build],
+    })
+
+    await expect(forged).rejects.toThrow(/catalog worker result/i)
+    expect(workers[0]!.terminationCount).toBe(1)
+    expect(onFailure).toHaveBeenCalledOnce()
+
+    const retry = runner.syncCatalog({ missionId: 'mission-1', chunks: [descriptor] })
+    expect(workers).toHaveLength(2)
+    workers[1]!.reply({
+      stageId: 'coverage-stage-00000000-0000-4000-8000-000000000009-1',
+      periods: [currentPeriod],
+      delivered: [descriptor],
+      builds: [build],
+    })
+    await expect(retry).resolves.toMatchObject({ periods: [currentPeriod] })
+  })
+
   it('replaces a worker that returns a malformed staged catalog result', async () => {
     const onFailure = vi.fn()
     const workers: FakeWorker[] = []
@@ -446,14 +513,13 @@ describe('Candidate B coverage tile worker [DON-276]', () => {
       minTs: null,
       maxTs: null,
     }
+    const period = createCoverageTileCatalog({
+      missionId: 'mission-1', chunks: [descriptor],
+    }).periods[0]!
 
     workers[0]!.reply({
       stageId: 'coverage-stage-00000000-0000-4000-8000-000000000001-1',
-      periods: [{
-        periodKey: 'outing\u0000outing-a',
-        revisionDigest: '1234567890abcdef1234',
-        contributors: ['device-a\u0000outing\u0000outing-a@1'],
-      }],
+      periods: [period],
       delivered: [descriptor],
       builds: [build, build],
     })
@@ -466,11 +532,7 @@ describe('Candidate B coverage tile worker [DON-276]', () => {
     expect(workers).toHaveLength(2)
     workers[1]!.reply({
       stageId: 'coverage-stage-00000000-0000-4000-8000-000000000002-1',
-      periods: [{
-        periodKey: 'outing\u0000outing-a',
-        revisionDigest: '1234567890abcdef1234',
-        contributors: ['device-a\u0000outing\u0000outing-a@1'],
-      }],
+      periods: [period],
       delivered: [descriptor],
       builds: [build],
     })
