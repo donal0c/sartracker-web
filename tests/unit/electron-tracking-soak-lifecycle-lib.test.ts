@@ -46,7 +46,9 @@ describe('tracking soak owned lifecycle [DON-260]', () => {
         graceful: true,
       })
     expect(expressions).toHaveLength(1)
-    expect(expressions[0]).toContain("require('electron').app.quit()")
+    expect(expressions[0]).toContain("process.getBuiltinModule?.('electron')")
+    expect(expressions[0]).toContain("process.mainModule?.require?.('electron')")
+    expect(expressions[0]).not.toContain("require('electron').app.quit()")
     expect(closeCount).toBe(1)
     expect(child.kills).toEqual([])
   })

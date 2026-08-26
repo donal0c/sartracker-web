@@ -26,7 +26,15 @@ export async function requestGracefulElectronQuit(mainInspector, child, timeoutM
     const requestResult = await Promise.race([
       Promise.resolve()
         .then(() => mainInspector.evaluate(
-          "require('electron').app.quit(); 'quit_requested'",
+          `(() => {
+            const electron = process.getBuiltinModule?.('electron') ??
+              process.mainModule?.require?.('electron')
+            if (electron?.app === undefined) {
+              throw new Error('Electron app quit hook is unavailable.')
+            }
+            electron.app.quit()
+            return 'quit_requested'
+          })()`,
         ))
         .then(() => true, () => false),
       new Promise((resolve) => {
