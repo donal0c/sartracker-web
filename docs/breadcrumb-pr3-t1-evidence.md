@@ -1496,3 +1496,85 @@ The commit containing this evidence record is documentation-only. It must pass
 the deterministic exact-head gates and five fresh independent exact-head
 reviews from zero before PR #3 can be called review ready. No merge or release
 occurred.
+
+## Failed-claim false-100% remediation
+
+Review invalidated the preceding documentation descendant with one further P2.
+When renderer delivery reached all selected fixes but the final database
+completeness claim rejected or timed out, the controller correctly withheld
+`Complete` and entered an error state. It intentionally retained the delivered
+and total counts for diagnosis. The panel nevertheless rendered those equal
+counts as a full progress bar, creating the exact false-100 presentation the PR
+promises never to show.
+
+The red reason was recorded before production code. A panel regression received
+`7 of 7` with a failed final claim and found `<progress value="7" max="7">`.
+A controller regression then proved the complete failure path: renderer
+delivery succeeded, the final database claim rejected, and the final state
+retained `1 of 1` without becoming `complete`.
+
+Application head `694644642b18405317ae38982ef14769a5f8f489` establishes the
+small display boundary:
+
+- equal delivered/total counts render no progress element unless status is
+  `complete`;
+- the panel says “Loaded history is shown, but completeness is not yet
+  verified.” and preserves the actionable failure reason and Retry control;
+- partial progress below 100% remains visible; and
+- the controller continues to retain diagnostic counts without weakening the
+  final database claim.
+
+The operator manual now describes the final-claim boundary and includes
+`public/manual/assets/mission-history-claim-unverified.png`. Critical visual
+test `coverage-claim-unverified-honesty` asserted the absence of a progress bar
+and presence of the explanation and Retry control; its uncached independent
+review passed with no failed items in
+`visual-review-2026-08-26T03-22-44Z.json`.
+
+Green verification at that application head:
+
+- focused panel/controller/manual: 5 files / 81 tests;
+- full unit: 264 files / 2,137 tests;
+- TypeScript, full ESLint, production build, and bundle budgets;
+- source-exact paged Dots contract: 10/10;
+- selected critical visual Playwright: 1/1, followed by uncached independent
+  visual review: PASS; and
+- participant/coverage Chromium: 10/10. The coverage suite also passed 4/4
+  after the honest resumed-progress assertion was corrected, and its slow
+  coverage workflow passed 3/3 serialized repetitions.
+
+Exact application-head Linux run
+[`32926442726`](https://github.com/donal0c/sartracker-web/actions/runs/32926442726)
+checked out PR merge ref
+`f5c230ed56392ec698af2b473f41deaaff3a2a9e`, explicitly merging application
+head `694644642b18405317ae38982ef14769a5f8f489` into exact PR-2 base
+`7021fc1ef33e6da5c91c96cd86e836fc3754f48f`, and passed:
+
+- Ubuntu x64 AppImage and `.deb` packaging, native SQLite inspection, Mesa
+  llvmpipe attestation, and AppImage window/content launch;
+- packaged CI soak: 6/6 batches, 8,664/8,664 source-exact positions, matching
+  SHA-256 `ab6713554b2eefb0745bc812cebc78196a62db6f596dc99374ed2d250bf992e9`,
+  integrity `ok`, one restart, zero renderer crashes, 32.024 ms maximum main
+  gap, zero redundant-event slope, and four healthy operator interactions;
+- AppImage SHA-256
+  `4788422a16fde309cc9a1cfe55cd7e0fe2648e7728465b47eb7492f78d3cbb18`;
+- `.deb` SHA-256
+  `dc75661f3245b04c6e04590c8a80f95efe66a85aa47f1b8d8b9a488ef39526c0`;
+- package artifact `9591784194`, uploaded-zip digest
+  `8bba3bbb2888def7cc39601598b739d22dd2ac8ef5c782003ff5ee02b81f18ee`;
+  and
+- validation artifact `9591784673`, uploaded-zip digest
+  `2e1222a8b55141200fb81ae982d63d26e3eec7e7991a674344709a23697f5f57`.
+
+This remediation changes only the honesty of the coverage progress presentation
+and its operator documentation. It does not change Candidate-B geometry/index
+construction, schema/open code, worker/IPC/controller delivery semantics, G2
+measurements, G3 flag posture, or exact Dots. The accepted G2 decision and
+960k/2M evidence, 3.704 GB v9-to-v10 migration, and earlier package evidence
+remain standing only for those unchanged surfaces. There was no pre-merge
+packaged 960k/2M coverage run outside G2 and no packaged forced-kill matrix.
+
+The commit containing this evidence record is documentation-only. It must pass
+the deterministic exact-head gates and five fresh independent exact-head
+reviews from zero before PR #3 can be called review ready. No merge or release
+occurred.
