@@ -150,6 +150,13 @@ function createCoverageTileRunner(input) {
     finalizeCatalog: (payload, options) => request('finalize-catalog', payload, options),
     discardCatalog: (payload, options) => request('discard-catalog', payload, options),
     readTile: (payload, options) => request('read-tile', payload, options),
+    invalidateWorker: async (error) => {
+      const activeWorker = worker
+      if (activeWorker === null) return
+      failPending(error, activeWorker)
+      input.onFailure?.(error)
+      await terminateWorker(activeWorker)
+    },
     close: async () => {
       closing = true
       failPending(new Error('Coverage tile runner closed.'))

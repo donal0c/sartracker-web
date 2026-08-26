@@ -125,7 +125,7 @@ function normalizeWorkerBuilds(value, requested) {
     throw invalidCatalogResult('build descriptors are unbounded')
   }
   const seen = new Set()
-  return value.map((candidate) => {
+  const builds = value.map((candidate) => {
     if (!isPlainRecord(candidate)) throw invalidCatalogResult('build descriptor is invalid')
     const key = normalizeResultKey(candidate.key)
     const identity = createCoverageChunkIdentity(key)
@@ -153,6 +153,10 @@ function normalizeWorkerBuilds(value, requested) {
       maxTs: candidate.maxTs,
     }
   })
+  if (seen.size !== requested.size) {
+    throw invalidCatalogResult('build descriptors are incomplete')
+  }
+  return builds
 }
 
 /** Validates bounded period metadata and exact requested contributors. */

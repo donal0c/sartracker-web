@@ -720,6 +720,75 @@ describe('Electron coverage mission-store orchestration', () => {
     expect(postBuildManifest.diagnostics.lastBuildDurationMs).toBeGreaterThanOrEqual(0)
   })
 
+  it('rejects forged tile-worker summaries before they can make a stale real chunk fresh', async () => {
+    directory = await mkdtemp(path.join(tmpdir(), 'sartracker-coverage-store-'))
+    const discardCatalog = vi.fn().mockResolvedValue(true)
+    const invalidateWorker = vi.fn().mockResolvedValue(undefined)
+    const syncCatalog = vi.fn(async (input: {
+      readonly missionId: string
+      readonly chunks: readonly { readonly key: CoverageKey; readonly contentRev: number }[]
+    }) => ({
+      stageId: 'coverage-stage-00000000-0000-4000-8000-000000000021-1',
+      periods: createCoverageTileCatalog(input).periods,
+      delivered: input.chunks,
+      builds: input.chunks.map((chunk) => ({
+        ...chunk,
+        fixCount: 0,
+        fixDigest: 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
+        minTs: null,
+        maxTs: null,
+      })),
+    }))
+    const tileRunner = {
+      syncCatalog,
+      commitCatalog: vi.fn().mockResolvedValue(true),
+      finalizeCatalog: vi.fn().mockResolvedValue(true),
+      discardCatalog,
+      invalidateWorker,
+      readTile: vi.fn().mockResolvedValue(new Uint8Array()),
+      close: vi.fn().mockResolvedValue(undefined),
+    }
+    store = createElectronMissionStore({ userDataPath: directory, coverageTileRunner: tileRunner })
+    const mission = await seedMission(store)
+    const initial = await store.readCoverageManifest(mission.id, 'forged-build-initial')
+    expect(initial.chunks[0]).toMatchObject({
+      contentRev: 1, builtRev: 1, fixCount: 2, exactCount: 2,
+    })
+    await store.addPositionsBulk({
+      mission_id: mission.id,
+      positions: [{
+        source_position_id: 'source-3', device_id: 'device-1', lat: 52.02, lon: -9.72,
+        timestamp: '2026-08-24T09:10:00.000Z',
+      }],
+    })
+    const stale = await store.readCoverageManifest(mission.id, 'forged-build-stale')
+    const chunk = stale.chunks[0]!
+    expect(chunk).toMatchObject({ contentRev: 2, builtRev: 1, fixCount: 2, exactCount: 3 })
+
+    await expect(store.syncCoverageTileCatalog({
+      missionId: mission.id,
+      chunks: [{ key: chunk.key, contentRev: chunk.contentRev }],
+    }, 'forged-build-sync')).rejects.toThrow(/build.*exact.*summary|summary.*diverged/i)
+
+    expect(discardCatalog).toHaveBeenCalledWith({
+      stageId: 'coverage-stage-00000000-0000-4000-8000-000000000021-1',
+    })
+    expect(invalidateWorker).toHaveBeenCalledOnce()
+    await expect(store.readCoverageManifest(mission.id, 'forged-build-after')).resolves
+      .toMatchObject({
+        chunks: [expect.objectContaining({
+          contentRev: 2, builtRev: 1, fixCount: 2, exactCount: 3,
+        })],
+      })
+    await expect(store.readCoverageClaim({
+      missionId: mission.id,
+      selectedKeys: [chunk.key],
+    }, 'forged-build-claim')).resolves.toMatchObject({
+      databaseReady: false,
+      blockers: expect.arrayContaining(['chunk_not_fresh']),
+    })
+  })
+
   it('bounds claim and catalog inputs to unique current canonical inventory', async () => {
     directory = await mkdtemp(path.join(tmpdir(), 'sartracker-coverage-store-'))
     const syncCatalog = vi.fn()
@@ -769,7 +838,14 @@ describe('Electron coverage mission-store orchestration', () => {
       stageId: 'coverage-stage-00000000-0000-4000-8000-000000000004-1',
       periods: coveragePeriodsFor(mission.id, chunk.key, chunk.contentRev),
       delivered: [{ key: chunk.key, contentRev: chunk.contentRev }],
-      builds: [],
+      builds: [{
+        key: chunk.key,
+        contentRev: chunk.contentRev,
+        fixCount: chunk.exactCount,
+        fixDigest: chunk.exactDigest,
+        minTs: '2026-08-24T09:00:00.000Z',
+        maxTs: '2026-08-24T09:05:00.000Z',
+      }],
     })
     await expect(store.syncCoverageTileCatalog({
       missionId: mission.id,
@@ -903,7 +979,9 @@ describe('Electron coverage mission-store orchestration', () => {
         delivered: [{ key: chunk.key, contentRev: chunk.contentRev }],
         builds: [{
           key: chunk.key, contentRev: chunk.contentRev, fixCount: 2,
-          fixDigest: chunk.exactDigest, minTs: null, maxTs: null,
+          fixDigest: chunk.exactDigest,
+          minTs: '2026-08-24T09:00:00.000Z',
+          maxTs: '2026-08-24T09:05:00.000Z',
         }],
       }
     })

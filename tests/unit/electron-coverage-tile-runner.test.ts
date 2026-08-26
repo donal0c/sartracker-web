@@ -45,6 +45,7 @@ const { createCoverageTileRunner } = require('../../electron/coverage-tile-runne
       input: Readonly<Record<string, unknown>>,
       options?: { readonly signal?: AbortSignal },
     ) => Promise<Uint8Array | null>
+    readonly invalidateWorker: (error: Error) => Promise<void>
     readonly close: () => Promise<void>
   }
 }
@@ -488,6 +489,36 @@ describe('Candidate B coverage tile worker [DON-276]', () => {
     await expect(retry).resolves.toMatchObject({ periods: [currentPeriod] })
   })
 
+  it('rejects delivery that omits requested chunk content evidence', async () => {
+    const onFailure = vi.fn()
+    const worker = new FakeWorker()
+    runner = createCoverageTileRunner({
+      databasePath: '/unused-incomplete-build-worker.sqlite',
+      cacheDirectory: '/unused-incomplete-build-worker-cache',
+      onFailure,
+      createWorker: () => worker,
+    })
+    const descriptor = {
+      key: { device_id: 'device-a', period_kind: 'outing', period_id: 'outing-a' } as ChunkKey,
+      contentRev: 1,
+    }
+    const period = createCoverageTileCatalog({
+      missionId: 'mission-1', chunks: [descriptor],
+    }).periods[0]!
+    const request = runner.syncCatalog({ missionId: 'mission-1', chunks: [descriptor] })
+
+    worker.reply({
+      stageId: 'coverage-stage-00000000-0000-4000-8000-000000000011-1',
+      periods: [period],
+      delivered: [descriptor],
+      builds: [],
+    })
+
+    await expect(request).rejects.toThrow(/build descriptors are incomplete/i)
+    expect(worker.terminationCount).toBe(1)
+    expect(onFailure).toHaveBeenCalledOnce()
+  })
+
   it('replaces a worker that returns a malformed staged catalog result', async () => {
     const onFailure = vi.fn()
     const workers: FakeWorker[] = []
@@ -539,6 +570,51 @@ describe('Candidate B coverage tile worker [DON-276]', () => {
     await expect(retry).resolves.toMatchObject({
       stageId: 'coverage-stage-00000000-0000-4000-8000-000000000002-1',
     })
+  })
+
+  it('fences a worker generation after main-side semantic attestation fails', async () => {
+    const onFailure = vi.fn()
+    const workers: FakeWorker[] = []
+    runner = createCoverageTileRunner({
+      databasePath: '/unused-attestation-worker.sqlite',
+      cacheDirectory: '/unused-attestation-worker-cache',
+      onFailure,
+      createWorker: () => {
+        const worker = new FakeWorker()
+        workers.push(worker)
+        return worker
+      },
+    })
+    const descriptor = {
+      key: { device_id: 'device-a', period_kind: 'outing', period_id: 'outing-a' } as ChunkKey,
+      contentRev: 1,
+    }
+    const pending = runner.syncCatalog({ missionId: 'mission-1', chunks: [descriptor] })
+    const attestationFailure = new Error('Coverage tile build exact summary diverged.')
+
+    await runner.invalidateWorker(attestationFailure)
+
+    await expect(pending).rejects.toBe(attestationFailure)
+    expect(workers[0]!.terminationCount).toBe(1)
+    expect(onFailure).toHaveBeenCalledWith(attestationFailure)
+    const retry = runner.syncCatalog({ missionId: 'mission-1', chunks: [descriptor] })
+    expect(workers).toHaveLength(2)
+    const period = createCoverageTileCatalog({
+      missionId: 'mission-1', chunks: [descriptor],
+    }).periods[0]!
+    workers[1]!.reply({
+      stageId: 'coverage-stage-00000000-0000-4000-8000-000000000010-1',
+      periods: [period],
+      delivered: [descriptor],
+      builds: [{
+        ...descriptor,
+        fixCount: 0,
+        fixDigest: 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
+        minTs: null,
+        maxTs: null,
+      }],
+    })
+    await expect(retry).resolves.toMatchObject({ stageId: expect.any(String) })
   })
 
   it('keeps the finalized catalog readable after cancelling a replacement build', async () => {

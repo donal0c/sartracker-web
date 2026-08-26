@@ -48,6 +48,10 @@ const {
 const { normalizeCoverageTileAddress } = require('./coverage-tile-address.cjs')
 const { createCoverageTileRunner } = require('./coverage-tile-runner.cjs')
 const {
+  assertCoverageBuildCoverage,
+  assertCoverageBuildSummaries,
+} = require('./coverage-build-attestation.cjs')
+const {
   createCoverageChunkIdentity,
   normalizeCoverageCatalogInput,
   normalizeCoverageCatalogWorkerResult,
@@ -188,6 +192,37 @@ function normalizeAuthorizedCoverageCatalogInput(database, value) {
     }
   }
   return normalized
+}
+
+/** Copies exact query-worker summaries into a main-owned, revision-bound oracle. */
+function createCoverageManifestBuildEvidence(manifest) {
+  return new Map(manifest.chunks.map((chunk) => [
+    createCoverageChunkIdentity(chunk.key),
+    {
+      key: { ...chunk.key },
+      contentRev: chunk.contentRev,
+      fix_count: chunk.exactCount,
+      fix_digest: chunk.exactDigest,
+      min_ts: chunk.exactMinTs,
+      max_ts: chunk.exactMaxTs,
+    },
+  ]))
+}
+
+/** Requires every catalog descriptor to match a prior exact off-main manifest summary. */
+function readCoverageManifestBuildEvidence(evidenceByMission, input) {
+  if (input.chunks.length === 0) return []
+  const missionEvidence = evidenceByMission.get(input.missionId)
+  if (missionEvidence === undefined) {
+    throw new Error('Coverage tile catalog has no exact manifest attestation.')
+  }
+  return input.chunks.map((descriptor) => {
+    const summary = missionEvidence.get(createCoverageChunkIdentity(descriptor.key))
+    if (summary === undefined || summary.contentRev !== descriptor.contentRev) {
+      throw new Error('Coverage tile catalog diverged from its exact manifest attestation.')
+    }
+    return summary
+  })
 }
 
 /** Returns a valid stage token only when a malformed worker result can be discarded safely. */
@@ -340,6 +375,7 @@ function createElectronMissionStore(options) {
   const outingFixSummaryControllersByRequestId = new Map()
   const coverageQueryControllersByRequestId = new Map()
   const coverageTileControllersByRequestId = new Map()
+  const coverageManifestBuildEvidenceByMission = new Map()
   let breadcrumbQueryTail = Promise.resolve()
   let missionReviewWorkerTail = Promise.resolve()
   let outingFixSummaryWorkerTail = Promise.resolve()
@@ -599,6 +635,10 @@ function createElectronMissionStore(options) {
           'manifest',
         )
         assertCoverageManifestOutings(db, missionId, currentManifest.outings)
+        coverageManifestBuildEvidenceByMission.set(
+          missionId,
+          createCoverageManifestBuildEvidence(currentManifest),
+        )
         return attachCoveragePerformance(missionId, currentManifest)
       },
     ),
@@ -685,6 +725,10 @@ function createElectronMissionStore(options) {
       requestId,
       async (signal) => {
         const normalizedInput = normalizeAuthorizedCoverageCatalogInput(db, input)
+        const exactBuildSummaries = readCoverageManifestBuildEvidence(
+          coverageManifestBuildEvidenceByMission,
+          normalizedInput,
+        )
         const buildStartedAt = performance.now()
         const rawResult = await coverageTileRunner.syncCatalog(normalizedInput, { signal })
         let result
@@ -694,6 +738,25 @@ function createElectronMissionStore(options) {
           const stageId = readDiscardableCoverageStageId(rawResult)
           if (stageId !== null) {
             await coverageTileRunner.discardCatalog({ stageId }).catch(() => undefined)
+          }
+          throw error
+        }
+        if (signal.aborted) {
+          await coverageTileRunner.discardCatalog({ stageId: result.stageId })
+          throw createCoverageRequestAbortError()
+        }
+        try {
+          assertCoverageBuildCoverage(
+            new Set(normalizedInput.chunks.map((chunk) =>
+              createCoverageChunkIdentity(chunk.key))),
+            result.builds,
+          )
+          assertCoverageBuildSummaries(result.builds, exactBuildSummaries)
+        } catch (error) {
+          await coverageTileRunner.discardCatalog({ stageId: result.stageId })
+            .catch(() => undefined)
+          if (error?.code === 'coverage-build-attestation') {
+            await coverageTileRunner.invalidateWorker?.(error)
           }
           throw error
         }

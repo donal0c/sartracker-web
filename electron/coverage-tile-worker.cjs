@@ -129,20 +129,11 @@ async function syncCatalog(message) {
   }
 
   const changed = new Set(difference.changedChunkKeys)
-  const builds = []
   for (const descriptor of message.chunks) {
     const chunkKey = createChunkKey(descriptor.key)
     if (!changed.has(chunkKey) && nextChunksByKey.has(chunkKey)) continue
     const chunk = readChunkSnapshot(message.missionId, descriptor)
     nextChunksByKey.set(chunkKey, chunk)
-    builds.push({
-      key: descriptor.key,
-      contentRev: descriptor.contentRev,
-      fixCount: chunk.fixCount,
-      fixDigest: chunk.fixDigest,
-      minTs: chunk.minTs,
-      maxTs: chunk.maxTs,
-    })
     if (workerData.faultInjection?.chunkBuildDelayMs > 0) {
       await delay(workerData.faultInjection.chunkBuildDelayMs)
     }
@@ -178,6 +169,20 @@ async function syncCatalog(message) {
     await yieldToMessages()
   }
   throwIfRequestCancelled(message.requestId)
+  const builds = message.chunks.map((descriptor) => {
+    const chunk = nextChunksByKey.get(createChunkKey(descriptor.key))
+    if (chunk === undefined || chunk.contentRev !== descriptor.contentRev) {
+      throw new Error('Coverage tile chunk evidence is unavailable for delivery.')
+    }
+    return {
+      key: descriptor.key,
+      contentRev: descriptor.contentRev,
+      fixCount: chunk.fixCount,
+      fixDigest: chunk.fixDigest,
+      minTs: chunk.minTs,
+      maxTs: chunk.maxTs,
+    }
+  })
   const stageId = `coverage-stage-${workerGeneration}-${++nextStageId}`
   stagedCatalog = {
     requestId: message.requestId,
