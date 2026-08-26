@@ -165,6 +165,10 @@ type CoverageMissionStore = {
     requestId?: string,
   ) => Promise<{
     readonly activationId: string
+    readonly periods: readonly {
+      readonly periodKey: string
+      readonly revisionDigest: string
+    }[]
     readonly delivered: readonly { readonly key: CoverageKey; readonly contentRev: number }[]
   }>
   readonly activateCoverageTileCatalog: (input: { readonly activationId: string }) => Promise<boolean>
@@ -184,6 +188,111 @@ afterEach(async () => {
 })
 
 describe('Electron coverage mission-store orchestration', () => {
+  it('attests staged and active tiles through the real store and worker across rebuilds', async () => {
+    store = await createStore()
+    const mission = await seedMission(store)
+    await store.createOuting({
+      mission_id: mission.id,
+      label: 'Search period',
+      started_at: '2026-08-24T09:03:00.000Z',
+    })
+
+    const firstManifest = await store.readCoverageManifest(mission.id, 'real-worker-manifest-1')
+    const firstChunks = firstManifest.chunks.map((chunk) => ({
+      key: chunk.key,
+      contentRev: chunk.contentRev,
+    }))
+    expect(firstChunks).toHaveLength(2)
+    const firstCatalog = await store.syncCoverageTileCatalog({
+      missionId: mission.id,
+      chunks: firstChunks,
+    }, 'real-worker-sync-1')
+    const outingPeriod = firstCatalog.periods.find((period) => period.periodKey.startsWith('outing\u0000'))
+    expect(outingPeriod).toBeDefined()
+    const tileAddress = {
+      missionId: mission.id,
+      periodKey: outingPeriod!.periodKey,
+      revisionDigest: outingPeriod!.revisionDigest,
+      z: 8,
+      x: 121,
+      y: 84,
+    }
+
+    const stagedTile = await store.readCoverageTile(tileAddress, 'real-worker-staged-tile')
+    expect(stagedTile?.byteLength).toBeGreaterThan(0)
+    await expect(store.activateCoverageTileCatalog({
+      activationId: firstCatalog.activationId,
+    })).resolves.toBe(true)
+    const activeTile = await store.readCoverageTile(tileAddress, 'real-worker-active-tile')
+    expect(activeTile).toEqual(stagedTile)
+    await expect(store.finalizeCoverageTileCatalog({
+      activationId: firstCatalog.activationId,
+    })).resolves.toBe(true)
+
+    await store.addPositionsBulk({
+      mission_id: mission.id,
+      positions: [{
+        source_position_id: 'source-3',
+        device_id: 'device-1',
+        lat: 52.02,
+        lon: -9.72,
+        timestamp: '2026-08-24T09:06:00.000Z',
+      }],
+    })
+    const secondManifest = await store.readCoverageManifest(mission.id, 'real-worker-manifest-2')
+    const secondChunks = secondManifest.chunks.map((chunk) => ({
+      key: chunk.key,
+      contentRev: chunk.contentRev,
+    }))
+    const firstRevisions = new Map(firstChunks.map((chunk) => [
+      `${chunk.key.device_id}\u0000${chunk.key.period_kind}\u0000${chunk.key.period_id}`,
+      chunk.contentRev,
+    ]))
+    expect(secondChunks.filter((chunk) => firstRevisions.get(
+      `${chunk.key.device_id}\u0000${chunk.key.period_kind}\u0000${chunk.key.period_id}`,
+    ) === chunk.contentRev)).toHaveLength(1)
+    const secondCatalog = await store.syncCoverageTileCatalog({
+      missionId: mission.id,
+      chunks: secondChunks,
+    }, 'real-worker-sync-2')
+    await store.activateCoverageTileCatalog({ activationId: secondCatalog.activationId })
+    await store.finalizeCoverageTileCatalog({ activationId: secondCatalog.activationId })
+    await expect(store.readCoverageClaim({
+      missionId: mission.id,
+      selectedKeys: secondManifest.chunks.map((chunk) => chunk.key),
+    }, 'real-worker-claim-2')).resolves.toMatchObject({
+      databaseReady: true,
+      blockers: [],
+    })
+
+    await store.addPositionsBulk({
+      mission_id: mission.id,
+      positions: [{
+        source_position_id: 'source-4',
+        device_id: 'device-1',
+        lat: 52.03,
+        lon: -9.73,
+        timestamp: '2026-08-24T09:07:00.000Z',
+      }],
+    })
+    await expect(store.syncCoverageTileCatalog({
+      missionId: mission.id,
+      chunks: secondChunks,
+    }, 'real-worker-stale-sync')).rejects.toThrow(/revision/i)
+    const thirdManifest = await store.readCoverageManifest(mission.id, 'real-worker-manifest-3')
+    await expect(store.syncCoverageTileCatalog({
+      missionId: mission.id,
+      chunks: thirdManifest.chunks.map((chunk) => ({
+        key: chunk.key,
+        contentRev: chunk.contentRev,
+      })),
+    }, 'real-worker-recovery-sync')).resolves.toMatchObject({
+      delivered: expect.arrayContaining([
+        expect.objectContaining({ contentRev: expect.any(Number) }),
+      ]),
+    })
+  }, 20_000)
+
   it('enumerates once, persists fresh metadata, and reads lossless chunks through the worker', async () => {
     store = await createStore()
     const mission = await seedMission(store)

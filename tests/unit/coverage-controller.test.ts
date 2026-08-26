@@ -93,8 +93,9 @@ describe('coverage controller [DON-276]', () => {
   it('revokes Complete synchronously before a wider filter scope can be relabelled', async () => {
     const harness = createHarness(manifest(1, [[KEY_A, 1], [KEY_B, 1]]))
     await harness.controller.updateContext({
-      missionId: 'mission-1', rendererGeneration: 'r1', selectedKeys: [KEY_A],
+      missionId: 'mission-1', rendererGeneration: 'r1', omittedDeviceIds: ['device-b'],
     })
+    await harness.controller.notifySelectionApplied([KEY_A])
     expect(harness.controller.getState()).toMatchObject({
       status: 'complete', deliveredFixCount: 1, totalFixCount: 1,
     })
@@ -116,14 +117,14 @@ describe('coverage controller [DON-276]', () => {
   it('does not restore Complete until a reversed filter is applied to the map', async () => {
     const harness = createHarness(manifest(1, [[KEY_A, 1], [KEY_B, 1]]))
     await harness.controller.updateContext({
-      missionId: 'mission-1', rendererGeneration: 'r1', selectedKeys: [KEY_A],
+      missionId: 'mission-1', rendererGeneration: 'r1', omittedDeviceIds: ['device-b'],
     })
 
     const widenSelection = harness.controller.updateContext({
       missionId: 'mission-1', rendererGeneration: 'r1',
     })
     const restoreSelection = harness.controller.updateContext({
-      missionId: 'mission-1', rendererGeneration: 'r1', selectedKeys: [KEY_A],
+      missionId: 'mission-1', rendererGeneration: 'r1', omittedDeviceIds: ['device-b'],
     })
 
     expect(harness.controller.getState()).toMatchObject({
@@ -150,7 +151,7 @@ describe('coverage controller [DON-276]', () => {
   it('does not restore a queued Complete claim after newer evidence is observed', async () => {
     const harness = createHarness(manifest(1, [[KEY_A, 1], [KEY_B, 1]]))
     await harness.controller.updateContext({
-      missionId: 'mission-1', rendererGeneration: 'r1', selectedKeys: [KEY_A],
+      missionId: 'mission-1', rendererGeneration: 'r1', omittedDeviceIds: ['device-b'],
     })
 
     const widenSelection = harness.controller.updateContext({
@@ -158,7 +159,7 @@ describe('coverage controller [DON-276]', () => {
     })
     const refresh = harness.controller.notifyChanged('mission-1', 2)
     const restoreSelection = harness.controller.updateContext({
-      missionId: 'mission-1', rendererGeneration: 'r1', selectedKeys: [KEY_A],
+      missionId: 'mission-1', rendererGeneration: 'r1', omittedDeviceIds: ['device-b'],
     })
 
     expect(harness.controller.getState()).toMatchObject({
@@ -1608,7 +1609,7 @@ describe('coverage controller [DON-276]', () => {
     }))
 
     const replacementLoad = controller.updateContext({
-      missionId: 'mission-1', rendererGeneration: 'r1', selectedKeys: [KEY_A],
+      missionId: 'mission-1', rendererGeneration: 'r1', omittedDeviceIds: ['device-b'],
     })
     await vi.waitFor(() => expect(deliverSelection).toHaveBeenCalledTimes(2))
 
@@ -1775,7 +1776,7 @@ describe('coverage controller [DON-276]', () => {
     })
     const firstRenderer = { commit: vi.fn(), rollback: vi.fn(), finalize: vi.fn() }
     const initialLoad = controller.updateContext({
-      missionId: 'mission-1', rendererGeneration: 'r1', selectedKeys: [KEY_A],
+      missionId: 'mission-1', rendererGeneration: 'r1', omittedDeviceIds: ['device-b'],
     })
     await vi.waitFor(() => expect(controller.getState()).toMatchObject({
       tileCatalog: { activationId: 'selection-stage-1' },
@@ -1786,7 +1787,7 @@ describe('coverage controller [DON-276]', () => {
     await vi.waitFor(() => expect(finishFirstFinalization).toBeTypeOf('function'))
 
     const selectionChange = controller.updateContext({
-      missionId: 'mission-1', rendererGeneration: 'r1', selectedKeys: [KEY_B],
+      missionId: 'mission-1', rendererGeneration: 'r1', omittedDeviceIds: ['device-a'],
     })
     await Promise.resolve()
 
@@ -1832,7 +1833,7 @@ describe('coverage controller [DON-276]', () => {
     })
     const renderer = { commit: vi.fn(), rollback: vi.fn(), finalize: vi.fn() }
     const load = controller.updateContext({
-      missionId: 'mission-1', rendererGeneration: 'r1', selectedKeys: [KEY_A],
+      missionId: 'mission-1', rendererGeneration: 'r1', omittedDeviceIds: ['device-b'],
     })
     await vi.waitFor(() => expect(controller.getState()).toMatchObject({
       tileCatalog: { activationId: 'cancel-during-finalization-stage' },
@@ -1841,7 +1842,7 @@ describe('coverage controller [DON-276]', () => {
     const notification = controller.notifyCatalogApplied(controller.getState().tileCatalog!, renderer)
     await vi.waitFor(() => expect(finishFinalization).toBeTypeOf('function'))
     const queuedSelection = controller.updateContext({
-      missionId: 'mission-1', rendererGeneration: 'r1', selectedKeys: [KEY_B],
+      missionId: 'mission-1', rendererGeneration: 'r1', omittedDeviceIds: ['device-a'],
     })
 
     controller.cancel()
@@ -1989,7 +1990,7 @@ describe('coverage controller [DON-276]', () => {
       publish: vi.fn(),
     })
     const load = controller.updateContext({
-      missionId: 'mission-1', rendererGeneration: 'r1', selectedKeys: [KEY_A],
+      missionId: 'mission-1', rendererGeneration: 'r1', omittedDeviceIds: ['device-b'],
     })
     await vi.waitFor(() => expect(controller.getState()).toMatchObject({
       tileCatalog: { activationId: 'selection-retry-stage-1' },
@@ -1999,7 +2000,7 @@ describe('coverage controller [DON-276]', () => {
     await vi.waitFor(() => expect(finishFinalization).toBeTypeOf('function'))
 
     const selectionChange = controller.updateContext({
-      missionId: 'mission-1', rendererGeneration: 'r1', selectedKeys: [KEY_B],
+      missionId: 'mission-1', rendererGeneration: 'r1', omittedDeviceIds: ['device-a'],
     })
     const retry = controller.resume()
     finishFinalization?.()

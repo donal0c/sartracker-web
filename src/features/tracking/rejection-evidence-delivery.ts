@@ -438,6 +438,16 @@ export function createRejectionEvidenceDelivery(
     publishAggregateHealth(existing?.state === 'healthy' ? undefined : existing)
   }
 
+  /** Keeps delayed hydration for a finalized mission outside the live aggregate. */
+  function applyMissionHealth(missionId: string, health: IngestEvidenceHealth): void {
+    if (finalizationPhaseByMission.get(missionId) === 'finalized') {
+      finalizedHealthByMission.set(missionId, health)
+      publishAggregateHealth()
+      return
+    }
+    publishEvidenceHealth(missionId, health)
+  }
+
   /** Returns whether the renderer still owns evidence for one mission. */
   function hasPendingMission(missionId: string): boolean {
     return [...pendingByMissionAndAnomaly.values()].some(
@@ -446,7 +456,7 @@ export function createRejectionEvidenceDelivery(
   }
 
   return {
-    applyMissionHealth: publishEvidenceHealth,
+    applyMissionHealth,
     dispose,
     flushMission,
     record,

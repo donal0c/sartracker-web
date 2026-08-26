@@ -12,12 +12,8 @@ import {
   applyCoverageController,
   applyCoverageState,
   resetCoverageStore,
-  useCoverageStore,
 } from './coverage-store'
-import {
-  selectCoverageChunkKeys,
-  useCoverageFilterStore,
-} from './coverage-filter-store'
+import { useCoverageFilterStore } from './coverage-filter-store'
 
 const COVERAGE_REFRESH_INTERVAL_MS = 30_000
 
@@ -122,18 +118,12 @@ export function startCoverageRuntime(
   const updateMission = (): void => {
     const missionId = useMissionStore.getState().currentMission?.id ?? null
     useCoverageFilterStore.getState().resetMission(missionId)
-    const coverageState = useCoverageStore.getState().state
-    const manifest = coverageState.status === 'inactive' || coverageState.missionId !== missionId
-      ? null
-      : coverageState.manifest
-    const selectedKeys = selectCoverageChunkKeys(
-      manifest,
-      useCoverageFilterStore.getState(),
-    )
+    const filters = useCoverageFilterStore.getState()
     void controller.updateContext({
       missionId,
       rendererGeneration,
-      ...(selectedKeys === undefined ? {} : { selectedKeys }),
+      omittedDeviceIds: filters.omittedDeviceIds,
+      omittedPeriodKeys: filters.omittedPeriodKeys,
     })
   }
   const unsubscribeMission = useMissionStore.subscribe(updateMission)

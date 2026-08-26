@@ -12,6 +12,10 @@ import { createCoverageCatalogActivation } from './coverage-catalog-activation'
 import { createCoverageCatalogDeliveryBatches } from './coverage-catalog-delivery-plan'
 import { coverageChunkIdentity } from './coverage-identity'
 import { calculateCoverageProgress } from './coverage-progress'
+import {
+  selectCoverageManifestChunks,
+  type CoverageOmissions,
+} from './coverage-filter-selection'
 import type {
   CoverageRendererFailure,
   CoverageRendererFailureSource,
@@ -44,8 +48,12 @@ export type CoverageState =
 type CoverageContext = {
   readonly missionId: string | null
   readonly rendererGeneration: string
-  readonly selectedKeys?: readonly CoverageChunkKey[]
+  readonly omittedDeviceIds?: readonly string[]
+  readonly omittedPeriodKeys?: readonly string[]
 }
+
+type NormalizedCoverageContext = Omit<CoverageContext, 'omittedDeviceIds' | 'omittedPeriodKeys'> &
+  CoverageOmissions
 
 type CoverageChunkPayload = {
   readonly key: CoverageChunkKey
@@ -125,8 +133,11 @@ export function createCoverageController(input: {
   readonly publish: (state: CoverageState) => void
 }): CoverageController {
   let state: CoverageState = { status: 'inactive' }
-  let context: CoverageContext = { missionId: null, rendererGeneration: '' }
-  let desiredContext: CoverageContext = context
+  let context: NormalizedCoverageContext = normalizeContext({
+    missionId: null,
+    rendererGeneration: '',
+  })
+  let desiredContext: NormalizedCoverageContext = context
   let stopped = false
   let stopRequestedDuringFinalization = false
   let operationGeneration = 0
@@ -147,7 +158,7 @@ export function createCoverageController(input: {
   } | null = null
   let activeLoadCompletion: Promise<void> | null = null
   let contextUpdateSequence = 0
-  let appliedSelectionKeySet: string | null = selectedKeySet(context.selectedKeys)
+  let appliedSelectionKeySet: string | null = expectedSelectionKeySet(null, context)
   let cancelRequested = false
   let rendererFailureDuringFinalization: Error | null = null
   let rendererFailureEpoch = 0
@@ -171,7 +182,7 @@ export function createCoverageController(input: {
       const blockers = new Set(next.blockers ?? [])
       if (rendererDetached) blockers.add('renderer_detached')
       else blockers.delete('renderer_detached')
-      const filterPending = appliedSelectionKeySet !== selectedKeySet(context.selectedKeys)
+      const filterPending = appliedSelectionKeySet !== expectedSelectionKeySet(next.manifest, context)
       if (filterPending) blockers.add('renderer_filter_pending')
       else blockers.delete('renderer_filter_pending')
       state = {
@@ -253,7 +264,7 @@ export function createCoverageController(input: {
       manifest: priorManifest,
       tileCatalog: priorCatalog,
       delivered: retainDeliveryAttestation ? priorDelivered : {},
-    }, context.selectedKeys))
+    }, context))
 
     try {
       await releasePendingCatalogPredecessor()
@@ -264,7 +275,7 @@ export function createCoverageController(input: {
         controller.signal,
       )
       if (!ownsOperation(operation, controller, missionId, rendererGeneration)) return
-      const selected = selectChunks(manifest, context.selectedKeys)
+      const selected = selectChunks(manifest, context)
       const delivered = retainUnchangedDeliveries(
         priorManifest,
         manifest,
@@ -278,7 +289,7 @@ export function createCoverageController(input: {
         manifest,
         tileCatalog: priorCatalog,
         delivered,
-      }, context.selectedKeys))
+      }, context))
 
       let activeManifest = manifest
       let activeSelected = selected
@@ -323,7 +334,7 @@ export function createCoverageController(input: {
             manifest,
             tileCatalog: activeCatalog,
             delivered,
-          }, context.selectedKeys))
+          }, context))
           try {
             await activation
           } catch (error) {
@@ -347,7 +358,7 @@ export function createCoverageController(input: {
             manifest,
             tileCatalog: activeCatalog,
             delivered,
-          }, context.selectedKeys))
+          }, context))
         }
         if (
           recoveryEpochAtLoad !== null &&
@@ -363,7 +374,7 @@ export function createCoverageController(input: {
           controller.signal,
         )
         if (!ownsOperation(operation, controller, missionId, rendererGeneration)) return
-        activeSelected = selectChunks(activeManifest, context.selectedKeys)
+        activeSelected = selectChunks(activeManifest, context)
       } else {
         for (const descriptor of scheduler.order(
           manifest,
@@ -391,7 +402,7 @@ export function createCoverageController(input: {
             manifest,
             tileCatalog: activeCatalog,
             delivered,
-          }, context.selectedKeys))
+          }, context))
         }
       }
       const claimSequence = Math.max(
@@ -405,7 +416,7 @@ export function createCoverageController(input: {
         manifest: activeManifest,
         tileCatalog: activeCatalog,
         delivered,
-      }, context.selectedKeys))
+      }, context))
 
       const claim = await input.readClaim(
         { missionId, selectedKeys: activeSelected.map((chunk) => chunk.key) },
@@ -425,7 +436,7 @@ export function createCoverageController(input: {
         !rendererDetached &&
         !cancelRequested &&
         rendererBlockers.length === 0 &&
-        appliedSelectionKeySet === selectedKeySet(context.selectedKeys) &&
+        appliedSelectionKeySet === expectedSelectionKeySet(activeManifest, context) &&
         !refreshRequested &&
         claim.changeSeq === finalSequence &&
         claimCoversSelection(claim.chunkRevisions, activeSelected, delivered)
@@ -447,7 +458,7 @@ export function createCoverageController(input: {
               lastErrorClass: classifyCoverageError(deferredRendererFailure),
               message: 'Complete mission history is temporarily unavailable. Existing coverage remains shown.',
             }),
-      }, context.selectedKeys))
+      }, context))
     } catch (error) {
       if (!ownsOperation(operation, controller, missionId, rendererGeneration)) return
       if (state.status === 'inactive') return
@@ -578,7 +589,7 @@ export function createCoverageController(input: {
         : { blockers: state.blockers.filter((blocker) => blocker !== 'renderer_detached') }),
       lastErrorClass: classifyCoverageError(error),
       message: 'Complete mission history is temporarily unavailable. Existing coverage remains shown.',
-    }, context.selectedKeys))
+    }, context))
   }
 
   /** Retries one failed renderer activation after its owning load has unwound. */
@@ -764,8 +775,7 @@ export function createCoverageController(input: {
   ): Promise<void> => {
     const identityChanged = context.missionId !== desiredContext.missionId ||
       context.rendererGeneration !== desiredContext.rendererGeneration
-    const selectionChanged = selectedKeySet(context.selectedKeys) !==
-      selectedKeySet(desiredContext.selectedKeys)
+    const selectionChanged = omissionSet(context) !== omissionSet(desiredContext)
     if (!identityChanged && !selectionChanged) {
       if (forceReload) await runLoad(true, bypassOpenOutingCooldown)
       return
@@ -785,7 +795,7 @@ export function createCoverageController(input: {
     operationGeneration += 1
     refreshRequested = false
     context = desiredContext
-    if (identityChanged) appliedSelectionKeySet = selectedKeySet(context.selectedKeys)
+    if (identityChanged) appliedSelectionKeySet = expectedSelectionKeySet(null, context)
     if (context.missionId === null) {
       publish({ status: 'inactive' })
       return
@@ -795,20 +805,14 @@ export function createCoverageController(input: {
 
   return {
     updateContext: async (nextContext) => {
-      const normalizedContext: CoverageContext = nextContext.selectedKeys === undefined
-        ? {
-            missionId: nextContext.missionId,
-            rendererGeneration: nextContext.rendererGeneration,
-          }
-        : { ...nextContext, selectedKeys: [...nextContext.selectedKeys] }
+      const normalizedContext = normalizeContext(nextContext)
       const desiredIdentityChanged = desiredContext.missionId !== normalizedContext.missionId ||
         desiredContext.rendererGeneration !== normalizedContext.rendererGeneration
-      const desiredSelectionChanged = selectedKeySet(desiredContext.selectedKeys) !==
-        selectedKeySet(normalizedContext.selectedKeys)
+      const desiredSelectionChanged = omissionSet(desiredContext) !== omissionSet(normalizedContext)
       if (!desiredIdentityChanged && !desiredSelectionChanged) return
       if (!desiredIdentityChanged && desiredSelectionChanged && state.status !== 'inactive') {
         appliedSelectionKeySet = null
-        publish(createActiveState({ ...state, status: 'partial' }, normalizedContext.selectedKeys))
+        publish(createActiveState({ ...state, status: 'partial' }, normalizedContext))
       }
       desiredContext = normalizedContext
       const updateSequence = ++contextUpdateSequence
@@ -836,11 +840,22 @@ export function createCoverageController(input: {
     notifyCatalogApplied,
     notifySelectionApplied: async (selectedKeys) => {
       const appliedKeySet = selectedKeySet(selectedKeys)
-      if (stopped || appliedKeySet !== selectedKeySet(desiredContext.selectedKeys)) return
+      if (stopped) return
+      const expectedDesiredKeySet = expectedSelectionKeySet(
+        state.status === 'inactive' ? null : state.manifest,
+        desiredContext,
+      )
+      if (appliedKeySet !== expectedDesiredKeySet) {
+        if (state.status !== 'inactive') {
+          appliedSelectionKeySet = null
+          publish({ ...state, status: 'partial' })
+        }
+        return
+      }
       appliedSelectionKeySet = appliedKeySet
       if (
         state.status === 'inactive' ||
-        appliedKeySet !== selectedKeySet(context.selectedKeys)
+        appliedKeySet !== expectedSelectionKeySet(state.manifest, context)
       ) return
       const wasPending = state.blockers?.includes('renderer_filter_pending') === true
       if (!wasPending) return
@@ -1026,11 +1041,9 @@ function rendererFailureSourceKey(source: CoverageRendererFailureSource): string
 
 function selectChunks(
   manifest: CoverageManifest,
-  selectedKeys: readonly CoverageChunkKey[] | undefined,
+  context: CoverageOmissions,
 ): readonly CoverageManifestChunk[] {
-  if (selectedKeys === undefined) return manifest.chunks
-  const selected = new Set(selectedKeys.map(coverageChunkIdentity))
-  return manifest.chunks.filter((chunk) => selected.has(coverageChunkIdentity(chunk.key)))
+  return selectCoverageManifestChunks(manifest, context)
 }
 
 function retainUnchangedDeliveries(
@@ -1048,9 +1061,9 @@ function retainUnchangedDeliveries(
 
 function createActiveState(input: Omit<Exclude<CoverageState, { status: 'inactive' }>,
   'deliveredFixCount' | 'totalFixCount'>,
-selectedKeys: readonly CoverageChunkKey[] | undefined,
+context: CoverageOmissions,
 ): Exclude<CoverageState, { status: 'inactive' }> {
-  const selected = input.manifest === null ? [] : selectChunks(input.manifest, selectedKeys)
+  const selected = input.manifest === null ? [] : selectChunks(input.manifest, context)
   const { deliveredFixCount, totalFixCount } = calculateCoverageProgress({
     chunks: selected,
     delivered: input.delivered,
@@ -1071,6 +1084,34 @@ function asPartialState(
 
 function selectedKeySet(keys: readonly CoverageChunkKey[] | undefined): string {
   return keys === undefined ? '*' : keys.map(coverageChunkIdentity).sort().join('\n')
+}
+
+/** Resolves the renderer filter acknowledgement expected for one manifest. */
+function expectedSelectionKeySet(
+  manifest: CoverageManifest | null,
+  context: CoverageOmissions,
+): string {
+  if (context.omittedDeviceIds.length === 0 && context.omittedPeriodKeys.length === 0) {
+    return '*'
+  }
+  return selectedKeySet(manifest === null
+    ? []
+    : selectChunks(manifest, context).map((chunk) => chunk.key))
+}
+
+/** Creates a stable identity for normalized omission predicates. */
+function omissionSet(context: CoverageOmissions): string {
+  return JSON.stringify([context.omittedDeviceIds, context.omittedPeriodKeys])
+}
+
+/** Copies, de-duplicates, and orders renderer omission predicates. */
+function normalizeContext(context: CoverageContext): NormalizedCoverageContext {
+  return {
+    missionId: context.missionId,
+    rendererGeneration: context.rendererGeneration,
+    omittedDeviceIds: [...new Set(context.omittedDeviceIds ?? [])].sort(),
+    omittedPeriodKeys: [...new Set(context.omittedPeriodKeys ?? [])].sort(),
+  }
 }
 
 function isAbortError(error: unknown): boolean {

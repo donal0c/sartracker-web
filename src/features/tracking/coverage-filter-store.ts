@@ -1,9 +1,11 @@
 import { create } from 'zustand'
 
 import type {
-  CoverageChunkKey,
   CoverageManifest,
 } from '../../infrastructure/mission-store/tauri-mission-store'
+import { coveragePeriodKey } from './coverage-filter-selection'
+
+export { coveragePeriodKey, selectCoverageChunkKeys } from './coverage-filter-selection'
 
 export type CoverageFilterState = {
   readonly missionId: string | null
@@ -47,27 +49,6 @@ export const useCoverageFilterStore = create<CoverageFilterState>((set) => ({
     omittedPeriodKeys: updateOmission(state.omittedPeriodKeys, periodKey, visible),
   })),
 }))
-
-/** Selects the exact claim denominator without changing evidence or live scope. */
-export function selectCoverageChunkKeys(
-  manifest: CoverageManifest | null,
-  filters: Pick<CoverageFilterState, 'omittedDeviceIds' | 'omittedPeriodKeys'>,
-): readonly CoverageChunkKey[] | undefined {
-  if (filters.omittedDeviceIds.length === 0 && filters.omittedPeriodKeys.length === 0) {
-    return undefined
-  }
-  if (manifest === null) return []
-  const omittedDevices = new Set(filters.omittedDeviceIds)
-  const omittedPeriods = new Set(filters.omittedPeriodKeys)
-  return manifest.chunks
-    .filter((chunk) => !omittedDevices.has(chunk.key.device_id) &&
-      !omittedPeriods.has(coveragePeriodKey(chunk.key)))
-    .map((chunk) => chunk.key)
-}
-
-export function coveragePeriodKey(key: CoverageChunkKey): string {
-  return `${key.period_kind}\u0000${key.period_id}`
-}
 
 function updateOmission(
   current: readonly string[],

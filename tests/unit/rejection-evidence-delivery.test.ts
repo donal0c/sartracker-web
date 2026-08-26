@@ -257,6 +257,36 @@ describe('rejection evidence delivery [DON-268]', () => {
     }))
   })
 
+  it('does not resurrect finalized mission health when delayed hydration arrives', async () => {
+    const applyEvidenceHealth = vi.fn()
+    const delivery = createRejectionEvidenceDelivery({
+      missionStore: {
+        recordIngestRejections: vi.fn(),
+      },
+      applyRejections: vi.fn(),
+      applyEvidenceHealth,
+    })
+    await delivery.runWithMissionFinalizationFence(
+      'mission-finalized',
+      async () => 'finalized',
+    )
+
+    delivery.applyMissionHealth('mission-finalized', {
+      ...healthy(),
+      state: 'critical',
+      reason: 'outbox_corrupt_record',
+      corruptCount: 1,
+    })
+    delivery.applyMissionHealth('mission-active', healthy())
+
+    expect(applyEvidenceHealth).toHaveBeenLastCalledWith(healthy())
+
+    delivery.reopenMissionEvidenceAfterUnlock('mission-finalized')
+    expect(applyEvidenceHealth).toHaveBeenLastCalledWith(expect.objectContaining({
+      state: 'critical', reason: 'outbox_corrupt_record', corruptCount: 1,
+    }))
+  })
+
   it('keeps unacknowledged unique evidence bounded and retries it on the next poll', async () => {
     const recordIngestRejections = vi
       .fn()
