@@ -3641,3 +3641,50 @@ executable and test trees must remain byte-identical to application head
 (`ed6b7918e5808c565bf11fa70cdf8da4a3f371d9`) are unchanged. Green
 exact-head CI plus one fresh broad and the three targeted exact-head rechecks
 remain before merge readiness. No merge or release occurred.
+
+### Final bounded review and merge-readiness binding
+
+The amended review topology completed on documentation/evidence head
+`25d963b329f920fd39a6aba39ba91a6d424df177`, whose executable and test inputs
+are byte-identical to repaired application head
+`d21e5df7e2151e6c97e501a2a32894cda157a806`. One fresh broad review plus the
+three targeted persistence/completeness, concurrency/finalization, and
+renderer/input-containment rechecks all returned **CLEAN** with no P1/P2
+finding:
+
+- broad safety: 6 files / 282 tests PASS;
+- persistence/completeness: 13 files / 415 tests PASS;
+- concurrency/finalization: 6 files / 236 tests PASS, including the controlled
+  finalization-held outbox attack and reopen proof; and
+- renderer/input containment: 8 files / 201 tests PASS, including main-owned
+  request identity, numeric tile validation, cache-root containment, sender
+  ownership, and in-queue incident-scope validation.
+
+The broad review confirmed the repaired history-loss ordering and serialized
+renderer-incident lifecycle together, and found no regression in false
+Complete/100%, lost evidence, mission scope, current-position independence, or
+Electron-main bounds. The persistence review traced failed initial-wave and
+anti-entropy writes through durable `mission_persistence_failed` ownership,
+restart hydration, Finish/finalization refusal, coverage health, and loss-
+generation acknowledgement invalidation. The concurrency review reproduced
+the former finalization race: finalization completed, the later queued stage
+rejected, and evidence health remained `healthy` before and after store reopen.
+The renderer review found no path or control-field override reachable through
+the normalized IPC and worker boundaries.
+
+The six-file Ubuntu evidence manifest verifies completely. Its report remains
+PASS at 8,664/8,664 exact positions, one restart, zero renderer crashes,
+SQLite integrity `ok`, and zero redundant slope. The documentation-only final
+binding preserves the attested `src`, `electron`, `tests`, `build`, `scripts`,
+`tools`, `package.json`, `package-lock.json`, `public/manual`, and `.github`
+trees from `d21e5df`; completed code reviews therefore remain valid under the
+approved exact-tree/diff rule. The live PR head and final CI run are bound in
+PR #3.
+
+Proof limits remain explicit: no pre-merge packaged 960k/2M coverage run was
+performed outside the ratified G2 comparison, no packaged forced-kill matrix
+was run, and no Windows, field-hardware, or coordinator-owned post-merge Ubuntu
+960k checkpoint was performed. The accepted 3.704 GB v9-to-v10 migration proof
+remains standing because schema and migration trees are unchanged. PR #3 is
+merge-ready after its final documentation-only descendant receives a green
+GitHub check; it was not merged or released by this task.
