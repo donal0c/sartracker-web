@@ -3463,3 +3463,62 @@ repair changes packaged renderer/runtime and Electron-main bytes. One final
 exact-application-head macOS/Linux package proof and the single permitted
 replacement Ubuntu CI-scale tracking soak remain required, followed by green
 exact-head CI and the amended broad plus three targeted reviews.
+
+### Final application-head package and Ubuntu soak
+
+Application head `b42c57f844d7a434b2948e04e9fed1b2c3933453` contains the
+complete deferred-evidence queue, durable renderer-incident settlement, and
+their runtime/finalization wiring. Its exact packages bind as:
+
+- macOS arm64 executable SHA-256:
+  `f5212ea9181df95040385dfd04f512e983ed95394a96fb7c4b8ee838ea433caf`;
+- macOS arm64 `app.asar` SHA-256:
+  `12c3f1beb84160887a0d6aef7ec99fe056a88836bda300eb6ad3bac60897084c`;
+- Linux x64 executable SHA-256:
+  `6344ae1d9044fedc54779e8bacaddc032fdcc0f55e146fc3623756eafa0bbaf8`;
+  and
+- Linux x64 `app.asar` SHA-256:
+  `98046918fe6c5811c78dc5efd12f602aa5504f11a596d97ed4a8902aabf1fc9b`.
+
+The single permitted replacement packaged CI-scale tracking soak ran serially
+on the reference Ubuntu host through its active Xwayland `:0` display, using
+Mesa llvmpipe through ANGLE/OpenGL. It passed:
+
+- 6/6 accelerated batches, 8,664/8,664 source-exact positions, and digest
+  `4df781906486a3ab3c113d05e697dcd87ad8a0bf61e5700a58211da54b23496d`;
+- one restart, two accepted WebGL launches, and zero renderer crashes;
+- SQLite integrity `ok`, WAL 0/0/0, zero unexplained mission events, and zero
+  redundant-telemetry slope;
+- main-process maximum 7.965 ms and renderer maximum 100.300 ms, below their
+  gates;
+- all four operator interactions classified `healthy`, with action maximum
+  31.200 ms and external-action maximum 74.075 ms; and
+- peak process-tree RSS 1,144,680,448 bytes.
+
+The post-soak coverage ledger contains one mission row at change sequence 77,
+32 chunk rows, zero pending invalidations, 20,480 coverage-table bytes, and
+integrity `ok`. The immutable evidence bundle is
+`output/pr3-packaged-soak/b42c57f844d7a434b2948e04e9fed1b2c3933453/`.
+Its manifest SHA-256 is
+`9211f70e6bd35bba97cff204ef47a033e6149b08768b65eeeaa57983bfb2a7a0`;
+the soak report SHA-256 is
+`2f6f759b846812468fd48d41670e9ee18a46de94e3b8f31b676bdbc93019522e`.
+
+This package/soak evidence closes the changed Electron/runtime proof tier for
+the frozen application code head. Green exact-head CI and the amended one broad
+plus persistence, concurrency, and renderer-containment review wave remain
+before merge readiness.
+
+The following documentation-only descendant is constrained to this evidence
+record, the workplan/handoff state, and the immutable six-file soak bundle. Its
+parent is application head `b42c57f844d7a434b2948e04e9fed1b2c3933453`.
+Executable and test inputs are byte-identical to that parent, with Git tree
+objects: `src` `279aee22fc45bf4fa59075ae25df34e5aaa62259`, `electron`
+`c32c2cf1cf05604b255c7a4d98556905b180e463`, `tests`
+`249b07d656b5b361fc07a17487f3afa2b1a2e930`, `build`
+`b91f42810f4ef07e7f4686cc2e750caa00a7fc54`, `scripts`
+`b3472c9139381b5d27ce4a461c975c5080f74b60`, and `tools`
+`950a5b1c2e2e5ebc149c9de22dae5a5fbd5a33ed`. `package.json`
+(`ca10e37bab0a1e0d9a05a9295289cf733e32d418`) and `package-lock.json`
+(`ed6b7918e5808c565bf11fa70cdf8da4a3f371d9`) are also unchanged. The staged
+diff gate must reject any path outside those documentation/evidence files.
