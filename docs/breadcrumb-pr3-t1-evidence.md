@@ -1854,3 +1854,100 @@ The commit containing this evidence record is documentation-only. It must pass
 the deterministic exact-head gates and five fresh independent exact-head
 reviews from zero before PR #3 can be called review ready. No merge or release
 occurred.
+
+## Cooled-down rendered-period preservation and live proof ownership
+
+The five-review wave on exact evidence head
+`61c7ed2a86ee65c155a878190245385bff4589ba` returned three clean built-in
+reviews and one clean external persistence review before the independent
+external renderer review invalidated the head with an I6 P1 and an adjacent
+proof-quality P2. Every verdict from that wave is superseded.
+
+The P1 was a two-load Candidate-B sequence. A first refresh could publish a
+new open-outing content revision while the scheduler correctly deferred its
+replacement under the 30-second open-outing cooldown. If another period became
+pending before that cooldown expired, the next delivery plan retained a prior
+descriptor only when its revision equalled the now-current manifest revision.
+The already-rendered old open-outing revision therefore disappeared from the
+catalog request. The worker invalidated its period and the renderer removed its
+source/layers without a detach/failure signal, violating I6's requirement that
+old geometry remains visible until its replacement is delivered.
+
+The red reason was recorded before production code. A composed delivery-plan
+test supplied a delivered open outing at revision 1, a current manifest at
+revision 2, and only Unassigned revision 2 in the scheduler's ready list. The
+only emitted catalog batch contained Unassigned and omitted the open outing.
+A follow-on red test proved that numeric zero must not be mistaken for a real
+delivered revision.
+
+Application head `24a5e4d5d7141ad76fbb4847e7c40c92175ef72e` closes the
+I6 path without bypassing the cooldown. The delivery plan now carries every
+positive still-delivered identity forward using its current manifest
+descriptor. When any replacement catalog is needed, a deferred stale period is
+therefore rebuilt inside that same two-phase catalog; its old worker index and
+MapLibre source remain serviceable through activation and are retired only
+after the current replacement is ready. An identity never delivered is not
+invented. If no period is ready, no catalog is submitted and the existing
+finalized catalog remains attached unchanged.
+
+The same review showed that `electron/coverage-completeness.cjs` and its named
+I2 tests exercised no production import. That false proof surface was removed.
+The actual controller now imports pure selected-scope progress math from
+`coverage-progress.ts`, with direct built-but-not-delivered, late-fix, restart,
+and zero-fix tests. Chunk and period identity construction was also extracted
+to one precise shared module. Database claim and renderer-delivery gates remain
+independently exercised at their shipped query/controller boundaries.
+
+Green verification at that application head:
+
+- focused delivery-plan/progress/controller/scheduler/overlay: 5 files / 84
+  tests;
+- full unit: 267 files / 2,140 tests;
+- full ESLint, TypeScript, production build, bundle budgets, and diff checks;
+- source-exact paged Dots contract: 10/10; and
+- participant/coverage Chromium: 10/10.
+
+Exact application-head Linux run
+[`32937238855`](https://github.com/donal0c/sartracker-web/actions/runs/32937238855)
+checked out PR merge ref
+`8403f4e0d7e229045f35a6a0d6b7ddf88ca4059d`, whose parents are exact PR-2
+base `7021fc1ef33e6da5c91c96cd86e836fc3754f48f` and application head
+`24a5e4d5d7141ad76fbb4847e7c40c92175ef72e`, and passed:
+
+- Ubuntu x64 AppImage and `.deb` packaging, native SQLite inspection, Mesa
+  llvmpipe attestation, and AppImage window/content launch;
+- packaged CI soak: 6/6 batches, 8,664/8,664 source-exact positions, matching
+  SHA-256
+  `232d4365a0544ac3a82e5bac8bfda3069e0e4a6e5f491d4fd51112f0f54f7ce8`,
+  integrity `ok`, one restart, zero renderer crashes, and four healthy operator
+  interactions;
+- Electron-main maximum 28.6847 ms and p95 9.1605 ms against the explicit
+  200 ms I5 limit, with zero samples over the limit;
+- Mesa llvmpipe renderer maximum 500 ms and p95 316.6 ms. This is descriptive
+  tracking-soak evidence below the separate 1,000 ms renderer/operator freeze
+  gate; G2 remains the coverage-renderer budget authority;
+- AppImage SHA-256
+  `1937762c6fdaf0b1c75c9bb5fde4729e3e80ed81828bbf29b972851d1170f4e9`;
+- `.deb` SHA-256
+  `fcfcb58fdeb1ee5993b22886faef24152ccd726b6229c47960f69075a36d7a76`;
+- soak report SHA-256
+  `ffd0e939ba000e1ee4055269c246684f36830b76bc150478659abd27a22cccc8`;
+- package artifact `9595361125`, uploaded-zip digest
+  `4b4f672e84f82c4dc4e09e117b095457c2adc02581d54a82fa41d2a578b27d5c`;
+  and
+- validation artifact `9595361735`, uploaded-zip digest
+  `6542a71f220df5aad1f03f1c5a3261c97f86b5ae7629016ce3de0b53d69ae8df`.
+
+This remediation preserves an already-visible healthy surface; it does not add
+or change operator controls, wording, filters, default flags, Candidate-B
+geometry semantics, schema/open code, G2 measurements, or exact Dots. The
+accepted G2 decision/960k/2M evidence, 3.704 GB v9-to-v10 migration, prior
+critical visual review, operator manual, and screenshots remain standing only
+for those unchanged surfaces. No manual or screenshot update is required.
+There was no pre-merge packaged 960k/2M coverage run outside G2 and no packaged
+forced-kill matrix.
+
+The commit containing this evidence record is documentation-only. It must pass
+the deterministic exact-head/Linux gates and five fresh independent exact-head
+reviews from zero before PR #3 can be called review ready. No merge or release
+occurred.

@@ -351,6 +351,22 @@ launch, and the 8,664/8,664 soak with integrity `ok`, one restart, 116.250 ms
 main maximum, zero redundant slope, zero renderer crashes, and four healthy
 interactions. Bind the documentation-only descendant and restart all five
 reviews from zero.
+The next evidence-bound head `862a300` was then invalidated by a separate P1:
+all non-invalidation query results still crossed the worker boundary as any
+plain record. A plausible current-sequence manifest could omit a real stale
+canonical chunk, derive an empty selection, and let an empty ready claim pass
+the controller's revision check vacuously. Application head `20ca76e` adds a
+kind-specific allowlisted result envelope for enumeration, manifest, claim,
+chunk-page, chunk-summary, and invalidation analysis; independently proves
+enumeration/manifest inventory and final claim truth from bounded main-side
+metadata; and requires exact unique claim coverage of every selected chunk.
+No main-isolate position scan was added. Full unit is 264/2,143; lint,
+TypeScript, build/budgets, CommonJS syntax, and focused coverage/participant
+251/251 pass. Exact Linux run `32930525474` passes packaging, AppImage launch,
+and the 8,664/8,664 soak with integrity `ok`, one restart, 46.882 ms main
+maximum, zero redundant slope, zero renderer crashes, and four healthy
+interactions. Bind the documentation-only descendant and restart all five
+reviews from zero.
 That descendant `d044e71` was invalidated by a P2 at the result-trust boundary:
 request-derived cardinality was not checked before deep traversal, outing
 metadata was not attested to SQLite, and production normalized the built-in
@@ -368,22 +384,22 @@ source-exact soak with integrity `ok`, one restart, 22.2073 ms main maximum,
 zero renderer crashes, and four healthy interactions. Bind the
 documentation-only descendant, rerun exact-head deterministic/Linux gates, and
 restart all five independent reviews from zero.
-The next evidence-bound head `862a300` was then invalidated by a separate P1:
-all non-invalidation query results still crossed the worker boundary as any
-plain record. A plausible current-sequence manifest could omit a real stale
-canonical chunk, derive an empty selection, and let an empty ready claim pass
-the controller's revision check vacuously. Application head `20ca76e` adds a
-kind-specific allowlisted result envelope for enumeration, manifest, claim,
-chunk-page, chunk-summary, and invalidation analysis; independently proves
-enumeration/manifest inventory and final claim truth from bounded main-side
-metadata; and requires exact unique claim coverage of every selected chunk.
-No main-isolate position scan was added. Full unit is 264/2,143; lint,
-TypeScript, build/budgets, CommonJS syntax, and focused coverage/participant
-251/251 pass. Exact Linux run `32930525474` passes packaging, AppImage launch,
-and the 8,664/8,664 soak with integrity `ok`, one restart, 46.882 ms main
-maximum, zero redundant slope, zero renderer crashes, and four healthy
-interactions. Bind the documentation-only descendant and restart all five
-reviews from zero.
+That documentation head `61c7ed2` was invalidated after three clean built-in
+reviews and one clean external persistence review when the independent renderer
+review reproduced an I6 P1. A stale-but-rendered open-outing chunk suppressed by
+its 30-second rebuild cooldown could be omitted from a later catalog for another
+pending period, silently removing already-visible coverage before its replacement
+was ready. The same review found that the named completeness unit exercised dead
+code rather than the shipped progress calculation. Application head `24a5e4d`
+closes both red-first: every positive delivered identity is carried into the next
+two-phase catalog using its current descriptor, while the real controller imports
+the pure progress owner and the dead proof is removed. Full unit is 267/2,140;
+static/build, exact Dots 10/10, and participant/coverage Chromium 10/10 pass.
+Exact Linux run `32937238855` passes packaging, AppImage launch, and the
+8,664/8,664 source-exact soak with integrity `ok`, one restart, 28.6847 ms main
+maximum, zero renderer crashes, and four healthy interactions. Bind the
+documentation-only descendant, rerun exact-head deterministic/Linux gates, and
+restart all five independent reviews from zero.
 
 ## Next Task Order
 
@@ -394,7 +410,7 @@ This is the default order when the user says “work on the next task.”
 | Done | Release the Tracking stability, interaction, and basemap-independent overlay hotfix | S2 Electron / Shared Tracking / Map / Verification | `DON-261` / `DON-262` / `DON-263` | Beta.12.5 exact commit `042d77ad6158`; clean no-skip verification 8/8; tag CI `30497318233` green; exact CI AppImage and real installed `.deb` passed lifecycle, safety, live-Traccar, 13-poll empty-history stability, pending/degraded basemap overlay, and deterministic five-/fourteen-day soak gates. Independent reviews returned `RELEASE` with no P1/P2. Guarded publication succeeded; fresh public hashes matched and the public AppImage passed Ubuntu lifecycle/recovery/finalize/archive. |
 | Done | PR-1: trustworthy ingest and live safety | Shared Tracking / S2 Electron / Evidence | `DON-266` / `DON-267` / `DON-268` / `DON-269` | Merged as [PR #1](https://github.com/donal0c/sartracker-web/pull/1) at `9481cf462e0e`; its exact-head review and Linux evidence remain in PR #1 and the handoff archive. |
 | Done | PR-2: explicit outings, participants, and mission-shaped fixtures | Shared Tracking / S2 Electron / Mission model / Verification | `DON-270` / `DON-271` / `DON-272` | Merged to `master` at `7021fc1ef33e6da5c91c96cd86e836fc3754f48f`, which is the exact PR-3 base. The preserved review, migration, scale, browser, and package evidence remains attached to PR-2 and the handoff archive. |
-| Final renewed review — PR #3 open | PR-3: decide and deliver complete mission coverage | Shared Tracking / S2 Electron / Coverage / Verification | `DON-273` / `DON-276` / `DON-275` | Candidate B and G3 remain ratified; migration/scale proof stands for unchanged geometry/schema surfaces. Fresh review invalidated `d044e71` because result cardinality and outing metadata were not request/SQLite-attested. Commit `68768f7` closes that trust boundary; its otherwise-green Linux run was rejected at 224.974 ms against the binding 200 ms main-isolate I5 limit. Commits `e1b51d8` and `cfd733c` remove per-fix SQLite work and enforce I5 independently from renderer/operator freeze gates. Exact application-head Linux run `32934141302` is green for package build, AppImage launch, and the 8,664/8,664 packaged soak with a 22.2073 ms main maximum. Full unit 266/2,149, lint, TypeScript, build/budgets, and focused hot-path/gate tests pass. Final evidence-head deterministic/Linux gates and five fresh independent reviews from zero gate review readiness. PR [#3](https://github.com/donal0c/sartracker-web/pull/3) remains open and unmerged. Do not merge or release from this task. |
+| Final renewed review — PR #3 open | PR-3: decide and deliver complete mission coverage | Shared Tracking / S2 Electron / Coverage / Verification | `DON-273` / `DON-276` / `DON-275` | Candidate B and G3 remain ratified; migration/scale proof stands for unchanged geometry/schema surfaces. Review invalidated `61c7ed2` because a cooled-down stale open-outing period could disappear from a later replacement catalog and because the named completeness test exercised dead code. Application head `24a5e4d` preserves every genuinely delivered identity through the two-phase replacement and makes the live controller import the tested pure progress owner. Full unit 267/2,140, lint, TypeScript, build/budgets, exact Dots 10/10, and participant/coverage Chromium 10/10 pass. Exact Linux run `32937238855` is green for package build, AppImage launch, and the 8,664/8,664 packaged soak with a 28.6847 ms main maximum. Final evidence-head deterministic/Linux gates and five fresh independent reviews from zero gate review readiness. PR [#3](https://github.com/donal0c/sartracker-web/pull/3) remains open and unmerged. Do not merge or release from this task. |
 | Todo (non-blocking) | Surface persistent overlay synchronization failures in diagnostics and map health | S2 Electron / Shared Map / Diagnostics | `DON-264` | DON-263 retries transient and persistent sync exceptions indefinitely with a 2 s cap, but repeated failures are currently developer-console-only. Add bounded, sanitized, durable warning elevation and success-based clearing after the beta.12.5 hotfix; this P3 does not block the release. |
 | Done | Make Breadcrumb Dots source-exact and independently release-gated | S2 Electron / Shared Tracking / Verification | `DON-260` | Published beta.12.11 at exact tag `bced8052b85c` after green CI run `31482052296`, full AppImage and genuinely installed `.deb` package matrices, synthetic 279,936/1,935,384-fix exact-page proofs, target-only live-provider equality, diagnostics privacy, and unchanged performance/RSS gates. The guarded publisher and a second public download revalidated both installer hashes and `SHA256SUMS`; the fresh public AppImage independently passed settings persistence, same-mission recovery, finalization, and archive creation. Dots is source-exact and paged; Line alone remains simplified. Beta.12.9/.12.10 are not the correction. |
 | Done | Build deterministic field-scale mission-store fixtures | S2 Electron / Verification | `DON-242` | Small/CI/local/field plus 5-day and 14-day continuous-mission presets; Ubuntu field fixture is 3.704 GB with measured table accounting and restart checkpoints. |
