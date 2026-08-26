@@ -327,6 +327,124 @@ describe('coverage controller [DON-276]', () => {
     expect(controller.getState()).toMatchObject({ status: 'complete', deliveredFixCount: 2 })
   })
 
+  it('keeps every progressive catalog in a multi-period renderer recovery fresh', async () => {
+    const initial: CoverageManifest = {
+      ...manifest(1, [[KEY_A, 1], [KEY_C, 1]]),
+      outings: [
+        { id: 'outing-1', label: 'Older', started_at: '2026-08-20T09:00:00.000Z', ended_at: '2026-08-20T10:00:00.000Z' },
+        { id: 'outing-2', label: 'Newest', started_at: '2026-08-24T09:00:00.000Z', ended_at: '2026-08-24T10:00:00.000Z' },
+      ],
+    }
+    const deliverSelection = vi.fn(async ({ chunks }: {
+      readonly chunks: readonly { readonly key: CoverageChunkKey; readonly contentRev: number }[]
+    }) => {
+      const activationId = `multi-period-recovery-stage-${deliverSelection.mock.calls.length}`
+      return {
+        missionId: 'mission-1',
+        activationId,
+        periods: chunks.map((chunk) => ({
+          periodKey: `${chunk.key.period_kind}\u0000${chunk.key.period_id}`,
+          revisionDigest: `${chunk.key.period_id}-revision-1`,
+        })),
+        delivered: chunks,
+      }
+    })
+    const controller = createCoverageController({
+      readManifest: vi.fn().mockResolvedValue(initial),
+      readChunk: vi.fn(),
+      readClaim: vi.fn().mockResolvedValue({
+        changeSeq: 1, databaseReady: true, blockers: [],
+        chunkRevisions: [{ key: KEY_A, contentRev: 1 }, { key: KEY_C, contentRev: 1 }],
+      }),
+      applyChunk: vi.fn(), deliverSelection, publish: vi.fn(),
+    })
+    const applyCurrentCatalog = async (
+      failureSources: readonly {
+        readonly periodKey: string
+        readonly revisionDigest: string
+        readonly activationId: string
+      }[],
+    ): Promise<void> => {
+      const current = controller.getState()
+      if (current.status === 'inactive' || current.tileCatalog === null) {
+        throw new Error('Coverage catalog was unavailable during the recovery regression.')
+      }
+      await controller.notifyCatalogApplied(current.tileCatalog, {
+        failureSources,
+        commit: vi.fn(), finalize: vi.fn(), rollback: vi.fn(),
+      })
+    }
+
+    const initialLoad = controller.updateContext({
+      missionId: 'mission-1', rendererGeneration: 'r1',
+    })
+    await vi.waitFor(() => expect(deliverSelection).toHaveBeenCalledTimes(1))
+    await applyCurrentCatalog([{
+      periodKey: 'outing\u0000outing-2',
+      revisionDigest: 'outing-2-revision-1',
+      activationId: 'multi-period-recovery-stage-1',
+    }])
+    await vi.waitFor(() => expect(deliverSelection).toHaveBeenCalledTimes(2))
+    await applyCurrentCatalog([
+      {
+        periodKey: 'outing\u0000outing-2',
+        revisionDigest: 'outing-2-revision-1',
+        activationId: 'multi-period-recovery-stage-1',
+      },
+      {
+        periodKey: 'outing\u0000outing-1',
+        revisionDigest: 'outing-1-revision-1',
+        activationId: 'multi-period-recovery-stage-2',
+      },
+    ])
+    await initialLoad
+    expect(controller.getState()).toMatchObject({ status: 'complete' })
+
+    controller.notifyRendererFailure({
+      missionId: 'mission-1',
+      periodKey: 'outing\u0000outing-1',
+      revisionDigest: 'outing-1-revision-1',
+      activationId: 'multi-period-recovery-stage-2',
+      message: 'Older retained coverage source failed.',
+    })
+    await vi.waitFor(() => expect(deliverSelection).toHaveBeenCalledTimes(3))
+    expect(controller.getState()).toMatchObject({
+      status: 'loading',
+      tileCatalog: { requiresFreshRendererSources: true },
+    })
+    await applyCurrentCatalog([
+      {
+        periodKey: 'outing\u0000outing-2',
+        revisionDigest: 'outing-2-revision-1',
+        activationId: 'multi-period-recovery-stage-3',
+      },
+      {
+        periodKey: 'outing\u0000outing-1',
+        revisionDigest: 'outing-1-revision-1',
+        activationId: 'multi-period-recovery-stage-2',
+      },
+    ])
+
+    await vi.waitFor(() => expect(deliverSelection).toHaveBeenCalledTimes(4))
+    expect(controller.getState()).toMatchObject({
+      status: 'loading',
+      tileCatalog: { requiresFreshRendererSources: true },
+    })
+    await applyCurrentCatalog([
+      {
+        periodKey: 'outing\u0000outing-2',
+        revisionDigest: 'outing-2-revision-1',
+        activationId: 'multi-period-recovery-stage-4',
+      },
+      {
+        periodKey: 'outing\u0000outing-1',
+        revisionDigest: 'outing-1-revision-1',
+        activationId: 'multi-period-recovery-stage-4',
+      },
+    ])
+    await vi.waitFor(() => expect(controller.getState()).toMatchObject({ status: 'complete' }))
+  })
+
   it('rebuilds a changed period with every unchanged sibling descriptor', async () => {
     let current = manifest(1, [[KEY_A, 1], [KEY_B, 1]])
     const deliverSelection = vi.fn(async ({ chunks }: {

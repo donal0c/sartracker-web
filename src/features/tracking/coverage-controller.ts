@@ -220,6 +220,7 @@ export function createCoverageController(input: {
     const operation = ++operationGeneration
     const missionId = context.missionId
     const rendererGeneration = context.rendererGeneration
+    const recoveryEpochAtLoad = rendererRecoveryEpoch
     const priorManifest = state.status === 'inactive' ? null : state.manifest
     const priorDelivered = state.status === 'inactive' ? {} : state.delivered
     const retainDeliveryAttestation = retainDelivery && rendererRecoveryEpoch === null
@@ -287,7 +288,7 @@ export function createCoverageController(input: {
           })
           activeCatalog = {
             ...deliveredCatalog,
-            requiresFreshRendererSources: rendererRecoveryEpoch !== null,
+            requiresFreshRendererSources: recoveryEpochAtLoad !== null,
             retainPriorPeriods: priorCatalog !== null &&
               batchIndex < catalogBatches.length - 1,
           }
@@ -325,6 +326,14 @@ export function createCoverageController(input: {
             tileCatalog: activeCatalog,
             delivered,
           }, context.selectedKeys))
+        }
+        if (
+          recoveryEpochAtLoad !== null &&
+          rendererRecoveryEpoch === recoveryEpochAtLoad
+        ) {
+          rendererRecoveryEpoch = null
+          rendererRecoverySupersededFailureKeys = null
+          automaticRendererRecoveryAvailable = true
         }
         activeManifest = await input.readManifest(
           missionId,
@@ -606,7 +615,6 @@ export function createCoverageController(input: {
     catalog: CoverageTileCatalog,
     rendererActivation: CoverageRendererActivation,
   ): Promise<void> => {
-    const recoveryEpochAtStart = rendererRecoveryEpoch
     if (!catalogActivation.isPending(catalog)) {
       if (
         isCurrentCatalog(state, catalog) &&
@@ -662,14 +670,6 @@ export function createCoverageController(input: {
       }
       finalizedRendererFailureSources = rendererActivation.failureSources ??
         coverageCatalogFailureSources(catalog)
-      if (
-        recoveryEpochAtStart !== null &&
-        rendererRecoveryEpoch === recoveryEpochAtStart
-      ) {
-        rendererRecoveryEpoch = null
-        rendererRecoverySupersededFailureKeys = null
-        automaticRendererRecoveryAvailable = true
-      }
     } catch (error) {
       const normalized = error instanceof Error
         ? error
