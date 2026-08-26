@@ -8,7 +8,7 @@ import {
 import type { CurrentPositionRejection } from '../../src/features/tracking/ingest-health'
 
 describe('rejection evidence delivery [DON-268]', () => {
-  it('drains more than one batch at Finish, seals late acceptance, then permits finalization', async () => {
+  it('drains more than one batch at Finish, accepts finished-mission evidence, then finalizes', async () => {
     const persisted: string[] = []
     const delivery = createRejectionEvidenceDelivery({
       missionStore: {
@@ -37,11 +37,82 @@ describe('rejection evidence delivery [DON-268]', () => {
     expect(() => delivery.record(
       [createRejection('source:after-finish')],
       observation('mission-1'),
-    )).toThrow(/acceptance.*sealed/iu)
+    )).not.toThrow()
     await expect(delivery.runWithMissionFinalizationFence(
       'mission-1',
       async () => 'finalized',
     )).resolves.toBe('finalized')
+    expect(persisted).toHaveLength(REJECTION_EVIDENCE_DELIVERY_BATCH_HYPOTHESIS + 2)
+  })
+
+  it('accepts and drains rejection evidence that arrives during the durable Finish transition', async () => {
+    const persisted: string[] = []
+    let resolveFinish: (() => void) | undefined
+    const delivery = createRejectionEvidenceDelivery({
+      missionStore: {
+        recordIngestRejections: vi.fn(async (input) => {
+          persisted.push(...input.rejections.map((entry) => entry.anomalyKey))
+          return {
+            acknowledgedDeliveryIds: input.rejections.map((entry) => entry.deliveryId),
+            health: healthy(),
+          }
+        }),
+      },
+      applyRejections: vi.fn(),
+      applyEvidenceHealth: vi.fn(),
+    })
+    const finish = delivery.runWithMissionFinishFence(
+      'mission-1',
+      () => new Promise<string>((resolve) => {
+        resolveFinish = () => resolve('finished')
+      }),
+    )
+    await vi.waitFor(() => expect(resolveFinish).toBeTypeOf('function'))
+
+    expect(() => delivery.record(
+      [createRejection('source:during-finish')],
+      observation('mission-1'),
+    )).not.toThrow()
+    resolveFinish?.()
+
+    await expect(finish).resolves.toBe('finished')
+    expect(persisted).toContain('source:during-finish')
+  })
+
+  it('waits for an in-flight mission observation before finalization seals evidence intake', async () => {
+    const persisted: string[] = []
+    const finalizeMission = vi.fn().mockResolvedValue('finalized')
+    const delivery = createRejectionEvidenceDelivery({
+      missionStore: {
+        recordIngestRejections: vi.fn(async (input) => {
+          persisted.push(...input.rejections.map((entry) => entry.anomalyKey))
+          return {
+            acknowledgedDeliveryIds: input.rejections.map((entry) => entry.deliveryId),
+            health: healthy(),
+          }
+        }),
+      },
+      applyRejections: vi.fn(),
+      applyEvidenceHealth: vi.fn(),
+    })
+    const missionObservation = delivery.beginMissionObservation('mission-1')
+
+    const finalization = delivery.runWithMissionFinalizationFence(
+      'mission-1',
+      finalizeMission,
+    )
+    await Promise.resolve()
+    expect(finalizeMission).not.toHaveBeenCalled()
+
+    delivery.record(
+      [createRejection('source:in-flight-before-finalize')],
+      observation(missionObservation.missionId ?? 'mission-1'),
+    )
+    missionObservation.complete()
+
+    await expect(finalization).resolves.toBe('finalized')
+    expect(persisted).toEqual(['source:in-flight-before-finalize'])
+    expect(finalizeMission).toHaveBeenCalledOnce()
   })
 
   it('keeps the mission active and reopens acceptance when Finish cannot drain evidence', async () => {
@@ -460,8 +531,40 @@ describe('rejection evidence delivery [DON-268]', () => {
     }))
   })
 
+  it('retries a failed capacity-loss marker before Finish may complete', async () => {
+    const recordIngestEvidenceLoss = vi
+      .fn()
+      .mockRejectedValueOnce(new Error('marker rename failed'))
+      .mockResolvedValue(capacityFailure())
+    const finishMission = vi.fn().mockResolvedValue('finished')
+    const delivery = createRejectionEvidenceDelivery({
+      missionStore: {
+        recordIngestRejections: vi.fn(async (input) => ({
+          acknowledgedDeliveryIds: input.rejections.map((entry) => entry.deliveryId),
+          health: healthy(),
+        })),
+        recordIngestEvidenceLoss,
+      },
+      applyRejections: vi.fn(),
+      applyEvidenceHealth: vi.fn(),
+    })
+    delivery.record(Array.from(
+      { length: REJECTION_EVIDENCE_PENDING_MEMORY_CAP_HYPOTHESIS + 1 },
+      (_unused, index) => createRejection(`capacity-retry:${index}`),
+    ), observation('mission-1'))
+    await vi.waitFor(() => expect(recordIngestEvidenceLoss).toHaveBeenCalledOnce())
+
+    await expect(delivery.runWithMissionFinishFence(
+      'mission-1',
+      finishMission,
+    )).resolves.toBe('finished')
+
+    expect(recordIngestEvidenceLoss).toHaveBeenCalledTimes(2)
+    expect(finishMission).toHaveBeenCalledOnce()
+  })
+
   it.each(['resolve', 'reject'] as const)(
-    'keeps delayed capacity-loss %s outside live health after finalization',
+    'requires delayed capacity-loss marker %s before finalization proceeds',
     async (settlement) => {
       let resolveEvidenceLoss: ((health: ReturnType<typeof capacityFailure>) => void) | undefined
       let rejectEvidenceLoss: ((error: Error) => void) | undefined
@@ -487,29 +590,29 @@ describe('rejection evidence delivery [DON-268]', () => {
       )
 
       delivery.record(rejections, observation('mission-finalized'))
-      await delivery.runWithMissionFinalizationFence(
+      const finalizeMission = vi.fn().mockResolvedValue('finalized')
+      const finalization = delivery.runWithMissionFinalizationFence(
         'mission-finalized',
-        async () => 'finalized',
+        finalizeMission,
       )
-      expect(applyEvidenceHealth).toHaveBeenLastCalledWith(expect.objectContaining({
-        state: 'healthy', reason: null, pendingCount: 0,
-      }))
+      await Promise.resolve()
+      expect(finalizeMission).not.toHaveBeenCalled()
 
       if (settlement === 'resolve') {
         resolveEvidenceLoss?.(capacityFailure())
+        await expect(finalization).resolves.toBe('finalized')
+        expect(finalizeMission).toHaveBeenCalledOnce()
+        expect(applyEvidenceHealth).toHaveBeenLastCalledWith(expect.objectContaining({
+          state: 'healthy', reason: null, pendingCount: 0,
+        }))
       } else {
         rejectEvidenceLoss?.(new Error('capacity marker failed'))
+        await expect(finalization).rejects.toThrow('capacity marker failed')
+        expect(finalizeMission).not.toHaveBeenCalled()
+        expect(applyEvidenceHealth).toHaveBeenLastCalledWith(expect.objectContaining({
+          state: 'critical', reason: 'renderer_pending_capacity_exhausted',
+        }))
       }
-      await evidenceLoss.catch(() => undefined)
-      await Promise.resolve()
-
-      expect(applyEvidenceHealth).toHaveBeenLastCalledWith(expect.objectContaining({
-        state: 'healthy', reason: null, pendingCount: 0,
-      }))
-      delivery.reopenMissionEvidenceAfterUnlock('mission-finalized')
-      expect(applyEvidenceHealth).toHaveBeenLastCalledWith(expect.objectContaining({
-        state: 'critical', reason: 'renderer_pending_capacity_exhausted',
-      }))
     },
   )
 

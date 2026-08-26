@@ -973,8 +973,12 @@
             renderer intake itself is exhausted, SAR Tracker records a durable evidence-loss marker
             wherever local storage is writable and blocks completeness claims. If no local storage is
             writable, the critical in-process warning is the honest limit: do not claim the evidence
-            was saved, and preserve the live operational picture. During a runtime restart or shutdown,
-            SAR Tracker waits for every bounded renderer batch rather than abandoning later batches. If
+            was saved, and preserve the live operational picture. A failed capacity-loss write is not
+            treated as complete: SAR Tracker retries the durable capacity-loss marker before Finish,
+            finalization, or shutdown may proceed. During a settings replacement, runtime restart, or
+            shutdown, SAR Tracker stops scheduling new polls, preserves the final current-position
+            observation already in flight, and waits for every bounded renderer batch rather than
+            abandoning later batches. If
             a batch cannot be acknowledged, it first records a mission-scoped durable loss marker and
             then shows that rejected-position evidence was lost during runtime shutdown. If even that
             marker cannot be written, runtime replacement fails closed instead of installing a new
@@ -999,10 +1003,15 @@
           </figure>
           <div class="note">
             <strong>Finish and finalization wait for evidence already observed:</strong> Finish drains
-            every renderer-held rejection batch and seals late acceptance before the mission becomes
-            finished. If that drain cannot complete, Finish is refused and the mission stays active for
-            repair and retry. Finalization then advances the already sealed mission through archive-and-lock
-            without reopening rejection intake. A finalized mission remains read-only.
+            every renderer-held rejection batch before asking the durable store to finish the mission.
+            Finish keeps mission evidence intake open while its durable transition is in flight. After
+            that transition succeeds, SAR Tracker closes the mission-evidence cutoff, waits for every
+            current-position observation that started before the cutoff, and drains its accepted and
+            rejected evidence. Current safety positions continue to render after the cutoff without being
+            added to the finished mission. If the initial drain cannot complete, Finish is refused and the
+            mission stays active for repair and retry. Finalization waits for the closed observation scope
+            and durable evidence markers before advancing the mission through archive-and-lock. A finalized
+            mission remains read-only.
             Any delivery already staged outside the renderer that reaches a finalized mission is retained
             outside the immutable mission ledger, shown as critical late-evidence health, and is not silently
             inserted into the finalized record. A new renderer observation after the seal is shown to the

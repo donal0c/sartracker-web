@@ -264,7 +264,7 @@ export async function startAppRuntime(
         reloadGeneration += 1
         const previousServices = activeServices
         activeServices = createNoopRuntimeServiceHandles()
-        stopRuntimeServices(previousServices)
+        await stopRuntimeServices(previousServices)
         await rejectionEvidenceDelivery?.dispose()
         stopExactBreadcrumbDots()
         stopCoverage()
@@ -294,7 +294,7 @@ export async function startAppRuntime(
     // competing mission snapshots.
     const previousServices = activeServices
     activeServices = createNoopRuntimeServiceHandles()
-    stopRuntimeServices(previousServices)
+    await stopRuntimeServices(previousServices)
 
     const nextServices = await createManagedRuntimeServices({
       runtimeSettings,
@@ -316,6 +316,12 @@ export async function startAppRuntime(
             return phase === 'active' || phase === 'paused' ? phase : 'idle'
           },
           getHistoryResetKey: () => useMissionStore.getState().currentMission?.id ?? null,
+          ...(rejectionEvidenceDelivery === null
+            ? {}
+            : {
+                beginCurrentPositionObservation:
+                  rejectionEvidenceDelivery.beginMissionObservation,
+              }),
           getInitialBreadcrumbFrom: () => {
             const mission = useMissionStore.getState().currentMission
             return mission === null ? null : new Date(mission.start_time)
@@ -409,7 +415,7 @@ export async function startAppRuntime(
     })
 
     if (generation !== reloadGeneration) {
-      stopRuntimeServices(nextServices)
+      await stopRuntimeServices(nextServices)
       return
     }
 

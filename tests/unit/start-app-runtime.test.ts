@@ -830,15 +830,24 @@ describe('app runtime startup', () => {
   it('stops the active tracking runtime before starting its replacement [DON-260]', async () => {
     const store: MissionStore & AutosaveStore = createMissionStoreStub()
     const lifecycle: string[] = []
+    let releaseInitialStop: (() => void) | undefined
     const startTrackingRuntime = vi
       .fn()
       .mockImplementationOnce(async () => {
         lifecycle.push('initial-start')
-        return () => lifecycle.push('initial-stop')
+        return async () => {
+          lifecycle.push('initial-stop-started')
+          await new Promise<void>((resolve) => {
+            releaseInitialStop = resolve
+          })
+          lifecycle.push('initial-stop-completed')
+        }
       })
       .mockImplementationOnce(async () => {
         lifecycle.push('replacement-start')
-        return () => lifecycle.push('replacement-stop')
+        return async () => {
+          lifecycle.push('replacement-stop')
+        }
       })
 
     const runtime = await startAppRuntime({
@@ -855,11 +864,16 @@ describe('app runtime startup', () => {
       startTrackingRuntime,
     })
 
-    await runtime?.reloadSettings()
+    const reload = runtime?.reloadSettings()
+    await vi.waitFor(() => expect(releaseInitialStop).toBeTypeOf('function'))
+    expect(lifecycle).toEqual(['initial-start', 'initial-stop-started'])
+    releaseInitialStop?.()
+    await reload
 
     expect(lifecycle).toEqual([
       'initial-start',
-      'initial-stop',
+      'initial-stop-started',
+      'initial-stop-completed',
       'replacement-start',
     ])
   })

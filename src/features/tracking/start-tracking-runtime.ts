@@ -58,7 +58,7 @@ type TrackingRuntimeClientFactory = (config: TrackingRuntimeConfig) => unknown
 
 type TrackingRuntimePoller = {
   readonly start: () => void
-  readonly stop: () => void
+  readonly stop: () => Promise<void>
   readonly requestPollNow?: () => void
 }
 
@@ -331,7 +331,7 @@ let breadcrumbStorageQueryTail: Promise<void> = Promise.resolve()
  */
 export async function startTrackingRuntime(
   dependencies: StartTrackingRuntimeDependencies,
-): Promise<() => void> {
+): Promise<() => Promise<void>> {
   const runtimeGeneration = ++nextTrackingRuntimeGeneration
   activeTrackingRuntimeGeneration = runtimeGeneration
   const now = dependencies.now ?? (() => new Date())
@@ -360,6 +360,7 @@ export async function startTrackingRuntime(
   let deferredOperationalSnapshot: {
     readonly snapshot: TrackingSnapshot
     readonly historyResetKey: string | null
+    readonly missionEvidenceId: string | null
     readonly persistAfterHydration: boolean
   } | null = null
   const participantBackfillAbortController = new AbortController()
@@ -373,7 +374,7 @@ export async function startTrackingRuntime(
       warning: dependencies.idleWarning ?? 'Tracking is not configured.',
     })
 
-    return () => invalidateTrackingRuntimeGeneration(runtimeGeneration)
+    return async () => invalidateTrackingRuntimeGeneration(runtimeGeneration)
   }
 
   const cachedContents = await dependencies.cache.read()
@@ -397,6 +398,7 @@ export async function startTrackingRuntime(
         deferredOperationalSnapshot = {
           snapshot: healthyCachedSnapshot,
           historyResetKey: null,
+          missionEvidenceId: null,
           persistAfterHydration: false,
         }
       } else {
@@ -701,6 +703,9 @@ export async function startTrackingRuntime(
         deferredOperationalSnapshot = {
           snapshot,
           historyResetKey: context?.historyResetKey ?? null,
+          missionEvidenceId: context?.missionEvidenceId === undefined
+            ? context?.historyResetKey ?? null
+            : context.missionEvidenceId,
           persistAfterHydration: true,
         }
         refreshTrackingStatus()
@@ -721,7 +726,9 @@ export async function startTrackingRuntime(
             missionEvidenceSnapshot,
             dependencies.maxPersistedPositionsPerSnapshot,
           ),
-          context?.historyResetKey ?? null,
+          context?.missionEvidenceId === undefined
+            ? context?.historyResetKey ?? null
+            : context.missionEvidenceId,
         ))
       }
       let trackingCacheDataKey: string | null = null
@@ -873,7 +880,7 @@ export async function startTrackingRuntime(
                 missionEvidenceSnapshot,
                 dependencies.maxPersistedPositionsPerSnapshot,
               ),
-              pendingSnapshot.historyResetKey,
+              pendingSnapshot.missionEvidenceId,
             ).then(
               () => applyMissionPersistenceResult({ status: 'fulfilled', value: undefined }),
               (reason: unknown) => applyMissionPersistenceResult({ status: 'rejected', reason }),
@@ -886,11 +893,11 @@ export async function startTrackingRuntime(
     refreshTrackingStatus()
   }) ?? (() => undefined)
   poller.start()
-  return () => {
+  return async () => {
     unsubscribeMissionWake()
     unsubscribeDeviceSelectionWake()
     unsubscribeParticipationScope()
-    poller.stop()
+    await poller.stop()
     participantBackfillAbortController.abort()
     invalidateTrackingRuntimeGeneration(runtimeGeneration)
   }

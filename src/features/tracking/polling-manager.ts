@@ -65,6 +65,10 @@ type PollingManagerOptions = {
   readonly maxBackoffMs?: number
   readonly getPollingMode?: () => 'active' | 'paused' | 'idle'
   readonly getHistoryResetKey?: () => string | null
+  readonly beginCurrentPositionObservation?: (missionId: string | null) => {
+    readonly missionId: string | null
+    readonly complete: () => void
+  }
   readonly getInitialBreadcrumbFrom?: () => Date | null
   readonly getInitialBreadcrumbs?: (
     signal?: AbortSignal,
@@ -101,7 +105,7 @@ type PollingManagerOptions = {
   readonly onSnapshot: (
     snapshot: TrackingSnapshot,
     context: TrackingSnapshotContext,
-  ) => void
+  ) => void | Promise<void>
   readonly onStatusChange: (status: TrackingConnectionStatus) => void
   readonly onCurrentPositionRejections?: (
     rejections: readonly CurrentPositionRejection[],
@@ -119,6 +123,8 @@ type PollingManagerOptions = {
 
 export type TrackingSnapshotContext = {
   readonly historyResetKey: string | null
+  /** Explicit mission scope for persistence; null keeps live display outside mission evidence. */
+  readonly missionEvidenceId?: string | null
   readonly suppressTrackingCache?: boolean
   /** False for idle, unavailable, or partially normalized roster observations. */
   readonly participantRosterAuthoritative?: boolean
@@ -167,7 +173,7 @@ const DEFAULT_LOGGER: PollingManagerLogger = {
 
 type PollingManager = {
   readonly start: () => void
-  readonly stop: () => void
+  readonly stop: () => Promise<void>
   readonly requestPollNow: () => void
 }
 
@@ -228,6 +234,10 @@ export function createPollingManager(
   } | null = null
   let boundedSourceRetention = false
   let lifecycleGeneration = 0
+  let stopping = false
+  let stopPromise: Promise<void> | null = null
+  let currentPositionObservationInFlight: Promise<void> | null = null
+  let settleCurrentPositionForStop: (() => void) | null = null
 
   const createHistoryPersistenceInput = (
     chunk: BreadcrumbHistoryChunk,
@@ -613,7 +623,7 @@ export function createPollingManager(
   }
 
   const scheduleNextPoll = (delayMs: number) => {
-    if (!running) {
+    if (!running || stopping) {
       return
     }
 
@@ -636,6 +646,7 @@ export function createPollingManager(
     const pollStartedAt = now().toISOString()
     let pollPhase: TrackingPollPhase = 'authentication'
     const pollHistoryResetKey = options.getHistoryResetKey?.() ?? null
+    let completeCurrentPositionObservation = (): void => undefined
     try {
       if (pollHistoryResetKey !== activeHistoryResetKey) {
         const retainedCurrentSnapshot = lastGoodSnapshot === null
@@ -717,6 +728,28 @@ export function createPollingManager(
       const recoveredBeforeCurrentPositions = consecutiveFailures > 0
       let rejectionEvidencePublishedEarly = false
       let earlyCurrentPositionTimer: ReturnType<typeof setTimeout> | null = null
+      const missionObservation = options.beginCurrentPositionObservation?.(
+        pollHistoryResetKey,
+      ) ?? {
+        missionId: pollHistoryResetKey,
+        complete: () => undefined,
+      }
+      let resolveCurrentPositionObservation = (): void => undefined
+      let currentPositionObservationCompleted = false
+      const currentPositionObservation = new Promise<void>((resolve) => {
+        resolveCurrentPositionObservation = resolve
+      })
+      currentPositionObservationInFlight = currentPositionObservation
+      completeCurrentPositionObservation = () => {
+        if (currentPositionObservationCompleted) return
+        currentPositionObservationCompleted = true
+        missionObservation.complete()
+        resolveCurrentPositionObservation()
+        if (currentPositionObservationInFlight === currentPositionObservation) {
+          currentPositionObservationInFlight = null
+        }
+        settleCurrentPositionForStop = null
+      }
       const currentPositionResult = await fetchRosterAndCurrentPositions(
         {
           getDevices: () => withPollPhase('devices', client.getDevices()),
@@ -737,12 +770,14 @@ export function createPollingManager(
                 rejected: [],
               })),
             )
-            earlyCurrentPositionTimer = scheduleTimeout(() => {
+            const publishBeforeRoster = async (): Promise<void> => {
+              if (currentPositionObservationCompleted) return
               earlyCurrentPositionTimer = null
               if (
                 discardSupersededPoll(generation, pollHistoryResetKey) ||
                 (options.getPollingMode?.() ?? 'active') !== 'active'
               ) {
+                completeCurrentPositionObservation()
                 return
               }
               const positions = retainLastAcceptedCurrentPositions(
@@ -763,20 +798,25 @@ export function createPollingManager(
                 breadcrumbMetadata,
               }
               lastGoodSnapshot = snapshot
-              options.onSnapshot(
-                annotateTrackingSnapshotHealth(snapshot, {
-                  now: now(),
-                  deviceStaleThresholdMs: options.staleThresholdMs,
-                }),
-                {
-                  historyResetKey: pollHistoryResetKey,
-                  participantRosterAuthoritative: false,
-                },
-              )
-              rejectionEvidencePublishedEarly = publishCurrentPositionRejections(
-                result.rejected,
-                pollHistoryResetKey,
-              )
+              try {
+                await options.onSnapshot(
+                  annotateTrackingSnapshotHealth(snapshot, {
+                    now: now(),
+                    deviceStaleThresholdMs: options.staleThresholdMs,
+                  }),
+                  {
+                    historyResetKey: pollHistoryResetKey,
+                    missionEvidenceId: missionObservation.missionId,
+                    participantRosterAuthoritative: false,
+                  },
+                )
+              } finally {
+                rejectionEvidencePublishedEarly = publishCurrentPositionRejections(
+                  result.rejected,
+                  missionObservation.missionId,
+                )
+                completeCurrentPositionObservation()
+              }
               publishStatus({
                 mode: 'online',
                 recovered: recoveredBeforeCurrentPositions,
@@ -785,7 +825,21 @@ export function createPollingManager(
                   createRejectedCurrentPositionWarning(result.rejected),
                 ),
               })
-            }, CURRENT_POSITION_ROSTER_GRACE_MS)
+            }
+            settleCurrentPositionForStop = () => {
+              if (earlyCurrentPositionTimer !== null) {
+                clearScheduledTimeout(earlyCurrentPositionTimer)
+                earlyCurrentPositionTimer = null
+              }
+              void publishBeforeRoster()
+            }
+            if (stopping) {
+              settleCurrentPositionForStop()
+            } else {
+              earlyCurrentPositionTimer = scheduleTimeout(() => {
+                void publishBeforeRoster()
+              }, CURRENT_POSITION_ROSTER_GRACE_MS)
+            }
             return result
           },
         },
@@ -796,6 +850,7 @@ export function createPollingManager(
         earlyCurrentPositionTimer = null
       }
       if (discardSupersededPoll(generation, pollHistoryResetKey)) {
+        completeCurrentPositionObservation()
         return
       }
 
@@ -821,6 +876,7 @@ export function createPollingManager(
         flushHistorySnapshot(false)
         historyReconciler.suspend()
         publishInactiveMissionSnapshot(currentPollingMode)
+        completeCurrentPositionObservation()
         scheduleNextPoll(pollIntervalMs)
         return
       }
@@ -840,23 +896,28 @@ export function createPollingManager(
         breadcrumbMetadata,
       }
       lastGoodSnapshot = currentSnapshot
-      options.onSnapshot(
-        annotateTrackingSnapshotHealth(currentSnapshot, {
-          now: now(),
-          deviceStaleThresholdMs: options.staleThresholdMs,
-        }),
-        {
-          historyResetKey: pollHistoryResetKey,
-          ...(currentPositionResult.rosterComplete
-            ? {}
-            : { participantRosterAuthoritative: false }),
-        },
-      )
-      if (!rejectionEvidencePublishedEarly) {
-        publishCurrentPositionRejections(
-          currentPositionResult.rejected,
-          pollHistoryResetKey,
+      try {
+        await options.onSnapshot(
+          annotateTrackingSnapshotHealth(currentSnapshot, {
+            now: now(),
+            deviceStaleThresholdMs: options.staleThresholdMs,
+          }),
+          {
+            historyResetKey: pollHistoryResetKey,
+            missionEvidenceId: missionObservation.missionId,
+            ...(currentPositionResult.rosterComplete
+              ? {}
+              : { participantRosterAuthoritative: false }),
+          },
         )
+      } finally {
+        if (!rejectionEvidencePublishedEarly) {
+          publishCurrentPositionRejections(
+            currentPositionResult.rejected,
+            missionObservation.missionId,
+          )
+        }
+        completeCurrentPositionObservation()
       }
       publishStatus({
         mode: 'online',
@@ -1043,6 +1104,7 @@ export function createPollingManager(
 
       scheduleNextPoll(pollIntervalMs)
     } catch (error) {
+      completeCurrentPositionObservation()
       if (discardSupersededPoll(generation, pollHistoryResetKey)) {
         return
       }
@@ -1095,7 +1157,7 @@ export function createPollingManager(
   }
 
   async function runPoll(generation: number): Promise<void> {
-    if (!running || generation !== lifecycleGeneration) {
+    if (!running || stopping || generation !== lifecycleGeneration) {
       return
     }
     if (pollInFlight) {
@@ -1154,7 +1216,7 @@ export function createPollingManager(
 
   return {
     start: () => {
-      if (running) {
+      if (running || stopping) {
         return
       }
 
@@ -1163,27 +1225,8 @@ export function createPollingManager(
       void runPoll(lifecycleGeneration)
     },
     stop: () => {
-      flushHistorySnapshot(false)
-      running = false
-      lifecycleGeneration += 1
-      immediatePollRequested = false
-      historyReconciler.reset()
-      canonicalizationSequence += 1
-      canonicalizationRefreshPending = false
-      initialReconciliationComplete = false
-      initialReconciliationSelectionKey = null
-      initialSeedAbortController?.abort()
-      initialSeedAbortController = null
-      canonicalizationInFlight?.abortController.abort()
-      canonicalizationInFlight = null
-      if (canonicalizationRetryTimer !== null) {
-        clearScheduledTimeout(canonicalizationRetryTimer)
-        canonicalizationRetryTimer = null
-      }
-      if (timer !== null) {
-        clearScheduledTimeout(timer)
-        timer = null
-      }
+      stopPromise ??= stopPolling()
+      return stopPromise
     },
     requestPollNow: () => {
       if (!running) {
@@ -1205,6 +1248,36 @@ export function createPollingManager(
       }
       void runPoll(lifecycleGeneration)
     },
+  }
+
+  /** Stops new work, settles the current safety observation, then invalidates the poll. */
+  async function stopPolling(): Promise<void> {
+    flushHistorySnapshot(false)
+    stopping = true
+    immediatePollRequested = false
+    if (timer !== null) {
+      clearScheduledTimeout(timer)
+      timer = null
+    }
+    settleCurrentPositionForStop?.()
+    if (currentPositionObservationInFlight !== null) {
+      await currentPositionObservationInFlight
+    }
+    running = false
+    lifecycleGeneration += 1
+    historyReconciler.reset()
+    canonicalizationSequence += 1
+    canonicalizationRefreshPending = false
+    initialReconciliationComplete = false
+    initialReconciliationSelectionKey = null
+    initialSeedAbortController?.abort()
+    initialSeedAbortController = null
+    canonicalizationInFlight?.abortController.abort()
+    canonicalizationInFlight = null
+    if (canonicalizationRetryTimer !== null) {
+      clearScheduledTimeout(canonicalizationRetryTimer)
+      canonicalizationRetryTimer = null
+    }
   }
 
   function discardSupersededPoll(

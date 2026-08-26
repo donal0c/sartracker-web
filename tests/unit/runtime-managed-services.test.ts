@@ -155,16 +155,16 @@ describe('runtime-managed-services', () => {
     )
   })
 
-  it('stops both services through the shared lifecycle helpers', () => {
+  it('stops both services through the shared lifecycle helpers', async () => {
     const stopAutosave = vi.fn()
     const stopTracking = vi.fn()
 
     const noopHandles = createNoopRuntimeServiceHandles()
-    expect(() => stopRuntimeServices(noopHandles)).not.toThrow()
+    await expect(stopRuntimeServices(noopHandles)).resolves.toBeUndefined()
 
-    stopRuntimeServices({
+    await stopRuntimeServices({
       stopAutosave,
-      stopTracking,
+      stopTracking: async () => stopTracking(),
     })
 
     expect(stopAutosave).toHaveBeenCalledTimes(1)

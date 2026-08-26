@@ -2531,3 +2531,59 @@ the head was known unsafe. Unsigned macOS packaging, the exact-head Ubuntu
 package/soak, and all five fresh reviews remain required after this
 code-and-documentation head is committed and pushed. No merge or release
 occurred.
+
+## Capacity-marker and in-flight observation remediation
+
+Fresh review of application head
+`b82298fa0845950cb11142b8b8bf4c634c172b87` found two further P1 evidence-loss
+classes. The renderer discarded the first rejection beyond its 4,096-record
+memory boundary after starting a one-shot capacity-marker write; if that write
+failed, later queue drain, Finish and disposal did not retry it. Separately, a
+current-position response could remain in flight while Finish, settings
+replacement or renderer teardown invalidated the poll generation. A rejected
+row could then hit sealed intake and be swallowed by the poller's UI-failure
+guard, or the entire retrieved response could be discarded before the renderer
+evidence drain.
+
+Both findings were centrally source-retraced before editing. The focused RED
+failed four exact assertions: Finish-time rejection acceptance threw, no mission
+observation token existed, Finish did not retry the failed capacity marker, and
+poller stop returned synchronously before the current-position response could be
+staged.
+
+The remediation gives every unresolved evidence-loss reason a retained,
+retryable durability promise. Finish, finalization and renderer disposal all
+await the marker before they may advance. Current-position polls now acquire a
+mission evidence observation token without delaying live display. Finish keeps
+that scope open across the durable status transition, closes the evidence cutoff
+only after the transition succeeds, waits observations already in flight and
+drains them. Later current positions still render through their unchanged live
+path but carry an explicit null mission-evidence scope. Finalization waits the
+closed scope before archiving. Poller stop is asynchronous, settings replacement
+awaits it, and renderer disposal starts only after the final retrieved safety
+observation has published and staged its accepted/rejected evidence.
+
+Local green evidence before commit:
+
+- focused evidence, polling, runtime lifecycle, finalization and manual set:
+  7 files / 192 tests;
+- full deterministic unit gate: 272 files / 2,199 tests;
+- ESLint, TypeScript, production build, bundle budgets and diff checks;
+- backend: 51 passed, with the intentional real macOS keychain test ignored;
+- participant/coverage/tracking Chromium: 13/13;
+- selected critical visual Playwright: 2/2; and
+- fresh uncached critical visual review: 2/2 PASS at
+  `test-results/visual-verification/reports/visual-review-2026-08-26T13-25-55Z.json`
+  and
+  `test-results/visual-verification/reports/visual-review-2026-08-26T13-26-18Z.json`.
+
+The manual now describes the durable-marker retry, Finish observation cutoff,
+continued live positions and awaited final observation. The warning layout did
+not change, so the existing screenshot remains accurate. Exact `b82298f` Linux
+run [`32970575273`](https://github.com/donal0c/sartracker-web/actions/runs/32970575273)
+passed the unchanged package harness and packaged soak, but it is invalidated as
+application-code proof by this remediation. Unsigned macOS packaging, a new
+exact-head Ubuntu package/soak and all five fresh independent reviews from zero
+remain required. Candidate-B geometry/index construction, schema v10, G2/G3,
+exact Dots and the 3.704 GB migration surface are unchanged. No merge or release
+occurred.

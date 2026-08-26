@@ -43,7 +43,13 @@ export type RejectionEvidenceObservationContext = {
   readonly observedAt: string
 }
 
+export type MissionEvidenceObservation = {
+  readonly missionId: string | null
+  readonly complete: () => void
+}
+
 export type RejectionEvidenceDelivery = {
+  readonly beginMissionObservation: (missionId: string | null) => MissionEvidenceObservation
   readonly record: (
     rejections: readonly CurrentPositionRejection[],
     context: RejectionEvidenceObservationContext,
@@ -87,11 +93,48 @@ export function createRejectionEvidenceDelivery(
   let accepting = true
   let disposalPromise: Promise<void> | null = null
   const evidenceLossMissionIds = new Set<string>()
+  const evidenceLossReasonByMission = new Map<string, IngestEvidenceLossReason>()
+  const durableEvidenceLossMissionIds = new Set<string>()
+  const evidenceLossWriteByMission = new Map<string, Promise<void>>()
   const durableHealthByMission = new Map<string, IngestEvidenceHealth>()
   const finalizedHealthByMission = new Map<string, IngestEvidenceHealth>()
   const finalizedEvidenceLossMissionIds = new Set<string>()
-  const finalizationPhaseByMission = new Map<string, 'draining' | 'sealed' | 'finalized'>()
+  const finalizationPhaseByMission = new Map<
+    string,
+    'finishing' | 'finished' | 'draining' | 'sealed' | 'finalized'
+  >()
   const finalizationEpochByMission = new Map<string, number>()
+  const observationScopeClosedMissionIds = new Set<string>()
+  const activeObservationCountByMission = new Map<string, number>()
+  const observationWaitersByMission = new Map<string, Set<() => void>>()
+
+  /** Tracks one current-position observation until its mission evidence is staged. */
+  function beginMissionObservation(missionId: string | null): MissionEvidenceObservation {
+    if (missionId === null || observationScopeClosedMissionIds.has(missionId)) {
+      return { missionId: null, complete: () => undefined }
+    }
+    activeObservationCountByMission.set(
+      missionId,
+      (activeObservationCountByMission.get(missionId) ?? 0) + 1,
+    )
+    let completed = false
+    return {
+      missionId,
+      complete: () => {
+        if (completed) return
+        completed = true
+        const remaining = (activeObservationCountByMission.get(missionId) ?? 1) - 1
+        if (remaining > 0) {
+          activeObservationCountByMission.set(missionId, remaining)
+          return
+        }
+        activeObservationCountByMission.delete(missionId)
+        const waiters = observationWaitersByMission.get(missionId)
+        observationWaitersByMission.delete(missionId)
+        for (const resolve of waiters ?? []) resolve()
+      },
+    }
+  }
 
   /** Publishes current warnings immediately and schedules non-blocking delivery. */
   function record(
@@ -127,7 +170,7 @@ export function createRejectionEvidenceDelivery(
         pendingByMissionAndAnomaly.size >=
         REJECTION_EVIDENCE_PENDING_MEMORY_CAP_HYPOTHESIS
       ) {
-        markEvidenceLoss(context.missionId)
+        markEvidenceLoss(context.missionId, 'renderer_pending_capacity_exhausted')
         continue
       }
       nextDeliverySequence += 1
@@ -177,6 +220,7 @@ export function createRejectionEvidenceDelivery(
         publishAggregateHealth()
       }
     }
+    await ensureAllEvidenceLossMarkersDurable()
     if (retryTimer !== null) {
       clearTimeoutFn(retryTimer)
       retryTimer = null
@@ -206,6 +250,7 @@ export function createRejectionEvidenceDelivery(
         )
       }
     }
+    await ensureMissionEvidenceLossDurable(missionId)
     if (
       sealAfterDrainEpoch !== undefined &&
       finalizationEpochByMission.get(missionId) === sealAfterDrainEpoch
@@ -234,12 +279,17 @@ export function createRejectionEvidenceDelivery(
       }
       return result
     }
-    if (existingPhase !== undefined) {
+    if (
+      existingPhase !== undefined &&
+      existingPhase !== 'finished'
+    ) {
       throw new Error('Mission evidence finalization is already in progress or complete.')
     }
     const finalizationEpoch = advanceMissionFinalizationEpoch(missionId)
     finalizationPhaseByMission.set(missionId, 'draining')
+    closeMissionObservationScope(missionId)
     try {
+      await waitForMissionObservations(missionId)
       await drainMissionEvidence(missionId, finalizationEpoch)
       if (finalizationEpochByMission.get(missionId) !== finalizationEpoch) {
         throw new Error(
@@ -254,7 +304,9 @@ export function createRejectionEvidenceDelivery(
       return result
     } catch (error) {
       if (finalizationEpochByMission.get(missionId) === finalizationEpoch) {
-        finalizationPhaseByMission.delete(missionId)
+        if (finalizationPhaseByMission.get(missionId) !== 'sealed') {
+          finalizationPhaseByMission.set(missionId, 'finished')
+        }
       }
       scheduleFlush()
       throw error
@@ -270,30 +322,42 @@ export function createRejectionEvidenceDelivery(
       throw new Error('Mission evidence closure is already in progress or complete.')
     }
     const finalizationEpoch = advanceMissionFinalizationEpoch(missionId)
-    finalizationPhaseByMission.set(missionId, 'draining')
+    finalizationPhaseByMission.set(missionId, 'finishing')
+    let result: Result
     try {
-      await drainMissionEvidence(missionId, finalizationEpoch)
+      await drainMissionEvidence(missionId)
       if (finalizationEpochByMission.get(missionId) !== finalizationEpoch) {
         throw new Error('Mission evidence Finish was superseded by administrative unlock.')
       }
-      const result = await operation()
-      if (finalizationEpochByMission.get(missionId) === finalizationEpoch) {
-        finalizationPhaseByMission.set(missionId, 'sealed')
-      }
-      return result
+      result = await operation()
     } catch (error) {
       if (finalizationEpochByMission.get(missionId) === finalizationEpoch) {
         finalizationPhaseByMission.delete(missionId)
+        observationScopeClosedMissionIds.delete(missionId)
       }
       scheduleFlush()
       throw error
     }
+    closeMissionObservationScope(missionId)
+    await waitForMissionObservations(missionId)
+    try {
+      await drainMissionEvidence(missionId)
+    } catch {
+      // Finish is already durable. Retain the renderer queue and critical health;
+      // finalization and teardown will retry instead of desynchronizing UI state.
+      scheduleFlush()
+    }
+    if (finalizationEpochByMission.get(missionId) === finalizationEpoch) {
+      finalizationPhaseByMission.set(missionId, 'finished')
+    }
+    return result
   }
 
   /** Reopens renderer acceptance only after the durable store confirms admin unlock. */
   function reopenMissionEvidenceAfterUnlock(missionId: string): void {
     advanceMissionFinalizationEpoch(missionId)
     finalizationPhaseByMission.delete(missionId)
+    observationScopeClosedMissionIds.delete(missionId)
     const finalizedHealth = finalizedHealthByMission.get(missionId)
     if (finalizedHealth !== undefined) {
       durableHealthByMission.set(missionId, finalizedHealth)
@@ -429,17 +493,10 @@ export function createRejectionEvidenceDelivery(
   }
 
   /** Persists one sticky completeness block without retaining further unique payloads. */
-  function markEvidenceLoss(missionId: string): void {
-    if (evidenceLossMissionIds.has(missionId)) return
-    evidenceLossMissionIds.add(missionId)
-    publishEvidenceHealth(missionId, createCapacityFailureHealth())
-    void dependencies.missionStore.recordIngestEvidenceLoss?.({
-      mission_id: missionId,
-      reason: 'renderer_pending_capacity_exhausted',
-    }).then((health) => {
-      if (!disposed) applyMissionHealth(missionId, health)
-    }).catch(() => {
-      if (!disposed) applyMissionHealth(missionId, createCapacityFailureHealth())
+  function markEvidenceLoss(missionId: string, reason: IngestEvidenceLossReason): void {
+    rememberEvidenceLoss(missionId, reason)
+    void ensureMissionEvidenceLossDurable(missionId).catch(() => {
+      if (!disposed) applyMissionHealth(missionId, createEvidenceLossHealth(reason))
     })
   }
 
@@ -455,11 +512,69 @@ export function createRejectionEvidenceDelivery(
       [...pendingByMissionAndAnomaly.values()].map((entry) => entry.missionId),
     )].sort()
     for (const missionId of missionIds) {
-      const health = await recordEvidenceLoss({
-        mission_id: missionId,
-        reason: 'renderer_pending_evidence_lost',
+      rememberEvidenceLoss(missionId, 'renderer_pending_evidence_lost')
+      await ensureMissionEvidenceLossDurable(missionId)
+    }
+  }
+
+  /** Retains an unresolved loss locally until its durable marker succeeds. */
+  function rememberEvidenceLoss(missionId: string, reason: IngestEvidenceLossReason): void {
+    if (!evidenceLossReasonByMission.has(missionId)) {
+      evidenceLossReasonByMission.set(missionId, reason)
+    }
+    evidenceLossMissionIds.add(missionId)
+    publishEvidenceHealth(missionId, createEvidenceLossHealth(
+      evidenceLossReasonByMission.get(missionId) ?? reason,
+    ))
+  }
+
+  /** Retries one marker and resolves only after the main process confirms durability. */
+  async function ensureMissionEvidenceLossDurable(missionId: string): Promise<void> {
+    if (durableEvidenceLossMissionIds.has(missionId)) return
+    const reason = evidenceLossReasonByMission.get(missionId)
+    if (reason === undefined) return
+    const existingWrite = evidenceLossWriteByMission.get(missionId)
+    if (existingWrite !== undefined) return existingWrite
+    const recordEvidenceLoss = dependencies.missionStore.recordIngestEvidenceLoss
+    if (recordEvidenceLoss === undefined) {
+      throw new Error(
+        'Rejected-position evidence loss could not be durably marked; mission closure remains blocked.',
+      )
+    }
+    const write = recordEvidenceLoss({ mission_id: missionId, reason })
+      .then((health) => {
+        durableEvidenceLossMissionIds.add(missionId)
+        if (!disposed) applyMissionHealth(missionId, health)
       })
-      applyMissionHealth(missionId, health)
+      .finally(() => {
+        if (evidenceLossWriteByMission.get(missionId) === write) {
+          evidenceLossWriteByMission.delete(missionId)
+        }
+      })
+    evidenceLossWriteByMission.set(missionId, write)
+    return write
+  }
+
+  /** Makes renderer teardown fail closed until every discarded payload has a marker. */
+  async function ensureAllEvidenceLossMarkersDurable(): Promise<void> {
+    for (const missionId of [...evidenceLossReasonByMission.keys()].sort()) {
+      await ensureMissionEvidenceLossDurable(missionId)
+    }
+  }
+
+  /** Prevents later polls from extending mission evidence beyond a durable close boundary. */
+  function closeMissionObservationScope(missionId: string): void {
+    observationScopeClosedMissionIds.add(missionId)
+  }
+
+  /** Waits for every current-position observation already scoped to this mission. */
+  async function waitForMissionObservations(missionId: string): Promise<void> {
+    while ((activeObservationCountByMission.get(missionId) ?? 0) > 0) {
+      await new Promise<void>((resolve) => {
+        const waiters = observationWaitersByMission.get(missionId) ?? new Set<() => void>()
+        waiters.add(resolve)
+        observationWaitersByMission.set(missionId, waiters)
+      })
     }
   }
 
@@ -505,7 +620,10 @@ export function createRejectionEvidenceDelivery(
       (rendererPendingCount > 0 ? 'renderer_evidence_pending' : null)
     if (evidenceLossMissionIds.size > 0) {
       state = 'critical'
-      reason = 'renderer_pending_capacity_exhausted'
+      const missionId = [...evidenceLossMissionIds].sort()[0]
+      reason = missionId === undefined
+        ? 'renderer_pending_capacity_exhausted'
+        : evidenceLossReasonByMission.get(missionId) ?? 'renderer_pending_capacity_exhausted'
     }
     dependencies.applyEvidenceHealth({
       state,
@@ -544,6 +662,7 @@ export function createRejectionEvidenceDelivery(
 
   return {
     applyMissionHealth,
+    beginMissionObservation,
     dispose,
     flushMission,
     record,
@@ -553,11 +672,11 @@ export function createRejectionEvidenceDelivery(
   }
 }
 
-/** Describes the explicit bounded-memory impossibility boundary. */
-function createCapacityFailureHealth(): IngestEvidenceHealth {
+/** Creates the renderer-side critical state for one unrepresented observation. */
+function createEvidenceLossHealth(reason: IngestEvidenceLossReason): IngestEvidenceHealth {
   return {
     state: 'critical',
-    reason: 'renderer_pending_capacity_exhausted',
+    reason,
     pendingCount: REJECTION_EVIDENCE_PENDING_MEMORY_CAP_HYPOTHESIS,
     corruptCount: 0,
     conflictCount: 0,

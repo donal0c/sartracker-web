@@ -15,6 +15,7 @@ import {
 import type { TrackingSnapshotContext } from '../tracking/polling-manager'
 
 const NOOP_STOP = () => undefined
+const NOOP_ASYNC_STOP = async () => undefined
 
 const NOOP_TRACKING_CACHE = {
   read: async () => null,
@@ -38,7 +39,7 @@ export type RuntimeBootstrapSettings = {
 export type RuntimeServiceHandles = {
   readonly stopAutosave: () => void
   readonly requestAutosaveSync: (reason: AutosaveSyncReason) => Promise<void>
-  readonly stopTracking: () => void
+  readonly stopTracking: () => Promise<void>
 }
 
 type CreateManagedRuntimeServicesDependencies = {
@@ -82,7 +83,7 @@ type CreateManagedRuntimeServicesDependencies = {
       },
     ) => {
       readonly start: () => void
-      readonly stop: () => void
+      readonly stop: () => Promise<void>
     }
     readonly cache: {
       readonly read: () => Promise<string | null>
@@ -142,7 +143,7 @@ type CreateManagedRuntimeServicesDependencies = {
     },
   ) => {
     readonly start: () => void
-    readonly stop: () => void
+    readonly stop: () => Promise<void>
   }
   readonly applySnapshot: (snapshot: import('../tracking/tracking-types').TrackingSnapshot) => void
   readonly applyStatus: (status: import('../tracking/tracking-types').TrackingConnectionStatus) => void
@@ -170,16 +171,16 @@ export function createNoopRuntimeServiceHandles(): RuntimeServiceHandles {
   return {
     stopAutosave: NOOP_STOP,
     requestAutosaveSync: async () => undefined,
-    stopTracking: NOOP_STOP,
+    stopTracking: NOOP_ASYNC_STOP,
   }
 }
 
 /**
  * Stops a previously-started runtime service set.
  */
-export function stopRuntimeServices(handles: RuntimeServiceHandles): void {
+export async function stopRuntimeServices(handles: RuntimeServiceHandles): Promise<void> {
   handles.stopAutosave()
-  handles.stopTracking()
+  await handles.stopTracking()
 }
 
 /**
@@ -259,9 +260,9 @@ export async function createManagedRuntimeServices(
     return {
       stopAutosave: autosave.stop,
       requestAutosaveSync: autosave.requestSync,
-      stopTracking: () => {
+      stopTracking: async () => {
         stopTrackingStatusBridge()
-        stopTrackingPoller()
+        await stopTrackingPoller()
       },
     }
   } catch (error) {
