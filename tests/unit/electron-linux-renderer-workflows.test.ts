@@ -104,6 +104,16 @@ describe('Linux Electron renderer workflows [DON-260]', () => {
     expect(workflowSource).not.toContain('--enable-unsafe-swiftshader')
   })
 
+  it('proves the standalone packaged app completes a graceful window close', () => {
+    const workflow = readWorkflow('.github/workflows/electron-linux-validation.yml')
+    const launch = selectStep(workflow.jobs.build, 'Launch AppImage smoke').run ?? ''
+
+    expect(launch).toContain('xdotool windowclose "$WINDOW_ID"')
+    expect(launch).toContain('timeout 15s tail --pid="$APP_PID" -f /dev/null')
+    expect(launch).toContain('wait "$APP_PID"')
+    expect(launch).toContain('appimage-graceful-close.txt')
+  })
+
   it('qualifies the internal mission model only in the standalone validation package', () => {
     const validation = readWorkflow('.github/workflows/electron-linux-validation.yml')
     const release = readWorkflow('.github/workflows/electron-release.yml')

@@ -3,6 +3,7 @@ import { EventEmitter } from 'node:events'
 import { describe, expect, it } from 'vitest'
 
 import {
+  requestGracefulElectronQuit,
   runCleanupStep,
   startTrackingSoakSleepGuard,
   stopOwnedProcess,
@@ -22,6 +23,44 @@ class FakeChild extends EventEmitter {
 }
 
 describe('tracking soak owned lifecycle [DON-260]', () => {
+  it('requests Electron quit and proves a normal process exit', async () => {
+    const child = new FakeChild()
+    const expressions: string[] = []
+    const mainInspector = {
+      evaluate: async (expression: string) => {
+        expressions.push(expression)
+        child.exitCode = 0
+        queueMicrotask(() => child.emit('exit', 0, null))
+      },
+    }
+
+    await expect(requestGracefulElectronQuit(mainInspector, child, 50))
+      .resolves.toEqual({
+        exited: true,
+        exitKind: 'code',
+        forced: false,
+        graceful: true,
+      })
+    expect(expressions).toHaveLength(1)
+    expect(expressions[0]).toContain("require('electron').app.quit()")
+    expect(child.kills).toEqual([])
+  })
+
+  it('fails closed when Electron does not complete graceful quit', async () => {
+    const child = new FakeChild()
+    const mainInspector = {
+      evaluate: async () => undefined,
+    }
+
+    await expect(requestGracefulElectronQuit(mainInspector, child, 1))
+      .rejects.toMatchObject({
+        trackingSoakLifecycleFailure: {
+          failureClass: 'graceful_app_quit_failed',
+        },
+      })
+    expect(child.kills).toEqual([])
+  })
+
   it('starts a run-scoped Darwin sleep guard with the harness pid', async () => {
     const child = new FakeChild()
     const calls: unknown[][] = []

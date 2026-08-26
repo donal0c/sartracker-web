@@ -1,5 +1,46 @@
 const ownedProcessStops = new WeakMap()
 
+/** Requests the packaged Electron app's real quit path and proves normal exit. */
+export async function requestGracefulElectronQuit(mainInspector, child, timeoutMs) {
+  if (
+    mainInspector === null ||
+    typeof mainInspector?.evaluate !== 'function' ||
+    child === null ||
+    typeof child !== 'object'
+  ) {
+    throw createLifecycleFailure(
+      'graceful_app_quit_failed',
+      'Tracking soak could not request a graceful Electron quit.',
+    )
+  }
+
+  let requestFailed = false
+  try {
+    await mainInspector.evaluate("require('electron').app.quit(); 'quit_requested'")
+  } catch {
+    requestFailed = true
+  }
+  const exited = await waitForProcessExit(child, timeoutMs)
+  const evidence = processExitEvidence(child, false)
+  if (
+    !exited ||
+    !evidence.exited ||
+    evidence.exitKind !== 'code' ||
+    child.exitCode !== 0
+  ) {
+    throw createLifecycleFailure(
+      'graceful_app_quit_failed',
+      requestFailed
+        ? 'Tracking soak could not confirm the Electron quit request.'
+        : 'Tracking soak Electron quit did not complete normally.',
+    )
+  }
+  return {
+    ...evidence,
+    graceful: true,
+  }
+}
+
 /** Starts a run-owned macOS sleep inhibitor tied to the harness process. */
 export async function startTrackingSoakSleepGuard(input) {
   if (input?.platform !== 'darwin') return createInactiveSleepGuard()

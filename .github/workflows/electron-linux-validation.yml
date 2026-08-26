@@ -213,8 +213,22 @@ jobs:
             exit 1
           }
 
-          kill "$APP_PID" 2>/dev/null || true
-          wait "$APP_PID" 2>/dev/null || true
+          WINDOW_ID="$(head -n 1 tmp/electron-validation-evidence/window-ids.txt)"
+          xdotool windowclose "$WINDOW_ID"
+          if ! timeout 15s tail --pid="$APP_PID" -f /dev/null; then
+            echo "::error::AppImage did not exit after the packaged window close request."
+            cat tmp/electron-validation-evidence/appimage.log || true
+            kill "$APP_PID" 2>/dev/null || true
+            wait "$APP_PID" 2>/dev/null || true
+            exit 1
+          fi
+          if ! wait "$APP_PID"; then
+            echo "::error::AppImage exited unsuccessfully after its window close request."
+            cat tmp/electron-validation-evidence/appimage.log || true
+            exit 1
+          fi
+          echo "graceful-window-close=passed" \
+            > tmp/electron-validation-evidence/appimage-graceful-close.txt
           EOF
 
       - name: Upload Electron Linux artifacts

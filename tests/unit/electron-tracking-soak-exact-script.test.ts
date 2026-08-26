@@ -329,10 +329,13 @@ describe('fourteen-day packaged exact-dot soak script [DON-260]', () => {
     expect(closeSource).toContain('runCleanupStep(')
     expect(closeSource).toContain('collectOperatorClickAuditTail')
     expect(closeSource).toContain('collectLaunchResponsiveness')
+    expect(closeSource).toContain('requestGracefulElectronQuit(')
+    expect(closeSource).toContain('launch.shutdownEvidence = exitEvidence')
     expect(closeSource).toContain('launch.mainInspector.close()')
     expect(closeSource).toContain('launch.browser.close()')
     expect(closeSource).toContain('stopOwnedProcess(launch.appProcess')
     expect(closeSource).not.toContain("launch.appProcess.kill('SIGTERM')")
+    expect(source).toContain('shutdown: launch.shutdownEvidence')
     expect(source).toContain('signalCode !== null')
     const launchFailureSource = source.slice(
       source.indexOf('async function launchPackagedApp('),
