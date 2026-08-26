@@ -370,9 +370,9 @@ export function createRejectionEvidenceDelivery(
       mission_id: missionId,
       reason: 'renderer_pending_capacity_exhausted',
     }).then((health) => {
-      if (!disposed) publishEvidenceHealth(missionId, health)
+      if (!disposed) applyMissionHealth(missionId, health)
     }).catch(() => {
-      if (!disposed) publishEvidenceHealth(missionId, createCapacityFailureHealth())
+      if (!disposed) applyMissionHealth(missionId, createCapacityFailureHealth())
     })
   }
 

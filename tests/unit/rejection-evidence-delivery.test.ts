@@ -399,6 +399,59 @@ describe('rejection evidence delivery [DON-268]', () => {
     }))
   })
 
+  it.each(['resolve', 'reject'] as const)(
+    'keeps delayed capacity-loss %s outside live health after finalization',
+    async (settlement) => {
+      let resolveEvidenceLoss: ((health: ReturnType<typeof capacityFailure>) => void) | undefined
+      let rejectEvidenceLoss: ((error: Error) => void) | undefined
+      const evidenceLoss = new Promise<ReturnType<typeof capacityFailure>>((resolve, reject) => {
+        resolveEvidenceLoss = resolve
+        rejectEvidenceLoss = reject
+      })
+      const applyEvidenceHealth = vi.fn()
+      const delivery = createRejectionEvidenceDelivery({
+        missionStore: {
+          recordIngestRejections: vi.fn(async (input) => ({
+            acknowledgedDeliveryIds: input.rejections.map((entry) => entry.deliveryId),
+            health: healthy(),
+          })),
+          recordIngestEvidenceLoss: vi.fn().mockReturnValue(evidenceLoss),
+        },
+        applyRejections: vi.fn(),
+        applyEvidenceHealth,
+      })
+      const rejections = Array.from(
+        { length: REJECTION_EVIDENCE_PENDING_MEMORY_CAP_HYPOTHESIS + 1 },
+        (_unused, index) => createRejection(`capacity:${index}`),
+      )
+
+      delivery.record(rejections, observation('mission-finalized'))
+      await delivery.runWithMissionFinalizationFence(
+        'mission-finalized',
+        async () => 'finalized',
+      )
+      expect(applyEvidenceHealth).toHaveBeenLastCalledWith(expect.objectContaining({
+        state: 'healthy', reason: null, pendingCount: 0,
+      }))
+
+      if (settlement === 'resolve') {
+        resolveEvidenceLoss?.(capacityFailure())
+      } else {
+        rejectEvidenceLoss?.(new Error('capacity marker failed'))
+      }
+      await evidenceLoss.catch(() => undefined)
+      await Promise.resolve()
+
+      expect(applyEvidenceHealth).toHaveBeenLastCalledWith(expect.objectContaining({
+        state: 'healthy', reason: null, pendingCount: 0,
+      }))
+      delivery.reopenMissionEvidenceAfterUnlock('mission-finalized')
+      expect(applyEvidenceHealth).toHaveBeenLastCalledWith(expect.objectContaining({
+        state: 'critical', reason: 'renderer_pending_capacity_exhausted',
+      }))
+    },
+  )
+
   it('captures mission identity at observation time and never cross-deduplicates missions', async () => {
     const calls: Array<{ readonly mission_id: string; readonly deliveryId: string }> = []
     const delivery = createRejectionEvidenceDelivery({
@@ -541,6 +594,15 @@ describe('rejection evidence delivery [DON-268]', () => {
       state: 'degraded' as const,
       reason: 'ledger_projection_failed',
       pendingCount: 1,
+    }
+  }
+
+  function capacityFailure() {
+    return {
+      ...healthy(),
+      state: 'critical' as const,
+      reason: 'renderer_pending_capacity_exhausted',
+      pendingCount: REJECTION_EVIDENCE_PENDING_MEMORY_CAP_HYPOTHESIS,
     }
   }
 })

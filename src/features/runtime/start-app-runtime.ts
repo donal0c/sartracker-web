@@ -6,6 +6,7 @@ import { startMissionAutosave } from '../persistence/mission-autosave'
 import type { AutosaveSyncReason } from '../persistence/autosave-status-store'
 import {
   createTauriMissionStore,
+  type IngestEvidenceHealth,
   type MissionStore,
 } from '../../infrastructure/mission-store/tauri-mission-store'
 import { createElectronMissionStore } from '../../infrastructure/mission-store/electron-mission-store'
@@ -165,33 +166,37 @@ export async function startAppRuntime(
         applyEvidenceHealth: applyIngestEvidenceHealth,
         readEvidenceHealth: () => useIngestHealthStore.getState().evidenceHealth,
       })
-  if (missionStore.getIngestEvidenceHealth !== undefined) {
-    void missionStore.getActiveMission().then(async (mission) =>
-      mission === null
-        ? null
-        : {
-            missionId: mission.id,
-            health: await (missionStore.getIngestEvidenceHealth?.(mission.id) ?? null),
-          },
-    ).then((result) => {
-      if (result === null || result.health === null) return
-      if (rejectionEvidenceDelivery === null) {
-        applyIngestEvidenceHealth(result.health)
-      } else {
-        rejectionEvidenceDelivery.applyMissionHealth(result.missionId, result.health)
-      }
-    }).catch(() => {
-      const health = {
-        state: 'critical',
-        reason: 'evidence_health_unavailable',
-        pendingCount: 0,
-        corruptCount: 0,
-        conflictCount: 0,
-        rejectedCount: 0,
-        affectedDeviceCount: 0,
-        conflictDeviceIds: [],
-      } as const
+  const unavailableEvidenceHealth: IngestEvidenceHealth = {
+    state: 'critical',
+    reason: 'evidence_health_unavailable',
+    pendingCount: 0,
+    corruptCount: 0,
+    conflictCount: 0,
+    rejectedCount: 0,
+    affectedDeviceCount: 0,
+    conflictDeviceIds: [],
+  }
+  /** Routes startup hydration through the finalized-mission health boundary. */
+  const applyStartupMissionHealth = (
+    missionId: string,
+    health: IngestEvidenceHealth,
+  ): void => {
+    if (rejectionEvidenceDelivery === null) {
       applyIngestEvidenceHealth(health)
+    } else {
+      rejectionEvidenceDelivery.applyMissionHealth(missionId, health)
+    }
+  }
+  if (missionStore.getIngestEvidenceHealth !== undefined) {
+    void missionStore.getActiveMission().then((mission) => {
+      if (mission === null) return
+      void missionStore.getIngestEvidenceHealth?.(mission.id).then((health) => {
+        applyStartupMissionHealth(mission.id, health)
+      }).catch(() => {
+        applyStartupMissionHealth(mission.id, unavailableEvidenceHealth)
+      })
+    }).catch(() => {
+      applyIngestEvidenceHealth(unavailableEvidenceHealth)
     })
   }
   const gpxImportSource =

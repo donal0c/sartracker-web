@@ -243,6 +243,93 @@ describe('app runtime startup', () => {
     expect(useIngestHealthStore.getState().evidenceHealth).toEqual(healthyEvidence())
   })
 
+  it('does not let delayed startup health rejection resurrect a finalized mission', async () => {
+    const activeMission = {
+      id: 'mission-finalized', name: 'Mission finalized', status: 'active' as const,
+      start_time: '2026-08-22T10:00:00.000Z', pause_time: null,
+      finish_time: null, paused_seconds: 0, notes: null, schema_version: 10,
+    }
+    let rejectStartupHealth: ((error: Error) => void) | undefined
+    const startupHealth = new Promise<ReturnType<typeof healthyEvidence>>((_resolve, reject) => {
+      rejectStartupHealth = reject
+    })
+    const missionStore = Object.assign(createMissionStoreStub(), {
+      getActiveMission: vi.fn().mockResolvedValue(activeMission),
+      getIngestEvidenceHealth: vi.fn().mockReturnValue(startupHealth),
+      recordIngestRejections: vi.fn(),
+      finalizeMission: vi.fn().mockResolvedValue({
+        mission: { ...activeMission, status: 'finalized' as const },
+        archive: {},
+      }),
+    })
+    const startMissionGovernanceRuntime = vi.fn().mockResolvedValue({})
+
+    await startAppRuntime({
+      registerServiceWorker: vi.fn().mockResolvedValue(undefined),
+      isTauriRuntimeAvailable: vi.fn().mockReturnValue(false),
+      isElectronRuntimeAvailable: vi.fn().mockReturnValue(true),
+      createMissionStore: vi.fn().mockReturnValue(missionStore),
+      readRuntimeBootstrapSettings: vi.fn().mockResolvedValue(createBootstrapSettings()),
+      startMissionAutosave: vi.fn().mockReturnValue(createAutosaveController()),
+      startMissionRuntime: vi.fn().mockResolvedValue({}),
+      startMissionGovernanceRuntime,
+      startMarkerRuntime: vi.fn().mockResolvedValue({}),
+      startDrawingRuntime: vi.fn().mockResolvedValue({}),
+      startGpxRuntime: vi.fn().mockResolvedValue({}),
+      startTrackingRuntime: vi.fn().mockResolvedValue(vi.fn()),
+    })
+    await vi.waitFor(() => expect(missionStore.getIngestEvidenceHealth).toHaveBeenCalledOnce())
+    const governanceStore = startMissionGovernanceRuntime.mock.calls[0]?.[0].missionStore
+    await governanceStore.finalizeMission(activeMission.id)
+
+    rejectStartupHealth?.(new Error('health read failed'))
+    await startupHealth.catch(() => undefined)
+    await Promise.resolve()
+    await Promise.resolve()
+
+    expect(useIngestHealthStore.getState().evidenceHealth).toEqual(healthyEvidence())
+    await governanceStore.unlockFinalizedMission({
+      mission_id: activeMission.id,
+      admin_name: 'Duty Admin',
+      reason: 'Review correction.',
+    })
+    expect(useIngestHealthStore.getState().evidenceHealth).toMatchObject({
+      state: 'critical', reason: 'evidence_health_unavailable',
+    })
+  })
+
+  it('publishes startup health rejection while its mission remains active', async () => {
+    const activeMission = {
+      id: 'mission-active', name: 'Mission active', status: 'active' as const,
+      start_time: '2026-08-22T10:00:00.000Z', pause_time: null,
+      finish_time: null, paused_seconds: 0, notes: null, schema_version: 10,
+    }
+    const missionStore = Object.assign(createMissionStoreStub(), {
+      getActiveMission: vi.fn().mockResolvedValue(activeMission),
+      getIngestEvidenceHealth: vi.fn().mockRejectedValue(new Error('health read failed')),
+      recordIngestRejections: vi.fn(),
+    })
+
+    await startAppRuntime({
+      registerServiceWorker: vi.fn().mockResolvedValue(undefined),
+      isTauriRuntimeAvailable: vi.fn().mockReturnValue(false),
+      isElectronRuntimeAvailable: vi.fn().mockReturnValue(true),
+      createMissionStore: vi.fn().mockReturnValue(missionStore),
+      readRuntimeBootstrapSettings: vi.fn().mockResolvedValue(createBootstrapSettings()),
+      startMissionAutosave: vi.fn().mockReturnValue(createAutosaveController()),
+      startMissionRuntime: vi.fn().mockResolvedValue({}),
+      startMissionGovernanceRuntime: vi.fn().mockResolvedValue({}),
+      startMarkerRuntime: vi.fn().mockResolvedValue({}),
+      startDrawingRuntime: vi.fn().mockResolvedValue({}),
+      startGpxRuntime: vi.fn().mockResolvedValue({}),
+      startTrackingRuntime: vi.fn().mockResolvedValue(vi.fn()),
+    })
+
+    await vi.waitFor(() => expect(useIngestHealthStore.getState().evidenceHealth).toMatchObject({
+      state: 'critical', reason: 'evidence_health_unavailable',
+    }))
+  })
+
   it('wires the active mission device selection into breadcrumb polling', async () => {
     useMissionStore.setState({
       phase: 'active',
