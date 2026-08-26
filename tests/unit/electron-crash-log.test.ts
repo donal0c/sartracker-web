@@ -29,6 +29,7 @@ type CrashLog = {
     readonly detail?: string
   }) => Promise<void>
   readonly readRecent: (limit?: number) => Promise<readonly CrashEntry[]>
+  readonly markSessionStart: () => Promise<void>
   readonly markCleanExit: () => Promise<void>
   readonly hadUncleanShutdown: () => Promise<boolean>
 }
@@ -108,6 +109,16 @@ describe('electron crash log', () => {
     await expect(log.hadUncleanShutdown()).resolves.toBe(true)
 
     // Marking a clean exit clears the flag again.
+    await log.markCleanExit()
+    await expect(log.hadUncleanShutdown()).resolves.toBe(false)
+  })
+
+  it('detects a hard process loss without relying on a crash callback', async () => {
+    const log = await createLog()
+    await log.markSessionStart()
+
+    await expect(log.hadUncleanShutdown()).resolves.toBe(true)
+
     await log.markCleanExit()
     await expect(log.hadUncleanShutdown()).resolves.toBe(false)
   })

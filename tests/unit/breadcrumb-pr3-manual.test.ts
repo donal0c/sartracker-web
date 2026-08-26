@@ -49,6 +49,9 @@ describe('breadcrumb PR-3 operator manual [DON-275]', () => {
       'retries the durable capacity-loss marker before Finish, finalization, or shutdown may proceed',
       'every unfinalized mission, including a finished mission',
       'unexpected renderer crash is fenced immediately',
+      'fatal main-process fault fences mission evidence before relaunch',
+      'After any unclean shutdown, SAR Tracker blocks every unfinalized mission before the operator window opens',
+      'SAR Tracker could not restart safely',
       'SAR Tracker could not close safely',
       'preserve the profile',
     ]) {

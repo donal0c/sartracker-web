@@ -334,6 +334,27 @@ function reportUnsafeRendererTeardown(error, runtimeLog) {
   }
 }
 
+/** Keeps a fatally damaged runtime open when mission evidence cannot be fenced. */
+function reportUnsafeFatalRestart(error, runtimeLog) {
+  void runtimeLog?.append({
+    level: 'error',
+    event: 'fatal_restart_blocked',
+    fields: {
+      failureClass: error instanceof Error
+        ? 'evidence_loss_marker_unavailable'
+        : 'unknown_fatal_restart_failure',
+    },
+  })
+  try {
+    dialog.showErrorBox(
+      'SAR Tracker could not restart safely',
+      'Pending tracking evidence could not be marked safely after the fatal runtime fault. SAR Tracker has kept the current process open and will not relaunch automatically. Preserve the profile and contact support before forcing it closed.',
+    )
+  } catch {
+    // The runtime log above retains the blocking failure in headless contexts.
+  }
+}
+
 function isAllowedRendererNavigation(targetUrl, currentUrl) {
   try {
     const target = new URL(targetUrl)
@@ -440,6 +461,17 @@ async function handleFatalMainProcessError(input) {
     event: input.kind === 'uncaughtException' ? 'uncaught_exception' : 'unhandled_rejection',
     fields: { name: input.error instanceof Error ? input.error.name : 'Error' },
   })
+
+  const rendererTeardownCoordinator =
+    electronRuntimeContext.rendererTeardownCoordinator
+  if (rendererTeardownCoordinator !== null) {
+    try {
+      await rendererTeardownCoordinator.markRendererUnavailable()
+    } catch (error) {
+      reportUnsafeFatalRestart(error, input.runtimeLog)
+      return
+    }
+  }
 
   try {
     dialog.showErrorBox(
@@ -962,6 +994,8 @@ async function startElectronApp() {
   })
   await storageDiagnostics.initialize()
   const crashLog = createCrashLog({ userDataPath })
+  const previousSessionEndedUncleanly = await crashLog.hadUncleanShutdown()
+  await crashLog.markSessionStart()
   electronRuntimeContext.crashLog = crashLog
   electronRuntimeContext.runtimeLog = runtimeLog
   installCrashCapture(crashLog, runtimeLog)
@@ -1034,6 +1068,9 @@ async function startElectronApp() {
     missionStore,
   })
   electronRuntimeContext.rendererTeardownCoordinator = rendererTeardownCoordinator
+  if (previousSessionEndedUncleanly) {
+    await rendererTeardownCoordinator.markRendererUnavailable()
+  }
   void missionStore
     .info()
     .then((missionStoreInfo) =>

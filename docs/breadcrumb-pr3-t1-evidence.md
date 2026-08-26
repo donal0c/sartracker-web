@@ -2848,3 +2848,59 @@ migration surface remain unchanged. There was no pre-merge packaged 960k/2M
 coverage run outside G2 and no packaged forced-kill matrix. Five fresh
 independent PR-3 reviews from zero remain required on the final evidence-bound
 head. No merge or release occurred.
+
+## Fatal-main and unclean-session evidence remediation
+
+Fresh broad review of evidence-bound head
+`848bfb2246939fd4635a7125edd8d0fe5002fcb9` found a further P1. The fatal
+main-process exception handler recorded diagnostics and called `app.exit(1)`
+without using the renderer-evidence coordinator. Because `app.exit` bypasses
+the guarded `before-quit` path, renderer-held mission evidence could disappear
+without a durable blocker and a later restart could claim Complete.
+
+Central source retrace confirmed the direct exit and the missing fatal-path
+coordinator call. Three REDs proved that fatal relaunch did not wait for the
+evidence fence, fence failure still relaunched, and a recorded unclean restart
+opened the operator window without marking uncertainty. A fourth RED proved
+that a hard process loss without a JavaScript crash callback was not detectable
+from the existing clean-exit timestamp alone. The manual RED rejected the
+missing operator guidance.
+
+The remediation makes the fatal handler await the main-owned durable loss
+marker before relaunch. If that marker cannot be written, SAR Tracker refuses
+automatic relaunch, keeps the current process open and shows a native safety
+message. The crash log now owns an atomic active-session marker: startup checks
+the previous marker, then records the current session; clean exit removes it
+only after its durable clean timestamp succeeds. After a fatal exception,
+SIGKILL, power loss, or other unclean termination, startup durably blocks every
+`active`, `paused`, or `finished` mission before creating an operator window.
+Failure to write those blockers aborts startup and is retried on the next
+launch. A composed real-SQLite regression proves the recovered mission health
+is `critical` with `renderer_pending_evidence_lost`.
+
+Local green evidence before commit:
+
+- focused crash/main/coordinator/store/coverage/manual set: 7 files / 140 tests;
+- full deterministic unit gate: 272 files / 2,208 tests;
+- ESLint, `tsc --noEmit`, production build, bundle budgets and diff checks;
+- backend: 51 passed, with the intentional real macOS keychain test ignored;
+- participant/coverage/tracking Chromium: 13/13;
+- selected critical visual Playwright: 2/2; and
+- fresh uncached critical visual review: 2/2 PASS at
+  `test-results/visual-verification/reports/visual-review-2026-08-26T15-09-43Z.json`.
+
+The first full-unit attempt recorded one unrelated breadcrumb-accumulator
+timing at `102.629 ms` against its `100 ms` test gate. The exact assertion then
+passed three serial isolated repetitions and the full 2,208-test rerun passed.
+The first Chromium attempt lost one harness execution context during navigation;
+the affected flow passed three serial isolated repetitions and the full 13-test
+rerun passed. Neither partial run is counted as the final green gate.
+
+The manual now documents fatal-restart refusal and pre-window recovery marking.
+The existing critical evidence screenshot remains accurate because the tracking
+warning surface did not change. Earlier macOS and Ubuntu package/soak evidence
+is invalidated as exact application-code proof by this Electron startup change.
+Candidate-B geometry/index construction, schema v10, G2/G3, exact Dots and the
+3.704 GB migration surface are unchanged. Commit, push, replacement exact-head
+macOS/Linux package evidence and five fresh independent PR-3 reviews from zero
+remain required. No merge or release occurred.

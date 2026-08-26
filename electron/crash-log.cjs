@@ -6,6 +6,7 @@ const { sanitizeDiagnosticText } = require('./diagnostic-sanitizer.cjs')
 const CRASH_DIR_NAME = 'crashes'
 const CRASH_LOG_FILE_NAME = 'crash-log.json'
 const CLEAN_EXIT_FILE_NAME = 'last-clean-exit'
+const ACTIVE_SESSION_FILE_NAME = 'active-session'
 const DEFAULT_MAX_ENTRIES = 10
 
 // `render-process-gone` fires on normal window teardown (`clean-exit`) as well as on
@@ -40,6 +41,7 @@ function createCrashLog(options) {
   const crashDir = path.join(options.userDataPath, CRASH_DIR_NAME)
   const crashLogPath = path.join(crashDir, CRASH_LOG_FILE_NAME)
   const cleanExitPath = path.join(crashDir, CLEAN_EXIT_FILE_NAME)
+  const activeSessionPath = path.join(crashDir, ACTIVE_SESSION_FILE_NAME)
   const maxEntries =
     typeof options.maxEntries === 'number' && options.maxEntries > 0
       ? options.maxEntries
@@ -52,6 +54,7 @@ function createCrashLog(options) {
   return {
     record,
     readRecent,
+    markSessionStart,
     markCleanExit,
     hadUncleanShutdown,
     crashLogPath,
@@ -91,9 +94,18 @@ function createCrashLog(options) {
   async function markCleanExit() {
     await fs.mkdir(crashDir, { recursive: true })
     await writeTextAtomically(cleanExitPath, now())
+    await fs.rm(activeSessionPath, { force: true })
+  }
+
+  async function markSessionStart() {
+    await fs.mkdir(crashDir, { recursive: true })
+    await writeTextAtomically(activeSessionPath, now())
   }
 
   async function hadUncleanShutdown() {
+    if (await fileExists(activeSessionPath)) {
+      return true
+    }
     const entries = await readAll()
     if (entries.length === 0) {
       return false
@@ -139,6 +151,15 @@ function createCrashLog(options) {
       }
       return null
     }
+  }
+}
+
+async function fileExists(filePath) {
+  try {
+    await fs.access(filePath)
+    return true
+  } catch {
+    return false
   }
 }
 

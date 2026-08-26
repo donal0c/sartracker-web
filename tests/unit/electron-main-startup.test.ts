@@ -504,9 +504,22 @@ describe('Electron main startup', () => {
       .spyOn(process, 'on')
       .mockImplementation(() => process)
     const electronMock = createElectronMock(vi.fn(), undefined, true)
+    let releaseEvidenceFence: (() => void) | undefined
+    const markRendererUnavailable = vi.fn(() => new Promise<void>((resolve) => {
+      releaseEvidenceFence = resolve
+    }))
     Module._load = ((request: string, parent: NodeJS.Module | null, isMain: boolean) => {
       if (request === 'electron') {
         return electronMock
+      }
+      if (request === './renderer-teardown-coordinator.cjs') {
+        return {
+          createRendererTeardownCoordinator: () => ({
+            prepare: vi.fn(),
+            markRendererUnavailable,
+            dispose: vi.fn(),
+          }),
+        }
       }
       return originalLoad(request, parent, isMain)
     }) as typeof Module._load
@@ -522,13 +535,17 @@ describe('Electron main startup', () => {
       | undefined
     expect(uncaughtHandler).toEqual(expect.any(Function))
 
-    await uncaughtHandler?.(new Error('fatal token=secret-token'))
+    void uncaughtHandler?.(new Error('fatal token=secret-token'))
     await vi.waitFor(() => {
       expect(
         readFileSync(path.join(testUserDataPath, 'logs', 'runtime.log'), 'utf8'),
       ).toContain('uncaught_exception')
-      expect(electronMock.app.exit).toHaveBeenCalledWith(1)
+      expect(markRendererUnavailable).toHaveBeenCalledOnce()
     })
+    expect(electronMock.app.relaunch).not.toHaveBeenCalled()
+    expect(electronMock.app.exit).not.toHaveBeenCalled()
+    releaseEvidenceFence?.()
+    await vi.waitFor(() => expect(electronMock.app.exit).toHaveBeenCalledWith(1))
 
     const crashLog = readFileSync(
       path.join(testUserDataPath, 'crashes', 'crash-log.json'),
@@ -544,6 +561,121 @@ describe('Electron main startup', () => {
     )
     expect(electronMock.app.relaunch).toHaveBeenCalledTimes(1)
     expect(electronMock.app.exit).toHaveBeenCalledWith(1)
+  })
+
+  it('does not relaunch a fatal runtime when the durable evidence fence fails', async () => {
+    const processOn = vi.spyOn(process, 'on').mockImplementation(() => process)
+    const electronMock = createElectronMock(vi.fn(), undefined, true)
+    const markRendererUnavailable = vi.fn().mockRejectedValue(
+      new Error('mission store unavailable'),
+    )
+    Module._load = ((request: string, parent: NodeJS.Module | null, isMain: boolean) => {
+      if (request === 'electron') return electronMock
+      if (request === './renderer-teardown-coordinator.cjs') {
+        return {
+          createRendererTeardownCoordinator: () => ({
+            prepare: vi.fn(),
+            markRendererUnavailable,
+            dispose: vi.fn(),
+          }),
+        }
+      }
+      return originalLoad(request, parent, isMain)
+    }) as typeof Module._load
+
+    require('../../electron/main.cjs')
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    const uncaughtHandler = processOn.mock.calls
+      .filter(([eventName]) => eventName === 'uncaughtException')
+      .map(([, listener]) => listener)
+      .find((listener) => String(listener).includes('handleFatalMainProcessError')) as
+      | ((error: Error) => void)
+      | undefined
+
+    uncaughtHandler?.(new Error('fatal persistence fault'))
+
+    await vi.waitFor(() => {
+      expect(markRendererUnavailable).toHaveBeenCalledOnce()
+      expect(electronMock.dialog.showErrorBox).toHaveBeenCalledWith(
+        'SAR Tracker could not restart safely',
+        expect.stringContaining('kept the current process open'),
+      )
+    })
+    expect(electronMock.app.relaunch).not.toHaveBeenCalled()
+    expect(electronMock.app.exit).not.toHaveBeenCalled()
+  })
+
+  it('fences every unfinalized mission before opening after an unclean shutdown', async () => {
+    mkdirSync(path.join(testUserDataPath, 'crashes'), { recursive: true })
+    writeFileSync(
+      path.join(testUserDataPath, 'crashes', 'crash-log.json'),
+      JSON.stringify([{
+        ts: '2026-08-26T14:00:00.000Z',
+        kind: 'uncaughtException',
+        summary: 'previous fatal runtime',
+      }]),
+      'utf8',
+    )
+    const electronMock = createElectronMock(vi.fn(), undefined, true)
+    let releaseEvidenceFence: (() => void) | undefined
+    const markRendererUnavailable = vi.fn(() => new Promise<void>((resolve) => {
+      releaseEvidenceFence = resolve
+    }))
+    Module._load = ((request: string, parent: NodeJS.Module | null, isMain: boolean) => {
+      if (request === 'electron') return electronMock
+      if (request === './renderer-teardown-coordinator.cjs') {
+        return {
+          createRendererTeardownCoordinator: () => ({
+            prepare: vi.fn(),
+            markRendererUnavailable,
+            dispose: vi.fn(),
+          }),
+        }
+      }
+      return originalLoad(request, parent, isMain)
+    }) as typeof Module._load
+
+    require('../../electron/main.cjs')
+
+    await vi.waitFor(() => expect(markRendererUnavailable).toHaveBeenCalledOnce())
+    expect(electronMock.BrowserWindow).not.toHaveBeenCalled()
+    releaseEvidenceFence?.()
+    await vi.waitFor(() => expect(electronMock.BrowserWindow).toHaveBeenCalledOnce())
+  })
+
+  it('turns an unclean restart into a durable mission completeness blocker', async () => {
+    const { createElectronMissionStore } = require('../../electron/mission-store.cjs') as {
+      readonly createElectronMissionStore: (input: { readonly userDataPath: string }) => {
+        readonly createMission: (input: { readonly name: string }) => Promise<{ readonly id: string }>
+        readonly close: () => void
+      }
+    }
+    mkdirSync(testUserDataPath, { recursive: true })
+    const seedStore = createElectronMissionStore({ userDataPath: testUserDataPath })
+    const mission = await seedStore.createMission({ name: 'Unclean restart evidence' })
+    seedStore.close()
+    const { createCrashLog } = require('../../electron/crash-log.cjs') as {
+      readonly createCrashLog: (input: { readonly userDataPath: string }) => {
+        readonly markSessionStart: () => Promise<void>
+      }
+    }
+    await createCrashLog({ userDataPath: testUserDataPath }).markSessionStart()
+    const electronMock = createElectronMock(vi.fn(), undefined, true)
+    Module._load = ((request: string, parent: NodeJS.Module | null, isMain: boolean) => {
+      if (request === 'electron') return electronMock
+      return originalLoad(request, parent, isMain)
+    }) as typeof Module._load
+
+    require('../../electron/main.cjs')
+    await vi.waitFor(() => expect(electronMock.BrowserWindow).toHaveBeenCalledOnce())
+    const healthHandler = electronMock.ipcMain.handle.mock.calls.find(
+      ([channel]) => channel === 'sartracker:mission-store:get-ingest-evidence-health',
+    )?.[1]
+
+    await expect(healthHandler(createPackagedSenderEvent(), mission.id)).resolves.toMatchObject({
+      state: 'critical',
+      reason: 'renderer_pending_evidence_lost',
+    })
   })
 
   it('refuses an incompatible mission-store schema without entering a relaunch loop [DON-260]', async () => {

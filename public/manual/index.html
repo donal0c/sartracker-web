@@ -988,7 +988,12 @@
             itself if the renderer is gone or misses the bounded acknowledgement. Before it permits
             that teardown, main durably blocks every unfinalized mission, including a finished mission,
             so a completed lifecycle transition cannot hide renderer-held evidence. An unexpected
-            renderer crash is fenced immediately. If neither the renderer drain
+            renderer crash is fenced immediately. A fatal main-process fault fences mission evidence
+            before relaunch. After any unclean shutdown, SAR Tracker blocks every unfinalized mission
+            before the operator window opens, so uncertain evidence cannot later look Complete. If the
+            fatal handler cannot write that blocker, SAR Tracker shows
+            <strong>SAR Tracker could not restart safely</strong>, keeps the current process open, and
+            refuses the automatic relaunch. If neither the renderer drain
             nor the main-process blocker write succeeds, SAR Tracker refuses the close or
             reload and shows <strong>SAR Tracker could not close safely</strong>; leave the
             process open, preserve the profile, and contact support rather than forcing it
