@@ -113,6 +113,7 @@ describe('Electron packaged tracking soak helpers [DON-246]', () => {
 
   it('uses a garbage-collection-safe default cadence for full packaged profiles', () => {
     expect(parseTrackingSoakArgs(['--app', '/tmp/app', '--profile', 'extended']).pollIntervalMs).toBe(250)
+    expect(parseTrackingSoakArgs(['--app', '/tmp/app']).mainStallThresholdMs).toBe(200)
   })
 
   it('serves every fix inside the requested window after a discarded poll [DON-260]', async () => {
@@ -181,6 +182,7 @@ describe('Electron packaged tracking soak helpers [DON-246]', () => {
       pollIntervalMs: 25,
       timeoutMs: 60_000,
       freezeThresholdMs: 1_000,
+      mainStallThresholdMs: 200,
       extraArgs: ['--ozone-platform=x11'],
     })
   })
@@ -480,6 +482,12 @@ describe('Electron packaged tracking soak helpers [DON-246]', () => {
       ...validInput,
       webGlRendererAttested: false,
     })
+    const mainStallVerdict = buildTrackingSoakVerdict({
+      ...validInput,
+      mainMaximumMs: 225,
+      mainStallThresholdMs: 200,
+      rendererMaximumMs: 433,
+    })
 
     expect(rendererReactionVerdict.passed).toBe(false)
     expect(rendererReactionVerdict.failureReasons.join('\n')).toMatch(/operator action/i)
@@ -487,6 +495,8 @@ describe('Electron packaged tracking soak helpers [DON-246]', () => {
     expect(externalDeliveryVerdict.failureReasons.join('\n')).toMatch(/external operator action/i)
     expect(backendVerdict.passed).toBe(false)
     expect(backendVerdict.failureReasons.join('\n')).toMatch(/WebGL renderer backend/i)
+    expect(mainStallVerdict.failureReasons.join('\n')).toMatch(/main-process maximum.*200/iu)
+    expect(mainStallVerdict.failureReasons.join('\n')).not.toMatch(/renderer maximum/iu)
   })
 
   it('fails when the renderer itself reaches the freeze threshold [DON-260]', () => {

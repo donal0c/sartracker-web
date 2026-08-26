@@ -161,6 +161,9 @@ export function parseTrackingSoakArgs(argv) {
       case '--freeze-threshold-ms':
         parsed.freezeThresholdMs = Number(nextValue())
         break
+      case '--main-stall-threshold-ms':
+        parsed.mainStallThresholdMs = Number(nextValue())
+        break
       case '--':
         parsed.extraArgs.push(...argv.slice(index + 1))
         index = argv.length
@@ -192,6 +195,11 @@ export function parseTrackingSoakArgs(argv) {
       parsed.freezeThresholdMs,
       1_000,
       '--freeze-threshold-ms',
+    ),
+    mainStallThresholdMs: positiveNumber(
+      parsed.mainStallThresholdMs,
+      200,
+      '--main-stall-threshold-ms',
     ),
     extraArgs: parsed.extraArgs,
   }
@@ -316,9 +324,10 @@ export function buildTrackingSoakVerdict(input) {
     )
   }
 
-  if (input.mainMaximumMs >= input.freezeThresholdMs) {
+  const mainStallThresholdMs = input.mainStallThresholdMs ?? input.freezeThresholdMs
+  if (input.mainMaximumMs >= mainStallThresholdMs) {
     failureReasons.push(
-      `Main-process maximum ${input.mainMaximumMs}ms reached the ${input.freezeThresholdMs}ms freeze threshold.`,
+      `Main-process maximum ${input.mainMaximumMs}ms reached the ${mainStallThresholdMs}ms stall threshold.`,
     )
   }
   if (input.rendererMaximumMs >= input.freezeThresholdMs) {

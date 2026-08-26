@@ -22,7 +22,7 @@ export function buildTrackingSoakCiRunnerArgs(input) {
     'ci',
     '--evidence',
     path.join(input.projectRoot, 'tmp', 'beta-artifacts', 'tracking-soak-ci'),
-    '--freeze-threshold-ms',
+    '--main-stall-threshold-ms',
     '200',
   ]
 

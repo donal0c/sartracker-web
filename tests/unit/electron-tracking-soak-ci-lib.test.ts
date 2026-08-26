@@ -21,7 +21,7 @@ describe('tracking soak CI runner arguments', () => {
       'ci',
       '--evidence',
       '/repo/tmp/beta-artifacts/tracking-soak-ci',
-      '--freeze-threshold-ms',
+      '--main-stall-threshold-ms',
       '200',
       '--',
       '--no-sandbox',
@@ -50,7 +50,7 @@ describe('tracking soak CI runner arguments', () => {
       'ci',
       '--evidence',
       '/repo/tmp/beta-artifacts/tracking-soak-ci',
-      '--freeze-threshold-ms',
+      '--main-stall-threshold-ms',
       '200',
     ])
   })

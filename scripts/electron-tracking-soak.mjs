@@ -424,7 +424,10 @@ async function main() {
     const runtimeTiming = parseTrackingSoakRuntimeLog(await readCombinedRuntimeLog(userDataDir))
     const growth = buildTrackingGrowthEvidence(growthCheckpoints)
     const supportBundleBytes = Buffer.byteLength(supportBundle, 'utf8')
-    const mainStats = summarizeResponsiveness(mainRoundTrips, 250)
+    const mainStats = summarizeResponsiveness(
+      mainRoundTrips,
+      options.mainStallThresholdMs,
+    )
     const rendererStats = summarizeResponsiveness(rendererGaps, 250)
     const operatorInteractionStats = summarizeResponsiveness(
       operatorInteractions.map((interaction) => interaction.durationMs),
@@ -532,6 +535,7 @@ async function main() {
       mainHeartbeatSamples: mainStats.count,
       mainHeartbeatErrors: launches.reduce((sum, launch) => sum + launch.mainHeartbeatErrors, 0),
       mainMaximumMs: mainStats.maxMs,
+      mainStallThresholdMs: options.mainStallThresholdMs,
       rendererSamples: rendererStats.count,
       rendererLaunchSampleCounts: launches.map(
         (launch) => launch.rendererSampleCount ?? 0,
