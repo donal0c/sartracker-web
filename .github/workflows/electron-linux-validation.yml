@@ -242,7 +242,18 @@ jobs:
           }
 
           WINDOW_ID="$(head -n 1 tmp/electron-validation-evidence/window-ids.txt)"
-          xdotool windowclose "$WINDOW_ID"
+          FRAME_ID="$(xwininfo -id "$WINDOW_ID" \
+            | awk '/Parent window id:/ { print $4; exit }')"
+          if [ -z "$FRAME_ID" ]; then
+            echo "::error::Openbox frame for the SAR Tracker window was not found."
+            exit 1
+          fi
+          eval "$(xdotool getwindowgeometry --shell "$FRAME_ID")"
+          CLOSE_X=$((X + WIDTH - 12))
+          CLOSE_Y=$((Y + 10))
+          echo "window=$WINDOW_ID frame=$FRAME_ID close=$CLOSE_X,$CLOSE_Y" \
+            > tmp/electron-validation-evidence/appimage-close-click.txt
+          xdotool mousemove --sync "$CLOSE_X" "$CLOSE_Y" click 1
           APP_EXITED=0
           for _ in $(seq 1 150); do
             if ! kill -0 "$APP_PID" 2>/dev/null; then
