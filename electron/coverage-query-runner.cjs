@@ -23,7 +23,11 @@ function runCoverageQueryInWorker(input) {
     let worker
     try {
       worker = new Worker(input.workerPath ?? DEFAULT_WORKER_PATH, {
-        workerData: { databasePath: input.databasePath, query },
+        workerData: {
+          databasePath: input.databasePath,
+          query,
+          resultLimits: input.resultLimits,
+        },
       })
     } catch (error) {
       resolveWorkerExit()
@@ -52,7 +56,11 @@ function runCoverageQueryInWorker(input) {
       if (settled) return
       if (message?.type === 'complete' && isPlainRecord(message.result)) {
         try {
-          completedResult = normalizeCoverageWorkerResult(query, message.result)
+          completedResult = normalizeCoverageWorkerResult(
+            query,
+            message.result,
+            input.resultLimits,
+          )
         } catch (error) {
           rejectAndTerminate(error)
         }

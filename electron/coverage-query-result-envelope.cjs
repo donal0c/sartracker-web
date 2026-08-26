@@ -15,33 +15,86 @@ const COVERAGE_BLOCKERS = new Set([
 ])
 
 /** Validates and copies one result according to the exact request kind. */
-function normalizeCoverageWorkerResult(query, value) {
+function normalizeCoverageWorkerResult(query, value, resultLimits = {}) {
   if (!isPlainRecord(value)) throw invalidResult(query.kind, 'result is not an object')
-  if (query.kind === 'enumerate') return normalizeEnumerationResult(value)
-  if (query.kind === 'manifest') return normalizeManifestResult(value)
+  assertCoverageWorkerResultCardinality(query, value, resultLimits)
+  if (query.kind === 'enumerate') {
+    return normalizeEnumerationResult(value, readResultLimit(
+      resultLimits, 'maxChunks', MAX_RESULT_ITEMS,
+    ))
+  }
+  if (query.kind === 'manifest') {
+    return normalizeManifestResult(value, {
+      maxOutings: readResultLimit(resultLimits, 'maxOutings', MAX_RESULT_ITEMS),
+      maxChunks: readResultLimit(resultLimits, 'maxChunks', MAX_RESULT_ITEMS),
+    })
+  }
   if (query.kind === 'claim') return normalizeClaimResult(query, value)
   if (query.kind === 'chunk-page') return normalizeChunkPageResult(query, value)
   if (query.kind === 'chunk-summary') return normalizeChunkSummaryResult(query, value)
   if (query.kind === 'invalidation-analysis') {
-    return normalizeInvalidationResult(query, value)
+    return normalizeInvalidationResult(query, value, readResultLimit(
+      resultLimits, 'maxAffectedKeys', MAX_RESULT_ITEMS,
+    ))
   }
   throw invalidResult('query', 'kind is unsupported')
 }
 
+/** Rejects oversized arrays before a worker result crosses into the main isolate. */
+function assertCoverageWorkerResultCardinality(query, value, resultLimits = {}) {
+  if (!isPlainRecord(value)) throw invalidResult(query.kind, 'result is not an object')
+  if (query.kind === 'enumerate') {
+    assertResultArray(value.chunks, 'enumeration', readResultLimit(
+      resultLimits, 'maxChunks', MAX_RESULT_ITEMS,
+    ))
+    return
+  }
+  if (query.kind === 'manifest') {
+    assertResultArray(value.outings, 'manifest', readResultLimit(
+      resultLimits, 'maxOutings', MAX_RESULT_ITEMS,
+    ))
+    assertResultArray(value.chunks, 'manifest', readResultLimit(
+      resultLimits, 'maxChunks', MAX_RESULT_ITEMS,
+    ))
+    return
+  }
+  if (query.kind === 'claim') {
+    assertResultArray(value.blockers, 'claim', COVERAGE_BLOCKERS.size)
+    assertResultArray(value.chunkRevisions, 'claim', query.selectedKeys.length)
+    return
+  }
+  if (query.kind === 'chunk-page') {
+    assertResultArray(
+      value.positions,
+      'chunk page',
+      Math.min(query.limit ?? MAX_PAGE_ITEMS, MAX_PAGE_ITEMS),
+    )
+    return
+  }
+  if (query.kind === 'invalidation-analysis') {
+    const maximum = readResultLimit(
+      resultLimits, 'maxAffectedKeys', MAX_RESULT_ITEMS,
+    )
+    if (!Array.isArray(value.affectedKeys) || value.affectedKeys.length > maximum) {
+      throw new Error('Coverage invalidation result key list is invalid.')
+    }
+  }
+}
+
 /** Validates the first exact chunk enumeration before main-side persistence. */
-function normalizeEnumerationResult(value) {
+function normalizeEnumerationResult(value, maxChunks) {
   const changeSeq = normalizeSequence(value.changeSeq, 'enumeration')
   const chunks = normalizeUniqueArray(value.chunks, 'enumeration', (candidate) => {
     if (!isPlainRecord(candidate)) throw invalidResult('enumeration', 'chunk is invalid')
     const key = normalizeResultKey(candidate, 'enumeration')
     const summary = normalizeSummary(candidate, 'enumeration')
     return { ...key, ...summary }
-  }, (chunk) => createCoverageChunkIdentity(chunk))
+  }, (chunk) => createCoverageChunkIdentity(chunk), maxChunks)
   return { changeSeq, chunks }
 }
 
 /** Validates one complete bounded manifest snapshot. */
-function normalizeManifestResult(value) {
+function normalizeManifestResult(value, limits) {
   const changeSeq = normalizeSequence(value.changeSeq, 'manifest')
   if (
     typeof value.enumerated !== 'boolean' ||
@@ -51,10 +104,15 @@ function normalizeManifestResult(value) {
     throw invalidResult('manifest', 'state flags are invalid')
   }
   const diagnostics = normalizeDiagnostics(value.diagnostics)
-  const outings = normalizeUniqueArray(value.outings, 'manifest', normalizeOuting, (outing) =>
-    outing.id)
+  const outings = normalizeUniqueArray(
+    value.outings,
+    'manifest',
+    normalizeOuting,
+    (outing) => outing.id,
+    limits.maxOutings,
+  )
   const chunks = normalizeUniqueArray(value.chunks, 'manifest', normalizeManifestChunk, (chunk) =>
-    createCoverageChunkIdentity(chunk.key))
+    createCoverageChunkIdentity(chunk.key), limits.maxChunks)
   if (
     diagnostics.queueDepth !==
       diagnostics.pendingChunkCount + diagnostics.staleChunkCount ||
@@ -175,7 +233,7 @@ function normalizeClaimResult(query, value) {
       throw invalidResult('claim', 'blocker is invalid')
     }
     return blocker
-  }, (blocker) => blocker)
+  }, (blocker) => blocker, COVERAGE_BLOCKERS.size)
   const requested = new Set(query.selectedKeys.map(createCoverageChunkIdentity))
   const chunkRevisions = normalizeUniqueArray(
     value.chunkRevisions,
@@ -192,6 +250,7 @@ function normalizeClaimResult(query, value) {
       }
     },
     (revision) => createCoverageChunkIdentity(revision.key),
+    requested.size,
   )
   if (
     value.databaseReady !== (blockers.length === 0) ||
@@ -249,11 +308,11 @@ function normalizeChunkSummaryResult(query, value) {
 }
 
 /** Validates invalidation analysis identity and its bounded tagged key set. */
-function normalizeInvalidationResult(query, value) {
+function normalizeInvalidationResult(query, value, maxAffectedKeys) {
   if (value.invalidationId !== query.invalidationId) {
     throw invalidResult('invalidation', 'identity does not match its request')
   }
-  if (!Array.isArray(value.affectedKeys) || value.affectedKeys.length > MAX_RESULT_ITEMS) {
+  if (!Array.isArray(value.affectedKeys) || value.affectedKeys.length > maxAffectedKeys) {
     throw new Error('Coverage invalidation result key list is invalid.')
   }
   const affectedKeys = normalizeUniqueArray(
@@ -267,6 +326,7 @@ function normalizeInvalidationResult(query, value) {
       return { mission_id: candidate.mission_id, ...key }
     },
     (key) => `${key.mission_id}\u0000${createCoverageChunkIdentity(key)}`,
+    maxAffectedKeys,
   )
   return { invalidationId: query.invalidationId, affectedKeys }
 }
@@ -317,8 +377,8 @@ function validateSummaryBounds(count, minTs, maxTs, label) {
 }
 
 /** Validates a bounded unique array and returns allowlisted copies. */
-function normalizeUniqueArray(value, label, normalize, identity) {
-  if (!Array.isArray(value) || value.length > MAX_RESULT_ITEMS) {
+function normalizeUniqueArray(value, label, normalize, identity, maximum = MAX_RESULT_ITEMS) {
+  if (!Array.isArray(value) || value.length > maximum) {
     throw invalidResult(label, 'item list is invalid')
   }
   const seen = new Set()
@@ -329,6 +389,23 @@ function normalizeUniqueArray(value, label, normalize, identity) {
     seen.add(key)
     return normalized
   })
+}
+
+/** Rejects a missing or oversized result array without reading any item. */
+function assertResultArray(value, label, maximum) {
+  if (!Array.isArray(value) || value.length > maximum) {
+    throw invalidResult(label, 'item list is invalid')
+  }
+}
+
+/** Reads one request-derived array limit before any result item is traversed. */
+function readResultLimit(resultLimits, key, fallback) {
+  const value = resultLimits?.[key]
+  if (value === undefined) return fallback
+  if (!Number.isSafeInteger(value) || value < 0 || value > MAX_RESULT_ITEMS) {
+    throw new Error('Coverage query result cardinality limit is invalid.')
+  }
+  return value
 }
 
 /** Converts a chunk-key validation error into the owning result family. */
@@ -424,4 +501,7 @@ function invalidResult(label, reason) {
   return new Error(`Coverage ${label} result is invalid: ${reason}.`)
 }
 
-module.exports = { normalizeCoverageWorkerResult }
+module.exports = {
+  assertCoverageWorkerResultCardinality,
+  normalizeCoverageWorkerResult,
+}

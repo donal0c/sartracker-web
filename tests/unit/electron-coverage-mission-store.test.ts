@@ -35,6 +35,7 @@ const { createElectronMissionStore } = require('../../electron/mission-store.cjs
       readonly databasePath: string
       readonly query: Readonly<Record<string, unknown>>
       readonly signal?: AbortSignal
+      readonly resultLimits?: Readonly<Record<string, number>>
     }) => Promise<Record<string, unknown>>
   }) => CoverageMissionStore
 }
@@ -482,6 +483,51 @@ describe('Electron coverage mission-store orchestration', () => {
       databaseReady: false,
       blockers: expect.arrayContaining(['chunk_not_fresh']),
     })
+  })
+
+  it('rejects forged or altered manifest outing metadata against current SQLite state', async () => {
+    directory = await mkdtemp(path.join(tmpdir(), 'sartracker-coverage-store-'))
+    let mutation: 'forged' | 'altered' = 'forged'
+    const coverageQueryRunner = vi.fn(async (input: {
+      readonly databasePath: string
+      readonly query: Readonly<Record<string, unknown>>
+      readonly signal?: AbortSignal
+      readonly resultLimits?: Readonly<Record<string, number>>
+    }) => {
+      const result = await runRealCoverageQueryInWorker(input)
+      if (input.query.kind !== 'manifest') return result
+      const outings = result.outings as readonly Readonly<Record<string, unknown>>[]
+      return {
+        ...result,
+        outings: mutation === 'forged'
+          ? [{
+              id: 'forged-outing',
+              label: 'Forged outing',
+              started_at: '2026-08-24T07:00:00.000Z',
+              ended_at: '2026-08-24T08:00:00.000Z',
+            }]
+          : outings.map((outing, index) => index === 0
+              ? { ...outing, label: 'Altered by worker' }
+              : outing),
+      }
+    })
+    store = createElectronMissionStore({
+      userDataPath: directory,
+      runCoverageQueryInWorker: coverageQueryRunner,
+    })
+    const mission = await seedMission(store)
+    await store.createOuting({
+      mission_id: mission.id,
+      label: 'Canonical outing',
+      started_at: '2026-08-24T08:30:00.000Z',
+    })
+
+    await expect(store.readCoverageManifest(mission.id, 'forged-outing-manifest'))
+      .rejects.toThrow(/manifest.*outing.*canonical metadata/iu)
+
+    mutation = 'altered'
+    await expect(store.readCoverageManifest(mission.id, 'altered-outing-manifest'))
+      .rejects.toThrow(/manifest.*outing.*canonical metadata/iu)
   })
 
   it('cancels only an active request ID and returns false for an unknown request', async () => {

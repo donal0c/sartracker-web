@@ -2,6 +2,9 @@ const { parentPort, threadId, workerData } = require('node:worker_threads')
 
 const Database = require('better-sqlite3')
 const {
+  assertCoverageWorkerResultCardinality,
+} = require('./coverage-query-result-envelope.cjs')
+const {
   analyzeCoverageInvalidation,
   enumerateCoverageChunks,
   readCoverageClaimSnapshot,
@@ -24,6 +27,11 @@ function run() {
     const readSnapshot = database.transaction(() =>
       executeCoverageQuery(database, workerData.query))
     const result = readSnapshot()
+    assertCoverageWorkerResultCardinality(
+      workerData.query,
+      result,
+      workerData.resultLimits,
+    )
     parentPort.postMessage({ type: 'complete', workerThreadId: threadId, result })
   } catch (error) {
     parentPort.postMessage({

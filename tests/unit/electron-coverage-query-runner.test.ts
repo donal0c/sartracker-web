@@ -16,6 +16,7 @@ const { runCoverageQueryInWorker } = require(
     readonly signal?: AbortSignal
     readonly workerPath?: string
     readonly timeoutMs?: number
+    readonly resultLimits?: Readonly<Record<string, number>>
   }) => Promise<Record<string, unknown>> & { readonly workerExited?: Promise<void> }
 }
 
@@ -151,6 +152,17 @@ describe('coverage query worker', () => {
       query: { kind: 'chunk-summary', missionId: 'mission-1', key, expectedContentRev: 7 },
       workerPath,
     })).rejects.toThrow(/coverage chunk summary result/iu)
+  })
+
+  it('applies request-derived cardinality limits in the first worker normalizer', async () => {
+    await expect(runCoverageQueryInWorker({
+      databasePath: '/unused.sqlite',
+      query: { kind: 'manifest', missionId: 'mission-1' },
+      workerPath: path.resolve(
+        'tests/fixtures/oversized-coverage-query-result-worker.cjs',
+      ),
+      resultLimits: { maxOutings: 0, maxChunks: 0 },
+    })).rejects.toThrow(/coverage manifest result.*item list/iu)
   })
 })
 
