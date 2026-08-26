@@ -4,6 +4,7 @@ import type {
   LayerCatalogLayerNode,
   LayerCatalogRootNode,
 } from './layer-catalog-types'
+import { COVERAGE_GROUP_NODE_ID } from './layer-catalog-ids'
 
 export type LayerCatalogNode =
   | LayerCatalogRootNode
@@ -107,6 +108,10 @@ export function filterHiddenNodes(root: LayerCatalogRootNode): LayerCatalogRootN
   const filteredGroups: LayerCatalogGroupNode[] = []
 
   for (const group of root.children) {
+    if (group.id === COVERAGE_GROUP_NODE_ID) {
+      filteredGroups.push(group)
+      continue
+    }
     const filteredLayers: LayerCatalogLayerNode[] = []
 
     for (const layer of group.children) {

@@ -2,10 +2,12 @@ import { mkdtemp, readdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { createRequire } from 'node:module'
+import { createHash } from 'node:crypto'
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 const require = createRequire(import.meta.url)
+const fsPromises = require('node:fs/promises') as typeof import('node:fs/promises')
 const {
   createIngestAnomalyOutbox,
 } = require('../../electron/ingest-anomaly-outbox.cjs') as {
@@ -16,6 +18,7 @@ const {
     readonly faultInjection?: {
       readonly failStage?: boolean
       readonly failRemovalAfterProjection?: boolean
+      failRendererStageAfterScopeCount?: number
     }
     readonly maxPendingFiles?: number
     readonly maxPendingBytes?: number
@@ -25,10 +28,36 @@ const {
     readonly initialize: () => Promise<void>
     readonly deliver: (envelope: RejectionEnvelope) => Promise<{ readonly persisted: boolean }>
     readonly markEvidenceLoss: (missionId: string, reason: string) => Promise<void>
+    readonly stageRendererEvidenceUncertainty: (
+      missionId: string,
+      incidentId: string,
+      scopeReason: string,
+    ) => Promise<void>
+    readonly resolveRendererEvidenceUncertainty: (
+      missionId: string,
+      incidentId: string,
+      outcome: 'drained' | 'lost',
+    ) => Promise<void>
+    readonly stageRendererEvidenceIncident: (
+      scopes: readonly {
+        readonly missionId: string
+        readonly scopeReason: string
+      }[],
+      incidentId: string,
+    ) => Promise<void>
+    readonly resolveRendererEvidenceIncidents: (
+      incidentId: string | null,
+      outcome: 'drained' | 'lost',
+    ) => Promise<void>
+    readonly readEvidenceLossAcknowledgementCandidate: (missionId: string) => Promise<{
+      readonly token: string
+      readonly reasons: readonly string[]
+    }>
     readonly runWithHealthyEvidenceFence: <Result>(
       missionId: string,
       operationName: string,
       operation: () => Promise<Result>,
+      options?: { readonly acknowledgedLossToken?: string },
     ) => Promise<Result>
     readonly health: (missionId?: string) => Promise<{
       readonly pendingCount: number
@@ -302,6 +331,310 @@ describe('durable ingest anomaly outbox [DON-268]', () => {
     await expect(restarted.health('mission-1')).resolves.toMatchObject({
       pendingCount: 0,
       lastFailure: 'renderer_pending_capacity_exhausted',
+    })
+  })
+
+  it('persists renderer teardown evidence loss across restart', async () => {
+    directoryPath = await mkdtemp(path.join(tmpdir(), 'sartracker-ingest-outbox-'))
+    const outbox = createIngestAnomalyOutbox({
+      directoryPath,
+      projectEnvelope: vi.fn(),
+    })
+
+    await outbox.markEvidenceLoss('mission-1', 'renderer_pending_evidence_lost')
+
+    const restarted = createIngestAnomalyOutbox({
+      directoryPath,
+      projectEnvelope: vi.fn(),
+    })
+    await expect(restarted.health('mission-1')).resolves.toMatchObject({
+      pendingCount: 0,
+      lastFailure: 'renderer_pending_evidence_lost',
+    })
+  })
+
+  it('persists accepted mission-write evidence loss across restart', async () => {
+    directoryPath = await mkdtemp(path.join(tmpdir(), 'sartracker-ingest-outbox-'))
+    const outbox = createIngestAnomalyOutbox({
+      directoryPath,
+      projectEnvelope: vi.fn(),
+    })
+
+    await outbox.markEvidenceLoss('mission-1', 'mission_persistence_failed')
+
+    const restarted = createIngestAnomalyOutbox({
+      directoryPath,
+      projectEnvelope: vi.fn(),
+    })
+    await expect(restarted.health('mission-1')).resolves.toMatchObject({
+      pendingCount: 0,
+      lastFailure: 'mission_persistence_failed',
+    })
+  })
+
+  it('retracts a late-clean renderer drain without consuming the acknowledged loss generation [DON-276]', async () => {
+    directoryPath = await mkdtemp(path.join(tmpdir(), 'sartracker-ingest-outbox-'))
+    const outbox = createIngestAnomalyOutbox({
+      directoryPath,
+      projectEnvelope: vi.fn(),
+    })
+    await outbox.markEvidenceLoss('mission-1', 'renderer_pending_evidence_lost')
+    const acknowledgedOccurrence = await outbox.readEvidenceLossAcknowledgementCandidate(
+      'mission-1',
+    )
+
+    await outbox.stageRendererEvidenceUncertainty(
+      'mission-1',
+      'request-slow-clean-drain',
+      'finished_unfinalized_mission',
+    )
+    await expect(outbox.health('mission-1')).resolves.toMatchObject({
+      lastFailure: 'renderer_pending_evidence_lost',
+    })
+    await expect(
+      outbox.readEvidenceLossAcknowledgementCandidate('mission-1'),
+    ).rejects.toThrow(/isolated mission evidence loss/iu)
+
+    await outbox.resolveRendererEvidenceUncertainty(
+      'mission-1',
+      'request-slow-clean-drain',
+      'drained',
+    )
+
+    await expect(outbox.readEvidenceLossAcknowledgementCandidate('mission-1')).resolves.toEqual(
+      acknowledgedOccurrence,
+    )
+    const marker = JSON.parse(
+      await fsPromises.readFile(
+        path.join(
+          directoryPath,
+          `degraded-health-${createHash('sha256').update('mission-1').digest('hex').slice(0, 16)}.json.marker`,
+        ),
+        'utf8',
+      ),
+    ) as { readonly rendererEvidenceContexts?: Record<string, unknown> }
+    expect(marker.rendererEvidenceContexts).toEqual({})
+  })
+
+  it('promotes unresolved renderer uncertainty to permanent loss exactly once after restart [DON-276]', async () => {
+    directoryPath = await mkdtemp(path.join(tmpdir(), 'sartracker-ingest-outbox-'))
+    const staging = createIngestAnomalyOutbox({
+      directoryPath,
+      projectEnvelope: vi.fn(),
+    })
+    await staging.stageRendererEvidenceUncertainty(
+      'mission-1',
+      'request-process-lost',
+      'active_mission',
+    )
+
+    const restarted = createIngestAnomalyOutbox({
+      directoryPath,
+      projectEnvelope: vi.fn(),
+    })
+    await restarted.initialize()
+    await expect(restarted.health('mission-1')).resolves.toMatchObject({
+      lastFailure: 'renderer_pending_evidence_lost',
+    })
+    const first = await restarted.readEvidenceLossAcknowledgementCandidate('mission-1')
+
+    const restartedAgain = createIngestAnomalyOutbox({
+      directoryPath,
+      projectEnvelope: vi.fn(),
+    })
+    await restartedAgain.initialize()
+    await expect(
+      restartedAgain.readEvidenceLossAcknowledgementCandidate('mission-1'),
+    ).resolves.toEqual(first)
+  })
+
+  it('uses one durable incident record to recover a partial multi-mission stage after a later clean drain [DON-276]', async () => {
+    directoryPath = await mkdtemp(path.join(tmpdir(), 'sartracker-ingest-outbox-'))
+    const faultInjection = { failRendererStageAfterScopeCount: 1 }
+    const staging = createIngestAnomalyOutbox({
+      directoryPath,
+      projectEnvelope: vi.fn(),
+      faultInjection,
+    })
+
+    await expect(staging.stageRendererEvidenceIncident([
+      { missionId: 'mission-a', scopeReason: 'active_mission' },
+      { missionId: 'mission-b', scopeReason: 'paused_recoverable_mission' },
+    ], 'request-partial-incident')).rejects.toThrow(/renderer.*stage/iu)
+    expect((await readdir(directoryPath)).filter((name) =>
+      name.startsWith('renderer-evidence-incident-'))).toHaveLength(1)
+
+    faultInjection.failRendererStageAfterScopeCount = Number.POSITIVE_INFINITY
+    await staging.resolveRendererEvidenceIncidents(null, 'drained')
+
+    const restarted = createIngestAnomalyOutbox({
+      directoryPath,
+      projectEnvelope: vi.fn(),
+    })
+    await restarted.initialize()
+    await expect(restarted.health('mission-a')).resolves.toMatchObject({ lastFailure: null })
+    await expect(restarted.health('mission-b')).resolves.toMatchObject({ lastFailure: null })
+    expect((await readdir(directoryPath)).filter((name) =>
+      name.startsWith('renderer-evidence-incident-'))).toHaveLength(0)
+  })
+
+  it('does not retain volatile incident ownership when the durable incident write fails [DON-276]', async () => {
+    directoryPath = await mkdtemp(path.join(tmpdir(), 'sartracker-ingest-outbox-'))
+    const outbox = createIngestAnomalyOutbox({
+      directoryPath,
+      projectEnvelope: vi.fn(),
+    })
+    await outbox.initialize()
+    const originalRename = fsPromises.rename
+    const rename = vi.spyOn(fsPromises, 'rename').mockImplementation(async (source, destination) => {
+      if (path.basename(String(destination)).startsWith('renderer-evidence-incident-')) {
+        throw new Error('injected incident rename failure')
+      }
+      return originalRename(source, destination)
+    })
+
+    try {
+      await expect(outbox.stageRendererEvidenceIncident([
+        { missionId: 'mission-a', scopeReason: 'active_mission' },
+      ], 'request-write-failed')).rejects.toThrow(/incident rename failure/iu)
+    } finally {
+      rename.mockRestore()
+    }
+
+    await expect(outbox.resolveRendererEvidenceIncidents(null, 'drained')).resolves.toEqual([])
+    await expect(outbox.health('mission-a')).resolves.toMatchObject({ lastFailure: null })
+  })
+
+  it('promotes only scopes owned by a surviving durable renderer incident and does so once [DON-276]', async () => {
+    directoryPath = await mkdtemp(path.join(tmpdir(), 'sartracker-ingest-outbox-'))
+    const staging = createIngestAnomalyOutbox({
+      directoryPath,
+      projectEnvelope: vi.fn(),
+    })
+    await staging.stageRendererEvidenceIncident([
+      { missionId: 'mission-a', scopeReason: 'active_mission' },
+      { missionId: 'mission-b', scopeReason: 'finished_unfinalized_mission' },
+    ], 'request-process-lost-bulk')
+
+    const restarted = createIngestAnomalyOutbox({
+      directoryPath,
+      projectEnvelope: vi.fn(),
+    })
+    await restarted.initialize()
+    const firstA = await restarted.readEvidenceLossAcknowledgementCandidate('mission-a')
+    const firstB = await restarted.readEvidenceLossAcknowledgementCandidate('mission-b')
+
+    const restartedAgain = createIngestAnomalyOutbox({
+      directoryPath,
+      projectEnvelope: vi.fn(),
+    })
+    await restartedAgain.initialize()
+    await expect(restartedAgain.readEvidenceLossAcknowledgementCandidate('mission-a'))
+      .resolves.toEqual(firstA)
+    await expect(restartedAgain.readEvidenceLossAcknowledgementCandidate('mission-b'))
+      .resolves.toEqual(firstB)
+  })
+
+  it('retains evidence loss while an exact durable acknowledgement token permits lifecycle closure [DON-276]', async () => {
+    directoryPath = await mkdtemp(path.join(tmpdir(), 'sartracker-ingest-outbox-'))
+    const outbox = createIngestAnomalyOutbox({
+      directoryPath,
+      projectEnvelope: vi.fn(),
+    })
+    await outbox.markEvidenceLoss('mission-1', 'renderer_pending_evidence_lost')
+
+    const candidate = await outbox.readEvidenceLossAcknowledgementCandidate('mission-1')
+    expect(candidate.reasons).toEqual(['renderer_pending_evidence_lost'])
+    await expect(outbox.runWithHealthyEvidenceFence(
+      'mission-1',
+      'finalization',
+      async () => 'finalized',
+      { acknowledgedLossToken: candidate.token },
+    )).resolves.toBe('finalized')
+    await expect(outbox.health('mission-1')).resolves.toMatchObject({
+      lastFailure: 'renderer_pending_evidence_lost',
+    })
+
+    const restarted = createIngestAnomalyOutbox({
+      directoryPath,
+      projectEnvelope: vi.fn(),
+    })
+    const restartedCandidate = await restarted.readEvidenceLossAcknowledgementCandidate(
+      'mission-1',
+    )
+    expect(restartedCandidate).toEqual(candidate)
+  })
+
+  it('refuses loss acknowledgement while the mission still has pending durable evidence', async () => {
+    directoryPath = await mkdtemp(path.join(tmpdir(), 'sartracker-ingest-outbox-'))
+    const outbox = createIngestAnomalyOutbox({
+      directoryPath,
+      projectEnvelope: vi.fn(),
+    })
+    await outbox.markEvidenceLoss('mission-1', 'renderer_pending_evidence_lost')
+    const missionPrefix = createHash('sha256').update('mission-1').digest('hex').slice(0, 16)
+    await writeFile(path.join(directoryPath, `${missionPrefix}-pending.json`), '{}', 'utf8')
+
+    await expect(
+      outbox.readEvidenceLossAcknowledgementCandidate('mission-1'),
+    ).rejects.toThrow(/isolated mission evidence loss/iu)
+  })
+
+  it('invalidates an earlier acknowledgement when another evidence-loss occurrence is recorded [DON-276]', async () => {
+    directoryPath = await mkdtemp(path.join(tmpdir(), 'sartracker-ingest-outbox-'))
+    const outbox = createIngestAnomalyOutbox({
+      directoryPath,
+      projectEnvelope: vi.fn(),
+    })
+    await outbox.markEvidenceLoss('mission-1', 'renderer_pending_evidence_lost')
+    const earlier = await outbox.readEvidenceLossAcknowledgementCandidate('mission-1')
+
+    await outbox.markEvidenceLoss('mission-1', 'renderer_pending_evidence_lost')
+    const later = await outbox.readEvidenceLossAcknowledgementCandidate('mission-1')
+
+    expect(later.token).not.toBe(earlier.token)
+    await expect(outbox.runWithHealthyEvidenceFence(
+      'mission-1',
+      'archive',
+      async () => 'archived',
+      { acknowledgedLossToken: earlier.token },
+    )).rejects.toThrow(/evidence health/iu)
+  })
+
+  it('rejects renderer teardown when the evidence-loss marker cannot become durable', async () => {
+    directoryPath = await mkdtemp(path.join(tmpdir(), 'sartracker-ingest-outbox-'))
+    const outbox = createIngestAnomalyOutbox({
+      directoryPath,
+      projectEnvelope: vi.fn(),
+    })
+    await outbox.initialize()
+    const originalRename = fsPromises.rename
+    const rename = vi.spyOn(fsPromises, 'rename').mockImplementation(async (source, destination) => {
+      if (String(destination).endsWith('.json.marker')) {
+        throw new Error('injected health-marker rename failure')
+      }
+      return originalRename(source, destination)
+    })
+
+    try {
+      await expect(
+        outbox.markEvidenceLoss('mission-1', 'renderer_pending_evidence_lost'),
+      ).rejects.toThrow(/health-marker rename failure/iu)
+      await expect(outbox.health('mission-1')).resolves.toMatchObject({
+        lastFailure: 'renderer_pending_evidence_lost',
+      })
+      expect((await readdir(directoryPath)).some((name) => name.endsWith('.tmp'))).toBe(false)
+    } finally {
+      rename.mockRestore()
+    }
+
+    const restarted = createIngestAnomalyOutbox({
+      directoryPath,
+      projectEnvelope: vi.fn(),
+    })
+    await expect(restarted.health('mission-1')).resolves.toMatchObject({
+      pendingCount: 0,
+      lastFailure: null,
     })
   })
 

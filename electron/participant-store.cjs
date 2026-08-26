@@ -5,6 +5,7 @@ function createParticipantStore(options) {
   const { db } = options
   const readNow = options.now ?? (() => new Date().toISOString())
   const faultInjection = options.faultInjection ?? {}
+  const recordCoverageChange = options.recordCoverageChange ?? (() => undefined)
 
   return {
     selectMissionParticipants(input) {
@@ -62,6 +63,18 @@ function createParticipantStore(options) {
             addedAt: timestamp,
             addedBy: selectedBy,
           }))
+          insertBackfillCheckpoint(db, {
+            missionId: mission.id,
+            deviceId,
+            windowFrom: mission.start_time,
+            windowTo: timestamp,
+            reconciledUntil: mission.start_time,
+            completed: mission.start_time === timestamp,
+            updatedAt: timestamp,
+          })
+        }
+        if (selected.length > 0) {
+          recordCoverageChange(mission.id, timestamp)
         }
         failAfterMutation(faultInjection)
         insertAudit(db, mission.id, 'participants_selected', timestamp, {
@@ -138,6 +151,7 @@ function createParticipantStore(options) {
             })
           }
         }
+        recordCoverageChange(mission.id, addedAt)
         failAfterMutation(faultInjection)
         insertAudit(db, mission.id, 'participant_added', addedAt, {
           participant_id: participant.id,
@@ -165,6 +179,7 @@ function createParticipantStore(options) {
         db.prepare(`UPDATE mission_participants
           SET removed_at = ?, removed_by = ? WHERE id = ?`)
           .run(removedAt, removedBy, participant.id)
+        recordCoverageChange(mission.id, removedAt)
         failAfterMutation(faultInjection)
         insertAudit(db, mission.id, 'participant_removed', removedAt, {
           participant_id: participant.id,
@@ -207,6 +222,7 @@ function createParticipantStore(options) {
         }
         if (inserted.length > 0) {
           const timestamp = readNow()
+          recordCoverageChange(mission.id, timestamp)
           failAfterMutation(faultInjection)
           insertAudit(db, mission.id, 'group_membership_changed', timestamp, {
             event_count: inserted.length,
@@ -274,6 +290,7 @@ function createParticipantStore(options) {
             mission.id, deviceId, windowFrom, windowTo,
             reconciledUntil, completed, updatedAt,
           )
+        recordCoverageChange(mission.id, updatedAt)
         if (completed === 1 && existing?.completed !== 1) {
           insertAudit(db, mission.id, 'participant_backfill_completed', updatedAt, {
             traccar_device_id: deviceId,
@@ -405,53 +422,93 @@ function synchronizeObservedGroupMembership(
   }
 }
 
+/** Adds only uncovered adjacent fixed windows for an authorized history interval. */
 function insertBackfillCheckpoint(db, input) {
-  const existing = db.prepare(`SELECT window_to FROM participant_backfill_checkpoints
+  const readAt = db.prepare(`SELECT window_to FROM participant_backfill_checkpoints
     WHERE mission_id = ? AND traccar_device_id = ? AND window_from = ?`)
-    .get(input.missionId, input.deviceId, input.windowFrom)
-  if (existing !== undefined) {
-    if (existing.window_to !== input.windowTo) {
-      throw new Error('Participant backfill window edges are immutable.')
-    }
-    return
-  }
-  db.prepare(`INSERT INTO participant_backfill_checkpoints (
+  const insert = db.prepare(`INSERT INTO participant_backfill_checkpoints (
       mission_id, traccar_device_id, window_from, window_to,
       reconciled_until, completed, updated_at
     ) VALUES (?, ?, ?, ?, ?, ?, ?)`)
-    .run(
+  let windowFrom = input.windowFrom
+  while (windowFrom < input.windowTo) {
+    const existing = readAt.get(input.missionId, input.deviceId, windowFrom)
+    if (existing === undefined) {
+      insert.run(
+        input.missionId, input.deviceId, windowFrom, input.windowTo,
+        windowFrom, 0, input.updatedAt,
+      )
+      return
+    }
+    if (existing.window_to <= windowFrom) {
+      throw new Error('Participant backfill window must advance beyond its start.')
+    }
+    if (existing.window_to >= input.windowTo) return
+    windowFrom = existing.window_to
+  }
+  if (input.windowFrom === input.windowTo && readAt.get(
+    input.missionId,
+    input.deviceId,
+    input.windowFrom,
+  ) === undefined) {
+    insert.run(
       input.missionId, input.deviceId, input.windowFrom, input.windowTo,
       input.reconciledUntil, input.completed ? 1 : 0, input.updatedAt,
     )
+  }
 }
 
 function listMissionParticipants(db, missionId) {
   return db.prepare(`SELECT participant.*, team.traccar_group_id, team.name AS team_name,
-      checkpoint.window_to AS backfill_window_to,
-      checkpoint.reconciled_until AS backfill_reconciled_until,
-      checkpoint.completed AS backfill_completed,
+      CASE WHEN participant.kind = 'device' THEN (
+        SELECT MAX(checkpoint.window_to) FROM participant_backfill_checkpoints AS checkpoint
+        WHERE checkpoint.mission_id = participant.mission_id
+          AND checkpoint.traccar_device_id = participant.traccar_device_id
+          AND checkpoint.window_from >= participant.effective_from
+          AND checkpoint.window_to <= participant.added_at
+      ) ELSE NULL END AS backfill_window_to,
+      CASE WHEN participant.kind = 'device' THEN (
+        SELECT COALESCE(
+          MIN(CASE WHEN checkpoint.completed = 0 THEN checkpoint.reconciled_until END),
+          MAX(checkpoint.reconciled_until)
+        ) FROM participant_backfill_checkpoints AS checkpoint
+        WHERE checkpoint.mission_id = participant.mission_id
+          AND checkpoint.traccar_device_id = participant.traccar_device_id
+          AND checkpoint.window_from >= participant.effective_from
+          AND checkpoint.window_to <= participant.added_at
+      ) ELSE NULL END AS backfill_reconciled_until,
+      CASE WHEN participant.kind = 'device' THEN (
+        SELECT CASE WHEN COUNT(*) = 0 THEN NULL WHEN MIN(checkpoint.completed) = 1 THEN 1 ELSE 0 END
+        FROM participant_backfill_checkpoints AS checkpoint
+        WHERE checkpoint.mission_id = participant.mission_id
+          AND checkpoint.traccar_device_id = participant.traccar_device_id
+          AND checkpoint.window_from >= participant.effective_from
+          AND checkpoint.window_to <= participant.added_at
+      ) ELSE NULL END AS backfill_completed,
       CASE WHEN participant.kind = 'group' THEN (
-        SELECT COUNT(DISTINCT group_checkpoint.traccar_device_id)
+        SELECT COUNT(DISTINCT initial_membership.traccar_device_id)
         FROM mission_group_membership_events AS initial_membership
-        INNER JOIN participant_backfill_checkpoints AS group_checkpoint
-          ON group_checkpoint.mission_id = initial_membership.mission_id
-         AND group_checkpoint.traccar_device_id = initial_membership.traccar_device_id
-         AND group_checkpoint.window_from = participant.effective_from
-         AND group_checkpoint.window_to = participant.added_at
         WHERE initial_membership.mission_id = participant.mission_id
           AND initial_membership.mission_team_id = participant.mission_team_id
           AND initial_membership.change = 'member'
           AND initial_membership.observed_at = participant.added_at
       ) ELSE NULL END AS backfill_member_count,
       CASE WHEN participant.kind = 'group' THEN (
-        SELECT COUNT(DISTINCT CASE WHEN group_checkpoint.completed = 1
-          THEN group_checkpoint.traccar_device_id END)
+        SELECT COUNT(DISTINCT CASE WHEN EXISTS (
+            SELECT 1 FROM participant_backfill_checkpoints AS group_checkpoint
+            WHERE group_checkpoint.mission_id = initial_membership.mission_id
+              AND group_checkpoint.traccar_device_id = initial_membership.traccar_device_id
+              AND group_checkpoint.window_from >= participant.effective_from
+              AND group_checkpoint.window_to <= participant.added_at
+          ) AND NOT EXISTS (
+            SELECT 1 FROM participant_backfill_checkpoints AS group_checkpoint
+            WHERE group_checkpoint.mission_id = initial_membership.mission_id
+              AND group_checkpoint.traccar_device_id = initial_membership.traccar_device_id
+              AND group_checkpoint.window_from >= participant.effective_from
+              AND group_checkpoint.window_to <= participant.added_at
+              AND group_checkpoint.completed = 0
+          ) THEN initial_membership.traccar_device_id END)
         FROM mission_group_membership_events AS initial_membership
-        INNER JOIN participant_backfill_checkpoints AS group_checkpoint
-          ON group_checkpoint.mission_id = initial_membership.mission_id
-         AND group_checkpoint.traccar_device_id = initial_membership.traccar_device_id
-         AND group_checkpoint.window_from = participant.effective_from
-         AND group_checkpoint.window_to = participant.added_at
         WHERE initial_membership.mission_id = participant.mission_id
           AND initial_membership.mission_team_id = participant.mission_team_id
           AND initial_membership.change = 'member'
@@ -459,10 +516,6 @@ function listMissionParticipants(db, missionId) {
       ) ELSE NULL END AS backfill_completed_count
     FROM mission_participants AS participant
     LEFT JOIN mission_teams AS team ON team.id = participant.mission_team_id
-    LEFT JOIN participant_backfill_checkpoints AS checkpoint
-      ON checkpoint.mission_id = participant.mission_id
-      AND checkpoint.traccar_device_id = participant.traccar_device_id
-      AND checkpoint.window_from = participant.effective_from
     WHERE participant.mission_id = ?
     ORDER BY participant.added_at ASC, participant.rowid ASC`).all(missionId)
 }

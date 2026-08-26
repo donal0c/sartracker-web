@@ -44,6 +44,7 @@ import {
   createTrackingSoakFailureReport,
 } from '../build/electron-tracking-soak-failure-evidence-lib.js'
 import {
+  requestGracefulElectronQuit,
   runCleanupStep,
   startTrackingSoakSleepGuard,
   stopOwnedProcess,
@@ -57,6 +58,7 @@ import {
   buildTrackingSoakVerdict,
   clickActionablePointerTarget,
   classifyOperatorInteraction,
+  classifyTrackingSoakMissionEvents,
   createPositionTruthDigestAccumulator,
   installCadencedRendererProbeInWindow,
   measureOperatorAction,
@@ -423,7 +425,10 @@ async function main() {
     const runtimeTiming = parseTrackingSoakRuntimeLog(await readCombinedRuntimeLog(userDataDir))
     const growth = buildTrackingGrowthEvidence(growthCheckpoints)
     const supportBundleBytes = Buffer.byteLength(supportBundle, 'utf8')
-    const mainStats = summarizeResponsiveness(mainRoundTrips, 250)
+    const mainStats = summarizeResponsiveness(
+      mainRoundTrips,
+      options.mainStallThresholdMs,
+    )
     const rendererStats = summarizeResponsiveness(rendererGaps, 250)
     const operatorInteractionStats = summarizeResponsiveness(
       operatorInteractions.map((interaction) => interaction.durationMs),
@@ -523,6 +528,7 @@ async function main() {
         (exactSoakRequired
           ? options.profile.restartCheckpoints.length * 2 + 1
           : 0) +
+        databaseEvidence.participantBackfillCompletedEvents +
         (databaseEvidence.events.mission_backup_synced ?? 0),
       unexplainedMissionEvents: databaseEvidence.unexplainedMissionEvents,
       restartCheckpointsPassed,
@@ -530,6 +536,7 @@ async function main() {
       mainHeartbeatSamples: mainStats.count,
       mainHeartbeatErrors: launches.reduce((sum, launch) => sum + launch.mainHeartbeatErrors, 0),
       mainMaximumMs: mainStats.maxMs,
+      mainStallThresholdMs: options.mainStallThresholdMs,
       rendererSamples: rendererStats.count,
       rendererLaunchSampleCounts: launches.map(
         (launch) => launch.rendererSampleCount ?? 0,
@@ -628,6 +635,7 @@ async function main() {
         rendererCrashes: launch.rendererCrashes,
         processMemory: createProcessMemoryReport(launch.processMemory),
         operatorClickAuditTail: launch.operatorClickAuditTail,
+        shutdown: launch.shutdownEvidence,
         exitCode: launch.appProcess.exitCode,
       })),
       verdict,
@@ -806,6 +814,7 @@ async function launchPackagedApp(options, userDataDir, number) {
         lastSequence: 0,
       },
       operatorClickAuditTail: null,
+      shutdownEvidence: null,
       logChunks,
       closed: false,
       closePromise: null,
@@ -2865,16 +2874,30 @@ async function closeLaunch(launch, mainRoundTrips, rendererGaps) {
       () => sampleProcessMemory(launch, { phase: 'launch-close' }),
       500,
     )
-    await runCleanupStep(() => launch.mainInspector.close(), 250)
     await runCleanupStep(
       () => collectLaunchResponsiveness(launch, mainRoundTrips, rendererGaps),
       2_000,
     )
+    let gracefulFailure
+    let exitEvidence
+    try {
+      exitEvidence = await requestGracefulElectronQuit(
+        launch.mainInspector,
+        launch.appProcess,
+        10_000,
+      )
+    } catch (error) {
+      gracefulFailure = error
+      exitEvidence = await stopOwnedProcess(launch.appProcess, {
+        termTimeoutMs: 10_000,
+        killTimeoutMs: 5_000,
+      })
+    }
+    await runCleanupStep(() => launch.mainInspector.close(), 250)
     await runCleanupStep(() => launch.browser.close(), 2_000)
-    return stopOwnedProcess(launch.appProcess, {
-      termTimeoutMs: 10_000,
-      killTimeoutMs: 5_000,
-    })
+    launch.shutdownEvidence = exitEvidence
+    if (gracefulFailure !== undefined) throw gracefulFailure
+    return exitEvidence
   })()
   return launch.closePromise
 }
@@ -3060,24 +3083,7 @@ function inspectDatabase(databasePath, missionId) {
         .all(missionId)
         .map((row) => [row.event_type, Number(row.count)]),
     )
-    const operationalMissionEvents = Object.entries(events)
-      .filter(([eventType]) => !['device_updated', 'position_recorded'].includes(eventType))
-      .reduce((sum, [, count]) => sum + count, 0)
-    const declaredEventTypes = new Set([
-      'mission_created',
-      'mission_paused',
-      'mission_resumed',
-      'mission_backup_synced',
-      'device_created',
-      'device_updated',
-      'position_recorded',
-      'participants_selected',
-      'participant_added',
-      'group_membership_changed',
-    ])
-    const unexplainedMissionEvents = Object.entries(events)
-      .filter(([eventType]) => !declaredEventTypes.has(eventType))
-      .reduce((sum, [, count]) => sum + count, 0)
+    const operationalEventEvidence = classifyTrackingSoakMissionEvents(events)
     const fullPositionTruth = createPositionTruthDigestAccumulator()
     const normalPrefixPositionTruth = createPositionTruthDigestAccumulator()
     for (const row of database
@@ -3110,8 +3116,7 @@ function inspectDatabase(databasePath, missionId) {
         database.prepare('SELECT COUNT(*) AS count FROM positions WHERE mission_id = ?').get(missionId).count,
       ),
       events,
-      operationalMissionEvents,
-      unexplainedMissionEvents,
+      ...operationalEventEvidence,
       positionTruth: {
         full: fullPositionTruth.finish(),
         normalPrefix: normalPrefixPositionTruth.finish(),

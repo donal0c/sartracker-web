@@ -34,7 +34,7 @@ export function ExactBreadcrumbDotStatus(props: ExactBreadcrumbDotStatusProps) {
         data-testid="exact-breadcrumb-dots-loading"
         role="status"
       >
-        Loading exact breadcrumb fixes…
+        Loading exact fixes for inspection…
       </p>
     )
   }
@@ -45,7 +45,7 @@ export function ExactBreadcrumbDotStatus(props: ExactBreadcrumbDotStatusProps) {
   return (
     <div className="mb-4 border-l-4 border-l-sky-400 bg-sky-400/10 px-3 py-2 text-xs font-medium leading-relaxed text-sky-100">
       <p data-testid="exact-breadcrumb-dot-page-summary">
-        Showing {props.state.pagePositionCount.toLocaleString()} exact fixes of{' '}
+        Exact fix inspection — showing {props.state.pagePositionCount.toLocaleString()} of{' '}
         {props.state.totalPositionCount.toLocaleString()}
         {props.state.fromTimestamp === null || props.state.toTimestamp === null
           ? null

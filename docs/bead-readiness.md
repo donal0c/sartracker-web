@@ -20,7 +20,17 @@ Use this document before implementation to decide how much parallel research, pl
 
 ## Current Assessments
 
-Last updated: 2026-08-23 by Codex (Breadcrumb PR-2 review remediation)
+Last updated: 2026-08-26 by Codex (Breadcrumb PR-3 in-flight evidence remediation)
+
+### `DON-273` / `DON-276` / `DON-275` — Breadcrumb PR-3 complete coverage — evidence-lifecycle remediation
+
+- Research required: `Low`; the renderer decision and domain requirements are locked.
+- Implementation readiness: implementation, G2/G3, migration, and Candidate-B scale evidence remain complete. The first bounded recheck found three related cases after the Opus deadline correction: accepted mission writes could settle after persistence failure, teardown promotion reused a stale mission-scope snapshot, and partial provisional staging lacked compensation. Central source retrace confirmed all three and one red-first seam repair now makes the accepted-write loss marker durable, refreshes promotion scope, and retracts partial staging.
+- Recommended action: push the application-head package/soak binding and serial-CI correction, obtain green expanded CI, then run one fresh broad exact-head review plus targeted persistence/completeness, concurrency/finalization, and renderer/input-containment rechecks once. Do not restart five full waves. Do not merge or release until clean.
+- Locked decisions: current positions never wait; historical filters never hide selected-participant live positions; non-participants remain discovery/picker/diagnostic only; no false 100%; no global mission timestamp index; no mission-sized main-isolate work; exact paged Dots remains inspection/export; G3 separately controls the final coverage + mission-model default posture.
+- Open questions: none. Donal approved the coverage + mission-model default posture at G3 on 2026-08-25.
+- Evidence: G2's 18 serial runs, B's 960k/2M results, and the 3.704 GB migration remain standing on unchanged surfaces. The new seam RED was 3 files / 107 with exactly five expected failures. GREEN is focused 9 / 250, full 273 / 2,249, lint, TypeScript, changed CJS syntax, diff, production build/budgets, Chromium 16/16, critical visual 2/2, and uncached Opus visual 2/2. Application head `21a16fe` packages on macOS/Linux and its Ubuntu soak passes 6/6, 8,664/8,664, one restart, zero crashes, integrity/WAL `ok`, main max 12.160 ms, renderer max 100.234 ms, and four healthy interactions. GitHub run `33002926988` failed only because the 200 ms DON-269 wall-clock gate measured 216.929 ms under cross-file contention; the budget remains unchanged and the workflow now runs all 2,249 tests serially. That exact command passes locally in 135.74 s. Green CI and reviews remain open.
+- Ready-to-start checklist: [x] accepted plan and requirement trace; [x] exact base; [x] G2/G3; [x] BCP-08/09; [x] migration and scale proof; [x] whole-seam Fable pass; [x] Opus P1 central retrace; [x] red-first provisional-loss correction; [x] bounded review finding retrace; [x] accepted-write/scope/compensation seam repair; [x] direct production blocker tests; [x] full local deterministic/browser/visual gates; [x] replacement exact-head macOS/Linux package and CI soak; [ ] green expanded CI; [ ] one fresh broad plus three targeted exact-head rechecks; [x] one PR open without merge/release.
 
 ### `DON-270` / `DON-271` / `DON-272` — Breadcrumb PR-2 mission model — review ready
 

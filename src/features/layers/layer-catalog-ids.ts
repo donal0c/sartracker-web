@@ -5,12 +5,15 @@ import type {
 } from '../../infrastructure/mission-store/tauri-mission-store'
 
 export const TRACKING_GROUP_NODE_ID = 'group:tracking'
+export const COVERAGE_GROUP_NODE_ID = 'group:coverage'
 export const HELICOPTERS_GROUP_NODE_ID = 'group:helicopters'
 export const MAP_TOOLS_GROUP_NODE_ID = 'group:map-tools'
 export const GPX_TRACKS_GROUP_NODE_ID = 'group:gpx-tracks'
 
 export const TRACKING_DEVICES_LAYER_NODE_ID = 'layer:tracking:devices'
 export const TRACKING_BREADCRUMBS_LAYER_NODE_ID = 'layer:tracking:breadcrumbs'
+export const COVERAGE_DEVICES_LAYER_NODE_ID = 'layer:coverage:devices'
+export const COVERAGE_PERIODS_LAYER_NODE_ID = 'layer:coverage:periods'
 export const MEASUREMENTS_LAYER_NODE_ID = 'layer:map-tools:measurements'
 
 export function getMarkerLayerNodeId(type: MarkerType): string {
@@ -49,6 +52,23 @@ export function getDeviceFeatureNodeId(deviceId: string): string {
 
 export function getBreadcrumbDeviceFeatureNodeId(deviceId: string): string {
   return `feature:tracking-breadcrumb:${deviceId}`
+}
+
+export function getCoverageDeviceFeatureNodeId(deviceId: string): string {
+  return `feature:coverage-device:${encodeURIComponent(deviceId)}`
+}
+
+export function getCoveragePeriodFeatureNodeId(periodKey: string): string {
+  return `feature:coverage-period:${encodeURIComponent(periodKey)}`
+}
+
+/** Returns whether a node belongs to renderer-only mission-history filtering. */
+export function isCoverageNodeId(nodeId: string): boolean {
+  return nodeId === COVERAGE_GROUP_NODE_ID ||
+    nodeId === COVERAGE_DEVICES_LAYER_NODE_ID ||
+    nodeId === COVERAGE_PERIODS_LAYER_NODE_ID ||
+    nodeId.startsWith('feature:coverage-device:') ||
+    nodeId.startsWith('feature:coverage-period:')
 }
 
 export function getMarkerFeatureNodeId(markerId: string): string {

@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { registerMapStyleSync } from '../../src/features/map/map-style-sync'
 
-type MapEventName = 'idle' | 'style.load' | 'styledata'
+type MapEventName = 'idle' | 'style.load' | 'styledata' | 'styledataloading'
 type MapEventListener = () => void
 
 describe('registerMapStyleSync', () => {
@@ -39,6 +39,28 @@ describe('registerMapStyleSync', () => {
     harness.emit('style.load')
 
     expect(synchronize).toHaveBeenCalledTimes(1)
+    dispose()
+  })
+
+  it('reports style loss immediately while replacement structure is unavailable', () => {
+    vi.useFakeTimers()
+    const harness = createMapHarness({
+      styleLayers: [{ id: 'opentopomap-layer' }],
+      styleLoaded: false,
+    })
+    const synchronize = vi.fn()
+    const onStyleUnavailable = vi.fn()
+    const register = registerMapStyleSync as unknown as (
+      map: maplibregl.Map,
+      sync: (signal: AbortSignal) => void,
+      options: { readonly onStyleUnavailable: () => void },
+    ) => () => void
+    const dispose = register(harness.map, synchronize, { onStyleUnavailable })
+
+    harness.setStyleLayers([])
+    harness.emit('styledataloading')
+
+    expect(onStyleUnavailable).toHaveBeenCalledOnce()
     dispose()
   })
 

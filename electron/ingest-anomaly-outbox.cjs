@@ -1,15 +1,36 @@
 const fs = require('node:fs/promises')
 const path = require('node:path')
-const { createHash, randomUUID } = require('node:crypto')
+const { createHash } = require('node:crypto')
+
+const {
+  syncDirectoryDurably,
+  writeFileDurably,
+} = require('./durable-file.cjs')
 
 const INGEST_ANOMALY_OUTBOX_MAX_ENVELOPE_BYTES_HYPOTHESIS = 16 * 1024
 const INGEST_ANOMALY_OUTBOX_MAX_PENDING_FILES_HYPOTHESIS = 4_096
 const INGEST_ANOMALY_OUTBOX_MAX_PENDING_BYTES_HYPOTHESIS = 64 * 1024 * 1024
 const INGEST_ANOMALY_OUTBOX_REPLAY_BATCH_HYPOTHESIS = 8
 const DEGRADED_HEALTH_MARKER_NAME = 'degraded-health.json.marker'
+const RENDERER_EVIDENCE_INCIDENT_PREFIX = 'renderer-evidence-incident-'
+const RENDERER_EVIDENCE_INCIDENT_SUFFIX = '.json.marker'
+const ACKNOWLEDGEABLE_EVIDENCE_LOSS_REASONS = new Set([
+  'mission_persistence_failed',
+  'renderer_pending_evidence_lost',
+  'renderer_pending_capacity_exhausted',
+])
+const RENDERER_EVIDENCE_PENDING_REASON = 'renderer_evidence_pending'
+const RENDERER_EVIDENCE_SCOPE_REASONS = new Set([
+  'active_mission',
+  'paused_recoverable_mission',
+  'finished_unfinalized_mission',
+])
 const FAILURE_PRIORITY = [
   'outbox_health_marker_corrupt',
+  'mission_persistence_failed',
+  'renderer_pending_evidence_lost',
   'renderer_pending_capacity_exhausted',
+  RENDERER_EVIDENCE_PENDING_REASON,
   'outbox_invalid_envelope',
   'late_evidence_after_finalization',
   'outbox_storage_unavailable',
@@ -26,6 +47,9 @@ const FAILURE_PRIORITY = [
 function createIngestAnomalyOutbox(options) {
   const failuresByScope = new Map()
   const recoveryKeysByScope = new Map()
+  const rendererEvidenceContextsByScope = new Map()
+  const rendererEvidenceIncidentsByKey = new Map()
+  const lossGenerationByScope = new Map()
   let failureStateInitialized = false
   let operationTail = Promise.resolve()
   let replayRetryTimer = null
@@ -98,7 +122,7 @@ function createIngestAnomalyOutbox(options) {
           throw new Error('Durable outbox capacity is exhausted; evidence was not acknowledged.')
         }
         try {
-          await writeAtomic(filePath, serialized.text, platform)
+          await writeFileDurably(filePath, serialized.text, { platform })
         } catch (error) {
           await persistFailure(
             envelope.missionId,
@@ -141,11 +165,139 @@ function createIngestAnomalyOutbox(options) {
   function markEvidenceLoss(missionId, reason) {
     return enqueue(async () => {
       await initializeDirectoryAndFailureState()
-      if (reason !== 'renderer_pending_capacity_exhausted') {
+      if (![
+        'mission_persistence_failed',
+        'renderer_pending_capacity_exhausted',
+        'renderer_pending_evidence_lost',
+      ].includes(reason)) {
         throw new Error('Ingest evidence-loss reason is invalid.')
       }
       validateMissionScope(missionId)
-      await persistFailure(missionId, reason)
+      const scope = failureScope(missionId)
+      await sealEvidenceLoss(scope, reason)
+    })
+  }
+
+  /** Stages one durable incident before projecting any per-mission health markers. */
+  function stageRendererEvidenceIncident(scopes, incidentId, validateScopes) {
+    return enqueue(async () => {
+      validateRendererEvidenceIncidentId(incidentId)
+      const normalizedScopes = normalizeRendererEvidenceIncidentScopes(scopes)
+      await initializeDirectoryAndFailureState()
+      await validateScopes?.(normalizedScopes)
+      const incidentKey = createDeliveryRecoveryKey(incidentId)
+      const previous = rendererEvidenceIncidentsByKey.get(incidentKey)
+      const combinedScopes = mergeRendererIncidentScopes(
+        previous?.scopes ?? [],
+        normalizedScopes,
+      )
+      for (const scopeEntry of combinedScopes) {
+        const existing = rendererEvidenceContextsByScope.get(scopeEntry.scope)
+        if (existing !== undefined && existing.incidentKey !== incidentKey) {
+          throw new Error('Another renderer evidence-drain uncertainty is already pending.')
+        }
+      }
+      await fs.mkdir(options.directoryPath, { recursive: true })
+      const incident = { incidentKey, scopes: combinedScopes }
+      await persistRendererEvidenceIncident(incident)
+      rendererEvidenceIncidentsByKey.set(incidentKey, incident)
+      let stagedCount = 0
+      for (const scopeEntry of combinedScopes) {
+        addFailure(scopeEntry.scope, RENDERER_EVIDENCE_PENDING_REASON)
+        recoveryKeysByScope.set(scopeEntry.scope, new Map([
+          ...(recoveryKeysByScope.get(scopeEntry.scope) ?? []),
+          [RENDERER_EVIDENCE_PENDING_REASON, incidentKey],
+        ]))
+        rendererEvidenceContextsByScope.set(scopeEntry.scope, {
+          incidentKey,
+          scopeReason: scopeEntry.scopeReason,
+        })
+        await persistFailureScope(scopeEntry.scope)
+        stagedCount += 1
+        if (
+          Number.isFinite(options.faultInjection?.failRendererStageAfterScopeCount) &&
+          stagedCount >= options.faultInjection.failRendererStageAfterScopeCount
+        ) {
+          throw new Error('Injected renderer incident stage failure.')
+        }
+      }
+    })
+  }
+
+  /** Preserves the earlier single-scope API on top of the durable incident unit. */
+  function stageRendererEvidenceUncertainty(
+    missionId,
+    incidentId,
+    scopeReason,
+    validateScopes,
+  ) {
+    validateMissionScope(missionId)
+    validateRendererEvidenceScopeReason(scopeReason)
+    return stageRendererEvidenceIncident(
+      [{ missionId, scopeReason }],
+      incidentId,
+      validateScopes,
+    )
+  }
+
+  /** Retracts a clean late drain or seals an actual renderer-loss occurrence exactly once. */
+  function resolveRendererEvidenceUncertainty(missionId, incidentId, outcome) {
+    return enqueue(async () => {
+      validateMissionScope(missionId)
+      validateRendererEvidenceIncidentId(incidentId)
+      if (!['drained', 'lost'].includes(outcome)) {
+        throw new Error('Renderer evidence-drain outcome is invalid.')
+      }
+      await initializeDirectoryAndFailureState()
+      const scope = failureScope(missionId)
+      const incidentKey = createDeliveryRecoveryKey(incidentId)
+      const context = rendererEvidenceContextsByScope.get(scope)
+      if (context === undefined || context.incidentKey !== incidentKey) {
+        throw new Error('Renderer evidence-drain uncertainty does not match the pending incident.')
+      }
+      await resolveRendererEvidenceIncidentScopes(incidentKey, [scope], outcome)
+    })
+  }
+
+  /** Resolves one exact incident or sweeps every earlier incident after a clean drain. */
+  function resolveRendererEvidenceIncidents(incidentId, outcome) {
+    return enqueue(async () => {
+      if (incidentId !== null) validateRendererEvidenceIncidentId(incidentId)
+      if (!['drained', 'lost'].includes(outcome)) {
+        throw new Error('Renderer evidence-drain outcome is invalid.')
+      }
+      await initializeDirectoryAndFailureState()
+      const incidentKeys = incidentId === null
+        ? [...rendererEvidenceIncidentsByKey.keys()].sort()
+        : [createDeliveryRecoveryKey(incidentId)]
+      const resolvedScopes = []
+      for (const incidentKey of incidentKeys) {
+        const incident = rendererEvidenceIncidentsByKey.get(incidentKey)
+        if (incident === undefined) continue
+        resolvedScopes.push(...await resolveRendererEvidenceIncidentScopes(
+          incidentKey,
+          incident.scopes.map((scopeEntry) => scopeEntry.scope),
+          outcome,
+        ))
+      }
+      if (outcome === 'drained') await retractOrphanRendererEvidencePending()
+      return resolvedScopes
+    })
+  }
+
+  /** Returns the exact durable loss occurrence an admin may acknowledge. */
+  function readEvidenceLossAcknowledgementCandidate(missionId) {
+    return enqueue(async () => {
+      validateMissionScope(missionId)
+      await initializeDirectoryAndFailureState()
+      const names = await fs.readdir(options.directoryPath)
+      if (names.some((name) =>
+        (name.endsWith('.json') || name.endsWith('.corrupt')) &&
+        fileBelongsToMission(name, missionId),
+      )) {
+        throw new Error('No isolated mission evidence loss is available to acknowledge.')
+      }
+      return createEvidenceLossAcknowledgementCandidate(missionId)
     })
   }
 
@@ -153,7 +305,7 @@ function createIngestAnomalyOutbox(options) {
    * Holds the durable-delivery queue while one completeness operation runs.
    * Earlier deliveries drain first; later deliveries observe finalized state.
    */
-  function runWithHealthyEvidenceFence(missionId, operationName, operation) {
+  function runWithHealthyEvidenceFence(missionId, operationName, operation, fenceOptions = {}) {
     return enqueue(async () => {
       validateMissionScope(missionId)
       await initializeDirectoryAndFailureState()
@@ -165,7 +317,15 @@ function createIngestAnomalyOutbox(options) {
       const corruptCount = names.filter((name) =>
         name.endsWith('.corrupt') && fileBelongsToMission(name, missionId),
       ).length
-      if (pendingCount > 0 || corruptCount > 0 || selectFailure(missionId, corruptCount) !== null) {
+      const failure = selectFailure(missionId, corruptCount)
+      const acknowledgedLossMatches =
+        typeof fenceOptions.acknowledgedLossToken === 'string' &&
+        evidenceLossAcknowledgementMatches(missionId, fenceOptions.acknowledgedLossToken)
+      if (
+        pendingCount > 0 ||
+        corruptCount > 0 ||
+        (failure !== null && !acknowledgedLossMatches)
+      ) {
         throw new Error(
           `Degraded evidence health blocks ${operationName}; resolve durable ingest evidence before continuing.`,
         )
@@ -195,7 +355,7 @@ function createIngestAnomalyOutbox(options) {
         envelope = parseEnvelope(await fs.readFile(filePath, 'utf8'))
       } catch {
         await fs.rename(filePath, `${filePath}.corrupt`)
-        await syncDirectory(options.directoryPath, platform)
+        await syncDirectoryDurably(options.directoryPath, { platform })
         await persistFailureForFile(name, 'outbox_corrupt_record')
         continue
       }
@@ -215,7 +375,7 @@ function createIngestAnomalyOutbox(options) {
         throw new Error('Injected outbox removal after projection failure.')
       }
       await fs.unlink(filePath)
-      await syncDirectory(options.directoryPath, platform)
+      await syncDirectoryDurably(options.directoryPath, { platform })
       projectedCount += 1
       await clearRecoveredFailures(envelope.missionId)
       await yieldToMainEventLoop()
@@ -241,6 +401,20 @@ function createIngestAnomalyOutbox(options) {
     await fs.mkdir(options.directoryPath, { recursive: true })
     if (failureStateInitialized) return
     const names = await fs.readdir(options.directoryPath)
+    const incidentNames = names.filter(isRendererEvidenceIncidentFileName)
+    let corruptIncidentDetected = false
+    for (const incidentName of incidentNames) {
+      try {
+        const incident = parseRendererEvidenceIncident(
+          incidentName,
+          await fs.readFile(path.join(options.directoryPath, incidentName), 'utf8'),
+        )
+        rendererEvidenceIncidentsByKey.set(incident.incidentKey, incident)
+      } catch {
+        addFailure('global', 'outbox_health_marker_corrupt')
+        corruptIncidentDetected = true
+      }
+    }
     const markerNames = names.filter((name) =>
       name === DEGRADED_HEALTH_MARKER_NAME ||
       /^degraded-health-(?:global|[a-f0-9]{16})\.json\.marker$/u.test(name),
@@ -260,6 +434,10 @@ function createIngestAnomalyOutbox(options) {
           addFailure(scope, 'outbox_health_marker_corrupt')
         } else {
           failuresByScope.set(scope, new Set(reasons))
+          const lossGeneration = marker?.lossGeneration
+          if (Number.isSafeInteger(lossGeneration) && lossGeneration >= 0) {
+            lossGenerationByScope.set(scope, lossGeneration)
+          }
           const recoveryKeys = marker?.recoveryKeys
           if (recoveryKeys !== null && typeof recoveryKeys === 'object') {
             recoveryKeysByScope.set(scope, new Map(
@@ -269,18 +447,120 @@ function createIngestAnomalyOutbox(options) {
               ),
             ))
           }
+          const rendererContext = marker?.rendererEvidenceContexts?.renderer_evidence_pending
+          if (
+            rendererContext !== null &&
+            typeof rendererContext === 'object' &&
+            typeof rendererContext.incidentKey === 'string' &&
+            /^[a-f0-9]{64}$/u.test(rendererContext.incidentKey) &&
+            RENDERER_EVIDENCE_SCOPE_REASONS.has(rendererContext.scopeReason)
+          ) {
+            rendererEvidenceContextsByScope.set(scope, {
+              incidentKey: rendererContext.incidentKey,
+              scopeReason: rendererContext.scopeReason,
+            })
+          }
         }
       } catch {
         addFailure(scope, 'outbox_health_marker_corrupt')
       }
     }
+    for (const incident of [...rendererEvidenceIncidentsByKey.values()]) {
+      for (const scopeEntry of incident.scopes) {
+        removeRendererEvidencePendingInMemory(scopeEntry.scope)
+        if (!failuresByScope.get(scopeEntry.scope)?.has('renderer_pending_evidence_lost')) {
+          addFailure(scopeEntry.scope, 'renderer_pending_evidence_lost')
+          lossGenerationByScope.set(
+            scopeEntry.scope,
+            (lossGenerationByScope.get(scopeEntry.scope) ?? 0) + 1,
+          )
+        }
+        await persistFailureScope(scopeEntry.scope)
+      }
+      await removeRendererEvidenceIncident(incident.incidentKey)
+    }
+    if (corruptIncidentDetected) await persistFailureScope('global')
+    await retractOrphanRendererEvidencePending()
     failureStateInitialized = true
   }
 
+  /** Resolves selected scopes while preserving crash-safe drained/lost ordering. */
+  async function resolveRendererEvidenceIncidentScopes(incidentKey, scopes, outcome) {
+    const incident = rendererEvidenceIncidentsByKey.get(incidentKey)
+    if (incident === undefined) {
+      throw new Error('Renderer evidence-drain uncertainty does not match the pending incident.')
+    }
+    const selected = new Set(scopes)
+    const resolving = incident.scopes.filter((entry) => selected.has(entry.scope))
+    const remaining = incident.scopes.filter((entry) => !selected.has(entry.scope))
+    if (outcome === 'drained') {
+      await replaceRendererEvidenceIncident(incidentKey, remaining)
+    }
+    for (const scopeEntry of resolving) {
+      removeRendererEvidencePendingInMemory(scopeEntry.scope)
+      if (outcome === 'lost') {
+        if (!failuresByScope.get(scopeEntry.scope)?.has('renderer_pending_evidence_lost')) {
+          addFailure(scopeEntry.scope, 'renderer_pending_evidence_lost')
+          lossGenerationByScope.set(
+            scopeEntry.scope,
+            (lossGenerationByScope.get(scopeEntry.scope) ?? 0) + 1,
+          )
+        }
+      }
+      await persistFailureScope(scopeEntry.scope)
+    }
+    if (outcome === 'lost') {
+      await replaceRendererEvidenceIncident(incidentKey, remaining)
+    }
+    return resolving
+  }
+
+  /** Removes pending marker projections that have no surviving incident owner. */
+  async function retractOrphanRendererEvidencePending() {
+    const owned = new Set([...rendererEvidenceIncidentsByKey.values()].flatMap((incident) =>
+      incident.scopes.map((scopeEntry) => `${scopeEntry.scope}:${incident.incidentKey}`)))
+    for (const [scope, context] of [...rendererEvidenceContextsByScope]) {
+      if (owned.has(`${scope}:${context.incidentKey}`)) continue
+      removeRendererEvidencePendingInMemory(scope)
+      await persistFailureScope(scope)
+    }
+  }
+
+  /** Rewrites or removes the one durable incident truth record. */
+  async function replaceRendererEvidenceIncident(incidentKey, scopes) {
+    if (scopes.length === 0) {
+      await removeRendererEvidenceIncident(incidentKey)
+      return
+    }
+    const incident = { incidentKey, scopes }
+    await persistRendererEvidenceIncident(incident)
+    rendererEvidenceIncidentsByKey.set(incidentKey, incident)
+  }
+
+  /** Persists one bounded opaque incident before per-scope health projection. */
+  async function persistRendererEvidenceIncident(incident) {
+    await writeFileDurably(
+      path.join(options.directoryPath, rendererEvidenceIncidentFileName(incident.incidentKey)),
+      JSON.stringify({ version: 1, ...incident }),
+      { platform },
+    )
+  }
+
+  /** Removes one incident durably before drained marker cleanup can be interrupted. */
+  async function removeRendererEvidenceIncident(incidentKey) {
+    await fs.rm(
+      path.join(options.directoryPath, rendererEvidenceIncidentFileName(incidentKey)),
+      { force: true },
+    )
+    await syncDirectoryDurably(options.directoryPath, { platform })
+    rendererEvidenceIncidentsByKey.delete(incidentKey)
+  }
+
   /** Persists only a bounded failure class; anomaly content never enters the marker. */
-  async function persistFailure(missionId, reason, recoveryKey) {
+  async function persistFailure(missionId, reason, recoveryKey, requireDurable = false) {
     const scope = failureScope(missionId)
     if (
+      !requireDurable &&
       failuresByScope.get(scope)?.has(reason) === true &&
       (recoveryKey === undefined || recoveryKeysByScope.get(scope)?.get(reason) === recoveryKey)
     ) return
@@ -293,9 +573,10 @@ function createIngestAnomalyOutbox(options) {
     try {
       await fs.mkdir(options.directoryPath, { recursive: true })
       await persistFailureScope(scope)
-    } catch {
+    } catch (error) {
       // No writable local storage is the explicit impossibility boundary. The
       // in-process state remains critical and no evidence is acknowledged.
+      if (requireDurable) throw error
     }
   }
 
@@ -343,13 +624,22 @@ function createIngestAnomalyOutbox(options) {
   async function persistFailureScope(scope) {
     const reasons = [...(failuresByScope.get(scope) ?? [])].sort()
     const recoveryKeys = Object.fromEntries(recoveryKeysByScope.get(scope) ?? [])
+    const lossGeneration = lossGenerationByScope.get(scope) ?? 0
+    const rendererContext = rendererEvidenceContextsByScope.get(scope)
+    const rendererEvidenceContexts = rendererContext === undefined
+      ? {}
+      : { renderer_evidence_pending: rendererContext }
     const markerPath = path.join(options.directoryPath, markerNameForScope(scope))
     if (reasons.length === 0) {
       await fs.rm(markerPath, { force: true })
-      await syncDirectory(options.directoryPath, platform)
+      await syncDirectoryDurably(options.directoryPath, { platform })
       return
     }
-    await writeAtomic(markerPath, JSON.stringify({ reasons, recoveryKeys }), platform)
+    await writeFileDurably(
+      markerPath,
+      JSON.stringify({ reasons, recoveryKeys, lossGeneration, rendererEvidenceContexts }),
+      { platform },
+    )
   }
 
   /** Removes selected recoverable reasons without erasing sticky evidence loss. */
@@ -359,10 +649,14 @@ function createIngestAnomalyOutbox(options) {
     for (const reason of reasons) {
       current.delete(reason)
       recoveryKeysByScope.get(scope)?.delete(reason)
+      if (reason === RENDERER_EVIDENCE_PENDING_REASON) {
+        rendererEvidenceContextsByScope.delete(scope)
+      }
     }
     if (current.size === 0) {
       failuresByScope.delete(scope)
       recoveryKeysByScope.delete(scope)
+      rendererEvidenceContextsByScope.delete(scope)
     }
     await persistFailureScope(scope)
   }
@@ -401,7 +695,60 @@ function createIngestAnomalyOutbox(options) {
     health,
     initialize,
     markEvidenceLoss,
+    resolveRendererEvidenceIncidents,
+    resolveRendererEvidenceUncertainty,
+    stageRendererEvidenceIncident,
+    stageRendererEvidenceUncertainty,
+    readEvidenceLossAcknowledgementCandidate,
     runWithHealthyEvidenceFence,
+  }
+
+  /** Builds a non-secret token for the exact sticky loss state of one mission. */
+  function createEvidenceLossAcknowledgementCandidate(missionId) {
+    const scope = failureScope(missionId)
+    const globalFailures = failuresByScope.get('global') ?? new Set()
+    const scopedFailures = failuresByScope.get(scope) ?? new Set()
+    const reasons = [...scopedFailures].sort()
+    if (
+      globalFailures.size > 0 ||
+      reasons.length === 0 ||
+      reasons.some((reason) => !ACKNOWLEDGEABLE_EVIDENCE_LOSS_REASONS.has(reason))
+    ) {
+      throw new Error('No isolated mission evidence loss is available to acknowledge.')
+    }
+    const lossGeneration = lossGenerationByScope.get(scope) ?? 0
+    return {
+      token: createHash('sha256')
+        .update(JSON.stringify({ scope, reasons, lossGeneration }), 'utf8')
+        .digest('hex'),
+      reasons,
+    }
+  }
+
+  /** Accepts only a token for the current isolated sticky loss occurrence. */
+  function evidenceLossAcknowledgementMatches(missionId, token) {
+    try {
+      return createEvidenceLossAcknowledgementCandidate(missionId).token === token
+    } catch {
+      return false
+    }
+  }
+
+  /** Converts one confirmed renderer incident into a sticky loss generation. */
+  async function sealEvidenceLoss(scope, reason) {
+    lossGenerationByScope.set(scope, (lossGenerationByScope.get(scope) ?? 0) + 1)
+    addFailure(scope, reason)
+    await fs.mkdir(options.directoryPath, { recursive: true })
+    await persistFailureScope(scope)
+  }
+
+  /** Removes only the exact provisional renderer state from one mission scope. */
+  function removeRendererEvidencePendingInMemory(scope) {
+    failuresByScope.get(scope)?.delete(RENDERER_EVIDENCE_PENDING_REASON)
+    recoveryKeysByScope.get(scope)?.delete(RENDERER_EVIDENCE_PENDING_REASON)
+    rendererEvidenceContextsByScope.delete(scope)
+    if (failuresByScope.get(scope)?.size === 0) failuresByScope.delete(scope)
+    if (recoveryKeysByScope.get(scope)?.size === 0) recoveryKeysByScope.delete(scope)
   }
 }
 
@@ -458,33 +805,6 @@ function validateEnvelope(envelope) {
   }
 }
 
-/** Writes through a temporary file, fsyncs it, renames, then fsyncs the directory. */
-async function writeAtomic(filePath, contents, platform) {
-  const temporaryPath = `${filePath}.${randomUUID()}.tmp`
-  let handle
-  try {
-    handle = await fs.open(temporaryPath, 'wx', 0o600)
-    await handle.writeFile(contents, 'utf8')
-    await handle.sync()
-  } finally {
-    await handle?.close()
-  }
-  await fs.rename(temporaryPath, filePath)
-  await syncDirectory(path.dirname(filePath), platform)
-}
-
-/** Flushes directory metadata on platforms that support directory handles. */
-async function syncDirectory(directoryPath, platform) {
-  if (platform === 'win32') return
-  let handle
-  try {
-    handle = await fs.open(directoryPath, 'r')
-    await handle.sync()
-  } finally {
-    await handle?.close()
-  }
-}
-
 /** Maps an arbitrary delivery identity to a portable opaque filename. */
 function createSafeEnvelopeBasename(missionId, deliveryId) {
   return `${createMissionFilePrefix(missionId)}-${createHash('sha256')
@@ -523,6 +843,20 @@ function validateMissionScope(missionId) {
   }
 }
 
+/** Rejects an unbounded renderer teardown incident identity. */
+function validateRendererEvidenceIncidentId(incidentId) {
+  if (typeof incidentId !== 'string' || !/^[A-Za-z0-9._:-]{1,160}$/u.test(incidentId)) {
+    throw new Error('Renderer evidence-drain incident identity is invalid.')
+  }
+}
+
+/** Rejects renderer uncertainty that is not attributed to a bounded mission state. */
+function validateRendererEvidenceScopeReason(scopeReason) {
+  if (!RENDERER_EVIDENCE_SCOPE_REASONS.has(scopeReason)) {
+    throw new Error('Renderer evidence-drain mission scope reason is invalid.')
+  }
+}
+
 /** Maps a bounded opaque scope to its durable marker filename. */
 function markerNameForScope(scope) {
   return scope === 'global'
@@ -534,6 +868,94 @@ function markerNameForScope(scope) {
 function markerScopeFromName(fileName) {
   if (fileName === DEGRADED_HEALTH_MARKER_NAME) return 'global'
   return fileName.slice('degraded-health-'.length, -'.json.marker'.length)
+}
+
+/** Converts validated mission inputs into bounded opaque incident scopes. */
+function normalizeRendererEvidenceIncidentScopes(scopes) {
+  if (!Array.isArray(scopes) || scopes.length === 0 || scopes.length > 256) {
+    throw new Error('Renderer evidence incident scopes are invalid.')
+  }
+  const normalized = scopes.map((entry) => {
+    validateMissionScope(entry?.missionId)
+    validateRendererEvidenceScopeReason(entry?.scopeReason)
+    return {
+      missionId: entry.missionId,
+      scope: failureScope(entry.missionId),
+      scopeReason: entry.scopeReason,
+    }
+  })
+  return mergeRendererIncidentScopes([], normalized)
+}
+
+/** Merges incident scopes deterministically and rejects conflicting mission state. */
+function mergeRendererIncidentScopes(left, right) {
+  const byScope = new Map()
+  for (const entry of [...left, ...right]) {
+    const previous = byScope.get(entry.scope)
+    if (
+      previous !== undefined &&
+      (previous.scopeReason !== entry.scopeReason || previous.missionId !== entry.missionId)
+    ) {
+      throw new Error('Renderer evidence incident scope reason changed while staging.')
+    }
+    byScope.set(entry.scope, entry)
+  }
+  return [...byScope.values()].sort((a, b) => a.scope.localeCompare(b.scope))
+}
+
+/** Parses one durable incident without trusting its filename or payload shape. */
+function parseRendererEvidenceIncident(fileName, contents) {
+  if (!isRendererEvidenceIncidentFileName(fileName)) {
+    throw new Error('Renderer evidence incident filename is invalid.')
+  }
+  const incident = JSON.parse(contents)
+  const incidentKey = fileName.slice(
+    RENDERER_EVIDENCE_INCIDENT_PREFIX.length,
+    -RENDERER_EVIDENCE_INCIDENT_SUFFIX.length,
+  )
+  if (
+    incident?.version !== 1 ||
+    incident?.incidentKey !== incidentKey ||
+    !/^[a-f0-9]{64}$/u.test(incidentKey) ||
+    !Array.isArray(incident?.scopes) ||
+    incident.scopes.length === 0 ||
+    incident.scopes.length > 256
+  ) {
+    throw new Error('Renderer evidence incident record is invalid.')
+  }
+  const scopes = incident.scopes.map((entry) => {
+    if (
+      entry === null ||
+      typeof entry !== 'object' ||
+      typeof entry.missionId !== 'string' ||
+      entry.missionId.trim() === '' ||
+      typeof entry.scope !== 'string' ||
+      !/^[a-f0-9]{16}$/u.test(entry.scope) ||
+      entry.scope !== failureScope(entry.missionId) ||
+      !RENDERER_EVIDENCE_SCOPE_REASONS.has(entry.scopeReason)
+    ) {
+      throw new Error('Renderer evidence incident scope is invalid.')
+    }
+    return {
+      missionId: entry.missionId,
+      scope: entry.scope,
+      scopeReason: entry.scopeReason,
+    }
+  })
+  return { incidentKey, scopes: mergeRendererIncidentScopes([], scopes) }
+}
+
+/** Creates the allow-listed opaque incident marker filename. */
+function rendererEvidenceIncidentFileName(incidentKey) {
+  if (typeof incidentKey !== 'string' || !/^[a-f0-9]{64}$/u.test(incidentKey)) {
+    throw new Error('Renderer evidence incident key is invalid.')
+  }
+  return `${RENDERER_EVIDENCE_INCIDENT_PREFIX}${incidentKey}${RENDERER_EVIDENCE_INCIDENT_SUFFIX}`
+}
+
+/** Recognizes only current opaque renderer incident marker files. */
+function isRendererEvidenceIncidentFileName(fileName) {
+  return /^renderer-evidence-incident-[a-f0-9]{64}\.json\.marker$/u.test(fileName)
 }
 
 /** Adds one bounded failure class to in-memory health. */

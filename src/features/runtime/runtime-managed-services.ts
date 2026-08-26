@@ -15,6 +15,7 @@ import {
 import type { TrackingSnapshotContext } from '../tracking/polling-manager'
 
 const NOOP_STOP = () => undefined
+const NOOP_ASYNC_STOP = async () => undefined
 
 const NOOP_TRACKING_CACHE = {
   read: async () => null,
@@ -38,7 +39,7 @@ export type RuntimeBootstrapSettings = {
 export type RuntimeServiceHandles = {
   readonly stopAutosave: () => void
   readonly requestAutosaveSync: (reason: AutosaveSyncReason) => Promise<void>
-  readonly stopTracking: () => void
+  readonly stopTracking: () => Promise<void>
 }
 
 type CreateManagedRuntimeServicesDependencies = {
@@ -82,7 +83,7 @@ type CreateManagedRuntimeServicesDependencies = {
       },
     ) => {
       readonly start: () => void
-      readonly stop: () => void
+      readonly stop: () => Promise<void>
     }
     readonly cache: {
       readonly read: () => Promise<string | null>
@@ -95,6 +96,19 @@ type CreateManagedRuntimeServicesDependencies = {
     readonly maxPersistedPositionsPerSnapshot?: number
     readonly writeCache?: boolean
     readonly recordDiagnosticEvent?: typeof recordDiagnosticEvent
+    readonly recordMissionEvidenceLoss?:
+      | ((
+          missionId: string,
+          reason: import('../../domain/tracking-ingest-evidence').IngestEvidenceLossReason,
+        ) => Promise<void>)
+      | undefined
+    readonly beginMissionEvidenceObservation?: (missionId: string) => {
+      readonly missionId: string | null
+      readonly complete: () => void
+    }
+    readonly registerMissionEvidenceSettler?: (
+      settler: (missionId: string) => Promise<void>,
+    ) => () => void
     readonly recordTrackingPollDiagnostic?: typeof recordTrackingPollLedgerEntry
     readonly notifyDurablePositionChange?: (changedPositionCount: number) => void
     readonly missionModelEnabled?: boolean
@@ -142,13 +156,26 @@ type CreateManagedRuntimeServicesDependencies = {
     },
   ) => {
     readonly start: () => void
-    readonly stop: () => void
+    readonly stop: () => Promise<void>
   }
   readonly applySnapshot: (snapshot: import('../tracking/tracking-types').TrackingSnapshot) => void
   readonly applyStatus: (status: import('../tracking/tracking-types').TrackingConnectionStatus) => void
   readonly readTrackingRuntimeConfig: () => RuntimeBootstrapSettings['trackingConfig']
   readonly createTrackingCache: () => TrackingCache
   readonly notifyDurablePositionChange?: (changedPositionCount: number) => void
+  readonly recordMissionEvidenceLoss?:
+    | ((
+        missionId: string,
+        reason: import('../../domain/tracking-ingest-evidence').IngestEvidenceLossReason,
+      ) => Promise<void>)
+    | undefined
+  readonly beginMissionEvidenceObservation?: (missionId: string) => {
+    readonly missionId: string | null
+    readonly complete: () => void
+  }
+  readonly registerMissionEvidenceSettler?: (
+    settler: (missionId: string) => Promise<void>,
+  ) => () => void
   readonly missionModelEnabled?: boolean
   readonly readParticipationScope?: () => import('../participants/participation-scope').ParticipationScope
   readonly readParticipationScopeStatus?: () => 'loading' | 'ready' | 'error'
@@ -170,16 +197,16 @@ export function createNoopRuntimeServiceHandles(): RuntimeServiceHandles {
   return {
     stopAutosave: NOOP_STOP,
     requestAutosaveSync: async () => undefined,
-    stopTracking: NOOP_STOP,
+    stopTracking: NOOP_ASYNC_STOP,
   }
 }
 
 /**
  * Stops a previously-started runtime service set.
  */
-export function stopRuntimeServices(handles: RuntimeServiceHandles): void {
+export async function stopRuntimeServices(handles: RuntimeServiceHandles): Promise<void> {
   handles.stopAutosave()
-  handles.stopTracking()
+  await handles.stopTracking()
 }
 
 /**
@@ -221,6 +248,19 @@ export async function createManagedRuntimeServices(
       applyStatus: dependencies.applyStatus,
       recordDiagnosticEvent,
       recordTrackingPollDiagnostic: recordTrackingPollLedgerEntry,
+      recordMissionEvidenceLoss: dependencies.recordMissionEvidenceLoss,
+      ...(dependencies.beginMissionEvidenceObservation === undefined
+        ? {}
+        : {
+            beginMissionEvidenceObservation:
+              dependencies.beginMissionEvidenceObservation,
+          }),
+      ...(dependencies.registerMissionEvidenceSettler === undefined
+        ? {}
+        : {
+            registerMissionEvidenceSettler:
+              dependencies.registerMissionEvidenceSettler,
+          }),
       ...(dependencies.missionModelEnabled === undefined
         ? {}
         : { missionModelEnabled: dependencies.missionModelEnabled }),
@@ -259,9 +299,9 @@ export async function createManagedRuntimeServices(
     return {
       stopAutosave: autosave.stop,
       requestAutosaveSync: autosave.requestSync,
-      stopTracking: () => {
+      stopTracking: async () => {
         stopTrackingStatusBridge()
-        stopTrackingPoller()
+        await stopTrackingPoller()
       },
     }
   } catch (error) {

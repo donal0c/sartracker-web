@@ -57,6 +57,37 @@ export function createTrackingSoakProfile(name) {
   })
 }
 
+/** Classifies bounded operational mission events captured by the packaged soak. */
+export function classifyTrackingSoakMissionEvents(events) {
+  const entries = Object.entries(events ?? {}).map(([eventType, count]) => [
+    eventType,
+    Number(count),
+  ])
+  const declaredEventTypes = new Set([
+    'mission_created',
+    'mission_paused',
+    'mission_resumed',
+    'mission_backup_synced',
+    'device_created',
+    'device_updated',
+    'position_recorded',
+    'participants_selected',
+    'participant_added',
+    'participant_backfill_completed',
+    'group_membership_changed',
+  ])
+  return {
+    operationalMissionEvents: entries
+      .filter(([eventType]) => !['device_updated', 'position_recorded'].includes(eventType))
+      .reduce((sum, [, count]) => sum + count, 0),
+    participantBackfillCompletedEvents:
+      Number(events?.participant_backfill_completed ?? 0),
+    unexplainedMissionEvents: entries
+      .filter(([eventType]) => !declaredEventTypes.has(eventType))
+      .reduce((sum, [, count]) => sum + count, 0),
+  }
+}
+
 /**
  * Revalidates the final operator-visible Line total against both SQLite and
  * independent deterministic source truth across two consecutive observations.
@@ -130,6 +161,9 @@ export function parseTrackingSoakArgs(argv) {
       case '--freeze-threshold-ms':
         parsed.freezeThresholdMs = Number(nextValue())
         break
+      case '--main-stall-threshold-ms':
+        parsed.mainStallThresholdMs = Number(nextValue())
+        break
       case '--':
         parsed.extraArgs.push(...argv.slice(index + 1))
         index = argv.length
@@ -161,6 +195,11 @@ export function parseTrackingSoakArgs(argv) {
       parsed.freezeThresholdMs,
       1_000,
       '--freeze-threshold-ms',
+    ),
+    mainStallThresholdMs: positiveNumber(
+      parsed.mainStallThresholdMs,
+      200,
+      '--main-stall-threshold-ms',
     ),
     extraArgs: parsed.extraArgs,
   }
@@ -285,9 +324,10 @@ export function buildTrackingSoakVerdict(input) {
     )
   }
 
-  if (input.mainMaximumMs >= input.freezeThresholdMs) {
+  const mainStallThresholdMs = input.mainStallThresholdMs ?? input.freezeThresholdMs
+  if (input.mainMaximumMs >= mainStallThresholdMs) {
     failureReasons.push(
-      `Main-process maximum ${input.mainMaximumMs}ms reached the ${input.freezeThresholdMs}ms freeze threshold.`,
+      `Main-process maximum ${input.mainMaximumMs}ms reached the ${mainStallThresholdMs}ms stall threshold.`,
     )
   }
   if (input.rendererMaximumMs >= input.freezeThresholdMs) {

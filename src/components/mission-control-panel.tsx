@@ -1,19 +1,14 @@
-import {
-  useEffect,
-  useRef,
-  type KeyboardEvent as ReactKeyboardEvent,
-  type ReactNode,
-} from 'react'
+import { lazy, Suspense } from 'react'
 
 import { useMissionControlViewModel } from '../features/mission/use-mission-control-view-model'
 import { formatMissionDuration } from '../features/mission/mission-timers'
 import { selectMissionPhasePresentation } from '../features/mission/mission-phase-presentation'
-import { focusFirstElement, restoreFocus, trapTabKey } from '../lib/focus-management'
 import {
   OpenOutingFinishOffer,
   OutingControlsSection,
 } from './outing-controls-section'
 import { ParticipantControlsSection } from './participant-controls-section'
+import { InlineDecisionDialog } from './inline-decision-dialog'
 
 const MISSION_NAME_INPUT_ID = 'mission-name-input'
 const MISSION_OFFSET_INPUT_ID = 'mission-offset-input'
@@ -23,6 +18,10 @@ const MISSION_UNLOCK_TITLE_ID = 'mission-unlock-dialog-title'
 const MISSION_FINISH_TITLE_ID = 'mission-finish-dialog-title'
 const MISSION_FINISH_DESCRIPTION_ID = 'mission-finish-dialog-description'
 const MAX_START_OFFSET_HOURS = 48
+const MissionEvidenceLossDialog = lazy(async () => {
+  const module = await import('./mission-evidence-loss-dialog')
+  return { default: module.MissionEvidenceLossDialog }
+})
 
 type MissionControlPanelProps = {
   readonly minimized?: boolean
@@ -56,6 +55,8 @@ export function MissionControlPanel({
     setShowFinalizeDialog,
     showUnlockDialog,
     setShowUnlockDialog,
+    showEvidenceLossDialog,
+    setShowEvidenceLossDialog,
     governanceBusy,
     governanceFeedback,
     adminRoster,
@@ -63,6 +64,8 @@ export function MissionControlPanel({
     setSelectedAdmin,
     unlockReason,
     setUnlockReason,
+    evidenceLossReason,
+    setEvidenceLossReason,
     canOpenReview,
     openReviewWorkspace,
     canStart,
@@ -75,6 +78,7 @@ export function MissionControlPanel({
     resumeRecoverable,
     startFresh,
     confirmFinalize,
+    confirmEvidenceLossAcknowledgement,
     confirmUnlock,
   } = useMissionControlViewModel()
 
@@ -268,7 +272,8 @@ export function MissionControlPanel({
         {/* Status Messages */}
         <div className="empty:hidden">
           {startError !== null ? <p className="border border-rose-400/24 bg-rose-400/10 p-2 text-xs text-rose-400">{startError}</p> : null}
-          {actionError !== null && !showFinishDialog && !showFinalizeDialog && !showUnlockDialog
+          {actionError !== null && !showFinishDialog && !showFinalizeDialog &&
+            !showUnlockDialog && !showEvidenceLossDialog
             ? <MissionActionError message={actionError} />
             : null}
           {duplicateWarning !== null ? (
@@ -512,6 +517,22 @@ export function MissionControlPanel({
         </InlineDecisionDialog>
       ) : null}
 
+      {showEvidenceLossDialog && governanceMission !== null ? (
+        <Suspense fallback={<p role="status">Loading evidence controls…</p>}>
+          <MissionEvidenceLossDialog
+            actionError={actionError}
+            adminRoster={adminRoster}
+            evidenceLossReason={evidenceLossReason}
+            governanceBusy={governanceBusy}
+            onCancel={() => setShowEvidenceLossDialog(false)}
+            onConfirm={() => void confirmEvidenceLossAcknowledgement()}
+            selectedAdmin={selectedAdmin}
+            setEvidenceLossReason={setEvidenceLossReason}
+            setSelectedAdmin={setSelectedAdmin}
+          />
+        </Suspense>
+      ) : null}
+
       {showFinishDialog ? (
         <InlineDecisionDialog
           describedBy={MISSION_FINISH_DESCRIPTION_ID}
@@ -567,78 +588,5 @@ function MissionActionError({ message }: { readonly message: string }) {
     >
       {message}
     </p>
-  )
-}
-
-function InlineDecisionDialog(props: {
-  readonly labelledBy: string
-  readonly describedBy?: string
-  readonly className: string
-  readonly 'data-testid': string
-  readonly onCancel: () => void
-  readonly children: ReactNode
-}) {
-  const { onCancel } = props
-  const panelRef = useRef<HTMLDivElement>(null)
-  const returnFocusRef = useRef<Element | null>(null)
-
-  useEffect(() => {
-    returnFocusRef.current = document.activeElement
-    const panel = panelRef.current
-    if (panel === null) {
-      return
-    }
-
-    const focusFrame = requestAnimationFrame(() => focusFirstElement(panel))
-    return () => {
-      cancelAnimationFrame(focusFrame)
-      restoreFocus(returnFocusRef.current)
-      returnFocusRef.current = null
-    }
-  }, [])
-
-  useEffect(() => {
-    const handleDocumentKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== 'Escape') {
-        return
-      }
-
-      event.preventDefault()
-      event.stopPropagation()
-      event.stopImmediatePropagation()
-      onCancel()
-    }
-
-    document.addEventListener('keydown', handleDocumentKeyDown, true)
-    return () => document.removeEventListener('keydown', handleDocumentKeyDown, true)
-  }, [onCancel])
-
-  function handleKeyDown(event: ReactKeyboardEvent<HTMLDivElement>): void {
-    if (event.key === 'Escape') {
-      event.preventDefault()
-      event.stopPropagation()
-      event.nativeEvent.stopImmediatePropagation()
-      onCancel()
-      return
-    }
-
-    if (panelRef.current !== null) {
-      trapTabKey(event.nativeEvent, panelRef.current)
-    }
-  }
-
-  return (
-    <div
-      aria-describedby={props.describedBy}
-      aria-labelledby={props.labelledBy}
-      className={props.className}
-      data-testid={props['data-testid']}
-      onKeyDown={handleKeyDown}
-      ref={panelRef}
-      role="alertdialog"
-      tabIndex={-1}
-    >
-      {props.children}
-    </div>
   )
 }

@@ -61,6 +61,13 @@ describe('diagnostics model', () => {
       },
       selectedMissionId: 'mission-1',
       missionModelEnabled: true,
+      coverageDiagnostics: {
+        queueDepth: 3, queueAgeMs: 120_000,
+        pendingChunkCount: 1, staleChunkCount: 2, freshChunkCount: 7,
+        pendingInvalidationCount: 1,
+        lastEnumerationDurationMs: 81, lastBuildDurationMs: 240,
+        deliveryMapSize: 6, lastErrorClass: 'timeout',
+      },
     })
 
     expect(snapshot.summaryRows.some((row) => row.label === 'Runtime' && row.value === 'Tauri desktop')).toBe(true)
@@ -91,6 +98,11 @@ describe('diagnostics model', () => {
     expect(snapshot.supportReport).not.toContain('reeks-standard-60km-z16.mbtiles')
     expect(snapshot.supportReport).toContain('layer metadata entries: 3')
     expect(snapshot.supportReport).toContain('mission model: enabled (internal)')
+    expect(snapshot.supportReport).toContain('[coverage]')
+    expect(snapshot.supportReport).toContain('queue depth: 3')
+    expect(snapshot.supportReport).toContain('queue age ms: 120000')
+    expect(snapshot.supportReport).toContain('delivery map size: 6')
+    expect(snapshot.supportReport).toContain('last error class: timeout')
   })
 
   it('reports only bounded ingest evidence health, never anomaly content [DON-268]', () => {

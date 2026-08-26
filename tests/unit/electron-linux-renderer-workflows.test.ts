@@ -44,6 +44,11 @@ function expectMesaPackages(step: WorkflowStep): void {
   expect(step.run).toContain('mesa-utils')
 }
 
+/** Verifies a real X11 window manager can deliver graceful close requests. */
+function expectWindowManager(step: WorkflowStep): void {
+  expect(step.run).toContain('openbox')
+}
+
 /**
  * Verifies that the workflow proves llvmpipe is active before app timing.
  */
@@ -95,6 +100,7 @@ describe('Linux Electron renderer workflows [DON-260]', () => {
     const job = workflow.jobs.build
 
     expectMesaPackages(selectStep(job, 'Install Linux Electron runtime deps'))
+    expectWindowManager(selectStep(job, 'Install Linux Electron runtime deps'))
     expectRendererAttestation(selectStep(job, 'Attest Mesa llvmpipe renderer'))
     expect(selectStep(job, 'Packaged tracking soak (CI profile)').env).toMatchObject({
       LIBGL_ALWAYS_SOFTWARE: '1',
@@ -102,6 +108,24 @@ describe('Linux Electron renderer workflows [DON-260]', () => {
     })
     expectMesaLaunch(selectStep(job, 'Launch AppImage smoke'))
     expect(workflowSource).not.toContain('--enable-unsafe-swiftshader')
+  })
+
+  it('proves the standalone packaged app completes a graceful window close', () => {
+    const workflow = readWorkflow('.github/workflows/electron-linux-validation.yml')
+    const launch = selectStep(workflow.jobs.build, 'Launch AppImage smoke').run ?? ''
+
+    expect(launch).toContain("FRAME_ID=\"$(xwininfo -tree -id \"$WINDOW_ID\"")
+    expect(launch).toContain('xdotool getwindowgeometry --shell "$FRAME_ID"')
+    expect(launch).toContain('xdotool mousemove --sync "$CLOSE_X" "$CLOSE_Y" click 1')
+    expect(launch).not.toContain('xdotool windowclose "$WINDOW_ID"')
+    expect(launch).toContain('openbox')
+    expect(launch).toContain('xprop -root _NET_SUPPORTING_WM_CHECK')
+    expect(launch).toContain("grep -Eq '_NET_SUPPORTING_WM_CHECK\\(WINDOW\\): window id # 0x[0-9a-f]+'")
+    expect(launch).toContain('APP_STATE="$(ps -o stat= -p "$APP_PID" 2>/dev/null || true)"')
+    expect(launch).toContain('if [[ "$APP_STATE" == Z* ]]; then')
+    expect(launch).not.toContain('tail --pid="$APP_PID"')
+    expect(launch).toContain('wait "$APP_PID"')
+    expect(launch).toContain('appimage-graceful-close.txt')
   })
 
   it('qualifies the internal mission model only in the standalone validation package', () => {

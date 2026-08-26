@@ -1,0 +1,38 @@
+{
+  "exactHead": "38ec709b1b59801e45d2e867ba9e3443065ab104",
+  "fixturePath": "/home/donal/sartracker-pr2-b759157/tmp/fixtures/bcp-960k.sqlite",
+  "fixtureBytes": 476151808,
+  "missionId": "fixture-mission-000000000001",
+  "chunkCount": 1300,
+  "periodCount": 13,
+  "totalFixes": 959988,
+  "deliveredFixes": 959988,
+  "manifestReadyMs": 2110.848249,
+  "firstUsefulMs": 2243.5118420000003,
+  "completeMs": 5794.323649999999,
+  "periodDurationsMs": [
+    125.68180700000039,
+    101.30853500000012,
+    96.56441300000006,
+    110.57174899999973,
+    84.75143800000023,
+    109.69260800000029,
+    65.45512099999996,
+    93.94668600000023,
+    68.6490660000004,
+    113.20138099999986,
+    81.0855459999998,
+    64.4681899999996,
+    2554.830726
+  ],
+  "mainMaxGapMs": 20.196721000000252,
+  "claim": {
+    "changeSeq": 1,
+    "databaseReady": false,
+    "blockers": [
+      "backfill_incomplete"
+    ],
+    "revisionCount": 1300
+  },
+  "completedAt": "2026-08-25T10:13:45.785Z"
+}

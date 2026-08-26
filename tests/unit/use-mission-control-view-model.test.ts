@@ -11,6 +11,7 @@ import type { MissionControlViewModel } from '../../src/features/mission/use-mis
 import { useMissionControlViewModel } from '../../src/features/mission/use-mission-control-view-model'
 import { useMissionReviewWorkspaceStore } from '../../src/features/mission-review/mission-review-workspace-store'
 import { useParticipantStore } from '../../src/features/participants/participant-store'
+import { useIngestHealthStore } from '../../src/features/tracking/ingest-health-store'
 
 const mocks = vi.hoisted(() => ({
   loadAppSettings: vi.fn(),
@@ -156,6 +157,7 @@ describe('useMissionControlViewModel', () => {
     const governanceController = {
       refreshGovernanceMission: vi.fn().mockResolvedValue(undefined),
       finalizeGovernanceMission: vi.fn(),
+      acknowledgeGovernanceEvidenceLoss: vi.fn(),
       unlockGovernanceMission: vi.fn().mockResolvedValue(createMission({ status: 'finished' })),
     }
     useMissionStore.setState({
@@ -187,6 +189,122 @@ describe('useMissionControlViewModel', () => {
     })
     expect(getModel().showUnlockDialog).toBe(false)
     expect(getModel().unlockReason).toBe('')
+  })
+
+  it('turns a known evidence-health finalization block into an audited admin flow [DON-276]', async () => {
+    const governanceController = {
+      refreshGovernanceMission: vi.fn().mockResolvedValue(undefined),
+      finalizeGovernanceMission: vi.fn().mockRejectedValue(
+        new Error('Degraded evidence health blocks finalization.'),
+      ),
+      acknowledgeGovernanceEvidenceLoss: vi.fn().mockResolvedValue({
+        state: 'critical',
+        reason: 'renderer_pending_evidence_lost',
+        pendingCount: 0,
+        corruptCount: 0,
+        conflictCount: 0,
+        rejectedCount: 0,
+        affectedDeviceCount: 0,
+        conflictDeviceIds: [],
+        acknowledgedLoss: {
+          adminName: 'Incident Controller',
+          reason: 'Known runtime loss reviewed.',
+          acknowledgedAt: '2026-08-26T17:00:00.000Z',
+        },
+      }),
+      unlockGovernanceMission: vi.fn(),
+    }
+    useMissionStore.setState({
+      governanceController,
+      governanceMission: createMission({ id: 'mission-finished', status: 'finished' }),
+      governanceEvidenceHealth: {
+        state: 'critical',
+        reason: 'renderer_pending_evidence_lost',
+        pendingCount: 0,
+        corruptCount: 0,
+        conflictCount: 0,
+        rejectedCount: 0,
+        affectedDeviceCount: 0,
+        conflictDeviceIds: [],
+      },
+    })
+    useIngestHealthStore.setState({
+      evidenceHealth: {
+        state: 'critical',
+        reason: 'renderer_pending_evidence_lost',
+        pendingCount: 0,
+        corruptCount: 0,
+        conflictCount: 0,
+        rejectedCount: 0,
+        affectedDeviceCount: 0,
+        conflictDeviceIds: [],
+      },
+    })
+    const { getModel } = renderHook()
+
+    await act(async () => {
+      await getModel().confirmFinalize()
+      await Promise.resolve()
+    })
+
+    expect(getModel().showFinalizeDialog).toBe(false)
+    expect(getModel().showEvidenceLossDialog).toBe(true)
+    expect(getModel().actionError).toBeNull()
+    expect(getModel().selectedAdmin).toBe('Incident Controller')
+
+    act(() => getModel().setEvidenceLossReason('Known runtime loss reviewed.'))
+    await act(async () => getModel().confirmEvidenceLossAcknowledgement())
+
+    expect(governanceController.acknowledgeGovernanceEvidenceLoss).toHaveBeenCalledWith({
+      mission_id: 'mission-finished',
+      admin_name: 'Incident Controller',
+      reason: 'Known runtime loss reviewed.',
+    })
+    expect(getModel().showEvidenceLossDialog).toBe(false)
+    expect(getModel().governanceFeedback).toMatch(/complete remains unavailable/i)
+  })
+
+  it('does not offer evidence-loss acknowledgement for other degraded evidence', async () => {
+    const governanceController = {
+      refreshGovernanceMission: vi.fn().mockResolvedValue(undefined),
+      finalizeGovernanceMission: vi.fn().mockRejectedValue(
+        new Error('Degraded evidence health blocks finalization.'),
+      ),
+      acknowledgeGovernanceEvidenceLoss: vi.fn(),
+      unlockGovernanceMission: vi.fn(),
+    }
+    useMissionStore.setState({
+      governanceController,
+      governanceMission: createMission({ id: 'mission-finished', status: 'finished' }),
+      governanceEvidenceHealth: {
+        state: 'critical',
+        reason: 'outbox_corrupt_record',
+        pendingCount: 0,
+        corruptCount: 1,
+        conflictCount: 0,
+        rejectedCount: 0,
+        affectedDeviceCount: 0,
+        conflictDeviceIds: [],
+      },
+    })
+    useIngestHealthStore.setState({
+      evidenceHealth: {
+        state: 'critical',
+        reason: 'outbox_corrupt_record',
+        pendingCount: 0,
+        corruptCount: 1,
+        conflictCount: 0,
+        rejectedCount: 0,
+        affectedDeviceCount: 0,
+        conflictDeviceIds: [],
+      },
+    })
+    const { getModel } = renderHook()
+
+    await act(async () => getModel().confirmFinalize())
+
+    expect(getModel().showEvidenceLossDialog).toBe(false)
+    expect(getModel().actionError).toMatch(/degraded evidence health blocks finalization/i)
   })
 
   function renderHook(): { readonly getModel: () => MissionControlViewModel } {
@@ -232,12 +350,14 @@ function resetStores(): void {
     currentMission: null,
     recoverableMission: null,
     governanceMission: null,
+    governanceEvidenceHealth: null,
     controller: null,
     governanceController: null,
   })
   useMissionReviewWorkspaceStore.setState({ open: false })
   useFocusModeStore.setState({ active: false })
   useParticipantStore.setState(useParticipantStore.getInitialState())
+  useIngestHealthStore.setState(useIngestHealthStore.getInitialState())
 }
 
 function createController(overrides: Partial<ReturnType<typeof createController>> = {}) {

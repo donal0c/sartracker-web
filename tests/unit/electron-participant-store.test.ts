@@ -29,6 +29,7 @@ type Participant = {
 
 type ElectronParticipantStore = {
   readonly close: () => void
+  readonly info: () => Promise<{ readonly database_path: string }>
   readonly createMission: (input: { readonly name: string; readonly start_time: string }) => Promise<{ readonly id: string }>
   readonly getMission: (missionId: string) => Promise<{ readonly status: string }>
   readonly selectMissionParticipants: (input: unknown) => Promise<readonly Participant[]>
@@ -48,6 +49,14 @@ type ElectronParticipantStore = {
     readonly reconciled_until: string
     readonly completed: number
   }[]>
+  readonly readCoverageClaim: (input: {
+    readonly missionId: string
+    readonly selectedKeys: readonly unknown[]
+  }) => Promise<{
+    readonly databaseReady: boolean
+    readonly blockers: readonly string[]
+  }>
+  readonly readCoverageManifest: (missionId: string) => Promise<unknown>
   readonly listMissionEvents: (missionId: string) => Promise<readonly {
     readonly event_type: string
     readonly timestamp: string
@@ -112,9 +121,21 @@ describe('Electron participant store [DON-271]', () => {
         window_from: '2026-08-20T08:00:00.000Z',
         completed: 0,
       }),
+      expect.objectContaining({
+        traccar_device_id: '20',
+        window_from: '2026-08-20T08:00:00.000Z',
+        completed: 0,
+      }),
     ])
     expect((await store.listMissionEvents(mission.id)).map((event) => event.event_type))
       .toContain('participants_selected')
+    const database = new Database((await store.info()).database_path, { readonly: true })
+    try {
+      expect(database.prepare('SELECT change_seq FROM coverage_missions WHERE mission_id = ?').get(mission.id))
+        .toEqual({ change_seq: 1 })
+    } finally {
+      database.close()
+    }
   })
 
   it('reports aggregate group-member backfill progress on the selected group row', async () => {
@@ -158,6 +179,13 @@ describe('Electron participant store [DON-271]', () => {
         backfill_completed_count: 1,
       }),
     ])
+    const database = new Database((await store.info()).database_path, { readonly: true })
+    try {
+      expect(database.prepare('SELECT change_seq FROM coverage_missions WHERE mission_id = ?').get(mission.id))
+        .toEqual({ change_seq: 2 })
+    } finally {
+      database.close()
+    }
   })
 
   it('rejects an initial selection that covers one device directly and through a group', async () => {
@@ -321,6 +349,70 @@ describe('Electron participant store [DON-271]', () => {
     expect(removed.removed_at).not.toBeNull()
     expect(readded.id).not.toBe(added.id)
     await expect(store.listMissionParticipants(mission.id)).resolves.toHaveLength(2)
+    const database = new Database((await store.info()).database_path, { readonly: true })
+    try {
+      expect(database.prepare(`SELECT change_seq FROM coverage_missions
+        WHERE mission_id = ?`).get(mission.id)).toEqual({ change_seq: 3 })
+    } finally {
+      database.close()
+    }
+  })
+
+  it('re-adds a participant from an earlier effective time without rewriting fixed backfill edges', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-08-20T10:00:00.000Z'))
+    const store = await createStore()
+    const mission = await store.createMission({
+      name: 'Repeated effective-from mission',
+      start_time: '2026-08-20T08:00:00.000Z',
+    })
+    const [initial] = await store.selectMissionParticipants({
+      mission_id: mission.id,
+      groups: [],
+      devices: [{ traccar_device_id: '20' }],
+      selected_by: 'Coordinator A',
+    })
+    await store.upsertParticipantBackfillCheckpoint({
+      mission_id: mission.id,
+      traccar_device_id: '20',
+      window_from: '2026-08-20T08:00:00.000Z',
+      window_to: '2026-08-20T10:00:00.000Z',
+      reconciled_until: '2026-08-20T10:00:00.000Z',
+      completed: true,
+    })
+    vi.setSystemTime(new Date('2026-08-20T11:00:00.000Z'))
+    await store.removeMissionParticipant({
+      mission_id: mission.id,
+      participant_id: initial!.id,
+      removed_by: 'Coordinator A',
+    })
+    vi.setSystemTime(new Date('2026-08-20T12:00:00.000Z'))
+
+    await expect(store.addMissionParticipant({
+      mission_id: mission.id,
+      kind: 'device',
+      ref: '20',
+      effective_from: '2026-08-20T08:00:00.000Z',
+      confirmed_by: 'Coordinator A',
+    })).resolves.toMatchObject({
+      traccar_device_id: '20',
+      effective_from: '2026-08-20T08:00:00.000Z',
+    })
+    await expect(store.listParticipantBackfillCheckpoints(mission.id)).resolves.toEqual([
+      expect.objectContaining({
+        window_from: '2026-08-20T08:00:00.000Z',
+        window_to: '2026-08-20T10:00:00.000Z',
+        completed: 1,
+      }),
+      expect.objectContaining({
+        window_from: '2026-08-20T10:00:00.000Z',
+        window_to: '2026-08-20T12:00:00.000Z',
+        reconciled_until: '2026-08-20T10:00:00.000Z',
+        completed: 0,
+      }),
+    ])
+    const participants = await store.listMissionParticipants(mission.id)
+    expect(participants[1]).toMatchObject({ backfill_completed: 0 })
   })
 
   it('rejects participant, membership, and checkpoint writes as soon as a mission is finished', async () => {
@@ -334,6 +426,15 @@ describe('Electron participant store [DON-271]', () => {
       groups: [],
       devices: [{ traccar_device_id: '20' }],
       selected_by: 'Coordinator A',
+    })
+    const [checkpoint] = await store.listParticipantBackfillCheckpoints(mission.id)
+    await store.upsertParticipantBackfillCheckpoint({
+      mission_id: mission.id,
+      traccar_device_id: checkpoint!.traccar_device_id,
+      window_from: checkpoint!.window_from,
+      window_to: checkpoint!.window_to,
+      reconciled_until: checkpoint!.window_to,
+      completed: true,
     })
     await store.finishMission(mission.id)
 
@@ -392,6 +493,13 @@ describe('Electron participant store [DON-271]', () => {
       { change: 'member' },
       { change: 'left' },
     ])
+    const database = new Database((await store.info()).database_path, { readonly: true })
+    try {
+      expect(database.prepare(`SELECT change_seq FROM coverage_missions
+        WHERE mission_id = ?`).get(mission.id)).toEqual({ change_seq: 3 })
+    } finally {
+      database.close()
+    }
   })
 
   it('keeps late-add backfill window edges immutable while advancing its cursor', async () => {
@@ -516,6 +624,53 @@ describe('Electron participant store [DON-271]', () => {
     await expect(store.listParticipantBackfillCheckpoints(mission.id)).resolves.toEqual([
       expect.objectContaining({ completed: 1, reconciled_until: checkpoint!.window_to }),
     ])
+  })
+
+  it('fences coverage completeness and mission finish for an initially selected direct device', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-08-20T10:00:00.000Z'))
+    const store = await createStore()
+    const mission = await store.createMission({
+      name: 'Direct-device backfill fence mission',
+      start_time: '2026-08-20T08:00:00.000Z',
+    })
+    await store.selectMissionParticipants({
+      mission_id: mission.id,
+      groups: [],
+      devices: [{ traccar_device_id: '20' }],
+      selected_by: 'Coordinator A',
+    })
+
+    const [checkpoint] = await store.listParticipantBackfillCheckpoints(mission.id)
+    expect(checkpoint).toEqual(expect.objectContaining({
+      traccar_device_id: '20',
+      window_from: '2026-08-20T08:00:00.000Z',
+      window_to: '2026-08-20T10:00:00.000Z',
+      reconciled_until: '2026-08-20T08:00:00.000Z',
+      completed: 0,
+    }))
+    await store.readCoverageManifest(mission.id)
+    await expect(store.readCoverageClaim({ missionId: mission.id, selectedKeys: [] }))
+      .resolves.toMatchObject({
+        databaseReady: false,
+        blockers: expect.arrayContaining(['backfill_incomplete']),
+      })
+    await expect(store.finishMission(mission.id)).rejects.toThrow(
+      /history backfill.*incomplete|complete.*history backfill/i,
+    )
+
+    await store.upsertParticipantBackfillCheckpoint({
+      mission_id: mission.id,
+      traccar_device_id: checkpoint!.traccar_device_id,
+      window_from: checkpoint!.window_from,
+      window_to: checkpoint!.window_to,
+      reconciled_until: checkpoint!.window_to,
+      completed: true,
+    })
+
+    await expect(store.readCoverageClaim({ missionId: mission.id, selectedKeys: [] }))
+      .resolves.toMatchObject({ databaseReady: true, blockers: [] })
+    await expect(store.finishMission(mission.id)).resolves.toMatchObject({ status: 'finished' })
   })
 
   it('rolls back checkpoint completion when its required audit append fails', async () => {

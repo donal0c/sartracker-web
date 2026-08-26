@@ -1,0 +1,1940 @@
+{
+  "schemaVersion": 1,
+  "issue": "DON-246",
+  "recordedAt": "2026-08-26T19:04:14.689Z",
+  "durationMs": 10601,
+  "profile": {
+    "name": "ci",
+    "deviceCount": 32,
+    "movingDeviceCount": 8,
+    "actualBatches": 6,
+    "productionPollsPerBatch": 180,
+    "equivalentProductionPolls": 1080,
+    "expectedPositionRows": 8664,
+    "restartCheckpoints": [
+      3
+    ],
+    "recommendedPollIntervalMs": 25
+  },
+  "fixtureClock": {
+    "recordedNowMs": 1787771044088,
+    "recordedNow": "2026-08-26T19:04:04.088Z",
+    "baseTimeMs": 1787601844088,
+    "baseTime": "2026-08-24T20:04:04.088Z",
+    "intervalMs": 5000,
+    "finalTimeMs": 1787607239088,
+    "finalTime": "2026-08-24T21:33:59.088Z",
+    "missionOffsetHours": 48,
+    "recentWindowMs": 7200000,
+    "maximumQualifiedWallElapsedMs": 1800000,
+    "latestQualifiedRecentFromMs": 1787765644088,
+    "latestQualifiedRecentFrom": "2026-08-26T17:34:04.088Z",
+    "recentWindowSeparationMs": 158405000
+  },
+  "acceleration": {
+    "actualPollIntervalMs": 25,
+    "productionPollIntervalMs": 5000,
+    "productionPollsPerBatch": 180
+  },
+  "app": {
+    "basename": "sartracker-web",
+    "sha256": "6344ae1d9044fedc54779e8bacaddc032fdcc0f55e146fc3623756eafa0bbaf8"
+  },
+  "platform": {
+    "os": "Linux 7.0.0-28-generic",
+    "architecture": "x64",
+    "node": "v22.22.2"
+  },
+  "mockTraccar": {
+    "completedBatches": 6,
+    "deviceRequests": 41,
+    "paused": false,
+    "baseTime": "2026-08-24T20:04:04.088Z",
+    "intervalMs": 5000
+  },
+  "missionModel": {
+    "enabled": true,
+    "selectedDeviceCount": 32,
+    "selectedParticipantRows": 32,
+    "expectedParticipantRows": 32,
+    "expectedParticipantAddedEvents": 0,
+    "persistedParticipantRows": 32,
+    "persistedTeamRows": 0
+  },
+  "database": {
+    "databaseBytes": 4403200,
+    "deviceRows": 32,
+    "participantRows": 32,
+    "teamRows": 0,
+    "positionRows": 8664,
+    "events": {
+      "device_created": 32,
+      "mission_backup_synced": 2,
+      "mission_created": 1,
+      "mission_paused": 1,
+      "mission_resumed": 1,
+      "participant_backfill_completed": 2,
+      "participants_selected": 1
+    },
+    "operationalMissionEvents": 40,
+    "participantBackfillCompletedEvents": 2,
+    "unexplainedMissionEvents": 0,
+    "positionTruth": {
+      "full": {
+        "rowCount": 8664,
+        "missingSourcePositionIdentityRows": 0,
+        "sha256": "3e42e488cce2e76ae1dc728876aaf24472de48425d50f8df135ee0c4c132175b"
+      },
+      "normalPrefix": {
+        "rowCount": 8664,
+        "missingSourcePositionIdentityRows": 0,
+        "sha256": "3e42e488cce2e76ae1dc728876aaf24472de48425d50f8df135ee0c4c132175b"
+      },
+      "normalPrefixBatch": 480
+    },
+    "integrityResult": "ok",
+    "walCheckpoint": {
+      "busy": 0,
+      "logFrames": 0,
+      "checkpointedFrames": 0
+    }
+  },
+  "positionTruth": {
+    "actual": {
+      "full": {
+        "rowCount": 8664,
+        "missingSourcePositionIdentityRows": 0,
+        "sha256": "3e42e488cce2e76ae1dc728876aaf24472de48425d50f8df135ee0c4c132175b"
+      },
+      "normalPrefix": {
+        "rowCount": 8664,
+        "missingSourcePositionIdentityRows": 0,
+        "sha256": "3e42e488cce2e76ae1dc728876aaf24472de48425d50f8df135ee0c4c132175b"
+      },
+      "normalPrefixBatch": 480
+    },
+    "expected": {
+      "full": {
+        "rowCount": 8664,
+        "missingSourcePositionIdentityRows": 0,
+        "sha256": "3e42e488cce2e76ae1dc728876aaf24472de48425d50f8df135ee0c4c132175b"
+      },
+      "normalPrefix": {
+        "rowCount": 8664,
+        "missingSourcePositionIdentityRows": 0,
+        "sha256": "3e42e488cce2e76ae1dc728876aaf24472de48425d50f8df135ee0c4c132175b"
+      },
+      "normalPrefixBatch": 480
+    },
+    "exactMatch": true,
+    "normalPrefixExactMatch": true
+  },
+  "growth": {
+    "checkpoints": [
+      {
+        "equivalentProductionPolls": 540,
+        "databaseBytes": 3765688,
+        "positionRows": 4344,
+        "redundantEventRows": 0
+      },
+      {
+        "equivalentProductionPolls": 1080,
+        "databaseBytes": 9116512,
+        "positionRows": 8664,
+        "redundantEventRows": 0
+      }
+    ],
+    "intervals": [
+      {
+        "fromEquivalentProductionPolls": 540,
+        "toEquivalentProductionPolls": 1080,
+        "databaseBytesPerEquivalentPoll": 9908.933333333332,
+        "positionRowsPerEquivalentPoll": 8,
+        "redundantEventRowsPerEquivalentPoll": 0
+      }
+    ]
+  },
+  "runtimeTiming": {
+    "backupCycles": [
+      {
+        "totalDurationMs": 100,
+        "databaseBytes": 4096
+      },
+      {
+        "totalDurationMs": 96,
+        "databaseBytes": 2355200
+      }
+    ],
+    "trackingPositionBatches": [
+      {
+        "durationMs": 93,
+        "insertedPositionCount": 1464
+      },
+      {
+        "durationMs": 33,
+        "insertedPositionCount": 180
+      },
+      {
+        "durationMs": 17,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 1,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 1,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 29,
+        "insertedPositionCount": 360
+      },
+      {
+        "durationMs": 1,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 0,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 76,
+        "insertedPositionCount": 1260
+      },
+      {
+        "durationMs": 24,
+        "insertedPositionCount": 180
+      },
+      {
+        "durationMs": 0,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 1,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 105,
+        "insertedPositionCount": 900
+      },
+      {
+        "durationMs": 0,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 1,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 1,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 13,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 10,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 2,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 0,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 14,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 1,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 29,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 0,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 1,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 10,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 0,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 1,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 12,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 0,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 1,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 11,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 1,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 0,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 30,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 1,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 10,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 11,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 0,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 2,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 9,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 0,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 1,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 39,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 1,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 0,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 9,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 1,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 11,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 0,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 1,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 12,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 1,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 0,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 28,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 2,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 0,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 10,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 10,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 0,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 1,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 12,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 1,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 28,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 1,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 0,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 11,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 1,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 0,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 11,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 0,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 1,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 16,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 1,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 0,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 30,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 12,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 0,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 1,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 11,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 1,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 12,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 33,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 0,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 1,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 1,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 9,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 11,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 1,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 0,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 14,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 1,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 25,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 0,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 1,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 10,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 0,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 1,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 14,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 1,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 0,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 13,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 1,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 28,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 1,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 0,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 0,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 0,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 0,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 0,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 1,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 0,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 0,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 0,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 0,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 2,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 1,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 0,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 39,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 11,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 13,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 0,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 1,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 13,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 2,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 0,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 29,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 0,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 1,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 9,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 2,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 10,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 0,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 1,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 10,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 0,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 1,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 32,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 5,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 0,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 14,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 1,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 10,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 1,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 0,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 12,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 1,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 0,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 34,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 2,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 0,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 21,
+        "insertedPositionCount": 180
+      },
+      {
+        "durationMs": 80,
+        "insertedPositionCount": 1260
+      },
+      {
+        "durationMs": 0,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 1,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 13,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 0,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 1,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 18,
+        "insertedPositionCount": 180
+      },
+      {
+        "durationMs": 74,
+        "insertedPositionCount": 1260
+      },
+      {
+        "durationMs": 0,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 1,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 30,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 0,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 2,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 20,
+        "insertedPositionCount": 180
+      },
+      {
+        "durationMs": 0,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 1,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 88,
+        "insertedPositionCount": 1260
+      },
+      {
+        "durationMs": 12,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 0,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 1,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 1,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 11,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 28,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 0,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 1,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 1,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 14,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 10,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 1,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 0,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 14,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 1,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 38,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 0,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 1,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 10,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 1,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 0,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 11,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 2,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 0,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 10,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 1,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 0,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 27,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 1,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 13,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 2,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 0,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 10,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 2,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 0,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 11,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 2,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 0,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 31,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 0,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 1,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 11,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 1,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 0,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 10,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 12,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 1,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 0,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 28,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 2,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 12,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 1,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 0,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 13,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 1,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 13,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 29,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 0,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 1,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 1,
+        "insertedPositionCount": 0
+      },
+      {
+        "durationMs": 10,
+        "insertedPositionCount": 0
+      }
+    ],
+    "backupDurationTrendMs": -4
+  },
+  "responsiveness": {
+    "mainProcess": {
+      "count": 136,
+      "maxMs": 12.159538999999768,
+      "meanMs": 1.524615154411723,
+      "p50Ms": 0.6279119999999239,
+      "p95Ms": 5.805798999999752,
+      "p99Ms": 8.61490700000013,
+      "overThresholdCount": 0,
+      "stallThresholdMs": 200
+    },
+    "renderer": {
+      "count": 191,
+      "maxMs": 100.23400000000015,
+      "meanMs": 35.6167539267016,
+      "p50Ms": 33.40000000000009,
+      "p95Ms": 50.200000000000045,
+      "p99Ms": 83.59999999999991,
+      "overThresholdCount": 0,
+      "stallThresholdMs": 250
+    },
+    "operatorInteractions": {
+      "count": 4,
+      "maxMs": 1330.765594,
+      "meanMs": 1119.15150525,
+      "p50Ms": 1054.2383320000004,
+      "p95Ms": 1330.765594,
+      "p99Ms": 1330.765594,
+      "overThresholdCount": 4,
+      "stallThresholdMs": 250,
+      "actionTiming": {
+        "count": 8,
+        "maxMs": 37,
+        "meanMs": 19.275000005960464,
+        "p50Ms": 14.600000023841858,
+        "p95Ms": 37,
+        "p99Ms": 37,
+        "overThresholdCount": 0,
+        "stallThresholdMs": 250
+      },
+      "externalActionTiming": {
+        "count": 8,
+        "maxMs": 96.70682899999974,
+        "meanMs": 53.96528749999976,
+        "p50Ms": 43.73495400000047,
+        "p95Ms": 96.70682899999974,
+        "p99Ms": 96.70682899999974,
+        "overThresholdCount": 0,
+        "stallThresholdMs": 250
+      },
+      "targetStabilityTiming": {
+        "count": 8,
+        "maxMs": 297.5968959999991,
+        "meanMs": 277.25475224999997,
+        "p50Ms": 273.1422499999999,
+        "p95Ms": 297.5968959999991,
+        "p99Ms": 297.5968959999991,
+        "overThresholdCount": 8,
+        "stallThresholdMs": 250
+      },
+      "errors": 0,
+      "classifications": {
+        "healthy": 4
+      },
+      "samples": [
+        {
+          "phase": "mission-started",
+          "durationMs": 1330.765594,
+          "openActionDurationMs": 32.59999996423721,
+          "closeActionDurationMs": 7.5,
+          "openExternalActionDurationMs": 69.95307699999967,
+          "closeExternalActionDurationMs": 41.08671400000003,
+          "openClickDeliveryDurationMs": 35.33470899999975,
+          "closeClickDeliveryDurationMs": 9.531986999999845,
+          "openStateWaitDurationMs": 34.61836799999992,
+          "closeStateWaitDurationMs": 31.554727000000184,
+          "openTargetStabilityWaitMs": 288.481769,
+          "closeTargetStabilityWaitMs": 269.273541,
+          "passed": true,
+          "classification": "healthy",
+          "failureStages": [],
+          "preflight": {
+            "documentFocused": true,
+            "targetFound": true,
+            "targetReceivesPointer": true,
+            "centerPoint": {
+              "x": 1218,
+              "y": 772
+            },
+            "hitElement": {
+              "tag": "button",
+              "testId": "open-devices-workspace",
+              "id": null
+            }
+          },
+          "closePreflight": {
+            "documentFocused": true,
+            "targetFound": true,
+            "targetReceivesPointer": true,
+            "centerPoint": {
+              "x": 1336.140625,
+              "y": 46.25
+            },
+            "hitElement": {
+              "tag": "button",
+              "testId": "workspace-close-btn",
+              "id": null
+            }
+          },
+          "browserEvents": {
+            "openClickCompleted": true,
+            "openClickReceived": true,
+            "closeClickCompleted": true,
+            "closeClickReceived": true
+          },
+          "uiState": {
+            "workspaceOpened": true,
+            "workspaceClosed": true
+          },
+          "mainIpc": {
+            "status": "ok",
+            "errorClass": null,
+            "durationMs": 14.199999988079071
+          },
+          "errorClasses": [],
+          "clickAudit": {
+            "interSampleEvents": [],
+            "interactionEvents": [
+              {
+                "sequence": 34,
+                "atMs": 2357.600000023842,
+                "trusted": true,
+                "detail": 1,
+                "clientX": 1218,
+                "clientY": 772,
+                "pathTestIds": [
+                  "open-devices-workspace",
+                  "tracking-status",
+                  "sidebar-tab-content",
+                  "operational-sidebar",
+                  "app-shell"
+                ]
+              },
+              {
+                "sequence": 35,
+                "atMs": 2873.100000023842,
+                "trusted": true,
+                "detail": 1,
+                "clientX": 1336,
+                "clientY": 46,
+                "pathTestIds": [
+                  "workspace-close-btn",
+                  "app-shell"
+                ]
+              }
+            ],
+            "missingEventCount": 0,
+            "lastSequence": 35,
+            "sequenceRegressed": false,
+            "issues": []
+          }
+        },
+        {
+          "phase": "checkpoint-3-before-restart",
+          "durationMs": 1054.2383320000004,
+          "openActionDurationMs": 20,
+          "closeActionDurationMs": 13.5,
+          "openExternalActionDurationMs": 43.73495400000047,
+          "closeExternalActionDurationMs": 59.93313000000035,
+          "openClickDeliveryDurationMs": 21.31279900000027,
+          "closeClickDeliveryDurationMs": 9.546186999999918,
+          "openStateWaitDurationMs": 22.422155000000203,
+          "closeStateWaitDurationMs": 50.38694300000043,
+          "openTargetStabilityWaitMs": 273.1422499999999,
+          "closeTargetStabilityWaitMs": 275.65152899999975,
+          "passed": true,
+          "classification": "healthy",
+          "failureStages": [],
+          "preflight": {
+            "documentFocused": true,
+            "targetFound": true,
+            "targetReceivesPointer": true,
+            "centerPoint": {
+              "x": 1218,
+              "y": 772
+            },
+            "hitElement": {
+              "tag": "button",
+              "testId": "open-devices-workspace",
+              "id": null
+            }
+          },
+          "closePreflight": {
+            "documentFocused": true,
+            "targetFound": true,
+            "targetReceivesPointer": true,
+            "centerPoint": {
+              "x": 1336.140625,
+              "y": 46.25
+            },
+            "hitElement": {
+              "tag": "button",
+              "testId": "workspace-close-btn",
+              "id": null
+            }
+          },
+          "browserEvents": {
+            "openClickCompleted": true,
+            "openClickReceived": true,
+            "closeClickCompleted": true,
+            "closeClickReceived": true
+          },
+          "uiState": {
+            "workspaceOpened": true,
+            "workspaceClosed": true
+          },
+          "mainIpc": {
+            "status": "ok",
+            "errorClass": null,
+            "durationMs": 0.800000011920929
+          },
+          "errorClasses": [],
+          "clickAudit": {
+            "interSampleEvents": [],
+            "interactionEvents": [
+              {
+                "sequence": 36,
+                "atMs": 3577.900000035763,
+                "trusted": true,
+                "detail": 1,
+                "clientX": 1218,
+                "clientY": 772,
+                "pathTestIds": [
+                  "open-devices-workspace",
+                  "tracking-status",
+                  "sidebar-tab-content",
+                  "operational-sidebar",
+                  "app-shell"
+                ]
+              },
+              {
+                "sequence": 37,
+                "atMs": 3943.100000023842,
+                "trusted": true,
+                "detail": 1,
+                "clientX": 1336,
+                "clientY": 46,
+                "pathTestIds": [
+                  "workspace-close-btn",
+                  "app-shell"
+                ]
+              }
+            ],
+            "missingEventCount": 0,
+            "lastSequence": 37,
+            "sequenceRegressed": false,
+            "issues": []
+          }
+        },
+        {
+          "phase": "checkpoint-3-after-restart",
+          "durationMs": 1009.2296959999994,
+          "openActionDurationMs": 37,
+          "closeActionDurationMs": 10.200000047683716,
+          "openExternalActionDurationMs": 96.70682899999974,
+          "closeExternalActionDurationMs": 37.79324600000018,
+          "openClickDeliveryDurationMs": 40.05066799999986,
+          "closeClickDeliveryDurationMs": 9.857987000000321,
+          "openStateWaitDurationMs": 56.656160999999884,
+          "closeStateWaitDurationMs": 27.93525899999986,
+          "openTargetStabilityWaitMs": 268.82265000000007,
+          "closeTargetStabilityWaitMs": 260.3792199999998,
+          "passed": true,
+          "classification": "healthy",
+          "failureStages": [],
+          "preflight": {
+            "documentFocused": true,
+            "targetFound": true,
+            "targetReceivesPointer": true,
+            "centerPoint": {
+              "x": 1218,
+              "y": 772
+            },
+            "hitElement": {
+              "tag": "button",
+              "testId": "open-devices-workspace",
+              "id": null
+            }
+          },
+          "closePreflight": {
+            "documentFocused": true,
+            "targetFound": true,
+            "targetReceivesPointer": true,
+            "centerPoint": {
+              "x": 1336.140625,
+              "y": 46.25
+            },
+            "hitElement": {
+              "tag": "button",
+              "testId": "workspace-close-btn",
+              "id": null
+            }
+          },
+          "browserEvents": {
+            "openClickCompleted": true,
+            "openClickReceived": true,
+            "closeClickCompleted": true,
+            "closeClickReceived": true
+          },
+          "uiState": {
+            "workspaceOpened": true,
+            "workspaceClosed": true
+          },
+          "mainIpc": {
+            "status": "ok",
+            "errorClass": null,
+            "durationMs": 3.100000023841858
+          },
+          "errorClasses": [],
+          "clickAudit": {
+            "interSampleEvents": [],
+            "interactionEvents": [
+              {
+                "sequence": 2,
+                "atMs": 1280.199999988079,
+                "trusted": true,
+                "detail": 1,
+                "clientX": 1218,
+                "clientY": 772,
+                "pathTestIds": [
+                  "open-devices-workspace",
+                  "tracking-status",
+                  "sidebar-tab-content",
+                  "operational-sidebar",
+                  "app-shell"
+                ]
+              },
+              {
+                "sequence": 3,
+                "atMs": 1669.7999999523163,
+                "trusted": true,
+                "detail": 1,
+                "clientX": 1336,
+                "clientY": 46,
+                "pathTestIds": [
+                  "workspace-close-btn",
+                  "app-shell"
+                ]
+              }
+            ],
+            "missingEventCount": 0,
+            "lastSequence": 3,
+            "sequenceRegressed": false,
+            "issues": []
+          }
+        },
+        {
+          "phase": "final-load",
+          "durationMs": 1082.3723989999999,
+          "openActionDurationMs": 18.80000001192093,
+          "closeActionDurationMs": 14.600000023841858,
+          "openExternalActionDurationMs": 37.65773299999819,
+          "closeExternalActionDurationMs": 44.85661699999946,
+          "openClickDeliveryDurationMs": 26.148699999997916,
+          "closeClickDeliveryDurationMs": 11.627871999999115,
+          "openStateWaitDurationMs": 11.509033000000272,
+          "closeStateWaitDurationMs": 33.228745000000345,
+          "openTargetStabilityWaitMs": 284.6901630000011,
+          "closeTargetStabilityWaitMs": 297.5968959999991,
+          "passed": true,
+          "classification": "healthy",
+          "failureStages": [],
+          "preflight": {
+            "documentFocused": true,
+            "targetFound": true,
+            "targetReceivesPointer": true,
+            "centerPoint": {
+              "x": 1218,
+              "y": 772
+            },
+            "hitElement": {
+              "tag": "button",
+              "testId": "open-devices-workspace",
+              "id": null
+            }
+          },
+          "closePreflight": {
+            "documentFocused": true,
+            "targetFound": true,
+            "targetReceivesPointer": true,
+            "centerPoint": {
+              "x": 1336.140625,
+              "y": 46.25
+            },
+            "hitElement": {
+              "tag": "button",
+              "testId": "workspace-close-btn",
+              "id": null
+            }
+          },
+          "browserEvents": {
+            "openClickCompleted": true,
+            "openClickReceived": true,
+            "closeClickCompleted": true,
+            "closeClickReceived": true
+          },
+          "uiState": {
+            "workspaceOpened": true,
+            "workspaceClosed": true
+          },
+          "mainIpc": {
+            "status": "ok",
+            "errorClass": null,
+            "durationMs": 0.5
+          },
+          "errorClasses": [],
+          "clickAudit": {
+            "interSampleEvents": [],
+            "interactionEvents": [
+              {
+                "sequence": 4,
+                "atMs": 3257.199999988079,
+                "trusted": true,
+                "detail": 1,
+                "clientX": 1218,
+                "clientY": 772,
+                "pathTestIds": [
+                  "open-devices-workspace",
+                  "tracking-status",
+                  "sidebar-tab-content",
+                  "operational-sidebar",
+                  "app-shell"
+                ]
+              },
+              {
+                "sequence": 5,
+                "atMs": 3687.7999999523163,
+                "trusted": true,
+                "detail": 1,
+                "clientX": 1336,
+                "clientY": 46,
+                "pathTestIds": [
+                  "workspace-close-btn",
+                  "app-shell"
+                ]
+              }
+            ],
+            "missingEventCount": 0,
+            "lastSequence": 5,
+            "sequenceRegressed": false,
+            "issues": []
+          }
+        }
+      ]
+    },
+    "rendererThrottledByDesktopSession": false
+  },
+  "processMemory": {
+    "samples": 6,
+    "maximumProcessTreeResidentBytes": 1148231680,
+    "maximumSample": {
+      "observedAt": "2026-08-26T19:04:14.518Z",
+      "phase": "launch-close",
+      "targetBatch": null,
+      "completedBatch": null,
+      "totalResidentBytes": 1148231680,
+      "processes": [
+        {
+          "pid": 304509,
+          "parentPid": null,
+          "residentBytes": 274386944,
+          "kind": "main"
+        },
+        {
+          "pid": 304512,
+          "parentPid": null,
+          "residentBytes": 59879424,
+          "kind": "other"
+        },
+        {
+          "pid": 304606,
+          "parentPid": null,
+          "residentBytes": 371703808,
+          "kind": "other"
+        },
+        {
+          "pid": 304511,
+          "parentPid": null,
+          "residentBytes": 58425344,
+          "kind": "other"
+        },
+        {
+          "pid": 304537,
+          "parentPid": null,
+          "residentBytes": 383836160,
+          "kind": "other"
+        }
+      ]
+    },
+    "phaseSamples": [
+      {
+        "launchNumber": 1,
+        "observedAt": "2026-08-26T19:04:07.600Z",
+        "phase": "checkpoint-drain",
+        "targetBatch": 3,
+        "completedBatch": 3,
+        "totalResidentBytes": 954007552,
+        "processes": [
+          {
+            "pid": 304314,
+            "parentPid": null,
+            "residentBytes": 244191232,
+            "kind": "main"
+          },
+          {
+            "pid": 304317,
+            "parentPid": null,
+            "residentBytes": 59961344,
+            "kind": "other"
+          },
+          {
+            "pid": 304414,
+            "parentPid": null,
+            "residentBytes": 273104896,
+            "kind": "other"
+          },
+          {
+            "pid": 304316,
+            "parentPid": null,
+            "residentBytes": 60153856,
+            "kind": "other"
+          },
+          {
+            "pid": 304344,
+            "parentPid": null,
+            "residentBytes": 316596224,
+            "kind": "other"
+          }
+        ]
+      },
+      {
+        "launchNumber": 2,
+        "observedAt": "2026-08-26T19:04:11.770Z",
+        "phase": "checkpoint-drain",
+        "targetBatch": 6,
+        "completedBatch": 3,
+        "totalResidentBytes": 981471232,
+        "processes": [
+          {
+            "pid": 304509,
+            "parentPid": null,
+            "residentBytes": 237359104,
+            "kind": "main"
+          },
+          {
+            "pid": 304512,
+            "parentPid": null,
+            "residentBytes": 59879424,
+            "kind": "other"
+          },
+          {
+            "pid": 304606,
+            "parentPid": null,
+            "residentBytes": 265789440,
+            "kind": "other"
+          },
+          {
+            "pid": 304511,
+            "parentPid": null,
+            "residentBytes": 58425344,
+            "kind": "other"
+          },
+          {
+            "pid": 304537,
+            "parentPid": null,
+            "residentBytes": 360017920,
+            "kind": "other"
+          }
+        ]
+      }
+    ]
+  },
+  "rendererCrashes": 0,
+  "webGlRendererAttestation": {
+    "required": true,
+    "passed": true,
+    "expectedBackend": "Mesa llvmpipe via ANGLE/OpenGL",
+    "launchCount": 2,
+    "acceptedLaunches": 2,
+    "failures": []
+  },
+  "boundedEvidence": {
+    "runtimeLogBytes": 214367,
+    "supportBundleBytes": 205111,
+    "supportBundleRedacted": true
+  },
+  "restartCheckpointsPassed": 1,
+  "exactDotProof": {
+    "required": false,
+    "passed": true
+  },
+  "finalLineTotalAudit": {
+    "required": false,
+    "passed": true
+  },
+  "hostSleepGuard": {
+    "required": false,
+    "started": false,
+    "active": false,
+    "earlyExit": false,
+    "stopped": true,
+    "forced": false
+  },
+  "launches": [
+    {
+      "number": 1,
+      "webGlRenderer": {
+        "available": true,
+        "contextType": "webgl2",
+        "vendor": "WebKit",
+        "renderer": "WebKit WebGL",
+        "unmaskedVendor": "Google Inc. (Mesa)",
+        "unmaskedRenderer": "ANGLE (Mesa, llvmpipe (LLVM 20.1.2 256 bits), OpenGL 4.5)"
+      },
+      "rendererSampleCount": 97,
+      "mainHeartbeatErrors": 0,
+      "rendererCrashes": 0,
+      "processMemory": {
+        "samples": 2,
+        "maximumProcessTreeResidentBytes": 1104195584,
+        "maximumSample": {
+          "observedAt": "2026-08-26T19:04:09.389Z",
+          "phase": "launch-close",
+          "targetBatch": null,
+          "completedBatch": null,
+          "totalResidentBytes": 1104195584,
+          "processes": [
+            {
+              "pid": 304314,
+              "parentPid": null,
+              "residentBytes": 260767744,
+              "kind": "main"
+            },
+            {
+              "pid": 304317,
+              "parentPid": null,
+              "residentBytes": 59961344,
+              "kind": "other"
+            },
+            {
+              "pid": 304414,
+              "parentPid": null,
+              "residentBytes": 351682560,
+              "kind": "other"
+            },
+            {
+              "pid": 304316,
+              "parentPid": null,
+              "residentBytes": 60153856,
+              "kind": "other"
+            },
+            {
+              "pid": 304344,
+              "parentPid": null,
+              "residentBytes": 371630080,
+              "kind": "other"
+            }
+          ]
+        },
+        "evidenceSamples": [
+          {
+            "observedAt": "2026-08-26T19:04:07.600Z",
+            "phase": "checkpoint-drain",
+            "targetBatch": 3,
+            "completedBatch": 3,
+            "totalResidentBytes": 954007552,
+            "processes": [
+              {
+                "pid": 304314,
+                "parentPid": null,
+                "residentBytes": 244191232,
+                "kind": "main"
+              },
+              {
+                "pid": 304317,
+                "parentPid": null,
+                "residentBytes": 59961344,
+                "kind": "other"
+              },
+              {
+                "pid": 304414,
+                "parentPid": null,
+                "residentBytes": 273104896,
+                "kind": "other"
+              },
+              {
+                "pid": 304316,
+                "parentPid": null,
+                "residentBytes": 60153856,
+                "kind": "other"
+              },
+              {
+                "pid": 304344,
+                "parentPid": null,
+                "residentBytes": 316596224,
+                "kind": "other"
+              }
+            ]
+          }
+        ]
+      },
+      "operatorClickAuditTail": {
+        "interSampleEvents": [],
+        "interactionEvents": [],
+        "lastSequence": 37,
+        "missingEventCount": 0,
+        "sequenceRegressed": false,
+        "issues": []
+      },
+      "shutdown": {
+        "exited": true,
+        "exitKind": "code",
+        "forced": false,
+        "graceful": true
+      },
+      "exitCode": 0
+    },
+    {
+      "number": 2,
+      "webGlRenderer": {
+        "available": true,
+        "contextType": "webgl2",
+        "vendor": "WebKit",
+        "renderer": "WebKit WebGL",
+        "unmaskedVendor": "Google Inc. (Mesa)",
+        "unmaskedRenderer": "ANGLE (Mesa, llvmpipe (LLVM 20.1.2 256 bits), OpenGL 4.5)"
+      },
+      "rendererSampleCount": 96,
+      "mainHeartbeatErrors": 0,
+      "rendererCrashes": 0,
+      "processMemory": {
+        "samples": 4,
+        "maximumProcessTreeResidentBytes": 1148231680,
+        "maximumSample": {
+          "observedAt": "2026-08-26T19:04:14.518Z",
+          "phase": "launch-close",
+          "targetBatch": null,
+          "completedBatch": null,
+          "totalResidentBytes": 1148231680,
+          "processes": [
+            {
+              "pid": 304509,
+              "parentPid": null,
+              "residentBytes": 274386944,
+              "kind": "main"
+            },
+            {
+              "pid": 304512,
+              "parentPid": null,
+              "residentBytes": 59879424,
+              "kind": "other"
+            },
+            {
+              "pid": 304606,
+              "parentPid": null,
+              "residentBytes": 371703808,
+              "kind": "other"
+            },
+            {
+              "pid": 304511,
+              "parentPid": null,
+              "residentBytes": 58425344,
+              "kind": "other"
+            },
+            {
+              "pid": 304537,
+              "parentPid": null,
+              "residentBytes": 383836160,
+              "kind": "other"
+            }
+          ]
+        },
+        "evidenceSamples": [
+          {
+            "observedAt": "2026-08-26T19:04:11.770Z",
+            "phase": "checkpoint-drain",
+            "targetBatch": 6,
+            "completedBatch": 3,
+            "totalResidentBytes": 981471232,
+            "processes": [
+              {
+                "pid": 304509,
+                "parentPid": null,
+                "residentBytes": 237359104,
+                "kind": "main"
+              },
+              {
+                "pid": 304512,
+                "parentPid": null,
+                "residentBytes": 59879424,
+                "kind": "other"
+              },
+              {
+                "pid": 304606,
+                "parentPid": null,
+                "residentBytes": 265789440,
+                "kind": "other"
+              },
+              {
+                "pid": 304511,
+                "parentPid": null,
+                "residentBytes": 58425344,
+                "kind": "other"
+              },
+              {
+                "pid": 304537,
+                "parentPid": null,
+                "residentBytes": 360017920,
+                "kind": "other"
+              }
+            ]
+          }
+        ]
+      },
+      "operatorClickAuditTail": {
+        "interSampleEvents": [],
+        "interactionEvents": [],
+        "lastSequence": 5,
+        "missingEventCount": 0,
+        "sequenceRegressed": false,
+        "issues": []
+      },
+      "shutdown": {
+        "exited": true,
+        "exitKind": "code",
+        "forced": false,
+        "graceful": true
+      },
+      "exitCode": 0
+    }
+  ],
+  "verdict": {
+    "valid": true,
+    "passed": true,
+    "failureReasons": [],
+    "redundantTelemetrySlopeRowsPerEquivalentPoll": 0,
+    "operationalPositionSlopeRowsPerEquivalentPoll": 8.022222222222222
+  }
+}

@@ -1,0 +1,11 @@
+2026-08-24T20:58:57+01:00
+Linux donal-Precision-5570 7.0.0-28-generic #28~24.04.1-Ubuntu SMP PREEMPT_DYNAMIC Wed Jul  1 15:50:57 UTC 2 x86_64 x86_64 x86_64 GNU/Linux
+Remote=no
+Type=wayland
+State=active
+electron_window_system=x11
+display=:0
+launch_flags=--ozone-platform=x11 --no-sandbox --ignore-gpu-blocklist --use-gl=angle --use-angle=gl
+gallium_driver=llvmpipe
+libgl_always_software=1
+app_sha=8eff87b724ae6b4ffa9123479a8982d1d08f47ef

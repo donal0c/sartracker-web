@@ -25,12 +25,16 @@ const {
 const {
   registerOutingFixSummaryIpcHandlers,
 } = require('./outing-fix-summary-ipc.cjs')
+const { registerCoverageIpcHandlers } = require('./coverage-ipc.cjs')
 const { createElectronFileSystem } = require('./file-system.cjs')
 const { createElectronOfficialMapProxy } = require('./official-map-proxy.cjs')
 const { createRuntimeLog } = require('./runtime-log.cjs')
 const { createCrashLog, isRendererFaultReason } = require('./crash-log.cjs')
 const { createStorageDiagnostics } = require('./storage-diagnostics.cjs')
 const { applyTrackingSoakRuntimeOverride } = require('./tracking-soak-validation.cjs')
+const {
+  createRendererTeardownCoordinator,
+} = require('./renderer-teardown-coordinator.cjs')
 
 const TRACCAR_REQUEST_CHANNEL = 'sartracker:traccar-http-request'
 const LOAD_SETTINGS_CHANNEL = 'sartracker:load-app-settings'
@@ -54,6 +58,8 @@ const INGEST_MARKER_ATTACHMENT_CHANNEL = 'sartracker:ingest-marker-attachment'
 const OPEN_EXTERNAL_PATH_CHANNEL = 'sartracker:open-external-path'
 const OPEN_EXTERNAL_URL_CHANNEL = 'sartracker:open-external-url'
 const FETCH_OFFICIAL_MAP_TILE_CHANNEL = 'sartracker:fetch-official-map-tile'
+const COVERAGE_CHANGED_CHANNEL = 'sartracker:coverage-changed'
+const COVERAGE_RENDERER_FAILED_CHANNEL = 'sartracker:coverage-renderer-failed'
 const MAX_TRACCAR_PROXY_RESPONSE_BYTES = 5 * 1024 * 1024
 
 const MISSION_STORE_CHANNELS = {
@@ -90,6 +96,16 @@ const MISSION_STORE_CHANNELS = {
   cancelBreadcrumbQuery: 'sartracker:mission-store:cancel-breadcrumb-query',
   listExactBreadcrumbDotPage: 'sartracker:mission-store:list-exact-breadcrumb-dot-page',
   cancelExactBreadcrumbDotQuery: 'sartracker:mission-store:cancel-exact-breadcrumb-dot-query',
+  readCoverageManifest: 'sartracker:mission-store:read-coverage-manifest',
+  readCoverageChunk: 'sartracker:mission-store:read-coverage-chunk',
+  readCoverageClaim: 'sartracker:mission-store:read-coverage-claim',
+  syncCoverageTileCatalog: 'sartracker:mission-store:sync-coverage-tile-catalog',
+  activateCoverageTileCatalog: 'sartracker:mission-store:activate-coverage-tile-catalog',
+  finalizeCoverageTileCatalog: 'sartracker:mission-store:finalize-coverage-tile-catalog',
+  discardCoverageTileCatalog: 'sartracker:mission-store:discard-coverage-tile-catalog',
+  readCoverageTile: 'sartracker:mission-store:read-coverage-tile',
+  cancelCoverageTileRead: 'sartracker:mission-store:cancel-coverage-tile-read',
+  cancelCoverageQuery: 'sartracker:mission-store:cancel-coverage-query',
   listTrackingHistoryCheckpoints: 'sartracker:mission-store:list-tracking-history-checkpoints',
   countPositions: 'sartracker:mission-store:count-positions',
   latestPositions: 'sartracker:mission-store:latest-positions',
@@ -100,6 +116,7 @@ const MISSION_STORE_CHANNELS = {
   listIngestAnomalies: 'sartracker:mission-store:list-ingest-anomalies',
   recordIngestRejections: 'sartracker:mission-store:record-ingest-rejections',
   recordIngestEvidenceLoss: 'sartracker:mission-store:record-ingest-evidence-loss',
+  acknowledgeIngestEvidenceLoss: 'sartracker:mission-store:acknowledge-ingest-evidence-loss',
   getIngestEvidenceHealth: 'sartracker:mission-store:get-ingest-evidence-health',
   upsertMarker: 'sartracker:mission-store:upsert-marker',
   getMarker: 'sartracker:mission-store:get-marker',
@@ -142,6 +159,7 @@ const electronRuntimeContext = {
   runtimeLog: null,
   officialMapProxy: null,
   stopEventLoopDiagnostics: null,
+  rendererTeardownCoordinator: null,
 }
 
 configureLinuxSecretStorage()
@@ -177,7 +195,7 @@ function configureLinuxSecretStorage() {
 /**
  * Creates the main SAR Tracker Electron validation window.
  */
-async function createWindow(crashLog, runtimeLog) {
+async function createWindow(crashLog, runtimeLog, rendererTeardownCoordinator) {
   const window = new BrowserWindow({
     width: 1440,
     height: 900,
@@ -193,7 +211,7 @@ async function createWindow(crashLog, runtimeLog) {
     },
   })
 
-  installWindowNavigationGuards(window)
+  installWindowTeardownGuards(window, rendererTeardownCoordinator, runtimeLog)
 
   if (crashLog !== undefined) {
     // A renderer crash leaves the operator with a blank or frozen window; record
@@ -213,34 +231,161 @@ async function createWindow(crashLog, runtimeLog) {
         event: 'render_process_gone',
         fields: { reason: details?.reason ?? 'unknown', exitCode: details?.exitCode ?? null },
       })
+      void rendererTeardownCoordinator.markRendererUnavailable().catch((error) => {
+        reportUnsafeRendererTeardown(error, runtimeLog)
+      })
     })
   }
 
   const rendererUrl = process.env.ELECTRON_RENDERER_URL
   if (rendererUrl !== undefined && rendererUrl.trim() !== '') {
     await window.loadURL(withOptionalValidationQuery(rendererUrl))
-    return
+  } else {
+    const indexUrl = pathToFileURL(path.join(__dirname, '..', 'dist', 'index.html'))
+    addValidationQueryIfRequested(indexUrl)
+    await window.loadURL(indexUrl.toString())
   }
-
-  const indexUrl = pathToFileURL(path.join(__dirname, '..', 'dist', 'index.html'))
-  addValidationQueryIfRequested(indexUrl)
-  await window.loadURL(indexUrl.toString())
+  await rendererTeardownCoordinator.markRendererAvailable()
 }
 
 /**
  * Prevents renderer content from navigating the operational window or opening
  * auxiliary windows outside the controlled SAR Tracker shell.
  */
-function installWindowNavigationGuards(window) {
+function installWindowTeardownGuards(window, rendererTeardownCoordinator, runtimeLog) {
+  let closeAllowed = false
+  let closeInProgress = false
+  let allowNextUnload = false
+  let reloadInProgress = false
+  window.on('close', (event) => {
+    if (closeAllowed) return
+    event.preventDefault()
+    if (closeInProgress) return
+    closeInProgress = true
+    void rendererTeardownCoordinator.prepare(window, 'window_close').then(() => {
+      allowNextUnload = true
+      closeAllowed = true
+      window.close()
+    }).catch((error) => {
+      closeInProgress = false
+      reportUnsafeRendererTeardown(error, runtimeLog)
+    })
+  })
+
   window.webContents.on('will-navigate', (event, targetUrl) => {
     const currentUrl =
       typeof window.webContents.getURL === 'function' ? window.webContents.getURL() : ''
     if (!isAllowedRendererNavigation(targetUrl, currentUrl)) {
       event.preventDefault()
+      return
     }
+    event.preventDefault()
+    void rendererTeardownCoordinator.prepare(window, 'renderer_reload').then(() => {
+      return rendererTeardownCoordinator.ensureUnexpectedRendererLossFenced()
+    }).then(() => {
+      allowNextUnload = true
+      return window.loadURL(targetUrl)
+    }).then(() => {
+      return rendererTeardownCoordinator.markRendererAvailable()
+    }).catch((error) => {
+      reportUnsafeRendererTeardown(error, runtimeLog)
+    })
+  })
+
+  window.webContents.on('will-prevent-unload', (event) => {
+    if (allowNextUnload) {
+      allowNextUnload = false
+      event.preventDefault()
+      return
+    }
+    // A native window close also reaches `will-prevent-unload` because the
+    // renderer installs a synchronous beforeunload fence. The close handler
+    // already owns that drain; starting the reload path here races the
+    // acknowledged close and can leave Electron alive without its window.
+    if (closeInProgress) return
+    if (reloadInProgress) return
+    reloadInProgress = true
+    void rendererTeardownCoordinator.prepare(window, 'renderer_reload').then(() => {
+      return rendererTeardownCoordinator.ensureUnexpectedRendererLossFenced()
+    }).then(() => {
+      allowNextUnload = true
+      window.webContents.once('did-finish-load', () => {
+        void rendererTeardownCoordinator.markRendererAvailable().catch((error) => {
+          reportUnsafeRendererRestore(error, runtimeLog)
+        })
+      })
+      window.webContents.reload()
+      reloadInProgress = false
+    }).catch((error) => {
+      reloadInProgress = false
+      reportUnsafeRendererTeardown(error, runtimeLog)
+    })
   })
 
   window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
+}
+
+/** Keeps the current window alive and tells the operator when fail-closed teardown fails. */
+function reportUnsafeRendererTeardown(error, runtimeLog) {
+  void runtimeLog?.append({
+    level: 'error',
+    event: 'renderer_teardown_blocked',
+    fields: {
+      failureClass: error instanceof Error
+        ? 'evidence_loss_marker_unavailable'
+        : 'unknown_teardown_failure',
+    },
+  })
+  try {
+    dialog.showErrorBox(
+      'SAR Tracker could not close safely',
+      'Pending tracking evidence could not be drained or marked safely. SAR Tracker has kept the current process open. Preserve the profile and contact support before forcing it closed.',
+    )
+  } catch {
+    // The runtime log above retains the blocking failure in headless contexts.
+  }
+}
+
+/** Keeps a replacement renderer closed until prior mission evidence is fenced. */
+function reportUnsafeRendererRestore(error, runtimeLog) {
+  void runtimeLog?.append({
+    level: 'error',
+    event: 'renderer_restore_blocked',
+    fields: {
+      failureClass: error instanceof Error
+        ? 'evidence_loss_marker_unavailable'
+        : 'unknown_restore_failure',
+    },
+  })
+  try {
+    dialog.showErrorBox(
+      'SAR Tracker could not restore safely',
+      'Evidence from the failed renderer could not be durably fenced. SAR Tracker kept the replacement window closed. Preserve the profile and contact support before forcing the app closed.',
+    )
+  } catch {
+    // The runtime log above retains the blocking failure in headless contexts.
+  }
+}
+
+/** Keeps a fatally damaged runtime open when mission evidence cannot be fenced. */
+function reportUnsafeFatalRestart(error, runtimeLog) {
+  void runtimeLog?.append({
+    level: 'error',
+    event: 'fatal_restart_blocked',
+    fields: {
+      failureClass: error instanceof Error
+        ? 'evidence_loss_marker_unavailable'
+        : 'unknown_fatal_restart_failure',
+    },
+  })
+  try {
+    dialog.showErrorBox(
+      'SAR Tracker could not restart safely',
+      'Pending tracking evidence could not be marked safely after the fatal runtime fault. SAR Tracker has kept the current process open and will not relaunch automatically. Preserve the profile and contact support before forcing it closed.',
+    )
+  } catch {
+    // The runtime log above retains the blocking failure in headless contexts.
+  }
 }
 
 function isAllowedRendererNavigation(targetUrl, currentUrl) {
@@ -349,6 +494,17 @@ async function handleFatalMainProcessError(input) {
     event: input.kind === 'uncaughtException' ? 'uncaught_exception' : 'unhandled_rejection',
     fields: { name: input.error instanceof Error ? input.error.name : 'Error' },
   })
+
+  const rendererTeardownCoordinator =
+    electronRuntimeContext.rendererTeardownCoordinator
+  if (rendererTeardownCoordinator !== null) {
+    try {
+      await rendererTeardownCoordinator.markRendererUnavailable()
+    } catch (error) {
+      reportUnsafeFatalRestart(error, input.runtimeLog)
+      return
+    }
+  }
 
   try {
     dialog.showErrorBox(
@@ -625,7 +781,28 @@ function registerMissionStoreHandlers(missionStore) {
     missionStore,
     validateIpcSender,
   })
-  const breadcrumbQueryMethods = new Set([
+  registerCoverageIpcHandlers({
+    ipcMain,
+    readChannels: {
+      manifest: MISSION_STORE_CHANNELS.readCoverageManifest,
+      chunk: MISSION_STORE_CHANNELS.readCoverageChunk,
+      claim: MISSION_STORE_CHANNELS.readCoverageClaim,
+      catalog: MISSION_STORE_CHANNELS.syncCoverageTileCatalog,
+    },
+    activationChannels: {
+      activate: MISSION_STORE_CHANNELS.activateCoverageTileCatalog,
+      finalize: MISSION_STORE_CHANNELS.finalizeCoverageTileCatalog,
+      discard: MISSION_STORE_CHANNELS.discardCoverageTileCatalog,
+    },
+    tileChannels: {
+      read: MISSION_STORE_CHANNELS.readCoverageTile,
+      cancel: MISSION_STORE_CHANNELS.cancelCoverageTileRead,
+    },
+    cancelChannel: MISSION_STORE_CHANNELS.cancelCoverageQuery,
+    missionStore,
+    validateIpcSender,
+  })
+  const ownedQueryMethods = new Set([
     'listBreadcrumbPositions',
     'cancelBreadcrumbQuery',
     'listExactBreadcrumbDotPage',
@@ -634,9 +811,19 @@ function registerMissionStoreHandlers(missionStore) {
     'cancelMissionReviewRead',
     'readOutingFixSummary',
     'cancelOutingFixSummary',
+    'readCoverageManifest',
+    'readCoverageChunk',
+    'readCoverageClaim',
+    'syncCoverageTileCatalog',
+    'activateCoverageTileCatalog',
+    'finalizeCoverageTileCatalog',
+    'discardCoverageTileCatalog',
+    'cancelCoverageQuery',
+    'readCoverageTile',
+    'cancelCoverageTileRead',
   ])
   for (const [methodName, channel] of Object.entries(MISSION_STORE_CHANNELS)) {
-    if (breadcrumbQueryMethods.has(methodName)) {
+    if (ownedQueryMethods.has(methodName)) {
       continue
     }
     ipcMain.handle(channel, (event, ...args) => {
@@ -840,6 +1027,8 @@ async function startElectronApp() {
   })
   await storageDiagnostics.initialize()
   const crashLog = createCrashLog({ userDataPath })
+  const previousSessionEndedUncleanly = await crashLog.hadUncleanShutdown()
+  await crashLog.markSessionStart()
   electronRuntimeContext.crashLog = crashLog
   electronRuntimeContext.runtimeLog = runtimeLog
   installCrashCapture(crashLog, runtimeLog)
@@ -892,7 +1081,29 @@ async function startElectronApp() {
       const settings = await settingsStore.loadAppSettings()
       return settings.missionDefaults.adminRoster
     },
+    onCoverageChanged: (missionId, changeSeq) => {
+      for (const window of BrowserWindow.getAllWindows()) {
+        if (!window.webContents.isDestroyed()) {
+          window.webContents.send(COVERAGE_CHANGED_CHANNEL, { missionId, changeSeq })
+        }
+      }
+    },
+    onCoverageRendererFailed: () => {
+      for (const window of BrowserWindow.getAllWindows()) {
+        if (!window.webContents.isDestroyed()) {
+          window.webContents.send(COVERAGE_RENDERER_FAILED_CHANNEL)
+        }
+      }
+    },
   })
+  const rendererTeardownCoordinator = createRendererTeardownCoordinator({
+    ipcMain,
+    missionStore,
+  })
+  electronRuntimeContext.rendererTeardownCoordinator = rendererTeardownCoordinator
+  if (previousSessionEndedUncleanly) {
+    await rendererTeardownCoordinator.markRendererUnavailable()
+  }
   void missionStore
     .info()
     .then((missionStoreInfo) =>
@@ -926,14 +1137,19 @@ async function startElectronApp() {
     crashLog,
     runtimeLog,
   )
-  await createWindow(crashLog, runtimeLog)
+  await createWindow(crashLog, runtimeLog, rendererTeardownCoordinator)
   electronRuntimeContext.stopEventLoopDiagnostics = startEventLoopDiagnostics(storageDiagnostics)
 
   app.on('before-quit', (event) => {
     // Record an intentional shutdown so the next launch does not show a false
     // crash-recovery notice.
     event.preventDefault()
-    void markCleanExitAndQuit(crashLog, officialMapProxy)
+    void markCleanExitAndQuit(
+      crashLog,
+      officialMapProxy,
+      rendererTeardownCoordinator,
+      runtimeLog,
+    )
   })
 }
 
@@ -962,16 +1178,27 @@ function startEventLoopDiagnostics(storageDiagnostics) {
 }
 
 let cleanExitInProgress = false
-async function markCleanExitAndQuit(crashLog, officialMapProxy) {
+async function markCleanExitAndQuit(
+  crashLog,
+  officialMapProxy,
+  rendererTeardownCoordinator,
+  runtimeLog,
+) {
   if (cleanExitInProgress) {
     return
   }
   cleanExitInProgress = true
   try {
+    for (const window of BrowserWindow.getAllWindows()) {
+      await rendererTeardownCoordinator.prepare(window, 'app_quit')
+    }
+    await rendererTeardownCoordinator.ensureUnexpectedRendererLossFenced()
     await crashLog.markCleanExit()
-  } finally {
     officialMapProxy.close?.()
     app.exit(0)
+  } catch (error) {
+    cleanExitInProgress = false
+    reportUnsafeRendererTeardown(error, runtimeLog)
   }
 }
 
@@ -983,6 +1210,16 @@ app.on('window-all-closed', () => {
 
 app.on('activate', async () => {
   if (BrowserWindow.getAllWindows().length === 0) {
-    await createWindow(electronRuntimeContext.crashLog, electronRuntimeContext.runtimeLog)
+    try {
+      await electronRuntimeContext.rendererTeardownCoordinator
+        ?.ensureUnexpectedRendererLossFenced()
+      await createWindow(
+        electronRuntimeContext.crashLog,
+        electronRuntimeContext.runtimeLog,
+        electronRuntimeContext.rendererTeardownCoordinator,
+      )
+    } catch (error) {
+      reportUnsafeRendererRestore(error, electronRuntimeContext.runtimeLog)
+    }
   }
 })

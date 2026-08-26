@@ -57,7 +57,7 @@ describe('ExactBreadcrumbDotStatus', () => {
     }))
 
     expect(getText('[data-testid="exact-breadcrumb-dot-page-summary"]')).toBe(
-      'Showing 10,000 exact fixes of 10,001 — 2026-08-08T00:00:00.000Z to 2026-08-09T12:00:00.000Z',
+      'Exact fix inspection — showing 10,000 of 10,001 — 2026-08-08T00:00:00.000Z to 2026-08-09T12:00:00.000Z',
     )
     const earlier = getButton('[data-testid="exact-breadcrumb-dots-earlier"]')
     const later = getButton('[data-testid="exact-breadcrumb-dots-later"]')

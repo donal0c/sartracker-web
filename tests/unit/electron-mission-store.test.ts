@@ -56,6 +56,7 @@ const { createElectronMissionStore, CURRENT_SCHEMA_VERSION } = require('../../el
       readonly failRemovalAfterProjection?: boolean
     }
     readonly storageDiagnostics?: StorageDiagnosticsPort
+    readonly coverageLedgerFaultInjection?: { readonly afterWrite?: boolean }
     readonly runBreadcrumbQueryInWorker?: (input: {
       readonly databasePath: string
       readonly missionId: string
@@ -113,6 +114,11 @@ type ElectronMissionStore = {
   }>
   readonly getActiveMission: () => Promise<{ readonly id: string; readonly status: string } | null>
   readonly listMissions: () => Promise<readonly { readonly id: string; readonly status: string }[]>
+  readonly listMissionIdsAwaitingEvidenceClosure: () => Promise<readonly string[]>
+  readonly listRendererEvidenceScopesAwaitingClosure: () => Promise<readonly {
+    readonly mission_id: string
+    readonly scope_reason: string
+  }[]>
   readonly pauseMission: (missionId: string) => Promise<{ readonly status: string }>
   readonly resumeMission: (missionId: string) => Promise<{ readonly status: string }>
   readonly finishMission: (missionId: string) => Promise<{ readonly status: string }>
@@ -295,17 +301,70 @@ type ElectronMissionStore = {
   }>
   readonly recordIngestEvidenceLoss: (input: {
     readonly mission_id: string
-    readonly reason: 'renderer_pending_capacity_exhausted'
+    readonly reason:
+      | 'mission_persistence_failed'
+      | 'renderer_pending_capacity_exhausted'
+      | 'renderer_pending_evidence_lost'
   }) => Promise<{
     readonly state: 'healthy' | 'degraded' | 'critical'
     readonly reason: string | null
     readonly pendingCount: number
+  }>
+  readonly stageRendererEvidenceUncertainty: (input: {
+    readonly mission_id: string
+    readonly incident_id: string
+    readonly scope_reason: string
+  }) => Promise<{
+    readonly state: 'healthy' | 'degraded' | 'critical'
+    readonly reason: string | null
+  }>
+  readonly resolveRendererEvidenceUncertainty: (input: {
+    readonly mission_id: string
+    readonly incident_id: string
+    readonly outcome: 'drained' | 'lost'
+  }) => Promise<{
+    readonly state: 'healthy' | 'degraded' | 'critical'
+    readonly reason: string | null
+  }>
+  readonly stageRendererEvidenceIncident: (input: {
+    readonly incident_id: string
+    readonly scopes: readonly {
+      readonly mission_id: string
+      readonly scope_reason: string
+    }[]
+  }) => Promise<{ readonly staged_scope_count: number }>
+  readonly resolveRendererEvidenceIncidents: (input: {
+    readonly incident_id?: string
+    readonly outcome: 'drained' | 'lost'
+  }) => Promise<{
+    readonly resolved_scopes: readonly {
+      readonly mission_id: string
+      readonly scope_reason: string
+    }[]
   }>
   readonly getIngestEvidenceHealth: (missionId?: string) => Promise<{
     readonly state: 'healthy' | 'degraded' | 'critical'
     readonly reason: string | null
     readonly pendingCount: number
     readonly corruptCount: number
+    readonly acknowledgedLoss?: {
+      readonly adminName: string
+      readonly reason: string
+      readonly acknowledgedAt: string
+    }
+  }>
+  readonly acknowledgeIngestEvidenceLoss: (input: {
+    readonly mission_id: string
+    readonly admin_name: string
+    readonly reason: string
+  }) => Promise<{
+    readonly state: 'healthy' | 'degraded' | 'critical'
+    readonly reason: string | null
+    readonly acknowledgedLoss?: {
+      readonly adminName: string
+      readonly reason: string
+      readonly acknowledgedAt: string
+    }
   }>
   readonly upsertMarker: (input: {
     readonly id?: string
@@ -454,6 +513,136 @@ describe('electron mission store', () => {
     }
   })
 
+  it('lists active, paused, and finished missions that still need renderer evidence closure', async () => {
+    store = await createStore()
+    const finished = await store.createMission({ name: 'Finished Evidence Scope' })
+    await store.finishMission(finished.id)
+    const active = await store.createMission({ name: 'Active Evidence Scope' })
+
+    await expect(store.listMissionIdsAwaitingEvidenceClosure()).resolves.toEqual([
+      active.id,
+      finished.id,
+    ])
+
+    await store.finishMission(active.id)
+    await store.finalizeMission(finished.id)
+    await expect(store.listMissionIdsAwaitingEvidenceClosure()).resolves.toEqual([
+      active.id,
+    ])
+  })
+
+  it('names why each mission can own renderer evidence during teardown [DON-276]', async () => {
+    store = await createStore()
+    const finished = await store.createMission({ name: 'Finished Renderer Scope' })
+    await store.finishMission(finished.id)
+    const active = await store.createMission({ name: 'Active Renderer Scope' })
+
+    await expect(store.listRendererEvidenceScopesAwaitingClosure()).resolves.toEqual([
+      { mission_id: active.id, scope_reason: 'active_mission' },
+      { mission_id: finished.id, scope_reason: 'finished_unfinalized_mission' },
+    ])
+
+    await store.pauseMission(active.id)
+    await expect(store.listRendererEvidenceScopesAwaitingClosure()).resolves.toEqual([
+      { mission_id: active.id, scope_reason: 'paused_recoverable_mission' },
+      { mission_id: finished.id, scope_reason: 'finished_unfinalized_mission' },
+    ])
+  })
+
+  it('stages and cleanly resolves one exact multi-mission renderer incident [DON-276]', async () => {
+    store = await createStore()
+    const finished = await store.createMission({ name: 'Finished Incident Scope' })
+    await store.finishMission(finished.id)
+    const active = await store.createMission({ name: 'Active Incident Scope' })
+
+    await expect(store.stageRendererEvidenceIncident({
+      incident_id: 'incident-multi-mission',
+      scopes: [
+        { mission_id: active.id, scope_reason: 'active_mission' },
+        { mission_id: finished.id, scope_reason: 'finished_unfinalized_mission' },
+      ],
+    })).resolves.toEqual({ staged_scope_count: 2 })
+    await expect(store.getIngestEvidenceHealth(active.id)).resolves.toMatchObject({
+      state: 'degraded', reason: 'renderer_evidence_pending',
+    })
+    await expect(store.getIngestEvidenceHealth(finished.id)).resolves.toMatchObject({
+      state: 'degraded', reason: 'renderer_evidence_pending',
+    })
+
+    await expect(store.resolveRendererEvidenceIncidents({
+      incident_id: 'incident-multi-mission',
+      outcome: 'drained',
+    })).resolves.toEqual({
+      resolved_scopes: expect.arrayContaining([
+        { mission_id: active.id, scope_reason: 'active_mission' },
+        { mission_id: finished.id, scope_reason: 'finished_unfinalized_mission' },
+      ]),
+    })
+    await expect(store.getIngestEvidenceHealth(active.id)).resolves.toMatchObject({
+      state: 'healthy', reason: null,
+    })
+    await expect(store.getIngestEvidenceHealth(finished.id)).resolves.toMatchObject({
+      state: 'healthy', reason: null,
+    })
+  })
+
+  it('revalidates renderer incident scopes after a queued finalization completes [DON-276]', async () => {
+    let releaseBackupStart: (() => void) | undefined
+    const backupStarted = new Promise<void>((resolve) => {
+      releaseBackupStart = resolve
+    })
+    const storageDiagnostics: StorageDiagnosticsPort = {
+      createOperation: vi.fn(() => ({
+        id: 'finalization-backup',
+        type: 'backup',
+        requestedAtMs: Date.now(),
+      })),
+      requested: vi.fn(),
+      started: vi.fn(() => backupStarted),
+      phase: vi.fn(),
+      completed: vi.fn(),
+      failed: vi.fn(),
+      startMission: vi.fn(),
+      recordTrackingBatch: vi.fn(),
+      recordInsertedPositions: vi.fn(),
+    }
+    store = await createStore({ storageDiagnostics })
+    const mission = await store.createMission({ name: 'Finalization Stage Race' })
+    await store.finishMission(mission.id)
+
+    const finalization = store.finalizeMission(mission.id)
+    await vi.waitFor(() => expect(storageDiagnostics.started).toHaveBeenCalledOnce())
+    const stage = store.stageRendererEvidenceIncident({
+      incident_id: 'incident-after-finalization',
+      scopes: [{
+        mission_id: mission.id,
+        scope_reason: 'finished_unfinalized_mission',
+      }],
+    })
+
+    releaseBackupStart?.()
+    await expect(finalization).resolves.toMatchObject({ mission: { status: 'finalized' } })
+    await expect(stage).rejects.toThrow(/scope reason does not match mission state/iu)
+    await expect(store.getIngestEvidenceHealth(mission.id)).resolves.toMatchObject({
+      state: 'healthy', reason: null,
+    })
+
+    store.close()
+    store = createElectronMissionStore({ userDataPath: userDataPath! })
+    await expect(store.getIngestEvidenceHealth(mission.id)).resolves.toMatchObject({
+      state: 'healthy', reason: null,
+    })
+  })
+
+  it('rejects an explicitly blank renderer incident identity instead of sweeping all [DON-276]', async () => {
+    store = await createStore()
+
+    await expect(store.resolveRendererEvidenceIncidents({
+      incident_id: '   ',
+      outcome: 'drained',
+    })).rejects.toThrow(/incident identity/iu)
+  })
+
   it('refuses to open a database from a newer schema instead of downgrading metadata [DON-232]', async () => {
     store = await createStore()
     const info = await store.info()
@@ -474,7 +663,7 @@ describe('electron mission store', () => {
   })
 
   it('migrates a schema-6 store to the durable tracking-history checkpoint schema', async () => {
-    expect(CURRENT_SCHEMA_VERSION).toBe(9)
+    expect(CURRENT_SCHEMA_VERSION).toBe(10)
     userDataPath = await mkdtemp(path.join(tmpdir(), 'sartracker-electron-checkpoint-migration-'))
     const databasePath = path.join(userDataPath, 'mission-store.sqlite')
     const legacyDb = new Database(databasePath)
@@ -488,7 +677,7 @@ describe('electron mission store', () => {
     }
 
     store = createElectronMissionStore({ userDataPath })
-    await expect(store.info()).resolves.toMatchObject({ schema_version: 9 })
+    await expect(store.info()).resolves.toMatchObject({ schema_version: 10 })
 
     const migratedDb = new Database(databasePath, { readonly: true })
     try {
@@ -503,7 +692,7 @@ describe('electron mission store', () => {
         migratedDb
           .prepare("SELECT value FROM metadata WHERE key = 'schema_version'")
           .get(),
-      ).toEqual({ value: '9' })
+      ).toEqual({ value: '10' })
     } finally {
       migratedDb.close()
     }
@@ -545,7 +734,7 @@ describe('electron mission store', () => {
     }
 
     store = createElectronMissionStore({ userDataPath })
-    await expect(store.info()).resolves.toMatchObject({ schema_version: 9 })
+    await expect(store.info()).resolves.toMatchObject({ schema_version: 10 })
 
     const migratedDb = new Database(databasePath, { readonly: true })
     try {
@@ -561,6 +750,137 @@ describe('electron mission store', () => {
       ).toEqual({ name: 'ingest_anomalies' })
     } finally {
       migratedDb.close()
+    }
+  })
+
+  it('migrates v9 to empty additive coverage tables without rewriting positions [DON-276]', async () => {
+    userDataPath = await mkdtemp(path.join(tmpdir(), 'sartracker-electron-v10-coverage-migration-'))
+    const databasePath = path.join(userDataPath, 'mission-store.sqlite')
+    const legacyDb = new Database(databasePath)
+    try {
+      legacyDb.exec(`
+        CREATE TABLE metadata (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+        INSERT INTO metadata (key, value) VALUES ('schema_version', '9');
+        CREATE TABLE positions (
+          id TEXT PRIMARY KEY,
+          mission_id TEXT NOT NULL,
+          device_id TEXT NOT NULL,
+          source_position_id TEXT,
+          name TEXT,
+          lat REAL NOT NULL,
+          lon REAL NOT NULL,
+          altitude REAL,
+          speed REAL,
+          battery REAL,
+          accuracy REAL,
+          source TEXT,
+          timestamp TEXT NOT NULL,
+          data_origin TEXT NOT NULL DEFAULT 'live',
+          received_at TEXT,
+          content_hash TEXT,
+          source_kind TEXT
+        );
+        CREATE INDEX idx_positions_mission_device_timestamp
+          ON positions(mission_id, device_id, timestamp);
+        INSERT INTO positions (
+          id, mission_id, device_id, source_position_id, lat, lon, timestamp
+        ) VALUES (
+          'preserved-position', 'mission-1', 'device-1', 'source-1',
+          52.0599, -9.5045, '2026-08-24T10:00:00.000Z'
+        );
+      `)
+    } finally {
+      legacyDb.close()
+    }
+
+    store = createElectronMissionStore({ userDataPath })
+    await expect(store.info()).resolves.toMatchObject({ schema_version: 10 })
+
+    const migratedDb = new Database(databasePath, { readonly: true })
+    try {
+      expect(
+        migratedDb.prepare(`SELECT name FROM sqlite_master
+          WHERE type = 'table' AND name LIKE 'coverage_%' ORDER BY name`).all(),
+      ).toEqual([
+        { name: 'coverage_chunks' },
+        { name: 'coverage_invalidations' },
+        { name: 'coverage_missions' },
+      ])
+      expect(migratedDb.prepare('SELECT COUNT(*) AS count FROM coverage_chunks').get()).toEqual({ count: 0 })
+      expect(migratedDb.prepare('SELECT COUNT(*) AS count FROM coverage_invalidations').get()).toEqual({ count: 0 })
+      expect(migratedDb.prepare('SELECT COUNT(*) AS count FROM coverage_missions').get()).toEqual({ count: 0 })
+      expect(migratedDb.prepare('SELECT id, source_position_id FROM positions').all()).toEqual([
+        { id: 'preserved-position', source_position_id: 'source-1' },
+      ])
+    } finally {
+      migratedDb.close()
+    }
+  })
+
+  it('updates coverage revisions only for newly accepted position truth [DON-276]', async () => {
+    store = await createStore()
+    const mission = await store.createMission({
+      name: 'Coverage revision mission',
+      start_time: '2026-08-24T08:00:00.000Z',
+    })
+    await store.upsertDevice({
+      mission_id: mission.id,
+      device_id: 'device-1',
+      name: 'Device 1',
+      color: '#fff',
+      status: 'online',
+    })
+    const position = {
+      source_position_id: 'source-1',
+      device_id: 'device-1',
+      lat: 52.0599,
+      lon: -9.5045,
+      timestamp: '2026-08-24T10:00:00.000Z',
+    }
+
+    await store.addPositionsBulk({ mission_id: mission.id, positions: [position] })
+    await store.addPositionsBulk({ mission_id: mission.id, positions: [position] })
+
+    const database = new Database((await store.info()).database_path, { readonly: true })
+    try {
+      expect(database.prepare(`SELECT device_id, period_kind, period_id,
+        content_rev, built_rev FROM coverage_chunks`).all()).toEqual([{
+        device_id: 'device-1', period_kind: 'unassigned', period_id: '',
+        content_rev: 1, built_rev: null,
+      }])
+      expect(database.prepare('SELECT change_seq FROM coverage_missions WHERE mission_id = ?').get(mission.id))
+        .toEqual({ change_seq: 1 })
+    } finally {
+      database.close()
+    }
+  })
+
+  it('rolls an accepted position back when coverage bookkeeping fails [DON-276]', async () => {
+    store = await createStore({ coverageLedgerFaultInjection: { afterWrite: true } })
+    const mission = await store.createMission({ name: 'Coverage rollback mission' })
+    await store.upsertDevice({
+      mission_id: mission.id,
+      device_id: 'device-1',
+      name: 'Device 1',
+      color: '#fff',
+      status: 'online',
+    })
+
+    await expect(store.addPosition({
+      mission_id: mission.id,
+      device_id: 'device-1',
+      lat: 52.0599,
+      lon: -9.5045,
+      timestamp: '2026-08-24T10:00:00.000Z',
+    })).rejects.toThrow(/Injected coverage ledger failure/)
+
+    await expect(store.listPositions(mission.id)).resolves.toEqual([])
+    const database = new Database((await store.info()).database_path, { readonly: true })
+    try {
+      expect(database.prepare('SELECT * FROM coverage_chunks').all()).toEqual([])
+      expect(database.prepare('SELECT * FROM coverage_missions').all()).toEqual([])
+    } finally {
+      database.close()
     }
   })
 
@@ -614,7 +934,7 @@ describe('electron mission store', () => {
       expect(migratedDb.prepare('SELECT COUNT(*) AS count FROM outings').get()).toEqual({ count: 0 })
       expect(migratedDb.prepare('SELECT COUNT(*) AS count FROM devices').get()).toEqual({ count: 2 })
       expect(migratedDb.prepare("SELECT value FROM metadata WHERE key = 'schema_version'").get())
-        .toEqual({ value: '9' })
+        .toEqual({ value: '10' })
       expect(migratedDb.prepare(`SELECT name FROM sqlite_master
           WHERE type = 'index' AND name IN (
             'idx_mission_participants_active_device',
@@ -1888,6 +2208,142 @@ describe('electron mission store', () => {
     await expect(store.finalizeMission(mission.id)).rejects.toThrow(/evidence health/iu)
   })
 
+  it('durably blocks completeness after renderer teardown loses pending evidence [DON-276]', async () => {
+    store = await createStore()
+    const mission = await store.createMission({ name: 'Renderer Teardown Mission' })
+
+    await expect(store.recordIngestEvidenceLoss({
+      mission_id: mission.id,
+      reason: 'renderer_pending_evidence_lost',
+    })).resolves.toMatchObject({
+      state: 'critical',
+      reason: 'renderer_pending_evidence_lost',
+    })
+    store.close()
+    store = createElectronMissionStore({ userDataPath: userDataPath! })
+    await expect(store.getIngestEvidenceHealth(mission.id)).resolves.toMatchObject({
+      state: 'critical',
+      reason: 'renderer_pending_evidence_lost',
+    })
+    await store.finishMission(mission.id)
+    await expect(store.finalizeMission(mission.id)).rejects.toThrow(/evidence health/iu)
+  })
+
+  it('durably blocks completeness after an accepted mission write fails [DON-276]', async () => {
+    store = await createStore()
+    const mission = await store.createMission({ name: 'Mission Persistence Failure' })
+
+    await expect(store.recordIngestEvidenceLoss({
+      mission_id: mission.id,
+      reason: 'mission_persistence_failed',
+    })).resolves.toMatchObject({
+      state: 'critical',
+      reason: 'mission_persistence_failed',
+    })
+    store.close()
+    store = createElectronMissionStore({ userDataPath: userDataPath! })
+    await expect(store.getIngestEvidenceHealth(mission.id)).resolves.toMatchObject({
+      state: 'critical',
+      reason: 'mission_persistence_failed',
+    })
+    await store.finishMission(mission.id)
+    await expect(store.finalizeMission(mission.id)).rejects.toThrow(/evidence health/iu)
+  })
+
+  it('allows an authorized admin to close a mission with permanently visible acknowledged evidence loss [DON-276]', async () => {
+    store = await createStore({
+      readAdminRoster: async () => ['Duty Admin'],
+    })
+    const mission = await store.createMission({ name: 'Acknowledged Evidence Gap' })
+    await store.recordIngestEvidenceLoss({
+      mission_id: mission.id,
+      reason: 'renderer_pending_evidence_lost',
+    })
+    await store.finishMission(mission.id)
+
+    await expect(store.finalizeMission(mission.id)).rejects.toThrow(/evidence health/iu)
+    await expect(store.acknowledgeIngestEvidenceLoss({
+      mission_id: mission.id,
+      admin_name: 'Duty Admin',
+      reason: 'Runtime failed during the 22:14 tracking poll; incident log retained.',
+    })).resolves.toMatchObject({
+      state: 'critical',
+      reason: 'renderer_pending_evidence_lost',
+      acknowledgedLoss: {
+        adminName: 'Duty Admin',
+        reason: 'Runtime failed during the 22:14 tracking poll; incident log retained.',
+      },
+    })
+
+    store.close()
+    store = createElectronMissionStore({ userDataPath: userDataPath! })
+    await expect(store.finalizeMission(mission.id)).resolves.toMatchObject({
+      mission: { status: 'finalized' },
+    })
+    await expect(store.getIngestEvidenceHealth(mission.id)).resolves.toMatchObject({
+      state: 'critical',
+      reason: 'renderer_pending_evidence_lost',
+      acknowledgedLoss: { adminName: 'Duty Admin' },
+    })
+    const events = await store.listMissionEvents(mission.id)
+    const acknowledged = events.find(
+      (event) => event.event_type === 'mission_evidence_loss_acknowledged',
+    )
+    expect(JSON.parse(acknowledged?.details_json ?? '{}')).toMatchObject({
+      admin_name: 'Duty Admin',
+      reason: 'Runtime failed during the 22:14 tracking poll; incident log retained.',
+    })
+  })
+
+  it('records denied evidence-loss acknowledgement and keeps finalization blocked [DON-276]', async () => {
+    store = await createStore({
+      readAdminRoster: async () => ['Duty Admin'],
+    })
+    const mission = await store.createMission({ name: 'Denied Evidence Gap' })
+    await store.recordIngestEvidenceLoss({
+      mission_id: mission.id,
+      reason: 'renderer_pending_evidence_lost',
+    })
+    await store.finishMission(mission.id)
+
+    await expect(store.acknowledgeIngestEvidenceLoss({
+      mission_id: mission.id,
+      admin_name: 'Unknown Operator',
+      reason: 'Attempted closure.',
+    })).rejects.toThrow(/not authorized/iu)
+    await expect(store.finalizeMission(mission.id)).rejects.toThrow(/evidence health/iu)
+    expect((await store.listMissionEvents(mission.id)).map((event) => event.event_type)).toContain(
+      'mission_evidence_loss_acknowledgement_denied',
+    )
+  })
+
+  it('invalidates acknowledgement when a later evidence-loss occurrence is recorded [DON-276]', async () => {
+    store = await createStore({
+      readAdminRoster: async () => ['Duty Admin'],
+    })
+    const mission = await store.createMission({ name: 'Repeated Evidence Gap' })
+    await store.recordIngestEvidenceLoss({
+      mission_id: mission.id,
+      reason: 'renderer_pending_evidence_lost',
+    })
+    await store.finishMission(mission.id)
+    await store.acknowledgeIngestEvidenceLoss({
+      mission_id: mission.id,
+      admin_name: 'Duty Admin',
+      reason: 'First runtime loss reviewed.',
+    })
+
+    await store.recordIngestEvidenceLoss({
+      mission_id: mission.id,
+      reason: 'renderer_pending_evidence_lost',
+    })
+
+    await expect(store.finalizeMission(mission.id)).rejects.toThrow(/evidence health/iu)
+    await expect(store.getIngestEvidenceHealth(mission.id)).resolves.not.toHaveProperty(
+      'acknowledgedLoss',
+    )
+  })
+
   it('does not block a clean mission with another mission evidence-loss marker [DON-268]', async () => {
     store = await createStore()
     const affected = await store.createMission({ name: 'Affected Evidence Mission' })
@@ -3058,6 +3514,7 @@ describe('electron mission store', () => {
       readonly failRemovalAfterProjection?: boolean
     }
     readonly storageDiagnostics?: StorageDiagnosticsPort
+    readonly coverageLedgerFaultInjection?: { readonly afterWrite?: boolean }
     readonly runOutingFixSummaryInWorker?: (input: {
       readonly databasePath: string
       readonly query: { readonly missionId: string }

@@ -2,10 +2,12 @@ const fs = require('node:fs/promises')
 const path = require('node:path')
 
 const { sanitizeDiagnosticText } = require('./diagnostic-sanitizer.cjs')
+const { removeFileDurably, writeFileDurably } = require('./durable-file.cjs')
 
 const CRASH_DIR_NAME = 'crashes'
 const CRASH_LOG_FILE_NAME = 'crash-log.json'
 const CLEAN_EXIT_FILE_NAME = 'last-clean-exit'
+const ACTIVE_SESSION_FILE_NAME = 'active-session'
 const DEFAULT_MAX_ENTRIES = 10
 
 // `render-process-gone` fires on normal window teardown (`clean-exit`) as well as on
@@ -40,6 +42,7 @@ function createCrashLog(options) {
   const crashDir = path.join(options.userDataPath, CRASH_DIR_NAME)
   const crashLogPath = path.join(crashDir, CRASH_LOG_FILE_NAME)
   const cleanExitPath = path.join(crashDir, CLEAN_EXIT_FILE_NAME)
+  const activeSessionPath = path.join(crashDir, ACTIVE_SESSION_FILE_NAME)
   const maxEntries =
     typeof options.maxEntries === 'number' && options.maxEntries > 0
       ? options.maxEntries
@@ -52,6 +55,7 @@ function createCrashLog(options) {
   return {
     record,
     readRecent,
+    markSessionStart,
     markCleanExit,
     hadUncleanShutdown,
     crashLogPath,
@@ -90,10 +94,19 @@ function createCrashLog(options) {
 
   async function markCleanExit() {
     await fs.mkdir(crashDir, { recursive: true })
-    await writeTextAtomically(cleanExitPath, now())
+    await writeFileDurably(cleanExitPath, now())
+    await removeFileDurably(activeSessionPath)
+  }
+
+  async function markSessionStart() {
+    await fs.mkdir(crashDir, { recursive: true })
+    await writeFileDurably(activeSessionPath, now())
   }
 
   async function hadUncleanShutdown() {
+    if (await fileExists(activeSessionPath)) {
+      return true
+    }
     const entries = await readAll()
     if (entries.length === 0) {
       return false
@@ -142,6 +155,16 @@ function createCrashLog(options) {
   }
 }
 
+async function fileExists(filePath) {
+  try {
+    await fs.access(filePath)
+    return true
+  } catch (error) {
+    if (error?.code === 'ENOENT') return false
+    throw error
+  }
+}
+
 function sanitizeText(value) {
   return sanitizeDiagnosticText(value).replace(
     /\b(password|secret|token|credential|api[-_]?key)\b\s*[:=]\s*\S+/gi,
@@ -149,15 +172,8 @@ function sanitizeText(value) {
   )
 }
 
-async function writeTextAtomically(filePath, contents) {
-  await fs.mkdir(path.dirname(filePath), { recursive: true })
-  const tempPath = `${filePath}.${process.pid}.${Date.now()}.tmp`
-  await fs.writeFile(tempPath, contents, 'utf8')
-  await fs.rename(tempPath, filePath)
-}
-
 async function writeJsonAtomically(filePath, value) {
-  await writeTextAtomically(filePath, JSON.stringify(value, null, 2))
+  await writeFileDurably(filePath, JSON.stringify(value, null, 2))
 }
 
 module.exports = {

@@ -5,6 +5,23 @@ import {
 } from '../../build/electron-tracking-soak-failure-evidence-lib.js'
 
 describe('tracking soak terminal failure evidence [DON-260]', () => {
+  it('retains the allowlisted graceful-quit failure class', () => {
+    const error = Object.assign(new Error('raw debugger path'), {
+      trackingSoakLifecycleFailure: {
+        failureClass: 'graceful_app_quit_failed',
+      },
+    })
+
+    expect(createTrackingSoakFailureReport({
+      profileName: 'ci',
+      error,
+      progress: { phase: 'closeout' },
+    })).toMatchObject({
+      failureClass: 'graceful_app_quit_failed',
+      progress: { phase: 'closeout' },
+    })
+  })
+
   it('always reduces an unknown raw error to allowlisted progress and timing', () => {
     const report = createTrackingSoakFailureReport({
       recordedAt: '2026-08-11T02:57:36.000Z',

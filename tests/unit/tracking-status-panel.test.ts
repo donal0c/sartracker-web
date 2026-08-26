@@ -9,6 +9,9 @@ import { useTrackingStore } from '../../src/features/tracking/tracking-store'
 import { useTrackingStyleStore } from '../../src/features/tracking/tracking-style-store'
 import { useIngestHealthStore } from '../../src/features/tracking/ingest-health-store'
 import { useStationaryAttentionStore } from '../../src/features/tracking/stationary-attention-store'
+import { useCoverageStore } from '../../src/features/tracking/coverage-store'
+import { useMissionStore } from '../../src/features/mission/mission-store'
+import type { Mission } from '../../src/infrastructure/mission-store/tauri-mission-store'
 
 let root: Root | null = null
 let host: HTMLDivElement | null = null
@@ -26,6 +29,8 @@ describe('TrackingStatusPanel', () => {
     useTrackingStyleStore.setState(useTrackingStyleStore.getInitialState())
     useIngestHealthStore.setState(useIngestHealthStore.getInitialState())
     useStationaryAttentionStore.setState(useStationaryAttentionStore.getInitialState())
+    useCoverageStore.setState(useCoverageStore.getInitialState())
+    useMissionStore.setState(useMissionStore.getInitialState())
   })
 
   it('renders offline tracking mode and OFFLINE MODE warning as a flashing red alert', () => {
@@ -141,6 +146,104 @@ describe('TrackingStatusPanel', () => {
     expect(getText('[data-testid="position-conflict-warning"]')).toContain(
       'first accepted fix remains displayed',
     )
+  })
+
+  it('describes renderer-held rejection evidence as pending save, not storage repair [DON-276]', () => {
+    useIngestHealthStore.getState().applyEvidenceHealth({
+      state: 'degraded',
+      reason: 'renderer_evidence_pending',
+      pendingCount: 1,
+      corruptCount: 0,
+      conflictCount: 0,
+      rejectedCount: 1,
+      affectedDeviceCount: 1,
+      conflictDeviceIds: [],
+    })
+
+    render(React.createElement(TrackingStatusPanel))
+
+    const warning = getText('[data-testid="ingest-evidence-health-warning"]')
+    expect(warning).toContain('rejected-position evidence is waiting to be saved')
+    expect(warning).not.toContain('requires repair')
+  })
+
+  it('describes renderer teardown evidence loss as a persistent safety blocker [DON-276]', () => {
+    useIngestHealthStore.getState().applyEvidenceHealth({
+      state: 'critical',
+      reason: 'renderer_pending_evidence_lost',
+      pendingCount: 0,
+      corruptCount: 0,
+      conflictCount: 0,
+      rejectedCount: 1,
+      affectedDeviceCount: 1,
+      conflictDeviceIds: [],
+    })
+
+    render(React.createElement(TrackingStatusPanel))
+
+    const warning = getText('[data-testid="ingest-evidence-health-warning"]')
+    expect(warning).toContain('rejected-position evidence was lost during runtime shutdown')
+    expect(warning).toContain('finalization and archive export are blocked')
+    expect(warning).toContain('authorized admin records the permanent known loss')
+    expect(warning).not.toContain('until storage is repaired')
+  })
+
+  it('keeps acknowledged evidence loss visible without falsely saying archive is blocked [DON-276]', () => {
+    useMissionStore.setState({
+      governanceMission: {
+        ...mission('mission-finished'),
+        status: 'finished',
+        finish_time: '2026-08-26T16:00:00.000Z',
+      },
+      governanceEvidenceHealth: {
+        state: 'critical',
+        reason: 'renderer_pending_evidence_lost',
+        pendingCount: 0,
+        corruptCount: 0,
+        conflictCount: 0,
+        rejectedCount: 1,
+        affectedDeviceCount: 1,
+        conflictDeviceIds: [],
+        acknowledgedLoss: {
+          adminName: 'Duty Admin',
+          reason: 'Known runtime loss recorded in incident log.',
+          acknowledgedAt: '2026-08-26T17:00:00.000Z',
+        },
+      },
+    })
+
+    render(React.createElement(TrackingStatusPanel))
+
+    const warning = getText('[data-testid="ingest-evidence-health-warning"]')
+    expect(warning).toContain('acknowledged by Duty Admin')
+    expect(warning).toContain('Complete and 100% remain blocked')
+    expect(warning).toContain('archive and lock may proceed')
+    expect(warning).not.toContain('archive export are blocked')
+  })
+
+  it('does not project an older governance loss onto a recoverable active mission [DON-276]', () => {
+    useMissionStore.setState({
+      recoverableMission: mission('mission-recoverable'),
+      governanceMission: {
+        ...mission('mission-finished'),
+        status: 'finished',
+        finish_time: '2026-08-26T16:00:00.000Z',
+      },
+      governanceEvidenceHealth: {
+        state: 'critical',
+        reason: 'renderer_pending_evidence_lost',
+        pendingCount: 0,
+        corruptCount: 0,
+        conflictCount: 0,
+        rejectedCount: 1,
+        affectedDeviceCount: 1,
+        conflictDeviceIds: [],
+      },
+    })
+
+    render(React.createElement(TrackingStatusPanel))
+
+    expect(document.querySelector('[data-testid="ingest-evidence-health-warning"]')).toBeNull()
   })
 
   it('summarizes stationary attention without declaring an emergency [DON-269]', () => {
@@ -286,7 +389,7 @@ describe('TrackingStatusPanel', () => {
 
     expect(document.querySelector('[data-testid="breadcrumb-display-summary"]')).toBeNull()
     expect(getText('[data-testid="exact-breadcrumb-dot-page-summary"]')).toBe(
-      'Showing 10,000 exact fixes of 10,001 — 2026-08-08T00:00:00.000Z to 2026-08-09T12:00:00.000Z',
+      'Exact fix inspection — showing 10,000 of 10,001 — 2026-08-08T00:00:00.000Z to 2026-08-09T12:00:00.000Z',
     )
   })
 
@@ -304,7 +407,43 @@ describe('TrackingStatusPanel', () => {
     )
     expect(document.querySelector('[data-testid="exact-breadcrumb-dot-page-summary"]')).toBeNull()
   })
+
+  it('never shows coverage status retained from the previous mission [DON-275]', () => {
+    useMissionStore.setState({ currentMission: mission('mission-2'), phase: 'active' })
+    useCoverageStore.setState({
+      state: {
+        status: 'complete',
+        missionId: 'mission-1',
+        rendererGeneration: 'renderer-1',
+        changeSeq: 1,
+        latestObservedChangeSeq: 1,
+        manifest: null,
+        tileCatalog: null,
+        delivered: {},
+        deliveredFixCount: 10,
+        totalFixCount: 10,
+      },
+    })
+
+    render(React.createElement(TrackingStatusPanel))
+
+    expect(document.querySelector('[data-testid="coverage-status-panel"]')).toBeNull()
+  })
 })
+
+function mission(id: string): Mission {
+  return {
+    id,
+    name: 'Mission',
+    status: 'active',
+    start_time: '2026-08-24T08:00:00.000Z',
+    pause_time: null,
+    finish_time: null,
+    paused_seconds: 0,
+    notes: null,
+    schema_version: 10,
+  }
+}
 
 function seedSimplifiedLineMetadata(): void {
   useTrackingStore.setState((state) => ({

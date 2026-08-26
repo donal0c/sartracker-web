@@ -9,6 +9,7 @@ import {
   formatTrackingPollLedger,
   type TrackingPollLedgerEntry,
 } from './tracking-poll-ledger'
+import type { CoverageDiagnostics } from '../tracking/coverage-diagnostics'
 
 type DependencySmoke = {
   readonly hasMapLibre: boolean
@@ -59,7 +60,7 @@ type BuildDiagnosticsSnapshotInput = {
   readonly missionStoreInfo: MissionStoreInfo
   readonly missions: readonly Mission[]
   readonly missionRuntime: MissionRuntimeState
-  readonly governanceRuntime: MissionGovernanceRuntimeState
+  readonly governanceRuntime: Pick<MissionGovernanceRuntimeState, 'governanceMission'>
   readonly trackingStatus: TrackingConnectionStatus
   readonly trackingSnapshot: TrackingSnapshot
   readonly diagnosticEvents?: readonly DiagnosticEvent[]
@@ -72,6 +73,7 @@ type BuildDiagnosticsSnapshotInput = {
   }
   readonly selectedMissionId: string | null
   readonly missionModelEnabled?: boolean
+  readonly coverageDiagnostics?: CoverageDiagnostics | null
 }
 
 /**
@@ -287,6 +289,8 @@ function buildSupportReport(
     `breadcrumbs in snapshot: ${input.trackingSnapshot.breadcrumbs.length}`,
     ...formatBreadcrumbMetadataReport(input.trackingSnapshot.breadcrumbMetadata),
     '',
+    ...formatCoverageDiagnostics(input.coverageDiagnostics),
+    '',
     formatTrackingPollLedger(input.trackingPollLedger ?? []),
     '',
     formatDiagnosticEvents(input.diagnosticEvents ?? []),
@@ -294,6 +298,27 @@ function buildSupportReport(
     '[warnings]',
     ...(input.warnings.length === 0 ? ['none'] : input.warnings),
   ].join('\n')
+}
+
+function formatCoverageDiagnostics(
+  diagnostics: CoverageDiagnostics | null | undefined,
+): readonly string[] {
+  if (diagnostics === undefined || diagnostics === null) {
+    return ['[coverage]', 'state: inactive or unavailable']
+  }
+  return [
+    '[coverage]',
+    `queue depth: ${diagnostics.queueDepth}`,
+    `queue age ms: ${diagnostics.queueAgeMs ?? 'none'}`,
+    `pending chunks: ${diagnostics.pendingChunkCount}`,
+    `stale chunks: ${diagnostics.staleChunkCount}`,
+    `fresh chunks: ${diagnostics.freshChunkCount}`,
+    `pending invalidations: ${diagnostics.pendingInvalidationCount}`,
+    `last enumeration duration ms: ${diagnostics.lastEnumerationDurationMs ?? 'none'}`,
+    `last build duration ms: ${diagnostics.lastBuildDurationMs ?? 'none'}`,
+    `delivery map size: ${diagnostics.deliveryMapSize}`,
+    `last error class: ${diagnostics.lastErrorClass ?? 'none'}`,
+  ]
 }
 
 function summarizeOfficialMapPackages(

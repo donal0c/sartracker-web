@@ -1,19 +1,26 @@
 export type MissionModelFlagContext = {
   readonly dev: boolean
   readonly browserHarness: boolean
+  readonly browserHarnessMode?: boolean
   readonly buildFlag: string | undefined
 }
 
+export const DEFAULT_MISSION_MODEL_ENABLED = true
+
 /**
  * Resolves the internal mission-model gate without exposing an operator toggle.
- * An explicit build value always wins so release builds fail closed by default.
+ * An explicit build value always wins, allowing controlled rollback from the approved default-on posture.
  */
 export function resolveMissionModelFlag(context: MissionModelFlagContext): boolean {
   if (context.buildFlag !== undefined) {
     return context.buildFlag === '1'
   }
 
-  return context.dev || context.browserHarness
+  if (context.browserHarnessMode === true) {
+    return context.browserHarness
+  }
+
+  return context.dev || context.browserHarness || DEFAULT_MISSION_MODEL_ENABLED
 }
 
 /** Returns whether the additive PR-2 mission model is enabled in this renderer. */
@@ -27,6 +34,7 @@ export function isMissionModelEnabled(): boolean {
   return resolveMissionModelFlag({
     dev: import.meta.env.DEV && !browserHarnessMode,
     browserHarness,
+    browserHarnessMode,
     buildFlag: import.meta.env.VITE_SARTRACKER_MISSION_MODEL,
   })
 }

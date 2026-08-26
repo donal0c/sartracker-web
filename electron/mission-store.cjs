@@ -34,12 +34,48 @@ const { createZipArchive, readZipArchive } = require('./zip-archive.cjs')
 const { createOutingStore } = require('./outing-store.cjs')
 const { createParticipantStore } = require('./participant-store.cjs')
 const { runOutingFixSummaryInWorker } = require('./outing-fix-summary-runner.cjs')
+const { runCoverageQueryInWorker } = require('./coverage-query-runner.cjs')
+const {
+  assertCoverageClaimMatchesDatabase,
+  assertCoverageManifestOutings,
+  assertCoverageResultInventory,
+  readCoverageQueryResultLimits,
+  readCurrentCoverageInventory,
+} = require('./coverage-query-result-attestation.cjs')
+const {
+  normalizeCoverageWorkerResult,
+} = require('./coverage-query-result-envelope.cjs')
+const { normalizeCoverageTileAddress } = require('./coverage-tile-address.cjs')
+const { createCoverageTileRunner } = require('./coverage-tile-runner.cjs')
+const {
+  assertCoverageBuildCoverage,
+  assertCoverageBuildSummaries,
+} = require('./coverage-build-attestation.cjs')
+const {
+  createCoverageChunkIdentity,
+  normalizeCoverageCatalogInput,
+  normalizeCoverageCatalogWorkerResult,
+  normalizeCoverageMissionId,
+  normalizeCoverageSelectedKeys,
+} = require('./coverage-worker-envelope.cjs')
+const {
+  appendCoverageInvalidation,
+  applyCoverageChunkBuild,
+  applyCoverageChunkBuilds,
+  applyCoverageEnumeration,
+  applyCoverageInvalidationDrain,
+  applyCoverageManifestInventory,
+  bumpCoverageChangeSequence,
+  normalizeCoverageInvalidationDrain,
+  recordAcceptedCoveragePositions,
+} = require('./coverage-ledger.cjs')
 
-const CURRENT_SCHEMA_VERSION = 9
+const CURRENT_SCHEMA_VERSION = 10
 const DATABASE_FILE_NAME = 'mission-store.sqlite'
 const BACKUP_FILE_NAME = 'mission-store.backup.sqlite'
 const ARCHIVE_DIRECTORY_NAME = 'archives'
 const INGEST_ANOMALY_OUTBOX_DIRECTORY_NAME = 'ingest-anomaly-outbox'
+const COVERAGE_TILE_CACHE_DIRECTORY_NAME = 'coverage-renderer-cache'
 const ARCHIVE_VERSION = 1
 
 /** Validates the opaque renderer correlation key used only for worker cancellation. */
@@ -86,6 +122,219 @@ function normalizeOutingFixSummaryRequestId(value, required) {
   return value
 }
 
+/** Validates the opaque renderer key used only for coverage-worker cancellation. */
+function normalizeCoverageQueryRequestId(value, required) {
+  if (value === undefined && required === false) return null
+  if (
+    typeof value !== 'string' ||
+    value.length < 1 ||
+    value.length > 140 ||
+    !/^[A-Za-z0-9._:-]+$/u.test(value)
+  ) {
+    throw new Error('Coverage query request ID is invalid.')
+  }
+  return value
+}
+
+/** Validates the opaque worker stage token returned to one renderer activation. */
+function normalizeCoverageTileActivationId(value) {
+  if (
+    typeof value !== 'string' ||
+    value.length < 1 ||
+    value.length > 100 ||
+    !/^coverage-stage-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}-[1-9][0-9]*$/u.test(value)
+  ) {
+    throw new Error('Coverage tile catalog activation ID is invalid.')
+  }
+  return value
+}
+
+/** Authorizes a bounded claim request against the current canonical inventory. */
+function normalizeCoverageClaimInput(database, value) {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error('Coverage claim request is invalid.')
+  }
+  const missionId = normalizeCoverageMissionId(value.missionId)
+  getMission(database, missionId)
+  const allowed = readCurrentCoverageInventory(database, missionId)
+  const selectedKeys = normalizeCoverageSelectedKeys(value.selectedKeys, allowed.size)
+  for (const key of selectedKeys) {
+    if (!allowed.has(createCoverageChunkIdentity(key))) {
+      throw new Error('Coverage claim key is not in the current mission inventory.')
+    }
+  }
+  return { missionId, selectedKeys }
+}
+
+/** Authorizes a bounded catalog request and its exact current ledger revisions. */
+function normalizeAuthorizedCoverageCatalogInput(database, value) {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error('Coverage tile catalog request is invalid.')
+  }
+  const missionId = normalizeCoverageMissionId(value.missionId)
+  getMission(database, missionId)
+  const allowed = readCurrentCoverageInventory(database, missionId)
+  const normalized = normalizeCoverageCatalogInput(value, allowed.size)
+  const readRevision = database.prepare(`SELECT content_rev FROM coverage_chunks
+    WHERE mission_id = ? AND device_id = ? AND period_kind = ? AND period_id = ?`)
+  for (const descriptor of normalized.chunks) {
+    if (!allowed.has(createCoverageChunkIdentity(descriptor.key))) {
+      throw new Error('Coverage catalog key is not in the current mission inventory.')
+    }
+    const row = readRevision.get(
+      missionId,
+      descriptor.key.device_id,
+      descriptor.key.period_kind,
+      descriptor.key.period_id,
+    )
+    if (row === undefined || row.content_rev !== descriptor.contentRev) {
+      throw new Error('Coverage catalog chunk does not match its current revision.')
+    }
+  }
+  return normalized
+}
+
+/** Copies exact query-worker summaries into a main-owned, revision-bound oracle. */
+function createCoverageManifestBuildEvidence(manifest) {
+  return new Map(manifest.chunks.map((chunk) => [
+    createCoverageChunkIdentity(chunk.key),
+    {
+      key: { ...chunk.key },
+      contentRev: chunk.contentRev,
+      fix_count: chunk.exactCount,
+      fix_digest: chunk.exactDigest,
+      min_ts: chunk.exactMinTs,
+      max_ts: chunk.exactMaxTs,
+    },
+  ]))
+}
+
+/** Requires every catalog descriptor to match a prior exact off-main manifest summary. */
+function readCoverageManifestBuildEvidence(evidenceByMission, input) {
+  if (input.chunks.length === 0) return []
+  const missionEvidence = evidenceByMission.get(input.missionId)
+  if (missionEvidence === undefined) {
+    throw new Error('Coverage tile catalog has no exact manifest attestation.')
+  }
+  return input.chunks.map((descriptor) => {
+    const summary = missionEvidence.get(createCoverageChunkIdentity(descriptor.key))
+    if (summary === undefined || summary.contentRev !== descriptor.contentRev) {
+      throw new Error('Coverage tile catalog diverged from its exact manifest attestation.')
+    }
+    return summary
+  })
+}
+
+/** Returns a valid stage token only when a malformed worker result can be discarded safely. */
+function readDiscardableCoverageStageId(value) {
+  try {
+    return normalizeCoverageTileActivationId(value?.stageId)
+  } catch {
+    return null
+  }
+}
+
+/** Validates and copies the complete renderer-owned tile read payload. */
+function normalizeCoverageTileReadInput(value) {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error('Coverage tile request is invalid.')
+  }
+  if (
+    typeof value.missionId !== 'string' ||
+    value.missionId.length < 1 ||
+    value.missionId.length > 100
+  ) {
+    throw new Error('Coverage tile mission ID is invalid.')
+  }
+  if (
+    typeof value.periodKey !== 'string' ||
+    value.periodKey.length < 1 ||
+    value.periodKey.length > 200
+  ) {
+    throw new Error('Coverage tile period key is invalid.')
+  }
+  if (
+    typeof value.revisionDigest !== 'string' ||
+    value.revisionDigest.length < 1 ||
+    value.revisionDigest.length > 100
+  ) {
+    throw new Error('Coverage tile revision is invalid.')
+  }
+  const address = normalizeCoverageTileAddress(value)
+  return {
+    missionId: value.missionId,
+    periodKey: value.periodKey,
+    revisionDigest: value.revisionDigest,
+    ...address,
+  }
+}
+
+/** Validates and copies renderer-owned fields for one exact coverage chunk page. */
+function normalizeCoverageChunkReadInput(value) {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error('Coverage chunk request is invalid.')
+  }
+  if (
+    typeof value.missionId !== 'string' ||
+    value.missionId.length < 1 ||
+    value.missionId.length > 100
+  ) {
+    throw new Error('Coverage chunk mission ID is invalid.')
+  }
+  const key = value.key
+  if (
+    key === null ||
+    typeof key !== 'object' ||
+    Array.isArray(key) ||
+    typeof key.device_id !== 'string' ||
+    key.device_id.length < 1 ||
+    key.device_id.length > 100 ||
+    !['outing', 'unassigned'].includes(key.period_kind) ||
+    typeof key.period_id !== 'string' ||
+    key.period_id.length > 100 ||
+    (key.period_kind === 'outing' && key.period_id.length < 1) ||
+    (key.period_kind === 'unassigned' && key.period_id !== '')
+  ) {
+    throw new Error('Coverage chunk key is invalid.')
+  }
+  if (!Number.isSafeInteger(value.expectedContentRev) || value.expectedContentRev < 1) {
+    throw new Error('Coverage chunk revision is invalid.')
+  }
+  const cursor = value.cursor
+  if (
+    cursor !== undefined && cursor !== null &&
+    (
+      typeof cursor !== 'object' ||
+      Array.isArray(cursor) ||
+      !isStrictTrackingTimestamp(cursor.timestamp) ||
+      typeof cursor.id !== 'string' ||
+      cursor.id.length < 1 ||
+      cursor.id.length > 100
+    )
+  ) {
+    throw new Error('Coverage chunk cursor is invalid.')
+  }
+  if (
+    value.limit !== undefined &&
+    (!Number.isSafeInteger(value.limit) || value.limit < 1 || value.limit > 10_000)
+  ) {
+    throw new Error('Coverage chunk page limit is invalid.')
+  }
+  return {
+    missionId: value.missionId,
+    key: {
+      device_id: key.device_id,
+      period_kind: key.period_kind,
+      period_id: key.period_id,
+    },
+    expectedContentRev: value.expectedContentRev,
+    ...(cursor === undefined || cursor === null
+      ? {}
+      : { cursor: { timestamp: cursor.timestamp, id: cursor.id } }),
+    ...(value.limit === undefined ? {} : { limit: value.limit }),
+  }
+}
+
 /**
  * Creates the Electron SQLite mission store.
  */
@@ -100,6 +349,7 @@ function createElectronMissionStore(options) {
   const finalizeMissionFaultInjection = options.finalizeMissionFaultInjection ?? {}
   const archiveFaultInjection = options.archiveFaultInjection ?? {}
   const storageDiagnostics = options.storageDiagnostics ?? null
+  const coverageLedgerFaultInjection = options.coverageLedgerFaultInjection ?? {}
   const breadcrumbQueryRunner =
     options.runBreadcrumbQueryInWorker ?? runBreadcrumbQueryInWorker
   const breadcrumbDotQueryRunner =
@@ -108,14 +358,28 @@ function createElectronMissionStore(options) {
     options.runMissionReviewReadQueryInWorker ?? runMissionReviewReadQueryInWorker
   const outingFixSummaryRunner =
     options.runOutingFixSummaryInWorker ?? runOutingFixSummaryInWorker
+  const coverageQueryRunner =
+    options.runCoverageQueryInWorker ?? runCoverageQueryInWorker
+  const coverageQueryRunnerValidatesResults = coverageQueryRunner === runCoverageQueryInWorker
+  const coverageTileRunner = options.coverageTileRunner ?? createCoverageTileRunner({
+    databasePath,
+    cacheDirectory: path.join(options.userDataPath, COVERAGE_TILE_CACHE_DIRECTORY_NAME),
+    onFailure: () => options.onCoverageRendererFailed?.(),
+  })
+  const onCoverageChanged = options.onCoverageChanged ?? (() => undefined)
+  const coveragePerformanceByMission = new Map()
   const activeBreadcrumbQueryControllers = new Set()
   const breadcrumbQueryControllersByRequestId = new Map()
   const breadcrumbDotQueryControllersByRequestId = new Map()
   const missionReviewQueryControllersByRequestId = new Map()
   const outingFixSummaryControllersByRequestId = new Map()
+  const coverageQueryControllersByRequestId = new Map()
+  const coverageTileControllersByRequestId = new Map()
+  const coverageManifestBuildEvidenceByMission = new Map()
   let breadcrumbQueryTail = Promise.resolve()
   let missionReviewWorkerTail = Promise.resolve()
   let outingFixSummaryWorkerTail = Promise.resolve()
+  let coverageChunkWorkerTail = Promise.resolve()
   const db = new Database(databasePath)
   db.pragma('journal_mode = WAL')
   db.pragma('synchronous = FULL')
@@ -124,10 +388,22 @@ function createElectronMissionStore(options) {
   const outingStore = createOutingStore({
     db,
     faultInjection: options.outingFaultInjection ?? {},
+    recordCoverageInvalidation: (input) => appendCoverageInvalidation(db, {
+      id: randomUUID(),
+      ...input,
+      failAfterWrite: coverageLedgerFaultInjection.afterWrite === true,
+    }),
   })
   const participantStore = createParticipantStore({
     db,
     faultInjection: options.participantFaultInjection ?? {},
+    recordCoverageChange: (missionId, updatedAt) => {
+      const changeSeq = bumpCoverageChangeSequence(db, missionId, updatedAt)
+      if (coverageLedgerFaultInjection.afterWrite === true) {
+        throw new Error('Injected coverage ledger failure.')
+      }
+      return changeSeq
+    },
   })
   const ingestEvidenceFaultInjection = options.ingestEvidenceFaultInjection ?? {}
   const ingestAnomalyOutbox = createIngestAnomalyOutbox({
@@ -150,6 +426,7 @@ function createElectronMissionStore(options) {
   )
   let finalizeTail = Promise.resolve()
   const enqueueFinalize = (missionId) => {
+    const acknowledgedLossToken = readAcknowledgedEvidenceLossToken(db, missionId)
     const run = finalizeTail.then(() =>
       ingestAnomalyOutbox.runWithHealthyEvidenceFence(
         missionId,
@@ -162,6 +439,7 @@ function createElectronMissionStore(options) {
           finalizeMissionFaultInjection,
           archiveFaultInjection,
         ),
+        acknowledgedLossToken === null ? {} : { acknowledgedLossToken },
       ))
     finalizeTail = run.catch(() => {})
     return run
@@ -184,6 +462,15 @@ function createElectronMissionStore(options) {
         activeQuery.controller.abort()
       }
       outingFixSummaryControllersByRequestId.clear()
+      for (const activeQuery of coverageQueryControllersByRequestId.values()) {
+        activeQuery.controller.abort()
+      }
+      coverageQueryControllersByRequestId.clear()
+      for (const activeQuery of coverageTileControllersByRequestId.values()) {
+        activeQuery.controller.abort()
+      }
+      coverageTileControllersByRequestId.clear()
+      void coverageTileRunner.close().catch(() => undefined)
       db.close()
     },
     info: async () => ({
@@ -193,8 +480,9 @@ function createElectronMissionStore(options) {
       backup_path: backupPath,
     }),
     syncBackup: async (trigger) => backupCoordinator.syncBackup(trigger),
-    createMissionArchive: async (missionId) =>
-      ingestAnomalyOutbox.runWithHealthyEvidenceFence(
+    createMissionArchive: async (missionId) => {
+      const acknowledgedLossToken = readAcknowledgedEvidenceLossToken(db, missionId)
+      return ingestAnomalyOutbox.runWithHealthyEvidenceFence(
         missionId,
         'archive',
         () => createMissionArchive(
@@ -205,7 +493,9 @@ function createElectronMissionStore(options) {
           true,
           archiveFaultInjection,
         ),
-      ),
+        acknowledgedLossToken === null ? {} : { acknowledgedLossToken },
+      )
+    },
     createMission: async (input) => {
       const mission = createMission(db, input)
       await safeStorageDiagnostic(() =>
@@ -213,24 +503,44 @@ function createElectronMissionStore(options) {
       )
       return mission
     },
-    createOuting: async (input) => outingStore.createOuting(input),
-    endOuting: async (input) => outingStore.endOuting(input),
+    createOuting: async (input) => runCoverageMutation(
+      input.mission_id,
+      () => outingStore.createOuting(input),
+    ),
+    endOuting: async (input) => runCoverageMutation(
+      input.mission_id,
+      () => outingStore.endOuting(input),
+    ),
     renameOuting: async (input) => outingStore.renameOuting(input),
-    editOutingBoundaries: async (input) => outingStore.editOutingBoundaries(input),
+    editOutingBoundaries: async (input) => runCoverageMutation(
+      input.mission_id,
+      () => outingStore.editOutingBoundaries(input),
+    ),
     listOutings: async (missionId) => outingStore.listOutings(missionId),
-    selectMissionParticipants: async (input) =>
-      participantStore.selectMissionParticipants(input),
-    addMissionParticipant: async (input) => participantStore.addMissionParticipant(input),
-    removeMissionParticipant: async (input) =>
-      participantStore.removeMissionParticipant(input),
+    selectMissionParticipants: async (input) => runCoverageMutation(
+      input.mission_id,
+      () => participantStore.selectMissionParticipants(input),
+    ),
+    addMissionParticipant: async (input) => runCoverageMutation(
+      input.mission_id,
+      () => participantStore.addMissionParticipant(input),
+    ),
+    removeMissionParticipant: async (input) => runCoverageMutation(
+      input.mission_id,
+      () => participantStore.removeMissionParticipant(input),
+    ),
     listMissionParticipants: async (missionId) =>
       participantStore.listMissionParticipants(missionId),
-    recordGroupMembershipEvents: async (input) =>
-      participantStore.recordGroupMembershipEvents(input),
+    recordGroupMembershipEvents: async (input) => runCoverageMutation(
+      input.mission_id,
+      () => participantStore.recordGroupMembershipEvents(input),
+    ),
     listGroupMembershipEvents: async (missionId, teamId) =>
       participantStore.listGroupMembershipEvents(missionId, teamId),
-    upsertParticipantBackfillCheckpoint: async (input) =>
-      participantStore.upsertParticipantBackfillCheckpoint(input),
+    upsertParticipantBackfillCheckpoint: async (input) => runCoverageMutation(
+      input.mission_id,
+      () => participantStore.upsertParticipantBackfillCheckpoint(input),
+    ),
     listParticipantBackfillCheckpoints: async (missionId) =>
       participantStore.listParticipantBackfillCheckpoints(missionId),
     readOutingFixSummary: async (input, requestId) => {
@@ -271,6 +581,249 @@ function createElectronMissionStore(options) {
       await activeQuery.completion.catch(() => undefined)
       return true
     },
+    readCoverageManifest: async (missionId, requestId) => executeCoverageRequest(
+      requestId,
+      async (signal) => {
+        getMission(db, missionId)
+        const coverageMission = db.prepare(`SELECT change_seq, enumerated
+          FROM coverage_missions WHERE mission_id = ?`).get(missionId)
+        if (coverageMission?.enumerated !== 1) {
+          const enumerationStartedAt = performance.now()
+          const enumeration = await runCoverageWorker(
+            { kind: 'enumerate', missionId },
+            signal,
+            false,
+          )
+          assertCoverageResultInventory(
+            db,
+            missionId,
+            enumeration.chunks,
+            (chunk) => chunk,
+            'enumeration',
+          )
+          recordCoveragePerformance(missionId, {
+            lastEnumerationDurationMs: performance.now() - enumerationStartedAt,
+          })
+          applyCoverageEnumeration(db, {
+            missionId,
+            expectedChangeSeq: enumeration.changeSeq,
+            chunks: enumeration.chunks,
+            updatedAt: now(),
+          })
+        }
+        await drainCoverageInvalidations(missionId, signal)
+        const manifest = await runCoverageWorker(
+          { kind: 'manifest', missionId }, signal, false,
+        )
+        assertCoverageResultInventory(
+          db,
+          missionId,
+          manifest.chunks,
+          (chunk) => chunk.key,
+          'manifest',
+        )
+        assertCoverageManifestOutings(db, missionId, manifest.outings)
+        const inserted = applyCoverageManifestInventory(db, {
+          missionId,
+          expectedChangeSeq: manifest.changeSeq,
+          chunks: manifest.chunks,
+          updatedAt: now(),
+        })
+        const currentManifest = inserted === 0
+          ? manifest
+          : await runCoverageWorker({ kind: 'manifest', missionId }, signal, false)
+        assertCoverageResultInventory(
+          db,
+          missionId,
+          currentManifest.chunks,
+          (chunk) => chunk.key,
+          'manifest',
+        )
+        assertCoverageManifestOutings(db, missionId, currentManifest.outings)
+        coverageManifestBuildEvidenceByMission.set(
+          missionId,
+          createCoverageManifestBuildEvidence(currentManifest),
+        )
+        return attachCoveragePerformance(missionId, currentManifest)
+      },
+    ),
+    readCoverageChunk: async (input, requestId) => {
+      const normalizedInput = normalizeCoverageChunkReadInput(input)
+      return executeCoverageRequest(
+        requestId,
+        async (signal) => {
+          const page = await runCoverageWorker(
+            { ...normalizedInput, kind: 'chunk-page' }, signal, true,
+          )
+          if (page.nextCursor !== null) return page
+          const summary = await runCoverageWorker({
+            kind: 'chunk-summary',
+            missionId: normalizedInput.missionId,
+            key: normalizedInput.key,
+            expectedContentRev: normalizedInput.expectedContentRev,
+          }, signal, true)
+          const applied = applyCoverageChunkBuild(db, {
+            missionId: normalizedInput.missionId,
+            deviceId: normalizedInput.key.device_id,
+            periodKind: normalizedInput.key.period_kind,
+            periodId: normalizedInput.key.period_id,
+            expectedContentRev: normalizedInput.expectedContentRev,
+            fixCount: summary.fix_count,
+            fixDigest: summary.fix_digest,
+            minTs: summary.min_ts,
+            maxTs: summary.max_ts,
+            updatedAt: now(),
+          })
+          if (!applied) {
+            const error = new Error('chunk-stale: coverage chunk revision changed')
+            error.code = 'chunk-stale'
+            throw error
+          }
+          return page
+        },
+      )
+    },
+    readCoverageClaim: async (input, requestId) => executeCoverageRequest(
+      requestId,
+      async (signal) => {
+        const normalizedInput = normalizeCoverageClaimInput(db, input)
+        const claim = await runCoverageWorker(
+          {
+            kind: 'claim',
+            ...normalizedInput,
+          },
+          signal,
+          false,
+        )
+        const health = await getIngestEvidenceHealth(
+          db,
+          ingestAnomalyOutbox,
+          normalizedInput.missionId,
+        )
+        // Keep the direct bounded attestation as the final yielding boundary so
+        // an accepted write cannot land between proof and the returned claim.
+        const attestedClaim = assertCoverageClaimMatchesDatabase(
+          db,
+          normalizedInput,
+          claim,
+        )
+        const blockers = [...attestedClaim.blockers]
+        if (Number(health.pendingCount ?? 0) > 0) blockers.push('ingest_outbox_pending')
+        if (health.state !== 'healthy') blockers.push('ingest_health_degraded')
+        return {
+          changeSeq: attestedClaim.changeSeq,
+          databaseReady: blockers.length === 0,
+          blockers: [...new Set(blockers)],
+          chunkRevisions: attestedClaim.chunkRevisions,
+        }
+      },
+    ),
+    cancelCoverageQuery: async (requestId) => {
+      const normalizedRequestId = normalizeCoverageQueryRequestId(requestId, true)
+      const activeQuery = coverageQueryControllersByRequestId.get(normalizedRequestId)
+      if (activeQuery === undefined) return false
+      activeQuery.controller.abort()
+      await activeQuery.completion.catch(() => undefined)
+      return true
+    },
+    syncCoverageTileCatalog: async (input, requestId) => executeCoverageRequest(
+      requestId,
+      async (signal) => {
+        const normalizedInput = normalizeAuthorizedCoverageCatalogInput(db, input)
+        const exactBuildSummaries = readCoverageManifestBuildEvidence(
+          coverageManifestBuildEvidenceByMission,
+          normalizedInput,
+        )
+        const buildStartedAt = performance.now()
+        const rawResult = await coverageTileRunner.syncCatalog(normalizedInput, { signal })
+        let result
+        try {
+          result = normalizeCoverageCatalogWorkerResult(normalizedInput, rawResult)
+        } catch (error) {
+          const stageId = readDiscardableCoverageStageId(rawResult)
+          if (stageId !== null) {
+            await coverageTileRunner.discardCatalog({ stageId }).catch(() => undefined)
+          }
+          throw error
+        }
+        if (signal.aborted) {
+          await coverageTileRunner.discardCatalog({ stageId: result.stageId })
+          throw createCoverageRequestAbortError()
+        }
+        try {
+          assertCoverageBuildCoverage(
+            new Set(normalizedInput.chunks.map((chunk) =>
+              createCoverageChunkIdentity(chunk.key))),
+            result.builds,
+          )
+          assertCoverageBuildSummaries(result.builds, exactBuildSummaries)
+        } catch (error) {
+          await coverageTileRunner.discardCatalog({ stageId: result.stageId })
+            .catch(() => undefined)
+          if (error?.code === 'coverage-build-attestation') {
+            await coverageTileRunner.invalidateWorker?.(error)
+          }
+          throw error
+        }
+        if (signal.aborted) {
+          await coverageTileRunner.discardCatalog({ stageId: result.stageId })
+          throw createCoverageRequestAbortError()
+        }
+        if (result.builds.length > 0) {
+          recordCoveragePerformance(normalizedInput.missionId, {
+            lastBuildDurationMs: performance.now() - buildStartedAt,
+          })
+        }
+        let appliedBuilds
+        try {
+          appliedBuilds = applyCoverageChunkBuilds(db, {
+            missionId: normalizedInput.missionId,
+            builds: result.builds,
+            updatedAt: now(),
+          })
+        } catch (error) {
+          await coverageTileRunner.discardCatalog({ stageId: result.stageId })
+          throw error
+        }
+        const rejectedChunks = new Set(appliedBuilds.rejectedChunkKeys)
+        if (rejectedChunks.size > 0) {
+          await coverageTileRunner.discardCatalog({ stageId: result.stageId })
+          const error = new Error('chunk-stale: coverage tile catalog changed during apply')
+          error.code = 'chunk-stale'
+          throw error
+        }
+        return {
+          activationId: result.stageId,
+          missionId: normalizedInput.missionId,
+          periods: result.periods,
+          delivered: result.delivered,
+        }
+      },
+    ),
+    activateCoverageTileCatalog: async (input) => coverageTileRunner.commitCatalog({
+      stageId: normalizeCoverageTileActivationId(input?.activationId),
+    }),
+    finalizeCoverageTileCatalog: async (input) => coverageTileRunner.finalizeCatalog({
+      stageId: normalizeCoverageTileActivationId(input?.activationId),
+    }),
+    discardCoverageTileCatalog: async (input) => coverageTileRunner.discardCatalog({
+      stageId: normalizeCoverageTileActivationId(input?.activationId),
+    }),
+    readCoverageTile: async (input, requestId) => {
+      const normalizedInput = normalizeCoverageTileReadInput(input)
+      return executeCoverageTileRead(
+        requestId,
+        (signal) => coverageTileRunner.readTile(normalizedInput, { signal }),
+      )
+    },
+    cancelCoverageTileRead: async (requestId) => {
+      const normalizedRequestId = normalizeCoverageQueryRequestId(requestId, true)
+      const activeQuery = coverageTileControllersByRequestId.get(normalizedRequestId)
+      if (activeQuery === undefined) return false
+      activeQuery.controller.abort()
+      await activeQuery.completion.catch(() => undefined)
+      return true
+    },
     upsertDevice: async (input) => upsertDevice(db, input),
     upsertDevicesBulk: async (input) => {
       const startedAtMs = performance.now()
@@ -287,10 +840,16 @@ function createElectronMissionStore(options) {
     },
     getDevice: async (missionId, deviceId) => getDevice(db, missionId, deviceId),
     listDevices: async (missionId) => all(db, 'SELECT * FROM devices WHERE mission_id = ? ORDER BY name ASC', missionId),
-    addPosition: async (input) => addPosition(db, input),
+    addPosition: async (input) => runCoverageMutation(
+      input.mission_id,
+      () => addPosition(db, input, coverageLedgerFaultInjection),
+    ),
     addPositionsBulk: async (input) => {
       const startedAtMs = performance.now()
-      const result = addPositionsBulk(db, input)
+      const result = await runCoverageMutation(
+        input.mission_id,
+        () => addPositionsBulk(db, input, true, coverageLedgerFaultInjection),
+      )
       await safeStorageDiagnostic(() =>
         storageDiagnostics?.recordInsertedPositions({
           durationMs: performance.now() - startedAtMs,
@@ -305,9 +864,12 @@ function createElectronMissionStore(options) {
     persistTrackingPositionsBulk: async (input) => {
       const startedAtMs = performance.now()
       const hasCheckpoints = Array.isArray(input.checkpoints) && input.checkpoints.length > 0
-      const result = hasCheckpoints
-        ? persistTrackingHistoryBatch(db, input, false)
-        : addPositionsBulk(db, input, false)
+      const result = await runCoverageMutation(
+        input.mission_id,
+        () => hasCheckpoints
+          ? persistTrackingHistoryBatch(db, input, false, coverageLedgerFaultInjection)
+          : addPositionsBulk(db, input, false, coverageLedgerFaultInjection),
+      )
       await safeStorageDiagnostic(() =>
         storageDiagnostics?.recordInsertedPositions({
           durationMs: performance.now() - startedAtMs,
@@ -326,7 +888,10 @@ function createElectronMissionStore(options) {
     },
     persistTrackingHistoryBatch: async (input) => {
       const startedAtMs = performance.now()
-      const result = persistTrackingHistoryBatch(db, input)
+      const result = await runCoverageMutation(
+        input.mission_id,
+        () => persistTrackingHistoryBatch(db, input, true, coverageLedgerFaultInjection),
+      )
       await safeStorageDiagnostic(() =>
         storageDiagnostics?.recordInsertedPositions({
           durationMs: performance.now() - startedAtMs,
@@ -518,6 +1083,20 @@ function createElectronMissionStore(options) {
       ingestAnomalyOutbox,
       input,
     ),
+    stageRendererEvidenceUncertainty: async (input) =>
+      updateRendererEvidenceUncertainty(db, ingestAnomalyOutbox, input, 'stage'),
+    resolveRendererEvidenceUncertainty: async (input) =>
+      updateRendererEvidenceUncertainty(db, ingestAnomalyOutbox, input, 'resolve'),
+    stageRendererEvidenceIncident: async (input) =>
+      stageRendererEvidenceIncident(db, ingestAnomalyOutbox, input),
+    resolveRendererEvidenceIncidents: async (input) =>
+      resolveRendererEvidenceIncidents(ingestAnomalyOutbox, input),
+    acknowledgeIngestEvidenceLoss: async (input) => acknowledgeIngestEvidenceLoss(
+      db,
+      ingestAnomalyOutbox,
+      input,
+      options.readAdminRoster,
+    ),
     getIngestEvidenceHealth: async (missionId) => getIngestEvidenceHealth(
       db,
       ingestAnomalyOutbox,
@@ -546,6 +1125,21 @@ function createElectronMissionStore(options) {
     clearLayerCatalogMetadata: async (missionId) => clearLayerCatalogMetadata(db, missionId),
     getMission: async (missionId) => getMission(db, missionId),
     listMissions: async () => all(db, 'SELECT * FROM missions ORDER BY start_time DESC'),
+    listMissionIdsAwaitingEvidenceClosure: async () => all(
+      db,
+      `SELECT id FROM missions
+        WHERE status IN ('active', 'paused', 'finished')
+        ORDER BY start_time DESC, rowid DESC`,
+    ).map((mission) => mission.id),
+    listRendererEvidenceScopesAwaitingClosure: async () => all(
+      db,
+      `SELECT id, status FROM missions
+        WHERE status IN ('active', 'paused', 'finished')
+        ORDER BY start_time DESC, rowid DESC`,
+    ).map((mission) => ({
+      mission_id: mission.id,
+      scope_reason: rendererEvidenceScopeReason(mission.status),
+    })),
     getActiveMission: async () => getActiveMission(db),
     getRecoverableMission: async () => getActiveMission(db),
     pauseMission: async (missionId) => transitionMission(db, missionId, 'active', 'paused'),
@@ -611,6 +1205,162 @@ function createElectronMissionStore(options) {
       void Promise.resolve(workerExited).then(releaseWorkerSlot, releaseWorkerSlot)
       return operation
     })
+  }
+
+  /** Runs one renderer-owned coverage operation with cancellation and ID reuse fencing. */
+  function executeCoverageRequest(requestId, execute) {
+    const normalizedRequestId = normalizeCoverageQueryRequestId(requestId, false)
+    if (
+      normalizedRequestId !== null &&
+      coverageQueryControllersByRequestId.has(normalizedRequestId)
+    ) {
+      throw new Error('Coverage query request ID is already active.')
+    }
+    const controller = new AbortController()
+    const activeQuery = {
+      controller,
+      completion: Promise.resolve().then(() => execute(controller.signal)),
+    }
+    if (normalizedRequestId !== null) {
+      coverageQueryControllersByRequestId.set(normalizedRequestId, activeQuery)
+    }
+    return activeQuery.completion.finally(() => {
+      if (
+        normalizedRequestId !== null &&
+        coverageQueryControllersByRequestId.get(normalizedRequestId) === activeQuery
+      ) {
+        coverageQueryControllersByRequestId.delete(normalizedRequestId)
+      }
+    })
+  }
+
+  /** Runs one independently cancellable renderer tile read on the shared worker. */
+  function executeCoverageTileRead(requestId, execute) {
+    const normalizedRequestId = normalizeCoverageQueryRequestId(requestId, false)
+    if (
+      normalizedRequestId !== null &&
+      coverageTileControllersByRequestId.has(normalizedRequestId)
+    ) {
+      throw new Error('Coverage tile request ID is already active.')
+    }
+    const controller = new AbortController()
+    const activeQuery = {
+      controller,
+      completion: Promise.resolve().then(() => execute(controller.signal)),
+    }
+    if (normalizedRequestId !== null) {
+      coverageTileControllersByRequestId.set(normalizedRequestId, activeQuery)
+    }
+    return activeQuery.completion.finally(() => {
+      if (
+        normalizedRequestId !== null &&
+        coverageTileControllersByRequestId.get(normalizedRequestId) === activeQuery
+      ) {
+        coverageTileControllersByRequestId.delete(normalizedRequestId)
+      }
+    })
+  }
+
+  /** Publishes only a sequence that moved in the just-committed mutation. */
+  async function runCoverageMutation(missionId, execute) {
+    const before = readCoverageChangeSequence(missionId)
+    const result = await execute()
+    const after = readCoverageChangeSequence(missionId)
+    if (after > before) onCoverageChanged(missionId, after)
+    return result
+  }
+
+  /** Reads one coordinate-free scalar without creating coverage state. */
+  function readCoverageChangeSequence(missionId) {
+    return Number(db.prepare(`SELECT change_seq FROM coverage_missions
+      WHERE mission_id = ?`).get(missionId)?.change_seq ?? 0)
+  }
+
+  /** Drains each durable outing invalidation through worker analysis and bounded applies. */
+  async function drainCoverageInvalidations(missionId, signal) {
+    const pending = db.prepare(`SELECT id FROM coverage_invalidations
+      WHERE mission_id = ? AND drained_at IS NULL ORDER BY created_at ASC, id ASC`)
+      .all(missionId)
+    for (const row of pending) {
+      const analysis = await runCoverageWorker(
+        { kind: 'invalidation-analysis', invalidationId: row.id },
+        signal,
+        false,
+      )
+      applyCoverageInvalidationDrain(db, {
+        invalidationId: row.id,
+        affectedKeys: normalizeCoverageInvalidationDrain(db, row.id, analysis),
+        drainedAt: now(),
+      })
+    }
+  }
+
+  function recordCoveragePerformance(missionId, update) {
+    coveragePerformanceByMission.set(missionId, {
+      lastEnumerationDurationMs:
+        coveragePerformanceByMission.get(missionId)?.lastEnumerationDurationMs ?? null,
+      lastBuildDurationMs:
+        coveragePerformanceByMission.get(missionId)?.lastBuildDurationMs ?? null,
+      ...update,
+    })
+  }
+
+  function attachCoveragePerformance(missionId, manifest) {
+    const performanceMetrics = coveragePerformanceByMission.get(missionId) ?? {
+      lastEnumerationDurationMs: null,
+      lastBuildDurationMs: null,
+    }
+    return {
+      ...manifest,
+      diagnostics: {
+        ...manifest.diagnostics,
+        ...performanceMetrics,
+      },
+    }
+  }
+
+  /** Serializes chunk payload reads while allowing small manifest/claim reads alongside. */
+  function runCoverageWorker(query, signal, serializeChunk) {
+    const resultLimits = readCoverageQueryResultLimits(db, query)
+    if (!serializeChunk) {
+      return normalizeCoverageOperation(
+        query,
+        coverageQueryRunner({ databasePath, query, signal, resultLimits }),
+        resultLimits,
+      )
+    }
+    const previousWorker = coverageChunkWorkerTail
+    let releaseWorkerSlot = () => undefined
+    const workerSlot = new Promise((resolve) => { releaseWorkerSlot = resolve })
+    coverageChunkWorkerTail = previousWorker.then(() => workerSlot)
+    return previousWorker.then(() => {
+      let operation
+      try {
+        operation = normalizeCoverageOperation(
+          query,
+          coverageQueryRunner({ databasePath, query, signal, resultLimits }),
+          resultLimits,
+        )
+      } catch (error) {
+        releaseWorkerSlot()
+        throw error
+      }
+      const workerExited = operation.workerExited ?? operation
+      void Promise.resolve(workerExited).then(releaseWorkerSlot, releaseWorkerSlot)
+      return operation
+    })
+  }
+
+  /** Normalizes injected and production worker operations without losing exit ownership. */
+  function normalizeCoverageOperation(query, operation, resultLimits) {
+    const normalized = coverageQueryRunnerValidatesResults
+      ? Promise.resolve(operation)
+      : Promise.resolve(operation).then((result) =>
+          normalizeCoverageWorkerResult(query, result, resultLimits))
+    Object.defineProperty(normalized, 'workerExited', {
+      value: operation.workerExited ?? operation,
+    })
+    return normalized
   }
 }
 
@@ -751,6 +1501,53 @@ function migrate(db) {
       FOREIGN KEY (mission_id, device_id) REFERENCES devices(mission_id, device_id)
     );
     CREATE INDEX IF NOT EXISTS idx_positions_mission_device_timestamp ON positions(mission_id, device_id, timestamp);
+    CREATE TABLE IF NOT EXISTS coverage_chunks (
+      mission_id TEXT NOT NULL,
+      device_id TEXT NOT NULL,
+      period_kind TEXT NOT NULL CHECK (period_kind IN ('outing', 'unassigned')),
+      period_id TEXT NOT NULL DEFAULT '',
+      content_rev INTEGER NOT NULL DEFAULT 1,
+      built_rev INTEGER,
+      fix_count INTEGER,
+      fix_digest TEXT,
+      min_ts TEXT,
+      max_ts TEXT,
+      updated_at TEXT NOT NULL,
+      PRIMARY KEY (mission_id, device_id, period_kind, period_id),
+      CHECK ((period_kind = 'outing') = (period_id <> '')),
+      FOREIGN KEY (mission_id) REFERENCES missions(id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_coverage_chunks_mission
+      ON coverage_chunks(mission_id);
+    CREATE TABLE IF NOT EXISTS coverage_missions (
+      mission_id TEXT PRIMARY KEY,
+      change_seq INTEGER NOT NULL DEFAULT 0,
+      enumerated INTEGER NOT NULL DEFAULT 0,
+      updated_at TEXT NOT NULL,
+      FOREIGN KEY (mission_id) REFERENCES missions(id) ON DELETE CASCADE
+    );
+    CREATE TABLE IF NOT EXISTS coverage_invalidations (
+      id TEXT PRIMARY KEY,
+      mission_id TEXT NOT NULL,
+      reason TEXT NOT NULL CHECK (reason IN (
+        'outing_created',
+        'outing_ended',
+        'outing_boundaries_edited',
+        'enumeration_required'
+      )),
+      subject_outing_id TEXT NOT NULL,
+      old_started_at TEXT,
+      old_ended_at TEXT,
+      new_started_at TEXT,
+      new_ended_at TEXT,
+      range_from TEXT NOT NULL,
+      range_to TEXT,
+      created_at TEXT NOT NULL,
+      drained_at TEXT,
+      FOREIGN KEY (mission_id) REFERENCES missions(id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_coverage_invalidations_pending
+      ON coverage_invalidations(mission_id, drained_at);
     CREATE TABLE IF NOT EXISTS tracking_history_checkpoints (
       mission_id TEXT NOT NULL,
       device_id TEXT NOT NULL,
@@ -1101,9 +1898,26 @@ async function recordIngestRejections(db, outbox, input) {
 
 /** Combines durable ledger counts with outbox health, excluding evidence content. */
 async function getIngestEvidenceHealth(db, outbox, missionId) {
-  return {
+  const health = {
     ...(await mapIngestEvidenceHealth(outbox, missionId)),
     ...summarizeIngestAnomalies(db, missionId),
+  }
+  if (missionId === undefined || missionId === null) return health
+  const acknowledgement = readEvidenceLossAcknowledgement(db, missionId)
+  if (acknowledgement === null) return health
+  try {
+    const candidate = await outbox.readEvidenceLossAcknowledgementCandidate(missionId)
+    if (candidate.token !== acknowledgement.lossToken) return health
+  } catch {
+    return health
+  }
+  return {
+    ...health,
+    acknowledgedLoss: {
+      adminName: acknowledgement.adminName,
+      reason: acknowledgement.reason,
+      acknowledgedAt: acknowledgement.acknowledgedAt,
+    },
   }
 }
 
@@ -1113,12 +1927,189 @@ async function recordIngestEvidenceLoss(db, outbox, input) {
   if (missionId === '') {
     throw new Error('Ingest evidence loss requires a mission identity.')
   }
-  if (input?.reason !== 'renderer_pending_capacity_exhausted') {
+  if (![
+    'mission_persistence_failed',
+    'renderer_pending_capacity_exhausted',
+    'renderer_pending_evidence_lost',
+  ].includes(input?.reason)) {
     throw new Error('Ingest evidence-loss reason is invalid.')
   }
-  getById(db, 'missions', missionId, 'Mission')
+  const mission = getMission(db, missionId)
+  if (
+    input?.scope_reason !== undefined &&
+    input.scope_reason !== rendererEvidenceScopeReason(mission.status)
+  ) {
+    throw new Error('Renderer evidence-loss mission scope reason does not match mission state.')
+  }
   await outbox.markEvidenceLoss(missionId, input.reason)
   return getIngestEvidenceHealth(db, outbox, missionId)
+}
+
+/** Stages or resolves one exact soft-deadline renderer evidence incident. */
+async function updateRendererEvidenceUncertainty(db, outbox, input, operation) {
+  const missionId = typeof input?.mission_id === 'string' ? input.mission_id.trim() : ''
+  const incidentId = typeof input?.incident_id === 'string' ? input.incident_id.trim() : ''
+  if (missionId === '' || incidentId === '') {
+    throw new Error('Renderer evidence uncertainty requires mission and incident identities.')
+  }
+  const mission = getMission(db, missionId)
+  const expectedScopeReason = rendererEvidenceScopeReason(mission.status)
+  if (expectedScopeReason === null) {
+    throw new Error('Finalized missions cannot receive renderer evidence uncertainty.')
+  }
+  if (operation === 'stage') {
+    if (input.scope_reason !== expectedScopeReason) {
+      throw new Error('Renderer evidence uncertainty scope reason does not match mission state.')
+    }
+    await outbox.stageRendererEvidenceUncertainty(
+      missionId,
+      incidentId,
+      input.scope_reason,
+      (queuedScopes) => assertRendererEvidenceScopesStillOpen(db, queuedScopes),
+    )
+  } else {
+    await outbox.resolveRendererEvidenceUncertainty(
+      missionId,
+      incidentId,
+      input.outcome,
+    )
+  }
+  return getIngestEvidenceHealth(db, outbox, missionId)
+}
+
+/** Validates every mission scope before the outbox commits one durable incident. */
+async function stageRendererEvidenceIncident(db, outbox, input) {
+  const incidentId = typeof input?.incident_id === 'string' ? input.incident_id.trim() : ''
+  if (incidentId === '' || !Array.isArray(input?.scopes) || input.scopes.length === 0) {
+    throw new Error('Renderer evidence incident requires an identity and mission scopes.')
+  }
+  const scopes = input.scopes.map((scope) => {
+    const missionId = typeof scope?.mission_id === 'string' ? scope.mission_id.trim() : ''
+    if (missionId === '') {
+      throw new Error('Renderer evidence incident mission scope is invalid.')
+    }
+    const mission = getMission(db, missionId)
+    const expectedScopeReason = rendererEvidenceScopeReason(mission.status)
+    if (expectedScopeReason === null || scope.scope_reason !== expectedScopeReason) {
+      throw new Error('Renderer evidence incident scope reason does not match mission state.')
+    }
+    return { missionId, scopeReason: expectedScopeReason }
+  })
+  await outbox.stageRendererEvidenceIncident(
+    scopes,
+    incidentId,
+    (queuedScopes) => assertRendererEvidenceScopesStillOpen(db, queuedScopes),
+  )
+  return { staged_scope_count: scopes.length }
+}
+
+/** Rechecks mutable mission ownership while the outbox finalization fence is held. */
+function assertRendererEvidenceScopesStillOpen(db, scopes) {
+  for (const scope of scopes) {
+    const mission = getMission(db, scope.missionId)
+    if (rendererEvidenceScopeReason(mission.status) !== scope.scopeReason) {
+      throw new Error('Renderer evidence scope reason does not match mission state.')
+    }
+  }
+}
+
+/** Resolves one or all durable renderer incidents without re-reading mutable mission state. */
+async function resolveRendererEvidenceIncidents(outbox, input) {
+  if (!['drained', 'lost'].includes(input?.outcome)) {
+    throw new Error('Renderer evidence incident outcome is invalid.')
+  }
+  let incidentId = null
+  if (input?.incident_id !== undefined) {
+    if (typeof input.incident_id !== 'string' || input.incident_id.trim() === '') {
+      throw new Error('Renderer evidence incident identity is invalid.')
+    }
+    incidentId = input.incident_id.trim()
+  }
+  const resolvedScopes = await outbox.resolveRendererEvidenceIncidents(
+    incidentId,
+    input.outcome,
+  )
+  return {
+    resolved_scopes: resolvedScopes.map((scope) => ({
+      mission_id: scope.missionId,
+      scope_reason: scope.scopeReason,
+    })),
+  }
+}
+
+/** Names the bounded reason one non-finalized mission can own renderer evidence. */
+function rendererEvidenceScopeReason(status) {
+  if (status === 'active') return 'active_mission'
+  if (status === 'paused') return 'paused_recoverable_mission'
+  if (status === 'finished') return 'finished_unfinalized_mission'
+  return null
+}
+
+/** Records an authorized, permanent acceptance of one exact known evidence gap. */
+async function acknowledgeIngestEvidenceLoss(db, outbox, input, readAdminRoster) {
+  const missionId = typeof input?.mission_id === 'string' ? input.mission_id.trim() : ''
+  const adminName = typeof input?.admin_name === 'string' ? input.admin_name.trim() : ''
+  const reason = typeof input?.reason === 'string' ? input.reason.trim() : ''
+  if (missionId === '' || adminName === '' || reason === '') {
+    throw new Error('Evidence-loss acknowledgement requires mission, admin, and reason.')
+  }
+  if (adminName.length > 160 || reason.length > 2_000) {
+    throw new Error('Evidence-loss acknowledgement exceeds the bounded audit limit.')
+  }
+  const mission = getMission(db, missionId)
+  if (mission.status !== 'finished') {
+    throw new Error('Evidence loss can be acknowledged only after the mission is finished.')
+  }
+  const adminRoster = typeof readAdminRoster === 'function' ? await readAdminRoster() : []
+  if (!adminRoster.map((value) => value.trim()).includes(adminName)) {
+    appendEvent(db, missionId, 'mission_evidence_loss_acknowledgement_denied', {
+      admin_name: adminName,
+      reason,
+      resulting_status: mission.status,
+    })
+    throw new Error('Selected admin is not authorized to acknowledge mission evidence loss.')
+  }
+  const candidate = await outbox.readEvidenceLossAcknowledgementCandidate(missionId)
+  const timestamp = now()
+  const transaction = db.transaction(() => {
+    insertEvent(db, missionId, 'mission_evidence_loss_acknowledged', timestamp, {
+      admin_name: adminName,
+      reason,
+      loss_token: candidate.token,
+      loss_reasons: candidate.reasons,
+      resulting_status: mission.status,
+    })
+  })
+  transaction()
+  return getIngestEvidenceHealth(db, outbox, missionId)
+}
+
+/** Returns the latest exact loss-token acknowledgement retained in mission audit. */
+function readEvidenceLossAcknowledgement(db, missionId) {
+  const event = db.prepare(
+    `SELECT timestamp, details_json FROM mission_events
+      WHERE mission_id = ? AND event_type = 'mission_evidence_loss_acknowledged'
+      ORDER BY timestamp DESC, rowid DESC LIMIT 1`,
+  ).get(missionId)
+  if (event === undefined) return null
+  const details = readEventDetails(event.details_json)
+  if (
+    typeof details.admin_name !== 'string' ||
+    typeof details.reason !== 'string' ||
+    typeof details.loss_token !== 'string' ||
+    !/^[a-f0-9]{64}$/u.test(details.loss_token)
+  ) return null
+  return {
+    adminName: details.admin_name,
+    reason: details.reason,
+    lossToken: details.loss_token,
+    acknowledgedAt: event.timestamp,
+  }
+}
+
+/** Returns only the current audit token used by the serialized outbox fence. */
+function readAcknowledgedEvidenceLossToken(db, missionId) {
+  return readEvidenceLossAcknowledgement(db, missionId)?.lossToken ?? null
 }
 
 /** Maps outbox state into the operator/completeness health contract. */
@@ -1130,6 +2121,8 @@ async function mapIngestEvidenceHealth(outbox, missionId) {
     'outbox_corrupt_record',
     'outbox_health_marker_corrupt',
     'outbox_invalid_envelope',
+    'mission_persistence_failed',
+    'renderer_pending_evidence_lost',
     'renderer_pending_capacity_exhausted',
     'late_evidence_after_finalization',
   ])
@@ -1854,7 +2847,7 @@ function getDevice(db, missionId, deviceId) {
   return device
 }
 
-function addPosition(db, input) {
+function addPosition(db, input, coverageFaultInjection = {}) {
   ensureWritableMission(db, input.mission_id)
   validateLatLon(input.lat, input.lon, 'Position')
   getDevice(db, input.mission_id, input.device_id)
@@ -1900,14 +2893,26 @@ function addPosition(db, input) {
       }
       return existing
     }
-    const adopted = adoptSourceIdentityForLegacyPosition(
-      db,
-      input.mission_id,
-      sourcePositionId,
-      input,
-      timestamp,
-      dataOrigin,
-    )
+    const adopt = db.transaction(() => {
+      const result = adoptSourceIdentityForLegacyPosition(
+        db,
+        input.mission_id,
+        sourcePositionId,
+        input,
+        timestamp,
+        dataOrigin,
+      )
+      if (result !== undefined && result !== AMBIGUOUS_LEGACY_ADOPTION) {
+        recordAcceptedCoveragePositions(db, {
+          missionId: input.mission_id,
+          positions: [result],
+          updatedAt: receivedAt,
+          failAfterWrite: coverageFaultInjection.afterWrite === true,
+        })
+      }
+      return result
+    })
+    const adopted = adopt()
     if (adopted === AMBIGUOUS_LEGACY_ADOPTION) {
       throw createAmbiguousLegacyAdoptionError(sourcePositionId)
     }
@@ -1930,12 +2935,18 @@ function addPosition(db, input) {
        status = 'online'
        WHERE mission_id = ? AND device_id = ?`,
     ).run(timestamp, timestamp, input.mission_id, input.device_id)
+    recordAcceptedCoveragePositions(db, {
+      missionId: input.mission_id,
+      positions: [{ device_id: input.device_id, timestamp }],
+      updatedAt: receivedAt,
+      failAfterWrite: coverageFaultInjection.afterWrite === true,
+    })
   })
   transaction()
   return getById(db, 'positions', id, 'Position')
 }
 
-function addPositionsBulk(db, input, includePositions = true) {
+function addPositionsBulk(db, input, includePositions = true, coverageFaultInjection = {}) {
   ensureWritableMission(db, input.mission_id)
   const positions = Array.isArray(input.positions) ? input.positions : []
   if (positions.length === 0) {
@@ -1970,6 +2981,7 @@ function addPositionsBulk(db, input, includePositions = true) {
   let changedPositionCount = 0
   let insertedPositionCount = 0
   let skippedAmbiguousLegacyAdoptionCount = 0
+  const acceptedCoveragePositions = []
 
   const transaction = db.transaction(() => {
     const receivedAt = now()
@@ -2033,6 +3045,7 @@ function addPositionsBulk(db, input, includePositions = true) {
         if (adopted !== undefined) {
           changedPositionCount += 1
           changedIds?.push(adopted.id)
+          acceptedCoveragePositions.push(adopted)
           continue
         }
       } else {
@@ -2079,7 +3092,14 @@ function addPositionsBulk(db, input, includePositions = true) {
       changedPositionCount += 1
       changedIds?.push(id)
       insertedPositionCount += 1
+      acceptedCoveragePositions.push({ device_id: position.device_id, timestamp })
     }
+    recordAcceptedCoveragePositions(db, {
+      missionId: input.mission_id,
+      positions: acceptedCoveragePositions,
+      updatedAt: receivedAt,
+      failAfterWrite: coverageFaultInjection.afterWrite === true,
+    })
   })
 
   transaction()
@@ -2091,7 +3111,12 @@ function addPositionsBulk(db, input, includePositions = true) {
   }
 }
 
-function persistTrackingHistoryBatch(db, input, includePositions = true) {
+function persistTrackingHistoryBatch(
+  db,
+  input,
+  includePositions = true,
+  coverageFaultInjection = {},
+) {
   ensureWritableMission(db, input.mission_id)
   const checkpoints = Array.isArray(input.checkpoints) ? input.checkpoints : []
   let positionResult = {
@@ -2122,7 +3147,7 @@ function persistTrackingHistoryBatch(db, input, includePositions = true) {
     const added = addPositionsBulk(db, {
       mission_id: input.mission_id,
       positions: Array.isArray(input.positions) ? input.positions : [],
-    }, includePositions)
+    }, includePositions, coverageFaultInjection)
     positionResult = {
       ...added,
       skippedAmbiguousLegacyAdoptionCount:
@@ -2768,6 +3793,13 @@ function insertEvent(db, missionId, eventType, timestamp, detailsJson) {
 
 function now() {
   return new Date().toISOString()
+}
+
+/** Creates the stable cancellation error surfaced by renderer-owned coverage reads. */
+function createCoverageRequestAbortError() {
+  const error = new Error('Coverage tile request was cancelled.')
+  error.name = 'AbortError'
+  return error
 }
 
 module.exports = {

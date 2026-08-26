@@ -282,6 +282,53 @@ Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
     })
   })
 
+  test('known evidence loss acknowledgement stays explicit and cannot imply Complete', async ({ page }) => {
+    await page.evaluate(() => {
+      window.localStorage.setItem(
+        'sartracker:browser-settings',
+        JSON.stringify({ missionDefaults: { adminRoster: ['Ops Lead'] } }),
+      )
+    })
+    await page.reload()
+    await page.getByTestId('app-title').waitFor({ state: 'visible', timeout: 15_000 })
+    await page.waitForSelector('canvas', { timeout: 20_000 })
+    await startMission(page, 'Evidence Gap Visual')
+    const missionId = await page.evaluate(
+      () => window.__SARTRACKER_BROWSER_HARNESS__?.readState().currentMissionId ?? null,
+    )
+    expect(missionId).not.toBeNull()
+    await page.getByTestId('mission-finish-btn').click()
+    await page.getByTestId('mission-finish-dialog')
+      .getByRole('button', { name: 'Confirm Finish' })
+      .click()
+    await page.evaluate(async (id) => {
+      await window.__SARTRACKER_BROWSER_HARNESS__?.injectEvidenceLoss(id)
+    }, missionId!)
+    await page.getByTestId('mission-finalize-btn').click()
+    await page.getByTestId('mission-finalize-confirm').click()
+
+    await expect(page.getByTestId('mission-evidence-loss-dialog')).toBeVisible()
+    await captureElementAndRegister(page, 'mission-evidence-loss-dialog', {
+      testId: 'mission-evidence-loss-acknowledgement',
+      testName: 'Known evidence loss acknowledgement',
+      area: 'mission',
+      severity: 'critical',
+      verificationPrompt: `Verify this element-scoped screenshot of the known mission-evidence-loss acknowledgement card:
+1. The heading must clearly say "ACKNOWLEDGE KNOWN EVIDENCE LOSS".
+2. The warning must explicitly say the action does not restore missing evidence.
+3. The warning must explicitly say Complete or 100% is never permitted.
+4. An Admin Identity selector and an Evidence Loss Record text area must be visible.
+5. The primary action must say "Record Gap & Allow Archive", making archive closure distinct from evidence completeness.
+6. The card must have unmistakable critical/warning styling and a Cancel action.
+Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
+      playwrightAssertions: [
+        'evidence-loss acknowledgement dialog is visible',
+        'dialog says it never permits Complete or 100%',
+        'admin selector and evidence-loss record are visible',
+      ],
+    })
+  })
+
   test('recovery dialog appears after simulated crash', async ({ page }) => {
     await startMission(page, 'Recovery Scenario')
     // Simulate crash by reloading

@@ -130,6 +130,68 @@ P1 and P2 findings block merge. Any new commit invalidates the affected
 review. Focused delta review closes findings, followed by one final exact-head
 review that checks the cumulative diff and all P1/P2 closures.
 
+### PR-3 Remediation And PR-4-Onward Review Topology
+
+Donal approved the following prospective amendment on 2026-08-26. It applies
+to PR-4 and later programme PRs. On the same date, after repeated confirmed
+PR-3 findings at the mission-evidence lifecycle seam, Donal explicitly applied
+the bounded remediation topology to PR-3 as well:
+
+- pause the PR-3 review loop and perform one deliberate end-to-end architecture
+  and attack-test pass over the complete evidence-lifecycle seam;
+- land the resulting seam correction as one coherent, red-first change;
+- complete deterministic, browser/visual, macOS package, and Linux package/soak
+  proof before re-review; and
+- run one fresh broad exact-head review plus targeted exact-head
+  persistence/completeness, concurrency/finalization, and renderer/input-
+  containment rechecks. Do not restart five full reviews after each fix.
+
+For PR-4 onward:
+
+- retain five independent reviewers for a 10/10 PR, run in parallel on one
+  final code-and-documentation head;
+- use two broad safety charters plus three complementary focused charters:
+  persistence/completeness, concurrency/finalization, and renderer/input
+  containment;
+- complete strict TDD, deterministic gates, required packaged/Linux evidence,
+  browser and visual verification, evidence documents, manual, and handoff
+  before that wave wherever practical;
+- centrally source-retrace every finding before changing code;
+- after a confirmed fix, run one fresh broad exact-head review plus targeted
+  exact-head rechecks only from focused reviewers whose risk areas changed;
+- retain unaffected focused reviews when their reviewed executable-code and
+  test trees are unchanged; and
+- require exact-tree and exact-diff attestation for a documentation-only
+  evidence-binding commit without automatically invalidating completed code
+  reviews when executable-code and test trees are byte-identical.
+
+Recheck scope is contract-based. A narrow persistence fix receives the fresh
+broad review plus persistence/completeness; a renderer input-containment fix
+receives the fresh broad review plus renderer/input containment; a Finish
+evidence fix normally receives the fresh broad review plus both
+persistence/completeness and concurrency/finalization. Restart all five only
+when a remediation changes a shared state machine or cross-boundary contract,
+touches enough critical areas that its impact cannot be confidently bounded,
+or invalidates the original charters' assumptions. Schema-plus-renderer,
+IPC-plus-worker ownership, finalization-plus-persistence, and Complete/100%
+logic are explicit escalation examples.
+
+Repeated confirmed P1/P2 findings at the same seam after remediation trigger an
+architecture pause, not another automatic local patch. Re-trace the shared
+cause, strengthen the attack-test model, and revise the accepted plan before
+continuing. Any resulting change to approved architecture, scope, proof budget,
+or domain behaviour returns to Donal for approval.
+
+The stop conditions do not change: false Complete or false 100%, lost mission
+evidence, unbounded Electron-main-isolate work, any P1/P2, or any unresolved
+safety failure blocks merge. Green CI and a majority of clean reviewers cannot
+override a reproduced safety failure.
+
+Before PR-5 implementation begins, record a short PR-4 process retrospective
+covering defect yield, centrally rejected false/duplicate findings, avoided
+re-review work, escalations, and missed risks. Continue or amend this topology
+from that evidence rather than reverting or weakening it by default.
+
 ## Cost-Aware Qualification
 
 - Development uses strict red-green-refactor with focused unit, integration,

@@ -1,0 +1,149 @@
+{
+  "schemaVersion": 1,
+  "groups": [
+    {
+      "candidate": "B",
+      "fixture": "bcp-2m",
+      "coldRunCount": 1,
+      "warmRunCount": 2,
+      "decision": "pass",
+      "rejections": [],
+      "worstWarm": {
+        "firstUsefulMs": 3632,
+        "completeMs": 7669,
+        "filterToggleMs": 121.2999999821186,
+        "appendRerenderMs": 715.5,
+        "mainMaxMs": 52.44947499999999,
+        "rendererP95Ms": 83.60000000000036,
+        "settledBytes": 305635328,
+        "peakBytes": 305635328
+      },
+      "phaseMs": {
+        "query": {
+          "count": 3,
+          "min": 5038.487703000004,
+          "median": 5177.696128999993,
+          "p95": 5390.755070999999,
+          "max": 5390.755070999999
+        },
+        "segmentation": {
+          "count": 3,
+          "min": 992.7947459999949,
+          "median": 1011.4881350000117,
+          "p95": 1062.7508640000049,
+          "max": 1062.7508640000049
+        },
+        "encodeServe": {
+          "count": 3,
+          "min": 278.1585190000004,
+          "median": 288.8251420000008,
+          "p95": 303.2173630000006,
+          "max": 303.2173630000006
+        },
+        "sourceUpdate": {
+          "count": 3,
+          "min": 0,
+          "median": 0,
+          "p95": 0,
+          "max": 0
+        },
+        "renderSettle": {
+          "count": 3,
+          "min": 3355.0999999940395,
+          "median": 3446.0999999940395,
+          "p95": 3538.0999999940395,
+          "max": 3538.0999999940395
+        }
+      },
+      "manifests": [
+        {
+          "repetition": 1,
+          "thermalState": "cold",
+          "checksum": "f6f671cdfbae9f4e0c609e144d814887d3d6384708e994ff6e52ae31e98de231"
+        },
+        {
+          "repetition": 2,
+          "thermalState": "warm",
+          "checksum": "6fb02b67e892c3424e315f4ba97dcce7a504e561dd4add8e73e060f4035a7487"
+        },
+        {
+          "repetition": 3,
+          "thermalState": "warm",
+          "checksum": "01e8b7989fa751383318caa9c45b2faeb552128995dffc8b48ef610c7b4b011d"
+        }
+      ]
+    },
+    {
+      "candidate": "B",
+      "fixture": "bcp-960k",
+      "coldRunCount": 1,
+      "warmRunCount": 2,
+      "decision": "pass",
+      "rejections": [],
+      "worstWarm": {
+        "firstUsefulMs": 1981,
+        "completeMs": 4248,
+        "filterToggleMs": 70.80000001192093,
+        "appendRerenderMs": 639.5,
+        "mainMaxMs": 42.43929,
+        "rendererP95Ms": 66.90000000000055,
+        "settledBytes": 289918976,
+        "peakBytes": 289918976
+      },
+      "phaseMs": {
+        "query": {
+          "count": 3,
+          "min": 2289.5611519999993,
+          "median": 2460.476548000002,
+          "p95": 2485.8951670000015,
+          "max": 2485.8951670000015
+        },
+        "segmentation": {
+          "count": 3,
+          "min": 446.8827969999989,
+          "median": 497.01712699999877,
+          "p95": 497.0748529999977,
+          "max": 497.0748529999977
+        },
+        "encodeServe": {
+          "count": 3,
+          "min": 142.68579799999986,
+          "median": 145.87912899999952,
+          "p95": 151.34861399999852,
+          "max": 151.34861399999852
+        },
+        "sourceUpdate": {
+          "count": 3,
+          "min": 0,
+          "median": 0,
+          "p95": 0,
+          "max": 0
+        },
+        "renderSettle": {
+          "count": 3,
+          "min": 2039.5999999940395,
+          "median": 2147,
+          "p95": 2161.9000000059605,
+          "max": 2161.9000000059605
+        }
+      },
+      "manifests": [
+        {
+          "repetition": 1,
+          "thermalState": "cold",
+          "checksum": "fc0b2d29b236143d3d043d50bef5667933fdbcf8c5aa78602f70e4625558d748"
+        },
+        {
+          "repetition": 2,
+          "thermalState": "warm",
+          "checksum": "87afa247b873e2cd1eae7a8e9d9bd80c247a4f3cc49cc1c07ada2c5efea840f2"
+        },
+        {
+          "repetition": 3,
+          "thermalState": "warm",
+          "checksum": "f1bb882d8490e8bcf9a0b4f58dab23416db64802a8860de7e8229904377a782b"
+        }
+      ]
+    }
+  ]
+}

@@ -21,6 +21,8 @@ describe('tracking soak CI runner arguments', () => {
       'ci',
       '--evidence',
       '/repo/tmp/beta-artifacts/tracking-soak-ci',
+      '--main-stall-threshold-ms',
+      '200',
       '--',
       '--no-sandbox',
       '--ignore-gpu-blocklist',
@@ -48,6 +50,8 @@ describe('tracking soak CI runner arguments', () => {
       'ci',
       '--evidence',
       '/repo/tmp/beta-artifacts/tracking-soak-ci',
+      '--main-stall-threshold-ms',
+      '200',
     ])
   })
 

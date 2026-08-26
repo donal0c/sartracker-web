@@ -1,5 +1,81 @@
 const ownedProcessStops = new WeakMap()
 
+/** Requests the packaged Electron app's real quit path and proves normal exit. */
+export async function requestGracefulElectronQuit(mainInspector, child, timeoutMs) {
+  if (
+    mainInspector === null ||
+    typeof mainInspector?.evaluate !== 'function' ||
+    typeof mainInspector?.close !== 'function' ||
+    child === null ||
+    typeof child !== 'object'
+  ) {
+    throw createLifecycleFailure(
+      'graceful_app_quit_failed',
+      'Tracking soak could not request a graceful Electron quit.',
+    )
+  }
+
+  const boundedTimeout = Number.isSafeInteger(timeoutMs) && timeoutMs > 0
+    ? timeoutMs
+    : 1
+  const deadline = Date.now() + boundedTimeout
+  let requestFailed = false
+  let requestTimer
+  try {
+    const requestTimedOut = Symbol('graceful_quit_request_timeout')
+    const requestResult = await Promise.race([
+      Promise.resolve()
+        .then(() => mainInspector.evaluate(
+          `(() => {
+            const electron = process.getBuiltinModule?.('electron') ??
+              process.mainModule?.require?.('electron')
+            if (electron?.app === undefined) {
+              throw new Error('Electron app quit hook is unavailable.')
+            }
+            electron.app.quit()
+            return 'quit_requested'
+          })()`,
+        ))
+        .then(() => true, () => false),
+      new Promise((resolve) => {
+        requestTimer = setTimeout(() => resolve(requestTimedOut), boundedTimeout)
+      }),
+    ])
+    requestFailed = requestResult !== true
+  } catch {
+    requestFailed = true
+  } finally {
+    if (requestTimer !== undefined) clearTimeout(requestTimer)
+    try {
+      mainInspector.close()
+    } catch {
+      requestFailed = true
+    }
+  }
+  const exited = await waitForProcessExit(
+    child,
+    Math.max(1, deadline - Date.now()),
+  )
+  const evidence = processExitEvidence(child, false)
+  if (
+    !exited ||
+    !evidence.exited ||
+    evidence.exitKind !== 'code' ||
+    child.exitCode !== 0
+  ) {
+    throw createLifecycleFailure(
+      'graceful_app_quit_failed',
+      requestFailed
+        ? 'Tracking soak could not confirm the Electron quit request.'
+        : 'Tracking soak Electron quit did not complete normally.',
+    )
+  }
+  return {
+    ...evidence,
+    graceful: true,
+  }
+}
+
 /** Starts a run-owned macOS sleep inhibitor tied to the harness process. */
 export async function startTrackingSoakSleepGuard(input) {
   if (input?.platform !== 'darwin') return createInactiveSleepGuard()

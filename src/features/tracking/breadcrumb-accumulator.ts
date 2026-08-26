@@ -26,6 +26,8 @@ const BASE_SPATIAL_BUCKET_WIDTH_DEGREES =
 const MAX_SELECTOR_ITERATIONS = 2_048
 const parsedTimestampByPosition = new WeakMap<NormalizedTrackingPosition, number>()
 
+export { createTrailSegments as createBreadcrumbSegments } from './trail-segmentation'
+
 export type BreadcrumbAccumulationResult = {
   readonly positions: readonly NormalizedTrackingPosition[]
   readonly metadata: BreadcrumbSnapshotMetadata
@@ -321,48 +323,6 @@ type DeviceTrailState = {
 
 function decorateWithTimestamp(position: NormalizedTrackingPosition): TimestampedPosition {
   return { position, timestampMs: getParsedTimestamp(position) }
-}
-
-/**
- * Splits breadcrumb positions into line segments when time gaps exceed the threshold.
- */
-export function createBreadcrumbSegments(
-  positions: readonly NormalizedTrackingPosition[],
-  gapThresholdMs: number,
-): readonly (readonly NormalizedTrackingPosition[])[] {
-  if (positions.length === 0) {
-    return []
-  }
-
-  const firstPosition = positions[0]
-  if (firstPosition === undefined) {
-    return []
-  }
-
-  const segments: NormalizedTrackingPosition[][] = []
-  let currentSegment: NormalizedTrackingPosition[] = [firstPosition]
-  let previous = firstPosition
-
-  for (let index = 1; index < positions.length; index += 1) {
-    const next = positions[index]
-    if (next === undefined) {
-      continue
-    }
-
-    const gapMs = getParsedTimestamp(next) - getParsedTimestamp(previous)
-
-    if (gapMs > gapThresholdMs) {
-      segments.push(currentSegment)
-      currentSegment = [next]
-    } else {
-      currentSegment.push(next)
-    }
-
-    previous = next
-  }
-
-  segments.push(currentSegment)
-  return segments
 }
 
 function getParsedTimestamp(position: NormalizedTrackingPosition): number {

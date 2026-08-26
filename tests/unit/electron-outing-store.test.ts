@@ -59,10 +59,10 @@ async function createStore(options: { readonly failAfterMutation?: boolean } = {
 }
 
 describe('Electron outing store', () => {
-  it('migrates additively to schema v9 and manages audited adjacent outings', async () => {
+  it('migrates additively to schema v10 and manages audited adjacent outings', async () => {
     const store = await createStore()
-    expect(CURRENT_SCHEMA_VERSION).toBe(9)
-    await expect(store.info()).resolves.toMatchObject({ schema_version: 9 })
+    expect(CURRENT_SCHEMA_VERSION).toBe(10)
+    await expect(store.info()).resolves.toMatchObject({ schema_version: 10 })
     const mission = await store.createMission({
       name: 'Mountain search',
       start_time: '2026-08-20T08:00:00.000Z',
@@ -95,6 +95,21 @@ describe('Electron outing store', () => {
       'outing_ended',
       'outing_renamed',
     ]))
+    const databasePath = (await store.info()).database_path
+    const database = new (require('better-sqlite3'))(databasePath, { readonly: true })
+    try {
+      expect(database.prepare(`SELECT reason, subject_outing_id, old_started_at,
+        old_ended_at, new_started_at, new_ended_at, drained_at
+        FROM coverage_invalidations ORDER BY created_at, rowid`).all()).toEqual([
+        expect.objectContaining({ reason: 'outing_created', subject_outing_id: first.id, old_started_at: null }),
+        expect.objectContaining({ reason: 'outing_ended', subject_outing_id: first.id, old_ended_at: null, new_ended_at: '2026-08-20T11:00:00.000Z' }),
+        expect.objectContaining({ reason: 'outing_created', subject_outing_id: second.id, old_started_at: null }),
+      ])
+      expect(database.prepare('SELECT change_seq FROM coverage_missions WHERE mission_id = ?').get(mission.id))
+        .toEqual({ change_seq: 3 })
+    } finally {
+      database.close()
+    }
   })
 
   it('refuses overlap, invalid boundaries, and mutations after mission finish without partial audit', async () => {
@@ -150,5 +165,12 @@ describe('Electron outing store', () => {
     })).rejects.toThrow(/Injected outing transaction failure/)
     await expect(store.listOutings(mission.id)).resolves.toEqual([])
     expect((await store.listMissionEvents(mission.id)).filter((event) => event.event_type === 'outing_started')).toHaveLength(0)
+    const database = new (require('better-sqlite3'))((await store.info()).database_path, { readonly: true })
+    try {
+      expect(database.prepare('SELECT * FROM coverage_invalidations').all()).toEqual([])
+      expect(database.prepare('SELECT * FROM coverage_missions').all()).toEqual([])
+    } finally {
+      database.close()
+    }
   })
 })

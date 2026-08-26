@@ -25,6 +25,9 @@ import type {
   OutingFixSummary,
   EditOutingBoundariesInput,
   EndOutingInput,
+  CoverageClaim,
+  CoverageManifest,
+  CoverageTileCatalog,
   RenameOutingInput,
   UnlockFinalizedMissionInput,
   UpsertDeviceInput,
@@ -33,6 +36,21 @@ import type {
   UpsertHelicopterInput,
   UpsertMarkerInput,
 } from '../../infrastructure/mission-store/tauri-mission-store'
+import type {
+  AcknowledgeIngestEvidenceLossInput,
+  IngestEvidenceHealth,
+  IngestEvidenceLossReason,
+} from '../../domain/tracking-ingest-evidence'
+import {
+  acknowledgeBrowserEvidenceLoss,
+  hasUnacknowledgedBrowserEvidenceLoss,
+  readBrowserEvidenceHealth,
+  readBrowserEvidenceLossState,
+  recordBrowserEvidenceLoss,
+  type BrowserEvidenceLossByMission,
+} from './browser-evidence-loss-state'
+import { createTrailSegments } from '../tracking/trail-segmentation'
+import { coveragePeriodKey } from '../tracking/coverage-filter-store'
 import { outingWindowsOverlap } from '../outings/outing-schedule'
 import {
   DEFAULT_AUDIT_EVENT_LIMIT,
@@ -64,6 +82,7 @@ type BrowserHarnessState = {
   readonly openedPaths: readonly string[]
   readonly currentMissionId: string | null
   readonly recoverableMissionId: string | null
+  readonly evidenceLossByMission: BrowserEvidenceLossByMission
 }
 
 type BrowserMissionTeam = {
@@ -138,6 +157,14 @@ type BrowserHarnessStore = {
   readonly resumeMission: (missionId: string) => Promise<Mission>
   readonly finishMission: (missionId: string) => Promise<Mission>
   readonly finalizeMission: (missionId: string) => Promise<FinalizeMissionResult>
+  readonly recordIngestEvidenceLoss: (input: {
+    readonly mission_id: string
+    readonly reason: IngestEvidenceLossReason
+  }) => Promise<IngestEvidenceHealth>
+  readonly getIngestEvidenceHealth: (missionId?: string) => Promise<IngestEvidenceHealth>
+  readonly acknowledgeIngestEvidenceLoss: (
+    input: AcknowledgeIngestEvidenceLossInput,
+  ) => Promise<IngestEvidenceHealth>
   readonly unlockFinalizedMission: (input: UnlockFinalizedMissionInput) => Promise<Mission>
   readonly listDevices: (missionId: string) => Promise<readonly Device[]>
   readonly upsertDevice: (input: UpsertDeviceInput) => Promise<Device>
@@ -168,6 +195,28 @@ type BrowserHarnessStore = {
     readonly laterCursor: null
   }>
   readonly countPositions: (missionId: string, deviceId?: string) => Promise<number>
+  readonly readCoverageManifest: (missionId: string) => Promise<CoverageManifest>
+  readonly readCoverageClaim: (input: {
+    readonly missionId: string
+    readonly selectedKeys: readonly CoverageManifest['chunks'][number]['key'][]
+  }) => Promise<CoverageClaim>
+  readonly syncCoverageTileCatalog: (input: {
+    readonly missionId: string
+    readonly chunks: readonly {
+      readonly key: CoverageManifest['chunks'][number]['key']
+      readonly contentRev: number
+    }[]
+  }) => Promise<CoverageTileCatalog>
+  readonly activateCoverageTileCatalog: (input: {
+    readonly activationId: string
+  }) => Promise<boolean>
+  readonly finalizeCoverageTileCatalog: (input: {
+    readonly activationId: string
+  }) => Promise<boolean>
+  readonly discardCoverageTileCatalog: (input: {
+    readonly activationId: string
+  }) => Promise<boolean>
+  readonly cancelCoverageQuery: (requestId: string) => Promise<boolean>
   readonly listMarkers: (missionId: string) => Promise<readonly Marker[]>
   readonly upsertMarker: (input: UpsertMarkerInput) => Promise<Marker>
   readonly deleteMarker: (markerId: string) => Promise<boolean>
@@ -423,15 +472,20 @@ export function getBrowserHarnessStore(): BrowserHarnessStore {
           change: 'member' as const,
           observed_at: timestamp,
         })))
-      const groupBackfillCheckpoints = membershipEvents.map((event) => ({
-        mission_id: mission.id,
-        traccar_device_id: event.traccar_device_id,
-        window_from: mission.start_time,
-        window_to: timestamp,
-        reconciled_until: mission.start_time,
-        completed: mission.start_time === timestamp ? 1 : 0,
-        updated_at: timestamp,
-      } satisfies ParticipantBackfillCheckpoint))
+      const groupBackfillCheckpoints = membershipEvents.map((event) =>
+        createHarnessBackfillCheckpoint({
+          missionId: mission.id,
+          deviceId: event.traccar_device_id,
+          windowFrom: mission.start_time,
+          windowTo: timestamp,
+        }))
+      const deviceBackfillCheckpoints = input.devices.map((device) =>
+        createHarnessBackfillCheckpoint({
+          missionId: mission.id,
+          deviceId: device.traccar_device_id,
+          windowFrom: mission.start_time,
+          windowTo: timestamp,
+        }))
       const participants = [...groupParticipants, ...deviceParticipants]
       state = {
         ...state,
@@ -441,6 +495,7 @@ export function getBrowserHarnessStore(): BrowserHarnessStore {
         participantBackfillCheckpoints: [
           ...state.participantBackfillCheckpoints,
           ...groupBackfillCheckpoints,
+          ...deviceBackfillCheckpoints,
         ],
         missionEvents: appendEvent(
           state.missionEvents,
@@ -535,24 +590,25 @@ export function getBrowserHarnessStore(): BrowserHarnessStore {
         addedBy: input.confirmed_by,
       })
       const checkpoints = deviceId === null
-        ? observedMembershipEvents.map((event) => ({
-            mission_id: mission.id,
-            traccar_device_id: event.traccar_device_id,
-            window_from: effectiveFrom,
-            window_to: addedAt,
-            reconciled_until: effectiveFrom,
-            completed: effectiveFrom === addedAt ? 1 : 0,
-            updated_at: addedAt,
-          } satisfies ParticipantBackfillCheckpoint))
-        : [{
-        mission_id: mission.id,
-        traccar_device_id: deviceId,
-        window_from: effectiveFrom,
-        window_to: addedAt,
-        reconciled_until: effectiveFrom,
-        completed: effectiveFrom === addedAt ? 1 : 0,
-        updated_at: addedAt,
-      } satisfies ParticipantBackfillCheckpoint]
+        ? observedMembershipEvents.map((event) =>
+            createHarnessBackfillCoverageCheckpoints(
+              state.participantBackfillCheckpoints,
+              {
+                missionId: mission.id,
+                deviceId: event.traccar_device_id,
+                windowFrom: effectiveFrom,
+                windowTo: addedAt,
+              },
+            )).flat()
+        : createHarnessBackfillCoverageCheckpoints(
+            state.participantBackfillCheckpoints,
+            {
+              missionId: mission.id,
+              deviceId,
+              windowFrom: effectiveFrom,
+              windowTo: addedAt,
+            },
+          )
       state = {
         ...state,
         missionTeams: team === null || state.missionTeams.some((candidate) => candidate.id === team?.id)
@@ -610,12 +666,18 @@ export function getBrowserHarnessStore(): BrowserHarnessStore {
       return state.missionParticipants
         .filter((participant) => participant.mission_id === missionId)
         .map((participant) => {
-          const checkpoint = participant.traccar_device_id === null
-            ? undefined
-            : state.participantBackfillCheckpoints.find((candidate) =>
+          const checkpoints = participant.traccar_device_id === null
+            ? []
+            : state.participantBackfillCheckpoints.filter((candidate) =>
                 candidate.mission_id === participant.mission_id &&
                 candidate.traccar_device_id === participant.traccar_device_id &&
-                candidate.window_from === participant.effective_from)
+                candidate.window_from >= participant.effective_from &&
+                candidate.window_to <= participant.added_at)
+          const incompleteCheckpoint = checkpoints
+            .filter((candidate) => candidate.completed === 0)
+            .toSorted((left, right) => left.reconciled_until.localeCompare(right.reconciled_until))[0]
+          const latestCheckpoint = checkpoints
+            .toSorted((left, right) => right.window_to.localeCompare(left.window_to))[0]
           const groupCheckpoints = participant.kind !== 'group'
             ? []
             : state.groupMembershipEvents
@@ -627,25 +689,37 @@ export function getBrowserHarnessStore(): BrowserHarnessStore {
                 .flatMap((event) => state.participantBackfillCheckpoints.filter((candidate) =>
                   candidate.mission_id === participant.mission_id &&
                   candidate.traccar_device_id === event.traccar_device_id &&
-                  candidate.window_from === participant.effective_from &&
-                  candidate.window_to === participant.added_at))
+                  candidate.window_from >= participant.effective_from &&
+                  candidate.window_to <= participant.added_at))
+          const groupMemberDeviceIds = participant.kind !== 'group'
+            ? []
+            : state.groupMembershipEvents
+                .filter((event) =>
+                  event.mission_id === participant.mission_id &&
+                  event.mission_team_id === participant.mission_team_id &&
+                  event.change === 'member' &&
+                  event.observed_at === participant.added_at)
+                .map((event) => event.traccar_device_id)
           return {
             ...participant,
-            ...(checkpoint === undefined
+            ...(latestCheckpoint === undefined
               ? {}
               : {
-                  backfill_window_to: checkpoint.window_to,
-                  backfill_reconciled_until: checkpoint.reconciled_until,
-                  backfill_completed: checkpoint.completed,
+                  backfill_window_to: latestCheckpoint.window_to,
+                  backfill_reconciled_until:
+                    incompleteCheckpoint?.reconciled_until ?? latestCheckpoint.reconciled_until,
+                  backfill_completed: checkpoints.every((entry) => entry.completed === 1) ? 1 : 0,
                 }),
             ...(participant.kind !== 'group'
               ? {}
               : {
-                  backfill_member_count: new Set(groupCheckpoints.map((entry) =>
-                    entry.traccar_device_id)).size,
-                  backfill_completed_count: new Set(groupCheckpoints
-                    .filter((entry) => entry.completed === 1)
-                    .map((entry) => entry.traccar_device_id)).size,
+                  backfill_member_count: new Set(groupMemberDeviceIds).size,
+                  backfill_completed_count: new Set(groupMemberDeviceIds.filter((deviceId) => {
+                    const deviceCheckpoints = groupCheckpoints.filter((entry) =>
+                      entry.traccar_device_id === deviceId)
+                    return deviceCheckpoints.length > 0 &&
+                      deviceCheckpoints.every((entry) => entry.completed === 1)
+                  })).size,
                 }),
           }
         })
@@ -899,10 +973,82 @@ export function getBrowserHarnessStore(): BrowserHarnessStore {
       save()
       return finishedMission
     },
+    recordIngestEvidenceLoss: async (input) => {
+      requireMission(input.mission_id, state.missions)
+      state = {
+        ...state,
+        evidenceLossByMission: recordBrowserEvidenceLoss(
+          state.evidenceLossByMission,
+          input.mission_id,
+          input.reason,
+        ),
+      }
+      save()
+      return readBrowserEvidenceHealth(state.evidenceLossByMission, input.mission_id)
+    },
+    getIngestEvidenceHealth: async (missionId) =>
+      readBrowserEvidenceHealth(state.evidenceLossByMission, missionId),
+    acknowledgeIngestEvidenceLoss: async (input) => {
+      const mission = requireMission(input.mission_id, state.missions)
+      if (mission.status !== 'finished') {
+        throw new Error('Evidence loss can be acknowledged only after the mission is finished.')
+      }
+      const evidenceLoss = state.evidenceLossByMission[input.mission_id]
+      if (evidenceLoss === undefined) {
+        throw new Error('No isolated mission evidence loss is available to acknowledge.')
+      }
+      const settings = readBrowserSettings()
+      if (!settings.missionDefaults.adminRoster.includes(input.admin_name)) {
+        state = {
+          ...state,
+          missionEvents: appendEvent(
+            state.missionEvents,
+            input.mission_id,
+            'mission_evidence_loss_acknowledgement_denied',
+            new Date().toISOString(),
+            {
+              admin_name: input.admin_name,
+              reason: input.reason,
+              resulting_status: mission.status,
+            },
+          ),
+        }
+        save()
+        throw new Error('Selected admin is not authorized to acknowledge mission evidence loss.')
+      }
+      const acknowledgedAt = new Date().toISOString()
+      state = {
+        ...state,
+        evidenceLossByMission: acknowledgeBrowserEvidenceLoss(
+          state.evidenceLossByMission,
+          input,
+          acknowledgedAt,
+        ),
+        missionEvents: appendEvent(
+          state.missionEvents,
+          input.mission_id,
+          'mission_evidence_loss_acknowledged',
+          acknowledgedAt,
+          {
+            admin_name: input.admin_name,
+            reason: input.reason,
+            loss_generation: evidenceLoss.generation,
+            resulting_status: mission.status,
+          },
+        ),
+      }
+      save()
+      return readBrowserEvidenceHealth(state.evidenceLossByMission, input.mission_id)
+    },
     finalizeMission: async (missionId) => {
       const mission = requireMission(missionId, state.missions)
       if (mission.status !== 'finished') {
         throw new Error('Only finished missions can be finalized.')
+      }
+      if (hasUnacknowledgedBrowserEvidenceLoss(state.evidenceLossByMission, missionId)) {
+        throw new Error(
+          'Degraded evidence health blocks finalization; resolve durable ingest evidence before continuing.',
+        )
       }
 
       const finalizedMission = {
@@ -1144,6 +1290,43 @@ export function getBrowserHarnessStore(): BrowserHarnessStore {
         }
         return deviceId === undefined || position.device_id === deviceId
       }).length,
+    readCoverageManifest: async (missionId) => {
+      await waitForBrowserCoverageValidationDelay()
+      return createBrowserCoverageManifest(state, missionId)
+    },
+    readCoverageClaim: async (input) => {
+      const manifest = createBrowserCoverageManifest(state, input.missionId)
+      const evidenceHealth = readBrowserEvidenceHealth(
+        state.evidenceLossByMission,
+        input.missionId,
+      )
+      const revisions = new Map(manifest.chunks.map((chunk) => [
+        `${chunk.key.device_id}\u0000${coveragePeriodKey(chunk.key)}`,
+        chunk,
+      ]))
+      const selected = input.selectedKeys.flatMap((key) => {
+        const chunk = revisions.get(`${key.device_id}\u0000${coveragePeriodKey(key)}`)
+        return chunk === undefined ? [] : [{ key: chunk.key, contentRev: chunk.contentRev }]
+      })
+      const blockers = [
+        ...(manifest.backfillIncomplete ? ['backfill_incomplete'] : []),
+        ...(evidenceHealth.state === 'healthy' ? [] : ['ingest_health_degraded']),
+      ]
+      return {
+        changeSeq: manifest.changeSeq,
+        databaseReady: blockers.length === 0,
+        blockers,
+        chunkRevisions: selected,
+      }
+    },
+    syncCoverageTileCatalog: async (input) => {
+      await waitForBrowserCoverageValidationDelay()
+      return createBrowserCoverageTileCatalog(state, input.missionId, input.chunks)
+    },
+    activateCoverageTileCatalog: async () => true,
+    finalizeCoverageTileCatalog: async () => true,
+    discardCoverageTileCatalog: async () => true,
+    cancelCoverageQuery: async () => false,
     listMarkers: async (missionId) =>
       state.markers
         .filter((marker) => marker.mission_id === missionId)
@@ -1510,6 +1693,7 @@ function readHarnessState(): BrowserHarnessState {
       openedPaths: [],
       currentMissionId: null,
       recoverableMissionId: null,
+      evidenceLossByMission: {},
     }
   }
 
@@ -1532,6 +1716,7 @@ function readHarnessState(): BrowserHarnessState {
       openedPaths: [],
       currentMissionId: null,
       recoverableMissionId: null,
+      evidenceLossByMission: {},
     }
   }
 
@@ -1567,6 +1752,7 @@ function readHarnessState(): BrowserHarnessState {
         typeof parsed.currentMissionId === 'string' ? parsed.currentMissionId : null,
       recoverableMissionId:
         typeof parsed.recoverableMissionId === 'string' ? parsed.recoverableMissionId : null,
+      evidenceLossByMission: readBrowserEvidenceLossState(parsed.evidenceLossByMission),
     }
   } catch {
     return {
@@ -1586,6 +1772,7 @@ function readHarnessState(): BrowserHarnessState {
       openedPaths: [],
       currentMissionId: null,
       recoverableMissionId: null,
+      evidenceLossByMission: {},
     }
   }
 }
@@ -1771,6 +1958,56 @@ function createHarnessParticipant(input: {
     removed_at: null,
     removed_by: null,
   }
+}
+
+/** Creates one fixed-window participant-history checkpoint for the browser mirror. */
+function createHarnessBackfillCheckpoint(input: {
+  readonly missionId: string
+  readonly deviceId: string
+  readonly windowFrom: string
+  readonly windowTo: string
+}): ParticipantBackfillCheckpoint {
+  return {
+    mission_id: input.missionId,
+    traccar_device_id: input.deviceId,
+    window_from: input.windowFrom,
+    window_to: input.windowTo,
+    reconciled_until: input.windowFrom,
+    completed: input.windowFrom === input.windowTo ? 1 : 0,
+    updated_at: input.windowTo,
+  }
+}
+
+/** Adds only the uncovered suffix while preserving existing fixed checkpoint edges. */
+function createHarnessBackfillCoverageCheckpoints(
+  existing: readonly ParticipantBackfillCheckpoint[],
+  input: {
+    readonly missionId: string
+    readonly deviceId: string
+    readonly windowFrom: string
+    readonly windowTo: string
+  },
+): readonly ParticipantBackfillCheckpoint[] {
+  let windowFrom = input.windowFrom
+  while (windowFrom < input.windowTo) {
+    const checkpoint = existing.find((candidate) =>
+      candidate.mission_id === input.missionId &&
+      candidate.traccar_device_id === input.deviceId &&
+      candidate.window_from === windowFrom)
+    if (checkpoint === undefined) {
+      return [createHarnessBackfillCheckpoint({ ...input, windowFrom })]
+    }
+    if (checkpoint.window_to <= windowFrom) {
+      throw new Error('Participant backfill window must advance beyond its start.')
+    }
+    if (checkpoint.window_to >= input.windowTo) return []
+    windowFrom = checkpoint.window_to
+  }
+  const exact = existing.some((candidate) =>
+    candidate.mission_id === input.missionId &&
+    candidate.traccar_device_id === input.deviceId &&
+    candidate.window_from === input.windowFrom)
+  return exact ? [] : [createHarnessBackfillCheckpoint(input)]
 }
 
 /** Mirrors the production store's active-selection uniqueness checks. */
@@ -2037,6 +2274,168 @@ function normalizeHarnessOutingLabel(value: string): string {
   if (label === '') throw new Error('Outing label is required.')
   if (label.length > 120) throw new Error('Outing label must be 120 characters or fewer.')
   return label
+}
+
+/** Builds the deterministic mocked desktop manifest used only by Chromium validation. */
+function createBrowserCoverageManifest(
+  state: BrowserHarnessState,
+  missionId: string,
+): CoverageManifest {
+  requireMission(missionId, state.missions)
+  const outings = state.outings
+    .filter((outing) => outing.mission_id === missionId)
+    .toSorted((left, right) => left.started_at.localeCompare(right.started_at))
+  const deviceIds = new Set(
+    state.devices.filter((device) => device.mission_id === missionId)
+      .map((device) => device.device_id),
+  )
+  for (const participant of state.missionParticipants) {
+    if (
+      participant.mission_id === missionId &&
+      participant.removed_at === null &&
+      participant.kind === 'device' &&
+      participant.traccar_device_id !== null
+    ) deviceIds.add(participant.traccar_device_id)
+  }
+  const periods = [
+    ...outings.map((outing) => ({
+      period_kind: 'outing' as const,
+      period_id: outing.id,
+    })),
+    { period_kind: 'unassigned' as const, period_id: '' },
+  ]
+  const chunks = [...deviceIds].sort().flatMap((deviceId) => periods.map((period) => {
+    const positions = readBrowserCoveragePositions(state, missionId, deviceId, period, outings)
+    const revision = positions.length + 1
+    return {
+      key: { device_id: deviceId, ...period },
+      contentRev: revision,
+      builtRev: revision,
+      fixCount: positions.length,
+      exactCount: positions.length,
+      fixDigest: positions.map((position) =>
+        position.source_position_id ?? position.id).join('\n'),
+      minTs: positions[0]?.timestamp ?? null,
+      maxTs: positions.at(-1)?.timestamp ?? null,
+    }
+  }))
+  const pendingBackfills = state.participantBackfillCheckpoints.filter(
+    (checkpoint) => checkpoint.mission_id === missionId && checkpoint.completed === 0,
+  ).length
+  return {
+    changeSeq: state.positions.filter((position) => position.mission_id === missionId).length +
+      outings.length + pendingBackfills,
+    enumerated: true,
+    pendingInvalidation: false,
+    backfillIncomplete: pendingBackfills > 0,
+    outings: outings.map((outing) => ({
+      id: outing.id,
+      label: outing.label,
+      started_at: outing.started_at,
+      ended_at: outing.ended_at,
+    })),
+    chunks,
+  }
+}
+
+/** Allows Chromium coverage tests to hold a real controller load in progress. */
+async function waitForBrowserCoverageValidationDelay(): Promise<void> {
+  const raw = window.sessionStorage.getItem('sartracker:browser-harness:coverage-delay-ms')
+  if (raw === null) return
+  const milliseconds = Number(raw)
+  if (!Number.isFinite(milliseconds) || milliseconds <= 0 || milliseconds > 5_000) return
+  await new Promise<void>((resolve) => window.setTimeout(resolve, milliseconds))
+}
+
+/** Materializes a small GeoJSON stand-in for mocked browser validation only. */
+function createBrowserCoverageTileCatalog(
+  state: BrowserHarnessState,
+  missionId: string,
+  requestedChunks: readonly {
+    readonly key: CoverageManifest['chunks'][number]['key']
+    readonly contentRev: number
+  }[],
+): CoverageTileCatalog {
+  const manifest = createBrowserCoverageManifest(state, missionId)
+  const outings = state.outings.filter((outing) => outing.mission_id === missionId)
+  const requested = new Map(requestedChunks.map((chunk) => [
+    `${chunk.key.device_id}\u0000${coveragePeriodKey(chunk.key)}`,
+    chunk,
+  ]))
+  const delivered = manifest.chunks.flatMap((chunk) => {
+    const request = requested.get(`${chunk.key.device_id}\u0000${coveragePeriodKey(chunk.key)}`)
+    return request?.contentRev === chunk.contentRev
+      ? [{ key: chunk.key, contentRev: chunk.contentRev }]
+      : []
+  })
+  const features = manifest.chunks.flatMap((chunk) => {
+    if (!requested.has(`${chunk.key.device_id}\u0000${coveragePeriodKey(chunk.key)}`)) return []
+    const positions = readBrowserCoveragePositions(
+      state,
+      missionId,
+      chunk.key.device_id,
+      chunk.key,
+      outings,
+    )
+    const segmentablePositions = positions.map((position) => ({
+      ...position,
+      cache_age_seconds: null,
+      device_cache_stale: false,
+    }))
+    return createTrailSegments(segmentablePositions, 30 * 60 * 1000).map((segment, index) => ({
+      type: 'Feature' as const,
+      id: `cov:${missionId}:${chunk.key.device_id}:${coveragePeriodKey(chunk.key)}:${index}`,
+      geometry: segment.length === 1
+        ? { type: 'Point' as const, coordinates: [segment[0]!.lon, segment[0]!.lat] }
+        : {
+            type: 'LineString' as const,
+            coordinates: segment.map((position) => [position.lon, position.lat]),
+          },
+      properties: {
+        device_id: chunk.key.device_id,
+        period_kind: chunk.key.period_kind,
+        period_id: chunk.key.period_id,
+        content_rev: chunk.contentRev,
+      },
+    }))
+  })
+  const periodRevisions = new Map<string, number[]>()
+  for (const chunk of manifest.chunks) {
+    if (!requested.has(`${chunk.key.device_id}\u0000${coveragePeriodKey(chunk.key)}`)) continue
+    const periodKey = coveragePeriodKey(chunk.key)
+    const revisions = periodRevisions.get(periodKey) ?? []
+    revisions.push(chunk.contentRev)
+    periodRevisions.set(periodKey, revisions)
+  }
+  return {
+    missionId,
+    periods: [...periodRevisions.entries()].map(([periodKey, revisions]) => ({
+      periodKey,
+      revisionDigest: `browser-${revisions.join('-')}`,
+    })),
+    delivered,
+    browserHarnessGeoJson: { type: 'FeatureCollection', features },
+  }
+}
+
+function readBrowserCoveragePositions(
+  state: BrowserHarnessState,
+  missionId: string,
+  deviceId: string,
+  period: { readonly period_kind: 'outing' | 'unassigned'; readonly period_id: string },
+  outings: readonly Outing[],
+): readonly Position[] {
+  return state.positions
+    .filter((position) => position.mission_id === missionId && position.device_id === deviceId)
+    .filter((position) => {
+      const containing = outings.find((outing) =>
+        outing.started_at <= position.timestamp &&
+        (outing.ended_at === null || position.timestamp < outing.ended_at))
+      return period.period_kind === 'unassigned'
+        ? containing === undefined
+        : containing?.id === period.period_id
+    })
+    .toSorted(compareBrowserHarnessPositions)
 }
 
 function calculatePausedSeconds(pauseTime: string | null): number {

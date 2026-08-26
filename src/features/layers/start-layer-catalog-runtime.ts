@@ -45,6 +45,7 @@ type RefreshCatalogInput = {
   readonly helicopters: readonly Helicopter[]
   readonly gpxImports: readonly GpxTrackImport[]
   readonly measurements: readonly Measurement[]
+  readonly coverage?: NonNullable<Parameters<typeof buildLayerCatalogTree>[0]['coverage']>
 }
 
 export type LayerCatalogController = {
@@ -75,6 +76,7 @@ export async function startLayerCatalogRuntime(
   let lastHelicopters: readonly Helicopter[] = []
   let lastGpxImports: readonly GpxTrackImport[] = []
   let lastMeasurements: readonly Measurement[] = []
+  let lastCoverage: RefreshCatalogInput['coverage']
   let nodeIndex = buildNodeIndex(root)
   let latestRefreshRequestId = 0
   let refreshInvalidationVersion = 0
@@ -91,6 +93,7 @@ export async function startLayerCatalogRuntime(
       lastHelicopters = input.helicopters
       lastGpxImports = input.gpxImports
       lastMeasurements = input.measurements
+      lastCoverage = input.coverage
       error = null
 
       if (missionId === null) {
@@ -158,6 +161,7 @@ export async function startLayerCatalogRuntime(
           helicopters: lastHelicopters,
           gpxImports: lastGpxImports,
           measurements: lastMeasurements,
+          ...(lastCoverage === undefined ? {} : { coverage: lastCoverage }),
         })
         rebuild()
       } catch (runtimeError) {
@@ -252,6 +256,7 @@ export async function startLayerCatalogRuntime(
       gpxImports: lastGpxImports,
       measurements: lastMeasurements,
       metadataEntries,
+      ...(lastCoverage === undefined ? {} : { coverage: lastCoverage }),
     })
     nodeIndex = buildNodeIndex(root)
     loading = false
@@ -331,6 +336,7 @@ function buildRefreshInputSignature(input: RefreshCatalogInput): string {
       id: measurement.id,
       label: measurement.label,
     })),
+    coverage: input.coverage,
   })
 }
 

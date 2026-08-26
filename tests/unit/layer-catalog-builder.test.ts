@@ -11,6 +11,32 @@ import type {
 } from '../../src/infrastructure/mission-store/tauri-mission-store'
 
 describe('layer catalog builder', () => {
+  it('adds renderer-only mission-history device and period rows including Outside outings', () => {
+    const root = buildLayerCatalogTree({
+      missionId: 'mission-1',
+      devices: [], markers: [], drawings: [], helicopters: [], gpxImports: [],
+      measurements: [], metadataEntries: [],
+      coverage: {
+        devices: [
+          { deviceId: 'device-1', label: 'Team Alpha', visible: true },
+          { deviceId: 'device-2', label: 'Team Bravo', visible: false },
+        ],
+        periods: [
+          { periodKey: 'outing\u0000outing-1', label: 'Sweep 1', visible: true },
+          { periodKey: 'unassigned\u0000', label: 'Outside outings', visible: false },
+        ],
+      },
+    })
+
+    const group = root.children.find((node) => node.id === 'group:coverage')
+    expect(group?.displayLabel).toBe('Mission History')
+    expect(group?.children.map((node) => node.displayLabel)).toEqual(['Participants', 'Outings'])
+    expect(group?.children[0]?.children.map((node) => [node.displayLabel, node.isVisible]))
+      .toEqual([['Team Alpha', true], ['Team Bravo', false]])
+    expect(group?.children[1]?.children.map((node) => node.displayLabel))
+      .toContain('Outside outings')
+  })
+
   it('builds the canonical grouped tree with ordered feature items', () => {
     const root = buildLayerCatalogTree({
       missionId: 'mission-1',

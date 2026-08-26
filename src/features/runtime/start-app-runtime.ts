@@ -6,6 +6,7 @@ import { startMissionAutosave } from '../persistence/mission-autosave'
 import type { AutosaveSyncReason } from '../persistence/autosave-status-store'
 import {
   createTauriMissionStore,
+  type IngestEvidenceHealth,
   type MissionStore,
 } from '../../infrastructure/mission-store/tauri-mission-store'
 import { createElectronMissionStore } from '../../infrastructure/mission-store/electron-mission-store'
@@ -35,19 +36,22 @@ import {
 } from '../tracking/polling-manager'
 import { applyTrackingSnapshot, applyTrackingStatus } from '../tracking/tracking-store'
 import { readTrackingRuntimeConfig } from '../tracking/tracking-runtime-config'
-import {
-  startTrackingRuntime,
-  type TrackingRuntimeMissionStore,
-} from '../tracking/start-tracking-runtime'
+import type { TrackingRuntimeMissionStore } from '../tracking/start-tracking-runtime'
 import { DEFAULT_DEVICE_STALE_THRESHOLD_MS } from '../tracking/tracking-snapshot-health'
 import { useActiveMissionDevicesStore } from '../tracking/active-mission-devices-store'
 import {
   applyCurrentPositionRejections,
   applyIngestEvidenceHealth,
+  useIngestHealthStore,
 } from '../tracking/ingest-health-store'
 import { createRejectionEvidenceDelivery } from '../tracking/rejection-evidence-delivery'
 import { createIngestEvidenceFinalizationBoundary } from '../tracking/ingest-evidence-finalization-boundary'
 import { startExactBreadcrumbDotRuntime } from '../tracking/start-exact-breadcrumb-dot-runtime'
+import { startCoverageRuntime } from '../tracking/start-coverage-runtime'
+import {
+  isCoverageEnabled,
+  resolveCoverageRuntimeEnabled,
+} from './coverage-flag'
 import { useStationaryAttentionStore } from '../tracking/stationary-attention-store'
 import { useExactBreadcrumbDotStore } from '../tracking/exact-breadcrumb-dot-store'
 import type { AppRuntimeController } from './app-runtime-controller'
@@ -98,11 +102,21 @@ type StartAppRuntimeDependencies = {
   readonly startDrawingRuntime: typeof startDrawingRuntime
   readonly startHelicopterRuntime: typeof startHelicopterRuntime
   readonly startGpxRuntime: typeof startGpxRuntime
-  readonly startTrackingRuntime: typeof startTrackingRuntime
+  readonly startTrackingRuntime:
+    typeof import('../tracking/start-tracking-runtime').startTrackingRuntime
   readonly startExactBreadcrumbDotRuntime: typeof startExactBreadcrumbDotRuntime
+  readonly startCoverageRuntime: typeof startCoverageRuntime
   readonly createPollingManager: typeof createPollingManager
   readonly startCoreFeatureRuntimes: typeof startCoreFeatureRuntimes
 }
+
+/** Loads the sizeable tracking runtime only when application services start it. */
+const startDefaultTrackingRuntime:
+  typeof import('../tracking/start-tracking-runtime').startTrackingRuntime =
+    async (dependencies) => {
+      const module = await import('../tracking/start-tracking-runtime')
+      return module.startTrackingRuntime(dependencies)
+    }
 
 const DEFAULT_DEPENDENCIES: StartAppRuntimeDependencies = {
   registerServiceWorker,
@@ -118,8 +132,9 @@ const DEFAULT_DEPENDENCIES: StartAppRuntimeDependencies = {
   startDrawingRuntime,
   startHelicopterRuntime,
   startGpxRuntime,
-  startTrackingRuntime,
+  startTrackingRuntime: startDefaultTrackingRuntime,
   startExactBreadcrumbDotRuntime,
+  startCoverageRuntime,
   createPollingManager,
   startCoreFeatureRuntimes,
 }
@@ -155,25 +170,39 @@ export async function startAppRuntime(
         },
         applyRejections: applyCurrentPositionRejections,
         applyEvidenceHealth: applyIngestEvidenceHealth,
+        readEvidenceHealth: () => useIngestHealthStore.getState().evidenceHealth,
       })
+  const unavailableEvidenceHealth: IngestEvidenceHealth = {
+    state: 'critical',
+    reason: 'evidence_health_unavailable',
+    pendingCount: 0,
+    corruptCount: 0,
+    conflictCount: 0,
+    rejectedCount: 0,
+    affectedDeviceCount: 0,
+    conflictDeviceIds: [],
+  }
+  /** Routes startup hydration through the finalized-mission health boundary. */
+  const applyStartupMissionHealth = (
+    missionId: string,
+    health: IngestEvidenceHealth,
+  ): void => {
+    if (rejectionEvidenceDelivery === null) {
+      applyIngestEvidenceHealth(health)
+    } else {
+      rejectionEvidenceDelivery.applyMissionHealth(missionId, health)
+    }
+  }
   if (missionStore.getIngestEvidenceHealth !== undefined) {
-    void missionStore.getActiveMission().then((mission) =>
-      mission === null
-        ? null
-        : missionStore.getIngestEvidenceHealth?.(mission.id) ?? null,
-    ).then((health) => {
-      if (health !== null) applyIngestEvidenceHealth(health)
-    }).catch(() => {
-      applyIngestEvidenceHealth({
-        state: 'critical',
-        reason: 'evidence_health_unavailable',
-        pendingCount: 0,
-        corruptCount: 0,
-        conflictCount: 0,
-        rejectedCount: 0,
-        affectedDeviceCount: 0,
-        conflictDeviceIds: [],
+    void missionStore.getActiveMission().then((mission) => {
+      if (mission === null) return
+      void missionStore.getIngestEvidenceHealth?.(mission.id).then((health) => {
+        applyStartupMissionHealth(mission.id, health)
+      }).catch(() => {
+        applyStartupMissionHealth(mission.id, unavailableEvidenceHealth)
       })
+    }).catch(() => {
+      applyIngestEvidenceHealth(unavailableEvidenceHealth)
     })
   }
   const gpxImportSource =
@@ -190,10 +219,11 @@ export async function startAppRuntime(
     ? missionStore
     : createIngestEvidenceFinalizationBoundary(missionStore, rejectionEvidenceDelivery)
 
+  const missionModelEnabled = isMissionModelEnabled()
   const coreFeatureRuntimes = await resolvedDependencies.startCoreFeatureRuntimes({
     missionStore: coreMissionStore,
     attachmentAdapter,
-    missionModelEnabled: isMissionModelEnabled(),
+    missionModelEnabled,
     gpxWatchSource: gpxImportSource,
     requestAutosaveSync: (reason: AutosaveSyncReason) =>
       activeServices.requestAutosaveSync(reason),
@@ -204,17 +234,27 @@ export async function startAppRuntime(
     startHelicopterRuntime: resolvedDependencies.startHelicopterRuntime,
     startGpxRuntime: resolvedDependencies.startGpxRuntime,
   })
-  const stopExactBreadcrumbDots = resolvedDependencies.startExactBreadcrumbDotRuntime(
-    missionStore,
-  )
+  let stopExactBreadcrumbDots = (): void => undefined
+  let stopCoverage = (): void => undefined
   try {
+    stopExactBreadcrumbDots = resolvedDependencies.startExactBreadcrumbDotRuntime(
+      missionStore,
+    )
+    stopCoverage = resolvedDependencies.startCoverageRuntime(missionStore, {
+      enabled: runtimeKind === 'electron' && resolveCoverageRuntimeEnabled({
+        missionModelEnabled,
+        coverageEnabled: isCoverageEnabled(),
+      }),
+    })
     await reloadSettings()
   } catch (error) {
     stopExactBreadcrumbDots()
+    stopCoverage()
     coreFeatureRuntimes.dispose()
     throw error
   }
   let disposed = false
+  let disposalPromise: Promise<void> | null = null
 
   return {
     reloadSettings: async (options) => {
@@ -225,18 +265,18 @@ export async function startAppRuntime(
       await reloadSettings(options)
     },
     dispose: () => {
-      if (disposed) {
-        return
-      }
-
-      disposed = true
-      reloadGeneration += 1
-      const previousServices = activeServices
-      activeServices = createNoopRuntimeServiceHandles()
-      stopRuntimeServices(previousServices)
-      stopExactBreadcrumbDots()
-      void rejectionEvidenceDelivery?.dispose()
-      coreFeatureRuntimes.dispose()
+      disposalPromise ??= (async () => {
+        disposed = true
+        reloadGeneration += 1
+        const previousServices = activeServices
+        activeServices = createNoopRuntimeServiceHandles()
+        await stopRuntimeServices(previousServices)
+        await rejectionEvidenceDelivery?.dispose()
+        stopExactBreadcrumbDots()
+        stopCoverage()
+        coreFeatureRuntimes.dispose()
+      })()
+      return disposalPromise
     },
   }
 
@@ -260,7 +300,7 @@ export async function startAppRuntime(
     // competing mission snapshots.
     const previousServices = activeServices
     activeServices = createNoopRuntimeServiceHandles()
-    stopRuntimeServices(previousServices)
+    await stopRuntimeServices(previousServices)
 
     const nextServices = await createManagedRuntimeServices({
       runtimeSettings,
@@ -282,6 +322,12 @@ export async function startAppRuntime(
             return phase === 'active' || phase === 'paused' ? phase : 'idle'
           },
           getHistoryResetKey: () => useMissionStore.getState().currentMission?.id ?? null,
+          ...(rejectionEvidenceDelivery === null
+            ? {}
+            : {
+                beginMissionEvidenceObservation:
+                  rejectionEvidenceDelivery.beginMissionObservation,
+              }),
           getInitialBreadcrumbFrom: () => {
             const mission = useMissionStore.getState().currentMission
             return mission === null ? null : new Date(mission.start_time)
@@ -340,6 +386,15 @@ export async function startAppRuntime(
         )
       },
       applyStatus: applyTrackingStatus,
+      recordMissionEvidenceLoss: rejectionEvidenceDelivery?.recordMissionEvidenceLoss,
+      ...(rejectionEvidenceDelivery === null
+        ? {}
+        : {
+            beginMissionEvidenceObservation:
+              rejectionEvidenceDelivery.beginMissionObservation,
+            registerMissionEvidenceSettler:
+              rejectionEvidenceDelivery.registerMissionObservationSettler,
+          }),
       missionModelEnabled: isMissionModelEnabled(),
       readParticipationScope: () => useParticipantStore.getState().scope,
       readParticipationScopeStatus: () => {
@@ -375,7 +430,7 @@ export async function startAppRuntime(
     })
 
     if (generation !== reloadGeneration) {
-      stopRuntimeServices(nextServices)
+      await stopRuntimeServices(nextServices)
       return
     }
 

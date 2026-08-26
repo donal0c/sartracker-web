@@ -6,6 +6,11 @@ import { useTrackingStyleStore } from '../features/tracking/tracking-style-store
 import { ExactBreadcrumbDotStatus } from './exact-breadcrumb-dot-status'
 import { useIngestHealthStore } from '../features/tracking/ingest-health-store'
 import { useStationaryAttentionStore } from '../features/tracking/stationary-attention-store'
+import { useCoverageStore } from '../features/tracking/coverage-store'
+import { useCoverageFilterStore } from '../features/tracking/coverage-filter-store'
+import { CoverageStatusPanel } from './coverage-status-panel'
+import { useMissionStore } from '../features/mission/mission-store'
+import { selectCoverageStateForMission } from '../features/tracking/mission-coverage-scope'
 
 type TrackingStatusPanelProps = {
   readonly exactBreadcrumbDotState?: ExactBreadcrumbDotState
@@ -21,10 +26,35 @@ export function TrackingStatusPanel(props: TrackingStatusPanelProps = {}) {
   const status = useTrackingStore((state) => state.status)
   const openWorkspace = useDeviceWorkspaceStore((state) => state.openWorkspace)
   const breadcrumbTrailMode = useTrackingStyleStore((state) => state.breadcrumbTrailMode)
+  const setBreadcrumbTrailMode = useTrackingStyleStore((state) => state.setBreadcrumbTrailMode)
+  const coverageState = useCoverageStore((state) => state.state)
+  const missionId = useMissionStore((state) => state.currentMission?.id ?? null)
+  const recoverableMissionId = useMissionStore(
+    (state) => state.recoverableMission?.id ?? null,
+  )
+  const governanceEvidenceHealth = useMissionStore(
+    (state) => state.governanceEvidenceHealth,
+  )
+  const missionCoverageState = selectCoverageStateForMission(coverageState, missionId)
+  const coverageController = useCoverageStore((state) => state.controller)
+  const omittedCoverageDeviceCount = useCoverageFilterStore(
+    (state) => state.omittedDeviceIds.length,
+  )
+  const omittedCoverageOutingCount = useCoverageFilterStore(
+    (state) => state.omittedPeriodKeys.filter((key) => key.startsWith('outing\u0000')).length,
+  )
+  const unassignedCoverageOmitted = useCoverageFilterStore(
+    (state) => state.omittedPeriodKeys.includes('unassigned\u0000'),
+  )
   const storedExactBreadcrumbDotState = useExactBreadcrumbDotStore((state) => state.state)
   const exactBreadcrumbDotController = useExactBreadcrumbDotStore((state) => state.controller)
   const ingestHealth = useIngestHealthStore((state) => state.summary)
-  const evidenceHealth = useIngestHealthStore((state) => state.evidenceHealth)
+  const activeEvidenceHealth = useIngestHealthStore((state) => state.evidenceHealth)
+  const evidenceHealth = missionId === null &&
+    recoverableMissionId === null &&
+    governanceEvidenceHealth !== null
+    ? governanceEvidenceHealth
+    : activeEvidenceHealth
   const stationaryAttentionCount = useStationaryAttentionStore((state) =>
     Object.values(state.byDevice).filter((attention) => attention.state === 'attention').length,
   )
@@ -132,7 +162,11 @@ export function TrackingStatusPanel(props: TrackingStatusPanelProps = {}) {
           data-testid="ingest-evidence-health-warning"
         >
           EVIDENCE HEALTH {evidenceHealth.state.toUpperCase()} — {formatEvidenceFailure(evidenceHealth.reason)}.
-          {' '}Current positions remain live, but anomaly evidence is not fully saved; mission finalization and archive export are blocked until storage is repaired.
+          {evidenceHealth.acknowledgedLoss === undefined ? (
+            <> Current positions remain live, but anomaly evidence is not fully saved; mission finalization and archive export are blocked {formatEvidenceRecovery(evidenceHealth.reason)}.</>
+          ) : (
+            <> Evidence loss was acknowledged by {evidenceHealth.acknowledgedLoss.adminName}. Complete and 100% remain blocked permanently; archive and lock may proceed with this warning retained.</>
+          )}
         </p>
       )}
 
@@ -166,6 +200,15 @@ export function TrackingStatusPanel(props: TrackingStatusPanelProps = {}) {
           {stationaryAttentionCount === 1 ? 'device needs' : 'devices need'} stationary attention. Open Devices to review or acknowledge the presentation; movement clears the underlying state.
         </p>
       )}
+
+      <CoverageStatusPanel
+        state={missionCoverageState}
+        omittedDeviceCount={omittedCoverageDeviceCount}
+        omittedOutingCount={omittedCoverageOutingCount}
+        unassignedOmitted={unassignedCoverageOmitted}
+        onInspectExactFixes={() => setBreadcrumbTrailMode('dots')}
+        onRetry={() => void coverageController?.resume()}
+      />
 
       {breadcrumbTrailMode === 'dots' ? (
         <ExactBreadcrumbDotStatus
@@ -261,9 +304,26 @@ function formatEvidenceFailure(reason: string | null): string {
     case 'evidence_delivery_unavailable':
     case 'evidence_health_unavailable':
       return 'the evidence persistence service is unavailable'
+    case 'renderer_pending_evidence_lost':
+      return 'rejected-position evidence was lost during runtime shutdown'
+    case 'renderer_evidence_pending':
+      return 'rejected-position evidence is waiting to be saved'
     default:
       return 'mission evidence persistence requires repair'
   }
+}
+
+function formatEvidenceRecovery(reason: string | null): string {
+  if (reason === 'renderer_evidence_pending') {
+    return 'until the queued evidence is saved'
+  }
+  if (
+    reason === 'renderer_pending_evidence_lost' ||
+    reason === 'renderer_pending_capacity_exhausted'
+  ) {
+    return 'until an authorized admin records the permanent known loss'
+  }
+  return 'until storage is repaired'
 }
 
 function getTrackingModeLabel(mode: 'idle' | 'offline' | 'online', warning: string | null): string {

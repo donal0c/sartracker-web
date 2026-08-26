@@ -1,0 +1,149 @@
+{
+  "schemaVersion": 1,
+  "groups": [
+    {
+      "candidate": "B",
+      "fixture": "bcp-2m",
+      "coldRunCount": 1,
+      "warmRunCount": 2,
+      "decision": "pass",
+      "rejections": [],
+      "worstWarm": {
+        "firstUsefulMs": 3621,
+        "completeMs": 7999,
+        "filterToggleMs": 115.7000000178814,
+        "appendRerenderMs": 742,
+        "mainMaxMs": 55.34753499999999,
+        "rendererP95Ms": 83.70000000000073,
+        "settledBytes": 304869376,
+        "peakBytes": 304869376
+      },
+      "phaseMs": {
+        "query": {
+          "count": 3,
+          "min": 5135.912227,
+          "median": 5335.144380999996,
+          "p95": 5374.771928000002,
+          "max": 5374.771928000002
+        },
+        "segmentation": {
+          "count": 3,
+          "min": 1020.6363769999939,
+          "median": 1048.1626070000013,
+          "p95": 1081.467508000001,
+          "max": 1081.467508000001
+        },
+        "encodeServe": {
+          "count": 3,
+          "min": 292.3714370000003,
+          "median": 293.1698759999965,
+          "p95": 303.59419700000035,
+          "max": 303.59419700000035
+        },
+        "sourceUpdate": {
+          "count": 3,
+          "min": 0,
+          "median": 0,
+          "p95": 0,
+          "max": 0
+        },
+        "renderSettle": {
+          "count": 3,
+          "min": 3616.599999964237,
+          "median": 3691.4000000059605,
+          "p95": 3794.9999999701977,
+          "max": 3794.9999999701977
+        }
+      },
+      "manifests": [
+        {
+          "repetition": 1,
+          "thermalState": "cold",
+          "checksum": "4a08f682bb6e1c1e9d9db16835025cc099e87a4941f5c18b86e5065a475c0b5d"
+        },
+        {
+          "repetition": 2,
+          "thermalState": "warm",
+          "checksum": "52b00ad673b82e3bb987e11ed4d1b6e02033763a401c4202b7c5f71a83d369af"
+        },
+        {
+          "repetition": 3,
+          "thermalState": "warm",
+          "checksum": "b714440d3fbe24b9160e14bcf8907d531622ade66406d73f4c155feb55db3993"
+        }
+      ]
+    },
+    {
+      "candidate": "B",
+      "fixture": "bcp-960k",
+      "coldRunCount": 1,
+      "warmRunCount": 2,
+      "decision": "pass",
+      "rejections": [],
+      "worstWarm": {
+        "firstUsefulMs": 2079,
+        "completeMs": 4359,
+        "filterToggleMs": 73,
+        "appendRerenderMs": 641.2000000178814,
+        "mainMaxMs": 63.07268699999999,
+        "rendererP95Ms": 66.90000000000009,
+        "settledBytes": 276090880,
+        "peakBytes": 276090880
+      },
+      "phaseMs": {
+        "query": {
+          "count": 3,
+          "min": 2310.2231600000027,
+          "median": 2477.4000100000007,
+          "p95": 2487.9724709999996,
+          "max": 2487.9724709999996
+        },
+        "segmentation": {
+          "count": 3,
+          "min": 450.7214140000028,
+          "median": 496.1292079999965,
+          "p95": 507.08814399999875,
+          "max": 507.08814399999875
+        },
+        "encodeServe": {
+          "count": 3,
+          "min": 145.93239199999942,
+          "median": 153.87103399999734,
+          "p95": 166.06887299999931,
+          "max": 166.06887299999931
+        },
+        "sourceUpdate": {
+          "count": 3,
+          "min": 0,
+          "median": 0,
+          "p95": 0,
+          "max": 0
+        },
+        "renderSettle": {
+          "count": 3,
+          "min": 2135.2999999821186,
+          "median": 2151.7999999821186,
+          "p95": 2261.399999976158,
+          "max": 2261.399999976158
+        }
+      },
+      "manifests": [
+        {
+          "repetition": 1,
+          "thermalState": "cold",
+          "checksum": "6c31f0a3f672cc059b4b80f18991ebf3865f4331506d403c2a07f8767ea09e96"
+        },
+        {
+          "repetition": 2,
+          "thermalState": "warm",
+          "checksum": "376525d61613d25d36e0a9d0ace873eb37f103af9846669e7612e71d75d1e88e"
+        },
+        {
+          "repetition": 3,
+          "thermalState": "warm",
+          "checksum": "6abce06ab9dbd069f612a1902bbe84dc6ca5c45bcc51a5484c8e540684e4ef7b"
+        }
+      ]
+    }
+  ]
+}

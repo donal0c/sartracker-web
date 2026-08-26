@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import {
+  buildCoverageLayerFilter,
   buildDrawingVisibilitySummary,
   buildDrawingLayerFilter,
   buildMarkerLayerFilter,
@@ -9,6 +10,19 @@ import {
 import type { Drawing } from '../../src/infrastructure/mission-store/tauri-mission-store'
 
 describe('map layer filter helpers', () => {
+  it('builds one renderer-only coverage filter across device and logical period omissions', () => {
+    expect(buildCoverageLayerFilter(
+      ['device-2'],
+      ['outing\u0000outing-2', 'unassigned\u0000'],
+    )).toEqual([
+      'all',
+      ['!', ['in', ['get', 'device_id'], ['literal', ['device-2']]]],
+      ['!', ['in', ['concat', ['get', 'period_kind'], '\u0000', ['get', 'period_id']],
+        ['literal', ['outing\u0000outing-2', 'unassigned\u0000']]]],
+    ])
+    expect(buildCoverageLayerFilter([], [])).toBeNull()
+  })
+
   it('returns no tracking filter when all devices are visible', () => {
     expect(buildTrackingLayerFilter([])).toBeNull()
   })

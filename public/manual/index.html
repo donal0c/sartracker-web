@@ -347,6 +347,7 @@
           <a href="#map">Map And Coordinates</a>
           <a href="#official-maps">Official Maps</a>
           <a href="#tracking">Tracking And Devices</a>
+          <a href="#mission-history">Mission History Coverage</a>
           <a href="#layers">Layers</a>
           <a href="#markers">Markers</a>
           <a href="#tools">Drawing And Measurement</a>
@@ -370,8 +371,8 @@
               review.
             </p>
             <div class="meta-grid">
-              <div class="card"><span class="kpi">Verified</span><span class="kpi-value">17 June 2026</span></div>
-              <div class="card"><span class="kpi">Branch</span><span class="kpi-value">master</span></div>
+              <div class="card"><span class="kpi">Verified</span><span class="kpi-value">25 August 2026</span></div>
+              <div class="card"><span class="kpi">Branch</span><span class="kpi-value">PR-3 candidate</span></div>
               <div class="card"><span class="kpi">Runtime Checked</span><span class="kpi-value">Browser harness + source audit</span></div>
               <div class="card"><span class="kpi">Desktop Shell</span><span class="kpi-value">Electron beta lane</span></div>
             </div>
@@ -615,7 +616,8 @@
             into the app's <code>archives</code> folder; each mission keeps its own archive, and the
             confirmation message reports the exact file path. Once finalized, a mission is locked: its
             markers, drawings, helicopters, and GPX imports can no longer be edited or deleted until an
-            authorized admin unlocks it.
+            authorized admin unlocks it. Finalization closes and preserves the incident record; it is not
+            a claim that every breadcrumb was recovered.
           </p>
           <table>
             <thead>
@@ -627,18 +629,20 @@
               <tr><td>Pause / Resume</td><td>Stops or restarts active-search timing without ending the mission.</td><td>Elapsed time keeps running; active-search time pauses.</td></tr>
               <tr><td>Finish</td><td>Opens a confirmation before ending the mission.</td><td>Confirm only when operations are genuinely complete.</td></tr>
               <tr><td>Review</td><td>Opens mission details, marker log, layer console, and audit records.</td><td>Use after or during operations to inspect saved mission state.</td></tr>
+              <tr><td>Archive &amp; Lock</td><td>Creates the retained archive and makes a finished mission read-only.</td><td>If known evidence loss blocks this action, use the admin acknowledgement only after reviewing and documenting the gap. Complete and 100% remain unavailable.</td></tr>
               <tr><td>Minimize / Expand</td><td>Collapses the active mission controls after setup to free right-rail space.</td><td>The control is not available while paused; expand before pausing, finishing, or changing lifecycle state.</td></tr>
             </tbody>
           </table>
-          <div class="warning">
-            <strong>Internal qualification feature:</strong> the mission participant and outing controls
-            below are disabled in normal packaged and release builds while the Breadcrumb Programme is
-            being qualified. Do not expect them in the current team beta. When the internal mission model
-            is enabled, Diagnostics states <strong>mission model: enabled (internal)</strong>.
+          <div class="note">
+            <strong>Approved mission model:</strong> the mission participant and outing controls below are
+            enabled by default in packaged and release builds that contain this PR-3 change. There is no
+            operator toggle. A maintainer can use an explicit build override to disable the mission model
+            and complete-coverage view together for controlled rollback. Diagnostics states
+            <strong>mission model: enabled (internal)</strong> while the model is active.
           </div>
           <h3>Mission Participants</h3>
           <p>
-            Before starting a mission, the internal mission model shows the live Traccar roster and asks
+            Before starting a mission, the mission model shows the live Traccar roster and asks
             the coordinator to select participating groups and/or individual devices. Nothing is selected
             automatically. Starting with none is allowed, but the screen states the consequence: reporting
             devices remain outside mission evidence and off the operational mission map until explicitly
@@ -646,7 +650,7 @@
           </p>
           <figure class="screenshot">
             <img src="assets/mission-participant-selection.png" alt="Mission participant selection showing no groups or devices pre-selected" />
-            <figcaption>The internal start step makes the empty selection and its evidence consequence explicit.</figcaption>
+            <figcaption>The participant start step makes the empty selection and its evidence consequence explicit.</figcaption>
           </figure>
           <p>
             A selected Traccar group follows later server-side membership changes from the time SAR Tracker
@@ -660,7 +664,9 @@
             pending/retrying state visible until every member completes. Removing a participant ends future
             live collection but does not delete evidence already retained. The low-rate history check keeps
             revisiting that participant's earlier authorized window so a late or corrected source fix is not
-            lost merely because the participant has since been removed. Their last accepted current marker
+            lost merely because the participant has since been removed. If the coordinator later re-adds the
+            participant from the same earlier effective time, SAR Tracker preserves every completed fixed
+            backfill window and queues only the still-uncovered interval. Their last accepted current marker
             remains visible across later polls until it becomes stale. More than 100
             active selected devices produces a persistent warning and still includes every selected device —
             the app never truncates the roster or silently drops the 101st device.
@@ -677,8 +683,9 @@
             still cannot be recorded. Finish retries the exact pending membership observation first. If it
             still fails, the mission remains active and the open Finish confirmation tells the coordinator
             what must be retried. The app settles roster observations already accepted before the finish
-            cutoff without blocking the app event loop. If participant scope cannot be reloaded, Finish is
-            refused and the exact accepted observation remains available for retry. Observations arriving
+            cutoff without blocking the app event loop. If participant scope is still loading, Finish is refused with a retry instruction;
+            the exact accepted observation remains owned by the active mission. If participant scope cannot
+            be reloaded, Finish is refused and the exact accepted observation remains available for retry. Observations arriving
             while the finish write is pending immediately update current-position visibility but do not become
             mission evidence yet; if finish is refused, they are replayed at their original observation time.
             The replay handoff is atomic, so an observation cannot fall between replay and the mission returning
@@ -906,7 +913,7 @@
             Turning off the whole Tracking group hides both surfaces.
           </p>
           <div class="note">
-            <strong>Participant visibility:</strong> with the internal mission model enabled, only selected
+            <strong>Participant visibility:</strong> with the mission model enabled, only selected
             mission participants are persisted as mission evidence or shown on the operational mission map.
             Historical time and outing filters never hide a selected participant's live position. Hiding a
             selected participant's current-location marker remains a separate, explicit operator action from
@@ -961,23 +968,92 @@
             <strong>Evidence health:</strong> if unique rejection evidence cannot reach the mission
             ledger, current positions continue to publish first. A persistent, non-dismissible warning
             names the storage failure and states that the anomaly evidence is not fully saved.
+            The warning appears as soon as rejected-position evidence is waiting in renderer memory and
+            clears only after that queued evidence is acknowledged by the durable mission store.
+            If an accepted current fix cannot reach mission storage, its live marker remains visible,
+            but SAR Tracker records a critical mission-scoped evidence-loss marker instead of silently
+            treating the observation as saved. Finish cannot proceed unless that loss marker is durable;
+            once durable, the existing loss review and acknowledgement rules below apply without ever
+            restoring Complete or 100%.
             Finalization and archive export remain blocked until the durable outbox is replayed or the
-            storage fault is repaired. Distinct committed conflicts are never expired or capped;
+            storage fault is repaired. A known, unrecoverable evidence-loss marker is different: it
+            remains critical forever and permanently prevents Complete or 100%. After the mission is
+            finished, an authorized admin may record who reviewed the exact loss occurrence, when, and
+            why. That audited acknowledgement permits archive-and-lock while retaining the critical
+            warning; it does not clear the marker, recover data, or certify completeness. A later loss
+            occurrence invalidates the earlier acknowledgement and blocks archive again. This remains
+            true across app restart: selecting the finished mission reloads its exact evidence health,
+            and Archive &amp; Lock refreshes that mission-scoped health again if a newer loss arrived
+            after Finish. Distinct
+            committed conflicts are never expired or capped;
             identical repeats update first-seen, last-seen, and occurrence count. If the bounded
             renderer intake itself is exhausted, SAR Tracker records a durable evidence-loss marker
             wherever local storage is writable and blocks completeness claims. If no local storage is
             writable, the critical in-process warning is the honest limit: do not claim the evidence
-            was saved, and preserve the live operational picture. Pending outbox storage is explicitly
+            was saved, and preserve the live operational picture. A failed capacity-loss write is not
+            treated as complete: SAR Tracker retries the durable capacity-loss marker before Finish,
+            finalization, or shutdown may proceed. During a settings replacement, runtime restart, or
+            shutdown, SAR Tracker stops scheduling new polls, preserves the final current-position
+            observation already in flight, and waits for every bounded renderer batch rather than
+            abandoning later batches. Accepted breadcrumb-history writes use the same mission close
+            boundary: anything admitted before Finish reaches durable storage before the mission status
+            changes, while later history cannot leak into the closed mission. If
+            a batch cannot be acknowledged, it first records a mission-scoped durable loss marker and
+            then shows that rejected-position evidence was lost during runtime shutdown. If even that
+            marker cannot be written, runtime replacement fails closed instead of installing a new
+            controller over unresolved evidence. The desktop main process now owns this
+            boundary for normal window close, reload, and app quit: it keeps the renderer
+            alive until the drain acknowledges. After five seconds it records only provisional,
+            mission-scoped uncertainty and continues waiting. It commits one durable incident record before any per-mission provisional marker,
+            so an interrupted multi-mission write can be cleanly retracted or conservatively promoted after restart;
+            a later clean acknowledgement removes
+            that exact provisional record without creating or advancing an evidence-loss occurrence.
+            Main writes the permanent mission-scoped blocker only when the renderer explicitly rejects
+            the drain, is actually lost, or the app restarts with unresolved provisional uncertainty.
+            Before it permits that teardown, main names why each affected active, paused, or finished
+            mission could own renderer evidence, so a completed lifecycle transition cannot hide
+            renderer-held evidence or falsely contaminate an unrelated mission. An unexpected
+            renderer crash is fenced immediately, and normal quit or macOS window recreation cannot
+            overtake that in-flight fence. Once a replacement renderer has loaded safely, it opens a
+            fresh incident generation, so another crash always records another loss occurrence rather
+            than reusing the earlier fence. A fatal main-process fault fences mission evidence
+            before relaunch. After any unclean shutdown, SAR Tracker blocks every unfinalized mission
+            before the operator window opens, so uncertain evidence cannot later look Complete. The
+            active-session marker and its clean removal are file-and-directory synced so a power loss
+            cannot silently reorder this recovery boundary. If the
+            fatal handler cannot write that blocker, SAR Tracker shows
+            <strong>SAR Tracker could not restart safely</strong>, keeps the current process open, and
+            refuses the automatic relaunch. If neither the renderer drain
+            nor the main-process blocker write succeeds, SAR Tracker refuses the close or
+            reload and shows <strong>SAR Tracker could not close safely</strong>; leave the
+            process open, preserve the profile, and contact support rather than forcing it
+            closed. Pending outbox storage is explicitly
             bounded at 4,096 canonical envelopes and 64 MiB; those are engineering hypotheses, not
             measured field limits. Crossing either boundary refuses new evidence, raises a durable
             mission-scoped block wherever storage permits, and never silently deletes a distinct record.
             A corrupt staged record is quarantined for repair and blocks only its affected mission; it is
             not automatically deleted.
           </div>
+          <figure class="screenshot">
+            <img src="assets/tracking-shutdown-evidence-loss.png" alt="Tracking panel showing a critical runtime-shutdown evidence-loss warning while live tracking remains online" />
+            <figcaption>If shutdown cannot save a rejected-position batch, SAR Tracker keeps live positions explicit and blocks completeness with a mission-scoped critical warning.</figcaption>
+          </figure>
+          <figure class="screenshot">
+            <img src="assets/mission-evidence-loss-acknowledgement.png" alt="Mission Control acknowledgement for a known evidence gap, with an admin selector, permanent record field, and explicit warning that Complete or 100% remains unavailable" />
+            <figcaption>An admin can close and retain a finished incident with a documented evidence gap; the action never restores evidence or permits Complete or 100%.</figcaption>
+          </figure>
           <div class="note">
-            <strong>Finalization waits for evidence already observed:</strong> SAR Tracker flushes
-            renderer-held rejection evidence before archive-and-lock begins, then seals new renderer
-            observations until that completeness operation finishes. A finalized mission remains read-only.
+            <strong>Finish and finalization wait for evidence already observed:</strong> Finish closes
+            the mission-evidence cutoff before the durable status transition. It then waits for every
+            current-position observation that started before the cutoff and drains its accepted and
+            rejected evidence while the mission is still writable. Only after that evidence is durable
+            does SAR Tracker mark the mission finished. Current safety positions continue to render after
+            the cutoff without being added to the finished mission. If the wait, drain, or durable Finish
+            cannot complete, Finish is refused and the mission stays active for repair and retry.
+            Finalization waits for the closed observation scope and durable evidence markers before
+            advancing the mission through archive-and-lock. A known unrecoverable loss requires the
+            explicit admin acknowledgement above; all repairable, pending, corrupt, or newly changed
+            evidence states still block. A finalized mission remains read-only.
             Any delivery already staged outside the renderer that reaches a finalized mission is retained
             outside the immutable mission ledger, shown as critical late-evidence health, and is not silently
             inserted into the finalized record. A new renderer observation after the seal is shown to the
@@ -1144,6 +1220,98 @@
             If restart reconstruction ignores unreadable stored fixes, SAR Tracker reports the count
             instead of silently stopping the remaining valid trail. Record the exact warning and export
             diagnostics before restarting when operationally safe.
+          </div>
+        </section>
+
+        <section id="mission-history">
+          <h2>Mission History Coverage</h2>
+          <p>
+            The default mission-history view shows every accepted breadcrumb for all selected mission
+            participants from the mission start to now. It loads progressively from the mission database
+            while current positions continue on their separate live path. A history load, retry, filter,
+            or outing correction must never delay or hide a current position.
+          </p>
+          <figure class="screenshot">
+            <img src="assets/mission-history-coverage-status.png" alt="Mission history status showing selected-scope completion and a device omission" />
+            <figcaption>Filtered history uses the honest “All selected history shown” wording and states that live positions are unchanged.</figcaption>
+          </figure>
+
+          <h3>Reading progress and completion</h3>
+          <table>
+            <thead>
+              <tr><th>Status</th><th>What It Means</th></tr>
+            </thead>
+            <tbody>
+              <tr><td><strong>N of M fixes</strong></td><td>The database currently knows about M accepted fixes in the selected scope, and N have been delivered to this app window. This is saved-evidence and delivery progress, not an elapsed-time estimate. When N reaches M, SAR Tracker withholds the full bar until the final database completeness claim also succeeds.</td></tr>
+              <tr><td><strong>All mission history shown</strong></td><td>Every selected participant and every outing period, including Outside outings, is included and complete for this app window.</td></tr>
+              <tr><td><strong>All selected history shown</strong></td><td>The visible filtered scope is complete, but one or more participants, outings, or Outside outings are deliberately omitted. The omission summary names that reduced scope.</td></tr>
+              <tr><td><strong>History incomplete — showing loaded coverage</strong></td><td>Loading was cancelled or failed. Already delivered coverage stays visible. After a map-source failure, SAR Tracker makes one automatic recovery attempt once the failed load has safely ended. If the warning remains, use <strong>Retry</strong>; do not treat the partial map as the whole mission record.</td></tr>
+              <tr><td><strong>Loaded history is shown, but completeness is not yet verified</strong></td><td>Every currently counted fix may have reached this app window, but the final database claim failed or is still pending. SAR Tracker shows no full progress bar. Use <strong>Retry</strong> after an error, and do not treat the loaded map as a verified complete record.</td></tr>
+              <tr><td><strong>Coverage is being reattached to the map</strong></td><td>A map-style change removed the attested history layers. Current positions remain live, but SAR Tracker shows neither a coverage percentage nor a Retry action until the history layers are visibly attached again.</td></tr>
+              <tr><td><strong>Applying the selected history filter to the map</strong></td><td>The filter choice has changed, but the map has not yet acknowledged the matching historical layers. Completion is paused, and SAR Tracker shows neither a coverage percentage nor a Retry action. Current positions remain live and are never filtered by this history control.</td></tr>
+              <tr><td><strong>Participant history is still being added</strong></td><td>A participant backfill is incomplete. Current positions remain live, but a complete-history claim is blocked.</td></tr>
+              <tr><td><strong>Updating outing assignment</strong></td><td>An audited outing-boundary change is reorganizing saved fixes. Loaded coverage remains visible, but 100% is blocked until the update finishes.</td></tr>
+              <tr><td><strong>Anomaly evidence is waiting to be saved</strong></td><td>The live map continues, but renderer-held anomaly evidence has not reached durable mission storage. SAR Tracker withholds both the completion claim and a misleading full progress bar. Follow the evidence warning in Tracking; the coverage Retry button is intentionally unavailable because it cannot repair evidence storage.</td></tr>
+              <tr><td><strong>Evidence health is degraded</strong></td><td>Saved evidence cannot yet support a completeness claim. Follow the accompanying evidence-health warning and repair guidance.</td></tr>
+            </tbody>
+          </table>
+          <figure class="screenshot">
+            <img src="assets/mission-history-claim-unverified.png" alt="Mission history status withholding a full progress bar after a final completeness claim timeout" />
+            <figcaption>Equal delivered and total counts are not enough for 100%. If the final database claim times out, Mission History stays explicitly incomplete, hides the full bar, and offers Retry.</figcaption>
+          </figure>
+          <figure class="screenshot">
+            <img src="assets/mission-history-reattaching.png" alt="Mission history status withholding visible-coverage claims while map layers reattach" />
+            <figcaption>During automatic map-style reattachment, Mission History makes no claim that detached coverage remains shown and keeps the separate live-position guarantee explicit.</figcaption>
+          </figure>
+          <figure class="screenshot">
+            <img src="assets/mission-history-filter-pending.png" alt="Mission history status pausing completion while a selected history filter is applied to the map" />
+            <figcaption>A changed history filter cannot restore a completion claim until the map has applied that exact selection. Progress and Retry stay hidden during the automatic transition; current positions remain live.</figcaption>
+          </figure>
+          <figure class="screenshot">
+            <img src="assets/mission-history-evidence-pending.png" alt="Mission history status withholding completion while anomaly evidence waits to be saved" />
+            <figcaption>When anomaly evidence is still waiting for durable storage, current positions remain live but Mission History shows neither a complete claim nor a false 100% bar.</figcaption>
+          </figure>
+          <div class="note">
+            <strong>Progress can go backwards honestly:</strong> a late accepted fix, an outing-boundary
+            correction, or a renderer restart can increase the total or clear this window's delivery
+            record. After Resume, the display may restart at <strong>0 of 0</strong> briefly and load again
+            from saved evidence. A lower percentage is safer than a false 100%.
+          </div>
+
+          <h3>History filters do not edit evidence or live tracking</h3>
+          <p>
+            Open <strong>Layers → Mission History</strong> to omit participant history, a named outing,
+            or <strong>Outside outings</strong>. These checkboxes affect only the historical coverage drawn
+            in the current app window. They do not delete, rewrite, or reclassify saved mission evidence.
+            A filter remains in force as later outing periods are discovered; SAR Tracker includes every
+            newly visible period in the completion check before it can say all selected history is shown.
+            <strong>Outside outings</strong> means accepted fixes that fall outside every explicit outing;
+            it is not an invented outing or a calendar day.
+          </p>
+          <p>
+            Hiding Alpha Team under Mission History does not hide Alpha Team's current marker. To hide a
+            live marker, use the separate <strong>Tracking → Current Location</strong> visibility control.
+            Devices that were discovered by Traccar but were never selected as mission participants stay
+            available in the participant picker and diagnostics only; they do not appear in mission
+            evidence, Mission History filters, or the operational mission map.
+          </p>
+          <figure class="screenshot">
+            <img src="assets/mission-history-live-independent.png" alt="Mission map showing Alpha Team live while Alpha Team history is unchecked in Mission History" />
+            <figcaption>Alpha Team's history is omitted in the Layer Workspace while its current live marker remains visible on the map.</figcaption>
+          </figure>
+
+          <h3>Exact-fix inspection</h3>
+          <p>
+            Use <strong>Inspect exact fixes</strong> to switch to the existing paged breadcrumb Dots
+            inspection surface. Coverage trails are the operational whole-mission overview; Dots remain
+            the source-exact per-fix evidence view with the existing Earlier and Later paging controls.
+            Mission-history coverage does not change the exact-dot query, page size, saved evidence, or
+            existing export workflows.
+          </p>
+          <div class="note">
+            <strong>Current scope:</strong> mission-history coverage includes accepted Traccar breadcrumb
+            evidence. GPX evidence, replay, search-pass analysis, archive/custody workflows, and timeline
+            reconstruction are later programme work and are not added by this view.
           </div>
         </section>
 
@@ -1574,7 +1742,7 @@ sh "$COLLECTOR" --screenshot</code></pre>
         <footer>
           SAR Tracker Operator Manual. DON-150 audit refreshed from current code, release notes,
           documentation, tests, Linear issue context, and Playwright browser-harness validation on
-          17 June 2026.
+          25 August 2026.
         </footer>
       </main>
     </div>

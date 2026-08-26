@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { createRequire } from 'node:module'
 
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 const require = createRequire(import.meta.url)
 const { createCrashLog, isRendererFaultReason } = require('../../electron/crash-log.cjs') as {
@@ -29,6 +29,7 @@ type CrashLog = {
     readonly detail?: string
   }) => Promise<void>
   readonly readRecent: (limit?: number) => Promise<readonly CrashEntry[]>
+  readonly markSessionStart: () => Promise<void>
   readonly markCleanExit: () => Promise<void>
   readonly hadUncleanShutdown: () => Promise<boolean>
 }
@@ -110,6 +111,30 @@ describe('electron crash log', () => {
     // Marking a clean exit clears the flag again.
     await log.markCleanExit()
     await expect(log.hadUncleanShutdown()).resolves.toBe(false)
+  })
+
+  it('detects a hard process loss without relying on a crash callback', async () => {
+    const log = await createLog()
+    await log.markSessionStart()
+
+    await expect(log.hadUncleanShutdown()).resolves.toBe(true)
+
+    await log.markCleanExit()
+    await expect(log.hadUncleanShutdown()).resolves.toBe(false)
+  })
+
+  it('fails closed when active-session marker access fails for a reason other than absence [DON-276]', async () => {
+    const log = await createLog()
+    const fsPromises = require('node:fs/promises') as typeof import('node:fs/promises')
+    const access = vi.spyOn(fsPromises, 'access').mockRejectedValue(
+      Object.assign(new Error('permission denied'), { code: 'EACCES' }),
+    )
+
+    try {
+      await expect(log.hadUncleanShutdown()).rejects.toThrow('permission denied')
+    } finally {
+      access.mockRestore()
+    }
   })
 
   it('treats only genuine fault reasons as renderer crashes', () => {

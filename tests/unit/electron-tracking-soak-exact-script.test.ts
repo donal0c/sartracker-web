@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest'
 
 describe('fourteen-day packaged exact-dot soak script [DON-260]', () => {
   const source = readFileSync('scripts/electron-tracking-soak.mjs', 'utf8')
+  const soakLibSource = readFileSync('build/electron-tracking-soak-lib.js', 'utf8')
 
   it('shares one recorded mission-scoped fixture clock with mock and independent oracle', () => {
     expect(source).toContain('createTrackingSoakFixtureClock(')
@@ -17,7 +18,9 @@ describe('fourteen-day packaged exact-dot soak script [DON-260]', () => {
 
   it('requires flag-off legacy participants and declares their audit events [DON-271]', () => {
     expect(source).toContain('expectedParticipantRows: expectedDeviceCount')
-    expect(source).toContain("'participant_added',")
+    expect(source).toContain('classifyTrackingSoakMissionEvents')
+    expect(soakLibSource).toContain("'participant_added',")
+    expect(soakLibSource).toContain("'participant_backfill_completed',")
     expect(source).toContain('expectedParticipantAddedEvents')
     expect(source).toContain(
       '(databaseEvidence.events.participant_added ?? 0) !== missionModelEvidence.expectedParticipantAddedEvents',
@@ -326,10 +329,13 @@ describe('fourteen-day packaged exact-dot soak script [DON-260]', () => {
     expect(closeSource).toContain('runCleanupStep(')
     expect(closeSource).toContain('collectOperatorClickAuditTail')
     expect(closeSource).toContain('collectLaunchResponsiveness')
+    expect(closeSource).toContain('requestGracefulElectronQuit(')
+    expect(closeSource).toContain('launch.shutdownEvidence = exitEvidence')
     expect(closeSource).toContain('launch.mainInspector.close()')
     expect(closeSource).toContain('launch.browser.close()')
     expect(closeSource).toContain('stopOwnedProcess(launch.appProcess')
     expect(closeSource).not.toContain("launch.appProcess.kill('SIGTERM')")
+    expect(source).toContain('shutdown: launch.shutdownEvidence')
     expect(source).toContain('signalCode !== null')
     const launchFailureSource = source.slice(
       source.indexOf('async function launchPackagedApp('),

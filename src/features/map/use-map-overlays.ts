@@ -15,6 +15,16 @@ import { useExactBreadcrumbDotStore } from '../tracking/exact-breadcrumb-dot-sto
 import { selectMissionTrackingSnapshot } from '../tracking/mission-active-tracking'
 import { useTrackingStylePreferences } from '../tracking/tracking-style-store'
 import { useTrackingStore } from '../tracking/tracking-store'
+import { useCoverageStore } from '../tracking/coverage-store'
+import {
+  isCoverageOverlayAttached,
+  syncCoverageOverlay,
+} from '../tracking/sync-coverage-overlay'
+import {
+  selectCoverageChunkKeys,
+  useCoverageFilterStore,
+} from '../tracking/coverage-filter-store'
+import { selectCoverageCatalogForMission } from '../tracking/mission-coverage-scope'
 import type { RenderableMapId } from '../../lib/map-config'
 import { useStationaryAttentionStore } from '../tracking/stationary-attention-store'
 import { registerMapStyleSync } from './map-style-sync'
@@ -48,6 +58,10 @@ export function useMapOverlays(options: UseMapOverlaysOptions): void {
   const trackingStyle = useTrackingStylePreferences()
   const exactBreadcrumbDotState = useExactBreadcrumbDotStore((state) => state.state)
   const attentionByDevice = useStationaryAttentionStore((state) => state.byDevice)
+  const coverageState = useCoverageStore((state) => state.state)
+  const coverageController = useCoverageStore((state) => state.controller)
+  const omittedCoverageDeviceIds = useCoverageFilterStore((state) => state.omittedDeviceIds)
+  const omittedCoveragePeriodKeys = useCoverageFilterStore((state) => state.omittedPeriodKeys)
   const missionTrackingSnapshot = useMemo(
     () => selectMissionTrackingSnapshot(trackingSnapshot, activeDeviceIds),
     [activeDeviceIds, trackingSnapshot],
@@ -86,6 +100,72 @@ export function useMapOverlays(options: UseMapOverlaysOptions): void {
     exactBreadcrumbDotState,
     missionTrackingSnapshot,
     attentionByDevice,
+  ])
+
+  useEffect(() => {
+    const map = options.mapRef.current
+    if (map === null) return
+    const synchronizeOverlay = async (signal: AbortSignal) => {
+      const catalog = selectCoverageCatalogForMission(coverageState, missionId)
+      let activation: Awaited<ReturnType<typeof syncCoverageOverlay>> | null = null
+      try {
+        if (
+          catalog !== null &&
+          coverageController !== null &&
+          !isCoverageOverlayAttached(map, catalog)
+        ) {
+          coverageController.notifyRendererDetached(catalog)
+        }
+        activation = await syncCoverageOverlay(map, catalog, {
+          omittedDeviceIds: omittedCoverageDeviceIds,
+          omittedPeriodKeys: omittedCoveragePeriodKeys,
+        }, signal)
+        const manifest = coverageState.status !== 'inactive' &&
+          coverageState.missionId === missionId
+          ? coverageState.manifest
+          : null
+        await coverageController?.notifySelectionApplied(selectCoverageChunkKeys(manifest, {
+          omittedDeviceIds: omittedCoverageDeviceIds,
+          omittedPeriodKeys: omittedCoveragePeriodKeys,
+        }))
+        if (catalog === null || coverageController === null) {
+          activation.commit()
+          activation.finalize()
+        } else {
+          await coverageController.notifyCatalogApplied(catalog, activation)
+        }
+      } catch (error) {
+        activation?.rollback()
+        if (error instanceof Error && error.name === 'AbortError') return
+        const period = catalog?.periods[0]
+        if (period !== undefined && catalog !== null) {
+          coverageController?.notifyRendererFailure({
+            missionId: catalog.missionId,
+            periodKey: period.periodKey,
+            revisionDigest: period.revisionDigest,
+            ...(catalog.activationId === undefined
+              ? {}
+              : { activationId: catalog.activationId }),
+            message: 'Coverage map source activation failed.',
+          })
+        }
+        throw error
+      }
+    }
+    return registerMapStyleSync(map, synchronizeOverlay, {
+      onStyleUnavailable: () => {
+        coverageController?.notifyRendererDetached()
+      },
+    })
+  }, [
+    coverageState,
+    coverageController,
+    omittedCoverageDeviceIds,
+    omittedCoveragePeriodKeys,
+    missionId,
+    options.activeBasemapId,
+    options.mapReadyVersion,
+    options.mapRef,
   ])
 
   useEffect(() => {

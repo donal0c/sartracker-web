@@ -1,6 +1,6 @@
 import type { Feature, FeatureCollection, Geometry, LineString, Point } from 'geojson'
 
-import { createBreadcrumbSegments } from './breadcrumb-accumulator'
+import { createTrailSegments } from './trail-segmentation'
 import { createDeviceColor } from './tracking-color'
 import {
   DEFAULT_BREADCRUMB_TRAIL_MODE,
@@ -183,7 +183,7 @@ export function createBreadcrumbFeatureCollection(
   const features: GeoJsonLineFeature[] = []
 
   for (const [deviceId, breadcrumbs] of breadcrumbsByDevice.entries()) {
-    const segments = createBreadcrumbSegments(breadcrumbs, gapThresholdMs)
+    const segments = createTrailSegments(breadcrumbs, gapThresholdMs)
     for (const [segmentIndex, segment] of segments.entries()) {
       if (segment.length < 2) {
         continue

@@ -18,7 +18,6 @@ import {
   createPollingManager,
   type TrackingPollerClient,
 } from '../tracking/polling-manager'
-import { startTrackingRuntime } from '../tracking/start-tracking-runtime'
 import { DEFAULT_DEVICE_STALE_THRESHOLD_MS } from '../tracking/tracking-snapshot-health'
 import { applyTrackingSnapshot, applyTrackingStatus } from '../tracking/tracking-store'
 import { startMissionTrackingStatusBridge } from '../tracking/mission-tracking-status-bridge'
@@ -29,6 +28,7 @@ import { useExactBreadcrumbDotStore } from '../tracking/exact-breadcrumb-dot-sto
 import { applyCurrentPositionRejections } from '../tracking/ingest-health-store'
 import { useParticipantStore } from '../participants/participant-store'
 import { isMissionModelEnabled } from '../runtime/mission-model-flag'
+import { startCoverageRuntime } from '../tracking/start-coverage-runtime'
 
 const BROWSER_HARNESS_MAX_PERSISTED_TRACKING_POSITIONS = 2_000
 const LEAFLET_FALLBACK_SEED_MISSION_NAME = 'DON-27 Leaflet fallback surface'
@@ -105,6 +105,7 @@ export async function startMissionBrowserHarness(): Promise<void> {
     missionModelEnabled: isMissionModelEnabled(),
   })
   const stopExactBreadcrumbDots = startExactBreadcrumbDotRuntime(browserStore)
+  const stopCoverage = startCoverageRuntime(browserStore)
 
   await hydrateTrackingFromBrowserHarness()
 
@@ -123,6 +124,7 @@ export async function startMissionBrowserHarness(): Promise<void> {
       shouldEnableBrowserHarnessLiveTracking() ? readTrackingRuntimeConfig() : null
     const electronRuntime = isElectronRuntimeAvailable()
     const trackingConfig = runtimeSettings.trackingConfig ?? envTrackingConfig
+    const { startTrackingRuntime } = await import('../tracking/start-tracking-runtime')
     const stopTracking = await startTrackingRuntime({
       config: trackingConfig,
       createClient: electronRuntime ? createElectronTraccarClient : createTraccarClient,
@@ -212,9 +214,9 @@ export async function startMissionBrowserHarness(): Promise<void> {
     previousTrackingStop()
   }
 
-  applyAppRuntimeController({
+  await applyAppRuntimeController({
     reloadSettings,
-    dispose: () => {
+    dispose: async () => {
       if (disposed) {
         return
       }
@@ -225,6 +227,7 @@ export async function startMissionBrowserHarness(): Promise<void> {
       activeTrackingStop = () => undefined
       previousTrackingStop()
       stopExactBreadcrumbDots()
+      stopCoverage()
     },
   })
 

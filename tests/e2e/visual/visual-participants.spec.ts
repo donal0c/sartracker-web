@@ -50,7 +50,10 @@ Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
 
     await expect(page.getByTestId('participant-active-list')).toContainText('Device 1')
     await expect(page.getByTestId('participant-active-list')).toContainText('Device 2')
-    await expect(page.getByTestId('participant-backfill-status')).toContainText('pending')
+    const backfillStatuses = page.getByTestId('participant-backfill-status')
+    await expect(backfillStatuses).toHaveCount(2)
+    await expect(backfillStatuses.first()).toContainText('pending')
+    await expect(backfillStatuses.last()).toContainText('pending')
 
     await captureElementAndRegister(page, 'participant-management', {
       testId: 'participant-management-provenance-backfill',
@@ -68,7 +71,7 @@ Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
 Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
       playwrightAssertions: [
         'both participant rows are visible',
-        'pending backfill status is visible',
+        'pending backfill status is visible for both participant rows',
       ],
     })
   })
@@ -103,7 +106,7 @@ Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
 
   test('unfinished participant history blocks mission finish with an actionable warning', async ({ page }) => {
     await seedDiscovery(page, 3)
-    await page.getByTestId('participant-group-picker').getByText('Hill Team', { exact: true }).click()
+    await page.getByTestId('participant-device-picker').getByText('Device 1', { exact: true }).click()
     await page.getByTestId('mission-name-input').fill('Backfill Finish Visual Mission')
     await page.getByTestId('mission-offset-input').fill('2')
     await page.getByTestId('mission-start-btn').click()

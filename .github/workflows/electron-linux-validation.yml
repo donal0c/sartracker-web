@@ -56,6 +56,7 @@ jobs:
             libgl1-mesa-dri \
             libglx-mesa0 \
             mesa-utils \
+            openbox \
             libgtk-3-0 \
             libnss3 \
             libxdamage1 \
@@ -63,6 +64,7 @@ jobs:
             libxrandr2 \
             libxss1 \
             xdotool \
+            x11-utils \
             xvfb
 
       - name: Setup Node
@@ -74,8 +76,16 @@ jobs:
       - name: Install npm deps
         run: npm ci
 
-      - name: Unit regression for packaged file URLs
-        run: npx vitest run tests/unit/vite-config.test.ts
+      - name: Lint
+        run: npm run lint
+
+      - name: Full deterministic unit gate
+        # Wall-clock safety budgets must not compete with unrelated Vitest files
+        # for a shared runner core; the complete suite still runs with no skips.
+        run: npm run test -- --no-file-parallelism
+
+      - name: Production web build and bundle budgets
+        run: npm run build
 
       - name: Build Electron Linux artifacts
         # This workflow is an internal qualification lane. Release packaging
@@ -151,6 +161,32 @@ jobs:
           export LIBGL_ALWAYS_SOFTWARE=1
           export GALLIUM_DRIVER=llvmpipe
 
+          openbox --sm-disable \
+            > tmp/electron-validation-evidence/openbox.log \
+            2>&1 &
+          WM_PID=$!
+          trap 'kill "$WM_PID" 2>/dev/null || true; wait "$WM_PID" 2>/dev/null || true' EXIT
+          WM_FOUND=0
+          for _ in $(seq 1 30); do
+            if ! kill -0 "$WM_PID" 2>/dev/null; then
+              echo "::error::Openbox exited before it could manage the X11 session."
+              cat tmp/electron-validation-evidence/openbox.log || true
+              exit 1
+            fi
+            if xprop -root _NET_SUPPORTING_WM_CHECK 2>/dev/null \
+              | tee tmp/electron-validation-evidence/window-manager.txt \
+              | grep -Eq '_NET_SUPPORTING_WM_CHECK\(WINDOW\): window id # 0x[0-9a-f]+'; then
+              WM_FOUND=1
+              break
+            fi
+            sleep 1
+          done
+          if [ "$WM_FOUND" != "1" ]; then
+            echo "::error::The X11 window manager did not become ready."
+            cat tmp/electron-validation-evidence/openbox.log || true
+            exit 1
+          fi
+
           printf '\n' | gnome-keyring-daemon --unlock --components=secrets \
             > tmp/electron-validation-evidence/keyring-env.txt \
             2> tmp/electron-validation-evidence/keyring.log || true
@@ -213,8 +249,49 @@ jobs:
             exit 1
           }
 
-          kill "$APP_PID" 2>/dev/null || true
-          wait "$APP_PID" 2>/dev/null || true
+          WINDOW_ID="$(head -n 1 tmp/electron-validation-evidence/window-ids.txt)"
+          FRAME_ID="$(xwininfo -tree -id "$WINDOW_ID" \
+            | awk '/Parent window id:/ { print $4; exit }')"
+          if [ -z "$FRAME_ID" ]; then
+            echo "::error::Openbox frame for the SAR Tracker window was not found."
+            exit 1
+          fi
+          eval "$(xdotool getwindowgeometry --shell "$FRAME_ID")"
+          CLOSE_X=$((X + WIDTH - 12))
+          CLOSE_Y=$((Y + 10))
+          echo "window=$WINDOW_ID frame=$FRAME_ID close=$CLOSE_X,$CLOSE_Y" \
+            > tmp/electron-validation-evidence/appimage-close-click.txt
+          xdotool mousemove --sync "$CLOSE_X" "$CLOSE_Y" click 1
+          APP_EXITED=0
+          for _ in $(seq 1 150); do
+            if ! kill -0 "$APP_PID" 2>/dev/null; then
+              APP_EXITED=1
+              break
+            fi
+            APP_STATE="$(ps -o stat= -p "$APP_PID" 2>/dev/null || true)"
+            if [[ "$APP_STATE" == Z* ]]; then
+              APP_EXITED=1
+              break
+            fi
+            sleep 0.1
+          done
+          if [ "$APP_EXITED" != "1" ]; then
+            echo "::error::AppImage did not exit after the packaged window close request."
+            cat tmp/electron-validation-evidence/appimage.log || true
+            kill "$APP_PID" 2>/dev/null || true
+            wait "$APP_PID" 2>/dev/null || true
+            exit 1
+          fi
+          if ! wait "$APP_PID"; then
+            echo "::error::AppImage exited unsuccessfully after its window close request."
+            cat tmp/electron-validation-evidence/appimage.log || true
+            exit 1
+          fi
+          echo "graceful-window-close=passed" \
+            > tmp/electron-validation-evidence/appimage-graceful-close.txt
+          kill "$WM_PID" 2>/dev/null || true
+          wait "$WM_PID" 2>/dev/null || true
+          trap - EXIT
           EOF
 
       - name: Upload Electron Linux artifacts

@@ -152,6 +152,73 @@ test.describe('M5 mission control workflows', () => {
     expect(persistedMission?.status).toBe('finalized')
   })
 
+  test('archives a known evidence gap only after permanent admin acknowledgement [DON-276]', async ({ page }) => {
+    await page.evaluate(() => {
+      window.localStorage.setItem(
+        'sartracker:browser-settings',
+        JSON.stringify({ missionDefaults: { adminRoster: ['Ops Lead'] } }),
+      )
+    })
+    await page.reload()
+
+    await page.getByTestId('mission-name-input').fill('Known Evidence Gap')
+    await page.getByTestId('mission-start-btn').click()
+    const missionId = await page.evaluate(
+      () => window.__SARTRACKER_BROWSER_HARNESS__?.readState().currentMissionId ?? null,
+    )
+    expect(missionId).not.toBeNull()
+    await page.getByTestId('mission-finish-btn').click()
+    await page.getByTestId('mission-finish-dialog')
+      .getByRole('button', { name: 'Confirm Finish' })
+      .click()
+    await page.evaluate(async (id) => {
+      await window.__SARTRACKER_BROWSER_HARNESS__?.injectEvidenceLoss(id)
+    }, missionId!)
+    await page.reload()
+    await page.getByTestId('app-title').waitFor({ state: 'visible', timeout: 10_000 })
+    await page.waitForSelector('canvas', { timeout: 15_000 })
+    await expect(page.getByTestId('ingest-evidence-health-warning')).toContainText(
+      'rejected-position evidence was lost during runtime shutdown',
+    )
+
+    await page.getByTestId('mission-finalize-btn').click()
+    await page.getByTestId('mission-finalize-confirm').click()
+
+    const evidenceDialog = page.getByTestId('mission-evidence-loss-dialog')
+    await expect(evidenceDialog).toBeVisible()
+    await expect(evidenceDialog).toContainText('never permits Complete or 100%')
+    await page.getByTestId('mission-evidence-loss-admin').selectOption('Ops Lead')
+    await page.getByTestId('mission-evidence-loss-reason').fill(
+      'Runtime failure recorded in the incident log at 22:14.',
+    )
+    await page.getByTestId('mission-evidence-loss-confirm').click()
+
+    await expect(evidenceDialog).toBeHidden()
+    await expect(page.getByTestId('ingest-evidence-health-warning')).toContainText(
+      'Complete and 100% remain blocked permanently',
+    )
+    await expect(page.getByTestId('ingest-evidence-health-warning')).toContainText(
+      'archive and lock may proceed',
+    )
+
+    await page.getByTestId('mission-finalize-btn').click()
+    await page.getByTestId('mission-finalize-confirm').click()
+    await expect(page.getByTestId('mission-governance-card')).toContainText('finalized')
+
+    const retained = await page.evaluate(() => {
+      const state = window.__SARTRACKER_BROWSER_HARNESS__?.readState()
+      return {
+        evidenceLoss: state?.evidenceLossByMission ?? {},
+        eventTypes: state?.missionEvents.map((event) => event.event_type) ?? [],
+      }
+    })
+    expect(retained.evidenceLoss[missionId!]).toMatchObject({
+      reason: 'renderer_pending_evidence_lost',
+      acknowledgement: { adminName: 'Ops Lead' },
+    })
+    expect(retained.eventTypes).toContain('mission_evidence_loss_acknowledged')
+  })
+
   test('unlocks a finalized mission through the configured admin roster', async ({ page }) => {
     await page.evaluate(() => {
       window.localStorage.setItem(

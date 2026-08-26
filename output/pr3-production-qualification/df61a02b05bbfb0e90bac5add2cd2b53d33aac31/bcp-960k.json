@@ -1,0 +1,173 @@
+{
+  "exactHead": "df61a02b05bbfb0e90bac5add2cd2b53d33aac31",
+  "fixturePath": "tmp/pr3-evidence-preserved-53e38bf/g2/53e38bf3b88e44f3be677e0ac260548f63f9ff9e/bcp-960k-B/fixture/mission-store.sqlite",
+  "fixtureBytes": 476151808,
+  "missionId": "fixture-mission-000000000001",
+  "chunkCount": 1300,
+  "periodCount": 13,
+  "totalFixes": 959988,
+  "deliveredFixes": 959988,
+  "manifestReadyMs": 2069.683255,
+  "firstUsefulMs": 2245.259746,
+  "completeMs": 6212.29585,
+  "periodDurationsMs": [
+    168.90525300000036,
+    145.76027699999986,
+    138.42724899999985,
+    146.20085599999993,
+    114.28240599999981,
+    149.25416700000005,
+    94.13057500000014,
+    133.0508679999998,
+    99.84447899999986,
+    151.3277720000001,
+    120.31003200000032,
+    91.52001199999995,
+    2576.0547839999995
+  ],
+  "geometryFeatureCount": 1420,
+  "geometrySha256": "d8133bc9ba7b2858020dc0f1b980893ffb71b78d51901707ac0d4e5e72377372",
+  "revisionSha256": "6736d423aa7eaae916c6da281babc9360d4344bd42fe3279ec989ee9be579f04",
+  "geometryProbes": [
+    {
+      "periodKey": "outing\u0000fixture-outing-000000000011",
+      "revisionDigest": "14037f04042a43a1e72b",
+      "z": 14,
+      "x": 7748,
+      "y": 5412,
+      "byteLength": 10734,
+      "geometryFeatureCount": 90,
+      "sha256": "ef06271d9427a810572702604660ee6588459c759abafcc7f9a1a0811cedc5d8"
+    },
+    {
+      "periodKey": "outing\u0000fixture-outing-000000000010",
+      "revisionDigest": "8bcb91f57b077162c45d",
+      "z": 14,
+      "x": 7748,
+      "y": 5411,
+      "byteLength": 12747,
+      "geometryFeatureCount": 100,
+      "sha256": "bb4cc7d07fafa4c27506f8cb39efc39619abd44c7eadc3c829f729d129dd492c"
+    },
+    {
+      "periodKey": "outing\u0000fixture-outing-000000000009",
+      "revisionDigest": "1d9fb6389c31c04e3531",
+      "z": 14,
+      "x": 7748,
+      "y": 5411,
+      "byteLength": 12414,
+      "geometryFeatureCount": 100,
+      "sha256": "7d083f6b7bf39a1c49f0e6966c7b38ac24eecdbd111526d39ebada1c878b698a"
+    },
+    {
+      "periodKey": "outing\u0000fixture-outing-000000000008",
+      "revisionDigest": "fd25a0e054d1b88e2623",
+      "z": 14,
+      "x": 7748,
+      "y": 5412,
+      "byteLength": 11391,
+      "geometryFeatureCount": 90,
+      "sha256": "67676c2dc6fa40f76e73b2509846cd528b4c5b87d93c68270285dba10e62ee8b"
+    },
+    {
+      "periodKey": "outing\u0000fixture-outing-000000000007",
+      "revisionDigest": "a5aba426cd12e3643b66",
+      "z": 14,
+      "x": 7748,
+      "y": 5412,
+      "byteLength": 11409,
+      "geometryFeatureCount": 90,
+      "sha256": "70950c3cccef9d147de794fdb91a5c965b009cdf01c40d768eba18f6318e2940"
+    },
+    {
+      "periodKey": "outing\u0000fixture-outing-000000000006",
+      "revisionDigest": "4d7cdb13bf13897d5ed7",
+      "z": 14,
+      "x": 7748,
+      "y": 5412,
+      "byteLength": 11409,
+      "geometryFeatureCount": 90,
+      "sha256": "fdfe754de99dfde576c9e77ab91a8b56d61ba53178a501f315c247567a4e8d8c"
+    },
+    {
+      "periodKey": "outing\u0000fixture-outing-000000000005",
+      "revisionDigest": "3a5765565cd2802e7bf7",
+      "z": 14,
+      "x": 7748,
+      "y": 5411,
+      "byteLength": 11766,
+      "geometryFeatureCount": 100,
+      "sha256": "ac3aa4b8fb2f3c6342f37cea3eeba0b646126055de055bc44d4816435f61437f"
+    },
+    {
+      "periodKey": "outing\u0000fixture-outing-000000000004",
+      "revisionDigest": "740c0a3afef3663ad3d4",
+      "z": 14,
+      "x": 7748,
+      "y": 5410,
+      "byteLength": 12641,
+      "geometryFeatureCount": 100,
+      "sha256": "b75ae8a0488646d7622c0d368b558ed16c3aaf7e0bb3f01d23616d549920f92c"
+    },
+    {
+      "periodKey": "outing\u0000fixture-outing-000000000003",
+      "revisionDigest": "47feccdcf6620b9ed047",
+      "z": 14,
+      "x": 7748,
+      "y": 5411,
+      "byteLength": 11910,
+      "geometryFeatureCount": 100,
+      "sha256": "cc50a898668012256294944e9ca8bbb621f31c2390ca3334465687c27636dd6f"
+    },
+    {
+      "periodKey": "outing\u0000fixture-outing-000000000002",
+      "revisionDigest": "6c8ec940464a49315c5e",
+      "z": 14,
+      "x": 7748,
+      "y": 5411,
+      "byteLength": 13144,
+      "geometryFeatureCount": 100,
+      "sha256": "8f36c44fad016c1c8023a01bca6a7d249fcd5b2ca90fb2f2cd1307f6c0ce64ec"
+    },
+    {
+      "periodKey": "outing\u0000fixture-outing-000000000001",
+      "revisionDigest": "e3957fe76b5cfd90a352",
+      "z": 14,
+      "x": 7748,
+      "y": 5412,
+      "byteLength": 10788,
+      "geometryFeatureCount": 90,
+      "sha256": "81e1387d559173bcc55989f88a1dec1116d49dac7b0fccd35a052a64de00b33b"
+    },
+    {
+      "periodKey": "outing\u0000fixture-outing-000000000000",
+      "revisionDigest": "73fdb73ebd6c8e6b18b7",
+      "z": 14,
+      "x": 7748,
+      "y": 5410,
+      "byteLength": 11275,
+      "geometryFeatureCount": 100,
+      "sha256": "0c846bdfce6e4ed8bf5388d028f622db51e20835241ff5fa1d8428d0ddfe7670"
+    },
+    {
+      "periodKey": "unassigned\u0000",
+      "revisionDigest": "ff7c3aa6aaf73c4b8ddf",
+      "z": 14,
+      "x": 7748,
+      "y": 5413,
+      "byteLength": 13504,
+      "geometryFeatureCount": 270,
+      "sha256": "149897e3f5269d1f2bee2550b91ea44864fe1748aceecd86d3fb209673c1415b"
+    }
+  ],
+  "mainMaxGapMs": 21.025555000000168,
+  "claim": {
+    "changeSeq": 1,
+    "databaseReady": false,
+    "blockers": [
+      "backfill_incomplete"
+    ],
+    "revisionCount": 1300
+  },
+  "completedAt": "2026-08-25T13:11:29.163Z"
+}

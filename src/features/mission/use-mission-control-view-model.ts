@@ -32,6 +32,8 @@ export type MissionControlViewModel = {
   readonly setShowFinalizeDialog: (show: boolean) => void
   readonly showUnlockDialog: boolean
   readonly setShowUnlockDialog: (show: boolean) => void
+  readonly showEvidenceLossDialog: boolean
+  readonly setShowEvidenceLossDialog: (show: boolean) => void
   readonly governanceBusy: boolean
   readonly governanceFeedback: string | null
   readonly adminRoster: readonly string[]
@@ -39,6 +41,8 @@ export type MissionControlViewModel = {
   readonly setSelectedAdmin: (admin: string) => void
   readonly unlockReason: string
   readonly setUnlockReason: (reason: string) => void
+  readonly evidenceLossReason: string
+  readonly setEvidenceLossReason: (reason: string) => void
   readonly canOpenReview: boolean
   readonly openReviewWorkspace: () => void
   readonly canStart: boolean
@@ -51,6 +55,7 @@ export type MissionControlViewModel = {
   readonly resumeRecoverable: () => Promise<void>
   readonly startFresh: () => Promise<void>
   readonly confirmFinalize: () => Promise<void>
+  readonly confirmEvidenceLossAcknowledgement: () => Promise<void>
   readonly confirmUnlock: () => Promise<void>
 }
 
@@ -64,6 +69,7 @@ export function useMissionControlViewModel(): MissionControlViewModel {
   const recoverableMission = useMissionStore((state) => state.recoverableMission)
   const controller = useMissionStore((state) => state.controller)
   const governanceMission = useMissionStore((state) => state.governanceMission)
+  const governanceEvidenceHealth = useMissionStore((state) => state.governanceEvidenceHealth)
   const governanceController = useMissionStore((state) => state.governanceController)
   const participantController = useParticipantStore((state) => state.controller)
   const openReviewWorkspace = useMissionReviewWorkspaceStore((state) => state.openWorkspace)
@@ -78,14 +84,16 @@ export function useMissionControlViewModel(): MissionControlViewModel {
   const [showFinishDialog, setShowFinishDialog] = useState(false)
   const [showFinalizeDialog, setShowFinalizeDialog] = useState(false)
   const [showUnlockDialog, setShowUnlockDialog] = useState(false)
+  const [showEvidenceLossDialog, setShowEvidenceLossDialog] = useState(false)
   const [governanceBusy, setGovernanceBusy] = useState(false)
   const [governanceFeedback, setGovernanceFeedback] = useState<string | null>(null)
   const [adminRoster, setAdminRoster] = useState<readonly string[]>([])
   const [selectedAdmin, setSelectedAdmin] = useState('')
   const [unlockReason, setUnlockReason] = useState('')
+  const [evidenceLossReason, setEvidenceLossReason] = useState('')
 
   useEffect(() => {
-    if (!showUnlockDialog) {
+    if (!showUnlockDialog && !showEvidenceLossDialog) {
       return
     }
 
@@ -113,7 +121,7 @@ export function useMissionControlViewModel(): MissionControlViewModel {
     return () => {
       cancelled = true
     }
-  }, [showUnlockDialog])
+  }, [showEvidenceLossDialog, showUnlockDialog])
 
   function setMissionName(name: string): void {
     setMissionNameState(name)
@@ -193,6 +201,33 @@ export function useMissionControlViewModel(): MissionControlViewModel {
     }
   }
 
+  async function confirmEvidenceLossAcknowledgement(): Promise<void> {
+    if (governanceController === null || governanceMission === null) {
+      return
+    }
+
+    setGovernanceBusy(true)
+    setActionError(null)
+    setGovernanceFeedback(null)
+
+    try {
+      await governanceController.acknowledgeGovernanceEvidenceLoss({
+        mission_id: governanceMission.id,
+        admin_name: selectedAdmin,
+        reason: evidenceLossReason,
+      })
+      setGovernanceFeedback(
+        `Evidence loss acknowledged by ${selectedAdmin}. Complete remains unavailable; Archive & Lock can now retain the mission with this permanent warning.`,
+      )
+      setShowEvidenceLossDialog(false)
+      setEvidenceLossReason('')
+    } catch (error) {
+      setActionError(toErrorMessage(error))
+    } finally {
+      setGovernanceBusy(false)
+    }
+  }
+
   async function confirmFinish(): Promise<void> {
     if (controller === null) {
       return
@@ -252,7 +287,18 @@ export function useMissionControlViewModel(): MissionControlViewModel {
       setGovernanceFeedback(`Mission archived to ${result.archive.archive_path}`)
       setShowFinalizeDialog(false)
     } catch (error) {
-      setActionError(toErrorMessage(error))
+      const currentGovernanceHealth =
+        useMissionStore.getState().governanceEvidenceHealth
+      if (isAcknowledgeableEvidenceHealthFinalizationBlock(
+        error,
+        currentGovernanceHealth?.reason ?? governanceEvidenceHealth?.reason ?? null,
+      )) {
+        setActionError(null)
+        setShowFinalizeDialog(false)
+        setShowEvidenceLossDialog(true)
+      } else {
+        setActionError(toErrorMessage(error))
+      }
     } finally {
       setGovernanceBusy(false)
     }
@@ -303,6 +349,8 @@ export function useMissionControlViewModel(): MissionControlViewModel {
     setShowFinalizeDialog,
     showUnlockDialog,
     setShowUnlockDialog,
+    showEvidenceLossDialog,
+    setShowEvidenceLossDialog,
     governanceBusy,
     governanceFeedback,
     adminRoster,
@@ -310,6 +358,8 @@ export function useMissionControlViewModel(): MissionControlViewModel {
     setSelectedAdmin,
     unlockReason,
     setUnlockReason,
+    evidenceLossReason,
+    setEvidenceLossReason,
     canOpenReview: currentMission !== null || governanceMission !== null || recoverableMission !== null,
     openReviewWorkspace,
     canStart: controller !== null && phase === 'idle',
@@ -322,10 +372,22 @@ export function useMissionControlViewModel(): MissionControlViewModel {
     resumeRecoverable,
     startFresh,
     confirmFinalize,
+    confirmEvidenceLossAcknowledgement,
     confirmUnlock,
   }
 }
 
 function toErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : 'Mission action failed.'
+}
+
+function isAcknowledgeableEvidenceHealthFinalizationBlock(
+  error: unknown,
+  reason: string | null,
+): boolean {
+  return error instanceof Error &&
+    /degraded evidence health blocks finalization/iu.test(error.message) &&
+    (reason === 'mission_persistence_failed' ||
+      reason === 'renderer_pending_evidence_lost' ||
+      reason === 'renderer_pending_capacity_exhausted')
 }

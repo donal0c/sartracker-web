@@ -1,4 +1,5 @@
 const MAX_MISSION_ID_LENGTH = 200
+const { findContainingOutingIndex } = require('./coverage-period-resolver.cjs')
 
 /** Reads exact per-outing and Unassigned accepted-fix counts from one snapshot. */
 function readOutingFixSummary(database, input) {
@@ -33,25 +34,6 @@ function readOutingFixSummary(database, input) {
     }
   })
   return readSnapshot()
-}
-
-/** Finds one half-open non-overlapping outing window in logarithmic time. */
-function findContainingOutingIndex(outings, timestamp) {
-  let low = 0
-  let high = outings.length - 1
-  let candidate = -1
-  while (low <= high) {
-    const middle = Math.floor((low + high) / 2)
-    if (outings[middle].started_at <= timestamp) {
-      candidate = middle
-      low = middle + 1
-    } else {
-      high = middle - 1
-    }
-  }
-  if (candidate === -1) return -1
-  const endedAt = outings[candidate].ended_at
-  return endedAt === null || timestamp < endedAt ? candidate : -1
 }
 
 /** Validates the bounded worker query before SQLite opens. */

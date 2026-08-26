@@ -56,6 +56,7 @@ export type CoreFeatureRuntimeMissionStore = Pick<
   MissionStore,
   | 'createMission'
   | 'listMissions'
+  | 'getIngestEvidenceHealth'
   | 'getRecoverableMission'
   | 'pauseMission'
   | 'resumeMission'
@@ -75,6 +76,7 @@ export type CoreFeatureRuntimeMissionStore = Pick<
   | 'listGroupMembershipEvents'
   | 'listParticipantBackfillCheckpoints'
   | 'finalizeMission'
+  | 'acknowledgeIngestEvidenceLoss'
   | 'unlockFinalizedMission'
   | 'listMarkers'
   | 'upsertMarker'

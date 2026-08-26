@@ -1,0 +1,445 @@
+{
+  "schemaVersion": 1,
+  "groups": [
+    {
+      "candidate": "A",
+      "fixture": "bcp-2m",
+      "coldRunCount": 1,
+      "warmRunCount": 2,
+      "decision": "reject",
+      "rejections": [
+        "firstUseful"
+      ],
+      "worstWarm": {
+        "firstUsefulMs": 5432,
+        "completeMs": 13593,
+        "filterToggleMs": 196.09999999403954,
+        "appendRerenderMs": 608.9000000059605,
+        "mainMaxMs": 57.821668,
+        "rendererP95Ms": 150.39999999999964,
+        "settledBytes": 987160576,
+        "peakBytes": 1045458944
+      },
+      "phaseMs": {
+        "query": {
+          "count": 3,
+          "min": 6838.544926000001,
+          "median": 6899.1721910000015,
+          "p95": 9616.598526000003,
+          "max": 9616.598526000003
+        },
+        "segmentation": {
+          "count": 3,
+          "min": 1276.4470380000016,
+          "median": 1279.1984639999964,
+          "p95": 2039.9814720000134,
+          "max": 2039.9814720000134
+        },
+        "encodeServe": {
+          "count": 3,
+          "min": 0,
+          "median": 0,
+          "p95": 0,
+          "max": 0
+        },
+        "sourceUpdate": {
+          "count": 3,
+          "min": 56.10000020265579,
+          "median": 58.399999529123306,
+          "p95": 95.69999971985817,
+          "max": 95.69999971985817
+        },
+        "renderSettle": {
+          "count": 3,
+          "min": 2964.899999976158,
+          "median": 3091.4000000059605,
+          "p95": 5582.699999988079,
+          "max": 5582.699999988079
+        }
+      },
+      "manifests": [
+        {
+          "repetition": 1,
+          "thermalState": "cold",
+          "checksum": "47382cdf08e871f758935f12fb7006ddaac3458c8c6df6b629a1f35568ad7f7a"
+        },
+        {
+          "repetition": 2,
+          "thermalState": "warm",
+          "checksum": "eefdbcddacc34f00f20417a4f6c940385ef4b4760281bf598532ffa77738e8a0"
+        },
+        {
+          "repetition": 3,
+          "thermalState": "warm",
+          "checksum": "9b7981bdeb645629ad8dcbcd815aef6ecbffb3c547e6da59b38e0cf713273fb9"
+        }
+      ]
+    },
+    {
+      "candidate": "A",
+      "fixture": "bcp-960k",
+      "coldRunCount": 1,
+      "warmRunCount": 2,
+      "decision": "reject",
+      "rejections": [
+        "firstUseful"
+      ],
+      "worstWarm": {
+        "firstUsefulMs": 8732,
+        "completeMs": 9480,
+        "filterToggleMs": 204,
+        "appendRerenderMs": 653.5,
+        "mainMaxMs": 52.756181000000026,
+        "rendererP95Ms": 183.79999999999927,
+        "settledBytes": 691113984,
+        "peakBytes": 691113984
+      },
+      "phaseMs": {
+        "query": {
+          "count": 3,
+          "min": 3073.628175999994,
+          "median": 6239.060539,
+          "p95": 6270.470746999997,
+          "max": 6270.470746999997
+        },
+        "segmentation": {
+          "count": 3,
+          "min": 579.6194510000023,
+          "median": 1313.5964860000022,
+          "p95": 1335.215636000003,
+          "max": 1335.215636000003
+        },
+        "encodeServe": {
+          "count": 3,
+          "min": 0,
+          "median": 0,
+          "p95": 0,
+          "max": 0
+        },
+        "sourceUpdate": {
+          "count": 3,
+          "min": 39.19999995827675,
+          "median": 81.10000002384186,
+          "p95": 83.50000002980232,
+          "max": 83.50000002980232
+        },
+        "renderSettle": {
+          "count": 3,
+          "min": 2237,
+          "median": 3460.5,
+          "p95": 8907.09999999404,
+          "max": 8907.09999999404
+        }
+      },
+      "manifests": [
+        {
+          "repetition": 1,
+          "thermalState": "cold",
+          "checksum": "c62899f923e50a5656a2fa2d9e7564cf953eda37bfcc94b2745cf38507be72d3"
+        },
+        {
+          "repetition": 2,
+          "thermalState": "warm",
+          "checksum": "6c6ba80d6df115248e94f4b0aa3cb59de5db5a9767ad9f7c92cfd700a03ce85d"
+        },
+        {
+          "repetition": 3,
+          "thermalState": "warm",
+          "checksum": "2e47a9202b57a2654a6a4fb9ca865aab838309607d3d227f2ee7d05ded84faa2"
+        }
+      ]
+    },
+    {
+      "candidate": "B",
+      "fixture": "bcp-2m",
+      "coldRunCount": 1,
+      "warmRunCount": 2,
+      "decision": "pass",
+      "rejections": [],
+      "worstWarm": {
+        "firstUsefulMs": 3334,
+        "completeMs": 7554,
+        "filterToggleMs": 103.5,
+        "appendRerenderMs": 489,
+        "mainMaxMs": 33.13821699999998,
+        "rendererP95Ms": 83.60000000000036,
+        "settledBytes": 294694912,
+        "peakBytes": 295051264
+      },
+      "phaseMs": {
+        "query": {
+          "count": 3,
+          "min": 4951.346545000007,
+          "median": 5000.064499000004,
+          "p95": 5305.076126000001,
+          "max": 5305.076126000001
+        },
+        "segmentation": {
+          "count": 3,
+          "min": 955.0662420000026,
+          "median": 985.2501960000025,
+          "p95": 1031.4776810000058,
+          "max": 1031.4776810000058
+        },
+        "encodeServe": {
+          "count": 3,
+          "min": 278.0206049999992,
+          "median": 300.03726499999925,
+          "p95": 311.0309299999976,
+          "max": 311.0309299999976
+        },
+        "sourceUpdate": {
+          "count": 3,
+          "min": 0,
+          "median": 0,
+          "p95": 0,
+          "max": 0
+        },
+        "renderSettle": {
+          "count": 3,
+          "min": 3531.699999988079,
+          "median": 3641.399999976158,
+          "p95": 3736.199999988079,
+          "max": 3736.199999988079
+        }
+      },
+      "manifests": [
+        {
+          "repetition": 1,
+          "thermalState": "cold",
+          "checksum": "e3050d3b1a0160180c0e05aa0e55608fcb92b1f9813b4cc232e7b7f123f56ad7"
+        },
+        {
+          "repetition": 2,
+          "thermalState": "warm",
+          "checksum": "e60206900081d3199104453c6445f79b693b877ff87f840ed400a21feb527667"
+        },
+        {
+          "repetition": 3,
+          "thermalState": "warm",
+          "checksum": "21e3afedbaf83591264d4f5d902b3b10066d7f223eaef99f347af8e9eddef0e9"
+        }
+      ]
+    },
+    {
+      "candidate": "B",
+      "fixture": "bcp-960k",
+      "coldRunCount": 1,
+      "warmRunCount": 2,
+      "decision": "pass",
+      "rejections": [],
+      "worstWarm": {
+        "firstUsefulMs": 3465,
+        "completeMs": 5976,
+        "filterToggleMs": 133.2999999821186,
+        "appendRerenderMs": 657.3000000119209,
+        "mainMaxMs": 58.27777999999995,
+        "rendererP95Ms": 117,
+        "settledBytes": 276369408,
+        "peakBytes": 276369408
+      },
+      "phaseMs": {
+        "query": {
+          "count": 3,
+          "min": 2414.6866070000024,
+          "median": 3509.4182569999966,
+          "p95": 3533.799945000001,
+          "max": 3533.799945000001
+        },
+        "segmentation": {
+          "count": 3,
+          "min": 490.85754499999643,
+          "median": 797.7314589999997,
+          "p95": 806.4990800000026,
+          "max": 806.4990800000026
+        },
+        "encodeServe": {
+          "count": 3,
+          "min": 161.07189599999828,
+          "median": 216.92405300000019,
+          "p95": 222.3140649999999,
+          "max": 222.3140649999999
+        },
+        "sourceUpdate": {
+          "count": 3,
+          "min": 0,
+          "median": 0,
+          "p95": 0,
+          "max": 0
+        },
+        "renderSettle": {
+          "count": 3,
+          "min": 2137.5999999940395,
+          "median": 3395.5,
+          "p95": 3481.7000000178814,
+          "max": 3481.7000000178814
+        }
+      },
+      "manifests": [
+        {
+          "repetition": 1,
+          "thermalState": "cold",
+          "checksum": "d2ddc6d7e962fd63f765e4eebe85c80aba9772f64bbe262c71bfbd82c9e38539"
+        },
+        {
+          "repetition": 2,
+          "thermalState": "warm",
+          "checksum": "87ecc2c27fdae663e01645167ee1bd1e1cabfe33acc1c0b66b7e0ac311042f05"
+        },
+        {
+          "repetition": 3,
+          "thermalState": "warm",
+          "checksum": "448d1598901120513ecda6b5e4ce7068e821408e17b322969140628a796edef8"
+        }
+      ]
+    },
+    {
+      "candidate": "C",
+      "fixture": "bcp-2m",
+      "coldRunCount": 1,
+      "warmRunCount": 2,
+      "decision": "reject",
+      "rejections": [
+        "firstUseful"
+      ],
+      "worstWarm": {
+        "firstUsefulMs": 8500,
+        "completeMs": 9208,
+        "filterToggleMs": 348.7000000178814,
+        "appendRerenderMs": 3089.7000000178814,
+        "mainMaxMs": 54.724430999999996,
+        "rendererP95Ms": 117,
+        "settledBytes": 1418027008,
+        "peakBytes": 1484681216
+      },
+      "phaseMs": {
+        "query": {
+          "count": 3,
+          "min": 4787.325148999996,
+          "median": 4953.296444000005,
+          "p95": 6185.534012000002,
+          "max": 6185.534012000002
+        },
+        "segmentation": {
+          "count": 3,
+          "min": 889.8506530000021,
+          "median": 947.2669549999989,
+          "p95": 1206.8962060000058,
+          "max": 1206.8962060000058
+        },
+        "encodeServe": {
+          "count": 3,
+          "min": 0,
+          "median": 0,
+          "p95": 0,
+          "max": 0
+        },
+        "sourceUpdate": {
+          "count": 3,
+          "min": 1.5,
+          "median": 1.5999999940395355,
+          "p95": 3.400000035762787,
+          "max": 3.400000035762787
+        },
+        "renderSettle": {
+          "count": 3,
+          "min": 2547.0999999940395,
+          "median": 2583.300000011921,
+          "p95": 3090.300000011921,
+          "max": 3090.300000011921
+        }
+      },
+      "manifests": [
+        {
+          "repetition": 1,
+          "thermalState": "cold",
+          "checksum": "e234c220f62f9c24f8c54c525118bfd5fda11bb586bf7b90493f5d242bb16964"
+        },
+        {
+          "repetition": 2,
+          "thermalState": "warm",
+          "checksum": "2af198419646aba94786cb552ce15ff861a8a78a2f7178827b147b0540d80f1c"
+        },
+        {
+          "repetition": 3,
+          "thermalState": "warm",
+          "checksum": "b1bf0337104ed3cc0a22db78c6deedae68fc0ef49a1042fc3ebf92fa8c45eb1c"
+        }
+      ]
+    },
+    {
+      "candidate": "C",
+      "fixture": "bcp-960k",
+      "coldRunCount": 1,
+      "warmRunCount": 2,
+      "decision": "reject",
+      "rejections": [
+        "firstUseful"
+      ],
+      "worstWarm": {
+        "firstUsefulMs": 5806,
+        "completeMs": 6555,
+        "filterToggleMs": 178,
+        "appendRerenderMs": 1755.5999999940395,
+        "mainMaxMs": 51.38732600000003,
+        "rendererP95Ms": 67,
+        "settledBytes": 890953728,
+        "peakBytes": 1079218176
+      },
+      "phaseMs": {
+        "query": {
+          "count": 3,
+          "min": 2385.519483999996,
+          "median": 2959.870276000005,
+          "p95": 2965.1432129999926,
+          "max": 2965.1432129999926
+        },
+        "segmentation": {
+          "count": 3,
+          "min": 453.84305799999646,
+          "median": 603.8001570000043,
+          "p95": 608.2082360000007,
+          "max": 608.2082360000007
+        },
+        "encodeServe": {
+          "count": 3,
+          "min": 0,
+          "median": 0,
+          "p95": 0,
+          "max": 0
+        },
+        "sourceUpdate": {
+          "count": 3,
+          "min": 1.5999999940395355,
+          "median": 2,
+          "p95": 2.0999999940395355,
+          "max": 2.0999999940395355
+        },
+        "renderSettle": {
+          "count": 3,
+          "min": 1631.300000011921,
+          "median": 2138.399999976158,
+          "p95": 2180.9999999701977,
+          "max": 2180.9999999701977
+        }
+      },
+      "manifests": [
+        {
+          "repetition": 1,
+          "thermalState": "cold",
+          "checksum": "652d378eebae84777289b4c54581322abc77b926b2f59ca4d2c5697c46905ee5"
+        },
+        {
+          "repetition": 2,
+          "thermalState": "warm",
+          "checksum": "a6c6a9481211ec1130165f012bc237b6b9a1232e3f112c805b0cf0197fc69ba7"
+        },
+        {
+          "repetition": 3,
+          "thermalState": "warm",
+          "checksum": "cde55e1db1be232ecd3c16279ecbff941c59da96b874501a78dbc889d724d698"
+        }
+      ]
+    }
+  ]
+}

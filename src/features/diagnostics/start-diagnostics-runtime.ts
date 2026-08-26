@@ -16,6 +16,7 @@ import {
   formatTrackingPollLedger,
   type TrackingPollLedgerEntry,
 } from './tracking-poll-ledger'
+import type { CoverageDiagnostics } from '../tracking/coverage-diagnostics'
 
 type DependencySmoke = {
   readonly hasMapLibre: boolean
@@ -41,7 +42,10 @@ type StartDiagnosticsRuntimeDependencies = {
   readonly missionStore: DiagnosticsMissionStoreBoundary
   readonly layerCatalogStore: DiagnosticsLayerCatalogBoundary
   readonly readMissionRuntime: () => MissionRuntimeState
-  readonly readMissionGovernanceRuntime: () => MissionGovernanceRuntimeState
+  readonly readMissionGovernanceRuntime: () => Pick<
+    MissionGovernanceRuntimeState,
+    'governanceMission'
+  >
   readonly readTrackingRuntime: () => {
     readonly status: TrackingConnectionStatus
     readonly snapshot: TrackingSnapshot
@@ -55,6 +59,7 @@ type StartDiagnosticsRuntimeDependencies = {
   readonly readDiagnosticEvents?: () => readonly DiagnosticEvent[]
   readonly readTrackingPollLedger?: () => readonly TrackingPollLedgerEntry[]
   readonly readMissionModelEnabled?: () => boolean
+  readonly readCoverageDiagnostics?: () => CoverageDiagnostics | null
   readonly exportReport: (fileName: string, contents: string) => Promise<string>
   /**
    * Exports a support bundle (environment + crash history + runtime log). Optional:
@@ -329,6 +334,7 @@ export async function startDiagnosticsRuntime(
         layerCatalogState: layerCatalogRuntime,
         selectedMissionId,
         missionModelEnabled: dependencies.readMissionModelEnabled?.() ?? false,
+        coverageDiagnostics: dependencies.readCoverageDiagnostics?.() ?? null,
       })
 
       if (token !== refreshToken) {

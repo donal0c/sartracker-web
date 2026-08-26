@@ -170,7 +170,7 @@ describe('polling manager', () => {
     poller.stop()
   })
 
-  it('does not publish a poll that completes after the poller is stopped [DON-260]', async () => {
+  it('publishes the final retrieved safety snapshot before stop settles [DON-260]', async () => {
     const deferredDevices = createDeferred<readonly NormalizedTrackingDevice[]>()
     const deferredPositions = createDeferred<readonly NormalizedTrackingPosition[]>()
     const client = createClient({
@@ -189,14 +189,119 @@ describe('polling manager', () => {
 
     poller.start()
     await vi.advanceTimersByTimeAsync(0)
-    poller.stop()
+    const stopping = poller.stop()
     deferredDevices.resolve(NORMALIZED_DEVICES)
     deferredPositions.resolve(NORMALIZED_POSITIONS)
     await vi.advanceTimersByTimeAsync(0)
+    await stopping
 
-    expect(onSnapshot).not.toHaveBeenCalled()
-    expect(onStatusChange).not.toHaveBeenCalled()
+    expect(onSnapshot).toHaveBeenCalledOnce()
+    expect(onSnapshot.mock.calls[0]?.[0].positions).toHaveLength(NORMALIZED_POSITIONS.length)
+    expect(onStatusChange).toHaveBeenCalledWith(expect.objectContaining({ mode: 'online' }))
     expect(client.getBreadcrumbs).not.toHaveBeenCalled()
+  })
+
+  it('settles retrieved current-position evidence before asynchronous stop completes', async () => {
+    const currentPositions = createDeferred<{
+      readonly accepted: readonly NormalizedTrackingPosition[]
+      readonly rejected: readonly [{
+        readonly deviceId: string
+        readonly reason: 'invalid_coordinates'
+        readonly rowIndex: number
+        readonly anomalyKey: string
+        readonly sourcePositionId: string
+        readonly canonicalEvidence: Readonly<Record<string, unknown>>
+      }]
+    }>()
+    const roster = createDeferred<readonly NormalizedTrackingDevice[]>()
+    const rejection = {
+      deviceId: '2',
+      reason: 'invalid_coordinates' as const,
+      rowIndex: 1,
+      anomalyKey: 'source:stop-in-flight',
+      sourcePositionId: 'stop-in-flight',
+      canonicalEvidence: { source_position_id: 'stop-in-flight', device_id: '2' },
+    }
+    const client = createClient({
+      getDevices: vi.fn().mockReturnValue(roster.promise),
+      getCurrentPositionsWithReport: vi.fn().mockReturnValue(currentPositions.promise),
+    })
+    const onCurrentPositionRejections = vi.fn()
+    const poller = createPollingManager(client, {
+      intervalMs: 5_000,
+      staleThresholdMs: 60 * 60 * 1000,
+      getHistoryResetKey: () => 'mission-1',
+      onSnapshot: vi.fn(),
+      onStatusChange: vi.fn(),
+      onCurrentPositionRejections,
+      now: () => new Date('2026-08-26T10:35:00.000Z'),
+    })
+
+    poller.start()
+    await vi.advanceTimersByTimeAsync(0)
+    const stopping = poller.stop()
+    let stopSettled = false
+    void stopping.then(() => {
+      stopSettled = true
+    })
+    await Promise.resolve()
+    expect(stopSettled).toBe(false)
+
+    currentPositions.resolve({ accepted: NORMALIZED_POSITIONS, rejected: [rejection] })
+    await vi.advanceTimersByTimeAsync(0)
+
+    await expect(stopping).resolves.toBeUndefined()
+    expect(onCurrentPositionRejections).toHaveBeenCalledWith([rejection], {
+      missionId: 'mission-1',
+      observedAt: '2026-08-26T10:35:00.000Z',
+    })
+  })
+
+  it('keeps live positions visible while a closed mission observation scope excludes evidence', async () => {
+    const rejection = {
+      deviceId: '2',
+      reason: 'invalid_coordinates' as const,
+      rowIndex: 1,
+      anomalyKey: 'source:after-finish-cutoff',
+      sourcePositionId: 'after-finish-cutoff',
+      canonicalEvidence: { source_position_id: 'after-finish-cutoff', device_id: '2' },
+    }
+    const onSnapshot = vi.fn()
+    const onCurrentPositionRejections = vi.fn()
+    const poller = createPollingManager(createClient({
+      getCurrentPositionsWithReport: vi.fn().mockResolvedValue({
+        accepted: NORMALIZED_POSITIONS,
+        rejected: [rejection],
+      }),
+    }), {
+      intervalMs: 5_000,
+      staleThresholdMs: 60 * 60 * 1000,
+      getHistoryResetKey: () => 'mission-1',
+      beginMissionEvidenceObservation: () => ({
+        missionId: null,
+        complete: vi.fn(),
+      }),
+      onSnapshot,
+      onStatusChange: vi.fn(),
+      onCurrentPositionRejections,
+      now: () => new Date('2026-08-26T10:35:00.000Z'),
+    })
+
+    poller.start()
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect(onSnapshot).toHaveBeenCalledWith(
+      expect.objectContaining({ positions: expect.any(Array) }),
+      expect.objectContaining({
+        historyResetKey: 'mission-1',
+        missionEvidenceId: null,
+      }),
+    )
+    expect(onCurrentPositionRejections).toHaveBeenCalledWith([rejection], {
+      missionId: null,
+      observedAt: '2026-08-26T10:35:00.000Z',
+    })
+    await poller.stop()
   })
 
   it('does not publish breadcrumb work into a replacement mission history [DON-260]', async () => {
@@ -249,7 +354,10 @@ describe('polling manager', () => {
       NORMALIZED_POSITIONS.map((position) => position.id),
     )
     expect(onSnapshot.mock.calls[0]?.[0].breadcrumbs).toEqual([])
-    expect(onSnapshot.mock.calls[0]?.[1]).toEqual({ historyResetKey: null })
+    expect(onSnapshot.mock.calls[0]?.[1]).toEqual({
+      historyResetKey: null,
+      missionEvidenceId: null,
+    })
 
     persistedBreadcrumbs.resolve(NORMALIZED_BREADCRUMBS)
     await vi.advanceTimersByTimeAsync(0)
@@ -3163,5 +3271,103 @@ describe('polling manager', () => {
     ).not.toContain(oldMissionBreadcrumb.id)
 
     poller.stop()
+  })
+
+  it('keeps fallback breadcrumb publication inside the mission evidence fence [DON-276]', async () => {
+    vi.useRealTimers()
+    const historyPublication = createDeferred<void>()
+    const observationCompletions: ReturnType<typeof vi.fn>[] = []
+    const beginMissionEvidenceObservation = vi.fn((missionId: string | null) => {
+      const complete = vi.fn()
+      observationCompletions.push(complete)
+      return { missionId, complete }
+    })
+    const onSnapshot = vi.fn((snapshot) =>
+      snapshot.rawBreadcrumbsForPersistence?.length > 0
+        ? historyPublication.promise
+        : Promise.resolve(),
+    )
+    const poller = createPollingManager(createClient(), {
+      intervalMs: 30_000,
+      staleThresholdMs: 60 * 60 * 1000,
+      getHistoryResetKey: () => 'mission-fenced-history',
+      getInitialBreadcrumbFrom: () => new Date('2026-04-06T06:00:00.000Z'),
+      getInitialBreadcrumbs: async () => [],
+      beginMissionEvidenceObservation,
+      onSnapshot,
+      onStatusChange: vi.fn(),
+      now: () => new Date('2026-04-06T10:35:00.000Z'),
+    })
+
+    poller.start()
+    await vi.waitFor(() => expect(onSnapshot.mock.calls.some(
+      (call) => call[0].rawBreadcrumbsForPersistence?.length > 0,
+    )).toBe(true))
+
+    expect(beginMissionEvidenceObservation.mock.calls.length).toBeGreaterThanOrEqual(2)
+    const historyCall = onSnapshot.mock.calls.find(
+      (call) => call[0].rawBreadcrumbsForPersistence?.length > 0,
+    )
+    expect(historyCall?.[1]).toMatchObject({
+      historyResetKey: 'mission-fenced-history',
+      missionEvidenceId: 'mission-fenced-history',
+    })
+    expect(observationCompletions.slice(1).some(
+      (completion) => completion.mock.calls.length === 0,
+    )).toBe(true)
+
+    historyPublication.resolve(undefined)
+    await vi.waitFor(() => {
+      for (const completion of observationCompletions) {
+        expect(completion).toHaveBeenCalledOnce()
+      }
+    })
+    await poller.stop()
+  })
+
+  it('keeps direct reconciliation persistence inside the mission evidence fence [DON-276]', async () => {
+    vi.useRealTimers()
+    const historyPersistence = createDeferred<{ readonly changed: boolean }>()
+    const observationCompletions: ReturnType<typeof vi.fn>[] = []
+    const beginMissionEvidenceObservation = vi.fn((missionId: string | null) => {
+      const complete = vi.fn()
+      observationCompletions.push(complete)
+      return { missionId, complete }
+    })
+    const persistenceCompletions: ReturnType<typeof vi.fn>[] = []
+    const persistHistoryChunk = vi.fn(() => {
+      const completion = observationCompletions.at(-1)
+      if (completion !== undefined) persistenceCompletions.push(completion)
+      return historyPersistence.promise
+    })
+    const poller = createPollingManager(createClient(), {
+      intervalMs: 30_000,
+      staleThresholdMs: 60 * 60 * 1000,
+      getHistoryResetKey: () => 'mission-fenced-reconciliation',
+      getInitialBreadcrumbFrom: () => new Date('2026-04-06T06:00:00.000Z'),
+      getInitialBreadcrumbs: async () => [],
+      beginMissionEvidenceObservation,
+      persistHistoryChunk,
+      onSnapshot: vi.fn().mockResolvedValue(undefined),
+      onStatusChange: vi.fn(),
+      now: () => new Date('2026-04-06T10:35:00.000Z'),
+    })
+
+    poller.start()
+    await vi.waitFor(() => expect(persistHistoryChunk).toHaveBeenCalled())
+
+    expect(beginMissionEvidenceObservation.mock.calls.length).toBeGreaterThanOrEqual(2)
+    expect(persistenceCompletions.length).toBeGreaterThan(0)
+    for (const completion of persistenceCompletions) {
+      expect(completion).not.toHaveBeenCalled()
+    }
+
+    historyPersistence.resolve({ changed: true })
+    await vi.waitFor(() => {
+      for (const completion of persistenceCompletions) {
+        expect(completion).toHaveBeenCalledOnce()
+      }
+    })
+    await poller.stop()
   })
 })

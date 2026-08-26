@@ -120,7 +120,7 @@ ship or ask testers for whole Electron profile zips.
 
 ## Current Priority
 
-1. Execute the **Breadcrumb and Mission-History Programme** under the locked ADR and `docs/breadcrumb-programme-execution-policy.md`. PR-1 is merged; PR-2 is the active mission-model candidate on `codex/breadcrumb-pr2-mission-model`.
+1. Execute the **Breadcrumb and Mission-History Programme** under the locked ADR and `docs/breadcrumb-programme-execution-policy.md`. PR-1 and PR-2 are merged; PR-3 is the active complete-coverage candidate on `codex/breadcrumb-pr3-complete-coverage`.
 2. Preserve `DON-247` and `DON-264` as independent reliability work. Neither is silently absorbed into the breadcrumb programme; `DON-264` remains a non-blocking P3 and is re-tested if a programme PR touches overlay synchronization.
 3. Continue the remaining **Mission Store Reliability programme** work under `DON-241` where it is not superseded by the breadcrumb programme's archive and qualification stages.
 4. Keep hosted browser testing smooth enough for the team to give real feedback.
@@ -143,28 +143,460 @@ mission model; complete coverage; mission evidence/replay; archive lifecycle.
 BCP-17 then qualifies one final team-facing release. BCP work units are the
 JIT-design and TDD boundaries inside those PRs, not separate release trains.
 
-Current work: PR-2 on `codex/breadcrumb-pr2-mission-model`, internally ordered
-BCP-03 → BCP-04 → BCP-06 (`DON-270/271/272`). The accepted design is
-`tmp/agent-mail/fable-breadcrumb-pr2-design-retry-20260823.md`. CP-0..CP-8 are
-implemented with one additive schema v9 and the mission model remains behind an
-internal flag. Review `5002724165` at `c5de653` returned seven P1 and six P2
-findings, followed by eight P1 and five P2 in the second pass, five P1/two P2
-in the third, one P1/one P2 in the fourth, and two P1/one P2 in the fifth. All
-are red-to-green at latest code commit `c6f417c3b7f1`.
-Mission switches fail closed while participant scope hydrates; mutation state is
-generation-fenced; failed group deltas retain their original observation; every
-history write is participation-scoped; membership failures are visible; finish
-waits for fixed participant backfills; and legacy preset-v2 caches remain usable.
-Exact-code flag-on/off Ubuntu package restart soaks pass, live GET-only Traccar confirms
-34 devices / 9 fixes with selected-only local evidence, the unchanged 3.704 GB
-v8→v9 proof preserves 2.04 million positions and 32 participants with integrity
-`ok`, and byte-identical generator-v4 960k/2M fixtures pass on macOS and Ubuntu.
-The final 2M / 12-outing worker returns exact counts in `1.072 s` with a `14.3 ms`
-parent maximum and no global timestamp index. The macOS flag-on 500k stall gate
-passes at `84.3 ms`; the equivalent Ubuntu Xwayland/llvmpipe path remains an
-explicit pre-existing qualification gap while the feature is release-off. PR-2
-is review ready; do not start PR-3 until an
-independent exact-current-head reviewer says it is approvable and Donal merges.
+Before PR-4 implementation begins, its accepted plan and execution packet must
+record the review amendment approved on 2026-08-26: two broad
+safety reviews plus focused persistence/completeness,
+concurrency/finalization, and renderer/input-containment reviews, all five in
+parallel on one final code-and-documentation head. Confirmed findings are
+source-retraced centrally; remediation requires one fresh broad exact-head
+review plus only the affected focused rechecks. Documentation-only binding
+descendants require exact-tree/diff attestation but preserve code reviews when
+executable-code and test trees are byte-identical. Strict TDD, deterministic,
+packaged/Linux, browser, and visual gates remain mandatory. False Complete or
+100%, lost mission evidence, unbounded Electron-main work, and unresolved
+safety failures remain absolute merge blockers. Donal separately applied the
+bounded remediation topology to PR-3 on 2026-08-26: pause the review loop,
+perform one end-to-end architecture and attack-test pass over the complete
+evidence-lifecycle seam, land one coherent red-first seam fix, complete the
+required deterministic/browser/visual/macOS/Linux gates, then run one fresh
+broad exact-head review plus targeted persistence/completeness,
+concurrency/finalization, and renderer/input-containment exact-head rechecks.
+Do not restart five complete PR-3 reviews after every fix. Re-review scope for
+later PRs follows affected contracts: one fresh
+broad review plus every affected focused reviewer, with all five restarted only
+when a shared state machine/cross-boundary contract changes or impact cannot be
+confidently bounded. Repeated confirmed P1/P2 findings at one seam trigger an
+architecture and attack-test pause before more remediation. Record a PR-4
+process retrospective before approving PR-5 so the topology is retained or
+amended from evidence.
+
+Current work: PR-3 on `codex/breadcrumb-pr3-complete-coverage`, internally ordered
+BCP-07 → BCP-08 → BCP-09 (`DON-273/276/275`) from exact merged PR-2 base
+`7021fc1ef33e6da5c91c96cd86e836fc3754f48f`. The accepted design is
+`tmp/agent-mail/fable-breadcrumb-pr3-design-revised-20260824.md`. Stage 1's
+non-production harness completed the prescribed 18-run packaged A/B/C matrix on
+the Ubuntu reference host at exact measured SHA `8eff87b724ae6`. Candidate B
+(SQLite-backed local vector tiles) alone passed both 960k and 2M; A and C both
+failed the 5 s first-useful gate. The checksummed decision memo recommends B with
+unchanged budgets. Donal ratified Candidate B and those budgets on 2026-08-24;
+BCP-08 is complete and BCP-09's flag-on operator view, renderer-only filters,
+honest progress/recovery states, exact-fix inspection entry, participant-scope
+regression, Chromium flow, critical visual set, and manual are implemented.
+T1 is green at tested code head `d1e884b`: full unit/static/build/Chromium and
+critical visual gates, macOS/Linux packaging, the bounded integrity-`ok` 3.704 GB
+v9→v10 migration, and the one packaged Ubuntu CI soak all passed. The first
+exact-head review wave found eight production-path blockers; all were reproduced
+red-first and remediated. A targeted production-path Ubuntu qualification then
+found and fixed a 2M first-useful regression: corrected code head `d39732e`
+delivered exact 960k/2M totals at 2.295/4.391 s first useful, 5.819/11.679 s
+complete, and 21.807/23.055 ms main gaps. Binding:
+`docs/breadcrumb-pr3-t1-evidence.md`. Donal approved the combined coverage +
+mission-model default posture at pre-flip head `d05c787` on 2026-08-25, and the
+separate two-boolean flip is committed. Later exact-head review exposed
+lifecycle, evidence-health, and backend/renderer handoff gaps. All were
+reproduced red-first and remediated through `17e75f2`. The first exact-head review
+wave then found four mission/source/worker lifetime blockers. Commit `53e38bf`
+binds every renderer and tile failure identity to its mission, treats only a
+finalized catalog as attachable, revokes Complete during style-source loss,
+reports timeouts as worker loss, and preserves the finalized worker/catalog on
+cooperative Cancel. Candidate B's six affected G2 rows plus both kill probes
+pass unchanged budgets at that code head. The production driver delivers exact
+959,988/959,988 and 1,999,988/1,999,988 totals at 2.282/4.540 s first useful;
+the one replacement packaged soak passes 8,664/8,664 with restart, integrity,
+responsiveness, and zero redundant slope. Final production/test head `4b740f2`
+passes 262 files / 2,095 tests, lint, TypeScript, CommonJS syntax, exact Dots
+10/10, build/budgets, Ubuntu Chromium 158/158, coverage visual 7/7, and fresh
+critical review 9/9. Operator-visible/package head `fea89db` passes the manual
+contract and unsigned macOS arm64 plus Ubuntu x64 packaging. Bind this evidence
+and complete five independent exact-head reviews before the PR opens. Review #1
+then found one accepted-write path that still materialized every mission outing.
+The first indexed attempt still walked all closed outings for a late unassigned
+fix and was rejected. Commit `40a713c` fetches only the indexed latest-start
+predecessor before applying the end boundary in memory. Later review proved
+initial direct devices lacked backfill checkpoints and the open-outing cooldown
+did not suppress early rebuilds. Commits through `691775a` fix both red-first
+while preserving explicit operator Retry. Final tool head `69a1096` also
+declares the resulting backfill-completion audits after the first replacement
+soak rejected them as unexplained. Full unit/static/Dots/build, coverage
+Chromium/visual review, both platform packages, and the final replacement
+packaged soak are green. Restart all five reviews on the evidence-bound head.
+The restarted wave then found two final proof-quality gaps: the browser mirror
+still omitted the production direct-device checkpoint, and the packaged G2
+benchmark could race renderer destruction during teardown. Commit `928158c`
+fixes both red-first. Final gates pass 263 files / 2,104 tests, full Chromium
+158/158, participant/coverage visual 11/11 with fresh critical review 13/13,
+both exact-head platform packages, and a rebuilt macOS benchmark package. The
+single final operational soak remains standing because no packaged operational
+path changed. Restart all five reviews on the new evidence-bound head.
+The first restarted reviewer then found that the operator manual still
+described the G3-approved participant/outing defaults as disabled. Commits
+through `133cc14` correct the manual and source posture red-first, refresh its
+verification date/terminology, and rebind both platform packages. Restart all
+five reviews on the corrected evidence-bound head. All five returned CLEAN at
+`0455f41` with no P1/P2 findings, and PR
+[#3](https://github.com/donal0c/sartracker-web/pull/3) is open to `master` for
+external review. Do not merge or release from this implementation task.
+That external review subsequently falsified the clean-review conclusion with
+three verified blockers: ledger-less inventory was inserted falsely fresh,
+renderer payload fields could replace the worker envelope, and a traversal-
+shaped tile `x` reached file output. Commit `259fd74` remediates all three
+red-first and passes the focused/full local gates. The earlier five-review
+result is superseded; require the live exact-head Linux check and five fresh
+independent reviews before restoring review-ready status.
+The first renewed review then demonstrated that the initial pending-row fix
+still left an already-fresh Unassigned sibling at its old revision, allowing
+the same two source fixes to become fresh in both the new closed outing and
+Unassigned. It also reproduced an orphaned stage after failed duplicate
+activation and renderer override of the main-owned chunk worker operation.
+Commit `31ba509` closes all three red-first; this result also supersedes that
+renewed review wave. Restart exact-head CI and all five reviews again.
+That restart independently found one remaining terminal-recovery defect:
+rejected finalize/discard released renderer ownership before the worker stage
+had settled, preventing the controller's cleanup discard. Commit `397b0c1`
+retains ownership until a terminal transition succeeds and proves the failed-
+finalize then discard recovery red-first. Restart exact-head CI and all five
+reviews again.
+The next review then reproduced renderer loss while catalog sync was pending:
+one failed cleanup discard left a live worker stage with no retriable owner, so
+the replacement renderer wedged until restart. Commit `b2a3a86` retains failed
+cleanup as an abandoned stage, coalesces and retries settlement before any
+replacement sync, and makes lost-generation cleanup idempotent only when the
+worker has no different unsettled stage. The `590df46` CI pass is superseded;
+restart exact-head CI and all five reviews again.
+The next restart found the alive-renderer counterpart: if both finalize and
+the controller's cleanup discard rejected, the controller forgot the catalog
+but IPC kept it non-abandoned, so explicit Retry attempted a new worker sync
+against the old unsettled stage. Commit `55163cc` makes a new catalog sync from
+that same renderer explicitly supersede and settle its prior stage first. The
+`745ab3e` CI pass is superseded; restart exact-head CI and all five reviews.
+The next review exercised two live renderer IDs across a worker restart. An
+older lost-generation token sorted before the retrying renderer's live stage,
+so its correct wrong-token rejection prevented cleanup from reaching the stage
+that could be settled. Commit `6e53ba1` prioritizes abandoned stages owned by
+the renderer initiating Retry, then settles older stale tokens after the worker
+is empty. The `a7cbda3` CI pass is superseded; restart CI and all five reviews.
+The next restart showed preferred ordering alone was insufficient when the
+preferred token was stale and another renderer's abandoned token was the live
+stage. Commit `9dd736c` replaces stop-on-first-conflict with a bounded progress
+sweep: attempt every abandoned stage, retry conflicts after any settlement,
+and fail after one complete no-progress retry. The `2d316da` CI pass is
+superseded; restart exact-head CI and all five reviews.
+The next review found that a same-revision refresh could retain a period's
+existing MapLibre source while the controller compared failure callbacks only
+with the newest global catalog activation. A real retained-source failure was
+therefore ignored and Complete remained visible. Application head `080abe8`
+binds every finalized source to the activation that actually owns it, revokes
+Complete for an accepted retained-source failure, and forces all superseded
+sources to be freshly replaced before the single bounded recovery can restore
+Complete. Delayed callbacks from that superseded set coalesce; a genuinely new
+activation failure remains a new fail-closed recovery. Focused green is 5/82,
+full unit is 264/2,126, and static/build plus participant/coverage Chromium
+10/10 pass. Exact Linux run `32917584753` passed package build, AppImage launch,
+and the 8,664/8,664 packaged soak with integrity `ok`, one restart, 25.3 ms main
+maximum, zero redundant slope, and four healthy interactions. Bind the final
+documentation head, rerun deterministic gates, and restart all five independent
+reviews on that exact SHA.
+The first final-head reviewer then reproduced a multi-period counterpart: the
+controller cleared its recovery epoch after the newest period's first
+progressive catalog, so the later cumulative catalog was no longer force-fresh
+and could reuse the failed older-period source before returning Complete.
+Application head `6cd6e19` captures the recovery epoch for the whole load,
+marks every progressive batch force-fresh, and clears/replenishes recovery only
+after all batches activate successfully. The exact red regression received
+`false` on recovery batch two; green is 5/83 focused, 264/2,127 full unit,
+static/build, and Chromium 10/10. Linux run `32919016169` passes packaging,
+AppImage launch, and the 8,664/8,664 soak with integrity `ok`, one restart,
+24.3 ms main maximum, zero redundant slope, and four healthy interactions.
+Bind the documentation-only descendant and restart all five reviews again.
+The next final-head review found a separate progressive mission-switch cycle.
+After one old-mission catalog finalized, `updateContext` waited for that entire
+old load; the load could publish its next catalog and wait for a renderer
+acknowledgement that the newly scoped map would never send. Application head
+`ffffe0f` waits only for the irreversible finalization, keeps the existing
+latest-update sequence fence, and then lets the winning desired context abort
+the remaining old load. The two-period red regression published old stage two
+and timed out at the invalidated head; green switches to mission two and never
+finalizes that stale stage. Focused green remains 5/83; full unit is 264/2,127,
+static/build and Chromium 10/10 pass. Linux run `32920238110` passes packaging,
+AppImage launch, and the 8,664/8,664 soak with integrity `ok`, one restart,
+32.603 ms main maximum, zero redundant slope, and four healthy interactions.
+Bind the documentation-only descendant and restart all five reviews from zero.
+The next review wave then found two release-blocking P2s. The backend retired
+predecessor catalogs before the renderer released their sources, including an
+unbounded partial-recovery case; renderer-controlled claim/catalog arrays also
+crossed IPC without a canonical cardinality, uniqueness, membership, revision,
+or result envelope. Application head `0e3cf4b` makes renderer release precede
+idempotent backend release, retries a failed release on the same stage, uses one
+full-manifest fresh-source recovery swap, and bounds input/output to current
+canonical inventory before any main-isolate ledger application. Red-first
+regressions include the reviewers' 20,000-duplicate probe. Full unit is
+264/2,133; static/build, exact Dots 10/10, and Chromium 10/10 pass. Exact Linux
+run `32922725575` passes packaging, AppImage launch, and the 8,664/8,664 soak
+with integrity `ok`, one restart, 33.450 ms main maximum, zero redundant slope,
+and four healthy interactions. Bind the documentation-only descendant and
+restart all five reviews from zero.
+That descendant `48ee118` was invalidated by two further recovery P2s. A tile
+worker timeout destroyed the generation owning the predecessor activation, but
+every Retry resubmitted that dead token to a fresh worker before permitting a
+new build. Separately, a worker result rejected by the new one-to-one validator
+left its already-created stage alive, so every Retry reused a poisoned worker
+and failed on the unsettled stage. Application head `635a7b3` treats
+finalization as already settled only when the replacement worker has no staged
+or activated catalog; a mismatched token still fails whenever a live stage
+exists. Result-validation failure now terminates its owning worker and raises
+the existing failure signal, so Retry rebuilds on a clean generation. Full
+unit is 264/2,135; static/build, exact Dots 10/10, and Chromium 10/10 pass.
+Exact Linux run `32924343484` passes packaging, AppImage launch, and the
+8,664/8,664 soak with integrity `ok`, one restart, 21.185 ms main maximum, zero
+redundant slope, and four healthy interactions. Bind the documentation-only
+descendant and restart all five reviews from zero.
+That documentation descendant was invalidated when review reproduced a false
+full progress bar after the final database completeness claim failed. The
+controller correctly withheld `Complete` but retained equal delivered/total
+counts, and the panel treated those counts as trusted progress. Application
+head `6946446` withholds the progress element whenever equal counts have not
+been verified by a successful final claim, labels the state explicitly, and
+retains partial progress below 100%. The manual, screenshot, controller/panel
+tests, and critical visual proof are updated. Full unit is 264/2,137;
+static/build, exact Dots 10/10, selected visual Playwright plus uncached visual
+review, and Chromium 10/10 pass. Exact Linux run `32926442726` passes packaging,
+AppImage launch, and the 8,664/8,664 soak with integrity `ok`, one restart,
+32.024 ms main maximum, zero redundant slope, zero renderer crashes, and four
+healthy interactions. Bind the documentation-only descendant and restart all
+five reviews from zero.
+That descendant `4b84fb0` was invalidated when review proved that a structurally
+valid empty invalidation-worker result could authorize `drained_at` without
+dirtying the outing and Unassigned chunks whose fix membership moved. Old
+counts and revisions remained fresh, so the final database claim returned
+ready over wrong ground. Application head `08ce78a` validates the worker result
+identity/key envelope and independently establishes a bounded, position-free
+canonical device×affected-period floor before any drain. Empty output now
+over-dirties safely; malformed or out-of-inventory output leaves the durable
+blocker pending. Full unit is 264/2,140; static/build, exact Dots 10/10, and
+Chromium 10/10 pass. Exact Linux run `32928637039` passes packaging, AppImage
+launch, and the 8,664/8,664 soak with integrity `ok`, one restart, 116.250 ms
+main maximum, zero redundant slope, zero renderer crashes, and four healthy
+interactions. Bind the documentation-only descendant and restart all five
+reviews from zero.
+The next evidence-bound head `862a300` was then invalidated by a separate P1:
+all non-invalidation query results still crossed the worker boundary as any
+plain record. A plausible current-sequence manifest could omit a real stale
+canonical chunk, derive an empty selection, and let an empty ready claim pass
+the controller's revision check vacuously. Application head `20ca76e` adds a
+kind-specific allowlisted result envelope for enumeration, manifest, claim,
+chunk-page, chunk-summary, and invalidation analysis; independently proves
+enumeration/manifest inventory and final claim truth from bounded main-side
+metadata; and requires exact unique claim coverage of every selected chunk.
+No main-isolate position scan was added. Full unit is 264/2,143; lint,
+TypeScript, build/budgets, CommonJS syntax, and focused coverage/participant
+251/251 pass. Exact Linux run `32930525474` passes packaging, AppImage launch,
+and the 8,664/8,664 soak with integrity `ok`, one restart, 46.882 ms main
+maximum, zero redundant slope, zero renderer crashes, and four healthy
+interactions. Bind the documentation-only descendant and restart all five
+reviews from zero.
+That descendant `d044e71` was invalidated by a P2 at the result-trust boundary:
+request-derived cardinality was not checked before deep traversal, outing
+metadata was not attested to SQLite, and production normalized the built-in
+worker result twice. Commit `68768f7` closes all three red-first with bounded
+worker preflight and exact inventory/outing/claim attestation. Its Linux run
+`32932901604` was workflow-green but rejected because Electron main reached
+224.974 ms, breaching the binding I5 hard limit of 200 ms. Commit `e1b51d8`
+replaces one synchronous outing lookup per fix with one bounded ordered outing
+snapshot and the canonical binary search. Run `32933663936` reduced main to
+55.2 ms but exposed incorrect gate wiring that also applied I5 to the CPU
+llvmpipe renderer. Commit `cfd733c` separates the hard 200 ms main-isolate gate
+from the existing 1,000 ms renderer/operator freeze gate. Exact application-head
+Linux run `32934141302` passes packaging, AppImage launch, and the 8,664/8,664
+source-exact soak with integrity `ok`, one restart, 22.2073 ms main maximum,
+zero renderer crashes, and four healthy interactions. Bind the
+documentation-only descendant, rerun exact-head deterministic/Linux gates, and
+restart all five independent reviews from zero.
+That documentation head `61c7ed2` was invalidated after three clean built-in
+reviews and one clean external persistence review when the independent renderer
+review reproduced an I6 P1. A stale-but-rendered open-outing chunk suppressed by
+its 30-second rebuild cooldown could be omitted from a later catalog for another
+pending period, silently removing already-visible coverage before its replacement
+was ready. The same review found that the named completeness unit exercised dead
+code rather than the shipped progress calculation. Application head `24a5e4d`
+closes both red-first: every positive delivered identity is carried into the next
+two-phase catalog using its current descriptor, while the real controller imports
+the pure progress owner and the dead proof is removed. Full unit is 267/2,140;
+static/build, exact Dots 10/10, and participant/coverage Chromium 10/10 pass.
+Exact Linux run `32937238855` passes packaging, AppImage launch, and the
+8,664/8,664 source-exact soak with integrity `ok`, one restart, 28.6847 ms main
+maximum, zero renderer crashes, and four healthy interactions. Bind the
+documentation-only descendant, rerun exact-head deterministic/Linux gates, and
+restart all five independent reviews from zero.
+The first final-head review wave then found five current boundary defects, all
+reproduced red-first: worker period digests were not recomputed from the request;
+a removed participant re-added with the same authorized effective-from collided
+with the prior fixed checkpoint key; finalized mission health remained in the
+live cross-mission aggregate; a normal accepted write between worker claim and
+main attestation threw as divergence; and default-on coverage started against
+the unsupported historical Tauri store. Application head `f842190` derives the
+canonical digest, adds only uncovered adjacent fixed backfill windows, retires
+finalized health with exact unlock restoration, substitutes the newer bounded
+SQLite claim only when the sequence changed while retaining the same-sequence
+fail-closed check, and gates coverage to Electron. Full unit is 267/2,147;
+lint, TypeScript, build/budgets, participant/coverage Chromium 10/10, selected
+critical visual plus uncached review 2/2, and backend 51/51 with one intentional
+OS-keychain ignore pass. Exact Linux run `32940999122` passes packaging,
+AppImage launch, and the 8,664/8,664 source-exact soak with integrity `ok`, one
+restart, 23.3174 ms main maximum, zero renderer crashes, and four healthy
+interactions. Bind the documentation-only descendant, repeat its exact-head
+deterministic/Linux gates, and restart all five independent reviews from zero.
+The next exact-head review invalidated `a47e102` on two independent fail-closed
+boundaries. A concrete filtered key snapshot could omit a later visible outing
+from the claim and report Complete while its newest fixes remained stale; delayed
+startup health could also re-add a finalized mission to the live aggregate.
+Application head `6db23e0` transports stable omission predicates and resolves
+them against every fresh manifest, makes selection acknowledgement mismatches
+explicitly Partial, and keeps delayed finalized health retired until unlock. It
+also adds a real-store/real-production-worker integration for staged/active tile
+equality, retained plus rebuilt chunks, ready claims, stale-revision rejection,
+and honest recovery. Full unit is 269/2,156; lint, TypeScript, build/budgets,
+participant/coverage Chromium 10/10, selected critical visual plus uncached
+review 2/2, and backend 51/51 with one intentional OS-keychain ignore pass.
+Exact Linux run `32948959241` passes package build, AppImage launch, and the
+8,664/8,664 source-exact soak with integrity/WAL `ok`, one restart, zero
+renderer crashes, four healthy interactions, zero redundant slope, and 20.541
+ms Electron-main maximum. Bind the documentation-only descendant, repeat
+exact-head gates, and restart all five independent reviews from zero.
+The first restarted review then reproduced a further false-Complete P1: a
+well-shaped tile-worker build could stamp a real stale chunk fresh with forged
+count/digest/bounds, or claim delivery without chunk content evidence. Application
+head `603aadf` requires one content descriptor per requested revision, compares
+it with the independent off-main exact manifest oracle before the ledger write,
+and discards/fences the worker generation on divergence. Full unit is 268/2,152;
+lint, TypeScript, build/budgets, participant/coverage Chromium 10/10, selected
+critical visual plus uncached review 2/2, and backend 51/51 with one intentional
+OS-keychain ignore pass. Exact Linux run `32944166541` passes packaging,
+AppImage launch, and the 8,664/8,664 source-exact soak with integrity `ok`, one
+restart, 27.1239 ms main maximum, zero renderer crashes, and four healthy
+interactions. Bind the documentation-only descendant, repeat its exact-head
+deterministic/Linux gates, and restart all five independent reviews from zero.
+That documentation descendant `2d8aa8e` was invalidated by one further
+finalization race: delayed startup-health rejection lost the captured mission
+identity, and delayed capacity-loss settlement published directly into live
+health. Either could resurrect a finalized mission's critical state and block a
+later mission's honest Complete claim. Application head `b383ef1` routes both
+late outcomes through the finalized-mission health boundary and restores them
+only after successful administrative unlock. Full unit is 269/2,160; lint,
+TypeScript, build/budgets, participant/coverage Chromium 10/10, selected
+critical visual plus fresh uncached review 2/2, and backend 51/51 with one
+intentional OS-keychain ignore pass. Exact Linux run `32951751651` passes
+packaging, AppImage launch, and the 8,664/8,664 source-exact soak with
+integrity/WAL `ok`, one restart, zero renderer crashes, four healthy
+interactions, zero redundant slope, and 40.935 ms Electron-main maximum. Bind
+the documentation-only descendant, repeat exact-head deterministic/Linux gates,
+and restart all five independent reviews from zero.
+That descendant `3769c5b` was invalidated by one further lost-evidence P1:
+runtime disposal waited one in-flight rejection batch, ran at most one more
+256-record batch, and could resolve with later payloads still renderer-only.
+Application head `1d2aa19` drains every batch, converts an unacknowledged
+remainder into a durable mission-scoped teardown-loss blocker before releasing
+payload memory, aborts replacement if that blocker cannot be written, and
+awaits/serializes controller replacement. Full unit is 269/2,169; lint,
+TypeScript, build/budgets, participant/coverage/tracking Chromium 13/13,
+selected critical visual plus fresh uncached review 2/2, and backend 51/51 with
+one intentional OS-keychain ignore pass. Exact Linux run `32955848729` passes
+packaging, AppImage launch, and the 8,664/8,664 source-exact soak with
+integrity/WAL `ok`, one restart, zero renderer crashes, four healthy
+interactions, zero redundant slope, and 44.296 ms Electron-main maximum. Bind
+the documentation-only descendant, repeat exact-head deterministic/Linux gates,
+and restart all five independent reviews from zero.
+The next review found that the real Electron window/reload/quit lifecycle did
+not own that drain. Application commits `bde223b` and `9276352` add the bounded
+main-renderer handshake and prevent a native close from racing the reload path.
+Harness head `906beb0` proves graceful code-0 shutdown on both active-mission
+launches and clicks the real Openbox close control for the standalone AppImage.
+Exact Linux run `32966604838` passes packaging, native close, and the 8,664 /
+8,664 source-exact soak with integrity/WAL `ok`, one restart, zero renderer
+crashes, four healthy interactions, zero redundant slope, and a 21.995 ms
+Electron-main maximum. Bind the documentation-only descendant, repeat exact-head
+deterministic/browser/visual/macOS/Linux gates, and restart all five independent
+reviews from zero.
+That review of documentation head `fa863da` then found two lost-evidence P1s.
+The file outbox swallowed atomic health-marker write failure, so main could
+permit teardown with only a RAM blocker. Separately, Finish did not drain or
+seal renderer rejection evidence; once the mission became `finished`, the
+active-mission teardown fallback could no longer name it. The red-first set
+failed all three new assertions for those exact reasons. The remediation makes
+explicit loss marking strict through atomic rename and directory sync, removes
+failed temporary marker files, and puts Finish behind an all-batch drain plus
+late-acceptance seal. Drain failure leaves the mission active for repair and
+retry; finalization advances an already sealed finished mission without
+reopening intake. Focused green is 3 files / 51 tests; full unit is 272 / 2,194;
+lint, TypeScript, build/budgets, backend 51/51 plus one intentional ignore,
+Chromium 13/13, and selected critical visual plus uncached review 2/2 pass.
+Commit and push the code-and-documentation head, repeat macOS/Linux package
+gates, and restart every PR-3 reviewer from zero.
+
+That restart instruction is superseded by Donal's 2026-08-26 PR-3 amendment.
+The final Opus pass confirmed the coverage claim but found that deferred
+accepted fixes could outlive their observation/Finish fence, while partial
+multi-mission provisional staging could lose its durable incident owner. The
+required architecture pause and central seam retrace are complete. The
+red-first coherent repair now keeps each deferred snapshot under a bounded
+mission observation until scoped persistence or durable loss ownership, makes
+Finish refuse actionably while participant scope is unavailable, and uses one
+crash-safe incident record before per-mission teardown projections. Focused
+seam verification is 6 files / 231 tests; the adjacent runtime/finalization/
+mission-store/wiring/manual set is 12 files / 269 tests; the exact serial suite
+is 274 files / 2,265 tests. Lint, types/project build, CommonJS syntax, diff,
+bundle budgets, backend 51/51, Chromium 22/22, visual 4/4, and the one relevant
+fresh uncached visual review are green. Freeze the application head,
+run the remaining deterministic/browser/visual/macOS/Linux gates and the one
+replacement Ubuntu soak, then run one fresh broad plus persistence,
+concurrency, and renderer-containment exact-head reviews. Do not restart five
+full reviews, merge, or release.
+
+Application head `b42c57f844d7a434b2948e04e9fed1b2c3933453` is now frozen and
+pushed. Its macOS arm64 and Linux x64 packages are bound, and the single
+replacement Ubuntu packaged soak passed 6/6 batches, 8,664/8,664 exact
+positions, one restart, zero crashes, integrity/WAL `ok`, 7.965 ms main maximum,
+100.300 ms renderer maximum, four healthy interactions, and zero redundant
+slope. Bind the immutable package/soak evidence in a documentation-only
+descendant with executable-code/test-tree attestation, require green exact-head
+CI, then run exactly one fresh broad plus persistence, concurrency, and
+renderer-containment rechecks. Do not restart five full reviews, merge, or
+release.
+
+That qualification was invalidated by the bounded persistence and concurrency
+reviews at documentation head `dc7f14a`. Central retrace reproduced an accepted
+history-write failure releasing its mission observation without durable loss
+ownership, and renderer incident staging validating before rather than inside
+the finalization/outbox fence. The coherent red-first repair makes initial-wave
+and anti-entropy failures await the exact mission's durable loss boundary, and
+revalidates normalized incident scopes inside the serialized mutation before
+any incident or health write. Focused affected verification is 6 files / 304
+tests; the exact serial suite is 274 files / 2,269 tests; lint, types, build,
+budgets, backend 51/51, Chromium 22/22, visual 4/4, and one fresh uncached
+critical visual review are green. Freeze the repaired application head, replace
+its macOS/Linux package and Ubuntu soak evidence, then run one fresh broad plus
+persistence, concurrency, and renderer/input-containment rechecks. Do not
+restart five full reviews, merge, or release.
+
+Repaired application head `d21e5df7e2151e6c97e501a2a32894cda157a806` is frozen
+and pushed. Exact macOS arm64 and Ubuntu-built Linux x64 packages are bound.
+The serial Ubuntu packaged soak passed 6/6 and 8,664/8,664 source-exact
+positions, one restart, two Mesa llvmpipe WebGL launches, zero crashes,
+integrity/WAL `ok`, main max 9.335 ms, renderer max 83.600 ms, four healthy
+interactions, and zero redundant slope. Bind the immutable evidence in a
+documentation-only descendant with exact-tree attestation, require green
+exact-head CI, then run one fresh broad plus persistence, concurrency, and
+renderer/input-containment rechecks. Do not merge or release.
+
+Those amended reviews are complete on executable/test-identical evidence head
+`25d963b329f920fd39a6aba39ba91a6d424df177`: the fresh broad review and the
+targeted persistence/completeness, concurrency/finalization, and renderer/input-
+containment reviews all returned CLEAN with no P1/P2. Their focused gates
+passed 282, 415, 236, and 201 tests respectively. The controlled queued-stage
+attack now completes finalization, rejects the later stage, and remains healthy
+after reopen; the history failure attacks retain mission observation until the
+exact durable loss boundary owns the failure. The final documentation-only
+binding preserves executable and test trees. PR #3 is merge-ready once that
+descendant's GitHub check is green; do not merge or release from this task.
 
 ## Next Task Order
 
@@ -174,7 +606,8 @@ This is the default order when the user says “work on the next task.”
 | --- | --- | --- | --- | --- |
 | Done | Release the Tracking stability, interaction, and basemap-independent overlay hotfix | S2 Electron / Shared Tracking / Map / Verification | `DON-261` / `DON-262` / `DON-263` | Beta.12.5 exact commit `042d77ad6158`; clean no-skip verification 8/8; tag CI `30497318233` green; exact CI AppImage and real installed `.deb` passed lifecycle, safety, live-Traccar, 13-poll empty-history stability, pending/degraded basemap overlay, and deterministic five-/fourteen-day soak gates. Independent reviews returned `RELEASE` with no P1/P2. Guarded publication succeeded; fresh public hashes matched and the public AppImage passed Ubuntu lifecycle/recovery/finalize/archive. |
 | Done | PR-1: trustworthy ingest and live safety | Shared Tracking / S2 Electron / Evidence | `DON-266` / `DON-267` / `DON-268` / `DON-269` | Merged as [PR #1](https://github.com/donal0c/sartracker-web/pull/1) at `9481cf462e0e`; its exact-head review and Linux evidence remain in PR #1 and the handoff archive. |
-| Review ready | PR-2: explicit outings, participants, and mission-shaped fixtures | Shared Tracking / S2 Electron / Mission model / Verification | `DON-270` / `DON-271` / `DON-272` | First through seventh review passes are closed at latest code commit `dc85613`. Refused-finish replay now durably reconciles the provisional roster, repeated write failures preserve later observations at their original times, removed participants remain eligible for late historical fixes without staying live, and a scope-expansion race refetches an unacknowledged suffix. Full serial unit `229/1,874`, Chromium `154/154`, and unsigned macOS Electron packaging pass; unchanged heavy proofs remain valid only for unaffected surfaces. Ubuntu Xwayland/llvmpipe 500k flag-on rendering remains explicitly unqualified and release-off. Next: continue exact-head review until a non-author reviewer says it is approvable; do not merge or start PR-3 meanwhile. |
+| Done | PR-2: explicit outings, participants, and mission-shaped fixtures | Shared Tracking / S2 Electron / Mission model / Verification | `DON-270` / `DON-271` / `DON-272` | Merged to `master` at `7021fc1ef33e6da5c91c96cd86e836fc3754f48f`, which is the exact PR-3 base. The preserved review, migration, scale, browser, and package evidence remains attached to PR-2 and the handoff archive. |
+| Merge-ready after final GitHub check — PR #3 open | PR-3: decide and deliver complete mission coverage | Shared Tracking / S2 Electron / Coverage / Verification | `DON-273` / `DON-276` / `DON-275` | Candidate B/G3 and earlier migration/scale evidence stand. The coherent red-first repair is frozen at `d21e5df`: affected 6/304, exact serial 274/2,269, lint/types/build/budgets/backend, Chromium 22/22, visual 4/4, and fresh critical visual review. Exact macOS/Linux packages are bound; the replacement Ubuntu soak passed 8,664/8,664 with restart, Mesa llvmpipe, integrity/WAL `ok`, zero crashes, bounded main/renderer timing, four healthy interactions, and zero redundant slope. The amended broad plus persistence, concurrency, and renderer-containment reviews are CLEAN with no P1/P2. The final documentation-only descendant preserves executable/test trees; only its GitHub status check remains before [PR #3](https://github.com/donal0c/sartracker-web/pull/3) is merge-ready. Do not merge or release from this task. |
 | Todo (non-blocking) | Surface persistent overlay synchronization failures in diagnostics and map health | S2 Electron / Shared Map / Diagnostics | `DON-264` | DON-263 retries transient and persistent sync exceptions indefinitely with a 2 s cap, but repeated failures are currently developer-console-only. Add bounded, sanitized, durable warning elevation and success-based clearing after the beta.12.5 hotfix; this P3 does not block the release. |
 | Done | Make Breadcrumb Dots source-exact and independently release-gated | S2 Electron / Shared Tracking / Verification | `DON-260` | Published beta.12.11 at exact tag `bced8052b85c` after green CI run `31482052296`, full AppImage and genuinely installed `.deb` package matrices, synthetic 279,936/1,935,384-fix exact-page proofs, target-only live-provider equality, diagnostics privacy, and unchanged performance/RSS gates. The guarded publisher and a second public download revalidated both installer hashes and `SHA256SUMS`; the fresh public AppImage independently passed settings persistence, same-mission recovery, finalization, and archive creation. Dots is source-exact and paged; Line alone remains simplified. Beta.12.9/.12.10 are not the correction. |
 | Done | Build deterministic field-scale mission-store fixtures | S2 Electron / Verification | `DON-242` | Small/CI/local/field plus 5-day and 14-day continuous-mission presets; Ubuntu field fixture is 3.704 GB with measured table accounting and restart checkpoints. |

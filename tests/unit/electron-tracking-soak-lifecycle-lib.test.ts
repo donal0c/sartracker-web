@@ -3,6 +3,7 @@ import { EventEmitter } from 'node:events'
 import { describe, expect, it } from 'vitest'
 
 import {
+  requestGracefulElectronQuit,
   runCleanupStep,
   startTrackingSoakSleepGuard,
   stopOwnedProcess,
@@ -22,6 +23,56 @@ class FakeChild extends EventEmitter {
 }
 
 describe('tracking soak owned lifecycle [DON-260]', () => {
+  it('requests Electron quit and proves a normal process exit', async () => {
+    const child = new FakeChild()
+    const expressions: string[] = []
+    let closeCount = 0
+    const mainInspector = {
+      evaluate: async (expression: string) => {
+        expressions.push(expression)
+      },
+      close: () => {
+        closeCount += 1
+        child.exitCode = 0
+        queueMicrotask(() => child.emit('exit', 0, null))
+      },
+    }
+
+    await expect(requestGracefulElectronQuit(mainInspector, child, 50))
+      .resolves.toEqual({
+        exited: true,
+        exitKind: 'code',
+        forced: false,
+        graceful: true,
+      })
+    expect(expressions).toHaveLength(1)
+    expect(expressions[0]).toContain("process.getBuiltinModule?.('electron')")
+    expect(expressions[0]).toContain("process.mainModule?.require?.('electron')")
+    expect(expressions[0]).not.toContain("require('electron').app.quit()")
+    expect(closeCount).toBe(1)
+    expect(child.kills).toEqual([])
+  })
+
+  it('fails closed when Electron does not complete graceful quit', async () => {
+    const child = new FakeChild()
+    let closeCount = 0
+    const mainInspector = {
+      evaluate: () => new Promise(() => undefined),
+      close: () => {
+        closeCount += 1
+      },
+    }
+
+    await expect(requestGracefulElectronQuit(mainInspector, child, 1))
+      .rejects.toMatchObject({
+        trackingSoakLifecycleFailure: {
+          failureClass: 'graceful_app_quit_failed',
+        },
+      })
+    expect(closeCount).toBe(1)
+    expect(child.kills).toEqual([])
+  }, 100)
+
   it('starts a run-scoped Darwin sleep guard with the harness pid', async () => {
     const child = new FakeChild()
     const calls: unknown[][] = []

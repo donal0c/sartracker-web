@@ -1,5 +1,9 @@
 import { invoke } from '@tauri-apps/api/core'
-import type { IngestEvidenceHealth } from '../../domain/tracking-ingest-evidence'
+import type {
+  AcknowledgeIngestEvidenceLossInput,
+  IngestEvidenceHealth,
+  IngestEvidenceLossReason,
+} from '../../domain/tracking-ingest-evidence'
 
 export type { IngestEvidenceHealth } from '../../domain/tracking-ingest-evidence'
 
@@ -59,6 +63,105 @@ export type OutingFixSummary = {
   }[]
   readonly unassigned_accepted_fix_count: number
   readonly total_accepted_fix_count: number
+}
+
+export type CoveragePeriodKind = 'outing' | 'unassigned'
+
+export type CoverageChunkKey = {
+  readonly device_id: string
+  readonly period_kind: CoveragePeriodKind
+  readonly period_id: string
+}
+
+export type CoverageManifestChunk = {
+  readonly key: CoverageChunkKey
+  readonly contentRev: number
+  readonly builtRev: number | null
+  readonly fixCount: number | null
+  readonly exactCount: number
+  readonly fixDigest: string | null
+  readonly exactDigest?: string
+  readonly exactMinTs?: string | null
+  readonly exactMaxTs?: string | null
+}
+
+export type CoverageManifest = {
+  readonly changeSeq: number
+  readonly enumerated: boolean
+  readonly pendingInvalidation: boolean
+  readonly backfillIncomplete: boolean
+  readonly diagnostics?: CoverageStorageDiagnostics
+  readonly outings: readonly {
+    readonly id: string
+    readonly label: string
+    readonly started_at: string
+    readonly ended_at: string | null
+  }[]
+  readonly chunks: readonly CoverageManifestChunk[]
+}
+
+export type CoverageStorageDiagnostics = {
+  readonly queueDepth: number
+  readonly oldestQueuedAt: string | null
+  readonly pendingChunkCount: number
+  readonly staleChunkCount: number
+  readonly freshChunkCount: number
+  readonly pendingInvalidationCount: number
+  readonly lastEnumerationDurationMs: number | null
+  readonly lastBuildDurationMs: number | null
+}
+
+export type CoverageChunkCursor = {
+  readonly timestamp: string
+  readonly id: string
+}
+
+export type CoverageChunkPage = {
+  readonly contentRev: number
+  readonly positions: readonly Position[]
+  readonly nextCursor: CoverageChunkCursor | null
+}
+
+export type CoverageClaim = {
+  readonly changeSeq: number
+  readonly databaseReady: boolean
+  readonly blockers: readonly string[]
+  readonly chunkRevisions: readonly {
+    readonly key: CoverageChunkKey
+    readonly contentRev: number
+  }[]
+}
+
+export type CoverageTileCatalog = {
+  /** Mission-scoped renderer identity; revisions can legitimately repeat across missions. */
+  readonly missionId: string
+  /** Opaque native-worker stage awaiting renderer acceptance. */
+  readonly activationId?: string
+  /** Recovery catalogs must replace structurally present sources before attestation. */
+  readonly requiresFreshRendererSources?: boolean
+  /** Intermediate recovery catalogs keep prior periods visible until final replacement. */
+  readonly retainPriorPeriods?: boolean
+  readonly periods: readonly {
+    readonly periodKey: string
+    readonly revisionDigest: string
+  }[]
+  readonly delivered: readonly {
+    readonly key: CoverageChunkKey
+    readonly contentRev: number
+  }[]
+  /** Browser-validation payload only; native Electron catalogs never include it. */
+  readonly browserHarnessGeoJson?: {
+    readonly type: 'FeatureCollection'
+    readonly features: readonly {
+      readonly type: 'Feature'
+      readonly id: string
+      readonly geometry: {
+        readonly type: 'Point' | 'LineString'
+        readonly coordinates: readonly number[] | readonly (readonly number[])[]
+      }
+      readonly properties: Readonly<Record<string, string | number>>
+    }[]
+  }
 }
 
 export type ParticipantProvenance = 'explicit' | 'grandfathered' | 'legacy_auto'
@@ -580,6 +683,59 @@ export type MissionStore = {
     requestId?: string,
   ) => Promise<ExactBreadcrumbDotPage>
   readonly cancelExactBreadcrumbDotQuery?: (requestId: string) => Promise<boolean>
+  readonly readCoverageManifest?: (
+    missionId: string,
+    requestId?: string,
+  ) => Promise<CoverageManifest>
+  readonly readCoverageChunk?: (
+    input: {
+      readonly missionId: string
+      readonly key: CoverageChunkKey
+      readonly expectedContentRev: number
+      readonly cursor?: CoverageChunkCursor
+      readonly limit?: number
+    },
+    requestId?: string,
+  ) => Promise<CoverageChunkPage>
+  readonly readCoverageClaim?: (
+    input: {
+      readonly missionId: string
+      readonly selectedKeys: readonly CoverageChunkKey[]
+    },
+    requestId?: string,
+  ) => Promise<CoverageClaim>
+  readonly cancelCoverageQuery?: (requestId: string) => Promise<boolean>
+  readonly syncCoverageTileCatalog?: (
+    input: {
+      readonly missionId: string
+      readonly chunks: readonly {
+        readonly key: CoverageChunkKey
+        readonly contentRev: number
+      }[]
+    },
+    requestId?: string,
+  ) => Promise<CoverageTileCatalog>
+  readonly activateCoverageTileCatalog?: (input: {
+    readonly activationId: string
+  }) => Promise<boolean>
+  readonly finalizeCoverageTileCatalog?: (input: {
+    readonly activationId: string
+  }) => Promise<boolean>
+  readonly discardCoverageTileCatalog?: (input: {
+    readonly activationId: string
+  }) => Promise<boolean>
+  readonly readCoverageTile?: (
+    input: {
+      readonly missionId: string
+      readonly periodKey: string
+      readonly revisionDigest: string
+      readonly z: number
+      readonly x: number
+      readonly y: number
+    },
+    requestId?: string,
+  ) => Promise<Uint8Array | null>
+  readonly cancelCoverageTileRead?: (requestId: string) => Promise<boolean>
   readonly listTrackingHistoryCheckpoints?: (
     missionId: string,
   ) => Promise<readonly TrackingHistoryCheckpoint[]>
@@ -608,8 +764,11 @@ export type MissionStore = {
   }>
   readonly recordIngestEvidenceLoss?: (input: {
     readonly mission_id: string
-    readonly reason: 'renderer_pending_capacity_exhausted'
+    readonly reason: IngestEvidenceLossReason
   }) => Promise<IngestEvidenceHealth>
+  readonly acknowledgeIngestEvidenceLoss: (
+    input: AcknowledgeIngestEvidenceLossInput,
+  ) => Promise<IngestEvidenceHealth>
   readonly getIngestEvidenceHealth?: (missionId?: string) => Promise<IngestEvidenceHealth>
   readonly upsertMarker: (input: UpsertMarkerInput) => Promise<Marker>
   readonly getMarker: (markerId: string) => Promise<Marker>
@@ -676,6 +835,11 @@ export function createTauriMissionStore(): MissionStore {
       return { auditEvents, breadcrumbCount: positions.length }
     },
     cancelMissionReviewRead: async () => false,
+    acknowledgeIngestEvidenceLoss: async () => {
+      throw new Error(
+        'Evidence-loss acknowledgement is available only through the Electron mission store.',
+      )
+    },
     upsertMarker: (input) => invoke<Marker>('upsert_marker', { input }),
     getMarker: (markerId) => invoke<Marker>('get_marker', { markerId }),
     listMarkers: (missionId) => invoke<readonly Marker[]>('list_markers', { missionId }),

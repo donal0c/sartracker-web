@@ -152,18 +152,75 @@ The implementation task returns the exact head SHA, commits, changed files,
 test evidence, remaining uncertainty, and PR-readiness status. Codex verifies
 that handoff against the accepted plan and requirements.
 
-Donal then initiates the allocated PR reviews. P1/P2 findings block progress.
-Remediation normally returns to the same implementation task to retain useful
-code context; a fresh task is used only when Donal requests it or the original
-task is genuinely unsuitable. Fable is not recalled unless review exposes an
-architecture or requirements problem rather than an ordinary implementation
-defect.
+For PR-4 onward, code, tests, required packaged/Linux evidence, evidence
+documents, operator manual, and handoff are sequenced onto one final head before
+review wherever practical. Five independent reviewers then run in parallel on
+that same exact code-and-documentation head:
+
+1. broad safety review A;
+2. broad safety review B;
+3. focused persistence and completeness review;
+4. focused concurrency and finalization review; and
+5. focused renderer and input-containment review.
+
+The five charters are complementary rather than five copies of one broad
+prompt. Strict TDD, full deterministic gates, required packaged/Linux evidence,
+browser verification, and visual verification must already be green before the
+wave starts. A documentation-only evidence-binding descendant receives an
+exact-tree and exact-diff attestation. It does not invalidate completed code
+reviews when the executable-code and test trees are byte-identical to the
+reviewed head.
+
+Codex centrally source-retraces every reported finding before remediation. A
+confirmed P1/P2 or other safety failure blocks progress and normally returns to
+the same implementation task. After a fix, require one fresh broad independent
+exact-head review plus exact-head rechecks from only the focused reviewers whose
+risk areas changed; unaffected focused reviews do not restart. A fresh task is
+used only when Donal requests it or the original task is genuinely unsuitable.
+Fable is not recalled unless review exposes an architecture or requirements
+problem rather than an ordinary implementation defect.
+
+Re-review scope follows affected contracts and failure modes, not the number or
+location of changed files. A change confined to one risk area receives the
+fresh broad review plus that focused recheck. A change spanning risk areas
+receives the fresh broad review plus every affected focused recheck. Restart all
+five reviewers only when the remediation changes a shared state machine or
+cross-boundary contract, spans enough critical areas that its impact cannot be
+confidently bounded, or invalidates the assumptions of the original review
+charters. Examples include schema plus renderer behaviour, IPC plus worker
+ownership, finalization plus persistence, or a change to the logic behind
+Complete/100%.
+
+If review repeatedly finds a confirmed P1/P2 at the same seam after
+remediation, stop the local patch loop. Source-retrace the shared cause, revisit
+the architecture and attack-test model, and update the accepted plan before
+continuing. Return to Donal for approval when that reassessment changes the
+approved architecture, scope, proof budget, or domain behaviour; do not invent
+authority merely to keep remediation moving.
+
+This amended topology applies prospectively to PR-4 and later programme PRs.
+Donal separately applied it to the current PR-3 remediation on 2026-08-26 after
+pausing the repeated review loop: one coherent evidence-lifecycle seam fix must
+first pass all deterministic, browser/visual, macOS package, and Linux
+package/soak gates, then receive one fresh broad exact-head review plus targeted
+persistence/completeness, concurrency/finalization, and renderer/input-
+containment exact-head rechecks. PR-3 does not restart five full reviews after
+each further fix.
+False Complete or false 100%, lost mission evidence, unbounded work on the
+Electron main isolate, and any unresolved safety failure are absolute merge
+blockers regardless of review count or otherwise green CI.
 
 ### 6. Close And Advance
 
 Once the exact head is accepted and merged, Codex synchronizes Linear, the
 workplan, handoff, and any operator documentation. It then prepares the next
 slice but again waits at Donal's implementation approval gate.
+
+After PR-4, record a short process retrospective before PR-5 implementation is
+approved: defects found, false or duplicate findings removed by central
+retrace, re-review rounds avoided, any seam that required escalation, and any
+missed risk. Keep or amend this topology from that evidence; do not drift back
+to unbounded full-wave restarts or weaken it by assumption.
 
 ## Evidence And Release Discipline
 

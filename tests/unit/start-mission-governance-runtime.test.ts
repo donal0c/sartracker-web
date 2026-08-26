@@ -27,6 +27,37 @@ const FINALIZED_MISSION: Mission = {
 }
 
 describe('startMissionGovernanceRuntime', () => {
+  it('hydrates the exact finished mission evidence health for restart governance [DON-276]', async () => {
+    const applyRuntime = vi.fn()
+    const getIngestEvidenceHealth = vi.fn().mockResolvedValue({
+      state: 'critical',
+      reason: 'renderer_pending_evidence_lost',
+      pendingCount: 0,
+      corruptCount: 0,
+      conflictCount: 0,
+      rejectedCount: 0,
+      affectedDeviceCount: 0,
+      conflictDeviceIds: [],
+    })
+
+    await startMissionGovernanceRuntime({
+      missionStore: createMissionGovernanceStoreStub({
+        listMissions: vi.fn().mockResolvedValue([FINISHED_MISSION]),
+        getIngestEvidenceHealth,
+      }),
+      applyRuntime,
+    })
+
+    expect(getIngestEvidenceHealth).toHaveBeenCalledWith(FINISHED_MISSION.id)
+    expect(applyRuntime).toHaveBeenLastCalledWith({
+      governanceMission: FINISHED_MISSION,
+      governanceEvidenceHealth: expect.objectContaining({
+        state: 'critical',
+        reason: 'renderer_pending_evidence_lost',
+      }),
+    })
+  })
+
   it('surfaces the newest finished or finalized mission as the governance target', async () => {
     const applyRuntime = vi.fn()
 
@@ -39,6 +70,7 @@ describe('startMissionGovernanceRuntime', () => {
 
     expect(applyRuntime).toHaveBeenLastCalledWith({
       governanceMission: FINALIZED_MISSION,
+      governanceEvidenceHealth: expect.objectContaining({ state: 'healthy' }),
     })
   })
 
@@ -75,6 +107,54 @@ describe('startMissionGovernanceRuntime', () => {
     expect(requestAutosaveSync).toHaveBeenCalledWith('mission-finalize')
     expect(applyRuntime).toHaveBeenLastCalledWith({
       governanceMission: FINALIZED_MISSION,
+      governanceEvidenceHealth: expect.objectContaining({ state: 'healthy' }),
+    })
+  })
+
+  it('refreshes mission-scoped health when finalization is blocked by a later loss [DON-276]', async () => {
+    const applyRuntime = vi.fn()
+    const getIngestEvidenceHealth = vi.fn()
+      .mockResolvedValueOnce({
+        state: 'healthy',
+        reason: null,
+        pendingCount: 0,
+        corruptCount: 0,
+        conflictCount: 0,
+        rejectedCount: 0,
+        affectedDeviceCount: 0,
+        conflictDeviceIds: [],
+      })
+      .mockResolvedValueOnce({
+        state: 'critical',
+        reason: 'renderer_pending_evidence_lost',
+        pendingCount: 0,
+        corruptCount: 0,
+        conflictCount: 0,
+        rejectedCount: 0,
+        affectedDeviceCount: 0,
+        conflictDeviceIds: [],
+      })
+    const runtime = await startMissionGovernanceRuntime({
+      missionStore: createMissionGovernanceStoreStub({
+        listMissions: vi.fn().mockResolvedValue([FINISHED_MISSION]),
+        getIngestEvidenceHealth,
+        finalizeMission: vi.fn().mockRejectedValue(
+          new Error('Degraded evidence health blocks finalization.'),
+        ),
+      }),
+      applyRuntime,
+    })
+
+    await expect(runtime.finalizeGovernanceMission(FINISHED_MISSION.id)).rejects.toThrow(
+      /evidence health blocks finalization/i,
+    )
+    expect(getIngestEvidenceHealth).toHaveBeenCalledTimes(2)
+    expect(applyRuntime).toHaveBeenLastCalledWith({
+      governanceMission: FINISHED_MISSION,
+      governanceEvidenceHealth: expect.objectContaining({
+        state: 'critical',
+        reason: 'renderer_pending_evidence_lost',
+      }),
     })
   })
 
@@ -112,7 +192,47 @@ describe('startMissionGovernanceRuntime', () => {
     expect(requestAutosaveSync).toHaveBeenCalledWith('mission-unlock')
     expect(applyRuntime).toHaveBeenLastCalledWith({
       governanceMission: FINISHED_MISSION,
+      governanceEvidenceHealth: expect.objectContaining({ state: 'healthy' }),
     })
+  })
+
+  it('records an evidence-loss acknowledgement and requests a durable backup [DON-276]', async () => {
+    const requestAutosaveSync = vi.fn().mockResolvedValue(undefined)
+    const acknowledgeIngestEvidenceLoss = vi.fn().mockResolvedValue({
+      state: 'critical',
+      reason: 'renderer_pending_evidence_lost',
+      pendingCount: 0,
+      corruptCount: 0,
+      conflictCount: 0,
+      rejectedCount: 0,
+      affectedDeviceCount: 0,
+      conflictDeviceIds: [],
+      acknowledgedLoss: {
+        adminName: 'Ops Lead',
+        reason: 'Known runtime loss reviewed.',
+        acknowledgedAt: '2026-08-26T17:00:00.000Z',
+      },
+    })
+    const runtime = await startMissionGovernanceRuntime({
+      missionStore: createMissionGovernanceStoreStub({ acknowledgeIngestEvidenceLoss }),
+      applyRuntime: vi.fn(),
+      requestAutosaveSync,
+    })
+
+    await expect(runtime.acknowledgeGovernanceEvidenceLoss({
+      mission_id: FINISHED_MISSION.id,
+      admin_name: 'Ops Lead',
+      reason: 'Known runtime loss reviewed.',
+    })).resolves.toMatchObject({
+      state: 'critical',
+      acknowledgedLoss: { adminName: 'Ops Lead' },
+    })
+    expect(acknowledgeIngestEvidenceLoss).toHaveBeenCalledWith({
+      mission_id: FINISHED_MISSION.id,
+      admin_name: 'Ops Lead',
+      reason: 'Known runtime loss reviewed.',
+    })
+    expect(requestAutosaveSync).toHaveBeenCalledWith('mission-evidence-loss-acknowledgement')
   })
 
   it('does not fail a completed governance transition when autosave request reports failure', async () => {
@@ -152,7 +272,18 @@ describe('startMissionGovernanceRuntime', () => {
 function createMissionGovernanceStoreStub(overrides: Record<string, unknown> = {}) {
   return {
     listMissions: vi.fn().mockResolvedValue([]),
+    getIngestEvidenceHealth: vi.fn().mockResolvedValue({
+      state: 'healthy',
+      reason: null,
+      pendingCount: 0,
+      corruptCount: 0,
+      conflictCount: 0,
+      rejectedCount: 0,
+      affectedDeviceCount: 0,
+      conflictDeviceIds: [],
+    }),
     finalizeMission: vi.fn(),
+    acknowledgeIngestEvidenceLoss: vi.fn(),
     unlockFinalizedMission: vi.fn(),
     ...overrides,
   }

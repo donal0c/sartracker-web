@@ -13,6 +13,7 @@ export type AutosaveSyncReason =
   | 'mission-recover-resume'
   | 'mission-start-fresh'
   | 'mission-finalize'
+  | 'mission-evidence-loss-acknowledgement'
   | 'mission-unlock'
 
 export type AutosavePhase = 'disabled' | 'idle' | 'syncing' | 'synced' | 'failed'

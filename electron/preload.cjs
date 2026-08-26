@@ -22,6 +22,10 @@ const INGEST_MARKER_ATTACHMENT_CHANNEL = 'sartracker:ingest-marker-attachment'
 const OPEN_EXTERNAL_PATH_CHANNEL = 'sartracker:open-external-path'
 const OPEN_EXTERNAL_URL_CHANNEL = 'sartracker:open-external-url'
 const FETCH_OFFICIAL_MAP_TILE_CHANNEL = 'sartracker:fetch-official-map-tile'
+const COVERAGE_CHANGED_CHANNEL = 'sartracker:coverage-changed'
+const COVERAGE_RENDERER_FAILED_CHANNEL = 'sartracker:coverage-renderer-failed'
+const RENDERER_TEARDOWN_REQUEST_CHANNEL = 'sartracker:app-runtime-teardown-requested'
+const RENDERER_TEARDOWN_READY_CHANNEL = 'sartracker:app-runtime-teardown-ready'
 
 const MISSION_STORE_CHANNELS = {
   info: 'sartracker:mission-store:info',
@@ -57,6 +61,16 @@ const MISSION_STORE_CHANNELS = {
   cancelBreadcrumbQuery: 'sartracker:mission-store:cancel-breadcrumb-query',
   listExactBreadcrumbDotPage: 'sartracker:mission-store:list-exact-breadcrumb-dot-page',
   cancelExactBreadcrumbDotQuery: 'sartracker:mission-store:cancel-exact-breadcrumb-dot-query',
+  readCoverageManifest: 'sartracker:mission-store:read-coverage-manifest',
+  readCoverageChunk: 'sartracker:mission-store:read-coverage-chunk',
+  readCoverageClaim: 'sartracker:mission-store:read-coverage-claim',
+  syncCoverageTileCatalog: 'sartracker:mission-store:sync-coverage-tile-catalog',
+  activateCoverageTileCatalog: 'sartracker:mission-store:activate-coverage-tile-catalog',
+  finalizeCoverageTileCatalog: 'sartracker:mission-store:finalize-coverage-tile-catalog',
+  discardCoverageTileCatalog: 'sartracker:mission-store:discard-coverage-tile-catalog',
+  readCoverageTile: 'sartracker:mission-store:read-coverage-tile',
+  cancelCoverageTileRead: 'sartracker:mission-store:cancel-coverage-tile-read',
+  cancelCoverageQuery: 'sartracker:mission-store:cancel-coverage-query',
   listTrackingHistoryCheckpoints: 'sartracker:mission-store:list-tracking-history-checkpoints',
   countPositions: 'sartracker:mission-store:count-positions',
   latestPositions: 'sartracker:mission-store:latest-positions',
@@ -67,6 +81,7 @@ const MISSION_STORE_CHANNELS = {
   listIngestAnomalies: 'sartracker:mission-store:list-ingest-anomalies',
   recordIngestRejections: 'sartracker:mission-store:record-ingest-rejections',
   recordIngestEvidenceLoss: 'sartracker:mission-store:record-ingest-evidence-loss',
+  acknowledgeIngestEvidenceLoss: 'sartracker:mission-store:acknowledge-ingest-evidence-loss',
   getIngestEvidenceHealth: 'sartracker:mission-store:get-ingest-evidence-health',
   upsertMarker: 'sartracker:mission-store:upsert-marker',
   getMarker: 'sartracker:mission-store:get-marker',
@@ -98,6 +113,14 @@ const LAYER_CATALOG_STORE_CHANNELS = {
   upsertMetadata: 'sartracker:layer-catalog-store:upsert-metadata',
   clearMetadata: 'sartracker:layer-catalog-store:clear-metadata',
 }
+
+// Electron main owns every unload. This synchronous fence converts direct
+// reload/menu/close attempts into `will-prevent-unload`, where main can wait for
+// rejected-position evidence to drain before explicitly allowing the unload.
+window.addEventListener('beforeunload', (event) => {
+  event.preventDefault()
+  event.returnValue = false
+})
 
 contextBridge.exposeInMainWorld('sartrackerElectron', {
   loadAppSettings() {
@@ -162,6 +185,24 @@ contextBridge.exposeInMainWorld('sartrackerElectron', {
   },
   fetchOfficialMapTile(url) {
     return ipcRenderer.invoke(FETCH_OFFICIAL_MAP_TILE_CHANNEL, url)
+  },
+  onCoverageChanged(listener) {
+    const handler = (_event, payload) => listener(payload)
+    ipcRenderer.on(COVERAGE_CHANGED_CHANNEL, handler)
+    return () => ipcRenderer.removeListener(COVERAGE_CHANGED_CHANNEL, handler)
+  },
+  onCoverageRendererFailed(listener) {
+    const handler = () => listener()
+    ipcRenderer.on(COVERAGE_RENDERER_FAILED_CHANNEL, handler)
+    return () => ipcRenderer.removeListener(COVERAGE_RENDERER_FAILED_CHANNEL, handler)
+  },
+  onAppRuntimeTeardownRequested(listener) {
+    const handler = (_event, input) => listener(input)
+    ipcRenderer.on(RENDERER_TEARDOWN_REQUEST_CHANNEL, handler)
+    return () => ipcRenderer.removeListener(RENDERER_TEARDOWN_REQUEST_CHANNEL, handler)
+  },
+  acknowledgeAppRuntimeTeardown(input) {
+    ipcRenderer.send(RENDERER_TEARDOWN_READY_CHANNEL, input)
   },
   missionStore: Object.fromEntries(
     Object.entries(MISSION_STORE_CHANNELS).map(([methodName, channel]) => [

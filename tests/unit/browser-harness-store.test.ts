@@ -13,8 +13,64 @@ describe('browser harness position persistence', () => {
   })
 
   afterEach(() => {
+    vi.useRealTimers()
     delete window.__SARTRACKER_BROWSER_HARNESS__
     vi.restoreAllMocks()
+  })
+
+  it('mirrors adjacent backfill checkpoints when a participant reuses an effective time', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-08-20T10:00:00.000Z'))
+    const store = getBrowserHarnessStore()
+    const mission = await store.createMission({
+      name: 'Harness participant re-add',
+      start_time: '2026-08-20T08:00:00.000Z',
+    })
+    const [initial] = await store.selectMissionParticipants({
+      mission_id: mission.id,
+      groups: [],
+      devices: [{ traccar_device_id: '20' }],
+      selected_by: 'Coordinator A',
+    })
+    const [initialCheckpoint] = await store.listParticipantBackfillCheckpoints(mission.id)
+    await store.upsertParticipantBackfillCheckpoint({
+      mission_id: mission.id,
+      traccar_device_id: '20',
+      window_from: initialCheckpoint!.window_from,
+      window_to: initialCheckpoint!.window_to,
+      reconciled_until: initialCheckpoint!.window_to,
+      completed: true,
+    })
+    vi.setSystemTime(new Date('2026-08-20T11:00:00.000Z'))
+    await store.removeMissionParticipant({
+      mission_id: mission.id,
+      participant_id: initial!.id,
+      removed_by: 'Coordinator A',
+    })
+    vi.setSystemTime(new Date('2026-08-20T12:00:00.000Z'))
+    await store.addMissionParticipant({
+      mission_id: mission.id,
+      kind: 'device',
+      ref: '20',
+      effective_from: '2026-08-20T08:00:00.000Z',
+      confirmed_by: 'Coordinator A',
+    })
+
+    await expect(store.listParticipantBackfillCheckpoints(mission.id)).resolves.toEqual([
+      expect.objectContaining({
+        window_from: '2026-08-20T08:00:00.000Z',
+        window_to: '2026-08-20T10:00:00.000Z',
+        completed: 1,
+      }),
+      expect.objectContaining({
+        window_from: '2026-08-20T10:00:00.000Z',
+        window_to: '2026-08-20T12:00:00.000Z',
+        completed: 0,
+      }),
+    ])
+    expect((await store.listMissionParticipants(mission.id))[1]).toMatchObject({
+      backfill_completed: 0,
+    })
   })
 
   it('persists a bulk tracking batch with one bounded storage write', async () => {
@@ -315,12 +371,14 @@ describe('browser harness store', () => {
         change: 'member', observed_at: '2026-08-20T09:00:00.000Z',
       }],
     })
+    const directCheckpoint = (await store.listParticipantBackfillCheckpoints(mission.id))
+      .find((checkpoint) => checkpoint.traccar_device_id === '20')!
     await store.upsertParticipantBackfillCheckpoint({
       mission_id: mission.id,
       traccar_device_id: '20',
-      window_from: '2026-08-20T08:00:00.000Z',
-      window_to: '2026-08-20T09:00:00.000Z',
-      reconciled_until: '2026-08-20T09:00:00.000Z',
+      window_from: directCheckpoint.window_from,
+      window_to: directCheckpoint.window_to,
+      reconciled_until: directCheckpoint.window_to,
       completed: true,
     })
 
@@ -339,14 +397,14 @@ describe('browser harness store', () => {
     await expect(store.upsertParticipantBackfillCheckpoint({
       mission_id: mission.id,
       traccar_device_id: '20',
-      window_from: '2026-08-20T08:00:00.000Z',
-      window_to: '2026-08-20T09:00:00.000Z',
-      reconciled_until: '2026-08-20T08:30:00.000Z',
+      window_from: directCheckpoint.window_from,
+      window_to: directCheckpoint.window_to,
+      reconciled_until: directCheckpoint.window_from,
       completed: false,
     })).rejects.toThrow(/completion.*irreversible|cursor.*decrease/i)
   })
 
-  it('mirrors the participant backfill finish fence', async () => {
+  it('mirrors direct-device backfill status, coverage claim, and finish fences', async () => {
     vi.useFakeTimers()
     vi.setSystemTime(new Date('2026-08-20T10:00:00.000Z'))
     const store = getBrowserHarnessStore()
@@ -356,13 +414,22 @@ describe('browser harness store', () => {
     })
     await store.selectMissionParticipants({
       mission_id: mission.id,
-      groups: [{
-        traccar_group_id: '101', name: 'Kerry MRT', member_device_ids: ['11'],
-      }],
-      devices: [],
+      groups: [],
+      devices: [{ traccar_device_id: '20' }],
       selected_by: 'Coordinator A',
     })
 
+    await expect(store.listMissionParticipants(mission.id)).resolves.toEqual([
+      expect.objectContaining({
+        kind: 'device', traccar_device_id: '20', backfill_completed: 0,
+      }),
+    ])
+    await store.readCoverageManifest(mission.id)
+    await expect(store.readCoverageClaim({ missionId: mission.id, selectedKeys: [] }))
+      .resolves.toMatchObject({
+        databaseReady: false,
+        blockers: expect.arrayContaining(['backfill_incomplete']),
+      })
     await expect(store.finishMission(mission.id)).rejects.toThrow(
       /history backfill.*incomplete|complete.*history backfill/i,
     )
@@ -379,6 +446,8 @@ describe('browser harness store', () => {
       completed: true,
     })
 
+    await expect(store.readCoverageClaim({ missionId: mission.id, selectedKeys: [] }))
+      .resolves.toMatchObject({ databaseReady: true, blockers: [] })
     await expect(store.finishMission(mission.id)).resolves.toMatchObject({ status: 'finished' })
   })
 
@@ -410,6 +479,15 @@ describe('browser harness store', () => {
     await expect(store.selectMissionParticipants(directSelection)).rejects.toThrow(/already active/i)
     await expect(store.listMissionParticipants(mission.id)).resolves.toHaveLength(1)
 
+    const [checkpoint] = await store.listParticipantBackfillCheckpoints(mission.id)
+    await store.upsertParticipantBackfillCheckpoint({
+      mission_id: mission.id,
+      traccar_device_id: checkpoint!.traccar_device_id,
+      window_from: checkpoint!.window_from,
+      window_to: checkpoint!.window_to,
+      reconciled_until: checkpoint!.window_to,
+      completed: true,
+    })
     await store.finishMission(mission.id)
     await expect(store.removeMissionParticipant({
       mission_id: mission.id,
@@ -510,6 +588,57 @@ describe('browser harness store', () => {
         expect.objectContaining({ event_type: 'mission_unlocked' }),
       ]),
     )
+  })
+
+  it('keeps a browser evidence gap critical while allowing audited closure [DON-276]', async () => {
+    window.localStorage.setItem(
+      'sartracker:browser-settings',
+      JSON.stringify({ missionDefaults: { adminRoster: ['Ops Lead'] } }),
+    )
+    const store = getBrowserHarnessStore()
+    const mission = await store.createMission({ name: 'Evidence Gap Mission' })
+    await store.recordIngestEvidenceLoss({
+      mission_id: mission.id,
+      reason: 'renderer_pending_evidence_lost',
+    })
+    await store.finishMission(mission.id)
+
+    await expect(store.finalizeMission(mission.id)).rejects.toThrow(/evidence health/iu)
+    await expect(store.acknowledgeIngestEvidenceLoss({
+      mission_id: mission.id,
+      admin_name: 'Ops Lead',
+      reason: 'Known runtime loss reviewed.',
+    })).resolves.toMatchObject({
+      state: 'critical',
+      acknowledgedLoss: { adminName: 'Ops Lead' },
+    })
+    await expect(store.finalizeMission(mission.id)).resolves.toMatchObject({
+      mission: { status: 'finalized' },
+    })
+    await expect(store.getIngestEvidenceHealth(mission.id)).resolves.toMatchObject({
+      state: 'critical',
+      reason: 'renderer_pending_evidence_lost',
+    })
+  })
+
+  it('keeps a retained evidence gap in the browser coverage claim after reload [DON-276]', async () => {
+    const store = getBrowserHarnessStore()
+    const mission = await store.createMission({ name: 'Reloaded Evidence Gap Mission' })
+    await store.recordIngestEvidenceLoss({
+      mission_id: mission.id,
+      reason: 'renderer_pending_evidence_lost',
+    })
+
+    resetBrowserHarnessStore(false)
+    const restoredStore = getBrowserHarnessStore()
+
+    await expect(restoredStore.readCoverageClaim({
+      missionId: mission.id,
+      selectedKeys: [],
+    })).resolves.toMatchObject({
+      databaseReady: false,
+      blockers: expect.arrayContaining(['ingest_health_degraded']),
+    })
   })
 
   it('records opened paths for review workflows', async () => {
