@@ -2299,3 +2299,99 @@ The commit containing this evidence record is documentation-only. It must pass
 the deterministic exact-head/Linux gates and five fresh independent exact-head
 reviews from zero before PR #3 can be called review ready. No merge or release
 occurred.
+
+## Renderer teardown evidence-drain remediation
+
+Documentation head `3769c5b9d7efe13a10a43293288b8fbb7fc161d1` was
+invalidated when an exact-head reviewer traced renderer teardown with more than
+two bounded rejection batches. `dispose()` waited an existing batch, ran at
+most one additional 256-record batch, then could resolve successfully with the
+remainder still held only in renderer memory. Runtime replacement was
+synchronous and ignored that asynchronous cleanup. A reload after the apparent
+success could therefore lose both the anomaly payload and its live blocker,
+allowing an eventual false Complete/100% claim.
+
+The red reasons were recorded before production changes. With 513 unique
+rejections and a controlled first acknowledgement, disposal attempted only 512
+records and resolved. A replacement controller also installed before the
+previous asynchronous disposal settled. The new durable teardown-loss reason
+was rejected by both outbox and mission store and rendered only as a generic
+repair warning. The initial focused RED produced six expected failures while
+127 companion tests passed. A separate refactor RED then proved two concurrent
+replacements could overtake the first asynchronous disposal.
+
+Application head `1d2aa19d663d6cdd311a0240f2deb83104acd409` closes the
+entire teardown chain. Disposal stops new acceptance and retries, waits the
+current single flight, then drains bounded batches until empty. If an
+unacknowledged batch cannot make progress, every affected mission first receives
+the sticky `renderer_pending_evidence_lost` marker; payload memory is released
+only after all markers succeed. Missing or failed marker persistence rejects
+disposal. App-runtime disposal stops the poller, awaits evidence cleanup before
+releasing the remaining runtime owners, and controller replacement is awaited,
+serialized, and aborted on cleanup failure. The durable marker survives restart,
+is critical in mission health, and blocks finalization/archive completeness.
+
+Green local verification at that application head:
+
+- focused teardown, store, UI, bootstrap, and lifecycle boundary: 7 files /
+  160 tests;
+- full deterministic unit gate: 269 files / 2,169 tests;
+- full ESLint, TypeScript, production build, bundle budgets, and diff checks;
+- participant/coverage/tracking Chromium: 13/13;
+- selected critical visual Playwright: 2/2, covering the new shutdown-loss
+  warning and the existing no-false-complete pending-evidence state;
+- fresh uncached independent critical visual review: 2/2 PASS at
+  `test-results/visual-verification/reports/visual-review-2026-08-26T09-57-13Z.json`
+  and
+  `test-results/visual-verification/reports/visual-review-2026-08-26T09-57-24Z.json`;
+  and
+- Rust backend: 51/51, with the intentional real macOS keychain test ignored.
+
+Exact application-head Linux run
+[`32955848729`](https://github.com/donal0c/sartracker-web/actions/runs/32955848729)
+checked out PR merge ref
+`698fd2fa7f3a6bf14214b7565d7e2d778ca6ed88`, whose parents are exact PR-2
+base `7021fc1ef33e6da5c91c96cd86e836fc3754f48f` and application head
+`1d2aa19d663d6cdd311a0240f2deb83104acd409`, and passed:
+
+- Ubuntu x64 AppImage and `.deb` packaging, native SQLite inspection, Mesa
+  llvmpipe attestation, and AppImage window/content launch;
+- packaged CI soak: 6/6 batches, 8,664/8,664 source-exact positions, matching
+  SHA-256
+  `a70b58d3944ab7ddcde3cb17a870aef87da2efc05aa65deb46a3abca387c5d5c`,
+  integrity `ok`, clean WAL checkpoint, one restart, zero renderer crashes,
+  zero redundant telemetry slope, and four healthy operator interactions;
+- Electron-main maximum 44.2964 ms and p95 7.7332 ms against the explicit
+  200 ms I5 limit, with zero samples over the limit;
+- operator action maximum 107.5 ms with zero samples over 250 ms;
+- Mesa llvmpipe renderer maximum 516.7 ms and p95 316.6 ms. This is
+  descriptive tracking-soak evidence below the separate 1,000 ms
+  renderer/operator freeze gate; G2 remains the coverage-renderer budget
+  authority;
+- peak measured process-tree RSS 1,194,340,352 bytes;
+- AppImage SHA-256
+  `9ddf7cbc1d8ba5e6e4086b3dac891b72e9564d9ca436e50c07874324fb436db0`;
+- `.deb` SHA-256
+  `3b67d2c6826a68947296cd01bfe505369f614894383b6131d4f4b9d46c215593`;
+- soak report SHA-256
+  `dfbaf64af45503e0e35cc3bf07b16115aacee71999df2e9f96867a348cdce3a1`;
+- package artifact `9602085083`, uploaded-zip digest
+  `13cc348fbdc78fd2c3bd1055200a37f1ff56b847f3f3c5ed406a54d6212f6cf0`;
+  and
+- validation artifact `9602086153`, uploaded-zip digest
+  `3ea8f58bbb39aa9c2fbe18997cb46531224846f439edd0b329ac6d298bdb4e46`.
+
+The operator manual now explains the all-batch drain, durable shutdown-loss
+marker, and replacement stop condition. New screenshot
+`public/manual/assets/tracking-shutdown-evidence-loss.png` shows the exact
+critical warning while live tracking remains explicitly online. Candidate-B
+geometry/index construction, schema v10, G2 measurements, G3 flag posture,
+exact Dots, and the 3.704 GB migration surface are unchanged. Their accepted
+evidence remains standing only for those unchanged surfaces. There was no
+pre-merge packaged 960k/2M coverage run outside G2 and no packaged forced-kill
+matrix.
+
+The commit containing this evidence record is documentation-only. It must pass
+the deterministic exact-head/Linux gates and five fresh independent exact-head
+reviews from zero before PR #3 can be called review ready. No merge or release
+occurred.
