@@ -44,6 +44,11 @@ function expectMesaPackages(step: WorkflowStep): void {
   expect(step.run).toContain('mesa-utils')
 }
 
+/** Verifies a real X11 window manager can deliver graceful close requests. */
+function expectWindowManager(step: WorkflowStep): void {
+  expect(step.run).toContain('openbox')
+}
+
 /**
  * Verifies that the workflow proves llvmpipe is active before app timing.
  */
@@ -95,6 +100,7 @@ describe('Linux Electron renderer workflows [DON-260]', () => {
     const job = workflow.jobs.build
 
     expectMesaPackages(selectStep(job, 'Install Linux Electron runtime deps'))
+    expectWindowManager(selectStep(job, 'Install Linux Electron runtime deps'))
     expectRendererAttestation(selectStep(job, 'Attest Mesa llvmpipe renderer'))
     expect(selectStep(job, 'Packaged tracking soak (CI profile)').env).toMatchObject({
       LIBGL_ALWAYS_SOFTWARE: '1',
@@ -109,6 +115,8 @@ describe('Linux Electron renderer workflows [DON-260]', () => {
     const launch = selectStep(workflow.jobs.build, 'Launch AppImage smoke').run ?? ''
 
     expect(launch).toContain('xdotool windowclose "$WINDOW_ID"')
+    expect(launch).toContain('openbox')
+    expect(launch).toContain('xprop -root _NET_SUPPORTING_WM_CHECK')
     expect(launch).toContain('timeout 15s tail --pid="$APP_PID" -f /dev/null')
     expect(launch).toContain('wait "$APP_PID"')
     expect(launch).toContain('appimage-graceful-close.txt')

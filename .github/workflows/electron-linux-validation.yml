@@ -56,6 +56,7 @@ jobs:
             libgl1-mesa-dri \
             libglx-mesa0 \
             mesa-utils \
+            openbox \
             libgtk-3-0 \
             libnss3 \
             libxdamage1 \
@@ -63,6 +64,7 @@ jobs:
             libxrandr2 \
             libxss1 \
             xdotool \
+            x11-utils \
             xvfb
 
       - name: Setup Node
@@ -151,6 +153,31 @@ jobs:
           export LIBGL_ALWAYS_SOFTWARE=1
           export GALLIUM_DRIVER=llvmpipe
 
+          openbox --sm-disable \
+            > tmp/electron-validation-evidence/openbox.log \
+            2>&1 &
+          WM_PID=$!
+          trap 'kill "$WM_PID" 2>/dev/null || true; wait "$WM_PID" 2>/dev/null || true' EXIT
+          WM_FOUND=0
+          for _ in $(seq 1 30); do
+            if ! kill -0 "$WM_PID" 2>/dev/null; then
+              echo "::error::Openbox exited before it could manage the X11 session."
+              cat tmp/electron-validation-evidence/openbox.log || true
+              exit 1
+            fi
+            if xprop -root _NET_SUPPORTING_WM_CHECK \
+              > tmp/electron-validation-evidence/window-manager.txt 2>/dev/null; then
+              WM_FOUND=1
+              break
+            fi
+            sleep 1
+          done
+          if [ "$WM_FOUND" != "1" ]; then
+            echo "::error::The X11 window manager did not become ready."
+            cat tmp/electron-validation-evidence/openbox.log || true
+            exit 1
+          fi
+
           printf '\n' | gnome-keyring-daemon --unlock --components=secrets \
             > tmp/electron-validation-evidence/keyring-env.txt \
             2> tmp/electron-validation-evidence/keyring.log || true
@@ -229,6 +256,9 @@ jobs:
           fi
           echo "graceful-window-close=passed" \
             > tmp/electron-validation-evidence/appimage-graceful-close.txt
+          kill "$WM_PID" 2>/dev/null || true
+          wait "$WM_PID" 2>/dev/null || true
+          trap - EXIT
           EOF
 
       - name: Upload Electron Linux artifacts
