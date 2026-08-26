@@ -1197,3 +1197,67 @@ automatic recovery followed by explicit Retry. There was no pre-merge packaged
 The commit containing this evidence record is documentation-only. It must pass
 the deterministic exact-head gates and five fresh independent reviews before
 PR #3 can be called review ready. No merge or release occurred.
+
+## Multi-period progressive recovery remediation
+
+The first review of the evidence-bound `e1ca2ea` head invalidated it with a
+deterministic P1. A two-period load schedules the newest period first. During
+automatic renderer recovery, the controller cleared its recovery epoch after
+that first progressive catalog activated. The cumulative second catalog was
+therefore emitted with `requiresFreshRendererSources = false`; the renderer
+could reuse the failed same-revision older-period source and return Complete.
+
+The exact red-first controller regression:
+
+1. completes normal progressive catalogs for a newer and older closed outing;
+2. fails the older source owned by the second activation;
+3. observes force-fresh on the first recovery catalog;
+4. applies that catalog while the failed older source is still retained; and
+5. expects force-fresh on the cumulative second recovery catalog.
+
+At the invalidated head, step 5 received `false`. Application head
+`6cd6e192dc07ec9be92cd5f03359a89d7a0702ec` captures the recovery epoch once
+per load, uses it for every progressive catalog, and clears the epoch,
+superseded-source fence, and automatic-recovery budget only after the entire
+batch sequence activates successfully. Equality with the captured epoch
+prevents a newer failure from being cleared by an older load.
+
+Green verification at that application head:
+
+- focused activation/controller/protocol/runtime/overlay: 5 files / 83 tests;
+- full serial unit: 264 files / 2,127 tests;
+- TypeScript, ESLint, changed CommonJS syntax, source/docs diff, production
+  build, and bundle budgets; and
+- participant/coverage Chromium: 10/10.
+
+Exact application-head Linux run
+[`32919016169`](https://github.com/donal0c/sartracker-web/actions/runs/32919016169)
+passed at `6cd6e192dc07ec9be92cd5f03359a89d7a0702ec`:
+
+- Ubuntu x64 AppImage and `.deb` packaging with native SQLite, Mesa llvmpipe
+  attestation, and AppImage window/content launch;
+- packaged CI soak: 6/6 batches, 8,664/8,664 source-exact positions, matching
+  SHA-256 `e7c03b93a9ea5e27dc935f1d75cdf66fd0962bb565b54d8c56cf0d2b83457e1a`,
+  integrity `ok`, one restart, zero renderer crashes, 24.283 ms maximum main
+  gap, zero redundant-event slope, and four healthy operator interactions;
+- AppImage SHA-256
+  `1b317238808c1fd41ada28504e9f47936d4753d03e69796395951168603bc29f`;
+- `.deb` SHA-256
+  `1d141e7e796ecc157c6a93e94fd46c43c6ae64fbba436888a3f9103c4096998d`;
+- package artifact `9589260596`, uploaded-zip digest
+  `88365731f6e9828e98924ead678fc17aab9b51e3442a8f255a31e63685b61e90`;
+  and
+- validation artifact `9589261447`, uploaded-zip digest
+  `70b15d50be0cd27e0f1d687a56e5a40db031864fbe335fcb3c70902b580876a9`.
+
+This change is confined to controller recovery correlation. Candidate-B query,
+segmentation, index construction, tile geometry, schema/open code, operator
+controls, G2 measurements, G3 posture, migration, and manual-visible behavior
+are unchanged. No new manual screenshot is required. The earlier G2/scale,
+migration, visual, and manual evidence remains standing only for those
+unchanged surfaces. There was no packaged 960k/2M run outside G2 and no
+packaged forced-kill matrix.
+
+The commit containing this evidence record is documentation-only. It must pass
+the deterministic exact-head gates and five fresh independent reviews before
+PR #3 can be called review ready. No merge or release occurred.
