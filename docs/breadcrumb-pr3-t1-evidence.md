@@ -1126,3 +1126,74 @@ The exact-head Linux run at `a7cbda3` passed packaging, AppImage launch, and an
 main maximum, and four healthy operator interactions, but is superseded by this
 operational cleanup-order change. New exact-head Linux CI and five fresh
 independent reviews must restart. No merge or release occurred.
+
+## Retained-source activation attestation and final application-head Linux gate
+
+The next review showed that a same-revision catalog refresh could retain an
+unchanged period's existing MapLibre source. That source still belonged to the
+earlier activation, but the controller accepted failures only when they matched
+the newest global catalog activation. A real retained-source failure was
+therefore ignored, leaving Complete visible and preventing recovery.
+
+The red-first controller regression retained period B from activation 1 while
+period A changed in activation 2, then delivered B's activation-1 failure. It
+failed because Complete was not revoked. A second regression delivered a
+delayed B1 callback during recovery and failed because it was not coalesced
+with the superseded source set. The overlay regression also failed because the
+activation result did not report per-source ownership.
+
+Application head `080abe8d2f9238aa150b9faa8e31e48634e7842a`:
+
+- returns the exact activation owner for every staged or retained coverage
+  source;
+- stores that ownership only after renderer finalization succeeds;
+- accepts a failure against the actual finalized source owner, while retaining
+  the pending-current-catalog fallback for the narrow activation window;
+- revokes Complete and starts one bounded recovery for an accepted retained-
+  source failure;
+- forces every superseded source to be recreated before Complete can return;
+- coalesces delayed callbacks whose sources are all being replaced; and
+- treats a failure from a genuinely new activation as a new fail-closed
+  recovery rather than suppressing it.
+
+Green verification at that application head:
+
+- focused controller/protocol/overlay/catalog/runtime: 5 files / 82 tests;
+- full serial unit: 264 files / 2,126 tests;
+- TypeScript, ESLint, production build, and bundle budgets;
+- participant/coverage Chromium: 10/10; and
+- a two-worker, ten-repeat intermittent coverage stress: 10/10 before the
+  final type-only refactor, followed by a normal exact-head Chromium rerun.
+
+Exact application-head Linux run
+[`32917584753`](https://github.com/donal0c/sartracker-web/actions/runs/32917584753)
+passed at `080abe8d2f9238aa150b9faa8e31e48634e7842a`:
+
+- Ubuntu x64 AppImage and `.deb` packaging with the native SQLite module;
+- Mesa llvmpipe renderer attestation and AppImage window/content launch;
+- packaged CI soak: 6/6 batches, 8,664/8,664 source-exact positions, matching
+  SHA-256 `770cc2e8e7ea972a651cade2487b22588bbd6e36b9f98f71a31b44a7f1016fc5`,
+  integrity `ok`, one restart, zero renderer crashes, 25.323 ms maximum main
+  gap, zero redundant-event slope, and four healthy operator interactions;
+- AppImage SHA-256
+  `cdb912166cc87bb8e06740261947914c63fc367c31de014db31e52664d26130a`;
+- `.deb` SHA-256
+  `7298683364ed072f53f42d9c17d41f99f4c69dba6a98932ac455af783a50f59a`;
+- package artifact `9588793151`, uploaded-zip digest
+  `47bc83f202af4724533d0958e2b6375d58ba717ffc0272f5a8b677f11946f669`;
+  and
+- validation artifact `9588793752`, uploaded-zip digest
+  `57349cde91a7575ab02b7c1b297fbc16338b7885214770120ec4d65bc3742f2d`.
+
+This remediation does not change the selected Candidate-B geometry/index
+construction, schema/open path, operator controls, G2 measurements, or G3
+default posture. The G2 decision memo, 3.704 GB v9-to-v10 migration proof,
+960k/2M qualification, earlier selected visual review, and operator manual
+therefore remain standing for their unchanged surfaces. No new manual or
+screenshot change is required: the visible failure contract remains one
+automatic recovery followed by explicit Retry. There was no pre-merge packaged
+960k/2M coverage run outside G2 and no packaged forced-kill matrix.
+
+The commit containing this evidence record is documentation-only. It must pass
+the deterministic exact-head gates and five fresh independent reviews before
+PR #3 can be called review ready. No merge or release occurred.
