@@ -15,6 +15,7 @@ describe('breadcrumb PR-3 operator manual [DON-275]', () => {
       'Outside outings',
       'Progress can go backwards honestly',
       'History incomplete — showing loaded coverage',
+      'SAR Tracker makes one automatic recovery attempt',
       'Applying the selected history filter to the map',
       'Inspect exact fixes',
       'does not hide Alpha Team\'s current marker',
