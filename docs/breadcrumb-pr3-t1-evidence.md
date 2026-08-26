@@ -3581,3 +3581,63 @@ Electron-main bytes. Freeze and push one repaired application head, then bind
 replacement macOS/Linux packages and one serial Ubuntu CI-scale soak before the
 amended fresh broad plus persistence, concurrency, and renderer/input-
 containment rechecks. No five-review restart, merge, or release occurred.
+
+### Repaired application-head package and Ubuntu soak
+
+Application head `d21e5df7e2151e6c97e501a2a32894cda157a806` freezes the
+accepted-history and queued-finalization ownership repair. Its exact packages
+bind as:
+
+- macOS arm64 executable SHA-256:
+  `f5212ea9181df95040385dfd04f512e983ed95394a96fb7c4b8ee838ea433caf`;
+- macOS arm64 `app.asar` SHA-256:
+  `53a67225c357a8e0177f0ae14d3eb784b17e50b11679282abc70066403159e0f`;
+- Ubuntu-built Linux x64 executable SHA-256:
+  `6344ae1d9044fedc54779e8bacaddc032fdcc0f55e146fc3623756eafa0bbaf8`;
+  and
+- Ubuntu-built Linux x64 `app.asar` SHA-256:
+  `6aa617967679a4ccb04b5609daa5707ac2538177e536483d22dfe4bdfb2849ba`.
+
+The one replacement packaged CI-scale tracking soak ran serially on the active
+Ubuntu Xwayland `:0` desktop with Mesa llvmpipe through ANGLE/OpenGL. It passed:
+
+- 6/6 batches and 8,664/8,664 source-exact positions, with actual and
+  independent expected digest
+  `53ef76a74d66e2146b1a7f9d03e6b57be45b6910d62961cfc69b32a8bdf956c9`;
+- one restart, two accepted WebGL launches, zero renderer crashes, and graceful
+  code-0 shutdown for both launches;
+- SQLite integrity `ok`, WAL 0/0/0, zero unexplained mission events, and zero
+  redundant-telemetry slope;
+- main-process maximum 9.335 ms and renderer maximum 83.600 ms;
+- four operator interactions classified `healthy`, with action maximum
+  39.800 ms and external-action maximum 94.646 ms; and
+- peak process-tree RSS 1,138,122,752 bytes.
+
+The first launch attempt was retained separately on the Ubuntu host and rejected
+before application startup: the unprivileged unpacked directory did not have a
+root-owned setuid Chromium sandbox. The qualifying rerun used the repository's
+standard Linux CI `--no-sandbox` plus Mesa/ANGLE flags and passed. This was a
+harness launch configuration failure, not product evidence.
+
+The post-soak coverage ledger contains one mission row at change sequence 83,
+32 chunk rows, zero pending invalidations, 20,480 coverage-table bytes, and
+integrity `ok`. The immutable six-file evidence bundle is
+`output/pr3-packaged-soak/d21e5df7e2151e6c97e501a2a32894cda157a806/`.
+Its manifest SHA-256 is
+`382336d8b51448d9930f34d547466d79510ae60bdda231a000fcad68e02f21f5`;
+the soak report SHA-256 is
+`6f28ce0bc75512a780eb981ef1ab90f9f8487a73a3d46db06538b3b8e34f66e7`.
+
+The following binding commit must be documentation/evidence-only. Its
+executable and test trees must remain byte-identical to application head
+`d21e5df`, whose Git tree objects are: `src`
+`90b21ffdfd6391cecb8b888b08ce9580685cf514`, `electron`
+`7efdbd2af58fbbf164a1bb3de9c5e1b25a6da193`, `tests`
+`d4173c90a56c1d2f4bfd3b826ce018c32db64def`, `build`
+`b91f42810f4ef07e7f4686cc2e750caa00a7fc54`, `scripts`
+`b3472c9139381b5d27ce4a461c975c5080f74b60`, and `tools`
+`950a5b1c2e2e5ebc149c9de22dae5a5fbd5a33ed`. `package.json`
+(`ca10e37bab0a1e0d9a05a9295289cf733e32d418`) and `package-lock.json`
+(`ed6b7918e5808c565bf11fa70cdf8da4a3f371d9`) are unchanged. Green
+exact-head CI plus one fresh broad and the three targeted exact-head rechecks
+remain before merge readiness. No merge or release occurred.
